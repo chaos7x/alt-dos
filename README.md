@@ -17,7 +17,8 @@ ist nur über die Family API (FAPI) erreichbar.
   `START`, `HILFE`, `EXIT`; andere Eingaben starten das gleichnamige Programm
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab
-- Tastaturtreiber (IRQ 1) mit deutscher Belegung, Umlauten und AltGr
+- Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
+  eingebaut; `KEYB US` oder `KEYB GB` lädt andere Belegungen aus `.KBL`-Dateien
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
@@ -65,6 +66,8 @@ Dateien aus dem Watcom-Abbild.
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
 | 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer |
+| 18 | KbdSetLayout    | BX = `.KBL`-Daten (278 Bytes), 0 = eingebaute |
+| 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung |
 
 ## Speicher
 

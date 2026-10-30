@@ -29,6 +29,9 @@ check_size() {   # Datei, Map, Maximum, Name
 echo "Bootsektor"
 nasm -f bin boot/boot.asm -o $B/boot.bin
 
+echo "Tastaturbelegungen"
+python3 tools/mkkbl.py $B
+
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
@@ -44,7 +47,7 @@ check_size $B/kernel.bin $B/kernel.map 65536 kernel
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in command a b c mem; do
+for t in command keyb a b c mem; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
@@ -52,7 +55,7 @@ done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
-for t in command a b c mem; do
+for t in command keyb a b c mem; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
@@ -73,6 +76,9 @@ truncate -s 32768 $B/KERNEL.SYS
 mcopy -i $IMG $B/KERNEL.SYS ::KERNEL.SYS
 mattrib -i $IMG +r +s +h ::KERNEL.SYS
 mcopy -i $IMG $B/task_command.exe ::COMMAND.EXE
+mcopy -i $IMG $B/task_keyb.exe ::KEYB.EXE
+mcopy -i $IMG $B/US.KBL ::US.KBL
+mcopy -i $IMG $B/GB.KBL ::GB.KBL
 mcopy -i $IMG $B/task_a.exe ::TASKA.EXE
 mcopy -i $IMG $B/task_b.exe ::TASKB.EXE
 mcopy -i $IMG $B/task_c.exe ::TASKC.EXE

@@ -650,6 +650,19 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(de));
         return 0;
 
+    case FAPI_KBDSETLAYOUT:
+        if (a1 == 0)
+            return kbd_set_layout(0, 0) ? FAPI_ERROR : 0;
+        if (!user_ok(usel, a1, KBL_SIZE_BYTES, 0))
+            return FAPI_ERROR;
+        return kbd_set_layout(usel, a1) ? FAPI_ERROR : 0;
+
+    case FAPI_KBDGETLAYOUT:
+        if (!user_ok(usel, a1, 4, 1))
+            return FAPI_ERROR;
+        far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id(), 4);
+        return 0;
+
     case FAPI_YIELD:
         schedule_next();
         return 0;

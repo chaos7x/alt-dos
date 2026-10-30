@@ -31,6 +31,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosFindEntry(e, n)  F2(FAPI_FINDENTRY, (e), (n))
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
 #define KbdPeek()           F2(FAPI_KBDPEEK, 0, 0)
+#define KbdSetLayout(p)     F2(FAPI_KBDSETLAYOUT, (p), 0)
+#define KbdGetLayout(p)     F2(FAPI_KBDGETLAYOUT, (p), 0)
 #define VioCls()            F2(FAPI_VIOCLS, 0, 0)
 #define VioWrtTTY(s, n)     F2(FAPI_VIOWRTTTY, (s), (n))
 #define VioWrtStr(r, c, s)  F2(FAPI_VIOWRTSTR, (s), ((r) << 8) | (c))

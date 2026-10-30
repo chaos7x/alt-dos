@@ -1,10 +1,13 @@
 /*
- * DOS 5.0 - Tastaturtreiber (IRQ 1), deutsche Belegung
+ * DOS 5.0 - Tastaturtreiber (IRQ 1)
  *
  * Der Tastaturcontroller liefert Scancodes (Satz 1). Hier werden daraus
  * Zeichen in Codepage 437. Zwei Tastenkombinationen behandelt der Kernel
  * selbst: Alt+Esc wechselt die Sitzung, Strg+C bricht das Programm im
  * Vordergrund ab.
+ *
+ * Die deutsche Belegung ist fest eingebaut, andere laedt KEYB.EXE aus
+ * .KBL-Dateien (KbdSetLayout).
  */
 #include "kern.h"
 
@@ -15,19 +18,15 @@ static unsigned short buf[NBUF];
 static unsigned char  head, tail;
 static unsigned char  shift, ctrl, alt, altgr, caps, e0;
 
-/* Scancode 0x00-0x39 -> Zeichen; 0 = kein Zeichen */
-static const unsigned char norm[0x3A] = {
-    0, 27, '1','2','3','4','5','6','7','8','9','0', 0xE1, '\'', 8, 9,
-    'q','w','e','r','t','z','u','i','o','p', 0x81, '+', 13, 0,
-    'a','s','d','f','g','h','j','k','l', 0x94, 0x84, '^', 0, '#',
-    'y','x','c','v','b','n','m', ',', '.', '-', 0, '*', 0, ' '
-};
-static const unsigned char shft[0x3A] = {
-    0, 27, '!','"', 0x15,'$','%','&','/','(',')','=', '?', '`', 8, 9,
-    'Q','W','E','R','T','Z','U','I','O','P', 0x9A, '*', 13, 0,
-    'A','S','D','F','G','H','J','K','L', 0x99, 0x8E, 0xF8, 0, '\'',
-    'Y','X','C','V','B','N','M', ';', ':', '_', 0, '*', 0, ' '
-};
+/* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
+   mit Umschalt und mit AltGr (Format siehe tools/mkkbl.py) */
+#include "../build/kbd_gr.h"
+#define KBL_SIZE  sizeof(kbl_gr)
+#define KBL_N     0x5A
+static unsigned char kbl[KBL_SIZE];
+#define NORM(sc)  kbl[8 + (sc)]
+#define SHFT(sc)  kbl[8 + KBL_N + (sc)]
+#define ALTG(sc)  kbl[8 + 2 * KBL_N + (sc)]
 
 static void put(unsigned short k)
 {
@@ -38,20 +37,29 @@ static void put(unsigned short k)
     }
 }
 
-static unsigned char altgr_char(unsigned sc)
+/* neue Belegung aus sel:off (KBL_SIZE Bytes), 0 = ok. sel 0 = eingebaute */
+int kbd_set_layout(unsigned sel, unsigned off)
 {
-    switch (sc) {
-    case 0x03: return 0xFD;         /* AltGr+2  -> hoch 2               */
-    case 0x08: return '{';
-    case 0x09: return '[';
-    case 0x0A: return ']';
-    case 0x0B: return '}';
-    case 0x0C: return '\\';         /* AltGr+sz                         */
-    case 0x10: return '@';          /* AltGr+Q                          */
-    case 0x1B: return '~';          /* AltGr++                          */
-    case 0x56: return '|';          /* AltGr+<                          */
+    const unsigned char __far *p;
+    unsigned f, i;
+
+    if (sel == 0) {
+        sel = KDATA;
+        off = (unsigned)kbl_gr;
     }
+    p = MK_FP(sel, off);
+    if (p[0] != 'K' || p[1] != 'B' || p[2] != 'L' || p[3] != 1)
+        return -1;
+    f = irq_off();
+    for (i = 0; i < KBL_SIZE; i++)
+        kbl[i] = p[i];
+    irq_restore(f);
     return 0;
+}
+
+const char *kbd_layout_id(void)
+{
+    return (const char *)kbl + 4;
 }
 
 void kbd_irq(unsigned sc)
@@ -89,19 +97,17 @@ void kbd_irq(unsigned sc)
         return;
     }
 
-    if (altgr) {
-        c = altgr_char(code);
-    } else if (code == 0x56) {      /* Taste < > neben links Shift      */
-        c = shift ? '>' : '<';
-    } else if (code < 0x3A) {
-        base = norm[code];
-        c = shift ? shft[code] : base;
+    if (code >= KBL_N) {
+        c = 0;
+    } else if (altgr) {
+        c = ALTG(code);
+    } else {
+        base = NORM(code);
+        c = shift ? SHFT(code) : base;
         if (caps && base >= 'a' && base <= 'z')
             c = shift ? base : (unsigned char)(base - 32);
         if (ctrl && base >= 'a' && base <= 'z')
             c = (unsigned char)(base - 'a' + 1);
-    } else {
-        c = 0;
     }
     if (c)
         put(c | (code << 8));
@@ -140,5 +146,6 @@ void kbd_init(void)
     /* Reste im Ausgabepuffer des Controllers abholen (nur lesen) */
     for (i = 0; i < 16 && (inb(0x64) & 1); i++)
         inb(0x60);
+    kbd_set_layout(0, 0);           /* eingebaut: deutsch               */
     kbd_flush();
 }

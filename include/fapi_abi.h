@@ -33,6 +33,9 @@
 #define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer */
+#define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 Bytes), 0 = eingebaut */
+#define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
+#define KBL_SIZE_BYTES      278
 
 #define FAPI_ERROR          0xFFFF
 

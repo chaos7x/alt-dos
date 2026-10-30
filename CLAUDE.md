@@ -35,7 +35,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
-- `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`)
+- `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`),
+  `mkkbl.py` (alle Tastaturbelegungen: `.KBL`-Dateien und `kbd_gr.h` für den
+  Kernel – Belegungen nur dort ändern)
 - `include/fx.h` – Programmformat: MZ-Stub, `e_lfanew` -> FX-Kopf
 - `include/fapi_abi.h` – FAPI-Funktionsnummern, gemeinsam für Kernel und Apps
 

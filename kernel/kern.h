@@ -91,6 +91,8 @@ void kbd_init(void);
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 void kbd_flush(void);
+int  kbd_set_layout(unsigned sel, unsigned off);   /* 0 = ok    */
+const char *kbd_layout_id(void);
 extern volatile unsigned char kbd_switch_req, kbd_break_req;
 
 #endif
