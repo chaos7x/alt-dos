@@ -93,3 +93,12 @@ durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
+
+## Geplant (noch nicht umgesetzt)
+
+- Treiberlader: `CONFIG.SYS` mit `IFS=` und `DEVICE=`, Ring-0-Treiber als Dateien
+- Adaptec AHA-154x als Blockgerät, FAT16 als `.IFS`-Treiber für die SCSI-Platte
+- Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
+- Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
+  Code und Daten getrennt beschreiben)
+- Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
