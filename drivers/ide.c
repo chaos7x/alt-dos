@@ -1,8 +1,10 @@
 /*
  * IDE.SYS - Treiber fuer die erste IDE-Festplatte (Port 1F0h), nur lesend
  *
- * PIO-Modus, LBA28, ohne Interrupt (IRQ 14 bleibt maskiert, der Treiber
- * fragt den Status ab). Erkennung liest zuerst: Ein unbelegter Port liefert
+ * PIO-Modus, ohne Interrupt (IRQ 14 bleibt maskiert, der Treiber fragt
+ * den Status ab). LBA28, wenn die Platte es kann, sonst CHS mit der
+ * aktuellen Geometrie der Platte (die das BIOS beim Start eingestellt hat) -
+ * Platten aus der 286-Zeit kennen oft kein LBA. Erkennung liest zuerst: Ein unbelegter Port liefert
  * FFh, erst danach wird das Laufwerk ausgewaehlt und IDENTIFY gesendet.
  */
 #include "drvlib.h"
@@ -24,6 +26,22 @@
 
 static unsigned short id[256];
 static char line[80];
+static unsigned char use_chs;
+static unsigned cyls, heads, spt;
+
+/* (x / d) in einem Schritt, x >> 16 muss kleiner als d sein;
+   -> Rest << 16 | Quotient (DIV ohne Watcom-Hilfsroutinen) */
+unsigned long divstep(unsigned long x, unsigned d);
+#pragma aux divstep = "div bx" parm [dx ax] [bx] value [dx ax];
+
+/* 32 Bit durch 16 Bit; -> Quotient, *rem = Rest */
+static unsigned long div32(unsigned long x, unsigned d, unsigned *rem)
+{
+    unsigned hi = (unsigned)(x >> 16);
+    unsigned long t = divstep(((unsigned long)(hi % d) << 16) | (unsigned)x, d);
+    *rem = (unsigned)(t >> 16);
+    return ((unsigned long)(hi / d) << 16) | (unsigned)t;
+}
 
 /* warten, bis BSY weg ist und (mask & status) == want; 0 = ok */
 static int wait_status(unsigned char mask, unsigned char want, unsigned t)
@@ -70,6 +88,22 @@ static void init(void)
     insw_far(DATA, (void __far *)id, 256);
 
     n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
+    if (!(id[49] & 0x0200) || n == 0) {
+        /* kein LBA: aktuelle Geometrie (Wort 54-56), sonst Grundgeometrie */
+        use_chs = 1;
+        if ((id[53] & 1) && id[54] && id[55] && id[56]) {
+            cyls = id[54]; heads = id[55]; spt = id[56];
+        } else {
+            cyls = id[1]; heads = id[3]; spt = id[6];
+        }
+        if (cyls == 0 || heads == 0 || heads > 16 || spt == 0 || spt > 255) {
+            r->status = DRV_ERR_NODEV;
+            return;
+        }
+        n = 0;
+        for (i = 0; i < (int)(heads * spt); i++)    /* cyls * heads * spt, */
+            n += cyls;                              /* ohne __U4M          */
+    }
     r->units = 1;
     r->blocks[0] = n;
     r->status = DRV_OK;
@@ -85,24 +119,41 @@ static void init(void)
     mb = (unsigned)(n >> 11);
     p = scat(p, ", ");
     p = udec(p, mb);
-    scat(p, " MB\n");
+    scat(p, use_chs ? " MB (CHS)\n" : " MB\n");
     dputs(line);
 }
 
 static void read(void)
 {
     struct drv_req __far *r = REQ;
-    unsigned long l = r->lba;
+    static unsigned sec, head, cyl;     /* static: SS ist nicht DS (-zu) */
+    unsigned long l = r->lba, track;
     int tries;
 
+    if (use_chs) {
+        track = div32(l, spt, &sec);
+        cyl = (unsigned)div32(track, heads, &head);
+        if (cyl >= cyls) {
+            r->status = DRV_ERR_IO;
+            return;
+        }
+    }
     for (tries = 0; tries < 3; tries++) {
         if (wait_status(0, 0, 300))
             continue;
-        outp(DRIVE, (unsigned char)(0xE0 | ((unsigned)(l >> 24) & 0x0F)));
-        outp(COUNT, 1);
-        outp(LBA0, (unsigned char)l);
-        outp(LBA1, (unsigned char)(l >> 8));
-        outp(LBA2, (unsigned char)(l >> 16));
+        if (use_chs) {
+            outp(DRIVE, (unsigned char)(0xA0 | head));
+            outp(COUNT, 1);
+            outp(LBA0, (unsigned char)(sec + 1));     /* Sektor ab 1      */
+            outp(LBA1, (unsigned char)cyl);
+            outp(LBA2, (unsigned char)(cyl >> 8));
+        } else {
+            outp(DRIVE, (unsigned char)(0xE0 | ((unsigned)(l >> 24) & 0x0F)));
+            outp(COUNT, 1);
+            outp(LBA0, (unsigned char)l);
+            outp(LBA1, (unsigned char)(l >> 8));
+            outp(LBA2, (unsigned char)(l >> 16));
+        }
         outp(CMD, 0x20);                    /* READ SECTORS             */
         if (wait_status(ST_DRQ, ST_DRQ, 300))
             continue;
