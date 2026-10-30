@@ -28,8 +28,14 @@ räumt der Kernel auf, **C** versucht direkt nach B800:0000
 zu schreiben und wird per #GP beendet, **MEM.EXE** zeigt den Arbeitsspeicher laufend
 an. Alle vier liegen als `TASKA.EXE` … `MEM.EXE` auf der Diskette.
 
-Die Programme sind noch reine Binärabbilder (Code und Daten in einem
-Segment, Einsprung bei 0), kein MZ- oder NE-Format.
+## Programmformat
+
+FAPI-Programme sind `.EXE`-Dateien mit einem MZ-Stub vorn: Unter MS-DOS
+gestartet, meldet er nur „Diese FAPI-Anwendung kann nicht im Real Mode
+ausgeführt werden.“ Dahinter folgt der FX-Kopf (siehe `include/fx.h`) mit
+Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
+Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
+Dateien aus dem Watcom-Abbild.
 
 ## FAPI (Stand Meilenstein 3)
 

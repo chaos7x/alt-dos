@@ -46,7 +46,12 @@ for t in a b c mem; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
-    check_size $B/task_$t.bin $B/task_$t.map 6144 task_$t   # Rest = Stack
+done
+
+echo "Programme (FX mit DOS-Stub)"
+nasm -f bin tools/stub.asm -o $B/stub.bin
+for t in a b c mem; do
+    python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
 echo "Diskette (FAT12)"
@@ -65,10 +70,10 @@ cp $B/kernel.bin $B/KERNEL.SYS
 truncate -s 32768 $B/KERNEL.SYS
 mcopy -i $IMG $B/KERNEL.SYS ::KERNEL.SYS
 mattrib -i $IMG +r +s +h ::KERNEL.SYS
-mcopy -i $IMG $B/task_a.bin ::TASKA.EXE
-mcopy -i $IMG $B/task_b.bin ::TASKB.EXE
-mcopy -i $IMG $B/task_c.bin ::TASKC.EXE
-mcopy -i $IMG $B/task_mem.bin ::MEM.EXE
+mcopy -i $IMG $B/task_a.exe ::TASKA.EXE
+mcopy -i $IMG $B/task_b.exe ::TASKB.EXE
+mcopy -i $IMG $B/task_c.exe ::TASKC.EXE
+mcopy -i $IMG $B/task_mem.exe ::MEM.EXE
 mcopy -i $IMG STARTUP.CMD ::STARTUP.CMD
 rm -f $B/KERNEL.SYS
 mdir -a -i $IMG :: | sed 's/^/  /'

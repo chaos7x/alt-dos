@@ -33,6 +33,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   IFS-Verteiler), `ifs.h`, `kern.h` (gemeinsame Definitionen)
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
+- `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`)
+- `include/fx.h` – Programmformat: MZ-Stub, `e_lfanew` -> FX-Kopf
 - `include/fapi_abi.h` – FAPI-Funktionsnummern, gemeinsam für Kernel und Apps
 
 ## Konventionen
@@ -43,7 +45,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Jeder Task hat eine eigene LDT: Eintrag 0 Code, 1 Daten/Stack, ab 2 per
   `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
-  Speicher zu, Laufwerke lesen per DMA in `DMABUF` (38h, linear 8000h).
+  Speicher zu (zweites Fenster `SCRATCH2`, 40h), Laufwerke lesen per DMA in
+  `DMABUF` (38h, linear 8000h).
 - Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); der
   Kernel selbst kennt kein FAT. Blockgeräte nie per BIOS ansprechen.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen

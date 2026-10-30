@@ -11,14 +11,15 @@
 #include "../include/fapi_abi.h"
 #include "mem.h"
 #include "ifs.h"
+#include "../include/fx.h"
 
 /* ---- GDT-Belegung (Rest in kern.h) ------------------------------------- */
 #define NTASK       4
-#define TSS_IDX(i)  (8 + (i))
-#define LDT_IDX(i)  (8 + NTASK + (i))
+#define TSS_IDX(i)  (9 + (i))
+#define LDT_IDX(i)  (9 + NTASK + (i))
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
-#define NGDT        (8 + 2 * NTASK)
+#define NGDT        (9 + 2 * NTASK)
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT        16
@@ -28,8 +29,7 @@
 #define UDATA       USEL(1)
 
 #define KBASE       0x10000UL
-#define APPSIZE     0x2000          /* Segment je Programm: Abbild + Stack */
-#define APPMAXFILE  (APPSIZE - 2048)
+#define UNITS(n)    ((unsigned)(((n) + MEM_UNIT - 1) / MEM_UNIT))
 
 #define LIN(p)      (KBASE + (unsigned short)(p))
 
@@ -73,6 +73,7 @@ static struct tss286 tss[NTASK];
 static struct desc   ldt[NTASK][NLDT];
 static unsigned      alloc_units;                 /* per DosAllocSeg vergeben */
 static unsigned      image_unit[NTASK];           /* Programmsegment je Task */
+static unsigned      image_cnt[NTASK];            /* ... und seine Einheiten */
 static unsigned      image_units;
 static unsigned short kstack[NTASK][256];      /* Ring-0-Stack je Task  */
 
@@ -119,6 +120,7 @@ void gdt_build(void)
     set_desc(5, LIN(&tss_k), sizeof(struct tss286) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);
     set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
+    set_desc(8, 0, 0, ACC_KDATA);
     for (i = 0; i < NTASK; i++) {
         set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
         set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
@@ -144,6 +146,11 @@ void gdt_build(void)
 void scratch_map(unsigned long base, unsigned limit)
 {
     set_desc(SCRATCH >> 3, base, limit, ACC_KDATA);
+}
+
+void scratch2_map(unsigned long base, unsigned limit)
+{
+    set_desc(SCRATCH2 >> 3, base, limit, ACC_KDATA);
 }
 
 void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n)
@@ -294,8 +301,8 @@ static void task_cleanup(int task)                  /* bei Ende/Abbruch */
         if (ldt[task][idx].access != 0)
             seg_free(task, USEL(idx));
     if (image_unit[task]) {                         /* Programmabbild     */
-        mem_free(image_unit[task], APPSIZE / MEM_UNIT);
-        image_units -= APPSIZE / MEM_UNIT;
+        mem_free(image_unit[task], image_cnt[task]);
+        image_units -= image_cnt[task];
         image_unit[task] = 0;
         ldt[task][0].access = 0;
         ldt[task][1].access = 0;
@@ -496,32 +503,72 @@ static int parse_startup(unsigned len, char names[][13], int max)
     return n;
 }
 
+static unsigned rd16(unsigned sel, unsigned off)
+{
+    unsigned char __far *p = MK_FP(sel, off);
+    return p[0] | ((unsigned)p[1] << 8);
+}
+
+/* Programm im FX-Format laden: Datei in einen Zwischenpuffer, Kopf pruefen,
+   Segment der richtigen Groesse anlegen, Abbild hineinkopieren. */
 static const char *load_program(int i, const char *name)
 {
     struct ifs_file f;
+    struct fx_header h;
     struct tss286 *t;
     unsigned short *w;
-    unsigned long base;
-    unsigned u;
+    unsigned long base, seg;
+    unsigned tu, tn, u, n, fx;
+    const char *err = 0;
 
     if (ifs_open(name, &f))
         return "nicht gefunden";
-    if (f.size > APPMAXFILE)
-        return "zu gro\xE1";
-    u = mem_alloc(APPSIZE / MEM_UNIT);
-    if (u == 0)
+    if (f.size < 64 || f.size > 0xFF00UL)
+        return "kein FAPI-Programm";
+
+    tn = UNITS(f.size);                         /* Zwischenpuffer       */
+    tu = mem_alloc(tn);
+    if (tu == 0)
         return "kein Speicher";
-    base = (unsigned long)u << 8;
-    scratch_map(base, APPSIZE - 1);
-    zero_seg(SCRATCH, APPSIZE / 2);             /* auch BSS ist dann 0  */
-    if (ifs_read(&f, base, APPSIZE)) {
-        mem_free(u, APPSIZE / MEM_UNIT);
+    if (ifs_read(&f, (unsigned long)tu << 8, tn * MEM_UNIT)) {
+        mem_free(tu, tn);
         return "Lesefehler";
     }
+    /* ifs_read hat SCRATCH auf den Puffer gelegt */
+    fx = rd16(SCRATCH, 0x3C);
+    if (rd16(SCRATCH, 0) != 0x5A4D || fx > (unsigned)f.size - sizeof(h)) {
+        mem_free(tu, tn);
+        return "kein FAPI-Programm";
+    }
+    far_copy(KDATA, (unsigned)&h, SCRATCH, fx, sizeof(h));
+    seg = (unsigned long)h.image_size + h.bss_size + h.stack_size;
+    if (h.sig[0] != FX_SIG0 || h.sig[1] != FX_SIG1 || h.version != FX_VERSION)
+        err = "kein FAPI-Programm";
+    else if ((unsigned long)h.image_off + h.image_size > f.size ||
+             seg > 0x10000UL || h.entry >= h.image_size)
+        err = "Programmkopf fehlerhaft";
+    if (err) {
+        mem_free(tu, tn);
+        return err;
+    }
+
+    n = UNITS(seg);
+    u = mem_alloc(n);
+    if (u == 0) {
+        mem_free(tu, tn);
+        return "kein Speicher";
+    }
+    base = (unsigned long)u << 8;
+    scratch2_map(base, (unsigned)(seg - 1));
+    zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
+    far_copy(SCRATCH2, 0, SCRATCH, h.image_off, h.image_size);
+    mem_free(tu, tn);
+
     image_unit[i] = u;
-    image_units += APPSIZE / MEM_UNIT;
-    put_desc(&ldt[i][0], base, APPSIZE - 1, ACC_UCODE);
-    put_desc(&ldt[i][1], base, APPSIZE - 1, ACC_UDATA);
+    image_cnt[i]  = n;
+    image_units  += n;
+    put_desc(&ldt[i][0], base, h.image_size - 1, ACC_UCODE);
+    put_desc(&ldt[i][1], base, (unsigned)(seg - 1), ACC_UDATA);
 
     t = &tss[i];
     for (w = (unsigned short *)t; w < (unsigned short *)(t + 1); w++)
@@ -529,9 +576,9 @@ static const char *load_program(int i, const char *name)
     t->ss0   = KDATA;
     t->sp0   = (unsigned short)&kstack[i][256];
     t->cs    = UCODE;
-    t->ip    = 0;
+    t->ip    = h.entry;
     t->ss    = UDATA;
-    t->sp    = APPSIZE;
+    t->sp    = (unsigned short)seg;     /* 64 KB -> 0, Stack wickelt korrekt */
     t->ds    = UDATA;
     t->es    = UDATA;
     t->ldt   = LDT_SEL(i);
@@ -577,7 +624,7 @@ void kmain(void)
     kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 3", 0x1F);
 
     pic_pit_init();
-    kputs(2, 2, "\xFE 286 Protected Mode, GDT 16, LDT je Task, FAPI-Gate 0023h, Takt 100 Hz", 0x07);
+    kputs(2, 2, "\xFE 286 Protected Mode, GDT 17, LDT je Task, FAPI-Gate 0023h, Takt 100 Hz", 0x07);
 
     mem_init(mem_conv_kb, mem_ext_kb);
     log_num(3, "\xFE Speicherverwaltung:", mem_free_kb(), " KB frei");

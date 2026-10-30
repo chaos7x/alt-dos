@@ -16,6 +16,7 @@
 #define TSS_K       0x28
 #define SCRATCH     0x30            /* Kernel-Fenster auf beliebigen Speicher */
 #define DMABUF      0x38            /* DMA-Puffer fuer Laufwerke           */
+#define SCRATCH2    0x40            /* zweites Fenster, z. B. fuer Kopien   */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 512
@@ -28,6 +29,7 @@ extern struct desc gdt[];
 
 /* SCRATCH auf linearen Speicher richten */
 void scratch_map(unsigned long base, unsigned limit);
+void scratch2_map(unsigned long base, unsigned limit);
 
 /* ---- Assembler-Routinen (start.asm) ------------------------------------ */
 void          outb(unsigned port, unsigned val);
