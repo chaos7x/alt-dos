@@ -200,19 +200,35 @@ void reboot_request(void)
     reboot_count = 500;
 }
 
-static void shutdown(void)
+/* alle Dateien schliessen, Platten-Caches leeren; dann Neustart oder
+   anhalten (ein 286 kann sich nicht selbst ausschalten - APM gibt es erst
+   ab 1992). Beim Anhalten bleibt Strg+Alt+Entf aktiv: Tastatur-IRQ setzt
+   reboot_count, IRQ 0 startet nach 5 s neu. */
+static void system_down(int restart)
 {
     int k;
     reboot_count = 0;
     vio_focus(boot_session);
-    vio_kputs(boot_session, "\n\xFE Dateien werden geschlossen, Neustart ...\n");
+    vio_kputs(boot_session, "\n\xFE Dateien werden geschlossen ...\n");
     for (k = 0; k < NFILE; k++)
         if (files[k].owner >= 0) {
             ifs_close(&files[k].f);
             files[k].owner = -1;
         }
     blk_flush();
-    reboot();
+    outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
+    if (restart)
+        reboot();
+    vio_kputs(boot_session, "\n  Alle Dateien sind geschlossen.\n"
+                            "  Der Rechner kann jetzt ausgeschaltet werden.\n"
+                            "  (Strg+Alt+Entf startet neu.)\n");
+    for (;;)
+        idle_wait();
+}
+
+static void shutdown(void)
+{
+    system_down(1);
 }
 
 /* ---- Echtzeituhr (CMOS) ------------------------------------------------ */
@@ -1007,6 +1023,10 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         if (!user_ok(usel, a1, 4, 1))
             return FAPI_ERROR;
         far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id(), 4);
+        return 0;
+
+    case FAPI_SHUTDOWN:
+        system_down(a1 != 0);
         return 0;
 
     case FAPI_YIELD:

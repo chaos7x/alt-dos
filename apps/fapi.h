@@ -39,6 +39,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosMkDir(p)         F2(FAPI_MKDIR, (p), 0)
 #define DosRmDir(p)         F2(FAPI_RMDIR, (p), 0)
 #define DosMove(from, to)   F2(FAPI_MOVE, (from), (to))
+#define DosShutdown(restart) F2(FAPI_SHUTDOWN, (restart), 0)
 #define DosFreeSpace(d, p)  F2(FAPI_FREESPACE, (d), (p))   /* freie Bytes */
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)

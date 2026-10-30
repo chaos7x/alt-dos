@@ -614,6 +614,7 @@ static void cmd_help(void)
          "  DEL Datei       Dateien l\x94schen (auch * und ?)\n"
          "  MD / RD Verz.   Verzeichnis anlegen / entfernen\n"
          "  REN Datei Name  Datei oder Verzeichnis umbenennen\n"
+         "  SHUTDOWN [/H|/R] herunterfahren (/H anhalten, /R neu starten), auch POWEROFF\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER             Version anzeigen\n"
          "  ECHO Text       Text ausgeben\n"
@@ -663,6 +664,11 @@ static int execute(void)
         cmd_md(arg, 1);
     else if (same(cmd, "REN") || same(cmd, "RENAME"))
         cmd_ren(arg);
+    else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF")) {
+        if (confirm(same(arg, "/R") ? "Alle Programme beenden und neu starten (J/N)? "
+                                    : "Alle Programme beenden und herunterfahren (J/N)? "))
+            DosShutdown(same(arg, "/R"));
+    }
     else if (same(cmd, "CD") || same(cmd, "CHDIR"))
         cmd_cd(arg);
     else if (same(cmd, "VER"))

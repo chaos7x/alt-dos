@@ -47,6 +47,7 @@
 #define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
 #define FAPI_RMDIR          0x1C    /* BX = Pfad (Verzeichnis muss leer sein) */
 #define FAPI_MOVE           0x1D    /* BX = alter Pfad, CX = neuer Pfad (gleiches Laufwerk) */
+#define FAPI_SHUTDOWN       0x1F    /* BX = 0 anhalten (ausschalten), 1 Neustart; kehrt nicht zurueck */
 #define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
 
 /* Fehler: alle Werte ab FAPI_ERR_FIRST. FAPI_ERROR heisst "nicht gefunden

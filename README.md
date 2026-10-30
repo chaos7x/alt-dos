@@ -35,7 +35,9 @@ und PC-DOS.
   Start läuft
 - `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (`/A`, `/P`, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
-  `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
+  `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
+  neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
+  Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab,
@@ -107,6 +109,7 @@ selbst nur 8.3 kennt.
 | 28 | DosRmDir        | BX = Pfad (muss leer sein)      |
 | 29 | DosMove         | BX = alter, CX = neuer Pfad (gleiches Laufwerk) |
 | 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes |
+| 31 | DosShutdown     | BX = 0 anhalten, 1 Neustart (kehrt nicht zurück) |
 
 Fehler sind Werte ab FFF0h: FFFFh nicht gefunden/unzulässig, FFFEh
 schreibgeschützt, FFFDh voll, FFFCh existiert schon, FFFBh Zugriff
