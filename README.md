@@ -17,7 +17,7 @@ ist nur über die Family API (FAPI) erreichbar.
 Demo-Tasks: **A** zählt und gibt per `DosYield()` ab, **B** schläft zehnmal
 mit `DosSleep(1000)` und endet regulär, **C** versucht direkt nach B800:0000
 zu schreiben und wird per #GP beendet, **MEM.EXE** zeigt den vom BIOS
-gemeldeten Speicher und beendet sich. Einen Programmlader gibt es noch nicht,
+gemeldeten Arbeitsspeicher und beendet sich. Einen Programmlader gibt es noch nicht,
 alle vier sind fest ins Image gebaut.
 
 ## FAPI (Stand Meilenstein 1)

@@ -26,11 +26,16 @@
 
 #define FAPI_VERSION        0x0500
 
+/*
+ * Speicher aus Sicht der FAPI: ein einziger Arbeitsspeicher. Die Trennung
+ * in "konventionell" und "erweitert" ist ein Real-Mode-Artefakt und wird
+ * nicht nach oben gereicht; das Loch 640 KB - 1 MB verwaltet der Kernel.
+ */
 struct fapi_meminfo {               /* alle Angaben in KB               */
-    unsigned short conv_kb;         /* konventionell (BIOS INT 12h)     */
-    unsigned short ext_kb;          /* erweitert ab 1 MB (INT 15h/88h)  */
+    unsigned short total_kb;        /* nutzbarer Arbeitsspeicher        */
     unsigned short kernel_kb;       /* vom Kernel belegt                */
     unsigned short apps_kb;         /* fuer Anwendungen reserviert      */
+    unsigned short rsv;             /* reserviert, 0                    */
 };
 
 #endif

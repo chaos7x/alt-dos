@@ -288,10 +288,10 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         if (!sel_writable(usel) || a1 > sel_limit(usel) - 7)
             return FAPI_ERROR;
         p = MK_FP(usel, a1);
-        p[0] = mem_conv_kb;
-        p[1] = mem_ext_kb;
-        p[2] = ((unsigned)kernel_end + 1023) / 1024;
-        p[3] = NTASK * (APPSIZE / 1024);
+        p[0] = mem_conv_kb + mem_ext_kb;
+        p[1] = ((unsigned)kernel_end + 1023) / 1024;
+        p[2] = NTASK * (APPSIZE / 1024);
+        p[3] = 0;
         return 0;
     }
 
