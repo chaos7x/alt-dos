@@ -118,6 +118,13 @@ Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 `ATSYS.COM` lässt sich in DOSBox-X testen (`imgmount d ziel.img -t hdd -size
 512,63,16,130`, Diskette als A:), danach das Ziel in QEMU starten.
 
+Falle beim Umstecken von Platten zwischen Adaptec und IDE: FDISK schreibt
+den Partitionsanfang auch als CHS mit der Geometrie des Controllers
+(Adaptec 64/32, IDE z. B. 16/63). Der MS-DOS-MBR lädt per CHS und meldet am
+anderen Controller „Betriebssystem fehlt“, obwohl MS-DOS, AT-DOS und
+`hdboot.asm` (alle über die Sektornummer) die Partition lesen. Abhilfe:
+am Zielcontroller neu partitionieren. Auf dem SCAT bestätigt.
+
 Für Plattentests in QEMU dient `IDE.SYS` mit einer FAT16-Testplatte
 (`-drive file=hdd.img,if=ide,snapshot=on`, angelegt mit `mpartition`/`mformat`).
 QEMU emuliert keinen Adaptec – `AHA154X.SYS` lässt sich nur in 86Box testen.
@@ -144,6 +151,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   ein Plattenzugriff unterbrochen sein kann, dann zweistufig: Taste setzt nur
   eine Anforderung, der Kernel leert beim nächsten Taskwechsel und startet neu;
   gibt ein hängendes Programm nicht ab, Reset nach ca. 5 s über IRQ 0.
+- `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
+  und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
+  aus der Tabelle
 - Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
