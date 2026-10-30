@@ -76,7 +76,9 @@ fehlen 128 KB zu 16 MB. Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
 SCSI-ID 6 CD-ROM.
 
 Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der
-echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286,
-deshalb 286-Kompatibilität zusätzlich am Code prüfen.
+echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286
+und prüft Segmentgrenzen nicht – ein Zugriff über die Grenze läuft in QEMU
+durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
+Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.

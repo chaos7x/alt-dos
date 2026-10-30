@@ -559,7 +559,9 @@ static const char *load_program(int i, const char *name)
         return "kein Speicher";
     }
     base = (unsigned long)u << 8;
-    scratch2_map(base, (unsigned)(seg - 1));
+    /* Fenster ueber alle belegten Einheiten, nicht nur bis seg - 1:
+       zero_seg schreibt ganze Einheiten, ein echter 286 prueft die Grenze */
+    scratch2_map(base, n * MEM_UNIT - 1);
     zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
     far_copy(SCRATCH2, 0, SCRATCH, h.image_off, h.image_size);
     mem_free(tu, tn);
