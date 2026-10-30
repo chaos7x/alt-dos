@@ -171,7 +171,12 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 ## Geplant (noch nicht umgesetzt)
 
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
-  (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY)
+  (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY).
+  Vorbild für das Verhalten sind die GNU-Werkzeuge, besonders `less`:
+  vor- und zurückblättern, Suche mit `/` und `n`, Sprung an Anfang/Ende,
+  Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
+  Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
+  `DIR /P` blättert seitenweise.
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
