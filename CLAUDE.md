@@ -123,7 +123,13 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
   für das CD-ROM an SCSI-ID 6)
-- Schreiben auf FAT (erst auf dem geklonten Testrechner)
+- Schreiben auf FAT (erst auf dem geklonten Testrechner). Dann muss
+  Strg+Alt+Entf vor dem Reset leeren: Schreib-Cache des Kernels und den
+  Cache der Platte selbst (IDE `FLUSH CACHE` E7h, SCSI `SYNCHRONIZE CACHE`
+  35h). Weil der Neustart im Tastatur-Interrupt ausgelöst wird, wo gerade
+  ein Plattenzugriff unterbrochen sein kann, dann zweistufig: Taste setzt nur
+  eine Anforderung, der Kernel leert beim nächsten Taskwechsel und startet neu;
+  gibt ein hängendes Programm nicht ab, Reset nach ca. 5 s über IRQ 0.
 - Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne

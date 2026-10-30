@@ -444,6 +444,23 @@ irq_restore_:
         popf
         ret
 
+; void cpu_reset(void)  - Neustart ueber den Tastaturcontroller (Puls auf
+; der Reset-Leitung), als Rueckfall ein Dreifachfehler
+global cpu_reset_
+cpu_reset_:
+        cli
+.w:     in      al, 0x64
+        test    al, 2
+        jnz     .w
+        mov     al, 0xFE
+        out     0x64, al
+        mov     cx, 0xFFFF
+.wait:  loop    .wait
+        lidt    [null_idtr]             ; keine Interrupts mehr erreichbar:
+        int     3                       ; Ausnahme -> Doppel- -> Dreifachfehler
+.h:     hlt
+        jmp     .h
+
 global halt_forever_
 halt_forever_:
         cli
@@ -467,6 +484,7 @@ _isr_table:
 tj_ptr: dw 0
 tj_sel: dw 0
 dc_ptr: dw 0, 0
+null_idtr: dw 0, 0, 0
 
 segment _BSS
 

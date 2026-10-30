@@ -4,7 +4,8 @@
  * Der Tastaturcontroller liefert Scancodes (Satz 1). Hier werden daraus
  * Zeichen in Codepage 437. Zwei Tastenkombinationen behandelt der Kernel
  * selbst: Alt+Esc wechselt die Sitzung, Strg+C bricht das Programm im
- * Vordergrund ab.
+ * Vordergrund ab, Strg+Alt+Entf startet den Rechner neu - direkt hier im
+ * Interrupt, damit es auch bei einem haengenden Programm wirkt.
  *
  * Die deutsche Belegung ist fest eingebaut, andere laedt KEYB.EXE aus
  * .KBL-Dateien (KbdSetLayout).
@@ -76,6 +77,8 @@ void kbd_irq(unsigned sc)
         if (code == 0x38) altgr = !rel;
         else if (code == 0x1D) ctrl = !rel;
         else if (code == 0x1C && !rel) put(13 | (0x1C << 8));
+        else if (code == 0x53 && !rel && ctrl && (alt || altgr))
+            reboot();               /* Strg+Alt+Entf (Entf-Taste)       */
         return;                     /* Pfeile usw. vorerst ignoriert    */
     }
 
@@ -88,6 +91,8 @@ void kbd_irq(unsigned sc)
     if (rel)
         return;
 
+    if (ctrl && (alt || altgr) && code == 0x53)
+        reboot();                   /* Strg+Alt+Entf (Ziffernblock)     */
     if (alt && code == 0x01) {      /* Alt+Esc                          */
         kbd_switch_req = 1;
         return;

@@ -57,6 +57,7 @@ void          zero_seg(unsigned sel, unsigned words);
 unsigned      irq_off(void);
 void          irq_restore(unsigned flags);
 void          halt_forever(void);
+void          cpu_reset(void);
 
 extern volatile unsigned char  fdc_irq;
 extern volatile unsigned short uptime_s;
@@ -65,6 +66,7 @@ extern volatile unsigned short uptime_s;
 void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n);
 void delay_ticks(unsigned n);
 void panic(const char *msg);
+void reboot(void);
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
 int  fd_init(void);

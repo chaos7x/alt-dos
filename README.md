@@ -25,7 +25,8 @@ und PC-DOS.
   `TYPE`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
-  eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab
+  eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab,
+  **Strg+Alt+Entf** startet neu (auch wenn ein Programm hängt)
 - Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
   eingebaut; `KEYB US` oder `KEYB GB` lädt andere Belegungen aus `.KBL`-Dateien
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`

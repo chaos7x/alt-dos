@@ -186,6 +186,20 @@ void panic(const char *msg)
     halt_forever();
 }
 
+/* Warmstart wie Strg+Alt+Entf unter MS-DOS: Kennung 1234h an 0040:0072,
+   damit das BIOS den Speichertest ueberspringt, dann CPU-Reset */
+void reboot(void)
+{
+    irq_off();
+    /* Hier muss spaeter alles Ungeschriebene auf die Platte (FAT-Schreib-
+       Cache, Platten-Cache per FLUSH CACHE / SYNCHRONIZE CACHE). Solange
+       der Kernel nur liest, gibt es nichts zu leeren. */
+    scratch_map(0, 0x4FF);
+    *(unsigned short __far *)MK_FP(SCRATCH, 0x472) = 0x1234;
+    outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
+    cpu_reset();
+}
+
 static void hex4(unsigned v, char *b)
 {
     static const char h[] = "0123456789ABCDEF";
