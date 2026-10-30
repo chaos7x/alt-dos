@@ -1,5 +1,5 @@
 /*
- * IDE.SYS - Treiber fuer IDE-Platten (ATA) an beiden Kanaelen, nur lesend
+ * IDE.SYS - Treiber fuer IDE-Platten (ATA) an beiden Kanaelen
  *
  * Primaerer Kanal 1F0h/3F6h, sekundaerer 170h/376h, je Master und Slave:
  * bis zu vier Platten, Einheiten in dieser Reihenfolge. ATAPI-Geraete
@@ -201,7 +201,8 @@ static void init(void)
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
-static void read(void)
+/* einen Sektor lesen oder schreiben */
+static void xfer(int write)
 {
     static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
     struct drv_req __far *r = REQ;
@@ -236,15 +237,40 @@ static void read(void)
             outp(b + R_CYL_HI, (unsigned char)(l >> 16));
         }
         settle(u->ctl);
-        outp(b + R_CMD, 0x20);              /* READ SECTORS             */
+        outp(b + R_CMD, write ? 0x30 : 0x20);   /* WRITE / READ SECTORS */
         settle(u->ctl);
         if (wait_status(b, ST_DRQ, ST_DRQ, 300))
             continue;
-        insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off), 256);
+        if (!write) {
+            insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off), 256);
+        } else {
+            outsw_far(b + R_DATA, r->buf_sel, r->buf_off, 256);
+            settle(u->ctl);
+            if (wait_status(b, 0, 0, 300))      /* Platte hat geschrieben */
+                continue;
+        }
         r->status = DRV_OK;
         return;
     }
     r->status = DRV_ERR_IO;
+}
+
+/* FLUSH CACHE an alle Platten; aeltere Platten kennen den Befehl nicht
+   und brechen ihn ab - die haben dann auch keinen Schreib-Cache */
+static void flush(void)
+{
+    struct drv_req __far *r = REQ;
+    int i;
+    for (i = 0; i < nunit; i++) {
+        if (wait_status(unit[i].base, 0, 0, 300) && !(inp(unit[i].base + R_STATUS) & ST_ERR))
+            continue;
+        outp(unit[i].base + R_DRIVE, (unsigned char)(0xA0 | unit[i].sel));
+        settle(unit[i].ctl);
+        outp(unit[i].base + R_CMD, 0xE7);
+        settle(unit[i].ctl);
+        wait_status(unit[i].base, 0, 0, 3000);
+    }
+    r->status = DRV_OK;
 }
 
 void strategy(void)
@@ -260,7 +286,16 @@ void strategy(void)
         if (r->unit >= nunit)
             r->status = DRV_ERR_IO;
         else
-            read();
+            xfer(0);
+        break;
+    case DRV_WRITE:
+        if (r->unit >= nunit)
+            r->status = DRV_ERR_IO;
+        else
+            xfer(1);
+        break;
+    case DRV_FLUSH:
+        flush();
         break;
     default:
         r->status = DRV_ERR_CMD;

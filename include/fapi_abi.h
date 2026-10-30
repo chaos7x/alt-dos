@@ -41,8 +41,23 @@
 #define FAPI_QCURDIR        0x15    /* BX = Puffer (130 Bytes) -> "C:\DOS" */
 #define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
 #define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
+#define FAPI_CREATE         0x18    /* BX = Dateiname -> Handle (neu oder gekuerzt) */
+#define FAPI_WRITE          0x19    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
+#define FAPI_DELETE         0x1A    /* BX = Dateiname                   */
+#define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
+#define FAPI_RMDIR          0x1C    /* BX = Pfad (Verzeichnis muss leer sein) */
+#define FAPI_MOVE           0x1D    /* BX = alter Pfad, CX = neuer Pfad (gleiches Laufwerk) */
+#define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
 
+/* Fehler: alle Werte ab FAPI_ERR_FIRST. FAPI_ERROR heisst "nicht gefunden
+   oder unzulaessig", die uebrigen sagen genauer, was schiefging. */
 #define FAPI_ERROR          0xFFFF
+#define FAPI_ERR_WP         0xFFFE  /* Datentraeger schreibgeschuetzt   */
+#define FAPI_ERR_FULL       0xFFFD  /* Datentraeger oder Verzeichnis voll */
+#define FAPI_ERR_EXIST      0xFFFC  /* Ziel gibt es schon               */
+#define FAPI_ERR_DENIED     0xFFFB  /* Attribut verbietet es / nicht leer */
+#define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
+#define FAPI_ERR_FIRST      0xFFF0
 
 #define FAPI_VERSION        0x0500
 #define FAPI_ARGLEN         81

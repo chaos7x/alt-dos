@@ -80,9 +80,13 @@ void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsign
 void delay_ticks(unsigned n);
 void panic(const char *msg);
 void reboot(void);
+void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
+extern volatile unsigned reboot_count;
+unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
 int  fd_init(void);
+int  fd_write(unsigned lba);        /* aus DMABUF; -2 = schreibgeschuetzt  */
 int  fd_read(unsigned lba);         /* Sektor in den DMA-Puffer, 0 = ok    */
 void fd_motor_off(void);
 
@@ -97,6 +101,9 @@ struct blkdev {
 extern struct blkdev blk[NBLK];
 extern int nblk;
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
+int  blk_write(int dev, unsigned long lba); /* DMABUF ->, -2 = schreibgesch. */
+void blk_flush(void);               /* Platten-Caches leeren              */
+void blk_invalidate(void);          /* Lese-Cache verwerfen (Diskettenwechsel) */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */

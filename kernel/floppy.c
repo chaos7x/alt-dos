@@ -117,14 +117,14 @@ int fd_init(void)
     return recalibrate();
 }
 
-static void dma_setup(void)
+static void dma_setup(int write)
 {
     unsigned long a = DMABUF_LIN;
     unsigned n = DMABUF_SIZE - 1;
 
     outb(0x0A, 0x06);                           /* Kanal 2 maskieren      */
     outb(0x0C, 0x00);                           /* Flip-Flop zuruecksetzen */
-    outb(0x0B, 0x46);                           /* Einzel, Schreiben in RAM, Kanal 2 */
+    outb(0x0B, write ? 0x4A : 0x46);            /* Einzel, RAM->FDC bzw. FDC->RAM, Kanal 2 */
     outb(0x04, (unsigned)a & 0xFF);
     outb(0x04, ((unsigned)a >> 8) & 0xFF);
     outb(0x81, (unsigned)(a >> 16) & 0xFF);     /* Seitenregister         */
@@ -134,7 +134,9 @@ static void dma_setup(void)
     outb(0x0A, 0x02);                           /* Kanal 2 freigeben      */
 }
 
-static int read_once(unsigned cyl, unsigned head, unsigned sec)
+#define WP_ERR (-2)                             /* schreibgeschuetzt      */
+
+static int xfer_once(unsigned cyl, unsigned head, unsigned sec, int write)
 {
     int st0, c, r[7], i;
 
@@ -148,9 +150,9 @@ static int read_once(unsigned cyl, unsigned head, unsigned sec)
     if (c != (int)cyl)
         return -1;
 
-    dma_setup();
+    dma_setup(write);
     fdc_irq = 0;
-    fdc_out(0xE6);                              /* READ DATA, MT MFM SK   */
+    fdc_out(write ? 0xC5 : 0xE6);               /* WRITE DATA MT MFM / READ DATA MT MFM SK */
     fdc_out((unsigned char)(head << 2));
     fdc_out((unsigned char)cyl);
     fdc_out((unsigned char)head);
@@ -163,21 +165,29 @@ static int read_once(unsigned cyl, unsigned head, unsigned sec)
         return -1;
     for (i = 0; i < 7; i++)
         r[i] = fdc_in();
+    if ((r[0] & 0xC0) && (r[1] & 0x02))
+        return WP_ERR;                          /* ST1.NW                 */
     return (r[0] & 0xC0) ? -1 : 0;
 }
 
-int fd_read(unsigned lba)
+/* einen Sektor zwischen DMABUF und Diskette; 0 = ok, -1 Fehler,
+   -2 schreibgeschuetzt */
+static int fd_xfer(unsigned lba, int write)
 {
     unsigned cyl = lba / (SPT * HEADS);
     unsigned head = (lba / SPT) % HEADS;
     unsigned sec = lba % SPT + 1;
-    int tries;
+    int tries, rc;
 
     motor();
     for (tries = 0; tries < 3; tries++) {
-        if (read_once(cyl, head, sec) == 0)
-            return 0;
+        rc = xfer_once(cyl, head, sec, write);
+        if (rc == 0 || rc == WP_ERR)
+            return rc;
         recalibrate();
     }
     return -1;
 }
+
+int fd_read(unsigned lba)  { return fd_xfer(lba, 0); }
+int fd_write(unsigned lba) { return fd_xfer(lba, 1); }

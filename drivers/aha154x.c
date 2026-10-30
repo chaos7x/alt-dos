@@ -54,6 +54,7 @@ static unsigned long lin;               /* lineare Basis dieses Treibers */
 static volatile struct mbox mb[2];      /* [0] ausgehend, [1] eingehend  */
 static struct ccb ccb;
 static unsigned char target[DRV_MAXUNITS];
+static unsigned nunits;
 static char line[80];
 static unsigned char cdb[12];
 
@@ -135,13 +136,15 @@ static int reset(void)
 #define SCSI_CHECK  2               /* Check Condition (z. B. Unit Attention) */
 #define SCSI_FAIL   3
 
-static int scsi(unsigned id, unsigned len, unsigned long buf, unsigned cdblen)
+/* dir: 08h Daten zum Rechner (Lesen), 10h zum Geraet (Schreiben) */
+static int scsi_dir(unsigned id, unsigned len, unsigned long buf, unsigned cdblen,
+                    unsigned char dir)
 {
     unsigned start, i;
     unsigned char st;
 
     ccb.op = 0;                             /* SCSI-Initiator           */
-    ccb.idlun = (unsigned char)((id << 5) | 0x08);  /* Daten zum Rechner */
+    ccb.idlun = (unsigned char)((id << 5) | dir);   /* Richtung         */
     ccb.cdblen = (unsigned char)cdblen;
     ccb.rsalen = sizeof(ccb.sense);
     put3(ccb.datalen, len);
@@ -172,6 +175,11 @@ static int scsi(unsigned id, unsigned len, unsigned long buf, unsigned cdblen)
     if (ccb.tarstat == 2)
         return SCSI_CHECK;
     return SCSI_FAIL;
+}
+
+static int scsi(unsigned id, unsigned len, unsigned long buf, unsigned cdblen)
+{
+    return scsi_dir(id, len, buf, cdblen, 0x08);
 }
 
 static void cdb6(unsigned char op, unsigned char alloc)
@@ -302,11 +310,13 @@ static void init(void)
         scat(p, "\n");
         dputs(line);
     }
+    nunits = n;
     r->units = (unsigned char)n;
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
 
-static void read(void)
+/* READ(10) / WRITE(10) eines Blocks */
+static void xfer(int write)
 {
     struct drv_req __far *r = REQ;
     unsigned long l = r->lba;
@@ -317,7 +327,7 @@ static void read(void)
         return;
     }
     for (tries = 0; tries < 3; tries++) {
-        cdb[0] = 0x28;                      /* READ(10)                 */
+        cdb[0] = write ? 0x2A : 0x28;       /* WRITE(10) / READ(10)     */
         cdb[1] = 0;
         cdb[2] = (unsigned char)(l >> 24);
         cdb[3] = (unsigned char)(l >> 16);
@@ -327,13 +337,29 @@ static void read(void)
         cdb[7] = 0;
         cdb[8] = 1;                         /* ein Block                */
         cdb[9] = 0;
-        rc = scsi(target[r->unit], 512, r->buf_phys, 10);
+        rc = scsi_dir(target[r->unit], 512, r->buf_phys, 10, write ? 0x10 : 0x08);
         if (rc == SCSI_OK) {
             r->status = DRV_OK;
             return;
         }
     }
     r->status = DRV_ERR_IO;
+}
+
+/* SYNCHRONIZE CACHE(10) an alle Platten; Platten ohne Cache lehnen den
+   Befehl ab (Check Condition) - das ist kein Fehler */
+static void flush(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned u, i;
+
+    for (u = 0; u < nunits; u++) {
+        for (i = 0; i < 12; i++)
+            cdb[i] = 0;
+        cdb[0] = 0x35;
+        scsi_dir(target[u], 0, 0, 10, 0x18);    /* 18h: keine Daten     */
+    }
+    r->status = DRV_OK;
 }
 
 void strategy(void)
@@ -346,7 +372,13 @@ void strategy(void)
         init();
         break;
     case DRV_READ:
-        read();
+        xfer(0);
+        break;
+    case DRV_WRITE:
+        xfer(1);
+        break;
+    case DRV_FLUSH:
+        flush();
         break;
     default:
         r->status = DRV_ERR_CMD;

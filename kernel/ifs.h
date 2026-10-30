@@ -29,7 +29,18 @@ struct ifs_file {
     unsigned long  size;
     unsigned       cache_clus;          /* zuletzt gelesene Stelle, damit   */
     unsigned long  cache_pos;           /* fortlaufendes Lesen schnell ist  */
+    unsigned       dir_clus, dir_idx;   /* Verzeichniseintrag (FAT)         */
+    unsigned char  flags;               /* IFS_F_*                          */
 };
+#define IFS_F_WRITE  0x01               /* zum Schreiben geoeffnet          */
+#define IFS_F_DIRTY  0x02               /* Eintrag beim Schliessen schreiben */
+
+/* Fehler der schreibenden Funktionen (negativ) */
+#define IFS_ERR      (-1)               /* nicht gefunden, E/A-Fehler       */
+#define IFS_WP       (-2)               /* schreibgeschuetzt                */
+#define IFS_FULL     (-3)               /* Datentraeger/Verzeichnis voll    */
+#define IFS_EXIST    (-4)               /* Ziel gibt es schon               */
+#define IFS_DENIED   (-5)               /* Schreibschutzattribut, nicht leer */
 
 struct ifs_dirent {
     char           name[IFS_NAMELEN];   /* "NAME.EXT"                       */
@@ -48,6 +59,9 @@ struct volume {
     unsigned long  fat_lba, root_lba, data_lba;
     unsigned       clusters;
     unsigned long  sectors;
+    unsigned char  nfats;
+    unsigned       spf;                 /* Sektoren je FAT                  */
+    unsigned       hint;                /* hier beginnt die Suche nach Freiem */
     struct ifs_driver *drv;
 };
 
@@ -62,6 +76,16 @@ struct ifs_driver {
     int  (*readdir)(int drive, const char *dir, unsigned n, struct ifs_dirent *d);
     /* ist 'path' ein Verzeichnis? 1 = ja */
     int  (*isdir)(int drive, const char *path);
+    /* ab hier optional (0 = nur lesbar); Rueckgabe 0 oder IFS_* */
+    int  (*create)(int drive, const char *path, struct ifs_file *f);
+    int  (*write)(struct ifs_file *f, unsigned long pos,
+                  unsigned sel, unsigned off, unsigned len);  /* -> Bytes */
+    int  (*close)(struct ifs_file *f);
+    int  (*remove)(int drive, const char *path);
+    int  (*mkdir)(int drive, const char *path);
+    int  (*rmdir)(int drive, const char *path);
+    int  (*move)(int drive, const char *from, const char *to);
+    int  (*space)(int drive, unsigned long *free_bytes);
 };
 
 extern struct volume vol[NDRIVE];
@@ -74,5 +98,14 @@ int ifs_read(struct ifs_file *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);
 int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d);
 int ifs_isdir(int drive, const char *path);
+int ifs_create(int drive, const char *path, struct ifs_file *f);
+int ifs_write(struct ifs_file *f, unsigned long pos, unsigned sel,
+              unsigned off, unsigned len);
+int ifs_close(struct ifs_file *f);
+int ifs_remove(int drive, const char *path);
+int ifs_mkdir(int drive, const char *path);
+int ifs_rmdir(int drive, const char *path);
+int ifs_move(int drive, const char *from, const char *to);
+int ifs_space(int drive, unsigned long *free_bytes);
 
 #endif

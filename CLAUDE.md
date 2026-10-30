@@ -9,7 +9,7 @@ Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 5
+## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 6
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -81,6 +81,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Clustergröße per Schieben, keine Watcom-Hilfsroutinen.
 - Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); außer
   `fat.c` kennt kein Kernelteil FAT-Interna. Blockgeräte nie per BIOS ansprechen.
+- Schreiben (`fat.c`): Daten und Verzeichniseinträge sofort (`blk_write`),
+  FAT nur im 2-Sektor-Cache bis `fat_flush()` am Ende jeder Operation – nach
+  jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
+  zeigen in `DMABUF` und gelten nur bis zum nächsten Plattenzugriff.
+  Disketten werden vor jeder Operation neu eingehängt (`revalidate`).
+- Strg+Alt+Entf ist zweistufig: Die Taste setzt `reboot_count`, der
+  Scheduler schließt beim nächsten Durchlauf alle Dateien, ruft `blk_flush()`
+  und startet neu; IRQ 0 startet nach 5 s trotzdem neu.
+- Schreibtests in QEMU mit beschreibbaren Kopien der Abbilder, danach
+  `fsck.fat -n` (Partition vorher mit `dd skip=63` herauslösen) und Inhalte
+  mit `cmp` vergleichen.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen
   erhalten alle Register außer dem Rückgabewert (AX bzw. DX:AX).
 - Kein C-Laufzeitsystem (`-zl`): keine Bibliotheksaufrufe, keine
@@ -144,16 +155,12 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
   für das CD-ROM an SCSI-ID 6)
-- Schreiben auf FAT, für IDE und Adaptec (Treiberbefehl DRV_WRITE). Testaufbau
-  auf dem SCAT: alle Platten sind Kopien, Schreiben überall erlaubt. Zuerst
-  auf der IDE-Slave-Platte (504 MB, unter AT-DOS E:), dann auf der
-  SCSI-Platte; Kontrolle unter MS-DOS mit CHKDSK/ScanDisk. Dann muss
-  Strg+Alt+Entf vor dem Reset leeren: Schreib-Cache des Kernels und den
-  Cache der Platte selbst (IDE `FLUSH CACHE` E7h, SCSI `SYNCHRONIZE CACHE`
-  35h). Weil der Neustart im Tastatur-Interrupt ausgelöst wird, wo gerade
-  ein Plattenzugriff unterbrochen sein kann, dann zweistufig: Taste setzt nur
-  eine Anforderung, der Kernel leert beim nächsten Taskwechsel und startet neu;
-  gibt ein hängendes Programm nicht ab, Reset nach ca. 5 s über IRQ 0.
+- Schreiben auf dem SCAT prüfen: Testaufbau, alle Platten sind Kopien,
+  Schreiben überall erlaubt. Zuerst IDE-Slave (504 MB, unter AT-DOS E:),
+  dann SCSI; Kontrolle unter MS-DOS mit CHKDSK/ScanDisk. `DRV_WRITE` beim
+  Adaptec ist in QEMU nicht testbar (kein Adaptec), nur in 86Box.
+- Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
+- `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle

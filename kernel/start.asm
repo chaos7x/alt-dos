@@ -20,7 +20,8 @@ segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
 
-extern preload_
+extern preload_, reboot_
+extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern _gdtr, _idtr
 
@@ -230,6 +231,12 @@ irq0:
         mov     ds, ax
         add     word [_ticks], 1
         adc     word [_ticks+2], 0
+        cmp     word [_reboot_count], 0     ; Strg+Alt+Entf angefordert und
+        je      .norb                       ; niemand gibt ab: nach 5 s
+        dec     word [_reboot_count]        ; trotzdem neu starten
+        jnz     .norb
+        call    reboot_
+.norb:
         inc     byte [subtick]
         cmp     byte [subtick], 100
         jb      .eoi

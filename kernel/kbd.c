@@ -78,7 +78,7 @@ void kbd_irq(unsigned sc)
         else if (code == 0x1D) ctrl = !rel;
         else if (code == 0x1C && !rel) put(13 | (0x1C << 8));
         else if (code == 0x53 && !rel && ctrl && (alt || altgr))
-            reboot();               /* Strg+Alt+Entf (Entf-Taste)       */
+            reboot_request();               /* Strg+Alt+Entf (Entf-Taste)       */
         return;                     /* Pfeile usw. vorerst ignoriert    */
     }
 
@@ -92,7 +92,7 @@ void kbd_irq(unsigned sc)
         return;
 
     if (ctrl && (alt || altgr) && code == 0x53)
-        reboot();                   /* Strg+Alt+Entf (Ziffernblock)     */
+        reboot_request();                   /* Strg+Alt+Entf (Ziffernblock)     */
     if (alt && code == 0x01) {      /* Alt+Esc                          */
         kbd_switch_req = 1;
         return;

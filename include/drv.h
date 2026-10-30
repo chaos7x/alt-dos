@@ -24,19 +24,22 @@ struct drv_header {
 
 #define DRV_INIT        0           /* Geraet suchen, Einheiten melden  */
 #define DRV_READ        1           /* einen Sektor (512 Bytes) lesen   */
+#define DRV_WRITE       2           /* einen Sektor (512 Bytes) schreiben */
+#define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
 
 #define DRV_MAXUNITS    8
 
 #define DRV_OK          0
 #define DRV_ERR_NODEV   1           /* kein Geraet gefunden             */
-#define DRV_ERR_IO      2           /* Lesefehler                       */
+#define DRV_ERR_IO      2           /* Lese-/Schreibfehler              */
 #define DRV_ERR_CMD     3           /* unbekannter Befehl               */
+#define DRV_ERR_WP      4           /* schreibgeschuetzt                */
 
 struct drv_req {
     unsigned char  cmd;
     unsigned char  unit;
     unsigned short status;          /* DRV_OK oder DRV_ERR_*            */
-    unsigned long  lba;             /* READ: Sektornummer               */
+    unsigned long  lba;             /* READ/WRITE: Sektornummer         */
     unsigned long  buf_phys;        /* physische Adresse des Puffers    */
     unsigned short buf_off, buf_sel;    /* derselbe Puffer, Ring-0-Zeiger */
     unsigned long  base;            /* INIT: lineare Basis des Treibers */

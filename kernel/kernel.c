@@ -89,6 +89,7 @@ static struct {
     signed char     owner;  /* Task oder -1                              */
     struct ifs_file f;
     unsigned long   pos;
+    char            path[IFS_PATHLEN];  /* kanonisch, fuer "in Benutzung" */
 } files[NFILE];
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
@@ -184,6 +185,71 @@ void panic(const char *msg)
     for (c = 0; msg[c] && c < 78; c++)
         v[24 * 80 + 1 + c] = 0x4F00 | (unsigned char)msg[c];
     halt_forever();
+}
+
+/* Strg+Alt+Entf: Der Neustart folgt beim naechsten Taskwechsel, wenn
+   keine Plattenoperation laeuft (shutdown). Gibt kein Programm ab, startet
+   IRQ 0 nach 5 s trotzdem neu; ein zweiter Druck startet sofort neu. */
+volatile unsigned reboot_count;
+static int boot_session;
+
+void reboot_request(void)
+{
+    if (reboot_count)
+        reboot();
+    reboot_count = 500;
+}
+
+static void shutdown(void)
+{
+    int k;
+    reboot_count = 0;
+    vio_focus(boot_session);
+    vio_kputs(boot_session, "\n\xFE Dateien werden geschlossen, Neustart ...\n");
+    for (k = 0; k < NFILE; k++)
+        if (files[k].owner >= 0) {
+            ifs_close(&files[k].f);
+            files[k].owner = -1;
+        }
+    blk_flush();
+    reboot();
+}
+
+/* ---- Echtzeituhr (CMOS) ------------------------------------------------ */
+static unsigned cmos(unsigned r)
+{
+    outb(0x70, (unsigned char)r);
+    return inb(0x71);
+}
+
+static unsigned from_bcd(unsigned v, unsigned bin)
+{
+    return bin ? v : (v >> 4) * 10 + (v & 15);
+}
+
+/* jetzt, als FAT-Datum << 16 | FAT-Uhrzeit */
+unsigned long rtc_stamp(void)
+{
+    unsigned s, m, h, dd, mm, yy, cc, bin, n;
+
+    for (n = 0; n < 2000 && (cmos(0x0A) & 0x80); n++)
+        ;                                       /* Uhr zaehlt gerade     */
+    bin = cmos(0x0B) & 4;
+    s  = from_bcd(cmos(0x00), bin);
+    m  = from_bcd(cmos(0x02), bin);
+    h  = from_bcd(cmos(0x04) & 0x7F, bin);
+    dd = from_bcd(cmos(0x07), bin);
+    mm = from_bcd(cmos(0x08), bin);
+    yy = from_bcd(cmos(0x09), bin);
+    cc = from_bcd(cmos(0x32), bin);
+    if (cc != 19 && cc != 20)
+        cc = yy < 80 ? 20 : 19;
+    yy += cc == 20 ? 100 : 0;                   /* Jahre seit 1900       */
+    yy = yy < 80 ? 0 : yy - 80;                 /* FAT zaehlt ab 1980    */
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || h > 23 || m > 59 || s > 59)
+        return (1UL << 5 | 1) << 16;            /* Uhr kaputt: 1.1.1980  */
+    return ((unsigned long)((yy << 9) | (mm << 5) | dd) << 16) |
+           ((h << 11) | (m << 5) | (s >> 1));
 }
 
 /* Warmstart wie Strg+Alt+Entf unter MS-DOS: Kennung 1234h an 0040:0072,
@@ -549,8 +615,10 @@ static void task_end(int t)
         task[t].img_unit = 0;
     }
     for (i = 0; i < NFILE; i++)
-        if (files[i].owner == t)
+        if (files[i].owner == t) {
+            ifs_close(&files[i].f);         /* Groesse ins Verzeichnis   */
             files[i].owner = -1;
+        }
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -603,6 +671,8 @@ static void schedule_next(void)
             kbd_break_req = 0;
             do_break();
         }
+        if (reboot_count)
+            shutdown();
         now = get_ticks();
         vio_status();
         any = 0;
@@ -639,6 +709,53 @@ static int user_ok(unsigned sel, unsigned off, unsigned len, int write)
         return 1;
     lim = sel_limit(sel);
     return off <= lim && len - 1 <= lim - off;
+}
+
+/* ---- Dateien in Benutzung ---------------------------------------------- */
+static int scmp(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a - *b;
+}
+
+/* a liegt in b oder ist b ("\\DOS\\X" in "\\DOS"); "\\" enthaelt alles */
+static int path_in(const char *a, const char *b)
+{
+    int i;
+    if (b[0] == '\\' && b[1] == 0)
+        return 1;
+    for (i = 0; b[i]; i++)
+        if (a[i] != b[i])
+            return 0;
+    return a[i] == 0 || a[i] == '\\';
+}
+
+/* offene Datei oder aktuelles Verzeichnis eines Tasks in canon? */
+static int in_use(int d, const char *canon, int dirs)
+{
+    int k;
+    for (k = 0; k < NFILE; k++)
+        if (files[k].owner >= 0 && files[k].f.drive == d &&
+            (dirs ? path_in(files[k].path, canon) : scmp(files[k].path, canon) == 0))
+            return 1;
+    if (dirs)
+        for (k = 0; k < NTASK; k++)
+            if (task[k].state != T_FREE && task[k].drive == d &&
+                task[k].cwd[0] && path_in(task[k].cwd, canon))
+                return 1;
+    return 0;
+}
+
+static unsigned ifs_err(int rc)
+{
+    switch (rc) {
+    case IFS_WP:     return FAPI_ERR_WP;
+    case IFS_FULL:   return FAPI_ERR_FULL;
+    case IFS_EXIST:  return FAPI_ERR_EXIST;
+    case IFS_DENIED: return FAPI_ERR_DENIED;
+    }
+    return FAPI_ERROR;
 }
 
 /* ---- FAPI-Verteiler ---------------------------------------------------- */
@@ -746,7 +863,76 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return FAPI_ERROR;
         files[k].owner = (signed char)current;
         files[k].pos = 0;
+        scopy(files[k].path, canon, IFS_PATHLEN);
         return k;
+
+    case FAPI_CREATE:
+        if (user_str(usel, a1, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, canon))
+            return FAPI_ERROR;
+        if (in_use(d, canon, 0))
+            return FAPI_ERR_INUSE;
+        for (k = 0; k < NFILE; k++)
+            if (files[k].owner < 0)
+                break;
+        if (k == NFILE)
+            return FAPI_ERROR;
+        t = ifs_create(d, canon, &files[k].f);
+        if (t)
+            return ifs_err(t);
+        files[k].owner = (signed char)current;
+        files[k].pos = 0;
+        scopy(files[k].path, canon, IFS_PATHLEN);
+        return k;
+
+    case FAPI_WRITE:
+        if (a1 >= NFILE || files[a1].owner != current)
+            return FAPI_ERROR;
+        if (a3 > 0x7FFF)
+            a3 = 0x7FFF;
+        if (!user_ok(usel, a2, a3, 0))
+            return FAPI_ERROR;
+        k = ifs_write(&files[a1].f, files[a1].pos, usel, a2, a3);
+        if (k < 0)
+            return ifs_err(k);
+        files[a1].pos += k;
+        return k;
+
+    case FAPI_DELETE:
+    case FAPI_MKDIR:
+    case FAPI_RMDIR:
+        if (user_str(usel, a1, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, canon))
+            return FAPI_ERROR;
+        if (fn != FAPI_MKDIR && in_use(d, canon, fn == FAPI_RMDIR))
+            return FAPI_ERR_INUSE;
+        t = fn == FAPI_DELETE ? ifs_remove(d, canon) :
+            fn == FAPI_MKDIR  ? ifs_mkdir(d, canon) : ifs_rmdir(d, canon);
+        return t ? ifs_err(t) : 0;
+
+    case FAPI_MOVE: {
+        static char canon2[IFS_PATHLEN];
+        int d2;
+        if (user_str(usel, a1, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, canon) ||
+            user_str(usel, a2, buf, sizeof(buf)) ||
+            resolve(current, buf, &d2, canon2) || d != d2)
+            return FAPI_ERROR;
+        if (path_in(canon2, canon))
+            return FAPI_ERROR;                  /* in sich selbst       */
+        if (in_use(d, canon, 1))
+            return FAPI_ERR_INUSE;
+        t = ifs_move(d, canon, canon2);
+        return t ? ifs_err(t) : 0;
+    }
+
+    case FAPI_FREESPACE: {
+        static unsigned long kb;
+        if (a1 >= NDRIVE || !user_ok(usel, a2, 4, 1) || ifs_space(a1, &kb))
+            return FAPI_ERROR;
+        far_copy(usel, a2, KDATA, (unsigned)&kb, 4);
+        return 0;
+    }
 
     case FAPI_READ:
         if (a1 >= NFILE || files[a1].owner != current)
@@ -765,7 +951,8 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         if (a1 >= NFILE || files[a1].owner != current)
             return FAPI_ERROR;
         files[a1].owner = -1;
-        return 0;
+        t = ifs_close(&files[a1].f);
+        return t ? ifs_err(t) : 0;
 
     case FAPI_FINDENTRY:
         if (!user_ok(usel, a1, sizeof(de), 1))
@@ -917,11 +1104,19 @@ static void drv_request(int d)
     drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
 }
 
+/* zuletzt gelesener oder geschriebener Sektor, steht noch in DMABUF */
+static int lc_dev = -1;
+static unsigned long lc_lba;
+static unsigned char blk_dirty[NBLK];   /* seit dem letzten Leeren beschrieben */
+
+void blk_invalidate(void)
+{
+    lc_dev = -1;
+}
+
 /* einen Sektor nach DMABUF; der zuletzt gelesene bleibt zwischengespeichert */
 int blk_read(int dev, unsigned long lba)
 {
-    static int lc_dev = -1;
-    static unsigned long lc_lba;
     struct blkdev *b = &blk[dev];
 
     if (dev == lc_dev && lba == lc_lba)
@@ -947,6 +1142,58 @@ int blk_read(int dev, unsigned long lba)
     lc_dev = dev;
     lc_lba = lba;
     return 0;
+}
+
+/* DMABUF in einen Sektor schreiben (sofort, kein Schreib-Cache im Kernel).
+   0 = ok, -1 Fehler, -2 schreibgeschuetzt */
+int blk_write(int dev, unsigned long lba)
+{
+    struct blkdev *b = &blk[dev];
+    int rc;
+
+    lc_dev = -1;
+    if (dev < 0 || dev >= nblk || lba >= b->blocks)
+        return -1;
+    if (b->drv < 0) {
+        rc = fd_write((unsigned)lba);
+        if (rc)
+            return rc;
+    } else {
+        req.cmd = DRV_WRITE;
+        req.unit = b->unit;
+        req.status = DRV_ERR_IO;
+        req.lba = lba;
+        req.buf_phys = DMABUF_LIN;
+        req.buf_sel = DMABUF;
+        req.buf_off = 0;
+        drv_request(b->drv);
+        if (req.status == DRV_ERR_WP)
+            return -2;
+        if (req.status != DRV_OK)
+            return -1;
+        blk_dirty[dev] = 1;
+    }
+    lc_dev = dev;                       /* DMABUF entspricht jetzt dem Sektor */
+    lc_lba = lba;
+    return 0;
+}
+
+/* Schreib-Caches der Platten leeren (FLUSH CACHE / SYNCHRONIZE CACHE) */
+void blk_flush(void)
+{
+    int dev, d;
+    for (dev = 1; dev < nblk; dev++) {
+        if (!blk_dirty[dev])
+            continue;
+        d = blk[dev].drv;
+        for (; dev < nblk; dev++)       /* je Treiber einmal          */
+            if (blk[dev].drv == d)
+                blk_dirty[dev] = 0;
+        req.cmd = DRV_FLUSH;
+        req.status = DRV_ERR_IO;
+        drv_request(d);
+        dev = 0;                        /* von vorn: naechster Treiber */
+    }
 }
 
 /* DevHlp: Dienste des Kernels fuer Treiber */

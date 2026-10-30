@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.0, Meilenstein 5
+# alt-dos – AT-DOS 5.0, Meilenstein 6
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
@@ -14,22 +14,30 @@ und PC-DOS.
   im Protected Mode gibt es kein BIOS mehr
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
+- Schreiben auf FAT12/16 (Diskette, IDE, SCSI): anlegen, schreiben,
+  löschen, Verzeichnisse anlegen/entfernen, umbenennen und verschieben.
+  Daten gehen sofort auf den Datenträger, die FAT am Ende jeder Operation in
+  beide Kopien; Zeitstempel aus der CMOS-Uhr. Disketten werden vor jeder
+  Operation neu eingelesen (Wechsel), Schreibschutz wird erkannt
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (bis zu
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
-  Platten ohne LBA; ATAPI-CD-ROMs werden erkannt) – beide vorerst nur lesend
+  Platten ohne LBA; ATAPI-CD-ROMs werden erkannt) – beide lesen und schreiben
 - Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
 - Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
   Start läuft
-- `COMMAND.EXE`: Befehlsinterpreter mit `DIR`, `CD`, Laufwerkswechsel,
-  `TYPE`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
+- `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (mit freiem Platz), `CD`,
+  Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
+  `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab,
-  **Strg+Alt+Entf** startet neu (auch wenn ein Programm hängt)
+  **Strg+Alt+Entf** schließt alle Dateien, leert die Platten-Caches und
+  startet neu; hängt ein Programm, nach spätestens 5 s trotzdem (zweimal
+  drücken: sofort)
 - Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
   eingebaut; `KEYB US` oder `KEYB GB` lädt andere Belegungen aus `.KBL`-Dateien
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`
@@ -57,7 +65,7 @@ Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
-## FAPI (Stand Meilenstein 5)
+## FAPI (Stand Meilenstein 6)
 
 Dateinamen und Pfade nehmen bis 260 Zeichen an (wie bei OS/2), auch wenn FAT
 selbst nur 8.3 kennt.
@@ -88,8 +96,24 @@ selbst nur 8.3 kennt.
 | 21 | DosQCurDir      | BX = Puffer (130 Bytes) → z. B. `C:\DOS` |
 | 22 | DosSelectDisk   | BX = Laufwerk (0 = A:)          |
 | 23 | DosQCurDisk     | → AX = Laufwerk                 |
+| 24 | DosCreate       | BX = Pfad → Handle (legt an oder kürzt auf 0) |
+| 25 | DosWrite        | BX = Handle, CX = Puffer, DX = Länge → Bytes |
+| 26 | DosDelete       | BX = Pfad                       |
+| 27 | DosMkDir        | BX = Pfad                       |
+| 28 | DosRmDir        | BX = Pfad (muss leer sein)      |
+| 29 | DosMove         | BX = alter, CX = neuer Pfad (gleiches Laufwerk) |
+| 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes |
+
+Fehler sind Werte ab FFF0h: FFFFh nicht gefunden/unzulässig, FFFEh
+schreibgeschützt, FFFDh voll, FFFCh existiert schon, FFFBh Zugriff
+verweigert (Attribut, Verzeichnis nicht leer), FFFAh in Benutzung (offene
+Datei, aktuelles Verzeichnis eines Programms).
 
 ## Gerätetreiber
+
+Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Sektor über den
+DMA-Puffer) und `DRV_FLUSH` (Schreib-Cache der Platten leeren: IDE
+`FLUSH CACHE`, SCSI `SYNCHRONIZE CACHE`).
 
 Treiber sind FX-Dateien mit gesetztem Treiber-Flag und laufen in Ring 0 mit
 eigenem Code- und Datensegment. Der Kernel ruft ihre Strategieroutine mit

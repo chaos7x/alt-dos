@@ -1,4 +1,4 @@
 REM AT-DOS 5.0 - Geraetetreiber
-REM Adaptec AHA-154x (SCSI) und IDE-Platten (bis zu vier), beide nur lesend
+REM Adaptec AHA-154x (SCSI) und IDE-Platten (bis zu vier)
 DEVICE=AHA154X.SYS
 DEVICE=IDE.SYS

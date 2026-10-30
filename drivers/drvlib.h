@@ -25,6 +25,10 @@ void outp(unsigned port, unsigned char v);
 /* n Worte vom Port nach es:di */
 void insw_far(unsigned port, void __far *dst, unsigned n);
 #pragma aux insw_far = "rep insw" __parm [__dx] [__es __di] [__cx] __modify [__di __cx];
+/* n Worte von sel:off zum Port */
+void outsw_far(unsigned port, unsigned sel, unsigned off, unsigned n);
+#pragma aux outsw_far = "push ds" "mov ds,ax" "rep outsw" "pop ds" \
+    __parm [__dx] [__ax] [__si] [__cx] __modify [__si __cx];
 
 void dputs(const char *s)
 {
