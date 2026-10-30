@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - Tastaturtreiber (IRQ 1)
+ * AT-DOS 5.0 - Tastaturtreiber (IRQ 1)
  *
  * Der Tastaturcontroller liefert Scancodes (Satz 1). Hier werden daraus
  * Zeichen in Codepage 437. Zwei Tastenkombinationen behandelt der Kernel

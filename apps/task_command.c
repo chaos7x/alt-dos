@@ -1,5 +1,5 @@
 /*
- * COMMAND.EXE - Befehlsinterpreter fuer DOS 5.0
+ * COMMAND.EXE - Befehlsinterpreter fuer AT-DOS 5.0
  *
  * Nachfolger von COMMAND.COM fuer den Protected Mode: spricht das System
  * nur ueber die FAPI an. Interne Befehle: DIR, CD, Laufwerk:, TYPE, CLS,

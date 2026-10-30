@@ -1,4 +1,4 @@
-; DOS 5.0 - Kernel-Einstieg und Low-Level-Routinen (80286)
+; AT-DOS 5.0 - Kernel-Einstieg und Low-Level-Routinen (80286)
 ;
 ; Der Kernel ist ein einziges 64-KB-Segment (Code + Daten in DGROUP),
 ; geladen bei linear 10000h. Im Real Mode ist CS=DS=1000h, im Protected

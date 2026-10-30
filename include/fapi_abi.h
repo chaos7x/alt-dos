@@ -1,5 +1,5 @@
 /*
- * FAPI - Family API, Aufrufschnittstelle (DOS 5.0, alternative Zeitlinie)
+ * FAPI - Family API, Aufrufschnittstelle (AT-DOS 5.0, alternative Zeitlinie)
  *
  * Anwendungen laufen in Ring 3 und haben keinen Zugriff auf Hardware,
  * I/O-Ports oder fremden Speicher. Der einzige Weg nach unten ist das

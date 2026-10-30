@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - Sitzungen und Konsole (VIO)
+ * AT-DOS 5.0 - Sitzungen und Konsole (VIO)
  *
  * Jede Sitzung hat einen eigenen Textpuffer (23 x 80) im Arbeitsspeicher,
  * erreichbar ueber einen eigenen GDT-Selektor. Programme schreiben immer

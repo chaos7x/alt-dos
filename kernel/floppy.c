@@ -1,12 +1,12 @@
 /*
- * DOS 5.0 - Treiber fuer den Diskettencontroller (NEC 765 / Intel 82077)
+ * AT-DOS 5.0 - Treiber fuer den Diskettencontroller (NEC 765 / Intel 82077)
  *
  * Laufwerk A:, 1,44 MB. Daten laufen per ISA-DMA (Kanal 2) in einen festen
  * Puffer bei 8000h, das Ende eines Befehls meldet der Controller ueber IRQ 6.
  * Im Protected Mode gibt es kein BIOS mehr - INT 13h ist Geschichte.
  *
  * Gewartet wird noch synchron (HLT bis zum Interrupt). Andere Tasks laufen
- * waehrenddessen nicht; fuer kooperatives DOS 5.0 vertretbar.
+ * waehrenddessen nicht; fuer kooperatives AT-DOS 5.0 vertretbar.
  */
 #include "kern.h"
 

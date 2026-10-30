@@ -1,5 +1,5 @@
 /*
- * FX - Programmformat fuer FAPI-Anwendungen (DOS 5.0)
+ * FX - Programmformat fuer FAPI-Anwendungen (AT-DOS 5.0)
  *
  * Aufbau einer .EXE-Datei:
  *

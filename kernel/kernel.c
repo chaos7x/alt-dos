@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - Kernel, Meilenstein 4
+ * AT-DOS 5.0 - Kernel, Meilenstein 4
  *
  * 80286 Protected Mode, segmentiert, kooperatives Multitasking.
  * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigener LDT und
@@ -1191,7 +1191,7 @@ void kmain(void)
     pic_pit_init();
 
     /* 286-Deskriptoren haben 24 Bit Basis: mehr als 16 MB gibt es fuer
-       DOS 5.0 nicht, auch wenn ein 486 mit 128 MB darunter steckt */
+       AT-DOS 5.0 nicht, auch wenn ein 486 mit 128 MB darunter steckt */
     if (mem_conv_kb > 640)
         mem_conv_kb = 640;
     if (mem_ext_kb > 15360 || !a20_ok)

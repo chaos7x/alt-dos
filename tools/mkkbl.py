@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tastaturbelegungen fuer DOS 5.0.
+"""Tastaturbelegungen fuer AT-DOS 5.0.
 
     mkkbl.py AUSGABEVERZEICHNIS
 

@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - gemeinsame Kernel-Definitionen
+ * AT-DOS 5.0 - gemeinsame Kernel-Definitionen
  */
 #ifndef KERN_H
 #define KERN_H

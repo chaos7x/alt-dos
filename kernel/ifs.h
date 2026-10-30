@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - Installable File System (IFS) und Laufwerke
+ * AT-DOS 5.0 - Installable File System (IFS) und Laufwerke
  *
  * Dateisysteme sind austauschbare Treiber hinter einer festen Schnittstelle
  * (struct ifs_driver). FAT (12 und 16 Bit) steckt fest im Kernel, wie bei

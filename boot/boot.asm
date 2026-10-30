@@ -1,4 +1,4 @@
-; DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
+; AT-DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
 ;
 ; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel ist die Datei
 ; KERNEL.SYS (versteckt, System) und liegt - wie einst IO.SYS - als erste
@@ -124,7 +124,7 @@ putc:   push    bx
         ret
 
 lba     dw 1
-msg_load db "DOS 5.0 wird geladen", 0
+msg_load db "AT-DOS 5.0 wird geladen", 0
 msg_err  db 13, 10, "Diskettenfehler!", 0
 
         times 510-($-$$) db 0

@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - physische Speicherverwaltung
+ * AT-DOS 5.0 - physische Speicherverwaltung
  *
  * Der Adressraum des 286 (16 MB) wird in Einheiten zu 256 Byte verwaltet.
  * Damit passt jede Einheitennummer in 16 Bit (Einheit u = linear u * 256),

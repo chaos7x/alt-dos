@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - IFS-Treiber FAT (12 und 16 Bit), nur lesend, und IFS-Verteiler
+ * AT-DOS 5.0 - IFS-Treiber FAT (12 und 16 Bit), nur lesend, und IFS-Verteiler
  *
  * Wie bei OS/2 steckt FAT fest im Kernel. Ein Laufwerk ist eine Partition
  * (oder eine Diskette ab Sektor 0) auf einem Blockgeraet. Sektornummern

@@ -1,5 +1,5 @@
 /*
- * DOS 5.0 - Schnittstelle zwischen Kernel und Geraetetreibern
+ * AT-DOS 5.0 - Schnittstelle zwischen Kernel und Geraetetreibern
  *
  * Geraetetreiber sind Dateien (.SYS) im FX-Format mit gesetztem Flag
  * FX_FLAG_DRIVER. Sie laufen in Ring 0 mit eigenem Code- und Datensegment
