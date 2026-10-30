@@ -270,7 +270,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   auf einem 386SX mit 2 MB. Flache 32-Bit-Programme erst mit 7.0.
   Vorarbeit schon in 5.0: Kernel aus dem einen 64-KB-Segment holen (Tabellen,
   Stacks, Puffer in eigene Segmente), wie der 16-Bit-Kernel von OS/2 1.x.
-- Testplan DOS 6.0: erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
+- Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
+  Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
+  vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
   und 386DX in 86Box, danach Umstieg auf 486DX. Build mit `cpu 386` / `-3`,
   damit keine 486-Befehle (`BSWAP`, `XADD`, `CMPXCHG`, `INVD`, `WBINVD`,
   `INVLPG`) hineinrutschen.
