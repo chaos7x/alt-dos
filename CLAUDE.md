@@ -89,6 +89,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Strg+Alt+Entf ist zweistufig: Die Taste setzt `reboot_count`, der
   Scheduler schließt beim nächsten Durchlauf alle Dateien, ruft `blk_flush()`
   und startet neu; IRQ 0 startet nach 5 s trotzdem neu.
+- Schreiben auf dem SCAT bestätigt: IDE-Master, IDE-Slave und Adaptec,
+  danach ScanDisk unter MS-DOS ohne Fehler. Alle Platten der Testmaschine
+  sind Kopien, Schreiben ist überall erlaubt. Den Adaptec emuliert QEMU
+  nicht – Änderungen an `AHA154X.SYS` nur in 86Box prüfbar.
 - Schreibtests in QEMU mit beschreibbaren Kopien der Abbilder, danach
   `fsck.fat -n` (Partition vorher mit `dd skip=63` herauslösen) und Inhalte
   mit `cmp` vergleichen.
@@ -155,10 +159,6 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
   für das CD-ROM an SCSI-ID 6)
-- Schreiben über den Adaptec auf dem SCAT prüfen (IDE ist bestätigt:
-  Kopieren auf IDE-Master und -Slave, ScanDisk unter MS-DOS ohne Fehler).
-  Alle Platten sind Kopien, Schreiben überall erlaubt. `DRV_WRITE` beim
-  Adaptec ist in QEMU nicht testbar (kein Adaptec), nur in 86Box.
 - Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
 - `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
