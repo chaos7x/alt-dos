@@ -50,6 +50,8 @@ _start:
         cli
 
         call    a20_enable
+        call    a20_check
+        mov     [_a20_ok], al
         call    gdt_build_              ; C: GDT und IDT aufbauen
 
         lgdt    [_gdtr]
@@ -77,6 +79,45 @@ a20_enable:
         out     0x60, al
         call    kbc_wait
         ret
+; AL = 1, wenn A20 offen ist: 0000:0500 und FFFF:0510 liegen dann nicht
+; auf derselben Speicherzelle. Der Tastaturcontroller braucht manchmal
+; einen Moment, deshalb mehrere Versuche.
+a20_check:
+        push    ds
+        push    es
+        push    si
+        push    di
+        push    cx
+        xor     ax, ax
+        mov     ds, ax
+        dec     ax
+        mov     es, ax
+        mov     si, 0x0500
+        mov     di, 0x0510
+        mov     cx, 0x4000
+.again:
+        mov     al, [si]
+        mov     ah, [es:di]
+        push    ax
+        mov     byte [si], 0x00
+        mov     byte [es:di], 0xFF
+        mov     al, [si]                ; 0xFF hier = Umlauf, A20 zu
+        pop     bx
+        mov     [es:di], bh
+        mov     [si], bl
+        cmp     al, 0xFF
+        jne     .open
+        loop    .again
+        xor     al, al
+        jmp     .done
+.open:  mov     al, 1
+.done:  pop     cx
+        pop     di
+        pop     si
+        pop     es
+        pop     ds
+        ret
+
 kbc_wait:
         in      al, 0x64
         test    al, 2
@@ -336,6 +377,8 @@ _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
 _uptime_s:   resw 1
+global _a20_ok
+_a20_ok:     resb 1
 global _fdc_irq
 _fdc_irq:    resb 1
 global _mem_conv_kb, _mem_ext_kb

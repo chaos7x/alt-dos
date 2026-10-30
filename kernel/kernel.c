@@ -62,6 +62,7 @@ extern unsigned short isr_table[48];
 extern unsigned char  boot_drive;
 extern volatile unsigned short uptime_s;
 extern unsigned short mem_conv_kb, mem_ext_kb;   /* vom BIOS, im Real Mode */
+extern unsigned char  a20_ok;                     /* im Real Mode geprueft  */
 
 /* ---- Kerneldaten ------------------------------------------------------- */
 struct desc     gdt[NGDT];
@@ -628,8 +629,14 @@ void kmain(void)
     pic_pit_init();
     kputs(2, 2, "\xFE 286 Protected Mode, GDT 17, LDT je Task, FAPI-Gate 0023h, Takt 100 Hz", 0x07);
 
-    mem_init(mem_conv_kb, mem_ext_kb);
-    log_num(3, "\xFE Speicherverwaltung:", mem_free_kb(), " KB frei");
+    if (a20_ok) {
+        mem_init(mem_conv_kb, mem_ext_kb);
+        log_num(3, "\xFE A20 frei, Speicherverwaltung:", mem_free_kb(), " KB frei");
+    } else {
+        /* ohne A20 laeuft jeder Zugriff ueber 1 MB unten herum */
+        mem_init(mem_conv_kb, 0);
+        log_num(3, "\xFE A20 GESPERRT - nur unter 1 MB:", mem_free_kb(), " KB frei");
+    }
 
     fill_row(24, 0x70);
     kputs(24, 1, "Uptime:       s", 0x70);
