@@ -192,6 +192,17 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
   Vollbild-Editor im Stil von MS-DOS EDIT, nutzt `SIG_SHUTDOWN`, um vor dem
   Herunterfahren nach dem Speichern zu fragen.
+- Maus: Treiber je Anschluss wie bei OS/2 (`DEVICE=`), alle brauchen Treiber
+  mit Interrupt (DevHlp SetIRQ, steht ohnehin auf der Liste):
+  `MOUSESER.SYS` seriell (COM1/COM2, Microsoft-Protokoll, Mouse Systems),
+  `MOUSEBUS.SYS` Busmaus (Microsoft InPort / Logitech, ISA-Karte, 23Ch),
+  `MOUSEPS2.SYS` PS/2 über den Hilfsport des Tastaturcontrollers (IRQ 12;
+  nur wenn der Controller ihn hat – beim SCAT-Board prüfen). FAPI wie das
+  Mou-API von OS/2: Ereignisse je Sitzung (nur Vordergrund), Zeiger als
+  invertierte Textzelle. Erster Nutzer: EDIT.
+- EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
+  Alt, Dialoge, CUA-Tasten), dazu Statuszeile, Suchen/Ersetzen. Braucht
+  FAPI: Zellen mit Attribut schreiben, Cursor setzen, Sondertasten.
 - `CHKDSK` wie MS-DOS (`/F`, `/V`, Datei-Fragmentierung), liest über eine
   FAPI-Funktion, die ein Laufwerk als Ganzes öffnet (sektorweise, wie DASD
   bei OS/2) – dieselbe Funktion für FORMAT, LABEL, DISKCOPY. Sperre in zwei
