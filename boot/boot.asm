@@ -8,7 +8,7 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 112                 ; 32 KB Kernel + 3 x 8 KB Anwendungen
+NSECT   equ 128                 ; 32 KB Kernel + 4 x 8 KB Anwendungen
 
 start:
         cli

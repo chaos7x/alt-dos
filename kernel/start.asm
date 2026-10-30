@@ -17,7 +17,8 @@ segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
 segment _DATA  public class=DATA align=2 use16
 segment _BSS   public class=BSS  align=2 use16
-group DGROUP _TEXT CONST CONST2 _DATA _BSS
+segment _BSSEND public class=BSS align=2 use16
+group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
 
 extern gdt_build_, kmain_, fapi_dispatch_, fault_
 extern _gdtr, _idtr
@@ -36,6 +37,17 @@ _start:
         mov     ss, ax
         mov     sp, kstack_top
         mov     [_boot_drive], dl
+
+        ; Speicher abfragen, solange das BIOS noch erreichbar ist
+        int     0x12                    ; konventionell in KB
+        mov     [_mem_conv_kb], ax
+        mov     ah, 0x88                ; erweitert ab 1 MB in KB
+        int     0x15
+        jnc     .ext_ok
+        xor     ax, ax
+.ext_ok:
+        mov     [_mem_ext_kb], ax
+        cli
 
         call    a20_enable
         call    gdt_build_              ; C: GDT und IDT aufbauen
@@ -191,6 +203,15 @@ sel_readable_:
         inc     ax
 .no:    ret
 
+; unsigned sel_writable(unsigned sel)  - 1, wenn Ring 3 schreiben darf
+global sel_writable_
+sel_writable_:
+        verw    ax
+        mov     ax, 0
+        jnz     .no
+        inc     ax
+.no:    ret
+
 ; unsigned sel_limit(unsigned sel)
 global sel_limit_
 sel_limit_:
@@ -255,5 +276,12 @@ _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
 _uptime_s:   resw 1
+global _mem_conv_kb, _mem_ext_kb
+_mem_conv_kb: resw 1
+_mem_ext_kb:  resw 1
 kstack:      resb 1024
 kstack_top:
+
+segment _BSSEND
+global _kernel_end
+_kernel_end:

@@ -38,7 +38,7 @@ check_size $B/kernel.bin $B/kernel.map 32768 kernel
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in a b c; do
+for t in a b c mem; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
@@ -48,8 +48,8 @@ done
 echo "Image"
 pad() { cp "$1" "$2"; truncate -s "$3" "$2"; }
 pad $B/kernel.bin $B/kernel.pad 32768
-for t in a b c; do pad $B/task_$t.bin $B/task_$t.pad 8192; done
-cat $B/boot.bin $B/kernel.pad $B/task_a.pad $B/task_b.pad $B/task_c.pad > $B/dos5.img
+for t in a b c mem; do pad $B/task_$t.bin $B/task_$t.pad 8192; done
+cat $B/boot.bin $B/kernel.pad $B/task_a.pad $B/task_b.pad $B/task_c.pad $B/task_mem.pad > $B/dos5.img
 truncate -s 1474560 $B/dos5.img
 rm -f $B/*.pad
 echo "  $B/dos5.img fertig"

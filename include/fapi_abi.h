@@ -20,9 +20,17 @@
 #define FAPI_YIELD          0x02    /* CPU kooperativ abgeben           */
 #define FAPI_EXIT           0x03    /* Task beenden                     */
 #define FAPI_SLEEP          0x04    /* BX = Millisekunden               */
+#define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
 
 #define FAPI_ERROR          0xFFFF
 
 #define FAPI_VERSION        0x0500
+
+struct fapi_meminfo {               /* alle Angaben in KB               */
+    unsigned short conv_kb;         /* konventionell (BIOS INT 12h)     */
+    unsigned short ext_kb;          /* erweitert ab 1 MB (INT 15h/88h)  */
+    unsigned short kernel_kb;       /* vom Kernel belegt                */
+    unsigned short apps_kb;         /* fuer Anwendungen reserviert      */
+};
 
 #endif

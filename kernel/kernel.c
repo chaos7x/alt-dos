@@ -17,12 +17,14 @@
 #define VIDEO       0x18
 #define GATE_IDX    4               /* -> Selektor 0x20, RPL 3 = 0x23      */
 #define TSS_K       0x28
-#define TSS_SEL(i)  (0x30 + (i) * 8)
-#define ACODE(i)    (0x48 + (i) * 16)
-#define ADATA(i)    (0x50 + (i) * 16)
-#define NGDT        15
+#define NTASK       4
+#define TSS_IDX(i)  (6 + (i))
+#define ACODE_IDX(i) (6 + NTASK + 2 * (i))
+#define TSS_SEL(i)  (TSS_IDX(i) * 8)
+#define ACODE(i)    (ACODE_IDX(i) * 8)
+#define ADATA(i)    (ACODE(i) + 8)
+#define NGDT        (6 + 3 * NTASK)
 
-#define NTASK       3
 #define KBASE       0x10000UL
 #define APPBASE(i)  (0x18000UL + (unsigned long)(i) * 0x2000UL)
 #define APPSIZE     0x2000
@@ -51,6 +53,7 @@ extern void fapi_entry(void);
 extern void task_jump(unsigned sel);
 extern void load_tr(unsigned sel);
 extern unsigned sel_readable(unsigned sel);
+extern unsigned sel_writable(unsigned sel);
 extern unsigned sel_limit(unsigned sel);
 extern void outb(unsigned port, unsigned val);
 extern unsigned long get_ticks(void);
@@ -60,6 +63,8 @@ extern void halt_forever(void);
 extern unsigned short isr_table[48];
 extern unsigned char  boot_drive;
 extern volatile unsigned short uptime_s;
+extern unsigned short mem_conv_kb, mem_ext_kb;   /* vom BIOS, im Real Mode */
+extern unsigned char  kernel_end[];
 
 /* ---- Kerneldaten ------------------------------------------------------- */
 struct desc     gdt[NGDT];
@@ -75,8 +80,8 @@ static unsigned long  wake[NTASK];
 static int            current = -1;
 static char           switches[] = "0000000";
 
-static const char           tname[NTASK] = { 'A', 'B', 'C' };
-static const unsigned char  tattr[NTASK] = { 0x0E, 0x0A, 0x0B };
+static const char * const   tname[NTASK] = { "Task A", "Task B", "Task C", "MEM.EXE" };
+static const unsigned char  tattr[NTASK] = { 0x0E, 0x0A, 0x0B, 0x0D };
 
 static unsigned short __far *vram;
 
@@ -109,9 +114,9 @@ void gdt_build(void)
 
     set_desc(5, LIN(&tss_k), sizeof(struct tss286) - 1, ACC_TSS);
     for (i = 0; i < NTASK; i++) {
-        set_desc(6 + i,      LIN(&tss[i]),  sizeof(struct tss286) - 1, ACC_TSS);
-        set_desc(9 + 2 * i,  APPBASE(i),    APPSIZE - 1, ACC_UCODE);
-        set_desc(10 + 2 * i, APPBASE(i),    APPSIZE - 1, ACC_UDATA);
+        set_desc(TSS_IDX(i),       LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
+        set_desc(ACODE_IDX(i),     APPBASE(i),   APPSIZE - 1, ACC_UCODE);
+        set_desc(ACODE_IDX(i) + 1, APPBASE(i),   APPSIZE - 1, ACC_UDATA);
     }
 
     for (i = 0; i < 48; i++) {
@@ -190,16 +195,18 @@ static void count_up(char *d)
     }
 }
 
-/* Fenster je Task: Kopfzeile + 4 Zeilen (0-2 fuer die Anwendung, 3 Kernel) */
-#define WIN_ROW(i)  (8 + (i) * 5)
+/* Fenster je Task: Kopfzeile + 3 Zeilen fuer die Anwendung */
+#define WIN_ROW(i)  (7 + (i) * 4)
 
 static void task_header(int i, const char *state, unsigned char attr)
 {
-    static char hdr[] = " Task ? ";
-    hdr[6] = tname[i];
-    fill_row(WIN_ROW(i), 0x08);
-    kputs(WIN_ROW(i), 0, hdr, (unsigned char)(tattr[i] << 4));
-    kputs(WIN_ROW(i), 9, state, attr);
+    unsigned char hattr = (unsigned char)(((tattr[i] & 7) << 4) | 0x0F);
+    int c;
+    fill_row(WIN_ROW(i), 0x07);
+    for (c = 0; c < 9; c++)
+        vram[WIN_ROW(i) * 80 + c] = ((unsigned short)hattr << 8) | ' ';
+    kputs(WIN_ROW(i), 1, tname[i], hattr);
+    kputs(WIN_ROW(i), 10, state, attr);
 }
 
 static void status_bar(void)
@@ -275,6 +282,19 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
                   sel_limit(usel), tattr[current]);
         return 0;
 
+    case FAPI_MEMINFO: {
+        unsigned short __far *p;
+        usel |= 3;
+        if (!sel_writable(usel) || a1 > sel_limit(usel) - 7)
+            return FAPI_ERROR;
+        p = MK_FP(usel, a1);
+        p[0] = mem_conv_kb;
+        p[1] = mem_ext_kb;
+        p[2] = ((unsigned)kernel_end + 1023) / 1024;
+        p[3] = NTASK * (APPSIZE / 1024);
+        return 0;
+    }
+
     case FAPI_YIELD:
         schedule_next();
         return 0;
@@ -321,8 +341,8 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         /* Fehler in einer Anwendung: nur diesen Task beenden */
         alive[current] = 0;
         task_header(current, "abgebrochen: ", 0x0C);
-        kputs(WIN_ROW(current), 22, exc_name(vec), 0x0C);
-        kputs(WIN_ROW(current) + 4, 2, msg, 0x0C);
+        kputs(WIN_ROW(current), 23, exc_name(vec), 0x0C);
+        kputs(WIN_ROW(current) + 3, 2, msg, 0x0C);
         schedule_next();
     }
     fill_row(23, 0x4F);
@@ -364,11 +384,10 @@ void kmain(void)
     kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 1", 0x1F);
 
     kputs(2, 2, "\xFE 80286 Protected Mode aktiv (MSW.PE), A20 frei", 0x07);
-    kputs(3, 2, "\xFE GDT: 15 Deskriptoren, IDT: 48 Vektoren", 0x07);
-    kputs(4, 2, "\xFE FAPI-Call-Gate an Selektor 0023h, Ring 3 -> Ring 0", 0x07);
+    kputs(3, 2, "\xFE GDT: 18 Deskriptoren, IDT: 48 Vektoren, FAPI-Call-Gate 0023h", 0x07);
 
     pic_pit_init();
-    kputs(5, 2, "\xFE PIC umgelegt (20h/28h), Systemtakt 100 Hz", 0x07);
+    kputs(4, 2, "\xFE PIC umgelegt (20h/28h), Systemtakt 100 Hz", 0x07);
 
     for (i = 0; i < NTASK; i++) {
         t = &tss[i];
@@ -387,7 +406,7 @@ void kmain(void)
         wake[i]  = 0;
         task_header(i, "bereit", 0x07);
     }
-    kputs(6, 2, "\xFE 3 Tasks angelegt (je TSS, Code-/Datensegment, Ring 3)", 0x07);
+    kputs(5, 2, "\xFE 4 Tasks angelegt (je TSS, Code-/Datensegment, Ring 3)", 0x07);
 
     fill_row(24, 0x70);
     kputs(24, 1, "Uptime:       s", 0x70);

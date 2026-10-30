@@ -17,6 +17,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1, unsigned short a2
 #define DosYield()          fapi_call(FAPI_YIELD, 0, 0)
 #define DosSleep(ms)        fapi_call(FAPI_SLEEP, (ms), 0)
 #define DosExit()           fapi_call(FAPI_EXIT, 0, 0)
+#define DosMemInfo(p)       fapi_call(FAPI_MEMINFO, (unsigned short)(p), 0)
 #define VioWrtStr(r, c, s)  fapi_call(FAPI_VIOWRTSTR, (unsigned short)(s), \
                                       (unsigned short)(((r) << 8) | (c)))
 

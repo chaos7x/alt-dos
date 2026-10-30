@@ -16,7 +16,9 @@ ist nur über die Family API (FAPI) erreichbar.
 
 Demo-Tasks: **A** zählt und gibt per `DosYield()` ab, **B** schläft zehnmal
 mit `DosSleep(1000)` und endet regulär, **C** versucht direkt nach B800:0000
-zu schreiben und wird per #GP beendet.
+zu schreiben und wird per #GP beendet, **MEM.EXE** zeigt den vom BIOS
+gemeldeten Speicher und beendet sich. Einen Programmlader gibt es noch nicht,
+alle vier sind fest ins Image gebaut.
 
 ## FAPI (Stand Meilenstein 1)
 
@@ -27,13 +29,14 @@ zu schreiben und wird per #GP beendet.
 | 2  | DosYield        | –                               |
 | 3  | DosExit         | –                               |
 | 4  | DosSleep        | BX = Millisekunden              |
+| 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB) |
 
 ## Speicher
 
 | linear           | Inhalt                          |
 |------------------|---------------------------------|
 | 10000h – 17FFFh  | Kernel (ein 64-KB-Segment)      |
-| 18000h – 1DFFFh  | Anwendungen A, B, C (je 8 KB)   |
+| 18000h – 1FFFFh  | Anwendungen A, B, C, MEM (je 8 KB) |
 | B8000h           | VGA-Text (nur Kernel-Selektor)  |
 
 ## Bauen
