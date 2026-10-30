@@ -261,9 +261,13 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   Tempo der Entwicklung, daher OS/2-2.0-Art statt WfW-Art: kein 16-Bit-Kern
   als gemeinsame „System-VM“ über einem 32-Bit-VMM, sondern ein Kernel, in
   dem FAPI-Programme und DOS-Boxen gleichberechtigt, voneinander geschützt
-  und präemptiv laufen. Für Programme bleibt alles 16 Bit (FAPI wie 5.0);
-  der Kernel darf intern 386-Strukturen und, wo nötig, 32-Bit-Code nutzen
-  (Seitentabellen, V86-Monitor). Flache 32-Bit-Programme erst mit 7.0.
+  und präemptiv laufen. Für Programme bleibt alles 16 Bit (FAPI wie 5.0).
+  **Kein 32-Bit-Umbau wie OS/2 2.0** (der hat die Rechner seiner Zeit
+  überfordert): Kernel bleibt 16 Bit und schlank; 386-Strukturen
+  (Seitentabellen, 32-Bit-TSS/Gates) sind nur Daten, 32-Bit-Code nur dort,
+  wo die CPU ihn erzwingt (Eintritt/Austritt V86, Interrupts aus V86 über
+  32-Bit-Gates) – als kleine, abgegrenzte Stücke. Zielhardware: läuft gut
+  auf einem 386SX mit 2 MB. Flache 32-Bit-Programme erst mit 7.0.
   Vorarbeit schon in 5.0: Kernel aus dem einen 64-KB-Segment holen (Tabellen,
   Stacks, Puffer in eigene Segmente), wie der 16-Bit-Kernel von OS/2 1.x.
 - Testplan DOS 6.0: erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
