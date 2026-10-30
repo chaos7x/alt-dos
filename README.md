@@ -16,8 +16,9 @@ und PC-DOS.
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
-  AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (erste
-  IDE-Platte, PIO) – beide vorerst nur lesend
+  AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (bis zu
+  vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
+  Platten ohne LBA; ATAPI-CD-ROMs werden erkannt) – beide vorerst nur lesend
 - Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“

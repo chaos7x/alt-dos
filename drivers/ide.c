@@ -1,40 +1,58 @@
 /*
- * IDE.SYS - Treiber fuer die erste IDE-Festplatte (Port 1F0h), nur lesend
+ * IDE.SYS - Treiber fuer IDE-Platten (ATA) an beiden Kanaelen, nur lesend
  *
- * PIO-Modus, ohne Interrupt (IRQ 14 bleibt maskiert, der Treiber fragt
+ * Primaerer Kanal 1F0h/3F6h, sekundaerer 170h/376h, je Master und Slave:
+ * bis zu vier Platten, Einheiten in dieser Reihenfolge. ATAPI-Geraete
+ * (CD-ROM) werden erkannt und gemeldet, aber noch nicht als Einheit
+ * eingehaengt - sie haben 2048-Byte-Sektoren und brauchen ein eigenes
+ * Dateisystem (ISO 9660).
+ *
+ * PIO-Modus, ohne Interrupt (IRQ 14/15 bleiben maskiert, der Treiber fragt
  * den Status ab). LBA28, wenn die Platte es kann, sonst CHS mit der
  * aktuellen Geometrie der Platte (die das BIOS beim Start eingestellt hat) -
- * Platten aus der 286-Zeit kennen oft kein LBA. Erkennung liest zuerst: Ein unbelegter Port liefert
- * FFh, erst danach wird das Laufwerk ausgewaehlt und IDENTIFY gesendet.
+ * Platten aus der 286-Zeit kennen oft kein LBA.
+ *
+ * Erkennung liest zuerst: Ein unbelegter Kanal liefert FFh (oder 7Fh) im
+ * Status, erst danach wird ein Laufwerk ausgewaehlt und IDENTIFY gesendet.
  */
 #include "drvlib.h"
 
-#define BASE    0x1F0
-#define DATA    (BASE + 0)
-#define COUNT   (BASE + 2)
-#define LBA0    (BASE + 3)
-#define LBA1    (BASE + 4)
-#define LBA2    (BASE + 5)
-#define DRIVE   (BASE + 6)
-#define STATUS  (BASE + 7)
-#define CMD     (BASE + 7)
+#define R_DATA      0
+#define R_ERROR     1
+#define R_COUNT     2
+#define R_SECTOR    3
+#define R_CYL_LO    4
+#define R_CYL_HI    5
+#define R_DRIVE     6
+#define R_STATUS    7
+#define R_CMD       7
 
-#define ST_BSY  0x80
-#define ST_DRDY 0x40
-#define ST_DRQ  0x08
-#define ST_ERR  0x01
+#define ST_BSY      0x80
+#define ST_DRDY     0x40
+#define ST_DRQ      0x08
+#define ST_ERR      0x01
 
+#define NUNIT       4
+
+struct unit {
+    unsigned       base, ctl;           /* Befehlsregister, Steuerregister */
+    unsigned char  sel;                 /* 00h Master, 10h Slave           */
+    unsigned char  chs;
+    unsigned       cyls, heads, spt;
+};
+
+static struct unit unit[NUNIT];
+static int nunit;
 static unsigned short id[256];
 static char line[80];
-static unsigned char use_chs;
-static unsigned cyls, heads, spt;
+static const unsigned ports[2][2] = { { 0x1F0, 0x3F6 }, { 0x170, 0x376 } };
 
 /* (x / d) in einem Schritt, x >> 16 muss kleiner als d sein;
    -> Rest << 16 | Quotient (DIV ohne Watcom-Hilfsroutinen) */
 unsigned long divstep(unsigned long x, unsigned d);
 #pragma aux divstep = "div bx" parm [dx ax] [bx] value [dx ax];
 
-/* 32 Bit durch 16 Bit; -> Quotient, *rem = Rest */
+/* 32 Bit durch 16 Bit; -> Quotient, *rem = Rest (rem muss static sein) */
 static unsigned long div32(unsigned long x, unsigned d, unsigned *rem)
 {
     unsigned hi = (unsigned)(x >> 16);
@@ -43,13 +61,20 @@ static unsigned long div32(unsigned long x, unsigned d, unsigned *rem)
     return ((unsigned long)(hi / d) << 16) | (unsigned)t;
 }
 
+/* ca. 400 ns nach einem Laufwerkswechsel: Steuerregister viermal lesen */
+static void settle(unsigned ctl)
+{
+    inp(ctl); inp(ctl); inp(ctl); inp(ctl);
+}
+
 /* warten, bis BSY weg ist und (mask & status) == want; 0 = ok */
-static int wait_status(unsigned char mask, unsigned char want, unsigned t)
+static int wait_status(unsigned base, unsigned char mask, unsigned char want,
+                       unsigned t)
 {
     unsigned start = ticks();
     unsigned char s;
     for (;;) {
-        s = inp(STATUS);
+        s = inp(base + R_STATUS);
         if (!(s & ST_BSY)) {
             if (s & ST_ERR)
                 return -1;
@@ -61,103 +86,161 @@ static int wait_status(unsigned char mask, unsigned char want, unsigned t)
     }
 }
 
-static void init(void)
+/* Modellname (Bytes vertauscht) an p anhaengen */
+static char *model(char *p)
 {
-    struct drv_req __far *r = REQ;
-    unsigned long n;
-    unsigned mb;
-    unsigned char s = inp(STATUS);
-    char *p;
     int i;
-
-    r->units = 0;
-    if (s == 0xFF || s == 0x7F) {           /* nichts angeschlossen     */
-        r->status = DRV_ERR_NODEV;
-        return;
-    }
-    outp(DRIVE, 0xA0);                      /* Master                   */
-    if (wait_status(0, 0, 300)) {
-        r->status = DRV_ERR_NODEV;
-        return;
-    }
-    outp(CMD, 0xEC);                        /* IDENTIFY                 */
-    if (wait_status(ST_DRQ, ST_DRQ, 300)) {
-        r->status = DRV_ERR_NODEV;
-        return;
-    }
-    insw_far(DATA, (void __far *)id, 256);
-
-    n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
-    if (!(id[49] & 0x0200) || n == 0) {
-        /* kein LBA: aktuelle Geometrie (Wort 54-56), sonst Grundgeometrie */
-        use_chs = 1;
-        if ((id[53] & 1) && id[54] && id[55] && id[56]) {
-            cyls = id[54]; heads = id[55]; spt = id[56];
-        } else {
-            cyls = id[1]; heads = id[3]; spt = id[6];
-        }
-        if (cyls == 0 || heads == 0 || heads > 16 || spt == 0 || spt > 255) {
-            r->status = DRV_ERR_NODEV;
-            return;
-        }
-        n = 0;
-        for (i = 0; i < (int)(heads * spt); i++)    /* cyls * heads * spt, */
-            n += cyls;                              /* ohne __U4M          */
-    }
-    r->units = 1;
-    r->blocks[0] = n;
-    r->status = DRV_OK;
-
-    p = scat(line, "  IDE Master: ");
-    for (i = 27; i < 47; i++) {             /* Modellname, Bytes vertauscht */
+    for (i = 27; i < 47; i++) {
         *p++ = (char)(id[i] >> 8);
         *p++ = (char)id[i];
     }
     while (p > line && p[-1] == ' ')
         p--;
     *p = 0;
-    mb = (unsigned)(n >> 11);
+    return p;
+}
+
+static char *where(int ch, int dev)
+{
+    return scat(line, ch == 0 ? (dev ? "  IDE prim\x84r Slave: " : "  IDE prim\x84r Master: ")
+                              : (dev ? "  IDE sekund\x84r Slave: " : "  IDE sekund\x84r Master: "));
+}
+
+/* ein Geraet pruefen; meldet Platten als Einheit, ATAPI nur im Protokoll */
+static void probe(int ch, int dev)
+{
+    struct drv_req __far *r = REQ;
+    unsigned base = ports[ch][0], ctl = ports[ch][1];
+    struct unit *u;
+    unsigned long n;
+    unsigned char s, sig1, sig2;
+    char *p;
+    int i;
+
+    outp(base + R_DRIVE, (unsigned char)(0xA0 | (dev << 4)));
+    settle(ctl);
+    s = inp(base + R_STATUS);
+    if (s == 0x00 || s == 0xFF || s == 0x7F)
+        return;                             /* kein Geraet              */
+    if (wait_status(base, 0, 0, 100) && !(inp(base + R_STATUS) & ST_ERR))
+        return;
+
+    outp(base + R_CMD, 0xEC);               /* IDENTIFY DEVICE          */
+    settle(ctl);
+    if (inp(base + R_STATUS) == 0)
+        return;
+    if (wait_status(base, ST_DRQ, ST_DRQ, 300)) {
+        /* abgelehnt: ATAPI meldet sich mit der Signatur 14h/EBh */
+        sig1 = inp(base + R_CYL_LO);
+        sig2 = inp(base + R_CYL_HI);
+        if (sig1 != 0x14 || sig2 != 0xEB)
+            return;
+        outp(base + R_CMD, 0xA1);           /* IDENTIFY PACKET DEVICE   */
+        settle(ctl);
+        if (wait_status(base, ST_DRQ, ST_DRQ, 300))
+            return;
+        insw_far(base + R_DATA, (void __far *)id, 256);
+        p = where(ch, dev);
+        p = scat(p, ((id[0] >> 8) & 0x1F) == 5 ? "CD-ROM " : "ATAPI-Ger\x84t ");
+        p = model(p);
+        scat(p, " (noch kein Dateisystem)\n");
+        dputs(line);
+        return;
+    }
+    insw_far(base + R_DATA, (void __far *)id, 256);
+    if (nunit == NUNIT || id[0] & 0x8000)   /* Bit 15: kein ATA-Geraet  */
+        return;
+
+    u = &unit[nunit];
+    u->base = base;
+    u->ctl = ctl;
+    u->sel = (unsigned char)(dev << 4);
+    u->chs = 0;
+    n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
+    if (!(id[49] & 0x0200) || n == 0) {
+        /* kein LBA: aktuelle Geometrie (Wort 54-56), sonst Grundgeometrie */
+        u->chs = 1;
+        if ((id[53] & 1) && id[54] && id[55] && id[56]) {
+            u->cyls = id[54]; u->heads = id[55]; u->spt = id[56];
+        } else {
+            u->cyls = id[1]; u->heads = id[3]; u->spt = id[6];
+        }
+        if (u->cyls == 0 || u->heads == 0 || u->heads > 16 ||
+            u->spt == 0 || u->spt > 255)
+            return;
+        n = 0;
+        for (i = 0; i < (int)(u->heads * u->spt); i++)  /* ohne __U4M */
+            n += u->cyls;
+    }
+    r->blocks[nunit] = n;
+    nunit++;
+
+    p = where(ch, dev);
+    p = model(p);
     p = scat(p, ", ");
-    p = udec(p, mb);
-    scat(p, use_chs ? " MB (CHS)\n" : " MB\n");
+    p = udec(p, (unsigned)(n >> 11));
+    scat(p, u->chs ? " MB (CHS)\n" : " MB\n");
     dputs(line);
+}
+
+static void init(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned char s;
+    int ch;
+
+    nunit = 0;
+    for (ch = 0; ch < 2; ch++) {
+        s = inp(ports[ch][0] + R_STATUS);
+        if (s == 0xFF || s == 0x7F)         /* Kanal nicht vorhanden    */
+            continue;
+        probe(ch, 0);
+        probe(ch, 1);
+    }
+    r->units = (unsigned char)nunit;
+    r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
 static void read(void)
 {
+    static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
     struct drv_req __far *r = REQ;
-    static unsigned sec, head, cyl;     /* static: SS ist nicht DS (-zu) */
+    struct unit *u = &unit[r->unit];
     unsigned long l = r->lba, track;
+    unsigned cyl = 0, b = u->base;
     int tries;
 
-    if (use_chs) {
-        track = div32(l, spt, &sec);
-        cyl = (unsigned)div32(track, heads, &head);
-        if (cyl >= cyls) {
+    if (u->chs) {
+        track = div32(l, u->spt, &sec);
+        cyl = (unsigned)div32(track, u->heads, &head);
+        if (cyl >= u->cyls) {
             r->status = DRV_ERR_IO;
             return;
         }
     }
     for (tries = 0; tries < 3; tries++) {
-        if (wait_status(0, 0, 300))
+        if (wait_status(b, 0, 0, 300))
             continue;
-        if (use_chs) {
-            outp(DRIVE, (unsigned char)(0xA0 | head));
-            outp(COUNT, 1);
-            outp(LBA0, (unsigned char)(sec + 1));     /* Sektor ab 1      */
-            outp(LBA1, (unsigned char)cyl);
-            outp(LBA2, (unsigned char)(cyl >> 8));
+        if (u->chs) {
+            outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | head));
+            outp(b + R_COUNT, 1);
+            outp(b + R_SECTOR, (unsigned char)(sec + 1));   /* ab 1      */
+            outp(b + R_CYL_LO, (unsigned char)cyl);
+            outp(b + R_CYL_HI, (unsigned char)(cyl >> 8));
         } else {
-            outp(DRIVE, (unsigned char)(0xE0 | ((unsigned)(l >> 24) & 0x0F)));
-            outp(COUNT, 1);
-            outp(LBA0, (unsigned char)l);
-            outp(LBA1, (unsigned char)(l >> 8));
-            outp(LBA2, (unsigned char)(l >> 16));
+            outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel |
+                                               ((unsigned)(l >> 24) & 0x0F)));
+            outp(b + R_COUNT, 1);
+            outp(b + R_SECTOR, (unsigned char)l);
+            outp(b + R_CYL_LO, (unsigned char)(l >> 8));
+            outp(b + R_CYL_HI, (unsigned char)(l >> 16));
         }
-        outp(CMD, 0x20);                    /* READ SECTORS             */
-        if (wait_status(ST_DRQ, ST_DRQ, 300))
+        settle(u->ctl);
+        outp(b + R_CMD, 0x20);              /* READ SECTORS             */
+        settle(u->ctl);
+        if (wait_status(b, ST_DRQ, ST_DRQ, 300))
             continue;
-        insw_far(DATA, MK_FP(r->buf_sel, r->buf_off), 256);
+        insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off), 256);
         r->status = DRV_OK;
         return;
     }
@@ -174,7 +257,7 @@ void strategy(void)
         init();
         break;
     case DRV_READ:
-        if (r->unit != 0)
+        if (r->unit >= nunit)
             r->status = DRV_ERR_IO;
         else
             read();
