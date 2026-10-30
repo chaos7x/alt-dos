@@ -196,8 +196,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   mit Interrupt (DevHlp SetIRQ, steht ohnehin auf der Liste):
   `MOUSESER.SYS` seriell (COM1/COM2, Microsoft-Protokoll, Mouse Systems),
   `MOUSEBUS.SYS` Busmaus (Microsoft InPort / Logitech, ISA-Karte, 23Ch),
-  `MOUSEPS2.SYS` PS/2 über den Hilfsport des Tastaturcontrollers (IRQ 12;
-  nur wenn der Controller ihn hat – beim SCAT-Board prüfen). FAPI wie das
+  `MOUSEPS2.SYS` PS/2 über den Hilfsport des Tastaturcontrollers (IRQ 12).
+  Reihenfolge: seriell, dann Bus; PS/2 zuletzt – auf normalen Boards erst
+  mit Baby-AT-Spätzeit/ATX verbreitet, passt eher zu DOS 6.0 (386/486). FAPI wie das
   Mou-API von OS/2: Ereignisse je Sitzung (nur Vordergrund), Zeiger als
   invertierte Textzelle. Erster Nutzer: EDIT.
 - EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
