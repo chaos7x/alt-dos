@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: NASM installieren
+        run: sudo apt-get update && sudo apt-get install -y nasm
+
+      - name: Open Watcom 2.0 installieren
+        run: |
+          curl -sSL -o ow.tar.xz \
+            https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
+          mkdir -p "$HOME/watcom"
+          tar -xJf ow.tar.xz -C "$HOME/watcom"
+          echo "WATCOM=$HOME/watcom" >> "$GITHUB_ENV"
+          echo "INCLUDE=$HOME/watcom/h" >> "$GITHUB_ENV"
+          echo "$HOME/watcom/binl64" >> "$GITHUB_PATH"
+
+      - name: Image bauen
+        run: ./build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alt-dos-image
+          path: build/dos5.img
