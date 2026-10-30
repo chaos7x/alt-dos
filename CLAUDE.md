@@ -114,6 +114,11 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - FAPI-Dateifunktionen auf lange Namen auslegen: `DosOpen`/`DosExecPgm`
   nehmen bisher höchstens 12 bzw. 80 Zeichen, `struct fapi_dirent` hat
   `name[13]` – vor der nächsten Erweiterung der Dateifunktionen umstellen
+- Lange Namen auf FAT (falls vor DOS 6.0 gewünscht): IBM/OS/2-Modell, also
+  `.LONGNAME` als erweitertes Attribut in `EA DATA. SF`, nicht VFAT. Grund:
+  MS-DOS-Werkzeuge (CHKDSK, ScanDisk) sehen nur eine normale Datei, während
+  sie VFAT-Einträge als Fehler „reparieren“. Dazu ein Prüfprogramm, das
+  verwaiste EAs aufräumt.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Testplan DOS 6.0: erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
