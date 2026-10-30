@@ -181,6 +181,16 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
+- `CHKDSK` wie MS-DOS (`/F`, `/V`, Datei-Fragmentierung), liest über eine
+  FAPI-Funktion, die ein Laufwerk als Ganzes öffnet (sektorweise, wie DASD
+  bei OS/2) – dieselbe Funktion für FORMAT, LABEL, DISKCOPY. Sperre in zwei
+  Stufen: nur lesen ohne Sperre; schreibend (`/F`, FORMAT …) exklusiv, nur
+  wenn keine offenen Dateien/aktuellen Verzeichnisse anderer Tasks auf dem
+  Laufwerk, solange gesperrt lehnt der Kernel andere Zugriffe ab, beim
+  Freigeben (auch bei Abbruch) Laufwerk neu einlesen. Geht die Sperre nicht
+  (Startlaufwerk), wie Windows NT: „Laufwerk kann nicht gesperrt werden.
+  Beim nächsten Neustart prüfen (J/N)?“ – Prüfung läuft dann beim Start vor
+  dem ersten Programm.
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
