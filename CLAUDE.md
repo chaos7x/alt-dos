@@ -172,6 +172,8 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
   (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY).
+  Wichtigste Werkzeuge für den Nutzer: `LESS` und `GREP`. `MORE` bleibt aus
+  Kompatibilität (einfach, nur vorwärts, wie MS-DOS); `FIND` ebenso neben `GREP`.
   Vorbild für das Verhalten sind die GNU-Werkzeuge, besonders `less`:
   vor- und zurückblättern, Suche mit `/` und `n`, Sprung an Anfang/Ende,
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
