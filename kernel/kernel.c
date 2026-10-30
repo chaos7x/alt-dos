@@ -78,7 +78,7 @@ static struct task    task[NTASK];
 static struct tss286  tss_k;
 static struct tss286  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
-#define KSTACK 512
+#define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* per DosAllocSeg       */
 static unsigned       image_units;                /* Programmabbilder      */
@@ -1154,6 +1154,8 @@ int blk_write(int dev, unsigned long lba)
     lc_dev = -1;
     if (dev < 0 || dev >= nblk || lba >= b->blocks)
         return -1;
+    if (b->bsize != 512)
+        return -2;                      /* CD-ROM                     */
     if (b->drv < 0) {
         rc = fd_write((unsigned)lba);
         if (rc)
@@ -1202,8 +1204,9 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     const char __far *p;
     unsigned n;
 
-    (void)cx;
     switch (fn) {
+    case DH_BLKREAD:
+        return blk_read((int)bx, ((unsigned long)devhlp_dx << 16) | cx) ? 1 : 0;
     case DH_PUTS:
         p = MK_FP(dsel, bx);
         for (n = 0; n < 200 && p[n]; n++)
@@ -1219,8 +1222,14 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     return 0xFFFF;
 }
 
-/* Treiber laden und initialisieren; -> Anzahl Einheiten oder -1 */
-static int load_driver(const char *line)
+/* nachgeladene Dateisysteme (IFS=): Treiberplatz und Medienklassen */
+#define NIFSMOD 2
+static struct { int drv; unsigned classes; } ifsmod[NIFSMOD];
+static int nifsmod;
+
+/* Treiber oder IFS-Modul laden und initialisieren;
+   -> Anzahl Einheiten (IFS: 1) oder -1 */
+static int load_driver(const char *line, int is_ifs)
 {
     static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
     struct fx_header h;
@@ -1276,6 +1285,8 @@ static int load_driver(const char *line)
     req.buf_off = 0;
     req.devhlp_off = (unsigned)devhlp_entry;
     req.devhlp_sel = KCODE;
+    for (k = 0; k < DRV_MAXUNITS; k++)
+        req.bsize[k] = 0;
     scopy(req.args, args, sizeof(req.args));
     drv_request(d);
 
@@ -1287,13 +1298,23 @@ static int load_driver(const char *line)
         drv[d].used = 0;
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
-        vio_kputs(boot_session, ": kein Ger\x84t gefunden\n");
+        vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
+                                       : ": kein Ger\x84t gefunden\n");
         return 0;
+    }
+    if (is_ifs) {
+        if (nifsmod < NIFSMOD) {
+            ifsmod[nifsmod].drv = d;
+            ifsmod[nifsmod].classes = req.units;
+            nifsmod++;
+        }
+        return 1;
     }
     for (k = 0; k < req.units && nblk < NBLK; k++) {
         blk[nblk].drv = (signed char)d;
         blk[nblk].unit = (unsigned char)k;
         blk[nblk].blocks = req.blocks[k];
+        blk[nblk].bsize = req.bsize[k] ? req.bsize[k] : 512;
         nblk++;
     }
     return req.units;
@@ -1310,6 +1331,8 @@ static void mount_disk(int dev)
     unsigned char type;
     int i, mounted = 0;
 
+    if (blk[dev].bsize != 512)
+        return;                         /* CD-ROM: siehe cd_drives()    */
     if (blk_read(dev, 0))
         return;
     b = MK_FP(DMABUF, 0);
@@ -1404,6 +1427,99 @@ static const char *exec_err(int e)
     return "keine Task frei";
 }
 
+/* ---- Bruecke zu nachgeladenen Dateisystemen --------------------------- */
+static struct ifs_req ireq;
+
+static int mod_call(int drive, unsigned char cmd)
+{
+    int d = vol[drive].mod;
+    ireq.cmd = cmd;
+    ireq.status = 1;
+    ireq.dev = (unsigned short)vol[drive].blk;
+    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&ireq);
+    return ireq.status ? -1 : 0;
+}
+
+static int mod_mount(int drive)
+{
+    blk_invalidate();                   /* CD koennte gewechselt sein  */
+    return mod_call(drive, IFSM_MOUNT);
+}
+
+static int mod_open(int drive, const char *path, struct ifs_file *f)
+{
+    scopy(ireq.path, path, IFS_PATHLEN);
+    if (mod_mount(drive) || mod_call(drive, IFSM_OPEN))
+        return -1;
+    far_copy(KDATA, (unsigned)f, KDATA, (unsigned)&ireq.f, sizeof(*f));
+    f->drive = (unsigned char)drive;
+    f->flags = 0;
+    return 0;
+}
+
+static int mod_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+                    unsigned off, unsigned len)
+{
+    far_copy(KDATA, (unsigned)&ireq.f, KDATA, (unsigned)f, sizeof(*f));
+    ireq.pos = pos;
+    ireq.sel = (unsigned short)sel;
+    ireq.off = (unsigned short)off;
+    ireq.len = (unsigned short)len;
+    if (mod_call(f->drive, IFSM_READ))
+        return -1;
+    far_copy(KDATA, (unsigned)f, KDATA, (unsigned)&ireq.f, sizeof(*f));
+    return ireq.result;
+}
+
+static int mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
+{
+    scopy(ireq.path, dir, IFS_PATHLEN);
+    ireq.n = (unsigned short)n;
+    if ((n == 0 && mod_mount(drive)) || mod_call(drive, IFSM_READDIR))
+        return -1;
+    far_copy(KDATA, (unsigned)de, KDATA, (unsigned)&ireq.de, sizeof(*de));
+    return 0;
+}
+
+static int mod_isdir(int drive, const char *path)
+{
+    scopy(ireq.path, path, IFS_PATHLEN);
+    return mod_mount(drive) == 0 && mod_call(drive, IFSM_ISDIR) == 0;
+}
+
+struct ifs_driver mod_driver = {
+    "IFS", mod_mount, mod_open, mod_read, mod_readdir, mod_isdir
+};
+
+/* CD-Laufwerke bekommen Buchstaben, wenn ein IFS-Modul CDs kann. Der
+   Datentraeger wird erst beim Zugriff geprueft (er kann fehlen/wechseln). */
+static void cd_drives(void)
+{
+    static char msg[40];
+    int dev, m;
+
+    for (dev = 1; dev < nblk && next_drive < PRE_DRIVE; dev++) {
+        if (blk[dev].bsize != 2048)
+            continue;
+        for (m = 0; m < nifsmod && !(ifsmod[m].classes & IFS_CLASS_CD); m++)
+            ;
+        if (m == nifsmod) {
+            vio_kputs(boot_session, "\xFE CD-ROM ohne Dateisystem (IFS=ISO9660.IFS fehlt)\n");
+            continue;
+        }
+        vol[next_drive].used = 1;
+        vol[next_drive].blk = dev;
+        vol[next_drive].start = 0;
+        vol[next_drive].drv = &mod_driver;
+        vol[next_drive].mod = ifsmod[m].drv;
+        msg[0] = (char)('A' + next_drive);
+        scopy(msg + 1, ": CD-ROM\n", sizeof(msg) - 1);
+        vio_kputs(boot_session, "\xFE Laufwerk ");
+        vio_kputs(boot_session, msg);
+        next_drive++;
+    }
+}
+
 /* CONFIG.SYS: DEVICE=Treiber [Argumente] */
 static void config_sys(void)
 {
@@ -1433,15 +1549,21 @@ static void config_sys(void)
             vio_kputs(boot_session, v);
             vio_kputs(boot_session, "\n");
             dev0 = nblk;
-            if (load_driver(v) > 0)
+            if (load_driver(v, 0) > 0)
                 for (i = dev0; i < nblk; i++)
                     mount_disk(i);
+        } else if (line[0] == 'I' && line[1] == 'F' && line[2] == 'S' && line[3] == 0) {
+            vio_kputs(boot_session, "\xFE IFS=");
+            vio_kputs(boot_session, v);
+            vio_kputs(boot_session, "\n");
+            load_driver(v, 1);
         } else {
             vio_kputs(boot_session, "\xFE CONFIG.SYS: unbekannt: ");
             vio_kputs(boot_session, line);
             vio_kputs(boot_session, "\n");
         }
     }
+    cd_drives();
 }
 
 void kmain(void)
@@ -1482,6 +1604,7 @@ void kmain(void)
     blk[BLK_FLOPPY].drv = -1;
     blk[BLK_FLOPPY].unit = 0;
     blk[BLK_FLOPPY].blocks = 2880;
+    blk[BLK_FLOPPY].bsize = 512;
     nblk = 1;
     if (!(boot_drive & 0x80)) {
         /* Start von Diskette: A: ist Pflicht */

@@ -9,7 +9,7 @@ Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 6
+## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 7
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -51,7 +51,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   SS (Kernelstack) ungleich DS ist – keine Adressen lokaler Variablen
   weitergeben, Puffer `static` anlegen
 - `include/drv.h` – Schnittstelle Kernel ↔ Treiber (Anforderung, DevHlp)
-- `CONFIG.SYS` – `DEVICE=` lädt Treiber
+- `ifs/` – nachladbare Dateisysteme (Ring 0, gebaut wie Treiber mit `-zu`),
+  `iso9660.c` -> `ISO9660.IFS`; Schnittstelle `include/ifsmod.h`
+  (`struct ifs_file`, `ifs_dirent`, `ifs_req`). Im Kernel überbrückt
+  `mod_driver` (kernel.c) die `struct ifs_driver`-Aufrufe zum Modul;
+  `cd_drives()` gibt CD-Einheiten (bsize 2048) nach `CONFIG.SYS` Buchstaben.
+- `CONFIG.SYS` – `DEVICE=` lädt Treiber, `IFS=` Dateisystem-Module (beides
+  wird beim Plattenstart vorgeladen)
 - `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
@@ -70,7 +76,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
   Speicher zu (zweites Fenster `SCRATCH2`, 40h), Laufwerke lesen per DMA in
-  `DMABUF` (38h, linear 8000h).
+  `DMABUF` (38h, linear 8000h, 2 KB für CD-Blöcke; Platten nutzen 512).
+- Blockgeräte haben eine Blockgröße (`blk[].bsize`, Treiber melden sie in
+  `drv_req.bsize`): 512 für Platten/Diskette, 2048 für CD-ROMs. FAT und
+  Partitionen nur auf 512er-Geräten, CDs nur lesend.
+- Kernelstack je Task 768 Worte: FAPI -> IFS-Modul -> DevHlp -> Treiber
+  schachtelt tief. BSS des Kernels liegt bei ~57 KB von 64 KB.
 - Der Kernel ist ein 64-KB-Segment ab 10000h; `ATDOS.SYS` (Datei) darf
   höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
@@ -157,8 +168,11 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 ## Geplant (noch nicht umgesetzt)
 
-- `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
-  für das CD-ROM an SCSI-ID 6)
+- Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
+  (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY)
+- CD am Adaptec auf dem SCAT prüfen (in QEMU nur ATAPI testbar); Meldung
+  „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD drin ist
+- Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
 - Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
 - `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen

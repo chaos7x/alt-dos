@@ -14,40 +14,8 @@
 #define IFS_H
 
 #define NDRIVE      26
-#define IFS_PATHLEN 128             /* kanonischer Pfad intern            */
-#define IFS_NAMELEN 256             /* Name in Verzeichniseintraegen      */
 
-#define ATTR_RO     0x01
-#define ATTR_HIDDEN 0x02
-#define ATTR_SYSTEM 0x04
-#define ATTR_DIR    0x10
-
-struct ifs_file {
-    unsigned char  drive;
-    unsigned char  attr;
-    unsigned       first;               /* treiberspezifisch (FAT: Cluster) */
-    unsigned long  size;
-    unsigned       cache_clus;          /* zuletzt gelesene Stelle, damit   */
-    unsigned long  cache_pos;           /* fortlaufendes Lesen schnell ist  */
-    unsigned       dir_clus, dir_idx;   /* Verzeichniseintrag (FAT)         */
-    unsigned char  flags;               /* IFS_F_*                          */
-};
-#define IFS_F_WRITE  0x01               /* zum Schreiben geoeffnet          */
-#define IFS_F_DIRTY  0x02               /* Eintrag beim Schliessen schreiben */
-
-/* Fehler der schreibenden Funktionen (negativ) */
-#define IFS_ERR      (-1)               /* nicht gefunden, E/A-Fehler       */
-#define IFS_WP       (-2)               /* schreibgeschuetzt                */
-#define IFS_FULL     (-3)               /* Datentraeger/Verzeichnis voll    */
-#define IFS_EXIST    (-4)               /* Ziel gibt es schon               */
-#define IFS_DENIED   (-5)               /* Schreibschutzattribut, nicht leer */
-
-struct ifs_dirent {
-    char           name[IFS_NAMELEN];   /* "NAME.EXT"                       */
-    unsigned char  attr;
-    unsigned long  size;
-    unsigned short date, time;          /* FAT-Format                       */
-};
+#include "../include/ifsmod.h"
 
 struct volume {
     unsigned char  used;
@@ -63,6 +31,7 @@ struct volume {
     unsigned       spf;                 /* Sektoren je FAT                  */
     unsigned       hint;                /* hier beginnt die Suche nach Freiem */
     struct ifs_driver *drv;
+    int            mod;                 /* nachgeladenes IFS: Treiberplatz */
 };
 
 struct ifs_driver {
@@ -89,7 +58,7 @@ struct ifs_driver {
 };
 
 extern struct volume vol[NDRIVE];
-extern struct ifs_driver fat_driver, pre_driver;
+extern struct ifs_driver fat_driver, pre_driver, mod_driver;
 extern int floppy_lazy;
 
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);

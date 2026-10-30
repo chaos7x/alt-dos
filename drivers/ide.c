@@ -2,10 +2,9 @@
  * IDE.SYS - Treiber fuer IDE-Platten (ATA) an beiden Kanaelen
  *
  * Primaerer Kanal 1F0h/3F6h, sekundaerer 170h/376h, je Master und Slave:
- * bis zu vier Platten, Einheiten in dieser Reihenfolge. ATAPI-Geraete
- * (CD-ROM) werden erkannt und gemeldet, aber noch nicht als Einheit
- * eingehaengt - sie haben 2048-Byte-Sektoren und brauchen ein eigenes
- * Dateisystem (ISO 9660).
+ * bis zu vier Geraete, Einheiten in dieser Reihenfolge. ATAPI-CD-ROMs
+ * sind Einheiten mit 2048-Byte-Bloecken (PACKET + READ(10), nur lesend);
+ * ein Dateisystem bekommen sie ueber IFS=ISO9660.IFS.
  *
  * PIO-Modus, ohne Interrupt (IRQ 14/15 bleiben maskiert, der Treiber fragt
  * den Status ab). LBA28, wenn die Platte es kann, sonst CHS mit der
@@ -38,6 +37,7 @@ struct unit {
     unsigned       base, ctl;           /* Befehlsregister, Steuerregister */
     unsigned char  sel;                 /* 00h Master, 10h Slave           */
     unsigned char  chs;
+    unsigned char  atapi;               /* CD-ROM: Paketbefehle            */
     unsigned       cyls, heads, spt;
 };
 
@@ -141,9 +141,25 @@ static void probe(int ch, int dev)
             return;
         insw_far(base + R_DATA, (void __far *)id, 256);
         p = where(ch, dev);
-        p = scat(p, ((id[0] >> 8) & 0x1F) == 5 ? "CD-ROM " : "ATAPI-Ger\x84t ");
+        if (((id[0] >> 8) & 0x1F) != 5 || nunit == NUNIT) {
+            p = scat(p, "ATAPI-Ger\x84t ");
+            p = model(p);
+            scat(p, " (nicht unterst\x81tzt)\n");
+            dputs(line);
+            return;
+        }
+        u = &unit[nunit];
+        u->base = base;
+        u->ctl = ctl;
+        u->sel = (unsigned char)(dev << 4);
+        u->chs = 0;
+        u->atapi = 1;
+        r->blocks[nunit] = 0xFFFFFFFFUL;    /* Groesse haengt an der CD */
+        r->bsize[nunit] = 2048;
+        nunit++;
+        p = scat(p, "CD-ROM ");
         p = model(p);
-        scat(p, " (noch kein Dateisystem)\n");
+        scat(p, "\n");
         dputs(line);
         return;
     }
@@ -156,6 +172,7 @@ static void probe(int ch, int dev)
     u->ctl = ctl;
     u->sel = (unsigned char)(dev << 4);
     u->chs = 0;
+    u->atapi = 0;
     n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
     if (!(id[49] & 0x0200) || n == 0) {
         /* kein LBA: aktuelle Geometrie (Wort 54-56), sonst Grundgeometrie */
@@ -201,6 +218,51 @@ static void init(void)
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
+/* ATAPI: einen 2048-Byte-Block mit READ(10) per PACKET lesen; 0 = ok */
+static unsigned char pkt[12];
+
+static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned off)
+{
+    void __far *pp = (void __far *)pkt;
+    unsigned b = u->base, got = 0, cnt, start;
+    int i;
+
+    outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
+    settle(u->ctl);
+    start = ticks();
+    while (inp(b + R_STATUS) & ST_BSY)
+        if ((unsigned)(ticks() - start) > 300)
+            return -1;
+    outp(b + R_ERROR, 0);                   /* Features: PIO            */
+    outp(b + R_CYL_LO, 0x00);               /* hoechstens 2048 Bytes    */
+    outp(b + R_CYL_HI, 0x08);               /* je DRQ-Block             */
+    outp(b + R_CMD, 0xA0);                  /* PACKET                   */
+    settle(u->ctl);
+    if (wait_status(b, ST_DRQ, ST_DRQ, 300))
+        return -1;
+    for (i = 0; i < 12; i++)
+        pkt[i] = 0;
+    pkt[0] = 0x28;                          /* READ(10)                 */
+    pkt[2] = (unsigned char)(l >> 24);
+    pkt[3] = (unsigned char)(l >> 16);
+    pkt[4] = (unsigned char)(l >> 8);
+    pkt[5] = (unsigned char)l;
+    pkt[8] = 1;                             /* ein Block                */
+    outsw_far(b + R_DATA, FP_SEG(pp), FP_OFF(pp), 6);
+    while (got < 2048) {
+        settle(u->ctl);
+        if (wait_status(b, ST_DRQ, ST_DRQ, 1000))   /* CD laeuft evtl. an */
+            return -1;
+        cnt = inp(b + R_CYL_LO) | ((unsigned)inp(b + R_CYL_HI) << 8);
+        if (cnt == 0 || (cnt & 1) || got + cnt > 2048)
+            return -1;
+        insw_far(b + R_DATA, MK_FP(sel, off + got), cnt >> 1);
+        got += cnt;
+    }
+    settle(u->ctl);
+    return wait_status(b, 0, 0, 300);
+}
+
 /* einen Sektor lesen oder schreiben */
 static void xfer(int write)
 {
@@ -210,6 +272,20 @@ static void xfer(int write)
     unsigned long l = r->lba, track;
     unsigned cyl = 0, b = u->base;
     int tries;
+
+    if (u->atapi) {
+        if (write) {
+            r->status = DRV_ERR_WP;
+            return;
+        }
+        for (tries = 0; tries < 3; tries++)     /* 1. Versuch: Unit Attention */
+            if (atapi_read(u, l, r->buf_sel, r->buf_off) == 0) {
+                r->status = DRV_OK;
+                return;
+            }
+        r->status = DRV_ERR_IO;
+        return;
+    }
 
     if (u->chs) {
         track = div32(l, u->spt, &sec);
@@ -262,6 +338,8 @@ static void flush(void)
     struct drv_req __far *r = REQ;
     int i;
     for (i = 0; i < nunit; i++) {
+        if (unit[i].atapi)
+            continue;
         if (wait_status(unit[i].base, 0, 0, 300) && !(inp(unit[i].base + R_STATUS) & ST_ERR))
             continue;
         outp(unit[i].base + R_DRIVE, (unsigned char)(0xA0 | unit[i].sel));

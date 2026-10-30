@@ -23,7 +23,11 @@ und PC-DOS.
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (bis zu
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
-  Platten ohne LBA; ATAPI-CD-ROMs werden erkannt) – beide lesen und schreiben
+  Platten ohne LBA; ATAPI-CD-ROMs als Einheit) – beide lesen und schreiben,
+  CD-ROMs (2048-Byte-Blöcke) nur lesen
+- Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
+  `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
+  bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt
 - Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
@@ -111,7 +115,11 @@ Datei, aktuelles Verzeichnis eines Programms).
 
 ## Gerätetreiber
 
-Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Sektor über den
+Dateisystem-Module (`IFS=`) sind gleich aufgebaut, melden bei der
+Initialisierung ihre Medienklassen und werden danach mit `struct ifs_req`
+aufgerufen (`include/ifsmod.h`); Blöcke lesen sie über DevHlp `DH_BLKREAD`.
+
+Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Block über den
 DMA-Puffer) und `DRV_FLUSH` (Schreib-Cache der Platten leeren: IDE
 `FLUSH CACHE`, SCSI `SYNCHRONIZE CACHE`).
 
@@ -127,7 +135,7 @@ erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
 
 | linear           | Inhalt                          |
 |------------------|---------------------------------|
-| 08000h – 081FFh  | DMA-Puffer für Laufwerke        |
+| 08000h – 087FFh  | DMA-Puffer für Laufwerke (2 KB, ein CD-Block) |
 | 10000h – 1FFFFh  | Kernel (ein 64-KB-Segment)      |
 | 20000h – 9FFFFh  | frei, Speicherverwaltung        |
 | A0000h – FFFFFh  | Systembereich (Video, ROMs)     |

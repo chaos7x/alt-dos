@@ -4,7 +4,7 @@
  * Henne-Ei-Problem: Die Treiber fuer die Platte stehen in CONFIG.SYS auf
  * eben dieser Platte. Loesung wie bei OS/2: Solange der Kernel noch im Real
  * Mode laeuft, liest er ueber das BIOS (INT 13h) CONFIG.SYS und alle dort
- * mit DEVICE= genannten Dateien in den Speicher ab 0600h. Im Protected Mode
+ * mit DEVICE= und IFS= genannten Dateien in den Speicher ab 0600h. Im Protected Mode
  * stellt das Pseudo-Dateisystem "BOOT" (Laufwerk Z:, nur waehrend
  * CONFIG.SYS) diese Dateien bereit; danach wird es wieder entfernt.
  *
@@ -13,6 +13,7 @@
  * merkt sich pre_err; kmain meldet sie spaeter.
  *
  * Nur FAT16 und nur Dateien im Stammverzeichnis (DEVICE=AHA154X.SYS).
+ * NPRE begrenzt CONFIG.SYS plus Treiber und IFS-Module auf 8 Dateien.
  */
 #include "kern.h"
 #include "ifs.h"
@@ -180,7 +181,7 @@ void preload(void)
     if (to83("CONFIG.SYS", name) || load(name))
         return;                     /* ohne CONFIG.SYS keine Treiber    */
 
-    /* DEVICE=-Zeilen: nur den Dateinamen, Argumente bleiben in CONFIG.SYS */
+    /* DEVICE=- und IFS=-Zeilen: nur den Dateinamen, Argumente bleiben in CONFIG.SYS */
     c = MK_FP(PRE_SEG, pre[0].off);
     n = pre[0].size;
     for (i = 0; i < n; ) {
@@ -189,11 +190,18 @@ void preload(void)
             i++;
         while (s < i && (c[s] == ' ' || c[s] == '\t'))
             s++;
-        if (i - s > 7) {
-            static const char dev[] = "DEVICE";
+        if (i - s > 4) {
+            static const char dev[] = "DEVICE", ifs[] = "IFS";
             char path[64];
             for (k = 0; k < 6 && (c[s + k] | 0x20) == (dev[k] | 0x20); k++)
                 ;
+            if (k != 6) {               /* IFS= wird genauso vorgeladen */
+                for (k = 0; k < 3 && (c[s + k] | 0x20) == (ifs[k] | 0x20); k++)
+                    ;
+                k = k == 3 ? 6 : 0;
+                if (k)
+                    s -= 3;             /* gleicher Sprung wie bei DEVICE */
+            }
             if (k == 6) {
                 s += 6;
                 while (s < i && c[s] == ' ')

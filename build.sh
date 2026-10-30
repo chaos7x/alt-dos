@@ -71,6 +71,14 @@ for t in aha154x ide; do
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
 done
 
+echo "Dateisysteme (IFS)"
+for t in iso9660; do
+    wcc $CFLAGS -zu -fo=$B/ifs_$t.o ifs/$t.c
+    wlink $LINK name $B/ifs_$t.bin option map=$B/ifs_$t.map \
+          file $B/dcrt0.o file $B/ifs_$t.o 2>&1 | grep -v W1014 || true
+    python3 tools/mkfx.py --driver $B/stub.bin $B/ifs_$t.bin $B/ifs_$t.map $B/ifs_$t.ifs
+done
+
 echo "Diskette (FAT12)"
 IMG=$B/dos5.img
 export MTOOLS_SKIP_CHECK=1
@@ -92,7 +100,8 @@ FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
        STARTUP.CMD STARTUP.CMD  CONFIG.SYS CONFIG.SYS
-       $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS"
+       $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
+       $B/ifs_iso9660.ifs ISO9660.IFS"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     set -- $FILES
     while [ $# -gt 0 ]; do

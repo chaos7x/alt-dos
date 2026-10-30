@@ -120,7 +120,7 @@ int fd_init(void)
 static void dma_setup(int write)
 {
     unsigned long a = DMABUF_LIN;
-    unsigned n = DMABUF_SIZE - 1;
+    unsigned n = 512 - 1;                       /* ein Sektor             */
 
     outb(0x0A, 0x06);                           /* Kanal 2 maskieren      */
     outb(0x0C, 0x00);                           /* Flip-Flop zuruecksetzen */

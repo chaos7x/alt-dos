@@ -54,6 +54,7 @@ static unsigned long lin;               /* lineare Basis dieses Treibers */
 static volatile struct mbox mb[2];      /* [0] ausgehend, [1] eingehend  */
 static struct ccb ccb;
 static unsigned char target[DRV_MAXUNITS];
+static unsigned bsz[DRV_MAXUNITS];      /* 512 Platte, 2048 CD-ROM      */
 static unsigned nunits;
 static char line[80];
 static unsigned char cdb[12];
@@ -297,6 +298,7 @@ static void init(void)
                 unsigned long last = ((unsigned long)buf[0] << 24) |
                     ((unsigned long)buf[1] << 16) | ((unsigned)buf[2] << 8) | buf[3];
                 r->blocks[n] = last + 1;
+                bsz[n] = 512;
                 target[n++] = (unsigned char)id;
                 p = scat(p, ", ");
                 p = udec(p, (unsigned)((last + 1) >> 11));
@@ -304,8 +306,18 @@ static void init(void)
             } else {
                 p = scat(p, " (nicht bereit)");
             }
-        } else if ((buf[0] & 0x1F) == 5) {
-            p = scat(p, " (noch kein Dateisystem)");
+        } else if ((buf[0] & 0x1F) == 5 && n < DRV_MAXUNITS) {
+            /* CD-ROM: Einheit mit 2048-Byte-Bloecken; ob eine CD drin
+               ist, prueft erst das Dateisystem beim Zugriff */
+            for (k = 0; k < 4; k++) {
+                cdb6(0x00, 0);
+                if (scsi(id, 0, 0, 6) == SCSI_OK)
+                    break;
+            }
+            r->blocks[n] = 0xFFFFFFFFUL;
+            r->bsize[n] = 2048;
+            bsz[n] = 2048;
+            target[n++] = (unsigned char)id;
         }
         scat(p, "\n");
         dputs(line);
@@ -337,7 +349,11 @@ static void xfer(int write)
         cdb[7] = 0;
         cdb[8] = 1;                         /* ein Block                */
         cdb[9] = 0;
-        rc = scsi_dir(target[r->unit], 512, r->buf_phys, 10, write ? 0x10 : 0x08);
+        if (write && bsz[r->unit] != 512) {
+            r->status = DRV_ERR_WP;
+            return;
+        }
+        rc = scsi_dir(target[r->unit], bsz[r->unit], r->buf_phys, 10, write ? 0x10 : 0x08);
         if (rc == SCSI_OK) {
             r->status = DRV_OK;
             return;
@@ -354,6 +370,8 @@ static void flush(void)
     unsigned u, i;
 
     for (u = 0; u < nunits; u++) {
+        if (bsz[u] != 512)
+            continue;
         for (i = 0; i < 12; i++)
             cdb[i] = 0;
         cdb[0] = 0x35;

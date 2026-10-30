@@ -1042,5 +1042,11 @@ int ifs_move(int drive, const char *from, const char *to)
 
 int ifs_space(int drive, unsigned long *free_bytes)
 {
-    return HAS(drive, space) ? vol[drive].drv->space(drive, free_bytes) : IFS_ERR;
+    if (!VOL_OK(drive))
+        return IFS_ERR;
+    if (!vol[drive].drv->space) {
+        *free_bytes = 0;                /* nur lesbar (CD): nichts frei */
+        return 0;
+    }
+    return vol[drive].drv->space(drive, free_bytes);
 }

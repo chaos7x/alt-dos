@@ -23,8 +23,8 @@ struct drv_header {
 };
 
 #define DRV_INIT        0           /* Geraet suchen, Einheiten melden  */
-#define DRV_READ        1           /* einen Sektor (512 Bytes) lesen   */
-#define DRV_WRITE       2           /* einen Sektor (512 Bytes) schreiben */
+#define DRV_READ        1           /* einen Block lesen (512, CD 2048 Bytes) */
+#define DRV_WRITE       2           /* einen Block schreiben (nur 512)  */
 #define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
 
 #define DRV_MAXUNITS    8
@@ -47,6 +47,7 @@ struct drv_req {
     unsigned char  units;           /* INIT: Anzahl Einheiten (Rueckgabe) */
     unsigned char  rsv;
     unsigned long  blocks[DRV_MAXUNITS];    /* INIT: Sektoren je Einheit */
+    unsigned short bsize[DRV_MAXUNITS];     /* INIT: Blockgroesse, 0 = 512 (CD: 2048) */
     char           args[81];        /* INIT: Argumente aus CONFIG.SYS   */
 };
 
@@ -54,5 +55,7 @@ struct drv_req {
 #define DH_PUTS         0           /* BX = Text (DS des Treibers) ins Startprotokoll */
 #define DH_TICKS        1           /* -> AX = Systemtakt (100 Hz), untere 16 Bit */
 #define DH_DELAY        2           /* BX = Takte warten                */
+#define DH_BLKREAD      3           /* BX = Blockgeraet, CX = LBA unten, DX = LBA oben
+                                       -> Block im DMA-Puffer, AX = 0 ok   */
 
 #endif

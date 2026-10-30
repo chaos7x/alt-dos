@@ -32,7 +32,7 @@
 #define NGDT        (9 + 3 * NTASK + 2 * NDRV)
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
-#define DMABUF_SIZE 512
+#define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
 
 #define KBASE       0x10000UL       /* Kernel: ein 64-KB-Segment ab hier   */
 #define LIN(p)      (KBASE + (unsigned short)(p))
@@ -97,6 +97,7 @@ struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;
     unsigned long  blocks;
+    unsigned       bsize;           /* 512, CD-ROM 2048                    */
 };
 extern struct blkdev blk[NBLK];
 extern int nblk;
