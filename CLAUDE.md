@@ -144,7 +144,10 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
   für das CD-ROM an SCSI-ID 6)
-- Schreiben auf FAT (erst auf dem geklonten Testrechner). Dann muss
+- Schreiben auf FAT, für IDE und Adaptec (Treiberbefehl DRV_WRITE). Testaufbau
+  auf dem SCAT: alle Platten sind Kopien, Schreiben überall erlaubt. Zuerst
+  auf der IDE-Slave-Platte (504 MB, unter AT-DOS E:), dann auf der
+  SCSI-Platte; Kontrolle unter MS-DOS mit CHKDSK/ScanDisk. Dann muss
   Strg+Alt+Entf vor dem Reset leeren: Schreib-Cache des Kernels und den
   Cache der Platte selbst (IDE `FLUSH CACHE` E7h, SCSI `SYNCHRONIZE CACHE`
   35h). Weil der Neustart im Tastatur-Interrupt ausgelöst wird, wo gerade
