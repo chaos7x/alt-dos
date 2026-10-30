@@ -192,15 +192,15 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
   Vollbild-Editor im Stil von MS-DOS EDIT, nutzt `SIG_SHUTDOWN`, um vor dem
   Herunterfahren nach dem Speichern zu fragen.
-- Maus: Treiber je Anschluss wie bei OS/2 (`DEVICE=`), alle brauchen Treiber
-  mit Interrupt (DevHlp SetIRQ, steht ohnehin auf der Liste):
-  `MOUSESER.SYS` seriell (COM1/COM2, Microsoft-Protokoll, Mouse Systems),
-  `MOUSEBUS.SYS` Busmaus (Microsoft InPort / Logitech, ISA-Karte, 23Ch),
-  `MOUSEPS2.SYS` PS/2 über den Hilfsport des Tastaturcontrollers (IRQ 12).
-  Reihenfolge: seriell, dann Bus; PS/2 zuletzt – auf normalen Boards erst
-  mit Baby-AT-Spätzeit/ATX verbreitet, passt eher zu DOS 6.0 (386/486). FAPI wie das
-  Mou-API von OS/2: Ereignisse je Sitzung (nur Vordergrund), Zeiger als
-  invertierte Textzelle. Erster Nutzer: EDIT.
+- Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
+  selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
+  controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),
+  seriell (COM1/COM2: UART erst lesend prüfen, dann DTR/RTS umschalten, die
+  Maus antwortet mit 'M'). Optional per Argument festlegen
+  (`DEVICE=MOUSE.SYS /COM2`). Braucht Treiber mit Interrupt (DevHlp SetIRQ).
+  FAPI wie das Mou-API von OS/2: Ereignisse je Sitzung (nur Vordergrund),
+  Zeiger als invertierte Textzelle. Erster Nutzer: EDIT. Test zuerst mit
+  serieller Microsoft-Maus in 86Box.
 - EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
   Alt, Dialoge, CUA-Tasten), dazu Statuszeile, Suchen/Ersetzen. Braucht
   FAPI: Zellen mit Attribut schreiben, Cursor setzen, Sondertasten.
