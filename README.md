@@ -33,7 +33,7 @@ und PC-DOS.
   „Start von Festplatte“
 - Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
   Start läuft
-- `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (mit freiem Platz), `CD`,
+- `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (`/A`, `/P`, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad

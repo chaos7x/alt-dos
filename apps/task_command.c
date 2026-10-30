@@ -136,12 +136,14 @@ static void cmd_dir(char *arg)
     static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
     unsigned n, files = 0, dirs = 0;
     unsigned long total = 0;
-    int all = 0;
+    int all = 0, page = 0, lines = 4;
 
     dir[0] = 0;
     for (; *arg; arg = next_word(arg)) {
         if (same(arg, "/A"))
             all = 1;
+        else if (same(arg, "/P"))
+            page = 1;
         else
             word(arg, dir, sizeof(dir));
     }
@@ -185,6 +187,12 @@ static void cmd_dir(char *arg)
         putc(' ');
         puts(e.name);
         puts("\n");
+        if (page && ++lines >= 22) {            /* eine Bildschirmseite */
+            puts("Weiter mit beliebiger Taste . . .");
+            KbdCharIn();
+            puts("\n");
+            lines = 0;
+        }
     }
     put_num(files, 16);
     puts(" Datei(en),");
@@ -239,6 +247,42 @@ static void cmd_type(char *arg)
     DosClose(h);
     if (last != '\n')
         puts("\n");
+}
+
+static char *base_name(char *path);
+
+/* MS-DOS-Programm (.COM)? Dann sagen, warum es nicht startet */
+static int dos_program(const char *cmd)
+{
+    static char name[FAPI_PATHLEN];
+    unsigned i = 0, dot = 0, h;
+
+    while (cmd[i] && cmd[i] != ' ' && i < FAPI_PATHLEN - 5) {
+        name[i] = cmd[i];
+        if (cmd[i] == '.')
+            dot = i;
+        else if (cmd[i] == '\\')
+            dot = 0;
+        i++;
+    }
+    if (!dot) {
+        name[i++] = '.';
+        name[i++] = 'C';
+        name[i++] = 'O';
+        name[i++] = 'M';
+    } else if (!(up(name[dot + 1]) == 'C' && up(name[dot + 2]) == 'O' &&
+                 up(name[dot + 3]) == 'M' && dot + 4 == i))
+        return 0;
+    name[i] = 0;
+    h = DosOpen(name);
+    if (h == FAPI_ERROR)
+        return 0;
+    DosClose(h);
+    for (i = 0; name[i]; i++)
+        name[i] = up(name[i]);
+    puts(base_name(name));
+    puts(" ist ein MS-DOS-Programm und l\x84uft nicht unter AT-DOS.\n");
+    return 1;
 }
 
 static void exec_error(unsigned r)
@@ -562,7 +606,7 @@ static void cmd_ren(char *arg)
 static void cmd_help(void)
 {
     puts("Interne Befehle:\n"
-         "  DIR [Pfad] [/A] Dateien anzeigen (/A auch versteckte)\n"
+         "  DIR [Pfad] [/A] [/P]  Dateien anzeigen (/A auch versteckte, /P seitenweise)\n"
          "  CD [Pfad]       Verzeichnis wechseln oder anzeigen\n"
          "  C:              Laufwerk wechseln\n"
          "  TYPE Datei      Textdatei ausgeben\n"
@@ -637,8 +681,11 @@ static int execute(void)
         if (!permanent)
             return 0;
         puts("Dieser Befehlsinterpreter ist permanent (/P) und kann nicht beendet werden.\n");
-    } else if ((r = DosExecPgm(cmd, EXEC_SYNC)) != 0)
+    } else if ((r = DosExecPgm(cmd, EXEC_SYNC)) != 0) {
+        if ((r == EXEC_ERR_NOTFOUND || r == EXEC_ERR_FORMAT) && dos_program(cmd))
+            return 1;
         exec_error(r);
+    }
     return 1;
 }
 
