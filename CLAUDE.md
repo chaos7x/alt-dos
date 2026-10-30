@@ -155,9 +155,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
   für das CD-ROM an SCSI-ID 6)
-- Schreiben auf dem SCAT prüfen: Testaufbau, alle Platten sind Kopien,
-  Schreiben überall erlaubt. Zuerst IDE-Slave (504 MB, unter AT-DOS E:),
-  dann SCSI; Kontrolle unter MS-DOS mit CHKDSK/ScanDisk. `DRV_WRITE` beim
+- Schreiben über den Adaptec auf dem SCAT prüfen (IDE ist bestätigt:
+  Kopieren auf IDE-Master und -Slave, ScanDisk unter MS-DOS ohne Fehler).
+  Alle Platten sind Kopien, Schreiben überall erlaubt. `DRV_WRITE` beim
   Adaptec ist in QEMU nicht testbar (kein Adaptec), nur in 86Box.
 - Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
 - `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
