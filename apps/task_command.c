@@ -2,8 +2,8 @@
  * COMMAND.EXE - Befehlsinterpreter fuer DOS 5.0
  *
  * Nachfolger von COMMAND.COM fuer den Protected Mode: spricht das System
- * nur ueber die FAPI an. Interne Befehle: DIR, TYPE, CLS, VER, ECHO, START,
- * HILFE, EXIT. Alles andere wird als Programm (NAME.EXE) gestartet.
+ * nur ueber die FAPI an. Interne Befehle: DIR, CD, Laufwerk:, TYPE, CLS,
+ * VER, ECHO, START, HILFE, EXIT. Alles andere wird als Programm gestartet.
  *
  * COMMAND.EXE /P  -  permanent, EXIT ist dann gesperrt (erste Sitzung).
  */
@@ -118,16 +118,50 @@ static void read_line(void)
     line[n] = 0;
 }
 
+/* ein Wort aus der Eingabe als eigene Zeichenkette */
+static char *word(char *p, char *out, int max)
+{
+    int i = 0;
+    while (*p && *p != ' ' && i < max - 1)
+        out[i++] = *p++;
+    out[i] = 0;
+    return out;
+}
+
 /* ---- interne Befehle --------------------------------------------------- */
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
-    unsigned n, files = 0;
+    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
+    unsigned n, files = 0, dirs = 0;
     unsigned long total = 0;
-    int all = same(arg, "/A");
+    int all = 0;
 
-    puts("\n Verzeichnis von A:\\\n\n");
-    for (n = 0; DosFindEntry(&e, n) != FAPI_ERROR; n++) {
+    dir[0] = 0;
+    for (; *arg; arg = next_word(arg)) {
+        if (same(arg, "/A"))
+            all = 1;
+        else
+            word(arg, dir, sizeof(dir));
+    }
+    if (dir[0] && DosFindEntry(&e, 0, dir) == FAPI_ERROR) {
+        puts("Verzeichnis nicht gefunden.\n");
+        return;
+    }
+    puts("\n Verzeichnis von ");
+    if (dir[0] && dir[1] == ':') {
+        puts(dir);
+    } else {
+        DosQCurDir(cur);
+        puts(cur);
+        if (dir[0]) {
+            if (cur[3])
+                putc('\\');
+            puts(dir);
+        }
+    }
+    puts("\n\n");
+    for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
         if (!all && (e.attr & 0x06))            /* versteckt, System    */
             continue;
         put2(e.date & 31);
@@ -139,21 +173,43 @@ static void cmd_dir(char *arg)
         put2(e.time >> 11);
         putc(':');
         put2((e.time >> 5) & 63);
-        put_num(e.size, 18);
+        if (e.attr & 0x10) {
+            puts("    <DIR>         ");
+            dirs++;
+        } else {
+            put_num(e.size, 18);
+            files++;
+            total += e.size;
+        }
         putc(' ');
         puts(e.name);
         puts("\n");
-        files++;
-        total += e.size;
     }
     put_num(files, 16);
     puts(" Datei(en),");
     put_num(total, 15);
-    puts(" Bytes\n\n");
+    puts(" Bytes\n");
+    put_num(dirs, 16);
+    puts(" Verzeichnis(se)\n\n");
+}
+
+static void cmd_cd(char *arg)
+{
+    static char p[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
+
+    if (!*arg) {
+        DosQCurDir(cur);
+        puts(cur);
+        puts("\n");
+        return;
+    }
+    if (DosChDir(word(arg, p, sizeof(p))) == FAPI_ERROR)
+        puts("Ung\x81ltiges Verzeichnis.\n");
 }
 
 static void cmd_type(char *arg)
 {
+    static char name[FAPI_PATHLEN];
     unsigned h, n;
     char last = '\n';
 
@@ -161,7 +217,7 @@ static void cmd_type(char *arg)
         puts("Syntax: TYPE Dateiname\n");
         return;
     }
-    h = DosOpen(arg);
+    h = DosOpen(word(arg, name, sizeof(name)));
     if (h == FAPI_ERROR) {
         puts("Datei nicht gefunden.\n");
         return;
@@ -189,7 +245,9 @@ static void exec_error(unsigned r)
 static void cmd_help(void)
 {
     puts("Interne Befehle:\n"
-         "  DIR [/A]        Dateien auf A: anzeigen (/A auch versteckte)\n"
+         "  DIR [Pfad] [/A] Dateien anzeigen (/A auch versteckte)\n"
+         "  CD [Pfad]       Verzeichnis wechseln oder anzeigen\n"
+         "  C:              Laufwerk wechseln\n"
          "  TYPE Datei      Textdatei ausgeben\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER             Version anzeigen\n"
@@ -203,7 +261,7 @@ static void cmd_help(void)
 static void cmd_ver(void)
 {
     unsigned v = DosGetVersion();
-    puts("\nDOS 5.0 (alternative Zeitlinie), 80286 Protected Mode\nFAPI-Version ");
+    puts("\nAT-DOS 5.0 (alternative Zeitlinie), 80286 Protected Mode\nFAPI-Version ");
     putc((char)('0' + (v >> 8)));
     putc('.');
     put2(v & 0xFF);
@@ -220,12 +278,17 @@ static int execute(void)
         return 1;
     arg = next_word(cmd);
 
-    if (same(cmd, "CLS"))
+    if (cmd[0] && cmd[1] == ':' && (cmd[2] == 0 || cmd[2] == ' ')) {
+        if (DosSelectDisk(up(cmd[0]) - 'A') == FAPI_ERROR)
+            puts("Ung\x81ltiges Laufwerk.\n");
+    } else if (same(cmd, "CLS"))
         VioCls();
     else if (same(cmd, "DIR"))
         cmd_dir(arg);
     else if (same(cmd, "TYPE"))
         cmd_type(arg);
+    else if (same(cmd, "CD") || same(cmd, "CHDIR"))
+        cmd_cd(arg);
     else if (same(cmd, "VER"))
         cmd_ver();
     else if (same(cmd, "ECHO")) {
@@ -257,10 +320,13 @@ void main(void)
         if (same(p, "/P"))
             permanent = 1;
 
-    puts("COMMAND.EXE - Befehlsinterpreter f\x81r DOS 5.0\n"
+    puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 5.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
     do {
-        puts("A:\\>");
+        static char cur[FAPI_CURDIRLEN];
+        DosQCurDir(cur);
+        puts(cur);
+        puts(">");
         read_line();
     } while (execute());
 }

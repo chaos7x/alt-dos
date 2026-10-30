@@ -57,7 +57,7 @@ static void title_bar(void)
 {
     static char n[] = "Sitzung ?";
     vfill(0, TITLE_ATTR);
-    vputs(0, 2, "DOS 5.0", TITLE_ATTR);
+    vputs(0, 1, "AT-DOS 5.0", TITLE_ATTR);
     if (fg >= 0) {
         n[8] = (char)('1' + fg);
         vputs(0, 12, "\xB3", TITLE_ATTR);

@@ -21,6 +21,8 @@
 #define FX_SIG1     'H'
 #define FX_VERSION  1
 
+#define FX_FLAG_DRIVER  0x0001      /* Geraetetreiber (Ring 0), kein Programm */
+
 struct fx_header {
     char           sig[2];          /* "CH"                             */
     unsigned short version;         /* FX_VERSION                       */
@@ -29,7 +31,7 @@ struct fx_header {
     unsigned short bss_size;        /* Bytes, vom Lader genullt         */
     unsigned short stack_size;      /* Bytes                            */
     unsigned short entry;           /* IP beim Start                    */
-    unsigned short flags;           /* reserviert, 0                    */
+    unsigned short flags;           /* FX_FLAG_*                        */
 };
 
 #endif

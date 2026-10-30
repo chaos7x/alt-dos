@@ -12,6 +12,7 @@
 #include "../include/fx.h"
 #include "mem.h"
 #include "ifs.h"
+#include "../include/drv.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT        16
@@ -66,8 +67,10 @@ struct task {
     unsigned long wake;
     int           session;
     int           parent;   /* -1: Sitzungsinhaber                       */
-    char          name[13];
+    char          name[13];                       /* fuer die Titelzeile   */
     char          args[FAPI_ARGLEN];
+    unsigned char drive;                          /* aktuelles Laufwerk    */
+    char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
     unsigned      img_unit, img_cnt;
 };
 
@@ -75,7 +78,8 @@ static struct task    task[NTASK];
 static struct tss286  tss_k;
 static struct tss286  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
-static unsigned short kstack[NTASK][256];         /* Ring-0-Stack je Task  */
+#define KSTACK 512
+static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* per DosAllocSeg       */
 static unsigned       image_units;                /* Programmabbilder      */
 static int            current = -1;
@@ -268,18 +272,96 @@ static unsigned rd16(unsigned sel, unsigned off)
     return p[0] | ((unsigned)p[1] << 8);
 }
 
-/* Programm im FX-Format in Task t laden. 0 = ok, sonst EXEC_ERR_* */
-static int load_program(int t, const char *name)
+/* ---- Pfade ------------------------------------------------------------ */
+static char up(char c)
+{
+    return (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+}
+
+/* Pfad eines Tasks (oder t < 0: Laufwerk A:, Stamm) -> Laufwerk und
+   kanonischer Pfad "\A\B" bzw. "\". Laenge der Eingabe bis 260 Zeichen. */
+static int resolve(int t, const char *in, int *drive, char *out)
+{
+    const char *p = in, *q;
+    int d = t >= 0 ? task[t].drive : 0, n, k;
+
+    if (p[0] && p[1] == ':') {
+        if (up(p[0]) < 'A' || up(p[0]) > 'Z')
+            return -1;
+        d = up(p[0]) - 'A';
+        p += 2;
+    }
+    n = 0;
+    out[0] = 0;
+    if (*p != '\\' && *p != '/' && t >= 0 && d == task[t].drive) {
+        scopy(out, task[t].cwd, IFS_PATHLEN);
+        while (out[n])
+            n++;
+    }
+    while (*p) {
+        while (*p == '\\' || *p == '/')
+            p++;
+        for (q = p; *q && *q != '\\' && *q != '/'; q++)
+            ;
+        k = (int)(q - p);
+        if (k == 0)
+            break;
+        if (k == 1 && p[0] == '.') {
+            /* bleibt */
+        } else if (k == 2 && p[0] == '.' && p[1] == '.') {
+            while (n > 0 && out[n - 1] != '\\')
+                n--;
+            if (n > 0)
+                n--;                            /* den '\' davor auch   */
+            out[n] = 0;
+        } else {
+            if (n + 1 + k >= IFS_PATHLEN)
+                return -1;
+            out[n++] = '\\';
+            while (p < q)
+                out[n++] = up(*p++);
+            out[n] = 0;
+        }
+        p = q;
+    }
+    if (n == 0) {
+        out[0] = '\\';
+        out[1] = 0;
+    }
+    *drive = d;
+    return 0;
+}
+
+/* Zeichenkette aus Ring 3 holen, hoechstens max - 1 Zeichen; -1 = Fehler */
+static int user_str(unsigned sel, unsigned off, char *buf, int max)
+{
+    unsigned lim;
+    int i;
+    if (!sel_readable(sel))
+        return -1;
+    lim = sel_limit(sel);
+    for (i = 0; i < max; i++) {
+        if (off + i > lim || off + i < off)
+            return -1;
+        buf[i] = *(char __far *)MK_FP(sel, off + i);
+        if (!buf[i])
+            return 0;
+    }
+    return -1;                                  /* zu lang              */
+}
+
+/* ---- Abbilder im FX-Format laden --------------------------------------- */
+/* Datei lesen, Kopf pruefen, Segment anlegen und fuellen. SCRATCH2 zeigt
+   danach auf das neue Segment. 0 = ok, sonst EXEC_ERR_*                  */
+static int load_image(int drive, const char *path, struct fx_header *h,
+                      unsigned *unit, unsigned *cnt, unsigned long *segsize)
 {
     struct ifs_file f;
-    struct fx_header h;
-    struct tss286 *ts;
-    unsigned short *w;
     unsigned long base, seg;
     unsigned tu, tn, u, n, fx;
     int err = 0;
 
-    if (ifs_open(name, &f))
+    if (ifs_open(drive, path, &f))
         return EXEC_ERR_NOTFOUND;
     if (f.size < 64 || f.size > 0xFF00UL)
         return EXEC_ERR_FORMAT;
@@ -294,15 +376,15 @@ static int load_program(int t, const char *name)
         return EXEC_ERR_NOTFOUND;
     }
     fx = rd16(SCRATCH, 0x3C);
-    if (rd16(SCRATCH, 0) != 0x5A4D || fx > (unsigned)f.size - sizeof(h)) {
+    if (rd16(SCRATCH, 0) != 0x5A4D || fx > (unsigned)f.size - sizeof(*h)) {
         mem_free(tu, tn);
         return EXEC_ERR_FORMAT;
     }
-    far_copy(KDATA, (unsigned)&h, SCRATCH, fx, sizeof(h));
-    seg = (unsigned long)h.image_size + h.bss_size + h.stack_size;
-    if (h.sig[0] != FX_SIG0 || h.sig[1] != FX_SIG1 || h.version != FX_VERSION ||
-        (unsigned long)h.image_off + h.image_size > f.size ||
-        seg > 0x10000UL || h.entry >= h.image_size)
+    far_copy(KDATA, (unsigned)h, SCRATCH, fx, sizeof(*h));
+    seg = (unsigned long)h->image_size + h->bss_size + h->stack_size;
+    if (h->sig[0] != FX_SIG0 || h->sig[1] != FX_SIG1 || h->version != FX_VERSION ||
+        (unsigned long)h->image_off + h->image_size > f.size ||
+        seg > 0x10000UL || h->image_size == 0 || h->entry >= h->image_size)
         err = EXEC_ERR_FORMAT;
     if (err) {
         mem_free(tu, tn);
@@ -320,9 +402,32 @@ static int load_program(int t, const char *name)
        zero_seg schreibt ganze Einheiten, ein echter 286 prueft die Grenze */
     scratch2_map(base, n * MEM_UNIT - 1);
     zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
-    far_copy(SCRATCH2, 0, SCRATCH, h.image_off, h.image_size);
+    far_copy(SCRATCH2, 0, SCRATCH, h->image_off, h->image_size);
     mem_free(tu, tn);
+    *unit = u;
+    *cnt = n;
+    *segsize = seg;
+    return 0;
+}
 
+/* Programm in Task t laden. 0 = ok, sonst EXEC_ERR_* */
+static int load_program(int t, int drive, const char *path)
+{
+    struct fx_header h;
+    struct tss286 *ts;
+    unsigned short *w;
+    unsigned long base, seg;
+    unsigned u, n;
+    int err;
+
+    err = load_image(drive, path, &h, &u, &n, &seg);
+    if (err)
+        return err;
+    if (h.flags & FX_FLAG_DRIVER) {
+        mem_free(u, n);
+        return EXEC_ERR_FORMAT;                 /* Treiber, kein Programm */
+    }
+    base = (unsigned long)u << 8;
     task[t].img_unit = u;
     task[t].img_cnt  = n;
     image_units     += n;
@@ -335,7 +440,7 @@ static int load_program(int t, const char *name)
     for (w = (unsigned short *)ts; w < (unsigned short *)(ts + 1); w++)
         *w = 0;
     ts->ss0   = KDATA;
-    ts->sp0   = (unsigned short)&kstack[t][256];
+    ts->sp0   = (unsigned short)&kstack[t][KSTACK];
     ts->cs    = UCODE;
     ts->ip    = h.entry;
     ts->ss    = UDATA;
@@ -347,47 +452,63 @@ static int load_program(int t, const char *name)
     return 0;
 }
 
-/* Befehlszeile "PROG ARGS" -> Programmname mit .EXE und Argumente */
-static void split_cmd(const char *cmd, char *name, char *args)
+/* Befehlszeile "PFAD\PROG ARGS" -> Pfad (mit .EXE, falls ohne Endung),
+   Anzeigename und Argumente */
+static int split_cmd(const char *cmd, char *path, char *name, char *args)
 {
-    int i = 0, dot = 0;
+    int i = 0, last = 0, dot = 0;
     char c;
 
     while (*cmd == ' ')
         cmd++;
-    while (*cmd && *cmd != ' ' && i < 8 + 1 + 3) {
+    while (*cmd && *cmd != ' ') {
+        if (i >= IFS_PATHLEN - 5)
+            return -1;
         c = *cmd++;
-        if (c >= 'a' && c <= 'z')
-            c -= 32;
-        if (c == '.')
+        if (c == '\\' || c == '/' || c == ':') {
+            last = i + 1;
+            dot = 0;
+        } else if (c == '.') {
             dot = 1;
-        name[i++] = c;
+        }
+        path[i++] = c;
     }
-    if (!dot && i <= 8) {
-        name[i++] = '.'; name[i++] = 'E'; name[i++] = 'X'; name[i++] = 'E';
+    if (!dot) {
+        path[i++] = '.'; path[i++] = 'E'; path[i++] = 'X'; path[i++] = 'E';
     }
+    path[i] = 0;
+    for (i = 0; i < 12 && path[last + i]; i++)
+        name[i] = up(path[last + i]);
     name[i] = 0;
-    while (*cmd && *cmd != ' ')
-        cmd++;
     while (*cmd == ' ')
         cmd++;
     scopy(args, cmd, FAPI_ARGLEN);
+    return 0;
 }
 
-/* neuen Task anlegen und laden; -> Tasknummer oder -(EXEC_ERR_*) */
-static int task_create(const char *cmd, int session, int parent)
+/* neuen Task anlegen und laden. Laufwerk und Verzeichnis erbt er von
+   'from' (oder A:\ bei from < 0). -> Tasknummer oder -(EXEC_ERR_*)    */
+static int task_create(const char *cmd, int session, int parent, int from)
 {
-    int t, err;
+    static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
+    int t, err, d;
 
     for (t = 0; t < NTASK; t++)
         if (task[t].state == T_FREE)
             break;
     if (t == NTASK)
         return -EXEC_ERR_NOSLOT;
-    split_cmd(cmd, task[t].name, task[t].args);
-    err = load_program(t, task[t].name);
+    if (split_cmd(cmd, path, task[t].name, task[t].args) ||
+        resolve(from, path, &d, canon))
+        return -EXEC_ERR_NOTFOUND;
+    err = load_program(t, d, canon);
     if (err)
         return -err;
+    task[t].drive = from >= 0 ? task[from].drive : 0;
+    if (from >= 0)
+        scopy(task[t].cwd, task[from].cwd, IFS_PATHLEN);
+    else
+        task[t].cwd[0] = 0;
     task[t].session = session;
     task[t].parent  = parent;
     task[t].wake    = 0;
@@ -505,10 +626,11 @@ static int user_ok(unsigned sel, unsigned off, unsigned len, int write)
 /* ---- FAPI-Verteiler ---------------------------------------------------- */
 unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 {
-    int row, col, s = task[current].session, t, k, i;
+    int row, col, s = task[current].session, t, k;
     unsigned a3 = fapi_dx;
-    char buf[FAPI_ARGLEN];
-    struct ifs_dirent de;
+    static char buf[FAPI_PATHLEN], canon[IFS_PATHLEN];
+    static struct ifs_dirent de;
+    int d;
 
     usel |= 3;                                  /* Aufrufer ist Ring 3  */
     switch (fn) {
@@ -567,21 +689,13 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         return seg_free(current, a1);
 
     case FAPI_EXECPGM:
-        if (!sel_readable(usel))
-            return FAPI_ERROR;
-        for (i = 0; i < FAPI_ARGLEN - 1; i++) {
-            if (!user_ok(usel, a1 + i, 1, 0))
-                break;
-            buf[i] = *(char __far *)MK_FP(usel, a1 + i);
-            if (!buf[i])
-                break;
-        }
-        buf[i] = 0;
+        if (user_str(usel, a1, buf, sizeof(buf)))
+            return EXEC_ERR_NOTFOUND;
         if (a2 == EXEC_ASYNC) {
             int ns = vio_open("");
             if (ns < 0)
                 return EXEC_ERR_NOMEM;
-            t = task_create(buf, ns, -1);
+            t = task_create(buf, ns, -1, current);
             if (t < 0) {
                 vio_close(ns);
                 return -t;
@@ -590,7 +704,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             vio_focus(ns);
             return 0;
         }
-        t = task_create(buf, s, current);
+        t = task_create(buf, s, current, current);
         if (t < 0)
             return -t;
         task[current].state = T_WAIT;           /* bis das Kind endet   */
@@ -604,20 +718,13 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         return 0;
 
     case FAPI_OPEN:
-        for (i = 0; i < 12; i++) {
-            if (!user_ok(usel, a1 + i, 1, 0))
-                return FAPI_ERROR;
-            buf[i] = *(char __far *)MK_FP(usel, a1 + i);
-            if (buf[i] >= 'a' && buf[i] <= 'z')
-                buf[i] -= 32;
-            if (!buf[i])
-                break;
-        }
-        buf[i] = 0;
+        if (user_str(usel, a1, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, canon))
+            return FAPI_ERROR;
         for (k = 0; k < NFILE; k++)
             if (files[k].owner < 0)
                 break;
-        if (k == NFILE || ifs_open(buf, &files[k].f))
+        if (k == NFILE || ifs_open(d, canon, &files[k].f))
             return FAPI_ERROR;
         files[k].owner = (signed char)current;
         files[k].pos = 0;
@@ -645,10 +752,44 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     case FAPI_FINDENTRY:
         if (!user_ok(usel, a1, sizeof(de), 1))
             return FAPI_ERROR;
-        if (ifs_readdir(a2, &de))
+        if (a3 == 0)
+            buf[0] = 0;                         /* aktuelles Verzeichnis */
+        else if (user_str(usel, a3, buf, sizeof(buf)))
+            return FAPI_ERROR;
+        if (resolve(current, buf, &d, canon) || ifs_readdir(d, canon, a2, &de))
             return FAPI_ERROR;
         far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(de));
         return 0;
+
+    case FAPI_CHDIR:
+        if (user_str(usel, a1, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, canon) || !ifs_isdir(d, canon))
+            return FAPI_ERROR;
+        if (d != task[current].drive)
+            return FAPI_ERROR;                  /* nur aktuelles Laufwerk */
+        scopy(task[current].cwd, canon[1] ? canon : "", IFS_PATHLEN);
+        return 0;
+
+    case FAPI_QCURDIR:                          /* "C:\DOS"            */
+        if (!user_ok(usel, a1, IFS_PATHLEN + 2, 1))
+            return FAPI_ERROR;
+        buf[0] = (char)('A' + task[current].drive);
+        buf[1] = ':';
+        scopy(buf + 2, task[current].cwd[0] ? task[current].cwd : "\\", IFS_PATHLEN);
+        far_copy(usel, a1, KDATA, (unsigned)buf, IFS_PATHLEN + 2);
+        return 0;
+
+    case FAPI_SELECTDISK:
+        if (a1 >= NDRIVE || !vol[a1].used)
+            return FAPI_ERROR;
+        if (a1 != task[current].drive) {
+            task[current].drive = (unsigned char)a1;
+            task[current].cwd[0] = 0;
+        }
+        return 0;
+
+    case FAPI_QCURDISK:
+        return task[current].drive;
 
     case FAPI_KBDSETLAYOUT:
         if (a1 == 0)
@@ -735,10 +876,220 @@ static void pic_pit_init(void)
     outb(0x40, 11932 >> 8);
 }
 
+/* ---- Blockgeraete ----------------------------------------------------- */
+struct blkdev blk[NBLK];
+int nblk;
+
+extern void drv_call(unsigned code_sel, unsigned data_sel, unsigned entry,
+                     unsigned req_off);
+extern void devhlp_entry(void);
+extern unsigned short devhlp_dx;
+
+static struct {
+    unsigned char used;
+    unsigned      entry;
+    unsigned      unit, cnt;
+    char          name[13];
+} drv[NDRV];
+static struct drv_req req;
+static int boot_session;
+
+static void drv_request(int d)
+{
+    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
+}
+
+/* einen Sektor nach DMABUF; der zuletzt gelesene bleibt zwischengespeichert */
+int blk_read(int dev, unsigned long lba)
+{
+    static int lc_dev = -1;
+    static unsigned long lc_lba;
+    struct blkdev *b = &blk[dev];
+
+    if (dev == lc_dev && lba == lc_lba)
+        return 0;
+    lc_dev = -1;
+    if (dev < 0 || dev >= nblk || lba >= b->blocks)
+        return -1;
+    if (b->drv < 0) {
+        if (fd_read((unsigned)lba))
+            return -1;
+    } else {
+        req.cmd = DRV_READ;
+        req.unit = b->unit;
+        req.status = DRV_ERR_IO;
+        req.lba = lba;
+        req.buf_phys = DMABUF_LIN;
+        req.buf_sel = DMABUF;
+        req.buf_off = 0;
+        drv_request(b->drv);
+        if (req.status != DRV_OK)
+            return -1;
+    }
+    lc_dev = dev;
+    lc_lba = lba;
+    return 0;
+}
+
+/* DevHlp: Dienste des Kernels fuer Treiber */
+unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
+{
+    const char __far *p;
+    unsigned n;
+
+    (void)cx;
+    switch (fn) {
+    case DH_PUTS:
+        p = MK_FP(dsel, bx);
+        for (n = 0; n < 200 && p[n]; n++)
+            ;
+        vio_tty(boot_session, dsel, bx, n);
+        return 0;
+    case DH_TICKS:
+        return (unsigned)get_ticks();
+    case DH_DELAY:
+        delay_ticks(bx);
+        return 0;
+    }
+    return 0xFFFF;
+}
+
+/* Treiber laden und initialisieren; -> Anzahl Einheiten oder -1 */
+static int load_driver(const char *line)
+{
+    static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
+    struct fx_header h;
+    unsigned long base, seg;
+    unsigned u, n, entry;
+    int d, k, drive, err;
+    const char *args = line;
+
+    for (d = 0; d < NDRV; d++)
+        if (!drv[d].used)
+            break;
+    if (d == NDRV)
+        return -1;
+    for (k = 0; *args && *args != ' ' && k < IFS_PATHLEN - 1; k++)
+        path[k] = *args++;
+    path[k] = 0;
+    while (*args == ' ')
+        args++;
+    if (resolve(-1, path, &drive, canon))
+        return -1;
+    err = load_image(drive, canon, &h, &u, &n, &seg);
+    if (err) {
+        vio_kputs(boot_session, "  ");
+        vio_kputs(boot_session, path);
+        vio_kputs(boot_session, err == EXEC_ERR_NOTFOUND ? ": nicht gefunden\n" :
+                                err == EXEC_ERR_NOMEM ? ": kein Speicher\n" :
+                                                        ": kein Treiber\n");
+        return -1;
+    }
+    /* Kopf am Anfang des Abbilds: "DRV1", Einsprung */
+    if (!(h.flags & FX_FLAG_DRIVER) || rd16(SCRATCH2, 0) != 0x5244 ||
+        rd16(SCRATCH2, 2) != 0x3156 || (entry = rd16(SCRATCH2, 4)) >= h.image_size) {
+        mem_free(u, n);
+        vio_kputs(boot_session, "  ");
+        vio_kputs(boot_session, path);
+        vio_kputs(boot_session, ": kein Treiber\n");
+        return -1;
+    }
+    base = (unsigned long)u << 8;
+    set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
+    set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
+    drv[d].used = 1;
+    drv[d].entry = entry;
+    drv[d].unit = u;
+    drv[d].cnt = n;
+
+    req.cmd = DRV_INIT;
+    req.status = DRV_ERR_NODEV;
+    req.units = 0;
+    req.base = base;
+    req.buf_phys = DMABUF_LIN;
+    req.buf_sel = DMABUF;
+    req.buf_off = 0;
+    req.devhlp_off = (unsigned)devhlp_entry;
+    req.devhlp_sel = KCODE;
+    scopy(req.args, args, sizeof(req.args));
+    drv_request(d);
+
+    if (req.status != DRV_OK || req.units == 0) {
+        /* nichts gefunden: Treiber wieder entfernen */
+        gdt[DRVC_IDX(d)].access = 0;
+        gdt[DRVC_IDX(d) + 1].access = 0;
+        mem_free(u, n);
+        drv[d].used = 0;
+        vio_kputs(boot_session, "  ");
+        vio_kputs(boot_session, path);
+        vio_kputs(boot_session, ": kein Ger\x84t gefunden\n");
+        return 0;
+    }
+    for (k = 0; k < req.units && nblk < NBLK; k++) {
+        blk[nblk].drv = (signed char)d;
+        blk[nblk].unit = (unsigned char)k;
+        blk[nblk].blocks = req.blocks[k];
+        nblk++;
+    }
+    return req.units;
+}
+
+/* Partitionstabelle lesen und FAT-Partitionen als C:, D:, ... einhaengen */
+static int next_drive = 2;
+
+static void mount_disk(int dev)
+{
+    static char msg[60];
+    unsigned char __far *b;
+    unsigned long start;
+    unsigned char type;
+    int i, mounted = 0;
+
+    if (blk_read(dev, 0))
+        return;
+    b = MK_FP(DMABUF, 0);
+    if (b[510] != 0x55 || b[511] != 0xAA)
+        return;
+    for (i = 0; i < 4 && next_drive < NDRIVE; i++) {
+        if (blk_read(dev, 0))
+            return;
+        b = MK_FP(DMABUF, 0);
+        type = b[0x1BE + 16 * i + 4];
+        start = rd16(DMABUF, 0x1BE + 16 * i + 8) |
+                ((unsigned long)rd16(DMABUF, 0x1BE + 16 * i + 10) << 16);
+        if (type != 0x01 && type != 0x04 && type != 0x06 && type != 0x0E)
+            continue;
+        if (ifs_mount(next_drive, dev, start, &fat_driver))
+            continue;
+        msg[0] = (char)('A' + next_drive);
+        scopy(msg + 1, ": Partition ", sizeof(msg) - 1);
+        msg[13] = (char)('1' + i);
+        scopy(msg + 14, vol[next_drive].fat16 ? ", FAT16, " : ", FAT12, ", 20);
+        udec((unsigned)(vol[next_drive].sectors >> 11), msg + 23);
+        vio_kputs(boot_session, "\xFE Laufwerk ");
+        vio_kputs(boot_session, msg);
+        vio_kputs(boot_session, " MB\n");
+        next_drive++;
+        mounted++;
+    }
+    (void)mounted;
+}
+
 /* ---- Start ------------------------------------------------------------- */
 static char startup[512];
 
-/* naechste Zeile aus STARTUP.CMD: REM und Leerzeilen zaehlen nicht */
+/* Datei vom Laufwerk A: nach startup[] lesen; -> Laenge oder -1 */
+static int read_cfg(const char *name)
+{
+    struct ifs_file f;
+    if (ifs_open(0, name, &f) || f.size > sizeof(startup))
+        return -1;
+    if (ifs_read(&f, 0, KDATA, (unsigned)startup, (unsigned)f.size) != (int)f.size)
+        return -1;
+    return (int)f.size;
+}
+
+/* naechste Zeile aus STARTUP.CMD/CONFIG.SYS: REM und Leerzeilen zaehlen nicht */
 static int next_line(unsigned *p, unsigned len, char *out)
 {
     unsigned k;
@@ -774,12 +1125,51 @@ static const char *exec_err(int e)
     return "keine Task frei";
 }
 
+/* CONFIG.SYS: DEVICE=Treiber [Argumente] */
+static void config_sys(void)
+{
+    static char line[FAPI_ARGLEN];
+    unsigned p = 0;
+    int size, dev0, i;
+    char *v;
+
+    size = read_cfg("\\CONFIG.SYS");
+    if (size < 0)
+        return;
+    while (next_line(&p, (unsigned)size, line)) {
+        for (v = line; *v && *v != '='; v++)
+            ;
+        if (!*v)
+            continue;
+        *v++ = 0;
+        while (*v == ' ')
+            v++;
+        for (i = 0; line[i]; i++)
+            line[i] = up(line[i]);
+        while (i > 0 && line[i - 1] == ' ')
+            line[--i] = 0;
+        if (line[0] == 'D' && line[1] == 'E' && line[2] == 'V' && line[3] == 'I' &&
+            line[4] == 'C' && line[5] == 'E' && line[6] == 0) {
+            vio_kputs(boot_session, "\xFE DEVICE=");
+            vio_kputs(boot_session, v);
+            vio_kputs(boot_session, "\n");
+            dev0 = nblk;
+            if (load_driver(v) > 0)
+                for (i = dev0; i < nblk; i++)
+                    mount_disk(i);
+        } else {
+            vio_kputs(boot_session, "\xFE CONFIG.SYS: unbekannt: ");
+            vio_kputs(boot_session, line);
+            vio_kputs(boot_session, "\n");
+        }
+    }
+}
+
 void kmain(void)
 {
-    struct ifs_file f;
     char line[FAPI_ARGLEN], num[6];
-    unsigned p, size;
-    int s0, s, t, i, n = 0;
+    unsigned p;
+    int s0, s, t, i, n = 0, size;
 
     for (i = 0; i < NFILE; i++)
         files[i].owner = -1;
@@ -797,11 +1187,12 @@ void kmain(void)
     s0 = vio_open("SYSTEM");
     if (s0 < 0)
         panic("Kein Speicher fuer die erste Sitzung.");
+    boot_session = s0;
     vio_focus(s0);
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "DOS 5.0 (alternative Zeitlinie) - 80286 Protected Mode\n");
+    vio_kputs(s0, "AT-DOS 5.0 - 80286 Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
     udec(mem_free_kb(), num);
     vio_kputs(s0, num);
@@ -811,25 +1202,28 @@ void kmain(void)
     kbd_init();
     if (fd_init())
         panic("Diskettencontroller antwortet nicht.");
-    if (ifs_mount(&fat12_driver))
-        panic("Diskette A: hat kein lesbares FAT12-Dateisystem.");
-    vio_kputs(s0, "\xFE Diskette A: IFS-Treiber ");
-    vio_kputs(s0, ifs_name());
-    vio_kputs(s0, " eingeh\x84ngt\n");
+    blk[BLK_FLOPPY].drv = -1;
+    blk[BLK_FLOPPY].unit = 0;
+    blk[BLK_FLOPPY].blocks = 2880;
+    nblk = 1;
+    if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
+        panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
+    vio_kputs(s0, "\xFE Laufwerk A: Diskette, ");
+    vio_kputs(s0, vol[0].fat16 ? "FAT16\n" : "FAT12\n");
 
-    if (ifs_open("STARTUP.CMD", &f) || f.size > sizeof(startup))
+    config_sys();
+
+    size = read_cfg("\\STARTUP.CMD");
+    if (size < 0)
         panic("STARTUP.CMD fehlt oder ist zu gross.");
-    size = (unsigned)f.size;
-    if (ifs_read(&f, 0, KDATA, (unsigned)startup, size) != (int)size)
-        panic("STARTUP.CMD ist unlesbar.");
 
     /* erstes Programm in Sitzung 1, jedes weitere in einer eigenen */
     p = 0;
-    while (next_line(&p, size, line)) {
+    while (next_line(&p, (unsigned)size, line)) {
         s = n == 0 ? s0 : vio_open("");
         if (s < 0)
             break;
-        t = task_create(line, s, -1);
+        t = task_create(line, s, -1, -1);
         if (t < 0) {
             vio_kputs(s0, "\xFE STARTUP.CMD: ");
             vio_kputs(s0, line);

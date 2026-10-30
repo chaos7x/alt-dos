@@ -35,7 +35,7 @@ python3 tools/mkkbl.py $B
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
-for m in kernel mem floppy fat12 vio kbd; do
+for m in kernel mem floppy fat vio kbd; do
     wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
@@ -57,6 +57,15 @@ echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
 for t in command keyb a b c mem; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
+done
+
+echo "Treiber"
+nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
+for t in aha154x ide; do
+    wcc $CFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
+    wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
+          file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
+    python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
 done
 
 echo "Diskette (FAT12)"
@@ -84,5 +93,8 @@ mcopy -i $IMG $B/task_b.exe ::TASKB.EXE
 mcopy -i $IMG $B/task_c.exe ::TASKC.EXE
 mcopy -i $IMG $B/task_mem.exe ::MEM.EXE
 mcopy -i $IMG STARTUP.CMD ::STARTUP.CMD
+mcopy -i $IMG CONFIG.SYS ::CONFIG.SYS
+mcopy -i $IMG $B/drv_aha154x.sys ::AHA154X.SYS
+mcopy -i $IMG $B/drv_ide.sys ::IDE.SYS
 rm -f $B/KERNEL.SYS
 mdir -a -i $IMG :: | sed 's/^/  /'

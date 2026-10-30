@@ -20,7 +20,7 @@ segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
 
-extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_
+extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern _gdtr, _idtr
 
 ; ---------------------------------------------------------------------------
@@ -375,6 +375,60 @@ zero_seg_:
         pop     es
         ret
 
+; ---------------------------------------------------------------------------
+; Geraetetreiber
+
+; void drv_call(unsigned code_sel, unsigned data_sel, unsigned entry,
+;               unsigned req_off)
+; Strategieroutine fern aufrufen: DS = Treiberdaten, ES:BX = Anforderung
+global drv_call_
+drv_call_:
+        pusha
+        push    ds
+        push    es
+        mov     [dc_ptr], bx
+        mov     [dc_ptr+2], ax
+        mov     bx, cx
+        mov     ax, KDATA
+        mov     es, ax
+        mov     ds, dx
+        call    far [es:dc_ptr]
+        pop     es
+        pop     ds
+        popa
+        ret
+
+; DevHlp: Treiber ruft fern, DS = Treiberdaten.
+; AX = Funktion, BX/CX/DX = Argumente -> devhlp_dispatch(fn, dsel, bx, cx)
+global devhlp_entry_
+devhlp_entry_:
+        push    ds
+        push    es
+        push    si
+        push    di
+        push    bp
+        push    dx
+        push    bx
+        push    cx
+        mov     si, ds
+        push    ax
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        pop     ax
+        mov     [_devhlp_dx], dx
+        mov     dx, si
+        call    devhlp_dispatch_
+        pop     cx
+        pop     bx
+        pop     dx
+        pop     bp
+        pop     di
+        pop     si
+        pop     es
+        pop     ds
+        retf
+
 ; unsigned irq_off(void)  - Flags sichern, Interrupts aus
 global irq_off_
 irq_off_:
@@ -412,13 +466,15 @@ _isr_table:
 
 tj_ptr: dw 0
 tj_sel: dw 0
+dc_ptr: dw 0, 0
 
 segment _BSS
 
 bss_start:
 global _boot_drive, _ticks, _uptime_s
-global _fapi_dx
+global _fapi_dx, _devhlp_dx
 _fapi_dx:    resw 1
+_devhlp_dx:  resw 1
 _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2

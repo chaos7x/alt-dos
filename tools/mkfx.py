@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Baut aus einem rohen Programmabbild eine FX-Datei mit MZ-Stub.
 
-    mkfx.py STUB.BIN IMAGE.BIN IMAGE.MAP AUSGABE.EXE [STACK]
+    mkfx.py [--driver] STUB.BIN IMAGE.BIN IMAGE.MAP AUSGABE.EXE [STACK]
 
 Die BSS-Groesse wird aus der Watcom-Map gelesen (Ende von DGROUP minus
 Dateigroesse des Abbilds). Format siehe include/fx.h.
@@ -26,8 +26,10 @@ def group_end(mapfile):
 
 
 def main():
-    stub_f, image_f, map_f, out_f = sys.argv[1:5]
-    stack = int(sys.argv[5]) if len(sys.argv) > 5 else 2048
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    driver = '--driver' in sys.argv
+    stub_f, image_f, map_f, out_f = args[:4]
+    stack = int(args[4]) if len(args) > 4 else (0 if driver else 2048)
 
     stub = open(stub_f, 'rb').read()
     image = open(image_f, 'rb').read()
@@ -41,7 +43,7 @@ def main():
                  % (image_f, total))
 
     fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
-                     bss, stack, 0, 0)
+                     bss, stack, 0, 1 if driver else 0)
 
     body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx + image
     size = MZ_HDR + len(body)

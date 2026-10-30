@@ -25,7 +25,11 @@
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
 #define SCR_SEL(i)  (SCR_IDX(i) * 8)
-#define NGDT        (9 + 3 * NTASK)
+#define NDRV        4               /* Geraetetreiber hoechstens           */
+#define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
+#define DRVC_SEL(i) (DRVC_IDX(i) * 8)
+#define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
+#define NGDT        (9 + 3 * NTASK + 2 * NDRV)
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 512
@@ -66,6 +70,18 @@ void panic(const char *msg);
 int  fd_init(void);
 int  fd_read(unsigned lba);         /* Sektor in den DMA-Puffer, 0 = ok    */
 void fd_motor_off(void);
+
+/* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
+#define NBLK        8
+#define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
+struct blkdev {
+    signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
+    unsigned char  unit;
+    unsigned long  blocks;
+};
+extern struct blkdev blk[NBLK];
+extern int nblk;
+int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */

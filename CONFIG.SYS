@@ -1,0 +1,4 @@
+REM DOS 5.0 - Geraetetreiber
+REM Adaptec AHA-154x (SCSI) und erste IDE-Platte, beide nur lesend
+DEVICE=AHA154X.SYS
+DEVICE=IDE.SYS

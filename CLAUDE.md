@@ -7,7 +7,9 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 4
+Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
+
+## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 5
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -17,8 +19,9 @@ Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 - **FAPI ist der einzige Weg zur Hardware.** Anwendungen laufen in Ring 3 mit
   IOPL 0 und haben keine Selektoren auf Hardware-Speicher. Nur der Kernel
   spricht Hardware an. Nie eine Abkürzung an der FAPI vorbei einbauen.
-- **IFS** (Installable File System) ist Teil der FAPI-Architektur; Dateisysteme
-  sind ladbare Treiber, kein fest eingebautes FAT.
+- **IFS** (Installable File System) ist Teil der FAPI-Architektur. FAT12/16
+  steckt wie bei OS/2 fest im Kernel; weitere Dateisysteme (ISO 9660, das
+  DOS-6.0-Dateisystem) kommen als nachladbare `.IFS`-Treiber.
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
@@ -29,9 +32,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Datei, zusammenhängend ab Cluster 2, auf 32 KB aufgefüllt) nach 1000:0000
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
   `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
-  `floppy.c` (Diskettentreiber), `fat12.c` (IFS-Treiber FAT12 und
-  IFS-Verteiler), `vio.c` (Sitzungen, Konsole), `kbd.c` (Tastatur, deutsche
-  Belegung), `ifs.h`, `kern.h` (gemeinsame Definitionen)
+  `floppy.c` (Diskettentreiber), `fat.c` (FAT12/16 und IFS-Verteiler),
+  `vio.c` (Sitzungen, Konsole), `kbd.c` (Tastatur), `ifs.h`, `kern.h`
+  (gemeinsame Definitionen). Blockgeräte, Treiberlader, DevHlp, CONFIG.SYS
+  und Partitionen stehen in `kernel.c`.
+- `drivers/` – Gerätetreiber (Ring 0): `dcrt0.asm` (Kopf, Einsprung,
+  DevHlp-Aufruf), `drvlib.h`, `aha154x.c`, `ide.c`; gebaut mit `-zu`, weil
+  SS (Kernelstack) ungleich DS ist – keine Adressen lokaler Variablen
+  weitergeben, Puffer `static` anlegen
+- `include/drv.h` – Schnittstelle Kernel ↔ Treiber (Anforderung, DevHlp)
+- `CONFIG.SYS` – `DEVICE=` lädt Treiber
 - `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
@@ -55,10 +65,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status. Programme schreiben in den Puffer ihrer Sitzung.
-- FAT12 bleibt fest im Kernel (Bootdateisystem); weitere Dateisysteme sollen
-  als `.IFS`-Dateien nachgeladen werden (geplant, mit FAT16/Adaptec).
-- Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); der
-  Kernel selbst kennt kein FAT. Blockgeräte nie per BIOS ansprechen.
+- Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
+  und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
+- Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der
+  Clustergröße per Schieben, keine Watcom-Hilfsroutinen.
+- Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); außer
+  `fat.c` kennt kein Kernelteil FAT-Interna. Blockgeräte nie per BIOS ansprechen.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen
   erhalten alle Register außer dem Rückgabewert (AX bzw. DX:AX).
 - Kein C-Laufzeitsystem (`-zl`): keine Bibliotheksaufrufe, keine
@@ -92,6 +104,10 @@ IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
 fehlen 128 KB zu 16 MB. Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
 SCSI-ID 6 CD-ROM.
 
+Für Plattentests in QEMU dient `IDE.SYS` mit einer FAT16-Testplatte
+(`-drive file=hdd.img,if=ide,snapshot=on`, angelegt mit `mpartition`/`mformat`).
+QEMU emuliert keinen Adaptec – `AHA154X.SYS` lässt sich nur in 86Box testen.
+
 Eingaben im QEMU-Test per Monitor `sendkey`; QEMU benennt Tasten nach
 US-Belegung, der Kernel wertet deutsch aus (`y`/`z` vertauscht).
 
@@ -105,15 +121,14 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Treiberlader: `CONFIG.SYS` mit `IFS=` und `DEVICE=`, Ring-0-Treiber als Dateien
-- Adaptec AHA-154x als Blockgerät, FAT16 als `.IFS`-Treiber für die SCSI-Platte
+- `IFS=` in `CONFIG.SYS` für nachladbare Dateisysteme (erstes Ziel: ISO 9660
+  für das CD-ROM an SCSI-ID 6)
+- Schreiben auf FAT (erst auf dem geklonten Testrechner)
+- Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
-- FAPI-Dateifunktionen auf lange Namen auslegen: `DosOpen`/`DosExecPgm`
-  nehmen bisher höchstens 12 bzw. 80 Zeichen, `struct fapi_dirent` hat
-  `name[13]` – vor der nächsten Erweiterung der Dateifunktionen umstellen
 - Lange Namen auf FAT (falls vor DOS 6.0 gewünscht): IBM/OS/2-Modell, also
   `.LONGNAME` als erweitertes Attribut in `EA DATA. SF`, nicht VFAT. Grund:
   MS-DOS-Werkzeuge (CHKDSK, ScanDisk) sehen nur eine normale Datei, während

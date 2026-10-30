@@ -1,8 +1,10 @@
-# alt-dos – DOS 5.0, Meilenstein 4
+# alt-dos – AT-DOS 5.0, Meilenstein 5
 
-Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, DOS 5.0 läuft im
+Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
-ist nur über die Family API (FAPI) erreichbar.
+ist nur über die Family API (FAPI) erreichbar. „AT“ steht doppelt: für die
+Rechnerklasse, die es voraussetzt, und für die Alternative – wie bei DR-DOS
+und PC-DOS.
 
 ## Was läuft
 
@@ -10,11 +12,18 @@ ist nur über die Family API (FAPI) erreichbar.
   System), die wie einst `IO.SYS` als erste Datei zusammenhängend liegt
 - Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
   im Protected Mode gibt es kein BIOS mehr
-- IFS-Schicht mit FAT12 als erstem Dateisystemtreiber
+- IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
+  Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
+- Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
+  die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
+  AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (erste
+  IDE-Platte, PIO) – beide vorerst nur lesend
+- Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
 - Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
   Start läuft
-- `COMMAND.EXE`: Befehlsinterpreter mit `DIR`, `TYPE`, `CLS`, `VER`, `ECHO`,
-  `START`, `HILFE`, `EXIT`; andere Eingaben starten das gleichnamige Programm
+- `COMMAND.EXE`: Befehlsinterpreter mit `DIR`, `CD`, Laufwerkswechsel,
+  `TYPE`, `CLS`, `VER`, `ECHO`, `START`, `HILFE`, `EXIT`; andere Eingaben
+  starten das gleichnamige Programm, auch mit Pfad
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab
 - Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
@@ -44,7 +53,10 @@ Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
-## FAPI (Stand Meilenstein 4)
+## FAPI (Stand Meilenstein 5)
+
+Dateinamen und Pfade nehmen bis 260 Zeichen an (wie bei OS/2), auch wenn FAT
+selbst nur 8.3 kennt.
 
 | AX | Funktion        | Argumente                       |
 |----|-----------------|---------------------------------|
@@ -62,12 +74,26 @@ Dateien aus dem Watcom-Abbild.
 | 11 | VioCls          | –                               |
 | 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung |
 | 13 | DosGetArgs      | BX = Puffer (81 Bytes)          |
-| 14 | DosOpen         | BX = Dateiname → Handle         |
+| 14 | DosOpen         | BX = Pfad → Handle              |
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
-| 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer |
+| 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
 | 18 | KbdSetLayout    | BX = `.KBL`-Daten (278 Bytes), 0 = eingebaute |
 | 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung |
+| 20 | DosChDir        | BX = Pfad                       |
+| 21 | DosQCurDir      | BX = Puffer (130 Bytes) → z. B. `C:\DOS` |
+| 22 | DosSelectDisk   | BX = Laufwerk (0 = A:)          |
+| 23 | DosQCurDisk     | → AX = Laufwerk                 |
+
+## Gerätetreiber
+
+Treiber sind FX-Dateien mit gesetztem Treiber-Flag und laufen in Ring 0 mit
+eigenem Code- und Datensegment. Der Kernel ruft ihre Strategieroutine mit
+einer Anforderung (`struct drv_req`) auf, Treiber erreichen den Kernel über
+DevHlp – angelehnt an die Treiber von OS/2 1.x. Schnittstelle:
+`include/drv.h`. Die Hardware-Erkennung liest immer erst: Der Adaptec-Treiber
+erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
+übergeht so etwa den MPU-401 einer Sound Blaster auf Port 330h.
 
 ## Speicher
 
@@ -85,6 +111,9 @@ Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
     ./build.sh      # -> build/dos5.img (1,44 MB, FAT12)
+
+`CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
+findet, wird wieder entladen.
 
 Das Image ist eine normale FAT12-Diskette und lässt sich unter MS-DOS, mit
 mtools oder unter jedem anderen System lesen. `KERNEL.SYS` ist versteckt

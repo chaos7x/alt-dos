@@ -32,15 +32,22 @@
 #define FAPI_OPEN           0x0E    /* BX = Dateiname -> Handle         */
 #define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
-#define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer */
+#define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
+                                       DX = Verzeichnis (0 = aktuelles)  */
 #define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 Bytes), 0 = eingebaut */
 #define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
 #define KBL_SIZE_BYTES      278
+#define FAPI_CHDIR          0x14    /* BX = Pfad                        */
+#define FAPI_QCURDIR        0x15    /* BX = Puffer (130 Bytes) -> "C:\DOS" */
+#define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
+#define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
 
 #define FAPI_ERROR          0xFFFF
 
 #define FAPI_VERSION        0x0500
 #define FAPI_ARGLEN         81
+#define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
+#define FAPI_CURDIRLEN      130
 
 /* DosExecPgm */
 #define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
@@ -64,8 +71,8 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
 };
 
 struct fapi_dirent {                /* DosFindEntry                     */
-    char           name[13];        /* "NAME.EXT"                       */
-    unsigned char  attr;            /* FAT-Attribute                    */
+    char           name[256];       /* Dateiname, auch fuer lange Namen */
+    unsigned char  attr;            /* FAT-Attribute (10h = Verzeichnis) */
     unsigned long  size;
     unsigned short date, time;      /* FAT-Format                       */
 };
