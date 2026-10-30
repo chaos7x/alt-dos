@@ -7,7 +7,7 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-## Aktueller Stand: DOS 5.0 (80286, ~1988/89)
+## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 2
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -26,7 +26,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
 ## Aufbau
 
 - `boot/` – Bootsektor, lädt das Image nach 1000:0000
-- `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`
+- `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
+  `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
 - `include/fapi_abi.h` – FAPI-Funktionsnummern, gemeinsam für Kernel und Apps
 
@@ -35,6 +36,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Kernel und jede App sind je **ein** 64-KB-Segment: `_TEXT` liegt mit in
   DGROUP (siehe Segmentkopf in `start.asm`/`crt0.asm`), gelinkt als
   `wlink format raw bin offset=0`.
+- Jeder Task hat eine eigene LDT: Eintrag 0 Code, 1 Daten/Stack, ab 2 per
+  `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
+  Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
+  Speicher zu.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen
   erhalten alle Register außer dem Rückgabewert (AX bzw. DX:AX).
 - Kein C-Laufzeitsystem (`-zl`): keine Bibliotheksaufrufe, keine
@@ -54,7 +59,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 Referenzmaschine in 86Box: 286er mit SCAT-Chipsatz (C&T 82C235), 16 MB RAM,
 Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB, SCSI Adaptec AHA-154xC
-(Port 334h, IRQ 11, DMA 6, BIOS C800h). Das SCAT-BIOS meldet 640 KB +
+(Port 334h, IRQ 11, DMA 6, BIOS C800h), Sound Blaster 16 (220h, MPU-401 330h,
+IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
 15232 KB, es fehlen 128 KB zu 16 MB.
 
 Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der

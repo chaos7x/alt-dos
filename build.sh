@@ -32,8 +32,9 @@ nasm -f bin boot/boot.asm -o $B/boot.bin
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 wcc $CFLAGS -fo=$B/kernel.o kernel/kernel.c
+wcc $CFLAGS -fo=$B/mem.o kernel/mem.c
 wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
-      file $B/start.o file $B/kernel.o 2>&1 | grep -v W1014 || true
+      file $B/start.o file $B/kernel.o file $B/mem.o 2>&1 | grep -v W1014 || true
 check_size $B/kernel.bin $B/kernel.map 32768 kernel
 
 echo "Anwendungen"

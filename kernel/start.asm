@@ -100,10 +100,24 @@ fapi_entry_:
         call    fapi_dispatch_          ; (fn, usel, a1, a2) -> AX
         mov     bp, sp
         mov     [bp+14], ax             ; Rueckgabewert in gesichertes AX
+        ; ES/DS des Aufrufers koennen auf ein gerade freigegebenes Segment
+        ; zeigen - dann beim Zurueckladen nicht abstuerzen, sondern nullen
+        mov     ax, [bp+16]
+        call    sanitize_sel
+        mov     [bp+16], ax
+        mov     ax, [bp+18]
+        call    sanitize_sel
+        mov     [bp+18], ax
         popa
         pop     es
         pop     ds
         retf                            ; zurueck nach Ring 3
+
+sanitize_sel:
+        verr    ax
+        jz      .ok
+        xor     ax, ax
+.ok:    ret
 
 ; ---------------------------------------------------------------------------
 ; Ausnahmen 0-16 (286) und Hardware-Interrupts
@@ -246,6 +260,23 @@ idle_wait_:
         hlt
         ret
 
+; void zero_seg(unsigned sel, unsigned words)
+global zero_seg_
+zero_seg_:
+        push    es
+        push    di
+        push    cx
+        mov     es, ax
+        mov     cx, dx
+        xor     di, di
+        xor     ax, ax
+        cld
+        rep     stosw
+        pop     cx
+        pop     di
+        pop     es
+        ret
+
 global halt_forever_
 halt_forever_:
         cli
@@ -283,5 +314,3 @@ kstack:      resb 1024
 kstack_top:
 
 segment _BSSEND
-global _kernel_end
-_kernel_end:

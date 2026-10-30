@@ -1,13 +1,14 @@
 /*
- * DOS 5.0 - Kernel, Meilenstein 1
+ * DOS 5.0 - Kernel, Meilenstein 2
  *
  * 80286 Protected Mode, segmentiert, kooperatives Multitasking.
- * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigenem Code- und
- * Datensegment und ohne IOPL. Hardware erreichen sie ausschliesslich ueber
+ * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigener LDT und
+ * ohne IOPL. Hardware und Speicher erreichen sie ausschliesslich ueber
  * die Family API (FAPI) per Call Gate.
  */
 #include <i86.h>
 #include "../include/fapi_abi.h"
+#include "mem.h"
 
 #pragma pack(1)
 
@@ -17,13 +18,20 @@
 #define VIDEO       0x18
 #define GATE_IDX    4               /* -> Selektor 0x20, RPL 3 = 0x23      */
 #define TSS_K       0x28
+#define SCRATCH     0x30            /* Kernel-Fenster auf beliebigen Speicher */
 #define NTASK       4
-#define TSS_IDX(i)  (6 + (i))
-#define ACODE_IDX(i) (6 + NTASK + 2 * (i))
+#define TSS_IDX(i)  (7 + (i))
+#define LDT_IDX(i)  (7 + NTASK + (i))
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
-#define ACODE(i)    (ACODE_IDX(i) * 8)
-#define ADATA(i)    (ACODE(i) + 8)
-#define NGDT        (6 + 3 * NTASK)
+#define LDT_SEL(i)  (LDT_IDX(i) * 8)
+#define NGDT        (7 + 2 * NTASK)
+
+/* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
+#define NLDT        16
+#define LDT_FIRST_FREE 2
+#define USEL(idx)   (((idx) << 3) | 4 | 3)  /* TI=1 (LDT), RPL 3          */
+#define UCODE       USEL(0)
+#define UDATA       USEL(1)
 
 #define KBASE       0x10000UL
 #define APPBASE(i)  (0x18000UL + (unsigned long)(i) * 0x2000UL)
@@ -37,6 +45,7 @@
 #define ACC_UCODE   0xFA    /* P, DPL3, Code, lesbar              */
 #define ACC_UDATA   0xF2    /* P, DPL3, Daten, schreibbar         */
 #define ACC_TSS     0x81    /* P, DPL0, 286-TSS, frei             */
+#define ACC_LDT     0x82    /* P, DPL0, LDT                       */
 #define ACC_CGATE3  0xE4    /* P, DPL3, 286-Call-Gate             */
 #define ACC_IGATE   0x86    /* P, DPL0, 286-Interrupt-Gate        */
 
@@ -59,12 +68,12 @@ extern void outb(unsigned port, unsigned val);
 extern unsigned long get_ticks(void);
 extern void idle_wait(void);
 extern void halt_forever(void);
+extern void zero_seg(unsigned sel, unsigned words);
 
 extern unsigned short isr_table[48];
 extern unsigned char  boot_drive;
 extern volatile unsigned short uptime_s;
 extern unsigned short mem_conv_kb, mem_ext_kb;   /* vom BIOS, im Real Mode */
-extern unsigned char  kernel_end[];
 
 /* ---- Kerneldaten ------------------------------------------------------- */
 struct desc     gdt[NGDT];
@@ -73,6 +82,8 @@ unsigned short  gdtr[3], idtr[3];
 
 static struct tss286 tss_k;
 static struct tss286 tss[NTASK];
+static struct desc   ldt[NTASK][NLDT];
+static unsigned      alloc_units;                 /* per DosAllocSeg vergeben */
 static unsigned short kstack[NTASK][256];      /* Ring-0-Stack je Task  */
 
 static unsigned char  alive[NTASK];
@@ -86,14 +97,17 @@ static const unsigned char  tattr[NTASK] = { 0x0E, 0x0A, 0x0B, 0x0D };
 static unsigned short __far *vram;
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
-static void set_desc(int i, unsigned long base, unsigned short limit, unsigned char acc)
+static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
+                     unsigned char acc)
 {
-    gdt[i].limit   = limit;
-    gdt[i].base_lo = (unsigned short)base;
-    gdt[i].base_hi = (unsigned char)(base >> 16);
-    gdt[i].access  = acc;
-    gdt[i].rsv     = 0;
+    d->limit   = limit;
+    d->base_lo = (unsigned short)base;
+    d->base_hi = (unsigned char)(base >> 16);
+    d->access  = acc;
+    d->rsv     = 0;
 }
+
+#define set_desc(i, b, l, a)  put_desc(&gdt[i], (b), (l), (a))
 
 void gdt_build(void)
 {
@@ -113,10 +127,12 @@ void gdt_build(void)
     g->rsv    = 0;
 
     set_desc(5, LIN(&tss_k), sizeof(struct tss286) - 1, ACC_TSS);
+    set_desc(6, 0, 0, ACC_KDATA);
     for (i = 0; i < NTASK; i++) {
-        set_desc(TSS_IDX(i),       LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
-        set_desc(ACODE_IDX(i),     APPBASE(i),   APPSIZE - 1, ACC_UCODE);
-        set_desc(ACODE_IDX(i) + 1, APPBASE(i),   APPSIZE - 1, ACC_UDATA);
+        set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
+        set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
+        put_desc(&ldt[i][0], APPBASE(i), APPSIZE - 1, ACC_UCODE);
+        put_desc(&ldt[i][1], APPBASE(i), APPSIZE - 1, ACC_UDATA);
     }
 
     for (i = 0; i < 48; i++) {
@@ -217,6 +233,57 @@ static void status_bar(void)
     kputs(24, 38, switches, 0x70);
 }
 
+/* ---- Segmente fuer Anwendungen ----------------------------------------- */
+static unsigned seg_alloc(int task, unsigned size)      /* size 0 = 64 KB */
+{
+    unsigned idx, units, u;
+    unsigned long base;
+
+    units = size ? (size >> 8) + ((size & 0xFF) != 0) : 256;
+    for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
+        if (ldt[task][idx].access == 0)
+            break;
+    if (idx == NLDT)
+        return FAPI_ERROR;                      /* LDT voll             */
+    u = mem_alloc(units);
+    if (u == 0)
+        return FAPI_ERROR;                      /* kein Speicher        */
+
+    base = (unsigned long)u << 8;
+    set_desc(SCRATCH >> 3, base, units * MEM_UNIT - 1, ACC_KDATA);
+    zero_seg(SCRATCH, units * (MEM_UNIT / 2));  /* nie fremde Altdaten  */
+
+    put_desc(&ldt[task][idx], base, size ? size - 1 : 0xFFFF, ACC_UDATA);
+    alloc_units += units;
+    return USEL(idx);
+}
+
+static unsigned seg_free(int task, unsigned sel)
+{
+    unsigned idx = sel >> 3, units, start;
+    struct desc *d;
+
+    if (!(sel & 4) || idx < LDT_FIRST_FREE || idx >= NLDT)
+        return FAPI_ERROR;
+    d = &ldt[task][idx];
+    if (d->access == 0)
+        return FAPI_ERROR;
+    start = (d->base_lo >> 8) | ((unsigned)d->base_hi << 8);
+    units = (d->limit >> 8) + 1;
+    mem_free(start, units);
+    alloc_units -= units;
+    d->access = 0;
+    return 0;
+}
+
+static void task_cleanup(int task)                  /* bei Ende/Abbruch */
+{
+    unsigned idx;
+    for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
+        if (ldt[task][idx].access != 0)
+            seg_free(task, USEL(idx));
+}
+
 /* ---- Scheduler (kooperativ) -------------------------------------------- */
 static void schedule_next(void);
 
@@ -285,15 +352,22 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     case FAPI_MEMINFO: {
         unsigned short __far *p;
         usel |= 3;
-        if (!sel_writable(usel) || a1 > sel_limit(usel) - 7)
+        if (!sel_writable(usel) || a1 > sel_limit(usel) - 9)
             return FAPI_ERROR;
         p = MK_FP(usel, a1);
         p[0] = mem_conv_kb + mem_ext_kb;
-        p[1] = ((unsigned)kernel_end + 1023) / 1024;
-        p[2] = NTASK * (APPSIZE / 1024);
-        p[3] = 0;
+        p[1] = mem_free_kb();
+        p[2] = 32;                              /* Kernel-Fenster       */
+        p[3] = NTASK * (APPSIZE / 1024);
+        p[4] = alloc_units / 4;
         return 0;
     }
+
+    case FAPI_ALLOCSEG:
+        return seg_alloc(current, a1);
+
+    case FAPI_FREESEG:
+        return seg_free(current, a1);
 
     case FAPI_YIELD:
         schedule_next();
@@ -306,6 +380,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 
     case FAPI_EXIT:
         alive[current] = 0;
+        task_cleanup(current);
         task_header(current, "beendet (DosExit)", 0x07);
         schedule_next();
         return 0;                               /* nie erreicht         */
@@ -340,6 +415,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
     if ((cs & 3) == 3 && current >= 0) {
         /* Fehler in einer Anwendung: nur diesen Task beenden */
         alive[current] = 0;
+        task_cleanup(current);
         task_header(current, "abgebrochen: ", 0x0C);
         kputs(WIN_ROW(current), 23, exc_name(vec), 0x0C);
         kputs(WIN_ROW(current) + 3, 2, msg, 0x0C);
@@ -381,13 +457,20 @@ void kmain(void)
         fill_row(r, 0x07);
 
     fill_row(0, 0x1F);
-    kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 1", 0x1F);
-
-    kputs(2, 2, "\xFE 80286 Protected Mode aktiv (MSW.PE), A20 frei", 0x07);
-    kputs(3, 2, "\xFE GDT: 18 Deskriptoren, IDT: 48 Vektoren, FAPI-Call-Gate 0023h", 0x07);
+    kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 2", 0x1F);
 
     pic_pit_init();
-    kputs(4, 2, "\xFE PIC umgelegt (20h/28h), Systemtakt 100 Hz", 0x07);
+    kputs(2, 2, "\xFE 80286 Protected Mode, A20 frei, PIC 20h/28h, Systemtakt 100 Hz", 0x07);
+    kputs(3, 2, "\xFE GDT 15, LDT je Task 16, IDT 48 Eintr\x84ge, FAPI-Call-Gate 0023h", 0x07);
+
+    mem_init(mem_conv_kb, mem_ext_kb);
+    {
+        static char m[] = "\xFE Speicherverwaltung: ????? KB frei in 256-Byte-Einheiten";
+        char b[6];
+        dec(mem_free_kb(), b, 5);
+        m[22] = b[0]; m[23] = b[1]; m[24] = b[2]; m[25] = b[3]; m[26] = b[4];
+        kputs(4, 2, m, 0x07);
+    }
 
     for (i = 0; i < NTASK; i++) {
         t = &tss[i];
@@ -395,18 +478,19 @@ void kmain(void)
             *w = 0;
         t->ss0   = KDATA;
         t->sp0   = (unsigned short)&kstack[i][256];
-        t->cs    = ACODE(i) | 3;
+        t->cs    = UCODE;
         t->ip    = 0;
-        t->ss    = ADATA(i) | 3;
+        t->ss    = UDATA;
         t->sp    = APPSIZE;
-        t->ds    = ADATA(i) | 3;
-        t->es    = ADATA(i) | 3;
+        t->ds    = UDATA;
+        t->es    = UDATA;
+        t->ldt   = LDT_SEL(i);
         t->flags = 0x0202;          /* IF=1, IOPL=0: kein I/O in Ring 3  */
         alive[i] = 1;
         wake[i]  = 0;
         task_header(i, "bereit", 0x07);
     }
-    kputs(5, 2, "\xFE 4 Tasks angelegt (je TSS, Code-/Datensegment, Ring 3)", 0x07);
+    kputs(5, 2, "\xFE 4 Tasks angelegt (je TSS und LDT, Ring 3)", 0x07);
 
     fill_row(24, 0x70);
     kputs(24, 1, "Uptime:       s", 0x70);

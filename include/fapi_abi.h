@@ -21,6 +21,8 @@
 #define FAPI_EXIT           0x03    /* Task beenden                     */
 #define FAPI_SLEEP          0x04    /* BX = Millisekunden               */
 #define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
+#define FAPI_ALLOCSEG       0x06    /* BX = Groesse (0 = 64 KB) -> Selektor */
+#define FAPI_FREESEG        0x07    /* BX = Selektor                    */
 
 #define FAPI_ERROR          0xFFFF
 
@@ -32,10 +34,11 @@
  * nicht nach oben gereicht; das Loch 640 KB - 1 MB verwaltet der Kernel.
  */
 struct fapi_meminfo {               /* alle Angaben in KB               */
-    unsigned short total_kb;        /* nutzbarer Arbeitsspeicher        */
-    unsigned short kernel_kb;       /* vom Kernel belegt                */
-    unsigned short apps_kb;         /* fuer Anwendungen reserviert      */
-    unsigned short rsv;             /* reserviert, 0                    */
+    unsigned short total_kb;        /* Arbeitsspeicher insgesamt        */
+    unsigned short free_kb;         /* frei                             */
+    unsigned short kernel_kb;       /* vom Kernel reserviert            */
+    unsigned short apps_kb;         /* fuer Programmabbilder reserviert */
+    unsigned short alloc_kb;        /* per DosAllocSeg vergeben         */
 };
 
 #endif
