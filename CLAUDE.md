@@ -49,6 +49,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
     ./build.sh          # NASM + Open Watcom -> build/dos5.img
 
+Referenzmaschine in 86Box: 286er mit SCAT-Chipsatz (C&T 82C235), 16 MB RAM,
+Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB. Das SCAT-BIOS meldet 640 KB +
+15232 KB, es fehlen 128 KB zu 16 MB.
+
 Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der
 echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286,
 deshalb 286-Kompatibilität zusätzlich am Code prüfen.
