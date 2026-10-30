@@ -629,11 +629,19 @@ void kmain(void)
     pic_pit_init();
     kputs(2, 2, "\xFE 286 Protected Mode, GDT 17, LDT je Task, FAPI-Gate 0023h, Takt 100 Hz", 0x07);
 
+    /* 286-Deskriptoren haben 24 Bit Basis: mehr als 16 MB gibt es fuer
+       DOS 5.0 nicht, auch wenn ein 486 mit 128 MB darunter steckt */
+    if (mem_conv_kb > 640)
+        mem_conv_kb = 640;
+    if (mem_ext_kb > 15360)
+        mem_ext_kb = 15360;
+
     if (a20_ok) {
         mem_init(mem_conv_kb, mem_ext_kb);
         log_num(3, "\xFE A20 frei, Speicherverwaltung:", mem_free_kb(), " KB frei");
     } else {
         /* ohne A20 laeuft jeder Zugriff ueber 1 MB unten herum */
+        mem_ext_kb = 0;
         mem_init(mem_conv_kb, 0);
         log_num(3, "\xFE A20 GESPERRT - nur unter 1 MB:", mem_free_kb(), " KB frei");
     }
