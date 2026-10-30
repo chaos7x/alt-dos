@@ -116,6 +116,10 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   `name[13]` – vor der nächsten Erweiterung der Dateifunktionen umstellen
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
+- Testplan DOS 6.0: erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
+  und 386DX in 86Box, danach Umstieg auf 486DX. Build mit `cpu 386` / `-3`,
+  damit keine 486-Befehle (`BSWAP`, `XADD`, `CMPXCHG`, `INVD`, `WBINVD`,
+  `INVLPG`) hineinrutschen.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
