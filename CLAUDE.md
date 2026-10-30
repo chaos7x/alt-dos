@@ -42,6 +42,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Struct-Zuweisungen.
 - FAPI-Aufruf: `call far 0023:0000`, AX = Funktion, BX/CX = Argumente.
   Neue FAPI-Funktionen immer in `include/fapi_abi.h` und im README eintragen.
+- Hardware-Erkennung liest immer erst, bevor sie schreibt: Eine Adresse gilt
+  nur als Treffer, wenn die gelesenen Werte zur gesuchten Karte passen. Nie
+  blind auf einen Port schreiben – dort kann ein anderes Gerät sitzen.
 - Bildschirmtexte in CP437: Umlaute als Escape (`\x84` ä, `\x94` ö, `\x81` ü,
   `\xE1` ß), auf folgende Hex-Ziffern achten.
 
