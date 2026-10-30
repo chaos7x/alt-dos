@@ -66,6 +66,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Struct-Zuweisungen.
 - FAPI-Aufruf: `call far 0023:0000`, AX = Funktion, BX/CX = Argumente.
   Neue FAPI-Funktionen immer in `include/fapi_abi.h` und im README eintragen.
+- FAPI-Schnittstellen für Dateien müssen lange Namen und Pfade annehmen
+  können (bis 260 Zeichen, wie bei OS/2), auch wenn FAT nur 8.3 kennt – der
+  IFS-Treiber lehnt ab, was er nicht kann. So laufen Programme später unter
+  DOS 6.0 mit langen Namen ohne Neuübersetzung.
 - Hardware-Erkennung liest immer erst, bevor sie schreibt: Eine Adresse gilt
   nur als Treffer, wenn die gelesenen Werte zur gesuchten Karte passen. Nie
   blind auf einen Port schreiben – dort kann ein anderes Gerät sitzen.
@@ -107,6 +111,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
+- FAPI-Dateifunktionen auf lange Namen auslegen: `DosOpen`/`DosExecPgm`
+  nehmen bisher höchstens 12 bzw. 80 Zeichen, `struct fapi_dirent` hat
+  `name[13]` – vor der nächsten Erweiterung der Dateifunktionen umstellen
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
