@@ -57,11 +57,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
     ./build.sh          # NASM + Open Watcom -> build/dos5.img
 
-Referenzmaschine in 86Box: 286er mit SCAT-Chipsatz (C&T 82C235), 16 MB RAM,
+Referenzmaschine in 86Box: GW-286CT GEAR, SCAT-Chipsatz (C&T 82C235),
+SCAT-BIOS 1.5.0, 16 MB RAM,
 Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB, SCSI Adaptec AHA-154xC
 (Port 334h, IRQ 11, DMA 6, BIOS C800h), Sound Blaster 16 (220h, MPU-401 330h,
 IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
-15232 KB, es fehlen 128 KB zu 16 MB.
+15232 KB erweitert, dazu 384 KB Shadow-RAM für System- und Video-BIOS; es
+fehlen 128 KB zu 16 MB. Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
+SCSI-ID 6 CD-ROM.
 
 Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der
 echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286,
