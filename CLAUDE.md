@@ -25,8 +25,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Aufbau
 
-- `boot/` – Bootsektor mit FAT12-BPB, lädt den Kernel (reservierte Sektoren
-  1–64) nach 1000:0000
+- `boot/` – Bootsektor mit Standard-FAT12-BPB, lädt `KERNEL.SYS` (erste
+  Datei, zusammenhängend ab Cluster 2, auf 32 KB aufgefüllt) nach 1000:0000
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
   `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
   `floppy.c` (Diskettentreiber), `fat12.c` (IFS-Treiber FAT12 und

@@ -1,24 +1,25 @@
 ; DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
 ;
-; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel liegt in den
-; reservierten Sektoren 1-64 direkt hinter dem Bootsektor; dieser Lader
-; holt ihn nach 1000:0000 (linear 10000h) und springt im Real Mode dorthin.
+; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel ist die Datei
+; KERNEL.SYS (versteckt, System) und liegt - wie einst IO.SYS - als erste
+; Datei zusammenhaengend am Anfang des Datenbereichs. Dieser Lader holt sie
+; nach 1000:0000 (linear 10000h) und springt im Real Mode dorthin.
 ; Programme liegen als Dateien im Dateisystem und laedt der Kernel selbst.
 
 bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 64                  ; 32 KB Kernel
+NSECT   equ 64                  ; KERNEL.SYS ist auf 32 KB aufgefuellt
 
         jmp     short start
         nop
 
-; BIOS-Parameterblock (1,44 MB, 64 zusaetzliche reservierte Sektoren)
+; BIOS-Parameterblock (Standard-1,44-MB-Diskette)
 oem         db "ALTDOS50"
 bps         dw 512
 spc         db 1
-reserved    dw 1 + NSECT
+reserved    dw 1
 nfats       db 2
 rootents    dw 224
 totalsec    dw 2880
@@ -47,6 +48,16 @@ start:
 
         mov     si, msg_load
         call    puts
+
+        ; erster Datensektor = reserviert + FATs + Stammverzeichnis
+        mov     al, [nfats]
+        xor     ah, ah
+        mul     word [spf]
+        add     ax, [reserved]
+        mov     bx, [rootents]
+        shr     bx, 4                   ; 16 Eintraege je Sektor
+        add     ax, bx
+        mov     [lba], ax
 
         mov     ax, KSEG
         mov     es, ax

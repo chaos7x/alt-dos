@@ -6,7 +6,8 @@ ist nur über die Family API (FAPI) erreichbar.
 
 ## Was läuft
 
-- FAT12-Diskette: Bootsektor lädt den Kernel aus den reservierten Sektoren
+- Standard-FAT12-Diskette: Der Kernel ist die Datei `KERNEL.SYS` (versteckt,
+  System), die wie einst `IO.SYS` als erste Datei zusammenhängend liegt
 - Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
   im Protected Mode gibt es kein BIOS mehr
 - IFS-Schicht mit FAT12 als erstem Dateisystemtreiber
@@ -60,9 +61,10 @@ im PATH):
 
     ./build.sh      # -> build/dos5.img (1,44 MB, FAT12)
 
-Das Image ist eine normale FAT12-Diskette und lässt sich auch mit mtools oder
-unter jedem anderen System lesen; der Kernel liegt in 64 reservierten
-Sektoren hinter dem Bootsektor.
+Das Image ist eine normale FAT12-Diskette und lässt sich unter MS-DOS, mit
+mtools oder unter jedem anderen System lesen. `KERNEL.SYS` ist versteckt
+(`DIR /A` zeigt sie) und muss die erste Datei bleiben; beim Austauschen
+also nicht einfach überschreiben, sondern das Image neu bauen.
 
 In 86Box als Diskette A: einlegen, beliebige 286-Maschine mit VGA.
 

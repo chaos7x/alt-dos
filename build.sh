@@ -55,14 +55,20 @@ export MTOOLS_SKIP_CHECK=1
 truncate -s 0 $IMG
 truncate -s 1474560 $IMG
 dd if=$B/boot.bin of=$IMG conv=notrunc status=none
-dd if=$B/kernel.bin of=$IMG bs=512 seek=1 conv=notrunc status=none
 # beide FATs initialisieren: Medienbyte F0h, Cluster 1 = Ende
-for fat in 65 74; do
+for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
+# KERNEL.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
+# auf 32 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
+cp $B/kernel.bin $B/KERNEL.SYS
+truncate -s 32768 $B/KERNEL.SYS
+mcopy -i $IMG $B/KERNEL.SYS ::KERNEL.SYS
+mattrib -i $IMG +r +s +h ::KERNEL.SYS
 mcopy -i $IMG $B/task_a.bin ::TASKA.EXE
 mcopy -i $IMG $B/task_b.bin ::TASKB.EXE
 mcopy -i $IMG $B/task_c.bin ::TASKC.EXE
 mcopy -i $IMG $B/task_mem.bin ::MEM.EXE
 mcopy -i $IMG STARTUP.CMD ::STARTUP.CMD
-mdir -i $IMG :: | sed 's/^/  /'
+rm -f $B/KERNEL.SYS
+mdir -a -i $IMG :: | sed 's/^/  /'
