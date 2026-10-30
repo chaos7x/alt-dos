@@ -79,8 +79,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
 Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`): GW-286CT
 GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 25 MHz (genauer
 Interpreter, kein Dynarec), 287XL, 16 MB RAM, vier Everex EV-159 als EMS
-(zusammen 11 MB, Ports 208h/218h, 258h/268h, 2A8h/2B8h, 2E8h), NE2000,
-IBM ROM-BASIC als Zusatz-ROM bei CC000h,
+(zusammen 11 MB, Ports 208h/218h, 258h/268h, 2A8h/2B8h, 2E8h; von DOS 5.0
+nicht genutzt, erst für V86-Sitzungen in DOS 6.0 interessant), NE2000,
 Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB, SCSI Adaptec AHA-154xC
 (Port 334h, IRQ 11, DMA 6, BIOS C800h), Sound Blaster 16 (220h, MPU-401 330h,
 IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
