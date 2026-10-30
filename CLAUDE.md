@@ -126,6 +126,11 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Schreiben auf FAT (erst auf dem geklonten Testrechner)
 - Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
+- Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
+  Real-Mode-DOS-Sitzung unter 640 KB (z. B. MS-DOS 6 von der SCSI-Platte),
+  Rückweg in den Real Mode per CPU-Reset mit Shutdown-Code im CMOS, Box im
+  Hintergrund eingefroren. Erweiterung der Zeitlinie (Spezifikation sieht
+  Altkompatibilität erst mit DOS 6.0/V86 vor).
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
