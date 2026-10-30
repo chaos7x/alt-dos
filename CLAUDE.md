@@ -109,3 +109,7 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
+- Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
+  ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
+  32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
+  erst viel später, wenn überhaupt.
