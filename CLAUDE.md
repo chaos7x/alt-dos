@@ -217,7 +217,15 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
-- Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
+- Mehrere Sektoren je Treiberaufruf (Cluster am Stück, Zähler in
+  `drv_req`, IDE `READ MULTIPLE`/Sektorzahl, SCSI Blockzahl in READ(10));
+  braucht größeren DMA-Puffer bzw. direkte Übertragung ins Ziel – auch ohne
+  Cache ein großer Gewinn auf echten Platten.
+- Platten-Cache wie SMARTDRV: Lese- und Schreib-Cache im erweiterten
+  Speicher (Größe in `CONFIG.SYS`), verzögertes Schreiben mit Zeitgrenze,
+  Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
+  Lese-Cache oder sofort schreiben (Wechsel). Heute: Daten sofort, nur FAT
+  im 2-Sektor-Cache.
 - `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
