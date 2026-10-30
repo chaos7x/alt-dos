@@ -1,4 +1,4 @@
-# alt-dos – DOS 5.0, Kernel-Meilenstein 2
+# alt-dos – DOS 5.0, Kernel-Meilenstein 3
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
@@ -6,7 +6,12 @@ ist nur über die Family API (FAPI) erreichbar.
 
 ## Was läuft
 
-- Bootsektor lädt Kernel + Anwendungen von Diskette nach 1000:0000
+- FAT12-Diskette: Bootsektor lädt den Kernel aus den reservierten Sektoren
+- Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
+  im Protected Mode gibt es kein BIOS mehr
+- IFS-Schicht mit FAT12 als erstem Dateisystemtreiber
+- Programmlader: `STARTUP.CMD` nennt bis zu vier Programme, die als Dateien
+  geladen werden
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
@@ -20,10 +25,12 @@ Demo-Tasks: **A** zählt und gibt per `DosYield()` ab, **B** fordert zehn
 Segmente zu 64 KB an, prüft sie, gibt die Hälfte frei und endet – den Rest
 räumt der Kernel auf, **C** versucht direkt nach B800:0000
 zu schreiben und wird per #GP beendet, **MEM.EXE** zeigt den Arbeitsspeicher laufend
-an. Einen Programmlader gibt es noch nicht,
-alle vier sind fest ins Image gebaut.
+an. Alle vier liegen als `TASKA.EXE` … `MEM.EXE` auf der Diskette.
 
-## FAPI (Stand Meilenstein 2)
+Die Programme sind noch reine Binärabbilder (Code und Daten in einem
+Segment, Einsprung bei 0), kein MZ- oder NE-Format.
+
+## FAPI (Stand Meilenstein 3)
 
 | AX | Funktion        | Argumente                       |
 |----|-----------------|---------------------------------|
@@ -40,17 +47,22 @@ alle vier sind fest ins Image gebaut.
 
 | linear           | Inhalt                          |
 |------------------|---------------------------------|
+| 08000h – 081FFh  | DMA-Puffer für Laufwerke        |
 | 10000h – 17FFFh  | Kernel (ein 64-KB-Segment)      |
-| 18000h – 1FFFFh  | Anwendungen A, B, C, MEM (je 8 KB) |
-| 20000h – 9FFFFh  | frei, Speicherverwaltung        |
+| 18000h – 9FFFFh  | frei, Speicherverwaltung        |
 | A0000h – FFFFFh  | Systembereich (Video, ROMs)     |
 | ab 100000h       | frei, Speicherverwaltung        |
 
 ## Bauen
 
-Benötigt NASM und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink` im PATH):
+Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
+im PATH):
 
-    ./build.sh      # -> build/dos5.img (1,44 MB)
+    ./build.sh      # -> build/dos5.img (1,44 MB, FAT12)
+
+Das Image ist eine normale FAT12-Diskette und lässt sich auch mit mtools oder
+unter jedem anderen System lesen; der Kernel liegt in 64 reservierten
+Sektoren hinter dem Bootsektor.
 
 In 86Box als Diskette A: einlegen, beliebige 286-Maschine mit VGA.
 

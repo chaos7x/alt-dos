@@ -1,30 +1,24 @@
 /*
- * DOS 5.0 - Kernel, Meilenstein 2
+ * DOS 5.0 - Kernel, Meilenstein 3
  *
  * 80286 Protected Mode, segmentiert, kooperatives Multitasking.
  * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigener LDT und
  * ohne IOPL. Hardware und Speicher erreichen sie ausschliesslich ueber
- * die Family API (FAPI) per Call Gate.
+ * die Family API (FAPI) per Call Gate. Programme werden ueber das IFS
+ * von Diskette geladen, welche sagt STARTUP.CMD.
  */
-#include <i86.h>
+#include "kern.h"
 #include "../include/fapi_abi.h"
 #include "mem.h"
+#include "ifs.h"
 
-#pragma pack(1)
-
-/* ---- GDT-Belegung ------------------------------------------------------ */
-#define KCODE       0x08
-#define KDATA       0x10
-#define VIDEO       0x18
-#define GATE_IDX    4               /* -> Selektor 0x20, RPL 3 = 0x23      */
-#define TSS_K       0x28
-#define SCRATCH     0x30            /* Kernel-Fenster auf beliebigen Speicher */
+/* ---- GDT-Belegung (Rest in kern.h) ------------------------------------- */
 #define NTASK       4
-#define TSS_IDX(i)  (7 + (i))
-#define LDT_IDX(i)  (7 + NTASK + (i))
+#define TSS_IDX(i)  (8 + (i))
+#define LDT_IDX(i)  (8 + NTASK + (i))
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
-#define NGDT        (7 + 2 * NTASK)
+#define NGDT        (8 + 2 * NTASK)
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT        16
@@ -34,14 +28,13 @@
 #define UDATA       USEL(1)
 
 #define KBASE       0x10000UL
-#define APPBASE(i)  (0x18000UL + (unsigned long)(i) * 0x2000UL)
-#define APPSIZE     0x2000
+#define APPSIZE     0x2000          /* Segment je Programm: Abbild + Stack */
+#define APPMAXFILE  (APPSIZE - 2048)
 
 #define LIN(p)      (KBASE + (unsigned short)(p))
 
 /* Zugriffsbytes (286) */
 #define ACC_KCODE   0x9A    /* P, DPL0, Code, lesbar              */
-#define ACC_KDATA   0x92    /* P, DPL0, Daten, schreibbar         */
 #define ACC_UCODE   0xFA    /* P, DPL3, Code, lesbar              */
 #define ACC_UDATA   0xF2    /* P, DPL3, Daten, schreibbar         */
 #define ACC_TSS     0x81    /* P, DPL0, 286-TSS, frei             */
@@ -49,7 +42,6 @@
 #define ACC_CGATE3  0xE4    /* P, DPL3, 286-Call-Gate             */
 #define ACC_IGATE   0x86    /* P, DPL0, 286-Interrupt-Gate        */
 
-struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; unsigned short rsv; };
 struct gate  { unsigned short off, sel; unsigned char wc, access; unsigned short rsv; };
 struct tss286 {
     unsigned short link, sp0, ss0, sp1, ss1, sp2, ss2;
@@ -64,11 +56,7 @@ extern void load_tr(unsigned sel);
 extern unsigned sel_readable(unsigned sel);
 extern unsigned sel_writable(unsigned sel);
 extern unsigned sel_limit(unsigned sel);
-extern void outb(unsigned port, unsigned val);
-extern unsigned long get_ticks(void);
-extern void idle_wait(void);
 extern void halt_forever(void);
-extern void zero_seg(unsigned sel, unsigned words);
 
 extern unsigned short isr_table[48];
 extern unsigned char  boot_drive;
@@ -84,6 +72,8 @@ static struct tss286 tss_k;
 static struct tss286 tss[NTASK];
 static struct desc   ldt[NTASK][NLDT];
 static unsigned      alloc_units;                 /* per DosAllocSeg vergeben */
+static unsigned      image_unit[NTASK];           /* Programmsegment je Task */
+static unsigned      image_units;
 static unsigned short kstack[NTASK][256];      /* Ring-0-Stack je Task  */
 
 static unsigned char  alive[NTASK];
@@ -91,7 +81,7 @@ static unsigned long  wake[NTASK];
 static int            current = -1;
 static char           switches[] = "0000000";
 
-static const char * const   tname[NTASK] = { "Task A", "Task B", "Task C", "MEM.EXE" };
+static char                 tname[NTASK][13];
 static const unsigned char  tattr[NTASK] = { 0x0E, 0x0A, 0x0B, 0x0D };
 
 static unsigned short __far *vram;
@@ -128,11 +118,10 @@ void gdt_build(void)
 
     set_desc(5, LIN(&tss_k), sizeof(struct tss286) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);
+    set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
     for (i = 0; i < NTASK; i++) {
         set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
         set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
-        put_desc(&ldt[i][0], APPBASE(i), APPSIZE - 1, ACC_UCODE);
-        put_desc(&ldt[i][1], APPBASE(i), APPSIZE - 1, ACC_UDATA);
     }
 
     for (i = 0; i < 48; i++) {
@@ -149,6 +138,27 @@ void gdt_build(void)
     idtr[0] = sizeof(idt) - 1;
     idtr[1] = (unsigned short)LIN(idt);
     idtr[2] = (unsigned short)(LIN(idt) >> 16);
+}
+
+/* ---- Kernel-Hilfen ----------------------------------------------------- */
+void scratch_map(unsigned long base, unsigned limit)
+{
+    set_desc(SCRATCH >> 3, base, limit, ACC_KDATA);
+}
+
+void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n)
+{
+    char __far *d = MK_FP(dsel, doff);
+    const char __far *s = MK_FP(ssel, soff);
+    while (n--)
+        *d++ = *s++;
+}
+
+void delay_ticks(unsigned n)
+{
+    unsigned long until = get_ticks() + n;
+    while (get_ticks() < until)
+        idle_wait();
 }
 
 /* ---- Konsolentreiber (nur der Kernel darf in den Bildspeicher) --------- */
@@ -213,16 +223,17 @@ static void count_up(char *d)
 
 /* Fenster je Task: Kopfzeile + 3 Zeilen fuer die Anwendung */
 #define WIN_ROW(i)  (7 + (i) * 4)
+#define HDR_W       14
 
 static void task_header(int i, const char *state, unsigned char attr)
 {
     unsigned char hattr = (unsigned char)(((tattr[i] & 7) << 4) | 0x0F);
     int c;
     fill_row(WIN_ROW(i), 0x07);
-    for (c = 0; c < 9; c++)
+    for (c = 0; c < HDR_W; c++)
         vram[WIN_ROW(i) * 80 + c] = ((unsigned short)hattr << 8) | ' ';
     kputs(WIN_ROW(i), 1, tname[i], hattr);
-    kputs(WIN_ROW(i), 10, state, attr);
+    kputs(WIN_ROW(i), HDR_W + 1, state, attr);
 }
 
 static void status_bar(void)
@@ -250,7 +261,7 @@ static unsigned seg_alloc(int task, unsigned size)      /* size 0 = 64 KB */
         return FAPI_ERROR;                      /* kein Speicher        */
 
     base = (unsigned long)u << 8;
-    set_desc(SCRATCH >> 3, base, units * MEM_UNIT - 1, ACC_KDATA);
+    scratch_map(base, units * MEM_UNIT - 1);
     zero_seg(SCRATCH, units * (MEM_UNIT / 2));  /* nie fremde Altdaten  */
 
     put_desc(&ldt[task][idx], base, size ? size - 1 : 0xFFFF, ACC_UDATA);
@@ -282,6 +293,13 @@ static void task_cleanup(int task)                  /* bei Ende/Abbruch */
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[task][idx].access != 0)
             seg_free(task, USEL(idx));
+    if (image_unit[task]) {                         /* Programmabbild     */
+        mem_free(image_unit[task], APPSIZE / MEM_UNIT);
+        image_units -= APPSIZE / MEM_UNIT;
+        image_unit[task] = 0;
+        ldt[task][0].access = 0;
+        ldt[task][1].access = 0;
+    }
 }
 
 /* ---- Scheduler (kooperativ) -------------------------------------------- */
@@ -358,7 +376,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         p[0] = mem_conv_kb + mem_ext_kb;
         p[1] = mem_free_kb();
         p[2] = 32;                              /* Kernel-Fenster       */
-        p[3] = NTASK * (APPSIZE / 1024);
+        p[3] = image_units / 4;
         p[4] = alloc_units / 4;
         return 0;
     }
@@ -417,7 +435,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         alive[current] = 0;
         task_cleanup(current);
         task_header(current, "abgebrochen: ", 0x0C);
-        kputs(WIN_ROW(current), 23, exc_name(vec), 0x0C);
+        kputs(WIN_ROW(current), HDR_W + 14, exc_name(vec), 0x0C);
         kputs(WIN_ROW(current) + 3, 2, msg, 0x0C);
         schedule_next();
     }
@@ -435,7 +453,7 @@ static void pic_pit_init(void)
     outb(0x21, 0x20); outb(0xA1, 0x28);
     outb(0x21, 0x04); outb(0xA1, 0x02);
     outb(0x21, 0x01); outb(0xA1, 0x01);
-    outb(0x21, 0xFE); outb(0xA1, 0xFF);     /* nur IRQ0 (Takt) frei    */
+    outb(0x21, 0xBE); outb(0xA1, 0xFF);     /* IRQ0 Takt, IRQ6 Diskette */
 
     /* PIT Kanal 0: 100 Hz */
     outb(0x43, 0x36);
@@ -443,12 +461,111 @@ static void pic_pit_init(void)
     outb(0x40, 11932 >> 8);
 }
 
+/* ---- Programmlader ---------------------------------------------------- */
+static char startup[512];
+
+/* Zeilen aus STARTUP.CMD: je ein Programmname, REM und Leerzeilen zaehlen
+   nicht. Gibt die Anzahl der gefundenen Namen zurueck. */
+static int parse_startup(unsigned len, char names[][13], int max)
+{
+    unsigned p = 0, k;
+    int n = 0;
+    char c;
+
+    while (p < len && n < max) {
+        while (p < len && (startup[p] == ' ' || startup[p] == '\t'))
+            p++;
+        k = 0;
+        while (p < len && startup[p] != '\r' && startup[p] != '\n' &&
+               startup[p] != ' ' && startup[p] != '\t') {
+            c = startup[p++];
+            if (c >= 'a' && c <= 'z')
+                c -= 32;
+            if (k < 12)
+                names[n][k++] = c;
+        }
+        names[n][k] = 0;
+        while (p < len && startup[p] != '\n')
+            p++;
+        p++;
+        if (k == 0 || (k == 3 && names[n][0] == 'R' && names[n][1] == 'E' &&
+                       names[n][2] == 'M'))
+            continue;
+        n++;
+    }
+    return n;
+}
+
+static const char *load_program(int i, const char *name)
+{
+    struct ifs_file f;
+    struct tss286 *t;
+    unsigned short *w;
+    unsigned long base;
+    unsigned u;
+
+    if (ifs_open(name, &f))
+        return "nicht gefunden";
+    if (f.size > APPMAXFILE)
+        return "zu gro\xE1";
+    u = mem_alloc(APPSIZE / MEM_UNIT);
+    if (u == 0)
+        return "kein Speicher";
+    base = (unsigned long)u << 8;
+    scratch_map(base, APPSIZE - 1);
+    zero_seg(SCRATCH, APPSIZE / 2);             /* auch BSS ist dann 0  */
+    if (ifs_read(&f, base, APPSIZE)) {
+        mem_free(u, APPSIZE / MEM_UNIT);
+        return "Lesefehler";
+    }
+    image_unit[i] = u;
+    image_units += APPSIZE / MEM_UNIT;
+    put_desc(&ldt[i][0], base, APPSIZE - 1, ACC_UCODE);
+    put_desc(&ldt[i][1], base, APPSIZE - 1, ACC_UDATA);
+
+    t = &tss[i];
+    for (w = (unsigned short *)t; w < (unsigned short *)(t + 1); w++)
+        *w = 0;
+    t->ss0   = KDATA;
+    t->sp0   = (unsigned short)&kstack[i][256];
+    t->cs    = UCODE;
+    t->ip    = 0;
+    t->ss    = UDATA;
+    t->sp    = APPSIZE;
+    t->ds    = UDATA;
+    t->es    = UDATA;
+    t->ldt   = LDT_SEL(i);
+    t->flags = 0x0202;          /* IF=1, IOPL=0: kein I/O in Ring 3  */
+    return 0;
+}
+
+/* Texte hintereinander in eine Zeile schreiben, gibt die naechste Spalte */
+static int kputs_at(int row, int col, const char *s)
+{
+    kputs(row, col, s, 0x07);
+    while (*s++)
+        col++;
+    return col;
+}
+
+static void log_num(int row, const char *pre, unsigned v, const char *post)
+{
+    char b[6], *p = b;
+    int col;
+    dec(v, b, 5);
+    while (*p == '0' && p[1])
+        p++;                                    /* fuehrende Nullen weg  */
+    col = kputs_at(row, 2, pre);
+    col = kputs_at(row, col + 1, p);
+    kputs_at(row, col, post);
+}
+
 /* ---- Einstieg im Protected Mode ---------------------------------------- */
 void kmain(void)
 {
-    struct tss286 *t;
-    unsigned short *w;
-    int i, r;
+    struct ifs_file f;
+    const char *err;
+    int i, r, n, loaded = 0;
 
     vram = MK_FP(VIDEO, 0);
     outb(0x3D4, 0x0A);              /* Hardware-Cursor ausblenden        */
@@ -457,48 +574,49 @@ void kmain(void)
         fill_row(r, 0x07);
 
     fill_row(0, 0x1F);
-    kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 2", 0x1F);
+    kputs(0, 2, "DOS 5.0  -  alternative Zeitlinie  -  Kernel-Meilenstein 3", 0x1F);
 
     pic_pit_init();
-    kputs(2, 2, "\xFE 80286 Protected Mode, A20 frei, PIC 20h/28h, Systemtakt 100 Hz", 0x07);
-    kputs(3, 2, "\xFE GDT 15, LDT je Task 16, IDT 48 Eintr\x84ge, FAPI-Call-Gate 0023h", 0x07);
+    kputs(2, 2, "\xFE 286 Protected Mode, GDT 16, LDT je Task, FAPI-Gate 0023h, Takt 100 Hz", 0x07);
 
     mem_init(mem_conv_kb, mem_ext_kb);
-    {
-        static char m[] = "\xFE Speicherverwaltung: ????? KB frei in 256-Byte-Einheiten";
-        char b[6];
-        dec(mem_free_kb(), b, 5);
-        m[22] = b[0]; m[23] = b[1]; m[24] = b[2]; m[25] = b[3]; m[26] = b[4];
-        kputs(4, 2, m, 0x07);
-    }
-
-    for (i = 0; i < NTASK; i++) {
-        t = &tss[i];
-        for (w = (unsigned short *)t; w < (unsigned short *)(t + 1); w++)
-            *w = 0;
-        t->ss0   = KDATA;
-        t->sp0   = (unsigned short)&kstack[i][256];
-        t->cs    = UCODE;
-        t->ip    = 0;
-        t->ss    = UDATA;
-        t->sp    = APPSIZE;
-        t->ds    = UDATA;
-        t->es    = UDATA;
-        t->ldt   = LDT_SEL(i);
-        t->flags = 0x0202;          /* IF=1, IOPL=0: kein I/O in Ring 3  */
-        alive[i] = 1;
-        wake[i]  = 0;
-        task_header(i, "bereit", 0x07);
-    }
-    kputs(5, 2, "\xFE 4 Tasks angelegt (je TSS und LDT, Ring 3)", 0x07);
+    log_num(3, "\xFE Speicherverwaltung:", mem_free_kb(), " KB frei");
 
     fill_row(24, 0x70);
     kputs(24, 1, "Uptime:       s", 0x70);
     kputs(24, 24, "Taskwechsel:", 0x70);
     kputs(24, 55, "kooperatives Multitasking", 0x70);
 
-    for (i = 0; i < NTASK; i++)
+    enable_ints();                  /* Diskette meldet sich per IRQ 6    */
+    kputs(4, 2, "\xFE Diskette A: ...", 0x07);
+    if (fd_init())
+        panic("Diskettencontroller antwortet nicht.");
+    if (ifs_mount(&fat12_driver))
+        panic("Diskette A: hat kein lesbares FAT12-Dateisystem.");
+    fill_row(4, 0x07);
+    r = kputs_at(4, 2, "\xFE Diskette A: IFS-Treiber ");
+    r = kputs_at(4, r, ifs_name());
+    kputs_at(4, r, " eingeh\x84ngt");
+
+    if (ifs_open("STARTUP.CMD", &f) || f.size > sizeof(startup) ||
+        ifs_read(&f, LIN(startup), sizeof(startup)))
+        panic("STARTUP.CMD fehlt oder ist unlesbar.");
+    n = parse_startup((unsigned)f.size, tname, NTASK);
+
+    for (i = 0; i < n; i++) {
+        task_header(i, "wird geladen ...", 0x07);
+        err = load_program(i, tname[i]);
+        if (err) {
+            task_header(i, err, 0x0C);
+            continue;
+        }
+        alive[i] = 1;
+        wake[i]  = 0;
+        loaded++;
         task_header(i, "l\x84uft", 0x07);
+    }
+    fd_motor_off();
+    log_num(5, "\xFE STARTUP.CMD:", loaded, " Programme geladen");
 
     load_tr(TSS_K);
     schedule_next();                /* kehrt nie zurueck                 */

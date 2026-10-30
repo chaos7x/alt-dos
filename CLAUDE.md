@@ -7,7 +7,7 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 2
+## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 3
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -25,9 +25,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Aufbau
 
-- `boot/` – Bootsektor, lädt das Image nach 1000:0000
+- `boot/` – Bootsektor mit FAT12-BPB, lädt den Kernel (reservierte Sektoren
+  1–64) nach 1000:0000
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
-  `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten)
+  `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
+  `floppy.c` (Diskettentreiber), `fat12.c` (IFS-Treiber FAT12 und
+  IFS-Verteiler), `ifs.h`, `kern.h` (gemeinsame Definitionen)
+- `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
 - `include/fapi_abi.h` – FAPI-Funktionsnummern, gemeinsam für Kernel und Apps
 
@@ -39,7 +43,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Jeder Task hat eine eigene LDT: Eintrag 0 Code, 1 Daten/Stack, ab 2 per
   `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
-  Speicher zu.
+  Speicher zu, Laufwerke lesen per DMA in `DMABUF` (38h, linear 8000h).
+- Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); der
+  Kernel selbst kennt kein FAT. Blockgeräte nie per BIOS ansprechen.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen
   erhalten alle Register außer dem Rückgabewert (AX bzw. DX:AX).
 - Kein C-Laufzeitsystem (`-zl`): keine Bibliotheksaufrufe, keine

@@ -14,8 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: NASM installieren
-        run: sudo apt-get update && sudo apt-get install -y nasm
+      - name: NASM und mtools installieren
+        run: sudo apt-get update && sudo apt-get install -y nasm mtools
 
       - name: Open Watcom 2.0 installieren
         run: |

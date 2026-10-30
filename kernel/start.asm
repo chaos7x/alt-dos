@@ -182,6 +182,19 @@ irq0:
         pop     ax
         iret
 
+; IRQ 6: Diskettencontroller fertig
+irq6:
+        push    ax
+        push    ds
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     byte [_fdc_irq], 1
+        mov     al, 0x20
+        out     0x20, al
+        pop     ds
+        pop     ax
+        iret
+
 ; alle anderen IRQs: maskiert, nur fuer den Fall der Faelle
 irq_other:
         push    ax
@@ -243,6 +256,22 @@ outb_:
         xchg    ax, dx
         ret
 
+; unsigned inb(unsigned port)
+global inb_
+inb_:
+        push    dx
+        mov     dx, ax
+        in      al, dx
+        xor     ah, ah
+        pop     dx
+        ret
+
+; void enable_ints(void)
+global enable_ints_
+enable_ints_:
+        sti
+        ret
+
 ; unsigned long get_ticks(void)
 global get_ticks_
 get_ticks_:
@@ -293,7 +322,7 @@ _isr_table:
         dw exc16, 0, 0, 0, 0, 0, 0, 0
         dw 0, 0, 0, 0, 0, 0, 0, 0
         dw irq0, irq_other, irq_other, irq_other
-        dw irq_other, irq_other, irq_other, irq_other
+        dw irq_other, irq_other, irq6, irq_other
         dw irq_other, irq_other, irq_other, irq_other
         dw irq_other, irq_other, irq_other, irq_other
 
@@ -307,6 +336,8 @@ _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
 _uptime_s:   resw 1
+global _fdc_irq
+_fdc_irq:    resb 1
 global _mem_conv_kb, _mem_ext_kb
 _mem_conv_kb: resw 1
 _mem_ext_kb:  resw 1

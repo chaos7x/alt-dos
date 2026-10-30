@@ -31,10 +31,13 @@ nasm -f bin boot/boot.asm -o $B/boot.bin
 
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
-wcc $CFLAGS -fo=$B/kernel.o kernel/kernel.c
-wcc $CFLAGS -fo=$B/mem.o kernel/mem.c
+KOBJ="$B/start.o"
+for m in kernel mem floppy fat12; do
+    wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
+    KOBJ="$KOBJ file $B/$m.o"
+done
 wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
-      file $B/start.o file $B/kernel.o file $B/mem.o 2>&1 | grep -v W1014 || true
+      file $KOBJ 2>&1 | grep -v W1014 || true
 check_size $B/kernel.bin $B/kernel.map 32768 kernel
 
 echo "Anwendungen"
@@ -46,11 +49,20 @@ for t in a b c mem; do
     check_size $B/task_$t.bin $B/task_$t.map 6144 task_$t   # Rest = Stack
 done
 
-echo "Image"
-pad() { cp "$1" "$2"; truncate -s "$3" "$2"; }
-pad $B/kernel.bin $B/kernel.pad 32768
-for t in a b c mem; do pad $B/task_$t.bin $B/task_$t.pad 8192; done
-cat $B/boot.bin $B/kernel.pad $B/task_a.pad $B/task_b.pad $B/task_c.pad $B/task_mem.pad > $B/dos5.img
-truncate -s 1474560 $B/dos5.img
-rm -f $B/*.pad
-echo "  $B/dos5.img fertig"
+echo "Diskette (FAT12)"
+IMG=$B/dos5.img
+export MTOOLS_SKIP_CHECK=1
+truncate -s 0 $IMG
+truncate -s 1474560 $IMG
+dd if=$B/boot.bin of=$IMG conv=notrunc status=none
+dd if=$B/kernel.bin of=$IMG bs=512 seek=1 conv=notrunc status=none
+# beide FATs initialisieren: Medienbyte F0h, Cluster 1 = Ende
+for fat in 65 74; do
+    printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
+done
+mcopy -i $IMG $B/task_a.bin ::TASKA.EXE
+mcopy -i $IMG $B/task_b.bin ::TASKB.EXE
+mcopy -i $IMG $B/task_c.bin ::TASKC.EXE
+mcopy -i $IMG $B/task_mem.bin ::MEM.EXE
+mcopy -i $IMG STARTUP.CMD ::STARTUP.CMD
+mdir -i $IMG :: | sed 's/^/  /'

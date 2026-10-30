@@ -1,14 +1,39 @@
-; DOS 5.0 - Bootsektor (1,44-MB-Diskette)
+; DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
 ;
-; Laedt das System-Image (Kernel + Anwendungen) ab Sektor 2 nach
-; 1000:0000 (linear 10000h) und springt im Real Mode dorthin.
-; Den Wechsel in den Protected Mode erledigt der Kernel selbst.
+; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel liegt in den
+; reservierten Sektoren 1-64 direkt hinter dem Bootsektor; dieser Lader
+; holt ihn nach 1000:0000 (linear 10000h) und springt im Real Mode dorthin.
+; Programme liegen als Dateien im Dateisystem und laedt der Kernel selbst.
 
 bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 128                 ; 32 KB Kernel + 4 x 8 KB Anwendungen
+NSECT   equ 64                  ; 32 KB Kernel
+
+        jmp     short start
+        nop
+
+; BIOS-Parameterblock (1,44 MB, 64 zusaetzliche reservierte Sektoren)
+oem         db "ALTDOS50"
+bps         dw 512
+spc         db 1
+reserved    dw 1 + NSECT
+nfats       db 2
+rootents    dw 224
+totalsec    dw 2880
+media       db 0xF0
+spf         dw 9
+spt         dw 18
+heads       dw 2
+hidden      dd 0
+totalsec32  dd 0
+drive       db 0
+            db 0
+            db 0x29
+serial      dd 0x19890501
+label       db "ALT-DOS    "
+fstype      db "FAT12   "
 
 start:
         cli
@@ -30,7 +55,7 @@ start:
 
 .next:
         push    cx
-        ; LBA -> CHS (18 Sektoren/Spur, 2 Koepfe)
+        ; LBA -> CHS
         mov     ax, [lba]
         xor     dx, dx
         div     word [spt]              ; AX = Spur, DX = Sektor-Index
@@ -64,11 +89,6 @@ start:
         pop     cx
         loop    .next
 
-        ; Diskettenmotor abschalten - im Protected Mode laeuft kein BIOS mehr
-        mov     dx, 0x3F2
-        mov     al, 0x0C
-        out     dx, al
-
         mov     dl, [drive]
         jmp     KSEG:0
 
@@ -92,10 +112,7 @@ putc:   push    bx
         pop     bx
         ret
 
-drive   db 0
 lba     dw 1
-spt     dw 18
-heads   dw 2
 msg_load db "DOS 5.0 wird geladen", 0
 msg_err  db 13, 10, "Diskettenfehler!", 0
 
