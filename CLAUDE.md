@@ -181,6 +181,17 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
+- Signale wie OS/2 (`DosSetSigHandler`), Nummern in `fapi_abi.h` reserviert:
+  Programm meldet einen Handler für `SIG_BREAK` (Strg+C) und `SIG_SHUTDOWN`
+  an. Der Kernel springt beim nächsten Wechsel in den Task in den Handler
+  (Rahmen auf dem Ring-3-Stack anlegen, IRET dorthin), der Handler endet mit
+  `DosSigReturn` oder `DosExit`. Ohne Handler: Strg+C beendet wie bisher.
+  `SHUTDOWN` und Strg+Alt+Entf schicken allen Tasks `SIG_SHUTDOWN`, warten
+  einige Sekunden, beenden die übrigen regulär (`task_end`: Speicher,
+  Sitzung, Dateien), dann Dateien schließen und `blk_flush()`.
+- `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
+  Vollbild-Editor im Stil von MS-DOS EDIT, nutzt `SIG_SHUTDOWN`, um vor dem
+  Herunterfahren nach dem Speichern zu fragen.
 - `CHKDSK` wie MS-DOS (`/F`, `/V`, Datei-Fragmentierung), liest über eine
   FAPI-Funktion, die ein Laufwerk als Ganzes öffnet (sektorweise, wie DASD
   bei OS/2) – dieselbe Funktion für FORMAT, LABEL, DISKCOPY. Sperre in zwei

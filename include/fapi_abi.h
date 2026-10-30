@@ -47,6 +47,13 @@
 #define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
 #define FAPI_RMDIR          0x1C    /* BX = Pfad (Verzeichnis muss leer sein) */
 #define FAPI_MOVE           0x1D    /* BX = alter Pfad, CX = neuer Pfad (gleiches Laufwerk) */
+/* vorgesehen, noch nicht umgesetzt (siehe CLAUDE.md, Signale):
+#define FAPI_SETSIGHANDLER  0x20       BX = Handler (Offset im Codesegment),
+                                       CX = Signal-Maske SIG_*; 0 = abmelden
+#define FAPI_SIGRETURN      0x21       Handler fertig, Programm laeuft weiter
+#define SIG_BREAK           0x01       Strg+C
+#define SIG_SHUTDOWN        0x02       SHUTDOWN / Strg+Alt+Entf: aufraeumen, dann DosExit
+*/
 #define FAPI_SHUTDOWN       0x1F    /* BX = 0 anhalten (ausschalten), 1 Neustart; kehrt nicht zurueck */
 #define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
 
