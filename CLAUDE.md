@@ -76,8 +76,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
     ./build.sh          # NASM + Open Watcom -> build/dos5.img
 
-Referenzmaschine in 86Box: GW-286CT GEAR, SCAT-Chipsatz (C&T 82C235),
-SCAT-BIOS 1.5.0, 16 MB RAM,
+Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`): GW-286CT
+GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 25 MHz (genauer
+Interpreter, kein Dynarec), 287XL, 16 MB RAM, vier Everex EV-159 als EMS
+(zusammen 11 MB, Ports 208h/218h, 258h/268h, 2A8h/2B8h, 2E8h), NE2000,
+IBM ROM-BASIC als Zusatz-ROM bei CC000h,
 Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB, SCSI Adaptec AHA-154xC
 (Port 334h, IRQ 11, DMA 6, BIOS C800h), Sound Blaster 16 (220h, MPU-401 330h,
 IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
@@ -104,3 +107,5 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
+- FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
+- Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
