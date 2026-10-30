@@ -221,6 +221,14 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   `drv_req`, IDE `READ MULTIPLE`/Sektorzahl, SCSI Blockzahl in READ(10));
   braucht größeren DMA-Puffer bzw. direkte Übertragung ins Ziel – auch ohne
   Cache ein großer Gewinn auf echten Platten.
+- `CONFIG.SYS` kompatibel zu MS-DOS: `FILES=` (Größe der Handle-Tabelle,
+  heute fest 8 – Tabelle dafür aus dem Kernelsegment in ein eigenes Segment
+  verlegen, BSS ist knapp), `BUFFERS=` (Anzahl Sektorpuffer, der eingebaute
+  kleine Cache unter einem SMARTDRV), `STACKS=` (im Protected Mode ohne
+  Bedeutung: annehmen, nichts tun), `FCBS=` (FAPI kennt keine FCBs; erst für
+  die DOS-Box in 5.1 von Bedeutung: annehmen, merken). Unbekanntes nicht
+  mehr als Fehler melden, sondern wie MS-DOS still übergehen bzw. kurz
+  hinweisen. Auch `REM`, `DEVICEHIGH=` (wie `DEVICE=`), `BREAK=`, `LASTDRIVE=`.
 - Platten-Cache wie SMARTDRV: Lese- und Schreib-Cache im erweiterten
   Speicher (Größe in `CONFIG.SYS`), verzögertes Schreiben mit Zeitgrenze,
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
