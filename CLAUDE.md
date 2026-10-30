@@ -7,7 +7,7 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 3
+## Aktueller Stand: DOS 5.0 (80286, ~1988/89), Meilenstein 4
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -30,7 +30,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
   `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
   `floppy.c` (Diskettentreiber), `fat12.c` (IFS-Treiber FAT12 und
-  IFS-Verteiler), `ifs.h`, `kern.h` (gemeinsame Definitionen)
+  IFS-Verteiler), `vio.c` (Sitzungen, Konsole), `kbd.c` (Tastatur, deutsche
+  Belegung), `ifs.h`, `kern.h` (gemeinsame Definitionen)
+- `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
 - `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`)
@@ -47,6 +49,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
   Speicher zu (zweites Fenster `SCRATCH2`, 40h), Laufwerke lesen per DMA in
   `DMABUF` (38h, linear 8000h).
+- Der Kernel ist ein 64-KB-Segment ab 10000h; `KERNEL.SYS` (Datei) darf
+  höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
+- Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
+  24 Status. Programme schreiben in den Puffer ihrer Sitzung.
+- FAT12 bleibt fest im Kernel (Bootdateisystem); weitere Dateisysteme sollen
+  als `.IFS`-Dateien nachgeladen werden (geplant, mit FAT16/Adaptec).
 - Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); der
   Kernel selbst kennt kein FAT. Blockgeräte nie per BIOS ansprechen.
 - Watcom-Registerkonvention: Argumente in AX, DX, BX, CX; Assembler-Routinen
@@ -74,6 +82,9 @@ IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
 15232 KB erweitert, dazu 384 KB Shadow-RAM für System- und Video-BIOS; es
 fehlen 128 KB zu 16 MB. Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
 SCSI-ID 6 CD-ROM.
+
+Eingaben im QEMU-Test per Monitor `sendkey`; QEMU benennt Tasten nach
+US-Belegung, der Kernel wertet deutsch aus (`y`/`z` vertauscht).
 
 Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der
 echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286

@@ -78,6 +78,13 @@ static void to83(const char *s, char *n)
         n[i++] = *s++;
 }
 
+/* Verzeichniseintrag gueltig fuer Dateien? (nicht geloescht, kein Label,
+   kein Ordner, kein Teil eines langen Namens) */
+static int is_file(unsigned char __far *d)
+{
+    return d[0] != 0xE5 && !(d[11] & 0x18) && d[11] != 0x0F;
+}
+
 static int fat_open(const char *name, struct ifs_file *f)
 {
     char n[11];
@@ -92,14 +99,16 @@ static int fat_open(const char *name, struct ifs_file *f)
         for (e = 0; e < 512; e += 32) {
             if (d[e] == 0)
                 return -1;                      /* Ende des Verzeichnisses */
-            if (d[e] == 0xE5 || (d[e + 11] & 0x18))
-                continue;                       /* geloescht, Label, Ordner */
+            if (!is_file(d + e))
+                continue;
             for (k = 0; k < 11; k++)
                 if (d[e + k] != (unsigned char)n[k])
                     break;
             if (k == 11) {
                 f->first = rd16(e + 26);
                 f->size  = rd16(e + 28) | ((unsigned long)rd16(e + 30) << 16);
+                f->cache_clus = 0;
+                f->cache_pos  = 0;
                 return 0;
             }
         }
@@ -107,31 +116,91 @@ static int fat_open(const char *name, struct ifs_file *f)
     return -1;
 }
 
-static int fat_read(struct ifs_file *f, unsigned long dst, unsigned max)
+static int fat_readdir(unsigned want, struct ifs_dirent *de)
 {
-    unsigned c = f->first, s, n, done = 0;
-    unsigned long left = f->size;
+    unsigned s, e, k, i, n = 0;
+    unsigned char __far *d;
 
-    if (left > max)
-        return -1;
-    scratch_map(dst, max ? max - 1 : 0xFFFF);
-    while (left > 0) {
-        if (c < 2 || c >= 0xFF0)
-            return -1;                          /* kaputte Kette          */
-        for (s = 0; s < spc && left > 0; s++) {
-            if (fd_read(data_lba + (c - 2) * spc + s))
+    for (s = 0; s < root_secs; s++) {
+        if (fd_read(root_lba + s))
+            return -1;
+        d = dma();
+        for (e = 0; e < 512; e += 32) {
+            if (d[e] == 0)
                 return -1;
-            n = left > 512 ? 512 : (unsigned)left;
-            far_copy(SCRATCH, done, DMABUF, 0, n);
-            done += n;
-            left -= n;
+            if (!is_file(d + e))
+                continue;
+            if (n++ != want)
+                continue;
+            i = 0;                              /* "NAME    EXT" -> NAME.EXT */
+            for (k = 0; k < 8 && d[e + k] != ' '; k++)
+                de->name[i++] = d[e + k];
+            if (d[e + 8] != ' ') {
+                de->name[i++] = '.';
+                for (k = 8; k < 11 && d[e + k] != ' '; k++)
+                    de->name[i++] = d[e + k];
+            }
+            de->name[i] = 0;
+            de->attr = d[e + 11];
+            de->time = rd16(e + 22);
+            de->date = rd16(e + 24);
+            de->size = rd16(e + 28) | ((unsigned long)rd16(e + 30) << 16);
+            return 0;
         }
-        c = next_cluster(c);
     }
-    return 0;
+    return -1;
 }
 
-struct ifs_driver fat12_driver = { "FAT12", fat_mount, fat_open, fat_read };
+static int fat_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+                    unsigned off, unsigned len)
+{
+    unsigned csz = spc * 512, c, so, b, n, done = 0;
+    unsigned long cpos;
+
+    if (pos >= f->size)
+        return 0;
+    if (f->size - pos < len)
+        len = (unsigned)(f->size - pos);
+
+    if (f->cache_clus && pos >= f->cache_pos) {
+        c = f->cache_clus;                      /* weiter, wo wir waren */
+        cpos = f->cache_pos;
+    } else {
+        c = f->first;
+        cpos = 0;
+    }
+    while (pos - cpos >= csz) {                 /* zum Cluster vorlaufen */
+        if (c < 2 || c >= 0xFF0)
+            return -1;
+        c = next_cluster(c);
+        cpos += csz;
+    }
+    while (done < len) {
+        if (c < 2 || c >= 0xFF0)
+            return -1;                          /* kaputte Kette        */
+        f->cache_clus = c;
+        f->cache_pos  = cpos;
+        so = (unsigned)(pos - cpos);
+        if (fd_read(data_lba + (c - 2) * spc + so / 512))
+            return -1;
+        b = so % 512;
+        n = 512 - b;
+        if (n > len - done)
+            n = len - done;
+        far_copy(sel, off + done, DMABUF, b, n);
+        done += n;
+        pos  += n;
+        if (pos - cpos >= csz) {
+            c = next_cluster(c);
+            cpos += csz;
+        }
+    }
+    return done;
+}
+
+struct ifs_driver fat12_driver = {
+    "FAT12", fat_mount, fat_open, fat_read, fat_readdir
+};
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
 static struct ifs_driver *mounted;
@@ -149,9 +218,15 @@ int ifs_open(const char *name, struct ifs_file *f)
     return mounted ? mounted->open(name, f) : -1;
 }
 
-int ifs_read(struct ifs_file *f, unsigned long dst, unsigned max)
+int ifs_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+             unsigned off, unsigned len)
 {
-    return mounted ? mounted->read(f, dst, max) : -1;
+    return mounted ? mounted->read(f, pos, sel, off, len) : -1;
+}
+
+int ifs_readdir(unsigned n, struct ifs_dirent *d)
+{
+    return mounted ? mounted->readdir(n, d) : -1;
 }
 
 const char *ifs_name(void)

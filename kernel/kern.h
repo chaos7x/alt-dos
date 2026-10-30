@@ -18,8 +18,20 @@
 #define DMABUF      0x38            /* DMA-Puffer fuer Laufwerke           */
 #define SCRATCH2    0x40            /* zweites Fenster, z. B. fuer Kopien   */
 
+#define NTASK       8               /* Tasks und Sitzungen hoechstens       */
+#define TSS_IDX(i)  (9 + (i))
+#define LDT_IDX(i)  (9 + NTASK + (i))
+#define SCR_IDX(i)  (9 + 2 * NTASK + (i))   /* Bildschirmpuffer je Sitzung */
+#define TSS_SEL(i)  (TSS_IDX(i) * 8)
+#define LDT_SEL(i)  (LDT_IDX(i) * 8)
+#define SCR_SEL(i)  (SCR_IDX(i) * 8)
+#define NGDT        (9 + 3 * NTASK)
+
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 512
+
+#define KBASE       0x10000UL       /* Kernel: ein 64-KB-Segment ab hier   */
+#define LIN(p)      (KBASE + (unsigned short)(p))
 
 struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; unsigned short rsv; };
 
@@ -27,7 +39,7 @@ struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; uns
 
 extern struct desc gdt[];
 
-/* SCRATCH auf linearen Speicher richten */
+void set_desc(int idx, unsigned long base, unsigned limit, unsigned char acc);
 void scratch_map(unsigned long base, unsigned limit);
 void scratch2_map(unsigned long base, unsigned limit);
 
@@ -38,16 +50,47 @@ unsigned long get_ticks(void);
 void          idle_wait(void);
 void          enable_ints(void);
 void          zero_seg(unsigned sel, unsigned words);
+unsigned      irq_off(void);
+void          irq_restore(unsigned flags);
+void          halt_forever(void);
 
-extern volatile unsigned char fdc_irq;
+extern volatile unsigned char  fdc_irq;
+extern volatile unsigned short uptime_s;
 
-/* ---- Hilfen ------------------------------------------------------------ */
+/* ---- Hilfen (kernel.c) ------------------------------------------------- */
 void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n);
 void delay_ticks(unsigned n);
+void panic(const char *msg);
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
 int  fd_init(void);
 int  fd_read(unsigned lba);         /* Sektor in den DMA-Puffer, 0 = ok    */
 void fd_motor_off(void);
+
+/* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
+#define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */
+#define SCOLS       80
+#define SBYTES      (SROWS * SCOLS * 2)
+
+int  vio_open(const char *title);   /* -> Sitzung oder -1                  */
+void vio_close(int s);
+void vio_title(int s, const char *title);
+void vio_focus(int s);
+void vio_next(void);
+int  vio_fg(void);
+int  vio_used(int s);
+void vio_cls(int s);
+void vio_tty(int s, unsigned sel, unsigned off, unsigned len);
+void vio_str(int s, int row, int col, unsigned sel, unsigned off,
+             unsigned limit, unsigned char attr);
+void vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
+void vio_status(void);
+
+/* ---- Tastatur (kbd.c) -------------------------------------------------- */
+void kbd_init(void);
+int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
+int  kbd_peek(void);
+void kbd_flush(void);
+extern volatile unsigned char kbd_switch_req, kbd_break_req;
 
 #endif

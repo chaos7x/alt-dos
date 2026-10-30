@@ -7,7 +7,7 @@
  *
  *     call far FAPI_GATE:0000
  *
- *     AX = Funktionsnummer, BX/CX = Argumente, Rueckgabe in AX
+ *     AX = Funktionsnummer, BX/CX/DX = Argumente, Rueckgabe in AX
  *     Zeiger-Argumente sind near und beziehen sich auf das DS des Aufrufers.
  */
 #ifndef FAPI_ABI_H
@@ -23,10 +23,29 @@
 #define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
 #define FAPI_ALLOCSEG       0x06    /* BX = Groesse (0 = 64 KB) -> Selektor */
 #define FAPI_FREESEG        0x07    /* BX = Selektor                    */
+#define FAPI_KBDCHARIN      0x08    /* -> AX = Zeichen | Scancode << 8  */
+#define FAPI_KBDPEEK        0x09    /* wie KBDCHARIN, wartet nicht, 0 = nichts */
+#define FAPI_VIOWRTTTY      0x0A    /* BX = Text, CX = Laenge           */
+#define FAPI_VIOCLS         0x0B    /* Bildschirm der Sitzung loeschen  */
+#define FAPI_EXECPGM        0x0C    /* BX = Befehlszeile, CX = EXEC_*   */
+#define FAPI_GETARGS        0x0D    /* BX = Puffer (FAPI_ARGLEN Bytes)  */
+#define FAPI_OPEN           0x0E    /* BX = Dateiname -> Handle         */
+#define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
+#define FAPI_CLOSE          0x10    /* BX = Handle                      */
+#define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer */
 
 #define FAPI_ERROR          0xFFFF
 
 #define FAPI_VERSION        0x0500
+#define FAPI_ARGLEN         81
+
+/* DosExecPgm */
+#define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
+#define EXEC_ASYNC          1       /* eigene Sitzung, laeuft nebenher    */
+#define EXEC_ERR_NOTFOUND   1
+#define EXEC_ERR_NOMEM      2
+#define EXEC_ERR_FORMAT     3
+#define EXEC_ERR_NOSLOT     4
 
 /*
  * Speicher aus Sicht der FAPI: ein einziger Arbeitsspeicher. Die Trennung
@@ -39,6 +58,13 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     unsigned short kernel_kb;       /* vom Kernel reserviert            */
     unsigned short apps_kb;         /* fuer Programmabbilder reserviert */
     unsigned short alloc_kb;        /* per DosAllocSeg vergeben         */
+};
+
+struct fapi_dirent {                /* DosFindEntry                     */
+    char           name[13];        /* "NAME.EXT"                       */
+    unsigned char  attr;            /* FAT-Attribute                    */
+    unsigned long  size;
+    unsigned short date, time;      /* FAT-Format                       */
 };
 
 #endif

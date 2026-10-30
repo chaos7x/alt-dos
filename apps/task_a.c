@@ -1,4 +1,4 @@
-/* Task A: zaehlt endlos und gibt nach jedem Durchlauf per DosYield() ab. */
+/* TASKA: zaehlt und gibt nach jedem Durchlauf per DosYield() ab. */
 #include "fapi.h"
 
 static char cnt[] = "0000000";
@@ -14,19 +14,17 @@ static void count_up(char *d)
 
 void main(void)
 {
-    static char ver[] = "FAPI-Version ?.??";
-    unsigned v = DosGetVersion();
-
-    ver[13] = (char)('0' + (v >> 8));
-    ver[15] = (char)('0' + (v & 0xFF) / 10);
-    ver[16] = (char)('0' + (v & 0xFF) % 10);
-
-    VioWrtStr(0, 2, "Hallo aus Ring 3. Ich gebe nach jedem Durchlauf mit DosYield() ab.");
-    VioWrtStr(1, 2, ver);
+    puts("TASKA: z\x84hlt und gibt nach jedem Durchlauf mit DosYield() ab.\n"
+         "Eine Taste beendet das Programm, Strg+C bricht es ab.\n\n");
     for (;;) {
         count_up(cnt);
-        VioWrtStr(2, 2, "Durchl\x84ufe:");
-        VioWrtStr(2, 15, cnt);
+        puts("\rDurchl\x84ufe: ");
+        puts(cnt);
+        if (KbdPeek()) {
+            KbdCharIn();
+            break;
+        }
         DosYield();
     }
+    puts("\n");
 }

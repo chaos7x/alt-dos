@@ -20,7 +20,7 @@ segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
 
-extern gdt_build_, kmain_, fapi_dispatch_, fault_
+extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_
 extern _gdtr, _idtr
 
 ; ---------------------------------------------------------------------------
@@ -34,6 +34,15 @@ _start:
         mov     ax, cs
         mov     ds, ax
         mov     es, ax
+        ; BSS selbst nullen - der Kernel-Stack liegt darin, also vor dem
+        ; ersten PUSH. Der Bootsektor hat hier nur Reste geladen.
+        mov     di, bss_start
+        mov     cx, bss_end
+        sub     cx, di
+        xor     al, al
+        cld
+        rep     stosb
+        mov     ax, cs
         mov     ss, ax
         mov     sp, kstack_top
         mov     [_boot_drive], dl
@@ -137,6 +146,7 @@ fapi_entry_:
         mov     di, KDATA
         mov     ds, di
         mov     es, di
+        mov     [_fapi_dx], dx          ; viertes Argument
         mov     dx, si
         call    fapi_dispatch_          ; (fn, usel, a1, a2) -> AX
         mov     bp, sp
@@ -234,6 +244,24 @@ irq6:
         out     0x20, al
         pop     ds
         pop     ax
+        iret
+
+; IRQ 1: Tastatur
+irq1:
+        pusha
+        push    ds
+        push    es
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        in      al, 0x60
+        xor     ah, ah
+        call    kbd_irq_
+        mov     al, 0x20
+        out     0x20, al
+        pop     es
+        pop     ds
+        popa
         iret
 
 ; alle anderen IRQs: maskiert, nur fuer den Fall der Faelle
@@ -347,6 +375,21 @@ zero_seg_:
         pop     es
         ret
 
+; unsigned irq_off(void)  - Flags sichern, Interrupts aus
+global irq_off_
+irq_off_:
+        pushf
+        pop     ax
+        cli
+        ret
+
+; void irq_restore(unsigned flags)
+global irq_restore_
+irq_restore_:
+        push    ax
+        popf
+        ret
+
 global halt_forever_
 halt_forever_:
         cli
@@ -362,7 +405,7 @@ _isr_table:
         dw exc8, exc9, exc10, exc11, exc12, exc13, exc14, exc15
         dw exc16, 0, 0, 0, 0, 0, 0, 0
         dw 0, 0, 0, 0, 0, 0, 0, 0
-        dw irq0, irq_other, irq_other, irq_other
+        dw irq0, irq1, irq_other, irq_other
         dw irq_other, irq_other, irq6, irq_other
         dw irq_other, irq_other, irq_other, irq_other
         dw irq_other, irq_other, irq_other, irq_other
@@ -372,7 +415,10 @@ tj_sel: dw 0
 
 segment _BSS
 
+bss_start:
 global _boot_drive, _ticks, _uptime_s
+global _fapi_dx
+_fapi_dx:    resw 1
 _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
@@ -388,3 +434,4 @@ kstack:      resb 1024
 kstack_top:
 
 segment _BSSEND
+bss_end:

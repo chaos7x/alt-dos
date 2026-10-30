@@ -1,7 +1,7 @@
 /*
- * Task B: fordert per DosAllocSeg() zehn Segmente zu je 64 KB an, beschreibt
+ * TASKB: fordert per DosAllocSeg() zehn Segmente zu je 64 KB an, beschreibt
  * und prueft sie, gibt die Haelfte selbst frei und beendet sich dann. Den
- * Rest muss der Kernel beim DosExit aufraeumen.
+ * Rest muss der Kernel beim Programmende aufraeumen.
  */
 #include <i86.h>
 #include "fapi.h"
@@ -34,36 +34,27 @@ static int test_seg(unsigned sel)
 void main(void)
 {
     static unsigned sel[NSEG];
-    static char line[] = "Segment ??: Selektor ????h, 64 KB beschrieben und gepr\x81" "ft  ";
+    static char line[] = "  Segment ??: Selektor ????h, 64 KB beschrieben und gepr\x81" "ft\n";
     int i;
 
-    VioWrtStr(0, 2, "Fordere nacheinander 10 Segmente zu je 64 KB per DosAllocSeg() an.");
-    DosSleep(2000);
-
+    puts("TASKB: fordert 10 Segmente zu je 64 KB per DosAllocSeg() an.\n");
     for (i = 0; i < NSEG; i++) {
         sel[i] = DosAllocSeg(0);
-        line[8] = (char)(i + 1 >= 10 ? '1' : ' ');
-        line[9] = (char)('0' + (i + 1) % 10);
         if (sel[i] == FAPI_ERROR) {
-            VioWrtStr(1, 2, "DosAllocSeg fehlgeschlagen - kein Speicher mehr.");
+            puts("  DosAllocSeg fehlgeschlagen - kein Speicher mehr.\n");
             break;
         }
-        hex4(sel[i], line + 21);
+        line[10] = (char)(i + 1 >= 10 ? '1' : ' ');
+        line[11] = (char)('0' + (i + 1) % 10);
+        hex4(sel[i], line + 23);
         if (!test_seg(sel[i])) {
-            VioWrtStr(1, 2, "Musterfehler im Segment!");
+            puts("  Musterfehler im Segment!\n");
             return;
         }
-        VioWrtStr(1, 2, line);
-        DosSleep(700);
+        puts(line);
+        DosSleep(300);
     }
-
-    DosSleep(2000);
-    VioWrtStr(2, 2, "Gebe 5 Segmente mit DosFreeSeg() frei ...");
-    for (i = 0; i < NSEG / 2; i++) {
+    puts("Gebe 5 Segmente mit DosFreeSeg() frei, den Rest r\x84umt der Kernel auf.\n");
+    for (i = 0; i < NSEG / 2; i++)
         DosFreeSeg(sel[i]);
-        DosSleep(500);
-    }
-    DosSleep(2000);
-    VioWrtStr(2, 2, "Ende ohne Aufr\x84umen - den Rest gibt der Kernel bei DosExit frei.");
-    DosSleep(3000);
 }

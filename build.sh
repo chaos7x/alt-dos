@@ -32,17 +32,19 @@ nasm -f bin boot/boot.asm -o $B/boot.bin
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
-for m in kernel mem floppy fat12; do
+for m in kernel mem floppy fat12 vio kbd; do
     wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
 wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
       file $KOBJ 2>&1 | grep -v W1014 || true
-check_size $B/kernel.bin $B/kernel.map 32768 kernel
+check_size $B/kernel.bin $B/kernel.map 65536 kernel
+# der Bootsektor laedt 64 Sektoren; BSS dahinter nullt der Kernel selbst
+[ $(stat -c %s $B/kernel.bin) -le 32768 ] || { echo "FEHLER: KERNEL.SYS groesser als 32 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in a b c mem; do
+for t in command a b c mem; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
@@ -50,7 +52,7 @@ done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
-for t in a b c mem; do
+for t in command a b c mem; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
@@ -70,6 +72,7 @@ cp $B/kernel.bin $B/KERNEL.SYS
 truncate -s 32768 $B/KERNEL.SYS
 mcopy -i $IMG $B/KERNEL.SYS ::KERNEL.SYS
 mattrib -i $IMG +r +s +h ::KERNEL.SYS
+mcopy -i $IMG $B/task_command.exe ::COMMAND.EXE
 mcopy -i $IMG $B/task_a.exe ::TASKA.EXE
 mcopy -i $IMG $B/task_b.exe ::TASKB.EXE
 mcopy -i $IMG $B/task_c.exe ::TASKC.EXE

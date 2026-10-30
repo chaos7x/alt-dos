@@ -6,7 +6,7 @@
  * und ein Segment von hoechstens 64 KB umfasst hoechstens 256 Einheiten.
  * Belegung als Bitmap: 65536 Einheiten = 8 KB, 1 = belegt.
  *
- * Nutzbar sind zwei Stuecke: unter 640 KB (ab 96 KB, darunter liegen
+ * Nutzbar sind zwei Stuecke: unter 640 KB (ab 128 KB, darunter liegen
  * BIOS-Daten, Bootbereich, DMA-Puffer und Kernel) und ab 1 MB. Das Loch
  * dazwischen (Video, ROMs) bleibt dauerhaft belegt.
  */

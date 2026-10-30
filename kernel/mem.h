@@ -2,7 +2,7 @@
 #define MEM_H
 
 #define MEM_UNIT        256         /* Bytes je Einheit                    */
-#define MEM_LOW_START   0x0180      /* 18000h: darunter BIOS-Daten, Boot, Kernel */
+#define MEM_LOW_START   0x0200      /* 20000h: darunter BIOS-Daten, Boot, Kernel */
 #define MEM_HIGH_START  0x1000      /* 100000h: 1 MB                       */
 
 void     mem_init(unsigned conv_kb, unsigned ext_kb);

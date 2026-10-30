@@ -1,4 +1,4 @@
-/* Task C: versucht, an der FAPI vorbei direkt in den VGA-Speicher zu schreiben. */
+/* TASKC: versucht, an der FAPI vorbei direkt in den VGA-Speicher zu schreiben. */
 #include "fapi.h"
 
 /* mov ax,0B800h / mov es,ax / mov word ptr es:[0],4F21h */
@@ -11,10 +11,9 @@ void poke_vga(void);
 
 void main(void)
 {
-    VioWrtStr(0, 2, "Ich warte 3 Sekunden und schreibe dann direkt nach B800:0000 ...");
-    DosSleep(3000);
-    VioWrtStr(1, 2, "Jetzt: mov ax,0B800h / mov es,ax  (Real-Mode-Gewohnheit)");
+    puts("TASKC: schreibt gleich direkt nach B800:0000, wie unter Real-Mode-DOS.\n"
+         "mov ax,0B800h / mov es,ax ...\n");
     DosSleep(1000);
     poke_vga();
-    VioWrtStr(2, 2, "Das hier d\x81rfte nie erscheinen!");
+    puts("Das hier d\x81rfte nie erscheinen!\n");
 }

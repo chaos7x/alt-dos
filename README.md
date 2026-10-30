@@ -1,4 +1,4 @@
-# alt-dos – DOS 5.0, Kernel-Meilenstein 3
+# alt-dos – DOS 5.0, Meilenstein 4
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
@@ -11,8 +11,13 @@ ist nur über die Family API (FAPI) erreichbar.
 - Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
   im Protected Mode gibt es kein BIOS mehr
 - IFS-Schicht mit FAT12 als erstem Dateisystemtreiber
-- Programmlader: `STARTUP.CMD` nennt bis zu vier Programme, die als Dateien
-  geladen werden
+- Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
+  Start läuft
+- `COMMAND.EXE`: Befehlsinterpreter mit `DIR`, `TYPE`, `CLS`, `VER`, `ECHO`,
+  `START`, `HILFE`, `EXIT`; andere Eingaben starten das gleichnamige Programm
+- Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
+  eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab
+- Tastaturtreiber (IRQ 1) mit deutscher Belegung, Umlauten und AltGr
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
@@ -22,11 +27,11 @@ ist nur über die Family API (FAPI) erreichbar.
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 
-Demo-Tasks: **A** zählt und gibt per `DosYield()` ab, **B** fordert zehn
-Segmente zu 64 KB an, prüft sie, gibt die Hälfte frei und endet – den Rest
-räumt der Kernel auf, **C** versucht direkt nach B800:0000
-zu schreiben und wird per #GP beendet, **MEM.EXE** zeigt den Arbeitsspeicher laufend
-an. Alle vier liegen als `TASKA.EXE` … `MEM.EXE` auf der Diskette.
+Programme auf der Diskette: **MEM** zeigt den Arbeitsspeicher, **TASKA**
+zählt und gibt per `DosYield()` ab (schön mit `START TASKA` im Hintergrund),
+**TASKB** fordert zehn Segmente zu 64 KB an, prüft sie, gibt die Hälfte frei
+und überlässt den Rest dem Kernel, **TASKC** versucht direkt nach B800:0000 zu
+schreiben und wird per #GP beendet.
 
 ## Programmformat
 
@@ -38,7 +43,7 @@ Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
-## FAPI (Stand Meilenstein 3)
+## FAPI (Stand Meilenstein 4)
 
 | AX | Funktion        | Argumente                       |
 |----|-----------------|---------------------------------|
@@ -50,14 +55,24 @@ Dateien aus dem Watcom-Abbild.
 | 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB) |
 | 6  | DosAllocSeg     | BX = Größe, 0 = 64 KB → AX = Selektor |
 | 7  | DosFreeSeg      | BX = Selektor                   |
+| 8  | KbdCharIn       | → AX = Zeichen \| Scancode<<8   |
+| 9  | KbdPeek         | wie 8, wartet nicht, 0 = nichts |
+| 10 | VioWrtTTY       | BX = Text, CX = Länge           |
+| 11 | VioCls          | –                               |
+| 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung |
+| 13 | DosGetArgs      | BX = Puffer (81 Bytes)          |
+| 14 | DosOpen         | BX = Dateiname → Handle         |
+| 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
+| 16 | DosClose        | BX = Handle                     |
+| 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer |
 
 ## Speicher
 
 | linear           | Inhalt                          |
 |------------------|---------------------------------|
 | 08000h – 081FFh  | DMA-Puffer für Laufwerke        |
-| 10000h – 17FFFh  | Kernel (ein 64-KB-Segment)      |
-| 18000h – 9FFFFh  | frei, Speicherverwaltung        |
+| 10000h – 1FFFFh  | Kernel (ein 64-KB-Segment)      |
+| 20000h – 9FFFFh  | frei, Speicherverwaltung        |
 | A0000h – FFFFFh  | Systembereich (Video, ROMs)     |
 | ab 100000h       | frei, Speicherverwaltung        |
 
