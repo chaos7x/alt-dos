@@ -43,3 +43,7 @@ Benötigt NASM und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink` im PATH):
     ./build.sh      # -> build/dos5.img (1,44 MB)
 
 In 86Box als Diskette A: einlegen, beliebige 286-Maschine mit VGA.
+
+## Lizenz
+
+MIT, siehe [LICENSE](LICENSE).
