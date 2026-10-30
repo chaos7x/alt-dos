@@ -32,7 +32,8 @@ an. Alle vier liegen als `TASKA.EXE` … `MEM.EXE` auf der Diskette.
 
 FAPI-Programme sind `.EXE`-Dateien mit einem MZ-Stub vorn: Unter MS-DOS
 gestartet, meldet er nur „Diese FAPI-Anwendung kann nicht im Real Mode
-ausgeführt werden.“ Dahinter folgt der FX-Kopf (siehe `include/fx.h`) mit
+ausgeführt werden.“ Dahinter folgt der FX-Kopf mit der Signatur `CH` – nach dem Vorbild von MZ,
+den Initialen von Mark Zbikowski (siehe `include/fx.h`), mit
 Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.

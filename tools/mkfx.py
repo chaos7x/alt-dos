@@ -40,7 +40,7 @@ def main():
         sys.exit('%s: Abbild + BSS + Stack = %d Bytes, mehr als 64 KB'
                  % (image_f, total))
 
-    fx = struct.pack('<2sHHHHHHH', b'FX', 1, image_off, len(image),
+    fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
                      bss, stack, 0, 0)
 
     body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx + image
