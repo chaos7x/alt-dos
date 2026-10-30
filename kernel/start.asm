@@ -20,6 +20,7 @@ segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
 
+extern preload_
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern _gdtr, _idtr
 
@@ -56,6 +57,14 @@ _start:
         xor     ax, ax
 .ext_ok:
         mov     [_mem_ext_kb], ax
+
+        ; Start von Festplatte: CONFIG.SYS und Treiber per BIOS vorladen,
+        ; solange es noch geht (BIOS-Plattenroutinen brauchen Interrupts)
+        test    byte [_boot_drive], 0x80
+        jz      .nopre
+        sti
+        call    preload_
+.nopre:
         cli
 
         call    a20_enable
@@ -446,6 +455,110 @@ irq_restore_:
 
 ; void cpu_reset(void)  - Neustart ueber den Tastaturcontroller (Puls auf
 ; der Reset-Leitung), als Rueckfall ein Dreifachfehler
+; int rm_geometry(void) - Geometrie des Startlaufwerks (INT 13h/08h), Real Mode
+global rm_geometry_
+rm_geometry_:
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        xor     di, di
+        mov     es, di
+        mov     ah, 0x08
+        mov     dl, [_boot_drive]
+        int     0x13
+        jc      .err
+        mov     al, cl
+        and     ax, 0x3F
+        jz      .err
+        mov     [geo_spt], ax
+        mov     al, dh
+        xor     ah, ah
+        inc     ax
+        mov     [geo_heads], ax
+        xor     ax, ax
+        jmp     .done
+.err:   mov     ax, 1
+.done:  pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
+; int rm_read(unsigned long lba) - DX:AX = LBA, ein Sektor nach 0000:8000
+; ueber INT 13h (CHS), Real Mode. 0 = ok
+global rm_read_
+rm_read_:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        mov     di, 3                   ; Versuche
+.again:
+        push    ax
+        push    dx
+        mov     bx, ax                  ; LBA / Sektoren je Spur
+        mov     ax, dx
+        xor     dx, dx
+        div     word [geo_spt]
+        mov     cx, ax
+        mov     ax, bx
+        div     word [geo_spt]
+        mov     si, dx                  ; Sektor-Index
+        mov     bx, ax                  ; Spur CX:BX / Koepfe
+        mov     ax, cx
+        xor     dx, dx
+        div     word [geo_heads]
+        test    ax, ax
+        jnz     .bad
+        mov     ax, bx
+        div     word [geo_heads]        ; AX = Zylinder, DX = Kopf
+        cmp     ax, 1024
+        jae     .bad
+        mov     ch, al
+        mov     cl, ah
+        shl     cl, 6
+        mov     bx, si
+        inc     bx
+        or      cl, bl
+        mov     dh, dl
+        mov     dl, [_boot_drive]
+        mov     bx, 0x0800
+        mov     es, bx
+        xor     bx, bx
+        mov     ax, 0x0201
+        int     0x13
+        pop     dx
+        pop     ax
+        jnc     .ok
+        push    ax
+        push    dx
+        xor     ax, ax                  ; Laufwerk zuruecksetzen
+        mov     dl, [_boot_drive]
+        int     0x13
+        pop     dx
+        pop     ax
+        dec     di
+        jnz     .again
+        mov     ax, 1
+        jmp     .out
+.bad:   pop     dx
+        pop     ax
+        mov     ax, 1
+        jmp     .out
+.ok:    xor     ax, ax
+.out:   pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
 global cpu_reset_
 cpu_reset_:
         cli
@@ -485,6 +598,8 @@ tj_ptr: dw 0
 tj_sel: dw 0
 dc_ptr: dw 0, 0
 null_idtr: dw 0, 0, 0
+geo_spt:   dw 63
+geo_heads: dw 16
 
 segment _BSS
 

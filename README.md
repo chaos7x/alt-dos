@@ -8,7 +8,7 @@ und PC-DOS.
 
 ## Was läuft
 
-- Standard-FAT12-Diskette: Der Kernel ist die Datei `KERNEL.SYS` (versteckt,
+- Standard-FAT12-Diskette: Der Kernel ist die Datei `ATDOS.SYS` (versteckt,
   System), die wie einst `IO.SYS` als erste Datei zusammenhängend liegt
 - Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
   im Protected Mode gibt es kein BIOS mehr
@@ -19,6 +19,8 @@ und PC-DOS.
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (erste
   IDE-Platte, PIO) – beide vorerst nur lesend
 - Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
+- Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
+  „Start von Festplatte“
 - Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
   Start läuft
 - `COMMAND.EXE`: Befehlsinterpreter mit `DIR`, `CD`, Laufwerkswechsel,
@@ -111,17 +113,46 @@ erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
 Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
-    ./build.sh      # -> build/dos5.img (1,44 MB, FAT12)
+    ./build.sh      # -> build/dos5.img (1,44 MB, FAT12) und build/atdos-hd.img
 
 `CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
 findet, wird wieder entladen.
 
 Das Image ist eine normale FAT12-Diskette und lässt sich unter MS-DOS, mit
-mtools oder unter jedem anderen System lesen. `KERNEL.SYS` ist versteckt
+mtools oder unter jedem anderen System lesen. `ATDOS.SYS` ist versteckt
 (`DIR /A` zeigt sie) und muss die erste Datei bleiben; beim Austauschen
 also nicht einfach überschreiben, sondern das Image neu bauen.
 
 In 86Box als Diskette A: einlegen, beliebige 286-Maschine mit VGA.
+
+## Start von Festplatte
+
+Der Bootsektor der Partition (`boot/hdboot.asm`) sucht `ATDOS.SYS` im
+Stammverzeichnis und folgt der FAT-Kette – die Datei darf also zerstückelt
+liegen. Gelesen wird per BIOS (CHS), deshalb muss `ATDOS.SYS` unterhalb von
+Zylinder 1024 liegen.
+
+Die Plattentreiber stehen in `CONFIG.SYS` auf eben der Platte, die sie erst
+lesbar machen. Wie bei OS/2 liest der Kernel deshalb noch im Real Mode über
+das BIOS `CONFIG.SYS` und alle `DEVICE=`-Dateien vor (höchstens 30 KB, nur
+aus dem Stammverzeichnis). Danach erkennt er die Startpartition an Startsektor
+und Seriennummer; sie wird das erste Laufwerk der Programme. `A:` wird dann
+erst beim ersten Zugriff eingehängt.
+
+Zwei Wege auf die Platte:
+
+- **Fertige Platte:** `build/atdos-hd.img` (im Release als
+  `atdos-hd.zip`), 63 MB, Geometrie 130 Zylinder / 16 Köpfe / 63 Sektoren.
+  In 86Box als IDE-Platte einhängen und im BIOS-Setup als Typ „User“ mit
+  dieser Geometrie eintragen.
+- **Vorhandene FAT16-Partition:** Unter MS-DOS von der AT-DOS-Diskette
+  `ATSYS D:` aufrufen. Es kopiert alle Dateien der Diskette (auch die
+  versteckte `ATDOS.SYS`) ins Stammverzeichnis und ersetzt den Code im
+  Bootsektor; der BPB bleibt. Laufwerke mit `IO.SYS`, `MSDOS.SYS` oder
+  `IBMBIO.COM` lehnt es ab. Danach muss die Partition aktiv sein (FDISK) und
+  die Platte die erste Festplatte des BIOS.
+
+Achtung: `ATSYS` überschreibt eine vorhandene `CONFIG.SYS` im Stammverzeichnis.
 
 ## Lizenz
 

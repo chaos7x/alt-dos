@@ -294,10 +294,14 @@ static char up(char c)
 
 /* Pfad eines Tasks (oder t < 0: Laufwerk A:, Stamm) -> Laufwerk und
    kanonischer Pfad "\A\B" bzw. "\". Laenge der Eingabe bis 260 Zeichen. */
+/* Laufwerk fuer Kernel-Pfade ohne Task (CONFIG.SYS, STARTUP.CMD) und
+   erstes Laufwerk der Programme: A: oder die Startpartition */
+static int sys_drive = 0;
+
 static int resolve(int t, const char *in, int *drive, char *out)
 {
     const char *p = in, *q;
-    int d = t >= 0 ? task[t].drive : 0, n, k;
+    int d = t >= 0 ? task[t].drive : sys_drive, n, k;
 
     if (p[0] && p[1] == ':') {
         if (up(p[0]) < 'A' || up(p[0]) > 'Z')
@@ -518,7 +522,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     err = load_program(t, d, canon);
     if (err)
         return -err;
-    task[t].drive = from >= 0 ? task[from].drive : 0;
+    task[t].drive = from >= 0 ? task[from].drive : (unsigned char)sys_drive;
     if (from >= 0)
         scopy(task[t].cwd, task[from].cwd, IFS_PATHLEN);
     else
@@ -1089,6 +1093,20 @@ static void mount_disk(int dev)
     (void)mounted;
 }
 
+/* Startpartition unter den eingehaengten Laufwerken: gleicher Startsektor
+   und gleiche Seriennummer wie der Bootsektor, den das BIOS geladen hat */
+static int find_boot_vol(void)
+{
+    int d;
+    for (d = 2; d < NDRIVE; d++)
+        if (vol[d].used && vol[d].drv == &fat_driver &&
+            vol[d].start == boot_hidden && blk_read(vol[d].blk, vol[d].start) == 0 &&
+            rd16(DMABUF, 39) == (unsigned)boot_serial &&
+            rd16(DMABUF, 41) == (unsigned)(boot_serial >> 16))
+            return d;
+    return -1;
+}
+
 /* ---- Start ------------------------------------------------------------- */
 static char startup[512];
 
@@ -1096,7 +1114,7 @@ static char startup[512];
 static int read_cfg(const char *name)
 {
     struct ifs_file f;
-    if (ifs_open(0, name, &f) || f.size > sizeof(startup))
+    if (ifs_open(sys_drive, name, &f) || f.size > sizeof(startup))
         return -1;
     if (ifs_read(&f, 0, KDATA, (unsigned)startup, (unsigned)f.size) != (int)f.size)
         return -1;
@@ -1214,18 +1232,45 @@ void kmain(void)
 
     enable_ints();                  /* Diskette und Tastatur per IRQ     */
     kbd_init();
-    if (fd_init())
-        panic("Diskettencontroller antwortet nicht.");
     blk[BLK_FLOPPY].drv = -1;
     blk[BLK_FLOPPY].unit = 0;
     blk[BLK_FLOPPY].blocks = 2880;
     nblk = 1;
-    if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
-        panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
-    vio_kputs(s0, "\xFE Laufwerk A: Diskette, ");
-    vio_kputs(s0, vol[0].fat16 ? "FAT16\n" : "FAT12\n");
-
-    config_sys();
+    if (!(boot_drive & 0x80)) {
+        /* Start von Diskette: A: ist Pflicht */
+        if (fd_init())
+            panic("Diskettencontroller antwortet nicht.");
+        if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
+            panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
+        vio_kputs(s0, "\xFE Laufwerk A: Diskette, ");
+        vio_kputs(s0, vol[0].fat16 ? "FAT16\n" : "FAT12\n");
+        config_sys();
+    } else {
+        /* Start von Festplatte: A: erst beim ersten Zugriff einhaengen */
+        if (fd_init() == 0)
+            floppy_lazy = 1;
+        vio_kputs(s0, "\xFE Start von Festplatte, ");
+        udec(npre, num);
+        vio_kputs(s0, num);
+        vio_kputs(s0, " Datei(en) vorgeladen\n");
+        if (pre_err)
+            vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16\n" :
+                          pre_err == PRE_ERR_FULL ? "  Vorladebereich voll (30 KB)\n" :
+                                                    "  BIOS-Lesefehler beim Vorladen\n");
+        ifs_mount(PRE_DRIVE, -1, 0, &pre_driver);
+        sys_drive = PRE_DRIVE;
+        config_sys();
+        vol[PRE_DRIVE].used = 0;                /* Z: wieder weg        */
+        sys_drive = find_boot_vol();
+        if (sys_drive < 0)
+            panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
+        vio_kputs(s0, "\xFE Startlaufwerk ");
+        num[0] = (char)('A' + sys_drive);
+        num[1] = ':';
+        num[2] = '\n';
+        num[3] = 0;
+        vio_kputs(s0, num);
+    }
 
     size = read_cfg("\\STARTUP.CMD");
     if (size < 0)

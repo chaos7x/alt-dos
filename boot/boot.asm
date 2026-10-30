@@ -1,7 +1,7 @@
 ; AT-DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
 ;
 ; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel ist die Datei
-; KERNEL.SYS (versteckt, System) und liegt - wie einst IO.SYS - als erste
+; ATDOS.SYS (versteckt, System) und liegt - wie einst IO.SYS - als erste
 ; Datei zusammenhaengend am Anfang des Datenbereichs. Dieser Lader holt sie
 ; nach 1000:0000 (linear 10000h) und springt im Real Mode dorthin.
 ; Programme liegen als Dateien im Dateisystem und laedt der Kernel selbst.
@@ -10,7 +10,7 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 64                  ; KERNEL.SYS ist auf 32 KB aufgefuellt
+NSECT   equ 64                  ; ATDOS.SYS ist auf 32 KB aufgefuellt
 
         jmp     short start
         nop

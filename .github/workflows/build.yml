@@ -33,7 +33,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: alt-dos-image
-          path: build/dos5.img
+          path: |
+            build/dos5.img
+            build/atdos-hd.img
 
       - name: Als Release "latest" veroeffentlichen
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -41,7 +43,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest build/dos5.img \
+          (cd build && zip -q atdos-hd.zip atdos-hd.img)
+          gh release create latest build/dos5.img build/atdos-hd.zip \
             --prerelease \
             --title "Aktueller Stand (${GITHUB_SHA::7})" \
-            --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. Diskette A: in 86Box, beliebige 286-Maschine mit VGA."
+            --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. dos5.img: Diskette A: in 86Box, beliebige 286-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."

@@ -384,7 +384,18 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
     return 0;
 }
 
-#define VOL_OK(d) ((unsigned)(d) < NDRIVE && vol[d].used)
+/* Diskette A: beim Start von Festplatte erst beim ersten Zugriff */
+int floppy_lazy;
+
+static int vol_ok(int d)
+{
+    if ((unsigned)d >= NDRIVE)
+        return 0;
+    if (d == 0 && !vol[0].used && floppy_lazy)
+        ifs_mount(0, BLK_FLOPPY, 0, &fat_driver);
+    return vol[d].used;
+}
+#define VOL_OK(d) vol_ok(d)
 
 int ifs_open(int drive, const char *path, struct ifs_file *f)
 {

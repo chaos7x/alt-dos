@@ -65,7 +65,8 @@ struct ifs_driver {
 };
 
 extern struct volume vol[NDRIVE];
-extern struct ifs_driver fat_driver;
+extern struct ifs_driver fat_driver, pre_driver;
+extern int floppy_lazy;
 
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 int ifs_open(int drive, const char *path, struct ifs_file *f);

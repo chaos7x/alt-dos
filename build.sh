@@ -26,8 +26,11 @@ check_size() {   # Datei, Map, Maximum, Name
     echo "  $4: $(stat -c %s "$1") Bytes Datei, $end Bytes mit BSS (max. $3)"
 }
 
-echo "Bootsektor"
+echo "Bootsektoren"
 nasm -f bin boot/boot.asm -o $B/boot.bin
+nasm -f bin boot/hdboot.asm -o $B/hdboot.bin
+nasm -f bin boot/mbr.asm -o $B/mbr.bin
+nasm -f bin tools/atsys.asm -o $B/atsys.com     # braucht hdboot.bin
 
 echo "Tastaturbelegungen"
 python3 tools/mkkbl.py $B
@@ -35,7 +38,7 @@ python3 tools/mkkbl.py $B
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
-for m in kernel mem floppy fat vio kbd; do
+for m in kernel mem floppy fat vio kbd preload; do
     wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
@@ -43,7 +46,7 @@ wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
       file $KOBJ 2>&1 | grep -v W1014 || true
 check_size $B/kernel.bin $B/kernel.map 65536 kernel
 # der Bootsektor laedt 64 Sektoren; BSS dahinter nullt der Kernel selbst
-[ $(stat -c %s $B/kernel.bin) -le 32768 ] || { echo "FEHLER: KERNEL.SYS groesser als 32 KB"; exit 1; }
+[ $(stat -c %s $B/kernel.bin) -le 32768 ] || { echo "FEHLER: ATDOS.SYS groesser als 32 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
@@ -78,23 +81,42 @@ dd if=$B/boot.bin of=$IMG conv=notrunc status=none
 for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
-# KERNEL.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
+# ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
 # auf 32 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
-cp $B/kernel.bin $B/KERNEL.SYS
-truncate -s 32768 $B/KERNEL.SYS
-mcopy -i $IMG $B/KERNEL.SYS ::KERNEL.SYS
-mattrib -i $IMG +r +s +h ::KERNEL.SYS
-mcopy -i $IMG $B/task_command.exe ::COMMAND.EXE
-mcopy -i $IMG $B/task_keyb.exe ::KEYB.EXE
-mcopy -i $IMG $B/US.KBL ::US.KBL
-mcopy -i $IMG $B/GB.KBL ::GB.KBL
-mcopy -i $IMG $B/task_a.exe ::TASKA.EXE
-mcopy -i $IMG $B/task_b.exe ::TASKB.EXE
-mcopy -i $IMG $B/task_c.exe ::TASKC.EXE
-mcopy -i $IMG $B/task_mem.exe ::MEM.EXE
-mcopy -i $IMG STARTUP.CMD ::STARTUP.CMD
-mcopy -i $IMG CONFIG.SYS ::CONFIG.SYS
-mcopy -i $IMG $B/drv_aha154x.sys ::AHA154X.SYS
-mcopy -i $IMG $B/drv_ide.sys ::IDE.SYS
-rm -f $B/KERNEL.SYS
+cp $B/kernel.bin $B/ATDOS.SYS
+truncate -s 32768 $B/ATDOS.SYS
+mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
+mattrib -i $IMG +r +s +h ::ATDOS.SYS
+# alle uebrigen Dateien: Quelle Ziel
+FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
+       $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
+       $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
+       STARTUP.CMD STARTUP.CMD  CONFIG.SYS CONFIG.SYS
+       $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS"
+copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
+    set -- $FILES
+    while [ $# -gt 0 ]; do
+        mcopy -o $TARGET "$1" "$TO$2"
+        shift 2
+    done
+}
+TARGET="-i $IMG" TO="::" copy_files
+mcopy -i $IMG $B/atsys.com ::ATSYS.COM
 mdir -a -i $IMG :: | sed 's/^/  /'
+
+echo "Festplatte (atdos-hd.img, 130/16/63 = 63 MB, FAT16)"
+HD=$B/atdos-hd.img
+rm -f $HD
+truncate -s $((130 * 16 * 63 * 512)) $HD
+printf 'drive c: file="%s" partition=1\nmtools_skip_check=1\n' "$PWD/$HD" > $B/mtoolsrc
+export MTOOLSRC=$B/mtoolsrc
+mpartition -I -B $B/mbr.bin c: 2>/dev/null
+mpartition -c -t 130 -h 16 -s 63 -a c: 2>/dev/null
+mformat -H 63 -v AT-DOS c:
+python3 tools/sysboot.py $HD $((63 * 512)) $B/hdboot.bin
+mcopy $B/ATDOS.SYS c:ATDOS.SYS
+mattrib +r +s +h c:ATDOS.SYS
+TARGET="" TO="c:" copy_files
+mdir -a c: | sed 's/^/  /'
+unset MTOOLSRC
+rm -f $B/ATDOS.SYS

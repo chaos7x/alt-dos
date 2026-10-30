@@ -28,8 +28,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Aufbau
 
-- `boot/` – Bootsektor mit Standard-FAT12-BPB, lädt `KERNEL.SYS` (erste
-  Datei, zusammenhängend ab Cluster 2, auf 32 KB aufgefüllt) nach 1000:0000
+- `boot/` – `boot.asm`: Diskette, Standard-FAT12-BPB, lädt `ATDOS.SYS` (erste
+  Datei, zusammenhängend ab Cluster 2, auf 32 KB aufgefüllt) nach 1000:0000;
+  `hdboot.asm`: FAT16-Partition, sucht `ATDOS.SYS` und folgt der FAT-Kette
+  (CHS per INT 13h/08h-Geometrie); `mbr.asm`: MBR nur für `atdos-hd.img`
+- `kernel/preload.c` – Start von Platte: liest im **Real Mode** per BIOS
+  `CONFIG.SYS` und die `DEVICE=`-Dateien nach 0600h–7BFFh; das
+  Pseudo-Dateisystem `BOOT` stellt sie während `CONFIG.SYS` als `Z:` bereit.
+  Danach findet `find_boot_vol()` die Startpartition (Startsektor +
+  Seriennummer aus dem BPB bei 0000:7C00) und setzt `sys_drive`.
+  Code in `preload()` darf keine Selektoren und kein `vio` benutzen.
+- `tools/atsys.asm` – `ATSYS.COM` für MS-DOS (wie SYS); `tools/sysboot.py`
+  macht dasselbe für Abbilder beim Bauen
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
   `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
   `floppy.c` (Diskettentreiber), `fat.c` (FAT12/16 und IFS-Verteiler),
@@ -61,7 +71,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
   Speicher zu (zweites Fenster `SCRATCH2`, 40h), Laufwerke lesen per DMA in
   `DMABUF` (38h, linear 8000h).
-- Der Kernel ist ein 64-KB-Segment ab 10000h; `KERNEL.SYS` (Datei) darf
+- Der Kernel ist ein 64-KB-Segment ab 10000h; `ATDOS.SYS` (Datei) darf
   höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status. Programme schreiben in den Puffer ihrer Sitzung.
@@ -103,6 +113,10 @@ IRQ 5, DMA 1/5, DSP 4.05). Das SCAT-BIOS meldet 640 KB +
 15232 KB erweitert, dazu 384 KB Shadow-RAM für System- und Video-BIOS; es
 fehlen 128 KB zu 16 MB. Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
 SCSI-ID 6 CD-ROM.
+
+Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
+`ATSYS.COM` lässt sich in DOSBox-X testen (`imgmount d ziel.img -t hdd -size
+512,63,16,130`, Diskette als A:), danach das Ziel in QEMU starten.
 
 Für Plattentests in QEMU dient `IDE.SYS` mit einer FAT16-Testplatte
 (`-drive file=hdd.img,if=ide,snapshot=on`, angelegt mit `mpartition`/`mformat`).
