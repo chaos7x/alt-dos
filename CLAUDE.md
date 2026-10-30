@@ -104,6 +104,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   danach ScanDisk unter MS-DOS ohne Fehler. Alle Platten der Testmaschine
   sind Kopien, Schreiben ist überall erlaubt. Den Adaptec emuliert QEMU
   nicht – Änderungen an `AHA154X.SYS` nur in 86Box prüfbar.
+- CD über den Adaptec (SCSI-ID 6) auf dem SCAT bestätigt: ISO9660.IFS
+  liest eine echte CD von 1994/95 mit korrekten Datumsangaben.
 - Schreibtests in QEMU mit beschreibbaren Kopien der Abbilder, danach
   `fsck.fat -n` (Partition vorher mit `dd skip=63` herauslösen) und Inhalte
   mit `cmp` vergleichen.
@@ -170,8 +172,8 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
   (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY)
-- CD am Adaptec auf dem SCAT prüfen (in QEMU nur ATAPI testbar); Meldung
-  „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD drin ist
+- Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
+  drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
 - Schreib-Cache für Daten (heute: sofort schreiben, nur FAT im Cache)
 - `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
