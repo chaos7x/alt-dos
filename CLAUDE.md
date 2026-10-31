@@ -231,7 +231,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   geprüft. ESDI in 86Box bestätigt (WD1007V, Master 504 MB + Slave
   63 MB, beide „(CHS, BIOS)“, also INT 41h und 46h gültig): FORMAT der
   500-MB-Platte unter AT-DOS ohne Fehler (jeder Sektor gelesen), Start von
-  der ESDI-Platte (Bootsektor per BIOS, danach IDE.SYS). Offen: WD1003 (MFM).
+  der ESDI-Platte (Bootsektor per BIOS, danach IDE.SYS). WD1003 ebenfalls
+  bestätigt (Weg ohne IDENTIFY): Master 130/16/63 und Slave 1024/16/63 aus
+  INT 41h/46h, Start von C:. Anzeige MFM (≤17 Sektoren/Spur), RLL (≤26),
+  sonst nur „Platte“ – 86Box erlaubt am WD1003 auch 63.
   Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
   die Einheitentabelle (jetzt 128).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:

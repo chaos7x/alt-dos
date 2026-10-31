@@ -268,7 +268,9 @@ static void old_disk(int ch, int dev)
     n = chs_size(u->cyls, u->heads, u->spt);
     r->blocks[nunit] = n;
     nunit++;
-    p = scat(p, u->spt > 17 ? "RLL-Platte" : "MFM-Platte");
+    /* echte WD1003-Platten: 17 Sektoren je Spur (MFM) oder 26 (RLL);
+       mehr gibt es nur im Emulator */
+    p = scat(p, u->spt <= 17 ? "MFM-Platte" : u->spt <= 26 ? "RLL-Platte" : "Platte");
     p = scat(p, " (WD1003), ");
     p = udec(p, (unsigned)(n >> 11));
     p = scat(p, " MB, CHS ");
