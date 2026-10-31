@@ -17,6 +17,7 @@
 static char line[LINE + 1];
 static char buf[256];
 static int  permanent;
+static unsigned errorlevel;             /* Rueckgabewert des letzten Programms */
 
 /* ---- Hilfen ------------------------------------------------------------ */
 static void putc(char c)
@@ -1087,7 +1088,7 @@ static int cmd_if(char *arg)
         p = next_word(p);
         for (n = 0; *p >= '0' && *p <= '9'; p++)
             n = n * 10 + (unsigned)(*p - '0');
-        cond = n == 0;                  /* Programme liefern noch 0     */
+        cond = errorlevel >= n;         /* wie MS-DOS: n oder groesser  */
         p = skip(p);
     } else if (same(p, "EXIST")) {
         p = next_word(p);
@@ -1310,8 +1311,12 @@ static int run_program(char *cmd, int sync, int call)
         return 1;
     }
     r = DosExecPgm(cl, sync ? EXEC_SYNC : EXEC_ASYNC);
-    if (r)
+    if (r) {
         exec_error(r);
+        errorlevel = 1;
+    } else if (sync) {
+        errorlevel = DosQChildRC();     /* fuer IF ERRORLEVEL          */
+    }
     return 1;
 }
 
@@ -1610,7 +1615,7 @@ void main(void)
         else if (up(p[0]) == '/' || p[0] == '/') {
             if (up(p[1]) == 'C' && (p[2] == ' ' || !p[2])) {
                 execute_line(next_word(p)); /* COMMAND /C befehl: ausfuehren, Ende */
-                return;
+                DosExit(errorlevel);        /* Rueckgabewert durchreichen */
             }
         }
     }

@@ -301,14 +301,64 @@ static void name83(const unsigned char *e, char *out)
 }
 
 /* ---- Ketten ------------------------------------------------------------ */
-/* Kette ab first ablaufen und belegen; -> Laenge. *bad_first: erster
-   Cluster ungueltig (Eintrag muss auf 0) */
-static unsigned walk(const char *name, unsigned first, int *bad_first)
+static unsigned free_hint = 2;
+
+/* freien Cluster suchen (FAT 0) -> Nummer, 0 = Platte voll */
+static unsigned alloc_free(void)
 {
-    unsigned c = first, prev = 0, n = 0, v;
+    unsigned c = free_hint, i;
+    for (i = 0; i < clusters; i++, c++) {
+        if (!valid(c))
+            c = 2;
+        if (fat_get(c) == 0 && !getbit(used, c)) {
+            free_hint = c + 1;
+            return c;
+        }
+    }
+    return 0;
+}
+
+static unsigned long clus_lba(unsigned c)
+{
+    return data_lba + shl((unsigned long)(c - 2), shift);
+}
+
+/* Inhalt eines Clusters kopieren; 0 = ok */
+static int copy_clus(unsigned from, unsigned to)
+{
+    unsigned s;
+    for (s = 0; s < spc; s++)
+        if (rd_secs(clus_lba(from) + s, sec, 1) || wr_sec(clus_lba(to) + s, sec))
+            return -1;
+    return 0;
+}
+
+static void num_msg(char *m, const char *a, unsigned x, const char *b)
+{
+    unsigned k = 0, d = 10000;
+    while (*a)
+        m[k++] = *a++;
+    while (d > 1 && x < d)
+        d /= 10;
+    for (; d; d /= 10)
+        m[k++] = (char)('0' + x / d % 10);
+    while (*b)
+        m[k++] = *b++;
+    m[k] = 0;
+}
+
+/* Kette ab *first ablaufen und belegen; -> Laenge. *bad_first: erster
+   Cluster ungueltig (Eintrag muss auf 0). limit: so viele Cluster braucht
+   die Datei (FFFFh: Verzeichnis). Querverbindung mit /F bei Dateien: der
+   gemeinsame Rest wird in freie Cluster kopiert, wie ScanDisk - beide
+   Dateien behalten ihren Inhalt; *first kann sich dabei aendern. */
+static unsigned walk(const char *name, unsigned *first, int *bad_first, unsigned limit)
+{
+    static char m[80];
+    unsigned c = *first, prev = 0, n = 0, v, nc;
 
     *bad_first = 0;
-    if (first == 0)
+    if (c == 0)
         return 0;
     for (;;) {
         if (!valid(c)) {
@@ -323,22 +373,36 @@ static unsigned walk(const char *name, unsigned first, int *bad_first)
             break;
         }
         if (getbit(used, c)) {
-            static char m[60];
-            unsigned k = 0, x = c, d = 10000;
-            const char *t = "Ist mit Zuordnungseinheit ";
-            while (*t)
-                m[k++] = *t++;
-            while (d > 1 && x < d)
-                d /= 10;
-            for (; d; d /= 10)
-                m[k++] = (char)('0' + x / d % 10);
-            t = " querverbunden.";
-            while (*t)
-                m[k++] = *t++;
-            m[k] = 0;
+            if (!fix || limit == 0xFFFF) {
+                num_msg(m, "Ist mit Zuordnungseinheit ", c, " querverbunden.");
+                report(name, m);
+                break;
+            }
+            num_msg(m, "Ist mit Zuordnungseinheit ", c, " querverbunden - Kopie angelegt.");
             report(name, m);
-            if (!prev)
-                *bad_first = 0;         /* Eintrag bleibt, nur Meldung */
+            while (n < limit) {             /* gemeinsamen Rest kopieren */
+                nc = alloc_free();
+                if (!nc || copy_clus(c, nc)) {
+                    report(name, "Kein Platz f\x81r die Kopie, Datei abgeschnitten.");
+                    break;
+                }
+                setbit(used, nc);
+                fat_put(nc, EOC);
+                if (prev)
+                    fat_put(prev, nc);
+                else
+                    *first = nc;
+                prev = nc;
+                n++;
+                v = fat_get(c);
+                if (v >= 0xFFF8 || !valid(v))
+                    break;
+                c = v;
+            }
+            if (prev)
+                fat_put(prev, EOC);
+            else
+                *first = 0;                 /* nichts uebrig: leere Datei */
             break;
         }
         setbit(used, c);
@@ -459,7 +523,7 @@ static void check_tree(void)
             puts("\n");
         }
         if (e[11] & 0x10) {             /* Unterverzeichnis            */
-            n = walk(name, first, &badf);
+            n = walk(name, &first, &badf, 0xFFFF);
             ndirs++;
             cdirs += n;
             if (badf || !first) {
@@ -481,7 +545,15 @@ static void check_tree(void)
             }
             continue;
         }
-        n = walk(name, first, &badf);
+        need = shr(size + shl(1, cshift) - 1, cshift);
+        k = first;
+        n = walk(name, &first, &badf, need > 0xFFFEUL ? 0xFFFE : (unsigned)need);
+        if (first != k && fix) {        /* Querverbindung: neue Kette   */
+            wr16(e + 26, first);
+            if (!first)
+                e[28] = e[29] = e[30] = e[31] = 0;
+            save_ent();
+        }
         if (badf) {
             if (fix) {
                 wr16(e + 26, 0);
@@ -490,7 +562,8 @@ static void check_tree(void)
             }
             n = 0;
         } else {
-            need = shr(size + shl(1, cshift) - 1, cshift);
+            if (!first)
+                need = 0;
             if ((unsigned long)n != need) {
                 report(name, "Zuordnungsfehler, Gr\x94\xE1" "e angepa\xE1t.");
                 if (fix) {
@@ -744,12 +817,12 @@ void main(void)
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Das Laufwerk ist gesperrt oder in Benutzung.\n"
                                   : "Laufwerk kann nicht ge\x94" "ffnet werden.\n");
-        return;
+        DosExit(3);
     }
     if (rd_secs(0, sec, 1) || rd16(sec + 11) != 512 || !sec[13] || !sec[16]) {
         puts("Bootsektor nicht lesbar oder kein FAT-Dateisystem.\n");
         DosClose(hd);
-        return;
+        DosExit(3);
     }
     for (reserved = 0; reserved < sizeof(boot); reserved++)
         boot[reserved] = sec[reserved];     /* sec dient spaeter als Puffer */
@@ -773,11 +846,11 @@ void main(void)
     if (spf == 0 || spf > 256 || (1U << shift) != spc) {
         puts("Ung\x81ltiger Bootsektor.\n");
         DosClose(hd);
-        return;
+        DosExit(3);
     }
     if (load_fat()) {
         DosClose(hd);
-        return;
+        DosExit(3);
     }
     if (fats_differ) {
         problem();
@@ -800,4 +873,5 @@ void main(void)
         puts("Keine Fehler gefunden.\n");
     summary(boot);
     DosClose(hd);                       /* gibt die Sperre frei         */
+    DosExit(errors == 0 ? 0 : fix ? 1 : 3);     /* wie CHKDSK von NT */
 }

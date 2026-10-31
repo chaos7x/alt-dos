@@ -80,6 +80,8 @@ struct task {
     unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
+    unsigned char rc;                           /* Rueckgabewert (DosExit)  */
+    unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
 };
 
 static struct task    task[NTASK];
@@ -787,6 +789,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].sig_tramp = task[t].sig_mask = 0;
     task[t].sig_pending = task[t].in_sig = 0;
     task[t].bg = 0;
+    task[t].rc = 0;
+    task[t].child_rc = 0;
     for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
         task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
         of_ref(task[t].std[i]);
@@ -823,6 +827,8 @@ static void task_end(int t)
             task[i].parent = -1;
     task[t].state = T_FREE;
 
+    if (p >= 0)
+        task[p].child_rc = task[t].rc;      /* fuer ERRORLEVEL          */
     if (task[t].bg)
         ;                                   /* Hintergrund (Pipe): niemand wartet */
     else if (p >= 0 && task[p].state == T_WAIT)
@@ -862,6 +868,7 @@ static void do_break(void)
     if (task[t].parent < 0 && s == 0)
         return;
     vio_kputs(s, "^C\n");
+    task[t].rc = 255;
     task_end(t);
 }
 
@@ -1460,6 +1467,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
                files[k].kind == OF_FILE ? HT_FILE :
                files[k].kind == OF_DASD ? HT_DRIVE : HT_PIPE;
 
+    case FAPI_QCHILDRC:
+        return task[current].child_rc;
+
     case FAPI_OPENDRIVE:
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked)
             return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
@@ -1710,6 +1720,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         return 0;
 
     case FAPI_EXIT:
+        task[current].rc = (unsigned char)a1;
         task_end(current);
         schedule_next();
         return 0;                               /* nie erreicht         */
@@ -1746,6 +1757,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         /* Fehler in einer Anwendung: nur dieses Programm beenden */
         tmsg(current, "\n", task[current].name, ": ");
         tmsg(current, exc_name(vec), msg, "\nProgramm abgebrochen.\n");
+        task[current].rc = 255;
         task_end(current);
         schedule_next();
     }

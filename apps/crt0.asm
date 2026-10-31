@@ -17,6 +17,7 @@ segment _TEXT
 global _start
 _start:
         call    main_
-        mov     ax, 3                   ; FAPI_EXIT
+        xor     bx, bx                  ; Rueckgabewert 0 (main ist void;
+        mov     ax, 3                   ; sonst DosExit(n)) - FAPI_EXIT
         call    0x23:0x0000
 .hang:  jmp     .hang

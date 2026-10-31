@@ -49,7 +49,8 @@ und PC-DOS.
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
   mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]
-  EXIST/==/ERRORLEVEL`, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
+  EXIST/==/ERRORLEVEL` – Programme liefern Rückgabewerte, `IF ERRORLEVEL n`
+  heißt „n oder größer“ wie bei MS-DOS, `COMMAND /C` reicht den Wert durch –, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
   beim Start (`COMMAND /P`), `COMMAND /C`; Programme werden wie bei
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
   (`.EXE`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
@@ -67,6 +68,10 @@ und PC-DOS.
   und sein `U….EXE` mit. Für `/F` wird das Laufwerk gesperrt; geht das nicht
   (Dateien offen), merkt CHKDSK es wie Windows NT für den nächsten Start vor
   (`\AUTOCHK.LST`), `COMMAND /P` prüft dann vor `AUTOEXEC.CMD`.
+  Querverbindungen behebt `/F` wie ScanDisk: Der gemeinsame Rest wird für
+  die zweite Datei in freie Cluster kopiert. ERRORLEVEL wie bei NT: 0 keine
+  Fehler, 1 behoben, 3 nicht behoben oder nicht prüfbar. GREP liefert wie
+  GNU grep 0/1/2 (Treffer/keiner/Fehler), FIND wie MS-DOS 6 ebenso.
   Wie bei NT und OS/2 merkt sich jede FAT16-Platte, ob sie sauber
   abgemeldet wurde (FAT[1] Bit 15, wie Windows 95/NT; MS-DOS stört es
   nicht): beim ersten Schreiben gelöscht, bei `SHUTDOWN`, `POWEROFF` und
@@ -121,7 +126,7 @@ selbst nur 8.3 kennt.
 | 0  | DosGetVersion   | → AX = 0500h                    |
 | 1  | VioWrtStr       | BX = String, CX = Zeile<<8\|Spalte |
 | 2  | DosYield        | –                               |
-| 3  | DosExit         | –                               |
+| 3  | DosExit         | BX = Rückgabewert 0–255 (ERRORLEVEL); `main` ohne DosExit liefert 0 |
 | 4  | DosSleep        | BX = Millisekunden              |
 | 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB) |
 | 6  | DosAllocSeg     | BX = Größe, 0 = 64 KB → AX = Selektor |
@@ -163,6 +168,7 @@ selbst nur 8.3 kennt.
 | 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole, 3 Laufwerk |
 | 43 | DosOpenDrive    | BX = Laufwerk, CX = 0 lesen / 1 exklusiv (Sperre) → Handle; Sektoren mit DosRead/DosWrite |
 | 44 | DosSeek         | BX = Handle, CX = Zeiger auf Position (4 Bytes) |
+| 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C) |
 | 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:

@@ -19,7 +19,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosGetVersion()     F2(FAPI_GETVERSION, 0, 0)
 #define DosYield()          F2(FAPI_YIELD, 0, 0)
 #define DosSleep(ms)        F2(FAPI_SLEEP, (ms), 0)
-#define DosExit()           F2(FAPI_EXIT, 0, 0)
+#define DosExit(rc)         F2(FAPI_EXIT, (rc), 0)        /* ERRORLEVEL */
+#define DosQChildRC()       F2(FAPI_QCHILDRC, 0, 0)
 #define DosAllocSeg(size)   F2(FAPI_ALLOCSEG, (size), 0)
 #define DosFreeSeg(sel)     F2(FAPI_FREESEG, (sel), 0)
 #define DosMemInfo(p)       F2(FAPI_MEMINFO, (p), 0)

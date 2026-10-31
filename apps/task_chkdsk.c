@@ -13,6 +13,10 @@
  * CHKDSK wie Windows NT an, beim naechsten Start zu pruefen: Es traegt
  * das Laufwerk in \AUTOCHK.LST auf dem Startlaufwerk ein; COMMAND.EXE /P
  * arbeitet die Liste vor AUTOEXEC.CMD ab (CHKDSK X: /F /AUTO).
+ *
+ * ERRORLEVEL wie CHKDSK von Windows NT: 0 keine Fehler, 1 Fehler gefunden
+ * und behoben, 3 Fehler gefunden und nicht behoben (ohne /F) oder nicht
+ * pruefbar.
  */
 #include "fapi.h"
 
@@ -135,7 +139,7 @@ void main(void)
 
     if (FAPI_FAILED(DosQFSInfo(drive, &fi))) {
         puts("Ung\x81ltiges Laufwerk.\n");
-        return;
+        DosExit(3);
     }
     prog[0] = 'U';
     prog[1] = 0;
@@ -147,21 +151,21 @@ void main(void)
         puts(" gibt es kein Pr\x81" "fprogramm (");
         puts(prog);
         puts(").\n");
-        return;
+        DosExit(3);
     }
 
     if (fix) {                          /* Sperre vorab pruefen         */
         h = DosOpenDrive(drive, DRV_OPEN_LOCK);
         if (h == FAPI_ERR_WP) {
             puts("Der Datentr\x84ger ist schreibgesch\x81tzt.\n");
-            return;
+            DosExit(3);
         }
         if (FAPI_FAILED(h)) {
             puts("Das Laufwerk kann nicht gesperrt werden, weil Dateien darauf\n"
                  "ge\x94" "ffnet sind. Soll es beim n\x84" "chsten Neustart gepr\x81" "ft werden (J/N)? ");
             if (yes())
                 schedule(drive);
-            return;
+            DosExit(3);
         }
         DosClose(h);
     }
@@ -199,5 +203,7 @@ void main(void)
         puts("):\n  ");
         puts(cmd);
         puts("\n");
+        DosExit(3);
     }
+    DosExit(DosQChildRC());             /* Ergebnis von U<Name>.EXE    */
 }

@@ -45,6 +45,9 @@ static void put_dec(unsigned long v)
     puts(b + i);
 }
 
+static unsigned long found;              /* Treffer aller Dateien     */
+static int had_err;
+
 static void search(unsigned h)
 {
     unsigned n, i, ll = 0;
@@ -67,6 +70,7 @@ static void search(unsigned h)
             hit = contains(line, ll) != opt_v;
             if (hit) {
                 count++;
+                found++;
                 if (!opt_c) {
                     if (opt_n) {
                         puts("[");
@@ -108,13 +112,13 @@ void main(void)
         case 'i': opt_i = 1; break;
         default:
             puts("FIND: Ung\x81ltiger Schalter\r\n");
-            return;
+            DosExit(2);
         }
         a += 2;
     }
     if (*a != '"') {
         puts("Syntax: FIND [/V] [/C] [/N] [/I] \"Text\" [Datei ...]\r\n");
-        return;
+        DosExit(2);
     }
     for (a++; *a && *a != '"'; a++)
         pat[plen++] = *a;
@@ -132,6 +136,7 @@ void main(void)
         files++;
         h = DosOpen(f);
         if (h == FAPI_ERROR) {
+            had_err = 1;
             puts("FIND: Datei nicht gefunden - ");
             puts(f);
             puts("\r\n");
@@ -145,4 +150,5 @@ void main(void)
     }
     if (!files)
         search(STDIN);
+    DosExit(had_err ? 2 : found ? 0 : 1);   /* wie MS-DOS 6 FIND      */
 }

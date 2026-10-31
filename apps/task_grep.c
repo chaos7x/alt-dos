@@ -210,6 +210,7 @@ static void put_dec(unsigned long v)
 }
 
 static unsigned long total;
+static int had_err;                     /* Datei fehlte: Rueckgabewert 2 */
 
 /* eine Datei (oder STDIN) durchsuchen */
 static void grep_handle(unsigned h, const char *name)
@@ -285,6 +286,7 @@ static void grep_file(const char *path)
 {
     unsigned h = DosOpen(path);
     if (h == FAPI_ERROR) {
+        had_err = 1;
         if (!opt_s) {
             puts("GREP: ");
             puts(path);
@@ -406,12 +408,12 @@ void main(void)
             default:
                 puts("GREP: unbekannte Option\r\n"
                      "Aufruf: GREP [-ivnclhHrsE] MUSTER [DATEI ...]\r\n");
-                return;
+                DosExit(2);
             }
     }
     if (!*a) {
         puts("Aufruf: GREP [-ivnclhHrsE] MUSTER [DATEI ...]\r\n");
-        return;
+        DosExit(2);
     }
     /* Muster, auch in "..." mit Leerzeichen */
     k = 0;
@@ -476,4 +478,5 @@ void main(void)
         else
             grep_handle(STDIN, "(Standardeingabe)");
     }
+    DosExit(had_err ? 2 : total ? 0 : 1);   /* wie GNU grep           */
 }

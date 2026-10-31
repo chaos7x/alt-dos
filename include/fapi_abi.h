@@ -18,7 +18,7 @@
 #define FAPI_GETVERSION     0x00    /* -> AX = 0x0500 (Major<<8|Minor)  */
 #define FAPI_VIOWRTSTR      0x01    /* BX = String, CX = Zeile<<8|Spalte */
 #define FAPI_YIELD          0x02    /* CPU kooperativ abgeben           */
-#define FAPI_EXIT           0x03    /* Task beenden                     */
+#define FAPI_EXIT           0x03    /* Task beenden, BX = Rueckgabewert (0-255) */
 #define FAPI_SLEEP          0x04    /* BX = Millisekunden               */
 #define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
 #define FAPI_ALLOCSEG       0x06    /* BX = Groesse (0 = 64 KB) -> Selektor */
@@ -79,6 +79,8 @@
 #define DRV_OPEN_READ       0       /* nur lesen, ohne Sperre           */
 #define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
+#define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
+                                       (ERRORLEVEL; 255 = abgebrochen) */
 #define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
 struct fapi_fsinfo {
     char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE */

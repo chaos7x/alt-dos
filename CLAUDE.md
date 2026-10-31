@@ -143,6 +143,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
   zeigen in `DMABUF` und gelten nur bis zum nächsten Plattenzugriff.
   Disketten werden vor jeder Operation neu eingehängt (`revalidate`).
+- Rückgabewerte: `DosExit(rc)` setzt `task.rc`, `task_end` legt ihn beim
+  Elternteil in `child_rc` ab (`DosQChildRC`); Ausnahme und Strg+C ergeben
+  255. `crt0` beendet nach `main` mit 0 (`main` ist `void`) – wer einen Wert
+  liefern will, ruft `DosExit(n)`. COMMAND merkt ihn in `errorlevel`.
 - Signale (`sig_deliver` in kernel.c): Rahmen des FAPI-Aufrufs liegt fest
   oben auf dem Kernelstack (`FRAME(t)`, 14 Worte, Aufbau in start.asm
   `fapi_entry_`). Zustellung beim Rücksprung aus der FAPI: Rahmen und
@@ -235,9 +239,6 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 ## Geplant (noch nicht umgesetzt)
 
-- `ERRORLEVEL`: Programme liefern noch keinen Rückgabewert (`DosExit` ohne
-  Code); `IF ERRORLEVEL n` ist nur für n = 0 wahr. Mit Rückgabewerten
-  nachziehen (DosExit(code), DosExecPgm liefert ihn).
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
   (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY).
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,
@@ -264,8 +265,8 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
   Alt, Dialoge, CUA-Tasten), dazu Statuszeile, Suchen/Ersetzen. Braucht
   FAPI: Zellen mit Attribut schreiben, Cursor setzen, Sondertasten.
-- CHKDSK: Querverbindungen beheben (Kopie der gemeinsamen Cluster, wie
-  ScanDisk), Datei-Fragmentierung anzeigen; FORMAT, LABEL, DISKCOPY über
+- CHKDSK: Datei-Fragmentierung anzeigen (`CHKDSK *.*`), Oberflächentest
+  gehört zu einem späteren ScanDisk; FORMAT, LABEL, DISKCOPY über
   dieselbe DosOpenDrive-Schnittstelle, FORMAT ebenfalls über
   `U<Dateisystem>.EXE` (wie OS/2: `UFAT`/`UHPFS` machen CHKDSK und FORMAT).
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
