@@ -237,6 +237,14 @@ Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
+Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
+(`gemini_chat_completion`). Funktioniert mit `model: gemini-3.5-flash`;
+3.1 Pro ist im kostenlosen Kontingent gesperrt (Limit 0), die 2.x-Modelle
+gibt Google nicht mehr heraus. Projektbeschreibung als `systemInstruction`
+mitgeben – Gemini kennt AT-DOS nicht. Antworten gegen den Code prüfen:
+beim CHKDSK-Review waren 2 von 8 Punkten echte Fehler (Verzeichnisschleifen,
+unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
+
 ## Geplant (noch nicht umgesetzt)
 
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme

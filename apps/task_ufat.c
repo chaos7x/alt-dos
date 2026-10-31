@@ -213,6 +213,8 @@ static unsigned long fbase(unsigned f)
     return b;
 }
 
+static void problem(void);
+
 /* FAT 1 laden, FAT 2.. vergleichen */
 static int load_fat(void)
 {
@@ -229,12 +231,21 @@ static int load_fat(void)
         for (s = 0; s < spf; s += n) {
             n = spf - s < 8 ? spf - s : 8;
             if (rd_secs(fat_lba + s + fbase(f), big, n)) {
-                if (f == 0) {
+                if (f == 0 && nfats > 1 && rd_secs(fat_lba + s + fbase(1), big, n) == 0) {
+                    unsigned i;         /* FAT 1 defekt: Kopie 2 nehmen,
+                                           mit /F wird FAT 1 neu geschrieben */
+                    puts("FAT 1 teilweise nicht lesbar, Kopie 2 wird benutzt.\n");
+                    problem();
+                    for (i = s; i < s + n; i++)
+                        fdirty[i >> 3] |= (unsigned char)(1 << (i & 7));
+                    fat_changed = 1;
+                } else if (f == 0) {
                     puts("FAT nicht lesbar.\n");
                     return -1;
+                } else {
+                    fats_differ = 1;
+                    break;
                 }
-                fats_differ = 1;
-                break;
             }
             p = fatb((unsigned long)s << 9);
             if (f == 0) {
@@ -443,6 +454,7 @@ static void cut(unsigned first, unsigned keep)
 /* ---- Verzeichnisse ------------------------------------------------------ */
 static struct frame {
     unsigned first, cur, idx, plen;
+    unsigned left;                      /* eigene Cluster (walk), danach Ende */
 } stk[MAXDEPTH];
 static unsigned depth;
 static unsigned long ent_lba;
@@ -462,10 +474,13 @@ static unsigned char *next_ent(void)
             lba = root_lba + (f->idx >> 4);
         } else {
             if (f->idx >= (spc << 4)) {
+                if (--f->left == 0)
+                    return 0;           /* nur die eigene Kette, nie eine
+                                           fremde oder eine Schleife   */
                 f->cur = fat_get(f->cur);
                 f->idx = 0;
             }
-            if (!valid(f->cur) || !getbit(used, f->cur))
+            if (!valid(f->cur))
                 return 0;
             lba = data_lba + shl((unsigned long)(f->cur - 2), shift) + (f->idx >> 4);
         }
@@ -523,10 +538,24 @@ static void check_tree(void)
             puts("\n");
         }
         if (e[11] & 0x10) {             /* Unterverzeichnis            */
+            int seen = valid(first) && getbit(used, first);
+            unsigned cnt;
             n = walk(name, &first, &badf, 0xFFFF);
+            cnt = n;
             ndirs++;
             cdirs += n;
-            if (badf || !first) {
+            if (seen) {                 /* schon besucht: Schleife oder
+                                           Querverbindung, nicht hinein */
+                report(name, fix ? "Verzeichnis ist querverbunden (Schleife), Eintrag entfernt."
+                                 : "Verzeichnis ist querverbunden (Schleife), nicht durchsucht.");
+                if (fix) {              /* zeigt in fremdes Verzeichnis */
+                    e[0] = 0xE5;
+                    save_ent();
+                    ndirs--;
+                }
+                continue;
+            }
+            if (badf || !first || !n) {
                 if (!first)
                     report(name, "Ung\x81ltiges Unterverzeichnis.");
                 continue;
@@ -540,6 +569,7 @@ static void check_tree(void)
                 stk[depth].first = first;
                 stk[depth].cur = first;
                 stk[depth].idx = 0;
+                stk[depth].left = cnt;
                 stk[depth].plen = k;
                 depth++;
             }
