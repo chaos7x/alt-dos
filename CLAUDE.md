@@ -410,6 +410,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Kernel, ACPI wäre zu groß); Warteschleifen immer über den PIT messen, nie
   über Befehlszählen (Pentium III ist hunderte Male schneller als der 286).
   Dazu PCI, 53C8xx, VESA VBE 1.2/2.0.
+  Test des Nutzers: AT-DOS 5.0 läuft auf dem P3B-F in 86Box (IDE, Diskette,
+  Tastatur, Sitzungen); nur der PCI-SCSI-Controller NCR 53C8xx wird nicht
+  erkannt – erwartet, dafür gibt es noch keinen Treiber (`NCR8XX.SYS`, 6.0).
 - Grafik in DOS 6.0: Video-BIOS/VESA über eine V86-Umgebung für Moduswechsel
   (allgemeiner VESA-Treiber), Spezialtreiber je Chip (ET4000 usw.) für Tempo.
   DOS-Boxen brauchen einen virtuellen Bildschirm wie VDD (Windows 3.0) bzw.
