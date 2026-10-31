@@ -58,6 +58,15 @@ und PC-DOS.
   neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
+- `CHKDSK [X:] [/F] [/V]` wie MS-DOS: prüft FAT, Ketten, Dateigrößen,
+  Querverbindungen und verlorene Zuordnungseinheiten; `/F` repariert
+  (verlorene Ketten als `FILEnnnn.CHK`, Größen, FAT-Kopien). CHKDSK kennt
+  selbst kein Dateisystem: Es fragt den Kernel (`DosQFSInfo`) und startet
+  `U<Dateisystem>.EXE` aus dem PATH, für FAT also `UFAT.EXE` – wie
+  `UFAT.DLL`/`UHPFS.DLL` bei OS/2. Ein neues Dateisystem bringt sein `.IFS`
+  und sein `U….EXE` mit. Für `/F` wird das Laufwerk gesperrt; geht das nicht
+  (Dateien offen), merkt CHKDSK es wie Windows NT für den nächsten Start vor
+  (`\AUTOCHK.LST`), `COMMAND /P` prüft dann vor `AUTOEXEC.CMD`.
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab,
   **Strg+Alt+Entf** schließt alle Dateien, leert die Platten-Caches und
@@ -145,7 +154,10 @@ selbst nur 8.3 kennt.
 | 39 | DosDup          | BX = Handle → neues Handle auf dasselbe |
 | 40 | DosPipe         | BX = Puffer (2 Worte) → Lese-, Schreib-Handle |
 | 41 | VioWrtStrAtt    | wie VioWrtStr, DX = Farbattribut |
-| 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole |
+| 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole, 3 Laufwerk |
+| 43 | DosOpenDrive    | BX = Laufwerk, CX = 0 lesen / 1 exklusiv (Sperre) → Handle; Sektoren mit DosRead/DosWrite |
+| 44 | DosSeek         | BX = Handle, CX = Zeiger auf Position (4 Bytes) |
+| 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

@@ -34,6 +34,7 @@ struct volume {
     int            mod;                 /* nachgeladenes IFS: Treiberplatz */
     unsigned char  part;                /* Partition 1-4, 0 = ganzes Geraet */
     unsigned char  nfree_ok;            /* nfree gezaehlt und gueltig       */
+    unsigned char  locked;              /* DosOpenDrive exklusiv: kein IFS  */
     unsigned       nfree;               /* freie Cluster (FAT)              */
 };
 
@@ -66,6 +67,8 @@ extern int floppy_lazy;
 
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 void vol_move(int from, int to);
+int  vol_present(int d);
+void vol_reset(int d);              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */
 int ifs_open(int drive, const char *path, struct ifs_file __far *f);
 int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);

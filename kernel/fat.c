@@ -996,6 +996,7 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
     v->blk = blk;
     v->start = start;
     v->drv = drv;
+    v->locked = 0;
     if (drv->mount(drive))
         return -1;
     v->used = 1;
@@ -1005,13 +1006,19 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
 /* Diskette A: beim Start von Festplatte erst beim ersten Zugriff */
 int floppy_lazy;
 
-static int vol_ok(int d)
+int vol_present(int d)
 {
     if ((unsigned)d >= NDRIVE)
         return 0;
     if (d == 0 && !vol[0].used && floppy_lazy)
         ifs_mount(0, BLK_FLOPPY, 0, &fat_driver);
     return vol[d].used;
+}
+
+/* gesperrte Laufwerke (CHKDSK /F, FORMAT) sind fuer das Dateisystem zu */
+static int vol_ok(int d)
+{
+    return vol_present(d) && !vol[d].locked;
 }
 #define VOL_OK(d) vol_ok(d)
 
@@ -1102,4 +1109,19 @@ void vol_move(int from, int to)
     for (d = from; d > to; d--)
         vol[d] = vol[d - 1];
     vol[to] = tmp;
+}
+
+/* nach DosOpenDrive (Sperre aufgehoben): alles Zwischengespeicherte des
+   Laufwerks verwerfen und neu einhaengen - CHKDSK /F kann FAT und
+   Verzeichnisse geaendert haben */
+void vol_reset(int d)
+{
+    fat_flush();
+    if (fc_drive == d) {
+        fc_drive = -1;
+        fc_dirty = 0;
+    }
+    dir_cache_reset();
+    if (vol[d].used && vol[d].drv->mount(d))
+        vol[d].used = 0;                /* nicht mehr lesbar          */
 }

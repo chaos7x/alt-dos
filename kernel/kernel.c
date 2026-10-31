@@ -107,6 +107,8 @@ struct ofile {
 #define OF_PRD  1           /* Leseende einer Pipe                      */
 #define OF_PWR  2           /* Schreibende einer Pipe                   */
 #define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
+#define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
+                               4 markiert eine schon geschlossene Datei      */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
@@ -1001,7 +1003,13 @@ static void of_release(int k)
     o->owner = -1;
     if (o->kind == OF_FILE)
         ifs_close(&o->f);
-    else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
+    else if (o->kind == OF_DASD) {
+        if (o->pipe) {                  /* Sperre aufheben, neu einlesen */
+            vol[o->f.drive].locked = 0;
+            blk_flush();
+            vol_reset(o->f.drive);
+        }
+    } else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
 }
@@ -1010,6 +1018,43 @@ static void of_ref(int k)
 {
     if (k != CONS)
         files[k].refs++;
+}
+
+static const char *drv_name(int d);
+
+/* DosRead/DosWrite auf ein ganzes Laufwerk: ganze Sektoren ab pos */
+static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
+{
+    struct ofile __far *o = &files[k];
+    int d = o->f.drive, dev = vol[d].blk;
+    unsigned bs = blk[dev].bsize, done = 0, n;
+    unsigned long lba, total;
+
+    if (write && !o->pipe)
+        return -1;                      /* nur mit Sperre             */
+    len &= ~(bs - 1);
+    if ((unsigned)o->pos & (bs - 1))
+        return -1;
+    lba = o->pos >> (bs == 2048 ? 11 : 9);
+    total = vol[d].drv == &fat_driver ? vol[d].sectors : blk[dev].blocks;
+    while (done < len && lba < total) {
+        if (write) {
+            far_copy(DMABUF, 0, sel, off + done, bs);
+            if (blk_write(dev, vol[d].start + lba))
+                return done ? (int)done : -1;
+        } else {
+            n = (len - done) / bs;      /* Rest am Stueck vorauslesen  */
+            if (n > total - lba)
+                n = (unsigned)(total - lba);
+            if (blk_read_n(dev, vol[d].start + lba, n))
+                return done ? (int)done : -1;
+            far_copy(sel, off + done, DMABUF, 0, bs);
+        }
+        done += bs;
+        lba++;
+    }
+    o->pos += done;
+    return (int)done;
 }
 
 /* Handle des laufenden Programms -> Eintrag, -1 = ungueltig */
@@ -1320,6 +1365,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return t < 0 ? FAPI_ERROR : (unsigned)t;
         case OF_PRD:
             return FAPI_ERROR;
+        case OF_DASD:
+            t = dasd_rw(k, usel, a2, a3, 1);
+            return t < 0 ? FAPI_ERROR : (unsigned)t;
         }
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -1377,6 +1425,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return (unsigned)pipe_read(k, usel, a2, a3);
         case OF_PWR:
             return FAPI_ERROR;
+        case OF_DASD:
+            t = dasd_rw(k, usel, a2, a3, 0);
+            return t < 0 ? FAPI_ERROR : (unsigned)t;
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -1405,7 +1456,63 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         if ((k = h2e(a1)) < 0)
             return FAPI_ERROR;
         return files[k].kind == OF_CON ? HT_CONSOLE :
-               files[k].kind == OF_FILE ? HT_FILE : HT_PIPE;
+               files[k].kind == OF_FILE ? HT_FILE :
+               files[k].kind == OF_DASD ? HT_DRIVE : HT_PIPE;
+
+    case FAPI_OPENDRIVE:
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked)
+            return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
+        if (a2 == DRV_OPEN_LOCK) {
+            if (blk[vol[a1].blk].bsize != 512)
+                return FAPI_ERR_WP;
+            for (k = 1; k < NFILE; k++)         /* offene Dateien dort?  */
+                if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+                    files[k].f.drive == a1)
+                    return FAPI_ERR_INUSE;
+        }
+        k = of_alloc();
+        if (k < 0)
+            return FAPI_ERROR;
+        files[k].kind = OF_DASD;
+        files[k].f.drive = (unsigned char)a1;
+        files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
+        if (a2 == DRV_OPEN_LOCK)
+            vol[a1].locked = 1;
+        if (vol[a1].blk == BLK_FLOPPY)
+            blk_invalidate();                   /* Diskette frisch lesen */
+        return k + HBASE;
+
+    case FAPI_SEEK: {
+        unsigned long __far *p;
+        if ((k = h2e(a1)) < 0 || !user_ok(usel, a2, 4, 0))
+            return FAPI_ERROR;
+        if (files[k].kind != OF_FILE && files[k].kind != OF_DASD)
+            return FAPI_ERROR;
+        p = MK_FP(usel, a2);
+        files[k].pos = *p;
+        if (files[k].kind == OF_FILE && files[k].pos > files[k].f.size)
+            files[k].pos = files[k].f.size;     /* keine Loecher         */
+        return 0;
+    }
+
+    case FAPI_QFSINFO: {
+        struct fapi_fsinfo __far *fi;
+        const char *nm;
+        int dv;
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) ||
+            !user_ok(usel, a2, sizeof(*fi), 1))
+            return FAPI_ERROR;
+        fi = MK_FP(usel, a2);
+        dv = vol[a1].blk;
+        nm = vol[a1].drv == &mod_driver ? drv_name(vol[a1].mod) : vol[a1].drv->name;
+        for (k = 0; nm[k] && nm[k] != '.' && k < (int)sizeof(fi->fsname) - 1; k++)
+            fi->fsname[k] = nm[k];
+        fi->fsname[k] = 0;
+        fi->sectors = vol[a1].drv == &fat_driver ? vol[a1].sectors : blk[dv].blocks;
+        fi->bsize = blk[dv].bsize;
+        fi->flags = (dv == BLK_FLOPPY ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0);
+        return 0;
+    }
 
     case FAPI_DUP2:
         if (a2 >= HBASE)
@@ -1682,6 +1789,11 @@ static struct {
 } drv[NDRV];
 static struct drv_req req;
 static int boot_session;
+
+static const char *drv_name(int d)
+{
+    return drv[d].name;
+}
 
 static void drv_request(int d)
 {

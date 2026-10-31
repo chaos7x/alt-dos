@@ -50,6 +50,9 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosEnvEntry(i, buf, n)   fapi_call(FAPI_ENVENTRY, (i), (unsigned short)(buf), (n))
 #define DosGetDateTime(p)        F2(FAPI_GETDATETIME, (p), 0)
 #define DosFreeSpace(d, p)  F2(FAPI_FREESPACE, (d), (p))   /* freie Bytes */
+#define DosOpenDrive(d, mode)  F2(FAPI_OPENDRIVE, (d), (mode))  /* DRV_OPEN_* */
+#define DosSeek(h, posp)    F2(FAPI_SEEK, (h), (posp))      /* Zeiger auf unsigned long */
+#define DosQFSInfo(d, fi)   F2(FAPI_QFSINFO, (d), (fi))     /* struct fapi_fsinfo */
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
 #define KbdPeek()           F2(FAPI_KBDPEEK, 0, 0)

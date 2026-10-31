@@ -120,6 +120,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   wie viele Blöcke ein READ kann (0 = 1); IDE und Adaptec: 16. Diskette:
   `blk_invalidate()` wirft ihre Einträge bei jedem `revalidate` raus.
   Messung `grep -r` über 120 Dateien in QEMU: 3095 -> 1173 IDE-Befehle.
+- CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
+  den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:
+  Dateiname des Moduls ohne Endung), gestartet wird `U<Name>.EXE` aus dem
+  PATH mit `X: [/F] [/V] [/AUTO]`. `UFAT.EXE` (`apps/task_ufat.c`) liest
+  über `DosOpenDrive` (OF_DASD in kernel.c, `dasd_rw`), FAT ganz im
+  Speicher, Verzeichnisse mit eigenem Stapel (App-Stack nur 2 KB).
+  Sperre: `vol[].locked` – solange gesetzt, lehnt `vol_ok()` alle
+  IFS-Zugriffe ab; beim Schließen `vol_reset()` (FAT-/Verzeichnis-Cache
+  weg, neu einhängen, freier Platz neu zählen). Gesperrt wird nur, wenn
+  keine Datei auf dem Laufwerk offen ist (aktuelle Verzeichnisse zählen
+  nicht). `AUTOCHK.LST` im Stamm des Startlaufwerks: Zeilen `X: /F`,
+  `COMMAND /P` löscht die Datei und ruft `CHKDSK X: /F /AUTO`.
 - Schreiben (`fat.c`): Daten und Verzeichniseinträge sofort (`blk_write`),
   FAT nur im 2-Sektor-Cache bis `fat_flush()` am Ende jeder Operation – nach
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
@@ -241,16 +253,10 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
   Alt, Dialoge, CUA-Tasten), dazu Statuszeile, Suchen/Ersetzen. Braucht
   FAPI: Zellen mit Attribut schreiben, Cursor setzen, Sondertasten.
-- `CHKDSK` wie MS-DOS (`/F`, `/V`, Datei-Fragmentierung), liest über eine
-  FAPI-Funktion, die ein Laufwerk als Ganzes öffnet (sektorweise, wie DASD
-  bei OS/2) – dieselbe Funktion für FORMAT, LABEL, DISKCOPY. Sperre in zwei
-  Stufen: nur lesen ohne Sperre; schreibend (`/F`, FORMAT …) exklusiv, nur
-  wenn keine offenen Dateien/aktuellen Verzeichnisse anderer Tasks auf dem
-  Laufwerk, solange gesperrt lehnt der Kernel andere Zugriffe ab, beim
-  Freigeben (auch bei Abbruch) Laufwerk neu einlesen. Geht die Sperre nicht
-  (Startlaufwerk), wie Windows NT: „Laufwerk kann nicht gesperrt werden.
-  Beim nächsten Neustart prüfen (J/N)?“ – Prüfung läuft dann beim Start vor
-  dem ersten Programm.
+- CHKDSK: Querverbindungen beheben (Kopie der gemeinsamen Cluster, wie
+  ScanDisk), Datei-Fragmentierung anzeigen; FORMAT, LABEL, DISKCOPY über
+  dieselbe DosOpenDrive-Schnittstelle, FORMAT ebenfalls über
+  `U<Dateisystem>.EXE` (wie OS/2: `UFAT`/`UHPFS` machen CHKDSK und FORMAT).
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
@@ -301,6 +307,11 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   auf einem 386SX mit 2 MB. Flache 32-Bit-Programme erst mit 7.0.
   Vorarbeit schon in 5.0: Kernel aus dem einen 64-KB-Segment holen (Tabellen,
   Stacks, Puffer in eigene Segmente), wie der 16-Bit-Kernel von OS/2 1.x.
+- Speicher in DOS 6.0: Erkennung per INT 15h E820h (Speicherkarte mit
+  Lücken), E801h als Rückfall, 88h zuletzt (nur 16 Bit KB, max. 64 MB).
+  Ziel: auch VMs mit 128 MB und mehr (Nutzer hat DOS/Windows-VMs mit
+  128 MB) richtig erkennen. Bitmap dann in 4-KB-Seiten (Paging) statt
+  256-Byte-Einheiten, sonst 64 KB Bitmap für 128 MB.
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

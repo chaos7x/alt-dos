@@ -1198,6 +1198,47 @@ static int run_batch(const char *path, const char *args)
 
 /* Programm oder Stapeldatei starten; sync: 1 warten, 0 eigene Sitzung.
    call: Stapeldatei als Unterprogramm (CALL) statt als Fortsetzung. */
+static int run_program(char *cmd, int sync, int call);
+
+/* Beim Start (COMMAND /P): von CHKDSK vorgemerkte Laufwerke pruefen, wie
+   autochk bei Windows NT. Die Liste wird vorher geloescht, damit ein
+   Absturz beim Pruefen nicht bei jedem Start wiederkommt. */
+static void autochk(void)
+{
+    static char lst[256], cl[40];
+    unsigned h, n, i, k;
+
+    h = DosOpen("\\AUTOCHK.LST");
+    if (FAPI_FAILED(h))
+        return;
+    n = DosRead(h, lst, sizeof(lst) - 1);
+    DosClose(h);
+    DosDelete("\\AUTOCHK.LST");
+    if (FAPI_FAILED(n))
+        return;
+    lst[n] = 0;
+    for (i = 0; lst[i]; ) {
+        while (lst[i] == '\r' || lst[i] == '\n' || lst[i] == ' ')
+            i++;
+        if (!lst[i] || lst[i + 1] != ':')
+            break;
+        for (k = 0; "CHKDSK "[k]; k++)
+            cl[k] = "CHKDSK "[k];
+        cl[k++] = up(lst[i]);
+        cl[k++] = ':';
+        for (n = 0; " /F /AUTO"[n]; n++)
+            cl[k++] = " /F /AUTO"[n];
+        cl[k] = 0;
+        puts("Vorgemerkte Pr\x81" "fung: ");
+        puts(cl);
+        puts("\n");
+        run_program(cl, 1, 0);
+        puts("\n");
+        while (lst[i] && lst[i] != '\n')
+            i++;
+    }
+}
+
 static int run_program(char *cmd, int sync, int call)
 {
     static char path[FAPI_PATHLEN], cl[FAPI_ARGLEN + 16];
@@ -1555,6 +1596,8 @@ void main(void)
 
     puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 5.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
+    if (permanent)
+        autochk();
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */
     if (permanent && exists("\\AUTOEXEC.CMD")) {

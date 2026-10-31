@@ -68,6 +68,26 @@
 #define FAPI_VIOWRTSTRATT   0x29    /* wie VioWrtStr, DX = Farbattribut */
 #define FAPI_QHANDTYPE      0x2A    /* BX = Handle -> HT_*              */
 #define HT_FILE             0
+#define HT_DRIVE            3       /* DosOpenDrive                     */
+/* Laufwerk als Ganzes (wie DASD bei OS/2), fuer CHKDSK, FORMAT, LABEL.
+   Lesen/Schreiben mit DosRead/DosWrite in ganzen Sektoren ab der Position
+   (DosSeek, Bytes, Vielfaches der Sektorgroesse), Sektor 0 = Bootsektor
+   der Partition. Exklusiv geht nur, wenn keine Datei auf dem Laufwerk
+   offen ist; solange gesperrt, lehnt das Dateisystem alle Zugriffe ab.
+   Beim Schliessen wird das Laufwerk neu eingelesen. */
+#define FAPI_OPENDRIVE      0x2B    /* BX = Laufwerk (0 = A:), CX = DRV_OPEN_* -> Handle */
+#define DRV_OPEN_READ       0       /* nur lesen, ohne Sperre           */
+#define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
+#define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
+#define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
+struct fapi_fsinfo {
+    char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE */
+    unsigned long  sectors;         /* Sektoren des Laufwerks           */
+    unsigned short bsize;           /* Bytes je Sektor (512, CD 2048)   */
+    unsigned short flags;           /* FSI_*                            */
+};
+#define FSI_REMOVABLE       0x01
+#define FSI_READONLY        0x02
 #define HT_PIPE             1
 #define HT_CONSOLE          2
 #define STDIN               0       /* Standard-Handles, Vorgabe Konsole */
