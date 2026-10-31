@@ -103,26 +103,29 @@ mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS
 FILES="$B/task_command.exe COMMAND.EXE
        CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD"
-DOSFILES="$B/task_keyb.exe KEYB.EXE
-       $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
-       $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
+DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE
-       $B/task_less.exe LESS.EXE  $B/task_chkdsk.exe CHKDSK.EXE  $B/task_ufat.exe UFAT.EXE
+       $B/task_less.exe LESS.EXE  $B/task_chkdsk.exe CHKDSK.EXE
        $B/task_attrib.exe ATTRIB.EXE  $B/task_move.exe MOVE.EXE  $B/task_deltree.exe DELTREE.EXE
        $B/task_tree.exe TREE.EXE  $B/task_label.exe LABEL.EXE  $B/task_choice.exe CHOICE.EXE
-       $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
-       $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
-       $B/ifs_iso9660.ifs ISO9660.IFS"
+       $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE"
+# \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
+SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
+       $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
+       $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
+DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
-    set -- $FILES
+    copy_list "$FILES" ""
+    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"
+    copy_list "$DOSFILES" "DOS/"
+    copy_list "$SYSFILES" "DOS/SYSTEM/"
+    copy_list "$DEMOFILES" "DEMO/"
+}
+copy_list() {
+    sub=$2
+    set -- $1
     while [ $# -gt 0 ]; do
-        mcopy -o $TARGET "$1" "$TO$2"
-        shift 2
-    done
-    mmd $TARGET "${TO}DOS"
-    set -- $DOSFILES
-    while [ $# -gt 0 ]; do
-        mcopy -o $TARGET "$1" "${TO}DOS/$2"
+        mcopy -o $TARGET "$1" "$TO$sub$2"
         shift 2
     done
 }

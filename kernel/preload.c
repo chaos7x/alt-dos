@@ -50,7 +50,7 @@ static unsigned long w32(unsigned char __far *p)
 }
 
 /* Name aus CONFIG.SYS ("C:\\DOS\\aha154x.sys") in Verzeichnisform; nur der
-   letzte Teil zaehlt - gesucht wird im Stamm und in \DOS. 0 = ok */
+   letzte Teil zaehlt - gesucht wird im Stamm, in \DOS\SYSTEM und \DOS. */
 static int to83(const char *s, char *n)
 {
     int i, k;
@@ -120,22 +120,17 @@ static int find_root(const char *n, int dir, unsigned *clus, unsigned long *size
     return -1;
 }
 
-/* Datei im Stamm, sonst in \DOS suchen -> erster Cluster, Groesse; 0 = ok */
-static int find(const char *n, unsigned *clus, unsigned long *size)
+/* Verzeichniskette ab Cluster c nach n durchsuchen; 0 = gefunden */
+static int find_chain(unsigned c, const char *n, int dir, unsigned *clus,
+                      unsigned long *size)
 {
-    static const char dosdir[12] = "DOS        ";
-    unsigned c, j;
+    unsigned j;
     int r;
-
-    if (find_root(n, 0, clus, size) == 0)
-        return 0;
-    if (find_root(dosdir, 1, &c, size))
-        return -1;
-    while (c >= 2 && c < 0xFFF8) {              /* Kette von \DOS      */
+    while (c >= 2 && c < 0xFFF8) {
         for (j = 0; j < spc; j++) {
             if (rm_read(data_lba + ((unsigned long)(c - 2) << spc_shift()) + j))
                 return -1;
-            r = scan_sec(n, 0, clus, size);
+            r = scan_sec(n, dir, clus, size);
             if (r)
                 return r > 0 ? 0 : -1;
         }
@@ -144,6 +139,24 @@ static int find(const char *n, unsigned *clus, unsigned long *size)
         c = w16(buf() + ((c & 0xFF) << 1));
     }
     return -1;
+}
+
+/* Datei im Stamm, in \DOS\SYSTEM (Treiber, IFS) oder \DOS suchen
+   -> erster Cluster, Groesse; 0 = ok */
+static int find(const char *n, unsigned *clus, unsigned long *size)
+{
+    static const char dosdir[12] = "DOS        ", sysdir[12] = "SYSTEM     ";
+    unsigned dc, sc;
+    unsigned long sz;
+
+    if (find_root(n, 0, clus, size) == 0)
+        return 0;
+    if (find_root(dosdir, 1, &dc, &sz))
+        return -1;
+    if (find_chain(dc, sysdir, 1, &sc, &sz) == 0 &&
+        find_chain(sc, n, 0, clus, size) == 0)
+        return 0;
+    return find_chain(dc, n, 0, clus, size);
 }
 
 /* Datei der FAT-Kette nach in den Vorladebereich lesen; 0 = ok */

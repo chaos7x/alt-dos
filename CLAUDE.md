@@ -38,12 +38,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Danach findet `find_boot_vol()` die Startpartition (Startsektor +
   Seriennummer aus dem BPB bei 0000:7C00) und setzt `sys_drive`; `vol_move()` schiebt sie danach auf C: (übrige rücken nach, nur beim Start, keine offenen Dateien).
   Code in `preload()` darf keine Selektoren und kein `vio` benutzen.
-  `preload()` sucht erst im Stamm, dann im Verzeichnis `\DOS`.
-- Ablage auf den Abbildern: Stamm nur `ATDOS.SYS`, `COMMAND.EXE`,
-  `CONFIG.SYS`, `AUTOEXEC.CMD` (+ `ATSYS.COM` auf der Diskette), alles andere
-  in `\DOS` (`build.sh`: `FILES` bzw. `DOSFILES`). `load_driver()` und
-  `KEYB` fallen bei reinem Dateinamen auf `\DOS` zurück; Standard-PATH
-  `X:\DOS;X:\`. `ATSYS` kopiert `\DOS` mit.
+  `preload()` sucht im Stamm, in `\DOS\SYSTEM`, dann in `\DOS`.
+- Ablage (Entscheidung des Nutzers, wie OS/2): Stamm nur `ATDOS.SYS`,
+  `COMMAND.EXE`, `CONFIG.SYS`, `AUTOEXEC.CMD` (+ `ATSYS.COM` auf der
+  Diskette); `\DOS` Werkzeuge, die man aufruft; `\DOS\SYSTEM` was das System
+  nachlädt (Treiber, IFS, `U*.EXE` für CHKDSK, `.KBL`); `\DEMO` TASKA–C.
+  `build.sh`: `FILES`, `DOSFILES`, `SYSFILES`, `DEMOFILES`. `load_driver()`
+  und `KEYB` fallen bei reinem Dateinamen auf `\DOS\SYSTEM`, dann `\DOS`
+  zurück; CHKDSK sucht `U*.EXE` fest in `\DOS\SYSTEM` des Startlaufwerks,
+  erst danach im PATH. Standard-PATH `X:\DOS;X:\`. `ATSYS` kopiert die
+  Unterverzeichnisse aus der Tabelle `subdirs` (Eltern zuerst).
 - `tools/atsys.asm` – `ATSYS.COM` für MS-DOS (wie SYS); `tools/sysboot.py`
   macht dasselbe für Abbilder beim Bauen
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,

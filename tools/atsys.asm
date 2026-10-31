@@ -4,7 +4,7 @@
 ;
 ; Wie SYS: kopiert alle Dateien des aktuellen Laufwerks (der AT-DOS-
 ; Diskette) ins Stammverzeichnis des Ziels, auch die versteckte ATDOS.SYS,
-; dazu den Inhalt von \DOS nach Ziel:\DOS, und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
+; dazu \DOS, \DOS\SYSTEM und \DEMO, und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
 ; 3..61) bleibt stehen. Verweigert Laufwerke mit IO.SYS, MSDOS.SYS oder
 ; IBMBIO.COM, damit eine MS-DOS-Startplatte nicht unbrauchbar wird.
 ;
@@ -51,7 +51,7 @@ org 0x100
         je      usage
         add     al, 'A'
         mov     [src_path], al
-        mov     [dos_path], al
+        mov     [pat_buf], al
         mov     [src_letter], al
 
         mov     ah, 0x1A                ; eigener DTA (80h ist die Befehlszeile)
@@ -102,26 +102,56 @@ org 0x100
         int     0x21
         jnc     .file
 
-        ; Unterverzeichnis \DOS (Werkzeuge, Treiber)
-        mov     ah, 0x4E
-        mov     cx, 0x07
-        mov     dx, dos_path
-        int     0x21
-        jc      .nodos
+        ; Unterverzeichnisse \DOS, \DOS\SYSTEM, \DEMO (Reihenfolge: Eltern zuerst)
+        mov     si, subdirs
+.sd:    cmp     byte [si], 0
+        je      .nodos
+        mov     [pfx_ptr], si
+        mov     di, si                  ; Laenge des Praefixes "DOS\..."
+        xor     cx, cx
+.len:   cmp     byte [di], 0
+        je      .lend
+        inc     di
+        inc     cx
+        jmp     .len
+.lend:  mov     [subdir], cl
+        mov     di, pat_buf + 3         ; "A:\" + Praefix + "*.*"
+        push    cx
+        rep     movsb
+        mov     si, star
+        movsw
+        movsw
+        pop     cx
+        mov     si, [pfx_ptr]           ; "C:\" + Praefix ohne letztes "\"
+        mov     di, dst_dir + 3
+        dec     cx
+        rep     movsb
+        mov     byte [di], 0
         mov     al, [dst_letter]
         mov     [dst_dir], al
-        mov     ah, 0x39                ; C:\DOS anlegen; gibt es schon: egal
-        mov     dx, dst_dir
-        int     0x21
-        mov     byte [subdir], 4
         mov     ah, 0x4E
         mov     cx, 0x07
-        mov     dx, dos_path
+        mov     dx, pat_buf
+        int     0x21
+        jc      .sdnext                 ; gibt es auf der Quelle nicht
+        mov     ah, 0x39                ; Zielverzeichnis anlegen; gibt es schon: egal
+        mov     dx, dst_dir
+        int     0x21
+        mov     ah, 0x4E
+        mov     cx, 0x07
+        mov     dx, pat_buf
         int     0x21
 .dfile: call    copy_file
         mov     ah, 0x4F
         int     0x21
         jnc     .dfile
+.sdnext:
+        mov     si, [pfx_ptr]
+        xor     ah, ah
+        mov     al, [subdir]
+        add     si, ax
+        inc     si                      ; hinter die 0
+        jmp     .sd
 .nodos: mov     ah, 0x0D                ; alle Puffer auf die Platte
         int     0x21
 
@@ -150,8 +180,8 @@ org 0x100
 copy_file:
         mov     di, src_name
         mov     bx, dst_name
-        mov     cl, [subdir]            ; 0 oder 4: "DOS\" voranstellen
-        mov     si, dos_pfx
+        mov     cl, [subdir]            ; 0 oder Laenge des Praefixes
+        mov     si, [pfx_ptr]
 .p:     test    cl, cl
         jz      .np
         lodsb
@@ -276,13 +306,17 @@ src_path    db "A:\*.*", 0
 chk_path    db "C:\", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 src_file:
 src_letter  db "A:\"
-src_name    times 17 db 0
+src_name    times 26 db 0
 dst_file:
 dst_letter  db "C:\"
-dst_name    times 17 db 0
-dos_path    db "A:\DOS\*.*", 0
-dst_dir     db "C:\DOS", 0
-dos_pfx     db "DOS\"
+dst_name    times 26 db 0
+subdirs     db "DOS\", 0, "DOS\SYSTEM\", 0, "DEMO\", 0, 0
+star        db "*.*", 0
+pat_buf     db "A:\", 0
+            times 20 db 0
+dst_dir     db "C:\", 0
+            times 20 db 0
+pfx_ptr     dw 0
 subdir      db 0
 
 dst_drive   db 0

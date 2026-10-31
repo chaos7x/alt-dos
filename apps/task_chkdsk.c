@@ -5,7 +5,8 @@
  *
  * CHKDSK selbst kennt kein Dateisystem. Es fragt den Kernel, welches
  * Dateisystem auf dem Laufwerk liegt (DosQFSInfo, z. B. "FAT") und
- * startet das passende Pruefprogramm U<Name>.EXE aus dem PATH - wie
+ * startet das passende Pruefprogramm U<Name>.EXE aus \DOS\SYSTEM (sonst
+ * aus dem PATH) - wie
  * UFAT.DLL/UHPFS.DLL bei OS/2. Ein neues Dateisystem bringt also sein
  * .IFS und sein U<Name>.EXE mit, CHKDSK bleibt unveraendert.
  *
@@ -49,6 +50,19 @@ static int find_prog(void)
     static char pv[256];
     unsigned h, i = 0, k;
 
+    /* zuerst fest im Systemordner des Startlaufwerks (wie OS/2 mit
+       \OS2\DLL) - ein fremdes U*.EXE im PATH greift dann nicht */
+    path[0] = 'C';
+    if (!FAPI_FAILED(DosGetEnv("COMSPEC", pv, sizeof(pv))) && pv[1] == ':')
+        path[0] = up(pv[0]);
+    path[1] = 0;
+    cat(path, ":\\DOS\\SYSTEM\\");
+    cat(path, prog);
+    h = DosOpen(path);
+    if (!FAPI_FAILED(h)) {
+        DosClose(h);
+        return 0;
+    }
     if (FAPI_FAILED(DosGetEnv("PATH", pv, sizeof(pv))))
         pv[0] = 0;
     for (;;) {

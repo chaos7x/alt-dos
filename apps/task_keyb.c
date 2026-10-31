@@ -50,12 +50,18 @@ void main(void)
             alt[k++] = cs[0];
             alt[k++] = ':';
         }
-        for (j = 0; "\\DOS\\"[j]; j++)
-            alt[k++] = "\\DOS\\"[j];
+        for (j = 0; "\\DOS\\SYSTEM\\"[j]; j++)
+            alt[k++] = "\\DOS\\SYSTEM\\"[j];
         for (j = 0; file[j]; j++)
-            alt[k++] = file[j];
-        alt[k] = 0;
+            alt[k + j] = file[j];
+        alt[k + j] = 0;
         h = DosOpen(alt);
+        if (h == FAPI_ERROR) {          /* aeltere Ablage: \DOS         */
+            for (j = 0; file[j]; j++)
+                alt[k - 7 + j] = file[j];   /* "SYSTEM\" ueberschreiben */
+            alt[k - 7 + j] = 0;
+            h = DosOpen(alt);
+        }
     }
     if (h == FAPI_ERROR) {
         puts("Belegungsdatei ");

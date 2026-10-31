@@ -2170,11 +2170,15 @@ static int load_driver(const char *line, int is_ifs)
     err = load_image(drive, canon, &h, &u, &n, &seg);
     for (k = 0; path[k] && path[k] != '\\' && path[k] != ':'; k++)
         ;
-    if (err == EXEC_ERR_NOTFOUND && !path[k]) {    /* nur Name: auch in \DOS */
+    if (err == EXEC_ERR_NOTFOUND && !path[k]) {    /* nur Name: \DOS\SYSTEM, \DOS */
         static char alt[IFS_PATHLEN];
-        scopy(alt, "\\DOS", sizeof(alt));
-        scopy(alt + 4, canon, sizeof(alt) - 4);
+        scopy(alt, "\\DOS\\SYSTEM", sizeof(alt));
+        scopy(alt + 11, canon, sizeof(alt) - 11);
         err = load_image(drive, alt, &h, &u, &n, &seg);
+        if (err == EXEC_ERR_NOTFOUND) {
+            scopy(alt + 4, canon, sizeof(alt) - 4);
+            err = load_image(drive, alt, &h, &u, &n, &seg);
+        }
     }
     if (err) {
         vio_kputs(boot_session, "  ");

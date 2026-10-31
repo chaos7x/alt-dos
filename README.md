@@ -240,10 +240,17 @@ im PATH):
 findet, wird wieder entladen.
 
 Im Stammverzeichnis liegen nur `ATDOS.SYS`, `COMMAND.EXE`, `CONFIG.SYS`,
-`AUTOEXEC.CMD` (und auf der Diskette `ATSYS.COM`); Werkzeuge, Treiber und
-Tastaturbelegungen liegen in `\DOS`. Treiber in `DEVICE=`/`IFS=` ohne Pfad
-sucht der Kernel erst im Stamm, dann in `\DOS`; `KEYB` sucht die `.KBL`
-genauso.
+`AUTOEXEC.CMD` (und auf der Diskette `ATSYS.COM`). Wie bei OS/2 (`\OS2`,
+`\OS2\BOOT`, `\OS2\DLL`) getrennt:
+
+- `\DOS` – was man aufruft: Werkzeuge wie `LESS`, `GREP`, `XCOPY`, `CHKDSK`
+- `\DOS\SYSTEM` – was das System nachlädt: Treiber (`.SYS`), Dateisysteme
+  (`.IFS`), Prüfprogramme für CHKDSK (`UFAT.EXE`), Tastaturbelegungen (`.KBL`)
+- `\DEMO` – die Testprogramme `TASKA`–`TASKC`
+
+Treiber in `DEVICE=`/`IFS=` ohne Pfad sucht der Kernel im Stamm, in
+`\DOS\SYSTEM` und (ältere Installationen) in `\DOS`; `KEYB` sucht die
+`.KBL` genauso, CHKDSK sein `U*.EXE` zuerst fest in `\DOS\SYSTEM`.
 
 Das Image ist eine normale FAT12-Diskette und lässt sich unter MS-DOS, mit
 mtools oder unter jedem anderen System lesen. `ATDOS.SYS` ist versteckt
@@ -262,7 +269,7 @@ Zylinder 1024 liegen.
 Die Plattentreiber stehen in `CONFIG.SYS` auf eben der Platte, die sie erst
 lesbar machen. Wie bei OS/2 liest der Kernel deshalb noch im Real Mode über
 das BIOS `CONFIG.SYS` und alle `DEVICE=`-Dateien vor (höchstens 30 KB, aus dem
-Stammverzeichnis oder `\DOS`). Danach erkennt er die Startpartition an Startsektor
+Stammverzeichnis, `\DOS\SYSTEM` oder `\DOS`). Danach erkennt er die Startpartition an Startsektor
 und Seriennummer; sie wird immer `C:` (die übrigen Laufwerke rücken in ihrer Reihenfolge nach) und das erste Laufwerk der Programme. `A:` wird dann
 erst beim ersten Zugriff eingehängt.
 
@@ -274,7 +281,7 @@ Zwei Wege auf die Platte:
   dieser Geometrie eintragen.
 - **Vorhandene FAT16-Partition:** Unter MS-DOS von der AT-DOS-Diskette
   `ATSYS D:` aufrufen. Es kopiert alle Dateien der Diskette (auch die
-  versteckte `ATDOS.SYS`) ins Stammverzeichnis, `\DOS` nach `D:\DOS`, und ersetzt
+  versteckte `ATDOS.SYS`) ins Stammverzeichnis, dazu `\DOS`, `\DOS\SYSTEM` und `\DEMO`, und ersetzt
   den Code im Bootsektor; der BPB bleibt. Laufwerke mit `IO.SYS`, `MSDOS.SYS` oder
   `IBMBIO.COM` lehnt es ab. Danach muss die Partition aktiv sein (FDISK) und
   die Platte die erste Festplatte des BIOS.
