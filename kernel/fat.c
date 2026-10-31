@@ -1050,3 +1050,22 @@ int ifs_space(int drive, unsigned long *free_bytes)
     }
     return vol[drive].drv->space(drive, free_bytes);
 }
+
+/* Laufwerk from nach to verschieben, die dazwischen rutschen eins nach
+   hinten (from > to). Nur beim Start, solange keine Datei offen ist. */
+void vol_move(int from, int to)
+{
+    static struct volume tmp;
+    int d;
+
+    if (from <= to)
+        return;
+    fat_flush();
+    fc_drive = -1;
+    fc_dirty = 0;
+    dir_cache_reset();
+    tmp = vol[from];
+    for (d = from; d > to; d--)
+        vol[d] = vol[d - 1];
+    vol[to] = tmp;
+}

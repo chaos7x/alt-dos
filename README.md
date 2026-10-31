@@ -227,7 +227,7 @@ Die Plattentreiber stehen in `CONFIG.SYS` auf eben der Platte, die sie erst
 lesbar machen. Wie bei OS/2 liest der Kernel deshalb noch im Real Mode über
 das BIOS `CONFIG.SYS` und alle `DEVICE=`-Dateien vor (höchstens 30 KB, aus dem
 Stammverzeichnis oder `\DOS`). Danach erkennt er die Startpartition an Startsektor
-und Seriennummer; sie wird das erste Laufwerk der Programme. `A:` wird dann
+und Seriennummer; sie wird immer `C:` (die übrigen Laufwerke rücken in ihrer Reihenfolge nach) und das erste Laufwerk der Programme. `A:` wird dann
 erst beim ersten Zugriff eingehängt.
 
 Zwei Wege auf die Platte:

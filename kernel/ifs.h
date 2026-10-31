@@ -62,6 +62,7 @@ extern struct ifs_driver fat_driver, pre_driver, mod_driver;
 extern int floppy_lazy;
 
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
+void vol_move(int from, int to);
 int ifs_open(int drive, const char *path, struct ifs_file __far *f);
 int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);

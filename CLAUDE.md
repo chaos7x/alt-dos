@@ -36,7 +36,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `CONFIG.SYS` und die `DEVICE=`-Dateien nach 0600h–7BFFh; das
   Pseudo-Dateisystem `BOOT` stellt sie während `CONFIG.SYS` als `Z:` bereit.
   Danach findet `find_boot_vol()` die Startpartition (Startsektor +
-  Seriennummer aus dem BPB bei 0000:7C00) und setzt `sys_drive`.
+  Seriennummer aus dem BPB bei 0000:7C00) und setzt `sys_drive`; `vol_move()` schiebt sie danach auf C: (übrige rücken nach, nur beim Start, keine offenen Dateien).
   Code in `preload()` darf keine Selektoren und kein `vio` benutzen.
   `preload()` sucht erst im Stamm, dann im Verzeichnis `\DOS`.
 - Ablage auf den Abbildern: Stamm nur `ATDOS.SYS`, `COMMAND.EXE`,

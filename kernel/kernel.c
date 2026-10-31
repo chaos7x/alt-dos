@@ -2288,12 +2288,21 @@ void kmain(void)
         sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
-        vio_kputs(s0, "\xFE Startlaufwerk ");
-        num[0] = (char)('A' + sys_drive);
-        num[1] = ':';
-        num[2] = '\n';
-        num[3] = 0;
-        vio_kputs(s0, num);
+        vio_kputs(s0, "\xFE Startlaufwerk C:");
+        if (sys_drive != 2) {                   /* immer C:, Rest rueckt nach */
+            line[0] = ' ';
+            line[1] = '(';
+            line[2] = 'w';
+            line[3] = 'a';
+            line[4] = 'r';
+            line[5] = ' ';
+            line[6] = (char)('A' + sys_drive);
+            scopy(line + 7, ":), Rest r\x81" "ckt nach", sizeof(line) - 7);
+            vio_kputs(s0, line);
+            vol_move(sys_drive, 2);
+            sys_drive = 2;
+        }
+        vio_kputs(s0, "\n");
     }
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
