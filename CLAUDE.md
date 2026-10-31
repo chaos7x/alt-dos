@@ -228,7 +228,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   sonst Grundgeometrie, beides per 91h eingestellt. In QEMU nachgestellt,
   indem `IDE.SYS` testweise 00h statt ECh schickt (QEMU bricht ab wie der
   WD1003): Start, CHKDSK, Kopieren über CHS mit SeaBIOS-Geometrie 130/16/63
-  geprüft. Echter Test steht aus: 86Box mit „[MFM] WD1003“ bzw. ESDI-AT.
+  geprüft. ESDI in 86Box bestätigt (WD1007V, Master 504 MB + Slave
+  63 MB, beide „(CHS, BIOS)“, also INT 41h und 46h gültig): FORMAT der
+  500-MB-Platte unter AT-DOS ohne Fehler (jeder Sektor gelesen), Start von
+  der ESDI-Platte (Bootsektor per BIOS, danach IDE.SYS). Offen: WD1003 (MFM).
   Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
   die Einheitentabelle (jetzt 128).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
