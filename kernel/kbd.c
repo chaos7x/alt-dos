@@ -11,13 +11,14 @@
  * .KBL-Dateien (KbdSetLayout).
  */
 #include "kern.h"
+#include "../include/fapi_abi.h"
 
 volatile unsigned char kbd_switch_req, kbd_break_req;
 
 #define NBUF 32
 static unsigned short buf[NBUF];
 static unsigned char  head, tail;
-static unsigned char  shift, ctrl, alt, altgr, caps, e0;
+static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
 
 /* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
    mit Umschalt und mit AltGr (Format siehe tools/mkkbl.py) */
@@ -72,6 +73,8 @@ void kbd_irq(unsigned sc)
         e0 = 1;
         return;
     }
+    if (!rel && code != 0x38)
+        alt_only = 0;               /* Alt nicht mehr allein gedrueckt  */
     if (e0) {                       /* erweiterte Tasten                */
         e0 = 0;
         if (code == 0x38) altgr = !rel;
@@ -88,7 +91,15 @@ void kbd_irq(unsigned sc)
     switch (code) {
     case 0x2A: case 0x36: shift = !rel; return;
     case 0x1D: ctrl = !rel; return;
-    case 0x38: alt = !rel; return;
+    case 0x38:
+        if (!rel && !alt)
+            alt_only = 1;
+        else if (rel && alt_only) {
+            alt_only = 0;
+            put(KEY_ALT);           /* Alt allein: Menue (EDIT)         */
+        }
+        alt = !rel;
+        return;
     case 0x3A: if (!rel) caps = !caps; return;
     }
     if (rel)
@@ -105,8 +116,8 @@ void kbd_irq(unsigned sc)
         return;
     }
 
-    if (code >= KBL_N) {
-        c = 0;
+    if (code >= KBL_N || (alt && !altgr)) {
+        c = 0;                      /* Alt+Taste: nur Scancode (BIOS)   */
     } else if (altgr) {
         c = ALTG(code);
     } else {
@@ -133,6 +144,12 @@ int kbd_get(void)
     }
     irq_restore(f);
     return k;
+}
+
+unsigned kbd_shift(void)
+{
+    return (shift ? KBDSHIFT_SHIFT : 0) | (ctrl ? KBDSHIFT_CTRL : 0) |
+           (alt ? KBDSHIFT_ALT : 0) | (altgr ? KBDSHIFT_ALTGR : 0);
 }
 
 int kbd_peek(void)

@@ -6,18 +6,27 @@
  * in den Puffer ihrer Sitzung; ist die Sitzung im Vordergrund, landet die
  * Ausgabe zusaetzlich direkt im Bildspeicher. Alt+Esc schaltet um.
  *
- * Bildschirm: Zeile 0 Titel, 1-23 Sitzung, 24 Statuszeile.
+ * Bildschirm: Zeile 0 Titel, 1-23 Sitzung, 24 Statuszeile. Eine Sitzung
+ * im Vollbild (VioSetMode, z. B. EDIT) hat alle 25 Zeilen; Titel- und
+ * Statusleiste erscheinen erst wieder in einer normalen Sitzung.
  */
 #include "kern.h"
 #include "mem.h"
 
 #define ATTR        0x07
+#define NBYTES   (SROWS * SCOLS * 2)            /* normaler Inhalt      */
+#define SAVEU    ((NBYTES + MEM_UNIT - 1) / MEM_UNIT)
 #define TITLE_ATTR  0x1F
 #define STATUS_ATTR 0x70
 
 struct session {
     unsigned char used;
     unsigned char row, col;
+    unsigned char rows, top;        /* 23/1 normal, 25/0 Vollbild       */
+    unsigned char hidecur;          /* Cursor aus (Vollbild)            */
+    signed char   owner;            /* Task, der Vollbild verlangt hat  */
+    unsigned char srow, scol;       /* Cursor vor dem Vollbild          */
+    unsigned      save;             /* gesicherter Inhalt (Einheit), 0 = keiner */
     unsigned      unit;
     char          title[13];
 };
@@ -48,7 +57,9 @@ static void cursor(void)
     unsigned pos;
     if (fg < 0)
         return;
-    pos = (ses[fg].row + 1) * SCOLS + ses[fg].col;
+    pos = (ses[fg].row + ses[fg].top) * SCOLS + ses[fg].col;
+    if (ses[fg].hidecur)
+        pos = SROWS_FULL * SCOLS;           /* hinter dem sichtbaren Bild */
     outb(0x3D4, 0x0E); outb(0x3D5, pos >> 8);
     outb(0x3D4, 0x0F); outb(0x3D5, pos & 0xFF);
 }
@@ -72,8 +83,8 @@ void vio_status(void)
     unsigned v = uptime_s;
     int i;
 
-    if (v == shown_uptime)
-        return;
+    if (v == shown_uptime || (fg >= 0 && !ses[fg].top))
+        return;                             /* Vollbild: keine Statuszeile */
     if (shown_uptime == 0xFFFF) {
         vfill(24, STATUS_ATTR);
         vputs(24, 1, "Alt+Esc: Sitzung wechseln \xB3 Strg+C: Abbruch \xB3", STATUS_ATTR);
@@ -90,9 +101,15 @@ void vio_status(void)
 
 static void redraw(void)
 {
-    title_bar();
-    if (fg >= 0)
-        far_copy(VIDEO, SCOLS * 2, SCR_SEL(fg), 0, SBYTES);
+    if (fg >= 0 && !ses[fg].top) {          /* Vollbild                 */
+        far_copy(VIDEO, 0, SCR_SEL(fg), 0, SROWS_FULL * SCOLS * 2);
+    } else {
+        title_bar();
+        if (fg >= 0)
+            far_copy(VIDEO, SCOLS * 2, SCR_SEL(fg), 0, SROWS * SCOLS * 2);
+        shown_uptime = 0xFFFF;              /* Statuszeile neu zeichnen  */
+        vio_status();
+    }
     cursor();
 }
 
@@ -100,7 +117,7 @@ static void put(int s, int r, int c, unsigned short v)
 {
     BUF(s)[r * SCOLS + c] = v;
     if (s == fg)
-        VRAM[(r + 1) * SCOLS + c] = v;
+        VRAM[(r + ses[s].top) * SCOLS + c] = v;
 }
 
 static void clear_row(int s, int r)
@@ -112,16 +129,17 @@ static void clear_row(int s, int r)
 
 static void scroll(int s)
 {
-    far_copy(SCR_SEL(s), 0, SCR_SEL(s), SCOLS * 2, (SROWS - 1) * SCOLS * 2);
-    clear_row(s, SROWS - 1);
+    unsigned n = ses[s].rows;
+    far_copy(SCR_SEL(s), 0, SCR_SEL(s), SCOLS * 2, (n - 1) * SCOLS * 2);
+    clear_row(s, n - 1);
     if (s == fg)
-        far_copy(VIDEO, SCOLS * 2, SCR_SEL(s), 0, SBYTES);
+        far_copy(VIDEO, ses[s].top * SCOLS * 2, SCR_SEL(s), 0, n * SCOLS * 2);
 }
 
 void vio_cls(int s)
 {
     int r;
-    for (r = 0; r < SROWS; r++)
+    for (r = 0; r < SROWS_FULL; r++)
         clear_row(s, r);
     ses[s].row = ses[s].col = 0;
     if (s == fg)
@@ -143,6 +161,11 @@ int vio_open(const char *title)
         return -1;
     ses[s].used = 1;
     ses[s].unit = u;
+    ses[s].rows = SROWS;
+    ses[s].top = 1;
+    ses[s].hidecur = 0;
+    ses[s].owner = -1;
+    ses[s].save = 0;
     set_desc(SCR_IDX(s), (unsigned long)u << 8, SBYTES - 1, ACC_KDATA);
     vio_title(s, title);
     vio_cls(s);
@@ -164,6 +187,10 @@ void vio_close(int s)
     if (!ses[s].used)
         return;
     mem_free(ses[s].unit, (SBYTES + MEM_UNIT - 1) / MEM_UNIT);
+    if (ses[s].save) {
+        mem_free(ses[s].save, SAVEU);
+        ses[s].save = 0;
+    }
     ses[s].used = 0;
     gdt[SCR_IDX(s)].access = 0;
     if (s == fg) {
@@ -233,9 +260,9 @@ static void tty_char(int s, char ch)
         p->col = 0;
         p->row++;
     }
-    if (p->row >= SROWS) {
+    if (p->row >= p->rows) {
         scroll(s);
-        p->row = SROWS - 1;
+        p->row = (unsigned char)(p->rows - 1);
     }
 }
 
@@ -266,7 +293,7 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
     const char __far *p = MK_FP(sel, 0);
     char c;
 
-    if (s < 0 || !ses[s].used || row < 0 || row >= SROWS)
+    if (s < 0 || !ses[s].used || row < 0 || row >= ses[s].rows)
         return;
     while (col < SCOLS && off <= limit) {
         c = p[off];
@@ -276,4 +303,68 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
         if (++off == 0)
             break;
     }
+}
+
+int vio_rows(int s)
+{
+    return (s >= 0 && ses[s].used) ? ses[s].rows : SROWS;
+}
+
+
+/* Vollbild ein/aus. Der normale Inhalt wird gesichert und danach wieder
+   hergestellt (wie bei MS-DOS EDIT); das Vollbild beginnt leer. */
+void vio_setmode(int s, int full, int owner)
+{
+    struct session *p;
+    if (s < 0 || !ses[s].used || full == !ses[s].top)
+        return;
+    p = &ses[s];
+    if (full) {
+        p->save = mem_alloc(SAVEU);
+        if (p->save) {
+            scratch_map((unsigned long)p->save << 8, NBYTES - 1);
+            far_copy(SCRATCH, 0, SCR_SEL(s), 0, NBYTES);
+            p->srow = p->row;
+            p->scol = p->col;
+        }
+    }
+    p->rows = (unsigned char)(full ? SROWS_FULL : SROWS);
+    p->top = (unsigned char)(full ? 0 : 1);
+    p->hidecur = 0;
+    p->owner = (signed char)(full ? owner : -1);
+    if (!full && p->save) {
+        scratch_map((unsigned long)p->save << 8, NBYTES - 1);
+        far_copy(SCR_SEL(s), 0, SCRATCH, 0, NBYTES);
+        mem_free(p->save, SAVEU);
+        p->save = 0;
+        p->row = p->srow;
+        p->col = p->scol;
+        if (s == fg)
+            redraw();
+    } else
+        vio_cls(s);                 /* zeichnet im Vordergrund neu     */
+}
+
+/* Programm endet: hatte es das Vollbild verlangt, wieder normal */
+void vio_task_end(int s, int t)
+{
+    if (s >= 0 && ses[s].used && !ses[s].top && ses[s].owner == t)
+        vio_setmode(s, 0, -1);
+}
+
+void vio_setcur(int s, int row, int col)
+{
+    if (s < 0 || !ses[s].used)
+        return;
+    if (row == 0xFF) {
+        ses[s].hidecur = 1;
+    } else {
+        if (row >= ses[s].rows || col >= SCOLS)
+            return;
+        ses[s].hidecur = 0;
+        ses[s].row = (unsigned char)row;
+        ses[s].col = (unsigned char)col;
+    }
+    if (s == fg)
+        cursor();
 }

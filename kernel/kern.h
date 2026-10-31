@@ -122,7 +122,8 @@ void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */
 #define SCOLS       80
-#define SBYTES      (SROWS * SCOLS * 2)
+#define SROWS_FULL  25              /* Vollbild: alle Zeilen der Sitzung   */
+#define SBYTES      (SROWS_FULL * SCOLS * 2)    /* Puffer reicht fuer beides */
 
 int  vio_open(const char *title);   /* -> Sitzung oder -1                  */
 void vio_close(int s);
@@ -137,11 +138,16 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
              unsigned limit, unsigned char attr);
 void vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
 void vio_status(void);
+int  vio_rows(int s);               /* 23 oder im Vollbild 25              */
+void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
+void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
+void vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
 
 /* ---- Tastatur (kbd.c) -------------------------------------------------- */
 void kbd_init(void);
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
+unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
 int  kbd_set_layout(unsigned sel, unsigned off);   /* 0 = ok    */
 const char *kbd_layout_id(void);

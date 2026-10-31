@@ -115,7 +115,12 @@ und PC-DOS.
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 
-Programme auf der Diskette: **LESS** zeigt Text an und blättert vor und
+Programme auf der Diskette: **EDIT** ist ein Bildschirm-Editor wie MS-DOS
+EDIT (Vollbild, Menüs mit Alt oder F10, Markieren mit Umschalt,
+Umschalt+Entf/Strg+Einfg/Umschalt+Einfg, Strg+Y, Suchen/Weitersuchen (F3)/
+Ändern, Strg+S; Text bis knapp 64 KB, Tabulatoren werden zu Leerzeichen).
+Alt+Taste liefert wie beim BIOS Zeichen 0 und den Scancode, Alt allein
+`KEY_ALT` (3800h). **LESS** zeigt Text an und blättert vor und
 zurück nach dem Vorbild von GNU less (Bild/Pfeile, `g G`, `123g`, `/` `?`
 `n N` mit Hervorhebung, `-N` Zeilennummern, `-i`, `h` Hilfe; aus Datei oder
 Pipe), **GREP** sucht mit regulären Ausdrücken nach dem
@@ -194,6 +199,9 @@ selbst nur 8.3 kennt.
 | 49 | DosLabel        | BX = Laufwerk, CX = Ausgabe (Bezeichnung, Seriennummer), DX = neue Bezeichnung oder 0 |
 | 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C) |
 | 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
+| 50 | VioSetMode      | BX = 1 Vollbild (25 Zeilen ohne Titel- und Statusleiste), 0 normal → Zeilenzahl; der normale Inhalt wird gesichert und am Ende wiederhergestellt |
+| 51 | VioSetCurPos    | BX = Zeile << 8 \| Spalte (Zeile FFh = Cursor aus) |
+| 52 | KbdShift        | → Umschalttasten jetzt: 1 Umschalt, 2 Strg, 4 Alt, 8 AltGr |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

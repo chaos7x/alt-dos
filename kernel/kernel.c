@@ -853,6 +853,7 @@ static void task_end(int t)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
     task[t].state = T_FREE;
+    vio_task_end(s, t);                     /* Vollbild zuruecknehmen   */
 
     if (p >= 0)
         task[p].child_rc = task[t].rc;      /* fuer ERRORLEVEL          */
@@ -1281,7 +1282,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return FAPI_ERROR;
         row = a2 >> 8;
         col = a2 & 0xFF;
-        if (row >= SROWS || col >= SCOLS)
+        if (row >= vio_rows(s) || col >= SCOLS)
             return FAPI_ERROR;
         vio_str(s, row, col, usel, a1, sel_limit(usel),
                 fn == FAPI_VIOWRTSTR ? 0x07 : (unsigned char)a3);
@@ -1296,6 +1297,17 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     case FAPI_VIOCLS:
         vio_cls(s);
         return 0;
+
+    case FAPI_VIOSETMODE:
+        vio_setmode(s, a1 != 0, current);
+        return vio_rows(s);
+
+    case FAPI_VIOSETCURPOS:
+        vio_setcur(s, a1 >> 8, a1 & 0xFF);
+        return 0;
+
+    case FAPI_KBDSHIFT:
+        return kbd_shift();
 
     case FAPI_KBDCHARIN:
         for (;;) {

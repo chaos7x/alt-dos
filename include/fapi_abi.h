@@ -94,6 +94,18 @@ struct fapi_label {
     char           label[12];
     unsigned long  serial;          /* 0 = keine                        */
 };
+#define FAPI_VIOSETMODE     0x32    /* BX = 1 Vollbild (25 Zeilen, ohne Titel- und
+                                       Statusleiste), 0 normal (23) -> Zeilenzahl;
+                                       endet das Programm, gilt wieder normal */
+#define FAPI_VIOSETCURPOS   0x33    /* BX = Zeile << 8 | Spalte, Zeile FFh = Cursor aus */
+#define FAPI_KBDSHIFT       0x34    /* -> AX = KBDSHIFT_* (Zustand jetzt)  */
+#define KBDSHIFT_SHIFT      0x01
+#define KBDSHIFT_CTRL       0x02
+#define KBDSHIFT_ALT        0x04    /* linke Alt-Taste                  */
+#define KBDSHIFT_ALTGR      0x08
+/* Tastencodes (KbdCharIn): Alt+Taste liefert wie das BIOS Zeichen 0 und den
+   Scancode; Alt allein gedrueckt und losgelassen liefert KEY_ALT. */
+#define KEY_ALT             0x3800
 #define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
 struct fapi_fsinfo {
     char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE;

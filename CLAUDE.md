@@ -125,7 +125,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
   höchstens 48 KB groß sein (Diskettenbootsektor lädt 96 Sektoren), BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
-  24 Status. Programme schreiben in den Puffer ihrer Sitzung.
+  24 Status. Programme schreiben in den Puffer ihrer Sitzung (Puffer immer
+  25 Zeilen groß). `VioSetMode(1)` (Entscheidung des Nutzers, wie MS-DOS
+  EDIT/OS/2-Vollbild): Sitzung hat alle 25 Zeilen, Titel- und Statusleiste
+  fehlen, solange sie im Vordergrund ist; der normale Inhalt wird in eigenem
+  Speicher gesichert und bei `VioSetMode(0)` oder Programmende
+  (`vio_task_end` in `task_end`) wiederhergestellt. `ses[].top` (1/0) und
+  `rows` (23/25) statt fester Konstanten benutzen.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
 - Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der
@@ -286,8 +292,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Nächster Schritt (mit dem Nutzer vereinbart): `EDIT` (Kernel ist in
-  Code- und Datensegment getrennt). FORMAT und SYS sind da. Später: UNDELETE, MSD,
+- EDIT ist da (`apps/task_edit.c`): Lückenpuffer in einem 64-KB-Segment,
+  daher Text bis knapp 64 KB – offen: größere Dateien (mehrere Segmente),
+  Dateiliste im Öffnen-Dialog, Maus, Nachfrage bei SIG_SHUTDOWN (der
+  Kernel wartet nur 5 s), horizontale Bildlaufleiste. Danach nächster
+  Schritt mit dem Nutzer absprechen. FORMAT und SYS sind da. Später: UNDELETE, MSD,
   HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
@@ -301,8 +310,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
-  Vollbild-Editor im Stil von MS-DOS EDIT, nutzt `SIG_SHUTDOWN`, um vor dem
-  Herunterfahren nach dem Speichern zu fragen.
+  soll noch `SIG_SHUTDOWN` nutzen, um vor dem Herunterfahren nach dem
+  Speichern zu fragen.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),
@@ -312,9 +321,6 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   FAPI wie das Mou-API von OS/2: Ereignisse je Sitzung (nur Vordergrund),
   Zeiger als invertierte Textzelle. Erster Nutzer: EDIT. Test zuerst mit
   serieller Microsoft-Maus in 86Box.
-- EDIT im Stil von MS-DOS EDIT/QBasic (Textmodus, Farben, Menüleiste mit
-  Alt, Dialoge, CUA-Tasten), dazu Statuszeile, Suchen/Ersetzen. Braucht
-  FAPI: Zellen mit Attribut schreiben, Cursor setzen, Sondertasten.
 - CHKDSK: Datei-Fragmentierung anzeigen (`CHKDSK *.*`), Oberflächentest
   gehört zu einem späteren ScanDisk; FORMAT, LABEL, DISKCOPY über
   dieselbe DosOpenDrive-Schnittstelle, FORMAT ebenfalls über
