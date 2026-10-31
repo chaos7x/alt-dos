@@ -389,7 +389,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `.LONGNAME` als erweitertes Attribut in `EA DATA. SF`, nicht VFAT. Grund:
   MS-DOS-Werkzeuge (CHKDSK, ScanDisk) sehen nur eine normale Datei, während
   sie VFAT-Einträge als Fehler „reparieren“. Dazu ein Prüfprogramm, das
-  verwaiste EAs aufräumt.
+  verwaiste EAs aufräumt. Zusätzlich (Entscheidung des Nutzers): `fat.c`
+  liest VFAT-Namen (Windows 95) mindestens, damit Platten und Disketten von
+  dort lange Namen zeigen; geschrieben wird weiter per EA. Offen: Merker
+  im FX-Kopf „kann lange Namen“ (wie OS/2), damit alte 8.3-Programme nur
+  kurze Namen bekommen.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,
