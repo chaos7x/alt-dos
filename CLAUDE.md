@@ -395,6 +395,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vorarbeit in 5.0 erledigt: Kernel-Code und -Daten in getrennten Segmenten
   (wie der 16-Bit-Kernel von OS/2 1.x); weitere Tabellen, Stacks und Puffer
   können später in eigene Segmente (`kseg_alloc`).
+- Hardware-Zeitraum DOS 6.0 (Entscheidung des Nutzers): Die Zeitlinie muss
+  nicht genau stimmen, 6.0 soll Hardware bis mindestens 1997 unterstützen
+  (PCI, VESA VBE 1.2/2.0 mit linearem Bildspeicher, 53C8xx, PCI-IDE mit
+  Busmaster-DMA).
+- Grafik in DOS 6.0: Video-BIOS/VESA über eine V86-Umgebung für Moduswechsel
+  (allgemeiner VESA-Treiber), Spezialtreiber je Chip (ET4000 usw.) für Tempo.
+  DOS-Boxen brauchen einen virtuellen Bildschirm wie VDD (Windows 3.0) bzw.
+  VVGA (OS/2 2.0): Hintergrund-Box schreibt per Seitentabelle in einen
+  Schatten bei A0000h–BFFFFh, VGA-Ports 3C0h–3DFh über die I/O-Bitmap
+  abfangen, Kartenzustand beim Umschalten sichern/herstellen (SVGA-Erweiterungen
+  je Chip). Grafik-Boxen im Hintergrund notfalls einfrieren (wie OS/2 2.0 anfangs).
+- 5.0 schon möglich: 43/50 Textzeilen (`MODE CON LINES=`) über Standard-
+  EGA/VGA-Register (8x8-Zeichensatz, CRTC), Sitzungen mit wählbarer Zeilenzahl.
+- Hardware-Referenz 86Box (Quellcode, GPL v2): lesen, um Register und
+  Verhalten zu verstehen, nie Code übernehmen (AT-DOS ist MIT). Datenblätter
+  bleiben erste Quelle; der Emulator ist nachsichtiger als echte Hardware.
+  Interessant für 5.0: WD1003 (MFM/RLL) und WD1007 (ESDI) haben die
+  IDE-Register, aber der WD1003 kein IDENTIFY -> `IDE.SYS` braucht einen
+  Rückfall auf die Geometrie aus BIOS/CMOS; NCR 5380/53C400 (Trantor T130B,
+  Rancho RT1000B, Longshine LCS-6821N), AHA-1520A/AIC-6360 (PIO).
+  Adaptec 154x und BusLogic laufen in 86Box über denselben Code (`scsi_x54x.c`).
 - Speicher in DOS 6.0: Erkennung per INT 15h E820h (Speicherkarte mit
   Lücken), E801h als Rückfall, 88h zuletzt (nur 16 Bit KB, max. 64 MB).
   Ziel: auch VMs mit 128 MB und mehr (Nutzer hat DOS/Windows-VMs mit
