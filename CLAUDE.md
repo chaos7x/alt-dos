@@ -219,8 +219,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nach dem ersten `blk_flush()` tot (auf dem SCAT nach `CHKDSK /F`). QEMU
   kennt FLUSH CACHE; nachstellen, indem man testweise 00h (NOP) schickt.
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
-  Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben auf die
-  BusLogic-Platte noch nicht eigens geprüft (EDIT-Test lief auf C:/IDE). Meldung
+  Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
+  (COPY nach D:, Datei von dort ausgeführt). Meldung
   lautet noch „Adaptec 154x“ – BusLogic-Erkennung (Board-ID aus INQUIRY)
   wäre nur Kosmetik; der native BusLogic-Modus lohnt erst ab 6.0.
 - CD über den Adaptec (SCSI-ID 6) auf dem SCAT bestätigt: ISO9660.IFS
