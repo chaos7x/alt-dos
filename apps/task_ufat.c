@@ -215,6 +215,16 @@ static unsigned long fbase(unsigned f)
 
 static void problem(void);
 
+/* nfats * s ohne 32-Bit-Multiplikation */
+static unsigned long fbase_n(unsigned s)
+{
+    unsigned long b = 0;
+    unsigned f;
+    for (f = 0; f < nfats; f++)
+        b += s;
+    return b;
+}
+
 /* FAT 1 laden, FAT 2.. vergleichen */
 static int load_fat(void)
 {
@@ -814,11 +824,14 @@ static void summary(const unsigned char *bs)
     }
 }
 
+#include "ufat_fmt.c"
+
 void main(void)
 {
     char *a = args;
     unsigned reserved;
     unsigned long rootsecs, fatsecs;
+    int fmt = 0, quick = 0;
 
     drive = DosQCurDisk();
     DosGetArgs(args);
@@ -829,7 +842,16 @@ void main(void)
             break;
         if (a[1] == ':')
             drive = (unsigned)(up(a[0]) - 'A');
-        else if (a[0] == '/' && up(a[1]) == 'F')
+        else if (a[0] == '/' && up(a[1]) == 'F' && up(a[2]) == 'O')
+            fmt = 1;                    /* /FORMAT                       */
+        else if (a[0] == '/' && up(a[1]) == 'Q')
+            quick = 1;
+        else if (a[0] == '/' && up(a[1]) == 'V' && a[2] == ':') {
+            unsigned k;                 /* /V:Bezeichnung (FORMAT)       */
+            for (k = 0; a[3 + k] && a[3 + k] != ' ' && k < 11; k++)
+                flabel[k] = up(a[3 + k]);
+            flabel[k] = 0;
+        } else if (a[0] == '/' && up(a[1]) == 'F')
             fix = 1;
         else if (a[0] == '/' && up(a[1]) == 'V')
             verbose = 1;
@@ -838,6 +860,8 @@ void main(void)
         while (*a && *a != ' ')
             a++;
     }
+    if (fmt)
+        DosExit(do_format(quick));
     pathbuf[0] = (char)('A' + drive);
     pathbuf[1] = ':';
     pathbuf[2] = '\\';

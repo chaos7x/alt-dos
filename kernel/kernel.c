@@ -1051,9 +1051,12 @@ static void of_release(int k)
         ifs_close(&o->f);
     else if (o->kind == OF_DASD) {
         if (o->pipe) {                  /* Sperre aufheben, neu einlesen */
+            unsigned char was = vol[o->f.drive].in_use;
             vol[o->f.drive].locked = 0;
             blk_flush();
             vol_reset(o->f.drive);
+            if (was)                    /* Sauber-Bit ist geloescht: beim */
+                vol[o->f.drive].in_use = 1; /* Herunterfahren wieder setzen */
         }
     } else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))

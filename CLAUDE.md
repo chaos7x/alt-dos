@@ -152,6 +152,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
   zeigen in `DMABUF` und gelten nur bis zum nächsten Plattenzugriff.
   Disketten werden vor jeder Operation neu eingehängt (`revalidate`).
+- FORMAT/SYS: `FORMAT.EXE` ruft `U<FS>.EXE X: /FORMAT [/Q] [/V:x]`
+  (Code in `apps/ufat_fmt.c`, in task_ufat.c eingebunden), danach ggf.
+  `SYS.EXE`. Bootcode für beide kommt aus `build/bootcode.h` (build.sh
+  erzeugt es aus boot.bin/hdboot.bin). Unformatierte Laufwerke:
+  `vol[].present` (Laufwerk da) neben `used` (Dateisystem eingehängt),
+  `psize`/`ptype` aus dem MBR; `vol_present()` = da, `vol_ok()` = da und
+  eingehängt. DosQFSInfo meldet dann "RAW". Nach dem Entsperren hängt
+  `vol_reset()` neu ein (frisch formatiert sofort benutzbar) und
+  `of_release` behält `in_use`, damit SHUTDOWN das Sauber-Bit setzt.
+  Diskette: ATDOS.SYS muss bei Cluster 2 zusammenhängend liegen – SYS nur
+  auf leere Disketten; der Bootsektor prüft die ersten 16 Stammeinträge.
 - Rückgabewerte: `DosExit(rc)` setzt `task.rc`, `task_end` legt ihn beim
   Elternteil in `child_rc` ab (`DosQChildRC`); Ausnahme und Strg+C ergeben
   255. `crt0` beendet nach `main` mit 0 (`main` ist `void`) – wer einen Wert
@@ -264,9 +275,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Nächster Schritt (mit dem Nutzer vereinbart): `FORMAT` und `SYS` nativ
-  (über `U<Dateisystem>.EXE` bzw. DosOpenDrive), dann Kernel-Umbau aus dem
-  64-KB-Segment (DGROUP bei ~61 KB!), dann `EDIT`. Später: UNDELETE, MSD,
+- Nächster Schritt (mit dem Nutzer vereinbart): Kernel-Umbau aus dem
+  64-KB-Segment (DGROUP bei ~61 KB!), dann `EDIT`. FORMAT und SYS sind da. Später: UNDELETE, MSD,
   HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.

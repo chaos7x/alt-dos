@@ -68,6 +68,17 @@ und PC-DOS.
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
   ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
   MS-DOS, `/B /C /N /nnnn`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
+- `FORMAT X: [/V[:Name]] [/Q] [/S] [/FS:FAT]` wie MS-DOS, gebaut wie OS/2:
+  FORMAT startet `U<Dateisystem>.EXE /FORMAT` aus `\DOS\SYSTEM` (für FAT
+  `UFAT.EXE`). Disketten (1,44 MB, 1,2 MB, 720 KB, 360 KB) und Partitionen
+  (FAT12 bei Typ 01h, sonst FAT16 mit den Clustergrößen von MS-DOS 6); ohne
+  `/Q` wird jeder Sektor gelesen und Fehlerhaftes gesperrt (keine
+  Low-Level-Formatierung). Das Startlaufwerk wird nicht formatiert.
+  Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
+- `SYS [Quelle:] Ziel:` überträgt `ATDOS.SYS`, `COMMAND.EXE`, `\DOS\SYSTEM`,
+  `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
+  Startcode in den Bootsektor. Disketten nur leer (`FORMAT A: /S`). Der
+  Diskettenbootsektor meldet „Keine Systemdiskette“, wenn `ATDOS.SYS` fehlt.
 - `CHKDSK [X:] [/F] [/V]` wie MS-DOS: prüft FAT, Ketten, Dateigrößen,
   Querverbindungen und verlorene Zuordnungseinheiten; `/F` repariert
   (verlorene Ketten als `FILEnnnn.CHK`, Größen, FAT-Kopien). CHKDSK kennt

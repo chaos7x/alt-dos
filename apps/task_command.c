@@ -512,6 +512,8 @@ static int is_dir(char *p);
 static int match(const char *name, const char *pat);
 static unsigned slen(const char *s);
 
+static void hex4(unsigned v);
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
@@ -558,13 +560,35 @@ static void cmd_dir(char *arg)
         if (n > 1 && dir[n - 1] == '\\' && dir[n - 2] != ':')
             dir[n - 1] = 0;
     }
-    if (dir[0] && DosFindEntry(&e, 0, dir) == FAPI_ERROR) {
+    n = slen(dir);                          /* Stamm ("D:", "D:\\", "\\")
+                                               gibt es immer, auch leer */
+    if (dir[0] && !(n <= 3 && (dir[n - 1] == ':' || dir[n - 1] == '\\')) &&
+        DosFindEntry(&e, 0, dir) == FAPI_ERROR) {
         puts("Verzeichnis nicht gefunden.\n");
         return;
     }
+    {                                       /* Kopf wie MS-DOS          */
+        static struct fapi_label lb;
+        unsigned dv = (dir[0] && dir[1] == ':') ? (unsigned)(up(dir[0]) - 'A') : DosQCurDisk();
+        if (DosLabel(dv, &lb, 0) == 0) {
+            puts("\n Datentr\x84ger in Laufwerk ");
+            putc((char)('A' + dv));
+            puts(lb.label[0] ? " ist " : " hat keine Bezeichnung");
+            puts(lb.label);
+            if (lb.serial) {
+                puts("\n Datentr\x84gernummer: ");
+                hex4((unsigned)(lb.serial >> 16));
+                putc('-');
+                hex4((unsigned)lb.serial);
+            }
+        }
+    }
     puts("\n Verzeichnis von ");
     if (dir[0] && dir[1] == ':') {
+        dir[0] = up(dir[0]);
         puts(dir);
+        if (!dir[2])
+            putc('\\');                    /* "D:" -> "D:\\"           */
     } else {
         DosQCurDir(cur);
         if (dir[0] == '\\') {                  /* absolut: nur Laufwerk */
