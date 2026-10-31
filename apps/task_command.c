@@ -176,10 +176,194 @@ static unsigned set_line(const char *src, unsigned *pos, unsigned n)
     return n;
 }
 
+/* ---- Vervollstaendigen mit Tab (wie bash) ------------------------------
+   Das Wort vor dem Cursor wird ergaenzt: erstes Wort aus internen Befehlen
+   und Programmen (.EXE/.CMD/.BAT) im aktuellen Verzeichnis und im PATH,
+   sonst aus Dateien und Verzeichnissen. Eindeutig: ganz einsetzen
+   (Verzeichnis mit "\", Datei mit Leerzeichen); mehrdeutig: gemeinsamen
+   Anfang einsetzen, zweites Tab listet die Moeglichkeiten. */
+#define NCAND 64
+static char     cand[NCAND][13];
+static unsigned ncand;
+static unsigned char cand_dir[NCAND];
+static const char *const builtin[] = {
+    "CD", "CHDIR", "CLS", "COPY", "DATE", "DEL", "DIR", "DOSKEY", "ECHO", "ERASE",
+    "EXIT", "HILFE", "MD", "MKDIR", "PATH", "POWEROFF", "PROMPT", "RD", "REN",
+    "RENAME", "RMDIR", "SET", "SHUTDOWN", "START", "TIME", "TYPE", "VER", "VOL", 0
+};
+
+static void show_prompt(void);
+static unsigned slen(const char *s);
+
+static int pfx(const char *name, const char *p, unsigned pl)
+{
+    unsigned i;
+    for (i = 0; i < pl; i++)
+        if (up(name[i]) != up(p[i]))
+            return 0;
+    return 1;
+}
+
+static void add_cand(const char *name, int dir)
+{
+    unsigned i;
+    for (i = 0; i < ncand; i++)         /* doppelt (PATH)?               */
+        if (same(cand[i], name))
+            return;
+    if (ncand < NCAND) {
+        for (i = 0; name[i] && i < 12; i++)
+            cand[ncand][i] = name[i];
+        cand[ncand][i] = 0;
+        cand_dir[ncand++] = (unsigned char)dir;
+    }
+}
+
+/* Eintraege von dir (0 = aktuelles), die mit p beginnen; progs: nur
+   Programme, Endung weg */
+static void scan_dir(const char *dir, const char *p, unsigned pl, int progs)
+{
+    static struct fapi_dirent e;
+    static char nm[13];
+    unsigned n, k;
+
+    for (n = 0; DosFindEntry(&e, n, dir) != FAPI_ERROR; n++) {
+        if (e.name[0] == '.' || (e.attr & 0x0E) || !pfx(e.name, p, pl))
+            continue;
+        if (progs) {
+            if (e.attr & 0x10)
+                continue;
+            for (k = 0; e.name[k] && e.name[k] != '.'; k++)
+                nm[k] = e.name[k];
+            nm[k] = 0;
+            if (!same(e.name + k, ".EXE") && !same(e.name + k, ".CMD") &&
+                !same(e.name + k, ".BAT"))
+                continue;
+            add_cand(nm, 0);
+        } else
+            add_cand(e.name, (e.attr & 0x10) != 0);
+    }
+}
+
+static void collect(char *w, unsigned wl, int first, unsigned *plen)
+{
+    static char dir[FAPI_PATHLEN], pv[256];
+    unsigned i, k, d = 0;
+
+    ncand = 0;
+    for (i = 0; i < wl; i++)            /* Verzeichnisteil abtrennen     */
+        if (w[i] == '\\' || w[i] == ':')
+            d = i + 1;
+    *plen = wl - d;
+    if (first && d == 0) {
+        for (i = 0; builtin[i]; i++)
+            if (pfx(builtin[i], w, wl))
+                add_cand(builtin[i], 0);
+        scan_dir(0, w, wl, 1);
+        if (DosGetEnv("PATH", pv, sizeof(pv)) != FAPI_ERROR)
+            for (i = 0; pv[i]; ) {
+                for (k = 0; pv[i] && pv[i] != ';' && k < sizeof(dir) - 1; )
+                    dir[k++] = pv[i++];
+                dir[k] = 0;
+                if (pv[i])
+                    i++;
+                if (k)
+                    scan_dir(dir, w, wl, 1);
+            }
+        return;
+    }
+    for (i = 0; i < d && i < sizeof(dir) - 2; i++)
+        dir[i] = w[i];
+    if (d && dir[d - 1] == '\\' && d > 1 && dir[d - 2] != ':')
+        d--;                            /* "\DOS\" -> "\DOS", "\" bleibt */
+    dir[d] = 0;
+    scan_dir(d ? dir : 0, w + (wl - *plen), *plen, 0);
+}
+
+static void ins_char(char c, unsigned *n, unsigned *pos)
+{
+    unsigned k;
+    if (*n >= LINE)
+        return;
+    for (k = *n; k > *pos; k--)
+        line[k] = line[k - 1];
+    line[*pos] = c;
+    (*n)++;
+    redraw(*pos, *n, 0);
+    oc(line[(*pos)++]);
+}
+
+/* Tab gedrueckt; again: direkt davor schon Tab ohne Fortschritt */
+static int complete(unsigned *n, unsigned *pos, int again)
+{
+    unsigned ws = *pos, pl, i, k, common;
+    int first = 1;
+
+    while (ws && line[ws - 1] != ' ')
+        ws--;
+    for (i = 0; i < ws; i++)
+        if (line[i] != ' ')
+            first = 0;                  /* es gibt ein Wort davor        */
+    collect(line + ws, *pos - ws, first, &pl);
+    if (!ncand) {
+        oc('\a');
+        return 0;
+    }
+    common = 13;                        /* gemeinsamer Anfang            */
+    for (i = 1; i < ncand; i++) {
+        for (k = 0; k < common && cand[0][k] && up(cand[0][k]) == up(cand[i][k]); k++)
+            ;
+        common = k;
+    }
+    if (ncand == 1)
+        common = slen(cand[0]);
+    if (common > pl || ncand == 1) {    /* Getipptes in der Schreibweise
+                                           des Treffers                 */
+        for (k = 0; k < pl; k++) {
+            oc('\b');
+            line[*pos - pl + k] = cand[0][k];
+        }
+        for (k = 0; k < pl; k++)
+            oc(cand[0][k]);
+    }
+    if (common > pl) {
+        for (k = pl; k < common; k++)
+            ins_char(cand[0][k], n, pos);
+        if (ncand == 1)
+            ins_char(cand_dir[0] ? '\\' : ' ', n, pos);
+        return 1;
+    }
+    if (ncand == 1) {
+        ins_char(cand_dir[0] ? '\\' : ' ', n, pos);
+        return 1;
+    }
+    if (!again) {
+        oc('\a');
+        return 0;
+    }
+    oc('\n');                           /* Moeglichkeiten zeigen         */
+    oflush();
+    for (i = 0; i < ncand; i++) {
+        puts(cand[i]);
+        if (cand_dir[i])
+            putc('\\');
+        for (k = slen(cand[i]) + cand_dir[i]; k < 15; k++)
+            putc(' ');
+        if (i % 5 == 4 || i == ncand - 1)
+            puts("\n");
+    }
+    show_prompt();
+    for (k = 0; k < *n; k++)
+        oc(line[k]);
+    for (k = *pos; k < *n; k++)
+        oc('\b');
+    return 0;
+}
+
 static void read_line(void)
 {
     unsigned n = 0, pos = 0, k, key, browse = 0;
     unsigned char c, sc;
+    int tabbed = 0;
 
     overwrite = 0;
     for (;;) {
@@ -187,6 +371,8 @@ static void read_line(void)
         key = KbdCharIn();
         c = (unsigned char)key;
         sc = (unsigned char)(key >> 8);
+        if (c != 9)
+            tabbed = 0;
         if (c == 13) {
             break;
         } else if (c == 0 || c == 0xE0) {   /* Sondertasten         */
@@ -259,6 +445,9 @@ static void read_line(void)
                 }
                 break;
             }
+        } else if (c == 9) {                /* Tab: vervollstaendigen */
+            tabbed = complete(&n, &pos, tabbed) ? 0 : 1;
+            continue;
         } else if (c == 8) {                /* Rueckschritt         */
             if (pos) {
                 pos--;
@@ -296,7 +485,7 @@ static void cmd_doskey(char *arg)
 {
     unsigned i;
     if (!*arg) {
-        puts("DOSKEY ist eingebaut: Pfeiltasten, Pos1/Ende, Einfg/Entf, F3, Esc.\n"
+        puts("DOSKEY ist eingebaut: Pfeiltasten, Pos1/Ende, Einfg/Entf, F3, Esc, Tab.\n"
              "DOSKEY /HISTORY zeigt die letzten Befehle.\n");
         return;
     }

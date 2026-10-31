@@ -44,7 +44,10 @@ und PC-DOS.
   `.BAT` führt COMMAND.EXE bis dahin trotzdem aus
 - `COMMAND.EXE`: Zeileneditor und Befehlsspeicher wie DOSKEY eingebaut
   (Pfeil auf/ab, links/rechts, Pos1/Ende, Einfg/Entf, F3, Esc, Bild auf/ab;
-  `DOSKEY /HISTORY` listet die letzten 16 Befehle).
+  `DOSKEY /HISTORY` listet die letzten 16 Befehle). **Tab** vervollständigt
+  wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
+  Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,
+  zweites Tab listet die Möglichkeiten.
   Befehlsinterpreter mit `DIR` (`/A`, `/P`, Muster, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
