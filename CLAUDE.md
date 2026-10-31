@@ -125,13 +125,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
   höchstens 48 KB groß sein (Diskettenbootsektor lädt 96 Sektoren), BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
-  24 Status. Programme schreiben in den Puffer ihrer Sitzung (Puffer immer
-  25 Zeilen groß). `VioSetMode(1)` (Entscheidung des Nutzers, wie MS-DOS
-  EDIT/OS/2-Vollbild): Sitzung hat alle 25 Zeilen, Titel- und Statusleiste
+  24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in
+  den Puffer ihrer Sitzung (Puffer immer 50 Zeilen groß). `VioSetMode(1)`
+  (Entscheidung des Nutzers, wie MS-DOS EDIT/OS/2-Vollbild): Sitzung hat
+  alle Bildschirmzeilen, Titel- und Statusleiste
   fehlen, solange sie im Vordergrund ist; der normale Inhalt wird in eigenem
   Speicher gesichert und bei `VioSetMode(0)` oder Programmende
   (`vio_task_end` in `task_end`) wiederhergestellt. `ses[].top` (1/0) und
-  `rows` (23/25) statt fester Konstanten benutzen.
+  `rows` statt fester Konstanten benutzen.
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile
