@@ -258,7 +258,7 @@ enum { C_NONE, C_NEW, C_OPEN, C_SAVE, C_SAVEAS, C_EXIT, C_CUT, C_COPY,
 struct item { const char *text, *key; int cmd; };
 
 static const struct item m_file[] = {
-    { "&Neu", "", C_NEW }, { "&\x99ffnen...", "", C_OPEN },
+    { "&Neu", "", C_NEW }, { "&\x99" "ffnen...", "", C_OPEN },
     { "&Speichern", "Strg+S", C_SAVE }, { "Speichern &unter...", "", C_SAVEAS },
     { 0, 0, 0 }, { "&Beenden", "", C_EXIT }, { 0, 0, -1 } };
 static const struct item m_edit[] = {
