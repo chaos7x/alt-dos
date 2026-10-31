@@ -161,6 +161,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   um ist oder Strg+C/Alt+Esc/Neustart anstehen. So bleiben Strg+C und der
   Sitzungswechsel auch bei `grep -r` über große Platten bedienbar. Rechnen
   ohne FAPI-Aufrufe hält das System weiter an (präemptiv erst 6.0).
+  Auf dem 386SX/2 MB in 86Box bestätigt: `grep -r` über die 2-GB-Platte im
+  Hintergrund, Vordergrund bleibt bedienbar, Alt+Esc schnell, Strg+C bricht ab.
+  `MEM` dort: 1.664 KB erkannt, 231 KB belegt, 1.433 KB frei.
 - Signale (`sig_deliver` in kernel.c): Rahmen des FAPI-Aufrufs liegt fest
   oben auf dem Kernelstack (`FRAME(t)`, 14 Worte, Aufbau in start.asm
   `fapi_entry_`). Zustellung beim Rücksprung aus der FAPI: Rahmen und
