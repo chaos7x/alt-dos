@@ -2005,6 +2005,11 @@ static int load_driver(const char *line, int is_ifs)
     set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
+    for (k = 0, n = 0; path[k]; k++)                /* Name ohne Pfad    */
+        if (path[k] == '\\' || path[k] == ':')
+            n = k + 1;
+    scopy(drv[d].name, path + n, sizeof(drv[d].name));
+    n = 0;
     drv[d].entry = entry;
     drv[d].unit = u;
     drv[d].cnt = n;
@@ -2060,7 +2065,6 @@ static int next_drive = 2;
 
 static void mount_disk(int dev)
 {
-    static char msg[60];
     unsigned char __far *b;
     unsigned long start;
     unsigned char type;
@@ -2084,14 +2088,7 @@ static void mount_disk(int dev)
             continue;
         if (ifs_mount(next_drive, dev, start, &fat_driver))
             continue;
-        msg[0] = (char)('A' + next_drive);
-        scopy(msg + 1, ": Partition ", sizeof(msg) - 1);
-        msg[13] = (char)('1' + i);
-        scopy(msg + 14, vol[next_drive].fat16 ? ", FAT16, " : ", FAT12, ", 20);
-        udec((unsigned)(vol[next_drive].sectors >> 11), msg + 23);
-        vio_kputs(boot_session, "\xFE Laufwerk ");
-        vio_kputs(boot_session, msg);
-        vio_kputs(boot_session, " MB\n");
+        vol[next_drive].part = (unsigned char)(i + 1);
         next_drive++;
         mounted++;
     }
@@ -2230,7 +2227,6 @@ struct ifs_driver mod_driver = {
    Datentraeger wird erst beim Zugriff geprueft (er kann fehlen/wechseln). */
 static void cd_drives(void)
 {
-    static char msg[40];
     int dev, m;
 
     for (dev = 1; dev < nblk && next_drive < PRE_DRIVE; dev++) {
@@ -2247,10 +2243,7 @@ static void cd_drives(void)
         vol[next_drive].start = 0;
         vol[next_drive].drv = &mod_driver;
         vol[next_drive].mod = ifsmod[m].drv;
-        msg[0] = (char)('A' + next_drive);
-        scopy(msg + 1, ": CD-ROM\n", sizeof(msg) - 1);
-        vio_kputs(boot_session, "\xFE Laufwerk ");
-        vio_kputs(boot_session, msg);
+        vol[next_drive].part = 0;
         next_drive++;
     }
 }
@@ -2364,6 +2357,53 @@ static void config_sys(void)
     cd_drives();
 }
 
+/* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move) */
+static void list_drives(void)
+{
+    static char msg[80];
+    int d, n;
+    struct blkdev *b;
+
+    for (d = 2; d < NDRIVE; d++) {
+        if (!vol[d].used || d == PRE_DRIVE)
+            continue;
+        b = &blk[vol[d].blk];
+        msg[0] = (char)('A' + d);
+        scopy(msg + 1, ": ", sizeof(msg) - 1);
+        n = 3;
+        if (vol[d].drv == &mod_driver) {
+            scopy(msg + n, "CD-ROM", sizeof(msg) - n);
+        } else {
+            scopy(msg + n, "Partition ", sizeof(msg) - n);
+            n += 10;
+            msg[n++] = (char)('0' + vol[d].part);
+            scopy(msg + n, vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
+            n += 9;
+            udec((unsigned)(vol[d].sectors >> 11), msg + n);
+            while (msg[n])
+                n++;
+            scopy(msg + n, " MB", sizeof(msg) - n);
+        }
+        while (msg[n])
+            n++;
+        if (b->drv >= 0) {
+            scopy(msg + n, "  (", sizeof(msg) - n);
+            n += 3;
+            scopy(msg + n, drv[b->drv].name, sizeof(msg) - n);
+            while (msg[n])
+                n++;
+            scopy(msg + n, ", Einheit ", sizeof(msg) - n);
+            n += 10;
+            msg[n++] = (char)('0' + b->unit);
+            msg[n++] = ')';
+        }
+        msg[n++] = '\n';
+        msg[n] = 0;
+        vio_kputs(boot_session, "\xFE Laufwerk ");
+        vio_kputs(boot_session, msg);
+    }
+}
+
 void kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
@@ -2432,23 +2472,14 @@ void kmain(void)
         sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
-        vio_kputs(s0, "\xFE Startlaufwerk C:");
+        vio_kputs(s0, "\xFE Startlaufwerk C:\n");
         if (sys_drive != 2) {                   /* immer C:, Rest rueckt nach */
-            line[0] = ' ';
-            line[1] = '(';
-            line[2] = 'w';
-            line[3] = 'a';
-            line[4] = 'r';
-            line[5] = ' ';
-            line[6] = (char)('A' + sys_drive);
-            scopy(line + 7, ":), Rest r\x81" "ckt nach", sizeof(line) - 7);
-            vio_kputs(s0, line);
             vol_move(sys_drive, 2);
             sys_drive = 2;
         }
-        vio_kputs(s0, "\n");
     }
 
+    list_drives();
     blk_cache_init(nbuffers);           /* nach CONFIG.SYS: BUFFERS= */
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
