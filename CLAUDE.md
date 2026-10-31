@@ -156,6 +156,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Elternteil in `child_rc` ab (`DosQChildRC`); Ausnahme und Strg+C ergeben
   255. `crt0` beendet nach `main` mit 0 (`main` ist `void`) – wer einen Wert
   liefern will, ruft `DosExit(n)`. COMMAND merkt ihn in `errorlevel`.
+- Zeitscheibe: `fapi_dispatch` ruft nach jedem FAPI-Aufruf
+  `schedule_next()`, wenn die Scheibe (`SLICE`, 50 ms seit `slice_start`)
+  um ist oder Strg+C/Alt+Esc/Neustart anstehen. So bleiben Strg+C und der
+  Sitzungswechsel auch bei `grep -r` über große Platten bedienbar. Rechnen
+  ohne FAPI-Aufrufe hält das System weiter an (präemptiv erst 6.0).
 - Signale (`sig_deliver` in kernel.c): Rahmen des FAPI-Aufrufs liegt fest
   oben auf dem Kernelstack (`FRAME(t)`, 14 Worte, Aufbau in start.asm
   `fapi_entry_`). Zustellung beim Rücksprung aus der FAPI: Rahmen und

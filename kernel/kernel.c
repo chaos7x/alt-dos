@@ -900,6 +900,15 @@ static void do_break(void)
     task_end(t);
 }
 
+/* Beginn der laufenden Zeitscheibe. Kooperativ heisst bei AT-DOS: Ein
+   Programm gibt die CPU an FAPI-Aufrufen ab. Ist seine Scheibe (SLICE
+   Takte) um oder wartet Strg+C/Alt+Esc, kommen beim Ruecksprung aus der
+   FAPI die anderen dran - so legt GREP -R ueber eine grosse Platte das
+   System nicht lahm. Wer rechnet, ohne die FAPI zu rufen, haelt es weiter
+   an (praeemptiv erst ab DOS 6.0). */
+#define SLICE 5                         /* 50 ms                         */
+static unsigned long slice_start;
+
 static void schedule_next(void)
 {
     int n, t, any;
@@ -928,6 +937,7 @@ static void schedule_next(void)
                 continue;
             if (t != current)
                 switch_to(t);
+            slice_start = get_ticks();  /* (wieder) dran: neue Zeitscheibe */
             return;
         }
         if (!any)
@@ -1241,7 +1251,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 
 unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 {
-    return sig_deliver(fapi_inner(fn, usel, a1, a2));
+    unsigned r = fapi_inner(fn, usel, a1, a2);
+    if (kbd_break_req || kbd_switch_req || reboot_count ||
+        get_ticks() - slice_start >= SLICE) {
+        task[current].wake = 0;
+        schedule_next();                /* Zeitscheibe um: andere zuerst */
+    }
+    return sig_deliver(r);
 }
 
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
