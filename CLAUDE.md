@@ -218,6 +218,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nicht) lässt ERR stehen bis zum nächsten Befehl. Sonst ist das Laufwerk
   nach dem ersten `blk_flush()` tot (auf dem SCAT nach `CHKDSK /F`). QEMU
   kennt FLUSH CACHE; nachstellen, indem man testweise 00h (NOP) schickt.
+- MFM/RLL (WD1003) und ESDI (WD1007) in `IDE.SYS`: IDENTIFY abgebrochen
+  (ERR + ABRT, keine ATAPI-Signatur) -> `old_disk()`: Geometrie aus der
+  BIOS-Tabelle (`DH_BIOSDISK`; `start.asm` kopiert INT 41h/46h und
+  0040:0075 im Real Mode nach `bios_fdpt`/`bios_hdcount`, weil die Tabelle
+  im vergebenen RAM liegen kann), 91h einstellen, Sektor 0 und letzten
+  Sektor der ersten Spur lesen. Kein FLUSH an diese Platten (`unit.old`).
+  CHS ohne Wort 53: BIOS-Geometrie, wenn sie in die Platte passt (ESDI),
+  sonst Grundgeometrie, beides per 91h eingestellt. In QEMU nachgestellt,
+  indem `IDE.SYS` testweise 00h statt ECh schickt (QEMU bricht ab wie der
+  WD1003): Start, CHKDSK, Kopieren über CHS mit SeaBIOS-Geometrie 130/16/63
+  geprüft. Echter Test steht aus: 86Box mit „[MFM] WD1003“ bzw. ESDI-AT.
+  Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
+  die Einheitentabelle (jetzt 128).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
   Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
   (COPY nach D:, Datei von dort ausgeführt). Meldung
@@ -425,9 +438,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - Hardware-Referenz 86Box (Quellcode, GPL v2): lesen, um Register und
   Verhalten zu verstehen, nie Code übernehmen (AT-DOS ist MIT). Datenblätter
   bleiben erste Quelle; der Emulator ist nachsichtiger als echte Hardware.
-  Interessant für 5.0: WD1003 (MFM/RLL) und WD1007 (ESDI) haben die
-  IDE-Register, aber der WD1003 kein IDENTIFY -> `IDE.SYS` braucht einen
-  Rückfall auf die Geometrie aus BIOS/CMOS; NCR 5380/53C400 (Trantor T130B,
+  Interessant für 5.0: NCR 5380/53C400 (Trantor T130B,
   Rancho RT1000B, Longshine LCS-6821N), AHA-1520A/AIC-6360 (PIO).
   Adaptec 154x und BusLogic laufen in 86Box über denselben Code (`scsi_x54x.c`).
 - Speicher in DOS 6.0: Erkennung per INT 15h E820h (Speicherkarte mit

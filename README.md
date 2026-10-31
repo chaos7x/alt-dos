@@ -24,7 +24,8 @@ und PC-DOS.
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
   kompatiblen BusLogic BT-545C) und `IDE.SYS` (bis zu
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
-  Platten ohne LBA; ATAPI-CD-ROMs als Einheit) – beide lesen und schreiben,
+  Platten ohne LBA; ATAPI-CD-ROMs als Einheit; dazu MFM/RLL-Platten am
+  WD1003 und ESDI am WD1007, Geometrie aus der Tabelle des BIOS) – beide lesen und schreiben,
   CD-ROMs (2048-Byte-Blöcke) nur lesen
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
@@ -243,6 +244,20 @@ DevHlp – angelehnt an die Treiber von OS/2 1.x. Schnittstelle:
 `include/drv.h`. Die Hardware-Erkennung liest immer erst: Der Adaptec-Treiber
 erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
 übergeht so etwa den MPU-401 einer Sound Blaster auf Port 330h.
+
+DevHlp-Funktionen: `DH_PUTS` (Text ins Startprotokoll), `DH_TICKS`
+(Systemtakt), `DH_DELAY` (warten), `DH_BLKREAD` (Block eines anderen
+Geräts lesen, für IFS-Module), `DH_BIOSDISK` (Plattentabelle des BIOS hinter
+INT 41h/46h, vom Kernel beim Start im Real Mode gesichert).
+
+`IDE.SYS` und ältere Controller: Der WD1003 (MFM/RLL) hat die Register der
+IDE-Platten, kennt aber kein IDENTIFY und bricht es ab. Dann nimmt der
+Treiber die Geometrie aus der BIOS-Tabelle (nur primärer Kanal, Platte
+80h/81h), stellt sie mit INITIALIZE DRIVE PARAMETERS (91h) ein und prüft
+sie, indem er den ersten und den letzten Sektor der ersten Spur liest. Der
+WD1007 (ESDI) liefert IDENTIFY mit der Rohgeometrie; das BIOS stellt oft
+etwas weniger ein. Bei Platten ohne LBA und ohne gültige aktuelle Geometrie
+(IDENTIFY-Wort 53) gilt deshalb die des BIOS, wenn sie in die Platte passt.
 
 ## Speicher
 

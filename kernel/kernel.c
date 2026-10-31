@@ -52,6 +52,7 @@ extern unsigned sel_limit(unsigned sel);
 
 extern unsigned short isr_table[48];
 extern unsigned short mem_conv_kb, mem_ext_kb;   /* vom BIOS, im Real Mode */
+extern unsigned char bios_hdcount, bios_fdpt[32];    /* INT 41h/46h vom Start (IDE.SYS) */
 extern unsigned char  a20_ok;                     /* im Real Mode geprueft  */
 extern unsigned short fapi_dx;                    /* viertes FAPI-Argument  */
 
@@ -2171,6 +2172,12 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         return (unsigned)get_ticks();
     case DH_DELAY:
         delay_ticks(bx);
+        return 0;
+    case DH_BIOSDISK:
+        if (bx > 1 || bx >= bios_hdcount)
+            return 1;
+        for (n = 0; n < 16; n++)
+            ((unsigned char __far *)MK_FP(dsel, cx))[n] = bios_fdpt[bx * 16 + n];
         return 0;
     }
     return 0xFFFF;

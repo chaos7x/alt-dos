@@ -70,6 +70,27 @@ _start:
 .ext_ok:
         mov     [_mem_ext_kb], ax
 
+        ; Plattenparameter des BIOS fuer IDE.SYS sichern: Anzahl Platten
+        ; (0040:0075) und die Tabellen hinter INT 41h/46h (je 16 Byte).
+        ; MFM-Controller (WD1003) kennen kein IDENTIFY, die Geometrie gibt
+        ; es nur hier. Die Tabellen koennen im RAM liegen, das der Kernel
+        ; spaeter vergibt - deshalb jetzt kopieren.
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     al, [0x475]
+        mov     [es:_bios_hdcount], al
+        mov     di, _bios_fdpt
+        lds     si, [0x41*4]
+        mov     cx, 8
+        rep     movsw
+        xor     ax, ax
+        mov     ds, ax
+        lds     si, [0x46*4]
+        mov     cx, 8
+        rep     movsw
+        pop     ds
+
         ; Start von Festplatte: CONFIG.SYS und Treiber per BIOS vorladen,
         ; solange es noch geht (BIOS-Plattenroutinen brauchen Interrupts)
         test    byte [_boot_drive], 0x80
@@ -647,6 +668,9 @@ _fdc_irq:    resb 1
 global _mem_conv_kb, _mem_ext_kb
 _mem_conv_kb: resw 1
 _mem_ext_kb:  resw 1
+global _bios_hdcount, _bios_fdpt
+_bios_hdcount: resb 1
+_bios_fdpt:   resb 32
 kstack:      resb 1024
 kstack_top:
 

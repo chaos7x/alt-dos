@@ -59,5 +59,9 @@ struct drv_req {
 #define DH_DELAY        2           /* BX = Takte warten                */
 #define DH_BLKREAD      3           /* BX = Blockgeraet, CX = LBA unten, DX = LBA oben
                                        -> Block im DMA-Puffer, AX = 0 ok   */
+#define DH_BIOSDISK     4           /* BX = Platte 0/1 (BIOS 80h/81h), CX = Ziel
+                                       (16 Byte, DS des Treibers) -> Tabelle
+                                       hinter INT 41h/46h vom Start; AX = 0 ok,
+                                       1 = BIOS kennt so viele Platten nicht */
 
 #endif

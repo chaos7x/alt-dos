@@ -13,6 +13,18 @@
  *
  * Erkennung liest zuerst: Ein unbelegter Kanal liefert FFh (oder 7Fh) im
  * Status, erst danach wird ein Laufwerk ausgewaehlt und IDENTIFY gesendet.
+ *
+ * Aeltere Controller mit denselben Registern: Der WD1003 (MFM/RLL) kennt
+ * kein IDENTIFY und bricht es ab (ERR, Fehlerregister ABRT). Die Geometrie
+ * steht dann nur in der Tabelle des BIOS (INT 41h/46h, vom Kernel beim
+ * Start gesichert, DH_BIOSDISK) - nur am primaeren Kanal, nur fuer die
+ * Platten, die das BIOS kennt. Sie wird mit zwei Lesezugriffen geprueft
+ * (erster und letzter Sektor der ersten Spur). Der WD1007 (ESDI) liefert
+ * IDENTIFY, aber mit der Rohgeometrie; das BIOS stellt oft eine kleinere
+ * ein (eine Spur oder einen Sektor weniger). Bei CHS ohne gueltige
+ * "aktuelle Geometrie" (Wort 53) gilt deshalb die des BIOS, wenn sie in die
+ * Platte passt. Die gewaehlte Geometrie wird mit INITIALIZE DRIVE
+ * PARAMETERS (91h) eingestellt, damit Treiber und Controller sie teilen.
  */
 #include "drvlib.h"
 
@@ -38,13 +50,14 @@ struct unit {
     unsigned char  sel;                 /* 00h Master, 10h Slave           */
     unsigned char  chs;
     unsigned char  atapi;               /* CD-ROM: Paketbefehle            */
+    unsigned char  old;                 /* WD1003: kein IDENTIFY, kein FLUSH */
     unsigned       cyls, heads, spt;
 };
 
 static struct unit unit[NUNIT];
 static int nunit;
 static unsigned short id[256];
-static char line[80];
+static char line[128];                  /* Zeile fuers Startprotokoll   */
 static const unsigned ports[2][2] = { { 0x1F0, 0x3F6 }, { 0x170, 0x376 } };
 
 /* (x / d) in einem Schritt, x >> 16 muss kleiner als d sein;
@@ -101,14 +114,17 @@ static int wait_idle(unsigned base, unsigned t)
 /* Modellname (Bytes vertauscht) an p anhaengen */
 static char *model(char *p)
 {
+    char *q = p;
     int i;
     for (i = 27; i < 47; i++) {
         *p++ = (char)(id[i] >> 8);
         *p++ = (char)id[i];
     }
-    while (p > line && p[-1] == ' ')
+    while (p > q && (p[-1] == ' ' || p[-1] == 0))
         p--;
     *p = 0;
+    if (p == q)                             /* ESDI: oft ohne Namen     */
+        p = scat(p, "Platte ohne Namen");
     return p;
 }
 
@@ -116,6 +132,153 @@ static char *where(int ch, int dev)
 {
     return scat(line, ch == 0 ? (dev ? "  IDE prim\x84r Slave: " : "  IDE prim\x84r Master: ")
                               : (dev ? "  IDE sekund\x84r Slave: " : "  IDE sekund\x84r Master: "));
+}
+
+/* Sektoren von cyls x heads x spt (ohne __U4M) */
+static unsigned long chs_size(unsigned cyls, unsigned heads, unsigned spt)
+{
+    unsigned long n = 0, t = 0;
+    unsigned i;
+    for (i = 0; i < spt; i++)
+        t += heads;
+    for (i = 0; i < cyls; i++)
+        n += t;
+    return n;
+}
+
+/* Befehl fuer n Sektoren ab l ausgeben (Register setzen, Befehl schreiben);
+   0 = ok, -1 = Laufwerk belegt oder Adresse ausserhalb */
+static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
+{
+    static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
+    unsigned long track;
+    unsigned cyl = 0, b = u->base;
+
+    if (u->chs) {
+        track = div32(l, u->spt, &sec);
+        cyl = (unsigned)div32(track, u->heads, &head);
+        if (cyl >= u->cyls)
+            return -1;
+    }
+    outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
+    settle(u->ctl);
+    if (wait_idle(b, 300))
+        return -1;
+    if (u->chs) {
+        outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | head));
+        outp(b + R_COUNT, (unsigned char)n);
+        outp(b + R_SECTOR, (unsigned char)(sec + 1));   /* ab 1      */
+        outp(b + R_CYL_LO, (unsigned char)cyl);
+        outp(b + R_CYL_HI, (unsigned char)(cyl >> 8));
+    } else {
+        outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel |
+                                           ((unsigned)(l >> 24) & 0x0F)));
+        outp(b + R_COUNT, (unsigned char)n);
+        outp(b + R_SECTOR, (unsigned char)l);
+        outp(b + R_CYL_LO, (unsigned char)(l >> 8));
+        outp(b + R_CYL_HI, (unsigned char)(l >> 16));
+    }
+    settle(u->ctl);
+    outp(b + R_CMD, cmd);
+    settle(u->ctl);
+    return 0;
+}
+
+/* einen Sektor nach id[] lesen (Pruefung der Geometrie); 0 = ok */
+static int test_read(struct unit *u, unsigned long l)
+{
+    if (issue(u, l, 1, 0x20) || wait_status(u->base, ST_DRQ, ST_DRQ, 300))
+        return -1;
+    insw_far(u->base + R_DATA, (void __far *)id, 256);
+    return 0;
+}
+
+/* INITIALIZE DRIVE PARAMETERS: Koepfe und Sektoren je Spur einstellen */
+static int set_geometry(struct unit *u)
+{
+    unsigned b = u->base;
+    outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
+    settle(u->ctl);
+    if (wait_idle(b, 300))
+        return -1;
+    outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | ((u->heads - 1) & 0x0F)));
+    outp(b + R_COUNT, (unsigned char)u->spt);
+    settle(u->ctl);
+    outp(b + R_CMD, 0x91);
+    settle(u->ctl);
+    return wait_status(b, 0, 0, 300);
+}
+
+/* Geometrie aus der BIOS-Tabelle (INT 41h/46h) der Platte dev am
+   primaeren Kanal; 0 = gueltig. Uebersetzende BIOS (Signatur A0h im
+   Byte 3) legen dort die echte Geometrie ab. */
+static unsigned char fdpt[16];
+
+static int bios_geometry(int ch, int dev, unsigned *cyls, unsigned *heads,
+                         unsigned *spt)
+{
+    if (ch != 0 || devhlp(DH_BIOSDISK, 0, (unsigned)dev, (unsigned)fdpt))
+        return -1;
+    if (fdpt[3] == 0xA0) {
+        *cyls = fdpt[9] | (fdpt[10] << 8);
+        *heads = fdpt[11];
+        *spt = fdpt[4];
+    } else {
+        *cyls = fdpt[0] | (fdpt[1] << 8);
+        *heads = fdpt[2];
+        *spt = fdpt[14];
+    }
+    if (*cyls == 0 || *cyls > 4096 || *heads == 0 || *heads > 16 ||
+        *spt == 0 || *spt > 63)
+        return -1;
+    return 0;
+}
+
+/* Platte ohne IDENTIFY (WD1003, MFM/RLL) */
+static void old_disk(int ch, int dev)
+{
+    struct drv_req __far *r = REQ;
+    struct unit *u;
+    unsigned long n;
+    char *p;
+
+    if (nunit == NUNIT)
+        return;
+    u = &unit[nunit];
+    p = where(ch, dev);
+    if (bios_geometry(ch, dev, &u->cyls, &u->heads, &u->spt)) {
+        scat(p, "kein IDENTIFY, Geometrie unbekannt\n");
+        dputs(line);
+        return;
+    }
+    u->base = ports[ch][0];
+    u->ctl = ports[ch][1];
+    u->sel = (unsigned char)(dev << 4);
+    u->chs = 1;
+    u->atapi = 0;
+    u->old = 1;
+    /* Geometrie pruefen: Sektor 1 und letzter Sektor der ersten Spur
+       (falsche Kopf- oder Sektorzahl -> Fehler) - nur lesen */
+    if (set_geometry(u) || test_read(u, 0) ||
+        test_read(u, (unsigned long)(u->heads * u->spt - 1))) {
+        scat(p, "kein IDENTIFY, BIOS-Geometrie passt nicht\n");
+        dputs(line);
+        return;
+    }
+    n = chs_size(u->cyls, u->heads, u->spt);
+    r->blocks[nunit] = n;
+    nunit++;
+    p = scat(p, u->spt > 17 ? "RLL-Platte" : "MFM-Platte");
+    p = scat(p, " (WD1003), ");
+    p = udec(p, (unsigned)(n >> 11));
+    p = scat(p, " MB, CHS ");
+    p = udec(p, u->cyls);
+    p = scat(p, "/");
+    p = udec(p, u->heads);
+    p = scat(p, "/");
+    p = udec(p, u->spt);
+    scat(p, "\n");
+    dputs(line);
 }
 
 /* ein Geraet pruefen; meldet Platten als Einheit, ATAPI nur im Protokoll */
@@ -126,8 +289,9 @@ static void probe(int ch, int dev)
     struct unit *u;
     unsigned long n;
     unsigned char s, sig1, sig2;
+    static unsigned c, h, sp;               /* static: SS ist nicht DS (-zu) */
     char *p;
-    int i;
+    int bios;
 
     outp(base + R_DRIVE, (unsigned char)(0xA0 | (dev << 4)));
     settle(ctl);
@@ -145,8 +309,13 @@ static void probe(int ch, int dev)
         /* abgelehnt: ATAPI meldet sich mit der Signatur 14h/EBh */
         sig1 = inp(base + R_CYL_LO);
         sig2 = inp(base + R_CYL_HI);
-        if (sig1 != 0x14 || sig2 != 0xEB)
+        if (sig1 != 0x14 || sig2 != 0xEB) {
+            /* WD1003: IDENTIFY sauber abgebrochen -> Geometrie vom BIOS */
+            if ((inp(base + R_STATUS) & (ST_BSY | ST_ERR)) == ST_ERR &&
+                (inp(base + R_ERROR) & 0x04))
+                old_disk(ch, dev);
             return;
+        }
         outp(base + R_CMD, 0xA1);           /* IDENTIFY PACKET DEVICE   */
         settle(ctl);
         if (wait_status(base, ST_DRQ, ST_DRQ, 300))
@@ -185,21 +354,31 @@ static void probe(int ch, int dev)
     u->sel = (unsigned char)(dev << 4);
     u->chs = 0;
     u->atapi = 0;
+    u->old = 0;
+    bios = 0;
     n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
     if (!(id[49] & 0x0200) || n == 0) {
-        /* kein LBA: aktuelle Geometrie (Wort 54-56), sonst Grundgeometrie */
+        /* kein LBA: aktuelle Geometrie (Wort 54-56); sonst die des BIOS,
+           wenn sie in die Platte passt (ESDI: BIOS stellt weniger ein),
+           sonst die Grundgeometrie - dann selbst einstellen */
         u->chs = 1;
         if ((id[53] & 1) && id[54] && id[55] && id[56]) {
             u->cyls = id[54]; u->heads = id[55]; u->spt = id[56];
         } else {
             u->cyls = id[1]; u->heads = id[3]; u->spt = id[6];
+            if (bios_geometry(ch, dev, &c, &h, &sp) == 0 && h <= 16 &&
+                chs_size(c, h, sp) <= chs_size(u->cyls, u->heads, u->spt)) {
+                u->cyls = c; u->heads = h; u->spt = sp;
+                bios = 1;
+            }
+            if (u->cyls == 0 || u->heads == 0 || u->heads > 16 ||
+                u->spt == 0 || u->spt > 255 || set_geometry(u))
+                return;
         }
         if (u->cyls == 0 || u->heads == 0 || u->heads > 16 ||
             u->spt == 0 || u->spt > 255)
             return;
-        n = 0;
-        for (i = 0; i < (int)(u->heads * u->spt); i++)  /* ohne __U4M */
-            n += u->cyls;
+        n = chs_size(u->cyls, u->heads, u->spt);
     }
     r->blocks[nunit] = n;
     nunit++;
@@ -208,7 +387,7 @@ static void probe(int ch, int dev)
     p = model(p);
     p = scat(p, ", ");
     p = udec(p, (unsigned)(n >> 11));
-    scat(p, u->chs ? " MB (CHS)\n" : " MB\n");
+    scat(p, !u->chs ? " MB\n" : bios ? " MB (CHS, BIOS)\n" : " MB (CHS)\n");
     dputs(line);
 }
 
@@ -279,11 +458,10 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
 /* count Sektoren (1-16) lesen oder einen schreiben */
 static void xfer(int write)
 {
-    static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
     struct drv_req __far *r = REQ;
     struct unit *u = &unit[r->unit];
-    unsigned long l = r->lba, track;
-    unsigned cyl = 0, b = u->base, n, i;
+    unsigned long l = r->lba;
+    unsigned b = u->base, n, i;
     int tries;
 
     n = write || r->count == 0 ? 1 : r->count;
@@ -304,36 +482,9 @@ static void xfer(int write)
         return;
     }
 
-    if (u->chs) {
-        track = div32(l, u->spt, &sec);
-        cyl = (unsigned)div32(track, u->heads, &head);
-        if (cyl >= u->cyls) {
-            r->status = DRV_ERR_IO;
-            return;
-        }
-    }
     for (tries = 0; tries < 3; tries++) {
-        outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
-        settle(u->ctl);
-        if (wait_idle(b, 300))
+        if (issue(u, l, n, write ? 0x30 : 0x20))    /* WRITE / READ SECTORS */
             continue;
-        if (u->chs) {
-            outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | head));
-            outp(b + R_COUNT, (unsigned char)n);
-            outp(b + R_SECTOR, (unsigned char)(sec + 1));   /* ab 1      */
-            outp(b + R_CYL_LO, (unsigned char)cyl);
-            outp(b + R_CYL_HI, (unsigned char)(cyl >> 8));
-        } else {
-            outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel |
-                                               ((unsigned)(l >> 24) & 0x0F)));
-            outp(b + R_COUNT, (unsigned char)n);
-            outp(b + R_SECTOR, (unsigned char)l);
-            outp(b + R_CYL_LO, (unsigned char)(l >> 8));
-            outp(b + R_CYL_HI, (unsigned char)(l >> 16));
-        }
-        settle(u->ctl);
-        outp(b + R_CMD, write ? 0x30 : 0x20);   /* WRITE / READ SECTORS */
-        settle(u->ctl);
         if (!write) {
             for (i = 0; i < n; i++) {           /* je Sektor auf DRQ warten */
                 if (wait_status(b, ST_DRQ, ST_DRQ, 300))
@@ -363,7 +514,7 @@ static void flush(void)
     struct drv_req __far *r = REQ;
     int i;
     for (i = 0; i < nunit; i++) {
-        if (unit[i].atapi)
+        if (unit[i].atapi || unit[i].old)
             continue;
         outp(unit[i].base + R_DRIVE, (unsigned char)(0xA0 | unit[i].sel));
         settle(unit[i].ctl);
