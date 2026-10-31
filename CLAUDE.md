@@ -145,6 +145,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `vga_font*`. Geänderte Zeilen als Bereich `dlo..dhi` statt 32-Bit-Maske.
   `VIDEO`-Deskriptor reicht für 50 Zeilen. Programme fragen die Zeilen mit
   `VioGetRows()` bzw. dem Ergebnis von `VioSetMode(1)` ab, nie fest 23/25.
+  Neue Sitzungen (START) erben die Zeilenzahl der startenden Sitzung
+  (Wunsch des Nutzers).
   In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25);
   auf dem SCAT/ET4000 noch offen. EGA (43 Zeilen, andere Register) nicht
   unterstützt.

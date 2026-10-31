@@ -1358,6 +1358,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             int ns = vio_open("");
             if (ns < 0)
                 return EXEC_ERR_NOMEM;
+            k = vio_setlines(s, 0);             /* Zeilenzahl erben     */
+            if (k > 25)
+                vio_setlines(ns, k);
             t = task_create(buf, ns, -1, current);
             if (t < 0) {
                 vio_close(ns);
