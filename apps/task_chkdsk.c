@@ -191,6 +191,13 @@ void main(void)
     h = DosExecPgm(cmd, EXEC_SYNC);
     if (h) {
         puts(prog);
-        puts(" kann nicht gestartet werden.\n");
+        puts(" kann nicht gestartet werden (");
+        puts(h == EXEC_ERR_NOTFOUND ? "nicht gefunden" :
+             h == EXEC_ERR_NOMEM ? "kein Speicher" :
+             h == EXEC_ERR_FORMAT ? "ung\x81ltiges Format" :
+             h == EXEC_ERR_NOSLOT ? "zu viele Programme" : "Fehler");
+        puts("):\n  ");
+        puts(cmd);
+        puts("\n");
     }
 }
