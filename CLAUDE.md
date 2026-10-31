@@ -158,6 +158,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   danach ScanDisk unter MS-DOS ohne Fehler. Alle Platten der Testmaschine
   sind Kopien, Schreiben ist überall erlaubt. Den Adaptec emuliert QEMU
   nicht – Änderungen an `AHA154X.SYS` nur in 86Box prüfbar.
+- IDE: Vor einem neuen Befehl nur auf BSY warten (`wait_idle`), nicht auf
+  ERR – ein abgebrochener Befehl (FLUSH CACHE kennen die Platten in 86Box
+  nicht) lässt ERR stehen bis zum nächsten Befehl. Sonst ist das Laufwerk
+  nach dem ersten `blk_flush()` tot (auf dem SCAT nach `CHKDSK /F`). QEMU
+  kennt FLUSH CACHE; nachstellen, indem man testweise 00h (NOP) schickt.
 - CD über den Adaptec (SCSI-ID 6) auf dem SCAT bestätigt: ISO9660.IFS
   liest eine echte CD von 1994/95 mit korrekten Datumsangaben.
 - Schreibtests in QEMU mit beschreibbaren Kopien der Abbilder, danach

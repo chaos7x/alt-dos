@@ -86,6 +86,18 @@ static int wait_status(unsigned base, unsigned char mask, unsigned char want,
     }
 }
 
+/* warten, bis BSY weg ist - vor einem neuen Befehl. Ein gesetztes ERR
+   stammt vom vorigen Befehl (z. B. FLUSH CACHE, den alte Platten
+   abbrechen) und bleibt stehen, bis der naechste kommt: hier egal. */
+static int wait_idle(unsigned base, unsigned t)
+{
+    unsigned start = ticks();
+    while (inp(base + R_STATUS) & ST_BSY)
+        if ((unsigned)(ticks() - start) > t)
+            return -1;
+    return 0;
+}
+
 /* Modellname (Bytes vertauscht) an p anhaengen */
 static char *model(char *p)
 {
@@ -301,7 +313,9 @@ static void xfer(int write)
         }
     }
     for (tries = 0; tries < 3; tries++) {
-        if (wait_status(b, 0, 0, 300))
+        outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
+        settle(u->ctl);
+        if (wait_idle(b, 300))
             continue;
         if (u->chs) {
             outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | head));
@@ -351,13 +365,13 @@ static void flush(void)
     for (i = 0; i < nunit; i++) {
         if (unit[i].atapi)
             continue;
-        if (wait_status(unit[i].base, 0, 0, 300) && !(inp(unit[i].base + R_STATUS) & ST_ERR))
-            continue;
         outp(unit[i].base + R_DRIVE, (unsigned char)(0xA0 | unit[i].sel));
         settle(unit[i].ctl);
+        if (wait_idle(unit[i].base, 300))
+            continue;
         outp(unit[i].base + R_CMD, 0xE7);
         settle(unit[i].ctl);
-        wait_status(unit[i].base, 0, 0, 3000);
+        wait_idle(unit[i].base, 3000);      /* ERR danach: kennt FLUSH nicht */
     }
     r->status = DRV_OK;
 }
