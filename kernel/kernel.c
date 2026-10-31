@@ -354,6 +354,34 @@ unsigned long rtc_stamp(void)
            ((h << 11) | (m << 5) | (s >> 1));
 }
 
+static unsigned to_bcd(unsigned v, unsigned bin)
+{
+    return bin ? v : ((v / 10) << 4) | (v % 10);
+}
+
+/* Echtzeituhr stellen (FAT-Format); 0 = ok */
+static int rtc_set(unsigned date, unsigned time)
+{
+    unsigned y = 1980 + (date >> 9), mo = (date >> 5) & 15, dd = date & 31;
+    unsigned h = time >> 11, mi = (time >> 5) & 63, sc = (time & 31) << 1;
+    unsigned bin = cmos(0x0B) & 4, b = cmos(0x0B), f;
+
+    if (mo < 1 || mo > 12 || dd < 1 || dd > 31 || h > 23 || mi > 59 || sc > 59)
+        return -1;
+    f = irq_off();
+    outb(0x70, 0x0B); outb(0x71, b | 0x80);     /* Uhr anhalten          */
+    outb(0x70, 0x00); outb(0x71, to_bcd(sc, bin));
+    outb(0x70, 0x02); outb(0x71, to_bcd(mi, bin));
+    outb(0x70, 0x04); outb(0x71, to_bcd(h, bin));    /* 24-Stunden-Modus */
+    outb(0x70, 0x07); outb(0x71, to_bcd(dd, bin));
+    outb(0x70, 0x08); outb(0x71, to_bcd(mo, bin));
+    outb(0x70, 0x09); outb(0x71, to_bcd(y % 100, bin));
+    outb(0x70, 0x32); outb(0x71, to_bcd(y / 100, bin));
+    outb(0x70, 0x0B); outb(0x71, b & 0x7F);     /* weiterlaufen          */
+    irq_restore(f);
+    return 0;
+}
+
 /* Warmstart wie Strg+Alt+Entf unter MS-DOS: Kennung 1234h an 0040:0072,
    damit das BIOS den Speichertest ueberspringt, dann CPU-Reset */
 void reboot(void)
@@ -1466,6 +1494,44 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         return files[k].kind == OF_CON ? HT_CONSOLE :
                files[k].kind == OF_FILE ? HT_FILE :
                files[k].kind == OF_DASD ? HT_DRIVE : HT_PIPE;
+
+    case FAPI_SETFINFO: {
+        struct fapi_finfo __far *fi;
+        if (user_str(usel, a1, buf, sizeof(buf)) || resolve(current, buf, &d, canon) ||
+            !user_ok(usel, a2, sizeof(*fi), 0))
+            return FAPI_ERROR;
+        if (in_use(d, canon, 0))
+            return FAPI_ERR_INUSE;      /* offene Datei: Eintrag gehoert ihr */
+        fi = MK_FP(usel, a2);
+        t = ifs_setinfo(d, canon, fi->mask, fi->attr, fi->date, fi->time);
+        return t ? ifs_err(t) : 0;
+    }
+
+    case FAPI_SETDATETIME: {
+        unsigned short __far *p;
+        if (!user_ok(usel, a1, 4, 0))
+            return FAPI_ERROR;
+        p = MK_FP(usel, a1);
+        return rtc_set(p[0], p[1]) ? FAPI_ERROR : 0;
+    }
+
+    case FAPI_LABEL: {
+        static char lb[12], nl[12];
+        static unsigned long ser;
+        struct fapi_label __far *fl;
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) ||
+            !user_ok(usel, a2, sizeof(*fl), 1))
+            return FAPI_ERROR;
+        if (a3 && user_str(usel, a3, nl, sizeof(nl)))
+            return FAPI_ERROR;
+        t = ifs_label(a1, lb, &ser, a3 ? nl : 0);
+        if (t)
+            return ifs_err(t);
+        fl = MK_FP(usel, a2);
+        far_copy(usel, a2, KDATA, (unsigned)lb, 12);
+        fl->serial = ser;
+        return 0;
+    }
 
     case FAPI_QCHILDRC:
         return task[current].child_rc;

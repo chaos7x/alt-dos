@@ -992,10 +992,87 @@ static int fat_space(int d, unsigned long *bytes)
     return 0;
 }
 
+/* Attribute und/oder Zeitstempel eines Eintrags setzen */
+static int fat_setinfo(int d, const char *path, unsigned mask, unsigned attr,
+                       unsigned date, unsigned time)
+{
+    struct found f;
+    unsigned char __far *e;
+
+    ferr = 0;
+    if (revalidate(d) || walk(d, path, &f) || f.dc == 0xFFFF)
+        return IFS_ERR;
+    e = dir_entry(d, f.dc, f.idx);
+    if (!e)
+        return IFS_ERR;
+    if (mask & 1)
+        e[11] = (unsigned char)((e[11] & (ATTR_DIR | 0x08)) |
+                                (attr & (ATTR_RO | ATTR_HIDDEN | ATTR_SYSTEM | 0x20)));
+    if (mask & 2) {
+        put16(e, 22, time);
+        put16(e, 24, date);
+    }
+    wr(d, de_lba);
+    return done_op(0);
+}
+
+/* Datentraegerbezeichnung: Eintrag mit Attribut 08h im Stamm, dazu die
+   Kopie im erweiterten BPB (ab 2Bh, wenn Signatur 29h) */
+static int fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
+{
+    unsigned char __far *e;
+    unsigned i, k, found = 0xFFFF;
+    char n[11];
+
+    ferr = 0;
+    if (revalidate(d))
+        return IFS_ERR;
+    lbl[0] = 0;
+    for (i = 0; (e = dir_entry(d, 0, i)) != 0 && e[0]; i++)
+        if (e[0] != 0xE5 && e[11] != 0x0F && (e[11] & 0x08)) {
+            for (k = 0; k < 11; k++)
+                lbl[k] = (char)e[k];
+            for (k = 11; k && lbl[k - 1] == ' '; k--)
+                ;
+            lbl[k] = 0;
+            found = i;
+            break;
+        }
+    *serial = 0;
+    if (blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38] == 0x29)
+        *serial = rd32(39);
+    if (!nl)
+        return 0;
+    for (k = 0; k < 11; k++)
+        n[k] = *nl ? *nl++ : ' ';
+    if (found != 0xFFFF) {
+        e = dir_entry(d, 0, found);
+        if (!e)
+            return IFS_ERR;
+        if (n[0] == ' ')
+            e[0] = 0xE5;                /* Bezeichnung loeschen        */
+        else
+            for (k = 0; k < 11; k++)
+                e[k] = (unsigned char)n[k];
+        stamp(e);
+        wr(d, de_lba);
+    } else if (n[0] != ' ') {
+        int rc = new_entry(d, 0, n, 0x08, 0, &i);
+        if (rc)
+            return rc;
+    }
+    if (!ferr && blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38] == 0x29) {
+        for (k = 0; k < 11; k++)
+            dma()[43 + k] = n[0] == ' ' ? "NO NAME    "[k] : n[k];
+        wr(d, vol[d].start);
+    }
+    return done_op(0);
+}
+
 struct ifs_driver fat_driver = {
     "FAT", fat_mount, fat_open, fat_read, fat_readdir, fat_isdir,
     fat_create, fat_write, fat_close, fat_remove, fat_mkdir, fat_rmdir,
-    fat_move, fat_space
+    fat_move, fat_space, fat_setinfo, fat_label
 };
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
@@ -1127,6 +1204,25 @@ int ifs_move(int drive, const char *from, const char *to)
 {
     MARK(drive);
     return HAS(drive, move) ? vol[drive].drv->move(drive, from, to) : IFS_WP;
+}
+
+int ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
+                unsigned date, unsigned time)
+{
+    MARK(d);
+    return HAS(d, setinfo) ? vol[d].drv->setinfo(d, path, mask, attr, date, time) : IFS_WP;
+}
+
+int ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
+{
+    if (newlbl)
+        MARK(d);
+    if (!HAS(d, label)) {
+        lbl[0] = 0;
+        *serial = 0;
+        return newlbl ? IFS_WP : 0;
+    }
+    return vol[d].drv->label(d, lbl, serial, newlbl);
 }
 
 int ifs_space(int drive, unsigned long *free_bytes)

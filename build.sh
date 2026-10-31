@@ -50,15 +50,20 @@ check_size $B/kernel.bin $B/kernel.map 65536 kernel
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in command keyb a b c mem more find grep less chkdsk ufat; do
+# Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
+UTILAPPS="attrib move deltree tree label choice sort fc xcopy"
+wcc $CFLAGS -fo=$B/util.o apps/util.c
+for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
+    U=""
+    case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
-          file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
+          file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true
 done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
-for t in command keyb a b c mem more find grep less chkdsk ufat; do
+for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
@@ -103,6 +108,9 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE
        $B/task_less.exe LESS.EXE  $B/task_chkdsk.exe CHKDSK.EXE  $B/task_ufat.exe UFAT.EXE
+       $B/task_attrib.exe ATTRIB.EXE  $B/task_move.exe MOVE.EXE  $B/task_deltree.exe DELTREE.EXE
+       $B/task_tree.exe TREE.EXE  $B/task_label.exe LABEL.EXE  $B/task_choice.exe CHOICE.EXE
+       $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
        $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"

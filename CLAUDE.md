@@ -73,7 +73,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   in CONFIG.SYS, Vorgabe `COMMAND.EXE /P`). Trennung wie OS/2: `.CMD` und
   `PROTSHELL=` nativ; `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören ab 6.0 der
   DOS-Box (V86) – AT-DOS 5.0 rührt `AUTOEXEC.BAT` nicht an.
-- `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
+- `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`; `util.c`/`util.h`
+  gemeinsame Hilfen der neueren Werkzeuge (Zeichenketten, Zahlen,
+  Platzhalter, `abs_path`, `copy_file`, `walk_tree` – Baum ohne Rekursion
+  im 2-KB-Stack, Rückruf mit WT_DESCEND/WT_REMOVED). In `build.sh` in
+  `UTILAPPS` eintragen; util.c setzt `FAPI_NO_IMPL` (fapi.h definiert
+  sonst `puts` doppelt). Ältere Programme haben eigene Kopien.
 - `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`),
   `mkkbl.py` (alle Tastaturbelegungen: `.KBL`-Dateien und `kbd_gr.h` für den
   Kernel – Belegungen nur dort ändern)
@@ -95,7 +100,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Partitionen nur auf 512er-Geräten, CDs nur lesend.
 - Kernelstack je Task 768 Worte: FAPI -> IFS-Modul -> DevHlp -> Treiber
   schachtelt tief. Die Kernelstacks bleiben in DGROUP (Kernel-C setzt
-  SS = DS voraus). DGROUP liegt bei ~49 KB von 64 KB.
+  SS = DS voraus). DGROUP liegt bei ~61 KB von 64 KB – eng.
 - Was mit der Konfiguration wächst, gehört nicht nach DGROUP, sondern in
   eigene Kernelsegmente: `kseg_alloc(bytes)` -> Selektor (GDT-Plätze
   `KSEG_IDX`, `NKSEG`), Zugriff über `__far`-Zeiger. Beispiel: Dateitabelle
@@ -247,8 +252,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
-  (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY).
+- Nächster Schritt (mit dem Nutzer vereinbart): `FORMAT` und `SYS` nativ
+  (über `U<Dateisystem>.EXE` bzw. DosOpenDrive), dann Kernel-Umbau aus dem
+  64-KB-Segment (DGROUP bei ~61 KB!), dann `EDIT`. Später: UNDELETE, MSD,
+  HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
+  MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,
   Schalter mit `/`, Meldungen, Verhalten). GNU-Vorbild nur für Werkzeuge, die
   MS-DOS nicht hatte. Wichtigste Werkzeuge für den Nutzer: `LESS` und `GREP`. `MORE` bleibt aus
@@ -285,7 +294,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
   Lese-Cache oder sofort schreiben (Wechsel). Heute: Daten sofort, nur FAT
   im 2-Sektor-Cache.
-- `COPY` mit Verketten (`A+B`), `XCOPY`, `ATTRIB`, Umleitung `>`
+- `COPY` mit Verketten (`A+B`); COPY sollte wie XCOPY Datum/Uhrzeit erhalten
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle

@@ -59,6 +59,11 @@ und PC-DOS.
   neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
+- Werkzeuge wie MS-DOS 5/6 (Schalter und Meldungen wie dort): `ATTRIB`
+  (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /Y`, Datum bleibt erhalten),
+  `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
+  ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
+  MS-DOS, `/B /C /N /nnnn`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
 - `CHKDSK [X:] [/F] [/V]` wie MS-DOS: prüft FAT, Ketten, Dateigrößen,
   Querverbindungen und verlorene Zuordnungseinheiten; `/F` repariert
   (verlorene Ketten als `FILEnnnn.CHK`, Größen, FAT-Kopien). CHKDSK kennt
@@ -168,6 +173,9 @@ selbst nur 8.3 kennt.
 | 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole, 3 Laufwerk |
 | 43 | DosOpenDrive    | BX = Laufwerk, CX = 0 lesen / 1 exklusiv (Sperre) → Handle; Sektoren mit DosRead/DosWrite |
 | 44 | DosSeek         | BX = Handle, CX = Zeiger auf Position (4 Bytes) |
+| 47 | DosSetFInfo     | BX = Pfad, CX = struct fapi_finfo: Attribute und/oder Datum/Uhrzeit setzen |
+| 48 | DosSetDateTime  | BX = Datum, Uhrzeit (FAT-Format) → Echtzeituhr stellen |
+| 49 | DosLabel        | BX = Laufwerk, CX = Ausgabe (Bezeichnung, Seriennummer), DX = neue Bezeichnung oder 0 |
 | 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C) |
 | 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
 

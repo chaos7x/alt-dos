@@ -81,6 +81,19 @@
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
                                        (ERRORLEVEL; 255 = abgebrochen) */
+#define FAPI_SETFINFO       0x2F    /* BX = Pfad, CX = struct fapi_finfo */
+struct fapi_finfo {
+    unsigned short mask;            /* 1: Attribut, 2: Datum/Uhrzeit    */
+    unsigned short attr;            /* 01h RO, 02h versteckt, 04h System, 20h Archiv */
+    unsigned short date, time;      /* FAT-Format                       */
+};
+#define FAPI_SETDATETIME    0x30    /* BX = Puffer (4 Bytes): Datum, Uhrzeit (FAT) -> Echtzeituhr */
+#define FAPI_LABEL          0x31    /* BX = Laufwerk, CX = struct fapi_label (Ausgabe),
+                                       DX = neue Bezeichnung (0 = nur lesen, "" = loeschen) */
+struct fapi_label {
+    char           label[12];
+    unsigned long  serial;          /* 0 = keine                        */
+};
 #define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
 struct fapi_fsinfo {
     char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE */

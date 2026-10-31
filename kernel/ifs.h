@@ -61,6 +61,12 @@ struct ifs_driver {
     int  (*rmdir)(int drive, const char *path);
     int  (*move)(int drive, const char *from, const char *to);
     int  (*space)(int drive, unsigned long *free_bytes);
+    /* mask 1: Attribute (RO/H/S/A), 2: Datum/Uhrzeit (FAT-Format) */
+    int  (*setinfo)(int drive, const char *path, unsigned mask,
+                    unsigned attr, unsigned date, unsigned time);
+    /* Bezeichnung (12 Bytes) und Seriennummer lesen; newlbl != 0: setzen
+       ("" = loeschen) */
+    int  (*label)(int drive, char *lbl, unsigned long *serial, const char *newlbl);
 };
 
 extern struct volume vol[NDRIVE];
@@ -71,7 +77,10 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 void vol_move(int from, int to);
 int  vol_present(int d);
 void vol_reset(int d);
-void ifs_shutdown(void);            /* alle FAT16-Platten als sauber markieren */              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */
+void ifs_shutdown(void);
+int  ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
+                 unsigned date, unsigned time);
+int  ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl);            /* alle FAT16-Platten als sauber markieren */              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */
 int ifs_open(int drive, const char *path, struct ifs_file __far *f);
 int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);

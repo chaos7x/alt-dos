@@ -54,6 +54,9 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosOpenDrive(d, mode)  F2(FAPI_OPENDRIVE, (d), (mode))  /* DRV_OPEN_* */
 #define DosSeek(h, posp)    F2(FAPI_SEEK, (h), (posp))      /* Zeiger auf unsigned long */
 #define DosQFSInfo(d, fi)   F2(FAPI_QFSINFO, (d), (fi))     /* struct fapi_fsinfo */
+#define DosSetFInfo(p, fi)  F2(FAPI_SETFINFO, (p), (fi))    /* struct fapi_finfo */
+#define DosSetDateTime(p)   F2(FAPI_SETDATETIME, (p), 0)    /* Datum, Uhrzeit (FAT) */
+#define DosLabel(d, out, nl) fapi_call(FAPI_LABEL, (d), (unsigned short)(out), (unsigned short)(nl))
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
 #define KbdPeek()           F2(FAPI_KBDPEEK, 0, 0)
@@ -64,6 +67,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioWrtStr(r, c, s)  F2(FAPI_VIOWRTSTR, (s), ((r) << 8) | (c))
 #define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))
 
+#ifndef FAPI_NO_IMPL                    /* util.c: nur Deklarationen  */
 /* Signale: Der Kernel springt in sig_tramp (AX = Signal), die ruft den
    Handler und meldet sich mit DosSigReturn zurueck. */
 typedef void (*sig_fn)(unsigned sig);
@@ -85,5 +89,8 @@ void puts(const char *s)
         n++;
     fapi_call(FAPI_WRITE, STDOUT, (unsigned short)s, n);
 }
+#else
+void puts(const char *s);
+#endif
 
 #endif

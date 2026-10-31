@@ -795,7 +795,8 @@ static void cmd_help(void)
          "  REN Datei Name  Datei oder Verzeichnis umbenennen\n"
          "  SHUTDOWN [/H|/R] herunterfahren (/H anhalten, /R neu starten), auch POWEROFF\n"
          "  CLS             Bildschirm l\x94schen\n"
-         "  VER             Version anzeigen\n"
+         "  VER / VOL       Version / Datentr\x84gerbezeichnung anzeigen\n"
+         "  DATE / TIME     Datum / Uhrzeit anzeigen und stellen\n"
          "  DOSKEY /HISTORY letzte Befehle; Pfeil auf/ab holt sie zur\x81" "ck, F3, Einfg\n"
          "  ECHO Text       Text ausgeben\n"
          "  START Programm  Programm in eigener Sitzung starten\n"
@@ -805,6 +806,137 @@ static void cmd_help(void)
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
          "Strg+Alt+Entf schlie\xE1t alle Dateien und startet neu.\n");
+}
+
+/* ---- VOL, DATE, TIME -------------------------------------------------- */
+static void hex4(unsigned v)
+{
+    int i;
+    for (i = 12; i >= 0; i -= 4)
+        putc("0123456789ABCDEF"[(v >> i) & 15]);
+}
+
+static void cmd_vol(char *arg)
+{
+    static struct fapi_label lb;
+    unsigned d = DosQCurDisk();
+    if (arg[0] && arg[1] == ':')
+        d = (unsigned)(up(arg[0]) - 'A');
+    if (DosLabel(d, &lb, 0)) {
+        puts("Ung\x81ltiges Laufwerk.\n");
+        return;
+    }
+    puts(" Datentr\x84ger in Laufwerk ");
+    putc((char)('A' + d));
+    puts(lb.label[0] ? " ist " : " hat keine Bezeichnung");
+    puts(lb.label);
+    puts("\n");
+    if (lb.serial) {
+        puts(" Datentr\x84gernummer: ");
+        hex4((unsigned)(lb.serial >> 16));
+        putc('-');
+        hex4((unsigned)lb.serial);
+        puts("\n");
+    }
+}
+
+/* Zahlen aus "12.10.26" oder "16:05:30" -> v[0..2]; -> Anzahl */
+static int nums(const char *p, unsigned *v)
+{
+    int n = 0;
+    while (*p == ' ')
+        p++;
+    while (n < 3 && *p >= '0' && *p <= '9') {
+        v[n] = 0;
+        while (*p >= '0' && *p <= '9')
+            v[n] = v[n] * 10 + (unsigned)(*p++ - '0');
+        n++;
+        if (*p == '.' || *p == ':' || *p == '-' || *p == '/' || *p == ',')
+            p++;
+        else
+            break;
+    }
+    return n;
+}
+
+static char *ask_line(const char *prompt)
+{
+    unsigned n;
+    puts(prompt);
+    n = DosRead(STDIN, buf, sizeof(buf) - 1);
+    if (FAPI_FAILED(n))
+        n = 0;
+    buf[n] = 0;
+    for (n = 0; buf[n] && buf[n] != '\r' && buf[n] != '\n'; n++)
+        ;
+    buf[n] = 0;
+    return buf;
+}
+
+static void cmd_date(char *arg)
+{
+    static unsigned short dt[2];
+    static const char *wd[] = { "So", "Mo", "Di", "Mi", "Do", "Fr", "Sa" };
+    unsigned v[3], y, m, d, k, j;
+    int w;
+    char *p = arg;
+
+    DosGetDateTime(dt);
+    if (!*p) {
+        d = dt[0] & 31; m = (dt[0] >> 5) & 15; y = 1980 + (dt[0] >> 9);
+        k = m < 3 ? y - 1 : y;          /* Wochentag (Zeller)          */
+        j = m < 3 ? m + 12 : m;
+        w = (int)((d + (13 * (j + 1)) / 5 + k % 100 + (k % 100) / 4 + (k / 100) / 4 + 5 * (k / 100)) % 7);
+        puts("Aktuelles Datum: ");
+        puts(wd[(w + 6) % 7]);
+        putc(' ');
+        put2(d); putc('.'); put2(m); putc('.');
+        put_numx(y, 4, 0);
+        p = ask_line("\nNeues Datum eingeben (TT.MM.JJ): ");
+        if (!*p)
+            return;
+    }
+    if (nums(p, v) != 3 || v[0] < 1 || v[0] > 31 || v[1] < 1 || v[1] > 12) {
+        puts("Ung\x81ltiges Datum\n");
+        return;
+    }
+    y = v[2] < 100 ? (v[2] < 80 ? 2000 + v[2] : 1900 + v[2]) : v[2];
+    if (y < 1980 || y > 2099) {
+        puts("Ung\x81ltiges Datum\n");
+        return;
+    }
+    DosGetDateTime(dt);
+    dt[0] = (unsigned short)(((y - 1980) << 9) | (v[1] << 5) | v[0]);
+    if (DosSetDateTime(dt))
+        puts("Ung\x81ltiges Datum\n");
+}
+
+static void cmd_time(char *arg)
+{
+    static unsigned short dt[2];
+    unsigned v[3];
+    int n;
+    char *p = arg;
+
+    DosGetDateTime(dt);
+    if (!*p) {
+        puts("Aktuelle Uhrzeit: ");
+        put2(dt[1] >> 11); putc(':'); put2((dt[1] >> 5) & 63); putc(':');
+        put2((dt[1] & 31) << 1);
+        p = ask_line("\nNeue Uhrzeit eingeben: ");
+        if (!*p)
+            return;
+    }
+    v[2] = 0;
+    n = nums(p, v);
+    if (n < 2 || v[0] > 23 || v[1] > 59 || v[2] > 59) {
+        puts("Ung\x81ltige Uhrzeit\n");
+        return;
+    }
+    DosGetDateTime(dt);
+    dt[1] = (unsigned short)((v[0] << 11) | (v[1] << 5) | (v[2] >> 1));
+    if (DosSetDateTime(dt))
+        puts("Ung\x81ltige Uhrzeit\n");
 }
 
 static void cmd_ver(void)
@@ -1357,6 +1489,12 @@ static int execute(char *l)
         cmd_cd(arg);
     else if (same(cmd, "VER"))
         cmd_ver();
+    else if (same(cmd, "VOL"))
+        cmd_vol(arg);
+    else if (same(cmd, "DATE"))
+        cmd_date(arg);
+    else if (same(cmd, "TIME"))
+        cmd_time(arg);
     else if (same(cmd, "DOSKEY"))
         cmd_doskey(arg);
     else if (same(cmd, "ECHO")) {
