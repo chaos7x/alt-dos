@@ -138,6 +138,7 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
              unsigned limit, unsigned char attr);
 void vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
 void vio_status(void);
+void vio_flush(void);               /* Schattenpuffer -> Bildspeicher      */
 int  vio_rows(int s);               /* 23 oder im Vollbild 25              */
 void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
 void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */

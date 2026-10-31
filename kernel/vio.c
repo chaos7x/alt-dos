@@ -9,6 +9,12 @@
  * Bildschirm: Zeile 0 Titel, 1-23 Sitzung, 24 Statuszeile. Eine Sitzung
  * im Vollbild (VioSetMode, z. B. EDIT) hat alle 25 Zeilen; Titel- und
  * Statusleiste erscheinen erst wieder in einer normalen Sitzung.
+ *
+ * Schattenpuffer: Ausgaben landen nur im Puffer der Sitzung; geaenderte
+ * Zeilen der Vordergrund-Sitzung merkt sich `dirty`. vio_flush() kopiert
+ * sie am Stueck in den Bildspeicher - der Scheduler ruft es, sobald ein
+ * Programm wartet (Taste, DosSleep, Zeitscheibe um). So sieht man nie
+ * halb gezeichnete Bilder (Menue weg, Text neu, Menue wieder da).
  */
 #include "kern.h"
 #include "mem.h"
@@ -33,6 +39,8 @@ struct session {
 
 static struct session ses[NTASK];
 static int fg = -1;
+static unsigned long dirty;         /* Pufferzeilen der Vordergrund-Sitzung */
+static unsigned char cur_dirty;
 static unsigned shown_uptime = 0xFFFF;
 
 #define BUF(s)   ((unsigned short __far *)MK_FP(SCR_SEL(s), 0))
@@ -101,6 +109,8 @@ void vio_status(void)
 
 static void redraw(void)
 {
+    dirty = 0;
+    cur_dirty = 0;
     if (fg >= 0 && !ses[fg].top) {          /* Vollbild                 */
         far_copy(VIDEO, 0, SCR_SEL(fg), 0, SROWS_FULL * SCOLS * 2);
     } else {
@@ -117,7 +127,7 @@ static void put(int s, int r, int c, unsigned short v)
 {
     BUF(s)[r * SCOLS + c] = v;
     if (s == fg)
-        VRAM[(r + ses[s].top) * SCOLS + c] = v;
+        dirty |= 1UL << r;          /* erst schreiben, dann merken (IRQ-fest) */
 }
 
 static void clear_row(int s, int r)
@@ -133,7 +143,7 @@ static void scroll(int s)
     far_copy(SCR_SEL(s), 0, SCR_SEL(s), SCOLS * 2, (n - 1) * SCOLS * 2);
     clear_row(s, n - 1);
     if (s == fg)
-        far_copy(VIDEO, ses[s].top * SCOLS * 2, SCR_SEL(s), 0, n * SCOLS * 2);
+        dirty |= (1UL << n) - 1;
 }
 
 void vio_cls(int s)
@@ -142,8 +152,10 @@ void vio_cls(int s)
     for (r = 0; r < SROWS_FULL; r++)
         clear_row(s, r);
     ses[s].row = ses[s].col = 0;
-    if (s == fg)
-        redraw();
+    if (s == fg) {
+        dirty = (1UL << SROWS_FULL) - 1;
+        cur_dirty = 1;
+    }
 }
 
 int vio_open(const char *title)
@@ -276,7 +288,7 @@ void vio_tty(int s, unsigned sel, unsigned off, unsigned len)
         off++;
     }
     if (s == fg)
-        cursor();
+        cur_dirty = 1;
 }
 
 void vio_kputs(int s, const char *str)
@@ -285,6 +297,38 @@ void vio_kputs(int s, const char *str)
     while (str[n])
         n++;
     vio_tty(s, KDATA, (unsigned)str, n);
+    vio_flush();                    /* Kernelmeldungen sofort zeigen    */
+}
+
+/* geaenderte Zeilen der Vordergrund-Sitzung in den Bildspeicher */
+void vio_flush(void)
+{
+    unsigned long d;
+    unsigned r, a, n;
+
+    if (fg < 0)
+        return;
+    d = dirty;
+    if (d) {
+        dirty = 0;                  /* vor dem Kopieren: neue Aenderungen
+                                       bleiben fuer den naechsten Lauf */
+        n = ses[fg].rows;
+        for (r = 0; r < n; ) {
+            if (!(d & (1UL << r))) {
+                r++;
+                continue;
+            }
+            a = r;
+            while (r < n && (d & (1UL << r)))
+                r++;
+            far_copy(VIDEO, (a + ses[fg].top) * SCOLS * 2, SCR_SEL(fg),
+                     a * SCOLS * 2, (r - a) * SCOLS * 2);
+        }
+    }
+    if (cur_dirty) {
+        cur_dirty = 0;
+        cursor();
+    }
 }
 
 void vio_str(int s, int row, int col, unsigned sel, unsigned off,
@@ -366,5 +410,5 @@ void vio_setcur(int s, int row, int col)
         ses[s].col = (unsigned char)col;
     }
     if (s == fg)
-        cursor();
+        cur_dirty = 1;
 }

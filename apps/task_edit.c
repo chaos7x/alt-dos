@@ -353,12 +353,18 @@ static void redraw_all(void);
 /* Menue bedienen; open: gleich aufgeklappt. -> Befehl oder C_NONE */
 static int menu_run(int m, int open)
 {
-    int sel = 0, n, x, w, i;
+    int sel = 0, n, x, w, i, shown = -2;
     unsigned k, c, sc;
 
     VioSetCurPos(0xFF, 0);
+    need_all = 1;                       /* danach Text neu zeichnen      */
     for (;;) {
         n = nitems(menus[m].it);
+        if (shown != (open ? m : -1)) { /* anderes Menue: Reste weg      */
+            if (shown >= 0)
+                redraw_all();
+            shown = open ? m : -1;
+        }
         draw_bar(m);
         if (open) {
             while (!menus[m].it[sel].text)
@@ -368,10 +374,6 @@ static int menu_run(int m, int open)
         k = KbdCharIn();
         c = k & 0xFF;
         sc = k >> 8;
-        if (open) {                     /* aufgeklapptes Menue weg       */
-            redraw_all();
-            VioSetCurPos(0xFF, 0);
-        }
         if (k == KEY_ALT || c == 27 || (c == 0 && sc == K_F10))
             return C_NONE;
         if (c == 0 || c == 0xE0) {
@@ -396,8 +398,10 @@ static int menu_run(int m, int open)
             continue;
         }
         if (c == 13) {
-            if (open)
+            if (open) {
+                redraw_all();           /* Menue weg vor dem Befehl      */
                 return menus[m].it[sel].cmd;
+            }
             open = 1;
             sel = 0;
             continue;
@@ -405,8 +409,10 @@ static int menu_run(int m, int open)
         c = (unsigned char)up((char)c);
         if (open) {
             for (i = 0; i < n; i++)
-                if (menus[m].it[i].text && (unsigned char)hot_char(menus[m].it[i].text) == c)
+                if (menus[m].it[i].text && (unsigned char)hot_char(menus[m].it[i].text) == c) {
+                    redraw_all();
                     return menus[m].it[i].cmd;
+                }
         } else {
             for (i = 0; i < 4; i++)
                 if ((unsigned char)hot_char(menus[i].title) == c) {

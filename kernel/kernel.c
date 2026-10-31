@@ -926,6 +926,7 @@ static void schedule_next(void)
         if (reboot_count)
             shutdown();
         now = get_ticks();
+        vio_flush();                    /* Programm wartet: Bild zeigen  */
         vio_status();
         any = 0;
         for (n = 1; n <= NTASK; n++) {
