@@ -108,6 +108,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
   zeigen in `DMABUF` und gelten nur bis zum nächsten Plattenzugriff.
   Disketten werden vor jeder Operation neu eingehängt (`revalidate`).
+- Signale (`sig_deliver` in kernel.c): Rahmen des FAPI-Aufrufs liegt fest
+  oben auf dem Kernelstack (`FRAME(t)`, 14 Worte, Aufbau in start.asm
+  `fapi_entry_`). Zustellung beim Rücksprung aus der FAPI: Rahmen und
+  Ergebnis in `sig_save`, IP auf die Weiche `sig_tramp` (apps/fapi.h),
+  AX = Signal; `DosSigReturn` legt alles zurück. Wartende FAPI-Aufrufe müssen
+  bei `sig_pending & sig_mask` zurückkehren (KbdCharIn tut es).
+  `end_programs()` (SHUTDOWN, Strg+Alt+Entf): SIG_SHUTDOWN, bis 5 s warten,
+  Rest mit `task_end` beenden.
 - Strg+Alt+Entf ist zweistufig: Die Taste setzt `reboot_count`, der
   Scheduler schließt beim nächsten Durchlauf alle Dateien, ruft `blk_flush()`
   und startet neu; IRQ 0 startet nach 5 s trotzdem neu.
@@ -195,14 +203,6 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
-- Signale wie OS/2 (`DosSetSigHandler`), Nummern in `fapi_abi.h` reserviert:
-  Programm meldet einen Handler für `SIG_BREAK` (Strg+C) und `SIG_SHUTDOWN`
-  an. Der Kernel springt beim nächsten Wechsel in den Task in den Handler
-  (Rahmen auf dem Ring-3-Stack anlegen, IRET dorthin), der Handler endet mit
-  `DosSigReturn` oder `DosExit`. Ohne Handler: Strg+C beendet wie bisher.
-  `SHUTDOWN` und Strg+Alt+Entf schicken allen Tasks `SIG_SHUTDOWN`, warten
-  einige Sekunden, beenden die übrigen regulär (`task_end`: Speicher,
-  Sitzung, Dateien), dann Dateien schließen und `blk_flush()`.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
   Vollbild-Editor im Stil von MS-DOS EDIT, nutzt `SIG_SHUTDOWN`, um vor dem
   Herunterfahren nach dem Speichern zu fragen.

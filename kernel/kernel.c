@@ -75,6 +75,9 @@ struct task {
     unsigned char drive;                          /* aktuelles Laufwerk    */
     char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
     unsigned      img_unit, img_cnt;
+    unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
+    unsigned char sig_pending, in_sig;
+    unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
 };
 
 static struct task    task[NTASK];
@@ -212,10 +215,47 @@ void reboot_request(void)
    anhalten (ein 286 kann sich nicht selbst ausschalten - APM gibt es erst
    ab 1992). Beim Anhalten bleibt Strg+Alt+Entf aktiv: Tastatur-IRQ setzt
    reboot_count, IRQ 0 startet nach 5 s neu. */
+static void task_end(int t);
+static void schedule_next(void);
+
+/* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
+   werden alle uebrigen Programme regulaer beendet */
+static void end_programs(void)
+{
+    unsigned long until;
+    int t, n;
+
+    for (t = 0, n = 0; t < NTASK; t++)
+        if (t != current && task[t].state != T_FREE && (task[t].sig_mask & SIG_SHUTDOWN)) {
+            task[t].sig_pending |= SIG_SHUTDOWN;
+            task[t].wake = 0;
+            n++;
+        }
+    if (n) {
+        vio_kputs(boot_session, "\xFE Programme werden beendet ...\n");
+        until = get_ticks() + 500;
+        while (n && get_ticks() < until) {
+            task[current].wake = 0;
+            schedule_next();                    /* die anderen laufen lassen */
+            for (t = 0, n = 0; t < NTASK; t++)
+                if (t != current && task[t].state != T_FREE &&
+                    (task[t].sig_mask & SIG_SHUTDOWN))
+                    n++;
+        }
+    }
+    /* die Sitzung, in der die Abschlussmeldung steht, bleibt stehen */
+    for (t = 0; t < NTASK; t++)
+        if (t != current && task[t].state != T_FREE && task[t].session != boot_session)
+            task_end(t);
+}
+
 static void system_down(int restart)
 {
     int k;
     reboot_count = 0;
+    vio_focus(boot_session);
+    if (current >= 0)
+        end_programs();
     vio_focus(boot_session);
     vio_kputs(boot_session, "\n\xFE Dateien werden geschlossen ...\n");
     for (k = 0; k < NFILE; k++)
@@ -726,6 +766,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].session = session;
     task[t].parent  = parent;
     task[t].wake    = 0;
+    task[t].sig_tramp = task[t].sig_mask = 0;
+    task[t].sig_pending = task[t].in_sig = 0;
     task[t].state   = T_READY;
     return t;
 }
@@ -781,7 +823,14 @@ static void do_break(void)
     for (t = 0; t < NTASK; t++)
         if (task[t].state == T_READY && task[t].session == s)
             break;
-    if (t == NTASK || (task[t].parent < 0 && s == 0))
+    if (t == NTASK)
+        return;
+    if (task[t].sig_mask & SIG_BREAK) {         /* Programm faengt Strg+C */
+        task[t].sig_pending |= SIG_BREAK;
+        task[t].wake = 0;
+        return;
+    }
+    if (task[t].parent < 0 && s == 0)
         return;
     vio_kputs(s, "^C\n");
     task_end(t);
@@ -889,7 +938,45 @@ static unsigned ifs_err(int rc)
 }
 
 /* ---- FAPI-Verteiler ---------------------------------------------------- */
+/* ---- Signale ----------------------------------------------------------
+   Rahmen des laufenden FAPI-Aufrufs oben auf dem Kernelstack (start.asm,
+   fapi_entry_): DI SI BP SP BX DX CX AX ES DS IP CS SP SS = 14 Worte. */
+#define FRAME(t) (&kstack[t][KSTACK - 14])
+
+static unsigned sig_deliver(unsigned r)
+{
+    struct task *tk;
+    unsigned short *fr;
+    unsigned sig, i;
+
+    if (current < 0)
+        return r;
+    tk = &task[current];
+    if (tk->state == T_FREE || tk->in_sig || !tk->sig_tramp)
+        return r;
+    sig = tk->sig_pending & tk->sig_mask;
+    if (!sig)
+        return r;
+    sig = (sig & SIG_SHUTDOWN) ? SIG_SHUTDOWN : SIG_BREAK;
+    tk->sig_pending &= (unsigned char)~sig;
+    fr = FRAME(current);
+    for (i = 0; i < 14; i++)
+        tk->sig_save[i] = fr[i];
+    tk->sig_save[14] = (unsigned short)r;
+    tk->in_sig = 1;
+    fr[10] = tk->sig_tramp;                     /* IP: Weiche            */
+    fr[8] = fr[9] = USEL(1);                    /* ES, DS: Programmdaten */
+    return sig;                                 /* AX = Signal           */
+}
+
+static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2);
+
 unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
+{
+    return sig_deliver(fapi_inner(fn, usel, a1, a2));
+}
+
+static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 {
     int row, col, s = task[current].session, t, k;
     unsigned a3 = fapi_dx;
@@ -926,6 +1013,8 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         for (;;) {
             if (vio_fg() == s && (k = kbd_get()) >= 0)
                 return k;
+            if (task[current].sig_pending & task[current].sig_mask)
+                return 0;                       /* Signal: Zustellung    */
             sleep_ticks(1);                     /* bis zur naechsten Taste */
         }
 
@@ -1194,6 +1283,25 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     case FAPI_SHUTDOWN:
         system_down(a1 != 0);
         return 0;
+
+    case FAPI_SETSIGHANDLER:
+        if (a1 && a1 > sel_limit(USEL(0)))
+            return FAPI_ERROR;
+        task[current].sig_tramp = a1;
+        task[current].sig_mask = a1 ? a2 & (SIG_BREAK | SIG_SHUTDOWN) : 0;
+        return 0;
+
+    case FAPI_SIGRETURN: {
+        struct task *tk = &task[current];
+        unsigned short *fr = FRAME(current);
+        unsigned i;
+        if (!tk->in_sig)
+            return FAPI_ERROR;
+        for (i = 0; i < 14; i++)
+            fr[i] = tk->sig_save[i];
+        tk->in_sig = 0;
+        return tk->sig_save[14];                /* Ergebnis des unterbrochenen Aufrufs */
+    }
 
     case FAPI_YIELD:
         schedule_next();

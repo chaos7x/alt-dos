@@ -54,6 +54,18 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioWrtTTY(s, n)     F2(FAPI_VIOWRTTTY, (s), (n))
 #define VioWrtStr(r, c, s)  F2(FAPI_VIOWRTSTR, (s), ((r) << 8) | (c))
 
+/* Signale: Der Kernel springt in sig_tramp (AX = Signal), die ruft den
+   Handler und meldet sich mit DosSigReturn zurueck. */
+typedef void (*sig_fn)(unsigned sig);
+sig_fn sig_user;
+void sig_tramp(unsigned sig)
+{
+    sig_user(sig);
+    fapi_call(FAPI_SIGRETURN, 0, 0, 0);
+}
+#define DosSetSigHandler(fn, mask) \
+    (sig_user = (fn), F2(FAPI_SETSIGHANDLER, (unsigned short)sig_tramp, (mask)))
+
 /* Zeichenkette mit Nullbyte ausgeben */
 void puts(const char *s)
 {

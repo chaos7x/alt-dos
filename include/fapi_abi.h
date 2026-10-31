@@ -47,13 +47,17 @@
 #define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
 #define FAPI_RMDIR          0x1C    /* BX = Pfad (Verzeichnis muss leer sein) */
 #define FAPI_MOVE           0x1D    /* BX = alter Pfad, CX = neuer Pfad (gleiches Laufwerk) */
-/* vorgesehen, noch nicht umgesetzt (siehe CLAUDE.md, Signale):
-#define FAPI_SETSIGHANDLER  0x20       BX = Handler (Offset im Codesegment),
-                                       CX = Signal-Maske SIG_*; 0 = abmelden
-#define FAPI_SIGRETURN      0x21       Handler fertig, Programm laeuft weiter
-#define SIG_BREAK           0x01       Strg+C
-#define SIG_SHUTDOWN        0x02       SHUTDOWN / Strg+Alt+Entf: aufraeumen, dann DosExit
-*/
+/* Signale wie OS/2 (DosSetSigHandler). Der Kernel stellt ein Signal beim
+   naechsten Ruecksprung aus der FAPI zu: Er springt in die Weiche (BX, ein
+   Offset im eigenen Codesegment, siehe DosSetSigHandler in apps/fapi.h)
+   mit AX = Signal; die Weiche ruft den Handler und endet mit DosSigReturn,
+   danach laeuft das Programm weiter, als sei der unterbrochene Aufruf
+   normal zurueckgekehrt. Wartende Aufrufe (KbdCharIn, DosSleep) kehren
+   dafuer vorzeitig zurueck (KbdCharIn mit 0). */
+#define FAPI_SETSIGHANDLER  0x20    /* BX = Weiche (0 = abmelden), CX = Maske SIG_* */
+#define FAPI_SIGRETURN      0x21    /* Handler fertig                   */
+#define SIG_BREAK           0x01    /* Strg+C                           */
+#define SIG_SHUTDOWN        0x02    /* SHUTDOWN / Strg+Alt+Entf: aufraeumen, dann DosExit */
 #define FAPI_GETENV         0x22    /* BX = Name, CX = Puffer, DX = Laenge -> Laenge des Werts */
 #define FAPI_SETENV         0x23    /* BX = "NAME=WERT" (leerer Wert loescht) */
 #define FAPI_ENVENTRY       0x24    /* BX = Nummer, CX = Puffer, DX = Laenge -> n-ter Eintrag */

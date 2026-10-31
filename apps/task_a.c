@@ -1,5 +1,17 @@
-/* TASKA: zaehlt und gibt nach jedem Durchlauf per DosYield() ab. */
+/* TASKA: zaehlt und gibt nach jedem Durchlauf per DosYield() ab.
+   Zeigt Signale: Strg+C und Herunterfahren werden abgefangen. */
 #include "fapi.h"
+
+static volatile int stop;
+
+static void on_signal(unsigned sig)
+{
+    if (sig == SIG_BREAK)
+        puts("\nStrg+C abgefangen - TASKA r\x84umt auf und endet.\n");
+    else
+        puts("\nSystem f\x84hrt herunter - TASKA r\x84umt auf und endet.\n");
+    stop = 1;
+}
 
 static char cnt[] = "0000000";
 
@@ -16,7 +28,8 @@ void main(void)
 {
     puts("TASKA: z\x84hlt und gibt nach jedem Durchlauf mit DosYield() ab.\n"
          "Eine Taste beendet das Programm, Strg+C bricht es ab.\n\n");
-    for (;;) {
+    DosSetSigHandler(on_signal, SIG_BREAK | SIG_SHUTDOWN);
+    while (!stop) {
         count_up(cnt);
         puts("\rDurchl\x84ufe: ");
         puts(cnt);

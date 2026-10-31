@@ -121,10 +121,18 @@ selbst nur 8.3 kennt.
 | 29 | DosMove         | BX = alter, CX = neuer Pfad (gleiches Laufwerk) |
 | 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes |
 | 31 | DosShutdown     | BX = 0 anhalten, 1 Neustart (kehrt nicht zurück) |
+| 32 | DosSetSigHandler | BX = Weiche (0 = abmelden), CX = `SIG_BREAK` \| `SIG_SHUTDOWN` – in C: `DosSetSigHandler(fn, maske)` |
+| 33 | DosSigReturn    | Handler fertig (macht die Weiche in `fapi.h`) |
 | 34 | DosGetEnv       | BX = Name, CX = Puffer, DX = Länge → Länge des Werts |
 | 35 | DosSetEnv       | BX = `NAME=WERT` (leerer Wert löscht) |
 | 36 | DosEnvEntry     | BX = Nummer, CX = Puffer, DX = Länge → n-ter Eintrag |
 | 37 | DosGetDateTime  | BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format |
+
+Signale wie bei OS/2: Ein Programm kann Strg+C (`SIG_BREAK`) und das
+Herunterfahren (`SIG_SHUTDOWN`) abfangen. Der Kernel stellt sie beim
+nächsten Rücksprung aus der FAPI zu; wartende Aufrufe wie `KbdCharIn`
+kehren dafür vorzeitig zurück. `SHUTDOWN` gibt solchen Programmen bis zu
+5 s zum Aufräumen und beendet dann alle Programme regulär. TASKA zeigt es.
 
 Jedes Programm hat eine eigene Umgebung (1 KB) und erbt sie von dem
 Programm, das es startet. Die Systemumgebung enthält `COMSPEC`, `PATH` (das
