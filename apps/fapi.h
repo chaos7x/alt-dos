@@ -34,6 +34,10 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosSelectDisk(d)    F2(FAPI_SELECTDISK, (d), 0)
 #define DosQCurDisk()       F2(FAPI_QCURDISK, 0, 0)
 #define DosCreate(name)     F2(FAPI_CREATE, (name), 0)
+#define DosAppend(name)     F2(FAPI_CREATE, (name), 1)          /* >> */
+#define DosDup2(h, std)     F2(FAPI_DUP2, (h), (std))
+#define DosDup(h)           F2(FAPI_DUP, (h), 0)
+#define DosPipe(hh)         F2(FAPI_PIPE, (hh), 0)
 #define DosWrite(h, buf, n) fapi_call(FAPI_WRITE, (h), (unsigned short)(buf), (n))
 #define DosDelete(name)     F2(FAPI_DELETE, (name), 0)
 #define DosMkDir(p)         F2(FAPI_MKDIR, (p), 0)
@@ -66,13 +70,14 @@ void sig_tramp(unsigned sig)
 #define DosSetSigHandler(fn, mask) \
     (sig_user = (fn), F2(FAPI_SETSIGHANDLER, (unsigned short)sig_tramp, (mask)))
 
-/* Zeichenkette mit Nullbyte ausgeben */
+/* Zeichenkette mit Nullbyte auf die Standardausgabe (Handle 1: Konsole,
+   Datei oder Pipe - je nach Umleitung) */
 void puts(const char *s)
 {
     unsigned n = 0;
     while (s[n])
         n++;
-    VioWrtTTY(s, n);
+    fapi_call(FAPI_WRITE, STDOUT, (unsigned short)s, n);
 }
 
 #endif

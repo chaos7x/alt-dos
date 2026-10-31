@@ -3,7 +3,7 @@
 
 static void putc(char c)
 {
-    VioWrtTTY(&c, 1);
+    DosWrite(STDOUT, &c, 1);
 }
 
 /* v rechtsbuendig mit Tausenderpunkt in w Zeichen */

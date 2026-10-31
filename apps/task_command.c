@@ -20,7 +20,9 @@ static int  permanent;
 /* ---- Hilfen ------------------------------------------------------------ */
 static void putc(char c)
 {
-    VioWrtTTY(&c, 1);
+    static char b;
+    b = c;
+    DosWrite(STDOUT, &b, 1);
 }
 
 static char up(char c)
@@ -242,7 +244,7 @@ static void cmd_type(char *arg)
         return;
     }
     while ((n = DosRead(h, buf, sizeof(buf))) != 0 && n != FAPI_ERROR) {
-        VioWrtTTY(buf, n);
+        DosWrite(STDOUT, buf, n);
         last = buf[n - 1];
     }
     DosClose(h);
@@ -610,6 +612,7 @@ static int echo_on = 1;
 static char pbuf[FAPI_PATHLEN], ebuf[CMDLEN];
 
 static int execute(char *l);
+static int execute_line(char *l);
 
 static int exists(const char *p)
 {
@@ -968,7 +971,7 @@ static int run_batch(const char *path, const char *args)
         for (i = 0; ebuf[i]; i++)
             l[i] = ebuf[i];
         l[i] = 0;
-        if (!execute(l)) {
+        if (!execute_line(l)) {
             rc = 0;
             break;
         }
@@ -1138,6 +1141,187 @@ static int execute(char *l)
     return 1;
 }
 
+/* ---- Umleitung und Pipes ----------------------------------------------
+   befehl < ein > aus, >> anhaengen, a | b | c. Wie COMMAND.COM biegt der
+   Befehlsinterpreter seine eigenen Standard-Handles um; gestartete Programme
+   erben sie. Linke Teile einer Pipe laufen gleichzeitig im Hintergrund
+   (COMMAND /C), der Kernel puffert dazwischen. */
+#define NSEG 4
+static struct seg {
+    char *cmd, *in, *out;
+    int   append;
+} sg[NSEG];
+static char lbuf[CMDLEN];
+
+/* Dateinamen hinter < oder > herausloesen: in eigenen Puffer kopieren und
+   in der Zeile durch Leerzeichen ersetzen */
+static char *take_name(char **pp)
+{
+    static char nb[NSEG * 2][FAPI_PATHLEN];
+    static int ni;
+    char *p = *pp, *d = nb[ni++ % (NSEG * 2)];
+    unsigned k = 0;
+
+    while (*p == ' ')
+        p++;
+    while (*p && *p != ' ' && *p != '<' && *p != '>' && *p != '|') {
+        if (k < FAPI_PATHLEN - 1)
+            d[k++] = *p;
+        *p++ = ' ';
+    }
+    d[k] = 0;
+    *pp = p;
+    return d;
+}
+
+static int parse_line(char *l)
+{
+    int n = 0, q = 0;
+    char *p;
+
+    for (p = l; *p && p - l < CMDLEN - 1; p++)
+        lbuf[p - l] = *p;
+    lbuf[p - l] = 0;
+    sg[0].cmd = lbuf;
+    sg[0].in = sg[0].out = 0;
+    sg[0].append = 0;
+    for (p = lbuf; *p; ) {
+        if (*p == '"') {
+            q = !q;
+            p++;
+        } else if (q) {
+            p++;
+        } else if (*p == '|') {
+            *p++ = 0;
+            if (++n == NSEG)
+                return -1;
+            sg[n].cmd = p;
+            sg[n].in = sg[n].out = 0;
+            sg[n].append = 0;
+        } else if (*p == '<') {
+            *p++ = ' ';
+            sg[n].in = take_name(&p);
+        } else if (*p == '>') {
+            *p++ = ' ';
+            if (*p == '>') {
+                *p++ = ' ';
+                sg[n].append = 1;
+            }
+            sg[n].out = take_name(&p);
+        } else
+            p++;
+    }
+    return n + 1;
+}
+
+static unsigned slen2(const char *s)
+{
+    unsigned n = 0;
+    while (s[n])
+        n++;
+    return n;
+}
+
+/* Teil einer Pipe im Hintergrund: COMMAND /C teil */
+static void run_bg(char *cmd)
+{
+    static char cl[FAPI_ARGLEN + 16];
+    unsigned k = 0, i;
+
+    if (DosGetEnv("COMSPEC", cl, sizeof(cl)) == FAPI_ERROR)
+        for (; "COMMAND.EXE"[k]; k++)
+            cl[k] = "COMMAND.EXE"[k];
+    else
+        k = slen2(cl);
+    cl[k++] = ' '; cl[k++] = '/'; cl[k++] = 'C'; cl[k++] = ' ';
+    cmd = skip(cmd);
+    for (i = 0; cmd[i] && k < sizeof(cl) - 1; i++)
+        cl[k++] = cmd[i];
+    cl[k] = 0;
+    if (k >= FAPI_ARGLEN) {
+        puts("Befehlszeile zu lang.\n");
+        return;
+    }
+    i = DosExecPgm(cl, EXEC_BG);
+    if (i)
+        exec_error(i);
+}
+
+/* eine Eingabezeile mit Umleitungen und Pipes ausfuehren; 0 = EXIT */
+static int execute_line(char *l)
+{
+    static unsigned hh[2];
+    unsigned save_in, save_out, h, prev = 0;
+    int n, i, rc = 1, simple = 1;
+    char *p;
+
+    for (p = l; *p; p++)
+        if (*p == '|' || *p == '<' || *p == '>')
+            simple = 0;
+    if (simple)
+        return execute(l);
+    n = parse_line(l);
+    if (n < 0) {
+        puts("Zu viele Teile in der Pipe.\n");
+        return 1;
+    }
+    save_in = DosDup(STDIN);
+    save_out = DosDup(STDOUT);
+    if (FAPI_FAILED(save_in) || FAPI_FAILED(save_out)) {
+        puts("Zu viele offene Dateien (FILES=).\n");
+        return 1;
+    }
+    for (i = 0; i < n; i++) {
+        if (prev) {                             /* Eingabe aus der Pipe */
+            DosDup2(prev, STDIN);
+            DosClose(prev);
+            prev = 0;
+        }
+        if (sg[i].in) {
+            h = DosOpen(sg[i].in);
+            if (h == FAPI_ERROR) {
+                puts("Datei nicht gefunden.\n");
+                break;
+            }
+            DosDup2(h, STDIN);
+            DosClose(h);
+        }
+        if (i < n - 1) {
+            if (DosPipe(hh)) {
+                puts("Keine Pipe mehr frei.\n");
+                break;
+            }
+            DosDup2(hh[1], STDOUT);
+            DosClose(hh[1]);
+            prev = hh[0];
+        } else
+            DosDup2(save_out, STDOUT);
+        if (sg[i].out) {
+            h = sg[i].append ? DosAppend(sg[i].out) : DosCreate(sg[i].out);
+            if (FAPI_FAILED(h)) {
+                DosDup2(save_out, STDOUT);
+                file_error(h);
+                break;
+            }
+            DosDup2(h, STDOUT);
+            DosClose(h);
+        }
+        if (i < n - 1)
+            run_bg(sg[i].cmd);
+        else
+            rc = execute(sg[i].cmd);
+        DosDup2(save_out, STDOUT);              /* eigene Ausgabe zurueck */
+        DosDup2(save_in, STDIN);
+    }
+    if (prev)
+        DosClose(prev);
+    DosDup2(save_in, STDIN);
+    DosDup2(save_out, STDOUT);
+    DosClose(save_in);
+    DosClose(save_out);
+    return rc;
+}
+
 void main(void)
 {
     static char args[FAPI_ARGLEN];
@@ -1149,7 +1333,7 @@ void main(void)
             permanent = 1;
         else if (up(p[0]) == '/' || p[0] == '/') {
             if (up(p[1]) == 'C' && (p[2] == ' ' || !p[2])) {
-                execute(next_word(p));  /* COMMAND /C befehl: ausfuehren, Ende */
+                execute_line(next_word(p)); /* COMMAND /C befehl: ausfuehren, Ende */
                 return;
             }
         }
@@ -1167,7 +1351,7 @@ void main(void)
         if (echo_on)
             show_prompt();
         read_line();
-        if (!execute(line))
+        if (!execute_line(line))
             break;
     }
 }

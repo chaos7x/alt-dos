@@ -41,7 +41,7 @@
 #define FAPI_QCURDIR        0x15    /* BX = Puffer (130 Bytes) -> "C:\DOS" */
 #define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
 #define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
-#define FAPI_CREATE         0x18    /* BX = Dateiname -> Handle (neu oder gekuerzt) */
+#define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen -> Handle */
 #define FAPI_WRITE          0x19    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_DELETE         0x1A    /* BX = Dateiname                   */
 #define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
@@ -62,6 +62,12 @@
 #define FAPI_SETENV         0x23    /* BX = "NAME=WERT" (leerer Wert loescht) */
 #define FAPI_ENVENTRY       0x24    /* BX = Nummer, CX = Puffer, DX = Laenge -> n-ter Eintrag */
 #define FAPI_GETDATETIME    0x25    /* BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format */
+#define FAPI_DUP2           0x26    /* BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0-2 */
+#define FAPI_DUP            0x27    /* BX = Handle -> neues Handle auf dasselbe */
+#define FAPI_PIPE           0x28    /* BX = Puffer (2 Worte) -> Lese-, Schreib-Handle */
+#define STDIN               0       /* Standard-Handles, Vorgabe Konsole */
+#define STDOUT              1
+#define STDERR              2
 #define FAPI_ENVSIZE        1024    /* Umgebung je Programm (wie COMMAND /E:1024) */
 #define FAPI_SHUTDOWN       0x1F    /* BX = 0 anhalten (ausschalten), 1 Neustart; kehrt nicht zurueck */
 #define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
@@ -84,6 +90,7 @@
 /* DosExecPgm */
 #define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
 #define EXEC_ASYNC          1       /* eigene Sitzung, laeuft nebenher    */
+#define EXEC_BG             2       /* diese Sitzung, laeuft nebenher (Pipes) */
 #define EXEC_ERR_NOTFOUND   1
 #define EXEC_ERR_NOMEM      2
 #define EXEC_ERR_FORMAT     3

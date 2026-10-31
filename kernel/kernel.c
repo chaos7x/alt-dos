@@ -76,6 +76,8 @@ struct task {
     char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
     unsigned      img_unit, img_cnt;
     unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
+    unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
+    unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
 };
@@ -93,11 +95,20 @@ static int            current = -1;
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
    (wie MS-DOS: fuer alle Programme zusammen) */
 struct ofile {
-    signed char     owner;  /* Task oder -1                              */
+    signed char     owner;  /* Task, die das Handle hat, oder -1         */
+    unsigned char   refs;   /* Verweise (Handle + Standard-Handles), 0 = frei */
+    unsigned char   kind;   /* OF_*                                      */
+    unsigned char   pipe;   /* OF_PRD/OF_PWR: Nummer der Pipe            */
     struct ifs_file f;
     unsigned long   pos;
     char            path[IFS_PATHLEN];  /* kanonisch, fuer "in Benutzung" */
 };
+#define OF_FILE 0
+#define OF_PRD  1           /* Leseende einer Pipe                      */
+#define OF_PWR  2           /* Schreibende einer Pipe                   */
+#define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
+#define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
+#define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
 static unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
 #define NFILE nfiles
@@ -259,8 +270,9 @@ static void system_down(int restart)
     vio_focus(boot_session);
     vio_kputs(boot_session, "\n\xFE Dateien werden geschlossen ...\n");
     for (k = 0; k < NFILE; k++)
-        if (files[k].owner >= 0) {
+        if (files[k].refs && files[k].kind == OF_FILE) {
             ifs_close(&files[k].f);
+            files[k].refs = 0;
             files[k].owner = -1;
         }
     blk_flush();
@@ -741,10 +753,13 @@ static int env_set(int t, const char *entry)
 
 /* neuen Task anlegen und laden. Laufwerk und Verzeichnis erbt er von
    'from' (oder A:\ bei from < 0). -> Tasknummer oder -(EXEC_ERR_*)    */
+static void of_ref(int k);
+static void of_release(int k);
+
 static int task_create(const char *cmd, int session, int parent, int from)
 {
     static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
-    int t, err, d;
+    int t, err, d, i;
 
     for (t = 0; t < NTASK; t++)
         if (task[t].state == T_FREE)
@@ -768,6 +783,11 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].wake    = 0;
     task[t].sig_tramp = task[t].sig_mask = 0;
     task[t].sig_pending = task[t].in_sig = 0;
+    task[t].bg = 0;
+    for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
+        task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
+        of_ref(task[t].std[i]);
+    }
     task[t].state   = T_READY;
     return t;
 }
@@ -786,17 +806,23 @@ static void task_end(int t)
         image_units -= task[t].img_cnt;
         task[t].img_unit = 0;
     }
-    for (i = 0; i < NFILE; i++)
-        if (files[i].owner == t) {
-            ifs_close(&files[i].f);         /* Groesse ins Verzeichnis   */
+    for (i = 0; i < (int)NFILE; i++)       /* eigene Handles schliessen */
+        if (files[i].refs && files[i].owner == t) {
             files[i].owner = -1;
+            of_release(i);                  /* Datei: Groesse ins Verzeichnis */
         }
+    for (i = 0; i < 3; i++) {               /* Standard-Handles freigeben */
+        of_release(task[t].std[i]);
+        task[t].std[i] = CONS;
+    }
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
     task[t].state = T_FREE;
 
-    if (p >= 0 && task[p].state == T_WAIT)
+    if (task[t].bg)
+        ;                                   /* Hintergrund (Pipe): niemand wartet */
+    else if (p >= 0 && task[p].state == T_WAIT)
         task[p].state = T_READY;            /* Aufrufer macht weiter     */
     else if (p < 0) {
         /* Sitzungsinhaber beendet: Sitzung schliessen */
@@ -915,7 +941,7 @@ static int in_use(int d, const char *canon, int dirs)
 {
     int k;
     for (k = 0; k < NFILE; k++)
-        if (files[k].owner >= 0 && files[k].f.drive == d &&
+        if (files[k].refs && files[k].kind == OF_FILE && files[k].f.drive == d &&
             (dirs ? path_in(files[k].path, canon) : scmp(files[k].path, canon) == 0))
             return 1;
     if (dirs)
@@ -938,6 +964,167 @@ static unsigned ifs_err(int rc)
 }
 
 /* ---- FAPI-Verteiler ---------------------------------------------------- */
+/* ---- Handles, Konsole, Pipes -------------------------------------------
+   Eintraege der Dateitabelle zaehlen Verweise: das Handle des Besitzers und
+   jedes Standard-Handle (0-2) eines Programms, das darauf zeigt. Kinder
+   erben die Standard-Handles. Freigegeben wird bei 0 Verweisen. */
+#define NPIPE   4
+#define PIPESZ  2048
+static struct pipe {
+    unsigned       head, count;
+    unsigned char  used, rd, wr;        /* Eintraege der beiden Enden    */
+} pipes[NPIPE];
+static unsigned pipe_sel;
+
+static int of_alloc(void)
+{
+    unsigned k;
+    for (k = 1; k < NFILE; k++)
+        if (!files[k].refs) {
+            files[k].refs = 1;
+            files[k].owner = (signed char)current;
+            files[k].kind = OF_FILE;
+            files[k].pos = 0;
+            files[k].path[0] = 0;
+            return (int)k;
+        }
+    return -1;
+}
+
+static void of_release(int k)
+{
+    struct ofile __far *o = &files[k];
+    if (k == CONS || !o->refs)
+        return;
+    if (--o->refs)
+        return;
+    o->owner = -1;
+    if (o->kind == OF_FILE)
+        ifs_close(&o->f);
+    else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
+             (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
+        pipes[o->pipe].used = 0;        /* beide Enden zu                */
+}
+
+static void of_ref(int k)
+{
+    if (k != CONS)
+        files[k].refs++;
+}
+
+/* Handle des laufenden Programms -> Eintrag, -1 = ungueltig */
+static int h2e(unsigned h)
+{
+    if (h < HBASE)
+        return task[current].std[h];
+    h -= HBASE;
+    if (h >= NFILE || !files[h].refs || files[h].owner != current)
+        return -1;
+    return (int)h;
+}
+
+static void yield(void)
+{
+    task[current].wake = 0;
+    schedule_next();
+}
+
+static int sig_waiting(void)
+{
+    return (task[current].sig_pending & task[current].sig_mask) != 0;
+}
+
+/* Zeile von der Tastatur (mit Echo), wie DOS beim Lesen von der Konsole */
+static int con_read(unsigned sel, unsigned off, unsigned len)
+{
+    static char cl[130];
+    int s = task[current].session, k;
+    unsigned n = 0;
+
+    for (;;) {
+        if (vio_fg() != s || (k = kbd_get()) < 0) {
+            if (sig_waiting())
+                return 0;
+            sleep_ticks(1);
+            continue;
+        }
+        k &= 0xFF;
+        if (k == 13) {
+            cl[n++] = '\r';
+            cl[n++] = '\n';
+            vio_tty(s, KDATA, (unsigned)"\n", 1);
+            break;
+        }
+        if (k == 26 && n == 0)
+            return 0;                   /* Strg+Z: Dateiende            */
+        if (k == 8) {
+            if (n) {
+                n--;
+                vio_tty(s, KDATA, (unsigned)"\b \b", 3);
+            }
+        } else if (k >= 32 && n < sizeof(cl) - 2) {
+            cl[n++] = (char)k;
+            vio_tty(s, KDATA, (unsigned)&cl[n - 1], 1);
+        }
+    }
+    if (n > len)
+        n = len;
+    far_copy(sel, off, KDATA, (unsigned)cl, n);
+    return (int)n;
+}
+
+static int pipe_read(int k, unsigned sel, unsigned off, unsigned len)
+{
+    struct pipe *p = &pipes[files[k].pipe];
+    unsigned n, first;
+
+    while (!p->count) {
+        if (!files[p->wr].refs || sig_waiting())
+            return 0;                   /* kein Schreiber mehr: Ende     */
+        yield();
+    }
+    n = len < p->count ? len : p->count;
+    first = PIPESZ - p->head;
+    if (first > n)
+        first = n;
+    far_copy(sel, off, pipe_sel, files[k].pipe * PIPESZ + p->head, first);
+    if (n > first)
+        far_copy(sel, off + first, pipe_sel, files[k].pipe * PIPESZ, n - first);
+    p->head = (p->head + n) % PIPESZ;
+    p->count -= n;
+    return (int)n;
+}
+
+static int pipe_write(int k, unsigned sel, unsigned off, unsigned len)
+{
+    struct pipe *p = &pipes[files[k].pipe];
+    unsigned done = 0, n, tail, first;
+
+    while (done < len) {
+        if (!files[p->rd].refs)
+            return done ? (int)done : -1;   /* niemand liest mehr       */
+        if (p->count == PIPESZ) {
+            if (sig_waiting())
+                return (int)done;
+            yield();
+            continue;
+        }
+        n = PIPESZ - p->count;
+        if (n > len - done)
+            n = len - done;
+        tail = (p->head + p->count) % PIPESZ;
+        first = PIPESZ - tail;
+        if (first > n)
+            first = n;
+        far_copy(pipe_sel, files[k].pipe * PIPESZ + tail, sel, off + done, first);
+        if (n > first)
+            far_copy(pipe_sel, files[k].pipe * PIPESZ, sel, off + done + first, n - first);
+        p->count += n;
+        done += n;
+    }
+    return (int)done;
+}
+
 /* ---- Signale ----------------------------------------------------------
    Rahmen des laufenden FAPI-Aufrufs oben auf dem Kernelstack (start.asm,
    fapi_entry_): DI SI BP SP BX DX CX AX ES DS IP CS SP SS = 14 Worte. */
@@ -1061,6 +1248,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         t = task_create(buf, s, current, current);
         if (t < 0)
             return -t;
+        if (a2 == EXEC_BG) {                    /* Pipe: nicht warten    */
+            task[t].bg = 1;
+            return 0;
+        }
         task[current].state = T_WAIT;           /* bis das Kind endet   */
         schedule_next();
         return 0;
@@ -1075,15 +1266,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve(current, buf, &d, canon))
             return FAPI_ERROR;
-        for (k = 0; k < NFILE; k++)
-            if (files[k].owner < 0)
-                break;
-        if (k == NFILE || ifs_open(d, canon, &files[k].f))
+        k = of_alloc();
+        if (k < 0)
             return FAPI_ERROR;
-        files[k].owner = (signed char)current;
-        files[k].pos = 0;
+        if (ifs_open(d, canon, &files[k].f)) {
+            files[k].refs = 0;
+            files[k].owner = -1;
+            return FAPI_ERROR;
+        }
         far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
-        return k;
+        return k + HBASE;
 
     case FAPI_CREATE:
         if (user_str(usel, a1, buf, sizeof(buf)) ||
@@ -1091,31 +1283,47 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return FAPI_ERROR;
         if (in_use(d, canon, 0))
             return FAPI_ERR_INUSE;
-        for (k = 0; k < NFILE; k++)
-            if (files[k].owner < 0)
-                break;
-        if (k == NFILE)
+        k = of_alloc();
+        if (k < 0)
             return FAPI_ERROR;
-        t = ifs_create(d, canon, &files[k].f);
-        if (t)
+        if (a2 == 1 && ifs_open(d, canon, &files[k].f) == 0) {
+            if (files[k].f.attr & (ATTR_RO | ATTR_DIR)) {   /* anhaengen (>>) */
+                files[k].refs = 0;
+                files[k].owner = -1;
+                return FAPI_ERR_DENIED;
+            }
+            files[k].f.flags |= IFS_F_WRITE;
+            files[k].pos = files[k].f.size;
+        } else if ((t = ifs_create(d, canon, &files[k].f)) != 0) {
+            files[k].refs = 0;
+            files[k].owner = -1;
             return ifs_err(t);
-        files[k].owner = (signed char)current;
-        files[k].pos = 0;
+        }
         far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
-        return k;
+        return k + HBASE;
 
     case FAPI_WRITE:
-        if (a1 >= NFILE || files[a1].owner != current)
+        if ((k = h2e(a1)) < 0)
             return FAPI_ERROR;
         if (a3 > 0x7FFF)
             a3 = 0x7FFF;
         if (!user_ok(usel, a2, a3, 0))
             return FAPI_ERROR;
-        k = ifs_write(&files[a1].f, files[a1].pos, usel, a2, a3);
-        if (k < 0)
-            return ifs_err(k);
-        files[a1].pos += k;
-        return k;
+        switch (files[k].kind) {
+        case OF_CON:
+            vio_tty(s, usel, a2, a3);
+            return a3;
+        case OF_PWR:
+            t = pipe_write(k, usel, a2, a3);
+            return t < 0 ? FAPI_ERROR : (unsigned)t;
+        case OF_PRD:
+            return FAPI_ERROR;
+        }
+        t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
+        if (t < 0)
+            return ifs_err(t);
+        files[k].pos += t;
+        return t;
 
     case FAPI_DELETE:
     case FAPI_MKDIR:
@@ -1154,24 +1362,97 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     }
 
     case FAPI_READ:
-        if (a1 >= NFILE || files[a1].owner != current)
+        if ((k = h2e(a1)) < 0)
             return FAPI_ERROR;
         if (a3 > 0x7FFF)
             a3 = 0x7FFF;
         if (!user_ok(usel, a2, a3, 1))
             return FAPI_ERROR;
-        k = ifs_read(&files[a1].f, files[a1].pos, usel, a2, a3);
-        if (k < 0)
+        switch (files[k].kind) {
+        case OF_CON:
+            return (unsigned)con_read(usel, a2, a3);
+        case OF_PRD:
+            return (unsigned)pipe_read(k, usel, a2, a3);
+        case OF_PWR:
             return FAPI_ERROR;
-        files[a1].pos += k;
-        return k;
+        }
+        t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
+        if (t < 0)
+            return FAPI_ERROR;
+        files[k].pos += t;
+        return t;
 
     case FAPI_CLOSE:
-        if (a1 >= NFILE || files[a1].owner != current)
+        if (a1 < HBASE) {                       /* Standard-Handle: wieder Konsole */
+            of_release(task[current].std[a1]);
+            task[current].std[a1] = CONS;
+            return 0;
+        }
+        if ((k = h2e(a1)) < 0)
             return FAPI_ERROR;
-        files[a1].owner = -1;
-        t = ifs_close(&files[a1].f);
+        files[k].owner = -1;
+        t = 0;
+        if (files[k].refs == 1 && files[k].kind == OF_FILE) {
+            t = ifs_close(&files[k].f);         /* Fehler melden koennen */
+            files[k].kind = OF_CON + 1;         /* nicht noch einmal     */
+        }
+        of_release(k);
         return t ? ifs_err(t) : 0;
+
+    case FAPI_DUP2:
+        if (a2 >= HBASE)
+            return FAPI_ERROR;
+        k = a1 == 0xFFFF ? CONS : h2e(a1);
+        if (k < 0)
+            return FAPI_ERROR;
+        of_ref(k);
+        of_release(task[current].std[a2]);
+        task[current].std[a2] = (unsigned char)k;
+        return 0;
+
+    case FAPI_DUP: {
+        int n;
+        if ((k = h2e(a1)) < 0)
+            return FAPI_ERROR;
+        n = of_alloc();                         /* neues Handle, gleicher Inhalt */
+        if (n < 0)
+            return FAPI_ERROR;
+        if (files[k].kind == OF_CON) {          /* Konsole: eigener Eintrag */
+            files[n].kind = OF_CON;
+            return n + HBASE;
+        }
+        far_copy(FP_SEG(files), FP_OFF(&files[n].f), FP_SEG(files), FP_OFF(&files[k].f),
+                 sizeof(struct ifs_file) + 4 + IFS_PATHLEN);
+        files[n].kind = files[k].kind;
+        files[n].pipe = files[k].pipe;
+        return n + HBASE;
+    }
+
+    case FAPI_PIPE: {
+        static unsigned short hh[2];
+        int r, w, p;
+        if (!user_ok(usel, a1, 4, 1))
+            return FAPI_ERROR;
+        for (p = 0; p < NPIPE && pipes[p].used; p++)
+            ;
+        if (p == NPIPE || (r = of_alloc()) < 0)
+            return FAPI_ERROR;
+        if ((w = of_alloc()) < 0) {
+            files[r].refs = 0;
+            return FAPI_ERROR;
+        }
+        files[r].kind = OF_PRD;
+        files[w].kind = OF_PWR;
+        files[r].pipe = files[w].pipe = (unsigned char)p;
+        pipes[p].used = 1;
+        pipes[p].head = pipes[p].count = 0;
+        pipes[p].rd = (unsigned char)r;
+        pipes[p].wr = (unsigned char)w;
+        hh[0] = (unsigned short)(r + HBASE);
+        hh[1] = (unsigned short)(w + HBASE);
+        far_copy(usel, a1, KDATA, (unsigned)hh, 4);
+        return 0;
+    }
 
     case FAPI_FINDENTRY:
         if (!user_ok(usel, a1, sizeof(de), 1))
@@ -2012,7 +2293,12 @@ void kmain(void)
         panic("Kein Speicher f\x81r die Dateitabelle (FILES=).");
     files = MK_FP(k, 0);
     for (i = 0; i < (int)nfiles; i++)
-        files[i].owner = -1;
+        files[i].owner = -1;                    /* refs = 0: frei        */
+    files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
+    files[CONS].refs = 255;
+    pipe_sel = kseg_alloc(NPIPE * PIPESZ);
+    if (!pipe_sel)
+        panic("Kein Speicher f\x81r Pipes.");
 
     size = read_cfg("\\STARTUP.CMD");
     if (size < 0)

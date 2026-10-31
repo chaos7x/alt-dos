@@ -46,7 +46,8 @@ und PC-DOS.
   beim Start (`COMMAND /P`), `COMMAND /C`; Programme werden wie bei
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
   (`.EXE`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
-  `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
+  Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
+  gleichzeitig), `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
   neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
@@ -66,7 +67,8 @@ und PC-DOS.
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 
-Programme auf der Diskette: **MEM** zeigt den Arbeitsspeicher, **TASKA**
+Programme auf der Diskette: **MORE** blättert seitenweise, **FIND** sucht
+Text (`/V /C /N /I`, wie MS-DOS), **MEM** zeigt den Arbeitsspeicher, **TASKA**
 zählt und gibt per `DosYield()` ab (schön mit `START TASKA` im Hintergrund),
 **TASKB** fordert zehn Segmente zu 64 KB an, prüft sie, gibt die Hälfte frei
 und überlässt den Rest dem Kernel, **TASKC** versucht direkt nach B800:0000 zu
@@ -127,6 +129,16 @@ selbst nur 8.3 kennt.
 | 35 | DosSetEnv       | BX = `NAME=WERT` (leerer Wert löscht) |
 | 36 | DosEnvEntry     | BX = Nummer, CX = Puffer, DX = Länge → n-ter Eintrag |
 | 37 | DosGetDateTime  | BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format |
+| 38 | DosDup2         | BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0–2 |
+| 39 | DosDup          | BX = Handle → neues Handle auf dasselbe |
+| 40 | DosPipe         | BX = Puffer (2 Worte) → Lese-, Schreib-Handle |
+
+Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
+Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die
+Standard-Handles; `DosCreate` mit CX = 1 hängt an (`>>`). `DosExecPgm` mit
+CX = 2 startet in derselben Sitzung im Hintergrund (für Pipes). Pipes
+puffern im Kernel 2 KB; der Schreiber wartet bei vollem, der Leser bei
+leerem Puffer, ein Leser ohne Schreiber bekommt das Dateiende.
 
 Signale wie bei OS/2: Ein Programm kann Strg+C (`SIG_BREAK`) und das
 Herunterfahren (`SIG_SHUTDOWN`) abfangen. Der Kernel stellt sie beim

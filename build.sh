@@ -45,12 +45,12 @@ done
 wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
       file $KOBJ 2>&1 | grep -v W1014 || true
 check_size $B/kernel.bin $B/kernel.map 65536 kernel
-# der Bootsektor laedt 64 Sektoren; BSS dahinter nullt der Kernel selbst
-[ $(stat -c %s $B/kernel.bin) -le 32768 ] || { echo "FEHLER: ATDOS.SYS groesser als 32 KB"; exit 1; }
+# der Bootsektor laedt 96 Sektoren; BSS dahinter nullt der Kernel selbst
+[ $(stat -c %s $B/kernel.bin) -le 49152 ] || { echo "FEHLER: ATDOS.SYS groesser als 48 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in command keyb a b c mem; do
+for t in command keyb a b c mem more find; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
@@ -58,7 +58,7 @@ done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
-for t in command keyb a b c mem; do
+for t in command keyb a b c mem more find; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
@@ -90,15 +90,16 @@ for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
 # ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
-# auf 32 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
+# auf 48 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
 cp $B/kernel.bin $B/ATDOS.SYS
-truncate -s 32768 $B/ATDOS.SYS
+truncate -s 49152 $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel
 FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
+       $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE
        STARTUP.CMD STARTUP.CMD  CONFIG.SYS CONFIG.SYS  AUTOEXEC.BAT AUTOEXEC.BAT
        $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS"

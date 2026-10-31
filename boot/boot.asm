@@ -10,7 +10,7 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 64                  ; ATDOS.SYS ist auf 32 KB aufgefuellt
+NSECT   equ 96                  ; ATDOS.SYS ist auf 48 KB aufgefuellt
 
         jmp     short start
         nop

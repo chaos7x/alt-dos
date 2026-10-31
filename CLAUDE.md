@@ -29,7 +29,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
 ## Aufbau
 
 - `boot/` – `boot.asm`: Diskette, Standard-FAT12-BPB, lädt `ATDOS.SYS` (erste
-  Datei, zusammenhängend ab Cluster 2, auf 32 KB aufgefüllt) nach 1000:0000;
+  Datei, zusammenhängend ab Cluster 2, auf 48 KB aufgefüllt) nach 1000:0000;
   `hdboot.asm`: FAT16-Partition, sucht `ATDOS.SYS` und folgt der FAT-Kette
   (CHS per INT 13h/08h-Geometrie); `mbr.asm`: MBR nur für `atdos-hd.img`
 - `kernel/preload.c` – Start von Platte: liest im **Real Mode** per BIOS
@@ -94,7 +94,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
   `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
 - Der Kernel ist ein 64-KB-Segment ab 10000h; `ATDOS.SYS` (Datei) darf
-  höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
+  höchstens 48 KB groß sein (Diskettenbootsektor lädt 96 Sektoren), BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status. Programme schreiben in den Puffer ihrer Sitzung.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
@@ -116,6 +116,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   bei `sig_pending & sig_mask` zurückkehren (KbdCharIn tut es).
   `end_programs()` (SHUTDOWN, Strg+Alt+Entf): SIG_SHUTDOWN, bis 5 s warten,
   Rest mit `task_end` beenden.
+- Handles (kernel.c): Einträge der Dateitabelle zählen Verweise (`refs`),
+  Eintrag 0 (`CONS`) ist die Konsole, `OF_FILE/OF_PRD/OF_PWR/OF_CON`.
+  Programm-Handles 0–2 zeigen über `task.std[]` auf Einträge, eigene ab 3
+  (`HBASE`). Freigabe nur über `of_release`. Programme schreiben über
+  `puts`/`DosWrite(STDOUT)`, nicht über VioWrtTTY – sonst wirkt keine
+  Umleitung (VioWrtTTY nur für Bildschirm-Dialoge wie „-- Mehr --“).
 - Strg+Alt+Entf ist zweistufig: Die Taste setzt `reboot_count`, der
   Scheduler schließt beim nächsten Durchlauf alle Dateien, ruft `blk_flush()`
   und startet neu; IRQ 0 startet nach 5 s trotzdem neu.
