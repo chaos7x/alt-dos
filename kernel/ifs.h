@@ -33,6 +33,8 @@ struct volume {
     struct ifs_driver *drv;
     int            mod;                 /* nachgeladenes IFS: Treiberplatz */
     unsigned char  part;                /* Partition 1-4, 0 = ganzes Geraet */
+    unsigned char  nfree_ok;            /* nfree gezaehlt und gueltig       */
+    unsigned       nfree;               /* freie Cluster (FAT)              */
 };
 
 struct ifs_driver {

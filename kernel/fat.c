@@ -151,8 +151,15 @@ static unsigned next_cluster(int d, unsigned c)
 static void fat_set(int d, unsigned c, unsigned val)
 {
     struct volume *v = &vol[d];
-    unsigned sec, off;
+    unsigned sec, off, old;
 
+    if (v->nfree_ok) {                  /* Zaehler freier Cluster mitfuehren */
+        old = fat_raw(d, c);
+        if (old == 0 && val != 0)
+            v->nfree--;
+        else if (old != 0 && val == 0)
+            v->nfree++;
+    }
     fat_pos(v, c, &sec, &off);
     if (fat_load(d, sec)) {
         if (!ferr)
@@ -245,6 +252,7 @@ static int fat_mount(int d)
     v->nfats = (unsigned char)nfats;
     v->spf = spf;
     v->hint = 2;
+    v->nfree_ok = 0;
     v->spc_shift = (unsigned char)n;
     v->sectors  = total;
     v->fat_lba  = v->start + reserved;
@@ -936,17 +944,42 @@ static int fat_move(int d, const char *from, const char *to)
 }
 
 /* freier Platz in Bytes */
+/* freie Cluster: einmal zaehlen, danach fuehrt fat_set() den Zaehler mit.
+   FAT16 sektorweise direkt im Cache - 65536 Einzelaufrufe kosten auf dem
+   286 spuerbar Zeit. */
 static int fat_space(int d, unsigned long *bytes)
 {
     struct volume *v = &vol[d];
-    unsigned c, n = 0;
+    unsigned c, n = 0, end = v->clusters + 2, k, last;
 
     if (revalidate(d))
         return IFS_ERR;
-    for (c = 2; c < v->clusters + 2; c++)
-        if (fat_raw(d, c) == 0)
-            n++;
-    *bytes = shl((unsigned long)n, v->spc_shift + 9);
+    if (!v->nfree_ok) {
+        if (v->fat16) {
+            for (c = 2; c < end && c >= 2; c = last + 1) {
+                if (fat_load(d, c >> 8))
+                    return IFS_ERR;
+                last = c | 255;
+                if (last >= end)
+                    last = end - 1;
+                for (k = c; ; k++) {
+                    if (fcache[(k & 255) * 2] == 0 && fcache[(k & 255) * 2 + 1] == 0)
+                        n++;
+                    if (k == last)
+                        break;
+                }
+                if (last == 0xFFFF)
+                    break;
+            }
+        } else {
+            for (c = 2; c < end; c++)
+                if (fat_raw(d, c) == 0)
+                    n++;
+        }
+        v->nfree = n;
+        v->nfree_ok = 1;
+    }
+    *bytes = shl((unsigned long)v->nfree, v->spc_shift + 9);
     return 0;
 }
 

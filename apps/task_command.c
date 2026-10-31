@@ -133,10 +133,16 @@ static char *word(char *p, char *out, int max)
 }
 
 /* ---- interne Befehle --------------------------------------------------- */
+static char *base_name(char *path);
+static int has_wild(const char *s);
+static int is_dir(char *p);
+static int match(const char *name, const char *pat);
+static unsigned slen(const char *s);
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
-    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
+    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[13];
     unsigned n, files = 0, dirs = 0;
     unsigned long total = 0;
     int all = 0, page = 0, lines = 4;
@@ -150,6 +156,17 @@ static void cmd_dir(char *arg)
         else
             word(arg, dir, sizeof(dir));
     }
+    pat[0] = 0;
+    if (dir[0] && (has_wild(dir) || !is_dir(dir))) {    /* DIR \DOS\*.EXE */
+        char *b = base_name(dir);
+        for (n = 0; b[n] && n < sizeof(pat) - 1; n++)
+            pat[n] = b[n];
+        pat[n] = 0;
+        *b = 0;
+        n = slen(dir);                          /* "\DOS\" -> "\DOS"   */
+        if (n > 1 && dir[n - 1] == '\\' && dir[n - 2] != ':')
+            dir[n - 1] = 0;
+    }
     if (dir[0] && DosFindEntry(&e, 0, dir) == FAPI_ERROR) {
         puts("Verzeichnis nicht gefunden.\n");
         return;
@@ -159,16 +176,21 @@ static void cmd_dir(char *arg)
         puts(dir);
     } else {
         DosQCurDir(cur);
-        puts(cur);
-        if (dir[0]) {
-            if (cur[3])
-                putc('\\');
-            puts(dir);
+        if (dir[0] == '\\') {                  /* absolut: nur Laufwerk */
+            cur[2] = 0;
+        } else if (dir[0] && cur[3]) {
+            n = slen(cur);
+            cur[n] = '\\';
+            cur[n + 1] = 0;
         }
+        puts(cur);
+        puts(dir);
     }
     puts("\n\n");
     for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
         if (!all && (e.attr & 0x06))            /* versteckt, System    */
+            continue;
+        if (pat[0] && !match(e.name, pat))
             continue;
         put2(e.date & 31);
         putc('.');
@@ -196,6 +218,10 @@ static void cmd_dir(char *arg)
             puts("\n");
             lines = 0;
         }
+    }
+    if (pat[0] && !files && !dirs) {
+        puts("Datei nicht gefunden.\n\n");
+        return;
     }
     put_num(files, 16);
     puts(" Datei(en),");
