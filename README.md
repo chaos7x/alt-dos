@@ -27,7 +27,8 @@ und PC-DOS.
   CD-ROMs (2048-Byte-Blöcke) nur lesen
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
-  `BUFFERS=`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  `BUFFERS=` (Sektor-Cache, 1–99 Sektoren, Vorgabe 15; Dateien werden bis
+  zu 4 Sektoren am Stück gelesen); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist

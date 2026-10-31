@@ -215,6 +215,7 @@ static void init(void)
         probe(ch, 1);
     }
     r->units = (unsigned char)nunit;
+    r->count = 16;                          /* READ SECTORS mit Sektorzahl */
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
@@ -263,15 +264,19 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
     return wait_status(b, 0, 0, 300);
 }
 
-/* einen Sektor lesen oder schreiben */
+/* count Sektoren (1-16) lesen oder einen schreiben */
 static void xfer(int write)
 {
     static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
     struct drv_req __far *r = REQ;
     struct unit *u = &unit[r->unit];
     unsigned long l = r->lba, track;
-    unsigned cyl = 0, b = u->base;
+    unsigned cyl = 0, b = u->base, n, i;
     int tries;
+
+    n = write || r->count == 0 ? 1 : r->count;
+    if (n > 16)
+        n = 16;
 
     if (u->atapi) {
         if (write) {
@@ -300,14 +305,14 @@ static void xfer(int write)
             continue;
         if (u->chs) {
             outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel | head));
-            outp(b + R_COUNT, 1);
+            outp(b + R_COUNT, (unsigned char)n);
             outp(b + R_SECTOR, (unsigned char)(sec + 1));   /* ab 1      */
             outp(b + R_CYL_LO, (unsigned char)cyl);
             outp(b + R_CYL_HI, (unsigned char)(cyl >> 8));
         } else {
             outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel |
                                                ((unsigned)(l >> 24) & 0x0F)));
-            outp(b + R_COUNT, 1);
+            outp(b + R_COUNT, (unsigned char)n);
             outp(b + R_SECTOR, (unsigned char)l);
             outp(b + R_CYL_LO, (unsigned char)(l >> 8));
             outp(b + R_CYL_HI, (unsigned char)(l >> 16));
@@ -315,11 +320,17 @@ static void xfer(int write)
         settle(u->ctl);
         outp(b + R_CMD, write ? 0x30 : 0x20);   /* WRITE / READ SECTORS */
         settle(u->ctl);
-        if (wait_status(b, ST_DRQ, ST_DRQ, 300))
-            continue;
         if (!write) {
-            insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off), 256);
+            for (i = 0; i < n; i++) {           /* je Sektor auf DRQ warten */
+                if (wait_status(b, ST_DRQ, ST_DRQ, 300))
+                    break;
+                insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off + (i << 9)), 256);
+            }
+            if (i < n)
+                continue;
         } else {
+            if (wait_status(b, ST_DRQ, ST_DRQ, 300))
+                continue;
             outsw_far(b + R_DATA, r->buf_sel, r->buf_off, 256);
             settle(u->ctl);
             if (wait_status(b, 0, 0, 300))      /* Platte hat geschrieben */

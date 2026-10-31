@@ -1,5 +1,6 @@
 /*
- * AHA154X.SYS - Adaptec AHA-1540/1542 (ISA, Busmaster), nur lesend
+ * AHA154X.SYS - Adaptec AHA-1540/1542 (ISA, Busmaster), auch BusLogic im
+ *               154x-Modus und AHA-174x im Standard-Modus
  *
  * Mailbox-Schnittstelle mit 24-Bit-Adressen: Der Treiber legt Mailboxen
  * und Befehlsbloecke (CCB) im eigenen Datensegment ab und gibt der Karte
@@ -324,6 +325,7 @@ static void init(void)
     }
     nunits = n;
     r->units = (unsigned char)n;
+    r->count = 16;                          /* Blockzahl in READ(10)    */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
 
@@ -332,6 +334,7 @@ static void xfer(int write)
 {
     struct drv_req __far *r = REQ;
     unsigned long l = r->lba;
+    unsigned n = write || r->count == 0 ? 1 : r->count;
     int tries, rc;
 
     if (r->unit >= DRV_MAXUNITS) {
@@ -347,13 +350,15 @@ static void xfer(int write)
         cdb[5] = (unsigned char)l;
         cdb[6] = 0;
         cdb[7] = 0;
-        cdb[8] = 1;                         /* ein Block                */
         cdb[9] = 0;
         if (write && bsz[r->unit] != 512) {
             r->status = DRV_ERR_WP;
             return;
         }
-        rc = scsi_dir(target[r->unit], bsz[r->unit], r->buf_phys, 10, write ? 0x10 : 0x08);
+        if (n > 1 && bsz[r->unit] != 512)
+            n = 1;                          /* CD: ein Block (2048)     */
+        cdb[8] = (unsigned char)n;
+        rc = scsi_dir(target[r->unit], n * bsz[r->unit], r->buf_phys, 10, write ? 0x10 : 0x08);
         if (rc == SCSI_OK) {
             r->status = DRV_OK;
             return;

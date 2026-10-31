@@ -108,9 +108,11 @@ struct blkdev {
 extern struct blkdev blk[NBLK];
 extern int nblk;
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
+int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */
 int  blk_write(int dev, unsigned long lba); /* DMABUF ->, -2 = schreibgesch. */
 void blk_flush(void);               /* Platten-Caches leeren              */
-void blk_invalidate(void);          /* Lese-Cache verwerfen (Diskettenwechsel) */
+void blk_invalidate(void);          /* Diskette aus dem Cache (Wechsel)    */
+void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */

@@ -112,6 +112,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Clustergröße per Schieben, keine Watcom-Hilfsroutinen.
 - Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); außer
   `fat.c` kennt kein Kernelteil FAT-Interna. Blockgeräte nie per BIOS ansprechen.
+- Sektor-Cache (`BUFFERS=`, kernel.c `bc_*`): ein Kernelsegment mit
+  n × 512 Byte, nur 512er-Geräte, write-through. `blk_read_n()` liest bei
+  Fehltreffern bis zu 4 Sektoren am Stück (DMABUF 2 KB) – `fat_read()`
+  bis Clusterende. Vorausgelesenes ist „Strom“ und wird zuerst verdrängt
+  (FAT/Verzeichnisse bleiben). Treiber melden in `drv_req.count` beim INIT,
+  wie viele Blöcke ein READ kann (0 = 1); IDE und Adaptec: 16. Diskette:
+  `blk_invalidate()` wirft ihre Einträge bei jedem `revalidate` raus.
+  Messung `grep -r` über 120 Dateien in QEMU: 3095 -> 1173 IDE-Befehle.
 - Schreiben (`fat.c`): Daten und Verzeichniseinträge sofort (`blk_write`),
   FAT nur im 2-Sektor-Cache bis `fat_flush()` am Ende jeder Operation – nach
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
@@ -246,14 +254,8 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
-- Mehrere Sektoren je Treiberaufruf (Cluster am Stück, Zähler in
-  `drv_req`, IDE `READ MULTIPLE`/Sektorzahl, SCSI Blockzahl in READ(10));
-  braucht größeren DMA-Puffer bzw. direkte Übertragung ins Ziel – auch ohne
-  Cache ein großer Gewinn auf echten Platten.
-- `BUFFERS=` wird gelesen (`nbuffers`), aber noch nicht benutzt – wird der
-  eingebaute Sektor-Cache unter einem späteren SMARTDRV.
-- Platten-Cache wie SMARTDRV: Lese- und Schreib-Cache im erweiterten
-  Speicher (Größe in `CONFIG.SYS`), verzögertes Schreiben mit Zeitgrenze,
+- Platten-Cache wie SMARTDRV (Ausbau des Sektor-Caches): größer als ein
+  Segment, verzögertes Schreiben mit Zeitgrenze,
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
   Lese-Cache oder sofort schreiben (Wechsel). Heute: Daten sofort, nur FAT
   im 2-Sektor-Cache.
@@ -262,6 +264,10 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle
 - Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
+- Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
+  passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
+  PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
+  32-Bit-Portzugriffen) gehören zu 6.0 auf dem 386/486.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
   Real-Mode-DOS-Sitzung unter 640 KB (z. B. MS-DOS 6 von der SCSI-Platte),

@@ -23,7 +23,7 @@ struct drv_header {
 };
 
 #define DRV_INIT        0           /* Geraet suchen, Einheiten melden  */
-#define DRV_READ        1           /* einen Block lesen (512, CD 2048 Bytes) */
+#define DRV_READ        1           /* count Bloecke lesen (512, CD 2048 Bytes) */
 #define DRV_WRITE       2           /* einen Block schreiben (nur 512)  */
 #define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
 
@@ -45,7 +45,9 @@ struct drv_req {
     unsigned long  base;            /* INIT: lineare Basis des Treibers */
     unsigned short devhlp_off, devhlp_sel;  /* INIT: Einsprung DevHlp   */
     unsigned char  units;           /* INIT: Anzahl Einheiten (Rueckgabe) */
-    unsigned char  rsv;
+    unsigned char  count;           /* READ: Bloecke am Stueck (0 = 1);
+                                       INIT: Rueckgabe Hoechstzahl je READ
+                                       (0 = 1, alte Treiber)              */
     unsigned long  blocks[DRV_MAXUNITS];    /* INIT: Sektoren je Einheit */
     unsigned short bsize[DRV_MAXUNITS];     /* INIT: Blockgroesse, 0 = 512 (CD: 2048) */
     char           args[81];        /* INIT: Argumente aus CONFIG.SYS   */

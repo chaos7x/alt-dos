@@ -1677,6 +1677,7 @@ static struct {
     unsigned char used;
     unsigned      entry;
     unsigned      unit, cnt;
+    unsigned      maxcnt;               /* Bloecke je READ (INIT, >= 1) */
     char          name[13];
 } drv[NDRV];
 static struct drv_req req;
@@ -1692,47 +1693,182 @@ static int lc_dev = -1;
 static unsigned long lc_lba;
 static unsigned char blk_dirty[NBLK];   /* seit dem letzten Leeren beschrieben */
 
-void blk_invalidate(void)
+/* ---- Sektor-Cache (BUFFERS=) -------------------------------------------
+   Ein Kernelsegment mit bc_n Sektoren zu 512 Byte, nur fuer 512er-Geraete.
+   Schreiben geht sofort durch (write-through), der Cache wird nur mit
+   aktualisiert. Daten, die fat_read() vorausliest, sind "Strom"-Eintraege:
+   sie werden zuerst verdraengt, damit eine grosse Datei nicht FAT und
+   Verzeichnisse aus dem Cache wirft. */
+#define BC_MAX      99
+#define BC_STREAM   8                   /* so viele Strom-Eintraege bleiben */
+static unsigned       bc_sel, bc_n, bc_clock, bc_nstream;
+static signed char    bc_dev[BC_MAX];   /* -1 = frei                    */
+static unsigned char  bc_stream[BC_MAX];
+static unsigned long  bc_lba[BC_MAX];
+static unsigned       bc_age[BC_MAX];
+unsigned long         bc_hits, bc_miss; /* fuer spaetere Statistik      */
+
+void blk_cache_init(unsigned n)
 {
-    lc_dev = -1;
+    unsigned i;
+    if (n > BC_MAX)
+        n = BC_MAX;
+    bc_sel = kseg_alloc((unsigned long)n << 9);
+    bc_n = bc_sel ? n : 0;
+    for (i = 0; i < BC_MAX; i++)
+        bc_dev[i] = -1;
 }
 
-/* einen Sektor nach DMABUF; der zuletzt gelesene bleibt zwischengespeichert */
-int blk_read(int dev, unsigned long lba)
+static int bc_find(int dev, unsigned long lba)
+{
+    unsigned i;
+    for (i = 0; i < bc_n; i++)
+        if (bc_dev[i] == dev && bc_lba[i] == lba)
+            return (int)i;
+    return -1;
+}
+
+/* Platz fuer einen neuen Eintrag: frei, sonst aeltester Strom-Eintrag
+   (wenn genug davon da sind), sonst aeltester ueberhaupt */
+static unsigned bc_victim(void)
+{
+    unsigned i, v = 0, best = 0xFFFF, age;
+    int stream_only = bc_nstream >= BC_STREAM;
+
+    for (i = 0; i < bc_n; i++) {
+        if (bc_dev[i] < 0)
+            return i;
+        if (stream_only && !bc_stream[i])
+            continue;
+        age = bc_clock - bc_age[i];
+        if (best == 0xFFFF || age > best) {
+            best = age;
+            v = i;
+        }
+    }
+    return v;
+}
+
+/* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) */
+static void bc_put(int dev, unsigned long lba, unsigned off, int stream)
+{
+    int i;
+    if (!bc_n || blk[dev].bsize != 512)
+        return;
+    i = bc_find(dev, lba);
+    if (i < 0) {
+        i = (int)bc_victim();
+        if (bc_dev[i] >= 0 && bc_stream[i])
+            bc_nstream--;
+        bc_dev[i] = (signed char)dev;
+        bc_lba[i] = lba;
+        bc_stream[i] = (unsigned char)stream;
+        if (stream)
+            bc_nstream++;
+    } else if (!stream && bc_stream[i]) {
+        bc_stream[i] = 0;               /* wieder gebraucht: bleibt     */
+        bc_nstream--;
+    }
+    bc_age[i] = ++bc_clock;
+    far_copy(bc_sel, (unsigned)i << 9, DMABUF, off, 512);
+}
+
+/* Diskette kann gewechselt sein: ihre Eintraege weg */
+void blk_invalidate(void)
+{
+    unsigned i;
+    lc_dev = -1;
+    for (i = 0; i < bc_n; i++)
+        if (bc_dev[i] == BLK_FLOPPY) {
+            if (bc_stream[i])
+                bc_nstream--;
+            bc_dev[i] = -1;
+        }
+}
+
+/* Treiberaufruf: n Bloecke ab lba nach DMABUF; 0 = ok */
+static int dev_read(int dev, unsigned long lba, unsigned n)
 {
     struct blkdev *b = &blk[dev];
 
+    if (b->drv < 0)
+        return fd_read((unsigned)lba) ? -1 : 0;     /* immer einer   */
+    req.cmd = DRV_READ;
+    req.unit = b->unit;
+    req.count = (unsigned char)n;
+    req.status = DRV_ERR_IO;
+    req.lba = lba;
+    req.buf_phys = DMABUF_LIN;
+    req.buf_sel = DMABUF;
+    req.buf_off = 0;
+    drv_request(b->drv);
+    return req.status == DRV_OK ? 0 : -1;
+}
+
+/* Sektor lba nach DMABUF (Offset 0). Fehlt er im Cache, liest es bis zu n
+   Sektoren am Stueck und legt die folgenden als Strom-Eintraege ab. */
+int blk_read_n(int dev, unsigned long lba, unsigned n)
+{
+    struct blkdev *b;
+    unsigned k, max;
+    int i;
+
     if (dev == lc_dev && lba == lc_lba)
         return 0;
-    lc_dev = -1;
-    if (dev < 0 || dev >= nblk || lba >= b->blocks)
+    if (dev < 0 || dev >= nblk)
         return -1;
-    if (b->drv < 0) {
-        if (fd_read((unsigned)lba))
-            return -1;
-    } else {
-        req.cmd = DRV_READ;
-        req.unit = b->unit;
-        req.status = DRV_ERR_IO;
-        req.lba = lba;
-        req.buf_phys = DMABUF_LIN;
-        req.buf_sel = DMABUF;
-        req.buf_off = 0;
-        drv_request(b->drv);
-        if (req.status != DRV_OK)
-            return -1;
+    b = &blk[dev];
+    if (lba >= b->blocks)
+        return -1;
+    lc_dev = -1;
+    if (bc_n && b->bsize == 512 && (i = bc_find(dev, lba)) >= 0) {
+        far_copy(DMABUF, 0, bc_sel, (unsigned)i << 9, 512);
+        bc_age[i] = ++bc_clock;
+        if (n == 1 && bc_stream[i]) {
+            bc_stream[i] = 0;
+            bc_nstream--;
+        }
+        bc_hits++;
+        lc_dev = dev;
+        lc_lba = lba;
+        return 0;
     }
+    bc_miss++;
+    max = b->drv < 0 ? 1 : drv[b->drv].maxcnt;
+    if (b->bsize != 512 || !bc_n)
+        max = 1;                        /* ohne Cache haette es keinen Sinn */
+    if (n > max)
+        n = max;
+    if (n > DMABUF_SIZE / 512)
+        n = DMABUF_SIZE / 512;
+    if (n < 1)
+        n = 1;
+    if (b->blocks - lba < n)
+        n = (unsigned)(b->blocks - lba);
+    if (dev_read(dev, lba, n)) {
+        if (n == 1 || dev_read(dev, lba, 1))    /* Fehler: einzeln nochmal */
+            return -1;
+        n = 1;
+    }
+    bc_put(dev, lba, 0, n > 1);
+    for (k = 1; k < n; k++)
+        bc_put(dev, lba + k, k << 9, 1);
     lc_dev = dev;
     lc_lba = lba;
     return 0;
 }
 
-/* DMABUF in einen Sektor schreiben (sofort, kein Schreib-Cache im Kernel).
+int blk_read(int dev, unsigned long lba)
+{
+    return blk_read_n(dev, lba, 1);
+}
+
+/* DMABUF in einen Sektor schreiben (sofort; der Cache wird mitgefuehrt).
    0 = ok, -1 Fehler, -2 schreibgeschuetzt */
 int blk_write(int dev, unsigned long lba)
 {
     struct blkdev *b = &blk[dev];
-    int rc;
+    int rc, i;
 
     lc_dev = -1;
     if (dev < 0 || dev >= nblk || lba >= b->blocks)
@@ -1741,23 +1877,29 @@ int blk_write(int dev, unsigned long lba)
         return -2;                      /* CD-ROM                     */
     if (b->drv < 0) {
         rc = fd_write((unsigned)lba);
-        if (rc)
+        if (rc) {
+            if (bc_n && (i = bc_find(dev, lba)) >= 0)
+                bc_dev[i] = -1, bc_nstream -= bc_stream[i];
             return rc;
+        }
     } else {
         req.cmd = DRV_WRITE;
         req.unit = b->unit;
+        req.count = 1;
         req.status = DRV_ERR_IO;
         req.lba = lba;
         req.buf_phys = DMABUF_LIN;
         req.buf_sel = DMABUF;
         req.buf_off = 0;
         drv_request(b->drv);
-        if (req.status == DRV_ERR_WP)
-            return -2;
-        if (req.status != DRV_OK)
-            return -1;
+        if (req.status != DRV_OK) {
+            if (bc_n && (i = bc_find(dev, lba)) >= 0)
+                bc_dev[i] = -1, bc_nstream -= bc_stream[i];
+            return req.status == DRV_ERR_WP ? -2 : -1;
+        }
         blk_dirty[dev] = 1;
     }
+    bc_put(dev, lba, 0, 0);
     lc_dev = dev;                       /* DMABUF entspricht jetzt dem Sektor */
     lc_lba = lba;
     return 0;
@@ -1870,6 +2012,7 @@ static int load_driver(const char *line, int is_ifs)
     req.cmd = DRV_INIT;
     req.status = DRV_ERR_NODEV;
     req.units = 0;
+    req.count = 0;
     req.base = base;
     req.buf_phys = DMABUF_LIN;
     req.buf_sel = DMABUF;
@@ -1893,6 +2036,7 @@ static int load_driver(const char *line, int is_ifs)
                                        : ": kein Ger\x84t gefunden\n");
         return 0;
     }
+    drv[d].maxcnt = req.count ? req.count : 1;
     if (is_ifs) {
         if (nifsmod < NIFSMOD) {
             ifsmod[nifsmod].drv = d;
@@ -2304,6 +2448,8 @@ void kmain(void)
         }
         vio_kputs(s0, "\n");
     }
+
+    blk_cache_init(nbuffers);           /* nach CONFIG.SYS: BUFFERS= */
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
     scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));

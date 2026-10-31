@@ -465,7 +465,7 @@ static int fat_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
 {
     int d = f->drive;
     struct volume *v = &vol[d];
-    unsigned csz = (unsigned)v->spc * 512, c, so, b, n, done = 0;
+    unsigned csz = (unsigned)v->spc * 512, c, so, b, n, ra, done = 0;
     unsigned long cpos;
 
     if (pos >= f->size)
@@ -492,9 +492,10 @@ static int fat_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
         f->cache_clus = c;
         f->cache_pos  = cpos;
         so = (unsigned)(pos - cpos);
-        if (blk_read(v->blk, clus_lba(v, c) + (so >> 9)))
-            return -1;
         b = so & 511;
+        ra = (unsigned)(csz - so + 511) >> 9;   /* voraus bis Clusterende */
+        if (blk_read_n(v->blk, clus_lba(v, c) + (so >> 9), ra))
+            return -1;
         n = 512 - b;
         if (n > len - done)
             n = len - done;
