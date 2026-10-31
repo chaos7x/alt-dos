@@ -147,8 +147,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `VioGetRows()` bzw. dem Ergebnis von `VioSetMode(1)` ab, nie fest 23/25.
   Neue Sitzungen (START) erben die Zeilenzahl der startenden Sitzung
   (Wunsch des Nutzers).
-  In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25);
-  auf dem SCAT/ET4000 noch offen. EGA (43 Zeilen, andere Register) nicht
+  In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25),
+  vom Nutzer auf dem SCAT mit ET4000 bestätigt. EGA (43 Zeilen, andere Register) nicht
   unterstützt.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
