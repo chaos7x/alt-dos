@@ -310,6 +310,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `U<Dateisystem>.EXE` (wie OS/2: `UFAT`/`UHPFS` machen CHKDSK und FORMAT).
 - Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
   drin ist
+- CHKDSK auf CD-ROM (Entscheidung des Nutzers, festgehalten): heute „CHKDSK
+  kann CD-ROM-Laufwerke nicht prüfen“, solange es kein U*.EXE gibt. Später
+  denkbar: Lesbarkeitsprüfung (Oberflächentest) für CDs, und ein Dateisystem
+  für beschreibbare Medien bringt sein eigenes U*.EXE mit – CHKDSK nimmt
+  es dann automatisch (Reihenfolge in task_chkdsk.c: erst U*.EXE suchen,
+  Meldung nur, wenn keins da ist).
 - Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
 - Platten-Cache wie SMARTDRV (Ausbau des Sektor-Caches): größer als ein
   Segment, verzögertes Schreiben mit Zeitgrenze,
