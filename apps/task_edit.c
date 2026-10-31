@@ -580,28 +580,70 @@ static void center(int r, const char *s, unsigned char a)
     VioWrtStrAtt(r, (80 - (int)slen(s)) / 2, s, a);
 }
 
-/* Meldung mit Tasten; keys z. B. "JN" -> gedrueckter Buchstabe, 27 = Esc */
+/* Knoepfe "< Ja >  < Nein >" zentriert in Zeile r, der mit Nummer foc
+   hervorgehoben (-1 = keiner); -> Anzahl Knoepfe */
+static int draw_buttons(int r, const char *b, int foc)
+{
+    int c0 = (80 - (int)slen(b)) / 2, i, start = 0, n = 0;
+    VioWrtStrAtt(r, c0, b, A_BAR);
+    for (i = 0; b[i]; i++) {
+        if (b[i] == '<')
+            start = i;
+        else if (b[i] == '>') {
+            if (n == foc)
+                out(r, c0 + start, b + start, (unsigned)(i - start + 1), A_BARSEL);
+            n++;
+        }
+    }
+    return n;
+}
+
+/* Fokus weiterschalten: Tab/Rechts vor, Umschalt+Tab/Links zurueck;
+   -> neuer Fokus, -1 = keine Wechseltaste */
+static int next_focus(unsigned c, unsigned sc, int foc, int n)
+{
+    if (c == 9)
+        return (KbdShift() & KBDSHIFT_SHIFT) ? (foc + n - 1) % n : (foc + 1) % n;
+    if (c == 0 || c == 0xE0) {
+        if (sc == 0x0F || sc == K_LEFT)         /* Umschalt+Tab, links  */
+            return (foc + n - 1) % n;
+        if (sc == K_RIGHT)
+            return (foc + 1) % n;
+    }
+    return -1;
+}
+
+/* Meldung mit Knoepfen; keys: ein Zeichen je Knopf ("JN\x1B"), Kennbuchstabe
+   waehlt direkt, Tab/Pfeile wechseln, Eingabe drueckt den gewaehlten,
+   Esc = 27 */
 static int msgbox(const char *t1, const char *t2, const char *buttons, const char *keys)
 {
-    unsigned c, i;
+    unsigned c, i, k;
+    int foc = 0, nb, f;
     need_all = 1;
     box(8, 12, 8, 56, 0);
     center(10, t1, A_BAR);
     if (t2)
         center(11, t2, A_BAR);
-    center(13, buttons, A_BAR);
     VioSetCurPos(0xFF, 0);
     for (;;) {
-        c = KbdCharIn() & 0xFF;
+        nb = draw_buttons(13, buttons, foc);
+        k = KbdCharIn();
+        c = k & 0xFF;
         if (c == 27)
             return 27;
+        f = next_focus(c, k >> 8, foc, nb);
+        if (f >= 0) {
+            foc = f;
+            continue;
+        }
+        if (c == 13 || c == ' ')
+            return (unsigned char)keys[foc];
         c = (unsigned char)up((char)c);
         if (c == 'Y')
             c = 'J';
-        if (c == 13)
-            c = (unsigned char)keys[0];         /* Eingabe = erste Taste */
         for (i = 0; keys[i]; i++)
-            if ((unsigned char)keys[i] == c)
+            if ((unsigned char)keys[i] == c && c != 27)
                 return (int)c;
     }
 }
@@ -611,19 +653,20 @@ static void message(const char *t1, const char *t2)
     msgbox(t1, t2, "< OK >", "O");
 }
 
-/* Eingabefelder; Tab wechselt. -> 1 OK, 0 Abbrechen */
+/* Eingabefelder und Knoepfe OK/Abbrechen; Tab wechselt reihum (Felder,
+   OK, Abbrechen), Eingabe im Feld = OK. -> 1 OK, 0 Abbrechen */
 #define FX 27                       /* Eingabefeld: Spalte, Breite   */
 #define FW 40
 static int input(const char *title, int nf, const char **prompt, char **buf, unsigned max)
 {
-    int f = 0, i, fresh = 1;
+    static const char btn[] = "< OK >   < Abbrechen >";
+    int f = 0, i, fresh = 1, g;
     unsigned pos, n, view, c, sc, k;
 
     need_all = 1;
     box(7, 10, 6 + 2 * nf, 60, title);
     for (i = 0; i < nf; i++)
         VioWrtStrAtt(9 + 2 * i, 13, prompt[i], A_BAR);
-    center(10 + 2 * nf, "< OK >   < Abbrechen >", A_BAR);
     pos = slen(buf[0]);
     for (;;) {
         for (i = 0; i < nf; i++) {      /* Felder zeichnen               */
@@ -637,20 +680,36 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
             if (i == f)
                 VioSetCurPos(9 + 2 * i, FX + pos - view);
         }
+        draw_buttons(10 + 2 * nf, btn, f >= nf ? f - nf : -1);
+        if (f >= nf)
+            VioSetCurPos(0xFF, 0);
         k = KbdCharIn();
         c = k & 0xFF;
         sc = k >> 8;
-        n = slen(buf[f]);
         if (c == 27)
             return 0;
         if (c == 13)
-            return 1;
-        if (c == 9) {
-            f = (f + 1) % nf;
-            pos = slen(buf[f]);
-            fresh = 1;
+            return f != nf + 1;         /* auf "Abbrechen": abbrechen    */
+        g = -1;
+        if (c == 9 || (c == 0 && sc == 0x0F))   /* Tab, Umschalt+Tab     */
+            g = next_focus(c, sc, f, nf + 2);
+        else if (f >= nf && (c == 0 || c == 0xE0) &&
+                 (sc == K_LEFT || sc == K_RIGHT))   /* zwischen Knoepfen */
+            g = nf + (f - nf + 1) % 2;
+        if (g >= 0) {
+            f = g;
+            if (f < nf) {
+                pos = slen(buf[f]);
+                fresh = 1;
+            }
             continue;
         }
+        if (f >= nf) {                  /* auf einem Knopf               */
+            if (c == ' ')
+                return f == nf;
+            continue;
+        }
+        n = slen(buf[f]);
         if (c == 0 || c == 0xE0) {
             fresh = 0;
             if (sc == K_LEFT && pos > 0) pos--;
@@ -797,7 +856,7 @@ static int ask_save(void)
     if (!modified)
         return 0;
     k = msgbox("Die Datei wurde ge\x84ndert.", "Jetzt speichern?",
-               "< Ja >   < Nein >   < Abbrechen >", "JN");
+               "< Ja >   < Nein >   < Abbrechen >", "JN\x1B");
     if (k == 27)
         return -1;
     if (k == 'J')
@@ -936,7 +995,7 @@ static void do_change(void)
                 follow();
                 redraw_all();
                 k = msgbox("Diese Stelle \x84ndern?", 0,
-                           "< Ja >  < Nein >  < Alle >  < Abbrechen >", "JNA");
+                           "< Ja >  < Nein >  < Alle >  < Abbrechen >", "JNA\x1B");
                 redraw_all();
                 if (k == 27)
                     goto done;
