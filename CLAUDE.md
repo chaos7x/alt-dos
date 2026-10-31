@@ -336,8 +336,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - EDIT ist da (`apps/task_edit.c`): Lückenpuffer in einem 64-KB-Segment,
   daher Text bis knapp 64 KB – offen: größere Dateien (mehrere Segmente),
-  Dateiliste im Öffnen-Dialog, Maus, Nachfrage bei SIG_SHUTDOWN (der
-  Kernel wartet nur 5 s), horizontale Bildlaufleiste. Danach nächster
+  Maus, horizontale Bildlaufleiste. Erledigt: Öffnen-Dialog mit Dateiliste
+  (`open_dialog`, Verzeichnisse zuerst, `..`, Muster, Laufwerk `D:`),
+  Nachfrage bei SIG_SHUTDOWN: Signal setzt nur `shut_req`, `getkey()`
+  (statt KbdCharIn überall in EDIT) ruft `shutdown_now()` beim nächsten
+  Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
+  `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
+  Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
   Schritt mit dem Nutzer absprechen. FORMAT und SYS sind da. Später: UNDELETE, MSD,
   HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
@@ -351,9 +356,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
-- `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`):
-  soll noch `SIG_SHUTDOWN` nutzen, um vor dem Herunterfahren nach dem
-  Speichern zu fragen.
+- `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`).
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),
@@ -466,7 +469,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   je Chip). Grafik-Boxen im Hintergrund notfalls einfrieren (wie OS/2 2.0 anfangs).
 - Reihenfolge nach dem ESDI-Test (abgestimmt mit dem Nutzer): 1. 43/50
   Textzeilen mit `MODE` (erledigt), 2. EDIT fertig (SIG_SHUTDOWN-Nachfrage,
-  Dateiliste), 3. Treiber mit Interrupt (DevHlp SetIRQ), 4. `MOUSE.SYS`,
+  Dateiliste – erledigt), 3. Treiber mit Interrupt (DevHlp SetIRQ), 4. `MOUSE.SYS`,
   danach der ISA-Bereich für 5.0 (Entscheidung des Nutzers): ISA-SCSI
   (NCR 53C400/Trantor T130B, evtl. AHA-1520/AIC-6360) und VGA-Grafik
   wie OS/2 1.x – Standardmodi (12h 640×480×16, 13h 320×200×256) direkt

@@ -127,7 +127,10 @@ Zeilen.
 Programme auf der Diskette: **EDIT** ist ein Bildschirm-Editor wie MS-DOS
 EDIT (Vollbild, Menüs mit Alt oder F10, Markieren mit Umschalt,
 Umschalt+Entf/Strg+Einfg/Umschalt+Einfg, Strg+Y, Suchen/Weitersuchen (F3)/
-Ändern, Strg+S; Text bis knapp 64 KB, Tabulatoren werden zu Leerzeichen).
+Ändern, Strg+S; Text bis knapp 64 KB, Tabulatoren werden zu Leerzeichen;
+Dialoge mit Tab und Pfeiltasten; Öffnen mit Dateiliste, Verzeichniswechsel
+und Mustern wie `*.TXT`; beim Herunterfahren fragt EDIT, ob geänderter Text
+gespeichert werden soll).
 Alt+Taste liefert wie beim BIOS Zeichen 0 und den Scancode, Alt allein
 `KEY_ALT` (3800h). **LESS** zeigt Text an und blättert vor und
 zurück nach dem Vorbild von GNU less (Bild/Pfeile, `g G`, `123g`, `/` `?`
@@ -213,6 +216,7 @@ selbst nur 8.3 kennt.
 | 52 | KbdShift        | → Umschalttasten jetzt: 1 Umschalt, 2 Strg, 4 Alt, 8 AltGr |
 | 53 | VioSetLines     | BX = Bildschirmzeilen der eigenen Sitzung: 25, 43, 50 (nur VGA), 0 = fragen → Zeilen; löscht den Bildschirm, nicht im Vollbild |
 | 54 | VioGetRows      | → Zeilen, die das Programm beschreiben kann (normal Bildschirm − 2, Vollbild alle) |
+| 55 | DosShutdownHold | nach SIG_SHUTDOWN: Herunterfahren aufhalten, weil das Programm den Benutzer fragt; Sitzung kommt nach vorn, der Kernel wartet bis zum Programmende (sonst 5 s) |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

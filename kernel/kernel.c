@@ -82,6 +82,7 @@ struct task {
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
     unsigned char rc;                           /* Rueckgabewert (DosExit)  */
     unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
+    unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
 };
 
 static struct task    task[NTASK];
@@ -218,10 +219,12 @@ void panic(const char *msg)
    IRQ 0 nach 5 s trotzdem neu; ein zweiter Druck startet sofort neu. */
 volatile unsigned reboot_count;
 static int boot_session;
+static unsigned char going_down;    /* system_down laeuft: Strg+Alt+Entf
+                                       startet dann sofort neu */
 
 void reboot_request(void)
 {
-    if (reboot_count)
+    if (reboot_count || going_down)
         reboot();
     reboot_count = 500;
 }
@@ -234,11 +237,14 @@ static void task_end(int t);
 static void schedule_next(void);
 
 /* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
-   werden alle uebrigen Programme regulaer beendet */
+   werden alle uebrigen Programme regulaer beendet. Ein Programm, das den
+   Benutzer fragen muss (EDIT: speichern?), ruft DosShutdownHold: seine
+   Sitzung kommt nach vorn, und der Kernel wartet ohne Frist, bis es endet
+   (ein zweites Strg+Alt+Entf startet trotzdem sofort neu). */
 static void end_programs(void)
 {
     unsigned long until;
-    int t, n;
+    int t, n, h;
 
     for (t = 0, n = 0; t < NTASK; t++)
         if (t != current && task[t].state != T_FREE && (task[t].sig_mask & SIG_SHUTDOWN)) {
@@ -252,10 +258,15 @@ static void end_programs(void)
         while (n && get_ticks() < until) {
             task[current].wake = 0;
             schedule_next();                    /* die anderen laufen lassen */
-            for (t = 0, n = 0; t < NTASK; t++)
+            for (t = 0, n = 0, h = 0; t < NTASK; t++)
                 if (t != current && task[t].state != T_FREE &&
-                    (task[t].sig_mask & SIG_SHUTDOWN))
+                    (task[t].sig_mask & SIG_SHUTDOWN)) {
                     n++;
+                    if (task[t].hold)
+                        h = 1;
+                }
+            if (h)                              /* jemand fragt: warten  */
+                until = get_ticks() + 500;
         }
     }
     /* die Sitzung, in der die Abschlussmeldung steht, bleibt stehen */
@@ -268,6 +279,7 @@ static void system_down(int restart)
 {
     int k;
     reboot_count = 0;
+    going_down = 1;
     vio_focus(boot_session);
     if (current >= 0)
         end_programs();
@@ -819,6 +831,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].bg = 0;
     task[t].rc = 0;
     task[t].child_rc = 0;
+    task[t].hold = 0;
     for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
         task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
         of_ref(task[t].std[i]);
@@ -1310,6 +1323,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 
     case FAPI_VIOGETROWS:
         return vio_rows(s);
+
+    case FAPI_SHUTDOWNHOLD:                     /* nur waehrend SHUTDOWN */
+        if (!going_down || !(task[current].sig_mask & SIG_SHUTDOWN))
+            return FAPI_ERROR;
+        task[current].hold = 1;
+        vio_focus(s);
+        return 0;
 
     case FAPI_VIOSETCURPOS:
         vio_setcur(s, a1 >> 8, a1 & 0xFF);

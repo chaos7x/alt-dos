@@ -102,6 +102,10 @@ struct fapi_label {
 #define FAPI_VIOSETLINES    0x35    /* BX = Bildschirmzeilen 25/43/50 (nur VGA)
                                        der eigenen Sitzung, 0 = nur fragen;
                                        loescht den Bildschirm -> Zeilen */
+#define FAPI_SHUTDOWNHOLD   0x37    /* nach SIG_SHUTDOWN: Herunterfahren aufhalten,
+                                       weil das Programm den Benutzer fragt; seine
+                                       Sitzung kommt nach vorn, der Kernel wartet
+                                       bis zum Programmende (sonst 5 s) */
 #define FAPI_VIOGETROWS     0x36    /* -> Zeilen, die das Programm beschreiben
                                        kann (normal Bildschirm - 2, Vollbild alle) */
 #define KBDSHIFT_SHIFT      0x01

@@ -65,6 +65,24 @@ static char     find_s[64], repl_s[64];
 static char     row[82], seg[82];
 static unsigned char att[82];
 static char     args[FAPI_ARGLEN];
+static volatile int shut_req;       /* SIG_SHUTDOWN angekommen          */
+static int      shutting;           /* Nachfrage laeuft schon           */
+
+static void shutdown_now(void);
+
+/* Taste holen; kommt beim Warten SIG_SHUTDOWN, fragt EDIT nach dem
+   Speichern und endet (KbdCharIn kehrt bei einem Signal mit 0 zurueck) */
+static unsigned getkey(void)
+{
+    unsigned k;
+    for (;;) {
+        if (shut_req && !shutting)
+            shutdown_now();
+        k = KbdCharIn();
+        if (k || !shut_req)
+            return k;
+    }
+}
 
 #define TB  ((char __far *)MK_FP(tsel, 0))
 
@@ -373,7 +391,7 @@ static int menu_run(int m, int open)
                 sel++;
             draw_menu(m, sel, &x, &w);
         }
-        k = KbdCharIn();
+        k = getkey();
         c = k & 0xFF;
         sc = k >> 8;
         if (k == KEY_ALT || c == 27 || (c == 0 && sc == K_F10))
@@ -630,7 +648,7 @@ static int msgbox(const char *t1, const char *t2, const char *buttons, const cha
     VioSetCurPos(0xFF, 0);
     for (;;) {
         nb = draw_buttons(13, buttons, foc);
-        k = KbdCharIn();
+        k = getkey();
         c = k & 0xFF;
         if (c == 27)
             return 27;
@@ -685,7 +703,7 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
         draw_buttons(10 + 2 * nf, btn, f >= nf ? f - nf : -1);
         if (f >= nf)
             VioSetCurPos(0xFF, 0);
-        k = KbdCharIn();
+        k = getkey();
         c = k & 0xFF;
         sc = k >> 8;
         if (c == 27)
@@ -741,6 +759,280 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
                 buf[f][i] = buf[f][i - 1];
             buf[f][pos++] = (char)c;
         }
+    }
+}
+
+/* ---- Oeffnen-Dialog mit Dateiliste (wie MS-DOS EDIT) ------------------ */
+#define NENT        300             /* Eintraege in der Liste           */
+#define LROWS       10              /* sichtbare Zeilen, je 4 Spalten   */
+#define LCOLS       4
+static char          ent[NENT][14];
+static unsigned char ent_dir[NENT];
+static unsigned      nent;
+static char          odir[FAPI_PATHLEN], opat[16] = "*.*";
+
+static int ent_less(unsigned a, unsigned b)     /* Verzeichnisse zuerst */
+{
+    const char *x = ent[a], *y = ent[b];
+    if (ent_dir[a] != ent_dir[b])
+        return ent_dir[a] > ent_dir[b];
+    if (x[0] == '.')
+        return 1;
+    if (y[0] == '.')
+        return 0;
+    while (*x && *x == *y)
+        x++, y++;
+    return (unsigned char)*x < (unsigned char)*y;
+}
+
+static void read_dir(void)
+{
+    static struct fapi_dirent e;
+    static char t[14];
+    unsigned i, j, n;
+    unsigned char d;
+
+    nent = 0;
+    if (slen(odir) > 3) {                       /* nicht im Stamm: ..   */
+        scopy(ent[0], "..", 14);
+        ent_dir[0] = 1;
+        nent = 1;
+    }
+    for (i = 0; nent < NENT && DosFindEntry(&e, i, odir) != FAPI_ERROR; i++) {
+        if (e.name[0] == '.' || (e.attr & 0x0E))    /* ., .., versteckt,
+                                                       System, Bezeichnung */
+            continue;
+        d = (e.attr & 0x10) != 0;
+        if (!d && !match(e.name, opat))
+            continue;
+        scopy(ent[nent], e.name, 13);
+        ent_dir[nent] = d;
+        nent++;
+    }
+    for (i = 1; i < nent; i++)                  /* einsortieren         */
+        for (j = i; j > 0 && ent_less(j, j - 1); j--) {
+            scopy(t, ent[j], 14);
+            scopy(ent[j], ent[j - 1], 14);
+            scopy(ent[j - 1], t, 14);
+            n = ent_dir[j];
+            ent_dir[j] = ent_dir[j - 1];
+            ent_dir[j - 1] = (unsigned char)n;
+        }
+}
+
+/* in Unterverzeichnis name bzw. ".." wechseln */
+static void enter_dir(const char *name)
+{
+    unsigned n;
+    if (name[0] == '.' && name[1] == '.') {
+        n = slen(odir);
+        while (n > 3 && odir[n - 1] != '\\')
+            n--;
+        odir[n > 3 ? n - 1 : 3] = 0;
+    } else
+        join(odir, odir, name, sizeof(odir));
+}
+
+/* Feld bearbeiten (Tasten wie in input); fresh: erste Taste ersetzt */
+static void field_key(char *b, unsigned max, unsigned *pos, int *fresh,
+                      unsigned c, unsigned sc)
+{
+    unsigned n = slen(b), i;
+    if (c == 0 || c == 0xE0) {
+        *fresh = 0;
+        if (sc == K_LEFT && *pos > 0) (*pos)--;
+        else if (sc == K_RIGHT && *pos < n) (*pos)++;
+        else if (sc == K_HOME) *pos = 0;
+        else if (sc == K_END) *pos = n;
+        else if (sc == K_DEL && *pos < n)
+            for (i = *pos; b[i]; i++)
+                b[i] = b[i + 1];
+        return;
+    }
+    if (*fresh) {
+        *fresh = 0;
+        if (c != 8) {
+            b[0] = 0;
+            *pos = n = 0;
+        }
+    }
+    if (c == 8) {
+        if (*pos > 0) {
+            (*pos)--;
+            for (i = *pos; b[i]; i++)
+                b[i] = b[i + 1];
+        }
+    } else if (c >= 32 && n + 1 < max) {
+        for (i = n + 1; i > *pos; i--)
+            b[i] = b[i - 1];
+        b[(*pos)++] = (char)c;
+    }
+}
+
+/* Dialog "Oeffnen": Feld, Verzeichnis, Liste, Knoepfe. Tab wechselt
+   Feld -> Liste -> OK -> Abbrechen. Im Feld: Name oder Muster (*.TXT),
+   Verzeichnis oder Laufwerk (D:) mit Eingabe. In der Liste: Pfeile,
+   Bild auf/ab, Pos1/Ende; Eingabe oeffnet Datei bzw. Verzeichnis.
+   -> 1 und voller Pfad in out, 0 = abgebrochen */
+static int open_dialog(char *out)
+{
+    static const char btn[] = "< OK >   < Abbrechen >";
+    static char fld[80], tmp[FAPI_PATHLEN];
+    unsigned pos, k, c, sc, i, r, col, ltop = 0, sel = 0, view;
+    int f = 0, fresh = 1, g, fresh_list = 1;
+
+    need_all = 1;
+    if (!odir[0]) {
+        DosQCurDir(odir);
+        if (slen(odir) == 2)
+            scat(odir, "\\", sizeof(odir));
+    }
+    scopy(fld, opat, sizeof(fld));
+    pos = slen(fld);
+    for (;;) {
+        if (fresh_list) {
+            read_dir();
+            sel = ltop = 0;
+            fresh_list = 0;
+        }
+        box(3, 8, 19, 64, "\x99" "ffnen");
+        VioWrtStrAtt(5, 11, "Dateiname:", A_BAR);
+        scopy(tmp, odir, 57);
+        VioWrtStrAtt(7, 11, tmp, A_BAR);
+        VioWrtStrAtt(8, 11, "Dateien und Verzeichnisse:", A_BAR);
+        /* Feld */
+        view = pos > 43 ? pos - 43 : 0;
+        for (i = 0; i < 44; i++) {
+            row[i] = view + i < slen(fld) ? fld[view + i] : ' ';
+            att[i] = A_FIELD;
+        }
+        out_row(5, 23, 44);
+        /* Liste */
+        if (sel / LCOLS < ltop)
+            ltop = sel / LCOLS;
+        if (sel / LCOLS >= ltop + LROWS)
+            ltop = sel / LCOLS - LROWS + 1;
+        for (r = 0; r < LROWS; r++) {
+            for (i = 0; i < 56; i++) {
+                row[i] = ' ';
+                att[i] = A_FIELD;
+            }
+            for (col = 0; col < LCOLS; col++) {
+                k = (ltop + r) * LCOLS + col;
+                if (k >= nent)
+                    break;
+                for (i = 0; ent[k][i]; i++)
+                    row[col * 14 + 1 + i] = ent[k][i];
+                if (ent_dir[k])
+                    row[col * 14 + 1 + i] = '\\';
+                if (f == 1 && k == sel)
+                    for (i = 0; i < 14; i++)
+                        att[col * 14 + i] = A_SEL;
+            }
+            out_row(9 + (int)r, 12, 56);
+        }
+        if (!nent)
+            VioWrtStrAtt(9, 13, "(keine passenden Dateien)", A_FIELD);
+        draw_buttons(20, btn, f >= 2 ? f - 2 : -1);
+        if (f == 0)
+            VioSetCurPos(5, 23 + pos - view);
+        else
+            VioSetCurPos(0xFF, 0);
+
+        k = getkey();
+        c = k & 0xFF;
+        sc = k >> 8;
+        if (c == 27)
+            return 0;
+        if (c == 9 || (c == 0 && sc == 0x0F)) {     /* Tab, Umschalt+Tab */
+            g = next_focus(c, sc, f, 4);
+            if (g >= 0)
+                f = g;
+            if (f == 0) {
+                pos = slen(fld);
+                fresh = 1;
+            }
+            continue;
+        }
+        if (f == 1 && nent) {                       /* Liste             */
+            if (c == 0 || c == 0xE0) {
+                if (sc == K_LEFT && sel > 0) sel--;
+                else if (sc == K_RIGHT && sel + 1 < nent) sel++;
+                else if (sc == K_UP && sel >= LCOLS) sel -= LCOLS;
+                else if (sc == K_DOWN && sel + LCOLS < nent) sel += LCOLS;
+                else if (sc == K_PGUP) sel = sel >= LCOLS * LROWS ? sel - LCOLS * LROWS : 0;
+                else if (sc == K_PGDN) sel = sel + LCOLS * LROWS < nent ? sel + LCOLS * LROWS : nent - 1;
+                else if (sc == K_HOME) sel = 0;
+                else if (sc == K_END) sel = nent - 1;
+                if (!ent_dir[sel])
+                    scopy(fld, ent[sel], sizeof(fld));
+                continue;
+            }
+            if (c != 13)
+                continue;
+            if (ent_dir[sel]) {
+                enter_dir(ent[sel]);
+                fresh_list = 1;
+                scopy(fld, opat, sizeof(fld));
+                continue;
+            }
+            join(out, odir, ent[sel], FAPI_PATHLEN);
+            return 1;
+        }
+        if (f >= 2) {                               /* Knoepfe           */
+            if ((c == 0 || c == 0xE0) && (sc == K_LEFT || sc == K_RIGHT))
+                f = f == 2 ? 3 : 2;
+            if (c != 13 && c != ' ')
+                continue;
+            if (f == 3)
+                return 0;
+        } else if (c != 13) {                       /* Feld              */
+            field_key(fld, sizeof(fld), &pos, &fresh, c, sc);
+            continue;
+        }
+        /* Eingabe im Feld oder OK: Muster, Verzeichnis oder Datei */
+        if (!fld[0])
+            continue;
+        if (has_wild(fld)) {
+            char *b = base_name(fld);
+            scopy(opat, b, sizeof(opat));
+            *b = 0;
+            if (fld[0]) {                           /* Pfad davor        */
+                if (fld[0] && fld[1] == ':' && !fld[2])
+                    scat(fld, "\\", sizeof(fld));
+                abs_path(fld, odir);
+            }
+            for (i = 0; opat[i]; i++)
+                opat[i] = up(opat[i]);
+            fresh_list = 1;
+            scopy(fld, opat, sizeof(fld));
+            pos = slen(fld);
+            fresh = 1;
+            continue;
+        }
+        if (fld[0] == '.' && fld[1] == '.' && !fld[2]) {
+            enter_dir("..");
+            fresh_list = 1;
+        } else {
+            if (fld[1] == ':' || fld[0] == '\\')
+                abs_path(fld, tmp);
+            else
+                join(tmp, odir, fld, sizeof(tmp));
+            for (i = 0; tmp[i]; i++)
+                tmp[i] = up(tmp[i]);
+            if (slen(tmp) == 2 && tmp[1] == ':')
+                scat(tmp, "\\", sizeof(tmp));
+            if (is_dir(tmp)) {
+                scopy(odir, tmp, sizeof(odir));
+                fresh_list = 1;
+            } else {
+                scopy(out, tmp, FAPI_PATHLEN);
+                return 1;
+            }
+        }
+        scopy(fld, opat, sizeof(fld));
+        pos = slen(fld);
+        fresh = 1;
     }
 }
 
@@ -1046,15 +1338,13 @@ static void show_keys(void)
         VioWrtStrAtt(6 + i, 9, t[i], A_BAR);
     center(19, "< OK >", A_BAR);
     VioSetCurPos(0xFF, 0);
-    KbdCharIn();
+    getkey();
 }
 
 /* ---- Befehle ----------------------------------------------------------- */
 static void command(int cmd)
 {
     static char nb[FAPI_PATHLEN];
-    static const char *pr[1] = { "Dateiname:" };
-    char *bp[1];
     int r;
 
     need_all = 1;                       /* Menue/Dialog uebermalt Text   */
@@ -1068,9 +1358,7 @@ static void command(int cmd)
     case C_OPEN:
         if (ask_save())
             break;
-        nb[0] = 0;
-        bp[0] = nb;
-        if (!input("\x99" "ffnen", 1, pr, bp, 79) || !nb[0])
+        if (!open_dialog(nb))
             break;
         r = load(nb);
         if (r == 1)
@@ -1327,9 +1615,32 @@ static void key(unsigned k)
         type_char((char)c);
 }
 
+/* Herunterfahren (SHUTDOWN, Strg+Alt+Entf): ungespeicherte Aenderungen?
+   Dann das System aufhalten, Sitzung nach vorn und fragen. */
+static void shutdown_now(void)
+{
+    int k;
+    shutting = 1;
+    if (modified) {
+        DosShutdownHold();
+        redraw_all();
+        for (;;) {
+            k = msgbox("Das System wird heruntergefahren.",
+                       "Ge\x84nderte Datei vorher speichern?",
+                       "< Ja >   < Nein >", "JN");
+            if (k == 'N' || (k == 'J' && do_save() == 0))
+                break;
+            redraw_all();               /* Esc oder Speichern misslungen */
+        }
+    }
+    DosExit(0);
+}
+
 static void on_signal(unsigned sig)
 {
-    (void)sig;                          /* Strg+C: im Editor ohne Wirkung */
+    if (sig == SIG_SHUTDOWN)            /* erst beim naechsten Warten     */
+        shut_req = 1;                   /* auf eine Taste fragen          */
+    /* Strg+C: im Editor ohne Wirkung */
 }
 
 void main(void)
@@ -1355,7 +1666,7 @@ void main(void)
     }
     TROWS = k - 4;
     SROW = k - 1;
-    DosSetSigHandler(on_signal, SIG_BREAK);
+    DosSetSigHandler(on_signal, SIG_BREAK | SIG_SHUTDOWN);
     text_clear();
     if (*a) {
         word(a, fname, sizeof(fname));
@@ -1373,7 +1684,7 @@ void main(void)
             }
             place_cursor();
         }
-        key(KbdCharIn());
+        key(getkey());
     }
     VioSetMode(0);
     DosExit(0);
