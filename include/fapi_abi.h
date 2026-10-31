@@ -65,6 +65,7 @@
 #define FAPI_DUP2           0x26    /* BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0-2 */
 #define FAPI_DUP            0x27    /* BX = Handle -> neues Handle auf dasselbe */
 #define FAPI_PIPE           0x28    /* BX = Puffer (2 Worte) -> Lese-, Schreib-Handle */
+#define FAPI_VIOWRTSTRATT   0x29    /* wie VioWrtStr, DX = Farbattribut */
 #define STDIN               0       /* Standard-Handles, Vorgabe Konsole */
 #define STDOUT              1
 #define STDERR              2

@@ -1177,13 +1177,15 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         return FAPI_VERSION;
 
     case FAPI_VIOWRTSTR:
+    case FAPI_VIOWRTSTRATT:
         if (!sel_readable(usel))
             return FAPI_ERROR;
         row = a2 >> 8;
         col = a2 & 0xFF;
         if (row >= SROWS || col >= SCOLS)
             return FAPI_ERROR;
-        vio_str(s, row, col, usel, a1, sel_limit(usel), 0x07);
+        vio_str(s, row, col, usel, a1, sel_limit(usel),
+                fn == FAPI_VIOWRTSTR ? 0x07 : (unsigned char)a3);
         return 0;
 
     case FAPI_VIOWRTTTY:

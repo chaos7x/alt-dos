@@ -50,7 +50,7 @@ check_size $B/kernel.bin $B/kernel.map 65536 kernel
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
-for t in command keyb a b c mem more find; do
+for t in command keyb a b c mem more find grep; do
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o 2>&1 | grep -v W1014 || true
@@ -58,7 +58,7 @@ done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
-for t in command keyb a b c mem more find; do
+for t in command keyb a b c mem more find grep; do
     python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
@@ -99,7 +99,7 @@ mattrib -i $IMG +r +s +h ::ATDOS.SYS
 FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
-       $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE
+       $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE
        CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD
        $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS"

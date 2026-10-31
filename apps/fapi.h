@@ -57,6 +57,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioCls()            F2(FAPI_VIOCLS, 0, 0)
 #define VioWrtTTY(s, n)     F2(FAPI_VIOWRTTTY, (s), (n))
 #define VioWrtStr(r, c, s)  F2(FAPI_VIOWRTSTR, (s), ((r) << 8) | (c))
+#define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))
 
 /* Signale: Der Kernel springt in sig_tramp (AX = Signal), die ruft den
    Handler und meldet sich mit DosSigReturn zurueck. */
