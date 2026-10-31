@@ -3,7 +3,8 @@
  *
  * Nachfolger von COMMAND.COM fuer den Protected Mode: spricht das System
  * nur ueber die FAPI an. Interne Befehle: DIR, CD, Laufwerk:, TYPE, COPY,
- * DEL, MD, RD, REN, CLS, VER, ECHO, START, HILFE, EXIT. Alles andere wird
+ * DEL, MD, RD, REN, CLS, VER, ECHO, START, DOSKEY, HILFE, EXIT. Zeilen-
+ * editor und Befehlsspeicher wie DOSKEY sind eingebaut. Alles andere wird
  * als Programm gestartet. COPY und DEL verstehen * und ? wie MS-DOS.
  *
  * COMMAND.EXE /P  -  permanent, EXIT ist dann gesperrt (erste Sitzung).
@@ -92,34 +93,216 @@ static void put2(unsigned v)
     putc((char)('0' + v % 10));
 }
 
-/* ---- Eingabezeile ------------------------------------------------------ */
+/* ---- Eingabezeile ------------------------------------------------------
+   Eingebaut wie DOSKEY: Pfeil auf/ab blaettert in den letzten Befehlen,
+   Pfeil links/rechts, Pos1, Ende, Entf, Einfg (Einfuegen/Ueberschreiben),
+   Esc loescht die Zeile, F3 holt den Rest des letzten Befehls, Bild auf/ab
+   springt zum aeltesten/neuesten Befehl. Der Cursor wird nur mit \b
+   bewegt - die Zeile bleibt deshalb in einer Bildschirmzeile. */
+#define NHIST 16
+static char     hist[NHIST][LINE + 1];
+static unsigned hist_n;                 /* gespeicherte Befehle (<= NHIST) */
+static unsigned hist_top;               /* Platz fuer den naechsten        */
+static int      overwrite;              /* Einfg: Ueberschreiben (je Zeile) */
+
+static char     ob[3 * LINE + 8];       /* Ausgabe sammeln: ein DosWrite   */
+static unsigned on;
+
+static void oc(char c)
+{
+    if (on < sizeof(ob))
+        ob[on++] = c;
+}
+
+static void oflush(void)
+{
+    if (on)
+        DosWrite(STDOUT, ob, on);
+    on = 0;
+}
+
+/* i-ter Befehl rueckwaerts (0 = letzter) */
+static char *hist_get(unsigned i)
+{
+    return hist[(hist_top + NHIST - 1 - i) % NHIST];
+}
+
+static void hist_add(const char *l, unsigned n)
+{
+    unsigned k;
+    if (n == 0)
+        return;
+    if (hist_n) {                       /* gleiche Zeile nicht doppelt  */
+        char *last = hist_get(0);
+        for (k = 0; k < n && last[k] == l[k]; k++)
+            ;
+        if (k == n && last[k] == 0)
+            return;
+    }
+    for (k = 0; k < n; k++)
+        hist[hist_top][k] = l[k];
+    hist[hist_top][n] = 0;
+    hist_top = (hist_top + 1) % NHIST;
+    if (hist_n < NHIST)
+        hist_n++;
+}
+
+/* ab pos neu ausgeben, extra alte Zeichen loeschen, Cursor nach pos */
+static void redraw(unsigned pos, unsigned n, unsigned extra)
+{
+    unsigned i;
+    for (i = pos; i < n; i++)
+        oc(line[i]);
+    for (i = 0; i < extra; i++)
+        oc(' ');
+    for (i = pos; i < n + extra; i++)
+        oc('\b');
+}
+
+/* ganze Zeile ersetzen; Cursor ans Ende */
+static unsigned set_line(const char *src, unsigned *pos, unsigned n)
+{
+    unsigned k, old = n;
+    for (k = 0; k < *pos; k++)
+        oc('\b');
+    for (k = 0; src[k] && k < LINE; k++)
+        line[k] = src[k];
+    n = k;
+    redraw(0, n, old > n ? old - n : 0);
+    for (k = 0; k < n; k++)
+        oc(line[k]);
+    *pos = n;
+    return n;
+}
+
 static void read_line(void)
 {
-    int n = 0;
-    unsigned char c;
+    unsigned n = 0, pos = 0, k, key, browse = 0;
+    unsigned char c, sc;
 
+    overwrite = 0;
     for (;;) {
-        c = (unsigned char)KbdCharIn();
+        oflush();
+        key = KbdCharIn();
+        c = (unsigned char)key;
+        sc = (unsigned char)(key >> 8);
         if (c == 13) {
-            puts("\n");
             break;
-        }
-        if (c == 8) {
-            if (n) {
-                n--;
-                puts("\b \b");
+        } else if (c == 0 || c == 0xE0) {   /* Sondertasten         */
+            switch (sc) {
+            case 0x4B:                      /* links                */
+                if (pos) {
+                    pos--;
+                    oc('\b');
+                }
+                break;
+            case 0x4D:                      /* rechts               */
+                if (pos < n)
+                    oc(line[pos++]);
+                break;
+            case 0x47:                      /* Pos1                 */
+                while (pos) {
+                    pos--;
+                    oc('\b');
+                }
+                break;
+            case 0x4F:                      /* Ende                 */
+                while (pos < n)
+                    oc(line[pos++]);
+                break;
+            case 0x53:                      /* Entf                 */
+                if (pos < n) {
+                    for (k = pos; k + 1 < n; k++)
+                        line[k] = line[k + 1];
+                    n--;
+                    redraw(pos, n, 1);
+                }
+                break;
+            case 0x52:                      /* Einfg                */
+                overwrite = !overwrite;
+                break;
+            case 0x48:                      /* auf: aelterer Befehl */
+                if (browse < hist_n)
+                    n = set_line(hist_get(browse++), &pos, n);
+                break;
+            case 0x50:                      /* ab: neuerer Befehl   */
+                if (browse > 1)
+                    n = set_line(hist_get(--browse - 1), &pos, n);
+                else if (browse == 1) {
+                    browse = 0;
+                    n = set_line("", &pos, n);
+                }
+                break;
+            case 0x49:                      /* Bild auf: aeltester  */
+                if (hist_n) {
+                    browse = hist_n;
+                    n = set_line(hist_get(hist_n - 1), &pos, n);
+                }
+                break;
+            case 0x51:                      /* Bild ab: neuester    */
+                if (hist_n) {
+                    browse = 1;
+                    n = set_line(hist_get(0), &pos, n);
+                }
+                break;
+            case 0x3D:                      /* F3: Rest des letzten */
+                if (hist_n) {
+                    char *l = hist_get(0);
+                    for (k = 0; l[k] && k < n; k++)
+                        ;
+                    while (l[k] && n < LINE) {
+                        line[n++] = l[k++];
+                        oc(line[n - 1]);
+                    }
+                    pos = n;
+                }
+                break;
             }
-        } else if (c == 27) {
-            while (n) {
+        } else if (c == 8) {                /* Rueckschritt         */
+            if (pos) {
+                pos--;
+                oc('\b');
+                for (k = pos; k + 1 < n; k++)
+                    line[k] = line[k + 1];
                 n--;
-                puts("\b \b");
+                redraw(pos, n, 1);
             }
-        } else if (c >= 32 && n < LINE) {
-            line[n++] = (char)c;
-            putc((char)c);
+        } else if (c == 27) {               /* Esc: Zeile leeren    */
+            browse = 0;
+            n = set_line("", &pos, n);
+        } else if (c >= 32) {
+            if (overwrite && pos < n) {
+                line[pos++] = (char)c;
+                oc((char)c);
+            } else if (n < LINE) {
+                for (k = n; k > pos; k--)
+                    line[k] = line[k - 1];
+                line[pos] = (char)c;
+                n++;
+                redraw(pos, n, 0);
+                oc(line[pos++]);
+            }
         }
     }
+    oc('\n');
+    oflush();
     line[n] = 0;
+    hist_add(line, n);
+}
+
+/* DOSKEY /HISTORY: gemerkte Befehle zeigen (DOSKEY selbst ist eingebaut) */
+static void cmd_doskey(char *arg)
+{
+    unsigned i;
+    if (!*arg) {
+        puts("DOSKEY ist eingebaut: Pfeiltasten, Pos1/Ende, Einfg/Entf, F3, Esc.\n"
+             "DOSKEY /HISTORY zeigt die letzten Befehle.\n");
+        return;
+    }
+    for (i = hist_n; i > 1; i--) {      /* ohne diesen Aufruf selbst */
+        puts(hist_get(i - 1));
+        puts("\n");
+    }
 }
 
 /* ein Wort aus der Eingabe als eigene Zeichenkette */
@@ -612,6 +795,7 @@ static void cmd_help(void)
          "  SHUTDOWN [/H|/R] herunterfahren (/H anhalten, /R neu starten), auch POWEROFF\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER             Version anzeigen\n"
+         "  DOSKEY /HISTORY letzte Befehle; Pfeil auf/ab holt sie zur\x81" "ck, F3, Einfg\n"
          "  ECHO Text       Text ausgeben\n"
          "  START Programm  Programm in eigener Sitzung starten\n"
          "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
@@ -1106,6 +1290,8 @@ static int execute(char *l)
         cmd_cd(arg);
     else if (same(cmd, "VER"))
         cmd_ver();
+    else if (same(cmd, "DOSKEY"))
+        cmd_doskey(arg);
     else if (same(cmd, "ECHO")) {
         if (same(arg, "OFF"))
             echo_on = 0;

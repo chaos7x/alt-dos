@@ -42,7 +42,10 @@ und PC-DOS.
   `AUTOEXEC.CMD` abarbeitet. Wie bei OS/2 gehören `.CMD`-Dateien der nativen
   Seite, `AUTOEXEC.BAT` und `SHELL=` bleiben der DOS-Box (ab 6.0) vorbehalten;
   `.BAT` führt COMMAND.EXE bis dahin trotzdem aus
-- `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (`/A`, `/P`, freier Platz), `CD`,
+- `COMMAND.EXE`: Zeileneditor und Befehlsspeicher wie DOSKEY eingebaut
+  (Pfeil auf/ab, links/rechts, Pos1/Ende, Einfg/Entf, F3, Esc, Bild auf/ab;
+  `DOSKEY /HISTORY` listet die letzten 16 Befehle).
+  Befehlsinterpreter mit `DIR` (`/A`, `/P`, Muster, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
   mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]
