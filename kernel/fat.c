@@ -403,7 +403,7 @@ static int walk(int d, const char *path, struct found *f)
 
 static int revalidate(int d);
 
-static int fat_open(int d, const char *path, struct ifs_file *fl)
+static int fat_open(int d, const char *path, struct ifs_file __far *fl)
 {
     struct found f;
     if (revalidate(d) || walk(d, path, &f) || (f.attr & ATTR_DIR))
@@ -460,7 +460,7 @@ static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent 
     return -1;
 }
 
-static int fat_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+static int fat_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     int d = f->drive;
@@ -641,7 +641,7 @@ static int revalidate(int d)
     return fat_mount(d) ? IFS_ERR : 0;
 }
 
-static int fat_create(int d, const char *path, struct ifs_file *fl)
+static int fat_create(int d, const char *path, struct ifs_file __far *fl)
 {
     struct found par, f;
     char n[11];
@@ -691,7 +691,7 @@ static unsigned next_or_alloc(int d, unsigned c)
     return n != FAT_END ? n : alloc_cluster(d, c);
 }
 
-static int fat_write(struct ifs_file *f, unsigned long pos, unsigned sel,
+static int fat_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                      unsigned off, unsigned len)
 {
     int d = f->drive;
@@ -769,7 +769,7 @@ static int fat_write(struct ifs_file *f, unsigned long pos, unsigned sel,
     return (int)done;
 }
 
-static int fat_close(struct ifs_file *f)
+static int fat_close(struct ifs_file __far *f)
 {
     unsigned char __far *e;
     int d = f->drive;
@@ -981,12 +981,12 @@ static int vol_ok(int d)
 }
 #define VOL_OK(d) vol_ok(d)
 
-int ifs_open(int drive, const char *path, struct ifs_file *f)
+int ifs_open(int drive, const char *path, struct ifs_file __far *f)
 {
     return VOL_OK(drive) ? vol[drive].drv->open(drive, path, f) : -1;
 }
 
-int ifs_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len)
 {
     return VOL_OK(f->drive) ? vol[f->drive].drv->read(f, pos, sel, off, len) : -1;
@@ -1004,18 +1004,18 @@ int ifs_isdir(int drive, const char *path)
 
 #define HAS(d, fn) (VOL_OK(d) && vol[d].drv->fn)
 
-int ifs_create(int drive, const char *path, struct ifs_file *f)
+int ifs_create(int drive, const char *path, struct ifs_file __far *f)
 {
     return HAS(drive, create) ? vol[drive].drv->create(drive, path, f) : IFS_WP;
 }
 
-int ifs_write(struct ifs_file *f, unsigned long pos, unsigned sel,
+int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len)
 {
     return HAS(f->drive, write) ? vol[f->drive].drv->write(f, pos, sel, off, len) : IFS_WP;
 }
 
-int ifs_close(struct ifs_file *f)
+int ifs_close(struct ifs_file __far *f)
 {
     return HAS(f->drive, close) ? vol[f->drive].drv->close(f) : 0;
 }

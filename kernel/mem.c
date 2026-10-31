@@ -10,9 +10,13 @@
  * BIOS-Daten, Bootbereich, DMA-Puffer und Kernel) und ab 1 MB. Das Loch
  * dazwischen (Video, ROMs) bleibt dauerhaft belegt.
  */
+#include <i86.h>
 #include "mem.h"
 
-static unsigned char bitmap[8192];
+/* Die Bitmap liegt nicht im Kernelsegment (dort ist der Platz knapp),
+   sondern fest bei linear 9000h-AFFFh, Selektor MEMMAP_SEL (kern.h) */
+#define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
+#define BITMAP_SIZE 8192U
 static unsigned      free_units;
 
 #define USED(u)     (bitmap[(u) >> 3] & (1 << ((u) & 7)))
@@ -35,7 +39,7 @@ void mem_init(unsigned conv_kb, unsigned ext_kb)
     unsigned i;
     unsigned long end;
 
-    for (i = 0; i < sizeof(bitmap); i++)
+    for (i = 0; i < BITMAP_SIZE; i++)
         bitmap[i] = 0xFF;
     free_units = 0;
 

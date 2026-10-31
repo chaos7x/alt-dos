@@ -37,19 +37,19 @@ struct volume {
 struct ifs_driver {
     const char *name;
     int  (*mount)(int drive);                               /* 0 = ok */
-    int  (*open)(int drive, const char *path, struct ifs_file *f);
+    int  (*open)(int drive, const char *path, struct ifs_file __far *f);
     /* ab Position 'pos' bis zu 'len' Bytes nach sel:off -> Bytes, -1 */
-    int  (*read)(struct ifs_file *f, unsigned long pos,
+    int  (*read)(struct ifs_file __far *f, unsigned long pos,
                  unsigned sel, unsigned off, unsigned len);
     /* n-ter Eintrag im Verzeichnis 'dir', 0 = ok, -1 = Ende */
     int  (*readdir)(int drive, const char *dir, unsigned n, struct ifs_dirent *d);
     /* ist 'path' ein Verzeichnis? 1 = ja */
     int  (*isdir)(int drive, const char *path);
     /* ab hier optional (0 = nur lesbar); Rueckgabe 0 oder IFS_* */
-    int  (*create)(int drive, const char *path, struct ifs_file *f);
-    int  (*write)(struct ifs_file *f, unsigned long pos,
+    int  (*create)(int drive, const char *path, struct ifs_file __far *f);
+    int  (*write)(struct ifs_file __far *f, unsigned long pos,
                   unsigned sel, unsigned off, unsigned len);  /* -> Bytes */
-    int  (*close)(struct ifs_file *f);
+    int  (*close)(struct ifs_file __far *f);
     int  (*remove)(int drive, const char *path);
     int  (*mkdir)(int drive, const char *path);
     int  (*rmdir)(int drive, const char *path);
@@ -62,15 +62,15 @@ extern struct ifs_driver fat_driver, pre_driver, mod_driver;
 extern int floppy_lazy;
 
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
-int ifs_open(int drive, const char *path, struct ifs_file *f);
-int ifs_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+int ifs_open(int drive, const char *path, struct ifs_file __far *f);
+int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);
 int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d);
 int ifs_isdir(int drive, const char *path);
-int ifs_create(int drive, const char *path, struct ifs_file *f);
-int ifs_write(struct ifs_file *f, unsigned long pos, unsigned sel,
+int ifs_create(int drive, const char *path, struct ifs_file __far *f);
+int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len);
-int ifs_close(struct ifs_file *f);
+int ifs_close(struct ifs_file __far *f);
 int ifs_remove(int drive, const char *path);
 int ifs_mkdir(int drive, const char *path);
 int ifs_rmdir(int drive, const char *path);

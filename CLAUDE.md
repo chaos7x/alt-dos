@@ -81,7 +81,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `drv_req.bsize`): 512 für Platten/Diskette, 2048 für CD-ROMs. FAT und
   Partitionen nur auf 512er-Geräten, CDs nur lesend.
 - Kernelstack je Task 768 Worte: FAPI -> IFS-Modul -> DevHlp -> Treiber
-  schachtelt tief. BSS des Kernels liegt bei ~57 KB von 64 KB.
+  schachtelt tief. Die Kernelstacks bleiben in DGROUP (Kernel-C setzt
+  SS = DS voraus). DGROUP liegt bei ~49 KB von 64 KB.
+- Was mit der Konfiguration wächst, gehört nicht nach DGROUP, sondern in
+  eigene Kernelsegmente: `kseg_alloc(bytes)` -> Selektor (GDT-Plätze
+  `KSEG_IDX`, `NKSEG`), Zugriff über `__far`-Zeiger. Beispiel: Dateitabelle
+  `files` (Größe `FILES=`). `KSEG_IDX(0)` ist fest die Belegungs-Bitmap der
+  Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
+  `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
 - Der Kernel ist ein 64-KB-Segment ab 10000h; `ATDOS.SYS` (Datei) darf
   höchstens 32 KB groß sein, BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
@@ -228,14 +235,8 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
   `drv_req`, IDE `READ MULTIPLE`/Sektorzahl, SCSI Blockzahl in READ(10));
   braucht größeren DMA-Puffer bzw. direkte Übertragung ins Ziel – auch ohne
   Cache ein großer Gewinn auf echten Platten.
-- `CONFIG.SYS` kompatibel zu MS-DOS: `FILES=` (Größe der Handle-Tabelle,
-  heute fest 8 – Tabelle dafür aus dem Kernelsegment in ein eigenes Segment
-  verlegen, BSS ist knapp), `BUFFERS=` (Anzahl Sektorpuffer, der eingebaute
-  kleine Cache unter einem SMARTDRV), `STACKS=` (im Protected Mode ohne
-  Bedeutung: annehmen, nichts tun), `FCBS=` (FAPI kennt keine FCBs; erst für
-  die DOS-Box in 5.1 von Bedeutung: annehmen, merken). Unbekanntes nicht
-  mehr als Fehler melden, sondern wie MS-DOS still übergehen bzw. kurz
-  hinweisen. Auch `REM`, `DEVICEHIGH=` (wie `DEVICE=`), `BREAK=`, `LASTDRIVE=`.
+- `BUFFERS=` wird gelesen (`nbuffers`), aber noch nicht benutzt – wird der
+  eingebaute Sektor-Cache unter einem späteren SMARTDRV.
 - Platten-Cache wie SMARTDRV: Lese- und Schreib-Cache im erweiterten
   Speicher (Größe in `CONFIG.SYS`), verzögertes Schreiben mit Zeitgrenze,
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur

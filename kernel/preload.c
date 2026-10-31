@@ -204,12 +204,24 @@ void preload(void)
             }
             if (k == 6) {
                 s += 6;
-                while (s < i && c[s] == ' ')
-                    s++;
+                if (i - s > 4 && (c[s] | 0x20) == 'h' && (c[s + 1] | 0x20) == 'i' &&
+                    (c[s + 2] | 0x20) == 'g' && (c[s + 3] | 0x20) == 'h')
+                    s += 4;             /* DEVICEHIGH                    */
+                if (s < i && c[s] != '=' && c[s] != ' ' && c[s] != '\t')
+                    s = i;              /* anderes Wort, z. B. DEVICEX   */
+                while (s < i && c[s] != '=')
+                    s++;                /* Optionen wie /L:1 vor dem =   */
                 if (s < i && c[s] == '=') {
                     s++;
                     while (s < i && c[s] == ' ')
                         s++;
+                    while (s < i && (c[s] == '/' || (c[s] | 0x20) == 's') &&
+                           (c[s] == '/' || ((c[s + 1] | 0x20) == 'i' && c[s + 4] == '='))) {
+                        while (s < i && c[s] != ' ')    /* /L:.. SIZE=.. */
+                            s++;
+                        while (s < i && c[s] == ' ')
+                            s++;
+                    }
                     for (k = 0; s < i && c[s] != ' ' && k < sizeof(path) - 1; )
                         path[k++] = c[s++];
                     path[k] = 0;
@@ -226,7 +238,7 @@ void preload(void)
 /* ---- Pseudo-Dateisystem BOOT (Protected Mode) --------------------------- */
 static int pre_mount(int drive) { (void)drive; return 0; }
 
-static int pre_open(int drive, const char *path, struct ifs_file *f)
+static int pre_open(int drive, const char *path, struct ifs_file __far *f)
 {
     char n[12];
     int i, k;
@@ -248,7 +260,7 @@ static int pre_open(int drive, const char *path, struct ifs_file *f)
     return -1;
 }
 
-static int pre_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+static int pre_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     struct pre_file *p = &pre[f->first];

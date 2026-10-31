@@ -11,6 +11,9 @@
 #include "../include/fapi_abi.h"
 #include "../include/fx.h"
 #include "mem.h"
+#if MEMMAP_SEL != KSEG_IDX(0) * 8
+#error MEMMAP_SEL passt nicht zu KSEG_IDX(0)
+#endif
 #include "ifs.h"
 #include "../include/drv.h"
 
@@ -84,13 +87,17 @@ static unsigned       alloc_units;                /* per DosAllocSeg       */
 static unsigned       image_units;                /* Programmabbilder      */
 static int            current = -1;
 
-#define NFILE 8
-static struct {
+/* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
+   (wie MS-DOS: fuer alle Programme zusammen) */
+struct ofile {
     signed char     owner;  /* Task oder -1                              */
     struct ifs_file f;
     unsigned long   pos;
     char            path[IFS_PATHLEN];  /* kanonisch, fuer "in Benutzung" */
-} files[NFILE];
+};
+static struct ofile __far *files;
+static unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
+#define NFILE nfiles
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
 static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
@@ -129,6 +136,7 @@ void gdt_build(void)
     set_desc(6, 0, 0, ACC_KDATA);               /* SCRATCH              */
     set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
     set_desc(8, 0, 0, ACC_KDATA);               /* SCRATCH2             */
+    set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
         set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
         set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
@@ -229,6 +237,27 @@ static void system_down(int restart)
 static void shutdown(void)
 {
     system_down(1);
+}
+
+/* ---- eigene Kernelsegmente -------------------------------------------- */
+unsigned kseg_alloc(unsigned long bytes)
+{
+    unsigned i, u, n;
+
+    if (bytes == 0 || bytes > 0x10000UL)
+        return 0;
+    bytes = (bytes + 1) & ~1UL;         /* zero_seg schreibt Worte       */
+    for (i = 0; i < NKSEG && gdt[KSEG_IDX(i)].access; i++)
+        ;
+    if (i == NKSEG)
+        return 0;
+    n = (unsigned)((bytes + MEM_UNIT - 1) >> 8);
+    u = mem_alloc(n);
+    if (!u)
+        return 0;
+    set_desc(KSEG_IDX(i), (unsigned long)u << 8, (unsigned)(bytes - 1), ACC_KDATA);
+    zero_seg(KSEG_IDX(i) * 8, (unsigned)((bytes + 1) >> 1));
+    return KSEG_IDX(i) * 8;
 }
 
 /* ---- Echtzeituhr (CMOS) ------------------------------------------------ */
@@ -728,7 +757,7 @@ static int user_ok(unsigned sel, unsigned off, unsigned len, int write)
 }
 
 /* ---- Dateien in Benutzung ---------------------------------------------- */
-static int scmp(const char *a, const char *b)
+static int scmp(const char __far *a, const char *b)
 {
     while (*a && *a == *b)
         a++, b++;
@@ -736,7 +765,7 @@ static int scmp(const char *a, const char *b)
 }
 
 /* a liegt in b oder ist b ("\\DOS\\X" in "\\DOS"); "\\" enthaelt alles */
-static int path_in(const char *a, const char *b)
+static int path_in(const char __far *a, const char *b)
 {
     int i;
     if (b[0] == '\\' && b[1] == 0)
@@ -879,7 +908,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return FAPI_ERROR;
         files[k].owner = (signed char)current;
         files[k].pos = 0;
-        scopy(files[k].path, canon, IFS_PATHLEN);
+        far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
         return k;
 
     case FAPI_CREATE:
@@ -898,7 +927,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return ifs_err(t);
         files[k].owner = (signed char)current;
         files[k].pos = 0;
-        scopy(files[k].path, canon, IFS_PATHLEN);
+        far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
         return k;
 
     case FAPI_WRITE:
@@ -1466,28 +1495,28 @@ static int mod_mount(int drive)
     return mod_call(drive, IFSM_MOUNT);
 }
 
-static int mod_open(int drive, const char *path, struct ifs_file *f)
+static int mod_open(int drive, const char *path, struct ifs_file __far *f)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     if (mod_mount(drive) || mod_call(drive, IFSM_OPEN))
         return -1;
-    far_copy(KDATA, (unsigned)f, KDATA, (unsigned)&ireq.f, sizeof(*f));
+    far_copy(FP_SEG(f), FP_OFF(f), KDATA, (unsigned)&ireq.f, sizeof(*f));
     f->drive = (unsigned char)drive;
     f->flags = 0;
     return 0;
 }
 
-static int mod_read(struct ifs_file *f, unsigned long pos, unsigned sel,
+static int mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
-    far_copy(KDATA, (unsigned)&ireq.f, KDATA, (unsigned)f, sizeof(*f));
+    far_copy(KDATA, (unsigned)&ireq.f, FP_SEG(f), FP_OFF(f), sizeof(*f));
     ireq.pos = pos;
     ireq.sel = (unsigned short)sel;
     ireq.off = (unsigned short)off;
     ireq.len = (unsigned short)len;
     if (mod_call(f->drive, IFSM_READ))
         return -1;
-    far_copy(KDATA, (unsigned)f, KDATA, (unsigned)&ireq.f, sizeof(*f));
+    far_copy(FP_SEG(f), FP_OFF(f), KDATA, (unsigned)&ireq.f, sizeof(*f));
     return ireq.result;
 }
 
@@ -1540,11 +1569,37 @@ static void cd_drives(void)
     }
 }
 
-/* CONFIG.SYS: DEVICE=Treiber [Argumente] */
+/* CONFIG.SYS wie MS-DOS. Wirksam: DEVICE=, DEVICEHIGH= (wie DEVICE, im
+   Protected Mode ist alles "hoch"), IFS=, FILES=, BUFFERS=. Angenommen
+   und ohne Bedeutung im Protected Mode: STACKS=, FCBS=, BREAK=,
+   LASTDRIVE=, DOS=, SHELL=, COUNTRY=, INSTALL=, NUMLOCK=, SWITCHES=, SET=
+   und die Menuebefehle von MS-DOS 6. Anderes wird gemeldet und uebergangen. */
+static unsigned nbuffers = 15;          /* BUFFERS=, fuer den Platten-Cache */
+
+static int kw(const char *l, const char *k)
+{
+    while (*k && *l == *k)
+        l++, k++;
+    return *k == 0 && *l == 0;
+}
+
+static unsigned num_arg(const char *v)
+{
+    unsigned n = 0;
+    while (*v >= '0' && *v <= '9')
+        n = n * 10 + (unsigned)(*v++ - '0');
+    return n;
+}
+
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
-    unsigned p = 0;
+    static const char *const quiet[] = {
+        "STACKS", "FCBS", "BREAK", "LASTDRIVE", "DOS", "SHELL", "COUNTRY",
+        "INSTALL", "INSTALLHIGH", "NUMLOCK", "SWITCHES", "SET", "MENUITEM",
+        "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", 0
+    };
+    unsigned p = 0, n;
     int size, dev0, i;
     char *v;
 
@@ -1552,19 +1607,26 @@ static void config_sys(void)
     if (size < 0)
         return;
     while (next_line(&p, (unsigned)size, line)) {
+        if (line[0] == ';')
+            continue;
         for (v = line; *v && *v != '='; v++)
             ;
         if (!*v)
-            continue;
+            continue;                   /* [MENU]-Abschnitte u. ae.     */
         *v++ = 0;
         while (*v == ' ')
             v++;
-        for (i = 0; line[i]; i++)
+        for (i = 0; line[i] && line[i] != ' ' && line[i] != '\t'; i++)
             line[i] = up(line[i]);
-        while (i > 0 && line[i - 1] == ' ')
-            line[--i] = 0;
-        if (line[0] == 'D' && line[1] == 'E' && line[2] == 'V' && line[3] == 'I' &&
-            line[4] == 'C' && line[5] == 'E' && line[6] == 0) {
+        line[i] = 0;                    /* "DEVICEHIGH /L:1 " -> Wort   */
+        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH")) {
+            while (*v == '/' || (up(v[0]) == 'S' && up(v[1]) == 'I' && up(v[2]) == 'Z' &&
+                                 up(v[3]) == 'E' && v[4] == '=')) {
+                while (*v && *v != ' ')             /* /L:1,1234 SIZE=... */
+                    v++;
+                while (*v == ' ')
+                    v++;
+            }
             vio_kputs(boot_session, "\xFE DEVICE=");
             vio_kputs(boot_session, v);
             vio_kputs(boot_session, "\n");
@@ -1572,15 +1634,25 @@ static void config_sys(void)
             if (load_driver(v, 0) > 0)
                 for (i = dev0; i < nblk; i++)
                     mount_disk(i);
-        } else if (line[0] == 'I' && line[1] == 'F' && line[2] == 'S' && line[3] == 0) {
+        } else if (kw(line, "IFS")) {
             vio_kputs(boot_session, "\xFE IFS=");
             vio_kputs(boot_session, v);
             vio_kputs(boot_session, "\n");
             load_driver(v, 1);
+        } else if (kw(line, "FILES")) {
+            n = num_arg(v);
+            nfiles = n < 8 ? 8 : n > 255 ? 255 : n;
+        } else if (kw(line, "BUFFERS")) {
+            n = num_arg(v);
+            nbuffers = n < 1 ? 1 : n > 99 ? 99 : n;
         } else {
-            vio_kputs(boot_session, "\xFE CONFIG.SYS: unbekannt: ");
-            vio_kputs(boot_session, line);
-            vio_kputs(boot_session, "\n");
+            for (i = 0; quiet[i] && !kw(line, quiet[i]); i++)
+                ;
+            if (!quiet[i]) {
+                vio_kputs(boot_session, "\xFE CONFIG.SYS: unbekannt: ");
+                vio_kputs(boot_session, line);
+                vio_kputs(boot_session, "\n");
+            }
         }
     }
     cd_drives();
@@ -1589,11 +1661,8 @@ static void config_sys(void)
 void kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
-    unsigned p;
+    unsigned p, k;
     int s0, s, t, i, n = 0, size;
-
-    for (i = 0; i < NFILE; i++)
-        files[i].owner = -1;
 
     pic_pit_init();
 
@@ -1661,6 +1730,14 @@ void kmain(void)
         num[3] = 0;
         vio_kputs(s0, num);
     }
+
+    /* Dateitabelle nach FILES= */
+    k = kseg_alloc(nfiles * sizeof(struct ofile));   /* < 64 KB, ohne __U4M */
+    if (!k)
+        panic("Kein Speicher f\x81r die Dateitabelle (FILES=).");
+    files = MK_FP(k, 0);
+    for (i = 0; i < (int)nfiles; i++)
+        files[i].owner = -1;
 
     size = read_cfg("\\STARTUP.CMD");
     if (size < 0)

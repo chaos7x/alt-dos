@@ -25,6 +25,11 @@ und PC-DOS.
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
   Platten ohne LBA; ATAPI-CD-ROMs als Einheit) – beide lesen und schreiben,
   CD-ROMs (2048-Byte-Blöcke) nur lesen
+- `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
+  `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
+  `BUFFERS=`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
+  übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
   bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt

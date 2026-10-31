@@ -29,7 +29,10 @@
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
-#define NGDT        (9 + 3 * NTASK + 2 * NDRV)
+#define NKSEG       12              /* eigene Kernelsegmente (kseg_alloc)  */
+#define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
+#define NGDT        (9 + 3 * NTASK + 2 * NDRV + NKSEG)
+/* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
@@ -80,6 +83,9 @@ void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsign
 void delay_ticks(unsigned n);
 void panic(const char *msg);
 void reboot(void);
+/* Kernelsegment ausserhalb von DGROUP (Tabellen, Puffer), genullt;
+   -> Selektor oder 0. Fuer alles, was mit der Konfiguration waechst. */
+unsigned kseg_alloc(unsigned long bytes);
 void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
 extern volatile unsigned reboot_count;
 unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
