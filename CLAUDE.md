@@ -234,7 +234,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   der ESDI-Platte (Bootsektor per BIOS, danach IDE.SYS). WD1003 ebenfalls
   bestätigt (Weg ohne IDENTIFY): Master 130/16/63 und Slave 1024/16/63 aus
   INT 41h/46h, Start von C:. Anzeige MFM (≤17 Sektoren/Spur), RLL (≤26),
-  sonst nur „Platte“ – 86Box erlaubt am WD1003 auch 63.
+  sonst „MFM/RLL-Platte“ – im BIOS (Typ 47) und in 86Box geht auch 63.
   Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
   die Einheitentabelle (jetzt 128).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
