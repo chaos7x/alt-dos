@@ -470,14 +470,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und 386DX in 86Box, danach Umstieg auf 486DX. Build mit `cpu 386` / `-3`,
   damit keine 486-Befehle (`BSWAP`, `XADD`, `CMPXCHG`, `INVD`, `WBINVD`,
   `INVLPG`) hineinrutschen.
-- Komprimierung: nicht als DoubleSpace-Container (feste Größe, geschätzter
-  freier Platz, ein Fehler trifft das ganze Laufwerk), sondern wenn, dann
-  im eigenen Dateisystem eingebaut wie bei NTFS (ab NT 3.51, Attribut pro
+- Komprimierung: Ein DoubleSpace-Container hat Schwächen (feste Größe,
+  geschätzter freier Platz, ein Fehler trifft das ganze Laufwerk); besser
+  ist sie im Dateisystem eingebaut wie bei NTFS (ab NT 3.51, Attribut pro
   Datei, Blöcke von 16 Clustern) bzw. ZFS/btrfs (pro Block, Unkomprimierbares
   bleibt roh) – braucht Extents statt FAT-Kette, schnelles LZ-Verfahren
-  für den 386. FAT32 bleibt davon unberührt. DoubleSpace (MS-DOS 6)
-  höchstens nur lesend, um alte Platten zu übernehmen. Eigenes
-  Dateisystem mit Komprimierung: Option für 6.x/7.0, noch nicht entschieden.
+  für den 386. FAT32 bleibt davon unberührt. Eigenes Dateisystem mit
+  Komprimierung: Option für 6.x/7.0, noch nicht entschieden.
+  DoubleSpace bleibt im Plan (Entscheidung des Nutzers), vor allem wegen
+  der Grundlage: **Laufwerk aus einer Datei** (Loop-Device) im Kernel –
+  eine Datei auf einem eingehängten Laufwerk wird als Blockgerät
+  eingehängt (auch für Disketten- und Plattenabbilder nützlich). Darauf
+  `DBLSPACE.IFS` (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6 zum
+  Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
+  `UDBLSPACE.EXE` (CHKDSK). Zeitlich 6.0.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
