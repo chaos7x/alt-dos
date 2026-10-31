@@ -396,9 +396,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (wie der 16-Bit-Kernel von OS/2 1.x); weitere Tabellen, Stacks und Puffer
   können später in eigene Segmente (`kseg_alloc`).
 - Hardware-Zeitraum DOS 6.0 (Entscheidung des Nutzers): Die Zeitlinie muss
-  nicht genau stimmen, 6.0 soll Hardware bis mindestens 1997 unterstützen
-  (PCI, VESA VBE 1.2/2.0 mit linearem Bildspeicher, 53C8xx, PCI-IDE mit
-  Busmaster-DMA).
+  nicht genau stimmen. Obergrenze, bis zu der DOS laufen muss: das Board des
+  Nutzers **ASUS P3B-F** (i440BX, PIIX4E, Slot 1, Pentium II/III, AGP, USB,
+  APM/ACPI, bis 1 GB SDRAM, Super-I/O W83977EF; in 86Box als `p3bf`).
+  Folgen für 6.0: Speicher per E820h bis 1 GB (Bitmap in 4-KB-Seiten:
+  32 KB); PIIX4-IDE im Kompatibilitätsmodus wie heute, dazu Busmaster-DMA
+  (SFF-8038i/UDMA); Partitionen über 2 GB -> FAT32 oder das eigene
+  6.0-Dateisystem (noch zu entscheiden); AGP-Grafik mit VBE 2.0/3.0 und
+  linearem Bildspeicher oberhalb 16 MB (über Seitentabellen/Selektoren);
+  Tastatur/Maus an USB über die Legacy-Emulation des BIOS (sieht aus wie
+  Port 60h/64h), eigener USB-Stack (UHCI) höchstens später; Ausschalten über
+  die 16-Bit-Protected-Mode-Schnittstelle von APM 1.2 (passt zum 16-Bit-
+  Kernel, ACPI wäre zu groß); Warteschleifen immer über den PIT messen, nie
+  über Befehlszählen (Pentium III ist hunderte Male schneller als der 286).
+  Dazu PCI, 53C8xx, VESA VBE 1.2/2.0.
 - Grafik in DOS 6.0: Video-BIOS/VESA über eine V86-Umgebung für Moduswechsel
   (allgemeiner VESA-Treiber), Spezialtreiber je Chip (ET4000 usw.) für Tempo.
   DOS-Boxen brauchen einen virtuellen Bildschirm wie VDD (Windows 3.0) bzw.
