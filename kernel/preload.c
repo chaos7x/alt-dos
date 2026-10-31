@@ -49,15 +49,18 @@ static unsigned long w32(unsigned char __far *p)
     return w16(p) | ((unsigned long)w16(p + 2) << 16);
 }
 
-/* Name aus CONFIG.SYS ("\aha154x.sys") in Verzeichnisform; 0 = ok */
+/* Name aus CONFIG.SYS ("C:\\DOS\\aha154x.sys") in Verzeichnisform; nur der
+   letzte Teil zaehlt - gesucht wird im Stamm und in \DOS. 0 = ok */
 static int to83(const char *s, char *n)
 {
     int i, k;
+    const char *q;
     for (i = 0; i < 11; i++)
         n[i] = ' ';
     n[11] = 0;
-    if (*s == '\\' || *s == '/')
-        s++;
+    for (q = s; *q && *q != ' '; q++)
+        if (*q == '\\' || *q == '/' || *q == ':')
+            s = q + 1;
     for (k = 0; *s && *s != '.' && *s != ' '; s++) {
         if (*s == '\\' || *s == '/' || *s == ':' || k == 8)
             return -1;                          /* nur Stammverzeichnis */
@@ -72,29 +75,73 @@ static int to83(const char *s, char *n)
     return 0;
 }
 
-/* Datei im Stammverzeichnis suchen -> erster Cluster, Groesse; 0 = ok */
-static int find(const char *n, unsigned *clus, unsigned long *size)
+static unsigned spc_shift(void)
 {
-    unsigned s, e, i;
-    unsigned char __far *d;
+    unsigned k = 0, j;
+    for (j = spc; j > 1; j >>= 1)
+        k++;
+    return k;
+}
 
+/* Eintrag n in einem Sektor voller Verzeichniseintraege; 1 = gefunden,
+   -1 = Ende des Verzeichnisses, 0 = weiter */
+static int scan_sec(const char *n, int dir, unsigned *clus, unsigned long *size)
+{
+    unsigned e, i;
+    unsigned char __far *d;
+    for (e = 0; e < 16; e++) {
+        d = buf() + (e << 5);
+        if (d[0] == 0)
+            return -1;
+        if ((d[11] & 0x08) || ((d[11] & 0x10) != 0) != dir)
+            continue;                           /* Name / falsche Art  */
+        for (i = 0; i < 11 && d[i] == (unsigned char)n[i]; i++)
+            ;
+        if (i == 11) {
+            *clus = w16(d + 26);
+            *size = w32(d + 28);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int find_root(const char *n, int dir, unsigned *clus, unsigned long *size)
+{
+    unsigned s;
+    int r;
     for (s = 0; s < (rootents >> 4); s++) {
         if (rm_read(root_lba + s))
             return -1;
-        for (e = 0; e < 16; e++) {
-            d = buf() + (e << 5);
-            if (d[0] == 0)
+        r = scan_sec(n, dir, clus, size);
+        if (r)
+            return r > 0 ? 0 : -1;
+    }
+    return -1;
+}
+
+/* Datei im Stamm, sonst in \DOS suchen -> erster Cluster, Groesse; 0 = ok */
+static int find(const char *n, unsigned *clus, unsigned long *size)
+{
+    static const char dosdir[12] = "DOS        ";
+    unsigned c, j;
+    int r;
+
+    if (find_root(n, 0, clus, size) == 0)
+        return 0;
+    if (find_root(dosdir, 1, &c, size))
+        return -1;
+    while (c >= 2 && c < 0xFFF8) {              /* Kette von \DOS      */
+        for (j = 0; j < spc; j++) {
+            if (rm_read(data_lba + ((unsigned long)(c - 2) << spc_shift()) + j))
                 return -1;
-            if (d[11] & 0x18)                   /* Verzeichnis, Name    */
-                continue;
-            for (i = 0; i < 11 && d[i] == (unsigned char)n[i]; i++)
-                ;
-            if (i == 11) {
-                *clus = w16(d + 26);
-                *size = w32(d + 28);
-                return 0;
-            }
+            r = scan_sec(n, 0, clus, size);
+            if (r)
+                return r > 0 ? 0 : -1;
         }
+        if (rm_read(fat_lba + (c >> 8)))
+            return -1;
+        c = w16(buf() + ((c & 0xFF) << 1));
     }
     return -1;
 }

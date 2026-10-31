@@ -95,13 +95,14 @@ cp $B/kernel.bin $B/ATDOS.SYS
 truncate -s 49152 $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
-# alle uebrigen Dateien: Quelle Ziel
-FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
+# alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS
+FILES="$B/task_command.exe COMMAND.EXE
+       CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD"
+DOSFILES="$B/task_keyb.exe KEYB.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE
        $B/task_less.exe LESS.EXE
-       CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD
        $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
@@ -110,10 +111,17 @@ copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
         mcopy -o $TARGET "$1" "$TO$2"
         shift 2
     done
+    mmd $TARGET "${TO}DOS"
+    set -- $DOSFILES
+    while [ $# -gt 0 ]; do
+        mcopy -o $TARGET "$1" "${TO}DOS/$2"
+        shift 2
+    done
 }
 TARGET="-i $IMG" TO="::" copy_files
 mcopy -i $IMG $B/atsys.com ::ATSYS.COM
 mdir -a -i $IMG :: | sed 's/^/  /'
+mdir -i $IMG ::DOS | sed 's/^/  /'
 
 echo "Festplatte (atdos-hd.img, 130/16/63 = 63 MB, FAT16)"
 HD=$B/atdos-hd.img
@@ -129,5 +137,6 @@ mcopy $B/ATDOS.SYS c:ATDOS.SYS
 mattrib +r +s +h c:ATDOS.SYS
 TARGET="" TO="c:" copy_files
 mdir -a c: | sed 's/^/  /'
+mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC
 rm -f $B/ATDOS.SYS

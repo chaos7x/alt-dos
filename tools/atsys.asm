@@ -4,7 +4,7 @@
 ;
 ; Wie SYS: kopiert alle Dateien des aktuellen Laufwerks (der AT-DOS-
 ; Diskette) ins Stammverzeichnis des Ziels, auch die versteckte ATDOS.SYS,
-; und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
+; dazu den Inhalt von \DOS nach Ziel:\DOS, und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
 ; 3..61) bleibt stehen. Verweigert Laufwerke mit IO.SYS, MSDOS.SYS oder
 ; IBMBIO.COM, damit eine MS-DOS-Startplatte nicht unbrauchbar wird.
 ;
@@ -51,6 +51,7 @@ org 0x100
         je      usage
         add     al, 'A'
         mov     [src_path], al
+        mov     [dos_path], al
         mov     [src_letter], al
 
         mov     ah, 0x1A                ; eigener DTA (80h ist die Befehlszeile)
@@ -100,7 +101,28 @@ org 0x100
         mov     ah, 0x4F
         int     0x21
         jnc     .file
-        mov     ah, 0x0D                ; alle Puffer auf die Platte
+
+        ; Unterverzeichnis \DOS (Werkzeuge, Treiber)
+        mov     ah, 0x4E
+        mov     cx, 0x07
+        mov     dx, dos_path
+        int     0x21
+        jc      .nodos
+        mov     al, [dst_letter]
+        mov     [dst_dir], al
+        mov     ah, 0x39                ; C:\DOS anlegen; gibt es schon: egal
+        mov     dx, dst_dir
+        int     0x21
+        mov     byte [subdir], 4
+        mov     ah, 0x4E
+        mov     cx, 0x07
+        mov     dx, dos_path
+        int     0x21
+.dfile: call    copy_file
+        mov     ah, 0x4F
+        int     0x21
+        jnc     .dfile
+.nodos: mov     ah, 0x0D                ; alle Puffer auf die Platte
         int     0x21
 
         ; neuen Code in den Bootsektor, BPB bleibt
@@ -126,9 +148,19 @@ org 0x100
 
 ; Datei aus dem DTA kopieren: Quelle X:\NAME -> Ziel Y:\NAME
 copy_file:
-        mov     si, dta + 0x1E
         mov     di, src_name
         mov     bx, dst_name
+        mov     cl, [subdir]            ; 0 oder 4: "DOS\" voranstellen
+        mov     si, dos_pfx
+.p:     test    cl, cl
+        jz      .np
+        lodsb
+        stosb
+        mov     [bx], al
+        inc     bx
+        dec     cl
+        jmp     .p
+.np:    mov     si, dta + 0x1E
 .n:     lodsb
         stosb
         mov     [bx], al
@@ -244,10 +276,14 @@ src_path    db "A:\*.*", 0
 chk_path    db "C:\", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 src_file:
 src_letter  db "A:\"
-src_name    times 13 db 0
+src_name    times 17 db 0
 dst_file:
 dst_letter  db "C:\"
-dst_name    times 13 db 0
+dst_name    times 17 db 0
+dos_path    db "A:\DOS\*.*", 0
+dst_dir     db "C:\DOS", 0
+dos_pfx     db "DOS\"
+subdir      db 0
 
 dst_drive   db 0
 hsrc        dw 0

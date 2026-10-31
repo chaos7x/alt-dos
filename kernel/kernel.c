@@ -1834,6 +1834,14 @@ static int load_driver(const char *line, int is_ifs)
     if (resolve(-1, path, &drive, canon))
         return -1;
     err = load_image(drive, canon, &h, &u, &n, &seg);
+    for (k = 0; path[k] && path[k] != '\\' && path[k] != ':'; k++)
+        ;
+    if (err == EXEC_ERR_NOTFOUND && !path[k]) {    /* nur Name: auch in \DOS */
+        static char alt[IFS_PATHLEN];
+        scopy(alt, "\\DOS", sizeof(alt));
+        scopy(alt + 4, canon, sizeof(alt) - 4);
+        err = load_image(drive, alt, &h, &u, &n, &seg);
+    }
     if (err) {
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
@@ -2292,9 +2300,9 @@ void kmain(void)
     scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));
     line[8] = (char)('A' + sys_drive);
     env_set(-1, line);
-    if (env_find(-1, "PATH", 4) < 0) {          /* Vorgabe: Startlaufwerk */
-        scopy(line, "PATH=A:\\", sizeof(line));
-        line[5] = (char)('A' + sys_drive);
+    if (env_find(-1, "PATH", 4) < 0) {          /* Vorgabe: X:\DOS;X:\ */
+        scopy(line, "PATH=A:\\DOS;A:\\", sizeof(line));
+        line[5] = line[12] = (char)('A' + sys_drive);
         env_set(-1, line);
     }
 
