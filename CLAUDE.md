@@ -420,8 +420,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   APM/ACPI, bis 1 GB SDRAM, Super-I/O W83977EF; in 86Box als `p3bf`).
   Folgen für 6.0: Speicher per E820h bis 1 GB (Bitmap in 4-KB-Seiten:
   32 KB); PIIX4-IDE im Kompatibilitätsmodus wie heute, dazu Busmaster-DMA
-  (SFF-8038i/UDMA); Partitionen über 2 GB -> FAT32 oder das eigene
-  6.0-Dateisystem (noch zu entscheiden); AGP-Grafik mit VBE 2.0/3.0 und
+  (SFF-8038i/UDMA); Partitionen über 2 GB -> FAT32 ist Pflicht
+  (Entscheidung des Nutzers, wegen des Austauschs mit Windows 95/98),
+  im Kernel neben FAT12/16 inkl. VFAT-Namen lesen; AGP-Grafik mit VBE 2.0/3.0 und
   linearem Bildspeicher oberhalb 16 MB (über Seitentabellen/Selektoren);
   Tastatur/Maus an USB über die Legacy-Emulation des BIOS (sieht aus wie
   Port 60h/64h), eigener USB-Stack (UHCI) höchstens später; Ausschalten über
@@ -469,6 +470,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und 386DX in 86Box, danach Umstieg auf 486DX. Build mit `cpu 386` / `-3`,
   damit keine 486-Befehle (`BSWAP`, `XADD`, `CMPXCHG`, `INVD`, `WBINVD`,
   `INVLPG`) hineinrutschen.
+- Komprimierung: nicht als DoubleSpace-Container (feste Größe, geschätzter
+  freier Platz, ein Fehler trifft das ganze Laufwerk), sondern wenn, dann
+  im eigenen Dateisystem eingebaut wie bei NTFS (ab NT 3.51, Attribut pro
+  Datei, Blöcke von 16 Clustern) bzw. ZFS/btrfs (pro Block, Unkomprimierbares
+  bleibt roh) – braucht Extents statt FAT-Kette, schnelles LZ-Verfahren
+  für den 386. FAT32 bleibt davon unberührt. DoubleSpace (MS-DOS 6)
+  höchstens nur lesend, um alte Platten zu übernehmen. Eigenes
+  Dateisystem mit Komprimierung: Option für 6.x/7.0, noch nicht entschieden.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
