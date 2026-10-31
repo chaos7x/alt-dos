@@ -1699,8 +1699,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         far_copy(usel, a1, KDATA, (unsigned)buf, IFS_PATHLEN + 2);
         return 0;
 
-    case FAPI_SELECTDISK:
-        if (a1 >= NDRIVE || !vol[a1].used)
+    case FAPI_SELECTDISK:                       /* A: ggf. erst einhaengen */
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1))
             return FAPI_ERROR;
         if (a1 != task[current].drive) {
             task[current].drive = (unsigned char)a1;
