@@ -38,6 +38,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosDup2(h, std)     F2(FAPI_DUP2, (h), (std))
 #define DosDup(h)           F2(FAPI_DUP, (h), 0)
 #define DosPipe(hh)         F2(FAPI_PIPE, (hh), 0)
+#define DosQHandType(h)     F2(FAPI_QHANDTYPE, (h), 0)
 #define DosWrite(h, buf, n) fapi_call(FAPI_WRITE, (h), (unsigned short)(buf), (n))
 #define DosDelete(name)     F2(FAPI_DELETE, (name), 0)
 #define DosMkDir(p)         F2(FAPI_MKDIR, (p), 0)

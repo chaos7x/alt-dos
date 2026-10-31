@@ -79,7 +79,10 @@ void kbd_irq(unsigned sc)
         else if (code == 0x1C && !rel) put(13 | (0x1C << 8));
         else if (code == 0x53 && !rel && ctrl && (alt || altgr))
             reboot_request();               /* Strg+Alt+Entf (Entf-Taste)       */
-        return;                     /* Pfeile usw. vorerst ignoriert    */
+        else if (!rel && code >= 0x47 && code <= 0x53)
+            put(0xE0 | (code << 8));        /* graue Pfeile, Bild, Pos1, Ende,
+                                               Einfg, Entf: wie das AT-BIOS  */
+        return;
     }
 
     switch (code) {
@@ -116,6 +119,8 @@ void kbd_irq(unsigned sc)
     }
     if (c)
         put(c | (code << 8));
+    else if (code && code < 0x59)
+        put(code << 8);             /* F-Tasten u. ae.: Zeichen 0, Scancode */
 }
 
 int kbd_get(void)

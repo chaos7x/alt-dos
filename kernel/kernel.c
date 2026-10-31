@@ -1401,6 +1401,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         of_release(k);
         return t ? ifs_err(t) : 0;
 
+    case FAPI_QHANDTYPE:
+        if ((k = h2e(a1)) < 0)
+            return FAPI_ERROR;
+        return files[k].kind == OF_CON ? HT_CONSOLE :
+               files[k].kind == OF_FILE ? HT_FILE : HT_PIPE;
+
     case FAPI_DUP2:
         if (a2 >= HBASE)
             return FAPI_ERROR;

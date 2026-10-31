@@ -70,7 +70,10 @@ und PC-DOS.
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 
-Programme auf der Diskette: **GREP** sucht mit regulären Ausdrücken nach dem
+Programme auf der Diskette: **LESS** zeigt Text an und blättert vor und
+zurück nach dem Vorbild von GNU less (Bild/Pfeile, `g G`, `123g`, `/` `?`
+`n N` mit Hervorhebung, `-N` Zeilennummern, `-i`, `h` Hilfe; aus Datei oder
+Pipe), **GREP** sucht mit regulären Ausdrücken nach dem
 Vorbild von GNU grep (`-i -v -n -c -l -h -H -r -s -E`, `. * + ? ^ $ [..] |`,
 Platzhalter in Dateinamen, erkennt Binärdateien), **MORE** blättert seitenweise, **FIND** sucht
 Text (`/V /C /N /I`, wie MS-DOS), **MEM** zeigt den Arbeitsspeicher, **TASKA**
@@ -138,6 +141,7 @@ selbst nur 8.3 kennt.
 | 39 | DosDup          | BX = Handle → neues Handle auf dasselbe |
 | 40 | DosPipe         | BX = Puffer (2 Worte) → Lese-, Schreib-Handle |
 | 41 | VioWrtStrAtt    | wie VioWrtStr, DX = Farbattribut |
+| 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die
