@@ -100,7 +100,7 @@ FILES="$B/task_command.exe COMMAND.EXE  $B/task_keyb.exe KEYB.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/task_a.exe TASKA.EXE
        $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE
-       STARTUP.CMD STARTUP.CMD  CONFIG.SYS CONFIG.SYS  AUTOEXEC.BAT AUTOEXEC.BAT
+       CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD
        $B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"

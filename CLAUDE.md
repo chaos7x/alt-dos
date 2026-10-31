@@ -63,7 +63,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `DosAllocSeg`-Segment, bis 4 Stufen) und `AUTOEXEC.BAT`. Umgebung je Task
   im Kernel (`env_*` in kernel.c, ein Kernelsegment für alle Tasks plus
   Systemumgebung)
-- `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
+- `AUTOEXEC.CMD` – Startdatei des nativen Befehlsinterpreters (`PROTSHELL=`
+  in CONFIG.SYS, Vorgabe `COMMAND.EXE /P`). Trennung wie OS/2: `.CMD` und
+  `PROTSHELL=` nativ; `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören ab 6.0 der
+  DOS-Box (V86) – AT-DOS 5.0 rührt `AUTOEXEC.BAT` nicht an.
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
 - `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`),
   `mkkbl.py` (alle Tastaturbelegungen: `.KBL`-Dateien und `kbd_gr.h` für den

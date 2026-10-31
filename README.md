@@ -36,8 +36,11 @@ und PC-DOS.
 - Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
-- Programmlader für das eigene FX-Format, `STARTUP.CMD` legt fest, was beim
-  Start läuft
+- Programmlader für das eigene FX-Format. Beim Start läuft der
+  Befehlsinterpreter aus `PROTSHELL=` (Vorgabe `COMMAND.EXE /P`), der
+  `AUTOEXEC.CMD` abarbeitet. Wie bei OS/2 gehören `.CMD`-Dateien der nativen
+  Seite, `AUTOEXEC.BAT` und `SHELL=` bleiben der DOS-Box (ab 6.0) vorbehalten;
+  `.BAT` führt COMMAND.EXE bis dahin trotzdem aus
 - `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (`/A`, `/P`, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`

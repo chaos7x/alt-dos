@@ -705,10 +705,12 @@ static void show_prompt(void)
 }
 
 /* Programm suchen wie COMMAND.COM: aktuelles Verzeichnis, dann PATH; je
-   Verzeichnis .EXE, .BAT, .COM. -> 0 nicht gefunden, 1 EXE, 2 BAT, 3 COM */
+   Verzeichnis .EXE, .CMD, .BAT, .COM. -> 0 nicht gefunden, 1 EXE,
+   2 Stapeldatei (.CMD nativ; .BAT gehoert ab 6.0 der DOS-Box), 3 COM */
 static int find_program(const char *w, unsigned wl, char *out)
 {
-    static const char *const ext[3] = { ".EXE", ".BAT", ".COM" };
+    static const char *const ext[4] = { ".EXE", ".CMD", ".BAT", ".COM" };
+    static const char type[4] = { 1, 2, 2, 3 };
     static char dir[FAPI_PATHLEN];
     const char *pp = 0;
     unsigned i, k, n, dl = 0;
@@ -733,21 +735,21 @@ static int find_program(const char *w, unsigned wl, char *out)
         out[k] = 0;
         if (has_ext) {
             if (exists(out)) {
-                for (e = 0; e < 3; e++) {
+                for (e = 0; e < 4; e++) {
                     for (i = 0; i < 4 && up(out[k - 4 + i]) == ext[e][i]; i++)
                         ;
                     if (i == 4)
-                        return e + 1;
+                        return type[e];
                 }
                 return 1;               /* andere Endung: als EXE versuchen */
             }
         } else
-            for (e = 0; e < 3; e++) {
+            for (e = 0; e < 4; e++) {
                 for (i = 0; i < 4; i++)
                     out[k + i] = ext[e][i];
                 out[k + 4] = 0;
                 if (exists(out))
-                    return e + 1;
+                    return type[e];
             }
         if (!pp || !*pp)
             return 0;
@@ -1341,8 +1343,10 @@ void main(void)
 
     puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 5.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
-    if (permanent && exists("\\AUTOEXEC.BAT")) {
-        if (!run_batch("\\AUTOEXEC.BAT", ""))
+    /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
+       OS/2) der DOS-Box und bleibt unangetastet */
+    if (permanent && exists("\\AUTOEXEC.CMD")) {
+        if (!run_batch("\\AUTOEXEC.CMD", ""))
             return;
         echo_on = 1;
         puts("\n");

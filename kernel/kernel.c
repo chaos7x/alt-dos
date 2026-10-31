@@ -5,7 +5,7 @@
  * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigener LDT und
  * ohne IOPL. Hardware und Speicher erreichen sie ausschliesslich ueber
  * die Family API (FAPI) per Call Gate. Programme laufen in Sitzungen mit
- * eigenem Bildschirm; die erste Sitzung startet, was STARTUP.CMD nennt.
+ * eigenem Bildschirm; die erste Sitzung startet PROTSHELL= (COMMAND.EXE /P).
  */
 #include "kern.h"
 #include "../include/fapi_abi.h"
@@ -457,7 +457,7 @@ static char up(char c)
 
 /* Pfad eines Tasks (oder t < 0: Laufwerk A:, Stamm) -> Laufwerk und
    kanonischer Pfad "\A\B" bzw. "\". Laenge der Eingabe bis 260 Zeichen. */
-/* Laufwerk fuer Kernel-Pfade ohne Task (CONFIG.SYS, STARTUP.CMD) und
+/* Laufwerk fuer Kernel-Pfade ohne Task (CONFIG.SYS, PROTSHELL=) und
    erstes Laufwerk der Programme: A: oder die Startpartition */
 static int sys_drive = 0;
 
@@ -842,7 +842,7 @@ static void switch_to(int t)
 }
 
 /* Strg+C: aktives Programm der Vordergrund-Sitzung beenden. Der Inhaber
-   der ersten Sitzung (die Shell aus STARTUP.CMD) ist geschuetzt. */
+   der ersten Sitzung (die Shell aus PROTSHELL=) ist geschuetzt. */
 static void do_break(void)
 {
     int s = vio_fg(), t;
@@ -1966,7 +1966,7 @@ static int read_cfg(const char *name)
     return (int)f.size;
 }
 
-/* naechste Zeile aus STARTUP.CMD/CONFIG.SYS: REM und Leerzeilen zaehlen nicht */
+/* naechste Zeile aus CONFIG.SYS: REM und Leerzeilen zaehlen nicht */
 static int next_line(unsigned *p, unsigned len, char *out)
 {
     unsigned k;
@@ -2101,6 +2101,7 @@ static void cd_drives(void)
    LASTDRIVE=, DOS=, SHELL=, COUNTRY=, INSTALL=, NUMLOCK=, SWITCHES=, SET=
    und die Menuebefehle von MS-DOS 6. Anderes wird gemeldet und uebergangen. */
 static unsigned nbuffers = 15;          /* BUFFERS=, fuer den Platten-Cache */
+static char protshell[FAPI_ARGLEN] = "COMMAND.EXE /P";   /* PROTSHELL=   */
 
 static int kw(const char *l, const char *k)
 {
@@ -2185,6 +2186,8 @@ static void config_sys(void)
         } else if (kw(line, "FILES")) {
             n = num_arg(v);
             nfiles = n < 8 ? 8 : n > 255 ? 255 : n;
+        } else if (kw(line, "PROTSHELL")) {
+            scopy(protshell, v, sizeof(protshell));
         } else if (kw(line, "BUFFERS")) {
             n = num_arg(v);
             nbuffers = n < 1 ? 1 : n > 99 ? 99 : n;
@@ -2204,8 +2207,8 @@ static void config_sys(void)
 void kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
-    unsigned p, k;
-    int s0, s, t, i, n = 0, size;
+    unsigned k;
+    int s0, t, i;
 
     pic_pit_init();
 
@@ -2300,30 +2303,19 @@ void kmain(void)
     if (!pipe_sel)
         panic("Kein Speicher f\x81r Pipes.");
 
-    size = read_cfg("\\STARTUP.CMD");
-    if (size < 0)
-        panic("STARTUP.CMD fehlt oder ist zu gross.");
-
-    /* erstes Programm in Sitzung 1, jedes weitere in einer eigenen */
-    p = 0;
-    while (next_line(&p, (unsigned)size, line)) {
-        s = n == 0 ? s0 : vio_open("");
-        if (s < 0)
-            break;
-        t = task_create(line, s, -1, -1);
-        if (t < 0) {
-            vio_kputs(s0, "\xFE STARTUP.CMD: ");
-            vio_kputs(s0, line);
-            vio_kputs(s0, " - ");
-            vio_kputs(s0, exec_err(-t));
-            vio_kputs(s0, "\n");
-            if (s != s0)
-                vio_close(s);
-            continue;
-        }
-        vio_title(s, task[t].name);
-        n++;
+    /* Befehlsinterpreter aus PROTSHELL= (Vorgabe COMMAND.EXE /P) in der
+       ersten Sitzung; er fuehrt AUTOEXEC.CMD aus. SHELL= bleibt wie bei
+       OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten. */
+    t = task_create(protshell, s0, -1, -1);
+    if (t < 0) {
+        vio_kputs(s0, "\xFE PROTSHELL=");
+        vio_kputs(s0, protshell);
+        vio_kputs(s0, " - ");
+        vio_kputs(s0, exec_err(-t));
+        vio_kputs(s0, "\n");
+        panic("Kein Befehlsinterpreter.");
     }
+    vio_title(s0, task[t].name);
     fd_motor_off();
     vio_kputs(s0, "\n");
     vio_focus(s0);
