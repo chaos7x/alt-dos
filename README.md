@@ -48,7 +48,8 @@ und PC-DOS.
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
   Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,
   zweites Tab listet die Möglichkeiten.
-  Befehlsinterpreter mit `DIR` (`/A`, `/P`, Muster, freier Platz), `CD`,
+  Befehlsinterpreter mit `DIR` (Verzeichnisse zuerst, `/A` alle bzw.
+  `/A:HSDRA` mit `-` wie MS-DOS, `/P`, Muster, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
   mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]

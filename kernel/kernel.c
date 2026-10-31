@@ -1082,7 +1082,7 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
     if ((unsigned)o->pos & (bs - 1))
         return -1;
     lba = o->pos >> (bs == 2048 ? 11 : 9);
-    total = vol[d].drv == &fat_driver ? vol[d].sectors : blk[dev].blocks;
+    total = vol[d].psize ? vol[d].psize : blk[dev].blocks;
     while (done < len && lba < total) {
         if (write) {
             far_copy(DMABUF, 0, sel, off + done, bs);
@@ -1601,7 +1601,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         for (k = 0; nm[k] && nm[k] != '.' && k < (int)sizeof(fi->fsname) - 1; k++)
             fi->fsname[k] = nm[k];
         fi->fsname[k] = 0;
-        fi->sectors = vol[a1].drv == &fat_driver ? vol[a1].sectors : blk[dv].blocks;
+        if (!vol[a1].used) {                /* nicht formatiert         */
+            fi->fsname[0] = 'R'; fi->fsname[1] = 'A'; fi->fsname[2] = 'W';
+            fi->fsname[3] = 0;
+        }
+        fi->sectors = vol[a1].psize ? vol[a1].psize : blk[dv].blocks;
+        fi->hidden = vol[a1].start;
+        fi->ptype = vol[a1].ptype;
         fi->bsize = blk[dv].bsize;
         fi->flags = (dv == BLK_FLOPPY ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0);
@@ -2298,8 +2304,12 @@ static void mount_disk(int dev)
                 ((unsigned long)rd16(DMABUF, 0x1BE + 16 * i + 10) << 16);
         if (type != 0x01 && type != 0x04 && type != 0x06 && type != 0x0E)
             continue;
-        if (ifs_mount(next_drive, dev, start, &fat_driver))
-            continue;
+        vol[next_drive].psize = rd16(DMABUF, 0x1BE + 16 * i + 12) |
+                ((unsigned long)rd16(DMABUF, 0x1BE + 16 * i + 14) << 16);
+        ifs_mount(next_drive, dev, start, &fat_driver);  /* auch unformatiert:
+                                           Buchstabe fuer FORMAT    */
+        vol[next_drive].present = 1;
+        vol[next_drive].ptype = type;
         vol[next_drive].part = (unsigned char)(i + 1);
         next_drive++;
         mounted++;
@@ -2582,7 +2592,7 @@ static void list_drives(void)
     struct blkdev *b;
 
     for (d = 2; d < NDRIVE; d++) {
-        if (!vol[d].used || d == PRE_DRIVE)
+        if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
             continue;
         b = &blk[vol[d].blk];
         msg[0] = (char)('A' + d);
@@ -2594,9 +2604,11 @@ static void list_drives(void)
             scopy(msg + n, "Partition ", sizeof(msg) - n);
             n += 10;
             msg[n++] = (char)('0' + vol[d].part);
-            scopy(msg + n, vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
-            n += 9;
-            udec((unsigned)(vol[d].sectors >> 11), msg + n);
+            scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
+                           vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
+            while (msg[n])
+                n++;
+            udec((unsigned)(vol[d].psize >> 11), msg + n);
             while (msg[n])
                 n++;
             scopy(msg + n, " MB", sizeof(msg) - n);
@@ -2665,6 +2677,7 @@ void kmain(void)
         /* Start von Diskette: A: ist Pflicht */
         if (fd_init())
             panic("Diskettencontroller antwortet nicht.");
+        vol[0].present = 1;
         if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
             panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
         vio_kputs(s0, "\xFE Laufwerk A: Diskette, ");
@@ -2672,8 +2685,12 @@ void kmain(void)
         config_sys();
     } else {
         /* Start von Festplatte: A: erst beim ersten Zugriff einhaengen */
-        if (fd_init() == 0)
+        if (fd_init() == 0) {
             floppy_lazy = 1;
+            vol[0].present = 1;             /* auch unformatiert (FORMAT) */
+            vol[0].blk = BLK_FLOPPY;
+            vol[0].drv = &fat_driver;
+        }
         vio_kputs(s0, "\xFE Start von Festplatte, ");
         udec(npre, num);
         vio_kputs(s0, num);

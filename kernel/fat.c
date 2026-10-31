@@ -1092,19 +1092,20 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
 /* Diskette A: beim Start von Festplatte erst beim ersten Zugriff */
 int floppy_lazy;
 
+/* Laufwerk vorhanden (auch unformatiert: FORMAT, DosOpenDrive) */
 int vol_present(int d)
 {
     if ((unsigned)d >= NDRIVE)
         return 0;
     if (d == 0 && !vol[0].used && floppy_lazy)
         ifs_mount(0, BLK_FLOPPY, 0, &fat_driver);
-    return vol[d].used;
+    return vol[d].used || vol[d].present;
 }
 
-/* gesperrte Laufwerke (CHKDSK /F, FORMAT) sind fuer das Dateisystem zu */
+/* Dateisystem eingehaengt; gesperrte Laufwerke (CHKDSK /F, FORMAT) sind zu */
 static int vol_ok(int d)
 {
-    return vol_present(d) && !vol[d].locked;
+    return vol_present(d) && vol[d].used && !vol[d].locked;
 }
 #define VOL_OK(d) vol_ok(d)
 
@@ -1266,6 +1267,6 @@ void vol_reset(int d)
         fc_dirty = 0;
     }
     dir_cache_reset();
-    if (vol[d].used && vol[d].drv->mount(d))
-        vol[d].used = 0;                /* nicht mehr lesbar          */
+    if (vol[d].drv)                     /* FORMAT: jetzt evtl. lesbar  */
+        vol[d].used = vol[d].drv->mount(d) == 0;
 }

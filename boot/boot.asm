@@ -46,14 +46,41 @@ start:
         cld
         mov     [drive], dl
 
-        mov     si, msg_load
-        call    puts
-
-        ; erster Datensektor = reserviert + FATs + Stammverzeichnis
+        ; Stammverzeichnis beginnt nach reserviert + FATs
         mov     al, [nfats]
         xor     ah, ah
         mul     word [spf]
         add     ax, [reserved]
+        mov     [lba], ax
+        push    ax                      ; Anfang des Stammverzeichnisses
+        ; ersten Sektor des Stammverzeichnisses nach 0050:0000 lesen und
+        ; ATDOS.SYS unter den ersten 16 Eintraegen suchen - sonst ist es
+        ; keine Systemdiskette (FORMAT ohne /S)
+        mov     ax, 0x0050
+        mov     es, ax
+        xor     bx, bx
+        call    read1
+        mov     cx, 16
+        xor     bx, bx
+.find:  push    cx
+        mov     si, kname
+        mov     di, bx                  ; ES = 0050h
+        mov     cx, 11
+        repe    cmpsb
+        pop     cx
+        je      .found
+        add     bx, 32
+        loop    .find
+        mov     si, msg_nosys
+        call    puts
+        xor     ax, ax                  ; Taste, dann neu starten
+        int     0x16
+        int     0x19
+.found:
+        mov     si, msg_load
+        call    puts
+        ; erster Datensektor = Stammverzeichnis + seine Groesse
+        pop     ax
         mov     bx, [rootents]
         shr     bx, 4                   ; 16 Eintraege je Sektor
         add     ax, bx
@@ -63,35 +90,11 @@ start:
         mov     es, ax
         xor     bx, bx
         mov     cx, NSECT
-
-.next:
-        push    cx
-        ; LBA -> CHS
-        mov     ax, [lba]
-        xor     dx, dx
-        div     word [spt]              ; AX = Spur, DX = Sektor-Index
-        mov     cl, dl
-        inc     cl                      ; Sektor ab 1
-        xor     dx, dx
-        div     word [heads]            ; AX = Zylinder, DX = Kopf
-        mov     ch, al
-        mov     dh, dl
-        mov     dl, [drive]
-        mov     si, 4                   ; Wiederholungen
-.retry:
-        mov     ax, 0x0201
-        int     0x13
-        jnc     .ok
-        xor     ax, ax                  ; Laufwerk zuruecksetzen
-        int     0x13
-        dec     si
-        jnz     .retry
-        jmp     disk_error
-.ok:
+.next:  push    cx
+        call    read1
         mov     ax, es
         add     ax, 0x20                ; 512 Bytes weiter
         mov     es, ax
-        inc     word [lba]
         test    byte [lba], 7
         jnz     .noprog
         mov     al, '.'
@@ -102,6 +105,30 @@ start:
 
         mov     dl, [drive]
         jmp     KSEG:0
+
+; Sektor [lba] nach ES:0 lesen, danach lba + 1
+read1:  mov     ax, [lba]
+        xor     dx, dx
+        div     word [spt]              ; AX = Spur, DX = Sektor-Index
+        mov     cl, dl
+        inc     cl                      ; Sektor ab 1
+        xor     dx, dx
+        div     word [heads]            ; AX = Zylinder, DX = Kopf
+        mov     ch, al
+        mov     dh, dl
+        mov     dl, [drive]
+        mov     si, 4                   ; Wiederholungen
+.retry: mov     ax, 0x0201
+        xor     bx, bx
+        int     0x13
+        jnc     .ok
+        xor     ax, ax                  ; Laufwerk zuruecksetzen
+        int     0x13
+        dec     si
+        jnz     .retry
+        jmp     disk_error
+.ok:    inc     word [lba]
+        ret
 
 disk_error:
         mov     si, msg_err
@@ -126,6 +153,8 @@ putc:   push    bx
 lba     dw 1
 msg_load db "AT-DOS 5.0 wird geladen", 0
 msg_err  db 13, 10, "Diskettenfehler!", 0
+msg_nosys db "Keine Systemdiskette - wechseln und Taste dr", 0x81, "cken", 13, 10, 0
+kname    db "ATDOS   SYS"
 
         times 510-($-$$) db 0
         dw 0xAA55

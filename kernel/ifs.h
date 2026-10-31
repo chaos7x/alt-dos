@@ -33,6 +33,9 @@ struct volume {
     struct ifs_driver *drv;
     int            mod;                 /* nachgeladenes IFS: Treiberplatz */
     unsigned char  part;                /* Partition 1-4, 0 = ganzes Geraet */
+    unsigned char  present;             /* Laufwerk da, auch ohne Dateisystem */
+    unsigned char  ptype;               /* Partitionstyp (MBR), 0 = keiner  */
+    unsigned long  psize;               /* Sektoren der Partition/des Geraets */
     unsigned char  nfree_ok;            /* nfree gezaehlt und gueltig       */
     unsigned char  locked;              /* DosOpenDrive exklusiv: kein IFS  */
     unsigned char  was_dirty;           /* beim Einhaengen nicht sauber abgemeldet */

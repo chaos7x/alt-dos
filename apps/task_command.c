@@ -516,15 +516,33 @@ static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
     static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[13];
-    unsigned n, files = 0, dirs = 0;
+    unsigned n, files = 0, dirs = 0, want = 0, nowant = 0, pass;
     unsigned long total = 0;
     int all = 0, page = 0, lines = 4;
 
     dir[0] = 0;
     for (; *arg; arg = next_word(arg)) {
-        if (same(arg, "/A"))
+        if (arg[0] == '/' && up(arg[1]) == 'A') {   /* /A, /A:H, /A-D ...  */
+            char *q = arg + 2;
+            int neg = 0;
             all = 1;
-        else if (same(arg, "/P"))
+            if (*q == ':')
+                q++;
+            for (; *q && *q != ' '; q++) {
+                unsigned b = up(*q) == 'H' ? 0x02 : up(*q) == 'S' ? 0x04 :
+                             up(*q) == 'D' ? 0x10 : up(*q) == 'R' ? 0x01 :
+                             up(*q) == 'A' ? 0x20 : 0;
+                if (*q == '-')
+                    neg = 1;
+                else if (b) {
+                    if (neg)
+                        nowant |= b;
+                    else
+                        want |= b;
+                    neg = 0;
+                }
+            }
+        } else if (same(arg, "/P"))
             page = 1;
         else
             word(arg, dir, sizeof(dir));
@@ -560,8 +578,13 @@ static void cmd_dir(char *arg)
         puts(dir);
     }
     puts("\n\n");
+    for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
     for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
+        if (((e.attr & 0x10) != 0) != (pass == 0))
+            continue;
         if (!all && (e.attr & 0x06))            /* versteckt, System    */
+            continue;
+        if ((e.attr & want) != want || (e.attr & nowant))
             continue;
         if (pat[0] && !match(e.name, pat))
             continue;
@@ -974,7 +997,8 @@ static void cmd_ren(char *arg)
 static void cmd_help(void)
 {
     puts("Interne Befehle:\n"
-         "  DIR [Pfad] [/A] [/P]  Dateien anzeigen (/A auch versteckte, /P seitenweise)\n"
+         "  DIR [Pfad] [/A[:HSDRA]] [/P]  Dateien, Verzeichnisse zuerst (/A alle,\n"
+         "                  /A:H nur versteckte, /A:-D ohne Verzeichnisse; /P Seiten)\n"
          "  CD [Pfad]       Verzeichnis wechseln oder anzeigen\n"
          "  C:              Laufwerk wechseln\n"
          "  TYPE Datei      Textdatei ausgeben\n"

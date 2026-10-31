@@ -96,10 +96,14 @@ struct fapi_label {
 };
 #define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
 struct fapi_fsinfo {
-    char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE */
+    char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE;
+                                       "RAW" = nicht formatiert */
     unsigned long  sectors;         /* Sektoren des Laufwerks           */
     unsigned short bsize;           /* Bytes je Sektor (512, CD 2048)   */
     unsigned short flags;           /* FSI_*                            */
+    unsigned long  hidden;          /* erster Sektor der Partition (BPB) */
+    unsigned char  ptype;           /* Partitionstyp im MBR, 0 = keiner  */
+    unsigned char  rsv;
 };
 #define FSI_REMOVABLE       0x01
 #define FSI_READONLY        0x02
