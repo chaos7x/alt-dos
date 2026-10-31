@@ -21,7 +21,8 @@ und PC-DOS.
   Operation neu eingelesen (Wechsel), Schreibschutz wird erkannt
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
-  AHA-1540/1542, SCSI, Busmaster mit Mailboxen) und `IDE.SYS` (bis zu
+  AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
+  kompatiblen BusLogic BT-545C) und `IDE.SYS` (bis zu
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
   Platten ohne LBA; ATAPI-CD-ROMs als Einheit) – beide lesen und schreiben,
   CD-ROMs (2048-Byte-Blöcke) nur lesen
