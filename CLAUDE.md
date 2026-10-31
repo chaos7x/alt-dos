@@ -316,7 +316,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   für beschreibbare Medien bringt sein eigenes U*.EXE mit – CHKDSK nimmt
   es dann automatisch (Reihenfolge in task_chkdsk.c: erst U*.EXE suchen,
   Meldung nur, wenn keins da ist).
-- Joliet (lange Namen auf CD), wenn lange Namen im FAPI ankommen
+- Lange Namen auf CD (Wunsch des Nutzers): `ISO9660.IFS` um Joliet
+  (Zusatz-Deskriptor mit UCS-2-Namen, Windows 95), ISO 9660:1999 (Level 4,
+  bis 207 Zeichen) und evtl. Rock Ridge erweitern; Namen über das FAPI mit
+  bis 260 Zeichen, 8.3 nur als Rückfall. Kopieren auf FAT braucht dann die
+  `.LONGNAME`-EAs (siehe unten), sonst 8.3-Ersatznamen. UDF (DVD, ab 1996)
+  als eigenes `UDF.IFS` – zeitlich DOS 6.0/7.0.
 - Platten-Cache wie SMARTDRV (Ausbau des Sektor-Caches): größer als ein
   Segment, verzögertes Schreiben mit Zeitgrenze,
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
