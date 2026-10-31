@@ -67,6 +67,12 @@ und PC-DOS.
   und sein `U….EXE` mit. Für `/F` wird das Laufwerk gesperrt; geht das nicht
   (Dateien offen), merkt CHKDSK es wie Windows NT für den nächsten Start vor
   (`\AUTOCHK.LST`), `COMMAND /P` prüft dann vor `AUTOEXEC.CMD`.
+  Wie bei NT und OS/2 merkt sich jede FAT16-Platte, ob sie sauber
+  abgemeldet wurde (FAT[1] Bit 15, wie Windows 95/NT; MS-DOS stört es
+  nicht): beim ersten Schreiben gelöscht, bei `SHUTDOWN`, `POWEROFF` und
+  Strg+Alt+Entf gesetzt. Fehlt es beim Start, prüft `COMMAND /P` die Platte
+  mit `CHKDSK /F`. `AUTOCHECK=CD` in der CONFIG.SYS beschränkt das auf
+  bestimmte Laufwerke, `AUTOCHECK=` ohne Buchstaben schaltet es ab.
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
   eigenen Bildschirm, **Alt+Esc** wechselt, **Strg+C** bricht ab,
   **Strg+Alt+Entf** schließt alle Dateien, leert die Platten-Caches und

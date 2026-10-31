@@ -35,6 +35,8 @@ struct volume {
     unsigned char  part;                /* Partition 1-4, 0 = ganzes Geraet */
     unsigned char  nfree_ok;            /* nfree gezaehlt und gueltig       */
     unsigned char  locked;              /* DosOpenDrive exklusiv: kein IFS  */
+    unsigned char  was_dirty;           /* beim Einhaengen nicht sauber abgemeldet */
+    unsigned char  in_use;              /* Sauber-Bit auf der Platte geloescht */
     unsigned       nfree;               /* freie Cluster (FAT)              */
 };
 
@@ -68,7 +70,8 @@ extern int floppy_lazy;
 int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 void vol_move(int from, int to);
 int  vol_present(int d);
-void vol_reset(int d);              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */
+void vol_reset(int d);
+void ifs_shutdown(void);            /* alle FAT16-Platten als sauber markieren */              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */
 int ifs_open(int drive, const char *path, struct ifs_file __far *f);
 int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);

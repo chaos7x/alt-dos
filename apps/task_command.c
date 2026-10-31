@@ -1200,42 +1200,63 @@ static int run_batch(const char *path, const char *args)
    call: Stapeldatei als Unterprogramm (CALL) statt als Fortsetzung. */
 static int run_program(char *cmd, int sync, int call);
 
-/* Beim Start (COMMAND /P): von CHKDSK vorgemerkte Laufwerke pruefen, wie
-   autochk bei Windows NT. Die Liste wird vorher geloescht, damit ein
-   Absturz beim Pruefen nicht bei jedem Start wiederkommt. */
+/* Beim Start (COMMAND /P), wie autochk bei Windows NT: geprueft werden
+   die Laufwerke, die CHKDSK in \AUTOCHK.LST vorgemerkt hat, und die
+   Festplatten, die beim letzten Mal nicht sauber abgemeldet wurden
+   (DosQFSInfo: FSI_DIRTY). Welche Platten automatisch geprueft werden,
+   legt AUTOCHECK= in der CONFIG.SYS fest (Vorgabe: alle; "AUTOCHECK=" ohne
+   Buchstaben: keine). Die Liste wird vorher geloescht, damit ein Absturz
+   beim Pruefen nicht bei jedem Start wiederkommt. */
 static void autochk(void)
 {
-    static char lst[256], cl[40];
-    unsigned h, n, i, k;
+    static char lst[256], cl[40], ac[32], todo[26];
+    static struct fapi_fsinfo fi;
+    unsigned h, n, i, k, d;
 
     h = DosOpen("\\AUTOCHK.LST");
-    if (FAPI_FAILED(h))
-        return;
-    n = DosRead(h, lst, sizeof(lst) - 1);
-    DosClose(h);
-    DosDelete("\\AUTOCHK.LST");
-    if (FAPI_FAILED(n))
-        return;
-    lst[n] = 0;
-    for (i = 0; lst[i]; ) {
-        while (lst[i] == '\r' || lst[i] == '\n' || lst[i] == ' ')
-            i++;
-        if (!lst[i] || lst[i + 1] != ':')
-            break;
+    if (!FAPI_FAILED(h)) {
+        n = DosRead(h, lst, sizeof(lst) - 1);
+        DosClose(h);
+        DosDelete("\\AUTOCHK.LST");
+        if (FAPI_FAILED(n))
+            n = 0;
+        lst[n] = 0;
+        for (i = 0; lst[i]; i++)
+            if (lst[i + 1] == ':' && up(lst[i]) >= 'A' && up(lst[i]) <= 'Z' &&
+                (i == 0 || lst[i - 1] == '\n'))
+                todo[up(lst[i]) - 'A'] = 1;
+    }
+    if (FAPI_FAILED(DosGetEnv("AUTOCHECK", ac, sizeof(ac))))
+        ac[0] = 0;                          /* nicht gesetzt: alle      */
+    for (d = 2; d < 26; d++) {
+        if (FAPI_FAILED(DosQFSInfo(d, &fi)) || !(fi.flags & FSI_DIRTY))
+            continue;
+        if (ac[0]) {
+            for (k = 0; ac[k] && up(ac[k]) != (char)('A' + d); k++)
+                ;
+            if (!ac[k])
+                continue;
+        }
+        puts("Laufwerk ");
+        putc((char)('A' + d));
+        puts(": wurde nicht ordnungsgem\x84\xE1 abgemeldet.\n");
+        todo[d] = 1;
+    }
+    for (d = 0; d < 26; d++) {
+        if (!todo[d])
+            continue;
         for (k = 0; "CHKDSK "[k]; k++)
             cl[k] = "CHKDSK "[k];
-        cl[k++] = up(lst[i]);
+        cl[k++] = (char)('A' + d);
         cl[k++] = ':';
         for (n = 0; " /F /AUTO"[n]; n++)
             cl[k++] = " /F /AUTO"[n];
         cl[k] = 0;
-        puts("Vorgemerkte Pr\x81" "fung: ");
+        puts("Pr\x81" "fung beim Start: ");
         puts(cl);
         puts("\n");
         run_program(cl, 1, 0);
         puts("\n");
-        while (lst[i] && lst[i] != '\n')
-            i++;
     }
 }
 

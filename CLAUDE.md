@@ -132,6 +132,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   keine Datei auf dem Laufwerk offen ist (aktuelle Verzeichnisse zählen
   nicht). `AUTOCHK.LST` im Stamm des Startlaufwerks: Zeilen `X: /F`,
   `COMMAND /P` löscht die Datei und ruft `CHKDSK X: /F /AUTO`.
+  Sauber-Bit: FAT16 (nicht Diskette) FAT[1] Bit 15. `mark_in_use()` (fat.c)
+  löscht es vor dem ersten Schreiben (Hook in den `ifs_*`-Schreibfunktionen,
+  nicht in `wr()` – DMABUF!), `ifs_shutdown()` setzt es in `system_down()`.
+  `fat_mount` merkt den Zustand beim Einhängen in `was_dirty` ->
+  `DosQFSInfo` FSI_DIRTY. `UFAT /F` setzt das Bit nach der Prüfung.
+  `AUTOCHECK=` (CONFIG.SYS) landet als Variable in der Systemumgebung.
 - Schreiben (`fat.c`): Daten und Verzeichniseinträge sofort (`blk_write`),
   FAT nur im 2-Sektor-Cache bis `fat_flush()` am Ende jeder Operation – nach
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`

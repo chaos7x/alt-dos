@@ -786,6 +786,14 @@ void main(void)
     }
     check_tree();
     lost_chains();
+    if (fix && fat16) {                 /* geprueft: wieder "sauber"   */
+        unsigned char __far *p1 = fatb(2);
+        if (!(p1[1] & 0x80)) {
+            p1[1] |= 0x80;
+            fdirty[0] |= 1;
+            fat_changed = 1;
+        }
+    }
     if (fix && (fat_changed || fats_differ))
         write_fat();
     if (errors == 0)

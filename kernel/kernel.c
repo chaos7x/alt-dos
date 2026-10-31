@@ -277,6 +277,7 @@ static void system_down(int restart)
             files[k].refs = 0;
             files[k].owner = -1;
         }
+    ifs_shutdown();                             /* Platten "sauber"     */
     blk_flush();
     outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
     if (restart)
@@ -1510,7 +1511,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         fi->fsname[k] = 0;
         fi->sectors = vol[a1].drv == &fat_driver ? vol[a1].sectors : blk[dv].blocks;
         fi->bsize = blk[dv].bsize;
-        fi->flags = (dv == BLK_FLOPPY ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0);
+        fi->flags = (dv == BLK_FLOPPY ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
+                    (vol[a1].was_dirty ? FSI_DIRTY : 0);
         return 0;
     }
 
@@ -2451,6 +2453,11 @@ static void config_sys(void)
         } else if (kw(line, "FILES")) {
             n = num_arg(v);
             nfiles = n < 8 ? 8 : n > 255 ? 255 : n;
+        } else if (kw(line, "AUTOCHECK")) {     /* wie OS/2 /AUTOCHECK:  */
+            static char ac[40];
+            scopy(ac, "AUTOCHECK=", sizeof(ac));
+            scopy(ac + 10, *v ? v : "-", sizeof(ac) - 10);
+            env_set(-1, ac);
         } else if (kw(line, "PROTSHELL")) {
             scopy(protshell, v, sizeof(protshell));
         } else if (kw(line, "BUFFERS")) {

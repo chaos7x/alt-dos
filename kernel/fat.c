@@ -223,6 +223,11 @@ static unsigned long clus_lba(struct volume *v, unsigned c)
 }
 
 /* ---- Einhaengen -------------------------------------------------------- */
+/* FAT16: FAT[1] Bit 15 = sauber abgemeldet (wie Windows 95/NT; MS-DOS
+   ignoriert es). Beim ersten Schreiben loeschen, beim Herunterfahren
+   setzen. Beim Start prueft COMMAND /P Laufwerke ohne das Bit. */
+#define CLEAN_BIT 0x8000
+
 static int fat_mount(int d)
 {
     struct volume *v = &vol[d];
@@ -263,6 +268,10 @@ static int fat_mount(int d)
         return -1;                              /* waere FAT32          */
     v->clusters = (unsigned)cl;
     v->fat16 = cl >= 4085;
+    v->in_use = 0;
+    v->was_dirty = 0;
+    if (v->fat16 && v->blk != BLK_FLOPPY && blk_read(v->blk, v->fat_lba) == 0)
+        v->was_dirty = !(rd16(2) & CLEAN_BIT);  /* FAT[1] Bit 15        */
     return 0;
 }
 
@@ -1045,14 +1054,49 @@ int ifs_isdir(int drive, const char *path)
 
 #define HAS(d, fn) (VOL_OK(d) && vol[d].drv->fn)
 
+/* vor jedem Schreiben: Laufwerk als "in Benutzung" markieren */
+static void mark_in_use(int d)
+{
+    struct volume *v = &vol[d];
+    unsigned val;
+
+    if (v->in_use || v->drv != &fat_driver || !v->fat16 || v->blk == BLK_FLOPPY ||
+        v->locked)
+        return;
+    v->in_use = 1;
+    val = fat_raw(d, 1);
+    if (val & CLEAN_BIT) {
+        fat_set(d, 1, val & ~CLEAN_BIT);
+        fat_flush();
+    }
+}
+
+void ifs_shutdown(void)
+{
+    int d;
+    unsigned val;
+
+    for (d = 0; d < NDRIVE; d++)
+        if (vol[d].used && vol[d].in_use && !vol[d].locked) {
+            val = fat_raw(d, 1);
+            fat_set(d, 1, val | CLEAN_BIT);
+            fat_flush();
+            vol[d].in_use = 0;
+        }
+}
+
+#define MARK(d) do { if (VOL_OK(d)) mark_in_use(d); } while (0)
+
 int ifs_create(int drive, const char *path, struct ifs_file __far *f)
 {
+    MARK(drive);
     return HAS(drive, create) ? vol[drive].drv->create(drive, path, f) : IFS_WP;
 }
 
 int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len)
 {
+    MARK(f->drive);
     return HAS(f->drive, write) ? vol[f->drive].drv->write(f, pos, sel, off, len) : IFS_WP;
 }
 
@@ -1063,21 +1107,25 @@ int ifs_close(struct ifs_file __far *f)
 
 int ifs_remove(int drive, const char *path)
 {
+    MARK(drive);
     return HAS(drive, remove) ? vol[drive].drv->remove(drive, path) : IFS_WP;
 }
 
 int ifs_mkdir(int drive, const char *path)
 {
+    MARK(drive);
     return HAS(drive, mkdir) ? vol[drive].drv->mkdir(drive, path) : IFS_WP;
 }
 
 int ifs_rmdir(int drive, const char *path)
 {
+    MARK(drive);
     return HAS(drive, rmdir) ? vol[drive].drv->rmdir(drive, path) : IFS_WP;
 }
 
 int ifs_move(int drive, const char *from, const char *to)
 {
+    MARK(drive);
     return HAS(drive, move) ? vol[drive].drv->move(drive, from, to) : IFS_WP;
 }
 
