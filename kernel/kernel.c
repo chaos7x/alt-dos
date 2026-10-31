@@ -615,6 +615,90 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
     return 0;
 }
 
+/* ---- Umgebung ----------------------------------------------------------
+   Je Task FAPI_ENVSIZE Bytes "NAME=WERT\0...\0\0" in einem gemeinsamen
+   Kernelsegment, dahinter die Systemumgebung (t < 0): COMSPEC und SET= aus
+   CONFIG.SYS. Ein neues Programm erbt die Umgebung seines Aufrufers. */
+static unsigned env_sel;
+
+static unsigned env_off(int t)
+{
+    return (t < 0 ? NTASK : t) * FAPI_ENVSIZE;
+}
+
+/* Laenge des belegten Teils (ohne die abschliessende Null) */
+static unsigned env_used(int t)
+{
+    char __far *e = MK_FP(env_sel, env_off(t));
+    unsigned n = 0;
+    while (e[n] && n < FAPI_ENVSIZE - 1)
+        while (e[n++] && n < FAPI_ENVSIZE - 1)
+            ;
+    return n;
+}
+
+/* Eintrag zu name (Laenge nl, Grossbuchstaben) suchen -> Offset im Block */
+static int env_find(int t, const char *name, unsigned nl)
+{
+    char __far *e = MK_FP(env_sel, env_off(t));
+    unsigned i = 0, k;
+    while (e[i]) {
+        for (k = 0; k < nl && e[i + k] == name[k]; k++)
+            ;
+        if (k == nl && e[i + k] == '=')
+            return (int)i;
+        while (e[i++])
+            ;
+    }
+    return -1;
+}
+
+/* "NAME=WERT" setzen; leerer Wert loescht. 0 = ok, -1 Format, -2 voll */
+static int env_set(int t, const char *entry)
+{
+    static char name[64];
+    char __far *e = MK_FP(env_sel, env_off(t));
+    unsigned nl, used, len, i;
+    int at;
+
+    for (nl = 0; entry[nl] && entry[nl] != '=' && nl < sizeof(name) - 1; nl++)
+        name[nl] = up(entry[nl]);
+    while (nl > 0 && name[nl - 1] == ' ')
+        nl--;
+    if (nl == 0 || entry[nl] != '=' && entry[nl] != ' ')
+        return -1;
+    while (*entry && *entry != '=')
+        entry++;
+    if (!*entry)
+        return -1;
+    entry++;
+    at = env_find(t, name, nl);
+    used = env_used(t);
+    if (at >= 0) {                      /* alten Eintrag entfernen       */
+        for (len = 0; e[at + len]; len++)
+            ;
+        len++;
+        for (i = (unsigned)at; i + len <= used; i++)
+            e[i] = e[i + len];
+        used -= len;
+        e[used] = 0;
+    }
+    for (len = 0; entry[len]; len++)
+        ;
+    if (len == 0)
+        return 0;                       /* nur loeschen                  */
+    if (used + nl + 1 + len + 2 > FAPI_ENVSIZE)
+        return -2;
+    for (i = 0; i < nl; i++)
+        e[used++] = name[i];
+    e[used++] = '=';
+    for (i = 0; i < len; i++)
+        e[used++] = entry[i];
+    e[used++] = 0;
+    e[used] = 0;
+    return 0;
+}
+
 /* neuen Task anlegen und laden. Laufwerk und Verzeichnis erbt er von
    'from' (oder A:\ bei from < 0). -> Tasknummer oder -(EXEC_ERR_*)    */
 static int task_create(const char *cmd, int session, int parent, int from)
@@ -634,6 +718,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     if (err)
         return -err;
     task[t].drive = from >= 0 ? task[from].drive : (unsigned char)sys_drive;
+    far_copy(env_sel, env_off(t), env_sel, env_off(from), FAPI_ENVSIZE);
     if (from >= 0)
         scopy(task[t].cwd, task[from].cwd, IFS_PATHLEN);
     else
@@ -1053,6 +1138,58 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             return FAPI_ERROR;
         far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id(), 4);
         return 0;
+
+    case FAPI_GETENV: {
+        static char name[64];
+        char __far *e;
+        unsigned nl, i;
+        if (user_str(usel, a1, name, sizeof(name)))
+            return FAPI_ERROR;
+        for (nl = 0; name[nl]; nl++)
+            name[nl] = up(name[nl]);
+        k = env_find(current, name, nl);
+        if (k < 0)
+            return FAPI_ERROR;
+        e = MK_FP(env_sel, env_off(current) + k + nl + 1);
+        for (i = 0; e[i]; i++)
+            ;
+        if (a3 == 0 || !user_ok(usel, a2, a3, 1))
+            return FAPI_ERROR;
+        far_copy(usel, a2, env_sel, FP_OFF(e), i + 1 <= a3 ? i + 1 : a3);
+        return i;
+    }
+
+    case FAPI_GETDATETIME: {
+        static unsigned long st;
+        if (!user_ok(usel, a1, 4, 1))
+            return FAPI_ERROR;
+        st = rtc_stamp();
+        st = (st >> 16) | (st << 16);           /* Datum zuerst          */
+        far_copy(usel, a1, KDATA, (unsigned)&st, 4);
+        return 0;
+    }
+
+    case FAPI_SETENV:
+        if (user_str(usel, a1, buf, sizeof(buf)))
+            return FAPI_ERROR;
+        k = env_set(current, buf);
+        return k == 0 ? 0 : k == -2 ? FAPI_ERR_FULL : FAPI_ERROR;
+
+    case FAPI_ENVENTRY: {
+        char __far *e = MK_FP(env_sel, env_off(current));
+        unsigned i = 0, n = 0, l;
+        while (e[i] && n < a1) {
+            while (e[i++])
+                ;
+            n++;
+        }
+        if (!e[i] || a3 == 0 || !user_ok(usel, a2, a3, 1))
+            return FAPI_ERROR;
+        for (l = 0; e[i + l]; l++)
+            ;
+        far_copy(usel, a2, env_sel, FP_OFF(e) + i, l + 1 <= a3 ? l + 1 : a3);
+        return l;
+    }
 
     case FAPI_SHUTDOWN:
         system_down(a1 != 0);
@@ -1618,6 +1755,23 @@ static void config_sys(void)
             v++;
         for (i = 0; line[i] && line[i] != ' ' && line[i] != '\t'; i++)
             line[i] = up(line[i]);
+        if (line[i]) {                  /* SET NAME=WERT (MS-DOS 6)     */
+            static char ent[FAPI_ARGLEN];
+            char *nm = line + i;
+            unsigned k2 = 0;
+            line[i] = 0;
+            if (kw(line, "SET")) {
+                while (*++nm == ' ' || *nm == '\t')
+                    ;
+                while (*nm && k2 < sizeof(ent) - 2)
+                    ent[k2++] = *nm++;
+                ent[k2++] = '=';
+                scopy(ent + k2, v, sizeof(ent) - k2);
+                if (env_set(-1, ent))
+                    vio_kputs(boot_session, "\xFE CONFIG.SYS: Umgebung voll\n");
+                continue;
+            }
+        }
         line[i] = 0;                    /* "DEVICEHIGH /L:1 " -> Wort   */
         if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH")) {
             while (*v == '/' || (up(v[0]) == 'S' && up(v[1]) == 'I' && up(v[2]) == 'Z' &&
@@ -1690,6 +1844,9 @@ void kmain(void)
 
     enable_ints();                  /* Diskette und Tastatur per IRQ     */
     kbd_init();
+    env_sel = kseg_alloc((NTASK + 1) * FAPI_ENVSIZE);  /* < 64 KB          */
+    if (!env_sel)
+        panic("Kein Speicher f\x81r die Umgebung.");
     blk[BLK_FLOPPY].drv = -1;
     blk[BLK_FLOPPY].unit = 0;
     blk[BLK_FLOPPY].blocks = 2880;
@@ -1729,6 +1886,16 @@ void kmain(void)
         num[2] = '\n';
         num[3] = 0;
         vio_kputs(s0, num);
+    }
+
+    /* Systemumgebung: COMSPEC wie bei MS-DOS */
+    scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));
+    line[8] = (char)('A' + sys_drive);
+    env_set(-1, line);
+    if (env_find(-1, "PATH", 4) < 0) {          /* Vorgabe: Startlaufwerk */
+        scopy(line, "PATH=A:\\", sizeof(line));
+        line[5] = (char)('A' + sys_drive);
+        env_set(-1, line);
     }
 
     /* Dateitabelle nach FILES= */

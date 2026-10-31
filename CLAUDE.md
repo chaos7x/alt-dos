@@ -58,7 +58,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `cd_drives()` gibt CD-Einheiten (bsize 2048) nach `CONFIG.SYS` Buchstaben.
 - `CONFIG.SYS` – `DEVICE=` lädt Treiber, `IFS=` Dateisystem-Module (beides
   wird beim Plattenstart vorgeladen)
-- `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter
+- `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter, mit
+  Programmsuche über `PATH`, Stapelverarbeitung (Datei je Stufe in einem
+  `DosAllocSeg`-Segment, bis 4 Stufen) und `AUTOEXEC.BAT`. Umgebung je Task
+  im Kernel (`env_*` in kernel.c, ein Kernelsegment für alle Tasks plus
+  Systemumgebung)
 - `STARTUP.CMD` – Liste der beim Start geladenen Programme (CRLF)
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`
 - `tools/` – `stub.asm` (DOS-Stub), `mkfx.py` (Abbild + Map -> FX-`.EXE`),
@@ -177,13 +181,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Umgebung wie MS-DOS: Umgebungsvariablen je Task (eigenes Segment, an
-  Kindprogramme vererbt, FAPI zum Lesen/Setzen), `SET`, `PATH`, `PROMPT`
-  (`$P$G`). COMMAND.EXE sucht Programme wie COMMAND.COM: erst aktuelles
-  Verzeichnis, dann `PATH` der Reihe nach. Dazu Stapeldateien (`.BAT`,
-  `ECHO OFF`, `@`, `REM`, `IF`, `GOTO`, `%1`, `%VAR%`, `CALL`, `PAUSE`) und
-  `AUTOEXEC.BAT`, das COMMAND /P beim Start ausführt (heute nur
-  `STARTUP.CMD`).
+- `ERRORLEVEL`: Programme liefern noch keinen Rückgabewert (`DosExit` ohne
+  Code); `IF ERRORLEVEL n` ist nur für n = 0 wahr. Mit Rückgabewerten
+  nachziehen (DosExit(code), DosExecPgm liefert ihn).
 - Nächster Schritt: die Werkzeuge, die MS-DOS hatte, als FAPI-Programme
   (z. B. FORMAT, CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, EDIT, DISKCOPY).
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,

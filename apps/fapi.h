@@ -40,6 +40,10 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosRmDir(p)         F2(FAPI_RMDIR, (p), 0)
 #define DosMove(from, to)   F2(FAPI_MOVE, (from), (to))
 #define DosShutdown(restart) F2(FAPI_SHUTDOWN, (restart), 0)
+#define DosGetEnv(name, buf, n)  fapi_call(FAPI_GETENV, (unsigned short)(name), (unsigned short)(buf), (n))
+#define DosSetEnv(entry)         F2(FAPI_SETENV, (entry), 0)
+#define DosEnvEntry(i, buf, n)   fapi_call(FAPI_ENVENTRY, (i), (unsigned short)(buf), (n))
+#define DosGetDateTime(p)        F2(FAPI_GETDATETIME, (p), 0)
 #define DosFreeSpace(d, p)  F2(FAPI_FREESPACE, (d), (p))   /* freie Bytes */
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)

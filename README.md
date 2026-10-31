@@ -40,6 +40,12 @@ und PC-DOS.
   Start läuft
 - `COMMAND.EXE`: Befehlsinterpreter mit `DIR` (`/A`, `/P`, freier Platz), `CD`,
   Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
+  `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
+  mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]
+  EXIST/==/ERRORLEVEL`, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
+  beim Start (`COMMAND /P`), `COMMAND /C`; Programme werden wie bei
+  COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
+  (`.EXE`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
   neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
@@ -115,6 +121,14 @@ selbst nur 8.3 kennt.
 | 29 | DosMove         | BX = alter, CX = neuer Pfad (gleiches Laufwerk) |
 | 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes |
 | 31 | DosShutdown     | BX = 0 anhalten, 1 Neustart (kehrt nicht zurück) |
+| 34 | DosGetEnv       | BX = Name, CX = Puffer, DX = Länge → Länge des Werts |
+| 35 | DosSetEnv       | BX = `NAME=WERT` (leerer Wert löscht) |
+| 36 | DosEnvEntry     | BX = Nummer, CX = Puffer, DX = Länge → n-ter Eintrag |
+| 37 | DosGetDateTime  | BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format |
+
+Jedes Programm hat eine eigene Umgebung (1 KB) und erbt sie von dem
+Programm, das es startet. Die Systemumgebung enthält `COMSPEC`, `PATH` (das
+Startlaufwerk) und alles, was die `CONFIG.SYS` mit `SET` festlegt.
 
 Fehler sind Werte ab FFF0h: FFFFh nicht gefunden/unzulässig, FFFEh
 schreibgeschützt, FFFDh voll, FFFCh existiert schon, FFFBh Zugriff

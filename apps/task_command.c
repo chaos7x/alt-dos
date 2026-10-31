@@ -8,6 +8,7 @@
  *
  * COMMAND.EXE /P  -  permanent, EXIT ist dann gesperrt (erste Sitzung).
  */
+#include <i86.h>
 #include "fapi.h"
 
 #define LINE 78
@@ -250,40 +251,6 @@ static void cmd_type(char *arg)
 }
 
 static char *base_name(char *path);
-
-/* MS-DOS-Programm (.COM)? Dann sagen, warum es nicht startet */
-static int dos_program(const char *cmd)
-{
-    static char name[FAPI_PATHLEN];
-    unsigned i = 0, dot = 0, h;
-
-    while (cmd[i] && cmd[i] != ' ' && i < FAPI_PATHLEN - 5) {
-        name[i] = cmd[i];
-        if (cmd[i] == '.')
-            dot = i;
-        else if (cmd[i] == '\\')
-            dot = 0;
-        i++;
-    }
-    if (!dot) {
-        name[i++] = '.';
-        name[i++] = 'C';
-        name[i++] = 'O';
-        name[i++] = 'M';
-    } else if (!(up(name[dot + 1]) == 'C' && up(name[dot + 2]) == 'O' &&
-                 up(name[dot + 3]) == 'M' && dot + 4 == i))
-        return 0;
-    name[i] = 0;
-    h = DosOpen(name);
-    if (h == FAPI_ERROR)
-        return 0;
-    DosClose(h);
-    for (i = 0; name[i]; i++)
-        name[i] = up(name[i]);
-    puts(base_name(name));
-    puts(" ist ein MS-DOS-Programm und l\x84uft nicht unter AT-DOS.\n");
-    return 1;
-}
 
 static void exec_error(unsigned r)
 {
@@ -619,6 +586,8 @@ static void cmd_help(void)
          "  VER             Version anzeigen\n"
          "  ECHO Text       Text ausgeben\n"
          "  START Programm  Programm in eigener Sitzung starten\n"
+         "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
+         "  Stapeldateien:  ECHO [ON|OFF], REM, PAUSE, GOTO, IF, CALL, SHIFT, %1 %NAME%\n"
          "  EXIT            Befehlsinterpreter beenden\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
@@ -635,11 +604,444 @@ static void cmd_ver(void)
     puts("\n\n");
 }
 
-/* ---- Hauptschleife ----------------------------------------------------- */
-static int execute(void)
+/* ---- Umgebung, Prompt, Programmsuche, Stapeldateien -------------------- */
+#define CMDLEN 256
+static int echo_on = 1;
+static char pbuf[FAPI_PATHLEN], ebuf[CMDLEN];
+
+static int execute(char *l);
+
+static int exists(const char *p)
 {
-    char *cmd = skip(line), *arg;
-    unsigned r;
+    unsigned h = DosOpen(p);
+    if (h == FAPI_ERROR)
+        return 0;
+    DosClose(h);
+    return 1;
+}
+
+static void cmd_set(char *arg)
+{
+    static char e[FAPI_ENVSIZE];
+    unsigned i, r;
+    char *q;
+
+    if (!*arg) {
+        for (i = 0; DosEnvEntry(i, e, sizeof(e)) != FAPI_ERROR; i++) {
+            puts(e);
+            puts("\n");
+        }
+        return;
+    }
+    for (q = arg; *q && *q != '='; q++)
+        ;
+    if (!*q) {
+        puts("Syntaxfehler.\n");
+        return;
+    }
+    r = DosSetEnv(arg);
+    if (r == FAPI_ERR_FULL)
+        puts("Kein Platz mehr in der Umgebung.\n");
+    else if (r)
+        puts("Syntaxfehler.\n");
+}
+
+/* NAME=arg setzen (PATH, PROMPT); leeres arg loescht */
+static void set_var(const char *name, const char *arg)
+{
+    unsigned i = 0;
+    while (*name)
+        ebuf[i++] = *name++;
+    ebuf[i++] = '=';
+    while (*arg && i < CMDLEN - 1)
+        ebuf[i++] = *arg++;
+    ebuf[i] = 0;
+    if (DosSetEnv(ebuf) == FAPI_ERR_FULL)
+        puts("Kein Platz mehr in der Umgebung.\n");
+}
+
+static void show_prompt(void)
+{
+    static char pr[128], cur[FAPI_CURDIRLEN];
+    static unsigned dt[2];
+    char *p;
+
+    if (DosGetEnv("PROMPT", pr, sizeof(pr)) == FAPI_ERROR)
+        pr[0] = 0;
+    if (!pr[0]) {
+        pr[0] = '$'; pr[1] = 'P'; pr[2] = '$'; pr[3] = 'G'; pr[4] = 0;
+    }
+    for (p = pr; *p; p++) {
+        if (*p != '$' || !p[1]) {
+            putc(*p);
+            continue;
+        }
+        switch (up(*++p)) {
+        case 'P': DosQCurDir(cur); puts(cur); break;
+        case 'N': putc((char)('A' + DosQCurDisk())); break;
+        case 'G': putc('>'); break;
+        case 'L': putc('<'); break;
+        case 'B': putc('|'); break;
+        case 'Q': putc('='); break;
+        case '$': putc('$'); break;
+        case '_': puts("\n"); break;
+        case 'H': puts("\b \b"); break;
+        case 'V': puts("AT-DOS 5.0"); break;
+        case 'D':
+            DosGetDateTime(dt);
+            put2(dt[0] & 31); putc('.'); put2((dt[0] >> 5) & 15); putc('.');
+            put_numx(1980 + (dt[0] >> 9), 4, 0);
+            break;
+        case 'T':
+            DosGetDateTime(dt);
+            put2(dt[1] >> 11); putc(':'); put2((dt[1] >> 5) & 63); putc(':');
+            put2((dt[1] & 31) * 2);
+            break;
+        }                               /* $E (ANSI) gibt es nicht      */
+    }
+}
+
+/* Programm suchen wie COMMAND.COM: aktuelles Verzeichnis, dann PATH; je
+   Verzeichnis .EXE, .BAT, .COM. -> 0 nicht gefunden, 1 EXE, 2 BAT, 3 COM */
+static int find_program(const char *w, unsigned wl, char *out)
+{
+    static const char *const ext[3] = { ".EXE", ".BAT", ".COM" };
+    static char dir[FAPI_PATHLEN];
+    const char *pp = 0;
+    unsigned i, k, n, dl = 0;
+    int has_ext = 0, has_path = 0, e;
+
+    for (i = 0; i < wl; i++) {
+        if (w[i] == '\\' || w[i] == ':') {
+            has_path = 1;
+            has_ext = 0;
+        } else if (w[i] == '.')
+            has_ext = 1;
+    }
+    if (!has_path && DosGetEnv("PATH", pbuf, sizeof(pbuf)) != FAPI_ERROR)
+        pp = pbuf;
+    for (;;) {                          /* erst "", dann PATH-Eintraege */
+        for (k = 0; k < dl; k++)
+            out[k] = dir[k];
+        if (dl && out[dl - 1] != '\\' && out[dl - 1] != ':')
+            out[k++] = '\\';
+        for (i = 0; i < wl && k < FAPI_PATHLEN - 5; i++)
+            out[k++] = w[i];
+        out[k] = 0;
+        if (has_ext) {
+            if (exists(out)) {
+                for (e = 0; e < 3; e++) {
+                    for (i = 0; i < 4 && up(out[k - 4 + i]) == ext[e][i]; i++)
+                        ;
+                    if (i == 4)
+                        return e + 1;
+                }
+                return 1;               /* andere Endung: als EXE versuchen */
+            }
+        } else
+            for (e = 0; e < 3; e++) {
+                for (i = 0; i < 4; i++)
+                    out[k + i] = ext[e][i];
+                out[k + 4] = 0;
+                if (exists(out))
+                    return e + 1;
+            }
+        if (!pp || !*pp)
+            return 0;
+        for (n = 0; *pp && *pp != ';' && n < FAPI_PATHLEN - 14; n++)
+            dir[n] = *pp++;
+        while (*pp == ';')
+            pp++;
+        dl = n;
+        if (dl == 0)
+            continue;
+    }
+}
+
+/* ---- Stapeldateien ----------------------------------------------------- */
+#define BMAX 4
+static struct batch {
+    unsigned sel, len, pos;
+    char     argbuf[FAPI_ARGLEN + FAPI_PATHLEN];
+    char    *argv[10];
+    int      argc, shift;
+} bat[BMAX];
+static int bdepth, batch_stop;
+
+static char __far *bdata(struct batch *b)
+{
+    return MK_FP(b->sel, 0);
+}
+
+/* naechste Zeile nach out; 0 = Ende */
+static int batch_line(struct batch *b, char *out)
+{
+    char __far *d = bdata(b);
+    unsigned n = 0;
+    if (b->pos >= b->len)
+        return 0;
+    while (b->pos < b->len && d[b->pos] != '\n' && d[b->pos] != 0x1A) {
+        if (d[b->pos] != '\r' && n < CMDLEN - 1)
+            out[n++] = d[b->pos];
+        b->pos++;
+    }
+    if (b->pos < b->len && d[b->pos] == 0x1A)
+        b->pos = b->len;
+    else
+        b->pos++;
+    out[n] = 0;
+    return 1;
+}
+
+/* %0..%9, %NAME%, %% ersetzen: in -> ebuf */
+static void expand(struct batch *b, const char *in)
+{
+    static char val[FAPI_PATHLEN], nm[64];
+    unsigned o = 0, k;
+    const char *s, *q;
+
+    while (*in && o < CMDLEN - 1) {
+        if (*in != '%') {
+            ebuf[o++] = *in++;
+            continue;
+        }
+        in++;
+        if (*in == '%') {
+            ebuf[o++] = '%';
+            in++;
+        } else if (*in >= '0' && *in <= '9') {
+            k = (unsigned)(*in++ - '0') + (unsigned)b->shift;
+            if ((int)k < b->argc)
+                for (s = b->argv[k]; *s && o < CMDLEN - 1; )
+                    ebuf[o++] = *s++;
+        } else {
+            for (q = in; *q && *q != '%' && *q != ' '; q++)
+                ;
+            if (*q != '%' || q == in || q - in >= (int)sizeof(nm)) {
+                ebuf[o++] = '%';        /* kein Variablenname: so lassen */
+                continue;
+            }
+            for (k = 0; in + k < q; k++)
+                nm[k] = in[k];
+            nm[k] = 0;
+            if (DosGetEnv(nm, val, sizeof(val)) != FAPI_ERROR)
+                for (s = val; *s && o < CMDLEN - 1; )
+                    ebuf[o++] = *s++;
+            in = q + 1;
+        }
+    }
+    ebuf[o] = 0;
+}
+
+static void cmd_goto(struct batch *b, char *label)
+{
+    static char l[CMDLEN];
+    char *p;
+    unsigned i;
+
+    if (*label == ':')
+        label++;
+    b->pos = 0;
+    while (batch_line(b, l)) {
+        p = skip(l);
+        if (*p != ':')
+            continue;
+        p++;
+        for (i = 0; label[i] && label[i] != ' ' && up(label[i]) == up(p[i]); i++)
+            ;
+        if ((!label[i] || label[i] == ' ') && (!p[i] || p[i] == ' '))
+            return;
+    }
+    puts("Sprungmarke nicht gefunden.\n");
+    batch_stop = 1;
+}
+
+/* IF [NOT] ERRORLEVEL n | EXIST datei | a==b  befehl  -> 0 = EXIT */
+static int cmd_if(char *arg)
+{
+    static char w[FAPI_PATHLEN];
+    int neg = 0, cond;
+    char *p = arg, *q;
+    unsigned n, i;
+
+    if (same(p, "NOT")) {
+        neg = 1;
+        p = next_word(p);
+    }
+    if (same(p, "ERRORLEVEL")) {
+        p = next_word(p);
+        for (n = 0; *p >= '0' && *p <= '9'; p++)
+            n = n * 10 + (unsigned)(*p - '0');
+        cond = n == 0;                  /* Programme liefern noch 0     */
+        p = skip(p);
+    } else if (same(p, "EXIST")) {
+        p = next_word(p);
+        word(p, w, sizeof(w));
+        cond = exists(w);
+        p = next_word(p);
+    } else {
+        for (q = p; *q && !(q[0] == '=' && q[1] == '='); q++)
+            ;
+        if (!*q) {
+            puts("Syntaxfehler.\n");
+            return 1;
+        }
+        n = (unsigned)(q - p);
+        q += 2;
+        for (i = 0; q[i] && q[i] != ' '; i++)
+            ;
+        cond = i == n;
+        for (i = 0; cond && i < n; i++)
+            cond = p[i] == q[i];
+        p = next_word(q);
+    }
+    if (cond != neg && *p)
+        return execute(p);
+    return 1;
+}
+
+static int run_batch(const char *path, const char *args)
+{
+    static char l[CMDLEN];
+    struct batch *b;
+    unsigned h, n, total = 0, sel, i;
+    char *p, __far *d;
+    int rc = 1, quiet;
+
+    if (bdepth == BMAX) {
+        puts("Zu viele verschachtelte Stapeldateien.\n");
+        return 1;
+    }
+    h = DosOpen(path);                  /* Laenge bestimmen             */
+    if (h == FAPI_ERROR) {
+        puts("Stapeldatei nicht gefunden.\n");
+        return 1;
+    }
+    while ((n = DosRead(h, cbuf, sizeof(cbuf))) != 0 && n != FAPI_ERROR)
+        total += n;
+    DosClose(h);
+    sel = DosAllocSeg(total ? total : 1);
+    if (sel == FAPI_ERROR || sel == 0) {
+        puts("Nicht gen\x81gend Arbeitsspeicher.\n");
+        return 1;
+    }
+    b = &bat[bdepth];
+    b->sel = sel;
+    b->len = total;
+    b->pos = 0;
+    b->shift = 0;
+    d = bdata(b);
+    h = DosOpen(path);
+    for (total = 0; h != FAPI_ERROR &&
+         (n = DosRead(h, cbuf, sizeof(cbuf))) != 0 && n != FAPI_ERROR; total += n)
+        for (i = 0; i < n && total + i < b->len; i++)
+            d[total + i] = cbuf[i];
+    if (h != FAPI_ERROR)
+        DosClose(h);
+    /* %0 = Name der Datei, %1.. = Argumente */
+    p = b->argbuf;
+    b->argc = 0;
+    for (i = 0; path[i] && i < FAPI_PATHLEN - 1; i++)
+        *p++ = path[i];
+    *p++ = 0;
+    b->argv[b->argc++] = b->argbuf;
+    for (args = skip((char *)args); *args && b->argc < 10; args = skip((char *)args)) {
+        b->argv[b->argc++] = p;
+        while (*args && *args != ' ' && p < b->argbuf + sizeof(b->argbuf) - 1)
+            *p++ = *args++;
+        *p++ = 0;
+    }
+    bdepth++;
+    while (!batch_stop && batch_line(b, l)) {
+        p = skip(l);
+        quiet = *p == '@';
+        if (quiet)
+            p = skip(p + 1);
+        if (!*p || *p == ':')
+            continue;                   /* Leerzeile, Sprungmarke       */
+        expand(b, p);
+        if (echo_on && !quiet) {
+            show_prompt();
+            puts(ebuf);
+            puts("\n");
+        }
+        for (i = 0; ebuf[i]; i++)
+            l[i] = ebuf[i];
+        l[i] = 0;
+        if (!execute(l)) {
+            rc = 0;
+            break;
+        }
+    }
+    batch_stop = 0;
+    bdepth--;
+    DosFreeSeg(sel);
+    if (bdepth == 0)
+        echo_on = 1;                    /* wie MS-DOS: an der Eingabe wieder an */
+    return rc;
+}
+
+/* Programm oder Stapeldatei starten; sync: 1 warten, 0 eigene Sitzung.
+   call: Stapeldatei als Unterprogramm (CALL) statt als Fortsetzung. */
+static int run_program(char *cmd, int sync, int call)
+{
+    static char path[FAPI_PATHLEN], cl[FAPI_ARGLEN + 16];
+    char *args = next_word(cmd);
+    unsigned wl, i, k, r;
+    int type;
+
+    for (wl = 0; cmd[wl] && cmd[wl] != ' '; wl++)
+        ;
+    type = find_program(cmd, wl, path);
+    if (type == 0) {
+        puts("Befehl oder Dateiname nicht gefunden.\n");
+        return 1;
+    }
+    if (type == 3) {
+        for (i = 0; path[i]; i++)
+            path[i] = up(path[i]);
+        puts(base_name(path));
+        puts(" ist ein MS-DOS-Programm und l\x84uft nicht unter AT-DOS.\n");
+        return 1;
+    }
+    if (type == 2 && sync) {
+        r = run_batch(path, args);
+        if (bdepth > 0 && !call)
+            batch_stop = 1;             /* ohne CALL: Kette, nicht zurueck */
+        return r;
+    }
+    k = 0;
+    if (type == 2) {                    /* START x.BAT: COMMAND /C x.BAT */
+        if (DosGetEnv("COMSPEC", cl, sizeof(cl)) != FAPI_ERROR)
+            for (; cl[k]; k++)
+                ;
+        else
+            for (; "COMMAND.EXE"[k]; k++)
+                cl[k] = "COMMAND.EXE"[k];
+        cl[k++] = ' '; cl[k++] = '/'; cl[k++] = 'C'; cl[k++] = ' ';
+    }
+    for (i = 0; path[i] && k < sizeof(cl) - 2; i++)
+        cl[k++] = path[i];
+    if (*args) {
+        cl[k++] = ' ';
+        for (i = 0; args[i] && k < sizeof(cl) - 1; i++)
+            cl[k++] = args[i];
+    }
+    cl[k] = 0;
+    if (k >= FAPI_ARGLEN) {
+        puts("Befehlszeile zu lang.\n");
+        return 1;
+    }
+    r = DosExecPgm(cl, sync ? EXEC_SYNC : EXEC_ASYNC);
+    if (r)
+        exec_error(r);
+    return 1;
+}
+
+/* ---- Hauptschleife ----------------------------------------------------- */
+static int execute(char *l)
+{
+    char *cmd = skip(l), *arg;
 
     if (!*cmd)
         return 1;
@@ -674,24 +1076,65 @@ static int execute(void)
     else if (same(cmd, "VER"))
         cmd_ver();
     else if (same(cmd, "ECHO")) {
-        puts(arg);
+        if (same(arg, "OFF"))
+            echo_on = 0;
+        else if (same(arg, "ON"))
+            echo_on = 1;
+        else if (!*arg)
+            puts(echo_on ? "ECHO ist eingeschaltet.\n" : "ECHO ist ausgeschaltet.\n");
+        else {
+            puts(arg);
+            puts("\n");
+        }
+    } else if (up(cmd[0]) == 'E' && up(cmd[1]) == 'C' && up(cmd[2]) == 'H' &&
+               up(cmd[3]) == 'O' && (cmd[4] == '.' || cmd[4] == ':')) {
+        puts(cmd + 5);                  /* ECHO. = Leerzeile            */
         puts("\n");
+    } else if (same(cmd, "SET"))
+        cmd_set(arg);
+    else if (same(cmd, "PATH")) {
+        if (!*arg) {
+            if (DosGetEnv("PATH", pbuf, sizeof(pbuf)) == FAPI_ERROR || !pbuf[0])
+                puts("Kein Pfad\n");
+            else {
+                puts("PATH=");
+                puts(pbuf);
+                puts("\n");
+            }
+        } else
+            set_var("PATH", arg[0] == ';' && !arg[1] ? "" : arg);
+    } else if (same(cmd, "PROMPT"))
+        set_var("PROMPT", arg);
+    else if (same(cmd, "REM"))
+        ;
+    else if (same(cmd, "PAUSE")) {
+        puts("Eine beliebige Taste dr\x81\x63ken . . .");
+        KbdCharIn();
+        puts("\n");
+    } else if (same(cmd, "GOTO")) {
+        if (bdepth)
+            cmd_goto(&bat[bdepth - 1], arg);
+    } else if (same(cmd, "SHIFT")) {
+        if (bdepth)
+            bat[bdepth - 1].shift++;
+    } else if (same(cmd, "IF"))
+        return cmd_if(arg);
+    else if (same(cmd, "CALL")) {
+        if (*arg)
+            return run_program(arg, 1, 1);
     } else if (same(cmd, "HILFE") || same(cmd, "HELP") || same(cmd, "?"))
         cmd_help();
     else if (same(cmd, "START")) {
         if (!*arg)
             puts("Syntax: START Programm [Argumente]\n");
-        else if ((r = DosExecPgm(arg, EXEC_ASYNC)) != 0)
-            exec_error(r);
+        else
+            run_program(arg, 0, 0);
     } else if (same(cmd, "EXIT")) {
         if (!permanent)
             return 0;
         puts("Dieser Befehlsinterpreter ist permanent (/P) und kann nicht beendet werden.\n");
-    } else if ((r = DosExecPgm(cmd, EXEC_SYNC)) != 0) {
-        if ((r == EXEC_ERR_NOTFOUND || r == EXEC_ERR_FORMAT) && dos_program(cmd))
-            return 1;
-        exec_error(r);
-    }
+    } else
+        return run_program(cmd, 1, 0);
     return 1;
 }
 
@@ -701,17 +1144,30 @@ void main(void)
     char *p;
 
     DosGetArgs(args);
-    for (p = args; *p; p = next_word(p))
+    for (p = args; *p; p = next_word(p)) {
         if (same(p, "/P"))
             permanent = 1;
+        else if (up(p[0]) == '/' || p[0] == '/') {
+            if (up(p[1]) == 'C' && (p[2] == ' ' || !p[2])) {
+                execute(next_word(p));  /* COMMAND /C befehl: ausfuehren, Ende */
+                return;
+            }
+        }
+    }
 
     puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 5.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
-    do {
-        static char cur[FAPI_CURDIRLEN];
-        DosQCurDir(cur);
-        puts(cur);
-        puts(">");
+    if (permanent && exists("\\AUTOEXEC.BAT")) {
+        if (!run_batch("\\AUTOEXEC.BAT", ""))
+            return;
+        echo_on = 1;
+        puts("\n");
+    }
+    for (;;) {
+        if (echo_on)
+            show_prompt();
         read_line();
-    } while (execute());
+        if (!execute(line))
+            break;
+    }
 }
