@@ -348,7 +348,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Code und Daten getrennt beschreiben)
 - Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
 - Lange Namen auf FAT – Entscheidung des Nutzers: Bonus, erst wenn 5.0 alle
-  nötigen Funktionen hat (niedrige Priorität, z. B. als 5.x). IBM/OS/2-Modell, also
+  nötigen Funktionen hat, aber auf jeden Fall vor der DOS-Box von 5.1.
+  Reihenfolge also: 5.0 komplett -> lange Namen -> 5.1 (Kompatibilitätsbox).
+  IBM/OS/2-Modell, also
   `.LONGNAME` als erweitertes Attribut in `EA DATA. SF`, nicht VFAT. Grund:
   MS-DOS-Werkzeuge (CHKDSK, ScanDisk) sehen nur eine normale Datei, während
   sie VFAT-Einträge als Fehler „reparieren“. Dazu ein Prüfprogramm, das
