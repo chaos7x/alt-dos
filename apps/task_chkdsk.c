@@ -160,6 +160,14 @@ void main(void)
     cat(prog, fi.fsname);
     cat(prog, ".EXE");
     if (find_prog()) {
+        if (fi.flags & FSI_READONLY) {  /* CD: wie MS-DOS mit MSCDEX    */
+            puts("CHKDSK kann CD-ROM-Laufwerke nicht pr\x81" "fen.\n");
+            DosExit(3);
+        }
+        if (fi.fsname[0] == 'R' && fi.fsname[1] == 'A' && fi.fsname[2] == 'W' && !fi.fsname[3]) {
+            puts("Das Laufwerk ist nicht formatiert (FORMAT).\n");
+            DosExit(3);
+        }
         puts("F\x81r das Dateisystem ");
         puts(fi.fsname);
         puts(" gibt es kein Pr\x81" "fprogramm (");
