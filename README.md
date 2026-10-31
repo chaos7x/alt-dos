@@ -75,9 +75,10 @@ und PC-DOS.
   `/Q` wird jeder Sektor gelesen und Fehlerhaftes gesperrt (keine
   Low-Level-Formatierung). Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
-- `SYS [Quelle:] Ziel:` überträgt `ATDOS.SYS`, `COMMAND.EXE`, `\DOS\SYSTEM`,
+- `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `COMMAND.EXE`, `\DOS\SYSTEM`,
   `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
-  Startcode in den Bootsektor. Disketten nur leer (`FORMAT A: /S`). Der
+  Startcode in den Bootsektor; mit `/A` zusätzlich alle Programme aus
+  `\DOS` (vollständige Installation). Disketten nur leer (`FORMAT A: /S`). Der
   Diskettenbootsektor meldet „Keine Systemdiskette“, wenn `ATDOS.SYS` fehlt.
 - `CHKDSK [X:] [/F] [/V]` wie MS-DOS: prüft FAT, Ketten, Dateigrößen,
   Querverbindungen und verlorene Zuordnungseinheiten; `/F` repariert

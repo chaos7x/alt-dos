@@ -1,7 +1,7 @@
 /*
  * SYS.EXE - AT-DOS auf einen Datentraeger uebertragen (wie MS-DOS SYS):
  *
- *   SYS [Quelle:] Ziel:
+ *   SYS [Quelle:] Ziel: [/A]
  *
  * Kopiert ATDOS.SYS (versteckt, System, schreibgeschuetzt) und COMMAND.EXE,
  * dazu \DOS\SYSTEM (die Treiber braucht der Start von Platte), CHKDSK.EXE
@@ -10,6 +10,7 @@
  * bekommt der Bootsektor den AT-DOS-Startcode, der BPB bleibt.
  * Disketten: ATDOS.SYS muss als erste Datei zusammenhaengend am Anfang
  * liegen - deshalb nur auf eine leere Diskette (FORMAT A: /S).
+ * /A kopiert zusaetzlich alle Programme aus \DOS (vollstaendige Installation).
  * Quelle ist das Startlaufwerk. ERRORLEVEL 0 ok, 1 Fehler.
  */
 #include "fapi.h"
@@ -21,7 +22,7 @@ static char sdir[FAPI_PATHLEN], ddir[FAPI_PATHLEN], cs[FAPI_PATHLEN];
 static unsigned char bs[512];
 static struct fapi_fsinfo fi;
 static struct fapi_finfo ff;
-static unsigned src = 0xFFFF, dst = 0xFFFF;
+static unsigned src = 0xFFFF, dst = 0xFFFF, all;
 
 static void mk(char *p, unsigned d, const char *rest)
 {
@@ -94,8 +95,13 @@ void main(void)
     for (a = skip(args); *a; a = next_word(a)) {
         if (a[0] == '/' && a[1] == '?') {
             puts("\x9A" "bertr\x84gt AT-DOS auf einen Datentr\x84ger.\r\n\r\n"
-                 "SYS [Quelle:] Ziel:\r\n");
+                 "SYS [Quelle:] Ziel: [/A]\r\n\r\n"
+                 "  /A  auch alle Programme aus \\DOS kopieren\r\n");
             return;
+        }
+        if (a[0] == '/' && up(a[1]) == 'A') {
+            all = 1;
+            continue;
         }
         if (a[1] == ':') {
             if (dst != 0xFFFF)
@@ -109,7 +115,7 @@ void main(void)
             src = (unsigned)(up(cs[0]) - 'A');
     }
     if (dst == 0xFFFF || dst == src) {
-        puts("Aufruf: SYS [Quelle:] Ziel:\r\n");
+        puts("Aufruf: SYS [Quelle:] Ziel: [/A]\r\n");
         DosExit(1);
     }
     if (DosQFSInfo(dst, &fi) || !same(fi.fsname, "FAT")) {
@@ -146,7 +152,11 @@ void main(void)
         DosMkDir(ddir);
     if (copy_dir("DOS\\SYSTEM"))
         DosExit(1);
-    cp("DOS\\CHKDSK.EXE", 0, 0);      /* Pruefung beim Start braucht es */
+    if (all) {
+        if (copy_dir("DOS"))
+            DosExit(1);
+    } else
+        cp("DOS\\CHKDSK.EXE", 0, 0);  /* Pruefung beim Start braucht es */
 
     /* Startcode in den Bootsektor, BPB (Bytes 3..61) bleibt */
     h = DosOpenDrive(dst, DRV_OPEN_LOCK);
