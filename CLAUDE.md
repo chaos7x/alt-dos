@@ -267,7 +267,9 @@ CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
-  32-Bit-Portzugriffen) gehören zu 6.0 auf dem 386/486.
+  32-Bit-Portzugriffen) gehören zu 6.0 auf dem 386/486. Die 53C8xx sind
+  die Standard-SCSI-Controller des Nutzers auf PCI-Maschinen: für 6.0 der
+  wichtigste neue Plattentreiber (`NCR8XX.SYS`, mit Interrupt).
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
   Real-Mode-DOS-Sitzung unter 640 KB (z. B. MS-DOS 6 von der SCSI-Platte),
