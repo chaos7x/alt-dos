@@ -391,9 +391,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sie VFAT-Einträge als Fehler „reparieren“. Dazu ein Prüfprogramm, das
   verwaiste EAs aufräumt. Zusätzlich (Entscheidung des Nutzers): `fat.c`
   liest VFAT-Namen (Windows 95) mindestens, damit Platten und Disketten von
-  dort lange Namen zeigen; geschrieben wird weiter per EA. Offen: Merker
-  im FX-Kopf „kann lange Namen“ (wie OS/2), damit alte 8.3-Programme nur
-  kurze Namen bekommen.
+  dort lange Namen zeigen; geschrieben wird weiter per EA. Merker im
+  FX-Kopf „kann lange Namen“ (Entscheidung des Nutzers, wie OS/2 1.2):
+  Programme ohne Merker bekommen bei der Dateisuche nur 8.3-Kurznamen
+  (`BEWERB~1.TXT`), damit ihre Puffer nicht überlaufen; eigene Werkzeuge
+  bekommen den Merker, sobald sie lange Namen sauber verarbeiten.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,
