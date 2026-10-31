@@ -7,7 +7,7 @@
  */
 #include "fapi.h"
 
-#define ROWS 22                 /* Sitzung hat 23 Zeilen, eine fuer die Frage */
+static unsigned ROWS = 22;     /* Zeilen der Sitzung minus eine fuer die Frage */
 #define COLS 80
 
 static char in[512], out[512];
@@ -26,6 +26,8 @@ void main(void)
     unsigned h = STDIN, n, i, lines = 0, col = 0;
     char *a = args, c;
 
+    ROWS = VioGetRows();
+    ROWS = FAPI_FAILED(ROWS) || ROWS < 3 ? 22 : ROWS - 1;
     DosGetArgs(args);
     while (*a == ' ')
         a++;

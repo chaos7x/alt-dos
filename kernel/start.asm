@@ -91,6 +91,41 @@ _start:
         rep     movsw
         pop     ds
 
+        ; VGA und Zeichensaetze fuer 43/50 Zeilen (MODE CON LINES=): Das
+        ; BIOS sagt, ob es eine VGA ist (AX=1A00h -> AL=1Ah), und wo die
+        ; ROM-Zeichensaetze liegen (AX=1130h: BH=3 8x8 0-127, BH=4 8x8
+        ; 128-255, BH=6 8x16). Im Protected Mode gibt es kein BIOS mehr.
+        push    bp
+        push    es
+        mov     ax, 0x1A00
+        int     0x10
+        cmp     al, 0x1A
+        jne     .novga
+        cmp     bl, 8                   ; aktive Anzeige: VGA Farbe
+        jne     .novga
+        mov     byte [_vga_ok], 1
+        mov     bh, 3
+        mov     di, _vga_font8a
+        call    .font
+        mov     bh, 4
+        mov     di, _vga_font8b
+        call    .font
+        mov     bh, 6
+        mov     di, _vga_font16
+        call    .font
+        jmp     .novga
+.font:
+        mov     ax, 0x1130
+        push    di
+        int     0x10                    ; -> ES:BP
+        pop     di
+        mov     [di], bp
+        mov     [di+2], es
+        ret
+.novga:
+        pop     es
+        pop     bp
+
         ; Start von Festplatte: CONFIG.SYS und Treiber per BIOS vorladen,
         ; solange es noch geht (BIOS-Plattenroutinen brauchen Interrupts)
         test    byte [_boot_drive], 0x80
@@ -671,6 +706,11 @@ _mem_ext_kb:  resw 1
 global _bios_hdcount, _bios_fdpt
 _bios_hdcount: resb 1
 _bios_fdpt:   resb 32
+global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
+_vga_ok:      resb 1
+_vga_font8a:  resw 2                    ; Offset, Segment (ROM)
+_vga_font8b:  resw 2
+_vga_font16:  resw 2
 kstack:      resb 1024
 kstack_top:
 

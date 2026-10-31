@@ -117,6 +117,13 @@ und PC-DOS.
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 
+**MODE CON LINES=25|43|50** stellt die Zeilenzahl der eigenen Sitzung um
+(wie OS/2: jede Sitzung hat ihre eigene, beim Wechsel stellt der Kernel die
+Karte um). 43 und 50 Zeilen nur mit VGA: 350 bzw. 400 Rasterzeilen mit dem
+8x8-Zeichensatz aus dem ROM der Karte; `MODE CON` zeigt den Zustand,
+`MODE CO80` geht zurück auf 25. EDIT, LESS, MORE und `DIR /P` nutzen alle
+Zeilen.
+
 Programme auf der Diskette: **EDIT** ist ein Bildschirm-Editor wie MS-DOS
 EDIT (Vollbild, Menüs mit Alt oder F10, Markieren mit Umschalt,
 Umschalt+Entf/Strg+Einfg/Umschalt+Einfg, Strg+Y, Suchen/Weitersuchen (F3)/
@@ -201,9 +208,11 @@ selbst nur 8.3 kennt.
 | 49 | DosLabel        | BX = Laufwerk, CX = Ausgabe (Bezeichnung, Seriennummer), DX = neue Bezeichnung oder 0 |
 | 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C) |
 | 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
-| 50 | VioSetMode      | BX = 1 Vollbild (25 Zeilen ohne Titel- und Statusleiste), 0 normal → Zeilenzahl; der normale Inhalt wird gesichert und am Ende wiederhergestellt |
+| 50 | VioSetMode      | BX = 1 Vollbild (alle Zeilen ohne Titel- und Statusleiste), 0 normal → Zeilenzahl; der normale Inhalt wird gesichert und am Ende wiederhergestellt |
 | 51 | VioSetCurPos    | BX = Zeile << 8 \| Spalte (Zeile FFh = Cursor aus) |
 | 52 | KbdShift        | → Umschalttasten jetzt: 1 Umschalt, 2 Strg, 4 Alt, 8 AltGr |
+| 53 | VioSetLines     | BX = Bildschirmzeilen der eigenen Sitzung: 25, 43, 50 (nur VGA), 0 = fragen → Zeilen; löscht den Bildschirm, nicht im Vollbild |
+| 54 | VioGetRows      | → Zeilen, die das Programm beschreiben kann (normal Bildschirm − 2, Vollbild alle) |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

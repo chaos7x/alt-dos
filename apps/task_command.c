@@ -632,7 +632,7 @@ static void cmd_dir(char *arg)
         putc(' ');
         puts(e.name);
         puts("\n");
-        if (page && ++lines >= 22) {            /* eine Bildschirmseite */
+        if (page && ++lines >= VioGetRows() - 1) {  /* eine Bildschirmseite */
             puts("Weiter mit beliebiger Taste . . .");
             KbdCharIn();
             puts("\n");

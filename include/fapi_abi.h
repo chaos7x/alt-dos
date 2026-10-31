@@ -94,11 +94,16 @@ struct fapi_label {
     char           label[12];
     unsigned long  serial;          /* 0 = keine                        */
 };
-#define FAPI_VIOSETMODE     0x32    /* BX = 1 Vollbild (25 Zeilen, ohne Titel- und
-                                       Statusleiste), 0 normal (23) -> Zeilenzahl;
+#define FAPI_VIOSETMODE     0x32    /* BX = 1 Vollbild (alle Zeilen, ohne Titel- und
+                                       Statusleiste), 0 normal (2 weniger) -> Zeilenzahl;
                                        endet das Programm, gilt wieder normal */
 #define FAPI_VIOSETCURPOS   0x33    /* BX = Zeile << 8 | Spalte, Zeile FFh = Cursor aus */
 #define FAPI_KBDSHIFT       0x34    /* -> AX = KBDSHIFT_* (Zustand jetzt)  */
+#define FAPI_VIOSETLINES    0x35    /* BX = Bildschirmzeilen 25/43/50 (nur VGA)
+                                       der eigenen Sitzung, 0 = nur fragen;
+                                       loescht den Bildschirm -> Zeilen */
+#define FAPI_VIOGETROWS     0x36    /* -> Zeilen, die das Programm beschreiben
+                                       kann (normal Bildschirm - 2, Vollbild alle) */
 #define KBDSHIFT_SHIFT      0x01
 #define KBDSHIFT_CTRL       0x02
 #define KBDSHIFT_ALT        0x04    /* linke Alt-Taste                  */

@@ -4,7 +4,8 @@
  *   EDIT [Datei]
  *
  * Vollbild (VioSetMode): Zeile 0 Menueleiste, 1 Rahmen mit Dateiname,
- * 2-22 Text, 23 Rahmen, 24 Statuszeile. Menue mit Alt (allein oder
+ * 2-22 Text, 23 Rahmen, 24 Statuszeile (bei 43/50 Zeilen entsprechend
+ * mehr Text, MODE CON LINES=). Menue mit Alt (allein oder
  * Alt+Buchstabe) oder F10, Tasten wie MS-DOS EDIT (CUA): Umschalt+Pfeile
  * markieren, Umschalt+Entf ausschneiden, Strg+Einfg kopieren,
  * Umschalt+Einfg einfuegen, Strg+Y Zeile loeschen, F3 weitersuchen.
@@ -21,7 +22,8 @@
 #include "util.h"
 
 #define CAP         65520U          /* Groesse des Textsegments        */
-#define TROWS       21              /* Textzeilen 2..22                */
+static unsigned TROWS = 21;         /* Textzeilen ab Zeile 2           */
+static unsigned SROW = 24;          /* Statuszeile (unterste)          */
 #define TCOLS       78              /* Textspalten 1..78               */
 #define TY          2
 #define TX          1
@@ -445,7 +447,7 @@ static void draw_frame(void)
     VioWrtStrAtt(1, x, seg, A_TITLE);
     row[0] = '\xC0';
     row[79] = '\xD9';
-    out(23, 0, row, 80, A_TEXT);
+    out((int)TROWS + 2, 0, row, 80, A_TEXT);
 }
 
 static void draw_status(void)
@@ -463,7 +465,7 @@ static void draw_status(void)
     num(s + 69, cur_line + 1, 5);
     s[74] = ':';
     num(s + 75, cur_col() + 1, 3);
-    out(24, 0, s, 80, A_STATUS);
+    out((int)SROW, 0, s, 80, A_STATUS);
 }
 
 static void draw_text(void)
@@ -1333,6 +1335,7 @@ static void on_signal(unsigned sig)
 void main(void)
 {
     char *a;
+    unsigned k;
 
     DosGetArgs(args);
     a = skip(args);
@@ -1345,10 +1348,13 @@ void main(void)
         puts("Nicht genug Speicher f\x81r EDIT.\r\n");
         DosExit(1);
     }
-    if (VioSetMode(1) != 25) {
+    k = VioSetMode(1);                  /* -> Zeilen: 25, 43 oder 50     */
+    if (FAPI_FAILED(k) || k < 25) {
         puts("Vollbild nicht verf\x81gbar.\r\n");
         DosExit(1);
     }
+    TROWS = k - 4;
+    SROW = k - 1;
     DosSetSigHandler(on_signal, SIG_BREAK);
     text_clear();
     if (*a) {

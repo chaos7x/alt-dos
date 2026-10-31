@@ -23,7 +23,8 @@
 #include <i86.h>
 #include "fapi.h"
 
-#define ROWS      22                    /* Textzeilen, Zeile 22 = Status */
+static unsigned ROWS = 22;             /* Textzeilen, darunter Status;
+                                           aus VioGetRows (MODE CON LINES=) */
 #define COLS      80
 #define NDATA     8
 #define MAXLINES  10900                 /* 6 Byte je Zeile im Index      */
@@ -358,6 +359,8 @@ void main(void)
     unsigned h = STDIN, key, ch, sc, count = 0;
     char *a = args, *f;
 
+    ROWS = VioGetRows();
+    ROWS = FAPI_FAILED(ROWS) || ROWS < 3 ? 22 : ROWS - 1;
     DosGetArgs(args);
     for (;;) {
         while (*a == ' ')

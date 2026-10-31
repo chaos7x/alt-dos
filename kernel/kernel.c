@@ -141,7 +141,7 @@ void gdt_build(void)
     set_desc(0, 0, 0, 0);
     set_desc(1, KCODE_LIN, ((kcode_size + 15) & ~15u) - 1, ACC_KCODE);
     set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
-    set_desc(3, 0xB8000UL, 80 * 25 * 2 - 1, ACC_KDATA);
+    set_desc(3, 0xB8000UL, 80 * 50 * 2 - 1, ACC_KDATA);   /* bis 50 Zeilen */
 
     g = (struct gate *)&gdt[GATE_IDX];          /* FAPI-Call-Gate       */
     g->off    = (unsigned short)fapi_entry;
@@ -1302,6 +1302,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 
     case FAPI_VIOSETMODE:
         vio_setmode(s, a1 != 0, current);
+        return vio_rows(s);
+
+    case FAPI_VIOSETLINES:
+        k = vio_setlines(s, (int)a1);
+        return k < 0 ? FAPI_ERROR : (unsigned)k;
+
+    case FAPI_VIOGETROWS:
         return vio_rows(s);
 
     case FAPI_VIOSETCURPOS:

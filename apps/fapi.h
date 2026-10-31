@@ -67,6 +67,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioWrtStr(r, c, s)  F2(FAPI_VIOWRTSTR, (s), ((r) << 8) | (c))
 #define VioSetMode(full)    F2(FAPI_VIOSETMODE, (full), 0)
 #define VioSetCurPos(r, c)  F2(FAPI_VIOSETCURPOS, ((r) << 8) | (c), 0)
+#define VioSetLines(n)      F2(FAPI_VIOSETLINES, (n), 0)
+#define VioGetRows()        F2(FAPI_VIOGETROWS, 0, 0)
 #define KbdShift()          F2(FAPI_KBDSHIFT, 0, 0)
 #define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))
 

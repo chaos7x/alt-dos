@@ -10,8 +10,14 @@
  * im Vollbild (VioSetMode, z. B. EDIT) hat alle 25 Zeilen; Titel- und
  * Statusleiste erscheinen erst wieder in einer normalen Sitzung.
  *
+ * Zeilenzahl je Sitzung (MODE CON LINES=, wie bei OS/2): 25, 43 oder 50
+ * Bildschirmzeilen, nur mit VGA. Beim Sitzungswechsel stellt redraw() die
+ * Karte um: 400 Rasterzeilen mit 8x16 (25) bzw. 8x8 (50), 350 Rasterzeilen
+ * mit 8x8 (43). Die Zeichensaetze kommen aus dem ROM der Karte (Adressen
+ * hat start.asm im Real Mode erfragt) und werden in Ebene 2 geladen.
+ *
  * Schattenpuffer: Ausgaben landen nur im Puffer der Sitzung; geaenderte
- * Zeilen der Vordergrund-Sitzung merkt sich `dirty`. vio_flush() kopiert
+ * Zeilen der Vordergrund-Sitzung merken sich dlo..dhi. vio_flush() kopiert
  * sie am Stueck in den Bildspeicher - der Scheduler ruft es, sobald ein
  * Programm wartet (Taste, DosSleep, Zeitscheibe um). So sieht man nie
  * halb gezeichnete Bilder (Menue weg, Text neu, Menue wieder da).
@@ -20,7 +26,7 @@
 #include "mem.h"
 
 #define ATTR        0x07
-#define NBYTES   (SROWS * SCOLS * 2)            /* normaler Inhalt      */
+#define NBYTES   ((SLINES_MAX - 2) * SCOLS * 2) /* normaler Inhalt      */
 #define SAVEU    ((NBYTES + MEM_UNIT - 1) / MEM_UNIT)
 #define TITLE_ATTR  0x1F
 #define STATUS_ATTR 0x70
@@ -29,6 +35,7 @@ struct session {
     unsigned char used;
     unsigned char row, col;
     unsigned char rows, top;        /* 23/1 normal, 25/0 Vollbild       */
+    unsigned char lines;            /* Bildschirmzeilen 25/43/50        */
     unsigned char hidecur;          /* Cursor aus (Vollbild)            */
     signed char   owner;            /* Task, der Vollbild verlangt hat  */
     unsigned char srow, scol;       /* Cursor vor dem Vollbild          */
@@ -39,9 +46,103 @@ struct session {
 
 static struct session ses[NTASK];
 static int fg = -1;
-static unsigned long dirty;         /* Pufferzeilen der Vordergrund-Sitzung */
+static unsigned char dlo = 0xFF, dhi; /* geaenderte Pufferzeilen dlo..dhi
+                                         der Vordergrund-Sitzung (FF = keine) */
 static unsigned char cur_dirty;
 static unsigned shown_uptime = 0xFFFF;
+static unsigned char hw_lines = 25; /* Zeilen, auf die die Karte steht  */
+
+extern unsigned char  vga_ok;       /* start.asm, aus dem Real Mode     */
+extern unsigned short vga_font8a[2], vga_font8b[2], vga_font16[2];
+
+static void mark(unsigned char a, unsigned char b)  /* Zeilen a..b neu */
+{
+    unsigned f = irq_off();
+    if (dlo == 0xFF) {
+        dlo = a;
+        dhi = b;
+    } else {
+        if (a < dlo)
+            dlo = a;
+        if (b > dhi)
+            dhi = b;
+    }
+    irq_restore(f);
+}
+
+/* ---- VGA: Zeilenzahl umstellen ----------------------------------------- */
+static void crtc(unsigned i, unsigned v) { outb(0x3D4, i); outb(0x3D5, v); }
+static unsigned crtc_in(unsigned i) { outb(0x3D4, i); return inb(0x3D5); }
+static void seqr(unsigned i, unsigned v) { outb(0x3C4, i); outb(0x3C5, v); }
+static void gcr(unsigned i, unsigned v) { outb(0x3CE, i); outb(0x3CF, v); }
+
+static unsigned long seg_lin(const unsigned short *p)
+{
+    return ((unsigned long)p[1] << 4) + p[0];
+}
+
+/* Zeichensatz mit h Rasterzeilen je Zeichen nach Ebene 2 (32 Byte je
+   Zeichen); 8x8 liegt im ROM in zwei Haelften */
+static void load_font(unsigned h)
+{
+    unsigned char __far *d;
+    const unsigned char __far *f;
+    unsigned c, l;
+
+    seqr(0x02, 0x04);                       /* nur Ebene 2 schreiben    */
+    seqr(0x04, 0x07);                       /* fortlaufend, kein Odd/Even */
+    gcr(0x04, 0x02);                        /* Ebene 2 lesen            */
+    gcr(0x05, 0x00);
+    gcr(0x06, 0x04);                        /* A0000h, 64 KB            */
+    scratch2_map(0xA0000UL, 256 * 32 - 1);
+    d = MK_FP(SCRATCH2, 0);
+    for (c = 0; c < 256; c++) {
+        if (h == 16) {
+            if (c == 0)
+                scratch_map(seg_lin(vga_font16), 256 * 16 - 1);
+            f = MK_FP(SCRATCH, c * 16);
+        } else {
+            if (c == 0)
+                scratch_map(seg_lin(vga_font8a), 128 * 8 - 1);
+            else if (c == 128)
+                scratch_map(seg_lin(vga_font8b), 128 * 8 - 1);
+            f = MK_FP(SCRATCH, (c & 127) * 8);
+        }
+        for (l = 0; l < 32; l++)
+            d[c * 32 + l] = l < h ? f[l] : 0;
+    }
+    seqr(0x02, 0x03);                       /* zurueck: Text            */
+    seqr(0x04, 0x03);
+    gcr(0x04, 0x00);
+    gcr(0x05, 0x10);
+    gcr(0x06, 0x0E);                        /* B8000h, 32 KB, Odd/Even  */
+}
+
+/* Karte auf n Zeilen (25/43/50) stellen; Zeitwerte der VGA-Textmodi mit
+   400 bzw. 350 Rasterzeilen (Gesamt 449, 70 Hz) */
+static void set_hw_lines(unsigned n)
+{
+    static const unsigned char r400[] = { 0xBF, 0x1F, 0x9C, 0x8E, 0x8F, 0x96, 0xB9 };
+    static const unsigned char r350[] = { 0xBF, 0x1F, 0x83, 0x85, 0x5D, 0x63, 0xBA };
+    static const unsigned char idx[]  = { 0x06, 0x07, 0x10, 0x11, 0x12, 0x15, 0x16 };
+    const unsigned char *r = n == 43 ? r350 : r400;
+    unsigned h = n == 25 ? 16 : 8, i, misc;
+
+    if (n == hw_lines || !vga_ok)
+        return;
+    misc = inb(0x3CC) & 0x3F;               /* Takt, Adressen behalten  */
+    seqr(0x00, 0x01);                       /* Sequenzer anhalten       */
+    outb(0x3C2, misc | (n == 43 ? 0x80 : 0x40));    /* Sync-Polaritaet   */
+    seqr(0x00, 0x03);
+    crtc(0x11, crtc_in(0x11) & 0x7F);       /* Register 0-7 freigeben   */
+    for (i = 0; i < sizeof(idx); i++)
+        crtc(idx[i], r[i]);                 /* 11h sperrt wieder        */
+    crtc(0x09, (crtc_in(0x09) & 0xE0) | (h - 1));   /* Zeichenhoehe     */
+    crtc(0x0A, (crtc_in(0x0A) & 0xE0) | (h - 2));   /* Cursor           */
+    crtc(0x0B, (crtc_in(0x0B) & 0xE0) | (h - 1));
+    load_font(h);
+    hw_lines = (unsigned char)n;
+}
 
 #define BUF(s)   ((unsigned short __far *)MK_FP(SCR_SEL(s), 0))
 #define VRAM     ((unsigned short __far *)MK_FP(VIDEO, 0))
@@ -67,7 +168,7 @@ static void cursor(void)
         return;
     pos = (ses[fg].row + ses[fg].top) * SCOLS + ses[fg].col;
     if (ses[fg].hidecur)
-        pos = SROWS_FULL * SCOLS;           /* hinter dem sichtbaren Bild */
+        pos = SLINES_MAX * SCOLS;           /* hinter dem sichtbaren Bild */
     outb(0x3D4, 0x0E); outb(0x3D5, pos >> 8);
     outb(0x3D4, 0x0F); outb(0x3D5, pos & 0xFF);
 }
@@ -91,12 +192,14 @@ void vio_status(void)
     unsigned v = uptime_s;
     int i;
 
+    int sr = hw_lines - 1;                  /* Statuszeile: unterste    */
+
     if (v == shown_uptime || (fg >= 0 && !ses[fg].top))
         return;                             /* Vollbild: keine Statuszeile */
     if (shown_uptime == 0xFFFF) {
-        vfill(24, STATUS_ATTR);
-        vputs(24, 1, "Alt+Esc: Sitzung wechseln \xB3 Strg+C: Abbruch \xB3", STATUS_ATTR);
-        vputs(24, 62, "Uptime:       s", STATUS_ATTR);
+        vfill(sr, STATUS_ATTR);
+        vputs(sr, 1, "Alt+Esc: Sitzung wechseln \xB3 Strg+C: Abbruch \xB3", STATUS_ATTR);
+        vputs(sr, 62, "Uptime:       s", STATUS_ATTR);
     }
     shown_uptime = v;
     for (i = 4; i >= 0; i--) {
@@ -104,19 +207,24 @@ void vio_status(void)
         v /= 10;
     }
     b[5] = 0;
-    vputs(24, 70, b, STATUS_ATTR);
+    vputs(sr, 70, b, STATUS_ATTR);
 }
 
 static void redraw(void)
 {
-    dirty = 0;
+    int r;
+    dlo = 0xFF;
     cur_dirty = 0;
+    if (fg >= 0)
+        set_hw_lines(ses[fg].lines);
+    for (r = hw_lines; r < SLINES_MAX; r++)     /* 43: Rest der 44. Zeile */
+        vfill(r, ATTR);
     if (fg >= 0 && !ses[fg].top) {          /* Vollbild                 */
-        far_copy(VIDEO, 0, SCR_SEL(fg), 0, SROWS_FULL * SCOLS * 2);
+        far_copy(VIDEO, 0, SCR_SEL(fg), 0, ses[fg].rows * SCOLS * 2);
     } else {
         title_bar();
         if (fg >= 0)
-            far_copy(VIDEO, SCOLS * 2, SCR_SEL(fg), 0, SROWS * SCOLS * 2);
+            far_copy(VIDEO, SCOLS * 2, SCR_SEL(fg), 0, ses[fg].rows * SCOLS * 2);
         shown_uptime = 0xFFFF;              /* Statuszeile neu zeichnen  */
         vio_status();
     }
@@ -127,7 +235,7 @@ static void put(int s, int r, int c, unsigned short v)
 {
     BUF(s)[r * SCOLS + c] = v;
     if (s == fg)
-        dirty |= 1UL << r;          /* erst schreiben, dann merken (IRQ-fest) */
+        mark((unsigned char)r, (unsigned char)r);   /* erst schreiben, dann merken */
 }
 
 static void clear_row(int s, int r)
@@ -143,17 +251,17 @@ static void scroll(int s)
     far_copy(SCR_SEL(s), 0, SCR_SEL(s), SCOLS * 2, (n - 1) * SCOLS * 2);
     clear_row(s, n - 1);
     if (s == fg)
-        dirty |= (1UL << n) - 1;
+        mark(0, (unsigned char)(n - 1));
 }
 
 void vio_cls(int s)
 {
     int r;
-    for (r = 0; r < SROWS_FULL; r++)
+    for (r = 0; r < SLINES_MAX; r++)
         clear_row(s, r);
     ses[s].row = ses[s].col = 0;
     if (s == fg) {
-        dirty = (1UL << SROWS_FULL) - 1;
+        mark(0, (unsigned char)(ses[s].rows - 1));
         cur_dirty = 1;
     }
 }
@@ -174,6 +282,7 @@ int vio_open(const char *title)
     ses[s].used = 1;
     ses[s].unit = u;
     ses[s].rows = SROWS;
+    ses[s].lines = 25;
     ses[s].top = 1;
     ses[s].hidecur = 0;
     ses[s].owner = -1;
@@ -303,27 +412,23 @@ void vio_kputs(int s, const char *str)
 /* geaenderte Zeilen der Vordergrund-Sitzung in den Bildspeicher */
 void vio_flush(void)
 {
-    unsigned long d;
-    unsigned r, a, n;
+    unsigned a, b, f;
 
     if (fg < 0)
         return;
-    d = dirty;
-    if (d) {
-        dirty = 0;                  /* vor dem Kopieren: neue Aenderungen
+    f = irq_off();
+    a = dlo;
+    b = dhi;
+    dlo = 0xFF;                     /* vor dem Kopieren: neue Aenderungen
                                        bleiben fuer den naechsten Lauf */
-        n = ses[fg].rows;
-        for (r = 0; r < n; ) {
-            if (!(d & (1UL << r))) {
-                r++;
-                continue;
-            }
-            a = r;
-            while (r < n && (d & (1UL << r)))
-                r++;
+    dhi = 0;
+    irq_restore(f);
+    if (a != 0xFF) {
+        if (b >= ses[fg].rows)
+            b = ses[fg].rows - 1;
+        if (a <= b)
             far_copy(VIDEO, (a + ses[fg].top) * SCOLS * 2, SCR_SEL(fg),
-                     a * SCOLS * 2, (r - a) * SCOLS * 2);
-        }
+                     a * SCOLS * 2, (b - a + 1) * SCOLS * 2);
     }
     if (cur_dirty) {
         cur_dirty = 0;
@@ -372,7 +477,7 @@ void vio_setmode(int s, int full, int owner)
             p->scol = p->col;
         }
     }
-    p->rows = (unsigned char)(full ? SROWS_FULL : SROWS);
+    p->rows = (unsigned char)(full ? p->lines : p->lines - 2);
     p->top = (unsigned char)(full ? 0 : 1);
     p->hidecur = 0;
     p->owner = (signed char)(full ? owner : -1);
@@ -411,4 +516,24 @@ void vio_setcur(int s, int row, int col)
     }
     if (s == fg)
         cur_dirty = 1;
+}
+
+/* Bildschirmzeilen der Sitzung (MODE CON LINES=): 25, 43, 50 (nur VGA);
+   0 = nur fragen. Nicht im Vollbild. Der Inhalt wird geloescht.
+   -> Zeilenzahl oder -1 */
+int vio_setlines(int s, int n)
+{
+    if (s < 0 || !ses[s].used)
+        return -1;
+    if (n == 0)
+        return ses[s].lines;
+    if ((n != 25 && n != 43 && n != 50) || (n != 25 && !vga_ok) ||
+        !ses[s].top)
+        return -1;
+    ses[s].lines = (unsigned char)n;
+    ses[s].rows = (unsigned char)(n - 2);
+    vio_cls(s);
+    if (s == fg)
+        redraw();
+    return n;
 }

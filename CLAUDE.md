@@ -132,6 +132,21 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Speicher gesichert und bei `VioSetMode(0)` oder Programmende
   (`vio_task_end` in `task_end`) wiederhergestellt. `ses[].top` (1/0) und
   `rows` (23/25) statt fester Konstanten benutzen.
+- Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
+  VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
+  `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile
+  `hw_lines - 1`. `redraw()` stellt die Karte bei Bedarf um
+  (`set_hw_lines`: 400 Rasterzeilen + 8x16 für 25, + 8x8 für 50; 350 +
+  8x8 für 43; Sync-Polarität im Misc-Register, CRTC 06h–16h, Zeichenhöhe
+  09h, Cursor 0Ah/0Bh) und lädt den Zeichensatz in Ebene 2 (`load_font`).
+  Nur VGA: `start.asm` fragt im Real Mode INT 10h 1A00h (VGA?) und 1130h
+  (ROM-Zeichensätze 8x8 in zwei Hälften, 8x16) ab -> `vga_ok`,
+  `vga_font*`. Geänderte Zeilen als Bereich `dlo..dhi` statt 32-Bit-Maske.
+  `VIDEO`-Deskriptor reicht für 50 Zeilen. Programme fragen die Zeilen mit
+  `VioGetRows()` bzw. dem Ergebnis von `VioSetMode(1)` ab, nie fest 23/25.
+  In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25);
+  auf dem SCAT/ET4000 noch offen. EGA (43 Zeilen, andere Register) nicht
+  unterstützt.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
 - Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der
@@ -447,7 +462,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   abfangen, Kartenzustand beim Umschalten sichern/herstellen (SVGA-Erweiterungen
   je Chip). Grafik-Boxen im Hintergrund notfalls einfrieren (wie OS/2 2.0 anfangs).
 - Reihenfolge nach dem ESDI-Test (abgestimmt mit dem Nutzer): 1. 43/50
-  Textzeilen mit `MODE`, 2. EDIT fertig (SIG_SHUTDOWN-Nachfrage,
+  Textzeilen mit `MODE` (erledigt), 2. EDIT fertig (SIG_SHUTDOWN-Nachfrage,
   Dateiliste), 3. Treiber mit Interrupt (DevHlp SetIRQ), 4. `MOUSE.SYS`,
   danach der ISA-Bereich für 5.0 (Entscheidung des Nutzers): ISA-SCSI
   (NCR 53C400/Trantor T130B, evtl. AHA-1520/AIC-6360) und VGA-Grafik
@@ -457,8 +472,6 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Sitzungswechsel sichern oder Programm einfrieren. PCI (53C8xx) und
   VESA bleiben bei 6.0. Später: FDISK, DISKCOPY, SUBST, UNDELETE usw.,
   lange Namen auf FAT, dann 5.1.
-- 5.0 schon möglich: 43/50 Textzeilen (`MODE CON LINES=`) über Standard-
-  EGA/VGA-Register (8x8-Zeichensatz, CRTC), Sitzungen mit wählbarer Zeilenzahl.
 - Hardware-Referenz 86Box (Quellcode, GPL v2): lesen, um Register und
   Verhalten zu verstehen, nie Code übernehmen (AT-DOS ist MIT). Datenblätter
   bleiben erste Quelle; der Emulator ist nachsichtiger als echte Hardware.

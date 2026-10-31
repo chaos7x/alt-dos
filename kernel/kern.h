@@ -122,8 +122,8 @@ void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */
 #define SCOLS       80
-#define SROWS_FULL  25              /* Vollbild: alle Zeilen der Sitzung   */
-#define SBYTES      (SROWS_FULL * SCOLS * 2)    /* Puffer reicht fuer beides */
+#define SLINES_MAX  50              /* Bildschirmzeilen hoechstens (VGA)   */
+#define SBYTES      (SLINES_MAX * SCOLS * 2)    /* Puffer reicht fuer alles */
 
 int  vio_open(const char *title);   /* -> Sitzung oder -1                  */
 void vio_close(int s);
@@ -139,7 +139,9 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
 void vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
 void vio_status(void);
 void vio_flush(void);               /* Schattenpuffer -> Bildspeicher      */
-int  vio_rows(int s);               /* 23 oder im Vollbild 25              */
+int  vio_rows(int s);               /* Zeilen der Sitzung (z. B. 23/25)    */
+int  vio_setlines(int s, int n);    /* 25/43/50 Bildschirmzeilen, 0 = fragen
+                                       -> Zeilenzahl oder -1                 */
 void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
 void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
 void vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
