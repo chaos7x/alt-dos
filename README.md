@@ -240,8 +240,8 @@ erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
 | linear           | Inhalt                          |
 |------------------|---------------------------------|
 | 08000h – 087FFh  | DMA-Puffer für Laufwerke (2 KB, ein CD-Block) |
-| 10000h – 1FFFFh  | Kernel (ein 64-KB-Segment)      |
-| 20000h – 9FFFFh  | frei, Speicherverwaltung        |
+| ab 10000h        | Kernel: Code (bis 64 KB), direkt dahinter Daten samt Stacks (bis 64 KB) |
+| Kernelende – 9FFFFh | frei, Speicherverwaltung     |
 | A0000h – FFFFFh  | Systembereich (Video, ROMs)     |
 | ab 100000h       | frei, Speicherverwaltung        |
 

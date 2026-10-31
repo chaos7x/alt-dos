@@ -34,7 +34,7 @@ static void release_range(unsigned from, unsigned to)   /* [from, to) */
     }
 }
 
-void mem_init(unsigned conv_kb, unsigned ext_kb)
+void mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb)
 {
     unsigned i;
     unsigned long end;
@@ -45,7 +45,7 @@ void mem_init(unsigned conv_kb, unsigned ext_kb)
 
     if (conv_kb > 640)
         conv_kb = 640;
-    release_range(MEM_LOW_START, conv_kb * 4);
+    release_range(low, conv_kb * 4);
 
     end = MEM_HIGH_START + (unsigned long)ext_kb * 4;
     if (end > 0xFFFFUL)

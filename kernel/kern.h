@@ -37,8 +37,13 @@
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
 
-#define KBASE       0x10000UL       /* Kernel: ein 64-KB-Segment ab hier   */
-#define LIN(p)      (KBASE + (unsigned short)(p))
+/* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
+#define KCODE_LIN   0x10000UL
+extern unsigned kcode_size;         /* start.asm: Groesse von CGROUP       */
+extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
+extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
+#define KDATA_LIN   ((unsigned long)kdata_seg << 4)
+#define LIN(p)      (KDATA_LIN + (unsigned short)(p))
 
 struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; unsigned short rsv; };
 

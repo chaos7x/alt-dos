@@ -52,9 +52,32 @@ for m in kernel mem floppy fat vio kbd preload; do
     wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
-wlink $LINK name $B/kernel.bin option map=$B/kernel.map \
-      file $KOBJ 2>&1 | grep -v W1014 || true
-check_size $B/kernel.bin $B/kernel.map 65536 kernel
+# Code (CGROUP) und Daten (DGROUP) sind getrennte Segmente: als DOS-EXE
+# linken, damit Datenoffsets relativ zu DGROUP sind, dann den Kopf abtrennen
+wlink option quiet format dos option nodefaultlibs \
+      option map order clname CODE clname DATA clname BSS \
+      name $B/kernel.exe option map=$B/kernel.map file $KOBJ 2>&1 | grep -v W1014 || true
+python3 - $B/kernel.exe $B/kernel.bin $B/kernel.map <<'PYEOF'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+nrel, hdr = struct.unpack('<HH', d[6:10])
+if nrel:
+    sys.exit('FEHLER: Kernel enthaelt %d Segment-Relokationen' % nrel)
+open(sys.argv[2], 'wb').write(d[hdr * 16:])
+g = {}
+for l in open(sys.argv[3]):
+    f = l.split()
+    if len(f) == 3 and f[0] in ('CGROUP', 'DGROUP') and ':' in f[1]:
+        s, o = f[1].split(':')
+        g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
+code, data = g['CGROUP'][1], g['DGROUP'][1]
+if g['DGROUP'][0] != (code + 15) & ~15:
+    sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
+if code > 65536 or data > 65536:
+    sys.exit('FEHLER: Kernel-Code %d oder -Daten %d Bytes ueber 64 KB' % (code, data))
+print('  kernel: %d Bytes Datei, Code %d Bytes, Daten %d Bytes mit BSS (je max. 65536)'
+      % (len(d) - hdr * 16, code, data))
+PYEOF
 # der Bootsektor laedt 96 Sektoren; BSS dahinter nullt der Kernel selbst
 [ $(stat -c %s $B/kernel.bin) -le 49152 ] || { echo "FEHLER: ATDOS.SYS groesser als 48 KB"; exit 1; }
 

@@ -91,9 +91,20 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Konventionen
 
-- Kernel und jede App sind je **ein** 64-KB-Segment: `_TEXT` liegt mit in
-  DGROUP (siehe Segmentkopf in `start.asm`/`crt0.asm`), gelinkt als
-  `wlink format raw bin offset=0`.
+- Jede App ist **ein** 64-KB-Segment: `_TEXT` liegt mit in DGROUP (siehe
+  `crt0.asm`), gelinkt als `wlink format raw bin offset=0`.
+- Der Kernel hat getrennte Code- und Datensegmente wie ein Small-Modell-
+  Programm: CGROUP (`_TEXT`) ab linear 10000h, DGROUP (CONST.._BSS) ab dem
+  nächsten Paragraphen dahinter (`_DSTART` align 16), je bis 64 KB.
+  `start.asm` setzt DS = CS + Codegröße, merkt sie in `kdata_seg`;
+  `KDATA_LIN`/`LIN()` in `kern.h` rechnen damit, KCODE/KDATA zeigen dorthin.
+  Gelinkt als **DOS-EXE** (`format dos`), weil `format raw` Offsets linear
+  statt gruppenrelativ vergibt; `build.sh` schneidet den Kopf ab und bricht
+  ab, wenn Segment-Relokationen auftauchen (kein `seg`-Bezug im Kernel!)
+  oder DGROUP nicht direkt hinter dem Code liegt. Kein Code darf Daten
+  über CS lesen oder Codeadressen als Datenoffsets benutzen.
+  Die Speicherverwaltung beginnt direkt hinter den Kerneldaten
+  (`mem_init(low, ...)`), MEM zeigt die echte Kernelgröße.
 - Jeder Task hat eine eigene LDT: Eintrag 0 Code, 1 Daten/Stack, ab 2 per
   `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
@@ -104,14 +115,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Partitionen nur auf 512er-Geräten, CDs nur lesend.
 - Kernelstack je Task 768 Worte: FAPI -> IFS-Modul -> DevHlp -> Treiber
   schachtelt tief. Die Kernelstacks bleiben in DGROUP (Kernel-C setzt
-  SS = DS voraus). DGROUP liegt bei ~61 KB von 64 KB – eng.
+  SS = DS voraus). Seit der Trennung: Code ~33 KB, Daten ~27 KB, je 64 KB.
 - Was mit der Konfiguration wächst, gehört nicht nach DGROUP, sondern in
   eigene Kernelsegmente: `kseg_alloc(bytes)` -> Selektor (GDT-Plätze
   `KSEG_IDX`, `NKSEG`), Zugriff über `__far`-Zeiger. Beispiel: Dateitabelle
   `files` (Größe `FILES=`). `KSEG_IDX(0)` ist fest die Belegungs-Bitmap der
   Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
   `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
-- Der Kernel ist ein 64-KB-Segment ab 10000h; `ATDOS.SYS` (Datei) darf
+- Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
   höchstens 48 KB groß sein (Diskettenbootsektor lädt 96 Sektoren), BSS dahinter nullt `start.asm` selbst.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status. Programme schreiben in den Puffer ihrer Sitzung.
@@ -275,8 +286,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- Nächster Schritt (mit dem Nutzer vereinbart): Kernel-Umbau aus dem
-  64-KB-Segment (DGROUP bei ~61 KB!), dann `EDIT`. FORMAT und SYS sind da. Später: UNDELETE, MSD,
+- Nächster Schritt (mit dem Nutzer vereinbart): `EDIT` (Kernel ist in
+  Code- und Datensegment getrennt). FORMAT und SYS sind da. Später: UNDELETE, MSD,
   HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
@@ -370,8 +381,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   wo die CPU ihn erzwingt (Eintritt/Austritt V86, Interrupts aus V86 über
   32-Bit-Gates) – als kleine, abgegrenzte Stücke. Zielhardware: läuft gut
   auf einem 386SX mit 2 MB. Flache 32-Bit-Programme erst mit 7.0.
-  Vorarbeit schon in 5.0: Kernel aus dem einen 64-KB-Segment holen (Tabellen,
-  Stacks, Puffer in eigene Segmente), wie der 16-Bit-Kernel von OS/2 1.x.
+  Vorarbeit in 5.0 erledigt: Kernel-Code und -Daten in getrennten Segmenten
+  (wie der 16-Bit-Kernel von OS/2 1.x); weitere Tabellen, Stacks und Puffer
+  können später in eigene Segmente (`kseg_alloc`).
 - Speicher in DOS 6.0: Erkennung per INT 15h E820h (Speicherkarte mit
   Lücken), E801h als Rückfall, 88h zuletzt (nur 16 Bit KB, max. 64 MB).
   Ziel: auch VMs mit 128 MB und mehr (Nutzer hat DOS/Windows-VMs mit

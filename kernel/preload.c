@@ -8,7 +8,7 @@
  * stellt das Pseudo-Dateisystem "BOOT" (Laufwerk Z:, nur waehrend
  * CONFIG.SYS) diese Dateien bereit; danach wird es wieder entfernt.
  *
- * preload() laeuft im REAL MODE (CS=DS=SS=1000h): keine Selektoren, keine
+ * preload() laeuft im REAL MODE (CS=1000h, DS=SS=kdata_seg): keine Selektoren, keine
  * Bildschirmausgabe ueber vio, nur Speicher per Segment:Offset. Fehler
  * merkt sich pre_err; kmain meldet sie spaeter.
  *

@@ -25,7 +25,6 @@
 #define UDATA       USEL(1)
 
 #define UNITS(n)    ((unsigned)(((n) + MEM_UNIT - 1) / MEM_UNIT))
-#define KERNEL_KB   64
 
 /* Zugriffsbytes (286) */
 #define ACC_KCODE   0x9A    /* P, DPL0, Code, lesbar              */
@@ -139,8 +138,8 @@ void gdt_build(void)
     int i;
 
     set_desc(0, 0, 0, 0);
-    set_desc(1, KBASE, 0xFFFF, ACC_KCODE);
-    set_desc(2, KBASE, 0xFFFF, ACC_KDATA);
+    set_desc(1, KCODE_LIN, ((kcode_size + 15) & ~15u) - 1, ACC_KCODE);
+    set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
     set_desc(3, 0xB8000UL, 80 * 25 * 2 - 1, ACC_KDATA);
 
     g = (struct gate *)&gdt[GATE_IDX];          /* FAPI-Call-Gate       */
@@ -1319,7 +1318,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         p = MK_FP(usel, a1);
         p[0] = mem_conv_kb + mem_ext_kb;
         p[1] = mem_free_kb();
-        p[2] = KERNEL_KB;
+        p[2] = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
         p[3] = image_units / 4;
         p[4] = alloc_units / 4;
         return 0;
@@ -2650,7 +2649,9 @@ void kmain(void)
         mem_conv_kb = 640;
     if (mem_ext_kb > 15360 || !a20_ok)
         mem_ext_kb = a20_ok ? 15360 : 0;
-    mem_init(mem_conv_kb, mem_ext_kb);
+    /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h) */
+    mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
+             mem_conv_kb, mem_ext_kb);
 
     s0 = vio_open("SYSTEM");
     if (s0 < 0)

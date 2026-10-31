@@ -1,8 +1,10 @@
 ; AT-DOS 5.0 - Kernel-Einstieg und Low-Level-Routinen (80286)
 ;
-; Der Kernel ist ein einziges 64-KB-Segment (Code + Daten in DGROUP),
-; geladen bei linear 10000h. Im Real Mode ist CS=DS=1000h, im Protected
-; Mode zeigen KCODE/KDATA auf dieselbe Basis - alle Offsets bleiben gleich.
+; Der Kernel besteht aus zwei Segmenten wie ein Small-Modell-Programm:
+; Code (CGROUP) ab linear 10000h, dahinter auf den naechsten Paragraphen
+; ausgerichtet die Daten (DGROUP: CONST, _DATA, BSS mit Kernel-Stack).
+; Beide duerfen je 64 KB gross werden. Im Real Mode ist CS=1000h und
+; DS=SS=_kdata_seg, im Protected Mode zeigen KCODE und KDATA dorthin.
 ;
 ; Aufrufkonvention zu C: Watcom-Registerkonvention (AX, DX, BX, CX),
 ; aufgerufene Routinen erhalten alle Register ausser AX (bzw. DX:AX).
@@ -13,12 +15,15 @@ KCODE   equ 0x08
 KDATA   equ 0x10
 
 segment _TEXT  public class=CODE align=1 use16
+segment _TEXTEND public class=CODE align=1 use16
+segment _DSTART public class=DATA align=16 use16
 segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
 segment _DATA  public class=DATA align=2 use16
 segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
-group DGROUP _TEXT CONST CONST2 _DATA _BSS _BSSEND
+group CGROUP _TEXT _TEXTEND
+group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
 extern preload_, reboot_
 extern _reboot_count
@@ -33,7 +38,12 @@ global _start
 _start:
         ; Real Mode, vom Bootsektor bei 1000:0000 angesprungen
         cli
-        mov     ax, cs
+        ; Datensegment: erster Paragraph hinter dem Code
+        mov     ax, code_end
+        add     ax, 15
+        shr     ax, 4
+        mov     bx, cs
+        add     ax, bx
         mov     ds, ax
         mov     es, ax
         ; BSS selbst nullen - der Kernel-Stack liegt darin, also vor dem
@@ -44,7 +54,8 @@ _start:
         xor     al, al
         cld
         rep     stosb
-        mov     ax, cs
+        mov     ax, ds
+        mov     [_kdata_seg], ax
         mov     ss, ax
         mov     sp, kstack_top
         mov     [_boot_drive], dl
@@ -588,7 +599,15 @@ halt_forever_:
         jmp     .h
 
 ; ---------------------------------------------------------------------------
+segment _TEXTEND
+code_end:
+
 segment _DATA
+
+global _kcode_size
+_kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)
+global _kdata_size
+_kdata_size: dw bss_end                 ; Datengroesse samt BSS (DGROUP)
 
 global _isr_table
 _isr_table:
@@ -621,6 +640,8 @@ _ticks:      resw 2
 _uptime_s:   resw 1
 global _a20_ok
 _a20_ok:     resb 1
+global _kdata_seg
+_kdata_seg:  resw 1
 global _fdc_irq
 _fdc_irq:    resb 1
 global _mem_conv_kb, _mem_ext_kb
