@@ -67,22 +67,47 @@ static unsigned char att[82];
 static char     args[FAPI_ARGLEN];
 static volatile int shut_req;       /* SIG_SHUTDOWN angekommen          */
 static int      shutting;           /* Nachfrage laeuft schon           */
+static int      mouse;              /* Maus da (MouOpen)                */
+static struct fapi_mouevent mev;    /* letztes Mausereignis             */
+static unsigned char mprev;         /* Tasten davor                     */
+#define K_MOUSE     0xFE00          /* getkey_m: Mausereignis in mev    */
 
 static void shutdown_now(void);
 
 /* Taste holen; kommt beim Warten SIG_SHUTDOWN, fragt EDIT nach dem
-   Speichern und endet (KbdCharIn kehrt bei einem Signal mit 0 zurueck) */
-static unsigned getkey(void)
+   Speichern und endet (KbdCharIn kehrt bei einem Signal mit 0 zurueck).
+   m = 1: auch Mausereignisse (-> K_MOUSE); sonst werden sie verworfen
+   (Dialoge kennen die Maus noch nicht). */
+static unsigned getkey_m(int m)
 {
     unsigned k;
     for (;;) {
         if (shut_req && !shutting)
             shutdown_now();
-        k = KbdCharIn();
-        if (k || !shut_req)
-            return k;
+        if (!mouse || KbdPeek()) {
+            k = KbdCharIn();
+            if (k || !shut_req)
+                return k;
+            continue;
+        }
+        if (MouReadEvent(&mev, 0) == 0) {
+            if (m)
+                return K_MOUSE;
+            mprev = mev.buttons;
+            continue;
+        }
+        DosSleep(20);
     }
 }
+
+static unsigned getkey(void)
+{
+    return getkey_m(0);
+}
+
+/* Mausereignis: linke Taste gerade gedrueckt / losgelassen / gehalten */
+#define M_PRESS()   ((mev.buttons & MOU_LEFT) && !(mprev & MOU_LEFT))
+#define M_RELEASE() (!(mev.buttons & MOU_LEFT) && (mprev & MOU_LEFT))
 
 #define TB  ((char __far *)MK_FP(tsel, 0))
 
@@ -370,10 +395,21 @@ static void draw_menu(int m, int sel, int *px, int *pw)
 
 static void redraw_all(void);
 
+/* Menue unter Spalte c der Menueleiste, -1 = keins */
+static int bar_hit(unsigned c)
+{
+    int m;
+    for (m = 0; m < 4; m++)
+        if (c >= (unsigned)menus[m].col &&
+            c < (unsigned)menus[m].col + hot_len(menus[m].title) + 2)
+            return m;
+    return -1;
+}
+
 /* Menue bedienen; open: gleich aufgeklappt. -> Befehl oder C_NONE */
 static int menu_run(int m, int open)
 {
-    int sel = 0, n, x, w, i, shown = -2;
+    int sel = 0, n, x = 0, w = 0, i, shown = -2;
     unsigned k, c, sc;
 
     VioSetCurPos(0xFF, 0);
@@ -391,7 +427,36 @@ static int menu_run(int m, int open)
                 sel++;
             draw_menu(m, sel, &x, &w);
         }
-        k = getkey();
+        k = getkey_m(1);
+        if (k == K_MOUSE) {
+            int press = M_PRESS(), rel = M_RELEASE(), mm;
+            mprev = mev.buttons;
+            if (mev.row == 0) {             /* Menueleiste              */
+                mm = bar_hit(mev.col);
+                if (mm >= 0 && (mev.buttons & MOU_LEFT) && (mm != m || !open)) {
+                    m = mm;
+                    sel = 0;
+                    open = 1;
+                } else if (mm < 0 && press)
+                    return C_NONE;
+                continue;
+            }
+            if (open && mev.row >= 2 && mev.row < 2 + n &&
+                mev.col >= x && mev.col <= x + w + 3) {
+                i = mev.row - 2;            /* Eintrag unter dem Zeiger */
+                if (menus[m].it[i].text) {
+                    sel = i;
+                    if (rel) {
+                        redraw_all();
+                        return menus[m].it[i].cmd;
+                    }
+                }
+                continue;
+            }
+            if (press)                      /* daneben geklickt: zu     */
+                return C_NONE;
+            continue;
+        }
         c = k & 0xFF;
         sc = k >> 8;
         if (k == KEY_ALT || c == 27 || (c == 0 && sc == K_F10))
@@ -1506,6 +1571,65 @@ static void nav(unsigned sc, unsigned shiftst)
         want = cur_col();
 }
 
+/* Anfang der Zeile Nummer l (0 = erste), ab der obersten sichtbaren */
+static unsigned line_pos(unsigned l)
+{
+    unsigned p = top, i = top_line, e, n = tlen();
+    while (i > l && p > 0) {
+        p = line_start(p - 1);
+        i--;
+    }
+    while (i < l) {
+        e = line_end(p);
+        if (e >= n)
+            break;                      /* letzte Zeile                 */
+        p = e + 1;
+        i++;
+    }
+    return p;
+}
+
+/* Mausereignis im Hauptfenster */
+static void mouse_ev(void)
+{
+    unsigned r = mev.row, c = mev.col, l;
+    int press = M_PRESS(), held = (mev.buttons & MOU_LEFT) != 0, m;
+
+    mprev = mev.buttons;
+    if (r == 0xFF)
+        return;
+    if (press && r == 0) {              /* Menueleiste                  */
+        if ((m = bar_hit(c)) >= 0)
+            command(menu_run(m, 1));
+        return;
+    }
+    if (press && c == 79 && r >= TY && r < TY + TROWS) {
+        selon = 0;                      /* Bildlaufleiste               */
+        if (r == TY)
+            nav(K_UP, 0);
+        else if (r == TY + TROWS - 1)
+            nav(K_DOWN, 0);
+        else
+            nav((last_thumb != NONE && r - TY - 1 < last_thumb) ? K_PGUP : K_PGDN, 0);
+        return;
+    }
+    if (!held || c == 79)
+        return;
+    if (!press && !selon) {             /* Ziehen beginnt: Markierung   */
+        selon = 1;
+        anchor = gs;
+    } else if (press)
+        selon = 0;
+    if (r < TY)                         /* ueber den Rand: rollen       */
+        l = top_line ? top_line - 1 : 0;
+    else if (r >= TY + TROWS)
+        l = top_line + TROWS;
+    else
+        l = top_line + (r - TY);
+    goto_col(line_pos(l), left + (c > TX ? c - TX : 0));
+    want = cur_col();
+}
+
 static void type_char(char c)
 {
     unsigned i, ls, ind = 0;
@@ -1544,6 +1668,10 @@ static void key(unsigned k)
 
     if (k == 0)
         return;                         /* Signal (Strg+C)              */
+    if (k == K_MOUSE) {
+        mouse_ev();
+        return;
+    }
     if (k == KEY_ALT || (c == 0 && sc == K_F10)) {
         command(menu_run(0, 0));
         return;
@@ -1666,6 +1794,10 @@ void main(void)
     }
     TROWS = k - 4;
     SROW = k - 1;
+    if (MouOpen()) {                    /* Maus: Zeiger zeigen          */
+        mouse = 1;
+        MouShowPtr(1);
+    }
     DosSetSigHandler(on_signal, SIG_BREAK | SIG_SHUTDOWN);
     text_clear();
     if (*a) {
@@ -1684,7 +1816,7 @@ void main(void)
             }
             place_cursor();
         }
-        key(getkey());
+        key(getkey_m(1));
     }
     VioSetMode(0);
     DosExit(0);

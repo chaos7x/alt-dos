@@ -414,8 +414,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   in vio_flush und redraw). FAPI 38h–3Ah MouOpen/MouReadEvent/MouShowPtr
   (ohne Kernelsperre), `vio_task_end` gibt die Maus frei. Test:
   `\DEMO\MAUSTEST.EXE`; in QEMU mit `-serial msmouse` und Monitor
-  `mouse_move`/`mouse_button` geprüft. Offen: Busmaus, EDIT als erster
-  Nutzer.
+  `mouse_move`/`mouse_button` geprüft. Vom Nutzer auf dem ASUS P3B-F in
+  86Box bestätigt: Maus wird erkannt. EDIT nutzt sie: Klick setzt den
+  Cursor, Ziehen markiert (über den Rand: rollen), Menüleiste per Klick,
+  Loslassen über einem Eintrag führt ihn aus, Klick daneben schließt,
+  Bildlaufleiste (Pfeile zeilenweise, Fläche seitenweise). `getkey_m(1)`
+  liefert `K_MOUSE` nur Hauptfenster und Menüs; Dialoge verwerfen
+  Mausereignisse (noch ohne Maus). Offen: Busmaus, Dialoge mit Maus,
+  Konsolenmaus wie gpm (Wunsch des Nutzers, siehe unten).
+- Konsolenmaus wie gpm unter Linux (Wunsch des Nutzers): Hat in der
+  Vordergrund-Sitzung niemand MouOpen gerufen, übernimmt der Kernel (vio)
+  die Maus: Zeiger zeigen, linke Taste ziehen markiert Text im
+  Sitzungspuffer, Loslassen legt ihn in eine Zwischenablage des Kernels,
+  rechte/mittlere Taste fügt ihn als Tastendrücke in die Tastatur-
+  Warteschlange der Sitzung ein. Zwischenablage für alle Sitzungen gemein-
+  sam; EDIT soll sie über einen FAPI-Aufruf ebenfalls benutzen.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),
