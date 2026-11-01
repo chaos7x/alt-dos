@@ -457,16 +457,20 @@ QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
 `sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
 
 Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`): GW-286CT
-GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 12 MHz (genauer
-Interpreter, kein Dynarec), 287XL, 2 MB RAM (vom Nutzer von 25 MHz/16 MB
-auf zeitgemäße Werte für 1988/89 verkleinert; MEM: 1.664 KB), vier Everex EV-159 als EMS
+GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 25 MHz (genauer
+Interpreter, kein Dynarec; laut cfg des Nutzers, zeitweise auch 12 MHz
+probiert), 287XL, 2 MB RAM (vom Nutzer von 16 MB auf zeitgemäße Werte für
+1988/89 verkleinert; MEM: 1.664 KB), vier Everex EV-159 als EMS
 (zusammen 11 MB, Ports 208h/218h, 258h/268h, 2A8h/2B8h, 2E8h; von DOS 5.0
 nicht genutzt, erst für V86-Sitzungen in DOS 6.0 interessant), NE2000,
 Tseng ET4000/W32i, Diskette A: 3,5" 1,44 MB, SCSI Adaptec AHA-154xC
 (Port 334h, IRQ 11, DMA 6, BIOS C800h), Sound Blaster 16 (220h, MPU-401 330h,
-IRQ 5, DMA 1/5, DSP 4.05). Mit 16 MB meldete das SCAT-BIOS
-640 KB + 15232 KB erweitert (384 KB Shadow-RAM für System- und Video-BIOS). Am Adaptec: SCSI-ID 0 Festplatte (BIOS-Laufwerk C:),
-SCSI-ID 6 CD-ROM.
+IRQ 5, DMA 1/5, DSP 4.05), ROM-Karte mit IBM BASIC für Nachbauten bei
+CC000h, Diskette B: 5,25" 1,2 MB. Mit 16 MB meldete das SCAT-BIOS
+640 KB + 15232 KB erweitert (384 KB Shadow-RAM für System- und Video-BIOS).
+Platten (Stand der cfg): IDE am Board, Master `atdos-hd.img` (130/16/63),
+Slave 100 MB (776/8/33); am Adaptec SCSI-ID 6 CD-ROM (für Adaptec-Tests
+hängt der Nutzer zeitweise eine SCSI-Platte an ID 0).
 
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 `ATSYS.COM` lässt sich in DOSBox-X testen (`imgmount d ziel.img -t hdd -size
