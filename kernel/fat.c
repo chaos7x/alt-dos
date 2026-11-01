@@ -1128,6 +1128,10 @@ static int revalidate(int d)
     fc_dirty = 0;
     dir_cache_reset();
     blk_invalidate();
+    if (blk_nomedia(vol[d].blk)) {
+        ifs_notready = 1;               /* FAPI meldet "nicht bereit"   */
+        return IFS_ERR;
+    }
     return fat_mount(d) ? IFS_ERR : 0;
 }
 
@@ -1872,6 +1876,8 @@ int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
     return 0;
 }
 
+unsigned char ifs_notready;
+
 /* Diskette A: beim Start von Festplatte erst beim ersten Zugriff */
 int floppy_lazy;
 
@@ -1882,7 +1888,10 @@ int vol_present(int d)
         return 0;
     if (d < 2 && !vol[d].used && (floppy_lazy & (1 << d))) {
         blk_media(vol[d].blk);          /* Format erkennen            */
-        ifs_mount(d, vol[d].blk, 0, &fat_driver);
+        if (blk_nomedia(vol[d].blk))
+            ifs_notready = 1;           /* leer: FAPI meldet "nicht bereit" */
+        else
+            ifs_mount(d, vol[d].blk, 0, &fat_driver);
     }
     return vol[d].used || vol[d].present;
 }
@@ -2011,6 +2020,8 @@ int ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
     if (newlbl)
         MARK(d);
     if (!HAS(d, label)) {
+        if (ifs_notready)
+            return IFS_ERR;
         lbl[0] = 0;
         *serial = 0;
         return newlbl ? IFS_WP : 0;

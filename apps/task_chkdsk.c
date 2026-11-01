@@ -160,6 +160,10 @@ void main(void)
         puts("Ung\x81ltiges Laufwerk.\n");
         DosExit(3);
     }
+    if (fi.flags & FSI_NOMEDIA) {
+        puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+        DosExit(3);
+    }
     prog[0] = 'U';
     prog[1] = 0;
     cat(prog, fi.fsname);

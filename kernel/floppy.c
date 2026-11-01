@@ -55,6 +55,7 @@ static struct {
     unsigned char type;         /* 0 = kein Laufwerk                   */
     unsigned char fi;           /* Format (Index in fmts)              */
     unsigned char known;        /* Format erkannt / gesetzt            */
+    unsigned char nomedia;      /* keine Diskette eingelegt            */
     unsigned char pcyl;         /* Kopf steht auf (physisch), FF = ?   */
 } fd[2];
 
@@ -361,7 +362,7 @@ int __far fd_read(int d, unsigned lba)
     unsigned cyl, head, sec, spt, i;
     int rc = 0;
 
-    if (split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
+    if (fd[d].nomedia || split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
         return -1;
     if (!tb_valid[sec]) {
         if (tb_ndirty && fd_sync())             /* Spur lesen ueberschriebe */
@@ -387,7 +388,7 @@ int __far fd_read(int d, unsigned lba)
 int __far fd_write(int d, unsigned lba)
 {
     unsigned cyl, head, sec;
-    if (split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
+    if (fd[d].nomedia || split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
         return -1;
     far_copy(tb_sel, sec << 9, DMABUF, 0, 512);
     tb_valid[sec] = 1;
@@ -414,15 +415,19 @@ static int detect(int d)
     for (i = 0; c[i] >= 0; i++) {
         set_fmt(d, (unsigned)c[i]);
         select(d);
-        if (recalibrate(d))
+        if (recalibrate(d)) {
+            fd[d].nomedia = 1;
             break;
+        }
         fdc_irq = 0;
         fdc_out(0x4A);                          /* READ ID, MFM           */
         fdc_out((unsigned char)d);
         if (wait_irq(60)) {                     /* kein Index: keine Diskette */
             ctl_reset();
+            fd[d].nomedia = 1;
             break;
         }
+        fd[d].nomedia = 0;
         /* Rate passt; dazu muss der letzte Sektor der Spur lesbar sein
            (unterscheidet 1,44 MB von 720 KB auch, wo READ ID die Rate
            nicht prueft, etwa in Emulatoren) */
@@ -469,10 +474,22 @@ int __far fd_check(int d)
             int st0, c;
             sense_int(&st0, &c);
         }
+        if (inb(DIR) & 0x80) {                  /* Leitung bleibt: leer   */
+            fd[d].nomedia = 1;
+            fd[d].known = 0;
+            done();
+            return 1;
+        }
     }
     detect(d);
     done();
     return 1;
+}
+
+/* 1 = keine Diskette (nach fd_check) */
+int __far fd_nomedia(int d)
+{
+    return d <= 1 && fd[d].type && fd[d].nomedia;
 }
 
 unsigned __far fd_size(int d)

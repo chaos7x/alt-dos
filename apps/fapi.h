@@ -56,6 +56,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
 #define DosSubst(d, path)   F2(FAPI_SUBST, (d), (path))
 #define DosQSubst(d, buf)   F2(FAPI_QSUBST, (d), (buf))
+#define DosJoin(d, path)    F2(FAPI_JOIN, (d), (path))
+#define DosQJoin(d, buf)    F2(FAPI_QJOIN, (d), (buf))
 #define DosFmtTrack(h, p)   F2(FAPI_FMTTRACK, (h), (p))     /* struct fapi_fmttrack */
 #define DosSeek(h, posp)    F2(FAPI_SEEK, (h), (posp))      /* Zeiger auf unsigned long */
 #define DosQFSInfo(d, fi)   F2(FAPI_QFSINFO, (d), (fi))     /* struct fapi_fsinfo */

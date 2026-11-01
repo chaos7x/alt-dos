@@ -647,6 +647,87 @@ static unsigned subst_real(unsigned d)
     return d < NDRIVE && subst_drv[d] >= 0 ? (unsigned)subst_drv[d] : d;
 }
 
+/* JOIN (wie MS-DOS 3.1-5.0): Laufwerk X: haengt in einem leeren
+   Verzeichnis eines anderen Laufwerks. join_drv[X] = Gastgeber (-1 =
+   keins), Pfad (kanonisch gross, "\\CDROM") im Kernelsegment join_sel.
+   Pfade unter dem Verzeichnis gehen an X:, X: selbst ist nicht mehr
+   erreichbar. Gegenstueck zu subst_map, laeuft danach. */
+static signed char join_drv[NDRIVE];
+static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
+#define JOIN_OFF (NDRIVE * IFS_PATHLEN)
+
+static int join_hidden(unsigned d)
+{
+    return d < NDRIVE && join_drv[d] >= 0;
+}
+
+/* Pfad lag unter einem JOIN-Verzeichnis und zeigt jetzt auf X: ->
+   Laenge des Verzeichnisses + 1, sonst 0 */
+static int join_map(int *d, char *path)
+{
+    unsigned x, n, k;
+    char __far *jp;
+    if (!join_sel)
+        return 0;
+    for (x = 0; x < NDRIVE; x++) {
+        if (join_drv[x] != *d)
+            continue;
+        jp = MK_FP(join_sel, JOIN_OFF + x * IFS_PATHLEN);
+        for (n = 0; jp[n] && up(path[n]) == jp[n]; n++)
+            ;
+        if (jp[n] || (path[n] && path[n] != '\\'))
+            continue;
+        if (!path[n])
+            path[0] = '\\', path[1] = 0;
+        else
+            for (k = 0; (path[k] = path[n + k]) != 0; k++)
+                ;
+        *d = (int)x;
+        return n + 1;
+    }
+    return 0;
+}
+
+/* liegt das aktuelle Verzeichnis cwd (Laufwerk d) im JOIN-Verzeichnis
+   von x oder darunter? */
+static int join_under(int d, const char *cwd, unsigned x)
+{
+    unsigned n;
+    char __far *jp = MK_FP(join_sel, JOIN_OFF + x * IFS_PATHLEN);
+    if (join_drv[x] != d)
+        return 0;
+    for (n = 0; jp[n] && up(cwd[n]) == jp[n]; n++)
+        ;
+    return !jp[n] && (!cwd[n] || cwd[n] == '\\');
+}
+
+/* ifs_namepath ueber eine JOIN-Grenze hinweg: Teil bis zum Verzeichnis
+   vom Gastgeber, Rest vom eingehaengten Laufwerk */
+static int namepath_j(int d, const char *canon, char *out, int shortn)
+{
+    static char tp[IFS_PATHLEN], rb[IFS_PATHLEN];
+    int rd = d;
+    unsigned hl, k, n;
+    scopy(tp, canon, IFS_PATHLEN);
+    hl = join_map(&rd, tp);
+    if (!hl)
+        return ifs_namepath(d, canon, out, shortn);
+    scopy(rb, canon, IFS_PATHLEN);
+    rb[hl - 1] = 0;
+    if (ifs_namepath(d, rb, out, shortn))
+        return -1;
+    if (tp[1]) {
+        if (ifs_namepath(rd, tp, rb, shortn))
+            return -1;
+        for (n = 0; out[n]; n++)
+            ;
+        for (k = 0; rb[k] && n < IFS_PATHLEN - 1; k++)
+            out[n++] = rb[k];
+        out[n] = 0;
+    }
+    return 0;
+}
+
 static void set_orig(const char *p);
 static int scmp_eq(const char *a, const char *b)
 {
@@ -658,9 +739,10 @@ static int resolve_v(int t, const char *in, int *drive, char *out);
 
 static int resolve(int t, const char *in, int *drive, char *out)
 {
-    if (resolve_v(t, in, drive, out))
+    if (resolve_v(t, in, drive, out) || subst_map(drive, out))
         return -1;
-    return subst_map(drive, out);
+    join_map(drive, out);
+    return 0;
 }
 
 /* wie resolve, aber ohne SUBST (Pfad aus Sicht des Programms) */
@@ -675,6 +757,8 @@ static int resolve_v(int t, const char *in, int *drive, char *out)
         d = up(p[0]) - 'A';
         p += 2;
     }
+    if (join_hidden(d))
+        return -1;                          /* per JOIN eingehaengt     */
     n = 0;
     out[0] = 0;
     if (*p != '\\' && *p != '/' && t >= 0 && d == task[t].drive) {
@@ -1491,7 +1575,7 @@ static int disk_blk(unsigned n)
 {
     int dev;
     for (dev = 1; dev < nblk; dev++)
-        if (blk[dev].bsize == 512 && n-- == 0)
+        if (blk[dev].bsize == 512 && !IS_FLOPPY(dev) && n-- == 0)   /* B: nicht */
             return dev;
     return -1;
 }
@@ -1832,6 +1916,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
        Warten auf die Kernelsperre laufen andere Tasks, deren FAPI-Aufrufe
        es ueberschreiben (so bekam DosWrite die Laenge eines anderen) */
     unsigned a3 = fapi_dx, r;
+    ifs_notready = 0;
     if (fapi_nolock(fn, a1))
         r = fapi_inner(fn, usel, a1, a2, a3);
     else {
@@ -1840,6 +1925,8 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
         fd_sync();                      /* Spurpuffer der Diskette: nach */
         klock_leave();                  /* jedem Aufruf auf der Scheibe  */
     }
+    if (ifs_notready && r >= FAPI_ERR_FIRST)
+        r = FAPI_ERR_NOTREADY;          /* Diskettenlaufwerk leer        */
     if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
         get_ticks() - slice_start >= SLICE) {
         task[current].wake = 0;
@@ -2162,6 +2249,70 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_JOIN: {                           /* JOIN X: Pfad / X: /D  */
+        static char real[IFS_PATHLEN];
+        static struct ifs_dirent jde;
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE)
+            return FAPI_ERROR;
+        if (!a2) {                              /* aufheben              */
+            if (join_drv[a1] < 0)
+                return FAPI_ERROR;
+            for (k = 0; k < NTASK; k++)         /* steht jemand darin?   */
+                if (task[k].state != T_FREE && join_under(task[k].drive, task[k].cwd, a1))
+                    return FAPI_ERR_INUSE;
+            for (k = 1; k < NFILE; k++)         /* offene Dateien dort?  */
+                if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+                    files[k].f.drive == a1)
+                    return FAPI_ERR_INUSE;
+            join_drv[a1] = -1;
+            return 0;
+        }
+        if (join_drv[a1] >= 0 || !join_sel || !vol_present(a1) || !vol[a1].used || a1 == sys_drive ||
+            subst_drv[a1] >= 0)
+            return FAPI_ERROR;
+        for (k = 0; k < NDRIVE; k++)            /* traegt selbst einen JOIN */
+            if (join_drv[k] == (signed char)a1 || (subst_drv[k] == (signed char)a1))
+                return FAPI_ERR_INUSE;
+        for (k = 0; k < NTASK; k++)
+            if (task[k].state != T_FREE && task[k].drive == a1)
+                return FAPI_ERR_INUSE;          /* aktuelles Laufwerk    */
+        for (k = 1; k < NFILE; k++)             /* offene Dateien dort?  */
+            if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+                files[k].f.drive == a1)
+                return FAPI_ERR_INUSE;
+        if (user_str(usel, a2, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, real) || d == (int)a1 || !real[1])
+            return FAPI_ERROR;                  /* nicht der Stamm       */
+        if (!ifs_isdir(d, real)) {              /* fehlt: anlegen        */
+            set_orig(buf);
+            if (ifs_mkdir(d, real) || !ifs_isdir(d, real))
+                return FAPI_ERROR;
+        }
+        for (k = 0; ifs_readdir(d, real, k, &jde) == 0; k++)
+            if (!(jde.name[0] == '.' && (!jde.name[1] ||
+                  (jde.name[1] == '.' && !jde.name[2]))))
+                return FAPI_ERR_DENIED;         /* nicht leer            */
+        for (k = 0; real[k]; k++)
+            real[k] = up(real[k]);
+        far_copy(join_sel, JOIN_OFF + a1 * IFS_PATHLEN, KDATA, (unsigned)real, IFS_PATHLEN);
+        join_drv[a1] = (signed char)d;
+        return 0;
+    }
+
+    case FAPI_QJOIN: {                          /* -> "C:\CDROM"         */
+        char __far *jp;
+        if (a1 >= NDRIVE || join_drv[a1] < 0 || !user_ok(usel, a2, IFS_PATHLEN + 2, 1))
+            return FAPI_ERROR;
+        jp = MK_FP(join_sel, JOIN_OFF + a1 * IFS_PATHLEN);
+        buf[0] = (char)('A' + join_drv[a1]);
+        buf[1] = ':';
+        for (k = 0; jp[k] && k < IFS_PATHLEN - 1; k++)
+            buf[2 + k] = jp[k];
+        buf[2 + k] = 0;
+        far_copy(usel, a2, KDATA, (unsigned)buf, k + 3);
+        return 0;
+    }
+
     case FAPI_QSUBST: {                         /* -> "C:\DOS"         */
         char __far *pre;
         if (a1 >= NDRIVE || subst_drv[a1] < 0 || !user_ok(usel, a2, IFS_PATHLEN + 2, 1))
@@ -2180,7 +2331,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_FREESPACE: {
         static unsigned long kb;
-        if (a1 >= NDRIVE || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &kb))
+        if (a1 >= NDRIVE || join_hidden(a1) || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &kb))
             return FAPI_ERROR;
         far_copy(usel, a2, KDATA, (unsigned)&kb, 4);
         return 0;
@@ -2266,7 +2417,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         struct fapi_label __far *fl;
         if (!a3)                                /* lesen: SUBST-Ziel     */
             a1 = subst_real(a1);
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) ||
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fl), 1))
             return FAPI_ERROR;
         if (a3 && user_str(usel, a3, nl, sizeof(nl)))
@@ -2284,7 +2435,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return task[current].child_rc;
 
     case FAPI_OPENDRIVE:
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked)
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
             return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
         if (a2 == DRV_OPEN_LOCK) {
             if (blk[vol[a1].blk].bsize != 512)
@@ -2396,7 +2547,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         struct fapi_fsinfo __far *fi;
         const char *nm;
         int dv;
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) ||
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fi), 1))
             return FAPI_ERROR;
         fi = MK_FP(usel, a2);
@@ -2416,7 +2567,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->ptype = vol[a1].ptype;
         fi->bsize = blk[dv].bsize;
         fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
-                    (vol[a1].was_dirty ? FSI_DIRTY : 0);
+                    (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0);
         return 0;
     }
 
@@ -2498,13 +2649,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         rd = d;
         scopy(real, canon, IFS_PATHLEN);
-        if (subst_map(&rd, real) || !ifs_isdir(rd, real))
+        if (subst_map(&rd, real))
+            return FAPI_ERROR;
+        join_map(&rd, real);
+        if (!ifs_isdir(rd, real))
             return FAPI_ERROR;
         if (d != task[current].drive)
             return FAPI_ERROR;                  /* nur aktuelles Laufwerk */
         /* gespeichert wird die Schreibung vom Datentraeger (lange Namen:
            "\\Neuer Ordner"), verglichen wird ohne Gross/klein */
-        if (subst_drv[d] < 0 && canon[1] && ifs_namepath(d, canon, real, 0) == 0)
+        if (subst_drv[d] < 0 && canon[1] && namepath_j(d, canon, real, 0) == 0)
             scopy(canon, real, IFS_PATHLEN);
         scopy(task[current].cwd, canon[1] ? canon : "", IFS_PATHLEN);
         return 0;
@@ -2524,7 +2678,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             for (n = 0; task[current].cwd[n]; n++)
                 uc[n] = up(task[current].cwd[n]);
             uc[n] = 0;
-            ifs_namepath(d, uc, qb + 2, 1);
+            namepath_j(d, uc, qb + 2, 1);
         }
         for (n = 0; qb[n]; n++)
             ;
@@ -2535,8 +2689,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_SELECTDISK:                       /* A: ggf. erst einhaengen */
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || (!vol_present(a1) && subst_drv[a1] < 0))
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || join_hidden(a1) || (!vol_present(a1) && subst_drv[a1] < 0))
             return FAPI_ERROR;
+        if (vol_present(a1) && IS_FLOPPY(vol[a1].blk) && !vol[a1].locked) {
+            blk_media(vol[a1].blk);
+            if (blk_nomedia(vol[a1].blk))
+                return FAPI_ERR_NOTREADY;       /* keine Diskette        */
+        }
         if (a1 != task[current].drive) {
             task[current].drive = (unsigned char)a1;
             task[current].cwd[0] = 0;
@@ -3009,6 +3168,11 @@ int blk_media(int dev)
             }
     }
     return r;
+}
+
+int blk_nomedia(int dev)
+{
+    return dev >= 0 && IS_FLOPPY(dev) && fd_nomedia(blk[dev].unit);
 }
 
 /* Diskette kann gewechselt sein: ihre Eintraege weg */
@@ -3817,7 +3981,11 @@ void kmain(void)
              mem_conv_kb, mem_ext_kb);
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
-    subst_sel = kseg_alloc((unsigned long)NDRIVE * IFS_PATHLEN);
+    /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
+    subst_sel = kseg_alloc(2UL * NDRIVE * IFS_PATHLEN);
+    for (i = 0; i < NDRIVE; i++)
+        join_drv[i] = -1;
+    join_sel = subst_sel;
 
     s0 = vio_open("SYSTEM");
     if (s0 < 0)

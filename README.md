@@ -296,6 +296,8 @@ selbst nur 8.3 kennt.
 | 73 | DosSysInfo      | BX = struct fapi_sysinfo: Prozessor (286/386+), Koprozessor, VGA, BIOS-Datum/-Modell/-Name, Video-BIOS-Name, COM/LPT-Ports, Speicher, Kernelgröße, freigegebene IRQs, Treiber, Diskettentypen |
 | 71 | DosSubst        | BX = Laufwerk, CX = Pfad oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE |
 | 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |
+| 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
+| 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 | 69 | VioSetPage      | Mode X: BX = sichtbare Seite 0/1; im Vordergrund wartet der Aufruf auf den Strahlrücklauf, danach kann das Programm in die andere Seite zeichnen |

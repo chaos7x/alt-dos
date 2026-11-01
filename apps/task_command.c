@@ -617,6 +617,19 @@ static void cmd_dir(char *arg)
         if (n > 1 && dir[n - 1] == '\\' && dir[n - 2] != ':')
             dir[n - 1] = 0;
     }
+    if (dir[0] && dir[1] == ':') {          /* Laufwerk gibt es?         */
+        static struct fapi_fsinfo fi;
+        static char sb[FAPI_CURDIRLEN];
+        unsigned dv = (unsigned)(up(dir[0]) - 'A');
+        if (dv >= 26 || (FAPI_FAILED(DosQFSInfo(dv, &fi)) && DosQSubst(dv, sb) != 0)) {
+            puts("Ung\x81ltiges Laufwerk.\n");
+            return;
+        }
+    }
+    if (DosFindEntry(&e, 0, dir) == FAPI_ERR_NOTREADY) {
+        puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+        return;
+    }
     n = slen(dir);                          /* Stamm ("D:", "D:\\", "\\")
                                                gibt es immer, auch leer */
     if (dir[0] && !(n <= 3 && (dir[n - 1] == ':' || dir[n - 1] == '\\')) &&
@@ -795,7 +808,8 @@ static void cmd_type(char *arg)
     }
     h = DosOpen(word(arg, name, sizeof(name)));
     if (FAPI_FAILED(h)) {
-        puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n"
+        puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n" :
+             h == FAPI_ERR_NOTREADY ? "Laufwerk nicht bereit - keine Diskette eingelegt.\n"
                                  : "Datei nicht gefunden.\n");
         return;
     }
@@ -830,7 +844,7 @@ static void file_error(unsigned r)
     case FAPI_ERR_EXIST:  puts("Datei oder Verzeichnis existiert bereits.\n"); break;
     case FAPI_ERR_DENIED: puts("Zugriff verweigert.\n"); break;
     case FAPI_ERR_INUSE:  puts("Datei oder Verzeichnis wird gerade benutzt.\n"); break;
-    case FAPI_ERR_NOTREADY: puts("Ger\x84t nicht bereit (Drucker aus oder kein Papier?).\n"); break;
+    case FAPI_ERR_NOTREADY: puts("Laufwerk oder Ger\x84t nicht bereit (keine Diskette, Drucker aus?).\n"); break;
     default:              puts("Datei oder Pfad nicht gefunden.\n");
     }
 }
@@ -973,7 +987,7 @@ static int copy_one(const char *src, const char *dst)
     }
     hs = DosOpen(src);
     if (FAPI_FAILED(hs)) {
-        puts("Datei nicht gefunden.\n");
+        file_error(hs == FAPI_ERR_NOTREADY ? hs : FAPI_ERROR);
         return -1;
     }
     hd = DosCreate(dst);
@@ -1273,9 +1287,9 @@ static void cmd_help(void)
          "  Stapeldateien:  ECHO [ON|OFF], REM, PAUSE, GOTO, IF, CALL, SHIFT, %1 %NAME%\n"
          "  EXIT            Befehlsinterpreter beenden\n"
          "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
-         "  ATTRIB CHKDSK CHOICE DELTREE DISKCOPY EDIT FC FDISK FIND FORMAT GREP\n"
-         "  KEYB LABEL LESS MEM MODE MORE MOVE SCANDISK SORT SUBST SYS TREE\n"
-         "  UNDELETE XCOPY\n"
+         "  ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND FORMAT\n"
+         "  GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
+         "  SUBST SYS TREE UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
          "Strg+Alt+Entf schlie\xE1t alle Dateien und startet neu.\n");
@@ -1292,11 +1306,12 @@ static void hex4(unsigned v)
 static void cmd_vol(char *arg)
 {
     static struct fapi_label lb;
-    unsigned d = DosQCurDisk();
+    unsigned d = DosQCurDisk(), n;
     if (arg[0] && arg[1] == ':')
         d = (unsigned)(up(arg[0]) - 'A');
-    if (DosLabel(d, &lb, 0)) {
-        puts("Ung\x81ltiges Laufwerk.\n");
+    if ((n = DosLabel(d, &lb, 0)) != 0) {
+        puts(n == FAPI_ERR_NOTREADY ? "Laufwerk nicht bereit - keine Diskette eingelegt.\n"
+                                    : "Ung\x81ltiges Laufwerk.\n");
         return;
     }
     puts(" Datentr\x84ger in Laufwerk ");
@@ -1939,7 +1954,10 @@ static int execute(char *l)
     arg = next_word(cmd);
 
     if (cmd[0] && cmd[1] == ':' && (cmd[2] == 0 || cmd[2] == ' ')) {
-        if (DosSelectDisk(up(cmd[0]) - 'A') == FAPI_ERROR)
+        unsigned r = DosSelectDisk(up(cmd[0]) - 'A');
+        if (r == FAPI_ERR_NOTREADY)
+            puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+        else if (r == FAPI_ERROR)
             puts("Ung\x81ltiges Laufwerk.\n");
     } else if (same(cmd, "CLS"))
         VioCls();

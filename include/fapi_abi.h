@@ -140,6 +140,13 @@ struct fapi_sysinfo {
     char           vbios_name[64];  /* ... im Video-BIOS (C000:0000)    */
     char           drivers[6][13];  /* geladene Treiber (DEVICE=)       */
 };
+/* JOIN: BX = Laufwerk, CX = Pfad (leeres Verzeichnis, fehlt es, wird es
+   angelegt; nicht der Stamm) oder 0 = aufheben -> 0, FAPI_ERROR,
+   FAPI_ERR_INUSE (aktuelles Laufwerk eines Programms, offene Dateien,
+   Ziel eines SUBST/JOIN), FAPI_ERR_DENIED (Verzeichnis nicht leer).
+   DosQJoin: BX = Laufwerk, CX = Puffer (FAPI_CURDIRLEN) -> "C:\CDROM" */
+#define FAPI_JOIN           0x4B
+#define FAPI_QJOIN          0x4C
 #define FAPI_SUBST          0x47
 #define FAPI_QSUBST         0x48
 struct fapi_fmttrack {
@@ -255,6 +262,7 @@ struct fapi_fsinfo {
 #define FSI_REMOVABLE       0x01
 #define FSI_READONLY        0x02
 #define FSI_DIRTY           0x04    /* beim Einhaengen nicht sauber abgemeldet */
+#define FSI_NOMEDIA         0x08    /* Diskettenlaufwerk leer           */
 #define HT_PIPE             1
 #define HT_CONSOLE          2
 #define STDIN               0       /* Standard-Handles, Vorgabe Konsole */

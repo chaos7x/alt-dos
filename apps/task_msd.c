@@ -156,7 +156,7 @@ static void detail(unsigned k)
         apn(v, mi.apps_kb + mi.alloc_kb);
         ap(v, " KB");
         line("Programme:", v);
-        line("EMS/XMS:", "nicht ntig (Protected Mode)");
+        line("EMS/XMS:", "nicht n\x94tig (Protected Mode)");
         break;
     case 2:
         line("Grafikkarte:", si.vga ? "VGA" : "keine VGA (EGA/CGA/MDA)");
@@ -207,11 +207,15 @@ static void detail(unsigned k)
                 ap(l, "CD-ROM ");
             else
                 ap(l, "Festplatte ");
-            if (fi.sectors == 0 || fi.sectors > 0x7FFFFFFFUL) {
+            if ((fi.flags & FSI_NOMEDIA) ||
+                ((fi.sectors == 0 || fi.sectors > 0x7FFFFFFFUL) && fi.fsname[0] == 'R' &&
+                 fi.fsname[1] == 'A' && fi.fsname[2] == 'W')) {
                 ap(l, "(kein Datentr\x84ger)");
                 continue;
             }
             ap(l, fi.fsname);
+            if (fi.sectors == 0 || fi.sectors > 0x7FFFFFFFUL)
+                continue;                   /* Groesse unbekannt (CD)    */
             ap(l, ", ");
             apn(l, fi.bsize == 2048 ? fi.sectors << 1 : fi.sectors >> 1);
             ap(l, " KB");
@@ -257,7 +261,7 @@ static void detail(unsigned k)
             } else
                 ap(l, "  nicht vorhanden");
         }
-        line(k == 6 ? "Drucken kommt mit PRINT (noch nicht da)." :
+        line(k == 6 ? "Drucken im Hintergrund: PRINT Datei" :
                       "Serielle Maus: MOUSE.SYS /COM1 bzw. /COM2", 0);
         break;
     case 8:
@@ -275,7 +279,7 @@ static void detail(unsigned k)
             apn(v, i);
             l = line(v, 0);
             ap(l, "  ");
-            ap(l, (si.irq_used >> i) & 1 || i == 2 ? "belegt  " : "frei    ");
+            ap(l, (si.irq_used >> i) & 1 || i == 2 || (i == 13 && si.fpu) ? "belegt  " : "frei    ");
             ap(l, use[i]);
         }
         break;

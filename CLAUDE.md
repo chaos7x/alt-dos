@@ -706,14 +706,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Tabelle nur als Rückfall – in QEMU mit 16/32 statt 16/63 geprüft (alter
   MBR hängt, neuer startet). Auf dem SCAT bestätigt: `atdos-hd.img` startet
   direkt am Adaptec (64/32). Ein eigener FDISK sollte denselben MBR schreiben.
-- `JOIN` (Wunsch des Nutzers, wie MS-DOS 3.1–5.0, in 6.0 gestrichen):
-  `JOIN D: C:\CDROM` hängt ein Laufwerk in ein leeres Verzeichnis eines
-  anderen ein, `JOIN` zeigt, `JOIN D: /D` hebt auf. Gegenstück zu SUBST,
-  im Kernel dieselbe Pfadumschreibung in `resolve()` in die andere Richtung
-  (`C:\CDROM\...` -> `D:\...`); das eingehängte Laufwerk ist als eigener
-  Buchstabe nicht mehr erreichbar. DIR/TREE/XCOPY laufen über die Grenze,
-  freier Platz und CHKDSK bleiben beim jeweiligen echten Laufwerk.
-  Startlaufwerk und Laufwerke mit offenen Dateien nicht einhängbar. Zeitlich 5.0.
+- `JOIN` (Wunsch des Nutzers, wie MS-DOS 3.1–5.0), erledigt, in QEMU
+  geprüft: `JOIN A: C:\DISK` (Verzeichnis leer, fehlt es, wird es
+  angelegt; nicht der Stamm), `JOIN` zeigt, `JOIN A: /D` hebt auf. FAPI
+  4Bh/4Ch DosJoin/DosQJoin. kernel.c: `join_drv[]`, Pfade in der hinteren
+  Hälfte von `subst_sel` (`JOIN_OFF`), `join_map()` läuft in `resolve()`
+  nach `subst_map()` (`C:\DISK\X` -> `A:\X`), `resolve_v` lehnt das
+  eingehängte Laufwerk ab, ebenso SELECTDISK/QFSInfo/OpenDrive/
+  FreeSpace/Label (`join_hidden`). Nicht einhängbar: Startlaufwerk,
+  SUBST-Laufwerke, aktuelle Laufwerke, Laufwerke mit offenen Dateien oder
+  mit SUBST/JOIN darauf. Aufheben nur, wenn kein Task darin steht
+  (`join_under`) und nichts offen ist. CHDIR/QCURDIR holen die
+  Schreibweise über die Grenze (`namepath_j`). DIR/TREE laufen hindurch.
+- Leeres Diskettenlaufwerk (vom Nutzer in 86Box gemeldet: A:/B: ohne
+  Diskette „zugreifbar“): `floppy.c` merkt `nomedia` (Wechselleitung
+  bleibt nach dem Schritt gesetzt, oder READ ID ohne Index), `fd_read`/
+  `fd_write` scheitern dann. `revalidate` und `vol_present` setzen
+  `ifs_notready`, `fapi_dispatch` macht aus jedem Fehler dann
+  FAPI_ERR_NOTREADY; QFSInfo meldet FSI_NOMEDIA, SELECTDISK lehnt ab.
+  COMMAND/CHKDSK/MSD: „Laufwerk nicht bereit - keine Diskette
+  eingelegt.“ In QEMU mit `eject`/`change` geprüft. Dabei behoben:
+  `disk_blk` zählte B: (Gerät 1) als „Platte 1“ (MSD, FDISK!).
 - Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen).
   `AHA154X.SYS` mit IRQ auf dem SCAT bestätigt (Anzeige „IRQ 11, DMA 6“,
   Start von der Adaptec-Platte über den Interrupt, 3× zwei XCOPY

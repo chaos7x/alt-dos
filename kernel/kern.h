@@ -110,6 +110,7 @@ int  __far fd_sync(void);                   /* Spurpuffer schreiben; -2 = WP */
 int  __far fd_check(int d);                 /* 1 = gewechselt/neu erkannt   */
 unsigned __far fd_size(int d);              /* Sektoren des Formats         */
 int  __far fd_type(int d);                  /* CMOS-Typ, 0 = kein Laufwerk  */
+int  __far fd_nomedia(int d);               /* 1 = keine Diskette drin      */
 int  __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks);
 void __far fd_tick(void);
 void __far fd_motor_off(void);
@@ -141,6 +142,8 @@ int  blk_write(int dev, unsigned long lba); /* DMABUF ->, -2 = schreibgesch. */
 void blk_flush(void);               /* Platten-Caches leeren              */
 void blk_invalidate(void);          /* Diskette aus dem Cache (Wechsel)    */
 int  blk_media(int dev);            /* Diskette gewechselt? 1 = ja (neu)   */
+int  blk_nomedia(int dev);          /* Diskettenlaufwerk leer? (nach blk_media) */
+extern unsigned char ifs_notready;  /* im FAPI-Aufruf: Laufwerk leer       */
 void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
