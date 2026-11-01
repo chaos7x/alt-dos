@@ -126,6 +126,12 @@ struct fapi_label {
                                        CX = Offset, DX = Platz -> Laenge des
                                        Inhalts (kopiert hoechstens DX Bytes) */
 #define CLIP_MAX            16384
+/* Logischer Bildschirmpuffer (wie VioGetBuf/VioShowBuf bei OS/2 1.x):
+   Selektor auf den Puffer der eigenen Sitzung, Zelle = Zeichen | Attribut
+   << 8, Zeile r ab Offset r * 160 (Zeilen wie VioGetRows). Schreiben
+   allein zeigt nichts; VioShowBuf meldet fertige Zeilen. */
+#define FAPI_VIOGETBUF      0x3D    /* -> Selektor (FAPI_ERROR: LDT voll) */
+#define FAPI_VIOSHOWBUF     0x3E    /* BX = erste, CX = letzte Zeile zeigen */
 struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */

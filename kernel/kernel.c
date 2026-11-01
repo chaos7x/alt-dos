@@ -505,6 +505,12 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
     return USEL(idx);
 }
 
+/* LDT-Eintraege, die nur auf fremden Speicher zeigen (VioGetBuf: der
+   Sitzungspuffer gehoert dem Kernel) - beim Freigeben kein mem_free.
+   Die reservierten Deskriptorbytes taugen dafuer nicht: beim 386 stehen
+   dort Basis und Grenze. */
+static unsigned short ldt_alias[NTASK];
+
 static unsigned seg_free(int t, unsigned sel)
 {
     unsigned idx = sel >> 3, units, start;
@@ -515,6 +521,11 @@ static unsigned seg_free(int t, unsigned sel)
     d = &ldt[t][idx];
     if (d->access == 0)
         return FAPI_ERROR;
+    if (ldt_alias[t] & (1u << idx)) {
+        ldt_alias[t] &= ~(1u << idx);
+        d->access = 0;
+        return 0;
+    }
     start = (d->base_lo >> 8) | ((unsigned)d->base_hi << 8);
     units = (d->limit >> 8) + 1;
     mem_free(start, units);
@@ -1502,6 +1513,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
     case FAPI_SHUTDOWNHOLD: case FAPI_MOUOPEN: case FAPI_MOUREADEVENT:
     case FAPI_MOUSHOWPTR: case FAPI_CLIPPUT: case FAPI_CLIPGET:
+    case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -2127,6 +2139,22 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_MOUSHOWPTR:
         vio_mou_show(s, a1);
+        return 0;
+
+    case FAPI_VIOGETBUF: {                      /* LVB wie bei OS/2 1.x  */
+        unsigned idx;
+        for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
+            if (ldt[current][idx].access == 0)
+                break;
+        if (idx == NLDT)
+            return FAPI_ERROR;
+        put_desc(&ldt[current][idx], vio_buf_lin(s), SBYTES - 1, ACC_UDATA);
+        ldt_alias[current] |= 1u << idx;
+        return USEL(idx);
+    }
+
+    case FAPI_VIOSHOWBUF:
+        vio_showbuf(s, a1, a2);
         return 0;
 
     case FAPI_CLIPPUT:

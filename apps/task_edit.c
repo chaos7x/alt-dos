@@ -74,6 +74,46 @@ static unsigned char mprev;         /* Tasten davor                     */
 
 static void shutdown_now(void);
 
+/* Bildschirm ueber den logischen Puffer (VioGetBuf/VioShowBuf wie bei
+   OS/2 1.x): EDIT schreibt direkt hinein und merkt sich die geaenderten
+   Zeilen; gezeigt wird, wenn EDIT auf eine Eingabe wartet - immer ein
+   fertiges Bild, ein FAPI-Aufruf statt einem je Zeile. Ohne Puffer geht
+   alles wie frueher ueber VioWrtStrAtt. */
+static unsigned lvb, lvb_rows = 25;     /* Selektor (0 = keiner), Zeilen */
+static unsigned char dlo = 0xFF, dhi;   /* geaenderte Zeilen             */
+
+static void lvb_str(int r, int c, const char *s, unsigned char a)
+{
+    unsigned short __far *p;
+    if (!lvb) {
+        fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)s, (r << 8) | c, a);
+        return;
+    }
+    if (r < 0 || r >= (int)lvb_rows || c < 0 || c >= 80)
+        return;
+    p = MK_FP(lvb, (r * 80 + c) * 2);
+    while (*s && c++ < 80)
+        *p++ = (unsigned char)*s++ | ((unsigned)a << 8);
+    if (dlo == 0xFF)
+        dlo = dhi = (unsigned char)r;
+    else if (r < dlo)
+        dlo = (unsigned char)r;
+    else if (r > dhi)
+        dhi = (unsigned char)r;
+}
+
+static void lvb_show(void)
+{
+    if (dlo != 0xFF) {
+        VioShowBuf(dlo, dhi);
+        dlo = 0xFF;
+        dhi = 0;
+    }
+}
+
+#undef VioWrtStrAtt
+#define VioWrtStrAtt(r, c, s, a) lvb_str((r), (c), (s), (a))
+
 /* Taste holen; kommt beim Warten SIG_SHUTDOWN, fragt EDIT nach dem
    Speichern und endet (KbdCharIn kehrt bei einem Signal mit 0 zurueck).
    m = 1: auch Mausereignisse (-> K_MOUSE); sonst werden sie verworfen
@@ -81,6 +121,7 @@ static void shutdown_now(void);
 static unsigned getkey_m(int m)
 {
     unsigned k;
+    lvb_show();                         /* fertiges Bild zeigen          */
     for (;;) {
         if (shut_req && !shutting)
             shutdown_now();
@@ -1891,6 +1932,10 @@ void main(void)
     }
     TROWS = k - 4;
     SROW = k - 1;
+    lvb_rows = k;
+    lvb = VioGetBuf();
+    if (FAPI_FAILED(lvb))
+        lvb = 0;                        /* dann ueber VioWrtStrAtt       */
     if (MouOpen()) {                    /* Maus: Zeiger zeigen          */
         mouse = 1;
         MouShowPtr(1);

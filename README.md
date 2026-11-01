@@ -222,6 +222,8 @@ selbst nur 8.3 kennt.
 | 58 | MouShowPtr      | BX = 1 Mauszeiger zeigen (invertierte Zelle), 0 verbergen |
 | 59 | DosClipPut      | BX = Selektor (0 = eigenes Datensegment), CX = Offset, DX = Länge → gespeichert (bis 16 KB); Zwischenablage für alle Sitzungen |
 | 60 | DosClipGet      | BX = Selektor (0 = eigenes), CX = Offset, DX = Platz → Länge des Inhalts |
+| 61 | VioGetBuf       | → Selektor auf den Bildschirmpuffer der eigenen Sitzung (logischer Puffer wie bei OS/2 1.x; Zelle = Zeichen \| Attribut << 8, Zeile r ab r·160) |
+| 62 | VioShowBuf      | BX = erste, CX = letzte Zeile: fertige Zeilen zeigen (Schreiben in den Puffer allein zeigt nichts) |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

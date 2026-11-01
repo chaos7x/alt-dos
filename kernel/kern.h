@@ -161,6 +161,8 @@ unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
 int  vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
 void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
+unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
+void vio_showbuf(int s, unsigned a, unsigned b);
 unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len);
 unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 

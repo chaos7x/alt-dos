@@ -133,6 +133,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Speicher gesichert und bei `VioSetMode(0)` oder Programmende
   (`vio_task_end` in `task_end`) wiederhergestellt. `ses[].top` (1/0) und
   `rows` statt fester Konstanten benutzen.
+- Logischer Bildschirmpuffer wie OS/2 1.x (FAPI 3Dh/3Eh VioGetBuf/
+  VioShowBuf): LDT-Alias auf den Sitzungspuffer (`ses[].unit`), in
+  `ldt_alias[t]` vermerkt – `seg_free` gibt dann nur den Eintrag frei,
+  nicht den Speicher (die reservierten Deskriptorbytes sind beim 386 Basis/
+  Grenze, daher eigene Bitmaske). Schreiben in den Puffer markiert nichts;
+  VioShowBuf(von, bis) markiert fertige Zeilen (nur im Vordergrund, sonst
+  zeichnet redraw beim Wechsel alles). EDIT leitet VioWrtStrAtt auf
+  `lvb_str` um und zeigt in `getkey_m` vor dem Warten – ein FAPI-Aufruf je
+  Bild, nie halbfertige Bilder (Anlass: Flackern auf dem SCAT). Grundsatz
+  (Wunsch des Nutzers): wo man sparen kann, nutzen; hat OS/2 für ein
+  Problem eine bewährte Lösung, das gleich sagen.
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile

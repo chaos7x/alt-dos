@@ -567,6 +567,28 @@ void vio_setmode(int s, int full, int owner)
     vio_cls(s);                     /* zeichnet im Vordergrund neu     */
 }
 
+/* VioGetBuf/VioShowBuf (logischer Bildschirmpuffer wie bei OS/2 1.x):
+   Das Programm schreibt direkt in den Sitzungspuffer und meldet fertige
+   Zeilen - erst dann werden sie als geaendert markiert und gezeigt. So
+   sieht man nie halbfertige Bilder, und es braucht keinen FAPI-Aufruf je
+   Zeile. */
+unsigned long vio_buf_lin(int s)
+{
+    return (unsigned long)ses[s].unit << 8;
+}
+
+void vio_showbuf(int s, unsigned a, unsigned b)
+{
+    if (s < 0 || !ses[s].used || s != fg || a > b)
+        return;                             /* Hintergrund: beim Wechsel
+                                               zeichnet redraw alles      */
+    if (a >= ses[s].rows)
+        return;
+    if (b >= ses[s].rows)
+        b = ses[s].rows - 1;
+    mark((unsigned char)a, (unsigned char)b);
+}
+
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */
 void vio_task_end(int s, int t)
 {
