@@ -475,13 +475,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Programme ohne Merker bekommen bei der Dateisuche nur 8.3-Kurznamen
   (`BEWERB~1.TXT`), damit ihre Puffer nicht überlaufen; eigene Werkzeuge
   bekommen den Merker, sobald sie lange Namen sauber verarbeiten.
-  Offene Frage vor dem Bau (Nutzer will sich das Verfahren noch ansehen):
+  Entscheidung des Nutzers (Verfahren): **EA-Datei mit Rückverweis**. Grund:
   OS/2 legt die EA-Nummer im Verzeichniseintrag bei Offset 14h ab – genau
   diese zwei Bytes sind bei FAT32 (Pflicht in 6.0) die oberen 16 Bit des
-  Startclusters. Auf FAT32 braucht die Zuordnung Datei -> EA also einen
-  anderen Weg (z. B. Suche in `EA DATA. SF` über Verzeichnis + Kurzname,
-  oder eigene Tabelle). Das Format sollte so gewählt werden, dass es auf
-  FAT12/16 (5.0) und FAT32 (6.0) gleich funktioniert. Hintergrund, warum
+  Startclusters. Deshalb steht im Verzeichniseintrag nichts; `EA DATA. SF`
+  speichert zu jedem Satz, wem er gehört (Startcluster des Verzeichnisses +
+  8.3-Kurzname), gleich auf FAT12/16 und FAT32. Folgen für den Bau: Cache
+  im Kernel (Verzeichnis -> lange Namen), sonst kostet jede Suche
+  Plattenzugriffe; Umbenennen/Verschieben/Löschen über das FAPI pflegt den
+  Rückverweis mit; das Prüfprogramm (UFAT) findet verwaiste Sätze, deren
+  Kurzname im Verzeichnis fehlt, und Dateien, die alte DOS-Werkzeuge
+  umbenannt haben. Nicht OS/2-kompatibel (OS/2 sieht die langen Namen
+  nicht), dafür FAT32-fest. Hintergrund, warum
   Microsoft VFAT statt EAs nahm: Suche nach langem Namen ohne zusätzliche
   Plattenzugriffe (Name im selben Verzeichnissektor), keine verwaisten EAs
   durch alte DOS-Werkzeuge, Name gehört ins Verzeichnis (wie HPFS/NTFS),
