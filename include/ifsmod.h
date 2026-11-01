@@ -12,7 +12,7 @@
 #ifndef IFSMOD_H
 #define IFSMOD_H
 
-#define IFS_PATHLEN 128             /* kanonischer Pfad intern            */
+#define IFS_PATHLEN 261             /* kanonischer Pfad intern (260 + 0)  */
 #define IFS_NAMELEN 256             /* Name in Verzeichniseintraegen      */
 
 #define ATTR_RO     0x01
@@ -42,10 +42,12 @@ struct ifs_file {
 #define IFS_DENIED   (-5)               /* Schreibschutzattribut, nicht leer */
 
 struct ifs_dirent {
-    char           name[IFS_NAMELEN];   /* "NAME.EXT"                       */
+    char           name[IFS_NAMELEN];   /* langer Name oder "NAME.EXT"      */
     unsigned char  attr;
     unsigned long  size;
     unsigned short date, time;          /* FAT-Format                       */
+    /* bis hier wie struct fapi_dirent (geht so an die Programme) */
+    char           sname[13];           /* 8.3-Name, "" = name ist schon 8.3 */
 };
 
 /* ---- Aufrufe an ein IFS-Modul ------------------------------------------ */

@@ -84,19 +84,28 @@ char *skip(char *p)
     return p;
 }
 
+/* Woerter durch Leerzeichen getrennt; "..." haelt lange Namen mit
+   Leerzeichen zusammen (die Anfuehrungszeichen fallen weg) */
 char *next_word(char *p)
 {
-    while (*p && *p != ' ' && *p != '\t')
+    int q = 0;
+    while (*p && (q || (*p != ' ' && *p != '\t'))) {
+        if (*p == '"')
+            q = !q;
         p++;
+    }
     return skip(p);
 }
 
 char *word(char *p, char *out, unsigned max)
 {
     unsigned i = 0;
+    int q = 0;
     p = skip(p);
-    while (*p && *p != ' ' && *p != '\t') {
-        if (i < max - 1)
+    while (*p && (q || (*p != ' ' && *p != '\t'))) {
+        if (*p == '"')
+            q = !q;
+        else if (i < max - 1)
             out[i++] = *p;
         p++;
     }
@@ -131,7 +140,14 @@ int match(const char *name, const char *pat)
     unsigned nl, pl;
     if (pat[0] == '*' && pat[1] == 0)
         return 1;
-    while (*nd && *nd != '.') nd++;
+    {                                   /* Endung: nach dem letzten Punkt */
+        const char *x;                  /* (lange Namen: a.b.txt)         */
+        for (x = name; *x; x++)
+            if (*x == '.')
+                nd = x;
+        if (*nd != '.')
+            nd = x;
+    }
     while (*pd && *pd != '.') pd++;
     nl = (unsigned)(nd - name);
     pl = (unsigned)(pd - pat);

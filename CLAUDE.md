@@ -485,6 +485,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   endlos; Lesen wartet bis 5 s aufs erste Zeichen). Belegt ein Treiber den
   IRQ des Ports (COM1/3: 4, COM2/4: 3 – z. B. serielle Maus), lehnt der
   Kernel ab. MODE LPT schickt SI/DC2 und ESC 0/ESC 2 an den Drucker.
+  In 86Box vom Nutzer geprüft: `ver > com2` geht, COM1 mit serieller Maus
+  gesperrt, `MODE LPT1:132,8,P` meldet „Drucker: bereit“.
   DEFRAG (in QEMU an einer absichtlich fragmentierten Diskette geprüft,
   danach fsck sauber, Inhalte gleich; vom Nutzer in 86Box an einer
   Diskette bestätigt, 4 Dateien verschoben, CHKDSK danach ohne Fehler): `apps/ufat_defrag.c`, Belegung als
@@ -773,6 +775,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Plattenzugriffe (Name im selben Verzeichnissektor), keine verwaisten EAs
   durch alte DOS-Werkzeuge, Name gehört ins Verzeichnis (wie HPFS/NTFS),
   dazu der Bruch mit IBM 1990–92.
+  Stufe 1 erledigt (in QEMU mit einer per mtools beschriebenen VFAT-
+  Diskette geprüft): `fat.c` sammelt VFAT-Einträge (`lfn_feed`/
+  `lfn_valid`, UCS-2 -> CP437 über `lat2cp`, Prüfsumme `sum83`),
+  `lookup_name` findet Pfadteile über 8.3 oder langen Namen (ASCII ohne
+  Groß/klein), `fat_readdir` liefert `name` (lang) und `sname` (8.3, ""
+  wenn gleich; NT-Kleinschreibungsbits Byte 12 beachtet), `drop_lfn` in
+  remove/rmdir/move, neuer IFS-Aufruf `shortpath`. Kernel: IFS_PATHLEN
+  261, `task.lfn` aus `FX_FLAG_LONGNAMES` (0x0002, `mkfx.py --lfn`,
+  build.sh `LFNAPPS`), FINDENTRY gibt alten Programmen `sname`, QCURDIR
+  ihnen den 8.3-Pfad (höchstens 130 Byte). COMMAND und util.c: `"..."` in
+  word/next_word, Endung nach dem letzten Punkt, FAPI_CURDIRLEN 263.
+  Offen in Stufe 1: aktuelles Verzeichnis wird kanonisch groß gespeichert
+  (Eingabeaufforderung `A:\EIGENE DATEIEN` statt Originalschreibung).
+  Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
+  64 KB Code) – vor Stufe 2/3 Platz schaffen (Teile auslagern oder zweites
+  Codesegment).
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).

@@ -38,7 +38,8 @@
 #define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
 #define KBL_SIZE_BYTES      278
 #define FAPI_CHDIR          0x14    /* BX = Pfad                        */
-#define FAPI_QCURDIR        0x15    /* BX = Puffer (130 Bytes) -> "C:\DOS" */
+#define FAPI_QCURDIR        0x15    /* BX = Puffer -> "C:\DOS"; 130 Bytes, mit
+                                       FX_FLAG_LONGNAMES bis 263 (FAPI_PATHLEN+2) */
 #define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
 #define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
 #define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen -> Handle */
@@ -277,7 +278,7 @@ struct fapi_fsinfo {
 #define FAPI_VERSION        0x0500
 #define FAPI_ARGLEN         81
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
-#define FAPI_CURDIRLEN      130
+#define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */
 
 /* DosExecPgm */
 #define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */

@@ -41,6 +41,13 @@ und PC-DOS.
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
   bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt
+- Lange Namen, Stufe 1: VFAT-Namen (Windows 95) werden gelesen – in
+  Verzeichnislisten, als Pfadteil (`CD "Eigene Dateien"`, Anführungszeichen
+  halten Namen mit Leerzeichen zusammen) und beim Löschen/Umbenennen mit
+  aufgeräumt; Pfade bis 260 Zeichen. Wie bei OS/2 1.2 sehen nur Programme
+  mit dem Merker „kann lange Namen“ (`FX_FLAG_LONGNAMES`, bisher COMMAND)
+  lange Namen, alle anderen 8.3-Kurznamen (`EIGENE~1`). Neue lange Namen
+  anlegen kommt mit Stufe 2/3
 - Laufwerke `A:`, `B:` (Disketten), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“

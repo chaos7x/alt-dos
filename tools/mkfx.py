@@ -28,6 +28,7 @@ def group_end(mapfile):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     driver = '--driver' in sys.argv
+    lfn = '--lfn' in sys.argv          # FX_FLAG_LONGNAMES
     stub_f, image_f, map_f, out_f = args[:4]
     stack = int(args[4]) if len(args) > 4 else (0 if driver else 2048)
 
@@ -43,7 +44,7 @@ def main():
                  % (image_f, total))
 
     fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
-                     bss, stack, 0, 1 if driver else 0)
+                     bss, stack, 0, (1 if driver else 0) | (2 if lfn else 0))
 
     body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx + image
     size = MZ_HDR + len(body)

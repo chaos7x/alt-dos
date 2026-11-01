@@ -22,6 +22,8 @@
 #define FX_VERSION  1
 
 #define FX_FLAG_DRIVER  0x0001      /* Geraetetreiber (Ring 0), kein Programm */
+#define FX_FLAG_LONGNAMES 0x0002    /* kann lange Namen (wie OS/2 1.2): sonst
+                                       liefern DosFindEntry/DosQCurDir 8.3 */
 
 struct fx_header {
     char           sig[2];          /* "CH"                             */

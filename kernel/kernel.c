@@ -82,6 +82,7 @@ struct task {
     unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
     unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
     unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
+    unsigned char lfn;                          /* FX_FLAG_LONGNAMES         */
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
     unsigned char rc;                           /* Rueckgabewert (DosExit)  */
@@ -803,6 +804,7 @@ static int load_program(int t, int drive, const char *path)
         return EXEC_ERR_FORMAT;                 /* Treiber, kein Programm */
     }
     base = (unsigned long)u << 8;
+    task[t].lfn = (h.flags & FX_FLAG_LONGNAMES) != 0;
     task[t].img_unit = u;
     task[t].img_cnt  = n;
     image_units     += n;
@@ -2466,9 +2468,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             buf[0] = 0;                         /* aktuelles Verzeichnis */
         else if (user_str(usel, a3, buf, sizeof(buf)))
             return FAPI_ERROR;
+        de.sname[0] = 0;                        /* IFS-Module kennen es nicht */
         if (resolve(current, buf, &d, canon) || ifs_readdir(d, canon, a2, &de))
             return FAPI_ERROR;
-        far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(de));
+        if (!task[current].lfn && de.sname[0])  /* altes Programm: 8.3   */
+            scopy(de.name, de.sname, sizeof(de.sname));
+        far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(struct fapi_dirent));
         return 0;
 
     case FAPI_CHDIR: {
@@ -2487,14 +2492,24 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_QCURDIR:                          /* "C:\DOS"            */
-        if (!user_ok(usel, a1, IFS_PATHLEN + 2, 1))
+    case FAPI_QCURDIR: {                        /* "C:\DOS"            */
+        /* Programme ohne FX_FLAG_LONGNAMES bekommen den Pfad in 8.3-Namen
+           und hoechstens 130 Bytes (so stand es bisher in fapi_abi.h) */
+        static char qb[IFS_PATHLEN + 2];
+        unsigned n;
+        d = task[current].drive;
+        qb[0] = (char)('A' + d);
+        qb[1] = ':';
+        scopy(qb + 2, task[current].cwd[0] ? task[current].cwd : "\\", IFS_PATHLEN);
+        if (!task[current].lfn && subst_drv[d] < 0 && task[current].cwd[0])
+            ifs_shortpath(d, task[current].cwd, qb + 2);
+        for (n = 0; qb[n]; n++)
+            ;
+        if ((!task[current].lfn && n > 129) || !user_ok(usel, a1, n + 1, 1))
             return FAPI_ERROR;
-        buf[0] = (char)('A' + task[current].drive);
-        buf[1] = ':';
-        scopy(buf + 2, task[current].cwd[0] ? task[current].cwd : "\\", IFS_PATHLEN);
-        far_copy(usel, a1, KDATA, (unsigned)buf, IFS_PATHLEN + 2);
+        far_copy(usel, a1, KDATA, (unsigned)qb, n + 1);
         return 0;
+    }
 
     case FAPI_SELECTDISK:                       /* A: ggf. erst einhaengen */
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || (!vol_present(a1) && subst_drv[a1] < 0))

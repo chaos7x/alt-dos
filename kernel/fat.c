@@ -378,6 +378,163 @@ struct found {
     unsigned dc, idx;                   /* Lage des Eintrags            */
 };
 
+/* ---- Lange Namen (VFAT, Windows 95) lesen --------------------------------
+   Vor dem 8.3-Eintrag stehen Eintraege mit Attribut 0Fh, letzter Teil
+   zuerst (Ordnungszahl | 40h), je 13 UCS-2-Zeichen an den Stellen 1-10,
+   14-25, 28-31, dazu die Pruefsumme des 8.3-Namens (Byte 13). Zeichen
+   ausserhalb von CP437 werden zu '_'. */
+static char lfn[IFS_NAMELEN];
+static unsigned char lfn_sum, lfn_next; /* naechste erwartete Ordnungszahl */
+static unsigned char lfn_have;          /* Teile gesammelt                */
+static const unsigned char lfn_pos[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
+/* Latin-1 A0h-FFh -> CP437 (0 = keins) */
+static const unsigned char lat2cp[96] = {
+    0xFF, 0xAD, 0x9B, 0x9C, 0, 0x9D, 0x7C, 0x15, 0, 0, 0xA6, 0xAE, 0xAA, 0x2D, 0, 0,
+    0xF8, 0xF1, 0xFD, 0, 0, 0xE6, 0x14, 0xFA, 0, 0, 0xA7, 0xAF, 0xAC, 0xAB, 0, 0xA8,
+    0, 0, 0, 0, 0x8E, 0x8F, 0x92, 0x80, 0, 0x90, 0, 0, 0, 0, 0, 0,
+    0, 0xA5, 0, 0, 0, 0, 0x99, 0, 0, 0, 0, 0, 0x9A, 0, 0, 0xE1,
+    0x85, 0xA0, 0x83, 0, 0x84, 0x86, 0x91, 0x87, 0x8A, 0x82, 0x88, 0x89, 0x8D, 0xA1, 0x8C, 0x8B,
+    0, 0xA4, 0x95, 0xA2, 0x93, 0, 0x94, 0xF6, 0, 0x97, 0xA3, 0x96, 0x81, 0, 0, 0x98 };
+
+static unsigned char sum83(const unsigned char __far *e)
+{
+    unsigned char s = 0;
+    unsigned i;
+    for (i = 0; i < 11; i++)
+        s = (unsigned char)(((s & 1) << 7) + (s >> 1) + e[i]);
+    return s;
+}
+
+/* einen Verzeichniseintrag mitlesen; 1 = Teil eines langen Namens */
+static int lfn_feed(const unsigned char __far *e)
+{
+    unsigned ord, i, c, p;
+    if (e[11] != 0x0F || e[0] == 0xE5) {
+        return 0;
+    }
+    ord = e[0] & 0x3F;
+    if (e[0] & 0x40) {                  /* letzter Teil kommt zuerst    */
+        if (ord == 0 || ord > 20) {
+            lfn_have = 0;
+            return 1;
+        }
+        lfn_sum = e[13];
+        lfn[ord * 13 < IFS_NAMELEN ? ord * 13 : IFS_NAMELEN - 1] = 0;
+        lfn_have = 1;
+    } else if (!lfn_have || ord != lfn_next - 1 || e[13] != lfn_sum) {
+        lfn_have = 0;
+        return 1;
+    }
+    lfn_next = (unsigned char)ord;
+    p = (ord - 1) * 13;
+    for (i = 0; i < 13; i++) {
+        c = e[lfn_pos[i]] | ((unsigned)e[lfn_pos[i] + 1] << 8);
+        if (c == 0) {
+            lfn[p + i] = 0;
+            break;
+        }
+        lfn[p + i] = (char)(c < 0x80 ? c : c >= 0xA0 && c <= 0xFF && lat2cp[c - 0xA0] ?
+                                lat2cp[c - 0xA0] : '_');
+    }
+    return 1;
+}
+
+/* gehoert der gesammelte lange Name zu diesem 8.3-Eintrag? */
+static int lfn_valid(const unsigned char __far *e)
+{
+    int ok = lfn_have && lfn_next == 1 && sum83(e) == lfn_sum;
+    lfn_have = 0;
+    return ok;
+}
+
+static char upc(char c) { return (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; }
+
+/* Pfadteil (kanonisch, gross) gleich dem langen Namen? */
+static int lfn_eq(const char *s, unsigned len)
+{
+    unsigned i;
+    for (i = 0; i < len; i++)
+        if (!lfn[i] || upc(lfn[i]) != s[i])
+            return 0;
+    return lfn[len] == 0;
+}
+
+/* Eintrag als 8.3-Text "NAME.EXT" */
+static void name83(const unsigned char __far *e, char *out)
+{
+    unsigned j = 0, k;
+    for (k = 0; k < 8 && e[k] != ' '; k++)
+        out[j++] = (char)e[k];
+    if (e[8] != ' ') {
+        out[j++] = '.';
+        for (k = 8; k < 11 && e[k] != ' '; k++)
+            out[j++] = (char)e[k];
+    }
+    out[j] = 0;
+}
+
+/* lange Namen vor Eintrag idx entfernen (beim Loeschen, Umbenennen) */
+static void wr(int d, unsigned long lba);
+static void drop_lfn(int d, unsigned dc, unsigned idx)
+{
+    unsigned char __far *e;
+    unsigned char s, last;
+    if (!idx || dc == 0xFFFF)
+        return;
+    e = dir_entry(d, dc, idx);
+    if (!e)
+        return;
+    s = sum83(e);
+    while (idx--) {
+        e = dir_entry(d, dc, idx);
+        if (!e || e[11] != 0x0F || e[0] == 0xE5 || e[13] != s)
+            return;
+        last = e[0] & 0x40;
+        e[0] = 0xE5;
+        wr(d, de_lba);
+        if (last)
+            return;
+    }
+}
+
+/* Pfadteil suchen: 8.3-Name oder langer Name; n11 = 0, wenn der Teil
+   kein 8.3-Name ist */
+static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
+                       const char *n11, struct found *f)
+{
+    unsigned char __far *e;
+    unsigned i, k;
+    int ok;
+
+    lfn_have = 0;
+    for (i = 0; (e = dir_entry(d, dc, i)) != 0; i++) {
+        if (e[0] == 0)
+            return -1;
+        if (lfn_feed(e))
+            continue;
+        if (kind(e) != 1) {
+            lfn_have = 0;
+            continue;
+        }
+        ok = lfn_valid(e) && lfn_eq(s, len);
+        if (!ok && n11) {
+            for (k = 0; k < 11 && e[k] == (unsigned char)n11[k]; k++)
+                ;
+            ok = k == 11;
+        }
+        if (ok) {
+            f->dc = dc;
+            f->idx = i;
+            f->first = e[26] | ((unsigned)e[27] << 8);
+            f->attr  = e[11];
+            f->size  = (e[28] | ((unsigned)e[29] << 8)) |
+                       ((unsigned long)(e[30] | ((unsigned)e[31] << 8)) << 16);
+            return 0;
+        }
+    }
+    return -1;
+}
+
 static int lookup(int d, unsigned dc, const char *n, struct found *f)
 {
     unsigned char __far *e;
@@ -421,7 +578,8 @@ static int walk(int d, const char *path, struct found *f)
             ;
         if (!(f->attr & ATTR_DIR))
             return -1;                  /* Zwischenstueck ist eine Datei */
-        if (to83(p, (unsigned)(q - p), n) || lookup(d, f->first, n, f))
+        if (lookup_name(d, f->first, p, (unsigned)(q - p),
+                        to83(p, (unsigned)(q - p), n) ? 0 : n, f))
             return -1;
         p = q;
         while (*p == '\\')
@@ -459,26 +617,43 @@ static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent 
 {
     struct found f;
     unsigned char __far *e;
-    unsigned i, k, j, n = 0;
+    unsigned i, k, n = 0;
 
     if ((want == 0 && revalidate(d)) || walk(d, dir, &f) || !(f.attr & ATTR_DIR))
         return -1;
+    lfn_have = 0;
     for (i = 0; (e = dir_entry(d, f.first, i)) != 0; i++) {
+        if (e[0] == 0)
+            return -1;
+        if (lfn_feed(e))
+            continue;
         switch (kind(e)) {
         case 0: return -1;
-        case 2: continue;
+        case 2: lfn_have = 0; continue;
         }
-        if (n++ != want)
+        if (n++ != want) {
+            lfn_have = 0;
             continue;
-        j = 0;
-        for (k = 0; k < 8 && e[k] != ' '; k++)
-            de->name[j++] = e[k];
-        if (e[8] != ' ') {
-            de->name[j++] = '.';
-            for (k = 8; k < 11 && e[k] != ' '; k++)
-                de->name[j++] = e[k];
         }
-        de->name[j] = 0;
+        name83(e, de->sname);
+        if (lfn_valid(e)) {             /* langer Name                  */
+            for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
+                de->name[k] = lfn[k];
+            de->name[k] = 0;
+        } else {
+            unsigned dot = 0, low = 0;
+            for (k = 0; de->sname[k]; k++) {    /* NT: Byte 12 Bit 3/4 =   */
+                char c = de->sname[k];          /* Name/Endung klein       */
+                if (c == '.')
+                    dot = 1;
+                else if (c >= 'A' && c <= 'Z' && (e[12] & (dot ? 0x10 : 0x08)))
+                    c = (char)(c + 32), low = 1;
+                de->name[k] = c;
+            }
+            de->name[k] = 0;
+            if (!low)                   /* schon 8.3; mit Kleinschrift */
+                de->sname[0] = 0;       /* bleibt der Kurzname gross fuer */
+        }                               /* alte Programme                */
         de->attr = e[11];
         de->time = e[22] | ((unsigned)e[23] << 8);
         de->date = e[24] | ((unsigned)e[25] << 8);
@@ -834,6 +1009,7 @@ static int fat_remove(int d, const char *path)
         return IFS_ERR;
     if (f.attr & (ATTR_RO | ATTR_SYSTEM | ATTR_HIDDEN))
         return IFS_DENIED;
+    drop_lfn(d, f.dc, f.idx);           /* lange Namen mit entfernen    */
     e = dir_entry(d, f.dc, f.idx);
     if (!e)
         return IFS_ERR;
@@ -897,6 +1073,7 @@ static int fat_rmdir(int d, const char *path)
         if (kind(e) == 1 && e[0] != '.')
             return IFS_DENIED;          /* nicht leer                   */
     }
+    drop_lfn(d, f.dc, f.idx);
     e = dir_entry(d, f.dc, f.idx);
     if (!e)
         return IFS_ERR;
@@ -928,6 +1105,7 @@ static int fat_move(int d, const char *from, const char *to)
         return IFS_EXIST;
     if (walk(d, from, &f))              /* lookup hat DMABUF benutzt    */
         return IFS_ERR;
+    drop_lfn(d, f.dc, f.idx);           /* alter langer Name passt nicht mehr */
     if (par.first == f.dc) {            /* gleiches Verzeichnis         */
         e = dir_entry(d, f.dc, f.idx);
         if (!e)
@@ -1083,10 +1261,50 @@ static int fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
     return done_op(0);
 }
 
+/* Pfad -> nur 8.3-Namen */
+static int fat_shortpath(int d, const char *path, char *out)
+{
+    struct found f;
+    char n[11], s[13];
+    const char *p = path, *q;
+    unsigned o = 0, k;
+    unsigned char __far *e;
+
+    f.first = 0;
+    f.attr = ATTR_DIR;
+    while (*p == '\\')
+        p++;
+    out[0] = 0;
+    while (*p) {
+        for (q = p; *q && *q != '\\'; q++)
+            ;
+        if (!(f.attr & ATTR_DIR) ||
+            lookup_name(d, f.first, p, (unsigned)(q - p),
+                        to83(p, (unsigned)(q - p), n) ? 0 : n, &f) ||
+            !(e = dir_entry(d, f.dc, f.idx)))
+            return -1;
+        name83(e, s);
+        if (o + 1 + 12 >= IFS_PATHLEN)
+            return -1;
+        out[o++] = '\\';
+        for (k = 0; s[k]; k++)
+            out[o++] = s[k];
+        out[o] = 0;
+        p = q;
+        while (*p == '\\')
+            p++;
+    }
+    if (!o) {
+        out[0] = '\\';
+        out[1] = 0;
+    }
+    return 0;
+}
+
 struct ifs_driver fat_driver = {
     "FAT", fat_mount, fat_open, fat_read, fat_readdir, fat_isdir,
     fat_create, fat_write, fat_close, fat_remove, fat_mkdir, fat_rmdir,
-    fat_move, fat_space, fat_setinfo, fat_label
+    fat_move, fat_space, fat_setinfo, fat_label, fat_shortpath
 };
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
@@ -1139,6 +1357,13 @@ int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
 int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
 {
     return VOL_OK(drive) ? vol[drive].drv->readdir(drive, dir, n, d) : -1;
+}
+
+int ifs_shortpath(int drive, const char *path, char *out)
+{
+    if (VOL_OK(drive) && vol[drive].drv->shortpath)
+        return vol[drive].drv->shortpath(drive, path, out);
+    return -1;
 }
 
 int ifs_isdir(int drive, const char *path)

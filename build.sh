@@ -105,8 +105,13 @@ done
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
+# Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
+# anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
+LFNAPPS="command"
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
-    python3 tools/mkfx.py $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
+    L=""
+    case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
+    python3 tools/mkfx.py $L $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
 echo "Treiber"

@@ -47,10 +47,15 @@ static char *skip(char *p)
     return p;
 }
 
+/* "..." haelt lange Namen mit Leerzeichen zusammen */
 static char *next_word(char *p)
 {
-    while (*p && *p != ' ')
+    int q = 0;
+    while (*p && (q || *p != ' ')) {
+        if (*p == '"')
+            q = !q;
         p++;
+    }
     return skip(p);
 }
 
@@ -183,7 +188,8 @@ static unsigned set_line(const char *src, unsigned *pos, unsigned n)
    (Verzeichnis mit "\", Datei mit Leerzeichen); mehrdeutig: gemeinsamen
    Anfang einsetzen, zweites Tab listet die Moeglichkeiten. */
 #define NCAND 64
-static char     cand[NCAND][13];
+#define CANDLEN 64                      /* laengere Namen ergaenzt Tab nicht */
+static char     cand[NCAND][CANDLEN];
 static unsigned ncand;
 static unsigned char cand_dir[NCAND];
 static const char *const builtin[] = {
@@ -210,8 +216,10 @@ static void add_cand(const char *name, int dir)
     for (i = 0; i < ncand; i++)         /* doppelt (PATH)?               */
         if (same(cand[i], name))
             return;
+    if (slen(name) >= CANDLEN)
+        return;
     if (ncand < NCAND) {
-        for (i = 0; name[i] && i < 12; i++)
+        for (i = 0; name[i] && i < CANDLEN - 1; i++)
             cand[ncand][i] = name[i];
         cand[ncand][i] = 0;
         cand_dir[ncand++] = (unsigned char)dir;
@@ -223,7 +231,7 @@ static void add_cand(const char *name, int dir)
 static void scan_dir(const char *dir, const char *p, unsigned pl, int progs)
 {
     static struct fapi_dirent e;
-    static char nm[13];
+    static char nm[CANDLEN];
     unsigned n, k;
 
     for (n = 0; DosFindEntry(&e, n, dir) != FAPI_ERROR; n++) {
@@ -232,7 +240,7 @@ static void scan_dir(const char *dir, const char *p, unsigned pl, int progs)
         if (progs) {
             if (e.attr & 0x10)
                 continue;
-            for (k = 0; e.name[k] && e.name[k] != '.'; k++)
+            for (k = 0; e.name[k] && e.name[k] != '.' && k < CANDLEN - 1; k++)
                 nm[k] = e.name[k];
             nm[k] = 0;
             if (!same(e.name + k, ".EXE") && !same(e.name + k, ".CMD") &&
@@ -498,9 +506,14 @@ static void cmd_doskey(char *arg)
 /* ein Wort aus der Eingabe als eigene Zeichenkette */
 static char *word(char *p, char *out, int max)
 {
-    int i = 0;
-    while (*p && *p != ' ' && i < max - 1)
-        out[i++] = *p++;
+    int i = 0, q = 0;
+    while (*p && (q || *p != ' ')) {
+        if (*p == '"')
+            q = !q;
+        else if (i < max - 1)
+            out[i++] = *p;
+        p++;
+    }
     out[i] = 0;
     return out;
 }
@@ -517,7 +530,7 @@ static void hex4(unsigned v);
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
-    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[13];
+    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[FAPI_PATHLEN];
     unsigned n, files = 0, dirs = 0, want = 0, nowant = 0, pass;
     unsigned long total = 0;
     int all = 0, page = 0, lines = 4;
@@ -756,7 +769,14 @@ static int match(const char *name, const char *pat)
 
     if (pat[0] == '*' && pat[1] == 0)
         return 1;
-    while (*nd && *nd != '.') nd++;
+    {                                   /* Endung: nach dem letzten Punkt */
+        const char *x;
+        for (x = name; *x; x++)
+            if (*x == '.')
+                nd = x;
+        if (*nd != '.')
+            nd = x;
+    }
     while (*pd && *pd != '.') pd++;
     nl = (unsigned)(nd - name);
     pl = (unsigned)(pd - pat);
