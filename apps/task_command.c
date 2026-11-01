@@ -683,7 +683,17 @@ static void cmd_cd(char *arg)
         puts("\n");
         return;
     }
-    if (DosChDir(word(arg, p, sizeof(p))) == FAPI_ERROR)
+    if (*arg == '"')
+        word(arg, p, sizeof(p));
+    else {                              /* wie Windows: CD Neuer Ordner  */
+        unsigned n;                     /* nimmt den Rest der Zeile      */
+        for (n = 0; arg[n] && n < sizeof(p) - 1; n++)
+            p[n] = arg[n];
+        while (n && p[n - 1] == ' ')
+            n--;
+        p[n] = 0;
+    }
+    if (DosChDir(p) == FAPI_ERROR)
         puts("Ung\x81ltiges Verzeichnis.\n");
 }
 

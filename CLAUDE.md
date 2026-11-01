@@ -788,8 +788,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   word/next_word, Endung nach dem letzten Punkt, FAPI_CURDIRLEN 263.
   Vom Nutzer in 86Box bestätigt: auf dem Mac angelegter Ordner mit langem
   Namen erscheint unter AT-DOS.
-  Offen in Stufe 1: aktuelles Verzeichnis wird kanonisch groß gespeichert
-  (Eingabeaufforderung `A:\EIGENE DATEIEN` statt Originalschreibung).
+  Aktuelles Verzeichnis in Originalschreibung (IFS-Aufruf `namepath`,
+  shortn=0): CHDIR speichert die Namen vom Datenträger, `resolve_v` macht
+  daraus beim Auflösen wieder Großbuchstaben, `path_in` vergleicht ohne
+  Groß/klein. `CD Neuer Ordner` ohne Anführungszeichen nimmt wie bei
+  Windows den Rest der Zeile (Wunsch des Nutzers nach Test in 86Box).
   Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
   64 KB Code) – vor Stufe 2/3 Platz schaffen (Teile auslagern oder zweites
   Codesegment).

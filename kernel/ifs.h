@@ -70,9 +70,10 @@ struct ifs_driver {
     /* Bezeichnung (12 Bytes) und Seriennummer lesen; newlbl != 0: setzen
        ("" = loeschen) */
     int  (*label)(int drive, char *lbl, unsigned long *serial, const char *newlbl);
-    /* Pfad mit langen Namen -> nur 8.3-Namen (fuer Programme ohne
-       FX_FLAG_LONGNAMES), out IFS_PATHLEN; 0 = ok */
-    int  (*shortpath)(int drive, const char *path, char *out);
+    /* kanonischen Pfad (gross) in Namen vom Datentraeger umsetzen:
+       shortn = 1 nur 8.3 (Programme ohne FX_FLAG_LONGNAMES), 0 lange Namen
+       in Originalschreibung; out IFS_PATHLEN; 0 = ok */
+    int  (*namepath)(int drive, const char *path, char *out, int shortn);
 };
 
 extern struct volume vol[NDRIVE];
@@ -92,7 +93,7 @@ int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len);
 int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d);
 int ifs_isdir(int drive, const char *path);
-int ifs_shortpath(int drive, const char *path, char *out);
+int ifs_namepath(int drive, const char *path, char *out, int shortn);
 int ifs_create(int drive, const char *path, struct ifs_file __far *f);
 int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len);

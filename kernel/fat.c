@@ -1261,11 +1261,11 @@ static int fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
     return done_op(0);
 }
 
-/* Pfad -> nur 8.3-Namen */
-static int fat_shortpath(int d, const char *path, char *out)
+/* Pfad -> 8.3-Namen (shortn) oder Namen in Originalschreibung */
+static int fat_namepath(int d, const char *path, char *out, int shortn)
 {
     struct found f;
-    char n[11], s[13];
+    char n[11], s[IFS_NAMELEN];
     const char *p = path, *q;
     unsigned o = 0, k;
     unsigned char __far *e;
@@ -1284,7 +1284,32 @@ static int fat_shortpath(int d, const char *path, char *out)
             !(e = dir_entry(d, f.dc, f.idx)))
             return -1;
         name83(e, s);
-        if (o + 1 + 12 >= IFS_PATHLEN)
+        if (!shortn) {                  /* langen Namen dazu suchen      */
+            unsigned i = f.idx;
+            unsigned char __far *x;
+            lfn_have = 0;
+            if (i > 20)
+                i -= 20;
+            else
+                i = 0;
+            for (; i <= f.idx && (x = dir_entry(d, f.dc, i)) != 0; i++)
+                if (!lfn_feed(x) && i < f.idx)
+                    lfn_have = 0;
+            if (x && lfn_valid(x))
+                for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
+                    s[k] = lfn[k], s[k + 1] = 0;
+            else if (x) {               /* NT-Kleinschreibung            */
+                unsigned dot = 0;
+                for (k = 0; s[k]; k++)
+                    if (s[k] == '.')
+                        dot = 1;
+                    else if (s[k] >= 'A' && s[k] <= 'Z' && (x[12] & (dot ? 0x10 : 0x08)))
+                        s[k] = (char)(s[k] + 32);
+            }
+        }
+        for (k = 0; s[k]; k++)
+            ;
+        if (o + 1 + k >= IFS_PATHLEN)
             return -1;
         out[o++] = '\\';
         for (k = 0; s[k]; k++)
@@ -1304,7 +1329,7 @@ static int fat_shortpath(int d, const char *path, char *out)
 struct ifs_driver fat_driver = {
     "FAT", fat_mount, fat_open, fat_read, fat_readdir, fat_isdir,
     fat_create, fat_write, fat_close, fat_remove, fat_mkdir, fat_rmdir,
-    fat_move, fat_space, fat_setinfo, fat_label, fat_shortpath
+    fat_move, fat_space, fat_setinfo, fat_label, fat_namepath
 };
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
@@ -1359,10 +1384,10 @@ int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
     return VOL_OK(drive) ? vol[drive].drv->readdir(drive, dir, n, d) : -1;
 }
 
-int ifs_shortpath(int drive, const char *path, char *out)
+int ifs_namepath(int drive, const char *path, char *out, int shortn)
 {
-    if (VOL_OK(drive) && vol[drive].drv->shortpath)
-        return vol[drive].drv->shortpath(drive, path, out);
+    if (VOL_OK(drive) && vol[drive].drv->namepath)
+        return vol[drive].drv->namepath(drive, path, out, shortn);
     return -1;
 }
 

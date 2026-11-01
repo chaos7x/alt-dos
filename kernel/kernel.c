@@ -670,7 +670,9 @@ static int resolve_v(int t, const char *in, int *drive, char *out)
     n = 0;
     out[0] = 0;
     if (*p != '\\' && *p != '/' && t >= 0 && d == task[t].drive) {
-        scopy(out, task[t].cwd, IFS_PATHLEN);
+        scopy(out, task[t].cwd, IFS_PATHLEN);   /* kanonisch = gross */
+        for (k = 0; out[k]; k++)
+            out[k] = up(out[k]);
         while (out[n])
             n++;
     }
@@ -1312,7 +1314,7 @@ static int path_in(const char __far *a, const char *b)
     if (b[0] == '\\' && b[1] == 0)
         return 1;
     for (i = 0; b[i]; i++)
-        if (a[i] != b[i])
+        if (up(a[i]) != up(b[i]))           /* cwd in Originalschreibung */
             return 0;
     return a[i] == 0 || a[i] == '\\';
 }
@@ -2488,6 +2490,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (d != task[current].drive)
             return FAPI_ERROR;                  /* nur aktuelles Laufwerk */
+        /* gespeichert wird die Schreibung vom Datentraeger (lange Namen:
+           "\\Neuer Ordner"), verglichen wird ohne Gross/klein */
+        if (subst_drv[d] < 0 && canon[1] && ifs_namepath(d, canon, real, 0) == 0)
+            scopy(canon, real, IFS_PATHLEN);
         scopy(task[current].cwd, canon[1] ? canon : "", IFS_PATHLEN);
         return 0;
     }
@@ -2501,8 +2507,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         qb[0] = (char)('A' + d);
         qb[1] = ':';
         scopy(qb + 2, task[current].cwd[0] ? task[current].cwd : "\\", IFS_PATHLEN);
-        if (!task[current].lfn && subst_drv[d] < 0 && task[current].cwd[0])
-            ifs_shortpath(d, task[current].cwd, qb + 2);
+        if (!task[current].lfn && subst_drv[d] < 0 && task[current].cwd[0]) {
+            static char uc[IFS_PATHLEN];
+            for (n = 0; task[current].cwd[n]; n++)
+                uc[n] = up(task[current].cwd[n]);
+            uc[n] = 0;
+            ifs_namepath(d, uc, qb + 2, 1);
+        }
         for (n = 0; qb[n]; n++)
             ;
         if ((!task[current].lfn && n > 129) || !user_ok(usel, a1, n + 1, 1))
