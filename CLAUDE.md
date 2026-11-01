@@ -274,7 +274,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Größe, Frist und Trefferquote. In QEMU geprüft: XCOPY + SHUTDOWN (fsck
   sauber, Inhalte gleich), Strom weg nach COPY (Datei fehlt, Dateisystem
   stimmig, Sauber-Bit gelöscht -> AUTOCHECK), CHKDSK /F, zwei XCOPY
-  gleichzeitig, Diskette mit 4 MB RAM.
+  gleichzeitig, Diskette mit 4 MB RAM. Vom Nutzer in 86Box bestätigt
+  (2-MB-Maschine, 1.664 KB): Vorgabe 128 KB, nach XCOPY 85 % Treffer.
+  Offen: Test auf dem SCAT mit Adaptec (Schreiben per Busmaster-DMA direkt
+  aus dem Cache oberhalb 1 MB).
 - CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
   den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:
   Dateiname des Moduls ohne Endung), gestartet wird `U<Name>.EXE` aus dem
