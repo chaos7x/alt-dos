@@ -477,7 +477,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
   Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später: MSD,
-  HELP, DEFRAG, PRINT/MODE.
+  DEFRAG, PRINT/MODE.
   UNDELETE (in QEMU geprüft): Verteiler `task_undel.c` -> `UFAT X:
   /UNDELETE \Pfad\Muster [/LIST] [/ALL]` (`apps/ufat_undel.c`), ohne
   Löschschutz wie MS-DOS 5: Startcluster frei -> Startcluster + nächste
@@ -648,7 +648,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
   Lese-Cache oder sofort schreiben (Wechsel). Heute: Daten sofort, nur FAT
   im 2-Sektor-Cache.
-- `COPY` mit Verketten (`A+B`); COPY sollte wie XCOPY Datum/Uhrzeit erhalten
+- `COPY` mit Verketten (`A+B [Ziel]`, ohne Ziel an A anhängen) und Datum/
+  Uhrzeit der Quelle (wie MS-DOS) – erledigt, in QEMU geprüft. Verketten
+  binär (kein ^Z-Textmodus). `HELP Befehl` = `Befehl /?`, `HELP` zeigt
+  interne Befehle und die Programme in `\DOS`.
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben). Erledigt: `mbr.asm` (nur `atdos-hd.img`)
   rechnet den Startsektor aus LBA und INT-13h/08h-Geometrie um, CHS aus der

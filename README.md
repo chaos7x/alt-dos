@@ -57,7 +57,8 @@ und PC-DOS.
   zweites Tab listet die Möglichkeiten.
   Befehlsinterpreter mit `DIR` (Verzeichnisse zuerst, `/A` alle bzw.
   `/A:HSDRA` mit `-` wie MS-DOS, `/P`, Muster, freier Platz), `CD`,
-  Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`), `MD`,
+  Laufwerkswechsel, `TYPE`, `COPY` und `DEL` (auch mit `*` und `?`; COPY
+  erhält Datum/Uhrzeit und verkettet mit `A+B [Ziel]`), `HELP [Befehl]`, `MD`,
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
   mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]
   EXIST/==/ERRORLEVEL` – Programme liefern Rückgabewerte, `IF ERRORLEVEL n`

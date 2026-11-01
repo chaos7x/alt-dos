@@ -823,9 +823,31 @@ static int is_dir(char *p)
 
 static char cbuf[8192];
 
-/* eine Datei kopieren; 0 = ok */
+/* Datum/Uhrzeit einer Datei (Eintrag im Verzeichnis); 0 = gefunden */
+static int file_stamp(const char *path, unsigned short *date, unsigned short *time)
+{
+    static struct fapi_dirent e;
+    static char dir[FAPI_PATHLEN];
+    char *nm = base_name((char *)path);
+    unsigned dl = (unsigned)(nm - path), n;
+    for (n = 0; n < dl; n++)
+        dir[n] = path[n];
+    dir[dl] = 0;
+    for (n = 0; DosFindEntry(&e, n, dl ? dir : 0) != FAPI_ERROR; n++)
+        if (same(nm, e.name)) {          /* e.name gross */
+            *date = e.date;
+            *time = e.time;
+            return 0;
+        }
+    return -1;
+}
+
+static int copy_data(unsigned hs, unsigned hd);
+
+/* eine Datei kopieren, Datum/Uhrzeit wie die Quelle (MS-DOS); 0 = ok */
 static int copy_one(const char *src, const char *dst)
 {
+    static struct fapi_finfo fi;
     unsigned hs, hd, n, w;
 
     if (same_path(src, dst)) {
@@ -861,7 +883,83 @@ static int copy_one(const char *src, const char *dst)
         DosDelete(dst);                         /* halbe Datei weg      */
         return -1;
     }
+    if (file_stamp(src, &fi.date, &fi.time) == 0) {
+        fi.mask = 2;
+        DosSetFInfo((char *)dst, &fi);
+    }
     return 0;
+}
+
+/* Inhalt von hs an hd anhaengen; 0 = ok */
+static int copy_data(unsigned hs, unsigned hd)
+{
+    unsigned n, w;
+    while ((n = DosRead(hs, cbuf, sizeof(cbuf))) != 0) {
+        if (n == FAPI_ERROR) {
+            puts("Lesefehler.\n");
+            return -1;
+        }
+        w = DosWrite(hd, cbuf, n);
+        if (FAPI_FAILED(w) || w != n) {
+            file_error(FAPI_FAILED(w) ? w : FAPI_ERR_FULL);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* COPY A+B[+C] [Ziel]: ohne Ziel wird an A angehaengt (wie MS-DOS) */
+static void copy_concat(char *list, char *dst)
+{
+    static char part[FAPI_PATHLEN];
+    char *p = list, *q;
+    unsigned hd, hs, k, first = 1, n = 0;
+
+    for (q = list; *q && *q != '+'; q++)
+        ;
+    k = (unsigned)(q - list);
+    if (!dst[0]) {                              /* an die erste anhaengen */
+        for (n = 0; n < k; n++)
+            dst[n] = list[n];
+        dst[k] = 0;
+        hd = DosAppend(dst);
+        p = *q ? q + 1 : q;
+        first = 0;
+    } else
+        hd = DosCreate(dst);
+    if (FAPI_FAILED(hd)) {
+        file_error(hd);
+        return;
+    }
+    n = 0;
+    while (*p) {
+        for (q = p, k = 0; *q && *q != '+' && k < sizeof(part) - 1; q++)
+            part[k++] = *q;
+        part[k] = 0;
+        p = *q ? q + 1 : q;
+        if (!k)
+            continue;
+        if (same_path(part, dst) && !first) {
+            puts("Inhalt der Zieldatei ging vor dem Kopieren verloren.\n");
+            continue;
+        }
+        hs = DosOpen(part);
+        if (FAPI_FAILED(hs)) {
+            puts(part);
+            puts(": Datei nicht gefunden.\n");
+            continue;
+        }
+        puts(part);
+        puts("\n");
+        k = copy_data(hs, hd);
+        DosClose(hs);
+        if (k)
+            break;
+        n++;
+    }
+    DosClose(hd);
+    put_numx(n ? 1 : 0, 8, 0);
+    puts(" Datei(en) kopiert\n");
 }
 
 static unsigned slen(const char *s)
@@ -880,10 +978,25 @@ static void cmd_copy(char *arg)
     char *pat;
     unsigned n, count = 0, dl;
 
+    {                                           /* "A + B" -> "A+B"     */
+        char *r = arg, *w = arg;
+        for (; *r; r++) {
+            if (*r == ' ' && (r[1] == '+' || (w > arg && w[-1] == '+')))
+                continue;
+            *w++ = *r;
+        }
+        *w = 0;
+    }
     word(arg, src, sizeof(src));
     word(next_word(arg), dst, sizeof(dst));
     if (!src[0]) {
-        puts("Syntax: COPY Quelle [Ziel]\n");
+        puts("Syntax: COPY Quelle [Ziel], COPY A+B [Ziel]\n");
+        return;
+    }
+    for (n = 0; src[n] && src[n] != '+'; n++)
+        ;
+    if (src[n]) {                               /* Verketten            */
+        copy_concat(src, dst);
         return;
     }
     pat = base_name(src);
@@ -1042,6 +1155,10 @@ static void cmd_help(void)
          "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
          "  Stapeldateien:  ECHO [ON|OFF], REM, PAUSE, GOTO, IF, CALL, SHIFT, %1 %NAME%\n"
          "  EXIT            Befehlsinterpreter beenden\n"
+         "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
+         "  ATTRIB CHKDSK CHOICE DELTREE DISKCOPY EDIT FC FDISK FIND FORMAT GREP\n"
+         "  KEYB LABEL LESS MEM MODE MORE MOVE SCANDISK SORT SUBST SYS TREE\n"
+         "  UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
          "Strg+Alt+Entf schlie\xE1t alle Dateien und startet neu.\n");
@@ -1784,8 +1901,21 @@ static int execute(char *l)
     else if (same(cmd, "CALL")) {
         if (*arg)
             return run_program(arg, 1, 1);
-    } else if (same(cmd, "HILFE") || same(cmd, "HELP") || same(cmd, "?"))
+    } else if (same(cmd, "HILFE") || same(cmd, "HELP") || same(cmd, "?")) {
+        static char hb[80];
+        unsigned bi;
+        if (*arg) {                     /* HELP Befehl = Befehl /?       */
+            word(arg, hb, sizeof(hb) - 4);
+            for (bi = 0; builtin[bi] && !same(hb, builtin[bi]); bi++)
+                ;
+            if (!builtin[bi]) {         /* intern: Liste unten           */
+                bi = slen(hb);
+                hb[bi] = ' '; hb[bi + 1] = '/'; hb[bi + 2] = '?'; hb[bi + 3] = 0;
+                return run_program(hb, 1, 0);
+            }
+        }
         cmd_help();
+    }
     else if (same(cmd, "START")) {
         if (!*arg)
             puts("Syntax: START Programm [Argumente]\n");
