@@ -34,7 +34,8 @@ static void list_files(void)
     unsigned n, shown = 0;
     int more = next_dir(0) >= 0;
     for (n = 0; DosFindEntry(&e, n, path) != FAPI_ERROR; n++) {
-        if (e.attr & 0x18)
+        if (e.attr & 0x1E)              /* wie MS-DOS: ohne versteckte,
+                                           System, Bezeichnung */
             continue;
         puts(pre);
         puts(more ? (ascii ? "|   " : "\xB3   ") : "    ");

@@ -722,6 +722,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vom Nutzer in 86Box bestätigt: JOIN funktioniert.
   DIR zeigt JOIN-Verzeichnisse wie Windows als `<JUNCTION>` mit Ziel
   (`disk [A:\]`), COMMAND fragt dazu DosQJoin ab (`join_mask`, `join_at`).
+  CD auf andere Laufwerke wie MS-DOS (in QEMU geprüft): je Task merkt sich
+  der Kernel das Verzeichnis von bis zu 4 weiteren Laufwerken (`dcwd()`,
+  `NDCWD`, im Pfadsegment `subst_sel` hinter SUBST/JOIN, `DCWD_OFF`);
+  CHDIR auf fremdes Laufwerk speichert dort, SELECTDISK tauscht (fehlt das
+  Verzeichnis inzwischen: Stamm), `resolve_v` nimmt es für relative Pfade,
+  `in_use` schützt es vor RD, Kinder erben die Tabelle. DosQCurDir mit
+  CX = Laufwerk + 1 (`DosQCurDirD`), COMMAND `CD A:` zeigt es. TREE zeigt
+  wie MS-DOS keine versteckten/System-Dateien.
 - Leeres Diskettenlaufwerk (vom Nutzer in 86Box gemeldet: A:/B: ohne
   Diskette „zugreifbar“): `floppy.c` merkt `nomedia` (Wechselleitung
   bleibt nach dem Schritt gesetzt, oder READ ID ohne Index), `fd_read`/

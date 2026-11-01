@@ -39,7 +39,11 @@
 #define KBL_SIZE_BYTES      278
 #define FAPI_CHDIR          0x14    /* BX = Pfad                        */
 #define FAPI_QCURDIR        0x15    /* BX = Puffer -> "C:\DOS"; 130 Bytes, mit
-                                       FX_FLAG_LONGNAMES bis 263 (FAPI_PATHLEN+2) */
+                                       FX_FLAG_LONGNAMES bis 263 (FAPI_PATHLEN+2);
+                                       CX = Laufwerk + 1 (0 = aktuelles): wie
+                                       MS-DOS merkt sich jeder Task das Ver-
+                                       zeichnis von bis zu 4 weiteren Laufwerken
+                                       (DosChDir "A:\X" von C: aus) */
 #define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
 #define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
 #define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen -> Handle */

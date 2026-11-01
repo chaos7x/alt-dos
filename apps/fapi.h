@@ -32,6 +32,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosFindEntry(e, n, dir) fapi_call(FAPI_FINDENTRY, (unsigned short)(e), (n), (unsigned short)(dir))
 #define DosChDir(p)         F2(FAPI_CHDIR, (p), 0)
 #define DosQCurDir(buf)     F2(FAPI_QCURDIR, (buf), 0)
+#define DosQCurDirD(d, buf) F2(FAPI_QCURDIR, (buf), (d) + 1)    /* d: 0 = A: */
 #define DosSelectDisk(d)    F2(FAPI_SELECTDISK, (d), 0)
 #define DosQCurDisk()       F2(FAPI_QCURDISK, 0, 0)
 #define DosCreate(name)     F2(FAPI_CREATE, (name), 0)

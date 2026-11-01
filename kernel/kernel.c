@@ -656,6 +656,55 @@ static signed char join_drv[NDRIVE];
 static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
 #define JOIN_OFF (NDRIVE * IFS_PATHLEN)
 
+/* Aktuelles Verzeichnis anderer Laufwerke (wie MS-DOS: CD A:\\X von C:
+   aus) je Task, bis NDCWD Laufwerke; im selben Kernelsegment hinter SUBST
+   und JOIN. Satz: Laufwerk (0xFF frei) + Pfad wie task.cwd. */
+#define NDCWD    4
+#define DCWD_SZ  (1 + IFS_PATHLEN)
+#define DCWD_OFF (2 * NDRIVE * IFS_PATHLEN)
+static char __far *dcwd(int t, int d, int create)
+{
+    char __far *p = MK_FP(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ);
+    char __far *fr = 0;
+    unsigned i;
+    if (!subst_sel)
+        return 0;
+    for (i = 0; i < NDCWD; i++, p += DCWD_SZ) {
+        if ((unsigned char)p[0] == (unsigned char)d)
+            return p + 1;
+        if ((unsigned char)p[0] == 0xFF && !fr)
+            fr = p;
+    }
+    if (!create)
+        return 0;
+    if (!fr) {                              /* voll: aeltesten ersetzen  */
+        fr = MK_FP(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ);
+        far_copy(subst_sel, FP_OFF(fr), subst_sel, FP_OFF(fr) + DCWD_SZ,
+                 (NDCWD - 1) * DCWD_SZ);
+        fr += (NDCWD - 1) * DCWD_SZ;
+    }
+    fr[0] = (char)d;
+    fr[1] = 0;
+    return fr + 1;
+}
+
+static void dcwd_clear(int t)
+{
+    unsigned i;
+    char __far *p = MK_FP(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ);
+    if (subst_sel)
+        for (i = 0; i < NDCWD; i++)
+            p[i * DCWD_SZ] = (char)0xFF;
+}
+
+static void fscopy(char __far *d, const char __far *s, unsigned max)
+{
+    unsigned i;
+    for (i = 0; s[i] && i + 1 < max; i++)
+        d[i] = s[i];
+    d[i] = 0;
+}
+
 static int join_hidden(unsigned d)
 {
     return d < NDRIVE && join_drv[d] >= 0;
@@ -761,8 +810,12 @@ static int resolve_v(int t, const char *in, int *drive, char *out)
         return -1;                          /* per JOIN eingehaengt     */
     n = 0;
     out[0] = 0;
-    if (*p != '\\' && *p != '/' && t >= 0 && d == task[t].drive) {
-        scopy(out, task[t].cwd, IFS_PATHLEN);   /* kanonisch = gross */
+    if (*p != '\\' && *p != '/' && t >= 0) {
+        char __far *oc = 0;
+        if (d == task[t].drive)
+            scopy(out, task[t].cwd, IFS_PATHLEN);   /* kanonisch = gross */
+        else if ((oc = dcwd(t, d, 0)) != 0)
+            fscopy((char __far *)out, oc, IFS_PATHLEN);
         for (k = 0; out[k]; k++)
             out[k] = up(out[k]);
         while (out[n])
@@ -1064,10 +1117,15 @@ static int task_create(const char *cmd, int session, int parent, int from)
         return -err;
     task[t].drive = from >= 0 ? task[from].drive : (unsigned char)sys_drive;
     far_copy(env_sel, env_off(t), env_sel, env_off(from), FAPI_ENVSIZE);
-    if (from >= 0)
+    if (from >= 0) {
         scopy(task[t].cwd, task[from].cwd, IFS_PATHLEN);
-    else
+        if (subst_sel)
+            far_copy(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ, subst_sel,
+                     DCWD_OFF + (unsigned)from * NDCWD * DCWD_SZ, NDCWD * DCWD_SZ);
+    } else {
         task[t].cwd[0] = 0;
+        dcwd_clear(t);
+    }
     task[t].session = session;
     task[t].parent  = parent;
     task[t].wake    = 0;
@@ -1421,9 +1479,14 @@ static int in_use(int d, const char *canon, int dirs)
             return 1;
     if (dirs)
         for (k = 0; k < NTASK; k++)
-            if (task[k].state != T_FREE && task[k].drive == d &&
-                task[k].cwd[0] && path_in(task[k].cwd, canon))
-                return 1;
+            if (task[k].state != T_FREE) {
+                char __far *oc;
+                if (task[k].drive == d && task[k].cwd[0] && path_in(task[k].cwd, canon))
+                    return 1;
+                if (task[k].drive != d && (oc = dcwd(k, d, 0)) != 0 && oc[0] &&
+                    path_in(oc, canon))
+                    return 1;
+            }
     return 0;
 }
 
@@ -2654,12 +2717,15 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         join_map(&rd, real);
         if (!ifs_isdir(rd, real))
             return FAPI_ERROR;
-        if (d != task[current].drive)
-            return FAPI_ERROR;                  /* nur aktuelles Laufwerk */
         /* gespeichert wird die Schreibung vom Datentraeger (lange Namen:
            "\\Neuer Ordner"), verglichen wird ohne Gross/klein */
         if (subst_drv[d] < 0 && canon[1] && namepath_j(d, canon, real, 0) == 0)
             scopy(canon, real, IFS_PATHLEN);
+        if (d != task[current].drive) {         /* anderes Laufwerk: merken */
+            char __far *oc = dcwd(current, d, 1);
+            fscopy(oc, (char __far *)(canon[1] ? canon : ""), IFS_PATHLEN);
+            return 0;
+        }
         scopy(task[current].cwd, canon[1] ? canon : "", IFS_PATHLEN);
         return 0;
     }
@@ -2667,16 +2733,27 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_QCURDIR: {                        /* "C:\DOS"            */
         /* Programme ohne FX_FLAG_LONGNAMES bekommen den Pfad in 8.3-Namen
            und hoechstens 130 Bytes (so stand es bisher in fapi_abi.h) */
-        static char qb[IFS_PATHLEN + 2];
+        /* CX = Laufwerk + 1 (0 = aktuelles): Verzeichnis dort (CD X:) */
+        static char qb[IFS_PATHLEN + 2], cw[IFS_PATHLEN];
         unsigned n;
         d = task[current].drive;
+        if (a2 && a2 - 1 != (unsigned)d) {
+            char __far *oc;
+            d = (int)a2 - 1;
+            if (d >= NDRIVE || join_hidden(d) || (!vol_present(d) && subst_drv[d] < 0))
+                return FAPI_ERROR;
+            cw[0] = 0;
+            if ((oc = dcwd(current, d, 0)) != 0)
+                fscopy((char __far *)cw, oc, IFS_PATHLEN);
+        } else
+            scopy(cw, task[current].cwd, IFS_PATHLEN);
         qb[0] = (char)('A' + d);
         qb[1] = ':';
-        scopy(qb + 2, task[current].cwd[0] ? task[current].cwd : "\\", IFS_PATHLEN);
-        if (!task[current].lfn && subst_drv[d] < 0 && task[current].cwd[0]) {
+        scopy(qb + 2, cw[0] ? cw : "\\", IFS_PATHLEN);
+        if (!task[current].lfn && subst_drv[d] < 0 && cw[0]) {
             static char uc[IFS_PATHLEN];
-            for (n = 0; task[current].cwd[n]; n++)
-                uc[n] = up(task[current].cwd[n]);
+            for (n = 0; cw[n]; n++)
+                uc[n] = up(cw[n]);
             uc[n] = 0;
             namepath_j(d, uc, qb + 2, 1);
         }
@@ -2696,9 +2773,17 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             if (blk_nomedia(vol[a1].blk))
                 return FAPI_ERR_NOTREADY;       /* keine Diskette        */
         }
-        if (a1 != task[current].drive) {
+        if (a1 != task[current].drive) {        /* Verzeichnisse tauschen */
+            char __far *oc = dcwd(current, task[current].drive, 1);
+            fscopy(oc, (char __far *)task[current].cwd, IFS_PATHLEN);
             task[current].drive = (unsigned char)a1;
             task[current].cwd[0] = 0;
+            if ((oc = dcwd(current, (int)a1, 0)) != 0) {
+                fscopy((char __far *)task[current].cwd, oc, IFS_PATHLEN);
+                if (task[current].cwd[0] && resolve(current, ".", &d, canon) == 0 &&
+                    !ifs_isdir(d, canon))
+                    task[current].cwd[0] = 0;   /* gibt es nicht mehr     */
+            }
         }
         return 0;
 
@@ -3982,10 +4067,12 @@ void kmain(void)
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
-    subst_sel = kseg_alloc(2UL * NDRIVE * IFS_PATHLEN);
+    subst_sel = kseg_alloc(2UL * NDRIVE * IFS_PATHLEN + (unsigned long)NTASK * NDCWD * DCWD_SZ);
     for (i = 0; i < NDRIVE; i++)
         join_drv[i] = -1;
     join_sel = subst_sel;
+    for (i = 0; i < NTASK; i++)
+        dcwd_clear(i);
 
     s0 = vio_open("SYSTEM");
     if (s0 < 0)

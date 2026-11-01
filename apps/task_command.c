@@ -857,8 +857,11 @@ static void cmd_cd(char *arg)
 {
     static char p[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
 
-    if (!*arg) {
-        DosQCurDir(cur);
+    if (!*arg || (arg[1] == ':' && !*skip(arg + 2))) {    /* CD, CD A:   */
+        if (*arg ? DosQCurDirD(up(arg[0]) - 'A', cur) != 0 : DosQCurDir(cur) != 0) {
+            puts("Ung\x81ltiges Laufwerk.\n");
+            return;
+        }
         puts(cur);
         puts("\n");
         return;
