@@ -228,6 +228,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und `task_end` anderer Tasks warten, solange jemand sie hält. Kernelteile
   ohne Sperre (vio) sichern SCRATCH/SCRATCH2 mit `win_save/win_restore`.
   Im Zweifel neue FAPI-Aufrufe nicht in `fapi_nolock` aufnehmen.
+  Lehre (Schreibfehler beim Doppel-XCOPY in 86Box, mit /NOIRQ nie): Alles,
+  was vor dem Warten auf die Sperre in globalen Variablen liegt, muss vorher
+  gesichert sein – `fapi_dx` (DX, z. B. Länge bei DosWrite) wurde erst in
+  `fapi_inner` gelesen und war dann von einem anderen Task überschrieben.
+  Jetzt liest `fapi_dispatch` es als Erstes. QEMU zeigte den Fehler nie.
   IDE: `wait_irq()` schläft je 2 Takte, prüft danach immer den Status
   (Interrupt beschleunigt nur), `chan[].done` vor Befehl und vor jedem
   Datentransfer löschen; 3 Fehltreffer -> Abfragebetrieb. In QEMU geprüft:

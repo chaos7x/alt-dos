@@ -1460,7 +1460,8 @@ static unsigned sig_deliver(unsigned r)
     return sig;                                 /* AX = Signal           */
 }
 
-static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2);
+static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
+                           unsigned a3);
 
 /* Aufrufe, die weder Dateisystem noch Laufwerke, DMABUF, SCRATCH oder die
    statischen Puffer von fapi_inner beruehren: sie laufen auch, waehrend ein
@@ -1493,12 +1494,15 @@ static int fapi_nolock(unsigned fn, unsigned a1)
 
 unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 {
-    unsigned r;
+    /* viertes Argument (DX) sofort sichern: fapi_dx ist global, und beim
+       Warten auf die Kernelsperre laufen andere Tasks, deren FAPI-Aufrufe
+       es ueberschreiben (so bekam DosWrite die Laenge eines anderen) */
+    unsigned a3 = fapi_dx, r;
     if (fapi_nolock(fn, a1))
-        r = fapi_inner(fn, usel, a1, a2);
+        r = fapi_inner(fn, usel, a1, a2, a3);
     else {
         klock_enter();
-        r = fapi_inner(fn, usel, a1, a2);
+        r = fapi_inner(fn, usel, a1, a2, a3);
         klock_leave();
     }
     if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
@@ -1509,10 +1513,10 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     return sig_deliver(r);
 }
 
-static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
+static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
+                           unsigned a3)
 {
     int row, col, s = task[current].session, t, k;
-    unsigned a3 = fapi_dx;
     static char buf[FAPI_PATHLEN], canon[IFS_PATHLEN];
     static struct ifs_dirent de;
     int d;
