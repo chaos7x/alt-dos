@@ -135,7 +135,7 @@ void main(void)
             *a++ = 0;
         files++;
         h = DosOpen(f);
-        if (h == FAPI_ERROR) {
+        if (FAPI_FAILED(h)) {
             had_err = 1;
             puts("FIND: Datei nicht gefunden - ");
             puts(f);

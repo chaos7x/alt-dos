@@ -37,7 +37,7 @@ static int load(const char *name, struct txt *t)
 
     h = DosOpen(name);
     if (FAPI_FAILED(h))
-        return -1;
+        return h == FAPI_ERR_INUSE ? -4 : -1;
     t->seg = DosAllocSeg(0);
     t->tab = DosAllocSeg(MAXL * 2);
     if (FAPI_FAILED(t->seg) || FAPI_FAILED(t->tab))
@@ -156,8 +156,13 @@ static int bin_cmp(void)
 
     h1 = DosOpen(n1);
     h2 = DosOpen(n2);
-    if (FAPI_FAILED(h1) || FAPI_FAILED(h2))
-        return -1;
+    if (FAPI_FAILED(h1) || FAPI_FAILED(h2)) {
+        if (!FAPI_FAILED(h1))
+            DosClose(h1);
+        if (!FAPI_FAILED(h2))
+            DosClose(h2);
+        return h1 == FAPI_ERR_INUSE || h2 == FAPI_ERR_INUSE ? -4 : -1;
+    }
     for (;;) {
         a = DosRead(h1, buf, sizeof(buf));
         b = DosRead(h2, b2, sizeof(b2));
@@ -244,7 +249,9 @@ void main(void)
             text_cmp();
     }
     if (r) {
-        puts(r == -2 ? "FC: Nicht genug Arbeitsspeicher\r\n" : "FC: Datei kann nicht ge\x94" "ffnet werden\r\n");
+        puts(r == -2 ? "FC: Nicht genug Arbeitsspeicher\r\n" :
+             r == -4 ? "FC: Datei wird gerade von einem anderen Programm geschrieben\r\n" :
+                       "FC: Datei kann nicht ge\x94" "ffnet werden\r\n");
         DosExit(2);
     }
     if (!diffs)

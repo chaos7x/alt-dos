@@ -196,10 +196,12 @@ static char xbuf[XFER];
 
 int copy_file(const char *from, const char *to)
 {
-    unsigned hi, ho, n;
+    unsigned hi, ho, n, k;
     int rc = 0;
 
     hi = DosOpen(from);
+    if (hi == FAPI_ERR_INUSE)
+        return -6;                      /* schreibt gerade ein anderer  */
     if (FAPI_FAILED(hi))
         return -1;
     ho = DosCreate(to);
@@ -212,8 +214,8 @@ int copy_file(const char *from, const char *to)
             rc = -3;
             break;
         }
-        if (DosWrite(ho, xbuf, n) != n) {
-            rc = -4;
+        if ((k = DosWrite(ho, xbuf, n)) != n) {
+            rc = k == FAPI_ERR_FULL || !FAPI_FAILED(k) ? -7 : -4;  /* voll */
             break;
         }
     }

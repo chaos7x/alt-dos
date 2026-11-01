@@ -382,7 +382,7 @@ void main(void)
         for (k = 0; f[k] && k < sizeof(name) - 1; k++)
             name[k] = f[k];
         h = DosOpen(f);
-        if (h == FAPI_ERROR) {
+        if (FAPI_FAILED(h)) {
             puts("LESS: ");
             puts(f);
             puts(": Datei nicht gefunden\r\n");

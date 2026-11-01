@@ -98,7 +98,9 @@ static void copy_one(char *path, struct fapi_dirent *e)
     if ((rc = copy_file(path, to)) != 0) {
         puts("Fehler beim Kopieren nach ");
         puts(to);
-        puts(rc == -1 ? " (Quelle nicht lesbar)\r\n" :
+        puts(rc == -6 ? " (Quelle wird von einem anderen Programm geschrieben)\r\n" :
+             rc == -7 ? " (unzureichender Speicherplatz)\r\n" :
+             rc == -1 ? " (Quelle nicht lesbar)\r\n" :
              rc == -2 ? " (Ziel nicht anlegbar)\r\n" :
              rc == -3 ? " (Lesefehler)\r\n" :
              rc == -4 ? " (Schreibfehler)\r\n" : " (Fehler beim Schlie\xE1" "en)\r\n");

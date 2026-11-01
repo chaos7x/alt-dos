@@ -43,7 +43,7 @@ void main(void)
     file[i++] = '.'; file[i++] = 'K'; file[i++] = 'B'; file[i++] = 'L';
     file[i] = 0;
     h = DosOpen(file);
-    if (h == FAPI_ERROR) {              /* sonst im DOS-Verzeichnis des Startlaufwerks */
+    if (FAPI_FAILED(h)) {              /* sonst im DOS-Verzeichnis des Startlaufwerks */
         static char alt[FAPI_PATHLEN], cs[FAPI_PATHLEN];
         unsigned k = 0, j;
         if (DosGetEnv("COMSPEC", cs, sizeof(cs)) != FAPI_ERROR && cs[1] == ':') {
@@ -56,7 +56,7 @@ void main(void)
             alt[k + j] = file[j];
         alt[k + j] = 0;
         h = DosOpen(alt);
-        if (h == FAPI_ERROR) {          /* aeltere Ablage: \DOS         */
+        if (FAPI_FAILED(h)) {          /* aeltere Ablage: \DOS         */
             for (j = 0; file[j]; j++)
                 alt[k - 7 + j] = file[j];   /* "SYSTEM\" ueberschreiben */
             alt[k - 7 + j] = 0;

@@ -285,7 +285,7 @@ static void grep_handle(unsigned h, const char *name)
 static void grep_file(const char *path)
 {
     unsigned h = DosOpen(path);
-    if (h == FAPI_ERROR) {
+    if (FAPI_FAILED(h)) {
         had_err = 1;
         if (!opt_s) {
             puts("GREP: ");

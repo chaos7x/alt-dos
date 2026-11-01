@@ -21,7 +21,9 @@ char    *base_name(char *path);                          /* nach \ oder : */
 void     join(char *out, const char *dir, const char *name, unsigned max);
 int      is_dir(const char *p);
 int      ask_yn(void);                                    /* J/N -> 1/0    */
-int      copy_file(const char *from, const char *to);    /* 0 = ok        */
+int      copy_file(const char *from, const char *to);    /* 0 = ok; -1 Quelle, -2 Ziel,
+                         -3 Lesen, -4 Schreiben, -5 Schliessen, -6 Quelle in Benutzung,
+                         -7 Datentraeger voll */
 #define  XFER 4096
 
 /* Verzeichnisbaum ablaufen (ohne Rekursion im C-Stack, App-Stack 2 KB).

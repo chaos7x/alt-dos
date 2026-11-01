@@ -37,7 +37,7 @@ void main(void)
             e++;
         *e = 0;
         h = DosOpen(a);
-        if (h == FAPI_ERROR) {
+        if (FAPI_FAILED(h)) {
             puts("Datei nicht gefunden.\n");
             return;
         }

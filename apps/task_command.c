@@ -685,8 +685,9 @@ static void cmd_type(char *arg)
         return;
     }
     h = DosOpen(word(arg, name, sizeof(name)));
-    if (h == FAPI_ERROR) {
-        puts("Datei nicht gefunden.\n");
+    if (FAPI_FAILED(h)) {
+        puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n"
+                                 : "Datei nicht gefunden.\n");
         return;
     }
     while ((n = DosRead(h, buf, sizeof(buf))) != 0 && n != FAPI_ERROR) {
@@ -832,7 +833,7 @@ static int copy_one(const char *src, const char *dst)
         return -1;
     }
     hs = DosOpen(src);
-    if (hs == FAPI_ERROR) {
+    if (FAPI_FAILED(hs)) {
         puts("Datei nicht gefunden.\n");
         return -1;
     }
@@ -1198,7 +1199,7 @@ static int execute_line(char *l);
 static int exists(const char *p)
 {
     unsigned h = DosOpen(p);
-    if (h == FAPI_ERROR)
+    if (FAPI_FAILED(h))
         return 0;
     DosClose(h);
     return 1;
@@ -1499,7 +1500,7 @@ static int run_batch(const char *path, const char *args)
         return 1;
     }
     h = DosOpen(path);                  /* Laenge bestimmen             */
-    if (h == FAPI_ERROR) {
+    if (FAPI_FAILED(h)) {
         puts("Stapeldatei nicht gefunden.\n");
         return 1;
     }
@@ -1518,11 +1519,11 @@ static int run_batch(const char *path, const char *args)
     b->shift = 0;
     d = bdata(b);
     h = DosOpen(path);
-    for (total = 0; h != FAPI_ERROR &&
+    for (total = 0; !FAPI_FAILED(h) &&
          (n = DosRead(h, cbuf, sizeof(cbuf))) != 0 && n != FAPI_ERROR; total += n)
         for (i = 0; i < n && total + i < b->len; i++)
             d[total + i] = cbuf[i];
-    if (h != FAPI_ERROR)
+    if (!FAPI_FAILED(h))
         DosClose(h);
     /* %0 = Name der Datei, %1.. = Argumente */
     p = b->argbuf;
@@ -1937,7 +1938,7 @@ static int execute_line(char *l)
         }
         if (sg[i].in) {
             h = DosOpen(sg[i].in);
-            if (h == FAPI_ERROR) {
+            if (FAPI_FAILED(h)) {
                 puts("Datei nicht gefunden.\n");
                 break;
             }

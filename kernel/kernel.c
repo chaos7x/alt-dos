@@ -1216,6 +1216,19 @@ static int in_use(int d, const char *canon, int dirs)
     return 0;
 }
 
+/* zum Schreiben offen (anderes Handle)? Wie OS/2 im Normalfall: lesen
+   duerfen viele, aber nicht, waehrend jemand schreibt - sonst sieht der
+   Leser eine halbe Datei (FC waehrend XCOPY in einer anderen Sitzung) */
+static int open_for_write(int d, const char *canon)
+{
+    int k;
+    for (k = 0; k < NFILE; k++)
+        if (files[k].refs && files[k].kind == OF_FILE && files[k].f.drive == d &&
+            (files[k].f.flags & IFS_F_WRITE) && scmp(files[k].path, canon) == 0)
+            return 1;
+    return 0;
+}
+
 static unsigned ifs_err(int rc)
 {
     switch (rc) {
@@ -1652,6 +1665,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve(current, buf, &d, canon))
             return FAPI_ERROR;
+        if (open_for_write(d, canon))
+            return FAPI_ERR_INUSE;
         k = of_alloc();
         if (k < 0)
             return FAPI_ERROR;
