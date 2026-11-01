@@ -820,8 +820,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `A:\Neuer Ordner`. macOS legt `.`/`..` versteckt an – DIR zeigt genau
   diese beiden immer, andere versteckte (z. B. `.fseventsd`) nur mit /A.
   Merker `FX_FLAG_LONGNAMES` (build.sh `LFNAPPS`): COMMAND, ATTRIB, TREE,
-  DELTREE, GREP, PRINT. XCOPY und MOVE erst mit Stufe 2 (sie müssten lange
-  Ziele anlegen), EDIT braucht vorher größere Puffer in der Dateiliste.
+  DELTREE, GREP, PRINT, XCOPY, MOVE. EDIT braucht vorher größere Puffer in
+  der Dateiliste.
   Musterpuffer auf FAPI_PATHLEN, `.`/`..` nur noch genau erkennen (nicht
   jeder Name mit Punkt vorn), Endung nach dem letzten Punkt auch in GREP.
   ATTRIB mit Verzeichnisnamen zeigt/setzt wie NT das Verzeichnis selbst.
@@ -835,7 +835,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `dir_slots` n freie Plätze am Stück, Unterverzeichnis wächst) und
   Kurzname `gen_short` (NAME~n.EXT, eindeutig). Move gibt den alten Platz
   vorher frei; nur Schreibung ändern (REN kurz.txt Kurz.TXT) erlaubt.
-  Ohne `vfat` werden lange Namen bis Stufe 3 abgelehnt.
+  Stufe 3 erledigt (in QEMU geprüft: frische Diskette und C:, XCOPY von
+  VFAT nach EA, REN/MOVE/DEL, Neustart, CHKDSK und fsck sauber):
+  `EA DATA. SF` im Stamm (versteckt+System), Sätze zu 32-Byte-Einheiten:
+  'L'/0 frei, Einheiten, Verzeichnis-Startcluster (32 Bit), 8.3-Name
+  (Rückverweis), Länge, Name. `ea_open` (legt beim ersten langen Namen
+  an), `ea_load` (Namen eines Verzeichnisses in ein 16-KB-Kernelsegment,
+  vor jeder Schleife über ein Verzeichnis – nie mitten drin, DMABUF!),
+  `ea_find`, `ea_add` (freien Satz wiederverwenden, sonst anhängen),
+  `ea_del`; Pflege in create/mkdir (`new_entry_n`), remove/rmdir, move.
+  `vol[].vfat = 0` heißt EA-Laufwerk. AUTO beim Einhängen: EA-Datei im
+  Stamm -> EA (geht vor), sonst lange VFAT-Einträge -> VFAT, sonst EA.
+  `dir_cache_reset` vergisst EA-Datei und Namen (Wechsel, Neueinhängen).
+  Gemischte Schreibung bei 8.3-Namen wird ebenfalls als Satz gespeichert.
+  Merker jetzt auch XCOPY und MOVE; `abs_path` (util.c) schreibt nicht
+  mehr groß (nur den Laufwerksbuchstaben). FAPI_ARGLEN 128 (127 Zeichen
+  wie MS-DOS), COMMAND-Eingabe bis 126 Zeichen, `\b` am Zeilenanfang
+  springt in vio.c in die vorige Zeile. DIR /B und /W. Noch offen:
+  Stufe 4 (UFAT prüft lange Einträge und verwaiste EA-Sätze), EDIT mit
+  langen Namen in der Dateiliste.
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).

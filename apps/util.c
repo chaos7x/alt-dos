@@ -304,9 +304,7 @@ int abs_path(const char *in, char *out)
         out[0] = (char)('A' + d);
         out[1] = ':';
         scopy(out + 2, in, FAPI_PATHLEN - 2);
-        for (d = 0; out[d]; d++)
-            out[d] = up(out[d]);
-        return 0;
+        return 0;                       /* Schreibung bleibt (lange Namen) */
     }
     /* relativ: aktuelles Verzeichnis des Laufwerks (nur das aktuelle
        Laufwerk ist bekannt; sonst Stamm) */
@@ -322,7 +320,6 @@ int abs_path(const char *in, char *out)
     if (*in)
         join(tmp, tmp, in, sizeof(tmp));
     scopy(out, tmp, FAPI_PATHLEN);
-    for (d = 0; out[d]; d++)            /* wie MS-DOS: gross            */
-        out[d] = up(out[d]);
-    return 0;
+    out[0] = up(out[0]);                /* Laufwerk gross, der Rest bleibt, */
+    return 0;                           /* wie geschrieben (lange Namen)  */
 }

@@ -52,6 +52,12 @@ und PC-DOS.
   legen `MD`, `COPY`, `REN` lange Namen wie Windows 95 an (Kurzname
   `NAME~1.EXT`); kleingeschriebene 8.3-Namen bekommen wie bei Windows NT
   nur das Kleinschreibungsbit
+- Lange Namen, Stufe 3: auf allen anderen FAT-Laufwerken (`LONGNAMES=EA`
+  oder `AUTO`) eigenes Format wie bei IBM/OS/2, aber FAT32-fest: die Datei
+  `EA DATA. SF` im Stamm hält zu jeder Datei (Verzeichniscluster + 8.3-Name
+  als Rückverweis) den langen Namen; im Verzeichniseintrag steht nichts,
+  MS-DOS sieht nur Kurznamen und eine versteckte Datei. XCOPY und MOVE
+  kopieren lange Namen mit; Befehlszeilen bis 127 Zeichen; `DIR /B`, `/W`
 - Laufwerke `A:`, `B:` (Disketten), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“

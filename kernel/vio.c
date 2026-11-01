@@ -419,6 +419,10 @@ static void tty_char(int s, char ch)
     case '\b':
         if (p->col > 0)
             p->col--;
+        else if (p->row > 0) {      /* lange Eingabezeile: zurueck in   */
+            p->row--;               /* die vorige Bildschirmzeile       */
+            p->col = SCOLS - 1;
+        }
         break;
     case '\t':
         p->col = (unsigned char)((p->col + 8) & ~7);

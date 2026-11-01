@@ -297,11 +297,14 @@ static int fat_mount(int d)
             e = dma() + ((i & 15) << 5);
             if (e[0] == 0)
                 break;
-            if (e[11] == 0x0F && e[0] != 0xE5) {
-                v->vfat = 1;
+            if (e[0] == 'E' && e[1] == 'A' && e[2] == ' ' && e[3] == 'D' &&
+                e[7] == ' ' && e[8] == 'S' && e[9] == 'F' && e[11] != 0x0F) {
+                v->vfat = 0;            /* EA DATA. SF: eigenes Format    */
                 break;
             }
-        }
+            if (e[11] == 0x0F && e[0] != 0xE5)
+                v->vfat = 1;            /* lange Eintraege (weiter suchen: */
+        }                               /* EA DATA. SF geht vor)          */
     }
     return 0;
 }
@@ -312,9 +315,13 @@ static int lc_drive = -1;
 static unsigned lc_dir, lc_n, lc_clus;
 static unsigned long de_lba;            /* Sektor des letzten dir_entry()  */
 
+static void ea_forget(int d);
 static void dir_cache_reset(void)
 {
+    int d;
     lc_drive = -1;
+    for (d = 0; d < NDRIVE; d++)        /* EA-Datei/Namen neu lesen       */
+        ea_forget(d);
 }
 
 /* i-ter Eintrag des Verzeichnisses ab Cluster dc (0 = Stamm) im DMA-Puffer */
@@ -458,6 +465,11 @@ static int lfn_feed(const unsigned char __far *e)
     return 1;
 }
 
+/* eigenes Format (Stufe 3), weiter unten */
+static void ea_load(int d, unsigned dc);
+static int  ea_find(const unsigned char __far *e, char *out);
+static char ea_tmp[IFS_NAMELEN];
+
 /* gehoert der gesammelte lange Name zu diesem 8.3-Eintrag? */
 static int lfn_valid(const unsigned char __far *e)
 {
@@ -481,12 +493,16 @@ static int lfn_eq(const char *s, unsigned len)
 /* Eintrag als 8.3-Text "NAME.EXT" */
 static void name83(const unsigned char __far *e, char *out)
 {
-    unsigned j = 0, k;
-    for (k = 0; k < 8 && e[k] != ' '; k++)
+    unsigned j = 0, k, n, x;
+    for (n = 8; n && e[n - 1] == ' '; n--)  /* nur Leerzeichen am Ende weg */
+        ;                                   /* ("EA DATA. SF")            */
+    for (x = 11; x > 8 && e[x - 1] == ' '; x--)
+        ;
+    for (k = 0; k < n; k++)
         out[j++] = (char)e[k];
-    if (e[8] != ' ') {
+    if (x > 8) {
         out[j++] = '.';
-        for (k = 8; k < 11 && e[k] != ' '; k++)
+        for (k = 8; k < x; k++)
             out[j++] = (char)e[k];
     }
     out[j] = 0;
@@ -526,6 +542,8 @@ static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
     int ok;
 
     lfn_have = 0;
+    if (!vol[d].vfat)
+        ea_load(d, dc);                 /* lange Namen dieses Verzeichnisses */
     for (i = 0; (e = dir_entry(d, dc, i)) != 0; i++) {
         if (e[0] == 0)
             return -1;
@@ -536,6 +554,11 @@ static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
             continue;
         }
         ok = lfn_valid(e) && lfn_eq(s, len);
+        if (!ok && !vol[d].vfat && ea_find(e, ea_tmp)) {   /* EA-Name    */
+            for (k = 0; k < len && ea_tmp[k] && upc(ea_tmp[k]) == s[k]; k++)
+                ;
+            ok = k == len && !ea_tmp[k];
+        }
         if (!ok && n11) {
             for (k = 0; k < 11 && e[k] == (unsigned char)n11[k]; k++)
                 ;
@@ -641,6 +664,8 @@ static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent 
     if ((want == 0 && revalidate(d)) || walk(d, dir, &f) || !(f.attr & ATTR_DIR))
         return -1;
     lfn_have = 0;
+    if (!vol[d].vfat)
+        ea_load(d, f.first);
     for (i = 0; (e = dir_entry(d, f.first, i)) != 0; i++) {
         if (e[0] == 0)
             return -1;
@@ -659,6 +684,8 @@ static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent 
             for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
                 de->name[k] = lfn[k];
             de->name[k] = 0;
+        } else if (!vol[d].vfat && ea_find(e, de->name)) {
+            /* langer Name aus EA DATA. SF                              */
         } else {
             unsigned dot = 0, low = 0;
             for (k = 0; de->sname[k]; k++) {    /* NT: Byte 12 Bit 3/4 =   */
@@ -1061,12 +1088,11 @@ static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n
             nt_case = (unsigned char)((partlo[0] ? 0x08 : 0) | (partlo[1] ? 0x10 : 0));
             return 0;
         }
-        if (!vol[d].vfat)
-            return 0;                   /* Schreibung geht verloren       */
+        /* gemischt: VFAT-Eintrag bzw. EA-Satz bewahrt die Schreibung */
     } else {
-        if (!vol[d].vfat || clen >= IFS_NAMELEN)
-            return IFS_ERR;             /* langer Name: Stufe 3 (EA)      */
-        gen_short(d, dc, o, n83);
+        if (clen >= IFS_NAMELEN)
+            return IFS_ERR;
+        gen_short(d, dc, o, n83);       /* VFAT und EA: Kurzname NAME~n   */
     }
     for (i = 0; i < clen; i++)
         ln_buf[i] = o[i];
@@ -1076,12 +1102,19 @@ static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n
 }
 
 /* Eintrag anlegen: mit langem Namen, wenn name_for einen bestimmt hat */
+static int ea_add(int d, unsigned dc, const char *n83, const char *name);
+static void ea_del(int d, unsigned dc, const unsigned char *n83);
+
 static int new_entry_n(int d, unsigned dc, const char *n83, unsigned char attr,
                        unsigned first, unsigned *idx)
 {
-    if (ln_buf[0])
+    int rc;
+    if (ln_buf[0] && vol[d].vfat)
         return new_entry_lfn(d, dc, ln_buf, n83, attr, first, idx);
-    return new_entry(d, dc, n83, attr, first, idx);
+    rc = new_entry(d, dc, n83, attr, first, idx);
+    if (rc == 0 && ln_buf[0])           /* EA-Laufwerk: Satz anlegen      */
+        rc = ea_add(d, dc, n83, ln_buf);
+    return rc;
 }
 
 /* Diskette: vor jeder Operation neu einhaengen, sie koennte gewechselt sein */
@@ -1247,6 +1280,211 @@ static int fat_close(struct ifs_file __far *f)
     return done_op(0);
 }
 
+/* ---- Lange Namen im eigenen Format (Stufe 3, Entscheidung des Nutzers) ---
+   "EA DATA. SF" im Stamm (versteckt, System; MS-DOS-Werkzeuge sehen eine
+   normale Datei). Saetze in Einheiten zu 32 Byte:
+     0  'L' = langer Name, 0 = frei      1  Laenge in Einheiten
+     2  Startcluster des Verzeichnisses (32 Bit, 0 = Stamm; FAT32-fest)
+     6  8.3-Name (11 Byte) - der Rueckverweis auf die Datei
+     17 Laenge des Namens, ab 18 der Name (CP437)
+   Im Verzeichniseintrag steht nichts (OS/2 nimmt Offset 14h, bei FAT32 die
+   oberen Clusterbits). Zwischenspeicher: die Namen eines Verzeichnisses
+   (das zuletzt gelesene) in einem Kernelsegment, sonst kostete jede Suche
+   Lesezugriffe; reicht er nicht (16 KB), fehlen die uebrigen Namen. */
+#define EA_HDR   18
+#define EA_CSIZE 16384U
+static struct ifs_file ea_f;            /* EA DATA. SF von ea_drv         */
+static int ea_drv = -1;
+static const char ea_n83[11] = { 'E', 'A', ' ', 'D', 'A', 'T', 'A', ' ', 'S', 'F', ' ' };
+static unsigned ea_csel, ea_cused, ea_cdc;
+static int ea_cdrv = -1;
+static unsigned char ea_rec[EA_HDR + IFS_NAMELEN + 32];
+
+#define EAF ((struct ifs_file __far *)&ea_f)
+
+static void ea_forget(int d)            /* Laufwerk neu/gewechselt        */
+{
+    if (ea_drv == d)
+        ea_drv = -1;
+    if (ea_cdrv == d)
+        ea_cdrv = -1;
+}
+
+/* EA-Datei oeffnen; create = anlegen, wenn sie fehlt. 0 = ok */
+static int ea_open(int d, int create)
+{
+    struct found f;
+    unsigned idx;
+    unsigned char save = nt_case;
+    if (ea_drv == d)
+        return 0;
+    ea_drv = -1;
+    if (lookup(d, 0, ea_n83, &f) == 0) {
+        ea_f.first = f.first;
+        ea_f.size = f.size;
+        ea_f.dir_idx = f.idx;
+    } else {
+        if (!create)
+            return -1;
+        nt_case = 0;
+        idx = (unsigned)new_entry(d, 0, ea_n83, ATTR_HIDDEN | ATTR_SYSTEM, 0, &idx) ? 0xFFFF : idx;
+        nt_case = save;
+        if (idx == 0xFFFF)
+            return -1;
+        ea_f.first = 0;
+        ea_f.size = 0;
+        ea_f.dir_idx = idx;
+    }
+    ea_f.drive = (unsigned char)d;
+    ea_f.attr = ATTR_HIDDEN | ATTR_SYSTEM;
+    ea_f.dir_clus = 0;
+    ea_f.cache_clus = 0;
+    ea_f.cache_pos = 0;
+    ea_f.flags = IFS_F_WRITE;
+    ea_drv = d;
+    return 0;
+}
+
+static unsigned ea_rd(unsigned long pos, void *buf, unsigned n)
+{
+    int r = fat_read(EAF, pos, KDATA, (unsigned)buf, n);
+    return r < 0 ? 0 : (unsigned)r;
+}
+
+static unsigned long ea_dc(void)
+{
+    return ea_rec[2] | ((unsigned)ea_rec[3] << 8) |
+           ((unsigned long)(ea_rec[4] | ((unsigned)ea_rec[5] << 8)) << 16);
+}
+
+/* Namen des Verzeichnisses dc in den Zwischenspeicher */
+static void ea_load(int d, unsigned dc)
+{
+    unsigned long pos;
+    unsigned u, len, k;
+    unsigned char __far *c;
+
+    if (ea_cdrv == d && ea_cdc == dc)
+        return;
+    ea_cdrv = d;
+    ea_cdc = dc;
+    ea_cused = 0;
+    if (!ea_csel && !(ea_csel = kseg_alloc(EA_CSIZE)))
+        return;
+    if (ea_open(d, 0))
+        return;                         /* keine EA-Datei: keine Namen    */
+    c = MK_FP(ea_csel, 0);
+    for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
+        if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
+            break;
+        if (ea_rec[0] != 'L' || ea_dc() != dc)
+            continue;
+        len = ea_rec[17];
+        if (ea_cused + 12 + len > EA_CSIZE)
+            break;                      /* voll: Rest ohne lange Namen    */
+        if (ea_rd(pos + EA_HDR, ea_rec + EA_HDR, len) != len)
+            break;
+        for (k = 0; k < 11; k++)
+            c[ea_cused + k] = ea_rec[6 + k];
+        c[ea_cused + 11] = (unsigned char)len;
+        for (k = 0; k < len; k++)
+            c[ea_cused + 12 + k] = ea_rec[EA_HDR + k];
+        ea_cused += 12 + len;
+    }
+}
+
+/* langer Name zum 8.3-Eintrag e (aus dem Zwischenspeicher); 1 = gefunden */
+static int ea_find(const unsigned char __far *e, char *out)
+{
+    unsigned char __far *c;
+    unsigned o, k, len;
+    if (!ea_csel || ea_cdrv < 0)
+        return 0;
+    c = MK_FP(ea_csel, 0);
+    for (o = 0; o < ea_cused; o += 12 + len) {
+        len = c[o + 11];
+        for (k = 0; k < 11 && c[o + k] == e[k]; k++)
+            ;
+        if (k == 11) {
+            for (k = 0; k < len; k++)
+                out[k] = (char)c[o + 12 + k];
+            out[k] = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Satz zu (dc, n83) freigeben */
+static void ea_del(int d, unsigned dc, const unsigned char *n83)
+{
+    unsigned long pos;
+    unsigned u, k;
+    if (ea_open(d, 0))
+        return;
+    for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
+        if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
+            break;
+        if (ea_rec[0] != 'L' || ea_dc() != dc)
+            continue;
+        for (k = 0; k < 11 && ea_rec[6 + k] == n83[k]; k++)
+            ;
+        if (k == 11) {
+            ea_rec[0] = 0;              /* frei, Laenge bleibt            */
+            fat_write(EAF, pos, KDATA, (unsigned)ea_rec, 1);
+        }
+    }
+    fat_close(EAF);
+    if (ea_cdrv == d && ea_cdc == dc)
+        ea_cdrv = -1;
+}
+
+/* Satz anlegen (vorher gleichnamigen freigeben); freier Satz, der gross
+   genug ist, sonst ans Ende. 0 oder IFS_* */
+static int ea_add(int d, unsigned dc, const char *n83, const char *name)
+{
+    unsigned long pos, at = 0xFFFFFFFFUL;
+    unsigned u, len, need, k, use;
+    int rc;
+
+    ea_del(d, dc, (const unsigned char *)n83);
+    if (ea_open(d, 1))
+        return IFS_FULL;
+    for (len = 0; name[len] && len < 255; len++)
+        ;
+    need = (EA_HDR + len + 31) >> 5;
+    use = need;
+    for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
+        if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
+            break;
+        if (ea_rec[0] == 0 && u >= need) {
+            at = pos;                   /* freien Satz nehmen             */
+            use = u;
+            break;
+        }
+    }
+    if (at == 0xFFFFFFFFUL)
+        at = ea_f.size;
+    for (k = 0; k < sizeof(ea_rec); k++)
+        ea_rec[k] = 0;
+    ea_rec[0] = 'L';
+    ea_rec[1] = (unsigned char)use;
+    ea_rec[2] = (unsigned char)dc;
+    ea_rec[3] = (unsigned char)(dc >> 8);
+    for (k = 0; k < 11; k++)
+        ea_rec[6 + k] = (unsigned char)n83[k];
+    ea_rec[17] = (unsigned char)len;
+    for (k = 0; k < len; k++)
+        ea_rec[EA_HDR + k] = (unsigned char)name[k];
+    /* am Ende ganze Einheiten schreiben, damit der naechste Satz passt */
+    rc = fat_write(EAF, at, KDATA, (unsigned)ea_rec,
+                   at == ea_f.size ? need << 5 : EA_HDR + len);
+    k = fat_close(EAF);
+    if (ea_cdrv == d && ea_cdc == dc)
+        ea_cdrv = -1;
+    return rc < 0 ? rc : (int)k;
+}
+
 static int fat_remove(int d, const char *path)
 {
     struct found f;
@@ -1263,10 +1501,18 @@ static int fat_remove(int d, const char *path)
     e = dir_entry(d, f.dc, f.idx);
     if (!e)
         return IFS_ERR;
-    e[0] = 0xE5;
-    wr(d, de_lba);
-    if (!ferr)
-        free_chain(d, f.first);
+    {
+        static unsigned char on[11];
+        unsigned k;
+        for (k = 0; k < 11; k++)
+            on[k] = e[k];
+        e[0] = 0xE5;
+        wr(d, de_lba);
+        if (!ferr)
+            free_chain(d, f.first);
+        if (!vol[d].vfat)
+            ea_del(d, f.dc, on);        /* EA-Satz mit entfernen         */
+    }
     return done_op(0);
 }
 
@@ -1327,10 +1573,18 @@ static int fat_rmdir(int d, const char *path)
     e = dir_entry(d, f.dc, f.idx);
     if (!e)
         return IFS_ERR;
-    e[0] = 0xE5;
-    wr(d, de_lba);
-    if (!ferr)
-        free_chain(d, f.first);
+    {
+        static unsigned char on[11];
+        unsigned k;
+        for (k = 0; k < 11; k++)
+            on[k] = e[k];
+        e[0] = 0xE5;
+        wr(d, de_lba);
+        if (!ferr)
+            free_chain(d, f.first);
+        if (!vol[d].vfat)
+            ea_del(d, f.dc, on);
+    }
     return done_op(0);
 }
 
@@ -1361,9 +1615,11 @@ static int fat_move(int d, const char *from, const char *to)
         if (!e)
             return IFS_ERR;
         for (k = 0; k < 11; k++)
-            e[k] = (unsigned char)n[k];
+            ent[k] = e[k], e[k] = (unsigned char)n[k];
         e[12] = nt_case;
         wr(d, de_lba);
+        if (!vol[d].vfat)
+            ea_del(d, f.dc, ent);
         return done_op(0);
     }
     e = dir_entry(d, f.dc, f.idx);
@@ -1372,7 +1628,7 @@ static int fat_move(int d, const char *from, const char *to)
     far_copy(KDATA, (unsigned)ent, DMABUF, FP_OFF(e), 32);
     e[0] = 0xE5;                        /* alten Platz frei, damit ein    */
     wr(d, de_lba);                      /* langer Name ihn nutzen kann    */
-    if (ln_buf[0])
+    if (ln_buf[0] && vol[d].vfat)
         rc = new_entry_lfn(d, par.first, ln_buf, n, ent[11], 0, &idx);
     else
         rc = dir_slot(d, par.first, &idx);
@@ -1392,6 +1648,11 @@ static int fat_move(int d, const char *from, const char *to)
         e[k] = (unsigned char)n[k];
     e[12] = ln_buf[0] ? 0 : nt_case;
     wr(d, de_lba);                      /* (alter Platz ist schon frei)   */
+    if (!vol[d].vfat) {                 /* EA: Satz umziehen              */
+        ea_del(d, f.dc, ent);
+        if (ln_buf[0])
+            ea_add(d, par.first, n, ln_buf);
+    }
     if ((f.attr & ATTR_DIR) && !ferr && par.first != f.dc) { /* ".." zeigt auf das neue Elternverzeichnis */
         e = dir_entry(d, f.first, 1);
         if (e && e[0] == '.' && e[1] == '.') {
@@ -1542,7 +1803,14 @@ static int fat_namepath(int d, const char *path, char *out, int shortn)
             !(e = dir_entry(d, f.dc, f.idx)))
             return -1;
         name83(e, s);
-        if (!shortn) {                  /* langen Namen dazu suchen      */
+        if (!shortn && !vol[d].vfat) {  /* EA: Name aus dem Zwischenspeicher */
+            unsigned dc2 = f.dc;
+            ea_load(d, dc2);
+            e = dir_entry(d, f.dc, f.idx);
+            if (e && ea_find(e, ea_tmp))
+                for (k = 0; ea_tmp[k] && k < IFS_NAMELEN - 1; k++)
+                    s[k] = ea_tmp[k], s[k + 1] = 0;
+        } else if (!shortn) {           /* langen Namen dazu suchen      */
             unsigned i = f.idx;
             unsigned char __far *x;
             lfn_have = 0;

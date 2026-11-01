@@ -12,7 +12,7 @@
 #include <i86.h>
 #include "fapi.h"
 
-#define LINE 78
+#define LINE 126                        /* wie MS-DOS 127 mit Nullbyte */
 
 static char line[LINE + 1];
 static char buf[256];
@@ -533,7 +533,8 @@ static void cmd_dir(char *arg)
     static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[FAPI_PATHLEN];
     unsigned n, files = 0, dirs = 0, want = 0, nowant = 0, pass;
     unsigned long total = 0;
-    int all = 0, page = 0, lines = 4;
+    int all = 0, page = 0, lines = 4, bare = 0, wide = 0;
+    unsigned wcol = 0;
 
     dir[0] = 0;
     for (; *arg; arg = next_word(arg)) {
@@ -559,6 +560,10 @@ static void cmd_dir(char *arg)
             }
         } else if (same(arg, "/P"))
             page = 1;
+        else if (same(arg, "/B"))
+            bare = 1;                   /* nur Namen                     */
+        else if (same(arg, "/W"))
+            wide = 1;                   /* breit, Verzeichnisse in [ ]   */
         else
             word(arg, dir, sizeof(dir));
     }
@@ -580,6 +585,7 @@ static void cmd_dir(char *arg)
         puts("Verzeichnis nicht gefunden.\n");
         return;
     }
+    if (!bare)
     {                                       /* Kopf wie MS-DOS          */
         static struct fapi_label lb;
         unsigned dv = (dir[0] && dir[1] == ':') ? (unsigned)(up(dir[0]) - 'A') : DosQCurDisk();
@@ -596,6 +602,7 @@ static void cmd_dir(char *arg)
             }
         }
     }
+    if (!bare) {
     puts("\n Verzeichnis von ");
     if (dir[0] && dir[1] == ':') {
         dir[0] = up(dir[0]);
@@ -615,6 +622,7 @@ static void cmd_dir(char *arg)
         puts(dir);
     }
     puts("\n\n");
+    }
     for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
     for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
         if (((e.attr & 0x10) != 0) != (pass == 0))
@@ -628,6 +636,39 @@ static void cmd_dir(char *arg)
             continue;
         if (pat[0] && !match(e.name, pat))
             continue;
+        if (e.attr & 0x10)
+            dirs++;
+        else {
+            files++;
+            total += e.size;
+        }
+        if (bare) {                             /* DIR /B                */
+            if (e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2])))
+                continue;
+            puts(e.name);
+            puts("\n");
+            continue;
+        }
+        if (wide) {                             /* DIR /W: Spalten zu 16 */
+            unsigned l = slen(e.name) + ((e.attr & 0x10) ? 2 : 0);
+            if (wcol && wcol + l > 79) {
+                puts("\n");
+                wcol = 0;
+            }
+            if (e.attr & 0x10)
+                putc('[');
+            puts(e.name);
+            if (e.attr & 0x10)
+                putc(']');
+            wcol += l;
+            for (; wcol % 16; wcol++)
+                putc(' ');
+            if (wcol >= 80) {
+                puts("\n");
+                wcol = 0;
+            }
+            continue;
+        }
         put2(e.date & 31);
         putc('.');
         put2((e.date >> 5) & 15);
@@ -637,14 +678,10 @@ static void cmd_dir(char *arg)
         put2(e.time >> 11);
         putc(':');
         put2((e.time >> 5) & 63);
-        if (e.attr & 0x10) {
+        if (e.attr & 0x10)
             puts("    <DIR>         ");
-            dirs++;
-        } else {
+        else
             put_num(e.size, 18);
-            files++;
-            total += e.size;
-        }
         putc(' ');
         puts(e.name);
         puts("\n");
@@ -655,10 +692,17 @@ static void cmd_dir(char *arg)
             lines = 0;
         }
     }
+    if (wcol)
+        puts("\n");
     if (pat[0] && !files && !dirs) {
-        puts("Datei nicht gefunden.\n\n");
+        if (!bare)
+            puts("Datei nicht gefunden.\n\n");
         return;
     }
+    if (bare)
+        return;
+    if (wide)
+        puts("\n");
     put_num(files, 16);
     puts(" Datei(en),");
     put_num(total, 15);
@@ -1785,7 +1829,7 @@ static void autochk(void)
 
 static int run_program(char *cmd, int sync, int call)
 {
-    static char path[FAPI_PATHLEN], cl[FAPI_ARGLEN + 16];
+    static char path[FAPI_PATHLEN], cl[FAPI_PATHLEN + FAPI_ARGLEN];
     char *args = next_word(cmd);
     unsigned wl, i, k, r;
     int type;
@@ -1822,13 +1866,17 @@ static int run_program(char *cmd, int sync, int call)
     }
     for (i = 0; path[i] && k < sizeof(cl) - 2; i++)
         cl[k++] = path[i];
+    if (slen(args) >= FAPI_ARGLEN) {        /* Argumente, ohne Programmpfad */
+        puts("Befehlszeile zu lang.\n");
+        return 1;
+    }
     if (*args) {
         cl[k++] = ' ';
         for (i = 0; args[i] && k < sizeof(cl) - 1; i++)
             cl[k++] = args[i];
     }
     cl[k] = 0;
-    if (k >= FAPI_ARGLEN) {
+    if (k >= FAPI_PATHLEN) {
         puts("Befehlszeile zu lang.\n");
         return 1;
     }
@@ -2048,7 +2096,7 @@ static unsigned slen2(const char *s)
 /* Teil einer Pipe im Hintergrund: COMMAND /C teil */
 static void run_bg(char *cmd)
 {
-    static char cl[FAPI_ARGLEN + 16];
+    static char cl[FAPI_PATHLEN + FAPI_ARGLEN];
     unsigned k = 0, i;
 
     if (DosGetEnv("COMSPEC", cl, sizeof(cl)) == FAPI_ERROR)
@@ -2061,7 +2109,7 @@ static void run_bg(char *cmd)
     for (i = 0; cmd[i] && k < sizeof(cl) - 1; i++)
         cl[k++] = cmd[i];
     cl[k] = 0;
-    if (k >= FAPI_ARGLEN) {
+    if (k >= FAPI_PATHLEN) {
         puts("Befehlszeile zu lang.\n");
         return;
     }
