@@ -161,7 +161,9 @@ struct fapi_label {
    kehr. Beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt
    den Selektor aus VioGetPhysBuf um - das Programm zeichnet weiter. */
 #define FAPI_VIOSETGFX      0x3F    /* BX = 13h (320x200x256), 12h (640x480x16),
+                                       VIO_MODEX (320x240x256, 2 Seiten),
                                        0 = Text */
+#define VIO_MODEX           0x58
 #define FAPI_VIOGETPHYSBUF  0x40    /* -> Selektor auf das Bild. 13h: 64 KB,
                                        Punkt (x,y) bei y * 320 + x. 12h: eine
                                        Ebene (VioSetPlane), 38400 Byte, Bit 7
@@ -169,7 +171,12 @@ struct fapi_label {
 #define FAPI_VIOSETPAL      0x41    /* BX = erster Eintrag, CX = Anzahl,
                                        DX = Puffer (je R, G, B, 0-63) */
 #define FAPI_VIOSETPLANE    0x42    /* 12h: BX = Ebene 0-3 (Farbbit) zum
-                                       Schreiben und Lesen */
+                                       Schreiben und Lesen; Mode X: Ebene
+                                       x & 3, Punkt (x,y) bei Seite +
+                                       y * 80 + x / 4, Seite 0 bei 0,
+                                       Seite 1 bei 19200 */
+#define FAPI_VIOSETPAGE     0x45    /* Mode X: BX = sichtbare Seite 0/1;
+                                       wartet vorn auf den Strahlruecklauf */
 struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */

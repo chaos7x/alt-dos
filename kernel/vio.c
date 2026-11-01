@@ -50,7 +50,8 @@ struct session {
     signed char   gfx_task;         /* Task mit dem Bildspeicher-Selektor */
     unsigned      gfx_sel;          /* ... dieser Selektor (0 = keiner) */
     unsigned      gfx_save;         /* Puffer: Bild + 768 Byte Palette  */
-    unsigned char gfx_plane;        /* 12h: gewaehlte Ebene (VioSetPlane) */
+    unsigned char gfx_plane;        /* 12h/X: gewaehlte Ebene (VioSetPlane) */
+    unsigned char gfx_page;         /* Mode X: sichtbare Seite (VioSetPage) */
 };
 
 static struct session ses[NTASK];
@@ -98,7 +99,10 @@ static void gptr_remove(void);
    Register kommen aus den Standardtabellen der IBM-VGA. */
 /* Puffer: 13h 64 KB Bild, 12h vier Ebenen zu 38400 Byte; Palette dahinter */
 #define PLANE12     38400U
-#define GFX_IMG(m)  ((m) == 0x12 ? 4UL * PLANE12 : 65536UL)
+#define MODEX       0x58            /* 320x240x256 unverkettet, 2 Seiten */
+#define PAGEX       19200U          /* Mode X: Seite je Ebene (80 x 240) */
+#define PLANAR(m)   ((m) == 0x12 || (m) == MODEX)   /* 4 Ebenen zu 38400 */
+#define GFX_IMG(m)  (PLANAR(m) ? 4UL * PLANE12 : 65536UL)
 #define GFX_UNITS(m) ((unsigned)((GFX_IMG(m) + 768 + MEM_UNIT - 1) / MEM_UNIT))
 static unsigned char hw_gfx;            /* Karte steht auf: 0 Text, 13h  */
 static unsigned char text_dac[64 * 3], text_dac_ok;
@@ -125,6 +129,16 @@ static const unsigned char vga_mode12[61] = { 0xE3,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0F, 0xFF,
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
     0x0C, 0x0D, 0x0E, 0x0F, 0x01, 0x00, 0x0F, 0x00, 0x00 };
+/* Mode X (Michael Abrash): 13h ohne Chain-4 (SEQ 4 = 06h), CRTC im
+   Bytebetrieb (14h = 0, 17h = E3h), 480 Rasterzeilen mit Doppelung =
+   240 Zeilen; Punkt (x,y) in Ebene x & 3, Byte y * 80 + x / 4 */
+static const unsigned char vga_modex[61] = { 0xE3,
+    0x03, 0x01, 0x0F, 0x00, 0x06,
+    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0x0D, 0x3E, 0x00, 0x41, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xEA, 0xAC, 0xDF, 0x28, 0x00, 0xE7, 0x06, 0xE3, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F, 0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+    0x0C, 0x0D, 0x0E, 0x0F, 0x41, 0x00, 0x0F, 0x00, 0x00 };
 static void gfx_out(void);
 static int  gfx_in(void);
 
@@ -687,6 +701,13 @@ static void vga_regs(const unsigned char *t)
     outb(0x3C0, 0x20);                      /* Bild an                  */
 }
 
+/* Mode X: Bildanfang (CRTC 0Ch/0Dh, Bytes je Ebene) */
+static void set_start(unsigned a)
+{
+    crtc(0x0C, a >> 8);
+    crtc(0x0D, a & 0xFF);
+}
+
 static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p)
 {
     unsigned i;
@@ -705,7 +726,7 @@ static unsigned long save_part(int s, int part)
     unsigned long b = (unsigned long)ses[s].gfx_save << 8;
     if (part == 4)
         return b + GFX_IMG(ses[s].gfx);
-    if (ses[s].gfx == 0x12)
+    if (PLANAR(ses[s].gfx))
         while (part-- > 0)              /* ohne 32-Bit-Multiplikation   */
             b += PLANE12;
     return b;
@@ -714,7 +735,7 @@ static unsigned long save_part(int s, int part)
 static void map_save(int s, int part)
 {
     scratch_map(save_part(s, part), part == 4 ? 767 :
-                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
+                PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF);
 }
 
 /* Bild zwischen Bildspeicher und Puffer kopieren; out = 1: sichern */
@@ -733,7 +754,7 @@ static void gfx_copy(int s, int out)
         }
         return;
     }
-    for (p = 0; p < 4; p++) {               /* 12h: Ebene fuer Ebene    */
+    for (p = 0; p < 4; p++) {               /* 12h/X: Ebene fuer Ebene  */
         map_save(s, (int)p);
         if (out) {
             gcr(0x04, p);                   /* Ebene p lesen            */
@@ -752,10 +773,10 @@ static void gfx_alias(int s)
         return;
     if (s == fg && hw_gfx == ses[s].gfx)
         ldt_set(ses[s].gfx_task, ses[s].gfx_sel, 0xA0000UL,
-                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
+                PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF);
     else
         ldt_set(ses[s].gfx_task, ses[s].gfx_sel, save_part(s, ses[s].gfx_plane),
-                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
+                PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF);
 }
 
 /* Karte auf Text zurueck: Register, Palette, Zeichensatz (hw_lines = 0
@@ -785,14 +806,17 @@ static int gfx_in(void)
         dac_io(0, 0, 64, (unsigned char __far *)text_dac);
         text_dac_ok = 1;
     }
-    vga_regs(ses[fg].gfx == 0x12 ? vga_mode12 : vga_mode13);
+    vga_regs(ses[fg].gfx == 0x12 ? vga_mode12 : ses[fg].gfx == MODEX ? vga_modex
+                                                                     : vga_mode13);
     hw_gfx = ses[fg].gfx;
     gp_drawn = 0;                           /* Bild kommt aus dem Puffer */
     gfx_copy(fg, 0);
-    if (hw_gfx == 0x12) {                   /* Ebene des Programms      */
+    if (PLANAR(hw_gfx)) {                   /* Ebene des Programms      */
         seqr(0x02, 1 << ses[fg].gfx_plane);
         gcr(0x04, ses[fg].gfx_plane);
     }
+    if (hw_gfx == MODEX)
+        set_start(ses[fg].gfx_page ? PAGEX : 0);
     map_save(fg, 4);
     dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
     win_restore(w);
@@ -858,7 +882,7 @@ int vio_setgfx(int s, int t, unsigned mode)
             redraw();                       /* Karte auf Text, Bild neu */
         return 0;
     }
-    if ((mode != 0x13 && mode != 0x12) || !vga_ok)
+    if ((mode != 0x13 && !PLANAR(mode)) || !vga_ok)
         return -1;
     if (ses[s].gfx && ses[s].gfx != mode)   /* anderer Modus: neu       */
         vio_setgfx(s, t, 0);
@@ -869,6 +893,7 @@ int vio_setgfx(int s, int t, unsigned mode)
     }
     ses[s].gfx = (unsigned char)mode;
     ses[s].gfx_plane = 0;
+    ses[s].gfx_page = 0;
     win_save(w);                            /* Puffer: schwarz, Palette */
     if (mode == 0x13) {
         map_save(s, 0);
@@ -902,20 +927,45 @@ unsigned long vio_gfx_base(int s)
 
 unsigned vio_gfx_limit(int s)
 {
-    return ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF;
+    return PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF;
 }
 
 /* VioSetPlane (12h): Ebene p (0-3) zum Schreiben und Lesen */
 int vio_setplane(int s, unsigned p)
 {
-    if (s < 0 || !ses[s].used || ses[s].gfx != 0x12 || p > 3)
+    if (s < 0 || !ses[s].used || !PLANAR(ses[s].gfx) || p > 3)
         return -1;
     ses[s].gfx_plane = (unsigned char)p;
-    if (s == fg && hw_gfx == 0x12) {
+    if (s == fg && hw_gfx == ses[s].gfx) {
         seqr(0x02, 1 << p);
         gcr(0x04, p);
     } else
         gfx_alias(s);                       /* Hintergrund: Puffer-Ebene */
+    return 0;
+}
+
+/* VioSetPage (Mode X): Seite p (0/1) zeigen. Der neue Anfang gilt ab dem
+   naechsten Bildwechsel; vorn wartet der Aufruf auf den Beginn des
+   Strahlruecklaufs (hoechstens 2 Takte), damit das Programm danach
+   gefahrlos in die andere Seite zeichnet. */
+int vio_setpage(int s, unsigned p)
+{
+    unsigned long t;
+    if (s < 0 || !ses[s].used || ses[s].gfx != MODEX || p > 1)
+        return -1;
+    if (s == fg && hw_gfx == MODEX) {
+        gptr_remove();                      /* Zeiger zieht mit um      */
+        t = get_ticks();
+        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;                               /* laufenden Ruecklauf abwarten */
+        set_start(p ? PAGEX : 0);
+        ses[s].gfx_page = (unsigned char)p;
+        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;                               /* neuer Anfang uebernommen */
+        cur_dirty = 1;
+        vio_flush();                        /* Zeiger auf die neue Seite */
+    } else
+        ses[s].gfx_page = (unsigned char)p;
     return 0;
 }
 
@@ -961,6 +1011,7 @@ static const unsigned short gptr_b[16] = {
     0x8000, 0xC000, 0xA000, 0x9000, 0x8800, 0x8400, 0x8200, 0x8100,
     0x8080, 0x83C0, 0x9200, 0xA900, 0xC900, 0x8480, 0x0480, 0x0300 };
 static int gp_x, gp_y;
+static unsigned gp_page;                /* Mode X: Anfang der Seite     */
 static unsigned char gp_save[16][12];   /* 13h: Punkte; 12h: 3 Byte x 4 Ebenen */
 
 /* Bytemaske des Pfeils fuer Byte i (0-2) einer Zeile, Verschiebung sh */
@@ -983,8 +1034,8 @@ static void gptr_paint(int draw)
     scratch2_map(0xA0000UL, 0xFFFF);
     for (r = 0; r < 16; r++) {
         y = gp_y + (int)r;
-        if (gp_mode == 0x13) {
-            if (y >= 200)
+        if (gp_mode == 0x13 || gp_mode == MODEX) {
+            if (y >= (gp_mode == MODEX ? 240 : 200))
                 break;
             for (c = 0; c < 10; c++) {
                 x = gp_x + (int)c;
@@ -996,7 +1047,12 @@ static void gptr_paint(int draw)
                     col = 0;
                 else
                     continue;
-                a = (unsigned)y * 320 + (unsigned)x;
+                if (gp_mode == MODEX) {     /* Ebene x & 3, sichtbare Seite */
+                    a = (unsigned)y * 80 + ((unsigned)x >> 2) + gp_page;
+                    seqr(0x02, 1 << (x & 3));
+                    gcr(0x04, x & 3);
+                } else
+                    a = (unsigned)y * 320 + (unsigned)x;
                 if (draw) {
                     gp_save[r][c] = v[a];
                     v[a] = col;
@@ -1052,7 +1108,7 @@ static void gptr_paint(int draw)
             }
         }
     }
-    if (gp_mode == 0x12 && fg >= 0) {       /* Ebene des Programms      */
+    if (PLANAR(gp_mode) && fg >= 0) {       /* Ebene des Programms      */
         seqr(0x02, 1 << ses[fg].gfx_plane);
         gcr(0x04, ses[fg].gfx_plane);
     }
@@ -1075,8 +1131,8 @@ static void gptr_update(void)
                ses[fg].mou_owner >= 0 && ses[fg].mou_show;
     int x = 0, y = 0;
     if (show) {
-        x = hw_gfx == 0x13 ? mx >> 1 : mx;
-        y = hw_gfx == 0x13 ? my >> 1 : my;
+        x = hw_gfx == 0x13 || hw_gfx == MODEX ? mx >> 1 : mx;
+        y = hw_gfx == 0x13 || hw_gfx == MODEX ? my >> 1 : my;
     }
     if (gp_drawn && (!show || x != gp_x || y != gp_y || gp_mode != hw_gfx))
         gptr_remove();
@@ -1084,6 +1140,7 @@ static void gptr_update(void)
         gp_x = x;
         gp_y = y;
         gp_mode = hw_gfx;
+        gp_page = hw_gfx == MODEX && ses[fg].gfx_page ? PAGEX : 0;
         gptr_paint(1);
         gp_drawn = 1;
     }
@@ -1269,15 +1326,16 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     if (mx > SCOLS * 8 - 1) mx = SCOLS * 8 - 1;
     if (my < 0) my = 0;
     /* Grafik: virtuelles Raster wie beim Maustreiber von Microsoft -
-       12h 640x480 Punkte, 13h 640x400 (halbiert 320x200) */
-    n = gm == 0x12 ? 479 : gm == 0x13 ? 399 : hw_lines * 16 - 1;
+       12h 640x480 Punkte, 13h 640x400 (halbiert 320x200), Mode X
+       640x480 (halbiert 320x240) */
+    n = PLANAR(gm) ? 479 : gm == 0x13 ? 399 : hw_lines * 16 - 1;
     if (my > (int)n) my = (int)n;
-    gx = gm == 0x13 ? mx >> 1 : mx;
-    gy = gm == 0x13 ? my >> 1 : my;
+    gx = gm == 0x13 || gm == MODEX ? mx >> 1 : mx;
+    gy = gm == 0x13 || gm == MODEX ? my >> 1 : my;
     r = (unsigned)my >> 4;
     c = (unsigned)mx >> 3;
     if (gm) {                               /* Grafik: Bildpunkt zaehlt */
-        if ((gm == 0x13 ? (ox >> 1 == gx && oy >> 1 == gy) : (ox == gx && oy == gy)) &&
+        if ((gm == 0x13 || gm == MODEX ? (ox >> 1 == gx && oy >> 1 == gy) : (ox == gx && oy == gy)) &&
             buttons == mbtn)
             return;
     } else if (r == or_ && c == oc && buttons == mbtn)

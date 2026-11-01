@@ -190,7 +190,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Beim Entfernen kommt je Punkt nur zurück, was noch genau wie der Zeiger
   aussieht (Programm darf jederzeit selbst malen). `gfx_out` entfernt ihn
   vor dem Sichern. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
-  Offen: evtl. Mode X (320×240×256 unverkettet, Ebenen wie 12h, Seitenwechsel).
+  Stufe 3, Mode X (`VIO_MODEX` = 58h, 320×240×256), in QEMU geprüft:
+  Register aus 13h ohne Chain-4, CRTC im Bytebetrieb, 480 Rasterzeilen
+  (`vga_modex`); Speicher wie 12h (vier Ebenen zu 38400 = zwei Seiten zu
+  19200, `PLANAR()`), daher gleiche Sicherung und VioSetPlane. FAPI 45h
+  VioSetPage(0/1): CRTC 0Ch/0Dh, wartet vorn auf den Strahlrücklauf
+  (Frist 2 Takte über get_ticks), Zeiger zieht mit (`gp_page`). Demo
+  `GRAFIK X` (Farbverlauf + Quadrat, je Bild verdeckt gezeichnet, Klick
+  setzt das Quadrat). Mauszeiger nimmt in 256-Farben-Modi die Farben 15
+  und 0 der Palette (wie der Microsoft-Treiber).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile

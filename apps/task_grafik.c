@@ -5,6 +5,10 @@
  * Alt+Esc zeichnet das Programm in den Puffer der Sitzung weiter).
  * GRAFIK 12: Modus 12h (640x480, 16 Farben, vier Ebenen; VioSetPlane):
  * 16 Farbbalken, unten ein wachsender Balken. Ende mit einer Taste.
+ * GRAFIK X: Mode X (320x240, 256 Farben, unverkettet, zwei Seiten):
+ * Farbverlauf und springendes Quadrat, je Bild in die verdeckte Seite
+ * gezeichnet und mit VioSetPage umgeschaltet - flimmerfrei. Linke
+ * Maustaste setzt das Quadrat an den Zeiger.
  * Mit Maus (MOUSE.SYS): Zeiger in Bildpunkten (MouReadEvent mit MOU_XY),
  * linke Taste malt, rechte wechselt die Malfarbe.
  */
@@ -12,7 +16,7 @@
 #include "fapi.h"
 #include "util.h"
 
-static unsigned char pal[16 * 3];
+static unsigned char pal[256 * 3];
 static char args[FAPI_ARGLEN];
 static struct fapi_mouevent ev;
 static unsigned mouse, color = 15;
@@ -144,6 +148,82 @@ static void mode12(void)
     VioSetGfx(0);
 }
 
+/* Dreieckswelle 0..63..0 ueber 256 Schritte */
+static unsigned char tri(unsigned v)
+{
+    v &= 255;
+    return (unsigned char)(v < 128 ? v >> 1 : (255 - v) >> 1);
+}
+
+static void modex(void)
+{
+    unsigned sel, p, y, x, b, page = 1, n = 0, row, off;
+    int bx = 20, by = 30, dx = 3, dy = 2;
+    unsigned short __far *w;
+    unsigned char __far *v;
+    unsigned short c2;
+
+    if (VioSetGfx(VIO_MODEX) != 0) {
+        puts("Grafik nicht verf\x81gbar (nur VGA).\r\n");
+        DosExit(1);
+    }
+    sel = VioGetPhysBuf();
+    if (FAPI_FAILED(sel)) {
+        VioSetGfx(0);
+        DosExit(1);
+    }
+    v = MK_FP(sel, 0);
+    for (x = 0; x < 255; x++) {             /* Regenbogen, 255 = weiss  */
+        pal[x * 3] = tri(x);
+        pal[x * 3 + 1] = tri(x + 85);
+        pal[x * 3 + 2] = tri(x + 170);
+    }
+    pal[255 * 3] = pal[255 * 3 + 1] = pal[255 * 3 + 2] = 63;
+    VioSetPal(0, 256, pal);
+    mouse_on();
+    for (;;) {
+        off = page ? 19200U : 0;            /* verdeckte Seite          */
+        for (p = 0; p < 4; p++) {
+            VioSetPlane(p);
+            w = MK_FP(sel, off);
+            for (y = 0; y < 240; y++) {     /* Zeile y: Farbe (y + n)   */
+                c2 = (unsigned char)((y + n) % 255);
+                c2 |= c2 << 8;
+                for (b = 0; b < 40; b++)
+                    *w++ = c2;
+            }
+            for (y = 0; y < 40; y++) {      /* Quadrat 40x40, weiss     */
+                row = off + (by + y) * 80;
+                for (x = (4 + p - (bx & 3)) & 3; x < 40; x += 4)
+                    v[row + ((bx + x) >> 2)] = 255;
+            }
+        }
+        VioSetPage(page);
+        page ^= 1;
+        n += 2;
+        while (mouse && MouReadEvent(&ev, MOU_XY) == 0)
+            if (ev.buttons & MOU_LEFT) {
+                bx = ev.x > 279 ? 279 : ev.x;
+                by = ev.y > 199 ? 199 : ev.y;
+            }
+        bx += dx;
+        by += dy;
+        if (bx < 0 || bx > 280) {
+            dx = -dx;
+            bx += 2 * dx;
+        }
+        if (by < 0 || by > 200) {
+            dy = -dy;
+            by += 2 * dy;
+        }
+        if (KbdPeek()) {
+            KbdCharIn();
+            break;
+        }
+    }
+    VioSetGfx(0);
+}
+
 void main(void)
 {
     unsigned sel, x, y, i, n = 0;
@@ -152,6 +232,10 @@ void main(void)
     DosGetArgs(args);
     if (args[0] == '1' && args[1] == '2' || (args[0] == ' ' && args[1] == '1' && args[2] == '2')) {
         mode12();
+        return;
+    }
+    if (args[0] == 'X' || args[0] == 'x' || (args[0] == ' ' && (args[1] == 'X' || args[1] == 'x'))) {
+        modex();
         return;
     }
     if (VioSetGfx(0x13) != 0) {

@@ -82,6 +82,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioGetPhysBuf()     F2(FAPI_VIOGETPHYSBUF, 0, 0)
 #define VioSetPal(f, n, p)  fapi_call(FAPI_VIOSETPAL, (f), (n), (unsigned short)(p))
 #define VioSetPlane(p)      F2(FAPI_VIOSETPLANE, (p), 0)
+#define VioSetPage(p)       F2(FAPI_VIOSETPAGE, (p), 0)
 #define DosDiskInfo(n, di)  F2(FAPI_DISKINFO, (n), (unsigned short)(di))
 #define DosOpenDisk(n, m)   F2(FAPI_OPENDISK, (n), (m))
 #define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))

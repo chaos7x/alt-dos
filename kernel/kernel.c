@@ -1608,6 +1608,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_MOUSHOWPTR: case FAPI_CLIPPUT: case FAPI_CLIPGET:
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
+    case FAPI_VIOSETPAGE:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -2325,6 +2326,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_VIOSETPLANE:
         return vio_setplane(s, a1) ? FAPI_ERROR : 0;
+
+    case FAPI_VIOSETPAGE:
+        return vio_setpage(s, a1) ? FAPI_ERROR : 0;
 
     case FAPI_VIOSETPAL:
         if (a2 == 0 || a2 > 256 || !user_ok(usel, a3, a2 * 3, 0))
