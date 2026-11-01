@@ -1,7 +1,11 @@
 /*
  * CHKDSK.EXE - Datentraeger pruefen, wie MS-DOS:
  *
- *   CHKDSK [Laufwerk:] [/F] [/V]
+ *   CHKDSK [Laufwerk:] [/F] [/V] [/R]
+ *
+ * /R (wie Windows NT) sucht zusaetzlich fehlerhafte Sektoren, rettet
+ * Lesbares und sperrt defekte Cluster - das, wofuer MS-DOS 6.2 SCANDISK
+ * hatte; SCANDISK.EXE ruft nur CHKDSK /F /R auf.
  *
  * CHKDSK selbst kennt kein Dateisystem. Es fragt den Kernel, welches
  * Dateisystem auf dem Laufwerk liegt (DosQFSInfo, z. B. "FAT") und
@@ -137,13 +141,14 @@ void main(void)
             break;
         if (a[1] == ':' && up(a[0]) >= 'A' && up(a[0]) <= 'Z')
             drive = (unsigned)(up(a[0]) - 'A');
-        else if (a[0] == '/' && up(a[1]) == 'F')
-            fix = 1;
+        else if (a[0] == '/' && (up(a[1]) == 'F' || up(a[1]) == 'R'))
+            fix = 1;                    /* /R schliesst /F ein           */
         else if (a[0] == '/' && a[1] == '?') {
             puts("Pr\x81" "ft einen Datentr\x84ger und zeigt einen Statusbericht an.\n\n"
-                 "CHKDSK [Laufwerk:] [/F] [/V]\n\n"
+                 "CHKDSK [Laufwerk:] [/F] [/V] [/R]\n\n"
                  "  /F  Fehler auf dem Datentr\x84ger beheben\n"
-                 "  /V  jede Datei mit Pfad anzeigen\n\n"
+                 "  /V  jede Datei mit Pfad anzeigen\n"
+                 "  /R  fehlerhafte Sektoren suchen, Lesbares retten (mit /F)\n\n"
                  "Gepr\x81" "ft wird mit U<Dateisystem>.EXE (z. B. UFAT.EXE) aus dem PATH.\n");
             return;
         }

@@ -825,14 +825,17 @@ static void summary(const unsigned char *bs)
 }
 
 #include "ufat_fmt.c"
+#include "ufat_undel.c"
+#include "ufat_scan.c"
 
 void main(void)
 {
     char *a = args;
     unsigned reserved;
     unsigned long rootsecs, fatsecs;
-    int fmt = 0, quick = 0;
-    unsigned fkb = 0;
+    int fmt = 0, quick = 0, undel = 0, ulist = 0, uall = 0, surface = 0;
+    unsigned fkb = 0, r_undel;
+    static char uspec[200] = "\\*.*";
 
     drive = DosQCurDisk();
     DosGetArgs(args);
@@ -845,6 +848,20 @@ void main(void)
             drive = (unsigned)(up(a[0]) - 'A');
         else if (a[0] == '/' && up(a[1]) == 'F' && up(a[2]) == 'O')
             fmt = 1;                    /* /FORMAT                       */
+        else if (a[0] == '/' && up(a[1]) == 'U' && up(a[2]) == 'N')
+            undel = 1;                  /* /UNDELETE                     */
+        else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'I')
+            ulist = 1;
+        else if (a[0] == '/' && up(a[1]) == 'R')
+            surface = fix = 1;          /* /R: Oberflaechentest, mit /F  */
+        else if (a[0] == '/' && up(a[1]) == 'A' && up(a[2]) == 'L')
+            uall = 1;
+        else if (a[0] == '\\') {      /* Pfad\Muster (UNDELETE)       */
+            unsigned k;
+            for (k = 0; a[k] && a[k] != ' ' && k < sizeof(uspec) - 1; k++)
+                uspec[k] = up(a[k]);
+            uspec[k] = 0;
+        }
         else if (a[0] == '/' && up(a[1]) == 'Q')
             quick = 1;
         else if (a[0] == '/' && up(a[1]) == 'F' && a[2] == ':') {
@@ -873,7 +890,7 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
-    hd = DosOpenDrive(drive, fix ? DRV_OPEN_LOCK : DRV_OPEN_READ);
+    hd = DosOpenDrive(drive, fix || (undel && !ulist) ? DRV_OPEN_LOCK : DRV_OPEN_READ);
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Das Laufwerk ist gesperrt oder in Benutzung.\n"
                                   : "Laufwerk kann nicht ge\x94" "ffnet werden.\n");
@@ -912,6 +929,11 @@ void main(void)
         DosClose(hd);
         DosExit(3);
     }
+    if (undel) {
+        r_undel = do_undelete(uspec, ulist, uall);
+        DosClose(hd);
+        DosExit(r_undel);
+    }
     if (fats_differ) {
         problem();
         puts("Die Kopien der FAT sind verschieden");
@@ -919,6 +941,8 @@ void main(void)
     }
     check_tree();
     lost_chains();
+    if (surface)
+        surface_scan();
     if (fix && fat16) {                 /* geprueft: wieder "sauber"   */
         unsigned char __far *p1 = fatb(2);
         if (!(p1[1] & 0x80)) {

@@ -88,6 +88,13 @@ und PC-DOS.
   Speicher nicht reicht; unformatierte oder anders formatierte Ziel-
   disketten werden beim Kopieren formatiert, die Kopie bekommt eine neue
   Seriennummer
+- `UNDELETE [Pfad][Muster] [/LIST] [/ALL]` wie MS-DOS 5 (ohne Löschschutz):
+  Verteiler wie CHKDSK, die Arbeit macht `UFAT /UNDELETE` – Startcluster
+  frei, dann Startcluster + nächste freie Cluster; erstes Zeichen wird
+  abgefragt (`/ALL`: `#`)
+- `CHKDSK /R` (wie Windows NT): Oberflächentest, defekte freie Cluster
+  werden gesperrt, belegte verlegt (Lesbares gerettet); `SCANDISK X:` ruft
+  `CHKDSK X: /F /R`
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte

@@ -476,8 +476,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY und SUBST sind da. Später: UNDELETE, MSD,
-  HELP, DEFRAG, SCANDISK, PRINT/MODE.
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später: MSD,
+  HELP, DEFRAG, PRINT/MODE.
+  UNDELETE (in QEMU geprüft): Verteiler `task_undel.c` -> `UFAT X:
+  /UNDELETE \Pfad\Muster [/LIST] [/ALL]` (`apps/ufat_undel.c`), ohne
+  Löschschutz wie MS-DOS 5: Startcluster frei -> Startcluster + nächste
+  freie Cluster nach Größe. SCANDISK (Entscheidung des Nutzers: gehört in
+  CHKDSK, wie NT): `CHKDSK /R` = /F + Oberflächentest (`apps/ufat_scan.c`):
+  freie defekte Cluster FFF7h, belegte verlegt (Vorgänger in der FAT
+  suchen, neuer Cluster, Unlesbares als Nullen), erster Cluster einer
+  Datei nur gemeldet. `SCANDISK.EXE` ruft `CHKDSK X: /F /R`. In QEMU mit
+  `blkdebug` (Lesefehler auf festen Sektoren einer IDE-Testplatte)
+  geprüft, danach fsck sauber.
   SUBST (in QEMU geprüft): `subst_drv[]`/`subst_sel` in kernel.c,
   `resolve()` = `resolve_v()` (Sicht des Programms) + `subst_map()`;
   CHDIR speichert die X:-Sicht, prüft am Ziel. FREESPACE und LABEL-Lesen
