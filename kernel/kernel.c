@@ -125,6 +125,7 @@ struct ofile {
                                4 markiert eine schon geschlossene Datei      */
 #define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
 #define OF_NUL  7           /* NUL                                      */
+#define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
@@ -1553,19 +1554,69 @@ static int dev_name(const char *canon)
     if (b[0] == 'L' && b[1] == 'P' && b[2] == 'T' && b[3] >= '1' && b[3] <= '3' &&
         (!b[4] || b[4] == '.'))
         return b[3] - '0';
+    if (b[0] == 'A' && b[1] == 'U' && b[2] == 'X' && (!b[3] || b[3] == '.'))
+        return 11;                          /* AUX = COM1                */
+    if (b[0] == 'C' && b[1] == 'O' && b[2] == 'M' && b[3] >= '1' && b[3] <= '4' &&
+        (!b[4] || b[4] == '.'))
+        return 10 + (b[3] - '0');           /* COM1-4 -> 11-14           */
     return 0;
+}
+
+extern unsigned short irq_hcs[16];
+static unsigned char lpt_retry[3], com_retry[4];
+
+/* COM-Port n (0-3) von einem Treiber belegt (IRQ 4 bzw. 3 vergeben)? */
+static int com_busy(unsigned n)
+{
+    return irq_hcs[(n & 1) ? 3 : 4] != 0;
+}
+
+/* Abfragebetrieb, wie INT 14h: senden, sobald das Halteregister leer ist
+   (LSR Bit 5), empfangen, was da ist (LSR Bit 0). Warten mit yield();
+   Senden gibt nach 30 s auf (MODE ... ,P: nie), Empfangen wartet bis 5 s
+   auf das erste Zeichen. */
+static int com_io(int k, unsigned sel, unsigned off, unsigned len, int write)
+{
+    unsigned n = files[k].f.drive, base = bios_ports[n], i, spin;
+    unsigned char __far *p;
+    unsigned long t0;
+
+    for (i = 0; i < len; i++) {
+        t0 = get_ticks();
+        for (spin = 0; !(inb(base + 5) & (write ? 0x20 : 0x01)); spin++)
+            if (spin > 100) {
+                if (!write && i)
+                    return (int)i;          /* gelesen, was da war       */
+                if (get_ticks() - t0 > (write ? 3000UL : 500UL) &&
+                    (!write || !com_retry[n]))
+                    return i ? (int)i : (write ? -1 : 0);
+                yield();
+                spin = 0;
+            }
+        p = MK_FP(sel, off);
+        if (write)
+            outb(base, p[i]);
+        else
+            p[i] = (unsigned char)inb(base);
+    }
+    return (int)len;
 }
 
 static unsigned dev_open(int dn)
 {
     int k;
-    if (dn != 9 && !bios_ports[3 + dn])
+    if (dn > 10) {                          /* COM1-4                    */
+        if (!bios_ports[dn - 11])
+            return FAPI_ERROR;
+        if (com_busy(dn - 11))
+            return FAPI_ERR_INUSE;          /* z. B. serielle Maus       */
+    } else if (dn != 9 && !bios_ports[3 + dn])
         return FAPI_ERROR;                  /* kein solcher Anschluss    */
     k = of_alloc();
     if (k < 0)
         return FAPI_ERROR;
-    files[k].kind = dn == 9 ? OF_NUL : OF_LPT;
-    files[k].f.drive = (unsigned char)(dn - 1);
+    files[k].kind = dn > 10 ? OF_COM : dn == 9 ? OF_NUL : OF_LPT;
+    files[k].f.drive = (unsigned char)(dn > 10 ? dn - 11 : dn - 1);
     files[k].pos = 0;
     files[k].path[0] = 0;
     return k + HBASE;
@@ -1585,8 +1636,8 @@ static int lpt_write(int k, unsigned sel, unsigned off, unsigned len)
         t0 = get_ticks();
         for (n = 0; !((st = inb(base + 1)) & 0x80); n++)
             if (n > 100) {                  /* belegt: andere vorlassen  */
-                if (get_ticks() - t0 > 3000)
-                    return i ? (int)i : -1;
+                if (get_ticks() - t0 > 3000 && !lpt_retry[files[k].f.drive])
+                    return i ? (int)i : -1;     /* MODE LPTn ,,P: endlos */
                 yield();
                 n = 0;
             }
@@ -1984,6 +2035,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_LPT:
             t = lpt_write(k, usel, a2, a3);
             return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
+        case OF_COM:
+            t = com_io(k, usel, a2, a3, 1);
+            return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
         }
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -2017,6 +2071,49 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERR_INUSE;
         t = ifs_move(d, canon, canon2);
         return t ? ifs_err(t) : 0;
+    }
+
+    case FAPI_COMCTL: {                         /* MODE COMn / LPTn      */
+        struct fapi_comcfg __far *cf;
+        unsigned n = a1 & 0x0F, base, lcr;
+        int lpt = (a1 & 0x10) != 0;
+        if (!user_ok(usel, a2, sizeof(*cf), 1) || n > (lpt ? 2u : 3u))
+            return FAPI_ERROR;
+        cf = MK_FP(usel, a2);
+        base = bios_ports[lpt ? 4 + n : n];
+        if (!base)
+            return FAPI_ERROR;
+        if (lpt) {
+            if (a3)
+                lpt_retry[n] = cf->retry;
+            cf->retry = lpt_retry[n];
+            cf->lsr = (unsigned char)inb(base + 1);   /* Druckerstatus  */
+            cf->msr = 0;
+            cf->base = base;
+            return 0;
+        }
+        if (com_busy(n))
+            return FAPI_ERR_INUSE;
+        if (a3) {                               /* einstellen            */
+            if (!cf->divisor)
+                return FAPI_ERROR;
+            outb(base + 3, (cf->lcr & 0x3F) | 0x80);
+            outb(base, cf->divisor & 0xFF);
+            outb(base + 1, cf->divisor >> 8);
+            outb(base + 3, cf->lcr & 0x3F);
+            outb(base + 4, 0x03);               /* DTR, RTS (ohne OUT2)  */
+            com_retry[n] = cf->retry;
+        }
+        lcr = inb(base + 3);                    /* zuruecklesen          */
+        outb(base + 3, lcr | 0x80);
+        cf->divisor = inb(base) | ((unsigned)inb(base + 1) << 8);
+        outb(base + 3, lcr & 0x7F);
+        cf->lcr = (unsigned char)(lcr & 0x7F);
+        cf->retry = com_retry[n];
+        cf->lsr = (unsigned char)inb(base + 5);
+        cf->msr = (unsigned char)inb(base + 6);
+        cf->base = base;
+        return 0;
     }
 
     case FAPI_SYSINFO:
@@ -2093,6 +2190,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_NUL:
         case OF_LPT:
             return 0;                       /* nichts zu lesen           */
+        case OF_COM:
+            return (unsigned)com_io(k, usel, a2, a3, 0);
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)

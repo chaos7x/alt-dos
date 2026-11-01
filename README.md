@@ -100,6 +100,10 @@ und PC-DOS.
   (`COPY BRIEF.TXT PRN`, `DIR > LPT1`); der Kernel gibt über den Parallel-
   port aus (Abfragebetrieb, andere Tasks laufen, solange der Drucker
   belegt ist; nach 30 s „nicht bereit“)
+- `MODE COMn:b,p,d,s,P` bzw. `MODE COMn BAUD= PARITY= DATA= STOP= RETRY=`,
+  `MODE LPTn:80|132,6|8,P` und `MODE` (alle Geräte) wie MS-DOS; `COM1`–`COM4`
+  und `AUX` sind Gerätenamen (`COPY DATEI COM1`). Den Port einer seriellen
+  Maus gibt der Kernel nicht her
 - `PRINT [/D:Gerät] [/T] [Datei [/C] [/P] ...]` wie MS-DOS: Warteschlange
   `\DOS\SYSTEM\PRINT.QUE`, gedruckt wird von einem Hintergrund-Task
   (`PRINT /WORK`), `/T` und `/C` brechen auch den laufenden Druck ab
@@ -271,6 +275,7 @@ selbst nur 8.3 kennt.
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
 | 67 | DosDiskInfo     | BX = Platte (0 = erste Festplatte), CX = Puffer: Sektoren, Sektorgröße, Treiber, Einheit, Zahl der Laufwerke darauf |
 | 70 | DosFmtTrack     | BX = Handle aus DosOpenDrive (Diskette, mit Sperre), CX = struct fapi_fmttrack (Zylinder, Kopf, Format als Sektorzahl 720/1440/2400/2880/5760) → 0, FAPI_ERR_WP, FAPI_ERROR |
+| 74 | DosComCtl       | BX = COM 0–3 oder 10h+LPT 0–2, CX = struct fapi_comcfg (Teiler, LCR, Wiederholen, Status), DX = 1 einstellen / 0 abfragen → 0, FAPI_ERROR, FAPI_ERR_INUSE (Port gehört einem Treiber) |
 | 73 | DosSysInfo      | BX = struct fapi_sysinfo: Prozessor (286/386+), Koprozessor, VGA, BIOS-Datum/-Modell/-Name, Video-BIOS-Name, COM/LPT-Ports, Speicher, Kernelgröße, freigegebene IRQs, Treiber, Diskettentypen |
 | 71 | DosSubst        | BX = Laufwerk, CX = Pfad oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE |
 | 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |

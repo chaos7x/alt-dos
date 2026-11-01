@@ -108,6 +108,17 @@ struct fapi_diskinfo {
 /* SUBST: BX = Laufwerk (0 = A:), CX = Pfad (bestehendes Verzeichnis) oder
    0 = aufheben -> 0, FAPI_ERROR, FAPI_ERR_INUSE (aktuelles Laufwerk eines
    Programms). DosQSubst: BX = Laufwerk, CX = Puffer (130 Byte) -> "C:\DOS" */
+/* Schnittstellen (MODE): BX = COM 0-3 oder 10h|LPT 0-2, CX = struct
+   fapi_comcfg, DX = 1 einstellen / 0 abfragen -> 0, FAPI_ERROR (kein
+   Anschluss), FAPI_ERR_INUSE (Port gehoert einem Treiber, z. B. Maus) */
+#define FAPI_COMCTL         0x4A
+struct fapi_comcfg {
+    unsigned short divisor;         /* COM: 115200 / Baud               */
+    unsigned char  lcr;             /* COM: Datenbits-5 | Stopp<<2 | Paritaet (UART-LCR) */
+    unsigned char  retry;           /* 1 = endlos warten (MODE ...,P)    */
+    unsigned char  lsr, msr;        /* Status (LPT: Druckerstatus in lsr) */
+    unsigned short base;            /* Portadresse                      */
+};
 /* Systemangaben fuer MSD: BX = struct fapi_sysinfo */
 #define FAPI_SYSINFO        0x49
 struct fapi_sysinfo {

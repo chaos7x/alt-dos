@@ -476,8 +476,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später:
-  MODE COM/LPT, DEFRAG mit Clusterkarte und Verzeichnissen.
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später (vom
+  Nutzer nach hinten gestellt): DEFRAG mit Clusterkarte und Verzeichnissen.
+  MODE COM/LPT (in QEMU mit `-serial file:`/`-parallel file:` geprüft):
+  FAPI 4Ah DosComCtl stellt den UART ein (Teiler aus Tabelle, LCR) bzw.
+  liest ihn zurück, LPT nur Wiederholen + Status. COM1-4/AUX als Geräte
+  (`OF_COM`, Abfragebetrieb mit yield, Senden 30 s Frist, mit RETRY=P
+  endlos; Lesen wartet bis 5 s aufs erste Zeichen). Belegt ein Treiber den
+  IRQ des Ports (COM1/3: 4, COM2/4: 3 – z. B. serielle Maus), lehnt der
+  Kernel ab. MODE LPT schickt SI/DC2 und ESC 0/ESC 2 an den Drucker.
   DEFRAG (in QEMU an einer absichtlich fragmentierten Diskette geprüft,
   danach fsck sauber, Inhalte gleich; vom Nutzer in 86Box an einer
   Diskette bestätigt, 4 Dateien verschoben, CHKDSK danach ohne Fehler): `apps/ufat_defrag.c`, Belegung als
