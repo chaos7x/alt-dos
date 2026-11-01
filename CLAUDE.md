@@ -7,9 +7,9 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-Lizenz (Stand des Nutzers): noch nicht entschieden, das Projekt ist nicht
-öffentlich. Im Repository liegt vorläufig eine MIT-`LICENSE`. Bis zur
-Entscheidung keinen fremden Code übernehmen (GPL/LGPL wie 86Box, Wine,
+Lizenz: vorläufig MIT (`LICENSE`, vom Nutzer bewusst so gesetzt), endgültig
+noch nicht entschieden; das Projekt ist nicht öffentlich. Bis dahin keinen
+fremden Code übernehmen (GPL/LGPL wie 86Box, Wine,
 ReactOS, GNU nur lesen) – so bleiben alle Wege offen. Größere fremde
 Teile (z. B. Wine-Bibliotheken für Win32) nur als abgegrenzte Teilsysteme
 neben dem Kernel denken.
