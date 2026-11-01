@@ -188,12 +188,24 @@ static int wait_mbox(unsigned t)
    Befehl 8Bh (Modellnummer, ein Laengenbyte) kennt nur BusLogic - ein
    Adaptec lehnt ihn sofort ab (HACC + ungueltig). Dann darf das Laengen-
    byte nicht mehr folgen, sonst gilt es als naechster Befehl. */
-static char model[20];
+static char model[40];
+
+/* ein Byte als Antwort auf Befehl c (ohne Parameter); -1 = keins */
+static int ask1(unsigned char c)
+{
+    int v;
+    if (cmd_out(c))
+        return -1;
+    v = data_in();
+    cmd_done();
+    return v;
+}
 
 static void identify(void)
 {
     unsigned start, i;
-    int c, id;
+    int c, id = 0, fw1 = 0, fw2 = 0, bl = 0;
+    char *p = model;
 
     /* BusLogic? */
     if (cmd_out(CMD_BLMODEL) == 0) {
@@ -203,27 +215,45 @@ static void identify(void)
         if (inp(INTR(base)) & I_HACC) {
             outp(CTRL(base), C_IRST);   /* abgelehnt: kein BusLogic      */
         } else if (cmd_out(4) == 0) {
-            char *p = scat(model, "BusLogic BT-");
+            bl = 1;
+            p = scat(model, "BusLogic BT-");
             for (i = 0; i < 4; i++) {
                 c = data_in();
                 if (c < 0)
                     break;
-                if (c > ' ')
+                if (c > ' ' && c < 127)
                     *p++ = (char)c;
             }
             *p = 0;
             cmd_done();
-            if (i == 4)
-                return;
+            /* leer (86Box nimmt das Modell aus dem NVRAM der Karte) */
+            if (p == model + 12)
+                p = scat(model, "BusLogic BT-54x");
         }
     }
-    /* Adaptec: Board-ID */
-    id = 0;
+    /* Board-ID und Firmware (Adaptec: Modell aus der Board-ID) */
     if (cmd_out(CMD_INQUIRY) == 0) {
         id = data_in();
-        for (i = 0; i < 3; i++)
-            data_in();
+        data_in();
+        fw1 = data_in();
+        fw2 = data_in();
         cmd_done();
+    }
+    if (bl) {
+        if (fw1 >= '0' && fw1 <= '9' && fw2 >= '0' && fw2 <= '9') {
+            p = scat(p, ", Firmware ");
+            *p++ = (char)fw1;
+            *p++ = '.';
+            *p++ = (char)fw2;
+            c = ask1(0x84);             /* zweite Nebenziffer            */
+            if (c >= '0' && c <= '9')
+                *p++ = (char)c;
+            c = ask1(0x85);             /* Buchstabe, falls vorhanden    */
+            if (c > ' ' && c < 127)
+                *p++ = (char)c;
+            *p = 0;
+        }
+        return;
     }
     scat(model, id == 'A' ? "Adaptec AHA-1540/1542A/B" :
                 id == 'D' ? "Adaptec AHA-1542C" :

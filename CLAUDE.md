@@ -314,6 +314,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   dann kein Längenbyte nachschicken – es gälte als Befehl 04h), dann
   Board-ID aus 04h: A = 1540/1542A/B, D = 1542C, E = 1542CF, F = 1542CP.
   Die Board-ID allein unterscheidet nicht (BusLogic meldet auch „A…“).
+  In 86Box bestätigt: Adaptec-Modell wird richtig erkannt; BusLogic wird
+  als BusLogic erkannt, die Modellnummer kam aber leer – 86Box nimmt sie
+  aus dem NVRAM der Karte (alte NVR-Datei). Rückfall: „BusLogic BT-54x“ und
+  Firmware aus 04h (Haupt-, erste Nebenziffer), 84h (zweite), 85h
+  (Buchstabe), z. B. „3.35“ (2.xx = BT-542B).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
   Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
   (COPY nach D:, Datei von dort ausgeführt). Meldung
