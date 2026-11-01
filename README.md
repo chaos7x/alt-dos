@@ -297,7 +297,7 @@ das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.
 `MOUSE.SYS` sucht eine PS/2-Maus (IRQ 12), dann eine serielle (Microsoft,
-Logitech mit dritter Taste) an COM1/COM2 (`/PS2`, `/COM1`, `/COM2` legt fest) und meldet ihre Bewegungen
+Logitech mit dritter Taste) an COM1/COM2, zuletzt die Busmaus (Microsoft InPort an 23Ch/238h, Logitech an 23Ch; IRQ wird gesucht, `/IRQ:n` legt ihn fest) (`/PS2`, `/COM1`, `/COM2`, `/BUS` legt fest) und meldet ihre Bewegungen
 dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist
 eine invertierte Textzelle (`\DEMO\MAUSTEST.EXE` zeigt die Ereignisse).
 In Sitzungen ohne eigenes Mausprogramm arbeitet die Maus wie gpm unter

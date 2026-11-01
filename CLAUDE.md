@@ -535,7 +535,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Bildlaufleiste (Pfeile zeilenweise, Fläche seitenweise). `getkey_m(1)`
   liefert `K_MOUSE` (Hauptfenster, Menüs, Öffnen-Dialog: Klick wählt,
   zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
-  (Suchen/Ändern/Speichern unter) noch ohne Maus. Offen: Busmaus.
+  (Suchen/Ändern/Speichern unter) noch ohne Maus.
+  Busmaus (nach seriell, `/BUS`), nur gebaut – QEMU hat keine, Test in
+  86Box (Microsoft InPort, Logitech Bus Mouse): InPort an 23Ch/238h über
+  die Kennung (Basis+2 abwechselnd DEh/Version, nur lesen), Modus 11h
+  (30 Hz, Interrupt), beim Lesen 31h (halten); Logitech (8255) an 23Ch
+  erst lesen (alles FFh = nichts), dann A5h/5Ah ins Kennungsregister.
+  Werte wie im Linux-Treiber (nur gelesen). IRQ: IRR beider PICs ohne
+  und mit Interrupt der Karte vergleichen (2, 3, 4, 5, 7; 2 = 9), genau
+  ein neuer -> der; sonst `/IRQ:n`, Rückfall 5.
   Lehre (Flackern des Öffnen-Dialogs auf dem SCAT): `getkey_m` meldet
   bloßes Bewegen ohne Taste nicht (den Zeiger zeichnet der Kernel), und
   Dialoge, in denen nur Drücken zählt, überspringen Loslassen/Ziehen ohne

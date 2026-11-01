@@ -4,7 +4,9 @@
  * Wie MOUSE.COM von Microsoft sucht der Treiber selbst, was da ist: erst
  * eine PS/2-Maus am Hilfsport des Tastaturcontrollers (IRQ 12), dann die
  * serielle Microsoft-Maus (und Logitech mit dritter Taste) an COM1 und
- * COM2. Busmaus folgt. /PS2, /COM1, /COM2 legen fest, was gesucht wird.
+ * COM2, zuletzt die Busmaus (InPort von Microsoft, Logitech) an 23Ch.
+ * /PS2, /COM1, /COM2, /BUS legen fest, was gesucht wird; /IRQ:n den
+ * Interrupt der Busmaus (sonst gesucht, Rueckfall 5).
  *
  * PS/2: Waehrend der Erkennung maskiert der Kernel die Tastatur (DevHlp
  * KbdLock), sonst holt deren Interruptroutine die Antworten des
@@ -27,6 +29,20 @@
  * Logitech haengt bei gedrueckter oder losgelassener mittlerer Taste ein
  * viertes Byte an (Bit 5 = Mitte). Bewegungen sind vorzeichenbehaftet,
  * Y positiv nach unten - wie der Kernel es erwartet (DevHlp MouEvent).
+ *
+ * Busmaus, InPort (Microsoft, 23Ch oder 238h): Adressregister Basis+0,
+ * Daten Basis+1, Kennung Basis+2 - liefert abwechselnd DEh und die
+ * Version, die Erkennung liest also nur. Register 0 Status (Bit 2 links,
+ * 1 Mitte, 0 rechts), 1 dx, 2 dy, 7 Modus (Bit 0-2 Takt, 1 = 30 Hz;
+ * Bit 4 Interrupt im Takt; Bit 5 halten, solange gelesen wird).
+ * Logitech (23Ch, ein 8255): Daten Basis+0, Kennung Basis+1 (freies
+ * Register, Probe mit A5h/5Ah erst nach dem Lesen: Ports ganz FFh = nichts
+ * da), Steuerung Basis+2 (80h/A0h/C0h/E0h waehlen dx/dy unten/oben,
+ * Bit 4 sperrt den Interrupt), Konfiguration Basis+3 (91h). Tasten im
+ * oberen Byte von dy, Bit 7-5 links/Mitte/rechts, gedrueckt = 0.
+ * Beide melden sich im Takt; der IRQ (Steckbruecke) wird gefunden, indem
+ * der Treiber das Anforderungsregister (IRR) des PIC mit und ohne
+ * Interrupt der Karte vergleicht (maskierte IRQs stehen dort trotzdem).
  */
 #include "drvlib.h"
 #include "../include/fapi_abi.h"     /* MOU_* */
@@ -54,6 +70,7 @@ static const unsigned com_irq[2]  = { 4, 3 };
 #define KS_AUX      0x20                /* Byte kommt vom Hilfsport     */
 
 static unsigned base, irq;              /* base 0 und irq 12: PS/2      */
+static unsigned char bus;               /* 1 InPort, 2 Logitech         */
 static unsigned char nbtn;
 static unsigned char pk[4], pn;         /* Paket im Aufbau              */
 static unsigned char btn;               /* Tasten zuletzt (MOU_*)       */
@@ -200,6 +217,144 @@ static unsigned probe(unsigned b)
     return three ? 3 : 2;
 }
 
+/* ---- Busmaus ------------------------------------------------------- */
+static int inport_id(unsigned b)        /* nur lesen                    */
+{
+    unsigned char x = inp(b + 2), y = inp(b + 2), z = inp(b + 2);
+    return x == z && x != y && (x == 0xDE || y == 0xDE);
+}
+
+static void inport_mode(unsigned char m)
+{
+    outp(base, 7);
+    outp(base + 1, m);
+}
+
+static int logi_probe(unsigned b)
+{
+    unsigned i;
+    for (i = 0; i < 4 && inp(b + i) == 0xFF; i++)
+        ;
+    if (i == 4)
+        return 0;                       /* nichts am Bus                */
+    outp(b + 3, 0x91);                  /* 8255: Konfiguration          */
+    outp(b + 1, 0xA5);
+    if (inp(b + 1) != 0xA5)
+        return 0;
+    outp(b + 1, 0x5A);
+    if (inp(b + 1) != 0x5A)
+        return 0;
+    outp(b + 3, 0x90);
+    outp(b + 2, 0x10);                  /* Interrupt aus                */
+    return 1;
+}
+
+static void bus_irqs(int on)
+{
+    if (bus == 1)
+        inport_mode(on ? 0x11 : 0x00);
+    else
+        outp(base + 2, on ? 0x00 : 0x10);
+}
+
+/* IRR beider PICs, oder-verknuepft ueber t Takte */
+static unsigned irr_scan(unsigned t)
+{
+    unsigned start = ticks(), r = 0;
+    outp(0x20, 0x0A);                   /* OCW3: IRR lesen              */
+    outp(0xA0, 0x0A);
+    while ((unsigned)(ticks() - start) < t)
+        r |= inp(0x20) | ((unsigned)inp(0xA0) << 8);
+    return r;
+}
+
+static unsigned bus_find_irq(void)
+{
+    static const unsigned char cand[] = { 2, 3, 4, 5, 7 };
+    unsigned off, on, i, n = 0, found = 0;
+    off = irr_scan(10);                 /* ohne Karte                   */
+    bus_irqs(1);
+    on = irr_scan(10);
+    bus_irqs(0);
+    on &= ~off;
+    for (i = 0; i < sizeof(cand); i++) {
+        unsigned bit = cand[i] == 2 ? 0x200 : 1u << cand[i];  /* 2 = 9 */
+        if (on & bit) {
+            found = cand[i] == 2 ? 9 : cand[i];
+            n++;
+        }
+    }
+    return n == 1 ? found : 0;
+}
+
+static void bus_irq(void)
+{
+    unsigned char b;
+    int dx, dy;
+
+    if (bus == 1) {
+        inport_mode(0x31);              /* halten                       */
+        outp(base, 1);
+        dx = (signed char)inp(base + 1);
+        outp(base, 2);
+        dy = (signed char)inp(base + 1);
+        outp(base, 0);
+        b = inp(base + 1);
+        inport_mode(0x11);
+        b = (unsigned char)(((b & 4) ? MOU_LEFT : 0) | ((b & 2) ? MOU_MIDDLE : 0) |
+                            ((b & 1) ? MOU_RIGHT : 0));
+    } else {
+        outp(base + 2, 0x80);
+        dx = inp(base) & 0x0F;
+        outp(base + 2, 0xA0);
+        dx = (signed char)(dx | ((inp(base) & 0x0F) << 4));
+        outp(base + 2, 0xC0);
+        dy = inp(base) & 0x0F;
+        outp(base + 2, 0xE0);
+        b = inp(base);
+        dy = (signed char)(dy | ((b & 0x0F) << 4));
+        b = (unsigned char)~b;
+        b = (unsigned char)(((b & 0x80) ? MOU_LEFT : 0) | ((b & 0x40) ? MOU_MIDDLE : 0) |
+                            ((b & 0x20) ? MOU_RIGHT : 0));
+        outp(base + 2, 0x00);           /* Interrupt wieder an          */
+    }
+    if (dx || dy || b != btn) {
+        btn = b;
+        devhlp(DH_MOUEVENT, (unsigned)dy, btn, (unsigned)dx);
+    }
+}
+
+/* Busmaus suchen; -> 1 gefunden (base, bus, nbtn, irq gesetzt) */
+static int bus_probe(const char __far *args)
+{
+    static const unsigned char opt_irq[] = { 2, 3, 4, 5, 7, 9 };
+    static const char *opt_txt[] = { "/IRQ:2", "/IRQ:3", "/IRQ:4", "/IRQ:5", "/IRQ:7", "/IRQ:9" };
+    unsigned i;
+
+    if (inport_id(0x23C))
+        base = 0x23C, bus = 1;
+    else if (inport_id(0x238))
+        base = 0x238, bus = 1;
+    else if (logi_probe(0x23C))
+        base = 0x23C, bus = 2;
+    else
+        return 0;
+    if (bus == 1) {
+        outp(base, 0x80);               /* InPort zuruecksetzen         */
+        inport_mode(0x00);
+    }
+    nbtn = bus == 1 ? 2 : 3;
+    irq = 0;
+    for (i = 0; i < sizeof(opt_irq); i++)
+        if (has_opt(args, opt_txt[i]))
+            irq = opt_irq[i];
+    if (!irq)
+        irq = bus_find_irq();
+    if (!irq)
+        irq = 5;
+    return 1;
+}
+
 /* Interrupt: Bytes abholen, Pakete zusammensetzen */
 static void mou_irq(unsigned n)
 {
@@ -208,6 +363,10 @@ static void mou_irq(unsigned n)
 
     if (n == 12) {
         ps2_irq();
+        return;
+    }
+    if (bus) {
+        bus_irq();
         return;
     }
     while (inp(LSR(base)) & 1) {
@@ -255,7 +414,10 @@ static void init(void)
         only = 1;
     else if (has_opt(r->args, "/PS2"))
         only = 2;
+    else if (has_opt(r->args, "/BUS"))
+        only = 3;
     base = 0;
+    bus = 0;
     pn = 0;
     btn = 0;
     if (only < 0 || only == 2) {        /* zuerst PS/2                  */
@@ -276,7 +438,7 @@ static void init(void)
         devhlp(DH_KBDLOCK, 0, 0, 0);
         nbtn = 0;
     }
-    for (i = 0; i < 2 && only != 2; i++) {
+    for (i = 0; i < 2 && only < 2; i++) {
         if (only >= 0 && i != only)
             continue;
         nbtn = (unsigned char)probe(com_port[i]);
@@ -285,6 +447,26 @@ static void init(void)
             irq = com_irq[i];
             break;
         }
+    }
+    if (!base && (only < 0 || only == 3) && bus_probe(r->args)) {
+        p = scat(line, bus == 1 ? "  Busmaus (Microsoft InPort) an " :
+                                  "  Busmaus (Logitech) an ");
+        p = hex(p, base, 3);
+        p = scat(p, "h, IRQ ");
+        p = udec(p, irq);
+        if (set_irq(irq, mou_irq)) {
+            scat(p, " belegt\n");
+            dputs(line);
+            r->status = DRV_ERR_NODEV;
+            return;
+        }
+        scat(p, "\n");
+        dputs(line);
+        btn = 0;
+        bus_irqs(1);
+        devhlp(DH_MOUREG, 0, nbtn, 0);
+        r->status = DRV_OK;
+        return;
     }
     if (!base) {
         dputs("  MOUSE.SYS: keine Maus gefunden\n");
