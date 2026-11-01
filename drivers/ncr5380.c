@@ -44,6 +44,7 @@
 #define ICR_DBUS  0x01                  /* Daten auf den Bus legen      */
 #define MR_ARB    0x01
 #define MR_DMA    0x02
+#define MR_MBSY   0x04                  /* BSY ueberwachen              */
 #define R_SDS     5                     /* schreiben: DMA senden starten */
 #define R_SDIR    7                     /* schreiben: DMA empfangen starten */
 
@@ -141,9 +142,11 @@ static int block_xfer(int out, unsigned sel, unsigned off, unsigned len)
 {
     unsigned n = len >> 7, i;
 
-    outp(base + C4_CTL, out ? 0 : C4_DIR);
-    outp(base + C4_BLK, (unsigned char)n);
-    OUT(R_MR, MR_DMA);
+    /* Reihenfolge wie im Datenblatt (und bei Linux): erst den 5380 in den
+       DMA-Betrieb und starten, dann Richtung und Blockzaehler - der 53C400
+       beginnt beim Laden des Zaehlers. Busueberwachung: faellt BSY weg,
+       endet der Blockbetrieb von selbst (sonst bleibt der Chip haengen) */
+    OUT(R_MR, MR_DMA | MR_MBSY);
     if (out) {
         OUT(R_ICR, ICR_DBUS);
         OUT(R_SDS, 0);
@@ -151,6 +154,8 @@ static int block_xfer(int out, unsigned sel, unsigned off, unsigned len)
         OUT(R_ICR, 0);
         OUT(R_SDIR, 0);
     }
+    outp(base + C4_CTL, out ? 0 : C4_DIR);
+    outp(base + C4_BLK, (unsigned char)n);
     for (i = 0; i < n; i++) {
         if (c4_wait(C4_NRDY, 0, 300))
             goto fail;

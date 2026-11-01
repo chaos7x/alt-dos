@@ -530,8 +530,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   I/O; LCS-6821N, RT1000B, LS2000, T128 mit Registern im 16-KB-Fenster
   des Karten-BIOS (C800h–DC00h) -> braucht DevHlp für physischen Speicher
   (OS/2: PhysToVirt/PhysToGDTSelector); AHA-1520A und SB16-SCSI: AIC-6360.
-  Zweite Stufe (Nutzer: PIO zu langsam), in 86Box vom Nutzer bestätigt:
-  Startzeile „Blockbetrieb“, kein Rückfall auf PIO.
+  Zweite Stufe (Nutzer: PIO zu langsam). Erster Test in 86Box: Busfehler
+  auf D: (Lesen 40h, Schreiben 4F8h) – Reihenfolge war falsch: 86Box (und
+  das Datenblatt) beginnen beim Laden des Blockzählers nur, wenn der 5380
+  schon im DMA-Betrieb ist. Jetzt wie Linux: MR=DMA|Busüberwachung, DMA-
+  Start, dann Richtung, dann Blockzähler. Nach einem gescheiterten Block-
+  versuch bleibt der 53C400 in 86Box auf „Zähler geladen“, dann scheitert
+  auch PIO (tx_mode bleibt DMA) – Neutest offen.
   Datenphasen in Vielfachen von 128 Byte im 53C400-Blockbetrieb – Richtung
   in Basis+0 (Bit 6 lesen), Blockzahl in Basis+1, 5380 MR=DMA und Start
   über Register 7 (empfangen) bzw. 5 (senden, ICR mit DBUS), je Block
