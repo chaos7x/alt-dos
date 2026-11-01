@@ -102,7 +102,7 @@ done
 
 echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
-for t in aha154x ide mouse; do
+for t in aha154x ide mouse ncr5380; do
     wcc $CFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
@@ -145,7 +145,7 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
-SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS
+SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE

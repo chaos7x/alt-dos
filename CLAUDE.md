@@ -507,6 +507,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   löst START kein HACC aus, MBIF kommt nach HACC erst nach IRST.
   Offen: Diskette (kernel floppy.c) ebenfalls schlafen lassen statt
   HLT-Schleife, danach `MOUSE.SYS`. `has_opt()` und `hex()` in drvlib.h.
+- `NCR5380.SYS` (drivers/ncr5380.c), erste Stufe gebaut, ungetestet (QEMU
+  hat keine solche Karte, Test nur in 86Box): Trantor T130B (53C400,
+  Ports 350h/340h/250h/240h, 5380-Register ab Basis+8), PIO mit REQ/ACK je
+  Byte, Arbitrierung + Auswahl ohne ATN, Phasen nach CSBS, langes Warten
+  mit ProcBlock-Schlaf (1 Takt). Erkennung lesend (MR Bit 6 und TCR Bit
+  4–6 = 0), dann TCR als Probe (wirkt nur im Zielmodus). `/P:340` usw.
+  86Box-Karten (scsi_ncr53c400.c, scsi_t128.c, scsi_aic6360.c): T130B per
+  I/O; LCS-6821N, RT1000B, LS2000, T128 mit Registern im 16-KB-Fenster
+  des Karten-BIOS (C800h–DC00h) -> braucht DevHlp für physischen Speicher
+  (OS/2: PhysToVirt/PhysToGDTSelector); AHA-1520A und SB16-SCSI: AIC-6360.
+  Nächste Stufen: 53C400-Blockbetrieb (128-Byte-Puffer, Basis+4) mit IRQ,
+  Speicherfenster-Karten, AIC6360.SYS. NDRV auf 6 erhöht (MEMMAP_SEL 168h).
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit

@@ -25,7 +25,7 @@
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
 #define SCR_SEL(i)  (SCR_IDX(i) * 8)
-#define NDRV        4               /* Geraetetreiber hoechstens           */
+#define NDRV        6               /* Geraetetreiber und IFS-Module      */
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
