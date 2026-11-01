@@ -702,6 +702,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Test des Nutzers: AT-DOS 5.0 läuft auf dem P3B-F in 86Box (IDE, Diskette,
   Tastatur, Sitzungen); nur der PCI-SCSI-Controller NCR 53C8xx wird nicht
   erkannt – erwartet, dafür gibt es noch keinen Treiber (`NCR8XX.SYS`, 6.0).
+- DOS-Sitzungen in DOS 6.0 wie OS/2 2.x (MVDM), Wunsch des Nutzers:
+  jede Sitzung eine eigene V86-Maschine (1 MB + HMA, präemptiv, geschützt –
+  ein Absturz trifft nur die Sitzung); virtuelle Gerätetreiber (VDDs) für
+  Bildschirm, Tastatur, Maus, COM/LPT, Zeitgeber, DMA fangen Ports und
+  Speicher ab; eingebautes DOS in der Box, das Dateizugriffe an den Kernel
+  weiterreicht (alle AT-DOS-Laufwerke sichtbar, auch FAT32/IFS, für DOS-
+  Programme als 8.3); DOS-Einstellungen je Sitzung (EMS/XMS/DPMI_MEMORY_
+  LIMIT, DOS_HIGH/UMB, IDLE_SENSITIVITY gegen Warteschleifen, VIDEO_
+  RETRACE_EMULATION, HW_TIMER, COM_HOLD …), EMS/XMS/DPMI vom Kernel statt
+  EMM386/HIMEM in der Box; „bestimmte DOS-Version“ wie VMB: echtes DOS
+  (MS-DOS 6, FreeDOS) aus einem Disketten-/Plattenabbild in einer Sitzung
+  starten; Windows 3.1 in einer Sitzung (WIN-OS/2-Weg), später seamless.
 - Grafik in DOS 6.0: Video-BIOS/VESA über eine V86-Umgebung für Moduswechsel
   (allgemeiner VESA-Treiber), Spezialtreiber je Chip (ET4000 usw.) für Tempo.
   DOS-Boxen brauchen einen virtuellen Bildschirm wie VDD (Windows 3.0) bzw.
