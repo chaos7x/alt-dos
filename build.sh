@@ -84,7 +84,7 @@ PYEOF
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest"
+UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
@@ -149,7 +149,7 @@ SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.s
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
-       $B/task_mtest.exe MAUSTEST.EXE"
+       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"

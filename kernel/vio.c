@@ -46,6 +46,10 @@ struct session {
     signed char   mou_owner;        /* Task mit MouOpen, -1 = keiner    */
     unsigned char mou_show;         /* Zeiger zeigen                    */
     unsigned char mq_head, mq_n;    /* Warteschlange der Mausereignisse */
+    unsigned char gfx;              /* Grafikmodus (13h), 0 = Text      */
+    signed char   gfx_task;         /* Task mit dem Bildspeicher-Selektor */
+    unsigned      gfx_sel;          /* ... dieser Selektor (0 = keiner) */
+    unsigned      gfx_save;         /* Puffer: 64 KB Bild + 768 Palette */
 };
 
 static struct session ses[NTASK];
@@ -79,6 +83,35 @@ static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
 
 static void ptr_remove(void);
 static void ptr_draw(void);
+
+/* ---- Grafik (VGA, Modus 13h) --------------------------------------------
+   Wie VioGetPhysBuf bei OS/2 1.x bekommt das Programm einen Selektor auf
+   den Bildspeicher - aber bequemer: Beim Sitzungswechsel sichert der Kernel
+   Bild (64 KB) und Palette in den Puffer der Sitzung und biegt den
+   Selektor dorthin um; das Programm zeichnet im Hintergrund einfach
+   weiter. Zurueck im Vordergrund: Karte umstellen, Bild und Palette
+   zurueck, Selektor wieder auf A0000h. Kein BIOS im Protected Mode: die
+   Register kommen aus den Standardtabellen der IBM-VGA. */
+#define GFX_UNITS   ((65536UL + 768 + MEM_UNIT - 1) / MEM_UNIT)
+static unsigned char hw_gfx;            /* Karte steht auf: 0 Text, 13h  */
+static unsigned char text_dac[64 * 3], text_dac_ok;
+/* Misc, Sequenzer 0-4, CRTC 0-24, Grafik 0-8, Attribut 0-20 */
+static const unsigned char vga_mode13[61] = { 0x63,
+    0x03, 0x01, 0x0F, 0x00, 0x0E,
+    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x41, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x9C, 0x0E, 0x8F, 0x28, 0x40, 0x96, 0xB9, 0xA3, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x05, 0x0F, 0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+    0x0C, 0x0D, 0x0E, 0x0F, 0x41, 0x00, 0x0F, 0x00, 0x00 };
+static const unsigned char vga_mode03[61] = { 0x67,
+    0x03, 0x00, 0x03, 0x00, 0x02,
+    0x5F, 0x4F, 0x50, 0x82, 0x55, 0x81, 0xBF, 0x1F, 0x00, 0x4F, 0x0D, 0x0E,
+    0x00, 0x00, 0x00, 0x00, 0x9C, 0x0E, 0x8F, 0x28, 0x1F, 0x96, 0xB9, 0xA3, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x0E, 0x00, 0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07, 0x38, 0x39, 0x3A, 0x3B,
+    0x3C, 0x3D, 0x3E, 0x3F, 0x0C, 0x00, 0x0F, 0x08, 0x00 };
+static void gfx_out(void);
+static int  gfx_in(void);
 
 /* Konsolenmaus wie gpm unter Linux: Hat in der Vordergrund-Sitzung kein
    Programm MouOpen gerufen, gehoert die Maus dem Kernel. Linke Taste
@@ -211,7 +244,7 @@ static void vfill(int row, unsigned char attr)
 static void cursor(void)
 {
     unsigned pos;
-    if (fg < 0)
+    if (fg < 0 || ses[fg].gfx)
         return;
     pos = (ses[fg].row + ses[fg].top) * SCOLS + ses[fg].col;
     if (ses[fg].hidecur)
@@ -241,7 +274,7 @@ void vio_status(void)
 
     int sr = hw_lines - 1;                  /* Statuszeile: unterste    */
 
-    if (v == shown_uptime || (fg >= 0 && !ses[fg].top))
+    if (v == shown_uptime || (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
         return;                             /* Vollbild: keine Statuszeile */
     if (shown_uptime == 0xFFFF) {
         vfill(sr, STATUS_ATTR);
@@ -263,6 +296,8 @@ static void redraw(void)
     p_drawn = 0;                            /* Bildspeicher wird neu    */
     dlo = 0xFF;
     cur_dirty = 0;
+    if (gfx_in())                           /* Grafiksitzung vorn       */
+        return;
     if (fg >= 0)
         set_hw_lines(ses[fg].lines);
     for (r = hw_lines; r < SLINES_MAX; r++)     /* 43: Rest der 44. Zeile */
@@ -342,6 +377,9 @@ int vio_open(const char *title)
     ses[s].mou_owner = -1;
     ses[s].mou_show = 0;
     ses[s].mq_n = 0;
+    ses[s].gfx = 0;
+    ses[s].gfx_sel = 0;
+    ses[s].gfx_save = 0;
     set_desc(SCR_IDX(s), (unsigned long)u << 8, SBYTES - 1, ACC_KDATA);
     vio_title(s, title);
     vio_cls(s);
@@ -367,6 +405,10 @@ void vio_close(int s)
         mem_free(ses[s].save, SAVEU);
         ses[s].save = 0;
     }
+    if (ses[s].gfx_save) {
+        mem_free(ses[s].gfx_save, GFX_UNITS);
+        ses[s].gfx_save = 0;
+    }
     ses[s].used = 0;
     gdt[SCR_IDX(s)].access = 0;
     if (s == fg) {
@@ -389,6 +431,7 @@ void vio_focus(int s)
 {
     if (s < 0 || s >= NTASK || !ses[s].used || s == fg)
         return;
+    gfx_out();                      /* Grafik der alten Sitzung sichern */
     fg = s;
     kbd_flush();
     redraw();
@@ -469,7 +512,7 @@ void vio_flush(void)
 {
     unsigned a, b, f;
 
-    if (fg < 0)
+    if (fg < 0 || ses[fg].gfx)      /* Grafik: Text bleibt im Puffer    */
         return;
     if (sel_copy)                   /* Taste losgelassen: kopieren      */
         sel_finish();
@@ -592,6 +635,8 @@ void vio_showbuf(int s, unsigned a, unsigned b)
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */
 void vio_task_end(int s, int t)
 {
+    if (s >= 0 && ses[s].used && ses[s].gfx && ses[s].gfx_task == t)
+        vio_setgfx(s, t, 0);                /* Grafik zuruecknehmen     */
     if (s >= 0 && ses[s].used && ses[s].mou_owner == t) {
         ses[s].mou_owner = -1;              /* Maus wieder frei         */
         ses[s].mou_show = 0;
@@ -599,6 +644,212 @@ void vio_task_end(int s, int t)
     }
     if (s >= 0 && ses[s].used && !ses[s].top && ses[s].owner == t)
         vio_setmode(s, 0, -1);
+}
+
+/* ---- Grafik ------------------------------------------------------------- */
+static void vga_regs(const unsigned char *t)
+{
+    unsigned i;
+    seqr(0x00, 0x01);                       /* Sequenzer anhalten       */
+    outb(0x3C2, t[0]);
+    for (i = 1; i < 5; i++)
+        seqr(i, t[1 + i]);
+    seqr(0x00, 0x03);
+    crtc(0x11, crtc_in(0x11) & 0x7F);       /* CRTC 0-7 freigeben       */
+    for (i = 0; i < 25; i++)
+        crtc(i, t[6 + i]);
+    for (i = 0; i < 9; i++)
+        gcr(i, t[31 + i]);
+    inb(0x3DA);                             /* Attribut: Index zuerst   */
+    for (i = 0; i < 21; i++) {
+        outb(0x3C0, i);
+        outb(0x3C0, t[40 + i]);
+    }
+    outb(0x3C0, 0x20);                      /* Bild an                  */
+}
+
+static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p)
+{
+    unsigned i;
+    outb(write ? 0x3C8 : 0x3C7, first);
+    for (i = 0; i < n * 3; i++)
+        if (write)
+            outb(0x3C9, p[i]);
+        else
+            p[i] = (unsigned char)inb(0x3C9);
+}
+
+/* Fenster: SCRATCH2 = Bildspeicher A0000h, SCRATCH = Puffer (Teil 0: Bild,
+   Teil 1: Palette ab 64 KB) */
+static void map_save(int s, int part)
+{
+    unsigned long b = (unsigned long)ses[s].gfx_save << 8;
+    if (part)
+        scratch_map(b + 0x10000UL, 767);
+    else
+        scratch_map(b, 0xFFFF);
+}
+
+/* Karte auf Text zurueck: Register, Palette, Zeichensatz (hw_lines = 0
+   zwingt set_hw_lines zum Neuprogrammieren - 13h belegt auch Ebene 2) */
+static void hw_text(void)
+{
+    vga_regs(vga_mode03);
+    if (text_dac_ok)
+        dac_io(1, 0, 64, (unsigned char __far *)text_dac);
+    hw_lines = 0;
+    hw_gfx = 0;
+}
+
+/* Grafiksitzung kommt nach vorn: Karte auf 13h, Bild und Palette aus dem
+   Puffer, Selektor auf den Bildspeicher. -> 1 = Grafik vorn */
+static int gfx_in(void)
+{
+    unsigned short w[8];
+    if (fg < 0 || !ses[fg].gfx) {
+        if (hw_gfx)
+            hw_text();                      /* Textsitzung vorn         */
+        return 0;
+    }
+    win_save(w);
+    if (!text_dac_ok) {                     /* Textpalette einmal merken */
+        dac_io(0, 0, 64, (unsigned char __far *)text_dac);
+        text_dac_ok = 1;
+    }
+    vga_regs(vga_mode13);
+    hw_gfx = 0x13;
+    scratch2_map(0xA0000UL, 0xFFFF);
+    map_save(fg, 0);
+    far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000);
+    far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
+    map_save(fg, 1);
+    dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
+    win_restore(w);
+    if (ses[fg].gfx_sel)
+        ldt_set(ses[fg].gfx_task, ses[fg].gfx_sel, 0xA0000UL, 0xFFFF);
+    return 1;
+}
+
+/* Grafiksitzung geht nach hinten: Bild in den Puffer, Selektor dorthin */
+static void gfx_out(void)
+{
+    unsigned short w[8];
+    if (fg < 0 || !ses[fg].gfx || hw_gfx != 0x13)
+        return;
+    win_save(w);
+    scratch2_map(0xA0000UL, 0xFFFF);
+    map_save(fg, 0);
+    far_copy(SCRATCH, 0, SCRATCH2, 0, 0x8000);
+    far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, 0x8000);
+    win_restore(w);
+    if (ses[fg].gfx_sel)
+        ldt_set(ses[fg].gfx_task, ses[fg].gfx_sel,
+                (unsigned long)ses[fg].gfx_save << 8, 0xFFFF);
+}
+
+/* Vorgabepalette (Werte 0-63): 16 EGA-Farben, 6x6x6-Wuerfel, Graustufen */
+static void def_palette(unsigned char __far *p)
+{
+    static const unsigned char ega[16][3] = {
+        {0,0,0},{0,0,42},{0,42,0},{0,42,42},{42,0,0},{42,0,42},{42,21,0},{42,42,42},
+        {21,21,21},{21,21,63},{21,63,21},{21,63,63},{63,21,21},{63,21,63},{63,63,21},{63,63,63} };
+    unsigned i, r, g, b, k = 0;
+    for (i = 0; i < 16; i++) {
+        p[k++] = ega[i][0]; p[k++] = ega[i][1]; p[k++] = ega[i][2];
+    }
+    for (r = 0; r < 6; r++)
+        for (g = 0; g < 6; g++)
+            for (b = 0; b < 6; b++) {
+                p[k++] = (unsigned char)(r * 63 / 5);
+                p[k++] = (unsigned char)(g * 63 / 5);
+                p[k++] = (unsigned char)(b * 63 / 5);
+            }
+    for (i = 0; i < 24; i++) {
+        g = i * 63 / 23;
+        p[k++] = (unsigned char)g;
+        p[k++] = (unsigned char)g;
+        p[k++] = (unsigned char)g;
+    }
+}
+
+/* VioSetGfx: mode 13h = Grafik, 0 = zurueck auf Text. 0 = ok, -1 Fehler */
+int vio_setgfx(int s, int t, unsigned mode)
+{
+    unsigned short w[8];
+    if (s < 0 || !ses[s].used)
+        return -1;
+    if (mode == 0) {
+        if (!ses[s].gfx)
+            return 0;
+        if (ses[s].gfx_sel)
+            ldt_drop(ses[s].gfx_task, ses[s].gfx_sel);
+        ses[s].gfx_sel = 0;
+        ses[s].gfx = 0;
+        mem_free(ses[s].gfx_save, GFX_UNITS);
+        ses[s].gfx_save = 0;
+        if (s == fg)
+            redraw();                       /* Karte auf Text, Bild neu */
+        return 0;
+    }
+    if (mode != 0x13 || !vga_ok)
+        return -1;
+    if (!ses[s].gfx) {
+        ses[s].gfx_save = mem_alloc(GFX_UNITS);
+        if (!ses[s].gfx_save)
+            return -1;
+    }
+    win_save(w);                            /* Puffer: schwarz, Palette */
+    map_save(s, 0);
+    zero_seg(SCRATCH, 0x8000);
+    map_save(s, 1);
+    def_palette(MK_FP(SCRATCH, 0));
+    win_restore(w);
+    ses[s].gfx = 0x13;
+    ses[s].gfx_task = (signed char)t;
+    if (s == fg) {
+        hw_gfx = 0;                         /* neu einstellen           */
+        redraw();
+    }
+    return 0;
+}
+
+/* VioGetPhysBuf: Basis des Bildes (vorn A0000h, sonst Puffer); merkt den
+   Selektor, damit der Kernel ihn beim Wechsel umbiegen kann */
+unsigned long vio_gfx_base(int s)
+{
+    if (s == fg && hw_gfx == 0x13)
+        return 0xA0000UL;
+    return (unsigned long)ses[s].gfx_save << 8;
+}
+
+int vio_gfx_reg(int s, int t, unsigned sel)
+{
+    if (s < 0 || !ses[s].used || !ses[s].gfx)
+        return -1;
+    if (ses[s].gfx_sel)                     /* nur einer je Sitzung     */
+        ldt_drop(ses[s].gfx_task, ses[s].gfx_sel);
+    ses[s].gfx_task = (signed char)t;
+    ses[s].gfx_sel = sel;
+    return 0;
+}
+
+int vio_is_gfx(int s)
+{
+    return s >= 0 && ses[s].used && ses[s].gfx;
+}
+
+/* VioSetPalette: n Eintraege ab first (je 3 Byte, 0-63) aus sel:off */
+void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off)
+{
+    unsigned short w[8];
+    if (!ses[s].gfx || first > 255 || n == 0 || n > 256 - first)
+        return;
+    win_save(w);
+    map_save(s, 1);
+    far_copy(SCRATCH, first * 3, sel, off, n * 3);
+    if (s == fg && hw_gfx == 0x13)
+        dac_io(1, first, n, MK_FP(sel, off));
+    win_restore(w);
 }
 
 /* ---- Maus --------------------------------------------------------------- */
@@ -614,7 +865,7 @@ static void ptr_remove(void)
 static void ptr_draw(void)
 {
     unsigned r, c;
-    if (p_drawn || fg < 0 || !mou_nbtn)
+    if (p_drawn || fg < 0 || !mou_nbtn || ses[fg].gfx)
         return;
     if (ses[fg].mou_owner >= 0 ? !ses[fg].mou_show : !con_ptr)
         return;

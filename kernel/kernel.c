@@ -511,6 +511,27 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
    dort Basis und Grenze. */
 static unsigned short ldt_alias[NTASK];
 
+/* Alias-Eintrag umbiegen (Grafik: Bildspeicher <-> Puffer) / entfernen.
+   Laeuft nur im Kernel; beim Ruecksprung laedt die CPU DS/ES neu. */
+void ldt_set(int t, unsigned sel, unsigned long base, unsigned limit)
+{
+    unsigned idx = sel >> 3;
+    if (t < 0 || t >= NTASK || idx < LDT_FIRST_FREE || idx >= NLDT ||
+        !(ldt_alias[t] & (1u << idx)))
+        return;
+    put_desc(&ldt[t][idx], base, limit, ACC_UDATA);
+}
+
+void ldt_drop(int t, unsigned sel)
+{
+    unsigned idx = sel >> 3;
+    if (t < 0 || t >= NTASK || idx < LDT_FIRST_FREE || idx >= NLDT ||
+        !(ldt_alias[t] & (1u << idx)))
+        return;
+    ldt[t][idx].access = 0;
+    ldt_alias[t] &= ~(1u << idx);
+}
+
 static unsigned seg_free(int t, unsigned sel)
 {
     unsigned idx = sel >> 3, units, start;
@@ -1513,7 +1534,8 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
     case FAPI_SHUTDOWNHOLD: case FAPI_MOUOPEN: case FAPI_MOUREADEVENT:
     case FAPI_MOUSHOWPTR: case FAPI_CLIPPUT: case FAPI_CLIPGET:
-    case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF:
+    case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
+    case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -2155,6 +2177,30 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_VIOSHOWBUF:
         vio_showbuf(s, a1, a2);
+        return 0;
+
+    case FAPI_VIOSETGFX:
+        return vio_setgfx(s, current, a1) ? FAPI_ERROR : 0;
+
+    case FAPI_VIOGETPHYSBUF: {                  /* wie OS/2 VioGetPhysBuf */
+        unsigned idx;
+        if (!vio_is_gfx(s))
+            return FAPI_ERROR;
+        for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
+            if (ldt[current][idx].access == 0)
+                break;
+        if (idx == NLDT)
+            return FAPI_ERROR;
+        put_desc(&ldt[current][idx], vio_gfx_base(s), 0xFFFF, ACC_UDATA);
+        ldt_alias[current] |= 1u << idx;
+        vio_gfx_reg(s, current, USEL(idx));
+        return USEL(idx);
+    }
+
+    case FAPI_VIOSETPAL:
+        if (a2 == 0 || a2 > 256 || !user_ok(usel, a3, a2 * 3, 0))
+            return FAPI_ERROR;
+        vio_setpal(s, a1, a2, usel, a3);
         return 0;
 
     case FAPI_CLIPPUT:

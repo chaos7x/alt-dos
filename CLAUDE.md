@@ -155,6 +155,20 @@ Win32s), nicht vorziehen, sondern nachfragen.
   auf dem SCAT bestätigt: Öffnen-Dialog mit Maus läuft ruhig). Grundsatz
   (Wunsch des Nutzers): wo man sparen kann, nutzen; hat OS/2 für ein
   Problem eine bewährte Lösung, das gleich sagen.
+- VGA-Grafik, Stufe 1 (Modus 13h), in QEMU geprüft: FAPI 3Fh–41h
+  VioSetGfx/VioGetPhysBuf/VioSetPal. Register aus den IBM-Standardtabellen
+  (`vga_mode13`, `vga_mode03`, `vga_regs`), kein BIOS. Anders als OS/2 1.x
+  (VioSavRedrawWait: Programm muss selbst sichern/neu zeichnen) sichert der
+  Kernel beim Wechsel (`gfx_out` in vio_focus vor dem fg-Wechsel) 64 KB
+  Bild + 768 Byte Palette in `gfx_save` und biegt den LDT-Alias aus
+  VioGetPhysBuf mit `ldt_set` in den Puffer um; `gfx_in` (in redraw)
+  stellt Karte, Bild, Palette und Selektor wieder her. Zurück auf Text:
+  `hw_text` (Register 03h, Text-DAC 0–63 von der ersten Umschaltung,
+  `hw_lines = 0` -> set_hw_lines lädt den Zeichensatz neu, 13h überschreibt
+  Ebene 2). Textausgaben einer Grafiksitzung landen im Textpuffer.
+  Programmende/VioSetGfx(0): `ldt_drop`. Demo `\DEMO\GRAFIK.EXE` (zeichnet
+  im Hintergrund weiter). Offen: Modus 12h (planar, Ebene wählen per FAPI),
+  Maus in Grafik, Test in 86Box (ET4000).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile

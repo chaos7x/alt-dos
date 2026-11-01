@@ -132,6 +132,15 @@ struct fapi_label {
    allein zeigt nichts; VioShowBuf meldet fertige Zeilen. */
 #define FAPI_VIOGETBUF      0x3D    /* -> Selektor (FAPI_ERROR: LDT voll) */
 #define FAPI_VIOSHOWBUF     0x3E    /* BX = erste, CX = letzte Zeile zeigen */
+/* Grafik (nur VGA): die Sitzung schaltet in einen Grafikmodus; Text-
+   ausgaben laufen weiter in den Textpuffer und erscheinen nach der Rueck-
+   kehr. Beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt
+   den Selektor aus VioGetPhysBuf um - das Programm zeichnet weiter. */
+#define FAPI_VIOSETGFX      0x3F    /* BX = 13h (320x200x256), 0 = Text */
+#define FAPI_VIOGETPHYSBUF  0x40    /* -> Selektor auf das Bild (64 KB,
+                                       Punkt (x,y) bei y * 320 + x) */
+#define FAPI_VIOSETPAL      0x41    /* BX = erster Eintrag, CX = Anzahl,
+                                       DX = Puffer (je R, G, B, 0-63) */
 struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */

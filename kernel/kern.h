@@ -163,6 +163,13 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
+int  vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
+unsigned long vio_gfx_base(int s);
+int  vio_gfx_reg(int s, int t, unsigned sel);
+int  vio_is_gfx(int s);
+void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);
+void ldt_set(int t, unsigned sel, unsigned long base, unsigned limit);
+void ldt_drop(int t, unsigned sel);
 unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len);
 unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 

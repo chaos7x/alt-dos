@@ -78,6 +78,9 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosClipGet(sel, off, n) fapi_call(FAPI_CLIPGET, (sel), (unsigned short)(off), (n))
 #define VioGetBuf()         F2(FAPI_VIOGETBUF, 0, 0)
 #define VioShowBuf(a, b)    F2(FAPI_VIOSHOWBUF, (a), (b))
+#define VioSetGfx(m)        F2(FAPI_VIOSETGFX, (m), 0)
+#define VioGetPhysBuf()     F2(FAPI_VIOGETPHYSBUF, 0, 0)
+#define VioSetPal(f, n, p)  fapi_call(FAPI_VIOSETPAL, (f), (n), (unsigned short)(p))
 #define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))
 
 #ifndef FAPI_NO_IMPL                    /* util.c: nur Deklarationen  */
