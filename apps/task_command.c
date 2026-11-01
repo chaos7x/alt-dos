@@ -619,8 +619,10 @@ static void cmd_dir(char *arg)
     for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
         if (((e.attr & 0x10) != 0) != (pass == 0))
             continue;
-        if (!all && (e.attr & 0x06))            /* versteckt, System    */
-            continue;
+        if (!all && (e.attr & 0x06) && e.name[0] != '.')
+            continue;                           /* versteckt, System - "."
+                                                   und ".." immer (macOS
+                                                   legt sie versteckt an) */
         if ((e.attr & want) != want || (e.attr & nowant))
             continue;
         if (pat[0] && !match(e.name, pat))
