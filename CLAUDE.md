@@ -168,8 +168,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Ebene 2). Textausgaben einer Grafiksitzung landen im Textpuffer.
   Programmende/VioSetGfx(0): `ldt_drop`. Demo `\DEMO\GRAFIK.EXE` (zeichnet
   im Hintergrund weiter). In 86Box vom Nutzer bestätigt (Grafik und
-  Sitzungswechsel). Offen: Modus 12h (planar, Ebene wählen per FAPI),
-  Maus in Grafik.
+  Sitzungswechsel; ET4000 und Diamond SpeedStar 24X).
+  Stufe 2, Modus 12h (640×480×16), in QEMU geprüft: vier Ebenen zu 38400
+  Byte, FAPI 42h VioSetPlane(p) = Map Mask (SEQ 2) und Read Map (GC 4) im
+  Vordergrund, im Hintergrund biegt `gfx_alias` den Selektor auf die Ebene
+  im Puffer (`save_part`, ohne 32-Bit-Multiplikation). Attributregister
+  0–15 direkt durchgeschaltet (Farbe n = DAC n), daher VioSetPal in beiden
+  Modi gleich. Sichern/Zurückladen Ebene für Ebene (`gfx_copy`). Demo
+  `GRAFIK 12` (16 Balken, wachsender Balken wechselt je Runde die Farbe –
+  im Hintergrund weitergezeichnet geprüft). Offen: Maus in Grafik,
+  evtl. Mode X (320×240×256 unverkettet, Ebenen wie 12h, Seitenwechsel).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile

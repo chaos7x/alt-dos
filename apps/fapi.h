@@ -81,6 +81,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define VioSetGfx(m)        F2(FAPI_VIOSETGFX, (m), 0)
 #define VioGetPhysBuf()     F2(FAPI_VIOGETPHYSBUF, 0, 0)
 #define VioSetPal(f, n, p)  fapi_call(FAPI_VIOSETPAL, (f), (n), (unsigned short)(p))
+#define VioSetPlane(p)      F2(FAPI_VIOSETPLANE, (p), 0)
 #define VioWrtStrAtt(r, c, s, a) fapi_call(FAPI_VIOWRTSTRATT, (unsigned short)(s), ((r) << 8) | (c), (a))
 
 #ifndef FAPI_NO_IMPL                    /* util.c: nur Deklarationen  */

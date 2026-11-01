@@ -224,9 +224,10 @@ selbst nur 8.3 kennt.
 | 60 | DosClipGet      | BX = Selektor (0 = eigenes), CX = Offset, DX = Platz → Länge des Inhalts |
 | 61 | VioGetBuf       | → Selektor auf den Bildschirmpuffer der eigenen Sitzung (logischer Puffer wie bei OS/2 1.x; Zelle = Zeichen \| Attribut << 8, Zeile r ab r·160) |
 | 62 | VioShowBuf      | BX = erste, CX = letzte Zeile: fertige Zeilen zeigen (Schreiben in den Puffer allein zeigt nichts) |
-| 63 | VioSetGfx       | BX = 13h: Sitzung in VGA-Grafik 320×200×256, 0 = zurück auf Text (nur VGA) |
+| 63 | VioSetGfx       | BX = 13h: VGA-Grafik 320×200×256, 12h: 640×480×16 (vier Ebenen), 0 = zurück auf Text (nur VGA) |
 | 64 | VioGetPhysBuf   | → Selektor auf das Bild (64 KB, Punkt x,y bei y·320+x); beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt den Selektor in den Puffer um – das Programm zeichnet weiter |
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
+| 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die

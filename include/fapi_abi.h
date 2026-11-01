@@ -136,11 +136,16 @@ struct fapi_label {
    ausgaben laufen weiter in den Textpuffer und erscheinen nach der Rueck-
    kehr. Beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt
    den Selektor aus VioGetPhysBuf um - das Programm zeichnet weiter. */
-#define FAPI_VIOSETGFX      0x3F    /* BX = 13h (320x200x256), 0 = Text */
-#define FAPI_VIOGETPHYSBUF  0x40    /* -> Selektor auf das Bild (64 KB,
-                                       Punkt (x,y) bei y * 320 + x) */
+#define FAPI_VIOSETGFX      0x3F    /* BX = 13h (320x200x256), 12h (640x480x16),
+                                       0 = Text */
+#define FAPI_VIOGETPHYSBUF  0x40    /* -> Selektor auf das Bild. 13h: 64 KB,
+                                       Punkt (x,y) bei y * 320 + x. 12h: eine
+                                       Ebene (VioSetPlane), 38400 Byte, Bit 7
+                                       von Byte y * 80 + x / 8 = Punkt x */
 #define FAPI_VIOSETPAL      0x41    /* BX = erster Eintrag, CX = Anzahl,
                                        DX = Puffer (je R, G, B, 0-63) */
+#define FAPI_VIOSETPLANE    0x42    /* 12h: BX = Ebene 0-3 (Farbbit) zum
+                                       Schreiben und Lesen */
 struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */

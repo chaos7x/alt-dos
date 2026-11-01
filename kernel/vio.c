@@ -49,7 +49,8 @@ struct session {
     unsigned char gfx;              /* Grafikmodus (13h), 0 = Text      */
     signed char   gfx_task;         /* Task mit dem Bildspeicher-Selektor */
     unsigned      gfx_sel;          /* ... dieser Selektor (0 = keiner) */
-    unsigned      gfx_save;         /* Puffer: 64 KB Bild + 768 Palette */
+    unsigned      gfx_save;         /* Puffer: Bild + 768 Byte Palette  */
+    unsigned char gfx_plane;        /* 12h: gewaehlte Ebene (VioSetPlane) */
 };
 
 static struct session ses[NTASK];
@@ -92,7 +93,10 @@ static void ptr_draw(void);
    weiter. Zurueck im Vordergrund: Karte umstellen, Bild und Palette
    zurueck, Selektor wieder auf A0000h. Kein BIOS im Protected Mode: die
    Register kommen aus den Standardtabellen der IBM-VGA. */
-#define GFX_UNITS   ((65536UL + 768 + MEM_UNIT - 1) / MEM_UNIT)
+/* Puffer: 13h 64 KB Bild, 12h vier Ebenen zu 38400 Byte; Palette dahinter */
+#define PLANE12     38400U
+#define GFX_IMG(m)  ((m) == 0x12 ? 4UL * PLANE12 : 65536UL)
+#define GFX_UNITS(m) ((unsigned)((GFX_IMG(m) + 768 + MEM_UNIT - 1) / MEM_UNIT))
 static unsigned char hw_gfx;            /* Karte steht auf: 0 Text, 13h  */
 static unsigned char text_dac[64 * 3], text_dac_ok;
 /* Misc, Sequenzer 0-4, CRTC 0-24, Grafik 0-8, Attribut 0-20 */
@@ -110,6 +114,14 @@ static const unsigned char vga_mode03[61] = { 0x67,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x0E, 0x00, 0xFF,
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07, 0x38, 0x39, 0x3A, 0x3B,
     0x3C, 0x3D, 0x3E, 0x3F, 0x0C, 0x00, 0x0F, 0x08, 0x00 };
+/* 12h: Attributregister direkt durchgeschaltet (Farbe n = DAC-Eintrag n) */
+static const unsigned char vga_mode12[61] = { 0xE3,
+    0x03, 0x01, 0x0F, 0x00, 0x06,
+    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0x0B, 0x3E, 0x00, 0x40, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0xEA, 0x0C, 0xDF, 0x28, 0x00, 0xE7, 0x04, 0xE3, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0F, 0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+    0x0C, 0x0D, 0x0E, 0x0F, 0x01, 0x00, 0x0F, 0x00, 0x00 };
 static void gfx_out(void);
 static int  gfx_in(void);
 
@@ -406,7 +418,7 @@ void vio_close(int s)
         ses[s].save = 0;
     }
     if (ses[s].gfx_save) {
-        mem_free(ses[s].gfx_save, GFX_UNITS);
+        mem_free(ses[s].gfx_save, GFX_UNITS(ses[s].gfx));
         ses[s].gfx_save = 0;
     }
     ses[s].used = 0;
@@ -679,15 +691,64 @@ static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p
             p[i] = (unsigned char)inb(0x3C9);
 }
 
-/* Fenster: SCRATCH2 = Bildspeicher A0000h, SCRATCH = Puffer (Teil 0: Bild,
-   Teil 1: Palette ab 64 KB) */
-static void map_save(int s, int part)
+/* Fenster SCRATCH auf den Puffer: part 0-3 = Bild (13h: nur 0, 64 KB;
+   12h: Ebene part), part 4 = Palette */
+static unsigned long save_part(int s, int part)
 {
     unsigned long b = (unsigned long)ses[s].gfx_save << 8;
-    if (part)
-        scratch_map(b + 0x10000UL, 767);
+    if (part == 4)
+        return b + GFX_IMG(ses[s].gfx);
+    if (ses[s].gfx == 0x12)
+        while (part-- > 0)              /* ohne 32-Bit-Multiplikation   */
+            b += PLANE12;
+    return b;
+}
+
+static void map_save(int s, int part)
+{
+    scratch_map(save_part(s, part), part == 4 ? 767 :
+                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
+}
+
+/* Bild zwischen Bildspeicher und Puffer kopieren; out = 1: sichern */
+static void gfx_copy(int s, int out)
+{
+    unsigned p;
+    scratch2_map(0xA0000UL, 0xFFFF);
+    if (ses[s].gfx == 0x13) {
+        map_save(s, 0);
+        if (out) {
+            far_copy(SCRATCH, 0, SCRATCH2, 0, 0x8000);
+            far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, 0x8000);
+        } else {
+            far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000);
+            far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
+        }
+        return;
+    }
+    for (p = 0; p < 4; p++) {               /* 12h: Ebene fuer Ebene    */
+        map_save(s, (int)p);
+        if (out) {
+            gcr(0x04, p);                   /* Ebene p lesen            */
+            far_copy(SCRATCH, 0, SCRATCH2, 0, PLANE12);
+        } else {
+            seqr(0x02, 1 << p);             /* nur Ebene p schreiben    */
+            far_copy(SCRATCH2, 0, SCRATCH, 0, PLANE12);
+        }
+    }
+}
+
+/* Selektor des Programms: vorn Bildspeicher, sonst Puffer (12h: Ebene) */
+static void gfx_alias(int s)
+{
+    if (!ses[s].gfx_sel)
+        return;
+    if (s == fg && hw_gfx == ses[s].gfx)
+        ldt_set(ses[s].gfx_task, ses[s].gfx_sel, 0xA0000UL,
+                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
     else
-        scratch_map(b, 0xFFFF);
+        ldt_set(ses[s].gfx_task, ses[s].gfx_sel, save_part(s, ses[s].gfx_plane),
+                ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF);
 }
 
 /* Karte auf Text zurueck: Register, Palette, Zeichensatz (hw_lines = 0
@@ -701,8 +762,8 @@ static void hw_text(void)
     hw_gfx = 0;
 }
 
-/* Grafiksitzung kommt nach vorn: Karte auf 13h, Bild und Palette aus dem
-   Puffer, Selektor auf den Bildspeicher. -> 1 = Grafik vorn */
+/* Grafiksitzung kommt nach vorn: Karte umstellen, Bild und Palette aus
+   dem Puffer, Selektor auf den Bildspeicher. -> 1 = Grafik vorn */
 static int gfx_in(void)
 {
     unsigned short w[8];
@@ -716,17 +777,17 @@ static int gfx_in(void)
         dac_io(0, 0, 64, (unsigned char __far *)text_dac);
         text_dac_ok = 1;
     }
-    vga_regs(vga_mode13);
-    hw_gfx = 0x13;
-    scratch2_map(0xA0000UL, 0xFFFF);
-    map_save(fg, 0);
-    far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000);
-    far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
-    map_save(fg, 1);
+    vga_regs(ses[fg].gfx == 0x12 ? vga_mode12 : vga_mode13);
+    hw_gfx = ses[fg].gfx;
+    gfx_copy(fg, 0);
+    if (hw_gfx == 0x12) {                   /* Ebene des Programms      */
+        seqr(0x02, 1 << ses[fg].gfx_plane);
+        gcr(0x04, ses[fg].gfx_plane);
+    }
+    map_save(fg, 4);
     dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
     win_restore(w);
-    if (ses[fg].gfx_sel)
-        ldt_set(ses[fg].gfx_task, ses[fg].gfx_sel, 0xA0000UL, 0xFFFF);
+    gfx_alias(fg);
     return 1;
 }
 
@@ -734,17 +795,13 @@ static int gfx_in(void)
 static void gfx_out(void)
 {
     unsigned short w[8];
-    if (fg < 0 || !ses[fg].gfx || hw_gfx != 0x13)
+    if (fg < 0 || !ses[fg].gfx || hw_gfx != ses[fg].gfx)
         return;
     win_save(w);
-    scratch2_map(0xA0000UL, 0xFFFF);
-    map_save(fg, 0);
-    far_copy(SCRATCH, 0, SCRATCH2, 0, 0x8000);
-    far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, 0x8000);
+    gfx_copy(fg, 1);
     win_restore(w);
-    if (ses[fg].gfx_sel)
-        ldt_set(ses[fg].gfx_task, ses[fg].gfx_sel,
-                (unsigned long)ses[fg].gfx_save << 8, 0xFFFF);
+    hw_gfx = 0xFF;                          /* Karte haelt nichts mehr  */
+    gfx_alias(fg);
 }
 
 /* Vorgabepalette (Werte 0-63): 16 EGA-Farben, 6x6x6-Wuerfel, Graustufen */
@@ -784,30 +841,41 @@ int vio_setgfx(int s, int t, unsigned mode)
         if (ses[s].gfx_sel)
             ldt_drop(ses[s].gfx_task, ses[s].gfx_sel);
         ses[s].gfx_sel = 0;
+        mem_free(ses[s].gfx_save, GFX_UNITS(ses[s].gfx));
         ses[s].gfx = 0;
-        mem_free(ses[s].gfx_save, GFX_UNITS);
         ses[s].gfx_save = 0;
         if (s == fg)
             redraw();                       /* Karte auf Text, Bild neu */
         return 0;
     }
-    if (mode != 0x13 || !vga_ok)
+    if ((mode != 0x13 && mode != 0x12) || !vga_ok)
         return -1;
+    if (ses[s].gfx && ses[s].gfx != mode)   /* anderer Modus: neu       */
+        vio_setgfx(s, t, 0);
     if (!ses[s].gfx) {
-        ses[s].gfx_save = mem_alloc(GFX_UNITS);
+        ses[s].gfx_save = mem_alloc(GFX_UNITS(mode));
         if (!ses[s].gfx_save)
             return -1;
     }
+    ses[s].gfx = (unsigned char)mode;
+    ses[s].gfx_plane = 0;
     win_save(w);                            /* Puffer: schwarz, Palette */
-    map_save(s, 0);
-    zero_seg(SCRATCH, 0x8000);
-    map_save(s, 1);
+    if (mode == 0x13) {
+        map_save(s, 0);
+        zero_seg(SCRATCH, 0x8000);
+    } else {
+        unsigned p;
+        for (p = 0; p < 4; p++) {
+            map_save(s, (int)p);
+            zero_seg(SCRATCH, PLANE12 / 2);
+        }
+    }
+    map_save(s, 4);
     def_palette(MK_FP(SCRATCH, 0));
     win_restore(w);
-    ses[s].gfx = 0x13;
     ses[s].gfx_task = (signed char)t;
     if (s == fg) {
-        hw_gfx = 0;                         /* neu einstellen           */
+        hw_gfx = 0xFF;                      /* neu einstellen           */
         redraw();
     }
     return 0;
@@ -817,9 +885,28 @@ int vio_setgfx(int s, int t, unsigned mode)
    Selektor, damit der Kernel ihn beim Wechsel umbiegen kann */
 unsigned long vio_gfx_base(int s)
 {
-    if (s == fg && hw_gfx == 0x13)
+    if (s == fg && hw_gfx == ses[s].gfx)
         return 0xA0000UL;
-    return (unsigned long)ses[s].gfx_save << 8;
+    return save_part(s, ses[s].gfx_plane);
+}
+
+unsigned vio_gfx_limit(int s)
+{
+    return ses[s].gfx == 0x12 ? PLANE12 - 1 : 0xFFFF;
+}
+
+/* VioSetPlane (12h): Ebene p (0-3) zum Schreiben und Lesen */
+int vio_setplane(int s, unsigned p)
+{
+    if (s < 0 || !ses[s].used || ses[s].gfx != 0x12 || p > 3)
+        return -1;
+    ses[s].gfx_plane = (unsigned char)p;
+    if (s == fg && hw_gfx == 0x12) {
+        seqr(0x02, 1 << p);
+        gcr(0x04, p);
+    } else
+        gfx_alias(s);                       /* Hintergrund: Puffer-Ebene */
+    return 0;
 }
 
 int vio_gfx_reg(int s, int t, unsigned sel)
@@ -845,9 +932,9 @@ void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off)
     if (!ses[s].gfx || first > 255 || n == 0 || n > 256 - first)
         return;
     win_save(w);
-    map_save(s, 1);
+    map_save(s, 4);
     far_copy(SCRATCH, first * 3, sel, off, n * 3);
-    if (s == fg && hw_gfx == 0x13)
+    if (s == fg && hw_gfx == ses[s].gfx)
         dac_io(1, first, n, MK_FP(sel, off));
     win_restore(w);
 }

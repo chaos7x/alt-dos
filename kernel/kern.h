@@ -165,6 +165,8 @@ unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
 int  vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
 unsigned long vio_gfx_base(int s);
+unsigned vio_gfx_limit(int s);
+int  vio_setplane(int s, unsigned p);
 int  vio_gfx_reg(int s, int t, unsigned sel);
 int  vio_is_gfx(int s);
 void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);
