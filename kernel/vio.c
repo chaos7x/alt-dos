@@ -24,6 +24,7 @@
  */
 #include "kern.h"
 #include "mem.h"
+#include "../include/fapi_abi.h"     /* MOU_* */
 
 #define ATTR        0x07
 #define NBYTES   ((SLINES_MAX - 2) * SCOLS * 2) /* normaler Inhalt      */
@@ -78,6 +79,25 @@ static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
 
 static void ptr_remove(void);
 static void ptr_draw(void);
+
+/* Konsolenmaus wie gpm unter Linux: Hat in der Vordergrund-Sitzung kein
+   Programm MouOpen gerufen, gehoert die Maus dem Kernel. Linke Taste
+   ziehen markiert Text (umgedrehte Zellen im Bildspeicher), Loslassen
+   legt ihn in die Zwischenablage; rechte oder mittlere Taste fuegt ihn
+   ein, als wuerde getippt (kbd_get holt die Zeichen ueber vio_paste).
+   Die Zwischenablage gilt fuer alle Sitzungen, Programme erreichen sie
+   ueber ClipPut/ClipGet. */
+#define CLIP_MAX 16384
+static unsigned clip_sel, clip_len;     /* Kernelsegment, Laenge         */
+static unsigned char con_ptr;           /* Zeiger nach erster Bewegung   */
+static unsigned char sel_on;            /* Markierung laeuft (Taste unten) */
+static signed char sel_s = -1;          /* ... in dieser Sitzung         */
+static unsigned sel_a, sel_b;           /* Zellen row*80+col (Sitzung)   */
+static volatile unsigned char sel_copy, paste_req;  /* fuer vio_flush   */
+static signed char paste_s = -1;        /* Einfuegen laeuft in Sitzung   */
+static unsigned paste_pos;
+static void sel_paint(unsigned a, unsigned b);
+static void sel_finish(void);
 
 static void mark(unsigned char a, unsigned char b)  /* Zeilen a..b neu */
 {
@@ -249,10 +269,13 @@ static void redraw(void)
         vfill(r, ATTR);
     if (fg >= 0 && !ses[fg].top) {          /* Vollbild                 */
         far_copy(VIDEO, 0, SCR_SEL(fg), 0, ses[fg].rows * SCOLS * 2);
+        sel_paint(0, ses[fg].rows - 1);
     } else {
         title_bar();
-        if (fg >= 0)
+        if (fg >= 0) {
             far_copy(VIDEO, SCOLS * 2, SCR_SEL(fg), 0, ses[fg].rows * SCOLS * 2);
+            sel_paint(0, ses[fg].rows - 1);
+        }
         shown_uptime = 0xFFFF;              /* Statuszeile neu zeichnen  */
         vio_status();
     }
@@ -448,6 +471,15 @@ void vio_flush(void)
 
     if (fg < 0)
         return;
+    if (sel_copy)                   /* Taste losgelassen: kopieren      */
+        sel_finish();
+    if (paste_req) {                /* rechte/mittlere Taste: einfuegen */
+        paste_req = 0;
+        if (clip_len) {
+            paste_pos = 0;
+            paste_s = (signed char)fg;
+        }
+    }
     f = irq_off();
     a = dlo;
     b = dhi;
@@ -459,9 +491,11 @@ void vio_flush(void)
     if (a != 0xFF) {
         if (b >= ses[fg].rows)
             b = ses[fg].rows - 1;
-        if (a <= b)
+        if (a <= b) {
             far_copy(VIDEO, (a + ses[fg].top) * SCOLS * 2, SCR_SEL(fg),
                      a * SCOLS * 2, (b - a + 1) * SCOLS * 2);
+            sel_paint(a, b);
+        }
     }
     if (cur_dirty) {
         cur_dirty = 0;
@@ -558,7 +592,9 @@ static void ptr_remove(void)
 static void ptr_draw(void)
 {
     unsigned r, c;
-    if (p_drawn || fg < 0 || !mou_nbtn || !ses[fg].mou_show || ses[fg].mou_owner < 0)
+    if (p_drawn || fg < 0 || !mou_nbtn)
+        return;
+    if (ses[fg].mou_owner >= 0 ? !ses[fg].mou_show : !con_ptr)
         return;
     r = (unsigned)my >> 4;
     c = (unsigned)mx >> 3;
@@ -571,12 +607,141 @@ static void ptr_draw(void)
     p_drawn = 1;
 }
 
+/* Zwischenablage anlegen (einmal, beim Start) */
+static void clip_init(void)
+{
+    if (!clip_sel)
+        clip_sel = kseg_alloc(CLIP_MAX);
+}
+
+/* Zeilen der Markierung (Sitzung) neu zeichnen lassen */
+static void sel_mark(unsigned a, unsigned b, unsigned c)
+{
+    unsigned lo = a, hi = a;
+    if (b < lo) lo = b;
+    if (c < lo) lo = c;
+    if (b > hi) hi = b;
+    if (c > hi) hi = c;
+    mark((unsigned char)(lo / SCOLS), (unsigned char)(hi / SCOLS));
+}
+
+/* markierte Zellen in den Pufferzeilen a..b im Bildspeicher umdrehen
+   (nur frisch kopierte Zeilen - sonst hoebe XOR die Markierung auf) */
+static void sel_paint(unsigned a, unsigned b)
+{
+    unsigned lo, hi, i, top;
+    if (!sel_on || sel_s != fg || fg < 0)
+        return;
+    lo = sel_a < sel_b ? sel_a : sel_b;
+    hi = sel_a < sel_b ? sel_b : sel_a;
+    if (lo < a * SCOLS)
+        lo = a * SCOLS;
+    if (hi > b * SCOLS + SCOLS - 1)
+        hi = b * SCOLS + SCOLS - 1;
+    top = ses[fg].top * SCOLS;
+    for (i = lo; i <= hi; i++)
+        VRAM[top + i] ^= 0x7700;
+}
+
+/* Markierung beendet: Text in die Zwischenablage (Zeilenende CR LF,
+   Leerzeichen am Zeilenende weg), Markierung vom Bildschirm nehmen */
+static void sel_finish(void)
+{
+    unsigned lo, hi, i, r, e, n = 0, f;
+    unsigned short __far *bp;
+    char __far *d;
+
+    f = irq_off();
+    sel_copy = 0;
+    if (!sel_on) {
+        irq_restore(f);
+        return;
+    }
+    sel_on = 0;
+    lo = sel_a < sel_b ? sel_a : sel_b;
+    hi = sel_a < sel_b ? sel_b : sel_a;
+    irq_restore(f);
+    if (sel_s != fg || fg < 0)
+        return;
+    mark((unsigned char)(lo / SCOLS), (unsigned char)(hi / SCOLS));
+    if (!clip_sel || lo == hi)
+        return;                         /* nur geklickt: nichts kopieren */
+    bp = BUF(fg);
+    d = MK_FP(clip_sel, 0);
+    for (r = lo / SCOLS; r <= hi / SCOLS; r++) {
+        i = r == lo / SCOLS ? lo : r * SCOLS;
+        e = r == hi / SCOLS ? hi : r * SCOLS + SCOLS - 1;
+        if (r != hi / SCOLS)            /* Leerzeichen am Ende weg       */
+            while (e > i && (unsigned char)bp[e] == ' ')
+                e--;
+        for (; i <= e && n < CLIP_MAX - 2; i++)
+            d[n++] = (char)bp[i];
+        if (r != hi / SCOLS && n < CLIP_MAX - 2) {
+            d[n++] = '\r';
+            d[n++] = '\n';
+        }
+    }
+    clip_len = n;
+}
+
+/* naechstes eingefuegtes Zeichen fuer kbd_get (take = 1) / kbd_peek;
+   -1 = nichts einzufuegen. CR, LF und CR LF werden zu Enter. */
+int vio_paste(int take)
+{
+    const char __far *d;
+    unsigned char c;
+    unsigned f = irq_off();
+    int k = -1;
+
+    if (paste_s >= 0 && (paste_s != fg || paste_pos >= clip_len))
+        paste_s = -1;                   /* Sitzung gewechselt / fertig   */
+    if (paste_s >= 0) {
+        d = MK_FP(clip_sel, 0);
+        c = (unsigned char)d[paste_pos];
+        if (c == '\n' && paste_pos > 0 && d[paste_pos - 1] == '\r') {
+            paste_pos++;                /* LF nach CR: schon Enter       */
+            if (paste_pos >= clip_len) {
+                paste_s = -1;
+                irq_restore(f);
+                return -1;
+            }
+            c = (unsigned char)d[paste_pos];
+        }
+        k = (c == '\r' || c == '\n') ? 0x1C0D : (c == '\t' ? 0x0F09 : c);
+        if (take)
+            paste_pos++;
+    }
+    irq_restore(f);
+    return k;
+}
+
+/* ClipPut/ClipGet: Zwischenablage <-> sel:off (Laenge geprueft) */
+unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len)
+{
+    if (!clip_sel)
+        return 0;
+    if (len > CLIP_MAX)
+        len = CLIP_MAX;
+    far_copy(clip_sel, 0, sel, off, len);
+    clip_len = len;
+    return len;
+}
+
+unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max)
+{
+    unsigned n = clip_len < max ? clip_len : max;
+    if (clip_sel && n)
+        far_copy(sel, off, clip_sel, 0, n);
+    return clip_len;
+}
+
 /* Treiber meldet die Maus an (DevHlp MouReg) */
 void vio_mou_reg(unsigned buttons)
 {
     mou_nbtn = (unsigned char)(buttons > 3 ? 3 : buttons);
     mx = SCOLS * 8 / 2;
     my = 12 * 16;
+    clip_init();
 }
 
 /* aus der Interruptroutine (IF aus): bewegen, Ereignis einreihen */
@@ -596,10 +761,35 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     c = (unsigned)mx >> 3;
     if (r == or_ && c == oc && buttons == mbtn)
         return;                             /* gleiche Zelle            */
+    n = mbtn;                               /* Tasten vorher            */
     mbtn = (unsigned char)buttons;
     cur_dirty = 1;                          /* vio_flush zeichnet neu   */
-    if (fg < 0 || (p = &ses[fg])->mou_owner < 0)
+    if (fg < 0)
         return;
+    p = &ses[fg];
+    if (p->mou_owner < 0) {                 /* Konsolenmaus (Kernel)    */
+        con_ptr = 1;
+        r -= p->top;
+        if (r < p->rows) {
+            c += r * SCOLS;                 /* Zelle in der Sitzung     */
+            if ((buttons & MOU_LEFT) && !(n & MOU_LEFT)) {
+                if (sel_on && sel_s == fg)
+                    sel_mark(sel_a, sel_b, c);
+                sel_on = 1;
+                sel_s = (signed char)fg;
+                sel_a = sel_b = c;
+                sel_mark(c, c, c);
+            } else if ((buttons & MOU_LEFT) && sel_on && sel_s == fg && c != sel_b) {
+                sel_mark(sel_a, sel_b, c);
+                sel_b = c;
+            }
+        }
+        if (!(buttons & MOU_LEFT) && (n & MOU_LEFT) && sel_on)
+            sel_copy = 1;                   /* kopieren in vio_flush    */
+        if ((buttons & (MOU_RIGHT | MOU_MIDDLE)) && !(n & (MOU_RIGHT | MOU_MIDDLE)))
+            paste_req = 1;
+        return;
+    }
     r -= p->top;                            /* Zeile der Sitzung        */
     if (r >= p->rows)
         r = 0xFF;

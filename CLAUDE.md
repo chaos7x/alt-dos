@@ -419,16 +419,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Cursor, Ziehen markiert (über den Rand: rollen), Menüleiste per Klick,
   Loslassen über einem Eintrag führt ihn aus, Klick daneben schließt,
   Bildlaufleiste (Pfeile zeilenweise, Fläche seitenweise). `getkey_m(1)`
-  liefert `K_MOUSE` nur Hauptfenster und Menüs; Dialoge verwerfen
-  Mausereignisse (noch ohne Maus). Offen: Busmaus, Dialoge mit Maus,
-  Konsolenmaus wie gpm (Wunsch des Nutzers, siehe unten).
-- Konsolenmaus wie gpm unter Linux (Wunsch des Nutzers): Hat in der
-  Vordergrund-Sitzung niemand MouOpen gerufen, übernimmt der Kernel (vio)
-  die Maus: Zeiger zeigen, linke Taste ziehen markiert Text im
-  Sitzungspuffer, Loslassen legt ihn in eine Zwischenablage des Kernels,
-  rechte/mittlere Taste fügt ihn als Tastendrücke in die Tastatur-
-  Warteschlange der Sitzung ein. Zwischenablage für alle Sitzungen gemein-
-  sam; EDIT soll sie über einen FAPI-Aufruf ebenfalls benutzen.
+  liefert `K_MOUSE` (Hauptfenster, Menüs, Öffnen-Dialog: Klick wählt,
+  zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
+  (Suchen/Ändern/Speichern unter) noch ohne Maus. Offen: Busmaus.
+- Konsolenmaus wie gpm (Wunsch des Nutzers), erledigt: Hat in der
+  Vordergrund-Sitzung niemand MouOpen gerufen, gehört die Maus dem Kernel
+  (vio.c): Zeiger nach der ersten Bewegung, linke Taste ziehen markiert
+  (Zellen XOR 77h, `sel_paint` nur auf frisch kopierten Zeilen, Änderungen
+  über `mark()`), Loslassen -> `sel_finish` in vio_flush: Text aus dem
+  Sitzungspuffer in die Zwischenablage (Kernelsegment 16 KB, CR LF,
+  Leerzeichen am Zeilenende weg; bloßer Klick kopiert nichts). Rechte oder
+  mittlere Taste: `vio_paste` liefert die Zeichen über kbd_get/kbd_peek,
+  solange die Sitzung im Vordergrund ist (kein Überlauf des 32er-Tasten-
+  puffers); CR/LF/CR LF -> Enter. FAPI 3Bh/3Ch DosClipPut/DosClipGet
+  (Selektor 0 = eigenes DS); EDIT kopiert dorthin und fügt von dort ein
+  (über 16 KB nur intern, Kernel-Ablage dann leer). In QEMU geprüft:
+  Markieren in COMMAND, Einfügen in COMMAND und in EDIT.
+  Testfalle: `ver` gibt vor dem Text eine Leerzeile aus – Bildschirm-
+  ausgaben beim Testen nicht mit `grep -v "^$"` filtern.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),

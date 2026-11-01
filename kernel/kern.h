@@ -160,6 +160,9 @@ void vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
 unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
 int  vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
 void vio_mou_show(int s, int on);
+int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
+unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len);
+unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 
 /* ---- Tastatur (kbd.c) -------------------------------------------------- */
 void kbd_init(void);

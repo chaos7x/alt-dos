@@ -220,6 +220,8 @@ selbst nur 8.3 kennt.
 | 56 | MouOpen         | → Anzahl Maustasten (0 = keine Maus); Ereignisse für die eigene Sitzung an, Zeiger zunächst aus |
 | 57 | MouReadEvent    | BX = Puffer (Tasten, Zeile, Spalte), CX = 1 warten → 0 Ereignis, 1 keins; Zeile/Spalte als Textzelle der Sitzung, Zeile FFh = Titel-/Statusleiste |
 | 58 | MouShowPtr      | BX = 1 Mauszeiger zeigen (invertierte Zelle), 0 verbergen |
+| 59 | DosClipPut      | BX = Selektor (0 = eigenes Datensegment), CX = Offset, DX = Länge → gespeichert (bis 16 KB); Zwischenablage für alle Sitzungen |
+| 60 | DosClipGet      | BX = Selektor (0 = eigenes), CX = Offset, DX = Platz → Länge des Inhalts |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die
@@ -281,6 +283,10 @@ das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 Logitech mit dritter Taste) an COM1/COM2 (`/PS2`, `/COM1`, `/COM2` legt fest) und meldet ihre Bewegungen
 dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist
 eine invertierte Textzelle (`\DEMO\MAUSTEST.EXE` zeigt die Ereignisse).
+In Sitzungen ohne eigenes Mausprogramm arbeitet die Maus wie gpm unter
+Linux: linke Taste ziehen markiert Text, rechte oder mittlere Taste fügt
+ihn ein, als wäre er getippt. Die Zwischenablage gilt für alle Sitzungen
+und für EDIT (DosClipPut/DosClipGet).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
 Anzeige beim Start) und schläft, bis die Karte die Eingangs-Mailbox
 beschrieben hat; ebenfalls mit Rückfall und `/NOIRQ`. Beide Treiber melden

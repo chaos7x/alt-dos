@@ -683,6 +683,24 @@ static int draw_buttons(int r, const char *b, int foc)
     return n;
 }
 
+/* Knopf unter dem Mausklick (mev) in Zeile r, -1 = keiner */
+static int button_hit(int r, const char *b)
+{
+    int c0 = (80 - (int)slen(b)) / 2, i, start = 0, n = 0;
+    if (mev.row != r)
+        return -1;
+    for (i = 0; b[i]; i++) {
+        if (b[i] == '<')
+            start = i;
+        else if (b[i] == '>') {
+            if ((int)mev.col >= c0 + start && (int)mev.col <= c0 + i)
+                return n;
+            n++;
+        }
+    }
+    return -1;
+}
+
 /* Fokus weiterschalten: Tab/Rechts vor, Umschalt+Tab/Links zurueck;
    -> neuer Fokus, -1 = keine Wechseltaste */
 static int next_focus(unsigned c, unsigned sc, int foc, int n)
@@ -713,7 +731,14 @@ static int msgbox(const char *t1, const char *t2, const char *buttons, const cha
     VioSetCurPos(0xFF, 0);
     for (;;) {
         nb = draw_buttons(13, buttons, foc);
-        k = getkey();
+        k = getkey_m(1);
+        if (k == K_MOUSE) {                 /* Klick auf einen Knopf     */
+            f = M_PRESS() ? button_hit(13, buttons) : -1;
+            mprev = mev.buttons;
+            if (f >= 0)
+                return (unsigned char)keys[f];
+            continue;
+        }
         c = k & 0xFF;
         if (c == 27)
             return 27;
@@ -1004,9 +1029,54 @@ static int open_dialog(char *out)
         else
             VioSetCurPos(0xFF, 0);
 
-        k = getkey();
-        c = k & 0xFF;
-        sc = k >> 8;
+        k = getkey_m(1);
+        if (k == K_MOUSE) {
+            int press = M_PRESS();
+            mprev = mev.buttons;
+            if (!press)
+                continue;
+            r = mev.row;
+            col = mev.col;
+            if (r >= 9 && r < 9 + LROWS && col >= 12 && col < 12 + LCOLS * 14) {
+                k = (ltop + r - 9) * LCOLS + (col - 12) / 14;
+                if (k >= nent)
+                    continue;
+                if (f == 1 && k == sel) {   /* zweiter Klick: oeffnen    */
+                    if (ent_dir[sel]) {
+                        enter_dir(ent[sel]);
+                        fresh_list = 1;
+                        scopy(fld, opat, sizeof(fld));
+                        continue;
+                    }
+                    join(out, odir, ent[sel], FAPI_PATHLEN);
+                    return 1;
+                }
+                f = 1;
+                sel = k;
+                if (!ent_dir[sel])
+                    scopy(fld, ent[sel], sizeof(fld));
+                continue;
+            }
+            if (r == 5 && col >= 23 && col < 23 + 44) {  /* Namensfeld */
+                f = 0;
+                fresh = 0;
+                pos = view + col - 23;
+                if (pos > slen(fld))
+                    pos = slen(fld);
+                continue;
+            }
+            g = button_hit(20, btn);
+            if (g == 1)
+                return 0;                   /* Abbrechen                 */
+            if (g != 0)
+                continue;
+            c = 13;                         /* OK: wie Eingabe im Feld   */
+            sc = 0;
+            f = 2;
+        } else {
+            c = k & 0xFF;
+            sc = k >> 8;
+        }
         if (c == 27)
             return 0;
         if (c == 9 || (c == 0 && sc == 0x0F)) {     /* Tab, Umschalt+Tab */
@@ -1242,17 +1312,38 @@ static void copy_sel(void)
     d = MK_FP(csel, 0);
     for (i = a; i < b; i++)
         d[clen++] = ch(i);
+    /* gemeinsame Zwischenablage aller Sitzungen (Konsolenmaus); zu gross:
+       dort leeren, damit Einfuegen nicht den abgeschnittenen Rest nimmt */
+    DosClipPut(csel, 0, clen <= CLIP_MAX ? clen : 0);
 }
 
+/* Einfuegen: aus der Zwischenablage des Kernels, wenn sie etwas enthaelt
+   (auch mit der Maus in einer anderen Sitzung markierter Text), sonst aus
+   der eigenen (Markierung ueber CLIP_MAX). CR faellt weg (Zeilenende LF). */
 static void paste(void)
 {
-    char __far *s = MK_FP(csel, 0);
-    unsigned i;
+    char __far *s;
+    unsigned i, n = DosClipGet(0, 0, 0);
+    if (!FAPI_FAILED(n) && n) {
+        if (csel)
+            DosFreeSeg(csel);
+        csel = DosAllocSeg(n);
+        clen = 0;
+        if (FAPI_FAILED(csel)) {
+            csel = 0;
+            message("Kein Speicher f\x81r die Zwischenablage.", 0);
+            return;
+        }
+        clen = DosClipGet(csel, 0, n);
+        if (clen > n)
+            clen = n;
+    }
     if (!csel)
         return;
+    s = MK_FP(csel, 0);
     del_sel();
     for (i = 0; i < clen; i++)
-        if (ins_char(s[i])) {
+        if (s[i] != '\r' && ins_char(s[i])) {
             message("Kein Platz mehr im Text (64 KB).", 0);
             break;
         }

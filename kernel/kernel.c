@@ -1501,7 +1501,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
     case FAPI_SHUTDOWNHOLD: case FAPI_MOUOPEN: case FAPI_MOUREADEVENT:
-    case FAPI_MOUSHOWPTR:
+    case FAPI_MOUSHOWPTR: case FAPI_CLIPPUT: case FAPI_CLIPGET:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -2128,6 +2128,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_MOUSHOWPTR:
         vio_mou_show(s, a1);
         return 0;
+
+    case FAPI_CLIPPUT:
+    case FAPI_CLIPGET:
+        if (a1 == 0)
+            a1 = usel;
+        a1 |= 3;
+        if (!user_ok(a1, a2, a3, fn == FAPI_CLIPGET))
+            return FAPI_ERROR;
+        return fn == FAPI_CLIPPUT ? vio_clip_put(a1, a2, a3)
+                                  : vio_clip_get(a1, a2, a3);
 
     case FAPI_YIELD:
         schedule_next();

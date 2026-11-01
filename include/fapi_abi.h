@@ -117,6 +117,15 @@ struct fapi_label {
 #define FAPI_MOUREADEVENT   0x39    /* BX = struct fapi_mouevent, CX = 1 warten
                                        -> 0 Ereignis, 1 keins (oder Signal) */
 #define FAPI_MOUSHOWPTR     0x3A    /* BX = 1 Zeiger zeigen, 0 verbergen */
+/* Zwischenablage des Kernels, fuer alle Sitzungen gemeinsam (auch die
+   Konsolenmaus legt markierten Text hier ab). Zeilenende CR LF oder LF. */
+#define FAPI_CLIPPUT        0x3B    /* BX = Selektor (0 = eigenes Datensegment),
+                                       CX = Offset, DX = Laenge -> gespeicherte
+                                       Laenge (hoechstens CLIP_MAX) */
+#define FAPI_CLIPGET        0x3C    /* BX = Selektor (0 = eigenes Datensegment),
+                                       CX = Offset, DX = Platz -> Laenge des
+                                       Inhalts (kopiert hoechstens DX Bytes) */
+#define CLIP_MAX            16384
 struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */

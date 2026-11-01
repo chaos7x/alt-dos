@@ -136,8 +136,11 @@ void kbd_irq(unsigned sc)
 
 int kbd_get(void)
 {
-    unsigned f = irq_off();
-    int k = -1;
+    unsigned f;
+    int k = vio_paste(1);           /* Einfuegen mit der Maus zuerst    */
+    if (k >= 0)
+        return k;
+    f = irq_off();
     if (head != tail) {
         k = buf[tail];
         tail = (unsigned char)((tail + 1) % NBUF);
@@ -154,8 +157,12 @@ unsigned kbd_shift(void)
 
 int kbd_peek(void)
 {
-    unsigned f = irq_off();
-    int k = head != tail ? buf[tail] : -1;
+    unsigned f;
+    int k = vio_paste(0);
+    if (k >= 0)
+        return k;
+    f = irq_off();
+    k = head != tail ? buf[tail] : -1;
     irq_restore(f);
     return k;
 }
