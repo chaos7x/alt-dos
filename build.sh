@@ -128,7 +128,7 @@ echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="command attrib tree deltree grep print xcopy move join"
+LFNAPPS="command attrib tree deltree grep print xcopy move join edit"
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac

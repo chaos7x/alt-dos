@@ -835,8 +835,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `A:\Neuer Ordner`. macOS legt `.`/`..` versteckt an – DIR zeigt genau
   diese beiden immer, andere versteckte (z. B. `.fseventsd`) nur mit /A.
   Merker `FX_FLAG_LONGNAMES` (build.sh `LFNAPPS`): COMMAND, ATTRIB, TREE,
-  DELTREE, GREP, PRINT, XCOPY, MOVE. EDIT braucht vorher größere Puffer in
-  der Dateiliste.
+  DELTREE, GREP, PRINT, XCOPY, MOVE, JOIN, EDIT.
   Musterpuffer auf FAPI_PATHLEN, `.`/`..` nur noch genau erkennen (nicht
   jeder Name mit Punkt vorn), Endung nach dem letzten Punkt auch in GREP.
   ATTRIB mit Verzeichnisnamen zeigt/setzt wie NT das Verzeichnis selbst.
@@ -872,8 +871,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   in `EA DATA. SF` (Verzeichnis + 8.3-Name vorhanden?); /F gibt Verwaistes
   frei. Tab-Ergänzung in COMMAND quotet wie bash: Namen mit Leerzeichen
   bekommen `"`, Datei mit schließendem `"`, Verzeichnis bleibt offen;
-  `type "T`+Tab sucht ohne das Anführungszeichen. Noch offen: EDIT mit
-  langen Namen in der Dateiliste.
+  `type "T`+Tab sucht ohne das Anführungszeichen. EDIT hat den Merker
+  (in QEMU geprüft): Dateiliste als Namenspool (12 KB, `ent_off[]`),
+  Anzeige 12 Zellen, länger -> 11 Zeichen + `\xAF`; Feld und Speichern
+  unter mit FAPI_PATHLEN, Pfade nicht mehr groß geschrieben, Titel nur
+  bei 8.3-Namen groß; `EDIT Brief an Hans.txt` nimmt wie CD den Rest der
+  Zeile.
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).

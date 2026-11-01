@@ -552,6 +552,23 @@ static int menu_run(int m, int open)
     }
 }
 
+/* passt der Name in 8.3 (ohne Leerzeichen, ein Punkt)? */
+static int is83(const char *s)
+{
+    unsigned n = 0, e = 0, dot = 0;
+    for (; *s; s++)
+        if (*s == '.') {
+            if (dot++)
+                return 0;
+        } else if (*s == ' ')
+            return 0;
+        else if (dot)
+            e++;
+        else
+            n++;
+    return n >= 1 && n <= 8 && e <= 3;
+}
+
 /* ---- Textfenster ------------------------------------------------------- */
 static void draw_frame(void)
 {
@@ -566,8 +583,11 @@ static void draw_frame(void)
     x = (80 - (n + 2)) / 2;
     seg[0] = ' ';
     scopy(seg + 1, b, 70);
+    if (is83(seg + 1))                      /* 8.3 gross wie MS-DOS,   */
+        for (n = 1; seg[n]; n++)            /* lange Namen wie sie sind */
+            seg[n] = up(seg[n]);
     for (n = 1; seg[n]; n++)
-        seg[n] = up(seg[n]);
+        ;
     seg[n++] = ' ';
     seg[n] = 0;
     VioWrtStrAtt(1, x, seg, A_TITLE);
@@ -919,54 +939,64 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
 #define NENT        300             /* Eintraege in der Liste           */
 #define LROWS       10              /* sichtbare Zeilen, je 4 Spalten   */
 #define LCOLS       4
-static char          ent[NENT][14];
+#define POOL        12288           /* Namen (lange Namen), je mit Null */
+static char          pool[POOL];
+static unsigned      ent_off[NENT], pool_n;
+#define ent(k)       (pool + ent_off[k])
 static unsigned char ent_dir[NENT];
 static unsigned      nent;
-static char          odir[FAPI_PATHLEN], opat[16] = "*.*";
+static char          odir[FAPI_PATHLEN], opat[64] = "*.*";
+
+static void ent_add(const char *name, unsigned char d)
+{
+    unsigned n = slen(name) + 1;
+    if (nent >= NENT || pool_n + n > POOL)
+        return;
+    ent_off[nent] = pool_n;
+    scopy(pool + pool_n, name, n);
+    pool_n += n;
+    ent_dir[nent++] = d;
+}
 
 static int ent_less(unsigned a, unsigned b)     /* Verzeichnisse zuerst */
 {
-    const char *x = ent[a], *y = ent[b];
+    const char *x = ent(a), *y = ent(b);
     if (ent_dir[a] != ent_dir[b])
         return ent_dir[a] > ent_dir[b];
-    if (x[0] == '.')
+    if (x[0] == '.' && x[1] == '.' && !x[2])
         return 1;
-    if (y[0] == '.')
+    if (y[0] == '.' && y[1] == '.' && !y[2])
         return 0;
-    while (*x && *x == *y)
+    while (*x && up(*x) == up(*y))      /* ohne Gross/klein          */
         x++, y++;
-    return (unsigned char)*x < (unsigned char)*y;
+    return (unsigned char)up(*x) < (unsigned char)up(*y);
 }
 
 static void read_dir(void)
 {
     static struct fapi_dirent e;
-    static char t[14];
     unsigned i, j, n;
     unsigned char d;
 
     nent = 0;
-    if (slen(odir) > 3) {                       /* nicht im Stamm: ..   */
-        scopy(ent[0], "..", 14);
-        ent_dir[0] = 1;
-        nent = 1;
-    }
+    pool_n = 0;
+    if (slen(odir) > 3)                         /* nicht im Stamm: ..   */
+        ent_add("..", 1);
     for (i = 0; nent < NENT && DosFindEntry(&e, i, odir) != FAPI_ERROR; i++) {
-        if (e.name[0] == '.' || (e.attr & 0x0E))    /* ., .., versteckt,
-                                                       System, Bezeichnung */
+        if ((e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2]))) ||
+            (e.attr & 0x0E))                    /* ., .., versteckt,
+                                                   System, Bezeichnung */
             continue;
         d = (e.attr & 0x10) != 0;
         if (!d && !match(e.name, opat))
             continue;
-        scopy(ent[nent], e.name, 13);
-        ent_dir[nent] = d;
-        nent++;
+        ent_add(e.name, d);
     }
     for (i = 1; i < nent; i++)                  /* einsortieren         */
         for (j = i; j > 0 && ent_less(j, j - 1); j--) {
-            scopy(t, ent[j], 14);
-            scopy(ent[j], ent[j - 1], 14);
-            scopy(ent[j - 1], t, 14);
+            n = ent_off[j];
+            ent_off[j] = ent_off[j - 1];
+            ent_off[j - 1] = n;
             n = ent_dir[j];
             ent_dir[j] = ent_dir[j - 1];
             ent_dir[j - 1] = (unsigned char)n;
@@ -1030,7 +1060,7 @@ static void field_key(char *b, unsigned max, unsigned *pos, int *fresh,
 static int open_dialog(char *out)
 {
     static const char btn[] = "< OK >   < Abbrechen >";
-    static char fld[80], tmp[FAPI_PATHLEN];
+    static char fld[FAPI_PATHLEN], tmp[FAPI_PATHLEN];
     unsigned pos, k, c, sc, i, r, col, ltop = 0, sel = 0, view;
     int f = 0, fresh = 1, g, fresh_list = 1;
 
@@ -1050,7 +1080,12 @@ static int open_dialog(char *out)
         }
         box(3, 8, 19, 64, "\x99" "ffnen");
         VioWrtStrAtt(5, 11, "Dateiname:", A_BAR);
-        scopy(tmp, odir, 57);
+        i = slen(odir);                         /* lang: Ende zeigen    */
+        if (i > 56) {
+            scopy(tmp, "...", sizeof(tmp));
+            scat(tmp, odir + i - 53, sizeof(tmp));
+        } else
+            scopy(tmp, odir, sizeof(tmp));
         VioWrtStrAtt(7, 11, tmp, A_BAR);
         VioWrtStrAtt(8, 11, "Dateien und Verzeichnisse:", A_BAR);
         /* Feld */
@@ -1074,10 +1109,16 @@ static int open_dialog(char *out)
                 k = (ltop + r) * LCOLS + col;
                 if (k >= nent)
                     break;
-                for (i = 0; ent[k][i]; i++)
-                    row[col * 14 + 1 + i] = ent[k][i];
-                if (ent_dir[k])
-                    row[col * 14 + 1 + i] = '\\';
+                {                       /* 12 Zellen, laenger: >>   */
+                    const char *nm = ent(k);
+                    unsigned n = slen(nm), w = n + ent_dir[k];
+                    for (i = 0; i < n && (w <= 12 ? 1 : i < 11); i++)
+                        row[col * 14 + 1 + i] = nm[i];
+                    if (w > 12)
+                        row[col * 14 + 12] = '\xAF';
+                    else if (ent_dir[k])
+                        row[col * 14 + 1 + i] = '\\';
+                }
                 if (f == 1 && k == sel)
                     for (i = 0; i < 14; i++)
                         att[col * 14 + i] = A_SEL;
@@ -1108,18 +1149,18 @@ static int open_dialog(char *out)
                     continue;
                 if (f == 1 && k == sel) {   /* zweiter Klick: oeffnen    */
                     if (ent_dir[sel]) {
-                        enter_dir(ent[sel]);
+                        enter_dir(ent(sel));
                         fresh_list = 1;
                         scopy(fld, opat, sizeof(fld));
                         continue;
                     }
-                    join(out, odir, ent[sel], FAPI_PATHLEN);
+                    join(out, odir, ent(sel), FAPI_PATHLEN);
                     return 1;
                 }
                 f = 1;
                 sel = k;
                 if (!ent_dir[sel])
-                    scopy(fld, ent[sel], sizeof(fld));
+                    scopy(fld, ent(sel), sizeof(fld));
                 continue;
             }
             if (r == 5 && col >= 23 && col < 23 + 44) {  /* Namensfeld */
@@ -1165,18 +1206,18 @@ static int open_dialog(char *out)
                 else if (sc == K_HOME) sel = 0;
                 else if (sc == K_END) sel = nent - 1;
                 if (!ent_dir[sel])
-                    scopy(fld, ent[sel], sizeof(fld));
+                    scopy(fld, ent(sel), sizeof(fld));
                 continue;
             }
             if (c != 13)
                 continue;
             if (ent_dir[sel]) {
-                enter_dir(ent[sel]);
+                enter_dir(ent(sel));
                 fresh_list = 1;
                 scopy(fld, opat, sizeof(fld));
                 continue;
             }
-            join(out, odir, ent[sel], FAPI_PATHLEN);
+            join(out, odir, ent(sel), FAPI_PATHLEN);
             return 1;
         }
         if (f >= 2) {                               /* Knoepfe           */
@@ -1218,8 +1259,6 @@ static int open_dialog(char *out)
                 abs_path(fld, tmp);
             else
                 join(tmp, odir, fld, sizeof(tmp));
-            for (i = 0; tmp[i]; i++)
-                tmp[i] = up(tmp[i]);
             if (slen(tmp) == 2 && tmp[1] == ':')
                 scat(tmp, "\\", sizeof(tmp));
             if (is_dir(tmp)) {
@@ -1321,7 +1360,7 @@ static int save_as(void)
 
     scopy(nb, fname, sizeof(nb));
     bp[0] = nb;
-    if (!input("Speichern unter", 1, pr, bp, 79) || !nb[0])
+    if (!input("Speichern unter", 1, pr, bp, sizeof(nb)) || !nb[0])
         return -1;
     h = DosOpen(nb);
     if (!FAPI_FAILED(h)) {
@@ -1961,7 +2000,15 @@ void main(void)
     DosSetSigHandler(on_signal, SIG_BREAK | SIG_SHUTDOWN);
     text_clear();
     if (*a) {
-        word(a, fname, sizeof(fname));
+        if (*a == '"')
+            word(a, fname, sizeof(fname));
+        else {                          /* wie CD: Rest der Zeile, damit
+                                           EDIT Brief an Hans.txt geht */
+            unsigned n;
+            scopy(fname, a, sizeof(fname));
+            for (n = slen(fname); n && fname[n - 1] == ' '; n--)
+                fname[n - 1] = 0;
+        }
         if (load(fname) < 0)
             fname[0] = 0;
     }
