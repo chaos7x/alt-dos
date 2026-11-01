@@ -719,6 +719,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit SUBST/JOIN darauf. Aufheben nur, wenn kein Task darin steht
   (`join_under`) und nichts offen ist. CHDIR/QCURDIR holen die
   Schreibweise über die Grenze (`namepath_j`). DIR/TREE laufen hindurch.
+  Vom Nutzer in 86Box bestätigt: JOIN funktioniert.
 - Leeres Diskettenlaufwerk (vom Nutzer in 86Box gemeldet: A:/B: ohne
   Diskette „zugreifbar“): `floppy.c` merkt `nomedia` (Wechselleitung
   bleibt nach dem Schritt gesetzt, oder READ ID ohne Index), `fd_read`/
