@@ -434,7 +434,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und warnen (siehe Falle oben). Erledigt: `mbr.asm` (nur `atdos-hd.img`)
   rechnet den Startsektor aus LBA und INT-13h/08h-Geometrie um, CHS aus der
   Tabelle nur als Rückfall – in QEMU mit 16/32 statt 16/63 geprüft (alter
-  MBR hängt, neuer startet). Ein eigener FDISK sollte denselben MBR schreiben.
+  MBR hängt, neuer startet). Auf dem SCAT bestätigt: `atdos-hd.img` startet
+  direkt am Adaptec (64/32). Ein eigener FDISK sollte denselben MBR schreiben.
 - Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen).
   `AHA154X.SYS` mit IRQ auf dem SCAT bestätigt (Anzeige „IRQ 11, DMA 6“,
   Start von der Adaptec-Platte über den Interrupt, 3× zwei XCOPY
@@ -474,6 +475,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Programme ohne Merker bekommen bei der Dateisuche nur 8.3-Kurznamen
   (`BEWERB~1.TXT`), damit ihre Puffer nicht überlaufen; eigene Werkzeuge
   bekommen den Merker, sobald sie lange Namen sauber verarbeiten.
+  Offene Frage vor dem Bau (Nutzer will sich das Verfahren noch ansehen):
+  OS/2 legt die EA-Nummer im Verzeichniseintrag bei Offset 14h ab – genau
+  diese zwei Bytes sind bei FAT32 (Pflicht in 6.0) die oberen 16 Bit des
+  Startclusters. Auf FAT32 braucht die Zuordnung Datei -> EA also einen
+  anderen Weg (z. B. Suche in `EA DATA. SF` über Verzeichnis + Kurzname,
+  oder eigene Tabelle). Das Format sollte so gewählt werden, dass es auf
+  FAT12/16 (5.0) und FAT32 (6.0) gleich funktioniert. Hintergrund, warum
+  Microsoft VFAT statt EAs nahm: Suche nach langem Namen ohne zusätzliche
+  Plattenzugriffe (Name im selben Verzeichnissektor), keine verwaisten EAs
+  durch alte DOS-Werkzeuge, Name gehört ins Verzeichnis (wie HPFS/NTFS),
+  dazu der Bruch mit IBM 1990–92.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,
