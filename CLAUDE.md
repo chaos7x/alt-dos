@@ -714,6 +714,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   EMM386/HIMEM in der Box; „bestimmte DOS-Version“ wie VMB: echtes DOS
   (MS-DOS 6, FreeDOS) aus einem Disketten-/Plattenabbild in einer Sitzung
   starten; Windows 3.1 in einer Sitzung (WIN-OS/2-Weg), später seamless.
+- Win16, Optionen (noch nicht entschieden): 1. echtes Windows 3.1 in
+  einer DOS-Sitzung (kommt mit den Sitzungen, braucht Windows-Lizenz);
+  2. eigenes Win16-Teilsystem auf Basis von Wine (krnl386/user/gdi, wie
+  otvdm/winevdm): Win16-Programme sind 16-Bit-PM (NE-Format) und passen
+  direkt zum Kernel – NE-Lader legt die Segmente in die LDT, kein V86,
+  keine Emulation; Aufwand ist USER/GDI auf einer eigenen Grafikschicht,
+  die auch ein Win32-Teilsystem (Wine, 7.0) bräuchte; LGPL als abgegrenzter
+  Teil; 3. ReactOS nur als Nachschlagewerk (NTVDM für DOS, WOW unfertig).
+  Vorschlag: erst 1, dann 2 als eigenes Vorhaben zusammen mit Win32.
 - Grafik in DOS 6.0: Video-BIOS/VESA über eine V86-Umgebung für Moduswechsel
   (allgemeiner VESA-Treiber), Spezialtreiber je Chip (ET4000 usw.) für Tempo.
   DOS-Boxen brauchen einen virtuellen Bildschirm wie VDD (Windows 3.0) bzw.
