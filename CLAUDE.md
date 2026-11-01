@@ -277,7 +277,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   gleichzeitig, Diskette mit 4 MB RAM. Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
   XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache
-  oberhalb 1 MB) mit 85 % Treffern, IDE ebenso (88 % Treffer).
+  oberhalb 1 MB) mit 85 % Treffern, IDE ebenso (88 % Treffer). Strom weg
+  nach dem Schreiben: AUTOCHECK lief beim nächsten Start sofort an.
 - CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
   den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:
   Dateiname des Moduls ohne Endung), gestartet wird `U<Name>.EXE` aus dem
