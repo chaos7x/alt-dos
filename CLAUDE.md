@@ -431,8 +431,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   im 2-Sektor-Cache.
 - `COPY` mit Verketten (`A+B`); COPY sollte wie XCOPY Datum/Uhrzeit erhalten
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
-  und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
-  aus der Tabelle
+  und warnen (siehe Falle oben). Erledigt: `mbr.asm` (nur `atdos-hd.img`)
+  rechnet den Startsektor aus LBA und INT-13h/08h-Geometrie um, CHS aus der
+  Tabelle nur als Rückfall – in QEMU mit 16/32 statt 16/63 geprüft (alter
+  MBR hängt, neuer startet). Ein eigener FDISK sollte denselben MBR schreiben.
 - Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen).
   `AHA154X.SYS` mit IRQ auf dem SCAT bestätigt (Anzeige „IRQ 11, DMA 6“,
   Start von der Adaptec-Platte über den Interrupt, 3× zwei XCOPY
