@@ -2777,12 +2777,36 @@ static int load_driver(const char *line, int is_ifs)
 /* Partitionstabelle lesen und FAT-Partitionen als C:, D:, ... einhaengen */
 static int next_drive = 2;
 
+#define IS_FATPART(t) ((t) == 0x01 || (t) == 0x04 || (t) == 0x06 || (t) == 0x0E)
+#define IS_EXTPART(t) ((t) == 0x05 || (t) == 0x0F)
+
+static unsigned long rd32(unsigned sel, unsigned off)
+{
+    return rd16(sel, off) | ((unsigned long)rd16(sel, off + 2) << 16);
+}
+
+static void mount_one(int dev, unsigned long start, unsigned long size,
+                      unsigned char type, unsigned part)
+{
+    vol[next_drive].psize = size;
+    ifs_mount(next_drive, dev, start, &fat_driver);  /* auch unformatiert:
+                                       Buchstabe fuer FORMAT    */
+    vol[next_drive].present = 1;
+    vol[next_drive].ptype = type;
+    vol[next_drive].part = (unsigned char)part;
+    next_drive++;
+}
+
+/* Partitionen einer Platte: erst die primaeren (FAT), dann die logischen
+   Laufwerke in einer erweiterten Partition (05h/0Fh, Kette von EBRs: im
+   EBR Eintrag 1 = logisches Laufwerk relativ zum EBR, Eintrag 2 = naechster
+   EBR relativ zum Anfang der erweiterten Partition - wie bei MS-DOS) */
 static void mount_disk(int dev)
 {
     unsigned char __far *b;
-    unsigned long start;
-    unsigned char type;
-    int i, mounted = 0;
+    unsigned char t[4], lt, nt;
+    unsigned long st[4], sz[4], ebr, ls, lz, ns;
+    int i, n;
 
     if (blk[dev].bsize != 512)
         return;                         /* CD-ROM: siehe cd_drives()    */
@@ -2791,26 +2815,36 @@ static void mount_disk(int dev)
     b = MK_FP(DMABUF, 0);
     if (b[510] != 0x55 || b[511] != 0xAA)
         return;
-    for (i = 0; i < 4 && next_drive < NDRIVE; i++) {
-        if (blk_read(dev, 0))
-            return;
-        b = MK_FP(DMABUF, 0);
-        type = b[0x1BE + 16 * i + 4];
-        start = rd16(DMABUF, 0x1BE + 16 * i + 8) |
-                ((unsigned long)rd16(DMABUF, 0x1BE + 16 * i + 10) << 16);
-        if (type != 0x01 && type != 0x04 && type != 0x06 && type != 0x0E)
-            continue;
-        vol[next_drive].psize = rd16(DMABUF, 0x1BE + 16 * i + 12) |
-                ((unsigned long)rd16(DMABUF, 0x1BE + 16 * i + 14) << 16);
-        ifs_mount(next_drive, dev, start, &fat_driver);  /* auch unformatiert:
-                                           Buchstabe fuer FORMAT    */
-        vol[next_drive].present = 1;
-        vol[next_drive].ptype = type;
-        vol[next_drive].part = (unsigned char)(i + 1);
-        next_drive++;
-        mounted++;
+    for (i = 0; i < 4; i++) {           /* Tabelle merken (ifs_mount    */
+        t[i] = b[0x1BE + 16 * i + 4];   /* benutzt DMABUF)              */
+        st[i] = rd32(DMABUF, 0x1BE + 16 * i + 8);
+        sz[i] = rd32(DMABUF, 0x1BE + 16 * i + 12);
     }
-    (void)mounted;
+    for (i = 0; i < 4 && next_drive < NDRIVE; i++)
+        if (IS_FATPART(t[i]))
+            mount_one(dev, st[i], sz[i], t[i], (unsigned)i + 1);
+    for (i = 0; i < 4; i++) {
+        if (!IS_EXTPART(t[i]))
+            continue;
+        ebr = st[i];
+        for (n = 0; n < 24 && next_drive < NDRIVE; n++) {
+            if (blk_read(dev, ebr))
+                break;
+            b = MK_FP(DMABUF, 0);
+            if (b[510] != 0x55 || b[511] != 0xAA)
+                break;
+            lt = b[0x1BE + 4];
+            ls = rd32(DMABUF, 0x1BE + 8);
+            lz = rd32(DMABUF, 0x1BE + 12);
+            nt = b[0x1CE + 4];
+            ns = rd32(DMABUF, 0x1CE + 8);
+            if (IS_FATPART(lt) && lz)
+                mount_one(dev, ebr + ls, lz, lt, 5 + (unsigned)n);
+            if (!IS_EXTPART(nt) || !ns)
+                break;
+            ebr = st[i] + ns;
+        }
+    }
 }
 
 /* Startpartition unter den eingehaengten Laufwerken: gleicher Startsektor
@@ -3097,9 +3131,17 @@ static void list_drives(void)
         if (vol[d].drv == &mod_driver) {
             scopy(msg + n, "CD-ROM", sizeof(msg) - n);
         } else {
-            scopy(msg + n, "Partition ", sizeof(msg) - n);
-            n += 10;
-            msg[n++] = (char)('0' + vol[d].part);
+            if (vol[d].part >= 5) {     /* in der erweiterten Partition */
+                scopy(msg + n, "logisch ", sizeof(msg) - n);
+                n += 8;
+                udec(vol[d].part - 4, msg + n);
+                while (msg[n])
+                    n++;
+            } else {
+                scopy(msg + n, "Partition ", sizeof(msg) - n);
+                n += 10;
+                msg[n++] = (char)('0' + vol[d].part);
+            }
             scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
                            vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
             while (msg[n])
