@@ -208,14 +208,18 @@ int copy_file(const char *from, const char *to)
         return -2;
     }
     while ((n = DosRead(hi, xbuf, XFER)) != 0) {
-        if (FAPI_FAILED(n) || DosWrite(ho, xbuf, n) != n) {
+        if (FAPI_FAILED(n)) {
             rc = -3;
+            break;
+        }
+        if (DosWrite(ho, xbuf, n) != n) {
+            rc = -4;
             break;
         }
     }
     DosClose(hi);
-    if (FAPI_FAILED(DosClose(ho)))
-        rc = -3;
+    if (FAPI_FAILED(DosClose(ho)) && !rc)
+        rc = -5;
     if (rc)
         DosDelete(to);
     return rc;

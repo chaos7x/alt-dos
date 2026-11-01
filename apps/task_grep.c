@@ -2,12 +2,12 @@
  * GREP.EXE - Zeilen mit einem Muster suchen, nach dem Vorbild von GNU grep
  * (nur Verhalten und Bedienung, kein GNU-Code):
  *
- *   GREP [-ivnclhHrsE] MUSTER [DATEI ...]
+ *   GREP [-ivnclhHrRsE] MUSTER [DATEI ...]
  *
  *   -i  Gross-/Kleinschreibung egal      -v  Zeilen OHNE Treffer
  *   -n  Zeilennummern                    -c  nur Anzahl je Datei
  *   -l  nur Dateinamen mit Treffern      -h  keine Dateinamen davor
- *   -H  immer Dateinamen davor           -r  Unterverzeichnisse durchsuchen
+ *   -H  immer Dateinamen davor           -r, -R  Unterverzeichnisse durchsuchen
  *   -s  keine Meldungen zu fehlenden Dateien
  *   -E  erweiterte Ausdruecke (+ ? | ohne \)
  *
@@ -402,17 +402,18 @@ void main(void)
             case 'l': opt_l = 1; break;
             case 'h': opt_h = 1; break;
             case 'H': opt_H = 1; break;
-            case 'r': opt_r = 1; break;
+            case 'r':
+            case 'R': opt_r = 1; break;    /* GNU: -R folgt Links, gibt es hier nicht */
             case 's': opt_s = 1; break;
             case 'E': opt_E = 1; break;
             default:
                 puts("GREP: unbekannte Option\r\n"
-                     "Aufruf: GREP [-ivnclhHrsE] MUSTER [DATEI ...]\r\n");
+                     "Aufruf: GREP [-ivnclhHrRsE] MUSTER [DATEI ...]\r\n");
                 DosExit(2);
             }
     }
     if (!*a) {
-        puts("Aufruf: GREP [-ivnclhHrsE] MUSTER [DATEI ...]\r\n");
+        puts("Aufruf: GREP [-ivnclhHrRsE] MUSTER [DATEI ...]\r\n");
         DosExit(2);
     }
     /* Muster, auch in "..." mit Leerzeichen */

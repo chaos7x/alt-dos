@@ -71,6 +71,7 @@ static void copy_one(char *path, struct fapi_dirent *e)
 {
     static struct fapi_finfo fi;
     char *d;
+    int rc;
 
     if (to_file)
         scopy(to, dst, sizeof(to));
@@ -94,10 +95,13 @@ static void copy_one(char *path, struct fapi_dirent *e)
     }
     if (exists(to) && !confirm_overwrite())
         return;
-    if (copy_file(path, to)) {
+    if ((rc = copy_file(path, to)) != 0) {
         puts("Fehler beim Kopieren nach ");
         puts(to);
-        puts("\r\n");
+        puts(rc == -1 ? " (Quelle nicht lesbar)\r\n" :
+             rc == -2 ? " (Ziel nicht anlegbar)\r\n" :
+             rc == -3 ? " (Lesefehler)\r\n" :
+             rc == -4 ? " (Schreibfehler)\r\n" : " (Fehler beim Schlie\xE1" "en)\r\n");
         errors++;
         return;
     }
