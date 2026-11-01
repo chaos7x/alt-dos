@@ -455,9 +455,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   hängt mount_disk nach den primären ein („logisch n“). Ausrichtung wie
   MS-DOS (erste Partition Spur 1, sonst Zylindergrenze, EBR eine Spur vor
   dem logischen Laufwerk), Typ nach Größe (01h < 16 MB, 04h < 32 MB, 06h,
-  höchstens 2 GB), Geometrie aus vorhandenen CHS-Endwerten, sonst 16/63
-  bzw. 255/63; 32-Bit über mul/div-Inline. Geschrieben wird sofort,
+  höchstens 2 GB); 32-Bit über mul/div-Inline. Geschrieben wird sofort,
   Laufwerksbuchstaben erst nach Neustart (FDISK bietet ihn an).
+  Geometrie: Erster Test in 86Box am Adaptec – MS-DOS-FDISK sah das
+  logische Laufwerk nicht, weil FDISK auf der leeren Platte 16/63 annahm,
+  der Adaptec aber 64/32 übersetzt (logisches Laufwerk nicht auf einer
+  Spurgrenze, CHS in der EBR-Kette falsch). Jetzt wie MS-DOS/FreeDOS:
+  start.asm fragt im Real Mode INT 13h/08h für 80h–83h (`bios_geo_*`),
+  `disk_geo()` ordnet die BIOS-Platten über die Größe zu (Zyl×Köpfe×Sekt.
+  höchstens 4 Zylinder unter der echten Größe, bei 1024 Zylindern gekappt),
+  DosDiskInfo liefert heads/spt; FDISK nimmt BIOS-Geometrie, sonst die aus
+  vorhandenen Einträgen, sonst 16/63 bzw. 255/63. In QEMU mit 8/32 geprüft
+  (CHS = LBA in MBR und EBR). FreeDOS-FDISK (GPL) nur gelesen.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,

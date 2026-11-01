@@ -94,6 +94,8 @@ struct fapi_diskinfo {
     unsigned char  unit;            /* Einheit des Treibers             */
     unsigned char  nvol;            /* Laufwerksbuchstaben darauf       */
     unsigned char  rsv;
+    unsigned short heads, spt;      /* Geometrie des BIOS (INT 13h/08h),
+                                       0 = unbekannt (Platte ohne BIOS)  */
 };
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes

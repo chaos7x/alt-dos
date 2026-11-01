@@ -92,6 +92,51 @@ _start:
         rep     movsw
         pop     ds
 
+        ; Geometrie der BIOS-Platten 80h-83h (INT 13h/08h) fuer FDISK: die
+        ; CHS-Felder der Partitionstabelle muessen zur Uebersetzung des
+        ; Controllers passen (Adaptec 64/32, IDE z. B. 16/63), sonst
+        ; verwirft MS-DOS logische Laufwerke
+        xor     cx, cx
+        mov     cl, [_bios_hdcount]
+        cmp     cl, 4
+        jbe     .gok
+        mov     cl, 4
+.gok:   xor     bx, bx
+.gloop: cmp     bx, cx
+        jae     .gdone
+        push    bx
+        push    cx
+        push    es
+        mov     dl, bl
+        or      dl, 0x80
+        mov     ah, 0x08
+        xor     di, di
+        int     0x13
+        pop     es
+        jc      .gskip
+        mov     si, cx                  ; CX der Antwort
+        mov     al, dh                  ; Koepfe - 1
+        pop     cx
+        pop     bx
+        push    bx
+        push    cx
+        mov     di, bx
+        mov     [_bios_geo_h + di], al
+        mov     ax, si
+        and     al, 0x3F
+        mov     [_bios_geo_s + di], al
+        mov     ax, si
+        xchg    al, ah                  ; AL = Zylinder unten, AH = CL
+        shr     ah, 6                   ; Zylinder Bit 8-9
+        inc     ax                      ; Anzahl = groesster + 1
+        shl     di, 1
+        mov     [_bios_geo_c + di], ax
+.gskip: pop     cx
+        pop     bx
+        inc     bx
+        jmp     .gloop
+.gdone:
+
         ; VGA und Zeichensaetze fuer 43/50 Zeilen (MODE CON LINES=): Das
         ; BIOS sagt, ob es eine VGA ist (AX=1A00h -> AL=1Ah), und wo die
         ; ROM-Zeichensaetze liegen (AX=1130h: BH=3 8x8 0-127, BH=4 8x8
@@ -806,9 +851,12 @@ _kbd_aux:    resb 1
 global _mem_conv_kb, _mem_ext_kb
 _mem_conv_kb: resw 1
 _mem_ext_kb:  resw 1
-global _bios_hdcount, _bios_fdpt
+global _bios_hdcount, _bios_fdpt, _bios_geo_h, _bios_geo_s, _bios_geo_c
 _bios_hdcount: resb 1
 _bios_fdpt:   resb 32
+_bios_geo_h:  resb 4                    ; Koepfe - 1 (INT 13h/08h)
+_bios_geo_s:  resb 4                    ; Sektoren je Spur, 0 = keine
+_bios_geo_c:  resw 4                    ; Zylinder
 global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
 _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)

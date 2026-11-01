@@ -1344,6 +1344,54 @@ static void of_ref(int k)
 
 static const char *drv_name(int d);
 
+/* Geometrie des BIOS fuer Blockgeraet want (0/0 = unbekannt). Zuordnung
+   ueber die Groesse: BIOS-Platten in der Reihenfolge der eigenen Platten,
+   jeweils die, deren Zylinder x Koepfe x Sektoren am knappsten unter der
+   echten Groesse liegt (hoechstens 4 Zylinder; bei 1024 Zylindern hat das
+   BIOS gekappt, dann zaehlt nur, dass sie kleiner ist) */
+extern unsigned char bios_geo_h[4], bios_geo_s[4];
+extern unsigned short bios_geo_c[4];
+
+static void disk_geo(int want, unsigned *h, unsigned *s)
+{
+    unsigned char used[4];
+    unsigned long cap, diff, bd;
+    unsigned i, k, hs;
+    int dev, best;
+
+    for (i = 0; i < 4; i++)
+        used[i] = 0;
+    *h = *s = 0;
+    for (dev = 1; dev < nblk; dev++) {
+        if (blk[dev].bsize != 512)
+            continue;
+        best = -1;
+        bd = 0xFFFFFFFFUL;
+        for (i = 0; i < 4 && i < bios_hdcount; i++) {
+            if (used[i] || !bios_geo_s[i])
+                continue;
+            hs = (bios_geo_h[i] + 1) * bios_geo_s[i];
+            for (cap = 0, k = 0; k < bios_geo_c[i]; k++)    /* ohne __U4M */
+                cap += hs;
+            if (cap > blk[dev].blocks)
+                continue;
+            diff = blk[dev].blocks - cap;
+            if ((diff <= ((unsigned long)hs << 2) || bios_geo_c[i] >= 1024) && diff < bd) {
+                bd = diff;
+                best = (int)i;
+            }
+        }
+        if (best < 0)
+            continue;
+        used[best] = 1;
+        if (dev == want) {
+            *h = bios_geo_h[best] + 1;
+            *s = bios_geo_s[best];
+            return;
+        }
+    }
+}
+
 /* Platte Nummer n (0 = erste Festplatte; Diskette und CD zaehlen nicht)
    -> Blockgeraet oder -1 */
 static int disk_blk(unsigned n)
@@ -1954,6 +2002,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 n++;
         di->nvol = (unsigned char)n;
         di->rsv = 0;
+        {
+            unsigned gh, gs;
+            disk_geo(dev, &gh, &gs);
+            di->heads = gh;
+            di->spt = gs;
+        }
         return 0;
     }
 

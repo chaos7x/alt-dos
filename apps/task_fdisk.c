@@ -141,7 +141,11 @@ static int load_disk(void)
         if (is_ext(pt[i].type) && ext == 4)
             ext = i;
     }
-    if (ms && mh) {
+    if (di.heads && di.spt) {           /* Geometrie des BIOS (wie FreeDOS
+                                           und MS-DOS per INT 13h/08h)  */
+        heads = di.heads;
+        spt = di.spt;
+    } else if (ms && mh) {              /* sonst aus vorhandenen Eintraegen */
         heads = mh + 1;
         spt = ms;
     } else if (di.sectors <= 1032192UL) {   /* 1024 x 16 x 63           */
@@ -246,7 +250,11 @@ static void header(void)
     put_num(di.unit, 0, 0);
     puts(", ");
     mbn(di.sectors, 0);
-    puts(" MB)\r\n\r\n");
+    puts(" MB, Geometrie ");
+    put_num(heads, 0, 0);
+    putc('/');
+    put_num(spt, 0, 0);
+    puts(di.heads ? " vom BIOS)\r\n\r\n" : ")\r\n\r\n");
 }
 
 static void show_table(void)
