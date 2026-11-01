@@ -497,6 +497,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   A: A: mit 2 MB RAM (mehrere Durchgänge) und A: -> B: 2,88 MB mit /V.
   QEMU kennt keine unformatierten Disketten und keinen Doppelschritt
   wirklich – beides nur in 86Box prüfbar.
+  Vom Nutzer in 86Box bestätigt (SCAT, zwei 1,44-MB-Laufwerke): B: wird
+  erkannt, `DISKCOPY A: B: /V` kopiert.
   FDISK (apps/task_fdisk.c), in QEMU geprüft: Menü wie MS-DOS 5/6
   (anlegen primär/erweitert/logisch, aktiv, löschen, anzeigen, nächste
   Platte), `/STATUS`, `/MBR` (Startcode aus build/mbrcode.h = mbr.asm).
