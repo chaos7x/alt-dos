@@ -600,7 +600,56 @@ static char up(char c)
    erstes Laufwerk der Programme: A: oder die Startpartition */
 static int sys_drive = 0;
 
+/* SUBST: Laufwerk X: zeigt auf ein Verzeichnis eines anderen Laufwerks.
+   subst_drv[X] = Ziellaufwerk (-1 = keins), Pfad (kanonisch, "\\DOS")
+   im Kernelsegment subst_sel, je IFS_PATHLEN Bytes. Programme sehen
+   X:-Pfade (aktuelles Verzeichnis, QCurDir); die IFS-Treiber bekommen
+   den umgesetzten Pfad auf dem Ziellaufwerk. */
+static signed char subst_drv[NDRIVE];
+static unsigned subst_sel;
+
+/* Laufwerk + kanonischer Pfad auf das Ziel umsetzen; -1 = zu lang */
+static int subst_map(int *d, char *path)
+{
+    static char tmp[IFS_PATHLEN];
+    unsigned n = 0, k;
+    char __far *pre;
+    if (*d < 0 || *d >= NDRIVE || subst_drv[*d] < 0)
+        return 0;
+    pre = MK_FP(subst_sel, *d * IFS_PATHLEN);
+    while (pre[n] && n < IFS_PATHLEN - 1)
+        tmp[n] = pre[n], n++;
+    if (path[1])                            /* nicht nur "\"           */
+        for (k = 0; path[k]; k++) {
+            if (n >= IFS_PATHLEN - 1)
+                return -1;
+            tmp[n++] = path[k];
+        }
+    if (!n)
+        tmp[n++] = '\\';
+    tmp[n] = 0;
+    scopy(path, tmp, IFS_PATHLEN);
+    *d = subst_drv[*d];
+    return 0;
+}
+
+/* Laufwerksnummer fuer Abfragen (freier Platz, Bezeichnung) */
+static unsigned subst_real(unsigned d)
+{
+    return d < NDRIVE && subst_drv[d] >= 0 ? (unsigned)subst_drv[d] : d;
+}
+
+static int resolve_v(int t, const char *in, int *drive, char *out);
+
 static int resolve(int t, const char *in, int *drive, char *out)
+{
+    if (resolve_v(t, in, drive, out))
+        return -1;
+    return subst_map(drive, out);
+}
+
+/* wie resolve, aber ohne SUBST (Pfad aus Sicht des Programms) */
+static int resolve_v(int t, const char *in, int *drive, char *out)
 {
     const char *p = in, *q;
     int d = t >= 0 ? task[t].drive : sys_drive, n, k;
@@ -1894,9 +1943,49 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return t ? ifs_err(t) : 0;
     }
 
+    case FAPI_SUBST: {                          /* SUBST X: Pfad / X: /D */
+        static char real[IFS_PATHLEN];
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || vol_present(a1))
+            return FAPI_ERROR;                  /* echtes Laufwerk       */
+        if (!a2) {                              /* aufheben              */
+            if (subst_drv[a1] < 0)
+                return FAPI_ERROR;
+            for (k = 0; k < NTASK; k++)
+                if (task[k].state != T_FREE && task[k].drive == a1)
+                    return FAPI_ERR_INUSE;      /* aktuelles Laufwerk    */
+            subst_drv[a1] = -1;
+            return 0;
+        }
+        if (subst_drv[a1] >= 0 || !subst_sel ||
+            user_str(usel, a2, buf, sizeof(buf)) ||
+            resolve(current, buf, &d, real) || !ifs_isdir(d, real))
+            return FAPI_ERROR;
+        if (real[1] == 0)
+            real[0] = 0;                        /* Stamm: leerer Vorsatz */
+        far_copy(subst_sel, a1 * IFS_PATHLEN, KDATA, (unsigned)real, IFS_PATHLEN);
+        subst_drv[a1] = (signed char)d;
+        return 0;
+    }
+
+    case FAPI_QSUBST: {                         /* -> "C:\DOS"         */
+        char __far *pre;
+        if (a1 >= NDRIVE || subst_drv[a1] < 0 || !user_ok(usel, a2, IFS_PATHLEN + 2, 1))
+            return FAPI_ERROR;
+        pre = MK_FP(subst_sel, a1 * IFS_PATHLEN);
+        buf[0] = (char)('A' + subst_drv[a1]);
+        buf[1] = ':';
+        for (k = 0; pre[k] && k < IFS_PATHLEN - 1; k++)
+            buf[2 + k] = pre[k];
+        if (!k)
+            buf[2 + k++] = '\\';
+        buf[2 + k] = 0;
+        far_copy(usel, a2, KDATA, (unsigned)buf, k + 3);
+        return 0;
+    }
+
     case FAPI_FREESPACE: {
         static unsigned long kb;
-        if (a1 >= NDRIVE || !user_ok(usel, a2, 4, 1) || ifs_space(a1, &kb))
+        if (a1 >= NDRIVE || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &kb))
             return FAPI_ERROR;
         far_copy(usel, a2, KDATA, (unsigned)&kb, 4);
         return 0;
@@ -1974,6 +2063,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         static char lb[12], nl[12];
         static unsigned long ser;
         struct fapi_label __far *fl;
+        if (!a3)                                /* lesen: SUBST-Ziel     */
+            a1 = subst_real(a1);
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) ||
             !user_ok(usel, a2, sizeof(*fl), 1))
             return FAPI_ERROR;
@@ -2195,14 +2286,21 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(de));
         return 0;
 
-    case FAPI_CHDIR:
+    case FAPI_CHDIR: {
+        static char real[IFS_PATHLEN];
+        int rd;
         if (user_str(usel, a1, buf, sizeof(buf)) ||
-            resolve(current, buf, &d, canon) || !ifs_isdir(d, canon))
+            resolve_v(current, buf, &d, canon))
+            return FAPI_ERROR;
+        rd = d;
+        scopy(real, canon, IFS_PATHLEN);
+        if (subst_map(&rd, real) || !ifs_isdir(rd, real))
             return FAPI_ERROR;
         if (d != task[current].drive)
             return FAPI_ERROR;                  /* nur aktuelles Laufwerk */
         scopy(task[current].cwd, canon[1] ? canon : "", IFS_PATHLEN);
         return 0;
+    }
 
     case FAPI_QCURDIR:                          /* "C:\DOS"            */
         if (!user_ok(usel, a1, IFS_PATHLEN + 2, 1))
@@ -2214,7 +2312,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_SELECTDISK:                       /* A: ggf. erst einhaengen */
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1))
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || (!vol_present(a1) && subst_drv[a1] < 0))
             return FAPI_ERROR;
         if (a1 != task[current].drive) {
             task[current].drive = (unsigned char)a1;
@@ -3406,6 +3504,9 @@ void kmain(void)
     /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h) */
     mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
              mem_conv_kb, mem_ext_kb);
+    for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
+        subst_drv[i] = -1;
+    subst_sel = kseg_alloc((unsigned long)NDRIVE * IFS_PATHLEN);
 
     s0 = vio_open("SYSTEM");
     if (s0 < 0)

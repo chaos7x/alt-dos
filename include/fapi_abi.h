@@ -104,6 +104,11 @@ struct fapi_diskinfo {
    passen; danach gilt es fuer das Laufwerk (DosQFSInfo meldet es).
    -> 0, FAPI_ERR_WP, FAPI_ERROR (Format passt nicht / Fehler) */
 #define FAPI_FMTTRACK       0x46
+/* SUBST: BX = Laufwerk (0 = A:), CX = Pfad (bestehendes Verzeichnis) oder
+   0 = aufheben -> 0, FAPI_ERROR, FAPI_ERR_INUSE (aktuelles Laufwerk eines
+   Programms). DosQSubst: BX = Laufwerk, CX = Puffer (130 Byte) -> "C:\DOS" */
+#define FAPI_SUBST          0x47
+#define FAPI_QSUBST         0x48
 struct fapi_fmttrack {
     unsigned short cyl, head, blocks;
 };

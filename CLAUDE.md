@@ -476,8 +476,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK und DISKCOPY sind da. Später: UNDELETE, MSD,
-  HELP, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY und SUBST sind da. Später: UNDELETE, MSD,
+  HELP, DEFRAG, SCANDISK, PRINT/MODE.
+  SUBST (in QEMU geprüft): `subst_drv[]`/`subst_sel` in kernel.c,
+  `resolve()` = `resolve_v()` (Sicht des Programms) + `subst_map()`;
+  CHDIR speichert die X:-Sicht, prüft am Ziel. FREESPACE und LABEL-Lesen
+  nehmen das Ziel (`subst_real`), DosOpenDrive/QFSInfo lehnen SUBST-
+  Laufwerke ab (CHKDSK/FORMAT also auch). Initialisierung ganz am Anfang
+  von kmain – sonst zeigt jedes Laufwerk auf A: (statische Null).
   Disketten (Wunsch des Nutzers: „old-school“, alle Formate bis 2,88 MB),
   in QEMU geprüft: `floppy.c` neu – A:/B: aus CMOS 10h (B: ist Geräte-
   nummer 1, `IS_FLOPPY(dev)` = `blk[].drv < 0`, `floppy_lazy` Bit 0/1),

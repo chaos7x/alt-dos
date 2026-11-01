@@ -88,6 +88,8 @@ und PC-DOS.
   Speicher nicht reicht; unformatierte oder anders formatierte Ziel-
   disketten werden beim Kopieren formatiert, die Kopie bekommt eine neue
   Seriennummer
+- `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
+  das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
   Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
   `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die
@@ -245,6 +247,8 @@ selbst nur 8.3 kennt.
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
 | 67 | DosDiskInfo     | BX = Platte (0 = erste Festplatte), CX = Puffer: Sektoren, Sektorgröße, Treiber, Einheit, Zahl der Laufwerke darauf |
 | 70 | DosFmtTrack     | BX = Handle aus DosOpenDrive (Diskette, mit Sperre), CX = struct fapi_fmttrack (Zylinder, Kopf, Format als Sektorzahl 720/1440/2400/2880/5760) → 0, FAPI_ERR_WP, FAPI_ERROR |
+| 71 | DosSubst        | BX = Laufwerk, CX = Pfad oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE |
+| 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 | 69 | VioSetPage      | Mode X: BX = sichtbare Seite 0/1; im Vordergrund wartet der Aufruf auf den Strahlrücklauf, danach kann das Programm in die andere Seite zeichnen |
