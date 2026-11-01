@@ -29,7 +29,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
 ## Aufbau
 
 - `boot/` – `boot.asm`: Diskette, Standard-FAT12-BPB, lädt `ATDOS.SYS` (erste
-  Datei, zusammenhängend ab Cluster 2, auf 48 KB aufgefüllt) nach 1000:0000;
+  Datei, zusammenhängend ab Cluster 2, auf 64 KB aufgefüllt) nach 1000:0000;
   `hdboot.asm`: FAT16-Partition, sucht `ATDOS.SYS` und folgt der FAT-Kette
   (CHS per INT 13h/08h-Geometrie); `mbr.asm`: MBR nur für `atdos-hd.img`
 - `kernel/preload.c` – Start von Platte: liest im **Real Mode** per BIOS
@@ -123,7 +123,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
   `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
 - Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
-  höchstens 48 KB groß sein (Diskettenbootsektor lädt 96 Sektoren), BSS dahinter nullt `start.asm` selbst.
+  höchstens 64 KB groß sein (Diskettenbootsektor lädt 128 Sektoren nach
+  1000:0000–1FFFF; bis Ende 2026 waren es 48 KB/96 Sektoren), BSS dahinter
+  nullt `start.asm` selbst. `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in
   den Puffer ihrer Sitzung (Puffer immer 50 Zeilen groß). `VioSetMode(1)`

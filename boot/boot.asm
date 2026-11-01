@@ -10,7 +10,9 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 96                  ; ATDOS.SYS ist auf 48 KB aufgefuellt
+NSECT   equ 128                 ; ATDOS.SYS ist auf 64 KB aufgefuellt
+                                ; (1000:0000-1FFFF, je Sektor ES:0 -
+                                ; keine DMA-Grenze innerhalb eines Sektors)
 
         jmp     short start
         nop
