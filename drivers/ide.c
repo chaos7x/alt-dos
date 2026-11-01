@@ -464,20 +464,6 @@ static void probe(int ch, int dev)
     dputs(line);
 }
 
-/* "/NOIRQ" in den Argumenten (gross oder klein) */
-static int noirq(const char __far *a)
-{
-    static const char k[] = "/NOIRQ";
-    int i;
-    for (; *a; a++) {
-        for (i = 0; k[i] && (a[i] & 0xDF) == (k[i] & 0xDF) ; i++)
-            ;
-        if (!k[i])
-            return 1;
-    }
-    return 0;
-}
-
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -498,7 +484,7 @@ static void init(void)
        8 Koepfe) */
     for (ch = 0; ch < 2; ch++) {
         chan[ch].on = 0;
-        if (!chan[ch].units || noirq(r->args))
+        if (!chan[ch].units || has_opt(r->args, "/NOIRQ"))
             continue;
         outp(ports[ch][1], 0x08);
         chan[ch].done = 0;
@@ -566,20 +552,6 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
 /* gescheiterten Versuch ins Startprotokoll (Sitzung 1) melden: Schritt
    (1 Befehl, 2 Daten, 3 Ende), Status- und Fehlerregister. Kommt nur bei
    Fehlern vor - hilft, Zeitprobleme auf echter Hardware zu finden. */
-static char hx(unsigned v)
-{
-    v &= 15;
-    return (char)(v < 10 ? '0' + v : 'A' + v - 10);
-}
-
-static char *hex(char *p, unsigned long v, int n)
-{
-    while (n--)
-        *p++ = hx((unsigned)(v >> (n * 4)));
-    *p = 0;
-    return p;
-}
-
 static void report(struct unit *u, int write, unsigned long l, int step, int t)
 {
     unsigned char st = inp(u->ctl), er = inp(u->base + R_ERROR);

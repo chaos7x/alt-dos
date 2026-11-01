@@ -433,10 +433,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle
-- Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen),
-  offen: `AHA154X.SYS` mit IRQ (IRQ aus der Konfiguration
-  der Karte lesen, Mailbox-Interrupt), Diskette (kernel
-  floppy.c) ebenfalls schlafen lassen statt HLT-Schleife, danach `MOUSE.SYS`
+- Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen).
+  `AHA154X.SYS` mit IRQ gebaut, Test in 86Box offen: IRQ aus Befehl 0Bh
+  (Byte 2: Bit 0–3 IRQ 9–12, Bit 5/6 IRQ 14/15), Routine quittiert bei
+  INTV mit IRST (sonst bleibt die ISA-Leitung oben) und weckt; fertig ist,
+  wenn `mb[1].status` gesetzt ist (`wait_mbox`). In 86Box (`scsi_x54x.c`)
+  löst START kein HACC aus, MBIF kommt nach HACC erst nach IRST.
+  Offen: Diskette (kernel floppy.c) ebenfalls schlafen lassen statt
+  HLT-Schleife, danach `MOUSE.SYS`. `has_opt()` und `hex()` in drvlib.h.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit

@@ -5,8 +5,12 @@
  * Mailbox-Schnittstelle mit 24-Bit-Adressen: Der Treiber legt Mailboxen
  * und Befehlsbloecke (CCB) im eigenen Datensegment ab und gibt der Karte
  * deren physische Adressen. Die Karte holt sich alles per Busmaster-DMA
- * selbst, auch die Daten. Gewartet wird ohne Interrupt durch Abfragen
- * der Eingangs-Mailbox.
+ * selbst, auch die Daten. Fertig ist ein Befehl, wenn die Karte die
+ * Eingangs-Mailbox beschrieben hat. Darauf wartet der Task schlafend
+ * (DevHlp ProcBlock), andere laufen weiter; der Interrupt der Karte (IRQ
+ * aus der Konfiguration, Befehl 0Bh) weckt ihn. Bleibt der Interrupt aus,
+ * obwohl die Mailbox voll ist (Frist 2 Takte), zaehlt das als Fehltreffer;
+ * nach dreien wird wieder abgefragt. /NOIRQ schaltet den Interrupt ab.
  *
  * Erkennung: Die ueblichen Adressen werden der Reihe nach nur gelesen.
  * Bei einem Adaptec sind im Interrupt-Register (Basis+2) die Bits 4-6
@@ -31,6 +35,7 @@
 #define S_DF        0x04            /* Daten fuer uns bereit            */
 #define S_INVDCMD   0x01            /* ungueltiger Befehl               */
 #define I_HACC      0x04            /* Befehl abgeschlossen             */
+#define I_INTV      0x80            /* irgendein Interrupt steht an     */
 
 #define CMD_MBINIT      0x01
 #define CMD_START       0x02
@@ -57,7 +62,11 @@ static struct ccb ccb;
 static unsigned char target[DRV_MAXUNITS];
 static unsigned bsz[DRV_MAXUNITS];      /* 512 Platte, 2048 CD-ROM      */
 static unsigned nunits;
-static char line[80];
+static char line[128];                  /* 80 war bei IDE.SYS zu knapp  */
+static unsigned irq;                    /* 0 = keiner                    */
+static unsigned char irq_on, miss;
+#define IRQ_WAIT    2                   /* Takte bis zum Blick auf die Mailbox */
+#define EV_MBOX     1
 static unsigned char cdb[12];
 
 static void put3(unsigned char *d, unsigned long v)    /* big endian */
@@ -132,6 +141,45 @@ static int reset(void)
     }
 }
 
+/* ---- Interrupt -------------------------------------------------------- */
+/* Quittieren (IRST), sonst bleibt die ISA-Leitung oben und kein weiterer
+   Interrupt kommt an; Abfragen und Interrupt duerfen sich ueberholen. */
+static void aha_irq(unsigned n)
+{
+    (void)n;
+    if (inp(INTR(base)) & I_INTV) {
+        outp(CTRL(base), C_IRST);
+        proc_run(EV_MBOX);
+    }
+}
+
+/* bis die Karte die Eingangs-Mailbox beschrieben hat; 0 = ok */
+static int wait_mbox(unsigned t)
+{
+    unsigned start = ticks(), r;
+
+    while (mb[1].status == 0) {
+        if ((unsigned)(ticks() - start) > t)
+            return -1;
+        if (!irq_on)
+            continue;
+        cli();
+        if (mb[1].status) {
+            sti();
+            break;
+        }
+        r = proc_block(EV_MBOX, IRQ_WAIT);
+        if (r == 0)
+            miss = 0;
+        else if (mb[1].status && ++miss >= 3) {     /* fertig ohne Interrupt */
+            irq_on = 0;
+            unset_irq(irq);
+            dputs("AHA154X.SYS: Interrupt bleibt aus, Abfragebetrieb\n");
+        }
+    }
+    return 0;
+}
+
 /* ---- SCSI-Befehl ausfuehren -------------------------------------------- */
 #define SCSI_OK     0
 #define SCSI_NODEV  1               /* Auswahl-Zeitueberschreitung      */
@@ -142,7 +190,7 @@ static int reset(void)
 static int scsi_dir(unsigned id, unsigned len, unsigned long buf, unsigned cdblen,
                     unsigned char dir)
 {
-    unsigned start, i;
+    unsigned i;
     unsigned char st;
 
     ccb.op = 0;                             /* SCSI-Initiator           */
@@ -162,10 +210,8 @@ static int scsi_dir(unsigned id, unsigned len, unsigned long buf, unsigned cdble
     if (cmd_out(CMD_START))
         return SCSI_FAIL;
 
-    start = ticks();
-    while (mb[1].status == 0)
-        if ((unsigned)(ticks() - start) > 300)
-            return SCSI_FAIL;
+    if (wait_mbox(300))
+        return SCSI_FAIL;
     st = mb[1].status;
     mb[1].status = 0;
     outp(CTRL(base), C_IRST);
@@ -200,7 +246,7 @@ static void init(void)
     unsigned char __far *buf = MK_FP(r->buf_sel, r->buf_off);
     unsigned i, id, host, n = 0;
     int rc, k;
-    unsigned char dma, lock;
+    unsigned char dma, lock, irqs;
     char *p;
 
     lin = r->base;
@@ -221,9 +267,13 @@ static void init(void)
     /* Konfiguration: DMA-Kanal, IRQ, eigene SCSI-ID */
     cmd_out(CMD_CONFIG);
     dma = (unsigned char)data_in();
-    data_in();
+    irqs = (unsigned char)data_in();        /* Bit 0-3: IRQ 9-12, 5/6: 14/15 */
     host = data_in() & 7;
     cmd_done();
+    irq = 0;
+    for (k = 0; k < 7 && !irq; k++)
+        if (irqs & (1 << k))
+            irq = k < 4 ? 9 + k : k == 5 ? 14 : k == 6 ? 15 : 0;
 
     /* 154xC/CF: Mailbox ggf. entsperren (bei erweiterter BIOS-Uebersetzung) */
     cmd_out(CMD_EXTBIOS);
@@ -262,7 +312,13 @@ static void init(void)
     *p++ = (char)('0' + (base >> 8));
     *p++ = (char)("0123456789ABCDEF"[(base >> 4) & 15]);
     *p++ = (char)("0123456789ABCDEF"[base & 15]);
-    p = scat(p, "h, DMA ");
+    p = scat(p, "h, ");
+    if (irq) {
+        p = scat(p, "IRQ ");
+        p = udec(p, irq);
+        p = scat(p, ", ");
+    }
+    p = scat(p, "DMA ");
     for (k = 0; k < 8; k++)
         if (dma & (1 << k))
             *p++ = (char)('0' + k);
@@ -324,9 +380,45 @@ static void init(void)
         dputs(line);
     }
     nunits = n;
+    /* Interrupt erst nach der Erkennung (die fragt ab) */
+    irq_on = 0;
+    miss = 0;
+    if (n && irq && !has_opt(r->args, "/NOIRQ")) {
+        if (set_irq(irq, aha_irq) == 0)
+            irq_on = 1;
+        else {
+            p = scat(line, "  AHA154X: IRQ ");
+            p = udec(p, irq);
+            scat(p, " belegt, Abfragebetrieb\n");
+            dputs(line);
+        }
+    }
     r->units = (unsigned char)n;
     r->count = 16;                          /* Blockzahl in READ(10)    */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
+}
+
+/* gescheiterten Versuch in Sitzung 1 melden (Host- und Zielstatus aus
+   dem CCB, Rueckgabe von scsi_dir) */
+static void report(int write, unsigned u, unsigned long l, int rc, int t)
+{
+    char *p = scat(line, write ? "AHA154X.SYS: Schreibfehler, SCSI-ID " :
+                                 "AHA154X.SYS: Lesefehler, SCSI-ID ");
+    p = udec(p, target[u]);
+    p = scat(p, ", Sektor ");
+    p = hex(p, l, 8);
+    p = scat(p, "h, ");
+    p = scat(p, rc == SCSI_NODEV ? "Ger\x84t antwortet nicht" :
+                rc == SCSI_CHECK ? "Check Condition" :
+                ccb.hastat == 0 && ccb.tarstat == 0 ? "Zeit\x81" "berschreitung" : "Fehler");
+    p = scat(p, ", Host ");
+    p = hex(p, ccb.hastat, 2);
+    p = scat(p, "h, Ziel ");
+    p = hex(p, ccb.tarstat, 2);
+    p = scat(p, "h, Versuch ");
+    p = udec(p, (unsigned)t + 1);
+    scat(p, irq_on ? ", IRQ\n" : ", Abfrage\n");
+    dputs(line);
 }
 
 /* READ(10) / WRITE(10) eines Blocks */
@@ -363,6 +455,10 @@ static void xfer(int write)
             r->status = DRV_OK;
             return;
         }
+        /* CD: Check Condition beim ersten Zugriff nach dem Wechsel (Unit
+           Attention) ist normal, nicht melden */
+        if (!(rc == SCSI_CHECK && bsz[r->unit] != 512 && tries == 0))
+            report(write, r->unit, l, rc, tries);
     }
     r->status = DRV_ERR_IO;
 }

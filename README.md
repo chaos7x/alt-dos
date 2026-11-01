@@ -274,6 +274,11 @@ Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
 Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
 (Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
 das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
+`AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
+Anzeige beim Start) und schläft, bis die Karte die Eingangs-Mailbox
+beschrieben hat; ebenfalls mit Rückfall und `/NOIRQ`. Beide Treiber melden
+gescheiterte Versuche mit Status (IDE) bzw. Host-/Zielstatus (SCSI) in
+Sitzung 1.
 
 `IDE.SYS` und ältere Controller: Der WD1003 (MFM/RLL) hat die Register der
 IDE-Platten, kennt aber kein IDENTIFY und bricht es ab. Dann nimmt der

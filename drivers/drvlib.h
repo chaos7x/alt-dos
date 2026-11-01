@@ -92,6 +92,31 @@ char *udec(char *d, unsigned v)
     return d;
 }
 
+/* Hexzahl mit n Stellen an p anhaengen, gibt Ende zurueck */
+char *hex(char *p, unsigned long v, int n)
+{
+    unsigned d;
+    while (n--) {
+        d = (unsigned)(v >> (n * 4)) & 15;
+        *p++ = (char)(d < 10 ? '0' + d : 'A' + d - 10);
+    }
+    *p = 0;
+    return p;
+}
+
+/* Schalter k (z. B. "/NOIRQ") in den Argumenten, gross oder klein */
+int has_opt(const char __far *a, const char *k)
+{
+    int i;
+    for (; *a; a++) {
+        for (i = 0; k[i] && (a[i] & 0xDF) == (k[i] & 0xDF); i++)
+            ;
+        if (!k[i])
+            return 1;
+    }
+    return 0;
+}
+
 char *scat(char *d, const char *s)
 {
     while (*s)
