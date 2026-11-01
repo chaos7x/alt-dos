@@ -786,6 +786,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   build.sh `LFNAPPS`), FINDENTRY gibt alten Programmen `sname`, QCURDIR
   ihnen den 8.3-Pfad (höchstens 130 Byte). COMMAND und util.c: `"..."` in
   word/next_word, Endung nach dem letzten Punkt, FAPI_CURDIRLEN 263.
+  Vom Nutzer in 86Box bestätigt: auf dem Mac angelegter Ordner mit langem
+  Namen erscheint unter AT-DOS.
   Offen in Stufe 1: aktuelles Verzeichnis wird kanonisch groß gespeichert
   (Eingabeaufforderung `A:\EIGENE DATEIEN` statt Originalschreibung).
   Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
