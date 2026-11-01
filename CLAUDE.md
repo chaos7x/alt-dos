@@ -466,7 +466,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   höchstens 4 Zylinder unter der echten Größe, bei 1024 Zylindern gekappt),
   DosDiskInfo liefert heads/spt; FDISK nimmt BIOS-Geometrie, sonst die aus
   vorhandenen Einträgen, sonst 16/63 bzw. 255/63. In QEMU mit 8/32 geprüft
-  (CHS = LBA in MBR und EBR). FreeDOS-FDISK (GPL) nur gelesen.
+  (CHS = LBA in MBR und EBR). FreeDOS-FDISK (GPL) nur gelesen. Vom
+  Nutzer in 86Box bestätigt: MS-DOS erkennt das mit AT-DOS-FDISK angelegte
+  logische Laufwerk (D: und E: unter MS-DOS).
+  Oberfläche (Wunsch des Nutzers) wie das deutsche MS-DOS-6-FDISK:
+  Vollbild, zentrierte Titel, Felder in [ ] (nach „…ein:“ direkt
+  dahinter, sonst Punkte bis Spalte 66), Fehler Zeile 22, „ESC drücken,
+  um zu den FDISK-Optionen zurückzukehren“, Tabellen mit Laufwerks-
+  buchstabe (über DosQFSInfo Start/Größe), Bezeichnung und System aus dem
+  Bootsektor, eigene Bildschirme für logische Laufwerke und Plattenwechsel,
+  „maximal und aktiv (J/N)“, Größe in MByte oder %, Löschen mit
+  Datenträgerbezeichnung, nach Änderungen Neustart-Bildschirm. Bedienung
+  nachgebildet, kein fremder Code; Copyright-Zeile weggelassen.
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,

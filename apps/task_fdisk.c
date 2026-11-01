@@ -53,7 +53,7 @@ static unsigned char sec[512];
 static struct fapi_diskinfo di;
 static unsigned disk, ndisks, hd;       /* hd: Handle                   */
 static unsigned heads, spt, cylsz;
-static int changed;
+static int changed, hd_locked, hd_lock_state;
 static char args[FAPI_ARGLEN], lb[16];
 
 static int is_fat(unsigned char t) { return t == 1 || t == 4 || t == 6 || t == 0x0E; }
@@ -220,10 +220,129 @@ static int write_ebrs(void)
     return 0;
 }
 
-/* ---- Ausgabe ----------------------------------------------------------- */
-static void mbn(unsigned long sectors, int w)
+/* ---- Bildschirm (Aufbau wie das deutsche MS-DOS-6-FDISK) --------------
+   Vollbild (VioSetMode), zentrierte Ueberschriften, Eingabefelder in
+   eckigen Klammern ab Spalte FC, Fehlerzeile 22, Hinweis unten. */
+#define FC      66                      /* Eingabefeld                  */
+#define A_HI    0x0F
+static unsigned rows = 25;
+static char ln[81], nb[12];
+static struct fapi_fsinfo fsi;
+
+static void row_out(int r, const char *t, unsigned char a)
 {
-    put_num(sectors >> 11, w, 0);
+    VioWrtStrAtt(r, 0, t, a);
+}
+
+static void at(int r, int c, const char *t)
+{
+    VioWrtStrAtt(r, c, t, 0x07);
+}
+
+static void center(int r, const char *t, unsigned char a)
+{
+    VioWrtStrAtt(r, (80 - (int)slen(t)) / 2, t, a);
+}
+
+/* Zahl rechtsbuendig in w Stellen nach nb */
+static char *ns(unsigned long v, int w)
+{
+    char t[11];
+    int n = 0, i = 0;
+    do {
+        unsigned r;
+        v = div32(v, 10, &r);
+        t[n++] = (char)('0' + r);
+    } while (v && n < 10);
+    while (w > n && i < 10) {
+        nb[i++] = ' ';
+        w--;
+    }
+    while (n)
+        nb[i++] = t[--n];
+    nb[i] = 0;
+    return nb;
+}
+
+/* Zeile ln aufbauen: lclr, lput(spalte, text) */
+static void lclr(void)
+{
+    unsigned i;
+    for (i = 0; i < 80; i++)
+        ln[i] = ' ';
+    ln[80] = 0;
+}
+
+static void lput(int c, const char *t)
+{
+    while (*t && c < 80)
+        ln[c++] = *t++;
+}
+
+/* Text t, Zahl v und Rest r hintereinander ab Spalte c */
+static void lseq(int c, const char *t, unsigned long v, const char *r)
+{
+    lput(c, t);
+    c += (int)slen(t);
+    lput(c, ns(v, 0));
+    c += (int)slen(nb);
+    lput(c, r);
+}
+
+static void lend(void)                  /* Leerzeichen am Ende weg      */
+{
+    int i = 79;
+    while (i >= 0 && ln[i] == ' ')
+        ln[i--] = 0;
+}
+
+static void screen(const char *title)
+{
+    VioCls();
+    if (title)
+        center(3, title, A_HI);
+}
+
+static void cur_disk(int r)
+{
+    lclr();
+    lput(4, "Aktuelle Festplatte: ");
+    lput(25, ns(disk + 1, 0));
+    lend();
+    at(r, 0, ln);
+}
+
+static void esc_line(const char *t)
+{
+    lclr();
+    lput(4, "ESC");
+    lput(8, t);
+    lend();
+    row_out((int)rows - 1, ln, 0x07);
+    VioWrtStrAtt((int)rows - 1, 4, "ESC", A_HI);
+}
+
+static void error(const char *t)
+{
+    static char tb[81];
+    scopy(tb, t, sizeof(tb));           /* t darf in ln liegen          */
+    lclr();
+    lput(4, tb);
+    lend();
+    row_out(22, ln, A_HI);
+}
+
+static void wait_esc(const char *t)
+{
+    esc_line(t ? t : "dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+    VioSetCurPos(0xFF, 0);
+    while ((KbdCharIn() & 0xFF) != 27)
+        ;
+}
+
+static unsigned mb(unsigned long sectors)
+{
+    return (unsigned)(sectors >> 11);
 }
 
 static unsigned pct(unsigned long part, unsigned long total)
@@ -235,115 +354,223 @@ static unsigned pct(unsigned long part, unsigned long total)
     return total ? (unsigned)((unsigned)part * 100 / (unsigned)total) : 0;
 }
 
+/* Eingabefeld in Zeile r: text, Punkte bis FC, [Vorgabe]. allow: erlaubte
+   Zeichen ("0123456789%" oder "JN"). Erste Taste ersetzt die Vorgabe.
+   -> 0 und Text in lb, -1 = Esc */
+static int field(int r, const char *text, const char *def, const char *allow)
+{
+    static char tb[81];
+    unsigned n, c, i, fc, w = slen(def) ? slen(def) : 1;
+    int fresh = 1;
+
+    for (i = 0; allow[i] && allow[i] != '%'; i++)
+        ;
+    if (allow[i] && w < 5)
+        w = 5;                          /* Groesse in MByte oder %      */
+    if (slen(allow) > 20)
+        w = 11;                         /* Datentraegerbezeichnung      */
+    scopy(tb, text, sizeof(tb));        /* text darf in ln liegen       */
+    lclr();
+    lput(4, tb);
+    i = 4 + slen(tb);
+    if (i && tb[slen(tb) - 1] == ':')   /* "Wahl ein:" - Feld gleich dahinter */
+        fc = i + 1;
+    else if (i + 1 >= FC)               /* langer Text: Feld dahinter   */
+        fc = i + 1;
+    else {                              /* sonst Punkte bis Spalte FC   */
+        for (fc = FC; i < fc; i++)
+            ln[i] = '.';
+    }
+    lput(fc, "[");
+    lend();
+    row_out(r, ln, 0x07);
+    scopy(lb, def, sizeof(lb));
+    n = slen(lb);
+    for (;;) {
+        for (i = 0; i < w; i++)
+            nb[i] = i < n ? lb[i] : ' ';
+        nb[w] = ']';
+        nb[w + 1] = 0;
+        VioWrtStrAtt(r, fc + 1, nb, A_HI);
+        VioSetCurPos(r, fc + 1 + n);
+        c = KbdCharIn() & 0xFF;
+        if (c == 27)
+            return -1;
+        if (c == 13) {
+            lb[n] = 0;
+            return 0;
+        }
+        if (c == 8) {
+            if (n)
+                n--;
+            fresh = 0;
+            continue;
+        }
+        c = (unsigned char)up((char)c);
+        if (c == 'Y')
+            c = 'J';
+        for (i = 0; allow[i] && (unsigned char)allow[i] != c; i++)
+            ;
+        if (!allow[i])
+            continue;
+        if (fresh) {
+            n = 0;
+            fresh = 0;
+        }
+        if (n < w && n < sizeof(lb) - 1)
+            lb[n++] = (char)c;
+    }
+}
+
+/* J/N-Feld -> 1 J, 0 N, -1 Esc */
+static int yn(int r, const char *text, int def)
+{
+    for (;;) {
+        if (field(r, text, def ? "J" : "N", "JN") < 0)
+            return -1;
+        if (lb[0] == 'J' && !lb[1]) return 1;
+        if (lb[0] == 'N' && !lb[1]) return 0;
+    }
+}
+
+/* Zahl aus lb; *was_pct bei "%". -1 = ungueltig */
+static long numval(int *was_pct)
+{
+    unsigned long v = 0;
+    unsigned i;
+    if (was_pct)
+        *was_pct = 0;
+    if (!lb[0])
+        return -1;
+    for (i = 0; lb[i]; i++) {
+        if (lb[i] == '%' && lb[i + 1] == 0 && i && was_pct) {
+            *was_pct = 1;
+            break;
+        }
+        if (lb[i] < '0' || lb[i] > '9')
+            return -1;
+        v = mul32(v, 10) + (lb[i] - '0');
+    }
+    return (long)v;
+}
+
+/* ---- Partitionsdaten --------------------------------------------------- */
+/* Bezeichnung und Dateisystem aus dem Bootsektor der Partition */
+static void vol_info(unsigned long start, char *label, char *sys)
+{
+    unsigned i;
+    scopy(label, "", 12);
+    scopy(sys, "UNBEKANNT", 10);
+    if (rw(start, 0) || sec[510] != 0x55 || sec[511] != 0xAA ||
+        sec[11] != 0 || sec[12] != 2)   /* 512 Byte je Sektor           */
+        return;
+    if (sec[0x26] == 0x29) {
+        for (i = 0; i < 11; i++)
+            label[i] = sec[0x2B + i];
+        label[11] = 0;
+        for (i = 11; i > 0 && label[i - 1] == ' '; i--)
+            label[i - 1] = 0;
+        if (label[0] == 'N' && label[1] == 'O' && label[2] == ' ')
+            label[0] = 0;               /* "NO NAME"                    */
+        for (i = 0; i < 8 && sec[0x36 + i] != ' '; i++)
+            sys[i] = sec[0x36 + i];
+        sys[i] = 0;
+    } else
+        scopy(sys, "FAT", 10);
+}
+
+/* Laufwerksbuchstabe der Partition (Startsektor und Groesse wie bei
+   DosQFSInfo), 0 = keiner */
+static char letter(unsigned long start, unsigned long size)
+{
+    unsigned d;
+    for (d = 2; d < 25; d++)
+        if (DosQFSInfo(d, &fsi) == 0 && fsi.hidden == start && fsi.sectors == size)
+            return (char)('A' + d);
+    return 0;
+}
+
 static const char *type_name(unsigned char t)
 {
-    return is_fat(t) ? "PRI DOS " : is_ext(t) ? "EXT DOS " : "Nicht-DOS";
+    return is_fat(t) ? "PRI DOS" : is_ext(t) ? "EXT DOS" : "Nicht-DOS";
 }
 
-static void header(void)
+/* Tabelle der Partitionen ab Zeile r -> naechste Zeile */
+static int draw_parts(int r)
 {
-    puts("\r\nAT-DOS-Festplatteneinrichtung (FDISK)\r\n\r\nAktuelle Festplatte: ");
-    put_num(disk + 1, 0, 0);
-    puts("   (");
-    puts(di.driver);
-    puts(", Einheit ");
-    put_num(di.unit, 0, 0);
-    puts(", ");
-    mbn(di.sectors, 0);
-    puts(" MB, Geometrie ");
-    put_num(heads, 0, 0);
-    putc('/');
-    put_num(spt, 0, 0);
-    puts(di.heads ? " vom BIOS)\r\n\r\n" : ")\r\n\r\n");
-}
+    static char label[12], sys[10];
+    unsigned i;
+    char lw[3];
+    int any = 0;
 
-static void show_table(void)
-{
-    unsigned i, any = 0;
-    puts("Partition  Status  Typ        Gr\x94\xE1" "e in MB  Prozent\r\n");
+    at(r++, 4, "Partition   Status   Typ       Bezeichnung   MByte   System    benutzt");
     for (i = 0; i < 4; i++) {
         if (!pt[i].type)
             continue;
         any = 1;
-        puts("    ");
-        put_num(i + 1, 1, 0);
-        puts(pt[i].boot == 0x80 ? "        A     " : "              ");
-        puts(type_name(pt[i].type));
-        puts("   ");
-        mbn(pt[i].size, 8);
-        puts("     ");
-        put_num(pct(pt[i].size, di.sectors), 3, 0);
-        puts("%\r\n");
+        lclr();
+        lw[0] = is_fat(pt[i].type) ? letter(pt[i].start, pt[i].size) : 0;
+        lw[1] = ':';
+        lw[2] = 0;
+        if (lw[0])
+            lput(5, lw);
+        lput(8, ns(i + 1, 1));
+        if (pt[i].boot == 0x80)
+            lput(18, "A");
+        lput(24, type_name(pt[i].type));
+        if (is_fat(pt[i].type)) {
+            vol_info(pt[i].start, label, sys);
+            lput(34, label);
+            lput(56, sys);
+        }
+        lput(46, ns(mb(pt[i].size), 6));
+        lput(66, ns(pct(pt[i].size, di.sectors), 4));
+        lput(70, "%");
+        lend();
+        at(r++, 0, ln);
     }
     if (!any)
-        puts("    Keine Partitionen definiert.\r\n");
-    if (ext < 4 && nlg) {
-        puts("\r\nLogische Laufwerke in der erweiterten Partition:\r\n");
-        for (i = 0; i < nlg; i++) {
-            puts("    ");
-            put_num(i + 1, 2, 0);
-            puts("   ");
-            mbn(lg[i].size, 8);
-            puts(" MB  ");
-            put_num(pct(lg[i].size, pt[ext].size), 3, 0);
-            puts(is_fat(lg[i].type) ? "%\r\n" : "%  (Nicht-DOS)\r\n");
+        at(r++, 4, "Keine Partitionen definiert");
+    return r;
+}
+
+static void total_line(int r)
+{
+    lclr();
+    lseq(4, "Speicherplatz auf Festplatte insgesamt: ", mb(di.sectors),
+         " MByte (1 MByte = 1048576 Byte)");
+    lend();
+    at(r, 0, ln);
+}
+
+/* logische Laufwerke ab Zeile r -> naechste Zeile */
+static int draw_logs(int r)
+{
+    static char label[12], sys[10];
+    unsigned i;
+    char lw[3];
+
+    at(r++, 4, "Lw  Bezeichnung   MByte   System    benutzt");
+    for (i = 0; i < nlg; i++) {
+        lclr();
+        lw[0] = letter(lg[i].start, lg[i].size);
+        lw[1] = ':';
+        lw[2] = 0;
+        if (!lw[0]) {
+            lw[0] = (char)('1' + i);    /* noch ohne Buchstaben: Nummer */
+            lw[1] = '.';
         }
+        lput(4, lw);
+        vol_info(lg[i].start, label, sys);
+        lput(8, label);
+        lput(20, ns(mb(lg[i].size), 6));
+        lput(30, is_fat(lg[i].type) ? sys : "Nicht-DOS");
+        lput(40, ns(pct(lg[i].size, pt[ext].size), 4));
+        lput(44, "%");
+        lend();
+        at(r++, 0, ln);
     }
-    puts("\r\nGesamter Speicherplatz: ");
-    mbn(di.sectors, 0);
-    puts(" MB\r\n");
-}
-
-/* ---- Eingabe ----------------------------------------------------------- */
-static void wait_esc(void)
-{
-    puts("\r\nESC dr\x81" "cken, um fortzufahren");
-    while ((KbdCharIn() & 0xFF) != 27)
-        ;
-    puts("\r\n");
-}
-
-/* Zahl lesen (Vorgabe def); -1 = Esc */
-static long read_num(const char *prompt, unsigned long def)
-{
-    unsigned n, c;
-    unsigned long v;
-    for (;;) {
-        puts(prompt);
-        puts(" [");
-        put_num(def, 0, 0);
-        puts("]: ");
-        n = 0;
-        for (;;) {
-            c = KbdCharIn() & 0xFF;
-            if (c == 27) {
-                puts("\r\n");
-                return -1;
-            }
-            if (c == 13)
-                break;
-            if (c == 8 && n) {
-                n--;
-                puts("\b \b");
-            } else if (c >= '0' && c <= '9' && n < 7) {
-                lb[n++] = (char)c;
-                putc((char)c);
-            }
-        }
-        puts("\r\n");
-        if (!n)
-            return (long)def;
-        for (v = 0, c = 0; c < n; c++)
-            v = mul32(v, 10) + (lb[c] - '0');
-        return (long)v;
-    }
-}
-
-static int confirm(const char *q)
-{
-    puts(q);
-    puts(" (J/N)? ");
-    return ask_yn();
+    return r;
 }
 
 /* ---- Freier Platz ------------------------------------------------------ */
@@ -385,53 +612,109 @@ static unsigned char fat_type(unsigned long size)
     return size < 32680UL ? 0x01 : size < 65536UL ? 0x04 : 0x06;
 }
 
-static unsigned long ask_size(unsigned long avail, unsigned long maxs)
+
+/* ---- Befehle ----------------------------------------------------------- */
+static void write_failed(void)
 {
-    long mb;
+    error("Fehler beim Schreiben der Partitionstabelle.");
+}
+
+/* Groesse erfragen (MByte oder %), r = Zeile -> Sektoren, 0 = Esc */
+static unsigned long ask_size(int r, const char *text, unsigned long avail,
+                              unsigned long maxs, unsigned long base)
+{
+    long v;
+    int was_pct;
     unsigned long s;
     if (avail > maxs)
         avail = maxs;
-    puts("Verf\x81gbarer Speicherplatz: ");
-    mbn(avail, 0);
-    puts(" MB\r\n");
-    mb = read_num("Gr\x94\xE1" "e in MB", avail >> 11);
-    if (mb <= 0)
-        return 0;
-    if ((unsigned long)mb == avail >> 11)
-        return avail;                   /* Vorgabe: wirklich alles      */
-    s = (unsigned long)mb << 11;
-    if (s > avail)
-        s = avail;
-    return s;
+    for (;;) {
+        if (field(r, text, ns(mb(avail), 0), "0123456789%") < 0)
+            return 0;
+        v = numval(&was_pct);
+        if (v > 0 && was_pct && v <= 100)
+            s = div32(mul32(base >> 7, (unsigned)v), 100, 0) << 7;   /* % */
+        else if (v > 0 && !was_pct)
+            s = (unsigned long)v == (avail >> 11) ? avail : (unsigned long)v << 11;
+        else
+            s = 0;
+        if (s && s <= avail)
+            return s;
+        if (s > avail && s - avail < MB)
+            return avail;               /* Rundung                      */
+        error("Unzul\x84ssige Eingabe, bitte eine g\x81ltige Gr\x94\xE1" "e eingeben.");
+    }
 }
 
-/* ---- Befehle ----------------------------------------------------------- */
+static int free_slot(void)
+{
+    unsigned i;
+    for (i = 0; i < 4; i++)
+        if (!pt[i].type)
+            return (int)i;
+    return -1;
+}
+
+static void create_logical(void);
+
 static void create_primary(int extended)
 {
-    unsigned i, slot = 4;
+    int slot = free_slot(), k, maxact;
     unsigned long start, avail, size, end;
+    unsigned i;
 
-    for (i = 0; i < 4; i++)
-        if (!pt[i].type) {
-            slot = i;
-            break;
-        }
-    if (slot == 4) {
-        puts("Die Partitionstabelle ist voll (vier Eintr\x84ge).\r\n");
+    screen(extended ? "Erstellen einer erweiterten DOS-Partition"
+                    : "Erstellen einer prim\x84ren DOS-Partition");
+    cur_disk(5);
+    if (slot < 0) {
+        error("Die Partitionstabelle ist voll.");
+        wait_esc(0);
         return;
     }
     if (extended && ext < 4) {
-        puts("Es gibt bereits eine erweiterte DOS-Partition.\r\n");
+        error("Erweiterte DOS-Partition ist bereits vorhanden.");
+        wait_esc(0);
         return;
     }
     avail = free_mbr(&start);
     if (avail < cylsz) {
-        puts("Kein freier Speicherplatz auf der Festplatte.\r\n");
+        error("Kein Speicherplatz zum Erstellen einer DOS-Partition vorhanden.");
+        wait_esc(0);
         return;
     }
-    size = ask_size(avail, extended ? avail : FAT_MAX);
-    if (!size)
-        return;
+    size = 0;
+    maxact = 0;
+    if (!extended) {                    /* wie MS-DOS: alles und aktiv?  */
+        at(7, 4, "Soll der maximal verf\x81gbare Speicherplatz f\x81r eine prim\x84re");
+        k = yn(8, "DOS-Partition verwendet und diese Partition aktiviert werden (J/N)", 1);
+        if (k < 0)
+            return;
+        if (k) {
+            size = avail > FAT_MAX ? FAT_MAX : avail;
+            maxact = 1;
+        }
+    }
+    if (!size) {
+        screen(extended ? "Erstellen einer erweiterten DOS-Partition"
+                        : "Erstellen einer prim\x84ren DOS-Partition");
+        cur_disk(5);
+        draw_parts(7);
+        total_line(14);
+        lclr();
+        lput(4, "Verf\x81gbarer Speicherplatz f\x81r Partition: ");
+        lput(46, ns(mb(avail), 5));
+        lput(52, "MByte (");
+        lput(59, ns(pct(avail, di.sectors), 0));
+        lput(59 + slen(nb), "%)");
+        lend();
+        at(15, 0, ln);
+        at(17, 4, "Geben Sie die Partitionsgr\x94\xE1" "e in MByte oder Prozent des");
+        size = ask_size(18, extended ? "Festplattenspeichers (%) ein, um eine erweiterte DOS-Partition"
+                                     : "Festplattenspeichers (%) ein, um eine prim\x84re DOS-Partition",
+                        avail, extended ? avail : FAT_MAX, di.sectors);
+        if (!size)
+            return;
+    }
     end = align_up(start + size);       /* auf Zylinderende             */
     if (end > start + avail)
         end = start + avail;
@@ -439,148 +722,305 @@ static void create_primary(int extended)
     pt[slot].size = end - start;
     pt[slot].boot = 0;
     pt[slot].type = extended ? 0x05 : fat_type(end - start);
+    if (maxact) {                       /* "maximal und aktiv"          */
+        for (i = 0; i < 4; i++)
+            pt[i].boot = 0;
+        pt[slot].boot = 0x80;
+    }
     if (extended) {
-        ext = slot;
+        ext = (unsigned)slot;
         nlg = 0;
     }
-    if (write_mbr() || (extended && write_ebrs()))
-        puts("Fehler beim Schreiben der Partitionstabelle.\r\n");
-    else
-        puts(extended ? "Erweiterte DOS-Partition erstellt.\r\n"
-                      : "Prim\x84re DOS-Partition erstellt. Mit FORMAT formatieren.\r\n");
+    screen(extended ? "Erstellen einer erweiterten DOS-Partition"
+                    : "Erstellen einer prim\x84ren DOS-Partition");
+    cur_disk(5);
+    if (write_mbr() || (extended && write_ebrs())) {
+        write_failed();
+        wait_esc(0);
+        return;
+    }
+    draw_parts(7);
+    error(extended ? "Erweiterte DOS-Partition erstellt"
+                   : "Prim\x84re DOS-Partition erstellt");
+    wait_esc("dr\x81" "cken, um fortzufahren");
+    if (extended)
+        create_logical();               /* wie MS-DOS gleich weiter     */
 }
 
 static void create_logical(void)
 {
     unsigned long ebr, avail, size, end, pend;
-    if (ext == 4) {
-        puts("Zuerst eine erweiterte DOS-Partition erstellen.\r\n");
-        return;
+    for (;;) {
+        screen("Erstellen logischer DOS-Laufwerke in der erweiterten DOS-Partition");
+        if (ext == 4) {
+            error("Es gibt keine erweiterte DOS-Partition.");
+            wait_esc(0);
+            return;
+        }
+        draw_logs(5);
+        pend = pt[ext].start + pt[ext].size;
+        ebr = nlg ? align_up(lg[nlg - 1].start + lg[nlg - 1].size) : pt[ext].start;
+        lclr();
+        lseq(4, "Gesamtgr\x94\xE1" "e der erweiterten DOS-Partition: ", mb(pt[ext].size),
+             " MByte");
+        lend();
+        at(17, 0, ln);
+        if (nlg == MAXLOG || ebr + spt + cylsz > pend) {
+            error("Der gesamte verf\x81gbare Speicherplatz in der erweiterten DOS-");
+            at(23, 4, "Partition ist logischen Laufwerken zugeordnet.");
+            wait_esc(0);
+            return;
+        }
+        avail = pend - (ebr + spt);
+        lclr();
+        lseq(4, "Verf\x81gbarer Speicherplatz f\x81r logische Laufwerke: ", mb(avail),
+             " MByte");
+        lend();
+        at(18, 0, ln);
+        at(20, 4, "Geben Sie die Gr\x94\xE1" "e des logischen Laufwerks in MByte oder");
+        size = ask_size(21, "Prozent der erweiterten Partition (%) ein", avail, FAT_MAX,
+                        pt[ext].size);
+        if (!size)
+            return;
+        end = align_up(ebr + spt + size);
+        if (end > pend)
+            end = pend;
+        lg[nlg].start = ebr + spt;
+        lg[nlg].size = end - lg[nlg].start;
+        lg[nlg].type = fat_type(lg[nlg].size);
+        nlg++;
+        if (write_ebrs()) {
+            nlg--;
+            write_failed();
+            wait_esc(0);
+            return;
+        }
     }
-    if (nlg == MAXLOG) {
-        puts("Keine weiteren logischen Laufwerke m\x94glich.\r\n");
-        return;
-    }
-    pend = pt[ext].start + pt[ext].size;
-    ebr = nlg ? align_up(lg[nlg - 1].start + lg[nlg - 1].size) : pt[ext].start;
-    if (ebr + spt + cylsz > pend) {
-        puts("Kein freier Platz in der erweiterten Partition.\r\n");
-        return;
-    }
-    avail = pend - (ebr + spt);
-    size = ask_size(avail, FAT_MAX);
-    if (!size)
-        return;
-    end = align_up(ebr + spt + size);
-    if (end > pend)
-        end = pend;
-    lg[nlg].start = ebr + spt;
-    lg[nlg].size = end - lg[nlg].start;
-    lg[nlg].type = fat_type(lg[nlg].size);
-    nlg++;
-    if (write_ebrs())
-        puts("Fehler beim Schreiben.\r\n");
-    else
-        puts("Logisches DOS-Laufwerk erstellt. Mit FORMAT formatieren.\r\n");
 }
 
 static void menu_create(void)
 {
     long k;
-    header();
-    puts("1. Prim\x84re DOS-Partition erstellen\r\n"
-         "2. Erweiterte DOS-Partition erstellen\r\n"
-         "3. Logische DOS-Laufwerke in der erweiterten Partition erstellen\r\n\r\n");
-    k = read_num("Option eingeben", 1);
-    if (k == 1) create_primary(0);
-    else if (k == 2) create_primary(1);
-    else if (k == 3) create_logical();
-    if (k >= 1 && k <= 3)
-        wait_esc();
+    for (;;) {
+        screen("Erstellen einer DOS-Partition oder eines logischen DOS-Laufwerks");
+        cur_disk(5);
+        at(7, 4, "W\x84hlen Sie eine der folgenden Optionen:");
+        at(9, 4, "1. Erstellen einer prim\x84ren DOS-Partition");
+        at(10, 4, "2. Erstellen einer erweiterten DOS-Partition");
+        at(11, 4, "3. Erstellen logischer DOS-Laufwerke in der erweiterten DOS-Partition");
+        esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+        if (field(14, "Geben Sie Ihre Wahl ein:", "1", "123") < 0)
+            return;
+        k = numval(0);
+        if (k == 1) { create_primary(0); return; }
+        if (k == 2) { create_primary(1); return; }
+        if (k == 3) { create_logical(); return; }
+    }
 }
 
 static void menu_active(void)
 {
     long k;
     unsigned i;
-    header();
-    show_table();
-    k = read_num("\r\nNummer der Partition, die aktiv werden soll", 1);
-    if (k < 1 || k > 4)
-        return;
-    if (!is_fat(pt[k - 1].type)) {
-        puts("Nur prim\x84re DOS-Partitionen k\x94nnen aktiv sein.\r\n");
-        wait_esc();
+    for (;;) {
+        screen("Festlegen der aktiven Partition");
+        cur_disk(5);
+        draw_parts(7);
+        total_line(14);
+        esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+        if (field(16, "Geben Sie die Nummer der Partition ein, die aktiviert werden soll", "", "1234") < 0)
+            return;
+        k = numval(0);
+        if (k < 1 || k > 4 || !pt[k - 1].type) {
+            error("Unzul\x84ssige Eingabe.");
+            continue;
+        }
+        if (!is_fat(pt[k - 1].type)) {
+            error("Nur prim\x84re DOS-Partitionen k\x94nnen aktiviert werden.");
+            wait_esc(0);
+            return;
+        }
+        for (i = 0; i < 4; i++)
+            pt[i].boot = (unsigned char)(i == (unsigned)(k - 1) ? 0x80 : 0);
+        if (write_mbr())
+            write_failed();
+        else {
+            lclr();
+            lput(4, "Partition ");
+            lput(14, ns((unsigned long)k, 0));
+            lput(16, "wurde aktiviert.");
+            lend();
+            error(ln + 4);
+        }
+        wait_esc(0);
         return;
     }
-    for (i = 0; i < 4; i++)
-        pt[i].boot = (unsigned char)(i == (unsigned)(k - 1) ? 0x80 : 0);
-    puts(write_mbr() ? "Fehler beim Schreiben.\r\n" : "Partition ist jetzt aktiv.\r\n");
-    wait_esc();
 }
 
-static void menu_delete(void)
+/* Bezeichnung zur Bestaetigung (wie MS-DOS), danach J/N */
+static int sure(int r, unsigned long start)
 {
-    long k, n;
-    unsigned i;
-    header();
-    show_table();
-    puts("\r\n1. Prim\x84re DOS-Partition l\x94schen\r\n"
-         "2. Erweiterte DOS-Partition l\x94schen\r\n"
-         "3. Logisches DOS-Laufwerk l\x94schen\r\n"
-         "4. Nicht-DOS-Partition l\x94schen\r\n\r\n");
-    k = read_num("Option eingeben", 3);
-    if (k < 1 || k > 4)
-        return;
-    if (k == 3) {
-        if (!nlg) {
-            puts("Keine logischen Laufwerke vorhanden.\r\n");
-        } else {
-            n = read_num("Nummer des logischen Laufwerks", nlg);
-            if (n >= 1 && n <= (long)nlg &&
-                confirm("ACHTUNG: Alle Daten auf dem Laufwerk gehen verloren. Fortfahren")) {
-                for (i = (unsigned)n - 1; i + 1 < nlg; i++) {
-                    lg[i].type = lg[i + 1].type;
-                    lg[i].start = lg[i + 1].start;
-                    lg[i].size = lg[i + 1].size;
-                }
-                nlg--;
-                puts(write_ebrs() ? "Fehler beim Schreiben.\r\n" : "Logisches Laufwerk gel\x94scht.\r\n");
-            }
+    static char label[12], sys[10];
+    vol_info(start, label, sys);
+    if (label[0]) {
+        if (field(r++, "Geben Sie die Datentr\x84gerbezeichnung ein", "",
+                  "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") < 0)
+            return 0;
+        if (!same(lb, label)) {
+            error("Datentr\x84gerbezeichnung stimmt nicht \x81" "berein.");
+            wait_esc(0);
+            return 0;
         }
-        wait_esc();
-        return;
     }
-    if (k == 2 && nlg) {
-        puts("Zuerst die logischen Laufwerke l\x94schen.\r\n");
-        wait_esc();
-        return;
-    }
-    n = read_num("Nummer der Partition", k == 2 && ext < 4 ? ext + 1 : 1);
-    if (n < 1 || n > 4 || !pt[n - 1].type) {
-        wait_esc();
-        return;
-    }
-    i = (unsigned)n - 1;
-    if ((k == 1 && !is_fat(pt[i].type)) || (k == 2 && !is_ext(pt[i].type)) ||
-        (k == 4 && (is_fat(pt[i].type) || is_ext(pt[i].type)))) {
-        puts("Die Partition hat einen anderen Typ.\r\n");
-        wait_esc();
-        return;
-    }
-    if (!confirm("ACHTUNG: Alle Daten in der Partition gehen verloren. Fortfahren")) {
-        wait_esc();
-        return;
+    return yn(r, "Sind Sie sicher (J/N)", 0) == 1;
+}
+
+static void delete_part(int kind)       /* 1 primaer, 2 erweitert, 4 Nicht-DOS */
+{
+    long k;
+    unsigned i;
+    screen(kind == 1 ? "L\x94schen der prim\x84ren DOS-Partition" :
+           kind == 2 ? "L\x94schen der erweiterten DOS-Partition" :
+                       "L\x94schen einer Nicht-DOS-Partition");
+    cur_disk(5);
+    draw_parts(7);
+    total_line(14);
+    esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+    if (kind == 2) {
+        if (ext == 4) {
+            error("Es gibt keine erweiterte DOS-Partition.");
+            wait_esc(0);
+            return;
+        }
+        if (nlg) {
+            error("Zuerst die logischen Laufwerke in der erweiterten Partition l\x94schen.");
+            wait_esc(0);
+            return;
+        }
+        at(16, 4, "ACHTUNG! Die Daten in der gel\x94schten erweiterten DOS-Partition");
+        at(17, 4, "gehen verloren.");
+        if (yn(18, "M\x94" "chten Sie fortfahren (J/N)", 0) != 1)
+            return;
+        i = ext;
+    } else {
+        at(16, 4, kind == 1 ? "ACHTUNG! Die Daten in der gel\x94schten prim\x84ren DOS-Partition"
+                            : "ACHTUNG! Die Daten in der gel\x94schten Nicht-DOS-Partition");
+        at(17, 4, "gehen verloren.");
+        if (field(18, kind == 1 ? "Welche prim\x84re Partition m\x94" "chten Sie l\x94schen"
+                                : "Welche Nicht-DOS-Partition m\x94" "chten Sie l\x94schen",
+                  "", "1234") < 0)
+            return;
+        k = numval(0);
+        if (k < 1 || k > 4 || !pt[k - 1].type ||
+            (kind == 1 && !is_fat(pt[k - 1].type)) ||
+            (kind == 4 && (is_fat(pt[k - 1].type) || is_ext(pt[k - 1].type)))) {
+            error("Unzul\x84ssige Eingabe.");
+            wait_esc(0);
+            return;
+        }
+        i = (unsigned)k - 1;
+        if (!(kind == 1 ? sure(19, pt[i].start) : yn(19, "Sind Sie sicher (J/N)", 0) == 1))
+            return;
     }
     pt[i].type = 0;
     pt[i].boot = 0;
     if (i == ext)
         ext = 4;
-    puts(write_mbr() ? "Fehler beim Schreiben.\r\n" : "Partition gel\x94scht.\r\n");
-    wait_esc();
+    if (write_mbr())
+        write_failed();
+    else
+        error(kind == 2 ? "Erweiterte DOS-Partition gel\x94scht" : "Partition gel\x94scht");
+    wait_esc(0);
 }
 
-static int open_disk(unsigned n)
+static void delete_logical(void)
+{
+    long k;
+    unsigned i, n;
+    char c;
+    screen("L\x94schen logischer DOS-Laufwerke in der erweiterten DOS-Partition");
+    if (!nlg) {
+        error("Keine logischen DOS-Laufwerke definiert.");
+        wait_esc(0);
+        return;
+    }
+    draw_logs(5);
+    esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+    at(17, 4, "ACHTUNG! Die Daten im gel\x94schten logischen DOS-Laufwerk gehen verloren.");
+    if (field(18, "Welches Laufwerk (Buchstabe oder Nummer) m\x94" "chten Sie l\x94schen", "",
+              "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") < 0)
+        return;
+    k = -1;
+    c = lb[0];
+    if (c >= '1' && c <= '9' && !lb[1])
+        k = c - '1';
+    else if (c >= 'C' && c <= 'Z' && !lb[1])
+        for (n = 0; n < nlg; n++)
+            if (letter(lg[n].start, lg[n].size) == c)
+                k = (long)n;
+    if (k < 0 || k >= (long)nlg) {
+        error("Unzul\x84ssige Eingabe.");
+        wait_esc(0);
+        return;
+    }
+    if (!sure(19, lg[k].start))
+        return;
+    for (i = (unsigned)k; i + 1 < nlg; i++) {
+        lg[i].type = lg[i + 1].type;
+        lg[i].start = lg[i + 1].start;
+        lg[i].size = lg[i + 1].size;
+    }
+    nlg--;
+    if (write_ebrs())
+        write_failed();
+    else
+        error("Logisches DOS-Laufwerk gel\x94scht");
+    wait_esc(0);
+}
+
+static void menu_delete(void)
+{
+    long k;
+    for (;;) {
+        screen("L\x94schen einer DOS-Partition oder eines logischen DOS-Laufwerks");
+        cur_disk(5);
+        at(7, 4, "W\x84hlen Sie eine der folgenden Optionen:");
+        at(9, 4, "1. L\x94schen der prim\x84ren DOS-Partition");
+        at(10, 4, "2. L\x94schen der erweiterten DOS-Partition");
+        at(11, 4, "3. L\x94schen logischer DOS-Laufwerke in der erweiterten DOS-Partition");
+        at(12, 4, "4. L\x94schen einer Nicht-DOS-Partition");
+        esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+        if (field(15, "Geben Sie Ihre Wahl ein:", "", "1234") < 0)
+            return;
+        k = numval(0);
+        if (k == 3) { delete_logical(); return; }
+        if (k >= 1 && k <= 4) { delete_part((int)k); return; }
+    }
+}
+
+static void show_data(void)
+{
+    screen("Anzeigen der Partitionierungsdaten");
+    cur_disk(5);
+    draw_parts(7);
+    total_line(14);
+    esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+    if (ext < 4 && nlg) {
+        at(16, 4, "Die erweiterte DOS-Partition enth\x84lt logische DOS-Laufwerke.");
+        if (yn(17, "Sollen die Daten der logischen Laufwerke angezeigt werden (J/N)", 1) != 1)
+            return;
+        screen("Anzeigen der Daten der logischen DOS-Laufwerke");
+        draw_logs(5);
+        lclr();
+        lseq(4, "Gesamtgr\x94\xE1" "e der erweiterten DOS-Partition: ", mb(pt[ext].size),
+             " MByte (1 MByte = 1048576 Byte)");
+        lend();
+        at(17, 0, ln);
+    }
+    wait_esc(0);
+}
+
+static int open_disk(unsigned n, int lock)
 {
     if (hd) {
         DosClose(hd);
@@ -588,37 +1028,132 @@ static int open_disk(unsigned n)
     }
     if (DosDiskInfo(n, &di) != 0)
         return -1;
-    hd = DosOpenDisk(n, DRV_OPEN_LOCK);
+    hd = DosOpenDisk(n, lock ? DRV_OPEN_LOCK : DRV_OPEN_READ);
     if (FAPI_FAILED(hd)) {
         hd = 0;
-        puts(" Die Festplatte wird gerade benutzt (offene Dateien).\r\n");
-        return -1;
+        return -2;
     }
+    hd_lock_state = lock;
     disk = n;
-    if (load_disk()) {
-        puts("Die Festplatte ist nicht lesbar.\r\n");
-        return -1;
-    }
-    return 0;
+    return load_disk() ? -3 : 0;
 }
 
-static void status(void)
+/* Uebersicht aller Platten (Wechseln, /STATUS); out: Zeile ausgeben */
+static void overview(void (*out)(void))
 {
-    unsigned n;
+    unsigned n, i, cur = disk;
+    unsigned long used;
+    char lw[3];
+
     for (n = 0; n < ndisks; n++) {
-        if (DosDiskInfo(n, &di) != 0)
+        if (open_disk(n, 0))
             continue;
-        hd = DosOpenDisk(n, DRV_OPEN_READ);
-        if (FAPI_FAILED(hd))
-            continue;
-        disk = n;
-        if (!load_disk()) {
-            header();
-            show_table();
-        }
-        DosClose(hd);
-        hd = 0;
+        for (used = 0, i = 0; i < 4; i++)
+            if (pt[i].type)
+                used += pt[i].size;
+        lclr();
+        lput(4, ns(n + 1, 1));
+        lput(18, ns(mb(di.sectors), 6));
+        lput(28, ns(mb(di.sectors > used ? di.sectors - used : 0), 6));
+        lput(37, ns(pct(used, di.sectors), 4));
+        lput(41, "%");
+        lend();
+        out();
+        for (i = 0; i < 4; i++)         /* Laufwerke darauf             */
+            if (is_fat(pt[i].type) && (lw[0] = letter(pt[i].start, pt[i].size)) != 0) {
+                lw[1] = ':';
+                lw[2] = 0;
+                lclr();
+                lput(12, lw);
+                lput(18, ns(mb(pt[i].size), 6));
+                lend();
+                out();
+            }
+        for (i = 0; i < nlg; i++)
+            if ((lw[0] = letter(lg[i].start, lg[i].size)) != 0) {
+                lw[1] = ':';
+                lw[2] = 0;
+                lclr();
+                lput(12, lw);
+                lput(18, ns(mb(lg[i].size), 6));
+                lend();
+                out();
+            }
     }
+    disk = cur;
+}
+
+static int ov_row;
+static void out_screen(void)
+{
+    at(ov_row++, 0, ln);
+}
+
+static void out_text(void)
+{
+    puts(ln);
+    puts("\r\n");
+}
+
+static void change_disk(void)
+{
+    long k;
+    unsigned cur = disk;
+    screen("Wechseln der aktuellen Festplatte");
+    at(5, 4, "Festpl.   Lw   MByte    frei  benutzt");
+    ov_row = 6;
+    overview(out_screen);
+    at(20, 4, "(1 MByte = 1048576 Byte)");
+    esc_line("dr\x81" "cken, um zu den FDISK-Optionen zur\x81" "ckzukehren");
+    for (;;) {
+        lclr();
+        lput(0, "Geben Sie die Nummer der Festplatte ein (1-");
+        lput(43, ns(ndisks, 0));
+        lput(43 + slen(nb), ")");
+        lend();
+        if (field(21, ln, "", "123456789") < 0)
+            break;
+        k = numval(0);
+        if (k >= 1 && k <= (long)ndisks) {
+            cur = (unsigned)k - 1;
+            break;
+        }
+        lclr();
+        lput(0, "Unzul\x84ssige Eingabe, bitte 1-");
+        lput(29, ns(ndisks, 0));
+        lput(29 + slen(nb), " eingeben.");
+        lend();
+        error(ln);
+    }
+    if (open_disk(cur, 1))
+        open_disk(cur, 0);              /* belegt: nur anzeigen         */
+}
+
+static void main_menu(void)
+{
+    unsigned i, act;
+    screen(0);
+    center(1, "AT-DOS Version 5.0", 0x07);
+    center(2, "Festplatten-Setup-Programm", 0x07);
+    center(4, "FDISK-Optionen", A_HI);
+    cur_disk(6);
+    at(8, 4, "W\x84hlen Sie eine der folgenden Optionen:");
+    at(10, 4, "1. Erstellen einer DOS-Partition oder eines logischen DOS-Laufwerks");
+    at(11, 4, "2. Festlegen der aktiven Partition");
+    at(12, 4, "3. L\x94schen einer Partition oder eines logischen DOS-Laufwerks");
+    at(13, 4, "4. Anzeigen der Partitionierungsdaten");
+    if (ndisks > 1)
+        at(14, 4, "5. Wechseln der aktuellen Festplatte");
+    for (act = 0, i = 0; i < 4; i++)
+        if (pt[i].type && pt[i].boot == 0x80)
+            act = 1;
+    if (!act && disk == 0) {
+        error("ACHTUNG! Keine Partition ist aktiv - Festplatte 1 kann nicht gestartet");
+        at(23, 4, "werden, bis eine Partition aktiviert wurde.");
+    }
+    if (!hd_locked)
+        at(16, 4, "(Festplatte wird benutzt - nur Anzeige m\x94glich)");
+    esc_line("dr\x81" "cken, um FDISK zu beenden");
 }
 
 void main(void)
@@ -626,6 +1161,7 @@ void main(void)
     char *a;
     long k;
     unsigned i;
+    int rc;
 
     DosGetArgs(args);
     a = skip(args);
@@ -635,50 +1171,67 @@ void main(void)
         puts("Keine Festplatte gefunden.\r\n");
         DosExit(1);
     }
-    if (same(a, "/STATUS")) {
-        status();
+    if (same(a, "/STATUS")) {           /* wie MS-DOS: Uebersicht als Text */
+        puts("\r\n                Festplattenspeicher \x81" "bersicht\r\n\r\n"
+             "    Festpl.   Lw   MByte    frei  benutzt\r\n");
+        overview(out_text);
+        puts("\r\n    (1 MByte = 1048576 Byte)\r\n");
+        if (hd)
+            DosClose(hd);
         return;
     }
-    if (same(a, "/MBR")) {                  /* Startcode erneuern       */
-        if (open_disk(0) || rw(0, 0))
+    if (same(a, "/MBR")) {              /* Startcode erneuern           */
+        if (open_disk(0, 1) || rw(0, 0)) {
+            puts("Die erste Festplatte ist nicht verf\x81gbar.\r\n");
             DosExit(1);
+        }
         for (i = 0; i < 446; i++)
             sec[i] = mbr_code[i];
         sec[510] = 0x55;
         sec[511] = 0xAA;
-        puts(rw(0, 1) ? "Fehler beim Schreiben.\r\n" : "Startcode der ersten Festplatte erneuert.\r\n");
+        puts(rw(0, 1) ? "Fehler beim Schreiben.\r\n"
+                      : "Startcode der ersten Festplatte erneuert.\r\n");
         DosClose(hd);
         return;
     }
-    if (open_disk(0))
+    rc = open_disk(0, 1);
+    if (rc == -2)
+        rc = open_disk(0, 0);           /* belegt: nur anzeigen         */
+    if (rc) {
+        puts("Die Festplatte ist nicht lesbar.\r\n");
         DosExit(1);
+    }
+    k = VioSetMode(1);
+    if (!FAPI_FAILED(k) && k >= 25)
+        rows = (unsigned)k;
     for (;;) {
-        header();
-        puts("1. DOS-Partition oder logisches DOS-Laufwerk erstellen\r\n"
-             "2. Aktive Partition festlegen\r\n"
-             "3. Partition oder logisches DOS-Laufwerk l\x94schen\r\n"
-             "4. Partitionsdaten anzeigen\r\n");
-        if (ndisks > 1)
-            puts("5. N\x84" "chste Festplatte w\x84hlen\r\n");
-        puts("\r\nESC = FDISK beenden\r\n");
-        k = read_num("Option eingeben", 4);
-        if (k < 0)
+        hd_locked = hd_lock_state;
+        main_menu();
+        if (field(18, "Geben Sie Ihre Wahl ein:", "1", ndisks > 1 ? "12345" : "1234") < 0)
             break;
+        k = numval(0);
+        if (!hd_locked && k >= 1 && k <= 3) {
+            error("Die Festplatte wird gerade benutzt (offene Dateien).");
+            wait_esc(0);
+            continue;
+        }
         switch ((int)k) {
         case 1: menu_create(); break;
         case 2: menu_active(); break;
         case 3: menu_delete(); break;
-        case 4: header(); show_table(); wait_esc(); break;
-        case 5:
-            if (ndisks > 1)
-                open_disk((disk + 1) % ndisks);
-            break;
+        case 4: show_data(); break;
+        case 5: if (ndisks > 1) change_disk(); break;
         }
     }
     DosClose(hd);
-    if (changed) {
-        puts("\r\nDie Laufwerksbuchstaben \x84ndern sich erst nach einem Neustart.\r\n");
-        if (confirm("Jetzt neu starten"))
-            DosShutdown(1);
+    if (changed) {                      /* wie MS-DOS: Neustart          */
+        screen(0);
+        at(10, 4, "Sie M\x9A" "SSEN das System neu starten, damit die \x8E" "nderungen wirksam");
+        at(11, 4, "werden. Alle Laufwerke, die Sie erstellt oder ge\x84ndert haben, m\x81ssen");
+        at(12, 4, "nach dem Neustart formatiert werden.");
+        at(15, 4, "Das System wird neu gestartet.");
+        wait_esc("dr\x81" "cken, um FDISK zu beenden");
+        DosShutdown(1);
     }
+    VioSetMode(0);
 }
