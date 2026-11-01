@@ -1,7 +1,7 @@
 /*
  * UFAT.EXE /R - Oberflaechentest (eingebunden in task_ufat.c), wie
  * CHKDSK /R von Windows NT bzw. SCANDISK von MS-DOS 6.2: jeder Sektor des
- * Datenbereichs wird gelesen (32 Sektoren am Stueck, bei Fehlern Cluster
+ * Datenbereichs wird gelesen (16 Sektoren am Stueck, bei Fehlern Cluster
  * fuer Cluster). Ein defekter freier Cluster wird in der FAT gesperrt
  * (FFF7h). Gehoert er zu einer Datei, kommt sein Inhalt in einen freien
  * Cluster (unlesbare Sektoren als Nullen), die Kette wird umgehaengt und

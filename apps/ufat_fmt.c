@@ -16,7 +16,7 @@
 
 static struct fapi_fsinfo ffi;
 
-#define VCHUNK 32                       /* Sektoren je Lesen beim Pruefen */
+#define VCHUNK 16                       /* Sektoren je Lesen beim Pruefen (UFAT muss in 64 KB passen) */
 static unsigned char vbuf[VCHUNK * 512];
 
 static int rd_vsecs(unsigned long lba, unsigned n)

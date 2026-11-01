@@ -477,7 +477,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
   Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später:
-  DEFRAG, MODE COM/LPT.
+  MODE COM/LPT, DEFRAG mit Clusterkarte und Verzeichnissen.
+  DEFRAG (in QEMU an einer absichtlich fragmentierten Diskette geprüft,
+  danach fsck sauber, Inhalte gleich): `apps/ufat_defrag.c`, Belegung als
+  Bitmap in `used`, Dateien (Eintragssektor, Startcluster, Länge) in einem
+  DosAllocSeg-Segment; Reihenfolge kopieren -> FAT -> Eintrag -> alte
+  Kette frei. UFAT ist knapp an 64 KB (VCHUNK auf 16 gesenkt) – beim
+  Bauen auf „mehr als 64 KB“ achten, build.sh bricht dann still ab.
   Drucker (Nutzer hat keinen, gehört aber rein; in QEMU mit `-parallel
   file:` geprüft): `dev_name()` in OPEN/CREATE erkennt PRN/LPT1-3/NUL
   (Basisname, Endung egal), `OF_LPT`/`OF_NUL`, Ports aus dem BIOS-

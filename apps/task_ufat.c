@@ -827,13 +827,14 @@ static void summary(const unsigned char *bs)
 #include "ufat_fmt.c"
 #include "ufat_undel.c"
 #include "ufat_scan.c"
+#include "ufat_defrag.c"
 
 void main(void)
 {
     char *a = args;
     unsigned reserved;
     unsigned long rootsecs, fatsecs;
-    int fmt = 0, quick = 0, undel = 0, ulist = 0, uall = 0, surface = 0;
+    int fmt = 0, quick = 0, undel = 0, ulist = 0, uall = 0, surface = 0, defrag = 0, donly = 0;
     unsigned fkb = 0, r_undel;
     static char uspec[200] = "\\*.*";
 
@@ -850,6 +851,10 @@ void main(void)
             fmt = 1;                    /* /FORMAT                       */
         else if (a[0] == '/' && up(a[1]) == 'U' && up(a[2]) == 'N')
             undel = 1;                  /* /UNDELETE                     */
+        else if (a[0] == '/' && up(a[1]) == 'D' && up(a[2]) == 'E')
+            defrag = 1;                 /* /DEFRAG                       */
+        else if (a[0] == '/' && up(a[1]) == 'U' && (a[2] == 0 || a[2] == ' '))
+            donly = 1;                  /* DEFRAG /U: nur Fragmente      */
         else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'I')
             ulist = 1;
         else if (a[0] == '/' && up(a[1]) == 'R')
@@ -890,7 +895,7 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
-    hd = DosOpenDrive(drive, fix || (undel && !ulist) ? DRV_OPEN_LOCK : DRV_OPEN_READ);
+    hd = DosOpenDrive(drive, fix || defrag || (undel && !ulist) ? DRV_OPEN_LOCK : DRV_OPEN_READ);
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Das Laufwerk ist gesperrt oder in Benutzung.\n"
                                   : "Laufwerk kann nicht ge\x94" "ffnet werden.\n");
@@ -928,6 +933,11 @@ void main(void)
     if (load_fat()) {
         DosClose(hd);
         DosExit(3);
+    }
+    if (defrag) {
+        r_undel = do_defrag(donly);
+        DosClose(hd);
+        DosExit(r_undel);
     }
     if (undel) {
         r_undel = do_undelete(uspec, ulist, uall);

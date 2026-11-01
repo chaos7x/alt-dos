@@ -103,6 +103,11 @@ und PC-DOS.
 - `PRINT [/D:Gerät] [/T] [Datei [/C] [/P] ...]` wie MS-DOS: Warteschlange
   `\DOS\SYSTEM\PRINT.QUE`, gedruckt wird von einem Hintergrund-Task
   (`PRINT /WORK`), `/T` und `/C` brechen auch den laufenden Druck ab
+- `DEFRAG [X:] [/F | /U] [/V]` wie MS-DOS 6: Verteiler, die Arbeit macht
+  `UFAT /DEFRAG` – fragmentierte Dateien zusammenlegen, mit `/F` (Vorgabe)
+  Dateien in Lücken weiter vorn schieben; je Datei erst kopieren, dann neue
+  Kette, dann Verzeichniseintrag, dann alte Kette frei (Absturz kostet
+  nichts); Verzeichnisse bleiben an ihrem Platz
 - `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
   (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
   IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,
