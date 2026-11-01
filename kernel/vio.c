@@ -73,7 +73,7 @@ extern unsigned short vga_font8a[2], vga_font8b[2], vga_font16[2];
    umgedrehtem Attribut (XOR 77h, Blinken und Helligkeit bleiben), nur im
    Bildspeicher - der Sitzungspuffer bleibt unberuehrt. */
 #define MQ_LEN  8
-struct mouev { unsigned char b, row, col; };
+struct mouev { unsigned char b, row, col; unsigned short x, y; };
 static struct mouev mq[NTASK][MQ_LEN];
 static unsigned char mou_nbtn;          /* 0 = keine Maus                */
 static int mx, my;                      /* Mickeys                       */
@@ -84,6 +84,9 @@ static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
 
 static void ptr_remove(void);
 static void ptr_draw(void);
+static unsigned char gp_drawn, gp_mode;
+static void gptr_update(void);
+static void gptr_remove(void);
 
 /* ---- Grafik (VGA, Modus 13h) --------------------------------------------
    Wie VioGetPhysBuf bei OS/2 1.x bekommt das Programm einen Selektor auf
@@ -524,7 +527,11 @@ void vio_flush(void)
 {
     unsigned a, b, f;
 
-    if (fg < 0 || ses[fg].gfx)      /* Grafik: Text bleibt im Puffer    */
+    if (fg >= 0 && ses[fg].gfx) {   /* Grafik: Text bleibt im Puffer,   */
+        gptr_update();              /* nur der Mauszeiger               */
+        return;
+    }
+    if (fg < 0)
         return;
     if (sel_copy)                   /* Taste losgelassen: kopieren      */
         sel_finish();
@@ -755,6 +762,7 @@ static void gfx_alias(int s)
    zwingt set_hw_lines zum Neuprogrammieren - 13h belegt auch Ebene 2) */
 static void hw_text(void)
 {
+    gp_drawn = 0;
     vga_regs(vga_mode03);
     if (text_dac_ok)
         dac_io(1, 0, 64, (unsigned char __far *)text_dac);
@@ -779,6 +787,7 @@ static int gfx_in(void)
     }
     vga_regs(ses[fg].gfx == 0x12 ? vga_mode12 : vga_mode13);
     hw_gfx = ses[fg].gfx;
+    gp_drawn = 0;                           /* Bild kommt aus dem Puffer */
     gfx_copy(fg, 0);
     if (hw_gfx == 0x12) {                   /* Ebene des Programms      */
         seqr(0x02, 1 << ses[fg].gfx_plane);
@@ -797,6 +806,7 @@ static void gfx_out(void)
     unsigned short w[8];
     if (fg < 0 || !ses[fg].gfx || hw_gfx != ses[fg].gfx)
         return;
+    gptr_remove();                          /* Zeiger nicht mitsichern  */
     win_save(w);
     gfx_copy(fg, 1);
     win_restore(w);
@@ -937,6 +947,146 @@ void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off)
     if (s == fg && hw_gfx == ses[s].gfx)
         dac_io(1, first, n, MK_FP(sel, off));
     win_restore(w);
+}
+
+/* ---- Mauszeiger in der Grafik ---------------------------------------------
+   Pfeil 10x16, weiss mit schwarzem Rand (Bit 15 = linke Spalte). Das
+   Programm schreibt jederzeit selbst in den Bildspeicher: beim Entfernen
+   kommt nur zurueck, was noch genau so aussieht, wie der Kernel es
+   gezeichnet hat - darueber Gemaltes bleibt (wie beim Textzeiger). */
+static const unsigned short gptr_w[16] = {
+    0x0000, 0x0000, 0x4000, 0x6000, 0x7000, 0x7800, 0x7C00, 0x7E00,
+    0x7F00, 0x7C00, 0x6C00, 0x4600, 0x0600, 0x0300, 0x0300, 0x0000 };
+static const unsigned short gptr_b[16] = {
+    0x8000, 0xC000, 0xA000, 0x9000, 0x8800, 0x8400, 0x8200, 0x8100,
+    0x8080, 0x83C0, 0x9200, 0xA900, 0xC900, 0x8480, 0x0480, 0x0300 };
+static int gp_x, gp_y;
+static unsigned char gp_save[16][12];   /* 13h: Punkte; 12h: 3 Byte x 4 Ebenen */
+
+/* Bytemaske des Pfeils fuer Byte i (0-2) einer Zeile, Verschiebung sh */
+static unsigned char gmask(unsigned short m, unsigned i, unsigned sh)
+{
+    return (unsigned char)(i == 0 ? m >> (8 + sh) : i == 1 ? (m >> sh) & 0xFF
+                                                          : (m << (8 - sh)) & 0xFF);
+}
+
+static void gptr_paint(int draw)
+{
+    unsigned char __far *v = MK_FP(SCRATCH2, 0);
+    volatile unsigned char __far *vv = MK_FP(SCRATCH2, 0);
+    unsigned short w[8];
+    unsigned r, c, i, pl, a, sh, b0;
+    unsigned char col, wm, bm, m, cur[4], an, orr;
+    int x, y;
+
+    win_save(w);
+    scratch2_map(0xA0000UL, 0xFFFF);
+    for (r = 0; r < 16; r++) {
+        y = gp_y + (int)r;
+        if (gp_mode == 0x13) {
+            if (y >= 200)
+                break;
+            for (c = 0; c < 10; c++) {
+                x = gp_x + (int)c;
+                if (x >= 320)
+                    break;
+                if (gptr_w[r] & (0x8000 >> c))
+                    col = 15;
+                else if (gptr_b[r] & (0x8000 >> c))
+                    col = 0;
+                else
+                    continue;
+                a = (unsigned)y * 320 + (unsigned)x;
+                if (draw) {
+                    gp_save[r][c] = v[a];
+                    v[a] = col;
+                } else if (v[a] == col)
+                    v[a] = gp_save[r][c];
+            }
+            continue;
+        }
+        if (y >= 480)                       /* 12h: Ebenen              */
+            break;
+        b0 = (unsigned)gp_x >> 3;
+        sh = (unsigned)gp_x & 7;
+        for (i = 0; i < 3 && b0 + i < 80; i++) {
+            wm = gmask(gptr_w[r], i, sh);
+            bm = gmask(gptr_b[r], i, sh);
+            m = wm | bm;
+            if (!m)
+                continue;
+            a = (unsigned)y * 80 + b0 + i;
+            if (draw) {
+                for (pl = 0; pl < 4; pl++) {
+                    gcr(0x04, pl);
+                    gp_save[r][i * 4 + pl] = v[a];
+                }
+                seqr(0x02, 0x0F);           /* alle Ebenen, Bitmaske    */
+                if (wm) {
+                    gcr(0x08, wm);
+                    (void)vv[a];            /* Latches laden            */
+                    v[a] = 0xFF;            /* weiss = alle Ebenen 1    */
+                }
+                if (bm) {
+                    gcr(0x08, bm);
+                    (void)vv[a];
+                    v[a] = 0x00;
+                }
+                gcr(0x08, 0xFF);
+            } else {
+                /* je Punkt: nur zurueck, was noch weiss (alle Ebenen 1)
+                   bzw. schwarz (alle 0) ist - das Programm darf daneben
+                   im selben Byte gemalt haben */
+                for (an = 0xFF, orr = 0, pl = 0; pl < 4; pl++) {
+                    gcr(0x04, pl);
+                    cur[pl] = vv[a];
+                    an &= cur[pl];
+                    orr |= cur[pl];
+                }
+                m = (unsigned char)((wm & an) | (bm & ~orr));
+                if (m)
+                    for (pl = 0; pl < 4; pl++) {
+                        seqr(0x02, 1 << pl);
+                        v[a] = (unsigned char)((cur[pl] & ~m) | (gp_save[r][i * 4 + pl] & m));
+                    }
+            }
+        }
+    }
+    if (gp_mode == 0x12 && fg >= 0) {       /* Ebene des Programms      */
+        seqr(0x02, 1 << ses[fg].gfx_plane);
+        gcr(0x04, ses[fg].gfx_plane);
+    }
+    win_restore(w);
+}
+
+static void gptr_remove(void)
+{
+    if (gp_drawn) {
+        if (hw_gfx == gp_mode)
+            gptr_paint(0);
+        gp_drawn = 0;
+    }
+}
+
+/* in vio_flush (Grafiksitzung vorn): Zeiger nachfuehren */
+static void gptr_update(void)
+{
+    int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && mou_nbtn &&
+               ses[fg].mou_owner >= 0 && ses[fg].mou_show;
+    int x = 0, y = 0;
+    if (show) {
+        x = hw_gfx == 0x13 ? mx >> 1 : mx;
+        y = hw_gfx == 0x13 ? my >> 1 : my;
+    }
+    if (gp_drawn && (!show || x != gp_x || y != gp_y || gp_mode != hw_gfx))
+        gptr_remove();
+    if (show && !gp_drawn) {
+        gp_x = x;
+        gp_y = y;
+        gp_mode = hw_gfx;
+        gptr_paint(1);
+        gp_drawn = 1;
+    }
 }
 
 /* ---- Maus --------------------------------------------------------------- */
@@ -1108,6 +1258,8 @@ void vio_mou_reg(unsigned buttons)
 void vio_mou_event(unsigned buttons, int dx, int dy)
 {
     unsigned or_ = (unsigned)my >> 4, oc = (unsigned)mx >> 3, r, c, n;
+    unsigned char gm = fg >= 0 ? ses[fg].gfx : 0;
+    int ox = mx, oy = my, gx, gy;
     struct session *p;
     struct mouev *e;
 
@@ -1116,10 +1268,19 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     if (mx < 0) mx = 0;
     if (mx > SCOLS * 8 - 1) mx = SCOLS * 8 - 1;
     if (my < 0) my = 0;
-    if (my > hw_lines * 16 - 1) my = hw_lines * 16 - 1;
+    /* Grafik: virtuelles Raster wie beim Maustreiber von Microsoft -
+       12h 640x480 Punkte, 13h 640x400 (halbiert 320x200) */
+    n = gm == 0x12 ? 479 : gm == 0x13 ? 399 : hw_lines * 16 - 1;
+    if (my > (int)n) my = (int)n;
+    gx = gm == 0x13 ? mx >> 1 : mx;
+    gy = gm == 0x13 ? my >> 1 : my;
     r = (unsigned)my >> 4;
     c = (unsigned)mx >> 3;
-    if (r == or_ && c == oc && buttons == mbtn)
+    if (gm) {                               /* Grafik: Bildpunkt zaehlt */
+        if ((gm == 0x13 ? (ox >> 1 == gx && oy >> 1 == gy) : (ox == gx && oy == gy)) &&
+            buttons == mbtn)
+            return;
+    } else if (r == or_ && c == oc && buttons == mbtn)
         return;                             /* gleiche Zelle            */
     n = mbtn;                               /* Tasten vorher            */
     mbtn = (unsigned char)buttons;
@@ -1127,6 +1288,8 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     if (fg < 0)
         return;
     p = &ses[fg];
+    if (gm && p->mou_owner < 0)
+        return;                             /* Grafik ohne Mausprogramm */
     if (p->mou_owner < 0) {                 /* Konsolenmaus (Kernel)    */
         con_ptr = 1;
         r -= p->top;
@@ -1150,9 +1313,14 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
             paste_req = 1;
         return;
     }
-    r -= p->top;                            /* Zeile der Sitzung        */
-    if (r >= p->rows)
-        r = 0xFF;
+    if (gm) {                               /* Grafik: Zelle zu 8x8 Punkten */
+        r = (unsigned)gy >> 3;
+        c = (unsigned)gx >> 3;
+    } else {
+        r -= p->top;                        /* Zeile der Sitzung        */
+        if (r >= p->rows)
+            r = 0xFF;
+    }
     if (p->mq_n == MQ_LEN && mq[fg][(p->mq_head + MQ_LEN - 1) % MQ_LEN].b == buttons)
         n = (p->mq_head + MQ_LEN - 1) % MQ_LEN;   /* voll: letzte Bewegung ersetzen */
     else if (p->mq_n == MQ_LEN)
@@ -1163,6 +1331,8 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     e->b = (unsigned char)buttons;
     e->row = (unsigned char)r;
     e->col = (unsigned char)c;
+    e->x = (unsigned short)(gm ? gx : mx);  /* Text: virtuell 640x... */
+    e->y = (unsigned short)(gm ? gy : my);
 }
 
 /* MouOpen: Ereignisse fuer die Sitzung an -> Tasten, 0 = keine Maus */
@@ -1179,7 +1349,8 @@ unsigned vio_mou_open(int s, int t)
     return mou_nbtn;
 }
 
-/* naechstes Ereignis nach e (3 Byte); 0 = keins */
+/* naechstes Ereignis nach e (8 Byte: Tasten, Zeile, Spalte, 0, x, y);
+   0 = keins */
 int vio_mou_read(int s, unsigned char *e)
 {
     unsigned f;
@@ -1195,6 +1366,11 @@ int vio_mou_read(int s, unsigned char *e)
     e[0] = q->b;
     e[1] = q->row;
     e[2] = q->col;
+    e[3] = 0;
+    e[4] = (unsigned char)q->x;
+    e[5] = (unsigned char)(q->x >> 8);
+    e[6] = (unsigned char)q->y;
+    e[7] = (unsigned char)(q->y >> 8);
     ses[s].mq_head = (unsigned char)((ses[s].mq_head + 1) % MQ_LEN);
     ses[s].mq_n--;
     irq_restore(f);

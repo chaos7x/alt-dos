@@ -133,8 +133,13 @@ struct fapi_label {
 #define FAPI_MOUOPEN        0x38    /* -> Anzahl Tasten, 0 = keine Maus;
                                        Ereignisse fuer diese Sitzung an,
                                        Warteschlange leer, Zeiger aus */
-#define FAPI_MOUREADEVENT   0x39    /* BX = struct fapi_mouevent, CX = 1 warten
+#define FAPI_MOUREADEVENT   0x39    /* BX = struct fapi_mouevent, CX = MOU_WAIT
+                                       (warten) | MOU_XY (8 Byte mit x, y)
                                        -> 0 Ereignis, 1 keins (oder Signal) */
+#define MOU_WAIT            1
+#define MOU_XY              2       /* x/y: Grafik in Bildpunkten (12h
+                                       640x480, 13h 320x200), Text im
+                                       virtuellen Raster (8 je Spalte) */
 #define FAPI_MOUSHOWPTR     0x3A    /* BX = 1 Zeiger zeigen, 0 verbergen */
 /* Zwischenablage des Kernels, fuer alle Sitzungen gemeinsam (auch die
    Konsolenmaus legt markierten Text hier ab). Zeilenende CR LF oder LF. */
@@ -169,6 +174,7 @@ struct fapi_mouevent {
     unsigned char  buttons;         /* MOU_* gedrueckt                  */
     unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */
     unsigned char  rsv;
+    unsigned short x, y;            /* nur mit MOU_XY                   */
 };
 #define MOU_LEFT            0x01
 #define MOU_RIGHT           0x02

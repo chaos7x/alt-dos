@@ -223,7 +223,7 @@ selbst nur 8.3 kennt.
 | 54 | VioGetRows      | → Zeilen, die das Programm beschreiben kann (normal Bildschirm − 2, Vollbild alle) |
 | 55 | DosShutdownHold | nach SIG_SHUTDOWN: Herunterfahren aufhalten, weil das Programm den Benutzer fragt; Sitzung kommt nach vorn, der Kernel wartet bis zum Programmende (sonst 5 s) |
 | 56 | MouOpen         | → Anzahl Maustasten (0 = keine Maus); Ereignisse für die eigene Sitzung an, Zeiger zunächst aus |
-| 57 | MouReadEvent    | BX = Puffer (Tasten, Zeile, Spalte), CX = 1 warten → 0 Ereignis, 1 keins; Zeile/Spalte als Textzelle der Sitzung, Zeile FFh = Titel-/Statusleiste |
+| 57 | MouReadEvent    | BX = Puffer (Tasten, Zeile, Spalte; mit MOU_XY zusätzlich x, y), CX = MOU_WAIT (1) warten \| MOU_XY (2) 8 statt 4 Byte → 0 Ereignis, 1 keins; Zeile/Spalte als Textzelle der Sitzung, Zeile FFh = Titel-/Statusleiste; x/y in Grafiksitzungen in Bildpunkten (12h 640×480, 13h 320×200), sonst Mickeys (8 je Spalte, 16 je Zeile) |
 | 58 | MouShowPtr      | BX = 1 Mauszeiger zeigen (invertierte Zelle), 0 verbergen |
 | 59 | DosClipPut      | BX = Selektor (0 = eigenes Datensegment), CX = Offset, DX = Länge → gespeichert (bis 16 KB); Zwischenablage für alle Sitzungen |
 | 60 | DosClipGet      | BX = Selektor (0 = eigenes), CX = Offset, DX = Platz → Länge des Inhalts |

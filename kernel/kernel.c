@@ -2267,20 +2267,19 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return vio_mou_open(s, current);
 
     case FAPI_MOUREADEVENT: {
-        static unsigned char ev[3];             /* nolock: nur kurz benutzt */
+        static unsigned char ev[8];             /* nolock: nur kurz benutzt */
         unsigned char __far *p;
-        if (!user_ok(usel, a1, 4, 1))
+        unsigned n = (a2 & MOU_XY) ? 8 : 4;    /* mit x/y: 8 Byte        */
+        if (!user_ok(usel, a1, n, 1))
             return FAPI_ERROR;
         for (;;) {
             if (vio_mou_read(s, ev)) {
                 p = MK_FP(usel, a1);
-                p[0] = ev[0];
-                p[1] = ev[1];
-                p[2] = ev[2];
-                p[3] = 0;
+                for (k = 0; k < (int)n; k++)
+                    p[k] = ev[k];
                 return 0;
             }
-            if (!a2 || sig_waiting())
+            if (!(a2 & MOU_WAIT) || sig_waiting())
                 return 1;
             sleep_ticks(1);                     /* bis zum naechsten Takt */
         }

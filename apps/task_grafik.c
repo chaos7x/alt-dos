@@ -5,6 +5,8 @@
  * Alt+Esc zeichnet das Programm in den Puffer der Sitzung weiter).
  * GRAFIK 12: Modus 12h (640x480, 16 Farben, vier Ebenen; VioSetPlane):
  * 16 Farbbalken, unten ein wachsender Balken. Ende mit einer Taste.
+ * Mit Maus (MOUSE.SYS): Zeiger in Bildpunkten (MouReadEvent mit MOU_XY),
+ * linke Taste malt, rechte wechselt die Malfarbe.
  */
 #include <i86.h>
 #include "fapi.h"
@@ -12,6 +14,89 @@
 
 static unsigned char pal[16 * 3];
 static char args[FAPI_ARGLEN];
+static struct fapi_mouevent ev;
+static unsigned mouse, color = 15;
+static int is12, lastx = -1, lasty;
+
+/* Mausereignisse abholen; liefert 1, solange gemalt werden soll (Punkt
+   in ev.x/ev.y) */
+static int mouse_paint(void)
+{
+    static unsigned char last;
+
+    while (mouse && MouReadEvent(&ev, MOU_XY) == 0) {
+        if ((ev.buttons & MOU_RIGHT) && !(last & MOU_RIGHT))
+            color = (color + 1) & 15;
+        last = ev.buttons;
+        if (ev.buttons & MOU_LEFT)
+            return 1;
+        lastx = -1;                         /* losgelassen: neue Linie   */
+    }
+    return 0;
+}
+
+static unsigned char __far *vbuf;
+
+static void putpix(int x, int y)
+{
+    unsigned p, o;
+    unsigned char m;
+
+    if (!is12) {
+        if (x < 320 && y < 200)
+            vbuf[(unsigned)y * 320 + (unsigned)x] = (unsigned char)color;
+        return;
+    }
+    if (x >= 640 || y >= 480)
+        return;
+    o = (unsigned)y * 80 + ((unsigned)x >> 3);
+    m = (unsigned char)(0x80 >> (x & 7));
+    for (p = 0; p < 4; p++) {
+        VioSetPlane(p);
+        if ((color >> p) & 1)
+            vbuf[o] |= m;
+        else
+            vbuf[o] &= (unsigned char)~m;
+    }
+}
+
+/* Linie vom letzten Punkt (Bresenham), damit schnelles Ziehen keine
+   Luecken laesst */
+static void paint_to(int x, int y)
+{
+    int dx, dy, sx, sy, err, e2;
+
+    if (lastx < 0) {
+        lastx = x;
+        lasty = y;
+    }
+    dx = x > lastx ? x - lastx : lastx - x;
+    dy = y > lasty ? lasty - y : y - lasty;
+    sx = lastx < x ? 1 : -1;
+    sy = lasty < y ? 1 : -1;
+    err = dx + dy;
+    for (;;) {
+        putpix(lastx, lasty);
+        if (lastx == x && lasty == y)
+            break;
+        e2 = 2 * err;
+        if (e2 >= dy) {
+            err += dy;
+            lastx += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            lasty += sy;
+        }
+    }
+}
+
+static void mouse_on(void)
+{
+    mouse = MouOpen();
+    if (mouse)
+        MouShowPtr(1);
+}
 
 /* 12h: 16 Balken zu je 40 Punkten (5 Byte), Ebene p traegt Farbbit p */
 static void mode12(void)
@@ -29,12 +114,15 @@ static void mode12(void)
         DosExit(1);
     }
     v = MK_FP(sel, 0);
+    is12 = 1;
     for (p = 0; p < 4; p++) {
         VioSetPlane(p);
         for (y = 0; y < 400; y++)
             for (b = 0; b < 80; b++)
                 v[y * 80 + b] = (unsigned char)(((b / 5) >> p) & 1 ? 0xFF : 0x00);
     }
+    vbuf = v;
+    mouse_on();
     for (;;) {                              /* Balken waechst, jede Runde
                                                in einer anderen Farbe     */
         x = 2 + (n % 76);
@@ -45,6 +133,8 @@ static void mode12(void)
                 v[b * 80 + x] = (unsigned char)((y >> p) & 1 ? 0xFF : 0x00);
         }
         n++;
+        while (mouse_paint())
+            paint_to(ev.x, ev.y);
         if (KbdPeek()) {
             KbdCharIn();
             break;
@@ -92,10 +182,14 @@ void main(void)
         pal[i * 3 + 2] = 0;
     }
     VioSetPal(240, 16, pal);
+    vbuf = v;
+    mouse_on();
     for (;;) {                              /* Balken waechst           */
         for (y = 150; y < 190; y++)
             v[y * 320 + 10 + (n % 300)] = (unsigned char)(240 + (n / 300) % 16);
         n++;
+        while (mouse_paint())
+            paint_to(ev.x, ev.y);
         if (KbdPeek()) {
             KbdCharIn();
             break;

@@ -181,8 +181,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Modi gleich. Sichern/Zurückladen Ebene für Ebene (`gfx_copy`). Demo
   `GRAFIK 12` (16 Balken, wachsender Balken wechselt je Runde die Farbe –
   im Hintergrund weitergezeichnet geprüft). In 86Box vom Nutzer bestätigt
-  (Farbbalken und Sitzungswechsel). Offen: Maus in Grafik,
-  evtl. Mode X (320×240×256 unverkettet, Ebenen wie 12h, Seitenwechsel).
+  (Farbbalken und Sitzungswechsel).
+  Maus in Grafik, in QEMU geprüft: `MouReadEvent(&ev, MOU_XY)` liefert
+  zusätzlich x/y in Bildpunkten (Mickeys 1:1 bei 12h, halbiert bei 13h).
+  Zeiger (Pfeil 10×16, weiß/schwarz) zeichnet der Kernel in vio_flush
+  (`gptr_update`) direkt in den Bildspeicher; 12h über Bitmaske GC 8 und
+  Latches, danach Map Mask/Read Map auf die Ebene des Programms zurück.
+  Beim Entfernen kommt je Punkt nur zurück, was noch genau wie der Zeiger
+  aussieht (Programm darf jederzeit selbst malen). `gfx_out` entfernt ihn
+  vor dem Sichern. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
+  Offen: evtl. Mode X (320×240×256 unverkettet, Ebenen wie 12h, Seitenwechsel).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile
