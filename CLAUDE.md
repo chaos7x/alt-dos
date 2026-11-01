@@ -480,7 +480,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   MODE COM/LPT, DEFRAG mit Clusterkarte und Verzeichnissen.
   DEFRAG (in QEMU an einer absichtlich fragmentierten Diskette geprüft,
   danach fsck sauber, Inhalte gleich; vom Nutzer in 86Box an einer
-  Diskette bestätigt, 4 Dateien verschoben): `apps/ufat_defrag.c`, Belegung als
+  Diskette bestätigt, 4 Dateien verschoben, CHKDSK danach ohne Fehler): `apps/ufat_defrag.c`, Belegung als
   Bitmap in `used`, Dateien (Eintragssektor, Startcluster, Länge) in einem
   DosAllocSeg-Segment; Reihenfolge kopieren -> FAT -> Eintrag -> alte
   Kette frei. UFAT ist knapp an 64 KB (VCHUNK auf 16 gesenkt) – beim
