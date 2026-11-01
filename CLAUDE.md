@@ -197,7 +197,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   VioSetPage(0/1): CRTC 0Ch/0Dh, wartet vorn auf den Strahlrücklauf
   (Frist 2 Takte über get_ticks), Zeiger zieht mit (`gp_page`). Demo
   `GRAFIK X` (Farbverlauf + Quadrat, je Bild verdeckt gezeichnet, Klick
-  setzt das Quadrat). Mauszeiger nimmt in 256-Farben-Modi die Farben 15
+  setzt das Quadrat). In 86Box vom Nutzer bestätigt (Bild und
+  Sitzungswechsel). Mauszeiger nimmt in 256-Farben-Modi die Farben 15
   und 0 der Palette (wie der Microsoft-Treiber).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
@@ -537,8 +538,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
   (Suchen/Ändern/Speichern unter): Klick ins Feld setzt den Cursor,
   Klick auf OK/Abbrechen drückt (in QEMU geprüft).
-  Busmaus (nach seriell, `/BUS`), nur gebaut – QEMU hat keine, Test in
-  86Box (Microsoft InPort, Logitech Bus Mouse): InPort an 23Ch/238h über
+  Busmaus (nach seriell, `/BUS`), in 86Box vom Nutzer bestätigt (wird
+  erkannt; QEMU hat keine): InPort an 23Ch/238h über
   die Kennung (Basis+2 abwechselnd DEh/Version, nur lesen), Modus 11h
   (30 Hz, Interrupt), beim Lesen 31h (halten); Logitech (8255) an 23Ch
   erst lesen (alles FFh = nichts), dann A5h/5Ah ins Kennungsregister.
