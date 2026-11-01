@@ -69,6 +69,7 @@
 #define FAPI_QHANDTYPE      0x2A    /* BX = Handle -> HT_*              */
 #define HT_FILE             0
 #define HT_DRIVE            3       /* DosOpenDrive                     */
+#define HT_DEVICE           4       /* PRN, LPT1-3, NUL                 */
 /* Laufwerk als Ganzes (wie DASD bei OS/2), fuer CHKDSK, FORMAT, LABEL.
    Lesen/Schreiben mit DosRead/DosWrite in ganzen Sektoren ab der Position
    (DosSeek, Bytes, Vielfaches der Sektorgroesse), Sektor 0 = Bootsektor
@@ -259,6 +260,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_EXIST      0xFFFC  /* Ziel gibt es schon               */
 #define FAPI_ERR_DENIED     0xFFFB  /* Attribut verbietet es / nicht leer */
 #define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
+#define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_FIRST      0xFFF0
 
 #define FAPI_VERSION        0x0500

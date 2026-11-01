@@ -96,6 +96,13 @@ und PC-DOS.
 - `CHKDSK /R` (wie Windows NT): Oberflächentest, defekte freie Cluster
   werden gesperrt, belegte verlegt (Lesbares gerettet); `SCANDISK X:` ruft
   `CHKDSK X: /F /R`
+- Drucker: Gerätenamen `PRN`, `LPT1`–`LPT3` und `NUL` in jedem Verzeichnis
+  (`COPY BRIEF.TXT PRN`, `DIR > LPT1`); der Kernel gibt über den Parallel-
+  port aus (Abfragebetrieb, andere Tasks laufen, solange der Drucker
+  belegt ist; nach 30 s „nicht bereit“)
+- `PRINT [/D:Gerät] [/T] [Datei [/C] [/P] ...]` wie MS-DOS: Warteschlange
+  `\DOS\SYSTEM\PRINT.QUE`, gedruckt wird von einem Hintergrund-Task
+  (`PRINT /WORK`), `/T` und `/C` brechen auch den laufenden Druck ab
 - `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
   (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
   IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,

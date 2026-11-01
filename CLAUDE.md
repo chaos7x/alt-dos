@@ -477,7 +477,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
   Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später:
-  DEFRAG, PRINT/MODE.
+  DEFRAG, MODE COM/LPT.
+  Drucker (Nutzer hat keinen, gehört aber rein; in QEMU mit `-parallel
+  file:` geprüft): `dev_name()` in OPEN/CREATE erkennt PRN/LPT1-3/NUL
+  (Basisname, Endung egal), `OF_LPT`/`OF_NUL`, Ports aus dem BIOS-
+  Datenbereich (`bios_ports`, start.asm). `lpt_write` wartet auf BUSY mit
+  `yield()`, Status Bit 5/3 -> FAPI_ERR_NOTREADY (0xFFF9), HT_DEVICE.
+  PRINT: Schlange `\DOS\SYSTEM\PRINT.QUE` („Gerät Pfad“ je Zeile),
+  Hintergrund-Task `PRINT /WORK` über EXEC_BG, läuft-Merker PRINT.LCK
+  (offen gehalten -> DosCreate meldet INUSE); prüft vor jedem 2-KB-Stück,
+  ob seine Zeile noch vorne steht (/T, /C). util `same()` vergleicht nur
+  das erste Wort – für ganze Zeilen eigener Vergleich.
   MSD (in QEMU geprüft): FAPI 49h DosSysInfo – start.asm fragt im Real
   Mode 286/386 (FLAGS Bit 12–15), Koprozessor (FNINIT/FNSTSW), INT 11h,
   BIOS-Datenbereich (COM/LPT), BIOS-Datum/Modellbyte ab; der Kernel sucht

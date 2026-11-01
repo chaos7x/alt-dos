@@ -123,6 +123,8 @@ struct ofile {
                                f.drive = Blockgeraet (DosOpenDisk)      */
 #define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
                                4 markiert eine schon geschlossene Datei      */
+#define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
+#define OF_NUL  7           /* NUL                                      */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
@@ -1536,6 +1538,68 @@ static void yield(void)
     schedule_next();
 }
 
+/* Geraetenamen wie bei MS-DOS (in jedem Verzeichnis, Endung egal):
+   PRN/LPT1 -> 1, LPT2 -> 2, LPT3 -> 3, NUL -> 9, sonst 0 */
+static int dev_name(const char *canon)
+{
+    const char *b = canon, *p;
+    for (p = canon; *p; p++)
+        if (*p == '\\')
+            b = p + 1;
+    if (b[0] == 'P' && b[1] == 'R' && b[2] == 'N' && (!b[3] || b[3] == '.'))
+        return 1;
+    if (b[0] == 'N' && b[1] == 'U' && b[2] == 'L' && (!b[3] || b[3] == '.'))
+        return 9;
+    if (b[0] == 'L' && b[1] == 'P' && b[2] == 'T' && b[3] >= '1' && b[3] <= '3' &&
+        (!b[4] || b[4] == '.'))
+        return b[3] - '0';
+    return 0;
+}
+
+static unsigned dev_open(int dn)
+{
+    int k;
+    if (dn != 9 && !bios_ports[3 + dn])
+        return FAPI_ERROR;                  /* kein solcher Anschluss    */
+    k = of_alloc();
+    if (k < 0)
+        return FAPI_ERROR;
+    files[k].kind = dn == 9 ? OF_NUL : OF_LPT;
+    files[k].f.drive = (unsigned char)(dn - 1);
+    files[k].pos = 0;
+    files[k].path[0] = 0;
+    return k + HBASE;
+}
+
+/* Zeichen an den Drucker (Parallelport, Abfragebetrieb): Status Bit 7 =
+   nicht BUSY, Bit 5 Papierende, Bit 3 = 0 Fehler/aus; Strobe ueber
+   Steuerregister Bit 0. Waehrend BUSY laufen andere Tasks weiter; nach
+   30 s ohne Fortschritt -> Fehler. -> Bytes, -1 = nicht bereit */
+static int lpt_write(int k, unsigned sel, unsigned off, unsigned len)
+{
+    unsigned base = bios_ports[4 + files[k].f.drive], i, n, st;
+    unsigned char __far *p;
+    unsigned long t0;
+
+    for (i = 0; i < len; i++) {
+        t0 = get_ticks();
+        for (n = 0; !((st = inb(base + 1)) & 0x80); n++)
+            if (n > 100) {                  /* belegt: andere vorlassen  */
+                if (get_ticks() - t0 > 3000)
+                    return i ? (int)i : -1;
+                yield();
+                n = 0;
+            }
+        if ((st & 0x20) || !(st & 0x08))
+            return i ? (int)i : -1;         /* Papierende, Fehler, aus   */
+        p = MK_FP(sel, off);
+        outb(base, p[i]);
+        outb(base + 2, 0x0D);               /* Strobe (Init aus, Select) */
+        outb(base + 2, 0x0C);
+    }
+    return (int)len;
+}
+
 static int sig_waiting(void)
 {
     return (task[current].sig_pending & task[current].sig_mask) != 0;
@@ -1854,6 +1918,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve(current, buf, &d, canon))
             return FAPI_ERROR;
+        if ((t = dev_name(canon)) != 0)
+            return dev_open(t);
         if (open_for_write(d, canon))
             return FAPI_ERR_INUSE;
         k = of_alloc();
@@ -1871,6 +1937,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve(current, buf, &d, canon))
             return FAPI_ERROR;
+        if ((t = dev_name(canon)) != 0)
+            return dev_open(t);
         if (in_use(d, canon, 0))
             return FAPI_ERR_INUSE;
         k = of_alloc();
@@ -1911,6 +1979,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_DASD:
             t = dasd_rw(k, usel, a2, a3, 1);
             return t < 0 ? FAPI_ERROR : (unsigned)t;
+        case OF_NUL:
+            return a3;
+        case OF_LPT:
+            t = lpt_write(k, usel, a2, a3);
+            return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
         }
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -2017,6 +2090,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_DASD:
             t = dasd_rw(k, usel, a2, a3, 0);
             return t < 0 ? FAPI_ERROR : (unsigned)t;
+        case OF_NUL:
+        case OF_LPT:
+            return 0;                       /* nichts zu lesen           */
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -2046,6 +2122,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         return files[k].kind == OF_CON ? HT_CONSOLE :
                files[k].kind == OF_FILE ? HT_FILE :
+               files[k].kind >= OF_LPT ? HT_DEVICE :
                files[k].kind == OF_DASD ? HT_DRIVE : HT_PIPE;
 
     case FAPI_SETFINFO: {

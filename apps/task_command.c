@@ -721,6 +721,7 @@ static void file_error(unsigned r)
     case FAPI_ERR_EXIST:  puts("Datei oder Verzeichnis existiert bereits.\n"); break;
     case FAPI_ERR_DENIED: puts("Zugriff verweigert.\n"); break;
     case FAPI_ERR_INUSE:  puts("Datei oder Verzeichnis wird gerade benutzt.\n"); break;
+    case FAPI_ERR_NOTREADY: puts("Ger\x84t nicht bereit (Drucker aus oder kein Papier?).\n"); break;
     default:              puts("Datei oder Pfad nicht gefunden.\n");
     }
 }
