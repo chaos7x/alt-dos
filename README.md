@@ -77,6 +77,11 @@ und PC-DOS.
   `/Q` wird jeder Sektor gelesen und Fehlerhaftes gesperrt (keine
   Low-Level-Formatierung). Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
+- `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
+  Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
+  `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die
+  BIOS-Geometrie). Logische Laufwerke in erweiterten Partitionen hängt der
+  Kernel beim Start ein, auch auf Platten von MS-DOS.
 - `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `COMMAND.EXE`, `\DOS\SYSTEM`,
   `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
   Startcode in den Bootsektor; mit `/A` zusätzlich alle Programme aus
@@ -227,6 +232,8 @@ selbst nur 8.3 kennt.
 | 63 | VioSetGfx       | BX = 13h: VGA-Grafik 320×200×256, 12h: 640×480×16 (vier Ebenen), 0 = zurück auf Text (nur VGA) |
 | 64 | VioGetPhysBuf   | → Selektor auf das Bild (64 KB, Punkt x,y bei y·320+x); beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt den Selektor in den Puffer um – das Programm zeichnet weiter |
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
+| 67 | DosDiskInfo     | BX = Platte (0 = erste Festplatte), CX = Puffer: Sektoren, Sektorgröße, Treiber, Einheit, Zahl der Laufwerke darauf |
+| 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:

@@ -443,8 +443,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT und SYS sind da. Später: UNDELETE, MSD,
-  HELP, DISKCOPY, FDISK, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS und FDISK sind da. Später: UNDELETE, MSD,
+  HELP, DISKCOPY, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  FDISK (apps/task_fdisk.c), in QEMU geprüft: Menü wie MS-DOS 5/6
+  (anlegen primär/erweitert/logisch, aktiv, löschen, anzeigen, nächste
+  Platte), `/STATUS`, `/MBR` (Startcode aus build/mbrcode.h = mbr.asm).
+  Kernel: FAPI 43h/44h DosDiskInfo/DosOpenDisk (OF_DASD mit f.attr =
+  DASD_DISK, ganze Platte ab Sektor 0; Sperre nur ohne offene Dateien auf
+  ihren Laufwerken, sperrt alle bis zum Schließen, dann vol_reset).
+  Logische Laufwerke in erweiterten Partitionen (05h/0Fh, EBR-Kette)
+  hängt mount_disk nach den primären ein („logisch n“). Ausrichtung wie
+  MS-DOS (erste Partition Spur 1, sonst Zylindergrenze, EBR eine Spur vor
+  dem logischen Laufwerk), Typ nach Größe (01h < 16 MB, 04h < 32 MB, 06h,
+  höchstens 2 GB), Geometrie aus vorhandenen CHS-Endwerten, sonst 16/63
+  bzw. 255/63; 32-Bit über mul/div-Inline. Geschrieben wird sofort,
+  Laufwerksbuchstaben erst nach Neustart (FDISK bietet ihn an).
   Schon da: CHKDSK, XCOPY, ATTRIB, LABEL, MORE, FIND, SORT, FC, TREE,
   MOVE, DELTREE, CHOICE; VOL/DATE/TIME in COMMAND.
   Grundsatz: alles, was zur Kompatibilität gehört, wie bei MS-DOS (Namen,

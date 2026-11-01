@@ -78,6 +78,23 @@
 #define FAPI_OPENDRIVE      0x2B    /* BX = Laufwerk (0 = A:), CX = DRV_OPEN_* -> Handle */
 #define DRV_OPEN_READ       0       /* nur lesen, ohne Sperre           */
 #define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
+/* Ganze Festplatten (FDISK): Nummer 0, 1, ... zaehlt nur Platten mit
+   512-Byte-Sektoren (keine Diskette, keine CD) */
+#define FAPI_DISKINFO       0x43    /* BX = Platte, CX = struct fapi_diskinfo
+                                       -> 0, FAPI_ERROR = keine solche Platte */
+#define FAPI_OPENDISK       0x44    /* BX = Platte, CX = DRV_OPEN_* -> Handle;
+                                       Sektoren ab 0 (MBR), mit Sperre nur,
+                                       wenn auf keinem ihrer Laufwerke etwas
+                                       offen ist; alle bleiben bis zum
+                                       Schliessen gesperrt */
+struct fapi_diskinfo {
+    unsigned long  sectors;
+    unsigned short bsize;
+    char           driver[13];      /* "IDE.SYS"                        */
+    unsigned char  unit;            /* Einheit des Treibers             */
+    unsigned char  nvol;            /* Laufwerksbuchstaben darauf       */
+    unsigned char  rsv;
+};
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
                                        (ERRORLEVEL; 255 = abgebrochen) */

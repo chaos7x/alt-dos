@@ -116,6 +116,8 @@ struct ofile {
 #define OF_PRD  1           /* Leseende einer Pipe                      */
 #define OF_PWR  2           /* Schreibende einer Pipe                   */
 #define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
+#define DASD_DISK 1         /* OF_DASD mit f.attr = DASD_DISK: ganze Platte,
+                               f.drive = Blockgeraet (DosOpenDisk)      */
 #define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
                                4 markiert eine schon geschlossene Datei      */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
@@ -1310,7 +1312,17 @@ static void of_release(int k)
     o->owner = -1;
     if (o->kind == OF_FILE)
         ifs_close(&o->f);
-    else if (o->kind == OF_DASD) {
+    else if (o->kind == OF_DASD && o->f.attr == DASD_DISK) {
+        if (o->pipe) {                  /* ganze Platte: alle Laufwerke  */
+            int d;                      /* darauf frei und neu einlesen  */
+            blk_flush();
+            for (d = 0; d < NDRIVE; d++)
+                if (vol_present(d) && vol[d].blk == o->f.drive && vol[d].locked) {
+                    vol[d].locked = 0;
+                    vol_reset(d);
+                }
+        }
+    } else if (o->kind == OF_DASD) {
         if (o->pipe) {                  /* Sperre aufheben, neu einlesen */
             unsigned char was = vol[o->f.drive].in_use;
             vol[o->f.drive].locked = 0;
@@ -1332,13 +1344,25 @@ static void of_ref(int k)
 
 static const char *drv_name(int d);
 
+/* Platte Nummer n (0 = erste Festplatte; Diskette und CD zaehlen nicht)
+   -> Blockgeraet oder -1 */
+static int disk_blk(unsigned n)
+{
+    int dev;
+    for (dev = 1; dev < nblk; dev++)
+        if (blk[dev].bsize == 512 && n-- == 0)
+            return dev;
+    return -1;
+}
+
 /* DosRead/DosWrite auf ein ganzes Laufwerk: ganze Sektoren ab pos */
 static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
 {
     struct ofile __far *o = &files[k];
-    int d = o->f.drive, dev = vol[d].blk;
+    int d = o->f.drive, whole = o->f.attr == DASD_DISK;
+    int dev = whole ? d : vol[d].blk;
     unsigned bs = blk[dev].bsize, done = 0, n;
-    unsigned long lba, total;
+    unsigned long lba, total, start = whole ? 0 : vol[d].start;
 
     if (write && !o->pipe)
         return -1;                      /* nur mit Sperre             */
@@ -1346,17 +1370,17 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
     if ((unsigned)o->pos & (bs - 1))
         return -1;
     lba = o->pos >> (bs == 2048 ? 11 : 9);
-    total = vol[d].psize ? vol[d].psize : blk[dev].blocks;
+    total = whole ? blk[dev].blocks : vol[d].psize ? vol[d].psize : blk[dev].blocks;
     while (done < len && lba < total) {
         if (write) {
             far_copy(DMABUF, 0, sel, off + done, bs);
-            if (blk_write(dev, vol[d].start + lba))
+            if (blk_write(dev, start + lba))
                 return done ? (int)done : -1;
         } else {
             n = (len - done) / bs;      /* Rest am Stueck vorauslesen  */
             if (n > total - lba)
                 n = (unsigned)(total - lba);
-            if (blk_read_n(dev, vol[d].start + lba, n))
+            if (blk_read_n(dev, start + lba, n))
                 return done ? (int)done : -1;
             far_copy(sel, off + done, DMABUF, 0, bs);
         }
@@ -1905,12 +1929,61 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         files[k].kind = OF_DASD;
         files[k].f.drive = (unsigned char)a1;
+        files[k].f.attr = 0;
         files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
         if (a2 == DRV_OPEN_LOCK)
             vol[a1].locked = 1;
         if (vol[a1].blk == BLK_FLOPPY)
             blk_invalidate();                   /* Diskette frisch lesen */
         return k + HBASE;
+
+    case FAPI_DISKINFO: {                       /* fuer FDISK            */
+        struct fapi_diskinfo __far *di;
+        int dev = disk_blk(a1), n;
+        if (dev < 0 || !user_ok(usel, a2, sizeof(*di), 1))
+            return FAPI_ERROR;
+        di = MK_FP(usel, a2);
+        di->sectors = blk[dev].blocks;
+        di->bsize = blk[dev].bsize;
+        for (n = 0; n < 12 && drv_name(blk[dev].drv)[n]; n++)
+            di->driver[n] = drv_name(blk[dev].drv)[n];
+        di->driver[n] = 0;
+        di->unit = blk[dev].unit;
+        for (n = 0, k = 0; k < NDRIVE; k++)
+            if (vol_present(k) && vol[k].blk == dev)
+                n++;
+        di->nvol = (unsigned char)n;
+        di->rsv = 0;
+        return 0;
+    }
+
+    case FAPI_OPENDISK: {                       /* ganze Platte (FDISK)  */
+        int dev = disk_blk(a1), d;
+        if (dev < 0)
+            return FAPI_ERROR;
+        if (a2 == DRV_OPEN_LOCK) {              /* nichts offen darauf?  */
+            for (k = 1; k < NFILE; k++)
+                if (files[k].refs && files[k].kind == OF_FILE &&
+                    vol[files[k].f.drive].blk == dev)
+                    return FAPI_ERR_INUSE;
+                else if (files[k].refs && files[k].kind == OF_DASD &&
+                         (files[k].f.attr == DASD_DISK ? files[k].f.drive == dev
+                                                       : vol[files[k].f.drive].blk == dev))
+                    return FAPI_ERR_INUSE;
+        }
+        k = of_alloc();
+        if (k < 0)
+            return FAPI_ERROR;
+        files[k].kind = OF_DASD;
+        files[k].f.drive = (unsigned char)dev;
+        files[k].f.attr = DASD_DISK;
+        files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
+        if (a2 == DRV_OPEN_LOCK)
+            for (d = 0; d < NDRIVE; d++)
+                if (vol_present(d) && vol[d].blk == dev)
+                    vol[d].locked = 1;
+        return k + HBASE;
+    }
 
     case FAPI_SEEK: {
         unsigned long __far *p;
