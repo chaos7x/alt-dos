@@ -706,6 +706,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Tabelle nur als Rückfall – in QEMU mit 16/32 statt 16/63 geprüft (alter
   MBR hängt, neuer startet). Auf dem SCAT bestätigt: `atdos-hd.img` startet
   direkt am Adaptec (64/32). Ein eigener FDISK sollte denselben MBR schreiben.
+- `JOIN` (Wunsch des Nutzers, wie MS-DOS 3.1–5.0, in 6.0 gestrichen):
+  `JOIN D: C:\CDROM` hängt ein Laufwerk in ein leeres Verzeichnis eines
+  anderen ein, `JOIN` zeigt, `JOIN D: /D` hebt auf. Gegenstück zu SUBST,
+  im Kernel dieselbe Pfadumschreibung in `resolve()` in die andere Richtung
+  (`C:\CDROM\...` -> `D:\...`); das eingehängte Laufwerk ist als eigener
+  Buchstabe nicht mehr erreichbar. DIR/TREE/XCOPY laufen über die Grenze,
+  freier Platz und CHKDSK bleiben beim jeweiligen echten Laufwerk.
+  Startlaufwerk und Laufwerke mit offenen Dateien nicht einhängbar. Zeitlich 5.0.
 - Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen).
   `AHA154X.SYS` mit IRQ auf dem SCAT bestätigt (Anzeige „IRQ 11, DMA 6“,
   Start von der Adaptec-Platte über den Interrupt, 3× zwei XCOPY
