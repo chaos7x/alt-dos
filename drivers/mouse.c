@@ -1,9 +1,19 @@
 /*
  * MOUSE.SYS - Maustreiber
  *
- * Wie MOUSE.COM von Microsoft sucht der Treiber selbst, was da ist. Diese
- * Fassung kennt die serielle Microsoft-Maus (und Logitech mit dritter
- * Taste) an COM1 und COM2; PS/2 und Busmaus folgen.
+ * Wie MOUSE.COM von Microsoft sucht der Treiber selbst, was da ist: erst
+ * eine PS/2-Maus am Hilfsport des Tastaturcontrollers (IRQ 12), dann die
+ * serielle Microsoft-Maus (und Logitech mit dritter Taste) an COM1 und
+ * COM2. Busmaus folgt. /PS2, /COM1, /COM2 legen fest, was gesucht wird.
+ *
+ * PS/2: Waehrend der Erkennung maskiert der Kernel die Tastatur (DevHlp
+ * KbdLock), sonst holt deren Interruptroutine die Antworten des
+ * Controllers aus Port 60h ab. Erst lesen: Status FFh = kein Controller;
+ * dann "Hilfsport pruefen" (A9h, Antwort 00h = da), Maus zuruecksetzen
+ * (FFh -> FAh AAh 00h), Vorgaben (F6h), Meldungen an (F4h) und im
+ * Steuerbyte den Interrupt des Hilfsports einschalten. Pakete (3 Byte):
+ *   Byte 1: Yueberl Xueberl Yvorz Xvorz 1 M R L   Byte 2: dx   Byte 3: dy
+ * dy ist bei PS/2 positiv nach oben, der Kernel will es nach unten.
  *
  * Erkennung, erst lesen: Ein UART (8250/16450/16550) hat im Interrupt-
  * Identifikationsregister (Basis+2) die Bits 4-5 und im Modem-Steuer-
@@ -37,12 +47,117 @@
 static const unsigned com_port[2] = { 0x3F8, 0x2F8 };
 static const unsigned com_irq[2]  = { 4, 3 };
 
-static unsigned base, irq;
+#define KBC_DATA    0x60
+#define KBC_STAT    0x64                /* lesen: Status, schreiben: Befehl */
+#define KS_OBF      0x01                /* Byte fuer uns da             */
+#define KS_IBF      0x02                /* Controller noch belegt       */
+#define KS_AUX      0x20                /* Byte kommt vom Hilfsport     */
+
+static unsigned base, irq;              /* base 0 und irq 12: PS/2      */
 static unsigned char nbtn;
 static unsigned char pk[4], pn;         /* Paket im Aufbau              */
 static unsigned char btn;               /* Tasten zuletzt (MOU_*)       */
 static char line[128];
 
+/* ---- PS/2 ---------------------------------------------------------- */
+static int kbc_wait_in(void)            /* bis der Controller annimmt   */
+{
+    unsigned start = ticks();
+    while (inp(KBC_STAT) & KS_IBF)
+        if ((unsigned)(ticks() - start) > 10)
+            return -1;
+    return 0;
+}
+
+static int kbc_cmd(unsigned char c)
+{
+    if (kbc_wait_in())
+        return -1;
+    outp(KBC_STAT, c);
+    return 0;
+}
+
+static int kbc_data(unsigned char c)
+{
+    if (kbc_wait_in())
+        return -1;
+    outp(KBC_DATA, c);
+    return 0;
+}
+
+/* naechstes Byte, t Takte warten; -1 = keins */
+static int kbc_read(unsigned t)
+{
+    unsigned start = ticks();
+    while (!(inp(KBC_STAT) & KS_OBF))
+        if ((unsigned)(ticks() - start) > t)
+            return -1;
+    return inp(KBC_DATA);
+}
+
+/* Befehl an die Maus (D4h davor), Bestaetigung FAh abwarten */
+static int aux_cmd(unsigned char c)
+{
+    if (kbc_cmd(0xD4) || kbc_data(c))
+        return -1;
+    return kbc_read(30) == 0xFA ? 0 : -1;
+}
+
+static unsigned ps2_probe(void)
+{
+    int cb, r;
+
+    if (inp(KBC_STAT) == 0xFF)
+        return 0;                       /* kein Controller              */
+    while (inp(KBC_STAT) & KS_OBF)      /* Reste abholen                */
+        inp(KBC_DATA);
+    if (kbc_cmd(0x20) || (cb = kbc_read(10)) < 0)
+        return 0;                       /* Steuerbyte lesen             */
+    if (kbc_cmd(0xA9) || kbc_read(10) != 0x00)
+        return 0;                       /* kein Hilfsport (AT-Controller) */
+    if (kbc_cmd(0xA8))                  /* Hilfsport an                 */
+        return 0;
+    if (aux_cmd(0xFF) ||                /* Reset; Selbsttest bis 1 s    */
+        kbc_read(100) != 0xAA) {
+        kbc_cmd(0xA7);                  /* keine Maus: Hilfsport aus    */
+        return 0;
+    }
+    kbc_read(10);                       /* Kennung 00h                  */
+    if (aux_cmd(0xF6) || aux_cmd(0xF4)) {
+        kbc_cmd(0xA7);
+        return 0;
+    }
+    /* Steuerbyte: Interrupt des Hilfsports an (Bit 1), Hilfsport nicht
+       gesperrt (Bit 5 aus) */
+    if (kbc_cmd(0x60) || kbc_data((unsigned char)((cb | 0x02) & ~0x20)))
+        return 0;
+    r = 3;                              /* L, R und M im Protokoll      */
+    return (unsigned)r;
+}
+
+static void ps2_irq(void)
+{
+    unsigned char st, c;
+    int dx, dy;
+
+    while (((st = inp(KBC_STAT)) & (KS_OBF | KS_AUX)) == (KS_OBF | KS_AUX)) {
+        c = inp(KBC_DATA);
+        if (pn == 0 && !(c & 0x08))
+            continue;                   /* Bit 3 im ersten Byte immer 1 */
+        pk[pn++] = c;
+        if (pn < 3)
+            continue;
+        pn = 0;
+        if (pk[0] & 0xC0)               /* Ueberlauf: Paket verwerfen   */
+            continue;
+        dx = pk[1] - ((pk[0] & 0x10) ? 256 : 0);
+        dy = pk[2] - ((pk[0] & 0x20) ? 256 : 0);
+        btn = (unsigned char)(pk[0] & 0x07);    /* L R M = MOU_*        */
+        devhlp(DH_MOUEVENT, (unsigned)-dy, btn, (unsigned)dx);
+    }
+}
+
+/* ---- seriell ------------------------------------------------------- */
 /* Lesen: sieht der Port wie ein UART aus? */
 static int looks_like_uart(unsigned b)
 {
@@ -91,7 +206,10 @@ static void mou_irq(unsigned n)
     unsigned char c, b;
     int dx, dy;
 
-    (void)n;
+    if (n == 12) {
+        ps2_irq();
+        return;
+    }
     while (inp(LSR(base)) & 1) {
         c = inp(RBR(base));
         if (c & 0x40) {                 /* Anfang eines Pakets          */
@@ -135,8 +253,30 @@ static void init(void)
         only = 0;
     else if (has_opt(r->args, "/COM2"))
         only = 1;
+    else if (has_opt(r->args, "/PS2"))
+        only = 2;
     base = 0;
-    for (i = 0; i < 2; i++) {
+    pn = 0;
+    btn = 0;
+    if (only < 0 || only == 2) {        /* zuerst PS/2                  */
+        devhlp(DH_KBDLOCK, 0, 1, 0);
+        nbtn = (unsigned char)ps2_probe();
+        if (nbtn && set_irq(12, mou_irq) == 0) {
+            devhlp(DH_KBDLOCK, 0, 2, 0);    /* Tastatur frei, AUX an    */
+            dputs("  PS/2-Maus am Tastaturcontroller, IRQ 12\n");
+            devhlp(DH_MOUREG, 0, nbtn, 0);
+            irq = 12;
+            r->status = DRV_OK;
+            return;
+        }
+        if (nbtn) {                     /* IRQ 12 belegt: Hilfsport aus */
+            kbc_cmd(0xA7);
+            dputs("  MOUSE.SYS: PS/2-Maus gefunden, aber IRQ 12 belegt\n");
+        }
+        devhlp(DH_KBDLOCK, 0, 0, 0);
+        nbtn = 0;
+    }
+    for (i = 0; i < 2 && only != 2; i++) {
         if (only >= 0 && i != only)
             continue;
         nbtn = (unsigned char)probe(com_port[i]);

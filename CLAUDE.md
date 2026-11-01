@@ -397,9 +397,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`).
-- Maus, Stand: `MOUSE.SYS` (drivers/mouse.c) kann die serielle Maus
-  (Microsoft 2 Tasten, Logitech `M3` mit 3. Taste im 4. Byte) an COM1/COM2,
-  `/COM1`/`/COM2`; Treiber ohne Blockgeräte melden beim INIT `DRV_OK` mit
+- Maus, Stand: `MOUSE.SYS` (drivers/mouse.c) sucht zuerst PS/2 (Wunsch des
+  Nutzers: die verbreitetste Maus), dann seriell (Microsoft 2 Tasten,
+  Logitech `M3` mit 3. Taste im 4. Byte) an COM1/COM2; `/PS2`, `/COM1`,
+  `/COM2`. PS/2: DevHlp `DH_KBDLOCK` maskiert IRQ 1 während der Erkennung
+  (Takt läuft weiter, Fristen über DH_TICKS); A9h vor A8h (AT-Controller
+  ohne Hilfsport kennen A8h nicht), bei Fehlschlag A7h; Bit 1 von
+  DH_KBDLOCK sagt dem Kernel, dass der AUX-Kanal an ist – erst dann lässt
+  `irq1` Bytes mit Statusbit 5 liegen (beim AT-Controller heißt Bit 5
+  Sende-Zeitüberschreitung!). In QEMU geprüft (PS/2 und seriell). SCAT
+  (GW-286CT) hat vermutlich keinen PS/2-Hilfsport – Test auf 386SX/P3B-F. Treiber ohne Blockgeräte melden beim INIT `DRV_OK` mit
   0 Einheiten (load_driver behält sie). DevHlp `DH_MOUREG`/`DH_MOUEVENT`
   -> vio.c: Position in Mickeys (8 je Spalte, 16 je Zeile wie Microsoft),
   Warteschlange je Sitzung (8, nur Vordergrund mit MouOpen), Zeiger als
@@ -407,9 +414,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   in vio_flush und redraw). FAPI 38h–3Ah MouOpen/MouReadEvent/MouShowPtr
   (ohne Kernelsperre), `vio_task_end` gibt die Maus frei. Test:
   `\DEMO\MAUSTEST.EXE`; in QEMU mit `-serial msmouse` und Monitor
-  `mouse_move`/`mouse_button` geprüft. Offen: PS/2 (Kernel-ISR für IRQ 1
-  liest Port 60h – Erkennung und IRQ 12 müssen mit kbd.c abgestimmt werden),
-  Busmaus, EDIT als erster Nutzer.
+  `mouse_move`/`mouse_button` geprüft. Offen: Busmaus, EDIT als erster
+  Nutzer.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),

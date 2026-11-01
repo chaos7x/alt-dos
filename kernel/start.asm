@@ -342,10 +342,15 @@ irq1:
         mov     ax, KDATA
         mov     ds, ax
         mov     es, ax
-        in      al, 0x60
+        cmp     byte [_kbd_aux], 0      ; PS/2-Maus aktiv (DevHlp KbdLock)?
+        je      .key
+        in      al, 0x64                ; Byte von der Maus (AUX)?
+        test    al, 0x20                ; dann gehoert es IRQ 12
+        jnz     .aux
+.key:   in      al, 0x60
         xor     ah, ah
         call    kbd_irq_
-        mov     al, 0x20
+.aux:   mov     al, 0x20
         out     0x20, al
         pop     es
         pop     ds
@@ -796,6 +801,8 @@ global _kdata_seg
 _kdata_seg:  resw 1
 global _fdc_irq
 _fdc_irq:    resb 1
+global _kbd_aux
+_kbd_aux:    resb 1
 global _mem_conv_kb, _mem_ext_kb
 _mem_conv_kb: resw 1
 _mem_ext_kb:  resw 1

@@ -2480,6 +2480,7 @@ void blk_flush(void)
 }
 
 /* Interruptroutinen der Treiber (start.asm: irq_common) */
+extern unsigned char kbd_aux;           /* start.asm: PS/2-Maus aktiv    */
 extern unsigned short irq_hoff[16], irq_hcs[16], irq_hds[16];
 
 /* Treiber zu seinem Datenselektor, -1 = keiner */
@@ -2536,6 +2537,14 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         return 0;
     case DH_MOUEVENT:
         vio_mou_event(bx, (int)cx, (int)devhlp_dx);
+        return 0;
+    case DH_KBDLOCK:
+        kbd_aux = (unsigned char)((bx & 2) != 0);
+        if (bx & 1)
+            pic_mask |= 2u;
+        else
+            pic_mask &= ~2u;
+        pic_update();
         return 0;
     case DH_BLKREAD:
         return blk_read((int)bx, ((unsigned long)devhlp_dx << 16) | cx) ? 1 : 0;

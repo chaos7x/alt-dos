@@ -87,5 +87,13 @@ struct drv_req {
                                        (MOU_* aus fapi_abi.h), CX = dx, DX = dy
                                        (Mickeys, vorzeichenbehaftet, dy > 0
                                        nach unten) */
+#define DH_KBDLOCK      11          /* BX Bit 0 = 1: Tastatur-IRQ 1 maskieren
+                                       (der Treiber spricht selbst mit dem
+                                       Tastaturcontroller, z. B. PS/2-Maus
+                                       erkennen), 0: freigeben; Takt laeuft
+                                       weiter. Bit 1: AUX-Kanal (PS/2-Maus) ist
+                                       an - IRQ 1 laesst Bytes mit Statusbit 5
+                                       liegen (beim AT-Controller heisst das Bit
+                                       etwas anderes, daher nur auf Ansage) */
 
 #endif

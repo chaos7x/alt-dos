@@ -277,8 +277,8 @@ Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
 Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
 (Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
 das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
-`MOUSE.SYS` sucht eine serielle Maus (Microsoft, Logitech mit dritter
-Taste) an COM1/COM2 (`/COM1`, `/COM2` legt fest) und meldet ihre Bewegungen
+`MOUSE.SYS` sucht eine PS/2-Maus (IRQ 12), dann eine serielle (Microsoft,
+Logitech mit dritter Taste) an COM1/COM2 (`/PS2`, `/COM1`, `/COM2` legt fest) und meldet ihre Bewegungen
 dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist
 eine invertierte Textzelle (`\DEMO\MAUSTEST.EXE` zeigt die Ereignisse).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
