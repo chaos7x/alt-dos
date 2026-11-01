@@ -233,6 +233,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   gesichert sein – `fapi_dx` (DX, z. B. Länge bei DosWrite) wurde erst in
   `fapi_inner` gelesen und war dann von einem anderen Task überschrieben.
   Jetzt liest `fapi_dispatch` es als Erstes. QEMU zeigte den Fehler nie.
+  In 86Box bestätigt (Board-IDE, Master 63 MB CHS + Slave 504 MB, IRQ 14):
+  3× zwei XCOPY gleichzeitig ohne Fehler, CHKDSK C:/D: sauber.
   IDE: `wait_irq()` schläft je 2 Takte, prüft danach immer den Status
   (Interrupt beschleunigt nur), `chan[].done` vor Befehl und vor jedem
   Datentransfer löschen; 3 Fehltreffer -> Abfragebetrieb. In QEMU geprüft:
