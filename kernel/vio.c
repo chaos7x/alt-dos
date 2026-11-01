@@ -42,6 +42,9 @@ struct session {
     unsigned      save;             /* gesicherter Inhalt (Einheit), 0 = keiner */
     unsigned      unit;
     char          title[13];
+    signed char   mou_owner;        /* Task mit MouOpen, -1 = keiner    */
+    unsigned char mou_show;         /* Zeiger zeigen                    */
+    unsigned char mq_head, mq_n;    /* Warteschlange der Mausereignisse */
 };
 
 static struct session ses[NTASK];
@@ -54,6 +57,27 @@ static unsigned char hw_lines = 25; /* Zeilen, auf die die Karte steht  */
 
 extern unsigned char  vga_ok;       /* start.asm, aus dem Real Mode     */
 extern unsigned short vga_font8a[2], vga_font8b[2], vga_font16[2];
+
+/* ---- Maus ---------------------------------------------------------------
+   Position in Mickeys wie beim Maustreiber von Microsoft: 8 je Spalte,
+   16 je Zeile (Textzelle = 8x8 Punkte des virtuellen 640x200-Schirms).
+   Die Interruptroutine des Treibers (DevHlp MouEvent) rechnet nur und
+   stellt Ereignisse in die Warteschlange der Vordergrund-Sitzung;
+   gezeichnet wird in vio_flush/redraw. Der Zeiger ist eine Zelle mit
+   umgedrehtem Attribut (XOR 77h, Blinken und Helligkeit bleiben), nur im
+   Bildspeicher - der Sitzungspuffer bleibt unberuehrt. */
+#define MQ_LEN  8
+struct mouev { unsigned char b, row, col; };
+static struct mouev mq[NTASK][MQ_LEN];
+static unsigned char mou_nbtn;          /* 0 = keine Maus                */
+static int mx, my;                      /* Mickeys                       */
+static unsigned char mbtn;              /* Tasten jetzt                  */
+static unsigned char p_drawn;           /* Zeiger steht im Bildspeicher  */
+static unsigned p_idx;                  /* ... an dieser Zelle           */
+static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
+
+static void ptr_remove(void);
+static void ptr_draw(void);
 
 static void mark(unsigned char a, unsigned char b)  /* Zeilen a..b neu */
 {
@@ -216,6 +240,7 @@ void vio_status(void)
 static void redraw(void)
 {
     int r;
+    p_drawn = 0;                            /* Bildspeicher wird neu    */
     dlo = 0xFF;
     cur_dirty = 0;
     if (fg >= 0)
@@ -232,6 +257,7 @@ static void redraw(void)
         vio_status();
     }
     cursor();
+    ptr_draw();
 }
 
 static void put(int s, int r, int c, unsigned short v)
@@ -290,6 +316,9 @@ int vio_open(const char *title)
     ses[s].hidecur = 0;
     ses[s].owner = -1;
     ses[s].save = 0;
+    ses[s].mou_owner = -1;
+    ses[s].mou_show = 0;
+    ses[s].mq_n = 0;
     set_desc(SCR_IDX(s), (unsigned long)u << 8, SBYTES - 1, ACC_KDATA);
     vio_title(s, title);
     vio_cls(s);
@@ -426,6 +455,7 @@ void vio_flush(void)
                                        bleiben fuer den naechsten Lauf */
     dhi = 0;
     irq_restore(f);
+    ptr_remove();
     if (a != 0xFF) {
         if (b >= ses[fg].rows)
             b = ses[fg].rows - 1;
@@ -437,6 +467,7 @@ void vio_flush(void)
         cur_dirty = 0;
         cursor();
     }
+    ptr_draw();
 }
 
 void vio_str(int s, int row, int col, unsigned sel, unsigned off,
@@ -505,8 +536,127 @@ void vio_setmode(int s, int full, int owner)
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */
 void vio_task_end(int s, int t)
 {
+    if (s >= 0 && ses[s].used && ses[s].mou_owner == t) {
+        ses[s].mou_owner = -1;              /* Maus wieder frei         */
+        ses[s].mou_show = 0;
+        ses[s].mq_n = 0;
+    }
     if (s >= 0 && ses[s].used && !ses[s].top && ses[s].owner == t)
         vio_setmode(s, 0, -1);
+}
+
+/* ---- Maus --------------------------------------------------------------- */
+static void ptr_remove(void)
+{
+    if (p_drawn) {
+        if (VRAM[p_idx] == p_inv)           /* sonst schon ueberschrieben */
+            VRAM[p_idx] = p_saved;
+        p_drawn = 0;
+    }
+}
+
+static void ptr_draw(void)
+{
+    unsigned r, c;
+    if (p_drawn || fg < 0 || !mou_nbtn || !ses[fg].mou_show || ses[fg].mou_owner < 0)
+        return;
+    r = (unsigned)my >> 4;
+    c = (unsigned)mx >> 3;
+    if (r >= hw_lines || c >= SCOLS)
+        return;
+    p_idx = r * SCOLS + c;
+    p_saved = VRAM[p_idx];
+    p_inv = p_saved ^ 0x7700;
+    VRAM[p_idx] = p_inv;
+    p_drawn = 1;
+}
+
+/* Treiber meldet die Maus an (DevHlp MouReg) */
+void vio_mou_reg(unsigned buttons)
+{
+    mou_nbtn = (unsigned char)(buttons > 3 ? 3 : buttons);
+    mx = SCOLS * 8 / 2;
+    my = 12 * 16;
+}
+
+/* aus der Interruptroutine (IF aus): bewegen, Ereignis einreihen */
+void vio_mou_event(unsigned buttons, int dx, int dy)
+{
+    unsigned or_ = (unsigned)my >> 4, oc = (unsigned)mx >> 3, r, c, n;
+    struct session *p;
+    struct mouev *e;
+
+    mx += dx;
+    my += dy;
+    if (mx < 0) mx = 0;
+    if (mx > SCOLS * 8 - 1) mx = SCOLS * 8 - 1;
+    if (my < 0) my = 0;
+    if (my > hw_lines * 16 - 1) my = hw_lines * 16 - 1;
+    r = (unsigned)my >> 4;
+    c = (unsigned)mx >> 3;
+    if (r == or_ && c == oc && buttons == mbtn)
+        return;                             /* gleiche Zelle            */
+    mbtn = (unsigned char)buttons;
+    cur_dirty = 1;                          /* vio_flush zeichnet neu   */
+    if (fg < 0 || (p = &ses[fg])->mou_owner < 0)
+        return;
+    r -= p->top;                            /* Zeile der Sitzung        */
+    if (r >= p->rows)
+        r = 0xFF;
+    if (p->mq_n == MQ_LEN && mq[fg][(p->mq_head + MQ_LEN - 1) % MQ_LEN].b == buttons)
+        n = (p->mq_head + MQ_LEN - 1) % MQ_LEN;   /* voll: letzte Bewegung ersetzen */
+    else if (p->mq_n == MQ_LEN)
+        return;                             /* voll, Taste geht vor: verwerfen */
+    else
+        n = (p->mq_head + p->mq_n++) % MQ_LEN;
+    e = &mq[fg][n];
+    e->b = (unsigned char)buttons;
+    e->row = (unsigned char)r;
+    e->col = (unsigned char)c;
+}
+
+/* MouOpen: Ereignisse fuer die Sitzung an -> Tasten, 0 = keine Maus */
+unsigned vio_mou_open(int s, int t)
+{
+    unsigned f;
+    if (!mou_nbtn || s < 0 || !ses[s].used)
+        return 0;
+    f = irq_off();
+    ses[s].mou_owner = (signed char)t;
+    ses[s].mou_show = 0;
+    ses[s].mq_n = 0;
+    irq_restore(f);
+    return mou_nbtn;
+}
+
+/* naechstes Ereignis nach e (3 Byte); 0 = keins */
+int vio_mou_read(int s, unsigned char *e)
+{
+    unsigned f;
+    struct mouev *q;
+    if (s < 0 || !ses[s].used || ses[s].mou_owner < 0)
+        return 0;
+    f = irq_off();
+    if (!ses[s].mq_n) {
+        irq_restore(f);
+        return 0;
+    }
+    q = &mq[s][ses[s].mq_head];
+    e[0] = q->b;
+    e[1] = q->row;
+    e[2] = q->col;
+    ses[s].mq_head = (unsigned char)((ses[s].mq_head + 1) % MQ_LEN);
+    ses[s].mq_n--;
+    irq_restore(f);
+    return 1;
+}
+
+void vio_mou_show(int s, int on)
+{
+    if (s < 0 || !ses[s].used || ses[s].mou_owner < 0)
+        return;
+    ses[s].mou_show = (unsigned char)(on != 0);
+    cur_dirty = 1;
 }
 
 void vio_setcur(int s, int row, int col)

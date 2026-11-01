@@ -108,6 +108,23 @@ struct fapi_label {
                                        bis zum Programmende (sonst 5 s) */
 #define FAPI_VIOGETROWS     0x36    /* -> Zeilen, die das Programm beschreiben
                                        kann (normal Bildschirm - 2, Vollbild alle) */
+/* Maus (wie das Mou-API von OS/2): Ereignisse gehen an die Sitzung im
+   Vordergrund, wenn dort ein Programm MouOpen gerufen hat. Zeile/Spalte
+   sind Textzellen relativ zur Sitzung (Zeile FFh: Titel-/Statusleiste). */
+#define FAPI_MOUOPEN        0x38    /* -> Anzahl Tasten, 0 = keine Maus;
+                                       Ereignisse fuer diese Sitzung an,
+                                       Warteschlange leer, Zeiger aus */
+#define FAPI_MOUREADEVENT   0x39    /* BX = struct fapi_mouevent, CX = 1 warten
+                                       -> 0 Ereignis, 1 keins (oder Signal) */
+#define FAPI_MOUSHOWPTR     0x3A    /* BX = 1 Zeiger zeigen, 0 verbergen */
+struct fapi_mouevent {
+    unsigned char  buttons;         /* MOU_* gedrueckt                  */
+    unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */
+    unsigned char  rsv;
+};
+#define MOU_LEFT            0x01
+#define MOU_RIGHT           0x02
+#define MOU_MIDDLE          0x04
 #define KBDSHIFT_SHIFT      0x01
 #define KBDSHIFT_CTRL       0x02
 #define KBDSHIFT_ALT        0x04    /* linke Alt-Taste                  */

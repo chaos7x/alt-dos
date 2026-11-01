@@ -1500,7 +1500,8 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
-    case FAPI_SHUTDOWNHOLD:
+    case FAPI_SHUTDOWNHOLD: case FAPI_MOUOPEN: case FAPI_MOUREADEVENT:
+    case FAPI_MOUSHOWPTR:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -2101,6 +2102,33 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return tk->sig_save[14];                /* Ergebnis des unterbrochenen Aufrufs */
     }
 
+    case FAPI_MOUOPEN:
+        return vio_mou_open(s, current);
+
+    case FAPI_MOUREADEVENT: {
+        static unsigned char ev[3];             /* nolock: nur kurz benutzt */
+        unsigned char __far *p;
+        if (!user_ok(usel, a1, 4, 1))
+            return FAPI_ERROR;
+        for (;;) {
+            if (vio_mou_read(s, ev)) {
+                p = MK_FP(usel, a1);
+                p[0] = ev[0];
+                p[1] = ev[1];
+                p[2] = ev[2];
+                p[3] = 0;
+                return 0;
+            }
+            if (!a2 || sig_waiting())
+                return 1;
+            sleep_ticks(1);                     /* bis zum naechsten Takt */
+        }
+    }
+
+    case FAPI_MOUSHOWPTR:
+        vio_mou_show(s, a1);
+        return 0;
+
     case FAPI_YIELD:
         schedule_next();
         return 0;
@@ -2503,6 +2531,12 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_PROCRUN:
         d = drv_of(dsel);
         return proc_run(((unsigned long)(d & 0xFF) << 16) | bx);
+    case DH_MOUREG:
+        vio_mou_reg(bx);
+        return 0;
+    case DH_MOUEVENT:
+        vio_mou_event(bx, (int)cx, (int)devhlp_dx);
+        return 0;
     case DH_BLKREAD:
         return blk_read((int)bx, ((unsigned long)devhlp_dx << 16) | cx) ? 1 : 0;
     case DH_PUTS:
@@ -2612,8 +2646,9 @@ static int load_driver(const char *line, int is_ifs)
     scopy(req.args, args, sizeof(req.args));
     drv_request(d);
 
-    if (req.status != DRV_OK || req.units == 0) {
-        /* nichts gefunden: Treiber wieder entfernen */
+    if (req.status != DRV_OK || (req.units == 0 && is_ifs)) {
+        /* nichts gefunden: Treiber wieder entfernen (DRV_OK mit 0
+           Einheiten: Treiber ohne Blockgeraete, z. B. MOUSE.SYS) */
         gdt[DRVC_IDX(d)].access = 0;
         gdt[DRVC_IDX(d) + 1].access = 0;
         mem_free(u, n);

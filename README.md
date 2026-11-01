@@ -217,6 +217,9 @@ selbst nur 8.3 kennt.
 | 53 | VioSetLines     | BX = Bildschirmzeilen der eigenen Sitzung: 25, 43, 50 (nur VGA), 0 = fragen → Zeilen; löscht den Bildschirm, nicht im Vollbild |
 | 54 | VioGetRows      | → Zeilen, die das Programm beschreiben kann (normal Bildschirm − 2, Vollbild alle) |
 | 55 | DosShutdownHold | nach SIG_SHUTDOWN: Herunterfahren aufhalten, weil das Programm den Benutzer fragt; Sitzung kommt nach vorn, der Kernel wartet bis zum Programmende (sonst 5 s) |
+| 56 | MouOpen         | → Anzahl Maustasten (0 = keine Maus); Ereignisse für die eigene Sitzung an, Zeiger zunächst aus |
+| 57 | MouReadEvent    | BX = Puffer (Tasten, Zeile, Spalte), CX = 1 warten → 0 Ereignis, 1 keins; Zeile/Spalte als Textzelle der Sitzung, Zeile FFh = Titel-/Statusleiste |
+| 58 | MouShowPtr      | BX = 1 Mauszeiger zeigen (invertierte Zelle), 0 verbergen |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:
 Konsole), eigene Dateien beginnen bei 3. Gestartete Programme erben die
@@ -274,6 +277,10 @@ Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
 Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
 (Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
 das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
+`MOUSE.SYS` sucht eine serielle Maus (Microsoft, Logitech mit dritter
+Taste) an COM1/COM2 (`/COM1`, `/COM2` legt fest) und meldet ihre Bewegungen
+dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist
+eine invertierte Textzelle (`\DEMO\MAUSTEST.EXE` zeigt die Ereignisse).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
 Anzeige beim Start) und schläft, bis die Karte die Eingangs-Mailbox
 beschrieben hat; ebenfalls mit Rückfall und `/NOIRQ`. Beide Treiber melden

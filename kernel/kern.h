@@ -155,6 +155,11 @@ int  vio_setlines(int s, int n);    /* 25/43/50 Bildschirmzeilen, 0 = fragen
 void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
 void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
 void vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
+void vio_mou_reg(unsigned buttons);             /* Maus angemeldet       */
+void vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
+unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
+int  vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
+void vio_mou_show(int s, int on);
 
 /* ---- Tastatur (kbd.c) -------------------------------------------------- */
 void kbd_init(void);

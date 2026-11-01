@@ -397,6 +397,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
   `DIR /P` blättert seitenweise.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`).
+- Maus, Stand: `MOUSE.SYS` (drivers/mouse.c) kann die serielle Maus
+  (Microsoft 2 Tasten, Logitech `M3` mit 3. Taste im 4. Byte) an COM1/COM2,
+  `/COM1`/`/COM2`; Treiber ohne Blockgeräte melden beim INIT `DRV_OK` mit
+  0 Einheiten (load_driver behält sie). DevHlp `DH_MOUREG`/`DH_MOUEVENT`
+  -> vio.c: Position in Mickeys (8 je Spalte, 16 je Zeile wie Microsoft),
+  Warteschlange je Sitzung (8, nur Vordergrund mit MouOpen), Zeiger als
+  Zelle mit Attribut XOR 77h nur im Bildspeicher (`ptr_remove`/`ptr_draw`
+  in vio_flush und redraw). FAPI 38h–3Ah MouOpen/MouReadEvent/MouShowPtr
+  (ohne Kernelsperre), `vio_task_end` gibt die Maus frei. Test:
+  `\DEMO\MAUSTEST.EXE`; in QEMU mit `-serial msmouse` und Monitor
+  `mouse_move`/`mouse_button` geprüft. Offen: PS/2 (Kernel-ISR für IRQ 1
+  liest Port 60h – Erkennung und IRQ 12 müssen mit kbd.c abgestimmt werden),
+  Busmaus, EDIT als erster Nutzer.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
   selbst sucht und nimmt, was da ist: PS/2 (Hilfsport des Tastatur-
   controllers, IRQ 12), Busmaus (InPort/Logitech, 23Ch, ID-Register lesen),
