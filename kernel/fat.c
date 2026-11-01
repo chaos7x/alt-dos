@@ -20,6 +20,8 @@
 #include "ifs.h"
 
 struct volume vol[NDRIVE];
+char ifs_orig[IFS_NAMELEN];             /* siehe ifs.h                    */
+unsigned char lfn_cfg;                  /* LONGNAMES=                     */
 
 static unsigned char __far *dma(void)
 {
@@ -284,6 +286,23 @@ static int fat_mount(int d)
     v->was_dirty = 0;
     if (v->fat16 && !IS_FLOPPY(v->blk) && blk_read(v->blk, v->fat_lba) == 0)
         v->was_dirty = !(rd16(2) & CLEAN_BIT);  /* FAT[1] Bit 15        */
+    v->vfat = lfn_cfg == 1;
+    if (lfn_cfg == 0) {                 /* AUTO: VFAT, wenn der Stamm schon */
+        unsigned i;                     /* lange Eintraege hat (Windows 95) */
+        unsigned char __far *e;
+        dir_cache_reset();
+        for (i = 0; i < v->rootents; i++) {
+            if (blk_read(v->blk, v->root_lba + (i >> 4)))
+                break;
+            e = dma() + ((i & 15) << 5);
+            if (e[0] == 0)
+                break;
+            if (e[11] == 0x0F && e[0] != 0xE5) {
+                v->vfat = 1;
+                break;
+            }
+        }
+    }
     return 0;
 }
 
@@ -760,6 +779,11 @@ static void zero_cluster(int d, unsigned c)
 }
 
 /* kanonischen Pfad in Elternverzeichnis und 8.3-Namen zerlegen */
+static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n83);
+static const char *sp_comp;             /* letzter Pfadteil nach split()  */
+static unsigned sp_len;
+
+/* Eltern suchen, Namen fuer den neuen Eintrag bestimmen (name_for) */
 static int split(int d, const char *path, struct found *par, char *n83)
 {
     static char pbuf[IFS_PATHLEN];
@@ -780,11 +804,19 @@ static int split(int d, const char *path, struct found *par, char *n83)
         last++;
     for (p = last; *p; p++)
         ;
-    if (walk(d, pbuf, par) || !(par->attr & ATTR_DIR))
+    if (walk(d, pbuf, par) || !(par->attr & ATTR_DIR) || p == last)
         return IFS_ERR;
-    if (to83(last, (unsigned)(p - last), n83) || n83[0] == '.')
-        return IFS_ERR;
-    return 0;
+    sp_comp = last;
+    sp_len = (unsigned)(p - last);
+    return name_for(d, par->first, last, sp_len, n83);
+}
+
+/* gibt es den Namen (8.3 oder lang) im Verzeichnis schon? */
+static int exists(int d, unsigned dc, struct found *f)
+{
+    char n[11];
+    return lookup_name(d, dc, sp_comp, sp_len,
+                       to83(sp_comp, sp_len, n) ? 0 : n, f) == 0;
 }
 
 /* freien Eintrag im Verzeichnis dc; erweitert Unterverzeichnisse */
@@ -811,6 +843,8 @@ static int dir_slot(int d, unsigned dc, unsigned *idx)
 }
 
 /* neuen Eintrag anlegen: Name, Attribut, erster Cluster */
+static unsigned char nt_case;            /* Byte 12 fuer den naechsten Eintrag */
+
 static int new_entry(int d, unsigned dc, const char *n83, unsigned char attr,
                      unsigned first, unsigned *idx)
 {
@@ -828,10 +862,226 @@ static int new_entry(int d, unsigned dc, const char *n83, unsigned char attr,
     for (k = 0; k < 11; k++)
         e[k] = (unsigned char)n83[k];
     e[11] = attr;
+    e[12] = nt_case;
     stamp(e);
     put16(e, 26, first);
     wr(d, de_lba);
     return 0;
+}
+
+/* ---- Lange Namen schreiben (VFAT, Stufe 2) --------------------------------
+   Nur auf Laufwerken mit vol[].vfat (LONGNAMES=VFAT oder AUTO mit langen
+   Eintraegen im Stamm). Name in 8.3 und nur Klein- oder nur Grossbuch-
+   staben je Teil: NT-Kleinschreibungsbits (Byte 12), kein langer Eintrag.
+   Sonst lange Eintraege + Kurzname NAME~n.EXT wie Windows 95. */
+static char ln_buf[IFS_NAMELEN];        /* zu schreibender langer Name    */
+
+static unsigned cp2uni(unsigned char c)
+{
+    unsigned i;
+    if (c < 0x80)
+        return c;
+    for (i = 0; i < 96; i++)
+        if (lat2cp[i] == c)
+            return 0xA0 + i;
+    return '_';
+}
+
+/* n freie Eintraege am Stueck (Unterverzeichnis wird verlaengert) */
+static int dir_slots(int d, unsigned dc, unsigned n, unsigned *idx)
+{
+    unsigned char __far *e;
+    unsigned i, run = 0, start = 0, c, nx;
+
+    for (i = 0;; i++) {
+        e = dir_entry(d, dc, i);
+        if (!e) {
+            if (dc == 0)
+                return IFS_FULL;
+            for (c = dc; (nx = next_cluster(d, c)) != FAT_END; c = nx)
+                ;
+            nx = alloc_cluster(d, c);
+            if (!nx)
+                return ferr ? ferr : IFS_FULL;
+            zero_cluster(d, nx);
+            e = dir_entry(d, dc, i);
+            if (!e)
+                return IFS_ERR;
+        }
+        if (e[0] == 0 || e[0] == 0xE5) {
+            if (!run)
+                start = i;
+            if (++run == n) {
+                *idx = start;
+                return 0;
+            }
+        } else
+            run = 0;
+    }
+}
+
+/* langen Namen + 8.3-Eintrag anlegen; *idx = Lage des 8.3-Eintrags */
+static int new_entry_lfn(int d, unsigned dc, const char *ln, const char *n83,
+                         unsigned char attr, unsigned first, unsigned *idx)
+{
+    unsigned char __far *e;
+    unsigned len, k, j, i, pos, ord, start, ch;
+    unsigned char sum;
+    int rc;
+
+    for (len = 0; ln[len]; len++)
+        ;
+    k = (len + 12) / 13;
+    rc = dir_slots(d, dc, k + 1, &start);
+    if (rc)
+        return rc;
+    {                                   /* Pruefsumme des Kurznamens      */
+        unsigned char s = 0;
+        for (i = 0; i < 11; i++)
+            s = (unsigned char)(((s & 1) << 7) + (s >> 1) + (unsigned char)n83[i]);
+        sum = s;
+    }
+    for (j = 0; j < k; j++) {           /* letzter Teil zuerst            */
+        ord = k - j;
+        e = dir_entry(d, dc, start + j);
+        if (!e)
+            return IFS_ERR;
+        for (i = 0; i < 32; i++)
+            e[i] = 0;
+        e[0] = (unsigned char)(ord | (j == 0 ? 0x40 : 0));
+        e[11] = 0x0F;
+        e[13] = sum;
+        for (i = 0; i < 13; i++) {
+            pos = (ord - 1) * 13 + i;
+            ch = pos < len ? cp2uni((unsigned char)ln[pos]) : pos == len ? 0 : 0xFFFF;
+            e[lfn_pos[i]] = (unsigned char)ch;
+            e[lfn_pos[i] + 1] = (unsigned char)(ch >> 8);
+        }
+        wr(d, de_lba);
+    }
+    e = dir_entry(d, dc, start + k);
+    if (!e)
+        return IFS_ERR;
+    for (i = 0; i < 32; i++)
+        e[i] = 0;
+    for (i = 0; i < 11; i++)
+        e[i] = (unsigned char)n83[i];
+    e[11] = attr;
+    stamp(e);
+    put16(e, 26, first);
+    wr(d, de_lba);
+    *idx = start + k;
+    return 0;
+}
+
+/* Kurzname zum langen Namen: NAME~n.EXT, im Verzeichnis eindeutig */
+static void gen_short(int d, unsigned dc, const char *ln, char *n83)
+{
+    static const char bad[] = "\"*+,/:;<=>?[\\]|";
+    struct found f;
+    char base[8], ext[3];
+    const char *dot = 0, *p;
+    unsigned nb = 0, ne = 0, i, n, k, w;
+    char c;
+
+    for (p = ln; *p; p++)
+        if (*p == '.')
+            dot = p;
+    for (p = ln; *p && p != dot; p++) {
+        c = upc(*p);
+        if (c == ' ' || c == '.')
+            continue;
+        for (i = 0; bad[i] && bad[i] != c; i++)
+            ;
+        if (bad[i] || (unsigned char)c < ' ')
+            c = '_';
+        if (nb < 8)
+            base[nb++] = c;
+    }
+    if (!nb)
+        base[nb++] = '_';
+    if (dot)
+        for (p = dot + 1; *p && ne < 3; p++) {
+            c = upc(*p);
+            if (c == ' ')
+                continue;
+            for (i = 0; bad[i] && bad[i] != c; i++)
+                ;
+            ext[ne++] = (bad[i] || (unsigned char)c < ' ') ? '_' : c;
+        }
+    for (n = 1; n < 1000; n++) {
+        w = n < 10 ? 1 : n < 100 ? 2 : 3;   /* Ziffern                  */
+        k = nb < 7 - w ? nb : 7 - w;        /* ~n + Ziffern in 8 Zeichen */
+        for (i = 0; i < 11; i++)
+            n83[i] = ' ';
+        for (i = 0; i < k; i++)
+            n83[i] = base[i];
+        n83[k] = '~';
+        for (i = w; i > 0; i--) {
+            unsigned v = n, j;
+            for (j = 1; j < i; j++)
+                v /= 10;
+            n83[k + 1 + (w - i)] = (char)('0' + v % 10);
+        }
+        for (i = 0; i < ne; i++)
+            n83[8 + i] = ext[i];
+        if (lookup(d, dc, n83, &f))
+            return;                     /* frei                           */
+    }
+}
+
+/* Namen fuer einen neuen Eintrag bestimmen: n83, ln_buf ("" = kein langer
+   Name), nt_case. comp/clen = letzter Pfadteil (kanonisch gross). Lange
+   Namen nur mit vol[].vfat (EA-Weg: Stufe 3). -> 0 oder IFS_ERR */
+static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n83)
+{
+    const char *o = comp;
+    unsigned i, lo = 0, up = 0, dot = 0, mixed = 0, partlo[2], partup[2];
+
+    nt_case = 0;
+    ln_buf[0] = 0;
+    for (i = 0; ifs_orig[i] && i < clen && upc(ifs_orig[i]) == comp[i]; i++)
+        ;
+    if (i == clen && !ifs_orig[i])
+        o = ifs_orig;                   /* Originalschreibung passt       */
+    if (to83(comp, clen, n83) == 0 && n83[0] != '.') {
+        partlo[0] = partlo[1] = partup[0] = partup[1] = 0;
+        for (i = 0; i < clen; i++) {
+            if (o[i] == '.')
+                dot = 1;
+            else if (o[i] >= 'a' && o[i] <= 'z')
+                partlo[dot] = 1, lo = 1;
+            else if (o[i] >= 'A' && o[i] <= 'Z')
+                partup[dot] = 1, up = 1;
+        }
+        mixed = (partlo[0] && partup[0]) || (partlo[1] && partup[1]);
+        if (!lo)
+            return 0;                   /* alles gross: nur 8.3           */
+        if (!mixed) {                   /* NT: Name/Endung ganz klein     */
+            nt_case = (unsigned char)((partlo[0] ? 0x08 : 0) | (partlo[1] ? 0x10 : 0));
+            return 0;
+        }
+        if (!vol[d].vfat)
+            return 0;                   /* Schreibung geht verloren       */
+    } else {
+        if (!vol[d].vfat || clen >= IFS_NAMELEN)
+            return IFS_ERR;             /* langer Name: Stufe 3 (EA)      */
+        gen_short(d, dc, o, n83);
+    }
+    for (i = 0; i < clen; i++)
+        ln_buf[i] = o[i];
+    ln_buf[i] = 0;
+    (void)up;
+    return 0;
+}
+
+/* Eintrag anlegen: mit langem Namen, wenn name_for einen bestimmt hat */
+static int new_entry_n(int d, unsigned dc, const char *n83, unsigned char attr,
+                       unsigned first, unsigned *idx)
+{
+    if (ln_buf[0])
+        return new_entry_lfn(d, dc, ln_buf, n83, attr, first, idx);
+    return new_entry(d, dc, n83, attr, first, idx);
 }
 
 /* Diskette: vor jeder Operation neu einhaengen, sie koennte gewechselt sein */
@@ -859,7 +1109,7 @@ static int fat_create(int d, const char *path, struct ifs_file __far *fl)
     ferr = 0;
     if (revalidate(d) || split(d, path, &par, n))
         return IFS_ERR;
-    if (lookup(d, par.first, n, &f) == 0) {
+    if (exists(d, par.first, &f)) {
         /* vorhandene Datei: auf Laenge 0 kuerzen */
         if (f.attr & (ATTR_DIR | ATTR_RO | ATTR_SYSTEM | ATTR_HIDDEN | 0x08))
             return IFS_DENIED;
@@ -875,7 +1125,7 @@ static int fat_create(int d, const char *path, struct ifs_file __far *fl)
         wr(d, de_lba);
         idx = f.idx;
     } else {
-        rc = new_entry(d, par.first, n, 0x20, 0, &idx);
+        rc = new_entry_n(d, par.first, n, 0x20, 0, &idx);
         if (rc)
             return done_op(rc);
     }
@@ -1031,13 +1281,13 @@ static int fat_mkdir(int d, const char *path)
     ferr = 0;
     if (revalidate(d) || split(d, path, &par, n))
         return IFS_ERR;
-    if (lookup(d, par.first, n, &f) == 0)
+    if (exists(d, par.first, &f))
         return IFS_EXIST;
     c = alloc_cluster(d, 0);
     if (!c)
         return done_op(IFS_FULL);
     zero_cluster(d, c);
-    rc = new_entry(d, par.first, n, ATTR_DIR, c, &idx);
+    rc = new_entry_n(d, par.first, n, ATTR_DIR, c, &idx);
     if (rc) {
         free_chain(d, c);
         return done_op(rc);
@@ -1101,17 +1351,18 @@ static int fat_move(int d, const char *from, const char *to)
         return IFS_ERR;
     if (split(d, to, &par, n))
         return IFS_ERR;
-    if (lookup(d, par.first, n, &g) == 0)
-        return IFS_EXIST;
+    if (exists(d, par.first, &g) && !(g.dc == f.dc && g.idx == f.idx))
+        return IFS_EXIST;               /* (nur Schreibung aendern geht) */
     if (walk(d, from, &f))              /* lookup hat DMABUF benutzt    */
         return IFS_ERR;
     drop_lfn(d, f.dc, f.idx);           /* alter langer Name passt nicht mehr */
-    if (par.first == f.dc) {            /* gleiches Verzeichnis         */
+    if (par.first == f.dc && !ln_buf[0]) {  /* gleiches Verzeichnis, 8.3 */
         e = dir_entry(d, f.dc, f.idx);
         if (!e)
             return IFS_ERR;
         for (k = 0; k < 11; k++)
             e[k] = (unsigned char)n[k];
+        e[12] = nt_case;
         wr(d, de_lba);
         return done_op(0);
     }
@@ -1119,22 +1370,29 @@ static int fat_move(int d, const char *from, const char *to)
     if (!e)
         return IFS_ERR;
     far_copy(KDATA, (unsigned)ent, DMABUF, FP_OFF(e), 32);
-    rc = dir_slot(d, par.first, &idx);
-    if (rc)
+    e[0] = 0xE5;                        /* alten Platz frei, damit ein    */
+    wr(d, de_lba);                      /* langer Name ihn nutzen kann    */
+    if (ln_buf[0])
+        rc = new_entry_lfn(d, par.first, ln_buf, n, ent[11], 0, &idx);
+    else
+        rc = dir_slot(d, par.first, &idx);
+    if (rc) {                           /* kein Platz: Eintrag zurueck    */
+        e = dir_entry(d, f.dc, f.idx);
+        if (e) {
+            e[0] = ent[0];
+            wr(d, de_lba);
+        }
         return done_op(rc);
+    }
     e = dir_entry(d, par.first, idx);
     if (!e)
         return done_op(IFS_ERR);
     far_copy(DMABUF, FP_OFF(e), KDATA, (unsigned)ent, 32);
     for (k = 0; k < 11; k++)
         e[k] = (unsigned char)n[k];
-    wr(d, de_lba);
-    e = dir_entry(d, f.dc, f.idx);
-    if (!e)
-        return done_op(IFS_ERR);
-    e[0] = 0xE5;
-    wr(d, de_lba);
-    if ((f.attr & ATTR_DIR) && !ferr) { /* ".." zeigt auf das neue Elternverzeichnis */
+    e[12] = ln_buf[0] ? 0 : nt_case;
+    wr(d, de_lba);                      /* (alter Platz ist schon frei)   */
+    if ((f.attr & ATTR_DIR) && !ferr && par.first != f.dc) { /* ".." zeigt auf das neue Elternverzeichnis */
         e = dir_entry(d, f.first, 1);
         if (e && e[0] == '.' && e[1] == '.') {
             put16(e, 26, par.first);

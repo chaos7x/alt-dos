@@ -46,8 +46,12 @@ und PC-DOS.
   halten Namen mit Leerzeichen zusammen) und beim Löschen/Umbenennen mit
   aufgeräumt; Pfade bis 260 Zeichen. Wie bei OS/2 1.2 sehen nur Programme
   mit dem Merker „kann lange Namen“ (`FX_FLAG_LONGNAMES`, bisher COMMAND)
-  lange Namen, alle anderen 8.3-Kurznamen (`EIGENE~1`). Neue lange Namen
-  anlegen kommt mit Stufe 2/3
+  lange Namen, alle anderen 8.3-Kurznamen (`EIGENE~1`).
+- Lange Namen, Stufe 2: auf VFAT-Laufwerken (`LONGNAMES=VFAT` in
+  CONFIG.SYS oder `AUTO`, wenn im Stamm schon lange Einträge stehen)
+  legen `MD`, `COPY`, `REN` lange Namen wie Windows 95 an (Kurzname
+  `NAME~1.EXT`); kleingeschriebene 8.3-Namen bekommen wie bei Windows NT
+  nur das Kleinschreibungsbit
 - Laufwerke `A:`, `B:` (Disketten), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“

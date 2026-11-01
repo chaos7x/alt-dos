@@ -647,6 +647,13 @@ static unsigned subst_real(unsigned d)
     return d < NDRIVE && subst_drv[d] >= 0 ? (unsigned)subst_drv[d] : d;
 }
 
+static void set_orig(const char *p);
+static int scmp_eq(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a == *b;
+}
 static int resolve_v(int t, const char *in, int *drive, char *out);
 
 static int resolve(int t, const char *in, int *drive, char *out)
@@ -2008,7 +2015,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             }
             files[k].f.flags |= IFS_F_WRITE;
             files[k].pos = files[k].f.size;
-        } else if ((t = ifs_create(d, canon, &files[k].f)) != 0) {
+        } else if (set_orig(buf), t = ifs_create(d, canon, &files[k].f), ifs_orig[0] = 0, t != 0) {
             files[k].refs = 0;
             files[k].owner = -1;
             return ifs_err(t);
@@ -2059,7 +2066,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (fn != FAPI_MKDIR && in_use(d, canon, fn == FAPI_RMDIR))
             return FAPI_ERR_INUSE;
         t = fn == FAPI_DELETE ? ifs_remove(d, canon) :
-            fn == FAPI_MKDIR  ? ifs_mkdir(d, canon) : ifs_rmdir(d, canon);
+            fn == FAPI_MKDIR  ? (set_orig(buf), ifs_mkdir(d, canon)) : ifs_rmdir(d, canon);
+        ifs_orig[0] = 0;
         return t ? ifs_err(t) : 0;
 
     case FAPI_MOVE: {
@@ -2070,11 +2078,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             user_str(usel, a2, buf, sizeof(buf)) ||
             resolve(current, buf, &d2, canon2) || d != d2)
             return FAPI_ERROR;
-        if (path_in(canon2, canon))
-            return FAPI_ERROR;                  /* in sich selbst       */
+        if (path_in(canon2, canon) && !scmp_eq(canon, canon2))
+            return FAPI_ERROR;                  /* in sich selbst (gleicher
+                                                   Pfad: nur Schreibung) */
         if (in_use(d, canon, 1))
             return FAPI_ERR_INUSE;
+        set_orig(buf);                          /* Ziel in Originalschreibung */
         t = ifs_move(d, canon, canon2);
+        ifs_orig[0] = 0;
         return t ? ifs_err(t) : 0;
     }
 
@@ -3591,6 +3602,19 @@ static void cd_drives(void)
    LASTDRIVE=, DOS=, SHELL=, COUNTRY=, INSTALL=, NUMLOCK=, SWITCHES=, SET=
    und die Menuebefehle von MS-DOS 6. Anderes wird gemeldet und uebergangen. */
 static unsigned nbuffers = 15;          /* BUFFERS=, fuer den Platten-Cache */
+
+/* letzten Pfadteil in Originalschreibung fuer das Dateisystem merken */
+static void set_orig(const char *p)
+{
+    const char *b = p;
+    unsigned k;
+    for (; *p; p++)
+        if (*p == '\\' || *p == '/' || *p == ':')
+            b = p + 1;
+    for (k = 0; b[k] && k < IFS_NAMELEN - 1; k++)
+        ifs_orig[k] = b[k];
+    ifs_orig[k] = 0;
+}
 static char protshell[FAPI_ARGLEN] = "COMMAND.EXE /P";   /* PROTSHELL=   */
 
 static int kw(const char *l, const char *k)
@@ -3686,6 +3710,8 @@ static void config_sys(void)
         } else if (kw(line, "BUFFERS")) {
             n = num_arg(v);
             nbuffers = n < 1 ? 1 : n > 99 ? 99 : n;
+        } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
+            lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {
             for (i = 0; quiet[i] && !kw(line, quiet[i]); i++)
                 ;

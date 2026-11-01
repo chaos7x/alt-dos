@@ -818,6 +818,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   jeder Name mit Punkt vorn), Endung nach dem letzten Punkt auch in GREP.
   ATTRIB mit Verzeichnisnamen zeigt/setzt wie NT das Verzeichnis selbst.
   Kernelgröße: erledigt mit KCODE2 (siehe Konventionen).
+  Stufe 2 erledigt (in QEMU geprüft, mtools liest alles, fsck sauber):
+  Kernel reicht den letzten Pfadteil in Originalschreibung in `ifs_orig`
+  (`set_orig` vor create/mkdir/move), `LONGNAMES=` -> `lfn_cfg`. fat.c:
+  `vol[].vfat` beim Einhängen (VFAT oder AUTO + lange Einträge im Stamm);
+  `name_for`: 8.3 ganz groß -> nur 8.3, ganz klein je Teil -> NT-Bits
+  Byte 12, gemischt oder lang -> VFAT-Einträge (`new_entry_lfn`,
+  `dir_slots` n freie Plätze am Stück, Unterverzeichnis wächst) und
+  Kurzname `gen_short` (NAME~n.EXT, eindeutig). Move gibt den alten Platz
+  vorher frei; nur Schreibung ändern (REN kurz.txt Kurz.TXT) erlaubt.
+  Ohne `vfat` werden lange Namen bis Stufe 3 abgelehnt.
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).

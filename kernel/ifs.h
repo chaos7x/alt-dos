@@ -41,7 +41,12 @@ struct volume {
     unsigned char  was_dirty;           /* beim Einhaengen nicht sauber abgemeldet */
     unsigned char  in_use;              /* Sauber-Bit auf der Platte geloescht */
     unsigned       nfree;               /* freie Cluster (FAT)              */
+    unsigned char  vfat;                /* lange Namen als VFAT schreiben   */
 };
+/* Original-Schreibung des letzten Pfadteils beim Anlegen/Umbenennen
+   (Pfade kommen kanonisch gross); "" = keine. Setzt der Kernel. */
+extern char ifs_orig[];
+extern unsigned char lfn_cfg;           /* LONGNAMES= 0 AUTO, 1 VFAT, 2 EA  */
 
 struct ifs_driver {
     const char *name;
