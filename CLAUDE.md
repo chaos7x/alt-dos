@@ -793,6 +793,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   daraus beim Auflösen wieder Großbuchstaben, `path_in` vergleicht ohne
   Groß/klein. `CD Neuer Ordner` ohne Anführungszeichen nimmt wie bei
   Windows den Rest der Zeile (Wunsch des Nutzers nach Test in 86Box).
+  In 86Box bestätigt (Ordner vom Mac): `cd Neuer Ordner\`, Aufforderung
+  `A:\Neuer Ordner`. macOS legt `.`/`..` versteckt an – DIR zeigt genau
+  diese beiden immer, andere versteckte (z. B. `.fseventsd`) nur mit /A.
   Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
   64 KB Code) – vor Stufe 2/3 Platz schaffen (Teile auslagern oder zweites
   Codesegment).
