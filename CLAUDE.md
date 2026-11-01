@@ -434,7 +434,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   puffers); CR/LF/CR LF -> Enter. FAPI 3Bh/3Ch DosClipPut/DosClipGet
   (Selektor 0 = eigenes DS); EDIT kopiert dorthin und fügt von dort ein
   (über 16 KB nur intern, Kernel-Ablage dann leer). In QEMU geprüft:
-  Markieren in COMMAND, Einfügen in COMMAND und in EDIT.
+  Markieren in COMMAND, Einfügen in COMMAND und in EDIT. Vom Nutzer auf
+  dem ASUS P3B-F (PS/2-Maus) bestätigt: Kopieren aus der Konsole geht.
   Testfalle: `ver` gibt vor dem Text eine Leerzeile aus – Bildschirm-
   ausgaben beim Testen nicht mit `grep -v "^$"` filtern.
 - Maus: ein Treiber `MOUSE.SYS`, der wie MOUSE.COM von Microsoft/Logitech
