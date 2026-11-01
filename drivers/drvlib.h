@@ -30,6 +30,12 @@ void outp(unsigned port, unsigned char v);
 /* n Worte vom Port nach es:di */
 void insw_far(unsigned port, void __far *dst, unsigned n);
 #pragma aux insw_far = "rep insw" __parm [__dx] [__es __di] [__cx] __modify [__di __cx];
+/* n Bytes vom Port nach es:di / von sel:off zum Port */
+void insb_far(unsigned port, void __far *dst, unsigned n);
+#pragma aux insb_far = "rep insb" __parm [__dx] [__es __di] [__cx] __modify [__di __cx];
+void outsb_far(unsigned port, unsigned sel, unsigned off, unsigned n);
+#pragma aux outsb_far = "push ds" "mov ds,ax" "rep outsb" "pop ds" \
+    __parm [__dx] [__ax] [__si] [__cx] __modify [__si __cx];
 /* n Worte von sel:off zum Port */
 void outsw_far(unsigned port, unsigned sel, unsigned off, unsigned n);
 #pragma aux outsw_far = "push ds" "mov ds,ax" "rep outsw" "pop ds" \

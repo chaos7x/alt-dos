@@ -528,7 +528,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   I/O; LCS-6821N, RT1000B, LS2000, T128 mit Registern im 16-KB-Fenster
   des Karten-BIOS (C800h–DC00h) -> braucht DevHlp für physischen Speicher
   (OS/2: PhysToVirt/PhysToGDTSelector); AHA-1520A und SB16-SCSI: AIC-6360.
-  Nächste Stufen: 53C400-Blockbetrieb (128-Byte-Puffer, Basis+4) mit IRQ,
+  Zweite Stufe gebaut (Nutzer: PIO zu langsam), Test in 86Box offen:
+  Datenphasen in Vielfachen von 128 Byte im 53C400-Blockbetrieb – Richtung
+  in Basis+0 (Bit 6 lesen), Blockzahl in Basis+1, 5380 MR=DMA und Start
+  über Register 7 (empfangen) bzw. 5 (senden, ICR mit DBUS), je Block
+  warten bis Status Bit 2 = 0, dann `rep insb/outsb` über Basis+4; am Ende
+  auf Bit 7 (5380 erreichbar) warten, MR=0. Scheitert es: Bus-Reset,
+  `blockmode = 0`, Meldung, Wiederholung per PIO; `/PIO` erzwingt PIO.
+  Ohne IRQ (Pufferwechsel je 128 Byte sind kurz). Nächste Stufen:
   Speicherfenster-Karten, AIC6360.SYS. NDRV auf 6 erhöht (MEMMAP_SEL 168h).
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die

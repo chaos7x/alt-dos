@@ -2,12 +2,17 @@
  * NCR5380.SYS - SCSI-Karten mit NCR 5380 / 53C400 (ISA, ohne Busmaster)
  *
  * Diese Fassung kennt den Trantor T130B (53C400, I/O-Ports 350h, 340h,
- * 250h oder 240h; die 5380-Register liegen ab Basis+8). Uebertragen wird
- * per PIO: jedes Byte mit dem REQ/ACK-Handshake des 5380 - langsam, aber
- * auf jeder Karte dieser Familie gleich. Laesst ein Geraet auf sich warten
- * (Platte sucht, CD laeuft an), schlaeft der Task kurz (ProcBlock mit
- * Frist), andere laufen weiter. Geplant: Blockbetrieb ueber den 128-Byte-
- * Puffer des 53C400 mit Interrupt, und die Karten mit Registern im
+ * 250h oder 240h; die 5380-Register liegen ab Basis+8). Befehl, Status
+ * und Meldungen laufen per PIO (jedes Byte mit dem REQ/ACK-Handshake des
+ * 5380), Daten in Vielfachen von 128 Byte im Blockbetrieb des 53C400: Der
+ * Chip macht den Handshake selbst, der Treiber holt bzw. fuellt nur seinen
+ * 128-Byte-Puffer (Basis+4) am Stueck. Steuerregister Basis+0 (Bit 6 =
+ * Richtung lesen; Status Bit 2 = Puffer nicht bereit, Bit 7 = 5380
+ * erreichbar), Blockzaehler Basis+1. Scheitert der Blockbetrieb, schaltet
+ * der Treiber auf PIO zurueck (Meldung); /PIO erzwingt PIO. Laesst ein
+ * Geraet auf sich warten (Platte sucht, CD laeuft an), schlaeft der Task
+ * kurz (ProcBlock mit Frist), andere laufen weiter. Geplant: die Karten
+ * mit Registern im
  * Speicherfenster (Longshine LCS-6821N, Rancho RT1000B) ueber eine DevHlp
  * fuer physischen Speicher (wie PhysToVirt bei OS/2).
  *
@@ -38,6 +43,17 @@
 #define ICR_ATN   0x02
 #define ICR_DBUS  0x01                  /* Daten auf den Bus legen      */
 #define MR_ARB    0x01
+#define MR_DMA    0x02
+#define R_SDS     5                     /* schreiben: DMA senden starten */
+#define R_SDIR    7                     /* schreiben: DMA empfangen starten */
+
+/* 53C400 (T130B: ab Basis+0) */
+#define C4_CTL    0                     /* Steuerung / Status           */
+#define C4_BLK    1                     /* Blockzaehler (je 128 Byte)   */
+#define C4_BUF    4                     /* Puffer                       */
+#define C4_DIR    0x40                  /* Richtung: zum Rechner        */
+#define C4_NRDY   0x04                  /* Puffer nicht bereit          */
+#define C4_5380   0x80                  /* 5380-Register erreichbar     */
 #define CS_RST    0x80
 #define CS_BSY    0x40
 #define CS_REQ    0x20
@@ -57,6 +73,7 @@
 static const unsigned t130b_ports[] = { 0x350, 0x340, 0x250, 0x240 };
 
 static unsigned base, r5;               /* Kartenbasis, 5380-Register   */
+static unsigned char blockmode;         /* 53C400-Puffer benutzen       */
 static unsigned char target[DRV_MAXUNITS];
 static unsigned bsz[DRV_MAXUNITS];
 static unsigned nunits;
@@ -101,6 +118,63 @@ static int looks_like_t130b(unsigned b)
         return 0;
     outp(r + R_TCR, 0x00);
     return 1;
+}
+
+/* Status des 53C400: kurz warten, dann schlafen, bis (Status & m) == v */
+static int c4_wait(unsigned char m, unsigned char v, unsigned t)
+{
+    unsigned start = ticks(), spin;
+    for (;;) {
+        for (spin = 0; spin < 2000; spin++)
+            if ((inp(base + C4_CTL) & m) == v)
+                return 0;
+        if ((unsigned)(ticks() - start) > t)
+            return -1;
+        cli();
+        proc_block(0xFFFF, 1);
+    }
+}
+
+/* len Bytes (Vielfaches von 128) im Blockbetrieb; Phase steht im TCR.
+   0 = ok, sonst ist der Bus zurueckgesetzt (Aufrufer wiederholt per PIO) */
+static int block_xfer(int out, unsigned sel, unsigned off, unsigned len)
+{
+    unsigned n = len >> 7, i;
+
+    outp(base + C4_CTL, out ? 0 : C4_DIR);
+    outp(base + C4_BLK, (unsigned char)n);
+    OUT(R_MR, MR_DMA);
+    if (out) {
+        OUT(R_ICR, ICR_DBUS);
+        OUT(R_SDS, 0);
+    } else {
+        OUT(R_ICR, 0);
+        OUT(R_SDIR, 0);
+    }
+    for (i = 0; i < n; i++) {
+        if (c4_wait(C4_NRDY, 0, 300))
+            goto fail;
+        if (out)
+            outsb_far(base + C4_BUF, sel, off + (i << 7), 128);
+        else
+            insb_far(base + C4_BUF, MK_FP(sel, off + (i << 7)), 128);
+    }
+    if (out && c4_wait(C4_NRDY, 0, 300))    /* letzter Block gesendet  */
+        goto fail;
+    if (c4_wait(C4_5380, C4_5380, 300))
+        goto fail;
+    OUT(R_MR, 0);
+    OUT(R_ICR, 0);
+    IN(R_RPI);
+    return 0;
+fail:
+    OUT(R_MR, 0);
+    outp(base + C4_CTL, 0);
+    OUT(R_ICR, ICR_RST);                /* Bus zuruecksetzen            */
+    delay(1);
+    OUT(R_ICR, 0);
+    IN(R_RPI);
+    return -1;
 }
 
 /* ---- Busphasen --------------------------------------------------------- */
@@ -195,13 +269,24 @@ static int scsi(unsigned id, unsigned cdblen, unsigned sel, unsigned off,
             ci++;
             break;
         case PH_DATAOUT:
-            c = put_byte(di < len ? p[di] : 0);
-            di++;
-            break;
         case PH_DATAIN:
-            c = get_byte();
-            if (c >= 0 && di < len)
-                p[di] = (unsigned char)c;
+            if (blockmode && di == 0 && len >= 128 && !(len & 127)) {
+                if (block_xfer(ph == PH_DATAOUT, sel, off, len)) {
+                    blockmode = 0;      /* zurueck auf PIO, Aufrufer wiederholt */
+                    dputs("NCR5380.SYS: Blockbetrieb gescheitert, weiter mit PIO\n");
+                    return SCSI_FAIL;
+                }
+                di = len;
+                c = 0;
+                break;
+            }
+            if (ph == PH_DATAOUT)
+                c = put_byte(di < len ? p[di] : 0);
+            else {
+                c = get_byte();
+                if (c >= 0 && di < len)
+                    p[di] = (unsigned char)c;
+            }
             di++;
             break;
         case PH_STATUS:
@@ -273,9 +358,11 @@ static void init(void)
     OUT(R_ICR, 0);
     OUT(R_TCR, 0);
     IN(R_RPI);
+    blockmode = !has_opt(r->args, "/PIO");
+    outp(base + C4_CTL, 0);             /* 53C400: schreiben, kein IRQ  */
     p = scat(line, "  NCR 53C400 (Trantor T130B) an Port ");
     p = hex3(p, base);
-    scat(p, "h, PIO\n");
+    scat(p, blockmode ? "h, Blockbetrieb\n" : "h, PIO\n");
     dputs(line);
 
     for (id = 0; id < 7; id++) {        /* eigene ID 7                  */
@@ -328,7 +415,7 @@ static void init(void)
     }
     nunits = n;
     r->units = (unsigned char)n;
-    r->count = 4;                       /* DMABUF: 4 Sektoren           */
+    r->count = 4;                       /* DMABUF: 4 Sektoren (16 Bloecke) */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
 
