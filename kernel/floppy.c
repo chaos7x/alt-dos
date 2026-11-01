@@ -5,8 +5,9 @@
  * Puffer bei 8000h, das Ende eines Befehls meldet der Controller ueber IRQ 6.
  * Im Protected Mode gibt es kein BIOS mehr - INT 13h ist Geschichte.
  *
- * Gewartet wird noch synchron (HLT bis zum Interrupt). Andere Tasks laufen
- * waehrenddessen nicht; fuer kooperatives AT-DOS 5.0 vertretbar.
+ * Waehrend der Controller arbeitet (Suchen, Lesen, Motoranlauf), schlaeft
+ * der Task (proc_block), und andere laufen weiter - die Kernelsperre
+ * haelt er dabei. IRQ 6 weckt ihn (start.asm -> fdc_isr).
  */
 #include "kern.h"
 
@@ -45,15 +46,23 @@ static int fdc_in(void)
     return -1;
 }
 
+/* bis IRQ 6 kommt (fdc_irq vor dem Befehl loeschen); 0 = ok */
 static int wait_irq(unsigned timeout)
 {
-    unsigned long until = get_ticks() + timeout;
-    while (!fdc_irq) {
-        if (get_ticks() > until)
+    unsigned long until = get_ticks() + timeout, now;
+    for (;;) {
+        irq_off();
+        if (fdc_irq)
+            break;
+        now = get_ticks();
+        if (now >= until) {
+            enable_ints();
             return -1;
-        idle_wait();
+        }
+        proc_block(FD_EVENT, (unsigned)(until - now));  /* kehrt mit STI */
     }
     fdc_irq = 0;
+    enable_ints();
     return 0;
 }
 
@@ -68,7 +77,8 @@ static void motor(void)
 {
     if (!motor_on) {
         outb(DOR, DOR_RUN | DOR_MOT);
-        delay_ticks(30);                        /* 300 ms anlaufen lassen */
+        irq_off();                              /* 300 ms anlaufen lassen, */
+        proc_block(SLEEP_EVENT, 30);            /* andere laufen weiter    */
         motor_on = 1;
     }
 }

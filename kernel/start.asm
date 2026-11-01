@@ -28,6 +28,7 @@ group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 extern preload_, reboot_
 extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
+extern fdc_isr_
 extern _gdtr, _idtr
 
 ; ---------------------------------------------------------------------------
@@ -316,17 +317,21 @@ irq0:
         pop     ax
         iret
 
-; IRQ 6: Diskettencontroller fertig
+; IRQ 6: Diskettencontroller fertig - Flag setzen, wartenden Task wecken
 irq6:
-        push    ax
+        pusha
         push    ds
+        push    es
         mov     ax, KDATA
         mov     ds, ax
+        mov     es, ax
         mov     byte [_fdc_irq], 1
+        call    fdc_isr_
         mov     al, 0x20
         out     0x20, al
+        pop     es
         pop     ds
-        pop     ax
+        popa
         iret
 
 ; IRQ 1: Tastatur

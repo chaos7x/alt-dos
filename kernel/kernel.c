@@ -1100,7 +1100,7 @@ static void sched(int keep)
 static unsigned long kblock_id;
 static volatile unsigned char kblock_on;
 
-static unsigned proc_block(unsigned long id, unsigned timeout)
+unsigned proc_block(unsigned long id, unsigned timeout)
 {
     unsigned long until = timeout ? get_ticks() + timeout : 0;
     struct task *tk;
@@ -1132,8 +1132,14 @@ static unsigned proc_block(unsigned long id, unsigned timeout)
     return tk->block_rc;
 }
 
+/* Diskette (IRQ 6, start.asm): wartenden Task wecken */
+void fdc_isr(void)
+{
+    proc_run(FD_EVENT);
+}
+
 /* DevHlp ProcRun, auch aus Interruptroutinen: nur Zustaende setzen */
-static unsigned proc_run(unsigned long id)
+unsigned proc_run(unsigned long id)
 {
     unsigned n = 0, f = irq_off();
     int t;

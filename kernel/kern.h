@@ -103,6 +103,14 @@ int  fd_write(unsigned lba);        /* aus DMABUF; -2 = schreibgeschuetzt  */
 int  fd_read(unsigned lba);         /* Sektor in den DMA-Puffer, 0 = ok    */
 void fd_motor_off(void);
 
+/* Schlafen im Kernel wie DevHlp ProcBlock/ProcRun (mit gesperrten
+   Interrupts rufen, kehrt mit STI zurueck; 0 geweckt, 1 Frist).
+   Ereignisse des Kernels: Treibernummer FFh */
+unsigned proc_block(unsigned long id, unsigned timeout);
+unsigned proc_run(unsigned long id);
+#define FD_EVENT    0xFF0006UL          /* Diskette, IRQ 6               */
+#define SLEEP_EVENT 0xFF0000UL          /* niemand weckt: nur Frist      */
+
 /* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
 #define NBLK        8
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
