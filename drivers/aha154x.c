@@ -39,7 +39,9 @@
 
 #define CMD_MBINIT      0x01
 #define CMD_START       0x02
+#define CMD_INQUIRY     0x04            /* Board-ID, Optionen, Firmware */
 #define CMD_CONFIG      0x0B
+#define CMD_BLMODEL     0x8B            /* nur BusLogic: Modellnummer    */
 #define CMD_EXTBIOS     0x28
 #define CMD_MBENABLE    0x29
 
@@ -180,6 +182,55 @@ static int wait_mbox(unsigned t)
     return 0;
 }
 
+/* ---- Welche Karte? ------------------------------------------------------
+   Die Board-ID (Befehl 04h) unterscheidet Adaptec und BusLogic nicht: der
+   AHA-1542B meldet 'A', die BusLogic-Karten im Adaptec-Modus ebenfalls.
+   Befehl 8Bh (Modellnummer, ein Laengenbyte) kennt nur BusLogic - ein
+   Adaptec lehnt ihn sofort ab (HACC + ungueltig). Dann darf das Laengen-
+   byte nicht mehr folgen, sonst gilt es als naechster Befehl. */
+static char model[20];
+
+static void identify(void)
+{
+    unsigned start, i;
+    int c, id;
+
+    /* BusLogic? */
+    if (cmd_out(CMD_BLMODEL) == 0) {
+        start = ticks();
+        while ((unsigned)(ticks() - start) < 5 && !(inp(INTR(base)) & I_HACC))
+            ;
+        if (inp(INTR(base)) & I_HACC) {
+            outp(CTRL(base), C_IRST);   /* abgelehnt: kein BusLogic      */
+        } else if (cmd_out(4) == 0) {
+            char *p = scat(model, "BusLogic BT-");
+            for (i = 0; i < 4; i++) {
+                c = data_in();
+                if (c < 0)
+                    break;
+                if (c > ' ')
+                    *p++ = (char)c;
+            }
+            *p = 0;
+            cmd_done();
+            if (i == 4)
+                return;
+        }
+    }
+    /* Adaptec: Board-ID */
+    id = 0;
+    if (cmd_out(CMD_INQUIRY) == 0) {
+        id = data_in();
+        for (i = 0; i < 3; i++)
+            data_in();
+        cmd_done();
+    }
+    scat(model, id == 'A' ? "Adaptec AHA-1540/1542A/B" :
+                id == 'D' ? "Adaptec AHA-1542C" :
+                id == 'E' ? "Adaptec AHA-1542CF" :
+                id == 'F' ? "Adaptec AHA-1542CP" : "Adaptec 154x");
+}
+
 /* ---- SCSI-Befehl ausfuehren -------------------------------------------- */
 #define SCSI_OK     0
 #define SCSI_NODEV  1               /* Auswahl-Zeitueberschreitung      */
@@ -264,6 +315,8 @@ static void init(void)
         return;
     }
 
+    identify();
+
     /* Konfiguration: DMA-Kanal, IRQ, eigene SCSI-ID */
     cmd_out(CMD_CONFIG);
     dma = (unsigned char)data_in();
@@ -308,7 +361,9 @@ static void init(void)
         return;
     }
 
-    p = scat(line, "  Adaptec 154x an Port ");
+    p = scat(line, "  ");
+    p = scat(p, model);
+    p = scat(p, " an Port ");
     *p++ = (char)('0' + (base >> 8));
     *p++ = (char)("0123456789ABCDEF"[(base >> 4) & 15]);
     *p++ = (char)("0123456789ABCDEF"[base & 15]);

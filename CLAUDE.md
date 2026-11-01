@@ -308,7 +308,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
   die Einheitentabelle (jetzt 128).
 - BusLogic ISA (laut Nutzer alle ISA-Modelle, die das aktuelle 86Box-
-  master zeigt) wird von `AHA154X.SYS` erkannt.
+  master zeigt) wird von `AHA154X.SYS` erkannt. Die Startmeldung nennt die
+  Karte (Wunsch des Nutzers): Befehl 8Bh (Modellnummer) kennt nur BusLogic
+  -> „BusLogic BT-545C“; ein Adaptec lehnt ihn sofort ab (HACC + ungültig,
+  dann kein Längenbyte nachschicken – es gälte als Befehl 04h), dann
+  Board-ID aus 04h: A = 1540/1542A/B, D = 1542C, E = 1542CF, F = 1542CP.
+  Die Board-ID allein unterscheidet nicht (BusLogic meldet auch „A…“).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
   Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
   (COPY nach D:, Datei von dort ausgeführt). Meldung
