@@ -436,7 +436,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   in vio_flush und redraw). FAPI 38h–3Ah MouOpen/MouReadEvent/MouShowPtr
   (ohne Kernelsperre), `vio_task_end` gibt die Maus frei. Test:
   `\DEMO\MAUSTEST.EXE`; in QEMU mit `-serial msmouse` und Monitor
-  `mouse_move`/`mouse_button` geprüft. Vom Nutzer auf dem ASUS P3B-F in
+  `mouse_move`/`mouse_button` geprüft. Serielle Microsoft-Maus an COM1
+  in 86Box erkannt (IRQ 4). Vom Nutzer auf dem ASUS P3B-F in
   86Box bestätigt: Maus wird erkannt. EDIT nutzt sie: Klick setzt den
   Cursor, Ziehen markiert (über den Rand: rollen), Menüleiste per Klick,
   Loslassen über einem Eintrag führt ihn aus, Klick daneben schließt,
@@ -514,8 +515,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   löst START kein HACC aus, MBIF kommt nach HACC erst nach IRST.
   Offen: Diskette (kernel floppy.c) ebenfalls schlafen lassen statt
   HLT-Schleife, danach `MOUSE.SYS`. `has_opt()` und `hex()` in drvlib.h.
-- `NCR5380.SYS` (drivers/ncr5380.c), erste Stufe gebaut, ungetestet (QEMU
-  hat keine solche Karte, Test nur in 86Box): Trantor T130B (53C400,
+- `NCR5380.SYS` (drivers/ncr5380.c), erste Stufe, in 86Box vom Nutzer
+  bestätigt (auf Anhieb): T130B an 350h, zwei IBM-Platten (63/504 MB) und
+  CD erkannt, Start von der Trantor-Platte (C:). Das Trantor-BIOS hängt
+  bei einer 2-GB-Platte (BIOS-Übersetzung 64/32, 1 GB) – AT-DOS braucht
+  das Karten-BIOS nicht (in 86Box „Disabled“). Trantor T130B (53C400,
   Ports 350h/340h/250h/240h, 5380-Register ab Basis+8), PIO mit REQ/ACK je
   Byte, Arbitrierung + Auswahl ohne ATN, Phasen nach CSBS, langes Warten
   mit ProcBlock-Schlaf (1 Takt). Erkennung lesend (MR Bit 6 und TCR Bit
