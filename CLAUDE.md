@@ -252,6 +252,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   für Löschen und Rollen), `ansi`, Zustand/Parameter. Vorgabe ANSI ON,
   `ANSI [ON|OFF]` (ANSI.EXE, FAPI 4Eh VioSetAnsi, 2 = abfragen), OFF setzt
   die Farbe zurück. COMMAND: `PROMPT $E` = ESC (`$e[1;33m$p$e[0m$g`).
+  Vom Nutzer in 86Box bestätigt: farbiger Prompt geht.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
 - Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der
