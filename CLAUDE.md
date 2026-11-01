@@ -318,7 +318,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   als BusLogic erkannt, die Modellnummer kam aber leer – 86Box nimmt sie
   aus dem NVRAM der Karte (alte NVR-Datei). Rückfall: „BusLogic BT-54x“ und
   Firmware aus 04h (Haupt-, erste Nebenziffer), 84h (zweite), 85h
-  (Buchstabe), z. B. „3.35“ (2.xx = BT-542B).
+  (Buchstabe), z. B. „3.35“ (2.xx = BT-542B). Nach dem Löschen der NVR-
+  Datei in 86Box wird auch das BusLogic-Modell erkannt (vom Nutzer
+  bestätigt).
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
   Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
   (COPY nach D:, Datei von dort ausgeführt). Meldung
