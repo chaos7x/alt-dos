@@ -274,10 +274,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Größe, Frist und Trefferquote. In QEMU geprüft: XCOPY + SHUTDOWN (fsck
   sauber, Inhalte gleich), Strom weg nach COPY (Datei fehlt, Dateisystem
   stimmig, Sauber-Bit gelöscht -> AUTOCHECK), CHKDSK /F, zwei XCOPY
-  gleichzeitig, Diskette mit 4 MB RAM. Vom Nutzer in 86Box bestätigt
-  (2-MB-Maschine, 1.664 KB): Vorgabe 128 KB, nach XCOPY 85 % Treffer.
-  Offen: Test auf dem SCAT mit Adaptec (Schreiben per Busmaster-DMA direkt
-  aus dem Cache oberhalb 1 MB).
+  gleichzeitig, Diskette mit 4 MB RAM. Vom Nutzer auf dem SCAT in 86Box
+  bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
+  XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache
+  oberhalb 1 MB) mit 85 % Treffern. IDE-Test folgt.
 - CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
   den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:
   Dateiname des Moduls ohne Endung), gestartet wird `U<Name>.EXE` aus dem
@@ -455,7 +455,10 @@ Werkzeuge in einer neuen Umgebung einrichten (wie `.github/workflows/build.yml`)
 QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
 `sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
 
-Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`): GW-286CT
+Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`, Stand vor
+der Beschneidung; der Nutzer hat den SCAT inzwischen auf 2 MB RAM und
+12 MHz verkleinert, zeitgemäßer für 1988/89 – neue cfg noch nicht im
+Repo): GW-286CT
 GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 25 MHz (genauer
 Interpreter, kein Dynarec), 287XL, 16 MB RAM, vier Everex EV-159 als EMS
 (zusammen 11 MB, Ports 208h/218h, 258h/268h, 2A8h/2B8h, 2E8h; von DOS 5.0
