@@ -673,6 +673,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Plattenzugriffe (Name im selben Verzeichnissektor), keine verwaisten EAs
   durch alte DOS-Werkzeuge, Name gehört ins Verzeichnis (wie HPFS/NTFS),
   dazu der Bruch mit IBM 1990–92.
+  Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
+  VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
+  FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).
+  FAT12/16: `EA DATA. SF` vorhanden -> EA; VFAT-Einträge vorhanden (beim
+  Einhängen im Stamm geprüft) -> VFAT; sonst EA. Nie beide Formate auf
+  einem Laufwerk (sonst wechselt eine verschobene Datei das Format, UFAT
+  müsste beides prüfen). VFAT-Schreiben braucht: Kurznamen `~1`,
+  Prüfsumme, zusammenhängend freie Verzeichnisplätze, lange Einträge beim
+  Löschen/Umbenennen mit entfernen, CP437/850 <-> UCS-2. Die EA-Datei mit
+  Rückverweis gilt damit praktisch für FAT12/16 und Disketten.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,
