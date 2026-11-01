@@ -7,6 +7,13 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
+Lizenz (Stand des Nutzers): noch nicht entschieden, das Projekt ist nicht
+öffentlich. Im Repository liegt vorläufig eine MIT-`LICENSE`. Bis zur
+Entscheidung keinen fremden Code übernehmen (GPL/LGPL wie 86Box, Wine,
+ReactOS, GNU nur lesen) – so bleiben alle Wege offen. Größere fremde
+Teile (z. B. Wine-Bibliotheken für Win32) nur als abgegrenzte Teilsysteme
+neben dem Kernel denken.
+
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
 ## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 7
@@ -409,7 +416,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vorbild für das Verhalten sind die GNU-Werkzeuge, besonders `less`:
   vor- und zurückblättern, Suche mit `/` und `n`, Sprung an Anfang/Ende,
   Zeilennummern – statt des einfachen MORE von MS-DOS. Nur Verhalten und
-  Bedienung übernehmen, keinen GNU-Code (Projekt ist MIT, GNU ist GPL).
+  Bedienung übernehmen, keinen GNU-Code (Lizenz offen, siehe oben).
   `DIR /P` blättert seitenweise.
 - `EDIT` gehört zu den wichtigsten Werkzeugen (neben `LESS`, `GREP`).
 - Maus, Stand: `MOUSE.SYS` (drivers/mouse.c) sucht zuerst PS/2 (Wunsch des
@@ -621,7 +628,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   VESA bleiben bei 6.0. Später: FDISK, DISKCOPY, SUBST, UNDELETE usw.,
   lange Namen auf FAT, dann 5.1.
 - Hardware-Referenz 86Box (Quellcode, GPL v2): lesen, um Register und
-  Verhalten zu verstehen, nie Code übernehmen (AT-DOS ist MIT). Datenblätter
+  Verhalten zu verstehen, nie Code übernehmen (Lizenz offen). Datenblätter
   bleiben erste Quelle; der Emulator ist nachsichtiger als echte Hardware.
   Interessant für 5.0: NCR 5380/53C400 (Trantor T130B,
   Rancho RT1000B, Longshine LCS-6821N), AHA-1520A/AIC-6360 (PIO).
