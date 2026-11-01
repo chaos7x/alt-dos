@@ -566,10 +566,74 @@ static unsigned slen(const char *s);
 
 static void hex4(unsigned v);
 
+static void scopy(char *d, const char *src, unsigned max)
+{
+    unsigned i;
+    for (i = 0; src[i] && i + 1 < max; i++)
+        d[i] = src[i];
+    d[i] = 0;
+}
+
+static void scat(char *d, const char *src, unsigned max)
+{
+    unsigned n = slen(d);
+    if (n < max)
+        scopy(d + n, src, max - n);
+}
+
+/* JOIN-Verzeichnisse fuer DIR: wie Windows "<JUNCTION>" mit Ziel */
+static unsigned long join_mask;         /* Bit d: Laufwerk d eingehaengt */
+
+static void dir_abs(const char *dir, char *out)    /* "C:\\X\\Y"       */
+{
+    if (dir[0] && dir[1] == ':' && dir[2] == '\\') {
+        scopy(out, dir, FAPI_PATHLEN);
+        out[0] = up(out[0]);
+        return;
+    }
+    if (dir[0] && dir[1] == ':' && (unsigned)(up(dir[0]) - 'A') != DosQCurDisk()) {
+        out[0] = up(dir[0]);
+        out[1] = ':';
+        out[2] = '\\';
+        scopy(out + 3, dir + 2, FAPI_PATHLEN - 3);
+        return;
+    }
+    DosQCurDir(out);
+    if (dir[0] && dir[1] == ':')
+        dir += 2;
+    if (dir[0] == '\\')
+        out[2] = 0;
+    else if (dir[0] && slen(out) > 3)
+        scat(out, "\\", FAPI_PATHLEN);
+    scat(out, dir, FAPI_PATHLEN);
+}
+
+/* ist adir\name ein JOIN-Verzeichnis? -> Laufwerk + 1, sonst 0 */
+static unsigned join_at(const char *adir, const char *name)
+{
+    static char p[FAPI_PATHLEN], q[FAPI_CURDIRLEN];
+    unsigned d, i;
+    if (!join_mask)
+        return 0;
+    scopy(p, adir, sizeof(p));
+    if (slen(p) > 3)
+        scat(p, "\\", sizeof(p));
+    scat(p, name, sizeof(p));
+    for (d = 0; d < 26; d++)
+        if ((join_mask >> d) & 1 && DosQJoin(d, q) == 0) {
+            for (i = 0; p[i] && up(p[i]) == up(q[i]); i++)
+                ;
+            if (!p[i] && !q[i])
+                return d + 1;
+        }
+    return 0;
+}
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
-    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[FAPI_PATHLEN];
+    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[FAPI_PATHLEN], adir[FAPI_PATHLEN];
+    unsigned jd;
     unsigned n, files = 0, dirs = 0, want = 0, nowant = 0, pass;
     unsigned long total = 0;
     int all = 0, page = 0, lines = 4, bare = 0, wide = 0;
@@ -675,6 +739,15 @@ static void cmd_dir(char *arg)
     }
     puts("\n\n");
     }
+    {
+        static char q[FAPI_CURDIRLEN];
+        join_mask = 0;
+        for (n = 0; n < 26; n++)
+            if (DosQJoin(n, q) == 0)
+                join_mask |= 1UL << n;
+        if (join_mask)
+            dir_abs(dir, adir);
+    }
     for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
     for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
         if (((e.attr & 0x10) != 0) != (pass == 0))
@@ -730,12 +803,20 @@ static void cmd_dir(char *arg)
         put2(e.time >> 11);
         putc(':');
         put2((e.time >> 5) & 63);
-        if (e.attr & 0x10)
+        jd = (e.attr & 0x10) ? join_at(adir, e.name) : 0;
+        if (jd)
+            puts("    <JUNCTION>    ");
+        else if (e.attr & 0x10)
             puts("    <DIR>         ");
         else
             put_num(e.size, 18);
         putc(' ');
         puts(e.name);
+        if (jd) {                               /* Ziel wie bei Windows  */
+            puts(" [");
+            putc((char)('A' + jd - 1));
+            puts(":\\]");
+        }
         puts("\n");
         if (page && ++lines >= VioGetRows() - 1) {  /* eine Bildschirmseite */
             puts("Weiter mit beliebiger Taste . . .");

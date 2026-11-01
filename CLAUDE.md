@@ -720,6 +720,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (`join_under`) und nichts offen ist. CHDIR/QCURDIR holen die
   Schreibweise über die Grenze (`namepath_j`). DIR/TREE laufen hindurch.
   Vom Nutzer in 86Box bestätigt: JOIN funktioniert.
+  DIR zeigt JOIN-Verzeichnisse wie Windows als `<JUNCTION>` mit Ziel
+  (`disk [A:\]`), COMMAND fragt dazu DosQJoin ab (`join_mask`, `join_at`).
 - Leeres Diskettenlaufwerk (vom Nutzer in 86Box gemeldet: A:/B: ohne
   Diskette „zugreifbar“): `floppy.c` merkt `nomedia` (Wechselleitung
   bleibt nach dem Schritt gesetzt, oder READ ID ohne Index), `fd_read`/
@@ -876,7 +878,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Anzeige 12 Zellen, länger -> 11 Zeichen + `\xAF`; Feld und Speichern
   unter mit FAPI_PATHLEN, Pfade nicht mehr groß geschrieben, Titel nur
   bei 8.3-Namen groß; `EDIT Brief an Hans.txt` nimmt wie CD den Rest der
-  Zeile.
+  Zeile. Vom Nutzer in 86Box bestätigt (Dialog mit langem Namen).
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).
