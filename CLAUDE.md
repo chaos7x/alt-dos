@@ -393,7 +393,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle
-- Treiber mit Interrupt statt Abfrage (DevHlp SetIRQ)
+- Treiber mit Interrupt statt Abfrage – nächster Schritt (mit dem Nutzer
+  abgestimmt, Plan): 1. DevHlp `SetIRQ` (Treiber meldet IRQ und Routine an;
+  Kernel-ISR lädt DS des Treibers, ruft die Routine, sendet EOI an PIC 1/2),
+  `UnSetIRQ`. 2. DevHlp `ProcBlock(id, Frist)`/`ProcRun(id)`: Task schläft
+  im Treiber, bis der Interrupt ihn weckt, andere Tasks laufen weiter
+  (Kernelstack je Task gibt es schon, `schedule_next` aus dem Kernel heraus
+  geht wie bei `sleep_ticks`); bei Fristablauf Rückfall auf Abfragen.
+  3. Sperre um alle Dateisystem-/Blockgeräte-Aufrufe (eine Kernel-Sperre wie
+  OS/2 1.x): `DMABUF`, FAT-Cache, `dir_entry`-Zeiger, Sektor-Cache sind
+  gemeinsam – wartet Task A auf die Platte, muss Task B vor der Sperre
+  schlafen. Auch Treiber selbst nicht doppelt betreten. 4. Zuerst IDE
+  (IRQ 14/15, nIEN in 3F6h/376h löschen; WD1003/WD1007 ebenfalls IRQ 14),
+  in 86Box testen; dann AHA154X (IRQ aus der Konfiguration lesen, Mailbox-
+  Interrupt); danach `MOUSE.SYS` auf derselben Grundlage. Floppy hat
+  schon IRQ 6 im Kernel (`fdc_irq`) – Vorbild prüfen.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
