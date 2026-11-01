@@ -12,7 +12,7 @@
 #include "util.h"
 
 static char args[FAPI_ARGLEN], src[FAPI_PATHLEN], dst[FAPI_PATHLEN];
-static char sdir[FAPI_PATHLEN], pat[16], from[FAPI_PATHLEN], to[FAPI_PATHLEN];
+static char sdir[FAPI_PATHLEN], pat[FAPI_PATHLEN], from[FAPI_PATHLEN], to[FAPI_PATHLEN];
 static int yes_all, moved, errors;
 
 static int ask_overwrite(const char *p)

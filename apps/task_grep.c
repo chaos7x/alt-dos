@@ -318,7 +318,14 @@ static int wmatch(const char *name, const char *pat2)
     unsigned nl, pl;
     if (pat2[0] == '*' && pat2[1] == 0)
         return 1;
-    while (*nd && *nd != '.') nd++;
+    {                                   /* Endung nach dem letzten Punkt */
+        const char *x;
+        for (x = name; *x; x++)
+            if (*x == '.')
+                nd = x;
+        if (*nd != '.')
+            nd = x;
+    }
     while (*pd && *pd != '.') pd++;
     if (!wmatch_part(name, (unsigned)(nd - name), pat2, (unsigned)(pd - pat2)))
         return 0;
@@ -365,7 +372,7 @@ static void grep_dir(unsigned dl, const char *wild, int depth)
         if (e.attr & 0x06)
             continue;                   /* versteckt, System            */
         if (e.attr & 0x10) {
-            if (opt_r && depth < 8 && e.name[0] != '.') {
+            if (opt_r && depth < 8 && !(e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2])))) {
                 k = join_name(dirbuf, dl, e.name);
                 grep_dir(k, wild, depth + 1);
                 dirbuf[dl] = 0;

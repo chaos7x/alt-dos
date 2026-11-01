@@ -235,7 +235,7 @@ static void scan_dir(const char *dir, const char *p, unsigned pl, int progs)
     unsigned n, k;
 
     for (n = 0; DosFindEntry(&e, n, dir) != FAPI_ERROR; n++) {
-        if (e.name[0] == '.' || (e.attr & 0x0E) || !pfx(e.name, p, pl))
+        if ((e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2]))) || (e.attr & 0x0E) || !pfx(e.name, p, pl))
             continue;
         if (progs) {
             if (e.attr & 0x10)

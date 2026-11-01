@@ -796,6 +796,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   In 86Box bestätigt (Ordner vom Mac): `cd Neuer Ordner\`, Aufforderung
   `A:\Neuer Ordner`. macOS legt `.`/`..` versteckt an – DIR zeigt genau
   diese beiden immer, andere versteckte (z. B. `.fseventsd`) nur mit /A.
+  Merker `FX_FLAG_LONGNAMES` (build.sh `LFNAPPS`): COMMAND, ATTRIB, TREE,
+  DELTREE, GREP, PRINT. XCOPY und MOVE erst mit Stufe 2 (sie müssten lange
+  Ziele anlegen), EDIT braucht vorher größere Puffer in der Dateiliste.
+  Musterpuffer auf FAPI_PATHLEN, `.`/`..` nur noch genau erkennen (nicht
+  jeder Name mit Punkt vorn), Endung nach dem letzten Punkt auch in GREP.
+  ATTRIB mit Verzeichnisnamen zeigt/setzt wie NT das Verzeichnis selbst.
   Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
   64 KB Code) – vor Stufe 2/3 Platz schaffen (Teile auslagern oder zweites
   Codesegment).

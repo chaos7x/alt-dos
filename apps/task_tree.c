@@ -17,7 +17,7 @@ static struct fapi_dirent e;
 
 static int is_sub(void)
 {
-    return (e.attr & 0x10) && e.name[0] != '.';
+    return (e.attr & 0x10) && !(e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2])));
 }
 
 /* naechstes Unterverzeichnis ab Index n -> Index oder -1 */
@@ -53,7 +53,7 @@ void main(void)
 {
     static struct fapi_label lb;
     static unsigned idx[MAXD], plen[MAXD], prel[MAXD];
-    static char name[16];
+    static char name[FAPI_PATHLEN];
     char *a;
     int depth = 0, i, last;
     unsigned d;

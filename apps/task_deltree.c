@@ -10,7 +10,7 @@
 #include "util.h"
 
 static char args[FAPI_ARGLEN], spec[FAPI_PATHLEN], path[FAPI_PATHLEN];
-static char dir[FAPI_PATHLEN], pat[16];
+static char dir[FAPI_PATHLEN], pat[FAPI_PATHLEN];
 static int yes, errors;
 
 static void unprotect(const char *p)
@@ -114,7 +114,7 @@ void main(void)
         if (slen(dir) > 3)
             dir[slen(dir) - 1] = 0;
         for (n = 0; DosFindEntry(&e, n, dir) != FAPI_ERROR; ) {
-            if ((e.name[0] == '.') || (e.attr & 0x08) || !match(e.name, pat)) {
+            if ((e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2]))) || (e.attr & 0x08) || !match(e.name, pat)) {
                 n++;
                 continue;
             }

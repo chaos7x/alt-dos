@@ -13,7 +13,7 @@
 #include "util.h"
 
 static char args[FAPI_ARGLEN], s_arg[FAPI_PATHLEN], d_arg[FAPI_PATHLEN];
-static char src[FAPI_PATHLEN], dst[FAPI_PATHLEN], pat[16];
+static char src[FAPI_PATHLEN], dst[FAPI_PATHLEN], pat[FAPI_PATHLEN];
 static char to[FAPI_PATHLEN], made[FAPI_PATHLEN];
 static int opt_a, opt_m, opt_p, opt_s, opt_e, yes_all, to_file;
 static unsigned copied, errors, slen_src;

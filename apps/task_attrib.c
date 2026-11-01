@@ -6,8 +6,8 @@
 #include "fapi.h"
 #include "util.h"
 
-static char args[FAPI_ARGLEN], spec[FAPI_PATHLEN], dir[FAPI_PATHLEN], pat[16];
-static unsigned set_m, clr_m, found;
+static char args[FAPI_ARGLEN], spec[FAPI_PATHLEN], dir[FAPI_PATHLEN], pat[FAPI_PATHLEN];
+static unsigned set_m, clr_m, found, show_dir;
 static int recurse;
 
 static int visit(char *path, struct fapi_dirent *e, int what, int depth)
@@ -33,7 +33,7 @@ static int visit(char *path, struct fapi_dirent *e, int what, int depth)
             puts(path);
             puts("\r\n");
         }
-    } else if (what == WT_FILE) {
+    } else if (what == WT_FILE || show_dir) {
         putc(a & 0x20 ? 'A' : ' ');
         puts("    ");
         putc(a & 0x04 ? 'S' : ' ');
@@ -85,9 +85,11 @@ void main(void)
     if (!spec[0])
         scopy(spec, "*.*", sizeof(spec));
     abs_path(spec, dir);
-    if (!has_wild(dir) && is_dir(dir)) {
-        scopy(pat, "*.*", sizeof(pat));
+    if (!has_wild(dir) && is_dir(dir) && !base_name(dir)[0]) {
+        scopy(pat, "*.*", sizeof(pat));     /* Stammverzeichnis           */
     } else {
+        if (!has_wild(dir) && is_dir(dir))
+            show_dir = 1;                   /* wie NT: das Verzeichnis selbst */
         b = base_name(dir);
         scopy(pat, b, sizeof(pat));
         *b = 0;
