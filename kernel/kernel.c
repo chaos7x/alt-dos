@@ -337,7 +337,8 @@ static void system_down(int restart)
             files[k].refs = 0;
             files[k].owner = -1;
         }
-    ifs_shutdown();                             /* Platten "sauber"     */
+    blk_flush();                                /* erst alle Daten      */
+    ifs_shutdown();                             /* dann Platten "sauber" */
     blk_flush();
     outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
     if (restart)
@@ -1431,8 +1432,16 @@ unsigned proc_run(unsigned long id)
     return n;
 }
 
+static int bc_due(void);
+static void bc_flush(void);
+static void cache_info(struct fapi_cacheinfo __far *ci);
 static void sleep_ticks(unsigned n)
 {
+    if (bc_due() && (klock < 0 || klock == current)) {
+        klock_enter();                  /* Leerlauf: verzoegerte Daten   */
+        bc_flush();                     /* schreiben, wenn Frist um      */
+        klock_leave();
+    }
     task[current].wake = get_ticks() + n;
     schedule_next();
 }
@@ -1985,6 +1994,8 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     else {
         klock_enter();
         r = fapi_inner(fn, usel, a1, a2, a3);
+        if (bc_due())
+            bc_flush();                 /* Frist um: verzoegerte Daten   */
         fd_sync();                      /* Spurpuffer der Diskette: nach */
         klock_leave();                  /* jedem Aufruf auf der Scheibe  */
     }
@@ -2359,6 +2370,15 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             real[k] = up(real[k]);
         far_copy(join_sel, JOIN_OFF + a1 * IFS_PATHLEN, KDATA, (unsigned)real, IFS_PATHLEN);
         join_drv[a1] = (signed char)d;
+        return 0;
+    }
+
+    case FAPI_CACHEINFO: {
+        struct fapi_cacheinfo __far *ci;
+        if (!user_ok(usel, a1, sizeof(*ci), 1))
+            return FAPI_ERROR;
+        ci = MK_FP(usel, a1);
+        cache_info(ci);
         return 0;
     }
 
@@ -3153,84 +3173,236 @@ static int lc_dev = -1;
 static unsigned long lc_lba;
 static unsigned char blk_dirty[NBLK];   /* seit dem letzten Leeren beschrieben */
 
-/* ---- Sektor-Cache (BUFFERS=) -------------------------------------------
-   Ein Kernelsegment mit bc_n Sektoren zu 512 Byte, nur fuer 512er-Geraete.
-   Schreiben geht sofort durch (write-through), der Cache wird nur mit
-   aktualisiert. Daten, die fat_read() vorausliest, sind "Strom"-Eintraege:
-   sie werden zuerst verdraengt, damit eine grosse Datei nicht FAT und
-   Verzeichnisse aus dem Cache wirft. */
-#define BC_MAX      99
-#define BC_STREAM   8                   /* so viele Strom-Eintraege bleiben */
-static unsigned       bc_sel, bc_n, bc_clock, bc_nstream;
-static signed char    bc_dev[BC_MAX];   /* -1 = frei                    */
-static unsigned char  bc_stream[BC_MAX];
-static unsigned long  bc_lba[BC_MAX];
-static unsigned       bc_age[BC_MAX];
-unsigned long         bc_hits, bc_miss; /* fuer spaetere Statistik      */
+/* ---- Platten-Cache (CACHE=), wie SMARTDRV ------------------------------
+   Daten in einem Stueck erweiterten Speichers (bc_lin), Bloecke zu 2 KB
+   (4 Sektoren, Blockanfang lba & ~3), Zugriff ueber ein eigenes GDT-Fenster
+   (bc_wsel), das vor jedem Zugriff auf den Block gelegt wird. Verwaltung
+   (je Block 10 Byte + Hash-Tabelle) in einem Kernelsegment. Nur 512er-
+   Geraete. Verdraengt wird nach dem Uhr-Verfahren (ref-Bit); Vorausgelesenes
+   ("Strom", fat_read) kommt ohne ref-Bit herein und geht zuerst.
+   Schreiben: Festplatten verzoegert (bc_delay Takte, CACHE=n,s), die Daten
+   gehen beim Verdraengen, nach Ablauf der Frist (bc_lazy: Ende eines FAPI-
+   Aufrufs mit Sperre, Warten auf Tasten) und in blk_flush auf die Platte;
+   Disketten und bc_sync (Sauber-Bit) sofort. Verzoegert geschriebene
+   Sektoren werden nie von vorausgelesenen ueberschrieben. */
+#define BC_HASH     1024
+#define BC_END      0xFFFFu
+struct bce {
+    unsigned long lba;                  /* erster Sektor des Blocks      */
+    signed char   dev;                  /* -1 = frei                     */
+    unsigned char valid, dirty, ref;    /* Bit s: Sektor lba + s         */
+    unsigned      next;                 /* Hash-Kette                    */
+};
+static unsigned       bc_msel, bc_wsel, bc_n, bc_hand, bc_ndirty, bc_delay;
+static unsigned long  bc_lin, bc_since;
+unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
+unsigned long         bc_hits, bc_miss;
+static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
+#define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
+#define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
-void blk_cache_init(unsigned n)
+void blk_cache_init(unsigned kb)
 {
-    unsigned i;
-    if (n > BC_MAX)
-        n = BC_MAX;
-    bc_sel = kseg_alloc((unsigned long)n << 9);
-    bc_n = bc_sel ? n : 0;
-    for (i = 0; i < BC_MAX; i++)
-        bc_dev[i] = -1;
+    unsigned i, u, w;
+    if (kb > 8192)
+        kb = 8192;
+    bc_n = 0;
+    if (kb < 16)
+        return;
+    w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
+    for (; kb >= 16; kb >>= 1) {
+        u = mem_alloc(kb << 2);         /* Einheiten zu 256 Byte         */
+        if (u)
+            break;
+    }
+    if (!w || kb < 16)
+        return;
+    bc_lin = (unsigned long)u << 8;
+    bc_msel = kseg_alloc((unsigned long)((kb >> 1) * sizeof(struct bce) + BC_HASH * 2));
+    if (!bc_msel) {
+        mem_free(u, kb << 2);
+        return;
+    }
+    bc_wsel = w;
+    bc_n = kb >> 1;
+    for (i = 0; i < bc_n; i++)
+        BCE(i)->dev = -1;
+    for (i = 0; i < BC_HASH; i++)
+        BCH(i) = BC_END;
+    bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
 }
 
-static int bc_find(int dev, unsigned long lba)
+unsigned blk_cache_kb(void)
+{
+    return bc_n << 1;
+}
+
+static void cache_info(struct fapi_cacheinfo __far *ci)
+{
+    ci->kb = bc_n << 1;
+    ci->delay_s = bc_n && bc_delay ? cache_s : 0;
+    ci->hits = bc_hits;
+    ci->misses = bc_miss;
+    ci->dirty = bc_ndirty;
+}
+
+static unsigned bc_hash(int dev, unsigned long blba)
+{
+    return ((unsigned)(blba >> 2) ^ (unsigned)(blba >> 12) ^ ((unsigned)dev << 7)) & (BC_HASH - 1);
+}
+
+static void bc_win(unsigned i)          /* Fenster auf Block i            */
+{
+    set_desc(bc_wsel >> 3, bc_lin + ((unsigned long)i << 11), 2047, ACC_KDATA);
+}
+
+static unsigned bc_lookup(int dev, unsigned long blba)
+{
+    unsigned i = BCH(bc_hash(dev, blba));
+    while (i != BC_END && (BCE(i)->dev != dev || BCE(i)->lba != blba))
+        i = BCE(i)->next;
+    return i;
+}
+
+static void bc_unlink(unsigned i)
+{
+    struct bce __far *e = BCE(i);
+    unsigned h = bc_hash(e->dev, e->lba), k = BCH(h);
+    if (k == i)
+        BCH(h) = e->next;
+    else {
+        while (k != BC_END && BCE(k)->next != i)
+            k = BCE(k)->next;
+        if (k != BC_END)
+            BCE(k)->next = e->next;
+    }
+    e->dev = -1;
+}
+
+static int bc_writeback(int dev);
+
+/* verzoegerte Sektoren eines Blocks auf die Platte, direkt aus dem Cache */
+static void bc_wb(unsigned i)
+{
+    struct bce __far *e = BCE(i);
+    struct blkdev *b = &blk[e->dev];
+    unsigned s, tries;
+
+    for (s = 0; s < 4; s++) {
+        if (!(e->dirty & (1 << s)))
+            continue;
+        for (tries = 0; tries < 2; tries++) {
+            bc_win(i);
+            req.cmd = DRV_WRITE;
+            req.unit = b->unit;
+            req.count = 1;
+            req.status = DRV_ERR_IO;
+            req.lba = e->lba + s;
+            req.buf_phys = bc_lin + ((unsigned long)i << 11) + (s << 9);
+            req.buf_sel = bc_wsel;
+            req.buf_off = s << 9;
+            drv_request(b->drv);
+            if (req.status == DRV_OK)
+                break;
+        }
+        if (req.status != DRV_OK) {
+            vio_kputs(boot_session, "\n\xFE Cache: Schreibfehler, Daten verloren!\n");
+            e->valid &= ~(1 << s);
+        }
+        e->dirty &= ~(1 << s);
+        blk_dirty[e->dev] = 1;
+    }
+    if (bc_ndirty)
+        bc_ndirty--;
+}
+
+/* Platz fuer einen Block: frei, sonst ohne ref-Bit und sauber, sonst ohne
+   ref-Bit (vorher schreiben) */
+static unsigned bc_victim(void)
+{
+    unsigned n, i, dirty_c = BC_END;
+    struct bce __far *e;
+    for (n = 0; n < 2 * bc_n; n++) {
+        i = bc_hand;
+        if (++bc_hand >= bc_n)
+            bc_hand = 0;
+        e = BCE(i);
+        if (e->dev < 0)
+            return i;
+        if (e->ref) {
+            e->ref = 0;
+            continue;
+        }
+        if (!e->dirty)
+            return i;
+        if (dirty_c == BC_END)
+            dirty_c = i;
+    }
+    return dirty_c != BC_END ? dirty_c : bc_hand;
+}
+
+/* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) -> Block */
+static unsigned bc_put(int dev, unsigned long lba, unsigned off, int stream)
+{
+    unsigned long blba = lba & ~3UL;
+    unsigned s = (unsigned)lba & 3, i, h;
+    struct bce __far *e;
+    if (!bc_n || blk[dev].bsize != 512)
+        return BC_END;
+    i = bc_lookup(dev, blba);
+    if (i == BC_END) {
+        i = bc_victim();
+        e = BCE(i);
+        if (e->dev >= 0) {
+            if (e->dirty)
+                bc_wb(i);
+            bc_unlink(i);
+        }
+        e->lba = blba;
+        e->dev = (signed char)dev;
+        e->valid = e->dirty = e->ref = 0;
+        h = bc_hash(dev, blba);
+        e->next = BCH(h);
+        BCH(h) = i;
+    }
+    e = BCE(i);
+    if (stream && (e->dirty & (1 << s)))
+        return i;                       /* Cache ist neuer als die Platte */
+    if (!stream)
+        e->ref = 1;
+    bc_win(i);
+    far_copy(bc_wsel, s << 9, DMABUF, off, 512);
+    e->valid |= 1 << s;
+    return i;
+}
+
+static void bc_drop_dev(int dev)        /* Diskette gewechselt           */
 {
     unsigned i;
     for (i = 0; i < bc_n; i++)
-        if (bc_dev[i] == dev && bc_lba[i] == lba)
-            return (int)i;
-    return -1;
+        if (BCE(i)->dev == dev && !BCE(i)->dirty)
+            bc_unlink(i);
 }
 
-/* Platz fuer einen neuen Eintrag: frei, sonst aeltester Strom-Eintrag
-   (wenn genug davon da sind), sonst aeltester ueberhaupt */
-static unsigned bc_victim(void)
+/* alle verzoegerten Daten schreiben */
+static void bc_flush(void)
 {
-    unsigned i, v = 0, best = 0xFFFF, age;
-    int stream_only = bc_nstream >= BC_STREAM;
-
-    for (i = 0; i < bc_n; i++) {
-        if (bc_dev[i] < 0)
-            return i;
-        if (stream_only && !bc_stream[i])
-            continue;
-        age = bc_clock - bc_age[i];
-        if (best == 0xFFFF || age > best) {
-            best = age;
-            v = i;
-        }
-    }
-    return v;
+    unsigned i;
+    for (i = 0; i < bc_n && bc_ndirty; i++)
+        if (BCE(i)->dev >= 0 && BCE(i)->dirty)
+            bc_wb(i);
+    bc_ndirty = 0;
 }
 
-/* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) */
-static void bc_put(int dev, unsigned long lba, unsigned off, int stream)
+/* Frist abgelaufen? Dann schreiben (mit Kernelsperre gerufen) */
+static int bc_due(void)
 {
-    int i;
-    if (!bc_n || blk[dev].bsize != 512)
-        return;
-    i = bc_find(dev, lba);
-    if (i < 0) {
-        i = (int)bc_victim();
-        if (bc_dev[i] >= 0 && bc_stream[i])
-            bc_nstream--;
-        bc_dev[i] = (signed char)dev;
-        bc_lba[i] = lba;
-        bc_stream[i] = (unsigned char)stream;
-        if (stream)
-            bc_nstream++;
-    } else if (!stream && bc_stream[i]) {
-        bc_stream[i] = 0;               /* wieder gebraucht: bleibt     */
-        bc_nstream--;
-    }
-    bc_age[i] = ++bc_clock;
-    far_copy(bc_sel, (unsigned)i << 9, DMABUF, off, 512);
+    return bc_ndirty && get_ticks() - bc_since >= bc_delay;
+}
+
+static int bc_writeback(int dev)
+{
+    return bc_delay && !bc_sync && !IS_FLOPPY(dev);
 }
 
 /* Diskette gewechselt? Der Treiber erkennt Wechsel und Format; dann
@@ -3238,19 +3410,13 @@ static void bc_put(int dev, unsigned long lba, unsigned off, int stream)
 int blk_media(int dev)
 {
     int r;
-    unsigned i;
     if (dev < 0 || !IS_FLOPPY(dev))
         return 0;
     r = fd_check(blk[dev].unit);
     blk[dev].blocks = fd_size(blk[dev].unit);
     if (r) {
         lc_dev = -1;
-        for (i = 0; i < bc_n; i++)
-            if (bc_dev[i] == dev) {
-                if (bc_stream[i])
-                    bc_nstream--;
-                bc_dev[i] = -1;
-            }
+        bc_drop_dev(dev);
     }
     return r;
 }
@@ -3263,14 +3429,11 @@ int blk_nomedia(int dev)
 /* Diskette kann gewechselt sein: ihre Eintraege weg */
 void blk_invalidate(void)
 {
-    unsigned i;
+    int dev;
     lc_dev = -1;
-    for (i = 0; i < bc_n; i++)
-        if (bc_dev[i] >= 0 && IS_FLOPPY(bc_dev[i])) {
-            if (bc_stream[i])
-                bc_nstream--;
-            bc_dev[i] = -1;
-        }
+    for (dev = 0; dev < nblk; dev++)
+        if (IS_FLOPPY(dev))
+            bc_drop_dev(dev);
 }
 
 /* Treiberaufruf: n Bloecke ab lba nach DMABUF; 0 = ok */
@@ -3297,8 +3460,7 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
 int blk_read_n(int dev, unsigned long lba, unsigned n)
 {
     struct blkdev *b;
-    unsigned k, max;
-    int i;
+    unsigned k, max, i, s;
 
     if (dev == lc_dev && lba == lc_lba)
         return 0;
@@ -3308,13 +3470,13 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
     if (lba >= b->blocks)
         return -1;
     lc_dev = -1;
-    if (bc_n && b->bsize == 512 && (i = bc_find(dev, lba)) >= 0) {
-        far_copy(DMABUF, 0, bc_sel, (unsigned)i << 9, 512);
-        bc_age[i] = ++bc_clock;
-        if (n == 1 && bc_stream[i]) {
-            bc_stream[i] = 0;
-            bc_nstream--;
-        }
+    s = (unsigned)lba & 3;
+    if (bc_n && b->bsize == 512 && (i = bc_lookup(dev, lba & ~3UL)) != BC_END &&
+        (BCE(i)->valid & (1 << s))) {
+        bc_win(i);
+        far_copy(DMABUF, 0, bc_wsel, s << 9, 512);
+        if (n == 1)
+            BCE(i)->ref = 1;
         bc_hits++;
         lc_dev = dev;
         lc_lba = lba;
@@ -3340,6 +3502,11 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
     bc_put(dev, lba, 0, n > 1);
     for (k = 1; k < n; k++)
         bc_put(dev, lba + k, k << 9, 1);
+    if (bc_n && b->bsize == 512 && (i = bc_lookup(dev, lba & ~3UL)) != BC_END &&
+        (BCE(i)->dirty & (1 << s))) {   /* kann nicht sein, sicher ist sicher */
+        bc_win(i);
+        far_copy(DMABUF, 0, bc_wsel, s << 9, 512);
+    }
     lc_dev = dev;
     lc_lba = lba;
     return 0;
@@ -3350,25 +3517,35 @@ int blk_read(int dev, unsigned long lba)
     return blk_read_n(dev, lba, 1);
 }
 
-/* DMABUF in einen Sektor schreiben (sofort; der Cache wird mitgefuehrt).
+/* DMABUF in einen Sektor schreiben (Festplatte: verzoegert im Cache).
    0 = ok, -1 Fehler, -2 schreibgeschuetzt */
 int blk_write(int dev, unsigned long lba)
 {
     struct blkdev *b = &blk[dev];
-    int rc, i;
+    int rc;
+    unsigned i, bit = 1 << ((unsigned)lba & 3);
 
     lc_dev = -1;
     if (dev < 0 || dev >= nblk || lba >= b->blocks)
         return -1;
     if (b->bsize != 512)
         return -2;                      /* CD-ROM                     */
+    if (bc_n && bc_writeback(dev)) {    /* verzoegert                 */
+        i = bc_put(dev, lba, 0, 0);
+        if (i != BC_END) {
+            if (!BCE(i)->dirty) {
+                if (!bc_ndirty)
+                    bc_since = get_ticks();
+                bc_ndirty++;
+            }
+            BCE(i)->dirty |= bit;
+            lc_dev = dev;
+            lc_lba = lba;
+            return 0;
+        }
+    }
     if (b->drv < 0) {
         rc = fd_write(b->unit, (unsigned)lba);
-        if (rc) {
-            if (bc_n && (i = bc_find(dev, lba)) >= 0)
-                bc_dev[i] = -1, bc_nstream -= bc_stream[i];
-            return rc;
-        }
     } else {
         req.cmd = DRV_WRITE;
         req.unit = b->unit;
@@ -3379,13 +3556,21 @@ int blk_write(int dev, unsigned long lba)
         req.buf_sel = DMABUF;
         req.buf_off = 0;
         drv_request(b->drv);
-        if (req.status != DRV_OK) {
-            if (bc_n && (i = bc_find(dev, lba)) >= 0)
-                bc_dev[i] = -1, bc_nstream -= bc_stream[i];
-            return req.status == DRV_ERR_WP ? -2 : -1;
-        }
-        blk_dirty[dev] = 1;
+        rc = req.status == DRV_OK ? 0 : req.status == DRV_ERR_WP ? -2 : -1;
+        if (!rc)
+            blk_dirty[dev] = 1;
     }
+    if (bc_n && b->bsize == 512 && (i = bc_lookup(dev, lba & ~3UL)) != BC_END) {
+        if (rc)
+            BCE(i)->valid &= ~bit;      /* Inhalt unsicher            */
+        else if (BCE(i)->dirty & bit) { /* jetzt auf der Platte       */
+            BCE(i)->dirty &= ~bit;
+            if (!BCE(i)->dirty && bc_ndirty)
+                bc_ndirty--;
+        }
+    }
+    if (rc)
+        return rc;
     bc_put(dev, lba, 0, 0);
     lc_dev = dev;                       /* DMABUF entspricht jetzt dem Sektor */
     lc_lba = lba;
@@ -3396,6 +3581,7 @@ int blk_write(int dev, unsigned long lba)
 void blk_flush(void)
 {
     int dev, d;
+    bc_flush();                         /* verzoegerte Daten zuerst      */
     fd_sync();                          /* Spurpuffer der Diskette       */
     for (dev = 1; dev < nblk; dev++) {
         if (!blk_dirty[dev] || IS_FLOPPY(dev))
@@ -3846,7 +4032,9 @@ static void cd_drives(void)
 }
 
 /* CONFIG.SYS wie MS-DOS. Wirksam: DEVICE=, DEVICEHIGH= (wie DEVICE, im
-   Protected Mode ist alles "hoch"), IFS=, FILES=, BUFFERS=. Angenommen
+   Protected Mode ist alles "hoch"), IFS=, FILES=, CACHE=kb[,s] (Platten-
+   Cache, s Sekunden verzoegertes Schreiben, 0 = sofort; BUFFERS=n ohne
+   CACHE= gibt n * 512 Byte, mindestens 16 KB). Angenommen
    und ohne Bedeutung im Protected Mode: STACKS=, FCBS=, BREAK=,
    LASTDRIVE=, DOS=, SHELL=, COUNTRY=, INSTALL=, NUMLOCK=, SWITCHES=, SET=
    und die Menuebefehle von MS-DOS 6. Anderes wird gemeldet und uebergangen. */
@@ -3959,6 +4147,13 @@ static void config_sys(void)
         } else if (kw(line, "BUFFERS")) {
             n = num_arg(v);
             nbuffers = n < 1 ? 1 : n > 99 ? 99 : n;
+        } else if (kw(line, "CACHE")) {        /* CACHE=1024[,5]         */
+            const char *q = v;
+            cache_kb = num_arg(v);
+            while (*q && *q != ',')
+                q++;
+            if (*q == ',')
+                cache_s = num_arg(q + 1);
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {
@@ -4157,7 +4352,13 @@ void kmain(void)
     }
 
     list_drives();
-    blk_cache_init(nbuffers);           /* nach CONFIG.SYS: BUFFERS= */
+    if (cache_kb == 0xFFFF) {           /* ohne CACHE=: nach Speicher    */
+        cache_kb = mem_ext_kb >= 4096 ? 1024 : mem_ext_kb >= 1536 ? 256 :
+                   mem_ext_kb >= 512 ? 128 : 32;
+        if (cache_kb < nbuffers / 2)
+            cache_kb = nbuffers / 2;
+    }
+    blk_cache_init(cache_kb);           /* nach CONFIG.SYS: CACHE=       */
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
     scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));

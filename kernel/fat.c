@@ -1944,9 +1944,11 @@ static void mark_in_use(int d)
         return;
     v->in_use = 1;
     val = fat_raw(d, 1);
-    if (val & CLEAN_BIT) {
-        fat_set(d, 1, val & ~CLEAN_BIT);
+    if (val & CLEAN_BIT) {              /* sofort auf die Platte, vor   */
+        fat_set(d, 1, val & ~CLEAN_BIT);    /* allen verzoegerten Daten */
+        bc_sync = 1;
         fat_flush();
+        bc_sync = 0;
     }
 }
 
@@ -1959,7 +1961,9 @@ void ifs_shutdown(void)
         if (vol[d].used && vol[d].in_use && !vol[d].locked) {
             val = fat_raw(d, 1);
             fat_set(d, 1, val | CLEAN_BIT);
+            bc_sync = 1;
             fat_flush();
+            bc_sync = 0;
             vol[d].in_use = 0;
         }
 }

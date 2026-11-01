@@ -249,14 +249,32 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Clustergröße per Schieben, keine Watcom-Hilfsroutinen.
 - Dateisysteme nur über die IFS-Schnittstelle (`struct ifs_driver`); außer
   `fat.c` kennt kein Kernelteil FAT-Interna. Blockgeräte nie per BIOS ansprechen.
-- Sektor-Cache (`BUFFERS=`, kernel.c `bc_*`): ein Kernelsegment mit
-  n × 512 Byte, nur 512er-Geräte, write-through. `blk_read_n()` liest bei
-  Fehltreffern bis zu 4 Sektoren am Stück (DMABUF 2 KB) – `fat_read()`
-  bis Clusterende. Vorausgelesenes ist „Strom“ und wird zuerst verdrängt
-  (FAT/Verzeichnisse bleiben). Treiber melden in `drv_req.count` beim INIT,
-  wie viele Blöcke ein READ kann (0 = 1); IDE und Adaptec: 16. Diskette:
-  `blk_invalidate()` wirft ihre Einträge bei jedem `revalidate` raus.
-  Messung `grep -r` über 120 Dateien in QEMU: 3095 -> 1173 IDE-Befehle.
+- Platten-Cache wie SMARTDRV, aber im Kernel wie OS/2 `DISKCACHE=`
+  (Wunsch des Nutzers; kein Programm, Anzeige über MEM): `CACHE=kb[,s]`
+  in CONFIG.SYS (bis 8 MB; ohne Angabe nach Speicher: ab 4 MB erweitert
+  1 MB, ab 1,5 MB 256 KB, sonst 128/32 KB; `BUFFERS=` wirkt nur noch als
+  Untergrenze). kernel.c `bc_*`: Daten am Stück per `mem_alloc` im
+  erweiterten Speicher (`bc_lin`), Blöcke zu 2 KB (4 Sektoren, Anfang
+  lba & ~3), Zugriff über ein eigenes GDT-Fenster (`bc_wsel`, vor jedem
+  Zugriff mit `bc_win(i)` umgelegt); Verwaltung (10 Byte je Block,
+  valid/dirty/ref-Bits, Hash-Kette, 1024 Hash-Köpfe) in einem
+  Kernelsegment. Verdrängen nach dem Uhr-Verfahren, Vorausgelesenes
+  („Strom“, `blk_read_n` bis 4 Sektoren) ohne ref-Bit -> geht zuerst.
+  Verzögertes Schreiben für Festplatten (s Sekunden, Vorgabe 5, 0 =
+  sofort): `blk_write` legt nur in den Cache; geschrieben wird beim
+  Verdrängen, nach Ablauf der Frist (`bc_due`: am Ende jedes FAPI-Aufrufs
+  mit Sperre und in `sleep_ticks`, also auch beim Warten auf Tasten) und
+  in `blk_flush` (SHUTDOWN, Strg+Alt+Entf, Entsperren nach CHKDSK/FORMAT/
+  FDISK). `bc_wb` schreibt direkt aus dem Cache (buf_phys/buf_sel aufs
+  Fenster), DMABUF bleibt unberührt. Vorausgelesenes überschreibt nie
+  verzögert Geschriebenes. Disketten sofort (eigener Spurpuffer), ihre
+  Einträge fliegen bei Wechsel raus. Sauber-Bit (`mark_in_use`,
+  `ifs_shutdown`) mit `bc_sync` sofort; `system_down` leert erst alle
+  Daten, setzt dann das Sauber-Bit. FAPI 4Dh DosCacheInfo, MEM zeigt
+  Größe, Frist und Trefferquote. In QEMU geprüft: XCOPY + SHUTDOWN (fsck
+  sauber, Inhalte gleich), Strom weg nach COPY (Datei fehlt, Dateisystem
+  stimmig, Sauber-Bit gelöscht -> AUTOCHECK), CHKDSK /F, zwei XCOPY
+  gleichzeitig, Diskette mit 4 MB RAM.
 - CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
   den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:
   Dateiname des Moduls ohne Endung), gestartet wird `U<Name>.EXE` aus dem
@@ -692,11 +710,6 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bis 260 Zeichen, 8.3 nur als Rückfall. Kopieren auf FAT braucht dann die
   `.LONGNAME`-EAs (siehe unten), sonst 8.3-Ersatznamen. UDF (DVD, ab 1996)
   als eigenes `UDF.IFS` – zeitlich DOS 6.0/7.0.
-- Platten-Cache wie SMARTDRV (Ausbau des Sektor-Caches): größer als ein
-  Segment, verzögertes Schreiben mit Zeitgrenze,
-  Leeren bei `SHUTDOWN`, Strg+Alt+Entf und Laufwerkssperre; Disketten nur
-  Lese-Cache oder sofort schreiben (Wechsel). Heute: Daten sofort, nur FAT
-  im 2-Sektor-Cache.
 - `COPY` mit Verketten (`A+B [Ziel]`, ohne Ziel an A anhängen) und Datum/
   Uhrzeit der Quelle (wie MS-DOS) – erledigt, in QEMU geprüft. Verketten
   binär (kein ^Z-Textmodus). `HELP Befehl` = `Befehl /?`, `HELP` zeigt

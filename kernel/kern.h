@@ -144,7 +144,9 @@ void blk_invalidate(void);          /* Diskette aus dem Cache (Wechsel)    */
 int  blk_media(int dev);            /* Diskette gewechselt? 1 = ja (neu)   */
 int  blk_nomedia(int dev);          /* Diskettenlaufwerk leer? (nach blk_media) */
 extern unsigned char ifs_notready;  /* im FAPI-Aufruf: Laufwerk leer       */
-void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
+void blk_cache_init(unsigned kb);   /* CACHE=: Platten-Cache in KB         */
+unsigned blk_cache_kb(void);
+extern unsigned char bc_sync;       /* 1: blk_write sofort (Sauber-Bit)    */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */
 #define SROWS       23              /* Zeilen 1-23, 0 Titel, 24 Status     */
