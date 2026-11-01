@@ -828,6 +828,7 @@ static void summary(const unsigned char *bs)
 #include "ufat_undel.c"
 #include "ufat_scan.c"
 #include "ufat_defrag.c"
+#include "ufat_lfn.c"
 
 void main(void)
 {
@@ -951,6 +952,7 @@ void main(void)
     }
     check_tree();
     lost_chains();
+    check_lfn();                        /* lange Namen (VFAT, EA DATA. SF) */
     if (surface)
         surface_scan();
     if (fix && fat16) {                 /* geprueft: wieder "sauber"   */

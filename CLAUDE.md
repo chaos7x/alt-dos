@@ -851,8 +851,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Merker jetzt auch XCOPY und MOVE; `abs_path` (util.c) schreibt nicht
   mehr groß (nur den Laufwerksbuchstaben). FAPI_ARGLEN 128 (127 Zeichen
   wie MS-DOS), COMMAND-Eingabe bis 126 Zeichen, `\b` am Zeilenanfang
-  springt in vio.c in die vorige Zeile. DIR /B und /W. Noch offen:
-  Stufe 4 (UFAT prüft lange Einträge und verwaiste EA-Sätze), EDIT mit
+  springt in vio.c in die vorige Zeile. DIR /B und /W. Stufe 4 erledigt
+  (in QEMU geprüft): `apps/ufat_lfn.c` – jedes CHKDSK prüft VFAT-Ketten
+  (Ordnung, Prüfsumme, direkt vor dem passenden 8.3-Eintrag) und die Sätze
+  in `EA DATA. SF` (Verzeichnis + 8.3-Name vorhanden?); /F gibt Verwaistes
+  frei. Tab-Ergänzung in COMMAND quotet wie bash: Namen mit Leerzeichen
+  bekommen `"`, Datei mit schließendem `"`, Verzeichnis bleibt offen;
+  `type "T`+Tab sucht ohne das Anführungszeichen. Noch offen: EDIT mit
   langen Namen in der Dateiliste.
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest

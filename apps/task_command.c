@@ -287,36 +287,64 @@ static void collect(char *w, unsigned wl, int first, unsigned *plen)
     scan_dir(d ? dir : 0, w + (wl - *plen), *plen, 0);
 }
 
-static void ins_char(char c, unsigned *n, unsigned *pos)
+/* line[ws..*pos) durch s ersetzen, Cursor dahinter; 0 = zu lang */
+static int put_word(unsigned ws, const char *s, unsigned *n, unsigned *pos)
 {
-    unsigned k;
-    if (*n >= LINE)
-        return;
-    for (k = *n; k > *pos; k--)
-        line[k] = line[k - 1];
-    line[*pos] = c;
-    (*n)++;
-    redraw(*pos, *n, 0);
-    oc(line[(*pos)++]);
+    unsigned k, sl = slen(s), old = *pos - ws, nn;
+    if (*n - old + sl > LINE) {
+        oc('\a');
+        return 0;
+    }
+    for (k = ws; k < *pos; k++)
+        oc('\b');
+    if (sl > old)
+        for (k = *n; k > *pos; k--)
+            line[k - 1 + sl - old] = line[k - 1];
+    else
+        for (k = *pos; k < *n; k++)
+            line[k - old + sl] = line[k];
+    for (k = 0; k < sl; k++)
+        line[ws + k] = s[k];
+    nn = *n - old + sl;
+    redraw(ws, nn, old > sl ? old - sl : 0);
+    for (k = 0; k < sl; k++)
+        oc(line[ws + k]);
+    *n = nn;
+    *pos = ws + sl;
+    return 1;
 }
 
-/* Tab gedrueckt; again: direkt davor schon Tab ohne Fortschritt */
+/* Tab gedrueckt; again: direkt davor schon Tab ohne Fortschritt.
+   Namen mit Leerzeichen kommen wie bei bash gequotet ins Wort: es
+   beginnt dann mit '"', eine eindeutige Datei schliesst mit '"' ab,
+   ein Verzeichnis bleibt offen (Tab danach ergaenzt darin weiter). */
 static int complete(unsigned *n, unsigned *pos, int again)
 {
-    unsigned ws = *pos, pl, i, k, common;
-    int first = 1;
+    static char w[LINE + 1], nw[LINE + 1];
+    unsigned ws = 0, pl, i, k, common, wl = 0, d;
+    int first = 1, inq = 0, q = 0;
 
-    while (ws && line[ws - 1] != ' ')
-        ws--;
+    for (i = 0; i < *pos; i++)          /* Wortanfang: Leerzeichen ausser-
+                                           halb von Anfuehrungszeichen   */
+        if (line[i] == '"')
+            inq = !inq;
+        else if (line[i] == ' ' && !inq)
+            ws = i + 1;
     for (i = 0; i < ws; i++)
         if (line[i] != ' ')
             first = 0;                  /* es gibt ein Wort davor        */
-    collect(line + ws, *pos - ws, first, &pl);
+    for (i = ws; i < *pos; i++)
+        if (line[i] == '"')
+            q = 1;
+        else
+            w[wl++] = line[i];
+    w[wl] = 0;
+    collect(w, wl, first, &pl);
     if (!ncand) {
         oc('\a');
         return 0;
     }
-    common = 13;                        /* gemeinsamer Anfang            */
+    common = CANDLEN;                   /* gemeinsamer Anfang            */
     for (i = 1; i < ncand; i++) {
         for (k = 0; k < common && cand[0][k] && up(cand[0][k]) == up(cand[i][k]); k++)
             ;
@@ -324,26 +352,37 @@ static int complete(unsigned *n, unsigned *pos, int again)
     }
     if (ncand == 1)
         common = slen(cand[0]);
-    if (common > pl || ncand == 1) {    /* Getipptes in der Schreibweise
-                                           des Treffers                 */
-        for (k = 0; k < pl; k++) {
-            oc('\b');
-            line[*pos - pl + k] = cand[0][k];
-        }
-        for (k = 0; k < pl; k++)
-            oc(cand[0][k]);
-    }
-    if (common > pl) {
-        for (k = pl; k < common; k++)
-            ins_char(cand[0][k], n, pos);
-        if (ncand == 1)
-            ins_char(cand_dir[0] ? '\\' : ' ', n, pos);
-        return 1;
-    }
+    if (common < pl)
+        common = pl;
+    d = wl - pl;                        /* Verzeichnisteil, wie getippt  */
+    for (i = 0; i < common; i++)
+        if (cand[0][i] == ' ')
+            q = 1;
+    for (i = 0; i < d; i++)
+        if (w[i] == ' ')
+            q = 1;
+    k = 0;                              /* Wort neu: Getipptes in der
+                                           Schreibweise des Treffers     */
+    if (q)
+        nw[k++] = '"';
+    for (i = 0; i < d; i++)
+        nw[k++] = w[i];
+    for (i = 0; i < common && k < LINE - 2; i++)
+        nw[k++] = cand[0][i];
     if (ncand == 1) {
-        ins_char(cand_dir[0] ? '\\' : ' ', n, pos);
-        return 1;
+        if (cand_dir[0])
+            nw[k++] = '\\';
+        else {
+            if (q)
+                nw[k++] = '"';
+            nw[k++] = ' ';
+        }
     }
+    nw[k] = 0;
+    if (!put_word(ws, nw, n, pos))
+        return 0;
+    if (common > pl || ncand == 1)
+        return 1;
     if (!again) {
         oc('\a');
         return 0;
@@ -354,7 +393,7 @@ static int complete(unsigned *n, unsigned *pos, int again)
         puts(cand[i]);
         if (cand_dir[i])
             putc('\\');
-        for (k = slen(cand[i]) + cand_dir[i]; k < 15; k++)
+        for (k = slen(cand[i]) + cand_dir[i]; k < 15 || k < slen(cand[i]) + cand_dir[i] + 2; k++)
             putc(' ');
         if (i % 5 == 4 || i == ncand - 1)
             puts("\n");
