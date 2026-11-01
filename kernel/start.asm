@@ -207,6 +207,22 @@ _start:
         mov     byte [_fpu_ok + 1], 0
         jne     .nofpu
         mov     byte [_fpu_ok], 1
+        ; 287 oder 387-Kern (287XL, 387)? Der 287 rechnet nach FNINIT mit
+        ; projektiver Unendlichkeit (+inf = -inf), der 387-Kern immer affin
+        fld1
+        fldz
+        fdivp   st1, st0                ; 1/0 = +inf (Ausnahme maskiert)
+        fld     st0
+        fchs                            ; -inf
+        fcompp
+        fstsw   [_fpu_sw]
+        fwait
+        mov     ah, [_fpu_sw + 1]
+        sahf
+        je      .fpu287                 ; gleich: projektiv -> 287
+        mov     byte [_fpu_ok], 2
+.fpu287:
+        fninit
 .nofpu:
         int     0x11
         mov     [_bios_equip], ax
@@ -920,6 +936,7 @@ _bios_geo_c:  resw 4                    ; Zylinder
 global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model
 _cpu_386:     resb 1
 _fpu_ok:      resw 1
+_fpu_sw:      resw 1
 _bios_equip:  resw 1
 _bios_ports:  resw 7                    ; COM1-4, LPT1-3
 _bios_date:   resb 9

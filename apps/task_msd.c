@@ -118,7 +118,8 @@ static void detail(unsigned k)
     switch (k) {
     case 0:
         line("Prozessor:", si.cpu == 3 ? "80386 oder neuer" : "80286");
-        line("Koprozessor:", si.fpu ? (si.cpu == 3 ? "vorhanden (387)" : "80287") : "keiner");
+        line("Koprozessor:", !si.fpu ? "keiner" : si.fpu == 1 ? "80287" :
+                             si.cpu == 3 ? "80387" : "80287XL (387-Kern)");
         l = line("BIOS-Datum:", si.bios_date);
         v[0] = 0;
         aphex(v, si.model);
@@ -308,7 +309,7 @@ static void summary(void)
         sum[i][0] = 0;
     ap(sum[0], si.cpu == 3 ? "80386+" : "80286");
     if (si.fpu)
-        ap(sum[0], si.cpu == 3 ? ", 387" : ", 80287");
+        ap(sum[0], si.fpu == 1 ? ", 80287" : si.cpu == 3 ? ", 80387" : ", 80287XL");
     apn(sum[1], si.conv_kb);
     ap(sum[1], "K + ");
     apn(sum[1], si.ext_kb);

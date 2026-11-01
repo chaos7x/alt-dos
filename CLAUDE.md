@@ -520,7 +520,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ob seine Zeile noch vorne steht (/T, /C). util `same()` vergleicht nur
   das erste Wort – für ganze Zeilen eigener Vergleich.
   MSD (in QEMU geprüft): FAPI 49h DosSysInfo – start.asm fragt im Real
-  Mode 286/386 (FLAGS Bit 12–15), Koprozessor (FNINIT/FNSTSW), INT 11h,
+  Mode 286/386 (FLAGS Bit 12–15), Koprozessor (FNINIT/FNSTSW; 287 oder
+  387-Kern wie 287XL über +inf = -inf nach FNINIT, nur beim 287 gleich), INT 11h,
   BIOS-Datenbereich (COM/LPT), BIOS-Datum/Modellbyte ab; der Kernel sucht
   in F000 und C000:0000–07FF den Namen (`rom_str`: „(C)“/„Copyright“ vor
   „BIOS“ vor dem längsten Text, mit Leerzeichen, ohne '%'). 386 und 486

@@ -124,7 +124,8 @@ struct fapi_comcfg {
 #define FAPI_SYSINFO        0x49
 struct fapi_sysinfo {
     unsigned char  cpu;             /* 2 = 80286, 3 = 80386 oder neuer  */
-    unsigned char  fpu;             /* Koprozessor vorhanden            */
+    unsigned char  fpu;             /* Koprozessor: 0 keiner, 1 287,
+                                       2 387-Kern (287XL, 387)          */
     unsigned char  vga;             /* VGA erkannt                      */
     unsigned char  model;           /* BIOS-Modellbyte F000:FFFE        */
     char           bios_date[9];    /* F000:FFF5, "MM/TT/JJ"            */
