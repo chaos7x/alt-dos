@@ -189,7 +189,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Latches, danach Map Mask/Read Map auf die Ebene des Programms zurück.
   Beim Entfernen kommt je Punkt nur zurück, was noch genau wie der Zeiger
   aussieht (Programm darf jederzeit selbst malen). `gfx_out` entfernt ihn
-  vor dem Sichern. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
+  vor dem Sichern. Gegen Flackern (vom Nutzer auf dem SCAT gemeldet):
+  Entfernen und neu Zeichnen in einem Durchgang über beide Flächen
+  (`gcomb`, zwei Zustände `gst[2]` im Wechsel, jeder Punkt höchstens
+  einmal geschrieben; ohne Überlappung erst neu, dann alt). Mode X: beim
+  Seitenwechsel erst auf die neue Seite malen, umschalten, dann die alte
+  aufräumen. Alle 50 ms ohne Bewegung derselbe Durchgang an derselben
+  Stelle: übermalte Zeigerpunkte werden neuer Hintergrund, der Zeiger
+  kommt zurück. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
   Stufe 3, Mode X (`VIO_MODEX` = 58h, 320×240×256), in QEMU geprüft:
   Register aus 13h ohne Chain-4, CRTC im Bytebetrieb, 480 Rasterzeilen
   (`vga_modex`); Speicher wie 12h (vier Ebenen zu 38400 = zwei Seiten zu

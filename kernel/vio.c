@@ -85,7 +85,7 @@ static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
 
 static void ptr_remove(void);
 static void ptr_draw(void);
-static unsigned char gp_drawn, gp_mode;
+static unsigned char gp_drawn;
 static void gptr_update(void);
 static void gptr_remove(void);
 
@@ -944,31 +944,6 @@ int vio_setplane(int s, unsigned p)
     return 0;
 }
 
-/* VioSetPage (Mode X): Seite p (0/1) zeigen. Der neue Anfang gilt ab dem
-   naechsten Bildwechsel; vorn wartet der Aufruf auf den Beginn des
-   Strahlruecklaufs (hoechstens 2 Takte), damit das Programm danach
-   gefahrlos in die andere Seite zeichnet. */
-int vio_setpage(int s, unsigned p)
-{
-    unsigned long t;
-    if (s < 0 || !ses[s].used || ses[s].gfx != MODEX || p > 1)
-        return -1;
-    if (s == fg && hw_gfx == MODEX) {
-        gptr_remove();                      /* Zeiger zieht mit um      */
-        t = get_ticks();
-        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 2)
-            ;                               /* laufenden Ruecklauf abwarten */
-        set_start(p ? PAGEX : 0);
-        ses[s].gfx_page = (unsigned char)p;
-        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 2)
-            ;                               /* neuer Anfang uebernommen */
-        cur_dirty = 1;
-        vio_flush();                        /* Zeiger auf die neue Seite */
-    } else
-        ses[s].gfx_page = (unsigned char)p;
-    return 0;
-}
-
 int vio_gfx_reg(int s, int t, unsigned sel)
 {
     if (s < 0 || !ses[s].used || !ses[s].gfx)
@@ -1003,16 +978,26 @@ void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off)
    Pfeil 10x16, weiss mit schwarzem Rand (Bit 15 = linke Spalte). Das
    Programm schreibt jederzeit selbst in den Bildspeicher: beim Entfernen
    kommt nur zurueck, was noch genau so aussieht, wie der Kernel es
-   gezeichnet hat - darueber Gemaltes bleibt (wie beim Textzeiger). */
+   gezeichnet hat - darueber Gemaltes bleibt (wie beim Textzeiger).
+   Gegen Flackern (auf dem 286 sichtbar): Entfernen und neu Zeichnen in
+   einem Durchgang ueber beide Flaechen - jeder Punkt wird hoechstens
+   einmal geschrieben, der Zeiger ist nie weg. Zwei Zustaende (alt/neu)
+   im Wechsel; Mode X malt beim Seitenwechsel erst auf die neue Seite. */
 static const unsigned short gptr_w[16] = {
     0x0000, 0x0000, 0x4000, 0x6000, 0x7000, 0x7800, 0x7C00, 0x7E00,
     0x7F00, 0x7C00, 0x6C00, 0x4600, 0x0600, 0x0300, 0x0300, 0x0000 };
 static const unsigned short gptr_b[16] = {
     0x8000, 0xC000, 0xA000, 0x9000, 0x8800, 0x8400, 0x8200, 0x8100,
     0x8080, 0x83C0, 0x9200, 0xA900, 0xC900, 0x8480, 0x0480, 0x0300 };
-static int gp_x, gp_y;
-static unsigned gp_page;                /* Mode X: Anfang der Seite     */
-static unsigned char gp_save[16][12];   /* 13h: Punkte; 12h: 3 Byte x 4 Ebenen */
+struct gpst {
+    int x, y;
+    unsigned page;                      /* Mode X: Anfang der Seite     */
+    unsigned char mode;
+    unsigned char save[16][12];         /* 13h/X: Punkte; 12h: 3 Byte x 4 Ebenen */
+};
+static struct gpst gst[2];
+static unsigned char gci;               /* gst[gci] ist gezeichnet      */
+static unsigned long gp_check;          /* letzte Pruefung (Takte)      */
 
 /* Bytemaske des Pfeils fuer Byte i (0-2) einer Zeile, Verschiebung sh */
 static unsigned char gmask(unsigned short m, unsigned i, unsigned sh)
@@ -1021,94 +1006,147 @@ static unsigned char gmask(unsigned short m, unsigned i, unsigned sh)
                                                           : (m << (8 - sh)) & 0xFF);
 }
 
-static void gptr_paint(int draw)
+/* Farbe des Pfeils an (x,y): 15, 0 oder -1 (nicht Teil des Pfeils) */
+static int gpix(const struct gpst *g, int x, int y)
+{
+    unsigned r, c;
+    if (!g || x < g->x || y < g->y || x >= g->x + 10 || y >= g->y + 16)
+        return -1;
+    r = (unsigned)(y - g->y);
+    c = (unsigned)(x - g->x);
+    if (gptr_w[r] & (0x8000 >> c))
+        return 15;
+    if (gptr_b[r] & (0x8000 >> c))
+        return 0;
+    return -1;
+}
+
+static int imin(int a, int b) { return a < b ? a : b; }
+static int imax(int a, int b) { return a > b ? a : b; }
+
+/* 13h/Mode X: o entfernen und n zeichnen (je 0 = entfaellt), Punkt fuer
+   Punkt ueber beide Flaechen */
+static void gcomb_px(const struct gpst *o, struct gpst *n)
+{
+    unsigned char __far *v = MK_FP(SCRATCH2, 0);
+    const struct gpst *g = n ? n : o;
+    int x, y, oc, nc, x0, x1, y0, y1, w = 320, h = g->mode == MODEX ? 240 : 200;
+    unsigned a;
+    unsigned char cur, bg, val;
+
+    x0 = o && n ? imin(o->x, n->x) : g->x;
+    y0 = o && n ? imin(o->y, n->y) : g->y;
+    x1 = imin((o && n ? imax(o->x, n->x) : g->x) + 10, w);
+    y1 = imin((o && n ? imax(o->y, n->y) : g->y) + 16, h);
+    for (y = y0; y < y1; y++)
+        for (x = x0; x < x1; x++) {
+            oc = gpix(o, x, y);
+            nc = gpix(n, x, y);
+            if (oc < 0 && nc < 0)
+                continue;
+            if (g->mode == MODEX) {         /* Ebene x & 3              */
+                a = (unsigned)y * 80 + ((unsigned)x >> 2) + g->page;
+                seqr(0x02, 1 << (x & 3));
+                gcr(0x04, x & 3);
+            } else
+                a = (unsigned)y * 320 + (unsigned)x;
+            cur = v[a];
+            bg = oc >= 0 && cur == (unsigned char)oc ? o->save[y - o->y][x - o->x] : cur;
+            if (nc >= 0) {
+                n->save[y - n->y][x - n->x] = bg;
+                val = (unsigned char)nc;
+            } else
+                val = bg;
+            if (val != cur)
+                v[a] = val;
+        }
+}
+
+/* Masken des Pfeils g fuer Byte bx in Zeile y (12h); -> 0 = nicht dabei */
+static int gbyte(const struct gpst *g, int y, int bx, unsigned char *wm,
+                 unsigned char *bm, unsigned *r, unsigned *i)
+{
+    int b0;
+    *wm = *bm = 0;
+    if (!g || y < g->y || y >= g->y + 16)
+        return 0;
+    b0 = g->x >> 3;
+    if (bx < b0 || bx > b0 + 2)
+        return 0;
+    *r = (unsigned)(y - g->y);
+    *i = (unsigned)(bx - b0);
+    *wm = gmask(gptr_w[*r], *i, (unsigned)g->x & 7);
+    *bm = gmask(gptr_b[*r], *i, (unsigned)g->x & 7);
+    return (*wm | *bm) != 0;
+}
+
+/* 12h: dasselbe Byte fuer Byte, je Ebene ein Schreibzugriff */
+static void gcomb_12(const struct gpst *o, struct gpst *n)
 {
     unsigned char __far *v = MK_FP(SCRATCH2, 0);
     volatile unsigned char __far *vv = MK_FP(SCRATCH2, 0);
-    unsigned short w[8];
-    unsigned r, c, i, pl, a, sh, b0;
-    unsigned char col, wm, bm, m, cur[4], an, orr;
-    int x, y;
+    const struct gpst *g = n ? n : o;
+    int y, bx, y0, y1, b0, b1, ho, hn;
+    unsigned a, pl, orow = 0, oi = 0, nrow = 0, ni = 0;
+    unsigned char owm, obm, nwm, nbm, cur[4], an, orr, ko, bg, val;
 
+    y0 = o && n ? imin(o->y, n->y) : g->y;
+    y1 = imin((o && n ? imax(o->y, n->y) : g->y) + 16, 480);
+    b0 = o && n ? imin(o->x, n->x) >> 3 : g->x >> 3;
+    b1 = imin(((o && n ? imax(o->x, n->x) : g->x) >> 3) + 3, 80);
+    gcr(0x08, 0xFF);
+    for (y = y0; y < y1; y++)
+        for (bx = b0; bx < b1; bx++) {
+            ho = gbyte(o, y, bx, &owm, &obm, &orow, &oi);
+            hn = gbyte(n, y, bx, &nwm, &nbm, &nrow, &ni);
+            if (!ho && !hn)
+                continue;
+            a = (unsigned)y * 80 + (unsigned)bx;
+            for (an = 0xFF, orr = 0, pl = 0; pl < 4; pl++) {
+                gcr(0x04, pl);
+                cur[pl] = vv[a];
+                an &= cur[pl];
+                orr |= cur[pl];
+            }
+            /* noch unveraenderte Punkte des alten Pfeils: weiss = alle
+               Ebenen 1, schwarz = alle 0 */
+            ko = (unsigned char)((owm & an) | (obm & ~orr));
+            for (pl = 0; pl < 4; pl++) {
+                bg = ko ? (unsigned char)((cur[pl] & ~ko) | (o->save[orow][oi * 4 + pl] & ko))
+                        : cur[pl];
+                if (hn) {
+                    n->save[nrow][ni * 4 + pl] = bg;
+                    val = (unsigned char)((bg & ~(nwm | nbm)) | nwm);
+                } else
+                    val = bg;
+                if (val != cur[pl]) {
+                    seqr(0x02, 1 << pl);
+                    v[a] = val;
+                }
+            }
+        }
+}
+
+/* o entfernen, n zeichnen (0 = entfaellt); sich nicht ueberlappende
+   Flaechen nacheinander (erst neu, dann alt) */
+static void gcomb(const struct gpst *o, struct gpst *n)
+{
+    unsigned short w[8];
+    unsigned char m = n ? n->mode : o->mode;
+
+    if (o && n && (o->page != n->page || o->x >= n->x + 16 || n->x >= o->x + 16 ||
+                   o->y >= n->y + 16 || n->y >= o->y + 16)) {
+        gcomb(0, n);
+        gcomb(o, 0);
+        return;
+    }
     win_save(w);
     scratch2_map(0xA0000UL, 0xFFFF);
-    for (r = 0; r < 16; r++) {
-        y = gp_y + (int)r;
-        if (gp_mode == 0x13 || gp_mode == MODEX) {
-            if (y >= (gp_mode == MODEX ? 240 : 200))
-                break;
-            for (c = 0; c < 10; c++) {
-                x = gp_x + (int)c;
-                if (x >= 320)
-                    break;
-                if (gptr_w[r] & (0x8000 >> c))
-                    col = 15;
-                else if (gptr_b[r] & (0x8000 >> c))
-                    col = 0;
-                else
-                    continue;
-                if (gp_mode == MODEX) {     /* Ebene x & 3, sichtbare Seite */
-                    a = (unsigned)y * 80 + ((unsigned)x >> 2) + gp_page;
-                    seqr(0x02, 1 << (x & 3));
-                    gcr(0x04, x & 3);
-                } else
-                    a = (unsigned)y * 320 + (unsigned)x;
-                if (draw) {
-                    gp_save[r][c] = v[a];
-                    v[a] = col;
-                } else if (v[a] == col)
-                    v[a] = gp_save[r][c];
-            }
-            continue;
-        }
-        if (y >= 480)                       /* 12h: Ebenen              */
-            break;
-        b0 = (unsigned)gp_x >> 3;
-        sh = (unsigned)gp_x & 7;
-        for (i = 0; i < 3 && b0 + i < 80; i++) {
-            wm = gmask(gptr_w[r], i, sh);
-            bm = gmask(gptr_b[r], i, sh);
-            m = wm | bm;
-            if (!m)
-                continue;
-            a = (unsigned)y * 80 + b0 + i;
-            if (draw) {
-                for (pl = 0; pl < 4; pl++) {
-                    gcr(0x04, pl);
-                    gp_save[r][i * 4 + pl] = v[a];
-                }
-                seqr(0x02, 0x0F);           /* alle Ebenen, Bitmaske    */
-                if (wm) {
-                    gcr(0x08, wm);
-                    (void)vv[a];            /* Latches laden            */
-                    v[a] = 0xFF;            /* weiss = alle Ebenen 1    */
-                }
-                if (bm) {
-                    gcr(0x08, bm);
-                    (void)vv[a];
-                    v[a] = 0x00;
-                }
-                gcr(0x08, 0xFF);
-            } else {
-                /* je Punkt: nur zurueck, was noch weiss (alle Ebenen 1)
-                   bzw. schwarz (alle 0) ist - das Programm darf daneben
-                   im selben Byte gemalt haben */
-                for (an = 0xFF, orr = 0, pl = 0; pl < 4; pl++) {
-                    gcr(0x04, pl);
-                    cur[pl] = vv[a];
-                    an &= cur[pl];
-                    orr |= cur[pl];
-                }
-                m = (unsigned char)((wm & an) | (bm & ~orr));
-                if (m)
-                    for (pl = 0; pl < 4; pl++) {
-                        seqr(0x02, 1 << pl);
-                        v[a] = (unsigned char)((cur[pl] & ~m) | (gp_save[r][i * 4 + pl] & m));
-                    }
-            }
-        }
-    }
-    if (PLANAR(gp_mode) && fg >= 0) {       /* Ebene des Programms      */
+    if (m == 0x12)
+        gcomb_12(o, n);
+    else
+        gcomb_px(o, n);
+    if (PLANAR(m) && fg >= 0) {             /* Ebene des Programms      */
         seqr(0x02, 1 << ses[fg].gfx_plane);
         gcr(0x04, ses[fg].gfx_plane);
     }
@@ -1118,10 +1156,28 @@ static void gptr_paint(int draw)
 static void gptr_remove(void)
 {
     if (gp_drawn) {
-        if (hw_gfx == gp_mode)
-            gptr_paint(0);
+        if (hw_gfx == gst[gci].mode)
+            gcomb(&gst[gci], 0);
         gp_drawn = 0;
     }
+}
+
+/* Zeiger nach (x,y) auf Seite page; alter wird im selben Zug entfernt */
+static void gptr_to(int x, int y, unsigned page)
+{
+    struct gpst *n = &gst[gci ^ 1];
+    n->x = x;
+    n->y = y;
+    n->page = page;
+    n->mode = hw_gfx;
+    gcomb(gp_drawn && gst[gci].mode == hw_gfx ? &gst[gci] : 0, n);
+    gci ^= 1;
+    gp_drawn = 1;
+}
+
+static unsigned gfx_pagestart(void)
+{
+    return hw_gfx == MODEX && ses[fg].gfx_page ? PAGEX : 0;
 }
 
 /* in vio_flush (Grafiksitzung vorn): Zeiger nachfuehren */
@@ -1129,21 +1185,54 @@ static void gptr_update(void)
 {
     int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && mou_nbtn &&
                ses[fg].mou_owner >= 0 && ses[fg].mou_show;
-    int x = 0, y = 0;
-    if (show) {
-        x = hw_gfx == 0x13 || hw_gfx == MODEX ? mx >> 1 : mx;
-        y = hw_gfx == 0x13 || hw_gfx == MODEX ? my >> 1 : my;
-    }
-    if (gp_drawn && (!show || x != gp_x || y != gp_y || gp_mode != hw_gfx))
+    int x, y;
+    struct gpst *g = &gst[gci];
+
+    if (!show) {
         gptr_remove();
-    if (show && !gp_drawn) {
-        gp_x = x;
-        gp_y = y;
-        gp_mode = hw_gfx;
-        gp_page = hw_gfx == MODEX && ses[fg].gfx_page ? PAGEX : 0;
-        gptr_paint(1);
-        gp_drawn = 1;
+        return;
     }
+    x = hw_gfx == 0x13 || hw_gfx == MODEX ? mx >> 1 : mx;
+    y = hw_gfx == 0x13 || hw_gfx == MODEX ? my >> 1 : my;
+    if (!gp_drawn || x != g->x || y != g->y || g->mode != hw_gfx ||
+        g->page != gfx_pagestart() || get_ticks() - gp_check >= 5) {
+        /* auch ohne Bewegung alle 50 ms: hat das Programm ueber den
+           Zeiger gemalt, wird das neuer Hintergrund und der Zeiger
+           kommt zurueck (geschrieben wird nur, was fehlt) */
+        gp_check = get_ticks();
+        gptr_to(x, y, gfx_pagestart());
+    }
+}
+
+/* VioSetPage (Mode X): Seite p (0/1) zeigen. Der neue Anfang gilt ab dem
+   naechsten Bildwechsel; vorn wartet der Aufruf auf den Beginn des
+   Strahlruecklaufs (hoechstens 2 Takte), damit das Programm danach
+   gefahrlos in die andere Seite zeichnet. */
+int vio_setpage(int s, unsigned p)
+{
+    unsigned long t;
+    if (s < 0 || !ses[s].used || ses[s].gfx != MODEX || p > 1)
+        return -1;
+    if (s == fg && hw_gfx == MODEX) {
+        /* Zeiger erst auf die neue (noch verdeckte) Seite, dann
+           umschalten, dann von der alten nehmen - nie ohne Zeiger */
+        int was = gp_drawn;
+        struct gpst *o = &gst[gci];
+        if (was)
+            gptr_to(o->x, o->y, p ? PAGEX : 0);   /* gci zeigt nun auf neu */
+        t = get_ticks();
+        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;                               /* laufenden Ruecklauf abwarten */
+        set_start(p ? PAGEX : 0);
+        ses[s].gfx_page = (unsigned char)p;
+        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;                               /* neuer Anfang uebernommen */
+        if (was)
+            gcomb(o, 0);                    /* alte Seite aufraeumen    */
+        cur_dirty = 1;
+    } else
+        ses[s].gfx_page = (unsigned char)p;
+    return 0;
 }
 
 /* ---- Maus --------------------------------------------------------------- */
