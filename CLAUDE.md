@@ -8,7 +8,11 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
 Lizenz: vorläufig MIT (`LICENSE`, vom Nutzer bewusst so gesetzt), endgültig
-noch nicht entschieden; das Projekt ist nicht öffentlich. Bis dahin keinen
+noch nicht entschieden; das Projekt ist nicht öffentlich. Entscheidung
+(Nutzer) vor Beginn von DOS 6.0 – evtl. Wechsel auf GPL, solange er der
+einzige Urheber ist; dann dürfte Code aus FreeDOS, 86Box, Linux, GRUB
+übernommen werden (Herkunft je Übernahme vermerken). Fremdes DOS in der
+V86-Box (FreeDOS, MS-DOS) geht unter jeder Lizenz. Bis dahin keinen
 fremden Code übernehmen (GPL/LGPL wie 86Box, Wine,
 ReactOS, GNU nur lesen) – so bleiben alle Wege offen. Größere fremde
 Teile (z. B. Wine-Bibliotheken für Win32) nur als abgegrenzte Teilsysteme
