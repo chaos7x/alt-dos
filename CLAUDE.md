@@ -536,7 +536,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   schon im DMA-Betrieb ist. Jetzt wie Linux: MR=DMA|Busüberwachung, DMA-
   Start, dann Richtung, dann Blockzähler. Nach einem gescheiterten Block-
   versuch bleibt der 53C400 in 86Box auf „Zähler geladen“, dann scheitert
-  auch PIO (tx_mode bleibt DMA) – Neutest offen.
+  auch PIO (tx_mode bleibt DMA). Nach der Korrektur vom Nutzer in 86Box
+  bestätigt: XCOPY von 28 Dateien auf die Trantor-Platte fehlerfrei, in
+  annehmbarer Geschwindigkeit.
   Datenphasen in Vielfachen von 128 Byte im 53C400-Blockbetrieb – Richtung
   in Basis+0 (Bit 6 lesen), Blockzahl in Basis+1, 5380 MR=DMA und Start
   über Register 7 (empfangen) bzw. 5 (senden, ICR mit DBUS), je Block
