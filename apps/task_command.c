@@ -1372,7 +1372,7 @@ static void cmd_help(void)
          "  EXIT            Befehlsinterpreter beenden\n"
          "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
          "  ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND FORMAT\n"
-         "  GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
+         "  ANSI GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
          "  SUBST SYS TREE UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
@@ -1605,6 +1605,7 @@ static void show_prompt(void)
         case '_': puts("\n"); break;
         case 'H': puts("\b \b"); break;
         case 'V': puts("AT-DOS 5.0"); break;
+        case 'E': putc(27); break;      /* ESC, fuer ANSI-Folgen        */
         case 'D':
             DosGetDateTime(dt);
             put2(dt[0] & 31); putc('.'); put2((dt[0] >> 5) & 15); putc('.');
@@ -1615,7 +1616,7 @@ static void show_prompt(void)
             put2(dt[1] >> 11); putc(':'); put2((dt[1] >> 5) & 63); putc(':');
             put2((dt[1] & 31) * 2);
             break;
-        }                               /* $E (ANSI) gibt es nicht      */
+        }
     }
 }
 

@@ -150,6 +150,9 @@ struct fapi_sysinfo {
    FAPI_ERR_INUSE (aktuelles Laufwerk eines Programms, offene Dateien,
    Ziel eines SUBST/JOIN), FAPI_ERR_DENIED (Verzeichnis nicht leer).
    DosQJoin: BX = Laufwerk, CX = Puffer (FAPI_CURDIRLEN) -> "C:\CDROM" */
+/* ANSI-Folgen in der TTY-Ausgabe der Sitzung (wie OS/2 VioSetAnsi):
+   BX = 1 an, 0 aus, 2 nur abfragen -> bisheriger Zustand (0/1) */
+#define FAPI_VIOSETANSI     0x4E
 /* Platten-Cache (MEM): BX = struct fapi_cacheinfo -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {

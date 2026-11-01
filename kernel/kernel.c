@@ -1959,7 +1959,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     int k;
     switch (fn) {
     case FAPI_GETVERSION: case FAPI_VIOWRTSTR: case FAPI_VIOWRTSTRATT:
-    case FAPI_VIOWRTTTY: case FAPI_VIOCLS: case FAPI_VIOSETMODE:
+    case FAPI_VIOWRTTTY: case FAPI_VIOCLS: case FAPI_VIOSETMODE: case FAPI_VIOSETANSI:
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
     case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
@@ -2043,6 +2043,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_VIOCLS:
         vio_cls(s);
         return 0;
+
+    case FAPI_VIOSETANSI:
+        return (unsigned)vio_ansi(s, a1);
 
     case FAPI_VIOSETMODE:
         vio_setmode(s, a1 != 0, current);

@@ -243,6 +243,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25),
   vom Nutzer auf dem SCAT mit ET4000 bestätigt. EGA (43 Zeilen, andere Register) nicht
   unterstützt.
+- ANSI wie OS/2 fest in der Bildschirmausgabe statt ANSI.SYS (Wunsch des
+  Nutzers, in QEMU geprüft): `tty_char` -> `ansi_char` (vio.c) wertet in
+  jeder TTY-Ausgabe (DosWrite auf die Konsole, VioWrtTTY) ESC[ Zeile;Spalte
+  H/f, n A/B/C/D, s/u, J (ganz löschen), K und m (0/1/22/5/25/7/8/30–37/39/
+  40–47/49) aus; Tastenbelegung (`p`, auch mit "..."), Modi (h/l, `=`/`?`)
+  und anderes ESC x werden geschluckt. Je Sitzung `attr` (Textfarbe, auch
+  für Löschen und Rollen), `ansi`, Zustand/Parameter. Vorgabe ANSI ON,
+  `ANSI [ON|OFF]` (ANSI.EXE, FAPI 4Eh VioSetAnsi, 2 = abfragen), OFF setzt
+  die Farbe zurück. COMMAND: `PROMPT $E` = ESC (`$e[1;33m$p$e[0m$g`).
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
 - Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der

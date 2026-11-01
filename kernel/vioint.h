@@ -24,6 +24,11 @@ struct session {
     unsigned      gfx_save;         /* Puffer: Bild + 768 Byte Palette  */
     unsigned char gfx_plane;        /* 12h/X: gewaehlte Ebene (VioSetPlane) */
     unsigned char gfx_page;         /* Mode X: sichtbare Seite (VioSetPage) */
+    unsigned char attr;             /* Textfarbe fuer TTY (ANSI ESC[..m) */
+    unsigned char ansi;             /* ANSI-Folgen auswerten (ANSI ON)  */
+    unsigned char ast, np;          /* ANSI: Zustand, Zahl der Parameter */
+    unsigned char par[6];           /* ANSI: Parameter                  */
+    unsigned char arow, acol;       /* ANSI: ESC[s gemerkter Cursor     */
 };
 
 /* Grafikpuffer: 13h 64 KB Bild, 12h/X vier Ebenen zu 38400 Byte; Palette dahinter */

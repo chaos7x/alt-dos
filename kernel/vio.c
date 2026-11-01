@@ -283,7 +283,7 @@ static void clear_row(int s, int r)
 {
     int c;
     for (c = 0; c < SCOLS; c++)
-        BUF(s)[r * SCOLS + c] = CELL(ATTR, ' ');
+        BUF(s)[r * SCOLS + c] = CELL(ses[s].attr, ' ');
 }
 
 static void scroll(int s)
@@ -334,6 +334,10 @@ int vio_open(const char *title)
     ses[s].gfx = 0;
     ses[s].gfx_sel = 0;
     ses[s].gfx_save = 0;
+    ses[s].attr = ATTR;
+    ses[s].ansi = 1;                /* wie OS/2: ANSI ist an          */
+    ses[s].ast = 0;
+    ses[s].arow = ses[s].acol = 0;
     set_desc(SCR_IDX(s), (unsigned long)u << 8, SBYTES - 1, ACC_KDATA);
     vio_title(s, title);
     vio_cls(s);
@@ -404,10 +408,145 @@ void vio_next(void)
     }
 }
 
+/* ANSI wie ANSI.SYS bzw. OS/2 (VioSetAnsi): ESC[ Zeile;Spalte H/f, n A/B/C/D,
+   s/u, 2J, K, Farben mit m. Tastenbelegung (p) und Modi (h/l) werden
+   geschluckt. Farben: ANSI-Reihenfolge -> PC-Attribut */
+static const unsigned char ansi_col[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
+
+static void ansi_sgr(struct session *p)
+{
+    unsigned i, v;
+    if (!p->np)
+        p->np = 1, p->par[0] = 0;
+    for (i = 0; i < p->np; i++) {
+        v = p->par[i];
+        if (v == 0)
+            p->attr = ATTR;
+        else if (v == 1)
+            p->attr |= 0x08;                /* hell                       */
+        else if (v == 22)
+            p->attr &= ~0x08;
+        else if (v == 5)
+            p->attr |= 0x80;                /* blinkend                   */
+        else if (v == 25)
+            p->attr &= ~0x80;
+        else if (v == 7)                    /* invers                     */
+            p->attr = (unsigned char)((p->attr & 0x88) | ((p->attr >> 4) & 7) |
+                                      ((p->attr & 7) << 4));
+        else if (v == 8)                    /* verdeckt                   */
+            p->attr = (unsigned char)((p->attr & 0xF0) | ((p->attr >> 4) & 7));
+        else if (v >= 30 && v <= 37)
+            p->attr = (unsigned char)((p->attr & 0xF8) | ansi_col[v - 30]);
+        else if (v == 39)
+            p->attr = (unsigned char)((p->attr & 0xF8) | 7);
+        else if (v >= 40 && v <= 47)
+            p->attr = (unsigned char)((p->attr & 0x8F) | (ansi_col[v - 40] << 4));
+        else if (v == 49)
+            p->attr &= 0x8F;
+    }
+}
+
+/* 1 = Zeichen gehoerte zu einer ANSI-Folge */
+static int ansi_char(int s, char ch)
+{
+    struct session *p = &ses[s];
+    unsigned n, c;
+
+    if (p->ast == 0) {
+        if (ch != 27 || !p->ansi)
+            return 0;
+        p->ast = 1;
+        return 1;
+    }
+    if (p->ast == 1) {                      /* nach ESC                   */
+        if (ch == '[') {
+            p->ast = 2;
+            p->np = 0;
+            p->par[0] = 0;
+            return 1;
+        }
+        p->ast = 0;                         /* anderes ESC x: weg         */
+        return 1;
+    }
+    if (p->ast == 3) {                      /* in "..." (Tastenbelegung)  */
+        if (ch == '"')
+            p->ast = 2;
+        return 1;
+    }
+    if (ch >= '0' && ch <= '9') {
+        if (!p->np)
+            p->np = 1, p->par[0] = 0;
+        n = p->par[p->np - 1] * 10 + (unsigned)(ch - '0');
+        p->par[p->np - 1] = (unsigned char)(n > 255 ? 255 : n);
+        return 1;
+    }
+    if (ch == ';') {
+        if (!p->np)
+            p->np = 1, p->par[0] = 0;
+        if (p->np < sizeof(p->par))
+            p->par[p->np++] = 0;
+        return 1;
+    }
+    if (ch == '"') {
+        p->ast = 3;
+        return 1;
+    }
+    if (ch == '=' || ch == '?')             /* ESC[=7h, ESC[?7h           */
+        return 1;
+    p->ast = 0;
+    n = p->np ? p->par[0] : 0;
+    switch (ch) {
+    case 'H': case 'f':                     /* Cursor setzen (1-basiert)  */
+        c = p->np > 1 ? p->par[1] : 0;
+        p->row = (unsigned char)(n ? (n > p->rows ? p->rows - 1 : n - 1) : 0);
+        p->col = (unsigned char)(c ? (c > SCOLS ? SCOLS - 1 : c - 1) : 0);
+        break;
+    case 'A':
+        if (!n) n = 1;
+        p->row = (unsigned char)(p->row > n ? p->row - n : 0);
+        break;
+    case 'B':
+        if (!n) n = 1;
+        p->row = (unsigned char)(p->row + n < p->rows ? p->row + n : p->rows - 1);
+        break;
+    case 'C':
+        if (!n) n = 1;
+        p->col = (unsigned char)(p->col + n < SCOLS ? p->col + n : SCOLS - 1);
+        break;
+    case 'D':
+        if (!n) n = 1;
+        p->col = (unsigned char)(p->col > n ? p->col - n : 0);
+        break;
+    case 's':
+        p->arow = p->row;
+        p->acol = p->col;
+        break;
+    case 'u':
+        p->row = p->arow < p->rows ? p->arow : p->rows - 1;
+        p->col = p->acol;
+        break;
+    case 'J':                               /* 2J (und J): ganz loeschen  */
+        vio_cls(s);
+        break;
+    case 'K':                               /* bis Zeilenende loeschen    */
+        for (c = p->col; c < SCOLS; c++)
+            put(s, p->row, c, CELL(p->attr, ' '));
+        break;
+    case 'm':
+        ansi_sgr(p);
+        break;
+    default:                                /* h, l, p, n ...: schlucken  */
+        break;
+    }
+    return 1;
+}
+
 static void tty_char(int s, char ch)
 {
     struct session *p = &ses[s];
 
+    if (ansi_char(s, ch))
+        return;
     switch (ch) {
     case '\r':
         p->col = 0;
@@ -430,7 +569,7 @@ static void tty_char(int s, char ch)
     case 7:                         /* Klingel: still                   */
         break;
     default:
-        put(s, p->row, p->col, CELL(ATTR, ch));
+        put(s, p->row, p->col, CELL(p->attr, ch));
         p->col++;
     }
     if (p->col >= SCOLS) {
@@ -454,6 +593,22 @@ void vio_tty(int s, unsigned sel, unsigned off, unsigned len)
     }
     if (s == fg)
         cur_dirty = 1;
+}
+
+/* VioSetAnsi: on 0/1, 2 = nur abfragen -> bisheriger Zustand */
+int vio_ansi(int s, unsigned on)
+{
+    int old;
+    if (s < 0 || !ses[s].used)
+        return 0;
+    old = ses[s].ansi;
+    if (on < 2) {
+        ses[s].ansi = (unsigned char)on;
+        ses[s].ast = 0;
+        if (!on)
+            ses[s].attr = ATTR;
+    }
+    return old;
 }
 
 void vio_kputs(int s, const char *str)
