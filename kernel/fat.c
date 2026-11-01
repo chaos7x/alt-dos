@@ -62,7 +62,7 @@ static unsigned char fc_dirty;
 static int           ferr;              /* erster Schreibfehler der Operation */
 
 /* geaenderte FAT-Sektoren in alle Kopien schreiben */
-static int fat_flush(void)
+static int fat_flush_fat(void)
 {
     struct volume *v;
     unsigned long lba;
@@ -85,6 +85,18 @@ static int fat_flush(void)
             }
         }
     return 0;
+}
+
+/* ... und den Spurpuffer der Diskette: nach jeder Operation stimmig */
+static int fat_flush(void)
+{
+    int rc = fat_flush_fat(), r2 = fd_sync();
+    if (r2) {
+        if (!ferr)
+            ferr = r2 == -2 ? IFS_WP : IFS_ERR;
+        rc = -1;
+    }
+    return rc;
 }
 
 static int fat_load(int d, unsigned sec)
@@ -270,7 +282,7 @@ static int fat_mount(int d)
     v->fat16 = cl >= 4085;
     v->in_use = 0;
     v->was_dirty = 0;
-    if (v->fat16 && v->blk != BLK_FLOPPY && blk_read(v->blk, v->fat_lba) == 0)
+    if (v->fat16 && !IS_FLOPPY(v->blk) && blk_read(v->blk, v->fat_lba) == 0)
         v->was_dirty = !(rd16(2) & CLEAN_BIT);  /* FAT[1] Bit 15        */
     return 0;
 }
@@ -650,8 +662,10 @@ static int new_entry(int d, unsigned dc, const char *n83, unsigned char attr,
 /* Diskette: vor jeder Operation neu einhaengen, sie koennte gewechselt sein */
 static int revalidate(int d)
 {
-    if (vol[d].blk != BLK_FLOPPY)
+    if (!IS_FLOPPY(vol[d].blk))
         return 0;
+    if (blk_media(vol[d].blk) == 0 && vol[d].used)
+        return 0;                       /* nicht gewechselt: alles gilt */
     fc_drive = -1;
     fc_dirty = 0;
     dir_cache_reset();
@@ -1097,8 +1111,10 @@ int vol_present(int d)
 {
     if ((unsigned)d >= NDRIVE)
         return 0;
-    if (d == 0 && !vol[0].used && floppy_lazy)
-        ifs_mount(0, BLK_FLOPPY, 0, &fat_driver);
+    if (d < 2 && !vol[d].used && (floppy_lazy & (1 << d))) {
+        blk_media(vol[d].blk);          /* Format erkennen            */
+        ifs_mount(d, vol[d].blk, 0, &fat_driver);
+    }
     return vol[d].used || vol[d].present;
 }
 
@@ -1138,7 +1154,7 @@ static void mark_in_use(int d)
     struct volume *v = &vol[d];
     unsigned val;
 
-    if (v->in_use || v->drv != &fat_driver || !v->fat16 || v->blk == BLK_FLOPPY ||
+    if (v->in_use || v->drv != &fat_driver || !v->fat16 || IS_FLOPPY(v->blk) ||
         v->locked)
         return;
     v->in_use = 1;

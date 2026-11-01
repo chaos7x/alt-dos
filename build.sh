@@ -93,7 +93,7 @@ PYEOF
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fdisk"
+UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fdisk diskcopy"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
@@ -152,7 +152,8 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_tree.exe TREE.EXE  $B/task_label.exe LABEL.EXE  $B/task_choice.exe CHOICE.EXE
        $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
        $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE
-       $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE"
+       $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
+       $B/task_diskcopy.exe DISKCOPY.EXE"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE

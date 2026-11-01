@@ -3,10 +3,12 @@
  *
  *   UFAT X: /FORMAT [/Q] [/V:Bezeichnung] [/V]
  *
- * Aufbau wie MS-DOS FORMAT: Disketten nach ihrer Groesse (1,44 MB, 1,2 MB,
- * 720 KB, 360 KB), Partitionen nach Partitionstyp (01h FAT12, sonst FAT16)
- * mit den Clustergroessen von MS-DOS 6. Ohne /Q wird jeder Sektor gelesen
- * und fehlerhafte Cluster in der FAT gesperrt (keine Low-Level-Formatierung).
+ * Aufbau wie MS-DOS FORMAT: Disketten nach ihrer Groesse (2,88 MB, 1,44 MB,
+ * 1,2 MB, 720 KB, 360 KB; /F:KB waehlt, sonst das erkannte Format bzw. das
+ * des Laufwerks), Partitionen nach Partitionstyp (01h FAT12, sonst FAT16)
+ * mit den Clustergroessen von MS-DOS 6. Disketten werden ohne /Q Spur fuer
+ * Spur formatiert (DosFmtTrack). Ohne /Q wird danach jeder Sektor gelesen
+ * und fehlerhafte Cluster in der FAT gesperrt.
  * Der Bootsektor bekommt den AT-DOS-Startcode (SYS macht den Datentraeger
  * startfaehig). FAT[1] mit Sauber-Bit.
  */
@@ -58,7 +60,42 @@ static unsigned calc_spf(unsigned long n, unsigned res, unsigned rsec)
     }
 }
 
-static int do_format(int quick)
+/* Diskette Spur fuer Spur formatieren; -> 0 ok */
+static int fmt_tracks(unsigned long n, unsigned spt)
+{
+    static struct fapi_fmttrack ft;
+    unsigned cyls = (unsigned)n / (spt * 2), c, h, r, pct = 0xFFFF, p;
+
+    ft.blocks = (unsigned)n;
+    for (c = 0; c < cyls; c++) {
+        p = c * 100 / cyls;             /* hoechstens 7900: 16 Bit     */
+        if (p != pct) {
+            pct = p;
+            putc('\r');
+            put_num(pct, 3);
+            puts(" Prozent formatiert");
+        }
+        for (h = 0; h < 2; h++) {
+            ft.cyl = c;
+            ft.head = h;
+            r = DosFmtTrack(hd, &ft);
+            if (r == FAPI_ERR_WP) {
+                puts("\r\nDie Diskette ist schreibgesch\x81tzt.\r\n");
+                return 3;
+            }
+            if (r && c == 0) {
+                puts(r == FAPI_ERROR && c == 0 && h == 0 ?
+                     "\r\nFormat wird vom Laufwerk nicht unterst\x81tzt, oder Spur 0 ist unbrauchbar.\r\n" :
+                     "\r\nSpur 0 ist unbrauchbar - Diskette nicht verwendbar.\r\n");
+                return 3;
+            }
+        }
+    }
+    puts("\r100 Prozent formatiert\r\n");
+    return 0;
+}
+
+static int do_format(int quick, unsigned fkb)
 {
     static unsigned short dt[2];
     unsigned long n, cl, s, step, next;
@@ -77,13 +114,22 @@ static int do_format(int quick)
     }
     nfats = 2;
     if (ffi.flags & FSI_REMOVABLE) {                /* Disketten          */
+        if (fkb)
+            n = (unsigned long)fkb << 1;
         fat16 = 0;
         rootents = 224; spc = 1; media = 0xF0; heads = 2; spt = 18;
         if (n == 2400) { spt = 15; media = 0xF9; }
+        else if (n == 5760) { spt = 36; spc = 2; rootents = 240; }
         else if (n == 1440) { rootents = 112; spc = 2; spt = 9; media = 0xF9; }
         else if (n == 720) { rootents = 112; spc = 2; spt = 9; media = 0xFD; }
         else if (n != 2880) {
-            puts("Unbekanntes Diskettenformat.\r\n");
+            puts("Unbekanntes Diskettenformat (/F:360, 720, 1200, 1440, 2880).\r\n");
+            return 3;
+        }
+        if (!quick && fmt_tracks(n, spt))
+            return 3;
+        if (quick && n != ffi.sectors) {
+            puts("Schnellformatierung nur im vorhandenen Format.\r\n");
             return 3;
         }
     } else {

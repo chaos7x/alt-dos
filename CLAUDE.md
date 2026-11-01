@@ -264,7 +264,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   FAT nur im 2-Sektor-Cache bis `fat_flush()` am Ende jeder Operation – nach
   jedem FAPI-Aufruf ist das Dateisystem stimmig. Zeiger aus `dir_entry()`
   zeigen in `DMABUF` und gelten nur bis zum nächsten Plattenzugriff.
-  Disketten werden vor jeder Operation neu eingehängt (`revalidate`).
+  Disketten: `revalidate` fragt vor jeder Operation `blk_media` (Wechsel-
+  leitung im Treiber), eingehängt wird nur nach einem Wechsel neu.
 - FORMAT/SYS: `FORMAT.EXE` ruft `U<FS>.EXE X: /FORMAT [/Q] [/V:x]`
   (Code in `apps/ufat_fmt.c`, in task_ufat.c eingebunden), danach ggf.
   `SYS.EXE`. Bootcode für beide kommt aus `build/bootcode.h` (build.sh
@@ -475,8 +476,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT, SYS und FDISK sind da. Später: UNDELETE, MSD,
-  HELP, DISKCOPY, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK und DISKCOPY sind da. Später: UNDELETE, MSD,
+  HELP, DEFRAG, SCANDISK, PRINT/MODE, SUBST.
+  Disketten (Wunsch des Nutzers: „old-school“, alle Formate bis 2,88 MB),
+  in QEMU geprüft: `floppy.c` neu – A:/B: aus CMOS 10h (B: ist Geräte-
+  nummer 1, `IS_FLOPPY(dev)` = `blk[].drv < 0`, `floppy_lazy` Bit 0/1),
+  Formattabelle `fmts` (Rate, GAP3, Format-GAP, Doppelschritt, ED mit
+  PERPENDICULAR MODE 12h), Erkennung: READ ID je möglicher Rate + letzter
+  Sektor der Spur 0 lesbar (QEMU prüft die Rate bei READ ID nicht), ohne
+  Diskette Controller-Reset (`ctl_reset`). Wechselleitung DIR Bit 7 (Typ 1
+  = 360-KB-Laufwerk hat keine: jedes Mal neu erkennen). Spurpuffer 18 KB
+  über `kseg_dma` (doppelt belegen, Stück ohne 64-KB-Grenze), Spur einer
+  Seite mit einem Befehl lesen, Schreiben verzögert bis `fd_sync` – das
+  läuft in `fat_flush`, nach DASD-Schreiben, in `blk_flush` und nach jedem
+  FAPI-Aufruf mit Sperre (`fapi_dispatch`); vor dem Lesen einer Spur wird
+  Geändertes zuerst geschrieben. Motoren 3 s nach dem letzten Zugriff aus
+  (`fd_tick` im Scheduler). FAPI 46h DosFmtTrack (FORMAT ohne /Q, DISKCOPY
+  formatiert beim Kopieren). In QEMU geprüft: Lesen/Schreiben aller fünf
+  Formate (auch 360 KB im 1,2-MB-Laufwerk), FORMAT 1,44/2,88, DISKCOPY
+  A: A: mit 2 MB RAM (mehrere Durchgänge) und A: -> B: 2,88 MB mit /V.
+  QEMU kennt keine unformatierten Disketten und keinen Doppelschritt
+  wirklich – beides nur in 86Box prüfbar.
   FDISK (apps/task_fdisk.c), in QEMU geprüft: Menü wie MS-DOS 5/6
   (anlegen primär/erweitert/logisch, aktiv, löschen, anzeigen, nächste
   Platte), `/STATUS`, `/MBR` (Startcode aus build/mbrcode.h = mbr.asm).
@@ -625,8 +645,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   INTV mit IRST (sonst bleibt die ISA-Leitung oben) und weckt; fertig ist,
   wenn `mb[1].status` gesetzt ist (`wait_mbox`). In 86Box (`scsi_x54x.c`)
   löst START kein HACC aus, MBIF kommt nach HACC erst nach IRST.
-  Offen: Diskette (kernel floppy.c) ebenfalls schlafen lassen statt
-  HLT-Schleife, danach `MOUSE.SYS`. `has_opt()` und `hex()` in drvlib.h.
+  Diskette schläft ebenfalls (proc_block), `MOUSE.SYS` erledigt. `has_opt()` und `hex()` in drvlib.h.
 - `NCR5380.SYS` (drivers/ncr5380.c), erste Stufe, in 86Box vom Nutzer
   bestätigt (auf Anhieb): T130B an 350h, zwei IBM-Platten (63/504 MB) und
   CD erkannt, Start von der Trantor-Platte (C:). Das Trantor-BIOS hängt

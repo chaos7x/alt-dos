@@ -832,6 +832,7 @@ void main(void)
     unsigned reserved;
     unsigned long rootsecs, fatsecs;
     int fmt = 0, quick = 0;
+    unsigned fkb = 0;
 
     drive = DosQCurDisk();
     DosGetArgs(args);
@@ -846,6 +847,11 @@ void main(void)
             fmt = 1;                    /* /FORMAT                       */
         else if (a[0] == '/' && up(a[1]) == 'Q')
             quick = 1;
+        else if (a[0] == '/' && up(a[1]) == 'F' && a[2] == ':') {
+            unsigned k;                 /* /F:KB (Diskettenformat)       */
+            for (k = 3; a[k] >= '0' && a[k] <= '9'; k++)
+                fkb = fkb * 10 + (unsigned)(a[k] - '0');
+        }
         else if (a[0] == '/' && up(a[1]) == 'V' && a[2] == ':') {
             unsigned k;                 /* /V:Bezeichnung (FORMAT)       */
             for (k = 0; a[3 + k] && a[3 + k] != ' ' && k < 11; k++)
@@ -861,7 +867,7 @@ void main(void)
             a++;
     }
     if (fmt)
-        DosExit(do_format(quick));
+        DosExit(do_format(quick, fkb));
     pathbuf[0] = (char)('A' + drive);
     pathbuf[1] = ':';
     pathbuf[2] = '\\';

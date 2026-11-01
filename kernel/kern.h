@@ -98,10 +98,17 @@ extern volatile unsigned reboot_count;
 unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
-int  fd_init(void);
-int  fd_write(unsigned lba);        /* aus DMABUF; -2 = schreibgeschuetzt  */
-int  fd_read(unsigned lba);         /* Sektor in den DMA-Puffer, 0 = ok    */
+int  fd_init(unsigned cmos_types);  /* CMOS 10h; 0 = Controller da        */
+int  fd_write(int d, unsigned lba); /* aus DMABUF in den Spurpuffer        */
+int  fd_read(int d, unsigned lba);  /* Sektor in den DMA-Puffer, 0 = ok    */
+int  fd_sync(void);                 /* Spurpuffer schreiben; -2 = schreibg. */
+int  fd_check(int d);               /* 1 = gewechselt/neu erkannt          */
+unsigned fd_size(int d);            /* Sektoren des Formats                */
+int  fd_type(int d);                /* CMOS-Typ, 0 = kein Laufwerk         */
+int  fd_format(int d, unsigned cyl, unsigned head, unsigned blocks);
+void fd_tick(void);
 void fd_motor_off(void);
+unsigned kseg_dma(unsigned bytes, unsigned long *lin);  /* ohne 64-KB-Grenze */
 
 /* Schlafen im Kernel wie DevHlp ProcBlock/ProcRun (mit gesperrten
    Interrupts rufen, kehrt mit STI zurueck; 0 geweckt, 1 Frist).
@@ -114,6 +121,7 @@ unsigned proc_run(unsigned long id);
 /* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
 #define NBLK        8
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
+#define IS_FLOPPY(dev) (blk[dev].drv < 0)   /* B: ist Geraet 1, wenn da   */
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;
@@ -127,6 +135,7 @@ int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */
 int  blk_write(int dev, unsigned long lba); /* DMABUF ->, -2 = schreibgesch. */
 void blk_flush(void);               /* Platten-Caches leeren              */
 void blk_invalidate(void);          /* Diskette aus dem Cache (Wechsel)    */
+int  blk_media(int dev);            /* Diskette gewechselt? 1 = ja (neu)   */
 void blk_cache_init(unsigned n);    /* BUFFERS=: n Sektoren Cache          */
 
 /* ---- Sitzungen und Konsole (vio.c) ------------------------------------- */

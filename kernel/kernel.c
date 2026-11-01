@@ -347,6 +347,30 @@ static void shutdown(void)
 }
 
 /* ---- eigene Kernelsegmente -------------------------------------------- */
+/* Kernelsegment fuer ISA-DMA: darf keine 64-KB-Grenze ueberschreiten.
+   Doppelt belegen, passendes Stueck behalten, Rest zurueck. */
+unsigned kseg_dma(unsigned bytes, unsigned long *lin)
+{
+    unsigned i, u, n = (bytes + MEM_UNIT - 1) >> 8, s;
+    unsigned long a;
+
+    for (i = 0; i < NKSEG && gdt[KSEG_IDX(i)].access; i++)
+        ;
+    if (i == NKSEG || !(u = mem_alloc(2 * n)))
+        return 0;
+    a = (unsigned long)u << 8;
+    s = u;
+    if ((a >> 16) != ((a + bytes - 1) >> 16))
+        s = (unsigned)(((a >> 16) + 1) << 8);   /* ab der naechsten Grenze */
+    if (s > u)
+        mem_free(u, s - u);
+    if (u + 2 * n > s + n)
+        mem_free(s + n, u + 2 * n - (s + n));
+    *lin = (unsigned long)s << 8;
+    set_desc(KSEG_IDX(i), *lin, bytes - 1, ACC_KDATA);
+    return KSEG_IDX(i) * 8;
+}
+
 unsigned kseg_alloc(unsigned long bytes)
 {
     unsigned i, u, n;
@@ -1086,6 +1110,7 @@ static void sched(int keep)
         if (reboot_count && klock < 0)  /* nicht mitten in einer Plattenoperation */
             shutdown();
         now = get_ticks();
+        fd_tick();                      /* Diskettenmotoren aus          */
         vio_flush();                    /* Programm wartet: Bild zeigen  */
         vio_status();
         any = 0;
@@ -1436,6 +1461,8 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
         done += bs;
         lba++;
     }
+    if (write && IS_FLOPPY(dev) && fd_sync())
+        return -1;                      /* Spurpuffer nicht geschrieben */
     o->pos += done;
     return (int)done;
 }
@@ -1631,7 +1658,8 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     else {
         klock_enter();
         r = fapi_inner(fn, usel, a1, a2, a3);
-        klock_leave();
+        fd_sync();                      /* Spurpuffer der Diskette: nach */
+        klock_leave();                  /* jedem Aufruf auf der Scheibe  */
     }
     if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
         get_ticks() - slice_start >= SLICE) {
@@ -1983,8 +2011,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
         if (a2 == DRV_OPEN_LOCK)
             vol[a1].locked = 1;
-        if (vol[a1].blk == BLK_FLOPPY)
-            blk_invalidate();                   /* Diskette frisch lesen */
+        if (IS_FLOPPY(vol[a1].blk))
+            blk_media(vol[a1].blk);             /* gewechselt? neu lesen */
         return k + HBASE;
 
     case FAPI_DISKINFO: {                       /* fuer FDISK            */
@@ -2041,6 +2069,24 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return k + HBASE;
     }
 
+    case FAPI_FMTTRACK: {
+        struct fapi_fmttrack __far *ft;
+        int dev;
+        if ((k = h2e(a1)) < 0 || files[k].kind != OF_DASD || !files[k].pipe ||
+            files[k].f.attr == DASD_DISK || !user_ok(usel, a2, sizeof(*ft), 0))
+            return FAPI_ERROR;
+        dev = vol[files[k].f.drive].blk;
+        if (!IS_FLOPPY(dev))
+            return FAPI_ERROR;
+        ft = MK_FP(usel, a2);
+        t = fd_format(blk[dev].unit, ft->cyl, ft->head, ft->blocks);
+        if (blk[dev].blocks != fd_size(blk[dev].unit)) {
+            blk[dev].blocks = fd_size(blk[dev].unit);
+            blk_invalidate();               /* anderes Format: Cache weg */
+        }
+        return t == 0 ? 0 : t == -2 ? FAPI_ERR_WP : FAPI_ERROR;
+    }
+
     case FAPI_SEEK: {
         unsigned long __far *p;
         if ((k = h2e(a1)) < 0 || !user_ok(usel, a2, 4, 0))
@@ -2063,6 +2109,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         fi = MK_FP(usel, a2);
         dv = vol[a1].blk;
+        if (IS_FLOPPY(dv) && !vol[a1].locked && blk_media(dv) == 1)
+            vol_reset(a1);                  /* andere Diskette: neu      */
         nm = vol[a1].drv == &mod_driver ? drv_name(vol[a1].mod) : vol[a1].drv->name;
         for (k = 0; nm[k] && nm[k] != '.' && k < (int)sizeof(fi->fsname) - 1; k++)
             fi->fsname[k] = nm[k];
@@ -2075,7 +2123,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->hidden = vol[a1].start;
         fi->ptype = vol[a1].ptype;
         fi->bsize = blk[dv].bsize;
-        fi->flags = (dv == BLK_FLOPPY ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
+        fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0);
         return 0;
     }
@@ -2547,13 +2595,35 @@ static void bc_put(int dev, unsigned long lba, unsigned off, int stream)
     far_copy(bc_sel, (unsigned)i << 9, DMABUF, off, 512);
 }
 
+/* Diskette gewechselt? Der Treiber erkennt Wechsel und Format; dann
+   Groesse neu und ihre Cache-Eintraege weg. -> 1 gewechselt/neu */
+int blk_media(int dev)
+{
+    int r;
+    unsigned i;
+    if (dev < 0 || !IS_FLOPPY(dev))
+        return 0;
+    r = fd_check(blk[dev].unit);
+    blk[dev].blocks = fd_size(blk[dev].unit);
+    if (r) {
+        lc_dev = -1;
+        for (i = 0; i < bc_n; i++)
+            if (bc_dev[i] == dev) {
+                if (bc_stream[i])
+                    bc_nstream--;
+                bc_dev[i] = -1;
+            }
+    }
+    return r;
+}
+
 /* Diskette kann gewechselt sein: ihre Eintraege weg */
 void blk_invalidate(void)
 {
     unsigned i;
     lc_dev = -1;
     for (i = 0; i < bc_n; i++)
-        if (bc_dev[i] == BLK_FLOPPY) {
+        if (bc_dev[i] >= 0 && IS_FLOPPY(bc_dev[i])) {
             if (bc_stream[i])
                 bc_nstream--;
             bc_dev[i] = -1;
@@ -2566,7 +2636,7 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     struct blkdev *b = &blk[dev];
 
     if (b->drv < 0)
-        return fd_read((unsigned)lba) ? -1 : 0;     /* immer einer   */
+        return fd_read(b->unit, (unsigned)lba) ? -1 : 0;   /* immer einer */
     req.cmd = DRV_READ;
     req.unit = b->unit;
     req.count = (unsigned char)n;
@@ -2650,7 +2720,7 @@ int blk_write(int dev, unsigned long lba)
     if (b->bsize != 512)
         return -2;                      /* CD-ROM                     */
     if (b->drv < 0) {
-        rc = fd_write((unsigned)lba);
+        rc = fd_write(b->unit, (unsigned)lba);
         if (rc) {
             if (bc_n && (i = bc_find(dev, lba)) >= 0)
                 bc_dev[i] = -1, bc_nstream -= bc_stream[i];
@@ -2683,8 +2753,9 @@ int blk_write(int dev, unsigned long lba)
 void blk_flush(void)
 {
     int dev, d;
+    fd_sync();                          /* Spurpuffer der Diskette       */
     for (dev = 1; dev < nblk; dev++) {
-        if (!blk_dirty[dev])
+        if (!blk_dirty[dev] || IS_FLOPPY(dev))
             continue;
         d = blk[dev].drv;
         for (; dev < nblk; dev++)       /* je Treiber einmal          */
@@ -3246,11 +3317,27 @@ static void config_sys(void)
 }
 
 /* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move) */
+static int fd_ok;
+
+static const char *fd_name(unsigned blocks)
+{
+    return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
+           blocks == 5760 ? "2,88 MB" : "1,44 MB";
+}
+
 static void list_drives(void)
 {
     static char msg[80];
+    static const unsigned tsize[6] = { 0, 720, 2400, 1440, 2880, 5760 };
     int d, n;
     struct blkdev *b;
+
+    for (d = (boot_drive & 0x80) ? 0 : 1; d < 2; d++)
+        if (fd_ok && fd_type(d)) {          /* Diskettenlaufwerke         */
+            vio_kputs(boot_session, d ? "\xFE Laufwerk B: Diskette " : "\xFE Laufwerk A: Diskette ");
+            vio_kputs(boot_session, fd_name(tsize[fd_type(d)]));
+            vio_kputs(boot_session, "\n");
+        }
 
     for (d = 2; d < NDRIVE; d++) {
         if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
@@ -3339,25 +3426,43 @@ void kmain(void)
     env_sel = kseg_alloc((NTASK + 1) * FAPI_ENVSIZE);  /* < 64 KB          */
     if (!env_sel)
         panic("Kein Speicher f\x81r die Umgebung.");
+    /* Disketten: Typen aus dem CMOS (10h); A: ist Geraet 0, B: Geraet 1 */
+    k = cmos(0x10);
+    if (!(boot_drive & 0x80) && !(k & 0xF0))
+        k |= 0x40;                          /* von A: gestartet: 1,44 MB */
     blk[BLK_FLOPPY].drv = -1;
     blk[BLK_FLOPPY].unit = 0;
     blk[BLK_FLOPPY].blocks = 2880;
     blk[BLK_FLOPPY].bsize = 512;
     nblk = 1;
+    fd_ok = fd_init((unsigned)k) == 0;
+    if (fd_ok && fd_type(1)) {
+        blk[1].drv = -1;
+        blk[1].unit = 1;
+        blk[1].blocks = fd_size(1);
+        blk[1].bsize = 512;
+        nblk = 2;
+        floppy_lazy |= 2;                   /* B: beim ersten Zugriff    */
+        vol[1].present = 1;
+        vol[1].blk = 1;
+        vol[1].drv = &fat_driver;
+    }
     if (!(boot_drive & 0x80)) {
         /* Start von Diskette: A: ist Pflicht */
-        if (fd_init())
+        if (!fd_ok)
             panic("Diskettencontroller antwortet nicht.");
         vol[0].present = 1;
+        blk_media(BLK_FLOPPY);
         if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
             panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
-        vio_kputs(s0, "\xFE Laufwerk A: Diskette, ");
-        vio_kputs(s0, vol[0].fat16 ? "FAT16\n" : "FAT12\n");
+        vio_kputs(s0, "\xFE Laufwerk A: Diskette ");
+        vio_kputs(s0, fd_name(fd_size(0)));
+        vio_kputs(s0, vol[0].fat16 ? ", FAT16\n" : ", FAT12\n");
         config_sys();
     } else {
         /* Start von Festplatte: A: erst beim ersten Zugriff einhaengen */
-        if (fd_init() == 0) {
-            floppy_lazy = 1;
+        if (fd_ok && fd_type(0)) {
+            floppy_lazy |= 1;
             vol[0].present = 1;             /* auch unformatiert (FORMAT) */
             vol[0].blk = BLK_FLOPPY;
             vol[0].drv = &fat_driver;

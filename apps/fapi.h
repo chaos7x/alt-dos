@@ -52,6 +52,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosGetDateTime(p)        F2(FAPI_GETDATETIME, (p), 0)
 #define DosFreeSpace(d, p)  F2(FAPI_FREESPACE, (d), (p))   /* freie Bytes */
 #define DosOpenDrive(d, mode)  F2(FAPI_OPENDRIVE, (d), (mode))  /* DRV_OPEN_* */
+#define DosFmtTrack(h, p)   F2(FAPI_FMTTRACK, (h), (p))     /* struct fapi_fmttrack */
 #define DosSeek(h, posp)    F2(FAPI_SEEK, (h), (posp))      /* Zeiger auf unsigned long */
 #define DosQFSInfo(d, fi)   F2(FAPI_QFSINFO, (d), (fi))     /* struct fapi_fsinfo */
 #define DosSetFInfo(p, fi)  F2(FAPI_SETFINFO, (p), (fi))    /* struct fapi_finfo */

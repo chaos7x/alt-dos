@@ -97,6 +97,16 @@ struct fapi_diskinfo {
     unsigned short heads, spt;      /* Geometrie des BIOS (INT 13h/08h),
                                        0 = unbekannt (Platte ohne BIOS)  */
 };
+/* Diskettenspur formatieren (FORMAT, DISKCOPY): BX = Handle aus
+   DosOpenDrive mit DRV_OPEN_LOCK auf einem Diskettenlaufwerk, CX = struct
+   fapi_fmttrack. blocks waehlt das Format (720 = 360 KB, 1440 = 720 KB,
+   2400 = 1,2 MB, 2880 = 1,44 MB, 5760 = 2,88 MB), es muss zum Laufwerk
+   passen; danach gilt es fuer das Laufwerk (DosQFSInfo meldet es).
+   -> 0, FAPI_ERR_WP, FAPI_ERROR (Format passt nicht / Fehler) */
+#define FAPI_FMTTRACK       0x46
+struct fapi_fmttrack {
+    unsigned short cyl, head, blocks;
+};
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
                                        (ERRORLEVEL; 255 = abgebrochen) */

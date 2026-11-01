@@ -11,14 +11,19 @@ und PC-DOS.
 - Standard-FAT12-Diskette: Der Kernel ist die Datei `ATDOS.SYS` (versteckt,
   System), die wie einst `IO.SYS` als erste Datei zusammenhängend liegt
 - Diskettentreiber im Kernel (Controller 765/82077, DMA-Kanal 2, IRQ 6) –
-  im Protected Mode gibt es kein BIOS mehr
+  im Protected Mode gibt es kein BIOS mehr. Laufwerke A: und B: mit Typ
+  aus dem CMOS, Formate 360 KB, 720 KB, 1,2 MB, 1,44 MB und 2,88 MB (auch
+  360 KB im 1,2-MB-Laufwerk mit Doppelschritt); das Format erkennt der
+  Treiber beim Einlegen über die Datenrate, den Wechsel über die
+  Wechselleitung. Spurpuffer: gelesen wird spurweise, geschrieben am Ende
+  jedes Aufrufs in zusammenhängenden Stücken. Spuren formatieren (FAPI 70)
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
 - Schreiben auf FAT12/16 (Diskette, IDE, SCSI): anlegen, schreiben,
   löschen, Verzeichnisse anlegen/entfernen, umbenennen und verschieben.
   Daten gehen sofort auf den Datenträger, die FAT am Ende jeder Operation in
-  beide Kopien; Zeitstempel aus der CMOS-Uhr. Disketten werden vor jeder
-  Operation neu eingelesen (Wechsel), Schreibschutz wird erkannt
+  beide Kopien; Zeitstempel aus der CMOS-Uhr. Gewechselte Disketten
+  werden neu eingelesen, Schreibschutz wird erkannt
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
@@ -36,7 +41,7 @@ und PC-DOS.
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
   bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt
-- Laufwerke `A:` (Diskette), `C:`, `D:` … für jede FAT-Partition
+- Laufwerke `A:`, `B:` (Disketten), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
 - Programmlader für das eigene FX-Format. Beim Start läuft der
@@ -70,13 +75,19 @@ und PC-DOS.
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
   ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
   MS-DOS, `/B /C /N /nnnn`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
-- `FORMAT X: [/V[:Name]] [/Q] [/S] [/FS:FAT]` wie MS-DOS, gebaut wie OS/2:
+- `FORMAT X: [/V[:Name]] [/Q] [/S] [/F:Größe] [/FS:FAT]` wie MS-DOS, gebaut wie OS/2:
   FORMAT startet `U<Dateisystem>.EXE /FORMAT` aus `\DOS\SYSTEM` (für FAT
-  `UFAT.EXE`). Disketten (1,44 MB, 1,2 MB, 720 KB, 360 KB) und Partitionen
-  (FAT12 bei Typ 01h, sonst FAT16 mit den Clustergrößen von MS-DOS 6); ohne
-  `/Q` wird jeder Sektor gelesen und Fehlerhaftes gesperrt (keine
-  Low-Level-Formatierung). Das Startlaufwerk wird nicht formatiert.
+  `UFAT.EXE`). Disketten (2,88 MB, 1,44 MB, 1,2 MB, 720 KB, 360 KB; `/F:`
+  wie MS-DOS: 360, 720, 1.2, 1.44, 2.88) und Partitionen
+  (FAT12 bei Typ 01h, sonst FAT16 mit den Clustergrößen von MS-DOS 6);
+  Disketten werden ohne `/Q` Spur für Spur formatiert, danach wird jeder
+  Sektor gelesen und Fehlerhaftes gesperrt. Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
+- `DISKCOPY [A: [B:]] [/V]` wie MS-DOS: alle Diskettenformate, mit einem
+  Laufwerk über Diskettenwechsel, in mehreren Durchgängen, wenn der
+  Speicher nicht reicht; unformatierte oder anders formatierte Ziel-
+  disketten werden beim Kopieren formatiert, die Kopie bekommt eine neue
+  Seriennummer
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
   Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
   `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die
@@ -233,6 +244,7 @@ selbst nur 8.3 kennt.
 | 64 | VioGetPhysBuf   | → Selektor auf das Bild (64 KB, Punkt x,y bei y·320+x); beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt den Selektor in den Puffer um – das Programm zeichnet weiter |
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
 | 67 | DosDiskInfo     | BX = Platte (0 = erste Festplatte), CX = Puffer: Sektoren, Sektorgröße, Treiber, Einheit, Zahl der Laufwerke darauf |
+| 70 | DosFmtTrack     | BX = Handle aus DosOpenDrive (Diskette, mit Sperre), CX = struct fapi_fmttrack (Zylinder, Kopf, Format als Sektorzahl 720/1440/2400/2880/5760) → 0, FAPI_ERR_WP, FAPI_ERROR |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 | 69 | VioSetPage      | Mode X: BX = sichtbare Seite 0/1; im Vordergrund wartet der Aufruf auf den Strahlrücklauf, danach kann das Programm in die andere Seite zeichnen |

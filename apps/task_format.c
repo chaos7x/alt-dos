@@ -1,7 +1,10 @@
 /*
  * FORMAT.EXE - Datentraeger formatieren (wie MS-DOS, Aufbau wie OS/2):
  *
- *   FORMAT Laufwerk: [/V[:Bezeichnung]] [/Q] [/S] [/FS:Dateisystem]
+ *   FORMAT Laufwerk: [/V[:Bezeichnung]] [/Q] [/S] [/F:Groesse] [/FS:Dateisystem]
+ *
+ * /F:Groesse fuer Disketten wie MS-DOS: 360, 720, 1.2, 1200, 1.44, 1440,
+ * 2.88, 2880 (KB bzw. MB).
  *
  * FORMAT selbst kennt kein Dateisystem: Es startet U<Dateisystem>.EXE
  * (Vorgabe FAT -> UFAT.EXE) aus \DOS\SYSTEM mit /FORMAT - wie CHKDSK.
@@ -13,6 +16,24 @@
 #include "util.h"
 
 static char args[FAPI_ARGLEN], cmd[FAPI_ARGLEN], fs[12] = "FAT", lbl[16];
+static unsigned fkb;                    /* /F: in KB                     */
+
+/* /F:-Angabe wie MS-DOS -> KB, 0 = ungueltig */
+static unsigned size_kb(const char *s)
+{
+    static const char *nm[] = { "360", "720", "1.2", "1200", "1.44", "1440", "2.88", "2880",
+                                "1,2", "1,44", "2,88" };
+    static const unsigned kb[] = { 360, 720, 1200, 1200, 1440, 1440, 2880, 2880,
+                                   1200, 1440, 2880 };
+    unsigned i, k;
+    for (i = 0; i < sizeof(kb) / sizeof(kb[0]); i++) {
+        for (k = 0; nm[i][k] && s[k] == nm[i][k]; k++)
+            ;
+        if (!nm[i][k] && (s[k] == 0 || s[k] == ' ' || up(s[k]) == 'K' || up(s[k]) == 'M'))
+            return kb[i];
+    }
+    return 0;
+}
 static char path[FAPI_PATHLEN], cs[FAPI_PATHLEN];
 static struct fapi_fsinfo fi;
 
@@ -54,15 +75,24 @@ void main(void)
             if (a[2] == ':')
                 for (k = 0; a[3 + k] && a[3 + k] != ' ' && k < 11; k++)
                     lbl[k] = up(a[3 + k]);
+        } else if (a[0] == '/' && up(a[1]) == 'F' && a[2] == ':') {
+            fkb = size_kb(a + 3);
+            if (!fkb) {
+                puts("Ung\x81ltige Gr\x94\xE1" "e - ");
+                puts(a);
+                puts("\r\n");
+                DosExit(4);
+            }
         } else if (a[0] == '/' && up(a[1]) == 'F' && up(a[2]) == 'S' && a[3] == ':') {
             for (k = 0; a[4 + k] && a[4 + k] != ' ' && k < sizeof(fs) - 1; k++)
                 fs[k] = up(a[4 + k]);
             fs[k] = 0;
         } else if (a[0] == '/' && a[1] == '?') {
             puts("Formatiert einen Datentr\x84ger.\r\n\r\n"
-                 "FORMAT Laufwerk: [/V[:Bezeichnung]] [/Q] [/S] [/FS:Dateisystem]\r\n\r\n"
+                 "FORMAT Laufwerk: [/V[:Bezeichnung]] [/Q] [/S] [/F:Gr\x94\xE1" "e] [/FS:Dateisystem]\r\n\r\n"
                  "  /V  Datentr\x84gerbezeichnung      /Q  Schnellformatierung\r\n"
-                 "  /S  Systemdateien \x81" "bertragen  /FS Dateisystem (Vorgabe FAT)\r\n");
+                 "  /S  Systemdateien \x81" "bertragen  /FS Dateisystem (Vorgabe FAT)\r\n"
+                 "  /F  Diskettenformat: 360, 720, 1.2, 1.44, 2.88\r\n");
             return;
         } else {
             puts("Ung\x81ltiger Parameter - ");
@@ -122,6 +152,17 @@ void main(void)
     scat(cmd, " /FORMAT", sizeof(cmd));
     if (quick)
         scat(cmd, " /Q", sizeof(cmd));
+    if (fkb) {
+        static char nb[8];
+        unsigned v = fkb, i = 7;
+        nb[i] = 0;
+        do {
+            nb[--i] = (char)('0' + v % 10);
+            v /= 10;
+        } while (v);
+        scat(cmd, " /F:", sizeof(cmd));
+        scat(cmd, nb + i, sizeof(cmd));
+    }
     if (vlab && lbl[0]) {
         scat(cmd, " /V:", sizeof(cmd));
         scat(cmd, lbl, sizeof(cmd));
