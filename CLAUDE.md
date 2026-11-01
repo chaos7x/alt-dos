@@ -307,6 +307,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   sonst „MFM/RLL-Platte“ – im BIOS (Typ 47) und in 86Box geht auch 63.
   Lehre: `line[]` im Treiber war 80 Byte, eine lange Meldung überschrieb
   die Einheitentabelle (jetzt 128).
+- BusLogic ISA (laut Nutzer alle ISA-Modelle, die das aktuelle 86Box-
+  master zeigt) wird von `AHA154X.SYS` erkannt.
 - BusLogic BT-545C (86Box) läuft mit `AHA154X.SYS` im Adaptec-Kompatibilitätsmodus:
   Platte (2 GB, D:) und CD erkannt und eingehängt; Schreiben bestätigt
   (COPY nach D:, Datei von dort ausgeführt). Meldung
