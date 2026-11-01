@@ -96,6 +96,10 @@ und PC-DOS.
 - `CHKDSK /R` (wie Windows NT): Oberflächentest, defekte freie Cluster
   werden gesperrt, belegte verlegt (Lesbares gerettet); `SCANDISK X:` ruft
   `CHKDSK X: /F /R`
+- `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
+  (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
+  IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,
+  Pfeilen oder Maus; `/S` als Bericht auf die Standardausgabe
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
@@ -255,6 +259,7 @@ selbst nur 8.3 kennt.
 | 65 | VioSetPal       | BX = erster Eintrag, CX = Anzahl, DX = Puffer (je R, G, B, 0–63) |
 | 67 | DosDiskInfo     | BX = Platte (0 = erste Festplatte), CX = Puffer: Sektoren, Sektorgröße, Treiber, Einheit, Zahl der Laufwerke darauf |
 | 70 | DosFmtTrack     | BX = Handle aus DosOpenDrive (Diskette, mit Sperre), CX = struct fapi_fmttrack (Zylinder, Kopf, Format als Sektorzahl 720/1440/2400/2880/5760) → 0, FAPI_ERR_WP, FAPI_ERROR |
+| 73 | DosSysInfo      | BX = struct fapi_sysinfo: Prozessor (286/386+), Koprozessor, VGA, BIOS-Datum/-Modell/-Name, Video-BIOS-Name, COM/LPT-Ports, Speicher, Kernelgröße, freigegebene IRQs, Treiber, Diskettentypen |
 | 71 | DosSubst        | BX = Laufwerk, CX = Pfad oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE |
 | 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

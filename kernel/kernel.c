@@ -52,6 +52,9 @@ extern unsigned sel_limit(unsigned sel);
 
 extern unsigned short isr_table[48];
 extern unsigned short mem_conv_kb, mem_ext_kb;   /* vom BIOS, im Real Mode */
+extern unsigned char cpu_386, bios_date[9], bios_model, vga_ok;
+extern unsigned short fpu_ok, bios_equip, bios_ports[7];
+static void sys_info(struct fapi_sysinfo __far *si);
 extern unsigned char bios_hdcount, bios_fdpt[32];    /* INT 41h/46h vom Start (IDE.SYS) */
 extern unsigned char  a20_ok;                     /* im Real Mode geprueft  */
 extern unsigned short fapi_dx;                    /* viertes FAPI-Argument  */
@@ -1943,6 +1946,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return t ? ifs_err(t) : 0;
     }
 
+    case FAPI_SYSINFO:
+        if (!user_ok(usel, a1, sizeof(struct fapi_sysinfo), 1))
+            return FAPI_ERROR;
+        sys_info(MK_FP(usel, a1));
+        return 0;
+
     case FAPI_SUBST: {                          /* SUBST X: Pfad / X: /D */
         static char real[IFS_PATHLEN];
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || vol_present(a1))
@@ -2601,6 +2610,79 @@ static int boot_session;
 static const char *drv_name(int d)
 {
     return drv[d].name;
+}
+
+/* Text im ROM fuer MSD: der laengste mit "BIOS", "(C)" oder "Copyright",
+   sonst der laengste ueberwiegend aus Buchstaben/Ziffern (ohne '%') */
+static void rom_str(unsigned long lin, unsigned len, char __far *out, unsigned max)
+{
+    unsigned char __far *p = MK_FP(SCRATCH, 0);
+    unsigned i, s = 0, n = 0, al = 0, best = 0, bs = 0, c, kw = 0, pc = 0, bkw = 0, sp = 0;
+    scratch_map(lin, len - 1);
+    for (i = 0; i <= len - 1; i++) {
+        c = i < len - 1 ? p[i] : 0;
+        if (c >= 0x20 && c < 0x7F) {
+            if (!n)
+                s = i, al = 0, kw = 0, pc = 0, sp = 0;
+            n++;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                al++;
+            if (c == '%')
+                pc = 1;
+            if (c == ' ')
+                sp = 1, al++;
+            if (n >= 4 && p[i - 3] == 'B' && p[i - 2] == 'I' && p[i - 1] == 'O' && c == 'S' &&
+                kw < 1)
+                kw = 1;                     /* "BIOS" zaehlt weniger als  */
+            if (n >= 4 && ((p[i - 2] == '(' && (p[i - 1] | 0x20) == 'c' && c == ')') ||
+                           (p[i - 3] == 'r' && p[i - 2] == 'i' && p[i - 1] == 'g' && c == 'h')))
+                kw = 2;                     /* "(C)" / "Copyright"        */
+            continue;
+        }
+        /* Zeichensalat aussortieren: mindestens 8 Zeichen, ein Leerzeichen,
+           zu drei Vierteln Buchstaben/Ziffern/Leerzeichen */
+        if (n >= 8 && sp && al * 4 >= n * 3 && !pc && (kw > bkw || (kw == bkw && n > best)))
+            best = n, bs = s, bkw = kw;
+        n = 0;
+    }
+    if (best >= max)
+        best = max - 1;
+    for (i = 0; i < best; i++)
+        out[i] = p[bs + i];
+    out[i] = 0;
+}
+
+static void sys_info(struct fapi_sysinfo __far *si)
+{
+    unsigned i, k;
+    si->cpu = cpu_386 ? 3 : 2;
+    si->fpu = (unsigned char)fpu_ok;
+    si->vga = vga_ok;
+    si->model = bios_model;
+    for (i = 0; i < 8; i++)
+        si->bios_date[i] = bios_date[i];
+    si->bios_date[8] = 0;
+    si->fdtype[0] = (unsigned char)fd_type(0);
+    si->fdtype[1] = (unsigned char)fd_type(1);
+    si->rsv = 0;
+    si->equip = bios_equip;
+    for (i = 0; i < 4; i++)
+        si->com[i] = bios_ports[i];
+    for (i = 0; i < 3; i++)
+        si->lpt[i] = bios_ports[4 + i];
+    si->conv_kb = mem_conv_kb;
+    si->ext_kb = mem_ext_kb;
+    si->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
+    si->irq_used = ~pic_mask & ~4u;         /* ohne Kaskade               */
+    si->uptime_s = uptime_s;
+    rom_str(0xF0000UL, 0xFFFF, si->bios_name, 64);
+    rom_str(0xC0000UL, 0x0800, si->vbios_name, 64);
+    for (i = 0; i < 6; i++) {
+        si->drivers[i][0] = 0;
+        if (i < NDRV && drv[i].used)
+            for (k = 0; k < 12 && drv[i].name[k]; k++)
+                si->drivers[i][k] = drv[i].name[k], si->drivers[i][k + 1] = 0;
+    }
 }
 
 static void drv_request(int d)

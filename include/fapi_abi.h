@@ -107,6 +107,26 @@ struct fapi_diskinfo {
 /* SUBST: BX = Laufwerk (0 = A:), CX = Pfad (bestehendes Verzeichnis) oder
    0 = aufheben -> 0, FAPI_ERROR, FAPI_ERR_INUSE (aktuelles Laufwerk eines
    Programms). DosQSubst: BX = Laufwerk, CX = Puffer (130 Byte) -> "C:\DOS" */
+/* Systemangaben fuer MSD: BX = struct fapi_sysinfo */
+#define FAPI_SYSINFO        0x49
+struct fapi_sysinfo {
+    unsigned char  cpu;             /* 2 = 80286, 3 = 80386 oder neuer  */
+    unsigned char  fpu;             /* Koprozessor vorhanden            */
+    unsigned char  vga;             /* VGA erkannt                      */
+    unsigned char  model;           /* BIOS-Modellbyte F000:FFFE        */
+    char           bios_date[9];    /* F000:FFF5, "MM/TT/JJ"            */
+    unsigned char  fdtype[2];       /* Diskettenlaufwerke (CMOS-Typ)    */
+    unsigned char  rsv;
+    unsigned short equip;           /* INT 11h                          */
+    unsigned short com[4], lpt[3];  /* Portadressen, 0 = keiner         */
+    unsigned short conv_kb, ext_kb; /* Speicher laut BIOS               */
+    unsigned short kernel_kb;       /* Kernel (Code + Daten)            */
+    unsigned short irq_used;        /* Bit n: IRQ n freigegeben         */
+    unsigned short uptime_s;
+    char           bios_name[64];   /* laengster Text im System-BIOS    */
+    char           vbios_name[64];  /* ... im Video-BIOS (C000:0000)    */
+    char           drivers[6][13];  /* geladene Treiber (DEVICE=)       */
+};
 #define FAPI_SUBST          0x47
 #define FAPI_QSUBST         0x48
 struct fapi_fmttrack {

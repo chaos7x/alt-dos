@@ -476,8 +476,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warten; bei Änderungen `DosShutdownHold` (FAPI 37h: Sitzung nach vorn,
   `end_programs` wartet ohne Frist, solange ein Task `hold` hat; zweites
   Strg+Alt+Entf während `going_down` startet sofort neu). Danach nächster
-  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später: MSD,
+  Schritt mit dem Nutzer absprechen. FORMAT, SYS, FDISK, DISKCOPY, SUBST, UNDELETE und SCANDISK sind da. Später:
   DEFRAG, PRINT/MODE.
+  MSD (in QEMU geprüft): FAPI 49h DosSysInfo – start.asm fragt im Real
+  Mode 286/386 (FLAGS Bit 12–15), Koprozessor (FNINIT/FNSTSW), INT 11h,
+  BIOS-Datenbereich (COM/LPT), BIOS-Datum/Modellbyte ab; der Kernel sucht
+  in F000 und C000:0000–07FF den Namen (`rom_str`: „(C)“/„Copyright“ vor
+  „BIOS“ vor dem längsten Text, mit Leerzeichen, ohne '%'). 386 und 486
+  unterscheiden ginge nur mit 32-Bit-Befehlen – Anzeige „80386 oder neuer“.
+  `MSD /S` Bericht, sonst Vollbild mit Knöpfen.
   UNDELETE (in QEMU geprüft): Verteiler `task_undel.c` -> `UFAT X:
   /UNDELETE \Pfad\Muster [/LIST] [/ALL]` (`apps/ufat_undel.c`), ohne
   Löschschutz wie MS-DOS 5: Startcluster frei -> Startcluster + nächste

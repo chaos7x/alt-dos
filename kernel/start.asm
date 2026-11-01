@@ -172,6 +172,51 @@ _start:
         pop     es
         pop     bp
 
+        ; Fuer MSD (DosSysInfo): Prozessor, Koprozessor, Ausstattungswort,
+        ; Anschluesse aus dem BIOS-Datenbereich, BIOS-Datum und Modellbyte.
+        ; 286 oder 386: im Real Mode haelt der 286 FLAGS Bit 12-15 auf 0
+        ; (nur 286-Befehle; 386/486 unterscheiden ginge nur mit 32 Bit).
+        pushf
+        pushf
+        pop     ax
+        or      ax, 0x7000
+        push    ax
+        popf
+        pushf
+        pop     ax
+        popf
+        test    ax, 0x7000
+        jz      .c286
+        mov     byte [_cpu_386], 1
+.c286:
+        fninit                          ; 287/387 da? Statuswort 0
+        mov     word [_fpu_ok], 0x5A5A
+        fnstsw  [_fpu_ok]
+        cmp     byte [_fpu_ok], 0
+        mov     byte [_fpu_ok], 0
+        mov     byte [_fpu_ok + 1], 0
+        jne     .nofpu
+        mov     byte [_fpu_ok], 1
+.nofpu:
+        int     0x11
+        mov     [_bios_equip], ax
+        push    ds
+        mov     ax, 0x0040              ; COM1-4, LPT1-3 (0040:0000-000D)
+        mov     ds, ax
+        xor     si, si
+        mov     di, _bios_ports
+        mov     cx, 7
+        rep     movsw
+        mov     ax, 0xF000              ; Datum F000:FFF5, Modell FFFE
+        mov     ds, ax
+        mov     si, 0xFFF5
+        mov     di, _bios_date
+        mov     cx, 8
+        rep     movsb
+        mov     al, [0xFFFE]
+        mov     [es:_bios_model], al
+        pop     ds
+
         ; Start von Festplatte: CONFIG.SYS und Treiber per BIOS vorladen,
         ; solange es noch geht (BIOS-Plattenroutinen brauchen Interrupts)
         test    byte [_boot_drive], 0x80
@@ -857,6 +902,13 @@ _bios_fdpt:   resb 32
 _bios_geo_h:  resb 4                    ; Koepfe - 1 (INT 13h/08h)
 _bios_geo_s:  resb 4                    ; Sektoren je Spur, 0 = keine
 _bios_geo_c:  resw 4                    ; Zylinder
+global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model
+_cpu_386:     resb 1
+_fpu_ok:      resw 1
+_bios_equip:  resw 1
+_bios_ports:  resw 7                    ; COM1-4, LPT1-3
+_bios_date:   resb 9
+_bios_model:  resb 1
 global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
 _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)
