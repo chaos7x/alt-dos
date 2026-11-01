@@ -286,6 +286,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
     ./build.sh          # NASM + Open Watcom -> build/dos5.img
 
+Werkzeuge in einer neuen Umgebung einrichten (wie `.github/workflows/build.yml`):
+
+    sudo apt-get install -y nasm mtools qemu-system-x86 dosfstools
+    curl -sSL -o ow.tar.xz https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
+    mkdir -p ~/watcom && tar -xJf ow.tar.xz -C ~/watcom
+    export WATCOM=~/watcom INCLUDE=~/watcom/h PATH=~/watcom/binl64:$PATH
+
+QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
+`sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
+
 Referenzmaschine in 86Box (Konfiguration: `86box/scat-286.cfg`): GW-286CT
 GEAR, SCAT-Chipsatz (C&T 82C235), SCAT-BIOS 1.5.0, 286 mit 25 MHz (genauer
 Interpreter, kein Dynarec), 287XL, 16 MB RAM, vier Everex EV-159 als EMS
