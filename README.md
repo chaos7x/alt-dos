@@ -62,7 +62,7 @@ und PC-DOS.
   (`.EXE`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
   gleichzeitig), `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
-  neu starten; auch `POWEROFF`: schließt alle Dateien, leert die
+  neu starten; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad
 - Werkzeuge wie MS-DOS 5/6 (Schalter und Meldungen wie dort): `ATTRIB`

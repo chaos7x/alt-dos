@@ -188,7 +188,7 @@ static unsigned ncand;
 static unsigned char cand_dir[NCAND];
 static const char *const builtin[] = {
     "CD", "CHDIR", "CLS", "COPY", "DATE", "DEL", "DIR", "DOSKEY", "ECHO", "ERASE",
-    "EXIT", "HILFE", "MD", "MKDIR", "PATH", "POWEROFF", "PROMPT", "RD", "REN",
+    "EXIT", "HILFE", "MD", "MKDIR", "PATH", "POWEROFF", "PROMPT", "RD", "REBOOT", "REN",
     "RENAME", "RMDIR", "SET", "SHUTDOWN", "START", "TIME", "TYPE", "VER", "VOL", 0
 };
 
@@ -1031,6 +1031,7 @@ static void cmd_help(void)
          "  MD / RD Verz.   Verzeichnis anlegen / entfernen\n"
          "  REN Datei Name  Datei oder Verzeichnis umbenennen\n"
          "  SHUTDOWN [/H|/R] herunterfahren (/H anhalten, /R neu starten), auch POWEROFF\n"
+         "  REBOOT          neu starten (wie SHUTDOWN /R)\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER / VOL       Version / Datentr\x84gerbezeichnung anzeigen\n"
          "  DATE / TIME     Datum / Uhrzeit anzeigen und stellen\n"
@@ -1717,10 +1718,11 @@ static int execute(char *l)
         cmd_md(arg, 1);
     else if (same(cmd, "REN") || same(cmd, "RENAME"))
         cmd_ren(arg);
-    else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF")) {
-        if (confirm(same(arg, "/R") ? "Alle Programme beenden und neu starten (J/N)? "
-                                    : "Alle Programme beenden und herunterfahren (J/N)? "))
-            DosShutdown(same(arg, "/R"));
+    else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF") || same(cmd, "REBOOT")) {
+        int r = same(cmd, "REBOOT") || same(arg, "/R");
+        if (confirm(r ? "Alle Programme beenden und neu starten (J/N)? "
+                      : "Alle Programme beenden und herunterfahren (J/N)? "))
+            DosShutdown(r);
     }
     else if (same(cmd, "CD") || same(cmd, "CHDIR"))
         cmd_cd(arg);
