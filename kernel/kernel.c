@@ -1121,6 +1121,7 @@ static void sched(int keep)
         }
         if (!any)
             panic("Alle Programme beendet - System angehalten.");
+        vio_idle();                     /* Grafikzeiger im Ruecklauf     */
         f = irq_off();                  /* ohne Luecke zwischen Pruefen  */
         if (!run_flag)                  /* und HLT                        */
             idle_wait();                /* alle warten: HLT bis zum Takt  */

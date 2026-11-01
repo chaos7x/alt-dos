@@ -1180,8 +1180,32 @@ static unsigned gfx_pagestart(void)
     return hw_gfx == MODEX && ses[fg].gfx_page ? PAGEX : 0;
 }
 
-/* in vio_flush (Grafiksitzung vorn): Zeiger nachfuehren */
-static void gptr_update(void)
+/* Zeiger nachfuehren. Gezeichnet wird moeglichst im Strahlruecklauf
+   (3DAh Bit 3), sonst kreuzt der Strahl auf dem 286 den halb gezeichneten
+   Zeiger und er flackert: idle = 1 (alle Tasks warten) wartet auf den
+   Beginn des Ruecklaufs (hoechstens 2 Takte); sonst nur, wenn gerade
+   Ruecklauf ist oder die Aenderung schon 30 ms wartet. */
+static unsigned long gp_pend;           /* Aenderung wartet seit        */
+static unsigned char gp_pending;
+
+static int gptr_vsync(int idle)
+{
+    unsigned long t = get_ticks();
+    if (!gp_pending) {
+        gp_pending = 1;
+        gp_pend = t;
+    }
+    if (idle) {
+        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;
+        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+            ;
+        return 1;
+    }
+    return (inb(0x3DA) & 0x08) || t - gp_pend >= 3;
+}
+
+static void gptr_update_v(int idle)
 {
     int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && mou_nbtn &&
                ses[fg].mou_owner >= 0 && ses[fg].mou_show;
@@ -1194,14 +1218,28 @@ static void gptr_update(void)
     }
     x = hw_gfx == 0x13 || hw_gfx == MODEX ? mx >> 1 : mx;
     y = hw_gfx == 0x13 || hw_gfx == MODEX ? my >> 1 : my;
-    if (!gp_drawn || x != g->x || y != g->y || g->mode != hw_gfx ||
-        g->page != gfx_pagestart() || get_ticks() - gp_check >= 5) {
+    if ((!gp_drawn || x != g->x || y != g->y || g->mode != hw_gfx ||
+         g->page != gfx_pagestart() || get_ticks() - gp_check >= 5) &&
+        gptr_vsync(idle)) {
+        gp_pending = 0;
         /* auch ohne Bewegung alle 50 ms: hat das Programm ueber den
            Zeiger gemalt, wird das neuer Hintergrund und der Zeiger
            kommt zurueck (geschrieben wird nur, was fehlt) */
         gp_check = get_ticks();
         gptr_to(x, y, gfx_pagestart());
     }
+}
+
+static void gptr_update(void)
+{
+    gptr_update_v(0);
+}
+
+/* Leerlauf des Schedulers (vor HLT): Zeiger im Strahlruecklauf zeichnen */
+void vio_idle(void)
+{
+    if (fg >= 0 && ses[fg].gfx)
+        gptr_update_v(1);
 }
 
 /* VioSetPage (Mode X): Seite p (0/1) zeigen. Der neue Anfang gilt ab dem

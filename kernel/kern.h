@@ -168,6 +168,7 @@ unsigned long vio_gfx_base(int s);
 unsigned vio_gfx_limit(int s);
 int  vio_setplane(int s, unsigned p);
 int  vio_setpage(int s, unsigned p);
+void vio_idle(void);
 int  vio_gfx_reg(int s, int t, unsigned sel);
 int  vio_is_gfx(int s);
 void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);

@@ -196,7 +196,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Seitenwechsel erst auf die neue Seite malen, umschalten, dann die alte
   aufräumen. Alle 50 ms ohne Bewegung derselbe Durchgang an derselben
   Stelle: übermalte Zeigerpunkte werden neuer Hintergrund, der Zeiger
-  kommt zurück. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
+  kommt zurück. Danach flackerte es auf dem SCAT weiter unten im Bild
+  (Strahl kreuzt den halb gezeichneten Zeiger): gezeichnet wird jetzt im
+  Strahlrücklauf (3DAh Bit 3) – im Leerlauf des Schedulers (`vio_idle`
+  vor HLT) wartet der Kernel auf dessen Beginn (höchstens 2 Takte), aus
+  vio_flush nur, wenn gerade Rücklauf ist oder die Änderung 30 ms wartet. Demo: GRAFIK malt mit links, rechts wechselt die Farbe.
   Stufe 3, Mode X (`VIO_MODEX` = 58h, 320×240×256), in QEMU geprüft:
   Register aus 13h ohne Chain-4, CRTC im Bytebetrieb, 480 Rasterzeilen
   (`vga_modex`); Speicher wie 12h (vier Ebenen zu 38400 = zwei Seiten zu
