@@ -176,7 +176,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   0–15 direkt durchgeschaltet (Farbe n = DAC n), daher VioSetPal in beiden
   Modi gleich. Sichern/Zurückladen Ebene für Ebene (`gfx_copy`). Demo
   `GRAFIK 12` (16 Balken, wachsender Balken wechselt je Runde die Farbe –
-  im Hintergrund weitergezeichnet geprüft). Offen: Maus in Grafik,
+  im Hintergrund weitergezeichnet geprüft). In 86Box vom Nutzer bestätigt
+  (Farbbalken und Sitzungswechsel). Offen: Maus in Grafik,
   evtl. Mode X (320×240×256 unverkettet, Ebenen wie 12h, Seitenwechsel).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
