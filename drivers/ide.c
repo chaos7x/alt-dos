@@ -166,6 +166,8 @@ static int wait_irq(struct unit *u, unsigned char mask, unsigned char want,
                 ++c->miss >= 3) {
                 c->on = 0;              /* kommt nicht: wieder abfragen */
                 unset_irq(irqs[u->ch]);
+                dputs(u->ch ? "IDE.SYS: IRQ 15 bleibt aus, Abfragebetrieb\n"
+                            : "IDE.SYS: IRQ 14 bleibt aus, Abfragebetrieb\n");
             }
         }
         c->done = 0;
@@ -561,6 +563,42 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
     return wait_irq(u, 0, 0, 300);
 }
 
+/* gescheiterten Versuch ins Startprotokoll (Sitzung 1) melden: Schritt
+   (1 Befehl, 2 Daten, 3 Ende), Status- und Fehlerregister. Kommt nur bei
+   Fehlern vor - hilft, Zeitprobleme auf echter Hardware zu finden. */
+static char hx(unsigned v)
+{
+    v &= 15;
+    return (char)(v < 10 ? '0' + v : 'A' + v - 10);
+}
+
+static char *hex(char *p, unsigned long v, int n)
+{
+    while (n--)
+        *p++ = hx((unsigned)(v >> (n * 4)));
+    *p = 0;
+    return p;
+}
+
+static void report(struct unit *u, int write, unsigned long l, int step, int t)
+{
+    unsigned char st = inp(u->ctl), er = inp(u->base + R_ERROR);
+    char *p = scat(line, write ? "IDE.SYS: Schreibfehler, Einheit " : "IDE.SYS: Lesefehler, Einheit ");
+    p = udec(p, (unsigned)(u - unit));
+    p = scat(p, ", Sektor ");
+    p = hex(p, l, 8);
+    p = scat(p, "h, Schritt ");
+    p = udec(p, (unsigned)step);
+    p = scat(p, ", Status ");
+    p = hex(p, st, 2);
+    p = scat(p, "h, Fehler ");
+    p = hex(p, er, 2);
+    p = scat(p, "h, Versuch ");
+    p = udec(p, (unsigned)t + 1);
+    scat(p, chan[u->ch].on ? ", IRQ\n" : ", Abfrage\n");
+    dputs(line);
+}
+
 /* count Sektoren (1-16) lesen oder einen schreiben */
 static void xfer(int write)
 {
@@ -589,8 +627,10 @@ static void xfer(int write)
     }
 
     for (tries = 0; tries < 3; tries++) {
-        if (issue(u, l, n, write ? 0x30 : 0x20))    /* WRITE / READ SECTORS */
+        if (issue(u, l, n, write ? 0x30 : 0x20)) {  /* WRITE / READ SECTORS */
+            report(u, write, l, 1, tries);
             continue;
+        }
         if (!write) {
             for (i = 0; i < n; i++) {           /* je Sektor auf DRQ warten */
                 if (wait_irq(u, ST_DRQ, ST_DRQ, 300))
@@ -598,16 +638,22 @@ static void xfer(int write)
                 chan[u->ch].done = 0;           /* naechster kommt nach dem Lesen */
                 insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off + (i << 9)), 256);
             }
-            if (i < n)
+            if (i < n) {
+                report(u, write, l + i, 2, tries);
                 continue;
+            }
         } else {
-            if (wait_status(b, ST_DRQ, ST_DRQ, 300))
+            if (wait_status(b, ST_DRQ, ST_DRQ, 300)) {
+                report(u, write, l, 2, tries);
                 continue;
+            }
             chan[u->ch].done = 0;               /* erster DRQ ohne Interrupt */
             outsw_far(b + R_DATA, r->buf_sel, r->buf_off, 256);
             settle(u->ctl);
-            if (wait_irq(u, 0, 0, 300))         /* Platte hat geschrieben */
+            if (wait_irq(u, 0, 0, 300)) {       /* Platte hat geschrieben */
+                report(u, write, l, 3, tries);
                 continue;
+            }
         }
         r->status = DRV_OK;
         return;
