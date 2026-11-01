@@ -422,6 +422,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   liefert `K_MOUSE` (Hauptfenster, Menüs, Öffnen-Dialog: Klick wählt,
   zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
   (Suchen/Ändern/Speichern unter) noch ohne Maus. Offen: Busmaus.
+  Lehre (Flackern des Öffnen-Dialogs auf dem SCAT): `getkey_m` meldet
+  bloßes Bewegen ohne Taste nicht (den Zeiger zeichnet der Kernel), und
+  Dialoge, in denen nur Drücken zählt, überspringen Loslassen/Ziehen ohne
+  Neuzeichnen – sonst baut sich der Dialog bei jeder Bewegung neu auf, und
+  vio_flush zeigt auf dem 286 halbfertige Zustände.
 - Konsolenmaus wie gpm (Wunsch des Nutzers), erledigt: Hat in der
   Vordergrund-Sitzung niemand MouOpen gerufen, gehört die Maus dem Kernel
   (vio.c): Zeiger nach der ersten Bewegung, linke Taste ziehen markiert

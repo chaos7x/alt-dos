@@ -91,7 +91,10 @@ static unsigned getkey_m(int m)
             continue;
         }
         if (MouReadEvent(&mev, 0) == 0) {
-            if (m)
+            /* blosses Bewegen ohne Taste: nichts zu tun (den Zeiger
+               zeichnet der Kernel) - sonst zeichnete EDIT bei jeder
+               Bewegung neu, auf dem 286 flackerte der Oeffnen-Dialog */
+            if (m && (mev.buttons || mprev))
                 return K_MOUSE;
             mprev = mev.buttons;
             continue;
@@ -731,7 +734,8 @@ static int msgbox(const char *t1, const char *t2, const char *buttons, const cha
     VioSetCurPos(0xFF, 0);
     for (;;) {
         nb = draw_buttons(13, buttons, foc);
-        k = getkey_m(1);
+        while ((k = getkey_m(1)) == K_MOUSE && !M_PRESS())
+            mprev = mev.buttons;            /* nur Druecken zaehlt       */
         if (k == K_MOUSE) {                 /* Klick auf einen Knopf     */
             f = M_PRESS() ? button_hit(13, buttons) : -1;
             mprev = mev.buttons;
@@ -1029,7 +1033,9 @@ static int open_dialog(char *out)
         else
             VioSetCurPos(0xFF, 0);
 
-        k = getkey_m(1);
+        /* nur Druecken zaehlt; Loslassen/Ziehen ohne Neuzeichnen */
+        while ((k = getkey_m(1)) == K_MOUSE && !M_PRESS())
+            mprev = mev.buttons;
         if (k == K_MOUSE) {
             int press = M_PRESS();
             mprev = mev.buttons;
