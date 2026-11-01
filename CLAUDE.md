@@ -167,8 +167,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `hw_lines = 0` -> set_hw_lines lädt den Zeichensatz neu, 13h überschreibt
   Ebene 2). Textausgaben einer Grafiksitzung landen im Textpuffer.
   Programmende/VioSetGfx(0): `ldt_drop`. Demo `\DEMO\GRAFIK.EXE` (zeichnet
-  im Hintergrund weiter). Offen: Modus 12h (planar, Ebene wählen per FAPI),
-  Maus in Grafik, Test in 86Box (ET4000).
+  im Hintergrund weiter). In 86Box vom Nutzer bestätigt (Grafik und
+  Sitzungswechsel). Offen: Modus 12h (planar, Ebene wählen per FAPI),
+  Maus in Grafik.
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile
