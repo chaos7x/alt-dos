@@ -16,6 +16,11 @@ KDATA   equ 0x10
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16
+; zweites Codesegment (KCODE2): selten gebrauchte Kernelteile, mit
+; wcc -nt=KTEXT2 uebersetzt; Einspruenge __far, build.sh traegt die
+; Selektoren der Fernaufrufe fest ein (Kernel liegt immer bei 10000h)
+segment KTEXT2 public class=CODE align=16 use16
+segment KTEXT2END public class=CODE align=1 use16
 segment _DSTART public class=DATA align=16 use16
 segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
@@ -23,6 +28,7 @@ segment _DATA  public class=DATA align=2 use16
 segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group CGROUP _TEXT _TEXTEND
+group CGROUP2 KTEXT2 KTEXT2END
 group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
 extern preload_, reboot_
@@ -39,10 +45,14 @@ global _start
 _start:
         ; Real Mode, vom Bootsektor bei 1000:0000 angesprungen
         cli
-        ; Datensegment: erster Paragraph hinter dem Code
+        ; Datensegment: erster Paragraph hinter beiden Codesegmenten
         mov     ax, code_end
         add     ax, 15
         shr     ax, 4
+        mov     bx, code2_end
+        add     bx, 15
+        shr     bx, 4
+        add     ax, bx
         mov     bx, cs
         add     ax, bx
         mov     ds, ax
@@ -843,10 +853,15 @@ halt_forever_:
 segment _TEXTEND
 code_end:
 
+segment KTEXT2END
+code2_end:
+
 segment _DATA
 
 global _kcode_size
 _kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)
+global _kcode2_size
+_kcode2_size: dw code2_end              ; zweites Codesegment (CGROUP2)
 global _kdata_size
 _kdata_size: dw bss_end                 ; Datengroesse samt BSS (DGROUP)
 

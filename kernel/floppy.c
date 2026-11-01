@@ -22,7 +22,7 @@
  * haelt er dabei. IRQ 6 weckt ihn (start.asm -> fdc_isr). Die Motoren
  * gehen 3 s nach dem letzten Zugriff aus (fd_tick aus dem Scheduler).
  */
-#include "kern.h"
+#include "k2.h"                         /* liegt in KCODE2 */
 
 #define DOR     0x3F2           /* Digital Output Register             */
 #define MSR     0x3F4           /* Main Status Register                */
@@ -178,14 +178,14 @@ static void done(void)
     busy = 0;
 }
 
-void fd_motor_off(void)
+void __far fd_motor_off(void)
 {
     motors = 0;
     dor();
 }
 
 /* aus dem Scheduler: Motoren nach 3 s ohne Zugriff aus */
-void fd_tick(void)
+void __far fd_tick(void)
 {
     if (motors && !busy && get_ticks() - last_use > 300)
         fd_motor_off();
@@ -299,7 +299,7 @@ static int xfer(int d, unsigned cyl, unsigned head, unsigned s, unsigned e, int 
 
 /* Geaendertes aus dem Spurpuffer auf die Diskette; 0 = ok, -1 Fehler,
    -2 schreibgeschuetzt. Im Fehlerfall ist der Puffer verworfen. */
-int fd_sync(void)
+int __far fd_sync(void)
 {
     unsigned s, e, spt;
     int d = tb_drv, rc = 0;
@@ -356,7 +356,7 @@ static int split(int d, unsigned lba, unsigned *cyl, unsigned *head, unsigned *s
 }
 
 /* einen Sektor in den DMA-Puffer (DMABUF, Offset 0); 0 = ok */
-int fd_read(int d, unsigned lba)
+int __far fd_read(int d, unsigned lba)
 {
     unsigned cyl, head, sec, spt, i;
     int rc = 0;
@@ -384,7 +384,7 @@ int fd_read(int d, unsigned lba)
 
 /* einen Sektor aus DMABUF schreiben (in den Spurpuffer, fd_sync bringt
    ihn auf die Diskette) */
-int fd_write(int d, unsigned lba)
+int __far fd_write(int d, unsigned lba)
 {
     unsigned cyl, head, sec;
     if (split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
@@ -439,7 +439,7 @@ static int detect(int d)
 
 /* Vor einem Zugriff: gewechselt oder unbekannt? Dann neu erkennen.
    -> 0 unveraendert, 1 neu (Caches verwerfen), -1 kein Laufwerk */
-int fd_check(int d)
+int __far fd_check(int d)
 {
     int ch;
     if (d > 1 || !fd[d].type)
@@ -475,19 +475,19 @@ int fd_check(int d)
     return 1;
 }
 
-unsigned fd_size(int d)
+unsigned __far fd_size(int d)
 {
     return d <= 1 && fd[d].type ? F(d)->blocks : 0;
 }
 
-int fd_type(int d)
+int __far fd_type(int d)
 {
     return d <= 1 ? fd[d].type : 0;
 }
 
 /* Spur formatieren (FAPI DosFmtTrack): Format nach Groesse 'blocks', muss
    zum Laufwerk passen. 0 = ok, -1 Fehler, -2 schreibgeschuetzt, -3 Format */
-int fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
+int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
 {
     const signed char *c;
     unsigned char __far *t = MK_FP(DMABUF, 0);
@@ -540,7 +540,7 @@ int fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
 }
 
 /* types = CMOS-Register 10h; -> 0 = Controller da */
-int fd_init(unsigned types)
+int __far fd_init(unsigned types)
 {
     int d;
 

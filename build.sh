@@ -57,8 +57,12 @@ python3 tools/mkkbl.py $B
 echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
-for m in kernel mem floppy fat vio kbd preload; do
-    wcc $CFLAGS -fo=$B/$m.o kernel/$m.c
+# KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
+K2MODS="floppy vgagfx"
+for m in kernel mem floppy fat vio kbd preload vgagfx k2thunk; do
+    S=""
+    case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
+    wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
 # Code (CGROUP) und Daten (DGROUP) sind getrennte Segmente: als DOS-EXE
@@ -68,27 +72,44 @@ wlink option quiet format dos option nodefaultlibs \
       name $B/kernel.exe option map=$B/kernel.map file $KOBJ 2>&1 | grep -v W1014 || true
 python3 - $B/kernel.exe $B/kernel.bin $B/kernel.map <<'PYEOF'
 import struct, sys
-d = open(sys.argv[1], 'rb').read()
-nrel, hdr = struct.unpack('<HH', d[6:10])
-if nrel:
-    sys.exit('FEHLER: Kernel enthaelt %d Segment-Relokationen' % nrel)
-open(sys.argv[2], 'wb').write(d[hdr * 16:])
+d = bytearray(open(sys.argv[1], 'rb').read())
+nrel, hdr, relo = struct.unpack('<H', d[6:8])[0], struct.unpack('<H', d[8:10])[0], \
+                  struct.unpack('<H', d[0x18:0x1A])[0]
 g = {}
 for l in open(sys.argv[3]):
     f = l.split()
-    if len(f) == 3 and f[0] in ('CGROUP', 'DGROUP') and ':' in f[1]:
+    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'DGROUP') and ':' in f[1]:
         s, o = f[1].split(':')
         g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
 code, data = g['CGROUP'][1], g['DGROUP'][1]
-if g['DGROUP'][0] != (code + 15) & ~15:
+c2 = g.get('CGROUP2', ((code + 15) & ~15, 0))
+if c2[0] != (code + 15) & ~15:
+    sys.exit('FEHLER: CGROUP2 liegt nicht direkt hinter CGROUP')
+if g['DGROUP'][0] != (c2[0] + c2[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
-if code > 65536 or data > 65536:
-    sys.exit('FEHLER: Kernel-Code %d oder -Daten %d Bytes ueber 64 KB' % (code, data))
-print('  kernel: %d Bytes Datei, Code %d Bytes, Daten %d Bytes mit BSS (je max. 65536)'
-      % (len(d) - hdr * 16, code, data))
+# Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
+# 10000h, also die Segmentwerte gleich als Selektoren eintragen
+# (KCODE 08h, KCODE2 1C8h, siehe kern.h); alles andere ist ein Fehler
+img = hdr * 16
+for i in range(nrel):
+    o, s = struct.unpack('<HH', d[relo + 4 * i:relo + 4 * i + 4])
+    at = img + s * 16 + o
+    v = struct.unpack('<H', d[at:at + 2])[0]
+    if v == 0:
+        sel = 0x08
+    elif v == c2[0] >> 4:
+        sel = 0x1C8
+    else:
+        sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2 erlaubt)' % v)
+    d[at:at + 2] = struct.pack('<H', sel)
+open(sys.argv[2], 'wb').write(d[img:])
+if code > 65536 or c2[1] > 65536 or data > 65536:
+    sys.exit('FEHLER: Kernel-Code %d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], data))
+print('  kernel: %d Bytes Datei, Code %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
+      % (len(d) - img, code, c2[1], data, nrel))
 PYEOF
-# der Bootsektor laedt 128 Sektoren; BSS dahinter nullt der Kernel selbst
-[ $(stat -c %s $B/kernel.bin) -le 65536 ] || { echo "FEHLER: ATDOS.SYS groesser als 64 KB"; exit 1; }
+# der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
+[ $(stat -c %s $B/kernel.bin) -le 81920 ] || { echo "FEHLER: ATDOS.SYS groesser als 80 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
@@ -142,9 +163,9 @@ for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
 # ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
-# auf 64 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
+# auf 80 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
 cp $B/kernel.bin $B/ATDOS.SYS
-truncate -s 65536 $B/ATDOS.SYS
+truncate -s 81920 $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS

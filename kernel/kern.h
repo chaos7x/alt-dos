@@ -31,7 +31,9 @@
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
 #define NKSEG       12              /* eigene Kernelsegmente (kseg_alloc)  */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
-#define NGDT        (9 + 3 * NTASK + 2 * NDRV + NKSEG)
+#define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
+#define KCODE2      0x1C8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define NGDT        (KCODE2_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -40,6 +42,8 @@
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL
 extern unsigned kcode_size;         /* start.asm: Groesse von CGROUP       */
+extern unsigned kcode2_size;        /* start.asm: Groesse von CGROUP2      */
+#define KCODE2_LIN  (KCODE_LIN + ((kcode_size + 15) & ~15u))
 extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
 extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
 #define KDATA_LIN   ((unsigned long)kdata_seg << 4)
@@ -98,16 +102,17 @@ extern volatile unsigned reboot_count;
 unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
-int  fd_init(unsigned cmos_types);  /* CMOS 10h; 0 = Controller da        */
-int  fd_write(int d, unsigned lba); /* aus DMABUF in den Spurpuffer        */
-int  fd_read(int d, unsigned lba);  /* Sektor in den DMA-Puffer, 0 = ok    */
-int  fd_sync(void);                 /* Spurpuffer schreiben; -2 = schreibg. */
-int  fd_check(int d);               /* 1 = gewechselt/neu erkannt          */
-unsigned fd_size(int d);            /* Sektoren des Formats                */
-int  fd_type(int d);                /* CMOS-Typ, 0 = kein Laufwerk         */
-int  fd_format(int d, unsigned cyl, unsigned head, unsigned blocks);
-void fd_tick(void);
-void fd_motor_off(void);
+/* floppy.c liegt in KCODE2: alle Einspruenge fern */
+int  __far fd_init(unsigned cmos_types);    /* CMOS 10h; 0 = Controller da */
+int  __far fd_write(int d, unsigned lba);   /* aus DMABUF in den Spurpuffer */
+int  __far fd_read(int d, unsigned lba);    /* Sektor in den DMA-Puffer     */
+int  __far fd_sync(void);                   /* Spurpuffer schreiben; -2 = WP */
+int  __far fd_check(int d);                 /* 1 = gewechselt/neu erkannt   */
+unsigned __far fd_size(int d);              /* Sektoren des Formats         */
+int  __far fd_type(int d);                  /* CMOS-Typ, 0 = kein Laufwerk  */
+int  __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks);
+void __far fd_tick(void);
+void __far fd_motor_off(void);
 unsigned kseg_dma(unsigned bytes, unsigned long *lin);  /* ohne 64-KB-Grenze */
 
 /* Schlafen im Kernel wie DevHlp ProcBlock/ProcRun (mit gesperrten
@@ -172,15 +177,15 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
-int  vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
-unsigned long vio_gfx_base(int s);
-unsigned vio_gfx_limit(int s);
-int  vio_setplane(int s, unsigned p);
-int  vio_setpage(int s, unsigned p);
-void vio_idle(void);
-int  vio_gfx_reg(int s, int t, unsigned sel);
-int  vio_is_gfx(int s);
-void vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);
+int __far vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
+unsigned long __far vio_gfx_base(int s);
+unsigned __far vio_gfx_limit(int s);
+int __far vio_setplane(int s, unsigned p);
+int __far vio_setpage(int s, unsigned p);
+void __far vio_idle(void);
+int __far vio_gfx_reg(int s, int t, unsigned sel);
+int __far vio_is_gfx(int s);
+void __far vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);
 void ldt_set(int t, unsigned sel, unsigned long base, unsigned limit);
 void ldt_drop(int t, unsigned sel);
 unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len);

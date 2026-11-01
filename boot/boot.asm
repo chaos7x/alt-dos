@@ -10,9 +10,10 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 128                 ; ATDOS.SYS ist auf 64 KB aufgefuellt
-                                ; (1000:0000-1FFFF, je Sektor ES:0 -
-                                ; keine DMA-Grenze innerhalb eines Sektors)
+NSECT   equ 160                 ; ATDOS.SYS ist auf 80 KB aufgefuellt
+                                ; (1000:0000-23FFF, je Sektor ES:0 -
+                                ; keine DMA-Grenze innerhalb eines Sektors;
+                                ; seit KCODE2 waechst der Kernel ueber 64 KB)
 
         jmp     short start
         nop

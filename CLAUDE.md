@@ -134,9 +134,24 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
   `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
 - Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
-  höchstens 64 KB groß sein (Diskettenbootsektor lädt 128 Sektoren nach
-  1000:0000–1FFFF; bis Ende 2026 waren es 48 KB/96 Sektoren), BSS dahinter
-  nullt `start.asm` selbst. `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  höchstens 80 KB groß sein (Diskettenbootsektor lädt 160 Sektoren nach
+  1000:0000–23FFF; vorher 128 bzw. 96 – Disketten mit altem Bootsektor
+  vor dem Überschreiten von 64 KB mit SYS erneuern), BSS dahinter
+  nullt `start.asm` selbst.
+- Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
+  der GDT): selten gebrauchte, abgeschlossene Teile werden mit
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`).
+  Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
+  ersten Segments nur über Fern-Thunks (`kernel/k2thunk.c`, umgelenkt per
+  `#define` in `kernel/k2.h` – k2.h als letztes Include!), Ports und
+  CLI/STI inline. Gleiche Daten (DS). start.asm: Segmente KTEXT2/KTEXT2END
+  in Gruppe CGROUP2 hinter CGROUP, DS = CS + beide Größen. build.sh setzt
+  die Segmentwerte der Fernaufrufe fest auf KCODE (08h) bzw. KCODE2 ein
+  (Kernel liegt immer bei 10000h) und bricht bei anderen Relokationen ab.
+  Nahe Aufrufe aus KTEXT2 ins erste Segment fängt der Linker nicht immer
+  ab – neue Hilfen immer über k2.h. Grafik aus vio.c steht in
+  `kernel/vgagfx.c`, gemeinsame Sitzungsdaten in `kernel/vioint.h`.
+  Stand: Code 48 + 8 KB (vorher 56 KB in einem Segment). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in
@@ -802,9 +817,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Musterpuffer auf FAPI_PATHLEN, `.`/`..` nur noch genau erkennen (nicht
   jeder Name mit Punkt vorn), Endung nach dem letzten Punkt auch in GREP.
   ATTRIB mit Verzeichnisnamen zeigt/setzt wie NT das Verzeichnis selbst.
-  Achtung Kernelgröße: ATDOS.SYS ist jetzt 59 KB (Grenze 64 KB Datei,
-  64 KB Code) – vor Stufe 2/3 Platz schaffen (Teile auslagern oder zweites
-  Codesegment).
+  Kernelgröße: erledigt mit KCODE2 (siehe Konventionen).
   Schreibformat je Laufwerk (Entscheidung des Nutzers): `LONGNAMES=AUTO|
   VFAT|EA` in CONFIG.SYS, Vorgabe AUTO. FAT32 immer VFAT (MS-DOS 6 liest
   FAT32 ohnehin nicht, Austausch mit Windows 95/98 in beide Richtungen).
