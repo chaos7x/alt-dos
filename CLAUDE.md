@@ -867,6 +867,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `DBLSPACE.IFS` (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6 zum
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
   `UDBLSPACE.EXE` (CHKDSK). Zeitlich 6.0.
+- UEFI (Wunsch des Nutzers, für 6.0 oder 7.0 – noch offen; Empfehlung
+  7.0 mit 32-Bit-Kernel): Lader wechselt aus Long Mode in den 32-Bit-
+  Protected-Mode. Ersatz für alles, was heute im Real Mode vom BIOS kommt
+  (Speicherkarte, Plattenparameter, Zeichensätze, Vorladen von CONFIG.SYS)
+  über UEFI-Dienste vor ExitBootServices. Nötig: Konsole im GOP-Framebuffer
+  (oberhalb 16 MB, kein B8000h), AHCI/NVMe statt IDE, xHCI/USB-Tastatur
+  (oft keine PS/2-Emulation), APIC/HPET, falls PIC/PIT fehlen. 6.0 (Ziel
+  P3B-F, hat noch BIOS) braucht UEFI nicht; bis dahin laufen Boards mit
+  CSM (bis ~2020) und VMs.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
