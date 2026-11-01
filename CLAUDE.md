@@ -456,7 +456,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - EDIT ist da (`apps/task_edit.c`): Lückenpuffer in einem 64-KB-Segment,
   daher Text bis knapp 64 KB – offen: größere Dateien (mehrere Segmente),
-  Maus, horizontale Bildlaufleiste. Erledigt: Öffnen-Dialog mit Dateiliste
+  horizontale Bildlaufleiste. Erledigt: Öffnen-Dialog mit Dateiliste
   (`open_dialog`, Verzeichnisse zuerst, `..`, Muster, Laufwerk `D:`),
   Nachfrage bei SIG_SHUTDOWN: Signal setzt nur `shut_req`, `getkey()`
   (statt KbdCharIn überall in EDIT) ruft `shutdown_now()` beim nächsten
@@ -535,7 +535,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Bildlaufleiste (Pfeile zeilenweise, Fläche seitenweise). `getkey_m(1)`
   liefert `K_MOUSE` (Hauptfenster, Menüs, Öffnen-Dialog: Klick wählt,
   zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
-  (Suchen/Ändern/Speichern unter) noch ohne Maus.
+  (Suchen/Ändern/Speichern unter): Klick ins Feld setzt den Cursor,
+  Klick auf OK/Abbrechen drückt (in QEMU geprüft).
   Busmaus (nach seriell, `/BUS`), nur gebaut – QEMU hat keine, Test in
   86Box (Microsoft InPort, Logitech Bus Mouse): InPort an 23Ch/238h über
   die Kennung (Basis+2 abwechselnd DEh/Version, nur lesen), Modus 11h

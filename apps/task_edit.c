@@ -116,8 +116,7 @@ static void lvb_show(void)
 
 /* Taste holen; kommt beim Warten SIG_SHUTDOWN, fragt EDIT nach dem
    Speichern und endet (KbdCharIn kehrt bei einem Signal mit 0 zurueck).
-   m = 1: auch Mausereignisse (-> K_MOUSE); sonst werden sie verworfen
-   (Dialoge kennen die Maus noch nicht). */
+   m = 1: auch Mausereignisse (-> K_MOUSE); sonst werden sie verworfen. */
 static unsigned getkey_m(int m)
 {
     unsigned k;
@@ -809,7 +808,8 @@ static void message(const char *t1, const char *t2)
 }
 
 /* Eingabefelder und Knoepfe OK/Abbrechen; Tab wechselt reihum (Felder,
-   OK, Abbrechen), Eingabe im Feld = OK. -> 1 OK, 0 Abbrechen */
+   OK, Abbrechen), Eingabe im Feld = OK. Maus: Klick ins Feld setzt den
+   Cursor, Klick auf einen Knopf drueckt ihn. -> 1 OK, 0 Abbrechen */
 #define FX 27                       /* Eingabefeld: Spalte, Breite   */
 #define FW 40
 static int input(const char *title, int nf, const char **prompt, char **buf, unsigned max)
@@ -838,7 +838,25 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
         draw_buttons(10 + 2 * nf, btn, f >= nf ? f - nf : -1);
         if (f >= nf)
             VioSetCurPos(0xFF, 0);
-        k = getkey();
+        while ((k = getkey_m(1)) == K_MOUSE && !M_PRESS())
+            mprev = mev.buttons;            /* nur Druecken zaehlt       */
+        if (k == K_MOUSE) {
+            mprev = mev.buttons;
+            g = button_hit(10 + 2 * nf, btn);
+            if (g >= 0)
+                return g == 0;              /* OK / Abbrechen            */
+            for (i = 0; i < nf; i++)
+                if (mev.row == 9 + 2 * i && mev.col >= FX && mev.col < FX + FW) {
+                    view = (i == f && pos > FW - 1) ? pos - (FW - 1) : 0;
+                    f = i;
+                    n = slen(buf[f]);
+                    pos = view + mev.col - FX;
+                    if (pos > n)
+                        pos = n;
+                    fresh = 0;
+                }
+            continue;
+        }
         c = k & 0xFF;
         sc = k >> 8;
         if (c == 27)
