@@ -911,7 +911,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Löschen/Umbenennen mit entfernen, CP437/850 <-> UCS-2. Die EA-Datei mit
   Rückverweis gilt damit praktisch für FAT12/16 und Disketten.
 - FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
-- Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit
+- Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit.
+  Nutzer: SCAT mit 12 MHz in 86Box bootet AT-DOS schnell.
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,
   das aus dem 386 herausholt, was geht – Paging (Schutz, virtueller Speicher),
   V86-Boxen für echte DOS-Programme, präemptives Multitasking. Stabilität vor
