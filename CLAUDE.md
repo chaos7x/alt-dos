@@ -530,7 +530,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   I/O; LCS-6821N, RT1000B, LS2000, T128 mit Registern im 16-KB-Fenster
   des Karten-BIOS (C800h–DC00h) -> braucht DevHlp für physischen Speicher
   (OS/2: PhysToVirt/PhysToGDTSelector); AHA-1520A und SB16-SCSI: AIC-6360.
-  Zweite Stufe gebaut (Nutzer: PIO zu langsam), Test in 86Box offen:
+  Zweite Stufe (Nutzer: PIO zu langsam), in 86Box vom Nutzer bestätigt:
+  Startzeile „Blockbetrieb“, kein Rückfall auf PIO.
   Datenphasen in Vielfachen von 128 Byte im 53C400-Blockbetrieb – Richtung
   in Basis+0 (Bit 6 lesen), Blockzahl in Basis+1, 5380 MR=DMA und Start
   über Register 7 (empfangen) bzw. 5 (senden, ICR mit DBUS), je Block
