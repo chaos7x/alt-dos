@@ -141,7 +141,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   VioShowBuf(von, bis) markiert fertige Zeilen (nur im Vordergrund, sonst
   zeichnet redraw beim Wechsel alles). EDIT leitet VioWrtStrAtt auf
   `lvb_str` um und zeigt in `getkey_m` vor dem Warten – ein FAPI-Aufruf je
-  Bild, nie halbfertige Bilder (Anlass: Flackern auf dem SCAT). Grundsatz
+  Bild, nie halbfertige Bilder (Anlass: Flackern auf dem SCAT; vom Nutzer
+  auf dem SCAT bestätigt: Öffnen-Dialog mit Maus läuft ruhig). Grundsatz
   (Wunsch des Nutzers): wo man sparen kann, nutzen; hat OS/2 für ein
   Problem eine bewährte Lösung, das gleich sagen.
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
