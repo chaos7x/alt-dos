@@ -88,7 +88,9 @@ static void load_font(unsigned h)
     unsigned char __far *d;
     const unsigned char __far *f;
     unsigned c, l;
+    unsigned short w[8];
 
+    win_save(w);                            /* laeuft ohne Kernelsperre */
     seqr(0x02, 0x04);                       /* nur Ebene 2 schreiben    */
     seqr(0x04, 0x07);                       /* fortlaufend, kein Odd/Even */
     gcr(0x04, 0x02);                        /* Ebene 2 lesen            */
@@ -116,6 +118,7 @@ static void load_font(unsigned h)
     gcr(0x04, 0x00);
     gcr(0x05, 0x10);
     gcr(0x06, 0x0E);                        /* B8000h, 32 KB, Odd/Even  */
+    win_restore(w);
 }
 
 /* Karte auf n Zeilen (25/43/50) stellen; Zeitwerte der VGA-Textmodi mit
@@ -465,9 +468,11 @@ int vio_rows(int s)
 void vio_setmode(int s, int full, int owner)
 {
     struct session *p;
+    unsigned short w[8];
     if (s < 0 || !ses[s].used || full == !ses[s].top)
         return;
     p = &ses[s];
+    win_save(w);                            /* laeuft ohne Kernelsperre */
     if (full) {
         p->save = mem_alloc(SAVEU);
         if (p->save) {
@@ -488,10 +493,13 @@ void vio_setmode(int s, int full, int owner)
         p->save = 0;
         p->row = p->srow;
         p->col = p->scol;
+        win_restore(w);
         if (s == fg)
             redraw();
-    } else
-        vio_cls(s);                 /* zeichnet im Vordergrund neu     */
+        return;
+    }
+    win_restore(w);
+    vio_cls(s);                     /* zeichnet im Vordergrund neu     */
 }
 
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */

@@ -54,6 +54,8 @@ extern struct desc gdt[];
 void set_desc(int idx, unsigned long base, unsigned limit, unsigned char acc);
 void scratch_map(unsigned long base, unsigned limit);
 void scratch2_map(unsigned long base, unsigned limit);
+void win_save(unsigned short *b);          /* SCRATCH/SCRATCH2, 8 Worte   */
+void win_restore(const unsigned short *b);
 
 /* ---- Assembler-Routinen (start.asm) ------------------------------------ */
 void          outb(unsigned port, unsigned val);

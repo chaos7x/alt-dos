@@ -63,5 +63,22 @@ struct drv_req {
                                        (16 Byte, DS des Treibers) -> Tabelle
                                        hinter INT 41h/46h vom Start; AX = 0 ok,
                                        1 = BIOS kennt so viele Platten nicht */
+#define DH_SETIRQ       5           /* BX = IRQ (3-15, nicht 6), CX = Einsprung
+                                       im Treibercode (fern, endet mit RETF;
+                                       dcrt0: irq_entry) -> AX = 0 ok,
+                                       1 = belegt/ungueltig. Der Kernel ruft ihn
+                                       mit DS = Treiberdaten, AX = IRQ, bei
+                                       gesperrten Interrupts, und schickt danach
+                                       das EOI an den PIC. */
+#define DH_UNSETIRQ     6           /* BX = IRQ: wieder maskieren, freigeben */
+#define DH_PROCBLOCK    7           /* BX = Ereignis (frei waehlbar, je Treiber
+                                       eindeutig), CX = Frist in Takten (0 = keine).
+                                       Mit CLI rufen, nachdem die Bedingung
+                                       geprueft ist: der Task schlaeft, andere
+                                       laufen weiter. Kehrt mit STI zurueck;
+                                       AX = 0 geweckt, 1 = Frist abgelaufen */
+#define DH_PROCRUN      8           /* BX = Ereignis: alle darauf schlafenden
+                                       Tasks wecken (auch aus der Interrupt-
+                                       routine) -> AX = Anzahl */
 
 #endif

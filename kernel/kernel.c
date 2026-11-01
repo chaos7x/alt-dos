@@ -64,6 +64,7 @@ unsigned short  gdtr[3], idtr[3];
 #define T_FREE  0
 #define T_READY 1           /* laeuft oder schlaeft bis 'wake'           */
 #define T_WAIT  2           /* wartet auf das Ende eines Kindprogramms   */
+#define T_BLOCK 3           /* schlaeft in einem Treiber (DevHlp ProcBlock) */
 
 struct task {
     unsigned char state;
@@ -83,6 +84,11 @@ struct task {
     unsigned char rc;                           /* Rueckgabewert (DosExit)  */
     unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
     unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
+    unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
+    unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */
+    volatile unsigned char block_rc;            /* ProcBlock: 0 geweckt, 1 Frist */
+    unsigned long block_id;                     /* ProcBlock: Ereignis       */
+    unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
 };
 
 static struct task    task[NTASK];
@@ -183,6 +189,32 @@ void scratch_map(unsigned long base, unsigned limit)
     set_desc(SCRATCH >> 3, base, limit, ACC_KDATA);
 }
 
+/* SCRATCH/SCRATCH2 sichern und zurueckholen (8 Worte): fuer Kernelteile,
+   die ohne Kernelsperre laufen (vio), waehrend ein anderer Task mitten in
+   einer Dateioperation ueber die Fenster in einem Treiber schlaeft. Beim
+   Taskwechsel laedt die CPU die Segmentregister neu aus der GDT. */
+void win_save(unsigned short *b)
+{
+    unsigned short *a = (unsigned short *)&gdt[SCRATCH >> 3];
+    unsigned short *c = (unsigned short *)&gdt[SCRATCH2 >> 3];
+    int i;
+    for (i = 0; i < 4; i++) {
+        b[i] = a[i];
+        b[4 + i] = c[i];
+    }
+}
+
+void win_restore(const unsigned short *b)
+{
+    unsigned short *a = (unsigned short *)&gdt[SCRATCH >> 3];
+    unsigned short *c = (unsigned short *)&gdt[SCRATCH2 >> 3];
+    int i;
+    for (i = 0; i < 4; i++) {
+        a[i] = b[i];
+        c[i] = b[4 + i];
+    }
+}
+
 void scratch2_map(unsigned long base, unsigned limit)
 {
     set_desc(SCRATCH2 >> 3, base, limit, ACC_KDATA);
@@ -235,6 +267,7 @@ void reboot_request(void)
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
 static void schedule_next(void);
+static void klock_enter(void);
 
 /* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
    werden alle uebrigen Programme regulaer beendet. Ein Programm, das den
@@ -269,7 +302,10 @@ static void end_programs(void)
                 until = get_ticks() + 500;
         }
     }
-    /* die Sitzung, in der die Abschlussmeldung steht, bleibt stehen */
+    /* die Sitzung, in der die Abschlussmeldung steht, bleibt stehen;
+       Dateien schliessen nur mit der Kernelsperre (niemand darf mitten in
+       einer Plattenoperation beendet werden) - sie bleibt bis zum Ende */
+    klock_enter();
     for (t = 0; t < NTASK; t++)
         if (t != current && task[t].state != T_FREE && task[t].session != boot_session)
             task_end(t);
@@ -832,6 +868,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].rc = 0;
     task[t].child_rc = 0;
     task[t].hold = 0;
+    task[t].want_lock = 0;
     for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
         task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
         of_ref(task[t].std[i]);
@@ -894,14 +931,22 @@ static void switch_to(int t)
 
 /* Strg+C: aktives Programm der Vordergrund-Sitzung beenden. Der Inhaber
    der ersten Sitzung (die Shell aus PROTSHELL=) ist geschuetzt. */
+static int klock;
+static unsigned klock_depth;
+
 static void do_break(void)
 {
     int s = vio_fg(), t;
     for (t = 0; t < NTASK; t++)
-        if (task[t].state == T_READY && task[t].session == s)
+        if ((task[t].state == T_READY || task[t].state == T_BLOCK) &&
+            task[t].session == s)
             break;
     if (t == NTASK)
         return;
+    if (klock >= 0) {                           /* Plattenoperation laeuft: */
+        kbd_break_req = 1;                      /* spaeter nochmal          */
+        return;
+    }
     if (task[t].sig_mask & SIG_BREAK) {         /* Programm faengt Strg+C */
         task[t].sig_pending |= SIG_BREAK;
         task[t].wake = 0;
@@ -911,7 +956,13 @@ static void do_break(void)
         return;
     vio_kputs(s, "^C\n");
     task[t].rc = 255;
+    if (current >= 0) {                         /* Dateien schliessen: Sperre */
+        klock = current;
+        klock_depth = 1;
+    }
     task_end(t);
+    if (current >= 0)
+        klock = -1;
 }
 
 /* Beginn der laufenden Zeitscheibe. Kooperativ heisst bei AT-DOS: Ein
@@ -923,12 +974,73 @@ static void do_break(void)
 #define SLICE 5                         /* 50 ms                         */
 static unsigned long slice_start;
 
+/* ---- Kernelsperre -------------------------------------------------------
+   Seit Treiber per ProcBlock schlafen, kann mitten in einer Dateisystem-
+   oder Plattenoperation ein anderer Task laufen. DMABUF, FAT- und
+   Sektor-Cache, die Anforderung 'req', die Fenster SCRATCH/SCRATCH2 und die
+   statischen Puffer von fapi_inner sind aber gemeinsam. Deshalb haelt ein
+   Task die Sperre fuer jeden FAPI-Aufruf ausser einer Liste harmloser
+   (fapi_nolock). An jedem freiwilligen Wartepunkt (schedule_next) gibt er
+   sie ab und bekommt sie vom Scheduler zurueck, bevor er weiterlaeuft -
+   nur ProcBlock behaelt sie: wer im Treiber schlaeft, bleibt Herr ueber
+   die Geraete. Andere Tasks rechnen weiter und duerfen Bildschirm,
+   Tastatur, Umgebung usw. benutzen. Vor dem Start der Tasks (current < 0)
+   gibt es keine Sperre. */
+static int klock = -1;                  /* Inhaber, -1 = frei            */
+static unsigned klock_depth;
+static volatile unsigned char run_flag; /* ProcRun hat jemanden geweckt  */
+static volatile unsigned char resched_req;  /* ... beim naechsten FAPI-Ende wechseln */
+
+static void sched(int keep);
+
+static void klock_enter(void)
+{
+    if (current < 0)
+        return;
+    if (klock == current) {
+        klock_depth++;
+        return;
+    }
+    if (klock < 0) {
+        klock = current;
+        klock_depth = 1;
+        return;
+    }
+    task[current].want_lock = 1;        /* Scheduler gibt sie uns        */
+    task[current].lock_depth = 0;
+    task[current].wake = 0;
+    sched(0);
+}
+
+static void klock_leave(void)
+{
+    if (current < 0 || klock != current)
+        return;
+    if (--klock_depth == 0)
+        klock = -1;
+}
+
 static void schedule_next(void)
+{
+    sched(0);
+}
+
+/* keep = 1: Sperre behalten (ProcBlock) */
+static void sched(int keep)
 {
     int n, t, any;
     unsigned long now;
+    unsigned f;
+    struct task *tk;
 
+    resched_req = 0;
+    if (!keep && current >= 0 && klock == current) {
+        task[current].want_lock = 1;    /* abgeben, spaeter zurueck      */
+        task[current].lock_depth = (unsigned char)klock_depth;
+        klock = -1;
+    }
     for (;;) {
+        run_flag = 0;
         if (kbd_switch_req) {
             kbd_switch_req = 0;
             vio_next();
@@ -937,7 +1049,7 @@ static void schedule_next(void)
             kbd_break_req = 0;
             do_break();
         }
-        if (reboot_count)
+        if (reboot_count && klock < 0)  /* nicht mitten in einer Plattenoperation */
             shutdown();
         now = get_ticks();
         vio_flush();                    /* Programm wartet: Bild zeigen  */
@@ -945,20 +1057,103 @@ static void schedule_next(void)
         any = 0;
         for (n = 1; n <= NTASK; n++) {
             t = (current + n + NTASK) % NTASK;
-            if (task[t].state == T_FREE)
+            tk = &task[t];
+            if (tk->state == T_FREE)
                 continue;
             any = 1;
-            if (task[t].state != T_READY || task[t].wake > now)
+            if (tk->state == T_BLOCK && tk->block_until && now >= tk->block_until) {
+                f = irq_off();
+                if (tk->state == T_BLOCK) {     /* Frist um              */
+                    tk->block_rc = 1;
+                    tk->state = T_READY;
+                }
+                irq_restore(f);
+            }
+            if (tk->state != T_READY || tk->wake > now)
                 continue;
+            if (tk->want_lock && klock >= 0 && klock != t)
+                continue;               /* wartet auf die Kernelsperre   */
             if (t != current)
                 switch_to(t);
+            /* hier laeuft der gewaehlte Task weiter */
+            tk = &task[current];
+            if (tk->want_lock) {
+                tk->want_lock = 0;
+                klock = current;
+                klock_depth = tk->lock_depth ? tk->lock_depth : 1;
+            }
             slice_start = get_ticks();  /* (wieder) dran: neue Zeitscheibe */
             return;
         }
         if (!any)
             panic("Alle Programme beendet - System angehalten.");
-        idle_wait();                /* alle warten: HLT bis zum Takt     */
+        f = irq_off();                  /* ohne Luecke zwischen Pruefen  */
+        if (!run_flag)                  /* und HLT                        */
+            idle_wait();                /* alle warten: HLT bis zum Takt  */
+        irq_restore(f);
     }
+}
+
+/* DevHlp ProcBlock: mit gesperrten Interrupts gerufen, nachdem der Treiber
+   seine Bedingung geprueft hat - so geht kein Wecken verloren. Vor dem
+   Start der Tasks wartet der Kernel selbst mit HLT. -> 0 geweckt, 1 Frist */
+static unsigned long kblock_id;
+static volatile unsigned char kblock_on;
+
+static unsigned proc_block(unsigned long id, unsigned timeout)
+{
+    unsigned long until = timeout ? get_ticks() + timeout : 0;
+    struct task *tk;
+
+    if (current < 0) {
+        kblock_id = id;
+        kblock_on = 1;
+        for (;;) {
+            irq_off();
+            if (!kblock_on)
+                break;
+            if (until && get_ticks() >= until) {
+                kblock_on = 0;
+                enable_ints();
+                return 1;
+            }
+            idle_wait();                /* STI; HLT                      */
+        }
+        enable_ints();
+        return 0;
+    }
+    tk = &task[current];
+    tk->block_id = id;
+    tk->block_until = until;
+    tk->block_rc = 0;
+    tk->state = T_BLOCK;
+    sched(1);
+    enable_ints();
+    return tk->block_rc;
+}
+
+/* DevHlp ProcRun, auch aus Interruptroutinen: nur Zustaende setzen */
+static unsigned proc_run(unsigned long id)
+{
+    unsigned n = 0, f = irq_off();
+    int t;
+
+    for (t = 0; t < NTASK; t++)
+        if (task[t].state == T_BLOCK && task[t].block_id == id) {
+            task[t].block_rc = 0;
+            task[t].state = T_READY;
+            n++;
+        }
+    if (kblock_on && kblock_id == id) {
+        kblock_on = 0;
+        n++;
+    }
+    if (n) {
+        run_flag = 1;
+        resched_req = 1;
+    }
+    irq_restore(f);
+    return n;
 }
 
 static void sleep_ticks(unsigned n)
@@ -1267,10 +1462,46 @@ static unsigned sig_deliver(unsigned r)
 
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2);
 
+/* Aufrufe, die weder Dateisystem noch Laufwerke, DMABUF, SCRATCH oder die
+   statischen Puffer von fapi_inner beruehren: sie laufen auch, waehrend ein
+   anderer Task in einem Treiber schlaeft. Alles andere nimmt die
+   Kernelsperre (im Zweifel sperren). Lesen/Schreiben auf Konsole und Pipe
+   gehoert dazu - sonst haelt ein GREP im Hintergrund jede Ausgabe auf. */
+static int fapi_nolock(unsigned fn, unsigned a1)
+{
+    int k;
+    switch (fn) {
+    case FAPI_GETVERSION: case FAPI_VIOWRTSTR: case FAPI_VIOWRTSTRATT:
+    case FAPI_VIOWRTTTY: case FAPI_VIOCLS: case FAPI_VIOSETMODE:
+    case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
+    case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
+    case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
+    case FAPI_QCHILDRC: case FAPI_QCURDIR: case FAPI_QCURDISK:
+    case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
+    case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
+    case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
+    case FAPI_SHUTDOWNHOLD:
+        return 1;
+    case FAPI_READ:
+    case FAPI_WRITE:
+        k = h2e(a1);
+        return k >= 0 && (files[k].kind == OF_CON || files[k].kind == OF_PRD ||
+                          files[k].kind == OF_PWR);
+    }
+    return 0;
+}
+
 unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 {
-    unsigned r = fapi_inner(fn, usel, a1, a2);
-    if (kbd_break_req || kbd_switch_req || reboot_count ||
+    unsigned r;
+    if (fapi_nolock(fn, a1))
+        r = fapi_inner(fn, usel, a1, a2);
+    else {
+        klock_enter();
+        r = fapi_inner(fn, usel, a1, a2);
+        klock_leave();
+    }
+    if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
         get_ticks() - slice_start >= SLICE) {
         task[current].wake = 0;
         schedule_next();                /* Zeitscheibe um: andere zuerst */
@@ -1892,6 +2123,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         tmsg(current, "\n", task[current].name, ": ");
         tmsg(current, exc_name(vec), msg, "\nProgramm abgebrochen.\n");
         task[current].rc = 255;
+        klock_enter();                  /* task_end schliesst Dateien    */
         task_end(current);
         schedule_next();
     }
@@ -1904,6 +2136,16 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
 }
 
 /* ---- Hardware ---------------------------------------------------------- */
+static unsigned pic_mask = 0xFFBC;      /* gesetztes Bit = IRQ maskiert  */
+
+static void pic_update(void)
+{
+    unsigned f = irq_off();
+    outb(0x21, pic_mask & 0xFF);
+    outb(0xA1, pic_mask >> 8);
+    irq_restore(f);
+}
+
 static void pic_pit_init(void)
 {
     /* PICs auf Vektor 20h/28h legen, sonst kollidiert IRQ0 mit #DF */
@@ -1911,7 +2153,8 @@ static void pic_pit_init(void)
     outb(0x21, 0x20); outb(0xA1, 0x28);
     outb(0x21, 0x04); outb(0xA1, 0x02);
     outb(0x21, 0x01); outb(0xA1, 0x01);
-    outb(0x21, 0xBC); outb(0xA1, 0xFF);     /* IRQ 0 Takt, 1 Tastatur, 6 Diskette */
+    outb(0x21, pic_mask & 0xFF);            /* IRQ 0 Takt, 1 Tastatur, 6 Diskette */
+    outb(0xA1, pic_mask >> 8);
 
     /* PIT Kanal 0: 100 Hz */
     outb(0x43, 0x36);
@@ -2183,13 +2426,58 @@ void blk_flush(void)
     }
 }
 
+/* Interruptroutinen der Treiber (start.asm: irq_common) */
+extern unsigned short irq_hoff[16], irq_hcs[16], irq_hds[16];
+
+/* Treiber zu seinem Datenselektor, -1 = keiner */
+static int drv_of(unsigned dsel)
+{
+    int d;
+    for (d = 0; d < NDRV; d++)
+        if (drv[d].used && DRVD_SEL(d) == (dsel & ~3))
+            return d;
+    return -1;
+}
+
 /* DevHlp: Dienste des Kernels fuer Treiber */
 unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
 {
     const char __far *p;
-    unsigned n;
+    unsigned n, f;
+    int d;
 
     switch (fn) {
+    case DH_SETIRQ:
+        d = drv_of(dsel);
+        /* 0 Takt, 1 Tastatur, 2 Kaskade, 6 Diskette gehoeren dem Kernel */
+        if (d < 0 || bx > 15 || bx < 3 || bx == 6 || irq_hcs[bx])
+            return 1;
+        f = irq_off();
+        irq_hoff[bx] = cx;
+        irq_hds[bx] = DRVD_SEL(d);
+        irq_hcs[bx] = DRVC_SEL(d);
+        irq_restore(f);
+        pic_mask &= ~(1u << bx);
+        if (bx >= 8)
+            pic_mask &= ~4u;            /* Kaskade zum zweiten PIC       */
+        pic_update();
+        return 0;
+    case DH_UNSETIRQ:
+        d = drv_of(dsel);
+        if (d < 0 || bx > 15 || irq_hcs[bx] != DRVC_SEL(d))
+            return 1;
+        pic_mask |= 1u << bx;
+        pic_update();
+        f = irq_off();
+        irq_hcs[bx] = 0;
+        irq_restore(f);
+        return 0;
+    case DH_PROCBLOCK:
+        d = drv_of(dsel);
+        return proc_block(((unsigned long)(d & 0xFF) << 16) | bx, cx);
+    case DH_PROCRUN:
+        d = drv_of(dsel);
+        return proc_run(((unsigned long)(d & 0xFF) << 16) | bx);
     case DH_BLKREAD:
         return blk_read((int)bx, ((unsigned long)devhlp_dx << 16) | cx) ? 1 : 0;
     case DH_PUTS:

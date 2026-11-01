@@ -16,6 +16,11 @@ extern void __far *devhlp_ptr;
 
 unsigned devhlp(unsigned fn, unsigned dx, unsigned bx, unsigned cx);
 
+/* Interruptroutine: void f(unsigned irq), laeuft mit gesperrten Interrupts */
+extern void (*irq_fn)(unsigned);
+#pragma aux irq_fn "_irq_fn"
+void irq_entry(void);
+
 #define REQ ((struct drv_req __far *)MK_FP(req_sel, req_off))
 
 unsigned char inp(unsigned port);
@@ -29,6 +34,36 @@ void insw_far(unsigned port, void __far *dst, unsigned n);
 void outsw_far(unsigned port, unsigned sel, unsigned off, unsigned n);
 #pragma aux outsw_far = "push ds" "mov ds,ax" "rep outsw" "pop ds" \
     __parm [__dx] [__ax] [__si] [__cx] __modify [__si __cx];
+
+void cli(void);
+#pragma aux cli = "cli";
+void sti(void);
+#pragma aux sti = "sti";
+
+/* IRQ belegen; alle IRQs eines Treibers landen in derselben Routine
+   (sie bekommt die Nummer). 0 = ok */
+unsigned set_irq(unsigned irq, void (*fn)(unsigned))
+{
+    irq_fn = fn;
+    return devhlp(DH_SETIRQ, 0, irq, (unsigned)irq_entry);
+}
+
+void unset_irq(unsigned irq)
+{
+    devhlp(DH_UNSETIRQ, 0, irq, 0);
+}
+
+/* nach CLI rufen; schlaeft bis proc_run(ev) oder Frist (Takte, 0 = keine).
+   Kehrt mit STI zurueck: 0 = geweckt, 1 = Frist um */
+unsigned proc_block(unsigned ev, unsigned t)
+{
+    return devhlp(DH_PROCBLOCK, 0, ev, t);
+}
+
+unsigned proc_run(unsigned ev)
+{
+    return devhlp(DH_PROCRUN, 0, ev, 0);
+}
 
 void dputs(const char *s)
 {

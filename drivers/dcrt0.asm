@@ -33,8 +33,16 @@ devhlp_:
         call    far [_devhlp]
         ret
 
+; Interrupt: der Kernel ruft hier fern an (DS = Treiberdaten, AX = IRQ,
+; Interrupts gesperrt) -> Routine aus irq_fn (set_irq in drvlib.h)
+global irq_entry_
+irq_entry_:
+        call    [_irq_fn]
+        retf
+
 segment _BSS
-global _req_sel, _req_off, _devhlp
+global _req_sel, _req_off, _devhlp, _irq_fn
 _req_sel:   resw 1
 _req_off:   resw 1
 _devhlp:    resd 1
+_irq_fn:    resw 1

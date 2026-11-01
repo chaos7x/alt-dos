@@ -347,7 +347,90 @@ irq1:
         popa
         iret
 
-; alle anderen IRQs: maskiert, nur fuer den Fall der Faelle
+; IRQs fuer Treiber (DevHlp SetIRQ): Tabelle irq_hoff/irq_hcs/irq_hds,
+; Routine fern mit DS = Treiberdaten, AX = IRQ, danach EOI. Interrupt-Gate:
+; IF bleibt aus, Verschachtelung gibt es nicht (ic_ptr darf global sein).
+%macro IRQ 1
+irq%1:  push    ax
+        mov     ax, %1
+        jmp     irq_common
+%endmacro
+IRQ 3
+IRQ 4
+IRQ 5
+IRQ 7
+IRQ 8
+IRQ 9
+IRQ 10
+IRQ 11
+IRQ 12
+IRQ 13
+IRQ 14
+IRQ 15
+
+irq_common:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     bx, KDATA
+        mov     ds, bx
+        mov     es, bx
+        mov     bx, ax
+        add     bx, bx
+        cmp     word [_irq_hcs+bx], 0
+        je      .eoi                    ; niemand zustaendig
+        cmp     al, 7                   ; IRQ 7/15: Geister-Interrupt?
+        je      .spur
+        cmp     al, 15
+        jne     .call
+.spur:  push    ax
+        mov     dx, 0x20
+        cmp     al, 8
+        jb      .isr
+        mov     dx, 0xA0
+.isr:   mov     al, 0x0B                ; OCW3: ISR lesen
+        out     dx, al
+        in      al, dx
+        test    al, 0x80
+        pop     ax
+        jnz     .call
+        cmp     al, 8                   ; Geist: kein EOI am eigenen PIC
+        jb      .out
+        mov     al, 0x20
+        out     0x20, al                ; Slave-Geist: Master hat IRQ 2
+        jmp     .out
+.call:  push    ax
+        mov     cx, [_irq_hoff+bx]
+        mov     [ic_ptr], cx
+        mov     cx, [_irq_hcs+bx]
+        mov     [ic_ptr+2], cx
+        mov     ds, [_irq_hds+bx]
+        call    far [es:ic_ptr]
+        mov     bx, KDATA
+        mov     ds, bx
+        pop     ax
+.eoi:   cmp     al, 8
+        mov     al, 0x20
+        jb      .m
+        out     0xA0, al
+.m:     out     0x20, al
+.out:   pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        iret
+
+; IRQ 2 (Kaskade): maskiert, nur fuer den Fall der Faelle
 irq_other:
         push    ax
         mov     al, 0x20
@@ -499,9 +582,11 @@ devhlp_entry_:
         mov     ds, ax
         mov     es, ax
         pop     ax
-        mov     [_devhlp_dx], dx
+        push    word [_devhlp_dx]       ; wiedereintrittsfest: DevHlp auch
+        mov     [_devhlp_dx], dx        ; aus Interruptroutinen
         mov     dx, si
         call    devhlp_dispatch_
+        pop     word [_devhlp_dx]
         pop     cx
         pop     bx
         pop     dx
@@ -671,10 +756,16 @@ _isr_table:
         dw exc8, exc9, exc10, exc11, exc12, exc13, exc14, exc15
         dw exc16, 0, 0, 0, 0, 0, 0, 0
         dw 0, 0, 0, 0, 0, 0, 0, 0
-        dw irq0, irq1, irq_other, irq_other
-        dw irq_other, irq_other, irq6, irq_other
-        dw irq_other, irq_other, irq_other, irq_other
-        dw irq_other, irq_other, irq_other, irq_other
+        dw irq0, irq1, irq_other, irq3
+        dw irq4, irq5, irq6, irq7
+        dw irq8, irq9, irq10, irq11
+        dw irq12, irq13, irq14, irq15
+
+global _irq_hoff, _irq_hcs, _irq_hds
+_irq_hoff: times 16 dw 0                ; Einsprung im Treibercode
+_irq_hcs:  times 16 dw 0                ; Codeselektor, 0 = frei
+_irq_hds:  times 16 dw 0                ; Datenselektor
+ic_ptr:    dw 0, 0
 
 tj_ptr: dw 0
 tj_sel: dw 0

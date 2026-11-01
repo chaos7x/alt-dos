@@ -261,7 +261,19 @@ erkennt die Karte am Bitmuster der Register, bevor er etwas schreibt, und
 DevHlp-Funktionen: `DH_PUTS` (Text ins Startprotokoll), `DH_TICKS`
 (Systemtakt), `DH_DELAY` (warten), `DH_BLKREAD` (Block eines anderen
 Geräts lesen, für IFS-Module), `DH_BIOSDISK` (Plattentabelle des BIOS hinter
-INT 41h/46h, vom Kernel beim Start im Real Mode gesichert).
+INT 41h/46h, vom Kernel beim Start im Real Mode gesichert), `DH_SETIRQ`/
+`DH_UNSETIRQ` (IRQ belegen: der Kernel ruft die Routine des Treibers mit
+dessen DS und schickt danach das EOI), `DH_PROCBLOCK`/`DH_PROCRUN` (Task
+schläft im Treiber bis zum Ereignis oder zur Frist, andere Tasks laufen
+weiter; die Interruptroutine weckt ihn).
+
+Treiber mit Interrupt: Während ein Task in einem Treiber schläft, hält er
+die Kernelsperre – Dateisystem, Sektor-Cache, DMA-Puffer und Laufwerke
+gehören in der Zeit ihm. Andere Programme rechnen weiter und dürfen
+Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
+Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
+(Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
+das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 
 `IDE.SYS` und ältere Controller: Der WD1003 (MFM/RLL) hat die Register der
 IDE-Platten, kennt aber kein IDENTIFY und bricht es ab. Dann nimmt der

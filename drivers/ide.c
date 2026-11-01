@@ -6,8 +6,13 @@
  * sind Einheiten mit 2048-Byte-Bloecken (PACKET + READ(10), nur lesend);
  * ein Dateisystem bekommen sie ueber IFS=ISO9660.IFS.
  *
- * PIO-Modus, ohne Interrupt (IRQ 14/15 bleiben maskiert, der Treiber fragt
- * den Status ab). LBA28, wenn die Platte es kann, sonst CHS mit der
+ * PIO-Modus mit Interrupt: IRQ 14 (primaer) und 15 (sekundaer) per DevHlp
+ * SetIRQ. Waehrend die Platte arbeitet, schlaeft der Task (ProcBlock), und
+ * andere laufen weiter; die Interruptroutine weckt ihn (ProcRun). Der
+ * Status wird danach trotzdem geprueft - der Interrupt beschleunigt nur.
+ * Bleibt er aus, obwohl das Geraet fertig ist (Frist 2 Takte), zaehlt das
+ * als Fehltreffer; nach dreien fragt der Kanal wieder nur ab wie frueher.
+ * /NOIRQ in der CONFIG.SYS schaltet die Interrupts ab. LBA28, wenn die Platte es kann, sonst CHS mit der
  * aktuellen Geometrie der Platte (die das BIOS beim Start eingestellt hat) -
  * Platten aus der 286-Zeit kennen oft kein LBA.
  *
@@ -47,6 +52,7 @@
 
 struct unit {
     unsigned       base, ctl;           /* Befehlsregister, Steuerregister */
+    unsigned char  ch;                  /* Kanal 0/1                       */
     unsigned char  sel;                 /* 00h Master, 10h Slave           */
     unsigned char  chs;
     unsigned char  atapi;               /* CD-ROM: Paketbefehle            */
@@ -59,6 +65,16 @@ static int nunit;
 static unsigned short id[256];
 static char line[128];                  /* Zeile fuers Startprotokoll   */
 static const unsigned ports[2][2] = { { 0x1F0, 0x3F6 }, { 0x170, 0x376 } };
+static const unsigned char irqs[2] = { 14, 15 };
+
+/* Interrupt je Kanal */
+#define IRQ_WAIT    2                   /* Takte bis zum Blick auf den Status */
+static struct chan {
+    unsigned char  on;                  /* Interrupt benutzen              */
+    unsigned char  miss;                /* Fehltreffer in Folge            */
+    unsigned char  units;               /* Einheiten an diesem Kanal       */
+    volatile unsigned char done;        /* Interrupt kam                   */
+} chan[2];
 
 /* (x / d) in einem Schritt, x >> 16 muss kleiner als d sein;
    -> Rest << 16 | Quotient (DIV ohne Watcom-Hilfsroutinen) */
@@ -109,6 +125,52 @@ static int wait_idle(unsigned base, unsigned t)
         if ((unsigned)(ticks() - start) > t)
             return -1;
     return 0;
+}
+
+/* Interruptroutine: Status lesen quittiert den Interrupt am Laufwerk */
+static void ide_irq(unsigned n)
+{
+    int ch = n == irqs[1];
+    inp(ports[ch][0] + R_STATUS);
+    chan[ch].done = 1;
+    proc_run(ch + 1);
+}
+
+/* wie wait_status, aber der Task schlaeft bis zum Interrupt des Kanals.
+   Vorher (bei ausgegebenem Befehl bzw. vor dem Datentransfer) muss
+   chan[].done geloescht sein. */
+static int wait_irq(struct unit *u, unsigned char mask, unsigned char want,
+                    unsigned t)
+{
+    struct chan *c = &chan[u->ch];
+    unsigned start = ticks(), r;
+    unsigned char s;
+
+    while (c->on) {
+        s = inp(u->base + R_STATUS);
+        if (!(s & ST_BSY) && ((s & ST_ERR) || (s & mask) == want))
+            break;
+        if ((unsigned)(ticks() - start) > t)
+            return -1;
+        cli();
+        if (c->done) {                  /* kam schon: nicht schlafen    */
+            sti();
+            r = 0;
+        } else
+            r = proc_block(u->ch + 1, IRQ_WAIT);
+        if (r == 0)
+            c->miss = 0;
+        else {                          /* Frist um: fertig ohne Interrupt? */
+            s = inp(u->base + R_STATUS);
+            if (!c->done && !(s & ST_BSY) && ((s & ST_ERR) || (s & mask) == want) &&
+                ++c->miss >= 3) {
+                c->on = 0;              /* kommt nicht: wieder abfragen */
+                unset_irq(irqs[u->ch]);
+            }
+        }
+        c->done = 0;
+    }
+    return wait_status(u->base, mask, want, t);
 }
 
 /* Modellname (Bytes vertauscht) an p anhaengen */
@@ -179,6 +241,7 @@ static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
         outp(b + R_CYL_HI, (unsigned char)(l >> 16));
     }
     settle(u->ctl);
+    chan[u->ch].done = 0;
     outp(b + R_CMD, cmd);
     settle(u->ctl);
     return 0;
@@ -253,6 +316,7 @@ static void old_disk(int ch, int dev)
     }
     u->base = ports[ch][0];
     u->ctl = ports[ch][1];
+    u->ch = (unsigned char)ch;
     u->sel = (unsigned char)(dev << 4);
     u->chs = 1;
     u->atapi = 0;
@@ -268,6 +332,7 @@ static void old_disk(int ch, int dev)
     n = chs_size(u->cyls, u->heads, u->spt);
     r->blocks[nunit] = n;
     nunit++;
+    chan[ch].units++;
     /* echte WD1003-Platten: 17 Sektoren je Spur (MFM) oder 26 (RLL);
        mehr gibt es nur im Emulator */
     p = scat(p, u->spt <= 17 ? "MFM-Platte" : u->spt <= 26 ? "RLL-Platte" : "MFM/RLL-Platte");
@@ -334,12 +399,14 @@ static void probe(int ch, int dev)
         u = &unit[nunit];
         u->base = base;
         u->ctl = ctl;
+        u->ch = (unsigned char)ch;
         u->sel = (unsigned char)(dev << 4);
         u->chs = 0;
         u->atapi = 1;
         r->blocks[nunit] = 0xFFFFFFFFUL;    /* Groesse haengt an der CD */
         r->bsize[nunit] = 2048;
         nunit++;
+        chan[ch].units++;
         p = scat(p, "CD-ROM ");
         p = model(p);
         scat(p, "\n");
@@ -353,6 +420,7 @@ static void probe(int ch, int dev)
     u = &unit[nunit];
     u->base = base;
     u->ctl = ctl;
+    u->ch = (unsigned char)ch;
     u->sel = (unsigned char)(dev << 4);
     u->chs = 0;
     u->atapi = 0;
@@ -384,6 +452,7 @@ static void probe(int ch, int dev)
     }
     r->blocks[nunit] = n;
     nunit++;
+    chan[ch].units++;
 
     p = where(ch, dev);
     p = model(p);
@@ -393,11 +462,26 @@ static void probe(int ch, int dev)
     dputs(line);
 }
 
+/* "/NOIRQ" in den Argumenten (gross oder klein) */
+static int noirq(const char __far *a)
+{
+    static const char k[] = "/NOIRQ";
+    int i;
+    for (; *a; a++) {
+        for (i = 0; k[i] && (a[i] & 0xDF) == (k[i] & 0xDF) ; i++)
+            ;
+        if (!k[i])
+            return 1;
+    }
+    return 0;
+}
+
 static void init(void)
 {
     struct drv_req __far *r = REQ;
     unsigned char s;
     int ch;
+    char *p;
 
     nunit = 0;
     for (ch = 0; ch < 2; ch++) {
@@ -406,6 +490,24 @@ static void init(void)
             continue;
         probe(ch, 0);
         probe(ch, 1);
+    }
+    /* Interrupts fuer Kanaele mit Geraeten. Steuerregister: nIEN = 0
+       (Interrupt an), Bit 3 gesetzt wie beim AT-BIOS (WD1003: mehr als
+       8 Koepfe) */
+    for (ch = 0; ch < 2; ch++) {
+        chan[ch].on = 0;
+        if (!chan[ch].units || noirq(r->args))
+            continue;
+        outp(ports[ch][1], 0x08);
+        chan[ch].done = 0;
+        p = scat(line, ch ? "  IDE sekund\x84r: IRQ " : "  IDE prim\x84r: IRQ ");
+        p = udec(p, irqs[ch]);
+        if (set_irq(irqs[ch], ide_irq) == 0) {
+            chan[ch].on = 1;
+            scat(p, "\n");
+        } else
+            scat(p, " belegt, Abfragebetrieb\n");
+        dputs(line);
     }
     r->units = (unsigned char)nunit;
     r->count = 16;                          /* READ SECTORS mit Sektorzahl */
@@ -442,19 +544,21 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
     pkt[4] = (unsigned char)(l >> 8);
     pkt[5] = (unsigned char)l;
     pkt[8] = 1;                             /* ein Block                */
+    chan[u->ch].done = 0;
     outsw_far(b + R_DATA, FP_SEG(pp), FP_OFF(pp), 6);
     while (got < 2048) {
         settle(u->ctl);
-        if (wait_status(b, ST_DRQ, ST_DRQ, 1000))   /* CD laeuft evtl. an */
+        if (wait_irq(u, ST_DRQ, ST_DRQ, 1000))      /* CD laeuft evtl. an */
             return -1;
         cnt = inp(b + R_CYL_LO) | ((unsigned)inp(b + R_CYL_HI) << 8);
         if (cnt == 0 || (cnt & 1) || got + cnt > 2048)
             return -1;
+        chan[u->ch].done = 0;
         insw_far(b + R_DATA, MK_FP(sel, off + got), cnt >> 1);
         got += cnt;
     }
     settle(u->ctl);
-    return wait_status(b, 0, 0, 300);
+    return wait_irq(u, 0, 0, 300);
 }
 
 /* count Sektoren (1-16) lesen oder einen schreiben */
@@ -489,8 +593,9 @@ static void xfer(int write)
             continue;
         if (!write) {
             for (i = 0; i < n; i++) {           /* je Sektor auf DRQ warten */
-                if (wait_status(b, ST_DRQ, ST_DRQ, 300))
+                if (wait_irq(u, ST_DRQ, ST_DRQ, 300))
                     break;
+                chan[u->ch].done = 0;           /* naechster kommt nach dem Lesen */
                 insw_far(b + R_DATA, MK_FP(r->buf_sel, r->buf_off + (i << 9)), 256);
             }
             if (i < n)
@@ -498,9 +603,10 @@ static void xfer(int write)
         } else {
             if (wait_status(b, ST_DRQ, ST_DRQ, 300))
                 continue;
+            chan[u->ch].done = 0;               /* erster DRQ ohne Interrupt */
             outsw_far(b + R_DATA, r->buf_sel, r->buf_off, 256);
             settle(u->ctl);
-            if (wait_status(b, 0, 0, 300))      /* Platte hat geschrieben */
+            if (wait_irq(u, 0, 0, 300))         /* Platte hat geschrieben */
                 continue;
         }
         r->status = DRV_OK;

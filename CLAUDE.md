@@ -210,6 +210,29 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Auf dem 386SX/2 MB in 86Box bestätigt: `grep -r` über die 2-GB-Platte im
   Hintergrund, Vordergrund bleibt bedienbar, Alt+Esc schnell, Strg+C bricht ab.
   `MEM` dort: 1.664 KB erkannt, 231 KB belegt, 1.433 KB frei.
+- Treiber mit Interrupt (DevHlp in `include/drv.h`, Hilfen in drvlib.h):
+  `DH_SETIRQ` (IRQ 3–15 außer 6) trägt die Routine in `irq_hoff/hcs/hds`
+  ein (start.asm `irq_common`: Aufruf fern mit DS = Treiberdaten, AX = IRQ,
+  IF aus, danach EOI; Geister-IRQ 7/15 über das ISR-Register erkannt).
+  `DH_PROCBLOCK` mit CLI rufen, nachdem die Bedingung geprüft ist (kein
+  verlorenes Wecken), Zustand `T_BLOCK`, Frist `block_until`, kehrt mit STI
+  zurück; vor dem Start der Tasks (`current < 0`) HLT-Schleife.
+  `DH_PROCRUN` setzt nur Zustände (auch aus dem Interrupt) und `run_flag`/
+  `resched_req` – der Scheduler prüft `run_flag` vor HLT bei CLI.
+  Ereignis = Treibernummer << 16 | BX. `devhlp_entry_` sichert
+  `devhlp_dx` auf dem Stack (Aufrufe aus Interruptroutinen).
+  Kernelsperre `klock` (kernel.c): jeder FAPI-Aufruf außer `fapi_nolock()`
+  (VIO, KBD, Umgebung, Zeit, Konsole/Pipe-READ/WRITE ...) nimmt sie;
+  `schedule_next()` gibt sie ab und der Scheduler gibt sie dem Task zurück
+  (`want_lock`), nur ProcBlock (`sched(1)`) behält sie. Strg+C, Neustart
+  und `task_end` anderer Tasks warten, solange jemand sie hält. Kernelteile
+  ohne Sperre (vio) sichern SCRATCH/SCRATCH2 mit `win_save/win_restore`.
+  Im Zweifel neue FAPI-Aufrufe nicht in `fapi_nolock` aufnehmen.
+  IDE: `wait_irq()` schläft je 2 Takte, prüft danach immer den Status
+  (Interrupt beschleunigt nur), `chan[].done` vor Befehl und vor jedem
+  Datentransfer löschen; 3 Fehltreffer -> Abfragebetrieb. In QEMU geprüft:
+  zwei Sitzungen kopieren und greppen gleichzeitig auf einer Platte,
+  `fsck.fat` sauber, 18/18 Kopien gleich; CD über IRQ 15; Rückfall mit nIEN.
 - Signale (`sig_deliver` in kernel.c): Rahmen des FAPI-Aufrufs liegt fest
   oben auf dem Kernelstack (`FRAME(t)`, 14 Worte, Aufbau in start.asm
   `fapi_entry_`). Zustellung beim Rücksprung aus der FAPI: Rahmen und
@@ -403,21 +426,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - `ATSYS`: CHS-Anfang der Partition im MBR gegen die BIOS-Geometrie prüfen
   und warnen (siehe Falle oben); eigener MBR mit LBA-Umrechnung statt CHS
   aus der Tabelle
-- Treiber mit Interrupt statt Abfrage – nächster Schritt (mit dem Nutzer
-  abgestimmt, Plan): 1. DevHlp `SetIRQ` (Treiber meldet IRQ und Routine an;
-  Kernel-ISR lädt DS des Treibers, ruft die Routine, sendet EOI an PIC 1/2),
-  `UnSetIRQ`. 2. DevHlp `ProcBlock(id, Frist)`/`ProcRun(id)`: Task schläft
-  im Treiber, bis der Interrupt ihn weckt, andere Tasks laufen weiter
-  (Kernelstack je Task gibt es schon, `schedule_next` aus dem Kernel heraus
-  geht wie bei `sleep_ticks`); bei Fristablauf Rückfall auf Abfragen.
-  3. Sperre um alle Dateisystem-/Blockgeräte-Aufrufe (eine Kernel-Sperre wie
-  OS/2 1.x): `DMABUF`, FAT-Cache, `dir_entry`-Zeiger, Sektor-Cache sind
-  gemeinsam – wartet Task A auf die Platte, muss Task B vor der Sperre
-  schlafen. Auch Treiber selbst nicht doppelt betreten. 4. Zuerst IDE
-  (IRQ 14/15, nIEN in 3F6h/376h löschen; WD1003/WD1007 ebenfalls IRQ 14),
-  in 86Box testen; dann AHA154X (IRQ aus der Konfiguration lesen, Mailbox-
-  Interrupt); danach `MOUSE.SYS` auf derselben Grundlage. Floppy hat
-  schon IRQ 6 im Kernel (`fdc_irq`) – Vorbild prüfen.
+- Treiber mit Interrupt: Grundlage und IDE erledigt (siehe Konventionen),
+  offen: `AHA154X.SYS` mit IRQ (IRQ aus der Konfiguration
+  der Karte lesen, Mailbox-Interrupt), Diskette (kernel
+  floppy.c) ebenfalls schlafen lassen statt HLT-Schleife, danach `MOUSE.SYS`
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
@@ -493,7 +505,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   je Chip). Grafik-Boxen im Hintergrund notfalls einfrieren (wie OS/2 2.0 anfangs).
 - Reihenfolge nach dem ESDI-Test (abgestimmt mit dem Nutzer): 1. 43/50
   Textzeilen mit `MODE` (erledigt), 2. EDIT fertig (SIG_SHUTDOWN-Nachfrage,
-  Dateiliste – erledigt), 3. Treiber mit Interrupt (DevHlp SetIRQ), 4. `MOUSE.SYS`,
+  Dateiliste – erledigt), 3. Treiber mit Interrupt (DevHlp SetIRQ; IDE
+  erledigt, AHA154X offen), 4. `MOUSE.SYS`,
   danach der ISA-Bereich für 5.0 (Entscheidung des Nutzers): ISA-SCSI
   (NCR 53C400/Trantor T130B, evtl. AHA-1520/AIC-6360) und VGA-Grafik
   wie OS/2 1.x – Standardmodi (12h 640×480×16, 13h 320×200×256) direkt
