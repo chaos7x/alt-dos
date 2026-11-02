@@ -303,6 +303,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   letztes Zeichen '_'; Größe wird am Ende per DosSeek in den Kopf
   geschrieben. Geprüft: Hin und zurück mit EXPAND + COMP, und ein
   unabhängiger Python-Entpacker liefert das Original.
+- CUT (Wunsch des Nutzers, „wie unter Linux“; in QEMU gegen GNU cut auf
+  dem Host verglichen): -c/-b/-f, -d, -s, --complement,
+  --output-delimiter=, Listen N/N-M/N-/-M; Zeilen bis 4 KB (länger wird
+  gekürzt), CR LF bleibt erhalten, ^Z beendet. Testfalle q.py: `|` ist
+  auf der deutschen Tastatur AltGr+< (`alt_r-less`).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`

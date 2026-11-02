@@ -165,6 +165,9 @@ und PC-DOS.
   von Microsoft-Disketten, der Name kommt aus dem Kopf zurück) wie MS-DOS;
   dazu `COMPRESS [/R] Quelle [Ziel]` wie aus den Microsoft-Entwickler-
   paketen (packt ins SZDD-Format, `/R` macht `BRIEF.TX_`)
+- `CUT -c|-b|-f LISTE [-d X] [-s] [--complement] [--output-delimiter=T]
+  [Datei…]` nach dem Vorbild von GNU cut (Zeichen oder Felder je Zeile,
+  auch in Pipes: `DIR /B | CUT -c1-8`)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
