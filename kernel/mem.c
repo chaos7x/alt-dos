@@ -53,7 +53,9 @@ void mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb)
     release_range(MEM_HIGH_START, (unsigned)end);
 }
 
-unsigned mem_alloc(unsigned units)
+unsigned (*mem_reclaim)(unsigned units);
+
+static unsigned try_alloc(unsigned units)
 {
     unsigned u, run = 0, start = 0;
 
@@ -79,6 +81,18 @@ unsigned mem_alloc(unsigned units)
         }
     }
     return 0;
+}
+
+/* Kein Platz? Dann gibt der Platten-Cache Stuecke ab (wie der Cache-
+   Manager bei NT, hier noch in festen 16-KB-Stuecken), bis es passt */
+unsigned mem_alloc(unsigned units)
+{
+    unsigned u;
+    if (units == 0)
+        return 0;
+    while ((u = try_alloc(units)) == 0 && mem_reclaim && mem_reclaim(units))
+        ;
+    return u;
 }
 
 void mem_free(unsigned start, unsigned units)

@@ -10,5 +10,9 @@ void     mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb); /* low: erst
 unsigned mem_alloc(unsigned units);             /* -> erste Einheit, 0 = Fehler */
 void     mem_free(unsigned start, unsigned units);
 unsigned mem_free_kb(void);
+/* Rueckruf bei Speichermangel (Platten-Cache gibt saubere Stuecke ab):
+   -> freigegebene Einheiten, 0 = nichts mehr abzugeben. Darf keine
+   Plattenzugriffe machen (mem_alloc kommt auch ohne Kernelsperre). */
+extern unsigned (*mem_reclaim)(unsigned units);
 
 #endif

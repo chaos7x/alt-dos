@@ -321,7 +321,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Größe, Frist und Trefferquote. In QEMU geprüft: XCOPY + SHUTDOWN (fsck
   sauber, Inhalte gleich), Strom weg nach COPY (Datei fehlt, Dateisystem
   stimmig, Sauber-Bit gelöscht -> AUTOCHECK), CHKDSK /F, zwei XCOPY
-  gleichzeitig, Diskette mit 4 MB RAM. Vom Nutzer auf dem SCAT in 86Box
+  gleichzeitig, Diskette mit 4 MB RAM.
+  Vorbereitung dynamischer Cache (Wunsch des Nutzers, für 6.0): Daten in
+  Stücken zu 16 KB (`bc_unit[]`, 8 Blöcke je Stück, `BC_LIN(i)`), nicht
+  mehr am Stück; fehlende Stücke = Blöcke mit dev -2. mem.c ruft bei
+  Platzmangel `mem_reclaim` (= `bc_reclaim`: saubere Stücke von hinten
+  freigeben, nur Tabellen, keine Plattenzugriffe – mem_alloc kommt auch
+  ohne Kernelsperre), `bc_regrow` holt sie in `sleep_ticks` zurück (alle
+  5 s, 256 KB bleiben frei; `bc_growing` verhindert Rückruf in sich
+  selbst). MEM zeigt die aktuelle Größe. In QEMU geprüft (3 MB, CACHE=
+  1536, TASKB: Cache 1.536 -> 1.472 KB, danach wieder 1.536; XCOPY,
+  SHUTDOWN, fsck sauber). In 6.0 dann wie NT: Seiten statt Stücke, Cache
+  = freier Speicher.
+  Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
   XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache
   oberhalb 1 MB) mit 85 % Treffern, IDE ebenso (88 % Treffer). Strom weg

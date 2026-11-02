@@ -37,7 +37,8 @@ und PC-DOS.
   `CACHE=kb[,s]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
   bis 8 MB im erweiterten Speicher, Festplatten schreiben s Sekunden
   verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
-  bei 2 MB; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
+  bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
+  16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `LONGNAMES=AUTO|VFAT|EA`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare

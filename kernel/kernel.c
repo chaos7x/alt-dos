@@ -1434,12 +1434,15 @@ unsigned proc_run(unsigned long id)
 
 static int bc_due(void);
 static void bc_flush(void);
+static void bc_regrow(void);
 static void cache_info(struct fapi_cacheinfo __far *ci);
 static void sleep_ticks(unsigned n)
 {
-    if (bc_due() && (klock < 0 || klock == current)) {
+    if (klock < 0 || klock == current) {
         klock_enter();                  /* Leerlauf: verzoegerte Daten   */
-        bc_flush();                     /* schreiben, wenn Frist um      */
+        if (bc_due())                   /* schreiben, wenn Frist um;     */
+            bc_flush();
+        bc_regrow();                    /* abgegebene Stuecke zurueck    */
         klock_leave();
     }
     task[current].wake = get_ticks() + n;
@@ -3197,52 +3200,122 @@ struct bce {
     unsigned      next;                 /* Hash-Kette                    */
 };
 static unsigned       bc_msel, bc_wsel, bc_n, bc_hand, bc_ndirty, bc_delay;
-static unsigned long  bc_lin, bc_since;
+static unsigned long  bc_since, bc_grow_t;
+/* Daten in Stuecken zu 16 KB (8 Bloecke, 64 Einheiten), einzeln belegt:
+   bei Speichermangel gibt mem_alloc saubere Stuecke zurueck (bc_reclaim),
+   im Leerlauf waechst der Cache wieder bis zur CACHE=-Groesse (bc_regrow).
+   Bloecke fehlender Stuecke haben dev = -2. Vorbereitung fuer den
+   dynamischen Cache von 6.0 (dort mit Seiten statt Stuecken). */
+#define BC_CHB      8                   /* Bloecke je Stueck             */
+#define BC_CHU      64                  /* Einheiten je Stueck (16 KB)   */
+#define BC_MAXCH    512                 /* 8 MB                          */
+static unsigned       bc_unit[BC_MAXCH], bc_nch, bc_present, bc_growing;
+#define BC_LIN(i)   (((unsigned long)bc_unit[(i) >> 3] << 8) + ((unsigned)((i) & 7) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
 static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
 #define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
 #define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
+static void bc_unlink(unsigned i);
+static unsigned bc_reclaim(unsigned units);
+
+/* ein fehlendes Stueck holen; 0 = ok */
+static int bc_chunk_get(unsigned c)
+{
+    unsigned u, k;
+    bc_growing = 1;                     /* kein bc_reclaim waehrenddessen */
+    u = mem_alloc(BC_CHU);
+    bc_growing = 0;
+    if (!u)
+        return -1;
+    bc_unit[c] = u;
+    for (k = 0; k < BC_CHB; k++)
+        BCE(c * BC_CHB + k)->dev = -1;
+    bc_present++;
+    return 0;
+}
+
 void blk_cache_init(unsigned kb)
 {
-    unsigned i, u, w;
+    unsigned i, w;
     if (kb > 8192)
         kb = 8192;
+    kb &= ~15u;                         /* ganze Stuecke                 */
     bc_n = 0;
     if (kb < 16)
         return;
     w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
-    for (; kb >= 16; kb >>= 1) {
-        u = mem_alloc(kb << 2);         /* Einheiten zu 256 Byte         */
-        if (u)
-            break;
-    }
-    if (!w || kb < 16)
-        return;
-    bc_lin = (unsigned long)u << 8;
     bc_msel = kseg_alloc((unsigned long)((kb >> 1) * sizeof(struct bce) + BC_HASH * 2));
-    if (!bc_msel) {
-        mem_free(u, kb << 2);
+    if (!w || !bc_msel)
         return;
-    }
     bc_wsel = w;
     bc_n = kb >> 1;
+    bc_nch = bc_n / BC_CHB;
     for (i = 0; i < bc_n; i++)
-        BCE(i)->dev = -1;
+        BCE(i)->dev = -2;
     for (i = 0; i < BC_HASH; i++)
         BCH(i) = BC_END;
+    for (i = 0; i < bc_nch; i++)        /* so viel, wie der Speicher hergibt */
+        if (bc_chunk_get(i))
+            break;
     bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
+    mem_reclaim = bc_reclaim;
 }
 
 unsigned blk_cache_kb(void)
 {
-    return bc_n << 1;
+    return bc_present << 4;
+}
+
+/* Speichermangel: saubere Stuecke von hinten freigeben, bis units Platz
+   gemacht sind. Nur Tabellen, keine Plattenzugriffe. */
+static unsigned bc_reclaim(unsigned units)
+{
+    unsigned c, k, freed = 0;
+    struct bce __far *e;
+    if (bc_growing)
+        return 0;
+    for (c = bc_nch; c-- > 0 && freed < units; ) {
+        if (!bc_unit[c])
+            continue;
+        for (k = 0; k < BC_CHB; k++)
+            if (BCE(c * BC_CHB + k)->dirty)
+                break;
+        if (k < BC_CHB)
+            continue;                   /* noch Ungeschriebenes drin     */
+        for (k = 0; k < BC_CHB; k++) {
+            e = BCE(c * BC_CHB + k);
+            if (e->dev >= 0)
+                bc_unlink(c * BC_CHB + k);
+            e->dev = -2;
+        }
+        mem_free(bc_unit[c], BC_CHU);
+        bc_unit[c] = 0;
+        bc_present--;
+        freed += BC_CHU;
+    }
+    return freed;
+}
+
+/* im Leerlauf (mit Kernelsperre): fehlende Stuecke zurueckholen, wenn
+   genug frei ist (256 KB bleiben fuer Programme) */
+static void bc_regrow(void)
+{
+    unsigned c;
+    if (bc_present == bc_nch || get_ticks() - bc_grow_t < 91)
+        return;
+    bc_grow_t = get_ticks();
+    for (c = 0; c < bc_nch; c++)
+        if (!bc_unit[c]) {
+            if (mem_free_kb() < 256 + 16 || bc_chunk_get(c))
+                return;
+        }
 }
 
 static void cache_info(struct fapi_cacheinfo __far *ci)
 {
-    ci->kb = bc_n << 1;
+    ci->kb = bc_present << 4;           /* gerade belegt (kann schrumpfen) */
     ci->delay_s = bc_n && bc_delay ? cache_s : 0;
     ci->hits = bc_hits;
     ci->misses = bc_miss;
@@ -3256,7 +3329,7 @@ static unsigned bc_hash(int dev, unsigned long blba)
 
 static void bc_win(unsigned i)          /* Fenster auf Block i            */
 {
-    set_desc(bc_wsel >> 3, bc_lin + ((unsigned long)i << 11), 2047, ACC_KDATA);
+    set_desc(bc_wsel >> 3, BC_LIN(i), 2047, ACC_KDATA);
 }
 
 static unsigned bc_lookup(int dev, unsigned long blba)
@@ -3301,7 +3374,7 @@ static void bc_wb(unsigned i)
             req.count = 1;
             req.status = DRV_ERR_IO;
             req.lba = e->lba + s;
-            req.buf_phys = bc_lin + ((unsigned long)i << 11) + (s << 9);
+            req.buf_phys = BC_LIN(i) + (s << 9);
             req.buf_sel = bc_wsel;
             req.buf_off = s << 9;
             drv_request(b->drv);
@@ -3330,8 +3403,10 @@ static unsigned bc_victim(void)
         if (++bc_hand >= bc_n)
             bc_hand = 0;
         e = BCE(i);
-        if (e->dev < 0)
+        if (e->dev == -1)
             return i;
+        if (e->dev < 0)
+            continue;                   /* Stueck fehlt                  */
         if (e->ref) {
             e->ref = 0;
             continue;
@@ -3341,7 +3416,7 @@ static unsigned bc_victim(void)
         if (dirty_c == BC_END)
             dirty_c = i;
     }
-    return dirty_c != BC_END ? dirty_c : bc_hand;
+    return dirty_c;                     /* BC_END: kein Platz            */
 }
 
 /* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) -> Block */
@@ -3355,6 +3430,8 @@ static unsigned bc_put(int dev, unsigned long lba, unsigned off, int stream)
     i = bc_lookup(dev, blba);
     if (i == BC_END) {
         i = bc_victim();
+        if (i == BC_END)
+            return BC_END;
         e = BCE(i);
         if (e->dev >= 0) {
             if (e->dirty)
