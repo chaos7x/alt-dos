@@ -201,8 +201,10 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_sb16.sys SB16.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
+python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
-       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE"
+       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE
+       $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"

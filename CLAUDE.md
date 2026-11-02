@@ -1001,6 +1001,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Stimmen, älteste wird abgelöst; IMF (560/700 Hz). Zeit in 10 ms über
   DosQTicks, Rest in µs (`time_add_us`, mul16/div32, `sdiv` begrenzt).
   Geprüft: IMF 440 Hz 1 s, MIDI A3/E4/A4 mit richtigen Frequenzen.
+  Klangbeispiele in `\DEMO` (tools/mkaudio.py, beim Bauen erzeugt):
+  KLANG.WAV (Arpeggio, 11 kHz 8 Bit), ODE.MID / ODE.IMF (Ode an die
+  Freude, gemeinfrei, mit Bass) – in QEMU alle drei hörbar.
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
   Offen: ISA-PnP

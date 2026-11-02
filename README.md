@@ -472,7 +472,8 @@ bis 44,1 kHz; SB/SB Pro: 8 Bit mono bis 22 kHz) per Auto-Init-DMA; sucht an
 MIDI über einen MPU-401 (330h, `/M:300` legt fest) – auch auf Karten ohne
 Sound Blaster. `PLAY Datei` spielt WAV, VOC, MIDI (über den MPU-401, mit
 `/FM` oder ohne MPU über eigene FM-Instrumente) und IMF (AdLib-Musik aus
-Spielen, `/R:700`), `MIXER [Regler Wert]`
+Spielen, `/R:700`) – Beispiele in `\DEMO`: `KLANG.WAV`, `ODE.MID`,
+`ODE.IMF` (Ode an die Freude) –, `MIXER [Regler Wert]`
 stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). Mehrere Programme
 dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung
 (Spiele), sonst das zuletzt gestartete (Musik im Hintergrund).
