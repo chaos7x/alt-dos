@@ -50,7 +50,18 @@ mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
 APM -> Phase 6 (Entscheidung des Nutzers: Rest von Phase 2 ans Ende)
 Sperren je Gerät statt der einen Kernelsperre (DMABUF, `req`,
 SCRATCH-Fenster und statische FAPI-Puffer je Task/Gerät), echt parallele
-Plattenzugriffe auf verschiedenen Laufwerken; danach nach `5.x` zurück. Jede Phase auf 386SX/2 MB in 86Box, danach 486.
+Plattenzugriffe auf verschiedenen Laufwerken; danach nach `5.x` zurück.
+
+Testmaschinen 6.0 (Entscheidung des Nutzers, ab Phase 3 – „Hauptsache
+stabil und ressourcenschonend“): **Hauptmaschine die 486 in 86Box mit
+8–16 MB**; **Untergrenze 386 (SX oder DX) mit 4 MB** – dort muss alles
+laufen, auch zwei DOS-Boxen; **386SX mit 2 MB nur noch Rauchtest**
+(starten, FAPI-Programme, Kopieren, CHKDSK, eine Box), Platz und Tempo
+werden nicht mehr darauf zugeschnitten; Obergrenze der P3B-F. Grund:
+eine Box kostet ~660 KB (mit FreeDOS mehr), jeder Trap und jeder TLB-
+Verlust beim Taskwechsel (CR3 je Task) kostet auf dem SX spürbar;
+Vorbilder der Zeit (Windows 3.1 erweitert, OS/2 2.0) brauchten real
+4–8 MB. Der Kernel bleibt trotzdem schlank (Leitlinie 6.0).
 
 Diskettenabbild heißt seit 6.0 `build/atdos-fd.img` (vorher `dos5.img`,
 Wunsch des Nutzers), OEM-Kennung `ALTDOS60`.
@@ -1546,7 +1557,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nimmt anderen ihre Zeitscheibe – später IDLE_SENSITIVITY wie OS/2.
   Nächste Stufe 3: FreeDOS-Kern in der Box mit INT-2Fh-Redirector auf
   die AT-DOS-Laufwerke (dann laufen .EXE, COMMAND.COM, Stapeldateien).
-- Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
+- Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
+  oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)
   und 386DX in 86Box, danach Umstieg auf 486DX. Build mit `cpu 386` / `-3`,
