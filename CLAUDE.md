@@ -7,16 +7,20 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
-Lizenz: vorläufig MIT (`LICENSE`, vom Nutzer bewusst so gesetzt), endgültig
-noch nicht entschieden; das Projekt ist nicht öffentlich. Entscheidung
-(Nutzer) vor Beginn von DOS 6.0 – evtl. Wechsel auf GPL, solange er der
-einzige Urheber ist; dann dürfte Code aus FreeDOS, 86Box, Linux, GRUB
-übernommen werden (Herkunft je Übernahme vermerken). Fremdes DOS in der
-V86-Box (FreeDOS, MS-DOS) geht unter jeder Lizenz. Bis dahin keinen
-fremden Code übernehmen (GPL/LGPL wie 86Box, Wine,
-ReactOS, GNU nur lesen) – so bleiben alle Wege offen. Größere fremde
-Teile (z. B. Wine-Bibliotheken für Win32) nur als abgegrenzte Teilsysteme
-neben dem Kernel denken.
+Lizenz (Entscheidung des Nutzers): AT-DOS 5.0 (Tag, Zweig `5.x`) bleibt
+MIT (`LICENSE`). Ab 6.0 auf `main` gilt **GPL-2.0-or-later** – beim Start
+von 6.0 `LICENSE` austauschen (GPL-2.0-Text mit „or later“), README-
+Abschnitt, SPDX-Zeilen. Grund: Ableger sollen offen bleiben, die Arbeit
+geht nicht verloren, wenn jemand anderes fortsetzt. Ab dann darf Code aus
+FreeDOS, 86Box (Lizenz je Datei prüfen), Linux (v2-only: nicht zusammen
+mit v3-Code), GRUB (v3+: macht das Ganze zu v3) übernommen werden –
+Herkunft je Übernahme vermerken. Fremden GPL-Code nie nach 5.x
+zurückübertragen (dort MIT); eigener Code darf in beide Richtungen.
+Bis 6.0 beginnt: keinen fremden Code übernehmen, nur lesen. Fremdes DOS
+in der V86-Box (FreeDOS, MS-DOS) geht unter jeder Lizenz. Wine (LGPL)
+als abgegrenztes Teilsystem neben dem Kernel. Grundsatz bleibt: fremder
+Code passt selten zum 16-Bit-System – meist selbst schreiben, fremden
+Code als Nachschlagewerk nutzen.
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
