@@ -100,7 +100,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - `tools/atsys.asm` – `ATSYS.COM` für MS-DOS (wie SYS); `tools/sysboot.py`
   macht dasselbe für Abbilder beim Bauen
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,
-  `mem.c` (physische Speicherverwaltung, Bitmap in 256-Byte-Einheiten),
+  `mem.c` (physische Speicherverwaltung, Bitmap in 4-KB-Seiten),
   `floppy.c` (Diskettentreiber), `fat.c` (FAT12/16 und IFS-Verteiler),
   `vio.c` (Sitzungen, Konsole), `kbd.c` (Tastatur), `ifs.h`, `kern.h`
   (gemeinsame Definitionen). Blockgeräte, Treiberlader, DevHlp, CONFIG.SYS
@@ -1344,11 +1344,32 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Interessant für 5.0: NCR 5380/53C400 (Trantor T130B,
   Rancho RT1000B, Longshine LCS-6821N), AHA-1520A/AIC-6360 (PIO).
   Adaptec 154x und BusLogic laufen in 86Box über denselben Code (`scsi_x54x.c`).
-- Speicher in DOS 6.0: Erkennung per INT 15h E820h (Speicherkarte mit
-  Lücken), E801h als Rückfall, 88h zuletzt (nur 16 Bit KB, max. 64 MB).
-  Ziel: auch VMs mit 128 MB und mehr (Nutzer hat DOS/Windows-VMs mit
-  128 MB) richtig erkennen. Bitmap dann in 4-KB-Seiten (Paging) statt
-  256-Byte-Einheiten, sonst 64 KB Bitmap für 128 MB.
+- Speicher in DOS 6.0, Phase 1a erledigt (Entscheidung des Nutzers:
+  durchgehend 32 Bit bis 1 GB, alles in 4-KB-Seiten – wegen DOS-Boxen mit
+  DPMI/XMS und dem Weg zu 7.0; der SX ist dafür nicht mehr Maßstab).
+  start.asm fragt im Real Mode E820h ab (`e820_map`, bis 32 Einträge zu
+  20 Byte, `e820_n`), sonst E801h (`e801_lo` KB 1–16 MB, `e801_hi`
+  64-KB-Blöcke darüber), zuletzt 88h. mem.c: `pg_t` = unsigned long
+  (Seitennummer), `mem_alloc(n)` -> erste Seite (0 = keiner),
+  `mem_alloc_low` unter 16 MB (kseg_dma, ISA-DMA), `mem_free(p, n)`,
+  `PAGES(bytes)`, `PG_LIN(p)`, Suche ab Merker `hint`. Bitmap bis 256 MB
+  (8 KB) fest bei 9000h, darüber im ersten passenden RAM ab 1 MB
+  (Seiten reserviert); `MEM_MAX_PG` = 1 GB. Unter 640 KB frei ab
+  Kernelende (auf Seiten gerundet). `put_desc` setzt Basis 24–31 (Byte
+  7), `desc_base()` liest sie (seg_free). Alle Felder mit Seitennummern
+  sind `pg_t` (task img/code_unit, ses unit/save/gfx_save, bc_unit,
+  ld_cu); Zähler bleiben `unsigned` (Segmente <= 16 Seiten, nur
+  GFX-Puffer mehr). Lehre: Watcom kürzt unsigned long -> unsigned ohne
+  Warnung, `(unsigned long)u << 8` in vio.c (Sitzungspuffer) übersehen
+  -> #GP erst, als der Speicher über 16 MB lag. Test: `hint` testweise
+  auf 256 MB setzen (alles wird oben vergeben). FAPI_MEMINFO: CX =
+  Größe, ab 18 Byte `total_kb32`/`free_kb32` (alte Programme 10 Byte,
+  gekappt; fapi.h übergibt sizeof). In QEMU geprüft: 2 MB bis 1 GB, 2 GB
+  -> 1 GB, isapc; mit allem oberhalb 256 MB: XCOPY über NCR, PLAY (DMA
+  unter 16 MB), GRAFIK 12 mit Sitzungswechsel, fsck sauber. Rundung auf
+  4 KB kostet bei 2 MB rund 45 KB (frei 976 statt 1.026 KB).
+  Erstes Kernel-Codesegment danach bei 63,8 KB – vor Phase 1b Teile
+  nach KTEXT2 verschieben.
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

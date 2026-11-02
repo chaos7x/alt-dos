@@ -11,6 +11,7 @@
 #ifndef K2_H
 #define K2_H
 #include "kern.h"
+#include "mem.h"
 
 /* Ports und Interrupts inline (kein Fernaufruf je Zugriff) */
 unsigned char k2_inb(unsigned port);
@@ -43,8 +44,8 @@ void __far kf_scratch2_map(unsigned long base, unsigned limit);
 void __far kf_win_save(unsigned short *b);
 void __far kf_win_restore(const unsigned short *b);
 void __far kf_zero_seg(unsigned sel, unsigned words);
-unsigned __far kf_mem_alloc(unsigned units);
-void __far kf_mem_free(unsigned start, unsigned units);
+pg_t __far kf_mem_alloc(unsigned pages);
+void __far kf_mem_free(pg_t start, unsigned pages);
 void __far kf_ldt_set(int t, unsigned sel, unsigned long base, unsigned limit);
 void __far kf_ldt_drop(int t, unsigned sel);
 void __far kf_redraw(void);

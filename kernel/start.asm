@@ -118,6 +118,49 @@ _start:
 .ext_ok:
         mov     [_mem_ext_kb], ax
 
+        ; Speicherkarte (INT 15h E820h, bis 32 Eintraege zu 20 Byte):
+        ; RAM mit Luecken, auch ueber 64 MB. Fehlt sie: E801h.
+        push    es
+        push    ds
+        pop     es
+        xor     ebx, ebx
+        mov     di, _e820_map
+.e820_next:
+        mov     eax, 0xE820
+        mov     edx, 0x534D4150         ; 'SMAP'
+        mov     ecx, 20
+        int     0x15
+        jc      .e820_end
+        cmp     eax, 0x534D4150
+        jne     .e820_end
+        cmp     cx, 20
+        jb      .e820_skip
+        add     di, 20
+        inc     word [_e820_n]
+        cmp     word [_e820_n], 32
+        jae     .e820_end
+.e820_skip:
+        test    ebx, ebx
+        jnz     .e820_next
+.e820_end:
+        pop     es
+        cmp     word [_e820_n], 0
+        jne     .e801_end
+        mov     ax, 0xE801              ; AX/CX: KB 1-16 MB, BX/DX: 64-KB-
+        xor     bx, bx                  ; Bloecke ueber 16 MB
+        xor     cx, cx
+        xor     dx, dx
+        int     0x15
+        jc      .e801_end
+        test    ax, ax
+        jnz     .e801_ax
+        mov     ax, cx
+        mov     bx, dx
+.e801_ax:
+        mov     [_e801_lo], ax
+        mov     [_e801_hi], bx
+.e801_end:
+
         ; Plattenparameter des BIOS fuer IDE.SYS sichern: Anzahl Platten
         ; (0040:0075) und die Tabellen hinter INT 41h/46h (je 16 Byte).
         ; MFM-Controller (WD1003) kennen kein IDENTIFY, die Geometrie gibt
@@ -1049,9 +1092,13 @@ global _fdc_irq
 _fdc_irq:    resb 1
 global _kbd_aux
 _kbd_aux:    resb 1
-global _mem_conv_kb, _mem_ext_kb
+global _mem_conv_kb, _mem_ext_kb, _e820_map, _e820_n, _e801_lo, _e801_hi
 _mem_conv_kb: resw 1
 _mem_ext_kb:  resw 1
+_e820_n:      resw 1
+_e801_lo:     resw 1
+_e801_hi:     resw 1
+_e820_map:    resb 32 * 20
 global _bios_hdcount, _bios_fdpt, _bios_geo_h, _bios_geo_s, _bios_geo_c
 _bios_hdcount: resb 1
 _bios_fdpt:   resb 32

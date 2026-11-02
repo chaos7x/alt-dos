@@ -150,6 +150,12 @@ static const char *fdname(unsigned t)
 }
 
 /* ---- Einzelheiten je Knopf -------------------------------------------- */
+/* erweiterter Speicher: aus der Speicherkarte (6.0), sonst INT 15h/88h */
+static unsigned long ext_kb(void)
+{
+    return mi.total_kb32 > si.conv_kb ? mi.total_kb32 - si.conv_kb : si.ext_kb;
+}
+
 static int same_name(const char *a, const char *b)
 {
     while (*a && *a == *b)
@@ -217,15 +223,15 @@ static void detail(unsigned k)
         ap(v, " KB");
         line("Konventionell:", v);
         v[0] = 0;
-        apn(v, si.ext_kb);
+        apn(v, ext_kb());
         ap(v, " KB");
         line("Erweitert (ab 1 MB):", v);
         v[0] = 0;
-        apn(v, mi.total_kb);
+        apn(v, mi.total_kb32 ? mi.total_kb32 : mi.total_kb);
         ap(v, " KB");
         line("Verwaltet:", v);
         v[0] = 0;
-        apn(v, mi.free_kb);
+        apn(v, mi.total_kb32 ? mi.free_kb32 : mi.free_kb);
         ap(v, " KB");
         line("Frei:", v);
         v[0] = 0;
@@ -413,7 +419,7 @@ static void summary(void)
         ap(sum[0], si.fpu == 1 ? ", 80287" : si.cpu == 3 ? ", 80387" : ", 80287XL");
     apn(sum[1], si.conv_kb);
     ap(sum[1], "K + ");
-    apn(sum[1], si.ext_kb);
+    apn(sum[1], ext_kb());
     ap(sum[1], "K");
     ap(sum[2], si.vga ? "VGA" : "keine VGA");
     if (si.vbios_name[0]) {

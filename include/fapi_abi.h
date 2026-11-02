@@ -21,7 +21,8 @@
 #define FAPI_YIELD          0x02    /* CPU kooperativ abgeben           */
 #define FAPI_EXIT           0x03    /* Task beenden, BX = Rueckgabewert (0-255) */
 #define FAPI_SLEEP          0x04    /* BX = Millisekunden               */
-#define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
+#define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo,
+                                       CX = dessen Groesse (0 = alte 10 Byte) */
 #define FAPI_ALLOCSEG       0x06    /* BX = Groesse (0 = 64 KB) -> Selektor */
 #define FAPI_FREESEG        0x07    /* BX = Selektor                    */
 #define FAPI_KBDCHARIN      0x08    /* -> AX = Zeichen | Scancode << 8  */
@@ -391,6 +392,9 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     unsigned short kernel_kb;       /* vom Kernel reserviert            */
     unsigned short apps_kb;         /* fuer Programmabbilder reserviert */
     unsigned short alloc_kb;        /* per DosAllocSeg vergeben         */
+    /* ab 6.0, nur wenn CX = sizeof(struct fapi_meminfo): die 16-Bit-
+       Felder oben sind bei mehr als 64 MB auf FFFFh gekappt */
+    unsigned long  total_kb32, free_kb32;
 };
 
 struct fapi_dirent {                /* DosFindEntry                     */

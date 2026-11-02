@@ -25,7 +25,7 @@
 #define UCODE       USEL(0)
 #define UDATA       USEL(1)
 
-#define UNITS(n)    ((unsigned)(((n) + MEM_UNIT - 1) / MEM_UNIT))
+#define UNITS(n)    PAGES(n)
 
 /* Zugriffsbytes (286) */
 #define ACC_KCODE   0x9A    /* P, DPL0, Code, lesbar              */
@@ -83,8 +83,8 @@ struct task {
     char          args[FAPI_ARGLEN];
     unsigned char drive;                          /* aktuelles Laufwerk    */
     char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
-    unsigned      img_unit, img_cnt;        /* Datensegment (V1: alles)  */
-    unsigned      code_unit, code_cnt;      /* V2: Codesegment, geteilt  */
+    pg_t          img_unit, code_unit;      /* Seiten: Daten (V1: alles), */
+    unsigned      img_cnt, code_cnt;        /* V2: Code, geteilt         */
     unsigned long code_key, code_fsize;     /* gleiches Programm?        */
     unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
     unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
@@ -108,8 +108,8 @@ static struct tss286  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
-static unsigned       alloc_units;                /* per DosAllocSeg       */
-static unsigned       image_units;                /* Programmabbilder      */
+static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
+static unsigned       image_units;                /* Seiten Programmabbilder */
 static int            current = -1;
 
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
@@ -148,7 +148,14 @@ static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
     d->base_lo = (unsigned short)base;
     d->base_hi = (unsigned char)(base >> 16);
     d->access  = acc;
-    d->rsv     = 0;
+    d->rsv     = (unsigned short)((base >> 16) & 0xFF00);   /* 386: Basis 24-31 */
+}
+
+/* lineare Basis eines Deskriptors (32 Bit) */
+static unsigned long desc_base(const struct desc *d)
+{
+    return d->base_lo | ((unsigned long)d->base_hi << 16) |
+           ((unsigned long)(d->rsv & 0xFF00) << 16);
 }
 
 void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
@@ -371,29 +378,29 @@ static void shutdown(void)
    Doppelt belegen, passendes Stueck behalten, Rest zurueck. */
 unsigned kseg_dma(unsigned bytes, unsigned long *lin)
 {
-    unsigned i, u, n = (bytes + MEM_UNIT - 1) >> 8, s;
-    unsigned long a;
+    unsigned i, n = PAGES(bytes);
+    pg_t u, s;
 
     for (i = 0; i < NKSEG && gdt[KSEG_IDX(i)].access; i++)
         ;
-    if (i == NKSEG || !(u = mem_alloc(2 * n)))
+    if (i == NKSEG || !(u = mem_alloc_low(2 * n)))      /* unter 16 MB   */
         return 0;
-    a = (unsigned long)u << 8;
     s = u;
-    if ((a >> 16) != ((a + bytes - 1) >> 16))
-        s = (unsigned)(((a >> 16) + 1) << 8);   /* ab der naechsten Grenze */
+    if ((u >> 4) != ((u + n - 1) >> 4))
+        s = ((u >> 4) + 1) << 4;        /* ab der naechsten 64-KB-Grenze */
     if (s > u)
-        mem_free(u, s - u);
+        mem_free(u, (unsigned)(s - u));
     if (u + 2 * n > s + n)
-        mem_free(s + n, u + 2 * n - (s + n));
-    *lin = (unsigned long)s << 8;
+        mem_free(s + n, (unsigned)(u + 2 * n - (s + n)));
+    *lin = PG_LIN(s);
     set_desc(KSEG_IDX(i), *lin, bytes - 1, ACC_KDATA);
     return KSEG_IDX(i) * 8;
 }
 
 unsigned kseg_alloc(unsigned long bytes)
 {
-    unsigned i, u, n;
+    unsigned i;
+    pg_t u;
 
     if (bytes == 0 || bytes > 0x10000UL)
         return 0;
@@ -402,11 +409,10 @@ unsigned kseg_alloc(unsigned long bytes)
         ;
     if (i == NKSEG)
         return 0;
-    n = (unsigned)((bytes + MEM_UNIT - 1) >> 8);
-    u = mem_alloc(n);
+    u = mem_alloc(PAGES(bytes));
     if (!u)
         return 0;
-    set_desc(KSEG_IDX(i), (unsigned long)u << 8, (unsigned)(bytes - 1), ACC_KDATA);
+    set_desc(KSEG_IDX(i), PG_LIN(u), (unsigned)(bytes - 1), ACC_KDATA);
     zero_seg(KSEG_IDX(i) * 8, (unsigned)((bytes + 1) >> 1));
     return KSEG_IDX(i) * 8;
 }
@@ -529,10 +535,11 @@ static void tmsg(int t, const char *a, const char *b, const char *c)
 /* ---- Segmente fuer Anwendungen ----------------------------------------- */
 static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
 {
-    unsigned idx, units, u;
+    unsigned idx, units;
+    pg_t u;
     unsigned long base;
 
-    units = size ? (size >> 8) + ((size & 0xFF) != 0) : 256;
+    units = size ? PAGES(size) : 16;
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access == 0)
             break;
@@ -542,9 +549,9 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
     if (u == 0)
         return FAPI_ERROR;                      /* kein Speicher        */
 
-    base = (unsigned long)u << 8;
-    scratch_map(base, units * MEM_UNIT - 1);
-    zero_seg(SCRATCH, units * (MEM_UNIT / 2));  /* nie fremde Altdaten  */
+    base = PG_LIN(u);
+    scratch_map(base, units * MEM_PAGE - 1);
+    zero_seg(SCRATCH, units * (MEM_PAGE / 2));  /* nie fremde Altdaten  */
 
     put_desc(&ldt[t][idx], base, size ? size - 1 : 0xFFFF, ACC_UDATA);
     alloc_units += units;
@@ -580,7 +587,7 @@ void ldt_drop(int t, unsigned sel)
 
 static unsigned seg_free(int t, unsigned sel)
 {
-    unsigned idx = sel >> 3, units, start;
+    unsigned idx = sel >> 3, units;
     struct desc *d;
 
     if (!(sel & 4) || idx < LDT_FIRST_FREE || idx >= NLDT)
@@ -593,9 +600,8 @@ static unsigned seg_free(int t, unsigned sel)
         d->access = 0;
         return 0;
     }
-    start = (d->base_lo >> 8) | ((unsigned)d->base_hi << 8);
-    units = (d->limit >> 8) + 1;
-    mem_free(start, units);
+    units = PAGES((unsigned long)d->limit + 1);
+    mem_free(desc_base(d) >> 12, units);
     alloc_units -= units;
     d->access = 0;
     return 0;
@@ -890,7 +896,8 @@ static int user_str(unsigned sel, unsigned off, char *buf, int max)
    danach auf das neue Segment. 0 = ok, sonst EXEC_ERR_*                  */
 /* V2: Codesegment des geladenen Programms (ld_shared: von einem anderen
    Task uebernommen) */
-static unsigned ld_cu, ld_cn, ld_shared;
+static pg_t ld_cu;
+static unsigned ld_cn, ld_shared;
 static unsigned long ld_key, ld_fsize;
 
 /* Schluessel fuer "dasselbe Programm": Laufwerk und kanonischer Pfad */
@@ -903,11 +910,12 @@ static unsigned long path_key(int drive, const char *p)
 }
 
 static int load_image(int drive, const char *path, struct fx_header *h,
-                      unsigned *unit, unsigned *cnt, unsigned long *segsize)
+                      pg_t *unit, unsigned *cnt, unsigned long *segsize)
 {
     struct ifs_file f;
     unsigned long base, seg;
-    unsigned tu, tn, u, n, fx, csz;
+    pg_t tu, u;
+    unsigned tn, n, fx, csz;
     int err = 0, k;
 
     if (ifs_open(drive, path, &f))
@@ -919,7 +927,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
     tu = mem_alloc(tn);
     if (tu == 0)
         return EXEC_ERR_NOMEM;
-    scratch_map((unsigned long)tu << 8, tn * MEM_UNIT - 1);
+    scratch_map(PG_LIN(tu), tn * MEM_PAGE - 1);
     if (ifs_read(&f, 0, SCRATCH, 0, (unsigned)f.size) != (int)f.size) {
         mem_free(tu, tn);
         return EXEC_ERR_NOTFOUND;
@@ -965,7 +973,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
                 mem_free(tu, tn);
                 return EXEC_ERR_NOMEM;
             }
-            scratch2_map((unsigned long)ld_cu << 8, ld_cn * MEM_UNIT - 1);
+            scratch2_map(PG_LIN(ld_cu), ld_cn * MEM_PAGE - 1);
             far_copy(SCRATCH2, 0, SCRATCH, h->image_off, csz);
         }
     }
@@ -977,11 +985,12 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         mem_free(tu, tn);
         return EXEC_ERR_NOMEM;
     }
-    base = (unsigned long)u << 8;
-    /* Fenster ueber alle belegten Einheiten, nicht nur bis seg - 1:
-       zero_seg schreibt ganze Einheiten, ein echter 286 prueft die Grenze */
-    scratch2_map(base, n * MEM_UNIT - 1);
-    zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
+    base = PG_LIN(u);
+    /* Fenster ueber alle belegten Seiten (hoechstens 16: 16 * 4096 - 1
+       ergibt in 16 Bit genau FFFFh), nicht nur bis seg - 1: zero_seg
+       schreibt ganze Seiten, die CPU prueft die Grenze */
+    scratch2_map(base, n * MEM_PAGE - 1);
+    zero_seg(SCRATCH2, n * (MEM_PAGE / 2));     /* BSS und Stack = 0    */
     far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
     mem_free(tu, tn);
     *unit = u;
@@ -997,7 +1006,8 @@ static int load_program(int t, int drive, const char *path)
     struct tss286 *ts;
     unsigned short *w;
     unsigned long base, seg;
-    unsigned u, n;
+    pg_t u;
+    unsigned n;
     int err;
 
     err = load_image(drive, path, &h, &u, &n, &seg);
@@ -1009,7 +1019,7 @@ static int load_program(int t, int drive, const char *path)
             mem_free(ld_cu, ld_cn);
         return EXEC_ERR_FORMAT;                 /* Treiber, kein Programm */
     }
-    base = (unsigned long)u << 8;
+    base = PG_LIN(u);
     task[t].lfn = (h.flags & FX_FLAG_LONGNAMES) != 0;
     task[t].img_unit = u;
     task[t].img_cnt  = n;
@@ -1023,7 +1033,7 @@ static int load_program(int t, int drive, const char *path)
     for (n = 0; n < NLDT; n++)
         ldt[t][n].access = 0;
     if (ld_cu)                                  /* V2: eigenes Codesegment */
-        put_desc(&ldt[t][0], (unsigned long)ld_cu << 8, h.code_size - 1, ACC_UCODE);
+        put_desc(&ldt[t][0], PG_LIN(ld_cu), h.code_size - 1, ACC_UCODE);
     else
         put_desc(&ldt[t][0], base, h.image_size - 1, ACC_UCODE);
     put_desc(&ldt[t][1], base, (unsigned)(seg - 1), ACC_UDATA);
@@ -2213,15 +2223,20 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_MEMINFO: {
-        unsigned short __far *p;
-        if (!user_ok(usel, a1, 10, 1))
+        struct fapi_meminfo __far *p;
+        unsigned long tk = mem_ram_kb(), fk = mem_free_kb();
+        if (!user_ok(usel, a1, a2 >= sizeof(*p) ? sizeof(*p) : 10, 1))
             return FAPI_ERROR;
         p = MK_FP(usel, a1);
-        p[0] = mem_conv_kb + mem_ext_kb;
-        p[1] = mem_free_kb();
-        p[2] = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
-        p[3] = image_units / 4;
-        p[4] = alloc_units / 4;
+        p->total_kb = tk > 0xFFFFUL ? 0xFFFF : (unsigned)tk;   /* alte Programme */
+        p->free_kb = fk > 0xFFFFUL ? 0xFFFF : (unsigned)fk;
+        p->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
+        p->apps_kb = image_units * 4;
+        p->alloc_kb = alloc_units * 4;
+        if (a2 >= sizeof(*p)) {         /* 6.0: CX = Groesse, 32 Bit    */
+            p->total_kb32 = tk;
+            p->free_kb32 = fk;
+        }
         return 0;
     }
 
@@ -3372,10 +3387,11 @@ static unsigned long  bc_since, bc_grow_t;
    Bloecke fehlender Stuecke haben dev = -2. Vorbereitung fuer den
    dynamischen Cache von 6.0 (dort mit Seiten statt Stuecken). */
 #define BC_CHB      8                   /* Bloecke je Stueck             */
-#define BC_CHU      64                  /* Einheiten je Stueck (16 KB)   */
+#define BC_CHU      4                   /* Seiten je Stueck (16 KB)      */
 #define BC_MAXCH    512                 /* 8 MB                          */
-static unsigned       bc_unit[BC_MAXCH], bc_nch, bc_present, bc_growing;
-#define BC_LIN(i)   (((unsigned long)bc_unit[(i) >> 3] << 8) + ((unsigned)((i) & 7) << 11))
+static pg_t           bc_unit[BC_MAXCH];  /* erste Seite je Stueck, 0 = fehlt */
+static unsigned       bc_nch, bc_present, bc_growing;
+#define BC_LIN(i)   (PG_LIN(bc_unit[(i) >> 3]) + ((unsigned)((i) & 7) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
 static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
@@ -3383,12 +3399,13 @@ static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
 #define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
 static void bc_unlink(unsigned i);
-static unsigned bc_reclaim(unsigned units);
+static pg_t bc_reclaim(unsigned pages);
 
 /* ein fehlendes Stueck holen; 0 = ok */
 static int bc_chunk_get(unsigned c)
 {
-    unsigned u, k;
+    unsigned k;
+    pg_t u;
     bc_growing = 1;                     /* kein bc_reclaim waehrenddessen */
     u = mem_alloc(BC_CHU);
     bc_growing = 0;
@@ -3435,7 +3452,7 @@ unsigned blk_cache_kb(void)
 
 /* Speichermangel: saubere Stuecke von hinten freigeben, bis units Platz
    gemacht sind. Nur Tabellen, keine Plattenzugriffe. */
-static unsigned bc_reclaim(unsigned units)
+static pg_t bc_reclaim(unsigned units)
 {
     unsigned c, k, freed = 0;
     struct bce __far *e;
@@ -4370,7 +4387,8 @@ static int load_driver(const char *line, int is_ifs)
     static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
     struct fx_header h;
     unsigned long base, seg;
-    unsigned u, n, entry;
+    pg_t u;
+    unsigned n, entry;
     int d, k, drive, err;
     const char *args = line;
 
@@ -4419,7 +4437,7 @@ static int load_driver(const char *line, int is_ifs)
         vio_kputs(boot_session, ": kein Treiber\n");
         return -1;
     }
-    base = (unsigned long)u << 8;
+    base = PG_LIN(u);
     set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
@@ -4427,10 +4445,7 @@ static int load_driver(const char *line, int is_ifs)
         if (path[k] == '\\' || path[k] == ':')
             n = k + 1;
     scopy(drv[d].name, path + n, sizeof(drv[d].name));
-    n = 0;
     drv[d].entry = entry;
-    drv[d].unit = u;
-    drv[d].cnt = n;
 
     req.cmd = DRV_INIT;
     req.status = DRV_ERR_NODEV;
@@ -4960,13 +4975,13 @@ void kmain(void)
        AT-DOS 5.0 nicht, auch wenn ein 486 mit 128 MB darunter steckt */
     if (mem_conv_kb > 640)
         mem_conv_kb = 640;
-    if (mem_ext_kb > 15360 || !a20_ok)
-        mem_ext_kb = a20_ok ? 15360 : 0;
+    if (!a20_ok)                        /* ohne A20 nichts ueber 1 MB    */
+        mem_ext_kb = e820_n = e801_lo = e801_hi = 0;
     /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h) */
     /* vorgeladene Treiber bei 80000h (preload.c) erst nach CONFIG.SYS
        freigeben: bis dahin endet der konventionelle Speicher dort */
-    mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
-             (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb, mem_ext_kb);
+    mem_init((KDATA_LIN + kdata_size + MEM_PAGE - 1) >> 12,
+             (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb);
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
@@ -5051,7 +5066,7 @@ void kmain(void)
         config_sys();
         vol[PRE_DRIVE].used = 0;                /* Z: wieder weg        */
         if (npre && pre_seg == 0x8000 && mem_conv_kb > 512)
-            mem_free(0x800, mem_conv_kb * 4 - 0x800);   /* 80000h frei */
+            mem_free(0x80, mem_conv_kb / 4 - 0x80);      /* 80000h frei */
         sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");

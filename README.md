@@ -245,8 +245,10 @@ und PC-DOS.
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
 - je Task ein 286-TSS und eine eigene LDT, Ring 3, IOPL 0
-- Speicherverwaltung über die vollen 16 MB in 256-Byte-Einheiten,
-  Segmente per `DosAllocSeg`/`DosFreeSeg`, Aufräumen bei Task-Ende
+- Speicherverwaltung in 4-KB-Seiten bis 1 GB (6.0): Speicherkarte des
+  BIOS per INT 15h E820h (Lücken werden ausgespart), sonst E801h bzw.
+  88h; Segmente auch oberhalb 16 MB, per `DosAllocSeg`/`DosFreeSeg`,
+  Aufräumen bei Task-Ende; ISA-DMA-Puffer bleiben unter 16 MB
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
@@ -325,7 +327,7 @@ selbst nur 8.3 kennt.
 | 2  | DosYield        | –                               |
 | 3  | DosExit         | BX = Rückgabewert 0–255 (ERRORLEVEL); `main` ohne DosExit liefert 0 |
 | 4  | DosSleep        | BX = Millisekunden              |
-| 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB) |
+| 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB), CX = dessen Größe: ab 6.0 mit 32-Bit-Feldern `total_kb32`/`free_kb32` (CX = 0: alte 10 Byte, Werte über 64 MB gekappt) |
 | 6  | DosAllocSeg     | BX = Größe, 0 = 64 KB → AX = Selektor |
 | 7  | DosFreeSeg      | BX = Selektor                   |
 | 8  | KbdCharIn       | → AX = Zeichen \| Scancode<<8   |

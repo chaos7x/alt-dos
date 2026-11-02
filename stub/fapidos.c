@@ -952,7 +952,7 @@ static unsigned sysinfo(unsigned off)
     return 0;
 }
 
-static unsigned meminfo(unsigned off)
+static unsigned meminfo(unsigned off, unsigned size)
 {
     static struct fapi_meminfo mi;
     rclr();
@@ -964,7 +964,9 @@ static unsigned meminfo(unsigned off)
     dos();
     mi.free_kb = r.bx >> 6;
     mi.kernel_kb = mi.apps_kb = mi.alloc_kb = 0;
-    to_app(off, &mi, sizeof(mi));
+    mi.total_kb32 = mi.total_kb;
+    mi.free_kb32 = mi.free_kb;
+    to_app(off, &mi, size >= sizeof(mi) ? sizeof(mi) : 10);
     return 0;
 }
 
@@ -1057,7 +1059,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
     case FAPI_EXIT:         exit_now(a1); break;
     case FAPI_YIELD:        yield(); rc = 0; break;
     case FAPI_SLEEP:        rc = sleep_ms(a1); break;
-    case FAPI_MEMINFO:      rc = meminfo(a1); break;
+    case FAPI_MEMINFO:      rc = meminfo(a1, a2); break;
     case FAPI_ALLOCSEG:
         i = dos_alloc(a1 ? (a1 + 15) >> 4 : 0x1000);
         if (i) {

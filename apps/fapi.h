@@ -26,7 +26,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosQChildRC()       F2(FAPI_QCHILDRC, 0, 0)
 #define DosAllocSeg(size)   F2(FAPI_ALLOCSEG, (size), 0)
 #define DosFreeSeg(sel)     F2(FAPI_FREESEG, (sel), 0)
-#define DosMemInfo(p)       F2(FAPI_MEMINFO, (p), 0)
+#define DosMemInfo(p)       F2(FAPI_MEMINFO, (p), sizeof(struct fapi_meminfo))
 #define DosExecPgm(cmd, m)  F2(FAPI_EXECPGM, (cmd), (m))
 #define DosGetArgs(buf)     F2(FAPI_GETARGS, (buf), 0)
 #define DosOpen(name)       F2(FAPI_OPEN, (name), 0)

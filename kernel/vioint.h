@@ -13,8 +13,8 @@ struct session {
     unsigned char hidecur;          /* Cursor aus (Vollbild)            */
     signed char   owner;            /* Task, der Vollbild verlangt hat  */
     unsigned char srow, scol;       /* Cursor vor dem Vollbild          */
-    unsigned      save;             /* gesicherter Inhalt (Einheit), 0 = keiner */
-    unsigned      unit;
+    pg_t          save;             /* gesicherter Inhalt (Seite), 0 = keiner */
+    pg_t          unit;             /* Sitzungspuffer (Seite)           */
     char          title[13];
     signed char   mou_owner;        /* Task mit MouOpen, -1 = keiner    */
     unsigned char mou_show;         /* Zeiger zeigen                    */
@@ -22,7 +22,7 @@ struct session {
     unsigned char gfx;              /* Grafikmodus (13h), 0 = Text      */
     signed char   gfx_task;         /* Task mit dem Bildspeicher-Selektor */
     unsigned      gfx_sel;          /* ... dieser Selektor (0 = keiner) */
-    unsigned      gfx_save;         /* Puffer: Bild + 768 Byte Palette  */
+    pg_t          gfx_save;         /* Puffer: Bild + 768 Byte Palette  */
     unsigned char gfx_plane;        /* 12h/X: gewaehlte Ebene (VioSetPlane) */
     unsigned char gfx_page;         /* Mode X: sichtbare Seite (VioSetPage) */
     unsigned char attr;             /* Textfarbe fuer TTY (ANSI ESC[..m) */
@@ -38,7 +38,7 @@ struct session {
 #define PAGEX       19200U          /* Mode X: Seite je Ebene (80 x 240) */
 #define PLANAR(m)   ((m) == 0x12 || (m) == MODEX)   /* 4 Ebenen zu 38400 */
 #define GFX_IMG(m)  (PLANAR(m) ? 4UL * PLANE12 : 65536UL)
-#define GFX_UNITS(m) ((unsigned)((GFX_IMG(m) + 768 + MEM_UNIT - 1) / MEM_UNIT))
+#define GFX_UNITS(m) PAGES(GFX_IMG(m) + 768)
 
 extern struct session ses[NTASK];
 extern int fg;

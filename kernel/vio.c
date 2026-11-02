@@ -29,7 +29,7 @@
 
 #define ATTR        0x07
 #define NBYTES   ((SLINES_MAX - 2) * SCOLS * 2) /* normaler Inhalt      */
-#define SAVEU    ((NBYTES + MEM_UNIT - 1) / MEM_UNIT)
+#define SAVEU    PAGES(NBYTES)
 #define TITLE_ATTR  0x1F
 #define STATUS_ATTR 0x70
 
@@ -311,14 +311,14 @@ void vio_cls(int s)
 int vio_open(const char *title)
 {
     int s;
-    unsigned u;
+    pg_t u;
 
     for (s = 0; s < NTASK; s++)
         if (!ses[s].used)
             break;
     if (s == NTASK)
         return -1;
-    u = mem_alloc((SBYTES + MEM_UNIT - 1) / MEM_UNIT);
+    u = mem_alloc(PAGES(SBYTES));
     if (u == 0)
         return -1;
     ses[s].used = 1;
@@ -339,7 +339,7 @@ int vio_open(const char *title)
     ses[s].ansi = 1;                /* wie OS/2: ANSI ist an          */
     ses[s].ast = 0;
     ses[s].arow = ses[s].acol = 0;
-    set_desc(SCR_IDX(s), (unsigned long)u << 8, SBYTES - 1, ACC_KDATA);
+    set_desc(SCR_IDX(s), PG_LIN(u), SBYTES - 1, ACC_KDATA);
     vio_title(s, title);
     vio_cls(s);
     return s;
@@ -359,7 +359,7 @@ void vio_close(int s)
 {
     if (!ses[s].used)
         return;
-    mem_free(ses[s].unit, (SBYTES + MEM_UNIT - 1) / MEM_UNIT);
+    mem_free(ses[s].unit, PAGES(SBYTES));
     if (ses[s].save) {
         mem_free(ses[s].save, SAVEU);
         ses[s].save = 0;
@@ -702,7 +702,7 @@ void vio_setmode(int s, int full, int owner)
     if (full) {
         p->save = mem_alloc(SAVEU);
         if (p->save) {
-            scratch_map((unsigned long)p->save << 8, NBYTES - 1);
+            scratch_map(PG_LIN(p->save), NBYTES - 1);
             far_copy(SCRATCH, 0, SCR_SEL(s), 0, NBYTES);
             p->srow = p->row;
             p->scol = p->col;
@@ -713,7 +713,7 @@ void vio_setmode(int s, int full, int owner)
     p->hidecur = 0;
     p->owner = (signed char)(full ? owner : -1);
     if (!full && p->save) {
-        scratch_map((unsigned long)p->save << 8, NBYTES - 1);
+        scratch_map(PG_LIN(p->save), NBYTES - 1);
         far_copy(SCR_SEL(s), 0, SCRATCH, 0, NBYTES);
         mem_free(p->save, SAVEU);
         p->save = 0;
@@ -735,7 +735,7 @@ void vio_setmode(int s, int full, int owner)
    Zeile. */
 unsigned long vio_buf_lin(int s)
 {
-    return (unsigned long)ses[s].unit << 8;
+    return PG_LIN(ses[s].unit);
 }
 
 void vio_showbuf(int s, unsigned a, unsigned b)

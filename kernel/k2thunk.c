@@ -23,8 +23,8 @@ void __far kf_scratch2_map(unsigned long b, unsigned l) { scratch2_map(b, l); }
 void __far kf_win_save(unsigned short *b) { win_save(b); }
 void __far kf_win_restore(const unsigned short *b) { win_restore(b); }
 void __far kf_zero_seg(unsigned sel, unsigned w) { zero_seg(sel, w); }
-unsigned __far kf_mem_alloc(unsigned u) { return mem_alloc(u); }
-void __far kf_mem_free(unsigned s, unsigned u) { mem_free(s, u); }
+pg_t __far kf_mem_alloc(unsigned u) { return mem_alloc(u); }
+void __far kf_mem_free(pg_t s, unsigned u) { mem_free(s, u); }
 void __far kf_ldt_set(int t, unsigned sel, unsigned long b, unsigned l) { ldt_set(t, sel, b, l); }
 void __far kf_ldt_drop(int t, unsigned sel) { ldt_drop(t, sel); }
 void __far kf_redraw(void) { redraw(); }

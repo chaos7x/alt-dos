@@ -784,7 +784,7 @@ static void line(unsigned long bytes, const char *text, unsigned n, const char *
 
 static void summary(const unsigned char *bs)
 {
-    static struct { unsigned short tot, fre, k, img, al; } mi;
+    static struct fapi_meminfo mi;
     unsigned c, nfree = 0;
     unsigned long csz = shl(1, cshift);
 
@@ -820,8 +820,8 @@ static void summary(const unsigned char *bs)
     line(nfree, " Zuordnungseinheiten verf\x81gbar", 0, 0);
     if (DosMemInfo(&mi) == 0) {
         puts("\n");
-        line(shl((unsigned long)mi.tot, 10), " Byte Arbeitsspeicher insgesamt", 0, 0);
-        line(shl((unsigned long)mi.fre, 10), " Byte Arbeitsspeicher frei", 0, 0);
+        line(shl(mi.total_kb32 ? mi.total_kb32 : mi.total_kb, 10), " Byte Arbeitsspeicher insgesamt", 0, 0);
+        line(shl(mi.total_kb32 ? mi.free_kb32 : mi.free_kb, 10), " Byte Arbeitsspeicher frei", 0, 0);
     }
 }
 

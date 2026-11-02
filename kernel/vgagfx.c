@@ -106,7 +106,7 @@ static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p
    12h: Ebene part), part 4 = Palette */
 static unsigned long save_part(int s, int part)
 {
-    unsigned long b = (unsigned long)ses[s].gfx_save << 8;
+    unsigned long b = PG_LIN(ses[s].gfx_save);
     if (part == 4)
         return b + GFX_IMG(ses[s].gfx);
     if (PLANAR(ses[s].gfx))

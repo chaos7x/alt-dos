@@ -1,107 +1,245 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * AT-DOS 5.0 - physische Speicherverwaltung
+ * AT-DOS 6.0 - physische Speicherverwaltung in 4-KB-Seiten
  *
- * Der Adressraum des 286 (16 MB) wird in Einheiten zu 256 Byte verwaltet.
- * Damit passt jede Einheitennummer in 16 Bit (Einheit u = linear u * 256),
- * und ein Segment von hoechstens 64 KB umfasst hoechstens 256 Einheiten.
- * Belegung als Bitmap: 65536 Einheiten = 8 KB, 1 = belegt.
+ * Seitennummern sind 32 Bit (Seite p = linear p * 4096), bis MEM_MAX_PG
+ * (1 GB). Belegung als Bitmap, 1 Bit je Seite, 1 = belegt: bis 256 MB
+ * 8 KB fest bei linear 9000h, darueber am Anfang des Speichers ab 1 MB.
  *
- * Nutzbar sind zwei Stuecke: unter 640 KB (ab 128 KB, darunter liegen
- * BIOS-Daten, Bootbereich, DMA-Puffer und Kernel) und ab 1 MB. Das Loch
- * dazwischen (Video, ROMs) bleibt dauerhaft belegt.
+ * Was frei ist, sagt die Speicherkarte des BIOS (INT 15h E820h, von
+ * start.asm im Real Mode abgefragt): nur Bereiche vom Typ 1 (RAM), mit
+ * Luecken. Ohne E820h E801h (bis 16 MB in KB, darueber in 64-KB-
+ * Bloecken), zuletzt 88h (16 Bit KB). Unter 640 KB frei ab low (hinter
+ * dem Kernel), das Loch 640 KB - 1 MB bleibt belegt.
  */
 #include <i86.h>
 #include "mem.h"
+#include "kern.h"
 
-/* Die Bitmap liegt nicht im Kernelsegment (dort ist der Platz knapp),
-   sondern fest bei linear 9000h-AFFFh, Selektor MEMMAP_SEL (kern.h) */
 #define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
-#define BITMAP_SIZE 8192U
-static unsigned      free_units;
 
-#define USED(u)     (bitmap[(u) >> 3] & (1 << ((u) & 7)))
-#define SET(u)      (bitmap[(u) >> 3] |= (unsigned char)(1 << ((u) & 7)))
-#define CLR(u)      (bitmap[(u) >> 3] &= (unsigned char)~(1 << ((u) & 7)))
+static pg_t          max_pg;            /* Seiten, die die Bitmap abdeckt */
+static pg_t          free_pg, total_pg, ram_pg;
+static pg_t          hint;              /* ab hier suchen                 */
 
-static void release_range(unsigned from, unsigned to)   /* [from, to) */
+#define BYTE(p)     bitmap[(unsigned)((p) >> 3)]
+#define BIT(p)      (1 << ((unsigned)(p) & 7))
+#define USED(p)     (BYTE(p) & BIT(p))
+
+static void release_range(pg_t from, pg_t to)          /* [from, to) */
 {
-    unsigned u;
-    for (u = from; u < to; u++) {
-        if (USED(u)) {
-            CLR(u);
-            free_units++;
+    pg_t p;
+    if (to > max_pg)
+        to = max_pg;
+    for (p = from; p < to; p++)
+        if (USED(p)) {
+            BYTE(p) &= (unsigned char)~BIT(p);
+            free_pg++;
         }
-    }
 }
 
-void mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb)
+static void reserve_range(pg_t from, pg_t to)
 {
-    unsigned i;
-    unsigned long end;
+    pg_t p;
+    for (p = from; p < to && p < max_pg; p++)
+        if (!USED(p)) {
+            BYTE(p) |= (unsigned char)BIT(p);
+            free_pg--;
+        }
+}
 
-    for (i = 0; i < BITMAP_SIZE; i++)
-        bitmap[i] = 0xFF;
-    free_units = 0;
+/* RAM-Bereiche oberhalb 1 MB nacheinander liefern: -> 1, Anfang a und
+   Ende e in Seiten */
+static unsigned rg_i;
+static int next_range(pg_t *a, pg_t *e)
+{
+    struct e820 *m;
+    unsigned long s, l;
 
+    if (e820_n) {
+        while (rg_i < e820_n) {
+            m = &e820_map[rg_i++];
+            if (m->type != 1 || m->base_hi || (m->len_lo == 0 && m->len_hi == 0))
+                continue;
+            s = m->base_lo;
+            l = m->len_hi ? 0xFFFFFFFFUL - s : m->len_lo;
+            if (s + l < s)
+                l = 0xFFFFFFFFUL - s;   /* ueber 4 GB: abschneiden       */
+            if (s + l <= 0x100000UL)
+                continue;               /* unter 1 MB: macht conv_kb     */
+            if (s < 0x100000UL) {
+                l -= 0x100000UL - s;
+                s = 0x100000UL;
+            }
+            *a = (s + 4095) >> 12;      /* nur ganze Seiten              */
+            *e = (s + l) >> 12;
+            if (*a >= MEM_MAX_PG)
+                continue;
+            if (*e > MEM_MAX_PG)
+                *e = MEM_MAX_PG;
+            if (*e > *a)
+                return 1;
+        }
+        return 0;
+    }
+    /* ohne Karte: E801h als zwei Bereiche (1-16 MB, ab 16 MB), sonst 88h */
+    if (rg_i == 0) {
+        rg_i = 1;
+        *a = 0x100;
+        *e = 0x100 + ((pg_t)(e801_lo || e801_hi ? e801_lo : mem_ext_kb) >> 2);
+        if (*e > *a)
+            return 1;
+    }
+    if (rg_i == 1) {
+        rg_i = 2;
+        *a = 0x1000;
+        *e = 0x1000 + ((pg_t)e801_hi << 4);
+        if (*e > MEM_MAX_PG)
+            *e = MEM_MAX_PG;
+        if (*e > *a)
+            return 1;
+    }
+    return 0;
+}
+
+void mem_init(pg_t low, unsigned conv_kb)
+{
+    pg_t a, e, bm_pg = 0, bm_n = 0;
+    unsigned long bytes, i;
+
+    /* 1. Groesse: hoechste RAM-Seite */
+    max_pg = 0x100;
+    rg_i = 0;
+    while (next_range(&a, &e))
+        if (e > max_pg)
+            max_pg = e;
+    max_pg = (max_pg + 7) & ~7UL;
+    bytes = max_pg >> 3;
+
+    /* 2. Platz fuer die Bitmap: bis 8 KB fest, sonst im ersten passenden
+          Bereich ab 1 MB */
+    if (bytes <= MEMMAP_FIX) {
+        set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, (unsigned)(bytes - 1), ACC_KDATA);
+    } else {
+        bm_n = (bytes + 4095) >> 12;
+        rg_i = 0;
+        while (next_range(&a, &e))
+            if (e - a > bm_n) {
+                bm_pg = a;
+                break;
+            }
+        if (!bm_pg) {                   /* geht nicht: nur bis 256 MB    */
+            max_pg = (pg_t)MEMMAP_FIX << 3;
+            bytes = MEMMAP_FIX;
+            bm_n = 0;
+            set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, MEMMAP_FIX - 1, ACC_KDATA);
+        } else
+            set_desc(MEMMAP_SEL >> 3, PG_LIN(bm_pg), 0xFFFF, ACC_KDATA);
+    }
+    for (i = 0; i < bytes; i++)
+        bitmap[(unsigned)i] = 0xFF;
+    free_pg = 0;
+
+    /* 3. frei: konventionell ab low, RAM ab 1 MB */
     if (conv_kb > 640)
         conv_kb = 640;
-    release_range(low, conv_kb * 4);
-
-    end = MEM_HIGH_START + (unsigned long)ext_kb * 4;
-    if (end > 0xFFFFUL)
-        end = 0xFFFFUL;                 /* letzte Einheit opfern wir     */
-    release_range(MEM_HIGH_START, (unsigned)end);
+    release_range(low, (pg_t)conv_kb >> 2);
+    ram_pg = (pg_t)(mem_conv_kb > 640 ? 640 : mem_conv_kb) >> 2;
+    rg_i = 0;
+    while (next_range(&a, &e)) {
+        release_range(a, e);
+        ram_pg += e - a;
+    }
+    if (bm_n)
+        reserve_range(bm_pg, bm_pg + bm_n);
+    total_pg = free_pg;
+    hint = low;
 }
 
-unsigned (*mem_reclaim)(unsigned units);
+/* Seite 0 ist nie frei: 0 heisst "kein Speicher" */
+pg_t (*mem_reclaim)(unsigned pages);
 
-static unsigned try_alloc(unsigned units)
+/* n Seiten am Stueck; erste Wahl unter limit (Seiten, 0 = egal) */
+static pg_t try_alloc(unsigned n, pg_t from, pg_t to)
 {
-    unsigned u, run = 0, start = 0;
+    pg_t p, start = 0;
+    unsigned run = 0;
 
-    if (units == 0 || units > free_units)
-        return 0;
-    for (u = 1; u != 0; u++) {
-        if ((u & 7) == 0 && bitmap[u >> 3] == 0xFF) {
-            run = 0;                    /* ganzes Byte belegt: ueberspringen */
-            u += 7;
+    for (p = from; p < to; p++) {
+        if (((unsigned)p & 7) == 0 && BYTE(p) == 0xFF && p + 8 <= to) {
+            run = 0;                    /* ganzes Byte belegt            */
+            p += 7;
             continue;
         }
-        if (USED(u)) {
+        if (USED(p)) {
             run = 0;
             continue;
         }
         if (run == 0)
-            start = u;
-        if (++run == units) {
-            for (u = start; u < start + units; u++)
-                SET(u);
-            free_units -= units;
+            start = p;
+        if (++run == n) {
+            for (p = start; p < start + n; p++)
+                BYTE(p) |= (unsigned char)BIT(p);
+            free_pg -= n;
+            if (start == hint)
+                hint = start + n;
             return start;
         }
     }
     return 0;
 }
 
-/* Kein Platz? Dann gibt der Platten-Cache Stuecke ab (wie der Cache-
-   Manager bei NT, hier noch in festen 16-KB-Stuecken), bis es passt */
-unsigned mem_alloc(unsigned units)
+static pg_t alloc_in(unsigned n, pg_t to)
 {
-    unsigned u;
-    if (units == 0)
+    pg_t p;
+    if (n == 0 || n > free_pg)
         return 0;
-    while ((u = try_alloc(units)) == 0 && mem_reclaim && mem_reclaim(units))
+    if (to > max_pg)
+        to = max_pg;
+    p = try_alloc(n, hint, to);         /* ab dem Merker, dann von vorn  */
+    if (!p && hint > 1)
+        p = try_alloc(n, 1, hint + n < to ? hint + n : to);
+    return p;
+}
+
+/* Kein Platz? Dann gibt der Platten-Cache Stuecke ab (wie der Cache-
+   Manager bei NT), bis es passt */
+pg_t mem_alloc(unsigned n)
+{
+    pg_t p;
+    while ((p = alloc_in(n, max_pg)) == 0 && mem_reclaim && mem_reclaim(n))
         ;
-    return u;
+    return p;
 }
 
-void mem_free(unsigned start, unsigned units)
+/* unter 16 MB (ISA-DMA, 386SX-Adressraum) */
+pg_t mem_alloc_low(unsigned n)
 {
-    release_range(start, start + units);
+    pg_t p;
+    while ((p = alloc_in(n, 0x1000)) == 0 && mem_reclaim && mem_reclaim(n))
+        ;
+    return p;
 }
 
-unsigned mem_free_kb(void)
+void mem_free(pg_t start, unsigned n)
 {
-    return free_units / 4;
+    release_range(start, start + n);
+    if (start < hint)
+        hint = start;
+}
+
+unsigned long mem_free_kb(void)
+{
+    return free_pg << 2;
+}
+
+unsigned long mem_total_kb(void)
+{
+    return total_pg << 2;
+}
+
+/* RAM insgesamt (konventionell + ab 1 MB laut BIOS-Karte) */
+unsigned long mem_ram_kb(void)
+{
+    return ram_pg << 2;
 }
