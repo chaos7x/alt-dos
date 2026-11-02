@@ -26,6 +26,7 @@ void          __far mem_free(pg_t start, unsigned pages);
 unsigned long __far mem_free_kb(void);
 unsigned long __far mem_total_kb(void);
 unsigned long __far mem_ram_kb(void);
+pg_t          __far mem_top_pg(void);
 /* Rueckruf bei Speichermangel (Platten-Cache gibt saubere Stuecke ab):
    -> freigegebene Seiten, 0 = nichts mehr abzugeben. Darf keine
    Plattenzugriffe machen (mem_alloc kommt auch ohne Kernelsperre). */

@@ -3190,26 +3190,41 @@ static const char *exc_name(unsigned v)
     case 11: return "#NP Segment nicht vorhanden";
     case 12: return "#SS Stackfehler";
     case 13: return "#GP Allgemeine Schutzverletzung";
+    case 14: return "#PF Seitenfehler";
     case 7:  return "#NM Kein Koprozessor";
     case 16: return "#MF Koprozessorfehler";
     }
     return "Ausnahme";
 }
 
+unsigned long read_cr2(void);
+#pragma aux read_cr2 = "mov eax,cr2" "mov edx,eax" "shr edx,16" \
+    __value [__dx __ax] __modify [__ax __dx];
+
 void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
 {
     static char msg[] = " bei xxxx:xxxx (Fehlercode xxxxh)";
     static char kmsg[80];
+    const char *m = msg;
     int i, j;
 
     hex4(cs, msg + 5);
     hex4(ip, msg + 10);
     hex4(err, msg + 27);
+    if (vec == 14) {                    /* Seitenfehler: Adresse aus CR2 */
+        static char pf[] = " bei xxxx:xxxx, Adresse xxxxxxxxh";
+        unsigned long ad = read_cr2();
+        hex4(cs, pf + 5);
+        hex4(ip, pf + 10);
+        hex4((unsigned)(ad >> 16), pf + 24);
+        hex4((unsigned)ad, pf + 28);
+        m = pf;
+    }
 
     if ((cs & 3) == 3 && current >= 0) {
         /* Fehler in einer Anwendung: nur dieses Programm beenden */
         tmsg(current, "\n", task[current].name, ": ");
-        tmsg(current, exc_name(vec), msg, "\nProgramm abgebrochen.\n");
+        tmsg(current, exc_name(vec), m, "\nProgramm abgebrochen.\n");
         task[current].rc = 255;
         klock_enter();                  /* task_end schliesst Dateien    */
         task_end(current);
@@ -3218,7 +3233,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
     j = 0;
     for (i = 0; "KERNEL PANIC: "[i]; i++) kmsg[j++] = "KERNEL PANIC: "[i];
     for (i = 0; exc_name(vec)[i]; i++) kmsg[j++] = exc_name(vec)[i];
-    for (i = 0; msg[i] && j < 79; i++) kmsg[j++] = msg[i];
+    for (i = 0; m[i] && j < 79; i++) kmsg[j++] = m[i];
     kmsg[j] = 0;
     panic(kmsg);
 }
@@ -4982,6 +4997,7 @@ void kmain(void)
        freigeben: bis dahin endet der konventionelle Speicher dort */
     mem_init((KDATA_LIN + kdata_size + MEM_PAGE - 1) >> 12,
              (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb);
+    paging_init();                      /* 1:1, Seitentabellen aus mem   */
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
@@ -5002,9 +5018,19 @@ void kmain(void)
 
     vio_kputs(s0, "AT-DOS 6.0 - 80386, 16-Bit Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
-    udec(mem_free_kb(), num);
-    vio_kputs(s0, num);
-    vio_kputs(s0, " KB Arbeitsspeicher frei\n");
+    {
+        unsigned long fk = mem_free_kb();
+        udec(fk > 0xFFFFUL ? (unsigned)(fk >> 10) : (unsigned)fk, num);
+        vio_kputs(s0, num);
+        vio_kputs(s0, fk > 0xFFFFUL ? " MB Arbeitsspeicher frei" : " KB Arbeitsspeicher frei");
+    }
+    if (paging_tables()) {
+        udec(paging_tables(), num);
+        vio_kputs(s0, ", Paging an (");
+        vio_kputs(s0, num);
+        vio_kputs(s0, paging_tables() == 1 ? " Seitentabelle)\n" : " Seitentabellen)\n");
+    } else
+        vio_kputs(s0, ", Paging aus\n");
 
     enable_ints();                  /* Diskette und Tastatur per IRQ     */
     kbd_init();

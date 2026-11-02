@@ -242,3 +242,9 @@ unsigned long __far mem_ram_kb(void)
 {
     return ram_pg << 2;
 }
+
+/* hoechste RAM-Seite + 1 (Groesse der Bitmap): Paging bildet bis hier ab */
+pg_t __far mem_top_pg(void)
+{
+    return max_pg;
+}

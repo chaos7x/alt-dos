@@ -185,6 +185,10 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
+/* paging.c (KTEXT2): Seitentabellen 1:1, CR0.PG */
+unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
+unsigned __far paging_tables(void);
+
 /* bus.c (KTEXT2): PCI und Belegungsliste */
 struct fapi_pcidev;
 unsigned __far pci_init(void);                 /* -> Anzahl PCI-Geraete, 0 = kein PCI */

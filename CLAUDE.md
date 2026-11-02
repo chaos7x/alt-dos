@@ -41,7 +41,7 @@ werden – HTTP 403 –, der Nutzer legt ihn in GitHub an).
 **Plan 6.0** (vom Nutzer abgestimmt): Phase 0 Umstellung (erledigt, s. u.)
 -> **NCR8XX.SYS** (PCI-SCSI 53C8xx, vom Nutzer vorgezogen: sein Standard
 auf PCI-Maschinen, steckt in seiner 486) -> Phase 1 Speicher (E820h,
-4-KB-Seiten, Paging 1:1) -> Phase 2 präemptiv + Sperren je Gerät +
+4-KB-Seiten, Paging 1:1; erledigt) -> Phase 2 präemptiv + Sperren je Gerät +
 asynchrone Plattenzugriffe (danach nach `5.x` zurück, braucht keinen 386)
 -> Phase 3 DOS-Boxen (V86; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
 Redirector auf die AT-DOS-Laufwerke, vom Nutzer gewählt; später echtes
@@ -1373,6 +1373,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `mem_reclaim` über Thunks `kf_set_desc`/`kf_reclaim`), jetzt 60,6 KB.
   `-os` statt `-ox` brachte nur 0,7 KB – nicht genommen. Geprüft: 3 MB,
   CACHE=1536, TASKB bekommt 640 KB, Cache 1.536 -> 1.408 KB.
+  Phase 1b erledigt (in QEMU geprüft): `kernel/paging.c` in KTEXT2,
+  `paging_init()` direkt nach mem_init: Seitenverzeichnis + je 4 MB eine
+  Seitentabelle (einzeln per mem_alloc, beschrieben über SCRATCH/
+  SCRATCH2), 1:1 von 0 bis `mem_top_pg()` (mindestens das erste MB),
+  alle Seiten P|W|U (Schutz vorerst weiter über Segmente), dann CR3 und
+  CR0.PG (pragma aux `pg_enable`). Die 286-TSS haben kein CR3: ein
+  Seitenverzeichnis für alle Tasks. Kosten: 8 KB bei 2 MB, 1 MB bei
+  1 GB. start.asm: Vektor 14 jetzt EXC_ERR (386 legt einen Fehlercode
+  ab), `fault()` meldet „#PF Seitenfehler bei CS:IP, Adresse“ aus CR2
+  (eigener Text, die statische Meldung bleibt unverändert). Startzeile
+  zeigt „Paging an (n Seitentabellen)“, freier Speicher ab 64 MB in MB.
+  Geprüft: CR0 = 8000001Bh, Zugriff auf 256 MB bei 4 MB RAM ->
+  #PF mit Adresse 10000004h; mit allen Vergaben oberhalb 256 MB XCOPY
+  über NCR, PLAY, GRAFIK 12 + Sitzungswechsel, SHUTDOWN, fsck sauber;
+  isapc mit 2 MB. Damit ist Phase 1 fertig; nächste Phase 2
+  (präemptiv, Sperren je Gerät, asynchrone Plattenzugriffe).
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

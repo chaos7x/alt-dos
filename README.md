@@ -249,6 +249,10 @@ und PC-DOS.
   BIOS per INT 15h E820h (Lücken werden ausgespart), sonst E801h bzw.
   88h; Segmente auch oberhalb 16 MB, per `DosAllocSeg`/`DosFreeSeg`,
   Aufräumen bei Task-Ende; ISA-DMA-Puffer bleiben unter 16 MB
+- Paging (6.0): der Kernel bildet beim Start allen RAM 1:1 über
+  Seitentabellen ab und schaltet den Seitenmechanismus des 386 ein –
+  Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen
+  Speicher; ein Seitenfehler meldet die Adresse
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen

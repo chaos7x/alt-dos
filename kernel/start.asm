@@ -469,7 +469,7 @@ EXC_ERR 10
 EXC_ERR 11
 EXC_ERR 12
 EXC_ERR 13
-EXC 14
+EXC_ERR 14                              ; 386: #PF mit Fehlercode
 EXC 15
 EXC 16
 
