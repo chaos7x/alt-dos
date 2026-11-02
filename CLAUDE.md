@@ -192,7 +192,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`).
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`,
+  `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
+  Segment damit 62,0 KB).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
   ersten Segments nur über Fern-Thunks (`kernel/k2thunk.c`, umgelenkt per
   `#define` in `kernel/k2.h` – k2.h als letztes Include!), Ports und

@@ -121,7 +121,10 @@ void reboot(void);
 unsigned kseg_alloc(unsigned long bytes);
 void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
 extern volatile unsigned reboot_count;
-unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
+/* k2misc.c (KTEXT2) */
+unsigned long __far rtc_stamp(void);    /* Datum << 16 | Uhrzeit im FAT-Format */
+int __far rtc_set(unsigned date, unsigned time);    /* 0 = ok              */
+void __far rom_str(unsigned long lin, unsigned len, char __far *out, unsigned max);
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
 /* floppy.c liegt in KCODE2: alle Einspruenge fern */

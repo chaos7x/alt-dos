@@ -62,8 +62,8 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx bus mem paging v86"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus paging v86 k2thunk; do
+K2MODS="floppy vgagfx bus mem paging v86 k2misc"
+for m in kernel mem floppy fat vio kbd preload vgagfx bus paging v86 k2misc k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     wcc $KCFLAGS $S -fo=$B/$m.o kernel/$m.c
