@@ -1023,8 +1023,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   SIST0/1 (löscht den pegelgesteuerten Interrupt), sammelt per ODER,
   `done`, proc_run; `run()` schläft je 2 Takte und prüft danach selbst
   (wie IDE: verlorener/geteilter IRQ hält nichts auf). `/NOIRQ` oder
-  belegter IRQ: Abfragebetrieb wie vorher. Offen: synchrone/Wide-
-  Übertragung. Vom Nutzer auf seiner 486 in 86Box
+  belegter IRQ: Abfragebetrieb wie vorher (Startmeldung nennt den
+  Grund). Vom Nutzer auf dem 486 in 86Box bestätigt: MSD zeigt „IRQ 9
+  belegt NCR8XX.SYS“ (vorher altes Abbild ohne IRQ – Release `latest`
+  neu laden!). Offen: synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
   bestätigt: Platte und ZIP-Laufwerk am NCR erkannt, `\DEMO` aufs ZIP
   kopiert (Programme laufen von dort), CHKDSK ohne Fehler.
   Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
