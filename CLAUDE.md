@@ -272,6 +272,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Tastaturtreiber liefert Alt+F-Taste als normalen Scancode (nicht 68h/
   69h wie das BIOS) -> `KbdShift()` prüfen. Zahlen ohne 32-Bit-Division
   (`fmt_num` über Zehnerpotenzen).
+  Betrachter F3 (Wunsch des Nutzers: wie mcview, nur Verhalten nach-
+  gebaut): 32-KB-Fenster in einem DosAllocSeg-Segment, `vb(off)` lädt
+  nach. Lehre: DosRead liest nur ins eigene DS (der Puffer ist nur ein
+  Offset) – in fremde Segmente über einen DS-Puffer kopieren, sonst
+  überschreibt der Kernel Programmdaten. Text mit Umbruch (`vnext`/`vprev`,
+  CR LF nach genau 80 Zeichen ist kein Umbruch) oder waagerecht blättern,
+  Hex (16 Byte je Zeile), Suchen (Text ohne Groß/klein, Hex-Bytes) mit
+  Hervorhebung, Gehe zu Zeile/0x-Offset, Prozent ohne 32-Bit-Division.
+  Dialoge mit Mausknöpfen (`buttons`/`button_hit`); `box()` hat einen
+  eigenen Puffer, weil der Text des Dialogs oft in `line` steht (Fehler
+  vom Nutzer gemeldet). Vom Nutzer in 86Box bestätigt: Kopieren und
+  Verschieben, CHKDSK danach ohne Fehler.
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`

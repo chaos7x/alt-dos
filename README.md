@@ -160,10 +160,13 @@ und PC-DOS.
   CHKDSK, FORMAT usw. sehen weiter das echte Laufwerk)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
-  (LESS), F4 Bearbeiten (EDIT), F5 Kopieren, F6 Verschieben/Umbenennen,
+  im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
+  Dateien, F2 Umbruch, F4 Hex, F5 Gehe zu Zeile/Offset, F7 Suchen mit
+  Hervorhebung, `n` weiter), F4 Bearbeiten (EDIT), F5 Kopieren, F6 Verschieben/Umbenennen,
   F7 Verzeichnis, F8 Löschen (Verzeichnisse mit Inhalt), Alt+F1/F2
   Laufwerk, Strg+O zeigt den Bildschirm der Sitzung, Befehlszeile unten
-  (Tippen, Eingabe; Strg+Eingabe übernimmt den Namen), Maus, lange Namen
+  (Tippen, Eingabe; Strg+Eingabe übernimmt den Namen), Maus (auch die
+  Knöpfe in den Dialogen), lange Namen
 - ANSI wie bei OS/2 fest in der Bildschirmausgabe (kein ANSI.SYS nötig):
   Cursor, Löschen, Farben; `ANSI [ON|OFF]` je Sitzung
 - Leere Diskettenlaufwerke melden „Laufwerk nicht bereit“

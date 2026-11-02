@@ -468,14 +468,16 @@ static void draw_all(void)
 /* ---- Dialoge --------------------------------------------------------- */
 static void box(int r, int h, const char *title)
 {
+    static char bl[62];                 /* eigener Puffer: line haelt oft
+                                           den Text des Dialogs         */
     int i, c = 10, w = 60;
     for (i = 0; i < h; i++) {
-        line[0] = i == 0 ? '\xC9' : i == h - 1 ? '\xC8' : '\xBA';
+        bl[0] = i == 0 ? '\xC9' : i == h - 1 ? '\xC8' : '\xBA';
         for (c = 1; c < w - 1; c++)
-            line[c] = (i == 0 || i == h - 1) ? '\xCD' : ' ';
-        line[w - 1] = i == 0 ? '\xBB' : i == h - 1 ? '\xBC' : '\xBA';
-        line[w] = 0;
-        put(r + i, 10, line, A_DLG, w);
+            bl[c] = (i == 0 || i == h - 1) ? '\xCD' : ' ';
+        bl[w - 1] = i == 0 ? '\xBB' : i == h - 1 ? '\xBC' : '\xBA';
+        bl[w] = 0;
+        put(r + i, 10, bl, A_DLG, w);
     }
     i = slen(title);
     put(r, 40 - i / 2 - 1, " ", A_DLG, 1);
@@ -483,21 +485,57 @@ static void box(int r, int h, const char *title)
     put(r, 40 - i / 2 + i, " ", A_DLG, 1);
 }
 
-/* Meldung mit J/N; -> 1 ja, 0 nein; ok_only: nur Taste */
+/* Knoepfe in einer Dialogzeile, mittig; per Maus anklickbar */
+static int btn_row, btn_n, btn_x[4], btn_w[4];
+
+static void buttons(int r, const char *const *lab, int n)
+{
+    int i, w = 0, x;
+    for (i = 0; i < n; i++)
+        w += (int)slen(lab[i]) + 4 + (i ? 3 : 0);
+    x = 40 - w / 2;
+    btn_row = r;
+    btn_n = n;
+    for (i = 0; i < n; i++) {
+        btn_x[i] = x;
+        btn_w[i] = (int)slen(lab[i]) + 4;
+        put(r, x, "< ", A_DLG, 2);
+        put(r, x + 2, lab[i], A_DLG, btn_w[i] - 4);
+        put(r, x + btn_w[i] - 2, " >", A_DLG, 2);
+        x += btn_w[i] + 3;
+    }
+}
+
+/* Mausereignis: welcher Knopf? -1 = keiner (Ereignis ist verbraucht) */
+static int button_hit(void)
+{
+    int i, press = (mev.buttons & MOU_LEFT) && !(mprev & MOU_LEFT);
+    mprev = mev.buttons;
+    if (!press || mev.row != (unsigned char)btn_row)
+        return -1;
+    for (i = 0; i < btn_n; i++)
+        if (mev.col >= btn_x[i] && mev.col < btn_x[i] + btn_w[i])
+            return i;
+    return -1;
+}
+
+/* Meldung mit Ja/Nein; -> 1 ja, 0 nein; ok_only: nur OK */
 static int ask(const char *title, const char *l1, const char *l2, int ok_only)
 {
+    static const char *const yn[2] = { "Ja", "Nein" };
+    static const char *const ok[1] = { "OK" };
     unsigned k;
-    int r = (int)R / 2 - 3;
-    box(r, 6, title);
+    int r = (int)R / 2 - 3, b;
+    box(r, 7, title);
     put(r + 2, 12, l1, A_DLG, 56);
     put(r + 3, 12, l2, A_DLG, 56);
-    put(r + 4, 12, ok_only ? "Weiter mit beliebiger Taste" : "(J)a / (N)ein",
-        A_DLG, 56);
+    buttons(r + 5, ok_only ? ok : yn, ok_only ? 1 : 2);
     VioSetCurPos(0xFF, 0);
     for (;;) {
         k = getkey();
         if (k == K_MOUSE) {
-            mprev = mev.buttons;
+            if ((b = button_hit()) >= 0)
+                return ok_only ? 1 : b == 0;
             continue;
         }
         if (ok_only)
@@ -515,10 +553,11 @@ static int input(const char *title, const char *prompt, char *b, unsigned max)
 {
     unsigned k, pos = slen(b), view, n, i;
     unsigned char c, sc;
-    int r = (int)R / 2 - 3;
-    box(r, 6, title);
+    static const char *const oc[2] = { "OK", "Abbrechen" };
+    int r = (int)R / 2 - 3, bt;
+    box(r, 7, title);
     put(r + 2, 12, prompt, A_DLG, 56);
-    put(r + 4, 12, "Eingabe = OK, Esc = Abbrechen", A_DLG, 56);
+    buttons(r + 5, oc, 2);
     for (;;) {
         n = slen(b);
         view = pos > 54 ? pos - 54 : 0;
@@ -526,7 +565,14 @@ static int input(const char *title, const char *prompt, char *b, unsigned max)
         VioSetCurPos(r + 3, 12 + pos - view);
         k = getkey();
         if (k == K_MOUSE) {
-            mprev = mev.buttons;
+            if (mev.row == (unsigned char)(r + 3) && mev.col >= 12 && mev.col < 68 &&
+                (mev.buttons & MOU_LEFT) && !(mprev & MOU_LEFT)) {
+                pos = view + mev.col - 12;      /* Klick ins Feld        */
+                if (pos > n)
+                    pos = n;
+            }
+            if ((bt = button_hit()) >= 0)
+                return bt == 0;
             continue;
         }
         c = (unsigned char)k;
@@ -663,17 +709,19 @@ static int confirm_over(const char *dst)
         return 1;
     DosClose(h);
     {
-        int r = (int)R / 2 - 3;
+        static const char *const ja[4] = { "Ja", "Nein", "Alle", "Abbrechen" };
+        int r = (int)R / 2 - 3, b;
         unsigned k;
-        box(r, 6, "Datei existiert");
+        box(r, 7, "Datei existiert");
         put(r + 2, 12, dst, A_DLG, 56);
         put(r + 3, 12, "\x9A" "berschreiben?", A_DLG, 56);
-        put(r + 4, 12, "(J)a / (N)ein / (A)lle / Esc", A_DLG, 56);
+        buttons(r + 5, ja, 4);
         for (;;) {
             k = getkey();
             if (k == K_MOUSE) {
-                mprev = mev.buttons;
-                continue;
+                if ((b = button_hit()) < 0)
+                    continue;
+                k = b == 0 ? 'J' : b == 1 ? 'N' : b == 2 ? 'A' : 27;
             }
             k = up((char)k);
             if (k == 'J' || k == 'Y')
@@ -975,6 +1023,391 @@ static void open_cur(void)
     }
 }
 
+/* ---- Betrachter (F3), Verhalten nach dem Vorbild von mcview ----------
+   Datei beliebiger Groesse: ein 32-KB-Fenster in einem eigenen Segment
+   wird bei Bedarf nachgeladen. Text mit/ohne Umbruch, Hex-Ansicht,
+   Suchen mit Hervorhebung, Springen zu Zeile oder Offset. */
+#define VWIN    32768U
+static unsigned vsel, vh, vhex, vwrap = 1, vleft;
+static unsigned long vbase, vlen = 0, vsize, vtop, vmpos = 0xFFFFFFFFUL, vmlen;
+static char vname[FAPI_PATHLEN], vfind[64];
+
+static int vb(unsigned long off)
+{
+    unsigned char __far *w = MK_FP(vsel, 0);
+    unsigned n, got;
+    if (off >= vsize)
+        return -1;
+    if (off < vbase || off >= vbase + vlen) {
+        vbase = off > VWIN / 2 ? (off - VWIN / 2) & ~511UL : 0;
+        DosSeek(vh, &vbase);
+        /* DosRead liest nur ins eigene Datensegment: ueber vbuf */
+        for (vlen = 0, got = 1; vlen < VWIN && got; vlen += got) {
+            static unsigned char vbuf[2048];
+            unsigned i;
+            n = VWIN - (unsigned)vlen > sizeof(vbuf) ? sizeof(vbuf) : VWIN - (unsigned)vlen;
+            got = DosRead(vh, vbuf, n);
+            if (got == FAPI_ERROR)
+                got = 0;
+            for (i = 0; i < got; i++)
+                w[(unsigned)vlen + i] = vbuf[i];
+        }
+        if (off >= vbase + vlen)
+            return -1;
+    }
+    return w[(unsigned)(off - vbase)];
+}
+
+/* Textzeile ab off: Anfang der naechsten Bildschirmzeile */
+static unsigned long vnext(unsigned long off)
+{
+    unsigned col = 0;
+    int c;
+    if (vhex)
+        return off + 16 < vsize ? off + 16 : vsize;
+    while ((c = vb(off)) >= 0) {
+        off++;
+        if (c == '\n')
+            break;
+        col = c == '\t' ? (col + 8) & ~7u : col + 1;
+        if (vwrap && col >= 80 && vb(off) != '\n' &&
+            !(vb(off) == '\r' && vb(off + 1) == '\n'))
+            break;                      /* umbrechen, ausser Zeilenende */
+    }
+    return off;
+}
+
+static unsigned long vline_start(unsigned long off)    /* logische Zeile */
+{
+    while (off && vb(off - 1) != '\n')
+        off--;
+    return off;
+}
+
+static unsigned long vprev(unsigned long off)
+{
+    unsigned long s, n;
+    if (!off)
+        return 0;
+    if (vhex)
+        return off >= 16 ? off - 16 : 0;
+    s = vline_start(off - 1);
+    if (!vwrap)
+        return s;
+    for (;;) {                          /* letzter Umbruch vor off       */
+        n = vnext(s);
+        if (n >= off)
+            return s;
+        s = n;
+    }
+}
+
+static unsigned long vlast_page(void)
+{
+    unsigned long t = vhex ? (vsize ? (vsize - 1) & ~15UL : 0) : vsize;
+    unsigned i;
+    for (i = 0; i < PROWS() + 5 - (vhex ? 1 : 0) && t; i++)
+        t = vprev(t);
+    return t;
+}
+
+static unsigned char vattr(unsigned long off)
+{
+    return (off >= vmpos && off < vmpos + vmlen) ? A_CUR : 0x17;
+}
+
+static void vdraw(void)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    static char st[82];
+    unsigned rows = R - 2, r, c, col, i;
+    unsigned long off = vtop, t, sz;
+    int ch;
+    char cell[2];
+
+    cell[1] = 0;
+    for (r = 0; r < rows; r++) {
+        put(1 + r, 0, "", 0x17, 80);
+        if (off >= vsize)
+            continue;
+        if (vhex) {
+            for (i = 0; i < 8; i++)
+                cell[0] = hx[(unsigned)(off >> (28 - 4 * i)) & 15], put(1 + r, i, cell, 0x13, 1);
+            for (i = 0; i < 16 && off + i < vsize; i++) {
+                ch = vb(off + i);
+                col = 10 + i * 3 + (i >= 8);
+                cell[0] = hx[(ch >> 4) & 15];
+                put(1 + r, col, cell, vattr(off + i), 1);
+                cell[0] = hx[ch & 15];
+                put(1 + r, col + 1, cell, vattr(off + i), 1);
+                cell[0] = ch < 32 ? '.' : (char)ch;
+                put(1 + r, 60 + i, cell, vattr(off + i), 1);
+            }
+            off += 16;
+            continue;
+        }
+        t = vnext(off);
+        for (col = 0, c = 0; off < t; off++) {
+            ch = vb(off);
+            if (ch == '\n' || ch == '\r')
+                continue;
+            if (ch == '\t') {
+                unsigned nc = (col + 8) & ~7u;
+                for (; col < nc; col++)
+                    if (col >= vleft && col - vleft < 80)
+                        put(1 + r, (int)(col - vleft), " ", vattr(off), 1);
+                continue;
+            }
+            if (col >= vleft && col - vleft < 80) {
+                cell[0] = ch < 32 ? '.' : (char)ch;
+                put(1 + r, (int)(col - vleft), cell, vattr(off), 1);
+            }
+            col++;
+            c++;
+        }
+        off = t;
+    }
+    /* Statuszeile: Name, Position, Prozent (ohne 32-Bit-Division) */
+    for (i = 0; i < 80; i++)
+        st[i] = ' ';
+    st[80] = 0;
+    put(0, 0, st, A_CUR, 80);
+    put(0, 1, base_name(vname), A_CUR, 40);
+    scopy(st, vhex ? "Hex" : vwrap ? "Text, Umbruch" : "Text", sizeof(st));
+    put(0, 42, st, A_CUR, 14);
+    st[0] = '0';
+    st[1] = 'x';
+    for (i = 0; i < 8; i++)
+        st[2 + i] = hx[(unsigned)(vtop >> (28 - 4 * i)) & 15];
+    st[10] = 0;
+    put(0, 57, st, A_CUR, 10);
+    t = vtop;
+    sz = vsize ? vsize : 1;
+    while (sz > 600) {
+        sz >>= 1;
+        t >>= 1;
+    }
+    fmt_num((unsigned)t * 100 / (unsigned)sz, st);
+    scat(st, " %", sizeof(st));
+    put(0, 74, st, A_CUR, 6);
+}
+
+static void vkeys(void)
+{
+    static const char *const vk[10] = {
+        "Hilfe", "Umbr.", "Ende", "Hex", "Gehe", "", "Suchen", "", "", "Ende" };
+    static char nb[3];
+    int i;
+    for (i = 0; i < 10; i++) {
+        fmt2((unsigned)(i + 1), nb);
+        put((int)R - 1, i * 8, nb[0] == '0' ? nb + 1 : nb, A_KEYNUM, i == 9 ? 2 : 1);
+        put((int)R - 1, i * 8 + (i == 9 ? 2 : 1), i == 1 && vwrap ? "Unumbr" : i == 3 && vhex ? "Text" : vk[i],
+            A_KEYTXT, 6);
+        if (i < 9)
+            put((int)R - 1, i * 8 + 7, "", A_KEYNUM, 1);
+    }
+}
+
+static int hexval(char c)
+{
+    c = up(c);
+    return c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/* Suchen ab from: Text ohne Gross/klein, in der Hex-Ansicht Hexbytes */
+static void vsearch(unsigned long from)
+{
+    static unsigned char pat[64];
+    unsigned n = 0, i, k;
+    unsigned long off;
+    int v;
+    if (vhex) {
+        for (i = 0; vfind[i] && n < sizeof(pat); ) {
+            while (vfind[i] == ' ')
+                i++;
+            if (hexval(vfind[i]) < 0 || hexval(vfind[i + 1]) < 0)
+                break;
+            pat[n++] = (unsigned char)(hexval(vfind[i]) * 16 + hexval(vfind[i + 1]));
+            i += 2;
+        }
+    } else
+        for (n = 0; vfind[n] && n < sizeof(pat); n++)
+            pat[n] = (unsigned char)up(vfind[n]);
+    if (!n)
+        return;
+    progress("Suchen", vfind);
+    for (off = from; off + n <= vsize; off++) {
+        for (k = 0; k < n; k++) {
+            v = vb(off + k);
+            if (v < 0 || (unsigned char)(vhex ? v : up((char)v)) != pat[k])
+                break;
+        }
+        if (k == n) {
+            vmpos = off;
+            vmlen = n;
+            vtop = vhex ? off & ~15UL : vline_start(off);
+            if (!vhex && vwrap)
+                while (vnext(vtop) <= off)
+                    vtop = vnext(vtop);
+            return;
+        }
+        if ((off & 4095) == 0 && KbdPeek() && (KbdCharIn() & 0xFF) == 27)
+            return;                     /* Esc bricht ab                 */
+    }
+    ask("Suchen", "Nicht gefunden:", vfind, 1);
+}
+
+static void vgoto(void)
+{
+    static char g[16];
+    unsigned long v = 0, line = 0, off = 0;
+    unsigned i;
+    int h;
+    g[0] = 0;
+    if (!input("Gehe zu", vhex ? "Offset (hex), z. B. 1F00:" : "Zeile, oder 0x... f\x81r einen Offset:",
+               g, sizeof(g)) || !g[0])
+        return;
+    if (vhex || (g[0] == '0' && up(g[1]) == 'X')) {
+        for (i = (g[0] == '0' && up(g[1]) == 'X') ? 2 : 0; (h = hexval(g[i])) >= 0; i++)
+            v = (v << 4) | (unsigned)h;
+        if (v > vsize)
+            v = vsize;
+        vtop = vhex ? v & ~15UL : vline_start(v);
+        return;
+    }
+    for (i = 0; g[i] >= '0' && g[i] <= '9'; i++)
+        v = (v << 3) + (v << 1) + (unsigned)(g[i] - '0');
+    if (v)
+        v--;
+    for (off = 0; line < v && off < vsize; off++)  /* Zeilen zaehlen     */
+        if (vb(off) == '\n')
+            line++;
+    vtop = off;
+}
+
+static void viewer(const char *path, unsigned long size)
+{
+    unsigned k, rows;
+    unsigned char c, sc;
+    unsigned long n;
+    int i;
+
+    vh = DosOpen(path);
+    if (FAPI_FAILED(vh)) {
+        ask("Ansehen", "Datei kann nicht ge\x94" "ffnet werden:", path, 1);
+        draw_all();
+        return;
+    }
+    vsel = DosAllocSeg(0);
+    if (FAPI_FAILED(vsel) || !vsel) {
+        DosClose(vh);
+        ask("Ansehen", "Nicht gen\x81gend Arbeitsspeicher.", "", 1);
+        draw_all();
+        return;
+    }
+    scopy(vname, path, sizeof(vname));
+    vsize = size;
+    vbase = vlen = 0;
+    vtop = 0;
+    vleft = 0;
+    vmpos = 0xFFFFFFFFUL;
+    vfind[0] = 0;
+    VioSetCurPos(0xFF, 0);
+    for (;;) {
+        rows = R - 2;
+        vdraw();
+        vkeys();
+        k = getkey();
+        if (k == K_MOUSE) {
+            if ((mev.buttons & MOU_LEFT) && !(mprev & MOU_LEFT) && mev.row == R - 1) {
+                mprev = mev.buttons;
+                k = (unsigned)(K_F1 + mev.col / 8) << 8;    /* Tastenleiste */
+            } else {
+                mprev = mev.buttons;
+                continue;
+            }
+        }
+        c = (unsigned char)k;
+        sc = (unsigned char)(k >> 8);
+        if (c == 27 || (c == 0 && (sc == K_F1 + 2 || sc == K_F10)) || c == 'q' || c == 'Q')
+            break;
+        if (c == 0 || c == 0xE0) {
+            switch (sc) {
+            case K_DOWN:
+                if (vnext(vtop) < vsize)
+                    vtop = vnext(vtop);
+                break;
+            case K_UP:
+                vtop = vprev(vtop);
+                break;
+            case K_PGDN:
+                for (i = 0; i < (int)rows - 1; i++) {
+                    n = vnext(vtop);
+                    if (n >= vsize)
+                        break;
+                    vtop = n;
+                }
+                break;
+            case K_PGUP:
+                for (i = 0; i < (int)rows - 1; i++)
+                    vtop = vprev(vtop);
+                break;
+            case K_HOME:
+                vtop = 0;
+                vleft = 0;
+                break;
+            case K_END:
+                vtop = vlast_page();
+                break;
+            case K_RIGHT:
+                if (!vwrap && !vhex)
+                    vleft += 8;
+                break;
+            case K_LEFT:
+                vleft = vleft >= 8 ? vleft - 8 : 0;
+                break;
+            case K_F1:
+                box(3, 13, "Betrachter");
+                put(5, 13, "Pfeile, Bild auf/ab, Pos1/Ende   bl\x84ttern", A_DLG, 54);
+                put(6, 13, "Pfeil links/rechts               waagerecht (ohne Umbruch)", A_DLG, 54);
+                put(7, 13, "F2  Zeilenumbruch an/aus", A_DLG, 54);
+                put(8, 13, "F4  Hex-Ansicht / Text", A_DLG, 54);
+                put(9, 13, "F5  Gehe zu Zeile oder Offset (0x...)", A_DLG, 54);
+                put(10, 13, "F7  Suchen (Hex-Ansicht: Bytes wie 4D 5A), n weiter", A_DLG, 54);
+                put(11, 13, "F3, F10, Esc, q  zur\x81" "ck", A_DLG, 54);
+                getkey();
+                break;
+            case K_F1 + 1:                  /* F2: Umbruch                */
+                vwrap = !vwrap;
+                vleft = 0;
+                vtop = vhex ? vtop : vline_start(vtop);
+                break;
+            case K_F1 + 3:                  /* F4: Hex                    */
+                vhex = !vhex;
+                vtop = vhex ? vtop & ~15UL : vline_start(vtop);
+                break;
+            case K_F1 + 4:
+                vgoto();
+                break;
+            case K_F1 + 6:                  /* F7: Suchen                 */
+                if (input("Suchen", vhex ? "Bytes (hex), z. B. 4D 5A:" : "Text:", vfind, sizeof(vfind)) &&
+                    vfind[0])
+                    vsearch(vmpos != 0xFFFFFFFFUL ? vmpos + 1 : vtop);
+                break;
+            }
+            continue;
+        }
+        if ((c == 'n' || c == 'N') && vfind[0])
+            vsearch(vmpos != 0xFFFFFFFFUL ? vmpos + 1 : vtop);
+        else if (c == ' ')
+            for (i = 0; i < (int)rows - 1 && vnext(vtop) < vsize; i++)
+                vtop = vnext(vtop);
+    }
+    DosFreeSeg(vsel);
+    DosClose(vh);
+    draw_all();
+}
+
 static void view_edit(int edit)
 {
     static char c[FAPI_PATHLEN + 8];
@@ -982,7 +1415,11 @@ static void view_edit(int edit)
     if (!p->n || (p->e[p->cur].attr & 0x10))
         return;
     cur_path(tmp);
-    scopy(c, edit ? "EDIT " : "LESS ", sizeof(c));
+    if (!edit) {                        /* eigener Betrachter            */
+        viewer(tmp, p->e[p->cur].size);
+        return;
+    }
+    scopy(c, "EDIT ", sizeof(c));
     quote(c + 5, tmp, sizeof(c) - 5);
     run(c, 0);
 }
@@ -995,7 +1432,7 @@ static void help(void)
         "Eingabe       Verzeichnis \x94" "ffnen, Programm starten,",
         "              sonst die Befehlszeile ausf\x81hren",
         "Einfg         markieren      Grau + - *  alle/keine/umkehren",
-        "F3 / F4       Ansehen (LESS) / Bearbeiten (EDIT)",
+        "F3 / F4       Ansehen (Betrachter, F1 dort) / Bearbeiten (EDIT)",
         "F5 / F6       Kopieren / Verschieben oder Umbenennen",
         "F7 / F8       Verzeichnis anlegen / L\x94schen (auch Entf)",
         "Alt+F1/F2     Laufwerk links / rechts",
