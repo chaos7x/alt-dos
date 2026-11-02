@@ -189,7 +189,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`).
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
   ersten Segments nur über Fern-Thunks (`kernel/k2thunk.c`, umgelenkt per
   `#define` in `kernel/k2.h` – k2.h als letztes Include!), Ports und
@@ -1368,8 +1368,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   -> 1 GB, isapc; mit allem oberhalb 256 MB: XCOPY über NCR, PLAY (DMA
   unter 16 MB), GRAFIK 12 mit Sitzungswechsel, fsck sauber. Rundung auf
   4 KB kostet bei 2 MB rund 45 KB (frei 976 statt 1.026 KB).
-  Erstes Kernel-Codesegment danach bei 63,8 KB – vor Phase 1b Teile
-  nach KTEXT2 verschieben.
+  Erstes Kernel-Codesegment danach bei 63,8 KB -> mem.c nach KTEXT2
+  (Einsprünge `__far` in mem.h, `set_desc` und der Cache-Rückruf
+  `mem_reclaim` über Thunks `kf_set_desc`/`kf_reclaim`), jetzt 60,6 KB.
+  `-os` statt `-ox` brachte nur 0,7 KB – nicht genommen. Geprüft: 3 MB,
+  CACHE=1536, TASKB bekommt 640 KB, Cache 1.536 -> 1.408 KB.
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

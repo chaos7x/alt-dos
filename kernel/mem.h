@@ -18,13 +18,14 @@ struct e820 { unsigned long base_lo, base_hi, len_lo, len_hi, type; };
 extern struct e820    e820_map[E820_MAX];
 extern unsigned short e820_n, e801_lo, e801_hi, mem_ext_kb, mem_conv_kb;
 
-void          mem_init(pg_t low, unsigned conv_kb); /* low: erste freie Seite hinter dem Kernel */
-pg_t          mem_alloc(unsigned pages);            /* -> erste Seite, 0 = kein Speicher */
-pg_t          mem_alloc_low(unsigned pages);        /* unter 16 MB (ISA-DMA)   */
-void          mem_free(pg_t start, unsigned pages);
-unsigned long mem_free_kb(void);
-unsigned long mem_total_kb(void);
-unsigned long mem_ram_kb(void);
+/* mem.c liegt im zweiten Codesegment (KTEXT2): Einspruenge fern */
+void          __far mem_init(pg_t low, unsigned conv_kb); /* low: erste freie Seite hinter dem Kernel */
+pg_t          __far mem_alloc(unsigned pages);      /* -> erste Seite, 0 = kein Speicher */
+pg_t          __far mem_alloc_low(unsigned pages);  /* unter 16 MB (ISA-DMA)   */
+void          __far mem_free(pg_t start, unsigned pages);
+unsigned long __far mem_free_kb(void);
+unsigned long __far mem_total_kb(void);
+unsigned long __far mem_ram_kb(void);
 /* Rueckruf bei Speichermangel (Platten-Cache gibt saubere Stuecke ab):
    -> freigegebene Seiten, 0 = nichts mehr abzugeben. Darf keine
    Plattenzugriffe machen (mem_alloc kommt auch ohne Kernelsperre). */

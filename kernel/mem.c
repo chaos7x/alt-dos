@@ -13,8 +13,7 @@
  * dem Kernel), das Loch 640 KB - 1 MB bleibt belegt.
  */
 #include <i86.h>
-#include "mem.h"
-#include "kern.h"
+#include "k2.h"                         /* im zweiten Codesegment       */
 
 #define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
 
@@ -102,7 +101,7 @@ static int next_range(pg_t *a, pg_t *e)
     return 0;
 }
 
-void mem_init(pg_t low, unsigned conv_kb)
+void __far mem_init(pg_t low, unsigned conv_kb)
 {
     pg_t a, e, bm_pg = 0, bm_n = 0;
     unsigned long bytes, i;
@@ -204,42 +203,42 @@ static pg_t alloc_in(unsigned n, pg_t to)
 
 /* Kein Platz? Dann gibt der Platten-Cache Stuecke ab (wie der Cache-
    Manager bei NT), bis es passt */
-pg_t mem_alloc(unsigned n)
+pg_t __far mem_alloc(unsigned n)
 {
     pg_t p;
-    while ((p = alloc_in(n, max_pg)) == 0 && mem_reclaim && mem_reclaim(n))
+    while ((p = alloc_in(n, max_pg)) == 0 && kf_reclaim(n))
         ;
     return p;
 }
 
 /* unter 16 MB (ISA-DMA, 386SX-Adressraum) */
-pg_t mem_alloc_low(unsigned n)
+pg_t __far mem_alloc_low(unsigned n)
 {
     pg_t p;
-    while ((p = alloc_in(n, 0x1000)) == 0 && mem_reclaim && mem_reclaim(n))
+    while ((p = alloc_in(n, 0x1000)) == 0 && kf_reclaim(n))
         ;
     return p;
 }
 
-void mem_free(pg_t start, unsigned n)
+void __far mem_free(pg_t start, unsigned n)
 {
     release_range(start, start + n);
     if (start < hint)
         hint = start;
 }
 
-unsigned long mem_free_kb(void)
+unsigned long __far mem_free_kb(void)
 {
     return free_pg << 2;
 }
 
-unsigned long mem_total_kb(void)
+unsigned long __far mem_total_kb(void)
 {
     return total_pg << 2;
 }
 
 /* RAM insgesamt (konventionell + ab 1 MB laut BIOS-Karte) */
-unsigned long mem_ram_kb(void)
+unsigned long __far mem_ram_kb(void)
 {
     return ram_pg << 2;
 }

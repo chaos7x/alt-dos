@@ -44,8 +44,8 @@ void __far kf_scratch2_map(unsigned long base, unsigned limit);
 void __far kf_win_save(unsigned short *b);
 void __far kf_win_restore(const unsigned short *b);
 void __far kf_zero_seg(unsigned sel, unsigned words);
-pg_t __far kf_mem_alloc(unsigned pages);
-void __far kf_mem_free(pg_t start, unsigned pages);
+pg_t __far kf_reclaim(unsigned pages);           /* mem_reclaim (Cache)   */
+void __far kf_set_desc(int i, unsigned long base, unsigned limit, unsigned char acc);
 void __far kf_ldt_set(int t, unsigned sel, unsigned long base, unsigned limit);
 void __far kf_ldt_drop(int t, unsigned sel);
 void __far kf_redraw(void);
@@ -55,8 +55,7 @@ void __far kf_vio_flush(void);
 #define win_save(b)                 kf_win_save(b)
 #define win_restore(b)              kf_win_restore(b)
 #define zero_seg(s, w)              kf_zero_seg((s), (w))
-#define mem_alloc(u)                kf_mem_alloc(u)
-#define mem_free(s, u)              kf_mem_free((s), (u))
+#define set_desc(i, b, l, a)        kf_set_desc((i), (b), (l), (a))
 #define ldt_set(t, s, b, l)         kf_ldt_set((t), (s), (b), (l))
 #define ldt_drop(t, s)              kf_ldt_drop((t), (s))
 #define redraw()                    kf_redraw()
