@@ -168,6 +168,15 @@ und PC-DOS.
 - `CUT -c|-b|-f LISTE [-d X] [-s] [--complement] [--output-delimiter=T]
   [Datei…]` nach dem Vorbild von GNU cut (Zeichen oder Felder je Zeile,
   auch in Pipes: `DIR /B | CUT -c1-8`)
+- Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
+  `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
+  `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
+  was andere Programme anhängen – Taste beendet), `WC [-l -w -c -m -L]`
+  (Zeilen, Wörter, Bytes, Summenzeile), `UNIQ [-c] [-d|-u] [-i] [Ein
+  [Aus]]` (gleiche Nachbarzeilen, meist hinter `SORT`) und `TR [-c -d -s]
+  Satz1 [Satz2]` (Zeichen ersetzen/löschen, Bereiche `a-z`, `\r`,
+  `[:upper:]` …), z. B. `TYPE BRIEF.TXT | TR -d \r` oder
+  `SORT < NAMEN.TXT | UNIQ -c`
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

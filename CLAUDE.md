@@ -310,6 +310,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   --output-delimiter=, Listen N/N-M/N-/-M; Zeilen bis 4 KB (länger wird
   gekürzt), CR LF bleibt erhalten, ^Z beendet. Testfalle q.py: `|` ist
   auf der deutschen Tastatur AltGr+< (`alt_r-less`).
+- HEAD, TAIL, WC, UNIQ, TR (Wunsch des Nutzers, GNU-Vorbild; in QEMU mit
+  den GNU-Werkzeugen auf dem Host verglichen – gleich bis auf CR LF und
+  die Spaltenbreite von WC): gemeinsamer gepufferter Ein-/Ausgabeteil
+  `apps/textin.h` (per `#include`, je 2 KB; `ti_num`/`ti_file` nur mit
+  `TI_NUM`/`TI_FILE`, sonst W202). TAIL liest durch einen 64-KB-Ring
+  (DosAllocSeg). Lehre bei `tail -f`: die Dateigröße steht je offenem
+  Handle (`struct ifs_file`), Angehängtes eines anderen Tasks sieht ein
+  offenes Handle nicht – TAIL öffnet daher alle 500 ms neu und springt
+  per DosSeek an die alte Stelle (wie `tail -F`).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
