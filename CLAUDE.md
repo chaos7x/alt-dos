@@ -503,7 +503,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Sitzung 1 sofort; Strg+C bricht BUSY ab; zwei BUSY gleichzeitig kommen
   beide voran (Vordergrund 12 statt 8 s, nicht genau halbe-halbe –
   QEMU-Messung grob); zwei BUSY per DETACH + XCOPY über NCR8XX in 22 s,
-  SHUTDOWN beendet sie, fsck sauber. Nächster Schritt: Sperren je Gerät.
+  SHUTDOWN beendet sie, fsck sauber. Vom Nutzer auf dem 486 in 86Box
+  bestätigt: mit zwei BUSY lässt sich weiter gut tippen und EDIT starten
+  (eine Bevorzugung interaktiver Tasks war daher nicht nötig).
   Auf dem 386SX/2 MB in 86Box bestätigt: `grep -r` über die 2-GB-Platte im
   Hintergrund, Vordergrund bleibt bedienbar, Alt+Esc schnell, Strg+C bricht ab.
   `MEM` dort: 1.664 KB erkannt, 231 KB belegt, 1.433 KB frei.
