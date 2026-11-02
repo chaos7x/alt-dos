@@ -288,7 +288,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Knopf im Fortschrittsfenster, Rückfrage) zwischen Dateien und über den
   neuen util-Rückruf `copy_abort` auch zwischen den 4-KB-Blöcken von
   copy_file (gibt -8, das Ziel wird gelöscht); `op_abort` statt op_err,
-  Verschieben löscht die Quelle nur, wenn alles ankam.
+  Verschieben löscht die Quelle nur, wenn alles ankam. Vom Nutzer in 86Box
+  bestätigt: Abbruch mitten in NWIND.MDB (Access) – die halbe Datei ist
+  weg, vorher Kopiertes bleibt.
 - DISKCOMP, COMP, REPLACE, EXPAND (in QEMU geprüft): DISKCOMP wie
   DISKCOPY (Quelle in 64-KB-Segmente, mehrere Durchgänge, ein Laufwerk
   mit Wechsel; Seriennummer 27h–2Ah im Bootsektor wird übergangen), COMP
