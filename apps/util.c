@@ -210,6 +210,8 @@ int ask_yn(void)
 
 static char xbuf[XFER];
 
+int (*copy_abort)(void);                /* Rueckfrage zwischen Bloecken */
+
 int copy_file(const char *from, const char *to)
 {
     unsigned hi, ho, n, k;
@@ -228,6 +230,10 @@ int copy_file(const char *from, const char *to)
     while ((n = DosRead(hi, xbuf, XFER)) != 0) {
         if (FAPI_FAILED(n)) {
             rc = -3;
+            break;
+        }
+        if (copy_abort && copy_abort()) {
+            rc = -8;                    /* abgebrochen: Ziel wieder weg */
             break;
         }
         if ((k = DosWrite(ho, xbuf, n)) != n) {

@@ -284,13 +284,25 @@ Win32s), nicht vorziehen, sondern nachfragen.
   eigenen Puffer, weil der Text des Dialogs oft in `line` steht (Fehler
   vom Nutzer gemeldet). Vom Nutzer in 86Box bestätigt: Kopieren und
   Verschieben, CHKDSK danach ohne Fehler.
+  Abbrechen (Wunsch des Nutzers): `abort_check` (Esc oder Klick auf den
+  Knopf im Fortschrittsfenster, Rückfrage) zwischen Dateien und über den
+  neuen util-Rückruf `copy_abort` auch zwischen den 4-KB-Blöcken von
+  copy_file (gibt -8, das Ziel wird gelöscht); `op_abort` statt op_err,
+  Verschieben löscht die Quelle nur, wenn alles ankam.
 - DISKCOMP, COMP, REPLACE, EXPAND (in QEMU geprüft): DISKCOMP wie
   DISKCOPY (Quelle in 64-KB-Segmente, mehrere Durchgänge, ein Laufwerk
   mit Wechsel; Seriennummer 27h–2Ah im Bootsektor wird übergangen), COMP
   (Muster auf Datei 2 übertragen, `apply_pat`), REPLACE (/S über
   walk_tree im Ziel), EXPAND (SZDD: Kopf `SZDD 88 F0 27 33`, 'A', letztes
   Zeichen, Größe; LZSS 4 KB, Fenster mit Leerzeichen, Start 4096-16;
-  getestet mit einer in Python gepackten Datei mit Rückverweisen).
+  getestet mit einer in Python gepackten Datei mit Rückverweisen; bei
+  mehreren Quellen erst zählen, dann prüfen, ob das Ziel ein Verzeichnis
+  ist). COMPRESS (Wunsch des Nutzers): eigener LZSS-Packer, Hash der
+  3-Byte-Anfänge mit Ketten (48 Schritte), Treffer höchstens so lang wie
+  der Abstand (sonst läse der Entpacker gerade Geschriebenes); /R ->
+  letztes Zeichen '_'; Größe wird am Ende per DosSeek in den Kopf
+  geschrieben. Geprüft: Hin und zurück mit EXPAND + COMP, und ein
+  unabhängiger Python-Entpacker liefert das Original.
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`

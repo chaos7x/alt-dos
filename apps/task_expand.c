@@ -220,6 +220,24 @@ void main(void)
     abs_path(srcs[nsrc - 1], dst);
     nsrc--;
     tdir = is_dir(dst);
+    if (!tdir) {                        /* erst zaehlen: mehrere Quellen */
+        for (i = 0, cnt = 0; i < nsrc; i++) {   /* brauchen ein Verzeichnis */
+            abs_path(srcs[i], dir);
+            b = base_name(dir);
+            scopy(pat, b, sizeof(pat));
+            *b = 0;
+            if (slen(dir) > 3)
+                dir[slen(dir) - 1] = 0;
+            for (n = 0; DosFindEntry(&e, n, dir) != FAPI_ERROR; n++)
+                if (!(e.attr & 0x18) && match(e.name, pat))
+                    cnt++;
+        }
+        if (cnt > 1) {
+            puts("Mehrere Quelldateien: das Ziel muss ein Verzeichnis sein.\r\n");
+            DosExit(1);
+        }
+        cnt = 0;
+    }
     for (i = 0; i < nsrc; i++) {
         abs_path(srcs[i], dir);
         b = base_name(dir);

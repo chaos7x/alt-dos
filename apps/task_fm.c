@@ -603,12 +603,38 @@ static int input(const char *title, const char *prompt, char *b, unsigned max)
     }
 }
 
+static int op_abort;                    /* Vorgang abgebrochen          */
+
 static void progress(const char *what, const char *name)
 {
+    static const char *const ab[1] = { "Abbrechen" };
     int r = (int)R / 2 - 2;
-    box(r, 4, what);
+    box(r, 6, what);
     put(r + 2, 12, name, A_DLG, 56);
+    buttons(r + 4, ab, 1);
+    VioSetCurPos(0xFF, 0);
     show();
+}
+
+/* waehrend Kopieren/Verschieben/Loeschen: Esc oder Klick auf Abbrechen?
+   -> 1 = aufhoeren (nach Rueckfrage) */
+static int abort_check(void)
+{
+    int want = 0;
+    if (op_abort)
+        return 1;
+    if (KbdPeek()) {
+        if ((KbdCharIn() & 0xFF) == 27)
+            want = 1;
+    } else if (mouse && MouReadEvent(&mev, 0) == 0) {
+        if (button_hit() == 0)
+            want = 1;
+    }
+    if (!want)
+        return 0;
+    if (ask("Abbrechen", "Den laufenden Vorgang abbrechen?", "", 0))
+        op_abort = 1;
+    return op_abort;
 }
 
 /* ---- Programme starten ----------------------------------------------- */
@@ -733,7 +759,7 @@ static int confirm_over(const char *dst)
             if (k == 'N')
                 return 0;
             if (k == 27) {
-                op_err = -1;            /* abbrechen                    */
+                op_abort = 1;           /* abbrechen                    */
                 return 0;
             }
         }
@@ -754,7 +780,7 @@ static int copy_visit(char *path, struct fapi_dirent *e, int what, int depth)
 {
     (void)e;
     (void)depth;
-    if (op_err < 0)
+    if (op_abort || abort_check())
         return WT_STOP;
     if (what == WT_LEAVE)
         return 0;
@@ -764,15 +790,17 @@ static int copy_visit(char *path, struct fapi_dirent *e, int what, int depth)
         return WT_DESCEND;
     }
     progress("Kopieren", path);
-    if (confirm_over(tmp2) && copy_file(path, tmp2))
+    if (confirm_over(tmp2) && copy_file(path, tmp2) && !op_abort)
         op_err++;
-    return 0;
+    return op_abort ? WT_STOP : 0;
 }
 
 static int del_visit(char *path, struct fapi_dirent *e, int what, int depth)
 {
     static struct fapi_finfo fi;
     (void)depth;
+    if (op_abort || abort_check())
+        return WT_STOP;
     if (what == WT_DIR)
         return WT_DESCEND;
     if (what == WT_FILE) {
@@ -801,7 +829,7 @@ static void copy_tree(const char *src, int isdir, const char *dst)
     static char sp[FAPI_PATHLEN];
     if (!isdir) {
         progress("Kopieren", src);
-        if (confirm_over(dst) && copy_file(src, dst))
+        if (confirm_over(dst) && copy_file(src, dst) && !op_abort)
             op_err++;
         return;
     }
@@ -881,7 +909,9 @@ static void do_copy_move(int move)
     }
     op_err = 0;
     op_all = 0;
-    for (i = 0; i < p->n && op_err >= 0; i++) {
+    op_abort = 0;
+    copy_abort = abort_check;
+    for (i = 0; i < p->n && !op_abort; i++) {
         if (!sel_item(i))
             continue;
         join(src, p->dir, NAME(p, i), sizeof(src));
@@ -894,13 +924,18 @@ static void do_copy_move(int move)
         if (move && up(src[0]) == up(dst[0]) && DosMove(src, dst) == 0)
             continue;                   /* gleiches Laufwerk: umhaengen */
         copy_tree(src, (p->e[i].attr & 0x10) != 0, dst);
-        if (move && op_err == 0)
-            remove_tree(src, (p->e[i].attr & 0x10) != 0);
+        if (move && op_err == 0 && !op_abort)   /* Quelle nur weg, wenn  */
+            remove_tree(src, (p->e[i].attr & 0x10) != 0);   /* alles kam */
+        if (abort_check())
+            break;
     }
+    copy_abort = 0;
     read_panel(&pn[0], 0);
     read_panel(&pn[1], 0);
     draw_all();
-    if (op_err > 0)
+    if (op_abort)
+        ask("Hinweis", "Abgebrochen.", "Bereits Kopiertes bleibt erhalten.", 1);
+    else if (op_err > 0)
         ask("Hinweis", "Nicht alles lie\xE1 sich kopieren/verschieben.", "", 1);
 }
 
@@ -930,15 +965,19 @@ static void do_delete(void)
                                      : "l\x94schen?", 0))
         return;
     op_err = 0;
-    for (i = 0; i < p->n; i++)
+    op_abort = 0;
+    for (i = 0; i < p->n && !op_abort; i++)
         if (sel_item(i)) {
             join(src, p->dir, NAME(p, i), sizeof(src));
             remove_tree(src, (p->e[i].attr & 0x10) != 0);
+            abort_check();
         }
     read_panel(&pn[0], 0);
     read_panel(&pn[1], 0);
     draw_all();
-    if (op_err)
+    if (op_abort)
+        ask("Hinweis", "Abgebrochen.", "", 1);
+    else if (op_err)
         ask("Hinweis", "Nicht alles lie\xE1 sich l\x94schen.", "", 1);
 }
 

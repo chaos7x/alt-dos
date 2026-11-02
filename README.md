@@ -162,13 +162,17 @@ und PC-DOS.
   nicht), `COMP [Daten1] [Daten2] [/D /A /L /N=n /C]` (Byte für Byte, bis
   10 Unterschiede, Muster wie `*.BAK`), `REPLACE Quelle [Ziel] [/A /P /R
   /S /U /W]` und `EXPAND Datei … Ziel` (entpackt SZDD-Dateien wie `*.EX_`
-  von Microsoft-Disketten, der Name kommt aus dem Kopf zurück) wie MS-DOS
+  von Microsoft-Disketten, der Name kommt aus dem Kopf zurück) wie MS-DOS;
+  dazu `COMPRESS [/R] Quelle [Ziel]` wie aus den Microsoft-Entwickler-
+  paketen (packt ins SZDD-Format, `/R` macht `BRIEF.TX_`)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
   Dateien, F2 Umbruch, F4 Hex, F5 Gehe zu Zeile/Offset, F7 Suchen mit
   Hervorhebung, `n` weiter), F4 Bearbeiten (EDIT), F5 Kopieren, F6 Verschieben/Umbenennen,
-  F7 Verzeichnis, F8 Löschen (Verzeichnisse mit Inhalt), Alt+F1/F2
+  F7 Verzeichnis, F8 Löschen (Verzeichnisse mit Inhalt; Kopieren,
+  Verschieben und Löschen lassen sich mit Esc oder dem Knopf abbrechen,
+  eine halb kopierte Datei wird entfernt), Alt+F1/F2
   Laufwerk, Strg+O zeigt den Bildschirm der Sitzung, Befehlszeile unten
   (Tippen, Eingabe; Strg+Eingabe übernimmt den Namen), Maus (auch die
   Knöpfe in den Dialogen), lange Namen

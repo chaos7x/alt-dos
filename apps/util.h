@@ -23,7 +23,8 @@ int      is_dir(const char *p);
 int      ask_yn(void);                                    /* J/N -> 1/0    */
 int      copy_file(const char *from, const char *to);    /* 0 = ok; -1 Quelle, -2 Ziel,
                          -3 Lesen, -4 Schreiben, -5 Schliessen, -6 Quelle in Benutzung,
-                         -7 Datentraeger voll */
+                         -7 Datentraeger voll, -8 abgebrochen (copy_abort) */
+extern int (*copy_abort)(void);         /* != 0: zwischen den Bloecken fragen */
 #define  XFER 4096
 
 /* Verzeichnisbaum ablaufen (ohne Rekursion im C-Stack, App-Stack 2 KB).
