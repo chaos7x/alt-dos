@@ -41,6 +41,7 @@ unsigned div32(unsigned long a, unsigned b);
 static unsigned base, irq = 5, dma8 = 1, dma16 = 5, dspv;
 static unsigned caps;                   /* AUDCAP_*                      */
 static void opl_w(unsigned reg, unsigned char v);
+static void single_block(void);
 static void opl_reset(void);
 static void midi_w(unsigned char v);
 static unsigned bsel;
@@ -144,6 +145,15 @@ static void dma_stop(void)
 }
 
 /* ---- Wiedergabe ----------------------------------------------------- */
+/* DSP 1.xx (Sound Blaster 1.0): eine Haelfte als Einzelblock; der 8237
+   laeuft im Auto-Init weiter, der Interrupt startet den naechsten Block */
+static void single_block(void)
+{
+    dsp_w(0x14);
+    dsp_w((unsigned char)((HALF - 1) & 0xFF));
+    dsp_w((unsigned char)((HALF - 1) >> 8));
+}
+
 static void dsp_start(void)
 {
     unsigned n;
@@ -160,10 +170,14 @@ static void dsp_start(void)
     } else {
         dsp_w(0x40);                    /* Zeitkonstante                 */
         dsp_w((unsigned char)(256 - div32(1000000UL, rate)));
-        dsp_w(0x48);                    /* Blockgroesse                  */
-        dsp_w((unsigned char)((HALF - 1) & 0xFF));
-        dsp_w((unsigned char)((HALF - 1) >> 8));
-        dsp_w(0x1C);                    /* 8 Bit, Auto-Init              */
+        if (dspv < 0x200)               /* DSP 1.xx: kein Auto-Init -    */
+            single_block();             /* Block fuer Block (14h)        */
+        else {
+            dsp_w(0x48);                /* Blockgroesse                  */
+            dsp_w((unsigned char)((HALF - 1) & 0xFF));
+            dsp_w((unsigned char)((HALF - 1) >> 8));
+            dsp_w(0x1C);                /* 8 Bit, Auto-Init              */
+        }
     }
 }
 
@@ -184,8 +198,14 @@ static void stop_play(void)
         if (dspv >= 0x400) {
             dsp_w(cur_dma16 ? 0xD9 : 0xDA);     /* Auto-Init beenden     */
             dsp_w(cur_dma16 ? 0xD5 : 0xD0);     /* anhalten              */
-        } else
+        } else {
+            /* vor dem SB16: DAh (Auto-Init beenden) gibt es erst ab DSP
+               2.01, D0h haelt Auto-Init bei DSP 2.00 nicht an (Sound
+               Blaster 1.5 spielte in 86Box endlos weiter) - sicher ist
+               nur ein Reset des DSP (Creative-Handbuch) */
             dsp_w(0xD0);
+            dsp_reset(base);
+        }
         dma_stop();
     }
     playing = 0;
@@ -210,6 +230,8 @@ static void sb_irq(unsigned n)
         inp(base + 0x0E);
     if (!playing)
         return;
+    if (dspv < 0x200)
+        single_block();                 /* DSP 1.xx: naechster Block     */
     /* eine Haelfte ist fertig, die DMA spielt jetzt "fill": nicht voll
        geworden -> Rest Stille (sonst klingen alte Daten nach) */
     if (!fill_full)
@@ -487,6 +509,9 @@ static int init_pcm(struct drv_req __far *r)
     maj = dsp_r();
     min = dsp_r();
     dspv = (maj << 8) | min;
+    if ((a = arg(r->args, 'V')) != 0 && hexval(a))
+        dspv = hexval(a);               /* /V:105 - nur zum Testen: alte
+                                           DSP-Version vortaeuschen      */
     if (dspv >= 0x400) {                /* SB16: Einstellung im Mixer    */
         m = mix_r(0x80);
         irq = (m & 1) ? 9 : (m & 2) ? 5 : (m & 4) ? 7 : (m & 8) ? 10 : irq;

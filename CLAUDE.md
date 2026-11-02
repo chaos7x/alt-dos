@@ -1005,7 +1005,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KLANG.WAV (Arpeggio, 11 kHz 8 Bit), ODE.MID / ODE.IMF (Ode an die
   Freude, gemeinfrei, mit Bass) – in QEMU alle drei hörbar.
   Vom Nutzer auf dem SCAT in 86Box bestätigt: `PLAY AKKORD.WAV` (aus
-  Windows 3.1) spielt über den SB16.
+  Windows 3.1) spielt über den SB16, ebenso über Sound Blaster 2.0.
+  Alte Karten (vom Nutzer gemeldet: SB 1.5 spielte endlos, SB 1.0 stumm):
+  DSP 1.xx kennt kein Auto-Init (1Ch) und keine Blockgröße (48h) ->
+  `single_block` (14h je Hälfte, im IRQ neu gestartet, der 8237 läuft im
+  Auto-Init weiter); vor dem SB16 hält D0h Auto-Init bei DSP 2.00 nicht an
+  (DAh erst ab 2.01) -> Anhalten per DSP-Reset. In QEMU mit dem
+  Testschalter `/V:105` bzw. `/V:200` (alte DSP-Version vortäuschen)
+  nachgestellt: Ton 1 s, danach Stille. Auf SB 1.0/1.5 in 86Box noch zu
+  bestätigen (laut Nutzer meldet 86Box DSP 2.0).
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
   Offen: ISA-PnP
