@@ -3,7 +3,7 @@
  * NCR8XX.SYS - PCI-SCSI mit NCR/Symbios 53C8xx (810, 815, 820, 825, 860,
  * 875, 895; in QEMU der LSI 53C895A) - AT-DOS 6.0, braucht einen 386
  *
- * CONFIG.SYS:  DEVICE=NCR8XX.SYS [/ID:7]
+ * CONFIG.SYS:  DEVICE=NCR8XX.SYS [/ID:7] [/NOIRQ]
  *
  * Die Karte findet der PCI-Dienst des Kernels (DevHlp DH_PCIFIND),
  * I/O-Basis aus BAR 0, I/O und Busmaster werden eingeschaltet. Der SCRIPTS-Prozessor der Karte arbeitet ein
@@ -11,8 +11,9 @@
  * keine Nachrichten), dann je nach Phase Befehl, Daten, Status und die
  * Abschlussmeldung uebertragen, am Ende ein SCRIPTS-Interrupt. Die Daten
  * gehen per Busmaster direkt in den Puffer des Kernels (physische Adresse
- * aus der Anforderung - ohne Paging gleich der linearen). Erste Stufe:
- * Abfragebetrieb (ISTAT), noch ohne IRQ.
+ * aus der Anforderung - Paging bildet 1:1 ab). Mit dem PCI-Interrupt
+ * schlaeft der Task, bis der Chip fertig ist; /NOIRQ oder ein belegter
+ * IRQ: Abfragebetrieb (ISTAT).
  *
  * Gebaut mit -zu wie alle Treiber: keine Adressen lokaler Variablen.
  */
@@ -163,42 +164,81 @@ static void chip_reset(void)
     rd8(SIST1);
 }
 
-/* Befehl ausfuehren (Abfragebetrieb) */
+/* Meldungen des Chips abholen (mit gesperrten Interrupts): ISTAT, dann
+   DSTAT/DSPS bzw. SIST0/SIST1 - das Lesen loescht sie und nimmt auch den
+   (pegelgesteuerten) PCI-Interrupt weg. Sammelt per ODER, -> 1 = etwas da */
+static volatile unsigned char done, irq_on;
+static unsigned char g_ds, g_s0, g_s1;
+static unsigned g_code;
+#define EV_DONE 1
+
+static int collect(void)
+{
+    unsigned char is = rd8(ISTAT);
+    if (!(is & (I_SIP | I_DIP)))
+        return 0;
+    if (is & I_DIP) {
+        unsigned char d = rd8(DSTAT);
+        g_ds |= d;
+        if (d & D_SIR)
+            g_code = (unsigned)inl(io + DSPS);
+    }
+    if (is & I_SIP) {
+        g_s0 |= rd8(SIST0);
+        inp(0x80);                      /* kurze Pause zwischen den Lesungen */
+        g_s1 |= rd8(SIST1);
+    }
+    done = 1;
+    return 1;
+}
+
+static void ncr_irq(unsigned n)
+{
+    (void)n;
+    if (collect())
+        proc_run(EV_DONE);
+}
+
+/* Befehl ausfuehren: mit IRQ schlafen (je 2 Takte, danach selbst
+   nachsehen - ein verlorener oder geteilter Interrupt haelt nichts auf),
+   sonst ISTAT abfragen */
 static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long len,
                unsigned tmo)
 {
-    unsigned t = devhlp(DH_TICKS, 0, 0, 0), code = 0;
-    unsigned char is, ds = 0, s0 = 0, s1 = 0;
+    unsigned t = devhlp(DH_TICKS, 0, 0, 0);
     unsigned long base;
 
     stat = 0xFF;
     msg = 0xFF;
     build(id, cdblen, buf, len);
     base = phys(scr);
+    cli();
+    done = 0;
+    g_ds = g_s0 = g_s1 = 0;
+    g_code = 0;
+    sti();
     outl(io + DSP, (unsigned)base, (unsigned)(base >> 16));   /* los         */
     for (;;) {
-        is = rd8(ISTAT);
-        if (is & (I_SIP | I_DIP))
+        cli();
+        if (!done)
+            collect();
+        if (done) {
+            sti();
             break;
+        }
+        if (irq_on)
+            proc_block(EV_DONE, 2);     /* kehrt mit STI zurueck         */
+        else
+            sti();
         if ((unsigned)(devhlp(DH_TICKS, 0, 0, 0) - t) > tmo) {
             chip_reset();               /* haengt: zuruecksetzen           */
             return SCSI_FAIL;
         }
     }
-    if (is & I_DIP) {
-        ds = rd8(DSTAT);
-        if (ds & D_SIR)
-            code = (unsigned)inl(io + DSPS);
-    }
-    if (is & I_SIP) {
-        s0 = rd8(SIST0);
-        inp(0x80);                      /* kurze Pause zwischen den Lesungen */
-        s1 = rd8(SIST1);
-    }
-    if (s1 & 0x04)                      /* STO: kein Geraet                */
+    if (g_s1 & 0x04)                    /* STO: kein Geraet                */
         return SCSI_NODEV;
-    if (code != 1 || (s0 & 0x0F)) {
-        if (s0 || (ds & ~D_SIR))
+    if (g_code != 1 || (g_s0 & 0x0F)) {
+        if (g_s0 || (g_ds & ~D_SIR))
             chip_reset();               /* Busfehler/Abbruch: sauber neu   */
         return SCSI_FAIL;
     }
@@ -300,11 +340,14 @@ static void init(void)
     p = hex(p, dev, 2);
     p = scat(p, ") an ");
     p = hex(p, io, 4);
+    if (irq && irq < 16 && !has_opt(r->args, "/NOIRQ") && set_irq(irq, ncr_irq) == 0)
+        irq_on = 1;
     p = scat(p, "h, IRQ ");
     p = udec(p, irq);
+    p = scat(p, irq_on ? "" : " (Abfragebetrieb)");
     p = scat(p, ", SCSI-ID ");
     p = udec(p, host);
-    scat(p, ", Abfragebetrieb\n");
+    scat(p, "\n");
     dputs(line);
 
     for (id = 0; id < 8; id++) {

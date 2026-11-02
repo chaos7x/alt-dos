@@ -41,13 +41,16 @@ werden – HTTP 403 –, der Nutzer legt ihn in GitHub an).
 **Plan 6.0** (vom Nutzer abgestimmt): Phase 0 Umstellung (erledigt, s. u.)
 -> **NCR8XX.SYS** (PCI-SCSI 53C8xx, vom Nutzer vorgezogen: sein Standard
 auf PCI-Maschinen, steckt in seiner 486) -> Phase 1 Speicher (E820h,
-4-KB-Seiten, Paging 1:1; erledigt) -> Phase 2 präemptiv + Sperren je Gerät +
-asynchrone Plattenzugriffe (danach nach `5.x` zurück, braucht keinen 386)
+4-KB-Seiten, Paging 1:1; erledigt) -> Phase 2 präemptiv (erledigt) +
+NCR8XX mit IRQ (erledigt)
 -> Phase 3 DOS-Boxen (V86; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
 Redirector auf die AT-DOS-Laufwerke, vom Nutzer gewählt; später echtes
 MS-DOS aus Abbildern) -> Phase 4 EMS/XMS/DPMI, virtuelle VGA und SB,
 mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
-APM. Jede Phase auf 386SX/2 MB in 86Box, danach 486.
+APM -> Phase 6 (Entscheidung des Nutzers: Rest von Phase 2 ans Ende)
+Sperren je Gerät statt der einen Kernelsperre (DMABUF, `req`,
+SCRATCH-Fenster und statische FAPI-Puffer je Task/Gerät), echt parallele
+Plattenzugriffe auf verschiedenen Laufwerken; danach nach `5.x` zurück. Jede Phase auf 386SX/2 MB in 86Box, danach 486.
 
 Diskettenabbild heißt seit 6.0 `build/atdos-fd.img` (vorher `dos5.img`,
 Wunsch des Nutzers), OEM-Kennung `ALTDOS60`.
@@ -1012,8 +1015,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   quittieren. Lehren aus QEMU: der LSI geht nach der Auswahl immer nach
   MSG OUT (ohne IDENTIFY INT 2) und trennt vor den Daten trotz 80h
   (ohne Wiederauswahl Zeitüberschreitung). Abfragebetrieb über ISTAT,
-  Frist über DH_TICKS; STO (SIST1 Bit 2) = kein Gerät. Offen: IRQ,
-  synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
+  Frist über DH_TICKS; STO (SIST1 Bit 2) = kein Gerät. IRQ (in QEMU
+  geprüft, `info irq`: 1.185 Interrupts auf IRQ 11 bei XCOPY): PCI-IRQ
+  aus Register 3Ch, `ncr_irq` -> `collect()` liest ISTAT, DSTAT/DSPS,
+  SIST0/1 (löscht den pegelgesteuerten Interrupt), sammelt per ODER,
+  `done`, proc_run; `run()` schläft je 2 Takte und prüft danach selbst
+  (wie IDE: verlorener/geteilter IRQ hält nichts auf). `/NOIRQ` oder
+  belegter IRQ: Abfragebetrieb wie vorher. Offen: synchrone/Wide-
+  Übertragung. Vom Nutzer auf seiner 486 in 86Box
   bestätigt: Platte und ZIP-Laufwerk am NCR erkannt, `\DEMO` aufs ZIP
   kopiert (Programme laufen von dort), CHKDSK ohne Fehler.
   Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
