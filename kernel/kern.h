@@ -231,6 +231,11 @@ int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c *
 #define BOX_SESSION 1                   /* -> Sitzung von current        */
 #define BOX_SLEEP   2                   /* a Takte schlafen              */
 #define BOX_EXIT    3                   /* Box beenden, Rueckgabewert a  */
+#define BOX_READ    4                   /* Sektor a des Startabbilds nach box_sec, 0 = ok */
+#define BOX_ARGS    5                   /* -> Befehlszeile (near, DS)    */
+extern unsigned char box_sec[512];
+void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs);
+int __far v86_fgbox(void);              /* Vordergrund ist eine Box mit DOS */
 
 /* bus.c (KTEXT2): PCI und Belegungsliste */
 struct fapi_pcidev;

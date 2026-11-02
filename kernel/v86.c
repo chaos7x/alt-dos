@@ -62,6 +62,7 @@
 
 #define VBIOS   0xF000          /* Segment der Dienst-Stummel            */
 #define INT8_STUB 0x0400        /* ARPL 8; INT 1Ch; IRET                 */
+#define DPT_OFF 0x0800          /* Diskettenparametertabelle             */
 #define BDA     0x0040
 #define VSEG    0xB800
 #define ROWS    25
@@ -91,6 +92,8 @@ static unsigned char vcur[NTASK];       /* zuletzt an Port 60h           */
 static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
 static unsigned pit_c[NTASK];
+static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
+static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
 
 /* Thunks (erstes Codesegment) */
 int  __far kf_box_ctl(unsigned op, unsigned a);
@@ -288,6 +291,11 @@ unsigned long __far v86_create(int t, unsigned kb)
     *(unsigned __far *)MK_FP(SCRATCH, 0x46E) = (unsigned)(tk >> 16);
     *(unsigned char __far *)MK_FP(SCRATCH, 0x470) = 0;
     *(unsigned char __far *)MK_FP(SCRATCH, 0x484) = ROWS - 1;
+    /* Laufwerke: ein Diskettenlaufwerk (das Startabbild), keine Platten -
+       die AT-DOS-Laufwerke kommen ueber den Redirector */
+    *(unsigned __far *)MK_FP(SCRATCH, 0x410) =
+        (*(unsigned __far *)MK_FP(SCRATCH, 0x410) & ~0xC1u) | 1;
+    *(unsigned char __far *)MK_FP(SCRATCH, 0x475) = 0;
     *(unsigned __far *)MK_FP(SCRATCH, 0x485) = 16;
     /* Stummel bei F000:0000: je Vektor "ARPL n; IRET; NOP", bei 0400
        der Takt */
@@ -297,6 +305,12 @@ unsigned long __far v86_create(int t, unsigned kb)
         put32(SCRATCH, i, 0x90CF0063UL | ((unsigned long)i << 8));
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
     *(unsigned char __far *)MK_FP(SCRATCH, INT8_STUB + 4) = 0xCF;
+    /* Diskettenparameter (INT 13h 08h, INT 1Eh) bei F000:0800, 1,44 MB */
+    put32(SCRATCH, DPT_OFF >> 2, 0x122502AFUL);
+    put32(SCRATCH, (DPT_OFF >> 2) + 1, 0xF66CFF1BUL);
+    put32(SCRATCH, (DPT_OFF >> 2) + 2, 0x0000080FUL);
+    img_spt[t] = img_heads[t] = img_secs[t] = 0;
+    idle_n[t] = 0;
     return PG_LIN(pd_box[t]);
 }
 
@@ -314,6 +328,32 @@ void __far v86_start(int t, int s)
     put32(SCRATCH2, 0xB9, (b + 4096) | PTE_BOX);
     box_ses[t] = (signed char)s;
     kf_vio_setcur(s, 0, 0);
+}
+
+/* Box startet von einem Abbild (load_img): Geometrie fuer INT 13h */
+void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs)
+{
+    if (spt == 0 || spt > 63 || heads == 0 || heads > 255)
+        spt = 9, heads = 2;             /* BPB unbrauchbar: 360 KB      */
+    img_spt[t] = spt;
+    img_heads[t] = heads;
+    img_secs[t] = secs;
+}
+
+/* Tastatur-Interrupt: ist die Vordergrund-Sitzung eine Box mit eigenem
+   DOS (Startabbild)? Dann gehoert Strg+C dem DOS darin. */
+int __far v86_fgbox(void)
+{
+    int t, s;
+    for (t = 0; t < NTASK && (box_ses[t] < 0 || !img_secs[t]); t++)
+        ;
+    if (t == NTASK)
+        return 0;
+    s = kf_vio_fg();
+    for (t = 0; t < NTASK; t++)
+        if (box_ses[t] == s && img_secs[t])
+            return 1;
+    return 0;
 }
 
 /* n Bytes aus dem Kernel (sel:off) an linear lin der Box, Seite fuer Seite
@@ -563,6 +603,7 @@ void __far v86_tick(struct v86_iret *r)
 #define DH  (*((unsigned char *)&f->edx + 1))
 #define DX  (*(unsigned short *)&f->edx)
 #define BP  (*(unsigned short *)&f->ebp)
+#define DI  (*(unsigned short *)&f->edi)
 
 static unsigned char crow, ccol;        /* Cursor waehrend eines Dienstes */
 
@@ -787,6 +828,88 @@ static void out_ch(int t, unsigned char ch)
     (void)t;
 }
 
+/* INT 13h: Laufwerk 0 ist das Startabbild (nur lesen), sonst nichts */
+static void int13(struct v86_frame *f, int t)
+{
+    unsigned i, n, c, h, sct, lba, cyl;
+    unsigned long lin;
+
+    if (!img_secs[t] || (DL != 0 && AH != 0x08)) {
+        AH = DL >= 0x80 && AH == 0x15 ? 0 : 1;  /* keine Platte         */
+        svc_cf = 1;
+        return;
+    }
+    switch (AH) {
+    case 0x00: case 0x0D:                       /* Reset                 */
+        AH = 0;
+        svc_cf = 0;
+        return;
+    case 0x02: case 0x04:                       /* lesen / pruefen       */
+        cyl = CH | ((CL & 0xC0) << 2);
+        sct = CL & 0x3F;
+        h = DH;
+        n = AL;
+        if (sct == 0 || sct > img_spt[t] || h >= img_heads[t]) {
+            AH = 4;
+            svc_cf = 1;
+            return;
+        }
+        lba = (cyl * img_heads[t] + h) * img_spt[t] + sct - 1;
+        lin = ((unsigned long)(unsigned)f->r.es << 4) + BX;
+        for (i = 0; i < n; i++, lba++, lin += 512) {
+            if (lba >= img_secs[t] || kf_box_ctl(BOX_READ, lba)) {
+                AX = (unsigned)(0x0400 | i);    /* Sektor nicht gefunden */
+                svc_cf = 1;
+                return;
+            }
+            if (AH == 0x02) {                   /* (VWIN erst nach dem   */
+                vwin((unsigned)(lin >> 4));     /* Lesen: es kann schlafen) */
+                far_copy(VWIN, (unsigned)lin & 15, KDATA, (unsigned)box_sec, 512);
+            }
+        }
+        AH = 0;
+        AL = (unsigned char)n;
+        svc_cf = 0;
+        return;
+    case 0x03: case 0x05:                       /* schreibgeschuetzt     */
+        AH = 3;
+        svc_cf = 1;
+        return;
+    case 0x08:                                  /* Geometrie             */
+        if (DL != 0) {
+            AH = 1;
+            svc_cf = 1;
+            return;
+        }
+        c = img_secs[t] / (img_spt[t] * img_heads[t]) - 1;
+        BL = img_secs[t] <= 720 ? 1 : img_secs[t] <= 1440 ? 3 :
+             img_secs[t] <= 2400 ? 2 : 4;
+        CH = (unsigned char)c;
+        CL = (unsigned char)(img_spt[t] | ((c >> 2) & 0xC0));
+        DH = (unsigned char)(img_heads[t] - 1);
+        DL = 1;
+        f->r.es = VBIOS;
+        DI = DPT_OFF;
+        AX = 0;
+        svc_cf = 0;
+        return;
+    case 0x15:                                  /* Diskette ohne Wechsel- */
+        AH = 1;                                 /* leitung               */
+        svc_cf = 0;
+        return;
+    case 0x16:                                  /* nicht gewechselt      */
+        AH = 0;
+        svc_cf = 0;
+        return;
+    case 0x17: case 0x18:
+        AH = 0;
+        svc_cf = 0;
+        return;
+    }
+    AH = 1;
+    svc_cf = 1;
+}
+
 static void svc(int n, struct v86_frame *f, int t)
 {
     unsigned i, off;
@@ -810,9 +933,8 @@ static void svc(int n, struct v86_frame *f, int t)
     case 0x12:
         AX = rd16(BDA, 0x13);
         break;
-    case 0x13:                                  /* Platte: (noch) nicht  */
-        AH = 1;
-        svc_cf = 1;
+    case 0x13:                                  /* Diskette = Startabbild */
+        int13(f, t);
         break;
     case 0x15:
         if (AH == 0x86) {                       /* warten CX:DX us       */
@@ -835,8 +957,13 @@ static void svc(int n, struct v86_frame *f, int t)
         } else if (AH == 0x01 || AH == 0x11) {
             k = key(t, 0);
             svc_zf = k < 0;
-            if (k >= 0)
+            if (k >= 0) {
                 AX = (unsigned)k;
+                idle_n[t] = 0;
+            } else if (++idle_n[t] >= 16) {     /* fragt nur ab: abgeben  */
+                idle_n[t] = 0;                  /* (wie IDLE_SENSITIVITY  */
+                kf_box_ctl(BOX_SLEEP, 1);       /* bei OS/2)              */
+            }
         } else if (AH == 0x02 || AH == 0x12)
             AL = (unsigned char)kf_kbd_shift();
         else if (AH == 0x05)
@@ -959,6 +1086,27 @@ static void svc(int n, struct v86_frame *f, int t)
         break;
     case 0x33:                                  /* keine Maus (noch)     */
         AX = 0;
+        break;
+    case 0x28:                                  /* DOS wartet: abgeben   */
+        kf_box_ctl(BOX_SLEEP, 1);
+        break;
+    case 0x29:                                  /* schnelle Ausgabe      */
+        out_ch(t, AL);
+        break;
+    case 0x2F:
+        if (AX == 0x1680) {                     /* Zeitscheibe abgeben   */
+            kf_box_ctl(BOX_SLEEP, 1);
+            AL = 0;
+        }
+        break;
+    case 0xE0:                                  /* Box-Schnittstelle     */
+        if (AH == 0x00) {                       /* Befehlszeile -> ES:DI */
+            const char *a = (const char *)kf_box_ctl(BOX_ARGS, 0);
+            for (i = 0; a[i] && i < 120; i++)
+                wr8((unsigned)f->r.es, DI + i, a[i]);
+            CX = i;
+        } else if (AH == 0x01)
+            kf_box_ctl(BOX_EXIT, AL);
         break;
     }
 }

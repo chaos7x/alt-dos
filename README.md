@@ -276,6 +276,17 @@ und PC-DOS.
   COMMAND, bleibt ihr Text stehen. Alt+Esc und Strg+C bleiben beim
   Kernel. Tests: `\DEMO\HALLO [Text] [/W]`, `\DEMO\BOXTEST` (wie ein
   Spiel: B800, INT 1Ch, INT 9, 3DAh; Esc beendet), auch mit `START`
+- DOS-Box mit FreeDOS (6.0, Phase 3 Stufe 3, erster Schritt): **DOSBOX**
+  öffnet eine Sitzung, in der der FreeDOS-Kern mit FreeCOM (deutsch)
+  läuft – gestartet wie auf einem echten PC vom Bootsektor eines
+  Diskettenabbilds (`\DOS\BOX\FREEDOS.IMG`, Laufwerk A: der Box, nur
+  lesend). Jedes andere Startabbild (`.IMG`) lässt sich ebenso mit
+  `START` starten. EXIT beendet die Box, Strg+C gehört dem DOS darin.
+  Eine Box, die nur auf Tasten wartet, gibt die CPU ab. Noch nicht: die
+  AT-DOS-Laufwerke in der Box (Redirector, nächster Schritt), `.EXE`
+  direkt aus COMMAND.EXE. FreeDOS-Kern und FreeCOM stehen unter der GPL
+  und sind aus dem Quelltext gebaut (`freedos/README.txt`,
+  `tools/freedos.sh`)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
   287-Zustand, getauscht erst, wenn ein anderes Programm wirklich rechnet

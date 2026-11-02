@@ -114,8 +114,8 @@ void kbd_irq(unsigned sc)
         kbd_switch_req = 1;
         return;
     }
-    if (ctrl && code == 0x2E) {     /* Strg+C                           */
-        kbd_break_req = 1;
+    if (ctrl && code == 0x2E && !v86_fgbox()) {   /* Strg+C (in einer Box */
+        kbd_break_req = 1;          /* mit DOS gehoert es dem DOS)      */
         return;
     }
 

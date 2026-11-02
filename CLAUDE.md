@@ -1557,8 +1557,39 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nimmt anderen ihre Zeitscheibe – später IDLE_SENSITIVITY wie OS/2.
   Vom Nutzer in 86Box (386SX, 4 MB) bestätigt: zwei BOXTEST gleichzeitig, dabei Dateien
   auf D: kopiert, CHKDSK ohne Fehler.
-  Nächste Stufe 3: FreeDOS-Kern in der Box mit INT-2Fh-Redirector auf
-  die AT-DOS-Laufwerke (dann laufen .EXE, COMMAND.COM, Stapeldateien).
+  Stufe 3, erster Schritt erledigt (in QEMU geprüft): FreeDOS in der
+  Box. FreeDOS-Kern (d6791ad, 386, FAT32, ohne UPX) und FreeCOM deutsch
+  (d52ba90) vom Nutzer erlaubt aus dem Quelltext gebaut (GitHub-Releases
+  und ibiblio sperrt das Netz der Umgebung, git geht), als Binärdateien in
+  `freedos/` (README.txt mit Herkunft, COPYING, `tools/freedos.sh` baut
+  neu). build.sh legt `build/freedos.img` an (360 KB, `mformat -B
+  fat12com.bin`, KERNEL.SYS zuerst, COMMAND.COM, BOXSHELL.COM, CONFIG.SYS
+  mit `SWITCHES=/F /N` und `SHELL=A:\BOXSHELL.COM`, AUTOEXEC.BAT) ->
+  `\DOS\BOX\FREEDOS.IMG`; `DOSBOX.CMD` = `START %DOSBOX%`, die Variable
+  setzt der Kernel wie COMSPEC. Kernel: Endung `.IMG` -> `load_img`
+  (Bootsektor nach 0:7C00, DL = 0, Abbild bleibt offen in `box_img[t]`),
+  `box_ctl(BOX_READ)` liest einen Sektor nach `box_sec` (mit Kernel-
+  sperre; erst danach legt v86.c VWIN um – ifs_read kann schlafen, eine
+  andere Box verbiegt sonst das Fenster). v86.c: INT 13h nur Laufwerk 0
+  (00/02/04/08/15/16/17/18, 03 = schreibgeschützt), CHS mit der Geometrie
+  aus dem BPB (`v86_disk`), Diskettenparameter bei F000:0800; BDA: ein
+  Diskettenlaufwerk, keine Platten (FreeDOS meldet „no hard disks“).
+  INT E0h = Box-Schnittstelle (00h Befehlszeile der Box nach ES:DI, 01h
+  Box beenden). `apps/boxshell.asm` ist SHELL=: holt die Befehlszeile,
+  startet `A:\COMMAND.COM A:\ /E:1024 /K A:\AUTOEXEC.BAT` bzw. `/C
+  Befehl`, beendet die Box mit dessen Rückgabewert -> EXIT schließt die
+  Box (FreeDOS selbst meldete sonst „Bad or missing Command Interpreter“).
+  Strg+C: `v86_fgbox()` – in einer Box mit DOS gehört es dem DOS (kbd.c
+  setzt kbd_break_req nicht). Leerlauf: 16 leere INT-16h-Abfragen
+  hintereinander, INT 28h und INT 2Fh 1680h schlafen einen Takt; XCOPY
+  neben einer wartenden FreeDOS-Box ist nicht langsamer. Geprüft: Start
+  bis zur Eingabe, VER, DIR, TIME, deutsche Tasten, Strg+C bricht nur
+  die Zeile ab, EXIT. Offen: Box mit DOS hängt -> bisher kein Abschuss
+  (Strg+C gehört dem DOS; später eigene Taste oder über die Sitzungs-
+  liste); Schreiben aufs Abbild; MEM zählt Box-Speicher unter „BIOS“.
+  Nächster Schritt: INT-2Fh-Redirector (TSR in der Box, Dienste über INT
+  E0h) -> AT-DOS-Laufwerke in der Box, dann `.EXE`/`.BAT` aus COMMAND.EXE
+  über `BOXSHELL /C`.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

@@ -1014,6 +1014,44 @@ static int load_com(int t, int drive, const char *path)
     return 0;                           /* fuehrt v86.c), IOPL 0         */
 }
 
+/* Startabbild (.IMG, Diskette mit Bootsektor) in einer DOS-Box: der
+   Bootsektor kommt nach 0000:7C00 und startet wie auf einem echten PC
+   (DL = 0); INT 13h fuer Laufwerk 0 liest aus der Datei (v86.c ueber
+   box_ctl BOX_READ). So startet die Box FreeDOS und spaeter auch andere
+   DOS-Versionen aus ihren Abbildern. */
+static struct ifs_file box_img[NTASK];
+unsigned char box_sec[512];             /* Sektorpuffer fuer v86.c       */
+
+static int load_img(int t, int drive, const char *path)
+{
+    struct tss386 *ts;
+    unsigned long cr3;
+
+    if (ifs_open(drive, path, &box_img[t]))
+        return EXEC_ERR_NOTFOUND;
+    if (box_img[t].size < 40UL * 512)
+        return EXEC_ERR_FORMAT;
+    if (ifs_read(&box_img[t], 0, KDATA, (unsigned)box_sec, 512) != 512)
+        return EXEC_ERR_NOTFOUND;
+    if (box_sec[510] != 0x55 || box_sec[511] != 0xAA)
+        return EXEC_ERR_FORMAT;
+    cr3 = v86_create(t, BOX_KB);
+    if (!cr3)
+        return EXEC_ERR_NOMEM;
+    v86_copy(t, 0x7C00, KDATA, (unsigned)box_sec, 512);
+    v86_disk(t, *(unsigned *)(box_sec + 0x18), *(unsigned *)(box_sec + 0x1A),
+             (unsigned)(box_img[t].size >> 9));
+    task[t].v86 = 1;
+    task[t].lfn = 0;
+    task[t].img_unit = task[t].code_unit = 0;
+    ts = &tss[t];
+    tss_init(t, cr3);                   /* CS=DS=ES=SS=0, DL=0           */
+    ts->eip = 0x7C00;
+    ts->esp = 0x7C00;
+    ts->eflags = 0x00020202UL;
+    return 0;
+}
+
 /* Programm in Task t laden. 0 = ok, sonst EXEC_ERR_* */
 static int load_program(int t, int drive, const char *path)
 {
@@ -1030,6 +1068,9 @@ static int load_program(int t, int drive, const char *path)
     if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'C' && path[n - 2] == 'O' &&
         path[n - 1] == 'M')
         return load_com(t, drive, path);
+    if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'I' && path[n - 2] == 'M' &&
+        path[n - 1] == 'G')
+        return load_img(t, drive, path);
     err = load_image(drive, path, &h, &u, &n, &seg);
     if (err)
         return err;
@@ -3228,6 +3269,16 @@ int box_ctl(unsigned op, unsigned a)
     case BOX_SLEEP:
         sleep_ticks(a);
         return 0;
+    case BOX_READ: {                    /* Sektor a des Startabbilds     */
+        int r;
+        klock_enter();
+        r = ifs_read(&box_img[current], (unsigned long)a << 9, KDATA,
+                     (unsigned)box_sec, 512) != 512;
+        klock_leave();
+        return r;
+    }
+    case BOX_ARGS:
+        return (int)(unsigned)task[current].args;
     case BOX_EXIT:
         task[current].rc = (unsigned char)a;
         klock_enter();                  /* task_end schliesst Dateien    */
@@ -5138,6 +5189,9 @@ void kmain(void)
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
     scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));
     line[8] = (char)('A' + sys_drive);
+    env_set(-1, line);
+    scopy(line, "DOSBOX=A:\\DOS\\BOX\\FREEDOS.IMG", sizeof(line));
+    line[7] = (char)('A' + sys_drive);  /* Startabbild der DOS-Box       */
     env_set(-1, line);
     {                                           /* TEMP/TMP wie Windows:  */
         char td = (char)('A' + sys_drive);      /* Startlaufwerk, von     */
