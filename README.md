@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.0, Meilenstein 8
+# alt-dos – AT-DOS 5.0, Meilenstein 9 (5.0 fertig)
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
@@ -309,7 +309,7 @@ COMMAND in jeder Sitzung), teilen sich alle Instanzen das Codesegment wie
 bei OS/2, jede hat nur ihr eigenes Datensegment. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
-## FAPI (Stand Meilenstein 8)
+## FAPI (Stand Meilenstein 9)
 
 Dateinamen und Pfade nehmen bis 260 Zeichen an (wie bei OS/2), auch wenn FAT
 selbst nur 8.3 kennt.

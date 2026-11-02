@@ -20,7 +20,7 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 8
+## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 9 – 5.0 fertig
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
@@ -29,9 +29,14 @@ nachtragen, im selben Commit.
 Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
 Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
 Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
-(MS-DOS 6.22 + OS/2 CMD), Dateimanager FM, DISKCOMP/COMP/REPLACE/EXPAND.
-Plan (Entscheidung des Nutzers): Ton fertig (FM/OPL, MPU-401) -> 5.0
-fertig (taggen, Zweig `5.x` für Fehlerbehebungen) -> 6.0 auf `main`;
+(MS-DOS 6.22 + OS/2 CMD), Dateimanager FM, DISKCOMP/COMP/REPLACE/EXPAND;
+9 = 5.0 fertig: Textwerkzeuge nach GNU (CUT, HEAD, TAIL, WC, UNIQ, TR),
+287 je Task, CD ohne Medium „nicht bereit“, FAPI-Programme unter MS-DOS
+(gebundener Stub), gemeinsame Codesegmente (FX-Version 2), Joliet, Ton
+(SB16.SYS: digital SB 1.0–SB16/AWE, FM OPL2/OPL3, MPU-401, Mixer; PLAY,
+MIXER), Lizenz GPL-2.0-or-later. Getaggt als `v5.0`, Zweig `5.x` für
+Fehlerbehebungen; `main` wird 6.0.
+Plan (Entscheidung des Nutzers): 6.0 auf `main`;
 asynchrone Plattenzugriffe in 6.0 bauen (Sperren je Gerät statt `klock`,
 ohne 386-Abhängigkeit) und danach nach 5.x zurückübertragen. 5.1
 (Kompatibilitätsbox) zurückgestellt – die echten DOS-Boxen in 6.0 gehen vor.
@@ -1005,7 +1010,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KLANG.WAV (Arpeggio, 11 kHz 8 Bit), ODE.MID / ODE.IMF (Ode an die
   Freude, gemeinfrei, mit Bass) – in QEMU alle drei hörbar.
   Vom Nutzer auf dem SCAT in 86Box bestätigt: `PLAY AKKORD.WAV` (aus
-  Windows 3.1) spielt über den SB16, ebenso über Sound Blaster 2.0.
+  Windows 3.1) spielt über den SB16, ebenso über Sound Blaster 2.0;
+  nach dem Umbau für alte DSP auch ohne Endlosschleife, FM auf SB 2.0.
   Alte Karten (vom Nutzer gemeldet: SB 1.5 spielte endlos, SB 1.0 stumm):
   DSP 1.xx kennt kein Auto-Init (1Ch) und keine Blockgröße (48h) ->
   `single_block` (14h je Hälfte, im IRQ neu gestartet, der 8237 läuft im
