@@ -667,6 +667,10 @@ static void init(void)
     if (!has_opt(r->args, "NOFM") && (o = opl_detect()) != 0) {
         caps |= o;
         opl_reset();
+        if (dspv >= 0x400 && (mix_r(0x34) >> 3) == 0) {
+            mix_w(0x34, 0xC0);          /* FM-Regler auf 0: 75 %          */
+            mix_w(0x35, 0xC0);
+        }
     }
     if ((a = arg(r->args, 'M')) != 0)
         mpu = hexval(a);

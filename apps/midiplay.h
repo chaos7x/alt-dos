@@ -213,14 +213,18 @@ static void all_off(unsigned ch)
             voice_off(v);
 }
 
-static int fm_start(void)
+/* use3: OPL3-Betrieb einschalten (MIDI, 18 Stimmen). IMF-Musik ist fuer
+   den OPL2 geschrieben: im OPL3-Betrieb waeren ihre Kanaele stumm, weil
+   sie in C0h die Ausgaenge links/rechts (Bits 4-5) nicht setzt - dafuer
+   bleibt ein OPL3 im OPL2-Betrieb */
+static int fm_start(int use3)
 {
     unsigned r = FmOpen(), k;
     if (FAPI_FAILED(r)) {
         err(r == FAPI_ERR_INUSE ? "FM-Synthese belegt" : "keine FM-Synthese (OPL)", "");
         return -1;
     }
-    opl3 = (AudCaps() & AUDCAP_OPL3) != 0;
+    opl3 = use3 && (AudCaps() & AUDCAP_OPL3) != 0;
     nvc = opl3 ? 18 : 9;
     if (opl3)
         fm(0x105, 1);                   /* OPL3-Betrieb: 18 Stimmen       */
@@ -366,7 +370,7 @@ static void midi_file(void)
             err(r == FAPI_ERR_INUSE ? "MIDI belegt" : "MIDI nicht m\x94glich", "");
             goto out;
         }
-    } else if (fm_start())
+    } else if (fm_start(1))
         goto out;
     for (k = 0; k < 16; k++) {
         prog[k] = 0;
@@ -478,10 +482,10 @@ static void imf_file(void)
     } else
         left = len;
     imf_us = sdiv(1000000UL, imf_rate);     /* Mikrosekunden je IMF-Takt */
-    if (fm_start())
+    if (fm_start(0))
         return;
     if (!quiet) {
-        puts(opl3 ? "  IMF \x81" "ber FM (OPL3), " : "  IMF \x81" "ber FM (OPL2), ");
+        puts("  IMF \x81" "ber FM (OPL2-Betrieb), ");
         put_num(imf_rate, 0, 0);
         puts(" Hz\r\n");
     }

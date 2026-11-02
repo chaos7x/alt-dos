@@ -1013,7 +1013,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (DAh erst ab 2.01) -> Anhalten per DSP-Reset. In QEMU mit dem
   Testschalter `/V:105` bzw. `/V:200` (alte DSP-Version vortäuschen)
   nachgestellt: Ton 1 s, danach Stille. Auf SB 1.0/1.5 in 86Box noch zu
-  bestätigen (laut Nutzer meldet 86Box DSP 2.0).
+  bestätigen (86Box: SB 1.0 = DSP 1.05, SB 1.5 = DSP 2.00).
+  IMF/MID auf SB16/AWE in 86Box stumm (vom Nutzer gemeldet): echter OPL3 –
+  im OPL3-Betrieb (105h = 1) braucht jeder Kanal in C0h die Ausgänge L/R
+  (Bits 4–5); IMF ist für den OPL2 geschrieben -> PLAY schaltet für IMF
+  den OPL3-Betrieb nicht ein (`fm_start(0)`), MIDI über FM nutzt ihn mit
+  C0h | 30h. QEMUs AdLib (OPL2, 38Ah fehlt) zeigte das nicht. MIDI geht
+  bei erkanntem MPU-401 dorthin – in 86Box nur hörbar mit eingestelltem
+  MIDI-Ausgang, sonst `PLAY /FM`. SB16.SYS stellt einen FM-Regler, der
+  beim Start auf 0 steht, auf 75 %.
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
   Offen: ISA-PnP
