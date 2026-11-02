@@ -161,7 +161,8 @@ void main(void)
         DosExit(3);
     }
     if (fi.flags & FSI_NOMEDIA) {
-        puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+        puts(fi.bsize == 2048 ? "Laufwerk nicht bereit - keine CD eingelegt.\n"
+                              : "Laufwerk nicht bereit - keine Diskette eingelegt.\n");
         DosExit(3);
     }
     prog[0] = 'U';

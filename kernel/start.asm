@@ -35,6 +35,7 @@ extern preload_, reboot_
 extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_
+extern fpu_nm_
 extern _gdtr, _idtr
 
 ; ---------------------------------------------------------------------------
@@ -383,7 +384,6 @@ EXC 3
 EXC 4
 EXC 5
 EXC 6
-EXC 7
 EXC_ERR 8
 EXC 9
 EXC_ERR 10
@@ -393,6 +393,28 @@ EXC_ERR 13
 EXC 14
 EXC 15
 EXC 16
+
+; #NM (Ausnahme 7): 287-Befehl nach einem Taskwechsel (der 286 setzt bei
+; jedem Hardware-Taskwechsel MSW.TS). fpu_nm tauscht den 287-Zustand aus
+; und gibt 0 zurueck - dann wird der Befehl wiederholt; sonst (kein 287)
+; wie jede andere Ausnahme.
+exc7:   pusha
+        push    ds
+        push    es
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        clts                            ; der Kernel darf jetzt an den 287
+        call    fpu_nm_
+        pop     es
+        pop     ds
+        test    ax, ax
+        popa
+        jnz     .fault
+        iret
+.fault: push    word 0
+        push    word 7
+        jmp     exc_common
 
 ; Stack: [vec] [err] [ip] [cs] [flags] ...
 exc_common:
@@ -490,9 +512,30 @@ IRQ 9
 IRQ 10
 IRQ 11
 IRQ 12
-IRQ 13
 IRQ 14
 IRQ 15
+
+; IRQ 13: Fehler des 287 (unmaskierte Ausnahme). Beim AT haelt ein Latch
+; BUSY fest, bis man Port F0h beschreibt - sonst wartet der naechste
+; 287-Befehl ewig. Kam der Fehler aus einem Programm, wird es wie bei
+; einer Ausnahme beendet (wie OS/2 ohne eigenen Handler); im Kernel nur
+; quittieren.
+irq13:  push    ax
+        xor     al, al
+        out     0xF0, al                ; BUSY-Latch loeschen
+        mov     al, 0x20
+        out     0xA0, al
+        out     0x20, al
+        pop     ax
+        push    bp
+        mov     bp, sp
+        test    byte [bp+4], 3          ; CS des Unterbrochenen
+        pop     bp
+        jz      .kern
+        push    word 0
+        push    word 16
+        jmp     exc_common
+.kern:  iret
 
 irq_common:
         push    bx
@@ -575,6 +618,52 @@ task_jump_:
         jmp     far [tj_ptr]
         ret                             ; hier geht es weiter, wenn dieser
                                         ; Task wieder an der Reihe ist
+
+; 287: void fpu_save(unsigned sel, unsigned off) / fpu_restore(...) -
+; 94 Byte Zustand; fpu_reset() leert den 287 und setzt TS wieder (damit
+; der naechste Befehl eines Programms wieder ueber #NM laeuft);
+; fpu_pm_init() einmal nach dem Umschalten: MSW.MP, FSETPM (der 287 muss
+; erfahren, dass die CPU im Protected Mode ist; 287XL/387 uebergehen es)
+global fpu_save_, fpu_restore_, fpu_reset_, fpu_pm_init_
+fpu_save_:
+        push    ds
+        push    bx
+        mov     ds, ax
+        mov     bx, dx
+        fnsave  [bx]
+        fwait
+        pop     bx
+        pop     ds
+        ret
+fpu_restore_:
+        push    ds
+        push    bx
+        mov     ds, ax
+        mov     bx, dx
+        frstor  [bx]
+        fwait
+        pop     bx
+        pop     ds
+        ret
+fpu_reset_:
+        push    ax
+        clts
+        fninit
+        smsw    ax
+        or      al, 8                   ; TS
+        lmsw    ax
+        pop     ax
+        ret
+fpu_pm_init_:
+        push    ax
+        smsw    ax
+        or      al, 2                   ; MP: auch WAIT prueft TS
+        lmsw    ax
+        clts
+        fsetpm
+        fninit
+        pop     ax
+        ret
 
 ; void load_tr(unsigned sel)
 global load_tr_

@@ -267,6 +267,8 @@ static void identify(void)
 #define SCSI_CHECK  2               /* Check Condition (z. B. Unit Attention) */
 #define SCSI_FAIL   3
 
+static unsigned last_sense;             /* Sense Key << 8 | ASC (Check Condition) */
+
 /* dir: 08h Daten zum Rechner (Lesen), 10h zum Geraet (Schreiben) */
 static int scsi_dir(unsigned id, unsigned len, unsigned long buf, unsigned cdblen,
                     unsigned char dir)
@@ -301,8 +303,13 @@ static int scsi_dir(unsigned id, unsigned len, unsigned long buf, unsigned cdble
         return SCSI_NODEV;
     if (st == 1 && ccb.hastat == 0 && ccb.tarstat == 0)
         return SCSI_OK;
-    if (ccb.tarstat == 2)
+    if (ccb.tarstat == 2) {
+        /* Auto-Sense: der Adapter legt die Daten direkt hinter die CDB
+           (Offset 18 + cdblen), nicht an den Anfang von ccb.sense */
+        unsigned char *sd = ccb.cdb + cdblen;
+        last_sense = ((sd[2] & 0x0F) << 8) | sd[12];
         return SCSI_CHECK;
+    }
     return SCSI_FAIL;
 }
 
@@ -512,7 +519,7 @@ static void xfer(int write)
     struct drv_req __far *r = REQ;
     unsigned long l = r->lba;
     unsigned n = write || r->count == 0 ? 1 : r->count;
-    int tries, rc;
+    int tries, rc, spin = 0;
 
     if (r->unit >= DRV_MAXUNITS) {
         r->status = DRV_ERR_IO;
@@ -540,9 +547,24 @@ static void xfer(int write)
             r->status = DRV_OK;
             return;
         }
+        /* CD: keine drin (2/3Ah, beim zweiten Mal - nach einem Wechsel
+           meldet manches Laufwerk das einmal); laeuft an (2/04h): warten */
+        if (rc == SCSI_CHECK && bsz[r->unit] != 512) {
+            if (last_sense == 0x23A && tries > 0) {
+                r->status = DRV_ERR_NOTREADY;
+                return;
+            }
+            if (last_sense == 0x204 && spin < 20) {
+                spin++;
+                tries--;
+                cli();
+                proc_block(0x7F, 50);
+                continue;
+            }
+        }
         /* CD: Check Condition beim ersten Zugriff nach dem Wechsel (Unit
            Attention) ist normal, nicht melden */
-        if (!(rc == SCSI_CHECK && bsz[r->unit] != 512 && tries == 0))
+        if (!(rc == SCSI_CHECK && bsz[r->unit] != 512 && (tries == 0 || last_sense == 0x23A)))
             report(write, r->unit, l, rc, tries);
     }
     r->status = DRV_ERR_IO;

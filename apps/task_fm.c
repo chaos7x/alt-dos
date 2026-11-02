@@ -1010,7 +1010,8 @@ static void do_drive(int k)
     if (dv >= 26 || (DosQFSInfo(dv, &fi) && DosQSubst(dv, tmp))) {
         ask("Fehler", "Ung\x81ltiges Laufwerk.", "", 1);
     } else if (fi.flags & FSI_NOMEDIA) {
-        ask("Fehler", "Laufwerk nicht bereit - keine Diskette eingelegt.", "", 1);
+        ask("Fehler", fi.bsize == 2048 ? "Laufwerk nicht bereit - keine CD eingelegt."
+                                       : "Laufwerk nicht bereit - keine Diskette eingelegt.", "", 1);
     } else {
         if (DosQCurDirD(dv, tmp) != 0) {
             tmp[0] = (char)('A' + dv);

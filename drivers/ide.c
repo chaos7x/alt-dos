@@ -502,14 +502,14 @@ static void init(void)
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
-/* ATAPI: einen 2048-Byte-Block mit READ(10) per PACKET lesen; 0 = ok */
+/* ATAPI: Paketbefehl in pkt[] schicken und len Bytes nach sel:off lesen
+   (READ(10): 2048, REQUEST SENSE: 18); 0 = ok */
 static unsigned char pkt[12];
 
-static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned off)
+static int atapi_pkt(struct unit *u, unsigned len, unsigned sel, unsigned off)
 {
     void __far *pp = (void __far *)pkt;
     unsigned b = u->base, got = 0, cnt, start;
-    int i;
 
     outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
     settle(u->ctl);
@@ -518,28 +518,20 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
         if ((unsigned)(ticks() - start) > 300)
             return -1;
     outp(b + R_ERROR, 0);                   /* Features: PIO            */
-    outp(b + R_CYL_LO, 0x00);               /* hoechstens 2048 Bytes    */
-    outp(b + R_CYL_HI, 0x08);               /* je DRQ-Block             */
+    outp(b + R_CYL_LO, (unsigned char)len);     /* hoechstens len Bytes */
+    outp(b + R_CYL_HI, (unsigned char)(len >> 8));  /* je DRQ-Block     */
     outp(b + R_CMD, 0xA0);                  /* PACKET                   */
     settle(u->ctl);
     if (wait_status(b, ST_DRQ, ST_DRQ, 300))
         return -1;
-    for (i = 0; i < 12; i++)
-        pkt[i] = 0;
-    pkt[0] = 0x28;                          /* READ(10)                 */
-    pkt[2] = (unsigned char)(l >> 24);
-    pkt[3] = (unsigned char)(l >> 16);
-    pkt[4] = (unsigned char)(l >> 8);
-    pkt[5] = (unsigned char)l;
-    pkt[8] = 1;                             /* ein Block                */
     chan[u->ch].done = 0;
     outsw_far(b + R_DATA, FP_SEG(pp), FP_OFF(pp), 6);
-    while (got < 2048) {
+    while (got < len) {
         settle(u->ctl);
         if (wait_irq(u, ST_DRQ, ST_DRQ, 1000))      /* CD laeuft evtl. an */
             return -1;
         cnt = inp(b + R_CYL_LO) | ((unsigned)inp(b + R_CYL_HI) << 8);
-        if (cnt == 0 || (cnt & 1) || got + cnt > 2048)
+        if (cnt == 0 || (cnt & 1) || got + cnt > len)
             return -1;
         chan[u->ch].done = 0;
         insw_far(b + R_DATA, MK_FP(sel, off + got), cnt >> 1);
@@ -547,6 +539,39 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
     }
     settle(u->ctl);
     return wait_irq(u, 0, 0, 300);
+}
+
+static void pkt_clear(unsigned char op)
+{
+    int i;
+    for (i = 0; i < 12; i++)
+        pkt[i] = 0;
+    pkt[0] = op;
+}
+
+/* einen 2048-Byte-Block mit READ(10) lesen; 0 = ok */
+static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned off)
+{
+    pkt_clear(0x28);                        /* READ(10)                 */
+    pkt[2] = (unsigned char)(l >> 24);
+    pkt[3] = (unsigned char)(l >> 16);
+    pkt[4] = (unsigned char)(l >> 8);
+    pkt[5] = (unsigned char)l;
+    pkt[8] = 1;                             /* ein Block                */
+    return atapi_pkt(u, 2048, sel, off);
+}
+
+/* REQUEST SENSE nach einem Fehler: Sense Key << 8 | ASC, -1 = keine Antwort */
+static unsigned char sense[18];
+
+static int atapi_sense(struct unit *u)
+{
+    void __far *sp = (void __far *)sense;
+    pkt_clear(0x03);
+    pkt[4] = sizeof(sense);
+    if (atapi_pkt(u, sizeof(sense), FP_SEG(sp), FP_OFF(sp)))
+        return -1;
+    return ((sense[2] & 0x0F) << 8) | sense[12];
 }
 
 /* gescheiterten Versuch ins Startprotokoll (Sitzung 1) melden: Schritt
@@ -589,11 +614,31 @@ static void xfer(int write)
             r->status = DRV_ERR_WP;
             return;
         }
-        for (tries = 0; tries < 3; tries++)     /* 1. Versuch: Unit Attention */
+        /* Nach einem Fehler fragt REQUEST SENSE nach dem Grund: Unit
+           Attention (6, Medium gewechselt) - gleich nochmal; nicht bereit
+           (2) mit ASC 3Ah - keine CD drin, nach einem zweiten Versuch
+           melden (manche Laufwerke, auch QEMU, melden das nach einem
+           Wechsel einmal, damit das System ihn bemerkt); ASC 04h - CD
+           laeuft an, je halbe Sekunde nochmal (bis 10 s) */
+        for (tries = 0; tries < 24; tries++) {
+            int sk;
             if (atapi_read(u, l, r->buf_sel, r->buf_off) == 0) {
                 r->status = DRV_OK;
                 return;
             }
+            sk = atapi_sense(u);
+            if (sk == 0x23A && tries > 0) {
+                r->status = DRV_ERR_NOTREADY;
+                return;
+            }
+            if (sk == 0x204 && tries < 22) {
+                cli();
+                proc_block(0x7F, 50);   /* wird gerade bereit       */
+                continue;
+            }
+            if ((sk & 0xFF00) != 0x600 && sk != 0x23A && tries >= 2)
+                break;
+        }
         r->status = DRV_ERR_IO;
         return;
     }

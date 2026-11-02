@@ -46,6 +46,10 @@ struct tss286 {
 extern void fapi_entry(void);
 extern void task_jump(unsigned sel);
 extern void load_tr(unsigned sel);
+extern void fpu_save(unsigned sel, unsigned off);
+extern void fpu_restore(unsigned sel, unsigned off);
+extern void fpu_reset(void);
+extern void fpu_pm_init(void);
 extern unsigned sel_readable(unsigned sel);
 extern unsigned sel_writable(unsigned sel);
 extern unsigned sel_limit(unsigned sel);
@@ -276,6 +280,8 @@ void reboot_request(void)
    ab 1992). Beim Anhalten bleibt Strg+Alt+Entf aktiv: Tastatur-IRQ setzt
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
+static void fpu_task_end(int t);
+static int mod_mount(int drive);
 static void schedule_next(void);
 static void klock_enter(void);
 
@@ -1151,6 +1157,7 @@ static void task_end(int t)
     unsigned idx;
     int p = task[t].parent, s = task[t].session, i;
 
+    fpu_task_end(t);
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
             seg_free(t, USEL(idx));
@@ -1187,6 +1194,46 @@ static void task_end(int t)
                 break;
         if (i == NTASK)
             vio_close(s);
+    }
+}
+
+/* ---- 287 je Task ----------------------------------------------------------
+   Wie OS/2 1.x: der Zustand wird erst getauscht, wenn ein anderer Task
+   wirklich einen 287-Befehl ausfuehrt. Der 286 setzt bei jedem
+   Hardware-Taskwechsel MSW.TS, der naechste 287-Befehl loest #NM aus
+   (start.asm exc7, mit MP auch WAIT). fpu_owner: wessen Zustand gerade
+   im 287 steht. */
+#define FPU_STATE 94                    /* FNSAVE im 16-Bit-Format        */
+static unsigned char fpu_area[NTASK][FPU_STATE];
+static int fpu_owner = -1;
+static unsigned char fpu_used;          /* Bit t: Task t hat einen Zustand */
+
+int fpu_nm(void)                        /* aus exc7, TS ist schon geloescht */
+{
+    if (!fpu_ok || current < 0)
+        return 1;                       /* kein 287: Programm abbrechen  */
+    if (fpu_owner == current)
+        return 0;
+    if (fpu_owner >= 0)
+        fpu_save(KDATA, (unsigned)fpu_area[fpu_owner]);
+    if (fpu_used & (1u << current))
+        fpu_restore(KDATA, (unsigned)fpu_area[current]);
+    else {
+        fpu_reset();                    /* frischer 287 (FNINIT) ...      */
+        __asm { clts }                  /* ... TS wieder weg: wir sind es */
+        fpu_used |= 1u << current;
+    }
+    fpu_owner = current;
+    return 0;
+}
+
+static void fpu_task_end(int t)
+{
+    fpu_used &= ~(1u << t);
+    if (fpu_owner == t) {               /* Rest (auch Fehler) wegwerfen  */
+        fpu_owner = -1;
+        if (fpu_ok)
+            fpu_reset();
     }
 }
 
@@ -2511,6 +2558,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (a3 && user_str(usel, a3, nl, sizeof(nl)))
             return FAPI_ERROR;
+        if (vol[a1].drv == &mod_driver && mod_mount(a1) && blk_nomedia(vol[a1].blk))
+            return FAPI_ERROR;                  /* keine CD: "nicht bereit" */
         t = ifs_label(a1, lb, &ser, a3 ? nl : 0);
         if (t)
             return ifs_err(t);
@@ -2643,6 +2692,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         dv = vol[a1].blk;
         if (IS_FLOPPY(dv) && !vol[a1].locked && blk_media(dv) == 1)
             vol_reset(a1);                  /* andere Diskette: neu      */
+        if (vol[a1].drv == &mod_driver && mod_mount(a1))
+            ifs_notready = 0;               /* nur FSI_NOMEDIA, kein Fehler */
         nm = vol[a1].drv == &mod_driver ? drv_name(vol[a1].mod) : vol[a1].drv->name;
         for (k = 0; nm[k] && nm[k] != '.' && k < (int)sizeof(fi->fsname) - 1; k++)
             fi->fsname[k] = nm[k];
@@ -2799,6 +2850,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             if (blk_nomedia(vol[a1].blk))
                 return FAPI_ERR_NOTREADY;       /* keine Diskette        */
         }
+        if (vol_present(a1) && vol[a1].drv == &mod_driver && mod_mount(a1) &&
+            blk_nomedia(vol[a1].blk))
+            return FAPI_ERR_NOTREADY;           /* keine CD              */
         if (a1 != task[current].drive) {        /* Verzeichnisse tauschen */
             char __far *oc = dcwd(current, task[current].drive, 1);
             fscopy(oc, (char __far *)task[current].cwd, IFS_PATHLEN);
@@ -3014,6 +3068,8 @@ static const char *exc_name(unsigned v)
     case 11: return "#NP Segment nicht vorhanden";
     case 12: return "#SS Stackfehler";
     case 13: return "#GP Allgemeine Schutzverletzung";
+    case 7:  return "#NM Kein Koprozessor";
+    case 16: return "#MF Koprozessorfehler";
     }
     return "Ausnahme";
 }
@@ -3075,6 +3131,7 @@ static void pic_pit_init(void)
 /* ---- Blockgeraete ----------------------------------------------------- */
 struct blkdev blk[NBLK];
 int nblk;
+static unsigned char blk_nm[NBLK];    /* letztes Lesen: kein Medium (CD) */
 
 extern void drv_call(unsigned code_sel, unsigned data_sel, unsigned entry,
                      unsigned req_off);
@@ -3501,9 +3558,15 @@ int blk_media(int dev)
     return r;
 }
 
+/* kein Medium: Diskette (Wechselleitung/READ ID) oder CD (der Treiber
+   meldet beim letzten Lesen DRV_ERR_NOTREADY) */
 int blk_nomedia(int dev)
 {
-    return dev >= 0 && IS_FLOPPY(dev) && fd_nomedia(blk[dev].unit);
+    if (dev < 0)
+        return 0;
+    if (IS_FLOPPY(dev))
+        return fd_nomedia(blk[dev].unit);
+    return blk_nm[dev];
 }
 
 /* Diskette kann gewechselt sein: ihre Eintraege weg */
@@ -3532,6 +3595,7 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     req.buf_sel = DMABUF;
     req.buf_off = 0;
     drv_request(b->drv);
+    blk_nm[dev] = req.status == DRV_ERR_NOTREADY;   /* CD: keine drin */
     return req.status == DRV_OK ? 0 : -1;
 }
 
@@ -4038,7 +4102,11 @@ static int mod_call(int drive, unsigned char cmd)
 static int mod_mount(int drive)
 {
     blk_invalidate();                   /* CD koennte gewechselt sein  */
-    return mod_call(drive, IFSM_MOUNT);
+    if (mod_call(drive, IFSM_MOUNT) == 0)
+        return 0;
+    if (blk_nomedia(vol[drive].blk))
+        ifs_notready = 1;               /* FAPI meldet "nicht bereit"   */
+    return -1;
 }
 
 static int mod_open(int drive, const char *path, struct ifs_file __far *f)
@@ -4329,6 +4397,11 @@ void kmain(void)
     int s0, t, i;
 
     pic_pit_init();
+    if (fpu_ok) {                       /* 287: Protected Mode, IRQ 13 frei */
+        fpu_pm_init();
+        pic_mask &= ~((1u << 13) | 4u);
+        pic_update();
+    }
 
     /* 286-Deskriptoren haben 24 Bit Basis: mehr als 16 MB gibt es fuer
        AT-DOS 5.0 nicht, auch wenn ein 486 mit 128 MB darunter steckt */

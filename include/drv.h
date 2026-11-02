@@ -34,6 +34,7 @@ struct drv_header {
 #define DRV_ERR_IO      2           /* Lese-/Schreibfehler              */
 #define DRV_ERR_CMD     3           /* unbekannter Befehl               */
 #define DRV_ERR_WP      4           /* schreibgeschuetzt                */
+#define DRV_ERR_NOTREADY 5          /* kein Medium im Laufwerk (CD)     */
 
 struct drv_req {
     unsigned char  cmd;

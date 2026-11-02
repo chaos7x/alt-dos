@@ -278,7 +278,7 @@ struct fapi_fsinfo {
 #define FSI_REMOVABLE       0x01
 #define FSI_READONLY        0x02
 #define FSI_DIRTY           0x04    /* beim Einhaengen nicht sauber abgemeldet */
-#define FSI_NOMEDIA         0x08    /* Diskettenlaufwerk leer           */
+#define FSI_NOMEDIA         0x08    /* Disketten- oder CD-Laufwerk leer */
 #define HT_PIPE             1
 #define HT_CONSOLE          2
 #define STDIN               0       /* Standard-Handles, Vorgabe Konsole */

@@ -666,6 +666,21 @@ static unsigned join_at(const char *adir, const char *name)
     return 0;
 }
 
+/* "nicht bereit": Diskette oder CD? (Laufwerk d) */
+static void not_ready_d(unsigned d)
+{
+    static struct fapi_fsinfo nf;
+    if (!FAPI_FAILED(DosQFSInfo(d, &nf)) && nf.bsize == 2048)
+        puts("Laufwerk nicht bereit - keine CD eingelegt.\n");
+    else
+        puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+}
+
+static void not_ready(const char *p)
+{
+    not_ready_d(p[0] && p[1] == ':' ? (unsigned)(up(p[0]) - 'A') : DosQCurDisk());
+}
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
@@ -728,7 +743,7 @@ static void cmd_dir(char *arg)
         }
     }
     if (DosFindEntry(&e, 0, dir) == FAPI_ERR_NOTREADY) {
-        puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+        not_ready(dir);
         return;
     }
     n = slen(dir);                          /* Stamm ("D:", "D:\\", "\\")
@@ -929,9 +944,11 @@ static void cmd_type(char *arg)
     }
     h = DosOpen(word(arg, name, sizeof(name)));
     if (FAPI_FAILED(h)) {
-        puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n" :
-             h == FAPI_ERR_NOTREADY ? "Laufwerk nicht bereit - keine Diskette eingelegt.\n"
-                                 : "Datei nicht gefunden.\n");
+        if (h == FAPI_ERR_NOTREADY)
+            not_ready(name);
+        else
+            puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n"
+                                     : "Datei nicht gefunden.\n");
         return;
     }
     while ((n = DosRead(h, buf, sizeof(buf))) != 0 && n != FAPI_ERROR) {
@@ -965,7 +982,7 @@ static void file_error(unsigned r)
     case FAPI_ERR_EXIST:  puts("Datei oder Verzeichnis existiert bereits.\n"); break;
     case FAPI_ERR_DENIED: puts("Zugriff verweigert.\n"); break;
     case FAPI_ERR_INUSE:  puts("Datei oder Verzeichnis wird gerade benutzt.\n"); break;
-    case FAPI_ERR_NOTREADY: puts("Laufwerk oder Ger\x84t nicht bereit (keine Diskette, Drucker aus?).\n"); break;
+    case FAPI_ERR_NOTREADY: puts("Laufwerk oder Ger\x84t nicht bereit (keine Diskette oder CD, Drucker aus?).\n"); break;
     default:              puts("Datei oder Pfad nicht gefunden.\n");
     }
 }
@@ -1436,8 +1453,10 @@ static void cmd_vol(char *arg)
     if (arg[0] && arg[1] == ':')
         d = (unsigned)(up(arg[0]) - 'A');
     if ((n = DosLabel(d, &lb, 0)) != 0) {
-        puts(n == FAPI_ERR_NOTREADY ? "Laufwerk nicht bereit - keine Diskette eingelegt.\n"
-                                    : "Ung\x81ltiges Laufwerk.\n");
+        if (n == FAPI_ERR_NOTREADY)
+            not_ready_d(d);
+        else
+            puts("Ung\x81ltiges Laufwerk.\n");
         return;
     }
     puts(" Datentr\x84ger in Laufwerk ");
@@ -2471,7 +2490,7 @@ static int execute(char *l)
     if (cmd[0] && cmd[1] == ':' && (cmd[2] == 0 || cmd[2] == ' ')) {
         unsigned r = DosSelectDisk(up(cmd[0]) - 'A');
         if (r == FAPI_ERR_NOTREADY)
-            puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
+            not_ready_d(up(cmd[0]) - 'A');
         else if (r == FAPI_ERROR)
             puts("Ung\x81ltiges Laufwerk.\n");
     } else if (same(cmd, "CLS"))

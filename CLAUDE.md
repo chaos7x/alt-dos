@@ -824,8 +824,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gehört zu einem späteren ScanDisk; FORMAT, LABEL, DISKCOPY über
   dieselbe DosOpenDrive-Schnittstelle, FORMAT ebenfalls über
   `U<Dateisystem>.EXE` (wie OS/2: `UFAT`/`UHPFS` machen CHKDSK und FORMAT).
-- Meldung „Laufwerk nicht bereit“ statt „nicht gefunden“, wenn keine CD
-  drin ist
+- CD ohne Medium (in QEMU mit `change`/`eject` geprüft): neuer
+  Treiberstatus `DRV_ERR_NOTREADY` (drv.h). IDE.SYS: nach einem Lesefehler
+  REQUEST SENSE (`atapi_pkt`/`atapi_sense`): 2/3Ah beim zweiten Mal ->
+  NOTREADY (QEMU und manche Laufwerke melden 3Ah nach einem Wechsel
+  einmal), 2/04h je 0,5 s bis 10 s warten, 6 (Unit Attention) nochmal.
+  AHA154X.SYS: Auto-Sense liegt hinter der CDB (`ccb.cdb + cdblen`, nicht
+  `ccb.sense`!); NCR5380.SYS schickt REQUEST SENSE selbst – beide nur in
+  86Box prüfbar. Kernel: `blk_nm[dev]` aus dem letzten Lesen,
+  `blk_nomedia` auch für CDs, `mod_mount` setzt `ifs_notready`;
+  SELECTDISK, LABEL und QFSInfo (FSI_NOMEDIA) versuchen bei CDs ein
+  Einhängen. COMMAND (`not_ready_d`), CHKDSK, FM: „keine CD eingelegt“
+  bei bsize 2048. Offen: ISO9660.IFS liefert keine Datenträgerbezeichnung
+  (VOL zeigt „keine Bezeichnung“).
 - CHKDSK auf CD-ROM (Entscheidung des Nutzers, festgehalten): heute „CHKDSK
   kann CD-ROM-Laufwerke nicht prüfen“, solange es kein U*.EXE gibt. Später
   denkbar: Lesbarkeitsprüfung (Oberflächentest) für CDs, und ein Dateisystem
@@ -1038,7 +1049,29 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Prüfsumme, zusammenhängend freie Verzeichnisplätze, lange Einträge beim
   Löschen/Umbenennen mit entfernen, CP437/850 <-> UCS-2. Die EA-Datei mit
   Rückverweis gilt damit praktisch für FAT12/16 und Disketten.
-- FPU: Zustand des 287 pro Task sichern (MSW.TS/MP setzen, Taskwechsel per #NM)
+- 287 je Task (in QEMU geprüft): Der 286 setzt bei jedem Hardware-
+  Taskwechsel MSW.TS – vorher führte daher jeder 287-Befehl eines
+  Programms zu #NM und Abbruch. Jetzt `exc7` (start.asm): CLTS,
+  `fpu_nm()` (kernel.c) speichert den Zustand des bisherigen Besitzers
+  (`fpu_owner`, FNSAVE 94 Byte in `fpu_area[NTASK]`) und lädt den eigenen
+  bzw. FNINIT beim ersten Mal (`fpu_used`); ohne 287 Abbruch wie bisher.
+  `fpu_pm_init` beim Start: MSW.MP (auch WAIT prüft TS), FSETPM (der 287
+  muss den Protected Mode kennen), IRQ 13 frei. `irq13`: Port F0h
+  beschreiben (sonst hält das AT-Latch BUSY und der nächste 287-Befehl
+  wartet ewig), aus Ring 3 wie Ausnahme 16 „#MF Koprozessorfehler“ –
+  Programm wird beendet. `task_end` -> `fpu_task_end` (Besitz weg,
+  `fpu_reset` = CLTS, FNINIT, TS wieder setzen). Demo `\DEMO\FPUTEST
+  Start Schritte [/W] [/E]`: zählt im 287 abwechselnd +1/-1 mit DosYield
+  dazwischen; zwei gleichzeitig (Stapeldatei mit `start fputest 100
+  300000 /w` + `fputest 7 300000`) – Gegenprobe ohne Tausch meldet FEHLER
+  bei Schritt 1. `/E`: 1/0 mit unmaskierter Ausnahme -> Abbruch, 287 geht
+  danach weiter. Auf dem SCAT (echter 287XL) noch zu bestätigen.
+- Dateien gleichzeitig: Leser und Schreiber schließen sich aus (FAPI_OPEN
+  prüft `open_for_write`, CREATE/Anhängen `in_use`), daher können die
+  Größen in den Handles nie auseinanderlaufen (geprüft: `echo >>` auf eine
+  Datei, die TYPE gerade liest -> „wird gerade benutzt“). Für Protokolle
+  mit `tail -f` bräuchte es Freigabemodi (wie OS/2 DENYNONE) und eine
+  gemeinsame Dateigröße – erst bei Bedarf.
 - Zweite Referenzmaschine: 286 mit 10–12 MHz für zeitgemäße Geschwindigkeit.
   Nutzer: SCAT mit 12 MHz in 86Box bootet AT-DOS schnell.
 - Leitlinie DOS 6.0 (Entscheidung des Nutzers): ein **stabiles 16-Bit-OS**,

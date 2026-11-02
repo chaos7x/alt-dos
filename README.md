@@ -190,7 +190,9 @@ und PC-DOS.
   Knöpfe in den Dialogen), lange Namen
 - ANSI wie bei OS/2 fest in der Bildschirmausgabe (kein ANSI.SYS nötig):
   Cursor, Löschen, Farben; `ANSI [ON|OFF]` je Sitzung
-- Leere Diskettenlaufwerke melden „Laufwerk nicht bereit“
+- Leere Disketten- und CD-Laufwerke melden „Laufwerk nicht bereit - keine
+  Diskette/CD eingelegt“ (CD: der Treiber fragt per REQUEST SENSE nach;
+  eine anlaufende CD wartet er bis 10 s ab)
 - `TEMP` und `TMP` stehen wie bei Windows von Anfang an in der Umgebung
   (`X:\TEMP` auf dem Startlaufwerk, beim Start von Diskette `C:\TEMP`,
   wenn es C: gibt; `SET TEMP=` in CONFIG.SYS geht vor). `COMMAND /P` legt
@@ -239,6 +241,11 @@ und PC-DOS.
   Segmente per `DosAllocSeg`/`DosFreeSeg`, Aufräumen bei Task-Ende
 - kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
+- Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
+  287-Zustand, getauscht erst, wenn ein anderes Programm wirklich rechnet
+  (#NM nach dem Taskwechsel, wie OS/2); ein 287-Fehler (IRQ 13) beendet
+  nur das Programm. Test: `\DEMO\FPUTEST [Start [Schritte]] [/W] [/E]`
+  zweimal gleichzeitig
 
 **MODE CON LINES=25|43|50** stellt die Zeilenzahl der eigenen Sitzung um
 (wie OS/2: jede Sitzung hat ihre eigene, beim Wechsel stellt der Kernel die

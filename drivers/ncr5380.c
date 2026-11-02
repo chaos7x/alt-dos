@@ -329,6 +329,19 @@ static void cdb6(unsigned char op, unsigned char alloc)
     cdb[4] = alloc;
 }
 
+/* REQUEST SENSE nach Check Condition (der 5380 kennt kein Auto-Sense):
+   Sense Key << 8 | ASC, 0 = keine Antwort */
+static unsigned char sense[18];
+
+static unsigned req_sense(unsigned id)
+{
+    void __far *sp = (void __far *)sense;
+    cdb6(0x03, sizeof(sense));
+    if (scsi(id, 6, FP_SEG(sp), FP_OFF(sp), sizeof(sense)) != SCSI_OK)
+        return 0;
+    return ((sense[2] & 0x0F) << 8) | sense[12];
+}
+
 static char *hex3(char *p, unsigned v)
 {
     return hex(p, v, 3);
@@ -444,7 +457,8 @@ static void xfer(int write)
     struct drv_req __far *r = REQ;
     unsigned long l = r->lba;
     unsigned n = write || r->count == 0 ? 1 : r->count;
-    int tries, rc;
+    int tries, rc, spin = 0;
+    unsigned sk;
 
     if (r->unit >= nunits) {
         r->status = DRV_ERR_IO;
@@ -472,7 +486,24 @@ static void xfer(int write)
             r->status = DRV_OK;
             return;
         }
-        if (!(rc == SCSI_CHECK && bsz[r->unit] != 512 && tries == 0))
+        /* CD: keine drin (2/3Ah, beim zweiten Mal - nach einem Wechsel
+           meldet manches Laufwerk das einmal); laeuft an (2/04h): warten */
+        sk = 0;
+        if (rc == SCSI_CHECK && bsz[r->unit] != 512) {
+            sk = req_sense(target[r->unit]);
+            if (sk == 0x23A && tries > 0) {
+                r->status = DRV_ERR_NOTREADY;
+                return;
+            }
+            if (sk == 0x204 && spin < 20) {
+                spin++;
+                tries--;
+                cli();
+                proc_block(0xFFFF, 50);
+                continue;
+            }
+        }
+        if (!(rc == SCSI_CHECK && bsz[r->unit] != 512 && (tries == 0 || sk == 0x23A)))
             report(write, r->unit, l, rc, tries);
     }
     r->status = DRV_ERR_IO;
