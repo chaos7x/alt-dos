@@ -1555,6 +1555,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   danach wie vorher; XCOPY über NCR8XX neben BOXTEST, fsck sauber; isapc
   2 MB. Beobachtung: eine Box, die an 3DAh wartet, trappt pausenlos und
   nimmt anderen ihre Zeitscheibe – später IDLE_SENSITIVITY wie OS/2.
+  Vom Nutzer in 86Box bestätigt: zwei BOXTEST gleichzeitig, dabei Dateien
+  auf D: kopiert, CHKDSK ohne Fehler.
   Nächste Stufe 3: FreeDOS-Kern in der Box mit INT-2Fh-Redirector auf
   die AT-DOS-Laufwerke (dann laufen .EXE, COMMAND.COM, Stapeldateien).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
