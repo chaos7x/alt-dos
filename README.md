@@ -460,6 +460,14 @@ das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.
+`NCR8XX.SYS` (6.0, braucht einen 386) spricht PCI-SCSI-Controller mit
+NCR/Symbios 53C810, 815, 820, 825, 860, 875, 895, 895A und 896 an: sucht
+die Karte über die PCI-Konfiguration (Ports CF8h/CFCh), I/O-Basis aus
+BAR 0, und lässt den SCRIPTS-Prozessor der Karte jeden Befehl selbst
+abarbeiten (Auswahl, IDENTIFY, Befehl, Daten per Busmaster direkt in den
+Kernelpuffer, Status, Trennen und Wiederauswahl). Platten und CD-ROMs
+an den IDs 0–6 (`/ID:n` legt die eigene ID fest, Vorgabe 7), noch im
+Abfragebetrieb ohne IRQ.
 `MOUSE.SYS` sucht eine PS/2-Maus (IRQ 12), dann eine serielle (Microsoft,
 Logitech mit dritter Taste) an COM1/COM2, zuletzt die Busmaus (Microsoft InPort an 23Ch/238h, Logitech an 23Ch; IRQ wird gesucht, `/IRQ:n` legt ihn fest) (`/PS2`, `/COM1`, `/COM2`, `/BUS` legt fest) und meldet ihre Bewegungen
 dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist

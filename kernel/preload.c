@@ -14,15 +14,19 @@
  * merkt sich pre_err; kmain meldet sie spaeter.
  *
  * Nur FAT16 und nur Dateien im Stammverzeichnis (DEVICE=AHA154X.SYS).
- * NPRE begrenzt CONFIG.SYS plus Treiber und IFS-Module auf 8 Dateien.
+ * NPRE begrenzt CONFIG.SYS plus Treiber und IFS-Module auf 16 Dateien.
  */
 #include "kern.h"
 #include "ifs.h"
 
-#define PRE_SEG     0x0060          /* linear 0600h                       */
-#define PRE_MAX     0x7600          /* bis 7BFFh, darueber der Bootsektor */
+/* Ablage der vorgeladenen Dateien: ab 6.0 bei 80000h (bis 60 KB; die
+   Speicherverwaltung gibt den Bereich erst nach CONFIG.SYS frei, kmain),
+   auf Rechnern mit weniger als 600 KB konventionellem Speicher wie
+   bisher 0600h-7BFFh (knapp 30 KB) */
+#define PRE_SEG     pre_seg
+#define PRE_MAX     pre_max
 #define BUF_SEG     0x0800          /* linear 8000h (DMABUF)              */
-#define NPRE        8
+#define NPRE        16
 
 struct pre_file {
     char           name[12];        /* "AHA154X SYS" (FAT-Verzeichnisform) */
@@ -31,6 +35,7 @@ struct pre_file {
 
 struct pre_file pre[NPRE];
 int             npre;
+unsigned        pre_seg = 0x0060, pre_max = 0x7600;
 unsigned char   pre_err;            /* PRE_ERR_*                          */
 unsigned long   boot_hidden;        /* Startsektor der Startpartition     */
 unsigned long   boot_serial;        /* Seriennummer der Startpartition    */
@@ -239,6 +244,10 @@ void preload(void)
         return;
     }
 
+    if (*(unsigned __far *)MK_FP(0x40, 0x13) >= 600) {
+        pre_seg = 0x8000;           /* linear 80000h, bis 60 KB           */
+        pre_max = 0xF000;
+    }
     if (to83("CONFIG.SYS", name) || load(name))
         return;                     /* ohne CONFIG.SYS keine Treiber    */
 

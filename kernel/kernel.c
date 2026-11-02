@@ -4919,8 +4919,10 @@ void kmain(void)
     if (mem_ext_kb > 15360 || !a20_ok)
         mem_ext_kb = a20_ok ? 15360 : 0;
     /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h) */
+    /* vorgeladene Treiber bei 80000h (preload.c) erst nach CONFIG.SYS
+       freigeben: bis dahin endet der konventionelle Speicher dort */
     mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
-             mem_conv_kb, mem_ext_kb);
+             (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb, mem_ext_kb);
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
@@ -4997,12 +4999,14 @@ void kmain(void)
         vio_kputs(s0, " Datei(en) vorgeladen\n");
         if (pre_err)
             vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16\n" :
-                          pre_err == PRE_ERR_FULL ? "  Vorladebereich voll (30 KB)\n" :
+                          pre_err == PRE_ERR_FULL ? "  Vorladebereich voll\n" :
                                                     "  BIOS-Lesefehler beim Vorladen\n");
         ifs_mount(PRE_DRIVE, -1, 0, &pre_driver);
         sys_drive = PRE_DRIVE;
         config_sys();
         vol[PRE_DRIVE].used = 0;                /* Z: wieder weg        */
+        if (npre && pre_seg == 0x8000 && mem_conv_kb > 512)
+            mem_free(0x800, mem_conv_kb * 4 - 0x800);   /* 80000h frei */
         sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");

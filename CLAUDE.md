@@ -977,6 +977,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `blockmode = 0`, Meldung, Wiederholung per PIO; `/PIO` erzwingt PIO.
   Ohne IRQ (Pufferwechsel je 128 Byte sind kurz). Nächste Stufen:
   Speicherfenster-Karten, AIC6360.SYS. NDRV auf 6 erhöht (MEMMAP_SEL 168h).
+- `NCR8XX.SYS` (drivers/ncr8xx.c, 6.0, in QEMU mit `-device lsi53c810`
+  und `lsi53c895a` geprüft: Platte + CD, XCOPY auf die SCSI-Platte,
+  CHKDSK, SHUTDOWN, fsck sauber, Inhalte gleich). PCI Mechanismus 1 mit
+  32-Bit-Ports (`inl`/`outl` per pragma aux), Chiptabelle Hersteller
+  1000h, BAR 0 = I/O, Befehlsregister I/O + Busmaster. SCRIPTS in `scr[]`
+  (je Befehl neu gebaut, `build()`): SELECT ATN -> Phasenschleife (JUMP
+  WHEN) -> MSG OUT IDENTIFY 80h, Befehl, Daten (Busmaster direkt nach
+  `buf_phys`), Status, MSG IN: 00h fertig (INT 1), 04h DISCONNECT ->
+  WAIT DISCONNECT, WAIT RESELECT, IDENTIFY lesen, weiter; anderes
+  quittieren. Lehren aus QEMU: der LSI geht nach der Auswahl immer nach
+  MSG OUT (ohne IDENTIFY INT 2) und trennt vor den Daten trotz 80h
+  (ohne Wiederauswahl Zeitüberschreitung). Abfragebetrieb über ISTAT,
+  Frist über DH_TICKS; STO (SIST1 Bit 2) = kein Gerät. Offen: IRQ,
+  synchrone/Wide-Übertragung, Test in 86Box (810/825/875).
+  Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
+  >= 600 KB konventionell 8000:0000 (60 KB, 16 Dateien) statt 0060:0000
+  (30 KB, 8); kmain gibt der Speicherverwaltung erst nach CONFIG.SYS den
+  Bereich ab 80000h (`mem_init(..., 512, ...)`, dann `mem_free`).
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
