@@ -1409,8 +1409,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Seitentabellen; mit FM Dateien über NCR8XX aufs ZIP kopiert, CHKDSK
   ohne Fehler); auf dem P3B-F MEM 261.676 KB erkannt, 259.944 KB frei,
   MSD listet alle PCI-Geräte inkl. S3 auf Bus 1 hinter der AGP-Brücke und
-  NCR 53C875 (IRQ 10). Offen (Kosmetik): BIOS-Name dort „. Awar,Copyright
-  (C) 1984-98, Award Softwa“ – `rom_str` nimmt Müll am Anfang mit; Cache
+  NCR 53C875 (IRQ 10). BIOS-Name zeigte dort „. Awar,Copyright (C)
+  1984-98, Award Softwa“ – `rom_str` beginnt jetzt bei „(C)“/„Copyright“,
+  wenn die Folge eines davon enthält (davor steht oft Müll); Cache
   bleibt ohne CACHE= bei 1 MB (dynamischer Cache = freier Speicher kommt
   später). Damit ist Phase 1 fertig; nächste Phase 2
   (präemptiv, Sperren je Gerät, asynchrone Plattenzugriffe).
