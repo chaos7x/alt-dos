@@ -997,7 +997,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (ohne Wiederauswahl Zeitüberschreitung). Abfragebetrieb über ISTAT,
   Frist über DH_TICKS; STO (SIST1 Bit 2) = kein Gerät. Offen: IRQ,
   synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
-  bestätigt: Platte und ZIP-Laufwerk am NCR erkannt.
+  bestätigt: Platte und ZIP-Laufwerk am NCR erkannt, `\DEMO` aufs ZIP
+  kopiert (Programme laufen von dort), CHKDSK ohne Fehler.
   Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
   >= 600 KB konventionell 8000:0000 (60 KB, 16 Dateien) statt 0060:0000
   (30 KB, 8); kmain gibt der Speicherverwaltung erst nach CONFIG.SYS den
