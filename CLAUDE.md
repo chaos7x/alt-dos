@@ -1489,7 +1489,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   IDE <-> NCR8XX, CHKDSK, GRAFIK 12, SHUTDOWN, fsck sauber; isapc 2 MB,
   512 MB, alle Vergaben über 256 MB. Erstes Codesegment jetzt 63,3 KB –
   vor weiterem Code Seltenes nach KTEXT2 verschieben. Offen: MEM zählt
-  Box-Speicher unter „BIOS, Boot, Puffer“.
+  Box-Speicher unter „BIOS, Boot, Puffer“. Vom Nutzer in 86Box
+  bestätigt: drei HALLO-Boxen gleichzeitig, dabei Dateien über NCR8XX
+  kopiert, CHKDSK ohne Fehler.
   Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
   den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
   (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.
