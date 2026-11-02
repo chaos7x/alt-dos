@@ -1412,9 +1412,10 @@ static void cmd_help(void)
          "  TRUENAME, BREAK, VERIFY, CHCP, CTTY, KEYS [ON|OFF|LIST], LH\n"
          "  EXIT            Befehlsinterpreter beenden\n"
          "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
-         "  ANSI ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND\n"
+         "  ANSI ATTRIB CHKDSK CHOICE COMP DEFRAG DELTREE DISKCOMP DISKCOPY EDIT EXPAND\n"
+         "  FC FDISK FIND\n"
          "  FM FORMAT GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK\n"
-         "  SORT SUBST SYS TREE UNDELETE XCOPY\n"
+         "  REPLACE SORT SUBST SYS TREE UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
          "Strg+Alt+Entf schlie\xE1t alle Dateien und startet neu.\n");

@@ -29,8 +29,8 @@ nachtragen, im selben Commit.
 Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
 Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
 Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
-(MS-DOS 6.22 + OS/2 CMD), Dateimanager FM. Danach geplant: DISKCOMP/COMP/
-REPLACE/EXPAND, dann 5.1 (Kompatibilitätsbox).
+(MS-DOS 6.22 + OS/2 CMD), Dateimanager FM, DISKCOMP/COMP/REPLACE/EXPAND.
+Danach geplant: 5.1 (Kompatibilitätsbox).
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -284,6 +284,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   eigenen Puffer, weil der Text des Dialogs oft in `line` steht (Fehler
   vom Nutzer gemeldet). Vom Nutzer in 86Box bestätigt: Kopieren und
   Verschieben, CHKDSK danach ohne Fehler.
+- DISKCOMP, COMP, REPLACE, EXPAND (in QEMU geprüft): DISKCOMP wie
+  DISKCOPY (Quelle in 64-KB-Segmente, mehrere Durchgänge, ein Laufwerk
+  mit Wechsel; Seriennummer 27h–2Ah im Bootsektor wird übergangen), COMP
+  (Muster auf Datei 2 übertragen, `apply_pat`), REPLACE (/S über
+  walk_tree im Ziel), EXPAND (SZDD: Kopf `SZDD 88 F0 27 33`, 'A', letztes
+  Zeichen, Größe; LZSS 4 KB, Fenster mit Leerzeichen, Start 4096-16;
+  getestet mit einer in Python gepackten Datei mit Rückverweisen).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
@@ -360,7 +367,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
   XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache
-  oberhalb 1 MB) mit 85 % Treffern, IDE ebenso (88 % Treffer). Strom weg
+  oberhalb 1 MB) mit 85 % Treffern, IDE ebenso (88 % Treffer).
+  DEFRAG auf der 100-MB-IDE-Platte vom Nutzer bestätigt (117 Dateien, 34
+  fragmentiert, CHKDSK danach sauber). Strom weg
   nach dem Schreiben: AUTOCHECK lief beim nächsten Start sofort an.
 - CHKDSK (`apps/task_chkdsk.c`) ist nur der Verteiler: `DosQFSInfo` liefert
   den Namen des Dateisystems (FAT: `fat_driver.name`, nachgeladene IFS:

@@ -158,6 +158,11 @@ und PC-DOS.
 - `JOIN [X: [Y:]Pfad] | X: /D` wie MS-DOS 3.1–5.0: hängt ein Laufwerk in ein
   leeres Verzeichnis ein (Gegenstück zu SUBST, im Kernel statt in COMMAND –
   CHKDSK, FORMAT usw. sehen weiter das echte Laufwerk)
+- `DISKCOMP [A: [B:]]` (Disketten Spur für Spur, Seriennummer zählt
+  nicht), `COMP [Daten1] [Daten2] [/D /A /L /N=n /C]` (Byte für Byte, bis
+  10 Unterschiede, Muster wie `*.BAK`), `REPLACE Quelle [Ziel] [/A /P /R
+  /S /U /W]` und `EXPAND Datei … Ziel` (entpackt SZDD-Dateien wie `*.EX_`
+  von Microsoft-Disketten, der Name kommt aus dem Kopf zurück) wie MS-DOS
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
