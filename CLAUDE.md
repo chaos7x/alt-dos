@@ -1493,6 +1493,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bestätigt: drei HALLO-Boxen gleichzeitig, dabei Dateien über NCR8XX
   kopiert, CHKDSK ohne Fehler; auf dem 386SX mit 2 MB zwei HALLO-Boxen
   gleichzeitig, dabei kopiert.
+  Lehre (Kernel-Panik auf der 486 in 86Box: #GP bei `task_jump`, Fehler-
+  code 00E0h = Puffer von Sitzung 3): das 386-TSS sichert ES/FS/GS und
+  lädt sie beim Zurückwechseln; Watcom hält Fernzeiger in FS/GS (z. B.
+  Sitzungspuffer), `vio_close` löscht den Deskriptor -> beim Wechsel
+  zurück in einen Task mit altem FS ein leerer Deskriptor. `task_jump`
+  legt jetzt ES = KDATA, FS = GS = 0 ins TSS und holt FS/GS danach vom
+  Stack zurück, nur wenn noch gültig (`sanitize_sel`). QEMU traf die Lage
+  im Nachstellversuch nicht.
   Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
   den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
   (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.

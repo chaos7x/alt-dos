@@ -741,11 +741,32 @@ irq_other:
 
 ; void task_jump(unsigned tss_sel)  - Hardware-Taskwechsel per JMP auf TSS
 global task_jump_
+; Das 386-TSS sichert auch ES, FS und GS, und beim Zurueckwechseln laedt
+; die CPU sie wieder. Watcom benutzt FS/GS fuer Fernzeiger (z. B. auf
+; Sitzungspuffer); wird das Segment inzwischen freigegeben (Sitzung zu),
+; faende der Wechsel einen leeren Deskriptor vor -> #GP (auf der 486 in
+; 86Box nach dem Ende einer Box-Sitzung). Deshalb gehen ES = KDATA und
+; FS/GS = 0 ins TSS; FS/GS selbst kommen danach vom Stack zurueck, aber
+; nur, wenn sie noch gueltig sind.
 task_jump_:
+        push    fs
+        push    gs
+        push    bx
+        mov     bx, KDATA
+        mov     es, bx
+        xor     bx, bx
+        mov     fs, bx
+        mov     gs, bx
         mov     [tj_sel], ax
         jmp     far [tj_ptr]
-        ret                             ; hier geht es weiter, wenn dieser
-                                        ; Task wieder an der Reihe ist
+        pop     bx                      ; hier geht es weiter, wenn dieser
+        pop     ax                      ; Task wieder an der Reihe ist
+        call    sanitize_sel
+        mov     gs, ax
+        pop     ax
+        call    sanitize_sel
+        mov     fs, ax
+        ret
 
 ; 287: void fpu_save(unsigned sel, unsigned off) / fpu_restore(...) -
 ; 94 Byte Zustand; fpu_reset() leert den 287 und setzt TS wieder (damit
