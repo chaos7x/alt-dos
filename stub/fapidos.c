@@ -33,7 +33,7 @@ void do_int(unsigned char n, struct regs *r);
 unsigned long ulmul(unsigned a, unsigned b);
 unsigned get_cs(void);
 unsigned cpu_type(void);
-void run_app(unsigned seg, unsigned sp, unsigned ip);
+void run_app(unsigned cs, unsigned ds, unsigned sp, unsigned ip);
 
 static struct regs r;
 static unsigned sig_mask;
@@ -1337,7 +1337,8 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
 void stub_main(void)
 {
     struct fx_header *fx;
-    unsigned cs = get_cs(), app, total, need;
+    unsigned cs = get_cs(), app, dseg, dinit, need;
+    unsigned long total;
 
     if (cpu_type() < 2) {
         out("Dieses Programm braucht einen 80286 oder neuer.\r\n");
@@ -1351,17 +1352,25 @@ void stub_main(void)
     fx = (struct fx_header *)fx_rel;
     if ((r.ax & 0xFF) < 3 || ((r.ax & 0xFF) == 3 && (r.ax >> 8) < 10) ||
         fx_rel == 0 || fx->sig[0] != FX_SIG0 || fx->sig[1] != FX_SIG1 ||
-        !(fx->flags & FX_FLAG_DOS)) {
+        !(fx->flags & FX_FLAG_DOS) || (fx->image_off & 15)) {
         out("Diese FAPI-Anwendung braucht AT-DOS oder MS-DOS 3.1 und neuer.\r\n");
         rclr();
         r.ax = 0x4C01;
         dos();
     }
     /* Abbild steht ab image_off der Datei; der Rumpf beginnt nach dem
-       64-Byte-MZ-Kopf an cs:0 */
+       64-Byte-MZ-Kopf an cs:0. Version 2: Code und Daten getrennt, das
+       Datensegment liegt direkt hinter dem Code (an Ort und Stelle) */
     app = cs + ((fx->image_off - 64) >> 4);
-    total = fx->image_size + fx->bss_size;
-    need = app + 0x1000 - psp_seg;      /* bis zum Ende des 64-KB-Segments */
+    if (fx->version == FX_VERSION2) {
+        dseg = app + (fx->code_size >> 4);
+        dinit = fx->image_size - fx->code_size;
+    } else {
+        dseg = app;
+        dinit = fx->image_size;
+    }
+    total = (unsigned long)dinit + fx->bss_size + fx->stack_size;
+    need = dseg + (unsigned)((total + 15) >> 4) - psp_seg;
     rclr();
     r.ax = 0x4A00;
     r.es = psp_seg;
@@ -1373,9 +1382,9 @@ void stub_main(void)
         r.ax = 0x4C08;
         dos();
     }
-    far_zero(app, fx->image_size, fx->bss_size);
+    far_zero(dseg, dinit, fx->bss_size);
     {
-        unsigned __far *g = MK_FP(app, 2);  /* Gate-Zeiger (crt0)       */
+        unsigned __far *g = MK_FP(dseg, 2);  /* Gate-Zeiger (crt0)      */
         if (g[0] != 0 || g[1] != FAPI_GATE) {
             out("Programm ohne Gate-Zeiger (mit altem crt0 gebaut).\r\n");
             rclr();
@@ -1402,5 +1411,5 @@ void stub_main(void)
     vga = (r.ax & 0xFF) == 0x1A && (r.bx & 0xFF) >= 7;
     kbd_enh = (BIOS(0x96) & 0x10) != 0;
 
-    run_app(app, (unsigned)(total + fx->stack_size), fx->entry);
+    run_app(app, dseg, (unsigned)total, fx->entry);
 }

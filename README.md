@@ -303,8 +303,10 @@ trägt der Stub seine Übersetzung ein.
 
 Dahinter folgt der FX-Kopf mit der Signatur `CH` – nach dem Vorbild von MZ,
 den Initialen von Mark Zbikowski (siehe `include/fx.h`), mit
-Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
-Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
+Größe von Code, Daten, BSS und Stack sowie dem Einsprung. Code und Daten
+sind getrennte Segmente (je bis 64 KB); läuft ein Programm mehrfach (z. B.
+COMMAND in jeder Sitzung), teilen sich alle Instanzen das Codesegment wie
+bei OS/2, jede hat nur ihr eigenes Datensegment. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
 ## FAPI (Stand Meilenstein 8)

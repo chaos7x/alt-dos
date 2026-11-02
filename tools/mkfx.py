@@ -17,7 +17,8 @@ import sys
 
 MZ_HDR = 64             # Kopfgroesse, Stub beginnt danach
 STUB_STACK = 1536       # Stack des DOS-Stubs (Gate, DOS-Aufrufe)
-FX_HDR = 16
+FX_HDR = 16             # Version 1 (Treiber, IFS)
+FX_HDR2 = 18            # Version 2 (Programme): + code_size
 
 
 def group_end(mapfile):
@@ -30,6 +31,20 @@ def group_end(mapfile):
             except ValueError:
                 pass
     return end
+
+
+def groups(mapfile):
+    """Gruppen aus einer Map von "format dos": Name -> (Offset, Groesse)"""
+    g = {}
+    for line in open(mapfile):
+        f = line.split()
+        if len(f) == 3 and ':' in f[1] and f[0].endswith('GROUP'):
+            try:
+                sg, o = f[1].split(':')
+                g[f[0]] = (int(sg, 16) * 16 + int(o, 16), int(f[2], 16))
+            except ValueError:
+                pass
+    return g
 
 
 def main():
@@ -49,26 +64,57 @@ def main():
     else:
         stub = open(stub_f, 'rb').read()
     image = open(image_f, 'rb').read()
-    bss = max(0, group_end(map_f) - len(image))
+    code_size = 0
+    if image[:2] == b'MZ':
+        # Version 2: wlink "format dos" (wie der Kernel) - Kopf ab, Code
+        # (CGROUP) ab 0, Daten (DGROUP) ab dem naechsten Paragraphen
+        nrel, hdr = struct.unpack('<HH', image[6:10])
+        if nrel:
+            sys.exit('%s: %d Segment-Relokationen (seg-Bezug im Programm?)'
+                     % (image_f, nrel))
+        image = image[hdr * 16:]
+        g = groups(map_f)
+        if 'DGROUP' not in g:
+            sys.exit('%s: keine DGROUP in der Map' % image_f)
+        code_size = g['DGROUP'][0]
+        if code_size & 15 or code_size < g.get('CGROUP', (0, 0))[1]:
+            sys.exit('%s: DGROUP liegt nicht hinter dem Code' % image_f)
+        data_init = max(0, len(image) - code_size)
+        image = image[:code_size + data_init]
+        image += b'\0' * (code_size + data_init - len(image))
+        bss = max(0, g['DGROUP'][1] - data_init)
+        total = data_init + bss + stack
+        if code_size > 0x10000 or total > 0x10000:
+            sys.exit('%s: Code %d oder Daten + BSS + Stack %d Bytes, mehr als 64 KB'
+                     % (image_f, code_size, total))
+    else:
+        bss = max(0, group_end(map_f) - len(image))
+        total = len(image) + bss + stack
+        if total > 0x10000:
+            sys.exit('%s: Abbild + BSS + Stack = %d Bytes, mehr als 64 KB'
+                     % (image_f, total))
 
+    fx_hdr = FX_HDR2 if code_size else FX_HDR
     fx_off = (MZ_HDR + len(stub) + 15) & ~15
     if bind:
         struct.pack_into('<H', stub, 2, fx_off - MZ_HDR)
         stub = bytes(stub)
-    image_off = fx_off + FX_HDR
-    total = len(image) + bss + stack
-    if total > 0x10000:
-        sys.exit('%s: Abbild + BSS + Stack = %d Bytes, mehr als 64 KB'
-                 % (image_f, total))
+    image_off = (fx_off + fx_hdr + 15) & ~15    # Abbild auf Paragraph (DOS-Stub)
 
-    fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
-                     bss, stack, 0, (1 if driver else 0) | (2 if lfn else 0) |
-                     (4 if bind else 0))
+    flags = (1 if driver else 0) | (2 if lfn else 0) | (4 if bind else 0)
+    if code_size:
+        fx = struct.pack('<2sHHHHHHHH', b'CH', 2, image_off, len(image),
+                         bss, stack, 0, flags, code_size)
+    else:
+        fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
+                         bss, stack, 0, flags)
 
-    body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx + image
+    body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx
+    body += b'\0' * (image_off - MZ_HDR - len(body)) + image
     size = MZ_HDR + len(body)
-    if bind:                    # DOS: Platz fuer das ganze 64-KB-Segment,
-        extra = (image_off - MZ_HDR) + 0x10000 - len(body)  # Stack im Stub
+    if bind:                    # DOS: Platz fuer das Datensegment (V2) bzw.
+        end = code_size + total if code_size else 0x10000   # das ganze
+        extra = (image_off - MZ_HDR) + end - len(body)       # 64-KB-Segment
         minalloc, ss_sp = (max(extra, 0) + 15) // 16, (0, len(stub))
     else:
         minalloc, ss_sp = 0x10, (0, 0x100 + len(body))
@@ -88,8 +134,9 @@ def main():
     assert len(mz) == MZ_HDR
 
     open(out_f, 'wb').write(mz + body)
-    print('  %-12s Abbild %5d, BSS %5d, Stack %5d -> Segment %5d Bytes%s'
-          % (out_f.split('/')[-1], len(image), bss, stack, total,
+    print('  %-12s %sDaten %5d, BSS %5d, Stack %5d -> %5d Bytes%s'
+          % (out_f.split('/')[-1], 'Code %5d, ' % code_size if code_size else '',
+             len(image) - code_size, bss, stack, total,
              ', DOS-Stub %d' % len(stub) if bind else ''))
 
 

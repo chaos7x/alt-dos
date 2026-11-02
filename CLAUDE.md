@@ -112,8 +112,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Konventionen
 
-- Jede App ist **ein** 64-KB-Segment: `_TEXT` liegt mit in DGROUP (siehe
-  `crt0.asm`), gelinkt als `wlink format raw bin offset=0`.
+- Programme (FX-Version 2): Code (CGROUP) und Daten (DGROUP) getrennt, je
+  bis 64 KB, beide ab Offset 0 – gelinkt als DOS-EXE (`ALINK` in build.sh,
+  `format dos` wie der Kernel), `mkfx.py` nimmt den Kopf ab (bricht bei
+  Segment-Relokationen ab), liest Code-/Datengröße aus der Map und füllt
+  den FX-Kopf (18 Byte, `code_size`) bis zur Paragraphengrenze auf (der
+  DOS-Stub nimmt das Abbild an Ort und Stelle!). Kernel `load_image`: Code
+  einmal laden und teilen, wenn ein laufender Task dasselbe Programm hat
+  (`path_key` aus Laufwerk + kanonischem Pfad, dazu Dateigröße), jede
+  Instanz eigenes Datensegment (Daten, BSS, Stack); `task_end` gibt den
+  Code erst mit dem letzten Benutzer frei. In QEMU geprüft: jede weitere
+  COMMAND-Sitzung kostet 42 statt 62 KB. Treiber/IFS bleiben Version 1
+  (ein Segment, `format raw`). crt0: BEGDATA zuerst in DGROUP (Gate-Zeiger
+  bei DS:2), _TEXT zuerst im Code (Einsprung 0).
 - Der Kernel hat getrennte Code- und Datensegmente wie ein Small-Modell-
   Programm: CGROUP (`_TEXT`) ab linear 10000h, DGROUP (CONST.._BSS) ab dem
   nächsten Paragraphen dahinter (`_DSTART` align 16), je bis 64 KB.

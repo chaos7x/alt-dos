@@ -113,6 +113,10 @@ PYEOF
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
+# Programme (FX-Version 2): Code und Daten getrennt, als DOS-EXE gelinkt
+# wie der Kernel (gruppenrelative Offsets), mkfx.py nimmt den Kopf ab
+ALINK="option quiet format dos option nodefaultlibs \
+      option map order clname CODE clname BEGDATA clname DATA clname BSS"
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr undel scandisk msd print defrag"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
@@ -120,7 +124,7 @@ for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
-    wlink $LINK name $B/task_$t.bin option map=$B/task_$t.map \
+    wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true
 done
 

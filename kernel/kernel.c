@@ -82,7 +82,9 @@ struct task {
     char          args[FAPI_ARGLEN];
     unsigned char drive;                          /* aktuelles Laufwerk    */
     char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
-    unsigned      img_unit, img_cnt;
+    unsigned      img_unit, img_cnt;        /* Datensegment (V1: alles)  */
+    unsigned      code_unit, code_cnt;      /* V2: Codesegment, geteilt  */
+    unsigned long code_key, code_fsize;     /* gleiches Programm?        */
     unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
     unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
     unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
@@ -883,13 +885,27 @@ static int user_str(unsigned sel, unsigned off, char *buf, int max)
 /* ---- Abbilder im FX-Format laden --------------------------------------- */
 /* Datei lesen, Kopf pruefen, Segment anlegen und fuellen. SCRATCH2 zeigt
    danach auf das neue Segment. 0 = ok, sonst EXEC_ERR_*                  */
+/* V2: Codesegment des geladenen Programms (ld_shared: von einem anderen
+   Task uebernommen) */
+static unsigned ld_cu, ld_cn, ld_shared;
+static unsigned long ld_key, ld_fsize;
+
+/* Schluessel fuer "dasselbe Programm": Laufwerk und kanonischer Pfad */
+static unsigned long path_key(int drive, const char *p)
+{
+    unsigned long k = (unsigned long)drive + 1;
+    while (*p)
+        k = (k << 5) + k + (unsigned char)*p++;     /* k * 33 + c       */
+    return k;
+}
+
 static int load_image(int drive, const char *path, struct fx_header *h,
                       unsigned *unit, unsigned *cnt, unsigned long *segsize)
 {
     struct ifs_file f;
     unsigned long base, seg;
-    unsigned tu, tn, u, n, fx;
-    int err = 0;
+    unsigned tu, tn, u, n, fx, csz;
+    int err = 0, k;
 
     if (ifs_open(drive, path, &f))
         return EXEC_ERR_NOTFOUND;
@@ -911,19 +927,50 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         return EXEC_ERR_FORMAT;
     }
     far_copy(KDATA, (unsigned)h, SCRATCH, fx, sizeof(*h));
-    seg = (unsigned long)h->image_size + h->bss_size + h->stack_size;
-    if (h->sig[0] != FX_SIG0 || h->sig[1] != FX_SIG1 || h->version != FX_VERSION ||
+    if (h->version != FX_VERSION2)
+        h->code_size = 0;               /* V1: ein Segment               */
+    csz = h->code_size;
+    seg = (unsigned long)(h->image_size - csz) + h->bss_size + h->stack_size;
+    if (h->sig[0] != FX_SIG0 || h->sig[1] != FX_SIG1 ||
+        (h->version != FX_VERSION && h->version != FX_VERSION2) ||
         (unsigned long)h->image_off + h->image_size > f.size ||
-        seg > 0x10000UL || h->image_size == 0 || h->entry >= h->image_size)
+        seg > 0x10000UL || h->image_size == 0 || csz > h->image_size ||
+        (csz & 15) || h->entry >= (csz ? csz : h->image_size) ||
+        (h->version == FX_VERSION2 && csz == 0))
         err = EXEC_ERR_FORMAT;
     if (err) {
         mem_free(tu, tn);
         return err;
     }
 
+    ld_cu = ld_cn = ld_shared = 0;
+    if (csz) {                          /* V2: Code teilen oder laden    */
+        ld_key = path_key(drive, path);
+        ld_fsize = f.size;
+        for (k = 0; k < NTASK; k++)
+            if (task[k].state != T_FREE && task[k].code_unit &&
+                task[k].code_key == ld_key && task[k].code_fsize == ld_fsize) {
+                ld_cu = task[k].code_unit;
+                ld_cn = task[k].code_cnt;
+                ld_shared = 1;
+                break;
+            }
+        if (!ld_shared) {
+            ld_cn = UNITS(csz);
+            ld_cu = mem_alloc(ld_cn);
+            if (ld_cu == 0) {
+                mem_free(tu, tn);
+                return EXEC_ERR_NOMEM;
+            }
+            scratch2_map((unsigned long)ld_cu << 8, ld_cn * MEM_UNIT - 1);
+            far_copy(SCRATCH2, 0, SCRATCH, h->image_off, csz);
+        }
+    }
     n = UNITS(seg);
     u = mem_alloc(n);
     if (u == 0) {
+        if (csz && !ld_shared)
+            mem_free(ld_cu, ld_cn);
         mem_free(tu, tn);
         return EXEC_ERR_NOMEM;
     }
@@ -932,7 +979,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
        zero_seg schreibt ganze Einheiten, ein echter 286 prueft die Grenze */
     scratch2_map(base, n * MEM_UNIT - 1);
     zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
-    far_copy(SCRATCH2, 0, SCRATCH, h->image_off, h->image_size);
+    far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
     mem_free(tu, tn);
     *unit = u;
     *cnt = n;
@@ -955,6 +1002,8 @@ static int load_program(int t, int drive, const char *path)
         return err;
     if (h.flags & FX_FLAG_DRIVER) {
         mem_free(u, n);
+        if (ld_cu && !ld_shared)
+            mem_free(ld_cu, ld_cn);
         return EXEC_ERR_FORMAT;                 /* Treiber, kein Programm */
     }
     base = (unsigned long)u << 8;
@@ -962,9 +1011,18 @@ static int load_program(int t, int drive, const char *path)
     task[t].img_unit = u;
     task[t].img_cnt  = n;
     image_units     += n;
+    task[t].code_unit = ld_cu;
+    task[t].code_cnt  = ld_cn;
+    task[t].code_key  = ld_key;
+    task[t].code_fsize = ld_fsize;
+    if (ld_cu && !ld_shared)
+        image_units += ld_cn;
     for (n = 0; n < NLDT; n++)
         ldt[t][n].access = 0;
-    put_desc(&ldt[t][0], base, h.image_size - 1, ACC_UCODE);
+    if (ld_cu)                                  /* V2: eigenes Codesegment */
+        put_desc(&ldt[t][0], (unsigned long)ld_cu << 8, h.code_size - 1, ACC_UCODE);
+    else
+        put_desc(&ldt[t][0], base, h.image_size - 1, ACC_UCODE);
     put_desc(&ldt[t][1], base, (unsigned)(seg - 1), ACC_UDATA);
 
     ts = &tss[t];
@@ -1165,6 +1223,17 @@ static void task_end(int t)
         mem_free(task[t].img_unit, task[t].img_cnt);
         image_units -= task[t].img_cnt;
         task[t].img_unit = 0;
+    }
+    if (task[t].code_unit) {                /* Code: nur der letzte gibt frei */
+        for (i = 0; i < NTASK; i++)
+            if (i != t && task[i].state != T_FREE &&
+                task[i].code_unit == task[t].code_unit)
+                break;
+        if (i == NTASK) {
+            mem_free(task[t].code_unit, task[t].code_cnt);
+            image_units -= task[t].code_cnt;
+        }
+        task[t].code_unit = 0;
     }
     for (i = 0; i < (int)NFILE; i++)       /* eigene Handles schliessen */
         if (files[i].refs && files[i].owner == t) {
@@ -3880,8 +3949,11 @@ static int load_driver(const char *line, int is_ifs)
                                                         ": kein Treiber\n");
         return -1;
     }
+    if (ld_cu && !ld_shared)            /* Programm (V2) statt Treiber   */
+        mem_free(ld_cu, ld_cn);
     /* Kopf am Anfang des Abbilds: "DRV1", Einsprung */
-    if (!(h.flags & FX_FLAG_DRIVER) || rd16(SCRATCH2, 0) != 0x5244 ||
+    if (!(h.flags & FX_FLAG_DRIVER) || h.version != FX_VERSION ||
+        rd16(SCRATCH2, 0) != 0x5244 ||
         rd16(SCRATCH2, 2) != 0x3156 || (entry = rd16(SCRATCH2, 4)) >= h.image_size) {
         mem_free(u, n);
         vio_kputs(boot_session, "  ");

@@ -40,17 +40,19 @@ init:   mov     ax, cs                  ; SS:SP setzt DOS schon auf das Ende
         call    stub_main_
 .hang:  jmp     .hang
 
-; void run_app(unsigned seg, unsigned sp, unsigned ip) - kehrt nicht zurueck
+; void run_app(unsigned cs, unsigned ds, unsigned sp, unsigned ip)
+; - kehrt nicht zurueck (AX = CS, DX = DS = SS, BX = SP, CX = IP)
 global run_app_
 run_app_:
+        mov     [_app_cs], ax
         cli
-        mov     ss, ax
-        mov     sp, dx
+        mov     ss, dx
+        mov     sp, bx
         sti
-        mov     ds, ax
-        mov     es, ax
+        mov     ds, dx
+        mov     es, dx
         push    ax                      ; CS
-        push    bx                      ; IP
+        push    cx                      ; IP
         retf
 
 ; ---- Gate: call far aus dem Programm, AX = Funktion, BX/CX/DX ----------
@@ -113,10 +115,9 @@ gate_entry_:
         mov     [sig_ss], ss
         mov     [sig_sp], sp
         mov     ax, [_sig_num]
-        mov     bx, [_sig_tramp]
+        push    word [_app_cs]          ; Weiche im Codesegment
+        push    word [_sig_tramp]
         mov     cx, [_app_ds]
-        push    cx
-        push    bx
         mov     ds, cx
         mov     es, cx
         retf
@@ -237,10 +238,11 @@ cpu_type_:
         ret
 
 segment _DATA
-global _psp_seg, _app_ds, _sig_go, _in_sig, _sig_num, _sig_tramp
+global _psp_seg, _app_ds, _app_cs, _sig_go, _in_sig, _sig_num, _sig_tramp
 global _brk_flag, _crit_err, _crit_hit
 _psp_seg    dw 0
 _app_ds     dw 0
+_app_cs     dw 0
 app_ss      dw 0
 app_sp      dw 0
 stk_top     dw 0
