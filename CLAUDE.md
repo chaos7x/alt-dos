@@ -1607,12 +1607,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (FreeDOS setzt sie auf den Puffer), CLOSE zählt die SFT selbst herunter,
   DOS prüft vor jedem Schreiben den Modus im SFT (bei CREATE ist das
   Argument das Attribut -> Modus 2 eintragen). Lehren: FreeCOM-COPY setzt
-  erst die Größe (Schreiben mit 0 Byte hinter dem Ende -> mit Nullen
-  verlängern; Kürzen fehlt im FAPI -> E_DENIED); DEL *.* löscht zwischen
+  erst die Größe (Schreiben mit 0 Byte -> FAPI 52h DosNewSize); DEL *.* löscht zwischen
   FINDFIRST/NEXT – Suche zählt Einträge, daher letzten Namen je Suche
   merken (`slast`) und zurückgehen, wenn er fehlt. Bezeichnung (Attribut
-  08h) über FAPI_LABEL. Offen: Dateien kürzen, Lesen+Schreiben über ein
-  Handle (AT-DOS-Handles sind lesend oder schreibend).
+  08h) über FAPI_LABEL. Lesen+Schreiben (in QEMU geprüft, auch Kürzen
+  über mehrere Cluster, fsck sauber): `DosOpen` CX = `OPEN_RW` (2, Datei
+  muss da sein, allein offen wie CREATE – `in_use`; Schreibschutz/
+  Verzeichnis -> DENIED), Handle bekommt IFS_F_WRITE, gelesen wird über
+  dasselbe Handle. FAPI 52h `DosNewSize` (wie OS/2) -> `ifs_setsize`
+  (fat.c): kürzen über den neuen Treiberaufruf `truncate` (letzter Eintrag
+  in `struct ifs_driver`, `fat_truncate` gibt die Kette hinter dem
+  Cluster mit Byte size-1 frei), verlängern für jedes IFS mit Nullen über
+  `write`. Stub: OPEN_RW = 3D02h, NewSize = Seek + Schreiben mit 0 Byte.
+  Weiter offen: dieselbe Datei in mehreren Handles gleichzeitig (Leser und
+  Schreiber schließen sich aus, Größe je Handle).
   SETVER (Wunsch des Nutzers): `SETVER.EXE` (FAPI, gebunden – läuft auch
   in der Box), Tabelle als Text in `X:\DOS\BOX\SETVER.LST`
   (Startlaufwerk aus %DOSBOX%, sonst %COMSPEC%), höchstens 48 Einträge

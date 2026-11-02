@@ -390,21 +390,12 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             return E_DENIED;
         cnt = CX;
         err = 0;
-        if (cnt == 0 && fn == 9) {              /* Groesse setzen (DOS)  */
-            static char zero[512];
-            if (pos < size)
-                return E_DENIED;                /* Kuerzen: fehlt im FAPI */
-            l32 = size;                         /* Verlaengern: Nullen   */
-            if (pos > size && FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
-                return E_DENIED;
-            while (size < pos) {
-                k = pos - size > sizeof(zero) ? sizeof(zero) : (unsigned)(pos - size);
-                r = FAPI(FAPI_WRITE, KDATA, h, (unsigned)zero, k);
-                if (FAILED(r) || r != k)
-                    return FAILED(r) ? errmap(r, E_DENIED) : E_DENIED;
-                size += k;
-                w32(bp(t, es, di + 0x11), size);
-            }
+        if (cnt == 0 && fn == 9) {              /* Groesse setzen (DOS): */
+            l32 = pos;                          /* kuerzen/verlaengern   */
+            r = FAPI(FAPI_NEWSIZE, KDATA, h, (unsigned)&l32, 0);
+            if (FAILED(r))
+                return errmap(r, E_DENIED);
+            w32(bp(t, es, di + 0x11), pos);
             CX = 0;
             return 0;
         }
@@ -512,10 +503,10 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             act = fn == 0x17 ? (exists ? 3 : 2) : 1;
         if (act == 1 && !exists)
             return E_NOFILE;
-        if (act == 1 && (mode & 3) == 0)
-            h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, 0, 0);
-        else                                    /* Schreiben: AT-DOS-     */
-            h = FAPI(FAPI_CREATE, KDATA, (unsigned)p1, act == 1, 0);  /* Handle */
+        if (act == 1)                           /* vorhanden: lesen oder  */
+            h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, (mode & 3) ? OPEN_RW : OPEN_READ, 0);
+        else                                    /* lesen+schreiben        */
+            h = FAPI(FAPI_CREATE, KDATA, (unsigned)p1, 0, 0);
         if (FAILED(h))
             return errmap(h, act == 1 ? E_NOFILE : E_DENIED);
         if (act != 1) {

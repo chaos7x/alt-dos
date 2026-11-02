@@ -31,7 +31,10 @@
 #define FAPI_VIOCLS         0x0B    /* Bildschirm der Sitzung loeschen  */
 #define FAPI_EXECPGM        0x0C    /* BX = Befehlszeile, CX = EXEC_*   */
 #define FAPI_GETARGS        0x0D    /* BX = Puffer (FAPI_ARGLEN Bytes)  */
-#define FAPI_OPEN           0x0E    /* BX = Dateiname -> Handle         */
+#define FAPI_OPEN           0x0E    /* BX = Dateiname, CX = OPEN_* -> Handle */
+#define OPEN_READ           0       /* nur lesen (alle alten Programme) */
+#define OPEN_RW             2       /* lesen und schreiben, Datei muss da sein,
+                                       allein offen; Position 0, nicht gekuerzt */
 #define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
@@ -165,6 +168,9 @@ struct fapi_sysinfo {
 /* Busangaben fuer MSD: BX = BUS_*, CX = Nummer (ab 0), DX = Puffer
    -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_NEWSIZE        0x52    /* BX = Handle (schreibend), CX = Zeiger auf neue
+                                       Groesse (4 Bytes): kuerzen oder mit Nullen
+                                       verlaengern (wie DosNewSize bei OS/2) */
 #define BUS_PCI             0       /* struct fapi_pcidev               */
 #define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
 struct fapi_pcidev {

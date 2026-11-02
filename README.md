@@ -286,8 +286,8 @@ und PC-DOS.
   AT-DOS-Laufwerke ab C: sind in der Box da (Redirector wie bei einem
   Netzlaufwerk, über die Dateifunktionen des Kernels – auch CD, SUBST,
   JOIN): DIR, CD, MD, RD, COPY, REN, DEL, TYPE, Umleitung, Programme
-  von C: starten. Noch nicht: Dateien kürzen (Schreiben mit Länge 0 vor
-  dem Ende), `.EXE` direkt aus COMMAND.EXE.
+  von C: starten, Dateien zum Lesen und Schreiben öffnen, kürzen und
+  verlängern. Noch nicht: `.EXE` direkt aus der Befehlszeile.
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS
@@ -381,7 +381,7 @@ selbst nur 8.3 kennt.
 | 11 | VioCls          | –                               |
 | 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung |
 | 13 | DosGetArgs      | BX = Puffer (81 Bytes)          |
-| 14 | DosOpen         | BX = Pfad → Handle              |
+| 14 | DosOpen         | BX = Pfad, CX = 0 lesen / 2 lesen+schreiben (`DosOpenRW`, Datei muss da sein) → Handle |
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
 | 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
@@ -445,6 +445,7 @@ selbst nur 8.3 kennt.
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste, CX = Nummer, DX = struct fapi_pcidev bzw. fapi_res → 0, FAPI_ERROR am Ende (MSD) |
+| 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte) → 0: kürzen oder mit Nullen verlängern (wie OS/2) |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |

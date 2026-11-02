@@ -1285,6 +1285,39 @@ static int fat_close(struct ifs_file __far *f)
     return done_op(0);
 }
 
+/* Datei kuerzen (DosNewSize): Kette hinter dem Cluster mit Byte size-1
+   freigeben, Groesse und Eintrag beim Schliessen */
+static int fat_truncate(struct ifs_file __far *f, unsigned long size)
+{
+    int d = f->drive;
+    struct volume *v = &vol[d];
+    unsigned long csz = 512UL << v->spc_shift, p;
+    unsigned c, nx;
+
+    ferr = 0;
+    if (!(f->flags & IFS_F_WRITE) || size > f->size)
+        return IFS_ERR;
+    if (size == 0) {
+        if (f->first)
+            free_chain(d, f->first);
+        f->first = 0;
+    } else {
+        c = f->first;
+        for (p = csz; p < size && valid(v, c); p += csz)
+            c = next_cluster(d, c);
+        if (!valid(v, c))
+            return done_op(IFS_ERR);
+        nx = fat_raw(d, c);
+        fat_set(d, c, v->fat16 ? 0xFFFF : 0x0FFF);
+        if (valid(v, nx))
+            free_chain(d, nx);
+    }
+    f->size = size;
+    f->flags |= IFS_F_DIRTY;
+    f->cache_clus = 0;
+    return done_op(0);
+}
+
 /* ---- Lange Namen im eigenen Format (Stufe 3, Entscheidung des Nutzers) ---
    "EA DATA. SF" im Stamm (versteckt, System; MS-DOS-Werkzeuge sehen eine
    normale Datei). Saetze in Einheiten zu 32 Byte:
@@ -1860,7 +1893,7 @@ static int fat_namepath(int d, const char *path, char *out, int shortn)
 struct ifs_driver fat_driver = {
     "FAT", fat_mount, fat_open, fat_read, fat_readdir, fat_isdir,
     fat_create, fat_write, fat_close, fat_remove, fat_mkdir, fat_rmdir,
-    fat_move, fat_space, fat_setinfo, fat_label, fat_namepath
+    fat_move, fat_space, fat_setinfo, fat_label, fat_namepath, fat_truncate
 };
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
@@ -1982,6 +2015,28 @@ int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
 {
     MARK(f->drive);
     return HAS(f->drive, write) ? vol[f->drive].drv->write(f, pos, sel, off, len) : IFS_WP;
+}
+
+/* Groesse setzen: kuerzen ueber den Treiber, verlaengern mit Nullen */
+int ifs_setsize(struct ifs_file __far *f, unsigned long size)
+{
+    static char zero[512];
+    unsigned n;
+    int r;
+    MARK(f->drive);
+    if (!HAS(f->drive, write) || !(f->flags & IFS_F_WRITE))
+        return IFS_WP;
+    if (size < f->size)
+        return HAS(f->drive, truncate) ? vol[f->drive].drv->truncate(f, size) : IFS_DENIED;
+    while (f->size < size) {
+        n = size - f->size > sizeof(zero) ? sizeof(zero) : (unsigned)(size - f->size);
+        r = vol[f->drive].drv->write(f, f->size, KDATA, (unsigned)zero, n);
+        if (r < 0)
+            return r;
+        if (r == 0)
+            return IFS_FULL;
+    }
+    return 0;
 }
 
 int ifs_close(struct ifs_file __far *f)

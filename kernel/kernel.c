@@ -2369,7 +2369,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if ((t = dev_name(canon)) != 0)
             return dev_open(t);
-        if (open_for_write(d, canon))
+        if (a2 ? in_use(d, canon, 0) : open_for_write(d, canon))
             return FAPI_ERR_INUSE;
         k = of_alloc();
         if (k < 0)
@@ -2378,6 +2378,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             files[k].refs = 0;
             files[k].owner = -1;
             return FAPI_ERROR;
+        }
+        if (a2) {                               /* OPEN_RW               */
+            if (files[k].f.attr & (ATTR_RO | ATTR_DIR)) {
+                files[k].refs = 0;
+                files[k].owner = -1;
+                return FAPI_ERR_DENIED;
+            }
+            files[k].f.flags |= IFS_F_WRITE;
         }
         far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
         return k + HBASE;
@@ -2875,6 +2883,19 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].pos = *p;
         if (files[k].kind == OF_FILE && files[k].pos > files[k].f.size)
             files[k].pos = files[k].f.size;     /* keine Loecher         */
+        return 0;
+    }
+
+    case FAPI_NEWSIZE: {
+        static unsigned long ns;
+        if ((k = h2e(a1)) < 0 || files[k].kind != OF_FILE || !user_ok(usel, a2, 4, 0))
+            return FAPI_ERROR;
+        far_copy(KDATA, (unsigned)&ns, usel, a2, 4);
+        t = ifs_setsize(&files[k].f, ns);
+        if (t)
+            return ifs_err(t);
+        if (files[k].pos > ns)
+            files[k].pos = ns;
         return 0;
     }
 

@@ -80,6 +80,9 @@ struct ifs_driver {
        shortn = 1 nur 8.3 (Programme ohne FX_FLAG_LONGNAMES), 0 lange Namen
        in Originalschreibung; out IFS_PATHLEN; 0 = ok */
     int  (*namepath)(int drive, const char *path, char *out, int shortn);
+    /* zum Schreiben geoeffnete Datei auf 'size' kuerzen (nicht laenger);
+       0 = ok. Verlaengern macht ifs_setsize mit Nullen ueber write. */
+    int  (*truncate)(struct ifs_file __far *f, unsigned long size);
 };
 
 extern struct volume vol[NDRIVE];
@@ -104,6 +107,7 @@ int ifs_create(int drive, const char *path, struct ifs_file __far *f);
 int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len);
 int ifs_close(struct ifs_file __far *f);
+int ifs_setsize(struct ifs_file __far *f, unsigned long size);   /* DosNewSize */
 int ifs_remove(int drive, const char *path);
 int ifs_mkdir(int drive, const char *path);
 int ifs_rmdir(int drive, const char *path);

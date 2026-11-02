@@ -1089,8 +1089,8 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         rc = 0;
         break;
     }
-    case FAPI_OPEN:
-        rc = dos_path(0x3D00, a1, 0);
+    case FAPI_OPEN:                         /* OPEN_RW -> DOS-Modus 2 */
+        rc = dos_path(a2 ? 0x3D02 : 0x3D00, a1, 0);
         if (!rc)
             rc = r.ax;
         break;
@@ -1120,6 +1120,21 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         r.dx = *(unsigned __far *)AP(a2);
         r.cx = *(unsigned __far *)AP(a2 + 2);
         dos();
+        rc = (r.flags & CF) ? FAPI_ERROR : 0;
+        break;
+    case FAPI_NEWSIZE:                      /* DOS: hinsetzen, 0 Byte */
+        rclr();                             /* schreiben              */
+        r.ax = 0x4200;
+        r.bx = a1;
+        r.dx = *(unsigned __far *)AP(a2);
+        r.cx = *(unsigned __far *)AP(a2 + 2);
+        dos();
+        if (!(r.flags & CF)) {
+            rclr();
+            r.ax = 0x4000;
+            r.bx = a1;
+            dos();
+        }
         rc = (r.flags & CF) ? FAPI_ERROR : 0;
         break;
     case FAPI_DELETE:       rc = dos_path(0x4100, a1, 0); break;
