@@ -126,7 +126,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
-for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
+for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
@@ -149,8 +149,8 @@ nasm -f bin apps/boxtest.asm -o $B/boxtest.com
 BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="command attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
-for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
+LFNAPPS="cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
+for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
     case " $BINDAPPS " in *" $t "*) L="$L --bind=$B/dstub.bin,$B/dstub.map" ;; esac
@@ -190,7 +190,7 @@ cp $B/kernel.bin $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS
-FILES="$B/task_command.exe COMMAND.EXE
+FILES="$B/task_cmd.exe CMD.EXE
        CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD"
 DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE

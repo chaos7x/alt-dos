@@ -240,7 +240,7 @@ static unsigned long clus_lba(struct volume *v, unsigned c)
 /* ---- Einhaengen -------------------------------------------------------- */
 /* FAT16: FAT[1] Bit 15 = sauber abgemeldet (wie Windows 95/NT; MS-DOS
    ignoriert es). Beim ersten Schreiben loeschen, beim Herunterfahren
-   setzen. Beim Start prueft COMMAND /P Laufwerke ohne das Bit. */
+   setzen. Beim Start prueft CMD /P Laufwerke ohne das Bit. */
 #define CLEAN_BIT 0x8000
 
 static int fat_mount(int d)

@@ -10,7 +10,7 @@
  *   Alt+F1/F2  Laufwerk links/rechts    Strg+O Bildschirm der Sitzung
  *   Strg+R     neu einlesen             F10/Esc (leere Zeile) Ende
  *
- * Tippen geht in die Befehlszeile; Eingabe startet sie ueber COMMAND /C im
+ * Tippen geht in die Befehlszeile; Eingabe startet sie ueber CMD /C im
  * Verzeichnis des aktiven Fensters (CD wechselt das Fenster). Maus: Klick
  * waehlt, zweiter Klick oeffnet, rechte Taste markiert, Klick auf die
  * Tastenleiste loest die Taste aus. Lange Namen (FX_FLAG_LONGNAMES).
@@ -657,14 +657,14 @@ static void screen_back(void)
     draw_all();
 }
 
-/* Befehl ueber COMMAND /C im Verzeichnis des aktiven Fensters */
+/* Befehl ueber CMD /C im Verzeichnis des aktiven Fensters */
 static void run(const char *cmd, int show_cmd)
 {
     static char cl[FAPI_PATHLEN + 140];
     unsigned k = 0;
 
     if (DosGetEnv("COMSPEC", cl, sizeof(cl)) == FAPI_ERROR)
-        scopy(cl, "COMMAND.EXE", sizeof(cl));
+        scopy(cl, "CMD.EXE", sizeof(cl));
     scat(cl, " /C ", sizeof(cl));
     scat(cl, cmd, sizeof(cl));
     enter_dir_of_panel();

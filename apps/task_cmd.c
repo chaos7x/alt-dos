@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * COMMAND.EXE - Befehlsinterpreter fuer AT-DOS 5.0
+ * CMD.EXE - Befehlsinterpreter fuer AT-DOS (bis 6.0: COMMAND.EXE; umbenannt
+ * wie bei OS/2 und NT, damit er nicht mit COMMAND.COM der DOS-Box
+ * verwechselt wird)
  *
  * Nachfolger von COMMAND.COM fuer den Protected Mode: spricht das System
  * nur ueber die FAPI an. Interne Befehle: DIR, CD, Laufwerk:, TYPE, COPY,
@@ -8,7 +10,7 @@
  * editor und Befehlsspeicher wie DOSKEY sind eingebaut. Alles andere wird
  * als Programm gestartet. COPY und DEL verstehen * und ? wie MS-DOS.
  *
- * COMMAND.EXE /P  -  permanent, EXIT ist dann gesperrt (erste Sitzung).
+ * CMD.EXE /P  -  permanent, EXIT ist dann gesperrt (erste Sitzung).
  */
 #include <i86.h>
 #include "fapi.h"
@@ -2440,13 +2442,13 @@ static int run_program(char *cmd, int sync, int call)
         return r;
     }
     k = 0;
-    if (type == 2) {                    /* START x.BAT: COMMAND /C x.BAT */
+    if (type == 2) {                    /* START x.BAT: CMD /C x.BAT */
         if (DosGetEnv("COMSPEC", cl, sizeof(cl)) != FAPI_ERROR)
             for (; cl[k]; k++)
                 ;
         else
-            for (; "COMMAND.EXE"[k]; k++)
-                cl[k] = "COMMAND.EXE"[k];
+            for (; "CMD.EXE"[k]; k++)
+                cl[k] = "CMD.EXE"[k];
         cl[k++] = ' '; cl[k++] = '/'; cl[k++] = 'C'; cl[k++] = ' ';
     }
     for (i = 0; path[i] && k < sizeof(cl) - 2; i++)
@@ -2769,8 +2771,8 @@ static void run_bg(char *cmd)
     unsigned k = 0, i;
 
     if (DosGetEnv("COMSPEC", cl, sizeof(cl)) == FAPI_ERROR)
-        for (; "COMMAND.EXE"[k]; k++)
-            cl[k] = "COMMAND.EXE"[k];
+        for (; "CMD.EXE"[k]; k++)
+            cl[k] = "CMD.EXE"[k];
     else
         k = slen2(cl);
     cl[k++] = ' '; cl[k++] = '/'; cl[k++] = 'C'; cl[k++] = ' ';
@@ -2879,7 +2881,7 @@ void main(void)
         }
     }
 
-    puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 6.0\n"
+    puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 6.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
     if (permanent) {
         autochk();

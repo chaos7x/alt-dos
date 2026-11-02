@@ -17,7 +17,7 @@
  *
  * /F braucht das Laufwerk exklusiv. Geht das nicht (Dateien offen), bietet
  * CHKDSK wie Windows NT an, beim naechsten Start zu pruefen: Es traegt
- * das Laufwerk in \AUTOCHK.LST auf dem Startlaufwerk ein; COMMAND.EXE /P
+ * das Laufwerk in \AUTOCHK.LST auf dem Startlaufwerk ein; CMD.EXE /P
  * arbeitet die Liste vor AUTOEXEC.CMD ab (CHKDSK X: /F /AUTO).
  *
  * ERRORLEVEL wie CHKDSK von Windows NT: 0 keine Fehler, 1 Fehler gefunden

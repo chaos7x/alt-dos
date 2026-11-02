@@ -6,7 +6,7 @@
  * Anwendungen laufen in Ring 3, jede mit eigenem TSS, eigener LDT und
  * ohne IOPL. Hardware und Speicher erreichen sie ausschliesslich ueber
  * die Family API (FAPI) per Call Gate. Programme laufen in Sitzungen mit
- * eigenem Bildschirm; die erste Sitzung startet PROTSHELL= (COMMAND.EXE /P).
+ * eigenem Bildschirm; die erste Sitzung startet PROTSHELL= (CMD.EXE /P).
  */
 #include "kern.h"
 #include "../include/fapi_abi.h"
@@ -4912,7 +4912,7 @@ static void set_orig(const char *p)
         ifs_orig[k] = b[k];
     ifs_orig[k] = 0;
 }
-static char protshell[FAPI_ARGLEN] = "COMMAND.EXE /P";   /* PROTSHELL=   */
+static char protshell[FAPI_ARGLEN] = "CMD.EXE /P";   /* PROTSHELL=   */
 
 static int kw(const char *l, const char *k)
 {
@@ -5244,7 +5244,7 @@ void kmain(void)
     blk_cache_init(cache_kb);           /* nach CONFIG.SYS: CACHE=       */
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
-    scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));
+    scopy(line, "COMSPEC=A:\\CMD.EXE", sizeof(line));
     line[8] = (char)('A' + sys_drive);
     env_set(-1, line);
     scopy(line, "DOSBOX=A:\\DOS\\BOX\\FREEDOS.IMG", sizeof(line));
@@ -5284,17 +5284,22 @@ void kmain(void)
     if (!pipe_sel)
         panic("Kein Speicher f\x81r Pipes.");
 
-    /* Befehlsinterpreter aus PROTSHELL= (Vorgabe COMMAND.EXE /P) in der
+    /* Befehlsinterpreter aus PROTSHELL= (Vorgabe CMD.EXE /P) in der
        ersten Sitzung; er fuehrt AUTOEXEC.CMD aus. SHELL= bleibt wie bei
-       OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten. */
+       OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
+       Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
+       wird CMD.EXE /P genommen. */
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
         vio_kputs(s0, "\xFE PROTSHELL=");
         vio_kputs(s0, protshell);
         vio_kputs(s0, " - ");
         vio_kputs(s0, exec_err(-t));
-        vio_kputs(s0, "\n");
-        panic("Kein Befehlsinterpreter.");
+        vio_kputs(s0, ", nehme CMD.EXE /P\n");
+        scopy(protshell, "CMD.EXE /P", sizeof(protshell));
+        t = task_create(protshell, s0, -1, -1);
+        if (t < 0)
+            panic("Kein Befehlsinterpreter.");
     }
     vio_title(s0, task[t].name);
     fd_motor_off();

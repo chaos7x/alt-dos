@@ -77,11 +77,14 @@ und PC-DOS.
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
 - Programmlader für das eigene FX-Format. Beim Start läuft der
-  Befehlsinterpreter aus `PROTSHELL=` (Vorgabe `COMMAND.EXE /P`), der
+  Befehlsinterpreter aus `PROTSHELL=` (Vorgabe `CMD.EXE /P`), der
   `AUTOEXEC.CMD` abarbeitet. Wie bei OS/2 gehören `.CMD`-Dateien der nativen
   Seite, `AUTOEXEC.BAT` und `SHELL=` bleiben der DOS-Box (ab 6.0) vorbehalten;
-  `.BAT` führt COMMAND.EXE bis dahin trotzdem aus
-- `COMMAND.EXE`: Zeileneditor und Befehlsspeicher wie DOSKEY eingebaut
+  `.BAT` führt CMD.EXE bis dahin trotzdem aus
+- Der Befehlsinterpreter heißt `CMD.EXE` (bis 6.0 `COMMAND.EXE`), wie bei
+  OS/2 und NT – `COMMAND.COM` gehört der DOS-Box. Eine alte CONFIG.SYS mit
+  `PROTSHELL=COMMAND.EXE` startet trotzdem (der Kernel nimmt dann `CMD.EXE /P`)
+- `CMD.EXE`: Zeileneditor und Befehlsspeicher wie DOSKEY eingebaut
   (Pfeil auf/ab, links/rechts, Pos1/Ende, Einfg/Entf, F3, Esc, Bild auf/ab;
   `DOSKEY /HISTORY` listet die letzten 16 Befehle). **Tab** vervollständigt
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
@@ -94,8 +97,8 @@ und PC-DOS.
   `SET`, `PATH`, `PROMPT` (`$P $G $N $D $T $V $_ …`), Stapeldateien (`.BAT`
   mit `@`, `ECHO ON/OFF`, `ECHO.`, `REM`, `PAUSE`, `GOTO`, `IF [NOT]
   EXIST/==/ERRORLEVEL` – Programme liefern Rückgabewerte, `IF ERRORLEVEL n`
-  heißt „n oder größer“ wie bei MS-DOS, `COMMAND /C` reicht den Wert durch –, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
-  beim Start (`COMMAND /P`), `COMMAND /C`; Programme werden wie bei
+  heißt „n oder größer“ wie bei MS-DOS, `CMD /C` reicht den Wert durch –, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
+  beim Start (`CMD /P`), `CMD /C`; Programme werden wie bei
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
   (`.EXE`, `.CMD`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
@@ -203,14 +206,14 @@ und PC-DOS.
   eine anlaufende CD wartet er bis 10 s ab)
 - `TEMP` und `TMP` stehen wie bei Windows von Anfang an in der Umgebung
   (`X:\TEMP` auf dem Startlaufwerk, beim Start von Diskette `C:\TEMP`,
-  wenn es C: gibt; `SET TEMP=` in CONFIG.SYS geht vor). `COMMAND /P` legt
+  wenn es C: gibt; `SET TEMP=` in CONFIG.SYS geht vor). `CMD /P` legt
   das Verzeichnis beim Start an
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
   Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
   `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die
   BIOS-Geometrie). Logische Laufwerke in erweiterten Partitionen hängt der
   Kernel beim Start ein, auch auf Platten von MS-DOS.
-- `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `COMMAND.EXE`, `\DOS\SYSTEM`,
+- `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `CMD.EXE`, `\DOS\SYSTEM`,
   `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
   Startcode in den Bootsektor; mit `/A` zusätzlich alle Programme aus
   `\DOS` (vollständige Installation). Disketten nur leer (`FORMAT A: /S`). Der
@@ -223,7 +226,7 @@ und PC-DOS.
   `UFAT.DLL`/`UHPFS.DLL` bei OS/2. Ein neues Dateisystem bringt sein `.IFS`
   und sein `U….EXE` mit. Für `/F` wird das Laufwerk gesperrt; geht das nicht
   (Dateien offen), merkt CHKDSK es wie Windows NT für den nächsten Start vor
-  (`\AUTOCHK.LST`), `COMMAND /P` prüft dann vor `AUTOEXEC.CMD`.
+  (`\AUTOCHK.LST`), `CMD /P` prüft dann vor `AUTOEXEC.CMD`.
   Querverbindungen behebt `/F` wie ScanDisk: Der gemeinsame Rest wird für
   die zweite Datei in freie Cluster kopiert. ERRORLEVEL wie bei NT: 0 keine
   Fehler, 1 behoben, 3 nicht behoben oder nicht prüfbar. GREP liefert wie
@@ -231,7 +234,7 @@ und PC-DOS.
   Wie bei NT und OS/2 merkt sich jede FAT16-Platte, ob sie sauber
   abgemeldet wurde (FAT[1] Bit 15, wie Windows 95/NT; MS-DOS stört es
   nicht): beim ersten Schreiben gelöscht, bei `SHUTDOWN`, `POWEROFF` und
-  Strg+Alt+Entf gesetzt. Fehlt es beim Start, prüft `COMMAND /P` die Platte
+  Strg+Alt+Entf gesetzt. Fehlt es beim Start, prüft `CMD /P` die Platte
   mit `CHKDSK /F`. `AUTOCHECK=CD` in der CONFIG.SYS beschränkt das auf
   bestimmte Laufwerke, `AUTOCHECK=` ohne Buchstaben schaltet es ab.
 - Sitzungen wie bei OS/2: jedes per `START` gestartete Programm hat einen
@@ -580,7 +583,7 @@ im PATH):
 `CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
 findet, wird wieder entladen.
 
-Im Stammverzeichnis liegen nur `ATDOS.SYS`, `COMMAND.EXE`, `CONFIG.SYS`,
+Im Stammverzeichnis liegen nur `ATDOS.SYS`, `CMD.EXE`, `CONFIG.SYS`,
 `AUTOEXEC.CMD` (und auf der Diskette `ATSYS.COM`). Wie bei OS/2 (`\OS2`,
 `\OS2\BOOT`, `\OS2\DLL`) getrennt:
 

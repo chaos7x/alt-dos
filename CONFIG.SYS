@@ -10,6 +10,6 @@ DEVICE=NCR8XX.SYS
 DEVICE=MOUSE.SYS
 DEVICE=SB16.SYS
 IFS=ISO9660.IFS
-PROTSHELL=COMMAND.EXE /P
+PROTSHELL=CMD.EXE /P
 REM Nicht sauber abgemeldete Platten beim Start pruefen: alle,
 REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK=

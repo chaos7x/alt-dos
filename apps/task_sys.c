@@ -4,7 +4,7 @@
  *
  *   SYS [Quelle:] Ziel: [/A]
  *
- * Kopiert ATDOS.SYS (versteckt, System, schreibgeschuetzt) und COMMAND.EXE,
+ * Kopiert ATDOS.SYS (versteckt, System, schreibgeschuetzt) und CMD.EXE,
  * dazu \DOS\SYSTEM (die Treiber braucht der Start von Platte), CHKDSK.EXE
  * (Pruefung beim Start) und - wenn
  * auf dem Ziel noch nicht vorhanden - CONFIG.SYS und AUTOEXEC.CMD. Danach
@@ -144,7 +144,7 @@ void main(void)
             DosExit(1);
         }
     }
-    if (cp("ATDOS.SYS", 0, 0x07) || cp("COMMAND.EXE", 0, 0))
+    if (cp("ATDOS.SYS", 0, 0x07) || cp("CMD.EXE", 0, 0))
         DosExit(1);
     cp("CONFIG.SYS", 1, 0);
     cp("AUTOEXEC.CMD", 1, 0);
