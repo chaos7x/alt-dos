@@ -1501,7 +1501,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   legt jetzt ES = KDATA, FS = GS = 0 ins TSS und holt FS/GS danach vom
   Stack zurück, nur wenn noch gültig (`sanitize_sel`). QEMU traf die Lage
   im Nachstellversuch nicht. Danach vom Nutzer auf der 486 bestätigt:
-  drei Box-Sitzungen beendet, keine Panik mehr.
+  drei Box-Sitzungen beendet, dabei kopiert, CHKDSK ohne Fehler, keine
+  Panik mehr.
   Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
   den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
   (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.
