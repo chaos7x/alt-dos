@@ -1413,8 +1413,8 @@ static void cmd_help(void)
          "  EXIT            Befehlsinterpreter beenden\n"
          "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
          "  ANSI ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND\n"
-         "  FORMAT GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
-         "  SUBST SYS TREE UNDELETE XCOPY\n"
+         "  FM FORMAT GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK\n"
+         "  SORT SUBST SYS TREE UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
          "Strg+Alt+Entf schlie\xE1t alle Dateien und startet neu.\n");

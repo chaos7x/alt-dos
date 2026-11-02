@@ -157,6 +157,12 @@ und PC-DOS.
 - `JOIN [X: [Y:]Pfad] | X: /D` wie MS-DOS 3.1–5.0: hängt ein Laufwerk in ein
   leeres Verzeichnis ein (Gegenstück zu SUBST, im Kernel statt in COMMAND –
   CHKDSK, FORMAT usw. sehen weiter das echte Laufwerk)
+- `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
+  nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
+  (LESS), F4 Bearbeiten (EDIT), F5 Kopieren, F6 Verschieben/Umbenennen,
+  F7 Verzeichnis, F8 Löschen (Verzeichnisse mit Inhalt), Alt+F1/F2
+  Laufwerk, Strg+O zeigt den Bildschirm der Sitzung, Befehlszeile unten
+  (Tippen, Eingabe; Strg+Eingabe übernimmt den Namen), Maus, lange Namen
 - ANSI wie bei OS/2 fest in der Bildschirmausgabe (kein ANSI.SYS nötig):
   Cursor, Löschen, Farben; `ANSI [ON|OFF]` je Sitzung
 - Leere Diskettenlaufwerke melden „Laufwerk nicht bereit“

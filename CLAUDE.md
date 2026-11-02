@@ -29,7 +29,7 @@ nachtragen, im selben Commit.
 Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
 Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
 Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
-(MS-DOS 6.22 + OS/2 CMD). Danach geplant: Dateimanager, DISKCOMP/COMP/
+(MS-DOS 6.22 + OS/2 CMD), Dateimanager FM. Danach geplant: DISKCOMP/COMP/
 REPLACE/EXPAND, dann 5.1 (Kompatibilitätsbox).
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
@@ -253,6 +253,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
   In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25),
   vom Nutzer auf dem SCAT mit ET4000 bestätigt. EGA (43 Zeilen, andere Register) nicht
   unterstützt.
+- Dateimanager `FM.EXE` (`apps/task_fm.c`, Wunsch des Nutzers „so etwas wie
+  der Norton Commander“ – eigener Entwurf, kein Nachbau; in QEMU geprüft):
+  Vollbild über VioGetBuf/VioShowBuf wie EDIT, zwei Fenster (`struct
+  panel`, je 350 Einträge + 8-KB-Namenspool, Shellsort, Verzeichnisse
+  zuerst, versteckte/System nicht gezeigt), Befehlszeile und Programme
+  über `COMSPEC /C` im Verzeichnis des aktiven Fensters (VioSetMode(0)
+  davor, danach VioSetMode(1), MouOpen neu, alles neu einlesen), CD in der
+  Befehlszeile wechselt das Fenster. Kopieren/Löschen von Bäumen über
+  `walk_tree` (`copy_visit`/`del_visit`), Verschieben auf demselben
+  Laufwerk per DosMove, sonst kopieren + löschen. Alt+F1/F2: der
+  Tastaturtreiber liefert Alt+F-Taste als normalen Scancode (nicht 68h/
+  69h wie das BIOS) -> `KbdShift()` prüfen. Zahlen ohne 32-Bit-Division
+  (`fmt_num` über Zehnerpotenzen).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
