@@ -10,9 +10,14 @@
  * den Datentraeger neu (IFSM_MOUNT) - CDs werden gewechselt.
  *
  * Unterstuetzt: Primary Volume Descriptor, Verzeichnisse beliebiger Tiefe,
- * Namen ohne Versionsnummer (";1") und ohne Schlusspunkt. Kein Joliet und
- * kein Rock Ridge - die kurzen ISO-Namen sind in der 8.3-Welt ohnehin die
- * richtigen. Dateien in mehreren Extents (sehr selten) werden nicht gelesen.
+ * Namen ohne Versionsnummer (";1") und ohne Schlusspunkt; Joliet (Windows
+ * 95: Supplementary Volume Descriptor mit UCS-2-Namen bis 64 Zeichen) -
+ * gibt es ihn, gilt sein Verzeichnisbaum: lange Namen in Originalschreibung
+ * (UCS-2 -> CP437, Unbekanntes als '_'), dazu je Eintrag ein 8.3-Ersatzname
+ * fuer Programme ohne FX_FLAG_LONGNAMES (NAME~n.EXT, n = Nummer des
+ * Eintrags im Verzeichnis, also eindeutig und bei jedem Lesen gleich).
+ * Pfade duerfen beide Namen mischen. Kein Rock Ridge. Dateien in mehreren
+ * Extents (sehr selten) werden nicht gelesen.
  *
  * Gebaut mit -zu wie die Treiber: SS ist der Kernelstack, also keine
  * Adressen lokaler Variablen weitergeben.
@@ -29,10 +34,13 @@ void far_cpy(void __far *dst, const void __far *src, unsigned n);
 
 static unsigned      dmasel;            /* DMA-Puffer des Kernels (2048 Byte) */
 static unsigned long root_ext, root_len;
+static unsigned char joliet;            /* Baum aus dem Joliet-Deskriptor  */
+static char          volid[12];         /* Bezeichnung (aus dem PVD)       */
 
 /* gefundener Verzeichniseintrag */
 static struct {
     char          name[IFS_NAMELEN];
+    char          alias[13];            /* 8.3-Ersatzname, "" = name ist 8.3 */
     unsigned long ext, size;
     unsigned char flags;                /* 02h Verzeichnis, 01h versteckt  */
     unsigned      date, time;           /* FAT-Format                      */
@@ -56,7 +64,107 @@ static unsigned long le32(unsigned char __far *p)
 
 static char up(char c)
 {
-    return (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+    unsigned char u = (unsigned char)c;
+    if (u >= 'a' && u <= 'z')
+        return (char)(u - 32);
+    if (u == 0x84) return (char)0x8E;   /* CP437: ae oe ue              */
+    if (u == 0x94) return (char)0x99;
+    if (u == 0x81) return (char)0x9A;
+    return c;
+}
+
+/* Latin-1 0xA0-0xFF -> CP437 (0 = keine Entsprechung) */
+static const unsigned char lat2cp[96] = {
+    0xFF, 0xAD, 0x9B, 0x9C, 0, 0x9D, 0x7C, 0x15, 0, 0, 0xA6, 0xAE, 0xAA, 0x2D, 0, 0,
+    0xF8, 0xF1, 0xFD, 0, 0, 0xE6, 0x14, 0xFA, 0, 0, 0xA7, 0xAF, 0xAC, 0xAB, 0, 0xA8,
+    0, 0, 0, 0, 0x8E, 0x8F, 0x92, 0x80, 0, 0x90, 0, 0, 0, 0, 0, 0,
+    0, 0xA5, 0, 0, 0, 0, 0x99, 0, 0, 0, 0, 0, 0x9A, 0, 0, 0xE1,
+    0x85, 0xA0, 0x83, 0, 0x84, 0x86, 0x91, 0x87, 0x8A, 0x82, 0x88, 0x89, 0x8D, 0xA1, 0x8C, 0x8B,
+    0, 0xA4, 0x95, 0xA2, 0x93, 0, 0x94, 0xF6, 0, 0x97, 0xA3, 0x96, 0x81, 0, 0, 0x98
+};
+
+static int ok83(unsigned char c)        /* in 8.3-Namen erlaubt         */
+{
+    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c >= 0x80 ||
+           c == '$' || c == '%' || c == '\'' || c == '-' || c == '_' ||
+           c == '@' || c == '~' || c == '!' || c == '(' || c == ')' ||
+           c == '{' || c == '}' || c == '^' || c == '#' || c == '&';
+}
+
+/* Grundform fuer den 8.3-Ersatznamen (wie Windows 95): bis 6 erlaubte
+   Zeichen vor dem letzten Punkt, "." und bis 3 danach. Ist der Name schon
+   8.3, steht er gross in b und das Ergebnis ist 1. */
+static int basis(const char *n, char *b)
+{
+    unsigned len, dot = 0xFFFF, i, k = 0, e = 0, valid = 1;
+
+    for (len = 0; n[len]; len++)
+        if (n[len] == '.')
+            dot = len;
+    for (i = 0; i < len; i++)
+        if (n[i] == '.' ? i != dot : !ok83((unsigned char)up(n[i])))
+            valid = 0;
+    if (dot == 0xFFFF ? len > 8 : (dot > 8 || len - dot - 1 > 3 || dot == 0))
+        valid = 0;
+    if (valid) {
+        for (i = 0; i < len; i++)
+            b[i] = up(n[i]);
+        b[len] = 0;
+        return 1;
+    }
+    for (i = 0; i < len && i != dot && k < 6; i++)
+        if (ok83((unsigned char)up(n[i])))
+            b[k++] = up(n[i]);
+    if (dot != 0xFFFF) {
+        b[k++] = '.';
+        for (i = dot + 1; i < len && e < 3; i++)
+            if (ok83((unsigned char)up(n[i])))
+                b[k++] = up(n[i]), e++;
+        if (!e)
+            k--;
+    }
+    b[k] = 0;
+    return 0;
+}
+
+/* Ersatzname aus Grundform und Zaehler: STAMM~k.EXT (8 Zeichen vorn) */
+static void alias_of(const char *b, unsigned cnt, char *a)
+{
+    static char sfx[7];
+    unsigned i = 6, s, k, o = 0;
+
+    sfx[6] = 0;
+    do {
+        sfx[--i] = (char)('0' + cnt % 10);
+        cnt /= 10;
+    } while (cnt && i > 1);
+    sfx[--i] = '~';
+    s = 6 - i;
+    for (k = 0; b[k] && b[k] != '.' && o < 8 - s; k++)
+        a[o++] = b[k];
+    while (b[k] && b[k] != '.')
+        k++;
+    for (; sfx[i]; i++)
+        a[o++] = sfx[i];
+    while (b[k])
+        a[o++] = b[k++];
+    a[o] = 0;
+}
+
+static int strcmp_n(const char *a, const char *b)  /* 0 = gleich */
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a != *b;
+}
+
+static const char *ext_of(const char *s)
+{
+    const char *e = "";
+    for (; *s; s++)
+        if (*s == '.')
+            e = s;
+    return e;
 }
 
 /* Primary Volume Descriptor suchen; 0 = ok */
@@ -64,34 +172,62 @@ static int mount(unsigned dev)
 {
     unsigned long lba;
     unsigned char __far *b;
+    int found = 0;
+    unsigned k;
 
-    for (lba = 16; lba < 32; lba++) {
+    joliet = 0;
+    for (lba = 16; lba < 48; lba++) {
         if (rd(dev, lba))
             return -1;
         b = blk();
         if (b[1] != 'C' || b[2] != 'D' || b[3] != '0' || b[4] != '0' || b[5] != '1')
-            return -1;
-        if (b[0] == 1) {
-            root_ext = le32(b + 156 + 2);
+            break;
+        if (b[0] == 1 && !found) {      /* Primary                       */
+            if (!joliet) {
+                root_ext = le32(b + 156 + 2);
+                root_len = le32(b + 156 + 10);
+            }
+            for (k = 0; k < 11 && b[40 + k] >= ' '; k++)
+                volid[k] = (char)b[40 + k];
+            while (k > 0 && volid[k - 1] == ' ')
+                k--;
+            volid[k] = 0;
+            found = 1;
+        } else if (b[0] == 2 && b[88] == '%' && b[89] == '/' &&
+                   (b[90] == '@' || b[90] == 'C' || b[90] == 'E')) {
+            root_ext = le32(b + 156 + 2);       /* Joliet: UCS-2-Baum    */
             root_len = le32(b + 156 + 10);
-            return 0;
-        }
-        if (b[0] == 255)
+            joliet = 1;
+        } else if (b[0] == 255)
             break;
     }
-    return -1;
+    return found ? 0 : -1;
 }
 
 /* Eintrag in ent uebernehmen */
 static void take(unsigned char __far *r)
 {
-    unsigned nl = r[32], k, y;
+    unsigned nl = r[32], k, y, i, c;
 
-    for (k = 0; k < nl && k < IFS_NAMELEN - 1 && r[33 + k] != ';'; k++)
-        ent.name[k] = up((char)r[33 + k]);
+    k = 0;
+    if (joliet) {                       /* UCS-2, gross zuerst           */
+        for (i = 0; i + 1 < nl && k < IFS_NAMELEN - 1; i += 2) {
+            c = (r[33 + i] << 8) | r[34 + i];
+            if (c == ';')
+                break;
+            if (c >= 0xA0 && c <= 0xFF)
+                c = lat2cp[c - 0xA0];
+            else if (c >= 0x80 || c < ' ')
+                c = 0;
+            ent.name[k++] = c ? (char)c : '_';
+        }
+    } else
+        for (k = 0; k < nl && k < IFS_NAMELEN - 1 && r[33 + k] != ';'; k++)
+            ent.name[k] = up((char)r[33 + k]);
     while (k > 0 && ent.name[k - 1] == '.')
         k--;                            /* "README." -> "README"        */
     ent.name[k] = 0;
+    ent.alias[0] = 0;
     ent.ext = le32(r + 2);
     ent.size = le32(r + 10);
     ent.flags = r[25];
@@ -100,15 +236,39 @@ static void take(unsigned char __far *r)
     ent.time = ((r[21] & 31) << 11) | ((r[22] & 63) << 5) | ((r[23] & 63) >> 1);
 }
 
-/* Verzeichnis (ext, len) durchgehen: name != 0 sucht diesen Namen,
-   sonst den Eintrag Nummer n. 0 = gefunden (in ent) */
+/* Verzeichnis (ext, len) durchgehen:
+   SC_NAME  sucht den Namen (lang, ohne Gross/klein, oder 8.3-Ersatzname),
+   SC_INDEX den Eintrag Nummer n,
+   SC_COUNT zaehlt die Eintraege vor Nummer n mit Grundform want (-> Anzahl).
+   0 = gefunden (in ent, Nummer in ent_idx) */
+#define SC_NAME  0
+#define SC_INDEX 1
+#define SC_COUNT 2
+static unsigned ent_idx;
+static char want[13], cand[13], eb[13], nm[IFS_NAMELEN];
+
 static int scan(unsigned dev, unsigned long ext, unsigned long len,
-                const char __far *name, unsigned nlen, unsigned n)
+                const char __far *name, unsigned nlen, unsigned n, int mode)
 {
     unsigned long i, nblk = (len + 2047) >> 11;
     unsigned char __far *b;
-    unsigned off, rl, k, count = 0;
+    unsigned off, rl, k, count = 0, t = 0xFFFF, kw = 0, hits = 0;
 
+    if (mode == SC_NAME) {              /* "STAMM~k.EXT"?                */
+        for (k = 0; k < nlen && k < IFS_NAMELEN - 1; k++)
+            nm[k] = up(name[k]);
+        nm[k] = 0;
+        for (k = 0; nm[k] && nm[k] != '.'; k++)
+            if (nm[k] == '~')
+                t = k;
+        if (joliet && t != 0xFFFF && nm[t + 1] >= '1' && nm[t + 1] <= '9') {
+            for (k = t + 1; nm[k] >= '0' && nm[k] <= '9'; k++)
+                kw = kw * 10 + (nm[k] - '0');
+            if (nm[k] && nm[k] != '.')
+                kw = 0;
+        }
+        cand[0] = 0;
+    }
     for (i = 0; i < nblk; i++) {
         if (rd(dev, ext + i))
             return -1;
@@ -123,19 +283,78 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
                 continue;               /* "." und ".."                  */
             if (b[off + 25] & 0x04)
                 continue;               /* zugeordnete Datei             */
-            if (name) {
-                take(b + off);
-                for (k = 0; k < nlen && ent.name[k] == up(name[k]); k++)
-                    ;
-                if (k == nlen && ent.name[k] == 0)
+            if (mode == SC_INDEX) {
+                if (count++ == n) {
+                    take(b + off);
+                    ent_idx = n;
                     return 0;
-            } else if (count++ == n) {
-                take(b + off);
+                }
+                continue;
+            }
+            take(b + off);
+            if (mode == SC_COUNT) {
+                if (count++ >= n)
+                    return hits;
+                if (!basis(ent.name, eb) && !strcmp_n(eb, want))
+                    hits++;
+                continue;
+            }
+            for (k = 0; k < nlen && up(ent.name[k]) == nm[k]; k++)
+                ;
+            if (k == nlen && ent.name[k] == 0) {
+                ent_idx = count;
                 return 0;
             }
+            if (kw && !basis(ent.name, eb)) {
+                /* Ersatzname: Stamm (vor ~) und Endung muessen passen */
+                for (k = 0; k < t && eb[k] == nm[k]; k++)
+                    ;
+                if (k == t && !strcmp_n(ext_of(eb), ext_of(nm)) &&
+                    (!cand[0] || !strcmp_n(eb, cand))) {
+                    if (!cand[0])
+                        for (k = 0; (cand[k] = eb[k]) != 0; k++)
+                            ;
+                    if (++hits == kw) {
+                        ent_idx = count;
+                        return 0;
+                    }
+                }
+            }
+            count++;
         }
     }
-    return -1;
+    return mode == SC_COUNT ? (int)hits : -1;
+}
+
+/* 8.3-Ersatzname des gefundenen Eintrags (ent, ent_idx) bilden */
+static void fill_alias(unsigned dev, unsigned long ext, unsigned long len)
+{
+    static char sv[IFS_NAMELEN], b[13];
+    unsigned k, cnt;
+    unsigned long e2 = ent.ext, s2 = ent.size;
+    unsigned char f2 = ent.flags;
+    unsigned d2 = ent.date, t2 = ent.time;
+
+    ent.alias[0] = 0;
+    if (!joliet)
+        return;
+    if (basis(ent.name, b)) {           /* schon 8.3: nur Schreibung     */
+        for (k = 0; b[k] && b[k] == ent.name[k]; k++)
+            ;
+        if (b[k] || ent.name[k])
+            for (k = 0; (ent.alias[k] = b[k]) != 0; k++)
+                ;
+        return;
+    }
+    for (k = 0; (sv[k] = ent.name[k]) != 0; k++)
+        ;
+    for (k = 0; (want[k] = b[k]) != 0; k++)
+        ;
+    cnt = (unsigned)scan(dev, ext, len, 0, 0, ent_idx, SC_COUNT) + 1;
+    for (k = 0; (ent.name[k] = sv[k]) != 0; k++)
+        ;
+    ent.ext = e2; ent.size = s2; ent.flags = f2; ent.date = d2; ent.time = t2;
+    alias_of(b, cnt, ent.alias);
 }
 
 /* kanonischen Pfad ablaufen; Stamm: ent.flags = 2 */
@@ -155,13 +374,55 @@ static int walk(unsigned dev, const char __far *path)
             ;
         if (!(ent.flags & 2))
             return -1;
-        if (scan(dev, ent.ext, ent.size, p, (unsigned)(q - p), 0))
+        if (scan(dev, ent.ext, ent.size, p, (unsigned)(q - p), 0, SC_NAME))
             return -1;
         p = q;
         while (*p == '\\')
             p++;
     }
     return 0;
+}
+
+/* Pfad Teil fuer Teil in die Schreibung der CD umsetzen (n = 1: 8.3) */
+static void namepath(struct ifs_req __far *r)
+{
+    static char out[IFS_PATHLEN], comp[IFS_PATHLEN];
+    const char __far *p = r->path, __far *q;
+    const char *src;
+    unsigned o = 0, k;
+    unsigned long pe, pl;
+
+    ent.ext = root_ext;
+    ent.size = root_len;
+    ent.flags = 2;
+    while (*p == '\\')
+        p++;
+    while (*p) {
+        for (q = p, k = 0; *q && *q != '\\'; q++)
+            comp[k++] = *q;
+        comp[k] = 0;
+        if (!(ent.flags & 2))
+            return;
+        pe = ent.ext;
+        pl = ent.size;
+        if (scan(r->dev, pe, pl, (const char __far *)comp, k, 0, SC_NAME))
+            return;
+        if (r->n)
+            fill_alias(r->dev, pe, pl);
+        src = (r->n && ent.alias[0]) ? ent.alias : ent.name;
+        if (o + 1 >= IFS_PATHLEN)
+            return;
+        out[o++] = '\\';
+        for (k = 0; src[k] && o < IFS_PATHLEN - 1; k++)
+            out[o++] = src[k];
+        p = q;
+        while (*p == '\\')
+            p++;
+    }
+    out[o] = 0;
+    for (k = 0; k <= o; k++)
+        r->path[k] = out[k];
+    r->status = 0;
 }
 
 static void do_read(struct ifs_req __far *r)
@@ -219,13 +480,21 @@ static void request(void)
     case IFSM_READ:
         do_read(r);
         break;
-    case IFSM_READDIR:
-        if (walk(r->dev, r->path) || !(ent.flags & 2) ||
-            scan(r->dev, ent.ext, ent.size, 0, 0, r->n))
+    case IFSM_READDIR: {
+        unsigned long pe, pl;
+        if (walk(r->dev, r->path) || !(ent.flags & 2))
             break;
+        pe = ent.ext;
+        pl = ent.size;
+        if (scan(r->dev, pe, pl, 0, 0, r->n, SC_INDEX))
+            break;
+        fill_alias(r->dev, pe, pl);
         for (k = 0; ent.name[k]; k++)
             r->de.name[k] = ent.name[k];
         r->de.name[k] = 0;
+        for (k = 0; ent.alias[k]; k++)
+            r->de.sname[k] = ent.alias[k];
+        r->de.sname[k] = 0;
         r->de.attr = (unsigned char)(ATTR_RO | ((ent.flags & 2) ? ATTR_DIR : 0) |
                                      ((ent.flags & 1) ? ATTR_HIDDEN : 0));
         r->de.size = (ent.flags & 2) ? 0 : ent.size;
@@ -233,9 +502,19 @@ static void request(void)
         r->de.time = ent.time;
         r->status = 0;
         break;
+    }
     case IFSM_ISDIR:
         if (walk(r->dev, r->path) == 0 && (ent.flags & 2))
             r->status = 0;
+        break;
+    case IFSM_LABEL:                    /* Bezeichnung -> de.name        */
+        for (k = 0; volid[k]; k++)
+            r->de.name[k] = volid[k];
+        r->de.name[k] = 0;
+        r->status = 0;
+        break;
+    case IFSM_NAMEPATH:                 /* path -> Namen vom Datentraeger */
+        namepath(r);
         break;
     }
 }
@@ -249,7 +528,7 @@ void strategy(void)
         dmasel = r->buf_sel;
         r->units = IFS_CLASS_CD;
         r->status = DRV_OK;
-        dputs("  ISO 9660 f\x81r CD-ROMs, nur lesend\n");
+        dputs("  ISO 9660 und Joliet f\x81r CD-ROMs, nur lesend\n");
         return;
     }
     request();

@@ -4150,8 +4150,30 @@ static int mod_isdir(int drive, const char *path)
     return mod_mount(drive) == 0 && mod_call(drive, IFSM_ISDIR) == 0;
 }
 
+static int mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
+{
+    if (newlbl)
+        return IFS_WP;
+    if (mod_mount(drive) || mod_call(drive, IFSM_LABEL))
+        return IFS_ERR;
+    scopy(lbl, ireq.de.name, 12);
+    *serial = 0;
+    return 0;
+}
+
+static int mod_namepath(int drive, const char *path, char *out, int shortn)
+{
+    scopy(ireq.path, path, IFS_PATHLEN);
+    ireq.n = (unsigned short)shortn;
+    if (mod_mount(drive) || mod_call(drive, IFSM_NAMEPATH))
+        return -1;
+    scopy(out, ireq.path, IFS_PATHLEN);
+    return 0;
+}
+
 struct ifs_driver mod_driver = {
-    "IFS", mod_mount, mod_open, mod_read, mod_readdir, mod_isdir
+    "IFS", mod_mount, mod_open, mod_read, mod_readdir, mod_isdir,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, mod_label, mod_namepath
 };
 
 /* CD-Laufwerke bekommen Buchstaben, wenn ein IFS-Modul CDs kann. Der

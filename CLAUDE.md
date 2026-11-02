@@ -845,10 +845,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   für beschreibbare Medien bringt sein eigenes U*.EXE mit – CHKDSK nimmt
   es dann automatisch (Reihenfolge in task_chkdsk.c: erst U*.EXE suchen,
   Meldung nur, wenn keins da ist).
-- Lange Namen auf CD (Wunsch des Nutzers): `ISO9660.IFS` um Joliet
-  (Zusatz-Deskriptor mit UCS-2-Namen, Windows 95), ISO 9660:1999 (Level 4,
-  bis 207 Zeichen) und evtl. Rock Ridge erweitern; Namen über das FAPI mit
-  bis 260 Zeichen, 8.3 nur als Rückfall. Kopieren auf FAT braucht dann die
+- Lange Namen auf CD (Wunsch des Nutzers): Joliet erledigt (in QEMU mit
+  `genisoimage -J` geprüft, auch Wechsel auf eine CD ohne Joliet, XCOPY
+  von der CD auf C: mit EA-Namen, fsck sauber). `ISO9660.IFS`: `mount`
+  nimmt den Joliet-Baum (SVD Typ 2, Escape `%/@`, `%/C`, `%/E` bei 88),
+  `take` wandelt UCS-2 -> CP437 (`lat2cp`, Unbekanntes `_`). 8.3-
+  Ersatznamen wie Windows 95: `basis()` (6 Zeichen + Endung), `~k` = k-ter
+  Eintrag mit gleicher Grundform (`fill_alias` zählt mit `scan(SC_COUNT)`,
+  nur für READDIR/NAMEPATH); `scan(SC_NAME)` findet lange Namen ohne
+  Groß/klein und Ersatznamen (`STAMM~k.EXT`). Neue Modulaufrufe
+  `IFSM_LABEL` (Bezeichnung aus dem PVD, VOL) und `IFSM_NAMEPATH` (CD
+  zeigt `D:\Neuer Ordner`, alte Programme bekommen 8.3) -> `mod_label`/
+  `mod_namepath` im Kernel. Offen: ISO 9660:1999 (Level 4, bis 207
+  Zeichen) und Rock Ridge. Kopieren auf FAT braucht dann die
   `.LONGNAME`-EAs (siehe unten), sonst 8.3-Ersatznamen. UDF (DVD, ab 1996)
   als eigenes `UDF.IFS` – zeitlich DOS 6.0/7.0.
 - `COPY` mit Verketten (`A+B [Ziel]`, ohne Ziel an A anhängen) und Datum/

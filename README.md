@@ -44,7 +44,11 @@ und PC-DOS.
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
-  bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt
+  bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt.
+  Joliet-CDs (Windows 95) zeigen lange Namen in Originalschreibung (auch
+  Umlaute); ältere Programme bekommen 8.3-Ersatznamen wie Windows
+  (`BRIEFA~1.TXT`), beide Namen gehen in Pfaden. `VOL` zeigt die
+  Bezeichnung der CD
 - Lange Namen, Stufe 1: VFAT-Namen (Windows 95) werden gelesen – in
   Verzeichnislisten, als Pfadteil (`CD "Eigene Dateien"`, Anführungszeichen
   halten Namen mit Leerzeichen zusammen) und beim Löschen/Umbenennen mit

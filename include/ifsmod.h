@@ -58,6 +58,9 @@ struct ifs_dirent {
 #define IFSM_READ       0x12        /* f, pos, sel:off, len -> result      */
 #define IFSM_READDIR    0x13        /* path, n -> de                       */
 #define IFSM_ISDIR      0x14        /* path -> status 0 = Verzeichnis      */
+#define IFSM_LABEL      0x15        /* -> de.name = Bezeichnung (11 Zeichen) */
+#define IFSM_NAMEPATH   0x16        /* path (gross) -> path in Schreibung des
+                                       Datentraegers; n = 1: 8.3-Namen    */
 
 struct ifs_req {
     unsigned char  cmd;             /* IFSM_*                              */
