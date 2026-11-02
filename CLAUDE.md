@@ -49,6 +49,9 @@ MS-DOS aus Abbildern) -> Phase 4 EMS/XMS/DPMI, virtuelle VGA und SB,
 mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
 APM. Jede Phase auf 386SX/2 MB in 86Box, danach 486.
 
+Diskettenabbild heißt seit 6.0 `build/atdos-fd.img` (vorher `dos5.img`,
+Wunsch des Nutzers), OEM-Kennung `ALTDOS60`.
+
 Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
 286-Befehle, kooperativ):
 
@@ -605,7 +608,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 ## Bauen und testen
 
-    ./build.sh          # NASM + Open Watcom -> build/dos5.img
+    ./build.sh          # NASM + Open Watcom -> build/atdos-fd.img
 
 Werkzeuge in einer neuen Umgebung einrichten (wie `.github/workflows/build.yml`):
 
@@ -651,13 +654,13 @@ QEMU emuliert keinen Adaptec – `AHA154X.SYS` lässt sich nur in 86Box testen.
 Eingaben im QEMU-Test per Monitor `sendkey`; QEMU benennt Tasten nach
 US-Belegung, der Kernel wertet deutsch aus (`y`/`z` vertauscht).
 
-Schnelltest headless in QEMU (`qemu-system-i386 -fda build/dos5.img`), der
+Schnelltest headless in QEMU (`qemu-system-i386 -fda build/atdos-fd.img`), der
 echte Test ist eine 286-Maschine in 86Box. QEMU emuliert keinen echten 286
 und prüft Segmentgrenzen nicht – ein Zugriff über die Grenze läuft in QEMU
 durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
-CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
+CI baut bei jedem Push und veröffentlicht `atdos-fd.img` als Release `latest`.
 
 Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
 (`gemini_chat_completion`). Funktioniert mit `model: gemini-3.5-flash`;
@@ -993,7 +996,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   MSG OUT (ohne IDENTIFY INT 2) und trennt vor den Daten trotz 80h
   (ohne Wiederauswahl Zeitüberschreitung). Abfragebetrieb über ISTAT,
   Frist über DH_TICKS; STO (SIST1 Bit 2) = kein Gerät. Offen: IRQ,
-  synchrone/Wide-Übertragung, Test in 86Box (810/825/875).
+  synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
+  bestätigt: Platte und ZIP-Laufwerk am NCR erkannt.
   Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
   >= 600 KB konventionell 8000:0000 (60 KB, 16 Dateien) statt 0060:0000
   (30 KB, 8); kmain gibt der Speicherverwaltung erst nach CONFIG.SYS den

@@ -18,7 +18,7 @@ KSEG    equ 0x1000
         nop
 
 ; BIOS-Parameterblock (Standard-1,44-MB-Diskette)
-oem         db "ALTDOS50"
+oem         db "ALTDOS60"
 bps         dw 512
 spc         db 1
 reserved    dw 1

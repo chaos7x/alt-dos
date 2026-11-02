@@ -236,7 +236,7 @@ static int do_format(int quick, unsigned fkb)
     for (i = 0; i < 512; i++)
         b[i] = (fat16 ? boot_hd : boot_fd)[i];
     for (i = 0; i < 8; i++)
-        b[3 + i] = (unsigned char)"ALTDOS50"[i];
+        b[3 + i] = (unsigned char)"ALTDOS60"[i];
     wr16(b + 11, 512);
     b[13] = (unsigned char)spc;
     wr16(b + 14, res);

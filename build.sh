@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Baut build/dos5.img (1,44-MB-Diskette): Bootsektor + Kernel + 3 Anwendungen
+# Baut build/atdos-fd.img (1,44-MB-Diskette): Bootsektor + Kernel + 3 Anwendungen
 # Benoetigt: nasm, Open Watcom 2.0 (WATCOM gesetzt, wcc/wlink im PATH)
 set -e
 cd "$(dirname "$0")"
@@ -173,7 +173,7 @@ for t in iso9660; do
 done
 
 echo "Diskette (FAT12)"
-IMG=$B/dos5.img
+IMG=$B/atdos-fd.img
 export MTOOLS_SKIP_CHECK=1
 truncate -s 0 $IMG
 truncate -s 1474560 $IMG
@@ -209,7 +209,7 @@ python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE
        $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
-copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
+copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"
     copy_list "$DOSFILES" "DOS/"

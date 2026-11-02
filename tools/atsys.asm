@@ -287,7 +287,7 @@ fail:       call    print
 ; ---------------------------------------------------------------------------
 COPYBUF     equ 4096
 
-msg_title   db "ATSYS - AT-DOS 5.0 auf eine Festplatte einrichten", 13, 10, '$'
+msg_title   db "ATSYS - AT-DOS 6.0 auf eine Festplatte einrichten", 13, 10, '$'
 msg_usage   db "Aufruf von der AT-DOS-Diskette:  ATSYS Laufwerk:   (z. B. ATSYS D:)", 13, 10, '$'
 msg_dos     db "Ben", 0x94, "tigt MS-DOS 4.0 oder neuer.", 13, 10, '$'
 msg_msdos   db "Auf dem Ziel liegt ein MS-DOS - abgebrochen.", 13, 10, '$'

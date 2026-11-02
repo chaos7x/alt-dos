@@ -23,7 +23,7 @@ BUF     equ 0x7E00              ; Sektorpuffer (Verzeichnis, FAT)
 
         jmp     short start
         nop
-oem         db "ALTDOS50"
+oem         db "ALTDOS60"
 bps         dw 512
 spc         db 4
 reserved    dw 1

@@ -518,7 +518,7 @@ etwas weniger ein. Bei Platten ohne LBA und ohne gültige aktuelle Geometrie
 Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
-    ./build.sh      # -> build/dos5.img (1,44 MB, FAT12) und build/atdos-hd.img
+    ./build.sh      # -> build/atdos-fd.img (1,44 MB, FAT12) und build/atdos-hd.img
 
 `CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
 findet, wird wieder entladen.

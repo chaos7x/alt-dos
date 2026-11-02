@@ -34,7 +34,7 @@ jobs:
         with:
           name: alt-dos-image
           path: |
-            build/dos5.img
+            build/atdos-fd.img
             build/atdos-hd.img
 
       - name: Als Release "latest" veroeffentlichen
@@ -44,7 +44,7 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
-          gh release create latest build/dos5.img build/atdos-hd.zip \
+          gh release create latest build/atdos-fd.img build/atdos-hd.zip \
             --prerelease \
             --title "Aktueller Stand (${GITHUB_SHA::7})" \
-            --notes "AT-DOS 6.0 in Arbeit, automatisch gebaut aus ${GITHUB_SHA::7}. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). dos5.img: Diskette A: in 86Box, 386-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+            --notes "AT-DOS 6.0 in Arbeit, automatisch gebaut aus ${GITHUB_SHA::7}. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Diskette A: in 86Box, 386-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
