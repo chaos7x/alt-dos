@@ -255,6 +255,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   unterstützt.
 - Dateimanager `FM.EXE` (`apps/task_fm.c`, Wunsch des Nutzers „so etwas wie
   der Norton Commander“ – eigener Entwurf, kein Nachbau; in QEMU geprüft):
+  Ansicht (Wunsch des Nutzers „so wie beim echten NC“): Fenster ab Zeile 0,
+  Pfad mittig im oberen Rahmen (aktiv: cyan hinterlegt), Spalten Name
+  (8.3 als „NAME     EXT“, lange Namen gekürzt mit »), Größe (ohne
+  Punkte, Verzeichnisse ►VERZ◄/►HOCH◄), Datum, Zeit mit gelben Köpfen und
+  ╤/│/┴-Strichen, Kurzanzeige unter ╟──╢, Befehlszeile R-2, Tastenleiste
+  (Ziffer weiß auf schwarz, Text schwarz auf cyan, 6 Zeichen).
   Vollbild über VioGetBuf/VioShowBuf wie EDIT, zwei Fenster (`struct
   panel`, je 350 Einträge + 8-KB-Namenspool, Shellsort, Verzeichnisse
   zuerst, versteckte/System nicht gezeigt), Befehlszeile und Programme

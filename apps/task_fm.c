@@ -23,7 +23,7 @@
 #define A_MARK      0x1E            /* markiert gelb                   */
 #define A_CUR       0x30            /* Balken schwarz auf cyan         */
 #define A_CURMARK   0x3E
-#define A_TOPBAR    0x30
+#define A_HEAD      0x1E            /* Spaltenkoepfe gelb              */
 #define A_KEYNUM    0x07
 #define A_KEYTXT    0x30
 #define A_CMD       0x07
@@ -81,7 +81,7 @@ static unsigned char mprev;
 static volatile int shut_req;
 
 #define NAME(p, i)  ((p)->pool + (p)->e[i].off)
-#define PROWS()     (R - 9)         /* Eintragszeilen je Fenster        */
+#define PROWS()     (R - 7)         /* Eintragszeilen je Fenster        */
 
 /* ---- Bildschirm: logischer Puffer wie in EDIT ------------------------ */
 static void put(int r, int c, const char *s, unsigned char a, int w)
@@ -247,26 +247,94 @@ static void read_panel(struct panel *p, const char *keep)
 }
 
 /* ---- Zeichnen -------------------------------------------------------- */
+/* Spalten wie bei den klassischen Dateimanagern: Rahmen 0, Name 1-13,
+   Strich 14, Groesse 15-23, Strich 24, Datum 25-32, Strich 33, Zeit 34-38 */
+#define C_S1    14
+#define C_S2    24
+#define C_S3    33
+
+static void frame_line(int r, int x, char l, char m, char j, char rr, unsigned char a)
+{
+    int i;
+    for (i = 0; i < 40; i++)
+        line[i] = m;
+    line[0] = l;
+    line[39] = rr;
+    if (j) {
+        line[C_S1] = j;
+        line[C_S2] = j;
+        line[C_S3] = j;
+    }
+    line[40] = 0;
+    put(r, x, line, a, 40);
+}
+
+/* Name in die 13er-Spalte: 8.3 als "NAME     EXT", lang gekuerzt */
+static void name_col(char *o, const char *nm, int isdir)
+{
+    unsigned i, l = slen(nm), dot = 0xFFFF;
+    for (i = 0; i < 13; i++)
+        o[i] = ' ';
+    o[13] = 0;
+    for (i = 0; i < l; i++)
+        if (nm[i] == '.')
+            dot = i;
+    (void)isdir;
+    if (nm[0] == '.' || l > 12 || (dot == 0xFFFF ? l > 8 : (dot > 8 || l - dot - 1 > 3))) {
+        for (i = 0; i < l && i < 13; i++)
+            o[i] = nm[i];
+        if (l > 13)
+            o[12] = '\xAF';
+        return;
+    }
+    for (i = 0; i < l && i < (dot == 0xFFFF ? l : dot); i++)
+        o[i] = nm[i];
+    if (dot != 0xFFFF)
+        for (i = dot + 1; i < l; i++)
+            o[9 + i - dot - 1] = nm[i];
+}
+
+static void plain_num(unsigned long v, char *o)     /* ohne Punkte  */
+{
+    static char t[16];
+    unsigned i, n = 0;
+    fmt_num(v, t);
+    for (i = 0; t[i]; i++)
+        if (t[i] != '.')
+            o[n++] = t[i];
+    o[n] = 0;
+}
+
+static void date_time(const struct ent *e, char *d, char *t)
+{
+    static char nb[3];
+    fmt2(e->date & 31, nb);
+    d[0] = nb[0]; d[1] = nb[1]; d[2] = '.';
+    fmt2((e->date >> 5) & 15, nb);
+    d[3] = nb[0]; d[4] = nb[1]; d[5] = '.';
+    fmt2(((e->date >> 9) + 80) % 100, nb);
+    d[6] = nb[0]; d[7] = nb[1]; d[8] = 0;
+    fmt2(e->time >> 11, nb);
+    t[0] = nb[0]; t[1] = nb[1]; t[2] = ':';
+    fmt2((e->time >> 5) & 63, nb);
+    t[3] = nb[0]; t[4] = nb[1]; t[5] = 0;
+}
+
 static void draw_panel(int k)
 {
     struct panel *p = &pn[k];
     int x = k * 40, r, i;
     unsigned rows = PROWS(), idx, n;
-    unsigned char a;
-    static char nb[16];
+    unsigned char a, as;
+    static char nb[16], db[10], tb[8], nm13[14];
     struct ent *e;
 
     if (p->cur < p->top)
         p->top = p->cur;
     if (p->cur >= p->top + rows)
         p->top = p->cur - rows + 1;
-    /* Rahmen */
-    for (i = 0; i < 40; i++)
-        line[i] = '\xCD';
-    line[0] = '\xC9';
-    line[39] = '\xBB';
-    line[40] = 0;
-    put(1, x, line, A_PANEL, 40);
+    /* oben: Rahmen mit Pfad in der Mitte */
+    frame_line(0, x, '\xC9', '\xCD', '\xD1', '\xBB', A_PANEL);
     n = slen(p->dir);
     if (n > 34) {
         scopy(tmp, "...", sizeof(tmp));
@@ -274,99 +342,94 @@ static void draw_panel(int k)
     } else
         scopy(tmp, p->dir, sizeof(tmp));
     n = slen(tmp);
-    putch(1, x + 19 - (int)n / 2 - 1, ' ', A_PANEL);
-    put(1, x + 19 - (int)n / 2, tmp, k == act ? A_CUR : A_PANEL, (int)n);
-    putch(1, x + 19 - (int)n / 2 + (int)n, ' ', A_PANEL);
+    putch(0, x + 20 - (int)n / 2 - 1, ' ', k == act ? A_CUR : A_PANEL);
+    put(0, x + 20 - (int)n / 2, tmp, k == act ? A_CUR : A_PANEL, (int)n);
+    putch(0, x + 20 - (int)n / 2 + (int)n, ' ', k == act ? A_CUR : A_PANEL);
+    /* Spaltenkoepfe */
+    frame_line(1, x, '\xBA', ' ', '\xB3', '\xBA', A_PANEL);
+    put(1, x + 5, "Name", A_HEAD, 4);
+    put(1, x + 17, "Gr\x94\xE1" "e", A_HEAD, 5);
+    put(1, x + 26, "Datum", A_HEAD, 5);
+    put(1, x + 35, "Zeit", A_HEAD, 4);
     for (r = 0; r < (int)rows; r++) {
         idx = p->top + r;
-        putch(2 + r, x, '\xBA', A_PANEL);
-        putch(2 + r, x + 39, '\xBA', A_PANEL);
-        if (idx >= p->n) {
-            put(2 + r, x + 1, "", A_PANEL, 38);
+        frame_line(2 + r, x, '\xBA', ' ', '\xB3', '\xBA', A_PANEL);
+        if (idx >= p->n)
             continue;
-        }
         e = &p->e[idx];
-        for (i = 0; i < 38; i++)
-            line[i] = ' ';
-        {
-            const char *nm = NAME(p, idx);
-            unsigned l = slen(nm);
-            for (i = 0; i < (int)l && i < 26; i++)
-                line[i + 1] = nm[i];
-            if (l > 26)
-                line[26] = '\xAF';
-        }
-        if (e->attr & 0x10)
-            scopy(nb, NAME(p, idx)[0] == '.' ? "<HOCH>" : "<VERZ>", sizeof(nb));
-        else
-            fmt_num(e->size, nb);
-        n = slen(nb);
-        for (i = 0; i < (int)n && i < 11; i++)
-            line[37 - n + i] = nb[i];
-        line[38] = 0;
-        a = e->mark ? A_MARK : (e->attr & 0x10) ? A_DIR : A_PANEL;
+        a = e->mark ? A_MARK : A_PANEL;
+        as = A_PANEL;                   /* Striche bleiben cyan          */
         if (k == act && idx == p->cur)
-            a = e->mark ? A_CURMARK : A_CUR;
-        put(2 + r, x + 1, line, a, 38);
+            a = as = e->mark ? A_CURMARK : A_CUR;
+        name_col(nm13, NAME(p, idx), (e->attr & 0x10) != 0);
+        put(2 + r, x + 1, nm13, a, 13);
+        if (e->attr & 0x10)
+            scopy(nb, NAME(p, idx)[0] == '.' ? "\x10HOCH\x11" : "\x10VERZ\x11", sizeof(nb));
+        else
+            plain_num(e->size, nb);
+        n = slen(nb);
+        for (i = 0; i < 9; i++)
+            line[i] = ' ';
+        for (i = 0; i < (int)n && i < 9; i++)
+            line[9 - n + i] = nb[i];
+        line[9] = 0;
+        putch(2 + r, x + C_S1, '\xB3', as);
+        put(2 + r, x + C_S1 + 1, line, a, 9);
+        putch(2 + r, x + C_S2, '\xB3', as);
+        if (e->date) {
+            date_time(e, db, tb);
+            put(2 + r, x + C_S2 + 1, db, a, 8);
+            putch(2 + r, x + C_S3, '\xB3', as);
+            put(2 + r, x + C_S3 + 1, tb, a, 5);
+        } else {
+            put(2 + r, x + C_S2 + 1, "", a, 8);
+            putch(2 + r, x + C_S3, '\xB3', as);
+            put(2 + r, x + C_S3 + 1, "", a, 5);
+        }
     }
-    /* Trennlinie, Infozeile, unterer Rand */
-    for (i = 0; i < 40; i++)
-        line[i] = '\xC4';
-    line[0] = '\xC7';
-    line[39] = '\xB6';
-    put(2 + rows, x, line, A_PANEL, 40);
+    /* Trennlinie und Kurzanzeige */
+    frame_line(2 + rows, x, '\xC7', '\xC4', '\xC1', '\xB6', A_PANEL);
     for (i = 0; i < 38; i++)
         line[i] = ' ';
     line[38] = 0;
     if (p->nmark) {
-        fmt_num(p->mbytes, tmp);
-        fmt_num(p->nmark, nb);
-        scopy(line, " ", sizeof(line));
+        plain_num(p->mbytes, tmp);
+        plain_num(p->nmark, nb);
+        scopy(line, tmp, sizeof(line));
+        scat(line, " Bytes in ", sizeof(line));
         scat(line, nb, sizeof(line));
-        scat(line, " markiert, ", sizeof(line));
-        scat(line, tmp, sizeof(line));
-        scat(line, " Bytes", sizeof(line));
-    } else if (p->n) {
-        e = &p->e[p->cur];
-        line[0] = ' ';
-        for (i = 0; NAME(p, p->cur)[i] && i < 21; i++)
-            line[1 + i] = NAME(p, p->cur)[i];
-        if (e->date) {
-            fmt2(e->date & 31, nb);
-            line[23] = nb[0]; line[24] = nb[1]; line[25] = '.';
-            fmt2((e->date >> 5) & 15, nb);
-            line[26] = nb[0]; line[27] = nb[1]; line[28] = '.';
-            fmt2(((e->date >> 9) + 80) % 100, nb);
-            line[29] = nb[0]; line[30] = nb[1];
-            fmt2(e->time >> 11, nb);
-            line[32] = nb[0]; line[33] = nb[1]; line[34] = ':';
-            fmt2((e->time >> 5) & 63, nb);
-            line[35] = nb[0]; line[36] = nb[1];
+        scat(line, p->nmark == 1 ? " markierten Datei" : " markierten Dateien", sizeof(line));
+        n = slen(line);
+        frame_line(3 + rows, x, '\xBA', ' ', 0, '\xBA', A_PANEL);
+        put(3 + rows, x + 1 + (n < 38 ? (38 - (int)n) / 2 : 0), line, A_MARK, (int)n);
+    } else {
+        frame_line(3 + rows, x, '\xBA', ' ', 0, '\xBA', A_PANEL);
+        if (p->n) {
+            e = &p->e[p->cur];
+            for (i = 0; NAME(p, p->cur)[i] && i < 18; i++)
+                line[i] = NAME(p, p->cur)[i];
+            if (slen(NAME(p, p->cur)) > 18)
+                line[17] = '\xAF';
+            if (e->attr & 0x10)
+                scopy(nb, NAME(p, p->cur)[0] == '.' ? "\x10HOCH\x11" : "\x10VERZ\x11", sizeof(nb));
+            else
+                plain_num(e->size, nb);
+            n = slen(nb);
+            for (i = 0; i < (int)n && i < 9; i++)
+                line[18 + 9 - n + i] = nb[i];
+            put(3 + rows, x + 1, line, A_PANEL, 27);
+            if (e->date) {
+                date_time(e, db, tb);
+                put(3 + rows, x + 29, db, A_PANEL, 8);
+            }
         }
     }
-    putch(3 + rows, x, '\xBA', A_PANEL);
-    put(3 + rows, x + 1, line, A_PANEL, 38);
-    putch(3 + rows, x + 39, '\xBA', A_PANEL);
-    for (i = 0; i < 40; i++)
-        line[i] = '\xCD';
-    line[0] = '\xC8';
-    line[39] = '\xBC';
-    put(4 + rows, x, line, A_PANEL, 40);
-    {
-        static unsigned long fb;
-        if (DosFreeSpace(up(p->dir[0]) - 'A', &fb) == 0) {
-            fmt_num(fb >> 10, tmp);
-            scat(tmp, " KB frei", sizeof(tmp));
-            n = slen(tmp);
-            putch(4 + rows, x + 37 - (int)n, ' ', A_PANEL);
-            put(4 + rows, x + 38 - (int)n, tmp, A_PANEL, (int)n);
-        }
-    }
+    frame_line(4 + rows, x, '\xC8', '\xCD', 0, '\xBC', A_PANEL);
 }
 
 static const char *const fkey[10] = {
-    "Hilfe", "", "Ansehen", "Bearb.", "Kopie", "Versch.", "Verz.",
-    "L\x94schen", "", "Ende" };
+    "Hilfe", "", "Zeigen", "Bearb.", "Kopie", "UmbVer", "MkDir",
+    "L\x94sch.", "", "Ende" };
 
 static void draw_cmd(void)
 {
@@ -390,15 +453,14 @@ static void draw_all(void)
 {
     int i;
     static char nb[3];
-    put(0, 0, " AT-DOS Dateimanager", A_TOPBAR, 80);
-    put(0, 58, "F1 Hilfe  F10 Ende", A_TOPBAR, 22);
     draw_panel(0);
     draw_panel(1);
-    put((int)R - 3, 0, "", A_CMD, 80);
-    for (i = 0; i < 10; i++) {
-        fmt2((unsigned)(i + 1), nb);
+    for (i = 0; i < 10; i++) {          /* Ziffer weiss auf schwarz,     */
+        fmt2((unsigned)(i + 1), nb);    /* Text schwarz auf cyan         */
         put((int)R - 1, i * 8, nb[0] == '0' ? nb + 1 : nb, A_KEYNUM, i == 9 ? 2 : 1);
-        put((int)R - 1, i * 8 + (i == 9 ? 2 : 1), fkey[i], A_KEYTXT, i == 9 ? 6 : 7);
+        put((int)R - 1, i * 8 + (i == 9 ? 2 : 1), fkey[i], A_KEYTXT, i == 9 ? 6 : 6);
+        if (i < 9)
+            put((int)R - 1, i * 8 + 7, "", A_KEYNUM, 1);
     }
     draw_cmd();
 }
