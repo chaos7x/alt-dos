@@ -31,17 +31,12 @@
 #define ACC_KCODE   0x9A    /* P, DPL0, Code, lesbar              */
 #define ACC_UCODE   0xFA    /* P, DPL3, Code, lesbar              */
 #define ACC_UDATA   0xF2    /* P, DPL3, Daten, schreibbar         */
-#define ACC_TSS     0x81    /* P, DPL0, 286-TSS, frei             */
+#define ACC_TSS     0x89    /* P, DPL0, 386-TSS, frei             */
 #define ACC_LDT     0x82    /* P, DPL0, LDT                       */
 #define ACC_CGATE3  0xE4    /* P, DPL3, 286-Call-Gate             */
-#define ACC_IGATE   0x86    /* P, DPL0, 286-Interrupt-Gate        */
+#define ACC_IGATE   0x8E    /* P, DPL0, 386-Interrupt-Gate (V86!)  */
 
 struct gate  { unsigned short off, sel; unsigned char wc, access; unsigned short rsv; };
-struct tss286 {
-    unsigned short link, sp0, ss0, sp1, ss1, sp2, ss2;
-    unsigned short ip, flags, ax, cx, dx, bx, sp, bp, si, di;
-    unsigned short es, cs, ss, ds, ldt;
-};
 
 /* ---- Assembler-Routinen (start.asm) ------------------------------------ */
 extern void fapi_entry(void);
@@ -100,11 +95,12 @@ struct task {
     volatile unsigned char block_rc;            /* ProcBlock: 0 geweckt, 1 Frist */
     unsigned long block_id;                     /* ProcBlock: Ereignis       */
     unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
+    unsigned char v86;                          /* DOS-Box (v86.c)          */
 };
 
 static struct task    task[NTASK];
-static struct tss286  tss_k;
-static struct tss286  tss[NTASK];
+static struct tss386  tss_k;
+static struct tss386  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
@@ -141,9 +137,13 @@ static unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
 #define NFILE nfiles
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
+unsigned char k_alias;                  /* paging.c: Kernel sieht ab KALIAS */
+
 static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
                      unsigned char acc)
 {
+    if (k_alias)
+        base += KALIAS;
     d->limit   = limit;
     d->base_lo = (unsigned short)base;
     d->base_hi = (unsigned char)(base >> 16);
@@ -154,8 +154,8 @@ static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
 /* lineare Basis eines Deskriptors (32 Bit) */
 static unsigned long desc_base(const struct desc *d)
 {
-    return d->base_lo | ((unsigned long)d->base_hi << 16) |
-           ((unsigned long)(d->rsv & 0xFF00) << 16);
+    return (d->base_lo | ((unsigned long)d->base_hi << 16) |
+            ((unsigned long)(d->rsv & 0xFF00) << 16)) - (k_alias ? KALIAS : 0);
 }
 
 void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
@@ -181,13 +181,13 @@ void gdt_build(void)
     g->access = ACC_CGATE3;
     g->rsv    = 0;
 
-    set_desc(5, LIN(&tss_k), sizeof(struct tss286) - 1, ACC_TSS);
+    set_desc(5, LIN(&tss_k), sizeof(struct tss386) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);               /* SCRATCH              */
     set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
     set_desc(8, 0, 0, ACC_KDATA);               /* SCRATCH2             */
     set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
-        set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss286) - 1, ACC_TSS);
+        set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss386) - 1, ACC_TSS);
         set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
     }
 
@@ -999,17 +999,102 @@ static int load_image(int drive, const char *path, struct fx_header *h,
     return 0;
 }
 
+/* TSS eines neuen Tasks: Ring-0-Stack, Seitenverzeichnis, keine I/O-
+   Bitmap (iomap hinter der Grenze: jeder Portzugriff aus Ring 3/V86 ist
+   #GP) */
+static void tss_init(int t, unsigned long cr3)
+{
+    struct tss386 *ts = &tss[t];
+    unsigned short *w;
+    for (w = (unsigned short *)ts; w < (unsigned short *)(ts + 1); w++)
+        *w = 0;
+    ts->ss0   = KDATA;
+    ts->esp0  = (unsigned short)&kstack[t][KSTACK];
+    ts->cr3   = cr3;
+    ts->iomap = sizeof(struct tss386);
+}
+
+/* DOS-Programm (.COM) in einer DOS-Box (V86, Phase 3 Stufe 1): eigenes
+   erstes MB, PSP bei 1000:0000, Programm ab 1000:0100, Stack am Ende des
+   64-KB-Segments mit 0 obenauf (RET -> INT 20h im PSP). */
+#define BOX_KB  640
+#define BOX_SEG 0x1000
+static int load_com(int t, int drive, const char *path)
+{
+    static unsigned char psp[256];
+    struct ifs_file f;
+    struct tss386 *ts;
+    unsigned long cr3;
+    pg_t tu;
+    unsigned tn, i;
+    char *a;
+
+    if (ifs_open(drive, path, &f))
+        return EXEC_ERR_NOTFOUND;
+    if (f.size == 0 || f.size > 0xFF00UL - 0x100)
+        return EXEC_ERR_FORMAT;
+    cr3 = v86_create(t, BOX_KB);
+    if (!cr3)
+        return EXEC_ERR_NOMEM;
+    tn = UNITS(f.size);
+    tu = mem_alloc(tn);
+    if (!tu) {
+        v86_destroy(t);
+        return EXEC_ERR_NOMEM;
+    }
+    scratch_map(PG_LIN(tu), tn * MEM_PAGE - 1);
+    if (ifs_read(&f, 0, SCRATCH, 0, (unsigned)f.size) != (int)f.size) {
+        mem_free(tu, tn);
+        v86_destroy(t);
+        return EXEC_ERR_NOTFOUND;
+    }
+    v86_copy(t, ((unsigned long)BOX_SEG << 4) + 0x100, SCRATCH, 0, (unsigned)f.size);
+    mem_free(tu, tn);
+
+    for (i = 0; i < 256; i++)
+        psp[i] = 0;
+    psp[0] = 0xCD;                              /* INT 20h               */
+    psp[1] = 0x20;
+    psp[2] = (unsigned char)((BOX_KB * 64) & 0xFF);     /* Speicherende  */
+    psp[3] = (unsigned char)((BOX_KB * 64) >> 8);
+    a = task[t].args;
+    i = 0;
+    if (*a)
+        psp[0x81 + i++] = ' ';                  /* wie DOS: Leerzeichen vorn */
+    for (; *a && i < 126; i++)
+        psp[0x81 + i] = *a++;
+    psp[0x80] = (unsigned char)i;
+    psp[0x81 + i] = 13;
+    v86_copy(t, (unsigned long)BOX_SEG << 4, KDATA, (unsigned)psp, 256);
+
+    task[t].v86 = 1;
+    task[t].lfn = 0;
+    task[t].img_unit = task[t].code_unit = 0;
+    ts = &tss[t];
+    tss_init(t, cr3);
+    ts->cs = ts->ss = ts->ds = ts->es = BOX_SEG;
+    ts->eip = 0x100;
+    ts->esp = 0xFFFE;
+    ts->eflags = 0x00020202UL;          /* VM, IF (echt; das IF der Box  */
+    return 0;                           /* fuehrt v86.c), IOPL 0         */
+}
+
 /* Programm in Task t laden. 0 = ok, sonst EXEC_ERR_* */
 static int load_program(int t, int drive, const char *path)
 {
     struct fx_header h;
-    struct tss286 *ts;
-    unsigned short *w;
+    struct tss386 *ts;
     unsigned long base, seg;
     pg_t u;
     unsigned n;
     int err;
 
+    for (n = 0; path[n]; n++)
+        ;
+    task[t].v86 = 0;
+    if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'C' && path[n - 2] == 'O' &&
+        path[n - 1] == 'M')
+        return load_com(t, drive, path);
     err = load_image(drive, path, &h, &u, &n, &seg);
     if (err)
         return err;
@@ -1039,18 +1124,15 @@ static int load_program(int t, int drive, const char *path)
     put_desc(&ldt[t][1], base, (unsigned)(seg - 1), ACC_UDATA);
 
     ts = &tss[t];
-    for (w = (unsigned short *)ts; w < (unsigned short *)(ts + 1); w++)
-        *w = 0;
-    ts->ss0   = KDATA;
-    ts->sp0   = (unsigned short)&kstack[t][KSTACK];
+    tss_init(t, paging_cr3());
     ts->cs    = UCODE;
-    ts->ip    = h.entry;
+    ts->eip   = h.entry;
     ts->ss    = UDATA;
-    ts->sp    = (unsigned short)seg;    /* 64 KB -> 0, Stack wickelt korrekt */
+    ts->esp   = (unsigned short)seg;    /* 64 KB -> 0, Stack wickelt korrekt */
     ts->ds    = UDATA;
     ts->es    = UDATA;
     ts->ldt   = LDT_SEL(t);
-    ts->flags = 0x0202;         /* IF=1, IOPL=0: kein I/O in Ring 3     */
+    ts->eflags = 0x0202;        /* IF=1, IOPL=0: kein I/O in Ring 3     */
     return 0;
 }
 
@@ -1230,6 +1312,10 @@ static void task_end(int t)
 
     fpu_task_end(t);
     aud_task_end(t);
+    if (task[t].v86) {                      /* DOS-Box: Speicher, CR3   */
+        v86_destroy(t);
+        task[t].v86 = 0;
+    }
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
             seg_free(t, USEL(idx));
@@ -3190,6 +3276,26 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     return FAPI_ERROR;
 }
 
+/* Dienste fuer den V86-Monitor (v86.c, zweites Codesegment) */
+int box_ctl(unsigned op, unsigned a)
+{
+    switch (op) {
+    case BOX_TASK:
+        return current;
+    case BOX_SESSION:
+        return task[current].session;
+    case BOX_SLEEP:
+        sleep_ticks(a);
+        return 0;
+    case BOX_EXIT:
+        task[current].rc = (unsigned char)a;
+        klock_enter();                  /* task_end schliesst Dateien    */
+        task_end(current);
+        schedule_next();
+    }
+    return 0;
+}
+
 /* ---- Ausnahmebehandlung ------------------------------------------------ */
 static const char *exc_name(unsigned v)
 {
@@ -3212,13 +3318,16 @@ unsigned long read_cr2(void);
 #pragma aux read_cr2 = "mov eax,cr2" "mov edx,eax" "shr edx,16" \
     __value [__dx __ax] __modify [__ax __dx];
 
+unsigned char fault_vm;                 /* start.asm: Ausnahme aus V86   */
+
 void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
 {
     static char msg[] = " bei xxxx:xxxx (Fehlercode xxxxh)";
     static char kmsg[80];
     const char *m = msg;
-    int i, j;
+    int i, j, vm = fault_vm;
 
+    fault_vm = 0;
     hex4(cs, msg + 5);
     hex4(ip, msg + 10);
     hex4(err, msg + 27);
@@ -3232,8 +3341,8 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         m = pf;
     }
 
-    if ((cs & 3) == 3 && current >= 0) {
-        /* Fehler in einer Anwendung: nur dieses Programm beenden */
+    if (((cs & 3) == 3 || vm) && current >= 0) {
+        /* Fehler in einer Anwendung oder DOS-Box: nur sie beenden */
         tmsg(current, "\n", task[current].name, ": ");
         tmsg(current, exc_name(vec), m, "\nProgramm abgebrochen.\n");
         task[current].rc = 255;
@@ -5017,6 +5126,7 @@ void kmain(void)
     mem_init((KDATA_LIN + kdata_size + MEM_PAGE - 1) >> 12,
              (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb);
     paging_init();                      /* 1:1, Seitentabellen aus mem   */
+    tss_k.cr3 = paging_cr3();           /* (die CPU schreibt CR3 nie zurueck) */
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */

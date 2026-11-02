@@ -2432,13 +2432,7 @@ static int run_program(char *cmd, int sync, int call)
         errorlevel = 1;                 /* fuer ||                      */
         return 1;
     }
-    if (type == 3) {
-        for (i = 0; path[i]; i++)
-            path[i] = up(path[i]);
-        puts(base_name(path));
-        puts(" ist ein MS-DOS-Programm und l\x84uft nicht unter AT-DOS.\n");
-        return 1;
-    }
+    /* type 3 (.COM): der Kernel startet es in einer DOS-Box (6.0) */
     if (type == 2 && sync == 1) {
         r = run_batch(path, args);
         if (bdepth > 0 && !call)

@@ -14,6 +14,7 @@ cpu 386
 
 KCODE   equ 0x08
 KDATA   equ 0x10
+KCODE2  equ 0x1C8                       ; zweites Codesegment (kern.h)
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16
@@ -38,6 +39,7 @@ extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
+extern v86_exc_, _fault_vm
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -445,14 +447,21 @@ sanitize_sel:
 .ok:    ret
 
 ; ---------------------------------------------------------------------------
-; Ausnahmen 0-16 (286) und Hardware-Interrupts
+; Ausnahmen 0-16 und Hardware-Interrupts
+; Seit 6.0 sind alle Gates 386-Interrupt-Gates (32-Bit-Rahmen, IRETD): nur
+; solche Gates fuehren aus dem V86-Modus der DOS-Boxen in den Kernel. Der
+; Code bleibt 16 Bit (use16). Rahmen der CPU, von unten nach oben:
+;   EIP, CS, EFLAGS (je 4 Byte), bei Ringwechsel ESP, SS, aus V86 zusaetzlich
+;   ES, DS, FS, GS (die CPU hat dann DS/ES/FS/GS genullt). Handler, die C
+;   rufen, sichern mit PUSHAD: Programme in den Boxen benutzen 32-Bit-
+;   Register, und Kernelteile (pragma aux) auch.
 %macro EXC 1
-exc%1:  push    word 0
+exc%1:  push    dword 0
         push    word %1
         jmp     exc_common
 %endmacro
 %macro EXC_ERR 1
-exc%1:  push    word %1
+exc%1:  push    word %1                 ; Fehlercode (4 Byte) liegt schon
         jmp     exc_common
 %endmacro
 
@@ -469,7 +478,7 @@ EXC_ERR 10
 EXC_ERR 11
 EXC_ERR 12
 EXC_ERR 13
-EXC_ERR 14                              ; 386: #PF mit Fehlercode
+EXC_ERR 14                              ; #PF, Adresse in CR2
 EXC 15
 EXC 16
 
@@ -477,7 +486,7 @@ EXC 16
 ; jedem Hardware-Taskwechsel MSW.TS). fpu_nm tauscht den 287-Zustand aus
 ; und gibt 0 zurueck - dann wird der Befehl wiederholt; sonst (kein 287)
 ; wie jede andere Ausnahme.
-exc7:   pusha
+exc7:   pushad
         push    ds
         push    es
         mov     ax, KDATA
@@ -488,23 +497,48 @@ exc7:   pusha
         pop     es
         pop     ds
         test    ax, ax
-        popa
+        popad
         jnz     .fault
-        iret
-.fault: push    word 0
+        iretd
+.fault: push    dword 0
         push    word 7
         jmp     exc_common
 
-; Stack: [vec] [err] [ip] [cs] [flags] ...
+; Stack: [vec] [err 4] [eip 4] [cs 4] [eflags 4] ...
+; Aus einer DOS-Box (EFLAGS.VM): erst der V86-Monitor (v86.c); kann er die
+; Ausnahme erledigen (privilegierter Befehl, INT n, Dienst), geht es mit
+; IRETD in die Box zurueck. Sonst wie bei Programmen: fault() beendet sie.
 exc_common:
+        push    bp                      ; BP gehoert noch dem Unterbrochenen
         mov     bp, sp
+        test    byte [bp+18], 2         ; EFLAGS Bit 17 = VM
+        pop     bp
+        jz      .pm
+        pushad                          ; Register der Box (fuer den Monitor)
+        push    ds
+        push    es
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        cld
+        mov     ax, sp                  ; -> struct v86_frame
+        call    KCODE2:v86_exc_         ; (Rahmen) -> 0 erledigt
+        mov     [_fault_vm], al
+        pop     es
+        pop     ds                      ; DS ist jetzt 0 (aus V86): ueber SS
+        popad
+        cmp     byte [ss:_fault_vm], 0
+        jne     .pm
+        add     sp, 6                   ; Vektor + Fehlercode
+        iretd
+.pm:    mov     bp, sp
         mov     ax, KDATA
         mov     ds, ax
         mov     es, ax
         mov     ax, [bp+0]              ; Vektor
         mov     dx, [bp+2]              ; Fehlercode
-        mov     bx, [bp+6]              ; CS
-        mov     cx, [bp+4]              ; IP
+        mov     bx, [bp+10]             ; CS
+        mov     cx, [bp+6]              ; IP
         call    fault_                  ; kehrt nicht zurueck
         jmp     halt_forever_
 
@@ -534,28 +568,33 @@ irq0:
         ; Scheduler wechseln - es haelt nie die Kernelsperre, und alle
         ; anderen Tasks stehen an ihren normalen Wartepunkten. Im Kernel
         ; (Ring 0) wird nie unterbrochen, erst beim Ruecksprung (FAPI).
-        ; Stack: [ds] [ax] [ip] [cs] [flags] ...
+        ; Ebenso aus einer DOS-Box (V86, CS sagt dann nichts ueber den Ring).
+        ; Stack: [ds] [ax] [eip 4] [cs 4] [eflags 4] ...
         push    bp
         mov     bp, sp
-        test    byte [bp+8], 3
-        pop     bp
-        jz      .ret
-        pusha
+        test    byte [bp+16], 2         ; VM
+        jnz     .pre
+        test    byte [bp+10], 3
+        jz      .nopre
+.pre:   pop     bp
+        pushad
         push    es
         mov     ax, ds
         mov     es, ax
         cld                             ; das Programm kann DF gesetzt haben
         call    preempt_
         pop     es
-        popa
+        popad
+        jmp     .ret
+.nopre: pop     bp
 .ret:
         pop     ds
         pop     ax
-        iret
+        iretd
 
 ; IRQ 6: Diskettencontroller fertig - Flag setzen, wartenden Task wecken
 irq6:
-        pusha
+        pushad
         push    ds
         push    es
         mov     ax, KDATA
@@ -567,12 +606,12 @@ irq6:
         out     0x20, al
         pop     es
         pop     ds
-        popa
-        iret
+        popad
+        iretd
 
 ; IRQ 1: Tastatur
 irq1:
-        pusha
+        pushad
         push    ds
         push    es
         mov     ax, KDATA
@@ -590,14 +629,14 @@ irq1:
         out     0x20, al
         pop     es
         pop     ds
-        popa
-        iret
+        popad
+        iretd
 
 ; IRQs fuer Treiber (DevHlp SetIRQ): Tabelle irq_hoff/irq_hcs/irq_hds,
 ; Routine fern mit DS = Treiberdaten, AX = IRQ, danach EOI. Interrupt-Gate:
 ; IF bleibt aus, Verschachtelung gibt es nicht (ic_ptr darf global sein).
 %macro IRQ 1
-irq%1:  push    ax
+irq%1:  pushad
         mov     ax, %1
         jmp     irq_common
 %endmacro
@@ -627,21 +666,18 @@ irq13:  push    ax
         pop     ax
         push    bp
         mov     bp, sp
-        test    byte [bp+4], 3          ; CS des Unterbrochenen
-        pop     bp
+        test    byte [bp+12], 2         ; aus einer DOS-Box (VM)?
+        jnz     .user
+        test    byte [bp+6], 3          ; CS des Unterbrochenen
         jz      .kern
-        push    word 0
+.user:  pop     bp
+        push    dword 0
         push    word 16
         jmp     exc_common
-.kern:  iret
+.kern:  pop     bp
+        iretd
 
-irq_common:
-        push    bx
-        push    cx
-        push    dx
-        push    si
-        push    di
-        push    bp
+irq_common:                             ; PUSHAD liegt schon (irqN)
         push    ds
         push    es
         mov     bx, KDATA
@@ -688,14 +724,8 @@ irq_common:
 .m:     out     0x20, al
 .out:   pop     es
         pop     ds
-        pop     bp
-        pop     di
-        pop     si
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax
-        iret
+        popad
+        iretd
 
 ; IRQ 2 (Kaskade): maskiert, nur fuer den Fall der Faelle
 irq_other:
@@ -704,7 +734,7 @@ irq_other:
         out     0xA0, al
         out     0x20, al
         pop     ax
-        iret
+        iretd
 
 ; ---------------------------------------------------------------------------
 ; Hilfsroutinen fuer C

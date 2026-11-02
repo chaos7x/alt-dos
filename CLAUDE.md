@@ -43,7 +43,7 @@ werden – HTTP 403 –, der Nutzer legt ihn in GitHub an).
 auf PCI-Maschinen, steckt in seiner 486) -> Phase 1 Speicher (E820h,
 4-KB-Seiten, Paging 1:1; erledigt) -> Phase 2 präemptiv (erledigt) +
 NCR8XX mit IRQ (erledigt)
--> Phase 3 DOS-Boxen (V86; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
+-> Phase 3 DOS-Boxen (Stufe 1 V86-Grundlage erledigt; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
 Redirector auf die AT-DOS-Laufwerke, vom Nutzer gewählt; später echtes
 MS-DOS aus Abbildern) -> Phase 4 EMS/XMS/DPMI, virtuelle VGA und SB,
 mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
@@ -192,7 +192,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`).
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
   ersten Segments nur über Fern-Thunks (`kernel/k2thunk.c`, umgelenkt per
   `#define` in `kernel/k2.h` – k2.h als letztes Include!), Ports und
@@ -1438,6 +1438,61 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bleibt ohne CACHE= bei 1 MB (dynamischer Cache = freier Speicher kommt
   später). Damit ist Phase 1 fertig; nächste Phase 2
   (präemptiv, Sperren je Gerät, asynchrone Plattenzugriffe).
+- DOS-Boxen, Phase 3 Stufe 1 erledigt (in QEMU geprüft): Grundlage V86.
+  Umbau des Kerns dafür: (1) **Kernel-Alias**: paging.c trägt jede
+  Seitentabelle zusätzlich bei Verzeichniseintrag 512+i ein (physisch
+  ab linear 80000000h = `KALIAS`), `alias_on()` rechnet danach alle
+  Speicherdeskriptoren der GDT um (Gates nicht) und lädt GDTR/IDTR neu,
+  `put_desc` addiert KALIAS selbst, sobald `k_alias` gesetzt ist,
+  `desc_base` zieht ihn ab. Physische Adressen (`buf_phys`, DMA) bleiben
+  physisch. Linear 0–4 MB gehört damit frei der laufenden Box.
+  Lehre: LGDT/LIDT im 16-Bit-Code laden nur 24 Bit Basis – Präfix 66h
+  nötig (`k2_lgdt`), sonst bleibt die GDT bei 0002xxxxh. (2) **Alle TSS
+  386** (`struct tss386` in kern.h, 104 Byte, `tss_init`, `ACC_TSS`
+  89h): CR3 je Task (die CPU lädt es beim Wechsel, schreibt es aber nie
+  zurück – deshalb auch `tss_k.cr3` nach paging_init setzen), iomap
+  hinter der Grenze (jeder Port aus Ring 3/V86 = #GP). (3) **Alle Gates
+  386-Interrupt-Gates** (8Eh): nur sie führen aus V86 in den Kernel.
+  Rahmen 32 Bit (EIP, CS, EFLAGS je 4 Byte, aus V86 dazu ESP, SS, ES,
+  DS, FS, GS), alle Handler enden mit IRETD, sichern mit PUSHAD (Programme
+  in Boxen nutzen 32-Bit-Register). irq0/irq13 prüfen „aus Ring 3“ jetzt
+  als EFLAGS.VM oder CS-RPL 3. EXC legt einen 4-Byte-Fehlercode ab.
+  Watcom benutzt im Kernel FS/GS (sieht man im Registerabzug) – die
+  386-TSS sichern sie jetzt mit.
+  Box (`kernel/v86.c`, KTEXT2): .COM -> `load_com` (kernel.c; COMMAND
+  lehnt .COM nicht mehr ab), `v86_create`: Seitenverzeichnis (0 = eigene
+  Tabelle, ab 512 wie der Kernel), Seitentabelle mit 640 KB eigenen
+  Seiten (einzeln, nicht zusammenhängend), ROM C0000–FFFFF 1:1 nur
+  lesen, A0000–BFFFF fehlt (Stufe 2), eigene Seite F0000 mit Stummeln
+  „ARPL n; IRET“ je Vektor (ARPL ist in V86 #UD -> Dienst n, wie die
+  BIOS-Haken von Windows 386), HMA = Umlauf auf 0–64 KB. PSP bei
+  1000:0000 (Befehlszeile mit Leerzeichen vorn wie DOS), TSS mit VM|IF,
+  IOPL 0. Monitor `v86_exc` aus exc_common (EFLAGS.VM): #GP -> CLI/STI/
+  PUSHF(D)/POPF(D)/INT n/INT3/INTO/IRET(D)/HLT/IN/OUT/INS/OUTS mit
+  Präfixen, virtuelles IF/IOPL/NT in `vfl[t]`; INT n über die IVT der
+  Box, zeigt der Vektor noch auf den Stummel, gleich den Dienst (ein
+  Trap statt drei); #DE/#DB/INT3/INTO/BOUND in die IVT der Box; sonst
+  (#PF, unbekannter Befehl) beendet `fault()` die Box (`fault_vm`).
+  Dienste über die Sitzung des Tasks (`box_ctl` in kernel.c für Task,
+  Sitzung, Schlafen, Ende). Box-Speicher über das rohe Fenster `VWIN`
+  (Basis ohne Alias, nur im Kontext der Box gültig). `v86_destroy`
+  schaltet auf das CR3 des Kernels um, wenn die Box sich selbst beendet,
+  bevor ihr Seitenverzeichnis frei wird.
+  Lehren: in exc_common erst PUSHAD, dann BP setzen (sonst verliert die
+  Box BP); nach `pop ds` ist DS = 0 (aus V86 genullt) – QEMU liest dann
+  ohne #GP aus linear 0 der Box, echte CPUs lösen #GP aus: danach nur
+  über SS zugreifen. Geprüft: HALLO (Ausgabe, IF, eigener INT 60h,
+  32-Bit-Register über Taktinterrupts, Befehlszeile, ERRORLEVEL 5), zwei
+  Boxen mit Rechenschleife gleichzeitig in eigenen Sitzungen (COMMAND
+  bleibt bedienbar, Strg+C beendet je eine, Speicher kommt ganz zurück),
+  #PF auf B800 und `mov eax,cr0` beenden nur die Box; Regression XCOPY
+  IDE <-> NCR8XX, CHKDSK, GRAFIK 12, SHUTDOWN, fsck sauber; isapc 2 MB,
+  512 MB, alle Vergaben über 256 MB. Erstes Codesegment jetzt 63,3 KB –
+  vor weiterem Code Seltenes nach KTEXT2 verschieben. Offen: MEM zählt
+  Box-Speicher unter „BIOS, Boot, Puffer“.
+  Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
+  den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
+  (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

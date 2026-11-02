@@ -34,7 +34,9 @@
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
 #define KCODE2      0x1C8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
-#define NGDT        (KCODE2_IDX + 1)
+#define VWIN_IDX    (KCODE2_IDX + 1) /* Fenster in den Speicher einer DOS-Box */
+#define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
+#define NGDT        (KCODE2_IDX + 2)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -55,6 +57,24 @@ struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; uns
 #define ACC_KDATA   0x92
 
 extern struct desc gdt[];
+
+/* Kernel-Alias (6.0, fuer die DOS-Boxen): Nach dem Einschalten des Pagings
+   sieht der Kernel den physischen Speicher ab linear KALIAS (Seitenver-
+   zeichnis 512+i = i). Alle Deskriptoren (GDT, LDTs) bekommen KALIAS +
+   physische Adresse; put_desc rechnet das selbst um, sobald k_alias
+   gesetzt ist. Der lineare Bereich 0-4 MB gehoert damit frei der
+   jeweiligen DOS-Box (eigenes erstes MB, eigenes CR3), der Kernel
+   erreicht GDT, IDT, TSS, Stacks und Daten in jedem Adressraum. */
+#define KALIAS      0x80000000UL
+extern unsigned char k_alias;
+
+/* 386-TSS fuer alle Tasks (CR3 je Task, V86 fuer die DOS-Boxen) */
+struct tss386 {
+    unsigned long link, esp0, ss0, esp1, ss1, esp2, ss2, cr3, eip, eflags;
+    unsigned long eax, ecx, edx, ebx, esp, ebp, esi, edi;
+    unsigned long es, cs, ss, ds, fs, gs, ldt;
+    unsigned short trap, iomap;
+};
 
 void set_desc(int idx, unsigned long base, unsigned limit, unsigned char acc);
 void scratch_map(unsigned long base, unsigned limit);
@@ -185,9 +205,22 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
-/* paging.c (KTEXT2): Seitentabellen 1:1, CR0.PG */
+/* paging.c (KTEXT2): Seitentabellen 1:1 und Alias ab KALIAS, CR0.PG */
 unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);
+unsigned long __far paging_cr3(void);          /* Seitenverzeichnis des Kernels */
+
+/* v86.c (KTEXT2): DOS-Boxen (V86) */
+struct v86_frame;
+unsigned long __far v86_create(int t, unsigned kb);    /* -> CR3, 0 = kein Speicher */
+void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n);
+void __far v86_destroy(int t);
+unsigned __far v86_exc(struct v86_frame *f);           /* 0 = erledigt  */
+int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c */
+#define BOX_TASK    0                   /* -> current                   */
+#define BOX_SESSION 1                   /* -> Sitzung von current        */
+#define BOX_SLEEP   2                   /* a Takte schlafen              */
+#define BOX_EXIT    3                   /* Box beenden, Rueckgabewert a  */
 
 /* bus.c (KTEXT2): PCI und Belegungsliste */
 struct fapi_pcidev;

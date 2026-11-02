@@ -252,13 +252,26 @@ und PC-DOS.
 - Paging (6.0): der Kernel bildet beim Start allen RAM 1:1 über
   Seitentabellen ab und schaltet den Seitenmechanismus des 386 ein –
   Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen
-  Speicher; ein Seitenfehler meldet die Adresse
+  Speicher; ein Seitenfehler meldet die Adresse. Der Kernel selbst sieht
+  den Speicher ab 2 GB (Alias), so gehört der Bereich 0–4 MB frei der
+  jeweiligen DOS-Box
 - präemptiver Scheduler (6.0) mit Hardware-Taskwechsel (`JMP` auf TSS):
   der Takt-Interrupt unterbricht ein Programm nach seiner Zeitscheibe
   (50 ms), auch wenn es nur rechnet; im Kernel wird nicht unterbrochen,
   gewechselt wird beim Rücksprung ins Programm (wie OS/2 1.x). Test:
   `\DEMO\BUSY [Runden] [/W]` rechnet ohne FAPI-Aufrufe – andere Sitzungen
   bleiben bedienbar, Strg+C bricht ab
+- DOS-Boxen (6.0, Phase 3 Stufe 1: Grundlage): ein `.COM`-Programm
+  läuft im V86-Modus des 386 in einer eigenen virtuellen Maschine – mit
+  eigenem erstem MB (640 KB, eigenes Seitenverzeichnis), präemptiv wie
+  jedes Programm, geschützt: ein Absturz beendet nur die Box. Ein Monitor
+  im Kernel führt privilegierte Befehle nach (CLI/STI/PUSHF/POPF mit
+  virtuellem IF, INT n über die Vektortabelle der Box, IRET, HLT;
+  Portzugriffe verpuffen noch) und bietet erste BIOS-/DOS-Dienste über
+  die Sitzung (INT 10h Zeichen, INT 16h Tastatur, INT 21h Zeichen/Text/
+  Handle 1–2/Vektoren/Version/Ende). Bildschirmspeicher, Zeitgeber und
+  ein DOS-Kern (FreeDOS) in der Box folgen. Test: `\DEMO\HALLO [Text] [/W]`
+  (auch unter MS-DOS lauffähig), mit `START HALLO.COM` in eigener Sitzung
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
   287-Zustand, getauscht erst, wenn ein anderes Programm wirklich rechnet

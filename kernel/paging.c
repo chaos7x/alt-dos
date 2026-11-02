@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * AT-DOS 6.0 - Paging (Phase 1b: 1:1)
+ * AT-DOS 6.0 - Paging (1:1 und Kernel-Alias)
  *
  * Der 386 uebersetzt lineare Adressen ueber ein Seitenverzeichnis und
  * Seitentabellen (je 1024 Eintraege zu 4 Byte, eine Tabelle deckt 4 MB).
@@ -11,9 +11,16 @@
  * nicht vorhanden/nur lesen), DOS-Boxen (V86 braucht je Box ein eigenes
  * erstes MB) und virtuellen Speicher ist da.
  *
- * Die 286-TSS der Tasks enthalten kein CR3: alle Tasks teilen sich ein
- * Seitenverzeichnis. Seiten tragen U/S = 1 und R/W = 1; geschuetzt wird
- * vorerst weiter ueber die Segmente.
+ * Alle Tasks teilen sich dieses Seitenverzeichnis (CR3 in ihrem 386-TSS),
+ * nur DOS-Boxen haben ein eigenes (v86.c). Seiten tragen U/S = 1 und
+ * R/W = 1; geschuetzt wird vorerst weiter ueber die Segmente.
+ *
+ * Alias (Phase 3): Eintraege 512+i des Seitenverzeichnisses zeigen auf
+ * dieselben Seitentabellen wie i - der Speicher erscheint ein zweites Mal
+ * ab linear KALIAS (80000000h). Danach rechnet paging_init alle
+ * Deskriptoren der GDT dorthin um (put_desc tut es fuer alle spaeteren)
+ * und laedt GDTR/IDTR neu. Die Boxen uebernehmen die Eintraege ab 512,
+ * der Kernel laeuft also in jedem Adressraum gleich.
  *
  * Laeuft im zweiten Codesegment (KTEXT2), nur beim Start.
  */
@@ -33,6 +40,56 @@ static void pg_enable(unsigned lo, unsigned hi);
     "mov eax,cr0" "or eax,80000000h" "mov cr0,eax" \
     "db 0EBh, 0" \
     __parm [__ax] [__dx] __modify [__ax __dx];
+
+static void k2_lgdt(unsigned short *p);
+#pragma aux k2_lgdt = 0x66 0x0F 0x01 0x17 __parm [__bx];    /* o32 lgdt [bx] */
+static void k2_lidt(unsigned short *p);
+#pragma aux k2_lidt = 0x66 0x0F 0x01 0x1F __parm [__bx];    /* 32 Bit Basis */
+/* DS, ES, SS neu aus der GDT laden (Basis jetzt im Alias) */
+static void k2_reload(void);
+#pragma aux k2_reload = "mov ax,ds" "mov ds,ax" "mov es,ax" "mov ax,ss" \
+    "mov ss,ax" __modify [__ax];
+
+extern unsigned short gdtr[3], idtr[3];
+
+static void add_alias(unsigned short *r)
+{
+    unsigned long b = (r[1] | ((unsigned long)r[2] << 16)) + KALIAS;
+    r[1] = (unsigned short)b;
+    r[2] = (unsigned short)(b >> 16);
+}
+
+/* alle Speicherdeskriptoren der GDT (Code, Daten, TSS, LDT; keine Gates)
+   in den Alias verschieben */
+static void alias_on(void)
+{
+    struct desc *d;
+    unsigned i, f, a;
+    unsigned long b;
+
+    f = irq_off();
+    for (i = 1; i < NGDT; i++) {
+        d = &gdt[i];
+        a = d->access;
+        if (!(a & 0x80))
+            continue;
+        if (!(a & 0x10) && (a & 0x0F) != 1 && (a & 0x0F) != 2 &&
+            (a & 0x0F) != 3 && (a & 0x0F) != 9 && (a & 0x0F) != 11)
+            continue;                           /* Gate                  */
+        b = (d->base_lo | ((unsigned long)d->base_hi << 16) |
+             ((unsigned long)(d->rsv & 0xFF00) << 16)) + KALIAS;
+        d->base_lo = (unsigned short)b;
+        d->base_hi = (unsigned char)(b >> 16);
+        d->rsv = (d->rsv & 0x00FF) | (unsigned short)((b >> 16) & 0xFF00);
+    }
+    k_alias = 1;
+    add_alias(gdtr);
+    add_alias(idtr);
+    k2_lgdt(gdtr);
+    k2_lidt(idtr);
+    k2_reload();
+    irq_restore(f);
+}
 
 /* 32-Bit-Wert an Stelle i (Doppelworte) im Fenster sel */
 static void put32(unsigned sel, unsigned i, unsigned long v)
@@ -62,6 +119,7 @@ unsigned __far paging_init(void)
             return 0;                   /* (Seiten bleiben belegt)       */
         scratch_map(PG_LIN(pd_pg), 4095);
         put32(SCRATCH, i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);
+        put32(SCRATCH, 512 + i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);   /* Alias */
         scratch2_map(PG_LIN(pt), 4095);
         p = (pg_t)i << 10;
         for (j = 0; j < 1024; j++, p++)
@@ -70,7 +128,14 @@ unsigned __far paging_init(void)
     }
     n_pt = n;
     pg_enable((unsigned)PG_LIN(pd_pg), (unsigned)(PG_LIN(pd_pg) >> 16));
+    alias_on();
     return n;
+}
+
+/* fuer die TSS der Tasks (0: Paging aus - dann stoert CR3 nicht) */
+unsigned long __far paging_cr3(void)
+{
+    return n_pt ? PG_LIN(pd_pg) : 0;
 }
 
 unsigned __far paging_tables(void)
