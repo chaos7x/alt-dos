@@ -1004,6 +1004,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Klangbeispiele in `\DEMO` (tools/mkaudio.py, beim Bauen erzeugt):
   KLANG.WAV (Arpeggio, 11 kHz 8 Bit), ODE.MID / ODE.IMF (Ode an die
   Freude, gemeinfrei, mit Bass) – in QEMU alle drei hörbar.
+  Vom Nutzer auf dem SCAT in 86Box bestätigt: `PLAY AKKORD.WAV` (aus
+  Windows 3.1) spielt über den SB16.
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
   Offen: ISA-PnP
