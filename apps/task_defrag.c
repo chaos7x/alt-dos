@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * DEFRAG.EXE - Dateien zusammenhaengend legen (wie MS-DOS 6):
  *

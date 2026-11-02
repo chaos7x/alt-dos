@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FIND.EXE - Text in Dateien suchen, wie MS-DOS 6:
  *   FIND [/V] [/C] [/N] [/I] "Text" [Datei ...]

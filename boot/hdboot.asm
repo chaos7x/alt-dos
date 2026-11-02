@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; AT-DOS 5.0 - Bootsektor fuer FAT16-Partitionen (Festplatte)
 ;
 ; Wird vom MBR nach 0000:7C00 geladen, DL = BIOS-Laufwerk. Der BPB (Bytes

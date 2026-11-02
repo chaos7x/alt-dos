@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AT-DOS 5.0 - gemeinsame Teile von vio.c und vgagfx.c (Grafik in KCODE2)
  */

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * HEAD.EXE - Anfang von Dateien ausgeben (nach dem Vorbild von GNU head):
  *

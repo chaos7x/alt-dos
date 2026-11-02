@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * PRINT.EXE - Dateien im Hintergrund drucken (wie MS-DOS):
  *

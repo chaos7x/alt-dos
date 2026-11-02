@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UNIQ.EXE - gleiche aufeinanderfolgende Zeilen zusammenfassen (nach dem
  * Vorbild von GNU uniq; meist hinter SORT):

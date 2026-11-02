@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * DELTREE.EXE - Verzeichnis mit allem Inhalt loeschen (wie MS-DOS 6):
  *

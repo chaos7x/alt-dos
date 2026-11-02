@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Gepuffertes Lesen fuer die Textwerkzeuge (HEAD, TAIL, WC, UNIQ, TR):
  * wird per #include eingebunden, nicht gelinkt.

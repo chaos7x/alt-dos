@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE /FORMAT - FAT12/16 anlegen (eingebunden in task_ufat.c)
  *

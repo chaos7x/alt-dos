@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ISO9660.IFS - nachladbares Dateisystem fuer CD-ROMs (ISO 9660), nur lesend
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * MOVE.EXE - Dateien verschieben, Verzeichnisse umbenennen (wie MS-DOS 6):
  *

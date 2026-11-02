@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * CUT.EXE - Teile von Zeilen ausgeben, Verhalten nach dem Vorbild von
  * GNU cut (MS-DOS hatte keins; nur Bedienung nachgebaut, kein GNU-Code):

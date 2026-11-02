@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Bootsektor-Code in eine FAT16-Partition schreiben, BPB bleibt erhalten.
 
     sysboot.py ABBILD OFFSET_BYTES hdboot.bin

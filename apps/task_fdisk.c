@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FDISK.EXE - Festplatten partitionieren (wie MS-DOS 5/6)
  *

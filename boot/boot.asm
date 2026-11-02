@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; AT-DOS 5.0 - Bootsektor (1,44-MB-Diskette, FAT12)
 ;
 ; Die Diskette ist ein normales FAT12-Dateisystem. Der Kernel ist die Datei

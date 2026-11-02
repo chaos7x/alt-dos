@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * XCOPY.EXE - Dateien und Verzeichnisbaeume kopieren (wie MS-DOS 6):
  *

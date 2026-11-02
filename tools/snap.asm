@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; SNAP.COM - Testhilfe fuer den FAPI-Stub unter DOSBox-X (nasm -f bin): TSR, F12 schreibt den Textbildschirm (B800:0, 8000
 ; Byte) nach SNAPn.BIN. Haengt an INT 16h (nur sicher, wenn das Programm
 ; die Tastatur ueber das BIOS abfragt - wie der FAPI-Stub).

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * MAUSTEST.EXE - zeigt den Mauszeiger und jedes Ereignis (MouOpen,
  * MouReadEvent, MouShowPtr). Beenden mit einer Taste.

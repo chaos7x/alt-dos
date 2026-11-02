@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; DOS-Stub fuer gebundene FAPI-Programme: Einstieg und Gate (Real Mode)
 ;
 ; Steht als MZ-Programm vor dem FX-Kopf (siehe tools/mkfx.py --bind). DOS

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FAPI - Family API, Aufrufschnittstelle (AT-DOS 5.0, alternative Zeitlinie)
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Gemeinsame Hilfen fuer die Werkzeuge, siehe util.h */
 #define FAPI_NO_IMPL
 #include "fapi.h"

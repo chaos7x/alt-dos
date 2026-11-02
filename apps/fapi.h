@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FAPI fuer Anwendungen - der einzige Weg aus Ring 3 nach unten.
  * Aufruf ueber den Gate-Zeiger bei DS:0002 (siehe apps/crt0.asm): unter

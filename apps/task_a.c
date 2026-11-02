@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* TASKA: zaehlt und gibt nach jedem Durchlauf per DosYield() ab.
    Zeigt Signale: Strg+C und Herunterfahren werden abgefangen. */
 #include "fapi.h"

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * GREP.EXE - Zeilen mit einem Muster suchen, nach dem Vorbild von GNU grep
  * (nur Verhalten und Bedienung, kein GNU-Code):

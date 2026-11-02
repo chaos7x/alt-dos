@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* MEM.EXE: zeigt den Arbeitsspeicher, ueber DosMemInfo(). */
 #include "fapi.h"
 

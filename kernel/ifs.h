@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AT-DOS 5.0 - Installable File System (IFS) und Laufwerke
  *

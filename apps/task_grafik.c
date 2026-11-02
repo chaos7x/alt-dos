@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * GRAFIK.EXE - Vorfuehrung des VGA-Modus 13h (320x200, 256 Farben):
  * VioSetGfx, VioGetPhysBuf, VioSetPal. Oben alle 256 Farben, unten ein

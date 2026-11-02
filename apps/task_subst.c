@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * SUBST.EXE - Laufwerksbuchstabe fuer ein Verzeichnis (wie MS-DOS):
  *

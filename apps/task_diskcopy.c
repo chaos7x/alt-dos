@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * DISKCOPY.EXE - Diskette Spur fuer Spur kopieren (wie MS-DOS):
  *

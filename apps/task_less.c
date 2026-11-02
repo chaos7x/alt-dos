@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * LESS.EXE - Text ansehen, vor- und zurueckblaettern, nach dem Vorbild von
  * GNU less (nur Bedienung, kein GNU-Code):

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FAPIDOS - FAPI unter MS-DOS (Real Mode), Teil des gebundenen Stubs.
  *

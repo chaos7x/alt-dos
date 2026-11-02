@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * COMP.EXE - Dateien Byte fuer Byte vergleichen (wie MS-DOS):
  *

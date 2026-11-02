@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * MSD.EXE - Systemdiagnose (Aufbau wie MSD von MS-DOS 6):
  *

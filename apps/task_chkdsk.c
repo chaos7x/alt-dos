@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * CHKDSK.EXE - Datentraeger pruefen, wie MS-DOS:
  *

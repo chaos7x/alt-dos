@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE /DEFRAG - Dateien zusammenhaengend legen (eingebunden in
  * task_ufat.c), aufgerufen von DEFRAG.EXE:

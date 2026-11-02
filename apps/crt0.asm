@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; Startcode fuer FAPI-Anwendungen (Ring 3)
 ; CS, DS, ES, SS und SP sind bereits vom Kernel ueber das TSS gesetzt.
 ;

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE - Pruefprogramm fuer FAT12/FAT16, gestartet von CHKDSK.EXE
  *

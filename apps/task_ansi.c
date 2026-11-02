@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ANSI.EXE - ANSI-Folgen in der Bildschirmausgabe ein-/ausschalten
  * (wie ANSI unter OS/2; die Auswertung steckt im Kernel, FAPI VioSetAnsi):

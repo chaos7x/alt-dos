@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * MIXER.EXE - Lautstaerke der Soundkarte zeigen und einstellen
  *

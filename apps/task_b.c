@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * TASKB: fordert per DosAllocSeg() zehn Segmente zu je 64 KB an, beschreibt
  * und prueft sie, gibt die Haelfte selbst frei und beendet sich dann. Den

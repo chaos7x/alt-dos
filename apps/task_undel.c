@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UNDELETE.EXE - geloeschte Dateien wiederherstellen (wie MS-DOS 5):
  *

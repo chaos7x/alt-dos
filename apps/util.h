@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Gemeinsame Hilfen fuer die Werkzeuge (util.c wird zu jedem Programm
  * gelinkt). Kein C-Laufzeitsystem - nur das, was die Werkzeuge brauchen.

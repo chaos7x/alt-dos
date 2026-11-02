@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * CHOICE.EXE - Auswahl in Stapeldateien (wie MS-DOS 6):
  *

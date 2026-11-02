@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; AT-DOS 5.0 - Master Boot Record (nur fuer das Plattenabbild aus build.sh)
 ;
 ; Klassischer Ablauf: nach 0000:0600 verschieben, aktive Partition suchen,

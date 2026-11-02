@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AT-DOS 5.0 - physische Speicherverwaltung
  *

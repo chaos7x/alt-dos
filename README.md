@@ -557,4 +557,6 @@ Achtung: `ATSYS` überschreibt eine vorhandene `CONFIG.SYS` im Stammverzeichnis.
 
 ## Lizenz
 
-MIT, siehe [LICENSE](LICENSE).
+GPL-2.0-or-later (GNU General Public License, Version 2 oder neuer), wie
+der FreeDOS-Kernel – siehe [LICENSE](LICENSE). Jede Quelldatei trägt eine
+`SPDX-License-Identifier`-Zeile.

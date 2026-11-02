@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * FPUTEST.EXE - prueft, ob jeder Task seinen eigenen 287-Zustand hat:
  *

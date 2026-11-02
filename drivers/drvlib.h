@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Hilfen fuer Geraetetreiber: Ports, DevHlp, Anforderung, Textausgabe.
  * Treiber laufen in Ring 0 und duerfen Ports direkt ansprechen.

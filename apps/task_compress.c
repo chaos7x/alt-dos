@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * COMPRESS.EXE - Dateien ins SZDD-Format packen (Gegenstueck zu EXPAND,
  * wie COMPRESS aus den Microsoft-Entwicklerpaketen):

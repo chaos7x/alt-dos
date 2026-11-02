@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
 """Baut aus einem rohen Programmabbild eine FX-Datei mit MZ-Stub.
 
     mkfx.py [--driver] [--lfn] [--bind=DSTUB.BIN,DSTUB.MAP] STUB.BIN IMAGE.BIN

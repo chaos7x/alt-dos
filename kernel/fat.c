@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AT-DOS 5.0 - IFS-Treiber FAT (12 und 16 Bit) und IFS-Verteiler
  *

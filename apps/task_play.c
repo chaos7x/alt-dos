@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * PLAY.EXE - WAV- und VOC-Dateien abspielen (ueber FAPI_AUDIO, z. B. SB16.SYS)
  *

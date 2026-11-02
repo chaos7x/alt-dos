@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * NCR5380.SYS - SCSI-Karten mit NCR 5380 / 53C400 (ISA, ohne Busmaster)
  *

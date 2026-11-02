@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; Startcode fuer Geraetetreiber (Ring 0)
 ;
 ; Das Abbild beginnt mit struct drv_header. Der Kernel ruft die

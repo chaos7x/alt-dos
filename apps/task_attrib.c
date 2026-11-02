@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * ATTRIB.EXE - Dateiattribute anzeigen und aendern, wie MS-DOS:
  *

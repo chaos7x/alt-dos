@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * WC.EXE - Zeilen, Woerter und Bytes zaehlen (nach dem Vorbild von GNU wc):
  *

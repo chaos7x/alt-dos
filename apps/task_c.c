@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* TASKC: versucht, an der FAPI vorbei direkt in den VGA-Speicher zu schreiben. */
 #include "fapi.h"
 

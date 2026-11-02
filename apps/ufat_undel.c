@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE /UNDELETE - geloeschte Dateien wiederherstellen (eingebunden in
  * task_ufat.c), aufgerufen von UNDELETE.EXE:

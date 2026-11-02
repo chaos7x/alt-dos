@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * JOIN.EXE - Laufwerk in ein Verzeichnis einhaengen (wie MS-DOS 3.1-5.0):
  *

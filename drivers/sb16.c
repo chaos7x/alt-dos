@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * SB16.SYS - Sound Blaster (Wiedergabe und Mixer) fuer FAPI_AUDIO
  *

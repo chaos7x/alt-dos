@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; AT-DOS 5.0 - Kernel-Einstieg und Low-Level-Routinen (80286)
 ;
 ; Der Kernel besteht aus zwei Segmenten wie ein Small-Modell-Programm:

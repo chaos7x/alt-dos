@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * DISKCOMP.EXE - zwei Disketten Spur fuer Spur vergleichen (wie MS-DOS):
  *

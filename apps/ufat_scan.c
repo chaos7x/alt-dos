@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE /R - Oberflaechentest (eingebunden in task_ufat.c), wie
  * CHKDSK /R von Windows NT bzw. SCANDISK von MS-DOS 6.2: jeder Sektor des

@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; DOS-Stub fuer FAPI-Anwendungen
 ; Laeuft nur, wenn jemand das Programm unter Real-Mode-DOS startet.
 

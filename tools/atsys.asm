@@ -1,3 +1,4 @@
+; SPDX-License-Identifier: GPL-2.0-or-later
 ; ATSYS.COM - AT-DOS auf eine FAT16-Partition bringen (laeuft unter MS-DOS)
 ;
 ;   A:\>ATSYS D:

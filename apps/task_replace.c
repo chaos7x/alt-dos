@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * REPLACE.EXE - Dateien ersetzen oder hinzufuegen (wie MS-DOS):
  *

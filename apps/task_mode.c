@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * MODE.EXE - Geraete einstellen (wie MS-DOS 5/6):
  *

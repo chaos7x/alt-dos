@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * SCANDISK.EXE - fuer MS-DOS-6.2-Gewohnheit: SCANDISK [Laufwerk:] ruft
  * CHKDSK Laufwerk: /F /R auf (Dateisystem pruefen und Oberflaechentest).

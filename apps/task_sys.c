@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * SYS.EXE - AT-DOS auf einen Datentraeger uebertragen (wie MS-DOS SYS):
  *

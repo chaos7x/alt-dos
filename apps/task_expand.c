@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * EXPAND.EXE - komprimierte Dateien von Microsoft-Disketten entpacken
  * (SZDD-Format, *.EX_, *.DL_ ... wie EXPAND von MS-DOS 5/6):

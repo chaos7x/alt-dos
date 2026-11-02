@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AHA154X.SYS - Adaptec AHA-1540/1542 (ISA, Busmaster), auch BusLogic im
  *               154x-Modus und AHA-174x im Standard-Modus

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * UFAT.EXE - lange Namen pruefen (Stufe 4, eingebunden in task_ufat.c,
  * laeuft bei jedem CHKDSK nach der Baumpruefung):

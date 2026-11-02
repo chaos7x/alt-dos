@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * EDIT.EXE - Bildschirm-Editor im Stil von MS-DOS EDIT:
  *

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * AT-DOS 5.0 - VGA-Grafik der Sitzungen (13h, 12h, Mode X) und der
  * Mauszeiger in der Grafik. Aus vio.c herausgeloest; liegt im zweiten

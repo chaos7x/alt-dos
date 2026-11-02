@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * TR.EXE - Zeichen ersetzen oder loeschen (nach dem Vorbild von GNU tr),
  * von der Standardeingabe auf die Standardausgabe:

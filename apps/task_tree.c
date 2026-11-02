@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * TREE.EXE - Verzeichnisstruktur grafisch anzeigen (wie MS-DOS):
  *
