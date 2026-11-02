@@ -45,6 +45,10 @@ org 100h
         int     10h                     ; des Programms an CMD zurueck
 .cwd:   call    goto_cwd
         pop     cx
+        jcxz    .viacom
+        call    direct                  ; .COM/.EXE: ohne FreeCOM
+        jnc     .run
+.viacom:
         mov     si, t_inter             ; leer: interaktiv
         jcxz    .build
         mov     si, t_cmd
@@ -61,8 +65,9 @@ org 100h
         mov     ax, di
         sub     ax, tail + 2
         mov     [tail], al
+        mov     dx, t_comspec
 
-        mov     ax, cs                  ; Umgebung mit DOSBOX=
+.run:   mov     ax, cs                  ; Umgebung mit DOSBOX=
         mov     bx, envbuf
         mov     cl, 4
         shr     bx, cl
@@ -71,7 +76,6 @@ org 100h
         mov     [pb_tail+2], cs
         mov     [pb_fcb1+2], cs
         mov     [pb_fcb2+2], cs
-        mov     dx, t_comspec
         mov     bx, pblock
         mov     ax, 4B00h               ; FreeCOM starten und warten
         int     21h
@@ -82,6 +86,55 @@ org 100h
 .exit:  mov     ah, 1                   ; Box beenden
         int     0E0h
         int     19h                     ; (ausserhalb einer Box: Neustart)
+
+; ---- Programm direkt starten ---------------------------------------------
+; Endet das erste Wort der Befehlszeile (cmd, CX Zeichen) auf .COM oder
+; .EXE, braucht es FreeCOM nicht (93 KB laden und einrichten - auf dem
+; 386SX mehrere Sekunden): Rest als Befehlszeile nach tail, Name mit 0
+; abschliessen -> DX = Name, CF = 0. Sonst CF = 1 (.BAT ueber FreeCOM).
+direct: push    cx
+        mov     bx, cx
+        xor     bp, bp                  ; Ende des ersten Worts
+.w:     cmp     bp, bx
+        jae     .we
+        cmp     byte [cmd+bp], ' '
+        je      .we
+        inc     bp
+        jmp     .w
+.we:    cmp     bp, 5
+        jb      .no
+        mov     ax, [cmd+bp-4]          ; "." und C/E
+        mov     dx, [cmd+bp-2]          ; "OM" / "XE"
+        and     dx, 0DFDFh
+        and     ah, 0DFh
+        cmp     al, '.'
+        jne     .no
+        cmp     ah, 'C'
+        jne     .exe
+        cmp     dx, 4D4Fh               ; "OM"
+        je      .yes
+.exe:   cmp     ah, 'E'
+        jne     .no
+        cmp     dx, 4558h               ; "XE"
+        jne     .no
+.yes:   push    cs
+        pop     es
+        lea     si, [cmd+bp]            ; Rest ab dem Leerzeichen
+        mov     cx, bx
+        sub     cx, bp
+        mov     di, tail + 1
+        mov     [tail], cl
+        rep     movsb
+        mov     al, 13
+        stosb
+        mov     byte [cmd+bp], 0
+        mov     dx, cmd
+        pop     cx
+        clc
+        ret
+.no:    pop     cx
+        stc
+        ret
 
 ; ---- Laufwerk und Verzeichnis des Aufrufers (INT E0h 14h, 8.3) ----------
 ; A:/B: der AT-DOS gibt es in der Box nicht (A: ist das Startabbild)

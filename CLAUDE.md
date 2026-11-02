@@ -1649,8 +1649,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   -> 0Eh + 3Bh, A:/B: nicht (gibt es in der Box nicht). CMD: `.BAT` ist
   Typ 4 (geht an ExecPgm, nicht mehr an run_batch), `COMMAND[.COM]
   [/C x]` -> %DOSBOX% mit den Argumenten. Erstes Codesegment danach
-  62,7 KB. Offen: Programme auf A:/B: der AT-DOS, Box je Sitzung
-  wiederverwenden (FreeDOS-Start kostet jedes Mal).
+  62,7 KB. Tempo (vom Nutzer gemeldet: auf dem 386SX dauert es, bis die
+  Ausgabe kommt, auf der 486 deutlich kürzer): gezählt je HALLO-Aufruf
+  ≈ 8.400 Monitor-Traps (CLI/STI je ~1.600, INT n 3.300, IRET 1.600)
+  und 348 Sektoren vom Abbild – fast alles Start von FreeDOS/FreeCOM.
+  BOXSHELL startet `.COM`/`.EXE` jetzt direkt (4B00h, Rest der Zeile als
+  Befehlszeile, `direct`), FreeCOM nur für `.BAT`/interaktiv: 167
+  Sektoren, ≈ 6.000–6.700 Traps. Der Rest ist der FreeDOS-Start (u. a.
+  Startmeldungen über INT 10h je Zeichen). Tasten, die während des Starts
+  getippt werden, gehen an die Box und verfallen. Nächste Hebel: Box je
+  Sitzung offen halten (wie NTVDM, der eigentliche Gewinn), Kosten je
+  Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
+  Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
+  nicht nach – Zählen ist der bessere Maßstab. Offen: Programme auf A:/B:.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum
