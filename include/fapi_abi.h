@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * FAPI - Family API, Aufrufschnittstelle (AT-DOS 5.0, alternative Zeitlinie)
+ * FAPI - Family API, Aufrufschnittstelle (AT-DOS 5.0/6.0, alternative Zeitlinie)
  *
  * Anwendungen laufen in Ring 3 und haben keinen Zugriff auf Hardware,
  * I/O-Ports oder fremden Speicher. Der einzige Weg nach unten ist das
@@ -16,7 +16,7 @@
 
 #define FAPI_GATE           0x23    /* GDT-Eintrag 4, RPL 3            */
 
-#define FAPI_GETVERSION     0x00    /* -> AX = 0x0500 (Major<<8|Minor)  */
+#define FAPI_GETVERSION     0x00    /* -> AX = 0x0600 (Major<<8|Minor)  */
 #define FAPI_VIOWRTSTR      0x01    /* BX = String, CX = Zeile<<8|Spalte */
 #define FAPI_YIELD          0x02    /* CPU kooperativ abgeben           */
 #define FAPI_EXIT           0x03    /* Task beenden, BX = Rueckgabewert (0-255) */
@@ -349,7 +349,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_FIRST      0xFFF0
 
-#define FAPI_VERSION        0x0500
+#define FAPI_VERSION        0x0600
 #define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
 #define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */

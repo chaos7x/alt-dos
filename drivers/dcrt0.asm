@@ -5,7 +5,7 @@
 ; Strategieroutine fern auf: DS = Treiberdaten, ES:BX = Anforderung,
 ; SS = Kernelstack (deshalb baut Watcom die Treiber mit -zu: SS != DS).
 
-cpu 286
+cpu 386
 
 segment _TEXT  public class=CODE align=1 use16
 segment CONST  public class=DATA align=2 use16

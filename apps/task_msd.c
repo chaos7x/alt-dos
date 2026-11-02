@@ -322,7 +322,7 @@ static void summary(void)
             sum[2][d] = si.vbios_name[i];
         sum[2][d] = 0;
     }
-    ap(sum[3], "AT-DOS 5.00");
+    ap(sum[3], "AT-DOS 6.00");
     if (nbtn) {
         apn(sum[4], nbtn);
         ap(sum[4], " Tasten");

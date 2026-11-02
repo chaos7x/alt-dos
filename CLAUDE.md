@@ -20,7 +20,7 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 9 – 5.0 fertig
+## Aktueller Stand: AT-DOS 6.0 in Arbeit (`main`), 5.0 fertig (Zweig `5.x`)
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
@@ -34,24 +34,40 @@ Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
 287 je Task, CD ohne Medium „nicht bereit“, FAPI-Programme unter MS-DOS
 (gebundener Stub), gemeinsame Codesegmente (FX-Version 2), Joliet, Ton
 (SB16.SYS: digital SB 1.0–SB16/AWE, FM OPL2/OPL3, MPU-401, Mixer; PLAY,
-MIXER), Lizenz GPL-2.0-or-later. Getaggt als `v5.0`, Zweig `5.x` für
-Fehlerbehebungen; `main` wird 6.0.
-Plan (Entscheidung des Nutzers): 6.0 auf `main`;
-asynchrone Plattenzugriffe in 6.0 bauen (Sperren je Gerät statt `klock`,
-ohne 386-Abhängigkeit) und danach nach 5.x zurückübertragen. 5.1
-(Kompatibilitätsbox) zurückgestellt – die echten DOS-Boxen in 6.0 gehen vor.
+MIXER), Lizenz GPL-2.0-or-later. Zweig `5.x` = Stand 5.0 für
+Fehlerbehebungen (Tag `v5.0` konnte aus der Umgebung nicht gepusht
+werden – HTTP 403 –, der Nutzer legt ihn in GitHub an).
 
-- **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
-- **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
-  Keine 386-Präfixe (66h/67h), kein Paging, kein V86.
-- **Protected Mode, segmentiert**, Adressraum bis 16 MB.
-- **Kooperatives Multitasking.** Kein präemptiver Scheduler vor DOS 6.0.
-- **FAPI ist der einzige Weg zur Hardware.** Anwendungen laufen in Ring 3 mit
-  IOPL 0 und haben keine Selektoren auf Hardware-Speicher. Nur der Kernel
-  spricht Hardware an. Nie eine Abkürzung an der FAPI vorbei einbauen.
-- **IFS** (Installable File System) ist Teil der FAPI-Architektur. FAT12/16
-  steckt wie bei OS/2 fest im Kernel; weitere Dateisysteme (ISO 9660, das
-  DOS-6.0-Dateisystem) kommen als nachladbare `.IFS`-Treiber.
+**Plan 6.0** (vom Nutzer abgestimmt): Phase 0 Umstellung (erledigt, s. u.)
+-> **NCR8XX.SYS** (PCI-SCSI 53C8xx, vom Nutzer vorgezogen: sein Standard
+auf PCI-Maschinen, steckt in seiner 486) -> Phase 1 Speicher (E820h,
+4-KB-Seiten, Paging 1:1) -> Phase 2 präemptiv + Sperren je Gerät +
+asynchrone Plattenzugriffe (danach nach `5.x` zurück, braucht keinen 386)
+-> Phase 3 DOS-Boxen (V86; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
+Redirector auf die AT-DOS-Laufwerke, vom Nutzer gewählt; später echtes
+MS-DOS aus Abbildern) -> Phase 4 EMS/XMS/DPMI, virtuelle VGA und SB,
+mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
+APM. Jede Phase auf 386SX/2 MB in 86Box, danach 486.
+
+Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
+286-Befehle, kooperativ):
+
+- **Kernel, Treiber, IFS: 386-Befehle** (`cpu 386`, Watcom `-3`,
+  build.sh `KCFLAGS`), keine 486-Befehle (BSWAP, XADD, CMPXCHG, INVD,
+  WBINVD, INVLPG). Code bleibt 16 Bit und segmentiert; 32-Bit-Register
+  und -Portzugriffe (PCI CF8h/CFCh) sind erlaubt, 32-Bit-Code nur wo die
+  CPU ihn erzwingt (V86-Eintritt/-Austritt), als kleine Stücke.
+- **Programme bleiben 286** (`-2`, `CFLAGS`, crt0 `cpu 286`): FAPI wie in
+  5.0, sie laufen unverändert auch unter 5.x.
+- `start.asm` prüft ganz am Anfang mit 8086-Befehlen auf einen 386
+  (Flags-Bits 12–15) und hält sonst mit Meldung an.
+- Version: Titel/VER/MSD „AT-DOS 6.0“, `FAPI_VERSION` 0600h.
+- Diskettenbootsektor liest so viele Sektoren, wie `ATDOS.SYS` groß ist
+  (Dateigröße aus dem Verzeichniseintrag; vorher fest 160 = 80 KB) –
+  `ATDOS.SYS` wird nicht mehr aufgefüllt, Grenze in build.sh 448 KB
+  (Laden ab 10000h, darüber Real-Mode-Reste/EBDA).
+- **Kooperatives Multitasking** bis Phase 2, **FAPI einziger Weg zur
+  Hardware**, **IFS** wie bisher.
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.

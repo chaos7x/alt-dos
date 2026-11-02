@@ -1668,7 +1668,7 @@ static void command(int cmd)
         show_keys();
         break;
     case C_ABOUT:
-        msgbox("AT-DOS Editor 1.0", "Teil von AT-DOS 5.0", "< OK >", "O");
+        msgbox("AT-DOS Editor 1.0", "Teil von AT-DOS 6.0", "< OK >", "O");
         break;
     }
 }

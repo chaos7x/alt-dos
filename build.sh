@@ -7,7 +7,10 @@ cd "$(dirname "$0")"
 B=build
 mkdir -p $B
 
+# Programme: 286-Befehle (-2), laufen so auch unter AT-DOS 5.x;
+# Kernel, Treiber, IFS: 386 (-3) ab AT-DOS 6.0
 CFLAGS="-q -ms -2 -s -zl -zls -zp1 -d0 -ox -wx -we"
+KCFLAGS="-q -ms -3 -s -zl -zls -zp1 -d0 -ox -wx -we"
 LINK="option quiet format raw bin option offset=0 option nodefaultlibs \
       option map order clname CODE clname DATA clname BSS"
 
@@ -63,7 +66,7 @@ K2MODS="floppy vgagfx"
 for m in kernel mem floppy fat vio kbd preload vgagfx k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
-    wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
+    wcc $KCFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
 # Code (CGROUP) und Daten (DGROUP) sind getrennte Segmente: als DOS-EXE
@@ -110,7 +113,9 @@ print('  kernel: %d Bytes Datei, Code %d + %d Bytes, Daten %d Bytes mit BSS (je 
       % (len(d) - img, code, c2[1], data, nrel))
 PYEOF
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
-[ $(stat -c %s $B/kernel.bin) -le 81920 ] || { echo "FEHLER: ATDOS.SYS groesser als 80 KB"; exit 1; }
+# der Diskettenbootsektor laedt nach Dateigroesse ab 1000:0000; Platz bis
+# 80000h (darueber Real-Mode-Reste, ab 9FC00h das EBDA)
+[ $(stat -c %s $B/kernel.bin) -le 458752 ] || { echo "FEHLER: ATDOS.SYS groesser als 448 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
@@ -153,7 +158,7 @@ done
 echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
 for t in aha154x ide mouse ncr5380 sb16; do
-    wcc $CFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
+    wcc $KCFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
@@ -161,7 +166,7 @@ done
 
 echo "Dateisysteme (IFS)"
 for t in iso9660; do
-    wcc $CFLAGS -zu -fo=$B/ifs_$t.o ifs/$t.c
+    wcc $KCFLAGS -zu -fo=$B/ifs_$t.o ifs/$t.c
     wlink $LINK name $B/ifs_$t.bin option map=$B/ifs_$t.map \
           file $B/dcrt0.o file $B/ifs_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/ifs_$t.bin $B/ifs_$t.map $B/ifs_$t.ifs
@@ -177,10 +182,9 @@ dd if=$B/boot.bin of=$IMG conv=notrunc status=none
 for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
-# ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
-# auf 80 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
+# ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt
+# (der Bootsektor liest so viele Sektoren, wie die Datei gross ist)
 cp $B/kernel.bin $B/ATDOS.SYS
-truncate -s 81920 $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS

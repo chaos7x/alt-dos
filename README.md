@@ -1,7 +1,10 @@
-# alt-dos – AT-DOS 5.0, Meilenstein 9 (5.0 fertig)
+# alt-dos – AT-DOS 6.0 in Arbeit (5.0 fertig: Zweig `5.x`, Meilenstein 9)
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
-80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
+80286 Protected Mode, segmentiert, mit kooperativem Multitasking (Zweig
+`5.x`). AT-DOS 6.0 (`main`, in Arbeit) braucht einen 80386: der Kernel
+nutzt 386-Befehle und bekommt Paging, präemptives Multitasking und
+DOS-Boxen; Programme bleiben 16 Bit und laufen auf beiden. Hardware
 ist nur über die Family API (FAPI) erreichbar. „AT“ steht doppelt: für die
 Rechnerklasse, die es voraussetzt, und für die Alternative – wie bei DR-DOS
 und PC-DOS.

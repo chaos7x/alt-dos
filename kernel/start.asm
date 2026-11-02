@@ -10,7 +10,7 @@
 ; Aufrufkonvention zu C: Watcom-Registerkonvention (AX, DX, BX, CX),
 ; aufgerufene Routinen erhalten alle Register ausser AX (bzw. DX:AX).
 
-cpu 286
+cpu 386
 
 KCODE   equ 0x08
 KDATA   equ 0x10
@@ -45,7 +45,42 @@ segment _TEXT
 ..start:
 global _start
 _start:
-        ; Real Mode, vom Bootsektor bei 1000:0000 angesprungen
+        ; Real Mode, vom Bootsektor bei 1000:0000 angesprungen. AT-DOS 6.0
+        ; braucht einen 386: pruefen mit 8086-Befehlen, bevor der erste
+        ; 386-Befehl kommt (Flags-Bits 12-15: 8086 immer 1, 286 im Real
+        ; Mode immer 0, 386 setzbar)
+        pushf
+        pop     ax
+        and     ax, 0x0FFF
+        push    ax
+        popf
+        pushf
+        pop     ax
+        and     ax, 0xF000
+        cmp     ax, 0xF000
+        je      .no386
+        mov     ax, 0x7000
+        push    ax
+        popf
+        pushf
+        pop     ax
+        test    ax, 0x7000
+        jnz     .is386
+.no386: push    cs                      ; nur hier im Real Mode: Text im
+        pop     ds                      ; Codesegment lesen
+        mov     si, .msg
+.nput:  lodsb
+        test    al, al
+        jz      .nhalt
+        mov     ah, 0x0E
+        mov     bx, 0x0007
+        int     0x10
+        jmp     .nput
+.nhalt: hlt
+        jmp     .nhalt
+.msg    db 13, 10, "AT-DOS 6.0 braucht einen 80386 oder neuer.", 13, 10
+          db "Auf dem 80286 l", 0x84, "uft AT-DOS 5.x.", 13, 10, 0
+.is386:
         cli
         ; Datensegment: erster Paragraph hinter beiden Codesegmenten
         mov     ax, code_end

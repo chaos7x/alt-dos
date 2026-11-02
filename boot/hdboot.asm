@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-2.0-or-later
-; AT-DOS 5.0 - Bootsektor fuer FAT16-Partitionen (Festplatte)
+; AT-DOS 6.0 - Bootsektor fuer FAT16-Partitionen (Festplatte)
 ;
 ; Wird vom MBR nach 0000:7C00 geladen, DL = BIOS-Laufwerk. Der BPB (Bytes
 ; 3..61) gehoert dem Dateisystem: ATSYS.COM bzw. tools/sysboot.py
@@ -214,7 +214,7 @@ puts:   lodsb
 .done:  ret
 
 kname     db "ATDOS   SYS"
-msg_load  db "AT-DOS 5.0 wird geladen", 13, 10, 0
+msg_load  db "AT-DOS 6.0 wird geladen", 13, 10, 0
 msg_nokrn db "ATDOS.SYS fehlt", 0
 msg_err   db "Lesefehler", 0
 
