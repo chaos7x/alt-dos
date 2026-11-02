@@ -1389,7 +1389,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   über NCR, PLAY, GRAFIK 12 + Sitzungswechsel, SHUTDOWN, fsck sauber;
   isapc mit 2 MB. Vom Nutzer in 86Box bestätigt: 486 mit 64 MB („Paging
   an (16 Seitentabellen)“) und ASUS P3B-F mit 256 MB (255 MB frei, 64
-  Seitentabellen). Damit ist Phase 1 fertig; nächste Phase 2
+  Seitentabellen); auf dem P3B-F MEM 261.676 KB erkannt, 259.944 KB frei,
+  MSD listet alle PCI-Geräte inkl. S3 auf Bus 1 hinter der AGP-Brücke und
+  NCR 53C875 (IRQ 10). Offen (Kosmetik): BIOS-Name dort „. Awar,Copyright
+  (C) 1984-98, Award Softwa“ – `rom_str` nimmt Müll am Anfang mit; Cache
+  bleibt ohne CACHE= bei 1 MB (dynamischer Cache = freier Speicher kommt
+  später). Damit ist Phase 1 fertig; nächste Phase 2
   (präemptiv, Sperren je Gerät, asynchrone Plattenzugriffe).
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
