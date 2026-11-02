@@ -1124,6 +1124,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (SB16 PnP/AWE32 PnP, nach der Intel/Microsoft-Spezifikation), AWE32-
   Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
   virtuelle SB der DOS-Boxen in 6.0.
+- SCSI-Wechselplatten (vom Nutzer auf dem 486 gemeldet, für später):
+  ZIP ohne Medium beim Start lässt sich danach nicht mehr einlegen –
+  NCR8XX/AHA154X/NCR5380 legen eine Platte nur an, wenn READ CAPACITY
+  klappt (sonst „(nicht bereit)“, keine Einheit, kein Buchstabe). Nötig:
+  Einheit trotzdem anlegen, wenn INQUIRY Byte 1 Bit 7 (RMB) gesetzt ist
+  (Größe offen), und Wechsel erkennen wie bei der Diskette (`blk_media`,
+  neu einhängen; SCSI meldet ihn als Unit Attention 6/28h, kein Medium
+  2/3Ah -> DRV_ERR_NOTREADY). Gilt für ZIP, JAZ, MO, SyQuest.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“ (vom Nutzer zurückgestellt, DOS-Boxen in 6.0 gehen
   vor): Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
