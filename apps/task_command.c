@@ -1979,6 +1979,7 @@ static int run_batch(const char *path, const char *args)
         DosSetSigHandler(on_break, SIG_BREAK);
     }
     bdepth++;
+    ran_prog = 0;                       /* Rest eines frueheren Aufrufs */
     while (!batch_stop && batch_line(b, l)) {
         if (break_req || (ran_prog && errorlevel == 255)) {
             break_req = 0;
@@ -2012,6 +2013,8 @@ static int run_batch(const char *path, const char *args)
         }
     }
     batch_stop = 0;
+    ran_prog = 0;                       /* letzte Zeile abgebrochen: nichts
+                                           mehr zu fragen (wie MS-DOS) */
     bdepth--;
     DosFreeSeg(sel);
     while (nlocal && local_lvl[nlocal - 1] > bdepth)

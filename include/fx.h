@@ -4,7 +4,9 @@
  * Aufbau einer .EXE-Datei:
  *
  *   0000h  MZ-Kopf (64 Byte), e_lfanew bei 3Ch zeigt auf den FX-Kopf
- *   0040h  DOS-Stub: gibt unter Real-Mode-DOS eine Meldung aus und endet
+ *   0040h  DOS-Stub: gibt unter Real-Mode-DOS eine Meldung aus und endet;
+ *          gebundene Programme haben stattdessen den FAPI-Stub (stub/),
+ *          der sie unter MS-DOS ausfuehrt
  *   e_lfanew  FX-Kopf (struct fx_header), Signatur "CH"
  *   image_off Programmabbild (Code und Daten, ein Segment, ab Offset 0)
  *
@@ -24,6 +26,8 @@
 #define FX_FLAG_DRIVER  0x0001      /* Geraetetreiber (Ring 0), kein Programm */
 #define FX_FLAG_LONGNAMES 0x0002    /* kann lange Namen (wie OS/2 1.2): sonst
                                        liefern DosFindEntry/DosQCurDir 8.3 */
+#define FX_FLAG_DOS     0x0004      /* gebunden (mkfx --bind): der MZ-Stub
+                                       uebersetzt die FAPI unter MS-DOS */
 
 struct fx_header {
     char           sig[2];          /* "CH"                             */

@@ -327,7 +327,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `setlocal`/`endlocal` (Umgebung + aktuelles Verzeichnis in DosAllocSeg,
   bis 4 tief, Ende der Stapeldatei räumt auf), EXTPROC (erste Zeile),
   GOTO :EOF, Strg+C: SIG_BREAK-Handler während Stapeldateien bzw. Kind
-  mit Rückgabewert 255 -> „Stapelverarbeitung abbrechen (J/N)?“
+  mit Rückgabewert 255 -> „Stapelverarbeitung abbrechen (J/N)?“ (vor der
+  nächsten Zeile; `ran_prog` wird am Anfang und Ende jeder Stapeldatei
+  gelöscht – sonst fragte der nächste Aufruf, Fehler vom Nutzer gemeldet)
   (`batch_abort` über alle Ebenen), TRUENAME (Pfad normalisieren, SUBST
   und JOIN auflösen), BREAK/VERIFY (nur Merker), CHCP (437), CTTY
   (Handles 0–2 auf das Gerät, `read_line_tty`), KEYS ON/OFF/LIST, LH,
@@ -944,7 +946,35 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Altkompatibilität erst mit DOS 6.0/V86 vor).
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
-- Optional: DOS-Extender als Stub, damit FAPI-Programme auch unter MS-DOS laufen
+- FAPI unter MS-DOS (Wunsch des Nutzers, „EXE darf größer werden“), wie
+  die Family API von OS/2 mit BIND, erledigt: Programme rufen die FAPI
+  über `call far [2]` (apps/fapi.h, 4 Byte); crt0 beginnt mit `jmp short`
+  über den Gate-Zeiger bei Offset 2 (`dw 0, 0023h`) – crt0.o muss zuerst
+  gelinkt werden. `mkfx.py --bind=dstub.bin,dstub.map`: statt tools/
+  stub.asm kommt `stub/` davor (scrt.asm + fapidos.c, Real Mode, `-0`),
+  aufgefüllt um BSS und 1,5 KB Stack (MZ-SS:SP zeigt ans Stubende),
+  Stub-Offset 2 = Abstand zum FX-Kopf, FX-Flag `FX_FLAG_DOS`, MZ-minalloc
+  bis zum Ende des 64-KB-Programmsegments. DOS lädt den ganzen Rumpf;
+  der Stub nimmt das Abbild an Ort und Stelle (image_off - 64 ab CS),
+  verkleinert seinen Block (4Ah), nullt BSS, trägt `gate_entry` in den
+  Gate-Zeiger ein, setzt INT 23h (Strg+C nur merken) und INT 24h (ohne
+  Rückfrage „Fehler“, Code merken -> NOTREADY/WP) und springt hinein.
+  `gate_entry` wechselt auf den Stub-Stack und ruft `fapi_dos()`;
+  Signale wie im Kernel (Rahmen merken, in sig_tramp springen,
+  DosSigReturn stellt zurück). Übersetzt: Dateien (Konsole: LF -> CR LF),
+  FindEntry (fortlaufend 4Fh), QCurDir, Umgebung aus dem PSP, ExecPgm
+  (4Bh, .EXE anhängen, BG geht nicht), Kbd über INT 16h (Strg+C/Untbr ->
+  SIG_BREAK oder Ende 255), Vio direkt in B800/B000, VioSetMode(1)
+  sichert den Bildschirm, VioGetBuf als DOS-Block, Grafik über INT 10h +
+  Register (Mode X wie im Kernel), Maus INT 33h, QFSInfo (MSCDEX für CD),
+  SysInfo aus BIOS. Nicht: Sitzungen, Pipes, DASD, SUBST/JOIN, SetEnv,
+  Tastaturbelegung, Zwischenablage (liefert 0). `BINDAPPS` in build.sh.
+  Geprüft in DOSBox (Textwerkzeuge mit Umleitung; DOSBox-Shell kann keine
+  `|`, ATTRIB ist dort ein interner Befehl) und DOSBox-X mit `autotype`
+  und `tools/snap.asm` (TSR: F12 schreibt B800 nach SNAPn.BIN, Anzeige
+  `tools/snapshow.py`): EDIT, FM (Betrachter, Befehlszeile über COMSPEC),
+  LESS, GRAFIK in allen drei Modi. Unter AT-DOS unverändert.
+  Strg+C und Maus unter DOS noch nicht geprüft.
 - Lange Namen auf FAT – Entscheidung des Nutzers: Bonus, erst wenn 5.0 alle
   nötigen Funktionen hat, aber auf jeden Fall vor der DOS-Box von 5.1.
   Reihenfolge also: 5.0 komplett -> lange Namen -> 5.1 (Kompatibilitätsbox).
@@ -1065,7 +1095,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dazwischen; zwei gleichzeitig (Stapeldatei mit `start fputest 100
   300000 /w` + `fputest 7 300000`) – Gegenprobe ohne Tausch meldet FEHLER
   bei Schritt 1. `/E`: 1/0 mit unmaskierter Ausnahme -> Abbruch, 287 geht
-  danach weiter. Auf dem SCAT (echter 287XL) noch zu bestätigen.
+  danach weiter. Vom Nutzer auf dem SCAT (287XL) bestätigt: 300.000
+  Schritte OK, `/e` dreimal hintereinander jeweils #MF. QEMU löst IRQ 13
+  nur beim ersten Mal aus (IGNNE nach dem Schreiben auf F0h) – Eigenheit
+  von QEMU, nicht des Kernels. Auf dem 286 dauern 300.000 Schritte
+  einige Minuten.
 - Dateien gleichzeitig: Leser und Schreiber schließen sich aus (FAPI_OPEN
   prüft `open_for_write`, CREATE/Anhängen `in_use`), daher können die
   Größen in den Handles nie auseinanderlaufen (geprüft: `echo >>` auf eine

@@ -278,7 +278,26 @@ schreiben und wird per #GP beendet.
 
 FAPI-Programme sind `.EXE`-Dateien mit einem MZ-Stub vorn: Unter MS-DOS
 gestartet, meldet er nur „Diese FAPI-Anwendung kann nicht im Real Mode
-ausgeführt werden.“ Dahinter folgt der FX-Kopf mit der Signatur `CH` – nach dem Vorbild von MZ,
+ausgeführt werden.“
+
+**Gebundene Programme laufen auch unter MS-DOS** – wie die Family API von
+OS/2 mit `BIND`: Statt der Meldung tragen sie den FAPI-Stub (`stub/`,
+knapp 11 KB) mit sich, der unter MS-DOS 3.1 und neuer (ab 80286) das
+Programmabbild als 64-KB-Segment zurechtlegt und jeden FAPI-Aufruf in
+DOS-, BIOS- und Maustreiber-Aufrufe übersetzt (Dateien, Verzeichnisse,
+Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
+Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
+SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
+Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
+WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB und die Demos
+GRAFIK, MAUSTEST, FPUTEST (`BINDAPPS` in build.sh, `mkfx.py --bind`).
+Unter DOS nicht möglich: Sitzungen, Pipes im Kernel, Laufwerke als Ganzes
+(CHKDSK, FORMAT, FDISK), SUBST/JOIN, lange Namen. Möglich macht es der
+Gate-Zeiger: Programme rufen die FAPI über `call far [2]`, der Zeiger am
+Anfang von crt0 zeigt unter AT-DOS auf das Call-Gate 0023:0000, unter DOS
+trägt der Stub seine Übersetzung ein.
+
+Dahinter folgt der FX-Kopf mit der Signatur `CH` – nach dem Vorbild von MZ,
 den Initialen von Mark Zbikowski (siehe `include/fx.h`), mit
 Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die

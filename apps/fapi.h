@@ -1,5 +1,7 @@
 /*
  * FAPI fuer Anwendungen - der einzige Weg aus Ring 3 nach unten.
+ * Aufruf ueber den Gate-Zeiger bei DS:0002 (siehe apps/crt0.asm): unter
+ * AT-DOS 0023:0000, unter MS-DOS die Uebersetzungsschicht des Stubs.
  */
 #ifndef FAPI_H
 #define FAPI_H
@@ -9,7 +11,7 @@
 unsigned short fapi_call(unsigned short fn, unsigned short a1,
                          unsigned short a2, unsigned short a3);
 #pragma aux fapi_call = \
-    0x9A 0x00 0x00 0x23 0x00    /* call far 0023:0000 (FAPI-Gate) */ \
+    0xFF 0x1E 0x02 0x00         /* call far [2]: Gate-Zeiger aus crt0 */ \
     __parm [__ax] [__bx] [__cx] [__dx] \
     __value [__ax] \
     __modify [__ax];

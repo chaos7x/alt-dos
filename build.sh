@@ -124,14 +124,24 @@ for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
           file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true
 done
 
+echo "DOS-Stub mit FAPI-Uebersetzung (stub/)"
+nasm -f obj stub/scrt.asm -o $B/scrt.o
+wcc -q -ms -0 -s -zl -zls -zp1 -d0 -os -wx -we -fo=$B/fapidos.o stub/fapidos.c
+wlink $LINK name $B/dstub.bin option map=$B/dstub.map \
+      file $B/scrt.o file $B/fapidos.o 2>&1 | grep -v W1014 || true
+
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
+# Programme, die auch unter MS-DOS laufen (gebunden wie mit BIND bei OS/2:
+# der Stub uebersetzt die FAPI in DOS-/BIOS-Aufrufe, die .EXE wird groesser)
+BINDAPPS="more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
 LFNAPPS="command attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
+    case " $BINDAPPS " in *" $t "*) L="$L --bind=$B/dstub.bin,$B/dstub.map" ;; esac
     python3 tools/mkfx.py $L $B/stub.bin $B/task_$t.bin $B/task_$t.map $B/task_$t.exe
 done
 
