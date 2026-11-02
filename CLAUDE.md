@@ -22,6 +22,10 @@ Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
 ## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 8
 
+README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
+README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
+nachtragen, im selben Commit.
+
 Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
 Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
 Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
