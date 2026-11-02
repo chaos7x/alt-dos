@@ -340,11 +340,12 @@ static void init(void)
     p = hex(p, dev, 2);
     p = scat(p, ") an ");
     p = hex(p, io, 4);
-    if (irq && irq < 16 && !has_opt(r->args, "/NOIRQ") && set_irq(irq, ncr_irq) == 0)
-        irq_on = 1;
+    k = irq && irq < 16 ? (has_opt(r->args, "/NOIRQ") ? 2 : set_irq(irq, ncr_irq) ? 1 : 0) : 3;
+    irq_on = k == 0;
     p = scat(p, "h, IRQ ");
     p = udec(p, irq);
-    p = scat(p, irq_on ? "" : " (Abfragebetrieb)");
+    p = scat(p, k == 1 ? " belegt, Abfragebetrieb" : k == 2 ? " nicht benutzt (/NOIRQ)" :
+                k == 3 ? " ung\x81ltig, Abfragebetrieb" : "");
     p = scat(p, ", SCSI-ID ");
     p = udec(p, host);
     scat(p, "\n");
