@@ -42,7 +42,7 @@ und PC-DOS.
   verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
   bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
   16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
-  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
@@ -79,8 +79,7 @@ und PC-DOS.
 - Programmlader für das eigene FX-Format. Beim Start läuft der
   Befehlsinterpreter aus `PROTSHELL=` (Vorgabe `CMD.EXE /P`), der
   `AUTOEXEC.CMD` abarbeitet. Wie bei OS/2 gehören `.CMD`-Dateien der nativen
-  Seite, `AUTOEXEC.BAT` und `SHELL=` bleiben der DOS-Box (ab 6.0) vorbehalten;
-  `.BAT` führt CMD.EXE bis dahin trotzdem aus
+  Seite, `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören der DOS-Box
 - Der Befehlsinterpreter heißt `CMD.EXE` (bis 6.0 `COMMAND.EXE`), wie bei
   OS/2 und NT – `COMMAND.COM` gehört der DOS-Box. Eine alte CONFIG.SYS mit
   `PROTSHELL=COMMAND.EXE` startet trotzdem (der Kernel nimmt dann `CMD.EXE /P`)
@@ -290,7 +289,17 @@ und PC-DOS.
   Netzlaufwerk, über die Dateifunktionen des Kernels – auch CD, SUBST,
   JOIN): DIR, CD, MD, RD, COPY, REN, DEL, TYPE, Umleitung, Programme
   von C: starten, Dateien zum Lesen und Schreiben öffnen, kürzen und
-  verlängern. Noch nicht: `.EXE` direkt aus der Befehlszeile.
+  verlängern.
+- DOS-Programme direkt aus CMD.EXE wie bei NT: `.COM`, `.BAT` und `.EXE`
+  ohne FX-Kopf startet der Kernel in einer FreeDOS-Box in derselben
+  Sitzung (Vollbild, im aktuellen Laufwerk und Verzeichnis), CMD wartet,
+  danach steht die Ausgabe im Fenster und ERRORLEVEL ist gesetzt. Das gilt
+  für jeden Programmstart (auch START, FM, Stapeldateien). `COMMAND` bzw.
+  `COMMAND.COM` öffnet die DOS-Befehlszeile in derselben Sitzung (EXIT kehrt
+  zurück), `COMMAND /C befehl` führt einen DOS-Befehl aus. Mit
+  `DOSSTART=SESSION` in CONFIG.SYS bekommt wie bei OS/2 jedes DOS-Programm
+  eine eigene Sitzung. Noch nicht: Programme auf den Disketten A:/B: (in der
+  Box ist A: das Startabbild)
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS

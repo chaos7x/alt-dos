@@ -69,6 +69,7 @@
 #define COLS    80
 
 #include "v86int.h"
+#include "../include/fapi_abi.h"
 
 static pg_t pd_box[NTASK], pt_box[NTASK];
 static unsigned short vfl[NTASK];       /* IF/IOPL/NT der Box            */
@@ -86,6 +87,7 @@ static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbi
 static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
 
 /* Thunks (erstes Codesegment) */
+unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 int  __far kf_box_ctl(unsigned op, unsigned a);
 int  __far kf_vio_fg(void);
 int  __far kf_kbd_get(void);
@@ -1107,6 +1109,14 @@ static void svc(int n, struct v86_frame *f, int t)
                 svc_cf = 0;
         } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
+        else if (AH == 0x14) {                  /* Verzeichnis des Aufrufers */
+            static char cd[132];                /* "C:\DOS" (8.3) -> ES:DI */
+            cd[0] = 0;
+            kf_box_fapi(FAPI_QCURDIR, KDATA, (unsigned)cd, 0, 0);
+            for (i = 0; cd[i] && i < 127; i++)
+                wr8((unsigned)f->r.es, DI + i, cd[i]);
+            wr8((unsigned)f->r.es, DI + i, 0);
+        }
         else if (AH == 0x11)                    /* SDA bei DS:SI         */
             redir_sda(t, (unsigned)f->r.ds, (unsigned)f->esi);
         else if (AH == 0x12) {                  /* AT-DOS-Laufwerke      */

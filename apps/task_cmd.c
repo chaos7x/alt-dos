@@ -1687,11 +1687,12 @@ static void show_prompt(void)
 
 /* Programm suchen wie COMMAND.COM: aktuelles Verzeichnis, dann PATH; je
    Verzeichnis .EXE, .CMD, .BAT, .COM. -> 0 nicht gefunden, 1 EXE,
-   2 Stapeldatei (.CMD nativ; .BAT gehoert ab 6.0 der DOS-Box), 3 COM */
+   2 Stapeldatei (.CMD, laeuft hier), 3 COM, 4 .BAT (gehoert ab 6.0 der
+   DOS-Box: der Kernel startet sie wie .COM und DOS-.EXE dort) */
 static int find_program(const char *w, unsigned wl, char *out)
 {
     static const char *const ext[4] = { ".EXE", ".CMD", ".BAT", ".COM" };
-    static const char type[4] = { 1, 2, 2, 3 };
+    static const char type[4] = { 1, 2, 4, 3 };
     static char dir[FAPI_PATHLEN];
     const char *pp = 0;
     unsigned i, k, n, dl = 0;
@@ -2429,12 +2430,19 @@ static int run_program(char *cmd, int sync, int call)
     for (wl = 0; cmd[wl] && cmd[wl] != ' '; wl++)
         ;
     type = find_program(cmd, wl, path);
+    if (type == 0 && (same(cmd, "COMMAND") || same(cmd, "COMMAND.COM")) &&
+        DosGetEnv("DOSBOX", path, sizeof(path)) != FAPI_ERROR) {
+        type = 1;                       /* DOS-Befehlsinterpreter: Box  */
+        if (args[0] == '/' && up(args[1]) == 'C' && args[2] == ' ')
+            args = skip(args + 3);      /* COMMAND /C x = Box mit x     */
+    }
     if (type == 0) {
         puts("Befehl oder Dateiname nicht gefunden.\n");
         errorlevel = 1;                 /* fuer ||                      */
         return 1;
     }
-    /* type 3 (.COM): der Kernel startet es in einer DOS-Box (6.0) */
+    /* type 3/4 (.COM, .BAT) und DOS-.EXE: der Kernel startet sie in
+       einer DOS-Box (6.0) */
     if (type == 2 && sync == 1) {
         r = run_batch(path, args);
         if (bdepth > 0 && !call)

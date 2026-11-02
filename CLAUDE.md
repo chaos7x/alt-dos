@@ -1633,7 +1633,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Name, Haupt-, Nebenversion, 0 = Ende) resident ab, Zeiger in LoL+37h –
   FreeDOS wertet sie beim EXEC aus (task.c `SetverGetVersion`). BOXSHELL
   gibt FreeCOM eine Umgebung mit `DOSBOX=X:\DOS\BOX\FREEDOS.IMG` mit.
-  Nächster Schritt: `.EXE`/`.BAT` aus CMD.EXE über `BOXSHELL /C`.
+  Start aus CMD.EXE erledigt (in QEMU geprüft: HALLO, eine DOS-.EXE
+  (MZ ohne FX), .BAT, ERRORLEVEL 5/7 kommt an, `COMMAND` interaktiv im
+  aktuellen Verzeichnis, DOSSTART=SESSION; FX-Programme, gebundene und
+  .CMD weiter nativ): kernel.c `dos_kind()` (.COM, .BAT, .EXE ohne
+  FX-Signatur „CH“ bei e_lfanew) -> `load_dos()`: Befehlszeile der Box =
+  8.3-Pfad (`ifs_namepath(..., 1)`) + Argumente, `load_img` von
+  `X:\DOS\BOX\FREEDOS.IMG` des Startlaufwerks (fehlt es, ein .COM wie
+  früher in der nackten Box über `load_com`). Gilt für jedes ExecPgm,
+  also auch START/FM. `DOSSTART=SESSION` (`dos_session`): EXEC_SYNC wird
+  für DOS-Programme (`dos_cmd`) zu EXEC_ASYNC. BOXSHELL: bei /C erst
+  INT 10h 0003h (sonst gäbe `v86_replay` die FreeDOS-Startmeldungen an
+  CMD zurück), dann INT E0h 14h (QCURDIR des Box-Tasks, der Laufwerk und
+  Verzeichnis vom Aufrufer erbt; 8.3, weil die Box kein LFN-Merker hat)
+  -> 0Eh + 3Bh, A:/B: nicht (gibt es in der Box nicht). CMD: `.BAT` ist
+  Typ 4 (geht an ExecPgm, nicht mehr an run_batch), `COMMAND[.COM]
+  [/C x]` -> %DOSBOX% mit den Argumenten. Erstes Codesegment danach
+  62,7 KB. Offen: Programme auf A:/B: der AT-DOS, Box je Sitzung
+  wiederverwenden (FreeDOS-Start kostet jedes Mal).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

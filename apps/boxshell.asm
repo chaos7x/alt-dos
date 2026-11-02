@@ -14,7 +14,8 @@
 ; Zeichen, ohne Null) -> CX = Laenge; AH=01h Box beenden, AL = Rueckgabe-
 ; wert; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis);
 ; AH=11h SDA ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke;
-; AH=13h -> AL = Startlaufwerk der AT-DOS (0 = A:).
+; AH=13h -> AL = Startlaufwerk der AT-DOS (0 = A:); AH=14h aktuelles
+; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI.
 
 cpu 8086
 org 100h
@@ -38,6 +39,12 @@ org 100h
         mov     di, cmd
         xor     ah, ah                  ; Befehlszeile der Box
         int     0E0h
+        push    cx
+        jcxz    .cwd                    ; /C: Bildschirm leeren - die Box
+        mov     ax, 0003h               ; gibt beim Ende nur die Ausgabe
+        int     10h                     ; des Programms an CMD zurueck
+.cwd:   call    goto_cwd
+        pop     cx
         mov     si, t_inter             ; leer: interaktiv
         jcxz    .build
         mov     si, t_cmd
@@ -75,6 +82,28 @@ org 100h
 .exit:  mov     ah, 1                   ; Box beenden
         int     0E0h
         int     19h                     ; (ausserhalb einer Box: Neustart)
+
+; ---- Laufwerk und Verzeichnis des Aufrufers (INT E0h 14h, 8.3) ----------
+; A:/B: der AT-DOS gibt es in der Box nicht (A: ist das Startabbild)
+goto_cwd:
+        push    cs
+        pop     es
+        mov     di, tail                ; tail ist hier noch frei
+        mov     ah, 14h
+        int     0E0h
+        cmp     byte [tail+1], ':'
+        jne     .ret
+        mov     dl, [tail]
+        and     dl, 0DFh
+        sub     dl, 'A'
+        cmp     dl, 2
+        jb      .ret
+        mov     ah, 0Eh                 ; Laufwerk wechseln
+        int     21h
+        mov     dx, tail                ; Verzeichnis
+        mov     ah, 3Bh
+        int     21h
+.ret:   ret
 
 ; ---- Umgebung: eigene + DOSBOX=X:\DOS\BOX\FREEDOS.IMG ------------------
 ; (wie unter AT-DOS; SETVER und spaeter andere Werkzeuge finden darueber

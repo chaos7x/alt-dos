@@ -1052,6 +1052,65 @@ static int load_img(int t, int drive, const char *path)
     return 0;
 }
 
+/* DOS-Programm? .COM, .BAT und .EXE ohne FX-Kopf laufen in einer
+   FreeDOS-Box (wie NT: in derselben Sitzung, Aufrufer wartet) */
+static int dos_kind(int drive, const char *path)
+{
+    static struct ifs_file f;
+    static unsigned char hb[64];
+    unsigned n, fx;
+    const char *e;
+
+    for (n = 0; path[n]; n++)
+        ;
+    if (n < 5 || path[n - 4] != '.')
+        return 0;
+    e = path + n - 3;
+    if ((e[0] == 'C' && e[1] == 'O' && e[2] == 'M') ||
+        (e[0] == 'B' && e[1] == 'A' && e[2] == 'T'))
+        return 1;
+    if (e[0] != 'E' || e[1] != 'X' || e[2] != 'E' || ifs_open(drive, path, &f))
+        return 0;
+    if (ifs_read(&f, 0, KDATA, (unsigned)hb, 64) != 64 || hb[0] != 'M' || hb[1] != 'Z')
+        return 1;
+    fx = hb[0x3C] | (hb[0x3D] << 8);
+    if ((unsigned long)fx + 2 > f.size || ifs_read(&f, fx, KDATA, (unsigned)hb, 2) != 2)
+        return 1;
+    return hb[0] != FX_SIG0 || hb[1] != FX_SIG1;
+}
+
+/* DOS-Programm in der FreeDOS-Box: Befehlszeile der Box = Programm
+   (8.3-Pfad) + Argumente, BOXSHELL startet COMMAND.COM /C damit. Fehlt
+   das Abbild, laeuft ein .COM in der nackten Box (ohne DOS) wie bisher. */
+static int load_dos(int t, int drive, const char *path)
+{
+    static char sp[IFS_PATHLEN + 2], a[FAPI_ARGLEN], keep[FAPI_ARGLEN];
+    unsigned i, k = 0;
+    int err;
+
+    sp[0] = (char)('A' + drive);
+    sp[1] = ':';
+    if (ifs_namepath(drive, path, sp + 2, 1))
+        scopy(sp + 2, path, IFS_PATHLEN);
+    for (i = 0; sp[i] && k < FAPI_ARGLEN - 2; i++)
+        a[k++] = sp[i];
+    if (task[t].args[0])
+        a[k++] = ' ';
+    for (i = 0; task[t].args[i] && k < FAPI_ARGLEN - 1; i++)
+        a[k++] = task[t].args[i];
+    a[k] = 0;
+    scopy(keep, task[t].args, FAPI_ARGLEN);
+    scopy(task[t].args, a, FAPI_ARGLEN);
+    err = load_img(t, sys_drive, "\\DOS\\BOX\\FREEDOS.IMG");
+    for (i = 0; path[i]; i++)
+        ;
+    if (err == EXEC_ERR_NOTFOUND && path[i - 1] == 'M') {
+        scopy(task[t].args, keep, FAPI_ARGLEN); /* .COM ohne Abbild     */
+        return load_com(t, drive, path);
+    }
+    return err;
+}
+
 /* Programm in Task t laden. 0 = ok, sonst EXEC_ERR_* */
 static int load_program(int t, int drive, const char *path)
 {
@@ -1065,9 +1124,8 @@ static int load_program(int t, int drive, const char *path)
     for (n = 0; path[n]; n++)
         ;
     task[t].v86 = 0;
-    if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'C' && path[n - 2] == 'O' &&
-        path[n - 1] == 'M')
-        return load_com(t, drive, path);
+    if (dos_kind(drive, path))
+        return load_dos(t, drive, path);
     if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'I' && path[n - 2] == 'M' &&
         path[n - 1] == 'G')
         return load_img(t, drive, path);
@@ -1144,6 +1202,16 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
         cmd++;
     scopy(args, cmd, FAPI_ARGLEN);
     return 0;
+}
+
+/* DOSSTART=SESSION (CONFIG.SYS): DOS-Programme wie bei OS/2 in einer
+   eigenen Sitzung statt wie NT in der des Aufrufers */
+static unsigned char dos_session;
+static int dos_cmd(const char *cmd)
+{
+    static char p[IFS_PATHLEN], nm[13], ar[FAPI_ARGLEN], cn[IFS_PATHLEN];
+    int d;
+    return !split_cmd(cmd, p, nm, ar) && !resolve(current, p, &d, cn) && dos_kind(d, cn);
 }
 
 /* ---- Umgebung ----------------------------------------------------------
@@ -2330,6 +2398,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_EXECPGM:
         if (user_str(usel, a1, buf, sizeof(buf)))
             return EXEC_ERR_NOTFOUND;
+        if (a2 == EXEC_SYNC && dos_session && dos_cmd(buf))
+            a2 = EXEC_ASYNC;                    /* DOSSTART=SESSION      */
         if (a2 == EXEC_ASYNC) {
             int ns = vio_open("");
             if (ns < 0)
@@ -5014,6 +5084,8 @@ static void config_sys(void)
                 q++;
             if (*q == ',')
                 cache_s = num_arg(q + 1);
+        } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
+            dos_session = up(v[0]) == 'S';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {
