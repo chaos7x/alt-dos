@@ -39,6 +39,10 @@ unsigned div32(unsigned long a, unsigned b);
 #pragma aux div32 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
 
 static unsigned base, irq = 5, dma8 = 1, dma16 = 5, dspv;
+static unsigned caps;                   /* AUDCAP_*                      */
+static void opl_w(unsigned reg, unsigned char v);
+static void opl_reset(void);
+static void midi_w(unsigned char v);
 static unsigned bsel;
 static unsigned long bphys;
 static char line[128], name[64];
@@ -334,6 +338,10 @@ static void audio(void)
     unsigned k;
 
     q->status = DRV_OK;
+    if (!(caps & AUDCAP_PCM) && q->fn <= AR_STOP) {
+        q->status = DRV_ERR_CMD;
+        return;
+    }
     switch (q->fn) {
     case AR_CHECK:
         if (!fmt_ok(q->a1, q->a2, q->a3))
@@ -365,6 +373,44 @@ static void audio(void)
             q->status = DRV_ERR_CMD;
         sti();
         q->result = mix_res;
+        break;
+    case AR_CAPS:
+        q->result = caps;
+        break;
+    case AR_FMWRITE: {
+        struct fapi_fmreg __far *f = MK_FP(q->sel, q->off);
+        if (!(caps & (AUDCAP_OPL2 | AUDCAP_OPL3))) {
+            q->status = DRV_ERR_CMD;
+            break;
+        }
+        for (k = 0; k < q->len; k++)
+            if (f[k].reg < 0x100 || (caps & AUDCAP_OPL3))
+                opl_w(f[k].reg & 0x1FF, f[k].val);
+        break;
+    }
+    case AR_FMRESET:
+        if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3))
+            opl_reset();
+        break;
+    case AR_MIDIWRITE: {
+        unsigned char __far *m = MK_FP(q->sel, q->off);
+        if (!(caps & AUDCAP_MPU401)) {
+            q->status = DRV_ERR_CMD;
+            break;
+        }
+        for (k = 0; k < q->len; k++)
+            midi_w(m[k]);
+        break;
+    }
+    case AR_MIDIRESET:
+        if (caps & AUDCAP_MPU401)
+            for (k = 0; k < 16; k++) {
+                midi_w((unsigned char)(0xB0 | k));
+                midi_w(123);            /* alle Noten aus                */
+                midi_w(0);
+                midi_w(121);            /* Controller zurueck            */
+                midi_w(0);
+            }
         break;
     case AR_INFO: {
         char __far *d = MK_FP(q->sel, q->off);
@@ -413,17 +459,14 @@ static const char __far *arg(const char __far *s, char key)
     return 0;
 }
 
-static void init(void)
+static int init_pcm(struct drv_req __far *r)
 {
-    struct drv_req __far *r = REQ;
     static const unsigned ports[4] = { 0x220, 0x240, 0x260, 0x280 };
     const char __far *a;
     unsigned i, b = 0, maj, min;
     unsigned char m;
     char *p;
 
-    r->units = 0;
-    r->status = DRV_ERR_NODEV;
     if ((a = arg(r->args, 'A')) != 0) {
         b = hexval(a);
         if (dsp_reset(b))
@@ -437,10 +480,8 @@ static void init(void)
             if (dsp_reset(ports[i]) == 0)
                 b = ports[i];
         }
-    if (!b) {
-        dputs("SB16.SYS: keine Sound Blaster gefunden\n");
-        return;
-    }
+    if (!b)
+        return -1;
     base = b;
     dsp_w(0xE1);                        /* DSP-Version                   */
     maj = dsp_r();
@@ -462,18 +503,17 @@ static void init(void)
         dma16 = decval(a);
     if (dma8 > 3 || dma8 == 2 || (dma16 && (dma16 < 5 || dma16 > 7))) {
         dputs("SB16.SYS: ung\x81ltiger DMA-Kanal\n");
-        return;
+        return -1;
     }
     bsel = devhlp(DH_DMABUF, 0, BUFSZ, (unsigned)&bphys);
     if (!bsel) {
         dputs("SB16.SYS: kein Speicher f\x81r den DMA-Puffer\n");
-        return;
+        return -1;
     }
     if (set_irq(irq, sb_irq)) {
         dputs("SB16.SYS: IRQ belegt\n");
-        return;
+        return -1;
     }
-    devhlp(DH_AUDREG, 0, 0, 0);
 
     p = scat(name, dspv >= 0x400 ? "Sound Blaster 16" :
                    dspv >= 0x300 ? "Sound Blaster Pro" : "Sound Blaster");
@@ -497,8 +537,143 @@ static void init(void)
     }
     scat(p, "\n");
     dputs(line);
+    return 0;
+}
+
+/* ---- FM (OPL2/OPL3 an 388h) ------------------------------------------ */
+
+static void opl_w(unsigned reg, unsigned char v)
+{
+    unsigned port = (reg & 0x100) ? 0x38A : 0x388, k;
+    outp(port, (unsigned char)reg);
+    for (k = 0; k < 6; k++)             /* 3,3 us nach der Adresse (OPL2) */
+        inp(0x388);
+    outp(port + 1, v);
+    for (k = 0; k < 35; k++)            /* 23 us nach dem Wert            */
+        inp(0x388);
+}
+
+/* Erkennung wie im AdLib-Handbuch: Zeitgeber 1 laufen lassen, Status
+   muss danach C0h zeigen. Erst lesen: FFh = nichts an 388h */
+static int opl_detect(void)
+{
+    unsigned char s1, s2;
+    unsigned k;
+    if (inp(0x388) == 0xFF)
+        return 0;
+    opl_w(4, 0x60);
+    opl_w(4, 0x80);
+    s1 = (unsigned char)(inp(0x388) & 0xE0);
+    opl_w(2, 0xFF);
+    opl_w(4, 0x21);
+    for (k = 0; k < 200; k++)           /* mindestens 80 us               */
+        inp(0x388);
+    s2 = (unsigned char)(inp(0x388) & 0xE0);
+    opl_w(4, 0x60);
+    opl_w(4, 0x80);
+    if (s1 != 0 || s2 != 0xC0)
+        return 0;
+    return (inp(0x388) & 0x06) == 0 ? AUDCAP_OPL3 : AUDCAP_OPL2;
+}
+
+static void opl_reset(void)
+{
+    unsigned r, banks = (caps & AUDCAP_OPL3) ? 2 : 1, b;
+    for (b = 0; b < banks; b++) {
+        for (r = 0xB0; r <= 0xB8; r++)  /* zuerst alle Tasten los        */
+            opl_w(r | (b << 8), 0);
+        for (r = 0x20; r <= 0xF5; r++)
+            opl_w(r | (b << 8), (r >= 0x40 && r <= 0x55) ? 0x3F : 0);
+    }
+    if (caps & AUDCAP_OPL3) {
+        opl_w(0x104, 0);
+        opl_w(0x105, 0);
+    }
+    opl_w(0x01, 0);
+    opl_w(0x08, 0);
+}
+
+/* ---- MIDI (MPU-401 im UART-Betrieb) ---------------------------------- */
+static unsigned mpu = 0x330;
+
+static int mpu_cmd(unsigned char c)
+{
+    unsigned n;
+    for (n = 0; n < 30000u && (inp(mpu + 1) & 0x40); n++)
+        ;
+    outp(mpu + 1, c);
+    for (n = 0; n < 30000u; n++)
+        if (!(inp(mpu + 1) & 0x80) && inp(mpu) == 0xFE)
+            return 0;                   /* Bestaetigung                  */
+    return -1;
+}
+
+static void midi_w(unsigned char v)
+{
+    unsigned n;
+    for (n = 0; n < 30000u && (inp(mpu + 1) & 0x40); n++)
+        if (!(inp(mpu + 1) & 0x80))
+            inp(mpu);                   /* Eingang leeren                */
+    outp(mpu, v);
+}
+
+static int mpu_detect(void)
+{
+    if (inp(mpu + 1) == 0xFF)           /* erst lesen                    */
+        return 0;
+    if (mpu_cmd(0xFF) && mpu_cmd(0xFF)) /* Reset (im UART-Betrieb kommt
+                                           das erste FFh ohne Antwort an) */
+        return 0;
+    mpu_cmd(0x3F);                      /* UART-Betrieb                  */
+    return AUDCAP_MPU401;
+}
+
+static void init(void)
+{
+    struct drv_req __far *r = REQ;
+    const char __far *a;
+    char *p;
+    unsigned o;
+
+    r->units = 0;
+    r->status = DRV_ERR_NODEV;
+    if (init_pcm(r) == 0)
+        caps |= AUDCAP_PCM;
+    if (!has_opt(r->args, "NOFM") && (o = opl_detect()) != 0) {
+        caps |= o;
+        opl_reset();
+    }
+    if ((a = arg(r->args, 'M')) != 0)
+        mpu = hexval(a);
+    if (!has_opt(r->args, "NOMPU") && mpu_detect())
+        caps |= AUDCAP_MPU401;
+    if (!caps) {
+        dputs("SB16.SYS: keine Sound Blaster, AdLib oder MPU-401 gefunden\n");
+        return;
+    }
+    if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3 | AUDCAP_MPU401)) {
+        p = scat(line, "  ");
+        if (caps & AUDCAP_OPL3)
+            p = scat(p, "FM-Synthese OPL3 an 388h");
+        else if (caps & AUDCAP_OPL2)
+            p = scat(p, "FM-Synthese OPL2 (AdLib) an 388h");
+        if (caps & AUDCAP_MPU401) {
+            if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3))
+                p = scat(p, ", ");
+            p = scat(p, "MIDI MPU-401 an ");
+            p = hex(p, mpu, 3);
+            p = scat(p, "h");
+        }
+        scat(p, "\n");
+        dputs(line);
+    }
+    if (!(caps & AUDCAP_PCM))
+        scat(name, (caps & AUDCAP_OPL3) ? "OPL3" : (caps & AUDCAP_OPL2) ? "AdLib (OPL2)" : "MPU-401");
+    devhlp(DH_AUDREG, 0, 0, 0);
     r->status = DRV_OK;
 }
+
+
 
 void strategy(void)
 {

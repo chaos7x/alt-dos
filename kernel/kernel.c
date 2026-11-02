@@ -2095,6 +2095,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
+    case FAPI_QTICKS:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -3100,6 +3101,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_AUDIO:
         return aud_fapi(usel, a1, a2, a3);
 
+    case FAPI_QTICKS:
+        return (unsigned)get_ticks();
+
     case FAPI_VIOSETPAL:
         if (a2 == 0 || a2 > 256 || !user_ok(usel, a3, a2 * 3, 0))
             return FAPI_ERROR;
@@ -3889,11 +3893,151 @@ static void aud_close(int i)
     aud[i].task = -1;
 }
 
+#define NFM 4
+struct aclient {
+    signed char   task;                 /* -1 = frei                      */
+    unsigned      seq;
+    unsigned char rs, need, d1;         /* MIDI: laufender Status         */
+    unsigned char prog[16], vol[16];
+};
+static struct aclient fmc[NFM] = { { -1 }, { -1 }, { -1 }, { -1 } },
+                      mdc[NFM] = { { -1 }, { -1 }, { -1 }, { -1 } };
+static int fm_cur = -1, md_cur = -1;
+static unsigned fm_sel;                 /* NFM * 512 Byte Registerkopien  */
+static struct fapi_fmreg fm_buf[64];
+
+static int cl_find(struct aclient *c, int t)
+{
+    int i;
+    for (i = 0; i < NFM; i++)
+        if (c[i].task == t)
+            return i;
+    return -1;
+}
+
+/* wer ist zu hoeren? Vordergrund, sonst der zuletzt geoeffnete */
+static int cl_pick(struct aclient *c)
+{
+    int i, best = -1, fg = -1, fgs = vio_fg();
+    for (i = 0; i < NFM; i++) {
+        if (c[i].task < 0)
+            continue;
+        if (task[c[i].task].session == fgs && (fg < 0 || c[i].seq > c[fg].seq))
+            fg = i;
+        if (best < 0 || c[i].seq > c[best].seq)
+            best = i;
+    }
+    return fg >= 0 ? fg : best;
+}
+
 static void aud_task_end(int t)
 {
     int i = aud_find(t);
     if (i >= 0)
         aud_close(i);
+    if (aud_drv < 0)
+        return;
+    if ((i = cl_find(fmc, t)) >= 0) {
+        if (fm_cur == i) {
+            aud_call(NAUD, AR_FMRESET, 0, 0, 0);
+            fm_cur = -1;
+        }
+        fmc[i].task = -1;
+    }
+    if ((i = cl_find(mdc, t)) >= 0) {
+        if (md_cur == i) {
+            aud_call(NAUD, AR_MIDIRESET, 0, 0, 0);
+            md_cur = -1;
+        }
+        mdc[i].task = -1;
+    }
+}
+
+/* FM und MIDI: dieselbe Vorrangregel. FM: der Kernel haelt je Programm
+   alle 512 OPL-Register (Kernelsegment), beim Wechsel laedt er die des
+   neuen Programms (Tasten los). MIDI: je Kanal Programm und Lautstaerke,
+   beim Wechsel alle Noten aus und den Stand des neuen Programms. */
+static unsigned char __far *fm_shadow(int i)
+{
+    return MK_FP(fm_sel, (unsigned)i * 512u);
+}
+
+/* Register des Programms i in den OPL laden (B0h-B8h ohne Taste) */
+static void fm_load(int i)
+{
+    unsigned char __far *sh = fm_shadow(i);
+    struct aud_req *q = &areq[NAUD];
+    unsigned r, n = 0;
+    static const unsigned first[4] = { 0x105, 0x104, 0x001, 0x008 };
+
+    aud_call(NAUD, AR_FMRESET, 0, 0, 0);
+    for (r = 0; r < 4 + 2 * 0xD6; r++) {
+        unsigned reg = r < 4 ? first[r] : ((r - 4) < 0xD6 ? 0x20 + (r - 4) : 0x120 + (r - 4 - 0xD6));
+        unsigned char v = sh[reg];
+        if ((reg & 0xFF) >= 0xB0 && (reg & 0xFF) <= 0xB8)
+            v &= ~0x20;
+        fm_buf[n].reg = reg;
+        fm_buf[n].val = v;
+        if (++n == 64 || r == 4 + 2 * 0xD6 - 1) {
+            q->sel = KDATA;
+            q->off = (unsigned)fm_buf;
+            q->len = n;
+            aud_call(NAUD, AR_FMWRITE, 0, 0, 0);
+            n = 0;
+        }
+    }
+}
+
+/* MIDI-Strom mitlesen: Programm (Cn) und Lautstaerke (Bn 07) je Kanal */
+static void md_track(int i, unsigned char c)
+{
+    if (c >= 0xF8)
+        return;                         /* Echtzeit                      */
+    if (c & 0x80) {
+        mdc[i].rs = c >= 0xF0 ? 0 : c;
+        mdc[i].need = (unsigned char)(((c & 0xF0) == 0xC0 || (c & 0xF0) == 0xD0) ? 1 : 2);
+        mdc[i].d1 = 0xFF;
+        return;
+    }
+    if (!mdc[i].rs)
+        return;
+    if (mdc[i].need == 1) {
+        if ((mdc[i].rs & 0xF0) == 0xC0)
+            mdc[i].prog[mdc[i].rs & 15] = c;
+        return;
+    }
+    if (mdc[i].d1 == 0xFF) {
+        mdc[i].d1 = c;
+        return;
+    }
+    if ((mdc[i].rs & 0xF0) == 0xB0 && mdc[i].d1 == 7)
+        mdc[i].vol[mdc[i].rs & 15] = c;
+    mdc[i].d1 = 0xFF;                   /* naechstes Paar (laufender Status) */
+}
+
+static void md_load(int i)
+{
+    static unsigned char m[16 * 5];
+    struct aud_req *q = &areq[NAUD];
+    unsigned k, n = 0;
+    aud_call(NAUD, AR_MIDIRESET, 0, 0, 0);
+    for (k = 0; k < 16; k++) {
+        m[n++] = (unsigned char)(0xC0 | k);
+        m[n++] = mdc[i].prog[k];
+        m[n++] = (unsigned char)(0xB0 | k);
+        m[n++] = 7;
+        m[n++] = mdc[i].vol[k];
+    }
+    q->sel = KDATA;
+    q->off = (unsigned)m;
+    q->len = n;
+    aud_call(NAUD, AR_MIDIWRITE, 0, 0, 0);
+}
+
+static unsigned aud_caps(void)
+{
+    aud_call(NAUD, AR_CAPS, 0, 0, 0);
+    return areq[NAUD].result;
 }
 
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
@@ -3904,6 +4048,107 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
     if (aud_drv < 0)
         return FAPI_ERROR;
     switch (fn) {
+    case AUD_CAPS:
+        return aud_caps();
+    case AUD_FMOPEN:
+    case AUD_MIDIOPEN: {
+        int fm = fn == AUD_FMOPEN, k;
+        if (!(aud_caps() & (fm ? (AUDCAP_OPL2 | AUDCAP_OPL3) : AUDCAP_MPU401)))
+            return FAPI_ERROR;
+        if (fm && !fm_sel && !(fm_sel = kseg_alloc(NFM * 512UL)))
+            return FAPI_ERROR;
+        i = cl_find(fm ? fmc : mdc, current);
+        if (i < 0)
+            for (i = 0; i < NFM && (fm ? fmc[i].task : mdc[i].task) >= 0; i++)
+                ;
+        if (i == NFM)
+            return FAPI_ERR_INUSE;
+        if (fm) {
+            unsigned char __far *sh = fm_shadow(i);
+            for (k = 0; k < 512; k++)
+                sh[k] = (unsigned char)(((k & 0xFF) >= 0x40 && (k & 0xFF) <= 0x55) ? 0x3F : 0);
+            fmc[i].task = (signed char)current;
+            fmc[i].seq = ++aud_seq;
+            if (fm_cur == i)
+                fm_cur = -1;
+        } else {
+            for (k = 0; k < 16; k++) {
+                mdc[i].prog[k] = 0;
+                mdc[i].vol[k] = 100;
+            }
+            mdc[i].rs = 0;
+            mdc[i].task = (signed char)current;
+            mdc[i].seq = ++aud_seq;
+            if (md_cur == i)
+                md_cur = -1;
+        }
+        return 0;
+    }
+    case AUD_FMWRITE: {
+        struct fapi_fmreg __far *f = MK_FP(usel, a);
+        unsigned k;
+        i = cl_find(fmc, current);
+        if (i < 0 || b > 512 || !user_ok(usel, a, b * sizeof(*f), 0))
+            return FAPI_ERROR;
+        for (k = 0; k < b; k++)
+            fm_shadow(i)[f[k].reg & 0x1FF] = f[k].val;
+        w = cl_pick(fmc);
+        if (w == i && fm_cur != i) {
+            fm_load(i);                 /* Stand laden (Tasten los) ...  */
+            fm_cur = i;
+        }
+        if (fm_cur == i) {              /* ... und diesen Auftrag dazu   */
+            q = &areq[i];
+            q->sel = usel;
+            q->off = a;
+            q->len = b;
+            aud_call(i, AR_FMWRITE, 0, 0, 0);
+        }
+        return 0;
+    }
+    case AUD_MIDIWRITE: {
+        unsigned char __far *m = MK_FP(usel, a);
+        unsigned k;
+        i = cl_find(mdc, current);
+        if (i < 0 || !user_ok(usel, a, b, 0))
+            return FAPI_ERROR;
+        for (k = 0; k < b; k++)
+            md_track(i, m[k]);
+        w = cl_pick(mdc);
+        if (w == i && md_cur != i) {
+            md_load(i);
+            md_cur = i;
+        }
+        if (md_cur == i) {
+            q = &areq[i];
+            q->sel = usel;
+            q->off = a;
+            q->len = b;
+            aud_call(i, AR_MIDIWRITE, 0, 0, 0);
+        }
+        return 0;
+    }
+    case AUD_FMCLOSE:
+    case AUD_MIDICLOSE: {
+        int fm = fn == AUD_FMCLOSE;
+        i = cl_find(fm ? fmc : mdc, current);
+        if (i < 0)
+            return FAPI_ERROR;
+        if (fm) {
+            if (fm_cur == i) {
+                aud_call(NAUD, AR_FMRESET, 0, 0, 0);
+                fm_cur = -1;
+            }
+            fmc[i].task = -1;
+        } else {
+            if (md_cur == i) {
+                aud_call(NAUD, AR_MIDIRESET, 0, 0, 0);
+                md_cur = -1;
+            }
+            mdc[i].task = -1;
+        }
+        return 0;
+    }
     case AUD_OPEN: {
         struct fapi_audfmt __far *f = MK_FP(usel, a);
         unsigned bytes;

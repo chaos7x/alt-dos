@@ -159,6 +159,8 @@ struct fapi_sysinfo {
    zuletzt geoeffnete. Die anderen laufen im Echtzeittempo weiter, ihre
    Daten werden verworfen. */
 #define FAPI_AUDIO          0x4F
+#define FAPI_QTICKS         0x50    /* -> Systemtakt (100 Hz), untere 16 Bit:
+                                       Zeitmessung fuer Spieler, Spiele */
 #define AUD_OPEN            0       /* CX = struct fapi_audfmt -> 0, FAPI_ERROR
                                        (kein Geraet, Format geht nicht),
                                        FAPI_ERR_INUSE (alle Plaetze belegt) */
@@ -169,6 +171,27 @@ struct fapi_sysinfo {
 #define AUD_MIXER           4       /* CX = AUDMIX_*, DX = 0-100 setzen,
                                        FFFFh nur abfragen -> Wert       */
 #define AUD_INFO            5       /* CX = Puffer (64 Byte) <- Name der Karte */
+#define AUD_CAPS            6       /* -> AUDCAP_* (was der Treiber kann)  */
+/* FM-Synthese (OPL2/OPL3, AdLib-kompatibel): Register direkt, wie die
+   Programme es von der AdLib kennen. Der Kernel merkt sich je Programm alle
+   Register; wechselt der Vorrang, laedt er die des neuen Programms. */
+#define AUD_FMOPEN          7       /* -> 0, FAPI_ERROR (kein OPL), FAPI_ERR_INUSE */
+#define AUD_FMWRITE         8       /* CX = struct fapi_fmreg[], DX = Anzahl
+                                       (hoechstens 512) -> 0               */
+#define AUD_FMCLOSE         9
+/* MIDI (MPU-401, UART-Betrieb): rohe MIDI-Bytes. Beim Wechsel des
+   Vorrangs: alle Noten aus, Programm und Lautstaerke je Kanal neu. */
+#define AUD_MIDIOPEN        10
+#define AUD_MIDIWRITE       11      /* CX = Bytes, DX = Anzahl -> 0      */
+#define AUD_MIDICLOSE       12
+#define AUDCAP_PCM          0x01    /* digitaler Ton (AUD_OPEN)          */
+#define AUDCAP_OPL2         0x02
+#define AUDCAP_OPL3         0x04    /* 18 Stimmen, Register 100h-1FFh    */
+#define AUDCAP_MPU401       0x08
+struct fapi_fmreg {
+    unsigned short reg;             /* 000h-0F5h, OPL3 auch 100h-1F5h    */
+    unsigned char  val, rsv;
+};
 #define AUDMIX_MASTER       0
 #define AUDMIX_WAVE         1
 #define AUDMIX_FM           2

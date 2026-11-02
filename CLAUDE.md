@@ -982,7 +982,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `PLAY.EXE` (WAV PCM 8/16, VOC Block 1/2/9; nur Esc bricht ab, damit ein
   DETACH-PLAY COMMAND die Tasten nicht wegnimmt), `MIXER.EXE`. Testfalle:
   q.py tippt ~0,45 s je Taste – zeitkritische Abläufe per Stapeldatei.
-  Offen: Stufe 3 FM (OPL3 an 388h über FAPI), Stufe 4 MPU-401, ISA-PnP
+  Stufe 3/4 erledigt (FM in QEMU mit `-device adlib,iobase=0x380` geprüft
+  – QEMU legt die AdLib auf iobase+8 = 388h; MPU-401 nur in 86Box
+  prüfbar): `SB16.SYS` erkennt OPL an 388h (Zeitgeber-Test, Status 06h =
+  OPL2, sonst OPL3 – QEMU meldet fälschlich OPL3) und MPU-401 (`/M:`,
+  Reset FFh mit Bestätigung FEh, UART 3Fh), lädt auch ohne DSP; `/NOFM`,
+  `/NOMPU`. FAPI: AUD_CAPS, AUD_FMOPEN/FMWRITE (struct fapi_fmreg)/
+  FMCLOSE, AUD_MIDIOPEN/MIDIWRITE/MIDICLOSE, FAPI_QTICKS (50h, Stub:
+  BIOS-Takt * 5,5). Kernel: `struct aclient` fmc/mdc, gleiche Vorrangregel
+  (`cl_pick`); FM: 512 Register je Programm in einem Kernelsegment
+  (`fm_sel`), beim Wechsel `fm_load` (AR_FMRESET, Register mit Tasten
+  los) und danach immer auch der laufende Auftrag (sonst fehlt die erste
+  Note – Fehler beim ersten Test); MIDI: Programm/Lautstärke je Kanal aus
+  dem Strom mitgelesen (`md_track`, laufender Status), beim Wechsel
+  AR_MIDIRESET + neuer Stand. PLAY: `apps/midiplay.h` – SMF 0/1 (bis 64 KB,
+  32 Spuren, Tempo, SysEx an den MPU), eigene FM-Instrumente (16
+  Familien nach GM-Programm/8, 5 Schlagzeugklänge auf Kanal 10), 9/18
+  Stimmen, älteste wird abgelöst; IMF (560/700 Hz). Zeit in 10 ms über
+  DosQTicks, Rest in µs (`time_add_us`, mul16/div32, `sdiv` begrenzt).
+  Geprüft: IMF 440 Hz 1 s, MIDI A3/E4/A4 mit richtigen Frequenzen.
+  ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
+  knapp, Seltenes nach KTEXT2 verschieben.
+  Offen: ISA-PnP
   (SB16 PnP/AWE32 PnP, nach der Intel/Microsoft-Spezifikation), AWE32-
   Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
   virtuelle SB der DOS-Boxen in 6.0.

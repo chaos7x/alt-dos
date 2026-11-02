@@ -1298,6 +1298,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         break;
     }
     case FAPI_VIOSETANSI:   rc = 0; break;
+    case FAPI_QTICKS:       rc = (unsigned)(ulmul(ticks(), 11) >> 1); break;  /* 55 ms -> 10 ms */
 
     /* Tastatur, Maus */
     case FAPI_KBDCHARIN:    rc = kbd_charin(); break;

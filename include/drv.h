@@ -125,5 +125,10 @@ struct aud_req {
 #define AR_STOP         4           /* sofort aufhoeren                  */
 #define AR_MIXER        5           /* a1 = AUDMIX_*, a2 = 0-100 / FFFFh -> result */
 #define AR_INFO         6           /* sel:off <- Name der Karte (64 Byte) */
+#define AR_CAPS         7           /* -> result = AUDCAP_*              */
+#define AR_FMWRITE      8           /* sel:off = struct fapi_fmreg[], len = Anzahl */
+#define AR_FMRESET      9           /* OPL stumm und auf Null            */
+#define AR_MIDIWRITE    10          /* sel:off, len Bytes an den MPU-401 */
+#define AR_MIDIRESET    11          /* alle Noten aus, Controller zurueck */
 
 #endif

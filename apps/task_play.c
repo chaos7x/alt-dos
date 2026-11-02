@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * PLAY.EXE - WAV- und VOC-Dateien abspielen (ueber FAPI_AUDIO, z. B. SB16.SYS)
+ * PLAY.EXE - WAV, VOC, MIDI und IMF abspielen (FAPI_AUDIO, z. B. SB16.SYS)
  *
- *   PLAY [/Q] Datei...
+ *   PLAY [/Q] [/FM] [/R:700] Datei...
+ *
+ * MIDI ueber den MPU-401, mit /FM (oder ohne MPU) ueber den OPL; IMF ist
+ * AdLib-Musik aus Spielen (560 Hz, /R:700 fuer 700 Hz). Siehe midiplay.h.
  *
  * WAV: unkomprimiertes PCM, 8 Bit (ohne Vorzeichen) oder 16 Bit (mit),
  * mono oder stereo. VOC (Creative): Bloecke 1 (8 Bit, Zeitkonstante),
@@ -10,6 +13,7 @@
  * zeigt nichts an. Zu hoeren ist das Programm der Vordergrund-Sitzung;
  * im Hintergrund spielt PLAY weiter, solange vorn niemand Ton hat.
  */
+#include <i86.h>
 #include "fapi.h"
 #include "util.h"
 
@@ -20,7 +24,8 @@ unsigned div32(unsigned long a, unsigned b);
 static char args[FAPI_ARGLEN], name[FAPI_PATHLEN], info[64];
 static unsigned char buf[4096];
 static struct fapi_audfmt fmt;
-static int quiet, opened, stop;
+static int quiet, opened, stop, o_fm;
+static unsigned imf_rate = 560;
 static unsigned h;
 static unsigned long zero;
 
@@ -35,6 +40,19 @@ static void err(const char *a, const char *b)
 static int rd(void *p, unsigned n)
 {
     return DosRead(h, p, n) == n;
+}
+
+static int ext_is(const char *n, const char *e)   /* Endung, ohne Gross/klein */
+{
+    const char *x = 0;
+    for (; *n; n++)
+        if (*n == '.')
+            x = n + 1;
+    if (!x)
+        return 0;
+    while (*x && up(*x) == *e)
+        x++, e++;
+    return !*x && !*e;
 }
 
 static unsigned long le32(const unsigned char *p)
@@ -177,6 +195,8 @@ static void voc(void)
     }
 }
 
+#include "midiplay.h"
+
 void main(void)
 {
     char *a;
@@ -185,14 +205,25 @@ void main(void)
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
         if (a[0] == '/' && a[1] == '?') {
-            puts("Spielt WAV- und VOC-Dateien ab.\r\n\r\n"
-                 "PLAY [/Q] Datei...\r\n\r\n"
-                 "  /Q  keine Anzeige      Esc bricht ab.\r\n"
+            puts("Spielt WAV, VOC, MIDI und IMF ab.\r\n\r\n"
+                 "PLAY [/Q] [/FM] [/R:700] Datei...\r\n\r\n"
+                 "  /Q      keine Anzeige            Esc bricht ab.\r\n"
+                 "  /FM     MIDI \x81ber die FM-Synthese statt den MPU-401\r\n"
+                 "  /R:700  IMF mit 700 Hz statt 560 Hz\r\n"
                  "Lautst\x84rke mit MIXER, Treiber: DEVICE=SB16.SYS\r\n");
             return;
         }
         if (a[0] == '/' && up(a[1]) == 'Q')
             quiet = 1;
+        if (a[0] == '/' && up(a[1]) == 'F' && up(a[2]) == 'M')
+            o_fm = 1;
+        if (a[0] == '/' && up(a[1]) == 'R' && a[2] == ':') {
+            unsigned v = 0, k;
+            for (k = 3; a[k] >= '0' && a[k] <= '9'; k++)
+                v = v * 10 + (a[k] - '0');
+            if (v >= 100)
+                imf_rate = v;
+        }
     }
     if (FAPI_FAILED(AudInfo(info))) {
         err("keine Soundkarte (DEVICE=SB16.SYS in CONFIG.SYS)", "");
@@ -221,8 +252,12 @@ void main(void)
             wav();
         } else if (buf[0] == 'C' && buf[1] == 'r' && buf[9] == 'V')
             voc();
+        else if (buf[0] == 'M' && buf[1] == 'T' && buf[2] == 'h' && buf[3] == 'd')
+            midi_file();
+        else if (ext_is(name, "IMF") || ext_is(name, "WLF"))
+            imf_file();
         else
-            err("weder WAV noch VOC - ", name);
+            err("weder WAV, VOC, MIDI noch IMF - ", name);
         DosClose(h);
     }
     if (opened) {
