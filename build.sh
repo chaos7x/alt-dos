@@ -118,7 +118,7 @@ nasm -f obj apps/crt0.asm -o $B/crt0.o
 ALINK="option quiet format dos option nodefaultlibs \
       option map order clname CODE clname BEGDATA clname DATA clname BSS"
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr undel scandisk msd print defrag"
+UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 for t in command keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
@@ -151,7 +151,7 @@ done
 
 echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
-for t in aha154x ide mouse ncr5380; do
+for t in aha154x ide mouse ncr5380 sb16; do
     wcc $CFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
@@ -193,11 +193,11 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
        $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
-       $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE
+       $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
        $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
-SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS
+SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_sb16.sys SB16.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE

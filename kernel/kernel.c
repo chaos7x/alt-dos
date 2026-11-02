@@ -284,6 +284,8 @@ void reboot_request(void)
 static void task_end(int t);
 static void fpu_task_end(int t);
 static int mod_mount(int drive);
+static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
+static void aud_task_end(int t);
 static void schedule_next(void);
 static void klock_enter(void);
 
@@ -1216,6 +1218,7 @@ static void task_end(int t)
     int p = task[t].parent, s = task[t].session, i;
 
     fpu_task_end(t);
+    aud_task_end(t);
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
             seg_free(t, USEL(idx));
@@ -2090,7 +2093,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_MOUSHOWPTR: case FAPI_CLIPPUT: case FAPI_CLIPGET:
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
-    case FAPI_VIOSETPAGE:
+    case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -3093,6 +3096,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_VIOSETPAGE:
         return vio_setpage(s, a1) ? FAPI_ERROR : 0;
 
+    case FAPI_AUDIO:
+        return aud_fapi(usel, a1, a2, a3);
+
     case FAPI_VIOSETPAL:
         if (a2 == 0 || a2 > 256 || !user_ok(usel, a3, a2 * 3, 0))
             return FAPI_ERROR;
@@ -3810,6 +3816,159 @@ void blk_flush(void)
     }
 }
 
+/* ---- Ton (FAPI_AUDIO) --------------------------------------------------
+   Mehrere Programme duerfen das Audiogeraet oeffnen (bis NAUD). Zu hoeren
+   ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geoeffnete
+   (Musik im Hintergrund, waehrend man in EDIT schreibt). Wer nicht zu
+   hoeren ist, laeuft im Echtzeittempo weiter: seine Daten werden nach
+   Laenge / Bytes je Takt verworfen - ein Spiel bleibt im Takt und ist
+   nach dem Zurueckholen sofort wieder zu hoeren. Der Kernel entscheidet
+   bei jedem Schreiben, der Treiber spielt einen Strom (aud_cur). */
+#define NAUD 4
+static struct {
+    signed char   task;                 /* -1 = frei                      */
+    unsigned      rate, bpt, seq;       /* bpt: Bytes je Takt (10 ms)     */
+    unsigned char ch, bits;
+} aud[NAUD] = { { -1 }, { -1 }, { -1 }, { -1 } };
+static int aud_drv = -1, aud_cur = -1;
+static unsigned aud_seq;
+static struct aud_req areq[NAUD + 1];   /* je Programm eine, [NAUD] fuer
+                                           START/STOP/MIXER (ein schlafender
+                                           Schreiber behaelt seine)      */
+
+static unsigned aud_call(int r, unsigned fn, unsigned a1, unsigned a2, unsigned a3)
+{
+    struct aud_req *q = &areq[r];
+    q->cmd = DRV_AUDIO;
+    q->fn = (unsigned char)fn;
+    q->status = DRV_ERR_CMD;
+    q->a1 = a1;
+    q->a2 = a2;
+    q->a3 = a3;
+    q->result = 0;
+    drv_call(DRVC_SEL(aud_drv), DRVD_SEL(aud_drv), drv[aud_drv].entry, (unsigned)q);
+    return q->status;
+}
+
+static int aud_find(int t)
+{
+    int i;
+    for (i = 0; i < NAUD; i++)
+        if (aud[i].task == t)
+            return i;
+    return -1;
+}
+
+/* wer ist zu hoeren? Vordergrund, sonst der zuletzt geoeffnete */
+static int aud_pick(void)
+{
+    int i, best = -1, fg = -1, fgs = vio_fg();
+    for (i = 0; i < NAUD; i++) {
+        if (aud[i].task < 0)
+            continue;
+        if (task[aud[i].task].session == fgs && (fg < 0 || aud[i].seq > aud[fg].seq))
+            fg = i;
+        if (best < 0 || aud[i].seq > aud[best].seq)
+            best = i;
+    }
+    return fg >= 0 ? fg : best;
+}
+
+static void aud_stop(void)
+{
+    if (aud_cur >= 0)
+        aud_call(NAUD, AR_STOP, 0, 0, 0);
+    aud_cur = -1;
+}
+
+static void aud_close(int i)
+{
+    if (aud_cur == i)
+        aud_stop();
+    aud[i].task = -1;
+}
+
+static void aud_task_end(int t)
+{
+    int i = aud_find(t);
+    if (i >= 0)
+        aud_close(i);
+}
+
+static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
+{
+    int i = aud_find(current), w;
+    struct aud_req *q;
+
+    if (aud_drv < 0)
+        return FAPI_ERROR;
+    switch (fn) {
+    case AUD_OPEN: {
+        struct fapi_audfmt __far *f = MK_FP(usel, a);
+        unsigned bytes;
+        if (!user_ok(usel, a, sizeof(*f), 0))
+            return FAPI_ERROR;
+        if (i >= 0)
+            aud_close(i);
+        for (i = 0; i < NAUD && aud[i].task >= 0; i++)
+            ;
+        if (i == NAUD)
+            return FAPI_ERR_INUSE;
+        if (aud_call(NAUD, AR_CHECK, f->rate, f->channels, f->bits) != DRV_OK)
+            return FAPI_ERROR;
+        bytes = (unsigned)f->channels * (f->bits >> 3);
+        aud[i].rate = f->rate;
+        aud[i].ch = f->channels;
+        aud[i].bits = f->bits;
+        aud[i].bpt = (f->rate / 100) * bytes;
+        aud[i].seq = ++aud_seq;
+        aud[i].task = (signed char)current;
+        return 0;
+    }
+    case AUD_WRITE:
+        if (i < 0 || !user_ok(usel, a, b, 0))
+            return FAPI_ERROR;
+        w = aud_pick();
+        if (w == i && aud_cur != i) {           /* wechseln              */
+            aud_stop();
+            if (aud_call(NAUD, AR_START, aud[i].rate, aud[i].ch, aud[i].bits) == DRV_OK)
+                aud_cur = i;
+        }
+        if (aud_cur == i) {
+            q = &areq[i];
+            q->sel = usel;
+            q->off = a;
+            q->len = b;
+            aud_call(i, AR_WRITE, 0, 0, 0);
+            return b;                           /* Rest ging beim Wechsel unter */
+        }
+        if (aud[i].bpt)                         /* stumm: Echtzeit abwarten */
+            sleep_ticks(b / aud[i].bpt + 1);
+        return b;
+    case AUD_DRAIN:
+        if (i >= 0 && aud_cur == i)
+            aud_call(i, AR_DRAIN, 0, 0, 0);
+        return i >= 0 ? 0 : FAPI_ERROR;
+    case AUD_CLOSE:
+        if (i < 0)
+            return FAPI_ERROR;
+        aud_close(i);
+        return 0;
+    case AUD_MIXER:
+        if (aud_call(NAUD, AR_MIXER, a, b, 0) != DRV_OK)
+            return FAPI_ERROR;
+        return areq[NAUD].result;
+    case AUD_INFO:
+        if (!user_ok(usel, a, 64, 1))
+            return FAPI_ERROR;
+        q = &areq[NAUD];
+        q->sel = usel;
+        q->off = a;
+        return aud_call(NAUD, AR_INFO, 0, 0, 0) == DRV_OK ? 0 : FAPI_ERROR;
+    }
+    return FAPI_ERROR;
+}
+
 /* Interruptroutinen der Treiber (start.asm: irq_common) */
 extern unsigned char kbd_aux;           /* start.asm: PS/2-Maus aktiv    */
 extern unsigned short irq_hoff[16], irq_hcs[16], irq_hds[16];
@@ -3890,6 +4049,16 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_DELAY:
         delay_ticks(bx);
         return 0;
+    case DH_DMABUF: {
+        static unsigned long lin;
+        n = kseg_dma(bx, &lin);
+        if (n)
+            *(unsigned long __far *)MK_FP(dsel, cx) = lin;
+        return n;
+    }
+    case DH_AUDREG:
+        aud_drv = drv_of(dsel);
+        return aud_drv < 0;
     case DH_BIOSDISK:
         if (bx > 1 || bx >= bios_hdcount)
             return 1;

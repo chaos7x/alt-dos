@@ -26,6 +26,7 @@ struct drv_header {
 #define DRV_READ        1           /* count Bloecke lesen (512, CD 2048 Bytes) */
 #define DRV_WRITE       2           /* einen Block schreiben (nur 512)  */
 #define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
+#define DRV_AUDIO       4           /* Audio: ES:BX = struct aud_req     */
 
 #define DRV_MAXUNITS    8
 
@@ -96,5 +97,32 @@ struct drv_req {
                                        an - IRQ 1 laesst Bytes mit Statusbit 5
                                        liegen (beim AT-Controller heisst das Bit
                                        etwas anderes, daher nur auf Ansage) */
+
+#define DH_DMABUF       12          /* BX = Bytes: Puffer fuer ISA-DMA (ohne
+                                       64-KB-Grenze, unter 16 MB), CX = 4 Byte
+                                       im Treiber-DS fuer die physische
+                                       Adresse -> AX = Selektor, 0 = keiner */
+#define DH_AUDREG       13          /* Treiber ist das Audiogeraet (FAPI_AUDIO
+                                       kommt als DRV_AUDIO an)           */
+
+/* Audio (DRV_AUDIO): der Kernel waehlt, wessen Ton zu hoeren ist, der
+   Treiber spielt einen Datenstrom */
+struct aud_req {
+    unsigned char  cmd;             /* DRV_AUDIO                        */
+    unsigned char  fn;              /* AR_*                             */
+    unsigned short status;          /* DRV_OK oder DRV_ERR_*            */
+    unsigned short a1, a2, a3;
+    unsigned short sel, off, len;   /* WRITE/INFO: Puffer des Programms */
+    unsigned short result;
+};
+#define AR_CHECK        0           /* a1 = Rate, a2 = Kanaele, a3 = Bits: geht das? */
+#define AR_START        1           /* Format einstellen (Wiedergabe beginnt mit
+                                       den ersten Daten)                 */
+#define AR_WRITE        2           /* sel:off, len -> result = Bytes; wartet,
+                                       bis Platz im Puffer ist           */
+#define AR_DRAIN        3           /* warten, bis alles gespielt ist    */
+#define AR_STOP         4           /* sofort aufhoeren                  */
+#define AR_MIXER        5           /* a1 = AUDMIX_*, a2 = 0-100 / FFFFh -> result */
+#define AR_INFO         6           /* sel:off <- Name der Karte (64 Byte) */
 
 #endif

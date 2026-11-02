@@ -958,6 +958,30 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   32-Bit-Portzugriffen) gehören zu 6.0 auf dem 386/486. Die 53C8xx sind
   die Standard-SCSI-Controller des Nutzers auf PCI-Maschinen: für 6.0 der
   wichtigste neue Plattentreiber (`NCR8XX.SYS`, mit Interrupt).
+- Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
+  für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
+  `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde
+  ausgewertet): `SB16.SYS` (drivers/sb16.c) – DSP-Reset (vorher lesen:
+  alle Leseports FFh = nichts), Version E1h, beim SB16 IRQ/DMA aus Mixer
+  80h/81h; 16-KB-DMA-Puffer (neuer DevHlp `DH_DMABUF` = kseg_dma, physische
+  Adresse in den Treiber), zwei Hälften, Auto-Init (SB16 41h + B6h/C6h,
+  DSP 2/3: Zeitkonstante 40h + 48h + 1Ch), IRQ füllt eine nicht volle
+  Hälfte mit Stille. Mixer SB16 30h–3Ah, SB Pro 22h/04h/26h/28h/2Eh.
+  Kernel: `DH_AUDREG`, `FAPI_AUDIO` (4Fh, ohne Kernelsperre – Schreiben
+  wartet im Treiber per ProcBlock), `DRV_AUDIO` mit `struct aud_req` (je
+  Programm eine, ein schlafender Schreiber behält seine; Treiber prüft
+  `gen` nach dem Aufwachen). Mehrere Programme (NAUD 4): `aud_pick` =
+  Vordergrund-Sitzung, sonst zuletzt geöffnet; beim Wechsel AR_STOP +
+  AR_START; wer nicht dran ist, schläft Länge / Bytes je Takt (Echtzeit,
+  Daten verworfen) – geprüft: Hintergrund 6 s 440 Hz + Vordergrund 2 s
+  880 Hz -> 880, dann 440 ab der Echtzeitstelle, zusammen 6 s.
+  `PLAY.EXE` (WAV PCM 8/16, VOC Block 1/2/9; nur Esc bricht ab, damit ein
+  DETACH-PLAY COMMAND die Tasten nicht wegnimmt), `MIXER.EXE`. Testfalle:
+  q.py tippt ~0,45 s je Taste – zeitkritische Abläufe per Stapeldatei.
+  Offen: Stufe 3 FM (OPL3 an 388h über FAPI), Stufe 4 MPU-401, ISA-PnP
+  (SB16 PnP/AWE32 PnP, nach der Intel/Microsoft-Spezifikation), AWE32-
+  Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
+  virtuelle SB der DOS-Boxen in 6.0.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
   Real-Mode-DOS-Sitzung unter 640 KB (z. B. MS-DOS 6 von der SCSI-Platte),

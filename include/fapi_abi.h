@@ -153,6 +153,32 @@ struct fapi_sysinfo {
 /* ANSI-Folgen in der TTY-Ausgabe der Sitzung (wie OS/2 VioSetAnsi):
    BX = 1 an, 0 aus, 2 nur abfragen -> bisheriger Zustand (0/1) */
 #define FAPI_VIOSETANSI     0x4E
+/* Ton (Treiber z. B. SB16.SYS): BX = AUD_*. Mehrere Programme duerfen
+   oeffnen; zu hoeren ist das Programm der Vordergrund-Sitzung, sonst das
+   zuletzt geoeffnete. Die anderen laufen im Echtzeittempo weiter, ihre
+   Daten werden verworfen. */
+#define FAPI_AUDIO          0x4F
+#define AUD_OPEN            0       /* CX = struct fapi_audfmt -> 0, FAPI_ERROR
+                                       (kein Geraet, Format geht nicht),
+                                       FAPI_ERR_INUSE (alle Plaetze belegt) */
+#define AUD_WRITE           1       /* CX = Puffer, DX = Laenge -> Bytes (wartet,
+                                       bis sie im Puffer der Karte sind) */
+#define AUD_DRAIN           2       /* warten, bis alles gespielt ist    */
+#define AUD_CLOSE           3
+#define AUD_MIXER           4       /* CX = AUDMIX_*, DX = 0-100 setzen,
+                                       FFFFh nur abfragen -> Wert       */
+#define AUD_INFO            5       /* CX = Puffer (64 Byte) <- Name der Karte */
+#define AUDMIX_MASTER       0
+#define AUDMIX_WAVE         1
+#define AUDMIX_FM           2
+#define AUDMIX_CD           3
+#define AUDMIX_LINE         4
+#define AUDMIX_MIC          5
+struct fapi_audfmt {
+    unsigned short rate;            /* Abtastrate, z. B. 22050           */
+    unsigned char  channels;        /* 1 mono, 2 stereo                  */
+    unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
+};
 /* Platten-Cache (MEM): BX = struct fapi_cacheinfo -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {

@@ -69,6 +69,12 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosSetFInfo(p, fi)  F2(FAPI_SETFINFO, (p), (fi))    /* struct fapi_finfo */
 #define DosSetDateTime(p)   F2(FAPI_SETDATETIME, (p), 0)    /* Datum, Uhrzeit (FAT) */
 #define DosLabel(d, out, nl) fapi_call(FAPI_LABEL, (d), (unsigned short)(out), (unsigned short)(nl))
+#define AudOpen(f)          F2(FAPI_AUDIO, AUD_OPEN, (unsigned short)(f))
+#define AudWrite(b, n)      fapi_call(FAPI_AUDIO, AUD_WRITE, (unsigned short)(b), (n))
+#define AudDrain()          F2(FAPI_AUDIO, AUD_DRAIN, 0)
+#define AudClose()          F2(FAPI_AUDIO, AUD_CLOSE, 0)
+#define AudMixer(c, v)      fapi_call(FAPI_AUDIO, AUD_MIXER, (c), (v))
+#define AudInfo(b)          F2(FAPI_AUDIO, AUD_INFO, (unsigned short)(b))
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
 #define KbdPeek()           F2(FAPI_KBDPEEK, 0, 0)

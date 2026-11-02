@@ -1,0 +1,517 @@
+/*
+ * SB16.SYS - Sound Blaster (Wiedergabe und Mixer) fuer FAPI_AUDIO
+ *
+ * CONFIG.SYS:  DEVICE=SB16.SYS [/A:220] [/I:5] [/D:1] [/H:5]
+ *
+ * Ohne Angabe sucht der Treiber an 220h, 240h, 260h, 280h (erst lesen:
+ * liefert die Adresse nur FFh, sitzt dort nichts) und setzt den DSP
+ * zurueck (Antwort AAh). Beim SB16 (DSP 4.xx) stehen IRQ und DMA in den
+ * Mixer-Registern 80h/81h; aeltere Karten (DSP 2.xx/3.xx) nehmen /I und
+ * /D oder 5 und 1.
+ *
+ * Wiedergabe ueber Auto-Init-DMA in einem 16-KB-Puffer aus zwei Haelften:
+ * der Schreiber fuellt die Haelfte, die gerade nicht spielt; ist sie beim
+ * Interrupt noch nicht voll, wird der Rest mit Stille aufgefuellt (kein
+ * Knacken durch alte Daten). SB16: 8 und 16 Bit, mono und stereo, 5000-
+ * 44100 Hz (16 Bit ueber den 16-Bit-DMA-Kanal); DSP 2/3: 8 Bit mono bis
+ * 22050 Hz ueber die Zeitkonstante. Mixer: SB16 (30h-3Ah) und SB Pro.
+ *
+ * Gebaut mit -zu wie alle Treiber: SS ist der Kernelstack, also keine
+ * Adressen lokaler Variablen weitergeben.
+ */
+#include "drvlib.h"
+#include "../include/fapi_abi.h"
+
+#define BUFSZ   16384u
+#define HALF    (BUFSZ / 2)
+#define EV_AUD  1
+
+#define AREQ ((struct aud_req __far *)MK_FP(req_sel, req_off))
+
+void far_cpy(void __far *dst, const void __far *src, unsigned n);
+#pragma aux far_cpy = "push ds" "mov ds,dx" "rep movsb" "pop ds" \
+    __parm [__es __di] [__dx __si] [__cx] __modify [__di __si __cx];
+void far_set(void __far *dst, unsigned char v, unsigned n);
+#pragma aux far_set = "rep stosb" __parm [__es __di] [__al] [__cx] __modify [__di __cx];
+/* 32 / 16 Bit -> 16 Bit (Quotient muss passen) */
+unsigned div32(unsigned long a, unsigned b);
+#pragma aux div32 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
+
+static unsigned base, irq = 5, dma8 = 1, dma16 = 5, dspv;
+static unsigned bsel;
+static unsigned long bphys;
+static char line[128], name[64];
+
+/* Wiedergabe */
+static unsigned rate, chans, bits16;
+static volatile unsigned char playing, fill, fill_full, cur_dma16;
+static volatile unsigned fill_off, irq_count, gen;
+static unsigned char silence;
+
+/* ---- DSP und Mixer -------------------------------------------------- */
+static int dsp_w(unsigned char v)
+{
+    unsigned n;
+    for (n = 0; n < 60000u; n++)
+        if (!(inp(base + 0x0C) & 0x80)) {
+            outp(base + 0x0C, v);
+            return 0;
+        }
+    return -1;
+}
+
+static int dsp_r(void)
+{
+    unsigned n;
+    for (n = 0; n < 60000u; n++)
+        if (inp(base + 0x0E) & 0x80)
+            return inp(base + 0x0A);
+    return -1;
+}
+
+static int dsp_reset(unsigned b)
+{
+    unsigned t, k;
+    base = b;
+    outp(b + 6, 1);
+    for (k = 0; k < 16; k++)            /* mindestens 3 us              */
+        inp(b + 6);
+    outp(b + 6, 0);
+    t = devhlp(DH_TICKS, 0, 0, 0);
+    while ((unsigned)(devhlp(DH_TICKS, 0, 0, 0) - t) < 3) {
+        if ((inp(b + 0x0E) & 0x80) && inp(b + 0x0A) == 0xAA)
+            return 0;
+    }
+    return -1;
+}
+
+static void mix_w(unsigned char reg, unsigned char v)
+{
+    outp(base + 4, reg);
+    outp(base + 5, v);
+}
+
+static unsigned char mix_r(unsigned char reg)
+{
+    outp(base + 4, reg);
+    return inp(base + 5);
+}
+
+/* ---- DMA (8237) ----------------------------------------------------- */
+static const unsigned char page8[4] = { 0x87, 0x83, 0x81, 0x82 };
+static const unsigned char page16[4] = { 0x8F, 0x8B, 0x89, 0x8A };
+
+static void dma_start(void)
+{
+    unsigned c;
+    if (cur_dma16) {                    /* Kanaele 5-7: Worte, 128 KB    */
+        unsigned long w = bphys >> 1;
+        c = dma16 & 3;
+        outp(0xD4, (unsigned char)(4 | c));     /* maskieren             */
+        outp(0xD8, 0);                          /* Flipflop              */
+        outp(0xD6, (unsigned char)(0x58 | c));  /* Auto-Init, Speicher->Karte */
+        outp(0xC0 + c * 4, (unsigned char)w);
+        outp(0xC0 + c * 4, (unsigned char)(w >> 8));
+        outp(page16[c], (unsigned char)((bphys >> 16) & 0xFE));
+        outp(0xC2 + c * 4, (unsigned char)((BUFSZ / 2 - 1) & 0xFF));
+        outp(0xC2 + c * 4, (unsigned char)((BUFSZ / 2 - 1) >> 8));
+        outp(0xD4, (unsigned char)c);           /* frei                  */
+    } else {
+        c = dma8 & 3;
+        outp(0x0A, (unsigned char)(4 | c));
+        outp(0x0C, 0);
+        outp(0x0B, (unsigned char)(0x58 | c));
+        outp(c * 2, (unsigned char)bphys);
+        outp(c * 2, (unsigned char)(bphys >> 8));
+        outp(page8[c], (unsigned char)(bphys >> 16));
+        outp(c * 2 + 1, (unsigned char)((BUFSZ - 1) & 0xFF));
+        outp(c * 2 + 1, (unsigned char)((BUFSZ - 1) >> 8));
+        outp(0x0A, (unsigned char)c);
+    }
+}
+
+static void dma_stop(void)
+{
+    if (cur_dma16)
+        outp(0xD4, (unsigned char)(4 | (dma16 & 3)));
+    else
+        outp(0x0A, (unsigned char)(4 | (dma8 & 3)));
+}
+
+/* ---- Wiedergabe ----------------------------------------------------- */
+static void dsp_start(void)
+{
+    unsigned n;
+    dsp_w(0xD1);                        /* Lautsprecher an (aeltere DSP) */
+    if (dspv >= 0x400) {
+        n = (bits16 ? HALF / 2 : HALF) - 1;     /* Werte je Haelfte - 1  */
+        dsp_w(0x41);
+        dsp_w((unsigned char)(rate >> 8));
+        dsp_w((unsigned char)rate);
+        dsp_w(bits16 ? 0xB6 : 0xC6);    /* Ausgabe, Auto-Init, FIFO      */
+        dsp_w((unsigned char)((chans == 2 ? 0x20 : 0) | (bits16 ? 0x10 : 0)));
+        dsp_w((unsigned char)n);
+        dsp_w((unsigned char)(n >> 8));
+    } else {
+        dsp_w(0x40);                    /* Zeitkonstante                 */
+        dsp_w((unsigned char)(256 - div32(1000000UL, rate)));
+        dsp_w(0x48);                    /* Blockgroesse                  */
+        dsp_w((unsigned char)((HALF - 1) & 0xFF));
+        dsp_w((unsigned char)((HALF - 1) >> 8));
+        dsp_w(0x1C);                    /* 8 Bit, Auto-Init              */
+    }
+}
+
+static void start_play(void)
+{
+    cur_dma16 = (unsigned char)(bits16 && dspv >= 0x400);
+    dma_start();
+    dsp_start();
+    playing = 1;
+    fill = 1;
+    fill_off = 0;
+    fill_full = 0;
+}
+
+static void stop_play(void)
+{
+    if (playing) {
+        if (dspv >= 0x400) {
+            dsp_w(cur_dma16 ? 0xD9 : 0xDA);     /* Auto-Init beenden     */
+            dsp_w(cur_dma16 ? 0xD5 : 0xD0);     /* anhalten              */
+        } else
+            dsp_w(0xD0);
+        dma_stop();
+    }
+    playing = 0;
+    fill = 0;
+    fill_off = 0;
+    fill_full = 0;
+    gen++;
+    proc_run(EV_AUD);
+}
+
+static void sb_irq(unsigned n)
+{
+    unsigned char st;
+    (void)n;
+    if (dspv >= 0x400) {
+        st = mix_r(0x82);               /* welcher Interrupt?            */
+        if (st & 1)
+            inp(base + 0x0E);
+        if (st & 2)
+            inp(base + 0x0F);
+    } else
+        inp(base + 0x0E);
+    if (!playing)
+        return;
+    /* eine Haelfte ist fertig, die DMA spielt jetzt "fill": nicht voll
+       geworden -> Rest Stille (sonst klingen alte Daten nach) */
+    if (!fill_full)
+        far_set(MK_FP(bsel, fill * HALF + fill_off), silence, HALF - fill_off);
+    fill ^= 1;
+    fill_off = 0;
+    fill_full = 0;
+    irq_count++;
+    proc_run(EV_AUD);
+}
+
+static void aud_write(struct aud_req __far *q)
+{
+    unsigned done = 0, n, my = gen;
+    unsigned char __far *src = MK_FP(q->sel, q->off);
+
+    while (done < q->len) {
+        if (gen != my)
+            break;                      /* anderer Strom ist dran        */
+        cli();
+        if (fill_full && playing) {     /* warten, bis eine Haelfte frei ist */
+            if (proc_block(EV_AUD, 100))
+                if (fill_full && gen == my)
+                    break;              /* Karte steht: aufgeben         */
+            continue;
+        }
+        sti();
+        n = HALF - fill_off;
+        if (n > q->len - done)
+            n = q->len - done;
+        far_cpy(MK_FP(bsel, fill * HALF + fill_off), src + done, n);
+        done += n;
+        cli();
+        fill_off += n;
+        if (fill_off == HALF) {
+            if (!playing)
+                start_play();           /* erste Haelfte voll: los       */
+            else
+                fill_full = 1;
+        }
+        sti();
+    }
+    sti();
+    q->result = done;
+}
+
+static void aud_drain(void)
+{
+    unsigned my = gen, want, t;
+    cli();
+    if (!playing) {
+        if (fill_off == 0) {
+            sti();
+            return;
+        }
+        far_set(MK_FP(bsel, fill_off), silence, HALF - fill_off);
+        start_play();
+        want = irq_count + 1;
+    } else if (fill_off > 0 || fill_full) {
+        if (!fill_full)
+            far_set(MK_FP(bsel, fill * HALF + fill_off), silence, HALF - fill_off);
+        fill_full = 1;
+        want = irq_count + 2;
+    } else
+        want = irq_count + 1;
+    sti();
+    t = devhlp(DH_TICKS, 0, 0, 0);
+    for (;;) {
+        cli();
+        if ((int)(irq_count - want) >= 0 || gen != my)
+            break;
+        if ((unsigned)(devhlp(DH_TICKS, 0, 0, 0) - t) > 300)
+            break;                      /* hoechstens 3 s                */
+        proc_block(EV_AUD, 50);
+    }
+    sti();
+    if (gen == my)
+        stop_play();
+}
+
+static int fmt_ok(unsigned r, unsigned c, unsigned b)
+{
+    if (dspv >= 0x400)
+        return r >= 5000 && r <= 44100 && (c == 1 || c == 2) &&
+               (b == 8 || (b == 16 && dma16 >= 5));
+    return r >= 4000 && r <= 22050 && c == 1 && b == 8;
+}
+
+/* ---- Mixer ---------------------------------------------------------- */
+static const unsigned char sb16reg[6] = { 0x30, 0x32, 0x34, 0x36, 0x38, 0x3A };
+static const unsigned char sbproreg[6] = { 0x22, 0x04, 0x26, 0x28, 0x2E, 0x00 };
+
+static int mixer(unsigned ch, unsigned v, unsigned *res)
+{
+    unsigned char r, x;
+    if (ch > 5)
+        return -1;
+    if (dspv >= 0x400) {
+        r = sb16reg[ch];
+        if (v != 0xFFFF) {
+            x = (unsigned char)(((v > 100 ? 100 : v) * 31 + 50) / 100 << 3);
+            mix_w(r, x);
+            if (ch != AUDMIX_MIC)
+                mix_w((unsigned char)(r + 1), x);
+        }
+        *res = ((mix_r(r) >> 3) * 100 + 15) / 31;
+        return 0;
+    }
+    if (dspv >= 0x300 && sbproreg[ch]) {    /* SB Pro: 4 Bit je Seite    */
+        r = sbproreg[ch];
+        if (v != 0xFFFF) {
+            x = (unsigned char)(((v > 100 ? 100 : v) * 15 + 50) / 100);
+            mix_w(r, (unsigned char)((x << 4) | x));
+        }
+        *res = ((mix_r(r) >> 4) * 100 + 7) / 15;
+        return 0;
+    }
+    return -1;
+}
+
+static unsigned mix_res;
+
+static void audio(void)
+{
+    struct aud_req __far *q = AREQ;
+    unsigned k;
+
+    q->status = DRV_OK;
+    switch (q->fn) {
+    case AR_CHECK:
+        if (!fmt_ok(q->a1, q->a2, q->a3))
+            q->status = DRV_ERR_CMD;
+        break;
+    case AR_START:
+        stop_play();
+        if (!fmt_ok(q->a1, q->a2, q->a3)) {
+            q->status = DRV_ERR_CMD;
+            break;
+        }
+        rate = q->a1;
+        chans = q->a2;
+        bits16 = q->a3 == 16;
+        silence = bits16 ? 0 : 0x80;
+        break;
+    case AR_WRITE:
+        aud_write(q);
+        break;
+    case AR_DRAIN:
+        aud_drain();
+        break;
+    case AR_STOP:
+        stop_play();
+        break;
+    case AR_MIXER:
+        cli();                          /* Indexregister teilt sich der IRQ */
+        if (mixer(q->a1, q->a2, &mix_res))
+            q->status = DRV_ERR_CMD;
+        sti();
+        q->result = mix_res;
+        break;
+    case AR_INFO: {
+        char __far *d = MK_FP(q->sel, q->off);
+        for (k = 0; name[k] && k < 63; k++)
+            d[k] = name[k];
+        d[k] = 0;
+        break;
+    }
+    default:
+        q->status = DRV_ERR_CMD;
+    }
+}
+
+/* ---- Initialisierung ------------------------------------------------ */
+static unsigned hexval(const char __far *p)
+{
+    unsigned v = 0;
+    for (;; p++) {
+        if (*p >= '0' && *p <= '9') v = v * 16 + (*p - '0');
+        else if (*p >= 'a' && *p <= 'f') v = v * 16 + (*p - 'a' + 10);
+        else if (*p >= 'A' && *p <= 'F') v = v * 16 + (*p - 'A' + 10);
+        else return v;
+    }
+}
+
+static unsigned decval(const char __far *p)
+{
+    unsigned v = 0;
+    while (*p >= '0' && *p <= '9')
+        v = v * 10 + (*p++ - '0');
+    return v;
+}
+
+/* Argument /X:wert oder (wie BLASTER) Xwert suchen -> Zeiger auf den Wert */
+static const char __far *arg(const char __far *s, char key)
+{
+    const char __far *a;
+    for (a = s; *a; a++)
+        if ((a[0] == key || a[0] == key + 32) &&
+            (a == s || a[-1] == ' ' || a[-1] == '/' || a[-1] == '\t')) {
+            a++;
+            if (*a == ':' || *a == '=')
+                a++;
+            return a;
+        }
+    return 0;
+}
+
+static void init(void)
+{
+    struct drv_req __far *r = REQ;
+    static const unsigned ports[4] = { 0x220, 0x240, 0x260, 0x280 };
+    const char __far *a;
+    unsigned i, b = 0, maj, min;
+    unsigned char m;
+    char *p;
+
+    r->units = 0;
+    r->status = DRV_ERR_NODEV;
+    if ((a = arg(r->args, 'A')) != 0) {
+        b = hexval(a);
+        if (dsp_reset(b))
+            b = 0;
+    } else
+        for (i = 0; i < 4 && !b; i++) {
+            /* erst lesen: nur FFh an allen Leseports = nichts da */
+            if (inp(ports[i] + 0x0A) == 0xFF && inp(ports[i] + 0x0C) == 0xFF &&
+                inp(ports[i] + 0x0E) == 0xFF)
+                continue;
+            if (dsp_reset(ports[i]) == 0)
+                b = ports[i];
+        }
+    if (!b) {
+        dputs("SB16.SYS: keine Sound Blaster gefunden\n");
+        return;
+    }
+    base = b;
+    dsp_w(0xE1);                        /* DSP-Version                   */
+    maj = dsp_r();
+    min = dsp_r();
+    dspv = (maj << 8) | min;
+    if (dspv >= 0x400) {                /* SB16: Einstellung im Mixer    */
+        m = mix_r(0x80);
+        irq = (m & 1) ? 9 : (m & 2) ? 5 : (m & 4) ? 7 : (m & 8) ? 10 : irq;
+        m = mix_r(0x81);
+        dma8 = (m & 1) ? 0 : (m & 2) ? 1 : (m & 8) ? 3 : dma8;
+        dma16 = (m & 0x20) ? 5 : (m & 0x40) ? 6 : (m & 0x80) ? 7 : 0;
+    } else
+        dma16 = 0;
+    if ((a = arg(r->args, 'I')) != 0)
+        irq = decval(a) == 2 ? 9 : decval(a);
+    if ((a = arg(r->args, 'D')) != 0)
+        dma8 = decval(a);
+    if ((a = arg(r->args, 'H')) != 0)
+        dma16 = decval(a);
+    if (dma8 > 3 || dma8 == 2 || (dma16 && (dma16 < 5 || dma16 > 7))) {
+        dputs("SB16.SYS: ung\x81ltiger DMA-Kanal\n");
+        return;
+    }
+    bsel = devhlp(DH_DMABUF, 0, BUFSZ, (unsigned)&bphys);
+    if (!bsel) {
+        dputs("SB16.SYS: kein Speicher f\x81r den DMA-Puffer\n");
+        return;
+    }
+    if (set_irq(irq, sb_irq)) {
+        dputs("SB16.SYS: IRQ belegt\n");
+        return;
+    }
+    devhlp(DH_AUDREG, 0, 0, 0);
+
+    p = scat(name, dspv >= 0x400 ? "Sound Blaster 16" :
+                   dspv >= 0x300 ? "Sound Blaster Pro" : "Sound Blaster");
+    p = scat(p, ", DSP ");
+    p = udec(p, maj);
+    p = scat(p, ".");
+    if (min < 10)
+        p = scat(p, "0");
+    udec(p, min);
+    p = scat(line, "  ");
+    p = scat(p, name);
+    p = scat(p, " an ");
+    p = hex(p, base, 3);
+    p = scat(p, "h, IRQ ");
+    p = udec(p, irq);
+    p = scat(p, ", DMA ");
+    p = udec(p, dma8);
+    if (dma16) {
+        p = scat(p, "/");
+        p = udec(p, dma16);
+    }
+    scat(p, "\n");
+    dputs(line);
+    r->status = DRV_OK;
+}
+
+void strategy(void)
+{
+    struct drv_req __far *r = REQ;
+
+    switch (r->cmd) {
+    case DRV_INIT:
+        devhlp_ptr = MK_FP(r->devhlp_sel, r->devhlp_off);
+        init();
+        break;
+    case DRV_AUDIO:
+        audio();
+        break;
+    default:
+        r->status = DRV_ERR_CMD;
+    }
+}

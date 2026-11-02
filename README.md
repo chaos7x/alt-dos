@@ -391,6 +391,7 @@ selbst nur 8.3 kennt.
 | 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
+| 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte). Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
@@ -463,6 +464,13 @@ In Sitzungen ohne eigenes Mausprogramm arbeitet die Maus wie gpm unter
 Linux: linke Taste ziehen markiert Text, rechte oder mittlere Taste fügt
 ihn ein, als wäre er getippt. Die Zwischenablage gilt für alle Sitzungen
 und für EDIT (DosClipPut/DosClipGet).
+`SB16.SYS` spielt Ton über eine Sound Blaster (SB16: 8/16 Bit, mono/stereo
+bis 44,1 kHz; SB/SB Pro: 8 Bit mono bis 22 kHz) per Auto-Init-DMA; sucht an
+220h–280h, IRQ und DMA liest er beim SB16 aus dem Mixer (`/A:220 /I:5 /D:1
+/H:5` legt fest). `PLAY Datei` spielt WAV und VOC, `MIXER [Regler Wert]`
+stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). Mehrere Programme
+dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung
+(Spiele), sonst das zuletzt gestartete (Musik im Hintergrund).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
 Anzeige beim Start) und schläft, bis die Karte die Eingangs-Mailbox
 beschrieben hat; ebenfalls mit Rückfall und `/NOIRQ`. Beide Treiber melden
