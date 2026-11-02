@@ -69,7 +69,7 @@ Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
   (Dateigröße aus dem Verzeichniseintrag; vorher fest 160 = 80 KB) –
   `ATDOS.SYS` wird nicht mehr aufgefüllt, Grenze in build.sh 448 KB
   (Laden ab 10000h, darüber Real-Mode-Reste/EBDA).
-- **Kooperatives Multitasking** bis Phase 2, **FAPI einziger Weg zur
+- **Präemptiv seit Phase 2 Schritt 1** (nur aus Ring 3, siehe unten), **FAPI einziger Weg zur
   Hardware**, **IFS** wie bisher.
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
@@ -484,6 +484,23 @@ Win32s), nicht vorziehen, sondern nachfragen.
   um ist oder Strg+C/Alt+Esc/Neustart anstehen. So bleiben Strg+C und der
   Sitzungswechsel auch bei `grep -r` über große Platten bedienbar. Rechnen
   ohne FAPI-Aufrufe hält das System weiter an (präemptiv erst 6.0).
+  6.0, Phase 2 Schritt 1 (in QEMU geprüft): präemptiv. start.asm `irq0`
+  prüft nach dem EOI, ob der unterbrochene Code in Ring 3 lief (CS-Bits
+  0–1 im Rahmen); nur dann pusha/es, CLD, `preempt()` (kernel.c): bei
+  abgelaufener Scheibe oder Strg+C/Alt+Esc/Neustart/resched_req
+  `schedule_next()` – wie beim FAPI-Rücksprung. Begründung: ein Task in
+  Ring 3 hält nie die Kernelsperre, alle anderen stehen an normalen
+  Wartepunkten, also braucht der 16-Bit-Kernel keine Wiedereintritts-
+  festigkeit (Kernel wird nie unterbrochen, wie OS/2 1.x). Der
+  unterbrochene Task wird im ISR-Zustand (IF=0, EOI schon geschickt) im
+  TSS gesichert und läuft später dort weiter bis zum IRET. Programme
+  sind 286-Code: keine 32-Bit-Register, FS/GS – das 286-TSS reicht (für
+  V86 später 386-TSS). Demo `\DEMO\BUSY [Runden] [/W]` (65536 Schritte
+  je Runde, ohne FAPI). Geprüft: BUSY in Sitzung 2, Alt+Esc und VER in
+  Sitzung 1 sofort; Strg+C bricht BUSY ab; zwei BUSY gleichzeitig kommen
+  beide voran (Vordergrund 12 statt 8 s, nicht genau halbe-halbe –
+  QEMU-Messung grob); zwei BUSY per DETACH + XCOPY über NCR8XX in 22 s,
+  SHUTDOWN beendet sie, fsck sauber. Nächster Schritt: Sperren je Gerät.
   Auf dem 386SX/2 MB in 86Box bestätigt: `grep -r` über die 2-GB-Platte im
   Hintergrund, Vordergrund bleibt bedienbar, Alt+Esc schnell, Strg+C bricht ab.
   `MEM` dort: 1.664 KB erkannt, 231 KB belegt, 1.433 KB frei.

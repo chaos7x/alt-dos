@@ -35,7 +35,7 @@ group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 extern preload_, reboot_
 extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
-extern fdc_isr_
+extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
 
@@ -530,6 +530,25 @@ irq0:
 .eoi:
         mov     al, 0x20
         out     0x20, al
+        ; Praeemptiv (6.0): war ein Programm in Ring 3 unterbrochen, darf der
+        ; Scheduler wechseln - es haelt nie die Kernelsperre, und alle
+        ; anderen Tasks stehen an ihren normalen Wartepunkten. Im Kernel
+        ; (Ring 0) wird nie unterbrochen, erst beim Ruecksprung (FAPI).
+        ; Stack: [ds] [ax] [ip] [cs] [flags] ...
+        push    bp
+        mov     bp, sp
+        test    byte [bp+8], 3
+        pop     bp
+        jz      .ret
+        pusha
+        push    es
+        mov     ax, ds
+        mov     es, ax
+        cld                             ; das Programm kann DF gesetzt haben
+        call    preempt_
+        pop     es
+        popa
+.ret:
         pop     ds
         pop     ax
         iret

@@ -253,7 +253,12 @@ und PC-DOS.
   Seitentabellen ab und schaltet den Seitenmechanismus des 386 ein –
   Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen
   Speicher; ein Seitenfehler meldet die Adresse
-- kooperativer Scheduler mit Hardware-Taskwechsel (`JMP` auf TSS)
+- präemptiver Scheduler (6.0) mit Hardware-Taskwechsel (`JMP` auf TSS):
+  der Takt-Interrupt unterbricht ein Programm nach seiner Zeitscheibe
+  (50 ms), auch wenn es nur rechnet; im Kernel wird nicht unterbrochen,
+  gewechselt wird beim Rücksprung ins Programm (wie OS/2 1.x). Test:
+  `\DEMO\BUSY [Runden] [/W]` rechnet ohne FAPI-Aufrufe – andere Sitzungen
+  bleiben bedienbar, Strg+C bricht ab
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
   287-Zustand, getauscht erst, wenn ein anderes Programm wirklich rechnet

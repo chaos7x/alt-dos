@@ -1423,6 +1423,17 @@ static void schedule_next(void)
     sched(0);
 }
 
+/* Takt-Interrupt hat ein Programm in Ring 3 unterbrochen (start.asm irq0,
+   EOI ist schon geschickt): wie beim Ruecksprung aus der FAPI wechseln,
+   wenn die Scheibe um ist oder Strg+C/Alt+Esc/Neustart/Wecken anstehen */
+void preempt(void)
+{
+    if (current >= 0 &&
+        (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
+         get_ticks() - slice_start >= SLICE))
+        schedule_next();
+}
+
 /* keep = 1: Sperre behalten (ProcBlock) */
 static void sched(int keep)
 {
