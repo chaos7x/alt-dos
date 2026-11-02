@@ -664,7 +664,7 @@ static void run(const char *cmd, int show_cmd)
     unsigned k = 0;
 
     if (DosGetEnv("COMSPEC", cl, sizeof(cl)) == FAPI_ERROR)
-        scopy(cl, "COMMAND.EXE", sizeof(cl));
+        scopy(cl, "CMD.EXE", sizeof(cl));
     scat(cl, " /C ", sizeof(cl));
     scat(cl, cmd, sizeof(cl));
     enter_dir_of_panel();

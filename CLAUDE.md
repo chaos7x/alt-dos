@@ -70,7 +70,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Code in `preload()` darf keine Selektoren und kein `vio` benutzen.
   `preload()` sucht im Stamm, in `\DOS\SYSTEM`, dann in `\DOS`.
 - Ablage (Entscheidung des Nutzers, wie OS/2): Stamm nur `ATDOS.SYS`,
-  `COMMAND.EXE`, `CONFIG.SYS`, `AUTOEXEC.CMD` (+ `ATSYS.COM` auf der
+  `CMD.EXE`, `CONFIG.SYS`, `AUTOEXEC.CMD` (+ `ATSYS.COM` auf der
   Diskette); `\DOS` Werkzeuge, die man aufruft; `\DOS\SYSTEM` was das System
   nachlädt (Treiber, IFS, `U*.EXE` für CHKDSK, `.KBL`); `\DEMO` TASKA–C.
   `build.sh`: `FILES`, `DOSFILES`, `SYSFILES`, `DEMOFILES`. `load_driver()`
@@ -98,13 +98,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `cd_drives()` gibt CD-Einheiten (bsize 2048) nach `CONFIG.SYS` Buchstaben.
 - `CONFIG.SYS` – `DEVICE=` lädt Treiber, `IFS=` Dateisystem-Module (beides
   wird beim Plattenstart vorgeladen)
-- `apps/task_command.c` – `COMMAND.EXE`, der Befehlsinterpreter, mit
+- `apps/task_cmd.c` – `CMD.EXE`, der Befehlsinterpreter (früher
+  `COMMAND.EXE`; umbenannt wie bei OS/2 und NT – Wunsch des Nutzers –, damit
+  er nicht mit `COMMAND.COM` verwechselt wird; steht in einer alten
+  CONFIG.SYS noch `PROTSHELL=COMMAND.EXE`, nimmt der Kernel `CMD.EXE /P`), mit
   Programmsuche über `PATH`, Stapelverarbeitung (Datei je Stufe in einem
   `DosAllocSeg`-Segment, bis 4 Stufen) und `AUTOEXEC.BAT`. Umgebung je Task
   im Kernel (`env_*` in kernel.c, ein Kernelsegment für alle Tasks plus
   Systemumgebung)
 - `AUTOEXEC.CMD` – Startdatei des nativen Befehlsinterpreters (`PROTSHELL=`
-  in CONFIG.SYS, Vorgabe `COMMAND.EXE /P`). Trennung wie OS/2: `.CMD` und
+  in CONFIG.SYS, Vorgabe `CMD.EXE /P`). Trennung wie OS/2: `.CMD` und
   `PROTSHELL=` nativ; `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören ab 6.0 der
   DOS-Box (V86) – AT-DOS 5.0 rührt `AUTOEXEC.BAT` nicht an.
 - `apps/` – Ring-3-Anwendungen, `crt0.asm`, `fapi.h`; `util.c`/`util.h`
@@ -368,7 +371,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
-  COMMAND /P macht DosMkDir(%TEMP%). Bisher nutzt kein AT-DOS-Werkzeug
+  CMD /P macht DosMkDir(%TEMP%). Bisher nutzt kein AT-DOS-Werkzeug
   temporäre Dateien (Pipes laufen im Kernel) – gedacht für DOS-Box/
   Compiler.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
@@ -432,7 +435,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   weg, neu einhängen, freier Platz neu zählen). Gesperrt wird nur, wenn
   keine Datei auf dem Laufwerk offen ist (aktuelle Verzeichnisse zählen
   nicht). `AUTOCHK.LST` im Stamm des Startlaufwerks: Zeilen `X: /F`,
-  `COMMAND /P` löscht die Datei und ruft `CHKDSK X: /F /AUTO`.
+  `CMD /P` löscht die Datei und ruft `CHKDSK X: /F /AUTO`.
   Sauber-Bit: FAT16 (nicht Diskette) FAT[1] Bit 15. `mark_in_use()` (fat.c)
   löscht es vor dem ersten Schreiben (Hook in den `ifs_*`-Schreibfunktionen,
   nicht in `wr()` – DMABUF!), `ifs_shutdown()` setzt es in `system_down()`.
