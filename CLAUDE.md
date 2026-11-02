@@ -1026,7 +1026,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   belegter IRQ: Abfragebetrieb wie vorher (Startmeldung nennt den
   Grund). Vom Nutzer auf dem 486 in 86Box bestätigt: MSD zeigt „IRQ 9
   belegt NCR8XX.SYS“ (vorher altes Abbild ohne IRQ – Release `latest`
-  neu laden!). Offen: synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
+  neu laden!); mit IRQ den DOS-Ordner per FM mehrfach auf D: (250 MB,
+  1.128 Dateien) kopiert und per DELTREE gelöscht, CHKDSK /F ohne
+  Fehler. Offen: synchrone/Wide-Übertragung. Vom Nutzer auf seiner 486 in 86Box
   bestätigt: Platte und ZIP-Laufwerk am NCR erkannt, `\DEMO` aufs ZIP
   kopiert (Programme laufen von dort), CHKDSK ohne Fehler.
   Vorladen beim Plattenstart dafür vergrößert: preload.c nimmt bei
