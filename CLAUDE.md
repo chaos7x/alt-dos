@@ -1596,6 +1596,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Nächster Schritt: INT-2Fh-Redirector (TSR in der Box, Dienste über INT
   E0h) -> AT-DOS-Laufwerke in der Box, dann `.EXE`/`.BAT` aus COMMAND.EXE
   über `BOXSHELL /C`.
+  Entscheidung des Nutzers (Start von DOS-Programmen aus COMMAND.EXE):
+  **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
+  `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum
+  Prompt, Text bleibt stehen, ERRORLEVEL kommt an; Stapeldateien laufen
+  der Reihe nach). Eigene Sitzung mit `START`. Der OS/2-Weg (jedes
+  DOS-Programm in neuer Sitzung) soll per CONFIG.SYS zuschaltbar werden,
+  z. B. `DOSSTART=SESSION`. Später: Box je Sitzung offen halten und
+  wiederverwenden wie NTVDM (spart den FreeDOS-Start).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
