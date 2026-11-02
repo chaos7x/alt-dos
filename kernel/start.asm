@@ -39,7 +39,7 @@ extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
-extern v86_exc_, _fault_vm
+extern v86_exc_, v86_tick_, _fault_vm
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -583,7 +583,12 @@ irq0:
         mov     es, ax
         cld                             ; das Programm kann DF gesetzt haben
         call    preempt_
-        pop     es
+        mov     bx, sp                  ; [es][pushad][ds][ax][eip ...]
+        test    byte [ss:bx+48], 2      ; Box: virtuellen Takt/Tasten
+        jz      .nov                    ; zustellen (v86.c)
+        lea     ax, [bx+38]
+        call    KCODE2:v86_tick_
+.nov:   pop     es
         popad
         jmp     .ret
 .nopre: pop     bp

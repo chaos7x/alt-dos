@@ -70,6 +70,8 @@ void kbd_irq(unsigned sc)
     unsigned char rel = (unsigned char)(sc & 0x80), c, base;
     unsigned code = sc & 0x7F;
 
+    if (!(alt && code == 0x01))     /* Alt+Esc (Sitzungswechsel) gehoert */
+        v86_key(sc);                /* dem Kernel, sonst DOS-Box: Port 60h */
     if (sc == 0xE0) {
         e0 = 1;
         return;

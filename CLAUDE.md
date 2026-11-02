@@ -1505,9 +1505,47 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   im Nachstellversuch nicht. Danach vom Nutzer auf der 486 bestätigt:
   drei Box-Sitzungen beendet, dabei kopiert, CHKDSK ohne Fehler, keine
   Panik mehr.
-  Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
-  den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
-  (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.
+  Stufe 2 erledigt (in QEMU geprüft): Bildschirm – `v86_start` (aus
+  task_create, sobald die Sitzung feststeht) schaltet die Sitzung ins
+  Vollbild (`vio_setmode(s, 1, t)`, wie EDIT) und trägt die zwei Seiten
+  des Sitzungspuffers (`vio_buf_lin`) bei B8000/B9000 in die Seiten-
+  tabelle der Box ein; A0000–BFFFF sonst eine Ersatzseite. Änderungen
+  erkennt `v86_poll` (im Scheduler vor vio_flush) am Dirty-Bit der beiden
+  PTE: löschen, `vio_dirty(s)`; läuft gerade die Box selbst, CR3 neu
+  laden (sonst hält der TLB D=1 und die CPU setzt es nie wieder). Ohne
+  Kernelsperre, SCRATCH mit win_save/restore. `v86_destroy` gibt B8/B9
+  nicht frei, merkt sich den Text bis zur Cursorzeile (`capture`), nach
+  `vio_task_end` gibt `v86_replay` ihn in der Sitzung des Aufrufers aus
+  (wie die NT-Konsole; sonst verschwände die Ausgabe eines DOS-Programms
+  mit dem Vollbild). INT 10h/21h-Ausgabe schreibt selbst in B800 (`vtty`,
+  Cursor im BIOS-Datenbereich 450h, `cur_put` -> vio_setcur), kein
+  vio_tty/ANSI mehr. BDA beim Anlegen aus dem echten (physisch 400h)
+  kopiert, Bildschirmfelder 80x25, Takt 46Ch aus der Echtzeituhr
+  (`rtc_ticks`, ohne 32-Bit-Division). Takt: `account` rechnet 100 Hz in
+  18,2 Hz um (vt_acc in Tausendsteln); solange INT 8 und 1Ch auf den
+  Stummeln stehen, zählt nur 46Ch weiter, sonst virtueller INT 8 (eigener
+  Stummel F000:0400 „ARPL 8; INT 1Ch; IRET“). Tastatur: kbd_irq ruft
+  `v86_key` (außer Alt+Esc – sonst beendete Esc die Box beim Wegschalten,
+  im Test passiert) -> Scancode-Ring je Box im Vordergrund; INT 9 nur
+  zugestellt, wenn umgebogen, sonst holt Port 60h aus dem Ring; INT 16h
+  weiter über kbd_get (deutsche Belegung). Zustellung `inject` beim
+  Rücksprung (Ende von v86_exc und aus irq0 nach preempt: `v86_tick`,
+  Zeiger auf EIP im Rahmen), nur bei virtuellem IF, `vimr`/`visr`
+  (EOI an Port 20h löscht das niedrigste Bit, die Standard-Stummel für 8/9
+  auch). Ports: 20h/21h, 60h/64h, 61h (Refresh-Bit kippt), 40h–43h
+  (Zähler läuft), 3DAh/3BAh (Rücklauf kippt), 3D4h/3D5h Cursor 0Eh/0Fh;
+  Rest FFh/verpufft. BIOS: INT 10h 00/01/02/03/05/06/07/08/09/0A/0E/0F/
+  11/12/13/1A, 11h, 12h, 13h (CF), 15h (86h warten, 88h = 0), 16h (00h
+  liefert graue Tasten mit AL 0 wie das AT-BIOS), 1Ah 00–04, 33h AX=0;
+  INT 21h dazu 2Ah/2Ch. Test `\DEMO\BOXTEST.COM` (apps/boxtest.asm):
+  B800 mit Farben, INT 1Ch zählt (131 Takte in ~7 s), INT 9 mit Port 60h
+  und EOI, Rücklauf-Schleife, Rollen per INT 10h; im Hintergrund per
+  START läuft der Takt weiter, Alt+Esc hin und zurück, Strg+C, Speicher
+  danach wie vorher; XCOPY über NCR8XX neben BOXTEST, fsck sauber; isapc
+  2 MB. Beobachtung: eine Box, die an 3DAh wartet, trappt pausenlos und
+  nimmt anderen ihre Zeitscheibe – später IDLE_SENSITIVITY wie OS/2.
+  Nächste Stufe 3: FreeDOS-Kern in der Box mit INT-2Fh-Redirector auf
+  die AT-DOS-Laufwerke (dann laufen .EXE, COMMAND.COM, Stapeldateien).
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
   vergleichbar sind; erste Phase auf 386SX (24 Adressleitungen, 16-MB-Grenze)

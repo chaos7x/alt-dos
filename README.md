@@ -261,17 +261,21 @@ und PC-DOS.
   gewechselt wird beim Rücksprung ins Programm (wie OS/2 1.x). Test:
   `\DEMO\BUSY [Runden] [/W]` rechnet ohne FAPI-Aufrufe – andere Sitzungen
   bleiben bedienbar, Strg+C bricht ab
-- DOS-Boxen (6.0, Phase 3 Stufe 1: Grundlage): ein `.COM`-Programm
-  läuft im V86-Modus des 386 in einer eigenen virtuellen Maschine – mit
-  eigenem erstem MB (640 KB, eigenes Seitenverzeichnis), präemptiv wie
-  jedes Programm, geschützt: ein Absturz beendet nur die Box. Ein Monitor
-  im Kernel führt privilegierte Befehle nach (CLI/STI/PUSHF/POPF mit
-  virtuellem IF, INT n über die Vektortabelle der Box, IRET, HLT;
-  Portzugriffe verpuffen noch) und bietet erste BIOS-/DOS-Dienste über
-  die Sitzung (INT 10h Zeichen, INT 16h Tastatur, INT 21h Zeichen/Text/
-  Handle 1–2/Vektoren/Version/Ende). Bildschirmspeicher, Zeitgeber und
-  ein DOS-Kern (FreeDOS) in der Box folgen. Test: `\DEMO\HALLO [Text] [/W]`
-  (auch unter MS-DOS lauffähig), mit `START HALLO.COM` in eigener Sitzung
+- DOS-Boxen (6.0, Phase 3 Stufen 1–2): ein `.COM`-Programm läuft im
+  V86-Modus des 386 in einer eigenen virtuellen Maschine – mit eigenem
+  erstem MB (640 KB, eigenes Seitenverzeichnis), präemptiv wie jedes
+  Programm, geschützt: ein Absturz beendet nur die Box. Der Bildschirm
+  der Box (B800) ist der Puffer ihrer Sitzung (Vollbild, 80x25): direktes
+  Schreiben kostet nichts, auch im Hintergrund. Virtueller Takt (INT 8/
+  1Ch, 18,2 Hz), virtuelle Tastatur (INT 9, Port 60h/64h), virtueller PIC
+  (EOI, Maske); Warteschleifen an 3DAh (Strahlrücklauf), 61h und am PIT
+  hängen nicht. BIOS: INT 10h (Textmodus, Cursor, Rollen, Zeichen,
+  Zeichenketten), 11h, 12h, 15h, 16h, 1Ah (Takt, Uhrzeit, Datum); DOS
+  (bis zum FreeDOS-Kern in Stufe 3) nur Zeichen/Text/Handle 1–2/
+  Vektoren/Datum/Uhrzeit/Version/Ende. Endet eine Box in der Sitzung von
+  COMMAND, bleibt ihr Text stehen. Alt+Esc und Strg+C bleiben beim
+  Kernel. Tests: `\DEMO\HALLO [Text] [/W]`, `\DEMO\BOXTEST` (wie ein
+  Spiel: B800, INT 1Ch, INT 9, 3DAh; Esc beendet), auch mit `START`
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
 - Koprozessor (287/287XL) je Task: jedes Programm hat seinen eigenen
   287-Zustand, getauscht erst, wenn ein anderes Programm wirklich rechnet

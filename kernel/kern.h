@@ -208,6 +208,7 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
+void vio_dirty(int s);                          /* ganze Sitzung neu zeigen */
 /* paging.c (KTEXT2): Seitentabellen 1:1 und Alias ab KALIAS, CR0.PG */
 unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);
@@ -219,6 +220,12 @@ unsigned long __far v86_create(int t, unsigned kb);    /* -> CR3, 0 = kein Speic
 void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n);
 void __far v86_destroy(int t);
 unsigned __far v86_exc(struct v86_frame *f);           /* 0 = erledigt  */
+void __far v86_start(int t, int s);     /* Sitzung fest: Vollbild, B800  */
+void __far v86_replay(int s);           /* Text der beendeten Box zeigen */
+void __far v86_poll(void);              /* Scheduler: Bildschirm geaendert? */
+void __far v86_key(unsigned sc);        /* kbd_irq: Scancode             */
+struct v86_iret;
+void __far v86_tick(struct v86_iret *r);    /* irq0 aus der Box          */
 int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c */
 #define BOX_TASK    0                   /* -> current                   */
 #define BOX_SESSION 1                   /* -> Sitzung von current        */

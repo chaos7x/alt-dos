@@ -750,6 +750,13 @@ void vio_showbuf(int s, unsigned a, unsigned b)
     mark((unsigned char)a, (unsigned char)b);
 }
 
+/* DOS-Box hat in ihren Bildschirm (= Sitzungspuffer) geschrieben */
+void vio_dirty(int s)
+{
+    if (s >= 0 && s == fg && ses[s].used)
+        mark(0, (unsigned char)(ses[s].rows - 1));
+}
+
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */
 void vio_task_end(int s, int t)
 {

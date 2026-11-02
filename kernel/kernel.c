@@ -1235,6 +1235,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
         task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
         of_ref(task[t].std[i]);
     }
+    if (task[t].v86)
+        v86_start(t, session);              /* Vollbild, B800 = Puffer  */
     task[t].state   = T_READY;
     return t;
 }
@@ -1248,8 +1250,7 @@ static void task_end(int t)
     fpu_task_end(t);
     aud_task_end(t);
     if (task[t].v86) {                      /* DOS-Box: Speicher, CR3   */
-        v86_destroy(t);
-        task[t].v86 = 0;
+        v86_destroy(t);                     /* (merkt sich ihren Text)  */
     }
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
@@ -1284,6 +1285,10 @@ static void task_end(int t)
             task[i].parent = -1;
     task[t].state = T_FREE;
     vio_task_end(s, t);                     /* Vollbild zuruecknehmen   */
+    if (task[t].v86) {                      /* Text der Box stehen lassen */
+        v86_replay(p >= 0 && task[p].session == s ? s : -1);
+        task[t].v86 = 0;
+    }
 
     if (p >= 0)
         task[p].child_rc = task[t].rc;      /* fuer ERRORLEVEL          */
@@ -1483,6 +1488,7 @@ static void sched(int keep)
             shutdown();
         now = get_ticks();
         fd_tick();                      /* Diskettenmotoren aus          */
+        v86_poll();                     /* DOS-Boxen: Bild geaendert?    */
         vio_flush();                    /* Programm wartet: Bild zeigen  */
         vio_status();
         any = 0;

@@ -37,3 +37,7 @@ int __far kf_kbd_get(void) { return kbd_get(); }
 int __far kf_kbd_peek(void) { return kbd_peek(); }
 unsigned __far kf_kbd_shift(void) { return kbd_shift(); }
 void __far kf_vio_tty(int s, unsigned sel, unsigned off, unsigned len) { vio_tty(s, sel, off, len); }
+void __far kf_vio_setmode(int s, int full, int owner) { vio_setmode(s, full, owner); }
+void __far kf_vio_setcur(int s, int row, int col) { vio_setcur(s, row, col); }
+void __far kf_vio_dirty(int s) { vio_dirty(s); }
+unsigned long __far kf_vio_buf_lin(int s) { return vio_buf_lin(s); }
