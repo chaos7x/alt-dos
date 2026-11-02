@@ -528,6 +528,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (`HBASE`). Freigabe nur über `of_release`. Programme schreiben über
   `puts`/`DosWrite(STDOUT)`, nicht über VioWrtTTY – sonst wirkt keine
   Umleitung (VioWrtTTY nur für Bildschirm-Dialoge wie „-- Mehr --“).
+- SHUTDOWN/POWEROFF/REBOOT (Wunsch des Nutzers): ohne Schalter Rückfrage
+  J/N, `/NOW` sofort, `/T:n` Countdown (Esc bricht ab), `/R` Neustart
+  (`cmd_shutdown` in task_command.c, in QEMU geprüft).
 - Strg+Alt+Entf ist zweistufig: Die Taste setzt `reboot_count`, der
   Scheduler schließt beim nächsten Durchlauf alle Dateien, ruft `blk_flush()`
   und startet neu; IRQ 0 startet nach 5 s trotzdem neu.

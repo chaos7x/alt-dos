@@ -1414,7 +1414,8 @@ static void cmd_help(void)
          "  DEL Datei       Dateien l\x94schen (auch * und ?)\n"
          "  MD / RD Verz.   Verzeichnis anlegen / entfernen\n"
          "  REN Datei Name  Datei oder Verzeichnis umbenennen\n"
-         "  SHUTDOWN [/H|/R] herunterfahren (/H anhalten, /R neu starten), auch POWEROFF\n"
+         "  SHUTDOWN [/H|/R] [/NOW] [/T:n]  herunterfahren (/R neu starten, /NOW ohne\n"
+         "                  Frage, /T:n nach n s, Esc bricht ab), auch POWEROFF\n"
          "  REBOOT          neu starten (wie SHUTDOWN /R)\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER / VOL       Version / Datentr\x84gerbezeichnung anzeigen\n"
@@ -2483,6 +2484,53 @@ static int run_program(char *cmd, int sync, int call)
 }
 
 /* ---- Hauptschleife ----------------------------------------------------- */
+/* SHUTDOWN/POWEROFF/REBOOT [/R] [/H] [/NOW] [/T:n]: ohne Schalter mit
+   Rueckfrage; /NOW sofort; /T:n zaehlt n Sekunden herunter, Esc bricht ab */
+static void cmd_shutdown(int r, char *arg)
+{
+    char w[16];
+    char *p;
+    int now = 0, t = -1, k = 0;
+
+    for (p = arg; *p; p = next_word(p)) {
+        word(p, w, sizeof(w));
+        if (same(w, "/R"))
+            r = 1;
+        else if (same(w, "/NOW"))
+            now = 1;
+        else if (w[0] == '/' && up(w[1]) == 'T' && w[2] == ':') {
+            t = 0;
+            for (k = 3; w[k] >= '0' && w[k] <= '9' && t < 3600; k++)
+                t = t * 10 + (w[k] - '0');
+        } else if (!same(w, "/H")) {
+            puts("Ung\x81ltiger Schalter - ");
+            puts(w);
+            puts("\n");
+            return;
+        }
+    }
+    if (t < 0 && !now &&
+        !confirm(r ? "Alle Programme beenden und neu starten (J/N)? "
+                   : "Alle Programme beenden und herunterfahren (J/N)? "))
+        return;
+    for (; t > 0; t--) {
+        puts(r ? "\rNeustart in " : "\rHerunterfahren in ");
+        put_numx((unsigned long)t, 0, 0);
+        puts(" s - Esc bricht ab ");
+        for (k = 0; k < 10; k++) {
+            DosSleep(100);
+            if ((KbdPeek() & 0xFF) == 0x1B) {
+                KbdCharIn();
+                puts("\rAbgebrochen.                                  \n");
+                return;
+            }
+        }
+    }
+    if (k == 10)                        /* nach dem Zaehler: neue Zeile    */
+        puts("\n");
+    DosShutdown(r);
+}
+
 static int execute(char *l)
 {
     char *cmd = skip(l), *arg;
@@ -2513,12 +2561,8 @@ static int execute(char *l)
         cmd_md(arg, 1);
     else if (same(cmd, "REN") || same(cmd, "RENAME"))
         cmd_ren(arg);
-    else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF") || same(cmd, "REBOOT")) {
-        int r = same(cmd, "REBOOT") || same(arg, "/R");
-        if (confirm(r ? "Alle Programme beenden und neu starten (J/N)? "
-                      : "Alle Programme beenden und herunterfahren (J/N)? "))
-            DosShutdown(r);
-    }
+    else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF") || same(cmd, "REBOOT"))
+        cmd_shutdown(same(cmd, "REBOOT"), arg);
     else if (same(cmd, "CD") || same(cmd, "CHDIR"))
         cmd_cd(arg);
     else if (same(cmd, "VER"))
