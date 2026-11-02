@@ -1021,7 +1021,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   C0h | 30h. QEMUs AdLib (OPL2, 38Ah fehlt) zeigte das nicht. MIDI geht
   bei erkanntem MPU-401 dorthin – in 86Box nur hörbar mit eingestelltem
   MIDI-Ausgang, sonst `PLAY /FM`. SB16.SYS stellt einen FM-Regler, der
-  beim Start auf 0 steht, auf 75 %.
+  beim Start auf 0 steht, auf 75 %. Danach vom Nutzer in 86Box bestätigt:
+  IMF/MID spielen auf SB16/AWE.
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
   Offen: ISA-PnP
