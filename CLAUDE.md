@@ -1587,6 +1587,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Zeile ab, EXIT. Offen: Box mit DOS hängt -> bisher kein Abschuss
   (Strg+C gehört dem DOS; später eigene Taste oder über die Sitzungs-
   liste); Schreiben aufs Abbild; MEM zählt Box-Speicher unter „BIOS“.
+  Vom Nutzer in 86Box (386, AT-DOS386) bestätigt: DOSBOX startet, VER,
+  DIR, TIME gehen; COPY auf A: meldet wie vorgesehen „Laufwerk ist
+  schreibgeschützt“ (A: ist das gemeinsame Startabbild aller Boxen –
+  Schreiben dorthin würde sich zwischen gleichzeitigen Boxen in die
+  Quere kommen; beschreibbar werden die AT-DOS-Laufwerke über den
+  Redirector).
   Nächster Schritt: INT-2Fh-Redirector (TSR in der Box, Dienste über INT
   E0h) -> AT-DOS-Laufwerke in der Box, dann `.EXE`/`.BAT` aus COMMAND.EXE
   über `BOXSHELL /C`.
