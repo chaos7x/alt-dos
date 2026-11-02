@@ -18,6 +18,9 @@ static char line[LINE + 1];
 static char buf[256];
 static int  permanent;
 static unsigned errorlevel;             /* Rueckgabewert des letzten Programms */
+static int  break_on, verify_on, keys_on = 1, ctty; /* BREAK, VERIFY, KEYS, CTTY */
+static volatile int break_req;          /* Strg+C in einer Stapeldatei   */
+static int  ran_prog;                   /* letzte Zeile startete ein Programm */
 
 /* ---- Hilfen ------------------------------------------------------------ */
 static void putc(char c)
@@ -193,9 +196,12 @@ static char     cand[NCAND][CANDLEN];
 static unsigned ncand;
 static unsigned char cand_dir[NCAND];
 static const char *const builtin[] = {
-    "CD", "CHDIR", "CLS", "COPY", "DATE", "DEL", "DIR", "DOSKEY", "ECHO", "ERASE",
-    "EXIT", "HILFE", "MD", "MKDIR", "PATH", "POWEROFF", "PROMPT", "RD", "REBOOT", "REN",
-    "RENAME", "RMDIR", "SET", "SHUTDOWN", "START", "TIME", "TYPE", "VER", "VOL", 0
+    "BREAK", "CALL", "CD", "CHCP", "CHDIR", "CLS", "COPY", "CTTY", "DATE", "DEL",
+    "DETACH", "DIR", "DOSKEY", "ECHO", "ENDLOCAL", "ERASE", "EXIT", "FOR", "GOTO",
+    "HILFE", "IF", "KEYS", "LH", "LOADHIGH", "MD", "MKDIR", "PATH", "PAUSE",
+    "POWEROFF", "PROMPT", "RD", "REBOOT", "REM", "REN", "RENAME", "RMDIR", "SET",
+    "SETLOCAL", "SHIFT", "SHUTDOWN", "START", "TIME", "TRUENAME", "TYPE", "VER",
+    "VERIFY", "VOL", 0
 };
 
 static void show_prompt(void);
@@ -406,12 +412,41 @@ static int complete(unsigned *n, unsigned *pos, int again)
     return 0;
 }
 
+/* CTTY: Zeile ueber die Standardeingabe (z. B. COM1), mit Echo */
+static void read_line_tty(void)
+{
+    unsigned n = 0;
+    char c;
+    for (;;) {
+        if (DosRead(STDIN, &c, 1) != 1) {
+            if (!n)
+                continue;
+            break;
+        }
+        if (c == '\r' || c == '\n')
+            break;
+        if ((c == 8 || c == 127) && n) {
+            n--;
+            puts("\b \b");
+        } else if ((unsigned char)c >= ' ' && n < LINE) {
+            line[n++] = c;
+            putc(c);
+        }
+    }
+    line[n] = 0;
+    puts("\r\n");
+}
+
 static void read_line(void)
 {
     unsigned n = 0, pos = 0, k, key, browse = 0;
     unsigned char c, sc;
     int tabbed = 0;
 
+    if (ctty) {
+        read_line_tty();
+        return;
+    }
     overwrite = 0;
     for (;;) {
         oflush();
@@ -456,6 +491,8 @@ static void read_line(void)
                 overwrite = !overwrite;
                 break;
             case 0x48:                      /* auf: aelterer Befehl */
+                if (!keys_on)
+                    break;
                 if (browse < hist_n)
                     n = set_line(hist_get(browse++), &pos, n);
                 break;
@@ -1036,7 +1073,7 @@ static int is_dir(char *p)
     return 0;
 }
 
-static char cbuf[8192];
+static char cbuf[4096];                 /* Kopieren, Stapeldatei laden */
 
 /* Datum/Uhrzeit einer Datei (Eintrag im Verzeichnis); 0 = gefunden */
 static int file_stamp(const char *path, unsigned short *date, unsigned short *time)
@@ -1366,13 +1403,17 @@ static void cmd_help(void)
          "  DATE / TIME     Datum / Uhrzeit anzeigen und stellen\n"
          "  DOSKEY /HISTORY letzte Befehle; Pfeil auf/ab holt sie zur\x81" "ck, F3, Einfg\n"
          "  ECHO Text       Text ausgeben\n"
-         "  START Programm  Programm in eigener Sitzung starten\n"
+         "  START Programm  Programm in eigener Sitzung starten, DETACH: im Hintergrund\n"
          "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
-         "  Stapeldateien:  ECHO [ON|OFF], REM, PAUSE, GOTO, IF, CALL, SHIFT, %1 %NAME%\n"
+         "  Stapeldateien:  ECHO [ON|OFF], ECHO., @, REM, PAUSE, GOTO [:EOF], CALL,\n"
+         "                  SHIFT, %0-%9, %NAME%, IF [NOT] ERRORLEVEL|EXIST|a==b,\n"
+         "                  FOR %%v IN (Satz) DO, SETLOCAL/ENDLOCAL, EXTPROC\n"
+         "  a & b, a && b, a || b  nacheinander / nur bei Erfolg / nur bei Fehler\n"
+         "  TRUENAME, BREAK, VERIFY, CHCP, CTTY, KEYS [ON|OFF|LIST], LH\n"
          "  EXIT            Befehlsinterpreter beenden\n"
          "Programme in \\DOS (HELP Befehl zeigt die Hilfe dazu):\n"
-         "  ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND FORMAT\n"
-         "  ANSI GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
+         "  ANSI ATTRIB CHKDSK CHOICE DEFRAG DELTREE DISKCOPY EDIT FC FDISK FIND\n"
+         "  FORMAT GREP JOIN KEYB LABEL LESS MEM MODE MORE MOVE MSD PRINT SCANDISK SORT\n"
          "  SUBST SYS TREE UNDELETE XCOPY\n"
          "Andere Eingaben starten das gleichnamige Programm, z. B. MEM.\n"
          "Alt+Esc wechselt die Sitzung, Strg+C bricht ein Programm ab,\n"
@@ -1687,7 +1728,18 @@ static struct batch {
     char    *argv[10];
     int      argc, shift;
 } bat[BMAX];
-static int bdepth, batch_stop;
+static int bdepth, batch_stop, batch_abort;
+static int run_chain(char *l);
+static int run_program(char *cmd, int sync, int call);
+static int confirm(const char *q);
+static void endlocal(void);
+static int nlocal, local_lvl[4];
+
+static void on_break(unsigned sig)
+{
+    (void)sig;
+    break_req = 1;
+}
 
 static char __far *bdata(struct batch *b)
 {
@@ -1762,6 +1814,10 @@ static void cmd_goto(struct batch *b, char *label)
 
     if (*label == ':')
         label++;
+    if (same(label, "EOF")) {           /* wie NT: an das Dateiende     */
+        b->pos = b->len;
+        return;
+    }
     b->pos = 0;
     while (batch_line(b, l)) {
         p = skip(l);
@@ -1867,13 +1923,53 @@ static int run_batch(const char *path, const char *args)
     *p++ = 0;
     b->argv[b->argc++] = b->argbuf;
     for (args = skip((char *)args); *args && b->argc < 10; args = skip((char *)args)) {
+        int q = 0;                      /* "Lange Namen" bleiben ein Wort */
         b->argv[b->argc++] = p;
-        while (*args && *args != ' ' && p < b->argbuf + sizeof(b->argbuf) - 1)
+        while (*args && (q || *args != ' ') && p < b->argbuf + sizeof(b->argbuf) - 1) {
+            if (*args == '"')
+                q = !q;
             *p++ = *args++;
+        }
         *p++ = 0;
+    }
+    /* OS/2: EXTPROC prog in der ersten Zeile - prog bearbeitet die Datei */
+    if (batch_line(b, l) && same(skip(l), "EXTPROC")) {
+        static char xc[CMDLEN];
+        unsigned k = 0;
+        char *x = next_word(skip(l));
+        DosFreeSeg(sel);
+        for (; *x && k < CMDLEN - 2; )
+            xc[k++] = *x++;
+        xc[k++] = ' ';
+        for (i = 0; path[i] && k < CMDLEN - 2; i++)
+            xc[k++] = path[i];
+        if (*args || b->argc > 1) {
+            for (i = 1; (int)i < b->argc; i++) {
+                xc[k++] = ' ';
+                for (x = b->argv[i]; *x && k < CMDLEN - 1; )
+                    xc[k++] = *x++;
+            }
+        }
+        xc[k] = 0;
+        return run_program(xc, 1, 1);
+    }
+    b->pos = 0;
+    if (bdepth == 0) {
+        break_req = 0;
+        DosSetSigHandler(on_break, SIG_BREAK);
     }
     bdepth++;
     while (!batch_stop && batch_line(b, l)) {
+        if (break_req || (ran_prog && errorlevel == 255)) {
+            break_req = 0;
+            ran_prog = 0;
+            if (confirm("Stapelverarbeitung abbrechen (J/N)? ")) {
+                batch_abort = 1;
+                break;
+            }
+        }
+        if (batch_abort)
+            break;
         p = skip(l);
         quiet = *p == '@';
         if (quiet)
@@ -1889,7 +1985,8 @@ static int run_batch(const char *path, const char *args)
         for (i = 0; ebuf[i]; i++)
             l[i] = ebuf[i];
         l[i] = 0;
-        if (!execute_line(l)) {
+        ran_prog = 0;
+        if (!run_chain(l)) {
             rc = 0;
             break;
         }
@@ -1897,9 +1994,338 @@ static int run_batch(const char *path, const char *args)
     batch_stop = 0;
     bdepth--;
     DosFreeSeg(sel);
-    if (bdepth == 0)
+    while (nlocal && local_lvl[nlocal - 1] > bdepth)
+        endlocal();                     /* wie OS/2: am Dateiende       */
+    if (bdepth == 0) {
         echo_on = 1;                    /* wie MS-DOS: an der Eingabe wieder an */
+        batch_abort = 0;
+        F2(FAPI_SETSIGHANDLER, 0, 0);
+    }
     return rc;
+}
+
+/* ---- Verketten wie OS/2 CMD: a & b, a && b, a || b, ^ maskiert -------- */
+static int run_chain(char *l)
+{
+    static char part[3][CMDLEN];
+    static int depth;
+    char *d;
+    unsigned i = 0;
+    int q = 0, op = 0, next, run, rc = 1;
+
+    if (depth >= 3)
+        return execute_line(l);
+    d = part[depth++];
+    for (;;) {
+        char c = *l;
+        next = -1;
+        if (c == 0)
+            next = 0;
+        else if (c == '"') {
+            q = !q;
+        } else if (c == '^' && l[1] && !q) {
+            l++;
+            c = *l;
+            if (i < CMDLEN - 1)
+                d[i++] = c;
+            l++;
+            continue;
+        } else if (!q && c == '&') {
+            next = l[1] == '&' ? 2 : 1;
+            l += next;
+        } else if (!q && c == '|' && l[1] == '|') {
+            next = 3;
+            l += 2;
+        }
+        if (next < 0) {
+            if (i < CMDLEN - 1)
+                d[i++] = c;
+            l++;
+            continue;
+        }
+        d[i] = 0;
+        run = op == 0 || op == 1 || (op == 2 && errorlevel == 0) ||
+              (op == 3 && errorlevel != 0);
+        if (run && *skip(d) && !execute_line(d)) {
+            rc = 0;
+            break;
+        }
+        if (next == 0)
+            break;
+        op = next;
+        i = 0;
+    }
+    depth--;
+    return rc;
+}
+
+/* ---- FOR %v IN (satz) DO befehl (in Stapeldateien %%v) ----------------- */
+static int for_active;
+
+static int for_one(const char *body, char v, const char *val)
+{
+    static char run[CMDLEN];
+    unsigned o = 0, k;
+    for (; *body && o < CMDLEN - 1; body++) {
+        if (body[0] == '%' && body[1] == v) {
+            for (k = 0; val[k] && o < CMDLEN - 1; k++)
+                run[o++] = val[k];
+            body++;
+        } else
+            run[o++] = *body;
+    }
+    run[o] = 0;
+    return run_chain(run);
+}
+
+static int cmd_for(char *arg)
+{
+    static char set[CMDLEN], body[CMDLEN], item[FAPI_PATHLEN], dir[FAPI_PATHLEN],
+                full[FAPI_PATHLEN];
+    static struct fapi_dirent e;
+    char v, *p, *b;
+    unsigned i, n, k, dl;
+    int rc = 1;
+
+    if (arg[0] != '%' || !arg[1] || (arg[2] && arg[2] != ' '))
+        goto syntax;
+    v = arg[1];
+    p = next_word(arg);
+    if (!same(p, "IN"))
+        goto syntax;
+    p = skip(p + 2);
+    if (*p != '(')
+        goto syntax;
+    for (i = 0, p++; *p && *p != ')' && i < CMDLEN - 1; )
+        set[i++] = *p++;
+    set[i] = 0;
+    if (*p != ')')
+        goto syntax;
+    p = skip(p + 1);
+    if (!same(p, "DO"))
+        goto syntax;
+    p = next_word(p);
+    if (!*p)
+        goto syntax;
+    if (for_active) {
+        puts("FOR kann nicht geschachtelt werden.\n");
+        return 1;
+    }
+    for (i = 0; p[i] && i < CMDLEN - 1; i++)
+        body[i] = p[i];
+    body[i] = 0;
+    for_active = 1;
+    for (p = set; rc; ) {
+        while (*p == ' ' || *p == ',' || *p == ';' || *p == '=' || *p == '\t')
+            p++;
+        if (!*p)
+            break;
+        for (i = 0; *p && *p != ' ' && *p != ',' && *p != ';' && *p != '=' &&
+             *p != '\t' && i < sizeof(item) - 1; )
+            item[i++] = *p++;
+        item[i] = 0;
+        if (!has_wild(item)) {
+            rc = for_one(body, v, item);
+            continue;
+        }
+        b = base_name(item);                    /* Dateien zum Muster     */
+        dl = (unsigned)(b - item);
+        for (k = 0; k < dl; k++)
+            dir[k] = item[k];
+        dir[dl] = 0;
+        if (dl > 1 && dir[dl - 1] == '\\' && dir[dl - 2] != ':')
+            dir[dl - 1] = 0;
+        for (n = 0; rc && DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
+            if ((e.attr & 0x16) || !match(e.name, b))
+                continue;               /* wie MS-DOS: nur sichtbare Dateien */
+            for (k = 0; k < dl && k < sizeof(full) - 1; k++)
+                full[k] = item[k];
+            for (i = 0; e.name[i] && k < sizeof(full) - 1; i++)
+                full[k++] = e.name[i];
+            full[k] = 0;
+            rc = for_one(body, v, full);
+        }
+    }
+    for_active = 0;
+    return rc;
+syntax:
+    puts("Syntaxfehler (FOR %v IN (Satz) DO Befehl).\n");
+    return 1;
+}
+
+/* ---- SETLOCAL/ENDLOCAL wie OS/2: Umgebung, Laufwerk, Verzeichnis ------- */
+static unsigned local_sel[4];
+
+static void setlocal(void)
+{
+    static char e[FAPI_ENVSIZE];
+    char __far *d;
+    unsigned sel, i, o = 0, k;
+
+    if (nlocal == 4) {
+        puts("Zu viele verschachtelte SETLOCAL.\n");
+        return;
+    }
+    sel = DosAllocSeg(FAPI_ENVSIZE + FAPI_CURDIRLEN + 4);
+    if (FAPI_FAILED(sel) || !sel) {
+        puts("Nicht gen\x81gend Arbeitsspeicher.\n");
+        return;
+    }
+    d = MK_FP(sel, 0);
+    DosQCurDir(e);                              /* "C:\\DOS" zuerst        */
+    for (k = 0; e[k]; k++)
+        d[o++] = e[k];
+    d[o++] = 0;
+    for (i = 0; DosEnvEntry(i, e, sizeof(e)) != FAPI_ERROR; i++) {
+        for (k = 0; e[k] && o < FAPI_ENVSIZE + FAPI_CURDIRLEN; k++)
+            d[o++] = e[k];
+        d[o++] = 0;
+    }
+    d[o] = 0;
+    local_sel[nlocal] = sel;
+    local_lvl[nlocal++] = bdepth;
+}
+
+static void endlocal(void)
+{
+    static char e[FAPI_ENVSIZE];
+    char __far *d;
+    unsigned o = 0, k;
+
+    if (!nlocal)
+        return;
+    d = MK_FP(local_sel[--nlocal], 0);
+    while (DosEnvEntry(0, e, sizeof(e)) != FAPI_ERROR) {   /* alles weg */
+        for (k = 0; e[k] && e[k] != '='; k++)
+            ;
+        e[k] = '=';
+        e[k + 1] = 0;
+        if (DosSetEnv(e))
+            break;
+    }
+    for (k = 0; d[o]; )                         /* Verzeichnis            */
+        e[k++] = d[o++];
+    e[k] = 0;
+    o++;
+    if (e[0] && e[1] == ':') {
+        DosSelectDisk(up(e[0]) - 'A');
+        DosChDir(e);
+    }
+    while (d[o]) {                              /* Umgebung zurueck       */
+        for (k = 0; d[o] && k < sizeof(e) - 1; )
+            e[k++] = d[o++];
+        e[k] = 0;
+        o++;
+        DosSetEnv(e);
+    }
+    DosFreeSeg(local_sel[nlocal]);
+}
+
+/* ---- TRUENAME: echter Pfad hinter SUBST und JOIN ---------------------- */
+static void cmd_truename(char *arg)
+{
+    static char in[FAPI_PATHLEN], out[FAPI_PATHLEN], t[FAPI_CURDIRLEN];
+    unsigned i, o, k, d;
+
+    word(arg, in, sizeof(in));
+    dir_abs(in, out);                           /* "C:\\A\\..\\B" */
+    for (i = 3, o = 3; out[i]; ) {              /* . und .. auflösen     */
+        if (out[i] == '.' && (out[i + 1] == '\\' || !out[i + 1])) {
+            i += out[i + 1] ? 2 : 1;
+        } else if (out[i] == '.' && out[i + 1] == '.' &&
+                   (out[i + 2] == '\\' || !out[i + 2])) {
+            i += out[i + 2] ? 3 : 2;
+            if (o > 3)
+                o--;
+            while (o > 3 && out[o - 1] != '\\')
+                o--;
+        } else {
+            while (out[i] && out[i] != '\\')
+                out[o++] = out[i++];
+            if (out[i])
+                out[o++] = out[i++];
+        }
+    }
+    if (o > 3 && out[o - 1] == '\\')
+        o--;
+    out[o] = 0;
+    for (i = 0; out[i]; i++)
+        out[i] = up(out[i]);
+    d = (unsigned)(out[0] - 'A');
+    if (DosQSubst(d, t) == 0) {                 /* X:\\REST -> ZIEL\\REST */
+        for (k = 0; t[k]; k++)
+            ;
+        if (k > 3 && out[3])
+            t[k++] = '\\';
+        for (i = 3; out[i] && k < sizeof(t) - 1; i++)
+            t[k++] = out[i];
+        t[k] = 0;
+        scopy(out, t, sizeof(out));
+    }
+    for (d = 0; d < 26; d++) {                  /* C:\\CDROM\\X -> D:\\X  */
+        if (DosQJoin(d, t) != 0)
+            continue;
+        for (k = 0; t[k] && up(t[k]) == out[k]; k++)
+            ;
+        if (t[k] || (out[k] && out[k] != '\\'))
+            continue;
+        in[0] = (char)('A' + d);
+        in[1] = ':';
+        in[2] = '\\';
+        for (i = 3, k += out[k] ? 1 : 0; out[k] && i < sizeof(in) - 1; )
+            in[i++] = out[k++];
+        in[i] = 0;
+        scopy(out, in, sizeof(out));
+        break;
+    }
+    puts(out);
+    puts("\n");
+}
+
+static void on_off(const char *name, int *flag, char *arg)
+{
+    if (same(arg, "ON"))
+        *flag = 1;
+    else if (same(arg, "OFF"))
+        *flag = 0;
+    else if (*arg) {
+        puts("Ung\x81ltiger Parameter - ");
+        puts(arg);
+        puts("\n");
+        return;
+    } else {
+        puts(name);
+        puts(*flag ? " ist eingeschaltet.\n" : " ist ausgeschaltet.\n");
+    }
+}
+
+/* CTTY CON | COM1..4 | AUX: Ein-/Ausgabe ueber ein anderes Geraet */
+static void cmd_ctty(char *arg)
+{
+    static char nm[16];
+    unsigned h;
+    word(arg, nm, sizeof(nm));
+    if (same(nm, "CON")) {
+        DosDup2(0xFFFF, STDIN);
+        DosDup2(0xFFFF, STDOUT);
+        DosDup2(0xFFFF, 2);
+        ctty = 0;
+        return;
+    }
+    if (!nm[0]) {
+        puts("Syntax: CTTY CON | COM1 | COM2 | COM3 | COM4 | AUX\n");
+        return;
+    }
+    h = DosOpen(nm);
+    if (FAPI_FAILED(h)) {
+        puts("Ung\x81ltiges Ger\x84t.\n");
+        return;
+    }
+    DosDup2(h, STDIN);
+    DosDup2(h, STDOUT);
+    DosDup2(h, 2);
+    DosClose(h);
+    ctty = 1;
 }
 
 /* Programm oder Stapeldatei starten; sync: 1 warten, 0 eigene Sitzung.
@@ -1978,6 +2404,7 @@ static int run_program(char *cmd, int sync, int call)
     type = find_program(cmd, wl, path);
     if (type == 0) {
         puts("Befehl oder Dateiname nicht gefunden.\n");
+        errorlevel = 1;                 /* fuer ||                      */
         return 1;
     }
     if (type == 3) {
@@ -1987,7 +2414,7 @@ static int run_program(char *cmd, int sync, int call)
         puts(" ist ein MS-DOS-Programm und l\x84uft nicht unter AT-DOS.\n");
         return 1;
     }
-    if (type == 2 && sync) {
+    if (type == 2 && sync == 1) {
         r = run_batch(path, args);
         if (bdepth > 0 && !call)
             batch_stop = 1;             /* ohne CALL: Kette, nicht zurueck */
@@ -2019,13 +2446,15 @@ static int run_program(char *cmd, int sync, int call)
         puts("Befehlszeile zu lang.\n");
         return 1;
     }
-    r = DosExecPgm(cl, sync ? EXEC_SYNC : EXEC_ASYNC);
+    r = DosExecPgm(cl, sync == 2 ? EXEC_BG : sync ? EXEC_SYNC : EXEC_ASYNC);
     if (r) {
         exec_error(r);
         errorlevel = 1;
-    } else if (sync) {
+    } else if (sync == 1) {
         errorlevel = DosQChildRC();     /* fuer IF ERRORLEVEL          */
-    }
+        ran_prog = 1;
+    } else if (sync == 2)
+        puts("Das Programm l\x84uft im Hintergrund (DETACH).\n");
     return 1;
 }
 
@@ -2122,6 +2551,42 @@ static int execute(char *l)
             bat[bdepth - 1].shift++;
     } else if (same(cmd, "IF"))
         return cmd_if(arg);
+    else if (same(cmd, "FOR"))
+        return cmd_for(arg);
+    else if (same(cmd, "BREAK"))
+        on_off("BREAK", &break_on, arg);
+    else if (same(cmd, "VERIFY"))
+        on_off("VERIFY", &verify_on, arg);
+    else if (same(cmd, "KEYS")) {               /* OS/2: Befehlsspeicher */
+        if (same(arg, "LIST"))
+            cmd_doskey("/HISTORY");
+        else
+            on_off("KEYS", &keys_on, arg);
+    } else if (same(cmd, "TRUENAME"))
+        cmd_truename(arg);
+    else if (same(cmd, "CHCP")) {
+        if (!*arg || same(arg, "437"))
+            puts("Aktive Codeseite: 437\n");
+        else if (same(arg, "850"))
+            puts("Codeseite 850 ist nicht vorbereitet (Zeichensatz fehlt).\n");
+        else
+            puts("Ung\x81ltige Codeseite.\n");
+    } else if (same(cmd, "CTTY"))
+        cmd_ctty(arg);
+    else if (same(cmd, "LH") || same(cmd, "LOADHIGH")) {
+        while (*arg == '/')                     /* /L:... /S: ohne Wirkung */
+            arg = next_word(arg);
+        if (*arg)
+            return run_program(arg, 1, 0);
+    } else if (same(cmd, "DETACH")) {
+        if (*arg)
+            run_program(arg, 2, 0);
+        else
+            puts("Syntax: DETACH Programm [Argumente]\n");
+    } else if (same(cmd, "SETLOCAL"))
+        setlocal();
+    else if (same(cmd, "ENDLOCAL"))
+        endlocal();
     else if (same(cmd, "CALL")) {
         if (*arg)
             return run_program(arg, 1, 1);
@@ -2346,7 +2811,7 @@ void main(void)
             permanent = 1;
         else if (up(p[0]) == '/' || p[0] == '/') {
             if (up(p[1]) == 'C' && (p[2] == ' ' || !p[2])) {
-                execute_line(next_word(p)); /* COMMAND /C befehl: ausfuehren, Ende */
+                run_chain(next_word(p));    /* COMMAND /C befehl: ausfuehren, Ende */
                 DosExit(errorlevel);        /* Rueckgabewert durchreichen */
             }
         }
@@ -2368,7 +2833,7 @@ void main(void)
         if (echo_on)
             show_prompt();
         read_line();
-        if (!execute_line(line))
+        if (!run_chain(line))
             break;
     }
 }

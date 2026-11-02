@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.0, Meilenstein 6
+# alt-dos – AT-DOS 5.0, Meilenstein 8
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
 80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
@@ -34,8 +34,11 @@ und PC-DOS.
   CD-ROMs (2048-Byte-Blöcke) nur lesen
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
-  `BUFFERS=` (Sektor-Cache, 1–99 Sektoren, Vorgabe 15; Dateien werden bis
-  zu 4 Sektoren am Stück gelesen); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  `CACHE=kb[,s]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
+  bis 8 MB im erweiterten Speicher, Festplatten schreiben s Sekunden
+  verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
+  bei 2 MB; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
+  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
@@ -58,6 +61,10 @@ und PC-DOS.
   als Rückverweis) den langen Namen; im Verzeichniseintrag steht nichts,
   MS-DOS sieht nur Kurznamen und eine versteckte Datei. XCOPY und MOVE
   kopieren lange Namen mit; Befehlszeilen bis 127 Zeichen; `DIR /B`, `/W`
+- Lange Namen, Stufe 4: CHKDSK prüft VFAT-Ketten und die Sätze in
+  `EA DATA. SF` und räumt mit `/F` verwaiste lange Namen auf (z. B. nach
+  Umbenennen mit einem alten DOS-Werkzeug). EDIT zeigt lange Namen in der
+  Dateiliste, die Tab-Ergänzung setzt Anführungszeichen wie bash
 - Laufwerke `A:`, `B:` (Disketten), `C:`, `D:` … für jede FAT-Partition
 - Start von Diskette oder von einer FAT16-Partition (IDE oder SCSI), siehe
   „Start von Festplatte“
@@ -82,12 +89,24 @@ und PC-DOS.
   heißt „n oder größer“ wie bei MS-DOS, `COMMAND /C` reicht den Wert durch –, `CALL`, `SHIFT`, `%0`–`%9`, `%NAME%`), `AUTOEXEC.BAT`
   beim Start (`COMMAND /P`), `COMMAND /C`; Programme werden wie bei
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
-  (`.EXE`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
+  (`.EXE`, `.CMD`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
   gleichzeitig), `RD`, `REN`, `CLS`, `VER`, `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
   neu starten; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
-  starten das gleichnamige Programm, auch mit Pfad
+  starten das gleichnamige Programm, auch mit Pfad.
+  Stapelsprache vollständig wie MS-DOS 6.22 und OS/2 CMD: dazu `FOR %%v IN
+  (Satz) DO` (Platzhalter werden zu Dateinamen; an der Eingabe `%v`),
+  `GOTO :EOF`, `SETLOCAL`/`ENDLOCAL` (Umgebung, Laufwerk und Verzeichnis;
+  am Dateiende automatisch), `EXTPROC` in der ersten Zeile, Verketten mit
+  `&`, `&&`, `||` und `^` zum Maskieren, Argumente in Anführungszeichen
+  bleiben ein Wort; Strg+C fragt „Stapelverarbeitung abbrechen (J/N)?“.
+  Außerdem `TRUENAME` (echter Pfad hinter SUBST/JOIN), `BREAK`, `VERIFY`,
+  `CHCP`, `CTTY COM1` (Bedienung über die serielle Leitung), `KEYS
+  ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund), `CD A:\X` von C:
+  aus (jedes Programm merkt sich das Verzeichnis weiterer Laufwerke),
+  `PROMPT $E` für ANSI-Farben; `DIR` zeigt JOIN-Verzeichnisse als
+  `<JUNCTION>`
 - Werkzeuge wie MS-DOS 5/6 (Schalter und Meldungen wie dort): `ATTRIB`
   (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /Y`, Datum bleibt erhalten),
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
@@ -135,6 +154,12 @@ und PC-DOS.
   Pfeilen oder Maus; `/S` als Bericht auf die Standardausgabe
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
+- `JOIN [X: [Y:]Pfad] | X: /D` wie MS-DOS 3.1–5.0: hängt ein Laufwerk in ein
+  leeres Verzeichnis ein (Gegenstück zu SUBST, im Kernel statt in COMMAND –
+  CHKDSK, FORMAT usw. sehen weiter das echte Laufwerk)
+- ANSI wie bei OS/2 fest in der Bildschirmausgabe (kein ANSI.SYS nötig):
+  Cursor, Löschen, Farben; `ANSI [ON|OFF]` je Sitzung
+- Leere Diskettenlaufwerke melden „Laufwerk nicht bereit“
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
   Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
   `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die
@@ -217,7 +242,7 @@ Größe von Abbild, BSS und Stack sowie dem Einsprung. Der Lader legt für jedes
 Programm ein Segment genau dieser Größe an. `tools/mkfx.py` erzeugt die
 Dateien aus dem Watcom-Abbild.
 
-## FAPI (Stand Meilenstein 6)
+## FAPI (Stand Meilenstein 8)
 
 Dateinamen und Pfade nehmen bis 260 Zeichen an (wie bei OS/2), auch wenn FAT
 selbst nur 8.3 kennt.

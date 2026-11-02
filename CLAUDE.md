@@ -20,7 +20,13 @@ neben dem Kernel denken.
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 7
+## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 8
+
+Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
+Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
+Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
+(MS-DOS 6.22 + OS/2 CMD). Danach geplant: Dateimanager, DISKCOMP/COMP/
+REPLACE/EXPAND, dann 5.1 (Kompatibilitätsbox).
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -243,6 +249,20 @@ Win32s), nicht vorziehen, sondern nachfragen.
   In QEMU geprüft (50, 43, EDIT mit 43, Sitzungswechsel 50 <-> 25),
   vom Nutzer auf dem SCAT mit ET4000 bestätigt. EGA (43 Zeilen, andere Register) nicht
   unterstützt.
+- Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
+  in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
+  DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
+  (& && || ^, statt execute_line in Hauptschleife, Stapel und /C;
+  && prüft ERRORLEVEL 0, nicht gefundener Befehl setzt ERRORLEVEL 1),
+  `setlocal`/`endlocal` (Umgebung + aktuelles Verzeichnis in DosAllocSeg,
+  bis 4 tief, Ende der Stapeldatei räumt auf), EXTPROC (erste Zeile),
+  GOTO :EOF, Strg+C: SIG_BREAK-Handler während Stapeldateien bzw. Kind
+  mit Rückgabewert 255 -> „Stapelverarbeitung abbrechen (J/N)?“
+  (`batch_abort` über alle Ebenen), TRUENAME (Pfad normalisieren, SUBST
+  und JOIN auflösen), BREAK/VERIFY (nur Merker), CHCP (437), CTTY
+  (Handles 0–2 auf das Gerät, `read_line_tty`), KEYS ON/OFF/LIST, LH,
+  DETACH (EXEC_BG). Argumente in "..." bleiben ein Wort. COMMAND ist bei
+  ~62 KB (cbuf auf 4 KB verkleinert) – auf „mehr als 64 KB“ achten.
 - ANSI wie OS/2 fest in der Bildschirmausgabe statt ANSI.SYS (Wunsch des
   Nutzers, in QEMU geprüft): `tty_char` -> `ansi_char` (vio.c) wertet in
   jeder TTY-Ausgabe (DosWrite auf die Konsole, VioWrtTTY) ESC[ Zeile;Spalte
