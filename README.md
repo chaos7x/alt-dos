@@ -170,6 +170,10 @@ und PC-DOS.
 - ANSI wie bei OS/2 fest in der Bildschirmausgabe (kein ANSI.SYS nötig):
   Cursor, Löschen, Farben; `ANSI [ON|OFF]` je Sitzung
 - Leere Diskettenlaufwerke melden „Laufwerk nicht bereit“
+- `TEMP` und `TMP` stehen wie bei Windows von Anfang an in der Umgebung
+  (`X:\TEMP` auf dem Startlaufwerk, beim Start von Diskette `C:\TEMP`,
+  wenn es C: gibt; `SET TEMP=` in CONFIG.SYS geht vor). `COMMAND /P` legt
+  das Verzeichnis beim Start an
 - `FDISK [/STATUS] [/MBR]` wie MS-DOS 5/6: primäre und erweiterte
   Partitionen, logische Laufwerke, aktive Partition, löschen, anzeigen;
   `/MBR` erneuert den Startcode (der MBR von AT-DOS lädt über LBA und die

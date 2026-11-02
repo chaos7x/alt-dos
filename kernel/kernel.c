@@ -4444,6 +4444,21 @@ void kmain(void)
     scopy(line, "COMSPEC=A:\\COMMAND.EXE", sizeof(line));
     line[8] = (char)('A' + sys_drive);
     env_set(-1, line);
+    {                                           /* TEMP/TMP wie Windows:  */
+        char td = (char)('A' + sys_drive);      /* Startlaufwerk, von     */
+        if (sys_drive < 2 && vol_present(2) && vol[2].used)
+            td = 'C';                           /* Diskette lieber C:     */
+        if (env_find(-1, "TEMP", 4) < 0) {
+            scopy(line, "TEMP=A:\\TEMP", sizeof(line));
+            line[5] = td;
+            env_set(-1, line);
+        }
+        if (env_find(-1, "TMP", 3) < 0) {
+            scopy(line, "TMP=A:\\TEMP", sizeof(line));
+            line[4] = td;
+            env_set(-1, line);
+        }
+    }
     if (env_find(-1, "PATH", 4) < 0) {          /* Vorgabe: X:\DOS;X:\ */
         scopy(line, "PATH=A:\\DOS;A:\\", sizeof(line));
         line[5] = line[12] = (char)('A' + sys_drive);

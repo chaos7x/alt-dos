@@ -308,6 +308,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `ANSI [ON|OFF]` (ANSI.EXE, FAPI 4Eh VioSetAnsi, 2 = abfragen), OFF setzt
   die Farbe zurück. COMMAND: `PROMPT $E` = ESC (`$e[1;33m$p$e[0m$g`).
   Vom Nutzer in 86Box bestätigt: farbiger Prompt geht.
+- TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
+  der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
+  C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
+  COMMAND /P macht DosMkDir(%TEMP%). Bisher nutzt kein AT-DOS-Werkzeug
+  temporäre Dateien (Pipes laufen im Kernel) – gedacht für DOS-Box/
+  Compiler.
 - Pfade: der Kernel löst sie je Task auf (aktuelles Laufwerk und Verzeichnis)
   und reicht den IFS-Treibern kanonische Pfade `\DIR\DATEI` weiter.
 - Sektornummern sind 32 Bit (`unsigned long`); Multiplikation mit der

@@ -2819,8 +2819,11 @@ void main(void)
 
     puts("COMMAND.EXE - Befehlsinterpreter f\x81r AT-DOS 5.0\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
-    if (permanent)
+    if (permanent) {
         autochk();
+        if (DosGetEnv("TEMP", pbuf, sizeof(pbuf)) != FAPI_ERROR && pbuf[0])
+            DosMkDir(pbuf);             /* fehlt %TEMP%: anlegen        */
+    }
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */
     if (permanent && exists("\\AUTOEXEC.CMD")) {
