@@ -30,7 +30,11 @@ Meilensteine (Zählung des Nutzers): 7 = Werkzeuge wie MS-DOS 5/6 und
 Treiber; 8 = lange Namen komplett (Stufen 1–4, EDIT), Platten-Cache im
 Kernel, ANSI, JOIN, CD auf andere Laufwerke, Stapelsprache komplett
 (MS-DOS 6.22 + OS/2 CMD), Dateimanager FM, DISKCOMP/COMP/REPLACE/EXPAND.
-Danach geplant: 5.1 (Kompatibilitätsbox).
+Plan (Entscheidung des Nutzers): Ton fertig (FM/OPL, MPU-401) -> 5.0
+fertig (taggen, Zweig `5.x` für Fehlerbehebungen) -> 6.0 auf `main`;
+asynchrone Plattenzugriffe in 6.0 bauen (Sperren je Gerät statt `klock`,
+ohne 386-Abhängigkeit) und danach nach 5.x zurückübertragen. 5.1
+(Kompatibilitätsbox) zurückgestellt – die echten DOS-Boxen in 6.0 gehen vor.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -983,7 +987,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
   virtuelle SB der DOS-Boxen in 6.0.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
-- Idee „AT-DOS 5.1“: Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
+- Idee „AT-DOS 5.1“ (vom Nutzer zurückgestellt, DOS-Boxen in 6.0 gehen
+  vor): Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
   Real-Mode-DOS-Sitzung unter 640 KB (z. B. MS-DOS 6 von der SCSI-Platte),
   Rückweg in den Real Mode per CPU-Reset mit Shutdown-Code im CMOS, Box im
   Hintergrund eingefroren. Erweiterung der Zeitlinie (Spezifikation sieht
