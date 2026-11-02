@@ -1491,7 +1491,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   vor weiterem Code Seltenes nach KTEXT2 verschieben. Offen: MEM zählt
   Box-Speicher unter „BIOS, Boot, Puffer“. Vom Nutzer in 86Box
   bestätigt: drei HALLO-Boxen gleichzeitig, dabei Dateien über NCR8XX
-  kopiert, CHKDSK ohne Fehler.
+  kopiert, CHKDSK ohne Fehler; auf dem 386SX mit 2 MB zwei HALLO-Boxen
+  gleichzeitig, dabei kopiert.
   Nächste Stufe 2: Monitor ausbauen – virtueller Bildschirm (B8000 in
   den Sitzungspuffer, VGA-Ports), Tastatur (INT 9/Port 60h), Zeitgeber
   (INT 8/1Ch, Port 40h–43h), BIOS INT 10h/16h/1Ah vollständiger.
