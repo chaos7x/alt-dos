@@ -2224,6 +2224,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     return sig_deliver(r);
 }
 
+static unsigned char fapi_kcall;        /* box_fapi: Puffer des Kernels */
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3)
 {
@@ -2232,7 +2233,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     static struct ifs_dirent de;
     int d;
 
-    usel |= 3;                                  /* Aufrufer ist Ring 3  */
+    if (!fapi_kcall)
+        usel |= 3;                              /* Aufrufer ist Ring 3  */
     switch (fn) {
     case FAPI_GETVERSION:
         return FAPI_VERSION;
@@ -3258,6 +3260,25 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     return FAPI_ERROR;
 }
 
+/* FAPI-Aufruf fuer den Redirector der DOS-Boxen (redir.c): Puffer ueber
+   usel (KDATA oder das Fenster der Box), mit Kernelsperre */
+unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3)
+{
+    unsigned r;
+    ifs_notready = 0;
+    klock_enter();
+    fapi_kcall = 1;                     /* KDATA/Fenster mit RPL 0       */
+    r = fapi_inner(fn, usel, a1, a2, a3);
+    fapi_kcall = 0;
+    if (bc_due())
+        bc_flush();
+    fd_sync();
+    klock_leave();
+    if (ifs_notready && r >= FAPI_ERR_FIRST)
+        r = FAPI_ERR_NOTREADY;
+    return r;
+}
+
 /* Dienste fuer den V86-Monitor (v86.c, zweites Codesegment) */
 int box_ctl(unsigned op, unsigned a)
 {
@@ -3279,6 +3300,21 @@ int box_ctl(unsigned op, unsigned a)
     }
     case BOX_ARGS:
         return (int)(unsigned)task[current].args;
+    case BOX_DRIVES: {                  /* eingehaengte Laufwerke ab C:  */
+        unsigned m = 0, d;
+        for (d = 2; d < 26; d++)
+            if ((d >> 4) == a && vol_present(d))
+                m |= 1u << (d & 15);
+        return (int)m;
+    }
+    case BOX_SYSDRV:
+        return sys_drive;
+    case BOX_LOCK:
+        if (a)
+            klock_enter();
+        else
+            klock_leave();
+        return 0;
     case BOX_EXIT:
         task[current].rc = (unsigned char)a;
         klock_enter();                  /* task_end schliesst Dateien    */

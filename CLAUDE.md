@@ -203,7 +203,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`,
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`, `redir`,
   `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
   Segment damit 62,0 KB).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
@@ -1593,9 +1593,35 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Schreiben dorthin würde sich zwischen gleichzeitigen Boxen in die
   Quere kommen; beschreibbar werden die AT-DOS-Laufwerke über den
   Redirector).
-  Nächster Schritt: INT-2Fh-Redirector (TSR in der Box, Dienste über INT
-  E0h) -> AT-DOS-Laufwerke in der Box, dann `.EXE`/`.BAT` aus COMMAND.EXE
-  über `BOXSHELL /C`.
+  Redirector erledigt (in QEMU geprüft: MD/CD/RD, COPY in beide
+  Richtungen mit 25/27 KB – Inhalte gleich, REN, DEL *.*, TYPE, Umleitung
+  `>`, Programm von C:, VOL; fsck sauber): BOXSHELL trägt die AT-DOS-
+  Laufwerke (INT E0h 12h) als Netzlaufwerke in die CDS ein (Flags C000h,
+  Backslash-Offset 2), meldet die SDA (5D06h -> INT E0h 11h) und biegt
+  INT 2Fh 11xxh auf INT E0h 10h um (`retf 2` mit `inc sp` – ADD zerstört
+  CF). `kernel/redir.c` (KTEXT2) erledigt die Unterfunktionen mit den
+  FAPI-Funktionen über `box_fapi` (Kernelpuffer: `fapi_kcall`, sonst
+  setzt fapi_inner RPL 3 auf den Selektor), Box-Speicher über das
+  Fenster `RWIN_SEL(t)` je Task. FreeDOS-Eigenheiten: Argument auf dem
+  Stack (beim TSR [SP+8]), Datenpuffer bei READ/WRITE ist die DTA der SDA
+  (FreeDOS setzt sie auf den Puffer), CLOSE zählt die SFT selbst herunter,
+  DOS prüft vor jedem Schreiben den Modus im SFT (bei CREATE ist das
+  Argument das Attribut -> Modus 2 eintragen). Lehren: FreeCOM-COPY setzt
+  erst die Größe (Schreiben mit 0 Byte hinter dem Ende -> mit Nullen
+  verlängern; Kürzen fehlt im FAPI -> E_DENIED); DEL *.* löscht zwischen
+  FINDFIRST/NEXT – Suche zählt Einträge, daher letzten Namen je Suche
+  merken (`slast`) und zurückgehen, wenn er fehlt. Bezeichnung (Attribut
+  08h) über FAPI_LABEL. Offen: Dateien kürzen, Lesen+Schreiben über ein
+  Handle (AT-DOS-Handles sind lesend oder schreibend).
+  SETVER (Wunsch des Nutzers): `SETVER.EXE` (FAPI, gebunden – läuft auch
+  in der Box), Tabelle als Text in `X:\DOS\BOX\SETVER.LST`
+  (Startlaufwerk aus %DOSBOX%, sonst %COMSPEC%), höchstens 48 Einträge
+  (BOXSHELL liest 1023 Byte). BOXSHELL holt das Startlaufwerk (INT E0h
+  13h), liest die Liste und legt die Tabelle im MS-DOS-Format (Länge,
+  Name, Haupt-, Nebenversion, 0 = Ende) resident ab, Zeiger in LoL+37h –
+  FreeDOS wertet sie beim EXEC aus (task.c `SetverGetVersion`). BOXSHELL
+  gibt FreeCOM eine Umgebung mit `DOSBOX=X:\DOS\BOX\FREEDOS.IMG` mit.
+  Nächster Schritt: `.EXE`/`.BAT` aus COMMAND.EXE über `BOXSHELL /C`.
   Entscheidung des Nutzers (Start von DOS-Programmen aus COMMAND.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

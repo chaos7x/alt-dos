@@ -36,7 +36,9 @@
 #define KCODE2      0x1C8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define VWIN_IDX    (KCODE2_IDX + 1) /* Fenster in den Speicher einer DOS-Box */
 #define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
-#define NGDT        (KCODE2_IDX + 2)
+#define RWIN_IDX(t) (KCODE2_IDX + 2 + (t))   /* Fenster je Box (redir.c) */
+#define RWIN_SEL(t) (RWIN_IDX(t) * 8)
+#define NGDT        (KCODE2_IDX + 2 + NTASK)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -233,6 +235,10 @@ int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c *
 #define BOX_EXIT    3                   /* Box beenden, Rueckgabewert a  */
 #define BOX_READ    4                   /* Sektor a des Startabbilds nach box_sec, 0 = ok */
 #define BOX_ARGS    5                   /* -> Befehlszeile (near, DS)    */
+#define BOX_DRIVES  6                   /* a=0: Laufwerke A-P, 1: Q-Z (Bitmaske) */
+#define BOX_LOCK    7                   /* a=1 Kernelsperre nehmen, 0 abgeben */
+#define BOX_SYSDRV  8                   /* -> Startlaufwerk (0 = A:)       */
+unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 extern unsigned char box_sec[512];
 void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs);
 int __far v86_fgbox(void);              /* Vordergrund ist eine Box mit DOS */

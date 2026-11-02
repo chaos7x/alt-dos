@@ -41,3 +41,7 @@ void __far kf_vio_setmode(int s, int full, int owner) { vio_setmode(s, full, own
 void __far kf_vio_setcur(int s, int row, int col) { vio_setcur(s, row, col); }
 void __far kf_vio_dirty(int s) { vio_dirty(s); }
 unsigned long __far kf_vio_buf_lin(int s) { return vio_buf_lin(s); }
+unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3)
+{
+    return box_fapi(fn, usel, a1, a2, a3);
+}

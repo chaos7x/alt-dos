@@ -68,17 +68,7 @@
 #define ROWS    25
 #define COLS    80
 
-/* CPU-Rahmen beim Eintritt aus V86 (32-Bit-Gate), ab EIP */
-struct v86_iret {
-    unsigned long eip, cs, eflags, esp, ss, es, ds, fs, gs;
-};
-struct v86_frame {
-    unsigned short es, ds;              /* vom Handler (genullt)         */
-    unsigned long  edi, esi, ebp, esp_k, ebx, edx, ecx, eax;   /* PUSHAD */
-    unsigned short vec;
-    unsigned long  err;
-    struct v86_iret r;
-};
+#include "v86int.h"
 
 static pg_t pd_box[NTASK], pt_box[NTASK];
 static unsigned short vfl[NTASK];       /* IF/IOPL/NT der Box            */
@@ -1107,6 +1097,22 @@ static void svc(int n, struct v86_frame *f, int t)
             CX = i;
         } else if (AH == 0x01)
             kf_box_ctl(BOX_EXIT, AL);
+        else if (AH == 0x10) {                  /* Redirector (BOXSHELL) */
+            k = redir(f, t);
+            svc_zf = k >= 0;                    /* ZF: erledigt          */
+            if (k > 0) {
+                AX = (unsigned)k;
+                svc_cf = 1;
+            } else if (k == 0)
+                svc_cf = 0;
+        } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
+            AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
+        else if (AH == 0x11)                    /* SDA bei DS:SI         */
+            redir_sda(t, (unsigned)f->r.ds, (unsigned)f->esi);
+        else if (AH == 0x12) {                  /* AT-DOS-Laufwerke      */
+            AX = (unsigned)kf_box_ctl(BOX_DRIVES, 0);
+            DX = (unsigned)kf_box_ctl(BOX_DRIVES, 1);
+        }
         break;
     }
 }

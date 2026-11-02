@@ -282,9 +282,17 @@ und PC-DOS.
   Diskettenabbilds (`\DOS\BOX\FREEDOS.IMG`, Laufwerk A: der Box, nur
   lesend). Jedes andere Startabbild (`.IMG`) lässt sich ebenso mit
   `START` starten. EXIT beendet die Box, Strg+C gehört dem DOS darin.
-  Eine Box, die nur auf Tasten wartet, gibt die CPU ab. Noch nicht: die
-  AT-DOS-Laufwerke in der Box (Redirector, nächster Schritt), `.EXE`
-  direkt aus COMMAND.EXE. FreeDOS-Kern und FreeCOM stehen unter der GPL
+  Eine Box, die nur auf Tasten wartet, gibt die CPU ab. Alle
+  AT-DOS-Laufwerke ab C: sind in der Box da (Redirector wie bei einem
+  Netzlaufwerk, über die Dateifunktionen des Kernels – auch CD, SUBST,
+  JOIN): DIR, CD, MD, RD, COPY, REN, DEL, TYPE, Umleitung, Programme
+  von C: starten. Noch nicht: Dateien kürzen (Schreiben mit Länge 0 vor
+  dem Ende), `.EXE` direkt aus COMMAND.EXE.
+- `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
+  für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
+  Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS
+  darin meldet dem Programm auf INT 21h 30h die eingetragene Version
+  (ohne Eintrag 7.10). Läuft unter AT-DOS und in der Box FreeDOS-Kern und FreeCOM stehen unter der GPL
   und sind aus dem Quelltext gebaut (`freedos/README.txt`,
   `tools/freedos.sh`)
 - Ausnahmen in Anwendungen beenden nur den Task, nicht das System
