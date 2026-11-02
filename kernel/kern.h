@@ -185,6 +185,18 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
+/* bus.c (KTEXT2): PCI und Belegungsliste */
+struct fapi_pcidev;
+unsigned __far pci_init(void);                 /* -> Anzahl PCI-Geraete, 0 = kein PCI */
+unsigned long __far pci_read(unsigned loc, unsigned reg);
+void __far pci_write(unsigned loc, unsigned reg, unsigned long v, unsigned size);
+unsigned __far pci_find(unsigned vendor, unsigned device, unsigned n);
+unsigned __far pci_findclass(unsigned cs, unsigned n);
+int __far pci_info(unsigned i, struct fapi_pcidev __far *p);
+unsigned __far res_claim(int drv, unsigned type, unsigned start, unsigned len);
+void __far res_free(int drv, unsigned type, unsigned start);
+int __far res_get(unsigned i, unsigned *type, unsigned *start, unsigned *len);
+
 int __far vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
 unsigned long __far vio_gfx_base(int s);
 unsigned __far vio_gfx_limit(int s);

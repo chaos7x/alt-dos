@@ -87,6 +87,33 @@ void delay(unsigned t)
     devhlp(DH_DELAY, 0, t, 0);
 }
 
+/* Ports/DMA in die Belegungsliste des Kernels (RES_IO, RES_DMA):
+   0 = ok, 1 = gehoert einem anderen Treiber */
+unsigned claim(unsigned type, unsigned start, unsigned len)
+{
+    return devhlp(DH_CLAIM, len, type, start);
+}
+
+/* PCI ueber den Kernel (6.0); loc = Bus << 8 | Geraet << 3 | Funktion */
+static unsigned long pci_val;           /* im DS (DevHlp schreibt hierher) */
+
+unsigned pci_find(unsigned vendor, unsigned device, unsigned n)
+{
+    return devhlp(DH_PCIFIND, n, vendor, device);
+}
+
+unsigned long pci_rd(unsigned loc, unsigned reg)
+{
+    devhlp(DH_PCIREAD, (unsigned)&pci_val, loc, reg);
+    return pci_val;
+}
+
+void pci_wr(unsigned loc, unsigned reg, unsigned long v, unsigned size)
+{
+    pci_val = v;
+    devhlp(DH_PCIWRITE, (unsigned)&pci_val, loc, reg | (size << 8));
+}
+
 /* Zahl als Dezimaltext an d anhaengen, gibt Ende zurueck */
 char *udec(char *d, unsigned v)
 {

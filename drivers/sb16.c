@@ -539,6 +539,10 @@ static int init_pcm(struct drv_req __far *r)
         dputs("SB16.SYS: IRQ belegt\n");
         return -1;
     }
+    claim(RES_IO, base, 16);
+    claim(RES_DMA, dma8, 1);
+    if (dma16)
+        claim(RES_DMA, dma16, 1);
 
     p = scat(name, dspv >= 0x400 ? "Sound Blaster 16" :
                    dspv >= 0x300 ? "Sound Blaster Pro" : "Sound Blaster");
@@ -680,6 +684,10 @@ static void init(void)
         dputs("SB16.SYS: keine Sound Blaster, AdLib oder MPU-401 gefunden\n");
         return;
     }
+    if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3))
+        claim(RES_IO, 0x388, 4);
+    if (caps & AUDCAP_MPU401)
+        claim(RES_IO, mpu, 2);
     if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3 | AUDCAP_MPU401)) {
         p = scat(line, "  ");
         if (caps & AUDCAP_OPL3)

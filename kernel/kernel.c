@@ -1570,6 +1570,8 @@ static void sleep_ticks(unsigned n)
 }
 
 /* ---- Zeiger aus Ring 3 pruefen ----------------------------------------- */
+static unsigned pci_nr;                 /* PCI-Geraete (0 = kein PCI)   */
+
 static int user_ok(unsigned sel, unsigned off, unsigned len, int write)
 {
     unsigned lim;
@@ -2420,6 +2422,31 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_BUSINFO:
+        if (a1 == BUS_PCI) {
+            if (!user_ok(usel, a3, sizeof(struct fapi_pcidev), 1) ||
+                pci_info(a2, MK_FP(usel, a3)))
+                return FAPI_ERROR;
+            return 0;
+        }
+        if (a1 == BUS_RES) {
+            struct fapi_res __far *r = MK_FP(usel, a3);
+            unsigned ty, st, ln;
+            int dv;
+            if (!user_ok(usel, a3, sizeof(struct fapi_res), 1) ||
+                (dv = res_get(a2, &ty, &st, &ln)) < 0)
+                return FAPI_ERROR;
+            r->type = (unsigned char)ty;
+            r->rsv = 0;
+            r->start = st;
+            r->len = ln;
+            for (k = 0; k < 12 && drv_name(dv)[k]; k++)
+                r->owner[k] = drv_name(dv)[k];
+            r->owner[k] = 0;
+            return 0;
+        }
+        return FAPI_ERROR;
+
     case FAPI_SYSINFO:
         if (!user_ok(usel, a1, sizeof(struct fapi_sysinfo), 1))
             return FAPI_ERROR;
@@ -3226,6 +3253,7 @@ static struct {
     char          name[13];
 } drv[NDRV];
 static struct drv_req req;
+
 static int boot_session;
 
 static const char *drv_name(int d)
@@ -4247,6 +4275,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         irq_hds[bx] = DRVD_SEL(d);
         irq_hcs[bx] = DRVC_SEL(d);
         irq_restore(f);
+        res_claim(d, RES_IRQ, bx, 1);
         pic_mask &= ~(1u << bx);
         if (bx >= 8)
             pic_mask &= ~4u;            /* Kaskade zum zweiten PIC       */
@@ -4261,6 +4290,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         f = irq_off();
         irq_hcs[bx] = 0;
         irq_restore(f);
+        res_free(d, RES_IRQ, bx);
         return 0;
     case DH_PROCBLOCK:
         d = drv_of(dsel);
@@ -4305,6 +4335,19 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_AUDREG:
         aud_drv = drv_of(dsel);
         return aud_drv < 0;
+    case DH_PCIFIND:
+        return pci_find(bx, cx, devhlp_dx);
+    case DH_PCICLASS:
+        return pci_findclass(bx, devhlp_dx);
+    case DH_PCIREAD:
+        *(unsigned long __far *)MK_FP(dsel, devhlp_dx) = pci_read(bx, cx & 0xFF);
+        return !pci_nr;
+    case DH_PCIWRITE:
+        pci_write(bx, cx & 0xFF, *(unsigned long __far *)MK_FP(dsel, devhlp_dx), cx >> 8);
+        return !pci_nr;
+    case DH_CLAIM:
+        d = drv_of(dsel);
+        return d < 0 ? 2 : res_claim(d, bx, cx, devhlp_dx);
     case DH_BIOSDISK:
         if (bx > 1 || bx >= bios_hdcount)
             return 1;
@@ -4411,6 +4454,7 @@ static int load_driver(const char *line, int is_ifs)
         gdt[DRVC_IDX(d) + 1].access = 0;
         mem_free(u, n);
         drv[d].used = 0;
+        res_free(d, 0, 0);              /* Belegungsliste                */
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
@@ -4962,6 +5006,7 @@ void kmain(void)
     blk[BLK_FLOPPY].bsize = 512;
     nblk = 1;
     fd_ok = fd_init((unsigned)k) == 0;
+    pci_nr = pci_init();                /* PCI-Geraete fuer die Treiber  */
     if (fd_ok && fd_type(1)) {
         blk[1].drv = -1;
         blk[1].unit = 1;

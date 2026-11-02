@@ -158,7 +158,8 @@ und PC-DOS.
   nichts); Verzeichnisse bleiben an ihrem Platz
 - `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
   (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
-  IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,
+  IRQ-Status mit Besitzer, Treiber mit Ports/DMA; PCI-Geräte auf der
+  Computer-Seite), Einzelheiten im Fenster, Bedienung mit Buchstaben,
   Pfeilen oder Maus; `/S` als Bericht auf die Standardausgabe
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
@@ -396,6 +397,7 @@ selbst nur 8.3 kennt.
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
+| 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste, CX = Nummer, DX = struct fapi_pcidev bzw. fapi_res → 0, FAPI_ERROR am Ende (MSD) |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
 | 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
@@ -460,9 +462,16 @@ das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.
+Busdienste (6.0): Der Kernel durchsucht beim Start den PCI-Bus
+(Mechanismus 1, auch hinter PCI-PCI-Brücken; auf ISA-Rechnern wird
+CF8h nur gelesen) und stellt Treibern Suche und Konfigurationszugriff
+als DevHlp bereit (`DH_PCIFIND`, `DH_PCICLASS`, `DH_PCIREAD`,
+`DH_PCIWRITE`, wie OEMHLP$ bei OS/2). Treiber melden ihre Ports,
+DMA-Kanäle und IRQs in einer Belegungsliste an (`DH_CLAIM`); ein
+Bereich gehört nur einem Treiber. MSD zeigt PCI-Geräte und Belegung.
 `NCR8XX.SYS` (6.0, braucht einen 386) spricht PCI-SCSI-Controller mit
-NCR/Symbios 53C810, 815, 820, 825, 860, 875, 895, 895A und 896 an: sucht
-die Karte über die PCI-Konfiguration (Ports CF8h/CFCh), I/O-Basis aus
+NCR/Symbios 53C810, 815, 820, 825, 860, 875, 895, 895A und 896 an: findet
+die Karte über den PCI-Dienst des Kernels, I/O-Basis aus
 BAR 0, und lässt den SCRIPTS-Prozessor der Karte jeden Befehl selbst
 abarbeiten (Auswahl, IDENTIFY, Befehl, Daten per Busmaster direkt in den
 Kernelpuffer, Status, Trennen und Wiederauswahl). Platten und CD-ROMs

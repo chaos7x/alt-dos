@@ -5,9 +5,8 @@
  *
  * CONFIG.SYS:  DEVICE=NCR8XX.SYS [/ID:7]
  *
- * Die Karte wird ueber die PCI-Konfiguration gesucht (Mechanismus 1,
- * Ports CF8h/CFCh mit 32 Bit), I/O-Basis aus BAR 0, I/O und Busmaster
- * werden eingeschaltet. Der SCRIPTS-Prozessor der Karte arbeitet ein
+ * Die Karte findet der PCI-Dienst des Kernels (DevHlp DH_PCIFIND),
+ * I/O-Basis aus BAR 0, I/O und Busmaster werden eingeschaltet. Der SCRIPTS-Prozessor der Karte arbeitet ein
  * kleines Programm aus dem Treiber ab (scr[]): Ziel auswaehlen (ohne ATN,
  * keine Nachrichten), dann je nach Phase Befehl, Daten, Status und die
  * Abschlussmeldung uebertragen, am Ende ein SCRIPTS-Interrupt. Die Daten
@@ -27,30 +26,6 @@ void outl(unsigned port, unsigned lo, unsigned hi);
 #pragma aux outl = "push ebx" "shl ebx,16" "mov bx,ax" "xchg eax,ebx" \
     "out dx,eax" "xchg eax,ebx" "pop ebx" \
     __parm [__dx] [__ax] [__bx] __modify __exact [];
-
-/* ---- PCI ---------------------------------------------------------------- */
-static unsigned long pci_rd(unsigned bus, unsigned dev, unsigned fn, unsigned reg)
-{
-    outl(0xCF8, (dev << 11) | (fn << 8) | (reg & 0xFC), 0x8000 | bus);
-    return inl(0xCFC);
-}
-
-static void pci_wr16(unsigned bus, unsigned dev, unsigned fn, unsigned reg, unsigned v)
-{
-    outl(0xCF8, (dev << 11) | (fn << 8) | (reg & 0xFC), 0x8000 | bus);
-    outp(0xCFC + (reg & 2), (unsigned char)v);
-    outp(0xCFD + (reg & 2), (unsigned char)(v >> 8));
-}
-
-/* Mechanismus 1 vorhanden? Erst lesen, dann den Adressport probieren */
-static int pci_present(void)
-{
-    unsigned long old = inl(0xCF8), v;
-    outl(0xCF8, 0x0000, 0x8000);
-    v = inl(0xCF8);
-    outl(0xCF8, (unsigned)old, (unsigned)(old >> 16));
-    return v == 0x80000000UL;
-}
 
 /* ---- 53C8xx-Register (I/O) --------------------------------------------- */
 #define SCNTL0  0x00
@@ -264,24 +239,16 @@ static const struct { unsigned id; const char *name; } chips[] = {
     { 0x000B, "53C896" }
 };
 
-static unsigned pbus, pdev;             /* gefundene Karte                 */
+static unsigned ploc;                   /* gefundene Karte (PCI-Ort)       */
 
+/* Karte ueber den PCI-Dienst des Kernels suchen */
 static int find_card(void)
 {
-    unsigned bus, dev, k;
-    unsigned long v;
-    for (bus = 0; bus < 4; bus++)
-        for (dev = 0; dev < 32; dev++) {
-            v = pci_rd(bus, dev, 0, 0);
-            if ((unsigned)v != 0x1000)  /* Hersteller NCR/Symbios/LSI      */
-                continue;
-            for (k = 0; k < sizeof(chips) / sizeof(chips[0]); k++)
-                if ((unsigned)(v >> 16) == chips[k].id) {
-                    chip = chips[k].name;
-                    pbus = bus;
-                    pdev = dev;
-                    return 0;
-                }
+    unsigned k;
+    for (k = 0; k < sizeof(chips) / sizeof(chips[0]); k++)
+        if ((ploc = pci_find(0x1000, chips[k].id, 0)) != 0xFFFF) {
+            chip = chips[k].name;
+            return 0;
         }
     return -1;
 }
@@ -304,25 +271,25 @@ static void init(void)
         if (*a == ':' && a[1] >= '0' && a[1] <= '7')
             host = a[1] - '0';
     }
-    if (!pci_present()) {
-        dputs("  NCR8XX.SYS: kein PCI-Bus (Mechanismus 1)\n");
-        return;
-    }
     if (find_card()) {
         dputs("  NCR8XX.SYS: kein NCR 53C8xx gefunden\n");
         return;
     }
-    bus = pbus;
-    dev = pdev;
-    v = pci_rd(bus, dev, 0, 0x10);      /* BAR 0: I/O                      */
+    bus = ploc >> 8;
+    dev = (ploc >> 3) & 31;
+    v = pci_rd(ploc, 0x10);             /* BAR 0: I/O                      */
     if (!(v & 1)) {
         dputs("  NCR8XX.SYS: BAR 0 ist kein I/O-Bereich\n");
         return;
     }
     io = (unsigned)v & 0xFFFC;
-    irq = (unsigned)pci_rd(bus, dev, 0, 0x3C) & 0xFF;
-    v = pci_rd(bus, dev, 0, 0x04);
-    pci_wr16(bus, dev, 0, 0x04, (unsigned)v | 0x0005);  /* I/O + Busmaster */
+    irq = (unsigned)pci_rd(ploc, 0x3C) & 0xFF;
+    if (claim(RES_IO, io, 0x80)) {
+        dputs("  NCR8XX.SYS: Ports geh\x94ren schon einem anderen Treiber\n");
+        return;
+    }
+    v = pci_rd(ploc, 0x04);
+    pci_wr(ploc, 0x04, (unsigned)v | 0x0005, 2);        /* I/O + Busmaster */
     chip_reset();
 
     p = scat(line, "  NCR ");

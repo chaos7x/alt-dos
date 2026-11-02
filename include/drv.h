@@ -105,6 +105,29 @@ struct drv_req {
                                        Adresse -> AX = Selektor, 0 = keiner */
 #define DH_AUDREG       13          /* Treiber ist das Audiogeraet (FAPI_AUDIO
                                        kommt als DRV_AUDIO an)           */
+/* PCI (6.0): der Kernel durchsucht den Bus beim Start; loc = Bus << 8 |
+   Geraet << 3 | Funktion. Ohne PCI liefern die Aufrufe FFFFh/1. */
+#define DH_PCIFIND      14          /* BX = Hersteller, CX = Geraet (FFFFh =
+                                       jedes), DX = n (0 = erstes) -> AX = loc,
+                                       FFFFh = keins                     */
+#define DH_PCICLASS     15          /* BX = Klasse << 8 | Unterklasse (FFh =
+                                       jede), DX = n -> AX = loc, FFFFh   */
+#define DH_PCIREAD      16          /* BX = loc, CX = Register (Doppelwort),
+                                       DX = 4 Byte im Treiber-DS <- Wert
+                                       -> AX = 0, 1 = kein PCI           */
+#define DH_PCIWRITE     17          /* BX = loc, CX = Register | Groesse << 8
+                                       (1, 2, 4 Byte), DX = 4 Byte im
+                                       Treiber-DS mit dem Wert -> AX = 0  */
+#define DH_CLAIM        18          /* BX = RES_*, CX = Anfang, DX = Laenge:
+                                       Ports/DMA anmelden (Belegungsliste,
+                                       MSD) -> AX = 0 ok, 1 = gehoert schon
+                                       einem anderen Treiber, 2 = voll.
+                                       IRQs traegt DH_SETIRQ selbst ein.
+                                       Scheitert INIT, loescht der Kernel
+                                       die Eintraege des Treibers.       */
+#define RES_IO          1
+#define RES_DMA         2
+#define RES_IRQ         3
 
 /* Audio (DRV_AUDIO): der Kernel waehlt, wessen Ton zu hoeren ist, der
    Treiber spielt einen Datenstrom */

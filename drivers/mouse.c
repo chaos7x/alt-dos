@@ -463,6 +463,7 @@ static void init(void)
         }
         scat(p, "\n");
         dputs(line);
+        claim(RES_IO, base, 4);
         btn = 0;
         bus_irqs(1);
         devhlp(DH_MOUREG, 0, nbtn, 0);
@@ -487,6 +488,7 @@ static void init(void)
     }
     scat(p, "\n");
     dputs(line);
+    claim(RES_IO, base, 8);
     pn = 0;
     btn = 0;
     while (inp(LSR(base)) & 1)          /* 'M' usw. wegwerfen           */

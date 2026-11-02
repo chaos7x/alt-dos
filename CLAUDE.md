@@ -986,7 +986,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - `NCR8XX.SYS` (drivers/ncr8xx.c, 6.0, in QEMU mit `-device lsi53c810`
   und `lsi53c895a` geprüft: Platte + CD, XCOPY auf die SCSI-Platte,
   CHKDSK, SHUTDOWN, fsck sauber, Inhalte gleich). PCI Mechanismus 1 mit
-  32-Bit-Ports (`inl`/`outl` per pragma aux), Chiptabelle Hersteller
+  Suche über den PCI-Dienst des Kernels (bus.c), Chiptabelle Hersteller
   1000h, BAR 0 = I/O, Befehlsregister I/O + Busmaster. SCRIPTS in `scr[]`
   (je Befehl neu gebaut, `build()`): SELECT ATN -> Phasenschleife (JUMP
   WHEN) -> MSG OUT IDENTIFY 80h, Befehl, Daten (Busmaster direkt nach
@@ -1003,6 +1003,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   >= 600 KB konventionell 8000:0000 (60 KB, 16 Dateien) statt 0060:0000
   (30 KB, 8); kmain gibt der Speicherverwaltung erst nach CONFIG.SYS den
   Bereich ab 80000h (`mem_init(..., 512, ...)`, dann `mem_free`).
+- Busdienste (Vorschlag mit dem Nutzer abgestimmt: im Kernel statt
+  PCI.SYS/ISA.SYS, wie OEMHLP$ bei OS/2), in QEMU geprüft (PC mit NCR
+  und SB16, `isapc` ohne PCI): `kernel/bus.c` in KTEXT2 (erstes
+  Codesegment ist mit ~61 KB fast voll). `pci_init` beim Start nach
+  fd_init: CF8h erst lesen – Bits 0–1 ungleich 0 = kein PCI-Host,
+  nichts schreiben (ISA dekodiert 10 Bit, CF8h wäre 0F8h =
+  Koprozessor); Tabelle `pci_tab` (32, Bus 0 + hinter Brücken,
+  Mehrfunktion). DevHlp 14–18: PCIFIND (Hersteller/Gerät, n),
+  PCICLASS, PCIREAD/PCIWRITE (Wert über 4 Byte im Treiber-DS), CLAIM
+  (RES_IO/RES_DMA; DH_SETIRQ trägt RES_IRQ ein, UNSETIRQ und
+  gescheitertes INIT löschen). drvlib: `claim`, `pci_find`, `pci_rd`,
+  `pci_wr`. Alle Treiber melden ihre Ports an. FAPI 51h DosBusInfo
+  (BUS_PCI/BUS_RES) -> MSD: Computer-Seite PCI-Liste mit Hersteller-
+  und Klassennamen, IRQ-Seite Besitzer, Treiber-Seite Ports/DMA/IRQ.
+  Offen: ISA-PnP (`ISAPNP.SYS`, früh laden) zusammen mit SB16 PnP.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit

@@ -413,10 +413,13 @@ static void init(void)
     }
     p = scat(p, "DMA ");
     for (k = 0; k < 8; k++)
-        if (dma & (1 << k))
+        if (dma & (1 << k)) {
             *p++ = (char)('0' + k);
+            claim(RES_DMA, k, 1);
+        }
     scat(p, "\n");
     dputs(line);
+    claim(RES_IO, base, 4);
 
     for (id = 0; id < 8; id++) {
         if (id == host)

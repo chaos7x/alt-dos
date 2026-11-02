@@ -24,6 +24,8 @@ static struct fapi_meminfo mi;
 static struct fapi_fsinfo fi;
 static struct fapi_diskinfo di;
 static struct fapi_mouevent mev;
+static struct fapi_pcidev pd;
+static struct fapi_res rs;
 static char args[FAPI_ARGLEN];
 static char lines[NL][LW + 1], sum[NB][34], row[81];
 static unsigned nl, nbtn, rows;
@@ -84,6 +86,45 @@ static void aphex(char *d, unsigned v)
     ap(d, b);
 }
 
+static void aphex2(char *d, unsigned v)
+{
+    static char b[3];
+    b[0] = "0123456789ABCDEF"[(v >> 4) & 15];
+    b[1] = "0123456789ABCDEF"[v & 15];
+    b[2] = 0;
+    ap(d, b);
+}
+
+/* bekannte PCI-Hersteller und -Klassen (Auswahl) */
+static const struct { unsigned id; const char *n; } vendors[] = {
+    { 0x8086, "Intel" }, { 0x1000, "NCR/Symbios" }, { 0x1022, "AMD" },
+    { 0x1106, "VIA" }, { 0x1039, "SiS" }, { 0x10B9, "ALi" }, { 0x1013, "Cirrus" },
+    { 0x5333, "S3" }, { 0x1002, "ATI" }, { 0x10DE, "nVidia" }, { 0x102B, "Matrox" },
+    { 0x121A, "3dfx" }, { 0x100C, "Tseng" }, { 0x1023, "Trident" }, { 0x10EC, "Realtek" },
+    { 0x1011, "DEC" }, { 0x10B7, "3Com" }, { 0x9004, "Adaptec" }, { 0x104B, "BusLogic" },
+    { 0x1274, "Ensoniq" }, { 0x1102, "Creative" }, { 0x125D, "ESS" }, { 0x1234, "Bochs/QEMU" },
+    { 0x1AF4, "virtio" }, { 0x80EE, "VirtualBox" }, { 0x15AD, "VMware" }
+};
+
+static const char *pci_kind(unsigned c, unsigned s)
+{
+    switch (c) {
+    case 0x00: return s == 1 ? "VGA (alt)" : "Ger\x84t (alt)";
+    case 0x01: return s == 0 ? "SCSI-Controller" : s == 1 ? "IDE-Controller" :
+                      s == 2 ? "Diskettencontroller" : "Massenspeicher";
+    case 0x02: return "Netzwerk";
+    case 0x03: return s == 0 ? "VGA-Grafik" : "Grafik";
+    case 0x04: return s == 1 ? "Audio" : "Multimedia";
+    case 0x05: return "Speicher";
+    case 0x06: return s == 0 ? "Host-Br\x81\x63ke" : s == 1 ? "ISA-Br\x81\x63ke" :
+                      s == 4 ? "PCI-PCI-Br\x81\x63ke" : s == 7 ? "CardBus" : "Br\x81\x63ke";
+    case 0x07: return "Kommunikation";
+    case 0x08: return "Systemger\x84t";
+    case 0x0C: return s == 3 ? "USB" : s == 5 ? "SMBus" : "Serieller Bus";
+    }
+    return "unbekannt";
+}
+
 static char *line(const char *a, const char *b)  /* "Name:   Wert"    */
 {
     char *l;
@@ -109,6 +150,13 @@ static const char *fdname(unsigned t)
 }
 
 /* ---- Einzelheiten je Knopf -------------------------------------------- */
+static int same_name(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a == *b;
+}
+
 static void detail(unsigned k)
 {
     static char v[LW + 1];
@@ -127,11 +175,41 @@ static void detail(unsigned k)
         l = line("BIOS-Modellbyte:", v + 2);
         ap(l, "h");
         line("BIOS:", si.bios_name[0] ? si.bios_name : "(kein Text gefunden)");
-        line("Bus:", "ISA (AT)");
         v[0] = 0;
         apn(v, si.uptime_s / 60);
         ap(v, " min");
         line("Laufzeit:", v);
+        if (DosBusInfo(BUS_PCI, 0, &pd) != 0) {
+            line("Bus:", "ISA (AT)");
+            break;
+        }
+        line("Bus:", "ISA und PCI");
+        for (i = 0; DosBusInfo(BUS_PCI, i, &pd) == 0 && nl < NL; i++) {
+            v[0] = 0;
+            ap(v, "  ");
+            aphex2(v, pd.loc >> 8);
+            ap(v, ":");
+            aphex2(v, (pd.loc >> 3) & 31);
+            ap(v, ".");
+            apn(v, pd.loc & 7);
+            ap(v, "  ");
+            aphex(v, pd.vendor);
+            ap(v, ":");
+            aphex(v, pd.device);
+            ap(v, "  ");
+            for (n = 0; n < sizeof(vendors) / sizeof(vendors[0]); n++)
+                if (vendors[n].id == pd.vendor) {
+                    ap(v, vendors[n].n);
+                    ap(v, " ");
+                    break;
+                }
+            ap(v, pci_kind(pd.cls, pd.sub));
+            if (pd.irq && pd.irq < 16) {
+                ap(v, ", IRQ ");
+                apn(v, pd.irq);
+            }
+            line(v, 0);
+        }
         break;
     case 1:
         v[0] = 0;
@@ -282,7 +360,10 @@ static void detail(unsigned k)
             l = line(v, 0);
             ap(l, "  ");
             ap(l, (si.irq_used >> i) & 1 || i == 2 || (i == 13 && si.fpu) ? "belegt  " : "frei    ");
-            ap(l, use[i]);
+            for (n = 0; DosBusInfo(BUS_RES, n, &rs) == 0; n++)
+                if (rs.type == 3 && rs.start == i)
+                    break;
+            ap(l, DosBusInfo(BUS_RES, n, &rs) == 0 ? rs.owner : use[i]);
         }
         break;
     case 9:
@@ -293,6 +374,25 @@ static void detail(unsigned k)
                 line(si.drivers[i], e > 4 && si.drivers[i][e - 3] == 'I' && si.drivers[i][e - 2] == 'F' ?
                      "Dateisystem (IFS=)" : "Ger\x84tetreiber (DEVICE=)");
                 n++;
+                v[0] = 0;
+                for (d = 0; DosBusInfo(BUS_RES, d, &rs) == 0; d++) {
+                    if (!same_name(rs.owner, si.drivers[i]))
+                        continue;
+                    ap(v, v[0] ? ", " : "  ");
+                    if (rs.type == 1) {
+                        aphex(v, rs.start);
+                        if (rs.len > 1) {
+                            ap(v, "-");
+                            aphex(v, rs.start + rs.len - 1);
+                        }
+                        ap(v, "h");
+                    } else {
+                        ap(v, rs.type == 2 ? "DMA " : "IRQ ");
+                        apn(v, rs.start);
+                    }
+                }
+                if (v[0])
+                    line(v, 0);
             }
             }
         if (!n)

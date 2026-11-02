@@ -379,6 +379,7 @@ static void init(void)
     IN(R_RPI);
     blockmode = !has_opt(r->args, "/PIO");
     outp(base + C4_CTL, 0);             /* 53C400: schreiben, kein IRQ  */
+    claim(RES_IO, base, 16);
     p = scat(line, "  NCR 53C400 (Trantor T130B) an Port ");
     p = hex3(p, base);
     scat(p, blockmode ? "h, Blockbetrieb\n" : "h, PIO\n");

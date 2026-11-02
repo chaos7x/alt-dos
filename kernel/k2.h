@@ -21,10 +21,13 @@ unsigned k2_irq_off(void);
 #pragma aux k2_irq_off = "pushf" "pop ax" "cli" __value [__ax];
 void k2_sti(void);
 #pragma aux k2_sti = "sti";
+void k2_irq_restore(unsigned f);
+#pragma aux k2_irq_restore = "push ax" "popf" __parm [__ax];
 #define inb(p)          k2_inb(p)
 #define outb(p, v)      k2_outb((p), (unsigned char)(v))
 #define irq_off()       k2_irq_off()
 #define enable_ints()   k2_sti()
+#define irq_restore(f)  k2_irq_restore(f)
 
 /* Kernelhilfen ueber Fern-Thunks */
 unsigned long __far kf_get_ticks(void);

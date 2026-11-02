@@ -161,6 +161,23 @@ struct fapi_sysinfo {
 #define FAPI_AUDIO          0x4F
 #define FAPI_QTICKS         0x50    /* -> Systemtakt (100 Hz), untere 16 Bit:
                                        Zeitmessung fuer Spieler, Spiele */
+/* Busangaben fuer MSD: BX = BUS_*, CX = Nummer (ab 0), DX = Puffer
+   -> 0, FAPI_ERROR = keine weiteren Eintraege */
+#define FAPI_BUSINFO        0x51
+#define BUS_PCI             0       /* struct fapi_pcidev               */
+#define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
+struct fapi_pcidev {
+    unsigned short loc;             /* Bus << 8 | Geraet << 3 | Funktion */
+    unsigned short vendor, device;
+    unsigned char  cls, sub, progif;    /* Klasse, Unterklasse, Schnittstelle */
+    unsigned char  irq;             /* Register 3Ch, FFh = keiner       */
+};
+struct fapi_res {
+    unsigned char  type;            /* 1 Ports, 2 DMA, 3 IRQ            */
+    unsigned char  rsv;
+    unsigned short start, len;
+    char           owner[13];       /* Treiberdatei                     */
+};
 #define AUD_OPEN            0       /* CX = struct fapi_audfmt -> 0, FAPI_ERROR
                                        (kein Geraet, Format geht nicht),
                                        FAPI_ERR_INUSE (alle Plaetze belegt) */

@@ -483,6 +483,11 @@ static void init(void)
     /* Interrupts fuer Kanaele mit Geraeten. Steuerregister: nIEN = 0
        (Interrupt an), Bit 3 gesetzt wie beim AT-BIOS (WD1003: mehr als
        8 Koepfe) */
+    for (ch = 0; ch < 2; ch++)          /* Belegungsliste                */
+        if (chan[ch].units) {
+            claim(RES_IO, ports[ch][0], 8);
+            claim(RES_IO, ports[ch][1], 1);
+        }
     for (ch = 0; ch < 2; ch++) {
         chan[ch].on = 0;
         if (!chan[ch].units || has_opt(r->args, "/NOIRQ"))
