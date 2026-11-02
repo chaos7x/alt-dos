@@ -1387,7 +1387,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Geprüft: CR0 = 8000001Bh, Zugriff auf 256 MB bei 4 MB RAM ->
   #PF mit Adresse 10000004h; mit allen Vergaben oberhalb 256 MB XCOPY
   über NCR, PLAY, GRAFIK 12 + Sitzungswechsel, SHUTDOWN, fsck sauber;
-  isapc mit 2 MB. Damit ist Phase 1 fertig; nächste Phase 2
+  isapc mit 2 MB. Vom Nutzer in 86Box bestätigt: 486 mit 64 MB („Paging
+  an (16 Seitentabellen)“) und ASUS P3B-F mit 256 MB (255 MB frei, 64
+  Seitentabellen). Damit ist Phase 1 fertig; nächste Phase 2
   (präemptiv, Sperren je Gerät, asynchrone Plattenzugriffe).
 - Testplan DOS 6.0: Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
