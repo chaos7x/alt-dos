@@ -1999,7 +1999,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   104h): läuft er, ist es ein Spiegel -> OPL2. Vermutlich auch der
   Grund, warum DOOMs Musik in QEMU nach 3 s verstummte. Test: `PLAY
   ODE.IMF` in einer DETACH-Schleife, vorn eine Box mit 440 Hz für 3 s
-  -> Mitschnitt: ODE, 440 (PLAY still), ODE ab der laufenden Stelle. AUD_CLOSE nur im
+  -> Mitschnitt: ODE, 440 (PLAY still), ODE ab der laufenden Stelle.
+  Kernel-Panik mit `START DOOM` (Nutzer, P3B-F; in QEMU nachgestellt:
+  #GP bei 0008:03EF = exc_common `.topm`, Fehlercode 1Ch = LDT-Selektor
+  1Fh): das TSS einer Box hat `ldt = 0` (nur FX-Programme bekamen
+  LDT_SEL), dp_switch lud die DPMI-LDT nur per LLDT – beim nächsten
+  Hardware-Taskwechsel zurück in die Box lud die CPU LDTR aus dem TSS
+  = 0. Synchron (CMD schläft) gab es keinen Wechsel, mit START läuft die
+  zweite Sitzung. Jetzt `tss[t].ldt = LDT_SEL(t)` in dp_switch, 0 in
+  dpmi_end. Gefunden mit Ausgaben auf Port E9h (`-debugcon file:`):
+  SLDT zeigte 0000 beim Absturz. Geprüft: START DOOM, Alt+Esc zu CMD
+  (VER), zurück, spielt weiter. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

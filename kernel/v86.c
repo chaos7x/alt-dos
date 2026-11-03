@@ -3610,6 +3610,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
             dp_mem[t][i].npg = 0;
         }
     gdt[LDT_IDX(t)] = dp_oldldt[t];     /* wieder die Task-LDT          */
+    tss[t].ldt = 0;
     if (kf_box_ctl(BOX_TASK, 0) == t)
         k2_lldt(LDT_SEL(t));
     vp_free(dp_ldt[t]);
@@ -3654,6 +3655,9 @@ static unsigned dp_switch(struct v86_frame *f, int t)
         g->access = 0x82;
         g->rsv = (unsigned short)((b >> 24) << 8);
     }
+    tss[t].ldt = LDT_SEL(t);                    /* (das TSS der Box hatte
+                                                   0: nach jedem Taskwechsel
+                                                   war LDTR leer -> #GP) */
     k2_lldt(LDT_SEL(t));                        /* LDTR neu laden        */
     ci = ldt_alloc(t, 1);
     ldesc(t, ci, (unsigned long)rcs << 4, 0xFFFF, 0xFA, 0);
