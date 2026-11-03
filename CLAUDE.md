@@ -2012,7 +2012,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (VER), zurück, spielt weiter.
   Vom Nutzer auf dem P3B-F bestätigt: START DOOM (Musik auf AdLib) und
   `PLAY /FM` mit MIDI laufen nebeneinander, Sitzungswechsel geht; der
-  Ton hakte am Anfang kurz, danach sauber (noch nicht untersucht). AUD_CLOSE nur im
+  Ton hakte am Anfang kurz, danach sauber (noch nicht untersucht).
+  SB-Effekte nach dem Wegschalten weg (Nutzer): `vga_freeze` rief
+  `sb_stop` – die virtuelle DSP stand, DMX wartete danach ewig auf den
+  Block-IRQ (AdLib-Musik lief weiter). Jetzt bleibt die SB beim
+  Einfrieren an (sb_pump gibt hinten ohnehin nichts aus), nach dem
+  Auftauen `sb[t].last` = jetzt (Pause nicht nachholen). In QEMU geprüft:
+  START DOOM, 6 s weg, zurück -> Effekte im Mitschnitt weiter. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

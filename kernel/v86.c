@@ -2247,12 +2247,15 @@ static void vga_freeze(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
-    sb_stop(t);
-    kpit_set(0);
+    kpit_set(0);                        /* die virtuelle SB nicht anhalten:
+                                           sonst wartet das Spiel nach dem
+                                           Zurueckholen ewig auf den Block-
+                                           IRQ (DOOM ohne Effekte) */
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
         kf_box_ctl(BOX_SLEEP, 2);
     irq_off();
+    sb[t].last = get_ticks();           /* Pause nicht nachholen         */
 }
 
 /* INT 10h: 1 = an das Video-BIOS geben */
