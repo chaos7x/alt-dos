@@ -1,7 +1,7 @@
 FreeDOS fuer die DOS-Boxen von AT-DOS 6.0
 =========================================
 
-KERNEL.SYS, COMMAND.COM und fat12com.bin stammen aus dem FreeDOS-Projekt
+KERNEL.SYS, COUNTRY.SYS, COMMAND.COM und fat12com.bin stammen aus dem FreeDOS-Projekt
 und stehen unter der GNU General Public License, Version 2 oder spaeter
 (siehe COPYING). Sie wurden aus dem Quelltext gebaut, unveraendert:
 
