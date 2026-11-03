@@ -1932,8 +1932,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Box-Speicher (VWIN über `lwin`, 512-Byte-Stücke in `sb_buf`) über
   `kf_box_aud` -> `box_aud` (kernel.c, aud_fapi mit KDATA, ohne Sperre)
   an SB16.SYS, nur vorn und mit Lautsprecher an; Blockende -> `irqp`,
-  zugestellt als IRQ 7, wenn 0Fh eingehängt ist (RM oder PM), sonst 5;
-  RM-Handler über die IVT, PM-Handler über dp_push. AUD_CLOSE nur im
+  Leitung = zuletzt per DPMI 0205h eingehängter Vektor 0Dh/0Fh (`irql`;
+  DOS/4GW hängt alle PM-Vektoren ein, „0Fh eingehängt“ taugt nicht; ohne
+  0205h: 7, wenn 0Fh in der IVT umgebogen ist, sonst 5), `irqp` als
+  Bitmaske, RM-Handler über die IVT, PM-Handler über dp_push; Standard-
+  Stummel 0Dh/0Fh löschen ihr visr-Bit. DOOM fror beim Levelstart ein:
+  DMX macht im PM PUSHF/CLI/POPF – POPF trappt bei IOPL 0 nicht, das
+  virtuelle IF blieb aus. Wachhund `dp_cli_t` (PM-CLI merkt die Zeit):
+  nach 3 Takten mit IF aus setzt dp_hwint es wieder. Lehren: Leitung über
+  die Maske an 21h erkennen geht nicht (DOS/4GW setzt sie nicht);
+  Zustellung auf beiden Leitungen ließ DOOM im Demo still beenden. In
+  QEMU mit IRQ 5 und 7 geprüft (Spiel läuft, Ton im Mitschnitt). AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

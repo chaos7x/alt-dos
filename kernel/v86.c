@@ -123,7 +123,7 @@ static void vga_freeze(int t);
 struct vsb {
     unsigned char on, rst, cmd, need, nargs, args[2];
     unsigned char out[4], on_, oh;      /* Ausgabe an 22Ah (Ring)        */
-    unsigned char spk, act, ai, irqp, aud;
+    unsigned char spk, act, ai, irqp, aud, irql;
     unsigned rate, blk, pos, frac;      /* Rate, Blocklaenge, Stand      */
     unsigned long last;                 /* Kerneltakt der letzten Abrechnung */
     unsigned dbase, dcnt, dcur, dleft;  /* DMA Kanal 1: Basis, Laenge-1, aktuell, Rest */
@@ -173,7 +173,8 @@ static unsigned char vga_raw[NTASK];
 static void ems_end(int t);
 static void ems_box(int t);
 static void dpmi_end(int t);
-static unsigned char dp_inirq[NTASK];   /* PM-Handler laeuft (IRET kommt ohne Trap) */
+static unsigned char dp_inirq[NTASK];
+static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
 unsigned __far redir_psp(int t);
@@ -441,7 +442,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
     spk[t] = spk_open[t] = opl_open[t] = 0;   /* (tss_init sperrt alle Ports) */
-    sb[t].act = sb[t].aud = sb[t].irqp = sb[t].on_ = sb[t].need = sb[t].spk = 0;
+    sb[t].act = sb[t].aud = sb[t].irqp = sb[t].on_ = sb[t].need = sb[t].spk = sb[t].irql = 0;
     sb[t].rate = 11025;
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
@@ -966,6 +967,16 @@ static unsigned div3216(unsigned long n, unsigned d);
 #pragma aux div3216 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
 static char sb_buf[512];
 
+/* Leitung der virtuellen Karte (Bitmaske): die das Programm zuletzt per
+   DPMI 0205h eingehaengt hat (DOS/4GW haengt beim Start alle ein, DMX
+   danach nur seine), sonst im Real Mode umgebogenes 0Fh -> 7, sonst 5 */
+static unsigned char sb_line(int t)
+{
+    if (sb[t].irql)
+        return (unsigned char)(1 << sb[t].irql);
+    return (unsigned char)(!vec_def(0x0F) && vec_def(0x0D) ? 0x80 : 0x20);
+}
+
 static void sb_put(int t, unsigned char v)
 {
     if (sb[t].on_ < 4) {
@@ -974,12 +985,6 @@ static void sb_put(int t, unsigned char v)
     }
 }
 
-static int sb_irq(int t)                /* 5 oder 7: wer ist eingehaengt  */
-{
-    if (!vec_def(0x0F) || pm_hooked(t, 0x0F))
-        return 7;
-    return 5;
-}
 
 static void sb_stop(int t)
 {
@@ -1055,8 +1060,8 @@ static void sb_pump(int t)
             sb[t].dleft = sb[t].dcnt;
         } else
             sb[t].dleft -= n;
-        if (sb[t].pos >= sb[t].blk) {           /* Block fertig: IRQ     */
-            sb[t].irqp = 1;
+        if (sb[t].pos >= sb[t].blk) {           /* Block fertig: IRQ 5 und 7 */
+            sb[t].irqp = sb_line(t);
             sb[t].pos = 0;
             if (!sb[t].ai)
                 sb[t].act = 0;
@@ -1116,7 +1121,7 @@ static void sb_cmd(int t, unsigned char v)
     case 0xD8: sb_put(t, b->spk ? 0xFF : 0); break;
     case 0xE1: sb_put(t, 2); sb_put(t, 1); break;   /* DSP 2.01         */
     case 0xE8: sb_put(t, b->args[1]); break;
-    case 0xF2: b->irqp = 1; break;              /* IRQ ausloesen         */
+    case 0xF2: b->irqp = sb_line(t); break;     /* IRQ ausloesen         */
     }
 }
 
@@ -1324,17 +1329,20 @@ static void inject(struct v86_iret *r, int t)
     sb_pump(t);
     if (!(vfl[t] & FL_IF))
         return;
-    if (sb[t].irqp) {                           /* Sound Blaster fertig  */
-        unsigned q = sb_irq(t), m = 1 << q;
-        if (!(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m)) {
+    if (sb[t].irqp) {                           /* Sound Blaster fertig: */
+        unsigned q;                             /* IRQ 5 und 7 (welche   */
+        for (q = 5; q <= 7; q += 2) {           /* Leitung das Spiel     */
+            unsigned m = 1 << q;                /* nutzt, sieht man nicht) */
+            if (!(sb[t].irqp & m) || (visr[t] & ((m << 1) - 1)) || (vimr[t] & m))
+                continue;
             if (!vec_def(8 + q)) {              /* Real-Mode-Handler     */
-                sb[t].irqp = 0;
+                sb[t].irqp &= (unsigned char)~m;
                 visr[t] |= (unsigned char)m;
                 int_raw(r, t, 8 + q, (unsigned)r->eip);
                 return;
             }
             if (!pm_hooked(t, 8 + q))
-                sb[t].irqp = 0;                 /* niemand will ihn      */
+                sb[t].irqp &= (unsigned char)~m;    /* niemand will ihn  */
         }
     }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && t8_ok(t)) {
@@ -1722,6 +1730,12 @@ static void svc(int n, struct v86_frame *f, int t)
         break;
     case 0x09:                                  /* Tastatur (verkettet)  */
         visr[t] &= ~2;
+        break;
+    case 0x0D:                                  /* IRQ 5/7 ohne Handler: */
+        visr[t] &= ~0x20;                       /* quittieren            */
+        break;
+    case 0x0F:
+        visr[t] &= ~0x80;
         break;
     case 0x10:
         int10(f, t);
@@ -3405,6 +3419,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
 {
     unsigned i;
     dp_inirq[t] = 0;
+    sb[t].irql = 0;
     if (!dp_on[t])
         return;
     for (i = 0; i < NDPM; i++)
@@ -3806,6 +3821,8 @@ static unsigned dp31(struct v86_frame *f, int t)
         v = pmvec(t, BL);
         v[0] = dp_32[t] ? f->edx : DX;
         *(unsigned short __far *)((char __far *)v + 4) = CX;
+        if (BL == 0x0D || BL == 0x0F)           /* Sound Blaster: zuletzt */
+            sb[t].irql = (unsigned char)(BL == 0x0D ? 5 : 7);   /* eingehaengt */
         return 0;
     }
     case 0x0300: case 0x0301: case 0x0302: {    /* Real Mode aufrufen    */
@@ -4055,8 +4072,15 @@ static void dp_hwint(struct v86_iret *r, int t)
         return;
     account(t);
     sb_pump(t);
-    if (!(vfl[t] & FL_IF))
-        return;
+    if (!(vfl[t] & FL_IF)) {
+        /* PUSHF/CLI/.../POPF: das POPF trappt in Ring 3 nicht und laesst
+           das IF stehen - das virtuelle IF bliebe fuer immer aus (DMX in
+           DOOM: Takt und Sound standen). Wachhund wie bei DOSEMU: nach
+           2 Takten ohne STI gilt es als wieder an. */
+        if (get_ticks() - dp_cli_t[t] < 3)
+            return;
+        vfl[t] |= FL_IF;
+    }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
         vt_pend[t]--;
         visr[t] |= 1;
@@ -4064,12 +4088,16 @@ static void dp_hwint(struct v86_iret *r, int t)
         return;
     }
     if (sb[t].irqp) {                           /* Sound Blaster (DMX)   */
-        unsigned q = sb_irq(t), m = 1 << q;
-        if (!(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m) && pm_hooked(t, 8 + q)) {
-            sb[t].irqp = 0;
-            visr[t] |= (unsigned char)m;
-            dp_push(r, t, 8 + q);
-            return;
+        unsigned q;
+        for (q = 5; q <= 7; q += 2) {
+            unsigned m = 1 << q;
+            if ((sb[t].irqp & m) && !(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m) &&
+                pm_hooked(t, 8 + q)) {
+                sb[t].irqp &= (unsigned char)~m;
+                visr[t] |= (unsigned char)m;
+                dp_push(r, t, 8 + q);
+                return;
+            }
         }
     }
     if (pm_hooked(t, 9) && key_ready(t)) {
@@ -4305,6 +4333,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     switch (op) {
     case 0xFA:                                  /* CLI/STI: virtuell     */
         vfl[t] &= ~FL_IF;
+        dp_cli_t[t] = get_ticks();
         f->r.eip++;
         return 0;
     case 0xFB:
