@@ -642,7 +642,7 @@ durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 Build-Nummer (Wunsch des Nutzers, auch auf main): build.sh schreibt
-`build/version.h` (Anzahl der Commits, Kurz-Hash, `+` bei ungesicherten
+`build/version.h` (CI: GitHub-Lauf-Nummer, lokal Commit-Zahl + „lokal“, Kurz-Hash, `+` bei ungesicherten
 Änderungen, Datum), VER zeigt „Build n (hash, Datum)“; CI mit
 `fetch-depth: 0`.
 

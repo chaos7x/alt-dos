@@ -48,7 +48,7 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           gh release create latest build/dos5.img build/atdos-hd.zip \
             --prerelease \
-            --title "Aktueller Stand (${GITHUB_SHA::7})" \
+            --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
             --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. dos5.img: Diskette A: in 86Box, beliebige 286-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
       - name: Release "v5.0" veroeffentlichen (Zweig 5.x)
