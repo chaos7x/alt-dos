@@ -166,6 +166,7 @@ int  __far kf_vio_fg(void);
 int  __far kf_kbd_get(void);
 int  __far kf_kbd_peek(void);
 unsigned __far kf_kbd_shift(void);
+void __far kf_kbd_flush(void);
 void __far kf_vio_tty(int s, unsigned sel, unsigned off, unsigned len);
 void __far kf_vio_setmode(int s, int full, int owner);
 void __far kf_vio_setcur(int s, int row, int col);
@@ -239,6 +240,8 @@ void __far v86_destroy(int t)
     if (!pd_box[t])
         return;
     dpmi_end(t);
+    if (box_ses[t] >= 0 && box_fg(t))
+        kf_kbd_flush();                 /* wie v86_park                  */
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk[t] = 0;
@@ -459,6 +462,12 @@ void __far v86_park(int t)
     int s = box_ses[t];
     if (s < 0)
         return;
+    if (box_fg(t))                      /* Tasten des DOS-Programms (Spiele
+                                           mit eigenem INT 9) nicht an CMD -
+                                           sonst holt Pfeil hoch + Enter den
+                                           letzten Befehl zurueck (DOOM lief
+                                           endlos neu) */
+        kf_kbd_flush();
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk[t] = 0;
@@ -1616,7 +1625,8 @@ static void vga_freeze(int t)
 static int vga_want(struct v86_frame *f, int t)
 {
     unsigned m = AL & 0x7F;
-    int txt = (AH == 0x00 && (m <= 3 || m == 7)) ||
+    int txt;
+    txt = (AH == 0x00 && (m <= 3 || m == 7)) ||
               (AX == 0x4F02 && (BX & 0x1FF) < 0x100 && ((BX & 0x7F) <= 3 || (BX & 0x7F) == 7));
     if (vga_raw[t]) {
         if (!txt)

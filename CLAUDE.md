@@ -1834,9 +1834,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   trappt im PM nicht – ein beim Zustellen gelöschtes virtuelles IF blieb
   bis zum nächsten STI aus (Tasten kamen Sekunden zu spät); jetzt bleibt
   IF an, Schachteln verhindert visr bis zum EOI; (3) Port 60h liefert bei
-  PM-Handler für 9 nur vcur (nicht aus dem Ring nehmen). Offen: „Y“ in der
-  Beenden-Abfrage von DOOM wirkt in QEMU nicht (Scancode 15h kommt
-  nachweislich an), echter Takt über 100 Hz (PIT des Kernels hochstellen).
+  PM-Handler für 9 nur vcur (nicht aus dem Ring nehmen). „Y“ in der Beenden-Abfrage wirkte doch (danach
+  der Neustart, s. u.); echter Takt über 100 Hz (PIT des Kernels hochstellen).
   Schneller echter Takt (Anlass: Digger fror beim Highscore ein, wartet
   dort auf viele schnelle Takte; DOOM will 140 Hz): `kpit_set` stellt
   den echten PIT-Kanal 0 auf den Teiler der Box im Vordergrund (höchstens
@@ -1851,6 +1850,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   DOOM sieht die Taste nie. `key_ready`: Loslassen-Code frühestens 3
   Takte nach dem vorigen Code, IRQ 1 nicht, solange IRQ 0 bedient wird
   (wie der PIC; sonst löschte das EOI des Tastatur-Handlers das Takt-Bit).
+  DOOM startete nach dem Beenden endlos neu (vom Nutzer gemeldet; Beenden
+  auf deutscher Tastatur mit Z, DOOM liest die Tastenposition): die im
+  Spiel gedrückten Tasten landen auch im Tastaturpuffer des Kernels, CMD
+  las danach Pfeil hoch (letzter Befehl) + Enter. `v86_park`/`v86_destroy`
+  leeren den Puffer (`kf_kbd_flush`), wenn die Box vorn war.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS
