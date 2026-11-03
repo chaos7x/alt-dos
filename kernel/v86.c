@@ -1360,9 +1360,12 @@ static void svc(int n, struct v86_frame *f, int t)
             if (k >= 0) {
                 AX = (unsigned)k;
                 idle_n[t] = 0;
-            } else if (++idle_n[t] >= 16) {     /* fragt nur ab: abgeben  */
-                idle_n[t] = 0;                  /* (wie IDLE_SENSITIVITY  */
-                kf_box_ctl(BOX_SLEEP, 1);       /* bei OS/2)              */
+            } else if (++idle_n[t] >= 16 && !pit_rl[t]) {  /* fragt nur ab: */
+                idle_n[t] = 0;                  /* abgeben (wie IDLE_SENSITIVITY */
+                kf_box_ctl(BOX_SLEEP, 1);       /* bei OS/2); nicht bei Spielen mit
+                                                   eigenem Takt - Digger fragt in
+                                                   seiner Warteschleife staendig ab
+                                                   und lief langsamer */
             }
         } else if (AH == 0x02 || AH == 0x12)
             AL = (unsigned char)kf_kbd_shift();

@@ -30,6 +30,17 @@ check_size() {   # Datei, Map, Maximum, Name
     echo "  $4: $(stat -c %s "$1") Bytes Datei, $end Bytes mit BSS (max. $3)"
 }
 
+# Build-Nummer fuer VER (Anzahl der Commits, Kurz-Hash, Datum)
+BUILDNO=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+BUILDREV=$(git rev-parse --short HEAD 2>/dev/null || echo unbekannt)
+git diff --quiet HEAD 2>/dev/null || BUILDREV="$BUILDREV+"
+cat > $B/version.h <<VEREOF
+/* erzeugt von build.sh */
+#define ATDOS_BUILD "$BUILDNO"
+#define ATDOS_REV   "$BUILDREV"
+#define ATDOS_DATE  "$(date +%d.%m.%Y)"
+VEREOF
+
 echo "Bootsektoren"
 nasm -f bin boot/boot.asm -o $B/boot.bin
 nasm -f bin boot/hdboot.asm -o $B/hdboot.bin

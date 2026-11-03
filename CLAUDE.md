@@ -702,6 +702,11 @@ durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 CI baut bei jedem Push und veröffentlicht `atdos-fd.img` als Release `latest`.
+Build-Nummer (Wunsch des Nutzers, damit klar ist, welches Abbild getestet
+wurde): build.sh schreibt `build/version.h` (ATDOS_BUILD = Anzahl der
+Commits, ATDOS_REV = Kurz-Hash, `+` bei ungesicherten Änderungen,
+ATDOS_DATE), VER in CMD zeigt „Build n (hash, Datum)“; die CI checkt mit
+`fetch-depth: 0` aus (sonst zählte sie 1).
 
 Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
 (`gemini_chat_completion`). Funktioniert mit `model: gemini-3.5-flash`;
@@ -1871,6 +1876,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   15h stellt sie vor dem Parken zurück und setzt den virtuellen PIC/Takt/
   Tastenring zurück. In QEMU geprüft: Digger mit F10 (Titel, dann Ende)
   beendet, danach PT (eigener INT 8, 1000 Hz) in derselben Box richtig.
+  Digger lief auf dem P3B-F zu langsam (Nutzer): die Leerlauf-Erkennung
+  (16 leere INT-16h-Abfragen -> 1 Takt schlafen) traf Diggers Warte-
+  schleife; sie gilt nicht mehr, sobald das Programm den PIT selbst
+  umstellt (`pit_rl`), wie IDLE_SENSITIVITY 100 bei OS/2.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS
