@@ -1892,6 +1892,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   grund gibt die I/O-Bitmap 42h und 61h direkt frei (43h bleibt gefangen,
   Kanal 0 gehört dem Kernel); hinten (inject, v86_poll, vga_freeze),
   Parken, Ende: wieder gesperrt und Lautsprecher aus.
+  Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
+  hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
+  25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),
+  `v86_replay` gibt sie als ANSI-Farbfolgen (`ansi_seq`, VGA-BGR ->
+  ANSI-RGB, 1 = hell, 5 = Blinken) über vio_tty aus, Zeilenende mit
+  ESC[0m, volle 80er-Zeilen ohne \n; bei ANSI OFF (kf_vio_ansi) nur Text.
+  In QEMU geprüft (ENDOOM rot/gelb/cyan). DGROUP jetzt 61 KB.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS

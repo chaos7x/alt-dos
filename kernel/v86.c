@@ -209,15 +209,16 @@ static unsigned long get32(unsigned sel, unsigned i)
 
 /* ---- Box anlegen und abbauen (im Kontext des Aufrufers) ---------------- */
 
-static char cap[ROWS * (COLS + 1)];     /* letzter Text einer Box        */
-static unsigned cap_len;
+static unsigned short cap[ROWS * COLS];  /* letzter Text einer Box (Zeichen + Farbe) */
+static unsigned char cap_rows, cap_len_r[ROWS];
+static unsigned cap_len;                /* 0 = nichts gemerkt            */
 
-/* Text der Box (Zeilen bis zum Cursor) fuer v86_replay merken */
+/* Text der Box (Zeilen bis zum Cursor) mit Farben fuer v86_replay merken
+   (DOOMs Abschlussseite ENDOOM ist farbig) */
 static void capture(int t)
 {
     unsigned long e;
-    unsigned r, c, n, last, crow;
-    unsigned char ch;
+    unsigned r, c, last, crow, v;
 
     cap_len = 0;
     scratch2_map(PG_LIN(pt_box[t]), 4095);
@@ -229,17 +230,17 @@ static void capture(int t)
     if (crow > ROWS)
         crow = ROWS;
     scratch_map(e & ~0xFFFUL, 4095);
-    for (r = 0, n = 0; r < crow; r++) {
-        for (c = 0, last = 0; c < COLS; c++)
-            if (*(unsigned char __far *)MK_FP(SCRATCH, (r * COLS + c) * 2) != ' ')
+    for (r = 0; r < crow; r++) {
+        for (c = 0, last = 0; c < COLS; c++) {
+            v = *(unsigned short __far *)MK_FP(SCRATCH, (r * COLS + c) * 2);
+            cap[r * COLS + c] = (unsigned short)v;
+            if ((v & 0xFF) != ' ' || (v & 0x7000))  /* Zeichen oder Hintergrund */
                 last = c + 1;
-        for (c = 0; c < last; c++) {
-            ch = *(unsigned char __far *)MK_FP(SCRATCH, (r * COLS + c) * 2);
-            cap[n++] = ch < ' ' ? ' ' : (char)ch;
         }
-        cap[n++] = '\n';
+        cap_len_r[r] = (unsigned char)last;
     }
-    cap_len = n;
+    cap_rows = (unsigned char)crow;
+    cap_len = crow ? 1 : 0;
 }
 
 void __far v86_destroy(int t)
@@ -304,10 +305,54 @@ void __far v86_destroy(int t)
 
 /* nach dem Ende einer Box in der Sitzung ihres Aufrufers: ihren Text dort
    ausgeben (s < 0: verwerfen) */
+int __far kf_vio_ansi(int s, unsigned on);
+/* Farbe (VGA-Attribut) als ANSI-Folge: VGA zaehlt BGR, ANSI RGB */
+static unsigned ansi_seq(char *b, unsigned a)
+{
+    static const char map[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
+    unsigned n = 0;
+    b[n++] = 27; b[n++] = '['; b[n++] = '0';
+    if (a & 0x08) { b[n++] = ';'; b[n++] = '1'; }
+    if (a & 0x80) { b[n++] = ';'; b[n++] = '5'; }
+    b[n++] = ';'; b[n++] = '3'; b[n++] = (char)('0' + map[a & 7]);
+    b[n++] = ';'; b[n++] = '4'; b[n++] = (char)('0' + map[(a >> 4) & 7]);
+    b[n++] = 'm';
+    return n;
+}
+
 void __far v86_replay(int s)
 {
-    if (s >= 0 && cap_len)
-        kf_vio_tty(s, KDATA, (unsigned)cap, cap_len);
+    static char b[96];
+    unsigned r, c, n, a, cur = 0x07, col = kf_vio_ansi(s, 2);
+    unsigned char ch;
+    if (s < 0 || !cap_len) {
+        cap_len = 0;
+        return;
+    }
+    for (r = 0; r < cap_rows; r++) {
+        for (c = 0, n = 0; c < cap_len_r[r]; c++) {
+            a = cap[r * COLS + c] >> 8;
+            if (col && a != cur) {
+                if (n)
+                    kf_vio_tty(s, KDATA, (unsigned)b, n);
+                n = ansi_seq(b, a);
+                cur = a;
+            }
+            ch = (unsigned char)cap[r * COLS + c];
+            b[n++] = ch < ' ' ? ' ' : (char)ch;
+            if (n > sizeof(b) - 20) {
+                kf_vio_tty(s, KDATA, (unsigned)b, n);
+                n = 0;
+            }
+        }
+        if (col && cur != 0x07) {               /* Zeilenende ohne Farbe */
+            b[n++] = 27; b[n++] = '['; b[n++] = '0'; b[n++] = 'm';
+            cur = 0x07;
+        }
+        if (cap_len_r[r] < COLS)                /* volle Zeile bricht selbst um */
+            b[n++] = '\n';
+        kf_vio_tty(s, KDATA, (unsigned)b, n);
+    }
     cap_len = 0;
 }
 
