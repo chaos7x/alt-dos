@@ -27,14 +27,13 @@ check_size() {   # Datei, Map, Maximum, Name
     echo "  $4: $(stat -c %s "$1") Bytes Datei, $end Bytes mit BSS (max. $3)"
 }
 
-# Build-Nummer fuer VER (Anzahl der Commits, Kurz-Hash, Datum)
-# in der CI die Lauf-Nummer von GitHub (wie auf der Actions-Seite und im
-# Release), lokal die Anzahl der Commits mit Zusatz "lokal"
-if [ -n "$GITHUB_RUN_NUMBER" ]; then
-    BUILDNO=$GITHUB_RUN_NUMBER
-else
-    BUILDNO="$(git rev-list --count HEAD 2>/dev/null || echo 0) lokal"
-fi
+# Build-Nummer fuer VER: Zweig 5.x zaehlt wie Windows 10 (19045.n) nur
+# hinter dem Punkt weiter - 240 ist der CI-Lauf von AT-DOS 5.0 (8d7f54f),
+# dahinter die Anzahl der Commits seither; lokal mit Zusatz "lokal"
+BUILDBASE=240
+BUILDN=$(git rev-list --count 8d7f54f..HEAD 2>/dev/null || echo "?")
+BUILDNO="$BUILDBASE.$BUILDN"
+[ -n "$GITHUB_RUN_NUMBER" ] || BUILDNO="$BUILDNO lokal"
 BUILDREV=$(git rev-parse --short HEAD 2>/dev/null || echo unbekannt)
 git diff --quiet HEAD 2>/dev/null || BUILDREV="$BUILDREV+"
 cat > $B/version.h <<VEREOF

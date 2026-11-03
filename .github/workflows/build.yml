@@ -59,6 +59,8 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           if gh release view v5.0 >/dev/null 2>&1; then
             gh release upload v5.0 build/dos5.img build/atdos-hd.zip --clobber
+            BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
+            gh release edit v5.0 --title "AT-DOS 5.0, Build $BNO"
           else
             gh release create v5.0 build/dos5.img build/atdos-hd.zip \
               --target "$GITHUB_SHA" \

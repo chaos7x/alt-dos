@@ -642,9 +642,12 @@ durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 Build-Nummer (Wunsch des Nutzers, auch auf main): build.sh schreibt
-`build/version.h` (CI: GitHub-Lauf-Nummer, lokal Commit-Zahl + „lokal“, Kurz-Hash, `+` bei ungesicherten
-Änderungen, Datum), VER zeigt „Build n (hash, Datum)“; CI mit
-`fetch-depth: 0`.
+`build/version.h` (Kurz-Hash, `+` bei ungesicherten Änderungen, Datum),
+VER zeigt „Build n (hash, Datum)“; CI mit `fetch-depth: 0`. Auf 5.x
+(Wunsch des Nutzers, wie Windows 10 19045.n): fest 240 (CI-Lauf von
+5.0, Commit 8d7f54f), hinter dem Punkt die Commits seither, z. B.
+240.5; lokal mit „lokal“. Die CI setzt den Titel des Releases v5.0 auf
+„AT-DOS 5.0, Build 240.n“. main zählt weiter die CI-Lauf-Nummer.
 
 CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
