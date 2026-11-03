@@ -1734,8 +1734,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   je Box in einer Seite (`ems_tab`: Erstseiten, Besitzer, Namen,
   gesicherte Zuordnung), Handles/Zählung/Zuordnung in DGROUP. Funktionen
   40–51h, 53h, 54h (nur 02), 58h, 59h (01), 5Ah. INI `EMS_MEMORY_LIMIT`
-  -> INT E0h 17h (`ems_lim`). Offen: 55h/56h (Sprung/Aufruf mit
-  Umblenden), 57h (Bereich kopieren), Rahmen abschaltbar,
+  -> INT E0h 17h (`ems_lim`). 57h (kopieren/tauschen, AL 0/1) über
+  `x57_win`: konventionell -> VWIN/RWIN mit linearer Basis, EMS -> SCRATCH/
+  SCRATCH2 auf die physischen Seiten (Ziel zuerst holen – die Tabellen-
+  suche benutzt SCRATCH), Stücke bis zur 16-KB-Grenze, Tauschen über
+  512 Byte in KDATA; geprüft mit 20.000 Byte über die Seitengrenze, EMS
+  -> EMS und zurück. Offen: 55h/56h (Sprung/Aufruf mit Umblenden),
+  Rahmen abschaltbar,
   mehr als 2,9 MB XMS (weitere Seitentabellen),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,

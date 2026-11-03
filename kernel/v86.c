@@ -1944,6 +1944,37 @@ static int ems_newh(int t)
     return (int)h;
 }
 
+/* 57h: eine Seite des Bereichs -> Fenster. typ 0 = konventionell
+   (seg:off, lineare Adresse der Box), 1 = EMS (Handle, logische Seite +
+   Versatz, ueber die physischen Seiten). -> Bytes bis zur Grenze, 0 = Fehler */
+static unsigned x57_win(int t, unsigned char typ, unsigned h, unsigned off, unsigned sp,
+                        unsigned long pos, unsigned widx, unsigned sel)
+{
+    unsigned long a;
+    unsigned lp, o, n;
+    int sl;
+    if (typ == 0) {
+        a = ((unsigned long)sp << 4) + off + pos;
+        if (a >= 0x110000UL)
+            return 0;
+        lwin(widx, a);
+        return 0x8000;
+    }
+    a = (unsigned long)off + pos;               /* ab Anfang der Seite sp */
+    lp = sp + (unsigned)(a >> 14);
+    o = (unsigned)a & 0x3FFF;
+    if (h >= NEH || !ems_on[t][h] || lp >= ems_np[t][h] || (sl = ems_slot(t, h, lp)) < 0)
+        return 0;
+    ems_tabmap(t);
+    a = PG_LIN(*(pg_t __far *)MK_FP(SCRATCH, sl * 4)) + o;
+    n = 0x4000 - o;
+    if (sel == SCRATCH)
+        scratch_map(a, n - 1);
+    else
+        scratch2_map(a, n - 1);
+    return n;
+}
+
 #define ERET(c)  do { AH = (c); return; } while (0)
 
 static void ems(struct v86_frame *f, int t)
@@ -2124,6 +2155,41 @@ static void ems(struct v86_frame *f, int t)
             ERET(0);
         }
         ERET(AL > 2 ? 0x8F : 0xA0);
+    case 0x57: {                                /* Bereich kopieren/tauschen */
+        static unsigned char xb[512];
+        unsigned long len, pos = 0;
+        unsigned char st = rd8(ds, si + 4), dt = rd8(ds, si + 11);
+        unsigned sh = rd16(ds, si + 5), so = rd16(ds, si + 7), ssp = rd16(ds, si + 9);
+        unsigned dh = rd16(ds, si + 12), dof = rd16(ds, si + 14), dsp = rd16(ds, si + 16);
+        unsigned a, b, ss, dsel;
+        len = ((unsigned long)rd16(ds, si + 2) << 16) | rd16(ds, si);
+        if (AL > 1 || st > 1 || dt > 1)
+            ERET(0x8F);
+        if (len > 0x100000UL)
+            ERET(0x96);
+        while (pos < len) {
+            ss = st ? SCRATCH : VWIN;
+            dsel = dt ? SCRATCH2 : RWIN_SEL(t);
+            b = x57_win(t, dt, dh, dof, dsp, pos, RWIN_IDX(t), dsel);  /* Ziel zuerst: */
+            a = x57_win(t, st, sh, so, ssp, pos, VWIN_IDX, ss);  /* SCRATCH zuletzt */
+            if (!a || !b)
+                ERET(0x8A);
+            n = a < b ? a : b;
+            if (AL == 1 && n > sizeof(xb))
+                n = sizeof(xb);
+            if (len - pos < n)
+                n = (unsigned)(len - pos);
+            if (AL == 0)
+                far_copy(dsel, 0, ss, 0, n);
+            else {                              /* tauschen ueber xb     */
+                far_copy(KDATA, (unsigned)xb, dsel, 0, n);
+                far_copy(dsel, 0, ss, 0, n);
+                far_copy(ss, 0, KDATA, (unsigned)xb, n);
+            }
+            pos += n;
+        }
+        ERET(0);
+    }
     case 0x58:                                  /* Rahmenadressen        */
         if (AL == 0)
             for (i = 0; i < 4; i++) {
