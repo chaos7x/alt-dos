@@ -1691,7 +1691,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   22 (`MEMINFO_V60` = 18 für total/free_kb32), Zeile „DOS-Boxen“.
   Strg+Alt+Ende (auch grau, E0-Zweig in kbd.c) bei einer Box im Vorder-
   grund -> kbd_break_req -> do_break beendet sie (in QEMU mit `jmp $`
-  geprüft). Erstes Codesegment 63,3 KB. Weitere Hebel: Kosten je
+  geprüft). Erstes Codesegment 63,3 KB.
+  Phase 4, erster Schritt erledigt: XMS/HMA/UMB (in QEMU mit einem
+  Testprogramm geprüft: Erkennung, Version 3.00, Anlegen/Kopieren hin und
+  zurück/Sperren -> 110000h/Freigeben, DOS in der HMA (3306h DH Bit 4),
+  48 KB mehr konventionell, UMB-Block bei CF01h, Speicher kommt beim Ende
+  der Box ganz zurück). v86.c: INT 2Fh 4300h/4310h fängt `do_int` ab
+  (FreeDOS reicht 43h nicht an den alten Vektor weiter!), Einsprung
+  F000:0500 „ARPL E1h; RETF“ -> `xms()` ohne FLAGS-Schreiben (Fernaufruf,
+  kein INT-Rahmen). A20 je Box = PTE 100h–10Fh: eigene Seiten (`hma_pg`,
+  bei Bedarf) oder Spiegel von 0–FFFF, danach `tlb()` (CR3 neu). EMBs im
+  Adressraum der Box ab Seite 110h (eine Seitentabelle, `XMS_KB` 2048 je
+  Box, Lücken über `emb_gap`, 16 Handles), Seiten mit `PTE_OWN` (Bit 9)
+  -> v86_destroy gibt sie frei; Move über VWIN + RWIN(t) mit linearer
+  Basis (`lwin`). UMB: `umb_scan` einmal (55AA-ROMs ab C0000 in 2-KB-
+  Schritten, sonst Seite einheitlich 00/FF), 10h vergibt eigene Seiten,
+  11h stellt den ROM-Eintrag 1:1 wieder her. CONFIG.SYS: `DOS=` setzt
+  `dos_high`/`dos_umb` (ohne = LOW,NOUMB wie MS-DOS; ausgeliefert mit
+  HIGH,UMB), `RMSIZE=` -> `box_kb`. Box-CONFIG.SYS hat fest
+  `DOS=HIGH,UMB` und `DEVICE=A:\ATBOX.SYS` (apps/atbox.asm, tut nichts –
+  FreeDOS ruft umb_init nur nach einer DEVICE=-Zeile!). Offen: XMS-Grenze
+  einstellbar (DOSBOX.INI), mehr als 2,9 MB (weitere Seitentabellen),
+  Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
   nicht nach – Zählen ist der bessere Maßstab. Offen: Programme auf A:/B:.

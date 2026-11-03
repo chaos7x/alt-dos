@@ -226,6 +226,7 @@ void __far v86_start(int t, int s);     /* Sitzung fest: Vollbild, B800  */
 void __far v86_replay(int s);           /* Text der beendeten Box zeigen */
 void __far v86_park(int t);             /* Box offen halten: Vollbild weg */
 extern unsigned long v86_pages;         /* Seiten aller DOS-Boxen (MEM)   */
+extern unsigned char dos_high, dos_umb; /* DOS=HIGH,UMB (CONFIG.SYS)      */
 void __far v86_poll(void);              /* Scheduler: Bildschirm geaendert? */
 void __far v86_key(unsigned sc);        /* kbd_irq: Scancode             */
 struct v86_iret;

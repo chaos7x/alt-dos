@@ -11,5 +11,7 @@ DEVICE=MOUSE.SYS
 DEVICE=SB16.SYS
 IFS=ISO9660.IFS
 PROTSHELL=CMD.EXE /P
+REM DOS-Boxen: DOS im oberen Speicher (HMA) und UMBs, wie bei OS/2
+DOS=HIGH,UMB
 REM Nicht sauber abgemeldete Platten beim Start pruefen: alle,
 REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK=

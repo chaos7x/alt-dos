@@ -63,6 +63,8 @@
 #define VBIOS   0xF000          /* Segment der Dienst-Stummel            */
 #define INT8_STUB 0x0400        /* ARPL 8; INT 1Ch; IRET                 */
 #define DPT_OFF 0x0800          /* Diskettenparametertabelle             */
+#define XMS_STUB 0x0500         /* XMS-Einsprung: ARPL E1h; RETF          */
+#define PTE_OWN 0x200           /* eigene Seite (EMB/UMB): bei Ende frei  */
 #define BDA     0x0040
 #define VSEG    0xB800
 #define ROWS    25
@@ -99,6 +101,8 @@ static void vp_free(pg_t p)
     mem_free(p, 1);
     v86_pages--;
 }
+
+static void xms_end(int t);
 
 /* Thunks (erstes Codesegment) */
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
@@ -186,7 +190,7 @@ void __far v86_destroy(int t)
         scratch_map(PG_LIN(pt_box[t]), 4095);
         for (i = 0; i < 0x100; i++) {
             e = get32(SCRATCH, i);
-            if ((e & PTE_P) && (i <= 0xA0 || i == 0xF0))   /* nicht B8/B9! */
+            if ((e & PTE_P) && (i <= 0xA0 || i == 0xF0 || (e & PTE_OWN)))  /* nicht B8/B9! */
                 vp_free(e >> 12);
         }
         vp_free(pt_box[t]);
@@ -194,6 +198,7 @@ void __far v86_destroy(int t)
     }
     vp_free(pd_box[t]);
     pd_box[t] = 0;
+    xms_end(t);
 }
 
 /* nach dem Ende einer Box in der Sitzung ihres Aufrufers: ihren Text dort
@@ -310,6 +315,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     for (i = 0; i < 256; i++)
         put32(SCRATCH, i, 0x90CF0063UL | ((unsigned long)i << 8));
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
+    put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
     *(unsigned char __far *)MK_FP(SCRATCH, INT8_STUB + 4) = 0xCF;
     /* Diskettenparameter (INT 13h 08h, INT 1Eh) bei F000:0800, 1,44 MB */
     put32(SCRATCH, DPT_OFF >> 2, 0x122502AFUL);
@@ -1175,6 +1181,16 @@ static unsigned run_svc(int n, struct v86_frame *f, int t, unsigned fl)
 /* INT n wie im Real Mode, ip = Ruecksprung */
 static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
 {
+    if (n == 0x2F && (AX == 0x4300 || AX == 0x4310)) {  /* XMS da?      */
+        f->r.eip = ip;                          /* (vor dem DOS: FreeDOS */
+        if (AL == 0)                            /* reicht 43h nicht weiter) */
+            AL = 0x80;
+        else {
+            f->r.es = VBIOS;
+            BX = XMS_STUB;
+        }
+        return;
+    }
     if (vec_def(n) && n != 8) {                 /* Vektor unveraendert:  */
         f->r.eip = ip;                          /* Dienst gleich         */
         set_flags(&f->r, t, run_svc(n, f, t, vflags(&f->r, t)));
@@ -1260,6 +1276,474 @@ static void port_out(int t, unsigned p, unsigned char v)
 /* ---- Monitor -------------------------------------------------------------
    Aus start.asm exc_common, wenn eine Ausnahme aus der Box kam. -> 0:
    erledigt, weiter in der Box; sonst beendet fault() die Box. */
+/* ---- XMS 3.0 fuer die Box (wie VXMS.SYS bei OS/2) -------------------------
+   Kein HIMEM in der Box: INT 2Fh 4300h/4310h beantwortet der Monitor
+   selbst (FreeDOS reicht 43h nicht weiter), Einsprung F000:0500 =
+   "ARPL E1h; RETF" -> xms(). A20 je Box ueber die Seitentabelle: aus =
+   100000-10FFFF spiegelt 0-FFFF, an = eigene 16 Seiten (hma_pg). HMA nur
+   mit DOS=HIGH (CONFIG.SYS der AT-DOS), UMBs nur mit DOS=UMB: freie
+   Lueckenseiten zwischen C8000 und EFFFF (kein ROM, Inhalt einfoermig)
+   bekommen eigene Seiten. Speicherbloecke (EMB) liegen im Adressraum der
+   Box ab 110000h (eine Seitentabelle: bis XMS_KB), Lock liefert diese
+   lineare Adresse (fuer DPMI spaeter), Move kopiert ueber zwei Fenster.
+   Eigene Seiten tragen PTE_OWN und werden in v86_destroy frei. */
+#define rd8_k(i) (*(unsigned char __far *)MK_FP(SCRATCH, (i)))
+#define XMS_PG0  0x110                  /* erste EMB-Seite               */
+#define XMS_KB   2048                   /* Grenze je Box (spaeter DOSBOX.INI) */
+#define XMS_PGN  (XMS_KB / 4)
+#define NXH      16
+struct xmsh { unsigned base, npg; unsigned char used, lock; };
+static struct xmsh xh[NTASK][NXH];
+static pg_t hma_pg[NTASK][16];
+static unsigned char a20_glob[NTASK], a20_loc[NTASK], a20_on[NTASK], hma_used[NTASK];
+static unsigned char umb_ok, umb_free[6];       /* Seiten C8..EF frei    */
+static unsigned char umb_used[NTASK][6], umb_head[NTASK][6];
+
+#define BIT(m, p)   ((m)[((p) - 0xC8) >> 3] & (1 << (((p) - 0xC8) & 7)))
+#define BSET(m, p)  ((m)[((p) - 0xC8) >> 3] |= (unsigned char)(1 << (((p) - 0xC8) & 7)))
+#define BCLR(m, p)  ((m)[((p) - 0xC8) >> 3] &= (unsigned char)~(1 << (((p) - 0xC8) & 7)))
+
+static unsigned long pte_get(int t, unsigned i)
+{
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    return get32(SCRATCH2, i);
+}
+
+static void pte_set(int t, unsigned i, unsigned long e)
+{
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    put32(SCRATCH2, i, e);
+}
+
+static void tlb(int t)                  /* Seitentabelle der laufenden Box geaendert */
+{
+    if (k2_get_cr3() == PG_LIN(pd_box[t]))
+        k2_cr3((unsigned)k2_get_cr3(), (unsigned)(k2_get_cr3() >> 16));
+}
+
+static pg_t own_page(void)              /* genullte eigene Seite         */
+{
+    pg_t p = vp_alloc();
+    if (p) {
+        scratch_map(PG_LIN(p), 4095);
+        zero_seg(SCRATCH, 2048);
+    }
+    return p;
+}
+
+static int a20_set(int t, int on)
+{
+    unsigned i;
+    if (on && !hma_pg[t][0])
+        for (i = 0; i < 16; i++)
+            if (!(hma_pg[t][i] = own_page())) {
+                while (i--) {
+                    vp_free(hma_pg[t][i]);
+                    hma_pg[t][i] = 0;
+                }
+                return 0;
+            }
+    for (i = 0; i < 16; i++)
+        pte_set(t, 0x100 + i, on ? PG_LIN(hma_pg[t][i]) | PTE_BOX
+                                 : (pte_get(t, i) & ~0xFFFUL) | PTE_BOX);
+    a20_on[t] = (unsigned char)on;
+    tlb(t);
+    return 1;
+}
+
+static void xms_end(int t)              /* aus v86_destroy               */
+{
+    unsigned i;
+    for (i = 0; i < 16; i++)
+        if (hma_pg[t][i]) {
+            vp_free(hma_pg[t][i]);
+            hma_pg[t][i] = 0;
+        }
+    for (i = 0; i < NXH; i++)
+        xh[t][i].used = 0;
+    a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
+    for (i = 0; i < 6; i++)
+        umb_used[t][i] = umb_head[t][i] = 0;
+}
+
+/* einmal: welche Seiten C8..EF sind frei? ROMs (55AA, Groesse * 512 ab
+   C0000 in 2-KB-Schritten) und uneinheitliche Seiten scheiden aus */
+static void umb_scan(void)
+{
+    static unsigned char rom[6];
+    unsigned long a;
+    unsigned p, k, n, i;
+    unsigned char c;
+
+    for (a = 0xC0000UL; a < 0xF0000UL; a += 2048) {
+        scratch_map(a, 2047);
+        if (rd8_k(0) == 0x55 && rd8_k(1) == 0xAA) {
+            n = rd8_k(2);                       /* 512-Byte-Bloecke    */
+            for (k = 0; k < (n + 7) / 8 + 1; k++) {
+                p = (unsigned)((a + (unsigned long)k * 4096) >> 12);
+                if (p >= 0xC8 && p < 0xF0)
+                    BSET(rom, p);
+            }
+        }
+    }
+    for (p = 0xC8; p < 0xF0; p++) {
+        if (BIT(rom, p))
+            continue;
+        scratch_map(PG_LIN(p), 4095);
+        c = rd8_k(0);
+        if (c != 0 && c != 0xFF)
+            continue;
+        for (i = 1; i < 4096 && rd8_k(i) == c; i++)
+            ;
+        if (i == 4096)
+            BSET(umb_free, p);
+    }
+    umb_ok = 1;
+}
+
+static unsigned umb_run(int t, unsigned p)      /* freie Seiten ab p     */
+{
+    unsigned n = 0;
+    while (p + n < 0xF0 && BIT(umb_free, p + n) && !BIT(umb_used[t], p + n))
+        n++;
+    return n;
+}
+
+/* EMB: Luecke fuer n Seiten im Adressraum der Box (erste passende) */
+static unsigned emb_gap(int t, unsigned n, unsigned *largest)
+{
+    unsigned s, e, i, best = 0, found = 0, nx;
+    s = XMS_PG0;
+    for (;;) {
+        for (i = 0; i < NXH; i++)               /* liegt s in einem Block? */
+            if (xh[t][i].used && xh[t][i].npg && s >= xh[t][i].base &&
+                s < xh[t][i].base + xh[t][i].npg)
+                break;
+        if (i < NXH) {
+            s = xh[t][i].base + xh[t][i].npg;
+            continue;
+        }
+        if (s >= XMS_PG0 + XMS_PGN)
+            break;
+        nx = XMS_PG0 + XMS_PGN;                 /* naechster Block dahinter */
+        for (i = 0; i < NXH; i++)
+            if (xh[t][i].used && xh[t][i].npg && xh[t][i].base > s && xh[t][i].base < nx)
+                nx = xh[t][i].base;
+        e = nx - s;
+        if (e > best)
+            best = e;
+        if (!found && e >= n)
+            found = s;
+        s = nx;
+    }
+    if (largest)
+        *largest = best;
+    return found;
+}
+
+static int emb_map(int t, unsigned base, unsigned n)
+{
+    unsigned i;
+    pg_t p;
+    for (i = 0; i < n; i++) {
+        if (!(p = own_page())) {
+            while (i--) {
+                vp_free(pte_get(t, base + i) >> 12);
+                pte_set(t, base + i, 0);
+            }
+            return 0;
+        }
+        pte_set(t, base + i, PG_LIN(p) | PTE_BOX | PTE_OWN);
+    }
+    return 1;
+}
+
+static void emb_unmap(int t, unsigned base, unsigned n)
+{
+    unsigned long e;
+    while (n--) {
+        e = pte_get(t, base + n);
+        if (e & PTE_P)
+            vp_free(e >> 12);
+        pte_set(t, base + n, 0);
+    }
+}
+
+static unsigned emb_free_pg(int t)
+{
+    unsigned i, u = 0;
+    for (i = 0; i < NXH; i++)
+        if (xh[t][i].used)
+            u += xh[t][i].npg;
+    return XMS_PGN - u;
+}
+
+static void lwin(unsigned idx, unsigned long lin)  /* Fenster auf lineare Adresse der Box */
+{
+    struct desc *d = &gdt[idx];
+    d->limit = 0xFFFF;
+    d->base_lo = (unsigned short)lin;
+    d->base_hi = (unsigned char)(lin >> 16);
+    d->access = ACC_KDATA;
+    d->rsv = 0;
+}
+
+/* Adresse fuer Move: Handle 0 = seg:off der Box, sonst Block + Versatz */
+static int xaddr(int t, unsigned h, unsigned long off, unsigned long len,
+                 unsigned long *lin)
+{
+    if (h == 0) {
+        *lin = ((off >> 16) << 4) + (unsigned)off;
+        return *lin + len <= 0x110000UL;
+    }
+    if (h > NXH || !xh[t][h - 1].used ||
+        off + len > ((unsigned long)xh[t][h - 1].npg << 12))
+        return 0;
+    *lin = ((unsigned long)xh[t][h - 1].base << 12) + off;
+    return 1;
+}
+
+#define XFAIL(c)  do { AX = 0; BL = (c); return; } while (0)
+
+static void xms(struct v86_frame *f, int t)
+{
+    unsigned h = DX, i, n, lg;
+    unsigned long kb, len, so, dof, sl, dl;
+    unsigned ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
+
+    switch (AH) {
+    case 0x00:                                  /* Version               */
+        AX = 0x0300;
+        BX = 0x0301;
+        DX = dos_high;
+        return;
+    case 0x01:                                  /* HMA anfordern         */
+        if (!dos_high)
+            XFAIL(0x90);
+        if (hma_used[t])
+            XFAIL(0x91);
+        hma_used[t] = 1;
+        AX = 1;
+        return;
+    case 0x02:
+        if (!hma_used[t])
+            XFAIL(0x93);
+        hma_used[t] = 0;
+        AX = 1;
+        return;
+    case 0x03: case 0x05:                       /* A20 ein (global/lokal) */
+        if (AH == 3)
+            a20_glob[t] = 1;
+        else
+            a20_loc[t]++;
+        if (!a20_on[t] && !a20_set(t, 1))
+            XFAIL(0x82);
+        AX = 1;
+        return;
+    case 0x04: case 0x06:                       /* A20 aus               */
+        if (AH == 4)
+            a20_glob[t] = 0;
+        else if (a20_loc[t])
+            a20_loc[t]--;
+        if (a20_on[t] && !a20_glob[t] && !a20_loc[t])
+            a20_set(t, 0);
+        AX = 1;
+        return;
+    case 0x07:
+        AX = a20_on[t];
+        BL = 0;
+        return;
+    case 0x08: case 0x88:                       /* freier Speicher       */
+        emb_gap(t, 0xFFFF, &lg);
+        n = emb_free_pg(t);
+        kb = mem_free_kb() >> 2;                /* auch das System zaehlt */
+        if (lg > kb) lg = (unsigned)kb;
+        if (n > kb) n = (unsigned)kb;
+        if (AH == 0x88) {
+            f->eax = (unsigned long)lg << 2;
+            f->edx = (unsigned long)n << 2;
+            f->ecx = ((unsigned long)(XMS_PG0 + XMS_PGN) << 12) - 1;
+        } else {
+            AX = lg << 2;
+            DX = n << 2;
+        }
+        BL = lg ? 0 : 0xA0;
+        return;
+    case 0x09: case 0x89:                       /* Block anlegen         */
+        kb = AH == 0x89 ? f->edx : DX;
+        if (kb > XMS_KB)
+            XFAIL(0xA0);
+        n = (unsigned)((kb + 3) >> 2);
+        for (i = 0; i < NXH && xh[t][i].used; i++)
+            ;
+        if (i == NXH)
+            XFAIL(0xA1);
+        h = n ? emb_gap(t, n, 0) : XMS_PG0;
+        if (!h || (n && !emb_map(t, h, n)))
+            XFAIL(0xA0);
+        xh[t][i].base = h;
+        xh[t][i].npg = n;
+        xh[t][i].used = 1;
+        xh[t][i].lock = 0;
+        tlb(t);
+        DX = i + 1;
+        AX = 1;
+        return;
+    case 0x0A:                                  /* freigeben             */
+        if (h == 0 || h > NXH || !xh[t][h - 1].used)
+            XFAIL(0xA2);
+        if (xh[t][h - 1].lock)
+            XFAIL(0xAB);
+        emb_unmap(t, xh[t][h - 1].base, xh[t][h - 1].npg);
+        xh[t][h - 1].used = 0;
+        tlb(t);
+        AX = 1;
+        return;
+    case 0x0B:                                  /* kopieren (DS:SI)      */
+        len = ((unsigned long)rd16(ds, si + 2) << 16) | rd16(ds, si);
+        so  = ((unsigned long)rd16(ds, si + 8) << 16) | rd16(ds, si + 6);
+        dof = ((unsigned long)rd16(ds, si + 14) << 16) | rd16(ds, si + 12);
+        if (!xaddr(t, rd16(ds, si + 4), so, len, &sl))
+            XFAIL(0xA4);
+        if (!xaddr(t, rd16(ds, si + 10), dof, len, &dl))
+            XFAIL(0xA6);
+        while (len) {
+            n = len > 0x8000UL ? 0x8000 : (unsigned)len;
+            lwin(VWIN_IDX, sl);
+            lwin(RWIN_IDX(t), dl);
+            far_copy(RWIN_SEL(t), 0, VWIN, 0, n);
+            sl += n;
+            dl += n;
+            len -= n;
+        }
+        AX = 1;
+        BL = 0;
+        return;
+    case 0x0C:                                  /* sperren -> DX:BX      */
+        if (h == 0 || h > NXH || !xh[t][h - 1].used)
+            XFAIL(0xA2);
+        if (xh[t][h - 1].lock == 255)
+            XFAIL(0xAC);
+        xh[t][h - 1].lock++;
+        kb = (unsigned long)xh[t][h - 1].base << 12;
+        DX = (unsigned)(kb >> 16);
+        BX = (unsigned)kb;
+        AX = 1;
+        return;
+    case 0x0D:
+        if (h == 0 || h > NXH || !xh[t][h - 1].used)
+            XFAIL(0xA2);
+        if (!xh[t][h - 1].lock)
+            XFAIL(0xAA);
+        xh[t][h - 1].lock--;
+        AX = 1;
+        return;
+    case 0x0E: case 0x8E:                       /* Angaben zum Block     */
+        if (h == 0 || h > NXH || !xh[t][h - 1].used)
+            XFAIL(0xA2);
+        for (i = 0, n = 0; i < NXH; i++)
+            if (!xh[t][i].used)
+                n++;
+        BH = xh[t][h - 1].lock;
+        if (AH == 0x8E) {
+            CX = n;
+            f->edx = (unsigned long)xh[t][h - 1].npg << 2;
+        } else {
+            BL = (unsigned char)n;
+            DX = xh[t][h - 1].npg << 2;
+        }
+        AX = 1;
+        return;
+    case 0x0F: case 0x8F: {                     /* Groesse aendern       */
+        struct xmsh *x;
+        kb = AH == 0x8F ? f->ebx : BX;
+        if (h == 0 || h > NXH || !xh[t][h - 1].used)
+            XFAIL(0xA2);
+        x = &xh[t][h - 1];
+        if (x->lock)
+            XFAIL(0xAB);
+        n = (unsigned)((kb + 3) >> 2);
+        if (kb > XMS_KB)
+            XFAIL(0xA0);
+        if (n < x->npg) {
+            emb_unmap(t, x->base + n, x->npg - n);
+            x->npg = n;
+        } else if (n > x->npg) {                /* nur an Ort und Stelle */
+            for (i = 0; i < NXH; i++)
+                if (i != h - 1 && xh[t][i].used && xh[t][i].npg &&
+                    xh[t][i].base < x->base + n && xh[t][i].base >= x->base)
+                    XFAIL(0xA0);
+            if (x->base + n > XMS_PG0 + XMS_PGN || !emb_map(t, x->base + x->npg, n - x->npg))
+                XFAIL(0xA0);
+            x->npg = n;
+        }
+        tlb(t);
+        AX = 1;
+        return;
+    }
+    case 0x10: {                                /* UMB anfordern (DX Par.) */
+        unsigned p, best = 0, at = 0, need = (DX + 255) >> 8;
+        if (!dos_umb)
+            XFAIL(0xB1);
+        if (!umb_ok)
+            umb_scan();
+        for (p = 0xC8; p < 0xF0; p++) {
+            n = umb_run(t, p);
+            if (n > best)
+                best = n;
+            if (!at && n >= need && need)
+                at = p;
+            if (n)
+                p += n - 1;
+        }
+        if (!best) {
+            DX = 0;
+            XFAIL(0xB1);
+        }
+        if (!at) {
+            DX = best << 8;
+            XFAIL(0xB0);
+        }
+        for (p = 0; p < need; p++) {
+            pg_t q = own_page();
+            if (!q) {
+                while (p--) {
+                    vp_free(pte_get(t, at + p) >> 12);
+                    pte_set(t, at + p, PG_LIN(at + p) | PTE_ROM);
+                    BCLR(umb_used[t], at + p);
+                }
+                DX = 0;
+                XFAIL(0xB1);
+            }
+            pte_set(t, at + p, PG_LIN(q) | PTE_BOX | PTE_OWN);
+            BSET(umb_used[t], at + p);
+        }
+        BSET(umb_head[t], at);
+        tlb(t);
+        BX = at << 8;
+        DX = need << 8;
+        AX = 1;
+        return;
+    }
+    case 0x11: {                                /* UMB freigeben (DX Seg.) */
+        unsigned p = DX >> 8;
+        if ((DX & 0xFF) || p < 0xC8 || p >= 0xF0 || !BIT(umb_head[t], p))
+            XFAIL(0xB2);
+        BCLR(umb_head[t], p);
+        do {
+            vp_free(pte_get(t, p) >> 12);
+            pte_set(t, p, PG_LIN(p) | PTE_ROM);
+            BCLR(umb_used[t], p);
+            p++;
+        } while (p < 0xF0 && BIT(umb_used[t], p) && !BIT(umb_head[t], p));
+        tlb(t);
+        AX = 1;
+        return;
+    }
+    }
+    XFAIL(0x80);                                /* nicht vorhanden       */
+}
+
 static unsigned monitor(struct v86_frame *f, int t)
 {
     unsigned cs = (unsigned)f->r.cs, ip = (unsigned)f->r.eip, i, v, p;
@@ -1274,6 +1758,10 @@ static unsigned monitor(struct v86_frame *f, int t)
             return 1;
         v = rd8(cs, ip + 1);
         f->r.eip = ip + 2;
+        if (cs == VBIOS && ip == XMS_STUB) {     /* Fernaufruf: kein FLAGS */
+            xms(f, t);
+            return 0;
+        }
         /* FLAGS des INT liegen auf dem Stack der Box: dort setzen */
         wr16((unsigned)f->r.ss, (unsigned)f->r.esp + 4,
              run_svc(v, f, t, rd16((unsigned)f->r.ss, (unsigned)f->r.esp + 4)));

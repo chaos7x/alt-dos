@@ -42,7 +42,7 @@ und PC-DOS.
   verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
   bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
   16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
-  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB` und `RMSIZE=` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
@@ -308,6 +308,14 @@ und PC-DOS.
   dort liegt auch COMMAND.COM), die interaktive Box führt `X:\AUTOEXEC.BAT`
   aus, wenn es sie gibt. Eine hängende Box beendet **Strg+Alt+Ende**
   (Strg+C gehört dem DOS darin)
+- XMS 3.0 in jeder DOS-Box vom Kernel (wie VXMS bei OS/2, kein HIMEM in
+  der Box): bis 2 MB Speicherblöcke je Box (Anlegen, Kopieren, Sperren,
+  32-Bit-Funktionen 88h/89h/8Eh/8Fh), A20 je Box. `DOS=HIGH,UMB` in der
+  CONFIG.SYS von AT-DOS gilt für alle Boxen: FreeDOS lädt sich in die HMA
+  (48 KB mehr konventioneller Speicher) und bekommt die freien Lücken
+  zwischen C8000 und EFFFF als UMBs (`LH`, `DEVICEHIGH`); `RMSIZE=` setzt
+  den konventionellen Speicher je Box (256–640 KB). Eine Box kostet damit
+  ≈ 820 KB
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS

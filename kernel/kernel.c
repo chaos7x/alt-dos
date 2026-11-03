@@ -953,6 +953,7 @@ static void tss_init(int t, unsigned long cr3)
    erstes MB, PSP bei 1000:0000, Programm ab 1000:0100, Stack am Ende des
    64-KB-Segments mit 0 obenauf (RET -> INT 20h im PSP). */
 #define BOX_KB  640
+static unsigned box_kb = BOX_KB;        /* RMSIZE=: Speicher je Box (KB) */
 #define BOX_SEG 0x1000
 static int load_com(int t, int drive, const char *path)
 {
@@ -1035,7 +1036,7 @@ static int load_img(int t, int drive, const char *path)
         return EXEC_ERR_NOTFOUND;
     if (box_sec[510] != 0x55 || box_sec[511] != 0xAA)
         return EXEC_ERR_FORMAT;
-    cr3 = v86_create(t, BOX_KB);
+    cr3 = v86_create(t, box_kb);
     if (!cr3)
         return EXEC_ERR_NOMEM;
     v86_copy(t, 0x7C00, KDATA, (unsigned)box_sec, 512);
@@ -1215,6 +1216,7 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
 /* DOSSTART=SESSION (CONFIG.SYS): DOS-Programme wie bei OS/2 in einer
    eigenen Sitzung statt wie NT in der des Aufrufers */
 static unsigned char dos_session;
+unsigned char dos_high, dos_umb;        /* DOS=HIGH,UMB: HMA/UMBs der Boxen */
 static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
 static int  dc_d;
 static int dos_cmd(const char *cmd)
@@ -5169,6 +5171,18 @@ static void config_sys(void)
                 q++;
             if (*q == ',')
                 cache_s = num_arg(q + 1);
+        } else if (kw(line, "DOS")) {          /* wie OS/2: fuer alle DOS-Boxen */
+            const char *q;
+            for (q = v; *q; q++) {
+                if (up(q[0]) == 'H' && up(q[1]) == 'I')
+                    dos_high = 1;
+                if (up(q[0]) == 'U' && up(q[1]) == 'M' && (q == v || up(q[-1]) != 'O'))
+                    dos_umb = 1;
+            }
+        } else if (kw(line, "RMSIZE")) {       /* KB je Box, wie OS/2   */
+            box_kb = num_arg(v);
+            if (box_kb < 256 || box_kb > BOX_KB)
+                box_kb = BOX_KB;
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
