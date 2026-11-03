@@ -709,6 +709,18 @@ wurde): build.sh schreibt `build/version.h` (ATDOS_BUILD = in der CI
 ATDOS_DATE), VER in CMD zeigt „Build n (hash, Datum)“; die CI checkt mit
 `fetch-depth: 0` aus (sonst zählte sie 1).
 
+Nachschlagewerke (Lizenz beachten): Microsoft hat 2024 MS-DOS 1.25/2.0/
+4.0 unter MIT veröffentlicht (github.com/microsoft/MS-DOS, Klon unter
+/home/user/microsoft/ms-dos falls vorhanden): `v4.0/src` vollständig,
+darin `MEMM` (EMS-Manager im V86-Modus für den 386, Vorläufer von
+EMM386; ELIM.INC nennt vdmad.inc aus Win386 2.03) und SMARTDRV;
+INT 2Fh-Kennungen in INC/MULT.INC (16h WIN386, 17h Zwischenablage).
+`v4.0-ozzie`: Multitasking-DOS-4-Beta (Grundlage dieser Zeitlinie, auf
+MS-DOS-2-Quellen) als Disketten + 11 Handbücher als gescannte PDFs (ohne
+Textebene). Für virtuelle Geräte außerdem DOSEMU2 (GPL, V86 wie wir),
+DOSBox (GPL, SB/OPL), ReactOS NTVDM (GPL). OS/2-Quellen sind nicht
+freigegeben (Lecks nicht verwenden).
+
 Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
 (`gemini_chat_completion`). Funktioniert mit `model: gemini-3.5-flash`;
 3.1 Pro ist im kostenlosen Kontingent gesperrt (Limit 0), die 2.x-Modelle
@@ -1899,6 +1911,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ANSI-RGB, 1 = hell, 5 = Blinken) über vio_tty aus, Zeilenende mit
   ESC[0m, volle 80er-Zeilen ohne \n; bei ANSI OFF (kf_vio_ansi) nur Text.
   In QEMU geprüft (ENDOOM rot/gelb/cyan). DGROUP jetzt 61 KB.
+  Musik (AdLib/OPL, Wunsch des Nutzers, Schritt 1 zum Ton für DOOM):
+  `opl_ports` gibt 388h–38Bh nach dem ersten Zugriff im Vordergrund
+  direkt frei (wie spk_ports), hinten/Parken/Ende gesperrt, alle Stimmen
+  aus (`opl_wr` B0h–B8h beider Bänke, BDh). In QEMU (`-device adlib,
+  iobase=0x380` + DEFAULT.CFG mit snd_musicdevice 2) startet DOOMs Musik
+  hörbar, verstummt aber nach ~3 s – vermutlich QEMUs AdLib (meldet OPL3,
+  hat 38Ah nicht); in 86Box prüfen. Konflikt mit FAPI-FM-Programmen
+  (SB16.SYS/fm_load) noch nicht geregelt: die Box im Vordergrund schreibt
+  direkt. Nächster Schritt: virtuelle Sound Blaster (DSP 220h, DMA 1,
+  IRQ 5/7) über SB16.SYS.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS

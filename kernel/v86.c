@@ -152,6 +152,8 @@ static int box_fg(int t);
 static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void spk_ports(int t, int on);
+static void opl_ports(int t, int on);
+static unsigned char opl_open[NTASK];
 static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
 static void tlb(int t);
@@ -256,6 +258,7 @@ void __far v86_destroy(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
+    opl_ports(t, 0);
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -424,7 +427,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc[t] = pit_t0[t] = 0;
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
-    spk[t] = spk_open[t] = 0;           /* (tss_init sperrt alle Ports)  */
+    spk[t] = spk_open[t] = opl_open[t] = 0;   /* (tss_init sperrt alle Ports) */
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
@@ -527,6 +530,7 @@ void __far v86_park(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
+    opl_ports(t, 0);
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -603,8 +607,10 @@ void __far v86_poll(void)
     int t, cur = -2;
 
     for (t = 0; t < NTASK; t++)         /* Lautsprecher nur vorn         */
-        if (spk_open[t] && !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg()))
+        if ((spk_open[t] || opl_open[t]) && !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg())) {
             spk_ports(t, 0);
+            opl_ports(t, 0);
+        }
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
         int s = kf_vio_fg(), ok = 0;
         for (t = 0; t < NTASK; t++)
@@ -900,6 +906,37 @@ static void spk_ports(int t, int on)
     }
 }
 
+/* OPL (AdLib, FM-Musik) an 388h-38Bh: im Vordergrund direkt an den Chip
+   (DOOM/DMX, Spiele mit AdLib-Musik), hinten gesperrt, alle Stimmen aus */
+static void opl_wr(unsigned base, unsigned reg, unsigned val)
+{
+    unsigned i;
+    outb(base, reg);
+    for (i = 0; i < 6; i++)
+        inb(base);
+    outb(base + 1, val);
+    for (i = 0; i < 35; i++)
+        inb(base);
+}
+
+static void opl_ports(int t, int on)
+{
+    unsigned c;
+    if (on == opl_open[t])
+        return;
+    opl_open[t] = (unsigned char)on;
+    if (on)
+        tss[t].iob[0x388 >> 3] &= (unsigned char)~0x0F;     /* 388h-38Bh */
+    else {
+        tss[t].iob[0x388 >> 3] |= 0x0F;
+        for (c = 0; c < 9; c++) {               /* Tasten los            */
+            opl_wr(0x388, 0xB0 + c, 0);
+            opl_wr(0x38A, 0xB0 + c, 0);
+        }
+        opl_wr(0x388, 0xBD, 0);                 /* Rhythmus aus          */
+    }
+}
+
 static void spk_hw(int t, int on)
 {
     unsigned char b = (unsigned char)inb(0x61);
@@ -1003,9 +1040,10 @@ static int t8_ok(int t)
 
 static void inject(struct v86_iret *r, int t)
 {
-    if ((spk[t] || spk_open[t]) && !box_fg(t)) {
+    if ((spk[t] || spk_open[t] || opl_open[t]) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
+        opl_ports(t, 0);
     }
     if (pit_rl[t])
         kpit_check(t);                          /* vorn schneller Takt   */
@@ -1726,6 +1764,7 @@ static void vga_freeze(int t)
     if (spk[t])
         spk_hw(t, 0);
     spk_ports(t, 0);
+    opl_ports(t, 0);
     kpit_set(0);
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
@@ -1863,6 +1902,12 @@ static unsigned char port_in(int t, unsigned p)
         return 0;
     case 0x3CC:
         return 0x67;
+    case 0x388: case 0x389: case 0x38A: case 0x38B:
+        if (box_fg(t)) {                        /* OPL: vorn direkt      */
+            opl_ports(t, 1);
+            return (unsigned char)inb(p);
+        }
+        return 0xFF;
     }
     return 0xFF;
 }
@@ -1885,6 +1930,12 @@ static void port_out(int t, unsigned p, unsigned char v)
         break;
     case 0x70:
         cmos_idx[t] = (unsigned char)(v & 0x7F);
+        break;
+    case 0x388: case 0x389: case 0x38A: case 0x38B:
+        if (box_fg(t)) {                        /* OPL: vorn direkt      */
+            outb(p, v);
+            opl_ports(t, 1);
+        }
         break;
     case 0x61:
         spk[t] = (unsigned char)(v & 3);
