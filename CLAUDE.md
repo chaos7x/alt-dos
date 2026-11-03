@@ -1811,7 +1811,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   QEMU schreibt nach E856Ch (SeaBIOS-Daten im Schattenbereich) -> #PF;
   `rom_cow` gibt jeder Box beim Schreiben auf eine ROM-Seite (C0–FF außer
   F0) eine eigene Kopie (PTE_OWN). Erstes Codesegment 65.202 Byte – voll!
-  Offen: virtueller PIT/Lautsprecher, IRQ 0/1 an PM-Handler (DOOM),
+  Virtueller PIT erledigt (Anlass: Digger lief „suboptimal“; in QEMU
+  geprüft: 1000 Hz eingestellt, 3000 eigene INT 8 in ~3 s; Lautsprecher
+  440 Hz im WAV-Mitschnitt mit `-machine pcspk-audiodev=`): v86.c
+  `pit_elapsed` misst echte Zeit (Kerneltakt + gelatchter echter Zähler
+  von Kanal 0, Teiler 11932), `pit_run` zählt `pit_acc` gegen den Teiler
+  des Programms (`pit_rl`, 0 = 65536) -> `vt_pend` (bis 32) und setzt den
+  Zähler `pit_cnt`; Lesen 40h mit Latch und lo/hi-Folge, Schreiben 43h/
+  40h stellt den Teiler. `account`: mit eigenem INT 8 oder Teiler die
+  Rate des Programms, sonst wie bisher 18,2 Hz für 46Ch. Kanal 2 (43h mit
+  Kanal 2, 42h) und 61h Bits 0–1 (`spk`) nur im Vordergrund an die
+  Hardware (`box_fg`), hinten/eingefroren/Ende/Parken stumm. Park setzt
+  den Teiler zurück.
+  Offen: IRQ 0/1 an PM-Handler (DOOM),
   Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und

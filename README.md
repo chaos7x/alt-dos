@@ -336,7 +336,10 @@ und PC-DOS.
   Ports 3B0h–3DFh direkt (CGA, EGA, VGA, SVGA-Modi des BIOS). Beim
   Sitzungswechsel sichert der Kernel alle Register, Palette und die vier
   Ebenen (256 KB); die Box steht im Hintergrund still und läuft vorn mit
-  ihrem Bild weiter. Ein Textmodus gibt die Karte zurück. Schreibt ein
+  ihrem Bild weiter. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
+  die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
+  Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
+  gehen im Vordergrund an die echte Hardware. Ein Textmodus gibt die Karte zurück. Schreibt ein
   BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
   Schatten-RAM)
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine

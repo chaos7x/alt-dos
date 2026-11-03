@@ -84,7 +84,19 @@ static unsigned char kq[NTASK][16], kq_h[NTASK], kq_t[NTASK];   /* Scancodes */
 static unsigned char vcur[NTASK];       /* zuletzt an Port 60h           */
 static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
-static unsigned pit_c[NTASK];
+static unsigned pit_c[NTASK];          /* (alt, ungenutzt)              */
+/* virtueller PIT: Kanal 0 mit der Rate des Programms, Zaehler nach
+   echter Zeit (in PIT-Schritten, 1,193 MHz) */
+static unsigned pit_rl[NTASK];          /* Teiler Kanal 0, 0 = 65536     */
+static unsigned pit_cnt[NTASK];         /* laufender Zaehler Kanal 0     */
+static unsigned pit_lat[NTASK];         /* gelatchter Wert               */
+static unsigned char pit_acc_m[NTASK];  /* Zugriff 1 lo, 2 hi, 3 lo/hi   */
+static unsigned char pit_latd[NTASK];   /* Latch gueltig                 */
+static unsigned char pit_wlo[NTASK];    /* lo/hi: lo schon geschrieben   */
+static unsigned long pit_acc[NTASK];    /* Schritte bis zum naechsten INT 8 */
+static unsigned long pit_t0[NTASK];     /* Takt der letzten Messung      */
+static unsigned pit_c0[NTASK];          /* echter Zaehler dabei          */
+static unsigned char spk[NTASK];        /* Lautsprecher-Bits 61h (0-1)   */
 static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
 static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
 static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
@@ -105,6 +117,8 @@ static void vp_free(pg_t p)
 
 static void xms_end(int t);
 static void vga_freeze(int t);
+static int box_fg(int t);
+static void spk_hw(int t, int on);
 static void vga_leave(int t);
 static void tlb(int t);
 static unsigned char vga_raw[NTASK];
@@ -200,6 +214,9 @@ void __far v86_destroy(int t)
     if (!pd_box[t])
         return;
     dpmi_end(t);
+    if (spk[t] && box_fg(t))
+        spk_hw(t, 0);
+    spk[t] = 0;
     if (pt_box[t])
         vga_leave(t);                           /* A0-BF vor dem Freigeben */
     if (box_ses[t] >= 0 && pt_box[t])
@@ -313,6 +330,12 @@ unsigned long __far v86_create(int t, unsigned kb)
     vfl[t] = FL_IF;
     visr[t] = vimr[t] = 0;
     kq_h[t] = kq_t[t] = 0;
+    pit_rl[t] = 0;
+    pit_acc[t] = pit_t0[t] = 0;
+    pit_acc_m[t] = 3;
+    pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
+    spk[t] = 0;
+    vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
     vt_acc[t] = vt_pend[t] = 0;
@@ -405,6 +428,10 @@ void __far v86_park(int t)
     int s = box_ses[t];
     if (s < 0)
         return;
+    if (spk[t] && box_fg(t))
+        spk_hw(t, 0);
+    spk[t] = 0;
+    pit_rl[t] = 0;
     vga_leave(t);
     if (pt_box[t])
         capture(t);
@@ -627,11 +654,161 @@ static void bda_ticks(unsigned n)
     wr16(BDA, 0x6E, (unsigned)(tk >> 16));
 }
 
+
+/* ---- virtueller Zeitgeber ------------------------------------------------ */
+#define KPIT 11932U                     /* Teiler des Kernels (100 Hz)   */
+
+/* vergangene PIT-Schritte seit der letzten Messung der Box (echte Zeit:
+   Kerneltakt + echter Zaehler von Kanal 0) */
+static unsigned long pit_elapsed(int t)
+{
+    unsigned f = irq_off(), c, d;
+    unsigned long tk, el = 0;
+    tk = get_ticks();
+    outb(0x43, 0x00);
+    c = inb(0x40);
+    c |= inb(0x40) << 8;
+    irq_restore(f);
+    if (tk < pit_t0[t] || tk - pit_t0[t] > 50) {        /* Anfang/lange weg */
+        pit_t0[t] = tk;
+        pit_c0[t] = c;
+        return 0;
+    }
+    d = (unsigned)(tk - pit_t0[t]);
+    while (d--)
+        el += KPIT;
+    el += pit_c0[t];                    /* Zaehler laeuft abwaerts       */
+    if (el < c)
+        return 0;                       /* Takt noch nicht gezaehlt      */
+    el -= c;
+    pit_t0[t] = tk;
+    pit_c0[t] = c;
+    return el;
+}
+
+static unsigned long pit_div(int t)
+{
+    return pit_rl[t] ? pit_rl[t] : 65536UL;
+}
+
+/* Zeit fortschreiben: Zaehler und faellige INT 8 */
+static void pit_run(int t)
+{
+    unsigned long el = pit_elapsed(t), dv = pit_div(t), c;
+    if (!el)
+        return;
+    pit_acc[t] += el;
+    while (pit_acc[t] >= dv) {
+        pit_acc[t] -= dv;
+        if (vt_pend[t] < 32)
+            vt_pend[t]++;
+    }
+    c = dv - pit_acc[t];                /* Rest bis zum naechsten        */
+    pit_cnt[t] = (unsigned)c;
+}
+
+static unsigned char pit_in(int t, unsigned p)
+{
+    unsigned v;
+    if (p != 0x40) {                    /* Kanal 1/2: grob laufen lassen */
+        pit_c[t] -= 0x1F3;
+        pit_ff[t] ^= 1;
+        return (unsigned char)(pit_ff[t] ? pit_c[t] : pit_c[t] >> 8);
+    }
+    pit_run(t);
+    v = pit_latd[t] ? pit_lat[t] : pit_cnt[t];
+    if (pit_acc_m[t] == 1) {
+        pit_latd[t] = 0;
+        return (unsigned char)v;
+    }
+    if (pit_acc_m[t] == 2) {
+        pit_latd[t] = 0;
+        return (unsigned char)(v >> 8);
+    }
+    if (!pit_ff[t]) {
+        pit_ff[t] = 1;
+        return (unsigned char)v;
+    }
+    pit_ff[t] = 0;
+    pit_latd[t] = 0;
+    return (unsigned char)(v >> 8);
+}
+
+/* Lautsprecher gehoert der Box nur im Vordergrund */
+static int box_fg(int t)
+{
+    return box_ses[t] >= 0 && kf_vio_fg() == box_ses[t];
+}
+
+static void spk_hw(int t, int on)
+{
+    unsigned char b = (unsigned char)inb(0x61);
+    b = (unsigned char)((b & ~3) | (on ? spk[t] & 3 : 0));
+    outb(0x61, b);
+}
+
+static void pit_out(int t, unsigned p, unsigned char v)
+{
+    if (p == 0x43) {
+        unsigned ch = v >> 6;
+        if (ch == 2) {                  /* Lautsprecher: echte Hardware  */
+            if (box_fg(t))
+                outb(0x43, v);
+            return;
+        }
+        if (ch != 0)
+            return;
+        if (!(v & 0x30)) {              /* Latch                         */
+            pit_run(t);
+            pit_lat[t] = pit_cnt[t];
+            pit_latd[t] = 1;
+            pit_ff[t] = 0;
+            return;
+        }
+        pit_acc_m[t] = (unsigned char)((v >> 4) & 3);
+        pit_ff[t] = pit_wlo[t] = 0;
+        return;
+    }
+    if (p == 0x42) {
+        if (box_fg(t))
+            outb(0x42, v);
+        return;
+    }
+    if (p != 0x40)
+        return;
+    if (pit_acc_m[t] == 1)
+        pit_rl[t] = (pit_rl[t] & 0xFF00) | v;
+    else if (pit_acc_m[t] == 2)
+        pit_rl[t] = (pit_rl[t] & 0x00FF) | (v << 8);
+    else if (!pit_wlo[t]) {
+        pit_rl[t] = (pit_rl[t] & 0xFF00) | v;
+        pit_wlo[t] = 1;
+        return;
+    } else {
+        pit_rl[t] = (pit_rl[t] & 0x00FF) | (v << 8);
+        pit_wlo[t] = 0;
+    }
+    pit_run(t);                         /* neuer Teiler gilt ab jetzt    */
+    pit_acc[t] = 0;
+    pit_cnt[t] = (unsigned)pit_div(t);
+}
+
 /* 100 Hz des Kernels in 18,2 Hz der Box umrechnen; ohne eigene Takt-
    Routine nur den Zaehler im BIOS-Datenbereich weiterzaehlen */
 static void account(int t)
 {
-    unsigned long now = get_ticks(), d = now - vt_last[t];
+    unsigned long now, d;
+    if (!vec_def(8) || pit_rl[t]) {     /* eigener Takt oder Teiler:     */
+        pit_run(t);                     /* Rate des Programms            */
+        if (vt_pend[t] && vec_def(8) && vec_def(0x1C)) {
+            bda_ticks(vt_pend[t]);      /* (Teiler ohne Routine)         */
+            vt_pend[t] = 0;
+        }
+        vt_last[t] = get_ticks();
+        return;
+    }
+    now = get_ticks();
+    d = now - vt_last[t];
     vt_last[t] = now;
     if (d > 100)
         d = 100;
@@ -640,7 +817,7 @@ static void account(int t)
         vt_acc[t] -= 1000;
         vt_pend[t]++;
     }
-    if (vt_pend[t] && vec_def(8) && vec_def(0x1C)) {
+    if (vt_pend[t] && vec_def(0x1C)) {
         bda_ticks(vt_pend[t]);
         vt_pend[t] = 0;
     } else if (vt_pend[t] > 4)
@@ -650,6 +827,8 @@ static void account(int t)
 /* beim Ruecksprung in die Box: ausstehenden Interrupt zustellen */
 static void inject(struct v86_iret *r, int t)
 {
+    if (spk[t] && !box_fg(t))
+        spk_hw(t, 0);                           /* hinten: stumm         */
     vga_freeze(t);
     account(t);
     if (!(vfl[t] & FL_IF))
@@ -1323,6 +1502,8 @@ static void vga_freeze(int t)
 {
     if (!vga_raw[t] || (kf_vio_fg() == box_ses[t] && hw_gfx == RAWGFX))
         return;
+    if (spk[t])
+        spk_hw(t, 0);
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
         kf_box_ctl(BOX_SLEEP, 2);
@@ -1430,12 +1611,9 @@ static unsigned char port_in(int t, unsigned p)
         return (unsigned char)(0x14 | (kq_h[t] != kq_t[t]));
     case 0x61:
         tgl[t] ^= 0x10;                         /* Refresh-Bit kippt     */
-        return (unsigned char)(0x20 | (tgl[t] & 0x10));
+        return (unsigned char)(0x20 | (tgl[t] & 0x10) | spk[t]);
     case 0x40: case 0x41: case 0x42:
-        if (!pit_ff[t]++)
-            pit_c[t] -= 0x1F3;
-        pit_ff[t] &= 1;
-        return (unsigned char)(pit_ff[t] ? pit_c[t] : pit_c[t] >> 8);
+        return pit_in(t, p);
     case 0x3DA: case 0x3BA:
         tgl[t] ^= 0x09;                         /* Ruecklauf kommt und geht */
         return (unsigned char)(tgl[t] & 0x09);
@@ -1463,8 +1641,13 @@ static void port_out(int t, unsigned p, unsigned char v)
     case 0x21:
         vimr[t] = v;
         break;
-    case 0x43:
-        pit_ff[t] = 0;
+    case 0x40: case 0x41: case 0x42: case 0x43:
+        pit_out(t, p, v);
+        break;
+    case 0x61:
+        spk[t] = (unsigned char)(v & 3);
+        if (box_fg(t))
+            spk_hw(t, 1);
         break;
     case 0x3D4:
         crt_idx[t] = v;
