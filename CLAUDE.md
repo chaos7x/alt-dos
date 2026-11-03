@@ -2058,7 +2058,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `STACKS=0,0`, damit FreeDOS sich nicht mit Stapel-Handlern vor die
   Stummel hängt (IVT 0Dh zeigte auf 0070:006B). Ergebnis: Umleitungen
   11/s statt 75/s; in QEMU kaum schneller (Fallen sind dort billig),
-  der Gewinn zeigt sich erst in 86Box. AUD_CLOSE nur im
+  der Gewinn zeigt sich erst in 86Box.
+  Nutzer danach: „gravierende Verbesserung“, nur bei Kämpfen (viele
+  Geräusche) wird 1.9 langsamer, 1.2 nicht. Gemessen (je s, Demo):
+  DOOM bekommt ~80 statt 140 Takte, ~60 gehen verloren (vt_pend voll);
+  Grund bei 60 % der Versuche: virtuelles IF aus (DMX mischt mit CLI,
+  darin weitere Fallen: DMA-Stelle, PIC). `t8_ok` jetzt wie der PIC:
+  jeder echte irq0 (`irq0_n`, start.asm) gibt höchstens einen INT 8 frei,
+  auch wenn er den Kernel traf (vorher außerhalb von irq0 nur einer je
+  Kerneltakt) – in QEMU ohne Wirkung, in 86Box (teurere Fallen) evtl.
+  Versuch verworfen: Rückstand bis 8 und Nachholen außerhalb des laufenden
+  Handlers -> DOOM 1.9 hing in I_StartupTimer. Nächster großer Hebel:
+  PVI (CR4 Bit 1, ab Pentium, 86Box bildet es für P2/P3 nach,
+  src/cpu/x86_ops_flag.h) – CLI/STI ohne Falle (~700/s); braucht dann
+  einen anderen Weg zum POPF-Patch (CLI trappt nicht mehr). AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

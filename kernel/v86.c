@@ -160,7 +160,8 @@ static int key_ready(int t)
 }
 static void rom_uncow(int t);
 static unsigned char from_tick;
-static unsigned long t8_last[NTASK];
+static unsigned t8_last[NTASK];         /* irq0_n bei der letzten Zustellung */
+extern volatile unsigned irq0_n;        /* start.asm: zaehlt jeden irq0  */
 /* Hardware-Vektoren beim Programmstart (INT E0h 00h): bricht ein Spiel
    ab (Strg+C), ohne INT 8/9 zurueckzunehmen, zeigen sie in freigegebenen
    Speicher - die offen gehaltene Box stellt sie beim Parken wieder her */
@@ -1498,16 +1499,19 @@ static void account(int t)
 }
 
 /* beim Ruecksprung in die Box: ausstehenden Interrupt zustellen */
-/* darf jetzt ein Takt zugestellt werden? Aus irq0 immer, sonst
-   hoechstens einer je Kerneltakt (nachgeholte Takte hintereinander ->
-   DOS/4GW "transfer stack overflow"; nur aus irq0 -> eine Box, die
-   staendig trappt, bekam fast keinen Takt, Digger wartete ewig) */
+/* darf jetzt ein Takt zugestellt werden? Wie der PIC: jeder echte
+   irq0 gibt hoechstens einen INT 8 frei, auch wenn er gerade den Kernel
+   traf - zugestellt wird dann beim naechsten Ruecksprung in die Box.
+   (Vorher: ausserhalb von irq0 hoechstens einer je Kerneltakt; mit
+   schnellem PIT (DOOM 140 Hz) und vielen Fallen kamen nur ~87 Takte je
+   Sekunde an, DOOM 1.9 lief bei viel Ton langsamer. Nachgeholte Takte
+   direkt hintereinander -> DOS/4GW "transfer stack overflow".) */
 static int t8_ok(int t)
 {
-    unsigned long now = get_ticks();
-    if (!from_tick && now == t8_last[t])
+    unsigned n = irq0_n;
+    if (!from_tick && n == t8_last[t])
         return 0;
-    t8_last[t] = now;
+    t8_last[t] = n;
     return 1;
 }
 

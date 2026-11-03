@@ -603,6 +603,7 @@ irq0:
         push    ds
         mov     ax, KDATA
         mov     ds, ax
+        inc     word [_irq0_n]          ; jeder echte Takt (v86.c t8_ok)
         mov     ax, [_kpit_div]         ; PIT schneller (DOS-Box vorn will
         or      ax, ax                  ; mehr als 100 Hz, v86.c): nur je
         jz      .tick                   ; 11932 Schritte ein Kerneltakt
@@ -1215,7 +1216,7 @@ geo_heads: dw 16
 segment _BSS
 
 bss_start:
-global _boot_drive, _ticks, _uptime_s
+global _boot_drive, _ticks, _uptime_s, _irq0_n
 global _fapi_dx, _devhlp_dx
 _fapi_dx:    resw 1
 _devhlp_dx:  resw 1
@@ -1223,6 +1224,7 @@ _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
 _uptime_s:   resw 1
+_irq0_n:     resw 1
 global _a20_ok
 _a20_ok:     resb 1
 global _kdata_seg
