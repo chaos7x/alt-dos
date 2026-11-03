@@ -708,6 +708,8 @@ wurde): build.sh schreibt `build/version.h` (ATDOS_BUILD = in der CI
 + „lokal“, ATDOS_REV = Kurz-Hash, `+` bei ungesicherten Änderungen,
 ATDOS_DATE), VER in CMD zeigt „Build n (hash, Datum)“; die CI checkt mit
 `fetch-depth: 0` aus (sonst zählte sie 1).
+Auf `5.x` (Wunsch des Nutzers, wie Windows 10 19045.n): fest 240 (CI-Lauf
+von 5.0, 8d7f54f), hinter dem Punkt die Commits seither, z. B. 240.5.
 
 Nachschlagewerke (Lizenz beachten): Microsoft hat 2024 MS-DOS 1.25/2.0/
 4.0 unter MIT veröffentlicht (github.com/microsoft/MS-DOS, Klon unter
