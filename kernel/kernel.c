@@ -4518,7 +4518,7 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
             return FAPI_ERR_INUSE;
         if (aud_call(NAUD, AR_CHECK, f->rate, f->channels, f->bits) != DRV_OK)
             return FAPI_ERROR;
-        bytes = (unsigned)f->channels * (f->bits >> 3);
+        bytes = (unsigned)f->channels * ((f->bits & ~AUD_SMALL) >> 3);
         aud[i].rate = f->rate;
         aud[i].ch = f->channels;
         aud[i].bits = f->bits;

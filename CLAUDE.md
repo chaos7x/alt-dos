@@ -1942,7 +1942,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nach 3 Takten mit IF aus setzt dp_hwint es wieder. Lehren: Leitung über
   die Maske an 21h erkennen geht nicht (DOS/4GW setzt sie nicht);
   Zustellung auf beiden Leitungen ließ DOOM im Demo still beenden. In
-  QEMU mit IRQ 5 und 7 geprüft (Spiel läuft, Ton im Mitschnitt). AUD_CLOSE nur im
+  QEMU mit IRQ 5 und 7 geprüft (Spiel läuft, Ton im Mitschnitt).
+  Waffe ~2 s verzögert (Nutzer, P3B-F; PC-Lautsprecher ohne): SB16.SYS
+  spielte erst los, wenn 8 KB im Puffer lagen, und hielt zwei Hälften zu
+  8 KB. Neu `AUD_SMALL` (Bit 7 von `fapi_audfmt.bits`): Hälfte etwa
+  1/16 s (rate/16 × Kanäle × Bytes, 512–8192, `half` im Treiber, 8237-
+  Zähler und DSP-Blocklänge danach); die Box öffnet damit. Geprüft mit
+  `LAT.COM` (Piepser, dann 8.000 Byte per DSP 14h, WAV mit pcspk und
+  sb16 auf einem audiodev): neu folgt der SB-Ton direkt, alt kam er gar
+  nicht (unter 8 KB, nie gestartet). AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

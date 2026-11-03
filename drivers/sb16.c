@@ -24,7 +24,7 @@
 #include "../include/fapi_abi.h"
 
 #define BUFSZ   16384u
-#define HALF    (BUFSZ / 2)
+#define HALF    half            /* Haelfte des gespielten Puffers */
 #define EV_AUD  1
 
 #define AREQ ((struct aud_req __far *)MK_FP(req_sel, req_off))
@@ -50,6 +50,7 @@ static char line[128], name[64];
 
 /* Wiedergabe */
 static unsigned rate, chans, bits16;
+static unsigned half = BUFSZ / 2;      /* AUD_SMALL: kurz (DOS-Boxen)   */
 static volatile unsigned char playing, fill, fill_full, cur_dma16;
 static volatile unsigned fill_off, irq_count, gen;
 static unsigned char silence;
@@ -119,8 +120,8 @@ static void dma_start(void)
         outp(0xC0 + c * 4, (unsigned char)w);
         outp(0xC0 + c * 4, (unsigned char)(w >> 8));
         outp(page16[c], (unsigned char)((bphys >> 16) & 0xFE));
-        outp(0xC2 + c * 4, (unsigned char)((BUFSZ / 2 - 1) & 0xFF));
-        outp(0xC2 + c * 4, (unsigned char)((BUFSZ / 2 - 1) >> 8));
+        outp(0xC2 + c * 4, (unsigned char)((HALF - 1) & 0xFF));
+        outp(0xC2 + c * 4, (unsigned char)((HALF - 1) >> 8));
         outp(0xD4, (unsigned char)c);           /* frei                  */
     } else {
         c = dma8 & 3;
@@ -130,8 +131,8 @@ static void dma_start(void)
         outp(c * 2, (unsigned char)bphys);
         outp(c * 2, (unsigned char)(bphys >> 8));
         outp(page8[c], (unsigned char)(bphys >> 16));
-        outp(c * 2 + 1, (unsigned char)((BUFSZ - 1) & 0xFF));
-        outp(c * 2 + 1, (unsigned char)((BUFSZ - 1) >> 8));
+        outp(c * 2 + 1, (unsigned char)((2 * HALF - 1) & 0xFF));
+        outp(c * 2 + 1, (unsigned char)((2 * HALF - 1) >> 8));
         outp(0x0A, (unsigned char)c);
     }
 }
@@ -314,6 +315,7 @@ static void aud_drain(void)
 
 static int fmt_ok(unsigned r, unsigned c, unsigned b)
 {
+    b &= ~AUD_SMALL;
     if (dspv >= 0x400)
         return r >= 5000 && r <= 44100 && (c == 1 || c == 2) &&
                (b == 8 || (b == 16 && dma16 >= 5));
@@ -377,7 +379,16 @@ static void audio(void)
         }
         rate = q->a1;
         chans = q->a2;
-        bits16 = q->a3 == 16;
+        bits16 = (q->a3 & ~AUD_SMALL) == 16;
+        half = BUFSZ / 2;
+        if (q->a3 & AUD_SMALL) {        /* etwa 1/16 s je Haelfte       */
+            half = (rate >> 4) * chans << bits16;
+            half = (half + 15) & ~15u;
+            if (half < 512)
+                half = 512;
+            if (half > BUFSZ / 2)
+                half = BUFSZ / 2;
+        }
         silence = bits16 ? 0 : 0x80;
         break;
     case AR_WRITE:

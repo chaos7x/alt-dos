@@ -226,7 +226,8 @@ struct fapi_audfmt {
     unsigned short rate;            /* Abtastrate, z. B. 22050           */
     unsigned char  channels;        /* 1 mono, 2 stereo                  */
     unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
-};
+};                                  /* | AUD_SMALL: kurzer Puffer        */
+#define AUD_SMALL           0x80    /* (kleine Verzoegerung, DOS-Boxen)  */
 /* Platten-Cache (MEM): BX = struct fapi_cacheinfo -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {

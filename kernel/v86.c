@@ -1006,7 +1006,7 @@ static void sb_start(int t, unsigned len, int ai)
             kf_box_aud(AUD_CLOSE, 0, 0);
         fmt.rate = sb[t].rate ? sb[t].rate : 11025;
         fmt.channels = 1;
-        fmt.bits = 8;
+        fmt.bits = 8 | AUD_SMALL;       /* Spiele: Ton sofort    */
         sb[t].aud = kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
     }
     sb[t].blk = len;
