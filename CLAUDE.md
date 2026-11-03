@@ -1722,7 +1722,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Programm zurück (DX = 0). In QEMU geprüft ([*] 1024, [XT.COM] 512,
   [DOSVER.COM] 6.22, anderes Programm wieder 7.10). Pro Programm nicht
   möglich, weil die Box offen bleibt: DOS=, RMSIZE (beim Start der Box).
-  Offen: mehr als 2,9 MB XMS (weitere Seitentabellen),
+  EMS 4.0 erledigt (in QEMU geprüft: Erkennung am Vektor F060:000A und
+  über das Gerät EMMXXXX0 = ATBOX.SYS, Rahmen D000h, 128 Seiten, Version
+  4.0, zwei logische Seiten im Wechsel behalten ihren Inhalt, Freigabe;
+  Speicher nach dem Ende der Box zurück): INT 67h -> F060:0020 „ARPL 67h;
+  IRET“, `vec_def(67h)` kennt das, also ein Trap je Aufruf. Rahmen:
+  `ems_pick_frame` nach umb_scan (erste 16 freie Seiten ab C8, auf 4
+  Seiten ausgerichtet), `umb_run` lässt ihn aus. Logische Seite = 4
+  zusammenhängende Seiten (`mem_alloc(4)`, in v86_pages gezählt),
+  Einblenden über die PTEs (`ems_show`, leer = Ersatzseite A0), Verwaltung
+  je Box in einer Seite (`ems_tab`: Erstseiten, Besitzer, Namen,
+  gesicherte Zuordnung), Handles/Zählung/Zuordnung in DGROUP. Funktionen
+  40–51h, 53h, 54h (nur 02), 58h, 59h (01), 5Ah. INI `EMS_MEMORY_LIMIT`
+  -> INT E0h 17h (`ems_lim`). Offen: 55h/56h (Sprung/Aufruf mit
+  Umblenden), 57h (Bereich kopieren), Rahmen abschaltbar,
+  mehr als 2,9 MB XMS (weitere Seitentabellen),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen

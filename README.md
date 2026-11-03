@@ -316,10 +316,15 @@ und PC-DOS.
   zwischen C8000 und EFFFF als UMBs (`LH`, `DEVICEHIGH`); `RMSIZE=` setzt
   den konventionellen Speicher je Box (256–640 KB). Eine Box kostet damit
   ≈ 820 KB
+- EMS 4.0 in jeder DOS-Box vom Kernel (wie VEMM bei OS/2, kein EMM386):
+  Seitenrahmen in der ersten freien 64-KB-Lücke ab C8000 (vor den UMBs),
+  Vorgabe 2 MB je Box, bis 4 MB; Erkennung über `EMMXXXX0` am INT-67h-
+  Vektor und als Gerät. Speicher wird erst beim Anlegen belegt
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–3008,
-  Vorgabe 2048), `DOS_VERSION=n.nn` (SETVER.LST geht vor). Wird vor jedem
+  Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048),
+  `DOS_VERSION=n.nn` (SETVER.LST geht vor). Wird vor jedem
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle

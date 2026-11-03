@@ -104,6 +104,12 @@ static void vp_free(pg_t p)
 }
 
 static void xms_end(int t);
+static void ems_end(int t);
+static void ems_box(int t);
+static void ems(struct v86_frame *f, int t);
+static void ems_pick_frame(void);
+static unsigned char ems_frame;         /* erste EMS-Rahmenseite, 0 = keiner */
+static unsigned ems_lim[NTASK];         /* EMS: logische Seiten + 1, 0 = Vorgabe */
 
 /* Thunks (erstes Codesegment) */
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
@@ -200,6 +206,7 @@ void __far v86_destroy(int t)
     vp_free(pd_box[t]);
     pd_box[t] = 0;
     xms_end(t);
+    ems_end(t);
 }
 
 /* nach dem Ende einer Box in der Sitzung ihres Aufrufers: ihren Text dort
@@ -283,7 +290,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     scratch2_map(PG_LIN(pt_box[t]), 4095);
     scratch_map(get32(SCRATCH2, 0) & ~0xFFFUL, 4095);
     for (i = 0; i < 256; i++)
-        put32(SCRATCH, i, ((unsigned long)VBIOS << 16) | (i == 8 ? INT8_STUB : i << 2));
+        put32(SCRATCH, i, i == 0x67 ? 0xF0600020UL :      /* EMS: F060:0020 */
+                          ((unsigned long)VBIOS << 16) | (i == 8 ? INT8_STUB : i << 2));
     /* BIOS-Datenbereich: der echte (Ports, Ausstattung), dann Bildschirm
        80x25 Farbe, Speichergroesse, Takt seit Mitternacht */
     tk = rtc_ticks();
@@ -317,6 +325,10 @@ unsigned long __far v86_create(int t, unsigned kb)
         put32(SCRATCH, i, 0x90CF0063UL | ((unsigned long)i << 8));
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
     put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
+    put32(SCRATCH, 0x60A >> 2, 0);                  /* F060:000A EMMXXXX0 */
+    for (i = 0; i < 8; i++)
+        *(unsigned char __far *)MK_FP(SCRATCH, 0x60A + i) = "EMMXXXX0"[i];
+    put32(SCRATCH, 0x620 >> 2, 0x90CF6763UL);       /* 63 67 CF: INT 67h */
     *(unsigned char __far *)MK_FP(SCRATCH, INT8_STUB + 4) = 0xCF;
     /* Diskettenparameter (INT 13h 08h, INT 1Eh) bei F000:0800, 1,44 MB */
     put32(SCRATCH, DPT_OFF >> 2, 0x122502AFUL);
@@ -324,6 +336,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, (DPT_OFF >> 2) + 2, 0x0000080FUL);
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
+    ems_box(t);
     return PG_LIN(pd_box[t]);
 }
 
@@ -542,6 +555,8 @@ static void set_flags(struct v86_iret *r, int t, unsigned v)
 /* Vektor n zeigt noch auf den Stummel des Kernels? */
 static int vec_def(unsigned n)
 {
+    if (n == 0x67)
+        return rd16(0, 0x19E) == 0xF060 && rd16(0, 0x19C) == 0x0020;
     return rd16(0, n * 4 + 2) == VBIOS && rd16(0, n * 4) == (n == 8 ? INT8_STUB : n * 4);
 }
 
@@ -1120,6 +1135,9 @@ static void svc(int n, struct v86_frame *f, int t)
     case 0x28:                                  /* DOS wartet: abgeben   */
         kf_box_ctl(BOX_SLEEP, 1);
         break;
+    case 0x67:                                  /* EMS                   */
+        ems(f, t);
+        break;
     case 0x29:                                  /* schnelle Ausgabe      */
         out_ch(t, AL);
         break;
@@ -1147,7 +1165,10 @@ static void svc(int n, struct v86_frame *f, int t)
                 svc_cf = 0;
         } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
-        else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
+        else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
+            unsigned pg = BX >> 4;
+            ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
+        } else if (AH == 0x16) {                /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
         } else if (AH == 0x15)                  /* Programm fertig (AL):  */
@@ -1405,12 +1426,14 @@ static void umb_scan(void)
             BSET(umb_free, p);
     }
     umb_ok = 1;
+    ems_pick_frame();
 }
 
 static unsigned umb_run(int t, unsigned p)      /* freie Seiten ab p     */
 {
     unsigned n = 0;
-    while (p + n < 0xF0 && BIT(umb_free, p + n) && !BIT(umb_used[t], p + n))
+    while (p + n < 0xF0 && BIT(umb_free, p + n) && !BIT(umb_used[t], p + n) &&
+           (!ems_frame || p + n < ems_frame || p + n >= ems_frame + 16u))
         n++;
     return n;
 }
@@ -1748,6 +1771,377 @@ static void xms(struct v86_frame *f, int t)
     }
     }
     XFAIL(0x80);                                /* nicht vorhanden       */
+}
+
+/* ---- EMS 4.0 fuer die Box (wie VEMM bei OS/2, EMM386 im Kernel) -----------
+   INT 67h zeigt auf F060:0020 ("ARPL 67h; IRET"), bei F060:000A steht
+   "EMMXXXX0" (so pruefen Programme, ob EMS da ist; ATBOX.SYS heisst
+   ebenso). Seitenrahmen: die erste freie 64-KB-Luecke ab C8000 (auf 16 KB
+   ausgerichtet), einmal fuer alle Boxen gewaehlt, vor den UMBs. Eine
+   logische Seite = 4 zusammenhaengende Kernelseiten, eingeblendet wird
+   ueber die Seitentabelle der Box; ein leerer Rahmenplatz zeigt auf die
+   Ersatzseite. Verwaltung je Box in einer eigenen Seite (ems_tab):
+   0 Erstseite je Platz (256 x pg_t), 1024 Besitzer (FFh frei), 1280
+   Namen (32 x 8), 1536 gesicherte Zuordnung je Handle (32 x 8). */
+#define EMS_SEG   0xF060
+#define EMS_OFF   0x0020
+#define NEH       32
+#define EMS_MAXP  256                   /* 4 MB je Box                    */
+#define EMS_KB    2048                  /* Vorgabe (DOSBOX.INI: EMS_MEMORY_LIMIT) */
+static pg_t ems_tab[NTASK];
+static unsigned char ems_on[NTASK][NEH], ems_np[NTASK][NEH];
+static unsigned char ems_mh[NTASK][4], ems_ml[NTASK][4];   /* Rahmen: Handle/Seite */
+#define EMS_PGN   (ems_lim[t] ? ems_lim[t] - 1 : EMS_KB / 16)
+#define ET(o)     (*(unsigned char __far *)MK_FP(SCRATCH, (o)))
+
+static void ems_tabmap(int t)
+{
+    scratch_map(PG_LIN(ems_tab[t]), 4095);
+}
+
+static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
+{
+    unsigned p, i;
+    for (p = 0xC8; p + 16 <= 0xF0; p += 4) {
+        for (i = 0; i < 16 && BIT(umb_free, p + i); i++)
+            ;
+        if (i == 16) {
+            ems_frame = (unsigned char)p;
+            return;
+        }
+    }
+}
+
+/* Platz s (Kernelseiten base..base+3) in Rahmenplatz pp, s < 0: leer */
+static void ems_show(int t, unsigned pp, int s)
+{
+    unsigned i;
+    unsigned long e, spare = pte_get(t, 0xA0) & ~0xFFFUL;
+    pg_t base = 0;
+    if (s >= 0) {
+        ems_tabmap(t);
+        base = *(pg_t __far *)MK_FP(SCRATCH, s * 4);
+    }
+    for (i = 0; i < 4; i++) {
+        e = s >= 0 ? PG_LIN(base + i) : spare;
+        pte_set(t, ems_frame + pp * 4 + i, e | PTE_BOX);
+    }
+}
+
+static int ems_slot(int t, unsigned h, unsigned k)   /* k-te Seite von h  */
+{
+    unsigned s;
+    ems_tabmap(t);
+    for (s = 0; s < EMS_MAXP; s++)
+        if (ET(1024 + s) == h && k-- == 0)
+            return (int)s;
+    return -1;
+}
+
+static unsigned ems_used(int t)
+{
+    unsigned h, u = 0;
+    for (h = 0; h < NEH; h++)
+        u += ems_np[t][h];
+    return u;
+}
+
+static unsigned ems_free(int t)
+{
+    unsigned u = ems_used(t), n = EMS_PGN;
+    unsigned long sys = mem_free_kb() >> 4;
+    n = u >= n ? 0 : n - u;
+    return sys < n ? (unsigned)sys : n;
+}
+
+static int ems_grow(int t, unsigned h, unsigned n)   /* n Seiten anhaengen */
+{
+    unsigned s;
+    pg_t p;
+    while (n) {
+        ems_tabmap(t);
+        for (s = 0; s < EMS_MAXP && ET(1024 + s) != 0xFF; s++)
+            ;
+        if (s == EMS_MAXP || !(p = mem_alloc(4)))
+            return 0;
+        v86_pages += 4;
+        ems_tabmap(t);
+        *(pg_t __far *)MK_FP(SCRATCH, s * 4) = p;
+        ET(1024 + s) = (unsigned char)h;
+        ems_np[t][h]++;
+        n--;
+    }
+    return 1;
+}
+
+static void ems_shrink(int t, unsigned h, unsigned n) /* auf n Seiten     */
+{
+    unsigned i;
+    int s;
+    pg_t p;
+    for (i = 0; i < 4; i++)
+        if (ems_mh[t][i] == h + 1 && ems_ml[t][i] >= n) {
+            ems_show(t, i, -1);
+            ems_mh[t][i] = 0;
+        }
+    while (ems_np[t][h] > n) {
+        s = ems_slot(t, h, ems_np[t][h] - 1);
+        ems_tabmap(t);
+        p = *(pg_t __far *)MK_FP(SCRATCH, s * 4);
+        ET(1024 + s) = 0xFF;
+        mem_free(p, 4);
+        v86_pages -= 4;
+        ems_np[t][h]--;
+    }
+}
+
+static void ems_box(int t)              /* aus v86_create                 */
+{
+    unsigned i;
+    if (!umb_ok)
+        umb_scan();
+    for (i = 0; i < NEH; i++)
+        ems_on[t][i] = ems_np[t][i] = 0;
+    ems_on[t][0] = 1;                   /* Handle 0 gehoert dem System    */
+    ems_lim[t] = 0;
+    ems_tab[t] = 0;
+    for (i = 0; i < 4; i++) {
+        ems_mh[t][i] = 0;
+        if (ems_frame)
+            ems_show(t, i, -1);
+    }
+}
+
+static void ems_end(int t)              /* aus v86_destroy                */
+{
+    unsigned h;
+    if (ems_tab[t]) {
+        for (h = 0; h < NEH; h++)
+            if (ems_np[t][h])
+                ems_shrink(t, h, 0);
+        vp_free(ems_tab[t]);
+        ems_tab[t] = 0;
+    }
+}
+
+static int ems_newh(int t)
+{
+    unsigned h, i;
+    if (!ems_tab[t]) {
+        if (!(ems_tab[t] = own_page()))
+            return -1;
+        ems_tabmap(t);
+        for (i = 1024; i < 1280; i++)
+            ET(i) = 0xFF;
+    }
+    for (h = 1; h < NEH && ems_on[t][h]; h++)
+        ;
+    if (h == NEH)
+        return -1;
+    ems_tabmap(t);
+    for (i = 0; i < 8; i++)
+        ET(1280 + h * 8 + i) = 0;
+    return (int)h;
+}
+
+#define ERET(c)  do { AH = (c); return; } while (0)
+
+static void ems(struct v86_frame *f, int t)
+{
+    unsigned h = DX, n, i, k, es = (unsigned)f->r.es, di = DI;
+    unsigned ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
+    int s;
+
+    if (!ems_frame)
+        ERET(0x80);
+    switch (AH) {                               /* mit Handle in DX      */
+    case 0x44: case 0x45: case 0x47: case 0x48: case 0x4C:
+    case 0x50: case 0x51: case 0x53:
+        if (h >= NEH || !ems_on[t][h])
+            ERET(0x83);
+    }
+    switch (AH) {
+    case 0x40:                                  /* Zustand               */
+        ERET(0);
+    case 0x41:                                  /* Seitenrahmen          */
+        BX = (unsigned)ems_frame << 8;
+        ERET(0);
+    case 0x42:                                  /* freie/alle Seiten     */
+        BX = ems_free(t);
+        DX = EMS_PGN;
+        ERET(0);
+    case 0x43: case 0x5A:                       /* anlegen (5A: auch 0)  */
+        n = BX;
+        if (AH == 0x43 && n == 0)
+            ERET(0x89);
+        if (n > EMS_PGN)
+            ERET(0x87);
+        if (n > ems_free(t))
+            ERET(0x88);
+        if ((s = ems_newh(t)) < 0)
+            ERET(0x85);
+        ems_on[t][s] = 1;
+        if (!ems_grow(t, (unsigned)s, n)) {
+            ems_shrink(t, (unsigned)s, 0);
+            ems_on[t][s] = 0;
+            ERET(0x88);
+        }
+        DX = (unsigned)s;
+        ERET(0);
+    case 0x44:                                  /* einblenden            */
+        if (AL > 3)
+            ERET(0x8B);
+        if (BX == 0xFFFF) {
+            ems_show(t, AL, -1);
+            ems_mh[t][AL] = 0;
+        } else {
+            if (BX >= ems_np[t][h])
+                ERET(0x8A);
+            ems_show(t, AL, ems_slot(t, h, BX));
+            ems_mh[t][AL] = (unsigned char)(h + 1);
+            ems_ml[t][AL] = (unsigned char)BX;
+        }
+        tlb(t);
+        ERET(0);
+    case 0x45:                                  /* freigeben             */
+        ems_shrink(t, h, 0);
+        tlb(t);
+        if (h)
+            ems_on[t][h] = 0;
+        ERET(0);
+    case 0x46:                                  /* Version 4.0           */
+        AL = 0x40;
+        ERET(0);
+    case 0x47: case 0x48:                       /* Zuordnung sichern/zurueck */
+        ems_tabmap(t);
+        for (i = 0; i < 4; i++)
+            if (AH == 0x47) {
+                ET(1536 + h * 8 + i * 2) = ems_mh[t][i];
+                ET(1536 + h * 8 + i * 2 + 1) = ems_ml[t][i];
+            } else {
+                ems_mh[t][i] = ET(1536 + h * 8 + i * 2);
+                ems_ml[t][i] = ET(1536 + h * 8 + i * 2 + 1);
+            }
+        if (AH == 0x48) {
+            for (i = 0; i < 4; i++)
+                ems_show(t, i, ems_mh[t][i] ? ems_slot(t, ems_mh[t][i] - 1, ems_ml[t][i]) : -1);
+            tlb(t);
+        }
+        ERET(0);
+    case 0x4B:                                  /* aktive Handles        */
+        for (i = 0, n = 0; i < NEH; i++)
+            n += ems_on[t][i];
+        BX = n;
+        ERET(0);
+    case 0x4C:                                  /* Seiten eines Handles  */
+        BX = ems_np[t][h];
+        ERET(0);
+    case 0x4D:                                  /* alle Handles -> ES:DI */
+        for (i = 0, n = 0; i < NEH; i++)
+            if (ems_on[t][i]) {
+                wr16(es, di + n * 4, i);
+                wr16(es, di + n * 4 + 2, ems_np[t][i]);
+                n++;
+            }
+        BX = n;
+        ERET(0);
+    case 0x4E:                                  /* ganze Zuordnung (8 Byte) */
+        if (AL == 3) {
+            AL = 8;
+            ERET(0);
+        }
+        if (AL > 3)
+            ERET(0x8F);
+        if (AL == 0 || AL == 2)
+            for (i = 0; i < 4; i++) {
+                wr8(es, di + i * 2, ems_mh[t][i]);
+                wr8(es, di + i * 2 + 1, ems_ml[t][i]);
+            }
+        if (AL == 1 || AL == 2) {
+            for (i = 0; i < 4; i++) {
+                ems_mh[t][i] = rd8(ds, si + i * 2);
+                ems_ml[t][i] = rd8(ds, si + i * 2 + 1);
+                k = ems_mh[t][i];
+                ems_show(t, i, k && k <= NEH && ems_on[t][k - 1] && ems_ml[t][i] < ems_np[t][k - 1]
+                               ? ems_slot(t, k - 1, ems_ml[t][i]) : -1);
+            }
+            tlb(t);
+        }
+        ERET(0);
+    case 0x50:                                  /* mehrere einblenden    */
+        if (AL > 1)
+            ERET(0x8F);
+        for (i = 0; i < CX; i++) {
+            unsigned lg = rd16(ds, si + i * 4), pp = rd16(ds, si + i * 4 + 2);
+            if (AL == 1)                        /* Segment statt Nummer  */
+                pp = (pp - ((unsigned)ems_frame << 8)) >> 10;
+            if (pp > 3)
+                ERET(0x8B);
+            if (lg == 0xFFFF) {
+                ems_show(t, pp, -1);
+                ems_mh[t][pp] = 0;
+            } else {
+                if (lg >= ems_np[t][h])
+                    ERET(0x8A);
+                ems_show(t, pp, ems_slot(t, h, lg));
+                ems_mh[t][pp] = (unsigned char)(h + 1);
+                ems_ml[t][pp] = (unsigned char)lg;
+            }
+        }
+        tlb(t);
+        ERET(0);
+    case 0x51:                                  /* Groesse aendern       */
+        n = BX;
+        if (n > ems_np[t][h]) {
+            if (n - ems_np[t][h] > ems_free(t))
+                ERET(0x88);
+            if (!ems_grow(t, h, n - ems_np[t][h]))
+                ERET(0x88);
+        } else
+            ems_shrink(t, h, n);
+        tlb(t);
+        BX = ems_np[t][h];
+        ERET(0);
+    case 0x53:                                  /* Name holen/setzen     */
+        if (!ems_tab[t] && ems_newh(t) < 0)
+            ERET(0x80);
+        if (AL > 1)
+            ERET(0x8F);
+        for (i = 0; i < 8; i++) {
+            ems_tabmap(t);
+            if (AL == 0)
+                wr8(es, di + i, ET(1280 + h * 8 + i));
+            else {
+                k = rd8(ds, si + i);
+                ems_tabmap(t);
+                ET(1280 + h * 8 + i) = (unsigned char)k;
+            }
+        }
+        ERET(0);
+    case 0x54:                                  /* Handle-Verzeichnis    */
+        if (AL == 2) {
+            BX = NEH;
+            ERET(0);
+        }
+        ERET(AL > 2 ? 0x8F : 0xA0);
+    case 0x58:                                  /* Rahmenadressen        */
+        if (AL == 0)
+            for (i = 0; i < 4; i++) {
+                wr16(es, di + i * 4, ((unsigned)ems_frame << 8) + (i << 10));
+                wr16(es, di + i * 4 + 2, i);
+            }
+        else if (AL != 1)
+            ERET(0x8F);
+        CX = 4;
+        ERET(0);
+    case 0x59:                                  /* Hardware: nur Seiten  */
+        if (AL != 1)
+            ERET(AL ? 0x8F : 0xA4);
+        BX = ems_free(t);
+        DX = EMS_PGN;
+        ERET(0);
+    }
+    ERET(0x84);                                 /* unbekannt             */
 }
 
 static unsigned monitor(struct v86_frame *f, int t)

@@ -139,6 +139,7 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;   [*]           fuer alle Programme
 ;   [NAME.EXT]    fuer ein Programm (geht vor)
 ;   XMS_MEMORY_LIMIT=KB   (0-3008, Vorgabe 2048) -> INT E0h 16h
+;   EMS_MEMORY_LIMIT=KB   (0-4096, Vorgabe 2048) -> INT E0h 17h
 ;   DOS_VERSION=n.nn      -> INT 2Fh 122Fh fuer das naechste Programm
 ;                            (ein Eintrag in SETVER.LST geht vor)
 ; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
@@ -201,6 +202,7 @@ ini_apply:
         push    cx
         push    es
         mov     word [xmskb], 2048
+        mov     word [emskb], 2048
         mov     word [dosver], 0
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
@@ -235,6 +237,9 @@ ini_apply:
         int     21h
 .set:   mov     bx, [xmskb]
         mov     ah, 16h
+        int     0E0h
+        mov     bx, [emskb]
+        mov     ah, 17h
         int     0E0h
         mov     dx, [dosver]
         test    dx, dx
@@ -284,7 +289,13 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         call    pnum
         mov     [xmskb], ax
         jmp     .skip
-.k2:    mov     di, k_ver
+.k2:    mov     di, k_ems
+        call    kmatch
+        jc      .k3
+        call    pnum
+        mov     [emskb], ax
+        jmp     .skip
+.k3:    mov     di, k_ver
         call    kmatch
         jc      .skip
         mov     dl, [es:si]             ; Hauptversion
@@ -662,7 +673,9 @@ t_star    db "*", 0
 t_cmdcom  db "COMMAND.COM", 0
 k_xms     db "XMS_MEMORY_LIMIT", 0
 k_ver     db "DOS_VERSION", 0
+k_ems     db "EMS_MEMORY_LIMIT", 0
 xmskb     dw 2048
+emskb     dw 2048
 dosver    dw 0
 ibuf      dw 0
 pname     times 13 db 0
