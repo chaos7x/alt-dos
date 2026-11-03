@@ -144,7 +144,8 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;                            (ein Eintrag in SETVER.LST geht vor)
 ;   POPF_PATCH=ON|OFF     Hilfen der Nachbildung fuer DPMI-Programme,
 ;   SB_IRQ_IDLE=ON|OFF    Vorgabe ON (siehe v86.c, box_hk) -> INT E0h 18h
-;   IF_WATCHDOG=ON|OFF    (BL Bit 0/1/2 = an)
+;   IF_WATCHDOG=ON|OFF    (BL Bit 0/1/2/3 = an)
+;   PVI=ON|OFF            CLI/STI ohne Falle (ab Pentium, CR4.PVI)
 ; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
 
 get_pname:                              ; Name aus cmd (CX Zeichen) -> pname
@@ -207,7 +208,7 @@ ini_apply:
         mov     word [xmskb], 2048
         mov     word [emskb], 2048
         mov     word [dosver], 0
-        mov     byte [hk], 7
+        mov     byte [hk], 15
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
         int     21h
@@ -346,7 +347,7 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jnc     .k6
         add     di, 12
         shl     dl, 1
-        cmp     dl, 8
+        cmp     dl, 16
         jb      .k5
         jmp     .skip
 .k6:    mov     al, [es:si]
@@ -733,7 +734,8 @@ k_ems     db "EMS_MEMORY_LIMIT", 0
 k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
           db "SB_IRQ_IDLE", 0
           db "IF_WATCHDOG", 0
-hk        db 7
+          db "PVI", 0, 0, 0, 0, 0, 0, 0, 0, 0
+hk        db 15
 xmskb     dw 2048
 emskb     dw 2048
 dosver    dw 0

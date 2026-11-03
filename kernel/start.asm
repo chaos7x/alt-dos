@@ -809,6 +809,27 @@ irq_other:
 ; ---------------------------------------------------------------------------
 ; Hilfsroutinen fuer C
 
+; void pvi_sw(int t) - CR4.PVI fuer den naechsten Task (v86.c: pvi_t[t]
+; nur 1, wenn die CPU es kann; pvi_cur = Stand in CR4)
+global pvi_sw_
+extern _pvi_t, _pvi_cur
+pvi_sw_:
+        push    bx
+        mov     bx, ax
+        mov     al, [_pvi_t+bx]
+        cmp     al, [_pvi_cur]
+        je      .r
+        mov     [_pvi_cur], al
+        push    ecx
+        db      0Fh, 20h, 0E1h          ; mov ecx, cr4
+        and     cl, 0FDh
+        add     al, al
+        or      cl, al
+        db      0Fh, 22h, 0E1h          ; mov cr4, ecx
+        pop     ecx
+.r:     pop     bx
+        ret
+
 ; void task_jump(unsigned tss_sel)  - Hardware-Taskwechsel per JMP auf TSS
 global task_jump_
 ; Das 386-TSS sichert auch ES, FS und GS, und beim Zurueckwechseln laedt

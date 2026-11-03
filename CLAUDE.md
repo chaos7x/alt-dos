@@ -2079,6 +2079,35 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   0 = Vorgabe alle an, zurück bei jedem Programmstart und in xms_reset).
   Nutzer danach mit DOOM 1.9: wieder besser, bei Kämpfen (Monster auf dem
   Podium in E1M1, Gegner vor dem Levelende) geht es noch deutlich runter.
+  PVI erledigt (CR4 Bit 1, CPUID 1 EDX Bit 1 = VME; nur in Bochs geprüft –
+  QEMU-TCG kennt VME nicht, auch nicht mit `+vme`): CLI/STI im PM setzen
+  nur EFLAGS.VIF. v86.c `pvi_in` (Eintritt dpmi_trap/v86_tick: VIF ->
+  vfl, Übergang 1->0 merkt dp_cli_t), `pvi_out` (Ausgang dpmi_trap,
+  v86_tick, v86_exc mit rc 2: vfl -> VIF, VIP nur wenn vt_pend/SB-IRQ/
+  Taste wartet – dann trappt das nächste STI). CR4 gilt für alle Tasks:
+  `pvi_sw` (start.asm) in switch_to stellt es nach `pvi_t[t]` (FAPI-
+  Programme behalten #GP bei CLI), v86.c ändert es selbst über `pvi_cr4`;
+  `pvi_cur` = Stand in CR4. POPF ändert VIF nicht – der POPF-Patch bleibt
+  nötig, findet seine Stellen aber nur über ein trappendes CLI: die erste
+  Sekunde nach dp_switch ohne PVI (`pvi_back`), und feuert der Wachhund,
+  wieder 1 s ohne (nur solange die Tabelle nicht voll ist). Beim
+  gepatchten POPFD nimmt die Nachbildung IF aus Bit 19 (VIF) des vom
+  Programm gesicherten Werts (PUSHFD sichert VIF mit). INI `PVI=OFF`.
+  Dabei gefunden (wichtiger als PVI selbst): die Patch-Tabelle (8) war
+  sofort voll, DOOM 1.9 braucht 9 Stellen – der Wachhund feuerte deshalb
+  auch ohne PVI 1–2-mal je s, jedes Mal 3 Takte ohne Interrupts, DOOMs
+  Takt verlor Schritte und das Spiel lief in Echtzeit langsamer (je mehr
+  Geräusche, desto mehr Mischpfade). Jetzt `NPATCH` 24; der Wachhund
+  feuert im Timedemo nicht mehr. QEMU-Timedemo zeigt deshalb mehr
+  „realtics“ (8804 statt 6042 bei gleicher Laufzeit – vorher fehlten
+  Takte). Fallen je 2 s in Bochs (virtuelle SB, Timedemo): ~7.400 ohne,
+  ~4.250 mit PVI. Testumgebung Bochs (apt `bochs bochs-x bochsbios
+  vgabios`, Debugger-Build: `c` über stdin, `display_library: x` unter
+  Xvfb, Bilder mit `import`, `BIOS-bochs-legacy` – das latest-BIOS stürzt
+  in rombios32 ab, `port_e9_hack`, Bochs-eigene SB16 aus: DOOM hing damit
+  auch ohne PVI). Offen dabei gesehen: nach `DOOM > T.TXT` meldet
+  `TYPE T.TXT` „wird gerade geschrieben“ – die geparkte Box hält die
+  Umleitung offen.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.

@@ -176,6 +176,8 @@ static const unsigned char hwvec[] = { 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
 static unsigned long ivt_save[NTASK][sizeof(hwvec)];    /* Kerneltakt des letzten INT 8 der Box */         /* Zustellung aus irq0 (Takt erlaubt) */
 static int pm_hooked(int t, unsigned n);
 static void dp_hwint(struct v86_iret *r, int t);
+static void pvi_in(struct v86_iret *r, int t);
+static void pvi_out(struct v86_iret *r, int t);
 static int box_fg(int t);
 static void blink_hw(int off);
 static void spk_hw(int t, int on);
@@ -192,10 +194,36 @@ static void ems_box(int t);
 static void dpmi_end(int t);
 static unsigned char dp_inirq[NTASK];
 static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
-#define NPATCH 8
+#define NPATCH 24
 static unsigned long dp_patch[NTASK][NPATCH];   /* POPF -> HLT (linear)  */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
+
+/* PVI (CR4 Bit 1, ab Pentium): CLI/STI eines DPMI-Programms in Ring 3
+   setzen nur EFLAGS.VIF statt zu trappen (DMX mischt mit CLI/STI, ~700
+   Fallen je s). Das virtuelle IF steht dann in VIF: pvi_in holt es beim
+   Eintritt in den Kernel nach vfl, pvi_out schreibt es zurueck und setzt
+   VIP, wenn ein Interrupt wartet (das naechste STI trappt dann). CR4
+   gilt fuer alle: pvi_sw (start.asm) schaltet es beim Taskwechsel nach
+   pvi_t[t] um, FAPI-Programme behalten ihr #GP bei CLI. POPF aendert VIF
+   nicht - wie ohne PVI das IF; den POPF-Patch findet nur ein CLI, das
+   trappt: feuert der Wachhund, laeuft die Box 1 s ohne PVI (pvi_back). */
+#define FL_VIF  0x80000UL
+#define FL_VIP  0x100000UL
+#define HK_PVI  8
+unsigned char pvi_t[NTASK], pvi_cur;    /* je Task / gerade in CR4       */
+static signed char pvi_ok = -1;         /* CPU kann PVI (CPUID 1: VME)   */
+static unsigned long pvi_back[NTASK];   /* PVI erst wieder ab diesem Takt */
+static unsigned long cpu_flid(void);    /* EFLAGS.ID kippbar -> != 0     */
+#pragma aux cpu_flid = "pushfd" "pop eax" "mov ecx,eax" "xor eax,200000h" \
+    "push eax" "popfd" "pushfd" "pop eax" "push ecx" "popfd" "xor eax,ecx" \
+    "mov edx,eax" "shr edx,16" __value [__dx __ax] __modify [__ax __cx __dx];
+static unsigned long cpu_feat(void);    /* CPUID 1: EDX                  */
+#pragma aux cpu_feat = "mov eax,1" 0x0F 0xA2 "mov eax,edx" "shr edx,16" \
+    __value [__dx __ax] __modify [__ax __bx __cx __dx];
+static void k2_cr4(unsigned on);
+#pragma aux k2_cr4 = 0x0F 0x20 0xE1 "and cl,0FDh" "or cl,al" \
+    0x0F 0x22 0xE1 __parm [__ax] __modify [__cx];
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
 unsigned __far redir_psp(int t);
@@ -1575,10 +1603,12 @@ void __far v86_tick(struct v86_iret *r)
     if (r->eflags & 0x20000UL)                  /* Takt (sonst schachteln */
         inject(r, t);                           /* nachgeholte Takte, DOS/4GW: */
     else {                                      /* "transfer stack overflow") */
-        vga_freeze(t);                          /* DPMI-Programm (Ring 3) */
+        pvi_in(r, t);                           /* DPMI-Programm (Ring 3) */
+        vga_freeze(t);
         if (pit_rl[t])
             kpit_check(t);
         dp_hwint(r, t);
+        pvi_out(r, t);
     }
     from_tick = 0;
 }
@@ -2150,7 +2180,7 @@ static void svc(int n, struct v86_frame *f, int t)
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
-            box_hk[t] = (unsigned char)(~BX & 7);
+            box_hk[t] = (unsigned char)(~BX & 15);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
@@ -3632,6 +3662,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
     unsigned i;
     dp_inirq[t] = 0;
     dp_npatch[t] = 0;
+    pvi_t[t] = 0;
     sb[t].irql = sb[t].noirq = 0;
     if (!dp_on[t])
         return;
@@ -3686,6 +3717,9 @@ static unsigned dp_switch(struct v86_frame *f, int t)
         g->access = 0x82;
         g->rsv = (unsigned short)((b >> 24) << 8);
     }
+    if (pvi_ok < 0)                             /* PVI: CPUID 1, EDX Bit 1 */
+        pvi_ok = (signed char)(cpu_flid() && (cpu_feat() & 2));
+    pvi_back[t] = get_ticks();                  /* erst 1 s lernen (POPF) */
     tss[t].ldt = LDT_SEL(t);                    /* (das TSS der Box hatte
                                                    0: nach jedem Taskwechsel
                                                    war LDTR leer -> #GP) */
@@ -4286,6 +4320,41 @@ static void dp_push(struct v86_iret *r, int t, unsigned n)
    INT 8 mit 140 Hz, INT 9). Ohne PM-Handler bleiben sie fuer den Real
    Mode liegen. Rahmen: Ring 3 aus irq0 oder nach einem PM-Trap. */
 
+static void pvi_cr4(int t)
+{
+    if (pvi_cur != pvi_t[t]) {
+        pvi_cur = pvi_t[t];
+        k2_cr4(pvi_cur ? 2 : 0);
+    }
+}
+
+static void pvi_in(struct v86_iret *r, int t)
+{
+    if (!pvi_cur || (r->cs & 3) != 3)
+        return;
+    if (!(r->eflags & FL_VIF)) {
+        if (vfl[t] & FL_IF)
+            dp_cli_t[t] = get_ticks();          /* fuer den Wachhund     */
+        vfl[t] &= ~FL_IF;
+    } else
+        vfl[t] |= FL_IF;
+}
+
+static void pvi_out(struct v86_iret *r, int t)
+{
+    if (pvi_ok && dp_on[t] && !pvi_t[t] && !(box_hk[t] & HK_PVI) &&
+        get_ticks() - pvi_back[t] >= 100)
+        pvi_t[t] = 1;
+    pvi_cr4(t);
+    r->eflags &= ~(FL_VIF | FL_VIP);
+    if (!pvi_t[t] || (r->cs & 3) != 3)
+        return;
+    if (vfl[t] & FL_IF)
+        r->eflags |= FL_VIF;
+    else if (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])
+        r->eflags |= FL_VIP;                    /* STI soll trappen      */
+}
+
 static void dp_hwint(struct v86_iret *r, int t)
 {
     if (!dp_on[t] || (r->cs & 3) != 3)
@@ -4301,6 +4370,10 @@ static void dp_hwint(struct v86_iret *r, int t)
             return;
         }
         vfl[t] |= FL_IF;
+        if (pvi_t[t] && dp_npatch[t] < NPATCH) {    /* POPF ohne Patch: */
+            pvi_t[t] = 0;                       /* eine Weile ohne PVI,  */
+            pvi_back[t] = get_ticks();          /* damit das CLI trappt  */
+        }
     }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
         vt_pend[t]--;
@@ -4623,8 +4696,8 @@ static unsigned dp_trap(struct v86_frame *f, int t)
             else
                 f->r.esp = (f->r.esp & 0xFFFF0000UL) | ((sp + (o32 ? 4 : 2)) & 0xFFFF);
             f->r.eflags = (f->r.eflags & ~0x0CD5UL) | (v & 0x0CD5UL);   /* CF..OF, DF */
-            if (dp_popf_if[t])                  /* IF wie vor dem CLI    */
-                vfl[t] |= FL_IF;
+            if (pvi_cur ? o32 && (v & FL_VIF) : dp_popf_if[t])
+                vfl[t] |= FL_IF;                /* IF wie vor dem CLI    */
             f->r.eip++;
             return 0;
         }
@@ -4656,12 +4729,15 @@ unsigned __far dpmi_trap(struct v86_frame *f)
     unsigned rc;
     if (t < 0 || !dp_on[t])
         return 1;
+    pvi_in(&f->r, t);
     enable_ints();
     rc = dp_trap(f, t);
     irq_off();
     vga_freeze(t);
-    if (rc == 0)
+    if (rc == 0) {
         dp_hwint(&f->r, t);
+        pvi_out(&f->r, t);
+    }
     from_tick = 0;
     return rc;
 }
@@ -4886,8 +4962,10 @@ unsigned __far v86_exc(struct v86_frame *f)
     if (rc == 0) {
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
-    } else if (rc == 2)
+    } else if (rc == 2) {
         irq_off();                      /* DPMI: weiter im PM            */
+        pvi_out(&f->r, t);
+    }
     from_tick = 0;
     return rc;
 }

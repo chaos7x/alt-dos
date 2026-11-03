@@ -41,6 +41,7 @@ struct gate  { unsigned short off, sel; unsigned char wc, access; unsigned short
 /* ---- Assembler-Routinen (start.asm) ------------------------------------ */
 extern void fapi_entry(void);
 extern void task_jump(unsigned sel);
+extern void pvi_sw(int t);
 extern void load_tr(unsigned sel);
 extern void fpu_save(unsigned sel, unsigned off);
 extern void fpu_restore(unsigned sel, unsigned off);
@@ -1524,6 +1525,7 @@ static void fpu_task_end(int t)
 static void switch_to(int t)
 {
     current = t;
+    pvi_sw(t);                      /* CR4.PVI je Task (DPMI-Boxen)   */
     task_jump(TSS_SEL(t));          /* Hardware-Taskwechsel ueber das TSS */
 }
 

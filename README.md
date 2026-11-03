@@ -358,7 +358,8 @@ und PC-DOS.
   DPMI-Programme, Vorgabe `ON`, bei einem störrischen Programm `OFF`:
   `POPF_PATCH` (POPF nach CLI wird zur Falle, damit das virtuelle IF
   stimmt), `SB_IRQ_IDLE` (SB-Leitung ohne Handler ruht),
-  `IF_WATCHDOG` (IF gilt nach 3 Takten ohne STI wieder als an). Wird vor jedem
+  `IF_WATCHDOG` (IF gilt nach 3 Takten ohne STI wieder als an), `PVI`
+  (ab Pentium: CLI/STI eines DPMI-Programms ohne Falle über CR4.PVI). Wird vor jedem
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
