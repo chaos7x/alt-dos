@@ -235,7 +235,7 @@ echo "DOS-Box: Startabbild freedos.img"
 nasm -f bin apps/boxshell.asm -o $B/boxshell.com
 rm -f $B/freedos.img
 mformat -i $B/freedos.img -C -f 360 -B freedos/fat12com.bin -v FREEDOS ::
-for f in KERNEL.SYS COMMAND.COM CONFIG.SYS; do
+for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
     mcopy -i $B/freedos.img freedos/$f ::$f
 done
 mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM

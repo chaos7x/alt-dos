@@ -457,7 +457,16 @@ build_env:
         pop     es
 .e1:    cmp     byte [si], 0            ; Ende der Liste?
         je      .e3
-        cmp     word [si], 'PA'         ; eigenes PATH= weglassen
+        cmp     word [si], 'BL'         ; BLASTER= schon gesetzt?
+        jne     .e1p
+        cmp     word [si+2], 'AS'
+        jne     .e1p
+        cmp     word [si+4], 'TE'
+        jne     .e1p
+        cmp     word [si+6], 'R='
+        jne     .e1p
+        mov     byte [cs:has_bl], 1
+.e1p:   cmp     word [si], 'PA'         ; eigenes PATH= weglassen
         jne     .e2
         cmp     word [si+2], 'TH'
         jne     .e2
@@ -469,7 +478,7 @@ build_env:
         jmp     .e1
 .e2:    lodsb
         stosb
-        cmp     di, envbuf + ENVSZ - 48
+        cmp     di, envbuf + ENVSZ - 80
         jae     .e3
         test    al, al
         jnz     .e2
@@ -485,7 +494,14 @@ build_env:
         stosb
         test    al, al
         jnz     .e5
-        stosb                           ; zweite Null: Ende
+        cmp     byte [has_bl], 0        ; virtuelle Sound Blaster (v86.c)
+        jne     .e7
+        mov     si, t_blaster
+.e6:    lodsb
+        stosb
+        test    al, al
+        jnz     .e6
+.e7:    stosb                           ; zweite Null: Ende
         ret
 
 ; ---- SETVER: X:\DOS\BOX\SETVER.LST -> Versionstabelle (LoL+37h) --------
@@ -668,6 +684,8 @@ dmask     dd 0
 old2f     dd 0
 
 t_path    db "PATH=X:\DOS\BOX;X:\DOS", 0
+t_blaster db "BLASTER=A220 I5 D1 T3", 0  ; SB 2.0; IRQ 5 oder 7 geht beides
+has_bl    db 0
 t_ini     db "X:\DOS\BOX\DOSBOX.INI", 0
 t_star    db "*", 0
 t_cmdcom  db "COMMAND.COM", 0

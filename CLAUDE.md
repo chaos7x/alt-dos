@@ -1954,7 +1954,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sb16 auf einem audiodev): neu folgt der SB-Ton direkt, alt kam er gar
   nicht (unter 8 KB, nie gestartet).
   Vom Nutzer auf dem ASUS P3B-F in 86Box bestätigt: DOOM funktioniert
-  (Spiel, Tasten, Ton der Waffe ohne Verzögerung). AUD_CLOSE nur im
+  (Spiel, Tasten, Ton der Waffe ohne Verzögerung).
+  BLASTER und Länderdaten (Wunsch des Nutzers; in QEMU geprüft):
+  BOXSHELL hängt `BLASTER=A220 I5 D1 T3` an die Umgebung der Box, wenn
+  sie keins hat (IRQ 5 oder 7 geht beides, siehe `irql`). COMMAND.COM
+  zeigte Datum/Zeit im US-Format: `freedos/COUNTRY.SYS` (FreeDOS-
+  Submodul country 7f83e04, GPL, mit nasm gebaut) im Startabbild, Box-
+  CONFIG.SYS `COUNTRY=049,437,A:\COUNTRY.SYS` -> DATE 03.11.2026, TIME
+  17:36:39,83. Fest Deutschland – AT-DOS wertet COUNTRY= selbst noch
+  nicht aus. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

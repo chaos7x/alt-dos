@@ -12,5 +12,7 @@ mkdir -p "$D"
 (cd "$D/freecom" && LNG=german ./build.sh wc)
 cp "$D/kernel/bin/kernel.sys" freedos/KERNEL.SYS
 cp "$D/kernel/boot/fat12com.bin" freedos/fat12com.bin
+(cd "$D/kernel/country" && nasm -o country.sys country.asm)
+cp "$D/kernel/country/country.sys" freedos/COUNTRY.SYS
 cp "$D/freecom/command.com" freedos/COMMAND.COM
 echo "freedos/ erneuert: KERNEL.SYS $(git -C "$D/kernel" rev-parse --short HEAD), COMMAND.COM $(git -C "$D/freecom" rev-parse --short HEAD)"

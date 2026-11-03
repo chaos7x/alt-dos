@@ -342,7 +342,8 @@ und PC-DOS.
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip
   (388h, FM-Musik). Virtuelle Sound Blaster 2.0 (220h, DMA 1, IRQ 5/7):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
-  Effekte). CMOS (Port 70h/71h) meldet
+  Effekte), `BLASTER=A220 I5 D1 T3` steht in der Umgebung. Datum und
+  Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). CMOS (Port 70h/71h) meldet
   der Box ihren eigenen erweiterten Speicher (MEM/MSD von MS-DOS), INT 10h
   1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein
   BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
