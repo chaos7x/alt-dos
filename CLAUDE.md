@@ -2043,7 +2043,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   QEMU: `-timedemo demo1` mit Ton 7.241 Ticks (ohne Ton 9.040, mit
   Haltepunkten 10.345, vorher nach 5 min nicht fertig); DOOM 1.2 und
   1.9 (START + Alt+Esc) mit Ton. Lehre: Emulatoren bilden Debug-
-  Register oft nicht nach – nicht darauf bauen. AUD_CLOSE nur im
+  Register oft nicht nach – nicht darauf bauen.
+  DOOM 1.9 blieb beim Nutzer trotzdem „unspielbar“ (1.2 rund). Fallen
+  je 2 s gezählt (Port E9h): 1.9 ~3.900 statt ~2.500, Ports 1.700 statt
+  800, V86 550 statt 100, Umleitungen in den Real Mode 150 statt 14. Der
+  Grund: DMX 1.9 hat gar keinen IRQ-Handler (liest die DMA-Stelle), die
+  virtuelle SB löste trotzdem 55-mal je Sekunde IRQ 7 aus (`irql` aus
+  DOS/4GWs eigenem 0205h für 0Fh); DOS/4GW reichte ihn in den Real Mode
+  zum leeren Stummel weiter, mit Fragen an den zweiten PIC (A0h). Jetzt:
+  landet IRQ 3–7 am PM-Stummel und steht im Real Mode nur der Standard-
+  Stummel (`vec_def`), quittiert dp_trap sofort ohne Moduswechsel; für
+  5/7 merkt sich die SB die Leitung als ruhend (`sb[].noirq`), bis ein
+  Real-Mode-Handler oder 0205h kommt (`sb_line`). Box-CONFIG.SYS hat
+  `STACKS=0,0`, damit FreeDOS sich nicht mit Stapel-Handlern vor die
+  Stummel hängt (IVT 0Dh zeigte auf 0070:006B). Ergebnis: Umleitungen
+  11/s statt 75/s; in QEMU kaum schneller (Fallen sind dort billig),
+  der Gewinn zeigt sich erst in 86Box. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

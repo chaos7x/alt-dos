@@ -127,6 +127,7 @@ struct vsb {
     unsigned char b16, st, sgn, ch;     /* laufende Ausgabe: 16 Bit, stereo,
                                            mit Vorzeichen, DMA 1 (0) / 5 (1) */
     unsigned char conv, ist;            /* auf 8 Bit mono gerechnet; Mixer 82h */
+    unsigned char noirq;                /* Leitungen ohne Handler (Bitmaske) */
     unsigned char och, obits;           /* geoeffnetes Format            */
     unsigned char mix_i, mix[24];       /* Mixer: Index, Register 30h-47h */
     unsigned rate, orate, blk8, frac;   /* Rate, Blocklaenge 48h         */
@@ -985,9 +986,18 @@ static char sb_buf[1024];              /* auch Suche in dp_patch_popf */
    danach nur seine), sonst im Real Mode umgebogenes 0Fh -> 7, sonst 5 */
 static unsigned char sb_line(int t)
 {
+    unsigned char l;
     if (sb[t].irql)
-        return (unsigned char)(1 << sb[t].irql);
-    return (unsigned char)(!vec_def(0x0F) && vec_def(0x0D) ? 0x80 : 0x20);
+        l = (unsigned char)(1 << sb[t].irql);
+    else
+        l = (unsigned char)(!vec_def(0x0F) && vec_def(0x0D) ? 0x80 : 0x20);
+    /* Leitung ohne Handler (DOOM 1.9: DMX liest die DMA-Stelle, der IRQ
+       ging ueber DOS/4GW in den Real Mode zum leeren Stummel - 55-mal je
+       Sekunde PM -> RM -> PM fuer nichts): dort nicht mehr ausloesen, bis
+       ein Real-Mode-Handler oder 0205h kommt */
+    if ((l & sb[t].noirq) && !vec_def(l == 0x80 ? 0x0F : 0x0D))
+        sb[t].noirq &= (unsigned char)~l;
+    return (unsigned char)(l & ~sb[t].noirq);
 }
 
 static void sb_put(int t, unsigned char v)
@@ -3609,7 +3619,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
     unsigned i;
     dp_inirq[t] = 0;
     dp_npatch[t] = 0;
-    sb[t].irql = 0;
+    sb[t].irql = sb[t].noirq = 0;
     if (!dp_on[t])
         return;
     for (i = 0; i < NDPM; i++)
@@ -4015,8 +4025,10 @@ static unsigned dp31(struct v86_frame *f, int t)
         v = pmvec(t, BL);
         v[0] = dp_32[t] ? f->edx : DX;
         *(unsigned short __far *)((char __far *)v + 4) = CX;
-        if (BL == 0x0D || BL == 0x0F)           /* Sound Blaster: zuletzt */
+        if (BL == 0x0D || BL == 0x0F) {         /* Sound Blaster: zuletzt */
             sb[t].irql = (unsigned char)(BL == 0x0D ? 5 : 7);   /* eingehaengt */
+            sb[t].noirq &= (unsigned char)~(1 << sb[t].irql);
+        }
         return 0;
     }
     case 0x0300: case 0x0301: case 0x0302: {    /* Real Mode aufrufen    */
@@ -4551,6 +4563,14 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     if (cs == dp_stub[t] && op == 0xF4) {       /* Standard-Vektor: an RM */
         n = (unsigned)lrd(lin + 1, 1);
         f->r.eip += 2;                          /* weiter bei IRET(D)    */
+        if (n >= 0x0B && n <= 0x0F && vec_def(n)) {
+            /* IRQ 3-7 ohne Handler auch im Real Mode: gleich quittieren
+               statt PM -> RM -> PM (der Stummel tut dort nichts) */
+            visr[t] &= (unsigned char)~(1 << (n - 8));
+            if (n == 0x0D || n == 0x0F)         /* virtuelle SB: Leitung */
+                sb[t].noirq |= (unsigned char)(1 << (n - 8));   /* ruht */
+            return 0;
+        }
         return dp_reflect(f, t, n);
     }
     {                                           /* Praefixe uebergehen   */
