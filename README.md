@@ -325,10 +325,11 @@ und PC-DOS.
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
   (0300h–0302h), Speicher bis 1 GB Adressraum (0501h–0503h), virtuelles
   IF; andere Interrupts gehen an den Handler des Programms oder an DOS
-  im Real Mode, Ende mit INT 21h 4Ch aus dem Protected Mode. Noch nicht:
-  Callbacks (0303h), Raw Switch (0306h), Ausnahme-Handler (0202h),
-  Hardware-Interrupts im Protected Mode – große DOS-Extender wie DOS4GW
-  brauchen das wohl noch
+  im Real Mode, Ende mit INT 21h 4Ch aus dem Protected Mode; dazu
+  Ausnahme-Handler (0202h/0203h), Callbacks (0303h/0304h) und Raw Switch
+  (0306h). Mit DOS/4G läuft DOOM 1.2 (Shareware) durch die ganze
+  Initialisierung bis zum Grafikmodus; es fehlen noch virtuelle VGA und
+  Hardware-Interrupts (Tastatur, Takt) im Protected Mode
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–3008,

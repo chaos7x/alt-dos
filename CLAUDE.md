@@ -1759,10 +1759,32 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Host-Bereich des Programms, 1 KB, Rücksprung F000:0520 „ARPL E3h“) ->
   `dp_back`. Speicher 0501h ab Seite 400h (4 MB) bis 1 GB, eigene
   Seitentabellen mit PTE_OWN im Seitenverzeichnis, v86_destroy gibt sie
-  frei. Nächste Stufe: 0303h Callbacks, 0306h Raw Switch, 0202h/0203h
-  Ausnahmen, IRQs (Takt/Tastatur) an PM-Handler, Takt im PM weiter-
-  zählen (46Ch steht, solange das Programm im PM läuft), Test mit DOS4GW
-  (z. B. ein Freeware-Spiel),
+  frei. Stufe 2 teilweise (Test mit DOOM 1.2 Shareware, DOS/4G
+  eingebunden, aus archive.org „Doom_Knee_Deep_in_the_Dead_Shareware“ –
+  nur zum Testen, nicht im Repository; DOOM läuft bis „ST_Init“, also
+  durch die ganze Initialisierung mit 8 MB DPMI-Speicher): 0306h Raw
+  Switch (PM -> RM: HLT bei Stummel:0530, RM -> PM: F000:0534 „ARPL
+  E4h“, Register wie in der Spezifikation), 0202h/0203h Ausnahmen
+  (Tabelle in der Zustandsseite bei 1536, Standard = HLT bei Stummel:
+  0600+4n -> Box beenden, `dp_exc` legt den DPMI-0.9-Rahmen auf den
+  Host-Stapel – eine Seite DPMI-Speicher, `dp_exstack` –, Rücksprung per
+  RETF nach Stummel:0540 -> `dp_exret`), 0303h/0304h Callbacks (16, bei
+  1728, Einsprung F000:0700+4k „ARPL E5h“ -> `dp_cbcall`: Register in die
+  Struktur, DS:(E)SI = RM-Stapel über `dp_cbss`, IRET-Rahmen nach
+  Stummel:0548 -> `dp_cbret` lädt den Real Mode aus ES:(E)DI), 0702h/
+  0703h ohne Wirkung, Präfixe (66h …) vor IN/OUT/CLI/STI im PM.
+  Sicherheit: das Seitenverzeichnis der Box bekommt die Einträge ab 512
+  (Kernel-Alias) ohne U-Bit – DOS/4G legt flache 4-GB-Selektoren an,
+  Ring 3 käme sonst an den Kernel. Lehre: DOS/4G ruft 0202h in einer
+  Schleife über alle 32 Ausnahmen und lädt AX nicht neu – ein fehlender
+  Dienst (AX = 8001h) brachte die ganze Kette durcheinander. Fehlersuche:
+  Meldungen in einem Puffer sammeln und in `v86_replay` ausgeben (im
+  Vollbild geht vio_kputs verloren). Nächste Schritte: virtuelle VGA
+  (Vordergrund direkt auf der Hardware: Ports 3C0h–3DFh über die
+  I/O-Bitmap, A0000–BFFFF physisch, Moduswechsel über das echte
+  Video-BIOS, Hintergrund einfrieren + sichern), virtueller PIT (DOOM
+  stellt 140 Hz ein), IRQ 0/1 an PM-Handler (auch während Real Mode),
+  Takt im PM weiterzählen (46Ch steht im PM),
   mehr als 2,9 MB XMS (weitere Seitentabellen),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,

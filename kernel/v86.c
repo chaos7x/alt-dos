@@ -115,6 +115,7 @@ static void ems_pick_frame(void);
 static unsigned char ems_frame;         /* erste EMS-Rahmenseite, 0 = keiner */
 static unsigned ems_lim[NTASK];         /* EMS: logische Seiten + 1, 0 = Vorgabe */
 
+
 /* Thunks (erstes Codesegment) */
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 int  __far kf_box_ctl(unsigned op, unsigned a);
@@ -268,9 +269,9 @@ unsigned long __far v86_create(int t, unsigned kb)
     /* Seitenverzeichnis: 0 = eigene Tabelle, ab 512 wie der Kernel */
     for (i = 0; i < 1024; i++) {
         e = 0;
-        if (i >= 512) {
-            scratch_map(kcr3, 4095);
-            e = get32(SCRATCH, i);
+        if (i >= 512) {                 /* Kernel-Alias: nur Ring 0 (sonst  */
+            scratch_map(kcr3, 4095);    /* kaemen DPMI-Programme mit 4-GB-  */
+            e = get32(SCRATCH, i) & ~(unsigned long)PTE_U;  /* Selektoren dran) */
         } else if (i == 0)
             e = PG_LIN(pt_box[t]) | PTE_BOX;
         scratch2_map(PG_LIN(pd_box[t]), 4095);
@@ -353,6 +354,11 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, 0x520 >> 2, 0x90CFE363UL);       /* DPMI-Ruecksprung  */
     put32(SCRATCH, 0x528 >> 2, 0x909090CBUL);       /* RETF (0305h)      */
     put32(SCRATCH, 0x52C >> 2, 0x9090CB66UL);       /* RETFD             */
+    put32(SCRATCH, 0x530 >> 2, 0x909090F4UL);       /* Raw PM -> RM: HLT */
+    put32(SCRATCH, 0x548 >> 2, 0x909090F4UL);       /* Callback-Rueckkehr */
+    for (i = 0; i < 16; i++)                        /* Callbacks: ARPL E5 */
+        put32(SCRATCH, (0x700 >> 2) + i, 0x90CBE563UL);
+    put32(SCRATCH, 0x534 >> 2, 0x90CFE463UL);       /* Raw RM -> PM: ARPL E4 */
     *(unsigned char __far *)MK_FP(SCRATCH, INT8_STUB + 4) = 0xCF;
     /* Diskettenparameter (INT 13h 08h, INT 1Eh) bei F000:0800, 1,44 MB */
     put32(SCRATCH, DPT_OFF >> 2, 0x122502AFUL);
@@ -2280,13 +2286,24 @@ static void k2_lldt(unsigned sel);
 #define CT_DOSFR  4                     /* 0101h                         */
 
 static unsigned char dp_on[NTASK], dp_32[NTASK], dp_dep[NTASK];
+static unsigned dp_exss[NTASK];         /* Selektor des Ausnahme-Stapels  */
+static unsigned dp_cbss[NTASK];         /* Selektor fuer den RM-Stapel (Callback) */
+struct dpcb { unsigned short psel, ssel; unsigned long poff, soff; };
+#define NCB       16
+#define DP_CB     0x0700                /* Callback-Einspruenge (4 Byte) */
+#define DP_CBRET  0x0548                /* Ruecksprung aus einem Callback */
+#define CB(t, k)  ((struct dpcb __far *)MK_FP(SCRATCH, 1728 + (k) * 12))
+#define DP_EXC    0x0600                /* Standard-Ausnahme-Handler (4 Byte) */
+#define DP_EXRET  0x0540                /* Ruecksprung aus einem Handler  */
+#define EXV(t, n) ((unsigned long __far *)MK_FP(SCRATCH, 1536 + (n) * 6))
 static unsigned dp_rmseg[NTASK], dp_stub[NTASK], dp_psp[NTASK];
 static pg_t dp_ldt[NTASK], dp_st[NTASK];        /* LDT-Seite, Zustandsseite */
 static struct desc dp_oldldt[NTASK];
 static unsigned char dp_lmap[NTASK][LDT_N / 8];
 static struct { unsigned long lpg, npg; } dp_mem[NTASK][NDPM];
 
-/* Zustandsseite: 0 PM-Vektoren (256 x 6), 2048 Rahmen (DPCT x 64) */
+/* Zustandsseite: 0 PM-Vektoren (256 x 6), 1536 Ausnahme-Handler (32 x 6),
+   2048 Rahmen (DPCT x 64) */
 struct dpctx {
     unsigned short type, cs, ss, ds, es, fs, gs, rsv;
     unsigned long eip, eflags, esp, lin, r[8];  /* r: EDI..EAX       */
@@ -2540,6 +2557,18 @@ static unsigned dp_switch(struct v86_frame *f, int t)
         v[0] = DP_STUB + i * 4;
         *(unsigned short __far *)((char __far *)v + 4) = dp_stub[t];
     }
+    scratch_map(pte_get(t, 0xF0) & ~0xFFFUL, 4095);
+    for (i = 0; i < 32; i++)                    /* Standard: HLT -> Ende  */
+        put32(SCRATCH, (DP_EXC >> 2) + i, 0x909090F4UL);
+    put32(SCRATCH, DP_EXRET >> 2, 0x909090F4UL);
+    scratch_map(PG_LIN(dp_st[t]), 4095);
+    for (i = 0; i < 32; i++) {
+        EXV(t, i)[0] = DP_EXC + i * 4;
+        *(unsigned short __far *)((char __far *)EXV(t, i) + 4) = dp_stub[t];
+    }
+    dp_exss[t] = dp_cbss[t] = 0;                /* Stapel bei Bedarf     */
+    for (i = 0; i < NCB; i++)
+        CB(t, i)->psel = 0;
     dp_on[t] = 1;
     /* Rahmen: weiter im PM hinter dem Fernaufruf */
     f->r.eip = rip;
@@ -2821,6 +2850,23 @@ static unsigned dp31(struct v86_frame *f, int t)
         wr16(0, BL * 4 + 2, CX);
         wr16(0, BL * 4, DX);
         return 0;
+    case 0x0202: case 0x0203: {                 /* Ausnahme-Handler      */
+        unsigned long __far *v;
+        if (BL > 31)
+            DERR(0x8021);
+        if (AX == 0x0203 && !sel_ok(t, CX) && CX != dp_stub[t])
+            DERR(0x8022);
+        scratch_map(PG_LIN(dp_st[t]), 4095);
+        v = EXV(t, BL);
+        if (AX == 0x0202) {
+            CX = *(unsigned short __far *)((char __far *)v + 4);
+            f->edx = dp_32[t] ? v[0] : (unsigned)v[0];
+        } else {
+            v[0] = dp_32[t] ? f->edx : DX;
+            *(unsigned short __far *)((char __far *)v + 4) = CX;
+        }
+        return 0;
+    }
     case 0x0204: {                              /* PM-Vektor holen       */
         unsigned long __far *v = pmvec(t, BL);
         CX = *(unsigned short __far *)((char __far *)v + 4);
@@ -2867,6 +2913,12 @@ static unsigned dp31(struct v86_frame *f, int t)
         CX = DP_BACK + 8;                       /* F000:0528 RETF        */
         SI = dp_stub[t];
         f->edi = dp_32[t] ? DP_BACK + 12 : DP_BACK + 8;  /* 052C: RETFD */
+        return 0;
+    case 0x0306:                                /* Raw Switch: Adressen  */
+        BX = VBIOS;                             /* RM -> PM: F000:0534   */
+        CX = 0x0534;
+        SI = dp_stub[t];                        /* PM -> RM: Stummel:0530 */
+        f->edi = 0x0530;
         return 0;
     case 0x0400:                                /* Version 0.90          */
         AX = 0x005A;
@@ -2940,7 +2992,32 @@ done501:
         tlb(t);
         return 0;
     case 0x0600: case 0x0601: case 0x0602: case 0x0603:
+    case 0x0702: case 0x0703:                   /* (DPMI 1.0) Auslagern  */
         return 0;                               /* nichts auszulagern    */
+    case 0x0303: {                              /* Real-Mode-Callback    */
+        struct dpcb __far *cb;
+        scratch_map(PG_LIN(dp_st[t]), 4095);
+        for (k = 0; k < NCB; k++)
+            if (!CB(t, k)->psel)
+                break;
+        if (k == NCB)
+            DERR(0x8015);
+        cb = CB(t, k);
+        cb->psel = es_[1];                      /* DS:(E)SI Prozedur     */
+        cb->poff = ESI32;
+        cb->ssel = es_[0];                      /* ES:(E)DI Struktur     */
+        cb->soff = EDI32;
+        CX = VBIOS;
+        DX = DP_CB + k * 4;
+        return 0;
+    }
+    case 0x0304:
+        scratch_map(PG_LIN(dp_st[t]), 4095);
+        k = (DX - DP_CB) >> 2;
+        if (CX != VBIOS || DX < DP_CB || k >= NCB || !CB(t, k)->psel)
+            DERR(0x8024);
+        CB(t, k)->psel = 0;
+        return 0;
     case 0x0604:
         BX = 0;
         CX = 4096;
@@ -2996,6 +3073,173 @@ static unsigned dp_int(struct v86_frame *f, int t, unsigned n)
     return 0;
 }
 
+/* gesperrter Stapel des Hosts (eine Seite): oben Ausnahmen, ab 800h
+   abwaerts Callbacks */
+static int dp_exstack(int t)
+{
+    unsigned long lp;
+    unsigned k;
+    int k2;
+    if (dp_exss[t])
+        return 1;
+    lp = dmem_gap(t, 1);
+    if (!lp || !dmem_map(t, lp, 1) || (k2 = ldt_alloc(t, 1)) < 0)
+        return 0;
+    ldesc(t, (unsigned)k2, lp << 12, 0xFFF, 0xF2, dp_32[t] ? 0x40 : 0);
+    dp_exss[t] = SEL(k2);
+    for (k = 0; k < NDPM && dp_mem[t][k].npg; k++)
+        ;
+    if (k < NDPM) {                             /* beim Ende freigeben   */
+        dp_mem[t][k].lpg = lp;
+        dp_mem[t][k].npg = 1;
+    }
+    tlb(t);
+    return 1;
+}
+
+/* Callback (0303h) aus dem Real Mode: Register in die Struktur, PM-
+   Prozedur mit DS:(E)SI = RM-Stapel, ES:(E)DI = Struktur, IRET-Rahmen
+   zurueck nach Stummel:0548 */
+static unsigned dp_cbcall(struct v86_frame *f, int t, unsigned k)
+{
+    struct dpcb __far *cb;
+    unsigned short psel, ssel;
+    unsigned long poff, soff, b, sp, rsp;
+    unsigned i, w = dp_32[t] ? 4 : 2;
+    int k2;
+    if (!dp_on[t] || k >= NCB || !dp_exstack(t))
+        return 1;
+    scratch_map(PG_LIN(dp_st[t]), 4095);
+    cb = CB(t, k);
+    psel = cb->psel;
+    ssel = cb->ssel;
+    poff = cb->poff;
+    soff = cb->soff;
+    if (!psel)
+        return 1;
+    b = sel_base(t, ssel) + soff;
+    for (i = 0; i < 8; i++)
+        if (i != 3)
+            lwr(b + i * 4, (&f->edi)[i], 4);
+    lwr(b + 0x20, f->r.eflags, 2);
+    lwr(b + 0x22, f->r.es, 2);
+    lwr(b + 0x24, f->r.ds, 2);
+    lwr(b + 0x26, f->r.fs, 2);
+    lwr(b + 0x28, f->r.gs, 2);
+    lwr(b + 0x2A, f->r.eip, 2);
+    lwr(b + 0x2C, f->r.cs, 2);
+    rsp = (unsigned)f->r.esp;
+    lwr(b + 0x2E, rsp, 2);
+    lwr(b + 0x30, f->r.ss, 2);
+    if (!dp_cbss[t]) {
+        if ((k2 = ldt_alloc(t, 1)) < 0)
+            return 1;
+        dp_cbss[t] = SEL(k2);
+    }
+    ldesc(t, IDX(dp_cbss[t]), (unsigned long)(unsigned)f->r.ss << 4, 0xFFFF, 0xF2, 0);
+    sp = 0x800 - 3 * w;                         /* IRET-Rahmen           */
+    b = sel_base(t, dp_exss[t]);
+    lwr(b + sp, DP_CBRET, w);
+    lwr(b + sp + w, dp_stub[t], w);
+    lwr(b + sp + 2 * w, (f->r.eflags & 0x0CD5UL) | 2, w);
+    f->r.ss = dp_exss[t];
+    f->r.esp = sp;
+    f->r.cs = psel;
+    f->r.eip = poff;
+    f->r.ds = dp_cbss[t];
+    f->r.es = ssel;
+    f->r.fs = f->r.gs = 0;
+    f->esi = rsp;
+    f->edi = soff;
+    f->r.eflags = (f->r.eflags & 0x0CD5UL) | FL_IF | 2;   /* VM aus      */
+    vfl[t] &= ~FL_IF;
+    return 2;
+}
+
+/* nach dem IRET der Callback-Prozedur: ES:(E)DI = Struktur -> Real Mode */
+static unsigned dp_cbret(struct v86_frame *f, int t)
+{
+    unsigned short *seg = (unsigned short *)f;
+    unsigned long b = sel_base(t, seg[0]) + (dp_32[t] ? f->edi : (unsigned)f->edi);
+    unsigned i;
+    unsigned long r[8];
+    for (i = 0; i < 8; i++)
+        r[i] = i == 3 ? 0 : lrd(b + i * 4, 4);
+    for (i = 0; i < 8; i++)
+        if (i != 3)
+            (&f->edi)[i] = r[i];
+    f->r.eflags = (lrd(b + 0x20, 2) & 0x0CD5UL) | 0x20000UL | FL_IF | 2;
+    f->r.es = lrd(b + 0x22, 2);
+    f->r.ds = lrd(b + 0x24, 2);
+    f->r.fs = lrd(b + 0x26, 2);
+    f->r.gs = lrd(b + 0x28, 2);
+    f->r.eip = lrd(b + 0x2A, 2);
+    f->r.cs = lrd(b + 0x2C, 2);
+    f->r.esp = lrd(b + 0x2E, 2);
+    f->r.ss = lrd(b + 0x30, 2);
+    vfl[t] |= FL_IF;
+    return 2;
+}
+
+/* Ausnahme an den Handler des Programms (0203h): Rahmen nach DPMI 0.9
+   auf dem Ausnahme-Stapel, Ruecksprung per RETF nach Stummel:0540 */
+static unsigned dp_exc(struct v86_frame *f, int t)
+{
+    unsigned long __far *v, off, sp, b;
+    unsigned sel, k, w = dp_32[t] ? 4 : 2;
+    unsigned long fr[8];
+    if (f->vec > 31)
+        return 1;
+    scratch_map(PG_LIN(dp_st[t]), 4095);
+    v = EXV(t, f->vec);
+    off = v[0];
+    sel = *(unsigned short __far *)((char __far *)v + 4);
+    if (sel == dp_stub[t] && off == DP_EXC + f->vec * 4)
+        return 1;                               /* kein eigener Handler  */
+    if (!dp_exstack(t))
+        return 1;
+    fr[0] = DP_EXRET;                           /* Ruecksprung           */
+    fr[1] = dp_stub[t];
+    fr[2] = f->err;
+    fr[3] = f->r.eip;
+    fr[4] = f->r.cs;
+    fr[5] = (f->r.eflags & ~FL_IF) | (vfl[t] & FL_IF);
+    fr[6] = f->r.esp;
+    fr[7] = f->r.ss;
+    b = sel_base(t, dp_exss[t]);
+    sp = 0x1000 - 8 * w;
+    for (k = 0; k < 8; k++)
+        lwr(b + sp + k * w, fr[k], w);
+    f->r.ss = dp_exss[t];
+    f->r.esp = sp;
+    f->r.cs = sel;
+    f->r.eip = off;
+    vfl[t] &= ~FL_IF;
+    f->r.eflags &= ~FL_TF;
+    return 0;
+}
+
+static unsigned dp_exret(struct v86_frame *f, int t)  /* nach RETF        */
+{
+    unsigned w = dp_32[t] ? 4 : 2;
+    unsigned long b = sel_base(t, (unsigned)f->r.ss) + (dp_32[t] ? f->r.esp : (unsigned)f->r.esp);
+    /* RETF hat ret-EIP/CS genommen: Fehlercode, EIP, CS, EFLAGS, ESP, SS */
+    unsigned long eip = lrd(b + w, w), cs = lrd(b + 2 * w, w), fl = lrd(b + 3 * w, w);
+    unsigned long esp = lrd(b + 4 * w, w), ss = lrd(b + 5 * w, w);
+    if (!sel_ok(t, (unsigned)cs) || !cs || !sel_ok(t, (unsigned)ss) || !ss)
+        return 1;
+    f->r.eip = eip;
+    f->r.cs = cs;
+    f->r.esp = esp;
+    f->r.ss = ss;
+    if (fl & FL_IF)
+        vfl[t] |= FL_IF;
+    else
+        vfl[t] &= ~FL_IF;
+    f->r.eflags = (fl & 0x0CD5UL) | FL_IF | 2;
+    return 0;
+}
+
 static unsigned dp_trap(struct v86_frame *f, int t)
 {
     unsigned long lin;
@@ -3003,7 +3247,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     unsigned n, cs = (unsigned)f->r.cs;
 
     if (f->vec != 13)
-        return 1;                               /* (spaeter: 0202h)      */
+        return dp_exc(f, t);
     lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
     op = (unsigned char)lrd(lin, 1);
     if (f->err & 2) {                           /* INT n                 */
@@ -3012,11 +3256,44 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return dp_int(f, t, n);
     }
     if (f->err)
-        return 1;
+        return dp_exc(f, t);
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_EXRET)
+        return dp_exret(f, t);
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_CBRET)
+        return dp_cbret(f, t);
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip >= DP_EXC &&
+        (unsigned)f->r.eip < DP_EXC + 128)
+        return 1;                               /* Standard: Ende        */
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == 0x0530) {
+        /* Raw Switch PM -> RM: AX DS, CX ES, DX SS, (E)BX (E)SP, SI CS,
+           (E)DI (E)IP - alles Real-Mode-Segmente */
+        f->r.ds = AX;
+        f->r.es = CX;
+        f->r.ss = DX;
+        f->r.esp = dp_32[t] ? f->ebx : BX;
+        f->r.cs = SI;
+        f->r.eip = dp_32[t] ? f->edi : DI;
+        f->r.fs = f->r.gs = 0;
+        f->r.eflags = (f->r.eflags & 0x0CD5UL) | 0x20000UL | FL_IF | 2;
+        return 2;
+    }
     if (cs == dp_stub[t] && op == 0xF4) {       /* Standard-Vektor: an RM */
         n = (unsigned)lrd(lin + 1, 1);
         f->r.eip += 2;                          /* weiter bei IRET(D)    */
         return dp_reflect(f, t, n);
+    }
+    {                                           /* Praefixe uebergehen   */
+        unsigned pl = 0, o16 = 0;
+        while ((op == 0x66 || op == 0x67 || op == 0xF2 || op == 0xF3 || op == 0x2E ||
+                op == 0x3E || op == 0x26 || op == 0x36 || op == 0x64 || op == 0x65) && pl < 8) {
+            if (op == 0x66)
+                o16 ^= 1;
+            pl++;
+            op = (unsigned char)lrd(lin + pl, 1);
+        }
+        f->r.eip += pl;
+        lin += pl;
+        (void)o16;
     }
     switch (op) {
     case 0xFA:                                  /* CLI/STI: virtuell     */
@@ -3047,7 +3324,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         f->r.eip += op <= 0xE7 ? 2 : 1;
         return 0;
     }
-    return 1;
+    return dp_exc(f, t);
 }
 
 unsigned __far dpmi_trap(struct v86_frame *f)
@@ -3080,6 +3357,22 @@ static unsigned monitor(struct v86_frame *f, int t)
             return dp_switch(f, t);
         if (cs == VBIOS && ip == 0x0520)        /* DPMI: zurueck in den PM */
             return dp_back(f, t);
+        if (cs == VBIOS && ip >= 0x0700 && ip < 0x0740)   /* DPMI-Callback */
+            return dp_cbcall(f, t, (ip - 0x0700) >> 2);
+        if (cs == VBIOS && ip == 0x0534) {      /* DPMI Raw Switch RM -> PM */
+            if (!dp_on[t] || !sel_ok(t, AX) || !sel_ok(t, CX) || !sel_ok(t, DX) ||
+                !sel_ok(t, SI) || !SI || !DX)
+                return 1;
+            f->r.ds = AX;
+            f->r.es = CX;
+            f->r.ss = DX;
+            f->r.esp = dp_32[t] ? f->ebx : BX;
+            f->r.cs = SI;
+            f->r.eip = dp_32[t] ? f->edi : DI;
+            f->r.fs = f->r.gs = 0;
+            f->r.eflags = (f->r.eflags & 0x0CD5UL) | FL_IF | 2;
+            return 2;
+        }
         if (cs == VBIOS && ip == XMS_STUB) {     /* Fernaufruf: kein FLAGS */
             xms(f, t);
             return 0;
