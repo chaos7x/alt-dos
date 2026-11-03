@@ -2009,7 +2009,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zweite Sitzung. Jetzt `tss[t].ldt = LDT_SEL(t)` in dp_switch, 0 in
   dpmi_end. Gefunden mit Ausgaben auf Port E9h (`-debugcon file:`):
   SLDT zeigte 0000 beim Absturz. Geprüft: START DOOM, Alt+Esc zu CMD
-  (VER), zurück, spielt weiter. AUD_CLOSE nur im
+  (VER), zurück, spielt weiter.
+  Vom Nutzer auf dem P3B-F bestätigt: START DOOM (Musik auf AdLib) und
+  `PLAY /FM` mit MIDI laufen nebeneinander, Sitzungswechsel geht; der
+  Ton hakte am Anfang kurz, danach sauber (noch nicht untersucht). AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
