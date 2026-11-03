@@ -2021,7 +2021,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   START DOOM, 6 s weg, zurück -> Effekte im Mitschnitt weiter.
   DOOM 1.9 (Shareware, archive.org „doom19s_202607“, nur zum Testen) in
   QEMU geprüft: synchron und per START mit Alt+Esc hin und zurück, Demo
-  läuft, Ton (SB + AdLib) vor und nach dem Wechsel. AUD_CLOSE nur im
+  läuft, Ton (SB + AdLib) vor und nach dem Wechsel.
+  DOOM 1.9 mit Sound Blaster „nicht rund“ (Nutzer; ohne Effekte rund):
+  Zähler über Port E9h zeigten 82 statt 140 Takte je Sekunde – DMX
+  macht PUSHFD; POP EAX; CLI … PUSH EAX; POPFD, das POPF trappt im PM
+  nicht, das virtuelle IF blieb bis zum Wachhund (3 Takte) aus. Versuche:
+  Stapelstelle merken (Flags liegen im Register – nichts), Einzelschritt
+  mit TF bis POPF/IRET (zu teuer: ~16.000 Fallen/s, die Mischschleife
+  hat mehr als 1000 Befehle mit CLI). Lösung: beim CLI im PM (IF war an)
+  Hardware-Haltepunkte (Debugregister, lokal L0/L1 – der Taskwechsel
+  löscht sie) auf das erste `PUSH reg; POPF(D)` (DR0) und das erste
+  `IRET(D)` (DR1) in den nächsten 1 KB (`dp_bp_set`, Suche in `sb_buf`);
+  #DB -> `dp_stepped`: POPF nachbilden, IF an; IRET mit RF laufen lassen,
+  IF aus dem Rahmen. Ein Treffer mitten in einem Befehl löst nie aus,
+  sonst bleibt der Wachhund. TF-Einzelschritt nur noch als Rückfall (8
+  Befehle, REP ohne TF); TF/Haltepunkte vor INT n, Ausnahmen und Stummel
+  aus (nicht in den Real Mode). Ergebnis in QEMU: Wachhund greift nicht
+  mehr, `-timedemo demo1` mit Ton 10.345 statt (vorher > 5 min, nicht
+  fertig) gegen 9.040 Ticks ohne Ton; DOOM 1.2 und 1.9 (START + Alt+Esc)
+  mit Ton. DGROUP 62,9 KB. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
