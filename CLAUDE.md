@@ -1952,7 +1952,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Zähler und DSP-Blocklänge danach); die Box öffnet damit. Geprüft mit
   `LAT.COM` (Piepser, dann 8.000 Byte per DSP 14h, WAV mit pcspk und
   sb16 auf einem audiodev): neu folgt der SB-Ton direkt, alt kam er gar
-  nicht (unter 8 KB, nie gestartet). AUD_CLOSE nur im
+  nicht (unter 8 KB, nie gestartet).
+  Vom Nutzer auf dem ASUS P3B-F in 86Box bestätigt: DOOM funktioniert
+  (Spiel, Tasten, Ton der Waffe ohne Verzögerung). AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
