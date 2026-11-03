@@ -684,7 +684,7 @@ dmask     dd 0
 old2f     dd 0
 
 t_path    db "PATH=X:\DOS\BOX;X:\DOS", 0
-t_blaster db "BLASTER=A220 I5 D1 T3", 0  ; SB 2.0; IRQ 5 oder 7 geht beides
+t_blaster db "BLASTER=A220 I5 D1 H5 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
 has_bl    db 0
 t_ini     db "X:\DOS\BOX\DOSBOX.INI", 0
 t_star    db "*", 0

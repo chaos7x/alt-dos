@@ -340,9 +340,10 @@ und PC-DOS.
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip
-  (388h, FM-Musik). Virtuelle Sound Blaster 2.0 (220h, DMA 1, IRQ 5/7):
+  (388h, FM-Musik). Virtuelle Sound Blaster 16 (220h, DMA 1/5, IRQ 5/7, DSP 4.05,
+  16 Bit/Stereo, Mixer):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
-  Effekte), `BLASTER=A220 I5 D1 T3` steht in der Umgebung. Datum und
+  Effekte), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Datum und
   Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). CMOS (Port 70h/71h) meldet
   der Box ihren eigenen erweiterten Speicher (MEM/MSD von MS-DOS), INT 10h
   1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein

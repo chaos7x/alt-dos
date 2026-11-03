@@ -121,16 +121,24 @@ static void vp_free(pg_t p)
 static void xms_end(int t);
 static void vga_freeze(int t);
 struct vsb {
-    unsigned char on, rst, cmd, need, nargs, args[2];
+    unsigned char on, rst, cmd, need, nargs, args[3];
     unsigned char out[4], on_, oh;      /* Ausgabe an 22Ah (Ring)        */
-    unsigned char spk, act, ai, irqp, aud, irql;
-    unsigned rate, blk, pos, frac;      /* Rate, Blocklaenge, Stand      */
+    unsigned char spk, act, ai, irqp, aud, irql, dsp4;
+    unsigned char b16, st, sgn, ch;     /* laufende Ausgabe: 16 Bit, stereo,
+                                           mit Vorzeichen, DMA 1 (0) / 5 (1) */
+    unsigned char conv, ist;            /* auf 8 Bit mono gerechnet; Mixer 82h */
+    unsigned char och, obits;           /* geoeffnetes Format            */
+    unsigned char mix_i, mix[24];       /* Mixer: Index, Register 30h-47h */
+    unsigned rate, orate, blk8, frac;   /* Rate, Blocklaenge 48h         */
+    unsigned long blk, pos;             /* Block in Bytes, Stand         */
     unsigned long last;                 /* Kerneltakt der letzten Abrechnung */
-    unsigned dbase, dcnt, dcur, dleft;  /* DMA Kanal 1: Basis, Laenge-1, aktuell, Rest */
-    unsigned char dpage, dff, dmode, dmask;
+    unsigned dbase[2], dcnt[2], dcur[2], dleft[2];  /* DMA 1 / 5: Basis,
+                                           Laenge-1, aktuell, Rest (Einheiten) */
+    unsigned char dpage[2], dff[2];
 };
 static struct vsb sb[NTASK];
 static void sb_stop(int t);
+static void sb_reset(int t);
 static void lwin(unsigned idx, unsigned long lin);
 static void kpit_set(unsigned dv);
 static void hlt_wait(int t);
@@ -442,8 +450,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
     spk[t] = spk_open[t] = opl_open[t] = 0;   /* (tss_init sperrt alle Ports) */
-    sb[t].act = sb[t].aud = sb[t].irqp = sb[t].on_ = sb[t].need = sb[t].spk = sb[t].irql = 0;
-    sb[t].rate = 11025;
+    sb_reset(t);
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
@@ -985,6 +992,29 @@ static void sb_put(int t, unsigned char v)
     }
 }
 
+/* Grundzustand (Box angelegt, DSP-Reset); Mixer nur beim Anlegen und
+   bei Mixer-Reset (Register 0) */
+static void sb_mixreset(struct vsb *b)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(b->mix); i++)
+        b->mix[i] = 0;
+    for (i = 0; i < 6; i++)                     /* 30h-35h Lautstaerken  */
+        b->mix[i] = 0xC0;
+    b->mix[0x3C - 0x30] = 0x1F;                 /* Ausgaenge an          */
+    b->mix[0x46 - 0x30] = b->mix[0x47 - 0x30] = 0x80;
+}
+
+static void sb_reset(int t)
+{
+    struct vsb *b = &sb[t];
+    unsigned char *p = (unsigned char *)b;
+    unsigned i;
+    for (i = 0; i < sizeof(*b); i++)
+        p[i] = 0;
+    b->rate = 11025;
+    sb_mixreset(b);
+}
 
 static void sb_stop(int t)
 {
@@ -996,80 +1026,135 @@ static void sb_stop(int t)
     }
 }
 
-static void sb_start(int t, unsigned len, int ai)
+static int sb_open(unsigned rate, unsigned ch, unsigned bits)
 {
     static struct fapi_audfmt fmt;
+    fmt.rate = rate;
+    fmt.channels = (unsigned char)ch;
+    fmt.bits = (unsigned char)(bits | AUD_SMALL);   /* Spiele: Ton sofort */
+    return kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
+}
+
+/* Ausgabe beginnen: len Bytes je Block; Format aus b16/st/sgn/ch.
+   Kann die Karte das Format nicht (SB 2.0 und 16 Bit/Stereo), geht der
+   Ton heruntergerechnet als 8 Bit mono hinaus (conv) */
+static void sb_start(int t, unsigned long len, int ai)
+{
+    struct vsb *b = &sb[t];
+    unsigned ch = b->st ? 2 : 1, bits = b->b16 ? 16 : 8;
     if (!len)
         return;
-    if (!sb[t].aud || fmt.rate != sb[t].rate) {
-        if (sb[t].aud)
+    if (!b->rate)
+        b->rate = 11025;
+    if (!b->aud || b->orate != b->rate || b->och != ch || b->obits != bits) {
+        if (b->aud)
             kf_box_aud(AUD_CLOSE, 0, 0);
-        fmt.rate = sb[t].rate ? sb[t].rate : 11025;
-        fmt.channels = 1;
-        fmt.bits = 8 | AUD_SMALL;       /* Spiele: Ton sofort    */
-        sb[t].aud = kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
+        b->conv = 0;
+        b->aud = (unsigned char)sb_open(b->rate, ch, bits);
+        if (!b->aud && (ch != 1 || bits != 8)) {
+            b->aud = (unsigned char)sb_open(b->rate, 1, 8);
+            b->conv = 1;
+        }
+        b->orate = b->rate;
+        b->och = (unsigned char)ch;
+        b->obits = (unsigned char)bits;
     }
-    sb[t].blk = len;
-    sb[t].pos = 0;
-    sb[t].frac = 0;
-    sb[t].ai = (unsigned char)ai;
-    sb[t].act = 1;
-    sb[t].last = get_ticks();
+    b->blk = len;
+    b->pos = 0;
+    b->frac = 0;
+    b->ai = (unsigned char)ai;
+    b->act = 1;
+    b->last = get_ticks();
+}
+
+/* Vorzeichen anpassen (Karte: 8 Bit ohne, 16 Bit mit), ggf. auf 8 Bit
+   mono herunterrechnen (linker Kanal) -> Bytes zum Ausgeben */
+static unsigned sb_conv(struct vsb *b, unsigned n)
+{
+    unsigned i, o, fs;
+    unsigned char x = 0;
+    if (b->b16 && !b->sgn)
+        x = 0x80;                               /* hohes Byte kippen     */
+    else if (!b->b16 && b->sgn)
+        x = 0x80;
+    if (x)
+        for (i = b->b16; i < n; i += 1 + b->b16)
+            sb_buf[i] ^= x;
+    if (!b->conv)
+        return n;
+    fs = (1 + b->b16) * (b->st ? 2 : 1);
+    for (i = o = 0; i + fs <= n; i += fs)
+        sb_buf[o++] = (char)(b->b16 ? sb_buf[i + 1] ^ 0x80 : sb_buf[i]);
+    return o;
 }
 
 /* faellige Bytes ausgeben, Blockende -> IRQ; im Ruecksprung in die Box
-   (Interrupts aus), schreibt mit Interrupts an (die Karte kann warten) */
+   (inject, dp_hwint) */
 static void sb_pump(int t)
 {
-    unsigned long now;
-    unsigned d, n, due;
-    if (!sb[t].act)
+    struct vsb *b = &sb[t];
+    unsigned long now, lin, n, room;
+    unsigned d, fr, u, k, w;
+    int c;
+    if (!b->act)
         return;
     now = get_ticks();
-    d = now - sb[t].last > 20 ? 20 : (unsigned)(now - sb[t].last);
+    d = now - b->last > 20 ? 20 : (unsigned)(now - b->last);
     if (!d)
         return;
-    sb[t].last = now;
-    due = 0;
-    while (d--) {                               /* Bytes je 10 ms        */
-        due += sb[t].rate / 100;
-        sb[t].frac += sb[t].rate % 100;
-        if (sb[t].frac >= 100) {
-            sb[t].frac -= 100;
-            due++;
+    b->last = now;
+    fr = 0;
+    while (d--) {                               /* Abtastwerte je 10 ms  */
+        fr += b->rate / 100;
+        b->frac += b->rate % 100;
+        if (b->frac >= 100) {
+            b->frac -= 100;
+            fr++;
         }
     }
+    n = (unsigned long)fr << (b->b16 + b->st);  /* Bytes                */
+    c = b->ch;
+    u = 1 + c;                                  /* DMA-Einheit in Bytes  */
     enable_ints();
-    while (due && sb[t].act) {
-        n = sb[t].blk - sb[t].pos;              /* bis zum Blockende     */
-        if (n > due)
-            n = due;
-        if (n > sb[t].dleft + 1)                /* bis zum Ende des DMA-Puffers */
-            n = sb[t].dleft + 1;
-        if (n > sizeof(sb_buf))
-            n = sizeof(sb_buf);
-        lwin(VWIN_IDX, ((unsigned long)sb[t].dpage << 16) + sb[t].dcur);
-        far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, n);
-        if (sb[t].aud && sb[t].spk && box_fg(t))
-            kf_box_aud(AUD_WRITE, (unsigned)sb_buf, n);
-        due -= n;
-        sb[t].pos += n;
-        sb[t].dcur += n;
-        if (n > sb[t].dleft) {                  /* DMA-Puffer zu Ende    */
-            sb[t].dcur = sb[t].dbase;           /* (8237 im Auto-Init)   */
-            sb[t].dleft = sb[t].dcnt;
+    while (n && b->act) {
+        k = (unsigned)(n > sizeof(sb_buf) ? sizeof(sb_buf) : n);
+        if (k > b->blk - b->pos)                /* bis zum Blockende     */
+            k = (unsigned)(b->blk - b->pos);
+        room = ((unsigned long)b->dleft[c] + 1) << c;
+        if (k > room)                           /* bis zum Pufferende    */
+            k = (unsigned)room;
+        if (c)
+            lin = ((unsigned long)(b->dpage[c] & 0xFE) << 16) + ((unsigned long)b->dcur[c] << 1);
+        else
+            lin = ((unsigned long)b->dpage[c] << 16) + b->dcur[c];
+        lwin(VWIN_IDX, lin);
+        far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, k);
+        if (b->aud && (b->spk || b->b16 || b->dsp4) && box_fg(t)) {
+            w = sb_conv(b, k);
+            if (w)
+                kf_box_aud(AUD_WRITE, (unsigned)sb_buf, w);
+        }
+        n -= k;
+        b->pos += k;
+        w = k / u;
+        b->dcur[c] += w;
+        if (w > b->dleft[c]) {                  /* Puffer zu Ende: 8237  */
+            b->dcur[c] = b->dbase[c];           /* im Auto-Init          */
+            b->dleft[c] = b->dcnt[c];
         } else
-            sb[t].dleft -= n;
-        if (sb[t].pos >= sb[t].blk) {           /* Block fertig: IRQ 5 und 7 */
-            sb[t].irqp = sb_line(t);
-            sb[t].pos = 0;
-            if (!sb[t].ai)
-                sb[t].act = 0;
+            b->dleft[c] -= w;
+        if (b->pos >= b->blk) {                 /* Block fertig: IRQ     */
+            b->irqp = sb_line(t);
+            b->ist |= (unsigned char)(b->b16 ? 2 : 1);
+            b->pos = 0;
+            if (!b->ai)
+                b->act = 0;
         }
     }
     irq_off();
 }
 
+/* DSP-Befehle: alles bis DSP 4.05 (SB16) ausser Aufnahme und MIDI */
 static void sb_cmd(int t, unsigned char v)
 {
     struct vsb *b = &sb[t];
@@ -1079,6 +1164,17 @@ static void sb_cmd(int t, unsigned char v)
         if (b->nargs < b->need)
             return;
         b->need = 0;
+        if (b->cmd >= 0xB0 && b->cmd <= 0xCF) { /* SB16: Bx 16, Cx 8 Bit */
+            if (b->cmd & 8)
+                return;                         /* Aufnahme: nicht da    */
+            b->b16 = (unsigned char)(b->cmd < 0xC0);
+            b->ch = b->b16;                     /* 16 Bit ueber DMA 5    */
+            b->st = (unsigned char)((b->args[0] & 0x20) != 0);
+            b->sgn = (unsigned char)((b->args[0] & 0x10) != 0);
+            sb_start(t, ((unsigned long)(b->args[1] | (b->args[2] << 8)) + 1) << b->b16,
+                     (b->cmd & 4) != 0);
+            return;
+        }
         switch (b->cmd) {
         case 0x40:
             d = 256 - b->args[0];
@@ -1086,43 +1182,150 @@ static void sb_cmd(int t, unsigned char v)
                 d = 16;
             b->rate = div3216(1000000UL, d);
             break;
+        case 0x41: case 0x42:                   /* SB16: Rate direkt     */
+            b->rate = (b->args[0] << 8) | b->args[1];
+            break;
         case 0x48:
-            b->blk = (b->args[0] | (b->args[1] << 8)) + 1;
+            b->blk8 = (b->args[0] | (b->args[1] << 8)) + 1;
             break;
         case 0x14: case 0x91:
-            sb_start(t, (b->args[0] | (b->args[1] << 8)) + 1, 0);
+            b->b16 = b->st = b->sgn = b->ch = 0;
+            sb_start(t, (b->args[0] | (b->args[1] << 8)) + 1UL, 0);
             break;
         case 0xE0:
             sb_put(t, (unsigned char)~b->args[0]);
             break;
         case 0xE4:
-            b->args[1] = b->args[0];            /* Testregister          */
+            b->args[2] = b->args[0];            /* Testregister          */
             break;
         }
         return;
     }
     b->cmd = v;
     b->nargs = 0;
+    if (v >= 0xB0 && v <= 0xCF) {
+        b->need = 3;
+        return;
+    }
     switch (v) {
     case 0x10: case 0x40: case 0xE0: case 0xE4: case 0x38:
         b->need = 1;
         break;
     case 0x14: case 0x48: case 0x91: case 0x16: case 0x17: case 0x74: case 0x75:
+    case 0x41: case 0x42: case 0x24:
         b->need = 2;
         break;
     case 0x1C: case 0x90:                       /* Auto-Init mit 48h     */
-        sb_start(t, b->blk ? b->blk : 2048, 1);
+        b->b16 = b->st = b->sgn = b->ch = 0;
+        sb_start(t, b->blk8 ? b->blk8 : 2048, 1);
         break;
-    case 0xD0: b->act = 0; break;               /* anhalten              */
-    case 0xD4: if (b->blk) { b->act = 1; b->last = get_ticks(); } break;
-    case 0xDA: b->ai = 0; break;                /* Auto-Init beenden     */
+    case 0xD0: case 0xD5: b->act = 0; break;    /* anhalten              */
+    case 0xD4: case 0xD6:                       /* weiter                */
+        if (b->blk) {
+            b->act = 1;
+            b->last = get_ticks();
+        }
+        break;
+    case 0xDA: case 0xD9: b->ai = 0; break;     /* Auto-Init beenden     */
     case 0xD1: b->spk = 1; break;
     case 0xD3: b->spk = 0; break;
     case 0xD8: sb_put(t, b->spk ? 0xFF : 0); break;
-    case 0xE1: sb_put(t, 2); sb_put(t, 1); break;   /* DSP 2.01         */
-    case 0xE8: sb_put(t, b->args[1]); break;
-    case 0xF2: b->irqp = sb_line(t); break;     /* IRQ ausloesen         */
+    case 0xE1:                                  /* DSP 4.05 (SB16)       */
+        sb_put(t, 4); sb_put(t, 5);
+        b->dsp4 = 1;
+        break;
+    case 0xE8: sb_put(t, b->args[2]); break;
+    case 0xF2: b->irqp = sb_line(t); b->ist |= 1; break;    /* IRQ   */
+    case 0xF3: b->irqp = sb_line(t); b->ist |= 2; break;
     }
+}
+
+static unsigned char sb_mixget(int t, unsigned char i)
+{
+    struct vsb *b = &sb[t];
+    unsigned char l;
+    if (i == 0x80) {                            /* IRQ-Auswahl           */
+        l = sb_line(t);
+        return (unsigned char)(l & 0x80 ? 4 : 2);
+    }
+    if (i == 0x81)                              /* DMA 1 und 5           */
+        return 0x22;
+    if (i == 0x82)                              /* anstehende IRQ        */
+        return b->ist;
+    if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
+        return b->mix[i - 0x30];
+    return 0;
+}
+
+static void sb_mixset(int t, unsigned char i, unsigned char v)
+{
+    struct vsb *b = &sb[t];
+    if (i == 0)
+        sb_mixreset(b);
+    else if (i == 0x80) {                       /* Programm stellt die   */
+        if (v & 2)                              /* Leitung ein           */
+            b->irql = 5;
+        else if (v & 4)
+            b->irql = 7;
+    } else if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
+        b->mix[i - 0x30] = v;
+}
+
+/* 8237-Ports: Kanal 1 (8 Bit) und 5 (16 Bit) virtuell, die anderen
+   verpuffen - die echte DMA gehoert den Treibern */
+static int sb_dma_in(struct vsb *b, unsigned p, unsigned char *v)
+{
+    int c;
+    unsigned w;
+    switch (p) {
+    case 0x02: case 0x03: c = 0; break;
+    case 0xC4: case 0xC6: c = 1; break;
+    case 0x08:
+        *v = (unsigned char)(b->act && !b->ch ? 0 : 0x02);  /* TC Kanal 1 */
+        return 1;
+    case 0xD0:
+        *v = (unsigned char)(b->act && b->ch ? 0 : 0x02);   /* TC Kanal 5 */
+        return 1;
+    case 0x83: *v = b->dpage[0]; return 1;
+    case 0x8B: *v = b->dpage[1]; return 1;
+    default:
+        return 0;
+    }
+    w = (p == 0x02 || p == 0xC4) ? b->dcur[c] : b->dleft[c];
+    *v = (unsigned char)(b->dff[c] ? w >> 8 : w);
+    b->dff[c] ^= 1;
+    return 1;
+}
+
+static int sb_dma_out(struct vsb *b, unsigned p, unsigned char v)
+{
+    int c = p >= 0xC0;
+    switch (p) {
+    case 0x02: case 0xC4:                       /* Adresse               */
+        if (b->dff[c]) b->dbase[c] = (b->dbase[c] & 0xFF) | (v << 8);
+        else b->dbase[c] = (b->dbase[c] & 0xFF00) | v;
+        b->dff[c] ^= 1;
+        b->dcur[c] = b->dbase[c];
+        return 1;
+    case 0x03: case 0xC6:                       /* Laenge - 1            */
+        if (b->dff[c]) b->dcnt[c] = (b->dcnt[c] & 0xFF) | (v << 8);
+        else b->dcnt[c] = (b->dcnt[c] & 0xFF00) | v;
+        b->dff[c] ^= 1;
+        b->dleft[c] = b->dcnt[c];
+        return 1;
+    case 0x0C: case 0xD8:
+        b->dff[c] = 0;
+        return 1;
+    case 0x83: b->dpage[0] = v; return 1;
+    case 0x8B: b->dpage[1] = v; return 1;
+    case 0x00: case 0x01: case 0x04: case 0x05: case 0x06: case 0x07:
+    case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0D: case 0x0E: case 0x0F:
+    case 0xC0: case 0xC2: case 0xC8: case 0xCA: case 0xCC: case 0xCE:
+    case 0xD0: case 0xD2: case 0xD4: case 0xD6: case 0xDA: case 0xDC: case 0xDE:
+    case 0x81: case 0x82: case 0x87: case 0x89: case 0x8A: case 0x8F:
+        return 1;                               /* Maske/Modus: egal     */
+    }
+    return 0;
 }
 
 static int sb_in(int t, unsigned p, unsigned char *v)
@@ -1140,26 +1343,25 @@ static int sb_in(int t, unsigned p, unsigned char *v)
     case 0x22C:
         *v = 0x7F;                              /* bereit                */
         return 1;
-    case 0x22E:
+    case 0x22E:                                 /* auch 8-Bit-IRQ quittieren */
+        b->ist &= (unsigned char)~1;
         *v = (unsigned char)(b->on_ ? 0xFF : 0x7F);
+        return 1;
+    case 0x22F:                                 /* 16-Bit-IRQ quittieren */
+        b->ist &= (unsigned char)~2;
+        *v = 0xFF;
+        return 1;
+    case 0x224:
+        *v = b->mix_i;
+        return 1;
+    case 0x225:
+        *v = sb_mixget(t, b->mix_i);
         return 1;
     case 0x226:
         *v = 0xFF;
         return 1;
-    case 0x02: case 0x03: {                     /* DMA 1 Adresse/Zaehler */
-        unsigned w = p == 0x02 ? b->dcur : b->dleft;
-        *v = (unsigned char)(b->dff ? w >> 8 : w);
-        b->dff ^= 1;
-        return 1;
     }
-    case 0x08:
-        *v = (unsigned char)(b->act ? 0 : 0x02);    /* TC Kanal 1        */
-        return 1;
-    case 0x83:
-        *v = b->dpage;
-        return 1;
-    }
-    return 0;
+    return sb_dma_in(b, p, v);
 }
 
 static int sb_out(int t, unsigned p, unsigned char v)
@@ -1175,43 +1377,21 @@ static int sb_out(int t, unsigned p, unsigned char v)
             b->need = 0;
             b->on_ = b->oh = 0;
             b->spk = 0;
+            b->ist = 0;
             sb_put(t, 0xAA);
         }
         return 1;
     case 0x22C:
         sb_cmd(t, v);
         return 1;
-    case 0x02:                                  /* DMA 1 Adresse         */
-        if (b->dff) b->dbase = (b->dbase & 0xFF) | (v << 8);
-        else b->dbase = (b->dbase & 0xFF00) | v;
-        b->dff ^= 1;
-        b->dcur = b->dbase;
+    case 0x224:
+        b->mix_i = v;
         return 1;
-    case 0x03:                                  /* DMA 1 Laenge - 1      */
-        if (b->dff) b->dcnt = (b->dcnt & 0xFF) | (v << 8);
-        else b->dcnt = (b->dcnt & 0xFF00) | v;
-        b->dff ^= 1;
-        b->dleft = b->dcnt;
+    case 0x225:
+        sb_mixset(t, b->mix_i, v);
         return 1;
-    case 0x0C:
-        b->dff = 0;
-        return 1;
-    case 0x0A:
-        if ((v & 3) == 1)
-            b->dmask = (unsigned char)(v & 4);
-        return 1;
-    case 0x0B:
-        if ((v & 3) == 1)
-            b->dmode = v;
-        return 1;
-    case 0x83:
-        b->dpage = v;
-        return 1;
-    case 0x00: case 0x01: case 0x04: case 0x05: case 0x06: case 0x07:
-    case 0x08: case 0x09: case 0x0D: case 0x0E: case 0x0F:
-        return 1;                               /* andere Kanaele: nichts */
     }
-    return 0;
+    return sb_dma_out(b, p, v);
 }
 
 static void spk_hw(int t, int on)

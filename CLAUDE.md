@@ -1962,7 +1962,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Submodul country 7f83e04, GPL, mit nasm gebaut) im Startabbild, Box-
   CONFIG.SYS `COUNTRY=049,437,A:\COUNTRY.SYS` -> DATE 03.11.2026, TIME
   17:36:39,83. Fest Deutschland – AT-DOS wertet COUNTRY= selbst noch
-  nicht aus. AUD_CLOSE nur im
+  nicht aus.
+  Virtuelle SB16 (Wunsch des Nutzers; in QEMU geprüft): DSP 4.05 (E1h),
+  41h/42h Rate, Bxh/Cxh (Modus: 20h stereo, 10h mit Vorzeichen; Länge
+  in Werten, Stereo zählt beide Kanäle, 16 Bit = Worte), D5/D6/D9, F3,
+  Quittung 22Eh (8 Bit) / 22Fh (16 Bit), Mixer 224h/225h (80h IRQ – ein
+  geschriebenes 2/4 setzt `irql` 5/7 –, 81h = 22h für DMA 1+5, 82h
+  anstehende IRQ, 30h–47h gespeichert, Lautstärken ohne Wirkung).
+  16 Bit über DMA 5 (C4h/C6h/D8h/8Bh, Adresse/Zähler in Worten, Seite &
+  FEh); die übrigen DMA-Ports verpuffen. Format je Block: Box öffnet
+  Rate/Kanäle/Bits passend (`orate/och/obits`); kann die Karte es nicht
+  (SB 2.0), `conv`: 8 Bit mono aus dem linken Kanal. Vorzeichen in
+  `sb_conv` an die Karte angepasst. DSP 4: Lautsprecher-Befehle wirken
+  nicht (`dsp4`). BLASTER jetzt `A220 I5 D1 H5 T6`. Geprüft: eigenes
+  Testprogramm 44,1 kHz 16 Bit stereo Auto-Init mit IRQ 5 (78 IRQs in 2 s
+  bei 25-ms-Blöcken, 1 kHz auf beiden Kanälen im Mitschnitt), DOOM 1.2
+  mit Ton. Ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ hängt bei I_Init –
+  auch mit dem Stand davor (nicht die SB16), noch offen. Offen: Aufnahme,
+  SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
