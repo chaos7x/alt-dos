@@ -1881,6 +1881,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (16 leere INT-16h-Abfragen -> 1 Takt schlafen) traf Diggers Warte-
   schleife; sie gilt nicht mehr, sobald das Programm den PIT selbst
   umstellt (`pit_rl`), wie IDLE_SENSITIVITY 100 bei OS/2.
+  Digger-Ton/-Spiel etwas zu schnell gegenüber MS-DOS (Nutzer, P3B-F):
+  der Kernel-PIT lief in Modus 3 (36h, Rechteck – der Zähler läuft je
+  halber Periode durch, in Zweierschritten), `pit_elapsed` nimmt einen
+  linearen Zähler an -> Zeit innerhalb eines Takts doppelt geschätzt.
+  Jetzt Modus 2 (34h) in pic_pit_init und kpit_set. Geprüft: PT 1000 Hz
+  ~3 s, Digger und DOOM laufen.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS

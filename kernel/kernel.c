@@ -3589,7 +3589,7 @@ static void pic_pit_init(void)
     outb(0xA1, pic_mask >> 8);
 
     /* PIT Kanal 0: 100 Hz */
-    outb(0x43, 0x36);
+    outb(0x43, 0x34);                   /* Modus 2: Zaehler linear (v86.c misst damit) */
     outb(0x40, 11932 & 0xFF);
     outb(0x40, 11932 >> 8);
 }

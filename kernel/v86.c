@@ -764,7 +764,7 @@ static void kpit_set(unsigned dv)
         return;
     f = irq_off();
     kpit_div = dv;
-    outb(0x43, 0x36);
+    outb(0x43, 0x34);                   /* Modus 2 wie pic_pit_init */
     outb(0x40, (dv ? dv : KPIT) & 0xFF);
     outb(0x40, (dv ? dv : KPIT) >> 8);
     irq_restore(f);
