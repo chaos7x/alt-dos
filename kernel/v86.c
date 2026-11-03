@@ -322,6 +322,23 @@ void __far v86_start(int t, int s)
     kf_vio_setcur(s, 0, 0);
 }
 
+/* Box parken (BOXSHELL meldet: Programm fertig, wie NTVDM offen halten):
+   Vollbild zuruecknehmen, ihren Text in der Sitzung stehen lassen, keine
+   Tasten und keine Bildschirmabfrage mehr, bis v86_start sie wieder an
+   eine Sitzung haengt */
+void __far v86_park(int t)
+{
+    int s = box_ses[t];
+    if (s < 0)
+        return;
+    if (pt_box[t])
+        capture(t);
+    box_ses[t] = -1;
+    kq_h[t] = kq_t[t] = 0;
+    kf_vio_setmode(s, 0, -1);
+    v86_replay(s);
+}
+
 /* Box startet von einem Abbild (load_img): Geometrie fuer INT 13h */
 void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs)
 {
@@ -1109,6 +1126,8 @@ static void svc(int n, struct v86_frame *f, int t)
                 svc_cf = 0;
         } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
+        else if (AH == 0x15)                    /* Programm fertig (AL):  */
+            kf_box_ctl(BOX_PARK, AL);           /* parken oder beenden    */
         else if (AH == 0x14) {                  /* Verzeichnis des Aufrufers */
             static char cd[132];                /* "C:\DOS" (8.3) -> ES:DI */
             cd[0] = 0;

@@ -1082,11 +1082,10 @@ static int dos_kind(int drive, const char *path)
 /* DOS-Programm in der FreeDOS-Box: Befehlszeile der Box = Programm
    (8.3-Pfad) + Argumente, BOXSHELL startet COMMAND.COM /C damit. Fehlt
    das Abbild, laeuft ein .COM in der nackten Box (ohne DOS) wie bisher. */
-static int load_dos(int t, int drive, const char *path)
+static void dos_line(int drive, const char *path, const char *ua, char *a)
 {
-    static char sp[IFS_PATHLEN + 2], a[FAPI_ARGLEN], keep[FAPI_ARGLEN];
+    static char sp[IFS_PATHLEN + 2];
     unsigned i, k = 0;
-    int err;
 
     sp[0] = (char)('A' + drive);
     sp[1] = ':';
@@ -1094,11 +1093,20 @@ static int load_dos(int t, int drive, const char *path)
         scopy(sp + 2, path, IFS_PATHLEN);
     for (i = 0; sp[i] && k < FAPI_ARGLEN - 2; i++)
         a[k++] = sp[i];
-    if (task[t].args[0])
+    if (ua[0])
         a[k++] = ' ';
-    for (i = 0; task[t].args[i] && k < FAPI_ARGLEN - 1; i++)
-        a[k++] = task[t].args[i];
+    for (i = 0; ua[i] && k < FAPI_ARGLEN - 1; i++)
+        a[k++] = ua[i];
     a[k] = 0;
+}
+
+static int load_dos(int t, int drive, const char *path)
+{
+    static char a[FAPI_ARGLEN], keep[FAPI_ARGLEN];
+    unsigned i;
+    int err;
+
+    dos_line(drive, path, task[t].args, a);
     scopy(keep, task[t].args, FAPI_ARGLEN);
     scopy(task[t].args, a, FAPI_ARGLEN);
     err = load_img(t, sys_drive, "\\DOS\\BOX\\FREEDOS.IMG");
@@ -1207,11 +1215,52 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
 /* DOSSTART=SESSION (CONFIG.SYS): DOS-Programme wie bei OS/2 in einer
    eigenen Sitzung statt wie NT in der des Aufrufers */
 static unsigned char dos_session;
+static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
+static int  dc_d;
 static int dos_cmd(const char *cmd)
 {
-    static char p[IFS_PATHLEN], nm[13], ar[FAPI_ARGLEN], cn[IFS_PATHLEN];
-    int d;
-    return !split_cmd(cmd, p, nm, ar) && !resolve(current, p, &d, cn) && dos_kind(d, cn);
+    dc_cn[0] = 0;
+    return !split_cmd(cmd, dc_p, dc_nm, dc_ar) && !resolve(current, dc_p, &dc_d, dc_cn) &&
+           dos_kind(dc_d, dc_cn);
+}
+
+/* Box je Sitzung offen halten (wie NTVDM): nach dem Programm parkt
+   BOXSHELL (BOX_PARK), der Aufrufer ist ihr Besitzer (park_owner = Task
+   + 1). Startet er wieder ein DOS-Programm, bekommt die geparkte Box die
+   neue Befehlszeile, sein Laufwerk/Verzeichnis und laeuft weiter - ohne
+   neuen FreeDOS-Start. Endet der Besitzer, endet die Box mit. */
+static unsigned char park_owner[NTASK];
+static int scmp_k(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a - *b;
+}
+static void dcwd_copy(int t, int from);
+static int box_reuse(const char *cmd, int s)
+{
+    int y;
+    for (y = 0; y < NTASK; y++)
+        if (park_owner[y] == current + 1 && task[y].state == T_WAIT)
+            break;
+    if (y == NTASK)
+        return -1;
+    if (dos_cmd(cmd))
+        dos_line(dc_d, dc_cn, dc_ar, task[y].args);
+    else if (dc_d == sys_drive && !scmp_k(dc_cn, "\\DOS\\BOX\\FREEDOS.IMG"))
+        scopy(task[y].args, dc_ar, FAPI_ARGLEN);    /* COMMAND: interaktiv */
+    else
+        return -1;
+    scopy(task[y].name, dc_nm, sizeof(task[y].name));
+    task[y].drive = task[current].drive;
+    scopy(task[y].cwd, task[current].cwd, IFS_PATHLEN);
+    dcwd_copy(y, current);
+    park_owner[y] = 0;
+    task[y].parent = current;
+    task[y].session = s;
+    v86_start(y, s);
+    task[y].state = T_READY;
+    return y;
 }
 
 /* ---- Umgebung ----------------------------------------------------------
@@ -1303,6 +1352,13 @@ static int env_set(int t, const char *entry)
 static void of_ref(int k);
 static void of_release(int k);
 
+static void dcwd_copy(int t, int from)
+{
+    if (subst_sel)
+        far_copy(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ, subst_sel,
+                 DCWD_OFF + (unsigned)from * NDCWD * DCWD_SZ, NDCWD * DCWD_SZ);
+}
+
 static int task_create(const char *cmd, int session, int parent, int from)
 {
     static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
@@ -1323,9 +1379,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     far_copy(env_sel, env_off(t), env_sel, env_off(from), FAPI_ENVSIZE);
     if (from >= 0) {
         scopy(task[t].cwd, task[from].cwd, IFS_PATHLEN);
-        if (subst_sel)
-            far_copy(subst_sel, DCWD_OFF + (unsigned)t * NDCWD * DCWD_SZ, subst_sel,
-                     DCWD_OFF + (unsigned)from * NDCWD * DCWD_SZ, NDCWD * DCWD_SZ);
+        dcwd_copy(t, from);
     } else {
         task[t].cwd[0] = 0;
         dcwd_clear(t);
@@ -1356,6 +1410,12 @@ static void task_end(int t)
     unsigned idx;
     int p = task[t].parent, s = task[t].session, i;
 
+    park_owner[t] = 0;
+    for (i = 0; i < NTASK; i++)             /* geparkte Box des Besitzers */
+        if (park_owner[i] == t + 1) {
+            park_owner[i] = 0;
+            task_end(i);
+        }
     fpu_task_end(t);
     aud_task_end(t);
     if (task[t].v86) {                      /* DOS-Box: Speicher, CR3   */
@@ -2416,6 +2476,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             vio_focus(ns);
             return 0;
         }
+        if (a2 == EXEC_SYNC && box_reuse(buf, s) >= 0) {
+            task[current].state = T_WAIT;       /* geparkte Box macht's  */
+            schedule_next();
+            return 0;
+        }
         t = task_create(buf, s, current, current);
         if (t < 0)
             return -t;
@@ -3406,6 +3471,21 @@ int box_ctl(unsigned op, unsigned a)
         else
             klock_leave();
         return 0;
+    case BOX_PARK: {                    /* Programm fertig, a = Wert     */
+        int p = task[current].parent;
+        if (p >= 0 && task[p].session == task[current].session && !task[current].bg) {
+            v86_park(current);
+            task[p].child_rc = (unsigned char)a;
+            if (task[p].state == T_WAIT)
+                task[p].state = T_READY;
+            task[current].parent = -1;
+            park_owner[current] = (unsigned char)(p + 1);
+            task[current].state = T_WAIT;   /* bis box_reuse weckt       */
+            schedule_next();
+            return 0;
+        }
+    }                                   /* sonst beenden:                */
+    /* fall through */
     case BOX_EXIT:
         task[current].rc = (unsigned char)a;
         klock_enter();                  /* task_end schliesst Dateien    */

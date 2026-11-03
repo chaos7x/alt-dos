@@ -298,8 +298,11 @@ und PC-DOS.
   `COMMAND.COM` öffnet die DOS-Befehlszeile in derselben Sitzung (EXIT kehrt
   zurück), `COMMAND /C befehl` führt einen DOS-Befehl aus. Mit
   `DOSSTART=SESSION` in CONFIG.SYS bekommt wie bei OS/2 jedes DOS-Programm
-  eine eigene Sitzung. Noch nicht: Programme auf den Disketten A:/B: (in der
-  Box ist A: das Startabbild)
+  eine eigene Sitzung. Die Box bleibt danach geparkt offen (wie NTVDM bei
+  NT): FreeDOS startet nur beim ersten DOS-Programm eines Befehlsinterpreters,
+  jedes weitere läuft ohne neuen Start; endet der Befehlsinterpreter, wird
+  ihr Speicher (≈ 660 KB) frei. Noch nicht: Programme auf den Disketten
+  A:/B: (in der Box ist A: das Startabbild)
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS

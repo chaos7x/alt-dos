@@ -224,6 +224,7 @@ void __far v86_destroy(int t);
 unsigned __far v86_exc(struct v86_frame *f);           /* 0 = erledigt  */
 void __far v86_start(int t, int s);     /* Sitzung fest: Vollbild, B800  */
 void __far v86_replay(int s);           /* Text der beendeten Box zeigen */
+void __far v86_park(int t);             /* Box offen halten: Vollbild weg */
 void __far v86_poll(void);              /* Scheduler: Bildschirm geaendert? */
 void __far v86_key(unsigned sc);        /* kbd_irq: Scancode             */
 struct v86_iret;
@@ -238,6 +239,7 @@ int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c *
 #define BOX_DRIVES  6                   /* a=0: Laufwerke A-P, 1: Q-Z (Bitmaske) */
 #define BOX_LOCK    7                   /* a=1 Kernelsperre nehmen, 0 abgeben */
 #define BOX_SYSDRV  8                   /* -> Startlaufwerk (0 = A:)       */
+#define BOX_PARK    9                   /* a = Rueckgabewert: parken/beenden */
 unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 extern unsigned char box_sec[512];
 void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs);

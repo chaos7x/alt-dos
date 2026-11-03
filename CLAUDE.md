@@ -1657,8 +1657,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Befehlszeile, `direct`), FreeCOM nur für `.BAT`/interaktiv: 167
   Sektoren, ≈ 6.000–6.700 Traps. Der Rest ist der FreeDOS-Start (u. a.
   Startmeldungen über INT 10h je Zeichen). Tasten, die während des Starts
-  getippt werden, gehen an die Box und verfallen. Nächste Hebel: Box je
-  Sitzung offen halten (wie NTVDM, der eigentliche Gewinn), Kosten je
+  getippt werden, gehen an die Box und verfallen.
+  Box offen halten erledigt (wie NTVDM, in QEMU geprüft: mehrere DOS-
+  Programme hintereinander mit Verzeichniswechsel, ERRORLEVEL, .BAT,
+  COMMAND nimmt dieselbe Box, nach EXIT des Besitzers ist der Speicher
+  wieder frei): BOXSHELL meldet nach jedem Programm INT E0h 15h (AL =
+  Rückgabewert) und springt danach an den Anfang (`next`, Stack neu).
+  Kernel `BOX_PARK`: hat die Box einen Aufrufer in derselben Sitzung,
+  `v86_park` (Text sichern, Vollbild weg, Text ausgeben, `box_ses = -1`
+  -> keine Tasten/Strg+C/Bildschirmabfrage mehr), child_rc und Aufrufer
+  wecken, `park_owner[t] = Aufrufer + 1`, T_WAIT; sonst wie BOX_EXIT.
+  `box_reuse` in EXECPGM (nur EXEC_SYNC): geparkte Box des Aufrufers
+  bekommt Befehlszeile (`dos_line`), Name, Laufwerk/Verzeichnis/dcwd,
+  `v86_start`, T_READY; `%DOSBOX%`-Abbild = interaktiv (COMMAND).
+  `task_end` des Besitzers beendet seine geparkte Box. Erstes Code-
+  segment jetzt 63,2 KB. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
   nicht nach – Zählen ist der bessere Maßstab. Offen: Programme auf A:/B:.

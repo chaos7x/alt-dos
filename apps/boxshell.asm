@@ -15,7 +15,9 @@
 ; wert; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis);
 ; AH=11h SDA ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke;
 ; AH=13h -> AL = Startlaufwerk der AT-DOS (0 = A:); AH=14h aktuelles
-; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI.
+; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI; AH=15h Programm
+; fertig, AL = Rueckgabewert: der Kernel parkt die Box bis zum naechsten
+; DOS-Programm des Aufrufers (kehrt dann zurueck) oder beendet sie.
 
 cpu 8086
 org 100h
@@ -34,7 +36,7 @@ org 100h
         call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
 
-        push    cs
+next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         pop     es
         mov     di, cmd
         xor     ah, ah                  ; Befehlszeile der Box
@@ -83,9 +85,14 @@ org 100h
         jc      .exit
         mov     ah, 4Dh                 ; dessen Rueckgabewert
         int     21h
-.exit:  mov     ah, 1                   ; Box beenden
-        int     0E0h
-        int     19h                     ; (ausserhalb einer Box: Neustart)
+.exit:  mov     ah, 15h                 ; fertig: der Kernel parkt die Box
+        int     0E0h                    ; (wie NTVDM offen halten) oder
+        cli                             ; beendet sie; zurueck kommt sie
+        mov     ax, cs                  ; erst mit dem naechsten Programm
+        mov     ss, ax
+        mov     sp, stack_top
+        sti
+        jmp     next
 
 ; ---- Programm direkt starten ---------------------------------------------
 ; Endet das erste Wort der Befehlszeile (cmd, CX Zeichen) auf .COM oder
