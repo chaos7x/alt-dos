@@ -139,7 +139,13 @@ static int key_ready(int t)
 }
 static void rom_uncow(int t);
 static unsigned char from_tick;
-static unsigned long t8_last[NTASK];    /* Kerneltakt des letzten INT 8 der Box */         /* Zustellung aus irq0 (Takt erlaubt) */
+static unsigned long t8_last[NTASK];
+/* Hardware-Vektoren beim Programmstart (INT E0h 00h): bricht ein Spiel
+   ab (Strg+C), ohne INT 8/9 zurueckzunehmen, zeigen sie in freigegebenen
+   Speicher - die offen gehaltene Box stellt sie beim Parken wieder her */
+static const unsigned char hwvec[] = { 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x1C,
+                                       0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77 };
+static unsigned long ivt_save[NTASK][sizeof(hwvec)];    /* Kerneltakt des letzten INT 8 der Box */         /* Zustellung aus irq0 (Takt erlaubt) */
 static int pm_hooked(int t, unsigned n);
 static void dp_hwint(struct v86_iret *r, int t);
 static int box_fg(int t);
@@ -1498,7 +1504,11 @@ static void svc(int n, struct v86_frame *f, int t)
         break;
     case 0xE0:                                  /* Box-Schnittstelle     */
         if (AH == 0x00) {                       /* Befehlszeile -> ES:DI */
-            const char *a = (const char *)kf_box_ctl(BOX_ARGS, 0);
+            const char *a;
+            for (i = 0; i < sizeof(hwvec); i++)  /* Vektoren merken    */
+                ivt_save[t][i] = ((unsigned long)rd16(0, hwvec[i] * 4 + 2) << 16) |
+                                 rd16(0, hwvec[i] * 4);
+            a = (const char *)kf_box_ctl(BOX_ARGS, 0);
             for (i = 0; a[i] && i < 120; i++)
                 wr8((unsigned)f->r.es, DI + i, a[i]);
             CX = i;
@@ -1520,8 +1530,16 @@ static void svc(int n, struct v86_frame *f, int t)
         } else if (AH == 0x16) {                /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
-        } else if (AH == 0x15)                  /* Programm fertig (AL):  */
+        } else if (AH == 0x15) {                /* Programm fertig (AL):  */
+            for (i = 0; i < sizeof(hwvec); i++) {   /* Haken zuruecknehmen */
+                wr16(0, hwvec[i] * 4, (unsigned)ivt_save[t][i]);
+                wr16(0, hwvec[i] * 4 + 2, (unsigned)(ivt_save[t][i] >> 16));
+            }
+            visr[t] = vimr[t] = 0;              /* PIC wie neu            */
+            vt_pend[t] = 0;
+            kq_h[t] = kq_t[t] = 0;
             kf_box_ctl(BOX_PARK, AL);           /* parken oder beenden    */
+        }
         else if (AH == 0x14) {                  /* Verzeichnis des Aufrufers */
             static char cd[132];                /* "C:\DOS" (8.3) -> ES:DI */
             cd[0] = 0;

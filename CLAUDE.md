@@ -1864,6 +1864,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und erlaubt danach den Takt. Spezifisches EOI (60h+n) am virtuellen PIC.
   Danach läuft Digger bis ins Spiel, DOOM weiter. Offen: PC-Lautsprecher
   bei Digger im QEMU-Mitschnitt stumm (Nutzer hört Knacksen).
+  Verwaiste Haken (Nutzer: Digger endet unter MS-DOS mit Strg+C unsauber,
+  Ton läuft weiter): die Box bleibt offen, ein abgebrochenes Spiel ließe
+  INT 8/9 in freigegebenen Speicher zeigen. INT E0h 00h (Programmstart)
+  merkt die Vektoren 08/09/0B–0F/1C/70–77 (`hwvec`, `ivt_save`), INT E0h
+  15h stellt sie vor dem Parken zurück und setzt den virtuellen PIC/Takt/
+  Tastenring zurück. In QEMU geprüft: Digger mit F10 (Titel, dann Ende)
+  beendet, danach PT (eigener INT 8, 1000 Hz) in derselben Box richtig.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS
