@@ -2071,7 +2071,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Handlers -> DOOM 1.9 hing in I_StartupTimer. Nächster großer Hebel:
   PVI (CR4 Bit 1, ab Pentium, 86Box bildet es für P2/P3 nach,
   src/cpu/x86_ops_flag.h) – CLI/STI ohne Falle (~700/s); braucht dann
-  einen anderen Weg zum POPF-Patch (CLI trappt nicht mehr). AUD_CLOSE nur im
+  einen anderen Weg zum POPF-Patch (CLI trappt nicht mehr).
+  Die drei Hilfen sind je Programm abschaltbar (Wunsch des Nutzers, weil
+  sie vom echten Verhalten abweichen): DOSBOX.INI `POPF_PATCH`,
+  `SB_IRQ_IDLE`, `IF_WATCHDOG` = ON/OFF (auch 1/0), BOXSHELL schickt die
+  Maske per INT E0h 18h (BL Bit 0–2 = an), v86.c `box_hk[t]` (Bit = aus,
+  0 = Vorgabe alle an, zurück bei jedem Programmstart und in xms_reset).
+  Nutzer danach mit DOOM 1.9: wieder besser, bei Kämpfen (Monster auf dem
+  Podium in E1M1, Gegner vor dem Levelende) geht es noch deutlich runter.
+  AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):

@@ -101,6 +101,12 @@ static unsigned pit_c0[NTASK];          /* Schritte seit dem Kerneltakt dabei */
 unsigned kpit_div, kpit_acc;            /* start.asm irq0: PIT-Teiler (0 = 11932) */
 static unsigned char spk[NTASK];        /* Lautsprecher-Bits 61h (0-1)   */
 static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
+/* Hilfen der Nachbildung, je Programm abschaltbar (DOSBOX.INI, INT E0h
+   18h): gesetztes Bit = aus; 0 = alle an (Vorgabe) */
+#define HK_POPF   1                     /* POPF_PATCH:  POPF -> HLT      */
+#define HK_IDLE   2                     /* SB_IRQ_IDLE: ruhende Leitung  */
+#define HK_WDOG   4                     /* IF_WATCHDOG: IF nach 3 Takten */
+static unsigned char box_hk[NTASK];
 static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
 static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
 
@@ -2143,7 +2149,9 @@ static void svc(int n, struct v86_frame *f, int t)
         else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
-        } else if (AH == 0x16) {                /* XMS-Grenze (BX KB, DOSBOX.INI) */
+        } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
+            box_hk[t] = (unsigned char)(~BX & 7);
+        else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
         } else if (AH == 0x15) {                /* Programm fertig (AL):  */
@@ -2561,6 +2569,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
         xh[t][i].used = 0;
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
     xms_lim[t] = 0;
+    box_hk[t] = 0;
     for (i = 0; i < 6; i++)
         umb_used[t][i] = umb_head[t][i] = 0;
 }
@@ -4288,7 +4297,7 @@ static void dp_hwint(struct v86_iret *r, int t)
            das IF stehen - das virtuelle IF bliebe fuer immer aus (DMX in
            DOOM: Takt und Sound standen). Wachhund wie bei DOSEMU: nach
            2 Takten ohne STI gilt es als wieder an. */
-        if (get_ticks() - dp_cli_t[t] < 3) {
+        if ((box_hk[t] & HK_WDOG) || get_ticks() - dp_cli_t[t] < 3) {
             return;
         }
         vfl[t] |= FL_IF;
@@ -4500,7 +4509,8 @@ static void dp_patch_popf(int t, unsigned long lin)
 {
     unsigned i;
     unsigned char r = (unsigned char)lrd(lin - 1, 1);
-    if (lrd(lin - 2, 1) != 0x9C || r < 0x58 || r > 0x5F || dp_npatch[t] >= NPATCH)
+    if (lrd(lin - 2, 1) != 0x9C || r < 0x58 || r > 0x5F || dp_npatch[t] >= NPATCH ||
+        (box_hk[t] & HK_POPF))
         return;
     r = (unsigned char)(r - 8);                 /* POP reg -> PUSH reg   */
     lwin(VWIN_IDX, lin + 1);
@@ -4571,7 +4581,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
             /* IRQ 3-7 ohne Handler auch im Real Mode: gleich quittieren
                statt PM -> RM -> PM (der Stummel tut dort nichts) */
             visr[t] &= (unsigned char)~(1 << (n - 8));
-            if (n == 0x0D || n == 0x0F)         /* virtuelle SB: Leitung */
+            if ((n == 0x0D || n == 0x0F) && !(box_hk[t] & HK_IDLE))  /* SB: Leitung */
                 sb[t].noirq |= (unsigned char)(1 << (n - 8));   /* ruht */
             return 0;
         }

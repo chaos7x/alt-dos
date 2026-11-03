@@ -142,6 +142,9 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;   EMS_MEMORY_LIMIT=KB   (0-4096, Vorgabe 2048) -> INT E0h 17h
 ;   DOS_VERSION=n.nn      -> INT 2Fh 122Fh fuer das naechste Programm
 ;                            (ein Eintrag in SETVER.LST geht vor)
+;   POPF_PATCH=ON|OFF     Hilfen der Nachbildung fuer DPMI-Programme,
+;   SB_IRQ_IDLE=ON|OFF    Vorgabe ON (siehe v86.c, box_hk) -> INT E0h 18h
+;   IF_WATCHDOG=ON|OFF    (BL Bit 0/1/2 = an)
 ; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
 
 get_pname:                              ; Name aus cmd (CX Zeichen) -> pname
@@ -204,6 +207,7 @@ ini_apply:
         mov     word [xmskb], 2048
         mov     word [emskb], 2048
         mov     word [dosver], 0
+        mov     byte [hk], 7
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
         int     21h
@@ -235,7 +239,10 @@ ini_apply:
 .free:  mov     es, [ibuf]
         mov     ah, 49h
         int     21h
-.set:   mov     bx, [xmskb]
+.set:   mov     bl, [hk]
+        mov     ah, 18h
+        int     0E0h
+        mov     bx, [xmskb]
         mov     ah, 16h
         int     0E0h
         mov     bx, [emskb]
@@ -297,7 +304,7 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jmp     .skip
 .k3:    mov     di, k_ver
         call    kmatch
-        jc      .skip
+        jc      .k4
         mov     dl, [es:si]             ; Hauptversion
         sub     dl, '0'
         xor     dh, dh
@@ -331,6 +338,37 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jne     .skip
         jmp     .line
 .done:  ret
+.k4:    mov     di, k_hk                ; Schalter ON/OFF (1/0)
+        mov     dl, 1
+.k5:    push    di
+        call    kmatch
+        pop     di
+        jnc     .k6
+        add     di, 12
+        shl     dl, 1
+        cmp     dl, 8
+        jb      .k5
+        jmp     .skip
+.k6:    mov     al, [es:si]
+        call    upcase
+        cmp     al, 'O'
+        jne     .k7
+        mov     al, [es:si+1]
+        call    upcase
+        cmp     al, 'N'
+        je      .on
+        cmp     al, 'F'
+        je      .off
+        jmp     .skip
+.k7:    cmp     al, '1'
+        je      .on
+        cmp     al, '0'
+        jne     .skip
+.off:   not     dl
+        and     [hk], dl
+        jmp     .skip
+.on:    or      [hk], dl
+        jmp     .skip
 
 kmatch:                                 ; [ES:SI] = Name an DI, dann "=" ?
         push    si                      ; -> SI hinter "=", CF = 0
@@ -692,6 +730,10 @@ t_cmdcom  db "COMMAND.COM", 0
 k_xms     db "XMS_MEMORY_LIMIT", 0
 k_ver     db "DOS_VERSION", 0
 k_ems     db "EMS_MEMORY_LIMIT", 0
+k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
+          db "SB_IRQ_IDLE", 0
+          db "IF_WATCHDOG", 0
+hk        db 7
 xmskb     dw 2048
 emskb     dw 2048
 dosver    dw 0
