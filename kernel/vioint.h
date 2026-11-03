@@ -38,7 +38,9 @@ struct session {
 #define PAGEX       19200U          /* Mode X: Seite je Ebene (80 x 240) */
 #define PLANAR(m)   ((m) == 0x12 || (m) == MODEX)   /* 4 Ebenen zu 38400 */
 #define GFX_IMG(m)  (PLANAR(m) ? 4UL * PLANE12 : 65536UL)
-#define GFX_UNITS(m) PAGES(GFX_IMG(m) + 768)
+#define RAWGFX      0x80            /* DOS-Box: Karte gehoert der Box (echtes Video-BIOS) */
+#define RAW_REGS    0x40000UL       /* Rohmodus: 4 Ebenen zu 64 KB, dann Register */
+#define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_REGS + 1024) : PAGES(GFX_IMG(m) + 768))
 
 extern struct session ses[NTASK];
 extern int fg;

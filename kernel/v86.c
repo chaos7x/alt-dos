@@ -104,6 +104,10 @@ static void vp_free(pg_t p)
 }
 
 static void xms_end(int t);
+static void vga_freeze(int t);
+static void vga_leave(int t);
+static void tlb(int t);
+static unsigned char vga_raw[NTASK];
 static void ems_end(int t);
 static void ems_box(int t);
 static void dpmi_end(int t);
@@ -134,6 +138,10 @@ static void k2_cr3(unsigned lo, unsigned hi);
     __parm [__ax] [__dx] __modify [__dx];
 static unsigned long k2_get_cr3(void);
 #pragma aux k2_get_cr3 = "mov eax,cr3" "mov edx,eax" "shr edx,16" \
+    __value [__dx __ax] __modify [__ax __dx];
+
+static unsigned long k2_cr2(void);
+#pragma aux k2_cr2 = "mov eax,cr2" "mov edx,eax" "shr edx,16" \
     __value [__dx __ax] __modify [__ax __dx];
 
 static void put32(unsigned sel, unsigned i, unsigned long v)
@@ -192,6 +200,8 @@ void __far v86_destroy(int t)
     if (!pd_box[t])
         return;
     dpmi_end(t);
+    if (pt_box[t])
+        vga_leave(t);                           /* A0-BF vor dem Freigeben */
     if (box_ses[t] >= 0 && pt_box[t])
         capture(t);
     box_ses[t] = -1;
@@ -395,6 +405,7 @@ void __far v86_park(int t)
     int s = box_ses[t];
     if (s < 0)
         return;
+    vga_leave(t);
     if (pt_box[t])
         capture(t);
     box_ses[t] = -1;
@@ -463,7 +474,7 @@ void __far v86_poll(void)
     int t, cur = -2;
 
     for (t = 0; t < NTASK; t++) {
-        if (box_ses[t] < 0 || !pt_box[t])
+        if (box_ses[t] < 0 || !pt_box[t] || vga_raw[t])
             continue;
         win_save(w);
         scratch_map(PG_LIN(pt_box[t]), 4095);
@@ -639,6 +650,7 @@ static void account(int t)
 /* beim Ruecksprung in die Box: ausstehenden Interrupt zustellen */
 static void inject(struct v86_iret *r, int t)
 {
+    vga_freeze(t);
     account(t);
     if (!(vfl[t] & FL_IF))
         return;
@@ -659,8 +671,12 @@ static void inject(struct v86_iret *r, int t)
 void __far v86_tick(struct v86_iret *r)
 {
     int t = kf_box_ctl(BOX_TASK, 0);
-    if (t >= 0 && pt_box[t])
+    if (t < 0 || !pt_box[t])
+        return;
+    if (r->eflags & 0x20000UL)
         inject(r, t);
+    else
+        vga_freeze(t);                          /* DPMI-Programm (Ring 3) */
 }
 
 /* ---- Bildschirm (B800 der Box = Sitzungspuffer) ------------------------- */
@@ -1233,6 +1249,118 @@ static unsigned run_svc(int n, struct v86_frame *f, int t, unsigned fl)
     return fl;
 }
 
+
+/* ---- Virtuelle VGA, Stufe 1: Grafik ueber das echte Video-BIOS -----------
+   Verlangt die Box einen Grafikmodus (INT 10h 00h, VESA 4F02h), bekommt sie
+   die Karte: A0000-BFFFF physisch, Ports 3B0h-3DFh in der I/O-Bitmap frei,
+   INT 10h geht an das Video-BIOS (Vektor aus der echten IVT, Zeichensatz-
+   Vektoren 1Fh/43h/6Dh dazu). Die Sitzung steht dann im Rohmodus
+   (vgagfx.c RAWGFX): beim Wechsel sichert der Kernel Register und alle
+   vier Ebenen, die Box steht im Hintergrund still (vga_freeze), bis sie
+   wieder vorn ist. Ein Textmodus (00h mit 0-3/7) gibt die Karte zurueck,
+   danach wieder die Nachbildung in den Sitzungspuffer. */
+int __far vio_setgfx(int s, int t, unsigned mode);  /* vgagfx.c (KTEXT2) */
+#define RAWGFX 0x80                     /* wie vioint.h */
+extern unsigned char hw_gfx;
+static unsigned long vga_spare[NTASK];  /* Ersatzseite A0000-BFFFF       */
+
+static void vga_ports(int t, int on)
+{
+    unsigned i;
+    for (i = 0x3B0 >> 3; i <= 0x3DF >> 3; i++)
+        tss[t].iob[i] = on ? 0 : 0xFF;
+}
+
+static int vga_enter(int t)
+{
+    unsigned i;
+    unsigned long v[3];
+    int s = box_ses[t];
+    if (s < 0 || vio_setgfx(s, t, RAWGFX))
+        return -1;
+    scratch_map(0, 0x3FF);                      /* echte IVT             */
+    v[0] = get32(SCRATCH, 0x1F);
+    v[1] = get32(SCRATCH, 0x43);
+    v[2] = get32(SCRATCH, 0x6D);
+    wr16(0, 0x1F * 4, (unsigned)v[0]); wr16(0, 0x1F * 4 + 2, (unsigned)(v[0] >> 16));
+    wr16(0, 0x43 * 4, (unsigned)v[1]); wr16(0, 0x43 * 4 + 2, (unsigned)(v[1] >> 16));
+    wr16(0, 0x6D * 4, (unsigned)v[2]); wr16(0, 0x6D * 4 + 2, (unsigned)(v[2] >> 16));
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    vga_spare[t] = get32(SCRATCH2, 0xA0);
+    for (i = 0xA0; i < 0xC0; i++)
+        put32(SCRATCH2, i, ((unsigned long)i << 12) | PTE_BOX);
+    vga_ports(t, 1);
+    vga_raw[t] = 1;
+    tlb(t);
+    return 0;
+}
+
+static void vga_leave(int t)
+{
+    unsigned i;
+    unsigned long b;
+    int s = box_ses[t];
+    if (!vga_raw[t])
+        return;
+    vga_raw[t] = 0;
+    vga_ports(t, 0);
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    for (i = 0xA0; i < 0xC0; i++)
+        put32(SCRATCH2, i, vga_spare[t]);
+    if (s >= 0) {
+        b = kf_vio_buf_lin(s);
+        put32(SCRATCH2, 0xB8, b | PTE_BOX);
+        put32(SCRATCH2, 0xB9, (b + 4096) | PTE_BOX);
+        vio_setgfx(s, t, 0);                    /* Karte auf Text, neu   */
+        kf_vio_dirty(s);
+    }
+    tlb(t);
+}
+
+/* Hintergrund: Box mit der Karte steht, bis ihre Sitzung vorn ist und
+   gfx_in alles zurueckgeladen hat (Interrupts aus, wie beim Aufruf) */
+static void vga_freeze(int t)
+{
+    if (!vga_raw[t] || (kf_vio_fg() == box_ses[t] && hw_gfx == RAWGFX))
+        return;
+    enable_ints();
+    while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
+        kf_box_ctl(BOX_SLEEP, 2);
+    irq_off();
+}
+
+/* INT 10h: 1 = an das Video-BIOS geben */
+static int vga_want(struct v86_frame *f, int t)
+{
+    unsigned m = AL & 0x7F;
+    int txt = (AH == 0x00 && (m <= 3 || m == 7)) ||
+              (AX == 0x4F02 && (BX & 0x1FF) < 0x100 && ((BX & 0x7F) <= 3 || (BX & 0x7F) == 7));
+    if (vga_raw[t]) {
+        if (!txt)
+            return 1;
+        vga_leave(t);                           /* Nachbildung macht 03h */
+        if (AH == 0x4F) {
+            AX = 0x0003;
+            int10(f, t);
+            AX = 0x004F;
+            return 2;
+        }
+        return 0;
+    }
+    if (AH == 0x00 || AX == 0x4F02)
+        return !txt && vga_enter(t) == 0;
+    return AH == 0x4F;                          /* VESA-Abfragen: BIOS   */
+}
+
+static void vga_bios(struct v86_frame *f)
+{
+    unsigned long v;
+    scratch_map(0, 0x3FF);
+    v = get32(SCRATCH, 0x10);
+    f->r.cs = (unsigned)(v >> 16);
+    f->r.eip = (unsigned)v;
+}
+
 /* INT n wie im Real Mode, ip = Ruecksprung */
 static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
 {
@@ -1256,6 +1384,22 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
             BX = XMS_STUB;
         }
         return;
+    }
+    if (n == 0x10 && vec_def(0x10)) {           /* Grafik: Video-BIOS    */
+        int w = vga_want(f, t);
+        if (w == 1) {
+            push16(&f->r, vflags(&f->r, t));
+            push16(&f->r, (unsigned)f->r.cs);
+            push16(&f->r, ip);
+            vfl[t] &= ~FL_IF;
+            f->r.eflags &= ~(unsigned long)FL_TF;
+            vga_bios(f);
+            return;
+        }
+        if (w == 2) {
+            f->r.eip = ip;
+            return;
+        }
     }
     if (vec_def(n) && n != 8) {                 /* Vektor unveraendert:  */
         f->r.eip = ip;                          /* Dienst gleich         */
@@ -3336,7 +3480,35 @@ unsigned __far dpmi_trap(struct v86_frame *f)
     enable_ints();
     rc = dp_trap(f, t);
     irq_off();
+    vga_freeze(t);
     return rc;
+}
+
+/* Schreiben auf eine ROM-Seite (C0000-FFFFF ausser den eigenen Stummeln
+   bei F0000): eigene, beschreibbare Kopie wie Schatten-RAM. Echte ROMs
+   ignorieren Schreibzugriffe, manche BIOS (SeaBIOS/SeaVGABIOS in QEMU)
+   halten Daten in ihrem Schattenbereich. -> 1 erledigt */
+static int rom_cow(struct v86_frame *f, int t)
+{
+    unsigned long a = k2_cr2(), e;
+    unsigned i = (unsigned)(a >> 12);
+    pg_t pg;
+    if ((f->err & 7) != 7 || a < 0xC0000UL || a >= 0x100000UL || i == 0xF0)
+        return 0;
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    e = get32(SCRATCH2, i);
+    if ((e & (PTE_P | PTE_W)) != PTE_P || (e & PTE_OWN))
+        return 0;
+    pg = vp_alloc();
+    if (!pg)
+        return 0;
+    scratch_map(e & 0xFFFFF000UL, 4095);
+    scratch2_map(PG_LIN(pg), 4095);
+    far_copy(SCRATCH2, 0, SCRATCH, 0, 4096);
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    put32(SCRATCH2, i, PG_LIN(pg) | PTE_BOX | PTE_OWN);
+    tlb(t);
+    return 1;
 }
 
 static unsigned monitor(struct v86_frame *f, int t)
@@ -3377,12 +3549,23 @@ static unsigned monitor(struct v86_frame *f, int t)
             xms(f, t);
             return 0;
         }
+        if (v == 0x10) {                        /* umgebogenes INT 10h kam an */
+            int w = vga_want(f, t);
+            if (w == 1) {                       /* Rahmen liegt schon: BIOS */
+                vga_bios(f);                    /* kehrt per IRET zurueck */
+                return 0;
+            }
+            if (w == 2)
+                return 0;
+        }
         /* FLAGS des INT liegen auf dem Stack der Box: dort setzen */
         wr16((unsigned)f->r.ss, (unsigned)f->r.esp + 4,
              run_svc(v, f, t, rd16((unsigned)f->r.ss, (unsigned)f->r.esp + 4)));
         return 0;
     case 13:
         break;
+    case 14:                                    /* Seitenfehler          */
+        return rom_cow(f, t) ? 0 : 1;
     default:
         return 1;
     }

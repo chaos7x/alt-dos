@@ -100,7 +100,7 @@ struct task {
 
 static struct task    task[NTASK];
 static struct tss386  tss_k;
-static struct tss386  tss[NTASK];
+struct tss386  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
@@ -946,7 +946,9 @@ static void tss_init(int t, unsigned long cr3)
     ts->ss0   = KDATA;
     ts->esp0  = (unsigned short)&kstack[t][KSTACK];
     ts->cr3   = cr3;
-    ts->iomap = sizeof(struct tss386);
+    ts->iomap = (unsigned short)((char *)ts->iob - (char *)ts);
+    for (w = (unsigned short *)ts->iob; w < (unsigned short *)(ts + 1); w++)
+        *w = 0xFFFF;                    /* alle Ports gesperrt (#GP)      */
 }
 
 /* DOS-Programm (.COM) in einer DOS-Box (V86, Phase 3 Stufe 1): eigenes

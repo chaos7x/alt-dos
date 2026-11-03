@@ -639,8 +639,10 @@ irq0:
         call    preempt_
         mov     bx, sp                  ; [es][pushad][ds][ax][eip ...]
         test    byte [ss:bx+48], 2      ; Box: virtuellen Takt/Tasten
-        jz      .nov                    ; zustellen (v86.c)
-        lea     ax, [bx+38]
+        jnz     .tk                     ; zustellen (v86.c); DPMI-Programm
+        test    byte [ss:bx+42], 3      ; (Ring 3): nur Einfrieren
+        jz      .nov                    ; pruefen (Grafik im Hintergrund)
+.tk:    lea     ax, [bx+38]
         call    KCODE2:v86_tick_
 .nov:   pop     es
         popad

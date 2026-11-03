@@ -174,6 +174,97 @@ static void hw_text(void)
     hw_gfx = 0;
 }
 
+
+/* ---- Rohmodus (DOS-Boxen mit Grafik, virtuelle VGA Stufe 1) --------------
+   Die Box stellt den Modus mit dem echten Video-BIOS ein und schreibt
+   direkt in Bildspeicher und Register (Ports 3B0h-3DFh frei, A0000-BFFFF
+   physisch). Beim Wechsel nach hinten sichert der Kernel alles: Misc,
+   Sequenzer, CRTC, Grafik, Attribut (gleiche Folge wie die Tabellen,
+   61 Byte), DAC und die vier Ebenen zu je 64 KB; die Box steht solange
+   (v86.c friert sie ein). gfx_plane = 1: frisch, die Karte hat noch nichts
+   von der Box. */
+static unsigned char raw_t[61];
+
+static void raw_regs_in(void)
+{
+    unsigned i;
+    raw_t[0] = (unsigned char)inb(0x3CC);
+    for (i = 0; i < 5; i++) {
+        outb(0x3C4, i);
+        raw_t[1 + i] = (unsigned char)inb(0x3C5);
+    }
+    for (i = 0; i < 25; i++)
+        raw_t[6 + i] = (unsigned char)crtc_in(i);
+    for (i = 0; i < 9; i++) {
+        outb(0x3CE, i);
+        raw_t[31 + i] = (unsigned char)inb(0x3CF);
+    }
+    for (i = 0; i < 21; i++) {
+        inb(0x3DA);
+        outb(0x3C0, i);
+        raw_t[40 + i] = (unsigned char)inb(0x3C1);
+    }
+    inb(0x3DA);
+    outb(0x3C0, 0x20);
+}
+
+/* Ebenen einzeln ansprechbar: A0000 64 KB, ohne Ketten, Schreibmodus 0 */
+static void raw_flat(void)
+{
+    seqr(0x04, 0x06);
+    gcr(0x01, 0x00);
+    gcr(0x03, 0x00);
+    gcr(0x05, 0x00);
+    gcr(0x06, 0x05);
+    gcr(0x08, 0xFF);
+}
+
+static void raw_copy(int s, int out)
+{
+    unsigned long b = PG_LIN(ses[s].gfx_save);
+    unsigned p;
+    raw_flat();
+    scratch2_map(0xA0000UL, 0xFFFF);
+    for (p = 0; p < 4; p++, b += 0x10000UL) {
+        scratch_map(b, 0xFFFF);
+        if (out) {
+            gcr(0x04, p);
+            far_copy(SCRATCH, 0, SCRATCH2, 0, 0x8000);
+            far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, 0x8000);
+        } else {
+            seqr(0x02, 1 << p);
+            far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000);
+            far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
+        }
+    }
+}
+
+static void raw_out(int s)
+{
+    unsigned i;
+    unsigned char __far *q;
+    raw_regs_in();
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+    q = MK_FP(SCRATCH, 0);
+    for (i = 0; i < 61; i++)
+        q[i] = raw_t[i];
+    dac_io(0, 0, 256, q + 64);
+    raw_copy(s, 1);
+}
+
+static void raw_in(int s)
+{
+    unsigned i;
+    unsigned char __far *q;
+    raw_copy(s, 0);
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+    q = MK_FP(SCRATCH, 0);
+    for (i = 0; i < 61; i++)
+        raw_t[i] = q[i];
+    dac_io(1, 0, 256, q + 64);
+    vga_regs(raw_t);
+}
+
 /* Grafiksitzung kommt nach vorn: Karte umstellen, Bild und Palette aus
    dem Puffer, Selektor auf den Bildspeicher. -> 1 = Grafik vorn */
 int __far gfx_in(void)
@@ -188,6 +279,14 @@ int __far gfx_in(void)
     if (!text_dac_ok) {                     /* Textpalette einmal merken */
         dac_io(0, 0, 64, (unsigned char __far *)text_dac);
         text_dac_ok = 1;
+    }
+    if (ses[fg].gfx == RAWGFX) {            /* DOS-Box: alles zurueck    */
+        if (!ses[fg].gfx_plane)
+            raw_in(fg);
+        hw_gfx = RAWGFX;
+        gp_drawn = 0;
+        win_restore(w);
+        return 1;
     }
     vga_regs(ses[fg].gfx == 0x12 ? vga_mode12 : ses[fg].gfx == MODEX ? vga_modex
                                                                      : vga_mode13);
@@ -215,7 +314,11 @@ void __far gfx_out(void)
         return;
     gptr_remove();                          /* Zeiger nicht mitsichern  */
     win_save(w);
-    gfx_copy(fg, 1);
+    if (hw_gfx == RAWGFX) {
+        raw_out(fg);
+        ses[fg].gfx_plane = 0;
+    } else
+        gfx_copy(fg, 1);
     win_restore(w);
     hw_gfx = 0xFF;                          /* Karte haelt nichts mehr  */
     gfx_alias(fg);
@@ -265,7 +368,7 @@ int __far vio_setgfx(int s, int t, unsigned mode)
             redraw();                       /* Karte auf Text, Bild neu */
         return 0;
     }
-    if ((mode != 0x13 && !PLANAR(mode)) || !vga_ok)
+    if ((mode != 0x13 && !PLANAR(mode) && mode != RAWGFX) || !vga_ok)
         return -1;
     if (ses[s].gfx && ses[s].gfx != mode)   /* anderer Modus: neu       */
         vio_setgfx(s, t, 0);
@@ -277,6 +380,15 @@ int __far vio_setgfx(int s, int t, unsigned mode)
     ses[s].gfx = (unsigned char)mode;
     ses[s].gfx_plane = 0;
     ses[s].gfx_page = 0;
+    if (mode == RAWGFX) {                   /* Inhalt kommt vom BIOS    */
+        ses[s].gfx_plane = 1;               /* frisch                   */
+        ses[s].gfx_task = (signed char)t;
+        if (s == fg) {
+            hw_gfx = 0xFF;
+            redraw();
+        }
+        return 0;
+    }
     win_save(w);                            /* Puffer: schwarz, Palette */
     if (mode == 0x13) {
         map_save(s, 0);

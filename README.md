@@ -328,8 +328,17 @@ und PC-DOS.
   im Real Mode, Ende mit INT 21h 4Ch aus dem Protected Mode; dazu
   Ausnahme-Handler (0202h/0203h), Callbacks (0303h/0304h) und Raw Switch
   (0306h). Mit DOS/4G läuft DOOM 1.2 (Shareware) durch die ganze
-  Initialisierung bis zum Grafikmodus; es fehlen noch virtuelle VGA und
-  Hardware-Interrupts (Tastatur, Takt) im Protected Mode
+  Initialisierung bis zum Grafikmodus; es fehlen noch Hardware-Interrupts
+  (Tastatur, Takt) im Protected Mode
+- Grafik in DOS-Boxen (virtuelle VGA, Stufe 1): ein Grafikmodus (INT 10h
+  00h, VESA 4F02h) gibt der Box im Vordergrund die echte Karte – Modus-
+  wechsel über das Video-BIOS der Karte, Bildspeicher A0000–BFFFF und
+  Ports 3B0h–3DFh direkt (CGA, EGA, VGA, SVGA-Modi des BIOS). Beim
+  Sitzungswechsel sichert der Kernel alle Register, Palette und die vier
+  Ebenen (256 KB); die Box steht im Hintergrund still und läuft vorn mit
+  ihrem Bild weiter. Ein Textmodus gibt die Karte zurück. Schreibt ein
+  BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
+  Schatten-RAM)
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–3008,

@@ -76,7 +76,9 @@ struct tss386 {
     unsigned long eax, ecx, edx, ebx, esp, ebp, esi, edi;
     unsigned long es, cs, ss, ds, fs, gs, ldt;
     unsigned short trap, iomap;
+    unsigned char  iob[126];            /* I/O-Bitmap Ports 0-3DFh + Ende (FFh) */
 };
+extern struct tss386 tss[NTASK];        /* v86.c: VGA-Ports der Box freigeben */
 
 void set_desc(int idx, unsigned long base, unsigned limit, unsigned char acc);
 void scratch_map(unsigned long base, unsigned limit);

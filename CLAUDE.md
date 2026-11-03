@@ -1790,6 +1790,29 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
   nicht nach – Zählen ist der bessere Maßstab. Offen: Programme auf A:/B:.
+  Virtuelle VGA, Stufe 1 erledigt (in QEMU geprüft: Modus 13h mit Bild,
+  CGA-Modus 4, `start g` in eigener Sitzung, Alt+Esc hin und zurück –
+  Bild, Palette und Tasten kommen wieder, Textsitzung mit Zeichensatz
+  heil): v86.c `vga_want` vor dem Dienst INT 10h (auch über einen
+  umgebogenen Vektor, ARPL-Weg): Grafikmodus (00h nicht 0–3/7, 4F02h) ->
+  `vga_enter`: `vio_setgfx(s, t, RAWGFX)` (vgagfx.c, 0x80; Puffer 4×64 KB
+  + Register), PTE A0–BF physisch (Ersatzseite in `vga_spare`), IVT 1Fh/
+  43h/6Dh aus der echten IVT, Ports 3B0h–3DFh frei (`tss[t].iob`, jedes
+  TSS hat jetzt eine I/O-Bitmap für 0–3DFh, Vorgabe alles gesperrt; `tss`
+  nicht mehr static), dann ins echte INT 10h (Vektor aus physisch 40h).
+  Solange roh, geht jedes INT 10h ans BIOS, ein Textmodus -> `vga_leave`
+  und Nachbildung. Rohmodus in vgagfx.c: `raw_out` (Register wie die
+  61-Byte-Tabellen, DAC, Ebenen über `raw_flat`), `raw_in`, gfx_plane = 1
+  heißt frisch (nichts zurückladen). `vga_freeze` in inject, v86_tick
+  (irq0 ruft es jetzt auch für DPMI-Ring-3) und dpmi_trap: im Hintergrund
+  schlafen, bis die Sitzung vorn ist und hw_gfx == RAWGFX. v86_poll
+  übergeht rohe Boxen, park/destroy rufen vga_leave (vor dem Freigeben –
+  A0 würde sonst als Box-Seite freigegeben). Lehre: das SeaVGABIOS von
+  QEMU schreibt nach E856Ch (SeaBIOS-Daten im Schattenbereich) -> #PF;
+  `rom_cow` gibt jeder Box beim Schreiben auf eine ROM-Seite (C0–FF außer
+  F0) eine eigene Kopie (PTE_OWN). Erstes Codesegment 65.202 Byte – voll!
+  Offen: virtueller PIT/Lautsprecher, IRQ 0/1 an PM-Handler (DOOM),
+  Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum
