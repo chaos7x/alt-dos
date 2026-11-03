@@ -1887,6 +1887,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   linearen Zähler an -> Zeit innerhalb eines Takts doppelt geschätzt.
   Jetzt Modus 2 (34h) in pic_pit_init und kpit_set. Geprüft: PT 1000 Hz
   ~3 s, Digger und DOOM laufen.
+  Digger bei viel Action langsamer (Nutzer, P3B-F): jeder Ton-Befehl an
+  42h/61h war ein Trap. `spk_ports`: nach dem ersten Zugriff im Vorder-
+  grund gibt die I/O-Bitmap 42h und 61h direkt frei (43h bleibt gefangen,
+  Kanal 0 gehört dem Kernel); hinten (inject, v86_poll, vga_freeze),
+  Parken, Ende: wieder gesperrt und Lautsprecher aus.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS

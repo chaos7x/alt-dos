@@ -151,6 +151,8 @@ static void dp_hwint(struct v86_iret *r, int t);
 static int box_fg(int t);
 static void blink_hw(int off);
 static void spk_hw(int t, int on);
+static void spk_ports(int t, int on);
+static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
 static void tlb(int t);
 static unsigned char vga_raw[NTASK];
@@ -252,6 +254,7 @@ void __far v86_destroy(int t)
         kf_kbd_flush();                 /* wie v86_park                  */
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
+    spk_ports(t, 0);
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -376,7 +379,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc[t] = pit_t0[t] = 0;
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
-    spk[t] = 0;
+    spk[t] = spk_open[t] = 0;           /* (tss_init sperrt alle Ports)  */
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
@@ -478,6 +481,7 @@ void __far v86_park(int t)
         kf_kbd_flush();
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
+    spk_ports(t, 0);
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -553,6 +557,9 @@ void __far v86_poll(void)
     unsigned long e8, e9;
     int t, cur = -2;
 
+    for (t = 0; t < NTASK; t++)         /* Lautsprecher nur vorn         */
+        if (spk_open[t] && !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg()))
+            spk_ports(t, 0);
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
         int s = kf_vio_fg(), ok = 0;
         for (t = 0; t < NTASK; t++)
@@ -829,6 +836,25 @@ static int box_fg(int t)
     return box_ses[t] >= 0 && kf_vio_fg() == box_ses[t];
 }
 
+/* Lautsprecher-Ports 42h/61h direkt freigeben (I/O-Bitmap), solange die
+   Box vorn ist: Spiele (Digger) schreiben bei viel Action staendig
+   dorthin, jeder Trap kostet - das Spiel wurde langsamer */
+static void spk_ports(int t, int on)
+{
+    if (on == spk_open[t])
+        return;
+    spk_open[t] = (unsigned char)on;
+    if (on) {
+        tss[t].iob[0x42 >> 3] &= (unsigned char)~(1 << (0x42 & 7));
+        tss[t].iob[0x61 >> 3] &= (unsigned char)~(1 << (0x61 & 7));
+    } else {
+        tss[t].iob[0x42 >> 3] |= (unsigned char)(1 << (0x42 & 7));
+        tss[t].iob[0x61 >> 3] |= (unsigned char)(1 << (0x61 & 7));
+        outb(0x61, inb(0x61) & ~3);             /* stumm                 */
+        spk[t] = 0;
+    }
+}
+
 static void spk_hw(int t, int on)
 {
     unsigned char b = (unsigned char)inb(0x61);
@@ -859,8 +885,10 @@ static void pit_out(int t, unsigned p, unsigned char v)
         return;
     }
     if (p == 0x42) {
-        if (box_fg(t))
+        if (box_fg(t)) {
             outb(0x42, v);
+            spk_ports(t, 1);                    /* weitere direkt        */
+        }
         return;
     }
     if (p != 0x40)
@@ -930,8 +958,10 @@ static int t8_ok(int t)
 
 static void inject(struct v86_iret *r, int t)
 {
-    if (spk[t] && !box_fg(t))
+    if ((spk[t] || spk_open[t]) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
+        spk_ports(t, 0);
+    }
     if (pit_rl[t])
         kpit_check(t);                          /* vorn schneller Takt   */
     vga_freeze(t);
@@ -1650,6 +1680,7 @@ static void vga_freeze(int t)
         return;
     if (spk[t])
         spk_hw(t, 0);
+    spk_ports(t, 0);
     kpit_set(0);
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
@@ -1812,8 +1843,10 @@ static void port_out(int t, unsigned p, unsigned char v)
         break;
     case 0x61:
         spk[t] = (unsigned char)(v & 3);
-        if (box_fg(t))
+        if (box_fg(t)) {
             spk_hw(t, 1);
+            spk_ports(t, 1);                    /* weitere direkt        */
+        }
         break;
     case 0x3D4:
         crt_idx[t] = v;
