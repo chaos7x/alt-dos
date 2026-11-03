@@ -1711,7 +1711,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   HIGH,UMB), `RMSIZE=` -> `box_kb`. Box-CONFIG.SYS hat fest
   `DOS=HIGH,UMB` und `DEVICE=A:\ATBOX.SYS` (apps/atbox.asm, tut nichts –
   FreeDOS ruft umb_init nur nach einer DEVICE=-Zeile!). Offen: XMS-Grenze
-  einstellbar (DOSBOX.INI), mehr als 2,9 MB (weitere Seitentabellen),
+  einstellbar erledigt: `\DOS\BOX\DOSBOX.INI` (Entscheidung des
+  Nutzers: keine Oberfläche -> Datei; beides: CONFIG.SYS für den Start
+  der Box, INI je Programm). BOXSHELL liest sie vor jedem Programm
+  (`get_pname` = Name aus der Befehlszeile, `ini_apply`/`ini_pass`: erst
+  `[*]`, dann `[NAME.EXT]`, Schlüssel ohne Groß/klein, 4 KB per 48h),
+  `XMS_MEMORY_LIMIT` -> INT E0h 16h (`xms_lim[t]` = Seiten + 1, 0 =
+  Vorgabe 2048, bis 3008), `DOS_VERSION` -> INT 2Fh 122Fh (FreeDOS gibt
+  os_setver jedem neuen PSP mit, SETVER-Tabelle geht vor), nach dem
+  Programm zurück (DX = 0). In QEMU geprüft ([*] 1024, [XT.COM] 512,
+  [DOSVER.COM] 6.22, anderes Programm wieder 7.10). Pro Programm nicht
+  möglich, weil die Box offen bleibt: DOS=, RMSIZE (beim Start der Box).
+  Offen: mehr als 2,9 MB XMS (weitere Seitentabellen),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen

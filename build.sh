@@ -224,7 +224,7 @@ done
 mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
-BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/DOSBOX.INI DOSBOX.INI  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/BOX" "${TO}DEMO"

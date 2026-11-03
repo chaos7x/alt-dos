@@ -316,6 +316,12 @@ und PC-DOS.
   zwischen C8000 und EFFFF als UMBs (`LH`, `DEVICEHIGH`); `RMSIZE=` setzt
   den konventionellen Speicher je Box (256–640 KB). Eine Box kostet damit
   ≈ 820 KB
+- `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
+  Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
+  `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–3008,
+  Vorgabe 2048), `DOS_VERSION=n.nn` (SETVER.LST geht vor). Wird vor jedem
+  Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
+  steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS

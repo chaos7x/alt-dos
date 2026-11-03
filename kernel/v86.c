@@ -86,6 +86,7 @@ static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
 static unsigned pit_c[NTASK];
 static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
+static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
 static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
 
 unsigned long v86_pages;                /* Seiten aller Boxen (MEM)      */
@@ -1146,7 +1147,10 @@ static void svc(int n, struct v86_frame *f, int t)
                 svc_cf = 0;
         } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
-        else if (AH == 0x15)                    /* Programm fertig (AL):  */
+        else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
+            unsigned pg = BX >> 2;
+            xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
+        } else if (AH == 0x15)                  /* Programm fertig (AL):  */
             kf_box_ctl(BOX_PARK, AL);           /* parken oder beenden    */
         else if (AH == 0x14) {                  /* Verzeichnis des Aufrufers */
             static char cd[132];                /* "C:\DOS" (8.3) -> ES:DI */
@@ -1289,8 +1293,9 @@ static void port_out(int t, unsigned p, unsigned char v)
    Eigene Seiten tragen PTE_OWN und werden in v86_destroy frei. */
 #define rd8_k(i) (*(unsigned char __far *)MK_FP(SCRATCH, (i)))
 #define XMS_PG0  0x110                  /* erste EMB-Seite               */
-#define XMS_KB   2048                   /* Grenze je Box (spaeter DOSBOX.INI) */
-#define XMS_PGN  (XMS_KB / 4)
+#define XMS_KB   2048                   /* Vorgabe je Box (DOSBOX.INI: XMS_MEMORY_LIMIT) */
+#define XMS_MAXPG (0x400 - XMS_PG0)      /* eine Seitentabelle: 3008 KB   */
+#define XMS_PGN  (xms_lim[t] ? xms_lim[t] - 1 : XMS_KB / 4)
 #define NXH      16
 struct xmsh { unsigned base, npg; unsigned char used, lock; };
 static struct xmsh xh[NTASK][NXH];
@@ -1362,6 +1367,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
     for (i = 0; i < NXH; i++)
         xh[t][i].used = 0;
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
+    xms_lim[t] = 0;
     for (i = 0; i < 6; i++)
         umb_used[t][i] = umb_head[t][i] = 0;
 }
@@ -1475,7 +1481,7 @@ static unsigned emb_free_pg(int t)
     for (i = 0; i < NXH; i++)
         if (xh[t][i].used)
             u += xh[t][i].npg;
-    return XMS_PGN - u;
+    return u >= XMS_PGN ? 0 : XMS_PGN - u;
 }
 
 static void lwin(unsigned idx, unsigned long lin)  /* Fenster auf lineare Adresse der Box */
@@ -1571,7 +1577,7 @@ static void xms(struct v86_frame *f, int t)
         return;
     case 0x09: case 0x89:                       /* Block anlegen         */
         kb = AH == 0x89 ? f->edx : DX;
-        if (kb > XMS_KB)
+        if (kb > (unsigned long)XMS_PGN << 2)
             XFAIL(0xA0);
         n = (unsigned)((kb + 3) >> 2);
         for (i = 0; i < NXH && xh[t][i].used; i++)
@@ -1663,7 +1669,7 @@ static void xms(struct v86_frame *f, int t)
         if (x->lock)
             XFAIL(0xAB);
         n = (unsigned)((kb + 3) >> 2);
-        if (kb > XMS_KB)
+        if (kb > (unsigned long)XMS_PGN << 2)
             XFAIL(0xA0);
         if (n < x->npg) {
             emb_unmap(t, x->base + n, x->npg - n);

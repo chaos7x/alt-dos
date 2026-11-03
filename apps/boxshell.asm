@@ -58,6 +58,8 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         int     10h                     ; des Programms an CMD zurueck
 .cwd:   call    goto_cwd
         pop     cx
+        call    get_pname               ; DOSBOX.INI: Einstellungen fuer
+        call    ini_apply               ; dieses Programm
         jcxz    .viacom
         call    direct                  ; .COM/.EXE: ohne FreeCOM
         jnc     .run
@@ -107,7 +109,14 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         jc      .exit
         mov     ah, 4Dh                 ; dessen Rueckgabewert
         int     21h
-.exit:  mov     ah, 15h                 ; fertig: der Kernel parkt die Box
+.exit:  cmp     word [dosver], 0        ; DOS_VERSION zuruecknehmen
+        je      .park
+        push    ax
+        mov     ax, 122Fh
+        xor     dx, dx
+        int     2Fh
+        pop     ax
+.park:  mov     ah, 15h                 ; fertig: der Kernel parkt die Box
         int     0E0h                    ; (wie NTVDM offen halten) oder
         cli                             ; beendet sie; zurueck kommt sie
         mov     ax, cs                  ; erst mit dem naechsten Programm
@@ -123,6 +132,239 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
         stosb
         jmp     copystr
 .r:     ret
+
+; ---- DOSBOX.INI (X:\DOS\BOX) -------------------------------------------
+; Einstellungen je Programm, die beim Programmstart wirken koennen (DOS=
+; und RMSIZE= gelten beim Start der Box und stehen in der CONFIG.SYS):
+;   [*]           fuer alle Programme
+;   [NAME.EXT]    fuer ein Programm (geht vor)
+;   XMS_MEMORY_LIMIT=KB   (0-3008, Vorgabe 2048) -> INT E0h 16h
+;   DOS_VERSION=n.nn      -> INT 2Fh 122Fh fuer das naechste Programm
+;                            (ein Eintrag in SETVER.LST geht vor)
+; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
+
+get_pname:                              ; Name aus cmd (CX Zeichen) -> pname
+        push    cx
+        push    si
+        push    di
+        push    bx
+        mov     di, pname
+        mov     si, t_cmdcom
+        jcxz    .cp
+        xor     si, si
+        xor     bx, bx                  ; Anfang des Namens
+.w:     cmp     si, cx
+        jae     .we
+        mov     al, [cmd+si]
+        inc     si
+        cmp     al, ' '
+        je      .we1
+        cmp     al, '\'
+        je      .bs
+        cmp     al, ':'
+        jne     .w
+.bs:    mov     bx, si
+        jmp     .w
+.we1:   dec     si
+.we:    mov     cx, si
+        sub     cx, bx
+        cmp     cx, 12
+        jbe     .cn
+        mov     cx, 12
+.cn:    lea     si, [cmd+bx]
+.c:     jcxz    .z
+        lodsb
+        call    upcase
+        stosb
+        dec     cx
+        jmp     .c
+.cp:    lodsb
+        stosb
+        test    al, al
+        jnz     .cp
+        jmp     .r
+.z:     mov     byte [di], 0
+.r:     pop     bx
+        pop     di
+        pop     si
+        pop     cx
+        ret
+
+upcase: cmp     al, 'a'
+        jb      .u
+        cmp     al, 'z'
+        ja      .u
+        sub     al, 20h
+.u:     ret
+
+ini_apply:
+        push    cx
+        push    es
+        mov     word [xmskb], 2048
+        mov     word [dosver], 0
+        mov     ah, 48h                 ; 4 KB Lesepuffer
+        mov     bx, 256
+        int     21h
+        jc      .set
+        mov     [ibuf], ax
+        mov     es, ax
+        mov     byte [es:0], 0
+        mov     dx, t_ini
+        mov     ax, 3D00h
+        int     21h
+        jc      .free
+        mov     bx, ax
+        push    ds
+        mov     ds, [cs:ibuf]
+        xor     dx, dx
+        mov     cx, 4095
+        mov     ah, 3Fh
+        int     21h
+        pop     ds
+        jc      .close
+        mov     di, ax
+        mov     byte [es:di], 0
+.close: mov     ah, 3Eh
+        int     21h
+        mov     bx, t_star              ; erst [*], dann [NAME.EXT]
+        call    ini_pass
+        mov     bx, pname
+        call    ini_pass
+.free:  mov     es, [ibuf]
+        mov     ah, 49h
+        int     21h
+.set:   mov     bx, [xmskb]
+        mov     ah, 16h
+        int     0E0h
+        mov     dx, [dosver]
+        test    dx, dx
+        jz      .r
+        mov     ax, 122Fh
+        int     2Fh
+.r:     pop     es
+        pop     cx
+        ret
+
+ini_pass:                               ; BX = Abschnittsname, ES = Puffer
+        mov     es, [ibuf]
+        xor     si, si
+        xor     bp, bp                  ; 1: Abschnitt gilt
+.line:  mov     al, [es:si]
+        test    al, al
+        jz      .done
+        cmp     al, ' '
+        ja      .tx
+        inc     si
+        jmp     .line
+.tx:    cmp     al, ';'
+        je      .skip
+        cmp     al, '['
+        jne     .key
+        inc     si
+        xor     bp, bp
+        mov     di, bx
+.sc:    mov     al, [es:si]
+        call    upcase
+        cmp     al, ']'
+        je      .se
+        cmp     al, [di]
+        jne     .skip
+        inc     si
+        inc     di
+        jmp     .sc
+.se:    cmp     byte [di], 0
+        jne     .skip
+        mov     bp, 1
+        jmp     .skip
+.key:   test    bp, bp
+        jz      .skip
+        mov     di, k_xms
+        call    kmatch
+        jc      .k2
+        call    pnum
+        mov     [xmskb], ax
+        jmp     .skip
+.k2:    mov     di, k_ver
+        call    kmatch
+        jc      .skip
+        mov     dl, [es:si]             ; Hauptversion
+        sub     dl, '0'
+        xor     dh, dh
+        inc     si
+        cmp     byte [es:si], '.'
+        jne     .vs
+        inc     si
+        mov     al, [es:si]
+        sub     al, '0'
+        cmp     al, 9
+        ja      .vs
+        mov     ah, 10
+        mul     ah
+        mov     dh, al
+        inc     si
+        mov     al, [es:si]
+        sub     al, '0'
+        cmp     al, 9
+        ja      .vs
+        add     dh, al
+.vs:    cmp     dl, 2
+        jb      .skip
+        cmp     dl, 9
+        ja      .skip
+        mov     [dosver], dx
+.skip:  mov     al, [es:si]
+        test    al, al
+        jz      .done
+        inc     si
+        cmp     al, 10
+        jne     .skip
+        jmp     .line
+.done:  ret
+
+kmatch:                                 ; [ES:SI] = Name an DI, dann "=" ?
+        push    si                      ; -> SI hinter "=", CF = 0
+.k:     mov     al, [di]
+        test    al, al
+        jz      .eq
+        mov     ah, al
+        mov     al, [es:si]
+        call    upcase
+        cmp     al, ah
+        jne     .no
+        inc     si
+        inc     di
+        jmp     .k
+.eq:    cmp     byte [es:si], ' '
+        jne     .e2
+        inc     si
+        jmp     .eq
+.e2:    cmp     byte [es:si], '='
+        jne     .no
+        inc     si
+.e3:    cmp     byte [es:si], ' '
+        jne     .ok
+        inc     si
+        jmp     .e3
+.ok:    add     sp, 2
+        clc
+        ret
+.no:    pop     si
+        stc
+        ret
+
+pnum:                                   ; Dezimalzahl an ES:SI -> AX
+        xor     ax, ax
+.n:     mov     cl, [es:si]
+        sub     cl, '0'
+        cmp     cl, 9
+        ja      .x
+        mov     dx, 10
+        mul     dx
+        xor     ch, ch
+        add     ax, cx
+        inc     si
+        jmp     .n
+.x:     ret
 
 ; ---- Programm direkt starten ---------------------------------------------
 ; Endet das erste Wort der Befehlszeile (cmd, CX Zeichen) auf .COM oder
@@ -415,13 +657,22 @@ dmask     dd 0
 old2f     dd 0
 
 t_path    db "PATH=X:\DOS\BOX;X:\DOS", 0
+t_ini     db "X:\DOS\BOX\DOSBOX.INI", 0
+t_star    db "*", 0
+t_cmdcom  db "COMMAND.COM", 0
+k_xms     db "XMS_MEMORY_LIMIT", 0
+k_ver     db "DOS_VERSION", 0
+xmskb     dw 2048
+dosver    dw 0
+ibuf      dw 0
+pname     times 13 db 0
 t_comspec db "X:\DOS\BOX\COMMAND.COM", 0
 t_cmd     db " X:\DOS\BOX\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+16, t_comspec, t_cmd+1
-          dw t_autoexec, 0
+          dw t_autoexec, t_ini, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0
 pb_fcb1   dw fcb, 0
