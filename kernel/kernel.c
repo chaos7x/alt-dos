@@ -3444,6 +3444,13 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
     return r;
 }
 
+/* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (v86.c), Puffer in
+   KDATA, ohne Kernelsperre wie FAPI_AUDIO */
+unsigned box_aud(unsigned fn, unsigned a, unsigned b)
+{
+    return aud_fapi(KDATA, fn, a, b);
+}
+
 /* Dienste fuer den V86-Monitor (v86.c, zweites Codesegment) */
 int box_ctl(unsigned op, unsigned a)
 {

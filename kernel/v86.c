@@ -120,6 +120,18 @@ static void vp_free(pg_t p)
 
 static void xms_end(int t);
 static void vga_freeze(int t);
+struct vsb {
+    unsigned char on, rst, cmd, need, nargs, args[2];
+    unsigned char out[4], on_, oh;      /* Ausgabe an 22Ah (Ring)        */
+    unsigned char spk, act, ai, irqp, aud;
+    unsigned rate, blk, pos, frac;      /* Rate, Blocklaenge, Stand      */
+    unsigned long last;                 /* Kerneltakt der letzten Abrechnung */
+    unsigned dbase, dcnt, dcur, dleft;  /* DMA Kanal 1: Basis, Laenge-1, aktuell, Rest */
+    unsigned char dpage, dff, dmode, dmask;
+};
+static struct vsb sb[NTASK];
+static void sb_stop(int t);
+static void lwin(unsigned idx, unsigned long lin);
 static void kpit_set(unsigned dv);
 static void hlt_wait(int t);
 static unsigned long key_t0[NTASK];     /* Takt der letzten zugestellten Taste */
@@ -259,6 +271,7 @@ void __far v86_destroy(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    sb_stop(t);
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -428,6 +441,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
     spk[t] = spk_open[t] = opl_open[t] = 0;   /* (tss_init sperrt alle Ports) */
+    sb[t].act = sb[t].aud = sb[t].irqp = sb[t].on_ = sb[t].need = sb[t].spk = 0;
+    sb[t].rate = 11025;
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
@@ -531,6 +546,7 @@ void __far v86_park(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    sb_stop(t);
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -937,6 +953,262 @@ static void opl_ports(int t, int on)
     }
 }
 
+
+/* ---- Virtuelle Sound Blaster 2.0 (DSP 2.01, 220h, DMA 1, IRQ 5/7) --------
+   Die Box sieht eine SB 2.0: DSP-Ports 226h/22Ah/22Ch/22Eh, 8237-Kanal 1
+   (Ports 02h/03h/0Ah/0Bh/0Ch/83h) nur virtuell. Laeuft eine DMA-Ausgabe
+   (14h einmal, 1Ch Auto-Init), holt sb_pump bei jedem Ruecksprung in die
+   Box die faelligen Bytes aus ihrem Speicher und gibt sie ueber die
+   Audio-Schnittstelle des Kernels (SB16.SYS) aus; am Blockende IRQ 5
+   bzw. 7 - welcher, entscheidet der eingehaengte Vektor (0Dh/0Fh). */
+unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
+static unsigned div3216(unsigned long n, unsigned d);
+#pragma aux div3216 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
+static char sb_buf[512];
+
+static void sb_put(int t, unsigned char v)
+{
+    if (sb[t].on_ < 4) {
+        sb[t].out[(sb[t].oh + sb[t].on_) & 3] = v;
+        sb[t].on_++;
+    }
+}
+
+static int sb_irq(int t)                /* 5 oder 7: wer ist eingehaengt  */
+{
+    if (!vec_def(0x0F) || pm_hooked(t, 0x0F))
+        return 7;
+    return 5;
+}
+
+static void sb_stop(int t)
+{
+    sb[t].act = 0;
+    if (sb[t].aud) {                    /* der Kernel ordnet Ton dem Task */
+        if (kf_box_ctl(BOX_TASK, 0) == t)       /* zu (sonst raeumt     */
+            kf_box_aud(AUD_CLOSE, 0, 0);        /* task_end auf)        */
+        sb[t].aud = 0;
+    }
+}
+
+static void sb_start(int t, unsigned len, int ai)
+{
+    static struct fapi_audfmt fmt;
+    if (!len)
+        return;
+    if (!sb[t].aud || fmt.rate != sb[t].rate) {
+        if (sb[t].aud)
+            kf_box_aud(AUD_CLOSE, 0, 0);
+        fmt.rate = sb[t].rate ? sb[t].rate : 11025;
+        fmt.channels = 1;
+        fmt.bits = 8;
+        sb[t].aud = kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
+    }
+    sb[t].blk = len;
+    sb[t].pos = 0;
+    sb[t].frac = 0;
+    sb[t].ai = (unsigned char)ai;
+    sb[t].act = 1;
+    sb[t].last = get_ticks();
+}
+
+/* faellige Bytes ausgeben, Blockende -> IRQ; im Ruecksprung in die Box
+   (Interrupts aus), schreibt mit Interrupts an (die Karte kann warten) */
+static void sb_pump(int t)
+{
+    unsigned long now;
+    unsigned d, n, due;
+    if (!sb[t].act)
+        return;
+    now = get_ticks();
+    d = now - sb[t].last > 20 ? 20 : (unsigned)(now - sb[t].last);
+    if (!d)
+        return;
+    sb[t].last = now;
+    due = 0;
+    while (d--) {                               /* Bytes je 10 ms        */
+        due += sb[t].rate / 100;
+        sb[t].frac += sb[t].rate % 100;
+        if (sb[t].frac >= 100) {
+            sb[t].frac -= 100;
+            due++;
+        }
+    }
+    enable_ints();
+    while (due && sb[t].act) {
+        n = sb[t].blk - sb[t].pos;              /* bis zum Blockende     */
+        if (n > due)
+            n = due;
+        if (n > sb[t].dleft + 1)                /* bis zum Ende des DMA-Puffers */
+            n = sb[t].dleft + 1;
+        if (n > sizeof(sb_buf))
+            n = sizeof(sb_buf);
+        lwin(VWIN_IDX, ((unsigned long)sb[t].dpage << 16) + sb[t].dcur);
+        far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, n);
+        if (sb[t].aud && sb[t].spk && box_fg(t))
+            kf_box_aud(AUD_WRITE, (unsigned)sb_buf, n);
+        due -= n;
+        sb[t].pos += n;
+        sb[t].dcur += n;
+        if (n > sb[t].dleft) {                  /* DMA-Puffer zu Ende    */
+            sb[t].dcur = sb[t].dbase;           /* (8237 im Auto-Init)   */
+            sb[t].dleft = sb[t].dcnt;
+        } else
+            sb[t].dleft -= n;
+        if (sb[t].pos >= sb[t].blk) {           /* Block fertig: IRQ     */
+            sb[t].irqp = 1;
+            sb[t].pos = 0;
+            if (!sb[t].ai)
+                sb[t].act = 0;
+        }
+    }
+    irq_off();
+}
+
+static void sb_cmd(int t, unsigned char v)
+{
+    struct vsb *b = &sb[t];
+    unsigned d;
+    if (b->need) {                              /* Argument              */
+        b->args[b->nargs++] = v;
+        if (b->nargs < b->need)
+            return;
+        b->need = 0;
+        switch (b->cmd) {
+        case 0x40:
+            d = 256 - b->args[0];
+            if (d < 16)
+                d = 16;
+            b->rate = div3216(1000000UL, d);
+            break;
+        case 0x48:
+            b->blk = (b->args[0] | (b->args[1] << 8)) + 1;
+            break;
+        case 0x14: case 0x91:
+            sb_start(t, (b->args[0] | (b->args[1] << 8)) + 1, 0);
+            break;
+        case 0xE0:
+            sb_put(t, (unsigned char)~b->args[0]);
+            break;
+        case 0xE4:
+            b->args[1] = b->args[0];            /* Testregister          */
+            break;
+        }
+        return;
+    }
+    b->cmd = v;
+    b->nargs = 0;
+    switch (v) {
+    case 0x10: case 0x40: case 0xE0: case 0xE4: case 0x38:
+        b->need = 1;
+        break;
+    case 0x14: case 0x48: case 0x91: case 0x16: case 0x17: case 0x74: case 0x75:
+        b->need = 2;
+        break;
+    case 0x1C: case 0x90:                       /* Auto-Init mit 48h     */
+        sb_start(t, b->blk ? b->blk : 2048, 1);
+        break;
+    case 0xD0: b->act = 0; break;               /* anhalten              */
+    case 0xD4: if (b->blk) { b->act = 1; b->last = get_ticks(); } break;
+    case 0xDA: b->ai = 0; break;                /* Auto-Init beenden     */
+    case 0xD1: b->spk = 1; break;
+    case 0xD3: b->spk = 0; break;
+    case 0xD8: sb_put(t, b->spk ? 0xFF : 0); break;
+    case 0xE1: sb_put(t, 2); sb_put(t, 1); break;   /* DSP 2.01         */
+    case 0xE8: sb_put(t, b->args[1]); break;
+    case 0xF2: b->irqp = 1; break;              /* IRQ ausloesen         */
+    }
+}
+
+static int sb_in(int t, unsigned p, unsigned char *v)
+{
+    struct vsb *b = &sb[t];
+    switch (p) {
+    case 0x22A:
+        if (b->on_) {
+            *v = b->out[b->oh];
+            b->oh = (unsigned char)((b->oh + 1) & 3);
+            b->on_--;
+        } else
+            *v = 0xAA;
+        return 1;
+    case 0x22C:
+        *v = 0x7F;                              /* bereit                */
+        return 1;
+    case 0x22E:
+        *v = (unsigned char)(b->on_ ? 0xFF : 0x7F);
+        return 1;
+    case 0x226:
+        *v = 0xFF;
+        return 1;
+    case 0x02: case 0x03: {                     /* DMA 1 Adresse/Zaehler */
+        unsigned w = p == 0x02 ? b->dcur : b->dleft;
+        *v = (unsigned char)(b->dff ? w >> 8 : w);
+        b->dff ^= 1;
+        return 1;
+    }
+    case 0x08:
+        *v = (unsigned char)(b->act ? 0 : 0x02);    /* TC Kanal 1        */
+        return 1;
+    case 0x83:
+        *v = b->dpage;
+        return 1;
+    }
+    return 0;
+}
+
+static int sb_out(int t, unsigned p, unsigned char v)
+{
+    struct vsb *b = &sb[t];
+    switch (p) {
+    case 0x226:                                 /* Reset                 */
+        if (v & 1)
+            b->rst = 1;
+        else if (b->rst) {
+            b->rst = 0;
+            sb_stop(t);
+            b->need = 0;
+            b->on_ = b->oh = 0;
+            b->spk = 0;
+            sb_put(t, 0xAA);
+        }
+        return 1;
+    case 0x22C:
+        sb_cmd(t, v);
+        return 1;
+    case 0x02:                                  /* DMA 1 Adresse         */
+        if (b->dff) b->dbase = (b->dbase & 0xFF) | (v << 8);
+        else b->dbase = (b->dbase & 0xFF00) | v;
+        b->dff ^= 1;
+        b->dcur = b->dbase;
+        return 1;
+    case 0x03:                                  /* DMA 1 Laenge - 1      */
+        if (b->dff) b->dcnt = (b->dcnt & 0xFF) | (v << 8);
+        else b->dcnt = (b->dcnt & 0xFF00) | v;
+        b->dff ^= 1;
+        b->dleft = b->dcnt;
+        return 1;
+    case 0x0C:
+        b->dff = 0;
+        return 1;
+    case 0x0A:
+        if ((v & 3) == 1)
+            b->dmask = (unsigned char)(v & 4);
+        return 1;
+    case 0x0B:
+        if ((v & 3) == 1)
+            b->dmode = v;
+        return 1;
+    case 0x83:
+        b->dpage = v;
+        return 1;
+    case 0x00: case 0x01: case 0x04: case 0x05: case 0x06: case 0x07:
+    case 0x08: case 0x09: case 0x0D: case 0x0E: case 0x0F:
+        return 1;                               /* andere Kanaele: nichts */
+    }
+    return 0;
+}
+
 static void spk_hw(int t, int on)
 {
     unsigned char b = (unsigned char)inb(0x61);
@@ -1049,8 +1321,22 @@ static void inject(struct v86_iret *r, int t)
         kpit_check(t);                          /* vorn schneller Takt   */
     vga_freeze(t);
     account(t);
+    sb_pump(t);
     if (!(vfl[t] & FL_IF))
         return;
+    if (sb[t].irqp) {                           /* Sound Blaster fertig  */
+        unsigned q = sb_irq(t), m = 1 << q;
+        if (!(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m)) {
+            if (!vec_def(8 + q)) {              /* Real-Mode-Handler     */
+                sb[t].irqp = 0;
+                visr[t] |= (unsigned char)m;
+                int_raw(r, t, 8 + q, (unsigned)r->eip);
+                return;
+            }
+            if (!pm_hooked(t, 8 + q))
+                sb[t].irqp = 0;                 /* niemand will ihn      */
+        }
+    }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && t8_ok(t)) {
         vt_pend[t]--;
         visr[t] |= 1;
@@ -1765,6 +2051,7 @@ static void vga_freeze(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    sb_stop(t);
     kpit_set(0);
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
@@ -1860,7 +2147,10 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
    Schreiben verpufft. */
 static unsigned char port_in(int t, unsigned p)
 {
+    unsigned char sv;
     int k;
+    if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
+        return sv;
     switch (p) {
     case 0x20:
         return 0;
@@ -1915,6 +2205,8 @@ static unsigned char port_in(int t, unsigned p)
 static void port_out(int t, unsigned p, unsigned char v)
 {
     unsigned o, cur;
+    if (sb_out(t, p, v))                        /* virtuelle Sound Blaster */
+        return;
     switch (p) {
     case 0x20:
         if (v == 0x20)                          /* EOI: niedrigstes Bit  */
@@ -3762,6 +4054,7 @@ static void dp_hwint(struct v86_iret *r, int t)
     if (!dp_on[t] || (r->cs & 3) != 3)
         return;
     account(t);
+    sb_pump(t);
     if (!(vfl[t] & FL_IF))
         return;
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
@@ -3769,6 +4062,15 @@ static void dp_hwint(struct v86_iret *r, int t)
         visr[t] |= 1;
         dp_push(r, t, 8);
         return;
+    }
+    if (sb[t].irqp) {                           /* Sound Blaster (DMX)   */
+        unsigned q = sb_irq(t), m = 1 << q;
+        if (!(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m) && pm_hooked(t, 8 + q)) {
+            sb[t].irqp = 0;
+            visr[t] |= (unsigned char)m;
+            dp_push(r, t, 8 + q);
+            return;
+        }
     }
     if (pm_hooked(t, 9) && key_ready(t)) {
         key_t0[t] = get_ticks();

@@ -1921,6 +1921,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (SB16.SYS/fm_load) noch nicht geregelt: die Box im Vordergrund schreibt
   direkt. Nächster Schritt: virtuelle Sound Blaster (DSP 220h, DMA 1,
   IRQ 5/7) über SB16.SYS.
+  Virtuelle Sound Blaster, Stufe 1 (in QEMU mit `-device sb16` für
+  SB16.SYS + DOOM-Konfiguration SB 220h/IRQ 5/DMA 1 geprüft: DOOM läuft,
+  Effekte im Mitschnitt): v86.c `struct vsb sb[]` – DSP 2.01 an 226h/22Ah/
+  22Ch/22Eh (Reset AAh, E1h Version, 40h Zeitkonstante -> Rate über
+  `div3216`, 48h Blocklänge, 14h/91h einmal, 1Ch/90h Auto-Init, D0/D4/DA,
+  D1/D3/D8 Lautsprecher, E0/E4/E8, F2 IRQ), 8237-Kanal 1 virtuell (02h/
+  03h/0Ah/0Bh/0Ch/83h, andere DMA-Ports verpuffen – nie an die Hardware).
+  `sb_pump` (aus inject und dp_hwint): fällige Bytes je 10 ms aus dem
+  Box-Speicher (VWIN über `lwin`, 512-Byte-Stücke in `sb_buf`) über
+  `kf_box_aud` -> `box_aud` (kernel.c, aud_fapi mit KDATA, ohne Sperre)
+  an SB16.SYS, nur vorn und mit Lautsprecher an; Blockende -> `irqp`,
+  zugestellt als IRQ 7, wenn 0Fh eingehängt ist (RM oder PM), sonst 5;
+  RM-Handler über die IVT, PM-Handler über dp_push. AUD_CLOSE nur im
+  eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
+  Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS
