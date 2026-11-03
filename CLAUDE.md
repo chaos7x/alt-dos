@@ -676,6 +676,8 @@ Slave 100 MB (776/8/33); am Adaptec SCSI-ID 6 CD-ROM (für Adaptec-Tests
 hängt der Nutzer zeitweise eine SCSI-Platte an ID 0).
 
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
+Der Nutzer will AT-DOS auch in Proxmox (KVM) laufen lassen: SeaBIOS,
+i440fx, Platte an IDE oder am „LSI 53C895A“ (NCR8XX.SYS), nicht VirtIO.
 `ATSYS.COM` lässt sich in DOSBox-X testen (`imgmount d ziel.img -t hdd -size
 512,63,16,130`, Diskette als A:), danach das Ziel in QEMU starten.
 
@@ -1341,7 +1343,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Nutzers **ASUS P3B-F** (i440BX, PIIX4E, Slot 1, Pentium II/III, AGP, USB,
   APM/ACPI, bis 1 GB SDRAM, Super-I/O W83977EF; in 86Box als `p3bf`).
   Folgen für 6.0: Speicher per E820h bis 1 GB (Bitmap in 4-KB-Seiten:
-  32 KB); PIIX4-IDE im Kompatibilitätsmodus wie heute, dazu Busmaster-DMA
+  32 KB; Anheben auf 2 GB und mehr – Entscheidung des Nutzers – nach
+  hinten, erst wenn das Wichtige durch ist: bis 2 GB wachsen nur Bitmap
+  und Seitentabellen, darüber stößt der Kernel-Alias ab 80000000h an,
+  dann Fenster statt voller Spiegelung bzw. 7.0; XMS der Boxen bekommt
+  trotzdem gleich die 32-Bit-Funktionen 88h/89h/8Fh); PIIX4-IDE im Kompatibilitätsmodus wie heute, dazu Busmaster-DMA
   (SFF-8038i/UDMA); Partitionen über 2 GB -> FAT32 ist Pflicht
   (Entscheidung des Nutzers, wegen des Austauschs mit Windows 95/98),
   im Kernel neben FAT12/16 inkl. VFAT-Namen lesen; AGP-Grafik mit VBE 2.0/3.0 und
