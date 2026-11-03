@@ -3446,8 +3446,13 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
 
 /* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (v86.c), Puffer in
    KDATA, ohne Kernelsperre wie FAPI_AUDIO */
+static void fm_box(int on);
 unsigned box_aud(unsigned fn, unsigned a, unsigned b)
 {
+    if (fn == BOX_AUD_FM) {             /* Box nimmt/gibt den OPL-Chip   */
+        fm_box(a);
+        return 0;
+    }
     return aud_fapi(KDATA, fn, a, b);
 }
 
@@ -4259,6 +4264,7 @@ struct aclient {
 static struct aclient fmc[NFM] = { { -1 }, { -1 }, { -1 }, { -1 } },
                       mdc[NFM] = { { -1 }, { -1 }, { -1 }, { -1 } };
 static int fm_cur = -1, md_cur = -1;
+static unsigned char fm_boxed;          /* Box im Vordergrund spielt direkt */
 static unsigned fm_sel;                 /* NFM * 512 Byte Registerkopien  */
 static struct fapi_fmreg fm_buf[64];
 
@@ -4316,6 +4322,19 @@ static void aud_task_end(int t)
 static unsigned char __far *fm_shadow(int i)
 {
     return MK_FP(fm_sel, (unsigned)i * 512u);
+}
+
+/* Eine DOS-Box im Vordergrund schreibt direkt auf 388h-38Bh (v86.c
+   opl_ports): solange gehoert ihr der Chip, FM-Programme schreiben nur in
+   ihre Registerkopie; das laufende wird angehalten. Gibt die Box ihn ab
+   (hinten, Parken, Ende), laedt der naechste FMWRITE den Stand neu. */
+static void fm_box(int on)
+{
+    fm_boxed = (unsigned char)on;
+    if (on && fm_cur >= 0 && aud_drv >= 0) {
+        aud_call(NAUD, AR_FMRESET, 0, 0, 0);
+        fm_cur = -1;
+    }
 }
 
 /* Register des Programms i in den OPL laden (B0h-B8h ohne Taste) */
@@ -4448,7 +4467,7 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
             return FAPI_ERROR;
         for (k = 0; k < b; k++)
             fm_shadow(i)[f[k].reg & 0x1FF] = f[k].val;
-        w = cl_pick(fmc);
+        w = fm_boxed ? -1 : cl_pick(fmc);
         if (w == i && fm_cur != i) {
             fm_load(i);                 /* Stand laden (Tasten los) ...  */
             fm_cur = i;

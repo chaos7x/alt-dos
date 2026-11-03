@@ -613,7 +613,20 @@ static int opl_detect(void)
     opl_w(4, 0x80);
     if (s1 != 0 || s2 != 0xC0)
         return 0;
-    return (inp(0x388) & 0x06) == 0 ? AUDCAP_OPL3 : AUDCAP_OPL2;
+    if (inp(0x388) & 0x06)
+        return AUDCAP_OPL2;
+    /* Statusbits 1-2 = 0 sagen OPL3, aber ein OPL2 dekodiert nur A0:
+       38Ah/38Bh spiegeln dann 388h/389h (QEMU-AdLib). Zeitgeber ueber
+       die zweite Bank starten - laeuft er, ist es ein Spiegel */
+    opl_w(0x102, 0xFF);
+    opl_w(0x104, 0x21);
+    for (k = 0; k < 200; k++)
+        inp(0x388);
+    s2 = (unsigned char)(inp(0x388) & 0xE0);
+    opl_w(0x104, 0);                    /* OPL3: 4-Operator-Bits wieder aus */
+    opl_w(4, 0x60);
+    opl_w(4, 0x80);
+    return s2 == 0xC0 ? AUDCAP_OPL2 : AUDCAP_OPL3;
 }
 
 static void opl_reset(void)

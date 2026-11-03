@@ -234,6 +234,7 @@ void __far v86_key(unsigned sc);        /* kbd_irq: Scancode             */
 struct v86_iret;
 void __far v86_tick(struct v86_iret *r);    /* irq0 aus der Box          */
 int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c */
+#define BOX_AUD_FM  0xFF                /* box_aud: Box nimmt (1)/gibt (0) den OPL */
 #define BOX_TASK    0                   /* -> current                   */
 #define BOX_SESSION 1                   /* -> Sitzung von current        */
 #define BOX_SLEEP   2                   /* a Takte schlafen              */

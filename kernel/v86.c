@@ -173,6 +173,7 @@ static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void spk_ports(int t, int on);
 static void opl_ports(int t, int on);
+unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
 static unsigned char opl_open[NTASK];
 static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
@@ -949,6 +950,7 @@ static void opl_ports(int t, int on)
     if (on == opl_open[t])
         return;
     opl_open[t] = (unsigned char)on;
+    kf_box_aud(BOX_AUD_FM, on, 0);              /* FM-Programme warten   */
     if (on)
         tss[t].iob[0x388 >> 3] &= (unsigned char)~0x0F;     /* 388h-38Bh */
     else {
@@ -2419,8 +2421,8 @@ static void port_out(int t, unsigned p, unsigned char v)
         break;
     case 0x388: case 0x389: case 0x38A: case 0x38B:
         if (box_fg(t)) {                        /* OPL: vorn direkt      */
+            opl_ports(t, 1);                    /* (FM-Programme erst still) */
             outb(p, v);
-            opl_ports(t, 1);
         }
         break;
     case 0x61:

@@ -340,7 +340,8 @@ und PC-DOS.
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip
-  (388h, FM-Musik). Virtuelle Sound Blaster 16 (220h, DMA 1/5, IRQ 5/7, DSP 4.05,
+  (388h, FM-Musik; FM-Programme wie PLAY pausieren solange und spielen
+  danach weiter). Virtuelle Sound Blaster 16 (220h, DMA 1/5, IRQ 5/7, DSP 4.05,
   16 Bit/Stereo, Mixer):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
   Effekte), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Datum und

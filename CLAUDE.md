@@ -1979,7 +1979,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bei 25-ms-Blöcken, 1 kHz auf beiden Kanälen im Mitschnitt), DOOM 1.2
   mit Ton. Ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ hängt bei I_Init –
   auch mit dem Stand davor (nicht die SB16), noch offen. Offen: Aufnahme,
-  SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI. AUD_CLOSE nur im
+  SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
+  AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
+  Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel
+  (`kf_box_aud(BOX_AUD_FM, 1)` -> `fm_box`): FAPI-FM-Programme werden
+  angehalten (AR_FMRESET, `fm_cur = -1`) und schreiben, solange
+  `fm_boxed`, nur in ihre Registerkopie; gibt die Box den Chip ab
+  (hinten, Parken, Ende), lädt der nächste FMWRITE den Stand neu
+  (fm_load) – PLAY spielt an der Stelle weiter. Erst melden, dann den
+  ersten Wert der Box schreiben (sonst löscht AR_FMRESET ihn). Grenze:
+  die Box schreibt direkt (Fallen auf 388h kosteten zu viel, Musik-
+  treiber lesen den Status Dutzende Male je Register), daher kein
+  Schatten der Box – kommt sie nach vorn zurück, nachdem ein FAPI-
+  Programm gespielt hat, fehlen ihre Instrumente bis zum nächsten
+  Programmwechsel. Dabei gefunden: QEMUs AdLib (OPL2) galt als OPL3 –
+  ein OPL2 dekodiert nur A0, 38Ah/38Bh spiegeln 388h/389h, fm_load
+  überschrieb mit Bank 1 (Nullen) die Instrumente. `opl_detect` startet
+  jetzt bei Status „OPL3“ noch Zeitgeber 1 über die zweite Bank (102h/
+  104h): läuft er, ist es ein Spiegel -> OPL2. Vermutlich auch der
+  Grund, warum DOOMs Musik in QEMU nach 3 s verstummte. Test: `PLAY
+  ODE.IMF` in einer DETACH-Schleife, vorn eine Box mit 440 Hz für 3 s
+  -> Mitschnitt: ODE, 440 (PLAY still), ODE ab der laufenden Stelle. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
