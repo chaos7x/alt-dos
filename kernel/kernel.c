@@ -1047,6 +1047,7 @@ static int load_img(int t, int drive, const char *path)
     task[t].img_unit = task[t].code_unit = 0;
     ts = &tss[t];
     tss_init(t, cr3);                   /* CS=DS=ES=SS=0, DL=0           */
+    ts->esp0 -= 16;                     /* DPMI: Platz fuer den V86-Rahmen */
     ts->eip = 0x7C00;
     ts->esp = 0x7C00;
     ts->eflags = 0x00020202UL;

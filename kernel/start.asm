@@ -39,7 +39,7 @@ extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
-extern v86_exc_, v86_tick_, _fault_vm
+extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -524,14 +524,68 @@ exc_common:
         mov     ax, sp                  ; -> struct v86_frame
         call    KCODE2:v86_exc_         ; (Rahmen) -> 0 erledigt
         mov     [_fault_vm], al
+        cmp     al, 2                   ; 2: weiter im Protected Mode (DPMI)
+        je      .topm
         pop     es
         pop     ds                      ; DS ist jetzt 0 (aus V86): ueber SS
         popad
         cmp     byte [ss:_fault_vm], 0
-        jne     .pm
+        jne     .kf
         add     sp, 6                   ; Vektor + Fehlercode
         iretd
-.pm:    mov     bp, sp
+.topm:  mov     byte [_fault_vm], 0     ; DPMI: aus V86 in den Protected Mode
+        pop     es                      ; der Box - die Segmentregister
+        pop     ds                      ; stehen in den V86-Feldern des
+        mov     bp, sp                  ; Rahmens (Selektoren), IRETD
+        mov     ax, [bp+58]             ; nimmt dann nur EIP/CS/EFLAGS/
+        mov     es, ax                  ; ESP/SS (VM = 0, Ring 3)
+        mov     ax, [bp+66]
+        mov     fs, ax
+        mov     ax, [bp+70]
+        mov     gs, ax
+        mov     ax, [bp+62]
+        mov     ds, ax
+        popad
+        add     sp, 6
+        iretd
+.pm:    push    bp                      ; aus Ring 3 (kein VM): DPMI-Programm
+        mov     bp, sp                  ; einer Box? (CS-RPL im Rahmen)
+        test    byte [bp+12], 3
+        pop     bp
+        jz      .kf
+        pushad
+        push    ds
+        push    es
+        push    fs
+        push    gs
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        cld
+        mov     ax, sp
+        add     ax, 4                   ; -> struct v86_frame (ab ES)
+        call    KCODE2:dpmi_trap_       ; 0 weiter, 1 Fehler, 2 nach V86
+        cmp     al, 1
+        je      .r3f
+        cmp     al, 2
+        je      .tov86
+        pop     gs
+        pop     fs
+        pop     es
+        pop     ds
+        popad
+        add     sp, 6
+        iretd
+.tov86: add     sp, 8                   ; V86 laedt die Segmente aus dem Rahmen
+        popad                           ; (esp0 der Boxen liegt 16 Byte tiefer,
+        add     sp, 6                   ; die vier Felder passen darueber)
+        iretd
+.r3f:   pop     gs
+        pop     fs
+        pop     es
+        pop     ds
+        popad
+.kf:    mov     bp, sp
         mov     ax, KDATA
         mov     ds, ax
         mov     es, ax

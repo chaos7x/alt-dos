@@ -65,6 +65,9 @@ void __far redir_sda(int t, unsigned seg, unsigned off)
     sda_off[t] = off;
 }
 
+/* PSP des laufenden DOS-Programms der Box (SDA+10h, fuer DPMI) */
+unsigned __far redir_psp(int t);
+
 /* ---- Speicher der Box ----------------------------------------------------- */
 
 static unsigned char __far *bp(int t, unsigned seg, unsigned off)
@@ -87,6 +90,15 @@ static void w32(unsigned char __far *p, unsigned long v) { w16(p, (unsigned)v); 
 static unsigned char __far *sda(int t, unsigned x)
 {
     return bp(t, sda_seg[t], sda_off[t] + x);
+}
+
+unsigned __far redir_psp(int t)
+{
+    unsigned char __far *p;
+    if (!sda_seg[t])
+        return 0;
+    p = sda(t, 0x10);
+    return p[0] | (p[1] << 8);
 }
 
 static void get_fn(int t, unsigned x, char *d)

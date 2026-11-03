@@ -1741,6 +1741,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   512 Byte in KDATA; geprüft mit 20.000 Byte über die Seitengrenze, EMS
   -> EMS und zurück. Offen: 55h/56h (Sprung/Aufruf mit Umblenden),
   Rahmen abschaltbar,
+  DPMI Stufe 1 erledigt (in QEMU mit eigenem Testprogramm DP/DP32
+  geprüft: Moduswechsel 16/32 Bit, INT 10h an den Real Mode, 0300h mit
+  INT 21h, 0400h, 0501h + Deskriptor schreiben/lesen, 0205h + INT 60h im
+  PM nachgebildet, Ende mit 4Ch aus dem PM, ERRORLEVEL; Speicher nach drei
+  Läufen gleich). Aufbau (v86.c, Abschnitt DPMI): 1687h in `do_int`,
+  Einsprung F000:0510 „ARPL E2h; RETF“ -> `dp_switch` (LDT-Seite, GDT-
+  Eintrag LDT_IDX(t) umgebogen – Basis KALIAS + physisch – und `lldt`,
+  Selektoren CS/DS/SS/PSP/Umgebung/Stummel, Standard-PM-Vektoren =
+  Stummel „HLT; n; IRET(D)“ bei F000:0C00+4n). start.asm: V86-Weg Rück-
+  gabe 2 = Segmente aus den V86-Feldern laden, IRETD mit 5 Doppelworten;
+  `.pm` mit CS-RPL 3 -> `dpmi_trap` (FS/GS gesichert, unter dem Rahmen),
+  Rückgabe 2 = nach V86 (die vier Segmentfelder liegen über SS – dafür
+  `esp0` der Boxen 16 Byte tiefer, load_img). INT n aus Ring 3 = #GP mit
+  Fehlercode n*8+2 (IDT-Tore DPL 0, über 48 jenseits der Grenze). Real
+  Mode: `ctx_push` (Zustandsseite, bis 6 Ebenen) + `rm_go` (Stapel im
+  Host-Bereich des Programms, 1 KB, Rücksprung F000:0520 „ARPL E3h“) ->
+  `dp_back`. Speicher 0501h ab Seite 400h (4 MB) bis 1 GB, eigene
+  Seitentabellen mit PTE_OWN im Seitenverzeichnis, v86_destroy gibt sie
+  frei. Nächste Stufe: 0303h Callbacks, 0306h Raw Switch, 0202h/0203h
+  Ausnahmen, IRQs (Takt/Tastatur) an PM-Handler, Takt im PM weiter-
+  zählen (46Ch steht, solange das Programm im PM läuft), Test mit DOS4GW
+  (z. B. ein Freeware-Spiel),
   mehr als 2,9 MB XMS (weitere Seitentabellen),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
