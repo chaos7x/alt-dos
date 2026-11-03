@@ -63,7 +63,8 @@ void main(void)
     if (DosCacheInfo(&ci) != 0)
         ci.kb = 0;
     puts("    Platten-Cache    ");   put_kb(ci.kb, 6);       puts(" KB\n");
-    puts("    BIOS, Boot, Puffer "); put_kb(used - mi.kernel_kb - mi.apps_kb - mi.alloc_kb - ci.kb, 4); puts(" KB\n");
+    puts("    DOS-Boxen        ");   put_kb(mi.box_kb, 6);   puts(" KB\n");
+    puts("    BIOS, Boot, Puffer "); put_kb(used - mi.kernel_kb - mi.apps_kb - mi.alloc_kb - ci.kb - mi.box_kb, 4); puts(" KB\n");
     puts("  frei               ");   put_kb(fr, 6);  puts(" KB\n");
     puts("Systembereich 640 KB - 1 MB (Video, ROMs) ausgespart\n");
     if (ci.kb) {                        /* Trefferquote ohne 32-Bit-Division */

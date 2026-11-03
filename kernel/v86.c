@@ -86,6 +86,20 @@ static unsigned pit_c[NTASK];
 static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
 static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
 
+unsigned long v86_pages;                /* Seiten aller Boxen (MEM)      */
+static pg_t vp_alloc(void)
+{
+    pg_t p = mem_alloc(1);
+    if (p)
+        v86_pages++;
+    return p;
+}
+static void vp_free(pg_t p)
+{
+    mem_free(p, 1);
+    v86_pages--;
+}
+
 /* Thunks (erstes Codesegment) */
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 int  __far kf_box_ctl(unsigned op, unsigned a);
@@ -173,12 +187,12 @@ void __far v86_destroy(int t)
         for (i = 0; i < 0x100; i++) {
             e = get32(SCRATCH, i);
             if ((e & PTE_P) && (i <= 0xA0 || i == 0xF0))   /* nicht B8/B9! */
-                mem_free(e >> 12, 1);
+                vp_free(e >> 12);
         }
-        mem_free(pt_box[t], 1);
+        vp_free(pt_box[t]);
         pt_box[t] = 0;
     }
-    mem_free(pd_box[t], 1);
+    vp_free(pd_box[t]);
     pd_box[t] = 0;
 }
 
@@ -212,8 +226,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     if (!kcr3 || pd_box[t] || n == 0 || n > 0xA0)
         return 0;
     box_ses[t] = -1;
-    pd_box[t] = mem_alloc(1);
-    pt_box[t] = mem_alloc(1);
+    pd_box[t] = vp_alloc();
+    pt_box[t] = vp_alloc();
     if (!pd_box[t] || !pt_box[t]) {
         v86_destroy(t);
         return 0;
@@ -234,7 +248,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     for (i = 0; i < 1024; i++)
         put32(SCRATCH2, i, i >= 0xC0 && i < 0x100 ? PG_LIN(i) | PTE_ROM : 0);
     for (i = 0; i <= n + 1; i++) {      /* n: Ersatzseite, n+1: BIOS-Seite */
-        p = mem_alloc(1);
+        p = vp_alloc();
         if (!p) {
             v86_destroy(t);
             return 0;

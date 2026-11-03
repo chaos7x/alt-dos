@@ -301,8 +301,13 @@ und PC-DOS.
   eine eigene Sitzung. Die Box bleibt danach geparkt offen (wie NTVDM bei
   NT): FreeDOS startet nur beim ersten DOS-Programm eines Befehlsinterpreters,
   jedes weitere läuft ohne neuen Start; endet der Befehlsinterpreter, wird
-  ihr Speicher (≈ 660 KB) frei. Noch nicht: Programme auf den Disketten
-  A:/B: (in der Box ist A: das Startabbild)
+  ihr Speicher (≈ 660 KB) frei; MEM zeigt ihn als „DOS-Boxen“. In der Box
+  sind A:/B: die Disketten von AT-DOS (das Startabbild braucht sie nach dem
+  Start nicht mehr), PATH ist `X:\DOS\BOX;X:\DOS` (X: = Startlaufwerk;
+  `\DOS\BOX` ist wie `\OS2\MDOS` bei OS/2 das Verzeichnis der DOS-Seite,
+  dort liegt auch COMMAND.COM), die interaktive Box führt `X:\AUTOEXEC.BAT`
+  aus, wenn es sie gibt. Eine hängende Box beendet **Strg+Alt+Ende**
+  (Strg+C gehört dem DOS darin)
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
   für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS
@@ -387,7 +392,7 @@ selbst nur 8.3 kennt.
 | 2  | DosYield        | –                               |
 | 3  | DosExit         | BX = Rückgabewert 0–255 (ERRORLEVEL); `main` ohne DosExit liefert 0 |
 | 4  | DosSleep        | BX = Millisekunden              |
-| 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB), CX = dessen Größe: ab 6.0 mit 32-Bit-Feldern `total_kb32`/`free_kb32` (CX = 0: alte 10 Byte, Werte über 64 MB gekappt) |
+| 5  | DosMemInfo      | BX = `struct fapi_meminfo` (KB), CX = dessen Größe: ab 6.0 mit 32-Bit-Feldern `total_kb32`/`free_kb32` (CX ≥ 18) und `box_kb` (Speicher der DOS-Boxen, CX ≥ 22) (CX = 0: alte 10 Byte, Werte über 64 MB gekappt) |
 | 6  | DosAllocSeg     | BX = Größe, 0 = 64 KB → AX = Selektor |
 | 7  | DosFreeSeg      | BX = Selektor                   |
 | 8  | KbdCharIn       | → AX = Zeichen \| Scancode<<8   |

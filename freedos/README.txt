@@ -16,5 +16,8 @@ Neu bauen: tools/freedos.sh (holt die Quellen per git und baut beide).
 
 build.sh legt daraus das Startabbild der DOS-Box an (build/freedos.img,
 360 KB, auf dem Ziel \DOS\BOX\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
-COMMAND.COM, BOXSHELL.COM (apps/boxshell.asm), CONFIG.SYS und AUTOEXEC.BAT
-aus diesem Ordner.
+COMMAND.COM, BOXSHELL.COM (apps/boxshell.asm) und CONFIG.SYS aus diesem
+Ordner. COMMAND.COM liegt zusaetzlich in \DOS\BOX (wie \OS2\MDOS bei OS/2):
+nach dem Start braucht die Box das Abbild nicht mehr, ihre Laufwerke A:/B:
+sind dann die Disketten von AT-DOS. Eine AUTOEXEC.BAT im Stamm des
+Startlaufwerks fuehrt die interaktive Box aus.

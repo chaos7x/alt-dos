@@ -401,7 +401,9 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     /* ab 6.0, nur wenn CX = sizeof(struct fapi_meminfo): die 16-Bit-
        Felder oben sind bei mehr als 64 MB auf FFFFh gekappt */
     unsigned long  total_kb32, free_kb32;
+    unsigned long  box_kb;          /* ab 6.0 (CX >= 22): DOS-Boxen     */
 };
+#define MEMINFO_V60  18             /* Groesse mit total/free_kb32      */
 
 struct fapi_dirent {                /* DosFindEntry                     */
     char           name[256];       /* Dateiname, auch fuer lange Namen */

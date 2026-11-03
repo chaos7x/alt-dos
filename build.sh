@@ -218,11 +218,11 @@ echo "DOS-Box: Startabbild freedos.img"
 nasm -f bin apps/boxshell.asm -o $B/boxshell.com
 rm -f $B/freedos.img
 mformat -i $B/freedos.img -C -f 360 -B freedos/fat12com.bin -v FREEDOS ::
-for f in KERNEL.SYS COMMAND.COM CONFIG.SYS AUTOEXEC.BAT; do
+for f in KERNEL.SYS COMMAND.COM CONFIG.SYS; do
     mcopy -i $B/freedos.img freedos/$f ::$f
 done
 mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
-BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/BOX" "${TO}DEMO"

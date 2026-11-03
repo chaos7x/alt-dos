@@ -85,6 +85,8 @@ void kbd_irq(unsigned sc)
         else if (code == 0x1C && !rel) put(13 | (0x1C << 8));
         else if (code == 0x53 && !rel && ctrl && (alt || altgr))
             reboot_request();               /* Strg+Alt+Entf (Entf-Taste)       */
+        else if (code == 0x4F && !rel && ctrl && (alt || altgr) && v86_fgbox())
+            kbd_break_req = 1;              /* Strg+Alt+Ende: DOS-Box beenden   */
         else if (!rel && code >= 0x47 && code <= 0x53)
             put(0xE0 | (code << 8));        /* graue Pfeile, Bild, Pos1, Ende,
                                                Einfg, Entf: wie das AT-BIOS  */
@@ -112,6 +114,10 @@ void kbd_irq(unsigned sc)
         reboot_request();                   /* Strg+Alt+Entf (Ziffernblock)     */
     if (alt && code == 0x01) {      /* Alt+Esc                          */
         kbd_switch_req = 1;
+        return;
+    }
+    if (ctrl && alt && code == 0x4F && v86_fgbox()) {  /* Strg+Alt+Ende:  */
+        kbd_break_req = 1;          /* haengende DOS-Box abschiessen    */
         return;
     }
     if (ctrl && code == 0x2E && !v86_fgbox()) {   /* Strg+C (in einer Box */

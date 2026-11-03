@@ -1677,7 +1677,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bekommt Befehlszeile (`dos_line`), Name, Laufwerk/Verzeichnis/dcwd,
   `v86_start`, T_READY; `%DOSBOX%`-Abbild = interaktiv (COMMAND).
   `task_end` des Besitzers beendet seine geparkte Box. Erstes Code-
-  segment jetzt 63,2 KB. Weitere Hebel: Kosten je
+  segment jetzt 63,2 KB.
+  Kleinere Punkte erledigt (in QEMU geprüft): COMMAND.COM auch in
+  `X:\DOS\BOX` (BOXFILES), BOXSHELL nimmt es von dort (COMSPEC) und
+  wechselt beim Start aufs Startlaufwerk – danach braucht die Box das
+  Abbild nicht mehr, und `BOX_DRIVES` meldet A:/B: mit (nur „Laufwerk da“
+  über vol[].used/present/floppy_lazy, kein Medienzugriff): die Disketten
+  von AT-DOS sind in der Box A:/B: (`a:prog` aus CMD geht). PATH der Box
+  `X:\DOS\BOX;X:\DOS` (build_env ersetzt PATH=, Laufwerksbuchstaben über
+  die Tabelle `drvpos`), interaktiv `/K X:\AUTOEXEC.BAT` nur, wenn es sie
+  gibt (4300h), Meldung von BOXSHELL; freedos/AUTOEXEC.BAT entfällt. MEM:
+  `v86_pages` (vp_alloc/vp_free in v86.c), `fapi_meminfo.box_kb` ab CX ≥
+  22 (`MEMINFO_V60` = 18 für total/free_kb32), Zeile „DOS-Boxen“.
+  Strg+Alt+Ende (auch grau, E0-Zweig in kbd.c) bei einer Box im Vorder-
+  grund -> kbd_break_req -> do_break beendet sie (in QEMU mit `jmp $`
+  geprüft). Erstes Codesegment 63,3 KB. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
   nicht nach – Zählen ist der bessere Maßstab. Offen: Programme auf A:/B:.

@@ -30,10 +30,21 @@ org 100h
         call    redir_install
         mov     ah, 13h                 ; Startlaufwerk der AT-DOS
         int     0E0h
+        mov     dl, al                  ; Vorgabe-Laufwerk der Box: das
+        push    ax                      ; Startlaufwerk (A: kann jetzt die
+        mov     ah, 0Eh                 ; AT-DOS-Diskette sein, ggf. leer)
+        int     21h
+        pop     ax
         add     al, 'A'
-        mov     [t_dosbox+7], al
-        mov     [t_setver], al
-        call    setver_load             ; liest in envbuf, daher zuerst
+        mov     si, drvpos              ; Laufwerksbuchstaben eintragen
+.dl:    mov     bx, [si]
+        test    bx, bx
+        jz      .dd
+        mov     [bx], al
+        inc     si
+        inc     si
+        jmp     .dl
+.dd:    call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
 
 next:   push    cs                      ; (nach dem Parken: naechstes Programm)
@@ -51,15 +62,26 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         call    direct                  ; .COM/.EXE: ohne FreeCOM
         jnc     .run
 .viacom:
-        mov     si, t_inter             ; leer: interaktiv
-        jcxz    .build
-        mov     si, t_cmd
-.build: mov     di, tail + 1            ; "A:\ /E:1024 " + /K bzw. /C ...
-.c1:    lodsb
-        test    al, al
-        jz      .c2
-        stosb
-        jmp     .c1
+        mov     si, t_cmd               ; "X:\DOS\BOX\ /E:1024 /C befehl"
+        mov     di, tail + 1
+        call    copystr
+        jcxz    .inter
+        jmp     .c2
+.inter: mov     dx, t_hello             ; interaktiv: Meldung, dazu
+        mov     ah, 9                   ; X:\AUTOEXEC.BAT, wenn es sie gibt
+        int     21h                     ; (gehoert der DOS-Box)
+        dec     di                      ; "/C " wieder weg
+        dec     di
+        dec     di
+        mov     dx, t_autoexec
+        mov     ax, 4300h
+        int     21h
+        jc      .c1
+        mov     si, t_kauto
+        call    copystr
+        mov     si, t_autoexec
+        call    copystr
+.c1:    xor     cx, cx
 .c2:    mov     si, cmd                 ; Befehl anhaengen (cx Zeichen)
         rep     movsb
         mov     al, 13
@@ -93,6 +115,14 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     sp, stack_top
         sti
         jmp     next
+
+copystr:                                ; DS:SI -> ES:DI ohne die Null
+        lodsb
+        test    al, al
+        jz      .r
+        stosb
+        jmp     copystr
+.r:     ret
 
 ; ---- Programm direkt starten ---------------------------------------------
 ; Endet das erste Wort der Befehlszeile (cmd, CX Zeichen) auf .COM oder
@@ -144,7 +174,6 @@ direct: push    cx
         ret
 
 ; ---- Laufwerk und Verzeichnis des Aufrufers (INT E0h 14h, 8.3) ----------
-; A:/B: der AT-DOS gibt es in der Box nicht (A: ist das Startabbild)
 goto_cwd:
         push    cs
         pop     es
@@ -156,8 +185,6 @@ goto_cwd:
         mov     dl, [tail]
         and     dl, 0DFh
         sub     dl, 'A'
-        cmp     dl, 2
-        jb      .ret
         mov     ah, 0Eh                 ; Laufwerk wechseln
         int     21h
         mov     dx, tail                ; Verzeichnis
@@ -177,6 +204,16 @@ build_env:
         pop     es
 .e1:    cmp     byte [si], 0            ; Ende der Liste?
         je      .e3
+        cmp     word [si], 'PA'         ; eigenes PATH= weglassen
+        jne     .e2
+        cmp     word [si+2], 'TH'
+        jne     .e2
+        cmp     byte [si+4], '='
+        jne     .e2
+.skip:  lodsb
+        test    al, al
+        jnz     .skip
+        jmp     .e1
 .e2:    lodsb
         stosb
         cmp     di, envbuf + ENVSZ - 48
@@ -190,6 +227,11 @@ build_env:
         stosb
         test    al, al
         jnz     .e4
+        mov     si, t_path              ; PATH wie \OS2\MDOS bei OS/2
+.e5:    lodsb
+        stosb
+        test    al, al
+        jnz     .e5
         stosb                           ; zweite Null: Ende
         ret
 
@@ -372,9 +414,14 @@ t_setver  db "X:\DOS\BOX\SETVER.LST", 0
 dmask     dd 0
 old2f     dd 0
 
-t_comspec db "A:\COMMAND.COM", 0
-t_inter   db " A:\ /E:1024 /K A:\AUTOEXEC.BAT", 0
-t_cmd     db " A:\ /E:1024 /C ", 0
+t_path    db "PATH=X:\DOS\BOX;X:\DOS", 0
+t_comspec db "X:\DOS\BOX\COMMAND.COM", 0
+t_cmd     db " X:\DOS\BOX\ /E:1024 /C ", 0
+t_kauto   db "/K ", 0
+t_autoexec db "X:\AUTOEXEC.BAT", 0
+t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+16, t_comspec, t_cmd+1
+          dw t_autoexec, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0
 pb_fcb1   dw fcb, 0

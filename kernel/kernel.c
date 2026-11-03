@@ -2434,7 +2434,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_MEMINFO: {
         struct fapi_meminfo __far *p;
         unsigned long tk = mem_ram_kb(), fk = mem_free_kb();
-        if (!user_ok(usel, a1, a2 >= sizeof(*p) ? sizeof(*p) : 10, 1))
+        if (a2 > sizeof(*p))
+            a2 = sizeof(*p);
+        if (!user_ok(usel, a1, a2 >= MEMINFO_V60 ? a2 : 10, 1))
             return FAPI_ERROR;
         p = MK_FP(usel, a1);
         p->total_kb = tk > 0xFFFFUL ? 0xFFFF : (unsigned)tk;   /* alte Programme */
@@ -2442,10 +2444,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         p->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
         p->apps_kb = image_units * 4;
         p->alloc_kb = alloc_units * 4;
-        if (a2 >= sizeof(*p)) {         /* 6.0: CX = Groesse, 32 Bit    */
+        if (a2 >= MEMINFO_V60) {        /* 6.0: CX = Groesse, 32 Bit    */
             p->total_kb32 = tk;
             p->free_kb32 = fk;
         }
+        if (a2 >= sizeof(*p))
+            p->box_kb = v86_pages << 2;
         return 0;
     }
 
@@ -3456,10 +3460,11 @@ int box_ctl(unsigned op, unsigned a)
     }
     case BOX_ARGS:
         return (int)(unsigned)task[current].args;
-    case BOX_DRIVES: {                  /* eingehaengte Laufwerke ab C:  */
-        unsigned m = 0, d;
-        for (d = 2; d < 26; d++)
-            if ((d >> 4) == a && vol_present(d))
+    case BOX_DRIVES: {                  /* Laufwerke fuer den Redirector */
+        unsigned m = 0, d;              /* (A:/B: ohne Zugriff aufs Medium) */
+        for (d = 0; d < 26; d++)
+            if ((d >> 4) == a && (d < 2 ? vol[d].used || vol[d].present ||
+                                          (floppy_lazy & (1 << d)) : vol_present(d)))
                 m |= 1u << (d & 15);
         return (int)m;
     }
