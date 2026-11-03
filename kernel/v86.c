@@ -184,13 +184,10 @@ static void ems_box(int t);
 static void dpmi_end(int t);
 static unsigned char dp_inirq[NTASK];
 static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
-static unsigned dp_step[NTASK];         /* Einzelschritt nach CLI: Zaehler */
-static unsigned char dp_tfown[NTASK];   /* TF koennte von uns stammen    */
-static unsigned long dp_rep_eip[NTASK]; /* REP ohne TF: Adresse + 1 (0 = keins) */
-static unsigned long dp_bp_lin[NTASK];  /* Haltepunkt (DR0) auf dem POPF, 0 = keiner */
-static unsigned long dp_bp_iret[NTASK]; /* Haltepunkt (DR1) auf dem IRET(D)  */
-static void dp_bp_off(int t);
-static void dp_bp_set(int t, unsigned long lin);
+#define NPATCH 8
+static unsigned long dp_patch[NTASK][NPATCH];   /* POPF -> HLT (linear)  */
+static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
+static int dp_patched(int t, unsigned long lin);
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
 unsigned __far redir_psp(int t);
@@ -981,7 +978,7 @@ static void opl_ports(int t, int on)
 unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
 static unsigned div3216(unsigned long n, unsigned d);
 #pragma aux div3216 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
-static char sb_buf[1024];              /* auch Suche in dp_bp_set */
+static char sb_buf[1024];              /* auch Suche in dp_patch_popf */
 
 /* Leitung der virtuellen Karte (Bitmaske): die das Programm zuletzt per
    DPMI 0205h eingehaengt hat (DOS/4GW haengt beim Start alle ein, DMX
@@ -3402,12 +3399,6 @@ static void ems(struct v86_frame *f, int t)
 #define SI  (*(unsigned short *)&f->esi)
 static void k2_lldt(unsigned sel);
 #pragma aux k2_lldt = "lldt ax" parm [ax] modify exact [];
-static void k2_dr0(unsigned long a);         /* Haltepunkt-Adresse (linear) */
-#pragma aux k2_dr0 = "shl edx,16" "mov dx,ax" "mov dr0,edx" parm [dx ax] modify [dx];
-static void k2_dr1(unsigned long a);
-#pragma aux k2_dr1 = "shl edx,16" "mov dx,ax" "mov dr1,edx" parm [dx ax] modify [dx];
-static void k2_dr7(unsigned long a);
-#pragma aux k2_dr7 = "shl edx,16" "mov dx,ax" "mov dr7,edx" parm [dx ax] modify [dx];
 #define DP_SW     0x0510                /* Einsprung (Moduswechsel)      */
 #define DP_BACK   0x0520                /* Ruecksprung aus dem Real Mode */
 #define DP_STUB   0x0C00                /* Standard-PM-Vektoren (4 Byte) */
@@ -3617,6 +3608,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
 {
     unsigned i;
     dp_inirq[t] = 0;
+    dp_npatch[t] = 0;
     sb[t].irql = 0;
     if (!dp_on[t])
         return;
@@ -4275,12 +4267,6 @@ static void dp_hwint(struct v86_iret *r, int t)
         return;
     account(t);
     sb_pump(t);
-    if (dp_rep_eip[t] && dp_step[t]) {          /* REP vorbei? weiter im */
-        if (r->eip + 1 != dp_rep_eip[t]) {      /* Einzelschritt         */
-            dp_rep_eip[t] = 0;
-            r->eflags |= FL_TF;
-        }
-    }
     if (!(vfl[t] & FL_IF)) {
         /* PUSHF/CLI/.../POPF: das POPF trappt in Ring 3 nicht und laesst
            das IF stehen - das virtuelle IF bliebe fuer immer aus (DMX in
@@ -4290,11 +4276,6 @@ static void dp_hwint(struct v86_iret *r, int t)
             return;
         }
         vfl[t] |= FL_IF;
-        if (dp_step[t]) {
-            dp_step[t] = 0;
-            r->eflags &= ~(unsigned long)FL_TF;
-        }
-        dp_bp_off(t);
     }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
         vt_pend[t]--;
@@ -4490,122 +4471,43 @@ static unsigned dp_exret(struct v86_frame *f, int t)  /* nach RETF        */
     return 0;
 }
 
-static void dp_bp_off(int t)
-{
-    if (dp_bp_lin[t] || dp_bp_iret[t]) {
-        dp_bp_lin[t] = dp_bp_iret[t] = 0;
-        k2_dr7(0);
-    }
-}
-
-static void dp_step_end(struct v86_frame *f, int t)
-{
-    dp_rep_eip[t] = 0;
-    dp_bp_off(t);
-    if (dp_step[t]) {
-        dp_step[t] = 0;
-        f->r.eflags &= ~(unsigned long)FL_TF;
-    }
-}
-
-/* CLI-Abschnitt (DMX: PUSHFD; POP EAX; CLI ... PUSH EAX; POPFD): das
-   erste PUSH reg; POPF(D) dahinter (DR0) und das erste IRET(D) (DR1,
-   Handler) suchen und Hardware-Haltepunkte setzen - lokal (L0/L1), der
-   Taskwechsel loescht sie. Kommt keiner, bleibt der Wachhund. Ein
-   Treffer mitten in einem Befehl loest nie aus. */
-#define bp_buf ((unsigned char *)sb_buf)
-static void dp_bp_set(int t, unsigned long lin)
+/* DMX (DOOM 1.9) sperrt mit PUSHFD; POP reg; CLI ... PUSH reg; POPFD.
+   POPF trappt im PM nicht - das virtuelle IF bliebe bis zum Wachhund
+   aus (82 statt 140 Takte je Sekunde, Tasten und Ton hakten). Beim CLI
+   nach PUSHF; POP reg das erste PUSH reg (dasselbe Register); POPF(D)
+   der naechsten 1 KB suchen und das POPF durch HLT ersetzen: das trappt
+   (#GP), dp_trap bildet POPF nach (dp_patched). Das Register muss
+   passen - so trifft die Suche keine Daten. Hardware-Haltepunkte
+   gingen auf echten CPUs, 86Box bildet sie aber nur mit einer Option
+   nach. */
+static void dp_patch_popf(int t, unsigned long lin)
 {
     unsigned i;
-    lwin(VWIN_IDX, lin);
+    unsigned char r = (unsigned char)lrd(lin - 1, 1);
+    if (lrd(lin - 2, 1) != 0x9C || r < 0x58 || r > 0x5F || dp_npatch[t] >= NPATCH)
+        return;
+    r = (unsigned char)(r - 8);                 /* POP reg -> PUSH reg   */
+    lwin(VWIN_IDX, lin + 1);
     far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, sizeof(sb_buf));
-    for (i = 0; i < sizeof(sb_buf) && !dp_bp_iret[t]; i++)
-        if (bp_buf[i] == 0xCF)                  /* IRET(D) (mit 66 davor) */
-            dp_bp_iret[t] = lin + i - (i && bp_buf[i - 1] == 0x66);
     for (i = 1; i < sizeof(sb_buf); i++) {
-        if (bp_buf[i] != 0x9D)
+        if ((unsigned char)sb_buf[i - 1] != r)
             continue;
-        if (bp_buf[i - 1] >= 0x50 && bp_buf[i - 1] <= 0x57) {
-            dp_bp_lin[t] = lin + i;
-            break;
-        }
-        if (bp_buf[i - 1] == 0x66 && i >= 2 && bp_buf[i - 2] >= 0x50 && bp_buf[i - 2] <= 0x57) {
-            dp_bp_lin[t] = lin + i - 1;         /* 66 9D                 */
-            break;
+        if ((unsigned char)sb_buf[i] == 0xF4 && dp_patched(t, lin + 1 + i))
+            return;                             /* schon erledigt        */
+        if ((unsigned char)sb_buf[i] == 0x9D) {
+            lwr(lin + 1 + i, 0xF4, 1);
+            dp_patch[t][dp_npatch[t]++] = lin + 1 + i;
+            return;
         }
     }
-    if (!dp_bp_lin[t] && !dp_bp_iret[t])
-        return;
-    dp_tfown[t] = 1;
-    k2_dr0(dp_bp_lin[t]);
-    k2_dr1(dp_bp_iret[t]);
-    k2_dr7((dp_bp_lin[t] ? 0x01UL : 0) | (dp_bp_iret[t] ? 0x04UL : 0) | 0x100UL);
 }
 
-/* #DB vom Haltepunkt (oder Einzelschritt): POPF(D) nachbilden (Flags
-   vom Stapel, IF wieder an - das CLI kam bei an IF), bei IRET(D) IF aus
-   dem Rahmen nehmen und das IRET mit RF laufen lassen. Der Einzelschritt
-   (TF) ist der Rueckfall fuer kurze Stuecke, hoechstens DP_STEPS
-   Befehle, REP ohne TF. */
-#define DP_STEPS 8
-static unsigned dp_stepped(struct v86_frame *f, int t)
+static int dp_patched(int t, unsigned long lin)
 {
-    unsigned long lin, sb_, sp, v;
-    unsigned cs = (unsigned)f->r.cs, o32 = dp_32[t], pl = 0;
-    unsigned char op;
-    lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
-    if (dp_bp_lin[t] || dp_bp_iret[t]) {        /* Haltepunkt erreicht?  */
-        int hit = lin == dp_bp_lin[t], hiti = lin == dp_bp_iret[t];
-        dp_bp_off(t);
-        if (hit || hiti) {
-            dp_step[t] = 1;                     /* POPF/IRET unten       */
-        }
-        if (hiti)
-            f->r.eflags |= 0x10000UL;           /* RF: IRET nicht nochmal */
-    }
-    if (!dp_step[t]) {                          /* Rest eines beendeten   */
-        dp_tfown[t] = 0;                        /* Einzelschritts         */
-        f->r.eflags &= ~(unsigned long)FL_TF;
-        return 0;
-    }
-    op = (unsigned char)lrd(lin, 1);
-    if (op == 0x66) {
-        o32 ^= 1;
-        pl = 1;
-        op = (unsigned char)lrd(lin + 1, 1);
-    }
-    if (op == 0x9D) {
-        sb_ = sel_base(t, (unsigned)f->r.ss);
-        sp = dp_32[t] ? f->r.esp : (f->r.esp & 0xFFFF);
-        v = lrd(sb_ + sp, o32 ? 4 : 2);
-        if (dp_32[t])
-            f->r.esp += o32 ? 4 : 2;
-        else
-            f->r.esp = (f->r.esp & 0xFFFF0000UL) | ((sp + (o32 ? 4 : 2)) & 0xFFFF);
-        f->r.eflags = (f->r.eflags & ~0x0CD5UL) | (v & 0x0CD5UL);   /* CF..OF, DF */
-        f->r.eip += pl + 1;
-        vfl[t] |= FL_IF;
-        dp_step_end(f, t);
-        return 0;
-    }
-    if (op == 0xCF) {                           /* IRET(D): Flags vom    */
-        sb_ = sel_base(t, (unsigned)f->r.ss);   /* Stapel, IF daraus     */
-        sp = dp_32[t] ? f->r.esp : (f->r.esp & 0xFFFF);
-        v = lrd(sb_ + sp + (o32 ? 8 : 4), o32 ? 4 : 2);
-        if (v & FL_IF)
-            vfl[t] |= FL_IF;
-        dp_step_end(f, t);                      /* IRET selbst laeuft    */
-        return 0;
-    }
-    if (op == 0xF3 || op == 0xF2) {             /* REP: jede Runde waere */
-        dp_rep_eip[t] = f->r.eip + 1;           /* ein Schritt - ohne TF */
-        f->r.eflags &= ~(unsigned long)FL_TF;   /* laufen lassen, beim   */
-        return 0;                               /* (dp_hwint)            */
-    }
-    if (++dp_step[t] > DP_STEPS) {              /* zu lang (DMX mischt   */
-        dp_step_end(f, t);                      /* auf dem POPF dazu     */
-        dp_bp_set(t, lin);
-    }
+    unsigned i;
+    for (i = 0; i < dp_npatch[t]; i++)
+        if (dp_patch[t][i] == lin)
+            return 1;
     return 0;
 }
 
@@ -4615,26 +4517,17 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     unsigned char op;
     unsigned n, cs = (unsigned)f->r.cs;
 
-    if (f->vec == 1 && (dp_tfown[t] || dp_bp_lin[t] || dp_bp_iret[t]))
-        return dp_stepped(f, t);
-    if (f->vec != 13) {
-        dp_step_end(f, t);
+    if (f->vec != 13)
         return dp_exc(f, t);
-    }
     lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
     op = (unsigned char)lrd(lin, 1);
     if (f->err & 2) {                           /* INT n                 */
-        dp_step_end(f, t);                      /* (TF nicht in den RM)  */
         n = (unsigned)f->err >> 3;
         f->r.eip += op == 0xCD ? 2 : 1;
         return dp_int(f, t, n);
     }
-    if (f->err) {
-        dp_step_end(f, t);
+    if (f->err)
         return dp_exc(f, t);
-    }
-    if (cs == dp_stub[t])                       /* Wechsel RM/Ausnahme:  */
-        dp_step_end(f, t);                      /* ohne TF               */
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_EXRET)
         return dp_exret(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_CBRET)
@@ -4675,26 +4568,32 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     }
     switch (op) {
     case 0xFA:                                  /* CLI/STI: virtuell     */
-        /* POPF und IRET trappen im PM nicht. DMX (DOOM 1.9) macht
-           PUSHFD; POP EAX; CLI ... PUSH EAX; POPFD - danach bliebe das
-           virtuelle IF bis zum Wachhund aus (82 statt 140 Takte je
-           Sekunde). Darum nach einem CLI bei an IF Hardware-Haltepunkte
-           auf das naechste PUSH reg; POPF(D) und IRET(D) (dp_bp_set);
-           der erste, der kommt, schaltet IF wieder an (dp_stepped). */
-        if ((vfl[t] & FL_IF) && !(f->r.eflags & FL_TF)) {
-            dp_bp_off(t);                       /* Haltepunkte auf das   */
-            dp_bp_set(t, lin + 1);              /* POPF/IRET dahinter    */
-        }
+        dp_patch_popf(t, lin);                  /* POPF dazu (DMX)       */
+        dp_popf_if[t] = (unsigned char)((vfl[t] & FL_IF) != 0);
         vfl[t] &= ~FL_IF;
         dp_cli_t[t] = get_ticks();
         f->r.eip++;
         return 0;
     case 0xFB:
         vfl[t] |= FL_IF;
-        dp_step_end(f, t);
         f->r.eip++;
         return 0;
     case 0xF4:                                  /* HLT: abgeben          */
+        if (dp_patched(t, lin)) {               /* gepatchtes POPF(D)    */
+            unsigned long sb_ = sel_base(t, (unsigned)f->r.ss), sp, v;
+            unsigned o32 = dp_32[t] ^ (lrd(lin - 1, 1) == 0x66);
+            sp = dp_32[t] ? f->r.esp : (f->r.esp & 0xFFFF);
+            v = lrd(sb_ + sp, o32 ? 4 : 2);
+            if (dp_32[t])
+                f->r.esp += o32 ? 4 : 2;
+            else
+                f->r.esp = (f->r.esp & 0xFFFF0000UL) | ((sp + (o32 ? 4 : 2)) & 0xFFFF);
+            f->r.eflags = (f->r.eflags & ~0x0CD5UL) | (v & 0x0CD5UL);   /* CF..OF, DF */
+            if (dp_popf_if[t])                  /* IF wie vor dem CLI    */
+                vfl[t] |= FL_IF;
+            f->r.eip++;
+            return 0;
+        }
         f->r.eip++;
         hlt_wait(t);
         return 0;

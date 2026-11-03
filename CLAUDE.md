@@ -2028,18 +2028,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nicht, das virtuelle IF blieb bis zum Wachhund (3 Takte) aus. Versuche:
   Stapelstelle merken (Flags liegen im Register – nichts), Einzelschritt
   mit TF bis POPF/IRET (zu teuer: ~16.000 Fallen/s, die Mischschleife
-  hat mehr als 1000 Befehle mit CLI). Lösung: beim CLI im PM (IF war an)
-  Hardware-Haltepunkte (Debugregister, lokal L0/L1 – der Taskwechsel
-  löscht sie) auf das erste `PUSH reg; POPF(D)` (DR0) und das erste
-  `IRET(D)` (DR1) in den nächsten 1 KB (`dp_bp_set`, Suche in `sb_buf`);
-  #DB -> `dp_stepped`: POPF nachbilden, IF an; IRET mit RF laufen lassen,
-  IF aus dem Rahmen. Ein Treffer mitten in einem Befehl löst nie aus,
-  sonst bleibt der Wachhund. TF-Einzelschritt nur noch als Rückfall (8
-  Befehle, REP ohne TF); TF/Haltepunkte vor INT n, Ausnahmen und Stummel
-  aus (nicht in den Real Mode). Ergebnis in QEMU: Wachhund greift nicht
-  mehr, `-timedemo demo1` mit Ton 10.345 statt (vorher > 5 min, nicht
-  fertig) gegen 9.040 Ticks ohne Ton; DOOM 1.2 und 1.9 (START + Alt+Esc)
-  mit Ton. DGROUP 62,9 KB. AUD_CLOSE nur im
+  hat mehr als 1000 Befehle mit CLI), Hardware-Haltepunkte (DR0/DR1 auf
+  das POPF/IRET – gingen in QEMU, 10.345 Ticks, aber 86Box prüft sie
+  und mit dem Dynarec auch TF nur mit der Option „Debug-Register bei
+  486-Prozessoren und neueren“, src/cpu/386_common.c/386_dynarec.c;
+  beim Nutzer blieb es zäh: Menü spät, Ton abgehackt). Lösung jetzt:
+  beim CLI im PM nach `PUSHF; POP reg` das erste `PUSH reg` (dasselbe
+  Register); `POPF(D)` der nächsten 1 KB suchen (`dp_patch_popf`, Suche
+  in `sb_buf`) und das 9Dh im Speicher der Box durch HLT (F4h) ersetzen
+  (höchstens 8 Stellen je Box, `dp_patch`, beim Ende von DPMI vergessen).
+  Das HLT trappt (#GP), dp_trap bildet POPF(D) nach (Flags vom Stapel,
+  IF wie vor dem CLI: `dp_popf_if`). Das passende Register macht einen
+  Treffer in Daten praktisch unmöglich; sonst bleibt der Wachhund. In
+  QEMU: `-timedemo demo1` mit Ton 7.241 Ticks (ohne Ton 9.040, mit
+  Haltepunkten 10.345, vorher nach 5 min nicht fertig); DOOM 1.2 und
+  1.9 (START + Alt+Esc) mit Ton. Lehre: Emulatoren bilden Debug-
+  Register oft nicht nach – nicht darauf bauen. AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
