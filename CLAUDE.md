@@ -1823,7 +1823,29 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Kanal 2, 42h) und 61h Bits 0–1 (`spk`) nur im Vordergrund an die
   Hardware (`box_fg`), hinten/eingefroren/Ende/Parken stumm. Park setzt
   den Teiler zurück.
-  Offen: IRQ 0/1 an PM-Handler (DOOM),
+  IRQ 0/1 an PM-Handler erledigt – DOOM 1.2 (DOS/4GW) läuft in QEMU
+  (Demo, Menü, Spiel; hing vorher in DMX_Init): `dp_hwint` aus v86_tick
+  (irq0, Ring-3-PM-Rahmen) und nach jedem PM-Trap, `pm_hooked(t, n)`
+  (0205h-Vektor nicht der Stummel) -> `dp_push` legt den IRET-Rahmen auf
+  den Stapel des Programms. Lehren: (1) nachgeholte Takte direkt
+  hintereinander -> DOS/4GW „transfer stack overflow on interrupt 08h“
+  -> Takt höchstens einmal je irq0 (`from_tick`), vt_pend bis 2 (über
+  100 Hz also gedeckelt – DOOM will 140); (2) das IRET des Handlers
+  trappt im PM nicht – ein beim Zustellen gelöschtes virtuelles IF blieb
+  bis zum nächsten STI aus (Tasten kamen Sekunden zu spät); jetzt bleibt
+  IF an, Schachteln verhindert visr bis zum EOI; (3) Port 60h liefert bei
+  PM-Handler für 9 nur vcur (nicht aus dem Ring nehmen). Offen: „Y“ in der
+  Beenden-Abfrage von DOOM wirkt in QEMU nicht (Scancode 15h kommt
+  nachweislich an), echter Takt über 100 Hz (PIT des Kernels hochstellen).
+  Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
+  `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
+  ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS
+  (Kennung im F-Segment) E0000–EFFFF aus (zonelow des BIOS).
+  MS-DOS 6.22 MEM/MSD in der Box (vom Nutzer): XMS 0 K bzw. Extended
+  65535K -> CMOS 70h/71h nachgebildet (17h/18h, 30h/31h = HMA + XMS der
+  Box, sonst echte CMOS lesend); MSD blinkte -> INT 10h 1003h schaltet
+  Attribut-Modusregister Bit 3 (`blink_hw`, bei Ende/Parken zurück).
+  Offen:
   Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und

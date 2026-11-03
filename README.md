@@ -328,8 +328,8 @@ und PC-DOS.
   im Real Mode, Ende mit INT 21h 4Ch aus dem Protected Mode; dazu
   Ausnahme-Handler (0202h/0203h), Callbacks (0303h/0304h) und Raw Switch
   (0306h). Mit DOS/4G läuft DOOM 1.2 (Shareware) durch die ganze
-  Initialisierung bis zum Grafikmodus; es fehlen noch Hardware-Interrupts
-  (Tastatur, Takt) im Protected Mode
+  Initialisierung; Takt und Tastatur gehen auch an die Handler im
+  Protected Mode – **DOOM 1.2 läuft** (Demo, Menü, Spiel)
 - Grafik in DOS-Boxen (virtuelle VGA, Stufe 1): ein Grafikmodus (INT 10h
   00h, VESA 4F02h) gibt der Box im Vordergrund die echte Karte – Modus-
   wechsel über das Video-BIOS der Karte, Bildspeicher A0000–BFFFF und
@@ -339,7 +339,9 @@ und PC-DOS.
   ihrem Bild weiter. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
-  gehen im Vordergrund an die echte Hardware. Ein Textmodus gibt die Karte zurück. Schreibt ein
+  gehen im Vordergrund an die echte Hardware. CMOS (Port 70h/71h) meldet
+  der Box ihren eigenen erweiterten Speicher (MEM/MSD von MS-DOS), INT 10h
+  1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein
   BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
   Schatten-RAM)
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine

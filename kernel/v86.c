@@ -84,6 +84,8 @@ static unsigned char kq[NTASK][16], kq_h[NTASK], kq_t[NTASK];   /* Scancodes */
 static unsigned char vcur[NTASK];       /* zuletzt an Port 60h           */
 static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
+static unsigned char cmos_idx[NTASK];    /* Port 70h der Box              */
+static unsigned char noblink[NTASK];     /* INT 10h 1003h: Hintergrund hell */
 static unsigned pit_c[NTASK];          /* (alt, ungenutzt)              */
 /* virtueller PIT: Kanal 0 mit der Rate des Programms, Zaehler nach
    echter Zeit (in PIT-Schritten, 1,193 MHz) */
@@ -117,7 +119,12 @@ static void vp_free(pg_t p)
 
 static void xms_end(int t);
 static void vga_freeze(int t);
+static void rom_uncow(int t);
+static unsigned char from_tick;         /* Zustellung aus irq0 (Takt erlaubt) */
+static int pm_hooked(int t, unsigned n);
+static void dp_hwint(struct v86_iret *r, int t);
 static int box_fg(int t);
+static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void vga_leave(int t);
 static void tlb(int t);
@@ -125,6 +132,7 @@ static unsigned char vga_raw[NTASK];
 static void ems_end(int t);
 static void ems_box(int t);
 static void dpmi_end(int t);
+static unsigned char dp_inirq[NTASK];   /* PM-Handler laeuft (IRET kommt ohne Trap) */
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
 unsigned __far redir_psp(int t);
@@ -217,6 +225,9 @@ void __far v86_destroy(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk[t] = 0;
+    if (noblink[t])
+        blink_hw(0);
+    noblink[t] = 0;
     if (pt_box[t])
         vga_leave(t);                           /* A0-BF vor dem Freigeben */
     if (box_ses[t] >= 0 && pt_box[t])
@@ -432,6 +443,9 @@ void __far v86_park(int t)
         spk_hw(t, 0);
     spk[t] = 0;
     pit_rl[t] = 0;
+    if (noblink[t])
+        blink_hw(0);
+    noblink[t] = 0;
     vga_leave(t);
     if (pt_box[t])
         capture(t);
@@ -700,7 +714,7 @@ static void pit_run(int t)
     pit_acc[t] += el;
     while (pit_acc[t] >= dv) {
         pit_acc[t] -= dv;
-        if (vt_pend[t] < 32)
+        if (vt_pend[t] < 2)
             vt_pend[t]++;
     }
     c = dv - pit_acc[t];                /* Rest bis zum naechsten        */
@@ -798,9 +812,9 @@ static void pit_out(int t, unsigned p, unsigned char v)
 static void account(int t)
 {
     unsigned long now, d;
-    if (!vec_def(8) || pit_rl[t]) {     /* eigener Takt oder Teiler:     */
+    if (!vec_def(8) || pit_rl[t] || pm_hooked(t, 8)) {  /* eigener Takt/Teiler */
         pit_run(t);                     /* Rate des Programms            */
-        if (vt_pend[t] && vec_def(8) && vec_def(0x1C)) {
+        if (vt_pend[t] && vec_def(8) && vec_def(0x1C) && !pm_hooked(t, 8)) {
             bda_ticks(vt_pend[t]);      /* (Teiler ohne Routine)         */
             vt_pend[t] = 0;
         }
@@ -833,7 +847,7 @@ static void inject(struct v86_iret *r, int t)
     account(t);
     if (!(vfl[t] & FL_IF))
         return;
-    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1)) {
+    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && (from_tick || !pit_rl[t])) {
         vt_pend[t]--;
         visr[t] |= 1;
         int_raw(r, t, 8, (unsigned)r->eip);
@@ -852,10 +866,14 @@ void __far v86_tick(struct v86_iret *r)
     int t = kf_box_ctl(BOX_TASK, 0);
     if (t < 0 || !pt_box[t])
         return;
-    if (r->eflags & 0x20000UL)
-        inject(r, t);
-    else
+    from_tick = 1;                              /* je irq0 hoechstens ein */
+    if (r->eflags & 0x20000UL)                  /* Takt (sonst schachteln */
+        inject(r, t);                           /* nachgeholte Takte, DOS/4GW: */
+    else {                                      /* "transfer stack overflow") */
         vga_freeze(t);                          /* DPMI-Programm (Ring 3) */
+        dp_hwint(r, t);
+    }
+    from_tick = 0;
 }
 
 /* ---- Bildschirm (B800 der Box = Sitzungspuffer) ------------------------- */
@@ -964,6 +982,17 @@ static void vtty(unsigned char ch)
     }
 }
 
+/* Attribut-Modusregister Bit 3: 1 = Blinken, 0 = helle Hintergruende */
+static void blink_hw(int off)
+{
+    unsigned char v;
+    inb(0x3DA);
+    outb(0x3C0, 0x30);                          /* Index 10h, Bild an    */
+    v = (unsigned char)inb(0x3C1);
+    v = (unsigned char)(off ? v & ~8 : v | 8);
+    outb(0x3C0, v);
+}
+
 static void int10(struct v86_frame *f, int t)
 {
     unsigned i, r, c, n;
@@ -1017,6 +1046,13 @@ static void int10(struct v86_frame *f, int t)
         AL = rd8(BDA, 0x49);
         AH = COLS;
         BH = 0;
+        break;
+    case 0x10:                                  /* 1003h: Blinken/hell   */
+        if (AL == 0x03) {
+            noblink[t] = BL == 0;
+            if (box_fg(t))
+                blink_hw(noblink[t]);
+        }
         break;
     case 0x11:
         if (AL == 0x30) {
@@ -1483,6 +1519,7 @@ static void vga_leave(int t)
         return;
     vga_raw[t] = 0;
     vga_ports(t, 0);
+    rom_uncow(t);                               /* BIOS-Kopien verwerfen  */
     scratch2_map(PG_LIN(pt_box[t]), 4095);
     for (i = 0xA0; i < 0xC0; i++)
         put32(SCRATCH2, i, vga_spare[t]);
@@ -1604,7 +1641,7 @@ static unsigned char port_in(int t, unsigned p)
     case 0x21:
         return vimr[t];
     case 0x60:
-        if (vec_def(9) && (k = kq_get(t)) >= 0)
+        if (vec_def(9) && !pm_hooked(t, 9) && (k = kq_get(t)) >= 0)
             vcur[t] = (unsigned char)k;         /* ohne INT 9: abfragen  */
         return vcur[t];
     case 0x64:
@@ -1614,6 +1651,19 @@ static unsigned char port_in(int t, unsigned p)
         return (unsigned char)(0x20 | (tgl[t] & 0x10) | spk[t]);
     case 0x40: case 0x41: case 0x42:
         return pit_in(t, p);
+    case 0x71: {                                /* CMOS: Speicher der Box, */
+        unsigned kb = 64 + ((xms_lim[t] ? xms_lim[t] - 1 : 512) << 2), f;
+        unsigned char v;
+        if (cmos_idx[t] == 0x17 || cmos_idx[t] == 0x30)
+            return (unsigned char)kb;
+        if (cmos_idx[t] == 0x18 || cmos_idx[t] == 0x31)
+            return (unsigned char)(kb >> 8);
+        f = irq_off();
+        outb(0x70, cmos_idx[t]);
+        v = (unsigned char)inb(0x71);
+        irq_restore(f);
+        return v;
+    }
     case 0x3DA: case 0x3BA:
         tgl[t] ^= 0x09;                         /* Ruecklauf kommt und geht */
         return (unsigned char)(tgl[t] & 0x09);
@@ -1643,6 +1693,9 @@ static void port_out(int t, unsigned p, unsigned char v)
         break;
     case 0x40: case 0x41: case 0x42: case 0x43:
         pit_out(t, p, v);
+        break;
+    case 0x70:
+        cmos_idx[t] = (unsigned char)(v & 0x7F);
         break;
     case 0x61:
         spk[t] = (unsigned char)(v & 3);
@@ -1781,6 +1834,17 @@ static void umb_scan(void)
             }
         }
     }
+    /* SeaBIOS (QEMU, Proxmox) haelt Daten im E-Segment (zonelow, auch
+       das SeaVGABIOS beim Moduswechsel) - dort keine UMBs, sonst
+       ueberschreiben sich DOS und BIOS gegenseitig */
+    scratch_map(0xF0000UL, 0xFFFF);
+    for (i = 0; i < 0xFFF8; i++)
+        if (rd8_k(i) == 'S' && rd8_k(i + 1) == 'e' && rd8_k(i + 2) == 'a' &&
+            rd8_k(i + 3) == 'B' && rd8_k(i + 4) == 'I' && rd8_k(i + 5) == 'O') {
+            for (p = 0xE0; p < 0xF0; p++)
+                BSET(rom, p);
+            break;
+        }
     for (p = 0xC8; p < 0xF0; p++) {
         if (BIT(rom, p))
             continue;
@@ -2806,6 +2870,7 @@ again:
 static void dpmi_end(int t)             /* Programm fertig / Box zu      */
 {
     unsigned i;
+    dp_inirq[t] = 0;
     if (!dp_on[t])
         return;
     for (i = 0; i < NDPM; i++)
@@ -3400,6 +3465,76 @@ static unsigned dp_int(struct v86_frame *f, int t, unsigned n)
     return 0;
 }
 
+
+/* hat das Programm im PM einen eigenen Handler fuer n (0205h)? */
+static int pm_hooked(int t, unsigned n)
+{
+    unsigned long __far *v;
+    if (!dp_on[t] || !dp_st[t])
+        return 0;
+    v = pmvec(t, n);
+    return !(*(unsigned short __far *)((char __far *)v + 4) == dp_stub[t] &&
+             v[0] == DP_STUB + n * 4);
+}
+
+/* Unterbrechung im PM nachbilden: FLAGS, CS, IP auf den Stapel des
+   Programms, weiter beim Handler (wie INT n) */
+static unsigned dp_iss[NTASK];          /* Stapel vor der Unterbrechung  */
+static unsigned long dp_isp[NTASK];
+static void dp_push(struct v86_iret *r, int t, unsigned n)
+{
+    unsigned long __far *v = pmvec(t, n), off = v[0], sp, b, fl;
+    unsigned sel = *(unsigned short __far *)((char __far *)v + 4);
+    fl = (r->eflags & ~(unsigned long)FL_IF) | (vfl[t] & FL_IF);
+    b = sel_base(t, (unsigned)r->ss);
+    dp_inirq[t] = 1;
+    dp_iss[t] = (unsigned)r->ss;
+    dp_isp[t] = dp_32[t] ? r->esp : (r->esp & 0xFFFF);
+    if (dp_32[t]) {
+        sp = r->esp - 12;
+        lwr(b + sp + 8, fl, 4);
+        lwr(b + sp + 4, r->cs, 4);
+        lwr(b + sp, r->eip, 4);
+        r->esp = sp;
+    } else {
+        sp = (r->esp - 6) & 0xFFFF;
+        lwr(b + sp + 4, fl, 2);
+        lwr(b + sp + 2, r->cs, 2);
+        lwr(b + sp, r->eip, 2);
+        r->esp = (r->esp & 0xFFFF0000UL) | sp;
+    }
+    r->cs = sel;
+    r->eip = off;
+    /* virtuelles IF bleibt an: das IRET des Handlers trappt im PM nicht,
+       ein geloeschtes IF bliebe bis zum naechsten STI aus (Tasten kamen
+       verspaetet). Gegen Schachteln derselben Quelle: visr bis zum EOI,
+       der Takt hoechstens einmal je irq0. */
+    r->eflags &= ~(unsigned long)FL_TF;
+}
+
+/* Takt und Tastatur an die PM-Handler des Programms (DOOM/DMX: eigener
+   INT 8 mit 140 Hz, INT 9). Ohne PM-Handler bleiben sie fuer den Real
+   Mode liegen. Rahmen: Ring 3 aus irq0 oder nach einem PM-Trap. */
+static void dp_hwint(struct v86_iret *r, int t)
+{
+    if (!dp_on[t] || (r->cs & 3) != 3)
+        return;
+    account(t);
+    if (!(vfl[t] & FL_IF))
+        return;
+    if (vt_pend[t] && from_tick && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8)) {
+        vt_pend[t]--;
+        visr[t] |= 1;
+        dp_push(r, t, 8);
+        return;
+    }
+    if (kq_h[t] != kq_t[t] && !(visr[t] & 2) && !(vimr[t] & 2) && pm_hooked(t, 9)) {
+        vcur[t] = (unsigned char)kq_get(t);
+        visr[t] |= 2;
+        dp_push(r, t, 9);
+    }
+}
+
 /* gesperrter Stapel des Hosts (eine Seite): oben Ausnahmen, ab 800h
    abwaerts Callbacks */
 static int dp_exstack(int t)
@@ -3664,6 +3799,8 @@ unsigned __far dpmi_trap(struct v86_frame *f)
     rc = dp_trap(f, t);
     irq_off();
     vga_freeze(t);
+    if (rc == 0)
+        dp_hwint(&f->r, t);
     return rc;
 }
 
@@ -3692,6 +3829,29 @@ static int rom_cow(struct v86_frame *f, int t)
     put32(SCRATCH2, i, PG_LIN(pg) | PTE_BOX | PTE_OWN);
     tlb(t);
     return 1;
+}
+
+/* Kopien der ROM-Seiten verwerfen (Ende einer Grafiksitzung): das
+   naechste Mal beginnt das Video-BIOS wieder mit seinem Startzustand;
+   eigene Seiten fuer UMBs und den EMS-Rahmen bleiben */
+static void rom_uncow(int t)
+{
+    unsigned p;
+    unsigned long e;
+    for (p = 0xC0; p < 0x100; p++) {
+        if (p == 0xF0)
+            continue;
+        if (p >= 0xC8 && p < 0xF0 && (BIT(umb_used[t], p) ||
+            (ems_frame && p >= ems_frame && p < ems_frame + 16)))
+            continue;
+        scratch2_map(PG_LIN(pt_box[t]), 4095);
+        e = get32(SCRATCH2, p);
+        if (!(e & PTE_OWN))
+            continue;
+        put32(SCRATCH2, p, ((unsigned long)p << 12) | PTE_ROM);
+        vp_free(e >> 12);
+    }
+    tlb(t);
 }
 
 static unsigned monitor(struct v86_frame *f, int t)
