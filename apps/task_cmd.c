@@ -13,6 +13,7 @@
  */
 #include <i86.h>
 #include "fapi.h"
+#include "../build/version.h"
 
 #define LINE 126                        /* wie MS-DOS 127 mit Nullbyte */
 
@@ -1577,7 +1578,8 @@ static void cmd_time(char *arg)
 static void cmd_ver(void)
 {
     unsigned v = DosGetVersion();
-    puts("\nAT-DOS 5.0 (alternative Zeitlinie), 80286 Protected Mode\nFAPI-Version ");
+    puts("\nAT-DOS 5.0 (alternative Zeitlinie), 80286 Protected Mode\n"
+         "Build " ATDOS_BUILD " (" ATDOS_REV ", " ATDOS_DATE "), FAPI-Version ");
     putc((char)('0' + (v >> 8)));
     putc('.');
     put2(v & 0xFF);

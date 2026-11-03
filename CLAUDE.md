@@ -641,6 +641,11 @@ und prüft Segmentgrenzen nicht – ein Zugriff über die Grenze läuft in QEMU
 durch und endet auf dem SCAT mit #GP. Deshalb bei jedem Zugriff über ein
 Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
+Build-Nummer (Wunsch des Nutzers, auch auf main): build.sh schreibt
+`build/version.h` (Anzahl der Commits, Kurz-Hash, `+` bei ungesicherten
+Änderungen, Datum), VER zeigt „Build n (hash, Datum)“; CI mit
+`fetch-depth: 0`.
+
 CI baut bei jedem Push und veröffentlicht `dos5.img` als Release `latest`.
 
 Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
