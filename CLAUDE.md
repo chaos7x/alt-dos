@@ -703,8 +703,9 @@ Fenster (`SCRATCH`, `SCRATCH2`, Anwendungssegmente) die Grenze selbst prüfen.
 
 CI baut bei jedem Push und veröffentlicht `atdos-fd.img` als Release `latest`.
 Build-Nummer (Wunsch des Nutzers, damit klar ist, welches Abbild getestet
-wurde): build.sh schreibt `build/version.h` (ATDOS_BUILD = Anzahl der
-Commits, ATDOS_REV = Kurz-Hash, `+` bei ungesicherten Änderungen,
+wurde): build.sh schreibt `build/version.h` (ATDOS_BUILD = in der CI
+`GITHUB_RUN_NUMBER` wie auf der Actions-Seite, lokal Anzahl der Commits
++ „lokal“, ATDOS_REV = Kurz-Hash, `+` bei ungesicherten Änderungen,
 ATDOS_DATE), VER in CMD zeigt „Build n (hash, Datum)“; die CI checkt mit
 `fetch-depth: 0` aus (sonst zählte sie 1).
 

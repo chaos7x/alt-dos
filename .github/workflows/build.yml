@@ -48,5 +48,5 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           gh release create latest build/atdos-fd.img build/atdos-hd.zip \
             --prerelease \
-            --title "Aktueller Stand (${GITHUB_SHA::7})" \
-            --notes "AT-DOS 6.0 in Arbeit, automatisch gebaut aus ${GITHUB_SHA::7}. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Diskette A: in 86Box, 386-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+            --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
+            --notes "AT-DOS 6.0 in Arbeit, automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Diskette A: in 86Box, 386-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."

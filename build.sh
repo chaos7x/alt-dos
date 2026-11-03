@@ -31,7 +31,13 @@ check_size() {   # Datei, Map, Maximum, Name
 }
 
 # Build-Nummer fuer VER (Anzahl der Commits, Kurz-Hash, Datum)
-BUILDNO=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+# in der CI die Lauf-Nummer von GitHub (wie auf der Actions-Seite und im
+# Release), lokal die Anzahl der Commits mit Zusatz "lokal"
+if [ -n "$GITHUB_RUN_NUMBER" ]; then
+    BUILDNO=$GITHUB_RUN_NUMBER
+else
+    BUILDNO="$(git rev-list --count HEAD 2>/dev/null || echo 0) lokal"
+fi
 BUILDREV=$(git rev-parse --short HEAD 2>/dev/null || echo unbekannt)
 git diff --quiet HEAD 2>/dev/null || BUILDREV="$BUILDREV+"
 cat > $B/version.h <<VEREOF
