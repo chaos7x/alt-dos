@@ -1855,6 +1855,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Spiel gedrückten Tasten landen auch im Tastaturpuffer des Kernels, CMD
   las danach Pfeil hoch (letzter Befehl) + Enter. `v86_park`/`v86_destroy`
   leeren den Puffer (`kf_kbd_flush`), wenn die Box vorn war.
+  Digger (Remastered, DOS, von digger.org – in QEMU nachgestellt) fror am
+  Highscore ein: es wartet in einer Schleife, die den PIT latcht/liest und
+  INT 16h 11h/INT 21h 0Bh ruft; dabei trappt die Box so oft, dass irq0
+  fast immer im Kernel landet – und der Takt kam nur aus irq0 heraus.
+  Jetzt `t8_ok`: aus irq0 immer, sonst höchstens ein INT 8 je Kerneltakt
+  (`t8_last`). HLT (`hlt_wait`): schläft nur, wenn kein Interrupt ansteht,
+  und erlaubt danach den Takt. Spezifisches EOI (60h+n) am virtuellen PIC.
+  Danach läuft Digger bis ins Spiel, DOOM weiter. Offen: PC-Lautsprecher
+  bei Digger im QEMU-Mitschnitt stumm (Nutzer hört Knacksen).
   Zweite Grafiksitzung in derselben Box (#UD im SeaVGABIOS bei C000:8008):
   `rom_uncow` verwirft beim Verlassen der Grafik die per rom_cow kopierten
   ROM-Seiten (UMB/EMS-Rahmen bleiben); `umb_scan` lässt bei SeaBIOS

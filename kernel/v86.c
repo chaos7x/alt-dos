@@ -121,6 +121,7 @@ static void vp_free(pg_t p)
 static void xms_end(int t);
 static void vga_freeze(int t);
 static void kpit_set(unsigned dv);
+static void hlt_wait(int t);
 static unsigned long key_t0[NTASK];     /* Takt der letzten zugestellten Taste */
 /* naechster Scancode darf jetzt kommen? Ein Loslassen-Code fruehestens
    3 Takte (30 ms) nach dem vorigen Code: Spiele fragen den Tastenzustand
@@ -137,7 +138,8 @@ static int key_ready(int t)
     return 1;
 }
 static void rom_uncow(int t);
-static unsigned char from_tick;         /* Zustellung aus irq0 (Takt erlaubt) */
+static unsigned char from_tick;
+static unsigned long t8_last[NTASK];    /* Kerneltakt des letzten INT 8 der Box */         /* Zustellung aus irq0 (Takt erlaubt) */
 static int pm_hooked(int t, unsigned n);
 static void dp_hwint(struct v86_iret *r, int t);
 static int box_fg(int t);
@@ -907,6 +909,19 @@ static void account(int t)
 }
 
 /* beim Ruecksprung in die Box: ausstehenden Interrupt zustellen */
+/* darf jetzt ein Takt zugestellt werden? Aus irq0 immer, sonst
+   hoechstens einer je Kerneltakt (nachgeholte Takte hintereinander ->
+   DOS/4GW "transfer stack overflow"; nur aus irq0 -> eine Box, die
+   staendig trappt, bekam fast keinen Takt, Digger wartete ewig) */
+static int t8_ok(int t)
+{
+    unsigned long now = get_ticks();
+    if (!from_tick && now == t8_last[t])
+        return 0;
+    t8_last[t] = now;
+    return 1;
+}
+
 static void inject(struct v86_iret *r, int t)
 {
     if (spk[t] && !box_fg(t))
@@ -917,7 +932,7 @@ static void inject(struct v86_iret *r, int t)
     account(t);
     if (!(vfl[t] & FL_IF))
         return;
-    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && (from_tick || !pit_rl[t])) {
+    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && t8_ok(t)) {
         vt_pend[t]--;
         visr[t] |= 1;
         int_raw(r, t, 8, (unsigned)r->eip);
@@ -1762,6 +1777,8 @@ static void port_out(int t, unsigned p, unsigned char v)
     case 0x20:
         if (v == 0x20)                          /* EOI: niedrigstes Bit  */
             visr[t] &= (unsigned char)(visr[t] - 1);
+        else if ((v & 0xF8) == 0x60)            /* spezifisches EOI (Digger) */
+            visr[t] &= (unsigned char)~(1 << (v & 7));
         break;
     case 0x21:
         vimr[t] = v;
@@ -3597,7 +3614,7 @@ static void dp_hwint(struct v86_iret *r, int t)
     account(t);
     if (!(vfl[t] & FL_IF))
         return;
-    if (vt_pend[t] && from_tick && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8)) {
+    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
         vt_pend[t]--;
         visr[t] |= 1;
         dp_push(r, t, 8);
@@ -3844,7 +3861,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return 0;
     case 0xF4:                                  /* HLT: abgeben          */
         f->r.eip++;
-        kf_box_ctl(BOX_SLEEP, 1);
+        hlt_wait(t);
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         n = op <= 0xE5 ? (unsigned)lrd(lin + 1, 1) : DX;
@@ -3877,6 +3894,7 @@ unsigned __far dpmi_trap(struct v86_frame *f)
     vga_freeze(t);
     if (rc == 0)
         dp_hwint(&f->r, t);
+    from_tick = 0;
     return rc;
 }
 
@@ -3928,6 +3946,18 @@ static void rom_uncow(int t)
         vp_free(e >> 12);
     }
     tlb(t);
+}
+
+/* HLT: bis zum naechsten (virtuellen) Interrupt warten - steht schon
+   einer an, gar nicht schlafen; danach darf der Takt gleich kommen
+   (Digger wartet am Highscore per HLT auf seinen INT 8 und fror ein,
+   weil der Takt nur aus irq0 heraus zugestellt wurde) */
+static void hlt_wait(int t)
+{
+    account(t);
+    if (!vt_pend[t] && kq_h[t] == kq_t[t])
+        kf_box_ctl(BOX_SLEEP, 1);
+    from_tick = 1;                              /* inject/dp_hwint danach */
 }
 
 static unsigned monitor(struct v86_frame *f, int t)
@@ -4050,7 +4080,7 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0xF4:                                  /* HLT: abgeben          */
         f->r.eip = ip;
-        kf_box_ctl(BOX_SLEEP, 1);
+        hlt_wait(t);
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         p = op <= 0xE5 ? rd8(cs, ip++) : DX;
@@ -4090,5 +4120,6 @@ unsigned __far v86_exc(struct v86_frame *f)
         inject(&f->r, t);
     } else if (rc == 2)
         irq_off();                      /* DPMI: weiter im PM            */
+    from_tick = 0;
     return rc;
 }
