@@ -40,6 +40,7 @@ extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
 extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_
+extern _kpit_div, _kpit_acc
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -602,7 +603,14 @@ irq0:
         push    ds
         mov     ax, KDATA
         mov     ds, ax
-        add     word [_ticks], 1
+        mov     ax, [_kpit_div]         ; PIT schneller (DOS-Box vorn will
+        or      ax, ax                  ; mehr als 100 Hz, v86.c): nur je
+        jz      .tick                   ; 11932 Schritte ein Kerneltakt
+        add     [_kpit_acc], ax
+        cmp     word [_kpit_acc], 11932
+        jb      .eoi
+        sub     word [_kpit_acc], 11932
+.tick:  add     word [_ticks], 1
         adc     word [_ticks+2], 0
         cmp     word [_reboot_count], 0     ; Strg+Alt+Entf angefordert und
         je      .norb                       ; niemand gibt ab: nach 5 s

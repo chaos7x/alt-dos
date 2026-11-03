@@ -97,7 +97,8 @@ static unsigned char pit_latd[NTASK];   /* Latch gueltig                 */
 static unsigned char pit_wlo[NTASK];    /* lo/hi: lo schon geschrieben   */
 static unsigned long pit_acc[NTASK];    /* Schritte bis zum naechsten INT 8 */
 static unsigned long pit_t0[NTASK];     /* Takt der letzten Messung      */
-static unsigned pit_c0[NTASK];          /* echter Zaehler dabei          */
+static unsigned pit_c0[NTASK];          /* Schritte seit dem Kerneltakt dabei */
+unsigned kpit_div, kpit_acc;            /* start.asm irq0: PIT-Teiler (0 = 11932) */
 static unsigned char spk[NTASK];        /* Lautsprecher-Bits 61h (0-1)   */
 static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbild */
 static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
@@ -119,6 +120,22 @@ static void vp_free(pg_t p)
 
 static void xms_end(int t);
 static void vga_freeze(int t);
+static void kpit_set(unsigned dv);
+static unsigned long key_t0[NTASK];     /* Takt der letzten zugestellten Taste */
+/* naechster Scancode darf jetzt kommen? Ein Loslassen-Code fruehestens
+   3 Takte (30 ms) nach dem vorigen Code: Spiele fragen den Tastenzustand
+   je Spieltakt ab (DOOM 35 Hz) - kamen Druecken und Loslassen zusammen,
+   sah DOOM die Taste nie (Leertaste, Strg). Wie der PIC: IRQ 1 nicht,
+   solange IRQ 0 bedient wird. */
+static int key_ready(int t)
+{
+    if (kq_h[t] == kq_t[t] || (visr[t] & 3) || (vimr[t] & 2))
+        return 0;
+    if ((kq[t][kq_t[t]] & 0x80) && kq[t][kq_t[t]] != 0xE0 &&
+        get_ticks() - key_t0[t] < 3)
+        return 0;
+    return 1;
+}
 static void rom_uncow(int t);
 static unsigned char from_tick;         /* Zustellung aus irq0 (Takt erlaubt) */
 static int pm_hooked(int t, unsigned n);
@@ -228,6 +245,9 @@ void __far v86_destroy(int t)
     if (noblink[t])
         blink_hw(0);
     noblink[t] = 0;
+    if (pit_rl[t] && box_fg(t))
+        kpit_set(0);
+    pit_rl[t] = 0;
     if (pt_box[t])
         vga_leave(t);                           /* A0-BF vor dem Freigeben */
     if (box_ses[t] >= 0 && pt_box[t])
@@ -442,6 +462,8 @@ void __far v86_park(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk[t] = 0;
+    if (pit_rl[t] && box_fg(t))
+        kpit_set(0);
     pit_rl[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -513,6 +535,15 @@ void __far v86_poll(void)
     unsigned short w[8];
     unsigned long e8, e9;
     int t, cur = -2;
+
+    if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
+        int s = kf_vio_fg(), ok = 0;
+        for (t = 0; t < NTASK; t++)
+            if (box_ses[t] == s && s >= 0 && pit_rl[t])
+                ok = 1;
+        if (!ok)
+            kpit_set(0);
+    }
 
     for (t = 0; t < NTASK; t++) {
         if (box_ses[t] < 0 || !pt_box[t] || vga_raw[t])
@@ -676,28 +707,55 @@ static void bda_ticks(unsigned n)
    Kerneltakt + echter Zaehler von Kanal 0) */
 static unsigned long pit_elapsed(int t)
 {
-    unsigned f = irq_off(), c, d;
+    unsigned f = irq_off(), c, d, pos;
     unsigned long tk, el = 0;
     tk = get_ticks();
     outb(0x43, 0x00);
     c = inb(0x40);
     c |= inb(0x40) << 8;
+    pos = kpit_acc + ((kpit_div ? kpit_div : KPIT) - c);   /* seit dem Takt */
     irq_restore(f);
     if (tk < pit_t0[t] || tk - pit_t0[t] > 50) {        /* Anfang/lange weg */
         pit_t0[t] = tk;
-        pit_c0[t] = c;
+        pit_c0[t] = pos;
         return 0;
     }
     d = (unsigned)(tk - pit_t0[t]);
     while (d--)
         el += KPIT;
-    el += pit_c0[t];                    /* Zaehler laeuft abwaerts       */
-    if (el < c)
+    el += pos;
+    if (el < pit_c0[t])
         return 0;                       /* Takt noch nicht gezaehlt      */
-    el -= c;
+    el -= pit_c0[t];
     pit_t0[t] = tk;
-    pit_c0[t] = c;
+    pit_c0[t] = pos;
     return el;
+}
+
+/* echten Kanal 0 auf den Teiler der Box im Vordergrund (schneller als
+   100 Hz), sonst zurueck auf 100 Hz; irq0 zaehlt den Kerneltakt weiter
+   je 11932 Schritte */
+#define KPIT_MIN 1193U                  /* hoechstens 1 kHz              */
+static void kpit_set(unsigned dv)
+{
+    unsigned f;
+    if (dv && dv < KPIT_MIN)
+        dv = KPIT_MIN;
+    if (dv >= KPIT)
+        dv = 0;
+    if (dv == kpit_div)
+        return;
+    f = irq_off();
+    kpit_div = dv;
+    outb(0x43, 0x36);
+    outb(0x40, (dv ? dv : KPIT) & 0xFF);
+    outb(0x40, (dv ? dv : KPIT) >> 8);
+    irq_restore(f);
+}
+
+static void kpit_check(int t)
+{
+    kpit_set(pit_rl[t] && box_fg(t) ? pit_rl[t] : 0);
 }
 
 static unsigned long pit_div(int t)
@@ -805,6 +863,7 @@ static void pit_out(int t, unsigned p, unsigned char v)
     pit_run(t);                         /* neuer Teiler gilt ab jetzt    */
     pit_acc[t] = 0;
     pit_cnt[t] = (unsigned)pit_div(t);
+    kpit_check(t);
 }
 
 /* 100 Hz des Kernels in 18,2 Hz der Box umrechnen; ohne eigene Takt-
@@ -843,6 +902,8 @@ static void inject(struct v86_iret *r, int t)
 {
     if (spk[t] && !box_fg(t))
         spk_hw(t, 0);                           /* hinten: stumm         */
+    if (pit_rl[t])
+        kpit_check(t);                          /* vorn schneller Takt   */
     vga_freeze(t);
     account(t);
     if (!(vfl[t] & FL_IF))
@@ -853,7 +914,8 @@ static void inject(struct v86_iret *r, int t)
         int_raw(r, t, 8, (unsigned)r->eip);
         return;
     }
-    if (kq_h[t] != kq_t[t] && !vec_def(9) && !(visr[t] & 2) && !(vimr[t] & 2)) {
+    if (!vec_def(9) && key_ready(t)) {
+        key_t0[t] = get_ticks();
         vcur[t] = (unsigned char)kq_get(t);
         visr[t] |= 2;
         int_raw(r, t, 9, (unsigned)r->eip);
@@ -871,6 +933,8 @@ void __far v86_tick(struct v86_iret *r)
         inject(r, t);                           /* nachgeholte Takte, DOS/4GW: */
     else {                                      /* "transfer stack overflow") */
         vga_freeze(t);                          /* DPMI-Programm (Ring 3) */
+        if (pit_rl[t])
+            kpit_check(t);
         dp_hwint(r, t);
     }
     from_tick = 0;
@@ -1541,6 +1605,7 @@ static void vga_freeze(int t)
         return;
     if (spk[t])
         spk_hw(t, 0);
+    kpit_set(0);
     enable_ints();
     while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
         kf_box_ctl(BOX_SLEEP, 2);
@@ -3528,7 +3593,8 @@ static void dp_hwint(struct v86_iret *r, int t)
         dp_push(r, t, 8);
         return;
     }
-    if (kq_h[t] != kq_t[t] && !(visr[t] & 2) && !(vimr[t] & 2) && pm_hooked(t, 9)) {
+    if (pm_hooked(t, 9) && key_ready(t)) {
+        key_t0[t] = get_ticks();
         vcur[t] = (unsigned char)kq_get(t);
         visr[t] |= 2;
         dp_push(r, t, 9);
