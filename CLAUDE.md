@@ -46,8 +46,14 @@ NCR8XX mit IRQ (erledigt)
 -> Phase 3 DOS-Boxen (Stufe 1 V86-Grundlage erledigt; DOS darin: **FreeDOS-Kernel** mit INT-2Fh-
 Redirector auf die AT-DOS-Laufwerke, vom Nutzer gewählt; später echtes
 MS-DOS aus Abbildern) -> Phase 4 EMS/XMS/DPMI, virtuelle VGA und SB,
-mehrere Boxen -> Phase 5 FAT32 + VFAT-Schreiben, IDE-Busmaster, VESA,
-APM -> Phase 6 (Entscheidung des Nutzers: Rest von Phase 2 ans Ende)
+mehrere Boxen (Rest, abgestimmt: Platz im ersten Codesegment, XMS über
+3 MB je Box, IDLE_SENSITIVITY, Grafik-Boxen im Hintergrund mit Schatten,
+AdLib-Registerkopie der Box, Kleinkram nach Bedarf) -> Phase 5 zuerst
+Fenster statt voller Spiegelung (Kernel-Alias reicht nur für 2 GB) mit
+Speicher bis ~3,5 GB (Wunsch des Nutzers: AT-DOS auf einer 4-GB-VM; heute
+startet es dort schon und nutzt 1 GB), gleich danach VESA mit linearem
+Bildspeicher (braucht denselben Umbau), dann FAT32 + VFAT-Schreiben,
+IDE-Busmaster, APM -> Phase 6 (Entscheidung des Nutzers: Rest von Phase 2 ans Ende)
 Sperren je Gerät statt der einen Kernelsperre (DMABUF, `req`,
 SCRATCH-Fenster und statische FAPI-Puffer je Task/Gerät), echt parallele
 Plattenzugriffe auf verschiedenen Laufwerken; danach nach `5.x` zurück.
