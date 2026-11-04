@@ -543,7 +543,7 @@ selbst nur 8.3 kennt.
 | 40 | DosPipe         | BX = Puffer (2 Worte) → Lese-, Schreib-Handle |
 | 41 | VioWrtStrAtt    | wie VioWrtStr, DX = Farbattribut |
 | 42 | DosQHandType    | BX = Handle → 0 Datei, 1 Pipe, 2 Konsole, 3 Laufwerk |
-| 43 | DosOpenDrive    | BX = Laufwerk, CX = 0 lesen / 1 exklusiv (Sperre) → Handle; Sektoren mit DosRead/DosWrite |
+| 43 | DosOpenDrive    | BX = Laufwerk, CX = 0 lesen / 1 exklusiv (Sperre) (+ 2 `DRV_OPEN_LBA`: DosSeek-Stelle in Sektoren, für über 4 GB) → Handle; Sektoren mit DosRead/DosWrite |
 | 44 | DosSeek         | BX = Handle, CX = Zeiger auf Position (4 Bytes) |
 | 47 | DosSetFInfo     | BX = Pfad, CX = struct fapi_finfo: Attribute und/oder Datum/Uhrzeit setzen |
 | 48 | DosSetDateTime  | BX = Datum, Uhrzeit (FAT-Format) → Echtzeituhr stellen |
