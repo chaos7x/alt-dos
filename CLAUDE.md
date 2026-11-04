@@ -2163,6 +2163,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (oft keine PS/2-Emulation), APIC/HPET, falls PIC/PIT fehlen. 6.0 (Ziel
   P3B-F, hat noch BIOS) braucht UEFI nicht; bis dahin laufen Boards mit
   CSM (bis ~2020) und VMs.
+- `COUNTRY=` richtig auswerten (Wunsch des Nutzers, ohne Vorrang – es
+  gibt auch andere Länder): heute nimmt der Kernel die Zeile nur an, AT-DOS
+  ist fest deutsch, die Box fest `COUNTRY=049,437` (freedos/CONFIG.SYS).
+  Ziel: Land aus der CONFIG.SYS für Datum/Zeit/Zahlen/Währung in CMD und
+  den Werkzeugen (FAPI-Abfrage wie OS/2 DosGetCtryInfo) und an die Box
+  weiterreichen.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
