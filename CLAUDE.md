@@ -1991,8 +1991,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nicht (`dsp4`). BLASTER jetzt `A220 I5 D1 H5 T6`. Geprüft: eigenes
   Testprogramm 44,1 kHz 16 Bit stereo Auto-Init mit IRQ 5 (78 IRQs in 2 s
   bei 25-ms-Blöcken, 1 kHz auf beiden Kanälen im Mitschnitt), DOOM 1.2
-  mit Ton. Ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ hängt bei I_Init –
-  auch mit dem Stand davor (nicht die SB16), noch offen. Offen: Aufnahme,
+  mit Ton. Ein DOOM-Nachbau hängt bei I_Init (siehe ganz am Ende).
+  Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
   Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel
@@ -2295,3 +2295,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
   erst viel später, wenn überhaupt.
+- Ganz am Ende (Entscheidung des Nutzers, er hat das Programm selbst
+  nicht): ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ (nur von mir zum
+  Testen besorgt) hängt in der Box bei I_Init – auch mit dem Stand vor
+  der virtuellen SB16, also nicht deren Fehler.
