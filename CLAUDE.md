@@ -2161,8 +2161,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `code_end` auf 16 auf, darüber läuft die DS-Rechnung über und der
   Kernel hängt beim Start; build.sh bricht jetzt ab. Vom Nutzer auf dem
   386 mit 4 MB bestätigt (Build 336): zwei Boxen per START 1.800 KB,
-  1.104 KB frei (vorher 2.600/304). Offen: MS-DOS-MEM
-  zeigt in der Box „Erweiterung (XMS) 0K“ insgesamt.
+  1.104 KB frei (vorher 2.600/304). MS-DOS-MEM zeigte in der Box
+  „Erweiterung (XMS) 0K“: MEM liest die Handle-Tabelle von HIMEM (INT
+  2Fh 4309h, AL = 43h, ES:BX -> Kopf: Kennung, Eintragsgröße 10, Anzahl,
+  Fernzeiger; Einträge Art 1 frei/2 belegt/4 leer, Sperren, Adresse und
+  Größe in KB). Jetzt `xms_table` (v86.c) bei F000:0900 (`XMS_TAB`), je
+  Aufruf neu: belegte Blöcke, dahinter der freie Rest der Box als ein
+  Block. Mit HT.COM geprüft (2.048 frei; nach 1 MB anlegen 1.024/1.024);
+  MS-DOS-MEM selbst nur beim Nutzer prüfbar.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.

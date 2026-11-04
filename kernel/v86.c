@@ -64,6 +64,7 @@
 #define INT8_STUB 0x0400        /* ARPL 8; INT 1Ch; IRET                 */
 #define DPT_OFF 0x0800          /* Diskettenparametertabelle             */
 #define XMS_STUB 0x0500         /* XMS-Einsprung: ARPL E1h; RETF          */
+#define XMS_TAB 0x0900          /* Handle-Tabelle wie HIMEM (INT 2Fh 4309h) */
 #define PTE_OWN 0x200           /* eigene Seite (EMB/UMB): bei Ende frei  */
 #define BDA     0x0040
 #define VSEG    0xB800
@@ -200,6 +201,7 @@ static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
 static unsigned long dp_patch[NTASK][NPATCH];   /* POPF -> HLT (linear)  */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
+static void xms_table(int t);
 
 /* PVI (CR4 Bit 1, ab Pentium): CLI/STI eines DPMI-Programms in Ring 3
    setzen nur EFLAGS.VIF statt zu trappen (DMX mischt mit CLI/STI, ~700
@@ -2382,6 +2384,14 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
         DI = 0x0510;
         return;
     }
+    if (n == 0x2F && AX == 0x4309) {            /* HIMEM-Handle-Tabelle  */
+        f->r.eip = ip;                          /* (MS-DOS-MEM zaehlt    */
+        xms_table(t);                           /* daraus XMS insgesamt) */
+        AL = 0x43;
+        f->r.es = VBIOS;
+        BX = XMS_TAB;
+        return;
+    }
     if (n == 0x2F && (AX == 0x4300 || AX == 0x4310)) {  /* XMS da?      */
         f->r.eip = ip;                          /* (vor dem DOS: FreeDOS */
         if (AL == 0)                            /* reicht 43h nicht weiter) */
@@ -2752,6 +2762,41 @@ static unsigned emb_free_pg(int t)
         if (xh[t][i].used)
             u += xh[t][i].npg;
     return u >= XMS_PGN ? 0 : XMS_PGN - u;
+}
+
+/* Handle-Tabelle wie HIMEM fuer INT 2Fh 4309h (MS-DOS-MEM liest daraus
+   XMS insgesamt/frei): Kopf (Kennung, Eintragsgroesse 10, Anzahl, Zeiger),
+   je Eintrag Art (1 frei, 2 belegt, 4 leer), Sperren, Adresse und Groesse
+   in KB. Der freie Rest der Box steht als ein Block hinter den belegten. */
+static void xms_table(int t)
+{
+    unsigned i, e = XMS_TAB + 16, top = XMS_PG0;
+    wr8(VBIOS, XMS_TAB, 1);
+    wr8(VBIOS, XMS_TAB + 1, 10);
+    wr16(VBIOS, XMS_TAB + 2, NXH + 1);
+    wr16(VBIOS, XMS_TAB + 4, XMS_TAB + 16);
+    wr16(VBIOS, XMS_TAB + 6, VBIOS);
+    for (i = 0; i <= NXH; i++, e += 10) {
+        unsigned fl = 4, lk = 0, ad = 0, kb = 0;
+        if (i < NXH && xh[t][i].used) {
+            fl = 2;
+            lk = xh[t][i].lock;
+            ad = xh[t][i].base << 2;
+            kb = xh[t][i].npg << 2;
+            if (xh[t][i].base + xh[t][i].npg > top)
+                top = xh[t][i].base + xh[t][i].npg;
+        } else if (i == NXH) {
+            fl = 1;
+            ad = top << 2;
+            kb = emb_free_pg(t) << 2;
+        }
+        wr8(VBIOS, e, (unsigned char)fl);
+        wr8(VBIOS, e + 1, (unsigned char)lk);
+        wr16(VBIOS, e + 2, ad);
+        wr16(VBIOS, e + 4, 0);
+        wr16(VBIOS, e + 6, kb);
+        wr16(VBIOS, e + 8, 0);
+    }
 }
 
 static void lwin(unsigned idx, unsigned long lin)  /* Fenster auf lineare Adresse der Box */
