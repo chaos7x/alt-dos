@@ -271,7 +271,9 @@ und PC-DOS.
   Schreiben kostet nichts, auch im Hintergrund. Virtueller Takt (INT 8/
   1Ch, 18,2 Hz), virtuelle Tastatur (INT 9, Port 60h/64h), virtueller PIC
   (EOI, Maske; nach `STI` kommt ein Interrupt wie bei der CPU erst nach
-  dem nächsten Befehl – Digger setzte darauf); Warteschleifen an 3DAh (Strahlrücklauf), 61h und am PIT
+  dem nächsten Befehl – Digger setzte darauf; stellt ein Programm den
+  Zeitgeber schneller, kommt jeder INT 8 von einem echten Takt-Interrupt,
+  ohne Zittern – wichtig für Lautsprecher-Ton); Warteschleifen an 3DAh (Strahlrücklauf), 61h und am PIT
   hängen nicht. BIOS: INT 10h (Textmodus, Cursor, Rollen, Zeichen,
   Zeichenketten), 11h, 12h, 15h, 16h, 1Ah (Takt, Uhrzeit, Datum); DOS
   (bis zum FreeDOS-Kern in Stufe 3) nur Zeichen/Text/Handle 1–2/

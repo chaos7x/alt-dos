@@ -97,7 +97,9 @@ static unsigned pit_lat[NTASK];         /* gelatchter Wert               */
 static unsigned char pit_acc_m[NTASK];  /* Zugriff 1 lo, 2 hi, 3 lo/hi   */
 static unsigned char pit_latd[NTASK];   /* Latch gueltig                 */
 static unsigned char pit_wlo[NTASK];    /* lo/hi: lo schon geschrieben   */
-static unsigned long pit_acc[NTASK];    /* Schritte bis zum naechsten INT 8 */
+static unsigned long pit_acc[NTASK];
+static unsigned pit_n0[NTASK];          /* irq0_n bei der letzten Messung */
+static unsigned pit_lastc;              /* zuletzt gelesener echter Zaehler */    /* Schritte bis zum naechsten INT 8 */
 static unsigned long pit_t0[NTASK];     /* Takt der letzten Messung      */
 static unsigned pit_c0[NTASK];          /* Schritte seit dem Kerneltakt dabei */
 unsigned kpit_div, kpit_acc;            /* start.asm irq0: PIT-Teiler (0 = 11932) */
@@ -952,6 +954,7 @@ static unsigned long pit_elapsed(int t)
     outb(0x43, 0x00);
     c = inb(0x40);
     c |= inb(0x40) << 8;
+    pit_lastc = c;
     pos = kpit_acc + ((kpit_div ? kpit_div : KPIT) - c);   /* seit dem Takt */
     irq_restore(f);
     if (tk < pit_t0[t] || tk - pit_t0[t] > 50) {        /* Anfang/lange weg */
@@ -1021,6 +1024,24 @@ static unsigned long pit_div(int t)
 static void pit_run(int t)
 {
     unsigned long el = pit_elapsed(t), dv = pit_div(t), c;
+    unsigned n = irq0_n;
+    if (kpit_div && kpit_div == dv && box_fg(t)) {
+        /* Der echte Kanal 0 laeuft mit dem Teiler der Box: jeder echte
+           irq0 ist genau ein INT 8 der Box, der Zaehler ist der echte.
+           Ueber die gemessene Zeit kam ein Takt, der gerade faellig war,
+           oft erst mit der naechsten Falle - der Lautsprecher (Digger
+           schaltet ihn je INT 8 um) klang dadurch unsauber. */
+        n -= pit_n0[t];
+        pit_n0[t] = irq0_n;
+        if (n > 2)
+            n = 2;
+        while (n-- && vt_pend[t] < 2)
+            vt_pend[t]++;
+        pit_acc[t] = 0;
+        pit_cnt[t] = pit_lastc;
+        return;
+    }
+    pit_n0[t] = n;
     if (!el)
         return;
     pit_acc[t] += el;

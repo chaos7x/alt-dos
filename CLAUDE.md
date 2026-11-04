@@ -1971,6 +1971,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   0000:0000. Jetzt STI-Schatten wie die CPU (`sti_sh`): schaltet STI IF
   ein, kommt der Interrupt erst mit der nächsten Falle oder dem nächsten
   Takt. Danach startet Digger (gehaltenes Enter), F10, COMMAND /C VER.
+  Digger-Ton „unter DOS klarer“ (Nutzer, P2; mit und ohne HW_TIMER
+  gleich): Digger schaltet den Lautsprecher in seinem INT 8 um (61h Bit 1,
+  Ton = halbe Taktrate; Musik mit Teilern 0D59h–1FBFh = 150–350 Hz). Die
+  Takte kamen aus der gemessenen Zeit (`pit_elapsed`) – ein gerade
+  fälliger Takt oft erst mit der nächsten Falle, also mit Zittern. Jetzt
+  `pit_run`: läuft der echte Kanal 0 mit dem Teiler der Box (kpit_div ==
+  Teiler, Box vorn), ist jeder echte irq0 genau ein INT 8 (`pit_n0`
+  gegen `irq0_n`), und 40h liefert den echten Zähler (`pit_lastc`). Test
+  JT.COM (Zähler im eigenen INT 8 bei 349 Hz): vorher über alle Phasen
+  verteilt, jetzt fast immer kurz nach dem Nachladen. Digger, Uhr (Uptime
+  gleich), DOOM 1.2 Timedemo geprüft; hörbar nur in 86Box.
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),
