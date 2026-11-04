@@ -2031,6 +2031,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (440 Hz 1 s, Taste abwarten, dann nur B0h = Taste an): DETACH PLAY
   ODE.IMF, START OPLR, weg, PLAY spielt, zurück, Taste -> 440 Hz sauber
   (ohne Kopie stumm); `ADLIB_COPY=ON` ohne PLAY ebenso; DOOM unverändert.
+  Vom Nutzer in 86Box bestätigt: IMF spielt sauber weiter, der Ton der
+  Box kommt nach dem Zurückschalten richtig.
   Kernel-Panik mit `START DOOM` (Nutzer, P3B-F; in QEMU nachgestellt:
   #GP bei 0008:03EF = exc_common `.topm`, Fehlercode 1Ch = LDT-Selektor
   1Fh): das TSS einer Box hat `ldt = 0` (nur FX-Programme bekamen
@@ -2206,10 +2208,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit -1 bei 16 MB 13.660 KB = 64 + 13.596 frei.
   Vom Nutzer in 86Box bestätigt (Build 339): 386/4 MB mit zwei Boxen
   1.204K/92K/1.112K, 16-MB-VM mit einer und zwei Boxen 2.036K/92K/
-  1.944K (92K = vermutlich FreeCOM „XMS_Swap“). Vorgemerkt (Kosmetik,
-  vom Nutzer für die nächste Phase): Lücken zwischen EMBs als eigene
-  freie Einträge in die 4309h-Tabelle (`xms_table`), damit die Summe
-  die Grenze trifft (heute fehlen ~12K).
+  1.944K (92K = vermutlich FreeCOM „XMS_Swap“). Danach (Wunsch des
+  Nutzers): `xms_table` meldet jede Lücke zwischen EMBs als eigenen
+  freien Eintrag (Gang wie emb_gap, gekappt auf den freien System-
+  speicher, Adresse/Größe 32 Bit über `xms_ent`), damit frei + belegt
+  die Grenze trifft – in QEMU mit HT2.COM geprüft (100/200/100 KB
+  anlegen, mittleren frei: 4 Einträge, 1.848 + 200 = 2.048 KB).
   Virtuelle VGA, Stufe 2 – Grafik-Boxen im Hintergrund (in QEMU geprüft:
   `\DEMO\BGTEST.COM` (apps/bgtest.asm, `4` = CGA) 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
   Farbe 1 per 3C8h/3C9h auf Rot – START, Alt+Esc weg bei Zeile 71, nach

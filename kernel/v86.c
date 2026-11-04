@@ -3070,35 +3070,57 @@ static unsigned emb_free_pg(int t)
    XMS insgesamt/frei): Kopf (Kennung, Eintragsgroesse 10, Anzahl, Zeiger),
    je Eintrag Art (1 frei, 2 belegt, 4 leer), Sperren, Adresse und Groesse
    in KB. Der freie Rest der Box steht als ein Block hinter den belegten. */
+static void xms_ent(unsigned *e, unsigned fl, unsigned lk, unsigned long ad, unsigned long kb)
+{
+    wr8(VBIOS, *e, (unsigned char)fl);
+    wr8(VBIOS, *e + 1, (unsigned char)lk);
+    wr16(VBIOS, *e + 2, (unsigned)ad);
+    wr16(VBIOS, *e + 4, (unsigned)(ad >> 16));
+    wr16(VBIOS, *e + 6, (unsigned)kb);
+    wr16(VBIOS, *e + 8, (unsigned)(kb >> 16));
+    *e += 10;
+}
+
 static void xms_table(int t)
 {
-    unsigned i, e = XMS_TAB + 16, top = XMS_PG0;
+    unsigned i, e = XMS_TAB + 16, s = XMS_PG0, nx, n = 0;
+    unsigned long bud = mem_free_kb() >> 2, g;  /* Seiten, die das System hat */
     wr8(VBIOS, XMS_TAB, 1);
     wr8(VBIOS, XMS_TAB + 1, 10);
-    wr16(VBIOS, XMS_TAB + 2, NXH + 1);
     wr16(VBIOS, XMS_TAB + 4, XMS_TAB + 16);
     wr16(VBIOS, XMS_TAB + 6, VBIOS);
-    for (i = 0; i <= NXH; i++, e += 10) {
-        unsigned fl = 4, lk = 0, ad = 0, kb = 0;
-        if (i < NXH && xh[t][i].used) {
-            fl = 2;
-            lk = xh[t][i].lock;
-            ad = xh[t][i].base << 2;
-            kb = xh[t][i].npg << 2;
-            if (xh[t][i].base + xh[t][i].npg > top)
-                top = xh[t][i].base + xh[t][i].npg;
-        } else if (i == NXH) {
-            fl = 1;
-            ad = top << 2;
-            kb = emb_free_pg(t) << 2;
+    for (i = 0; i < NXH; i++)                   /* belegte Bloecke       */
+        if (xh[t][i].used) {
+            xms_ent(&e, 2, xh[t][i].lock, (unsigned long)xh[t][i].base << 2,
+                    (unsigned long)xh[t][i].npg << 2);
+            n++;
         }
-        wr8(VBIOS, e, (unsigned char)fl);
-        wr8(VBIOS, e + 1, (unsigned char)lk);
-        wr16(VBIOS, e + 2, ad);
-        wr16(VBIOS, e + 4, 0);
-        wr16(VBIOS, e + 6, kb);
-        wr16(VBIOS, e + 8, 0);
+    for (;;) {                                  /* freie Luecken einzeln, */
+        for (i = 0; i < NXH; i++)               /* damit die Summe die    */
+            if (xh[t][i].used && xh[t][i].npg && s >= xh[t][i].base &&  /* Grenze trifft */
+                s < xh[t][i].base + xh[t][i].npg)
+                break;
+        if (i < NXH) {
+            s = xh[t][i].base + xh[t][i].npg;
+            continue;
+        }
+        if (s >= XMS_PG0 + XMS_PGN)
+            break;
+        nx = XMS_PG0 + XMS_PGN;
+        for (i = 0; i < NXH; i++)
+            if (xh[t][i].used && xh[t][i].npg && xh[t][i].base > s && xh[t][i].base < nx)
+                nx = xh[t][i].base;
+        g = nx - s;
+        if (g > bud)                            /* mehr hat das System nicht */
+            g = bud;
+        bud -= g;
+        if (g) {
+            xms_ent(&e, 1, 0, (unsigned long)s << 2, g << 2);
+            n++;
+        }
+        s = nx;
     }
+    wr16(VBIOS, XMS_TAB + 2, n);
 }
 
 static void lwin(unsigned idx, unsigned long lin)  /* Fenster auf lineare Adresse der Box */
