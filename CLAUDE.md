@@ -2009,6 +2009,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   unverändert, Digger/BOXTEST/COMMAND geprüft); in Bochs (p2_klamath)
   geprüft: VME aktiv (Zähler über Port E9h), Digger-Titel läuft, DOOM 1.9
   Timedemo durch.
+  Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
+  evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
+  Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und
+  86Boxs Nachbildung des PC-Lautsprechers (Vergleich unter MS-DOS auf
+  derselben Maschine wäre der nächste Anhaltspunkt).
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),
