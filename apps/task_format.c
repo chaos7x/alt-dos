@@ -17,6 +17,7 @@
 #include "util.h"
 
 static char args[FAPI_ARGLEN], cmd[FAPI_ARGLEN], fs[12] = "FAT", lbl[16];
+static int fs_given;                    /* /FS: angegeben               */
 static unsigned fkb;                    /* /F: in KB                     */
 
 /* /F:-Angabe wie MS-DOS -> KB, 0 = ungueltig */
@@ -88,11 +89,12 @@ void main(void)
             for (k = 0; a[4 + k] && a[4 + k] != ' ' && k < sizeof(fs) - 1; k++)
                 fs[k] = up(a[4 + k]);
             fs[k] = 0;
+            fs_given = 1;
         } else if (a[0] == '/' && a[1] == '?') {
             puts("Formatiert einen Datentr\x84ger.\r\n\r\n"
                  "FORMAT Laufwerk: [/V[:Bezeichnung]] [/Q] [/S] [/F:Gr\x94\xE1" "e] [/FS:Dateisystem]\r\n\r\n"
                  "  /V  Datentr\x84gerbezeichnung      /Q  Schnellformatierung\r\n"
-                 "  /S  Systemdateien \x81" "bertragen  /FS Dateisystem (Vorgabe FAT)\r\n"
+                 "  /S  Systemdateien \x81" "bertragen  /FS Dateisystem (Vorgabe FAT, bei FAT32-Partitionen FAT32)\r\n"
                  "  /F  Diskettenformat: 360, 720, 1.2, 1.44, 2.88\r\n");
             return;
         } else {
@@ -115,6 +117,8 @@ void main(void)
         puts("Ung\x81ltiges Laufwerk oder schreibgesch\x81tzt.\r\n");
         DosExit(3);
     }
+    if (!fs_given && (fi.ptype == 0x0B || fi.ptype == 0x0C))
+        scopy(fs, "FAT32", sizeof(fs));     /* FAT32-Partition (FDISK)  */
     scopy(prog, "U", sizeof(prog));
     scat(prog, fs, sizeof(prog));
     scat(prog, ".EXE", sizeof(prog));

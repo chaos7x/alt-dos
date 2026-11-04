@@ -16,6 +16,7 @@
  */
 #include "fapi.h"
 #include "util.h"
+#define BOOT32
 #include "../build/bootcode.h"
 
 static char args[FAPI_ARGLEN], from[FAPI_PATHLEN], to[FAPI_PATHLEN];
@@ -90,7 +91,8 @@ void main(void)
 {
     static struct fapi_dirent e;
     char *a;
-    unsigned h, i;
+    unsigned h, i, k;
+    int f32;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -119,7 +121,7 @@ void main(void)
         puts("Aufruf: SYS [Quelle:] Ziel: [/A]\r\n");
         DosExit(1);
     }
-    if (DosQFSInfo(dst, &fi) || !same(fi.fsname, "FAT")) {
+    if (DosQFSInfo(dst, &fi) || (!same(fi.fsname, "FAT") && !same(fi.fsname, "FAT32"))) {
         puts("Ziel ist kein FAT-Datentr\x84ger (zuerst FORMAT).\r\n");
         DosExit(1);
     }
@@ -129,9 +131,10 @@ void main(void)
         DosExit(1);
     }
     DosClose(h);
-    i = bs[54 + 3] == '1' && bs[54 + 4] == '6';         /* "FAT16   "  */
+    i = (bs[54 + 3] == '1' && bs[54 + 4] == '6') ||     /* "FAT16   "  */
+        (bs[82 + 3] == '3' && bs[82 + 4] == '2');       /* "FAT32   "  */
     if (!(fi.flags & FSI_REMOVABLE) && !i) {
-        puts("Startf\x84hig sind nur FAT16-Partitionen und Disketten.\r\n");
+        puts("Startf\x84hig sind nur FAT16-/FAT32-Partitionen und Disketten.\r\n");
         DosExit(1);
     }
     if (fi.flags & FSI_REMOVABLE) {
@@ -165,17 +168,33 @@ void main(void)
         puts("Laufwerk kann nicht gesperrt werden - Bootsektor nicht ge\x84ndert.\r\n");
         DosExit(1);
     }
-    for (i = 0; i < 512; i++)
-        if (i < 3 || i >= 0x3E)
-            bs[i] = ((fi.flags & FSI_REMOVABLE) ? boot_fd : boot_hd)[i];
+    f32 = fi.fsname[3] == '3' && fi.fsname[4] == '2';  /* "FAT32"   */
+    for (i = 0; i < 512; i++)           /* FAT32: BPB bis 59h            */
+        if (i < 3 || i >= (f32 ? 0x5A : 0x3E))
+            bs[i] = (f32 ? boot_32 : (fi.flags & FSI_REMOVABLE) ? boot_fd : boot_hd)[i];
     {
-        static unsigned long zero;
-        DosSeek(h, &zero);
-    }
-    if (DosWrite(h, bs, 512) != 512) {
-        DosClose(h);
-        puts("Bootsektor nicht schreibbar.\r\n");
-        DosExit(1);
+        static unsigned long pos;
+        pos = 0;
+        DosSeek(h, &pos);
+        if (DosWrite(h, bs, 512) != 512) {
+            DosClose(h);
+            puts("Bootsektor nicht schreibbar.\r\n");
+            DosExit(1);
+        }
+        if (f32) {                      /* zweiter Teil des Startcodes   */
+            pos = 2UL << 9;             /* in den reservierten Sektor 2  */
+            if (DosSeek(h, &pos) || DosWrite(h, (void *)boot_32b, 512) != 512) {
+                DosClose(h);
+                puts("Sektor 2 nicht schreibbar.\r\n");
+                DosExit(1);
+            }
+        }
+        k = bs[50] | (bs[51] << 8);     /* FAT32: Kopie (meist Sektor 6) */
+        if (f32 && k && k < (bs[14] | (bs[15] << 8))) {
+            pos = (unsigned long)k << 9;
+            if (DosSeek(h, &pos) || DosWrite(h, bs, 512) != 512)
+                puts("Kopie des Bootsektors nicht schreibbar.\r\n");
+        }
     }
     DosClose(h);
     puts("System \x81" "bertragen\r\n");

@@ -1110,7 +1110,17 @@ rm_geometry_:
         xor     ah, ah
         inc     ax
         mov     [geo_heads], ax
-        xor     ax, ax
+        mov     ah, 0x41                ; LBA-Erweiterungen (INT 13h/42h)?
+        mov     bx, 0x55AA
+        mov     dl, [_boot_drive]
+        int     0x13
+        jc      .nolba
+        cmp     bx, 0xAA55
+        jne     .nolba
+        test    cl, 1
+        jz      .nolba
+        mov     byte [geo_lba], 1
+.nolba: xor     ax, ax
         jmp     .done
 .err:   mov     ax, 1
 .done:  pop     es
@@ -1134,6 +1144,21 @@ rm_read_:
 .again:
         push    ax
         push    dx
+        cmp     byte [geo_lba], 0       ; mit Erweiterungen ueber LBA
+        je      .chs                    ; (FAT32-Partitionen ueber 8 GB)
+        mov     [geo_dap + 8], ax
+        mov     [geo_dap + 10], dx
+        mov     si, geo_dap
+        mov     dl, [_boot_drive]
+        mov     ah, 0x42
+        int     0x13
+        pop     dx
+        pop     ax
+        jnc     .ok
+        push    ax
+        push    dx
+        jmp     .reset
+.chs:
         mov     bx, ax                  ; LBA / Sektoren je Spur
         mov     ax, dx
         xor     dx, dx
@@ -1170,7 +1195,7 @@ rm_read_:
         jnc     .ok
         push    ax
         push    dx
-        xor     ax, ax                  ; Laufwerk zuruecksetzen
+.reset: xor     ax, ax                  ; Laufwerk zuruecksetzen
         mov     dl, [_boot_drive]
         int     0x13
         pop     dx
@@ -1401,6 +1426,11 @@ dc_ptr: dw 0, 0
 null_idtr: dw 0, 0, 0
 geo_spt:   dw 63
 geo_heads: dw 16
+geo_lba:   db 0
+           db 0
+geo_dap:   db 16, 0                     ; Disk Address Packet: 1 Sektor
+           dw 1, 0, 0x0800              ; nach 0800:0000 (linear 8000h)
+           dd 0, 0                      ; LBA
 
 segment _BSS
 

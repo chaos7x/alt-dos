@@ -34,8 +34,11 @@ und PC-DOS.
   Querverbindungen, verlorene Ketten -> FILEnnnn.CHK, FAT-Kopien; die FAT
   bleibt auf der Platte, Bitmaps in eigenen Segmenten). `FORMAT X:
   /FS:FAT32 [/Q] [/V:Name]` legt FAT32 an (Clustergröße wie Windows 98,
-  ohne /Q mit Oberflächentest). Noch offen: FDISK über 2 GB und der Start
-  von einer FAT32-Partition
+  ohne /Q mit Oberflächentest). FDISK fragt wie Windows 98 nach
+  „Unterstützung für große Festplatten“ und legt dann Partitionen ab
+  512 MB als FAT32 an (0Bh, über 8 GB 0Ch), FORMAT nimmt dort FAT32 von
+  selbst. `SYS` macht FAT32-Partitionen startfähig (Bootsektor mit
+  zweitem Teil in Sektor 2, LBA-Erweiterungen des BIOS, sonst CHS)
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem

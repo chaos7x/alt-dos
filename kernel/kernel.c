@@ -4949,8 +4949,8 @@ static int find_boot_vol(void)
     for (d = 2; d < NDRIVE; d++)
         if (vol[d].used && vol[d].drv == &fat_driver &&
             vol[d].start == boot_hidden && blk_read(vol[d].blk, vol[d].start) == 0 &&
-            rd16(DMABUF, 39) == (unsigned)boot_serial &&
-            rd16(DMABUF, 41) == (unsigned)(boot_serial >> 16))
+            rd16(DMABUF, vol[d].fat16 == 2 ? 67 : 39) == (unsigned)boot_serial &&
+            rd16(DMABUF, vol[d].fat16 == 2 ? 69 : 41) == (unsigned)(boot_serial >> 16))
             return d;
     return -1;
 }
@@ -5460,7 +5460,7 @@ void kmain(void)
         vio_kputs(s0, num);
         vio_kputs(s0, " Datei(en) vorgeladen\n");
         if (pre_err)
-            vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16\n" :
+            vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16/FAT32\n" :
                           pre_err == PRE_ERR_FULL ? "  Vorladebereich voll\n" :
                                                     "  BIOS-Lesefehler beim Vorladen\n");
         ifs_mount(PRE_DRIVE, -1, 0, &pre_driver);

@@ -280,8 +280,29 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (`udiv`), Startcode nur Meldung „Kein Systemdatenträger“. Kernel:
   DosOpenDrive/DosOpenDisk mit `DRV_OPEN_LBA` (2, kombinierbar) – DosSeek-
   Stelle in Sektoren (`DASD_LBA` in f.flags), nötig über 4 GB.
-  Offen: FDISK über 2 GB,
-  hdboot/preload/ATSYS für den Start von FAT32, REN mit Platzhalter auf
+  Stufe 3 (in QEMU geprüft: leere 3-GB-Platte -> FDISK „große Platten“
+  J -> 3071 MB Typ 0Bh, Neustart, FORMAT D: /Q nimmt FAT32, XCOPY,
+  CHKDSK, fsck sauber; SYS D:, Start nur von dieser Platte: CONFIG.SYS
+  und Treiber vorgeladen, „Laufwerk C: FAT32 3071 MB“, Kopieren +
+  CHKDSK + fsck sauber; Start von FAT16 unverändert): FDISK fragt bei
+  Platten über 512 MB „Unterstützung für große Festplatten aktivieren
+  (J/N)“ (`big`), dann FAT32 ab 512 MB (`fat_type(size, end)`: 0Bh,
+  hinter 1024 Zylindern 0Ch; erweiterte dann 0Fh), ohne 2-GB-Grenze
+  (`fmax`), DosOpenDisk mit DRV_OPEN_LBA. FORMAT: ohne /FS bei Typ 0B/0C
+  FAT32. Start: `boot/fat32boot.asm` (386-Code, 1024 Byte: Sektor 0 =
+  Bootsektor ab 5Ah, lädt Sektor 2 der Partition nach 7E00 – passte
+  nicht in einen Sektor; Puffer 8000h; INT 13h/42h wenn 41h es meldet,
+  sonst CHS über 08h-Geometrie; aktive FAT bei Spiegeln aus). bootcode.h
+  `boot_32`/`boot_32b` nur mit `#define BOOT32` (sonst W202 in UFAT);
+  SYS erkennt „FAT32“ (QFSInfo), schreibt Code ab 5Ah, Sektor 2 und die
+  Bootsektor-Kopie (BPB +50). preload.c: FAT32 am BPB (spf16 = 0, Sig.
+  29h bei 66), Stamm als Kette, `next_clus` 28 Bit, Seriennummer bei 67
+  (auch find_boot_vol); start.asm `rm_read` mit LBA-Erweiterungen
+  (`geo_lba`, `geo_dap`) – damit auch FAT16-Start über 8 GB. CHS-Weg des
+  FAT32-Bootsektors nur theoretisch geprüft (SeaBIOS hat LBA). fsck merkt
+  nach SHUTDOWN „Free cluster summary uninitialized“ an – FSInfo bleibt
+  FFFFFFFFh, wenn der Kernel nicht gezählt hat (erlaubt).
+  Offen: ATSYS (MS-DOS kennt kein FAT32 – entfällt), REN mit Platzhalter auf
   lange Namen (`ren d:\ordner\langer* kurz.txt` fand nichts – auch auf
   FAT16 VFAT zu prüfen). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.

@@ -50,15 +50,21 @@ VEREOF
 echo "Bootsektoren"
 nasm -f bin boot/boot.asm -o $B/boot.bin
 nasm -f bin boot/hdboot.asm -o $B/hdboot.bin
+nasm -f bin boot/fat32boot.asm -o $B/fat32boot.bin
 # Bootcode fuer FORMAT/SYS (UFAT.EXE, SYS.EXE) als C-Feld
-python3 - $B/boot.bin $B/hdboot.bin > $B/bootcode.h <<'PYEOF'
+python3 - $B/boot.bin $B/hdboot.bin $B/fat32boot.bin > $B/bootcode.h <<'PYEOF'
 import sys
-for name, path in (("boot_fd", sys.argv[1]), ("boot_hd", sys.argv[2])):
-    d = open(path, "rb").read()
+for name, path, at in (("boot_fd", sys.argv[1], 0), ("boot_hd", sys.argv[2], 0),
+                       ("boot_32", sys.argv[3], 0), ("boot_32b", sys.argv[3], 512)):
+    d = open(path, "rb").read()[at:at + 512]   # FAT32: zweite Haelfte = Sektor 2
+    if name == "boot_32":
+        print("#ifdef BOOT32                   /* nur SYS braucht FAT32 */")
     print("static const unsigned char %s[512] = {" % name)
     for i in range(0, 512, 16):
         print("    " + ", ".join("0x%02X" % b for b in d[i:i+16]) + ",")
     print("};")
+    if name == "boot_32b":
+        print("#endif")
 PYEOF
 nasm -f bin boot/mbr.asm -o $B/mbr.bin
 # Startcode des MBR (ohne Partitionstabelle) fuer FDISK

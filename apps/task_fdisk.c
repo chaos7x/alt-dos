@@ -57,7 +57,12 @@ static unsigned heads, spt, cylsz;
 static int changed, hd_locked, hd_lock_state;
 static char args[FAPI_ARGLEN], lb[16];
 
-static int is_fat(unsigned char t) { return t == 1 || t == 4 || t == 6 || t == 0x0E; }
+static int is_fat(unsigned char t)
+{
+    return t == 1 || t == 4 || t == 6 || t == 0x0E || t == 0x0B || t == 0x0C;
+}
+static int big;                         /* Unterstuetzung grosser Platten (FAT32) */
+static unsigned long fmax(void) { return big ? 0xFFFFFFFFUL : FAT_MAX; }
 static int is_ext(unsigned char t) { return t == 5 || t == 0x0F; }
 
 static unsigned long get32(const unsigned char *p)
@@ -78,7 +83,7 @@ static void put32(unsigned char *p, unsigned long v)
 static int rw(unsigned long lba, int write)
 {
     static unsigned long pos;
-    pos = lba << 9;
+    pos = lba;                          /* DRV_OPEN_LBA: in Sektoren    */
     if (DosSeek(hd, &pos) == FAPI_ERROR)
         return -1;
     return (write ? DosWrite(hd, sec, 512) : DosRead(hd, sec, 512)) == 512 ? 0 : -1;
@@ -608,8 +613,12 @@ static unsigned long free_mbr(unsigned long *start)
     return best;
 }
 
-static unsigned char fat_type(unsigned long size)
+/* Typ nach Groesse; mit grossen Platten ab 512 MB FAT32 wie Windows 98
+   (0Bh innerhalb der ersten 1024 Zylinder, sonst 0Ch = LBA) */
+static unsigned char fat_type(unsigned long size, unsigned long end)
 {
+    if (big && size >= 512UL * MB)
+        return end > ((unsigned long)cylsz << 10) ? 0x0C : 0x0B;
     return size < 32680UL ? 0x01 : size < 65536UL ? 0x04 : 0x06;
 }
 
@@ -691,7 +700,7 @@ static void create_primary(int extended)
         if (k < 0)
             return;
         if (k) {
-            size = avail > FAT_MAX ? FAT_MAX : avail;
+            size = avail > fmax() ? fmax() : avail;
             maxact = 1;
         }
     }
@@ -712,7 +721,7 @@ static void create_primary(int extended)
         at(17, 4, "Geben Sie die Partitionsgr\x94\xE1" "e in MByte oder Prozent des");
         size = ask_size(18, extended ? "Festplattenspeichers (%) ein, um eine erweiterte DOS-Partition"
                                      : "Festplattenspeichers (%) ein, um eine prim\x84re DOS-Partition",
-                        avail, extended ? avail : FAT_MAX, di.sectors);
+                        avail, extended ? avail : fmax(), di.sectors);
         if (!size)
             return;
     }
@@ -722,7 +731,8 @@ static void create_primary(int extended)
     pt[slot].start = start;
     pt[slot].size = end - start;
     pt[slot].boot = 0;
-    pt[slot].type = extended ? 0x05 : fat_type(end - start);
+    pt[slot].type = extended ? (big && end > ((unsigned long)cylsz << 10) ? 0x0F : 0x05)
+                             : fat_type(end - start, end);
     if (maxact) {                       /* "maximal und aktiv"          */
         for (i = 0; i < 4; i++)
             pt[i].boot = 0;
@@ -779,7 +789,7 @@ static void create_logical(void)
         lend();
         at(18, 0, ln);
         at(20, 4, "Geben Sie die Gr\x94\xE1" "e des logischen Laufwerks in MByte oder");
-        size = ask_size(21, "Prozent der erweiterten Partition (%) ein", avail, FAT_MAX,
+        size = ask_size(21, "Prozent der erweiterten Partition (%) ein", avail, fmax(),
                         pt[ext].size);
         if (!size)
             return;
@@ -788,7 +798,7 @@ static void create_logical(void)
             end = pend;
         lg[nlg].start = ebr + spt;
         lg[nlg].size = end - lg[nlg].start;
-        lg[nlg].type = fat_type(lg[nlg].size);
+        lg[nlg].type = fat_type(lg[nlg].size, end);
         nlg++;
         if (write_ebrs()) {
             nlg--;
@@ -1029,7 +1039,7 @@ static int open_disk(unsigned n, int lock)
     }
     if (DosDiskInfo(n, &di) != 0)
         return -1;
-    hd = DosOpenDisk(n, lock ? DRV_OPEN_LOCK : DRV_OPEN_READ);
+    hd = DosOpenDisk(n, (lock ? DRV_OPEN_LOCK : DRV_OPEN_READ) | DRV_OPEN_LBA);
     if (FAPI_FAILED(hd)) {
         hd = 0;
         return -2;
@@ -1195,6 +1205,9 @@ void main(void)
         DosClose(hd);
         return;
     }
+    for (i = 0; i < ndisks; i++)        /* wie Windows 98: ueber 512 MB fragen */
+        if (DosDiskInfo(i, &di) == 0 && di.sectors > 512UL * MB)
+            big = -1;
     rc = open_disk(0, 1);
     if (rc == -2)
         rc = open_disk(0, 0);           /* belegt: nur anzeigen         */
@@ -1205,6 +1218,22 @@ void main(void)
     k = VioSetMode(1);
     if (!FAPI_FAILED(k) && k >= 25)
         rows = (unsigned)k;
+    if (big) {
+        screen(0);
+        at(4, 4, "Ihr Computer hat eine Festplatte mit mehr als 512 MB. AT-DOS");
+        at(5, 4, "unterst\x81tzt gro\xE1" "e Festplatten mit FAT32: Laufwerke \x81" "ber 2 GB als");
+        at(6, 4, "ein Laufwerk, kleinere Zuordnungseinheiten. Neue Partitionen ab");
+        at(7, 4, "512 MB werden dann FAT32 (danach FORMAT, FAT32 ist dort die Vorgabe).");
+        at(9, 4, "MS-DOS 6 und \x84lter und Windows 95 vor OSR2 k\x94nnen auf");
+        at(10, 4, "FAT32-Laufwerke nicht zugreifen.");
+        k = yn(13, "Unterst\x81tzung f\x81r gro\xE1" "e Festplatten aktivieren (J/N)", 1);
+        if (k < 0) {
+            VioSetMode(0);
+            DosClose(hd);
+            return;
+        }
+        big = (int)k;
+    }
     for (;;) {
         hd_locked = hd_lock_state;
         main_menu();
