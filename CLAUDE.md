@@ -2145,6 +2145,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Erkennung bei Spielen mit eigenem Takt (`pit_rl`) aus (Digger). Test
   POLL.COM (fragt 3DAh und INT 16h 01 ab) per START im Hintergrund,
   BUSY 60000 vorn: 10 s mit Vorgabe, mit 100 nach über 2 min nicht fertig.
+  Vorgemerkt (Wunsch des Nutzers, mit dem nächsten Commit an den Boxen):
+  `XMS_MEMORY_LIMIT=-1` (und sinngemäß `EMS_MEMORY_LIMIT=-1`) = so viel,
+  wie die Box ansprechen kann (heute 63.424 KB XMS); BOXSHELL `pnum`
+  kennt noch kein Minus.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
