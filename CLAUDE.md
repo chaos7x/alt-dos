@@ -226,7 +226,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Nahe Aufrufe aus KTEXT2 ins erste Segment fängt der Linker nicht immer
   ab – neue Hilfen immer über k2.h. Grafik aus vio.c steht in
   `kernel/vgagfx.c`, gemeinsame Sitzungsdaten in `kernel/vioint.h`.
-  Stand: Code 48 + 8 KB (vorher 56 KB in einem Segment). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  Drittes Codesegment KCODE3 (Selektor 218h, `KCODE3_IDX` = letzter
+  GDT-Eintrag): `v86.c` und `redir.c` (build.sh `K3MODS`, `-nt=KTEXT3`,
+  Gruppe CGROUP3 hinter CGROUP2, DS = CS + alle drei Größen; start.asm
+  ruft v86_exc/dpmi_trap/v86_tick über KCODE3). Vorher prüfen, dass ein
+  verschobenes Modul nah nur eigene Funktionen ruft (dmpobj: „Self“-
+  Fixups auf globale EXTDEFs). Stand danach: Code 65.463 + 13.823 +
+  44.510 Byte – das erste Segment bleibt voll, KTEXT2 hat wieder ~50 KB
+  frei (Ziel für Seltenes aus kernel.c), KTEXT3 ~20 KB für die Boxen.
+  Stand vorher: Code 48 + 8 KB (vorher 56 KB in einem Segment). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in
