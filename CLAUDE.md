@@ -2108,6 +2108,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   auch ohne PVI). Offen dabei gesehen: nach `DOOM > T.TXT` meldet
   `TYPE T.TXT` „wird gerade geschrieben“ – die geparkte Box hält die
   Umleitung offen.
+  Vom Nutzer auf dem P3B-F (Pentium II) in 86Box bestätigt: DOOM 1.9 mit
+  Sound Blaster läuft flüssig, auch bei Kämpfen.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
