@@ -2082,7 +2082,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bestätigt: S3 (P3B-F) – VESA listet viele Modi, VDEMO zeigt den
   Farbverlauf sauber; ET4000 (486) meldet wie erwartet „keine VESA-Karte
   mit linearem Bildspeicher“ (VBE ohne LFB). Offen: Mauszeiger,
-  Direktfarben-Demo, Sitzungswechsel (START VDEMO + Alt+Esc) auf der S3.
+  Direktfarben-Demo. Sitzungswechsel auf der S3 ebenfalls bestätigt
+  (START VDEMO, Wechsel zu DOOM in einer Box und zurück).
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und
