@@ -239,9 +239,40 @@ static void raw_copy(int s, int out)
     }
 }
 
+/* Schatten fuer den Hintergrund (v86.c laesst die Box darauf weiterlaufen):
+   nur, wenn der BIOS-Modus es erlaubt (13h, CGA 4-6) und die Register
+   einfach sind - Chain-4 bzw. B8000, Schreibmodus 0 ohne Set/Reset,
+   Drehen, Verknuepfung, Bitmaske FFh, Lesemodus 0. Dann ist das Bild,
+   wie die CPU es sieht, ein Stueck linearer Speicher. */
+static unsigned raw_kind(unsigned allow)
+{
+    if (raw_t[32] || raw_t[34] || (raw_t[36] & 0x0B) || raw_t[39] != 0xFF)
+        return 0;
+    if (allow == 1 && (raw_t[5] & 0x08) && ((raw_t[37] >> 2) & 3) <= 1)
+        return 1;
+    if (allow == 3 && ((raw_t[37] >> 2) & 3) == 3 && !(raw_t[35] & 2))
+        return 3;
+    return 0;
+}
+
+/* Sicht der CPU zwischen Bildspeicher und Schatten kopieren */
+static void raw_lin(int s, unsigned kind, int out)
+{
+    unsigned n = kind == 1 ? 0x8000 : 0x4000;   /* zwei Haelften (2*n */
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_LIN, 0xFFFF);   /* waere 0) */
+    scratch2_map(kind == 1 ? 0xA0000UL : 0xB8000UL, 0xFFFF);
+    if (out) {
+        far_copy(SCRATCH, 0, SCRATCH2, 0, n);
+        far_copy(SCRATCH, n, SCRATCH2, n, n);
+    } else {
+        far_copy(SCRATCH2, 0, SCRATCH, 0, n);
+        far_copy(SCRATCH2, n, SCRATCH, n, n);
+    }
+}
+
 static void raw_out(int s)
 {
-    unsigned i;
+    unsigned i, k;
     unsigned char __far *q;
     raw_regs_in();
     scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
@@ -249,20 +280,40 @@ static void raw_out(int s)
     for (i = 0; i < 61; i++)
         q[i] = raw_t[i];
     dac_io(0, 0, 256, q + 64);
+    k = raw_kind(q[RAW_ALLOW]);
+    q[RAW_KIND] = (unsigned char)k;
+    for (i = 0; i < 8; i++)
+        q[RAW_ST + i] = 0;
+    if (k)
+        raw_lin(s, k, 1);                   /* vor raw_flat (Register!)  */
     raw_copy(s, 1);
 }
 
 static void raw_in(int s)
 {
-    unsigned i;
+    unsigned i, k;
     unsigned char __far *q;
     raw_copy(s, 0);
     scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
     q = MK_FP(SCRATCH, 0);
     for (i = 0; i < 61; i++)
         raw_t[i] = q[i];
+    k = q[RAW_KIND];
     dac_io(1, 0, 256, q + 64);
     vga_regs(raw_t);
+    if (k) {                                /* was die Box hinten schrieb */
+        seqr(0x02, k == 1 ? 0x0F : 0x03);
+        raw_lin(s, k, 0);
+        seqr(0x02, raw_t[3]);
+    }
+}
+
+/* fuer v86.c: Puffer einer Sitzung im Rohmodus (0 = keiner) */
+unsigned long __far vio_raw_buf(int s)
+{
+    if (s < 0 || ses[s].gfx != RAWGFX || !ses[s].gfx_save)
+        return 0;
+    return PG_LIN(ses[s].gfx_save);
 }
 
 /* Grafiksitzung kommt nach vorn: Karte umstellen, Bild und Palette aus
@@ -381,6 +432,11 @@ int __far vio_setgfx(int s, int t, unsigned mode)
     ses[s].gfx_plane = 0;
     ses[s].gfx_page = 0;
     if (mode == RAWGFX) {                   /* Inhalt kommt vom BIOS    */
+        win_save(w);
+        scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+        *(unsigned char __far *)MK_FP(SCRATCH, RAW_KIND) = 0;
+        *(unsigned char __far *)MK_FP(SCRATCH, RAW_ALLOW) = 0;
+        win_restore(w);
         ses[s].gfx_plane = 1;               /* frisch                   */
         ses[s].gfx_task = (signed char)t;
         if (s == fg) {

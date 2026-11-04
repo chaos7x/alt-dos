@@ -40,7 +40,11 @@ struct session {
 #define GFX_IMG(m)  (PLANAR(m) ? 4UL * PLANE12 : 65536UL)
 #define RAWGFX      0x80            /* DOS-Box: Karte gehoert der Box (echtes Video-BIOS) */
 #define RAW_REGS    0x40000UL       /* Rohmodus: 4 Ebenen zu 64 KB, dann Register */
-#define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_REGS + 1024) : PAGES(GFX_IMG(m) + 768))
+#define RAW_LIN     0x41000UL       /* Rohmodus: Schatten (Sicht der CPU, 64 KB) */
+#define RAW_KIND    61              /* Bytes hinter den 61 Registern: Art des Schattens */
+#define RAW_ALLOW   62              /*   (0 keiner, 1 A0000 64 KB, 3 B8000 32 KB), BIOS-Modus erlaubt es */
+#define RAW_ST      0x340           /* Zustand der Ports hinten (Indizes, DAC-Zaehler) */
+#define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_LIN + 0x10000UL) : PAGES(GFX_IMG(m) + 768))
 
 extern struct session ses[NTASK];
 extern int fg;

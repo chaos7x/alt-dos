@@ -335,8 +335,12 @@ und PC-DOS.
   wechsel über das Video-BIOS der Karte, Bildspeicher A0000–BFFFF und
   Ports 3B0h–3DFh direkt (CGA, EGA, VGA, SVGA-Modi des BIOS). Beim
   Sitzungswechsel sichert der Kernel alle Register, Palette und die vier
-  Ebenen (256 KB); die Box steht im Hintergrund still und läuft vorn mit
-  ihrem Bild weiter. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
+  Ebenen (256 KB). Stufe 2: Boxen in 320×200×256 (13h) und den CGA-
+  Modi 4–6 laufen im Hintergrund weiter (wie VVGA bei OS/2): sie
+  schreiben in einen Schatten, Palette, CRTC und die übrigen VGA-Register
+  bildet der Kernel nach; beim Zurückholen kommt das Bild mit allem, was
+  hinten gezeichnet wurde. Planare Modi, Mode X, SVGA und Aufrufe des
+  Video-BIOS halten die Box an, bis sie wieder vorn ist. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip

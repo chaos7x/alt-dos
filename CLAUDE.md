@@ -2193,8 +2193,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   vom Nutzer für die nächste Phase): Lücken zwischen EMBs als eigene
   freie Einträge in die 4309h-Tabelle (`xms_table`), damit die Summe
   die Grenze trifft (heute fehlen ~12K).
-  Offen:
-  Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
+  Virtuelle VGA, Stufe 2 – Grafik-Boxen im Hintergrund (in QEMU geprüft:
+  BG.COM 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
+  Farbe 1 per 3C8h/3C9h auf Rot – START, Alt+Esc weg bei Zeile 71, nach
+  5 s zurück bei Zeile 169, ganzes Bild rot; BG4.COM dasselbe in CGA-
+  Modus 4: 70 -> 195 Zeilen; CMD vorn sauber; DOOM (Mode Y) hält wie
+  bisher an und läuft danach weiter): wie VVGA, aber nur für Modi, deren
+  Bild für die CPU linearer Speicher ist. v86.c `vga_allow` merkt beim
+  Moduswechsel übers BIOS im Puffer (RAW_ALLOW, Byte 62 hinter den 61
+  Registern), ob der Modus taugt (13h -> 1, 4–6 -> 3). vgagfx.c
+  `raw_out`: `raw_kind` prüft die Register (Chain-4 bzw. B8000, GC1/GC3
+  0, Schreib-/Lesemodus 0, Bitmaske FFh, bei CGA Read Map < 2) und
+  kopiert vor `raw_flat` die Sicht der CPU (64 KB A0000 bzw. 32 KB
+  B8000) nach RAW_LIN (Puffer jetzt 4×64 KB + 4 KB + 64 KB), Art in
+  RAW_KIND; `raw_in` schreibt nach den Registern den Schatten zurück
+  (Map Mask kurz 0Fh/03h). v86.c `vga_freeze` (vor jedem Rücksprung in
+  die Box): vorn Karte (`vga_map(t, 0)`), hinten mit Art -> `vga_map(t,
+  k)`: PTE des Fensters auf den Schatten, Rest Ersatzseite, Ports
+  gesperrt; sonst `vga_wait` (wie früher). Ports hinten (`vga_pin`/
+  `vga_pout`) gehen an die gesicherte Registerkopie im Puffer, Zustand
+  (Indizes, Attribut-Flipflop, DAC-Zähler) bei RAW_ST; was die
+  Abbildung ändert (SEQ 4 Chain-4/Odd-Even, GC 1/3/5/6/8 nicht einfach)
+  -> `vga_wait`, dann an die Karte. Jedes INT 10h ans Video-BIOS wartet
+  ebenfalls (vga_want), auch ein Grafikmodus, der hinten verlangt wird.
+  Lehre: `for (o = 0; o < 2 * n; ...)` mit n = 8000h – 2 * n ist in
+  16 Bit 0, die Schleife lief nie (der Schatten blieb leer, beim
+  Zurückholen überschrieb er das Bild).
+  Offen: planare Modi und Mode X hinten (bräuchte Fallen je Zugriff oder
+  Umblenden je Map Mask), Palette über INT 10h 10xxh hinten nachbilden.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

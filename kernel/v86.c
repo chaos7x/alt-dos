@@ -192,6 +192,7 @@ static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
 static void tlb(int t);
 static unsigned char vga_raw[NTASK];
+static unsigned char vga_bgk[NTASK];            /* hinten auf Schatten (Art) */
 static void ems_end(int t);
 static void ems_box(int t);
 static void dpmi_end(int t);
@@ -2302,6 +2303,7 @@ static void vga_leave(int t)
     if (!vga_raw[t])
         return;
     vga_raw[t] = 0;
+    vga_bgk[t] = 0;
     vga_ports(t, 0);
     rom_uncow(t);                               /* BIOS-Kopien verwerfen  */
     scratch2_map(PG_LIN(pt_box[t]), 4095);
@@ -2317,25 +2319,123 @@ static void vga_leave(int t)
     tlb(t);
 }
 
-/* Hintergrund: Box mit der Karte steht, bis ihre Sitzung vorn ist und
-   gfx_in alles zurueckgeladen hat (Interrupts aus, wie beim Aufruf) */
+/* ---- Virtuelle VGA, Stufe 2: Grafik-Boxen im Hintergrund ---------------
+   Wie VVGA bei OS/2 2.x, aber nur fuer Modi, deren Bild fuer die CPU ein
+   Stueck linearer Speicher ist: 13h (Chain-4, A0000 64 KB) und CGA 4-6
+   (B8000 32 KB), mit einfachen Registern. gfx_out (vgagfx.c raw_out)
+   legt dann zusaetzlich die Sicht der CPU in einen Schatten im Puffer
+   der Sitzung (RAW_LIN) und vermerkt die Art (RAW_KIND); die Seiten-
+   tabelle der Box zeigt hinten dorthin - Schreiben kostet nichts. Die
+   VGA-Ports werden hinten in die gesicherte Registerkopie nachgebildet
+   (Palette, CRTC, Sequenzer, Grafik, Attribut, 3DAh). Was die Abbildung
+   aendern wuerde (Chain-4/Odd-Even, Schreibmodus, Bitmaske ...), das
+   Video-BIOS, planare Modi, Mode X und SVGA: die Box wartet, bis sie
+   vorn ist, und macht dann auf der Karte weiter. raw_in schreibt den
+   Schatten beim Zurueckholen ueber die Ebenen. */
+unsigned long __far vio_raw_buf(int s);         /* vgagfx.c (KTEXT2) */
+#define RAW_REGS  0x40000UL                     /* wie vioint.h          */
+#define RAW_LIN   0x41000UL
+#define RAW_KIND  61
+#define RAW_ALLOW 62
+#define RAW_ST    0x340                         /* Port-Zustand hinten:  */
+#define ST_SEQ    0                             /* Index Sequenzer       */
+#define ST_GC     1                             /* Index Grafik          */
+#define ST_AFF    2                             /* Attribut: Flipflop    */
+#define ST_AIDX   3                             /*   und Index           */
+#define ST_WI     4                             /* DAC schreiben: Farbe  */
+#define ST_WC     5                             /*   Anteil              */
+#define ST_RI     6                             /* DAC lesen             */
+#define ST_RC     7
+
+/* Registerkopie im Puffer der Sitzung (SCRATCH, Interrupts aus) */
+static unsigned char __far *vga_vr(int t)
+{
+    unsigned long b = vio_raw_buf(box_ses[t]);
+    if (!b)
+        return 0;
+    scratch_map(b + RAW_REGS, 1023);
+    return MK_FP(SCRATCH, 0);
+}
+
+/* Box vorn auf der Karte (k = 0) oder hinten auf dem Schatten */
+static void vga_map(int t, unsigned k)
+{
+    unsigned i, a = k == 1 ? 0xA0 : 0xB8, n = k == 1 ? 16 : 8;
+    unsigned long b = k ? vio_raw_buf(box_ses[t]) + RAW_LIN : 0;
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    for (i = 0xA0; i < 0xC0; i++)
+        put32(SCRATCH2, i, k ? vga_spare[t] : ((unsigned long)i << 12) | PTE_BOX);
+    if (k)
+        for (i = 0; i < n; i++)
+            put32(SCRATCH2, a + i, (b + ((unsigned long)i << 12)) | PTE_BOX);
+    vga_ports(t, !k);
+    vga_bgk[t] = (unsigned char)k;
+    tlb(t);
+}
+
+/* Box mit der Karte wartet, bis ihre Sitzung vorn ist und gfx_in alles
+   zurueckgeladen hat; danach wieder auf der Karte */
+static void vga_wait(int t)
+{
+    unsigned f = irq_off();
+    if (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX)) {
+        if (spk[t])
+            spk_hw(t, 0);
+        spk_ports(t, 0);
+        opl_ports(t, 0);
+        kpit_set(0);                    /* die virtuelle SB nicht anhalten:
+                                           sonst wartet das Spiel nach dem
+                                           Zurueckholen ewig auf den Block-
+                                           IRQ (DOOM ohne Effekte) */
+        enable_ints();
+        while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
+            kf_box_ctl(BOX_SLEEP, 2);
+        irq_off();
+        sb[t].last = get_ticks();       /* Pause nicht nachholen         */
+    }
+    if (vga_raw[t] && vga_bgk[t])
+        vga_map(t, 0);
+    irq_restore(f);
+}
+
+/* vor jedem Ruecksprung in die Box: vorn Karte, hinten Schatten oder warten */
 static void vga_freeze(int t)
 {
-    if (!vga_raw[t] || (kf_vio_fg() == box_ses[t] && hw_gfx == RAWGFX))
+    unsigned char __far *q;
+    unsigned k;
+    if (!vga_raw[t])
         return;
+    if (kf_vio_fg() == box_ses[t] && hw_gfx == RAWGFX) {
+        if (vga_bgk[t])
+            vga_map(t, 0);
+        return;
+    }
+    if (vga_bgk[t])
+        return;                                 /* laeuft schon hinten   */
+    q = vga_vr(t);
+    k = q ? q[RAW_KIND] : 0;                    /* 0 auch, solange frisch */
+    if (!k) {
+        vga_wait(t);
+        return;
+    }
     if (spk[t])
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
-    kpit_set(0);                        /* die virtuelle SB nicht anhalten:
-                                           sonst wartet das Spiel nach dem
-                                           Zurueckholen ewig auf den Block-
-                                           IRQ (DOOM ohne Effekte) */
-    enable_ints();
-    while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
-        kf_box_ctl(BOX_SLEEP, 2);
-    irq_off();
-    sb[t].last = get_ticks();           /* Pause nicht nachholen         */
+    kpit_set(0);
+    vga_map(t, k);
+}
+
+/* Modus vom BIOS: darf die Box damit hinten auf dem Schatten laufen? */
+static void vga_allow(struct v86_frame *f, int t)
+{
+    unsigned m = AH == 0x00 ? AL & 0x7F : (BX & 0x1FF) < 0x100 ? BX & 0x7F : 0xFF;
+    unsigned char __far *q;
+    unsigned fl = irq_off();
+    q = vga_vr(t);
+    if (q)
+        q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 : 0);
+    irq_restore(fl);
 }
 
 /* INT 10h: 1 = an das Video-BIOS geben */
@@ -2346,8 +2446,12 @@ static int vga_want(struct v86_frame *f, int t)
     txt = (AH == 0x00 && (m <= 3 || m == 7)) ||
               (AX == 0x4F02 && (BX & 0x1FF) < 0x100 && ((BX & 0x7F) <= 3 || (BX & 0x7F) == 7));
     if (vga_raw[t]) {
-        if (!txt)
+        if (!txt) {
+            vga_wait(t);                        /* BIOS: nur auf der Karte */
+            if (AH == 0x00 || AX == 0x4F02)
+                vga_allow(f, t);
             return 1;
+        }
         vga_leave(t);                           /* Nachbildung macht 03h */
         if (AH == 0x4F) {
             AX = 0x0003;
@@ -2357,8 +2461,13 @@ static int vga_want(struct v86_frame *f, int t)
         }
         return 0;
     }
-    if (AH == 0x00 || AX == 0x4F02)
-        return !txt && vga_enter(t) == 0;
+    if (AH == 0x00 || AX == 0x4F02) {
+        if (txt || vga_enter(t))
+            return 0;
+        vga_wait(t);                            /* hinten gestartet: erst vorn */
+        vga_allow(f, t);
+        return 1;
+    }
     return AH == 0x4F;                          /* VESA-Abfragen: BIOS   */
 }
 
@@ -2432,12 +2541,118 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
    Ports, an denen Warteschleifen haengen (3DAh Strahlruecklauf, 61h
    Refresh-Bit, PIT-Zaehler), werden nachgebildet; der Rest liest FFh,
    Schreiben verpufft. */
+/* VGA-Ports einer Box, die hinten auf dem Schatten laeuft: Lesen und
+   Schreiben gehen an die gesicherte Registerkopie. Was die Abbildung
+   aendern wuerde, wartet bis vorn und geht dann an die Karte. */
+static int vga_simple(unsigned char __far *q, unsigned i, unsigned v)
+{
+    switch (i) {
+    case 1: case 3: return v == 0;              /* Set/Reset, Drehen     */
+    case 5: return !(v & 0x0B) && !((v ^ q[36]) & 0x10);
+    case 6: return v == q[37];                  /* Speicherabbildung     */
+    case 8: return v == 0xFF;                   /* Bitmaske              */
+    }
+    return 1;
+}
+
+static unsigned char vga_pin(int t, unsigned p)
+{
+    unsigned char __far *q = vga_vr(t), __far *st, v;
+    if (!q)
+        return 0xFF;
+    st = q + RAW_ST;
+    switch (p) {
+    case 0x3C0: return st[ST_AIDX];
+    case 0x3C1: return (st[ST_AIDX] & 0x1F) < 21 ? q[40 + (st[ST_AIDX] & 0x1F)] : 0;
+    case 0x3C4: return st[ST_SEQ];
+    case 0x3C5: return st[ST_SEQ] < 5 ? q[1 + st[ST_SEQ]] : 0xFF;
+    case 0x3C8: return st[ST_WI];
+    case 0x3C9:
+        v = q[64 + st[ST_RI] * 3 + st[ST_RC]];
+        if (++st[ST_RC] == 3) {
+            st[ST_RC] = 0;
+            st[ST_RI]++;
+        }
+        return v;
+    case 0x3CC: return q[0];
+    case 0x3CE: return st[ST_GC];
+    case 0x3CF: return st[ST_GC] < 9 ? q[31 + st[ST_GC]] : 0xFF;
+    case 0x3D4: return crt_idx[t];
+    case 0x3D5: return crt_idx[t] < 25 ? q[6 + crt_idx[t]] : 0xFF;
+    case 0x3DA:
+        st[ST_AFF] = 0;
+        idle_poll(t);
+        tgl[t] ^= 0x09;
+        return (unsigned char)(tgl[t] & 0x09);
+    }
+    return 0xFF;
+}
+
+static void vga_pout(int t, unsigned p, unsigned char v)
+{
+    unsigned char __far *q = vga_vr(t), __far *st;
+    unsigned i;
+    if (!q)
+        return;
+    st = q + RAW_ST;
+    switch (p) {
+    case 0x3C0:
+        if (!st[ST_AFF])
+            st[ST_AIDX] = v;
+        else if ((st[ST_AIDX] & 0x1F) < 21)
+            q[40 + (st[ST_AIDX] & 0x1F)] = v;
+        st[ST_AFF] ^= 1;
+        return;
+    case 0x3C2: q[0] = v; return;
+    case 0x3C4: st[ST_SEQ] = v; return;
+    case 0x3C5:
+        i = st[ST_SEQ];
+        if (i == 4 && ((v ^ q[5]) & 0x0C)) {    /* Chain-4/Odd-Even      */
+            vga_wait(t);
+            outb(0x3C4, i);
+            outb(0x3C5, v);
+        } else if (i < 5)
+            q[1 + i] = v;
+        return;
+    case 0x3C7: st[ST_RI] = v; st[ST_RC] = 0; return;
+    case 0x3C8: st[ST_WI] = v; st[ST_WC] = 0; return;
+    case 0x3C9:
+        q[64 + st[ST_WI] * 3 + st[ST_WC]] = (unsigned char)(v & 0x3F);
+        if (++st[ST_WC] == 3) {
+            st[ST_WC] = 0;
+            st[ST_WI]++;
+        }
+        return;
+    case 0x3CE: st[ST_GC] = v; return;
+    case 0x3CF:
+        i = st[ST_GC];
+        if (i < 9 && !vga_simple(q, i, v)) {
+            vga_wait(t);
+            outb(0x3CE, i);
+            outb(0x3CF, v);
+        } else if (i < 9)
+            q[31 + i] = v;
+        return;
+    case 0x3D4: crt_idx[t] = v; return;
+    case 0x3D5:
+        if (crt_idx[t] < 25)
+            q[6 + crt_idx[t]] = v;
+        return;
+    }
+}
+
 static unsigned char port_in(int t, unsigned p)
 {
     unsigned char sv;
     int k;
     if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
         return sv;
+    if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
+        if (vga_bgk[t])
+            return vga_pin(t, p);
+        vga_wait(t);                            /* (Index 3D4 o. ae. vorn: */
+        return (unsigned char)inb(p);           /* Bitmap war noch zu)   */
+    }
     switch (p) {
     case 0x20:
         return 0;
@@ -2499,6 +2714,15 @@ static void port_out(int t, unsigned p, unsigned char v)
     unsigned o, cur;
     if (sb_out(t, p, v))                        /* virtuelle Sound Blaster */
         return;
+    if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
+        if (vga_bgk[t])
+            vga_pout(t, p, v);
+        else {
+            vga_wait(t);
+            outb(p, v);
+        }
+        return;
+    }
     switch (p) {
     case 0x20:
         if (v == 0x20)                          /* EOI: niedrigstes Bit  */
