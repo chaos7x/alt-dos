@@ -53,6 +53,10 @@ static unsigned char rd8(unsigned long lin)
     return *(unsigned char __far *)MK_FP(SCRATCH, 0);
 }
 
+static unsigned vb_ver;                 /* VBE-Version (aus vbe_info)    */
+static unsigned long vb_phys;           /* vbe_mode: linearer Bildspeicher */
+static unsigned vb_gmul;                /* ... sonst Fenster: Schritte je 64 KB */
+
 /* VbeInfoBlock holen: -> Version, 0 = kein VBE */
 static unsigned vbe_info(unsigned long *list, unsigned *mem_kb)
 {
@@ -67,11 +71,14 @@ static unsigned vbe_info(unsigned long *list, unsigned *mem_kb)
         return 0;
     *list = ((unsigned long)rd16(RM_BUF + 16) << 4) + rd16(RM_BUF + 14);
     *mem_kb = rd16(RM_BUF + 18) << 6;                           /* 64-KB-Bloecke */
-    return rd16(RM_BUF + 4);
+    return vb_ver = rd16(RM_BUF + 4);
 }
 
-/* ModeInfoBlock nach RM_BUF + 200h; -> 1, wenn brauchbar (Grafik, LFB,
-   Palette oder direkte Farben, 8/15/16/24/32 Bit) */
+/* ModeInfoBlock nach RM_BUF + 200h; -> 1, wenn brauchbar (Grafik,
+   Palette oder direkte Farben, 8/15/16/24/32 Bit). Linearer Bildspeicher
+   (VBE 2.0+) -> vb_phys; sonst (VBE 1.2, ET4000/Cirrus/S3 der 386-Zeit)
+   Fenster A bei A000h, 64 KB, lesbar und beschreibbar -> vb_gmul, ohne
+   24 Bit (Punkte laegen ueber der Fenstergrenze). model Bit 7 = Fenster */
 static int vbe_mode(unsigned m, struct fapi_vesamode __far *o)
 {
     struct rmregs r;
@@ -87,14 +94,28 @@ static int vbe_mode(unsigned m, struct fapi_vesamode __far *o)
     attr = rd16(RM_BUF + 0x200);
     bpp = rd8(RM_BUF + 0x200 + 25);
     model = rd8(RM_BUF + 0x200 + 27);
-    if ((attr & 0x99) != 0x99 ||                /* da, Farbe, Grafik, LFB */
+    if ((attr & 0x1B) != 0x1B ||                /* da, Angaben, Farbe, Grafik */
         (model != 4 && model != 6) ||
         (bpp != 8 && bpp != 15 && bpp != 16 && bpp != 24 && bpp != 32))
         return 0;
+    vb_phys = 0;
+    vb_gmul = 0;
+    if ((attr & 0x80) && vb_ver >= 0x200)
+        vb_phys = ((unsigned long)rd16(RM_BUF + 0x200 + 42) << 16) | rd16(RM_BUF + 0x200 + 40);
+    if (!vb_phys) {                             /* nur ueber das Fenster */
+        unsigned g = rd16(RM_BUF + 0x200 + 4);  /* Granularitaet in KB   */
+        if ((attr & 0x40) || bpp == 24 || (rd8(RM_BUF + 0x200 + 2) & 7) != 7 ||
+            rd16(RM_BUF + 0x200 + 6) != 64 || rd16(RM_BUF + 0x200 + 8) != 0xA000 ||
+            !g || g > 64 || 64 % g)
+            return 0;
+        vb_gmul = 64 / g;
+        model |= 0x80;
+    }
     o->mode = m;
     o->width = rd16(RM_BUF + 0x200 + 18);
     o->height = rd16(RM_BUF + 0x200 + 20);
-    o->pitch = rd16(RM_BUF + 0x200 + 50);       /* LinBytesPerScanLine (3.0) */
+    o->pitch = vb_phys && vb_ver >= 0x300 ? rd16(RM_BUF + 0x200 + 50) : 0;
+                                                /* LinBytesPerScanLine (3.0) */
     if (!o->pitch)
         o->pitch = rd16(RM_BUF + 0x200 + 16);
     o->bpp = bpp;
@@ -118,18 +139,27 @@ int __far vesa_bios(unsigned mode)
     return r.ax != 0x004F;
 }
 
+/* Fenster A auf Stelle n (in Granularitaets-Schritten) */
+void __far vesa_bank(unsigned n)
+{
+    struct rmregs r;
+    r.ax = 0x4F05;
+    r.bx = 0;
+    r.dx = n;
+    rm_call(&r);
+}
+
 
 unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
                          struct fapi_vesamode __far *o)
 {
-    unsigned long list, phys;
+    unsigned long list;
     unsigned mem_kb, ver, m, k = 0, i, pages;
     if (sub == VESA_SET) {
         if (!vbe_info(&list, &mem_kb) || !vbe_mode(n, o))
             return FAPI_ERROR;
-        phys = ((unsigned long)rd16(RM_BUF + 0x200 + 42) << 16) | rd16(RM_BUF + 0x200 + 40);
         pages = (unsigned)((mul16(o->pitch, o->height) + 4095) >> 12);
-        if (!phys || pages > 896 || vio_setvesa(s, t, o, pages, phys))
+        if (pages > 896 || vio_setvesa(s, t, o, pages, vb_phys, vb_gmul))
             return FAPI_ERROR;
         o->mem_kb = mem_kb;
         o->version = 0;

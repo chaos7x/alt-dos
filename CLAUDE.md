@@ -2082,9 +2082,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Farbverlauf sauber; ET4000 (486) meldet wie erwartet „keine VESA-Karte
   mit linearem Bildspeicher“ (VBE ohne LFB). Sitzungswechsel auf der
   S3 ebenfalls bestätigt (START VDEMO, Wechsel zu DOOM in einer Box und
-  zurück). Für die ET4000 ginge VBE mit Bankumschaltung (4F05h) – laut
-  Nutzer nicht nötig: in den 386 kommt eine ELSA Winner 2000 (S3);
-  TLVBE/UniVBE/Treiber-TSRs hat der Kernel nicht, zählt nur das BIOS.
+  zurück). ET4000 und Cirrus CL-GD5434 (Nutzer) haben im BIOS nur VBE
+  1.2 ohne linearen Bildspeicher (TLVBE/UniVBE/Treiber-TSRs hat der
+  Kernel nicht, zählt nur das BIOS) -> Fenster-Karten erledigt (in QEMU
+  geprüft, indem vesa.c testweise LFB übergeht: VDEMO 8 und 32 Bit, Maus,
+  Malen über Abschnittsgrenzen, Alt+Esc, Neuzeichnen; LFB danach
+  unverändert): vbe_mode nimmt ohne LFB (oder VBE < 2.0) Modi mit
+  Fenster A lesbar+beschreibbar, 64 KB, A000h, Granularität teilt 64,
+  nicht Attribut Bit 6, ohne 24 Bit (Punkte über der Fenstergrenze);
+  `vb_gmul` = 64/Granularität, `model | VESA_BANKED`. Pitch aus +50 nur
+  bei VBE 3.0 mit LFB, PhysBasePtr nur ab 2.0. vio_setvesa bekommt
+  `gmul` (VP_INFO + 8), gfx_in stellt ohne 4000h ein, `vesa_lin` =
+  A0000h. vgagfx.c `vesa_at(b)`: linear Basis + b·64 KB, sonst
+  `hwbank(b)` (4F05h über `vesa_bank` in vesa.c, Real Mode, mit
+  win_save – rm_call benutzt SCRATCH; `vesa_cb` merkt die Stellung,
+  BIOS-Moduswechsel = 0) und A0000h. Benutzt von vesa_copy, gfx_alias,
+  vio_gfx_base, VioSetPlane vorn; gcomb_vesa wählt je Punkt den
+  Abschnitt und stellt danach das Fenster des Programms zurück. Jede
+  Umschaltung ist ein Ausflug in den Real Mode – auf dem 386 spürbar,
+  aber nur bei VioSetPlane und Zeigerbewegung über Abschnittsgrenzen.
+  VESA.EXE zeigt „linear“/„Fenster“ und die VBE-Version richtig (1.2).
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem

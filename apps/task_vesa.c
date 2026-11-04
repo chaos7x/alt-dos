@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * VESA.EXE - VESA-Modi mit linearem Bildspeicher auflisten (6.0)
+ * VESA.EXE - nutzbare VESA-Modi auflisten (6.0)
  *
  *   VESA
  */
@@ -28,22 +28,22 @@ void main(void)
     DosGetArgs(args);
     a = skip(args);
     if (a[0] == '/' && a[1] == '?') {
-        puts("Zeigt die VESA-Grafikmodi der Karte, die AT-DOS mit linearem\r\n"
-             "Bildspeicher nutzen kann.\r\n\r\nVESA\r\n");
+        puts("Zeigt die VESA-Grafikmodi der Karte, die AT-DOS nutzen kann\r\n"
+             "(linearer Bildspeicher oder 64-KB-Fenster bei VBE 1.2).\r\n\r\nVESA\r\n");
         return;
     }
     if (VioVesa(VESA_MODE, 0, &m)) {
-        puts("Keine VESA-Karte mit linearem Bildspeicher (VBE 2.0) gefunden.\r\n");
+        puts("Keine VESA-Karte mit nutzbaren Grafikmodi gefunden.\r\n");
         DosExit(1);
         return;
     }
     puts("VBE ");
     put_num(m.version >> 8, 1, 0);
     puts(".");
-    put_num((m.version >> 4) & 15, 1, 0);
+    put_num(((m.version >> 4) & 15) * 10 + (m.version & 15), 1, 0);
     puts(", Bildspeicher ");
     put_num(m.mem_kb, 1, 1);
-    puts(" KB\r\n\r\n  Modus   Aufl\x94sung       Farben   Byte/Zeile\r\n");
+    puts(" KB\r\n\r\n  Modus   Aufl\x94sung       Farben   Byte/Zeile  Zugriff\r\n");
     for (n = 0; !VioVesa(VESA_MODE, n, &m); n++) {
         puts("   ");
         put_hex(m.mode);
@@ -55,6 +55,6 @@ void main(void)
         put_num(m.bpp, 2, 0);
         puts(" Bit   ");
         put_num(m.pitch, 6, 0);
-        puts("\r\n");
+        puts(m.model & VESA_BANKED ? "      Fenster\r\n" : "      linear\r\n");
     }
 }

@@ -408,18 +408,21 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
 };
 #define MEMINFO_V60  18             /* Groesse mit total/free_kb32      */
 
-/* FAPI_VESA (6.0): VESA-Modi mit linearem Bildspeicher */
+/* FAPI_VESA (6.0): VESA-Modi mit linearem Bildspeicher oder (VBE 1.2)
+   umschaltbarem 64-KB-Fenster - fuer Programme gleich */
 #define VESA_MODE       0       /* CX = n: n-ter brauchbare Modus, sonst Fehler */
 #define VESA_SET        1       /* CX = Modusnummer: einstellen; danach
                                    VioGetPhysBuf = 64-KB-Fenster aufs Bild,
                                    VioSetPlane(n) = n-ter 64-KB-Abschnitt,
                                    VioSetPal fuer 8 Bit, VioSetGfx(0) = Text */
+#define VESA_BANKED     0x80
 struct fapi_vesamode {
     unsigned short mode;            /* VBE-Modusnummer                  */
     unsigned short width, height;   /* Bildpunkte                       */
     unsigned short pitch;           /* Byte je Zeile                    */
     unsigned char  bpp;             /* 8, 15, 16, 24, 32                */
-    unsigned char  model;           /* 4 = Palette, 6 = direkte Farben  */
+    unsigned char  model;           /* 4 = Palette, 6 = direkte Farben;
+                                       | VESA_BANKED: nur ueber Fenster */
     unsigned short mem_kb;          /* Bildspeicher der Karte           */
     unsigned short version;         /* VBE-Version (BCD, z. B. 0300h)   */
 };

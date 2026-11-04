@@ -121,6 +121,33 @@ static unsigned char vesa_hw;           /* Karte steht auf VESA          */
 #define VP_INFO 768                     /* Breite, Hoehe, Pitch, Bit     */
 #define VP_SAVE 784                     /* Zeiger-Hintergrund, 2 x 640   */
 static unsigned vp_w, vp_h, vp_pitch, vp_bpp;
+static unsigned vp_gmul;                /* 0 = linear, sonst Fenster (VBE 1.2) */
+static unsigned vesa_cb;                /* Fenster der Karte steht auf ...  */
+void __far vesa_bank(unsigned n);       /* vesa.c                        */
+
+/* Fenster-Karten (VBE 1.2): Bildspeicher nur ueber A0000h, 64 KB; der
+   Kernel stellt das Fenster per BIOS (4F05h, Real Mode) um. hwbank
+   sichert SCRATCH/SCRATCH2 (rm_call benutzt SCRATCH). */
+static void hwbank(unsigned b)
+{
+    unsigned short w[8];
+    if (!vp_gmul || b == vesa_cb)
+        return;
+    win_save(w);
+    vesa_bank(b * vp_gmul);
+    win_restore(w);
+    vesa_cb = b;
+}
+
+/* Basis (fuer Deskriptoren) des 64-KB-Abschnitts b; Fenster: umstellen */
+static unsigned long vesa_at(unsigned b)
+{
+    if (vp_gmul) {
+        hwbank(b);
+        return vesa_lin;
+    }
+    return vesa_lin + ((unsigned long)b << 16);
+}
 int vp_xm = 639, vp_ym = 479;
 int __far vesa_bios(unsigned mode);     /* vesa.c                        */
 
@@ -162,8 +189,8 @@ static void vesa_copy(int s, int out)
     unsigned long base = PG_LIN(ses[s].gfx_save);
     for (b = 0; b < n; b++) {
         rest = b + 1 < n ? 16 : ses[s].vpg - (b << 4);  /* Seiten       */
+        set_desc(SCRATCH2 >> 3, vesa_at(b), 0xFFFF, ACC_KDATA);
         scratch_map(base + ((unsigned long)b << 16), 0xFFFF);
-        set_desc(SCRATCH2 >> 3, vesa_lin + ((unsigned long)b << 16), 0xFFFF, ACC_KDATA);
         if (out)
             far_copy(SCRATCH, 0, SCRATCH2, 0, (rest > 8 ? 8 : rest) << 12);
         else
@@ -211,8 +238,7 @@ static void gfx_alias(int s)
     if (!ses[s].gfx_sel)
         return;
     if (ses[s].gfx == VESAGFX && s == fg && hw_gfx == VESAGFX)
-        ldt_set(ses[s].gfx_task, ses[s].gfx_sel,
-                vesa_lin + ((unsigned long)ses[s].gfx_plane << 16), vesa_limit(s));
+        ldt_set(ses[s].gfx_task, ses[s].gfx_sel, vesa_at(ses[s].gfx_plane), vesa_limit(s));
     else if (ses[s].gfx == VESAGFX)
         ldt_set(ses[s].gfx_task, ses[s].gfx_sel, save_part(s, 0), vesa_limit(s));
     else if (s == fg && hw_gfx == ses[s].gfx)
@@ -405,22 +431,25 @@ int __far gfx_in(void)
         text_dac_ok = 1;
     }
     if (ses[fg].gfx == VESAGFX) {           /* VESA: BIOS, dann Bild     */
-        if (vesa_bios(ses[fg].vmode | 0x4000)) {
-            win_restore(w);
-            return 0;
-        }
-        vesa_hw = 1;
-        vesa_lin = pg_lfb(vesa_phys, ses[fg].vpg);
-        hw_gfx = VESAGFX;
-        gp_drawn = 0;
-        vesa_copy(fg, 0);
-        map_save(fg, 4);
-        dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
         scratch_map(save_part(fg, 4), 4095);
         vp_w = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO);
         vp_h = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 2);
         vp_pitch = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 4);
         vp_bpp = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 6);
+        vp_gmul = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 8);
+        if (vesa_bios(vp_gmul ? ses[fg].vmode : ses[fg].vmode | 0x4000)) {
+            win_restore(w);
+            return 0;
+        }
+        vesa_hw = 1;
+        vesa_cb = 0;                        /* BIOS stellt Fenster 0 ein */
+        vesa_lin = vp_gmul ? 0xA0000UL : pg_lfb(vesa_phys, ses[fg].vpg);
+        hw_gfx = VESAGFX;
+        gp_drawn = 0;
+        vesa_copy(fg, 0);
+        hwbank(ses[fg].gfx_plane);
+        map_save(fg, 4);
+        dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
         vp_xm = vp_w - 1;
         vp_ym = vp_h - 1;
         win_restore(w);
@@ -571,7 +600,7 @@ int __far vio_setgfx(int s, int t, unsigned mode)
    Sitzung s: Puffer anlegen (schwarz, Vorgabepalette); vorn stellt
    redraw -> gfx_in das BIOS um. 0 = ok, -1 Fehler (kein Speicher) */
 int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned pages,
-                      unsigned long phys)
+                      unsigned long phys, unsigned gmul)
 {
     unsigned short w[8];
     unsigned __far *vi;
@@ -588,7 +617,8 @@ int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned page
     ses[s].vpg = pages;
     ses[s].gfx_plane = 0;
     ses[s].gfx_page = 0;
-    vesa_phys = phys;
+    if (phys)
+        vesa_phys = phys;
     win_save(w);
     for (b = 0; b < vesa_banks(s); b++) {
         scratch_map(PG_LIN(ses[s].gfx_save) + ((unsigned long)b << 16), 0xFFFF);
@@ -601,6 +631,7 @@ int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned page
     vi[1] = o->height;
     vi[2] = o->pitch;
     vi[3] = o->bpp;
+    vi[4] = gmul;
     win_restore(w);
     ses[s].gfx_task = (signed char)t;
     if (s == fg) {
@@ -615,7 +646,7 @@ int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned page
 unsigned long __far vio_gfx_base(int s)
 {
     if (ses[s].gfx == VESAGFX && s == fg && hw_gfx == VESAGFX)
-        return vesa_lin + ((unsigned long)ses[s].gfx_plane << 16);
+        return vesa_at(ses[s].gfx_plane);
     if (s == fg && hw_gfx == ses[s].gfx)
         return 0xA0000UL;
     return save_part(s, ses[s].gfx_plane);
@@ -869,11 +900,11 @@ static void gcomb_vesa(const struct gpst *o, struct gpst *n)
 {
     const struct gpst *g = n ? n : o;
     unsigned bb = (vp_bpp + 7) >> 3, os = 0, ns = 0;
-    unsigned long white, cur, bg, val;
+    unsigned long white, cur, bg, val, row, pa;
     unsigned char __far *v = MK_FP(SCRATCH2, 0);
     unsigned long __far *sv = MK_FP(SCRATCH, 0);
     int x, y, oc, nc, x0, x1, y0, y1;
-    unsigned a;
+    unsigned a, mb = 0xFFFF;
 
     if (fg < 0 || ses[fg].gfx != VESAGFX || !ses[fg].gfx_save || !vp_w)
         return;
@@ -890,14 +921,23 @@ static void gcomb_vesa(const struct gpst *o, struct gpst *n)
     if (x0 >= x1)
         return;
     for (y = y0; y < y1; y++) {
-        set_desc(SCRATCH2 >> 3, vesa_lin + mul16((unsigned)y, vp_pitch) + (unsigned)x0 * bb,
-                 (unsigned)(x1 - x0) * bb - 1, ACC_KDATA);
+        row = mul16((unsigned)y, vp_pitch) + (unsigned)x0 * bb;
+        if (!vp_gmul)                       /* linear: ein Fenster je Zeile */
+            set_desc(SCRATCH2 >> 3, vesa_lin + row, (unsigned)(x1 - x0) * bb - 1, ACC_KDATA);
         for (x = x0; x < x1; x++) {
             oc = gpix(o, x, y);
             nc = gpix(n, x, y);
             if (oc < 0 && nc < 0)
                 continue;
             a = (unsigned)(x - x0) * bb;
+            if (vp_gmul) {                  /* Fenster: Abschnitt des Punkts */
+                pa = row + a;
+                if ((unsigned)(pa >> 16) != mb) {
+                    mb = (unsigned)(pa >> 16);
+                    set_desc(SCRATCH2 >> 3, vesa_at(mb), 0xFFFF, ACC_KDATA);
+                }
+                a = (unsigned)pa;           /* Punkte liegen nie ueber der Grenze */
+            }
             cur = vpx_rd(v + a, bb);
             bg = oc >= 0 && cur == (oc ? white : 0) ?
                  sv[os + (y - o->y) * 10 + (x - o->x)] : cur;
@@ -910,6 +950,7 @@ static void gcomb_vesa(const struct gpst *o, struct gpst *n)
                 vpx_wr(v + a, bb, val);
         }
     }
+    hwbank(ses[fg].gfx_plane);              /* Fenster des Programms     */
 }
 
 /* o entfernen, n zeichnen (0 = entfaellt); sich nicht ueberlappende
