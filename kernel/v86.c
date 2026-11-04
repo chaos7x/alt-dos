@@ -2489,6 +2489,10 @@ static void vga_ports(int t, int on)
     unsigned i;
     for (i = 0x3B0 >> 3; i <= 0x3DF >> 3; i++)
         tss[t].iob[i] = on ? 0 : 0xFF;
+    if (on)                             /* VBE der Bochs-/QEMU-/Proxmox- */
+        tss[t].iob[0x1CE >> 3] &= 0x3F; /* Standard-VGA (1CEh/1CFh)      */
+    else
+        tss[t].iob[0x1CE >> 3] |= 0xC0;
 }
 
 static int vga_enter(int t)
@@ -4248,6 +4252,10 @@ static pg_t dp_ldt[NTASK], dp_st[NTASK];        /* LDT-Seite, Zustandsseite */
 static struct desc dp_oldldt[NTASK];
 static unsigned char dp_lmap[NTASK][LDT_N / 8];
 static struct { unsigned long lpg, npg; } dp_mem[NTASK][NDPM];
+/* DPMI 0800h: eingeblendeter Geraetespeicher (z. B. linearer Bild-
+   speicher einer VBE-2.0-Karte); Seiten ohne PTE_OWN, nie freigegeben */
+#define NDPP      4
+static struct { unsigned long lpg, npg, ppg; } dp_phys[NTASK][NDPP];
 
 /* Zustandsseite: 0 PM-Vektoren (256 x 6), 1536 Ausnahme-Handler (32 x 6),
    2048 Rahmen (DPCT x 64) */
@@ -4420,7 +4428,21 @@ again:
             s = dp_mem[t][i].lpg + dp_mem[t][i].npg;
             goto again;
         }
+    for (i = 0; i < NDPP; i++)
+        if (dp_phys[t][i].npg && s < dp_phys[t][i].lpg + dp_phys[t][i].npg &&
+            s + n > dp_phys[t][i].lpg) {
+            s = dp_phys[t][i].lpg + dp_phys[t][i].npg;
+            goto again;
+        }
     return s + n <= 0x40000UL ? s : 0;
+}
+
+static void dphys_unmap(int t, unsigned i)
+{
+    unsigned long k;
+    for (k = 0; k < dp_phys[t][i].npg; k++)
+        lpte_set(t, dp_phys[t][i].lpg + k, 0);
+    dp_phys[t][i].npg = 0;
 }
 
 static void dpmi_end(int t)             /* Programm fertig / Box zu      */
@@ -4436,6 +4458,10 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
         if (dp_mem[t][i].npg) {
             dmem_unmap(t, dp_mem[t][i].lpg, dp_mem[t][i].npg);
             dp_mem[t][i].npg = 0;
+        }
+    for (i = 0; i < NDPP; i++)
+        if (dp_phys[t][i].npg) {
+            dphys_unmap(t, i);
         }
     gdt[LDT_IDX(t)] = dp_oldldt[t];     /* wieder die Task-LDT          */
     tss[t].ldt = 0;
@@ -4957,6 +4983,51 @@ done501:
         dp_mem[t][k - 1].npg = 0;
         tlb(t);
         return 0;
+    case 0x0800: {                              /* Geraetespeicher einblenden */
+        /* BX:CX physisch, SI:DI Groesse -> BX:CX linear. Nur oberhalb
+           des RAM (Bildspeicher, Karten) - nie Speicher des Systems */
+        unsigned long ph = ((unsigned long)BX << 16) | CX;
+        unsigned long sz = ((unsigned long)SI << 16) | DI, pp, np;
+        if (!sz || ph + sz - 1 < ph)
+            DERR(0x8021);
+        pp = ph >> 12;
+        np = ((ph & 0xFFF) + sz + 4095) >> 12;
+        if (pp < mem_top_pg())
+            DERR(0x8025);                       /* RAM: nicht erlaubt    */
+        for (k = 0; k < NDPP; k++)              /* schon da? gleich zurueck */
+            if (dp_phys[t][k].npg && dp_phys[t][k].ppg == pp &&
+                dp_phys[t][k].npg >= np)
+                goto done800;
+        for (k = 0; k < NDPP && dp_phys[t][k].npg; k++)
+            ;
+        if (k == NDPP || !(lin = dmem_gap(t, np)))
+            DERR(0x8012);
+        dp_phys[t][k].lpg = lin;
+        dp_phys[t][k].ppg = pp;
+        dp_phys[t][k].npg = np;
+        for (i = 0; i < np; i++)
+            if (!lpte_set(t, lin + i, PG_LIN(pp + i) | PTE_BOX)) {
+                dp_phys[t][k].npg = i;
+                dphys_unmap(t, k);
+                DERR(0x8013);
+            }
+        tlb(t);
+done800:
+        lin = (dp_phys[t][k].lpg << 12) + (ph & 0xFFF);
+        BX = (unsigned)(lin >> 16);
+        CX = (unsigned)lin;
+        return 0;
+    }
+    case 0x0801: {                              /* wieder ausblenden     */
+        unsigned long l = (((unsigned long)BX << 16) | CX) >> 12;
+        for (k = 0; k < NDPP; k++)
+            if (dp_phys[t][k].npg && dp_phys[t][k].lpg == l) {
+                dphys_unmap(t, k);
+                tlb(t);
+                return 0;
+            }
+        DERR(0x8025);
+    }
     case 0x0600: case 0x0601: case 0x0602: case 0x0603:
     case 0x0702: case 0x0703:                   /* (DPMI 1.0) Auslagern  */
         return 0;                               /* nichts auszulagern    */

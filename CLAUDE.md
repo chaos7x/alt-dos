@@ -2037,6 +2037,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   meldete 3 GB frei, in Byte über 2^31 – DOS/4GW las das als negativ
   („DOS/16M error [6] not enough memory“); jetzt gekappt auf den DPMI-
   Bereich der Box (64 MB–1 GB). Erstes Codesegment 65.421 Byte.
+  Phase 5, Schritt 2 begonnen – VESA mit linearem Bildspeicher, zuerst
+  in den Boxen (in QEMU geprüft: `\DEMO\VBETEST.COM` (apps/vbetest.asm), DPMI-Programm, 4F02h 4101h
+  im Real Mode, 0800h auf PhysBasePtr FD000000h, Deskriptor 0000h/0007h/
+  0008h, 640×480×256 Streifen, zurück auf 03h; dazu START VBETEST, Alt+
+  Esc zu CMD + VER, zurück -> Bild wieder da): v86.c DPMI 0800h/0801h,
+  `dp_phys[NTASK][NDPP=4]` (lpg/npg/ppg), Lücke über `dmem_gap` (beachtet
+  jetzt auch dp_phys), PTEs ohne PTE_OWN (v86_destroy gibt nichts frei),
+  gleiche Anfrage -> gleiche Adresse; nur Seiten ab `mem_top_pg()` (nie
+  RAM), `dphys_unmap` in 0801h und dpmi_end. `vga_ports` gibt im
+  Rohbetrieb zusätzlich 1CEh/1CFh frei (VBE-Register der Bochs-/QEMU-/
+  Proxmox-Standard-VGA). Offen: SVGA-Zustand beim Sitzungswechsel auf
+  echten Karten (raw_out sichert nur die Standardregister; S3 hat eigene
+  CRTC-Register) – nur in 86Box prüfbar; VESA für FAPI-Programme (Moduswechsel
+  braucht das Video-BIOS, also einen V86-Aufruf aus dem Kernel). DGROUP
+  jetzt 65.002 Byte – fast voll.
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und

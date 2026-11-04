@@ -333,7 +333,9 @@ und PC-DOS.
 - DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2), erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
-  (0300h–0302h), Speicher bis 1 GB Adressraum (0501h–0503h), virtuelles
+  (0300h–0302h), Speicher bis 1 GB Adressraum (0501h–0503h),
+  Gerätespeicher einblenden (0800h/0801h, z. B. linearer Bildspeicher
+  einer VBE-2.0-Karte, auch oberhalb 2 GB; RAM nie), virtuelles
   IF; andere Interrupts gehen an den Handler des Programms oder an DOS
   im Real Mode, Ende mit INT 21h 4Ch aus dem Protected Mode; dazu
   Ausnahme-Handler (0202h/0203h), Callbacks (0303h/0304h) und Raw Switch
