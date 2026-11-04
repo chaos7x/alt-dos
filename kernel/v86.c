@@ -407,7 +407,24 @@ static unsigned ansi_seq(char *b, unsigned a)
     return n;
 }
 
+static void replay_text(int s);
+extern char box_fmsg[];                 /* kernel.c fault: Abbruch der Box */
+
 void __far v86_replay(int s)
+{
+    unsigned n;
+    replay_text(s);
+    if (s >= 0 && box_fmsg[0]) {            /* warum die Box endete      */
+        for (n = 0; box_fmsg[n]; n++)
+            ;
+        kf_vio_tty(s, KDATA, (unsigned)"\nDOS-Box abgebrochen: ", 23);
+        kf_vio_tty(s, KDATA, (unsigned)box_fmsg, n);
+        kf_vio_tty(s, KDATA, (unsigned)"\n", 1);
+    }
+    box_fmsg[0] = 0;
+}
+
+static void replay_text(int s)
 {
     static char b[96];
     unsigned r, c, n, a, cur = 0x07, col = kf_vio_ansi(s, 2);

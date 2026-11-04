@@ -3562,12 +3562,22 @@ unsigned long read_cr2(void);
 
 unsigned char fault_vm;                 /* start.asm: Ausnahme aus V86   */
 
+char box_fmsg[88];                      /* letzter Abbruch einer DOS-Box (v86_replay) */
+
+static int scat(char *d, int j, const char *s, int max)
+{
+    while (*s && j < max)
+        d[j++] = *s++;
+    d[j] = 0;
+    return j;
+}
+
 void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
 {
     static char msg[] = " bei xxxx:xxxx (Fehlercode xxxxh)";
     static char kmsg[80];
     const char *m = msg;
-    int i, j, vm = fault_vm;
+    int vm = fault_vm;
 
     fault_vm = 0;
     hex4(cs, msg + 5);
@@ -3583,6 +3593,8 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         m = pf;
     }
 
+    if (vm)                             /* Vollbild der Box ist gleich weg: */
+        scat(box_fmsg, scat(box_fmsg, 0, exc_name(vec), 40), m, 86);  /* fuer CMD merken */
     if (((cs & 3) == 3 || vm) && current >= 0) {
         /* Fehler in einer Anwendung oder DOS-Box: nur sie beenden */
         tmsg(current, "\n", task[current].name, ": ");
@@ -3592,11 +3604,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         task_end(current);
         schedule_next();
     }
-    j = 0;
-    for (i = 0; "KERNEL PANIC: "[i]; i++) kmsg[j++] = "KERNEL PANIC: "[i];
-    for (i = 0; exc_name(vec)[i]; i++) kmsg[j++] = exc_name(vec)[i];
-    for (i = 0; m[i] && j < 79; i++) kmsg[j++] = m[i];
-    kmsg[j] = 0;
+    scat(kmsg, scat(kmsg, scat(kmsg, 0, "KERNEL PANIC: ", 79), exc_name(vec), 79), m, 79);
     panic(kmsg);
 }
 

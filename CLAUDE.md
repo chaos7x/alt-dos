@@ -1950,6 +1950,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   prüfbar. Vermutung zum Haken am Anfang bei DOOM + PLAY: DOOM lädt beim
   Start die WAD über den Redirector mit Kernelsperre – PLAY wartet dann
   bei FAPI-Aufrufen mit Sperre (Phase 6: Sperren je Gerät).
+  Absturz einer Box sichtbar machen (Anlass: Digger stürzt beim Nutzer
+  in 86Box ohne Meldung ab, in QEMU und Bochs nicht nachstellbar): die
+  Meldung von `fault()` ging mit dem Vollbild der Box verloren. Jetzt
+  merkt fault() sie in `box_fmsg` (kernel.c, `scat`), `v86_replay` gibt
+  sie nach dem Text der Box in der Sitzung des Aufrufers aus („DOS-Box
+  abgebrochen: #GP … bei CS:IP (Fehlercode …)“). Nur beim Start aus CMD
+  (mit START hat die Box keinen Aufrufer in derselben Sitzung).
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),
