@@ -49,3 +49,12 @@ unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 {
     return box_fapi(fn, usel, a1, a2, a3);
 }
+
+/* fat.c (FAT-Treiber in KTEXT2) */
+int __far kf_blk_read(int dev, unsigned long lba) { return blk_read(dev, lba); }
+int __far kf_blk_read_n(int dev, unsigned long lba, unsigned n) { return blk_read_n(dev, lba, n); }
+int __far kf_blk_write(int dev, unsigned long lba) { return blk_write(dev, lba); }
+void __far kf_blk_invalidate(void) { blk_invalidate(); }
+int __far kf_blk_media(int dev) { return blk_media(dev); }
+int __far kf_blk_nomedia(int dev) { return blk_nomedia(dev); }
+unsigned __far kf_kseg_alloc(unsigned long bytes) { return kseg_alloc(bytes); }

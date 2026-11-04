@@ -302,7 +302,7 @@ void reboot_request(void)
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
 static void fpu_task_end(int t);
-static int mod_mount(int drive);
+static int __far mod_mount(int drive);
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
 static void aud_task_end(int t);
 static void schedule_next(void);
@@ -5008,7 +5008,7 @@ static int mod_call(int drive, unsigned char cmd)
     return ireq.status ? -1 : 0;
 }
 
-static int mod_mount(int drive)
+static int __far mod_mount(int drive)
 {
     blk_invalidate();                   /* CD koennte gewechselt sein  */
     if (mod_call(drive, IFSM_MOUNT) == 0)
@@ -5018,7 +5018,7 @@ static int mod_mount(int drive)
     return -1;
 }
 
-static int mod_open(int drive, const char *path, struct ifs_file __far *f)
+static int __far mod_open(int drive, const char *path, struct ifs_file __far *f)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     if (mod_mount(drive) || mod_call(drive, IFSM_OPEN))
@@ -5029,7 +5029,7 @@ static int mod_open(int drive, const char *path, struct ifs_file __far *f)
     return 0;
 }
 
-static int mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+static int __far mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     far_copy(KDATA, (unsigned)&ireq.f, FP_SEG(f), FP_OFF(f), sizeof(*f));
@@ -5043,7 +5043,7 @@ static int mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
     return ireq.result;
 }
 
-static int mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
+static int __far mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
 {
     scopy(ireq.path, dir, IFS_PATHLEN);
     ireq.n = (unsigned short)n;
@@ -5053,13 +5053,13 @@ static int mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent
     return 0;
 }
 
-static int mod_isdir(int drive, const char *path)
+static int __far mod_isdir(int drive, const char *path)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     return mod_mount(drive) == 0 && mod_call(drive, IFSM_ISDIR) == 0;
 }
 
-static int mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
+static int __far mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
 {
     if (newlbl)
         return IFS_WP;
@@ -5070,7 +5070,7 @@ static int mod_label(int drive, char *lbl, unsigned long *serial, const char *ne
     return 0;
 }
 
-static int mod_namepath(int drive, const char *path, char *out, int shortn)
+static int __far mod_namepath(int drive, const char *path, char *out, int shortn)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     ireq.n = (unsigned short)shortn;

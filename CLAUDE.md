@@ -213,7 +213,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `v86`, `redir`,
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `vesa`, `fat`,
   `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
   Segment damit 62,0 KB).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
@@ -234,7 +234,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Fixups auf globale EXTDEFs). Stand danach: Code 65.463 + 13.823 +
   44.510 Byte – das erste Segment bleibt voll, KTEXT2 hat wieder ~50 KB
   frei (Ziel für Seltenes aus kernel.c), KTEXT3 ~20 KB für die Boxen.
-  Stand vorher: Code 48 + 8 KB (vorher 56 KB in einem Segment). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  Stand vorher: Code 48 + 8 KB (vorher 56 KB in einem Segment).
+  6.0, vor FAT32 (in QEMU geprüft: Start von C:, XCOPY \DOS, CHKDSK /F,
+  SHUTDOWN, fsck sauber, Kopien gleich): `fat.c` (14 KB) nach KTEXT2 –
+  `struct ifs_driver` hat `__far`-Funktionszeiger, fat_*/mod_*/pre_*
+  und die IFS-Einsprünge (ifs_*, vol_move/present/reset) sind `__far`,
+  blk_read/blk_read_n/blk_write/blk_media/blk_nomedia/blk_invalidate/
+  kseg_alloc über Thunks (k2.h). Danach Code 51.258 + 34.408 + 51.526,
+  DGROUP 65.176 (die Fernzeiger der drei Treibertabellen kosten 102 Byte). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in
