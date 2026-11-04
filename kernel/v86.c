@@ -225,7 +225,8 @@ static unsigned emb_free_pg(int t);
 #define FL_VIF  0x80000UL
 #define FL_VIP  0x100000UL
 #define HK_PVI  8
-#define HK_ADLIB 16                     /* ADLIB_SHADOW=ON (Bit = an!)   */
+#define HK_ADLIB 16                     /* ADLIB_COPY=ON (Bit = an!)     */
+#define HK_HWT   32                     /* HW_TIMER=ON (Bit = an!)       */
 unsigned char pvi_t[NTASK], pvi_cur;    /* je Task / gerade in CR4       */
 static signed char pvi_ok = -1;         /* CPU kann PVI (CPUID 1: VME)   */
 static unsigned long pvi_back[NTASK];   /* PVI erst wieder ab diesem Takt */
@@ -897,13 +898,15 @@ static unsigned long pit_elapsed(int t)
    100 Hz), sonst zurueck auf 100 Hz; irq0 zaehlt den Kerneltakt weiter
    je 11932 Schritte */
 #define KPIT_MIN 1193U                  /* hoechstens 1 kHz              */
+static unsigned char kpit_slow;         /* auch langsamer als 100 Hz (HW_TIMER) */
 static void kpit_set(unsigned dv)
 {
     unsigned f;
     if (dv && dv < KPIT_MIN)
         dv = KPIT_MIN;
-    if (dv >= KPIT)
+    if (dv >= KPIT && !kpit_slow)
         dv = 0;
+    kpit_slow = 0;
     if (dv == kpit_div)
         return;
     f = irq_off();
@@ -914,8 +917,21 @@ static void kpit_set(unsigned dv)
     irq_restore(f);
 }
 
+/* HW_TIMER=ON (DOSBOX.INI, angelehnt an OS/2): vorn laeuft der echte
+   Kanal 0 mit dem Teiler der Box auch dann, wenn er langsamer als 100 Hz
+   ist (irq0 zaehlt dann mehrere Kerneltakte je Interrupt) - jeder INT 8
+   der Box kommt von einem echten Interrupt statt aus dem 100-Hz-Raster
+   (bis 10 ms Zittern). Die Ports bleiben gefangen: Digger stellt den
+   Teiler laufend direkt ueber 40h um (ohne Befehl an 43h); ganz frei
+   gegeben lief die Uhr des Kernels 40 % vor. */
+static int kpit_hw(int t)
+{
+    return (box_hk[t] & HK_HWT) && pit_rl[t] && box_fg(t);
+}
+
 static void kpit_check(int t)
 {
+    kpit_slow = (unsigned char)kpit_hw(t);
     kpit_set(pit_rl[t] && box_fg(t) ? pit_rl[t] : 0);
 }
 
@@ -2270,7 +2286,7 @@ static void svc(int n, struct v86_frame *f, int t)
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
-            box_hk[t] = (unsigned char)((~BX & 15) | (BX & HK_ADLIB));
+            box_hk[t] = (unsigned char)((~BX & 15) | (BX & (HK_ADLIB | HK_HWT)));
         else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
             idle_sens[t] = (unsigned char)(BX > 101 ? 101 : BX);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */

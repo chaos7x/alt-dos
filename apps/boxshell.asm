@@ -361,7 +361,7 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jnc     .k6
         add     di, 12
         shl     dl, 1
-        cmp     dl, 32
+        cmp     dl, 64
         jb      .k5
         jmp     .skip
 .k6:    mov     al, [es:si]
@@ -777,6 +777,7 @@ k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
           db "IF_WATCHDOG", 0
           db "PVI", 0, 0, 0, 0, 0, 0, 0, 0, 0
           db "ADLIB_COPY", 0, 0         ; Bit 4: Vorgabe aus (hk = 15)
+          db "HW_TIMER", 0, 0, 0, 0     ; Bit 5: Vorgabe aus
 hk        db 15
 idles     dw 0
 k_idle    db "IDLE_SENSITIVITY", 0

@@ -1931,6 +1931,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   grund gibt die I/O-Bitmap 42h und 61h direkt frei (43h bleibt gefangen,
   Kanal 0 gehört dem Kernel); hinten (inject, v86_poll, vga_freeze),
   Parken, Ende: wieder gesperrt und Lautsprecher aus.
+  Digger-Knacksen untersucht (Phase 4, Rest; QEMUs PC-Lautsprecher gibt
+  Diggers Technik nicht wieder – stumm, nur in 86Box hörbar): Digger
+  stellt Kanal 2 per B6h auf Modus 3 und schreibt ständig Teiler 0028h
+  (29,8 kHz Träger) nach 42h, misst Zeit über Latch (43h = 04h) + zwei
+  Lesezugriffe auf 40h und stellt den Teiler von Kanal 0 laufend um –
+  direkt über 40h, ohne Befehl an 43h. Versuch „40h/43h frei“ wie OS/2
+  HW_TIMER: Uhr des Kernels lief 40 % vor (Hardware schneller, der Kernel
+  sah die Teiler nicht) -> verworfen. Jetzt DOSBOX.INI `HW_TIMER=ON`
+  (BOXSHELL hk Bit 5, `HK_HWT`, Vorgabe aus): Ports bleiben gefangen,
+  aber `kpit_check` setzt `kpit_slow` – der echte Kanal 0 läuft vorn mit
+  dem Teiler der Box auch unter 100 Hz, jeder INT 8 kommt von einem
+  echten irq0 statt aus dem 100-Hz-Raster. start.asm irq0 zählt dafür je
+  Interrupt so viele Kerneltakte, wie 11932er-Schritte voll sind
+  (`kpend`, Überlauf über 65536 = 5 × 11932 + 5876). In QEMU geprüft:
+  Uhr richtig mit Digger (50 s Uptime in 50 s), SLOW.COM (4000h), DOOM
+  (140 Hz) läuft mit Ton. Ob es das Knacksen behebt, nur in 86Box
+  prüfbar. Vermutung zum Haken am Anfang bei DOOM + PLAY: DOOM lädt beim
+  Start die WAD über den Redirector mit Kernelsperre – PLAY wartet dann
+  bei FAPI-Aufrufen mit Sperre (Phase 6: Sperren je Gerät).
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),

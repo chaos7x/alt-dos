@@ -613,13 +613,22 @@ irq0:
         mov     ax, KDATA
         mov     ds, ax
         inc     word [_irq0_n]          ; jeder echte Takt (v86.c t8_ok)
-        mov     ax, [_kpit_div]         ; PIT schneller (DOS-Box vorn will
-        or      ax, ax                  ; mehr als 100 Hz, v86.c): nur je
-        jz      .tick                   ; 11932 Schritte ein Kerneltakt
-        add     [_kpit_acc], ax
-        cmp     word [_kpit_acc], 11932
-        jb      .eoi
+        mov     ax, [_kpit_div]         ; PIT umgestellt (DOS-Box vorn mit
+        or      ax, ax                  ; eigenem Takt, v86.c): je 11932
+        jz      .one                    ; Schritte ein Kerneltakt - bei
+        add     [_kpit_acc], ax         ; langsamerem Takt (HW_TIMER)
+        jnc     .cnt                    ; mehrere je Interrupt
+        add     word [_kpit_acc], 5876  ; Ueberlauf: 65536 = 5*11932+5876
+        add     byte [kpend], 5
+.cnt:   cmp     word [_kpit_acc], 11932
+        jb      .more
         sub     word [_kpit_acc], 11932
+        inc     byte [kpend]
+        jmp     .cnt
+.one:   inc     byte [kpend]
+.more:  cmp     byte [kpend], 0
+        je      .eoi
+        dec     byte [kpend]
 .tick:  add     word [_ticks], 1
         adc     word [_ticks+2], 0
         cmp     word [_reboot_count], 0     ; Strg+Alt+Entf angefordert und
@@ -630,9 +639,10 @@ irq0:
 .norb:
         inc     byte [subtick]
         cmp     byte [subtick], 100
-        jb      .eoi
+        jb      .more
         mov     byte [subtick], 0
         inc     word [_uptime_s]
+        jmp     .more
 .eoi:
         mov     al, 0x20
         out     0x20, al
@@ -1257,6 +1267,7 @@ _fapi_dx:    resw 1
 _devhlp_dx:  resw 1
 _boot_drive: resb 1
 subtick:     resb 1
+kpend:       resb 1                     ; irq0: noch zu zaehlende Kerneltakte
 _ticks:      resw 2
 _uptime_s:   resw 1
 _irq0_n:     resw 1

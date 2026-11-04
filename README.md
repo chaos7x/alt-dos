@@ -383,7 +383,11 @@ und PC-DOS.
   Register der Box von Anfang an mit, damit ihre Instrumente zurückkommen,
   wenn zwischendurch ein FAPI-Programm wie `PLAY /FM` gespielt hat; ohne
   Angabe nur, wenn beim Zugriff der Box schon eines FM offen hat – das
-  Mitschreiben kostet Fallen; Test `\DEMO\OPLTEST`). Wird vor jedem
+  Mitschreiben kostet Fallen; Test `\DEMO\OPLTEST`), `HW_TIMER=ON`
+  (Vorgabe aus: der echte Zeitgeber läuft vorn mit dem Takt des
+  Programms auch unter 100 Hz, jeder Takt-Interrupt kommt von der
+  Hardware statt aus dem 100-Hz-Raster – für Spiele mit Ton über den
+  PC-Lautsprecher wie Digger). Wird vor jedem
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
