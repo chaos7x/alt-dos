@@ -2149,6 +2149,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `XMS_MEMORY_LIMIT=-1` (und sinngemäß `EMS_MEMORY_LIMIT=-1`) = so viel,
   wie die Box ansprechen kann (heute 63.424 KB XMS); BOXSHELL `pnum`
   kennt noch kein Minus.
+  Speicher je Box (vom Nutzer auf dem 386 mit 4 MB gemeldet: zwei
+  Boxen 2.600 KB, 304 KB frei): in QEMU nachgestellt – eine Box am
+  FreeCOM-Prompt kostet ~830 KB, dazu kam eine **geparkte** Box (DOS-
+  Programm vorher direkt aus CMD, BOX_PARK hält sie wie NTVDM offen).
+  Jetzt gibt `load_img` vor dem Anlegen einer neuen Box die geparkten
+  frei, wenn weniger als 4 × RMSIZE (2,5 MB) frei sind. Danach in QEMU
+  (4 MB): zwei Boxen 1.656 KB, 1.132 KB frei. Platz dafür: `sys_info`
+  (MSD) bis auf die Treiberliste nach k2misc.c (`sys_info2`). Lehre: das
+  erste Codesegment darf höchstens 65.520 Byte haben – start.asm rundet
+  `code_end` auf 16 auf, darüber läuft die DS-Rechnung über und der
+  Kernel hängt beim Start; build.sh bricht jetzt ab. Offen: MS-DOS-MEM
+  zeigt in der Box „Erweiterung (XMS) 0K“ insgesamt.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.

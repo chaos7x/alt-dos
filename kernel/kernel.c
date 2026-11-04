@@ -1027,10 +1027,12 @@ static int load_com(int t, int drive, const char *path)
 static struct ifs_file box_img[NTASK];
 unsigned char box_sec[512];             /* Sektorpuffer fuer v86.c       */
 
+static unsigned char park_owner[NTASK];
 static int load_img(int t, int drive, const char *path)
 {
     struct tss386 *ts;
     unsigned long cr3;
+    int i;
 
     if (ifs_open(drive, path, &box_img[t]))
         return EXEC_ERR_NOTFOUND;
@@ -1040,6 +1042,11 @@ static int load_img(int t, int drive, const char *path)
         return EXEC_ERR_NOTFOUND;
     if (box_sec[510] != 0x55 || box_sec[511] != 0xAA)
         return EXEC_ERR_FORMAT;
+    for (i = 0; i < NTASK; i++)         /* Speicher knapp: geparkte Boxen */
+        if (park_owner[i] && mem_free_kb() < box_kb * 4UL) {    /* zuerst */
+            park_owner[i] = 0;
+            task_end(i);
+        }
     cr3 = v86_create(t, box_kb);
     if (!cr3)
         return EXEC_ERR_NOMEM;
@@ -1236,7 +1243,6 @@ static int dos_cmd(const char *cmd)
    + 1). Startet er wieder ein DOS-Programm, bekommt die geparkte Box die
    neue Befehlszeile, sein Laufwerk/Verzeichnis und laeuft weiter - ohne
    neuen FreeDOS-Start. Endet der Besitzer, endet die Box mit. */
-static unsigned char park_owner[NTASK];
 static int scmp_k(const char *a, const char *b)
 {
     while (*a && *a == *b)
@@ -3646,28 +3652,7 @@ static const char *drv_name(int d)
 static void sys_info(struct fapi_sysinfo __far *si)
 {
     unsigned i, k;
-    si->cpu = cpu_386 ? 3 : 2;
-    si->fpu = (unsigned char)fpu_ok;
-    si->vga = vga_ok;
-    si->model = bios_model;
-    for (i = 0; i < 8; i++)
-        si->bios_date[i] = bios_date[i];
-    si->bios_date[8] = 0;
-    si->fdtype[0] = (unsigned char)fd_type(0);
-    si->fdtype[1] = (unsigned char)fd_type(1);
-    si->rsv = 0;
-    si->equip = bios_equip;
-    for (i = 0; i < 4; i++)
-        si->com[i] = bios_ports[i];
-    for (i = 0; i < 3; i++)
-        si->lpt[i] = bios_ports[4 + i];
-    si->conv_kb = mem_conv_kb;
-    si->ext_kb = mem_ext_kb;
-    si->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
-    si->irq_used = ~pic_mask & ~4u;         /* ohne Kaskade               */
-    si->uptime_s = uptime_s;
-    rom_str(0xF0000UL, 0xFFFF, si->bios_name, 64);
-    rom_str(0xC0000UL, 0x0800, si->vbios_name, 64);
+    sys_info2(si, ~pic_mask & ~4u);         /* ohne Kaskade (k2misc.c)    */
     for (i = 0; i < 6; i++) {
         si->drivers[i][0] = 0;
         if (i < NDRV && drv[i].used)

@@ -3,7 +3,40 @@
  * AT-DOS 6.0 - Seltenes aus kernel.c im zweiten Codesegment (KTEXT2):
  * Echtzeituhr (CMOS) und die Suche nach dem BIOS-Namen fuer MSD.
  */
+#include "../include/fapi_abi.h"
 #include "k2.h"
+
+extern unsigned short mem_conv_kb, mem_ext_kb;   /* start.asm, Real Mode  */
+extern unsigned char cpu_386, bios_date[9], bios_model, vga_ok;
+extern unsigned short fpu_ok, bios_equip, bios_ports[7];
+
+/* DosSysInfo ohne die Treiberliste (die steht in kernel.c) */
+void __far sys_info2(struct fapi_sysinfo __far *si, unsigned irq_used)
+{
+    unsigned i;
+    si->cpu = cpu_386 ? 3 : 2;
+    si->fpu = (unsigned char)fpu_ok;
+    si->vga = vga_ok;
+    si->model = bios_model;
+    for (i = 0; i < 8; i++)
+        si->bios_date[i] = bios_date[i];
+    si->bios_date[8] = 0;
+    si->fdtype[0] = (unsigned char)fd_type(0);
+    si->fdtype[1] = (unsigned char)fd_type(1);
+    si->rsv = 0;
+    si->equip = bios_equip;
+    for (i = 0; i < 4; i++)
+        si->com[i] = bios_ports[i];
+    for (i = 0; i < 3; i++)
+        si->lpt[i] = bios_ports[4 + i];
+    si->conv_kb = mem_conv_kb;
+    si->ext_kb = mem_ext_kb;
+    si->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
+    si->irq_used = irq_used;
+    si->uptime_s = uptime_s;
+    rom_str(0xF0000UL, 0xFFFF, si->bios_name, 64);
+    rom_str(0xC0000UL, 0x0800, si->vbios_name, 64);
+}
 
 /* ---- Echtzeituhr (CMOS) ------------------------------------------------ */
 static unsigned cmos(unsigned r)

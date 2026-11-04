@@ -132,6 +132,8 @@ for i in range(nrel):
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
 open(sys.argv[2], 'wb').write(d[img:])
+if code > 65520:
+    sys.exit('FEHLER: erstes Kernel-Codesegment %d Bytes ueber 65520 (start.asm rundet auf 16)' % code)
 if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or data > 65536:
     sys.exit('FEHLER: Kernel-Code %d/%d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], c3[1], data))
 print('  kernel: %d Bytes Datei, Code %d + %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
