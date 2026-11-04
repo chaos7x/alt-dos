@@ -1243,6 +1243,7 @@ static int scmp_k(const char *a, const char *b)
     return *a - *b;
 }
 static void dcwd_copy(int t, int from);
+static void std_set(int t, int from);
 static int box_reuse(const char *cmd, int s)
 {
     int y;
@@ -1261,6 +1262,7 @@ static int box_reuse(const char *cmd, int s)
     task[y].drive = task[current].drive;
     scopy(task[y].cwd, task[current].cwd, IFS_PATHLEN);
     dcwd_copy(y, current);
+    std_set(y, current);                /* Umleitung des Aufrufers       */
     park_owner[y] = 0;
     task[y].parent = current;
     task[y].session = s;
@@ -1368,7 +1370,7 @@ static void dcwd_copy(int t, int from)
 static int task_create(const char *cmd, int session, int parent, int from)
 {
     static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
-    int t, err, d, i;
+    int t, err, d;
 
     for (t = 0; t < NTASK; t++)
         if (task[t].state == T_FREE)
@@ -1400,10 +1402,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].child_rc = 0;
     task[t].hold = 0;
     task[t].want_lock = 0;
-    for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
-        task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
-        of_ref(task[t].std[i]);
-    }
+    std_set(t, from);                           /* Standard-Handles erben */
     if (task[t].v86)
         v86_start(t, session);              /* Vollbild, B800 = Puffer  */
     task[t].state   = T_READY;
@@ -1451,10 +1450,7 @@ static void task_end(int t)
             files[i].owner = -1;
             of_release(i);                  /* Datei: Groesse ins Verzeichnis */
         }
-    for (i = 0; i < 3; i++) {               /* Standard-Handles freigeben */
-        of_release(task[t].std[i]);
-        task[t].std[i] = CONS;
-    }
+    std_set(t, -1);                         /* Standard-Handles freigeben */
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -1938,6 +1934,17 @@ static void of_ref(int k)
 {
     if (k != CONS)
         files[k].refs++;
+}
+
+/* Handles 0-2 von t: alte freigeben, die von from (< 0: Konsole) nehmen */
+static void std_set(int t, int from)
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        of_release(task[t].std[i]);
+        task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
+        of_ref(task[t].std[i]);
+    }
 }
 
 static const char *drv_name(int d);
@@ -3499,6 +3506,7 @@ int box_ctl(unsigned op, unsigned a)
         int p = task[current].parent;
         if (p >= 0 && task[p].session == task[current].session && !task[current].bg) {
             v86_park(current);
+            std_set(current, -1);       /* Umleitung zu (Datei frei)     */
             task[p].child_rc = (unsigned char)a;
             if (task[p].state == T_WAIT)
                 task[p].state = T_READY;

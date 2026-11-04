@@ -2105,9 +2105,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   vgabios`, Debugger-Build: `c` über stdin, `display_library: x` unter
   Xvfb, Bilder mit `import`, `BIOS-bochs-legacy` – das latest-BIOS stürzt
   in rombios32 ab, `port_e9_hack`, Bochs-eigene SB16 aus: DOOM hing damit
-  auch ohne PVI). Offen dabei gesehen: nach `DOOM > T.TXT` meldet
-  `TYPE T.TXT` „wird gerade geschrieben“ – die geparkte Box hält die
-  Umleitung offen.
+  auch ohne PVI). Dabei gesehen und behoben: nach `DOOM > T.TXT` meldete
+  `TYPE T.TXT` „wird gerade geschrieben“ – die geparkte Box hielt die
+  Umleitung offen. Jetzt `std_set(t, from)` (kernel.c): BOX_PARK gibt
+  die Handles 0–2 frei (Konsole), box_reuse übernimmt die des Aufrufers;
+  task_create/task_end nutzen dieselbe Hilfe. In QEMU geprüft: zweimal
+  `HALLO.COM > X.TXT` + `TYPE X.TXT`, danach `DEL X.TXT`.
   Vom Nutzer auf dem P3B-F (Pentium II) in 86Box bestätigt: DOOM 1.9 mit
   Sound Blaster läuft flüssig, auch bei Kämpfen.
   AUD_CLOSE nur im
