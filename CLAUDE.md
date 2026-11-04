@@ -1992,6 +1992,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   JT.COM (Zähler im eigenen INT 8 bei 349 Hz): vorher über alle Phasen
   verteilt, jetzt fast immer kurz nach dem Nachladen. Digger, Uhr (Uptime
   gleich), DOOM 1.2 Timedemo geprüft; hörbar nur in 86Box.
+  Danach (Build 355) „immer noch leicht verzerrt“: Digger misst die Zeit
+  in einer Schleife „CLI; Latch; IN 40h; IN 40h; STI“ – vier Fallen mit
+  virtuellem IF aus, ein Takt in diesem Fenster kam erst nach dem STI.
+  Jetzt VME (CR4 Bit 0, Pentium+, CPUID 1 EDX Bit 1 wie PVI) für Boxen
+  ohne DPMI: CLI/STI/PUSHF/POPF/IRET (16 Bit) laufen ohne Falle auf
+  EFLAGS.VIF, INT n fängt weiter der Monitor (Umleitungs-Bitmap `irb[32]`
+  im TSS vor der I/O-Bitmap, ganz 1). `vme_in` (Eintritt v86_exc/
+  v86_tick, nur wenn `vme_on[t]`) holt VIF nach vfl, `vme_out` (Ausgang
+  rc 0 und v86_tick) legt vfl nach VIF, VIP bei wartendem Interrupt
+  (dann trappt das STI/POPF/IRET, das IF einschaltet). Andere Ausgänge
+  (PM, DPMI) lassen VME aus (vme_in löscht das Bit in `pvi_t`, der
+  nächste pvi_cr4 stellt CR4). `pvi_t`/`pvi_cur` sind jetzt Bitmasken
+  (1 VME, 2 PVI), pvi_sw `and cl,0FCh`. Mit TF (STI-Einzelschritt) kein
+  VME. INI `PVI=OFF` schaltet beides ab. QEMU-TCG kennt VME nicht (dort
+  unverändert, Digger/BOXTEST/COMMAND geprüft); in Bochs (p2_klamath)
+  geprüft: VME aktiv (Zähler über Port E9h), Digger-Titel läuft, DOOM 1.9
+  Timedemo durch.
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),

@@ -80,6 +80,7 @@ struct tss386 {
     unsigned long eax, ecx, edx, ebx, esp, ebp, esi, edi;
     unsigned long es, cs, ss, ds, fs, gs, ldt;
     unsigned short trap, iomap;
+    unsigned char  irb[32];             /* VME: INT n umleiten (alles 1 = Falle) */
     unsigned char  iob[126];            /* I/O-Bitmap Ports 0-3DFh + Ende (FFh) */
 };
 extern struct tss386 tss[NTASK];        /* v86.c: VGA-Ports der Box freigeben */

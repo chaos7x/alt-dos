@@ -828,8 +828,8 @@ irq_other:
 ; ---------------------------------------------------------------------------
 ; Hilfsroutinen fuer C
 
-; void pvi_sw(int t) - CR4.PVI fuer den naechsten Task (v86.c: pvi_t[t]
-; nur 1, wenn die CPU es kann; pvi_cur = Stand in CR4)
+; void pvi_sw(int t) - CR4.VME/PVI fuer den naechsten Task (v86.c: pvi_t[t]
+; Bit 0 VME, Bit 1 PVI, nur wenn die CPU es kann; pvi_cur = Stand in CR4)
 global pvi_sw_
 extern _pvi_t, _pvi_cur
 pvi_sw_:
@@ -841,8 +841,7 @@ pvi_sw_:
         mov     [_pvi_cur], al
         push    ecx
         db      0Fh, 20h, 0E1h          ; mov ecx, cr4
-        and     cl, 0FDh
-        add     al, al
+        and     cl, 0FCh                ; Bit 0 VME, Bit 1 PVI
         or      cl, al
         db      0Fh, 22h, 0E1h          ; mov cr4, ecx
         pop     ecx

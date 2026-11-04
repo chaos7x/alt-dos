@@ -378,7 +378,8 @@ und PC-DOS.
   `POPF_PATCH` (POPF nach CLI wird zur Falle, damit das virtuelle IF
   stimmt), `SB_IRQ_IDLE` (SB-Leitung ohne Handler ruht),
   `IF_WATCHDOG` (IF gilt nach 3 Takten ohne STI wieder als an), `PVI`
-  (ab Pentium: CLI/STI eines DPMI-Programms ohne Falle über CR4.PVI),
+  (ab Pentium: CLI/STI ohne Falle – DPMI-Programme über CR4.PVI, sonst
+  über CR4.VME wie OS/2 2.11/Windows 95; `OFF` schaltet beides ab),
   `IDLE_SENSITIVITY=n` (0–100 wie OS/2, Vorgabe 75, 100 = aus: wer im
   Takt öfter leer die Tastatur, die Uhr oder den Strahlrücklauf abfragt,
   gibt die Zeitscheibe ab; ohne Angabe nicht bei Spielen mit eigenem

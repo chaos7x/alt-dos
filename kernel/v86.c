@@ -197,6 +197,9 @@ static unsigned long ivt_save[NTASK][sizeof(hwvec)];    /* Kerneltakt des letzte
 static int pm_hooked(int t, unsigned n);
 static void dp_hwint(struct v86_iret *r, int t);
 static void pvi_in(struct v86_iret *r, int t);
+static void vme_in(struct v86_iret *r, int t);
+static unsigned char vme_on[NTASK];     /* VIF gilt (letzter Ruecksprung mit VME) */
+static void vme_out(struct v86_iret *r, int t);
 static void pvi_out(struct v86_iret *r, int t);
 static int box_fg(int t);
 static void blink_hw(int off);
@@ -243,6 +246,8 @@ static unsigned emb_free_pg(int t);
 #define HK_PVI  8
 #define HK_ADLIB 16                     /* ADLIB_COPY=ON (Bit = an!)     */
 #define HK_HWT   32                     /* HW_TIMER=ON (Bit = an!)       */
+#define CR4_VME 1
+#define CR4_PVI 2
 unsigned char pvi_t[NTASK], pvi_cur;    /* je Task / gerade in CR4       */
 static signed char pvi_ok = -1;         /* CPU kann PVI (CPUID 1: VME)   */
 static unsigned long pvi_back[NTASK];   /* PVI erst wieder ab diesem Takt */
@@ -254,7 +259,7 @@ static unsigned long cpu_feat(void);    /* CPUID 1: EDX                  */
 #pragma aux cpu_feat = "mov eax,1" 0x0F 0xA2 "mov eax,edx" "shr edx,16" \
     __value [__dx __ax] __modify [__ax __bx __cx __dx];
 static void k2_cr4(unsigned on);
-#pragma aux k2_cr4 = 0x0F 0x20 0xE1 "and cl,0FDh" "or cl,al" \
+#pragma aux k2_cr4 = 0x0F 0x20 0xE1 "and cl,0FCh" "or cl,al" \
     0x0F 0x22 0xE1 __parm [__ax] __modify [__cx];
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
@@ -577,6 +582,8 @@ unsigned long __far v86_create(int t, unsigned kb)
             put32(SCRATCH2, 0x100 + i, PG_LIN(p) | PTE_BOX);
     }
     vfl[t] = FL_IF;
+    vme_on[t] = 0;
+    pvi_t[t] &= ~CR4_VME;
     visr[t] = vimr[t] = 0;
     kq_h[t] = kq_t[t] = 0;
     pit_rl[t] = 0;
@@ -1810,9 +1817,11 @@ void __far v86_tick(struct v86_iret *r)
     if (t < 0 || !pt_box[t])
         return;
     from_tick = 1;                              /* je irq0 hoechstens ein */
-    if (r->eflags & 0x20000UL)                  /* Takt (sonst schachteln */
-        inject(r, t);                           /* nachgeholte Takte, DOS/4GW: */
-    else {                                      /* "transfer stack overflow") */
+    if (r->eflags & 0x20000UL) {                /* Takt (sonst schachteln */
+        vme_in(r, t);                           /* nachgeholte Takte, DOS/4GW: */
+        inject(r, t);
+        vme_out(r, t);
+    } else {                                      /* "transfer stack overflow") */
         pvi_in(r, t);                           /* DPMI-Programm (Ring 3) */
         vga_freeze(t);
         if (pit_rl[t])
@@ -5064,13 +5073,53 @@ static void pvi_cr4(int t)
 {
     if (pvi_cur != pvi_t[t]) {
         pvi_cur = pvi_t[t];
-        k2_cr4(pvi_cur ? 2 : 0);
+        k2_cr4(pvi_cur);
     }
+}
+
+/* VME (CR4 Bit 0, ab Pentium, wie OS/2 2.11/Windows 95): in einer Box
+   ohne DPMI setzen CLI/STI und 16-Bit-PUSHF/POPF/IRET nur EFLAGS.VIF,
+   ohne Falle; INT n faengt weiter der Monitor (Umleitungs-Bitmap im TSS
+   ganz 1). Das virtuelle IF lebt dann in VIF: vme_in holt es beim
+   Eintritt (v86_exc, v86_tick), vme_out legt es beim Ruecksprung zurueck
+   und setzt VIP, wenn ein Interrupt wartet (das naechste STI/POPF/IRET,
+   das IF einschaltet, trappt dann). Anlass: Diggers Zaehlerschleife
+   "CLI; Latch; IN; IN; STI" - waehrend der Fallen war IF aus, ein Takt
+   kam verspaetet, der Lautsprecher-Ton klang leicht verzerrt. */
+
+static void vme_in(struct v86_iret *r, int t)
+{
+    if (!vme_on[t])
+        return;
+    vme_on[t] = 0;
+    pvi_t[t] &= ~CR4_VME;               /* CR4 stellt der naechste Ausgang */
+    if (r->eflags & FL_VIF)
+        vfl[t] |= FL_IF;
+    else
+        vfl[t] &= ~FL_IF;
+    r->eflags &= ~(FL_VIF | FL_VIP);
+}
+
+static void vme_out(struct v86_iret *r, int t)
+{
+    if (pvi_ok < 0)
+        pvi_ok = (signed char)(cpu_flid() && (cpu_feat() & 2));
+    r->eflags &= ~(FL_VIF | FL_VIP);
+    if (pvi_ok && !dp_on[t] && !(box_hk[t] & HK_PVI) && !(r->eflags & FL_TF)) {
+        if (vfl[t] & FL_IF)
+            r->eflags |= FL_VIF;
+        else if (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])
+            r->eflags |= FL_VIP;
+        vme_on[t] = 1;
+        pvi_t[t] |= CR4_VME;
+    } else
+        pvi_t[t] &= ~CR4_VME;
+    pvi_cr4(t);
 }
 
 static void pvi_in(struct v86_iret *r, int t)
 {
-    if (!pvi_cur || (r->cs & 3) != 3)
+    if (!(pvi_cur & CR4_PVI) || (r->cs & 3) != 3)
         return;
     if (!(r->eflags & FL_VIF)) {
         if (vfl[t] & FL_IF)
@@ -5082,12 +5131,12 @@ static void pvi_in(struct v86_iret *r, int t)
 
 static void pvi_out(struct v86_iret *r, int t)
 {
-    if (pvi_ok && dp_on[t] && !pvi_t[t] && !(box_hk[t] & HK_PVI) &&
+    if (pvi_ok && dp_on[t] && !(pvi_t[t] & CR4_PVI) && !(box_hk[t] & HK_PVI) &&
         get_ticks() - pvi_back[t] >= 100)
-        pvi_t[t] = 1;
+        pvi_t[t] |= CR4_PVI;
     pvi_cr4(t);
     r->eflags &= ~(FL_VIF | FL_VIP);
-    if (!pvi_t[t] || (r->cs & 3) != 3)
+    if (!(pvi_t[t] & CR4_PVI) || (r->cs & 3) != 3)
         return;
     if (vfl[t] & FL_IF)
         r->eflags |= FL_VIF;
@@ -5110,8 +5159,8 @@ static void dp_hwint(struct v86_iret *r, int t)
             return;
         }
         vfl[t] |= FL_IF;
-        if (pvi_t[t] && dp_npatch[t] < NPATCH) {    /* POPF ohne Patch: */
-            pvi_t[t] = 0;                       /* eine Weile ohne PVI,  */
+        if ((pvi_t[t] & CR4_PVI) && dp_npatch[t] < NPATCH) {  /* POPF ohne Patch: */
+            pvi_t[t] &= ~CR4_PVI;                      /* eine Weile ohne PVI,  */
             pvi_back[t] = get_ticks();          /* damit das CLI trappt  */
         }
     }
@@ -5438,7 +5487,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
             else
                 f->r.esp = (f->r.esp & 0xFFFF0000UL) | ((sp + (o32 ? 4 : 2)) & 0xFFFF);
             f->r.eflags = (f->r.eflags & ~0x0CD5UL) | (v & 0x0CD5UL);   /* CF..OF, DF */
-            if (pvi_cur ? o32 && (v & FL_VIF) : dp_popf_if[t])
+            if ((pvi_cur & CR4_PVI) ? o32 && (v & FL_VIF) : dp_popf_if[t])
                 vfl[t] |= FL_IF;                /* IF wie vor dem CLI    */
             f->r.eip++;
             return 0;
@@ -5705,9 +5754,12 @@ unsigned __far v86_exc(struct v86_frame *f)
     int t = kf_box_ctl(BOX_TASK, 0);
     unsigned rc;
 
+    if (t >= 0)
+        vme_in(&f->r, t);
     if (t >= 0 && sti_step[t] && f->vec == 1) { /* Befehl nach STI fertig */
         irq_off();
         inject(&f->r, t);
+        vme_out(&f->r, t);
         from_tick = 0;
         return 0;
     }
@@ -5731,6 +5783,7 @@ unsigned __far v86_exc(struct v86_frame *f)
             f->r.eflags |= FL_TF;
         }
         sti_sh = 0;
+        vme_out(&f->r, t);
     } else if (rc == 2) {
         irq_off();                      /* DPMI: weiter im PM            */
         pvi_out(&f->r, t);

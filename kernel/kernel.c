@@ -949,8 +949,9 @@ static void tss_init(int t, unsigned long cr3)
     ts->esp0  = (unsigned short)&kstack[t][KSTACK];
     ts->cr3   = cr3;
     ts->iomap = (unsigned short)((char *)ts->iob - (char *)ts);
-    for (w = (unsigned short *)ts->iob; w < (unsigned short *)(ts + 1); w++)
-        *w = 0xFFFF;                    /* alle Ports gesperrt (#GP)      */
+    for (w = (unsigned short *)ts->irb; w < (unsigned short *)(ts + 1); w++)
+        *w = 0xFFFF;                    /* alle Ports gesperrt (#GP), jedes
+                                           INT n faengt der Monitor (VME) */
 }
 
 /* DOS-Programm (.COM) in einer DOS-Box (V86, Phase 3 Stufe 1): eigenes
