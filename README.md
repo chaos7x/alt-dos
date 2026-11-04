@@ -340,7 +340,9 @@ und PC-DOS.
   schreiben in einen Schatten, Palette, CRTC und die übrigen VGA-Register
   bildet der Kernel nach; beim Zurückholen kommt das Bild mit allem, was
   hinten gezeichnet wurde. Planare Modi, Mode X, SVGA und Aufrufe des
-  Video-BIOS halten die Box an, bis sie wieder vorn ist. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
+  Video-BIOS halten die Box an, bis sie wieder vorn ist. Test:
+  `START \DEMO\BGTEST [4]` (eine Zeile je Takt, bei Zeile 100 Farbe
+  per Port auf Rot), wegschalten, nach ein paar Sekunden zurück. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip

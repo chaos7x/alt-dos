@@ -2194,7 +2194,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   freie Einträge in die 4309h-Tabelle (`xms_table`), damit die Summe
   die Grenze trifft (heute fehlen ~12K).
   Virtuelle VGA, Stufe 2 – Grafik-Boxen im Hintergrund (in QEMU geprüft:
-  BG.COM 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
+  `\DEMO\BGTEST.COM` (apps/bgtest.asm, `4` = CGA) 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
   Farbe 1 per 3C8h/3C9h auf Rot – START, Alt+Esc weg bei Zeile 71, nach
   5 s zurück bei Zeile 169, ganzes Bild rot; BG4.COM dasselbe in CGA-
   Modus 4: 70 -> 195 Zeilen; CMD vorn sauber; DOOM (Mode Y) hält wie
