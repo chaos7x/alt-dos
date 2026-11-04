@@ -247,7 +247,9 @@ und PC-DOS.
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
 - je Task ein 286-TSS und eine eigene LDT, Ring 3, IOPL 0
-- Speicherverwaltung in 4-KB-Seiten bis 1 GB (6.0): Speicherkarte des
+- Speicherverwaltung in 4-KB-Seiten bis knapp 4 GB (6.0; was ein 32-Bit-
+  Adressraum ohne PAE erreicht – auf einer VM mit 4 GB meist 3–3,5 GB,
+  der Rest liegt oberhalb 4 GB): Speicherkarte des
   BIOS per INT 15h E820h (Lücken werden ausgespart), sonst E801h bzw.
   88h; Segmente auch oberhalb 16 MB, per `DosAllocSeg`/`DosFreeSeg`,
   Aufräumen bei Task-Ende; ISA-DMA-Puffer bleiben unter 16 MB
@@ -256,7 +258,9 @@ und PC-DOS.
   Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen
   Speicher; ein Seitenfehler meldet die Adresse. Der Kernel selbst sieht
   den Speicher ab 2 GB (Alias), so gehört der Bereich 0–4 MB frei der
-  jeweiligen DOS-Box
+  jeweiligen DOS-Box. Der Alias reicht bis knapp 2 GB; Speicher darüber
+  erreicht der Kernel über umlegbare Seitenfenster und nutzt ihn für
+  DOS-Boxen (auch XMS/EMS/DPMI) und den Platten-Cache
 - präemptiver Scheduler (6.0) mit Hardware-Taskwechsel (`JMP` auf TSS):
   der Takt-Interrupt unterbricht ein Programm nach seiner Zeitscheibe
   (50 ms), auch wenn es nur rechnet; im Kernel wird nicht unterbrochen,

@@ -224,6 +224,8 @@ void vio_dirty(int s);                          /* ganze Sitzung neu zeigen */
 unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);
 unsigned long __far paging_cr3(void);          /* Seitenverzeichnis des Kernels */
+unsigned long __far pg_win(unsigned sel, unsigned long base, unsigned limit);
+extern unsigned win_csel;                       /* Cache-Fenster fuer pg_win */
 
 /* v86.c (KTEXT2): DOS-Boxen (V86) */
 struct v86_frame;

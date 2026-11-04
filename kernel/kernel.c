@@ -210,9 +210,18 @@ void gdt_build(void)
 }
 
 /* ---- Kernel-Hilfen ----------------------------------------------------- */
+/* Fenster-Selektor auf physischen Speicher: unter MEM_LOW_PG ueber den
+   Kernel-Alias, darueber ueber ein Seitenfenster (paging.c pg_win) */
+static void swin(unsigned sel, unsigned long base, unsigned limit)
+{
+    if (base + limit >= PG_LIN(MEM_LOW_PG))
+        base = pg_win(sel, base, limit);
+    set_desc(sel >> 3, base, limit, ACC_KDATA);
+}
+
 void scratch_map(unsigned long base, unsigned limit)
 {
-    set_desc(SCRATCH >> 3, base, limit, ACC_KDATA);
+    swin(SCRATCH, base, limit);
 }
 
 /* SCRATCH/SCRATCH2 sichern und zurueckholen (8 Worte): fuer Kernelteile,
@@ -243,7 +252,7 @@ void win_restore(const unsigned short *b)
 
 void scratch2_map(unsigned long base, unsigned limit)
 {
-    set_desc(SCRATCH2 >> 3, base, limit, ACC_KDATA);
+    swin(SCRATCH2, base, limit);
 }
 
 void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n)
@@ -3732,7 +3741,7 @@ static int bc_chunk_get(unsigned c)
     unsigned k;
     pg_t u;
     bc_growing = 1;                     /* kein bc_reclaim waehrenddessen */
-    u = mem_alloc(BC_CHU);
+    u = mem_alloc_hi(BC_CHU);
     bc_growing = 0;
     if (!u)
         return -1;
@@ -3756,7 +3765,7 @@ void blk_cache_init(unsigned kb)
     bc_msel = kseg_alloc((unsigned long)((kb >> 1) * sizeof(struct bce) + BC_HASH * 2));
     if (!w || !bc_msel)
         return;
-    bc_wsel = w;
+    bc_wsel = win_csel = w;
     bc_n = kb >> 1;
     bc_nch = bc_n / BC_CHB;
     for (i = 0; i < bc_n; i++)
@@ -3836,7 +3845,7 @@ static unsigned bc_hash(int dev, unsigned long blba)
 
 static void bc_win(unsigned i)          /* Fenster auf Block i            */
 {
-    set_desc(bc_wsel >> 3, BC_LIN(i), 2047, ACC_KDATA);
+    swin(bc_wsel, BC_LIN(i), 2047);
 }
 
 static unsigned bc_lookup(int dev, unsigned long blba)

@@ -3,8 +3,10 @@
  * AT-DOS 6.0 - physische Speicherverwaltung in 4-KB-Seiten
  *
  * Seitennummern sind 32 Bit (Seite p = linear p * 4096), bis MEM_MAX_PG
- * (1 GB). Belegung als Bitmap, 1 Bit je Seite, 1 = belegt: bis 256 MB
- * 8 KB fest bei linear 9000h, darueber am Anfang des Speichers ab 1 MB.
+ * (knapp 4 GB). Belegung als Bitmap, 1 Bit je Seite, 1 = belegt: bis
+ * 256 MB 8 KB fest bei linear 9000h, darueber (bis 128 KB, zwei
+ * Selektoren) am Anfang des Speichers ab 1 MB. Ueber MEM_LOW_PG (2 GB -
+ * 4 MB) nur mem_alloc_hi, siehe mem.h.
  *
  * Was frei ist, sagt die Speicherkarte des BIOS (INT 15h E820h, von
  * start.asm im Real Mode abgefragt): nur Bereiche vom Typ 1 (RAM), mit
@@ -15,13 +17,17 @@
 #include <i86.h>
 #include "k2.h"                         /* im zweiten Codesegment       */
 
-#define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
+/* Bitmap bis 128 KB (4 GB): zwei Selektoren, KSEG_IDX(0) und (1) */
+#define BMB(b)      (*(unsigned char __far *)MK_FP(MEMMAP_SEL + \
+                       ((unsigned)((b) >> 16) << 3), (unsigned)(b)))
 
 static pg_t          max_pg;            /* Seiten, die die Bitmap abdeckt */
 static pg_t          free_pg, total_pg, ram_pg;
-static pg_t          hint;              /* ab hier suchen                 */
+static pg_t          hint;              /* ab hier suchen (unter MEM_LOW_PG) */
+static pg_t          hint_hi;           /* ab hier suchen (darueber)      */
+unsigned char        mem_hi_ok;         /* Fenster bereit (paging_init)   */
 
-#define BYTE(p)     bitmap[(unsigned)((p) >> 3)]
+#define BYTE(p)     BMB((p) >> 3)
 #define BIT(p)      (1 << ((unsigned)(p) & 7))
 #define USED(p)     (BYTE(p) & BIT(p))
 
@@ -123,7 +129,7 @@ void __far mem_init(pg_t low, unsigned conv_kb)
         bm_n = (bytes + 4095) >> 12;
         rg_i = 0;
         while (next_range(&a, &e))
-            if (e - a > bm_n) {
+            if (e - a > bm_n && a + bm_n <= MEM_LOW_PG) {
                 bm_pg = a;
                 break;
             }
@@ -132,11 +138,16 @@ void __far mem_init(pg_t low, unsigned conv_kb)
             bytes = MEMMAP_FIX;
             bm_n = 0;
             set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, MEMMAP_FIX - 1, ACC_KDATA);
-        } else
-            set_desc(MEMMAP_SEL >> 3, PG_LIN(bm_pg), 0xFFFF, ACC_KDATA);
+        } else {
+            set_desc(MEMMAP_SEL >> 3, PG_LIN(bm_pg),
+                     bytes > 0x10000UL ? 0xFFFF : (unsigned)(bytes - 1), ACC_KDATA);
+            if (bytes > 0x10000UL)      /* zweite Haelfte (ueber 2 GB)   */
+                set_desc((MEMMAP_SEL >> 3) + 1, PG_LIN(bm_pg) + 0x10000UL,
+                         (unsigned)(bytes - 0x10001UL), ACC_KDATA);
+        }
     }
     for (i = 0; i < bytes; i++)
-        bitmap[(unsigned)i] = 0xFF;
+        BMB(i) = 0xFF;
     free_pg = 0;
 
     /* 3. frei: konventionell ab low, RAM ab 1 MB */
@@ -153,6 +164,7 @@ void __far mem_init(pg_t low, unsigned conv_kb)
         reserve_range(bm_pg, bm_pg + bm_n);
     total_pg = free_pg;
     hint = low;
+    hint_hi = MEM_LOW_PG;
 }
 
 /* Seite 0 ist nie frei: 0 heisst "kein Speicher" */
@@ -182,6 +194,8 @@ static pg_t try_alloc(unsigned n, pg_t from, pg_t to)
             free_pg -= n;
             if (start == hint)
                 hint = start + n;
+            else if (start == hint_hi)
+                hint_hi = start + n;
             return start;
         }
     }
@@ -195,9 +209,23 @@ static pg_t alloc_in(unsigned n, pg_t to)
         return 0;
     if (to > max_pg)
         to = max_pg;
+    if (to > MEM_LOW_PG)                /* darueber nur ueber Fenster    */
+        to = MEM_LOW_PG;
     p = try_alloc(n, hint, to);         /* ab dem Merker, dann von vorn  */
     if (!p && hint > 1)
         p = try_alloc(n, 1, hint + n < to ? hint + n : to);
+    return p;
+}
+
+/* ueber MEM_LOW_PG (nur mit Fenstern, also nach paging_init) */
+static pg_t alloc_hi(unsigned n)
+{
+    pg_t p;
+    if (!mem_hi_ok || max_pg <= MEM_LOW_PG || n == 0 || n > free_pg)
+        return 0;
+    p = try_alloc(n, hint_hi, max_pg);
+    if (!p && hint_hi > MEM_LOW_PG)
+        p = try_alloc(n, MEM_LOW_PG, hint_hi + n < max_pg ? hint_hi + n : max_pg);
     return p;
 }
 
@@ -207,6 +235,17 @@ pg_t __far mem_alloc(unsigned n)
 {
     pg_t p;
     while ((p = alloc_in(n, max_pg)) == 0 && kf_reclaim(n))
+        ;
+    return p;
+}
+
+/* Box-Speicher, XMS/EMS/DPMI, Platten-Cache: zuerst ueber 2 GB, damit
+   der gespiegelte Bereich fuer Segmente frei bleibt */
+pg_t __far mem_alloc_hi(unsigned n)
+{
+    pg_t p;
+    while ((p = alloc_hi(n)) == 0 && (p = alloc_in(n, max_pg)) == 0 &&
+           kf_reclaim(n))
         ;
     return p;
 }
@@ -223,7 +262,10 @@ pg_t __far mem_alloc_low(unsigned n)
 void __far mem_free(pg_t start, unsigned n)
 {
     release_range(start, start + n);
-    if (start < hint)
+    if (start >= MEM_LOW_PG) {
+        if (start < hint_hi)
+            hint_hi = start;
+    } else if (start < hint)
         hint = start;
 }
 

@@ -124,6 +124,13 @@ static pg_t vp_alloc(void)
         v86_pages++;
     return p;
 }
+static pg_t vp_alloc_hi(void)           /* Box-Speicher: auch ueber 2 GB */
+{
+    pg_t p = mem_alloc_hi(1);
+    if (p)
+        v86_pages++;
+    return p;
+}
 static void vp_free(pg_t p)
 {
     mem_free(p, 1);
@@ -563,7 +570,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     for (i = 0; i < 1024; i++)
         put32(SCRATCH2, i, i >= 0xC0 && i < 0x100 ? PG_LIN(i) | PTE_ROM : 0);
     for (i = 0; i <= n + 1; i++) {      /* n: Ersatzseite, n+1: BIOS-Seite */
-        p = vp_alloc();
+        p = vp_alloc_hi();
         if (!p) {
             v86_destroy(t);
             return 0;
@@ -3159,9 +3166,8 @@ static void tlb(int t)                  /* Seitentabelle der laufenden Box geaen
         k2_cr3((unsigned)k2_get_cr3(), (unsigned)(k2_get_cr3() >> 16));
 }
 
-static pg_t own_page(void)              /* genullte eigene Seite         */
+static pg_t zero_page(pg_t p)
 {
-    pg_t p = vp_alloc();
     if (p) {
         scratch_map(PG_LIN(p), 4095);
         zero_seg(SCRATCH, 2048);
@@ -3169,12 +3175,23 @@ static pg_t own_page(void)              /* genullte eigene Seite         */
     return p;
 }
 
+static pg_t own_page(void)              /* genullte eigene Seite (Tabellen,
+                                           Verwaltung: unter 2 GB)        */
+{
+    return zero_page(vp_alloc());
+}
+
+static pg_t own_page_hi(void)           /* genullte Seite fuer Box-Daten  */
+{
+    return zero_page(vp_alloc_hi());
+}
+
 static int a20_set(int t, int on)
 {
     unsigned i;
     if (on && !hma_pg[t][0])
         for (i = 0; i < 16; i++)
-            if (!(hma_pg[t][i] = own_page())) {
+            if (!(hma_pg[t][i] = own_page_hi())) {
                 while (i--) {
                     vp_free(hma_pg[t][i]);
                     hma_pg[t][i] = 0;
@@ -3302,7 +3319,7 @@ static int emb_map(int t, unsigned base, unsigned n)
     unsigned i;
     pg_t p;
     for (i = 0; i < n; i++)
-        if (!(p = own_page()) || !lpte_set(t, base + i, PG_LIN(p) | PTE_BOX | PTE_OWN)) {
+        if (!(p = own_page_hi()) || !lpte_set(t, base + i, PG_LIN(p) | PTE_BOX | PTE_OWN)) {
             if (p)
                 vp_free(p);
             emb_unmap(t, base, i);
@@ -3615,7 +3632,7 @@ static void xms(struct v86_frame *f, int t)
             XFAIL(0xB0);
         }
         for (p = 0; p < need; p++) {
-            pg_t q = own_page();
+            pg_t q = own_page_hi();
             if (!q) {
                 while (p--) {
                     vp_free(pte_get(t, at + p) >> 12);
@@ -3746,7 +3763,7 @@ static int ems_grow(int t, unsigned h, unsigned n)   /* n Seiten anhaengen */
         ems_tabmap(t);
         for (s = 0; s < EMS_MAXP && ET(1024 + s) != 0xFF; s++)
             ;
-        if (s == EMS_MAXP || !(p = mem_alloc(4)))
+        if (s == EMS_MAXP || !(p = mem_alloc_hi(4)))
             return 0;
         v86_pages += 4;
         ems_tabmap(t);
@@ -4382,7 +4399,7 @@ static int dmem_map(int t, unsigned long lp, unsigned long n)
     unsigned long i;
     pg_t p;
     for (i = 0; i < n; i++)
-        if (!(p = own_page()) || !lpte_set(t, lp + i, PG_LIN(p) | PTE_BOX | PTE_OWN)) {
+        if (!(p = own_page_hi()) || !lpte_set(t, lp + i, PG_LIN(p) | PTE_BOX | PTE_OWN)) {
             if (p)
                 vp_free(p);
             dmem_unmap(t, lp, i);
@@ -4873,6 +4890,10 @@ static unsigned dp31(struct v86_frame *f, int t)
         return 0;
     case 0x0500: {                              /* freier Speicher       */
         unsigned long fr = mem_free_kb() >> 2;
+        if (fr > 0x3C000UL)             /* mehr als der DPMI-Bereich der Box */
+            fr = 0x3C000UL;             /* (64 MB - 1 GB) geht nicht; ueber */
+                                        /* 2 GB in Byte hielt DOS/4GW den Wert */
+                                        /* fuer negativ ("not enough memory") */
         lin = sel_base(t, es_[0]) + EDI32;
         lwr(lin, fr << 12, 4);
         for (i = 1; i < 12; i++)
@@ -5548,7 +5569,7 @@ static int rom_cow(struct v86_frame *f, int t)
     e = get32(SCRATCH2, i);
     if ((e & (PTE_P | PTE_W)) != PTE_P || (e & PTE_OWN))
         return 0;
-    pg = vp_alloc();
+    pg = vp_alloc_hi();
     if (!pg)
         return 0;
     scratch_map(e & 0xFFFFF000UL, 4095);

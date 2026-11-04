@@ -2009,6 +2009,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   unverändert, Digger/BOXTEST/COMMAND geprüft); in Bochs (p2_klamath)
   geprüft: VME aktiv (Zähler über Port E9h), Digger-Titel läuft, DOOM 1.9
   Timedemo durch.
+  Phase 5, Schritt 1 erledigt – Speicher bis knapp 4 GB über Fenster
+  (in QEMU geprüft: 3 GB erkannt, DOOM 1.2 Timedemo mit Box-/DPMI-
+  Speicher über 2 GB, XCOPY über den Cache über 2 GB + CHKDSK +
+  SHUTDOWN, fsck sauber, Inhalte gleich; isapc 4 MB, 512 MB; -m 3584
+  liefert unter i440fx 3 GB, der Rest liegt über 4 GB = ohne PAE nicht
+  erreichbar): mem.h `MEM_MAX_PG` 0xFFFFF, `MEM_LOW_PG` 0x7FC00 (2 GB -
+  4 MB). Der Alias spiegelt nur noch darunter (paging.c: höchstens 511
+  Seitentabellen); PDE 1023 (linear FFC00000h, kopieren die Boxen mit)
+  zeigt auf `win_pt` mit vier Plätzen zu 32 Seiten: SCRATCH, SCRATCH2,
+  Cache-Fenster (`win_csel` = bc_wsel), Rest. `pg_win(sel, base,
+  limit)` legt den Platz auf die 64-KB-Gegend um (nur wenn sie sich
+  ändert, dann CR3 neu laden – kein INVLPG, 386) und liefert die Basis
+  für set_desc; kernel.c `swin` nimmt es für scratch_map/scratch2_map/
+  bc_win, sobald base + limit über MEM_LOW_PG liegt. mem.c: `mem_alloc`
+  nur unter MEM_LOW_PG (Segmente/Deskriptoren über den Alias),
+  `mem_alloc_hi` zuerst darüber (`hint_hi`, erst nach paging_init:
+  `mem_hi_ok`) – nur für Speicher, den der Kernel ausschließlich über
+  diese Fenster oder Seitentabellen einer Box anfasst: Box-Seiten
+  (`vp_alloc_hi`/`own_page_hi`: konventionell, HMA, UMB, EMB, DPMI,
+  ROM-Kopien), EMS-Seiten, Platten-Cache. Seitentabellen, Verzeichnisse,
+  DPMI-LDT/Zustandsseiten, OPL-Kopie bleiben unten. Bitmap bis 128 KB
+  über zwei Selektoren (KSEG_IDX(0)/(1), kseg_alloc überspringt belegte).
+  Regel: was ohne Kernelsperre über SCRATCH geht (vio, v86_poll), bildet
+  nur Speicher unter MEM_LOW_PG ab – win_restore stellt nur Deskriptoren
+  zurück, nicht die Seiten eines Platzes. Dabei gefunden: DPMI 0500h
+  meldete 3 GB frei, in Byte über 2^31 – DOS/4GW las das als negativ
+  („DOS/16M error [6] not enough memory“); jetzt gekappt auf den DPMI-
+  Bereich der Box (64 MB–1 GB). Erstes Codesegment 65.421 Byte.
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und
