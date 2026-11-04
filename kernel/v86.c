@@ -42,7 +42,7 @@
  * nur zugestellt, wenn das Programm ihn umgebogen hat (sonst liest es
  * Tasten ueber INT 16h).
  *
- * Laeuft im zweiten Codesegment (KTEXT2), im Kontext des Box-Tasks: dann
+ * Laeuft im dritten Codesegment (KTEXT3), im Kontext des Box-Tasks: dann
  * ist das CR3 der Box geladen und ihr Speicher linear 0-10FFEFh ueber das
  * rohe Fenster VWIN erreichbar.
  */

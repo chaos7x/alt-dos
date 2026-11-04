@@ -15,6 +15,7 @@ cpu 386
 KCODE   equ 0x08
 KDATA   equ 0x10
 KCODE2  equ 0x1C8                       ; zweites Codesegment (kern.h)
+KCODE3  equ 0x218                       ; drittes Codesegment (v86.c, redir.c)
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16
@@ -23,6 +24,9 @@ segment _TEXTEND public class=CODE align=1 use16
 ; Selektoren der Fernaufrufe fest ein (Kernel liegt immer bei 10000h)
 segment KTEXT2 public class=CODE align=16 use16
 segment KTEXT2END public class=CODE align=1 use16
+; drittes Codesegment (KCODE3): DOS-Boxen (v86.c, redir.c), wcc -nt=KTEXT3
+segment KTEXT3 public class=CODE align=16 use16
+segment KTEXT3END public class=CODE align=1 use16
 segment _DSTART public class=DATA align=16 use16
 segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
@@ -31,6 +35,7 @@ segment _BSS   public class=BSS  align=2 use16
 segment _BSSEND public class=BSS align=2 use16
 group CGROUP _TEXT _TEXTEND
 group CGROUP2 KTEXT2 KTEXT2END
+group CGROUP3 KTEXT3 KTEXT3END
 group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
 extern preload_, reboot_
@@ -85,11 +90,15 @@ _start:
           db "Auf dem 80286 l", 0x84, "uft AT-DOS 5.x.", 13, 10, 0
 .is386:
         cli
-        ; Datensegment: erster Paragraph hinter beiden Codesegmenten
+        ; Datensegment: erster Paragraph hinter den drei Codesegmenten
         mov     ax, code_end
         add     ax, 15
         shr     ax, 4
         mov     bx, code2_end
+        add     bx, 15
+        shr     bx, 4
+        add     ax, bx
+        mov     bx, code3_end
         add     bx, 15
         shr     bx, 4
         add     ax, bx
@@ -523,7 +532,7 @@ exc_common:
         mov     es, ax
         cld
         mov     ax, sp                  ; -> struct v86_frame
-        call    KCODE2:v86_exc_         ; (Rahmen) -> 0 erledigt
+        call    KCODE3:v86_exc_         ; (Rahmen) -> 0 erledigt
         mov     [_fault_vm], al
         cmp     al, 2                   ; 2: weiter im Protected Mode (DPMI)
         je      .topm
@@ -565,7 +574,7 @@ exc_common:
         cld
         mov     ax, sp
         add     ax, 4                   ; -> struct v86_frame (ab ES)
-        call    KCODE2:dpmi_trap_       ; 0 weiter, 1 Fehler, 2 nach V86
+        call    KCODE3:dpmi_trap_       ; 0 weiter, 1 Fehler, 2 nach V86
         cmp     al, 1
         je      .r3f
         cmp     al, 2
@@ -652,7 +661,7 @@ irq0:
         test    byte [ss:bx+42], 3      ; (Ring 3): nur Einfrieren
         jz      .nov                    ; pruefen (Grafik im Hintergrund)
 .tk:    lea     ax, [bx+38]
-        call    KCODE2:v86_tick_
+        call    KCODE3:v86_tick_
 .nov:   pop     es
         popad
         jmp     .ret
@@ -1201,12 +1210,17 @@ code_end:
 segment KTEXT2END
 code2_end:
 
+segment KTEXT3END
+code3_end:
+
 segment _DATA
 
 global _kcode_size
 _kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)
 global _kcode2_size
 _kcode2_size: dw code2_end              ; zweites Codesegment (CGROUP2)
+global _kcode3_size
+_kcode3_size: dw code3_end              ; drittes Codesegment (CGROUP3)
 global _kdata_size
 _kdata_size: dw bss_end                 ; Datengroesse samt BSS (DGROUP)
 

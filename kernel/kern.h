@@ -38,7 +38,9 @@
 #define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
 #define RWIN_IDX(t) (KCODE2_IDX + 2 + (t))   /* Fenster je Box (redir.c) */
 #define RWIN_SEL(t) (RWIN_IDX(t) * 8)
-#define NGDT        (KCODE2_IDX + 2 + NTASK)
+#define KCODE3_IDX  (KCODE2_IDX + 2 + NTASK)  /* drittes Codesegment (v86.c, redir.c) */
+#define KCODE3      0x218           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
+#define NGDT        (KCODE3_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -49,6 +51,8 @@
 extern unsigned kcode_size;         /* start.asm: Groesse von CGROUP       */
 extern unsigned kcode2_size;        /* start.asm: Groesse von CGROUP2      */
 #define KCODE2_LIN  (KCODE_LIN + ((kcode_size + 15) & ~15u))
+extern unsigned kcode3_size;        /* start.asm: Groesse von CGROUP3      */
+#define KCODE3_LIN  (KCODE2_LIN + ((kcode2_size + 15) & ~15u))
 extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
 extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
 #define KDATA_LIN   ((unsigned long)kdata_seg << 4)

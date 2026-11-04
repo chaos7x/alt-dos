@@ -172,6 +172,7 @@ void gdt_build(void)
     set_desc(0, 0, 0, 0);
     set_desc(1, KCODE_LIN, ((kcode_size + 15) & ~15u) - 1, ACC_KCODE);
     set_desc(KCODE2_IDX, KCODE2_LIN, kcode2_size ? kcode2_size - 1 : 0, ACC_KCODE);
+    set_desc(KCODE3_IDX, KCODE3_LIN, kcode3_size ? kcode3_size - 1 : 0, ACC_KCODE);
     set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
     set_desc(3, 0xB8000UL, 80 * 50 * 2 - 1, ACC_KDATA);   /* bis 50 Zeilen */
 
