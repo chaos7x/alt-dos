@@ -2187,6 +2187,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   + XMS-Grenze, gekappt auf belegte EMBs + freien Systemspeicher (sonst
   bei -1 riesige „belegt“-Werte). In QEMU geprüft: 2.112 KB (Vorgabe),
   mit -1 bei 16 MB 13.660 KB = 64 + 13.596 frei.
+  Vom Nutzer in 86Box bestätigt (Build 339): 386/4 MB mit zwei Boxen
+  1.204K/92K/1.112K, 16-MB-VM mit einer und zwei Boxen 2.036K/92K/
+  1.944K (92K = vermutlich FreeCOM „XMS_Swap“). Vorgemerkt (Kosmetik,
+  vom Nutzer für die nächste Phase): Lücken zwischen EMBs als eigene
+  freie Einträge in die 4309h-Tabelle (`xms_table`), damit die Summe
+  die Grenze trifft (heute fehlen ~12K).
   Offen:
   Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
