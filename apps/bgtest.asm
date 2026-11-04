@@ -2,7 +2,8 @@
 ; BGTEST.COM - Grafik-Box im Hintergrund (AT-DOS 6.0, virtuelle VGA Stufe 2)
 ;
 ; Zeichnet je BIOS-Takt (18,2 je Sekunde) eine Zeile von oben nach unten
-; und stellt bei Zeile 100 die Farbe 1 per Port 3C8h/3C9h auf Rot. Mit
+; und stellt bei Zeile 100 die Farbe 1 per Port 3C8h/3C9h auf Rot (CGA:
+; den DAC-Eintrag aus Attributregister 1, per 3C0h/3C1h gelesen). Mit
 ; START in eigener Sitzung starten, mit Alt+Esc wegschalten, spaeter
 ; zurueck: laeuft die Box hinten weiter, ist das Bild inzwischen weiter
 ; gewachsen (und rot, falls Zeile 100 hinten erreicht wurde).
@@ -59,8 +60,21 @@
         rep     stosb
 .pal:   cmp     bx, 100
         jne     .n
-        mov     dx, 3C8h                ; Farbe 1 -> rot
-        mov     al, 1
+        mov     ah, 1                   ; 13h: DAC-Eintrag 1
+        cmp     byte [cga], 0
+        je      .dac
+        mov     dx, 3DAh                ; CGA: Farbe 1 zeigt ueber das
+        in      al, dx                  ; Attributregister 1 auf einen
+        mov     dx, 3C0h                ; anderen DAC-Eintrag (BIOS:
+        mov     al, 21h                 ; 13h) - den nehmen (Index mit
+        out     dx, al                  ; Bit 5, Bild bleibt an)
+        inc     dx
+        in      al, dx
+        mov     ah, al
+        mov     dx, 3DAh
+        in      al, dx
+.dac:   mov     dx, 3C8h                ; Farbe 1 -> rot
+        mov     al, ah
         out     dx, al
         inc     dx
         mov     al, 63

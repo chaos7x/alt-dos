@@ -2219,6 +2219,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Lehre: `for (o = 0; o < 2 * n; ...)` mit n = 8000h – 2 * n ist in
   16 Bit 0, die Schleife lief nie (der Schatten blieb leer, beim
   Zurückholen überschrieb er das Bild).
+  Vom Nutzer in 86Box bestätigt: BGTEST wächst hinten weiter und wird
+  rot. `BGTEST 4` blieb cyan – Testfehler: in CGA-Modus 4 zeigt Farbe 1
+  über Attributregister 1 auf DAC 13h, nicht DAC 1; BGTEST liest jetzt
+  das Attributregister (3DAh, 3C0h = 21h, 3C1h) und stellt diesen
+  Eintrag um (prüft so auch das Lesen der Attributkopie hinten; in QEMU
+  danach rot).
   Offen: planare Modi und Mode X hinten (bräuchte Fallen je Zugriff oder
   Umblenden je Map Mask), Palette über INT 10h 10xxh hinten nachbilden.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
