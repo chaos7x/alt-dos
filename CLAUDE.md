@@ -2003,10 +2003,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (fm_load) – PLAY spielt an der Stelle weiter. Erst melden, dann den
   ersten Wert der Box schreiben (sonst löscht AR_FMRESET ihn). Grenze:
   die Box schreibt direkt (Fallen auf 388h kosteten zu viel, Musik-
-  treiber lesen den Status Dutzende Male je Register), daher kein
-  Schatten der Box – kommt sie nach vorn zurück, nachdem ein FAPI-
-  Programm gespielt hat, fehlen ihre Instrumente bis zum nächsten
-  Programmwechsel. Dabei gefunden: QEMUs AdLib (OPL2) galt als OPL3 –
+  treiber lesen den Status Dutzende Male je Register) – Registerkopie
+  nur bei Bedarf, siehe unten. Dabei gefunden: QEMUs AdLib (OPL2) galt als OPL3 –
   ein OPL2 dekodiert nur A0, 38Ah/38Bh spiegeln 388h/389h, fm_load
   überschrieb mit Bank 1 (Nullen) die Instrumente. `opl_detect` startet
   jetzt bei Status „OPL3“ noch Zeitgeber 1 über die zweite Bank (102h/
@@ -2014,6 +2012,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Grund, warum DOOMs Musik in QEMU nach 3 s verstummte. Test: `PLAY
   ODE.IMF` in einer DETACH-Schleife, vorn eine Box mit 440 Hz für 3 s
   -> Mitschnitt: ODE, 440 (PLAY still), ODE ab der laufenden Stelle.
+  Registerkopie der Box (Phase 4, Rest; in QEMU geprüft): v86.c
+  `opl_pg[t]` (eigene Seite, je Bank 256 Byte), `opl_trk[t]` (Bit 0
+  mitschreiben, 1 Kopie gilt, 2 Bank 1 benutzt), `opl_idx`. Mitschreiben
+  heißt: Ports 388h–38Bh bleiben gesperrt, port_out merkt Index/Wert und
+  reicht durch, port_in liest den Chip – nur wenn beim Nehmen des Chips
+  (`opl_ports(t, 1)`) ein FAPI-Programm FM offen hat (`BOX_AUD_FMQ` ->
+  `fm_count`), die Kopie schon gilt oder DOSBOX.INI `ADLIB_COPY=ON`
+  (BOXSHELL hk Bit 4, Vorgabe aus -> `HK_ADLIB`, als einziges Bit „an“).
+  Nimmt die Box den Chip wieder und die Kopie gilt: `opl_restore`
+  (08h, WSE kurz an, 20h–F5h nur gültige Register `OPL_REG`, Tasten/
+  Rhythmus los, 01h zuletzt; Bank 1 und 104h/105h nur, wenn benutzt –
+  sonst überschreibt beim OPL2 der Spiegel Bank 0). Kopie gilt bis zum
+  Programmende (xms_reset), Seite frei in v86_destroy. Lehre: D0h–DFh
+  gibt es nicht, der OPL-Kern von QEMU (MAME) nimmt D0h–D8h aber als
+  C0h–C8h – Nullen dort machten aus additiv FM (Obertöne 1320/2640 Hz);
+  fm_load (FAPI) schreibt dort jetzt den Wert von C0h–C8h. Test OPLR.COM
+  (440 Hz 1 s, Taste abwarten, dann nur B0h = Taste an): DETACH PLAY
+  ODE.IMF, START OPLR, weg, PLAY spielt, zurück, Taste -> 440 Hz sauber
+  (ohne Kopie stumm); `ADLIB_COPY=ON` ohne PLAY ebenso; DOOM unverändert.
   Kernel-Panik mit `START DOOM` (Nutzer, P3B-F; in QEMU nachgestellt:
   #GP bei 0008:03EF = exc_common `.topm`, Fehlercode 1Ch = LDT-Selektor
   1Fh): das TSS einer Box hat `ldt = 0` (nur FX-Programme bekamen

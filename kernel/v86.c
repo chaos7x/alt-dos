@@ -186,6 +186,10 @@ static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void spk_ports(int t, int on);
 static void opl_ports(int t, int on);
+static pg_t own_page(void);
+static pg_t opl_pg[NTASK];
+static unsigned char opl_trk[NTASK];            /* Bit 0 mitschreiben, 1 Kopie gilt, 2 Bank 1 benutzt */
+static unsigned char opl_idx[NTASK][2];
 unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
 static unsigned char opl_open[NTASK];
 static unsigned char spk_open[NTASK];
@@ -217,6 +221,7 @@ static unsigned emb_free_pg(int t);
 #define FL_VIF  0x80000UL
 #define FL_VIP  0x100000UL
 #define HK_PVI  8
+#define HK_ADLIB 16                     /* ADLIB_SHADOW=ON (Bit = an!)   */
 unsigned char pvi_t[NTASK], pvi_cur;    /* je Task / gerade in CR4       */
 static signed char pvi_ok = -1;         /* CPU kann PVI (CPUID 1: VME)   */
 static unsigned long pvi_back[NTASK];   /* PVI erst wieder ab diesem Takt */
@@ -327,6 +332,11 @@ void __far v86_destroy(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    if (opl_pg[t]) {
+        vp_free(opl_pg[t]);
+        opl_pg[t] = 0;
+    }
+    opl_trk[t] = 0;
     sb_stop(t);
     spk[t] = 0;
     if (noblink[t])
@@ -990,6 +1000,46 @@ static void opl_wr(unsigned base, unsigned reg, unsigned val)
         inb(base);
 }
 
+/* Registerkopie der Box (AdLib teilen): die Box schreibt sonst direkt,
+   und hat inzwischen ein FAPI-Programm gespielt, fehlen ihr beim
+   Zurueckkommen die Instrumente. Fallen auf 388h sind teuer (Treiber
+   lesen nach jedem Register 30-40-mal den Status am selben Port) - daher
+   nur, wenn es noetig ist: ein FAPI-Programm hat FM offen, wenn die Box
+   den Chip nimmt, oder DOSBOX.INI ADLIB_SHADOW=ON. Dann bleiben die
+   Ports gesperrt, port_out merkt Index und Wert (je Bank 256 Byte in
+   einer eigenen Seite) und reicht sie durch; nimmt die Box den Chip
+   wieder, laedt opl_restore ihre Kopie (Tasten los). */
+
+/* gibt es das OPL-Register? (Operatoren 0-15h je 20h-Block, Kanaele 0-8,
+   BDh, kein D0h-DFh) */
+#define OPL_REG(r)  ((r) >= 0xE0 || ((r) < 0xA0 ? ((r) & 0x1F) <= 0x15 : \
+                     (r) == 0xBD || ((r) < 0xD0 && ((r) & 0x0F) <= 8)))
+
+static void opl_restore(int t)
+{
+    unsigned char __far *c;
+    unsigned r, b, v;
+    static const unsigned first[3] = { 0x105, 0x104, 0x008 };
+    scratch_map(PG_LIN(opl_pg[t]), 511);
+    c = MK_FP(SCRATCH, 0);
+    for (r = 0; r < 3; r++)                     /* Bank 1 nur, wenn die Box */
+        if (!(first[r] & 0x100) || (opl_trk[t] & 4))    /* sie benutzt hat: */
+            opl_wr(first[r] & 0x100 ? 0x38A : 0x388, first[r] & 0xFF, c[first[r]]);
+    opl_wr(0x388, 0x01, 0x20);                  /* Wellenformen erst mit WSE an */
+    for (b = 0; b < 1 + ((opl_trk[t] >> 2) & 1); b++)   /* (OPL2: 38Ah spiegelt 388h) */
+        for (r = 0x20; r <= 0xF5; r++) {
+            if (!OPL_REG(r))
+                continue;                       /* Luecken (D0h-D8h waere */
+            v = c[b * 256 + r];                 /* in QEMU C0h-C8h!)     */
+            if (r >= 0xB0 && r <= 0xB8)
+                v &= ~0x20;                     /* Tasten los            */
+            else if (r == 0xBD)
+                v &= 0xE0;                      /* Rhythmus-Tasten los   */
+            opl_wr(b ? 0x38A : 0x388, r, v);
+        }
+    opl_wr(0x388, 0x01, c[0x01]);               /* (sonst bleibt die alte) */
+}
+
 static void opl_ports(int t, int on)
 {
     unsigned c;
@@ -997,9 +1047,21 @@ static void opl_ports(int t, int on)
         return;
     opl_open[t] = (unsigned char)on;
     kf_box_aud(BOX_AUD_FM, on, 0);              /* FM-Programme warten   */
-    if (on)
+    if (on) {
+        if ((opl_trk[t] & 2) && opl_pg[t])
+            opl_restore(t);                     /* eigene Instrumente    */
+        if ((box_hk[t] & HK_ADLIB) || (opl_trk[t] & 2) ||
+            kf_box_aud(BOX_AUD_FMQ, 0, 0)) {
+            if (!opl_pg[t])
+                opl_pg[t] = own_page();
+            if (opl_pg[t]) {
+                opl_trk[t] |= 1;                /* gesperrt: mitschreiben */
+                return;
+            }
+        }
+        opl_trk[t] &= ~1;
         tss[t].iob[0x388 >> 3] &= (unsigned char)~0x0F;     /* 388h-38Bh */
-    else {
+    } else {
         tss[t].iob[0x388 >> 3] |= 0x0F;
         for (c = 0; c < 9; c++) {               /* Tasten los            */
             opl_wr(0x388, 0xB0 + c, 0);
@@ -2203,7 +2265,7 @@ static void svc(int n, struct v86_frame *f, int t)
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
-            box_hk[t] = (unsigned char)(~BX & 15);
+            box_hk[t] = (unsigned char)((~BX & 15) | (BX & HK_ADLIB));
         else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
             idle_sens[t] = (unsigned char)(BX > 101 ? 101 : BX);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
@@ -2742,6 +2804,16 @@ static void port_out(int t, unsigned p, unsigned char v)
     case 0x388: case 0x389: case 0x38A: case 0x38B:
         if (box_fg(t)) {                        /* OPL: vorn direkt      */
             opl_ports(t, 1);                    /* (FM-Programme erst still) */
+            if (opl_trk[t] & 1) {               /* Kopie mitschreiben    */
+                unsigned bk = (p >> 1) & 1;
+                if (!(p & 1))
+                    opl_idx[t][bk] = v;
+                else {
+                    scratch_map(PG_LIN(opl_pg[t]), 511);
+                    *(unsigned char __far *)MK_FP(SCRATCH, bk * 256 + opl_idx[t][bk]) = v;
+                    opl_trk[t] |= (unsigned char)(2 | bk << 2);   /* Bit 2: Bank 1 */
+                }
+            }
             outb(p, v);
         }
         break;
@@ -2865,6 +2937,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
     xms_lim[t] = 0;
     box_hk[t] = 0;
+    opl_trk[t] = 0;                             /* Kopie gilt nicht mehr */
     idle_sens[t] = 0;
     for (i = 0; i < 6; i++)
         umb_used[t][i] = umb_head[t][i] = 0;

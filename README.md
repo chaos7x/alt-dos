@@ -371,7 +371,11 @@ und PC-DOS.
   `IDLE_SENSITIVITY=n` (0–100 wie OS/2, Vorgabe 75, 100 = aus: wer im
   Takt öfter leer die Tastatur, die Uhr oder den Strahlrücklauf abfragt,
   gibt die Zeitscheibe ab; ohne Angabe nicht bei Spielen mit eigenem
-  Takt). Wird vor jedem
+  Takt), `ADLIB_COPY=ON` (Vorgabe aus: der Kernel schreibt die AdLib-
+  Register der Box von Anfang an mit, damit ihre Instrumente zurückkommen,
+  wenn zwischendurch ein FAPI-Programm wie `PLAY /FM` gespielt hat; ohne
+  Angabe nur, wenn beim Zugriff der Box schon eines FM offen hat – das
+  Mitschreiben kostet Fallen). Wird vor jedem
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle

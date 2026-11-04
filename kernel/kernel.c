@@ -3463,12 +3463,15 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
 /* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (v86.c), Puffer in
    KDATA, ohne Kernelsperre wie FAPI_AUDIO */
 static void fm_box(int on);
+static unsigned fm_count(void);
 unsigned box_aud(unsigned fn, unsigned a, unsigned b)
 {
     if (fn == BOX_AUD_FM) {             /* Box nimmt/gibt den OPL-Chip   */
         fm_box(a);
         return 0;
     }
+    if (fn == BOX_AUD_FMQ)
+        return fm_count();
     return aud_fapi(KDATA, fn, a, b);
 }
 
@@ -4333,6 +4336,14 @@ static void fm_box(int on)
     }
 }
 
+static unsigned fm_count(void)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < NFM; i++)
+        n += fmc[i].task >= 0;
+    return n;
+}
+
 /* Register des Programms i in den OPL laden (B0h-B8h ohne Taste) */
 static void fm_load(int i)
 {
@@ -4344,9 +4355,12 @@ static void fm_load(int i)
     aud_call(NAUD, AR_FMRESET, 0, 0, 0);
     for (r = 0; r < 4 + 2 * 0xD6; r++) {
         unsigned reg = r < 4 ? first[r] : ((r - 4) < 0xD6 ? 0x20 + (r - 4) : 0x120 + (r - 4 - 0xD6));
-        unsigned char v = sh[reg];
-        if ((reg & 0xFF) >= 0xB0 && (reg & 0xFF) <= 0xB8)
+        unsigned char v = sh[reg], lo = (unsigned char)reg;
+        if (lo >= 0xB0 && lo <= 0xB8)
             v &= ~0x20;
+        if (lo >= 0xD0 && lo < 0xE0)
+            v = sh[reg - 0x10];         /* gibt es nicht - QEMU nimmt es als
+                                           C0h-C8h: denselben Wert schreiben */
         fm_buf[n].reg = reg;
         fm_buf[n].val = v;
         if (++n == 64 || r == 4 + 2 * 0xD6 - 1) {
