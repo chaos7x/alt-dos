@@ -20,17 +20,17 @@
 
 struct volume {
     unsigned char  used;
-    unsigned char  fat16;               /* sonst FAT12                      */
+    unsigned char  fat16;               /* 0 FAT12, 1 FAT16, 2 FAT32        */
     int            blk;                 /* Blockgeraet                      */
     unsigned long  start;               /* erster Sektor der Partition      */
     unsigned char  spc, spc_shift;      /* Sektoren je Cluster              */
-    unsigned       rootents;
-    unsigned long  fat_lba, root_lba, data_lba;
-    unsigned       clusters;
+    unsigned       rootents;            /* FAT32: FSInfo-Sektor             */
+    unsigned long  fat_lba, root_lba, data_lba;   /* FAT32: root_lba = Stammcluster */
+    unsigned long  clusters;
     unsigned long  sectors;
     unsigned char  nfats;
-    unsigned       spf;                 /* Sektoren je FAT                  */
-    unsigned       hint;                /* hier beginnt die Suche nach Freiem */
+    unsigned long  spf;                 /* Sektoren je FAT                  */
+    unsigned long  hint;                /* hier beginnt die Suche nach Freiem */
     struct ifs_driver *drv;
     int            mod;                 /* nachgeladenes IFS: Treiberplatz */
     unsigned char  part;                /* Partition 1-4, 0 = ganzes Geraet */
@@ -41,7 +41,7 @@ struct volume {
     unsigned char  locked;              /* DosOpenDrive exklusiv: kein IFS  */
     unsigned char  was_dirty;           /* beim Einhaengen nicht sauber abgemeldet */
     unsigned char  in_use;              /* Sauber-Bit auf der Platte geloescht */
-    unsigned       nfree;               /* freie Cluster (FAT)              */
+    unsigned long  nfree;               /* freie Cluster (FAT)              */
     unsigned char  vfat;                /* lange Namen als VFAT schreiben   */
 };
 /* Original-Schreibung des letzten Pfadteils beim Anlegen/Umbenennen

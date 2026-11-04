@@ -241,7 +241,32 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und die IFS-Einsprünge (ifs_*, vol_move/present/reset) sind `__far`,
   blk_read/blk_read_n/blk_write/blk_media/blk_nomedia/blk_invalidate/
   kseg_alloc über Thunks (k2.h). Danach Code 51.258 + 34.408 + 51.526,
-  DGROUP 65.176 (die Fernzeiger der drei Treibertabellen kosten 102 Byte). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  DGROUP 65.176 (die Fernzeiger der drei Treibertabellen kosten 102 Byte).
+- FAT32 im Kernel, Stufe 1 (Phase 5; in QEMU mit einer per mkfs.fat -F 32
+  angelegten 600-MB-Platte, Typ 0Ch, geprüft: DIR/VOL/lange Namen von
+  mtools, XCOPY \DOS hin, COPY/MD/REN mit langen Namen, SHUTDOWN, fsck
+  sauber, Kopien gleich): fat.c `clus_t` (32 Bit) überall, `vol[].fat16`
+  0/1/2 (2 = FAT32, `IS32`), `EOC(v)`, FAT-Eintrag 28 Bit (obere 4 Bit
+  bleiben beim Schreiben), Cluster-Hochwort in Byte 20/21 (`ent_clus`/
+  `put_clus`; bei FAT12/16 dort 0), Verzeichnis-Cluster 0 = Stamm, bei
+  FAT32 über `dirc()` auf den Stammcluster (`ROOTC` = root_lba). Ohne
+  neue Felder in DGROUP: FAT32 nimmt root_lba für den Stammcluster und
+  rootents für den FSInfo-Sektor; clusters/spf/hint/nfree sind 32 Bit;
+  ifs_file first/cache_clus/dir_clus 32 Bit (ifsmod.h, Dateitabelle im
+  Kernelsegment). Einhängen wie Linux am BPB (spf16 = 0), Spiegeln aus
+  (ext. Flags Bit 7) -> nur die aktive FAT. Sauber-Bit FAT[1] Bit 27,
+  FSInfo (`fsinfo`): beim ersten Schreiben frei/nächster = FFFFFFFFh,
+  beim Herunterfahren gezählter Stand, wenn er gilt. Erweiterter BPB
+  +28 (Bezeichnung/Seriennummer). FAT32 schreibt immer VFAT.
+  IS_FATPART kennt 0Bh/0Ch, QFSInfo meldet „FAT32“ -> CHKDSK sucht
+  UFAT32.EXE (gibt es noch nicht) und nennt jetzt immer das Dateisystem.
+  DGROUP-Platz: der 1-KB-FAT-Cache liegt nicht mehr in DGROUP, sondern
+  hinter dem DMA-Puffer (DMABUF:FCACHE_OFF = linear 8800h, Fenster 3 KB).
+  Danach Code 51.330 + 37.095 + 51.526, DGROUP 64.452.
+  Offen: UFAT für FAT32 (CHKDSK), FORMAT /FS:FAT32, FDISK über 2 GB,
+  hdboot/preload/ATSYS für den Start von FAT32, REN mit Platzhalter auf
+  lange Namen (`ren d:\ordner\langer* kurz.txt` fand nichts – auch auf
+  FAT16 VFAT zu prüfen). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in

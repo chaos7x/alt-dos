@@ -185,7 +185,7 @@ void gdt_build(void)
 
     set_desc(5, LIN(&tss_k), sizeof(struct tss386) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);               /* SCRATCH              */
-    set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
+    set_desc(7, DMABUF_LIN, FCACHE_OFF + 1024 - 1, ACC_KDATA);   /* + FAT-Cache */
     set_desc(8, 0, 0, ACC_KDATA);               /* SCRATCH2             */
     set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
@@ -3091,6 +3091,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         for (k = 0; nm[k] && nm[k] != '.' && k < (int)sizeof(fi->fsname) - 1; k++)
             fi->fsname[k] = nm[k];
         fi->fsname[k] = 0;
+        if (vol[a1].drv == &fat_driver && vol[a1].fat16 == 2) {
+            fi->fsname[3] = '3'; fi->fsname[4] = '2'; fi->fsname[5] = 0;  /* FAT32 */
+        }
         if (!vol[a1].used) {                /* nicht formatiert         */
             fi->fsname[0] = 'R'; fi->fsname[1] = 'A'; fi->fsname[2] = 'W';
             fi->fsname[3] = 0;
@@ -4861,7 +4864,8 @@ static int load_driver(const char *line, int is_ifs)
 /* Partitionstabelle lesen und FAT-Partitionen als C:, D:, ... einhaengen */
 static int next_drive = 2;
 
-#define IS_FATPART(t) ((t) == 0x01 || (t) == 0x04 || (t) == 0x06 || (t) == 0x0E)
+#define IS_FATPART(t) ((t) == 0x01 || (t) == 0x04 || (t) == 0x06 || (t) == 0x0E || \
+                       (t) == 0x0B || (t) == 0x0C)   /* FAT32 (CHS, LBA) */
 #define IS_EXTPART(t) ((t) == 0x05 || (t) == 0x0F)
 
 static unsigned long rd32(unsigned sel, unsigned off)
@@ -5309,7 +5313,7 @@ static void list_drives(void)
                 msg[n++] = (char)('0' + vol[d].part);
             }
             scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
-                           vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
+                           vol[d].fat16 == 2 ? ", FAT32, " : vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
             while (msg[n])
                 n++;
             udec((unsigned)(vol[d].psize >> 11), msg + n);

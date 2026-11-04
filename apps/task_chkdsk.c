@@ -225,6 +225,9 @@ void main(void)
                 a++;
         }
     }
+    puts("Der Typ des Dateisystems ist ");    /* wie Windows NT/95 */
+    puts(fi.fsname);
+    puts(".\n");
     h = DosExecPgm(cmd, EXEC_SYNC);
     if (h) {
         puts(prog);

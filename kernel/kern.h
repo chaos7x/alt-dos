@@ -45,6 +45,7 @@
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
+#define FCACHE_OFF  DMABUF_SIZE     /* dahinter 1 KB FAT-Cache (fat.c)     */
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL

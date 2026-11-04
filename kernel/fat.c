@@ -44,6 +44,16 @@ static unsigned long rd32(unsigned off)
     return rd16(off) | ((unsigned long)rd16(off + 2) << 16);
 }
 
+static void put32(unsigned char __far *b, unsigned o, unsigned long v)
+{
+    b[o] = (unsigned char)v;
+    b[o + 1] = (unsigned char)(v >> 8);
+    b[o + 2] = (unsigned char)(v >> 16);
+    b[o + 3] = (unsigned char)(v >> 24);
+}
+
+static void wr(int d, unsigned long lba);
+
 static unsigned long shl(unsigned long v, unsigned n)
 {
     while (n--)
@@ -61,10 +71,20 @@ static unsigned long shr(unsigned long v, unsigned n)
 /* ---- FAT: zwei aufeinanderfolgende Sektoren im Cache, weil ein
         12-Bit-Eintrag ueber die Sektorgrenze reichen kann; Aenderungen
         bleiben bis fat_flush() im Cache ------------------------------------ */
-#define FAT_END 0xFFFF
-static unsigned char fcache[1024];
+/* Clusternummern sind 32 Bit (FAT32: 28 Bit). vol[].fat16: 0 FAT12,
+   1 FAT16, 2 FAT32; bei FAT32 steht in root_lba der Stammcluster und in
+   rootents der FSInfo-Sektor. Verzeichnis-Cluster 0 heisst immer Stamm. */
+typedef unsigned long clus_t;
+#define FAT_END  0xFFFFFFFFUL
+#define NO_DC    0xFFFFFFFFUL           /* Stamm hat keinen Eintrag       */
+#define IS32(v)  ((v)->fat16 == 2)
+#define EOC(v)   (IS32(v) ? 0x0FFFFFFFUL : (v)->fat16 ? 0xFFFFUL : 0x0FFFUL)
+#define ROOTC(v) ((v)->root_lba)
+/* FAT-Cache: 1 KB hinter dem DMA-Puffer (DMABUF:FCACHE_OFF, linear 8800h)
+   statt in DGROUP */
+#define fcache   ((unsigned char __far *)MK_FP(DMABUF, FCACHE_OFF))
 static int           fc_drive = -1;
-static unsigned      fc_sec;            /* Sektor relativ zum FAT-Anfang  */
+static unsigned long fc_sec;            /* Sektor relativ zum FAT-Anfang  */
 static unsigned char fc_dirty;
 static int           ferr;              /* erster Schreibfehler der Operation */
 
@@ -82,7 +102,7 @@ static int fat_flush_fat(void)
     fc_dirty = 0;
     for (k = 0, lba = v->fat_lba + fc_sec; k < v->nfats; k++, lba += v->spf)
         for (i = 0; i < 2 && fc_sec + i < v->spf; i++) {
-            far_copy(DMABUF, 0, KDATA, (unsigned)fcache + (i << 9), 512);
+            far_copy(DMABUF, 0, DMABUF, FCACHE_OFF + (i << 9), 512);
             rc = blk_write(v->blk, lba + i);
             if (rc) {
                 if (!ferr)
@@ -106,7 +126,7 @@ static int fat_flush(void)
     return rc;
 }
 
-static int fat_load(int d, unsigned sec)
+static int fat_load(int d, unsigned long sec)
 {
     struct volume *v = &vol[d];
     if (fc_drive == d && fc_sec == sec)
@@ -116,61 +136,70 @@ static int fat_load(int d, unsigned sec)
     fc_drive = -1;
     if (blk_read(v->blk, v->fat_lba + sec))
         return -1;
-    far_copy(KDATA, (unsigned)fcache, DMABUF, 0, 512);
+    far_copy(DMABUF, FCACHE_OFF, DMABUF, 0, 512);
     if (sec + 1 < v->spf) {
         if (blk_read(v->blk, v->fat_lba + sec + 1))
             return -1;
-        far_copy(KDATA, (unsigned)fcache + 512, DMABUF, 0, 512);
+        far_copy(DMABUF, FCACHE_OFF + 512, DMABUF, 0, 512);
     }
     fc_drive = d;
     fc_sec = sec;
     return 0;
 }
 
-static int valid(struct volume *v, unsigned c)
+static int valid(struct volume *v, clus_t c)
 {
     return c >= 2 && c < v->clusters + 2;
 }
 
 /* Lage eines Eintrags: Sektor relativ zur FAT, Byte im Cache */
-static void fat_pos(struct volume *v, unsigned c, unsigned *sec, unsigned *off)
+static void fat_pos(struct volume *v, clus_t c, unsigned long *sec, unsigned *off)
 {
-    unsigned o;
-    if (v->fat16) {
+    unsigned long o;
+    if (IS32(v)) {
+        *sec = c >> 7;
+        *off = ((unsigned)c & 127) * 4;
+    } else if (v->fat16) {
         *sec = c >> 8;
         *off = (c & 255) * 2;
     } else {
         o = c + (c >> 1);
         *sec = o >> 9;
-        *off = o & 511;
+        *off = (unsigned)o & 511;
     }
 }
 
 /* roher FAT-Eintrag; bei Lesefehler ein "defekt"-Wert, nie 0 */
-static unsigned fat_raw(int d, unsigned c)
+static clus_t fat_raw(int d, clus_t c)
 {
     struct volume *v = &vol[d];
-    unsigned sec, off, val;
+    unsigned long sec;
+    unsigned off, val;
 
     fat_pos(v, c, &sec, &off);
     if (fat_load(d, sec))
-        return 0xFFF7;
+        return 0x0FFFFFF7UL;            /* nie gueltig, nie frei          */
     val = fcache[off] | ((unsigned)fcache[off + 1] << 8);
+    if (IS32(v))
+        return val | ((unsigned long)(fcache[off + 2] |
+                     ((unsigned)(fcache[off + 3] & 0x0F) << 8)) << 16);
     if (!v->fat16)
         val = (c & 1) ? val >> 4 : val & 0xFFF;
     return val;
 }
 
-static unsigned next_cluster(int d, unsigned c)
+static clus_t next_cluster(int d, clus_t c)
 {
-    unsigned val = fat_raw(d, c);
+    clus_t val = fat_raw(d, c);
     return valid(&vol[d], val) ? val : FAT_END;
 }
 
-static void fat_set(int d, unsigned c, unsigned val)
+static void fat_set(int d, clus_t c, clus_t val)
 {
     struct volume *v = &vol[d];
-    unsigned sec, off, old;
+    unsigned long sec;
+    unsigned off;
+    clus_t old;
 
     if (v->nfree_ok) {                  /* Zaehler freier Cluster mitfuehren */
         old = fat_raw(d, c);
@@ -188,6 +217,10 @@ static void fat_set(int d, unsigned c, unsigned val)
     if (v->fat16) {
         fcache[off] = (unsigned char)val;
         fcache[off + 1] = (unsigned char)(val >> 8);
+        if (IS32(v)) {                  /* obere 4 Bit bleiben            */
+            fcache[off + 2] = (unsigned char)(val >> 16);
+            fcache[off + 3] = (unsigned char)((fcache[off + 3] & 0xF0) | ((val >> 24) & 0x0F));
+        }
     } else if (c & 1) {
         fcache[off] = (unsigned char)((fcache[off] & 0x0F) | ((val & 0x0F) << 4));
         fcache[off + 1] = (unsigned char)(val >> 4);
@@ -199,16 +232,16 @@ static void fat_set(int d, unsigned c, unsigned val)
 }
 
 /* freien Cluster belegen und an prev haengen (0 = neue Kette); 0 = voll */
-static unsigned alloc_cluster(int d, unsigned prev)
+static clus_t alloc_cluster(int d, clus_t prev)
 {
     struct volume *v = &vol[d];
-    unsigned n, c = v->hint;
+    clus_t n, c = v->hint;
 
     for (n = 0; n < v->clusters; n++, c++) {
         if (!valid(v, c))
             c = 2;
         if (fat_raw(d, c) == 0) {
-            fat_set(d, c, v->fat16 ? 0xFFFF : 0x0FFF);
+            fat_set(d, c, EOC(v));
             if (prev)
                 fat_set(d, prev, c);
             v->hint = c + 1;
@@ -221,10 +254,10 @@ static unsigned alloc_cluster(int d, unsigned prev)
 static void dir_cache_reset(void);
 
 /* Kette ab c freigeben */
-static void free_chain(int d, unsigned c)
+static void free_chain(int d, clus_t c)
 {
     struct volume *v = &vol[d];
-    unsigned n, guard = 0;
+    clus_t n, guard = 0;
 
     while (valid(v, c) && guard++ < v->clusters) {
         n = fat_raw(d, c);
@@ -236,9 +269,24 @@ static void free_chain(int d, unsigned c)
     dir_cache_reset();
 }
 
-static unsigned long clus_lba(struct volume *v, unsigned c)
+static unsigned long clus_lba(struct volume *v, clus_t c)
 {
-    return v->data_lba + shl((unsigned long)(c - 2), v->spc_shift);
+    return v->data_lba + shl(c - 2, v->spc_shift);
+}
+
+/* Verzeichnis-Cluster: 0 = Stamm, bei FAT32 eine gewoehnliche Kette */
+static clus_t dirc(struct volume *v, clus_t dc)
+{
+    return dc == 0 && IS32(v) ? ROOTC(v) : dc;
+}
+
+/* erster Cluster aus einem Verzeichniseintrag (FAT32: Bytes 20/21 dazu) */
+static clus_t ent_clus(struct volume *v, const unsigned char __far *e)
+{
+    clus_t c = e[26] | ((unsigned)e[27] << 8);
+    if (IS32(v))
+        c |= (unsigned long)(e[20] | ((unsigned)e[21] << 8)) << 16;
+    return c;
 }
 
 /* ---- Einhaengen -------------------------------------------------------- */
@@ -246,12 +294,34 @@ static unsigned long clus_lba(struct volume *v, unsigned c)
    ignoriert es). Beim ersten Schreiben loeschen, beim Herunterfahren
    setzen. Beim Start prueft CMD /P Laufwerke ohne das Bit. */
 #define CLEAN_BIT 0x8000
+#define CLEAN(v)  (IS32(v) ? 0x08000000UL : CLEAN_BIT)   /* FAT32: Bit 27 */
+
+/* FAT32: FSInfo-Sektor (Zahl freier Cluster, naechster freier) - beim
+   ersten Schreiben ungueltig (FFFFFFFFh), beim Herunterfahren mit dem
+   gezaehlten Stand, wenn er gilt */
+static void fsinfo(int d, int valid_now)
+{
+    struct volume *v = &vol[d];
+    unsigned long lba = v->start + v->rootents;
+    unsigned char __far *b = dma();
+    unsigned i;
+    if (!IS32(v) || !v->rootents || blk_read(v->blk, lba) ||
+        rd32(0) != 0x41615252UL || rd32(484) != 0x61417272UL)
+        return;
+    for (i = 0; i < 8; i++)
+        b[488 + i] = 0xFF;
+    if (valid_now && v->nfree_ok) {
+        put32(b, 488, v->nfree);
+        put32(b, 492, v->hint);
+    }
+    wr(d, lba);
+}
 
 static int __far fat_mount(int d)
 {
     struct volume *v = &vol[d];
-    unsigned bps, reserved, nfats, spf, spc, n;
-    unsigned long total, cl;
+    unsigned bps, reserved, nfats, spc, n, ext = 0, f32 = 0;
+    unsigned long total, cl, spf, fats, rootc = 0;
 
     if (blk_read(v->blk, v->start))
         return -1;
@@ -266,12 +336,22 @@ static int __far fat_mount(int d)
     spf      = rd16(22);
     if (total == 0)
         total = rd32(32);
+    if (spf == 0) {                     /* FAT32 (wie Linux am BPB erkannt) */
+        if (v->rootents || rd16(42) != 0)
+            return -1;                  /* Version 0.0                    */
+        spf = rd32(36);
+        ext = rd16(40);                 /* Bit 7: nur aktive FAT (0-3)    */
+        rootc = rd32(44);
+        v->rootents = rd16(48);         /* FSInfo-Sektor                  */
+        f32 = 1;
+    }
     if (bps != 512 || spf == 0 || nfats == 0 || nfats > 2 || spc == 0 || spc > 64)
-        return -1;                              /* FAT32 hat spf == 0   */
+        return -1;
     for (n = 0; (1U << n) < spc; n++)
         ;
     if ((1U << n) != spc)
         return -1;
+    fats = nfats == 2 ? spf + spf : spf;        /* ohne 32-Bit-Mult.    */
     v->spc = (unsigned char)spc;
     v->nfats = (unsigned char)nfats;
     v->spf = spf;
@@ -280,19 +360,32 @@ static int __far fat_mount(int d)
     v->spc_shift = (unsigned char)n;
     v->sectors  = total;
     v->fat_lba  = v->start + reserved;
-    v->root_lba = v->fat_lba + nfats * spf;
-    v->data_lba = v->root_lba + (v->rootents + 15) / 16;
+    if (f32) {
+        v->data_lba = v->fat_lba + fats;
+        v->root_lba = rootc;            /* ROOTC: Stammcluster            */
+        if (ext & 0x80) {               /* Spiegeln aus: nur aktive FAT   */
+            if ((ext & 15) == 1)
+                v->fat_lba += spf;
+            v->nfats = 1;
+        }
+    } else {
+        v->root_lba = v->fat_lba + fats;
+        v->data_lba = v->root_lba + (v->rootents + 15) / 16;
+    }
+    if (total <= v->data_lba - v->start)
+        return -1;
     cl = shr(total - (v->data_lba - v->start), n);
-    if (cl >= 65525UL)
-        return -1;                              /* waere FAT32          */
-    v->clusters = (unsigned)cl;
-    v->fat16 = cl >= 4085;
+    if (f32 ? cl > 0x0FFFFFF4UL || rootc < 2 || rootc >= cl + 2 : cl >= 65525UL)
+        return -1;
+    v->clusters = cl;
+    v->fat16 = f32 ? 2 : cl >= 4085;
     v->in_use = 0;
     v->was_dirty = 0;
     if (v->fat16 && !IS_FLOPPY(v->blk) && blk_read(v->blk, v->fat_lba) == 0)
-        v->was_dirty = !(rd16(2) & CLEAN_BIT);  /* FAT[1] Bit 15        */
-    v->vfat = lfn_cfg == 1;
-    if (lfn_cfg == 0) {                 /* AUTO: VFAT, wenn der Stamm schon */
+        v->was_dirty = f32 ? !(rd32(4) & 0x08000000UL)   /* FAT[1] Bit 27 */
+                           : !(rd16(2) & CLEAN_BIT);     /* FAT[1] Bit 15 */
+    v->vfat = lfn_cfg == 1 || f32;      /* FAT32 immer VFAT (Windows 95/98) */
+    if (lfn_cfg == 0 && !f32) {         /* AUTO: VFAT, wenn der Stamm schon */
         unsigned i;                     /* lange Eintraege hat (Windows 95) */
         unsigned char __far *e;
         dir_cache_reset();
@@ -317,7 +410,8 @@ static int __far fat_mount(int d)
 /* ---- Verzeichnisse ----------------------------------------------------- */
 /* zuletzt benutzter Cluster beim fortlaufenden Lesen eines Verzeichnisses */
 static int lc_drive = -1;
-static unsigned lc_dir, lc_n, lc_clus;
+static unsigned lc_n;
+static clus_t lc_dir, lc_clus;
 static unsigned long de_lba;            /* Sektor des letzten dir_entry()  */
 
 static void ea_forget(int d);
@@ -330,11 +424,13 @@ static void dir_cache_reset(void)
 }
 
 /* i-ter Eintrag des Verzeichnisses ab Cluster dc (0 = Stamm) im DMA-Puffer */
-static unsigned char __far *dir_entry(int d, unsigned dc, unsigned i)
+static unsigned char __far *dir_entry(int d, clus_t dc, unsigned i)
 {
     struct volume *v = &vol[d];
-    unsigned epc, n, c, k;
+    unsigned epc, n, k;
+    clus_t c;
 
+    dc = dirc(v, dc);
     if (dc == 0) {
         if (i >= v->rootents)
             return 0;
@@ -403,10 +499,11 @@ static int to83(const char *s, unsigned len, char *n)
 }
 
 struct found {
-    unsigned first;
+    clus_t first;
     unsigned char attr;
     unsigned long size;
-    unsigned dc, idx;                   /* Lage des Eintrags            */
+    clus_t dc;                          /* Lage des Eintrags            */
+    unsigned idx;
 };
 
 /* ---- Lange Namen (VFAT, Windows 95) lesen --------------------------------
@@ -471,7 +568,7 @@ static int lfn_feed(const unsigned char __far *e)
 }
 
 /* eigenes Format (Stufe 3), weiter unten */
-static void ea_load(int d, unsigned dc);
+static void ea_load(int d, clus_t dc);
 static int  ea_find(const unsigned char __far *e, char *out);
 static char ea_tmp[IFS_NAMELEN];
 
@@ -515,11 +612,11 @@ static void name83(const unsigned char __far *e, char *out)
 
 /* lange Namen vor Eintrag idx entfernen (beim Loeschen, Umbenennen) */
 static void wr(int d, unsigned long lba);
-static void drop_lfn(int d, unsigned dc, unsigned idx)
+static void drop_lfn(int d, clus_t dc, unsigned idx)
 {
     unsigned char __far *e;
     unsigned char s, last;
-    if (!idx || dc == 0xFFFF)
+    if (!idx || dc == NO_DC)
         return;
     e = dir_entry(d, dc, idx);
     if (!e)
@@ -539,7 +636,7 @@ static void drop_lfn(int d, unsigned dc, unsigned idx)
 
 /* Pfadteil suchen: 8.3-Name oder langer Name; n11 = 0, wenn der Teil
    kein 8.3-Name ist */
-static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
+static int lookup_name(int d, clus_t dc, const char *s, unsigned len,
                        const char *n11, struct found *f)
 {
     unsigned char __far *e;
@@ -572,7 +669,7 @@ static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
         if (ok) {
             f->dc = dc;
             f->idx = i;
-            f->first = e[26] | ((unsigned)e[27] << 8);
+            f->first = ent_clus(&vol[d], e);
             f->attr  = e[11];
             f->size  = (e[28] | ((unsigned)e[29] << 8)) |
                        ((unsigned long)(e[30] | ((unsigned)e[31] << 8)) << 16);
@@ -582,7 +679,7 @@ static int lookup_name(int d, unsigned dc, const char *s, unsigned len,
     return -1;
 }
 
-static int lookup(int d, unsigned dc, const char *n, struct found *f)
+static int lookup(int d, clus_t dc, const char *n, struct found *f)
 {
     unsigned char __far *e;
     unsigned i, k;
@@ -597,7 +694,7 @@ static int lookup(int d, unsigned dc, const char *n, struct found *f)
         if (k == 11) {
             f->dc = dc;
             f->idx = i;
-            f->first = e[26] | ((unsigned)e[27] << 8);
+            f->first = ent_clus(&vol[d], e);
             f->attr  = e[11];
             f->size  = (e[28] | ((unsigned)e[29] << 8)) |
                        ((unsigned long)(e[30] | ((unsigned)e[31] << 8)) << 16);
@@ -616,7 +713,7 @@ static int walk(int d, const char *path, struct found *f)
     f->first = 0;
     f->attr = ATTR_DIR;
     f->size = 0;
-    f->dc = 0xFFFF;                     /* Stamm hat keinen Eintrag     */
+    f->dc = NO_DC;                      /* Stamm hat keinen Eintrag     */
     f->idx = 0;
     while (*p == '\\')
         p++;
@@ -720,8 +817,9 @@ static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned 
 {
     int d = f->drive;
     struct volume *v = &vol[d];
-    unsigned csz = (unsigned)v->spc * 512, c, so, b, n, ra, done = 0;
+    unsigned csz = (unsigned)v->spc * 512, so, b, n, ra, done = 0;
     unsigned long cpos;
+    clus_t c;
 
     if (pos >= f->size)
         return 0;
@@ -775,6 +873,14 @@ static void put16(unsigned char __far *e, unsigned o, unsigned v)
     e[o + 1] = (unsigned char)(v >> 8);
 }
 
+/* ersten Cluster eintragen (FAT32: obere 16 Bit nach 20/21; sonst dort
+   0, bei OS/2 waere es der EA-Verweis) */
+static void put_clus(int d, unsigned char __far *e, clus_t c)
+{
+    put16(e, 26, (unsigned)c);
+    put16(e, 20, IS32(&vol[d]) ? (unsigned)(c >> 16) : 0);
+}
+
 static void stamp(unsigned char __far *e)
 {
     unsigned long t = rtc_stamp();
@@ -799,7 +905,7 @@ static int done_op(int rc)
     return rc;
 }
 
-static void zero_cluster(int d, unsigned c)
+static void zero_cluster(int d, clus_t c)
 {
     struct volume *v = &vol[d];
     unsigned long lba = clus_lba(v, c);
@@ -811,7 +917,7 @@ static void zero_cluster(int d, unsigned c)
 }
 
 /* kanonischen Pfad in Elternverzeichnis und 8.3-Namen zerlegen */
-static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n83);
+static int name_for(int d, clus_t dc, const char *comp, unsigned clen, char *n83);
 static const char *sp_comp;             /* letzter Pfadteil nach split()  */
 static unsigned sp_len;
 
@@ -844,7 +950,7 @@ static int split(int d, const char *path, struct found *par, char *n83)
 }
 
 /* gibt es den Namen (8.3 oder lang) im Verzeichnis schon? */
-static int exists(int d, unsigned dc, struct found *f)
+static int exists(int d, clus_t dc, struct found *f)
 {
     char n[11];
     return lookup_name(d, dc, sp_comp, sp_len,
@@ -852,17 +958,18 @@ static int exists(int d, unsigned dc, struct found *f)
 }
 
 /* freien Eintrag im Verzeichnis dc; erweitert Unterverzeichnisse */
-static int dir_slot(int d, unsigned dc, unsigned *idx)
+static int dir_slot(int d, clus_t dc, unsigned *idx)
 {
     unsigned char __far *e;
-    unsigned i, c, n;
+    unsigned i;
+    clus_t c, n;
 
     for (i = 0; (e = dir_entry(d, dc, i)) != 0; i++)
         if (e[0] == 0 || e[0] == 0xE5) {
             *idx = i;
             return 0;
         }
-    if (dc == 0)
+    if ((dc = dirc(&vol[d], dc)) == 0)
         return IFS_FULL;                /* Stammverzeichnis hat feste Groesse */
     for (c = dc; (n = next_cluster(d, c)) != FAT_END; c = n)
         ;
@@ -877,8 +984,8 @@ static int dir_slot(int d, unsigned dc, unsigned *idx)
 /* neuen Eintrag anlegen: Name, Attribut, erster Cluster */
 static unsigned char nt_case;            /* Byte 12 fuer den naechsten Eintrag */
 
-static int new_entry(int d, unsigned dc, const char *n83, unsigned char attr,
-                     unsigned first, unsigned *idx)
+static int new_entry(int d, clus_t dc, const char *n83, unsigned char attr,
+                     clus_t first, unsigned *idx)
 {
     unsigned char __far *e;
     unsigned k;
@@ -896,7 +1003,7 @@ static int new_entry(int d, unsigned dc, const char *n83, unsigned char attr,
     e[11] = attr;
     e[12] = nt_case;
     stamp(e);
-    put16(e, 26, first);
+    put_clus(d, e, first);
     wr(d, de_lba);
     return 0;
 }
@@ -920,17 +1027,18 @@ static unsigned cp2uni(unsigned char c)
 }
 
 /* n freie Eintraege am Stueck (Unterverzeichnis wird verlaengert) */
-static int dir_slots(int d, unsigned dc, unsigned n, unsigned *idx)
+static int dir_slots(int d, clus_t dc, unsigned n, unsigned *idx)
 {
     unsigned char __far *e;
-    unsigned i, run = 0, start = 0, c, nx;
+    unsigned i, run = 0, start = 0;
+    clus_t c, nx;
 
     for (i = 0;; i++) {
         e = dir_entry(d, dc, i);
         if (!e) {
-            if (dc == 0)
+            if (dirc(&vol[d], dc) == 0)
                 return IFS_FULL;
-            for (c = dc; (nx = next_cluster(d, c)) != FAT_END; c = nx)
+            for (c = dirc(&vol[d], dc); (nx = next_cluster(d, c)) != FAT_END; c = nx)
                 ;
             nx = alloc_cluster(d, c);
             if (!nx)
@@ -953,8 +1061,8 @@ static int dir_slots(int d, unsigned dc, unsigned n, unsigned *idx)
 }
 
 /* langen Namen + 8.3-Eintrag anlegen; *idx = Lage des 8.3-Eintrags */
-static int new_entry_lfn(int d, unsigned dc, const char *ln, const char *n83,
-                         unsigned char attr, unsigned first, unsigned *idx)
+static int new_entry_lfn(int d, clus_t dc, const char *ln, const char *n83,
+                         unsigned char attr, clus_t first, unsigned *idx)
 {
     unsigned char __far *e;
     unsigned len, k, j, i, pos, ord, start, ch;
@@ -1000,14 +1108,14 @@ static int new_entry_lfn(int d, unsigned dc, const char *ln, const char *n83,
         e[i] = (unsigned char)n83[i];
     e[11] = attr;
     stamp(e);
-    put16(e, 26, first);
+    put_clus(d, e, first);
     wr(d, de_lba);
     *idx = start + k;
     return 0;
 }
 
 /* Kurzname zum langen Namen: NAME~n.EXT, im Verzeichnis eindeutig */
-static void gen_short(int d, unsigned dc, const char *ln, char *n83)
+static void gen_short(int d, clus_t dc, const char *ln, char *n83)
 {
     static const char bad[] = "\"*+,/:;<=>?[\\]|";
     struct found f;
@@ -1065,7 +1173,7 @@ static void gen_short(int d, unsigned dc, const char *ln, char *n83)
 /* Namen fuer einen neuen Eintrag bestimmen: n83, ln_buf ("" = kein langer
    Name), nt_case. comp/clen = letzter Pfadteil (kanonisch gross). Lange
    Namen nur mit vol[].vfat (EA-Weg: Stufe 3). -> 0 oder IFS_ERR */
-static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n83)
+static int name_for(int d, clus_t dc, const char *comp, unsigned clen, char *n83)
 {
     const char *o = comp;
     unsigned i, lo = 0, up = 0, dot = 0, mixed = 0, partlo[2], partup[2];
@@ -1107,11 +1215,11 @@ static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n
 }
 
 /* Eintrag anlegen: mit langem Namen, wenn name_for einen bestimmt hat */
-static int ea_add(int d, unsigned dc, const char *n83, const char *name);
-static void ea_del(int d, unsigned dc, const unsigned char *n83);
+static int ea_add(int d, clus_t dc, const char *n83, const char *name);
+static void ea_del(int d, clus_t dc, const unsigned char *n83);
 
-static int new_entry_n(int d, unsigned dc, const char *n83, unsigned char attr,
-                       unsigned first, unsigned *idx)
+static int new_entry_n(int d, clus_t dc, const char *n83, unsigned char attr,
+                       clus_t first, unsigned *idx)
 {
     int rc;
     if (ln_buf[0] && vol[d].vfat)
@@ -1159,7 +1267,7 @@ static int __far fat_create(int d, const char *path, struct ifs_file __far *fl)
         e = dir_entry(d, par.first, f.idx);
         if (!e)
             return done_op(IFS_ERR);
-        put16(e, 26, 0);
+        put_clus(d, e, 0);
         put16(e, 28, 0);
         put16(e, 30, 0);
         e[11] |= 0x20;                  /* Archiv                       */
@@ -1184,9 +1292,9 @@ static int __far fat_create(int d, const char *path, struct ifs_file __far *fl)
 }
 
 /* Cluster fuer Position cpos+csz holen, notfalls anhaengen; 0 = voll */
-static unsigned next_or_alloc(int d, unsigned c)
+static clus_t next_or_alloc(int d, clus_t c)
 {
-    unsigned n = next_cluster(d, c);
+    clus_t n = next_cluster(d, c);
     return n != FAT_END ? n : alloc_cluster(d, c);
 }
 
@@ -1195,8 +1303,9 @@ static int __far fat_write(struct ifs_file __far *f, unsigned long pos, unsigned
 {
     int d = f->drive;
     struct volume *v = &vol[d];
-    unsigned csz = (unsigned)v->spc * 512, c, so, b, n, done = 0;
+    unsigned csz = (unsigned)v->spc * 512, so, b, n, done = 0;
     unsigned long cpos, lba;
+    clus_t c;
 
     ferr = 0;
     if (!(f->flags & IFS_F_WRITE) || pos > f->size)
@@ -1279,7 +1388,7 @@ static int __far fat_close(struct ifs_file __far *f)
     e = dir_entry(d, f->dir_clus, f->dir_idx);
     if (!e)
         return IFS_ERR;
-    put16(e, 26, f->first);
+    put_clus(d, e, f->first);
     put16(e, 28, (unsigned)f->size);
     put16(e, 30, (unsigned)(f->size >> 16));
     e[11] |= 0x20;
@@ -1296,7 +1405,7 @@ static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
     int d = f->drive;
     struct volume *v = &vol[d];
     unsigned long csz = 512UL << v->spc_shift, p;
-    unsigned c, nx;
+    clus_t c, nx;
 
     ferr = 0;
     if (!(f->flags & IFS_F_WRITE) || size > f->size)
@@ -1312,7 +1421,7 @@ static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
         if (!valid(v, c))
             return done_op(IFS_ERR);
         nx = fat_raw(d, c);
-        fat_set(d, c, v->fat16 ? 0xFFFF : 0x0FFF);
+        fat_set(d, c, EOC(v));
         if (valid(v, nx))
             free_chain(d, nx);
     }
@@ -1338,7 +1447,8 @@ static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
 static struct ifs_file ea_f;            /* EA DATA. SF von ea_drv         */
 static int ea_drv = -1;
 static const char ea_n83[11] = { 'E', 'A', ' ', 'D', 'A', 'T', 'A', ' ', 'S', 'F', ' ' };
-static unsigned ea_csel, ea_cused, ea_cdc;
+static unsigned ea_csel, ea_cused;
+static clus_t ea_cdc;
 static int ea_cdrv = -1;
 static unsigned char ea_rec[EA_HDR + IFS_NAMELEN + 32];
 
@@ -1400,7 +1510,7 @@ static unsigned long ea_dc(void)
 }
 
 /* Namen des Verzeichnisses dc in den Zwischenspeicher */
-static void ea_load(int d, unsigned dc)
+static void ea_load(int d, clus_t dc)
 {
     unsigned long pos;
     unsigned u, len, k;
@@ -1458,7 +1568,7 @@ static int ea_find(const unsigned char __far *e, char *out)
 }
 
 /* Satz zu (dc, n83) freigeben */
-static void ea_del(int d, unsigned dc, const unsigned char *n83)
+static void ea_del(int d, clus_t dc, const unsigned char *n83)
 {
     unsigned long pos;
     unsigned u, k;
@@ -1483,7 +1593,7 @@ static void ea_del(int d, unsigned dc, const unsigned char *n83)
 
 /* Satz anlegen (vorher gleichnamigen freigeben); freier Satz, der gross
    genug ist, sonst ans Ende. 0 oder IFS_* */
-static int ea_add(int d, unsigned dc, const char *n83, const char *name)
+static int ea_add(int d, clus_t dc, const char *n83, const char *name)
 {
     unsigned long pos, at = 0xFFFFFFFFUL;
     unsigned u, len, need, k, use;
@@ -1533,7 +1643,7 @@ static int __far fat_remove(int d, const char *path)
     unsigned char __far *e;
 
     ferr = 0;
-    if (revalidate(d) || walk(d, path, &f) || f.dc == 0xFFFF)
+    if (revalidate(d) || walk(d, path, &f) || f.dc == NO_DC)
         return IFS_ERR;
     if (f.attr & (ATTR_DIR | 0x08))
         return IFS_ERR;
@@ -1563,7 +1673,8 @@ static int __far fat_mkdir(int d, const char *path)
     struct found par, f;
     char n[11];
     unsigned char __far *e;
-    unsigned c, idx, k;
+    unsigned idx, k;
+    clus_t c;
     int rc;
 
     ferr = 0;
@@ -1590,8 +1701,8 @@ static int __far fat_mkdir(int d, const char *path)
     e[11] = e[32 + 11] = ATTR_DIR;
     stamp(e);
     stamp(e + 32);
-    put16(e, 26, c);
-    put16(e, 32 + 26, par.first);
+    put_clus(d, e, c);
+    put_clus(d, e + 32, par.first);
     wr(d, clus_lba(&vol[d], c));
     return done_op(0);
 }
@@ -1698,7 +1809,7 @@ static int __far fat_move(int d, const char *from, const char *to)
     if ((f.attr & ATTR_DIR) && !ferr && par.first != f.dc) { /* ".." zeigt auf das neue Elternverzeichnis */
         e = dir_entry(d, f.first, 1);
         if (e && e[0] == '.' && e[1] == '.') {
-            put16(e, 26, par.first);
+            put_clus(d, e, par.first);
             wr(d, de_lba);
         }
     }
@@ -1712,12 +1823,23 @@ static int __far fat_move(int d, const char *from, const char *to)
 static int __far fat_space(int d, unsigned long *bytes)
 {
     struct volume *v = &vol[d];
-    unsigned c, n = 0, end = v->clusters + 2, k, last;
+    unsigned c, end = (unsigned)v->clusters + 2, k, last;
+    clus_t n = 0, c32;
 
     if (revalidate(d))
         return IFS_ERR;
     if (!v->nfree_ok) {
-        if (v->fat16) {
+        if (IS32(v)) {                  /* sektorweise, 128 Eintraege     */
+            for (c32 = 0; c32 < v->clusters + 2; c32 += 128) {
+                if (fat_load(d, c32 >> 7))
+                    return IFS_ERR;
+                for (k = 0; k < 128; k++)
+                    if (c32 + k >= 2 && c32 + k < v->clusters + 2 &&
+                        !(fcache[k * 4] | fcache[k * 4 + 1] | fcache[k * 4 + 2] |
+                          (fcache[k * 4 + 3] & 0x0F)))
+                        n++;
+            }
+        } else if (v->fat16) {
             for (c = 2; c < end && c >= 2; c = last + 1) {
                 if (fat_load(d, c >> 8))
                     return IFS_ERR;
@@ -1753,7 +1875,7 @@ static int __far fat_setinfo(int d, const char *path, unsigned mask, unsigned at
     unsigned char __far *e;
 
     ferr = 0;
-    if (revalidate(d) || walk(d, path, &f) || f.dc == 0xFFFF)
+    if (revalidate(d) || walk(d, path, &f) || f.dc == NO_DC)
         return IFS_ERR;
     e = dir_entry(d, f.dc, f.idx);
     if (!e)
@@ -1774,7 +1896,7 @@ static int __far fat_setinfo(int d, const char *path, unsigned mask, unsigned at
 static int __far fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
 {
     unsigned char __far *e;
-    unsigned i, k, found = 0xFFFF;
+    unsigned i, k, eb, found = 0xFFFF;
     char n[11];
 
     ferr = 0;
@@ -1792,8 +1914,9 @@ static int __far fat_label(int d, char *lbl, unsigned long *serial, const char *
             break;
         }
     *serial = 0;
-    if (blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38] == 0x29)
-        *serial = rd32(39);
+    eb = IS32(&vol[d]) ? 28 : 0;        /* erweiterter BPB bei FAT32 +28  */
+    if (blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38 + eb] == 0x29)
+        *serial = rd32(39 + eb);
     if (!nl)
         return 0;
     for (k = 0; k < 11; k++)
@@ -1814,9 +1937,9 @@ static int __far fat_label(int d, char *lbl, unsigned long *serial, const char *
         if (rc)
             return rc;
     }
-    if (!ferr && blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38] == 0x29) {
+    if (!ferr && blk_read(vol[d].blk, vol[d].start) == 0 && dma()[38 + eb] == 0x29) {
         for (k = 0; k < 11; k++)
-            dma()[43 + k] = n[0] == ' ' ? "NO NAME    "[k] : n[k];
+            dma()[43 + eb + k] = n[0] == ' ' ? "NO NAME    "[k] : n[k];
         wr(d, vol[d].start);
     }
     return done_op(0);
@@ -1975,16 +2098,17 @@ int __far ifs_isdir(int drive, const char *path)
 static void mark_in_use(int d)
 {
     struct volume *v = &vol[d];
-    unsigned val;
+    clus_t val;
 
     if (v->in_use || v->drv != &fat_driver || !v->fat16 || IS_FLOPPY(v->blk) ||
         v->locked)
         return;
     v->in_use = 1;
     val = fat_raw(d, 1);
-    if (val & CLEAN_BIT) {              /* sofort auf die Platte, vor   */
-        fat_set(d, 1, val & ~CLEAN_BIT);    /* allen verzoegerten Daten */
+    if (val & CLEAN(v)) {               /* sofort auf die Platte, vor   */
+        fat_set(d, 1, val & ~CLEAN(v)); /* allen verzoegerten Daten     */
         bc_sync = 1;
+        fsinfo(d, 0);
         fat_flush();
         bc_sync = 0;
     }
@@ -1993,13 +2117,14 @@ static void mark_in_use(int d)
 void __far ifs_shutdown(void)
 {
     int d;
-    unsigned val;
+    clus_t val;
 
     for (d = 0; d < NDRIVE; d++)
         if (vol[d].used && vol[d].in_use && !vol[d].locked) {
             val = fat_raw(d, 1);
-            fat_set(d, 1, val | CLEAN_BIT);
+            fat_set(d, 1, val | CLEAN(&vol[d]));
             bc_sync = 1;
+            fsinfo(d, 1);
             fat_flush();
             bc_sync = 0;
             vol[d].in_use = 0;

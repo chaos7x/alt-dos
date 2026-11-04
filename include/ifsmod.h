@@ -24,11 +24,12 @@
 struct ifs_file {
     unsigned char  drive;
     unsigned char  attr;
-    unsigned       first;               /* treiberspezifisch (FAT: Cluster) */
+    unsigned long  first;               /* treiberspezifisch (FAT: Cluster) */
     unsigned long  size;
-    unsigned       cache_clus;          /* zuletzt gelesene Stelle, damit   */
+    unsigned long  cache_clus;          /* zuletzt gelesene Stelle, damit   */
     unsigned long  cache_pos;           /* fortlaufendes Lesen schnell ist  */
-    unsigned       dir_clus, dir_idx;   /* Verzeichniseintrag (FAT)         */
+    unsigned long  dir_clus;            /* Verzeichniseintrag (FAT)         */
+    unsigned       dir_idx;
     unsigned char  flags;               /* IFS_F_*                          */
     unsigned long  fsdata;              /* frei fuer das Dateisystem (ISO: Extent) */
 };

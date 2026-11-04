@@ -27,6 +27,11 @@ und PC-DOS.
   Daten gehen sofort auf den Datenträger, die FAT am Ende jeder Operation in
   beide Kopien; Zeitstempel aus der CMOS-Uhr. Gewechselte Disketten
   werden neu eingelesen, Schreibschutz wird erkannt
+- FAT32 (6.0): Partitionen vom Typ 0Bh/0Ch werden eingehängt, gelesen
+  und beschrieben, lange Namen dort immer im Windows-95-Format (VFAT);
+  Sauber-Bit (FAT[1] Bit 27) und FSInfo wie Windows 95/98. CHKDSK nennt
+  das Dateisystem; ein Prüfprogramm für FAT32 (UFAT32) fehlt noch,
+  ebenso FORMAT/FDISK für FAT32 und der Start von einer FAT32-Partition
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
