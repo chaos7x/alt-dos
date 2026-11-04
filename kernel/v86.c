@@ -170,6 +170,13 @@ static int key_ready(int t)
 }
 static void rom_uncow(int t);
 static unsigned char from_tick;
+/* STI-Schatten: die CPU nimmt Interrupts erst nach dem Befehl hinter STI
+   an. Digger biegt INT 9 um und merkt sich den alten Vektor erst nach
+   "STI; POP DS" - eine beim STI sofort zugestellte Taste sprang ueber
+   den leeren Zeiger ins Nichts (#UD bei 0000:000B, auf dem P2). Nach
+   einem STI, das IF einschaltet, kommt der Interrupt daher erst mit der
+   naechsten Falle oder dem naechsten Takt. */
+static unsigned char sti_sh;
 static unsigned t8_last[NTASK];         /* irq0_n bei der letzten Zustellung */
 extern volatile unsigned irq0_n;        /* start.asm: zaehlt jeden irq0  */
 /* Hardware-Vektoren beim Programmstart (INT E0h 00h): bricht ein Spiel
@@ -1720,7 +1727,7 @@ static void inject(struct v86_iret *r, int t)
     vga_freeze(t);
     account(t);
     sb_pump(t);
-    if (!(vfl[t] & FL_IF))
+    if (!(vfl[t] & FL_IF) || sti_sh)
         return;
     if (sb[t].irqp) {                           /* Sound Blaster fertig: */
         unsigned q;                             /* IRQ 5 und 7 (welche   */
@@ -5577,6 +5584,8 @@ static unsigned monitor(struct v86_frame *f, int t)
         vfl[t] &= ~FL_IF;
         break;
     case 0xFB:                                  /* STI                   */
+        if (!(vfl[t] & FL_IF))
+            sti_sh = 1;                         /* Schatten: erst spaeter */
         vfl[t] |= FL_IF;
         break;
     case 0x9C:                                  /* PUSHF(D)              */
@@ -5663,6 +5672,7 @@ unsigned __far v86_exc(struct v86_frame *f)
     if (rc == 0) {
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
+        sti_sh = 0;
     } else if (rc == 2) {
         irq_off();                      /* DPMI: weiter im PM            */
         pvi_out(&f->r, t);

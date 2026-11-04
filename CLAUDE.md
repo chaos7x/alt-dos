@@ -1963,6 +1963,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Anlass: COMMAND und DIGGER brechen beim Nutzer auf dem P2 mit #UD bei
   0000:000B bzw. 0000:0024 ab (HALLO und DOOM laufen) – in QEMU (bis
   1 GB, Pentium II, D: mit 1,8 GB FAT16) und Bochs nicht nachstellbar.
+  Ursache (mit der Spur gefunden, danach in QEMU mit `sendkey ret 100`
+  nachgestellt): Digger biegt INT 9 um und speichert den alten Vektor
+  erst nach `STI; POP DS`. Der Monitor stellte beim emulierten STI eine
+  wartende Taste (Loslassen von Enter, `key_ready` verzögert es 3 Takte)
+  sofort zu -> Diggers Handler sprang über den leeren Zeiger nach
+  0000:0000. Jetzt STI-Schatten wie die CPU (`sti_sh`): schaltet STI IF
+  ein, kommt der Interrupt erst mit der nächsten Falle oder dem nächsten
+  Takt. Danach startet Digger (gehaltenes Enter), F10, COMMAND /C VER.
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),
