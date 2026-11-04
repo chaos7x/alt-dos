@@ -2082,8 +2082,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Farbverlauf sauber; ET4000 (486) meldet wie erwartet „keine VESA-Karte
   mit linearem Bildspeicher“ (VBE ohne LFB). Sitzungswechsel auf der
   S3 ebenfalls bestätigt (START VDEMO, Wechsel zu DOOM in einer Box und
-  zurück). Für die ET4000 ginge VBE mit Bankumschaltung (4F05h) – erst
-  bei Bedarf; TLVBE/UniVBE sind DOS-TSRs, die der Kernel nicht hat.
+  zurück). Für die ET4000 ginge VBE mit Bankumschaltung (4F05h) – laut
+  Nutzer nicht nötig: in den 386 kommt eine ELSA Winner 2000 (S3);
+  TLVBE/UniVBE/Treiber-TSRs hat der Kernel nicht, zählt nur das BIOS.
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem
