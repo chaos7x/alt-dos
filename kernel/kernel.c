@@ -124,6 +124,7 @@ struct ofile {
 #define OF_PRD  1           /* Leseende einer Pipe                      */
 #define OF_PWR  2           /* Schreibende einer Pipe                   */
 #define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
+#define DASD_LBA  0x80      /* OF_DASD: f.flags, pos in Sektoren (DRV_OPEN_LBA) */
 #define DASD_DISK 1         /* OF_DASD mit f.attr = DASD_DISK: ganze Platte,
                                f.drive = Blockgeraet (DosOpenDisk)      */
 #define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
@@ -2038,9 +2039,12 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
     if (write && !o->pipe)
         return -1;                      /* nur mit Sperre             */
     len &= ~(bs - 1);
-    if ((unsigned)o->pos & (bs - 1))
+    if (o->f.flags & DASD_LBA)          /* Stelle in Sektoren (ueber 4 GB) */
+        lba = o->pos;
+    else if ((unsigned)o->pos & (bs - 1))
         return -1;
-    lba = o->pos >> (bs == 2048 ? 11 : 9);
+    else
+        lba = o->pos >> (bs == 2048 ? 11 : 9);
     total = whole ? blk[dev].blocks : vol[d].psize ? vol[d].psize : blk[dev].blocks;
     while (done < len && lba < total) {
         if (write) {
@@ -2060,7 +2064,7 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
     }
     if (write && IS_FLOPPY(dev) && fd_sync())
         return -1;                      /* Spurpuffer nicht geschrieben */
-    o->pos += done;
+    o->pos += o->f.flags & DASD_LBA ? done / bs : done;
     return (int)done;
 }
 
@@ -2955,7 +2959,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_OPENDRIVE:
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
             return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
-        if (a2 == DRV_OPEN_LOCK) {
+        if (a2 & DRV_OPEN_LOCK) {
             if (blk[vol[a1].blk].bsize != 512)
                 return FAPI_ERR_WP;
             for (k = 1; k < NFILE; k++)         /* offene Dateien dort?  */
@@ -2969,8 +2973,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].kind = OF_DASD;
         files[k].f.drive = (unsigned char)a1;
         files[k].f.attr = 0;
-        files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
-        if (a2 == DRV_OPEN_LOCK)
+        files[k].f.flags = (unsigned char)(a2 & DRV_OPEN_LBA ? DASD_LBA : 0);
+        files[k].pipe = (unsigned char)(a2 & DRV_OPEN_LOCK);
+        if (a2 & DRV_OPEN_LOCK)
             vol[a1].locked = 1;
         if (IS_FLOPPY(vol[a1].blk))
             blk_media(vol[a1].blk);             /* gewechselt? neu lesen */
@@ -3006,7 +3011,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         int dev = disk_blk(a1), d;
         if (dev < 0)
             return FAPI_ERROR;
-        if (a2 == DRV_OPEN_LOCK) {              /* nichts offen darauf?  */
+        if (a2 & DRV_OPEN_LOCK) {               /* nichts offen darauf?  */
             for (k = 1; k < NFILE; k++)
                 if (files[k].refs && files[k].kind == OF_FILE &&
                     vol[files[k].f.drive].blk == dev)
@@ -3022,8 +3027,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].kind = OF_DASD;
         files[k].f.drive = (unsigned char)dev;
         files[k].f.attr = DASD_DISK;
-        files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
-        if (a2 == DRV_OPEN_LOCK)
+        files[k].f.flags = (unsigned char)(a2 & DRV_OPEN_LBA ? DASD_LBA : 0);
+        files[k].pipe = (unsigned char)(a2 & DRV_OPEN_LOCK);
+        if (a2 & DRV_OPEN_LOCK)
             for (d = 0; d < NDRIVE; d++)
                 if (vol_present(d) && vol[d].blk == dev)
                     vol[d].locked = 1;

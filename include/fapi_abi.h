@@ -89,6 +89,8 @@
 #define FAPI_OPENDRIVE      0x2B    /* BX = Laufwerk (0 = A:), CX = DRV_OPEN_* -> Handle */
 #define DRV_OPEN_READ       0       /* nur lesen, ohne Sperre           */
 #define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
+#define DRV_OPEN_LBA        2       /* | : DosSeek-Stelle in Sektoren statt
+                                       Byte (Laufwerke ueber 4 GB, 6.0)  */
 /* Ganze Festplatten (FDISK): Nummer 0, 1, ... zaehlt nur Platten mit
    512-Byte-Sektoren (keine Diskette, keine CD) */
 #define FAPI_DISKINFO       0x43    /* BX = Platte, CX = struct fapi_diskinfo

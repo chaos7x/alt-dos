@@ -153,7 +153,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver vesa vdemo"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
-for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
+for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     U=""
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
@@ -180,7 +180,7 @@ BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expan
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
 LFNAPPS="cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
-for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
+for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
     case " $BINDAPPS " in *" $t "*) L="$L --bind=$B/dstub.bin,$B/dstub.map" ;; esac
@@ -236,7 +236,7 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_sb16.sys SB16.SYS
-       $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
+       $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE  $B/task_ufat32.exe UFAT32.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE

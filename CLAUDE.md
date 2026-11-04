@@ -263,7 +263,24 @@ Win32s), nicht vorziehen, sondern nachfragen.
   DGROUP-Platz: der 1-KB-FAT-Cache liegt nicht mehr in DGROUP, sondern
   hinter dem DMA-Puffer (DMABUF:FCACHE_OFF = linear 8800h, Fenster 3 KB).
   Danach Code 51.330 + 37.095 + 51.526, DGROUP 64.452.
-  Offen: UFAT für FAT32 (CHKDSK), FORMAT /FS:FAT32, FDISK über 2 GB,
+  Stufe 2 (in QEMU geprüft: CHKDSK gleich fsck, eingebaute Fehler –
+  verlorene Kette, zu große Dateigröße – gemeldet und mit /F repariert,
+  fsck danach sauber; FORMAT /FS:FAT32 /Q /V, XCOPY, CHKDSK, fsck und
+  minfo sauber): `UFAT32.EXE` (apps/task_ufat32.c + ufat32_fmt.c) –
+  eigenes Programm statt UFAT (das hält die FAT ganz im Speicher): FAT
+  über 8 Sektoren Cache (`fc_get`, schreibt in alle aktiven Kopien),
+  Bitmaps used/aux in DosAllocSeg-Segmenten (je 64 KB = 524.288 Cluster,
+  höchstens 7 je Bitmap wegen 14 freien LDT-Plätzen -> 3,6 Mio. Cluster),
+  Querverbindung: Kette davor beenden (keine Kopie wie UFAT), /F setzt
+  Sauber-Bit + FSInfo. Bei über 4 GB Bytewerte in KB (`cline`). Kein
+  UNDELETE/DEFRAG/Oberflächentest/LFN-Prüfung für FAT32 (Meldung).
+  FORMAT: 32 reservierte Sektoren, FSInfo 1/7, Bootsektor-Kopie 6,
+  Clustergröße nach Microsoft-Tabelle, kleiner bis 65.525 Cluster
+  erreicht sind, Sektoren je FAT nach der Formel der Spezifikation
+  (`udiv`), Startcode nur Meldung „Kein Systemdatenträger“. Kernel:
+  DosOpenDrive/DosOpenDisk mit `DRV_OPEN_LBA` (2, kombinierbar) – DosSeek-
+  Stelle in Sektoren (`DASD_LBA` in f.flags), nötig über 4 GB.
+  Offen: FDISK über 2 GB,
   hdboot/preload/ATSYS für den Start von FAT32, REN mit Platzhalter auf
   lange Namen (`ren d:\ordner\langer* kurz.txt` fand nichts – auch auf
   FAT16 VFAT zu prüfen). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS

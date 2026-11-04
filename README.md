@@ -30,8 +30,12 @@ und PC-DOS.
 - FAT32 (6.0): Partitionen vom Typ 0Bh/0Ch werden eingehängt, gelesen
   und beschrieben, lange Namen dort immer im Windows-95-Format (VFAT);
   Sauber-Bit (FAT[1] Bit 27) und FSInfo wie Windows 95/98. CHKDSK nennt
-  das Dateisystem; ein Prüfprogramm für FAT32 (UFAT32) fehlt noch,
-  ebenso FORMAT/FDISK für FAT32 und der Start von einer FAT32-Partition
+  das Dateisystem und prüft FAT32 mit `UFAT32.EXE` (Ketten, Größen,
+  Querverbindungen, verlorene Ketten -> FILEnnnn.CHK, FAT-Kopien; die FAT
+  bleibt auf der Platte, Bitmaps in eigenen Segmenten). `FORMAT X:
+  /FS:FAT32 [/Q] [/V:Name]` legt FAT32 an (Clustergröße wie Windows 98,
+  ohne /Q mit Oberflächentest). Noch offen: FDISK über 2 GB und der Start
+  von einer FAT32-Partition
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
