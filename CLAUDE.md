@@ -2027,7 +2027,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Programmende (xms_reset), Seite frei in v86_destroy. Lehre: D0h–DFh
   gibt es nicht, der OPL-Kern von QEMU (MAME) nimmt D0h–D8h aber als
   C0h–C8h – Nullen dort machten aus additiv FM (Obertöne 1320/2640 Hz);
-  fm_load (FAPI) schreibt dort jetzt den Wert von C0h–C8h. Test OPLR.COM
+  fm_load (FAPI) schreibt dort jetzt den Wert von C0h–C8h. Test `\DEMO\OPLTEST.COM`
   (440 Hz 1 s, Taste abwarten, dann nur B0h = Taste an): DETACH PLAY
   ODE.IMF, START OPLR, weg, PLAY spielt, zurück, Taste -> 440 Hz sauber
   (ohne Kopie stumm); `ADLIB_COPY=ON` ohne PLAY ebenso; DOOM unverändert.

@@ -172,6 +172,7 @@ nasm -f bin tools/stub.asm -o $B/stub.bin
 nasm -f bin apps/hallo.asm -o $B/hallo.com   # Test der DOS-Boxen (V86)
 nasm -f bin apps/boxtest.asm -o $B/boxtest.com
 nasm -f bin apps/bgtest.asm -o $B/bgtest.com
+nasm -f bin apps/opltest.asm -o $B/opltest.com
 # Programme, die auch unter MS-DOS laufen (gebunden wie mit BIND bei OS/2:
 # der Stub uebersetzt die FAPI in DOS-/BIOS-Aufrufe, die .EXE wird groesser)
 BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest"
@@ -238,7 +239,7 @@ SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.s
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
-       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM
+       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM  $B/opltest.com OPLTEST.COM
        $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL

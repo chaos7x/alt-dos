@@ -375,7 +375,7 @@ und PC-DOS.
   Register der Box von Anfang an mit, damit ihre Instrumente zurückkommen,
   wenn zwischendurch ein FAPI-Programm wie `PLAY /FM` gespielt hat; ohne
   Angabe nur, wenn beim Zugriff der Box schon eines FM offen hat – das
-  Mitschreiben kostet Fallen). Wird vor jedem
+  Mitschreiben kostet Fallen; Test `\DEMO\OPLTEST`). Wird vor jedem
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
