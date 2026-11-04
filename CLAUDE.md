@@ -2137,6 +2137,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit PTE_OWN). Geprüft: X2.COM (16 MB anlegen, Muster bei 15 MB hin
   und zurück, Lock 110000h, Freigabe), Box per START mit belegtem EMB
   beendet -> Speicher ganz zurück, DOOM 1.9 Timedemo (DPMI ab 64 MB).
+  IDLE_SENSITIVITY (Phase 4, Rest; in QEMU geprüft): v86.c `idle_poll`
+  zählt je Kerneltakt leere INT-16h-01/11-Abfragen, INT 1Ah 00h und
+  Lesen von 3DAh/3BAh; ab sens/4 + 1 schläft die Box einen Takt
+  (BOX_SLEEP). INI `IDLE_SENSITIVITY=n` -> BOXSHELL INT E0h 19h (BX =
+  n + 1, 0 = Vorgabe 75), `idle_sens[t]`. Ohne INI-Wert bleibt die
+  Erkennung bei Spielen mit eigenem Takt (`pit_rl`) aus (Digger). Test
+  POLL.COM (fragt 3DAh und INT 16h 01 ab) per START im Hintergrund,
+  BUSY 60000 vorn: 10 s mit Vorgabe, mit 100 nach über 2 min nicht fertig.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.

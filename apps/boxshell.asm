@@ -146,6 +146,8 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;   SB_IRQ_IDLE=ON|OFF    Vorgabe ON (siehe v86.c, box_hk) -> INT E0h 18h
 ;   IF_WATCHDOG=ON|OFF    (BL Bit 0/1/2/3 = an)
 ;   PVI=ON|OFF            CLI/STI ohne Falle (ab Pentium, CR4.PVI)
+;   IDLE_SENSITIVITY=n    0-100 wie OS/2 (Vorgabe 75, 100 = aus)
+;                         -> INT E0h 19h, BX = n + 1 (0 = Vorgabe)
 ; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
 
 get_pname:                              ; Name aus cmd (CX Zeichen) -> pname
@@ -209,6 +211,7 @@ ini_apply:
         mov     word [emskb], 2048
         mov     word [dosver], 0
         mov     byte [hk], 15
+        mov     word [idles], 0
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
         int     21h
@@ -242,6 +245,9 @@ ini_apply:
         int     21h
 .set:   mov     bl, [hk]
         mov     ah, 18h
+        int     0E0h
+        mov     bx, [idles]
+        mov     ah, 19h
         int     0E0h
         mov     bx, [xmskb]
         mov     ah, 16h
@@ -305,7 +311,7 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jmp     .skip
 .k3:    mov     di, k_ver
         call    kmatch
-        jc      .k4
+        jc      .k3b
         mov     dl, [es:si]             ; Hauptversion
         sub     dl, '0'
         xor     dh, dh
@@ -339,6 +345,13 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jne     .skip
         jmp     .line
 .done:  ret
+.k3b:   mov     di, k_idle              ; IDLE_SENSITIVITY=n
+        call    kmatch
+        jc      .k4
+        call    pnum
+        inc     ax
+        mov     [idles], ax
+        jmp     .skip
 .k4:    mov     di, k_hk                ; Schalter ON/OFF (1/0)
         mov     dl, 1
 .k5:    push    di
@@ -736,6 +749,8 @@ k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
           db "IF_WATCHDOG", 0
           db "PVI", 0, 0, 0, 0, 0, 0, 0, 0, 0
 hk        db 15
+idles     dw 0
+k_idle    db "IDLE_SENSITIVITY", 0
 xmskb     dw 2048
 emskb     dw 2048
 dosver    dw 0

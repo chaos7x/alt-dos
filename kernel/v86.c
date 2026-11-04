@@ -108,7 +108,9 @@ static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbi
 #define HK_WDOG   4                     /* IF_WATCHDOG: IF nach 3 Takten */
 static unsigned char box_hk[NTASK];
 static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
-static unsigned char idle_n[NTASK];     /* leere Tastaturabfragen hintereinander */
+static unsigned char idle_n[NTASK];     /* Abfragen im laufenden Kerneltakt */
+static unsigned char idle_sens[NTASK];  /* IDLE_SENSITIVITY + 1, 0 = Vorgabe */
+static unsigned idle_tk[NTASK];         /* Takt, zu dem idle_n zaehlt      */
 
 unsigned long v86_pages;                /* Seiten aller Boxen (MEM)      */
 static pg_t vp_alloc(void)
@@ -1836,6 +1838,27 @@ static void int10(struct v86_frame *f, int t)
     cur_put(t);
 }
 
+/* Leerlauf wie IDLE_SENSITIVITY bei OS/2 (0-100, Vorgabe 75, 100 = aus):
+   leere Tastaturabfrage, Uhr lesen (INT 1Ah 00h), Ruecklauf (3DAh) zaehlen
+   je Kerneltakt; mehr als sens/4 + 1 davon -> bis zum naechsten Takt
+   schlafen. Ohne INI-Wert nicht bei Spielen mit eigenem Takt (pit_rl) -
+   Digger fragt in seiner Warteschleife staendig ab und lief langsamer. */
+static void idle_poll(int t)
+{
+    unsigned sens = idle_sens[t] ? idle_sens[t] - 1u : 75u, tk;
+    if (sens >= 100 || (!idle_sens[t] && pit_rl[t]))
+        return;
+    tk = (unsigned)get_ticks();
+    if (tk != idle_tk[t]) {
+        idle_tk[t] = tk;
+        idle_n[t] = 0;
+    }
+    if (++idle_n[t] >= sens / 4 + 1) {
+        idle_n[t] = 0;
+        kf_box_ctl(BOX_SLEEP, 1);
+    }
+}
+
 /* ---- Dienste ------------------------------------------------------------ */
 
 static unsigned char svc_cf, svc_zf;    /* 0xFF = unveraendert          */
@@ -2009,13 +2032,8 @@ static void svc(int n, struct v86_frame *f, int t)
             if (k >= 0) {
                 AX = (unsigned)k;
                 idle_n[t] = 0;
-            } else if (++idle_n[t] >= 16 && !pit_rl[t]) {  /* fragt nur ab: */
-                idle_n[t] = 0;                  /* abgeben (wie IDLE_SENSITIVITY */
-                kf_box_ctl(BOX_SLEEP, 1);       /* bei OS/2); nicht bei Spielen mit
-                                                   eigenem Takt - Digger fragt in
-                                                   seiner Warteschleife staendig ab
-                                                   und lief langsamer */
-            }
+            } else
+                idle_poll(t);                   /* fragt nur ab          */
         } else if (AH == 0x02 || AH == 0x12)
             AL = (unsigned char)kf_kbd_shift();
         else if (AH == 0x05)
@@ -2028,6 +2046,7 @@ static void svc(int n, struct v86_frame *f, int t)
     case 0x1A:                                  /* Uhr                   */
         st = rtc_stamp();
         if (AH == 0x00) {
+            idle_poll(t);                       /* Warteschleife?        */
             DX = rd16(BDA, 0x6C);
             CX = rd16(BDA, 0x6E);
             AL = rd8(BDA, 0x70);
@@ -2181,6 +2200,8 @@ static void svc(int n, struct v86_frame *f, int t)
             ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
             box_hk[t] = (unsigned char)(~BX & 15);
+        else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
+            idle_sens[t] = (unsigned char)(BX > 101 ? 101 : BX);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x4000 - 0x110 ? 0x4000 - 0x110 : pg) + 1;  /* bis 63.424 KB */
@@ -2436,6 +2457,7 @@ static unsigned char port_in(int t, unsigned p)
         return v;
     }
     case 0x3DA: case 0x3BA:
+        idle_poll(t);
         tgl[t] ^= 0x09;                         /* Ruecklauf kommt und geht */
         return (unsigned char)(tgl[t] & 0x09);
     case 0x3D5:
@@ -2604,6 +2626,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
     xms_lim[t] = 0;
     box_hk[t] = 0;
+    idle_sens[t] = 0;
     for (i = 0; i < 6; i++)
         umb_used[t][i] = umb_head[t][i] = 0;
 }
