@@ -2102,6 +2102,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Umschaltung ist ein Ausflug in den Real Mode – auf dem 386 spürbar,
   aber nur bei VioSetPlane und Zeigerbewegung über Abschnittsgrenzen.
   VESA.EXE zeigt „linear“/„Fenster“ und die VBE-Version richtig (1.2).
+  Vom Nutzer in 86Box bestätigt: Cirrus CL-GD5434 (386), `VDEMO 640 16`
+  über das Fenster mit Mauszeiger. Der senkrechte Strich in der Bild-
+  mitte ist VDEMO selbst (zeichnet Byte für Byte, Rand bei Byte 639 =
+  Punkt 319 in 16 Bit), auch in QEMU zu sehen.
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem
