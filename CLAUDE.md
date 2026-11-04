@@ -2159,7 +2159,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (MSD) bis auf die Treiberliste nach k2misc.c (`sys_info2`). Lehre: das
   erste Codesegment darf höchstens 65.520 Byte haben – start.asm rundet
   `code_end` auf 16 auf, darüber läuft die DS-Rechnung über und der
-  Kernel hängt beim Start; build.sh bricht jetzt ab. Offen: MS-DOS-MEM
+  Kernel hängt beim Start; build.sh bricht jetzt ab. Vom Nutzer auf dem
+  386 mit 4 MB bestätigt (Build 336): zwei Boxen per START 1.800 KB,
+  1.104 KB frei (vorher 2.600/304). Offen: MS-DOS-MEM
   zeigt in der Box „Erweiterung (XMS) 0K“ insgesamt.
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
