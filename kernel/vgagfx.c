@@ -246,6 +246,11 @@ static void raw_copy(int s, int out)
    wie die CPU es sieht, ein Stueck linearer Speicher. */
 static unsigned raw_kind(unsigned allow)
 {
+    if ((allow == 1 || allow == 2) && !(raw_t[5] & 0x08) && (raw_t[5] & 0x04) &&
+        !(raw_t[36] & 0x10) && ((raw_t[37] >> 2) & 3) <= 1)
+        return 2;                           /* planar (12h, EGA, Mode X): */
+                                            /* v86.c blendet die Ebene der
+                                               Map Mask aus dem Puffer ein */
     if (raw_t[32] || raw_t[34] || (raw_t[36] & 0x0B) || raw_t[39] != 0xFF)
         return 0;
     if (allow == 1 && (raw_t[5] & 0x08) && ((raw_t[37] >> 2) & 3) <= 1)
@@ -284,7 +289,7 @@ static void raw_out(int s)
     q[RAW_KIND] = (unsigned char)k;
     for (i = 0; i < 8; i++)
         q[RAW_ST + i] = 0;
-    if (k)
+    if (k & 1)
         raw_lin(s, k, 1);                   /* vor raw_flat (Register!)  */
     raw_copy(s, 1);
 }
@@ -301,7 +306,9 @@ static void raw_in(int s)
     k = q[RAW_KIND];
     dac_io(1, 0, 256, q + 64);
     vga_regs(raw_t);
-    if (k) {                                /* was die Box hinten schrieb */
+    if (k & 1) {                            /* was die Box hinten schrieb
+                                               (planar: steht schon in den
+                                               Ebenen, raw_copy) */
         seqr(0x02, k == 1 ? 0x0F : 0x03);
         raw_lin(s, k, 0);
         seqr(0x02, raw_t[3]);

@@ -2226,7 +2226,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Grenze trifft – in QEMU mit HT2.COM geprüft (100/200/100 KB
   anlegen, mittleren frei: 4 Einträge, 1.848 + 200 = 2.048 KB).
   Virtuelle VGA, Stufe 2 – Grafik-Boxen im Hintergrund (in QEMU geprüft:
-  `\DEMO\BGTEST.COM` (apps/bgtest.asm, `4` = CGA) 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
+  `\DEMO\BGTEST.COM` (apps/bgtest.asm, `4` = CGA, `12` = planar) 13h zeichnet je BIOS-Takt eine Zeile und stellt bei Zeile 100
   Farbe 1 per 3C8h/3C9h auf Rot – START, Alt+Esc weg bei Zeile 71, nach
   5 s zurück bei Zeile 169, ganzes Bild rot; BG4.COM dasselbe in CGA-
   Modus 4: 70 -> 195 Zeilen; CMD vorn sauber; DOOM (Mode Y) hält wie
@@ -2257,8 +2257,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   das Attributregister (3DAh, 3C0h = 21h, 3C1h) und stellt diesen
   Eintrag um (prüft so auch das Lesen der Attributkopie hinten; in QEMU
   danach rot).
-  Offen: planare Modi und Mode X hinten (bräuchte Fallen je Zugriff oder
-  Umblenden je Map Mask), Palette über INT 10h 10xxh hinten nachbilden.
+  Planare Modi hinten (Phase 4, Rest; in QEMU mit `BGTEST 12` geprüft:
+  54 -> 200 Zeilen, rot): Art 2 in `raw_kind` (BIOS-Modus 0Dh/0Eh/10h/
+  12h -> RAW_ALLOW 2, 13h -> 1 erlaubt auch Mode X; Chain-4 aus, SEQ 4
+  Bit 2, GC5 ohne Odd/Even, A0000). Kein Schatten nötig – die vier Ebenen
+  liegen schon im Puffer (raw_copy holt sie in raw_in zurück, raw_lin nur
+  für Art 1/3). v86.c `vga_plmap`: A0–AF zeigen auf die Ebene der Map
+  Mask im Puffer, wenn die Register einfach sind und genau eine Ebene
+  gewählt ist (Map Mask 0: Read Map nur lesend), sonst nicht eingeblendet;
+  neu nach jedem Schreiben auf SEQ 2 und GC 0–8 (außer 6). Seitenfehler
+  dort (`vga_pf`, V86 und dp_trap) -> vga_wait, danach läuft der Befehl
+  auf der Karte. DOOM 1.9 (Mode Y) wartet damit gleich bei der ersten
+  Latch-Kopie (`mov cl,[ebx]` … `mov [edx],cl` in Schreibmodus 1, GC5 =
+  41h, Map Mask 0Fh) – nachbilden hieße einen Befehls-Nachbildner je Byte;
+  lohnt nicht (DOOM spielt man nicht hinten, Ton ist dort stumm). In QEMU
+  geprüft: START DOOM, weg, VER, zurück, läuft weiter.
+  INT 10h hinten (`vga_bgint` vor vga_wait in vga_want): 0Fh aus dem BDA,
+  1000h/1001h/1002h/1007h/1008h Attribute, 1010h/1012h/1015h/1017h DAC
+  in der Registerkopie – in QEMU mit einer Abwandlung von BGTEST geprüft
+  (Zeile 100: 0Fh + 1010h grün, 200 Zeilen, grün).
+  Offen: Latch-Kopien und SVGA hinten.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

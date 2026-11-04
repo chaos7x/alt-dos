@@ -9,6 +9,7 @@
 ; gewachsen (und rot, falls Zeile 100 hinten erreicht wurde).
 ;   BGTEST      Modus 13h (320x200x256)
 ;   BGTEST 4    CGA-Modus 4 (320x200x4)
+;   BGTEST 12   Modus 12h (640x480x16, planar - schreibt ueber Map Mask)
 ; Eine Taste beendet.
         org     100h
         mov     si, 81h
@@ -16,11 +17,21 @@
         cmp     al, ' '
         je      .arg
         cmp     al, '4'
-        jne     .m13
+        jne     .m12
         mov     byte [cga], 1
         mov     ax, 4
         int     10h
         push    word 0B800h
+        jmp     .seg
+.m12:   cmp     al, '1'                 ; "12": planar, Map Mask = Ebene 0
+        jne     .m13
+        mov     byte [cga], 2
+        mov     ax, 12h
+        int     10h
+        mov     dx, 3C4h
+        mov     ax, 0102h               ; SEQ 2 = 1
+        out     dx, ax
+        push    word 0A000h
         jmp     .seg
 .m13:   mov     ax, 13h
         int     10h
@@ -39,9 +50,17 @@
         int     1Ah
         cmp     dx, si
         je      .w
-        cmp     byte [cga], 0
-        jne     .c4
-        mov     ax, 320                 ; 13h: Zeile bx mit Farbe 1
+        cmp     byte [cga], 1
+        je      .c4
+        jb      .z13
+        mov     ax, 80                  ; 12h: Zeile bx, 80 Byte in Ebene 0
+        mul     bx
+        mov     di, ax
+        mov     al, 0FFh
+        mov     cx, 80
+        rep     stosb
+        jmp     .pal
+.z13:   mov     ax, 320                 ; 13h: Zeile bx mit Farbe 1
         mul     bx
         mov     di, ax
         mov     al, 1
@@ -62,7 +81,7 @@
         jne     .n
         mov     ah, 1                   ; 13h: DAC-Eintrag 1
         cmp     byte [cga], 0
-        je      .dac
+        je      .dac                    ; (CGA und 12h: ueber Attribut 1)
         mov     dx, 3DAh                ; CGA: Farbe 1 zeigt ueber das
         in      al, dx                  ; Attributregister 1 auf einen
         mov     dx, 3C0h                ; anderen DAC-Eintrag (BIOS:

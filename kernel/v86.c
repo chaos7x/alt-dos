@@ -2425,6 +2425,36 @@ static unsigned char __far *vga_vr(int t)
 }
 
 /* Box vorn auf der Karte (k = 0) oder hinten auf dem Schatten */
+/* planar hinten (Art 2): A0000-AFFFF zeigt auf die Ebene im Puffer, in
+   die die Karte jetzt schriebe - nur bei einfachen Registern (Schreib-
+   modus 0 ohne Set/Reset, Drehen, Verknuepfung, Bitmaske FFh, Lesemodus
+   0) und genau einer Ebene in der Map Mask; Map Mask 0: Read Map nur
+   lesend. Sonst nicht eingeblendet: der Seitenfehler laesst die Box
+   warten, bis sie vorn ist (vga_pf). Nach jedem Umstellen neu. */
+static void vga_plmap(int t)
+{
+    unsigned char __far *q = vga_vr(t);
+    unsigned i, mm, p = 4, rw = PTE_BOX;
+    unsigned long b;
+    if (!q)
+        return;
+    b = vio_raw_buf(box_ses[t]);
+    mm = q[3] & 15;                             /* SEQ 2 Map Mask        */
+    if (q[32] || q[34] || (q[36] & 0x0B) || q[39] != 0xFF)
+        mm = 0xFF;
+    if (mm == 1 || mm == 2 || mm == 4 || mm == 8)
+        p = mm == 1 ? 0 : mm == 2 ? 1 : mm == 4 ? 2 : 3;
+    else if (mm == 0) {
+        p = q[35] & 3;                          /* GC 4 Read Map         */
+        rw = PTE_P | PTE_U;
+    }
+    scratch2_map(PG_LIN(pt_box[t]), 4095);
+    for (i = 0; i < 16; i++)
+        put32(SCRATCH2, 0xA0 + i, p < 4 ? (b + ((unsigned long)p << 16) +
+                                           ((unsigned long)i << 12)) | rw : 0);
+    tlb(t);
+}
+
 static void vga_map(int t, unsigned k)
 {
     unsigned i, a = k == 1 ? 0xA0 : 0xB8, n = k == 1 ? 16 : 8;
@@ -2432,12 +2462,26 @@ static void vga_map(int t, unsigned k)
     scratch2_map(PG_LIN(pt_box[t]), 4095);
     for (i = 0xA0; i < 0xC0; i++)
         put32(SCRATCH2, i, k ? vga_spare[t] : ((unsigned long)i << 12) | PTE_BOX);
-    if (k)
+    if (k & 1)
         for (i = 0; i < n; i++)
             put32(SCRATCH2, a + i, (b + ((unsigned long)i << 12)) | PTE_BOX);
     vga_ports(t, !k);
     vga_bgk[t] = (unsigned char)k;
+    if (k == 2)
+        vga_plmap(t);
     tlb(t);
+}
+
+/* Seitenfehler im Bildspeicher einer planaren Box hinten: warten, bis sie
+   vorn ist, dann laeuft der Befehl auf der Karte noch einmal */
+static void vga_wait(int t);
+static int vga_pf(int t)
+{
+    unsigned long a = k2_cr2();
+    if (!vga_raw[t] || vga_bgk[t] != 2 || a < 0xA0000UL || a >= 0xB0000UL)
+        return 0;
+    vga_wait(t);
+    return 1;
 }
 
 /* Box mit der Karte wartet, bis ihre Sitzung vorn ist und gfx_in alles
@@ -2501,8 +2545,68 @@ static void vga_allow(struct v86_frame *f, int t)
     unsigned fl = irq_off();
     q = vga_vr(t);
     if (q)
-        q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 : 0);
+        q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 :
+                                       m == 0x0D || m == 0x0E || m == 0x10 || m == 0x12 ? 2 : 0);
     irq_restore(fl);
+}
+
+/* INT 10h einer Box, die hinten auf dem Schatten laeuft: Modus abfragen
+   und Palette/Attribute (1000h-1017h) gehen an die gesicherte Register-
+   kopie, statt die Box bis vorn anhalten -> 1 = erledigt */
+static int vga_bgint(struct v86_frame *f, int t)
+{
+    unsigned char __far *q;
+    unsigned i, n, es = (unsigned)f->r.es, dx = DX;
+    if (AH == 0x0F) {                           /* Modus aus dem BDA     */
+        AL = (unsigned char)rd8(BDA, 0x49);
+        AH = (unsigned char)rd8(BDA, 0x4A);
+        BH = (unsigned char)rd8(BDA, 0x62);
+        return 1;
+    }
+    if (AH != 0x10 || !(q = vga_vr(t)))
+        return 0;
+    switch (AL) {
+    case 0x00:                                  /* Attribut BL = BH      */
+        if (BL < 21)
+            q[40 + BL] = BH;
+        return 1;
+    case 0x01:                                  /* Rand                  */
+        q[40 + 0x11] = BH;
+        return 1;
+    case 0x02:                                  /* 16 Attribute + Rand   */
+        for (i = 0; i < 17; i++)
+            q[40 + (i < 16 ? i : 0x11)] = (unsigned char)rd8(es, dx + i);
+        return 1;
+    case 0x07:
+        BH = BL < 21 ? q[40 + BL] : 0;
+        return 1;
+    case 0x08:
+        BH = q[40 + 0x11];
+        return 1;
+    case 0x10:                                  /* eine DAC-Farbe        */
+        i = 64 + (BX & 0xFF) * 3;
+        q[i] = (unsigned char)(DH & 63);
+        q[i + 1] = (unsigned char)(CH & 63);
+        q[i + 2] = (unsigned char)(CL & 63);
+        return 1;
+    case 0x12: case 0x17:                       /* Block setzen/lesen    */
+        for (n = 0; n < CX && (BX & 0xFF) + n < 256; n++)
+            for (i = 0; i < 3; i++) {
+                unsigned o = 64 + ((BX & 0xFF) + n) * 3 + i;
+                if (AL == 0x12)
+                    q[o] = (unsigned char)(rd8(es, dx + n * 3 + i) & 63);
+                else
+                    wr8(es, dx + n * 3 + i, q[o]);  /* (VWIN, nicht SCRATCH) */
+            }
+        return 1;
+    case 0x15:                                  /* eine DAC-Farbe lesen  */
+        i = 64 + BL * 3;
+        DH = q[i];
+        CH = q[i + 1];
+        CL = q[i + 2];
+        return 1;
+    }
+    return 0;
 }
 
 /* INT 10h: 1 = an das Video-BIOS geben */
@@ -2514,6 +2618,8 @@ static int vga_want(struct v86_frame *f, int t)
               (AX == 0x4F02 && (BX & 0x1FF) < 0x100 && ((BX & 0x7F) <= 3 || (BX & 0x7F) == 7));
     if (vga_raw[t]) {
         if (!txt) {
+            if (vga_bgk[t] && vga_bgint(f, t))
+                return 2;                       /* hinten nachgebildet   */
             vga_wait(t);                        /* BIOS: nur auf der Karte */
             if (AH == 0x00 || AX == 0x4F02)
                 vga_allow(f, t);
@@ -2678,8 +2784,11 @@ static void vga_pout(int t, unsigned p, unsigned char v)
             vga_wait(t);
             outb(0x3C4, i);
             outb(0x3C5, v);
-        } else if (i < 5)
+        } else if (i < 5) {
             q[1 + i] = v;
+            if (i == 2 && vga_bgk[t] == 2)
+                vga_plmap(t);                   /* andere Ebene          */
+        }
         return;
     case 0x3C7: st[ST_RI] = v; st[ST_RC] = 0; return;
     case 0x3C8: st[ST_WI] = v; st[ST_WC] = 0; return;
@@ -2693,6 +2802,11 @@ static void vga_pout(int t, unsigned p, unsigned char v)
     case 0x3CE: st[ST_GC] = v; return;
     case 0x3CF:
         i = st[ST_GC];
+        if (vga_bgk[t] == 2 && i < 9 && i != 6) {   /* planar: neu einblenden */
+            q[31 + i] = v;
+            vga_plmap(t);
+            return;
+        }
         if (i < 9 && !vga_simple(q, i, v)) {
             vga_wait(t);
             outb(0x3CE, i);
@@ -5105,6 +5219,8 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     unsigned char op;
     unsigned n, cs = (unsigned)f->r.cs;
 
+    if (f->vec == 14 && vga_pf(t))              /* Bildspeicher hinten   */
+        return 0;
     if (f->vec != 13)
         return dp_exc(f, t);
     lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
@@ -5351,7 +5467,7 @@ static unsigned monitor(struct v86_frame *f, int t)
     case 13:
         break;
     case 14:                                    /* Seitenfehler          */
-        return rom_cow(f, t) ? 0 : 1;
+        return vga_pf(t) || rom_cow(f, t) ? 0 : 1;
     default:
         return 1;
     }
