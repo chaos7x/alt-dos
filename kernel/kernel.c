@@ -1229,6 +1229,7 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
    eigenen Sitzung statt wie NT in der des Aufrufers */
 static unsigned char dos_session;
 unsigned char dos_high, dos_umb;        /* DOS=HIGH,UMB: HMA/UMBs der Boxen */
+unsigned char ems_none;                 /* EMS_FRAME_LOCATION=NONE: kein Rahmen */
 static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
 static int  dc_d;
 static int dos_cmd(const char *cmd)
@@ -5222,6 +5223,8 @@ static void config_sys(void)
             box_kb = num_arg(v);
             if (box_kb < 256 || box_kb > BOX_KB)
                 box_kb = BOX_KB;
+        } else if (kw(line, "EMS_FRAME_LOCATION")) {  /* NONE wie OS/2 */
+            ems_none = up(v[0]) == 'N';
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */

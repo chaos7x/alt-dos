@@ -42,7 +42,7 @@ und PC-DOS.
   verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
   bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
   16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
-  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB` und `RMSIZE=` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
@@ -319,7 +319,10 @@ und PC-DOS.
 - EMS 4.0 in jeder DOS-Box vom Kernel (wie VEMM bei OS/2, kein EMM386):
   Seitenrahmen in der ersten freien 64-KB-Lücke ab C8000 (vor den UMBs),
   Vorgabe 2 MB je Box, bis 4 MB; Erkennung über `EMMXXXX0` am INT-67h-
-  Vektor und als Gerät. Speicher wird erst beim Anlegen belegt
+  Vektor und als Gerät. Speicher wird erst beim Anlegen belegt. Auch
+  55h/56h (Seiten einblenden und springen bzw. aufrufen).
+  `EMS_FRAME_LOCATION=NONE` in der CONFIG.SYS (wie OS/2): kein EMS, der
+  Rahmen bleibt als UMB frei (64 KB mehr)
 - DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2), erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen

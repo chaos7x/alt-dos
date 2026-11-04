@@ -64,6 +64,7 @@
 #define INT8_STUB 0x0400        /* ARPL 8; INT 1Ch; IRET                 */
 #define DPT_OFF 0x0800          /* Diskettenparametertabelle             */
 #define XMS_STUB 0x0500         /* XMS-Einsprung: ARPL E1h; RETF          */
+#define EMS_RET  0x0560         /* EMS 56h zurueck: ARPL E6h; RETF        */
 #define XMS_TAB 0x0900          /* Handle-Tabelle wie HIMEM (INT 2Fh 4309h) */
 #define PTE_OWN 0x200           /* eigene Seite (EMB/UMB): bei Ende frei  */
 #define BDA     0x0040
@@ -199,6 +200,9 @@ static unsigned char vga_raw[NTASK];
 static unsigned char vga_bgk[NTASK];            /* hinten auf Schatten (Art) */
 static void ems_end(int t);
 static void ems_box(int t);
+#define NEMSC    3                              /* Aufrufe ineinander    */
+static unsigned char ems_cn[NTASK];
+static struct { unsigned seg, off; unsigned char n, mode, h; } ems_cs[NTASK][NEMSC];
 static void dpmi_end(int t);
 static unsigned char dp_inirq[NTASK];
 static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
@@ -552,6 +556,7 @@ unsigned long __far v86_create(int t, unsigned kb)
         put32(SCRATCH, i, 0x90CF0063UL | ((unsigned long)i << 8));
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
     put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
+    put32(SCRATCH, EMS_RET >> 2, 0x90CBE663UL);     /* 63 E6 CB: EMS 56h */
     put32(SCRATCH, 0x60A >> 2, 0);                  /* F060:000A EMMXXXX0 */
     for (i = 0; i < 8; i++)
         *(unsigned char __far *)MK_FP(SCRATCH, 0x60A + i) = "EMMXXXX0"[i];
@@ -3415,9 +3420,12 @@ static void ems_tabmap(int t)
     scratch_map(PG_LIN(ems_tab[t]), 4095);
 }
 
+extern unsigned char ems_none;          /* EMS_FRAME_LOCATION=NONE (CONFIG.SYS) */
 static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
 {
     unsigned p, i;
+    if (ems_none)                       /* kein EMS, 64 KB mehr UMB      */
+        return;
     for (p = 0xC8; p + 16 <= 0xF0; p += 4) {
         for (i = 0; i < 16 && BIT(umb_free, p + i); i++)
             ;
@@ -3514,6 +3522,7 @@ static void ems_shrink(int t, unsigned h, unsigned n) /* auf n Seiten     */
 static void ems_box(int t)              /* aus v86_create                 */
 {
     unsigned i;
+    ems_cn[t] = 0;
     if (!umb_ok)
         umb_scan();
     for (i = 0; i < NEH; i++)
@@ -3593,6 +3602,107 @@ static unsigned x57_win(int t, unsigned char typ, unsigned h, unsigned off, unsi
 
 #define ERET(c)  do { AH = (c); return; } while (0)
 
+/* n Paare (logische Seite, Rahmenplatz bzw. Segment bei mode 1) ab
+   seg:off einblenden -> 0 oder Fehlercode */
+static unsigned ems_maplist(int t, unsigned h, unsigned mode, unsigned seg,
+                            unsigned off, unsigned n)
+{
+    unsigned i, r = 0;
+    for (i = 0; i < n && !r; i++) {
+        unsigned lg = rd16(seg, off + i * 4), pp = rd16(seg, off + i * 4 + 2);
+        if (mode == 1)                          /* Segment statt Nummer  */
+            pp = (pp - ((unsigned)ems_frame << 8)) >> 10;
+        if (pp > 3)
+            r = 0x8B;
+        else if (lg == 0xFFFF) {
+            ems_show(t, pp, -1);
+            ems_mh[t][pp] = 0;
+        } else if (lg >= ems_np[t][h])
+            r = 0x8A;
+        else {
+            ems_show(t, pp, ems_slot(t, h, lg));
+            ems_mh[t][pp] = (unsigned char)(h + 1);
+            ems_ml[t][pp] = (unsigned char)lg;
+        }
+    }
+    tlb(t);
+    return r;
+}
+
+/* 55h/56h (EMS 4.0): Seiten nach der Liste einblenden, dann springen bzw.
+   fern aufrufen; 56h blendet nach dem RETF des Ziels die alte Liste ein
+   (Ruecksprung ueber F000:EMS_RET "ARPL E6h; RETF" -> ems_ret). INT 67h
+   kommt auf zwei Wegen: direkt aus do_int (Rahmen nicht auf dem Stapel,
+   CS:IP = Ruecksprung) oder ueber den Stummel F060:0020 (IRET-Rahmen
+   oben auf dem Stapel, FLAGS schreibt der Aufrufer danach bei SP+4). */
+
+static void ems_jmpcall(struct v86_frame *f, int t, unsigned h)
+{
+    unsigned fn = AH, ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
+    unsigned ss = (unsigned)f->r.ss, sp, cip, ccs, fl, r, k;
+    unsigned tip = rd16(ds, si), tcs = rd16(ds, si + 2);
+    if (fn == 0x56 && AL == 2) {                /* Stapelbedarf          */
+        BX = 8;
+        ERET(0);
+    }
+    if (AL > 1)
+        ERET(0x8F);
+    if (fn == 0x56 && ems_cn[t] >= NEMSC)
+        ERET(0x80);
+    r = ems_maplist(t, h, AL, rd16(ds, si + 7), rd16(ds, si + 5), rd8(ds, si + 4));
+    if (r)
+        ERET(r);
+    if (fn == 0x56) {                           /* alte Liste merken     */
+        k = ems_cn[t]++;
+        ems_cs[t][k].off = rd16(ds, si + 10);
+        ems_cs[t][k].seg = rd16(ds, si + 12);
+        ems_cs[t][k].n = rd8(ds, si + 9);
+        ems_cs[t][k].mode = AL;
+        ems_cs[t][k].h = (unsigned char)h;
+    }
+    AH = 0;
+    if (f->r.cs == EMS_SEG) {                   /* Rahmen IP CS FL bei SP */
+        sp = (unsigned)f->r.esp;
+        cip = rd16(ss, sp);
+        ccs = rd16(ss, sp + 2);
+        fl = rd16(ss, sp + 4);
+        if (fn == 0x55) {                       /* IRET springt hin      */
+            wr16(ss, sp, tip);
+            wr16(ss, sp + 2, tcs);
+            return;
+        }
+        sp -= 8;                                /* Ziel, FL, Ruecksprung */
+        wr16(ss, sp, tip);                      /* zu EMS_RET, dann zum  */
+        wr16(ss, sp + 2, tcs);                  /* Aufrufer              */
+        wr16(ss, sp + 4, fl);
+        wr16(ss, sp + 6, EMS_RET);
+        wr16(ss, sp + 8, VBIOS);
+        wr16(ss, sp + 10, cip);
+        wr16(ss, sp + 12, ccs);
+        f->r.esp = (f->r.esp & 0xFFFF0000UL) | sp;
+        return;
+    }
+    if (fn == 0x56) {                           /* direkt aus do_int     */
+        push16(&f->r, (unsigned)f->r.cs);
+        push16(&f->r, (unsigned)f->r.eip);
+        push16(&f->r, VBIOS);
+        push16(&f->r, EMS_RET);
+    }
+    f->r.cs = tcs;
+    f->r.eip = tip;
+}
+
+/* RETF des Ziels von 56h kam an: alte Liste einblenden, RETF zum Aufrufer */
+static void ems_ret(struct v86_frame *f, int t)
+{
+    unsigned k;
+    if (!ems_cn[t])
+        return;
+    k = --ems_cn[t];
+    AH = (unsigned char)ems_maplist(t, ems_cs[t][k].h, ems_cs[t][k].mode,
+                                    ems_cs[t][k].seg, ems_cs[t][k].off, ems_cs[t][k].n);
+}
+
 static void ems(struct v86_frame *f, int t)
 {
     unsigned h = DX, n, i, k, es = (unsigned)f->r.es, di = DI;
@@ -3603,7 +3713,7 @@ static void ems(struct v86_frame *f, int t)
         ERET(0x80);
     switch (AH) {                               /* mit Handle in DX      */
     case 0x44: case 0x45: case 0x47: case 0x48: case 0x4C:
-    case 0x50: case 0x51: case 0x53:
+    case 0x50: case 0x51: case 0x53: case 0x55:
         if (h >= NEH || !ems_on[t][h])
             ERET(0x83);
     }
@@ -3718,25 +3828,10 @@ static void ems(struct v86_frame *f, int t)
     case 0x50:                                  /* mehrere einblenden    */
         if (AL > 1)
             ERET(0x8F);
-        for (i = 0; i < CX; i++) {
-            unsigned lg = rd16(ds, si + i * 4), pp = rd16(ds, si + i * 4 + 2);
-            if (AL == 1)                        /* Segment statt Nummer  */
-                pp = (pp - ((unsigned)ems_frame << 8)) >> 10;
-            if (pp > 3)
-                ERET(0x8B);
-            if (lg == 0xFFFF) {
-                ems_show(t, pp, -1);
-                ems_mh[t][pp] = 0;
-            } else {
-                if (lg >= ems_np[t][h])
-                    ERET(0x8A);
-                ems_show(t, pp, ems_slot(t, h, lg));
-                ems_mh[t][pp] = (unsigned char)(h + 1);
-                ems_ml[t][pp] = (unsigned char)lg;
-            }
-        }
-        tlb(t);
-        ERET(0);
+        ERET(ems_maplist(t, h, AL, ds, si, CX));
+    case 0x55: case 0x56:                       /* einblenden + Sprung/Aufruf */
+        ems_jmpcall(f, t, h);
+        return;
     case 0x51:                                  /* Groesse aendern       */
         n = BX;
         if (n > ems_np[t][h]) {
@@ -5234,6 +5329,10 @@ static unsigned monitor(struct v86_frame *f, int t)
         }
         if (cs == VBIOS && ip == XMS_STUB) {     /* Fernaufruf: kein FLAGS */
             xms(f, t);
+            return 0;
+        }
+        if (cs == VBIOS && ip == EMS_RET) {      /* EMS 56h: Ziel fertig  */
+            ems_ret(f, t);
             return 0;
         }
         if (v == 0x10) {                        /* umgebogenes INT 10h kam an */

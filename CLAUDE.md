@@ -1773,8 +1773,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   SCRATCH2 auf die physischen Seiten (Ziel zuerst holen – die Tabellen-
   suche benutzt SCRATCH), Stücke bis zur 16-KB-Grenze, Tauschen über
   512 Byte in KDATA; geprüft mit 20.000 Byte über die Seitengrenze, EMS
-  -> EMS und zurück. Offen: 55h/56h (Sprung/Aufruf mit Umblenden),
-  Rahmen abschaltbar,
+  -> EMS und zurück. 55h/56h (Phase 4, Rest; in QEMU mit E56.COM
+  geprüft, direkt und über einen eigenen INT-67h-Haken): `ems_maplist`
+  (aus 50h herausgelöst), `ems_jmpcall` – INT 67h kommt auf zwei Wegen:
+  aus do_int (Vektor unverändert: kein Rahmen, CS:IP = Rücksprung) oder
+  über den Stummel F060:0020 (IRET-Rahmen bei SP, FLAGS schreibt der
+  Aufrufer danach bei SP+4 – deshalb für 56h den Rahmen nach unten
+  umbauen: Ziel, FLAGS, EMS_RET, Aufrufer). 56h merkt die alte Liste
+  (`ems_cs`, 3 tief), das RETF des Ziels landet bei F000:0560 „ARPL
+  E6h; RETF“ -> `ems_ret` blendet sie ein. 5602h: BX = 8.
+  `EMS_FRAME_LOCATION=NONE` (CONFIG.SYS, `ems_none` in kernel.c):
+  `ems_pick_frame` wählt keinen Rahmen, INT 67h meldet 80h, die 64 KB
+  bleiben UMB (in QEMU: größter freier UMB 68 statt 4 KB). DPMI 0600h–
+  0603h/0702h/0703h (Sperren, Auslagern) gab es schon ohne Wirkung.
   DPMI Stufe 1 erledigt (in QEMU mit eigenem Testprogramm DP/DP32
   geprüft: Moduswechsel 16/32 Bit, INT 10h an den Real Mode, 0300h mit
   INT 21h, 0400h, 0501h + Deskriptor schreiben/lesen, 0205h + INT 60h im
