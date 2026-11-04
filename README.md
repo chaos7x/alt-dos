@@ -113,7 +113,7 @@ und PC-DOS.
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
   (`.EXE`, `.CMD`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
-  gleichzeitig), `RD`, `REN`, `CLS`, `VER` (mit Build-Nummer), `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/NOW` ohne Rückfrage, `/T:n` nach n Sekunden Countdown – Esc bricht ab, `/R`
+  gleichzeitig), `RD`, `REN` (auch `*` und `?` wie MS-DOS), `CLS`, `VER` (mit Build-Nummer), `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/NOW` ohne Rückfrage, `/T:n` nach n Sekunden Countdown – Esc bricht ab, `/R`
   neu starten; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad.

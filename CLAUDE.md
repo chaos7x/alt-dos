@@ -302,9 +302,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   FAT32-Bootsektors nur theoretisch geprüft (SeaBIOS hat LBA). fsck merkt
   nach SHUTDOWN „Free cluster summary uninitialized“ an – FSInfo bleibt
   FFFFFFFFh, wenn der Kernel nicht gezählt hat (erlaubt).
-  Offen: ATSYS (MS-DOS kennt kein FAT32 – entfällt), REN mit Platzhalter auf
-  lange Namen (`ren d:\ordner\langer* kurz.txt` fand nichts – auch auf
-  FAT16 VFAT zu prüfen). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
+  ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
+  keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
+  (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
+  Zeichen an der Stelle, * den Rest des Teils; in QEMU geprüft: `ren
+  c*.exe *.bak`, `ren co*.bak xy*.old`). Muster wie MS-DOS: `langer*`
+  trifft nur Namen ohne Endung (Name und Endung getrennt). `hdboot.asm` folgt der FAT-Kette, ATSYS/SYS
   kopieren in Stücken – beide ohne feste Grenze.
 - Bildschirm nur über Sitzungen (`vio.c`): Zeile 0 Titel, 1–23 Sitzung,
   24 Status (bei 43/50 Zeilen entsprechend tiefer). Programme schreiben in

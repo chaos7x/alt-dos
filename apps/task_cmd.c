@@ -1385,24 +1385,92 @@ static void cmd_md(char *arg, int rd)
         file_error(r);
 }
 
+/* Muster des neuen Namens auf einen Namen anwenden (REN *.TXT *.BAK,
+   wie MS-DOS: ? nimmt das Zeichen an der Stelle, * den Rest des Teils) */
+static void ren_part(const char *n, unsigned nl, const char *p, unsigned pl,
+                     char *o, unsigned *k)
+{
+    unsigned i;
+    for (i = 0; i < pl && p[i] != '*'; i++)
+        if (p[i] != '?')
+            o[(*k)++] = p[i];
+        else if (i < nl)
+            o[(*k)++] = n[i];
+    if (i < pl)
+        for (; i < nl; i++)
+            o[(*k)++] = n[i];
+}
+
+static void ren_pat(const char *name, const char *pat, char *o)
+{
+    unsigned nd = slen(name), pd = slen(pat), nl = nd, pl = pd, k = 0, i;
+    for (i = 0; name[i]; i++)
+        if (name[i] == '.')
+            nd = i;
+    for (i = 0; pat[i]; i++)
+        if (pat[i] == '.')
+            pd = i;
+    ren_part(name, nd, pat, pd, o, &k);
+    if (pd < pl) {
+        o[k++] = '.';
+        ren_part(nd < nl ? name + nd + 1 : "", nd < nl ? nl - nd - 1 : 0,
+                 pat + pd + 1, pl - pd - 1, o, &k);
+    }
+    o[k] = 0;
+}
+
 static void cmd_ren(char *arg)
 {
     static char from[FAPI_PATHLEN], name[FAPI_PATHLEN], to[FAPI_PATHLEN];
-    unsigned r;
+    static char nn[FAPI_PATHLEN], dst[FAPI_PATHLEN], pt[FAPI_PATHLEN], list[4096];
+    static struct fapi_dirent e;
+    unsigned r, n, dl, used = 0, k;
+    char *pat;
     word(arg, from, sizeof(from));
     word(next_word(arg), name, sizeof(name));
     if (!from[0] || !name[0]) {
-        puts("Syntax: REN Datei Neuer_Name\n");
+        puts("Syntax: REN Datei Neuer_Name (auch * und ?)\n");
         return;
     }
     if (base_name(name) != name) {
         puts("Der neue Name darf keinen Pfad enthalten.\n");
         return;
     }
-    join(to, from, (unsigned)(base_name(from) - from), name);
-    r = DosMove(from, to);
-    if (r)
-        file_error(r);
+    pat = base_name(from);
+    dl = (unsigned)(pat - from);
+    if (!has_wild(pat)) {
+        join(to, from, dl, name);
+        r = DosMove(from, to);
+        if (r)
+            file_error(r);
+        return;
+    }
+    for (k = 0; pat[k] && k < sizeof(pt) - 1; k++)
+        pt[k] = pat[k];                 /* Muster sichern, from = Verzeichnis */
+    pt[k] = 0;
+    pat = pt;
+    from[dl] = 0;
+    for (n = 0; DosFindEntry(&e, n, dl ? from : 0) != FAPI_ERROR; n++)
+        if (!(e.attr & 0x0E) && match(e.name, pat) &&
+            !(e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2]))) &&
+            used + slen(e.name) + 1 < sizeof(list)) {
+            for (k = 0; e.name[k]; k++)
+                list[used++] = e.name[k];
+            list[used++] = 0;
+        }
+    for (k = 0; k < used; k += slen(list + k) + 1) {
+        ren_pat(list + k, name, nn);
+        join(to, from, dl, list + k);
+        join(dst, from, dl, nn);
+        r = DosMove(to, dst);
+        if (r) {
+            puts(list + k);
+            puts(": ");
+            file_error(r);
+        }
+    }
+    if (!used)
+        puts("Keine Datei gefunden.\n");
 }
 
 static void cmd_help(void)
