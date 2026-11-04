@@ -1957,6 +1957,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sie nach dem Text der Box in der Sitzung des Aufrufers aus („DOS-Box
   abgebrochen: #GP … bei CS:IP (Fehlercode …)“). Nur beim Start aus CMD
   (mit START hat die Box keinen Aufrufer in derselben Sitzung).
+  Dazu eine Spur (v86.c `trace`/`trace_out`): die letzten 8 Fallen der
+  Box (Ausnahme bzw. 80h + zugestellter Interrupt, CS:IP/AX) und die
+  Vektoren 08h/09h/1Ch im Moment des Abbruchs, unter der Meldung.
+  Anlass: COMMAND und DIGGER brechen beim Nutzer auf dem P2 mit #UD bei
+  0000:000B bzw. 0000:0024 ab (HALLO und DOOM laufen) – in QEMU (bis
+  1 GB, Pentium II, D: mit 1,8 GB FAT16) und Bochs nicht nachstellbar.
   Farbiger Text nach dem Ende (Nutzer: DOOMs ENDOOM unter MS-DOS rot
   hinterlegt, bei uns grau): `capture` merkt Zeichen + Attribut (cap[]
   25×80 Worte, Zeilen bis zum letzten Zeichen oder farbigen Hintergrund),

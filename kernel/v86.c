@@ -407,8 +407,47 @@ static unsigned ansi_seq(char *b, unsigned a)
     return n;
 }
 
+static struct { unsigned char v; unsigned cs, ip, ax; } trc[8];
+static unsigned char trn;
+static unsigned long trc_ivt[3];
 static void replay_text(int s);
 extern char box_fmsg[];                 /* kernel.c fault: Abbruch der Box */
+
+static unsigned hx(char *b, unsigned n, unsigned v, unsigned d)
+{
+    while (d--)
+        b[n++] = "0123456789ABCDEF"[(v >> (d * 4)) & 15];
+    return n;
+}
+
+static void trace_out(int s)
+{
+    static char b[96];
+    unsigned i, k, n;
+    for (i = 0; i < 8; i++) {
+        k = (trn + i) & 7;
+        n = 0;
+        b[n++] = i ? ' ' : '\n';
+        n = hx(b, n, trc[k].v, 2);
+        b[n++] = ' ';
+        n = hx(b, n, trc[k].cs, 4);
+        b[n++] = ':';
+        n = hx(b, n, trc[k].ip, 4);
+        b[n++] = '/';
+        n = hx(b, n, trc[k].ax, 4);
+        kf_vio_tty(s, KDATA, (unsigned)b, n);
+    }
+    n = 0;
+    b[n++] = '\n';
+    for (i = 0; i < 3; i++) {                   /* INT 08h, 09h, 1Ch     */
+        b[n++] = ' ';
+        n = hx(b, n, (unsigned)(trc_ivt[i] >> 16), 4);
+        b[n++] = ':';
+        n = hx(b, n, (unsigned)trc_ivt[i], 4);
+    }
+    b[n++] = '\n';
+    kf_vio_tty(s, KDATA, (unsigned)b, n);
+}
 
 void __far v86_replay(int s)
 {
@@ -419,7 +458,7 @@ void __far v86_replay(int s)
             ;
         kf_vio_tty(s, KDATA, (unsigned)"\nDOS-Box abgebrochen: ", 23);
         kf_vio_tty(s, KDATA, (unsigned)box_fmsg, n);
-        kf_vio_tty(s, KDATA, (unsigned)"\n", 1);
+        trace_out(s);
     }
     box_fmsg[0] = 0;
 }
@@ -853,6 +892,19 @@ static int vec_def(unsigned n)
 }
 
 /* INT n ohne Dienst: FLAGS, CS, IP auf den Stack, ueber die IVT */
+/* Spur fuer die Fehlersuche: die letzten 8 Fallen der Box (Ausnahme
+   bzw. 80h + zugestellter Interrupt, CS:IP, AX); bricht die Box ab,
+   gibt v86_replay sie mit der Meldung in CMD aus, dazu die Vektoren
+   08h/09h/1Ch der Box im Moment des Abbruchs */
+static void trace(unsigned v, unsigned cs, unsigned ip, unsigned ax)
+{
+    unsigned i = trn++ & 7;
+    trc[i].v = (unsigned char)v;
+    trc[i].cs = cs;
+    trc[i].ip = ip;
+    trc[i].ax = ax;
+}
+
 static void int_raw(struct v86_iret *r, int t, unsigned n, unsigned ip)
 {
     push16(r, vflags(r, t));
@@ -862,6 +914,7 @@ static void int_raw(struct v86_iret *r, int t, unsigned n, unsigned ip)
     r->eflags &= ~(unsigned long)FL_TF;
     r->cs = rd16(0, n * 4 + 2);
     r->eip = rd16(0, n * 4);
+    trace(0x80 | n, (unsigned)r->cs, (unsigned)r->eip, 0);
 }
 
 /* ---- Takt ---------------------------------------------------------------- */
@@ -5599,8 +5652,14 @@ unsigned __far v86_exc(struct v86_frame *f)
     int t = kf_box_ctl(BOX_TASK, 0);
     unsigned rc;
 
+    trace((unsigned)f->vec, (unsigned)f->r.cs, (unsigned)f->r.eip, (unsigned)f->eax);
     enable_ints();                      /* Kernel laeuft mit Interrupts  */
     rc = monitor(f, t);
+    if (rc == 1) {                      /* Abbruch: Vektoren fuer die Spur */
+        trc_ivt[0] = ((unsigned long)rd16(0, 0x22) << 16) | rd16(0, 0x20);
+        trc_ivt[1] = ((unsigned long)rd16(0, 0x26) << 16) | rd16(0, 0x24);
+        trc_ivt[2] = ((unsigned long)rd16(0, 0x72) << 16) | rd16(0, 0x70);
+    }
     if (rc == 0) {
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
