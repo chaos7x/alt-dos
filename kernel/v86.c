@@ -202,6 +202,7 @@ static unsigned long dp_patch[NTASK][NPATCH];   /* POPF -> HLT (linear)  */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
 static void xms_table(int t);
+static unsigned emb_free_pg(int t);
 
 /* PVI (CR4 Bit 1, ab Pentium): CLI/STI eines DPMI-Programms in Ring 3
    setzen nur EFLAGS.VIF statt zu trappen (DMX mischt mit CLI/STI, ~700
@@ -2454,8 +2455,12 @@ static unsigned char port_in(int t, unsigned p)
     case 0x40: case 0x41: case 0x42:
         return pit_in(t, p);
     case 0x71: {                                /* CMOS: Speicher der Box, */
-        unsigned kb = 64 + ((xms_lim[t] ? xms_lim[t] - 1 : 512) << 2), f;
+        unsigned kb, f, n = emb_free_pg(t), lim = xms_lim[t] ? xms_lim[t] - 1 : 512;
+        unsigned long fr = mem_free_kb() >> 2;
         unsigned char v;
+        if (n > fr)                             /* nur, was die Box bekommen */
+            lim -= n - (unsigned)fr;            /* kann (XMS_MEMORY_LIMIT=-1) */
+        kb = 64 + (lim << 2);
         if (cmos_idx[t] == 0x17 || cmos_idx[t] == 0x30)
             return (unsigned char)kb;
         if (cmos_idx[t] == 0x18 || cmos_idx[t] == 0x31)

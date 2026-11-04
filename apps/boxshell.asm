@@ -252,6 +252,7 @@ ini_apply:
         mov     bx, [xmskb]
         mov     ah, 16h
         int     0E0h
+        call    set_xmssize
         mov     bx, [emskb]
         mov     ah, 17h
         int     0E0h
@@ -416,6 +417,9 @@ kmatch:                                 ; [ES:SI] = Name an DI, dann "=" ?
         ret
 
 pnum:                                   ; Dezimalzahl an ES:SI -> AX
+        mov     ax, 0FFFFh              ; -1 (jede negative Zahl) = so viel
+        cmp     byte [es:si], '-'       ; wie moeglich, der Kernel kappt
+        je      .x
         xor     ax, ax
 .n:     mov     cl, [es:si]
         sub     cl, '0'
@@ -659,6 +663,30 @@ setver_load:
 .close: mov     ah, 3Eh
         int     21h
 .ret:   ret
+
+;
+; ---- LoL+45h: erweiterter Speicher in KB (MS-DOS-MEM nimmt das als
+; Gesamtgroesse von XMS; FreeDOS setzt es nie). Wert aus CMOS 30h/31h,
+; das der Kernel als HMA + XMS-Grenze dieser Box nachbildet.
+set_xmssize:
+        push    ax
+        push    bx
+        push    es
+        mov     al, 31h
+        out     70h, al
+        in      al, 71h
+        mov     ah, al
+        mov     al, 30h
+        out     70h, al
+        in      al, 71h
+        push    ax
+        mov     ah, 52h
+        int     21h
+        pop     word [es:bx+45h]
+        pop     es
+        pop     bx
+        pop     ax
+        ret
 
 ; ---- Redirector ----------------------------------------------------------
 redir_install:

@@ -353,7 +353,9 @@ und PC-DOS.
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–63424,
-  Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048),
+  Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048), je `-1`
+  = so viel wie möglich (MS-DOS-MEM zeigt in der Box die XMS-Größe:
+  BOXSHELL trägt sie in LoL+45h ein),
   `DOS_VERSION=n.nn` (SETVER.LST geht vor); Hilfen der Nachbildung für
   DPMI-Programme, Vorgabe `ON`, bei einem störrischen Programm `OFF`:
   `POPF_PATCH` (POPF nach CLI wird zur Falle, damit das virtuelle IF

@@ -2145,10 +2145,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Erkennung bei Spielen mit eigenem Takt (`pit_rl`) aus (Digger). Test
   POLL.COM (fragt 3DAh und INT 16h 01 ab) per START im Hintergrund,
   BUSY 60000 vorn: 10 s mit Vorgabe, mit 100 nach über 2 min nicht fertig.
-  Vorgemerkt (Wunsch des Nutzers, mit dem nächsten Commit an den Boxen):
-  `XMS_MEMORY_LIMIT=-1` (und sinngemäß `EMS_MEMORY_LIMIT=-1`) = so viel,
-  wie die Box ansprechen kann (heute 63.424 KB XMS); BOXSHELL `pnum`
-  kennt noch kein Minus.
+  `XMS_MEMORY_LIMIT=-1` bzw. `EMS_MEMORY_LIMIT=-1` (Wunsch des Nutzers)
+  = so viel, wie die Box ansprechen kann (63.424 KB XMS, 4.096 KB EMS):
+  BOXSHELL `pnum` liefert bei `-` FFFFh, der Kernel kappt.
   Speicher je Box (vom Nutzer auf dem 386 mit 4 MB gemeldet: zwei
   Boxen 2.600 KB, 304 KB frei): in QEMU nachgestellt – eine Box am
   FreeCOM-Prompt kostet ~830 KB, dazu kam eine **geparkte** Box (DOS-
@@ -2180,6 +2179,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   65535K -> CMOS 70h/71h nachgebildet (17h/18h, 30h/31h = HMA + XMS der
   Box, sonst echte CMOS lesend); MSD blinkte -> INT 10h 1003h schaltet
   Attribut-Modusregister Bit 3 (`blink_hw`, bei Ende/Parken zurück).
+  MEM zeigte danach weiter „Erweiterung (XMS) 0K“ (auch mit der 4309h-
+  Tabelle): MEM nimmt die Gesamtgröße aus LoL+45h („erweiterter Speicher
+  beim Start“, MS-DOS-4.0-MEM.C `ExtendedMemory`), Frei/Belegt kappt es
+  darauf – FreeDOS setzt das Feld nie. BOXSHELL (`set_xmssize`) trägt
+  vor jedem Programm CMOS 30h/31h dort ein; die Nachbildung liefert HMA
+  + XMS-Grenze, gekappt auf belegte EMBs + freien Systemspeicher (sonst
+  bei -1 riesige „belegt“-Werte). In QEMU geprüft: 2.112 KB (Vorgabe),
+  mit -1 bei 16 MB 13.660 KB = 64 + 13.596 frei.
   Offen:
   Grafik im Hintergrund weiterlaufen lassen (Schatten wie VVGA).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
