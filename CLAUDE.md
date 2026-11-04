@@ -2078,8 +2078,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (SVGA-Register kennt der Kernel nicht), `vio_setvesa`, VioSetPlane =
   Bank (`vesa_limit` für den letzten Abschnitt), Mauszeiger in VESA noch
   aus. Grund für das Bank-Fenster: die LDT hat nur 16 Einträge je Task,
-  eine Selektorkette über 1–3 MB passte nicht. Offen: Mauszeiger,
-  Direktfarben-Demo, Echttest auf S3/ET4000 in 86Box.
+  eine Selektorkette über 1–3 MB passte nicht. Vom Nutzer in 86Box
+  bestätigt: S3 (P3B-F) – VESA listet viele Modi, VDEMO zeigt den
+  Farbverlauf sauber; ET4000 (486) meldet wie erwartet „keine VESA-Karte
+  mit linearem Bildspeicher“ (VBE ohne LFB). Offen: Mauszeiger,
+  Direktfarben-Demo, Sitzungswechsel (START VDEMO + Alt+Esc) auf der S3.
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und
