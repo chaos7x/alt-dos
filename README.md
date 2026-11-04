@@ -259,8 +259,10 @@ und PC-DOS.
   BIOS ein; das Programm sieht das Bild über ein 64-KB-Fenster, das
   VioSetPlane weiterschiebt (passt zu 286-Programmen). Sitzungswechsel
   wie bei VGA-Grafik (Bild und Palette gesichert, im Hintergrund wird
-  weitergezeichnet). `VESA` listet die Modi, `\DEMO\VDEMO [Breite]`
-  zeigt einen 8-Bit-Modus
+  weitergezeichnet). Mauszeiger (MouShowPtr) zeichnet der Kernel wie
+  bei VGA in allen Farbtiefen, Koordinaten in Bildpunkten bis zum
+  Bildrand. `VESA` listet die Modi, `\DEMO\VDEMO [Breite [Bit]]` zeigt
+  einen Modus, linke Maustaste malt
 - Paging (6.0): der Kernel bildet beim Start allen RAM 1:1 über
   Seitentabellen ab und schaltet den Seitenmechanismus des 386 ein –
   Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen

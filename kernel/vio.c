@@ -948,12 +948,13 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     mx += dx;
     my += dy;
     if (mx < 0) mx = 0;
-    if (mx > SCOLS * 8 - 1) mx = SCOLS * 8 - 1;
+    n = gm == VESAGFX ? vp_xm : SCOLS * 8 - 1;
+    if (mx > (int)n) mx = (int)n;
     if (my < 0) my = 0;
     /* Grafik: virtuelles Raster wie beim Maustreiber von Microsoft -
        12h 640x480 Punkte, 13h 640x400 (halbiert 320x200), Mode X
        640x480 (halbiert 320x240) */
-    n = PLANAR(gm) ? 479 : gm == 0x13 ? 399 : hw_lines * 16 - 1;
+    n = PLANAR(gm) ? 479 : gm == 0x13 ? 399 : gm == VESAGFX ? vp_ym : hw_lines * 16 - 1;
     if (my > (int)n) my = (int)n;
     gx = gm == 0x13 || gm == MODEX ? mx >> 1 : mx;
     gy = gm == 0x13 || gm == MODEX ? my >> 1 : my;

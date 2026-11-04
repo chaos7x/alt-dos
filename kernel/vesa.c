@@ -129,7 +129,7 @@ unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
             return FAPI_ERROR;
         phys = ((unsigned long)rd16(RM_BUF + 0x200 + 42) << 16) | rd16(RM_BUF + 0x200 + 40);
         pages = (unsigned)((mul16(o->pitch, o->height) + 4095) >> 12);
-        if (!phys || pages > 896 || vio_setvesa(s, t, n, pages, phys))
+        if (!phys || pages > 896 || vio_setvesa(s, t, o, pages, phys))
             return FAPI_ERROR;
         o->mem_kb = mem_kb;
         o->version = 0;

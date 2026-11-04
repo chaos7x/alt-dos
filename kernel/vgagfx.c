@@ -116,6 +116,12 @@ static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p
 static unsigned long vesa_lin;          /* Bildspeicher fuer Deskriptoren */
 static unsigned long vesa_phys;         /* ... physisch                  */
 static unsigned char vesa_hw;           /* Karte steht auf VESA          */
+/* Modus der Karte (aus dem Puffer der Sitzung, VP_INFO hinter der
+   Palette): fuer den Mauszeiger; vp_xm/vp_ym begrenzen die Maus (vio.c) */
+#define VP_INFO 768                     /* Breite, Hoehe, Pitch, Bit     */
+#define VP_SAVE 784                     /* Zeiger-Hintergrund, 2 x 640   */
+static unsigned vp_w, vp_h, vp_pitch, vp_bpp;
+int vp_xm = 639, vp_ym = 479;
 int __far vesa_bios(unsigned mode);     /* vesa.c                        */
 
 static unsigned vesa_banks(int s)
@@ -410,6 +416,13 @@ int __far gfx_in(void)
         vesa_copy(fg, 0);
         map_save(fg, 4);
         dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
+        scratch_map(save_part(fg, 4), 4095);
+        vp_w = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO);
+        vp_h = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 2);
+        vp_pitch = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 4);
+        vp_bpp = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 6);
+        vp_xm = vp_w - 1;
+        vp_ym = vp_h - 1;
         win_restore(w);
         gfx_alias(fg);
         return 1;
@@ -557,9 +570,11 @@ int __far vio_setgfx(int s, int t, unsigned mode)
 /* VESA-Modus mode (Bild pages Seiten, Bildspeicher physisch phys) fuer
    Sitzung s: Puffer anlegen (schwarz, Vorgabepalette); vorn stellt
    redraw -> gfx_in das BIOS um. 0 = ok, -1 Fehler (kein Speicher) */
-int __far vio_setvesa(int s, int t, unsigned mode, unsigned pages, unsigned long phys)
+int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned pages,
+                      unsigned long phys)
 {
     unsigned short w[8];
+    unsigned __far *vi;
     unsigned b;
     if (s < 0 || !ses[s].used || !vga_ok)
         return -1;
@@ -569,7 +584,7 @@ int __far vio_setvesa(int s, int t, unsigned mode, unsigned pages, unsigned long
     if (!ses[s].gfx_save)
         return -1;
     ses[s].gfx = VESAGFX;
-    ses[s].vmode = mode;
+    ses[s].vmode = o->mode;
     ses[s].vpg = pages;
     ses[s].gfx_plane = 0;
     ses[s].gfx_page = 0;
@@ -579,8 +594,13 @@ int __far vio_setvesa(int s, int t, unsigned mode, unsigned pages, unsigned long
         scratch_map(PG_LIN(ses[s].gfx_save) + ((unsigned long)b << 16), 0xFFFF);
         zero_seg(SCRATCH, b + 1 < vesa_banks(s) ? 0x8000 : (pages - (b << 4)) << 11);
     }
-    map_save(s, 4);
+    scratch_map(save_part(s, 4), 4095);
     def_palette(MK_FP(SCRATCH, 0));
+    vi = MK_FP(SCRATCH, VP_INFO);
+    vi[0] = o->width;
+    vi[1] = o->height;
+    vi[2] = o->pitch;
+    vi[3] = o->bpp;
     win_restore(w);
     ses[s].gfx_task = (signed char)t;
     if (s == fg) {
@@ -812,6 +832,86 @@ static void gcomb_12(const struct gpst *o, struct gpst *n)
         }
 }
 
+/* 16 x 16 -> 32 Bit ohne Laufzeitbibliothek */
+static unsigned long mul16(unsigned a, unsigned b);
+#pragma aux mul16 = "mul dx" __parm [__ax] [__dx] __value [__dx __ax] __modify [__ax __dx];
+
+/* VESA: Punkt fuer Punkt wie gcomb_px, Zeile fuer Zeile ueber ein
+   SCRATCH2-Fenster in den linearen Bildspeicher; der Hintergrund liegt
+   im Puffer der Sitzung (VP_SAVE, je Zustand 16 x 10 Punkte zu 4 Byte -
+   in DGROUP ist kein Platz). Weiss/schwarz: 8 Bit Farben 15/0 der
+   Palette, sonst direkte Farbe. */
+static unsigned long vpx_rd(unsigned char __far *a, unsigned bb)
+{
+    if (bb == 1)
+        return *a;
+    if (bb == 2)
+        return *(unsigned short __far *)a;
+    if (bb == 3)
+        return *(unsigned short __far *)a | ((unsigned long)a[2] << 16);
+    return *(unsigned long __far *)a;
+}
+
+static void vpx_wr(unsigned char __far *a, unsigned bb, unsigned long v)
+{
+    if (bb == 1)
+        *a = (unsigned char)v;
+    else if (bb == 2)
+        *(unsigned short __far *)a = (unsigned short)v;
+    else if (bb == 3) {
+        *(unsigned short __far *)a = (unsigned short)v;
+        a[2] = (unsigned char)(v >> 16);
+    } else
+        *(unsigned long __far *)a = v;
+}
+
+static void gcomb_vesa(const struct gpst *o, struct gpst *n)
+{
+    const struct gpst *g = n ? n : o;
+    unsigned bb = (vp_bpp + 7) >> 3, os = 0, ns = 0;
+    unsigned long white, cur, bg, val;
+    unsigned char __far *v = MK_FP(SCRATCH2, 0);
+    unsigned long __far *sv = MK_FP(SCRATCH, 0);
+    int x, y, oc, nc, x0, x1, y0, y1;
+    unsigned a;
+
+    if (fg < 0 || ses[fg].gfx != VESAGFX || !ses[fg].gfx_save || !vp_w)
+        return;
+    white = vp_bpp == 8 ? 15 : vp_bpp == 15 ? 0x7FFF : vp_bpp == 16 ? 0xFFFF : 0xFFFFFFUL;
+    if (o)
+        os = o == &gst[1] ? 160 : 0;        /* Langwort-Index im Puffer */
+    if (n)
+        ns = n == &gst[1] ? 160 : 0;
+    scratch_map(save_part(fg, 4) + VP_SAVE, 1279);
+    x0 = o && n ? imin(o->x, n->x) : g->x;
+    y0 = o && n ? imin(o->y, n->y) : g->y;
+    x1 = imin((o && n ? imax(o->x, n->x) : g->x) + 10, (int)vp_w);
+    y1 = imin((o && n ? imax(o->y, n->y) : g->y) + 16, (int)vp_h);
+    if (x0 >= x1)
+        return;
+    for (y = y0; y < y1; y++) {
+        set_desc(SCRATCH2 >> 3, vesa_lin + mul16((unsigned)y, vp_pitch) + (unsigned)x0 * bb,
+                 (unsigned)(x1 - x0) * bb - 1, ACC_KDATA);
+        for (x = x0; x < x1; x++) {
+            oc = gpix(o, x, y);
+            nc = gpix(n, x, y);
+            if (oc < 0 && nc < 0)
+                continue;
+            a = (unsigned)(x - x0) * bb;
+            cur = vpx_rd(v + a, bb);
+            bg = oc >= 0 && cur == (oc ? white : 0) ?
+                 sv[os + (y - o->y) * 10 + (x - o->x)] : cur;
+            if (nc >= 0) {
+                sv[ns + (y - n->y) * 10 + (x - n->x)] = bg;
+                val = nc ? white : 0;
+            } else
+                val = bg;
+            if (val != cur)
+                vpx_wr(v + a, bb, val);
+        }
+    }
+}
+
 /* o entfernen, n zeichnen (0 = entfaellt); sich nicht ueberlappende
    Flaechen nacheinander (erst neu, dann alt) */
 static void gcomb(const struct gpst *o, struct gpst *n)
@@ -826,6 +926,11 @@ static void gcomb(const struct gpst *o, struct gpst *n)
         return;
     }
     win_save(w);
+    if (m == VESAGFX) {
+        gcomb_vesa(o, n);
+        win_restore(w);
+        return;
+    }
     scratch2_map(0xA0000UL, 0xFFFF);
     if (m == 0x12)
         gcomb_12(o, n);
@@ -892,7 +997,7 @@ static int gptr_vsync(int idle)
 
 static void gptr_update_v(int idle)
 {
-    int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && hw_gfx != VESAGFX && mou_nbtn &&
+    int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && mou_nbtn &&
                ses[fg].mou_owner >= 0 && ses[fg].mou_show;
     int x, y;
     struct gpst *g = &gst[gci];

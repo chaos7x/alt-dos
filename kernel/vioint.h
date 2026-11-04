@@ -54,6 +54,7 @@ extern int fg;
 extern unsigned char cur_dirty, hw_lines, mou_nbtn;
 extern int mx, my;
 extern unsigned char hw_gfx;            /* vgagfx.c: Karte steht auf 0 Text, 12h, 13h, X */
+extern int vp_xm, vp_ym;                /* vgagfx.c: Mausgrenzen VESA     */
 extern unsigned char gp_drawn;          /* vgagfx.c: Grafikzeiger gezeichnet */
 extern unsigned char  vga_ok;           /* start.asm, aus dem Real Mode     */
 

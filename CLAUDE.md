@@ -2076,14 +2076,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   für Bank über SCRATCH/SCRATCH2 (Bildspeicher über vesa_lin), gfx_in
   stellt per BIOS ein, `vesa_hw`: vor jedem anderen Modus erst BIOS 03h
   (SVGA-Register kennt der Kernel nicht), `vio_setvesa`, VioSetPlane =
-  Bank (`vesa_limit` für den letzten Abschnitt), Mauszeiger in VESA noch
-  aus. Grund für das Bank-Fenster: die LDT hat nur 16 Einträge je Task,
+  Bank (`vesa_limit` für den letzten Abschnitt). Grund für das Bank-Fenster: die LDT hat nur 16 Einträge je Task,
   eine Selektorkette über 1–3 MB passte nicht. Vom Nutzer in 86Box
   bestätigt: S3 (P3B-F) – VESA listet viele Modi, VDEMO zeigt den
   Farbverlauf sauber; ET4000 (486) meldet wie erwartet „keine VESA-Karte
-  mit linearem Bildspeicher“ (VBE ohne LFB). Offen: Mauszeiger,
-  Direktfarben-Demo. Sitzungswechsel auf der S3 ebenfalls bestätigt
-  (START VDEMO, Wechsel zu DOOM in einer Box und zurück).
+  mit linearem Bildspeicher“ (VBE ohne LFB). Sitzungswechsel auf der
+  S3 ebenfalls bestätigt (START VDEMO, Wechsel zu DOOM in einer Box und
+  zurück). Für die ET4000 ginge VBE mit Bankumschaltung (4F05h) – erst
+  bei Bedarf; TLVBE/UniVBE sind DOS-TSRs, die der Kernel nicht hat.
+  Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
+  Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
+  Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem
+  Zeiger): `gcomb_vesa` (vgagfx.c) wie gcomb_px, je Zeile ein
+  SCRATCH2-Fenster in den Bildspeicher (vesa_lin + y·pitch über mul16),
+  Hintergrund nicht in DGROUP (voll), sondern im Palettenblatt des
+  Puffers (`VP_SAVE` 784, 2 × 16 × 10 Langworte über SCRATCH); dort bei
+  `VP_INFO` 768 auch Breite/Höhe/Pitch/Bit, die gfx_in nach `vp_*`
+  holt. Weiß/schwarz: 8 Bit Farben 15/0, sonst direkte Farbe.
+  vio.c begrenzt die Maus mit `vp_xm`/`vp_ym` (Mickey = Bildpunkt).
+  vio_setvesa nimmt jetzt `struct fapi_vesamode`. Erstes Codesegment
+  65.477 Byte, DGROUP 65.062.
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und
