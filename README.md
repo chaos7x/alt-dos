@@ -352,7 +352,7 @@ und PC-DOS.
   Schatten-RAM)
 - `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
-  `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–3008,
+  `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–63424,
   Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048),
   `DOS_VERSION=n.nn` (SETVER.LST geht vor); Hilfen der Nachbildung für
   DPMI-Programme, Vorgabe `ON`, bei einem störrischen Programm `OFF`:

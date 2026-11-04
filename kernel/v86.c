@@ -355,7 +355,7 @@ void __far v86_destroy(int t)
     }
     if (pt_box[t]) {
         scratch_map(PG_LIN(pt_box[t]), 4095);
-        for (i = 0; i < 0x100; i++) {
+        for (i = 0; i < 0x400; i++) {           /* bis 4 MB, auch XMS     */
             e = get32(SCRATCH, i);
             if ((e & PTE_P) && (i <= 0xA0 || i == 0xF0 || (e & PTE_OWN)))  /* nicht B8/B9! */
                 vp_free(e >> 12);
@@ -2183,7 +2183,7 @@ static void svc(int n, struct v86_frame *f, int t)
             box_hk[t] = (unsigned char)(~BX & 15);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
-            xms_lim[t] = (pg > 0x400 - 0x110 ? 0x400 - 0x110 : pg) + 1;  /* bis 3008 KB */
+            xms_lim[t] = (pg > 0x4000 - 0x110 ? 0x4000 - 0x110 : pg) + 1;  /* bis 63.424 KB */
         } else if (AH == 0x15) {                /* Programm fertig (AL):  */
             for (i = 0; i < sizeof(hwvec); i++) {   /* Haken zuruecknehmen */
                 wr16(0, hwvec[i] * 4, (unsigned)ivt_save[t][i]);
@@ -2519,13 +2519,17 @@ static void port_out(int t, unsigned p, unsigned char v)
    mit DOS=HIGH (CONFIG.SYS der AT-DOS), UMBs nur mit DOS=UMB: freie
    Lueckenseiten zwischen C8000 und EFFFF (kein ROM, Inhalt einfoermig)
    bekommen eigene Seiten. Speicherbloecke (EMB) liegen im Adressraum der
-   Box ab 110000h (eine Seitentabelle: bis XMS_KB), Lock liefert diese
+   Box ab 110000h bis 64 MB (Seitentabellen ab 4 MB wie DPMI ueber
+   lpte_set, DPMI-Speicher deshalb erst ab 64 MB), Lock liefert diese
    lineare Adresse (fuer DPMI spaeter), Move kopiert ueber zwei Fenster.
    Eigene Seiten tragen PTE_OWN und werden in v86_destroy frei. */
 #define rd8_k(i) (*(unsigned char __far *)MK_FP(SCRATCH, (i)))
 #define XMS_PG0  0x110                  /* erste EMB-Seite               */
 #define XMS_KB   2048                   /* Vorgabe je Box (DOSBOX.INI: XMS_MEMORY_LIMIT) */
-#define XMS_MAXPG (0x400 - XMS_PG0)      /* eine Seitentabelle: 3008 KB   */
+#define XMS_TOP  0x4000                 /* bis 64 MB (DPMI dahinter)     */
+#define XMS_MAXPG (XMS_TOP - XMS_PG0)    /* 63.424 KB                     */
+static int lpte_set(int t, unsigned long lp, unsigned long e);
+static unsigned long lpte_get(int t, unsigned long lp);
 #define XMS_PGN  (xms_lim[t] ? xms_lim[t] - 1 : XMS_KB / 4)
 #define NXH      16
 struct xmsh { unsigned base, npg; unsigned char used, lock; };
@@ -2692,20 +2696,18 @@ static unsigned emb_gap(int t, unsigned n, unsigned *largest)
     return found;
 }
 
+static void emb_unmap(int t, unsigned base, unsigned n);
 static int emb_map(int t, unsigned base, unsigned n)
 {
     unsigned i;
     pg_t p;
-    for (i = 0; i < n; i++) {
-        if (!(p = own_page())) {
-            while (i--) {
-                vp_free(pte_get(t, base + i) >> 12);
-                pte_set(t, base + i, 0);
-            }
+    for (i = 0; i < n; i++)
+        if (!(p = own_page()) || !lpte_set(t, base + i, PG_LIN(p) | PTE_BOX | PTE_OWN)) {
+            if (p)
+                vp_free(p);
+            emb_unmap(t, base, i);
             return 0;
         }
-        pte_set(t, base + i, PG_LIN(p) | PTE_BOX | PTE_OWN);
-    }
     return 1;
 }
 
@@ -2713,10 +2715,10 @@ static void emb_unmap(int t, unsigned base, unsigned n)
 {
     unsigned long e;
     while (n--) {
-        e = pte_get(t, base + n);
+        e = lpte_get(t, base + n);
         if (e & PTE_P)
             vp_free(e >> 12);
-        pte_set(t, base + n, 0);
+        lpte_set(t, base + n, 0);
     }
 }
 
@@ -3642,10 +3644,10 @@ static int dmem_map(int t, unsigned long lp, unsigned long n)
     return 1;
 }
 
-/* Luecke fuer n Seiten ab 4 MB (Seite 400h), bis 1 GB */
+/* Luecke fuer n Seiten ab 64 MB (Seite 4000h, darunter XMS), bis 1 GB */
 static unsigned long dmem_gap(int t, unsigned long n)
 {
-    unsigned long s = 0x400;
+    unsigned long s = XMS_TOP;
     unsigned i;
 again:
     for (i = 0; i < NDPM; i++)

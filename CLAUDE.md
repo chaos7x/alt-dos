@@ -1751,7 +1751,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (`get_pname` = Name aus der Befehlszeile, `ini_apply`/`ini_pass`: erst
   `[*]`, dann `[NAME.EXT]`, Schlüssel ohne Groß/klein, 4 KB per 48h),
   `XMS_MEMORY_LIMIT` -> INT E0h 16h (`xms_lim[t]` = Seiten + 1, 0 =
-  Vorgabe 2048, bis 3008), `DOS_VERSION` -> INT 2Fh 122Fh (FreeDOS gibt
+  Vorgabe 2048, bis 63.424 – seit Phase 4 Rest), `DOS_VERSION` -> INT 2Fh 122Fh (FreeDOS gibt
   os_setver jedem neuen PSP mit, SETVER-Tabelle geht vor), nach dem
   Programm zurück (DX = 0). In QEMU geprüft ([*] 1024, [XT.COM] 512,
   [DOSVER.COM] 6.22, anderes Programm wieder 7.10). Pro Programm nicht
@@ -1819,7 +1819,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Video-BIOS, Hintergrund einfrieren + sichern), virtueller PIT (DOOM
   stellt 140 Hz ein), IRQ 0/1 an PM-Handler (auch während Real Mode),
   Takt im PM weiterzählen (46Ch steht im PM),
-  mehr als 2,9 MB XMS (weitere Seitentabellen),
+  mehr als 2,9 MB XMS (erledigt, s. u.),
   Lock für DPMI, EMS, DPMI. Weitere Hebel: Kosten je
   Trap senken (`kf_box_ctl(BOX_TASK)` je Trap, `vwin` vor jedem Byte,
   Präfix-Schleife). QEMU mit `-icount` bildet die teuren 386-Ausnahmen
@@ -2127,6 +2127,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `HALLO.COM > X.TXT` + `TYPE X.TXT`, danach `DEL X.TXT`.
   Vom Nutzer auf dem P3B-F (Pentium II) in 86Box bestätigt: DOOM 1.9 mit
   Sound Blaster läuft flüssig, auch bei Kämpfen.
+  XMS über 3 MB (Phase 4, Rest; in QEMU geprüft): EMBs im Adressraum
+  der Box von 110000h bis 64 MB (`XMS_TOP` 4000h, `XMS_MAXPG` 63.424 KB,
+  INI `XMS_MEMORY_LIMIT` bis 63424, Vorgabe weiter 2048). `emb_map`/
+  `emb_unmap` gehen über `lpte_set`/`lpte_get` (Seitentabellen ab 4 MB
+  bei Bedarf, PTE_OWN), DPMI-Speicher (`dmem_gap`) deshalb erst ab
+  64 MB. Dabei behoben: v86_destroy gab nicht freigegebene EMBs unter
+  4 MB nicht zurück (Schleife über pt_box nur bis 100h, jetzt bis 400h
+  mit PTE_OWN). Geprüft: X2.COM (16 MB anlegen, Muster bei 15 MB hin
+  und zurück, Lock 110000h, Freigabe), Box per START mit belegtem EMB
+  beendet -> Speicher ganz zurück, DOOM 1.9 Timedemo (DPMI ab 64 MB).
   AUD_CLOSE nur im
   eigenen Task (`sb_stop`), sonst räumt aud_task_end auf. Offen: BLASTER-
   Variable in der Box, 16-Bit/SB16-DSP, Aufnahme, Mixer-Ports 224h/225h.
