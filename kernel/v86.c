@@ -179,6 +179,13 @@ static unsigned char from_tick;
    einem STI, das IF einschaltet, kommt der Interrupt daher erst mit der
    naechsten Falle oder dem naechsten Takt. */
 static unsigned char sti_sh;
+/* Wartet beim STI ein Interrupt, laeuft der naechste Befehl im
+   Einzelschritt (TF); dessen #DB stellt ihn zu - genau ein Befehl
+   spaeter wie bei der CPU. Ohne das wartete er bis zur naechsten
+   Falle mit IF an: in Diggers Schleife "CLI; Zaehler lesen; STI"
+   kamen die Takte unregelmaessig, der Ton klang verzerrt. */
+static unsigned char sti_step[NTASK];
+static unsigned char k9_def[NTASK];     /* INT 9 stand zuletzt auf dem Stummel */
 static unsigned t8_last[NTASK];         /* irq0_n bei der letzten Zustellung */
 extern volatile unsigned irq0_n;        /* start.asm: zaehlt jeden irq0  */
 /* Hardware-Vektoren beim Programmstart (INT E0h 00h): bricht ein Spiel
@@ -1738,6 +1745,10 @@ static int t8_ok(int t)
 
 static void inject(struct v86_iret *r, int t)
 {
+    if (sti_step[t]) {                          /* Einzelschritt erledigt */
+        sti_step[t] = 0;
+        r->eflags &= ~(unsigned long)FL_TF;
+    }
     if ((spk[t] || spk_open[t] || opl_open[t]) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
@@ -1771,6 +1782,18 @@ static void inject(struct v86_iret *r, int t)
         visr[t] |= 1;
         int_raw(r, t, 8, (unsigned)r->eip);
         return;
+    }
+    if (vec_def(9))
+        k9_def[t] = 1;
+    else if (k9_def[t]) {
+        /* INT 9 gerade umgebogen: was vorher im Ring lag, haette auf
+           echter Hardware das BIOS laengst verarbeitet (bei uns kommt
+           es ueber INT 16h aus dem Kernel). Sonst traf z. B. das
+           Loslassen von Enter Diggers Handler, bevor der alten Vektor
+           gemerkt hatte. */
+        k9_def[t] = 0;
+        if (!pm_hooked(t, 9))
+            kq_t[t] = kq_h[t];
     }
     if (!vec_def(9) && key_ready(t)) {
         key_t0[t] = get_ticks();
@@ -5606,7 +5629,7 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0xFB:                                  /* STI                   */
         if (!(vfl[t] & FL_IF))
-            sti_sh = 1;                         /* Schatten: erst spaeter */
+            sti_sh = !(f->r.eflags & FL_TF);    /* Schatten: erst spaeter */
         vfl[t] |= FL_IF;
         break;
     case 0x9C:                                  /* PUSHF(D)              */
@@ -5682,6 +5705,16 @@ unsigned __far v86_exc(struct v86_frame *f)
     int t = kf_box_ctl(BOX_TASK, 0);
     unsigned rc;
 
+    if (t >= 0 && sti_step[t] && f->vec == 1) { /* Befehl nach STI fertig */
+        irq_off();
+        inject(&f->r, t);
+        from_tick = 0;
+        return 0;
+    }
+    if (t >= 0 && sti_step[t]) {        /* anderer Grund (Befehl trappt  */
+        sti_step[t] = 0;                /* selbst): TF weg, bevor PUSHF  */
+        f->r.eflags &= ~(unsigned long)FL_TF;   /* o. Ae. es sieht       */
+    }
     trace((unsigned)f->vec, (unsigned)f->r.cs, (unsigned)f->r.eip, (unsigned)f->eax);
     enable_ints();                      /* Kernel laeuft mit Interrupts  */
     rc = monitor(f, t);
@@ -5693,6 +5726,10 @@ unsigned __far v86_exc(struct v86_frame *f)
     if (rc == 0) {
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
+        if (sti_sh && (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])) {
+            sti_step[t] = 1;            /* nach dem naechsten Befehl     */
+            f->r.eflags |= FL_TF;
+        }
         sti_sh = 0;
     } else if (rc == 2) {
         irq_off();                      /* DPMI: weiter im PM            */

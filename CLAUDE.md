@@ -1969,8 +1969,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   wartende Taste (Loslassen von Enter, `key_ready` verzögert es 3 Takte)
   sofort zu -> Diggers Handler sprang über den leeren Zeiger nach
   0000:0000. Jetzt STI-Schatten wie die CPU (`sti_sh`): schaltet STI IF
-  ein, kommt der Interrupt erst mit der nächsten Falle oder dem nächsten
-  Takt. Danach startet Digger (gehaltenes Enter), F10, COMMAND /C VER.
+  ein und wartet ein Interrupt, läuft der nächste Befehl im Einzelschritt
+  (TF, `sti_step`), dessen #DB stellt ihn zu (jede andere Falle löscht TF
+  vorher, damit PUSHF es nicht sieht). Erster Versuch „bis zur nächsten
+  Falle“ verzerrte Diggers Ton: in seiner Schleife „CLI; Zähler lesen;
+  STI“ ist die nächste Falle wieder ein CLI. Das allein reicht für Digger
+  nicht (die Taste käme nach `POP DS`, wie auf echter Hardware zu früh):
+  der eigentliche Fehler war, dass Tastencodes im Ring liegen blieben,
+  solange INT 9 auf dem Stummel stand (dort hätte sie das BIOS längst
+  verarbeitet; INT 16h holt seine Tasten aus dem Kernel). Jetzt verwirft
+  inject den Ring, sobald INT 9 umgebogen wird (`k9_def`, nicht bei
+  PM-Handler). Geprüft: Digger mit gehaltenem Enter (100/300/600 ms),
+  BOXTEST (INT 9 + Port 60h), DOOM 1.2 Timedemo, COMMAND /C VER.
   Digger-Ton „unter DOS klarer“ (Nutzer, P2; mit und ohne HW_TIMER
   gleich): Digger schaltet den Lautsprecher in seinem INT 8 um (61h Bit 1,
   Ton = halbe Taktrate; Musik mit Teilern 0D59h–1FBFh = 150–350 Hz). Die
