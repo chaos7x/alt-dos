@@ -14,6 +14,7 @@ cpu 386
 
 KCODE   equ 0x08
 KDATA   equ 0x10
+VWIN    equ 0x1D0                       ; = VWIN_IDX * 8 (kern.h)
 KCODE2  equ 0x1C8                       ; zweites Codesegment (kern.h)
 KCODE3  equ 0x218                       ; drittes Codesegment (v86.c, redir.c)
 
@@ -1211,6 +1212,150 @@ halt_forever_:
         cli
 .h:     hlt
         jmp     .h
+
+;
+; ---------------------------------------------------------------------------
+; void __far rm_int10(void) - Video-BIOS aus dem Kernel (VESA, Phase 5)
+;
+; Wie OS/2 1.x: kurz in den Real Mode, INT 10h, zurueck. Register stehen
+; physisch bei 6F00h (rmregs: ax bx cx dx si di bp es ds flags), Stapel
+; darunter, Puffer ab 7000h (alles im ersten MB unterhalb des Kernels,
+; nach dem Start frei). Interrupts aus, PIC ganz maskiert; CR3 = Seiten-
+; verzeichnis des Kernels (_rm_kcr3, dort ist das erste MB 1:1). Der
+; Weg: KCODE2 und VWIN kurz mit roher Basis (ohne KALIAS), Paging und PE
+; aus, Real Mode bei _rm_cs16:...; zurueck mit roher GDTR, PE, Paging,
+; dann wieder Alias-GDTR und Deskriptoren.
+RMR     equ     6F00h                   ; Register
+RMGDT   equ     6FD0h                   ; rohe GDTR
+RMIVT   equ     6FE0h                   ; IDTR fuer den Real Mode
+RMESP   equ     6FF0h                   ; ESP des Kernels
+extern _gdt, _rm_kcr3, _rm_cs16
+segment KTEXT2
+global rm_int10_
+rm_int10_:
+        pushfd
+        pushad
+        push    ds
+        push    es
+        push    fs
+        push    gs
+        cli
+        in      al, 0A1h
+        mov     ah, al
+        in      al, 21h
+        push    ax
+        mov     al, 0FFh
+        out     0A1h, al
+        out     21h, al
+        mov     eax, cr3
+        push    eax
+        mov     eax, [_rm_kcr3]
+        mov     cr3, eax
+        mov     si, _gdt + VWIN         ; VWIN sichern, roh 0..FFFF
+        push    dword [si]
+        push    dword [si+4]
+        mov     dword [si], 0000FFFFh
+        mov     dword [si+4], 00009200h
+        mov     di, _gdt + KCODE2       ; KCODE2 sichern, Basis roh
+        push    dword [di+4]
+        sub     byte [di+7], 80h
+        mov     dx, [_rm_cs16]
+        mov     ax, VWIN
+        mov     es, ax
+        mov     ax, [_gdtr]
+        mov     [es:RMGDT], ax
+        mov     eax, [_gdtr+2]
+        sub     eax, 80000000h
+        mov     [es:RMGDT+2], eax
+        mov     word [es:RMIVT], 3FFh
+        mov     dword [es:RMIVT+2], 0
+        mov     [es:RMESP], esp
+        jmp     KCODE2:.raw
+.raw:   mov     ax, VWIN                ; alles roh, linear = physisch
+        mov     ss, ax
+        mov     sp, RMR
+        mov     ds, ax
+        mov     es, ax
+        mov     fs, ax
+        mov     gs, ax
+        push    dx                      ; Real-Mode-CS
+        push    word .real
+        mov     eax, cr0
+        and     eax, 7FFFFFFEh          ; Paging und PE aus
+        mov     cr0, eax
+        retf
+.real:  xor     ax, ax
+        mov     ss, ax
+        mov     ds, ax
+        mov     es, ax
+        mov     fs, ax
+        mov     gs, ax
+        lidt    [RMIVT]
+        mov     bx, [RMR+2]
+        mov     cx, [RMR+4]
+        mov     dx, [RMR+6]
+        mov     si, [RMR+8]
+        mov     di, [RMR+10]
+        mov     bp, [RMR+12]
+        mov     ax, [RMR+14]
+        mov     es, ax
+        push    word [RMR+16]
+        mov     ax, [RMR]
+        pop     ds
+        int     10h
+        mov     [ss:RMR], ax
+        mov     [ss:RMR+2], bx
+        mov     [ss:RMR+4], cx
+        mov     [ss:RMR+6], dx
+        mov     [ss:RMR+8], si
+        mov     [ss:RMR+10], di
+        mov     [ss:RMR+12], bp
+        mov     [ss:RMR+14], es
+        mov     [ss:RMR+16], ds
+        pushf
+        pop     ax
+        mov     [ss:RMR+18], ax
+        cli
+        xor     ax, ax
+        mov     ds, ax
+        o32 lgdt [RMGDT]                ; rohe Basis
+        mov     eax, cr0
+        or      al, 1
+        mov     cr0, eax
+        jmp     KCODE2:.pm1
+.pm1:   mov     ax, VWIN
+        mov     ss, ax
+        mov     ds, ax
+        mov     ebx, [RMESP]
+        mov     eax, cr0
+        or      eax, 80000000h          ; Paging wieder an (1:1 im ersten MB)
+        mov     cr0, eax
+        jmp     short .pg
+.pg:    mov     ax, KDATA
+        mov     ds, ax
+        o32 lgdt [_gdtr]                ; Alias-Basis
+        mov     ss, ax
+        mov     esp, ebx
+        mov     di, _gdt + KCODE2
+        pop     dword [di+4]
+        jmp     KCODE2:.pm2             ; CS wieder mit Alias
+.pm2:   mov     si, _gdt + VWIN
+        pop     dword [si+4]
+        pop     dword [si]
+        o32 lidt [_idtr]
+        pop     eax
+        mov     cr3, eax
+        pop     ax
+        out     21h, al
+        mov     al, ah
+        out     0A1h, al
+        pop     gs
+        pop     fs
+        pop     es
+        pop     ds
+        popad
+        popfd
+        retf
 
 ; ---------------------------------------------------------------------------
 segment _TEXTEND

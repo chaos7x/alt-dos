@@ -2052,6 +2052,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   CRTC-Register) – nur in 86Box prüfbar; VESA für FAPI-Programme (Moduswechsel
   braucht das Video-BIOS, also einen V86-Aufruf aus dem Kernel). DGROUP
   jetzt 65.002 Byte – fast voll.
+  VESA für FAPI-Programme erledigt (Wunsch des Nutzers, auch als Grund-
+  lage für eine spätere GUI; in QEMU geprüft: VESA listet die Modi bis
+  3840×2160, VDEMO 640×400×8 mit Regenbogenpalette, START VDEMO + Alt+Esc
+  weg/zurück -> Bild wieder da, Esc -> Text; danach GRAFIK 13h und
+  VBETEST in der Box unverändert). Vom Nutzer in Proxmox (4-GB-VM)
+  bestätigt: MEM 3.145.204 KB. Aufbau: start.asm `rm_int10` (KTEXT2,
+  fern): Video-BIOS wie OS/2 1.x per Real Mode – PIC ganz maskiert, CR3
+  des Kernels (`rm_kcr3`, 1:1 im ersten MB), VWIN und KCODE2 kurz mit
+  roher Basis (ohne KALIAS), Paging+PE aus, Real Mode bei `rm_cs16`
+  (= KCODE2_LIN >> 4), IVT-IDTR, Register aus physisch 6F00h, Stapel
+  darunter, Puffer ab 7000h (VbeInfoBlock, ModeInfo bei 7200h), INT 10h;
+  zurück über rohe GDTR (bei 6FD0h abgelegt), PE, Paging, Alias-GDTR,
+  Deskriptoren zurück, IDTR, CR3, PIC. `kernel/vesa.c` (KTEXT2):
+  `rm_call`, `vbe_info` („VBE2“), `vbe_mode` (Attribute 99h: da, Farbe,
+  Grafik, LFB; Modell 4/6; 8/15/16/24/32 Bit; Pitch aus LinBytesPerScan-
+  Line), `vesa_bios(mode)` (3 = Text), FAPI 53h `vesa_fapi` (VESA_MODE,
+  VESA_SET, Bild höchstens 896 Seiten = 3,5 MB). paging.c `pg_lfb`:
+  Bildspeicher in die Fenster-Seitentabelle ab Platz 128 (PTE mit U, PDE
+  1023 jetzt mit U – die Fensterplätze haben kein U, die Boxen kopieren
+  die PDE ohne U). vgagfx.c: Sitzungsart `VESAGFX` (0x81), `ses[].vmode/
+  vpg`, Puffer vpg Seiten + Palette (`GFX_UNITS_S`), `vesa_copy` Bank
+  für Bank über SCRATCH/SCRATCH2 (Bildspeicher über vesa_lin), gfx_in
+  stellt per BIOS ein, `vesa_hw`: vor jedem anderen Modus erst BIOS 03h
+  (SVGA-Register kennt der Kernel nicht), `vio_setvesa`, VioSetPlane =
+  Bank (`vesa_limit` für den letzten Abschnitt), Mauszeiger in VESA noch
+  aus. Grund für das Bank-Fenster: die LDT hat nur 16 Einträge je Task,
+  eine Selektorkette über 1–3 MB passte nicht. Offen: Mauszeiger,
+  Direktfarben-Demo, Echttest auf S3/ET4000 in 86Box.
   Nutzer danach (P2): Verzerrung unverändert – zurückgestellt („löst sich
   evtl. in einem anderen Fall“). VME bleibt (weniger Fallen für alle
   Boxen). Weitere Verdächtige: die Fallen auf 43h/40h im Messfenster und

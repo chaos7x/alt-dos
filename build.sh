@@ -79,10 +79,10 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx bus mem paging k2misc"
+K2MODS="floppy vgagfx bus mem paging k2misc vesa"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86 redir"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus paging v86 redir k2misc k2thunk; do
+for m in kernel mem floppy fat vio kbd preload vgagfx bus paging v86 redir k2misc vesa k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
@@ -151,7 +151,7 @@ nasm -f obj apps/crt0.asm -o $B/crt0.o
 ALINK="option quiet format dos option nodefaultlibs \
       option map order clname CODE clname BEGDATA clname DATA clname BSS"
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver"
+UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver vesa vdemo"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
@@ -232,7 +232,7 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
        $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
-       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE
+       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_sb16.sys SB16.SYS
@@ -240,7 +240,7 @@ SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.s
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
-       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM
+       $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE
        $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL

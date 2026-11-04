@@ -168,6 +168,8 @@ struct fapi_sysinfo {
 /* Busangaben fuer MSD: BX = BUS_*, CX = Nummer (ab 0), DX = Puffer
    -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_VESA           0x53    /* BX = VESA_*, CX = Zahl, DX = Zeiger auf
+                                       struct fapi_vesamode (6.0)       */
 #define FAPI_NEWSIZE        0x52    /* BX = Handle (schreibend), CX = Zeiger auf neue
                                        Groesse (4 Bytes): kuerzen oder mit Nullen
                                        verlaengern (wie DosNewSize bei OS/2) */
@@ -405,6 +407,22 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     unsigned long  box_kb;          /* ab 6.0 (CX >= 22): DOS-Boxen     */
 };
 #define MEMINFO_V60  18             /* Groesse mit total/free_kb32      */
+
+/* FAPI_VESA (6.0): VESA-Modi mit linearem Bildspeicher */
+#define VESA_MODE       0       /* CX = n: n-ter brauchbare Modus, sonst Fehler */
+#define VESA_SET        1       /* CX = Modusnummer: einstellen; danach
+                                   VioGetPhysBuf = 64-KB-Fenster aufs Bild,
+                                   VioSetPlane(n) = n-ter 64-KB-Abschnitt,
+                                   VioSetPal fuer 8 Bit, VioSetGfx(0) = Text */
+struct fapi_vesamode {
+    unsigned short mode;            /* VBE-Modusnummer                  */
+    unsigned short width, height;   /* Bildpunkte                       */
+    unsigned short pitch;           /* Byte je Zeile                    */
+    unsigned char  bpp;             /* 8, 15, 16, 24, 32                */
+    unsigned char  model;           /* 4 = Palette, 6 = direkte Farben  */
+    unsigned short mem_kb;          /* Bildspeicher der Karte           */
+    unsigned short version;         /* VBE-Version (BCD, z. B. 0300h)   */
+};
 
 struct fapi_dirent {                /* DosFindEntry                     */
     char           name[256];       /* Dateiname, auch fuer lange Namen */

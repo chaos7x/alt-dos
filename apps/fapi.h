@@ -59,6 +59,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
 #define DosBusInfo(w, i, p) fapi_call(FAPI_BUSINFO, (w), (i), (unsigned short)(p))
+#define VioVesa(sub, n, p)  fapi_call(FAPI_VESA, (sub), (n), (unsigned short)(p))   /* struct fapi_vesamode */
 #define DosSubst(d, path)   F2(FAPI_SUBST, (d), (path))
 #define DosQSubst(d, buf)   F2(FAPI_QSUBST, (d), (buf))
 #define DosJoin(d, path)    F2(FAPI_JOIN, (d), (path))

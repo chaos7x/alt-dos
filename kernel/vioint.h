@@ -30,6 +30,7 @@ struct session {
     unsigned char ast, np;          /* ANSI: Zustand, Zahl der Parameter */
     unsigned char par[6];           /* ANSI: Parameter                  */
     unsigned char arow, acol;       /* ANSI: ESC[s gemerkter Cursor     */
+    unsigned short vmode, vpg;      /* VESA: Modus, Seiten des Bildes   */
 };
 
 /* Grafikpuffer: 13h 64 KB Bild, 12h/X vier Ebenen zu 38400 Byte; Palette dahinter */
@@ -45,6 +46,8 @@ struct session {
 #define RAW_ALLOW   62              /*   (0 keiner, 1 A0000 64 KB, 3 B8000 32 KB), BIOS-Modus erlaubt es */
 #define RAW_ST      0x340           /* Zustand der Ports hinten (Indizes, DAC-Zaehler) */
 #define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_LIN + 0x10000UL) : PAGES(GFX_IMG(m) + 768))
+#define VESAGFX     0x81            /* VESA-Modus (linearer Bildspeicher), Bild in vpg Seiten */
+#define GFX_UNITS_S(s) (ses[s].gfx == VESAGFX ? ses[s].vpg + 1u : GFX_UNITS(ses[s].gfx))
 
 extern struct session ses[NTASK];
 extern int fg;

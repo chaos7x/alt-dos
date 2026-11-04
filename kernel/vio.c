@@ -365,7 +365,7 @@ void vio_close(int s)
         ses[s].save = 0;
     }
     if (ses[s].gfx_save) {
-        mem_free(ses[s].gfx_save, GFX_UNITS(ses[s].gfx));
+        mem_free(ses[s].gfx_save, GFX_UNITS_S(s));
         ses[s].gfx_save = 0;
     }
     ses[s].used = 0;

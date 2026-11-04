@@ -2697,6 +2697,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_VESA:
+        if (!user_ok(usel, a3, sizeof(struct fapi_vesamode), 1))
+            return FAPI_ERROR;
+        return vesa_fapi(s, current, a1, a2, MK_FP(usel, a3));
     case FAPI_BUSINFO:
         if (a1 == BUS_PCI) {
             if (!user_ok(usel, a3, sizeof(struct fapi_pcidev), 1) ||

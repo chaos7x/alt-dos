@@ -104,9 +104,37 @@ static void dac_io(int write, unsigned first, unsigned n, unsigned char __far *p
 
 /* Fenster SCRATCH auf den Puffer: part 0-3 = Bild (13h: nur 0, 64 KB;
    12h: Ebene part), part 4 = Palette */
+/* VESA: der Kernel stellt den Modus ueber das Video-BIOS ein (vesa.c,
+   kurzer Real-Mode-Aufruf); den linearen Bildspeicher bildet paging.c
+   pg_lfb in seine Fenster-Seitentabelle ab (vesa_lin = Basis fuer
+   Deskriptoren). Das Programm sieht ihn ueber einen 64-KB-Selektor, den
+   VioSetPlane(n) auf den n-ten Abschnitt ("Bank") legt - vorn auf den
+   Bildspeicher, hinten auf den Puffer (Bild in vpg Seiten, Palette
+   dahinter). Steht die Karte in einem VESA-Modus (vesa_hw), stellt der
+   Kernel vor jedem anderen Modus mit dem BIOS erst Modus 3 ein - die
+   SVGA-Register kennt er nicht. */
+static unsigned long vesa_lin;          /* Bildspeicher fuer Deskriptoren */
+static unsigned long vesa_phys;         /* ... physisch                  */
+static unsigned char vesa_hw;           /* Karte steht auf VESA          */
+int __far vesa_bios(unsigned mode);     /* vesa.c                        */
+
+static unsigned vesa_banks(int s)
+{
+    return (ses[s].vpg + 15) >> 4;
+}
+
+static unsigned vesa_limit(int s)       /* Grenze der gewaehlten Bank   */
+{
+    unsigned r = ses[s].vpg - (ses[s].gfx_plane << 4);
+    return r >= 16 ? 0xFFFF : (r << 12) - 1;
+}
+
 static unsigned long save_part(int s, int part)
 {
     unsigned long b = PG_LIN(ses[s].gfx_save);
+    if (ses[s].gfx == VESAGFX)
+        return part == 4 ? b + PG_LIN(ses[s].vpg) :
+               b + ((unsigned long)ses[s].gfx_plane << 16);
     if (part == 4)
         return b + GFX_IMG(ses[s].gfx);
     if (PLANAR(ses[s].gfx))
@@ -119,6 +147,28 @@ static void map_save(int s, int part)
 {
     scratch_map(save_part(s, part), part == 4 ? 767 :
                 PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF);
+}
+
+/* VESA: Bild zwischen Bildspeicher und Puffer, Bank fuer Bank */
+static void vesa_copy(int s, int out)
+{
+    unsigned b, n = vesa_banks(s), rest;
+    unsigned long base = PG_LIN(ses[s].gfx_save);
+    for (b = 0; b < n; b++) {
+        rest = b + 1 < n ? 16 : ses[s].vpg - (b << 4);  /* Seiten       */
+        scratch_map(base + ((unsigned long)b << 16), 0xFFFF);
+        set_desc(SCRATCH2 >> 3, vesa_lin + ((unsigned long)b << 16), 0xFFFF, ACC_KDATA);
+        if (out)
+            far_copy(SCRATCH, 0, SCRATCH2, 0, (rest > 8 ? 8 : rest) << 12);
+        else
+            far_copy(SCRATCH2, 0, SCRATCH, 0, (rest > 8 ? 8 : rest) << 12);
+        if (rest > 8) {
+            if (out)
+                far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, (rest - 8) << 12);
+            else
+                far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, (rest - 8) << 12);
+        }
+    }
 }
 
 /* Bild zwischen Bildspeicher und Puffer kopieren; out = 1: sichern */
@@ -154,7 +204,12 @@ static void gfx_alias(int s)
 {
     if (!ses[s].gfx_sel)
         return;
-    if (s == fg && hw_gfx == ses[s].gfx)
+    if (ses[s].gfx == VESAGFX && s == fg && hw_gfx == VESAGFX)
+        ldt_set(ses[s].gfx_task, ses[s].gfx_sel,
+                vesa_lin + ((unsigned long)ses[s].gfx_plane << 16), vesa_limit(s));
+    else if (ses[s].gfx == VESAGFX)
+        ldt_set(ses[s].gfx_task, ses[s].gfx_sel, save_part(s, 0), vesa_limit(s));
+    else if (s == fg && hw_gfx == ses[s].gfx)
         ldt_set(ses[s].gfx_task, ses[s].gfx_sel, 0xA0000UL,
                 PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF);
     else
@@ -328,6 +383,11 @@ unsigned long __far vio_raw_buf(int s)
 int __far gfx_in(void)
 {
     unsigned short w[8];
+    if (vesa_hw && (fg < 0 || ses[fg].gfx != VESAGFX)) {
+        vesa_bios(3);                       /* SVGA-Register ueber das BIOS */
+        vesa_hw = 0;                        /* zuruecksetzen            */
+        hw_gfx = 0xFF;
+    }
     if (fg < 0 || !ses[fg].gfx) {
         if (hw_gfx)
             hw_text();                      /* Textsitzung vorn         */
@@ -337,6 +397,22 @@ int __far gfx_in(void)
     if (!text_dac_ok) {                     /* Textpalette einmal merken */
         dac_io(0, 0, 64, (unsigned char __far *)text_dac);
         text_dac_ok = 1;
+    }
+    if (ses[fg].gfx == VESAGFX) {           /* VESA: BIOS, dann Bild     */
+        if (vesa_bios(ses[fg].vmode | 0x4000)) {
+            win_restore(w);
+            return 0;
+        }
+        vesa_hw = 1;
+        vesa_lin = pg_lfb(vesa_phys, ses[fg].vpg);
+        hw_gfx = VESAGFX;
+        gp_drawn = 0;
+        vesa_copy(fg, 0);
+        map_save(fg, 4);
+        dac_io(1, 0, 256, MK_FP(SCRATCH, 0));
+        win_restore(w);
+        gfx_alias(fg);
+        return 1;
     }
     if (ses[fg].gfx == RAWGFX) {            /* DOS-Box: alles zurueck    */
         if (!ses[fg].gfx_plane)
@@ -375,6 +451,10 @@ void __far gfx_out(void)
     if (hw_gfx == RAWGFX) {
         raw_out(fg);
         ses[fg].gfx_plane = 0;
+    } else if (hw_gfx == VESAGFX) {
+        vesa_copy(fg, 1);
+        map_save(fg, 4);
+        dac_io(0, 0, 256, MK_FP(SCRATCH, 0));
     } else
         gfx_copy(fg, 1);
     win_restore(w);
@@ -419,7 +499,7 @@ int __far vio_setgfx(int s, int t, unsigned mode)
         if (ses[s].gfx_sel)
             ldt_drop(ses[s].gfx_task, ses[s].gfx_sel);
         ses[s].gfx_sel = 0;
-        mem_free(ses[s].gfx_save, GFX_UNITS(ses[s].gfx));
+        mem_free(ses[s].gfx_save, GFX_UNITS_S(s));
         ses[s].gfx = 0;
         ses[s].gfx_save = 0;
         if (s == fg)
@@ -474,10 +554,48 @@ int __far vio_setgfx(int s, int t, unsigned mode)
     return 0;
 }
 
+/* VESA-Modus mode (Bild pages Seiten, Bildspeicher physisch phys) fuer
+   Sitzung s: Puffer anlegen (schwarz, Vorgabepalette); vorn stellt
+   redraw -> gfx_in das BIOS um. 0 = ok, -1 Fehler (kein Speicher) */
+int __far vio_setvesa(int s, int t, unsigned mode, unsigned pages, unsigned long phys)
+{
+    unsigned short w[8];
+    unsigned b;
+    if (s < 0 || !ses[s].used || !vga_ok)
+        return -1;
+    if (ses[s].gfx)
+        vio_setgfx(s, t, 0);
+    ses[s].gfx_save = mem_alloc(pages + 1);
+    if (!ses[s].gfx_save)
+        return -1;
+    ses[s].gfx = VESAGFX;
+    ses[s].vmode = mode;
+    ses[s].vpg = pages;
+    ses[s].gfx_plane = 0;
+    ses[s].gfx_page = 0;
+    vesa_phys = phys;
+    win_save(w);
+    for (b = 0; b < vesa_banks(s); b++) {
+        scratch_map(PG_LIN(ses[s].gfx_save) + ((unsigned long)b << 16), 0xFFFF);
+        zero_seg(SCRATCH, b + 1 < vesa_banks(s) ? 0x8000 : (pages - (b << 4)) << 11);
+    }
+    map_save(s, 4);
+    def_palette(MK_FP(SCRATCH, 0));
+    win_restore(w);
+    ses[s].gfx_task = (signed char)t;
+    if (s == fg) {
+        hw_gfx = 0xFF;
+        redraw();
+    }
+    return 0;
+}
+
 /* VioGetPhysBuf: Basis des Bildes (vorn A0000h, sonst Puffer); merkt den
    Selektor, damit der Kernel ihn beim Wechsel umbiegen kann */
 unsigned long __far vio_gfx_base(int s)
 {
+    if (ses[s].gfx == VESAGFX && s == fg && hw_gfx == VESAGFX)
+        return vesa_lin + ((unsigned long)ses[s].gfx_plane << 16);
     if (s == fg && hw_gfx == ses[s].gfx)
         return 0xA0000UL;
     return save_part(s, ses[s].gfx_plane);
@@ -485,12 +603,21 @@ unsigned long __far vio_gfx_base(int s)
 
 unsigned __far vio_gfx_limit(int s)
 {
+    if (ses[s].gfx == VESAGFX)
+        return vesa_limit(s);
     return PLANAR(ses[s].gfx) ? PLANE12 - 1 : 0xFFFF;
 }
 
 /* VioSetPlane (12h): Ebene p (0-3) zum Schreiben und Lesen */
 int __far vio_setplane(int s, unsigned p)
 {
+    if (s >= 0 && ses[s].used && ses[s].gfx == VESAGFX) {   /* Bank */
+        if (p >= vesa_banks(s))
+            return -1;
+        ses[s].gfx_plane = (unsigned char)p;
+        gfx_alias(s);
+        return 0;
+    }
     if (s < 0 || !ses[s].used || !PLANAR(ses[s].gfx) || p > 3)
         return -1;
     ses[s].gfx_plane = (unsigned char)p;
@@ -765,7 +892,7 @@ static int gptr_vsync(int idle)
 
 static void gptr_update_v(int idle)
 {
-    int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && mou_nbtn &&
+    int show = fg >= 0 && ses[fg].gfx && hw_gfx == ses[fg].gfx && hw_gfx != VESAGFX && mou_nbtn &&
                ses[fg].mou_owner >= 0 && ses[fg].mou_show;
     int x, y;
     struct gpst *g = &gst[gci];

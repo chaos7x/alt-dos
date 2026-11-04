@@ -156,12 +156,33 @@ unsigned __far paging_init(void)
                   PG_LIN(p) | PTE_P | PTE_W | PTE_U : 0);
     }
     scratch_map(PG_LIN(pd_pg), 4095);
-    put32(SCRATCH, WIN_PDE, PG_LIN(win_pt) | PTE_P | PTE_W);   /* nur Ring 0 */
+    put32(SCRATCH, WIN_PDE, PG_LIN(win_pt) | PTE_P | PTE_W | PTE_U);  /* Ring 3 nur
+                                           ueber PTEs mit U: VESA-Bild */
     n_pt = n;
     pg_enable((unsigned)PG_LIN(pd_pg), (unsigned)(PG_LIN(pd_pg) >> 16));
     alias_on();
     mem_hi_ok = 1;
     return n;
+}
+
+/* Linearen Bildspeicher (VESA) ab Platz WIN_SLOTS * WIN_PG der Fenster-
+   Tabelle abbilden, mit U-Bit (das Programm schreibt ueber seinen Selektor
+   direkt hinein). Hoechstens WIN_LFB Seiten (3,5 MB). -> Basis fuer
+   Deskriptoren (put_desc addiert KALIAS), 0 = zu gross */
+#define WIN_LFB   (1024 - WIN_SLOTS * WIN_PG)
+unsigned long __far pg_lfb(unsigned long phys, unsigned pages)
+{
+    unsigned i;
+    pg_t first = phys >> 12;
+    if (pages > WIN_LFB)
+        return 0;
+    set_desc(SCRATCH >> 3, PG_LIN(win_pt), 4095, ACC_KDATA);
+    for (i = 0; i < WIN_LFB; i++)
+        put32(SCRATCH, WIN_SLOTS * WIN_PG + i,
+              i < pages ? PG_LIN(first + i) | PTE_P | PTE_W | PTE_U : 0);
+    win_first[0] = 0;                   /* SCRATCH zeigte auf win_pt     */
+    tlb_flush();
+    return WIN_LIN + ((unsigned long)WIN_SLOTS * WIN_PG << 12) - KALIAS;
 }
 
 /* Fenster fuer Selektor sel auf [base, base + limit] (physisch) legen:

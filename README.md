@@ -253,6 +253,14 @@ und PC-DOS.
   BIOS per INT 15h E820h (Lücken werden ausgespart), sonst E801h bzw.
   88h; Segmente auch oberhalb 16 MB, per `DosAllocSeg`/`DosFreeSeg`,
   Aufräumen bei Task-Ende; ISA-DMA-Puffer bleiben unter 16 MB
+- VESA für FAPI-Programme (6.0): Modi mit linearem Bildspeicher bis
+  1024×768×32 (VBE 2.0/3.0, FAPI VioVesa). Den Modus stellt der Kernel
+  wie OS/2 1.x über einen kurzen Ausflug in den Real Mode mit dem Video-
+  BIOS ein; das Programm sieht das Bild über ein 64-KB-Fenster, das
+  VioSetPlane weiterschiebt (passt zu 286-Programmen). Sitzungswechsel
+  wie bei VGA-Grafik (Bild und Palette gesichert, im Hintergrund wird
+  weitergezeichnet). `VESA` listet die Modi, `\DEMO\VDEMO [Breite]`
+  zeigt einen 8-Bit-Modus
 - Paging (6.0): der Kernel bildet beim Start allen RAM 1:1 über
   Seitentabellen ab und schaltet den Seitenmechanismus des 386 ein –
   Grundlage für Speicherschutz je Seite, DOS-Boxen und virtuellen
@@ -557,10 +565,11 @@ selbst nur 8.3 kennt.
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, ~1/16 s statt 8 KB), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste, CX = Nummer, DX = struct fapi_pcidev bzw. fapi_res → 0, FAPI_ERROR am Ende (MSD) |
+| 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,5 MB Bild) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte) → 0: kürzen oder mit Nullen verlängern (wie OS/2) |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
-| 66 | VioSetPlane     | Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
+| 66 | VioSetPlane     | VESA (VioVesa): BX = 64-KB-Abschnitt des Bildes, den das Fenster aus VioGetPhysBuf zeigt. Modus 12h: BX = Ebene 0–3 (Farbbit) zum Schreiben und Lesen; Mode X: Ebene x & 3, Punkt bei Seite + y·80 + x/4 (Seite 0 bei 0, Seite 1 bei 19200); im Hintergrund zeigt der Selektor auf die Ebene im Puffer |
 | 69 | VioSetPage      | Mode X: BX = sichtbare Seite 0/1; im Vordergrund wartet der Aufruf auf den Strahlrücklauf, danach kann das Programm in die andere Seite zeichnen |
 
 Handles 0, 1, 2 sind Standardeingabe, -ausgabe und -fehler (Vorgabe:

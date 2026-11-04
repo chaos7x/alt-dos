@@ -225,6 +225,8 @@ unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);
 unsigned long __far paging_cr3(void);          /* Seitenverzeichnis des Kernels */
 unsigned long __far pg_win(unsigned sel, unsigned long base, unsigned limit);
+unsigned long __far pg_lfb(unsigned long phys, unsigned pages);   /* VESA */
+int __far vio_setvesa(int s, int t, unsigned mode, unsigned pages, unsigned long phys);
 extern unsigned win_csel;                       /* Cache-Fenster fuer pg_win */
 
 /* v86.c (KTEXT2): DOS-Boxen (V86) */
@@ -268,6 +270,9 @@ void __far pci_write(unsigned loc, unsigned reg, unsigned long v, unsigned size)
 unsigned __far pci_find(unsigned vendor, unsigned device, unsigned n);
 unsigned __far pci_findclass(unsigned cs, unsigned n);
 int __far pci_info(unsigned i, struct fapi_pcidev __far *p);
+/* vesa.c (KTEXT2): VBE ueber einen kurzen Real-Mode-Aufruf */
+unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
+                         struct fapi_vesamode __far *o);
 unsigned __far res_claim(int drv, unsigned type, unsigned start, unsigned len);
 void __far res_free(int drv, unsigned type, unsigned start);
 int __far res_get(unsigned i, unsigned *type, unsigned *start, unsigned *len);
