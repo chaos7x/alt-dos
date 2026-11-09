@@ -366,6 +366,8 @@ static int proc_prot(int t)
     return 0;
 }
 
+static unsigned char apm_none;          /* APM=OFF: SHUTDOWN schaltet nicht aus */
+
 static void system_down(int restart)
 {
     int k;
@@ -388,6 +390,8 @@ static void system_down(int restart)
     outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
     if (restart)
         reboot();
+    if (!apm_none)
+        apm_off();                              /* kehrt nur bei Fehler zurueck */
     vio_kputs(boot_session, "\n  Alle Dateien sind geschlossen.\n"
                             "  Der Rechner kann jetzt ausgeschaltet werden.\n"
                             "  (Strg+Alt+Entf startet neu.)\n");
@@ -5386,6 +5390,8 @@ static void config_sys(void)
                 box_kb = BOX_KB;
         } else if (kw(line, "EMS_FRAME_LOCATION")) {  /* NONE wie OS/2 */
             ems_none = up(v[0]) == 'N';
+        } else if (kw(line, "APM")) {          /* OFF: nicht ausschalten */
+            apm_none = up(v[0]) == 'O' && up(v[1]) == 'F';
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */

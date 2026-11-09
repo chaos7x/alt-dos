@@ -2713,6 +2713,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   FEATURES ein (SeaBIOS tut es nicht, ohne /DMA bleibt QEMU bei PIO).
   `/NODMA`. CD-ROMs bleiben PIO. Offen: LBA48, UDMA-Zeiten selbst
   einstellen, Bestätigung auf dem P3B-F.
+- APM (Phase 5, Rest; in QEMU geprüft: SHUTDOWN /NOW schaltet aus, QEMU
+  endet, fsck sauber; mit `APM=OFF` die alte Meldung; VESA unverändert):
+  Ausschalten über die Real-Mode-Schnittstelle des APM-BIOS wie POWER.EXE
+  (statt der 16-Bit-PM-Schnittstelle – der Rechner geht ohnehin aus) –
+  derselbe Ausflug wie für das Video-BIOS: `struct rmregs` hat `intno`
+  (rm_call setzt 10h, außer 15h), start.asm wählt per [RMR+20] INT 10h
+  oder 15h. vesa.c `apm_off`: 5300h (BX = 'PM'), 5301h verbinden, 530Eh
+  Version 1.2/1.1, 5308h an, 5307h BX = 1 CX = 3; kehrt nur bei Fehler
+  zurück. system_down ruft es nach allem Schreiben, nicht bei Neustart.
+  CONFIG.SYS `APM=OFF` (`apm_none`). SeaBIOS schaltet dabei per ACPI ab.
+  Offen: Leerlauf über APM (CPU Idle 5305h), Anzeige in MSD.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

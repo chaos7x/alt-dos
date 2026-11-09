@@ -12,7 +12,8 @@
 #include "../include/fapi_abi.h"
 #include "k2.h"
 
-struct rmregs { unsigned short ax, bx, cx, dx, si, di, bp, es, ds, flags; };
+struct rmregs { unsigned short ax, bx, cx, dx, si, di, bp, es, ds, flags,
+                intno; };              /* 10h Video-BIOS, 15h (APM)     */
 #define RM_REGS   0x6F00UL
 #define RM_BUF    0x7000UL              /* 7000h: VbeInfoBlock, 7200h: ModeInfo */
 
@@ -25,6 +26,8 @@ static void rm_call(struct rmregs *r)
 {
     struct rmregs __far *p;
     unsigned i;
+    if (r->intno != 0x15)
+        r->intno = 0x10;
     rm_kcr3 = paging_cr3();
     rm_cs16 = (unsigned)(KCODE2_LIN >> 4);
     scratch_map(RM_REGS, sizeof(struct rmregs) - 1);
@@ -179,4 +182,43 @@ unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
         }
     }
     return FAPI_ERROR;
+}
+
+/* ---- APM (Ausschalten) -------------------------------------------------
+   Wie DOS/Windows mit POWER.EXE: ueber die Real-Mode-Schnittstelle des
+   APM-BIOS (INT 15h 53xxh) - derselbe kurze Ausflug in den Real Mode wie
+   fuer das Video-BIOS. Erst pruefen (5300h, BX = 'PM'), verbinden (5301h,
+   "schon verbunden" ist kein Fehler), Treiberversion melden (530Eh, 1.2
+   bzw. 1.1), Energieverwaltung an (5308h), dann alle Geraete aus (5307h
+   BX = 1, CX = 3). Kehrt nur zurueck, wenn es nicht geklappt hat:
+   -1 kein APM, -2 BIOS lehnt ab. Nur in system_down, nach allem
+   Schreiben. */
+static void apm(struct rmregs *r, unsigned ax, unsigned bx, unsigned cx)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(*r); i++)
+        ((unsigned char *)r)[i] = 0;
+    r->ax = ax;
+    r->bx = bx;
+    r->cx = cx;
+    r->intno = 0x15;
+    rm_call(r);
+}
+
+int __far apm_off(void)
+{
+    static struct rmregs r;
+    unsigned ver;
+    apm(&r, 0x5300, 0, 0);
+    if ((r.flags & 1) || r.bx != 0x504D)        /* 'PM'                  */
+        return -1;
+    ver = r.ax;
+    if (ver < 0x0101)                           /* 1.0: ohne 530Eh      */
+        ver = 0x0100;
+    apm(&r, 0x5301, 0, 0);                      /* verbinden            */
+    if (ver >= 0x0101)
+        apm(&r, 0x530E, 0, ver >= 0x0102 ? 0x0102 : 0x0101);
+    apm(&r, 0x5308, 1, 1);                      /* Energieverwaltung an */
+    apm(&r, 0x5307, 1, 3);                      /* alles aus            */
+    return -2;
 }

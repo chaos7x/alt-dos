@@ -122,7 +122,9 @@ und PC-DOS.
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
   gleichzeitig), `RD`, `REN` (auch `*` und `?` wie MS-DOS), `CLS`, `VER` (mit Build-Nummer), `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/NOW` ohne Rückfrage, `/T:n` nach n Sekunden Countdown – Esc bricht ab, `/R`
   neu starten; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
-  Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
+  Platten-Caches und schaltet den Rechner über APM aus, wenn das BIOS es
+  kann – sonst Meldung wie bisher; `APM=OFF` in der CONFIG.SYS schaltet
+  das ab), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad.
   Stapelsprache vollständig wie MS-DOS 6.22 und OS/2 CMD: dazu `FOR %%v IN
   (Satz) DO` (Platzhalter werden zu Dateinamen; an der Eingabe `%v`),

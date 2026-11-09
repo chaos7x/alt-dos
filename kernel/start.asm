@@ -1327,8 +1327,12 @@ rm_int10_:
         push    word [RMR+16]
         mov     ax, [RMR]
         pop     ds
+        cmp     byte [ss:RMR+20], 15h   ; APM (INT 15h) oder Video-BIOS
+        je      .i15
         int     10h
-        mov     [ss:RMR], ax
+        jmp     .ret
+.i15:   int     15h
+.ret:   mov     [ss:RMR], ax
         mov     [ss:RMR+2], bx
         mov     [ss:RMR+4], cx
         mov     [ss:RMR+6], dx
