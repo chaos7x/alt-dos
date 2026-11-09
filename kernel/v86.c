@@ -290,6 +290,18 @@ void __far kf_vio_setmode(int s, int full, int owner);
 void __far kf_vio_setcur(int s, int row, int col);
 void __far kf_vio_dirty(int s);
 unsigned long __far kf_vio_buf_lin(int s);
+unsigned __far kf_vio_mou_open(int s, int t);
+int __far kf_vio_mou_read(int s, unsigned char *e);
+void __far kf_vio_mou_show(int s, int on);
+unsigned __far kf_vio_mou_delta(int s, int *dx, int *dy);
+void __far kf_vio_mou_pos(int s, int row, int col);
+void __far kf_vio_mou_close(int s, int t);
+static void mou33(struct v86_frame *f, int t);
+static void mou_off(int t);
+static void mou_cb(struct v86_frame *f, int t);
+static int mou_ret(struct v86_frame *f, int t);
+#define MOU_RET  0x0570         /* Maus-Rueckruf zurueck: ARPL E7h        */
+#define MOU_ST   0x0B00         /* Zustand des Maustreibers (F000:0B00)   */
 
 static void k2_cr3(unsigned lo, unsigned hi);
 #pragma aux k2_cr3 = "shl edx,16" "mov dx,ax" "mov cr3,edx" \
@@ -644,6 +656,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
     put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
     put32(SCRATCH, EMS_RET >> 2, 0x90CBE663UL);     /* 63 E6 CB: EMS 56h */
+    put32(SCRATCH, MOU_RET >> 2, 0x9090E763UL);     /* 63 E7: Maus       */
     put32(SCRATCH, 0x60A >> 2, 0);                  /* F060:000A EMMXXXX0 */
     for (i = 0; i < 8; i++)
         *(unsigned char __far *)MK_FP(SCRATCH, 0x60A + i) = "EMMXXXX0"[i];
@@ -714,6 +727,7 @@ void __far v86_park(int t)
     vga_leave(t);
     if (pt_box[t])
         capture(t);
+    kf_vio_mou_close(s, t);
     box_ses[t] = -1;
     kq_h[t] = kq_t[t] = 0;
     kf_vio_setmode(s, 0, -1);
@@ -2379,8 +2393,8 @@ static void svc(int n, struct v86_frame *f, int t)
             break;
         }
         break;
-    case 0x33:                                  /* keine Maus (noch)     */
-        AX = 0;
+    case 0x33:                                  /* Maus                  */
+        mou33(f, t);
         break;
     case 0x28:                                  /* DOS wartet: abgeben   */
         kf_box_ctl(BOX_SLEEP, 1);
@@ -2403,6 +2417,7 @@ static void svc(int n, struct v86_frame *f, int t)
             for (i = 0; i < sizeof(hwvec); i++)  /* Vektoren merken    */
                 ivt_save[t][i] = ((unsigned long)rd16(0, hwvec[i] * 4 + 2) << 16) |
                                  rd16(0, hwvec[i] * 4);
+            mou_off(t);                         /* Maus: neues Programm  */
             a = (const char *)kf_box_ctl(BOX_ARGS, 0);
             for (i = 0; a[i] && i < 120; i++)
                 wr8((unsigned)f->r.es, DI + i, a[i]);
@@ -5725,6 +5740,8 @@ static unsigned monitor(struct v86_frame *f, int t)
             xms(f, t);
             return 0;
         }
+        if (cs == VBIOS && ip == MOU_RET)       /* Maus-Rueckruf fertig  */
+            return mou_ret(f, t);
         if (cs == VBIOS && ip == EMS_RET) {      /* EMS 56h: Ziel fertig  */
             ems_ret(f, t);
             return 0;
@@ -5841,6 +5858,348 @@ static unsigned monitor(struct v86_frame *f, int t)
     return 0;
 }
 
+/* ---- Maus (INT 33h) --------------------------------------------------------
+   Maustreiber der Box wie MOUSE.COM von Microsoft: die Maus der Sitzung
+   (MOUSE.SYS) gehoert nach dem Reset der Box (vio_mou_open). Bewegung
+   kommt als ungekuerzte Mickeys (vio_mou_delta), Tasten als Ereignisse
+   (vio_mou_read), die Box rechnet Position, Grenzen und Zaehler selbst.
+   Im Textmodus zeichnet der Kernel den Zeiger an der Stelle der Box
+   (vio_mou_pos); in Grafikmodi gibt es noch keinen Zeiger (Position und
+   Tasten stimmen). Zustand je Box in ihrer Stummelseite bei F000:0B00
+   (DGROUP ist voll), hier eine Arbeitskopie. Rueckruf (0Ch/14h) nur, wenn
+   die Box im V86-Modus mit IF an trappt: Register auf ihren Stapel,
+   Ruecksprung ueber F000:0570 "ARPL E7h". */
+struct vmou {
+    unsigned char on, nbtn, btn, incb;
+    signed char show;
+    unsigned char rx, ry, cw;           /* Mickeys je 8 Punkte, Zellbreite */
+    int x, y, xmin, xmax, ymin, ymax;
+    int mcx, mcy, fx, fy;
+    unsigned mask, cbofs, cbseg, evp;
+    unsigned npr[3], nrl[3];
+    int prx[3], pry[3], rlx[3], rly[3];
+};
+static struct vmou mo;
+
+static void mo_load(void)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(mo); i++)
+        ((unsigned char *)&mo)[i] = rd8(VBIOS, MOU_ST + i);
+}
+
+static void mo_save(void)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(mo); i++)
+        wr8(VBIOS, MOU_ST + i, ((unsigned char *)&mo)[i]);
+}
+
+/* Vorgaben nach dem Videomodus der Box (wie der Microsoft-Treiber) */
+static void mo_mode(void)
+{
+    unsigned m = rd8(BDA, 0x49) & 0x7F, rows = rd8(BDA, 0x84) + 1;
+    if (rows < 25 || rows > 50)
+        rows = 25;
+    mo.xmin = mo.ymin = 0;
+    mo.xmax = 639;
+    mo.cw = m <= 1 ? 16 : 8;
+    if (m <= 3 || m == 7)
+        mo.ymax = rows * 8 - 1;
+    else if (m == 0x0F || m == 0x10)
+        mo.ymax = 349;
+    else if (m == 0x11 || m == 0x12 || m > 0x13)
+        mo.ymax = 479;
+    else
+        mo.ymax = 199;
+    mo.x = 320;
+    mo.y = (mo.ymax + 1) / 2 & ~7;
+}
+
+static int mo_text(void)
+{
+    unsigned m = rd8(BDA, 0x49) & 0x7F;
+    return m <= 3 || m == 7;
+}
+
+static void mo_clip(void)
+{
+    if (mo.x < mo.xmin) mo.x = mo.xmin;
+    if (mo.x > mo.xmax) mo.x = mo.xmax;
+    if (mo.y < mo.ymin) mo.y = mo.ymin;
+    if (mo.y > mo.ymax) mo.y = mo.ymax;
+}
+
+/* Zeiger des Kernels (Textmodus) an die Stelle der Box */
+static void mo_ptr(int t)
+{
+    if (box_ses[t] >= 0 && mo_text())
+        kf_vio_mou_pos(box_ses[t], mo.y >> 3, mo.x / mo.cw * (mo.cw >> 3));
+}
+
+static int mo_rx(int x) { return mo_text() ? x & ~(mo.cw - 1) : x; }
+static int mo_ry(int y) { return mo_text() ? y & ~7 : y; }
+
+/* Neues von der Maus holen: Bewegung, dann Tastenereignisse */
+static void mo_poll(int t)
+{
+    static unsigned char ev[8];
+    int dx, dy, s = box_ses[t];
+    unsigned b, i, ch;
+    if (!mo.on || s < 0)
+        return;
+    kf_vio_mou_delta(s, &dx, &dy);
+    if (dx || dy) {
+        mo.mcx += dx;
+        mo.mcy += dy;
+        mo.fx += dx * 8;
+        mo.fy += dy * 8;
+        mo.x += mo.fx / (int)mo.rx;
+        mo.fx %= (int)mo.rx;
+        mo.y += mo.fy / (int)mo.ry;
+        mo.fy %= (int)mo.ry;
+        mo_clip();
+        mo.evp |= 1;
+        mo_ptr(t);
+    }
+    while (kf_vio_mou_read(s, ev)) {
+        b = ev[0] & 7;
+        ch = b ^ mo.btn;
+        for (i = 0; i < 3; i++) {
+            if (!(ch & (1 << i)))
+                continue;
+            if (b & (1 << i)) {
+                mo.npr[i]++;
+                mo.prx[i] = mo_rx(mo.x);
+                mo.pry[i] = mo_ry(mo.y);
+                mo.evp |= 2 << (i * 2);
+            } else {
+                mo.nrl[i]++;
+                mo.rlx[i] = mo_rx(mo.x);
+                mo.rly[i] = mo_ry(mo.y);
+                mo.evp |= 4 << (i * 2);
+            }
+        }
+        mo.btn = (unsigned char)b;
+    }
+}
+
+/* Programmstart (INT E0h 00h): Treiber aus, Maus der Sitzung frei */
+static void mou_off(int t)
+{
+    /* FreeDOS legt INT 33h auf ein blosses IRET (Programme ohne Treiber
+       sollen nicht abstuerzen) - zurueck auf den Stummel des Kernels */
+    if (rd8(rd16(0, 0xCE), rd16(0, 0xCC)) == 0xCF) {
+        wr16(0, 0xCC, 0x33 * 4);
+        wr16(0, 0xCE, VBIOS);
+    }
+    mo_load();
+    mo.on = 0;
+    mo.incb = 0;
+    mo.mask = 0;
+    mo_save();
+    if (box_ses[t] >= 0)
+        kf_vio_mou_close(box_ses[t], t);
+}
+
+static void mo_reset(int t)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(mo); i++)
+        ((unsigned char *)&mo)[i] = 0;
+    mo.nbtn = (unsigned char)(box_ses[t] >= 0 ? kf_vio_mou_open(box_ses[t], t) : 0);
+    if (!mo.nbtn)
+        return;
+    mo.on = 1;
+    mo.show = -1;
+    mo.rx = 8;
+    mo.ry = 16;
+    mo_mode();
+    kf_vio_mou_delta(box_ses[t], &mo.mcx, &mo.mcy);  /* Altes verwerfen */
+    mo.mcx = mo.mcy = 0;
+    kf_vio_mou_show(box_ses[t], 0);
+    mo_ptr(t);
+}
+
+static void mou33(struct v86_frame *f, int t)
+{
+    unsigned i, a = AX;
+    int s = box_ses[t];
+
+    mo_load();
+    if (a == 0x0000 || a == 0x0021) {
+        mo_reset(t);
+        AX = mo.on ? 0xFFFF : 0;
+        BX = mo.nbtn == 3 ? 3 : 2;
+        mo_save();
+        return;
+    }
+    if (!mo.on) {                               /* kein Treiber          */
+        mo_save();
+        return;
+    }
+    mo_poll(t);
+    switch (a) {
+    case 0x01:                                  /* Zeiger zeigen         */
+        if (mo.show < 0 && ++mo.show == 0)
+            kf_vio_mou_show(s, 1);
+        break;
+    case 0x02:                                  /* Zeiger verbergen      */
+        if (mo.show-- == 0)
+            kf_vio_mou_show(s, 0);
+        break;
+    case 0x03:
+        BX = mo.btn;
+        CX = (unsigned)mo_rx(mo.x);
+        DX = (unsigned)mo_ry(mo.y);
+        break;
+    case 0x04:                                  /* Position setzen       */
+        mo.x = (int)CX;
+        mo.y = (int)DX;
+        mo_clip();
+        mo_ptr(t);
+        break;
+    case 0x05: case 0x06:                       /* Druecken/Loslassen    */
+        i = BX < 3 ? BX : 0;
+        AX = mo.btn;
+        if (a == 5) {
+            BX = mo.npr[i];
+            CX = (unsigned)mo.prx[i];
+            DX = (unsigned)mo.pry[i];
+            mo.npr[i] = 0;
+        } else {
+            BX = mo.nrl[i];
+            CX = (unsigned)mo.rlx[i];
+            DX = (unsigned)mo.rly[i];
+            mo.nrl[i] = 0;
+        }
+        break;
+    case 0x07: case 0x08:                       /* Grenzen               */
+        {
+            int lo = (int)CX, hi = (int)DX;
+            if (lo > hi) { int k = lo; lo = hi; hi = k; }
+            if (a == 7) { mo.xmin = lo; mo.xmax = hi; }
+            else { mo.ymin = lo; mo.ymax = hi; }
+            mo_clip();
+            mo_ptr(t);
+        }
+        break;
+    case 0x0B:                                  /* Mickeys seit dem letzten Mal */
+        CX = (unsigned)mo.mcx;
+        DX = (unsigned)mo.mcy;
+        mo.mcx = mo.mcy = 0;
+        break;
+    case 0x0C:                                  /* Rueckruf setzen       */
+        mo.mask = CX;
+        mo.cbofs = DX;
+        mo.cbseg = (unsigned)f->r.es;
+        mo.evp = 0;
+        break;
+    case 0x14:                                  /* Rueckruf tauschen     */
+        i = mo.mask;
+        mo.mask = CX;
+        CX = i;
+        i = mo.cbofs;
+        mo.cbofs = DX;
+        DX = i;
+        i = mo.cbseg;
+        mo.cbseg = (unsigned)f->r.es;
+        f->r.es = i;
+        mo.evp = 0;
+        break;
+    case 0x0F:                                  /* Mickeys je 8 Punkte   */
+        if (CX) mo.rx = (unsigned char)(CX > 255 ? 255 : CX);
+        if (DX) mo.ry = (unsigned char)(DX > 255 ? 255 : DX);
+        break;
+    case 0x15:                                  /* Zustand: Puffergroesse */
+        BX = 0;
+        break;
+    case 0x1B:                                  /* Empfindlichkeit       */
+        BX = CX = 50;
+        DX = 0;
+        break;
+    case 0x1D: case 0x1E:                       /* Bildschirmseite       */
+        BX = 0;
+        break;
+    case 0x1F:                                  /* Treiber aus           */
+        AX = 0xFFFF;
+        break;
+    case 0x24:                                  /* Version, Typ, IRQ     */
+        BX = 0x0805;
+        CX = 0x0400;                            /* PS/2                  */
+        break;
+    case 0x26:                                  /* groesste Koordinaten  */
+        BX = 0;
+        CX = (unsigned)mo.xmax;
+        DX = (unsigned)mo.ymax;
+        break;
+    case 0x2A:                                  /* Zaehler, Heisser Punkt */
+        AX = (unsigned)mo.show;
+        BX = CX = 0;
+        DX = 4;
+        break;
+    }
+    mo_save();
+}
+
+/* Rueckruf (0Ch) zustellen, wenn etwas ansteht, das er haben will */
+static void mou_cb(struct v86_frame *f, int t)
+{
+    struct v86_iret *r = &f->r;
+    unsigned e;
+    if (box_ses[t] < 0 || !(vfl[t] & FL_IF) || sti_sh || rd8(VBIOS, MOU_ST) == 0)
+        return;
+    mo_load();
+    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
+        return;
+    mo_poll(t);
+    e = mo.evp & mo.mask;
+    if (!e) {
+        mo_save();
+        return;
+    }
+    mo.evp = 0;
+    mo.incb = 1;
+    push16(r, vflags(r, t));                    /* wie ein Interrupt     */
+    push16(r, (unsigned)r->cs);
+    push16(r, (unsigned)r->eip);
+    push16(r, AX); push16(r, BX); push16(r, CX); push16(r, DX);
+    push16(r, (unsigned)f->esi); push16(r, DI); push16(r, BP);
+    push16(r, (unsigned)r->ds); push16(r, (unsigned)r->es);
+    push16(r, VBIOS);                           /* RETF -> ARPL E7h       */
+    push16(r, MOU_RET);
+    AX = e;
+    BX = mo.btn;
+    CX = (unsigned)mo_rx(mo.x);
+    DX = (unsigned)mo_ry(mo.y);
+    *(unsigned short *)&f->esi = (unsigned)mo.mcx;
+    DI = (unsigned)mo.mcy;
+    vfl[t] &= ~FL_IF;
+    r->eflags &= ~(unsigned long)FL_TF;
+    r->cs = mo.cbseg;
+    r->eip = mo.cbofs;
+    mo_save();
+}
+
+/* Rueckruf ist fertig (RETF nach F000:0570): Register und IRET */
+static int mou_ret(struct v86_frame *f, int t)
+{
+    struct v86_iret *r = &f->r;
+    r->es = pop16(r);
+    r->ds = pop16(r);
+    BP = pop16(r);
+    DI = pop16(r);
+    *(unsigned short *)&f->esi = pop16(r);
+    DX = pop16(r); CX = pop16(r); BX = pop16(r); AX = pop16(r);
+    r->eip = pop16(r);
+    r->cs = pop16(r);
+    set_flags(r, t, pop16(r));
+    mo_load();
+    mo.incb = 0;
+    mo_save();
+    return 0;
+}
+
 unsigned __far v86_exc(struct v86_frame *f)
 {
     int t = kf_box_ctl(BOX_TASK, 0);
@@ -5868,8 +6227,11 @@ unsigned __far v86_exc(struct v86_frame *f)
         trc_ivt[2] = ((unsigned long)rd16(0, 0x72) << 16) | rd16(0, 0x70);
     }
     if (rc == 0) {
+        unsigned long ocs = f->r.cs, oip = f->r.eip;
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
+        if (f->r.cs == ocs && f->r.eip == oip)
+            mou_cb(f, t);               /* Maus-Ereignis an den Rueckruf */
         if (sti_sh && (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])) {
             sti_step[t] = 1;            /* nach dem naechsten Befehl     */
             f->r.eflags |= FL_TF;

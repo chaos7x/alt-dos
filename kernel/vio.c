@@ -60,6 +60,8 @@ static struct mouev mq[NTASK][MQ_LEN];
 unsigned char mou_nbtn;                 /* 0 = keine Maus                */
 int mx, my;                             /* Mickeys                       */
 static unsigned char mbtn;              /* Tasten jetzt                  */
+static int mou_adx, mou_ady;            /* DOS-Box: Mickeys ungekuerzt   */
+static signed char mou_as = -1;         /* ... fuer diese Sitzung        */
 static unsigned char p_drawn;           /* Zeiger steht im Bildspeicher  */
 static unsigned p_idx;                  /* ... an dieser Zelle           */
 static unsigned short p_saved, p_inv;   /* Zelle vorher / mit Zeiger     */
@@ -945,6 +947,14 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
     struct session *p;
     struct mouev *e;
 
+    if (fg >= 0 && ses[fg].mou_owner >= 0) {    /* fuer INT 33h der Box  */
+        if (mou_as != fg) {
+            mou_as = (signed char)fg;
+            mou_adx = mou_ady = 0;
+        }
+        mou_adx += dx;
+        mou_ady += dy;
+    }
     mx += dx;
     my += dy;
     if (mx < 0) mx = 0;
@@ -1059,6 +1069,44 @@ int vio_mou_read(int s, unsigned char *e)
     ses[s].mq_n--;
     irq_restore(f);
     return 1;
+}
+
+/* DOS-Box (INT 33h): gesammelte Mickeys seit dem letzten Abruf und
+   Tasten jetzt; -> Tasten */
+unsigned vio_mou_delta(int s, int *dx, int *dy)
+{
+    unsigned f = irq_off();
+    *dx = *dy = 0;
+    if (mou_as == s) {
+        *dx = mou_adx;
+        *dy = mou_ady;
+        mou_adx = mou_ady = 0;
+    }
+    irq_restore(f);
+    return mbtn;
+}
+
+/* DOS-Box im Textmodus: Zeiger an Zeile/Spalte (die Box rechnet selbst) */
+void vio_mou_pos(int s, int row, int col)
+{
+    unsigned f;
+    if (s != fg || ses[s].gfx)
+        return;
+    f = irq_off();
+    mx = col * 8;
+    my = (row + ses[s].top) * 16;
+    cur_dirty = 1;
+    irq_restore(f);
+}
+
+/* Maus der Sitzung wieder frei (DOS-Box geparkt / Programm zu Ende) */
+void vio_mou_close(int s, int t)
+{
+    if (s < 0 || !ses[s].used || ses[s].mou_owner != t)
+        return;
+    ses[s].mou_owner = -1;
+    ses[s].mou_show = 0;
+    cur_dirty = 1;
 }
 
 void vio_mou_show(int s, int on)

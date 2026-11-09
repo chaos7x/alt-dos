@@ -2579,6 +2579,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   DOS-Programm in neuer Sitzung) soll per CONFIG.SYS zuschaltbar werden,
   z. B. `DOSSTART=SESSION`. Später: Box je Sitzung offen halten und
   wiederverwenden wie NTVDM (spart den FreeDOS-Start).
+- Maus in der DOS-Box (Wunsch des Nutzers: MSD von MS-DOS fand keine;
+  in QEMU mit `-serial msmouse` + `MOUSE.SYS /COM1` und einem eigenen
+  .COM geprüft: Reset FFFFh/3 Tasten, 24h 8.05, Position, Klickzähler,
+  Rückruf mit Maske 7, Zeiger an der richtigen Zelle; danach gehört die
+  Maus wieder der Konsole): v86.c `mou33` (INT 33h über svc), Zustand je
+  Box in ihrer Stummelseite F000:0B00 (`MOU_ST`, Arbeitskopie `mo`,
+  DGROUP ist voll). Reset -> `vio_mou_open` (die Sitzungsmaus gehört der
+  Box). Bewegung: vio.c zählt für eine Sitzung mit Maus-Besitzer die
+  ungekürzten Mickeys mit (`mou_adx/ady`, `vio_mou_delta`), die Box
+  rechnet Position (Mickeys je 8 Punkte, Vorgabe 8/16), Grenzen und
+  Zähler selbst; Tasten aus der Ereignisschlange (`vio_mou_read`). Text:
+  Zeiger des Kernels an der Zelle der Box (`vio_mou_pos`), Koordinaten
+  wie Microsoft (640 × Zeilen·8, Zelle 8×8). Rückruf 0Ch/14h: nur aus
+  `v86_exc` (V86, IF an, inject hat nichts zugestellt) – `mou_cb` legt
+  FLAGS/CS/IP + AX..ES auf den Stapel der Box, RETF nach F000:0570
+  „ARPL E7h“ -> `mou_ret`. Lehre: FreeDOS legt INT 33h auf ein bloßes
+  IRET – `mou_off` (INT E0h 00h, Programmstart) setzt den Vektor dann
+  auf den Stummel zurück und gibt die Maus frei; v86_park ebenso.
+  Offen: Zeiger in Grafikmodi (RAWGFX), Rückruf im DPMI-PM, 15h–17h
+  (Zustand sichern) nur Größe 0.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

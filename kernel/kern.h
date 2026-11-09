@@ -217,6 +217,9 @@ void vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
 unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
 int  vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
 void vio_mou_show(int s, int on);
+unsigned vio_mou_delta(int s, int *dx, int *dy);    /* DOS-Box: Mickeys */
+void vio_mou_pos(int s, int row, int col);
+void vio_mou_close(int s, int t);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
