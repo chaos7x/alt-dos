@@ -2344,6 +2344,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Rücksprung aus der Falle fertig. Geprüft: Demo mit Sprache im SB-
   Mitschnitt, Musik läuft durch (vorher nach 12 s still); DOOM 1.2 mit
   Effekten und Musik.
+  Vom Nutzer in 86Box bestätigt: DOTT (CD-Fassung) spricht.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
