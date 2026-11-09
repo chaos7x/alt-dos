@@ -351,6 +351,21 @@ static void end_programs(void)
             task_end(t);
 }
 
+/* Taskmanager: nicht beendbar sind der Aufrufer selbst, alle, auf die er
+   (ueber seine Aufrufer) wartet, und die Shell der ersten Sitzung */
+static int proc_prot(int t)
+{
+    int p;
+    if (task[t].state == T_FREE)
+        return 0;
+    if (task[t].parent < 0 && task[t].session == boot_session && !task[t].v86)
+        return 1;
+    for (p = current; p >= 0; p = task[p].parent)
+        if (p == t)
+            return 1;
+    return 0;
+}
+
 static void system_down(int restart)
 {
     int k;
@@ -2729,6 +2744,39 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return 0;
         }
         return FAPI_ERROR;
+
+    case FAPI_PROC: {                           /* Taskmanager           */
+        struct fapi_proc __far *pi = MK_FP(usel, a3);
+        if (a2 >= NTASK)
+            return FAPI_ERROR;
+        t = (int)a2;
+        if (a1 == PROC_INFO) {
+            if (!user_ok(usel, a3, sizeof(struct fapi_proc), 1))
+                return FAPI_ERROR;
+            pi->state = task[t].state;
+            pi->kind = (unsigned char)(!task[t].v86 ? 0 : park_owner[t] ? 2 : 1);
+            pi->session = (unsigned char)task[t].session;
+            pi->parent = (unsigned char)task[t].parent;
+            pi->flags = (unsigned char)((t == current ? PROC_SELF : 0) |
+                                        (proc_prot(t) ? PROC_PROT : 0));
+            pi->rsv = 0;
+            pi->kb = (task[t].img_cnt + task[t].code_cnt) << 2;
+            for (k = 0; k < 12 && task[t].name[k]; k++)
+                pi->name[k] = task[t].name[k];
+            pi->name[k] = 0;
+            for (k = 0; k < 40 && task[t].args[k]; k++)
+                pi->args[k] = task[t].args[k];
+            pi->args[k] = 0;
+            return 0;
+        }
+        if (a1 != PROC_KILL || task[t].state == T_FREE)
+            return FAPI_ERROR;
+        if (proc_prot(t))
+            return FAPI_ERR_DENIED;
+        task[t].rc = 255;                       /* wie Strg+C            */
+        task_end(t);                            /* Kernelsperre haben wir */
+        return 0;
+    }
 
     case FAPI_SYSINFO:
         if (!user_ok(usel, a1, sizeof(struct fapi_sysinfo), 1))

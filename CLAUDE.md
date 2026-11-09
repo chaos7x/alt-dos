@@ -2661,6 +2661,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ersten Bewegung (der vermeintliche „Cursorblock“ war der Zeiger in
   der Bildmitte), Maus-Seite zeigt Anschluss (PS/2, COMn, Busmaus-Port)
   und IRQ aus der Belegungsliste (DosBusInfo).
+- Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
+  geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
+  beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO
+  liefert `struct fapi_proc` je Platz, PROC_KILL = `task_end` wie
+  end_programs (rc 255); `proc_prot`: eigener Task, seine Aufrufer und
+  die Shell der ersten Sitzung nicht. `TASKMAN.EXE` (apps/task_taskman.c):
+  Vollbild mit Liste (jede Sekunde neu), Entf mit Rückfrage, `/L`, `/K n|
+  Name` (auch ohne Endung); beendet Kinder zuerst (`kill_tree`).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
