@@ -663,6 +663,13 @@ Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
 Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
 (Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
 das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
+Busmaster-DMA (6.0): sitzt der IDE-Controller am PCI (PIIX3/4 wie im
+ASUS P3B-F, QEMU) im Kompatibilitätsmodus und hat das BIOS der Platte
+einen DMA-Modus eingestellt, überträgt `IDE.SYS` per READ/WRITE DMA
+direkt in den Puffer (PRD-Tabelle, Startmeldung „Busmaster-DMA“);
+`/NODMA` schaltet es ab, `/DMA` stellt Multiword-DMA 2 ein, wenn das BIOS
+keinen Modus gesetzt hat (SeaBIOS/QEMU). Nach Fehlern geht die Platte
+auf PIO zurück. CD-ROMs bleiben bei PIO.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.

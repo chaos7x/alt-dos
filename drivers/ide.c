@@ -58,6 +58,9 @@ struct unit {
     unsigned char  chs;
     unsigned char  atapi;               /* CD-ROM: Paketbefehle            */
     unsigned char  old;                 /* WD1003: kein IDENTIFY, kein FLUSH */
+    unsigned char  dma;                 /* 1 DMA-Modus eingestellt, 2 nur
+                                           moeglich (mit /DMA einstellen),
+                                           3 Busmaster benutzen         */
     unsigned       cyls, heads, spt;
 };
 
@@ -174,6 +177,106 @@ static int wait_irq(struct unit *u, unsigned char mask, unsigned char want,
         c->done = 0;
     }
     return wait_status(u->base, mask, want, t);
+}
+
+/* ---- Busmaster-DMA (SFF-8038i: PIIX & Co.) ------------------------------
+   Der IDE-Controller am PCI (Klasse 01/01, Prog-IF Bit 7) hat je Kanal drei
+   Register ab BAR 4: Befehl (+0: Bit 0 Start, Bit 3 zum Speicher), Status
+   (+2: Bit 0 aktiv, 1 Fehler, 2 Interrupt; 1/2 werden mit 1 geloescht)
+   und die physische Adresse der PRD-Tabelle (+4). Ein PRD-Eintrag:
+   Adresse (32 Bit), Laenge (16 Bit, 0 = 64 KB), Bit 15 des letzten Worts =
+   letzter Eintrag; kein Eintrag darf eine 64-KB-Grenze ueberqueren. Nur im
+   Kompatibilitaetsmodus (Ports 1F0h/170h, IRQ 14/15) - so stellen PIIX3/4
+   und QEMU den Controller ein. Die Platte bekommt READ/WRITE DMA (C8h/CAh),
+   wenn ein DMA-Modus eingestellt ist (Wort 63/88 - das macht das BIOS). */
+static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd);
+void outl(unsigned port, unsigned lo, unsigned hi);
+#pragma aux outl = "push ebx" "shl ebx,16" "mov bx,ax" "xchg eax,ebx" \
+    "out dx,eax" "xchg eax,ebx" "pop ebx" \
+    __parm [__dx] [__ax] [__bx] __modify __exact [];
+
+static unsigned bm_base[2];             /* 0 = kein Busmaster am Kanal   */
+static unsigned char prdbuf[32];        /* PRD-Tabelle, 16 Byte darin auf
+                                           16 ausgerichtet (keine 64-KB-
+                                           Grenze)                       */
+static unsigned long drv_lin;           /* physische Basis des Treibers  */
+static unsigned long prd_phys;
+static unsigned long *prd;             /* im eigenen DS               */
+
+static void bm_find(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned loc, n;
+    unsigned long v;
+    int ch;
+    char *p;
+
+    bm_base[0] = bm_base[1] = 0;
+    if (has_opt(r->args, "/NODMA"))
+        return;
+    for (n = 0; (loc = devhlp(DH_PCICLASS, n, 0x0101, 0)) != 0xFFFF; n++) {
+        v = pci_rd(loc, 0x08);
+        if (!(v & 0x8000UL) || (v & 0x0500UL))  /* kein Busmaster bzw.  */
+            continue;                           /* nativer Modus         */
+        v = pci_rd(loc, 0x20);                  /* BAR 4: I/O            */
+        if (!(v & 1) || !(v & 0xFFFC))
+            continue;
+        bm_base[0] = (unsigned)v & 0xFFFC;
+        bm_base[1] = bm_base[0] + 8;
+        v = pci_rd(loc, 0x04);
+        if (!(v & 4))                           /* Busmaster an          */
+            pci_wr(loc, 0x04, v | 5, 2);
+        drv_lin = r->base;
+        prd_phys = (drv_lin + (unsigned)prdbuf + 15) & ~15UL;
+        prd = (unsigned long *)(unsigned)(prd_phys - drv_lin);
+        for (ch = 0; ch < 2; ch++)
+            if (chan[ch].units) {
+                claim(RES_IO, bm_base[ch], 8);
+                outp(bm_base[ch] + 2, (unsigned char)(inp(bm_base[ch] + 2) | 6));
+            }
+        p = scat(line, "  IDE-Busmaster an ");
+        p = hex(p, bm_base[0], 4);
+        scat(p, "h\n");
+        dputs(line);
+        return;
+    }
+}
+
+/* n Sektoren ab l per DMA; 0 = ok */
+static int dma_xfer(struct unit *u, unsigned long l, unsigned n, int write)
+{
+    struct drv_req __far *r = REQ;
+    unsigned bm = bm_base[u->ch], k = 0;
+    unsigned long a = r->buf_phys, len = (unsigned long)n << 9, piece;
+    unsigned char st, dir = (unsigned char)(write ? 0 : 8);
+
+    while (len) {                               /* an 64 KB teilen       */
+        piece = 0x10000UL - (a & 0xFFFFUL);
+        if (piece > len)
+            piece = len;
+        prd[k++] = a;
+        prd[k++] = piece & 0xFFFFUL;
+        a += piece;
+        len -= piece;
+    }
+    prd[k - 1] |= 0x80000000UL;                 /* letzter Eintrag       */
+    outp(bm, 0);
+    outp(bm + 2, (unsigned char)(inp(bm + 2) | 6));
+    outl(bm + 4, (unsigned)prd_phys, (unsigned)(prd_phys >> 16));
+    outp(bm, dir);
+    if (issue(u, l, n, write ? 0xCA : 0xC8))
+        return -1;
+    outp(bm, (unsigned char)(dir | 1));         /* los                   */
+    if (wait_irq(u, ST_DRQ, 0, 300)) {          /* Platte fertig         */
+        outp(bm, dir);
+        return -1;
+    }
+    for (k = 0; k < 1000 && (inp(bm + 2) & 1); k++)
+        ;                                       /* letzte Bytes          */
+    outp(bm, dir);
+    st = inp(bm + 2);
+    outp(bm + 2, (unsigned char)(st | 6));
+    return (st & 3) || (inp(u->base + R_STATUS) & ST_ERR) ? -1 : 0;
 }
 
 /* Modellname (Bytes vertauscht) an p anhaengen */
@@ -428,6 +531,13 @@ static void probe(int ch, int dev)
     u->chs = 0;
     u->atapi = 0;
     u->old = 0;
+    u->dma = 0;
+    if (id[49] & 0x0100) {                  /* DMA moeglich             */
+        if ((id[63] & 0x0700) || ((id[53] & 4) && (id[88] & 0x7F00)))
+            u->dma = 1;                     /* Modus eingestellt (BIOS) */
+        else if (id[63] & 0x0004)
+            u->dma = 2;                     /* MWDMA 2 ginge            */
+    }
     bios = 0;
     n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
     if (!(id[49] & 0x0200) || n == 0) {
@@ -465,11 +575,27 @@ static void probe(int ch, int dev)
     dputs(line);
 }
 
+/* SET FEATURES 03h: Multiword-DMA 2 (nur mit /DMA, wenn das BIOS keinen
+   Modus eingestellt hat - z. B. SeaBIOS in QEMU); 0 = ok */
+static int set_mwdma2(struct unit *u)
+{
+    unsigned b = u->base;
+    outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
+    settle(u->ctl);
+    if (wait_idle(b, 300))
+        return -1;
+    outp(b + R_ERROR, 0x03);
+    outp(b + R_COUNT, 0x22);
+    outp(b + R_CMD, 0xEF);
+    settle(u->ctl);
+    return wait_status(b, 0, 0, 300);
+}
+
 static void init(void)
 {
     struct drv_req __far *r = REQ;
     unsigned char s;
-    int ch;
+    int ch, i;
     char *p;
 
     nunit = 0;
@@ -501,6 +627,25 @@ static void init(void)
             scat(p, "\n");
         } else
             scat(p, " belegt, Abfragebetrieb\n");
+        dputs(line);
+    }
+    bm_find();
+    for (i = 0; i < nunit; i++) {           /* Busmaster je Platte       */
+        struct unit *u = &unit[i];
+        if (!bm_base[u->ch] || u->atapi || !u->dma) {
+            u->dma = 0;
+            continue;
+        }
+        if (u->dma == 2) {                  /* /DMA: MWDMA 2 einstellen  */
+            if (!has_opt(r->args, "/DMA") || set_mwdma2(u)) {
+                u->dma = 0;
+                continue;
+            }
+        }
+        u->dma = 3;
+        p = scat(line, "  Einheit ");
+        p = udec(p, (unsigned)i);
+        scat(p, ": Busmaster-DMA\n");
         dputs(line);
     }
     r->units = (unsigned char)nunit;
@@ -649,6 +794,17 @@ static void xfer(int write)
         return;
     }
 
+    if (u->dma == 3) {                      /* Busmaster                 */
+        for (tries = 0; tries < 2; tries++) {
+            if (dma_xfer(u, l, n, write) == 0) {
+                r->status = DRV_OK;
+                return;
+            }
+            report(u, write, l, 4, tries);
+        }
+        u->dma = 0;                         /* zurueck auf PIO           */
+        dputs("IDE.SYS: Busmaster-DMA aus, weiter mit PIO\n");
+    }
     for (tries = 0; tries < 3; tries++) {
         if (issue(u, l, n, write ? 0x30 : 0x20)) {  /* WRITE / READ SECTORS */
             report(u, write, l, 1, tries);

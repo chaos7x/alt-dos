@@ -2696,7 +2696,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Kernelsperre frei ist: läuft TASKMAN, dessen Sitzung nach vorn,
   sonst X:\DOS\TASKMAN.EXE vom Startlaufwerk in neuer Sitzung. In QEMU
   mit HANG.COM (`CLI; JMP $` in der Box vorn) geprüft: Taste, Box
-  beendet, CMD macht weiter.
+  beendet, CMD macht weiter. Vom Nutzer auf dem P3B-F bestätigt.
+- IDE-Busmaster (Phase 5, Rest; in QEMU mit `DEVICE=IDE.SYS /DMA` geprüft:
+  Start, XCOPY \DOS (64 Dateien), CHKDSK, SHUTDOWN, fsck sauber, Kopien
+  gleich): drivers/ide.c `bm_find` – PCI-Klasse 01/01, Prog-IF Bit 7
+  (Busmaster) und Bits 0/2 = 0 (Kompatibilitätsmodus, sonst nichts),
+  BAR 4 I/O, Befehlsregister Busmaster an; `dma_xfer`: PRD-Tabelle im
+  Treiber-DS (16-Byte-ausgerichtet in `prdbuf`, physisch über r->base),
+  Einträge an 64-KB-Grenzen geteilt, Befehl/Status/Adresse (+0/+2/+4,
+  `outl` 32 Bit), READ/WRITE DMA C8h/CAh über `issue`, Warten wie PIO
+  (`wait_irq`, BSY weg und DRQ 0), dann Busmaster stoppen, Status
+  Bit 1 oder ERR -> Fehler; zwei Fehlversuche -> `u->dma = 0`, PIO.
+  DMA nur, wenn IDENTIFY Wort 49 Bit 8 und ein Modus eingestellt ist
+  (Wort 63 Bits 8–10 oder Wort 88 Bits 8–14 bei Wort 53 Bit 2) – das macht
+  das BIOS (Award auf dem P3B-F); `/DMA` stellt sonst MWDMA 2 per SET
+  FEATURES ein (SeaBIOS tut es nicht, ohne /DMA bleibt QEMU bei PIO).
+  `/NODMA`. CD-ROMs bleiben PIO. Offen: LBA48, UDMA-Zeiten selbst
+  einstellen, Bestätigung auf dem P3B-F.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
