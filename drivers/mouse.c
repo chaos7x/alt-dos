@@ -427,7 +427,7 @@ static void init(void)
         if (nbtn && set_irq(12, mou_irq) == 0) {
             devhlp(DH_KBDLOCK, 0, 2, 0);    /* Tastatur frei, AUX an    */
             dputs("  PS/2-Maus am Tastaturcontroller, IRQ 12\n");
-            devhlp(DH_MOUREG, 0, nbtn, 0);
+            devhlp(DH_MOUREG, 0, nbtn | 0x400, 12);
             irq = 12;
             r->status = DRV_OK;
             return;
@@ -466,7 +466,7 @@ static void init(void)
         claim(RES_IO, base, 4);
         btn = 0;
         bus_irqs(1);
-        devhlp(DH_MOUREG, 0, nbtn, 0);
+        devhlp(DH_MOUREG, 0, nbtn | (bus == 1 ? 0x300 : 0x100), irq);
         r->status = DRV_OK;
         return;
     }
@@ -495,7 +495,7 @@ static void init(void)
         inp(RBR(base));
     outp(MCR(base), MCR_DTR | MCR_RTS | MCR_OUT2);
     outp(IER(base), 0x01);              /* Interrupt bei empfangenem Byte */
-    devhlp(DH_MOUREG, 0, nbtn, 0);
+    devhlp(DH_MOUREG, 0, nbtn | 0x200, irq);
     r->status = DRV_OK;
 }
 

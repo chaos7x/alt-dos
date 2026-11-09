@@ -4722,7 +4722,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         d = drv_of(dsel);
         return proc_run(((unsigned long)(d & 0xFF) << 16) | bx);
     case DH_MOUREG:
-        vio_mou_reg(bx);
+        vio_mou_reg(bx, cx);
         return 0;
     case DH_MOUEVENT:
         vio_mou_event(bx, (int)cx, (int)devhlp_dx);

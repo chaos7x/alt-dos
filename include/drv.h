@@ -83,7 +83,9 @@ struct drv_req {
 #define DH_PROCRUN      8           /* BX = Ereignis: alle darauf schlafenden
                                        Tasks wecken (auch aus der Interrupt-
                                        routine) -> AX = Anzahl */
-#define DH_MOUREG       9           /* BX = Anzahl Maustasten: Maus anmelden.
+#define DH_MOUREG       9           /* BL = Anzahl Maustasten, BH = Art wie
+                                       INT 33h 24h (1 Bus, 2 seriell, 3 InPort,
+                                       4 PS/2; 0 = unbekannt), CX = IRQ: Maus anmelden.
                                        Ein Treiber ohne Blockgeraete meldet
                                        beim INIT units = 0 und DRV_OK */
 #define DH_MOUEVENT     10          /* aus der Interruptroutine: BX = Tasten

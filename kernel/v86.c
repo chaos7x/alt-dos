@@ -6188,9 +6188,10 @@ static void mou33(struct v86_frame *f, int t)
         AX = 0xFFFF;
         break;
     case 0x24:                                  /* Version, Typ, IRQ     */
-        BX = 0x0805;
-        CX = 0x0400;                            /* PS/2                  */
-        break;
+        BX = 0x0805;                            /* Art und IRQ der echten */
+        CX = mou_kind ? (unsigned)mou_kind << 8 | (mou_kind == 4 ? 0 : mou_irqn) :
+             0x0400;                            /* Maus (PS/2: IRQ 0 wie  */
+        break;                                  /* bei Microsoft)         */
     case 0x26:                                  /* groesste Koordinaten  */
         BX = 0;
         CX = (unsigned)mo.xmax;

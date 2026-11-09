@@ -58,6 +58,7 @@ extern unsigned short vga_font8a[2], vga_font8b[2], vga_font16[2];
 struct mouev { unsigned char b, row, col; unsigned short x, y; };
 static struct mouev mq[NTASK][MQ_LEN];
 unsigned char mou_nbtn;                 /* 0 = keine Maus                */
+unsigned char mou_kind, mou_irqn;       /* Art (INT 33h 24h) und IRQ     */
 int mx, my;                             /* Mickeys                       */
 static unsigned char mbtn;              /* Tasten jetzt                  */
 static int mou_adx, mou_ady;            /* DOS-Box: Mickeys ungekuerzt   */
@@ -930,8 +931,11 @@ unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max)
 }
 
 /* Treiber meldet die Maus an (DevHlp MouReg) */
-void vio_mou_reg(unsigned buttons)
+void vio_mou_reg(unsigned buttons, unsigned irq)
 {
+    mou_kind = (unsigned char)(buttons >> 8);   /* fuer INT 33h 24h     */
+    mou_irqn = (unsigned char)irq;
+    buttons &= 0xFF;
     mou_nbtn = (unsigned char)(buttons > 3 ? 3 : buttons);
     mx = SCOLS * 8 / 2;
     my = 12 * 16;

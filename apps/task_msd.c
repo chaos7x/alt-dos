@@ -28,7 +28,7 @@ static struct fapi_pcidev pd;
 static struct fapi_res rs;
 static char args[FAPI_ARGLEN];
 static char lines[NL][LW + 1], sum[NB][34], row[81];
-static unsigned nl, nbtn, rows;
+static unsigned nl, nbtn, rows, ptr_on;
 
 static const char *const bname[NB] = {
     "Computer...", "Speicher...", "Video...", "Betriebssystem...", "Maus...",
@@ -125,22 +125,36 @@ static const char *pci_kind(unsigned c, unsigned s)
     return "unbekannt";
 }
 
-static char *line(const char *a, const char *b)  /* "Name:   Wert"    */
+/* "Name:   Wert"; ein zu langer Wert (PATH) geht in Folgezeilen weiter,
+   umbrochen nach ';' oder ' ' */
+static char *line(const char *a, const char *b)
 {
-    char *l;
-    unsigned n;
-    if (nl >= NL)
-        return lines[NL - 1];
-    l = lines[nl++];
-    l[0] = 0;
-    ap(l, a);
-    for (n = slen(l); b && n < 24; n++)
-        l[n] = ' ';
-    l[n] = 0;
-    for (; b && *b && n < LW; n++)          /* auf Fensterbreite kuerzen */
-        l[n] = *b++;
-    l[n] = 0;
-    return l;
+    char *l, *first = 0;
+    unsigned n, k, brk;
+    do {
+        if (nl >= NL)
+            return first ? first : lines[NL - 1];
+        l = lines[nl++];
+        if (!first)
+            first = l;
+        l[0] = 0;
+        ap(l, a);
+        a = "";
+        for (n = slen(l); b && n < 24; n++)
+            l[n] = ' ';
+        if (b && slen(b) > LW - n) {        /* passt nicht: Bruchstelle  */
+            for (brk = 0, k = 0; k < LW - n; k++)
+                if (b[k] == ';' || b[k] == ' ')
+                    brk = k + 1;
+            if (!brk)
+                brk = LW - n;
+        } else
+            brk = b ? slen(b) : 0;
+        for (k = 0; k < brk; k++)
+            l[n++] = *b++;
+        l[n] = 0;
+    } while (b && *b);
+    return first;
 }
 
 static const char *fdname(unsigned t)
@@ -165,7 +179,7 @@ static int same_name(const char *a, const char *b)
 
 static void detail(unsigned k)
 {
-    static char v[LW + 1];
+    static char v[264];                 /* auch fuer lange PATH-Werte  */
     unsigned i, n, d;
     char *l;
 
@@ -277,7 +291,35 @@ static void detail(unsigned k)
         v[0] = 0;
         apn(v, nbtn);
         line("Tasten:", v);
-        line("Treiber:", "MOUSE.SYS (PS/2, seriell oder Busmaus)");
+        {                                   /* Art aus der Belegung      */
+            unsigned mi = 0xFF, mp = 0;
+            for (n = 0; DosBusInfo(BUS_RES, n, &rs) == 0; n++)
+                if (same_name(rs.owner, "MOUSE.SYS")) {
+                    if (rs.type == 3)
+                        mi = rs.start;
+                    else if (rs.type == 1 && !mp)
+                        mp = rs.start;
+                }
+            line("Treiber:", "MOUSE.SYS");
+            v[0] = 0;
+            if (mi == 12)
+                ap(v, "PS/2 (Tastaturcontroller)");
+            else if (mp == 0x3F8 || mp == 0x2F8 || mp == 0x3E8 || mp == 0x2E8) {
+                ap(v, "seriell an COM");
+                apn(v, mp == 0x3F8 ? 1 : mp == 0x2F8 ? 2 : mp == 0x3E8 ? 3 : 4);
+            } else if (mp) {
+                ap(v, "Busmaus an ");
+                aphex(v, mp);
+                ap(v, "h");
+            } else
+                ap(v, "unbekannt");
+            line("Anschluss:", v);
+            if (mi != 0xFF) {
+                v[0] = 0;
+                apn(v, mi);
+                line("IRQ:", v);
+            }
+        }
         break;
     case 5:
         for (d = 0; d < 26; d++) {
@@ -512,9 +554,11 @@ static void draw_main(int sel)
 
 static void draw_box(unsigned k)
 {
-    unsigned top, h, i, n;
-    h = nl + 4;
-    top = (rows - h) / 2;
+    unsigned top, h, i, n, ns = nl;
+    if (ns > rows - 5)                      /* passt nicht: kuerzen      */
+        ns = rows - 5;
+    h = ns + 5;                             /* Rahmen, Leer, Text, Leer, */
+    top = (rows - h) / 2;                   /* Knopf, Rahmen             */
     for (i = 0; i < h; i++) {
         for (n = 0; n < LW + 4; n++)
             row[n] = ' ';
@@ -528,9 +572,9 @@ static void draw_box(unsigned k)
     }
     put_at(top, 7, " ", 0x70);
     put_at(top, 8, bname[k], 0x70);
-    for (i = 0; i < nl; i++)
+    for (i = 0; i < ns; i++)
         put_at(top + 2 + i, 7, lines[i], 0x70);
-    put_at(top + h - 1, 5 + LW / 2 - 2, " OK ", 0x0F);
+    put_at(top + h - 2, 5 + LW / 2 - 1, "   OK   ", 0x0F);
 }
 
 /* Taste oder Mausklick -> Knopf (0..NB-1), -2 = Ende, -1 = nichts */
@@ -559,6 +603,10 @@ static int input(int *sel)
             continue;
         }
         if (nbtn && MouReadEvent(&mev, 0) == 0) {
+            if (!ptr_on) {                  /* Zeiger erst, wenn die Maus */
+                MouShowPtr(1);              /* bewegt wird (sonst steht   */
+                ptr_on = 1;                 /* er als Block in der Mitte) */
+            }
             if (!(mev.buttons & MOU_LEFT))
                 continue;
             for (i = 0; i < NB; i++)
@@ -613,8 +661,6 @@ void main(void)
     rows = VioSetMode(1);
     if (FAPI_FAILED(rows) || rows < 25)
         rows = 25;
-    if (nbtn)
-        MouShowPtr(1);
     VioSetCurPos(0xFF, 0);                  /* Cursor aus                */
     for (;;) {
         draw_main(sel);
@@ -631,7 +677,7 @@ void main(void)
         if (r == -2)
             r = 0;                          /* ESC nur Fenster zu        */
     }
-    if (nbtn)
+    if (ptr_on)
         MouShowPtr(0);
     VioSetMode(0);
 }

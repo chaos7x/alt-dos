@@ -2649,12 +2649,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Microsoft 8.05, PS/2, IRQ 12, 3 Tasten; „Mouse Hardware: Not
   Detected“ (MSD prüft die Hardware selbst – nur Anzeige).
   Offen: Zeiger in Grafikmodi (RAWGFX), Rückruf im DPMI-PM, 15h–17h
-  (Zustand sichern) nur Größe 0, 24h meldet immer PS/2.
-  Bei Gelegenheit (Wunsch des Nutzers): 24h Typ/IRQ nach der echten Maus
-  (MOUSE.SYS kennt PS/2/seriell/Bus) und MSD von AT-DOS aufhübschen –
-  Betriebssystem-Fenster: OK-Knopf sitzt auf dem Rahmen, Cursorblock
-  bleibt im Fenster stehen (bei PATH), lange Werte laufen über den
-  Rand; „kooperativ“ stand dort noch (behoben: präemptiv ab 6.0).
+  (Zustand sichern) nur Größe 0.
+  24h nach der echten Maus (Wunsch des Nutzers; in QEMU geprüft: PS/2
+  0400h, `/COM1` mit `-serial msmouse` 0204h): DH_MOUREG BL = Tasten,
+  BH = Art wie INT 33h (1 Bus, 2 seriell, 3 InPort, 4 PS/2), CX = IRQ
+  -> vio.c `mou_kind`/`mou_irqn`; PS/2 meldet IRQ 0 wie Microsoft.
+  MSD von AT-DOS aufgehübscht (Wunsch des Nutzers, in QEMU geprüft):
+  OK-Knopf in eigener Zeile statt auf dem Rahmen, Fenster auf die
+  Bildschirmhöhe begrenzt, lange Werte (PATH) umbrechen nach `;`/` ` in
+  Folgezeilen (`line`, Puffer 264 Byte), Mauszeiger erst nach der
+  ersten Bewegung (der vermeintliche „Cursorblock“ war der Zeiger in
+  der Bildmitte), Maus-Seite zeigt Anschluss (PS/2, COMn, Busmaus-Port)
+  und IRQ aus der Belegungsliste (DosBusInfo).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

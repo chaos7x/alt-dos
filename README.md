@@ -402,7 +402,7 @@ und PC-DOS.
   E2h), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Datum und
   Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Maus in der Box
   über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
-  Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h, Version 24h – MSD
+  Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h, Version 24h mit Art und IRQ der echten Maus – MSD
   erkennt sie); im Textmodus zeichnet AT-DOS den Zeiger, in Grafikmodi
   fehlt er noch (Position und Tasten stimmen). CMOS (Port 70h/71h) meldet
   der Box ihren eigenen erweiterten Speicher (MEM/MSD von MS-DOS), INT 10h
