@@ -2732,6 +2732,36 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vom Nutzer auf dem P3B-F in 86Box bestätigt: SHUTDOWN schaltet aus
   (das 86Box-Fenster schließt sich).
   Offen: Leerlauf über APM (CPU Idle 5305h), Anzeige in MSD.
+- Phase 6, Sperren je Laufwerk statt der einen Kernelsperre (Entwurf,
+  Stufe 1 erledigt). Bestandsaufnahme: der Kernel wird nie unterbrochen,
+  geschützt werden muss nur, was über einen Schlafpunkt hinweg lebt
+  (ProcBlock im Treiber, yield/sleep_ticks). Das sind DMABUF (Zeiger aus
+  dir_entry, Daten des laufenden Treiberauftrags), `req`, SCRATCH/
+  SCRATCH2, die statischen Puffer in fapi_inner/task_create (Pfade,
+  ifs_dirent), die laufenden Variablen in fat.c (lfn-Sammler, ln_buf,
+  ea_rec/ea_tmp, sp_comp, nt_case, ferr, de_lba, lc_*), redir.c und die
+  Treiber selbst (nicht wiedereintrittsfest). Gemeinsame Caches (FCACHE
+  mit fc_drive, Verzeichnis-/EA-Cache, Sprungindex, Platten-Cache) sind
+  nach Laufwerk markiert, dürfen aber nicht mitten in einer Operation
+  wechseln. Entwurf: (1) DMABUF je Task (erledigt); (2) die laufenden
+  Variablen als Kontext je Task – zusammengefasst und beim Wechsel der
+  Sperre nur bei Bedarf getauscht (wie der 287: erst, wenn ein anderer
+  die Sperre wirklich nimmt); (3) Sperren: L_vol je Laufwerk über die
+  ganze IFS-Operation (auch über Schlaf), L_drv je Treiber/IFS-Modul,
+  die globale Sperre wird wie der „Big Kernel Lock“ von Linux 2.0 beim
+  Schlafen abgegeben und danach mit Kontext zurückgeholt; Platten-Cache:
+  Block „in Arbeit“ nicht verdrängen, erst nach dem Lesen eintragen;
+  task_end/Strg+C nur für Tasks außerhalb einer Operation; (4) Test:
+  zwei XCOPY auf verschiedenen Laufwerken (IDE + NCR) gleichzeitig.
+  Stufe 1 (in QEMU geprüft: XCOPY \DOS, zwei XCOPY gleichzeitig per
+  START, CHKDSK, DIR A:, HALLO und COMMAND /C in der Box, SHUTDOWN, fsck
+  sauber, Kopien gleich): jeder Task bekommt in task_create eine Seite
+  unter 16 MB (`dmab_pg`, mem_alloc_low), `switch_to` -> `dmab_set` legt
+  den DMABUF-Deskriptor um und vergisst `lc_dev` (gilt je Task);
+  `dmab_phys` statt DMABUF_LIN für Treiber und Disketten-Format; ohne
+  Speicher der gemeinsame Puffer bei 8000h. Der FAT-Cache hat einen
+  eigenen Selektor `FCACHE_SEL` (letzter GDT-Eintrag, linear 8800h) –
+  er bleibt gemeinsam. Kosten: 4 KB je Task.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

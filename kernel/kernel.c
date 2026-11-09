@@ -186,7 +186,8 @@ void gdt_build(void)
 
     set_desc(5, LIN(&tss_k), sizeof(struct tss386) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);               /* SCRATCH              */
-    set_desc(7, DMABUF_LIN, FCACHE_OFF + 1024 - 1, ACC_KDATA);   /* + FAT-Cache */
+    set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
+    set_desc(FCACHE_IDX, FCACHE_LIN, 1023, ACC_KDATA);  /* FAT-Cache (fat.c) */
     set_desc(8, 0, 0, ACC_KDATA);               /* SCRATCH2             */
     set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
@@ -302,6 +303,8 @@ void reboot_request(void)
    ab 1992). Beim Anhalten bleibt Strg+Alt+Entf aktiv: Tastatur-IRQ setzt
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
+static void dmab_free(int t);
+static pg_t dmab_pg[NTASK];            /* DMABUF je Task (Phase 6)      */
 static void fpu_task_end(int t);
 static int __far mod_mount(int drive);
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
@@ -1441,6 +1444,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].hold = 0;
     task[t].want_lock = 0;
     std_set(t, from);                           /* Standard-Handles erben */
+    dmab_pg[t] = mem_alloc_low(1);              /* eigener DMABUF (0: gemeinsam) */
     if (task[t].v86)
         v86_start(t, session);              /* Vollbild, B800 = Puffer  */
     task[t].state   = T_READY;
@@ -1489,6 +1493,7 @@ static void task_end(int t)
             of_release(i);                  /* Datei: Groesse ins Verzeichnis */
         }
     std_set(t, -1);                         /* Standard-Handles freigeben */
+    dmab_free(t);                           /* eigener DMABUF             */
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -1555,10 +1560,37 @@ static void fpu_task_end(int t)
     }
 }
 
+/* ---- DMA-Puffer je Task (Phase 6) --------------------------------------
+   Jeder Task bekommt eine eigene Seite unter 16 MB als DMABUF (ISA-DMA,
+   keine 64-KB-Grenze in einer Seite); switch_to legt den Deskriptor um.
+   So kann spaeter ein Task in einem Treiber schlafen, waehrend ein anderer
+   DMABUF benutzt. Ohne Speicher bleibt es beim gemeinsamen Puffer bei
+   DMABUF_LIN (wie bisher; mit der einen Kernelsperre unbedenklich). */
+unsigned long dmab_phys = DMABUF_LIN;
+static int lc_dev;
+
+static void dmab_set(int t)
+{
+    dmab_phys = t >= 0 && dmab_pg[t] ? PG_LIN(dmab_pg[t]) : DMABUF_LIN;
+    set_desc(7, dmab_phys, DMABUF_SIZE - 1, ACC_KDATA);
+    lc_dev = -1;                    /* "Sektor steht in DMABUF" gilt je Task */
+}
+
+static void dmab_free(int t)
+{
+    if (dmab_pg[t]) {
+        mem_free(dmab_pg[t], 1);
+        dmab_pg[t] = 0;
+        if (t == current)
+            dmab_set(-1);           /* Rest von task_end: gemeinsamer Puffer */
+    }
+}
+
 /* ---- Scheduler (kooperativ) -------------------------------------------- */
 static void switch_to(int t)
 {
     current = t;
+    dmab_set(t);
     pvi_sw(t);                      /* CR4.PVI je Task (DPMI-Boxen)   */
     task_jump(TSS_SEL(t));          /* Hardware-Taskwechsel ueber das TSS */
 }
@@ -3795,7 +3827,8 @@ static void drv_request(int d)
     drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
 }
 
-/* zuletzt gelesener oder geschriebener Sektor, steht noch in DMABUF */
+/* zuletzt gelesener oder geschriebener Sektor, steht noch in DMABUF
+   (des laufenden Tasks; dmab_set vergisst ihn beim Wechsel) */
 static int lc_dev = -1;
 static unsigned long lc_lba;
 static unsigned char blk_dirty[NBLK];   /* seit dem letzten Leeren beschrieben */
@@ -4191,7 +4224,7 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     req.count = (unsigned char)n;
     req.status = DRV_ERR_IO;
     req.lba = lba;
-    req.buf_phys = DMABUF_LIN;
+    req.buf_phys = dmab_phys;
     req.buf_sel = DMABUF;
     req.buf_off = 0;
     drv_request(b->drv);
@@ -4296,7 +4329,7 @@ int blk_write(int dev, unsigned long lba)
         req.count = 1;
         req.status = DRV_ERR_IO;
         req.lba = lba;
-        req.buf_phys = DMABUF_LIN;
+        req.buf_phys = dmab_phys;
         req.buf_sel = DMABUF;
         req.buf_off = 0;
         drv_request(b->drv);
@@ -4952,7 +4985,7 @@ static int load_driver(const char *line, int is_ifs)
     req.units = 0;
     req.count = 0;
     req.base = base;
-    req.buf_phys = DMABUF_LIN;
+    req.buf_phys = dmab_phys;
     req.buf_sel = DMABUF;
     req.buf_off = 0;
     req.devhlp_off = (unsigned)devhlp_entry;

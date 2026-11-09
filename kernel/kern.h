@@ -40,12 +40,19 @@
 #define RWIN_SEL(t) (RWIN_IDX(t) * 8)
 #define KCODE3_IDX  (KCODE2_IDX + 2 + NTASK)  /* drittes Codesegment (v86.c, redir.c) */
 #define KCODE3      0x218           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
-#define NGDT        (KCODE3_IDX + 1)
+#define FCACHE_IDX  (KCODE3_IDX + 1) /* FAT-Cache (fat.c), fest bei FCACHE_LIN */
+#define FCACHE_SEL  (FCACHE_IDX * 8)
+#define NGDT        (KCODE3_IDX + 2)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
-#define FCACHE_OFF  DMABUF_SIZE     /* dahinter 1 KB FAT-Cache (fat.c)     */
+#define FCACHE_LIN  (DMABUF_LIN + DMABUF_SIZE)  /* 1 KB FAT-Cache (fat.c)  */
+/* Phase 6: DMABUF gehoert dem laufenden Task - jeder Task hat eine eigene
+   Seite unter 16 MB, switch_to legt den Deskriptor um. dmab_phys = ihre
+   physische Adresse (fuer Treiber/DMA); vor dem Start der Tasks und ohne
+   eigene Seite DMABUF_LIN. */
+extern unsigned long dmab_phys;
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL

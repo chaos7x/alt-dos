@@ -540,7 +540,7 @@ int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
             recalibrate(d);
             continue;
         }
-        dma_setup(DMABUF_LIN, f->spt * 4, 1);
+        dma_setup(dmab_phys, f->spt * 4, 1);
         fdc_irq = 0;
         fdc_out(0x4D);                          /* FORMAT TRACK, MFM      */
         fdc_out((unsigned char)((head << 2) | d));

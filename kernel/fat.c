@@ -80,9 +80,9 @@ typedef unsigned long clus_t;
 #define IS32(v)  ((v)->fat16 == 2)
 #define EOC(v)   (IS32(v) ? 0x0FFFFFFFUL : (v)->fat16 ? 0xFFFFUL : 0x0FFFUL)
 #define ROOTC(v) ((v)->root_lba)
-/* FAT-Cache: 1 KB hinter dem DMA-Puffer (DMABUF:FCACHE_OFF, linear 8800h)
-   statt in DGROUP */
-#define fcache   ((unsigned char __far *)MK_FP(DMABUF, FCACHE_OFF))
+/* FAT-Cache: 1 KB bei linear 8800h (eigener Selektor FCACHE_SEL) statt in
+   DGROUP; gemeinsam fuer alle Tasks, anders als DMABUF */
+#define fcache   ((unsigned char __far *)MK_FP(FCACHE_SEL, 0))
 static int           fc_drive = -1;
 static unsigned long fc_sec;            /* Sektor relativ zum FAT-Anfang  */
 static unsigned char fc_dirty;
@@ -102,7 +102,7 @@ static int fat_flush_fat(void)
     fc_dirty = 0;
     for (k = 0, lba = v->fat_lba + fc_sec; k < v->nfats; k++, lba += v->spf)
         for (i = 0; i < 2 && fc_sec + i < v->spf; i++) {
-            far_copy(DMABUF, 0, DMABUF, FCACHE_OFF + (i << 9), 512);
+            far_copy(DMABUF, 0, FCACHE_SEL, i << 9, 512);
             rc = blk_write(v->blk, lba + i);
             if (rc) {
                 if (!ferr)
@@ -136,11 +136,11 @@ static int fat_load(int d, unsigned long sec)
     fc_drive = -1;
     if (blk_read(v->blk, v->fat_lba + sec))
         return -1;
-    far_copy(DMABUF, FCACHE_OFF, DMABUF, 0, 512);
+    far_copy(FCACHE_SEL, 0, DMABUF, 0, 512);
     if (sec + 1 < v->spf) {
         if (blk_read(v->blk, v->fat_lba + sec + 1))
             return -1;
-        far_copy(DMABUF, FCACHE_OFF + 512, DMABUF, 0, 512);
+        far_copy(FCACHE_SEL, 512, DMABUF, 0, 512);
     }
     fc_drive = d;
     fc_sec = sec;
