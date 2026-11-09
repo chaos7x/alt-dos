@@ -42,7 +42,9 @@
 #define KCODE3      0x218           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
 #define FCACHE_IDX  (KCODE3_IDX + 1) /* FAT-Cache (fat.c), fest bei FCACHE_LIN */
 #define FCACHE_SEL  (FCACHE_IDX * 8)
-#define NGDT        (KCODE3_IDX + 2)
+#define CTXWIN_IDX  (KCODE3_IDX + 2) /* Ablage des Kontexts je Task (Phase 6) */
+#define CTXWIN      (CTXWIN_IDX * 8)
+#define NGDT        (KCODE3_IDX + 3)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -53,6 +55,11 @@
    physische Adresse (fuer Treiber/DMA); vor dem Start der Tasks und ohne
    eigene Seite DMABUF_LIN. */
 extern unsigned long dmab_phys;
+/* Kontext je Task (Phase 6): Variablen, die eine Operation mit Kernel-
+   sperre ueber einen Schlafpunkt hinweg haelt (kernel.c ctx_take) */
+struct ctxblk { void *p; unsigned n; };
+extern const struct ctxblk fat_ctx[], redir_ctx[];
+extern const unsigned fat_nctx, redir_nctx;
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL

@@ -981,9 +981,10 @@ static const char *sp_comp;             /* letzter Pfadteil nach split()  */
 static unsigned sp_len;
 
 /* Eltern suchen, Namen fuer den neuen Eintrag bestimmen (name_for) */
+static char sp_pbuf[IFS_PATHLEN];               /* Kontext (Phase 6) */
+#define pbuf sp_pbuf
 static int split(int d, const char *path, struct found *par, char *n83)
 {
-    static char pbuf[IFS_PATHLEN];
     const char *last = path, *p;
     unsigned k;
 
@@ -1007,6 +1008,7 @@ static int split(int d, const char *path, struct found *par, char *n83)
     sp_len = (unsigned)(p - last);
     return name_for(d, par->first, last, sp_len, n83);
 }
+#undef pbuf
 
 /* gibt es den Namen (8.3 oder lang) im Verzeichnis schon? */
 static int exists(int d, clus_t dc, struct found *f)
@@ -1705,6 +1707,8 @@ static int ea_add(int d, clus_t dc, const char *n83, const char *name)
     return rc < 0 ? rc : (int)k;
 }
 
+static unsigned char rm_on[11];                 /* Kontext */
+#define on rm_on
 static int __far fat_remove(int d, const char *path)
 {
     struct found f;
@@ -1722,7 +1726,6 @@ static int __far fat_remove(int d, const char *path)
     if (!e)
         return IFS_ERR;
     {
-        static unsigned char on[11];
         unsigned k;
         for (k = 0; k < 11; k++)
             on[k] = e[k];
@@ -1735,6 +1738,7 @@ static int __far fat_remove(int d, const char *path)
     }
     return done_op(0);
 }
+#undef on
 
 static int __far fat_mkdir(int d, const char *path)
 {
@@ -1775,6 +1779,8 @@ static int __far fat_mkdir(int d, const char *path)
     return done_op(0);
 }
 
+static unsigned char rd_on[11];                 /* Kontext */
+#define on rd_on
 static int __far fat_rmdir(int d, const char *path)
 {
     struct found f;
@@ -1795,7 +1801,6 @@ static int __far fat_rmdir(int d, const char *path)
     if (!e)
         return IFS_ERR;
     {
-        static unsigned char on[11];
         unsigned k;
         for (k = 0; k < 11; k++)
             on[k] = e[k];
@@ -1808,11 +1813,13 @@ static int __far fat_rmdir(int d, const char *path)
     }
     return done_op(0);
 }
+#undef on
 
 /* umbenennen oder verschieben (gleiches Laufwerk) */
+static unsigned char mv_ent[32];                /* Kontext */
+#define ent mv_ent
 static int __far fat_move(int d, const char *from, const char *to)
 {
-    static unsigned char ent[32];
     struct found f, par, g;
     char n[11];
     unsigned char __far *e;
@@ -1883,6 +1890,7 @@ static int __far fat_move(int d, const char *from, const char *to)
     }
     return done_op(0);
 }
+#undef ent
 
 /* freier Platz in Bytes */
 /* freie Cluster: einmal zaehlen, danach fuehrt fat_set() den Zaehler mit.
@@ -2330,3 +2338,17 @@ void __far vol_reset(int d)
     if (vol[d].drv)                     /* FORMAT: jetzt evtl. lesbar  */
         vol[d].used = vol[d].drv->mount(d) == 0;
 }
+
+/* Kontext je Task (Phase 6): laufende Variablen einer Operation, siehe
+   kernel.c ctx_take. Gemeinsame Caches (fc_*, lc_*, ea_drv/ea_c*, skx_*)
+   gehoeren nicht hinein. */
+const struct ctxblk fat_ctx[] = {
+    { lfn, sizeof(lfn) }, { &lfn_sum, sizeof(lfn_sum) }, { &lfn_next, sizeof(lfn_next) },
+    { &lfn_have, sizeof(lfn_have) }, { ea_tmp, sizeof(ea_tmp) }, { ln_buf, sizeof(ln_buf) },
+    { ea_rec, sizeof(ea_rec) }, { &sp_comp, sizeof(sp_comp) }, { &sp_len, sizeof(sp_len) },
+    { &nt_case, sizeof(nt_case) }, { &ferr, sizeof(ferr) }, { &de_lba, sizeof(de_lba) },
+    { ifs_orig, sizeof(ifs_orig) }, { &ifs_notready, sizeof(ifs_notready) },
+    { sp_pbuf, sizeof(sp_pbuf) }, { rm_on, sizeof(rm_on) }, { rd_on, sizeof(rd_on) },
+    { mv_ent, sizeof(mv_ent) }
+};
+const unsigned fat_nctx = sizeof(fat_ctx) / sizeof(fat_ctx[0]);

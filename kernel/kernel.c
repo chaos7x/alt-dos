@@ -214,8 +214,14 @@ void gdt_build(void)
 /* ---- Kernel-Hilfen ----------------------------------------------------- */
 /* Fenster-Selektor auf physischen Speicher: unter MEM_LOW_PG ueber den
    Kernel-Alias, darueber ueber ein Seitenfenster (paging.c pg_win) */
+static unsigned long scr_b[2];          /* SCRATCH/SCRATCH2: Kontext     */
+static unsigned scr_l[2];
 static void swin(unsigned sel, unsigned long base, unsigned limit)
 {
+    if (sel == SCRATCH || sel == SCRATCH2) {
+        scr_b[sel == SCRATCH2] = base;
+        scr_l[sel == SCRATCH2] = limit;
+    }
     if (base + limit >= PG_LIN(MEM_LOW_PG))
         base = pg_win(sel, base, limit);
     set_desc(sel >> 3, base, limit, ACC_KDATA);
@@ -304,7 +310,11 @@ void reboot_request(void)
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
 static void dmab_free(int t);
+static void ctx_take(int t);
+static void ctx_task_end(int t);
 static pg_t dmab_pg[NTASK];            /* DMABUF je Task (Phase 6)      */
+static unsigned char dmab_np[NTASK];   /* ... Seiten (mit Kontext)       */
+static unsigned ctx_pages(void);
 static void fpu_task_end(int t);
 static int __far mod_mount(int drive);
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
@@ -739,9 +749,11 @@ static int join_under(int d, const char *cwd, unsigned x)
 
 /* ifs_namepath ueber eine JOIN-Grenze hinweg: Teil bis zum Verzeichnis
    vom Gastgeber, Rest vom eingehaengten Laufwerk */
+static char nj_tp[IFS_PATHLEN], nj_rb[IFS_PATHLEN];  /* Kontext (Phase 6) */
+#define tp nj_tp
+#define rb nj_rb
 static int namepath_j(int d, const char *canon, char *out, int shortn)
 {
-    static char tp[IFS_PATHLEN], rb[IFS_PATHLEN];
     int rd = d;
     unsigned hl, k, n;
     scopy(tp, canon, IFS_PATHLEN);
@@ -763,6 +775,8 @@ static int namepath_j(int d, const char *canon, char *out, int shortn)
     }
     return 0;
 }
+#undef tp
+#undef rb
 
 static void set_orig(const char *p);
 static int scmp_eq(const char *a, const char *b)
@@ -992,9 +1006,10 @@ static void tss_init(int t, unsigned long cr3)
 #define BOX_KB  640
 static unsigned box_kb = BOX_KB;        /* RMSIZE=: Speicher je Box (KB) */
 #define BOX_SEG 0x1000
+static unsigned char lcm_psp[256];                  /* Kontext */
+#define psp lcm_psp
 static int load_com(int t, int drive, const char *path)
 {
-    static unsigned char psp[256];
     struct ifs_file f;
     struct tss386 *ts;
     unsigned long cr3;
@@ -1051,6 +1066,7 @@ static int load_com(int t, int drive, const char *path)
     ts->eflags = 0x00020202UL;          /* VM, IF (echt; das IF der Box  */
     return 0;                           /* fuehrt v86.c), IOPL 0         */
 }
+#undef psp
 
 /* Startabbild (.IMG, Diskette mit Bootsektor) in einer DOS-Box: der
    Bootsektor kommt nach 0000:7C00 und startet wie auf einem echten PC
@@ -1100,10 +1116,12 @@ static int load_img(int t, int drive, const char *path)
 
 /* DOS-Programm? .COM, .BAT und .EXE ohne FX-Kopf laufen in einer
    FreeDOS-Box (wie NT: in derselben Sitzung, Aufrufer wartet) */
+static struct ifs_file dk_f;                        /* Kontext */
+static unsigned char dk_hb[64];
+#define f dk_f
+#define hb dk_hb
 static int dos_kind(int drive, const char *path)
 {
-    static struct ifs_file f;
-    static unsigned char hb[64];
     unsigned n, fx;
     const char *e;
 
@@ -1124,13 +1142,16 @@ static int dos_kind(int drive, const char *path)
         return 1;
     return hb[0] != FX_SIG0 || hb[1] != FX_SIG1;
 }
+#undef f
+#undef hb
 
 /* DOS-Programm in der FreeDOS-Box: Befehlszeile der Box = Programm
    (8.3-Pfad) + Argumente, BOXSHELL startet COMMAND.COM /C damit. Fehlt
    das Abbild, laeuft ein .COM in der nackten Box (ohne DOS) wie bisher. */
+static char dl_sp[IFS_PATHLEN + 2];                 /* Kontext */
+#define sp dl_sp
 static void dos_line(int drive, const char *path, const char *ua, char *a)
 {
-    static char sp[IFS_PATHLEN + 2];
     unsigned i, k = 0;
 
     sp[0] = (char)('A' + drive);
@@ -1145,10 +1166,13 @@ static void dos_line(int drive, const char *path, const char *ua, char *a)
         a[k++] = ua[i];
     a[k] = 0;
 }
+#undef sp
 
+static char ld_a[FAPI_ARGLEN], ld_keep[FAPI_ARGLEN];  /* Kontext */
+#define a ld_a
+#define keep ld_keep
 static int load_dos(int t, int drive, const char *path)
 {
-    static char a[FAPI_ARGLEN], keep[FAPI_ARGLEN];
     unsigned i;
     int err;
 
@@ -1164,6 +1188,8 @@ static int load_dos(int t, int drive, const char *path)
     }
     return err;
 }
+#undef a
+#undef keep
 
 /* Programm in Task t laden. 0 = ok, sonst EXEC_ERR_* */
 static int load_program(int t, int drive, const char *path)
@@ -1408,9 +1434,11 @@ static void dcwd_copy(int t, int from)
                  DCWD_OFF + (unsigned)from * NDCWD * DCWD_SZ, NDCWD * DCWD_SZ);
 }
 
+static char tc_path[IFS_PATHLEN], tc_canon[IFS_PATHLEN];  /* Kontext */
+#define path tc_path
+#define canon tc_canon
 static int task_create(const char *cmd, int session, int parent, int from)
 {
-    static char path[IFS_PATHLEN], canon[IFS_PATHLEN];
     int t, err, d;
 
     for (t = 0; t < NTASK; t++)
@@ -1444,12 +1472,17 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].hold = 0;
     task[t].want_lock = 0;
     std_set(t, from);                           /* Standard-Handles erben */
-    dmab_pg[t] = mem_alloc_low(1);              /* eigener DMABUF (0: gemeinsam) */
+    dmab_np[t] = ctx_pages();                   /* DMABUF + Kontext (Phase 6) */
+    dmab_pg[t] = mem_alloc_low(dmab_np[t]);
+    if (!dmab_pg[t])                            /* ohne Kontext: nur DMABUF */
+        dmab_pg[t] = mem_alloc_low(dmab_np[t] = 1);
     if (task[t].v86)
         v86_start(t, session);              /* Vollbild, B800 = Puffer  */
     task[t].state   = T_READY;
     return t;
 }
+#undef path
+#undef canon
 
 /* ---- Task-Ende --------------------------------------------------------- */
 static void task_end(int t)
@@ -1578,8 +1611,9 @@ static void dmab_set(int t)
 
 static void dmab_free(int t)
 {
+    ctx_task_end(t);
     if (dmab_pg[t]) {
-        mem_free(dmab_pg[t], 1);
+        mem_free(dmab_pg[t], dmab_np[t]);
         dmab_pg[t] = 0;
         if (t == current)
             dmab_set(-1);           /* Rest von task_end: gemeinsamer Puffer */
@@ -1625,6 +1659,7 @@ static void do_break(void)
     if (current >= 0) {                         /* Dateien schliessen: Sperre */
         klock = current;
         klock_depth = 1;
+        ctx_take(-2);                           /* Kernel, nicht der Task */
     }
     task_end(t);
     if (current >= 0)
@@ -1670,6 +1705,7 @@ static void klock_enter(void)
     if (klock < 0) {
         klock = current;
         klock_depth = 1;
+        ctx_take(current);
         return;
     }
     task[current].want_lock = 1;        /* Scheduler gibt sie uns        */
@@ -1730,6 +1766,7 @@ static void taskman_key(void)
     cmd[0] = (char)('A' + sys_drive);
     klock = current;
     klock_depth = 1;
+    ctx_take(-2);
     t = task_create(cmd, ns, -1, -1);
     klock = -1;
     if (t < 0) {
@@ -1799,6 +1836,7 @@ static void sched(int keep)
             /* hier laeuft der gewaehlte Task weiter */
             tk = &task[current];
             if (tk->want_lock) {
+                ctx_take(current);      /* Puffer der Operation zurueck   */
                 tk->want_lock = 0;
                 klock = current;
                 klock_depth = tk->lock_depth ? tk->lock_depth : 1;
@@ -2434,7 +2472,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
     case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
-    case FAPI_QCHILDRC: case FAPI_QCURDIR: case FAPI_QCURDISK:
+    case FAPI_QCHILDRC: case FAPI_QCURDISK:
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
@@ -2482,12 +2520,26 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
 }
 
 static unsigned char fapi_kcall;        /* box_fapi: Puffer des Kernels */
+/* Puffer von fapi_inner: gehoeren zum Kontext je Task (Phase 6); die der
+   einzelnen Faelle teilen sich eine Union (nie gleichzeitig) */
+static char fi_buf[FAPI_PATHLEN], fi_canon[IFS_PATHLEN];
+static struct ifs_dirent fi_de;
+static union {
+    char canon2[IFS_PATHLEN];
+    struct { char real[IFS_PATHLEN]; struct ifs_dirent jde; } r;
+    unsigned long kb;
+    struct { char lb[12], nl[12]; unsigned long ser; } l;
+    unsigned long ns;
+    unsigned short hh[2];
+    struct { char qb[IFS_PATHLEN + 2], cw[IFS_PATHLEN], uc[IFS_PATHLEN]; } q;
+} fi_u;
+#define buf fi_buf
+#define canon fi_canon
+#define de fi_de
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3)
 {
     int row, col, s = task[current].session, t, k;
-    static char buf[FAPI_PATHLEN], canon[IFS_PATHLEN];
-    static struct ifs_dirent de;
     int d;
 
     if (!fapi_kcall)
@@ -2733,20 +2785,19 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return t ? ifs_err(t) : 0;
 
     case FAPI_MOVE: {
-        static char canon2[IFS_PATHLEN];
         int d2;
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve(current, buf, &d, canon) ||
             user_str(usel, a2, buf, sizeof(buf)) ||
-            resolve(current, buf, &d2, canon2) || d != d2)
+            resolve(current, buf, &d2, fi_u.canon2) || d != d2)
             return FAPI_ERROR;
-        if (path_in(canon2, canon) && !scmp_eq(canon, canon2))
+        if (path_in(fi_u.canon2, canon) && !scmp_eq(canon, fi_u.canon2))
             return FAPI_ERROR;                  /* in sich selbst (gleicher
                                                    Pfad: nur Schreibung) */
         if (in_use(d, canon, 1))
             return FAPI_ERR_INUSE;
         set_orig(buf);                          /* Ziel in Originalschreibung */
-        t = ifs_move(d, canon, canon2);
+        t = ifs_move(d, canon, fi_u.canon2);
         ifs_orig[0] = 0;
         return t ? ifs_err(t) : 0;
     }
@@ -2863,7 +2914,6 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_SUBST: {                          /* SUBST X: Pfad / X: /D */
-        static char real[IFS_PATHLEN];
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || vol_present(a1))
             return FAPI_ERROR;                  /* echtes Laufwerk       */
         if (!a2) {                              /* aufheben              */
@@ -2877,18 +2927,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         }
         if (subst_drv[a1] >= 0 || !subst_sel ||
             user_str(usel, a2, buf, sizeof(buf)) ||
-            resolve(current, buf, &d, real) || !ifs_isdir(d, real))
+            resolve(current, buf, &d, fi_u.r.real) || !ifs_isdir(d, fi_u.r.real))
             return FAPI_ERROR;
-        if (real[1] == 0)
-            real[0] = 0;                        /* Stamm: leerer Vorsatz */
-        far_copy(subst_sel, a1 * IFS_PATHLEN, KDATA, (unsigned)real, IFS_PATHLEN);
+        if (fi_u.r.real[1] == 0)
+            fi_u.r.real[0] = 0;                        /* Stamm: leerer Vorsatz */
+        far_copy(subst_sel, a1 * IFS_PATHLEN, KDATA, (unsigned)fi_u.r.real, IFS_PATHLEN);
         subst_drv[a1] = (signed char)d;
         return 0;
     }
 
     case FAPI_JOIN: {                           /* JOIN X: Pfad / X: /D  */
-        static char real[IFS_PATHLEN];
-        static struct ifs_dirent jde;
         if (a1 >= NDRIVE || a1 == PRE_DRIVE)
             return FAPI_ERROR;
         if (!a2) {                              /* aufheben              */
@@ -2918,20 +2966,20 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 files[k].f.drive == a1)
                 return FAPI_ERR_INUSE;
         if (user_str(usel, a2, buf, sizeof(buf)) ||
-            resolve(current, buf, &d, real) || d == (int)a1 || !real[1])
+            resolve(current, buf, &d, fi_u.r.real) || d == (int)a1 || !fi_u.r.real[1])
             return FAPI_ERROR;                  /* nicht der Stamm       */
-        if (!ifs_isdir(d, real)) {              /* fehlt: anlegen        */
+        if (!ifs_isdir(d, fi_u.r.real)) {              /* fehlt: anlegen        */
             set_orig(buf);
-            if (ifs_mkdir(d, real) || !ifs_isdir(d, real))
+            if (ifs_mkdir(d, fi_u.r.real) || !ifs_isdir(d, fi_u.r.real))
                 return FAPI_ERROR;
         }
-        for (k = 0; ifs_readdir(d, real, k, &jde) == 0; k++)
-            if (!(jde.name[0] == '.' && (!jde.name[1] ||
-                  (jde.name[1] == '.' && !jde.name[2]))))
+        for (k = 0; ifs_readdir(d, fi_u.r.real, k, &fi_u.r.jde) == 0; k++)
+            if (!(fi_u.r.jde.name[0] == '.' && (!fi_u.r.jde.name[1] ||
+                  (fi_u.r.jde.name[1] == '.' && !fi_u.r.jde.name[2]))))
                 return FAPI_ERR_DENIED;         /* nicht leer            */
-        for (k = 0; real[k]; k++)
-            real[k] = up(real[k]);
-        far_copy(join_sel, JOIN_OFF + a1 * IFS_PATHLEN, KDATA, (unsigned)real, IFS_PATHLEN);
+        for (k = 0; fi_u.r.real[k]; k++)
+            fi_u.r.real[k] = up(fi_u.r.real[k]);
+        far_copy(join_sel, JOIN_OFF + a1 * IFS_PATHLEN, KDATA, (unsigned)fi_u.r.real, IFS_PATHLEN);
         join_drv[a1] = (signed char)d;
         return 0;
     }
@@ -2976,10 +3024,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_FREESPACE: {
-        static unsigned long kb;
-        if (a1 >= NDRIVE || join_hidden(a1) || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &kb))
+        if (a1 >= NDRIVE || join_hidden(a1) || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &fi_u.kb))
             return FAPI_ERROR;
-        far_copy(usel, a2, KDATA, (unsigned)&kb, 4);
+        far_copy(usel, a2, KDATA, (unsigned)&fi_u.kb, 4);
         return 0;
     }
 
@@ -3058,24 +3105,22 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_LABEL: {
-        static char lb[12], nl[12];
-        static unsigned long ser;
         struct fapi_label __far *fl;
         if (!a3)                                /* lesen: SUBST-Ziel     */
             a1 = subst_real(a1);
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fl), 1))
             return FAPI_ERROR;
-        if (a3 && user_str(usel, a3, nl, sizeof(nl)))
+        if (a3 && user_str(usel, a3, fi_u.l.nl, sizeof(fi_u.l.nl)))
             return FAPI_ERROR;
         if (vol[a1].drv == &mod_driver && mod_mount(a1) && blk_nomedia(vol[a1].blk))
             return FAPI_ERROR;                  /* keine CD: "nicht bereit" */
-        t = ifs_label(a1, lb, &ser, a3 ? nl : 0);
+        t = ifs_label(a1, fi_u.l.lb, &fi_u.l.ser, a3 ? fi_u.l.nl : 0);
         if (t)
             return ifs_err(t);
         fl = MK_FP(usel, a2);
-        far_copy(usel, a2, KDATA, (unsigned)lb, 12);
-        fl->serial = ser;
+        far_copy(usel, a2, KDATA, (unsigned)fi_u.l.lb, 12);
+        fl->serial = fi_u.l.ser;
         return 0;
     }
 
@@ -3194,15 +3239,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_NEWSIZE: {
-        static unsigned long ns;
         if ((k = h2e(a1)) < 0 || files[k].kind != OF_FILE || !user_ok(usel, a2, 4, 0))
             return FAPI_ERROR;
-        far_copy(KDATA, (unsigned)&ns, usel, a2, 4);
-        t = ifs_setsize(&files[k].f, ns);
+        far_copy(KDATA, (unsigned)&fi_u.ns, usel, a2, 4);
+        t = ifs_setsize(&files[k].f, fi_u.ns);
         if (t)
             return ifs_err(t);
-        if (files[k].pos > ns)
-            files[k].pos = ns;
+        if (files[k].pos > fi_u.ns)
+            files[k].pos = fi_u.ns;
         return 0;
     }
 
@@ -3269,7 +3313,6 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_PIPE: {
-        static unsigned short hh[2];
         int r, w, p;
         if (!user_ok(usel, a1, 4, 1))
             return FAPI_ERROR;
@@ -3288,9 +3331,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         pipes[p].head = pipes[p].count = 0;
         pipes[p].rd = (unsigned char)r;
         pipes[p].wr = (unsigned char)w;
-        hh[0] = (unsigned short)(r + HBASE);
-        hh[1] = (unsigned short)(w + HBASE);
-        far_copy(usel, a1, KDATA, (unsigned)hh, 4);
+        fi_u.hh[0] = (unsigned short)(r + HBASE);
+        fi_u.hh[1] = (unsigned short)(w + HBASE);
+        far_copy(usel, a1, KDATA, (unsigned)fi_u.hh, 4);
         return 0;
     }
 
@@ -3310,22 +3353,21 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_CHDIR: {
-        static char real[IFS_PATHLEN];
         int rd;
         if (user_str(usel, a1, buf, sizeof(buf)) ||
             resolve_v(current, buf, &d, canon))
             return FAPI_ERROR;
         rd = d;
-        scopy(real, canon, IFS_PATHLEN);
-        if (subst_map(&rd, real))
+        scopy(fi_u.r.real, canon, IFS_PATHLEN);
+        if (subst_map(&rd, fi_u.r.real))
             return FAPI_ERROR;
-        join_map(&rd, real);
-        if (!ifs_isdir(rd, real))
+        join_map(&rd, fi_u.r.real);
+        if (!ifs_isdir(rd, fi_u.r.real))
             return FAPI_ERROR;
         /* gespeichert wird die Schreibung vom Datentraeger (lange Namen:
            "\\Neuer Ordner"), verglichen wird ohne Gross/klein */
-        if (subst_drv[d] < 0 && canon[1] && namepath_j(d, canon, real, 0) == 0)
-            scopy(canon, real, IFS_PATHLEN);
+        if (subst_drv[d] < 0 && canon[1] && namepath_j(d, canon, fi_u.r.real, 0) == 0)
+            scopy(canon, fi_u.r.real, IFS_PATHLEN);
         if (d != task[current].drive) {         /* anderes Laufwerk: merken */
             char __far *oc = dcwd(current, d, 1);
             fscopy(oc, (char __far *)(canon[1] ? canon : ""), IFS_PATHLEN);
@@ -3339,7 +3381,6 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         /* Programme ohne FX_FLAG_LONGNAMES bekommen den Pfad in 8.3-Namen
            und hoechstens 130 Bytes (so stand es bisher in fapi_abi.h) */
         /* CX = Laufwerk + 1 (0 = aktuelles): Verzeichnis dort (CD X:) */
-        static char qb[IFS_PATHLEN + 2], cw[IFS_PATHLEN];
         unsigned n;
         d = task[current].drive;
         if (a2 && a2 - 1 != (unsigned)d) {
@@ -3347,26 +3388,25 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             d = (int)a2 - 1;
             if (d >= NDRIVE || join_hidden(d) || (!vol_present(d) && subst_drv[d] < 0))
                 return FAPI_ERROR;
-            cw[0] = 0;
+            fi_u.q.cw[0] = 0;
             if ((oc = dcwd(current, d, 0)) != 0)
-                fscopy((char __far *)cw, oc, IFS_PATHLEN);
+                fscopy((char __far *)fi_u.q.cw, oc, IFS_PATHLEN);
         } else
-            scopy(cw, task[current].cwd, IFS_PATHLEN);
-        qb[0] = (char)('A' + d);
-        qb[1] = ':';
-        scopy(qb + 2, cw[0] ? cw : "\\", IFS_PATHLEN);
-        if (!task[current].lfn && subst_drv[d] < 0 && cw[0]) {
-            static char uc[IFS_PATHLEN];
-            for (n = 0; cw[n]; n++)
-                uc[n] = up(cw[n]);
-            uc[n] = 0;
-            namepath_j(d, uc, qb + 2, 1);
+            scopy(fi_u.q.cw, task[current].cwd, IFS_PATHLEN);
+        fi_u.q.qb[0] = (char)('A' + d);
+        fi_u.q.qb[1] = ':';
+        scopy(fi_u.q.qb + 2, fi_u.q.cw[0] ? fi_u.q.cw : "\\", IFS_PATHLEN);
+        if (!task[current].lfn && subst_drv[d] < 0 && fi_u.q.cw[0]) {
+            for (n = 0; fi_u.q.cw[n]; n++)
+                fi_u.q.uc[n] = up(fi_u.q.cw[n]);
+            fi_u.q.uc[n] = 0;
+            namepath_j(d, fi_u.q.uc, fi_u.q.qb + 2, 1);
         }
-        for (n = 0; qb[n]; n++)
+        for (n = 0; fi_u.q.qb[n]; n++)
             ;
         if ((!task[current].lfn && n > 129) || !user_ok(usel, a1, n + 1, 1))
             return FAPI_ERROR;
-        far_copy(usel, a1, KDATA, (unsigned)qb, n + 1);
+        far_copy(usel, a1, KDATA, (unsigned)fi_u.q.qb, n + 1);
         return 0;
     }
 
@@ -3589,6 +3629,99 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;                               /* nie erreicht         */
     }
     return FAPI_ERROR;
+}
+#undef buf
+#undef canon
+#undef de
+
+/* ---- Kontext je Task (Phase 6, Stufe 2) ---------------------------------
+   Was eine Operation mit Kernelsperre ueber einen Schlafpunkt hinweg in
+   statischen Variablen haelt (Pfadpuffer, Sammler fuer lange Namen,
+   Fenster SCRATCH/SCRATCH2 ...), steht in diesen Tabellen. Gibt ein Task
+   die Sperre mitten in einer Operation ab (want_lock) und nimmt sie ein
+   anderer, sichert ctx_take den Stand des alten Besitzers hinter dessen
+   DMABUF (Selektor CTXWIN) und holt ihn zurueck, sobald er die Sperre
+   wieder hat - wie beim 287 nur, wenn es wirklich noetig ist. Gemeinsame
+   Caches (FAT-Cache, Platten-Cache, Verzeichnis-/EA-Cache) gehoeren NICHT
+   hinein: was ein anderer dort aendert, muss bleiben. */
+static const struct ctxblk kern_ctx[] = {
+    { nj_tp, sizeof(nj_tp) }, { nj_rb, sizeof(nj_rb) },
+    { lcm_psp, sizeof(lcm_psp) }, { &dk_f, sizeof(dk_f) }, { dk_hb, sizeof(dk_hb) },
+    { dl_sp, sizeof(dl_sp) }, { ld_a, sizeof(ld_a) }, { ld_keep, sizeof(ld_keep) },
+    { tc_path, sizeof(tc_path) }, { tc_canon, sizeof(tc_canon) },
+    { fi_buf, sizeof(fi_buf) }, { fi_canon, sizeof(fi_canon) },
+    { &fi_de, sizeof(fi_de) }, { &fi_u, sizeof(fi_u) },
+    { dc_p, sizeof(dc_p) }, { dc_nm, sizeof(dc_nm) }, { dc_ar, sizeof(dc_ar) },
+    { dc_cn, sizeof(dc_cn) }, { &dc_d, sizeof(dc_d) },
+    { scr_b, sizeof(scr_b) }, { scr_l, sizeof(scr_l) }
+};
+static const struct ctxblk *const ctx_tab[3] = { kern_ctx, fat_ctx, redir_ctx };
+static unsigned ctx_cnt[3] = { sizeof(kern_ctx) / sizeof(kern_ctx[0]) };
+static unsigned ctx_len;                /* Summe aller Bloecke           */
+static int ctx_owner = -1;              /* wessen Stand in den Variablen steht */
+static unsigned char ctx_saved[NTASK];
+
+static unsigned ctx_pages(void)
+{
+    unsigned m, i;
+    if (!ctx_len) {
+        ctx_cnt[1] = fat_nctx;
+        ctx_cnt[2] = redir_nctx;
+        for (m = 0; m < 3; m++)
+            for (i = 0; i < ctx_cnt[m]; i++)
+                ctx_len += ctx_tab[m][i].n;
+    }
+    return (unsigned)PAGES((unsigned long)DMABUF_SIZE + ctx_len);
+}
+
+/* save = 1: Variablen -> Ablage von t, sonst zurueck */
+static void ctx_copy(int t, int save)
+{
+    unsigned m, i, off = 0;
+    set_desc(CTXWIN_IDX, PG_LIN(dmab_pg[t]) + DMABUF_SIZE, ctx_len - 1, ACC_KDATA);
+    for (m = 0; m < 3; m++)
+        for (i = 0; i < ctx_cnt[m]; i++) {
+            const struct ctxblk *b = &ctx_tab[m][i];
+            if (save)
+                far_copy(CTXWIN, off, KDATA, (unsigned)b->p, b->n);
+            else
+                far_copy(KDATA, (unsigned)b->p, CTXWIN, off, b->n);
+            off += b->n;
+        }
+    if (!save) {                        /* Fenster wieder dorthin legen  */
+        swin(SCRATCH, scr_b[0], scr_l[0]);
+        swin(SCRATCH2, scr_b[1], scr_l[1]);
+    }
+}
+
+static int ctx_room(int t)
+{
+    return t >= 0 && dmab_pg[t] && dmab_np[t] == ctx_pages();
+}
+
+/* t bekommt die Sperre (-2: der Kernel selbst, z. B. task_end aus do_break) */
+static void ctx_take(int t)
+{
+    int o = ctx_owner;
+    if (o == t)
+        return;
+    if (o >= 0 && task[o].state != T_FREE && task[o].want_lock && !ctx_saved[o] &&
+        ctx_room(o)) {
+        ctx_copy(o, 1);                 /* o steht mitten in einer Operation */
+        ctx_saved[o] = 1;
+    }
+    if (t >= 0 && ctx_saved[t]) {
+        ctx_copy(t, 0);
+        ctx_saved[t] = 0;
+    }
+    ctx_owner = t;
+}
+
+static void ctx_task_end(int t)
+{
+    ctx_saved[t] = 0;
+    if (ctx_owner == t)
+        ctx_owner = -1;
 }
 
 /* FAPI-Aufruf fuer den Redirector der DOS-Boxen (redir.c): Puffer ueber

@@ -2765,6 +2765,29 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eigenen Selektor `FCACHE_SEL` (letzter GDT-Eintrag, linear 8800h) –
   er bleibt gemeinsam. Kosten: 4 KB je Task. Vom Nutzer auf dem P3B-F
   bestätigt: Kopieren und CHKDSK ohne Probleme.
+  Stufe 2 erledigt (in QEMU geprüft, Tausch über Port E9h mitgezählt:
+  CMD wird gesichert, sobald sein XCOPY/CHKDSK/die Box die Sperre nimmt,
+  und danach zurückgeholt, auch geschachtelt; XCOPY, zwei XCOPY per
+  START, CHKDSK, HALLO und COMMAND /C in der Box, SHUTDOWN, fsck sauber,
+  Kopien gleich; 2 MB): Kontext je Task = Tabellen `struct ctxblk`
+  (Zeiger, Länge) in kernel.c (`kern_ctx`), fat.c (`fat_ctx`) und redir.c
+  (`redir_ctx`). Statische Puffer aus Funktionen stehen dafür vor ihrer
+  Funktion (Präfix, z. B. `nj_tp`, `tc_path`, `sp_pbuf`, `op_dir`) und
+  werden per `#define` innerhalb der Funktion umgelenkt (`#undef`
+  danach); die Puffer der einzelnen Fälle von fapi_inner teilen sich die
+  Union `fi_u` (DGROUP 1,3 KB kleiner). `swin` merkt sich die Fenster
+  SCRATCH/SCRATCH2 (`scr_b`/`scr_l`), beim Zurückholen werden sie neu
+  gelegt. Ablage hinter dem DMABUF des Tasks (gleiche Zuteilung,
+  `dmab_np` Seiten, `ctx_pages`), Zugriff über den GDT-Eintrag `CTXWIN`;
+  fehlt der Speicher dafür, nur DMABUF und kein Tausch (wie bisher).
+  `ctx_take(t)` beim Vergeben der Sperre (klock_enter, Scheduler; do_break
+  und taskman_key als Kernel = -2): steht der bisherige Besitzer mitten
+  in einer Operation (`want_lock`), wird sein Stand gesichert, der eigene
+  zurückgeholt – wie beim 287 nur bei Bedarf. Dabei behoben: QCURDIR lief
+  ohne Sperre, liest für Programme ohne LFN-Merker aber über namepath_j
+  die Platte – jetzt mit Sperre. Neue Variablen, die eine Operation über
+  einen Plattenzugriff hinweg hält, gehören in die Tabelle; gemeinsame
+  Caches nicht.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

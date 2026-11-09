@@ -190,9 +190,11 @@ static unsigned errmap(unsigned r, unsigned def)
 #define FAILED(r)   ((r) >= FAPI_ERR_FIRST)
 
 /* Eintrag zu Pfad p in de suchen (Stamm: Verzeichnis) -> 0 gefunden */
+static char st_dir[80], st_fcb[11];             /* Kontext (Phase 6) */
+#define dir st_dir
+#define fcb st_fcb
 static int stat_path(const char *p)
 {
-    static char dir[80], fcb[11];
     const char *n = split(p, dir);
     unsigned i, k;
     if (!*n) {                              /* "C:\"                     */
@@ -212,15 +214,18 @@ static int stat_path(const char *p)
             return 0;
     }
 }
+#undef dir
+#undef fcb
 
 /* ---- SFT -------------------------------------------------------------------- */
 
+static char sf_dir[80];                         /* Kontext */
+#define dir sf_dir
 static void sft_fill(int t, unsigned es, unsigned di, unsigned h, unsigned mode,
                      const char *path)
 {
     unsigned char __far *s = bp(t, es, di);
     const char *n;
-    static char dir[80];
     unsigned k;
     w16(s + 0x02, mode);
     s[0x04] = de.attr;
@@ -237,6 +242,7 @@ static void sft_fill(int t, unsigned es, unsigned di, unsigned h, unsigned mode,
     for (k = 0; k < 11; k++)
         s[k] = tmpl[k];
 }
+#undef dir
 
 /* Daten zwischen Datei und Box (DTA) in Stuecken (FAPI hoechstens 7FFFh) */
 static unsigned xfer(int t, unsigned fn, unsigned h, unsigned long lin, unsigned n,
@@ -263,9 +269,13 @@ static unsigned xfer(int t, unsigned fn, unsigned h, unsigned long lin, unsigned
 /* ---- Suche -------------------------------------------------------------------- */
 
 /* naechsten passenden Eintrag ab Suchzustand sdb (in der Box) */
+static char fn_fcb[11], fn_tp[11];              /* Kontext */
+static struct fapi_label fn_lb;
+#define fcb fn_fcb
+#define tp fn_tp
+#define lb fn_lb
 static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsigned off)
 {
-    static char fcb[11], tp[11];
     unsigned char __far *s = bp(t, seg, off);
     unsigned n = r16(s + 13), slot = s[15] & 3, k;
     unsigned char mask = s[12], a;
@@ -273,7 +283,6 @@ static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsig
     if (n == 0xFFFF)
         return E_NOMORE;                    /* nach der Bezeichnung      */
     if (mask == 0x08) {                     /* nur Datentraegerbezeichnung */
-        static struct fapi_label lb;
         if (FAILED(FAPI(FAPI_LABEL, KDATA, s[0] & 0x1F, (unsigned)&lb, 0)) || !lb.label[0])
             return E_NOMORE;
         for (k = 0; k < 11; k++)
@@ -329,6 +338,9 @@ found:
     w32(s + 28, de.size);
     return 0;
 }
+#undef fcb
+#undef tp
+#undef lb
 
 static int find_first(int t)
 {
@@ -353,6 +365,10 @@ static int find_first(int t)
 
 /* ---- Verteiler ---------------------------------------------------------------- */
 
+static char op_dir[80], op_fcb[11], op_one[96];  /* Kontext */
+#define dir op_dir
+#define fcb op_fcb
+#define one op_one
 static int op(struct v86_frame *f, int t, unsigned fn)
 {
     unsigned char __far *s;
@@ -465,7 +481,6 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         r = FAPI(FAPI_MOVE, KDATA, (unsigned)p1, (unsigned)p2, 0);
         return FAILED(r) ? errmap(r, E_NOFILE) : 0;
     case 0x13: {                                /* DELETE (auch *.*)     */
-        static char dir[80], fcb[11], one[96];
         const char *n;
         unsigned i = 0, hit = 0, j, l;
         get_fn(t, 0x9E, p1);
@@ -550,6 +565,9 @@ static int op(struct v86_frame *f, int t, unsigned fn)
     }
     return -1;                                  /* nicht unser           */
 }
+#undef dir
+#undef fcb
+#undef one
 
 int __far redir(struct v86_frame *f, int t)
 {
@@ -561,3 +579,13 @@ int __far redir(struct v86_frame *f, int t)
     kf_box_ctl(BOX_LOCK, 0);
     return r;
 }
+
+/* Kontext je Task (Phase 6, kernel.c ctx_take) */
+const struct ctxblk redir_ctx[] = {
+    { p1, sizeof(p1) }, { p2, sizeof(p2) }, { tmpl, sizeof(tmpl) }, { &de, sizeof(de) },
+    { &fsi, sizeof(fsi) }, { &fin, sizeof(fin) }, { &l32, sizeof(l32) },
+    { st_dir, sizeof(st_dir) }, { st_fcb, sizeof(st_fcb) }, { sf_dir, sizeof(sf_dir) },
+    { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { &fn_lb, sizeof(fn_lb) },
+    { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) }
+};
+const unsigned redir_nctx = sizeof(redir_ctx) / sizeof(redir_ctx[0]);
