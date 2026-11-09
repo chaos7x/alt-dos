@@ -2661,6 +2661,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ersten Bewegung (der vermeintliche „Cursorblock“ war der Zeiger in
   der Bildmitte), Maus-Seite zeigt Anschluss (PS/2, COMn, Busmaus-Port)
   und IRQ aus der Belegungsliste (DosBusInfo).
+  Alt in MSD 2.11 (MS-DOS 6.22) wirkungslos (Nutzer): INT 16h 02h gab
+  die Bits des Kernels (KBDSHIFT_*: 1 Shift, 2 Strg, 4 Alt) statt des
+  BIOS-Formats zurück (2 Shift links, 4 Strg, 8 Alt) – Alt kam als Strg
+  an; 0417h/0418h blieben ungepflegt. Jetzt `bios_shift` (v86.c): Bits
+  wie das BIOS, Sperrtasten bleiben, schreibt 0417h/0418h, auch bei
+  jedem inject im Vordergrund; 12h liefert 0418h-Bits in AH. In QEMU mit
+  SH.COM geprüft (Alt 0808, Strg 0404, Shift 0202). Offen: Mausklicks in
+  MSD 2.11 (auch mit /I) – Abfrage 03h/05h und Rückruf 0Ch gehen im Test.
 - Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
   geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
   beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO

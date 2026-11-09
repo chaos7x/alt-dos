@@ -1820,12 +1820,32 @@ static int t8_ok(int t)
     return 1;
 }
 
+/* Umschalttasten im BIOS-Format (0040:0017/18) - der Kernel zaehlt
+   anders (KBDSHIFT_*: 1 Shift, 2 Strg, 4 Alt, 8 AltGr). Die Oberflaeche
+   von MSD/EDIT/QBASIC erkennt die blosse Alt-Taste nur hier. Sperrtasten
+   (Bits 4-7) bleiben, wie sie im Datenbereich der Box stehen.
+   -> AL = 0417h, AH = 0418h (fuer INT 16h 12h: Bit 0 Strg, 1 Alt links,
+   2 Strg rechts, 3 Alt rechts) */
+static unsigned bios_shift(void)
+{
+    unsigned k = kf_kbd_shift(), lo, hi;
+    lo = (rd8(BDA, 0x17) & 0xF0) | (k & KBDSHIFT_SHIFT ? 0x02 : 0) |
+         (k & KBDSHIFT_CTRL ? 0x04 : 0) | (k & (KBDSHIFT_ALT | KBDSHIFT_ALTGR) ? 0x08 : 0);
+    hi = (rd8(BDA, 0x18) & 0xF0) | (k & KBDSHIFT_CTRL ? 0x01 : 0) |
+         (k & KBDSHIFT_ALT ? 0x02 : 0) | (k & KBDSHIFT_ALTGR ? 0x08 : 0);
+    wr8(BDA, 0x17, (unsigned char)lo);
+    wr8(BDA, 0x18, (unsigned char)hi);
+    return lo | hi << 8;
+}
+
 static void inject(struct v86_iret *r, int t)
 {
     if (sti_step[t]) {                          /* Einzelschritt erledigt */
         sti_step[t] = 0;
         r->eflags &= ~(unsigned long)FL_TF;
     }
+    if (box_fg(t))                              /* 0417h aktuell halten  */
+        bios_shift();
     if ((spk[t] || spk_open[t] || opl_open[t]) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
@@ -2321,8 +2341,12 @@ static void svc(int n, struct v86_frame *f, int t)
                 idle_n[t] = 0;
             } else
                 idle_poll(t);                   /* fragt nur ab          */
-        } else if (AH == 0x02 || AH == 0x12)
-            AL = (unsigned char)kf_kbd_shift();
+        } else if (AH == 0x02 || AH == 0x12) {
+            k = bios_shift();
+            AL = (unsigned char)k;
+            if (AH == 0x12)
+                AH = (unsigned char)(k >> 8);
+        }
         else if (AH == 0x05)
             AL = 1;                             /* Puffer voll           */
         break;
