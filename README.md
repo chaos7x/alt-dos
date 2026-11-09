@@ -398,7 +398,8 @@ und PC-DOS.
   danach weiter). Virtuelle Sound Blaster 16 (220h, DMA 1/5, IRQ 5/7, DSP 4.05,
   16 Bit/Stereo, Mixer):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
-  Effekte), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Datum und
+  Effekte, Sprache in Day of the Tentacle; OPL auch an 220h/228h, DSP
+  E2h), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Datum und
   Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Maus in der Box
   über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h, Version 24h – MSD

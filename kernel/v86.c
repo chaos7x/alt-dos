@@ -155,6 +155,8 @@ struct vsb {
     unsigned dbase[2], dcnt[2], dcur[2], dleft[2];  /* DMA 1 / 5: Basis,
                                            Laenge-1, aktuell, Rest (Einheiten) */
     unsigned char dpage[2], dff[2];
+    unsigned char e2v, e2c;             /* DSP E2h: Wert, Zaehler        */
+    unsigned char quick;                /* kurzer Block: sofort fertig   */
 };
 static struct vsb sb[NTASK];
 static void sb_stop(int t);
@@ -1287,6 +1289,7 @@ static void sb_reset(int t)
     for (i = 0; i < sizeof(*b); i++)
         p[i] = 0;
     b->rate = 11025;
+    b->e2v = 0xAA;
     sb_mixreset(b);
 }
 
@@ -1339,6 +1342,11 @@ static void sb_start(int t, unsigned long len, int ai)
     b->ai = (unsigned char)ai;
     b->act = 1;
     b->last = get_ticks();
+    /* Einzelblock kuerzer als ein Takt (Erkennung: DOTT/CT-VOICE schickt
+       1 Byte mit 14h und wartet in einer Zaehlschleife auf den IRQ - auf
+       schnellen Rechnern weit unter 10 ms): gleich beim Ruecksprung
+       fertig melden statt erst beim naechsten Takt */
+    b->quick = (unsigned char)(!ai && len <= (unsigned long)(b->rate / 100) << (b->b16 + b->st));
 }
 
 /* Vorzeichen anpassen (Karte: 8 Bit ohne, 16 Bit mit), ggf. auf 8 Bit
@@ -1374,6 +1382,9 @@ static void sb_pump(int t)
         return;
     now = get_ticks();
     d = now - b->last > 20 ? 20 : (unsigned)(now - b->last);
+    if (b->quick && !d)
+        d = 1;
+    b->quick = 0;
     if (!d)
         return;
     b->last = now;
@@ -1428,6 +1439,38 @@ static void sb_pump(int t)
     irq_off();
 }
 
+/* DSP E2h (DMA-Erkennung, undokumentiert): die DSP schreibt per DMA
+   (Kanal 1) ein Byte, das aus dem Argument und den vorigen E2h-Aufrufen
+   folgt; Erkennungsroutinen (z. B. CT-VOICE in DOTT) pruefen es und
+   nehmen die Karte sonst nicht.  Tabelle wie in DOSBox (GPL, src/hardware/
+   sblaster.cpp, E2_incr_table) - Verhalten der echten DSP. */
+static const signed char e2_tab[4][9] = {
+    {  1,  -2,  -4,  8, -16,  32,  64, -128, -106 },
+    { -1,   2,  -4,  8,  16, -32,  64, -128,  -91 },
+    { -1,   2,   4, -8,  16, -32, -64, -128,  105 },
+    {  1,  -2,   4, -8, -16,  32, -64, -128,   90 }
+};
+static void sb_e2(int t, unsigned char a)
+{
+    struct vsb *b = &sb[t];
+    const signed char *e = e2_tab[b->e2c & 3];
+    unsigned i;
+    for (i = 0; i < 8; i++)
+        if (a & (1 << i))
+            b->e2v = (unsigned char)(b->e2v + e[i]);
+    b->e2v = (unsigned char)(b->e2v + e[8]);
+    b->e2c++;
+    lwin(VWIN_IDX, ((unsigned long)b->dpage[0] << 16) + b->dcur[0]);
+    *(unsigned char __far *)MK_FP(VWIN, 0) = b->e2v;
+    b->dcur[0]++;                               /* 8237 zaehlt weiter    */
+    if (b->dleft[0])
+        b->dleft[0]--;
+    else {
+        b->dcur[0] = b->dbase[0];
+        b->dleft[0] = b->dcnt[0];
+    }
+}
+
 /* DSP-Befehle: alles bis DSP 4.05 (SB16) ausser Aufnahme und MIDI */
 static void sb_cmd(int t, unsigned char v)
 {
@@ -1472,6 +1515,9 @@ static void sb_cmd(int t, unsigned char v)
         case 0xE4:
             b->args[2] = b->args[0];            /* Testregister          */
             break;
+        case 0xE2:
+            sb_e2(t, b->args[0]);
+            break;
         }
         return;
     }
@@ -1482,7 +1528,7 @@ static void sb_cmd(int t, unsigned char v)
         return;
     }
     switch (v) {
-    case 0x10: case 0x40: case 0xE0: case 0xE4: case 0x38:
+    case 0x10: case 0x40: case 0xE0: case 0xE2: case 0xE4: case 0x38:
         b->need = 1;
         break;
     case 0x14: case 0x48: case 0x91: case 0x16: case 0x17: case 0x74: case 0x75:
@@ -1652,6 +1698,8 @@ static int sb_out(int t, unsigned p, unsigned char v)
             b->on_ = b->oh = 0;
             b->spk = 0;
             b->ist = 0;
+            b->e2v = 0xAA;
+            b->e2c = 0;
             sb_put(t, 0xAA);
         }
         return 1;
@@ -2995,12 +3043,25 @@ static void vga_pout(int t, unsigned p, unsigned char v)
     }
 }
 
+/* OPL der Sound Blaster: 220h-223h (SB Pro/SB16, beide Baenke) und
+   228h/229h (OPL2-Sicht) sind derselbe Chip wie 388h-38Bh.  DOTT sucht
+   den OPL bei Basis+8 und gibt ohne ihn auch den Digitalton auf.     */
+static unsigned sb_opl(unsigned p)
+{
+    if (p >= 0x220 && p <= 0x223)
+        return p + (0x388 - 0x220);
+    if (p == 0x228 || p == 0x229)
+        return p + (0x388 - 0x228);
+    return p;
+}
+
 static unsigned char port_in(int t, unsigned p)
 {
     unsigned char sv;
     int k;
     if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
         return sv;
+    p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t])
             return vga_pin(t, p);
@@ -3068,6 +3129,7 @@ static void port_out(int t, unsigned p, unsigned char v)
     unsigned o, cur;
     if (sb_out(t, p, v))                        /* virtuelle Sound Blaster */
         return;
+    p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t])
             vga_pout(t, p, v);

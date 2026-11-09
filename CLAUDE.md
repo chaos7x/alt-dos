@@ -342,8 +342,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   GDT-Plätze für Kernelsegmente waren voll, ein eigenes kseg_alloc
   scheiterte still. Geprüft mit SK.COM (12 Stellen einer 190-MB-Datei
   mit bekanntem Inhalt, Box über den Redirector): richtig, 1. Lauf 14
-  Takte (Index aufbauen), danach 0; XCOPY + CHKDSK + fsck sauber. Ob
-  DOTT damit spricht, nur beim Nutzer prüfbar.
+  Takte (Index aufbauen), danach 0; XCOPY + CHKDSK + fsck sauber. Der
+  Index war nicht der Grund (DOTT sprach weiter nicht), siehe virtuelle
+  SB: „DOTT ohne Sprache“.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
@@ -2328,6 +2329,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Testprogramm 44,1 kHz 16 Bit stereo Auto-Init mit IRQ 5 (78 IRQs in 2 s
   bei 25-ms-Blöcken, 1 kHz auf beiden Kanälen im Mitschnitt), DOOM 1.2
   mit Ton. Ein DOOM-Nachbau hängt bei I_Init (siehe ganz am Ende).
+  DOTT ohne Sprache (Nutzer; mit der Demo von archive.org in QEMU
+  nachgestellt – nur zum Testen, nicht im Repository – mit `-device
+  sb16` plus `-device adlib,iobase=0x380`, je ein `-audiodev wav`, Spur
+  über Port E9h mit CS:IP je Portzugriff): DOTTs CT-VOICE-Erkennung
+  scheiterte an drei Stellen. (1) OPL bei Basis+8 (228h/229h) – v86.c
+  `sb_opl` spiegelt 220h–223h und 228h/229h auf 388h–38Bh (dieselbe
+  Behandlung, auch die Registerkopie). (2) DSP E2h (DMA-Erkennung: Byte
+  aus Argument und Zähler per DMA in den Speicher, `sb_e2`, Tabelle wie
+  in DOSBox; Reset setzt Wert AAh/Zähler 0). (3) Entscheidend: nach 14h
+  mit 1 Byte wartet DOTT in einer Zählschleife auf den IRQ, die SB
+  meldete den Block erst beim nächsten 10-ms-Takt – Schleife abgelaufen,
+  Karte verworfen. Jetzt `quick`: Einzelblock unter einem Takt ist beim
+  Rücksprung aus der Falle fertig. Geprüft: Demo mit Sprache im SB-
+  Mitschnitt, Musik läuft durch (vorher nach 12 s still); DOOM 1.2 mit
+  Effekten und Musik.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
