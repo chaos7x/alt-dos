@@ -565,8 +565,21 @@ Win32s), nicht vorziehen, sondern nachfragen.
   5 s, 256 KB bleiben frei; `bc_growing` verhindert Rückruf in sich
   selbst). MEM zeigt die aktuelle Größe. In QEMU geprüft (3 MB, CACHE=
   1536, TASKB: Cache 1.536 -> 1.472 KB, danach wieder 1.536; XCOPY,
-  SHUTDOWN, fsck sauber). In 6.0 dann wie NT: Seiten statt Stücke, Cache
-  = freier Speicher.
+  SHUTDOWN, fsck sauber).
+  Dynamischer Cache (6.0, Wunsch des Nutzers; in QEMU geprüft): `CACHE=
+  kb,s,max` – kb Mindestgröße (`bc_minch`), Tabellen für max (ohne
+  Angabe RAM/2, höchstens 8 MB = BC_MAXCH), `bc_regrow` (alle 5 s, bis
+  1 MB je Durchgang) wächst über die Mindestgröße nur, solange `bc_rsv`
+  (RAM/8, 512 KB–4 MB) frei bleibt; bc_reclaim gibt wie bisher saubere
+  Stücke ab. `mem_avail_kb()` = frei + Cache über der Mindestgröße –
+  v86.c nimmt es (Thunk `kf_mem_avail_kb`) für DPMI 0500h, XMS-Tabelle,
+  CMOS, EMS-Grenzen; load_img (geparkte Boxen) ebenso. DosCacheInfo mit
+  CX = Größe liefert min_kb/max_kb (`CACHEINFO_V50` = 14 für CX = 0),
+  MEM zeigt „verfügbar“ und die Spanne. Geprüft: 16 MB -> Cache wächst
+  auf 7.920 KB; 4 MB -> 1.776 KB, zwei Boxen per START (1.656 KB) ->
+  Cache 1.344 KB, frei 8 KB, verfügbar 1.096 KB, XCOPY \DOS dabei,
+  SHUTDOWN, fsck sauber, Inhalte gleich. Offen: Seiten statt 16-KB-
+  Stücke, mehr als 8 MB (Tabellen über ein Kernelsegment hinaus).
   Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
   XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache

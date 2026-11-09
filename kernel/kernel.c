@@ -1054,7 +1054,7 @@ static int load_img(int t, int drive, const char *path)
     if (box_sec[510] != 0x55 || box_sec[511] != 0xAA)
         return EXEC_ERR_FORMAT;
     for (i = 0; i < NTASK; i++)         /* Speicher knapp: geparkte Boxen */
-        if (park_owner[i] && mem_free_kb() < box_kb * 4UL) {    /* zuerst */
+        if (park_owner[i] && mem_avail_kb() < box_kb * 4UL) {   /* zuerst */
             park_owner[i] = 0;
             task_end(i);
         }
@@ -1794,7 +1794,7 @@ unsigned proc_run(unsigned long id)
 static int bc_due(void);
 static void bc_flush(void);
 static void bc_regrow(void);
-static void cache_info(struct fapi_cacheinfo __far *ci);
+static void cache_info(struct fapi_cacheinfo __far *ci, unsigned size);
 static void sleep_ticks(unsigned n)
 {
     if (klock < 0 || klock == current) {
@@ -2812,10 +2812,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_CACHEINFO: {
         struct fapi_cacheinfo __far *ci;
-        if (!user_ok(usel, a1, sizeof(*ci), 1))
+        if (!user_ok(usel, a1, a2 >= sizeof(*ci) ? sizeof(*ci) : CACHEINFO_V50, 1))
             return FAPI_ERROR;
         ci = MK_FP(usel, a1);
-        cache_info(ci);
+        cache_info(ci, a2);
         return 0;
     }
 
@@ -3741,7 +3741,9 @@ static unsigned       bc_nch, bc_present, bc_growing;
 #define BC_LIN(i)   (PG_LIN(bc_unit[(i) >> 3]) + ((unsigned)((i) & 7) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
-static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
+static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s,max */
+static unsigned       cache_max = 0xFFFF;               /* 0xFFFF = nach Speicher */
+static unsigned       bc_minch, bc_rsv;                 /* Mindeststuecke, Reserve KB */
 #define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
 #define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
@@ -3767,29 +3769,53 @@ static int bc_chunk_get(unsigned c)
 
 void blk_cache_init(unsigned kb)
 {
-    unsigned i, w;
+    unsigned i, w, max = cache_max;
+    unsigned long ram = mem_ram_kb();
+    /* Dynamisch (wie NT): kb ist die Mindestgroesse; darueber waechst der
+       Cache in freien Speicher bis max (ohne Angabe: halber Speicher,
+       hoechstens 8 MB) und gibt bei Bedarf saubere Stuecke wieder ab
+       (bc_reclaim). Frei bleiben immer bc_rsv KB fuer Programme. */
+    if (max == 0xFFFF)
+        max = ram / 2 > 8192 ? 8192 : (unsigned)(ram / 2);
     if (kb > 8192)
         kb = 8192;
+    if (max > 8192)
+        max = 8192;
+    if (max < kb)
+        max = kb;
     kb &= ~15u;                         /* ganze Stuecke                 */
+    max &= ~15u;
+    bc_rsv = ram / 8 < 512 ? 512 : ram / 8 > 4096 ? 4096 : (unsigned)(ram / 8);
     bc_n = 0;
-    if (kb < 16)
+    if (max < 16)
         return;
     w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
-    bc_msel = kseg_alloc((unsigned long)((kb >> 1) * sizeof(struct bce) + BC_HASH * 2));
+    bc_msel = kseg_alloc((unsigned long)((max >> 1) * sizeof(struct bce) + BC_HASH * 2));
     if (!w || !bc_msel)
         return;
     bc_wsel = win_csel = w;
-    bc_n = kb >> 1;
+    bc_n = max >> 1;
     bc_nch = bc_n / BC_CHB;
+    bc_minch = kb >> 4;
     for (i = 0; i < bc_n; i++)
         BCE(i)->dev = -2;
     for (i = 0; i < BC_HASH; i++)
         BCH(i) = BC_END;
-    for (i = 0; i < bc_nch; i++)        /* so viel, wie der Speicher hergibt */
+    for (i = 0; i < bc_minch; i++)      /* so viel, wie der Speicher hergibt */
         if (bc_chunk_get(i))
             break;
     bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
     mem_reclaim = bc_reclaim;
+}
+
+/* Speicher, den der Cache ueber seiner Mindestgroesse haelt (geht bei
+   Bedarf zurueck) - zaehlt fuer DPMI/XMS der Boxen als frei */
+unsigned long mem_avail_kb(void)
+{
+    unsigned long f = mem_free_kb();
+    if (bc_present > bc_minch)
+        f += (unsigned long)(bc_present - bc_minch) << 4;
+    return f;
 }
 
 unsigned blk_cache_kb(void)
@@ -3827,24 +3853,32 @@ static pg_t bc_reclaim(unsigned units)
     return freed;
 }
 
-/* im Leerlauf (mit Kernelsperre): fehlende Stuecke zurueckholen, wenn
-   genug frei ist (256 KB bleiben fuer Programme) */
+/* im Leerlauf (mit Kernelsperre, alle 5 s): fehlende Stuecke holen -
+   bis zur Mindestgroesse, solange 256 KB frei bleiben, darueber nur,
+   solange die Reserve (bc_rsv) frei bleibt; je Durchgang hoechstens
+   1 MB, damit der Cache nach und nach waechst */
 static void bc_regrow(void)
 {
-    unsigned c;
+    unsigned c, n = 0;
     if (bc_present == bc_nch || get_ticks() - bc_grow_t < 91)
         return;
     bc_grow_t = get_ticks();
-    for (c = 0; c < bc_nch; c++)
+    for (c = 0; c < bc_nch && n < 64; c++)
         if (!bc_unit[c]) {
-            if (mem_free_kb() < 256 + 16 || bc_chunk_get(c))
+            if (mem_free_kb() < (bc_present < bc_minch ? 256 + 16 : bc_rsv + 16UL) ||
+                bc_chunk_get(c))
                 return;
+            n++;
         }
 }
 
-static void cache_info(struct fapi_cacheinfo __far *ci)
+static void cache_info(struct fapi_cacheinfo __far *ci, unsigned size)
 {
     ci->kb = bc_present << 4;           /* gerade belegt (kann schrumpfen) */
+    if (size >= sizeof(*ci)) {          /* 6.0: Grenzen des dynamischen Caches */
+        ci->min_kb = bc_minch << 4;
+        ci->max_kb = bc_nch << 4;
+    }
     ci->delay_s = bc_n && bc_delay ? cache_s : 0;
     ci->hits = bc_hits;
     ci->misses = bc_miss;
@@ -5241,8 +5275,13 @@ static void config_sys(void)
             cache_kb = num_arg(v);
             while (*q && *q != ',')
                 q++;
-            if (*q == ',')
-                cache_s = num_arg(q + 1);
+            if (*q == ',') {
+                cache_s = num_arg(++q);
+                while (*q && *q != ',')
+                    q++;
+                if (*q == ',')              /* dritter Wert: Hoechstgroesse */
+                    cache_max = num_arg(q + 1);
+            }
         } else if (kw(line, "DOS")) {          /* wie OS/2: fuer alle DOS-Boxen */
             const char *q;
             for (q = v; *q; q++) {

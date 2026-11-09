@@ -51,11 +51,16 @@ und PC-DOS.
   CD-ROMs (2048-Byte-Blöcke) nur lesen
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
-  `CACHE=kb[,s]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
-  bis 8 MB im erweiterten Speicher, Festplatten schreiben s Sekunden
-  verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
-  bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
-  16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
+  `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie
+  bei OS/2: Festplatten schreiben s Sekunden verzögert, Vorgabe 5, `,0`
+  sofort. Dynamisch wie bei Windows NT (6.0): kb ist die Mindestgröße
+  (ohne Angabe nach Speicher, z. B. 128 KB bei 2 MB), darüber wächst der
+  Cache in freien Speicher bis max (ohne Angabe halber Speicher,
+  höchstens 8 MB; `CACHE=1024,5,1024` = feste Größe), lässt immer 1/8
+  des Speichers (512 KB–4 MB) frei und gibt saubere 16-KB-Stücke ab,
+  sobald ein Programm oder eine DOS-Box Speicher braucht; DPMI/XMS der
+  Boxen zählen den abgebbaren Teil als frei. MEM zeigt Größe, Spanne,
+  „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
@@ -583,7 +588,7 @@ selbst nur 8.3 kennt.
 | 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |
 | 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
-| 77 | DosCacheInfo    | BX = struct fapi_cacheinfo → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
+| 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = 5.0) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke; ab CX = 18 Mindest-/Höchstgröße des dynamischen Caches |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, ~1/16 s statt 8 KB), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste, CX = Nummer, DX = struct fapi_pcidev bzw. fapi_res → 0, FAPI_ERROR am Ende (MSD) |

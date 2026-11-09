@@ -290,6 +290,7 @@ void __far kf_vio_setmode(int s, int full, int owner);
 void __far kf_vio_setcur(int s, int row, int col);
 void __far kf_vio_dirty(int s);
 unsigned long __far kf_vio_buf_lin(int s);
+unsigned long __far kf_mem_avail_kb(void);
 unsigned __far kf_vio_mou_open(int s, int t);
 int __far kf_vio_mou_read(int s, unsigned char *e);
 void __far kf_vio_mou_show(int s, int on);
@@ -3024,7 +3025,7 @@ static unsigned char port_in(int t, unsigned p)
         return pit_in(t, p);
     case 0x71: {                                /* CMOS: Speicher der Box, */
         unsigned kb, f, n = emb_free_pg(t), lim = xms_lim[t] ? xms_lim[t] - 1 : 512;
-        unsigned long fr = mem_free_kb() >> 2;
+        unsigned long fr = kf_mem_avail_kb() >> 2;
         unsigned char v;
         if (n > fr)                             /* nur, was die Box bekommen */
             lim -= n - (unsigned)fr;            /* kann (XMS_MEMORY_LIMIT=-1) */
@@ -3385,7 +3386,7 @@ static void xms_ent(unsigned *e, unsigned fl, unsigned lk, unsigned long ad, uns
 static void xms_table(int t)
 {
     unsigned i, e = XMS_TAB + 16, s = XMS_PG0, nx, n = 0;
-    unsigned long bud = mem_free_kb() >> 2, g;  /* Seiten, die das System hat */
+    unsigned long bud = kf_mem_avail_kb() >> 2, g;  /* Seiten, die das System hat */
     wr8(VBIOS, XMS_TAB, 1);
     wr8(VBIOS, XMS_TAB + 1, 10);
     wr16(VBIOS, XMS_TAB + 4, XMS_TAB + 16);
@@ -3502,7 +3503,7 @@ static void xms(struct v86_frame *f, int t)
     case 0x08: case 0x88:                       /* freier Speicher       */
         emb_gap(t, 0xFFFF, &lg);
         n = emb_free_pg(t);
-        kb = mem_free_kb() >> 2;                /* auch das System zaehlt */
+        kb = kf_mem_avail_kb() >> 2;                /* auch das System zaehlt */
         if (lg > kb) lg = (unsigned)kb;
         if (n > kb) n = (unsigned)kb;
         if (AH == 0x88) {
@@ -3769,7 +3770,7 @@ static unsigned ems_used(int t)
 static unsigned ems_free(int t)
 {
     unsigned u = ems_used(t), n = EMS_PGN;
-    unsigned long sys = mem_free_kb() >> 4;
+    unsigned long sys = kf_mem_avail_kb() >> 4;
     n = u >= n ? 0 : n - u;
     return sys < n ? (unsigned)sys : n;
 }
@@ -4930,7 +4931,7 @@ static unsigned dp31(struct v86_frame *f, int t)
         DX = 0x0870;
         return 0;
     case 0x0500: {                              /* freier Speicher       */
-        unsigned long fr = mem_free_kb() >> 2;
+        unsigned long fr = kf_mem_avail_kb() >> 2;
         if (fr > 0x3C000UL)             /* mehr als der DPMI-Bereich der Box */
             fr = 0x3C000UL;             /* (64 MB - 1 GB) geht nicht; ueber */
                                         /* 2 GB in Byte hielt DOS/4GW den Wert */
@@ -4977,7 +4978,7 @@ static unsigned dp31(struct v86_frame *f, int t)
             ;
         if (k == NDPM)
             DERR(0x8016);
-        if (n > mem_free_kb() >> 2 || !(lin = dmem_gap(t, n)) || !dmem_map(t, lin, n))
+        if (n > kf_mem_avail_kb() >> 2 || !(lin = dmem_gap(t, n)) || !dmem_map(t, lin, n))
             DERR(0x8013);
         dp_mem[t][k].lpg = lin;
         dp_mem[t][k].npg = n;

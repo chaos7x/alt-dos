@@ -182,6 +182,7 @@ int  blk_media(int dev);            /* Diskette gewechselt? 1 = ja (neu)   */
 int  blk_nomedia(int dev);          /* Diskettenlaufwerk leer? (nach blk_media) */
 extern unsigned char ifs_notready;  /* im FAPI-Aufruf: Laufwerk leer       */
 void blk_cache_init(unsigned kb);   /* CACHE=: Platten-Cache in KB         */
+unsigned long mem_avail_kb(void);  /* frei + abgebbarer Cache            */
 unsigned blk_cache_kb(void);
 extern unsigned char bc_sync;       /* 1: blk_write sofort (Sauber-Bit)    */
 

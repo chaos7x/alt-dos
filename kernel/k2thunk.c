@@ -45,6 +45,7 @@ void __far kf_vio_setmode(int s, int full, int owner) { vio_setmode(s, full, own
 void __far kf_vio_setcur(int s, int row, int col) { vio_setcur(s, row, col); }
 void __far kf_vio_dirty(int s) { vio_dirty(s); }
 unsigned long __far kf_vio_buf_lin(int s) { return vio_buf_lin(s); }
+unsigned long __far kf_mem_avail_kb(void) { return mem_avail_kb(); }
 unsigned __far kf_vio_mou_open(int s, int t) { return vio_mou_open(s, t); }
 int __far kf_vio_mou_read(int s, unsigned char *e) { return vio_mou_read(s, e); }
 void __far kf_vio_mou_show(int s, int on) { vio_mou_show(s, on); }
