@@ -2667,8 +2667,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   an; 0417h/0418h blieben ungepflegt. Jetzt `bios_shift` (v86.c): Bits
   wie das BIOS, Sperrtasten bleiben, schreibt 0417h/0418h, auch bei
   jedem inject im Vordergrund; 12h liefert 0418h-Bits in AH. In QEMU mit
-  SH.COM geprüft (Alt 0808, Strg 0404, Shift 0202). Offen: Mausklicks in
-  MSD 2.11 (auch mit /I) – Abfrage 03h/05h und Rückruf 0Ch gehen im Test.
+  SH.COM geprüft (Alt 0808, Strg 0404, Shift 0202).
+  Mausklicks in MSD 2.11 gingen auf dem P3B-F nicht (MSD.EXE aus
+  archive.org „msdos-622“, nur zum Testen): MSD ruft nach dem Start nur
+  0/0Ah/0Ch/24h/26h/7/8/1/3 und lebt dann allein vom Rückruf; seine
+  Warteschleife enthält kein INT, mit VME fallen CLI/STI nicht mehr –
+  die Box kam nur noch über den Takt in den Kernel, und v86_tick stellte
+  Interrupts zu (Tasten über INT 9), aber keinen Maus-Rückruf (mou_cb
+  braucht den vollen Registerrahmen von v86_exc). Jetzt `mou_tick`: steht
+  ein Ereignis für den Rückruf an, lenkt v86_tick die Box wie bei einem
+  Interrupt auf den Stummel F000:0574 „ARPL E8h; IRET“ (`MOU_TICK`), dessen
+  Falle mou_cb(f, t, 1) ruft. In QEMU geprüft, auch mit testweise
+  abgeschaltetem Weg über v86_exc (nur Takt): Klick auf „Windows…“
+  öffnet das Fenster; seriell und PS/2.
 - Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
   geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
   beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO

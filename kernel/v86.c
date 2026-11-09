@@ -301,9 +301,11 @@ void __far kf_vio_mou_pos(int s, int row, int col);
 void __far kf_vio_mou_close(int s, int t);
 static void mou33(struct v86_frame *f, int t);
 static void mou_off(int t);
-static void mou_cb(struct v86_frame *f, int t);
+static void mou_cb(struct v86_frame *f, int t, int force);
+static void mou_tick(struct v86_iret *r, int t);
 static int mou_ret(struct v86_frame *f, int t);
 #define MOU_RET  0x0570         /* Maus-Rueckruf zurueck: ARPL E7h        */
+#define MOU_TICK 0x0574         /* Maus-Rueckruf aus dem Takt: ARPL E8h; IRET */
 #define MOU_ST   0x0B00         /* Zustand des Maustreibers (F000:0B00)   */
 
 static void k2_cr3(unsigned lo, unsigned hi);
@@ -660,6 +662,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
     put32(SCRATCH, EMS_RET >> 2, 0x90CBE663UL);     /* 63 E6 CB: EMS 56h */
     put32(SCRATCH, MOU_RET >> 2, 0x9090E763UL);     /* 63 E7: Maus       */
+    put32(SCRATCH, MOU_TICK >> 2, 0x90CFE863UL);    /* 63 E8 CF: Maus/Takt */
     put32(SCRATCH, 0x60A >> 2, 0);                  /* F060:000A EMMXXXX0 */
     for (i = 0; i < 8; i++)
         *(unsigned char __far *)MK_FP(SCRATCH, 0x60A + i) = "EMMXXXX0"[i];
@@ -1908,8 +1911,11 @@ void __far v86_tick(struct v86_iret *r)
         return;
     from_tick = 1;                              /* je irq0 hoechstens ein */
     if (r->eflags & 0x20000UL) {                /* Takt (sonst schachteln */
+        unsigned long ocs = r->cs, oip = r->eip;
         vme_in(r, t);                           /* nachgeholte Takte, DOS/4GW: */
         inject(r, t);
+        if (r->cs == ocs && r->eip == oip)      /* nichts zugestellt:     */
+            mou_tick(r, t);                     /* Maus-Rueckruf faellig? */
         vme_out(r, t);
     } else {                                      /* "transfer stack overflow") */
         pvi_in(r, t);                           /* DPMI-Programm (Ring 3) */
@@ -5829,6 +5835,10 @@ static unsigned monitor(struct v86_frame *f, int t)
         }
         if (cs == VBIOS && ip == MOU_RET)       /* Maus-Rueckruf fertig  */
             return mou_ret(f, t);
+        if (cs == VBIOS && ip == MOU_TICK) {    /* Rueckruf aus dem Takt */
+            mou_cb(f, t, 1);                    /* (danach IRET des Stummels) */
+            return 0;
+        }
         if (cs == VBIOS && ip == EMS_RET) {      /* EMS 56h: Ziel fertig  */
             ems_ret(f, t);
             return 0;
@@ -6231,11 +6241,12 @@ static void mou33(struct v86_frame *f, int t)
 }
 
 /* Rueckruf (0Ch) zustellen, wenn etwas ansteht, das er haben will */
-static void mou_cb(struct v86_frame *f, int t)
+static void mou_cb(struct v86_frame *f, int t, int force)
 {
     struct v86_iret *r = &f->r;
     unsigned e;
-    if (box_ses[t] < 0 || !(vfl[t] & FL_IF) || sti_sh || rd8(VBIOS, MOU_ST) == 0)
+    if (box_ses[t] < 0 || (!force && (!(vfl[t] & FL_IF) || sti_sh)) ||
+        rd8(VBIOS, MOU_ST) == 0)
         return;
     mo_load();
     if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
@@ -6267,6 +6278,33 @@ static void mou_cb(struct v86_frame *f, int t)
     r->cs = mo.cbseg;
     r->eip = mo.cbofs;
     mo_save();
+}
+
+/* Aus dem Takt (v86_tick): dort fehlen die Register der Box. Steht ein
+   Ereignis fuer den Rueckruf an, wird die Box wie bei einem Interrupt
+   auf den Stummel F000:0574 "ARPL E8h; IRET" umgelenkt - dessen Falle hat
+   den vollen Rahmen und ruft mou_cb. Noetig mit VME: die Oberflaeche von
+   MSD 2.11 wartet in einer Schleife ohne INT, CLI/STI fallen nicht mehr,
+   also kam die Box ausser ueber den Takt nie in den Monitor (Tasten
+   kamen ueber INT 9 an, Klicks nie). */
+static void mou_tick(struct v86_iret *r, int t)
+{
+    if (box_ses[t] < 0 || !(vfl[t] & FL_IF) || sti_sh || rd8(VBIOS, MOU_ST) == 0)
+        return;
+    mo_load();
+    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
+        return;
+    mo_poll(t);
+    mo_save();
+    if (!(mo.evp & mo.mask))
+        return;
+    push16(r, vflags(r, t));                    /* wie ein Interrupt     */
+    push16(r, (unsigned)r->cs);
+    push16(r, (unsigned)r->eip);
+    vfl[t] &= ~FL_IF;
+    r->eflags &= ~(unsigned long)FL_TF;
+    r->cs = VBIOS;
+    r->eip = MOU_TICK;
 }
 
 /* Rueckruf ist fertig (RETF nach F000:0570): Register und IRET */
@@ -6319,7 +6357,7 @@ unsigned __far v86_exc(struct v86_frame *f)
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
         if (f->r.cs == ocs && f->r.eip == oip)
-            mou_cb(f, t);               /* Maus-Ereignis an den Rueckruf */
+            mou_cb(f, t, 0);            /* Maus-Ereignis an den Rueckruf */
         if (sti_sh && (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])) {
             sti_step[t] = 1;            /* nach dem naechsten Befehl     */
             f->r.eflags |= FL_TF;
