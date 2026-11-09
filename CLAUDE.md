@@ -322,7 +322,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `mkfs.fat --offset 63` trägt 0 versteckte Sektoren ein – der Boot-
   sektor liest dann Sektor 2 der Platte und hängt (FORMAT von AT-DOS
   setzt den Wert richtig); eine von Hand angelegte MBR-Tabelle braucht
-  noch Startcode (aus atdos-hd.img). fsck merkt
+  noch Startcode (aus atdos-hd.img).
+  Vom Nutzer in 86Box bestätigt: 486 mit Award-BIOS PVI-4SP3, Platte
+  3072/16/63 (1585 MB) im Modus LARGE (Übersetzung ohne INT-13h-
+  Erweiterungen; NORMAL sähe nur 504 MB) – FDISK, FORMAT, SYS, Start
+  von der FAT32-Partition klappt. fsck merkt
   nach SHUTDOWN „Free cluster summary uninitialized“ an – FSInfo bleibt
   FFFFFFFFh, wenn der Kernel nicht gezählt hat (erlaubt).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
