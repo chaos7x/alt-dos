@@ -639,6 +639,7 @@ static void lost_chains(void)
 
 /* ---- FAT-Kopien vergleichen (und mit /F angleichen) -------------------- */
 static unsigned char cmpb[512];
+static int fats_differ;
 static void cmp_fats(void)
 {
     unsigned long s;
@@ -653,6 +654,7 @@ static void cmp_fats(void)
             ;
         if (i < 512) {
             if (!differ) {
+                fats_differ = !fix;
                 problem();
                 puts("Die Kopien der FAT sind verschieden");
                 puts(fix ? " - Kopie wird aus der ersten erneuert.\n" : ".\n");
@@ -763,12 +765,15 @@ static void mark_clean(void)
 
 static char flabel[12];
 #include "ufat32_fmt.c"
+#include "ufat32_undel.c"
+#include "ufat32_defrag.c"
 
 void main(void)
 {
     char *a = args;
     unsigned reserved;
-    int fmt = 0, quick = 0;
+    int fmt = 0, quick = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
+    static char spec[FAPI_PATHLEN];
 
     drive = DosQCurDisk();
     DosGetArgs(args);
@@ -788,9 +793,21 @@ void main(void)
             for (k = 0; a[3 + k] && a[3 + k] != ' ' && k < 11; k++)
                 flabel[k] = up(a[3 + k]);
             flabel[k] = 0;
-        } else if (a[0] == '/' && (up(a[1]) == 'U' || up(a[1]) == 'D')) {
-            puts("UNDELETE und DEFRAG gibt es f\x81r FAT32 noch nicht.\n");
-            DosExit(3);
+        } else if (a[0] == '/' && up(a[1]) == 'U' && up(a[2]) == 'N')
+            undel = 1;
+        else if (a[0] == '/' && up(a[1]) == 'D' && up(a[2]) == 'E')
+            defrag = 1;
+        else if (a[0] == '/' && up(a[1]) == 'U')
+            quick = 1;                  /* DEFRAG /U: nur fragmentierte  */
+        else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'I')
+            ulist = 1;
+        else if (a[0] == '/' && up(a[1]) == 'A' && up(a[2]) == 'L')
+            uall = 1;
+        else if (a[0] == '\\') {
+            unsigned k;
+            for (k = 0; a[k] && a[k] != ' ' && k < sizeof(spec) - 1; k++)
+                spec[k] = a[k];
+            spec[k] = 0;
         } else if (a[0] == '/' && up(a[1]) == 'R')
             fix = 1;                    /* Oberflaechentest fehlt noch  */
         else if (a[0] == '/' && up(a[1]) == 'F')
@@ -809,6 +826,8 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
+    if (undel || defrag)
+        fix = 1;                        /* schreibt: Laufwerk sperren    */
     hd = DosOpenDrive(drive, (fix ? DRV_OPEN_LOCK : DRV_OPEN_READ) | DRV_OPEN_LBA);
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Das Laufwerk ist gesperrt oder in Benutzung.\n"
@@ -850,12 +869,23 @@ void main(void)
         DosExit(3);
     }
     nbm = (unsigned)((maxc >> 19) + 1);
-    if (nbm > NBMSEG || bm_alloc(useds) || bm_alloc(auxs)) {
+    if (nbm > NBMSEG || bm_alloc(useds) || (!undel && !defrag && bm_alloc(auxs))) {
         puts("Zu wenig Arbeitsspeicher f\x81r die Pr\x81" "fung.\n");
         DosClose(hd);
         DosExit(3);
     }
     fc_init();
+    if (undel || defrag) {
+        int rc;
+        fix = 0;                        /* cmp_fats nur pruefen          */
+        if (defrag)
+            cmp_fats();
+        rc = undel ? do_undelete(spec[0] ? spec : "\\*.*", ulist, uall)
+                   : do_defrag(quick);
+        fat_flush();
+        DosClose(hd);
+        DosExit(rc);
+    }
     cmp_fats();
     check_tree();
     lost_chains();

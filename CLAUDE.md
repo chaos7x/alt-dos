@@ -273,7 +273,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   höchstens 7 je Bitmap wegen 14 freien LDT-Plätzen -> 3,6 Mio. Cluster),
   Querverbindung: Kette davor beenden (keine Kopie wie UFAT), /F setzt
   Sauber-Bit + FSInfo. Bei über 4 GB Bytewerte in KB (`cline`). Kein
-  UNDELETE/DEFRAG/Oberflächentest/LFN-Prüfung für FAT32 (Meldung).
+  Oberflächentest/LFN-Prüfung für FAT32 (/R wirkt wie /F).
+  UNDELETE (`ufat32_undel.c`) und DEFRAG (`ufat32_defrag.c`) wie bei
+  UFAT, eingebunden in task_ufat32.c: Verzeichnisse über `u_open`/
+  `u_next` als Kette (0 = Stamm = rootc), Cluster 32 Bit (`ent_first`/
+  `set_first`; fat.c lässt beim Löschen das Hochwort stehen), FAT über
+  fc_get/fat_flush, Belegung in `useds`, Dateisätze in bis zu 4
+  DosAllocSeg-Segmenten (16.384 Dateien), Kopieren in 8-Sektor-Stücken
+  über `zb`. In QEMU geprüft (200-MB-Platte, Dateien über Cluster
+  65.536): /LIST, /ALL, Unterverzeichnis mit Rückfrage, drei per Skript
+  zerstückelte Dateien zusammengelegt, Inhalte gleich, CHKDSK und fsck
+  sauber. Dabei behoben (auch UFAT): „Dateiangaben“ zeigte immer *.*.
   FORMAT: 32 reservierte Sektoren, FSInfo 1/7, Bootsektor-Kopie 6,
   Clustergröße nach Microsoft-Tabelle, kleiner bis 65.525 Cluster
   erreicht sind, Sektoren je FAT nach der Formel der Spezifikation
