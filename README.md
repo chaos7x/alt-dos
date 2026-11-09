@@ -32,8 +32,9 @@ und PC-DOS.
   Sauber-Bit (FAT[1] Bit 27) und FSInfo wie Windows 95/98. CHKDSK nennt
   das Dateisystem und prüft FAT32 mit `UFAT32.EXE` (Ketten, Größen,
   Querverbindungen, verlorene Ketten -> FILEnnnn.CHK, FAT-Kopien; die FAT
-  bleibt auf der Platte, Bitmaps in eigenen Segmenten). UNDELETE und
-  DEFRAG (auch `/U`) gehen auf FAT32 ebenso über `UFAT32.EXE`. `FORMAT X:
+  bleibt auf der Platte, Bitmaps in eigenen Segmenten). UNDELETE,
+  DEFRAG (auch `/U`) und der Oberflächentest `CHKDSK /R` (bzw. SCANDISK)
+  gehen auf FAT32 ebenso über `UFAT32.EXE`. `FORMAT X:
   /FS:FAT32 [/Q] [/V:Name]` legt FAT32 an (Clustergröße wie Windows 98,
   ohne /Q mit Oberflächentest). FDISK fragt wie Windows 98 nach
   „Unterstützung für große Festplatten“ und legt dann Partitionen ab

@@ -272,8 +272,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Bitmaps used/aux in DosAllocSeg-Segmenten (je 64 KB = 524.288 Cluster,
   höchstens 7 je Bitmap wegen 14 freien LDT-Plätzen -> 3,6 Mio. Cluster),
   Querverbindung: Kette davor beenden (keine Kopie wie UFAT), /F setzt
-  Sauber-Bit + FSInfo. Bei über 4 GB Bytewerte in KB (`cline`). Kein
-  Oberflächentest/LFN-Prüfung für FAT32 (/R wirkt wie /F).
+  Sauber-Bit + FSInfo. Bei über 4 GB Bytewerte in KB (`cline`). Keine
+  LFN-Prüfung für FAT32. /R (`ufat32_scan.c`, wie ufat_scan.c): 32
+  Sektoren am Stück über `vbuf`, bei Fehlern clusterweise; frei ->
+  0FFFFFF7h, belegt -> Inhalt in freien lesbaren Cluster (`alloc_free`
+  ab `fhint`, Unlesbares als Nullen), Vorgänger umhängen (`pred` über die
+  ganze FAT – teuer, aber selten), erster Cluster nur Meldung; läuft vor
+  count_free. In QEMU mit blkdebug geprüft (200-MB-FAT32, drei defekte
+  Sektoren: in BIG.BIN verlegt – nur der Sektor genullt –, freier
+  gesperrt, Dateianfang gemeldet; fsck sauber).
   UNDELETE (`ufat32_undel.c`) und DEFRAG (`ufat32_defrag.c`) wie bei
   UFAT, eingebunden in task_ufat32.c: Verzeichnisse über `u_open`/
   `u_next` als Kette (0 = Stamm = rootc), Cluster 32 Bit (`ent_first`/
@@ -309,7 +316,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   29h bei 66), Stamm als Kette, `next_clus` 28 Bit, Seriennummer bei 67
   (auch find_boot_vol); start.asm `rm_read` mit LBA-Erweiterungen
   (`geo_lba`, `geo_dap`) – damit auch FAT16-Start über 8 GB. CHS-Weg des
-  FAT32-Bootsektors nur theoretisch geprüft (SeaBIOS hat LBA). fsck merkt
+  FAT32-Bootsektors in QEMU geprüft, indem `mov byte [uselba], 1` im
+  geschriebenen Bootsektor auf 0 gepatcht wurde (Muster C6 06 08 7B 01):
+  Start mit ATDOS.SYS hinter Cluster 65.536 klappt. Testfalle:
+  `mkfs.fat --offset 63` trägt 0 versteckte Sektoren ein – der Boot-
+  sektor liest dann Sektor 2 der Platte und hängt (FORMAT von AT-DOS
+  setzt den Wert richtig); eine von Hand angelegte MBR-Tabelle braucht
+  noch Startcode (aus atdos-hd.img). fsck merkt
   nach SHUTDOWN „Free cluster summary uninitialized“ an – FSInfo bleibt
   FFFFFFFFh, wenn der Kernel nicht gezählt hat (erlaubt).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar

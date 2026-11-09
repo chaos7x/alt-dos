@@ -2,7 +2,7 @@
 /*
  * UFAT32.EXE - Pruefprogramm fuer FAT32, gestartet von CHKDSK.EXE (6.0)
  *
- *   UFAT32 Laufwerk: [/F] [/V] [/AUTO]
+ *   UFAT32 Laufwerk: [/F] [/R] [/V] [/AUTO]   (/R: ufat32_scan.c)
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
  *
  * Wie UFAT, aber fuer grosse Datentraeger gebaut: die FAT (bei FAT32
@@ -765,6 +765,7 @@ static void mark_clean(void)
 
 static char flabel[12];
 #include "ufat32_fmt.c"
+#include "ufat32_scan.c"
 #include "ufat32_undel.c"
 #include "ufat32_defrag.c"
 
@@ -772,7 +773,7 @@ void main(void)
 {
     char *a = args;
     unsigned reserved;
-    int fmt = 0, quick = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
+    int fmt = 0, quick = 0, surface = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
     static char spec[FAPI_PATHLEN];
 
     drive = DosQCurDisk();
@@ -809,7 +810,7 @@ void main(void)
                 spec[k] = a[k];
             spec[k] = 0;
         } else if (a[0] == '/' && up(a[1]) == 'R')
-            fix = 1;                    /* Oberflaechentest fehlt noch  */
+            surface = fix = 1;          /* /R: Oberflaechentest, mit /F  */
         else if (a[0] == '/' && up(a[1]) == 'F')
             fix = 1;
         else if (a[0] == '/' && up(a[1]) == 'V')
@@ -889,6 +890,8 @@ void main(void)
     cmp_fats();
     check_tree();
     lost_chains();
+    if (surface)
+        surface_scan();
     count_free();
     if (fix)
         mark_clean();
