@@ -294,7 +294,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   FORMAT: 32 reservierte Sektoren, FSInfo 1/7, Bootsektor-Kopie 6,
   Clustergröße nach Microsoft-Tabelle, kleiner bis 65.525 Cluster
   erreicht sind, Sektoren je FAT nach der Formel der Spezifikation
-  (`udiv`), Startcode nur Meldung „Kein Systemdatenträger“. Kernel:
+  (`udiv`), Startcode nur Meldung „Kein Systemdatenträger“. Ohne /V
+  fragt UFAT32 wie UFAT nach der Bezeichnung (fehlte, vom Nutzer
+  gemeldet; in QEMU geprüft, mlabel/fsck sauber). Kernel:
   DosOpenDrive/DosOpenDisk mit `DRV_OPEN_LBA` (2, kombinierbar) – DosSeek-
   Stelle in Sektoren (`DASD_LBA` in f.flags), nötig über 4 GB.
   Stufe 3 (in QEMU geprüft: leere 3-GB-Platte -> FDISK „große Platten“
@@ -2761,7 +2763,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `dmab_phys` statt DMABUF_LIN für Treiber und Disketten-Format; ohne
   Speicher der gemeinsame Puffer bei 8000h. Der FAT-Cache hat einen
   eigenen Selektor `FCACHE_SEL` (letzter GDT-Eintrag, linear 8800h) –
-  er bleibt gemeinsam. Kosten: 4 KB je Task.
+  er bleibt gemeinsam. Kosten: 4 KB je Task. Vom Nutzer auf dem P3B-F
+  bestätigt: Kopieren und CHKDSK ohne Probleme.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

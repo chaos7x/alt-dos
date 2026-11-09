@@ -113,6 +113,18 @@ static int do_format32(int quick)
         DosClose(hd);
         return 3;
     }
+    if (!flabel[0] && !autom) {         /* wie MS-DOS (und UFAT): fragen */
+        static char in[40];
+        unsigned m;
+        puts("Datentr\x84gerbezeichnung (11 Zeichen, EINGABETASTE f\x81r keine)? ");
+        m = DosRead(STDIN, in, sizeof(in) - 1);
+        if (FAPI_FAILED(m))
+            m = 0;
+        in[m] = 0;
+        for (m = 0; in[m] && in[m] != '\r' && in[m] != '\n' && m < 11; m++)
+            flabel[m] = up(in[m]);
+        flabel[m] = 0;
+    }
     /* Bootsektor */
     for (i = 0; i < 512; i++)
         b[i] = 0;
