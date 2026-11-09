@@ -483,7 +483,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - DISKCOMP, COMP, REPLACE, EXPAND (in QEMU geprüft): DISKCOMP wie
   DISKCOPY (Quelle in 64-KB-Segmente, mehrere Durchgänge, ein Laufwerk
   mit Wechsel; Seriennummer 27h–2Ah im Bootsektor wird übergangen), COMP
-  (Muster auf Datei 2 übertragen, `apply_pat`), REPLACE (/S über
+  (Muster auf Datei 2 übertragen, `apply_pat` in `apps/namepat.h`, auch
+  FC – Platzhalter vom Nutzer beim DMA-Test vermisst; in QEMU geprüft:
+  Verzeichnis gegen Verzeichnis, `*.txt` -> `*.bak`, fehlende Datei
+  wird genannt), REPLACE (/S über
   walk_tree im Ziel), EXPAND (SZDD: Kopf `SZDD 88 F0 27 33`, 'A', letztes
   Zeichen, Größe; LZSS 4 KB, Fenster mit Leerzeichen, Start 4096-16;
   getestet mit einer in Python gepackten Datei mit Rückverweisen; bei
@@ -2713,7 +2716,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   FEATURES ein (SeaBIOS tut es nicht, ohne /DMA bleibt QEMU bei PIO).
   `/NODMA`. CD-ROMs bleiben PIO. Vom Nutzer auf dem P3B-F bestätigt:
   „IDE-Busmaster an D800h, Einheit 0: Busmaster-DMA“ (Award stellt den
-  Modus ein). Offen: XCOPY + CHKDSK dort mit DMA, LBA48, UDMA-Zeiten
+  Modus ein); CD -> IDE-Platte kopiert (744 MB, 1.054 Dateien), FC /B
+  auf die 200-MB-Datei gleich, CHKDSK ohne Fehler. Offen: LBA48, UDMA-Zeiten
   selbst einstellen.
 - APM (Phase 5, Rest; in QEMU geprüft: SHUTDOWN /NOW schaltet aus, QEMU
   endet, fsck sauber; mit `APM=OFF` die alte Meldung; VESA unverändert):

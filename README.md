@@ -142,7 +142,8 @@ und PC-DOS.
   (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /Y`, Datum bleibt erhalten),
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
   ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
-  MS-DOS, `/B /C /N /nnnn`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
+  MS-DOS, `/B /C /N /nnnn`, Platzhalter wie `FC A:\*.* C:\ZIEL` oder
+  `*.TXT *.BAK`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
 - `FORMAT X: [/V[:Name]] [/Q] [/S] [/F:Größe] [/FS:FAT]` wie MS-DOS, gebaut wie OS/2:
   FORMAT startet `U<Dateisystem>.EXE /FORMAT` aus `\DOS\SYSTEM` (für FAT
   `UFAT.EXE`). Disketten (2,88 MB, 1,44 MB, 1,2 MB, 720 KB, 360 KB; `/F:`

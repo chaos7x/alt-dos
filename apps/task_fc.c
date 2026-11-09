@@ -9,15 +9,20 @@
  * Zeilen gelten als wieder synchron (Vorgabe 2), /C ohne Gross/klein,
  * /N mit Zeilennummern. /B binaer: Abweichungen als Offset und Bytes.
  * ERRORLEVEL 0 gleich, 1 verschieden, 2 Fehler. Bis 63 KB je Datei (Text).
+ * Platzhalter wie MS-DOS: Datei1 darf * und ? enthalten, Datei2 ist dann
+ * ein Verzeichnis oder ein Muster (*.BAK) – je Treffer ein Vergleich.
  */
 #include <i86.h>
 #include "fapi.h"
 #include "util.h"
+#include "namepat.h"
 
 #define MAXL 4000
 
 static char args[FAPI_ARGLEN], n1[FAPI_PATHLEN], n2[FAPI_PATHLEN], buf[XFER], b2[XFER];
-static int opt_b, opt_c, opt_n, diffs;
+static int opt_b, opt_c, opt_n, diffs, rc;
+static const char *bad;                  /* Datei, die nicht aufging    */
+static char spec1[FAPI_PATHLEN], spec2[FAPI_PATHLEN], dir1[FAPI_PATHLEN], pat1[64];
 static unsigned resync = 2;
 
 struct txt { unsigned seg, tab, n; };
@@ -37,12 +42,17 @@ static int load(const char *name, struct txt *t)
     unsigned __far *tb;
 
     h = DosOpen(name);
+    bad = name;
     if (FAPI_FAILED(h))
         return h == FAPI_ERR_INUSE ? -4 : -1;
-    t->seg = DosAllocSeg(0);
-    t->tab = DosAllocSeg(MAXL * 2);
-    if (FAPI_FAILED(t->seg) || FAPI_FAILED(t->tab))
-        return -2;
+    if (!t->seg) {                      /* einmal, bei Platzhaltern     */
+        t->seg = DosAllocSeg(0);        /* fuer jedes Dateipaar wieder  */
+        t->tab = DosAllocSeg(MAXL * 2);
+        if (FAPI_FAILED(t->seg) || FAPI_FAILED(t->tab)) {
+            DosClose(h);
+            return -2;
+        }
+    }
     d = MK_FP(t->seg, 0);
     tb = MK_FP(t->tab, 0);
     t->n = 0;
@@ -157,6 +167,7 @@ static int bin_cmp(void)
 
     h1 = DosOpen(n1);
     h2 = DosOpen(n2);
+    bad = FAPI_FAILED(h1) ? n1 : n2;
     if (FAPI_FAILED(h1) || FAPI_FAILED(h2)) {
         if (!FAPI_FAILED(h1))
             DosClose(h1);
@@ -198,10 +209,50 @@ static int bin_cmp(void)
     return 0;
 }
 
+static void fc_one(void)
+{
+    int r;
+    diffs = 0;
+    puts("Vergleichen der Dateien ");
+    puts(n1);
+    puts(" und ");
+    puts(n2);
+    puts("\r\n");
+    if (opt_b) {
+        r = bin_cmp();
+    } else {
+        r = load(n1, &A);
+        if (!r)
+            r = load(n2, &B);
+        if (r == -3) {
+            puts("FC: Datei zu gro\xE1 f\x81r den Textvergleich, /B benutzen\r\n");
+            rc = 2;
+            return;
+        }
+        if (!r)
+            text_cmp();
+    }
+    if (r) {
+        if (r == -2)
+            puts("FC: Nicht genug Arbeitsspeicher\r\n");
+        else {
+            puts("FC: ");
+            puts(bad);
+            puts(r == -4 ? " wird gerade von einem anderen Programm geschrieben\r\n" :
+                           " kann nicht ge\x94" "ffnet werden\r\n");
+        }
+        if (rc < 2) rc = 2;
+        return;
+    }
+    if (!diffs)
+        puts("FC: Keine Unterschiede gefunden\r\n");
+    if (diffs && !rc)
+        rc = 1;
+}
+
 void main(void)
 {
     char *a;
-    int r;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -218,6 +269,8 @@ void main(void)
             } else if (o == '?') {
                 puts("Vergleicht zwei Dateien.\r\n\r\n"
                      "FC [/B] [/C] [/N] [/nnnn] Datei1 Datei2\r\n\r\n"
+                     "Datei1 darf * und ? enthalten; Datei2 ist dann ein Verzeichnis\r\n"
+                     "oder ein Muster (z. B. *.BAK).\r\n\r\n"
                      "  /B  bin\x84r    /C  ohne Gro\xE1/klein    /N  Zeilennummern\r\n"
                      "  /nnnn  gleiche Zeilen bis zur Synchronisation (Vorgabe 2)\r\n");
                 return;
@@ -231,31 +284,54 @@ void main(void)
         puts("FC: Zu wenige Dateinamen angegeben\r\n");
         DosExit(2);
     }
-    puts("Vergleichen der Dateien ");
-    puts(n1);
-    puts(" und ");
-    puts(n2);
-    puts("\r\n");
-    if (opt_b) {
-        r = bin_cmp();
-    } else {
-        r = load(n1, &A);
-        if (!r)
-            r = load(n2, &B);
-        if (r == -3) {
-            puts("FC: Datei zu gro\xE1 f\x81r den Textvergleich, /B benutzen\r\n");
+    abs_path(n1, spec1);
+    abs_path(n2, spec2);
+    if (is_dir(spec1))                  /* FC DIR1 DIR2 = alle Dateien   */
+        scat(spec1, slen(spec1) > 3 ? "\\*.*" : "*.*", sizeof(spec1));
+    if (!has_wild(spec1)) {
+        scopy(n1, spec1, sizeof(n1));
+        if (is_dir(spec2))
+            join(n2, spec2, base_name(spec1), sizeof(n2));
+        else
+            scopy(n2, spec2, sizeof(n2));
+        fc_one();
+        DosExit(rc);
+    }
+    {
+        static struct fapi_dirent e;
+        unsigned k, any = 0;
+        char *b;
+        scopy(dir1, spec1, sizeof(dir1));
+        b = base_name(dir1);
+        scopy(pat1, b, sizeof(pat1));
+        *b = 0;
+        if (slen(dir1) > 3)
+            dir1[slen(dir1) - 1] = 0;
+        for (k = 0; DosFindEntry(&e, k, dir1) != FAPI_ERROR; k++) {
+            if ((e.attr & 0x18) || !match(e.name, pat1))
+                continue;
+            any = 1;
+            join(n1, dir1, e.name, sizeof(n1));
+            if (is_dir(spec2))
+                join(n2, spec2, e.name, sizeof(n2));
+            else if (has_wild(spec2)) {
+                static char nm[FAPI_PATHLEN];
+                scopy(n2, spec2, sizeof(n2));
+                b = base_name(n2);
+                apply_pat(e.name, b, nm);
+                *b = 0;
+                scat(n2, nm, sizeof(n2));
+            } else
+                scopy(n2, spec2, sizeof(n2));
+            fc_one();
+            puts("\r\n");
+        }
+        if (!any) {
+            puts("FC: Keine Dateien gefunden: ");
+            puts(spec1);
+            puts("\r\n");
             DosExit(2);
         }
-        if (!r)
-            text_cmp();
     }
-    if (r) {
-        puts(r == -2 ? "FC: Nicht genug Arbeitsspeicher\r\n" :
-             r == -4 ? "FC: Datei wird gerade von einem anderen Programm geschrieben\r\n" :
-                       "FC: Datei kann nicht ge\x94" "ffnet werden\r\n");
-        DosExit(2);
-    }
-    if (!diffs)
-        puts("FC: Keine Unterschiede gefunden\r\n");
-    DosExit(diffs ? 1 : 0);
+    DosExit(rc);
 }
