@@ -27,6 +27,9 @@ und PC-DOS.
   Daten gehen sofort auf den Datenträger, die FAT am Ende jeder Operation in
   beide Kopien; Zeitstempel aus der CMOS-Uhr. Gewechselte Disketten
   werden neu eingelesen, Schreibschutz wird erkannt
+- Parallele Plattenzugriffe (6.0, Phase 6): Sperren je Laufwerk und je
+  Treiber statt einer Kernelsperre – Kopieren auf verschiedene Laufwerke
+  läuft gleichzeitig, siehe „Treiber mit Interrupt“
 - FAT32 (6.0): Partitionen vom Typ 0Bh/0Ch werden eingehängt, gelesen
   und beschrieben, lange Namen dort immer im Windows-95-Format (VFAT);
   Sauber-Bit (FAT[1] Bit 27) und FSInfo wie Windows 95/98. CHKDSK nennt
@@ -659,11 +662,16 @@ dessen DS und schickt danach das EOI), `DH_PROCBLOCK`/`DH_PROCRUN` (Task
 schläft im Treiber bis zum Ereignis oder zur Frist, andere Tasks laufen
 weiter; die Interruptroutine weckt ihn).
 
-Treiber mit Interrupt: Während ein Task in einem Treiber schläft, hält er
-die Kernelsperre – Dateisystem, Sektor-Cache, DMA-Puffer und Laufwerke
-gehören in der Zeit ihm. Andere Programme rechnen weiter und dürfen
-Bildschirm, Tastatur, Umgebung, Konsole und Pipes benutzen; ein
-Dateizugriff wartet, bis die Sperre frei ist. `IDE.SYS` benutzt IRQ 14/15
+Treiber mit Interrupt: Während ein Task in einem Treiber auf das Gerät
+wartet, gibt er seit 6.0 die Kernelsperre ab (Phase 6): andere Tasks
+arbeiten auf anderen Laufwerken weiter – XCOPY auf die SCSI-Platte, eine
+CD-Kopie und eine DOS-Box auf der IDE-Platte laufen wirklich
+gleichzeitig, CMD bleibt daneben bedienbar. Geschützt wird je Laufwerk
+(FAT12/16 teilen sich eine Sperre, FAT32 und CDs haben je eine) und je
+Treiber; jeder Task hat eigenen DMA-Puffer, FAT-Cache und Schreibpuffer,
+und was eine Operation über einen Plattenzugriff hinweg hält, tauscht
+der Kernel bei Bedarf aus. Strg+C, der Taskmanager und SHUTDOWN warten,
+bis eine laufende Plattenoperation fertig ist. `IDE.SYS` benutzt IRQ 14/15
 (Abschalten mit `DEVICE=IDE.SYS /NOIRQ`); bleibt der Interrupt aus, obwohl
 das Gerät fertig ist, fragt der Kanal nach drei Fehltreffern wieder ab.
 Busmaster-DMA (6.0): sitzt der IDE-Controller am PCI (PIIX3/4 wie im

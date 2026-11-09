@@ -83,9 +83,16 @@ typedef unsigned long clus_t;
 /* FAT-Cache: 1 KB bei linear 8800h (eigener Selektor FCACHE_SEL) statt in
    DGROUP; gemeinsam fuer alle Tasks, anders als DMABUF */
 #define fcache   ((unsigned char __far *)MK_FP(FCACHE_SEL, 0))
-static int           fc_drive = -1;
-static unsigned long fc_sec;            /* Sektor relativ zum FAT-Anfang  */
-static unsigned char fc_dirty;
+/* Phase 6: der FAT-Cache gehoert dem Task (FCACHE_SEL wird wie DMABUF beim
+   Taskwechsel umgelegt), die Kennung steht mit darin (hinter den 1 KB) -
+   so kann ein Task in fat_load schlafen, waehrend ein anderer seine FAT
+   liest. Beim Nehmen einer Laufwerkssperre verwirft fat_op_begin ihn
+   (ein anderer Task kann die FAT inzwischen geaendert haben). */
+struct fct { int drive; unsigned long sec; unsigned char dirty; };
+#define FCT      ((struct fct __far *)MK_FP(FCACHE_SEL, 1024))
+#define fc_drive (FCT->drive)
+#define fc_sec   (FCT->sec)            /* Sektor relativ zum FAT-Anfang  */
+#define fc_dirty (FCT->dirty)
 static int           ferr;              /* erster Schreibfehler der Operation */
 
 /* geaenderte FAT-Sektoren in alle Kopien schreiben */
@@ -112,6 +119,14 @@ static int fat_flush_fat(void)
             }
         }
     return 0;
+}
+
+/* neue Laufwerkssperre (kernel.c vol_lock): eigenen FAT-Cache verwerfen */
+void __far fat_op_begin(void)
+{
+    if (fc_drive >= 0 && fc_dirty)
+        fat_flush_fat();                /* sollte nie vorkommen          */
+    fc_drive = -1;
 }
 
 /* ... und den Spurpuffer der Diskette: nach jeder Operation stimmig */
@@ -195,6 +210,8 @@ static clus_t fat_raw(int d, clus_t c)
    und jedes Neueinhaengen verwirft ihn. Tabelle in einem Kernelsegment. */
 #define SKX_N 256
 static unsigned fat_ksel(void);
+/* Laufwerkssperre (Phase 6, kernel.c vol_lock): bis zum Ende des FAPI-Aufrufs */
+#define VLOCK(d) kf_vol_lock(d)
 static clus_t skx_first;                /* Startcluster der Datei, 0 = keiner */
 static signed char skx_drive = -1;
 static unsigned char skx_shift;
@@ -2142,22 +2159,26 @@ static int vol_ok(int d)
 
 int __far ifs_open(int drive, const char *path, struct ifs_file __far *f)
 {
+    VLOCK(drive);
     return VOL_OK(drive) ? vol[drive].drv->open(drive, path, f) : -1;
 }
 
 int __far ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len)
 {
+    VLOCK(f->drive);
     return VOL_OK(f->drive) ? vol[f->drive].drv->read(f, pos, sel, off, len) : -1;
 }
 
 int __far ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
 {
+    VLOCK(drive);
     return VOL_OK(drive) ? vol[drive].drv->readdir(drive, dir, n, d) : -1;
 }
 
 int __far ifs_namepath(int drive, const char *path, char *out, int shortn)
 {
+    VLOCK(drive);
     if (VOL_OK(drive) && vol[drive].drv->namepath)
         return vol[drive].drv->namepath(drive, path, out, shortn);
     return -1;
@@ -2165,6 +2186,7 @@ int __far ifs_namepath(int drive, const char *path, char *out, int shortn)
 
 int __far ifs_isdir(int drive, const char *path)
 {
+    VLOCK(drive);
     return VOL_OK(drive) ? vol[drive].drv->isdir(drive, path) : 0;
 }
 
@@ -2211,6 +2233,7 @@ void __far ifs_shutdown(void)
 
 int __far ifs_create(int drive, const char *path, struct ifs_file __far *f)
 {
+    VLOCK(drive);
     MARK(drive);
     return HAS(drive, create) ? vol[drive].drv->create(drive, path, f) : IFS_WP;
 }
@@ -2218,6 +2241,7 @@ int __far ifs_create(int drive, const char *path, struct ifs_file __far *f)
 int __far ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len)
 {
+    VLOCK(f->drive);
     MARK(f->drive);
     return HAS(f->drive, write) ? vol[f->drive].drv->write(f, pos, sel, off, len) : IFS_WP;
 }
@@ -2228,6 +2252,7 @@ int __far ifs_setsize(struct ifs_file __far *f, unsigned long size)
     static char zero[512];
     unsigned n;
     int r;
+    VLOCK(f->drive);
     MARK(f->drive);
     if (!HAS(f->drive, write) || !(f->flags & IFS_F_WRITE))
         return IFS_WP;
@@ -2246,29 +2271,34 @@ int __far ifs_setsize(struct ifs_file __far *f, unsigned long size)
 
 int __far ifs_close(struct ifs_file __far *f)
 {
+    VLOCK(f->drive);
     return HAS(f->drive, close) ? vol[f->drive].drv->close(f) : 0;
 }
 
 int __far ifs_remove(int drive, const char *path)
 {
+    VLOCK(drive);
     MARK(drive);
     return HAS(drive, remove) ? vol[drive].drv->remove(drive, path) : IFS_WP;
 }
 
 int __far ifs_mkdir(int drive, const char *path)
 {
+    VLOCK(drive);
     MARK(drive);
     return HAS(drive, mkdir) ? vol[drive].drv->mkdir(drive, path) : IFS_WP;
 }
 
 int __far ifs_rmdir(int drive, const char *path)
 {
+    VLOCK(drive);
     MARK(drive);
     return HAS(drive, rmdir) ? vol[drive].drv->rmdir(drive, path) : IFS_WP;
 }
 
 int __far ifs_move(int drive, const char *from, const char *to)
 {
+    VLOCK(drive);
     MARK(drive);
     return HAS(drive, move) ? vol[drive].drv->move(drive, from, to) : IFS_WP;
 }
@@ -2276,12 +2306,14 @@ int __far ifs_move(int drive, const char *from, const char *to)
 int __far ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
                 unsigned date, unsigned time)
 {
+    VLOCK(d);
     MARK(d);
     return HAS(d, setinfo) ? vol[d].drv->setinfo(d, path, mask, attr, date, time) : IFS_WP;
 }
 
 int __far ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
 {
+    VLOCK(d);
     if (newlbl)
         MARK(d);
     if (!HAS(d, label)) {
@@ -2296,6 +2328,7 @@ int __far ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
 
 int __far ifs_space(int drive, unsigned long *free_bytes)
 {
+    VLOCK(drive);
     if (!VOL_OK(drive))
         return IFS_ERR;
     if (!vol[drive].drv->space) {

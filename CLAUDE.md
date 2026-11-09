@@ -2788,6 +2788,65 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Platte – jetzt mit Sperre. Neue Variablen, die eine Operation über
   einen Plattenzugriff hinweg hält, gehören in die Tabelle; gemeinsame
   Caches nicht.
+  Vom Nutzer in 86Box bestätigt (Stufe 2): Kopieren und CHKDSK ohne
+  Fehler, DOS-Box im Hintergrund.
+  Stufe 3 erledigt (in QEMU geprüft mit IDE C: FAT16, NCR D: FAT32 – auch
+  mit `throttling.bps-total=300000` gedrosselt, damit Tasks wirklich lange
+  im Treiber schlafen –, CD am IDE: XCOPY C:->D: neben C:->C:, D:->D:
+  neben C:, CD->D: (ISO-Modul) + DOS-Box (COPY über den Redirector) +
+  XCOPY vorn gleichzeitig; über Port E9h gezählt: 1.031 Abgaben der
+  Sperre im Treiber, 41-mal arbeitete ein anderer derweil; TASKMAN /K und
+  Strg+C mitten im Kopieren, SHUTDOWN mitten im Kopieren, CHKDSK /F C:
+  und COPY auf A: neben dem Kopieren auf D:; CMD bleibt bedienbar (VER,
+  DIR, CHKDSK); fsck sauber, alle Kopien gleich; 2 MB mit Box):
+  - `proc_block` gibt die Kernelsperre ab (sched-Modus 2: abgeben, aber
+    Laufwerks-/Treibersperren behalten), wenn der Auftrag in eigene Puffer
+    des Tasks geht (`may_rel` über `drv_request_rel`: dev_read, blk_write
+    ohne Cache, FLUSH, bc_wb) und der Task seine volle Ablage hat
+    (`ctx_room`); Diskette (floppy.c) und Hausarbeit (`bkl_hold`) nie.
+  - Laufwerkssperre `vol_lock(d)` (Schlüssel `vol_key`: FAT12/16 teilen
+    `VK_FAT` – der EA-Namenscache ist gemeinsam –, FAT32/Module je
+    Laufwerk): in `resolve()` und an jedem `ifs_*`-Einstieg (fat.c
+    `VLOCK`, Thunk kf_vol_lock), nicht in vol_present (der Kernel fragt
+    damit reihum alle ab). Höchstens eine je Task (vor einer anderen gibt
+    er seine ab – keine Verklemmung), frei am Ende des FAPI-Aufrufs
+    (klock_leave Tiefe 0) und bei freiwilligem Schlafen (sched-Modus 0:
+    EXEC-Warten). Neu genommen -> `fat_op_begin` verwirft den FAT-Cache.
+    DosOpenDrive/DosOpenDisk mit Sperre nehmen sie vorher (nichts mehr
+    unterwegs).
+  - Treibersperre `drv_lock(n)` je Treiber, `MOD_DL` für alle IFS-Module
+    (gemeinsames `ireq`; Wrapper um mod_*); Auftrag je Treiber nur der
+    Kopf bis `count` (`drq[NDRV][28]`, `DRQ(d)`), INIT behält `req`.
+    Reihenfolge Laufwerk -> Modul -> Treiber, gewartet wird immer ohne
+    Kernelsperre (`wait_k`, der Scheduler überspringt Wartende,
+    `lock_wait`); freigeben reicht direkt an einen Wartenden weiter
+    (`lock_waiter`, reihum) – sonst verhungerte CMD neben XCOPY.
+  - Je Task in seiner Seite (`dmab_pg`, `CTX_OFF` 4096): DMABUF 2 KB,
+    FAT-Cache 1 KB + Kennung `struct fct` (fc_drive/sec/dirty, `FCACHE_SEL`
+    in dmab_set umgelegt; vorher wechselte fat_load den gemeinsamen Cache
+    über einen Plattenzugriff hinweg), Schreibpuffer 512 Byte (`WBUF`,
+    `WBUF_OFF` 3584) für bc_wb, Kontext. GDT: CTXWIN, WBUF.
+  - Platten-Cache: bc_wb markiert den Block belegt (ref Bit 7: kein
+    Verdrängen, kein bc_reclaim), löscht das Geändert-Bit vor dem
+    Schreiben (wer derweil schreibt, setzt es neu), schreibt über WBUF;
+    bc_put prüft nach dem Verdrängen neu (`while`), von der Platte
+    Gelesenes (stream Bit 1) überschreibt nie Geändertes. bc_flush geht
+    über alle Blöcke und zählt bc_ndirty danach neu. Am Ende jedes
+    FAPI-Aufrufs und im Tasten-Leerlauf nur `bc_flush_some(4)` (Leerlauf
+    nur, wenn kein anderer mitten in einer Operation steht) – sonst schrieb
+    CMD für den Prompt sekundenlang die Daten von XCOPY weg.
+  - `in_op(t)`: hält die Kernelsperre oder hat sie mitten im Aufruf
+    abgegeben (`lock_depth`) und nicht freiwillig (`lk_quiet` – sonst galt
+    CMD beim Warten auf sein Kind als beschäftigt, Strg+C kam nie an).
+    Strg+C (do_break), Strg+Umschalt+Esc, Neustart und vertagtes Beenden
+    (`kill_req`, `kill_pending`) nur ohne laufende Operation; PROC_KILL
+    eines Tasks in einer Operation setzt kill_req. end_programs wartet,
+    bis die anderen fertig sind, dann `bkl_hold`. `box_sec` im Kontext.
+  Grenzen: zwei Laufwerke am selben Treiber (IDE-Master/-Slave, zwei
+  Partitionen) und zwei FAT12/16-Laufwerke laufen weiter nacheinander;
+  Diskette behält die Sperre; ein Task, der in einer Operation im Treiber
+  hängt, ist erst nach deren Ende beendbar. Kanäle/Geräte einzeln sperren
+  wäre der nächste Schritt (Treiber müssten wiedereintrittsfest werden).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

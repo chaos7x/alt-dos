@@ -97,6 +97,14 @@ struct task {
     unsigned long block_id;                     /* ProcBlock: Ereignis       */
     unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
     unsigned char v86;                          /* DOS-Box (v86.c)          */
+    /* Phase 6, Stufe 3: Sperren je Laufwerk/Treiber */
+    unsigned char vkey;                         /* gehaltene Laufwerkssperre + 1 */
+    unsigned char wait_k;                       /* wartet: Laufwerk + 1, 80h|Treiber */
+    unsigned char may_rel;                      /* Treiberauftrag mit eigenem DMABUF:
+                                                   ProcBlock gibt die Kernelsperre ab */
+    unsigned char kill_req;                     /* beenden, sobald die Operation fertig */
+    unsigned char lk_quiet;                     /* Sperre freiwillig abgegeben (EXEC,
+                                                   Schlafen): kein Plattenzustand offen */
 };
 
 static struct task    task[NTASK];
@@ -187,7 +195,8 @@ void gdt_build(void)
     set_desc(5, LIN(&tss_k), sizeof(struct tss386) - 1, ACC_TSS);
     set_desc(6, 0, 0, ACC_KDATA);               /* SCRATCH              */
     set_desc(7, DMABUF_LIN, DMABUF_SIZE - 1, ACC_KDATA);
-    set_desc(FCACHE_IDX, FCACHE_LIN, 1023, ACC_KDATA);  /* FAT-Cache (fat.c) */
+    set_desc(FCACHE_IDX, FCACHE_LIN, FCACHE_SIZE - 1, ACC_KDATA);  /* FAT-Cache (fat.c) */
+    ((int __far *)MK_FP(FCACHE_SEL, 1024))[0] = -1;    /* leer (fct.drive) */
     set_desc(8, 0, 0, ACC_KDATA);               /* SCRATCH2             */
     set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
@@ -310,6 +319,21 @@ void reboot_request(void)
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
 static void dmab_free(int t);
+static void bc_flush_some(unsigned max);
+static int any_in_op(void);
+static int others_in_op(void);
+static int in_op(int t);
+static void locks_task_end(int t);
+static void vol_unlock_cur(void);
+#define VK_FAT  NDRIVE
+#define NVK     (NDRIVE + 1)
+#define MOD_DL  NDRV
+static unsigned char vk_owner[NVK];     /* Task + 1, 0 = frei            */
+static unsigned char dl_owner[NDRV + 1], dl_depth[NDRV + 1];
+static unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
+void vol_lock(int d);
+static void drv_lock(int n);
+static void drv_unlock(int n);
 static void ctx_take(int t);
 static void ctx_task_end(int t);
 static pg_t dmab_pg[NTASK];            /* DMABUF je Task (Phase 6)      */
@@ -358,7 +382,17 @@ static void end_programs(void)
     /* die Sitzung, in der die Abschlussmeldung steht, bleibt stehen;
        Dateien schliessen nur mit der Kernelsperre (niemand darf mitten in
        einer Plattenoperation beendet werden) - sie bleibt bis zum Ende */
+    for (;;) {                                  /* laufende Operationen */
+        for (t = 0; t < NTASK; t++)             /* erst zu Ende kommen  */
+            if (t != current && task[t].state != T_FREE && in_op(t))
+                break;
+        if (t == NTASK)
+            break;
+        task[current].wake = 0;
+        schedule_next();
+    }
     klock_enter();
+    bkl_hold++;                                 /* ab hier keiner mehr   */
     for (t = 0; t < NTASK; t++)
         if (t != current && task[t].state != T_FREE && task[t].session != boot_session)
             task_end(t);
@@ -792,6 +826,8 @@ static int resolve(int t, const char *in, int *drive, char *out)
     if (resolve_v(t, in, drive, out) || subst_map(drive, out))
         return -1;
     join_map(drive, out);
+    if (t == current)
+        vol_lock(*drive);               /* bis zum Ende des Aufrufs      */
     return 0;
 }
 
@@ -1476,6 +1512,11 @@ static int task_create(const char *cmd, int session, int parent, int from)
     dmab_pg[t] = mem_alloc_low(dmab_np[t]);
     if (!dmab_pg[t])                            /* ohne Kontext: nur DMABUF */
         dmab_pg[t] = mem_alloc_low(dmab_np[t] = 1);
+    else {                                      /* eigener FAT-Cache: leer */
+        set_desc(CTXWIN_IDX, PG_LIN(dmab_pg[t]) + DMABUF_SIZE + 1024, 15, ACC_KDATA);
+        zero_seg(CTXWIN, 8);
+        ((int __far *)MK_FP(CTXWIN, 0))[0] = -1;
+    }
     if (task[t].v86)
         v86_start(t, session);              /* Vollbild, B800 = Puffer  */
     task[t].state   = T_READY;
@@ -1527,6 +1568,7 @@ static void task_end(int t)
         }
     std_set(t, -1);                         /* Standard-Handles freigeben */
     dmab_free(t);                           /* eigener DMABUF             */
+    locks_task_end(t);
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -1600,12 +1642,19 @@ static void fpu_task_end(int t)
    DMABUF benutzt. Ohne Speicher bleibt es beim gemeinsamen Puffer bei
    DMABUF_LIN (wie bisher; mit der einen Kernelsperre unbedenklich). */
 unsigned long dmab_phys = DMABUF_LIN;
+static unsigned long wbuf_phys;         /* Schreibpuffer des Tasks (bc_wb) */
+#define WBUF_OFF 3584                   /* hinter dem FAT-Cache          */
 static int lc_dev;
 
 static void dmab_set(int t)
 {
+    int own = t >= 0 && dmab_pg[t] && dmab_np[t] > 1;
     dmab_phys = t >= 0 && dmab_pg[t] ? PG_LIN(dmab_pg[t]) : DMABUF_LIN;
     set_desc(7, dmab_phys, DMABUF_SIZE - 1, ACC_KDATA);
+    set_desc(FCACHE_IDX, own ? dmab_phys + DMABUF_SIZE : FCACHE_LIN,  /* FAT-Cache */
+             FCACHE_SIZE - 1, ACC_KDATA);                             /* je Task  */
+    wbuf_phys = own ? dmab_phys + WBUF_OFF : 0;                       /* Schreib- */
+    set_desc(WBUF_IDX, wbuf_phys, own ? 511 : 0, ACC_KDATA);          /* puffer   */
     lc_dev = -1;                    /* "Sektor steht in DMABUF" gilt je Task */
 }
 
@@ -1643,7 +1692,7 @@ static void do_break(void)
             break;
     if (t == NTASK)
         return;
-    if (klock >= 0) {                           /* Plattenoperation laeuft: */
+    if (klock >= 0 || any_in_op()) {            /* Plattenoperation laeuft: */
         kbd_break_req = 1;                      /* spaeter nochmal          */
         return;
     }
@@ -1660,10 +1709,14 @@ static void do_break(void)
         klock = current;
         klock_depth = 1;
         ctx_take(-2);                           /* Kernel, nicht der Task */
+        bkl_hold++;
     }
     task_end(t);
-    if (current >= 0)
+    if (current >= 0) {
+        bkl_hold--;
         klock = -1;
+        vol_unlock_cur();
+    }
 }
 
 /* Beginn der laufenden Zeitscheibe. Kooperativ heisst bei AT-DOS: Ein
@@ -1718,13 +1771,164 @@ static void klock_leave(void)
 {
     if (current < 0 || klock != current)
         return;
-    if (--klock_depth == 0)
+    if (--klock_depth == 0) {
         klock = -1;
+        vol_unlock_cur();               /* Operation fertig              */
+    }
 }
 
 static void schedule_next(void)
 {
     sched(0);
+}
+
+/* ---- Sperren je Laufwerk und Treiber (Phase 6, Stufe 3) ------------------
+   Die Kernelsperre (klock) bleibt, wird aber wie der Big Kernel Lock von
+   Linux 2.0 abgegeben, waehrend ein Task in einem Treiber auf das Geraet
+   wartet (ProcBlock, nur bei Auftraegen in seinen eigenen DMABUF). Was
+   dabei weiterlaufen darf, schuetzen zwei weitere Sperren:
+   - je Laufwerk (vk_owner): von resolve() bzw. dem ersten IFS-Aufruf bis
+     zum Ende des FAPI-Aufrufs; ein Task haelt hoechstens eine (vor einer
+     anderen gibt er seine ab - keine Verklemmung). FAT12/16 teilen sich
+     eine (VK_FAT: der Namenscache von EA DATA. SF ist gemeinsam), FAT32
+     und nachgeladene Dateisysteme haben je eine.
+   - je Treiber (dl_owner), [NDRV] fuer die IFS-Module (gemeinsames ireq):
+     vom Fuellen des Auftrags bis zur Antwort.
+   Reihenfolge Laufwerk -> Modul -> Treiber; gewartet wird immer ohne die
+   Kernelsperre. Hausarbeit des Schedulers (Strg+C, Taskmanager, Neustart,
+   kill_req) nur, wenn niemand mitten in einer Operation steht. */
+
+static int in_op(int t)                 /* mitten in einer Plattenoperation? */
+{
+    return klock == t || (task[t].lock_depth && !task[t].lk_quiet);
+}
+
+static int others_in_op(void)
+{
+    int t;
+    for (t = 0; t < NTASK; t++)
+        if (t != current && task[t].state != T_FREE && in_op(t))
+            return 1;
+    return 0;
+}
+
+static int any_in_op(void)
+{
+    int t;
+    for (t = 0; t < NTASK; t++)
+        if (task[t].state != T_FREE && in_op(t))
+            return 1;
+    return 0;
+}
+
+static int vol_key(int d)
+{
+    return vol[d].drv == &fat_driver && vol[d].fat16 != 2 ? VK_FAT : d;
+}
+
+/* wartet jemand auf die Sperre w (wait_k-Kodierung)? -> Task, sonst -1.
+   Reihum ab dem Freigebenden: wer freigibt und sofort wieder will, kommt
+   sonst immer zuerst (CMD verhungerte neben XCOPY an der Treibersperre) */
+static int lock_waiter(unsigned w)
+{
+    int n, t;
+    for (n = 1; n <= NTASK; n++) {
+        t = (current + n) % NTASK;
+        if (task[t].state != T_FREE && task[t].wait_k == w)
+            return t;
+    }
+    return -1;
+}
+
+static void vol_unlock_cur(void)
+{
+    struct task *tk;
+    int w;
+    if (current < 0)
+        return;
+    tk = &task[current];
+    if (tk->vkey && vk_owner[tk->vkey - 1] == current + 1) {
+        w = lock_waiter(tk->vkey);      /* direkt weiterreichen          */
+        vk_owner[tk->vkey - 1] = (unsigned char)(w >= 0 ? w + 1 : 0);
+    }
+    tk->vkey = 0;
+}
+
+void vol_lock(int d)
+{
+    struct task *tk;
+    int k;
+    if (current < 0 || klock != current || d < 0 || d >= NDRIVE)
+        return;
+    tk = &task[current];
+    k = vol_key(d);
+    if (tk->vkey == k + 1)
+        return;
+    vol_unlock_cur();
+    while (vk_owner[k] && vk_owner[k] != current + 1) {
+        tk->wait_k = (unsigned char)(k + 1);
+        tk->wake = 0;
+        sched(bkl_hold ? 1 : 2);
+    }
+    tk->wait_k = 0;
+    vk_owner[k] = (unsigned char)(current + 1);
+    tk->vkey = (unsigned char)(k + 1);
+    fat_op_begin();                     /* FAT-Cache des Tasks verwerfen */
+}
+
+static void drv_lock(int n)
+{
+    struct task *tk;
+    if (current < 0)
+        return;
+    tk = &task[current];
+    if (dl_owner[n] == current + 1) {
+        dl_depth[n]++;
+        return;
+    }
+    while (dl_owner[n] && dl_owner[n] != current + 1) {
+        tk->wait_k = (unsigned char)(0x80 | n);
+        tk->wake = 0;
+        sched(klock == current && !bkl_hold ? 2 : 1);
+    }
+    tk->wait_k = 0;
+    dl_owner[n] = (unsigned char)(current + 1);
+    dl_depth[n] = 1;
+}
+
+static void drv_unlock(int n)
+{
+    int w;
+    if (current >= 0 && dl_owner[n] == current + 1 && !--dl_depth[n]) {
+        w = lock_waiter(0x80 | n);      /* direkt weiterreichen          */
+        dl_owner[n] = (unsigned char)(w >= 0 ? w + 1 : 0);
+        if (w >= 0)
+            dl_depth[n] = 1;
+    }
+}
+
+static void locks_task_end(int t)       /* Sicherheitsnetz              */
+{
+    int i;
+    for (i = 0; i < NVK; i++)
+        if (vk_owner[i] == t + 1)
+            vk_owner[i] = 0;
+    for (i = 0; i <= NDRV; i++)
+        if (dl_owner[i] == t + 1)
+            dl_owner[i] = 0;
+    task[t].vkey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
+    task[t].lock_depth = 0;
+}
+
+/* kann t jetzt laufen? (wartet auf eine Sperre) */
+static int lock_wait(int t)
+{
+    unsigned k = task[t].wait_k;
+    if (!k)
+        return 0;
+    if (k & 0x80)
+        return dl_owner[k & 0x7F] && dl_owner[k & 0x7F] != t + 1;
+    return vk_owner[k - 1] && vk_owner[k - 1] != t + 1;
 }
 
 /* Takt-Interrupt hat ein Programm in Ring 3 unterbrochen (start.asm irq0,
@@ -1767,8 +1971,11 @@ static void taskman_key(void)
     klock = current;
     klock_depth = 1;
     ctx_take(-2);
+    bkl_hold++;
     t = task_create(cmd, ns, -1, -1);
+    bkl_hold--;
     klock = -1;
+    vol_unlock_cur();
     if (t < 0) {
         vio_close(ns);
         return;
@@ -1777,7 +1984,28 @@ static void taskman_key(void)
     vio_focus(ns);
 }
 
-/* keep = 1: Sperre behalten (ProcBlock) */
+/* Taskmanager-Beenden, das warten musste (Task stand mitten in einer
+   Operation): wie do_break aus dem Scheduler */
+static void kill_pending(void)
+{
+    int t;
+    for (t = 0; t < NTASK; t++)
+        if (task[t].state != T_FREE && task[t].kill_req) {
+            klock = current;
+            klock_depth = 1;
+            ctx_take(-2);
+            bkl_hold++;
+            task[t].rc = 255;
+            task_end(t);
+            bkl_hold--;
+            klock = -1;
+            vol_unlock_cur();
+        }
+}
+
+/* keep = 0: Kernelsperre abgeben (freiwillig, auch die Laufwerkssperre),
+   1: behalten, 2: abgeben, Laufwerks-/Treibersperren behalten (Warten im
+   Treiber oder auf eine Sperre) */
 static void sched(int keep)
 {
     int n, t, any;
@@ -1786,10 +2014,13 @@ static void sched(int keep)
     struct task *tk;
 
     resched_req = 0;
-    if (!keep && current >= 0 && klock == current) {
+    if (keep != 1 && current >= 0 && klock == current) {
         task[current].want_lock = 1;    /* abgeben, spaeter zurueck      */
         task[current].lock_depth = (unsigned char)klock_depth;
+        task[current].lk_quiet = (unsigned char)!keep;
         klock = -1;
+        if (!keep)
+            vol_unlock_cur();
     }
     for (;;) {
         run_flag = 0;
@@ -1801,12 +2032,14 @@ static void sched(int keep)
             kbd_break_req = 0;
             do_break();
         }
-        if (kbd_tm_req && klock < 0 && current >= 0) {
+        if (kbd_tm_req && klock < 0 && current >= 0 && !any_in_op()) {
             kbd_tm_req = 0;             /* Strg+Umschalt+Esc: Taskmanager */
             taskman_key();
         }
-        if (reboot_count && klock < 0)  /* nicht mitten in einer Plattenoperation */
-            shutdown();
+        if (reboot_count && klock < 0 && !any_in_op())  /* nicht mitten in */
+            shutdown();                 /* einer Plattenoperation         */
+        if (klock < 0 && current >= 0 && !any_in_op())
+            kill_pending();             /* Taskmanager: vertagtes Beenden */
         now = get_ticks();
         fd_tick();                      /* Diskettenmotoren aus          */
         v86_poll();                     /* DOS-Boxen: Bild geaendert?    */
@@ -1831,6 +2064,8 @@ static void sched(int keep)
                 continue;
             if (tk->want_lock && klock >= 0 && klock != t)
                 continue;               /* wartet auf die Kernelsperre   */
+            if (lock_wait(t))
+                continue;               /* ... auf Laufwerk/Treiber      */
             if (t != current)
                 switch_to(t);
             /* hier laeuft der gewaehlte Task weiter */
@@ -1840,6 +2075,7 @@ static void sched(int keep)
                 tk->want_lock = 0;
                 klock = current;
                 klock_depth = tk->lock_depth ? tk->lock_depth : 1;
+                tk->lock_depth = 0;
             }
             slice_start = get_ticks();  /* (wieder) dran: neue Zeitscheibe */
             return;
@@ -1887,7 +2123,7 @@ unsigned proc_block(unsigned long id, unsigned timeout)
     tk->block_until = until;
     tk->block_rc = 0;
     tk->state = T_BLOCK;
-    sched(1);
+    sched(tk->may_rel && !bkl_hold && klock == current ? 2 : 1);
     enable_ints();
     return tk->block_rc;
 }
@@ -1930,8 +2166,9 @@ static void sleep_ticks(unsigned n)
 {
     if (klock < 0 || klock == current) {
         klock_enter();                  /* Leerlauf: verzoegerte Daten   */
-        if (bc_due())                   /* schreiben, wenn Frist um;     */
-            bc_flush();
+        if (bc_due() && !others_in_op())    /* schreiben, wenn Frist um - */
+            bc_flush_some(4);           /* nur ein Stueck: wer auf Tasten
+                                           wartet, soll sie bald sehen  */
         bc_regrow();                    /* abgegebene Stuecke zurueck    */
         klock_leave();
     }
@@ -2504,8 +2741,10 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     else {
         klock_enter();
         r = fapi_inner(fn, usel, a1, a2, a3);
-        if (bc_due())
-            bc_flush();                 /* Frist um: verzoegerte Daten   */
+        if (bc_due())                   /* Frist um: verzoegerte Daten,  */
+            bc_flush_some(4);           /* je Aufruf ein Stueck (Phase 6:
+                                           sonst schreibt ein Task, der nur
+                                           den Prompt will, fuer alle)   */
         fd_sync();                      /* Spurpuffer der Diskette: nach */
         klock_leave();                  /* jedem Aufruf auf der Scheibe  */
     }
@@ -2902,6 +3141,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (proc_prot(t))
             return FAPI_ERR_DENIED;
+        if (in_op(t)) {                         /* mitten in einer Platten- */
+            task[t].kill_req = 1;               /* operation: danach       */
+            return 0;
+        }
         task[t].rc = 255;                       /* wie Strg+C            */
         task_end(t);                            /* Kernelsperre haben wir */
         return 0;
@@ -3131,6 +3374,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
             return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
         if (a2 & DRV_OPEN_LOCK) {
+            vol_lock(a1);                       /* nichts mehr unterwegs */
             if (blk[vol[a1].blk].bsize != 512)
                 return FAPI_ERR_WP;
             for (k = 1; k < NFILE; k++)         /* offene Dateien dort?  */
@@ -3202,8 +3446,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].pipe = (unsigned char)(a2 & DRV_OPEN_LOCK);
         if (a2 & DRV_OPEN_LOCK)
             for (d = 0; d < NDRIVE; d++)
-                if (vol_present(d) && vol[d].blk == dev)
+                if (vol_present(d) && vol[d].blk == dev) {
+                    vol_lock(d);                /* nichts mehr unterwegs */
                     vol[d].locked = 1;
+                }
         return k + HBASE;
     }
 
@@ -3653,11 +3899,12 @@ static const struct ctxblk kern_ctx[] = {
     { &fi_de, sizeof(fi_de) }, { &fi_u, sizeof(fi_u) },
     { dc_p, sizeof(dc_p) }, { dc_nm, sizeof(dc_nm) }, { dc_ar, sizeof(dc_ar) },
     { dc_cn, sizeof(dc_cn) }, { &dc_d, sizeof(dc_d) },
-    { scr_b, sizeof(scr_b) }, { scr_l, sizeof(scr_l) }
+    { scr_b, sizeof(scr_b) }, { scr_l, sizeof(scr_l) }, { box_sec, sizeof(box_sec) }
 };
 static const struct ctxblk *const ctx_tab[3] = { kern_ctx, fat_ctx, redir_ctx };
 static unsigned ctx_cnt[3] = { sizeof(kern_ctx) / sizeof(kern_ctx[0]) };
 static unsigned ctx_len;                /* Summe aller Bloecke           */
+#define CTX_OFF 4096                    /* DMABUF 2 KB, FAT-Cache, WBUF, Kontext */
 static int ctx_owner = -1;              /* wessen Stand in den Variablen steht */
 static unsigned char ctx_saved[NTASK];
 
@@ -3671,14 +3918,14 @@ static unsigned ctx_pages(void)
             for (i = 0; i < ctx_cnt[m]; i++)
                 ctx_len += ctx_tab[m][i].n;
     }
-    return (unsigned)PAGES((unsigned long)DMABUF_SIZE + ctx_len);
+    return (unsigned)PAGES((unsigned long)CTX_OFF + ctx_len);
 }
 
 /* save = 1: Variablen -> Ablage von t, sonst zurueck */
 static void ctx_copy(int t, int save)
 {
     unsigned m, i, off = 0;
-    set_desc(CTXWIN_IDX, PG_LIN(dmab_pg[t]) + DMABUF_SIZE, ctx_len - 1, ACC_KDATA);
+    set_desc(CTXWIN_IDX, PG_LIN(dmab_pg[t]) + CTX_OFF, ctx_len - 1, ACC_KDATA);
     for (m = 0; m < 3; m++)
         for (i = 0; i < ctx_cnt[m]; i++) {
             const struct ctxblk *b = &ctx_tab[m][i];
@@ -3735,7 +3982,7 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
     r = fapi_inner(fn, usel, a1, a2, a3);
     fapi_kcall = 0;
     if (bc_due())
-        bc_flush();
+        bc_flush_some(4);
     fd_sync();
     klock_leave();
     if (ifs_notready && r >= FAPI_ERR_FIRST)
@@ -3955,9 +4202,29 @@ static void sys_info(struct fapi_sysinfo __far *si)
     }
 }
 
-static void drv_request(int d)
+/* Auftrag je Treiber (Phase 6): nur der Kopf bis 'count' - READ/WRITE/
+   FLUSH brauchen nicht mehr, die INIT-Felder bleiben in 'req' */
+#define DRQ_SIZE 28
+static unsigned char drq[NDRV][DRQ_SIZE];
+#define DRQ(d) ((struct drv_req *)drq[d])
+
+static void drv_request(int d)          /* Treibersperre wird gehalten   */
 {
-    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
+    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)DRQ(d));
+}
+
+/* Auftrag in den eigenen DMABUF: waehrend der Treiber wartet, duerfen
+   andere Tasks die Kernelsperre haben (proc_block) */
+static int ctx_room(int t);
+static void drv_request_rel(int d)
+{
+    if (current < 0) {
+        drv_request(d);
+        return;
+    }
+    task[current].may_rel = (unsigned char)ctx_room(current);
+    drv_request(d);
+    task[current].may_rel = 0;
 }
 
 /* zuletzt gelesener oder geschriebener Sektor, steht noch in DMABUF
@@ -4095,7 +4362,7 @@ static pg_t bc_reclaim(unsigned units)
         if (!bc_unit[c])
             continue;
         for (k = 0; k < BC_CHB; k++)
-            if (BCE(c * BC_CHB + k)->dirty)
+            if (BCE(c * BC_CHB + k)->dirty || (BCE(c * BC_CHB + k)->ref & 0x80))
                 break;
         if (k < BC_CHB)
             continue;                   /* noch Ungeschriebenes drin     */
@@ -4180,38 +4447,61 @@ static void bc_unlink(unsigned i)
 
 static int bc_writeback(int dev);
 
-/* verzoegerte Sektoren eines Blocks auf die Platte, direkt aus dem Cache */
+/* verzoegerte Sektoren eines Blocks auf die Platte. Der Block ist dabei
+   "belegt" (ref Bit 7): nicht verdraengen, nicht freigeben, nicht ein
+   zweites Mal schreiben. Mit eigener Ablage (Phase 6) geht jeder Sektor
+   ueber den Schreibpuffer des Tasks (WBUF, 512 Byte), und der Treiber darf
+   die Kernelsperre abgeben; das Geaendert-Bit wird vorher geloescht - wer
+   waehrenddessen in den Block schreibt, setzt es neu, und es wird spaeter
+   geschrieben. Ohne eigene Ablage direkt aus dem Cache-Fenster (bc_wsel ist
+   gemeinsam, also mit Sperre). */
 static void bc_wb(unsigned i)
 {
     struct bce __far *e = BCE(i);
-    struct blkdev *b = &blk[e->dev];
-    unsigned s, tries;
+    int dev = e->dev, own = current >= 0 && ctx_room(current);
+    struct blkdev *b = &blk[dev];
+    struct drv_req *r = DRQ(b->drv);
+    unsigned s, tries, bit;
 
+    e->ref |= 0x80;
+    drv_lock(b->drv);
     for (s = 0; s < 4; s++) {
-        if (!(e->dirty & (1 << s)))
+        bit = 1 << s;
+        if (!(e->dirty & bit))
             continue;
+        e->dirty &= ~bit;
         for (tries = 0; tries < 2; tries++) {
             bc_win(i);
-            req.cmd = DRV_WRITE;
-            req.unit = b->unit;
-            req.count = 1;
-            req.status = DRV_ERR_IO;
-            req.lba = e->lba + s;
-            req.buf_phys = BC_LIN(i) + (s << 9);
-            req.buf_sel = bc_wsel;
-            req.buf_off = s << 9;
-            drv_request(b->drv);
-            if (req.status == DRV_OK)
+            r->cmd = DRV_WRITE;
+            r->unit = b->unit;
+            r->count = 1;
+            r->status = DRV_ERR_IO;
+            r->lba = e->lba + s;
+            if (own) {
+                far_copy(WBUF, 0, bc_wsel, s << 9, 512);
+                r->buf_phys = wbuf_phys;
+                r->buf_sel = WBUF;
+                r->buf_off = 0;
+                drv_request_rel(b->drv);
+            } else {
+                r->buf_phys = BC_LIN(i) + (s << 9);
+                r->buf_sel = bc_wsel;
+                r->buf_off = s << 9;
+                drv_request(b->drv);
+            }
+            if (r->status == DRV_OK)
                 break;
         }
-        if (req.status != DRV_OK) {
+        if (r->status != DRV_OK) {
             vio_kputs(boot_session, "\n\xFE Cache: Schreibfehler, Daten verloren!\n");
-            e->valid &= ~(1 << s);
+            if (!(e->dirty & bit))
+                e->valid &= ~bit;
         }
-        e->dirty &= ~(1 << s);
-        blk_dirty[e->dev] = 1;
+        blk_dirty[dev] = 1;
     }
-    if (bc_ndirty)
+    drv_unlock(b->drv);
+    e->ref &= 0x7F;
+    if (!e->dirty && bc_ndirty)
         bc_ndirty--;
 }
 
@@ -4230,6 +4520,8 @@ static unsigned bc_victim(void)
             return i;
         if (e->dev < 0)
             continue;                   /* Stueck fehlt                  */
+        if (e->ref & 0x80)
+            continue;                   /* wird gerade geschrieben       */
         if (e->ref) {
             e->ref = 0;
             continue;
@@ -4242,7 +4534,10 @@ static unsigned bc_victim(void)
     return dirty_c;                     /* BC_END: kein Platz            */
 }
 
-/* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) -> Block */
+/* Sektor aus DMABUF+off in den Cache legen (oder dort erneuern) -> Block.
+   stream Bit 0: vorausgelesen (ohne ref-Bit), Bit 1: von der Platte - beide
+   ueberschreiben nie verzoegert Geschriebenes (Phase 6: waehrend ein Task
+   liest, darf ein anderer schreiben) */
 static unsigned bc_put(int dev, unsigned long lba, unsigned off, int stream)
 {
     unsigned long blba = lba & ~3UL;
@@ -4251,28 +4546,32 @@ static unsigned bc_put(int dev, unsigned long lba, unsigned off, int stream)
     if (!bc_n || blk[dev].bsize != 512)
         return BC_END;
     i = bc_lookup(dev, blba);
-    if (i == BC_END) {
-        i = bc_victim();
-        if (i == BC_END)
+    while (i == BC_END) {
+        unsigned v = bc_victim();
+        if (v == BC_END)
             return BC_END;
-        e = BCE(i);
-        if (e->dev >= 0) {
-            if (e->dirty)
-                bc_wb(i);
-            bc_unlink(i);
+        e = BCE(v);
+        if (e->dev >= 0 && e->dirty) {
+            bc_wb(v);                   /* kann schlafen: danach alles   */
+            i = bc_lookup(dev, blba);   /* neu pruefen                   */
+            continue;
         }
+        if (e->dev >= 0)
+            bc_unlink(v);
+        i = v;
         e->lba = blba;
         e->dev = (signed char)dev;
         e->valid = e->dirty = e->ref = 0;
         h = bc_hash(dev, blba);
         e->next = BCH(h);
         BCH(h) = i;
+        break;
     }
     e = BCE(i);
-    if (stream && (e->dirty & (1 << s)))
+    if ((stream & 3) && (e->dirty & (1 << s)))
         return i;                       /* Cache ist neuer als die Platte */
-    if (!stream)
-        e->ref = 1;
+    if (!(stream & 1))
+        e->ref |= 1;
     bc_win(i);
     far_copy(bc_wsel, s << 9, DMABUF, off, 512);
     e->valid |= 1 << s;
@@ -4291,10 +4590,32 @@ static void bc_drop_dev(int dev)        /* Diskette gewechselt           */
 static void bc_flush(void)
 {
     unsigned i;
-    for (i = 0; i < bc_n && bc_ndirty; i++)
-        if (BCE(i)->dev >= 0 && BCE(i)->dirty)
+    unsigned n = 0;
+    for (i = 0; i < bc_n; i++)
+        if (BCE(i)->dev >= 0 && BCE(i)->dirty && !(BCE(i)->ref & 0x80))
             bc_wb(i);
-    bc_ndirty = 0;
+    for (i = 0; i < bc_n; i++)          /* waehrenddessen neu Geschriebenes */
+        if (BCE(i)->dev >= 0 && (BCE(i)->dirty || (BCE(i)->ref & 0x80)))
+            n++;
+    bc_ndirty = n;
+}
+
+/* im Leerlauf: hoechstens max Bloecke schreiben (reihum ab bc_fpos) */
+static unsigned bc_fpos;
+static void bc_flush_some(unsigned max)
+{
+    unsigned n;
+    for (n = 0; n < bc_n && max; n++) {
+        unsigned i = bc_fpos;
+        if (++bc_fpos >= bc_n)
+            bc_fpos = 0;
+        if (BCE(i)->dev >= 0 && BCE(i)->dirty && !(BCE(i)->ref & 0x80)) {
+            bc_wb(i);
+            max--;
+        }
+    }
+    if (max)                            /* nichts mehr gefunden          */
+        bc_ndirty = 0;
 }
 
 /* Frist abgelaufen? Dann schreiben (mit Kernelsperre gerufen) */
@@ -4349,20 +4670,26 @@ void blk_invalidate(void)
 static int dev_read(int dev, unsigned long lba, unsigned n)
 {
     struct blkdev *b = &blk[dev];
+    struct drv_req *r;
+    int rc;
 
     if (b->drv < 0)
         return fd_read(b->unit, (unsigned)lba) ? -1 : 0;   /* immer einer */
-    req.cmd = DRV_READ;
-    req.unit = b->unit;
-    req.count = (unsigned char)n;
-    req.status = DRV_ERR_IO;
-    req.lba = lba;
-    req.buf_phys = dmab_phys;
-    req.buf_sel = DMABUF;
-    req.buf_off = 0;
-    drv_request(b->drv);
-    blk_nm[dev] = req.status == DRV_ERR_NOTREADY;   /* CD: keine drin */
-    return req.status == DRV_OK ? 0 : -1;
+    drv_lock(b->drv);
+    r = DRQ(b->drv);
+    r->cmd = DRV_READ;
+    r->unit = b->unit;
+    r->count = (unsigned char)n;
+    r->status = DRV_ERR_IO;
+    r->lba = lba;
+    r->buf_phys = dmab_phys;            /* nach drv_lock: unser DMABUF   */
+    r->buf_sel = DMABUF;
+    r->buf_off = 0;
+    drv_request_rel(b->drv);
+    blk_nm[dev] = r->status == DRV_ERR_NOTREADY;    /* CD: keine drin */
+    rc = r->status == DRV_OK ? 0 : -1;
+    drv_unlock(b->drv);
+    return rc;
 }
 
 /* Sektor lba nach DMABUF (Offset 0). Fehlt er im Cache, liest es bis zu n
@@ -4386,7 +4713,7 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
         bc_win(i);
         far_copy(DMABUF, 0, bc_wsel, s << 9, 512);
         if (n == 1)
-            BCE(i)->ref = 1;
+            BCE(i)->ref |= 1;
         bc_hits++;
         lc_dev = dev;
         lc_lba = lba;
@@ -4409,7 +4736,7 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
             return -1;
         n = 1;
     }
-    bc_put(dev, lba, 0, n > 1);
+    bc_put(dev, lba, 0, (n > 1) | 2);   /* 2: von der Platte gelesen     */
     for (k = 1; k < n; k++)
         bc_put(dev, lba + k, k << 9, 1);
     if (bc_n && b->bsize == 512 && (i = bc_lookup(dev, lba & ~3UL)) != BC_END &&
@@ -4457,16 +4784,19 @@ int blk_write(int dev, unsigned long lba)
     if (b->drv < 0) {
         rc = fd_write(b->unit, (unsigned)lba);
     } else {
-        req.cmd = DRV_WRITE;
-        req.unit = b->unit;
-        req.count = 1;
-        req.status = DRV_ERR_IO;
-        req.lba = lba;
-        req.buf_phys = dmab_phys;
-        req.buf_sel = DMABUF;
-        req.buf_off = 0;
-        drv_request(b->drv);
-        rc = req.status == DRV_OK ? 0 : req.status == DRV_ERR_WP ? -2 : -1;
+        struct drv_req *r = DRQ(b->drv);
+        drv_lock(b->drv);
+        r->cmd = DRV_WRITE;
+        r->unit = b->unit;
+        r->count = 1;
+        r->status = DRV_ERR_IO;
+        r->lba = lba;
+        r->buf_phys = dmab_phys;
+        r->buf_sel = DMABUF;
+        r->buf_off = 0;
+        drv_request_rel(b->drv);
+        rc = r->status == DRV_OK ? 0 : r->status == DRV_ERR_WP ? -2 : -1;
+        drv_unlock(b->drv);
         if (!rc)
             blk_dirty[dev] = 1;
     }
@@ -4500,9 +4830,11 @@ void blk_flush(void)
         for (; dev < nblk; dev++)       /* je Treiber einmal          */
             if (blk[dev].drv == d)
                 blk_dirty[dev] = 0;
-        req.cmd = DRV_FLUSH;
-        req.status = DRV_ERR_IO;
-        drv_request(d);
+        drv_lock(d);
+        DRQ(d)->cmd = DRV_FLUSH;
+        DRQ(d)->status = DRV_ERR_IO;
+        drv_request_rel(d);
+        drv_unlock(d);
         dev = 0;                        /* von vorn: naechster Treiber */
     }
 }
@@ -5126,7 +5458,7 @@ static int load_driver(const char *line, int is_ifs)
     for (k = 0; k < DRV_MAXUNITS; k++)
         req.bsize[k] = 0;
     scopy(req.args, args, sizeof(req.args));
-    drv_request(d);
+    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);   /* INIT */
 
     if (req.status != DRV_OK || (req.units == 0 && is_ifs)) {
         /* nichts gefunden: Treiber wieder entfernen (DRV_OK mit 0
@@ -5312,7 +5644,7 @@ static int mod_call(int drive, unsigned char cmd)
     return ireq.status ? -1 : 0;
 }
 
-static int __far mod_mount(int drive)
+static int mod_mount_(int drive)
 {
     blk_invalidate();                   /* CD koennte gewechselt sein  */
     if (mod_call(drive, IFSM_MOUNT) == 0)
@@ -5322,7 +5654,7 @@ static int __far mod_mount(int drive)
     return -1;
 }
 
-static int __far mod_open(int drive, const char *path, struct ifs_file __far *f)
+static int mod_open_(int drive, const char *path, struct ifs_file __far *f)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     if (mod_mount(drive) || mod_call(drive, IFSM_OPEN))
@@ -5333,7 +5665,7 @@ static int __far mod_open(int drive, const char *path, struct ifs_file __far *f)
     return 0;
 }
 
-static int __far mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+static int mod_read_(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     far_copy(KDATA, (unsigned)&ireq.f, FP_SEG(f), FP_OFF(f), sizeof(*f));
@@ -5347,7 +5679,7 @@ static int __far mod_read(struct ifs_file __far *f, unsigned long pos, unsigned 
     return ireq.result;
 }
 
-static int __far mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
+static int mod_readdir_(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
 {
     scopy(ireq.path, dir, IFS_PATHLEN);
     ireq.n = (unsigned short)n;
@@ -5357,13 +5689,13 @@ static int __far mod_readdir(int drive, const char *dir, unsigned n, struct ifs_
     return 0;
 }
 
-static int __far mod_isdir(int drive, const char *path)
+static int mod_isdir_(int drive, const char *path)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     return mod_mount(drive) == 0 && mod_call(drive, IFSM_ISDIR) == 0;
 }
 
-static int __far mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
+static int mod_label_(int drive, char *lbl, unsigned long *serial, const char *newlbl)
 {
     if (newlbl)
         return IFS_WP;
@@ -5374,7 +5706,7 @@ static int __far mod_label(int drive, char *lbl, unsigned long *serial, const ch
     return 0;
 }
 
-static int __far mod_namepath(int drive, const char *path, char *out, int shortn)
+static int mod_namepath_(int drive, const char *path, char *out, int shortn)
 {
     scopy(ireq.path, path, IFS_PATHLEN);
     ireq.n = (unsigned short)shortn;
@@ -5382,6 +5714,70 @@ static int __far mod_namepath(int drive, const char *path, char *out, int shortn
         return -1;
     scopy(out, ireq.path, IFS_PATHLEN);
     return 0;
+}
+
+static int __far mod_open(int drive, const char *path, struct ifs_file __far *f)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_open_(drive, path, f);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+                    unsigned off, unsigned len)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_read_(f, pos, sel, off, len);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_readdir_(drive, dir, n, de);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_isdir(int drive, const char *path)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_isdir_(drive, path);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_label_(drive, lbl, serial, newlbl);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_namepath(int drive, const char *path, char *out, int shortn)
+{
+    int r;
+    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
+    r = mod_namepath_(drive, path, out, shortn);
+    drv_unlock(MOD_DL);
+    return r;
+}
+
+static int __far mod_mount(int drive)
+{
+    int r;
+    drv_lock(MOD_DL);
+    r = mod_mount_(drive);
+    drv_unlock(MOD_DL);
+    return r;
 }
 
 struct ifs_driver mod_driver = {

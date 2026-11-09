@@ -44,12 +44,16 @@
 #define FCACHE_SEL  (FCACHE_IDX * 8)
 #define CTXWIN_IDX  (KCODE3_IDX + 2) /* Ablage des Kontexts je Task (Phase 6) */
 #define CTXWIN      (CTXWIN_IDX * 8)
-#define NGDT        (KCODE3_IDX + 3)
+#define WBUF_IDX    (KCODE3_IDX + 3) /* Schreibpuffer je Task (bc_wb, Phase 6) */
+#define WBUF        (WBUF_IDX * 8)
+#define NGDT        (KCODE3_IDX + 4)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
 #define FCACHE_LIN  (DMABUF_LIN + DMABUF_SIZE)  /* 1 KB FAT-Cache (fat.c)  */
+#define FCACHE_SIZE (1024 + 16)     /* + Kennung (fat.c struct fct)        */
+void __far fat_op_begin(void);
 /* Phase 6: DMABUF gehoert dem laufenden Task - jeder Task hat eine eigene
    Seite unter 16 MB, switch_to legt den Deskriptor um. dmab_phys = ihre
    physische Adresse (fuer Treiber/DMA); vor dem Start der Tasks und ohne
@@ -187,6 +191,7 @@ struct blkdev {
 };
 extern struct blkdev blk[NBLK];
 extern int nblk;
+void vol_lock(int d);                       /* Phase 6: Laufwerkssperre */
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
 int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */
 int  blk_write(int dev, unsigned long lba); /* DMABUF ->, -2 = schreibgesch. */
