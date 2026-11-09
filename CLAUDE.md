@@ -2613,8 +2613,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   „ARPL E7h“ -> `mou_ret`. Lehre: FreeDOS legt INT 33h auf ein bloßes
   IRET – `mou_off` (INT E0h 00h, Programmstart) setzt den Vektor dann
   auf den Stummel zurück und gibt die Maus frei; v86_park ebenso.
+  Vom Nutzer in 86Box (386) bestätigt: MSD von MS-DOS zeigt Treiber
+  Microsoft 8.05, PS/2, IRQ 12, 3 Tasten; „Mouse Hardware: Not
+  Detected“ (MSD prüft die Hardware selbst – nur Anzeige).
   Offen: Zeiger in Grafikmodi (RAWGFX), Rückruf im DPMI-PM, 15h–17h
-  (Zustand sichern) nur Größe 0.
+  (Zustand sichern) nur Größe 0, 24h meldet immer PS/2.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
