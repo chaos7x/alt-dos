@@ -329,6 +329,21 @@ Win32s), nicht vorziehen, sondern nachfragen.
   von der FAT32-Partition klappt. fsck merkt
   nach SHUTDOWN „Free cluster summary uninitialized“ an – FSInfo bleibt
   FFFFFFFFh, wenn der Kernel nicht gezählt hat (erlaubt).
+  Sprungindex (Anlass: DOTT-CD-Fassung ohne Sprache – die 200-MB-Datei
+  MONSTER.SOU wird kreuz und quer gelesen, jeder Sprung lief die FAT-
+  Kette von vorn bzw. von der letzten Stelle aus durch; in QEMU auf
+  FAT32 mit 512-Byte-Clustern 12 Sprünge 26 Takte, in 86Box ein
+  Vielfaches): fat.c `fat_read` nimmt den nächstliegenden Startpunkt aus
+  letzter Stelle (cache_clus) oder `SKX` – für die zuletzt so gelesene
+  Datei (`skx_drive`/`skx_first`) bis zu 256 Merkpunkte (Cluster Nr.
+  i << skx_shift), beim Vorlaufen gesammelt (`skx_note`). Jede FAT-
+  Änderung (fat_set) und dir_cache_reset verwirft ihn. Tabelle hinter
+  dem Namenspuffer im Segment `fat_ksel()` (EA_CSIZE + 1 KB) – die 12
+  GDT-Plätze für Kernelsegmente waren voll, ein eigenes kseg_alloc
+  scheiterte still. Geprüft mit SK.COM (12 Stellen einer 190-MB-Datei
+  mit bekanntem Inhalt, Box über den Redirector): richtig, 1. Lauf 14
+  Takte (Index aufbauen), danach 0; XCOPY + CHKDSK + fsck sauber. Ob
+  DOTT damit spricht, nur beim Nutzer prüfbar.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das

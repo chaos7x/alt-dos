@@ -188,6 +188,37 @@ static clus_t fat_raw(int d, clus_t c)
     return val;
 }
 
+/* Sprungindex (Anlass: DOTT liest Sprache kreuz und quer aus der 200-MB-
+   Datei MONSTER.SOU - jeder Sprung zurueck lief die FAT-Kette von vorn
+   durch). Fuer die zuletzt so gelesene Datei Merkpunkte: Cluster Nr.
+   i << skx_shift, beim Vorlaufen eingesammelt. Jede FAT-Aenderung (fat_set)
+   und jedes Neueinhaengen verwirft ihn. Tabelle in einem Kernelsegment. */
+#define SKX_N 256
+static unsigned fat_ksel(void);
+static clus_t skx_first;                /* Startcluster der Datei, 0 = keiner */
+static signed char skx_drive = -1;
+static unsigned char skx_shift;
+static unsigned skx_n;                  /* gueltige Merkpunkte (von vorn)  */
+#define SKX_OFF 16384U                  /* hinter dem Namenspuffer (EA_CSIZE) */
+#define SKX(i) (((clus_t __far *)MK_FP(fat_ksel(), SKX_OFF))[i])
+
+static int skx_mine(int d, struct ifs_file __far *f)
+{
+    return skx_first && skx_drive == d && skx_first == f->first;
+}
+
+/* beim Vorlaufen: Cluster c beginnt bei Byte cpos */
+static void skx_note(int d, struct ifs_file __far *f, clus_t c, unsigned long cpos,
+                     unsigned sh)
+{
+    unsigned long i;
+    if (!skx_mine(d, f))
+        return;
+    i = cpos >> sh;
+    if ((i & ((1UL << skx_shift) - 1)) == 0 && (i >> skx_shift) == skx_n && skx_n < SKX_N)
+        SKX(skx_n++) = c;
+}
+
 static clus_t next_cluster(int d, clus_t c)
 {
     clus_t val = fat_raw(d, c);
@@ -208,6 +239,7 @@ static void fat_set(int d, clus_t c, clus_t val)
         else if (old != 0 && val == 0)
             v->nfree++;
     }
+    skx_first = 0;                      /* Kette kann sich aendern      */
     fat_pos(v, c, &sec, &off);
     if (fat_load(d, sec)) {
         if (!ferr)
@@ -418,6 +450,7 @@ static void ea_forget(int d);
 static void dir_cache_reset(void)
 {
     int d;
+    skx_first = 0;
     lc_drive = -1;
     for (d = 0; d < NDRIVE; d++)        /* EA-Datei/Namen neu lesen       */
         ea_forget(d);
@@ -817,7 +850,7 @@ static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned 
 {
     int d = f->drive;
     struct volume *v = &vol[d];
-    unsigned csz = (unsigned)v->spc * 512, so, b, n, ra, done = 0;
+    unsigned csz = (unsigned)v->spc * 512, so, b, n, ra, done = 0, sh;
     unsigned long cpos;
     clus_t c;
 
@@ -826,6 +859,8 @@ static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned 
     if (f->size - pos < len)
         len = (unsigned)(f->size - pos);
 
+    for (sh = 9; (1U << (sh - 9)) < v->spc; sh++)
+        ;
     if (f->cache_clus && pos >= f->cache_pos) {
         c = f->cache_clus;                      /* weiter, wo wir waren */
         cpos = f->cache_pos;
@@ -833,11 +868,33 @@ static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned 
         c = f->first;
         cpos = 0;
     }
+    if ((pos - cpos) >> sh > 64 && valid(v, f->first)) {   /* weit: Sprungindex */
+        if (!skx_mine(d, f) && fat_ksel()) {
+            skx_drive = (signed char)d;
+            skx_first = f->first;
+            for (skx_shift = 0; (f->size >> sh) >> skx_shift >= SKX_N; skx_shift++)
+                ;
+            SKX(0) = f->first;
+            skx_n = 1;
+        }
+        if (skx_mine(d, f)) {
+            unsigned long k = (pos >> sh) >> skx_shift, kp;
+            if (k >= skx_n)
+                k = skx_n - 1;
+            kp = (k << skx_shift) << sh;
+            if (kp > cpos) {                    /* naeher dran als bisher */
+                c = SKX((unsigned)k);
+                cpos = kp;
+            }
+        }
+    }
     while (pos - cpos >= csz) {                 /* zum Cluster vorlaufen */
         if (!valid(v, c))
             return -1;
         c = next_cluster(d, c);
         cpos += csz;
+        if (valid(v, c))
+            skx_note(d, f, c, cpos, sh);
     }
     while (done < len) {
         if (!valid(v, c))
@@ -858,6 +915,8 @@ static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned 
         if (pos - cpos >= csz) {
             c = next_cluster(d, c);
             cpos += csz;
+            if (valid(v, c))
+                skx_note(d, f, c, cpos, sh);
         }
     }
     return done;
@@ -1448,6 +1507,15 @@ static struct ifs_file ea_f;            /* EA DATA. SF von ea_drv         */
 static int ea_drv = -1;
 static const char ea_n83[11] = { 'E', 'A', ' ', 'D', 'A', 'T', 'A', ' ', 'S', 'F', ' ' };
 static unsigned ea_csel, ea_cused;
+
+/* ein Kernelsegment fuer fat.c: Namenspuffer (EA_CSIZE) + Sprungindex
+   (die GDT-Plaetze fuer Kernelsegmente sind knapp) */
+static unsigned fat_ksel(void)
+{
+    if (!ea_csel)
+        ea_csel = kseg_alloc(EA_CSIZE + SKX_N * 4UL);
+    return ea_csel;
+}
 static clus_t ea_cdc;
 static int ea_cdrv = -1;
 static unsigned char ea_rec[EA_HDR + IFS_NAMELEN + 32];
@@ -1521,7 +1589,7 @@ static void ea_load(int d, clus_t dc)
     ea_cdrv = d;
     ea_cdc = dc;
     ea_cused = 0;
-    if (!ea_csel && !(ea_csel = kseg_alloc(EA_CSIZE)))
+    if (!fat_ksel())
         return;
     if (ea_open(d, 0))
         return;                         /* keine EA-Datei: keine Namen    */
