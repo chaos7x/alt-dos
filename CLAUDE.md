@@ -2680,6 +2680,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Falle mou_cb(f, t, 1) ruft. In QEMU geprüft, auch mit testweise
   abgeschaltetem Weg über v86_exc (nur Takt): Klick auf „Windows…“
   öffnet das Fenster; seriell und PS/2.
+  Vom Nutzer auf dem P3B-F bestätigt: Klicks und Alt in MSD 2.11 gehen.
 - Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
   geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
   beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO
