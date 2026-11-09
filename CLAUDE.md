@@ -2711,8 +2711,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Wort 63 Bits 8–10 oder Wort 88 Bits 8–14 bei Wort 53 Bit 2) – das macht
   das BIOS (Award auf dem P3B-F); `/DMA` stellt sonst MWDMA 2 per SET
   FEATURES ein (SeaBIOS tut es nicht, ohne /DMA bleibt QEMU bei PIO).
-  `/NODMA`. CD-ROMs bleiben PIO. Offen: LBA48, UDMA-Zeiten selbst
-  einstellen, Bestätigung auf dem P3B-F.
+  `/NODMA`. CD-ROMs bleiben PIO. Vom Nutzer auf dem P3B-F bestätigt:
+  „IDE-Busmaster an D800h, Einheit 0: Busmaster-DMA“ (Award stellt den
+  Modus ein). Offen: XCOPY + CHKDSK dort mit DMA, LBA48, UDMA-Zeiten
+  selbst einstellen.
 - APM (Phase 5, Rest; in QEMU geprüft: SHUTDOWN /NOW schaltet aus, QEMU
   endet, fsck sauber; mit `APM=OFF` die alte Meldung; VESA unverändert):
   Ausschalten über die Real-Mode-Schnittstelle des APM-BIOS wie POWER.EXE
@@ -2723,6 +2725,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Version 1.2/1.1, 5308h an, 5307h BX = 1 CX = 3; kehrt nur bei Fehler
   zurück. system_down ruft es nach allem Schreiben, nicht bei Neustart.
   CONFIG.SYS `APM=OFF` (`apm_none`). SeaBIOS schaltet dabei per ACPI ab.
+  Vom Nutzer auf dem P3B-F in 86Box bestätigt: SHUTDOWN schaltet aus
+  (das 86Box-Fenster schließt sich).
   Offen: Leerlauf über APM (CPU Idle 5305h), Anzeige in MSD.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
