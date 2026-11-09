@@ -262,7 +262,8 @@ static void detail(unsigned k)
         apn(v, n & 0xFF);
         line("Betriebssystem:", "AT-DOS (alternative Zeitlinie)");
         line("FAPI-Version:", v);
-        line("Betriebsart:", "16-Bit Protected Mode, kooperatives Multitasking");
+        line("Betriebsart:", n >= 0x0600 ? "16-Bit Protected Mode, pr\x84" "emptiv" :
+                             "16-Bit Protected Mode, kooperativ");
         if (!FAPI_FAILED(DosGetEnv("COMSPEC", v, sizeof(v))))
             line("COMSPEC:", v);
         if (!FAPI_FAILED(DosGetEnv("PATH", v, sizeof(v))))

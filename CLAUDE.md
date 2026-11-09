@@ -2618,6 +2618,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Detected“ (MSD prüft die Hardware selbst – nur Anzeige).
   Offen: Zeiger in Grafikmodi (RAWGFX), Rückruf im DPMI-PM, 15h–17h
   (Zustand sichern) nur Größe 0, 24h meldet immer PS/2.
+  Bei Gelegenheit (Wunsch des Nutzers): 24h Typ/IRQ nach der echten Maus
+  (MOUSE.SYS kennt PS/2/seriell/Bus) und MSD von AT-DOS aufhübschen –
+  Betriebssystem-Fenster: OK-Knopf sitzt auf dem Rahmen, Cursorblock
+  bleibt im Fenster stehen (bei PATH), lange Werte laufen über den
+  Rand; „kooperativ“ stand dort noch (behoben: präemptiv ab 6.0).
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse
