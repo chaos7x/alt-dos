@@ -186,7 +186,8 @@ und PC-DOS.
   DOS-Boxen (Sitzung, Zustand, Größe, Befehlszeile), Entf bzw. `/K`
   beendet einen Task samt allem, was er gestartet hat – z. B. eine
   hängende DOS-Box in einer anderen Sitzung; geschützt sind TASKMAN, seine
-  Aufrufer und die Shell der ersten Sitzung
+  Aufrufer und die Shell der ersten Sitzung. **Strg+Umschalt+Esc** (wie
+  Windows NT) holt ihn von überall nach vorn, auch über eine hängende Box
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
 - `JOIN [X: [Y:]Pfad] | X: /D` wie MS-DOS 3.1–5.0: hängt ein Laufwerk in ein

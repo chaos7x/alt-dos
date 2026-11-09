@@ -2689,6 +2689,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Shell der ersten Sitzung nicht. `TASKMAN.EXE` (apps/task_taskman.c):
   Vollbild mit Liste (jede Sekunde neu), Entf mit Rückfrage, `/L`, `/K n|
   Name` (auch ohne Endung); beendet Kinder zuerst (`kill_tree`).
+  Vom Nutzer auf dem P3B-F bestätigt. Taste (Wunsch des Nutzers):
+  Strg+Umschalt+Esc wie Windows NT (Strg+Esc wäre OS/2/Win 3.1, der
+  Nutzer verwechselt es mit Alt+Esc) – kbd.c setzt `kbd_tm_req` (geht wie
+  Alt+Esc nie an die Box), sched ruft `taskman_key` wie do_break, wenn
+  die Kernelsperre frei ist: läuft TASKMAN, dessen Sitzung nach vorn,
+  sonst X:\DOS\TASKMAN.EXE vom Startlaufwerk in neuer Sitzung. In QEMU
+  mit HANG.COM (`CLI; JMP $` in der Box vorn) geprüft: Taste, Box
+  beendet, CMD macht weiter.
 - Testplan DOS 6.0 (bis Phase 2; ab Phase 3 siehe „Testmaschinen 6.0“
   oben): Messmaschine 386SX mit 2 MB in 86Box, sonst gleiche
   Ausstattung wie der SCAT (ET4000, Adaptec, IDE, SB16), damit Ergebnisse

@@ -1661,9 +1661,47 @@ static void schedule_next(void)
 void preempt(void)
 {
     if (current >= 0 &&
-        (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
+        (kbd_break_req || kbd_switch_req || kbd_tm_req || reboot_count || resched_req ||
          get_ticks() - slice_start >= SLICE))
         schedule_next();
+}
+
+static int tm_name(const char *n)
+{
+    const char *m = "TASKMAN.EXE";
+    while (*m && (*n == *m || *n == *m + 32))
+        n++, m++;
+    return !*m && !*n;
+}
+
+/* Strg+Umschalt+Esc (aus dem Scheduler, wie do_break): Taskmanager nach vorn -
+   laeuft schon einer, dessen Sitzung, sonst X:\DOS\TASKMAN.EXE vom
+   Startlaufwerk in einer neuen Sitzung. Laden braucht die Kernelsperre
+   (sched ruft nur, wenn sie frei ist). So kommt man auch an eine
+   haengende DOS-Box im Vordergrund heran. */
+static void taskman_key(void)
+{
+    static char cmd[] = "C:\\DOS\\TASKMAN.EXE";
+    int t, ns;
+    for (t = 0; t < NTASK; t++)
+        if (task[t].state != T_FREE && tm_name(task[t].name)) {
+            vio_focus(task[t].session);
+            return;
+        }
+    ns = vio_open("");
+    if (ns < 0)
+        return;
+    cmd[0] = (char)('A' + sys_drive);
+    klock = current;
+    klock_depth = 1;
+    t = task_create(cmd, ns, -1, -1);
+    klock = -1;
+    if (t < 0) {
+        vio_close(ns);
+        return;
+    }
+    vio_title(ns, task[t].name);
+    vio_focus(ns);
 }
 
 /* keep = 1: Sperre behalten (ProcBlock) */
@@ -1689,6 +1727,10 @@ static void sched(int keep)
         if (kbd_break_req) {
             kbd_break_req = 0;
             do_break();
+        }
+        if (kbd_tm_req && klock < 0 && current >= 0) {
+            kbd_tm_req = 0;             /* Strg+Umschalt+Esc: Taskmanager */
+            taskman_key();
         }
         if (reboot_count && klock < 0)  /* nicht mitten in einer Plattenoperation */
             shutdown();
@@ -2395,7 +2437,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     }
     if (ifs_notready && r >= FAPI_ERR_FIRST)
         r = FAPI_ERR_NOTREADY;          /* Diskettenlaufwerk leer        */
-    if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
+    if (kbd_break_req || kbd_switch_req || kbd_tm_req || reboot_count || resched_req ||
         get_ticks() - slice_start >= SLICE) {
         task[current].wake = 0;
         schedule_next();                /* Zeitscheibe um: andere zuerst */
