@@ -578,7 +578,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   MEM zeigt „verfügbar“ und die Spanne. Geprüft: 16 MB -> Cache wächst
   auf 7.920 KB; 4 MB -> 1.776 KB, zwei Boxen per START (1.656 KB) ->
   Cache 1.344 KB, frei 8 KB, verfügbar 1.096 KB, XCOPY \DOS dabei,
-  SHUTDOWN, fsck sauber, Inhalte gleich. Offen: Seiten statt 16-KB-
+  SHUTDOWN, fsck sauber, Inhalte gleich. Vom Nutzer in 86Box (386,
+  4 MB) bestätigt: Cache wächst auf 1.856 KB, mit zwei Boxen (1.800 KB)
+  schrumpft er auf 1.312 KB, frei 12 KB, verfügbar 1.068 KB.
+  Offen: Seiten statt 16-KB-
   Stücke, mehr als 8 MB (Tabellen über ein Kernelsegment hinaus).
   Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
