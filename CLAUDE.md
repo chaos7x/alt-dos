@@ -168,7 +168,12 @@ INT E0h auf F000:00B1 setzt: EXIT geht. Dabei wurde der Stummel größer als
 seinen Stapel sogar bei 400h hinein -> #GP, Neustart); neue Aufteilung
 der 8 KB: Zustand 0, Stummel 80h–5FFh (rb_common prüft `RB_STUBMAX`),
 Text 600h, IVT/BIOS-Daten 1600h, Vektoren C0h–FFh 1B00h, GDT für 87h
-1C00h, Stapel bis 2000h (auch der 386-Weg). Erstes Codesegment 64.969 Byte
+1C00h, Stapel bis 2000h (auch der 386-Weg). Danach auf dem SCAT (Build 240.14):
+RBTEST wechselt mit Alt+Esc hinaus, dann steht AT-DOS. Vermutung: das
+AT-BIOS schaltet zu Beginn von INT 9 die Tastatur am 8042 ab (ADh) und am
+Ende wieder ein (AEh); Alt+Esc springt aber mitten aus INT 15h/4Fh
+hinaus -> Tastatur bleibt aus. kf_rb_hw schickt nach jeder Rückkehr AEh
+(SeaBIOS macht ADh/AEh nicht, QEMU zeigte es daher nicht). Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.

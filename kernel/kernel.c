@@ -3372,6 +3372,15 @@ void __far kf_rb_hw(unsigned long lin)
         set_desc(SCRATCH2 >> 3, lin, 0xFFFF, ACC_KCODE);
     }
     rb_enter();
+    /* Alt+Esc kommt mitten aus dem Tastatur-Interrupt des BIOS (INT 15h/
+       4Fh): das AT-BIOS hat die Tastatur am 8042 abgeschaltet (ADh) und
+       schaltet sie erst am Ende wieder ein - das holen wir nach */
+    {
+        unsigned n = 0;
+        while ((inb(0x64) & 2) && --n)
+            ;
+        outb(0x64, 0xAE);
+    }
     pic_pit_init();
     a20_on();
     if (fpu_ok) {
