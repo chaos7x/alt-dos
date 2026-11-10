@@ -39,7 +39,10 @@
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
                                        DX = Verzeichnis (0 = aktuelles)  */
 #define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 Bytes), 0 = eingebaut */
-#define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
+#define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung;
+                                       CX >= KBL_BYTES: die ganze aktive Belegung
+                                       im .KBL-Format (5.1, fuer die Box) */
+#define KBL_BYTES           278     /* "KBL" 01h, Kennung, 3 x 90 Zeichen */
 #define KBL_SIZE_BYTES      278
 #define FAPI_CHDIR          0x14    /* BX = Pfad                        */
 #define FAPI_QCURDIR        0x15    /* BX = Puffer -> "C:\DOS"; 130 Bytes, mit

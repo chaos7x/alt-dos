@@ -169,7 +169,8 @@ und PC-DOS.
   zurück in die Sitzungen und wieder hinein, EXIT oder Strg+Alt+Entf
   beendet sie. Die AT-DOS-Laufwerke ab C: erscheinen in der Box als
   Netzlaufwerke (RBOX erledigt die Zugriffe); Platten direkt und der
-  erweiterte Speicher bleiben für die Box unsichtbar (Tastatur noch US).
+  erweiterte Speicher bleiben für die Box unsichtbar. Die Box beginnt im
+  aktuellen Verzeichnis und hat dieselbe Tastaturbelegung wie AT-DOS (KEYB).
   Rückweg auf dem 386 per PE löschen, auf dem 286 per Prozessor-Reset;
   `RBOX \DEMO\RBTEST.COM` testet ohne DOS
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
@@ -358,7 +359,7 @@ selbst nur 8.3 kennt.
 | 16 | DosClose        | BX = Handle                     |
 | 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
 | 18 | KbdSetLayout    | BX = `.KBL`-Daten (278 Bytes), 0 = eingebaute |
-| 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung |
+| 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung; mit CX >= 278 die ganze aktive Belegung im .KBL-Format (für die Box von 5.1) |
 | 20 | DosChDir        | BX = Pfad                       |
 | 21 | DosQCurDir      | BX = Puffer (130 Bytes) → z. B. `C:\DOS` |
 | 22 | DosSelectDisk   | BX = Laufwerk (0 = A:)          |

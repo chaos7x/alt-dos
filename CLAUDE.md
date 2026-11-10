@@ -220,7 +220,20 @@ oder RBOX in rb_free endet) vio_rehw + kbd_flush. Tasten, die AT-DOS
 während eines Dienstes bekommt, schreibt `rb_keys` in den BIOS-Puffer
 der Box (41Ah/41Ch, Grenzen 480h/482h; Format wie kbd_get). Start-
 verzeichnis: INT E0h 14h liefert das aktuelle Verzeichnis von RBOX
-(8.3, nur ab C:), RBSHELL wechselt vor dem Start von FreeCOM dorthin. Erstes Codesegment 64.969 Byte
+(8.3, nur ab C:), RBSHELL wechselt vor dem Start von FreeCOM dorthin.
+Tastatur in der Box wie AT-DOS (Wunsch des Nutzers: „wie AT-DOS 6 das
+KEYB übernehmen“ – in 6.0 bedient der Kernel INT 16h der Box aus kbd.c;
+in 5.1 steht AT-DOS, solange die Box vorn ist, also gleiche Belegung statt
+gleichem Treiber; in QEMU geprüft: y/z, ü, Umschalt- und AltGr-Zeichen
+(\ | ~ [), Alt+Esc und EXIT weiter): FAPI 13h KbdGetLayout mit CX >=
+`KBL_BYTES` (278) liefert die ganze aktive Belegung (KEYB GR/US/GB),
+RBOX gibt die drei Ebenen per INT E0h 15h an RBSHELL. RBSHELL hängt sich
+in INT 15h/4Fh (vor den Stummel): Zeichentasten legt es selbst als
+Zeichen | Scancode in den BIOS-Puffer und meldet CF = 0, Regeln wie
+kbd.c (Umschalt, Feststelltaste für Buchstaben und Umlaute, Strg+Buch-
+stabe nach der Belegung, AltGr aus E0 38 selbst gemerkt – das AT-BIOS
+hält die rechte Alt-Taste für Alt); Umschalt-/Strg-/Alt-, Funktions-
+und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben beim BIOS. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.

@@ -12,7 +12,8 @@
 ; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis); AH=11h SDA
 ; ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke; AH=14h
 ; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI (leer bei
-; A:/B:) - FreeCOM beginnt dort.
+; A:/B:) - FreeCOM beginnt dort; AH=15h Tastaturbelegung von AT-DOS
+; (3 x 90 Zeichen) nach ES:DI -> AX = 0.
 cpu 8086
 org 0x100
 
@@ -22,6 +23,7 @@ start:
         mov     ah, 0x4A
         int     0x21
         call    redir_install
+        call    keyb_install
         mov     ax, cs
         mov     es, ax                          ; EXEC: ES:BX = Parameterblock
         mov     di, cdbuf                       ; Laufwerk und Verzeichnis,
@@ -122,6 +124,154 @@ int2f:  cmp     ah, 0x11
         retf    2                       ; CF von RBOX zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+
+; ---- Tastaturbelegung wie AT-DOS (kernel/kbd.c) --------------------------
+; RBOX liefert die aktive Belegung (KEYB GR/US/GB). Der Haken sitzt im
+; Tastaturabfang des BIOS (INT 15h/4Fh, AL = Scancode): Zeichentasten
+; legt er selbst mit dem Zeichen der Belegung in den BIOS-Puffer und
+; meldet CF = 0 (das BIOS uebergeht die Taste). Umschalt-, Strg-, Alt-,
+; Funktions- und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben
+; beim BIOS; Alt+Esc und Strg+Alt+Entf gehen weiter an den Stummel.
+; AltGr (E0 38) merkt sich der Haken selbst - das AT-BIOS haelt die rechte
+; Alt-Taste fuer Alt.
+keyb_install:
+        push    cs
+        pop     es
+        mov     di, kb_norm
+        mov     ah, 0x15
+        int     0xE0
+        test    ax, ax
+        jnz     .no                     ; keine Belegung: BIOS (US)
+        mov     ax, 0x3515
+        int     0x21
+        mov     [old15], bx
+        mov     [old15+2], es
+        mov     dx, int15
+        mov     ax, 0x2515
+        int     0x21
+.no:    ret
+
+int15:  cmp     ah, 0x4F
+        je      .kb
+        jmp     far [cs:old15]
+.kb:    push    ax
+        push    bx
+        push    dx
+        push    ds
+        push    cs
+        pop     ds
+        cmp     al, 0xE0
+        jne     .ne0
+        mov     byte [e0], 1
+        jmp     .out
+.ne0:   cmp     byte [e0], 0
+        je      .noe0
+        mov     byte [e0], 0            ; erweiterte Taste: nur AltGr merken
+        cmp     al, 0x38
+        jne     .e0r
+        mov     byte [altgr], 1
+        jmp     .out
+.e0r:   cmp     al, 0xB8
+        jne     .out
+        mov     byte [altgr], 0
+        jmp     .out
+.noe0:  test    al, 0x80                ; Loslassen: BIOS
+        jnz     .out
+        cmp     al, 0x5A
+        jae     .out
+        mov     bl, al
+        xor     bh, bh                  ; BX = Scancode
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     ah, [0x417]             ; AH = Umschaltzustand des BIOS
+        pop     ds
+        cmp     byte [altgr], 0
+        je      .noag
+        mov     al, [kb_altg + bx]
+        test    al, al
+        jnz     .put
+        jmp     .eat                    ; AltGr ohne Zeichen: nichts
+.noag:  test    ah, 8                   ; Alt+Taste: BIOS (Scancode)
+        jnz     .out
+        mov     al, [kb_norm + bx]
+        test    al, al
+        jz      .out
+        mov     dl, al                  ; DL = Grundzeichen
+        test    ah, 4                   ; Strg+Buchstabe: 01h-1Ah
+        jz      .noct
+        cmp     dl, 'a'
+        jb      .out
+        cmp     dl, 'z'
+        ja      .out
+        sub     dl, 'a' - 1
+        mov     al, dl
+        jmp     .put
+.noct:  cmp     bl, 0x0F                ; Umschalt+Tab: BIOS (0F00h)
+        jne     .nt
+        test    ah, 3
+        jnz     .out
+.nt:    test    ah, 3
+        jz      .ns
+        mov     al, [kb_shft + bx]
+.ns:    test    ah, 0x40                ; Feststelltaste: nur Buchstaben
+        jz      .chk
+        cmp     dl, 'a'
+        jb      .um
+        cmp     dl, 'z'
+        jbe     .tog
+.um:    cmp     dl, 0x84                ; ae oe ue
+        je      .tog
+        cmp     dl, 0x94
+        je      .tog
+        cmp     dl, 0x81
+        jne     .chk
+.tog:   mov     al, [kb_shft + bx]
+        test    ah, 3
+        jz      .chk
+        mov     al, dl
+.chk:   test    al, al
+        jz      .out
+.put:   mov     ah, bl                  ; AX = Zeichen | Scancode << 8
+        push    si
+        push    di
+        push    es
+        xor     si, si
+        mov     es, si
+        mov     si, [es:0x41C]
+        mov     di, si
+        add     di, 2
+        cmp     di, [es:0x482]
+        jb      .w
+        mov     di, [es:0x480]
+.w:     cmp     di, [es:0x41A]
+        je      .full                   ; Puffer voll
+        mov     [es:0x400 + si], ax
+        mov     [es:0x41C], di
+.full:  pop     es
+        pop     di
+        pop     si
+.eat:   pop     ds
+        pop     dx
+        pop     bx
+        pop     ax
+        push    bp                      ; CF = 0: das BIOS uebergeht sie
+        mov     bp, sp
+        and     byte [bp + 6], 0xFE
+        pop     bp
+        iret
+.out:   pop     ds
+        pop     dx
+        pop     bx
+        pop     ax
+        jmp     far [cs:old15]
+
+e0:     db      0
+altgr:  db      0
+old15:  dd      0
+kb_norm: times  90 db 0                 ; von RBOX (INT E0h 15h)
+kb_shft: times  90 db 0
+kb_altg: times  90 db 0
 
 cdbuf:  times   130 db 0
 dmask:  dd      0

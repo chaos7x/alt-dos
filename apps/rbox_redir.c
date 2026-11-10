@@ -14,7 +14,9 @@
  * Kernel sie.
  *
  * Weitere INT-E0h-Dienste: 11h SDA ist DS:SI, 12h -> DX:AX Laufwerke,
- * 14h aktuelles Verzeichnis von RBOX (8.3) nach ES:DI, leer bei A:/B:.
+ * 14h aktuelles Verzeichnis von RBOX (8.3) nach ES:DI, leer bei A:/B:,
+ * 15h aktive Tastaturbelegung von AT-DOS (270 Byte: ohne Umschalt, mit
+ * Umschalt, mit AltGr, je Scancode 00h-59h) nach ES:DI -> AX = 0.
  *
  * Daten des DOS: SDA (INT 21h 5D06h, Aufbau wie MS-DOS 4+): DTA 0Ch,
  * Dateiname 1 9Eh, Dateiname 2 11Eh, Suchzustand 19Eh (21 Byte),
@@ -568,6 +570,17 @@ static void box_call(void)
         if (FAILED(DosQCurDir(cd)) || up(cd[0]) < 'C' || slen(cd) > 127)
             cd[0] = 0;                          /* A:/B: hat die Box selbst */
         poke(lin(rg.es, rg.di), cd, slen(cd) + 1);
+        break;
+    }
+    case 0x15: {                                /* Tastaturbelegung von   */
+        static unsigned char kb[KBL_BYTES];     /* AT-DOS (3 x 90 Zeichen) */
+        if (FAILED(fapi_call(FAPI_KBDGETLAYOUT, (unsigned)kb, KBL_BYTES, 0)) ||
+            kb[0] != 'K') {
+            rg.ax = 0xFFFF;                     /* alter Kernel: BIOS (US) */
+            break;
+        }
+        poke(lin(rg.es, rg.di), kb + 8, KBL_BYTES - 8);
+        rg.ax = 0;
         break;
     }
     default:

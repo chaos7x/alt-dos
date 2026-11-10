@@ -3127,9 +3127,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return kbd_set_layout(usel, a1) ? FAPI_ERROR : 0;
 
     case FAPI_KBDGETLAYOUT:
-        if (!user_ok(usel, a1, 4, 1))
+        k = a2 >= KBL_BYTES ? KBL_BYTES : 4;    /* CX: ganze Tabelle (5.1) */
+        if (!user_ok(usel, a1, k, 1))
             return FAPI_ERROR;
-        far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id(), 4);
+        far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id() - (k == 4 ? 0 : 4), k);
         return 0;
 
     case FAPI_GETENV: {
