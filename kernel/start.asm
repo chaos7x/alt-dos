@@ -1104,7 +1104,7 @@ rb_enter_:
         mov     ds, ax
         mov     es, ax
         mov     ss, ax
-        mov     sp, 0x400
+        mov     sp, 0x2000
         jmp     SCRATCH2:(rbs_386 - rbs_code + 0x80)
 
 ; Rueckweg: CS = KCODE, sonst noch Real-Mode-Reste
@@ -1151,8 +1151,9 @@ code_end:
 ; Spur, 54 Koepfe, 56 Abbild linear (32 Bit), 60 Sektoren im Abbild,
 ; 62 alter INT 13h, 66 alter INT 15h, 70 Laufwerkstyp (INT 13h/08h),
 ; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9).
-; Stummel ab 80h, Bildschirmtext (80x25) ab 400h, IVT+BDA-Kopie ab 1400h
-; (rbox.c), GDT fuer INT 15h/87h ab 1A00h, Stapel bis 2000h.
+; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
+; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
+; Stapel bis 2000h.
 segment KTEXT2
 %define RBO(x) ((x) - rbs_code + 0x80)
 rbs_code:
@@ -1162,6 +1163,7 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     ds, ax
         mov     ss, ax
         mov     sp, 0x2000                  ; Stapel hinter der GDT
+        call    rbs_ivrest              ; IVT 300h-3FFh: BIOS-Stapel beim Reset
         mov     al, [28]
         out     0x21, al
         mov     al, [29]
@@ -1172,7 +1174,7 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         push    es
         mov     ax, 0xB800
         mov     es, ax
-        mov     si, 0x400
+        mov     si, 0x600
         xor     di, di
         mov     cx, 2000
         cld
@@ -1340,7 +1342,7 @@ rbs_int13:
         shr     dx, cl
         add     ax, [56]
         adc     dx, [58]
-        mov     di, 0x1A00
+        mov     di, 0x1C00
         mov     [di + 18], ax
         mov     [di + 20], dl
         ; Ziel: ES:BX linear
@@ -1363,9 +1365,13 @@ rbs_int13:
         mov     ax, cs
         mov     es, ax
         mov     si, di
-        mov     ah, 0x87
-        pushf
+        call    rbs_ivsave              ; der 286 kehrt per Reset zurueck,
+        mov     ah, 0x87                ; das BIOS legt seinen Stapel dabei
+        pushf                           ; nach 0030:0100 - mitten in die IVT
         call    far [66]                ; altes INT 15h
+        pushf
+        call    rbs_ivrest
+        popf
         pop     ax
         jc      .rderr
         mov     bx, bp
@@ -1505,16 +1511,62 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         mov     ax, 0xB800              ; Bildschirmtext sichern
         mov     ds, ax
         xor     si, si
-        mov     di, 0x400
+        mov     di, 0x600
         mov     cx, 2000
         cld
         rep     movsw
         mov     ax, cs
         mov     ds, ax
+        call    rbs_ivsave
         lgdt    [32]
         mov     ax, 1
         lmsw    ax
         jmp     far [38]
+
+; IVT 300h-3FFh (Vektoren C0h-FFh, darunter INT E0h) nach rb_lin + 1B00h
+; sichern bzw. zurueck: das AT-BIOS nimmt nach dem Reset 0030:0100 als
+; Stapel. Alle Register bleiben.
+rbs_ivsave:
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        xor     si, si
+        mov     ds, si
+        mov     si, 0x300
+        push    cs
+        pop     es
+        mov     di, 0x1B00
+        mov     cx, 128
+        cld
+        rep     movsw
+        jmp     short rbs_ivend
+rbs_ivrest:
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        push    cs
+        pop     ds
+        mov     si, 0x1B00
+        xor     di, di
+        mov     es, di
+        mov     di, 0x300
+        mov     cx, 128
+        cld
+        pushf
+        cli
+        rep     movsw
+        popf
+rbs_ivend:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        ret
 
 cpu 386
 rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen

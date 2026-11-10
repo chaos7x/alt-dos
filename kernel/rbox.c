@@ -38,12 +38,26 @@ static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
 
 #define RB_SIZE     0x2000UL
 #define RB_LO       (0x10000UL / MEM_UNIT)
-#define RB_SAVE     0x1400              /* IVT + BIOS-Daten (500h Byte)  */
-#define RB_GDT      0x1A00              /* GDT fuer INT 15h/87h         */
+/* Aufteilung der 8 KB (start.asm): 0 Zustand, 80h Stummel, 600h Text */
+#define RB_STUBMAX  0x580               /* Stummel hoechstens 80h-5FFh  */
+#define RB_TEXT     0x600               /* Bildschirmtext 80x25          */
+#define RB_SAVE     0x1600              /* IVT + BIOS-Daten (500h Byte)  */
+#define RB_IVHI     0x1B00              /* IVT 300h-3FFh nach Resets     */
+#define RB_GDT      0x1C00              /* GDT fuer INT 15h/87h         */
 #define RBB(o)      (((unsigned char __far *)MK_FP(SCRATCH, 0))[o])
 #define RBW(o)      (*(unsigned short __far *)MK_FP(SCRATCH, (o)))
 #define RBS(o)      (*(unsigned short __far *)MK_FP(SCRATCH2, (o)))
 #define RBSB(o)     (((unsigned char __far *)MK_FP(SCRATCH2, 0))[o])
+
+/* Vektoren C0h-FFh (300h-3FFh) fuer den Stummel ablegen: rbs_entry holt
+   sie nach jedem Reset zurueck - das AT-BIOS legt dann seinen Stapel nach
+   0030:0100, mitten in die IVT (INT E0h!). SCRATCH = rb_lin, SCRATCH2 = 0. */
+static void rb_ivt_hi(void)
+{
+    unsigned i;
+    for (i = 0x300; i < 0x400; i += 2)
+        RBW(RB_IVHI - 0x300 + i) = RBS(i);
+}
 
 /* gemeinsamer Teil: Speicher belegen, Stummel und Zustandsblock, IVT und
    BIOS-Daten sichern */
@@ -53,7 +67,7 @@ static unsigned rb_common(void)
     unsigned char __far *cod = MK_FP(KCODE2, rbs_code);
     unsigned seg;
 
-    if (!kmoved || rb_task >= 0)
+    if (!kmoved || rb_task >= 0 || rbs_len > RB_STUBMAX)
         return FAPI_ERROR;
     rb_lin = ((unsigned long)mem_conv_kb << 10) - RB_SIZE;
     hi = (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT);
@@ -69,7 +83,7 @@ static unsigned rb_common(void)
     for (i = 0; i < rbs_len; i++)           /* Stummel ab 80h        */
         RBB(0x80 + i) = cod[i];
     for (i = 0; i < 2000; i++)
-        RBW(0x400 + 2 * i) = 0x0720;
+        RBW(RB_TEXT + 2 * i) = 0x0720;
     for (i = 0; i < 0x500; i += 2)          /* zurueck in rb_free    */
         RBW(RB_SAVE + i) = RBS(i);
     for (i = 0; i < 48; i++)
@@ -96,6 +110,7 @@ static unsigned rb_common(void)
     RBS(0x15 * 4) = rbs_int15_off;
     RBS(0x15 * 4 + 2) = seg;
     RBS(0x413) = (unsigned)(rb_lin >> 10);
+    rb_ivt_hi();
     return 0;
 }
 

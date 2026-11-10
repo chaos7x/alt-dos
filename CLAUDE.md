@@ -153,7 +153,22 @@ ein anderes, `.COM` wie Stufe 2. Offen: Tastatur in der Box US (BIOS-
 Belegung, kein KEYB), AT-DOS-Laufwerke (Redirector, Stufe 4), Bild nur
 Text 80×25 beim Wechsel, 287-Zustand der Box geht beim Wechsel verloren.
 286-Weg nur auf dem SCAT prüfbar (dort ruft auch INT 15h/87h des BIOS
-selbst einen Reset). Erstes Codesegment 64.969 Byte
+selbst einen Reset).
+Erster Test auf dem SCAT: FreeDOS startet, VER/DIR gehen, aber EXIT und
+Task-Wechsel enden mit „Invalid Opcode at 00B1 F000“ und danach „Bad or
+missing Command Interpreter“. Grund: nach jedem Reset (Rückkehr in die
+Box, jedes INT 15h/87h) nimmt das AT-BIOS 0030:0100 als Stapel – mitten
+in der IVT (300h–3FFh, Vektoren C0h–FFh) – und überschreibt INT E0h mit
+einer Rücksprungadresse. Jetzt sichert der Stummel 300h–3FFh vor jedem
+Reset (`rbs_ivsave` in rbs_topm und vor INT 15h/87h) und holt ihn danach
+zurück (`rbs_ivrest` in rbs_entry und nach 87h); rb_common legt den
+Anfangsstand ab. In QEMU nachgestellt, indem rb_run vor jedem Eintritt
+INT E0h auf F000:00B1 setzt: EXIT geht. Dabei wurde der Stummel größer als
+380h und lief in den Bildschirmtext bei 400h hinein (der 386-Weg legte
+seinen Stapel sogar bei 400h hinein -> #GP, Neustart); neue Aufteilung
+der 8 KB: Zustand 0, Stummel 80h–5FFh (rb_common prüft `RB_STUBMAX`),
+Text 600h, IVT/BIOS-Daten 1600h, Vektoren C0h–FFh 1B00h, GDT für 87h
+1C00h, Stapel bis 2000h (auch der 386-Weg). Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
