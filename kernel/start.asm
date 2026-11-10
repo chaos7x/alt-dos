@@ -1157,7 +1157,9 @@ code_end:
 ; 62 alter INT 13h, 66 alter INT 15h, 70 Laufwerkstyp (INT 13h/08h),
 ; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9), 74 Rueckkehr
 ; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen), 76 287
-; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte).
+; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte), 78
+; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
+; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel).
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1202,21 +1204,38 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     bh, 0
         mov     ah, 2                   ; (Umschalttasten 417h/418h/496h
         int     0x10                    ;  stellt rbox.c vor dem Eintritt)
-.quiet: in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+.quiet: mov     byte [78], 0
+        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
         test    al, 1                   ; ist neu eingestellt und sieht die
         jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
         test    al, 0x20                ; als Flanke - abholen, sonst steht
         jnz     .aux                    ; die Tastatur
-        int     9
-        jmp     short .kok
-.aux:   in      al, 0x60                ; Maus: die Box hat keinen Treiber
-.kok:   cli
-        mov     ss, [20]
+        mov     byte [78], 1            ; INT 9 an der Stelle der Box
+        jmp     short .kok              ; (nicht hier im Stummel: ein Alt+Esc
+.aux:   in      al, 0x60                ; saehe sonst den halben Stummel als
+.kok:   cli                             ; Zustand der Box); Maus: weg
+        mov     al, [79]                ; Wechsel waehrend des Eintritts
+        test    al, al                  ; verlangt: jetzt ausfuehren
+        jz      .go
+        mov     byte [79], 0
+        mov     ah, 0
+        mov     [30], ax
+        jmp     rbs_saved
+.go:    mov     ss, [20]
         mov     sp, [18]
         push    word [26]
         push    word [24]
         push    word [22]
-        mov     ax, [0]
+        cmp     byte [78], 0            ; wie ein Hardware-Interrupt genau
+        je      .noint                  ; am Fortsetzungspunkt: zweiter Rahmen
+        mov     ax, [26]                ; in INT 9, IF und TF aus
+        and     ax, 0xFCFF
+        push    ax
+        xor     ax, ax
+        mov     es, ax
+        push    word [es:9 * 4 + 2]
+        push    word [es:9 * 4]
+.noint: mov     ax, [0]
         mov     bx, [2]
         mov     cx, [4]
         mov     dx, [6]
@@ -1501,7 +1520,20 @@ rbs_inte0:                              ; Dienst des Kernels
 
 rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         cli
-        mov     [cs:0], ax
+        push    ax                      ; Alt+Esc/Strg+Alt+Entf mitten im
+        mov     ax, ss                  ; Eintrittscode (Interrupt waehrend
+        push    bx                      ; INT 10h, eigener Stapel): nur
+        mov     bx, cs                  ; merken, rbs_entry fuehrt es am Ende
+        cmp     ax, bx                  ; mit dem unveraenderten Zustand aus
+        pop     bx
+        pop     ax
+        jne     .box
+        push    ax
+        mov     al, [cs:30]
+        mov     [cs:79], al
+        pop     ax
+        iret
+.box:   mov     [cs:0], ax
         mov     [cs:2], bx
         mov     [cs:4], cx
         mov     [cs:6], dx
@@ -1515,6 +1547,7 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         pop     word [cs:26]
         mov     [cs:18], sp
         mov     [cs:20], ss
+rbs_saved:                              ; Zustand der Box steht im Block
         mov     ax, cs
         mov     ds, ax
         mov     es, ax

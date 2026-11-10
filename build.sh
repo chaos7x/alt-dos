@@ -126,7 +126,7 @@ print('  kernel: %d Bytes Datei, Code %d + %d Bytes, Daten %d Bytes mit BSS (je 
       % (len(d) - img, code, c2[1], data, nrel))
 PYEOF
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
-[ $(stat -c %s $B/kernel.bin) -le 81920 ] || { echo "FEHLER: ATDOS.SYS groesser als 80 KB"; exit 1; }
+[ $(stat -c %s $B/kernel.bin) -le 458752 ] || { echo "FEHLER: ATDOS.SYS groesser als 448 KB"; exit 1; }
 
 echo "Anwendungen"
 nasm -f obj apps/crt0.asm -o $B/crt0.o
@@ -194,9 +194,9 @@ for fat in 1 10; do
     printf '\360\377\377' | dd of=$IMG bs=1 seek=$((fat * 512)) conv=notrunc status=none
 done
 # ATDOS.SYS als erste Datei, damit sie zusammenhaengend ab Cluster 2 liegt;
-# auf 80 KB aufgefuellt, damit der Bootsektor nur Nullen als BSS nachlaedt
+# der Bootsektor laedt so viele Sektoren, wie sie gross ist (BSS nullt
+# start.asm selbst)
 cp $B/kernel.bin $B/ATDOS.SYS
-truncate -s 81920 $B/ATDOS.SYS
 mcopy -i $IMG $B/ATDOS.SYS ::ATDOS.SYS
 mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS

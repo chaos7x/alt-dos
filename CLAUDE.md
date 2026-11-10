@@ -314,6 +314,27 @@ RBTIME schaltet. ATDOS.SYS stieß dabei an die 80 KB des Diskettenladers
 Testfalle: build.sh meldet das mit „FEHLER: ATDOS.SYS groesser als
 80 KB“ – nach Fehlern auch danach filtern, sonst testet man das alte
 Abbild weiter; q.py mit `timeout 10` bricht lange Eingaben ab.
+Hänger nach ein paar Alt+Esc (vom Nutzer auf dem SCAT mit RBTIME gemeldet,
+in QEMU mit LOOP.COM – INT E0h ohne Ende – nachgestellt; Box lief mit IF = 0
+bei 0000:002B, SS = Stummel): zwei Wege, auf denen ein Alt+Esc den halb
+fertigen Eintrittscode als Zustand der Box sicherte – (1) das Nachholen
+eines wartenden 8042-Bytes rief INT 9 im Stummel selbst; jetzt legt
+rbs_entry einen zweiten IRET-Rahmen auf den Stapel der Box (Byte 78), INT 9
+läuft also wie ein Hardware-Interrupt genau am Fortsetzungspunkt;
+(2) ein echter IRQ 1 während INT 10h im Eintrittscode (IF an); jetzt prüft
+rbs_topm, ob es auf dem eigenen Stapel läuft (SS = CS): dann nur Grund in
+Byte 79 merken und IRET, rbs_entry führt den Wechsel am Ende mit dem
+unveränderten Zustand aus (Sprungziel `rbs_saved`). Danach in QEMU 5 × 30
+Wechsel ohne Hänger. Dabei gefunden: die Uptime sprang beim Start von
+FreeDOS um die Zeit seit dem Start von AT-DOS – FreeDOS stellt den BIOS-
+Takt 46Ch selbst; rb_run deckelt die Box-Zeit jetzt mit der Echtzeituhr
+(`rtc_secs`, CMOS 0/2/4, BCD oder binär). RBOX nimmt Namen ohne Endung
+(erst .COM, dann .IMG). ATDOS.SYS damit über 80 KB: der Diskettenboot-
+sektor liest jetzt wie in 6.0 so viele Sektoren, wie die Datei groß ist
+(Größe aus dem Verzeichniseintrag, `nsect`), build.sh füllt nicht mehr auf
+und prüft 448 KB – alte Disketten brauchen SYS (neuer Bootsektor); Start
+von Platte unberührt (hdboot folgt der FAT-Kette). In QEMU: Diskette
+startet, Uptime nach Box-Sitzung richtig.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
@@ -440,11 +461,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `files` (Größe `FILES=`). `KSEG_IDX(0)` ist fest die Belegungs-Bitmap der
   Speicherverwaltung bei linear 9000h–AFFFh (`MEMMAP_SEL`).
   `struct ifs_file` wird überall als `__far`-Zeiger übergeben.
-- Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten) darf
-  höchstens 80 KB groß sein (Diskettenbootsektor lädt 160 Sektoren nach
-  1000:0000–23FFF; vorher 128 bzw. 96 – Disketten mit altem Bootsektor
-  vor dem Überschreiten von 64 KB mit SYS erneuern), BSS dahinter
-  nullt `start.asm` selbst.
+- Kernel ab 10000h (Code, dann Daten); `ATDOS.SYS` (Code + initialisierte Daten): der
+  Diskettenbootsektor lädt seit 5.1 so viele Sektoren, wie die Datei groß
+  ist (vorher fest 160 = 80 KB – Disketten mit altem Bootsektor mit SYS
+  erneuern), Grenze in build.sh 448 KB; BSS dahinter nullt `start.asm`
+  selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
   `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`).

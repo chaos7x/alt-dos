@@ -121,6 +121,19 @@ void main(void)
         word(a, path, sizeof(path));
     a = path;
     l = slen(a);
+    e = base_name(a);                   /* ohne Endung: .COM, dann .IMG */
+    while (*e && *e != '.')
+        e++;
+    if (!*e && l + 4 < sizeof(path)) {
+        unsigned h;
+        scat(a, ".COM", sizeof(path));
+        h = DosOpen(a);
+        if (FAPI_FAILED(h))
+            a[l + 1] = 'I', a[l + 2] = 'M', a[l + 3] = 'G';
+        else
+            DosClose(h);
+        l += 4;
+    }
     e = l >= 4 ? a + l - 4 : a;
     if (same(e, ".COM"))
         load_com(a);

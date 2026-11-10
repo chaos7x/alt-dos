@@ -11,10 +11,9 @@ bits 16
 org 0x7C00
 
 KSEG    equ 0x1000
-NSECT   equ 160                 ; ATDOS.SYS ist auf 80 KB aufgefuellt
-                                ; (1000:0000-23FFF, je Sektor ES:0 -
-                                ; keine DMA-Grenze innerhalb eines Sektors;
-                                ; seit KCODE2 waechst der Kernel ueber 64 KB)
+; Sektorzahl aus der Dateigroesse im Verzeichniseintrag (frueher fest 160
+; = 80 KB, 5.1 wuchs darueber); je Sektor ES:0 - keine DMA-Grenze innerhalb
+; eines Sektors
 
         jmp     short start
         nop
@@ -81,6 +80,15 @@ start:
         int     0x16
         int     0x19
 .found:
+        mov     ax, [es:bx + 28]        ; Dateigroesse -> Sektoren
+        mov     dx, [es:bx + 30]
+        add     ax, 511
+        adc     dx, 0
+        mov     cx, 9
+.div:   shr     dx, 1
+        rcr     ax, 1
+        loop    .div
+        mov     [nsect], ax
         mov     si, msg_load
         call    puts
         ; erster Datensektor = Stammverzeichnis + seine Groesse
@@ -93,7 +101,7 @@ start:
         mov     ax, KSEG
         mov     es, ax
         xor     bx, bx
-        mov     cx, NSECT
+        mov     cx, [nsect]
 .next:  push    cx
         call    read1
         mov     ax, es
@@ -155,6 +163,7 @@ putc:   push    bx
         ret
 
 lba     dw 1
+nsect   dw 0
 msg_load db "AT-DOS 5.0 wird geladen", 0
 msg_err  db 13, 10, "Diskettenfehler!", 0
 msg_nosys db "Keine Systemdiskette - wechseln und Taste dr", 0x81, "cken", 13, 10, 0

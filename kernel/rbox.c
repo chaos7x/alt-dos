@@ -333,9 +333,41 @@ static void rb_keys(void)
     }
 }
 
+/* Sekunden des Tages aus der Echtzeituhr: Obergrenze fuer die Zeit in der
+   Box - der BIOS-Takt 46Ch taugt allein nicht, FreeDOS stellt ihn beim
+   Start selbst (sonst sprang die Uptime um die Zeit seit dem Start von
+   AT-DOS). Ohne 32-Bit-Multiplikation. */
+static unsigned char cmos_rd(unsigned r)
+{
+    outb(0x70, 0x80 | r);                   /* NMI bleibt aus (rb_run) */
+    return (unsigned char)inb(0x71);
+}
+
+static unsigned long rtc_secs(void)
+{
+    unsigned n = 0, h, m, sec, i;
+    unsigned long t = 0;
+    unsigned char bin;
+    while ((cmos_rd(0x0A) & 0x80) && --n)   /* Uhr wird gerade gestellt */
+        ;
+    bin = cmos_rd(0x0B) & 4;
+    sec = cmos_rd(0x00);
+    m = cmos_rd(0x02);
+    h = cmos_rd(0x04) & 0x3F;
+    if (!bin) {
+        sec = (sec >> 4) * 10 + (sec & 15);
+        m = (m >> 4) * 10 + (m & 15);
+        h = (h >> 4) * 10 + (h & 15);
+    }
+    for (i = 0; i < h && i < 24; i++)
+        t += 3600;
+    return t + m * 60 + sec;
+}
+
 unsigned __far rb_run(void)
 {
     unsigned r, t0, d = 0;
+    unsigned long s0, s1;
     unsigned char rb_kind_was = rb_kind;
 
     if (rb_task != current)
@@ -365,6 +397,7 @@ unsigned __far rb_run(void)
         scratch_map(0, 0xFFFF);
         t0 = RBW(0x46C);                    /* BIOS-Takt: steht, solange
                                                AT-DOS laeuft          */
+        s0 = rtc_secs();
         RBW(0x467) = rbs_entry_off;         /* Einsprung nach Reset  */
         RBW(0x469) = (unsigned)(rb_lin >> 4);
         outb(0x70, 0x8F);                   /* Shutdown-Code 0Ah: BIOS */
@@ -375,6 +408,10 @@ unsigned __far rb_run(void)
         outb(0x70, 0x0D);                   /* NMI wieder an          */
         scratch_map(0, 0xFFFF);
         d = RBW(0x46C) - t0;                /* Zeit in der Box nachholen: */
+        s1 = rtc_secs();
+        s1 = s1 >= s0 ? s1 - s0 : s1 + 86400UL - s0;
+        if (s1 < 3600 && d > (unsigned)s1 * 19 + 38)
+            d = (unsigned)s1 * 18 + (unsigned)s1 / 5;   /* 18,2 je s   */
         ticks += (((unsigned long)d << 3) + ((unsigned long)d << 1) + d) >> 1;
         uptime_s += d / 18;                 /* 55 ms je BIOS-Takt     */
         scratch_map(rb_lin, 0xFFFF);
