@@ -265,7 +265,9 @@ bevor vio_rehw die Karte auf Text stellt; vor dem nächsten Eintritt lädt
 (Byte 74 wie bei Diensten). Text bleibt beim Stummel (B800). Die Text-
 palette von AT-DOS merkt `gfx_textdac` beim Anlegen der Box (hw_text
 braucht sie, wenn AT-DOS selbst nie Grafik hatte). Offen: SVGA-Register
-(nur Standard-VGA), Zeichensätze einer Box im Textmodus. Erstes Codesegment 64.969 Byte
+(nur Standard-VGA), Zeichensätze einer Box im Textmodus. Testprogramme
+`\\DEMO\\RBGFX.COM` (apps/rbgfx.asm) und `RBFPU.COM` (apps/rbfpu.asm), Start mit
+`RBOX \\DEMO\\RBGFX.COM`. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
