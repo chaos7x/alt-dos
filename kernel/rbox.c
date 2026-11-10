@@ -22,7 +22,7 @@
 extern unsigned short rbs_code, rbs_len, rbs_entry_off, rbs_int9_off, rbs_int20_off,
                       rbs_inte0_off, rbs_int13_off, rbs_int15_off;
 extern unsigned char  bios_pic1, bios_pic2;
-extern unsigned short mem_conv_kb;
+extern unsigned short mem_conv_kb, fpu_ok;
 extern unsigned short gdtr[3];
 extern volatile unsigned long ticks;
 extern void rb_reentry(void);
@@ -94,6 +94,7 @@ static unsigned rb_common(void)
         RBB(RB_GDT + i) = 0;
     RBW(RB_GDT + 16) = RBW(RB_GDT + 24) = 0xFFFF;
     RBB(RB_GDT + 21) = RBB(RB_GDT + 29) = 0x93;
+    RBB(76) = fpu_ok ? 1 : 0;               /* Stummel sichert den 287 */
     RBB(28) = bios_pic1;
     RBB(29) = bios_pic2;
     RBW(32) = gdtr[0];

@@ -1151,7 +1151,8 @@ code_end:
 ; Spur, 54 Koepfe, 56 Abbild linear (32 Bit), 60 Sektoren im Abbild,
 ; 62 alter INT 13h, 66 alter INT 15h, 70 Laufwerkstyp (INT 13h/08h),
 ; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9), 74 Rueckkehr
-; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen).
+; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen), 76 287
+; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte).
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1165,6 +1166,15 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     ss, ax
         mov     sp, 0x2000                  ; Stapel hinter der GDT
         call    rbs_ivrest              ; IVT 300h-3FFh: BIOS-Stapel beim Reset
+        cmp     byte [76], 0            ; 287: Reset ueber Port F1h holt ihn
+        je      .nofpu                  ; aus dem Protected Mode (FSETPM von
+        xor     al, al                  ; AT-DOS), dann Zustand der Box
+        out     0xF1, al
+        fninit
+        cmp     byte [77], 0
+        je      .nofpu
+        frstor  [0x1C40]
+.nofpu:
         mov     al, [28]
         out     0x21, al
         mov     al, [29]
@@ -1528,7 +1538,12 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         rep     movsw
         mov     ax, cs
         mov     ds, ax
-        call    rbs_ivsave
+        cmp     byte [76], 0            ; 287 der Box sichern (AT-DOS macht
+        je      .nofpu                  ; FNINIT/FSETPM)
+        fnsave  [0x1C40]
+        fwait
+        mov     byte [77], 1
+.nofpu: call    rbs_ivsave
         call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
         lgdt    [32]
         mov     ax, 1

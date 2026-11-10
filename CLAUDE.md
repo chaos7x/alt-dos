@@ -246,7 +246,14 @@ und zu die Uptime von AT-DOS durch (Zeile 25, mit der Ausgabe der Box
 hochgerollt): `vio_status` schrieb die Statuszeile am Freeze vorbei
 direkt in den Bildspeicher – prüft jetzt `vio_frozen`. In QEMU: fünf DIR
 über mehrere Sekunden, keine Uptime mehr im Bild. Vom Nutzer auf dem
-386 (ASUS ISA-386SIQ in 86Box, Build 240.23) bestätigt: DIR ohne Durchscheinen. Erstes Codesegment 64.969 Byte
+386 (ASUS ISA-386SIQ in 86Box, Build 240.23) bestätigt: DIR ohne Durchscheinen.
+287-Zustand der Box (in QEMU mit FPT2.COM geprüft: 1.0 laden, auf eine
+Taste warten, Alt+Esc hin und zurück, + 1.0 -> „2“; vorher „1“, weil
+AT-DOS beim Zurückkommen FNINIT macht): rbs_topm sichert ihn vor jedem
+Ausflug (auch Diensten) mit FNSAVE nach rb_lin + 1C40h (Byte 77 = gilt),
+rbs_entry setzt den 287 über Port F1h zurück (auf dem 286 holt nur das
+ihn aus dem Protected Mode – AT-DOS macht FSETPM), FNINIT, dann FRSTOR.
+Byte 76 = fpu_ok (rb_common). Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
