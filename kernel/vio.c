@@ -229,7 +229,8 @@ void vio_status(void)
 
     int sr = hw_lines - 1;                  /* Statuszeile: unterste    */
 
-    if (v == shown_uptime || (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
+    if (v == shown_uptime || vio_frozen ||  /* Bild gehoert der Box (5.1) */
+        (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
         return;                             /* Vollbild: keine Statuszeile */
     if (shown_uptime == 0xFFFF) {
         vfill(sr, STATUS_ATTR);

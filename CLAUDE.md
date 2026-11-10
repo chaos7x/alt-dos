@@ -240,7 +240,12 @@ der erste 287-Befehl in der Box löste INT 7 aus (im Real Mode meist ein
 bloßes IRET -> Endlosschleife; in QEMU mit FPT.COM nachgestellt: steht
 bei IP 0100h, CR0 = 1Ah). Jetzt `and al, 0F0h` wie der Reset des 286
 (PE, MP, EM, TS); FPT rechnet 1 + 1 = 2. Den 287-Zustand der Box beim
-Wechsel sichert noch niemand. Erstes Codesegment 64.969 Byte
+Wechsel sichert noch niemand. Vom Nutzer auf
+dem 386 in 86Box bestätigt: DIR usw. in der Box gehen; dabei schien ab
+und zu die Uptime von AT-DOS durch (Zeile 25, mit der Ausgabe der Box
+hochgerollt): `vio_status` schrieb die Statuszeile am Freeze vorbei
+direkt in den Bildspeicher – prüft jetzt `vio_frozen`. In QEMU: fünf DIR
+über mehrere Sekunden, keine Uptime mehr im Bild. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
