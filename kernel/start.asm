@@ -1049,7 +1049,7 @@ halt_forever_:
 ; unsigned rb_enter(void) - in den Real Mode zur Box; kehrt zurueck, wenn
 ; die Box per Alt+Esc, INT 20h oder INT E0h in den Kernel zurueckkommt
 ; (Grund im Zustandsblock, rb.c). Vorher hat C den Real-Mode-Teil (ab
-; rbs_code) an rb_lin + 40h gelegt, den Zustandsblock gefuellt, 40:67 und
+; rbs_code) an rb_lin + 80h gelegt, den Zustandsblock gefuellt, 40:67 und
 ; CMOS 0Fh = 0Ah gesetzt und bei einem 386 SCRATCH (Daten) und SCRATCH2
 ; (Code, 9Ah) auf rb_lin gelegt. Hin: 286 per Reset ueber den Tastatur-
 ; controller (BIOS springt nach 40:67), 386 per PE loeschen. Zurueck: der
@@ -1105,7 +1105,7 @@ rb_enter_:
         mov     es, ax
         mov     ss, ax
         mov     sp, 0x400
-        jmp     SCRATCH2:(rbs_386 - rbs_code + 0x40)
+        jmp     SCRATCH2:(rbs_386 - rbs_code + 0x80)
 
 ; Rueckweg: CS = KCODE, sonst noch Real-Mode-Reste
 rb_reentry_:
@@ -1137,19 +1137,31 @@ a20_on_:
         ret
 
 
-; ---- Real-Mode-Teil der Box: wird nach rb_lin + 40h kopiert -------------
-; Zustandsblock ab rb_lin (rb.c): 0 AX BX CX DX SI DI BP DS ES, 18 SP,
-; 20 SS, 22 IP, 24 CS, 26 FLAGS, 28 PIC-Masken, 30 Grund, 32 GDTR (6),
-; 38 Rueckweg (Offset, Selektor), 42 alter INT 9, 46 Cursor, 50 rb_seg.
-; Stapel bis 400h, Bildschirmtext (80x25) ab 400h.
-%define RBO(x) ((x) - rbs_code + 0x40)
+
+
+; ---------------------------------------------------------------------------
+segment _TEXTEND
+code_end:
+
+; ---- Real-Mode-Teil der Box: wird nach rb_lin + 80h kopiert -------------
+; Liegt in KTEXT2 (erstes Codesegment ist voll), kernel/rbox.c kopiert ihn.
+; Zustandsblock ab rb_lin: 0 AX BX CX DX SI DI BP DS ES, 18 SP, 20 SS,
+; 22 IP, 24 CS, 26 FLAGS, 28 PIC-Masken, 30 Grund, 32 GDTR (6), 38 Rueckweg
+; (Offset, Selektor), 42 alter INT 9, 46 Cursor, 50 rb_seg, 52 Sektoren je
+; Spur, 54 Koepfe, 56 Abbild linear (32 Bit), 60 Sektoren im Abbild,
+; 62 alter INT 13h, 66 alter INT 15h, 70 Laufwerkstyp (INT 13h/08h),
+; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9).
+; Stummel ab 80h, Bildschirmtext (80x25) ab 400h, IVT+BDA-Kopie ab 1400h
+; (rbox.c), GDT fuer INT 15h/87h ab 1A00h, Stapel bis 2000h.
+segment KTEXT2
+%define RBO(x) ((x) - rbs_code + 0x80)
 rbs_code:
 rbs_entry:                              ; Real Mode, CS = rb_seg
         cli
         mov     ax, cs
         mov     ds, ax
         mov     ss, ax
-        mov     sp, 0x400
+        mov     sp, 0x2000                  ; Stapel hinter der GDT
         mov     al, [28]
         out     0x21, al
         mov     al, [29]
@@ -1194,11 +1206,29 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         iret
 
 rbs_int9:                               ; Alt+Esc: zurueck zu AT-DOS
-        push    ax
+        cmp     byte [cs:72], 0         ; BIOS ruft INT 15h/4Fh: dort (ein
+        je      .own                    ; zweites Lesen von 60h verliert in
+        jmp     far [cs:42]             ; manchen Nachbildungen Tasten)
+.own:   push    ax
         in      al, 0x60
         cmp     al, 1
+        je      .esc
+        cmp     al, 0x53                ; Entf: mit Strg+Alt Box beenden
+        jne     .chain                  ; (sonst startete das BIOS den
+        push    ds                      ;  ganzen Rechner neu)
+        xor     ax, ax
+        mov     ds, ax
+        mov     al, [0x417]
+        pop     ds
+        and     al, 0x0C
+        cmp     al, 0x0C
         jne     .chain
-        push    ds
+        mov     al, 0x20
+        out     0x20, al
+        pop     ax
+        mov     word [cs:30], 2
+        jmp     rbs_topm
+.esc:   push    ds
         xor     ax, ax
         mov     ds, ax
         test    byte [0x417], 8
@@ -1208,9 +1238,231 @@ rbs_int9:                               ; Alt+Esc: zurueck zu AT-DOS
         out     0x20, al
         pop     ax
         mov     word [cs:30], 1
-        jmp     short rbs_topm
+        jmp     rbs_topm
 .chain: pop     ax
         jmp     far [cs:42]
+
+; INT 13h: Laufwerk 0 ist das Abbild im erweiterten Speicher (nur lesen,
+; Kopie per INT 15h/87h des BIOS - kein Ausflug zu AT-DOS); die Platten
+; und Laufwerke von AT-DOS sieht die Box nicht.
+rbs_int13:
+        sti
+        cmp     dl, 0
+        jne     .other
+        cmp     ah, 2
+        je      .read
+        cmp     ah, 8
+        je      .parm
+        cmp     ah, 3
+        je      .wp
+        cmp     ah, 5
+        je      .wp
+        cmp     ah, 0x15
+        je      .type
+        mov     ah, 0                   ; 00, 04, 16h (kein Wechsel), 17h ...
+        jmp     .ok
+.type:  mov     ah, 1                   ; Diskette ohne Wechselleitung
+        jmp     .ok
+.wp:    mov     ah, 3                   ; schreibgeschuetzt
+        jmp     .err
+.other: test    dl, 0x80
+        jz      .nodrv
+        cmp     ah, 8                   ; Platten: keine
+        jne     .nodrv
+        xor     dx, dx
+.nodrv: mov     ah, 0x80                ; Zeitueberschreitung: kein Laufwerk
+        jmp     .err
+.parm:  mov     bl, [cs:70]
+        mov     ax, [cs:52]
+        mul     byte [cs:54]            ; Sektoren je Zylinder
+        mov     cx, ax
+        mov     ax, [cs:60]
+        xor     dx, dx
+        div     cx
+        dec     ax                      ; letzter Zylinder
+        mov     ch, al
+        mov     cl, ah
+        ror     cl, 1
+        ror     cl, 1
+        and     cl, 0xC0
+        or      cl, [cs:52]
+        mov     dh, [cs:54]
+        dec     dh
+        mov     dl, 1
+        xor     ax, ax
+        mov     di, 0x1E * 4            ; Parametertabelle des BIOS
+        push    ds
+        mov     es, ax
+        les     di, [es:di]
+        pop     ds
+        jmp     .ok
+.read:  push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        push    ax
+        mov     bp, cs
+        mov     ds, bp
+        ; LBA = (Zylinder * Koepfe + Kopf) * Sektoren + Sektor - 1
+        mov     di, dx                  ; DH = Kopf (MUL zerstoert DX)
+        mov     al, cl
+        rol     al, 1
+        rol     al, 1
+        and     al, 3
+        mov     ah, al
+        mov     al, ch                  ; AX = Zylinder
+        mul     word [54]
+        mov     dx, di
+        add     al, dh
+        adc     ah, 0
+        mul     word [52]
+        and     cx, 0x3F
+        dec     cx
+        add     ax, cx
+        mov     si, ax                  ; SI = LBA
+        pop     ax
+        push    ax
+        xor     ah, ah
+        mov     bp, ax                  ; BP = Anzahl
+        add     ax, si
+        cmp     ax, [60]
+        ja      .range
+        ; Quelle: Abbild + LBA * 512
+        mov     ax, si
+        mov     dx, si
+        mov     cl, 9
+        shl     ax, cl
+        mov     cl, 7
+        shr     dx, cl
+        add     ax, [56]
+        adc     dx, [58]
+        mov     di, 0x1A00
+        mov     [di + 18], ax
+        mov     [di + 20], dl
+        ; Ziel: ES:BX linear
+        pop     ax
+        pop     cx                      ; ES des Aufrufers
+        push    cx
+        push    ax
+        mov     ax, cx
+        mov     dx, cx
+        mov     cl, 4
+        shl     ax, cl
+        mov     cl, 12
+        shr     dx, cl
+        add     ax, bx
+        adc     dx, 0
+        mov     [di + 26], ax
+        mov     [di + 28], dl
+        mov     cx, bp
+        xchg    ch, cl                  ; Worte = Sektoren * 256
+        mov     ax, cs
+        mov     es, ax
+        mov     si, di
+        mov     ah, 0x87
+        pushf
+        call    far [66]                ; altes INT 15h
+        pop     ax
+        jc      .rderr
+        mov     bx, bp
+        mov     al, bl
+        mov     ah, 0
+        jmp     .rdok
+.range: pop     ax
+        mov     ah, 4                   ; Sektor nicht gefunden
+.rderr: mov     al, 0
+        stc
+        jmp     .rdend
+.rdok:  clc
+.rdend: pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        jc      .err
+.ok:    push    bp
+        mov     bp, sp
+        and     byte [bp + 6], 0xFE
+        pop     bp
+        iret
+.err:   push    bp
+        mov     bp, sp
+        or      byte [bp + 6], 1
+        pop     bp
+        iret
+
+; INT 15h: der erweiterte Speicher gehoert AT-DOS - die Box meldet keinen
+; und darf ihn nicht beschreiben (HIMEM, RAMDRIVE finden nichts)
+rbs_int15:
+        cmp     ah, 0x4F                ; Tastatur-Abfang (BIOS-INT 9)
+        jne     .no4f
+        mov     byte [cs:72], 1
+        cmp     al, 1
+        je      .esc
+        cmp     al, 0x53
+        jne     .chain
+        push    ax
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     al, [0x417]
+        pop     ds
+        and     al, 0x0C
+        cmp     al, 0x0C
+        pop     ax
+        jne     .chain
+        mov     al, 0x20                ; Strg+Alt+Entf: Box beenden
+        out     0x20, al
+        mov     word [cs:30], 2
+        jmp     rbs_topm
+.esc:   push    ds
+        push    ax
+        xor     ax, ax
+        mov     ds, ax
+        test    byte [0x417], 8
+        pop     ax
+        pop     ds
+        jz      .chain
+        push    bp                      ; Taste verbraucht (CF = 0), das
+        mov     bp, sp                  ; BIOS legt sie nicht ab
+        and     byte [bp + 6], 0xFE
+        pop     bp
+        push    ax
+        mov     al, 0x20
+        out     0x20, al
+        pop     ax
+        mov     word [cs:30], 1
+        jmp     rbs_topm
+.no4f:  cmp     ah, 0x88
+        je      .none
+        cmp     ah, 0x87
+        je      .deny
+        cmp     ah, 0x89
+        je      .deny
+        cmp     ax, 0xE801
+        je      .deny
+        cmp     ax, 0xE820
+        je      .deny
+.chain: jmp     far [cs:66]
+.none:  xor     ax, ax
+        push    bp
+        mov     bp, sp
+        and     byte [bp + 6], 0xFE
+        pop     bp
+        iret
+.deny:  mov     ah, 0x86                ; nicht unterstuetzt
+        push    bp
+        mov     bp, sp
+        or      byte [bp + 6], 1
+        pop     bp
+        iret
 
 rbs_int20:                              ; Programm zu Ende
         cli
@@ -1275,23 +1527,21 @@ rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen
 cpu 286
 rbs_end:
 
-
-; ---------------------------------------------------------------------------
-segment _TEXTEND
-code_end:
-
 segment KTEXT2END
 code2_end:
 
 segment _DATA
 rm_idtr: dw 0x3FF, 0, 0
 global _rbs_code, _rbs_len, _rbs_entry_off, _rbs_int9_off, _rbs_int20_off, _rbs_inte0_off
+global _rbs_int13_off, _rbs_int15_off
 _rbs_code:      dw rbs_code
 _rbs_len:       dw rbs_end - rbs_code
 _rbs_entry_off: dw RBO(rbs_entry)
 _rbs_int9_off:  dw RBO(rbs_int9)
 _rbs_int20_off: dw RBO(rbs_int20)
 _rbs_inte0_off: dw RBO(rbs_inte0)
+_rbs_int13_off: dw RBO(rbs_int13)
+_rbs_int15_off: dw RBO(rbs_int15)
 
 global _kcode_size
 _kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)

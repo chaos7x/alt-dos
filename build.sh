@@ -75,8 +75,8 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx"
-for m in kernel mem floppy fat vio kbd preload vgagfx k2thunk; do
+K2MODS="floppy vgagfx rbox"
+for m in kernel mem floppy fat vio kbd preload vgagfx rbox k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
@@ -222,11 +222,24 @@ nasm -f bin apps/rbtest.asm -o $B/rbtest.com  # Test der Kompatibilitaetsbox (5.
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE
        $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF  $B/rbtest.com RBTEST.COM"
+# Startabbild der Kompatibilitaetsbox (5.1): 360-KB-Diskette mit FreeDOS-
+# Bootsektor, KERNEL.SYS zuerst (8086-Bau), FreeCOM, RBSHELL
+echo "Box: Startabbild freedos.img"
+nasm -f bin apps/rbshell.asm -o $B/rbshell.com
+rm -f $B/freedos.img
+mformat -i $B/freedos.img -C -f 360 -B freedos/fat12com.bin -v FREEDOS ::
+for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
+    mcopy -i $B/freedos.img freedos/$f ::$f
+done
+mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
+BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
+    mmd $TARGET "${TO}DOS/BOX"
+    copy_list "$BOXFILES" "DOS/BOX/"
     copy_list "$DEMOFILES" "DEMO/"
 }
 copy_list() {

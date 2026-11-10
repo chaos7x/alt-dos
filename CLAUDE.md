@@ -113,7 +113,47 @@ auf den eigenen Stummel (Hänger). Der 286-Weg ist in QEMU nicht prüfbar:
 dessen 8042-Reset startet die Maschine neu (SeaBIOS bootet, CMOS 0Ah
 wirkt nicht) – nur auf dem SCAT in 86Box. Vom Nutzer auf dem SCAT
 (286, Reset-Weg) bestätigt: START CMD, RBTEST in der Box, hin und her
-gewechselt, XCOPY in der anderen Sitzung, `q` zurück zu CMD. Erstes Codesegment 64.969 Byte
+gewechselt, XCOPY in der anderen Sitzung, `q` zurück zu CMD.
+Stufe 3 erledigt (in QEMU geprüft, 386-Weg: RBOX startet FreeDOS bis
+`A:\>`, VER, DIR; START CMD, Alt+Esc hin und her, dabei XCOPY \DOS und
+CHKDSK in der anderen Sitzung, EXIT -> „Box beendet.“, Strg+Alt+Entf
+beendet die Box, fsck sauber, Kopien gleich): Box-Code in
+`kernel/rbox.c` (KTEXT2, Thunks kf_mem_is_free/kf_mem_reserve/kf_vio_fg,
+in kernel.c kf_sleep_ticks/kf_cur/kf_cur_ses und `kf_rb_hw` = blk_flush,
+287 sichern, Fenster für den 386-Weg, rb_enter, danach PIC/PIT, A20,
+287, vio_rehw, kbd_flush); der Stummel liegt in KTEXT2 (start.asm) und
+ab rb_lin + 80h (erst lagen neue Felder des Zustandsblocks über seinem
+Anfang), Stapel bis 2000h. Erstes Codesegment danach 63,5 KB. FAPI
+RB_BOOT (Größe in KB, 160–2880) belegt das Abbild per mem_alloc im
+erweiterten Speicher (unter 16 MB), RB_IMG hängt Stücke an (das erste
+liefert Bootsektor nach 0:7C00 und Geometrie aus dem BPB), RB_RUN startet
+bei 0:7C00 mit DL = 0. `rb_common` sichert IVT und BIOS-Daten (0–4FFh)
+nach rb_lin + 1400h, rb_free stellt sie ohne 46Ch zurück. Stummel:
+INT 13h Laufwerk 0 = Abbild, gelesen per INT 15h/87h des BIOS aus dem
+erweiterten Speicher (kein Ausflug zu AT-DOS je Sektor – auf dem 286
+wäre jeder ein Reset), Schreiben -> 03h schreibgeschützt, 08h aus dem
+BPB, andere Laufwerke 80h (410h: ein Diskettenlaufwerk, 475h = 0);
+INT 15h: 88h meldet 0, 87h/89h/E801h/E820h abgelehnt (der erweiterte
+Speicher gehört AT-DOS – HIMEM/RAMDRIVE finden nichts); 4Fh (Tastatur-
+abfang des BIOS) erkennt Alt+Esc (Taste verbraucht, CF = 0) und
+Strg+Alt+Entf (Box beenden statt Neustart des Rechners). Lehre: der
+INT-9-Haken las Port 60h ein zweites Mal – QEMU legt dann schon das
+nächste Byte nach, bei Strg+Alt+Entf ging Alt verloren und das BIOS
+startete neu; INT 9 liest jetzt nur noch, solange das BIOS kein 4Fh
+ruft (Merker +72). FreeDOS biegt INT 9 über STACKS um – der Haken
+bleibt dahinter erreichbar. INT E0h AH = 01h beendet die Box (AL =
+Rückgabewert, RB_RUN liefert ihn in AH, RBOX gibt ihn per DosExit
+weiter); andere INT-E0h-Aufrufe -> AX = FFFFh. FreeDOS-Kern als
+8086-Bau (`XCPU=86`, „808x compatible“, `tools/freedos.sh`), FreeCOM wie
+in 6.0 (Watcom baut 8086-Code), Startabbild `build/freedos.img` ->
+`\DOS\BOX\FREEDOS.IMG` mit `RBSHELL.COM` (apps/rbshell.asm: startet
+`A:\COMMAND.COM A:\ /E:1024`, nach EXIT INT E0h 01h). `RBOX` ohne
+Argument nimmt das Abbild des Startlaufwerks (COMSPEC), `RBOX x.IMG`
+ein anderes, `.COM` wie Stufe 2. Offen: Tastatur in der Box US (BIOS-
+Belegung, kein KEYB), AT-DOS-Laufwerke (Redirector, Stufe 4), Bild nur
+Text 80×25 beim Wechsel, 287-Zustand der Box geht beim Wechsel verloren.
+286-Weg nur auf dem SCAT prüfbar (dort ruft auch INT 15h/87h des BIOS
+selbst einen Reset). Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.

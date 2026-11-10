@@ -57,5 +57,14 @@ void __far kf_vio_flush(void);
 #define ldt_drop(t, s)              kf_ldt_drop((t), (s))
 #define redraw()                    kf_redraw()
 #define vio_flush()                 kf_vio_flush()
+int __far kf_mem_is_free(unsigned from, unsigned to);
+void __far kf_mem_reserve(unsigned from, unsigned to);
+void __far kf_sleep_ticks(unsigned n);
+int __far kf_vio_fg(void);
+void __far kf_rb_hw(unsigned long lin);
+#define mem_is_free(a, b)           kf_mem_is_free((a), (b))
+#define mem_reserve(a, b)           kf_mem_reserve((a), (b))
+#define sleep_ticks(n)              kf_sleep_ticks(n)
+#define vio_fg()                    kf_vio_fg()
 
 #endif

@@ -131,12 +131,20 @@ struct fapi_comcfg {
                                        RB_LOAD: CX = Selektor, DX = Laenge eines
                                        .COM (bis FE00h) -> 0, FAPI_ERR_INUSE
                                        (Speicher unter 640 KB belegt), FAPI_ERROR;
+                                       RB_BOOT: CX = Groesse eines Disketten-
+                                       abbilds in KB (bis 2880) -> 0, Fehler wie
+                                       RB_LOAD; RB_IMG: CX = Puffer, DX = Laenge
+                                       (Vielfaches von 512) haengt an das Abbild an,
+                                       das erste Stueck enthaelt den Bootsektor;
                                        RB_RUN: wartet, bis die eigene Sitzung vorn
                                        ist, laeuft im Real Mode -> RB_SWITCH (Alt+Esc),
-                                       RB_EXIT (Programmende), RB_CALL; RB_FREE */
+                                       RB_EXIT (Programmende, Strg+Alt+Entf, INT E0h
+                                       AH = 01h), RB_CALL; RB_FREE */
 #define RB_LOAD             0
 #define RB_RUN              1
 #define RB_FREE             2
+#define RB_BOOT             3
+#define RB_IMG              4
 #define RB_SWITCH           1
 #define RB_EXIT             2
 #define RB_CALL             3

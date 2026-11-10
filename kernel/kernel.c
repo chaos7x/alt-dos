@@ -309,10 +309,12 @@ void reboot_request(void)
    ab 1992). Beim Anhalten bleibt Strg+Alt+Entf aktiv: Tastatur-IRQ setzt
    reboot_count, IRQ 0 startet nach 5 s neu. */
 static void task_end(int t);
-static unsigned rb_load(unsigned sel, unsigned len);
-static unsigned rb_run(void);
-static void rb_free(void);
-static int rb_task = -1;
+unsigned __far rb_load(unsigned sel, unsigned len);
+unsigned __far rb_boot(unsigned kb);
+unsigned __far rb_img(unsigned sel, unsigned off, unsigned len);
+unsigned __far rb_run(void);
+void __far rb_free(void);
+extern int rb_task;
 static void fpu_task_end(int t);
 static int mod_mount(int drive);
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
@@ -2548,6 +2550,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_RBOX:                             /* 5.1: Kompatibilitaetsbox */
         if (a1 == RB_LOAD)
             return user_ok(a2 | 3, 0, a3, 0) ? rb_load(a2 | 3, a3) : FAPI_ERROR;
+        if (a1 == RB_BOOT)
+            return rb_boot(a2);
+        if (a1 == RB_IMG)
+            return user_ok(usel, a2, a3, 0) ? rb_img(usel, a2, a3) : FAPI_ERROR;
         if (a1 == RB_RUN)
             return rb_run();
         if (a1 == RB_FREE && rb_task == current) {
@@ -3344,154 +3350,36 @@ static void pic_pit_init(void)
     outb(0x40, 11932 >> 8);
 }
 
-/* ---- 5.1: Kompatibilitaetsbox ----------------------------------------- */
-/* Eine DOS-Sitzung im echten Real Mode, wie bei OS/2 1.x. Der Kernel liegt
-   ueber 1 MB (kmove), 0-640 KB gehoert der Box. Oben im konventionellen
-   Speicher 8 KB fuer den Real-Mode-Teil (start.asm rbs_*), Zustand und den
-   gesicherten Bildschirmtext; das BIOS meldet der Box entsprechend weniger
-   (0413h). Solange die Box vorn ist, steht AT-DOS. Stufe 2: ein .COM bei
-   1000:0100 ohne DOS (INT 20h beendet). */
-extern unsigned short rbs_code, rbs_len, rbs_entry_off, rbs_int9_off, rbs_int20_off,
-                      rbs_inte0_off;
-extern unsigned char  bios_pic1, bios_pic2;
-extern volatile unsigned long ticks;
+/* ---- 5.1: Kompatibilitaetsbox, Wechsel der Hardware ------------------ */
+/* Der Rest steht in rbox.c (KTEXT2). rb_hw: alles, was vor und nach dem
+   Ausflug in den Real Mode Hilfen des ersten Segments braucht. */
 extern unsigned rb_enter(void);
-extern void rb_reentry(void);
 extern void a20_on(void);
-static unsigned long rb_lin;
-static unsigned short rb_ivt[6];        /* INT 9, 20h, E0h vor der Box */
-#define RB_SIZE     0x2000UL
-#define RB_LO       (0x10000UL / MEM_UNIT)
-#define RBB(o)      (((unsigned char __far *)MK_FP(SCRATCH, 0))[o])
-#define RBW(o)      (*(unsigned short __far *)MK_FP(SCRATCH, (o)))
 
-static unsigned rb_load(unsigned sel, unsigned len)
+void __far kf_sleep_ticks(unsigned n) { sleep_ticks(n); }
+int __far kf_cur(void) { return current; }
+int __far kf_cur_ses(void) { return task[current].session; }
+
+void __far kf_rb_hw(unsigned long lin)
 {
-    unsigned i, o9, s9;
-    unsigned char __far *src = MK_FP(sel, 0);
-    unsigned char __far *cod = MK_FP(KCODE, rbs_code);
-    unsigned hi;
-
-    if (!kmoved || rb_task >= 0 || len > 0xFE00)
-        return FAPI_ERROR;
-    rb_lin = ((unsigned long)mem_conv_kb << 10) - RB_SIZE;
-    hi = (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT);
-    if (!mem_is_free(RB_LO, hi))
-        return FAPI_ERR_INUSE;
-    mem_reserve(RB_LO, hi);
-    rb_task = current;
-    scratch_map(0x10000UL, 0xFFFF);         /* PSP und Programm      */
-    for (i = 0; i < 0x100; i++)
-        RBB(i) = 0;
-    RBB(0) = 0xCD;                          /* INT 20h               */
-    RBB(1) = 0x20;
-    RBW(2) = (unsigned)(rb_lin >> 4);
-    for (i = 0; i < len; i++)
-        RBB(0x100 + i) = src[i];
-    RBW(0xFFFE) = 0;                        /* RET -> PSP:0          */
-    scratch_map(0, 0xFFFF);                 /* IVT und BIOS-Daten    */
-    o9 = RBW(9 * 4);
-    s9 = RBW(9 * 4 + 2);
-    rb_ivt[0] = o9;
-    rb_ivt[1] = s9;
-    rb_ivt[2] = RBW(0x20 * 4);
-    rb_ivt[3] = RBW(0x20 * 4 + 2);
-    rb_ivt[4] = RBW(0xE0 * 4);
-    rb_ivt[5] = RBW(0xE0 * 4 + 2);
-    RBW(9 * 4) = rbs_int9_off;
-    RBW(9 * 4 + 2) = (unsigned)(rb_lin >> 4);
-    RBW(0x20 * 4) = rbs_int20_off;
-    RBW(0x20 * 4 + 2) = (unsigned)(rb_lin >> 4);
-    RBW(0xE0 * 4) = rbs_inte0_off;
-    RBW(0xE0 * 4 + 2) = (unsigned)(rb_lin >> 4);
-    RBW(0x413) = (unsigned)(rb_lin >> 10);
-    scratch_map(rb_lin, 0xFFFF);            /* Real-Mode-Teil        */
-    for (i = 0; i < 0x40; i++)
-        RBB(i) = 0;
-    for (i = 0; i < rbs_len; i++)
-        RBB(0x40 + i) = cod[i];
-    for (i = 0; i < 2000; i++)
-        RBW(0x400 + 2 * i) = 0x0720;
-    RBW(14) = RBW(16) = RBW(20) = RBW(24) = 0x1000;
-    RBW(18) = 0xFFFE;
-    RBW(22) = 0x100;
-    RBW(26) = 0x0202;
-    RBB(28) = bios_pic1;
-    RBB(29) = bios_pic2;
-    RBW(32) = gdtr[0];
-    RBW(34) = gdtr[1];
-    RBW(36) = gdtr[2];
-    RBW(38) = (unsigned)rb_reentry;
-    RBW(40) = KCODE;
-    RBW(42) = o9;
-    RBW(44) = s9;
-    RBW(50) = (unsigned)(rb_lin >> 4);
-    return 0;
-}
-
-static void rb_free(void)
-{
-    if (rb_task < 0)
-        return;
-    mem_free(RB_LO, (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT) - RB_LO);
-    scratch_map(0, 0xFFFF);
-    RBW(0x413) = mem_conv_kb;
-    RBW(9 * 4) = rb_ivt[0];                 /* Haken der Box zurueck */
-    RBW(9 * 4 + 2) = rb_ivt[1];
-    RBW(0x20 * 4) = rb_ivt[2];
-    RBW(0x20 * 4 + 2) = rb_ivt[3];
-    RBW(0xE0 * 4) = rb_ivt[4];
-    RBW(0xE0 * 4 + 2) = rb_ivt[5];
-    rb_task = -1;
-}
-
-static unsigned rb_run(void)
-{
-    unsigned r, t0, d;
-
-    if (rb_task != current)
-        return FAPI_ERROR;
-    while (vio_fg() != task[current].session)
-        sleep_ticks(5);
     blk_flush();                            /* die Box kann neu starten */
     if (fpu_owner >= 0) {
         fpu_save(KDATA, (unsigned)fpu_area[fpu_owner]);
         fpu_owner = -1;
     }
-    scratch_map(0, 0xFFFF);
-    t0 = RBW(0x46C);                        /* BIOS-Takt: steht, solange
-                                               AT-DOS laeuft          */
-    RBW(0x467) = rbs_entry_off;             /* Einsprung nach Reset  */
-    RBW(0x469) = (unsigned)(rb_lin >> 4);
-    outb(0x70, 0x8F);                       /* Shutdown-Code 0Ah: BIOS */
-    outb(0x71, 0x0A);                       /* springt nach 40:67    */
-    if (cpu_386) {
-        set_desc(SCRATCH >> 3, rb_lin, 0xFFFF, ACC_KDATA);
-        set_desc(SCRATCH2 >> 3, rb_lin, 0xFFFF, ACC_KCODE);
+    if (cpu_386) {                          /* Rueckweg ueber PE loeschen */
+        set_desc(SCRATCH >> 3, lin, 0xFFFF, ACC_KDATA);
+        set_desc(SCRATCH2 >> 3, lin, 0xFFFF, ACC_KCODE);
     }
     rb_enter();
-    outb(0x70, 0x8F);
-    outb(0x71, 0x00);
-    outb(0x70, 0x0D);                       /* NMI wieder an          */
     pic_pit_init();
     a20_on();
     if (fpu_ok) {
         fpu_pm_init();
         fpu_reset();
     }
-    scratch_map(0, 0xFFFF);
-    d = RBW(0x46C) - t0;                    /* Zeit in der Box nachholen: */
-    ticks += (((unsigned long)d << 3) + ((unsigned long)d << 1) + d) >> 1;
-    uptime_s += d / 18;                     /* 55 ms je BIOS-Takt     */
-    scratch_map(rb_lin, 0xFFFF);
-    r = RBW(30);
     vio_rehw();
     kbd_flush();
-    if (r == RB_SWITCH)
-        kbd_switch_req = 1;
-    else if (r == RB_EXIT)
-        rb_free();
-    return r;
 }
 
 /* ---- Blockgeraete ----------------------------------------------------- */

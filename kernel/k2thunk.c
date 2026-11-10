@@ -29,3 +29,6 @@ void __far kf_ldt_set(int t, unsigned sel, unsigned long b, unsigned l) { ldt_se
 void __far kf_ldt_drop(int t, unsigned sel) { ldt_drop(t, sel); }
 void __far kf_redraw(void) { redraw(); }
 void __far kf_vio_flush(void) { vio_flush(); }
+int __far kf_mem_is_free(unsigned a, unsigned b) { return mem_is_free(a, b); }
+void __far kf_mem_reserve(unsigned a, unsigned b) { mem_reserve(a, b); }
+int __far kf_vio_fg(void) { return vio_fg(); }
