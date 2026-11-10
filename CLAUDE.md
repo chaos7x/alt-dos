@@ -286,7 +286,8 @@ dem SCAT (286, 25 MHz) gemessen: KBC 270, FAULT 277 Ausflüge/s – der
 Reset ist nicht der teure Teil (~3,7 ms je Ausflug). Verdächtig: blk_flush
 vor jedem Eintritt (geht über alle Cache-Blöcke, bei 16 MB ~4.000), die
 FAPI-Aufrufe von RBOX je Dienst (RB_RUN, RB_REGS holen/setzen), B800
-sichern im Stummel.
+sichern im Stummel. Mit RBRESET=FAULT läuft die Box auf dem SCAT normal,
+auch Alt+Esc zurück zu AT-DOS (vom Nutzer bestätigt).
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
