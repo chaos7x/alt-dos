@@ -1190,7 +1190,15 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         and     byte [0x417], 0xF7      ; Alt ist beim Zurueckkommen los
         and     byte [0x418], 0xFD
         pop     ds
-        cli
+        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+        test    al, 1                   ; ist neu eingestellt und sieht die
+        jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
+        test    al, 0x20                ; als Flanke - abholen, sonst steht
+        jnz     .aux                    ; die Tastatur
+        int     9
+        jmp     short .kok
+.aux:   in      al, 0x60                ; Maus: die Box hat keinen Treiber
+.kok:   cli
         mov     ss, [20]
         mov     sp, [18]
         push    word [26]
@@ -1570,8 +1578,29 @@ rbs_ivend:
         ret
 
 ; A20 ueber den Tastaturcontroller einschalten: das AT-BIOS schaltet sie
-; nach INT 15h/87h wieder ab (SeaBIOS laesst sie an)
+; nach INT 15h/87h wieder ab (SeaBIOS laesst sie an). Nur wenn sie aus ist
+; (0000:0500 und FFFF:0510 dieselbe Zelle) - das Ausgangsport des 8042 bei
+; jedem Ausflug zu schreiben, legte in QEMU mitten im Tippen IRQ 1 still.
 rbs_a20:
+        push    ds
+        push    es
+        push    bx
+        xor     bx, bx
+        mov     ds, bx
+        dec     bx
+        mov     es, bx
+        mov     bl, [0x500]
+        mov     bh, [es:0x510]
+        mov     byte [0x500], 0
+        mov     byte [es:0x510], 0xFF
+        mov     al, [0x500]             ; FFh: Umlauf, A20 ist aus
+        mov     [es:0x510], bh
+        mov     [0x500], bl
+        pop     bx
+        pop     es
+        pop     ds
+        cmp     al, 0xFF
+        jne     .ret
         call    .w
         mov     al, 0xD1
         out     0x64, al
@@ -1582,7 +1611,7 @@ rbs_a20:
 .w1:    in      al, 0x64
         test    al, 2
         loopnz  .w1
-        ret
+.ret:   ret
 
 cpu 386
 rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen

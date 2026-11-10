@@ -182,7 +182,32 @@ Kernel über 1 MB nicht. rbs_topm schaltet A20 jetzt vor LGDT über den
 FreeDOS in der Box, Alt+Esc hinaus und zurück, EXIT – alles geht. Lehren
 für den Reset-Weg des 286 (in QEMU unsichtbar, SeaBIOS + 386-Weg): das
 AT-BIOS legt seinen Stapel nach dem Reset in die IVT (300h–3FFh), schaltet
-die Tastatur in INT 9 ab/an (ADh/AEh) und A20 nach INT 15h/87h ab. Erstes Codesegment 64.969 Byte
+die Tastatur in INT 9 ab/an (ADh/AEh) und A20 nach INT 15h/87h ab.
+Stufe 4, Redirector erledigt (in QEMU geprüft, 386-Weg: DIR C:, CD,
+TYPE, MD, COPY A: -> C: und C: -> C:, REN, DEL, EXIT; fsck sauber, Kopie
+gleich): wie BOXSHELL in 6.0, aber die Arbeit macht RBOX selbst im
+Benutzermodus (wie eine VDM) statt der Kernel – spart das volle erste
+Codesegment, ein Fehler trifft nur RBOX. Kernel: INT E0h AH ungleich 01h
+-> RB_RUN liefert RB_CALL; RB_REGS (struct fapi_rbregs, setzen nur
+AX..ES und die Rechenbits von FLAGS) und RB_MEM (struct fapi_rbmem,
+Speicher der Box 0..rb_lin lesen/schreiben) in rbox.c. RBOX
+(apps/rbox_redir.c, aus kernel/redir.c von main übernommen): SFT,
+Suchzustand, SDA-Felder über RB_MEM in lokale Kopien, Daten über 8 KB
+`xbuf`, Dateien sind Handles von RBOX; AH 11h SDA, 12h Laufwerke ab C:
+(DosQFSInfo ok oder NOTREADY). RBSHELL: 5D06h -> INT E0h 11h, 12h, CDS
+ab C: mit Flags C000h, INT 2Fh 11xxh -> INT E0h 10h; 1123h (Namen
+prüfen, FreeDOS fragt das für jeden Pfad) geht ohne Ausflug gleich
+weiter. Dafür aus main zurückgeholt: DosOpen mit `OPEN_RW` und FAPI 52h
+`DosNewSize` (fat_truncate, ifs_setsize; Commit 6dabf16). Lehren: EXEC
+braucht ES:BX auf den Parameterblock – nach redir_install zeigte ES
+woanders hin, FreeCOM bekam Unsinn als Befehlszeile („Pfad zur
+COMMAND.COM muss vollständig …“). Nach einem Ausflug mitten im Tippen
+stand die Tastatur: ein Byte wartete im 8042, der neu eingestellte PIC
+sah die schon hohe IRQ-Leitung nie als Flanke – rbs_entry ruft dann
+selbst INT 9 (Maus-Byte: verwerfen), kf_rb_hw liest es weg. A20 schaltet
+rbs_a20 nur noch ein, wenn sie aus ist (Umlauf-Test). In der Box gilt
+die US-Belegung (Testskript: Tastennamen ohne y/z-Tausch). Auf dem 286
+kostet jeder Redirector-Aufruf einen Reset. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.

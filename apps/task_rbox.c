@@ -8,9 +8,13 @@
  *
  * Die Box laeuft, solange ihre Sitzung vorn ist; Alt+Esc wechselt zu den
  * anderen Sitzungen, zurueck setzt sie fort. Strg+Alt+Entf beendet sie.
+ * Die AT-DOS-Laufwerke ab C: erscheinen in der Box als Netzlaufwerke
+ * (rbox_redir.c, RBOX erledigt die Zugriffe).
  */
 #include "fapi.h"
 #include "util.h"
+
+#include "rbox_redir.c"                 /* AT-DOS-Laufwerke in der Box */
 
 static char args[FAPI_ARGLEN], path[FAPI_PATHLEN], buf[8192];
 
@@ -122,8 +126,16 @@ void main(void)
         load_com(a);
     else
         load_img(a);
-    while ((r = DosRBox(RB_RUN, 0, 0)) == RB_SWITCH)
-        ;
+    for (;;) {
+        r = DosRBox(RB_RUN, 0, 0);
+        if (r == RB_SWITCH)
+            continue;
+        if (r == RB_CALL) {             /* INT E0h: Redirector usw.  */
+            box_call();
+            continue;
+        }
+        break;
+    }
     if ((r & 0xFF) != RB_EXIT) {
         puts("Box: unerwarteter R\x81" "ckweg.\r\n");
         DosExit(255);

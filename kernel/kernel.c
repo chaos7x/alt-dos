@@ -314,6 +314,8 @@ unsigned __far rb_boot(unsigned kb);
 unsigned __far rb_img(unsigned sel, unsigned off, unsigned len);
 unsigned __far rb_run(void);
 void __far rb_free(void);
+unsigned __far rb_regs(unsigned sel, unsigned off, unsigned set);
+unsigned __far rb_mem(unsigned sel, unsigned long lin, unsigned buf, unsigned len, unsigned wr);
 extern int rb_task;
 static void fpu_task_end(int t);
 static int mod_mount(int drive);
@@ -2365,7 +2367,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if ((t = dev_name(canon)) != 0)
             return dev_open(t);
-        if (open_for_write(d, canon))
+        if (a2 ? in_use(d, canon, 0) : open_for_write(d, canon))
             return FAPI_ERR_INUSE;
         k = of_alloc();
         if (k < 0)
@@ -2374,6 +2376,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             files[k].refs = 0;
             files[k].owner = -1;
             return FAPI_ERROR;
+        }
+        if (a2) {                               /* OPEN_RW               */
+            if (files[k].f.attr & (ATTR_RO | ATTR_DIR)) {
+                files[k].refs = 0;
+                files[k].owner = -1;
+                return FAPI_ERR_DENIED;
+            }
+            files[k].f.flags |= IFS_F_WRITE;
         }
         far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
         return k + HBASE;
@@ -2556,6 +2566,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return user_ok(usel, a2, a3, 0) ? rb_img(usel, a2, a3) : FAPI_ERROR;
         if (a1 == RB_RUN)
             return rb_run();
+        if (a1 == RB_REGS)
+            return user_ok(usel, a2, sizeof(struct fapi_rbregs), !a3) ?
+                   rb_regs(usel, a2, a3) : FAPI_ERROR;
+        if (a1 == RB_MEM) {
+            struct fapi_rbmem __far *m = MK_FP(usel, a2);
+            if (!user_ok(usel, a2, sizeof(*m), 0) || !m->len ||
+                !user_ok(usel, m->buf, m->len, !m->write))
+                return FAPI_ERROR;
+            return rb_mem(usel, m->lin, m->buf, m->len, m->write);
+        }
         if (a1 == RB_FREE && rb_task == current) {
             rb_free();
             return 0;
@@ -2894,6 +2914,19 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].pos = *p;
         if (files[k].kind == OF_FILE && files[k].pos > files[k].f.size)
             files[k].pos = files[k].f.size;     /* keine Loecher         */
+        return 0;
+    }
+
+    case FAPI_NEWSIZE: {
+        static unsigned long ns;
+        if ((k = h2e(a1)) < 0 || files[k].kind != OF_FILE || !user_ok(usel, a2, 4, 0))
+            return FAPI_ERROR;
+        far_copy(KDATA, (unsigned)&ns, usel, a2, 4);
+        t = ifs_setsize(&files[k].f, ns);
+        if (t)
+            return ifs_err(t);
+        if (files[k].pos > ns)
+            files[k].pos = ns;
         return 0;
     }
 
@@ -3382,6 +3415,8 @@ void __far kf_rb_hw(unsigned long lin)
         outb(0x64, 0xAE);
     }
     pic_pit_init();
+    if (inb(0x64) & 1)                      /* wartendes Byte: der neu */
+        inb(0x60);                          /* eingestellte PIC saehe es nie */
     a20_on();
     if (fpu_ok) {
         fpu_pm_init();

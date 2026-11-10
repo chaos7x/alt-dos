@@ -264,14 +264,9 @@ unsigned __far rb_run(void)
         uptime_s += d / 18;                 /* 55 ms je BIOS-Takt     */
         scratch_map(rb_lin, 0xFFFF);
         r = RBW(30);
-        if (r == RB_CALL) {                 /* INT E0h               */
-            if ((RBW(0) >> 8) == 1) {       /* AH = 01h: Box beenden */
-                r = RB_EXIT;            /* AL = Rueckgabewert    */
-                d = RBW(0) & 0xFF;
-            } else {
-                RBW(0) = 0xFFFF;            /* unbekannt             */
-                continue;
-            }
+        if (r == RB_CALL && (RBW(0) >> 8) == 1) {   /* INT E0h 01h:  */
+            r = RB_EXIT;                    /* Box beenden, AL = Wert */
+            d = RBW(0) & 0xFF;
         }
         break;
     }
@@ -283,4 +278,43 @@ unsigned __far rb_run(void)
             r |= d << 8;                    /* Rueckgabewert in AH   */
     }
     return r;
+}
+
+/* Register der Box bei RB_CALL (INT E0h) holen/setzen: AX..ES frei, von
+   FLAGS nur die Rechenbits (IF/TF/IOPL bleiben) */
+unsigned __far rb_regs(unsigned sel, unsigned off, unsigned set)
+{
+    unsigned short __far *u = MK_FP(sel, off);
+    unsigned i;
+
+    if (rb_task != current)
+        return FAPI_ERROR;
+    scratch_map(rb_lin, 0xFFFF);
+    if (set) {
+        for (i = 0; i < 9; i++)
+            RBW(2 * i) = u[i];
+        RBW(26) = (RBW(26) & ~0x0CD5u) | (u[13] & 0x0CD5u);
+    } else
+        for (i = 0; i < 14; i++)
+            u[i] = RBW(2 * i);
+    return 0;
+}
+
+/* Speicher der Box (0 .. rb_lin) lesen oder schreiben */
+unsigned __far rb_mem(unsigned sel, unsigned long lin, unsigned buf,
+                      unsigned len, unsigned wr)
+{
+    unsigned char __far *u = MK_FP(sel, buf);
+    unsigned i;
+
+    if (rb_task != current || !len || lin >= rb_lin || len > rb_lin - lin)
+        return FAPI_ERROR;
+    scratch_map(lin, len - 1);
+    if (wr)
+        for (i = 0; i < len; i++)
+            RBB(i) = u[i];
+    else
+        for (i = 0; i < len; i++)
+            u[i] = RBB(i);
+    return 0;
 }

@@ -167,8 +167,9 @@ und PC-DOS.
   echten Real Mode mit FreeDOS (8086-Bau, `\DOS\BOX\FREEDOS.IMG` als A:,
   nur lesend) – AT-DOS steht, solange sie vorn ist; Alt+Esc wechselt
   zurück in die Sitzungen und wieder hinein, EXIT oder Strg+Alt+Entf
-  beendet sie. Die Platten von AT-DOS und der erweiterte Speicher bleiben
-  für die Box unsichtbar (noch keine AT-DOS-Laufwerke, Tastatur US).
+  beendet sie. Die AT-DOS-Laufwerke ab C: erscheinen in der Box als
+  Netzlaufwerke (RBOX erledigt die Zugriffe); Platten direkt und der
+  erweiterte Speicher bleiben für die Box unsichtbar (Tastatur noch US).
   Rückweg auf dem 386 per PE löschen, auf dem 286 per Prozessor-Reset;
   `RBOX \DEMO\RBTEST.COM` testet ohne DOS
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
@@ -415,7 +416,8 @@ selbst nur 8.3 kennt.
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = alte Form ohne min/max) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 84 | DosProc         | Taskmanager (wie 6.0): BX = PROC_INFO (CX = Platz, DX = struct fapi_proc: Zustand, Sitzung, Aufrufer, Größe, Name, Befehlszeile) oder PROC_KILL (beenden wie Strg+C; nicht der Aufrufer, seine Aufrufer und die Shell der ersten Sitzung) |
-| 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH), RB_FREE |
+| 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH, RB_CALL INT E0h), RB_REGS (CX = struct fapi_rbregs, DX = 0 holen/1 setzen), RB_MEM (CX = struct fapi_rbmem: Speicher der Box lesen/schreiben), RB_FREE |
+| 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

@@ -30,7 +30,10 @@
 #define FAPI_VIOCLS         0x0B    /* Bildschirm der Sitzung loeschen  */
 #define FAPI_EXECPGM        0x0C    /* BX = Befehlszeile, CX = EXEC_*   */
 #define FAPI_GETARGS        0x0D    /* BX = Puffer (FAPI_ARGLEN Bytes)  */
-#define FAPI_OPEN           0x0E    /* BX = Dateiname -> Handle         */
+#define FAPI_OPEN           0x0E    /* BX = Dateiname, CX = OPEN_* -> Handle */
+#define OPEN_READ           0       /* nur lesen (alle alten Programme) */
+#define OPEN_RW             2       /* lesen und schreiben, Datei muss da sein,
+                                       allein offen; Position 0, nicht gekuerzt */
 #define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
@@ -139,12 +142,26 @@ struct fapi_comcfg {
                                        RB_RUN: wartet, bis die eigene Sitzung vorn
                                        ist, laeuft im Real Mode -> RB_SWITCH (Alt+Esc),
                                        RB_EXIT (Programmende, Strg+Alt+Entf, INT E0h
-                                       AH = 01h), RB_CALL; RB_FREE */
+                                       AH = 01h), RB_CALL (INT E0h, AH ungleich 01h:
+                                       RBOX erledigt ihn ueber RB_REGS/RB_MEM, dann
+                                       wieder RB_RUN); RB_FREE */
 #define RB_LOAD             0
 #define RB_RUN              1
 #define RB_FREE             2
 #define RB_BOOT             3
 #define RB_IMG              4
+#define RB_REGS             5       /* CX = struct fapi_rbregs, DX = 0 holen,
+                                       1 setzen (AX..ES, FLAGS ohne IF/TF) */
+#define RB_MEM              6       /* CX = struct fapi_rbmem: Speicher der
+                                       Box lesen (write = 0) oder schreiben */
+struct fapi_rbregs {                /* Zustand der Box bei RB_CALL      */
+    unsigned short ax, bx, cx, dx, si, di, bp, ds, es, sp, ss, ip, cs, flags;
+};
+struct fapi_rbmem {
+    unsigned long  lin;             /* linear in der Box (< 640 KB)     */
+    unsigned short buf, len;        /* Puffer im eigenen DS             */
+    unsigned short write;
+};
 #define RB_SWITCH           1
 #define RB_EXIT             2
 #define RB_CALL             3
@@ -205,6 +222,9 @@ struct fapi_sysinfo {
 #define FAPI_AUDIO          0x4F
 #define FAPI_QTICKS         0x50    /* -> Systemtakt (100 Hz), untere 16 Bit:
                                        Zeitmessung fuer Spieler, Spiele */
+#define FAPI_NEWSIZE        0x52    /* BX = Handle (schreibend), CX = Zeiger auf neue
+                                       Groesse (4 Bytes): kuerzen oder mit Nullen
+                                       verlaengern (wie DosNewSize bei OS/2) */
 #define AUD_OPEN            0       /* CX = struct fapi_audfmt -> 0, FAPI_ERROR
                                        (kein Geraet, Format geht nicht),
                                        FAPI_ERR_INUSE (alle Plaetze belegt) */
