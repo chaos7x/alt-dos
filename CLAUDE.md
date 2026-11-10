@@ -1559,14 +1559,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   USER/GDI (eigen oder Wine mit einem PM-Treiber statt x11drv) bilden
   Fenster und Zeichnen auf PM ab (Ursprung oben links -> unten links,
   Nachrichten, DC -> Presentation Space); Win16-Programme sind 16-Bit-NE
-  und passen direkt zum Kernel. Grafiktreiber unter dem PM: zuerst VESA
-  (läuft auf jeder Karte), als erste Karte mit eigenem beschleunigtem
-  Treiber die **S3 Trio3D** (86C365, 1998, Karte des Nutzers): 2D-Engine
-  der S3-Familie (Trio64-kompatible Register: Rechteck füllen, BitBLT,
-  Linien, Ports oder MMIO), Hardware-Mauszeiger. Unterlagen: S3-Daten-
-  blätter, Linux `s3fb` und X.Org-S3-Treiber als Nachschlagewerk
-  (GPL, Herkunft vermerken), 86Box für das Registerverhalten. Danach
-  evtl. ET4000, Cirrus.
+  und passen direkt zum Kernel. Grafiktreiber unter dem PM: zuerst
+  **VGA** 640×480×16 (läuft auf allen Maschinen, auch dem 286; ET4000 und
+  Cirrus haben im BIOS kein VBE 2.0 mit linearem Bildspeicher), VESA
+  dort, wo es da ist. Erste Karte mit eigenem beschleunigtem Treiber:
+  **Cirrus 54xx** (Entscheidung im Gedankenspiel: gute Datenbücher,
+  einfache BitBLT-Einheit, QEMU emuliert eine GD5446 (`-vga cirrus`) –
+  Test vor 86Box möglich; Karten sind ISA, der Nutzer kann sie in 86Box
+  zwischen den Maschinen tauschen). Danach ET4000/W32 (Beschleuniger der
+  W32), dann S3 (ISA-Chips 801/805/911/924/928 und Trio3D am P3B-F, 2D-
+  Engine der S3-Familie, Hardware-Mauszeiger). Nachschlagewerke: Daten-
+  blätter, Linux/X.Org-Treiber (GPL, Herkunft vermerken), 86Box für das
+  Registerverhalten.
 - Win16, Optionen (noch nicht entschieden): 1. echtes Windows 3.1 in
   einer DOS-Sitzung (kommt mit den Sitzungen, braucht Windows-Lizenz);
   2. eigenes Win16-Teilsystem auf Basis von Wine (krnl386/user/gdi, wie
