@@ -281,7 +281,12 @@ Ausflüge) -> „n Ausflüge/s“. QEMU (386-Weg): 579/s. In Bochs (Legacy-
 BIOS, 286-Weg per Testbau erzwungen) gehen beide Wege, 46.895 8042-
 Resets bzw. 43.669 Dreifachfehler mit Fortsetzung über 0Ah; Bochs bildet
 die Verzögerung des 8042 nicht nach (je Ausflug gleich, ~4.260 Befehle)
-– messen lässt sich der Unterschied nur auf dem SCAT.
+– messen lässt sich der Unterschied nur auf dem SCAT. Vom Nutzer auf
+dem SCAT (286, 25 MHz) gemessen: KBC 270, FAULT 277 Ausflüge/s – der
+Reset ist nicht der teure Teil (~3,7 ms je Ausflug). Verdächtig: blk_flush
+vor jedem Eintritt (geht über alle Cache-Blöcke, bei 16 MB ~4.000), die
+FAPI-Aufrufe von RBOX je Dienst (RB_RUN, RB_REGS holen/setzen), B800
+sichern im Stummel.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
