@@ -1518,6 +1518,7 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         mov     ax, cs
         mov     ds, ax
         call    rbs_ivsave
+        call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
         lgdt    [32]
         mov     ax, 1
         lmsw    ax
@@ -1566,6 +1567,21 @@ rbs_ivend:
         pop     di
         pop     si
         pop     cx
+        ret
+
+; A20 ueber den Tastaturcontroller einschalten: das AT-BIOS schaltet sie
+; nach INT 15h/87h wieder ab (SeaBIOS laesst sie an)
+rbs_a20:
+        call    .w
+        mov     al, 0xD1
+        out     0x64, al
+        call    .w
+        mov     al, 0xDF
+        out     0x60, al
+.w:     xor     cx, cx
+.w1:    in      al, 0x64
+        test    al, 2
+        loopnz  .w1
         ret
 
 cpu 386

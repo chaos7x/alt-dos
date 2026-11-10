@@ -173,7 +173,12 @@ RBTEST wechselt mit Alt+Esc hinaus, dann steht AT-DOS. Vermutung: das
 AT-BIOS schaltet zu Beginn von INT 9 die Tastatur am 8042 ab (ADh) und am
 Ende wieder ein (AEh); Alt+Esc springt aber mitten aus INT 15h/4Fh
 hinaus -> Tastatur bleibt aus. kf_rb_hw schickt nach jeder Rückkehr AEh
-(SeaBIOS macht ADh/AEh nicht, QEMU zeigte es daher nicht). Erstes Codesegment 64.969 Byte
+(SeaBIOS macht ADh/AEh nicht, QEMU zeigte es daher nicht). Vom Nutzer
+bestätigt (Build 240.15): RBTEST wechselt hin und her. Mit FreeDOS weiter
+„Invalid Opcode“ beim Alt+Esc: das AT-BIOS schaltet nach INT 15h/87h A20
+ab (RBTEST liest nie vom Abbild) – der Sprung in den PM fand GDT und
+Kernel über 1 MB nicht. rbs_topm schaltet A20 jetzt vor LGDT über den
+8042 ein (`rbs_a20`). Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
