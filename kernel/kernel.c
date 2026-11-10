@@ -3422,8 +3422,6 @@ void __far kf_rb_hw(unsigned long lin)
         fpu_pm_init();
         fpu_reset();
     }
-    vio_rehw();
-    kbd_flush();
 }
 
 /* ---- Blockgeraete ----------------------------------------------------- */

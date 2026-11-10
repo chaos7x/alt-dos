@@ -26,6 +26,9 @@ extern unsigned short mem_conv_kb;
 extern unsigned short gdtr[3];
 extern volatile unsigned long ticks;
 extern void rb_reentry(void);
+void __far kf_vio_rehw(void);
+int __far kf_kbd_get(void);
+void __far kf_kbd_flush(void);
 int __far kf_cur(void);                 /* kernel.c: laufender Task */
 int __far kf_cur_ses(void);             /* ... und seine Sitzung    */
 #define current     kf_cur()
@@ -35,6 +38,7 @@ static unsigned long rb_lin;
 static unsigned rb_img_u, rb_img_n;     /* Abbild: erste Einheit, Anzahl */
 static unsigned long rb_img_pos;        /* bisher geladen (Byte)         */
 static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
+static unsigned char rb_quiet;          /* letzter Ausflug war ein Dienst */
 
 #define RB_SIZE     0x2000UL
 #define RB_LO       (0x10000UL / MEM_UNIT)
@@ -233,6 +237,30 @@ void __far rb_free(void)
         RBS(i) = RBW(RB_SAVE + i);
     rb_task = -1;
     rb_kind = 0;
+    rb_quiet = 0;
+    if (vio_frozen) {                       /* RBOX mitten im Dienst beendet */
+        vio_frozen = 0;
+        kf_vio_rehw();
+    }
+}
+
+/* Tasten, die AT-DOS waehrend eines Dienstes bekam, in den Tastaturpuffer
+   des BIOS der Box (gleiches Format: Zeichen | Scancode << 8) */
+static void rb_keys(void)
+{
+    int k;
+    unsigned t, n;
+    scratch2_map(0, 0xFFFF);
+    while ((k = kf_kbd_get()) != -1) {
+        t = RBS(0x41C);
+        n = t + 2;
+        if (n >= RBS(0x482))
+            n = RBS(0x480);
+        if (n == RBS(0x41A))
+            break;                          /* Puffer voll            */
+        RBS(0x400 + t) = (unsigned)k;
+        RBS(0x41C) = n;
+    }
 }
 
 unsigned __far rb_run(void)
@@ -245,8 +273,19 @@ unsigned __far rb_run(void)
     if (rb_kind == 2 && rb_img_pos < 512)
         return FAPI_ERROR;
     for (;;) {
-        while (vio_fg() != kf_cur_ses())
+        while (vio_fg() != kf_cur_ses()) {
+            if (vio_frozen) {               /* waehrend eines Dienstes   */
+                vio_frozen = 0;             /* weggeschaltet            */
+                rb_quiet = 0;
+                kf_vio_rehw();
+            }
             sleep_ticks(5);
+        }
+        scratch_map(rb_lin, 0xFFFF);
+        RBB(74) = rb_quiet;                 /* Stummel: Bild steht noch */
+        if (rb_quiet)
+            rb_keys();
+        vio_frozen = 1;
         scratch_map(0, 0xFFFF);
         t0 = RBW(0x46C);                    /* BIOS-Takt: steht, solange
                                                AT-DOS laeuft          */
@@ -269,6 +308,12 @@ unsigned __far rb_run(void)
             d = RBW(0) & 0xFF;
         }
         break;
+    }
+    rb_quiet = r == RB_CALL;                /* Dienst: Bild bleibt der Box */
+    if (!rb_quiet) {
+        vio_frozen = 0;
+        kf_vio_rehw();
+        kf_kbd_flush();
     }
     if (r == RB_SWITCH)
         kbd_switch_req = 1;

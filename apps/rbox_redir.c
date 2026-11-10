@@ -13,6 +13,9 @@
  * Offene Dateien der Box sind Handles von RBOX - endet RBOX, schliesst der
  * Kernel sie.
  *
+ * Weitere INT-E0h-Dienste: 11h SDA ist DS:SI, 12h -> DX:AX Laufwerke,
+ * 14h aktuelles Verzeichnis von RBOX (8.3) nach ES:DI, leer bei A:/B:.
+ *
  * Daten des DOS: SDA (INT 21h 5D06h, Aufbau wie MS-DOS 4+): DTA 0Ch,
  * Dateiname 1 9Eh, Dateiname 2 11Eh, Suchzustand 19Eh (21 Byte),
  * gefundener Eintrag 1B3h, Suchattribut 24Dh, erweitertes Oeffnen
@@ -560,6 +563,13 @@ static void box_call(void)
         rg.ax = (unsigned)m;
         rg.dx = (unsigned)(m >> 16);
         break;
+    case 0x14: {                                /* aktuelles Verzeichnis  */
+        static char cd[FAPI_CURDIRLEN];         /* von RBOX nach ES:DI    */
+        if (FAILED(DosQCurDir(cd)) || up(cd[0]) < 'C' || slen(cd) > 127)
+            cd[0] = 0;                          /* A:/B: hat die Box selbst */
+        poke(lin(rg.es, rg.di), cd, slen(cd) + 1);
+        break;
+    }
     default:
         rg.ax = 0xFFFF;
     }

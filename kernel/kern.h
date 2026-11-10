@@ -212,6 +212,7 @@ int  kbd_peek(void);
 unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
 void vio_rehw(void);
+extern unsigned char vio_frozen;     /* 5.1: Bildschirm gehoert der Box */
 int  kbd_set_layout(unsigned sel, unsigned off);   /* 0 = ok    */
 const char *kbd_layout_id(void);
 extern volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;

@@ -32,3 +32,6 @@ void __far kf_vio_flush(void) { vio_flush(); }
 int __far kf_mem_is_free(unsigned a, unsigned b) { return mem_is_free(a, b); }
 void __far kf_mem_reserve(unsigned a, unsigned b) { mem_reserve(a, b); }
 int __far kf_vio_fg(void) { return vio_fg(); }
+void __far kf_vio_rehw(void) { vio_rehw(); }
+int __far kf_kbd_get(void) { return kbd_get(); }
+void __far kf_kbd_flush(void) { kbd_flush(); }

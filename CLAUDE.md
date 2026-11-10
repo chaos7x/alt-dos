@@ -207,7 +207,20 @@ sah die schon hohe IRQ-Leitung nie als Flanke – rbs_entry ruft dann
 selbst INT 9 (Maus-Byte: verwerfen), kf_rb_hw liest es weg. A20 schaltet
 rbs_a20 nur noch ein, wenn sie aus ist (Umlauf-Test). In der Box gilt
 die US-Belegung (Testskript: Tastennamen ohne y/z-Tausch). Auf dem 286
-kostet jeder Redirector-Aufruf einen Reset. Erstes Codesegment 64.969 Byte
+kostet jeder Redirector-Aufruf einen Reset. Vom Nutzer auf dem SCAT bestätigt
+(Build 240.18): Laufwerke da, CHKDSK danach ohne Fehler; aber DIR und
+andere Befehle flackerten, die Box begann auf A:, Tastatur US. Flackern:
+nach jedem Dienst zeichnete AT-DOS seinen Bildschirm (vio_rehw in
+kf_rb_hw) und der Stummel setzte Modus 03h neu. Jetzt `vio_frozen`
+(vio.c: redraw/vio_flush tun nichts), solange die Box vorn ist und nur
+für einen Dienst (RB_CALL) zu AT-DOS kommt; rbox.c `rb_quiet` -> Byte 74
+im Zustandsblock, rbs_entry überspringt dann Modus/Text/Cursor. Erst bei
+RB_SWITCH/RB_EXIT (oder wenn die Sitzung derweil weggeschaltet wurde,
+oder RBOX in rb_free endet) vio_rehw + kbd_flush. Tasten, die AT-DOS
+während eines Dienstes bekommt, schreibt `rb_keys` in den BIOS-Puffer
+der Box (41Ah/41Ch, Grenzen 480h/482h; Format wie kbd_get). Start-
+verzeichnis: INT E0h 14h liefert das aktuelle Verzeichnis von RBOX
+(8.3, nur ab C:), RBSHELL wechselt vor dem Start von FreeCOM dorthin. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.

@@ -1150,7 +1150,8 @@ code_end:
 ; (Offset, Selektor), 42 alter INT 9, 46 Cursor, 50 rb_seg, 52 Sektoren je
 ; Spur, 54 Koepfe, 56 Abbild linear (32 Bit), 60 Sektoren im Abbild,
 ; 62 alter INT 13h, 66 alter INT 15h, 70 Laufwerkstyp (INT 13h/08h),
-; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9).
+; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9), 74 Rueckkehr
+; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen).
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1169,6 +1170,8 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     al, [29]
         out     0xA1, al
         sti
+        cmp     byte [74], 0            ; nur ein Dienst: Bild steht noch
+        jne     .quiet
         mov     ax, 3                   ; BIOS stellt die Karte selbst ein
         int     0x10
         push    es
@@ -1184,7 +1187,7 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     bh, 0
         mov     ah, 2
         int     0x10
-        push    ds
+.quiet: push    ds
         xor     ax, ax
         mov     ds, ax
         and     byte [0x417], 0xF7      ; Alt ist beim Zurueckkommen los

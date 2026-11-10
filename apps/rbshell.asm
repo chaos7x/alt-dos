@@ -10,7 +10,9 @@
 ;
 ; INT E0h (nur in der Box): AH=01h Box beenden, AL = Rueckgabewert;
 ; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis); AH=11h SDA
-; ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke.
+; ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke; AH=14h
+; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI (leer bei
+; A:/B:) - FreeCOM beginnt dort.
 cpu 8086
 org 0x100
 
@@ -22,6 +24,21 @@ start:
         call    redir_install
         mov     ax, cs
         mov     es, ax                          ; EXEC: ES:BX = Parameterblock
+        mov     di, cdbuf                       ; Laufwerk und Verzeichnis,
+        mov     ah, 0x14                        ; aus dem RBOX gestartet wurde
+        int     0xE0
+        mov     dl, [cdbuf]
+        test    dl, dl
+        jz      .nocd
+        and     dl, 0xDF
+        sub     dl, 'A'
+        mov     ah, 0x0E
+        int     0x21
+        mov     dx, cdbuf
+        mov     ah, 0x3B
+        int     0x21
+.nocd:  mov     ax, cs
+        mov     es, ax
         mov     [pb_tail + 2], ax
         mov     [pb_fcb1 + 2], ax
         mov     [pb_fcb2 + 2], ax
@@ -106,6 +123,7 @@ int2f:  cmp     ah, 0x11
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
 
+cdbuf:  times   130 db 0
 dmask:  dd      0
 old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0

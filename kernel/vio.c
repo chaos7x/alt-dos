@@ -245,9 +245,15 @@ void vio_status(void)
     vputs(sr, 70, b, STATUS_ATTR);
 }
 
+/* 5.1: solange die Kompatibilitaetsbox vorn ist und nur kurz fuer einen
+   Dienst (Redirector) zu AT-DOS kommt, gehoert der Bildschirm ihr */
+unsigned char vio_frozen;
+
 void redraw(void)
 {
     int r;
+    if (vio_frozen)
+        return;
     p_drawn = 0;                            /* Bildspeicher wird neu    */
     dlo = 0xFF;
     cur_dirty = 0;
@@ -633,6 +639,8 @@ void vio_flush(void)
 {
     unsigned a, b, f;
 
+    if (vio_frozen)
+        return;
     if (fg >= 0 && ses[fg].gfx) {   /* Grafik: Text bleibt im Puffer,   */
         gptr_update();              /* nur der Mauszeiger               */
         return;
