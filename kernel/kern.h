@@ -37,17 +37,24 @@
 #define NGDT        (KCODE2_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
-#define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
+/* Lage von Kernel, DMA-Puffer und Speicher-Bitmap: ab 5.1 kopiert sich
+   der Kernel noch im Real Mode nach 1 MB (kmove_prep/kmove), wenn genug
+   erweiterter Speicher da ist - 0-640 KB werden frei (Programme, spaeter
+   die DOS-Box). Sonst wie 5.0: 10000h, 8000h, 9000h. */
+extern unsigned long kcode_lin, kdata_lin, dmabuf_lin, memmap_lin;
+extern unsigned char kmoved;        /* Kernel liegt ueber 1 MB           */
+#define KMOVE_BASE  0x100000UL      /* DMA-Puffer, Bitmap, dann Kernel   */
+#define DMABUF_LIN  dmabuf_lin      /* keine 64-KB-Grenze                */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
-#define KCODE_LIN   0x10000UL
+#define KCODE_LIN   kcode_lin
 extern unsigned kcode_size;         /* start.asm: Groesse von CGROUP       */
 extern unsigned kcode2_size;        /* start.asm: Groesse von CGROUP2      */
 #define KCODE2_LIN  (KCODE_LIN + ((kcode_size + 15) & ~15u))
 extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
 extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
-#define KDATA_LIN   ((unsigned long)kdata_seg << 4)
+#define KDATA_LIN   kdata_lin
 #define LIN(p)      (KDATA_LIN + (unsigned short)(p))
 
 struct desc  { unsigned short limit, base_lo; unsigned char base_hi, access; unsigned short rsv; };

@@ -15,7 +15,8 @@
 #include "mem.h"
 
 /* Die Bitmap liegt nicht im Kernelsegment (dort ist der Platz knapp),
-   sondern fest bei linear 9000h-AFFFh, Selektor MEMMAP_SEL (kern.h) */
+   sondern bei linear 9000h-AFFFh bzw. hinter dem DMA-Puffer ueber 1 MB
+   (memmap_lin), Selektor MEMMAP_SEL (kern.h) */
 #define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
 #define BITMAP_SIZE 8192U
 static unsigned      free_units;
@@ -94,6 +95,16 @@ unsigned mem_alloc(unsigned units)
     while ((u = try_alloc(units)) == 0 && mem_reclaim && mem_reclaim(units))
         ;
     return u;
+}
+
+void mem_reserve(unsigned from, unsigned to)
+{
+    unsigned u;
+    for (u = from; u < to; u++)
+        if (!USED(u)) {
+            SET(u);
+            free_units--;
+        }
 }
 
 void mem_free(unsigned start, unsigned units)

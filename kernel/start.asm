@@ -37,7 +37,7 @@ extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_
 extern fpu_nm_
-extern _gdtr, _idtr
+extern _gdtr, _idtr, _kmoved, _kcode_lin, _kmove_fail
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -258,6 +258,14 @@ _start:
         call    a20_check
         mov     [_a20_ok], al
         call    gdt_build_              ; C: GDT und IDT aufbauen
+        cmp     byte [_kmoved], 0       ; Kernel ueber 1 MB legen?
+        je      .nomove
+        call    kmove
+        call    a20_enable              ; das BIOS laesst A20 evtl. zu
+        cmp     byte [_kmoved], 0
+        jne     .nomove
+        call    gdt_build_              ; Kopie ging nicht: GDT fuer unten
+.nomove:
 
         lgdt    [_gdtr]
         lidt    [_idtr]
@@ -273,6 +281,80 @@ pm_entry:
         mov     sp, kstack_top
         call    kmain_
         jmp     halt_forever_
+
+; Kernel (10000h bis Ende von DGROUP) nach kcode_lin kopieren - im Real
+; Mode ueber INT 15h/87h (Blockkopie des AT-BIOS, je 32 KB). Danach ist
+; die Kopie der gueltige Kernel: lgdt/lidt zeigen schon dorthin, der Sprung
+; nach KCODE:pm_entry landet in ihr. Die alte Kopie wird nicht mehr benutzt.
+kmove:
+        push    es
+        mov     ax, ds
+        mov     es, ax
+        ; Laenge = (kdata_seg - 1000h) * 16 + bss_end
+        mov     ax, [_kdata_seg]
+        sub     ax, 0x1000
+        mov     dx, ax
+        shl     ax, 4
+        shr     dx, 12
+        add     ax, bss_end
+        adc     dx, 0
+        mov     [km_len], ax
+        mov     [km_len + 2], dx
+        xor     ax, ax
+        mov     [km_off], ax
+        mov     [km_off + 2], ax
+.next:
+        mov     ax, [km_len]            ; Rest = len - off
+        mov     dx, [km_len + 2]
+        sub     ax, [km_off]
+        sbb     dx, [km_off + 2]
+        mov     cx, ax
+        or      ax, dx
+        jz      .done
+        or      dx, dx
+        jnz     .big
+        cmp     cx, 0x8000
+        jbe     .sz
+.big:   mov     cx, 0x8000
+.sz:    inc     cx                      ; auf Worte aufrunden
+        shr     cx, 1
+        push    cx
+        ; Tabelle: 6 Deskriptoren, Quelle bei +16, Ziel bei +24
+        mov     di, km_gdt
+        push    cx
+        mov     cx, 24
+        xor     ax, ax
+        rep     stosw
+        pop     cx
+        mov     ax, [km_off]            ; Quelle = 10000h + off
+        mov     dx, [km_off + 2]
+        add     dx, 1
+        mov     word [km_gdt + 16], 0xFFFF
+        mov     [km_gdt + 18], ax
+        mov     [km_gdt + 20], dl
+        mov     byte [km_gdt + 21], 0x93
+        mov     ax, [km_off]            ; Ziel = kcode_lin + off
+        mov     dx, [km_off + 2]
+        add     ax, [_kcode_lin]
+        adc     dx, [_kcode_lin + 2]
+        mov     word [km_gdt + 24], 0xFFFF
+        mov     [km_gdt + 26], ax
+        mov     [km_gdt + 28], dl
+        mov     byte [km_gdt + 29], 0x93
+        mov     si, km_gdt
+        mov     ah, 0x87
+        int     0x15
+        cli
+        pop     cx
+        jc      .fail
+        shl     cx, 1                   ; Bytes weiter
+        add     [km_off], cx
+        adc     word [km_off + 2], 0
+        jmp     .next
+.fail:  mov     byte [_kmoved], 0       ; geht nicht: Kernel bleibt unten
+        mov     byte [_kmove_fail], 1
+.done:  pop     es
+        ret
 
 ; A20 ueber den Tastaturcontroller freischalten (AT-Methode)
 a20_enable:
@@ -1036,6 +1118,9 @@ _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)
 _vga_font8b:  resw 2
 _vga_font16:  resw 2
+km_len:       resw 2
+km_off:       resw 2
+km_gdt:       resb 48
 kstack:      resb 1024
 kstack_top:
 

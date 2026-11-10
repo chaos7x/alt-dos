@@ -156,10 +156,36 @@ void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
     put_desc(&gdt[i], base, limit, acc);
 }
 
+unsigned long kcode_lin = 0x10000UL, kdata_lin, dmabuf_lin = 0x8000UL, memmap_lin = 0x9000UL;
+unsigned char kmoved, kmove_fail;
+
+/* noch im Real Mode (aus gdt_build): Kernel nach 1 MB legen, wenn
+   mindestens 512 KB erweiterter Speicher da sind. Nur die Adressen - kopiert
+   wird danach in start.asm (kmove, INT 15h/87h), die GDT entsteht gleich
+   mit den neuen Basen. Reihenfolge ab KMOVE_BASE: DMA-Puffer (2 KB, auf
+   4 KB), Bitmap (8 KB), Kernel ab +12 KB (Code, Daten wie bei 10000h). */
+static void kmove_prep(void)
+{
+    kcode_lin = 0x10000UL;
+    kdata_lin = (unsigned long)kdata_seg << 4;
+    dmabuf_lin = 0x8000UL;
+    memmap_lin = 0x9000UL;
+    kmoved = 0;
+    if (kmove_fail || !a20_ok || mem_ext_kb < 512)
+        return;
+    dmabuf_lin = KMOVE_BASE;
+    memmap_lin = KMOVE_BASE + 0x1000UL;
+    kdata_lin = KMOVE_BASE + 0x3000UL + (kdata_lin - kcode_lin);
+    kcode_lin = KMOVE_BASE + 0x3000UL;
+    kmoved = 1;
+}
+
 void gdt_build(void)
 {
     struct gate *g;
     int i;
+
+    kmove_prep();
 
     set_desc(0, 0, 0, 0);
     set_desc(1, KCODE_LIN, ((kcode_size + 15) & ~15u) - 1, ACC_KCODE);
@@ -5046,9 +5072,16 @@ void kmain(void)
         mem_conv_kb = 640;
     if (mem_ext_kb > 15360 || !a20_ok)
         mem_ext_kb = a20_ok ? 15360 : 0;
-    /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h) */
-    mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
-             mem_conv_kb, mem_ext_kb);
+    /* frei ab dem Ende der Kernel-Daten (Code und Daten liegen ab 10000h);
+       liegt der Kernel ueber 1 MB, ab 10000h und dort der Kernelbereich
+       belegt */
+    if (kmoved) {
+        mem_init(0x10000UL / MEM_UNIT, mem_conv_kb, mem_ext_kb);
+        mem_reserve((unsigned)(KMOVE_BASE / MEM_UNIT),
+                    (unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT));
+    } else
+        mem_init((unsigned)((KDATA_LIN + kdata_size + MEM_UNIT - 1) / MEM_UNIT),
+                 mem_conv_kb, mem_ext_kb);
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */

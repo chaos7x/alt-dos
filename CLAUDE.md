@@ -58,6 +58,30 @@ tail mit DETACH TAIL -f, Taste öffnet ihn in neuer Sitzung). Erstes
 Codesegment danach 62.534 Byte. Testfalle: ein DETACH-MORE liest von der
 Tastatur und nimmt CMD die Eingaben weg.
 
+**5.1 (Kompatibilitätsbox, in Arbeit auf diesem Zweig)** – Entwurf mit
+dem Nutzer: eine DOS-Sitzung im echten Real Mode mit dem FreeDOS-Abbild
+(8086-Bau) wie in 6.0, Festplatten sieht die Box nicht, A: = Abbild über
+einen INT-13h-Haken, AT-DOS-Laufwerke über den Redirector (INT E0h);
+jeder Aufruf ein Ausflug in den PM (hin per LMSW, zurück per Reset, auf
+dem 386 per PE löschen – erlaubt, Entscheidung des Nutzers). AT-DOS steht,
+solange die Box vorn ist. Stufen: 1 Kernel über 1 MB, 2 Wechsel mit
+leerer Box, 3 INT 13h/INT E0h -> FreeDOS startet, 4 Redirector/Bild-
+schirm/Tastatur/PIC/PIT/287, 5 AT-DOS läuft je Takt weiter, später UMBs.
+Stufe 1 erledigt (in QEMU geprüft: Platte und Diskette, 16/2/1 MB, XCOPY
+\DOS, COPY auf A: + FC /B, CHKDSK, SHUTDOWN, fsck sauber, Kopien gleich):
+`kmove_prep` (aus gdt_build, noch im Real Mode) legt bei A20 und mindestens
+512 KB erweitertem Speicher DMA-Puffer (100000h), Bitmap (101000h) und
+den Kernel (103000h, Code + Daten wie ab 10000h) über 1 MB; die GDT
+entsteht gleich mit den neuen Basen. start.asm `kmove` kopiert danach
+10000h..bss_end per INT 15h/87h in 32-KB-Stücken (A20 danach neu an;
+scheitert es, `kmove_fail` und gdt_build noch einmal für unten), der
+Sprung nach KCODE:pm_entry landet in der Kopie. kern.h: KCODE_LIN/
+KDATA_LIN/DMABUF_LIN/MEMMAP_LIN sind jetzt Variablen (`kcode_lin` …,
+`kmoved`); mem_init gibt 10000h–640 KB frei, `mem_reserve` belegt den
+Kernelbereich über 1 MB. Damit sind 0–640 KB bis auf 0–FFFFh (BIOS,
+Vorladebereich, alter DMA-Puffer/Bitmap) frei – Programme bekommen
+109 KB mehr konventionellen Speicher, die Box später alles.
+
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
   Keine 386-Präfixe (66h/67h), kein Paging, kein V86.

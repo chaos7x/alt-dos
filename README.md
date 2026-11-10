@@ -159,6 +159,10 @@ und PC-DOS.
   Dateien in Lücken weiter vorn schieben; je Datei erst kopieren, dann neue
   Kette, dann Verzeichniseintrag, dann alte Kette frei (Absturz kostet
   nichts); Verzeichnisse bleiben an ihrem Platz
+- Kernel über 1 MB (Vorbereitung 5.1): mit mindestens 512 KB erweitertem
+  Speicher kopiert sich der Kernel beim Start (noch im Real Mode, per
+  BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
+  frei
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
   Liste der Programme, Entf beendet mit Rückfrage; auch mit
   Strg+Umschalt+Esc. Kooperativ: ein Programm, das ohne FAPI-Aufruf
