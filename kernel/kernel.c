@@ -3389,6 +3389,7 @@ static void pic_pit_init(void)
    Ausflug in den Real Mode Hilfen des ersten Segments braucht. */
 extern unsigned rb_enter(void);
 extern void a20_on(void);
+extern unsigned char rb_fault;          /* start.asm: 286 per Dreifachfehler */
 
 void __far kf_sleep_ticks(unsigned n) { sleep_ticks(n); }
 int __far kf_cur(void) { return current; }
@@ -5063,6 +5064,8 @@ static void config_sys(void)
                 if (*q == ',')              /* dritter Wert: Hoechstgroesse */
                     cache_max = num_arg(q + 1);
             }
+        } else if (kw(line, "RBRESET")) {      /* 5.1: KBC oder FAULT     */
+            rb_fault = up(v[0]) == 'F';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {

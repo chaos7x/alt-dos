@@ -1092,6 +1092,11 @@ rb_enter_:
         out     0x40, al
         cmp     byte [_cpu_386], 0
         jne     .r386
+        cmp     byte [_rb_fault], 0     ; RBRESET=FAULT: Dreifachfehler
+        je      .w                      ; wie OS/2 1.x - IDT ohne Eintraege,
+        lidt    [rb_noidt]              ; INT 3 -> #GP -> #DF -> Shutdown,
+        int     3                       ; das Board setzt die CPU zurueck
+        hlt                             ; (schneller als der 8042)
 .w:     in      al, 0x64                ; 286: Reset, das BIOS springt
         test    al, 2                   ; ueber 40:67 in die Box
         jnz     .w
@@ -1647,6 +1652,9 @@ code2_end:
 
 segment _DATA
 rm_idtr: dw 0x3FF, 0, 0
+rb_noidt: dw 0, 0, 0                    ; Grenze 0: jeder Interrupt -> #DF
+global _rb_fault
+_rb_fault: db 0
 global _rbs_code, _rbs_len, _rbs_entry_off, _rbs_int9_off, _rbs_int20_off, _rbs_inte0_off
 global _rbs_int13_off, _rbs_int15_off
 _rbs_code:      dw rbs_code

@@ -269,6 +269,19 @@ braucht sie, wenn AT-DOS selbst nie Grafik hatte). Offen: SVGA-Register
 (nur Standard-VGA), Zeichensätze einer Box im Textmodus. Testprogramme
 `\DEMO\RBGFX.COM` (apps/rbgfx.asm) und `RBFPU.COM` (apps/rbfpu.asm), Start mit
 `RBOX \DEMO\RBGFX.COM`.
+Schnellerer Reset (Vorbild OS/2 1.x, vom Nutzer gewünscht; Vorbereitung
+für Stufe 5): CONFIG.SYS `RBRESET=FAULT` (Vorgabe KBC) – der 286-Weg in
+rb_enter lädt eine IDT mit Grenze 0 (`rb_noidt`) und löst INT 3 aus ->
+#GP -> #DF -> Shutdown, das Board setzt die CPU zurück, das BIOS springt
+wie beim 8042-Reset über CMOS 0Ah nach 40:67. Hält ein Board nach dem
+Shutdown einfach an, hängt es – deshalb nur zuschaltbar. Messprogramm
+`\DEMO\RBTIME.COM` (apps/rbtime.asm): 10 s INT E0h mit unbekanntem
+Dienst, Zeit aus der CMOS-Uhr (der BIOS-Takt der Box steht während der
+Ausflüge) -> „n Ausflüge/s“. QEMU (386-Weg): 579/s. In Bochs (Legacy-
+BIOS, 286-Weg per Testbau erzwungen) gehen beide Wege, 46.895 8042-
+Resets bzw. 43.669 Dreifachfehler mit Fortsetzung über 0Ah; Bochs bildet
+die Verzögerung des 8042 nicht nach (je Ausflug gleich, ~4.260 Befehle)
+– messen lässt sich der Unterschied nur auf dem SCAT.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
