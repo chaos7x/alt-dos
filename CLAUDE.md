@@ -178,7 +178,11 @@ bestätigt (Build 240.15): RBTEST wechselt hin und her. Mit FreeDOS weiter
 „Invalid Opcode“ beim Alt+Esc: das AT-BIOS schaltet nach INT 15h/87h A20
 ab (RBTEST liest nie vom Abbild) – der Sprung in den PM fand GDT und
 Kernel über 1 MB nicht. rbs_topm schaltet A20 jetzt vor LGDT über den
-8042 ein (`rbs_a20`). Erstes Codesegment 64.969 Byte
+8042 ein (`rbs_a20`). Vom Nutzer auf dem SCAT bestätigt (Build 240.16):
+FreeDOS in der Box, Alt+Esc hinaus und zurück, EXIT – alles geht. Lehren
+für den Reset-Weg des 286 (in QEMU unsichtbar, SeaBIOS + 386-Weg): das
+AT-BIOS legt seinen Stapel nach dem Reset in die IVT (300h–3FFh), schaltet
+die Tastatur in INT 9 ab/an (ADh/AEh) und A20 nach INT 15h/87h ab. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
