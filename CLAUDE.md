@@ -111,7 +111,8 @@ TSS löschen, LTR, LLDT. Danach pic_pit_init, A20, 287, Takte des BIOS
 Lehre: die alte IVT muss zurück – sonst zeigt INT 9 beim zweiten RBOX
 auf den eigenen Stummel (Hänger). Der 286-Weg ist in QEMU nicht prüfbar:
 dessen 8042-Reset startet die Maschine neu (SeaBIOS bootet, CMOS 0Ah
-wirkt nicht) – nur auf dem SCAT in 86Box. Vom Nutzer auf dem SCAT
+wirkt nicht) – nur auf dem SCAT in 86Box. Erstes Codesegment danach
+64.969 Byte (seit Stufe 3 liegt der Box-Code in KTEXT2). Vom Nutzer auf dem SCAT
 (286, Reset-Weg) bestätigt: START CMD, RBTEST in der Box, hin und her
 gewechselt, XCOPY in der anderen Sitzung, `q` zurück zu CMD.
 Stufe 3 erledigt (in QEMU geprüft, 386-Weg: RBOX startet FreeDOS bis
@@ -266,9 +267,8 @@ bevor vio_rehw die Karte auf Text stellt; vor dem nächsten Eintritt lädt
 palette von AT-DOS merkt `gfx_textdac` beim Anlegen der Box (hw_text
 braucht sie, wenn AT-DOS selbst nie Grafik hatte). Offen: SVGA-Register
 (nur Standard-VGA), Zeichensätze einer Box im Textmodus. Testprogramme
-`\\DEMO\\RBGFX.COM` (apps/rbgfx.asm) und `RBFPU.COM` (apps/rbfpu.asm), Start mit
-`RBOX \\DEMO\\RBGFX.COM`. Erstes Codesegment 64.969 Byte
-– vor Stufe 3 den rb-Code nach KTEXT2.
+`\DEMO\RBGFX.COM` (apps/rbgfx.asm) und `RBFPU.COM` (apps/rbfpu.asm), Start mit
+`RBOX \DEMO\RBGFX.COM`.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
