@@ -172,6 +172,21 @@ int kbd_peek(void)
     return k;
 }
 
+/* 5.1: Zustand der Umschalttasten mit der Box abgleichen (Bit 0 Umschalt,
+   1 Strg, 2 Alt, 3 AltGr). set & 8000h: setzen. -> bisheriger Zustand */
+unsigned kbd_mods(unsigned set)
+{
+    unsigned m = shift | (ctrl << 1) | (alt << 2) | (altgr << 3);
+    if (set & 0x8000) {
+        shift = (unsigned char)(set & 1);
+        ctrl = (unsigned char)((set >> 1) & 1);
+        alt = (unsigned char)((set >> 2) & 1);
+        altgr = (unsigned char)((set >> 3) & 1);
+        alt_only = 0;
+    }
+    return m;
+}
+
 void kbd_flush(void)
 {
     unsigned f = irq_off();

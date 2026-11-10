@@ -209,6 +209,7 @@ unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 void kbd_init(void);
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
+void kbd_irq(unsigned sc);          /* Scancode verarbeiten (IRQ 1)       */
 unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
 void vio_rehw(void);

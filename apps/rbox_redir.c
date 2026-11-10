@@ -532,14 +532,14 @@ static unsigned long drive_mask(void)
     return m;
 }
 
-/* INT E0h der Box (ausser 01h, das erledigt der Kernel) */
+/* INT E0h der Box (ausser 01h, das erledigt der Kernel); RB_RUN hat die
+   Register nach rg geholt und setzt sie beim naechsten Aufruf zurueck */
 static void box_call(void)
 {
     int r;
     unsigned long m;
 
-    DosRBox(RB_REGS, (unsigned)&rg, 0);
-    switch (rg.ax >> 8) {
+    switch (rg.ax >> 8) {                       /* rg fuellte RB_RUN */
     case 0x10:                                  /* Redirector, AL = Funktion */
         if (!sda_lin) {
             rg.flags &= ~0x40;                  /* ZF = 0: nicht unser    */
@@ -586,5 +586,4 @@ static void box_call(void)
     default:
         rg.ax = 0xFFFF;
     }
-    DosRBox(RB_REGS, (unsigned)&rg, 1);
-}
+}                                               /* setzt das naechste RB_RUN */

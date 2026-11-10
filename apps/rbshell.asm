@@ -132,8 +132,9 @@ int2f:  cmp     ah, 0x11
 ; meldet CF = 0 (das BIOS uebergeht die Taste). Umschalt-, Strg-, Alt-,
 ; Funktions- und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben
 ; beim BIOS; Alt+Esc und Strg+Alt+Entf gehen weiter an den Stummel.
-; AltGr (E0 38) merkt sich der Haken selbst - das AT-BIOS haelt die rechte
-; Alt-Taste fuer Alt.
+; AltGr (E0 38) merkt sich der Haken selbst in 496h Bit 3 (das AT-BIOS
+; haelt die rechte Alt-Taste fuer Alt); der Kernel gleicht 417h/418h/496h
+; bei jedem Wechsel mit seinem Tastaturtreiber ab.
 keyb_install:
         push    cs
         pop     es
@@ -167,13 +168,18 @@ int15:  cmp     ah, 0x4F
 .ne0:   cmp     byte [e0], 0
         je      .noe0
         mov     byte [e0], 0            ; erweiterte Taste: nur AltGr merken
+        push    es                      ; AltGr in 496h Bit 3 (rechte Alt-
+        xor     bx, bx                  ; Taste): der Kernel gleicht es mit
+        mov     es, bx                  ; AT-DOS ab
         cmp     al, 0x38
         jne     .e0r
-        mov     byte [altgr], 1
+        or      byte [es:0x496], 8
+        pop     es
         jmp     .out
 .e0r:   cmp     al, 0xB8
-        jne     .out
-        mov     byte [altgr], 0
+        jne     .e0x
+        and     byte [es:0x496], 0xF7
+.e0x:   pop     es
         jmp     .out
 .noe0:  test    al, 0x80                ; Loslassen: BIOS
         jnz     .out
@@ -185,9 +191,10 @@ int15:  cmp     ah, 0x4F
         xor     ax, ax
         mov     ds, ax
         mov     ah, [0x417]             ; AH = Umschaltzustand des BIOS
+        mov     dl, [0x496]             ; Bit 3: AltGr
         pop     ds
-        cmp     byte [altgr], 0
-        je      .noag
+        test    dl, 8
+        jz      .noag
         mov     al, [kb_altg + bx]
         test    al, al
         jnz     .put
@@ -267,7 +274,6 @@ int15:  cmp     ah, 0x4F
         jmp     far [cs:old15]
 
 e0:     db      0
-altgr:  db      0
 old15:  dd      0
 kb_norm: times  90 db 0                 ; von RBOX (INT E0h 15h)
 kb_shft: times  90 db 0

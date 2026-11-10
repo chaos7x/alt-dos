@@ -35,3 +35,5 @@ int __far kf_vio_fg(void) { return vio_fg(); }
 void __far kf_vio_rehw(void) { vio_rehw(); }
 int __far kf_kbd_get(void) { return kbd_get(); }
 void __far kf_kbd_flush(void) { kbd_flush(); }
+unsigned kbd_mods(unsigned set);
+unsigned __far kf_kbd_mods(unsigned set) { return kbd_mods(set); }

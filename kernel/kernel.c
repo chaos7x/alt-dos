@@ -2564,8 +2564,18 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return rb_boot(a2);
         if (a1 == RB_IMG)
             return user_ok(usel, a2, a3, 0) ? rb_img(usel, a2, a3) : FAPI_ERROR;
-        if (a1 == RB_RUN)
-            return rb_run();
+        if (a1 == RB_RUN) {                 /* CX = Register (RB_CALL),  */
+            if (a2) {                       /* DX = 1: vorher setzen     */
+                if (!user_ok(usel, a2, sizeof(struct fapi_rbregs), 1))
+                    return FAPI_ERROR;
+                if (a3)
+                    rb_regs(usel, a2, 1);
+            }
+            k = rb_run();
+            if (a2 && (k & 0xFF) == RB_CALL)
+                rb_regs(usel, a2, 0);
+            return k;
+        }
         if (a1 == RB_REGS)
             return user_ok(usel, a2, sizeof(struct fapi_rbregs), !a3) ?
                    rb_regs(usel, a2, a3) : FAPI_ERROR;
@@ -3390,10 +3400,32 @@ static void pic_pit_init(void)
 extern unsigned rb_enter(void);
 extern void a20_on(void);
 extern unsigned char rb_fault;          /* start.asm: 286 per Dreifachfehler */
+void __far rb_mods_to_box(void);        /* rbox.c                        */
+void __far rb_mods_from_box(void);
 
 void __far kf_sleep_ticks(unsigned n) { sleep_ticks(n); }
 int __far kf_cur(void) { return current; }
 int __far kf_cur_ses(void) { return task[current].session; }
+
+/* A20 offen? 0:0500 und 1 MB + 0500 sind dann verschiedene Zellen. Nur
+   wenn nicht, ueber den 8042 einschalten (jeder Befehl dorthin dauert) */
+static int a20_is_on(void)
+{
+    unsigned char __far *lo = MK_FP(SCRATCH, 0x500);
+    unsigned char __far *hi = MK_FP(SCRATCH2, 0x500);
+    unsigned char a, b;
+    int on;
+    scratch_map(0, 0xFFFF);
+    scratch2_map(0x100000UL, 0xFFFF);
+    a = *lo;
+    b = *hi;
+    *lo = 0;
+    *hi = 0xFF;
+    on = *lo == 0;
+    *hi = b;
+    *lo = a;
+    return on;
+}
 
 void __far kf_rb_hw(unsigned long lin)
 {
@@ -3402,11 +3434,14 @@ void __far kf_rb_hw(unsigned long lin)
         fpu_save(KDATA, (unsigned)fpu_area[fpu_owner]);
         fpu_owner = -1;
     }
+    irq_off();                              /* bis zur Box: Umschalt- */
+    rb_mods_to_box();                       /* tasten abgleichen      */
     if (cpu_386) {                          /* Rueckweg ueber PE loeschen */
         set_desc(SCRATCH >> 3, lin, 0xFFFF, ACC_KDATA);
         set_desc(SCRATCH2 >> 3, lin, 0xFFFF, ACC_KCODE);
     }
-    rb_enter();
+    rb_enter();                             /* kommt mit IF = 0 zurueck */
+    rb_mods_from_box();
     /* Alt+Esc kommt mitten aus dem Tastatur-Interrupt des BIOS (INT 15h/
        4Fh): das AT-BIOS hat die Tastatur am 8042 abgeschaltet (ADh) und
        schaltet sie erst am Ende wieder ein - das holen wir nach */
@@ -3417,9 +3452,12 @@ void __far kf_rb_hw(unsigned long lin)
         outb(0x64, 0xAE);
     }
     pic_pit_init();
-    if (inb(0x64) & 1)                      /* wartendes Byte: der neu */
-        inb(0x60);                          /* eingestellte PIC saehe es nie */
-    a20_on();
+    if ((inb(0x64) & 0x21) == 1)            /* wartende Taste: der neu  */
+        kbd_irq(inb(0x60));                 /* eingestellte PIC saehe sie */
+    else if (inb(0x64) & 1)                 /* nie (Alt+Esc bei RBTIME   */
+        inb(0x60);                          /* ging so verloren); Maus weg */
+    if (!a20_is_on())                       /* nach INT 15h/87h aus     */
+        a20_on();
     if (fpu_ok) {
         fpu_pm_init();
         fpu_reset();

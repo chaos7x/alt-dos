@@ -1200,15 +1200,9 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         pop     es
         mov     dx, [46]
         mov     bh, 0
-        mov     ah, 2
-        int     0x10
-.quiet: push    ds
-        xor     ax, ax
-        mov     ds, ax
-        and     byte [0x417], 0xF7      ; Alt ist beim Zurueckkommen los
-        and     byte [0x418], 0xFD
-        pop     ds
-        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+        mov     ah, 2                   ; (Umschalttasten 417h/418h/496h
+        int     0x10                    ;  stellt rbox.c vor dem Eintritt)
+.quiet: in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
         test    al, 1                   ; ist neu eingestellt und sieht die
         jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
         test    al, 0x20                ; als Flanke - abholen, sonst steht
@@ -1534,14 +1528,16 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         mov     ax, [0x450]             ; Cursor Seite 0
         pop     ds
         mov     [46], ax
-        mov     ax, 0xB800              ; Bildschirmtext sichern
-        mov     ds, ax
-        xor     si, si
+        cmp     word [30], 3            ; Dienst (INT E0h): Bild bleibt
+        je      .notxt                  ; stehen - 4000 Byte aus dem ISA-
+        mov     ax, 0xB800              ; Bildspeicher kosten ~2 ms; wird
+        mov     ds, ax                  ; derweil weggeschaltet, sichert
+        xor     si, si                  ; der Kernel (rbox.c)
         mov     di, 0x600
         mov     cx, 2000
         cld
         rep     movsw
-        mov     ax, cs
+.notxt: mov     ax, cs
         mov     ds, ax
         cmp     byte [76], 0            ; 287 der Box sichern (AT-DOS macht
         je      .nofpu                  ; FNINIT/FSETPM)

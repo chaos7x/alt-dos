@@ -29,6 +29,7 @@ extern void rb_reentry(void);
 void __far kf_vio_rehw(void);
 int __far kf_kbd_get(void);
 void __far kf_kbd_flush(void);
+unsigned __far kf_kbd_mods(unsigned set);
 int __far kf_cur(void);                 /* kernel.c: laufender Task */
 int __far kf_cur_ses(void);             /* ... und seine Sitzung    */
 #define current     kf_cur()
@@ -257,6 +258,62 @@ void __far rb_free(void)
     }
 }
 
+/* Bild der Box sichern, wenn sie nach einem Dienst (Stummel sichert dann
+   nicht) weggeschaltet wird: Grafik wie bei Alt+Esc, Text nach rb_lin +
+   600h wie der Stummel */
+static void rb_save_screen(void)
+{
+    if (!rb_gfx_u)
+        rb_gfx_u = mem_alloc((unsigned)RB_GFX_UNITS);
+    if (rb_gfx_u && rb_gfx_save((unsigned long)rb_gfx_u * MEM_UNIT)) {
+        rb_gfx = 1;
+        return;
+    }
+    scratch_map(rb_lin + RB_TEXT, 3999);
+    scratch2_map(0xB8000UL, 3999);
+    far_copy(SCRATCH, 0, SCRATCH2, 0, 4000);
+}
+
+/* Umschalttasten zwischen AT-DOS (kbd.c) und dem BIOS der Box abgleichen:
+   wird eine Taste gedrueckt oder losgelassen, waehrend die andere Seite
+   laeuft, saehe die eine sonst Alt/Umschalt ewig gedrueckt bzw. nie (Alt
+   in der Box, Esc waehrend eines Ausflugs: kein Alt+Esc). 417h Bit 0/1
+   Umschalt, 2 Strg, 3 Alt; 418h Bit 0 Strg links, 1 Alt links; 496h Bit 3
+   AltGr (rechte Alt-Taste, RBSHELL fuehrt es auch). SCRATCH2 = 0. Ruft
+   kf_rb_hw mit gesperrten Interrupts direkt vor dem Eintritt bzw. nach der
+   Rueckkehr - sonst ging eine Alt-Taste dazwischen verloren (Alt+Esc bei
+   RBTIME). */
+void __far rb_mods_to_box(void)
+{
+    unsigned m = kf_kbd_mods(0);
+    unsigned char a, b, c;
+    scratch2_map(0, 0xFFFF);
+    a = RBSB(0x417) & 0xF0;
+    b = RBSB(0x418) & 0xFC;
+    c = RBSB(0x496) & 0xF3;
+    if (m & 1) a |= 0x02;
+    if (m & 2) { a |= 0x04; b |= 0x01; }
+    if (m & 4) { a |= 0x08; b |= 0x02; }
+    if (m & 8) { a |= 0x08; c |= 0x08; }
+    RBSB(0x417) = a;
+    RBSB(0x418) = b;
+    RBSB(0x496) = c;
+}
+
+void __far rb_mods_from_box(void)
+{
+    unsigned char a, c;
+    unsigned m = 0x8000;
+    scratch2_map(0, 0xFFFF);                /* 386-Weg: war Codefenster */
+    a = RBSB(0x417);
+    c = RBSB(0x496);
+    if (a & 3) m |= 1;
+    if (a & 4) m |= 2;
+    if (c & 8) m |= 8;
+    else if (a & 8) m |= 4;
+    kf_kbd_mods(m);
+}
+
 /* Tasten, die AT-DOS waehrend eines Dienstes bekam, in den Tastaturpuffer
    des BIOS der Box (gleiches Format: Zeichen | Scancode << 8) */
 static void rb_keys(void)
@@ -288,8 +345,9 @@ unsigned __far rb_run(void)
     for (;;) {
         while (vio_fg() != kf_cur_ses()) {
             if (vio_frozen) {               /* waehrend eines Dienstes   */
-                vio_frozen = 0;             /* weggeschaltet            */
-                rb_quiet = 0;
+                rb_save_screen();           /* weggeschaltet: Bild der   */
+                vio_frozen = 0;             /* Box sichern (der Stummel  */
+                rb_quiet = 0;               /* tat es nicht)            */
                 kf_vio_rehw();
             }
             sleep_ticks(5);

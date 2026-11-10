@@ -78,7 +78,7 @@ KOBJ="$B/start.o"
 K2MODS="floppy vgagfx rbox"
 for m in kernel mem floppy fat vio kbd preload vgagfx rbox k2thunk; do
     S=""
-    case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
+    case " $K2MODS " in *" $m "*) S="-nt=KTEXT2 -os" ;; esac   # selten: klein statt schnell
     wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done

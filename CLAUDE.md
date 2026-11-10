@@ -288,6 +288,32 @@ vor jedem Eintritt (geht über alle Cache-Blöcke, bei 16 MB ~4.000), die
 FAPI-Aufrufe von RBOX je Dienst (RB_RUN, RB_REGS holen/setzen), B800
 sichern im Stummel. Mit RBRESET=FAULT läuft die Box auf dem SCAT normal,
 auch Alt+Esc zurück zu AT-DOS (vom Nutzer bestätigt).
+Bremsen gelöst (in QEMU, 386-Weg: RBTIME 579 -> 3.945/s, mit zweiter
+Sitzung 2.377/s): (1) der Stummel sichert B800 bei Diensten (Grund 3)
+nicht mehr – 4.000 Byte aus dem ISA-Bildspeicher; wird während eines
+Dienstes weggeschaltet, sichert `rb_save_screen` (rbox.c) Grafik bzw.
+Text selbst; (2) kf_rb_hw schaltet A20 nur ein, wenn `a20_is_on` sie aus
+findet (Zellen 0:0500/1 MB + 0500, ohne 8042); (3) RB_RUN nimmt mit CX
+den Registerpuffer (bei RB_CALL gefüllt, DX = 1 setzt ihn vorher) – ein
+FAPI-Aufruf je Dienst statt drei. blk_flush war kein Verdächtiger (läuft
+nur, solange Blöcke geändert sind).
+Alt+Esc während RBTIME blieb in der Box (vom Nutzer gemeldet): Alt und
+Esc kamen zu verschiedenen Seiten (Box/AT-DOS), jede sah nur ihre Hälfte.
+Jetzt gleicht der Kernel die Umschalttasten bei jedem Wechsel ab:
+kbd.c `kbd_mods` (Umschalt, Strg, Alt, AltGr), rbox.c `rb_mods_to_box`/
+`rb_mods_from_box` <-> 417h/418h/496h (AltGr = 496h Bit 3, RBSHELL führt
+es dort statt in einer eigenen Variablen), aufgerufen in kf_rb_hw mit
+gesperrten Interrupts direkt vor rb_enter bzw. danach (rb_enter kommt mit
+IF = 0 zurück) – mit einem Abgleich früher im Ablauf ging eine Alt-Taste
+im Fenster dazwischen auf beiden Seiten verloren (über Port E9h gefunden).
+Ein im 8042 wartendes Byte nach dem Wechsel geht an kbd_irq statt
+verworfen zu werden (Maus-Bytes weiter weg). Der Stummel löscht Alt beim
+Zurückkommen nicht mehr selbst. In QEMU 3 von 3 Läufen: Alt+Esc während
+RBTIME schaltet. ATDOS.SYS stieß dabei an die 80 KB des Diskettenladers
+(82.146 Byte): K2MODS jetzt mit `-os` (selten gebraucht), 81.698 Byte.
+Testfalle: build.sh meldet das mit „FEHLER: ATDOS.SYS groesser als
+80 KB“ – nach Fehlern auch danach filtern, sonst testet man das alte
+Abbild weiter; q.py mit `timeout 10` bricht lange Eingaben ab.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.

@@ -126,12 +126,14 @@ void main(void)
         load_com(a);
     else
         load_img(a);
-    for (;;) {
-        r = DosRBox(RB_RUN, 0, 0);
+    for (l = 0;;) {                     /* l = 1: Register zurueck   */
+        r = DosRBox(RB_RUN, (unsigned)&rg, l);
+        l = 0;
         if (r == RB_SWITCH)
             continue;
         if (r == RB_CALL) {             /* INT E0h: Redirector usw.  */
             box_call();
+            l = 1;
             continue;
         }
         break;

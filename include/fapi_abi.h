@@ -142,8 +142,11 @@ struct fapi_comcfg {
                                        RB_LOAD; RB_IMG: CX = Puffer, DX = Laenge
                                        (Vielfaches von 512) haengt an das Abbild an,
                                        das erste Stueck enthaelt den Bootsektor;
-                                       RB_RUN: wartet, bis die eigene Sitzung vorn
-                                       ist, laeuft im Real Mode -> RB_SWITCH (Alt+Esc),
+                                       RB_RUN: CX = struct fapi_rbregs oder 0 (bei
+                                       RB_CALL damit gefuellt; DX = 1: vorher daraus
+                                       setzen, spart RB_REGS), wartet, bis die eigene
+                                       Sitzung vorn ist, laeuft im Real Mode ->
+                                       RB_SWITCH (Alt+Esc),
                                        RB_EXIT (Programmende, Strg+Alt+Entf, INT E0h
                                        AH = 01h), RB_CALL (INT E0h, AH ungleich 01h:
                                        RBOX erledigt ihn ueber RB_REGS/RB_MEM, dann
