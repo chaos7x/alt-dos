@@ -1559,7 +1559,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   USER/GDI (eigen oder Wine mit einem PM-Treiber statt x11drv) bilden
   Fenster und Zeichnen auf PM ab (Ursprung oben links -> unten links,
   Nachrichten, DC -> Presentation Space); Win16-Programme sind 16-Bit-NE
-  und passen direkt zum Kernel.
+  und passen direkt zum Kernel. Grafiktreiber unter dem PM: zuerst VESA
+  (läuft auf jeder Karte), als erste Karte mit eigenem beschleunigtem
+  Treiber die **S3 Trio3D** (86C365, 1998, Karte des Nutzers): 2D-Engine
+  der S3-Familie (Trio64-kompatible Register: Rechteck füllen, BitBLT,
+  Linien, Ports oder MMIO), Hardware-Mauszeiger. Unterlagen: S3-Daten-
+  blätter, Linux `s3fb` und X.Org-S3-Treiber als Nachschlagewerk
+  (GPL, Herkunft vermerken), 86Box für das Registerverhalten. Danach
+  evtl. ET4000, Cirrus.
 - Win16, Optionen (noch nicht entschieden): 1. echtes Windows 3.1 in
   einer DOS-Sitzung (kommt mit den Sitzungen, braucht Windows-Lizenz);
   2. eigenes Win16-Teilsystem auf Basis von Wine (krnl386/user/gdi, wie
