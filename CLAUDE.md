@@ -1563,14 +1563,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   **VGA** 640×480×16 (läuft auf allen Maschinen, auch dem 286; ET4000 und
   Cirrus haben im BIOS kein VBE 2.0 mit linearem Bildspeicher), VESA
   dort, wo es da ist. Erste Karte mit eigenem beschleunigtem Treiber:
-  **Cirrus 54xx** (Entscheidung im Gedankenspiel: gute Datenbücher,
-  einfache BitBLT-Einheit, QEMU emuliert eine GD5446 (`-vga cirrus`) –
-  Test vor 86Box möglich; Karten sind ISA, der Nutzer kann sie in 86Box
-  zwischen den Maschinen tauschen). Danach ET4000/W32 (Beschleuniger der
-  W32), dann S3 (ISA-Chips 801/805/911/924/928 und Trio3D am P3B-F, 2D-
-  Engine der S3-Familie, Hardware-Mauszeiger). Nachschlagewerke: Daten-
-  blätter, Linux/X.Org-Treiber (GPL, Herkunft vermerken), 86Box für das
-  Registerverhalten.
+  **S3 Trio3D** (86C365, Wunsch des Nutzers: höchste Priorität; am
+  P3B-F, VBE 2.0 mit linearem Bildspeicher, 2D-Engine der S3-Familie mit
+  Trio64-kompatiblen Registern – Rechteck füllen, BitBLT, Linien, Ports
+  oder MMIO –, Hardware-Mauszeiger; nur in 86Box testbar, QEMU hat keine
+  S3). Danach **Cirrus 54xx** (gute Datenbücher, einfache BitBLT-
+  Einheit, QEMU emuliert eine GD5446 `-vga cirrus`), dann ET4000/W32.
+  Die ISA-Karten kann der Nutzer in 86Box zwischen den Maschinen
+  tauschen; S3-ISA-Chips (801/805/911/924/928) teilen die 2D-Engine mit
+  der Trio3D. Nachschlagewerke: Datenblätter, Linux/X.Org-Treiber (GPL,
+  Herkunft vermerken), 86Box für das Registerverhalten.
 - Win16, Optionen (noch nicht entschieden): 1. echtes Windows 3.1 in
   einer DOS-Sitzung (kommt mit den Sitzungen, braucht Windows-Lizenz);
   2. eigenes Win16-Teilsystem auf Basis von Wine (krnl386/user/gdi, wie
