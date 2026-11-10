@@ -1358,6 +1358,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Rückweg in den Real Mode per CPU-Reset mit Shutdown-Code im CMOS, Box im
   Hintergrund eingefroren. Erweiterung der Zeitlinie (Spezifikation sieht
   Altkompatibilität erst mit DOS 6.0/V86 vor).
+  Entwurf (mit dem Nutzer, noch nicht begonnen): DOS in der Box ist das
+  FreeDOS-Abbild wie in 6.0 (Vorschlag des Nutzers) – Festplatten sieht
+  die Box nicht, A: = Abbild über einen INT-13h-Haken, AT-DOS-Laufwerke
+  über den Redirector (INT 2Fh -> INT E0h); jeder Aufruf ist ein Ausflug
+  in den PM (hin per LMSW, zurück per CPU-Reset/Dreifachfehler).
+  Entscheidung des Nutzers: läuft 5.1 auf einem 386 oder höher, darf der
+  Rückweg die schnelle 386-Variante nehmen (PE löschen; kleines Stück
+  386-Code mit Laufzeitprüfung, sonst Reset). Dafür zieht der Kernel
+  über 1 MB (`PROTECTONLY=NO`, `RMSIZE=` wie OS/2 1.x), 0–640 KB gehört
+  der Box, kein Speichertausch. FreeDOS-Kern braucht einen 8086/286-Bau.
+  AT-DOS steht vorerst, solange die Box vorn ist (später je Takt kurz
+  weiter wie OS/2 1.0). Offen: Zweig/Version (5.1 auf `5.x`?).
 - Codesegmente zwischen Instanzen desselben Programms teilen (FX-Kopf muss
   Code und Daten getrennt beschreiben)
 - FAPI unter MS-DOS (Wunsch des Nutzers, „EXE darf größer werden“), wie
