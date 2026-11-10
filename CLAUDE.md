@@ -2871,6 +2871,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
     (`kill_req`, `kill_pending`) nur ohne laufende Operation; PROC_KILL
     eines Tasks in einer Operation setzt kill_req. end_programs wartet,
     bis die anderen fertig sind, dann `bkl_hold`. `box_sec` im Kontext.
+  Vom Nutzer in 86Box bestätigt: DOTT-CD gleichzeitig auf die NCR- und
+  die IDE-Platte kopiert (beide liefen gleichzeitig, die Plattensymbole
+  blinkten im Wechsel), dabei VER/DIR/TASKMAN bedienbar und DELTREE auf
+  der IDE-Platte mitten im Kopieren; CHKDSK auf beiden ohne Fehler.
   Grenzen: zwei Laufwerke am selben Treiber (IDE-Master/-Slave, zwei
   Partitionen) und zwei FAT12/16-Laufwerke laufen weiter nacheinander;
   Diskette behält die Sperre; ein Task, der in einer Operation im Treiber
