@@ -661,3 +661,101 @@ int __far vio_setpage(int s, unsigned p)
         ses[s].gfx_page = (unsigned char)p;
     return 0;
 }
+
+/* ---- 5.1: Kompatibilitaetsbox mit Grafik ---------------------------------
+   Kommt die Box (Real Mode, schreibt direkt auf die Karte) per Alt+Esc
+   zurueck und steht die Karte auf Grafik (GC 6 Bit 0, erkennt auch Mode X),
+   sichert rbox.c alles wie raw_out in 6.0: Misc, Sequenzer, CRTC, Grafik,
+   Attribut (61 Byte wie die Tabellen), DAC und die vier Ebenen zu 64 KB.
+   Puffer: Ebenen ab buf, Register ab buf + 40000h (1 KB). */
+static unsigned char rb_t[61];
+
+static void rb_regs_in(void)
+{
+    unsigned i;
+    rb_t[0] = (unsigned char)inb(0x3CC);
+    for (i = 0; i < 5; i++) {
+        outb(0x3C4, i);
+        rb_t[1 + i] = (unsigned char)inb(0x3C5);
+    }
+    for (i = 0; i < 25; i++)
+        rb_t[6 + i] = (unsigned char)crtc_in(i);
+    for (i = 0; i < 9; i++) {
+        outb(0x3CE, i);
+        rb_t[31 + i] = (unsigned char)inb(0x3CF);
+    }
+    for (i = 0; i < 21; i++) {
+        inb(0x3DA);
+        outb(0x3C0, i);
+        rb_t[40 + i] = (unsigned char)inb(0x3C1);
+    }
+    inb(0x3DA);
+    outb(0x3C0, 0x20);
+}
+
+/* Ebenen einzeln: A0000 64 KB, ohne Ketten, Schreibmodus 0 */
+static void rb_planes(unsigned long buf, int out)
+{
+    unsigned p;
+    seqr(0x04, 0x06);
+    gcr(0x01, 0x00);
+    gcr(0x03, 0x00);
+    gcr(0x05, 0x00);
+    gcr(0x06, 0x05);
+    gcr(0x08, 0xFF);
+    scratch2_map(0xA0000UL, 0xFFFF);
+    for (p = 0; p < 4; p++, buf += 0x10000UL) {
+        scratch_map(buf, 0xFFFF);
+        if (out) {
+            gcr(0x04, p);
+            far_copy(SCRATCH, 0, SCRATCH2, 0, 0x8000);
+            far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, 0x8000);
+        } else {
+            seqr(0x02, 1 << p);
+            far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000);
+            far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
+        }
+    }
+}
+
+/* -> 1 Grafik gesichert, 0 Textmodus (das sichert der Stummel selbst) */
+int __far rb_gfx_save(unsigned long buf)
+{
+    unsigned i;
+    unsigned char __far *q;
+    outb(0x3CE, 0x06);
+    if (!(inb(0x3CF) & 1))
+        return 0;
+    rb_regs_in();
+    scratch_map(buf + 0x40000UL, 1023);
+    q = MK_FP(SCRATCH, 0);
+    for (i = 0; i < 61; i++)
+        q[i] = rb_t[i];
+    dac_io(0, 0, 256, q + 64);
+    rb_planes(buf, 1);
+    return 1;
+}
+
+void __far rb_gfx_load(unsigned long buf)
+{
+    unsigned i;
+    unsigned char __far *q;
+    rb_planes(buf, 0);
+    scratch_map(buf + 0x40000UL, 1023);
+    q = MK_FP(SCRATCH, 0);
+    for (i = 0; i < 61; i++)
+        rb_t[i] = q[i];
+    dac_io(1, 0, 256, q + 64);
+    vga_regs(rb_t);
+    hw_gfx = 0;                             /* Karte gehoert der Box     */
+}
+
+/* Textpalette merken, solange AT-DOS sie zeigt (hw_text braucht sie nach
+   Grafik in der Box) */
+void __far gfx_textdac(void)
+{
+    if (!text_dac_ok && !hw_gfx) {
+        dac_io(0, 0, 64, (unsigned char __far *)text_dac);
+        text_dac_ok = 1;
+    }
+}

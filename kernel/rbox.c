@@ -39,6 +39,12 @@ static unsigned rb_img_u, rb_img_n;     /* Abbild: erste Einheit, Anzahl */
 static unsigned long rb_img_pos;        /* bisher geladen (Byte)         */
 static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
 static unsigned char rb_quiet;          /* letzter Ausflug war ein Dienst */
+static unsigned rb_gfx_u;               /* Grafik der Box (257 KB)       */
+static unsigned char rb_gfx;            /* ... ist gesichert             */
+#define RB_GFX_UNITS ((0x40000UL + 1024) / MEM_UNIT)
+int __far rb_gfx_save(unsigned long buf);       /* vgagfx.c */
+void __far rb_gfx_load(unsigned long buf);
+void __far gfx_textdac(void);
 
 #define RB_SIZE     0x2000UL
 #define RB_LO       (0x10000UL / MEM_UNIT)
@@ -95,6 +101,7 @@ static unsigned rb_common(void)
     RBW(RB_GDT + 16) = RBW(RB_GDT + 24) = 0xFFFF;
     RBB(RB_GDT + 21) = RBB(RB_GDT + 29) = 0x93;
     RBB(76) = fpu_ok ? 1 : 0;               /* Stummel sichert den 287 */
+    gfx_textdac();                          /* AT-DOS zeigt noch Text    */
     RBB(28) = bios_pic1;
     RBB(29) = bios_pic2;
     RBW(32) = gdtr[0];
@@ -230,6 +237,11 @@ void __far rb_free(void)
         mem_free(rb_img_u, rb_img_n);
         rb_img_u = 0;
     }
+    if (rb_gfx_u) {
+        mem_free(rb_gfx_u, (unsigned)RB_GFX_UNITS);
+        rb_gfx_u = 0;
+    }
+    rb_gfx = 0;
     scratch_map(rb_lin, 0xFFFF);            /* IVT und BIOS-Daten wie */
     scratch2_map(0, 0xFFFF);                /* vor der Box            */
     for (i = 0; i < 0x46C; i += 2)
@@ -282,11 +294,16 @@ unsigned __far rb_run(void)
             }
             sleep_ticks(5);
         }
+        vio_frozen = 1;
+        if (rb_gfx) {                       /* Grafik der Box zurueck    */
+            rb_gfx_load((unsigned long)rb_gfx_u * MEM_UNIT);
+            rb_gfx = 0;
+            rb_quiet = 1;                   /* Stummel: Modus nicht neu  */
+        }
         scratch_map(rb_lin, 0xFFFF);
         RBB(74) = rb_quiet;                 /* Stummel: Bild steht noch */
         if (rb_quiet)
             rb_keys();
-        vio_frozen = 1;
         scratch_map(0, 0xFFFF);
         t0 = RBW(0x46C);                    /* BIOS-Takt: steht, solange
                                                AT-DOS laeuft          */
@@ -311,6 +328,12 @@ unsigned __far rb_run(void)
         break;
     }
     rb_quiet = r == RB_CALL;                /* Dienst: Bild bleibt der Box */
+    if (r == RB_SWITCH) {                   /* Grafik sichern, bevor AT-DOS */
+        if (!rb_gfx_u)                      /* die Karte auf Text stellt  */
+            rb_gfx_u = mem_alloc((unsigned)RB_GFX_UNITS);
+        if (rb_gfx_u)
+            rb_gfx = (unsigned char)rb_gfx_save((unsigned long)rb_gfx_u * MEM_UNIT);
+    }
     if (!rb_quiet) {
         vio_frozen = 0;
         kf_vio_rehw();

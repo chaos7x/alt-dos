@@ -253,7 +253,19 @@ AT-DOS beim Zurückkommen FNINIT macht): rbs_topm sichert ihn vor jedem
 Ausflug (auch Diensten) mit FNSAVE nach rb_lin + 1C40h (Byte 77 = gilt),
 rbs_entry setzt den 287 über Port F1h zurück (auf dem 286 holt nur das
 ihn aus dem Protected Mode – AT-DOS macht FSETPM), FNINIT, dann FRSTOR.
-Byte 76 = fpu_ok (rb_common). Erstes Codesegment 64.969 Byte
+Byte 76 = fpu_ok (rb_common).
+Grafik der Box über Alt+Esc (in QEMU mit GFX.COM geprüft: 13h mit Muster
+und roter Farbe 1, Alt+Esc, VER in der anderen Sitzung, zurück -> Bild
+und Palette gleich, „OK“): kommt die Box mit RB_SWITCH zurück und meldet
+GC 6 Grafik (auch Mode X), sichert `rb_gfx_save` (vgagfx.c, wie raw_out
+in 6.0) Register (61 Byte), DAC und vier Ebenen in 257 KB erweiterten
+Speicher (`rb_gfx_u`, beim ersten Mal per mem_alloc, frei in rb_free),
+bevor vio_rehw die Karte auf Text stellt; vor dem nächsten Eintritt lädt
+`rb_gfx_load` alles zurück, und der Stummel überspringt das Einstellen
+(Byte 74 wie bei Diensten). Text bleibt beim Stummel (B800). Die Text-
+palette von AT-DOS merkt `gfx_textdac` beim Anlegen der Box (hw_text
+braucht sie, wenn AT-DOS selbst nie Grafik hatte). Offen: SVGA-Register
+(nur Standard-VGA), Zeichensätze einer Box im Textmodus. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
