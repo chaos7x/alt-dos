@@ -374,6 +374,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   EBR 06h -> 0Bh) mit fragmentierten und gelöschten Dateien, das
   Startlaufwerk C: im Betrieb mit EA-Namen (Verweise richtig umgerechnet),
   danach Start von FAT32, XCOPY, CHKDSK; Abbruch mit N lässt FAT16 gleich.
+  Vom Nutzer in 86Box bestätigt: seine Spiele-Platte (FAT16) mit CONVERT
+  nach FAT32 umgewandelt.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
