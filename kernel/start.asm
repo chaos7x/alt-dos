@@ -1620,9 +1620,9 @@ cpu 386
 rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen
         push    word [cs:50]
         push    word RBO(rbs_entry)
-        mov     eax, cr0
-        and     al, 0xFE
-        mov     cr0, eax
+        mov     eax, cr0                ; PE, MP, EM, TS loeschen wie der
+        and     al, 0xF0                ; Reset des 286 (sonst: 287-Befehl
+        mov     cr0, eax                ; in der Box -> INT 7 -> Endlosschleife)
         retf                            ; laedt CS = rb_seg (Real Mode)
 cpu 286
 rbs_end:

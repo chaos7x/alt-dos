@@ -234,7 +234,13 @@ kbd.c (Umschalt, Feststelltaste für Buchstaben und Umlaute, Strg+Buch-
 stabe nach der Belegung, AltGr aus E0 38 selbst gemerkt – das AT-BIOS
 hält die rechte Alt-Taste für Alt); Umschalt-/Strg-/Alt-, Funktions-
 und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben beim BIOS. Vom
-Nutzer auf dem SCAT bestätigt (Build 240.20): deutsche Tastatur in der Box geht. Erstes Codesegment 64.969 Byte
+Nutzer auf dem SCAT bestätigt (Build 240.20): deutsche Tastatur in der Box geht.
+386-Weg: rbs_386 löschte nur PE – MP/TS blieben vom Taskwechsel gesetzt,
+der erste 287-Befehl in der Box löste INT 7 aus (im Real Mode meist ein
+bloßes IRET -> Endlosschleife; in QEMU mit FPT.COM nachgestellt: steht
+bei IP 0100h, CR0 = 1Ah). Jetzt `and al, 0F0h` wie der Reset des 286
+(PE, MP, EM, TS); FPT rechnet 1 + 1 = 2. Den 287-Zustand der Box beim
+Wechsel sichert noch niemand. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
