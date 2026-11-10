@@ -233,7 +233,8 @@ Zeichen | Scancode in den BIOS-Puffer und meldet CF = 0, Regeln wie
 kbd.c (Umschalt, Feststelltaste für Buchstaben und Umlaute, Strg+Buch-
 stabe nach der Belegung, AltGr aus E0 38 selbst gemerkt – das AT-BIOS
 hält die rechte Alt-Taste für Alt); Umschalt-/Strg-/Alt-, Funktions-
-und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben beim BIOS. Erstes Codesegment 64.969 Byte
+und Ziffernblocktasten, Alt+Taste und Umschalt+Tab bleiben beim BIOS. Vom
+Nutzer auf dem SCAT bestätigt (Build 240.20): deutsche Tastatur in der Box geht. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
