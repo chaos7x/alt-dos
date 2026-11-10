@@ -82,7 +82,8 @@ Kernelbereich über 1 MB. Damit sind 0–640 KB bis auf 0–FFFFh (BIOS,
 Vorladebereich, alter DMA-Puffer/Bitmap) frei – Programme bekommen
 109 KB mehr konventionellen Speicher, die Box später alles.
 Vom Nutzer auf dem SCAT in 86Box (16 MB) bestätigt: Start über den
-Adaptec (drei Platten + CD), MEM 109 KB Kernel, Cache 7.936 KB.
+Adaptec (drei Platten + CD), MEM 109 KB Kernel, Cache 7.936 KB;
+Dateien auf Adaptec- und IDE-Platte kopiert, CHKDSK auf beiden sauber.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
