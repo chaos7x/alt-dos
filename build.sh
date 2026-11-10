@@ -219,9 +219,11 @@ SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.s
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 nasm -f bin apps/rbtest.asm -o $B/rbtest.com  # Test der Kompatibilitaetsbox (5.1)
+nasm -f bin apps/rbgfx.asm -o $B/rbgfx.com
+nasm -f bin apps/rbfpu.asm -o $B/rbfpu.com
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE
-       $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF  $B/rbtest.com RBTEST.COM"
+       $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF  $B/rbtest.com RBTEST.COM  $B/rbgfx.com RBGFX.COM  $B/rbfpu.com RBFPU.COM"
 # Startabbild der Kompatibilitaetsbox (5.1): 360-KB-Diskette mit FreeDOS-
 # Bootsektor, KERNEL.SYS zuerst (8086-Bau), FreeCOM, RBSHELL
 echo "Box: Startabbild freedos.img"
