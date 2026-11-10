@@ -61,7 +61,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosSubst(d, path)   F2(FAPI_SUBST, (d), (path))
 #define DosQSubst(d, buf)   F2(FAPI_QSUBST, (d), (buf))
 #define DosJoin(d, path)    F2(FAPI_JOIN, (d), (path))
-#define DosCacheInfo(p)     F2(FAPI_CACHEINFO, (p), 0)
+#define DosCacheInfo(p)     F2(FAPI_CACHEINFO, (p), sizeof(*(p)))
 #define VioSetAnsi(on)      F2(FAPI_VIOSETANSI, (on), 0)    /* 2 = abfragen */
 #define DosQJoin(d, buf)    F2(FAPI_QJOIN, (d), (buf))
 #define DosFmtTrack(h, p)   F2(FAPI_FMTTRACK, (h), (p))     /* struct fapi_fmttrack */

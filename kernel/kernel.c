@@ -1555,7 +1555,7 @@ unsigned proc_run(unsigned long id)
 static int bc_due(void);
 static void bc_flush(void);
 static void bc_regrow(void);
-static void cache_info(struct fapi_cacheinfo __far *ci);
+static void cache_info(struct fapi_cacheinfo __far *ci, unsigned size);
 static void sleep_ticks(unsigned n)
 {
     if (klock < 0 || klock == current) {
@@ -2086,7 +2086,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
     case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
-    case FAPI_QCHILDRC: case FAPI_QCURDIR: case FAPI_QCURDISK:
+    case FAPI_QCHILDRC: case FAPI_QCURDISK:   /* QCURDIR liest u. U. die Platte */
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
     case FAPI_SIGRETURN: case FAPI_YIELD: case FAPI_SLEEP:
@@ -2502,10 +2502,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_CACHEINFO: {
         struct fapi_cacheinfo __far *ci;
-        if (!user_ok(usel, a1, sizeof(*ci), 1))
+        if (!user_ok(usel, a1, a2 >= sizeof(*ci) ? sizeof(*ci) : CACHEINFO_V50, 1))
             return FAPI_ERROR;
         ci = MK_FP(usel, a1);
-        cache_info(ci);
+        cache_info(ci, a2);
         return 0;
     }
 
@@ -3238,7 +3238,7 @@ static const char *drv_name(int d)
 static void rom_str(unsigned long lin, unsigned len, char __far *out, unsigned max)
 {
     unsigned char __far *p = MK_FP(SCRATCH, 0);
-    unsigned i, s = 0, n = 0, al = 0, best = 0, bs = 0, c, kw = 0, pc = 0, bkw = 0, sp = 0;
+    unsigned i, s = 0, n = 0, al = 0, best = 0, bs = 0, c, kw = 0, pc = 0, bkw = 0, sp = 0, ks = 0;
     scratch_map(lin, len - 1);
     for (i = 0; i <= len - 1; i++) {
         c = i < len - 1 ? p[i] : 0;
@@ -3256,14 +3256,22 @@ static void rom_str(unsigned long lin, unsigned len, char __far *out, unsigned m
                 kw < 1)
                 kw = 1;                     /* "BIOS" zaehlt weniger als  */
             if (n >= 4 && ((p[i - 2] == '(' && (p[i - 1] | 0x20) == 'c' && c == ')') ||
-                           (p[i - 3] == 'r' && p[i - 2] == 'i' && p[i - 1] == 'g' && c == 'h')))
+                           (p[i - 3] == 'r' && p[i - 2] == 'i' && p[i - 1] == 'g' && c == 'h'))) {
+                if (kw < 2)                 /* ab hier zeigen: davor steht */
+                    ks = c == ')' ? i - 2 : (i - 7 >= s ? i - 7 : s);  /* oft Muell */
                 kw = 2;                     /* "(C)" / "Copyright"        */
+            }
             continue;
         }
         /* Zeichensalat aussortieren: mindestens 8 Zeichen, ein Leerzeichen,
            zu drei Vierteln Buchstaben/Ziffern/Leerzeichen */
-        if (n >= 8 && sp && al * 4 >= n * 3 && !pc && (kw > bkw || (kw == bkw && n > best)))
+        if (n >= 8 && sp && al * 4 >= n * 3 && !pc && (kw > bkw || (kw == bkw && n > best))) {
             best = n, bs = s, bkw = kw;
+            if (kw == 2 && ks > s) {        /* "(C)"/"Copyright" voran   */
+                best -= ks - s;
+                bs = ks;
+            }
+        }
         n = 0;
     }
     if (best >= max)
@@ -3350,7 +3358,9 @@ static unsigned       bc_unit[BC_MAXCH], bc_nch, bc_present, bc_growing;
 #define BC_LIN(i)   (((unsigned long)bc_unit[(i) >> 3] << 8) + ((unsigned)((i) & 7) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
-static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s     */
+static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s,max */
+static unsigned       cache_max = 0xFFFF;               /* 0xFFFF = nach Speicher */
+static unsigned       bc_minch, bc_rsv;                 /* Mindeststuecke, Reserve KB */
 #define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
 #define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
@@ -3375,25 +3385,39 @@ static int bc_chunk_get(unsigned c)
 
 void blk_cache_init(unsigned kb)
 {
-    unsigned i, w;
+    unsigned i, w, max = cache_max;
+    unsigned ram = mem_conv_kb + mem_ext_kb;
+    /* Dynamisch (wie NT, aus 6.0): kb ist die Mindestgroesse; darueber
+       waechst der Cache in freien Speicher bis max (ohne Angabe: halber
+       Speicher, hoechstens 8 MB) und gibt bei Bedarf saubere Stuecke
+       wieder ab (bc_reclaim). Frei bleiben immer bc_rsv KB. */
+    if (max == 0xFFFF)
+        max = ram / 2 > 8192 ? 8192 : ram / 2;
     if (kb > 8192)
         kb = 8192;
+    if (max > 8192)
+        max = 8192;
+    if (max < kb)
+        max = kb;
     kb &= ~15u;                         /* ganze Stuecke                 */
+    max &= ~15u;
+    bc_rsv = ram / 8 < 512 ? 512 : ram / 8 > 4096 ? 4096 : ram / 8;
     bc_n = 0;
-    if (kb < 16)
+    if (max < 16)
         return;
     w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
-    bc_msel = kseg_alloc((unsigned long)((kb >> 1) * sizeof(struct bce) + BC_HASH * 2));
+    bc_msel = kseg_alloc((unsigned long)((max >> 1) * sizeof(struct bce) + BC_HASH * 2));
     if (!w || !bc_msel)
         return;
     bc_wsel = w;
-    bc_n = kb >> 1;
+    bc_n = max >> 1;
     bc_nch = bc_n / BC_CHB;
+    bc_minch = kb >> 4;
     for (i = 0; i < bc_n; i++)
         BCE(i)->dev = -2;
     for (i = 0; i < BC_HASH; i++)
         BCH(i) = BC_END;
-    for (i = 0; i < bc_nch; i++)        /* so viel, wie der Speicher hergibt */
+    for (i = 0; i < bc_minch; i++)      /* so viel, wie der Speicher hergibt */
         if (bc_chunk_get(i))
             break;
     bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
@@ -3439,20 +3463,26 @@ static unsigned bc_reclaim(unsigned units)
    genug frei ist (256 KB bleiben fuer Programme) */
 static void bc_regrow(void)
 {
-    unsigned c;
+    unsigned c, n = 0;
     if (bc_present == bc_nch || get_ticks() - bc_grow_t < 91)
         return;
     bc_grow_t = get_ticks();
-    for (c = 0; c < bc_nch; c++)
+    for (c = 0; c < bc_nch && n < 64; c++)  /* je Durchgang hoechstens 1 MB */
         if (!bc_unit[c]) {
-            if (mem_free_kb() < 256 + 16 || bc_chunk_get(c))
+            if (mem_free_kb() < (bc_present < bc_minch ? 256 + 16 : bc_rsv + 16) ||
+                bc_chunk_get(c))
                 return;
+            n++;
         }
 }
 
-static void cache_info(struct fapi_cacheinfo __far *ci)
+static void cache_info(struct fapi_cacheinfo __far *ci, unsigned size)
 {
     ci->kb = bc_present << 4;           /* gerade belegt (kann schrumpfen) */
+    if (size >= sizeof(*ci)) {          /* Grenzen des dynamischen Caches */
+        ci->min_kb = bc_minch << 4;
+        ci->max_kb = bc_nch << 4;
+    }
     ci->delay_s = bc_n && bc_delay ? cache_s : 0;
     ci->hits = bc_hits;
     ci->misses = bc_miss;
@@ -4809,8 +4839,13 @@ static void config_sys(void)
             cache_kb = num_arg(v);
             while (*q && *q != ',')
                 q++;
-            if (*q == ',')
-                cache_s = num_arg(q + 1);
+            if (*q == ',') {
+                cache_s = num_arg(++q);
+                while (*q && *q != ',')
+                    q++;
+                if (*q == ',')              /* dritter Wert: Hoechstgroesse */
+                    cache_max = num_arg(q + 1);
+            }
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {

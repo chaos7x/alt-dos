@@ -40,6 +40,17 @@ Plan (Entscheidung des Nutzers): 6.0 auf `main`;
 asynchrone Plattenzugriffe in 6.0 bauen (Sperren je Gerät statt `klock`,
 ohne 386-Abhängigkeit) und danach nach 5.x zurückübertragen. 5.1
 (Kompatibilitätsbox) zurückgestellt – die echten DOS-Boxen in 6.0 gehen vor.
+Aus 6.0 übernommen (Build 240.n, in QEMU mit 16 und 4 MB geprüft): REN
+mit Platzhaltern (`ren_pat`), FC mit Platzhaltern (`apps/namepat.h`, auch
+COMP), SHUTDOWN `/NOW`/`/T:n`, MSD-BIOS-Name ab „(C)“/„Copyright“,
+QCURDIR nicht mehr ohne Kernelsperre (liest für Programme ohne LFN-Merker
+die Platte, während ein anderer im Treiber schläft), dynamischer Cache
+`CACHE=kb,s,max` wie in 6.0 (`bc_minch`, `bc_rsv`, `cache_max`; RAM =
+mem_conv_kb + mem_ext_kb; DosCacheInfo mit CX = Größe liefert min/max).
+Geprüft: 16 MB -> Cache 1.024 -> 7.920 KB; 4 MB: 1.776 KB, drei TASKB
+(1.920 KB) gleichzeitig ohne Fehlschlag, danach wieder 1.776 KB; XCOPY,
+CHKDSK, fsck sauber. Unbekannte FAPI-Nummern (51h–54h aus 6.0) liefern
+FAPI_ERROR.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.

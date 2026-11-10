@@ -34,11 +34,14 @@ und PC-DOS.
   CD-ROMs (2048-Byte-Blöcke) nur lesen
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
-  `CACHE=kb[,s]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
+  `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
   bis 8 MB im erweiterten Speicher, Festplatten schreiben s Sekunden
-  verzögert, Vorgabe 5, `,0` sofort; ohne Angabe nach Speicher, z. B. 128 KB
-  bei 2 MB; braucht ein Programm den Speicher, gibt der Cache saubere
-  16-KB-Stücke ab und holt sie sich im Leerlauf zurück; MEM zeigt Größe und Trefferquote; `BUFFERS=` gilt nur noch als
+  verzögert, Vorgabe 5, `,0` sofort; dynamisch wie bei NT: kb ist die
+  Mindestgröße (ohne Angabe nach Speicher, z. B. 128 KB bei 2 MB), im
+  Leerlauf wächst der Cache in freien Speicher bis max (Vorgabe halber
+  Speicher, höchstens 8 MB; 1/8 des Speichers, mindestens 512 KB, bleibt
+  frei); braucht ein Programm den Speicher, gibt er saubere
+  16-KB-Stücke ab; MEM zeigt Größe, Spanne, „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `LONGNAMES=AUTO|VFAT|EA`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
@@ -99,8 +102,8 @@ und PC-DOS.
   COMMAND.COM erst im aktuellen Verzeichnis, dann über `PATH` gesucht
   (`.EXE`, `.CMD`, `.BAT`; `.COM` wird als MS-DOS-Programm erkannt),
   Umleitung `<`, `>`, `>>` und Pipes `|` (echte Pipes, alle Teile laufen
-  gleichzeitig), `RD`, `REN`, `CLS`, `VER` (mit Build-Nummer), `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
-  neu starten; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
+  gleichzeitig), `RD`, `REN` (mit Platzhaltern wie MS-DOS: `ren *.txt *.bak`), `CLS`, `VER` (mit Build-Nummer), `ECHO`, `START`, `SHUTDOWN` (`/H` anhalten, `/R`
+  neu starten, `/NOW` ohne Rückfrage, `/T:n` Countdown, Esc bricht ab; auch `POWEROFF`, `REBOOT` = `SHUTDOWN /R`: schließt alle Dateien, leert die
   Platten-Caches), `HILFE`, `EXIT`; andere Eingaben
   starten das gleichnamige Programm, auch mit Pfad.
   Stapelsprache vollständig wie MS-DOS 6.22 und OS/2 CMD: dazu `FOR %%v IN
@@ -119,7 +122,7 @@ und PC-DOS.
   (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /Y`, Datum bleibt erhalten),
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
   ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
-  MS-DOS, `/B /C /N /nnnn`); in COMMAND dazu `VOL`, `DATE`, `TIME`.
+  MS-DOS, `/B /C /N /nnnn`, Platzhalter und Verzeichnisse wie COMP); in COMMAND dazu `VOL`, `DATE`, `TIME`.
 - `FORMAT X: [/V[:Name]] [/Q] [/S] [/F:Größe] [/FS:FAT]` wie MS-DOS, gebaut wie OS/2:
   FORMAT startet `U<Dateisystem>.EXE /FORMAT` aus `\DOS\SYSTEM` (für FAT
   `UFAT.EXE`). Disketten (2,88 MB, 1,44 MB, 1,2 MB, 720 KB, 360 KB; `/F:`
@@ -393,7 +396,7 @@ selbst nur 8.3 kennt.
 | 72 | DosQSubst       | BX = Laufwerk, CX = Puffer (130 Byte) → "C:\DOS" oder FAPI_ERROR |
 | 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
-| 77 | DosCacheInfo    | BX = struct fapi_cacheinfo → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
+| 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = alte Form ohne min/max) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |

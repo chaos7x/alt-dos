@@ -203,14 +203,16 @@ struct fapi_audfmt {
     unsigned char  channels;        /* 1 mono, 2 stereo                  */
     unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
 };
-/* Platten-Cache (MEM): BX = struct fapi_cacheinfo -> 0 */
+/* Platten-Cache (MEM): BX = struct fapi_cacheinfo, CX = Groesse (0 = 5.0) -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {
     unsigned short kb;              /* Groesse, 0 = kein Cache          */
     unsigned short delay_s;         /* verzoegertes Schreiben, 0 = sofort */
     unsigned long  hits, misses;    /* Lesezugriffe aus dem Cache / von der Platte */
     unsigned short dirty;           /* Bloecke mit noch nicht geschriebenen Daten */
+    unsigned short min_kb, max_kb;  /* CX = Groesse: dynamischer Cache (wie 6.0) */
 };
+#define CACHEINFO_V50 14                /* Groesse in 5.0 (CX = 0)          */
 #define FAPI_JOIN           0x4B
 #define FAPI_QJOIN          0x4C
 #define FAPI_SUBST          0x47

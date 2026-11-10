@@ -46,12 +46,24 @@ void main(void)
     puts("    Platten-Cache    ");   put_kb(ci.kb, 6);       puts(" KB\n");
     puts("    BIOS, Boot, Puffer "); put_kb(used - mi.kernel_kb - mi.apps_kb - mi.alloc_kb - ci.kb, 4); puts(" KB\n");
     puts("  frei               ");   put_kb(mi.free_kb, 6);  puts(" KB\n");
+    if (ci.max_kb > ci.min_kb && ci.kb > ci.min_kb) {   /* dynamischer Cache */
+        puts("  verf\x81gbar          ");  put_kb(mi.free_kb + ci.kb - ci.min_kb, 6);
+        puts(" KB (Cache gibt bei Bedarf ab)\n");
+    }
     puts("Systembereich 640 KB - 1 MB (Video, ROMs) ausgespart\n");
     if (ci.kb) {                        /* Trefferquote ohne 32-Bit-Division */
         unsigned long h = ci.hits, t = ci.hits + ci.misses;
         puts("\nPlatten-Cache (CACHE=): ");
         put_kb(ci.kb, 0);
-        puts(" KB, Schreiben ");
+        puts(" KB");
+        if (ci.max_kb > ci.min_kb) {    /* dynamisch                     */
+            puts(", dynamisch ");
+            put_kb(ci.min_kb, 0);
+            puts(" - ");
+            put_kb(ci.max_kb, 0);
+            puts(" KB");
+        }
+        puts("\n  Schreiben ");
         if (ci.delay_s) {
             puts("verz\x94gert ");
             put_kb(ci.delay_s, 0);
