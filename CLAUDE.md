@@ -1544,6 +1544,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   EMM386/HIMEM in der Box; „bestimmte DOS-Version“ wie VMB: echtes DOS
   (MS-DOS 6, FreeDOS) aus einem Disketten-/Plattenabbild in einer Sitzung
   starten; Windows 3.1 in einer Sitzung (WIN-OS/2-Weg), später seamless.
+- Gedankenspiel des Nutzers (nicht beschlossen, nur festgehalten):
+  grafische Oberfläche als **Presentation Manager nach OS/2 1.x**
+  (Schnittstelle Win*/Gpi* nach Petzold „Programming the OS/2
+  Presentation Manager“ 1989 und IBM PM Programming Reference, beide frei
+  als PDF; EDM/2-Wiki), aber mit der **Optik und Startoberfläche von
+  Windows 3.x**: Systemfarben/-bilder wie 3.1 (graue 3D-Knöpfe, blaue
+  Titelleiste), Programm-Manager (Gruppen als MDI-Fenster, Symbole,
+  Taskliste Strg+Esc) und Dateimanager als eigene PM-Programme darüber.
+  Grundlage heute schon da: VESA mit linearem Bildspeicher für FAPI,
+  Maus, Sitzungen, präemptiv. Reizvoll: schnittstellengleich mit OS/2 1.x
+  + NE-Lader + DLL-Namen (PMWIN, PMGPI, DOSCALLS) -> echte OS/2-1.x-PM-
+  Programme. Win16 ließe sich darauf setzen (wie Odin/WIN-OS/2 seamless):
+  USER/GDI (eigen oder Wine mit einem PM-Treiber statt x11drv) bilden
+  Fenster und Zeichnen auf PM ab (Ursprung oben links -> unten links,
+  Nachrichten, DC -> Presentation Space); Win16-Programme sind 16-Bit-NE
+  und passen direkt zum Kernel.
 - Win16, Optionen (noch nicht entschieden): 1. echtes Windows 3.1 in
   einer DOS-Sitzung (kommt mit den Sitzungen, braucht Windows-Lizenz);
   2. eigenes Win16-Teilsystem auf Basis von Wine (krnl386/user/gdi, wie
