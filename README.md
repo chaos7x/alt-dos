@@ -159,6 +159,10 @@ und PC-DOS.
   Dateien in Lücken weiter vorn schieben; je Datei erst kopieren, dann neue
   Kette, dann Verzeichniseintrag, dann alte Kette frei (Absturz kostet
   nichts); Verzeichnisse bleiben an ihrem Platz
+- `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
+  Liste der Programme, Entf beendet mit Rückfrage; auch mit
+  Strg+Umschalt+Esc. Kooperativ: ein Programm, das ohne FAPI-Aufruf
+  rechnet, gibt den Prozessor nie ab – dagegen hilft auch TASKMAN nicht
 - `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
   (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
   IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,
@@ -398,6 +402,7 @@ selbst nur 8.3 kennt.
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = alte Form ohne min/max) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
+| 84 | DosProc         | Taskmanager (wie 6.0): BX = PROC_INFO (CX = Platz, DX = struct fapi_proc: Zustand, Sitzung, Aufrufer, Größe, Name, Befehlszeile) oder PROC_KILL (beenden wie Strg+C; nicht der Aufrufer, seine Aufrufer und die Shell der ersten Sitzung) |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

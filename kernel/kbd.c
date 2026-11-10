@@ -14,7 +14,7 @@
 #include "kern.h"
 #include "../include/fapi_abi.h"
 
-volatile unsigned char kbd_switch_req, kbd_break_req;
+volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 
 #define NBUF 32
 static unsigned short buf[NBUF];
@@ -108,6 +108,10 @@ void kbd_irq(unsigned sc)
 
     if (ctrl && (alt || altgr) && code == 0x53)
         reboot_request();                   /* Strg+Alt+Entf (Ziffernblock)     */
+    if (ctrl && shift && !alt && !altgr && code == 0x01) {  /* Strg+Umschalt+ */
+        kbd_tm_req = 1;             /* Esc: Taskmanager (wie Windows NT) */
+        return;
+    }
     if (alt && code == 0x01) {      /* Alt+Esc                          */
         kbd_switch_req = 1;
         return;

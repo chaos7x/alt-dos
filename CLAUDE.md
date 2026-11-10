@@ -49,8 +49,14 @@ die Platte, während ein anderer im Treiber schläft), dynamischer Cache
 mem_conv_kb + mem_ext_kb; DosCacheInfo mit CX = Größe liefert min/max).
 Geprüft: 16 MB -> Cache 1.024 -> 7.920 KB; 4 MB: 1.776 KB, drei TASKB
 (1.920 KB) gleichzeitig ohne Fehlschlag, danach wieder 1.776 KB; XCOPY,
-CHKDSK, fsck sauber. Unbekannte FAPI-Nummern (51h–54h aus 6.0) liefern
+CHKDSK, fsck sauber. Unbekannte FAPI-Nummern (51h–53h aus 6.0) liefern
 FAPI_ERROR.
+Dazu TASKMAN (FAPI 54h DosProc, `proc_prot`, kind immer 0, Größe aus
+256-Byte-Einheiten >> 2) und Strg+Umschalt+Esc (`kbd_tm_req`,
+`taskman_key` im Scheduler bei freier Sperre); in QEMU geprüft (/L, /K
+tail mit DETACH TAIL -f, Taste öffnet ihn in neuer Sitzung). Erstes
+Codesegment danach 62.534 Byte. Testfalle: ein DETACH-MORE liest von der
+Tastatur und nimmt CMD die Eingaben weg.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.

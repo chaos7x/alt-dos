@@ -332,6 +332,21 @@ static void end_programs(void)
             task_end(t);
 }
 
+/* Taskmanager: nicht beendbar sind der Aufrufer selbst, alle, auf die er
+   (ueber seine Aufrufer) wartet, und die Shell der ersten Sitzung */
+static int proc_prot(int t)
+{
+    int p;
+    if (task[t].state == T_FREE)
+        return 0;
+    if (task[t].parent < 0 && task[t].session == boot_session)
+        return 1;
+    for (p = current; p >= 0; p = task[p].parent)
+        if (p == t)
+            return 1;
+    return 0;
+}
+
 static void system_down(int restart)
 {
     int k;
@@ -1322,6 +1337,47 @@ static void switch_to(int t)
 static int klock;
 static unsigned klock_depth;
 
+static int task_create(const char *cmd, int session, int parent, int from);
+
+static int tm_name(const char *n)
+{
+    const char *m = "TASKMAN.EXE";
+    while (*m && (*n == *m || *n == *m + 32))
+        n++, m++;
+    return !*m && !*n;
+}
+
+/* Strg+Umschalt+Esc (aus dem Scheduler, wie do_break): Taskmanager nach vorn -
+   laeuft schon einer, dessen Sitzung, sonst X:\DOS\TASKMAN.EXE vom
+   Startlaufwerk in einer neuen Sitzung. Laden braucht die Kernelsperre
+   (sched ruft nur, wenn sie frei ist). Kooperativ: ein Programm, das ohne
+   FAPI-Aufruf rechnet, gibt den Prozessor nie ab - dann hilft auch das
+   nicht. */
+static void taskman_key(void)
+{
+    static char cmd[] = "C:\\DOS\\TASKMAN.EXE";
+    int t, ns;
+    for (t = 0; t < NTASK; t++)
+        if (task[t].state != T_FREE && tm_name(task[t].name)) {
+            vio_focus(task[t].session);
+            return;
+        }
+    ns = vio_open("");
+    if (ns < 0)
+        return;
+    cmd[0] = (char)('A' + sys_drive);
+    klock = current;
+    klock_depth = 1;
+    t = task_create(cmd, ns, -1, -1);
+    klock = -1;
+    if (t < 0) {
+        vio_close(ns);
+        return;
+    }
+    vio_title(ns, task[t].name);
+    vio_focus(ns);
+}
+
 static void do_break(void)
 {
     int s = vio_fg(), t;
@@ -1436,6 +1492,10 @@ static void sched(int keep)
         if (kbd_break_req) {
             kbd_break_req = 0;
             do_break();
+        }
+        if (kbd_tm_req && klock < 0 && current >= 0) {
+            kbd_tm_req = 0;             /* Strg+Umschalt+Esc: Taskmanager */
+            taskman_key();
         }
         if (reboot_count && klock < 0)  /* nicht mitten in einer Plattenoperation */
             shutdown();
@@ -2125,7 +2185,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
     }
     if (ifs_notready && r >= FAPI_ERR_FIRST)
         r = FAPI_ERR_NOTREADY;          /* Diskettenlaufwerk leer        */
-    if (kbd_break_req || kbd_switch_req || reboot_count || resched_req ||
+    if (kbd_break_req || kbd_switch_req || kbd_tm_req || reboot_count || resched_req ||
         get_ticks() - slice_start >= SLICE) {
         task[current].wake = 0;
         schedule_next();                /* Zeitscheibe um: andere zuerst */
@@ -2417,6 +2477,39 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         cf->lsr = (unsigned char)inb(base + 5);
         cf->msr = (unsigned char)inb(base + 6);
         cf->base = base;
+        return 0;
+    }
+
+    case FAPI_PROC: {                           /* Taskmanager           */
+        struct fapi_proc __far *pi = MK_FP(usel, a3);
+        if (a2 >= NTASK)
+            return FAPI_ERROR;
+        t = (int)a2;
+        if (a1 == PROC_INFO) {
+            if (!user_ok(usel, a3, sizeof(struct fapi_proc), 1))
+                return FAPI_ERROR;
+            pi->state = task[t].state;
+            pi->kind = 0;                       /* 5.x: keine DOS-Boxen  */
+            pi->session = (unsigned char)task[t].session;
+            pi->parent = (unsigned char)task[t].parent;
+            pi->flags = (unsigned char)((t == current ? PROC_SELF : 0) |
+                                        (proc_prot(t) ? PROC_PROT : 0));
+            pi->rsv = 0;
+            pi->kb = (task[t].img_cnt + task[t].code_cnt) >> 2;  /* 256-Byte-Einheiten */
+            for (k = 0; k < 12 && task[t].name[k]; k++)
+                pi->name[k] = task[t].name[k];
+            pi->name[k] = 0;
+            for (k = 0; k < 40 && task[t].args[k]; k++)
+                pi->args[k] = task[t].args[k];
+            pi->args[k] = 0;
+            return 0;
+        }
+        if (a1 != PROC_KILL || task[t].state == T_FREE)
+            return FAPI_ERROR;
+        if (proc_prot(t))
+            return FAPI_ERR_DENIED;
+        task[t].rc = 255;                       /* wie Strg+C            */
+        task_end(t);                            /* Kernelsperre haben wir */
         return 0;
     }
 

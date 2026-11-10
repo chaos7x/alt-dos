@@ -127,6 +127,29 @@ struct fapi_comcfg {
 };
 /* Systemangaben fuer MSD: BX = struct fapi_sysinfo */
 #define FAPI_SYSINFO        0x49
+#define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
+                                       struct fapi_proc (Taskmanager, wie 6.0) */
+#define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
+#define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne
+                                       Rueckfrage an das Programm) -> 0,
+                                       FAPI_ERR_DENIED (eigener Task, ein
+                                       Aufrufer davon, Shell der ersten Sitzung),
+                                       FAPI_ERROR (Platz frei) */
+struct fapi_proc {
+    unsigned char  state;           /* 0 frei, 1 laeuft, 2 wartet auf Kind,
+                                       3 im Treiber                     */
+    unsigned char  kind;            /* 0 FAPI-Programm, 1 DOS-Box, 2 geparkte
+                                       DOS-Box (nur 6.0)                */
+    unsigned char  session;         /* Sitzung (0 = erste)              */
+    unsigned char  parent;          /* Aufrufer, FFh = keiner           */
+    unsigned char  flags;           /* PROC_SELF, PROC_PROT             */
+    unsigned char  rsv;
+    unsigned short kb;              /* Programmabbild (Code + Daten) in KB */
+    char           name[13];
+    char           args[41];        /* Anfang der Befehlszeile          */
+};
+#define PROC_SELF           1       /* der aufrufende Task              */
+#define PROC_PROT           2       /* nicht beendbar                   */
 struct fapi_sysinfo {
     unsigned char  cpu;             /* 2 = 80286, 3 = 80386 oder neuer  */
     unsigned char  fpu;             /* Koprozessor: 0 keiner, 1 287,
