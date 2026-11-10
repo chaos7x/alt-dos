@@ -245,7 +245,8 @@ dem 386 in 86Box bestätigt: DIR usw. in der Box gehen; dabei schien ab
 und zu die Uptime von AT-DOS durch (Zeile 25, mit der Ausgabe der Box
 hochgerollt): `vio_status` schrieb die Statuszeile am Freeze vorbei
 direkt in den Bildspeicher – prüft jetzt `vio_frozen`. In QEMU: fünf DIR
-über mehrere Sekunden, keine Uptime mehr im Bild. Erstes Codesegment 64.969 Byte
+über mehrere Sekunden, keine Uptime mehr im Bild. Vom Nutzer auf dem
+386 (ASUS ISA-386SIQ in 86Box, Build 240.23) bestätigt: DIR ohne Durchscheinen. Erstes Codesegment 64.969 Byte
 – vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
