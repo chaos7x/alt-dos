@@ -43,7 +43,16 @@ und PC-DOS.
   „Unterstützung für große Festplatten“ und legt dann Partitionen ab
   512 MB als FAT32 an (0Bh, über 8 GB 0Ch), FORMAT nimmt dort FAT32 von
   selbst. `SYS` macht FAT32-Partitionen startfähig (Bootsektor mit
-  zweitem Teil in Sektor 2, LBA-Erweiterungen des BIOS, sonst CHS)
+  zweitem Teil in Sektor 2, LBA-Erweiterungen des BIOS, sonst CHS).
+  `CONVERT X: /FS:FAT32 [/V]` wandelt eine FAT16-Partition an Ort und
+  Stelle in FAT32 um, ohne Daten zu löschen (wie CVT.EXE von Windows 98,
+  auch das Startlaufwerk im Betrieb): erst CHKDSK, dann `UFAT32
+  /CONVERT` – kleinere Zuordnungseinheiten (Tabelle wie FORMAT), die
+  Daten bleiben liegen, nur der künftige FAT-Bereich und der feste Stamm
+  werden in freie Cluster kopiert; Partitionstyp 06h/04h -> 0Bh,
+  0Eh -> 0Ch, Startcode von AT-DOS wird zum FAT32-Startcode. Bis zur
+  Rückfrage ändert es nichts; lange Namen im EA-Format bleiben in
+  `EA DATA. SF` erhalten (Verweise umgerechnet), FAT32 zeigt sie noch nicht
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem

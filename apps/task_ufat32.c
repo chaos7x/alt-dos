@@ -4,6 +4,7 @@
  *
  *   UFAT32 Laufwerk: [/F] [/R] [/V] [/AUTO]   (/R: ufat32_scan.c)
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
+ *   UFAT32 Laufwerk: /CONVERT [/V]   FAT16 -> FAT32    (ufat32_conv.c)
  *
  * Wie UFAT, aber fuer grosse Datentraeger gebaut: die FAT (bei FAT32
  * leicht viele MB) bleibt auf der Platte und wird ueber einen kleinen
@@ -768,12 +769,13 @@ static char flabel[12];
 #include "ufat32_scan.c"
 #include "ufat32_undel.c"
 #include "ufat32_defrag.c"
+#include "ufat32_conv.c"
 
 void main(void)
 {
     char *a = args;
     unsigned reserved;
-    int fmt = 0, quick = 0, surface = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
+    int fmt = 0, conv = 0, quick = 0, surface = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
     static char spec[FAPI_PATHLEN];
 
     drive = DosQCurDisk();
@@ -787,6 +789,8 @@ void main(void)
             drive = (unsigned)(up(a[0]) - 'A');
         else if (a[0] == '/' && up(a[1]) == 'F' && up(a[2]) == 'O')
             fmt = 1;
+        else if (a[0] == '/' && up(a[1]) == 'C' && up(a[2]) == 'O')
+            conv = 1;
         else if (a[0] == '/' && up(a[1]) == 'Q')
             quick = 1;
         else if (a[0] == '/' && up(a[1]) == 'V' && a[2] == ':') {
@@ -822,6 +826,8 @@ void main(void)
     }
     if (fmt)
         DosExit(do_format32(quick));
+    if (conv)
+        DosExit(do_convert());
     pathbuf[0] = (char)('A' + drive);
     pathbuf[1] = ':';
     pathbuf[2] = '\\';

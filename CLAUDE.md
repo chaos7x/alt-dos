@@ -347,6 +347,33 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Takte (Index aufbauen), danach 0; XCOPY + CHKDSK + fsck sauber. Der
   Index war nicht der Grund (DOTT sprach weiter nicht), siehe virtuelle
   SB: „DOTT ohne Sprache“.
+  CONVERT (Wunsch des Nutzers, abgestimmt: zuerst FAT16 -> FAT32;
+  FAT32 -> FAT16 und EA -> VFAT später): `CONVERT.EXE` (Verteiler wie
+  FORMAT: CHKDSK X:, bei Fehlern Abbruch, dann `UFAT32 X: /CONVERT [/V]`,
+  `apps/ufat32_conv.c`). Ablauf: alte FAT ganz in den Speicher (2
+  Segmente), neue Aufteilung wie FORMAT (Clustergröße höchstens die alte,
+  kleiner bis 65.525 Cluster), reservierte Sektoren ab 32 so aufgefüllt,
+  dass alter und neuer Datenbeginn um ein Vielfaches der neuen
+  Clustergröße auseinanderliegen -> alter Cluster p = neue Cluster
+  `nmap(p)` .. +k-1 an derselben Stelle. Alte Cluster < `kclus` (künftiger
+  FAT-Bereich) und der feste Stamm werden in freie Cluster von hinten
+  kopiert (`rl`, `rootd`), dann prüft `cv_walk(0)` den Baum – bis zur
+  Rückfrage ist nur freier Platz beschrieben. Danach: Bereich 1..
+  Datenbeginn nullen, `cv_walk(1)` schreibt jeden Eintrag (auch ., ..,
+  gelöschte) mit neuer Nummer und jede Kette k-fach in die FAT32 (Dateien
+  auf die Größe gekürzt), `cv_ea` rechnet die Verzeichnis-Cluster der
+  Sätze in `EA DATA. SF` um (Kurzname dort `EA DATA SF `!), FSInfo,
+  Bootsektor (+ Kopie 6; war es der Startcode von AT-DOS: FAT32-Start-
+  code, Sektor 2/8), zuletzt Partitionstyp in MBR/EBR – Partition über
+  Start + Typ + Vergleich des eben geschriebenen Bootsektors finden
+  (sonst traf es im Test die gleich gelegene C:-Partition). Das Sauber-
+  Bit prüft UFAT32 nicht (im Betrieb immer gelöscht, CHKDSK läuft
+  vorher). In QEMU geprüft (fsck sauber, Inhalte gleich): 700 MB mit
+  32 reservierten Sektoren (16 -> 4 KB), 2 GB Typ 0Eh mit 1 reserviertem
+  (32 -> 4 KB, -> 0Ch) und ein logisches Laufwerk 150 MB (4 KB -> 512 Byte,
+  EBR 06h -> 0Bh) mit fragmentierten und gelöschten Dateien, das
+  Startlaufwerk C: im Betrieb mit EA-Namen (Verweise richtig umgerechnet),
+  danach Start von FAT32, XCOPY, CHKDSK; Abbruch mit N lässt FAT16 gleich.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
