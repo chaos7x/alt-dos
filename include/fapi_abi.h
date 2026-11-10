@@ -127,6 +127,19 @@ struct fapi_comcfg {
 };
 /* Systemangaben fuer MSD: BX = struct fapi_sysinfo */
 #define FAPI_SYSINFO        0x49
+#define FAPI_RBOX           0x55    /* 5.1, Kompatibilitaetsbox: BX = RB_*;
+                                       RB_LOAD: CX = Selektor, DX = Laenge eines
+                                       .COM (bis FE00h) -> 0, FAPI_ERR_INUSE
+                                       (Speicher unter 640 KB belegt), FAPI_ERROR;
+                                       RB_RUN: wartet, bis die eigene Sitzung vorn
+                                       ist, laeuft im Real Mode -> RB_SWITCH (Alt+Esc),
+                                       RB_EXIT (Programmende), RB_CALL; RB_FREE */
+#define RB_LOAD             0
+#define RB_RUN              1
+#define RB_FREE             2
+#define RB_SWITCH           1
+#define RB_EXIT             2
+#define RB_CALL             3
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (Taskmanager, wie 6.0) */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */

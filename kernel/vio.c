@@ -381,6 +381,13 @@ int vio_used(int s)
     return ses[s].used;
 }
 
+/* nach der Kompatibilitaetsbox: Textmodus neu einstellen, alles neu zeichnen */
+void vio_rehw(void)
+{
+    gfx_hwreset();
+    redraw();
+}
+
 int vio_fg(void)
 {
     return fg;

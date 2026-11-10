@@ -14,6 +14,8 @@ cpu 286
 
 KCODE   equ 0x08
 KDATA   equ 0x10
+SCRATCH equ 0x30
+SCRATCH2 equ 0x40
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16
@@ -37,7 +39,7 @@ extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_
 extern fpu_nm_
-extern _gdtr, _idtr, _kmoved, _kcode_lin, _kmove_fail
+extern _gdtr, _idtr, _kmoved, _kcode_lin, _kmove_fail, _gdt
 
 ; ---------------------------------------------------------------------------
 segment _TEXT
@@ -72,6 +74,10 @@ _start:
         mov     ss, ax
         mov     sp, kstack_top
         mov     [_boot_drive], dl
+        in      al, 0x21                ; Masken des BIOS (fuer die Box)
+        mov     [_bios_pic1], al
+        in      al, 0xA1
+        mov     [_bios_pic2], al
 
         ; Speicher abfragen, solange das BIOS noch erreichbar ist
         int     0x12                    ; konventionell in KB
@@ -1038,6 +1044,239 @@ halt_forever_:
         jmp     .h
 
 ; ---------------------------------------------------------------------------
+; 5.1: Kompatibilitaetsbox (eine DOS-Sitzung im echten Real Mode)
+;
+; unsigned rb_enter(void) - in den Real Mode zur Box; kehrt zurueck, wenn
+; die Box per Alt+Esc, INT 20h oder INT E0h in den Kernel zurueckkommt
+; (Grund im Zustandsblock, rb.c). Vorher hat C den Real-Mode-Teil (ab
+; rbs_code) an rb_lin + 40h gelegt, den Zustandsblock gefuellt, 40:67 und
+; CMOS 0Fh = 0Ah gesetzt und bei einem 386 SCRATCH (Daten) und SCRATCH2
+; (Code, 9Ah) auf rb_lin gelegt. Hin: 286 per Reset ueber den Tastatur-
+; controller (BIOS springt nach 40:67), 386 per PE loeschen. Zurueck: der
+; Real-Mode-Teil laedt die GDT, LMSW und springt nach rb_reentry.
+global rb_enter_, rb_reentry_, a20_on_
+rb_enter_:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     [rb_ksp], sp
+        str     word [rb_tr]
+        sldt    word [rb_ldt]
+        cli
+        mov     al, 0x11                ; PICs zurueck auf 08h/70h (BIOS)
+        out     0x20, al
+        out     0xA0, al
+        mov     al, 0x08
+        out     0x21, al
+        mov     al, 0x70
+        out     0xA1, al
+        mov     al, 4
+        out     0x21, al
+        mov     al, 2
+        out     0xA1, al
+        mov     al, 1
+        out     0x21, al
+        out     0xA1, al
+        mov     al, 0xFF                ; Masken setzt der Real-Mode-Teil
+        out     0x21, al
+        out     0xA1, al
+        mov     al, 0x36                ; Takt wie das BIOS: 18,2 Hz
+        out     0x43, al
+        xor     al, al
+        out     0x40, al
+        out     0x40, al
+        cmp     byte [_cpu_386], 0
+        jne     .r386
+.w:     in      al, 0x64                ; 286: Reset, das BIOS springt
+        test    al, 2                   ; ueber 40:67 in die Box
+        jnz     .w
+        mov     al, 0xFE
+        out     0x64, al
+.h:     hlt
+        jmp     .h
+.r386:  lidt    [rm_idtr]
+        mov     ax, SCRATCH
+        mov     ds, ax
+        mov     es, ax
+        mov     ss, ax
+        mov     sp, 0x400
+        jmp     SCRATCH2:(rbs_386 - rbs_code + 0x40)
+
+; Rueckweg: CS = KCODE, sonst noch Real-Mode-Reste
+rb_reentry_:
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        mov     ss, ax
+        mov     sp, [rb_ksp]
+        lidt    [_idtr]
+        mov     bx, [rb_tr]             ; TSS ist noch "busy": LTR braeuchte
+        and     bx, 0xFFF8              ; ein freies
+        and     byte [_gdt + bx + 5], 0xFD
+        ltr     [rb_tr]
+        lldt    [rb_ldt]
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
+a20_on_:
+        push    ax
+        call    a20_enable
+        pop     ax
+        ret
+
+
+; ---- Real-Mode-Teil der Box: wird nach rb_lin + 40h kopiert -------------
+; Zustandsblock ab rb_lin (rb.c): 0 AX BX CX DX SI DI BP DS ES, 18 SP,
+; 20 SS, 22 IP, 24 CS, 26 FLAGS, 28 PIC-Masken, 30 Grund, 32 GDTR (6),
+; 38 Rueckweg (Offset, Selektor), 42 alter INT 9, 46 Cursor, 50 rb_seg.
+; Stapel bis 400h, Bildschirmtext (80x25) ab 400h.
+%define RBO(x) ((x) - rbs_code + 0x40)
+rbs_code:
+rbs_entry:                              ; Real Mode, CS = rb_seg
+        cli
+        mov     ax, cs
+        mov     ds, ax
+        mov     ss, ax
+        mov     sp, 0x400
+        mov     al, [28]
+        out     0x21, al
+        mov     al, [29]
+        out     0xA1, al
+        sti
+        mov     ax, 3                   ; BIOS stellt die Karte selbst ein
+        int     0x10
+        push    es
+        mov     ax, 0xB800
+        mov     es, ax
+        mov     si, 0x400
+        xor     di, di
+        mov     cx, 2000
+        cld
+        rep     movsw
+        pop     es
+        mov     dx, [46]
+        mov     bh, 0
+        mov     ah, 2
+        int     0x10
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        and     byte [0x417], 0xF7      ; Alt ist beim Zurueckkommen los
+        and     byte [0x418], 0xFD
+        pop     ds
+        cli
+        mov     ss, [20]
+        mov     sp, [18]
+        push    word [26]
+        push    word [24]
+        push    word [22]
+        mov     ax, [0]
+        mov     bx, [2]
+        mov     cx, [4]
+        mov     dx, [6]
+        mov     si, [8]
+        mov     di, [10]
+        mov     bp, [12]
+        mov     es, [16]
+        mov     ds, [14]
+        iret
+
+rbs_int9:                               ; Alt+Esc: zurueck zu AT-DOS
+        push    ax
+        in      al, 0x60
+        cmp     al, 1
+        jne     .chain
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        test    byte [0x417], 8
+        pop     ds
+        jz      .chain
+        mov     al, 0x20
+        out     0x20, al
+        pop     ax
+        mov     word [cs:30], 1
+        jmp     short rbs_topm
+.chain: pop     ax
+        jmp     far [cs:42]
+
+rbs_int20:                              ; Programm zu Ende
+        cli
+        mov     word [cs:30], 2
+        jmp     short rbs_topm
+
+rbs_inte0:                              ; Dienst des Kernels
+        cli
+        mov     word [cs:30], 3
+
+rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
+        cli
+        mov     [cs:0], ax
+        mov     [cs:2], bx
+        mov     [cs:4], cx
+        mov     [cs:6], dx
+        mov     [cs:8], si
+        mov     [cs:10], di
+        mov     [cs:12], bp
+        mov     [cs:14], ds
+        mov     [cs:16], es
+        pop     word [cs:22]
+        pop     word [cs:24]
+        pop     word [cs:26]
+        mov     [cs:18], sp
+        mov     [cs:20], ss
+        mov     ax, cs
+        mov     ds, ax
+        mov     es, ax
+        in      al, 0x21
+        mov     [28], al
+        in      al, 0xA1
+        mov     [29], al
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     ax, [0x450]             ; Cursor Seite 0
+        pop     ds
+        mov     [46], ax
+        mov     ax, 0xB800              ; Bildschirmtext sichern
+        mov     ds, ax
+        xor     si, si
+        mov     di, 0x400
+        mov     cx, 2000
+        cld
+        rep     movsw
+        mov     ax, cs
+        mov     ds, ax
+        lgdt    [32]
+        mov     ax, 1
+        lmsw    ax
+        jmp     far [38]
+
+cpu 386
+rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen
+        push    word [cs:50]
+        push    word RBO(rbs_entry)
+        mov     eax, cr0
+        and     al, 0xFE
+        mov     cr0, eax
+        retf                            ; laedt CS = rb_seg (Real Mode)
+cpu 286
+rbs_end:
+
+
+; ---------------------------------------------------------------------------
 segment _TEXTEND
 code_end:
 
@@ -1045,6 +1284,14 @@ segment KTEXT2END
 code2_end:
 
 segment _DATA
+rm_idtr: dw 0x3FF, 0, 0
+global _rbs_code, _rbs_len, _rbs_entry_off, _rbs_int9_off, _rbs_int20_off, _rbs_inte0_off
+_rbs_code:      dw rbs_code
+_rbs_len:       dw rbs_end - rbs_code
+_rbs_entry_off: dw RBO(rbs_entry)
+_rbs_int9_off:  dw RBO(rbs_int9)
+_rbs_int20_off: dw RBO(rbs_int20)
+_rbs_inte0_off: dw RBO(rbs_inte0)
 
 global _kcode_size
 _kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)
@@ -1113,6 +1360,12 @@ _bios_equip:  resw 1
 _bios_ports:  resw 7                    ; COM1-4, LPT1-3
 _bios_date:   resb 9
 _bios_model:  resb 1
+global _bios_pic1, _bios_pic2
+_bios_pic1:   resb 1
+_bios_pic2:   resb 1
+rb_ksp:       resw 1
+rb_tr:        resw 1
+rb_ldt:       resw 1
 global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
 _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)

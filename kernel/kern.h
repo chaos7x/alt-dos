@@ -43,7 +43,7 @@
    die DOS-Box). Sonst wie 5.0: 10000h, 8000h, 9000h. */
 extern unsigned long kcode_lin, kdata_lin, dmabuf_lin, memmap_lin;
 extern unsigned char kmoved;        /* Kernel liegt ueber 1 MB           */
-#define KMOVE_BASE  0x100000UL      /* DMA-Puffer, Bitmap, dann Kernel   */
+#define KMOVE_BASE  0x110000UL      /* hinter der HMA (gehoert der Box)   */
 #define DMABUF_LIN  dmabuf_lin      /* keine 64-KB-Grenze                */
 #define DMABUF_SIZE 2048            /* ein CD-Block; Platten nutzen 512    */
 
@@ -211,6 +211,7 @@ int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
+void vio_rehw(void);
 int  kbd_set_layout(unsigned sel, unsigned off);   /* 0 = ok    */
 const char *kbd_layout_id(void);
 extern volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;

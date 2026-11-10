@@ -71,7 +71,7 @@ Stufe 1 erledigt (in QEMU geprüft: Platte und Diskette, 16/2/1 MB, XCOPY
 \DOS, COPY auf A: + FC /B, CHKDSK, SHUTDOWN, fsck sauber, Kopien gleich):
 `kmove_prep` (aus gdt_build, noch im Real Mode) legt bei A20 und mindestens
 512 KB erweitertem Speicher DMA-Puffer (100000h), Bitmap (101000h) und
-den Kernel (103000h, Code + Daten wie ab 10000h) über 1 MB; die GDT
+den Kernel (103000h, Code + Daten wie ab 10000h; inzwischen 110000h ff., s. u.) über 1 MB; die GDT
 entsteht gleich mit den neuen Basen. start.asm `kmove` kopiert danach
 10000h..bss_end per INT 15h/87h in 32-KB-Stücken (A20 danach neu an;
 scheitert es, `kmove_fail` und gdt_build noch einmal für unten), der
@@ -84,6 +84,35 @@ Vorladebereich, alter DMA-Puffer/Bitmap) frei – Programme bekommen
 Vom Nutzer auf dem SCAT in 86Box (16 MB) bestätigt: Start über den
 Adaptec (drei Platten + CD), MEM 109 KB Kernel, Cache 7.936 KB;
 Dateien auf Adaptec- und IDE-Platte kopiert, CHKDSK auf beiden sauber.
+Danach: Kernel ab 110000h statt 100000h (`KMOVE_BASE`) – die HMA
+(100000h–10FFEFh) bleibt frei für DOS=HIGH in der Box, mem_init belegt
+sie. mem.c sucht zuerst ab 1 MB (`try_range`), erst dann darunter, damit
+0–640 KB möglichst frei bleibt.
+Stufe 2 erledigt (386-Weg in QEMU geprüft: RBTEST läuft im Real Mode,
+CR0.PE = 0, BIOS-Takt zählt; Alt+Esc zurück, in der zweiten Sitzung VER,
+DIR, XCOPY; Alt+Esc wieder in die Box, Text da, Tippen geht; `q` ->
+„Box beendet.“; fsck sauber). FAPI 55h `DosRBox` (RB_LOAD Selektor +
+Länge eines .COM, RB_RUN -> RB_SWITCH/RB_EXIT, RB_FREE), `RBOX.EXE`
+(apps/task_rbox.c), Test `\DEMO\RBTEST.COM` (apps/rbtest.asm, 8086).
+kernel.c `rb_load`: Box = 0–(640 KB - 8 KB) (`mem_is_free`/`mem_reserve`,
+nur bei `kmoved`), PSP 1000:0000, IVT 9/20h/E0h auf den Stummel (alte
+Werte in `rb_ivt`, rb_free stellt sie und 413h zurück), Stummel
+`rbs_code` (start.asm) mit Zustandsblock am Ende des konventionellen
+Speichers (`rb_lin`, Text der Box ab +400h). `rb_run`: wartet, bis die
+Sitzung vorn ist, blk_flush, 287 sichern, 40:67 = Stummel, CMOS 0Fh =
+0Ah, `rb_enter` (start.asm): PIC auf 08h/70h, PIT 18,2 Hz; 286: 8042-
+Reset (`out 64h, FEh`), 386: LIDT Real-Mode-IVT, Sprung in den Stummel
+über SCRATCH/SCRATCH2 (Basis rb_lin) und PE löschen. Stummel `rbs_entry`:
+PIC-Masken, INT 10h 03h, Text + Cursor zurück, IRET in die Box. Zurück
+(Alt+Esc über INT 9, INT 20h, INT E0h): Register, Masken, Cursor und
+B800 sichern, LGDT/LMSW, `rb_reentry` (KCODE): Stack, IDTR, Busy-Bit des
+TSS löschen, LTR, LLDT. Danach pic_pit_init, A20, 287, Takte des BIOS
+(46Ch) auf den Kerneltakt, `vio_rehw` (Textmodus + redraw), kbd_flush.
+Lehre: die alte IVT muss zurück – sonst zeigt INT 9 beim zweiten RBOX
+auf den eigenen Stummel (Hänger). Der 286-Weg ist in QEMU nicht prüfbar:
+dessen 8042-Reset startet die Maschine neu (SeaBIOS bootet, CMOS 0Ah
+wirkt nicht) – nur auf dem SCAT in 86Box. Erstes Codesegment 64.969 Byte
+– vor Stufe 3 den rb-Code nach KTEXT2.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.

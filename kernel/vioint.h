@@ -53,6 +53,7 @@ void redraw(void);                      /* vio.c                            */
 /* vgagfx.c liegt in KCODE2: fern */
 int  __far gfx_in(void);
 void __far gfx_out(void);
+void __far gfx_hwreset(void);
 void __far gptr_update(void);
 void __far gptr_remove(void);
 

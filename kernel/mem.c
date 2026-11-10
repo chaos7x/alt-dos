@@ -57,13 +57,13 @@ void mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb)
 
 unsigned (*mem_reclaim)(unsigned units);
 
-static unsigned try_alloc(unsigned units)
+/* erst ab 1 MB suchen, dann darunter: der konventionelle Speicher bleibt
+   moeglichst frei (5.1: er gehoert der Kompatibilitaetsbox) */
+static unsigned try_range(unsigned units, unsigned from, unsigned to)
 {
     unsigned u, run = 0, start = 0;
 
-    if (units == 0 || units > free_units)
-        return 0;
-    for (u = 1; u != 0; u++) {
+    for (u = from; u != to; u++) {
         if ((u & 7) == 0 && bitmap[u >> 3] == 0xFF) {
             run = 0;                    /* ganzes Byte belegt: ueberspringen */
             u += 7;
@@ -85,6 +85,15 @@ static unsigned try_alloc(unsigned units)
     return 0;
 }
 
+static unsigned try_alloc(unsigned units)
+{
+    unsigned u;
+    if (units == 0 || units > free_units)
+        return 0;
+    u = try_range(units, MEM_HIGH_START, 0);
+    return u ? u : try_range(units, 1, MEM_HIGH_START);
+}
+
 /* Kein Platz? Dann gibt der Platten-Cache Stuecke ab (wie der Cache-
    Manager bei NT, hier noch in festen 16-KB-Stuecken), bis es passt */
 unsigned mem_alloc(unsigned units)
@@ -95,6 +104,15 @@ unsigned mem_alloc(unsigned units)
     while ((u = try_alloc(units)) == 0 && mem_reclaim && mem_reclaim(units))
         ;
     return u;
+}
+
+int mem_is_free(unsigned from, unsigned to)
+{
+    unsigned u;
+    for (u = from; u < to; u++)
+        if (USED(u))
+            return 0;
+    return 1;
 }
 
 void mem_reserve(unsigned from, unsigned to)

@@ -174,6 +174,12 @@ static void hw_text(void)
     hw_gfx = 0;
 }
 
+/* nach der Kompatibilitaetsbox (5.1): das BIOS hat die Karte eingestellt */
+void __far gfx_hwreset(void)
+{
+    hw_text();
+}
+
 /* Grafiksitzung kommt nach vorn: Karte umstellen, Bild und Palette aus
    dem Puffer, Selektor auf den Bildspeicher. -> 1 = Grafik vorn */
 int __far gfx_in(void)
