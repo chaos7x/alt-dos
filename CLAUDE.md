@@ -2944,6 +2944,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Ziel: Land aus der CONFIG.SYS für Datum/Zeit/Zahlen/Währung in CMD und
   den Werkzeugen (FAPI-Abfrage wie OS/2 DosGetCtryInfo) und an die Box
   weiterreichen.
+- Unicode (Wunsch des Nutzers, abgestimmt in drei Stufen): (1) Datei-
+  namen verlustfrei, bald: heute wird jedes Zeichen außerhalb CP437 beim
+  Lesen eines VFAT-Namens zu `_` (`lat2cp`) und so auch ins Ziel kopiert;
+  der Kernel soll die UCS-2-Namen beim Kopieren/Umbenennen/Verschieben
+  unverändert weiterreichen, Programme bekommen weiter die CP437-Fassung.
+  EA-Format: Sätze in `EA DATA. SF` speichern den Namen heute als CP437 –
+  neues Satzformat mit Kennbyte und UTF-16/UTF-8, bevor viele Platten mit
+  EA-Namen unterwegs sind (alte Sätze weiter lesbar). (2) Codepages in
+  6.x wie MS-DOS 5/6 und OS/2, zusammen mit `COUNTRY=`: `CHCP` 437/850/
+  852 … wirklich umschalten, Zeichensatz laden (`load_font`),
+  Umwandlungstabelle UCS-2 <-> Codepage im Kernel. (3) Unicode-
+  Schnittstellen für Programme (W-Aufrufe wie Win32) erst mit 7.0 und
+  der Grafikoberfläche – der VGA-Textmodus hat nur 256/512 Zeichen.
+  Zeitlinie: NT 3.1 (1993) Unicode, OS/2 blieb bei Codepages.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
