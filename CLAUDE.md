@@ -621,6 +621,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   PSP:2Ch zeigt dorthin). In QEMU: 627 KB frei, größtes Programm 626 KB
   (mit FreeCOM resident; direkt aus CMD 2,5 KB mehr), mit EMS-Rahmen und
   nur 4 KB UMB wie vorher 620 KB; SET, DIR, EXIT, HALLO aus CMD gehen.
+  EMS-Rahmen je Box (vom Nutzer gemeldet: mit EMS_MEMORY_LIMIT=0 blieb
+  der Seitenrahmen da): der Rahmen steht fest, bevor FreeDOS die UMBs
+  verteilt – die INI-Werte je Programm kommen zu spät. Jetzt liest
+  kernel.c `ini_noframe` beim Anlegen der Box (load_img) DOSBOX.INI
+  ([*], dann [NAME.EXT] des Programms aus load_dos, `box_prog`):
+  EMS_MEMORY_LIMIT=0 oder neu EMS_FRAME_LOCATION=NONE -> `ems_nf[t]`,
+  v86.c nimmt `EFR(t)` statt ems_frame (kein Rahmen, INT 67h 80h, 64 KB
+  UMB). Eine geparkte Box behält ihren Stand. In QEMU geprüft: [*]
+  EMS_MEMORY_LIMIT=0 -> MEM in der Box ohne EMS, oberer Speicher 68 statt
+  4 KB, größtes Programm 627 KB.
   Elvira selbst stürzt auch unter MS-DOS mit QEMM ab (#6 bei 0000:0073,
   INT 8/9 auf 0:0 – wie in der Box). Auflösung (Nutzer): Elvira wird
   über ELVIRA.BAT gestartet (`runvga gamepc /s >tmp.txt`, vorher

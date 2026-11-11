@@ -276,6 +276,9 @@ unsigned __far redir_psp(int t);
 static void ems(struct v86_frame *f, int t);
 static void ems_pick_frame(void);
 static unsigned char ems_frame;         /* erste EMS-Rahmenseite, 0 = keiner */
+unsigned char ems_nf[NTASK];            /* diese Box ohne Rahmen (DOSBOX.INI,
+                                           setzt load_img in kernel.c)   */
+#define EFR(t) (ems_nf[t] ? 0 : ems_frame)
 static unsigned ems_lim[NTASK];         /* EMS: logische Seiten + 1, 0 = Vorgabe */
 
 
@@ -3388,7 +3391,7 @@ static unsigned umb_run(int t, unsigned p)      /* freie Seiten ab p     */
 {
     unsigned n = 0;
     while (p + n < 0xF0 && BIT(umb_free, p + n) && !BIT(umb_used[t], p + n) &&
-           (!ems_frame || p + n < ems_frame || p + n >= ems_frame + 16u))
+           (!EFR(t) || p + n < EFR(t) || p + n >= EFR(t) + 16u))
         n++;
     return n;
 }
@@ -3837,7 +3840,7 @@ static void ems_show(int t, unsigned pp, int s)
     }
     for (i = 0; i < 4; i++) {
         e = s >= 0 ? PG_LIN(base + i) : spare;
-        pte_set(t, ems_frame + pp * 4 + i, e | PTE_BOX);
+        pte_set(t, EFR(t) + pp * 4 + i, e | PTE_BOX);
     }
 }
 
@@ -3921,7 +3924,7 @@ static void ems_box(int t)              /* aus v86_create                 */
     ems_tab[t] = 0;
     for (i = 0; i < 4; i++) {
         ems_mh[t][i] = 0;
-        if (ems_frame)
+        if (EFR(t))
             ems_show(t, i, -1);
     }
 }
@@ -4000,7 +4003,7 @@ static unsigned ems_maplist(int t, unsigned h, unsigned mode, unsigned seg,
     for (i = 0; i < n && !r; i++) {
         unsigned lg = rd16(seg, off + i * 4), pp = rd16(seg, off + i * 4 + 2);
         if (mode == 1)                          /* Segment statt Nummer  */
-            pp = (pp - ((unsigned)ems_frame << 8)) >> 10;
+            pp = (pp - ((unsigned)EFR(t) << 8)) >> 10;
         if (pp > 3)
             r = 0x8B;
         else if (lg == 0xFFFF) {
@@ -4098,7 +4101,7 @@ static void ems(struct v86_frame *f, int t)
     unsigned ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
     int s;
 
-    if (!ems_frame)
+    if (!EFR(t))
         ERET(0x80);
     switch (AH) {                               /* mit Handle in DX      */
     case 0x44: case 0x45: case 0x47: case 0x48: case 0x4C:
@@ -4110,7 +4113,7 @@ static void ems(struct v86_frame *f, int t)
     case 0x40:                                  /* Zustand               */
         ERET(0);
     case 0x41:                                  /* Seitenrahmen          */
-        BX = (unsigned)ems_frame << 8;
+        BX = (unsigned)EFR(t) << 8;
         ERET(0);
     case 0x42:                                  /* freie/alle Seiten     */
         BX = ems_free(t);
@@ -4293,7 +4296,7 @@ static void ems(struct v86_frame *f, int t)
     case 0x58:                                  /* Rahmenadressen        */
         if (AL == 0)
             for (i = 0; i < 4; i++) {
-                wr16(es, di + i * 4, ((unsigned)ems_frame << 8) + (i << 10));
+                wr16(es, di + i * 4, ((unsigned)EFR(t) << 8) + (i << 10));
                 wr16(es, di + i * 4 + 2, i);
             }
         else if (AL != 1)
@@ -5771,7 +5774,7 @@ static void rom_uncow(int t)
         if (p == 0xF0)
             continue;
         if (p >= 0xC8 && p < 0xF0 && (BIT(umb_used[t], p) ||
-            (ems_frame && p >= ems_frame && p < ems_frame + 16)))
+            (EFR(t) && p >= EFR(t) && p < EFR(t) + 16)))
             continue;
         scratch2_map(PG_LIN(pt_box[t]), 4095);
         e = get32(SCRATCH2, p);

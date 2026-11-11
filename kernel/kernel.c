@@ -1113,6 +1113,93 @@ static struct ifs_file box_img[NTASK];
 unsigned char box_sec[512];             /* Sektorpuffer fuer v86.c       */
 
 static unsigned char park_owner[NTASK];
+/* DOSBOX.INI beim Anlegen einer Box: soll sie einen EMS-Rahmen haben?
+   Der Rahmen steht fest, bevor FreeDOS die UMBs verteilt - also hier und
+   nicht erst bei EMS_MEMORY_LIMIT je Programm (BOXSHELL). Kein Rahmen bei
+   EMS_MEMORY_LIMIT=0 oder EMS_FRAME_LOCATION=NONE (wie OS/2) unter [*]
+   oder unter [NAME.EXT] des gestarteten Programms (geht vor). */
+extern unsigned char ems_nf[];
+static char box_prog[13];               /* load_dos: "NAME.EXT", sonst "" */
+
+static int ini_key(const char __far *l, const char *k)
+{
+    while (*k && up(*l) == *k)
+        l++, k++;
+    if (*k)
+        return 0;
+    while (*l == ' ' || *l == '\t')
+        l++;
+    return *l == '=';
+}
+
+static const char __far *ini_val(const char __far *l)
+{
+    while (*l && *l != '=')
+        l++;
+    if (*l)
+        l++;
+    while (*l == ' ' || *l == '\t')
+        l++;
+    return l;
+}
+
+static int ini_noframe(void)
+{
+    struct ifs_file f;
+    unsigned sel, n, i, k;
+    int sec = 0, res = 0, own = 0, v;
+    char __far *b;
+    const char __far *l;
+    const char __far *w;
+
+    if (ifs_open(sys_drive, "\\DOS\\MDOS\\DOSBOX.INI", &f) || !(sel = kseg_alloc(4096)))
+        return 0;
+    n = f.size > 4095 ? 4095 : (unsigned)f.size;
+    b = MK_FP(sel, 0);
+    if (ifs_read(&f, 0, sel, 0, n) != (int)n)
+        n = 0;
+    b[n] = 0;
+    for (i = 0; i < n; ) {
+        l = b + i;
+        while (i < n && b[i] != '\r' && b[i] != '\n')
+            i++;
+        b[i] = 0;                       /* Zeile abschliessen          */
+        while (i < n && (b[i] == 0 || b[i] == '\r' || b[i] == '\n'))
+            i++;
+        while (*l == ' ' || *l == '\t')
+            l++;
+        if (*l == '[') {
+            l++;
+            if (l[0] == '*' && l[1] == ']')
+                sec = 1;
+            else {
+                for (k = 0; box_prog[k] && up(l[k]) == box_prog[k]; k++)
+                    ;
+                sec = box_prog[0] && !box_prog[k] && l[k] == ']' ? 2 : 0;
+            }
+            continue;
+        }
+        if (!sec)
+            continue;
+        if (ini_key(l, "EMS_MEMORY_LIMIT")) {
+            w = ini_val(l);
+            v = w[0] == '0' && (w[1] < '0' || w[1] > '9');
+        } else if (ini_key(l, "EMS_FRAME_LOCATION")) {
+            w = ini_val(l);
+            v = up(w[0]) == 'N';
+        } else
+            continue;
+        if (sec == 2) {
+            res = v;
+            own = 1;
+        } else if (!own)
+            res = v;
+    }
+    mem_free(desc_base(&gdt[sel >> 3]) >> 12, 1);
+    gdt[sel >> 3].access = 0;
+    return res;
+}
+
 static int load_img(int t, int drive, const char *path)
 {
     struct tss386 *ts;
@@ -1135,6 +1222,8 @@ static int load_img(int t, int drive, const char *path)
     cr3 = v86_create(t, box_kb);
     if (!cr3)
         return EXEC_ERR_NOMEM;
+    ems_nf[t] = (unsigned char)ini_noframe();
+    box_prog[0] = 0;
     v86_copy(t, 0x7C00, KDATA, (unsigned)box_sec, 512);
     v86_disk(t, *(unsigned *)(box_sec + 0x18), *(unsigned *)(box_sec + 0x1A),
              (unsigned)(box_img[t].size >> 9));
@@ -1213,6 +1302,11 @@ static int load_dos(int t, int drive, const char *path)
     int err;
 
     dos_line(drive, path, task[t].args, a);
+    for (i = 0; path[i]; i++)               /* Name fuer DOSBOX.INI      */
+        ;
+    while (i && path[i - 1] != '\\' && path[i - 1] != ':')
+        i--;
+    scopy(box_prog, path + i, sizeof(box_prog));
     scopy(keep, task[t].args, FAPI_ARGLEN);
     scopy(task[t].args, a, FAPI_ARGLEN);
     err = load_img(t, sys_drive, "\\DOS\\MDOS\\FREEDOS.IMG");
