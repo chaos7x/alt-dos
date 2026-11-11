@@ -1205,6 +1205,7 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     ss, ax
         mov     sp, 0x2000                  ; Stapel hinter der GDT
         call    rbs_ivrest              ; IVT 300h-3FFh: BIOS-Stapel beim Reset
+        call    rbs_a20                 ; DOS=HIGH: die HMA muss sichtbar sein
         cmp     byte [76], 0            ; 287: Reset ueber Port F1h holt ihn
         je      .nofpu                  ; aus dem Protected Mode (FSETPM von
         xor     al, al                  ; AT-DOS), dann Zustand der Box

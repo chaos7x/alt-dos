@@ -148,6 +148,15 @@ MOUSE.SYS). In QEMU mit `-serial msmouse` + MOUSE.SYS /COM1 geprüft:
 INT 33h Reset 3 Tasten, Version 7.05, Bewegung, Klick, Rückruf; danach
 MAUSTEST in AT-DOS geht. PS/2 nur in 86Box prüfbar (QEMU ohne Bildschirm
 schickt der PS/2-Maus keine Bewegungen).
+Vom Nutzer in 86Box bestätigt: CuteMouse geht, MEM in der Box geht.
+HMA für die Box (Wunsch des Nutzers): `apps/rbhma.asm` -> RBHMA.SYS im
+Startabbild (CONFIG.SYS `DEVICE=A:\RBHMA.SYS`, `DOS=HIGH`), XMS 3.00 nur
+mit HMA (00h–08h; 01h/02h vergeben/freigeben, 03h–07h melden Erfolg und
+lassen A20 offen, 08h kein XMS). Die HMA (100000h–10FFEFh) hält der Kernel
+ohnehin frei (KMOVE_BASE 110000h), INT 15h/87h lehnt der Stummel ab; beim
+Eintritt (rbs_entry) jetzt auch rbs_a20 – falls das BIOS nach dem Reset
+A20 schließt. In QEMU (386-Weg) und Bochs (286-Weg, 10 Wechsel) geprüft:
+„FreeDOS verwendet die HMA“, 536 KB frei (vorher ~488).
 
 ## Zweige und Releases (5.x)
 
