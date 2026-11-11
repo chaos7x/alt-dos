@@ -492,7 +492,7 @@ zurück nach dem Vorbild von GNU less (Bild/Pfeile, `g G`, `123g`, `/` `?`
 Pipe), **GREP** sucht mit regulären Ausdrücken nach dem
 Vorbild von GNU grep (`-i -v -n -c -l -h -H -r -s -E`, `. * + ? ^ $ [..] |`,
 Platzhalter in Dateinamen, erkennt Binärdateien), **MORE** blättert seitenweise, **FIND** sucht
-Text (`/V /C /N /I`, wie MS-DOS), **MEM** zeigt den Arbeitsspeicher, **TASKA**
+Text (`/V /C /N /I`, wie MS-DOS), **MEM** zeigt den Arbeitsspeicher als Tabelle wie das MEM von FreeDOS (`/C` ohne Platten-Cache; in der DOS-Box gilt das FreeDOS-MEM aus `\DOS\MDOS`), **TASKA**
 zählt und gibt per `DosYield()` ab (schön mit `START TASKA` im Hintergrund),
 **TASKB** fordert zehn Segmente zu 64 KB an, prüft sie, gibt die Hälfte frei
 und überlässt den Rest dem Kernel, **TASKC** versucht direkt nach B800:0000 zu

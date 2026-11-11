@@ -578,6 +578,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   fat.c `name_for` lehnt `"*?/:<>|\` und Steuerzeichen in langen Namen ab
   (8.3 prüfte to83 schon). MD meldet wie MS-DOS „Verzeichnis kann nicht
   erstellt werden“. In QEMU geprüft.
+- MEM (Wunsch des Nutzers, Stil wie MEM von FreeDOS): Tabelle Speicher /
+  Größe / Anteil (Kernel, Programme, AllocSeg, Platten-Cache, DOS-Boxen
+  nur wenn belegt, BIOS/Boot/Puffer, Belegt, Frei, Gesamt, Verfügbar),
+  darunter der Cache; `/C` ohne Cache. Prozent über `udiv` (Bit-Schleife)
+  und Multiplikation per Schieben (sonst __U4M). Auch auf 5.x.
 - Verzeichnis der DOS-Boxen heißt `\DOS\MDOS` (vorher `\DOS\BOX`;
   Wunsch des Nutzers, wie OS/2 `\OS2\MDOS`, auch auf 5.x): FREEDOS.IMG,
   COMMAND.COM, DOSBOX.INI, SETVER.LST; `%DOSBOX%` zeigt dorthin, BOXSHELL
