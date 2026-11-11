@@ -86,6 +86,21 @@ Testaufbau Bochs: `t/bx/rsw2.sh Wartezeit Wechsel Abstand` (AUTOEXEC mit
 START CMD + RBOX, Klicks auf USER/OK), Testkernel mit `nop` statt
 `mov byte [_cpu_386], 1` in start.asm (über eine Kopie, nie mit `git
 checkout` zurück – das verwirft ungesicherte Änderungen).
+Danach auf dem SCAT: nach `DIR` über den Redirector, Wechsel weg und
+zurück friert alles ein. In Bochs (286-Weg) mit einer Endlosschleife
+`DIR C:\DOS` in der Box nachgestellt (Testabbild: RBSHELL-Befehlszeile
+auf `/K A:\L.BAT` gepatcht) – FreeCOM stürzte nach einigen hundert
+Redirector-Aufrufen auch ohne Wechsel ab („Invalid Opcode at 0108:0064“),
+in QEMU (386-Weg) nie. Wegmarken (Buchstabe in der letzten Bildschirm-
+zelle je Eintrittsschritt) zeigten: der Stummel springt sauber zurück.
+Ein Protokoll der Box-Vektoren bei jeder Rückkehr zeigte, dass FreeDOS
+INT 8/9 mit seinen STACKS-Handlern (0070:000F/0016) belegt. Ursache:
+rbs_topm erkannte „Ausflug mitten im Eintritt“ an SS = CS – ein Takt
+während des Eintritts läuft aber erst durch FreeDOS, das auf einen
+eigenen Stapel schaltet; dann sicherte der Ausflug den halben Stummel als
+Zustand der Box. Jetzt Merker [78] (gesetzt am Anfang von rbs_entry,
+gelöscht direkt vor dem IRET in die Box). Danach in Bochs mehrere Minuten
+DIR-Schleife mit 30 Wechseln ohne Absturz.
 
 ## Zweige und Releases (5.x)
 

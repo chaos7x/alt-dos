@@ -1186,7 +1186,7 @@ code_end:
 ; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9), 74 Rueckkehr
 ; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen), 76 287
 ; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte), 78
-; frei (war: INT 9 nachholen), 79 Wechsel waehrend des
+; Stummel im Eintritt (rbs_entry bis zum IRET), 79 Wechsel waehrend des
 ; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
 ; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8, 86 vorgemerkter
 ; Wechsel aus INT 15h/4Fh (Grund | Weg << 8). Grund 4 = Takt, 5 = INT 13h
@@ -1196,18 +1196,10 @@ code_end:
 ; Stapel bis 2000h.
 segment KTEXT2
 %define RBO(x) ((x) - rbs_code + 0x80)
-%macro RBMARK 1                        ; Fehlersuche: Zeichen in die letzte
-        push    es                      ; Bildschirmzelle (rot), zeigt, wie
-        push    ax                      ; weit der Eintritt kam
-        mov     ax, 0xB800
-        mov     es, ax
-        mov     word [es:3998], 0x4F00 | %1
-        pop     ax
-        pop     es
-%endmacro
 rbs_code:
 rbs_entry:                              ; Real Mode, CS = rb_seg
         cli
+        mov     byte [cs:78], 1         ; im Eintritt: Ausfluege nur merken
         mov     ax, cs
         mov     ds, ax
         mov     ss, ax
@@ -1227,12 +1219,10 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     al, [29]
         out     0xA1, al
         sti
-        RBMARK  'A'
         cmp     byte [74], 0            ; nur ein Dienst: Bild steht noch
         jne     .quiet
         mov     ax, 3                   ; BIOS stellt die Karte selbst ein
         int     0x10
-        RBMARK  'B'
         push    es
         mov     ax, 0xB800
         mov     es, ax
@@ -1242,13 +1232,11 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         cld
         rep     movsw
         pop     es
-        RBMARK  'C'
         mov     dx, [46]
         mov     bh, 0
         mov     ah, 2                   ; (Umschalttasten 417h/418h/496h
         int     0x10                    ;  stellt rbox.c vor dem Eintritt)
-.quiet: RBMARK  'D'
-        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+.quiet: in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
         test    al, 1                   ; ist neu eingestellt und sieht die
         jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
         test    al, 0x20                ; als Flanke - abholen, sonst steht
@@ -1258,14 +1246,11 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     es, ax                  ; nur vor, ein Takt dabei geht ueber
         pushf                           ; [79]. (Frueher ein INT-9-Rahmen am
         cli                             ; Fortsetzungspunkt der Box - der
-        RBMARK  'E'
         call    far [es:9 * 4]          ; stoerte FreeDOS mitten im Laden:
         pop     es                      ; Absturz nach schnellen Wechseln)
-        RBMARK  'F'
         jmp     short .kok
 .aux:   in      al, 0x60                ; Maus: weg
-.kok:   RBMARK  'G'
-        cli
+.kok:   cli
         mov     al, [79]                ; Wechsel waehrend des Eintritts
         test    al, al                  ; verlangt: jetzt ausfuehren
         jz      .go
@@ -1278,12 +1263,12 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         or      ah, 4
         mov     [30], ax
         jmp     rbs_saved
-.go:    RBMARK  'H'
-        mov     ss, [20]
+.go:    mov     ss, [20]
         mov     sp, [18]
         push    word [26]
         push    word [24]
         push    word [22]
+        mov     byte [78], 0            ; ab dem IRET laeuft die Box
         mov     ax, [0]
         mov     bx, [2]
         mov     cx, [4]
@@ -1499,15 +1484,13 @@ rbs_inte0:                              ; Dienst des Kernels
         mov     word [cs:30], 3
 
 rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
-        cli
-        push    ax                      ; Alt+Esc/Strg+Alt+Entf mitten im
-        mov     ax, ss                  ; Eintrittscode (Interrupt waehrend
-        push    bx                      ; INT 10h, eigener Stapel): nur
-        mov     bx, cs                  ; merken, rbs_entry fuehrt es am Ende
-        cmp     ax, bx                  ; mit dem unveraenderten Zustand aus
-        pop     bx
-        pop     ax
-        jne     .box
+        cli                             ; Ausflug mitten im Eintrittscode
+        cmp     byte [cs:78], 0         ; (Takt waehrend INT 10h/INT 9): nur
+        je      .box                    ; merken, rbs_entry fuehrt es am Ende
+                                        ; aus. Nicht an SS = CS erkennen -
+                                        ; FreeDOS (STACKS) schaltet in INT 8/9
+                                        ; auf eigene Stapel um, dann sicherte
+                                        ; der Ausflug den halben Stummel
         cmp     byte [cs:30], 4         ; Takt-Ausflug: einfach auslassen
         je      .skip
         push    ax                      ; [79] = Grund | Weg << 2 | 40h
