@@ -1188,7 +1188,8 @@ code_end:
 ; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte), 78
 ; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
 ; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
-; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8. Grund 4 = Takt.
+; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8, 86 vorgemerkter
+; Wechsel aus INT 15h/4Fh (Grund | Weg << 8). Grund 4 = Takt.
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1262,6 +1263,8 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         push    word [22]
         cmp     byte [78], 0            ; wie ein Hardware-Interrupt genau
         je      .noint                  ; am Fortsetzungspunkt: zweiter Rahmen
+        test    byte [27], 2            ; - nur, wenn die Box dort Inter-
+        jz      .noint                  ; rupts zulaesst (IF im Rahmen)
         mov     ax, [26]                ; in INT 9, IF und TF aus
         and     ax, 0xFCFF
         push    ax
@@ -1497,10 +1500,8 @@ rbs_int15:
         cmp     al, 0x0C
         pop     ax
         jne     .chain
-        mov     al, 0x20                ; Strg+Alt+Entf: Box beenden
-        out     0x20, al
-        mov     word [cs:30], 0x0202
-        jmp     rbs_topm
+        mov     word [cs:86], 0x0202    ; Strg+Alt+Entf: Box beenden
+        jmp     short .eat
 .esc:   push    ds
         push    ax
         xor     ax, ax
@@ -1509,16 +1510,12 @@ rbs_int15:
         pop     ax
         pop     ds
         jz      .chain
-        push    bp                      ; Taste verbraucht (CF = 0), das
-        mov     bp, sp                  ; BIOS legt sie nicht ab
-        and     byte [bp + 6], 0xFE
-        pop     bp
-        push    ax
-        mov     al, 0x20
-        out     0x20, al
-        pop     ax
-        mov     word [cs:30], 1
-        jmp     rbs_topm
+        mov     word [cs:86], 0x0201    ; Alt+Esc: nur vormerken - hier
+.eat:   push    bp                      ; steht die Box mitten im INT 9 des
+        mov     bp, sp                  ; BIOS (IF aus); gewechselt wird
+        and     byte [bp + 6], 0xFE     ; beim naechsten Takt (rbs_int8).
+        pop     bp                      ; CF = 0: Taste verbraucht
+        iret
 .no4f:  cmp     ah, 0x88
         je      .none
         cmp     ah, 0x87
@@ -1546,7 +1543,16 @@ rbs_int15:
 rbs_int8:                               ; Takt: BIOS zaehlt, dann je
         pushf                           ; [80] Takte ein Ausflug zu AT-DOS
         call    far [cs:82]             ; (Stufe 5: Hintergrund laeuft)
-        cmp     byte [cs:80], 0
+        cmp     byte [cs:86], 0         ; vorgemerkter Wechsel (INT 15h/
+        je      .nosw                   ; 4Fh): hier an sauberer Stelle
+        cli
+        push    ax
+        mov     ax, [cs:86]
+        mov     [cs:30], ax
+        mov     word [cs:86], 0
+        pop     ax
+        jmp     rbs_topm
+.nosw:  cmp     byte [cs:80], 0
         je      .ret
         dec     byte [cs:81]
         jnz     .ret
