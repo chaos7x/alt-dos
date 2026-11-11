@@ -217,6 +217,11 @@ Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
+VESA für FAPI-Programme in 5.x: verworfen (Entscheidung des Nutzers).
+Moduswechsel ginge über den Reset-Ausflug wie RBOX, aber jeder
+Fensterwechsel bräuchte einen Chip-Treiber (ET4000 3CDh usw.) oder
+einen Reset je Bank. SVGA-Programme laufen in der 5.1-Box direkt auf
+der Karte (SVGA-Zustand nach Alt+Esc nicht gesichert).
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
