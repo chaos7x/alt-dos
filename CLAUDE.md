@@ -334,7 +334,8 @@ sektor liest jetzt wie in 6.0 so viele Sektoren, wie die Datei groß ist
 (Größe aus dem Verzeichniseintrag, `nsect`), build.sh füllt nicht mehr auf
 und prüft 448 KB – alte Disketten brauchen SYS (neuer Bootsektor); Start
 von Platte unberührt (hdboot folgt der FAT-Kette). In QEMU: Diskette
-startet, Uptime nach Box-Sitzung richtig.
+startet, Uptime nach Box-Sitzung richtig. Vom Nutzer auf dem SCAT bestätigt (Build
+240.34): RBTIME mit vielen Alt+Esc läuft ohne Hänger.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.
