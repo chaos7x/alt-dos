@@ -872,6 +872,11 @@ Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
 `$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
 Paketquellen nicht auf. `CI_FORCE_SRC=1` erzwingt den Quelltext-Weg.
 
+Regel für `main` auf GitHub (Ruleset): kein Löschen, kein Force-Push,
+lineare Historie, Pull Request – mit Ausnahme „Repository admin“
+(Always allow), damit die Claude-Sitzung direkt pushen kann (sie pusht
+im Namen des Nutzers, eine Ausnahme nur für die App greift nicht).
+
 QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
 `sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
 
