@@ -26,6 +26,7 @@ org 100h
         mov     bx, ((stack_top - $$) + 100h + 15) / 16
         mov     ah, 4Ah                 ; Speicher auf das Noetige kuerzen
         int     21h
+        call    go_high                 ; wenn moeglich in eine UMB
 
         call    redir_install
         mov     ah, 13h                 ; Startlaufwerk der AT-DOS
@@ -46,6 +47,15 @@ org 100h
         jmp     .dl
 .dd:    call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
+        mov     es, [2Ch]               ; eigene Umgebung wird nicht mehr
+        mov     ah, 49h                 ; gebraucht (Kinder bekommen envbuf)
+        int     21h
+        mov     ax, cs
+        mov     bx, envbuf
+        mov     cl, 4
+        shr     bx, cl
+        add     ax, bx
+        mov     [2Ch], ax
 
 next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         pop     es
@@ -124,6 +134,104 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     sp, stack_top
         sti
         jmp     next
+
+; ---- sich selbst in eine UMB verlegen ------------------------------------
+; Spiele wie Elvira (1990) brauchen fast den ganzen konventionellen Speicher
+; (unter MS-DOS 6.22 mit QEMM laeuft es mit 635 KB, die Box hatte 618 KB).
+; BOXSHELL bleibt als Wurzelprozess resident (~6 KB) - liegt es in einer
+; UMB, hat das DOS-Programm diese 6 KB mehr. Ablauf: Block nur oben
+; holen (5801h 41h, UMBs eingebunden), PSP + Programm + Stapel hinueber-
+; kopieren, im PSP Elternverweis, JFT-Zeiger und INT 22h-24h auf das neue
+; Segment, Besitzer von Block und Umgebung umtragen, dort weiter (SS:SP
+; gleich, die Ruecksprungadresse liegt mit im kopierten Stapel), 50h, alten
+; Block frei. Kein Platz oben: alles bleibt, wie es war.
+PARAS   equ     ((stack_top - $$) + 100h + 15) / 16
+go_high:
+        mov     ax, 5800h               ; Strategie und UMB-Verbindung merken
+        int     21h
+        push    ax
+        mov     ax, 5802h
+        int     21h
+        push    ax
+        mov     ax, 5803h               ; UMBs einbinden
+        mov     bx, 1
+        int     21h
+        mov     ax, 5801h               ; nur oben, bester Treffer
+        mov     bx, 41h
+        int     21h
+        mov     bx, PARAS
+        mov     ah, 48h
+        int     21h
+        jc      .none
+        cmp     ax, 0A000h
+        jae     .got
+        mov     es, ax                  ; doch unten gelandet: zurueck
+        mov     ah, 49h
+        int     21h
+.none:  xor     ax, ax
+.got:   mov     dx, ax                  ; DX = neues Segment oder 0
+        pop     bx                      ; UMB-Verbindung wie vorher
+        xor     bh, bh
+        mov     ax, 5803h
+        int     21h
+        pop     bx                      ; Strategie wie vorher
+        mov     ax, 5801h
+        int     21h
+        test    dx, dx
+        jz      .ret
+        mov     es, dx                  ; alles kopieren (ab PSP)
+        xor     si, si
+        xor     di, di
+        mov     cx, PARAS * 8
+        cld
+        rep     movsw
+        mov     bx, cs                  ; BX = altes Segment
+        mov     [es:16h], dx            ; Elternverweis = sich selbst
+        cmp     [es:36h], bx            ; JFT-Zeiger
+        jne     .j1
+        mov     [es:36h], dx
+.j1:    mov     di, 0Ch                 ; INT 22h/23h/24h (Segmente)
+.vec:   cmp     [es:di], bx
+        jne     .v1
+        mov     [es:di], dx
+.v1:    add     di, 4
+        cmp     di, 0Ch + 12
+        jb      .vec
+        dec     dx                      ; Besitzer und Name des neuen Blocks
+        mov     es, dx
+        inc     dx
+        mov     [es:1], dx
+        mov     word [es:8], 'BO'
+        mov     word [es:10], 'XS'
+        mov     word [es:12], 'HE'
+        mov     word [es:14], 'LL'
+        mov     ax, [cs:2Ch]            ; Besitzer der Umgebung
+        test    ax, ax
+        jz      .noenv
+        dec     ax
+        mov     es, ax
+        cmp     [es:1], bx
+        jne     .noenv
+        mov     [es:1], dx
+.noenv: mov     bp, bx                  ; altes Segment
+        cli                             ; Stapel und Code umsetzen
+        mov     ss, dx
+        sti
+        push    dx
+        mov     ax, .there
+        push    ax
+        retf
+.there: push    cs
+        pop     ds
+        mov     ah, 50h                 ; neuer PSP
+        mov     bx, cs
+        int     21h
+        mov     es, bp                  ; alten Block frei
+        mov     ah, 49h
+        int     21h
+        push    cs
+        pop     es
+.ret:   ret
 
 copystr:                                ; DS:SI -> ES:DI ohne die Null
         lodsb

@@ -456,6 +456,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein
   BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
   Schatten-RAM)
+- Konventioneller Speicher der Box: FreeDOS in der HMA, Dateien und
+  Laufwerkstabelle in UMBs, BOXSHELL verlegt sich selbst in eine UMB –
+  bis 627 KB frei (unter MS-DOS 6.22 mit QEMM ~635 KB)
 - `\DOS\MDOS\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–63424,

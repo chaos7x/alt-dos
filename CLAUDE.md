@@ -610,6 +610,20 @@ Win32s), nicht vorziehen, sondern nachfragen.
   1-KB-Puffer, jeder andere Redirector-Aufruf verwirft ihn) – das MEM von
   FreeDOS liest MEM.DE byteweise, sonst je Byte ein Weg durch den Kernel.
   In QEMU geprüft: DIR, MEM deutsch, COPY von MEM.DE/COMMAND.COM gleich.
+  Mehr konventioneller Speicher in der Box (Anlass: Elvira 1990 meldet
+  „Not enough memory“ – unter MS-DOS 6.22 läuft es mit 635 KB frei, mit
+  560 KB nicht; die Box hatte 618 KB): Box-CONFIG.SYS `FILESHIGH=20`,
+  `LASTDRIVEHIGH=Z` (+3 KB), BOXSHELL verlegt sich beim Start selbst in
+  eine UMB (`go_high`: Block nur oben per 5801h 41h, alles ab PSP
+  kopieren, PSP-Elternverweis/JFT-Zeiger/INT 22h–24h und MCB-Besitzer +
+  Name umtragen, SS/CS umsetzen, 50h, alten Block frei; kein Platz oben
+  -> bleibt unten) und gibt seine Umgebung frei (Kinder bekommen envbuf,
+  PSP:2Ch zeigt dorthin). In QEMU: 627 KB frei, größtes Programm 626 KB
+  (mit FreeCOM resident; direkt aus CMD 2,5 KB mehr), mit EMS-Rahmen und
+  nur 4 KB UMB wie vorher 620 KB; SET, DIR, EXIT, HALLO aus CMD gehen.
+  Elvira selbst stürzt auch unter MS-DOS mit QEMM ab (#6 bei 0000:0073,
+  INT 8/9 auf 0:0 – wie in der Box), also vermutlich ein Fehler der
+  Fassung.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
