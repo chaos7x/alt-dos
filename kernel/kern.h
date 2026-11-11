@@ -190,7 +190,9 @@ struct blkdev {
     unsigned char  unit;
     unsigned long  blocks;
     unsigned       bsize;           /* 512, CD-ROM 2048                    */
+    unsigned char  rem;             /* Wechselplatte (ZIP, MO): DRV_MEDIA  */
 };
+#define IS_REM(dev) (blk[dev].rem)
 extern struct blkdev blk[NBLK];
 extern int nblk;
 void vol_lock(int d);                       /* Phase 6: Laufwerkssperre */

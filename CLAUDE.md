@@ -1424,14 +1424,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (SB16 PnP/AWE32 PnP, nach der Intel/Microsoft-Spezifikation), AWE32-
   Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
   virtuelle SB der DOS-Boxen in 6.0.
-- SCSI-Wechselplatten (vom Nutzer auf dem 486 gemeldet, für später):
-  ZIP ohne Medium beim Start lässt sich danach nicht mehr einlegen –
-  NCR8XX/AHA154X/NCR5380 legen eine Platte nur an, wenn READ CAPACITY
-  klappt (sonst „(nicht bereit)“, keine Einheit, kein Buchstabe). Nötig:
-  Einheit trotzdem anlegen, wenn INQUIRY Byte 1 Bit 7 (RMB) gesetzt ist
-  (Größe offen), und Wechsel erkennen wie bei der Diskette (`blk_media`,
-  neu einhängen; SCSI meldet ihn als Unit Attention 6/28h, kein Medium
-  2/3Ah -> DRV_ERR_NOTREADY). Gilt für ZIP, JAZ, MO, SyQuest.
+- SCSI-Wechselplatten (vom Nutzer auf dem 486 gemeldet: ZIP ohne Medium
+  beim Start ließ sich danach nicht mehr einlegen), erledigt für
+  NCR8XX.SYS (in QEMU mit `scsi-hd,removable=on` am lsi53c895a geprüft:
+  Start mit und ohne Medium, `eject`/`change` im Monitor, Superfloppy
+  und ZIP-Abbild mit Partition 4, DIR/TYPE/Schreiben, CHKDSK, fsck
+  sauber). Treiber: INQUIRY Byte 1 Bit 7 (RMB, auch Typ 7 = MO) -> Einheit
+  auch ohne Medium (blocks 0), `bsize | DRV_BS_REMOVABLE` (8000h);
+  neuer Befehl `DRV_MEDIA` (5): TEST UNIT READY, 6/xx -> gewechselt,
+  2/3Ah -> DRV_ERR_NOTREADY, nach Wechsel READ CAPACITY (lba = Sektoren,
+  count = 1); Unit Attention mitten im Lesen/Schreiben -> neuer Status
+  `DRV_ERR_CHANGED` (6). Kernel: `blk[].rem`, `rem_media` (höchstens
+  alle 2 s, ohne Medium 1 s, sofort nach DRV_ERR_CHANGED – `blk_chg`),
+  Wechsel -> Cache des Geräts weg; kein verzögertes Schreiben
+  (bc_writeback); mount_disk gibt einer Wechselplatte genau einen
+  Buchstaben (present, eingehängt bei Bedarf). fat.c `revalidate` gilt
+  auch für Wechselplatten: `rem_locate` (Sektor 0 mit BPB = ganzes
+  Medium, sonst erste FAT-Partition der Tabelle), dann fat_mount;
+  `vol_check` (fern) für SELECTDISK/QFSInfo. Meldung „kein Medium
+  eingelegt“ (CMD, CHKDSK, FM) für C: und dahinter. Offen: AHA154X.SYS
+  und NCR5380.SYS genauso (nur in 86Box prüfbar), EJECT-Befehl (START
+  STOP UNIT; die Laufwerke haben eine Auswurftaste).
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“ (vom Nutzer zurückgestellt, DOS-Boxen in 6.0 gehen
   vor): Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne

@@ -92,6 +92,7 @@ extern int floppy_lazy;
 int __far ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 void __far vol_move(int from, int to);
 int __far  vol_present(int d);
+int __far  vol_check(int d);            /* Wechselplatte: Medium pruefen */
 void __far vol_reset(int d);
 void __far ifs_shutdown(void);
 int __far  ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,

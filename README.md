@@ -736,7 +736,10 @@ BAR 0, und lässt den SCRIPTS-Prozessor der Karte jeden Befehl selbst
 abarbeiten (Auswahl, IDENTIFY, Befehl, Daten per Busmaster direkt in den
 Kernelpuffer, Status, Trennen und Wiederauswahl). Platten und CD-ROMs
 an den IDs 0–6 (`/ID:n` legt die eigene ID fest, Vorgabe 7), mit dem PCI-Interrupt
-(`/NOIRQ`: Abfragebetrieb).
+(`/NOIRQ`: Abfragebetrieb). Wechselplatten (ZIP, JAZ, MO, SyQuest)
+bekommen immer einen Laufwerksbuchstaben, auch ohne Medium beim Start;
+ein Wechsel wird wie bei der Diskette erkannt (Partition 4 der ZIP-
+Disketten und Medien ohne Partitionstabelle gehen beide).
 `MOUSE.SYS` sucht eine PS/2-Maus (IRQ 12), dann eine serielle (Microsoft,
 Logitech mit dritter Taste) an COM1/COM2, zuletzt die Busmaus (Microsoft InPort an 23Ch/238h, Logitech an 23Ch; IRQ wird gesucht, `/IRQ:n` legt ihn fest) (`/PS2`, `/COM1`, `/COM2`, `/BUS` legt fest) und meldet ihre Bewegungen
 dem Kernel; Programme lesen sie über MouOpen/MouReadEvent, der Zeiger ist

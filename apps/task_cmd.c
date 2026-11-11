@@ -670,12 +670,14 @@ static unsigned join_at(const char *adir, const char *name)
     return 0;
 }
 
-/* "nicht bereit": Diskette oder CD? (Laufwerk d) */
+/* "nicht bereit": Diskette, CD oder Wechselplatte? (Laufwerk d) */
 static void not_ready_d(unsigned d)
 {
     static struct fapi_fsinfo nf;
     if (!FAPI_FAILED(DosQFSInfo(d, &nf)) && nf.bsize == 2048)
         puts("Laufwerk nicht bereit - keine CD eingelegt.\n");
+    else if (d >= 2)                    /* ZIP, MO: Wechselplatte      */
+        puts("Laufwerk nicht bereit - kein Medium eingelegt.\n");
     else
         puts("Laufwerk nicht bereit - keine Diskette eingelegt.\n");
 }

@@ -28,6 +28,9 @@ struct drv_header {
 #define DRV_WRITE       2           /* einen Block schreiben (nur 512)  */
 #define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
 #define DRV_AUDIO       4           /* Audio: ES:BX = struct aud_req     */
+#define DRV_MEDIA       5           /* Wechselplatte: Medium da? -> status OK
+                                       oder NOTREADY, count = 1 gewechselt
+                                       (seit der letzten Frage), lba = Sektoren */
 
 #define DRV_MAXUNITS    8
 
@@ -37,6 +40,10 @@ struct drv_header {
 #define DRV_ERR_CMD     3           /* unbekannter Befehl               */
 #define DRV_ERR_WP      4           /* schreibgeschuetzt                */
 #define DRV_ERR_NOTREADY 5          /* kein Medium im Laufwerk (CD)     */
+#define DRV_ERR_CHANGED 6           /* Medium gewechselt (Unit Attention):
+                                       der Kernel haengt neu ein          */
+#define DRV_BS_REMOVABLE 0x8000     /* INIT bsize: Wechselplatte (ZIP, MO):
+                                       Einheit auch ohne Medium, DRV_MEDIA */
 
 struct drv_req {
     unsigned char  cmd;
