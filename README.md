@@ -462,7 +462,7 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `\DOS\MDOS\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–63424,
-  Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048; 0 oder
+  Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–32768, Vorgabe 2048; 0 oder
   `EMS_FRAME_LOCATION=NONE` beim Anlegen der Box: kein Seitenrahmen,
   64 KB mehr oberer Speicher), je `-1`
   = so viel wie möglich (MS-DOS-MEM zeigt in der Box die XMS-Größe:

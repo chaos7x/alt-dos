@@ -631,6 +631,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   UMB). Eine geparkte Box behält ihren Stand. In QEMU geprüft: [*]
   EMS_MEMORY_LIMIT=0 -> MEM in der Box ohne EMS, oberer Speicher 68 statt
   4 KB, größtes Programm 627 KB.
+  EMS bis 32 MB je Box (vom Nutzer gemeldet: mit -1 nur 4 MB): v86.c
+  `EMS_MAXP` 2048 Seiten wie EMS 4.0/OS/2, Verwaltung `ems_tab` jetzt 4
+  Seiten am Stück (mem_alloc, erst beim ersten Handle): ET_BASE
+  Erstseiten, ET_OWN Besitzer, ET_IDX Seitennummer im Handle (ems_slot
+  prüft zuerst `ems_fs` + k, sonst Suche), ET_NAME, ET_SAVE (47h/48h);
+  `ems_np`/`ems_ml` 16 Bit, 4Eh-Zuordnung 12 Byte (Handle, Seite als
+  Wort). In QEMU mit ET.COM geprüft (-1: 0800h Seiten, 16 MB anlegen,
+  Seite 1000/5 mit Mustern, 4E00/4E01, freigeben; Speicher danach gleich).
   Elvira selbst stürzt auch unter MS-DOS mit QEMM ab (#6 bei 0000:0073,
   INT 8/9 auf 0:0 – wie in der Box). Auflösung (Nutzer): Elvira wird
   über ELVIRA.BAT gestartet (`runvga gamepc /s >tmp.txt`, vorher
@@ -2723,7 +2731,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   POLL.COM (fragt 3DAh und INT 16h 01 ab) per START im Hintergrund,
   BUSY 60000 vorn: 10 s mit Vorgabe, mit 100 nach über 2 min nicht fertig.
   `XMS_MEMORY_LIMIT=-1` bzw. `EMS_MEMORY_LIMIT=-1` (Wunsch des Nutzers)
-  = so viel, wie die Box ansprechen kann (63.424 KB XMS, 4.096 KB EMS):
+  = so viel, wie die Box ansprechen kann (63.424 KB XMS, 32.768 KB EMS):
   BOXSHELL `pnum` liefert bei `-` FFFFh, der Kernel kappt.
   Speicher je Box (vom Nutzer auf dem 386 mit 4 MB gemeldet: zwei
   Boxen 2.600 KB, 304 KB frei): in QEMU nachgestellt – eine Box am

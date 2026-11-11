@@ -247,7 +247,7 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;   [*]           fuer alle Programme
 ;   [NAME.EXT]    fuer ein Programm (geht vor)
 ;   XMS_MEMORY_LIMIT=KB   (0-3008, Vorgabe 2048) -> INT E0h 16h
-;   EMS_MEMORY_LIMIT=KB   (0-4096, Vorgabe 2048) -> INT E0h 17h
+;   EMS_MEMORY_LIMIT=KB   (0-32768, Vorgabe 2048) -> INT E0h 17h
 ;   DOS_VERSION=n.nn      -> INT 2Fh 122Fh fuer das naechste Programm
 ;                            (ein Eintrag in SETVER.LST geht vor)
 ;   POPF_PATCH=ON|OFF     Hilfen der Nachbildung fuer DPMI-Programme,

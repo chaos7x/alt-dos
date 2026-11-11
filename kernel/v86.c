@@ -2518,7 +2518,7 @@ static void svc(int n, struct v86_frame *f, int t)
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
         else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 4;
-            ems_lim[t] = (pg > 256 ? 256 : pg) + 1;
+            ems_lim[t] = (pg > 2048 ? 2048 : pg) + 1;   /* bis 32 MB */
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
             box_hk[t] = (unsigned char)((~BX & 15) | (BX & (HK_ADLIB | HK_HWT)));
         else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
@@ -3793,23 +3793,33 @@ static void xms(struct v86_frame *f, int t)
    ausgerichtet), einmal fuer alle Boxen gewaehlt, vor den UMBs. Eine
    logische Seite = 4 zusammenhaengende Kernelseiten, eingeblendet wird
    ueber die Seitentabelle der Box; ein leerer Rahmenplatz zeigt auf die
-   Ersatzseite. Verwaltung je Box in einer eigenen Seite (ems_tab):
-   0 Erstseite je Platz (256 x pg_t), 1024 Besitzer (FFh frei), 1280
-   Namen (32 x 8), 1536 gesicherte Zuordnung je Handle (32 x 8). */
+   Ersatzseite. Verwaltung je Box in 4 eigenen Seiten (ems_tab, 16 KB):
+   ET_BASE Erstseite je Platz (2048 x pg_t), ET_OWN Besitzer (FFh frei),
+   ET_IDX logische Seitennummer im Handle, ET_NAME Namen (32 x 8),
+   ET_SAVE gesicherte Zuordnung je Handle (32 x 4 x (Handle, -, Seite)). */
 #define EMS_SEG   0xF060
 #define EMS_OFF   0x0020
 #define NEH       32
-#define EMS_MAXP  256                   /* 4 MB je Box                    */
+#define EMS_MAXP  2048                  /* 32 MB je Box (wie EMS 4.0/OS/2) */
+#define ET_BASE   0
+#define ET_OWN    8192
+#define ET_IDX    10240
+#define ET_NAME   14336
+#define ET_SAVE   14592
+#define ET_PAGES  4
 #define EMS_KB    2048                  /* Vorgabe (DOSBOX.INI: EMS_MEMORY_LIMIT) */
 static pg_t ems_tab[NTASK];
-static unsigned char ems_on[NTASK][NEH], ems_np[NTASK][NEH];
-static unsigned char ems_mh[NTASK][4], ems_ml[NTASK][4];   /* Rahmen: Handle/Seite */
+static unsigned char ems_on[NTASK][NEH];
+static unsigned ems_np[NTASK][NEH], ems_fs[NTASK][NEH];    /* Seiten, Platz von Seite 0 */
+static unsigned char ems_mh[NTASK][4];
+static unsigned ems_ml[NTASK][4];       /* Rahmen: Handle + 1 / Seite     */
 #define EMS_PGN   (ems_lim[t] ? ems_lim[t] - 1 : EMS_KB / 16)
 #define ET(o)     (*(unsigned char __far *)MK_FP(SCRATCH, (o)))
+#define ETW(o)    (*(unsigned __far *)MK_FP(SCRATCH, (o)))
 
 static void ems_tabmap(int t)
 {
-    scratch_map(PG_LIN(ems_tab[t]), 4095);
+    scratch_map(PG_LIN(ems_tab[t]), ET_PAGES * 4096U - 1);
 }
 
 extern unsigned char ems_none;          /* EMS_FRAME_LOCATION=NONE (CONFIG.SYS) */
@@ -3836,7 +3846,7 @@ static void ems_show(int t, unsigned pp, int s)
     pg_t base = 0;
     if (s >= 0) {
         ems_tabmap(t);
-        base = *(pg_t __far *)MK_FP(SCRATCH, s * 4);
+        base = *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4);
     }
     for (i = 0; i < 4; i++) {
         e = s >= 0 ? PG_LIN(base + i) : spare;
@@ -3846,10 +3856,12 @@ static void ems_show(int t, unsigned pp, int s)
 
 static int ems_slot(int t, unsigned h, unsigned k)   /* k-te Seite von h  */
 {
-    unsigned s;
+    unsigned s = ems_fs[t][h] + k;
     ems_tabmap(t);
+    if (s < EMS_MAXP && ET(ET_OWN + s) == h && ETW(ET_IDX + s * 2) == k)
+        return (int)s;                  /* meist am Stueck angelegt       */
     for (s = 0; s < EMS_MAXP; s++)
-        if (ET(1024 + s) == h && k-- == 0)
+        if (ET(ET_OWN + s) == h && ETW(ET_IDX + s * 2) == k)
             return (int)s;
     return -1;
 }
@@ -3876,14 +3888,17 @@ static int ems_grow(int t, unsigned h, unsigned n)   /* n Seiten anhaengen */
     pg_t p;
     while (n) {
         ems_tabmap(t);
-        for (s = 0; s < EMS_MAXP && ET(1024 + s) != 0xFF; s++)
+        for (s = 0; s < EMS_MAXP && ET(ET_OWN + s) != 0xFF; s++)
             ;
         if (s == EMS_MAXP || !(p = mem_alloc_hi(4)))
             return 0;
         v86_pages += 4;
         ems_tabmap(t);
-        *(pg_t __far *)MK_FP(SCRATCH, s * 4) = p;
-        ET(1024 + s) = (unsigned char)h;
+        *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4) = p;
+        ET(ET_OWN + s) = (unsigned char)h;
+        ETW(ET_IDX + s * 2) = ems_np[t][h];
+        if (!ems_np[t][h])
+            ems_fs[t][h] = s;
         ems_np[t][h]++;
         n--;
     }
@@ -3903,8 +3918,8 @@ static void ems_shrink(int t, unsigned h, unsigned n) /* auf n Seiten     */
     while (ems_np[t][h] > n) {
         s = ems_slot(t, h, ems_np[t][h] - 1);
         ems_tabmap(t);
-        p = *(pg_t __far *)MK_FP(SCRATCH, s * 4);
-        ET(1024 + s) = 0xFF;
+        p = *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4);
+        ET(ET_OWN + s) = 0xFF;
         mem_free(p, 4);
         v86_pages -= 4;
         ems_np[t][h]--;
@@ -3936,7 +3951,8 @@ static void ems_end(int t)              /* aus v86_destroy                */
         for (h = 0; h < NEH; h++)
             if (ems_np[t][h])
                 ems_shrink(t, h, 0);
-        vp_free(ems_tab[t]);
+        mem_free(ems_tab[t], ET_PAGES);
+        v86_pages -= ET_PAGES;
         ems_tab[t] = 0;
     }
 }
@@ -3944,11 +3960,14 @@ static void ems_end(int t)              /* aus v86_destroy                */
 static int ems_newh(int t)
 {
     unsigned h, i;
-    if (!ems_tab[t]) {
-        if (!(ems_tab[t] = own_page()))
+    if (!ems_tab[t]) {                  /* Tabelle erst bei Bedarf        */
+        if (!(ems_tab[t] = mem_alloc(ET_PAGES)))
             return -1;
+        v86_pages += ET_PAGES;
         ems_tabmap(t);
-        for (i = 1024; i < 1280; i++)
+        for (i = 0; i < ET_PAGES * 4096U; i++)
+            ET(i) = 0;
+        for (i = ET_OWN; i < ET_IDX; i++)
             ET(i) = 0xFF;
     }
     for (h = 1; h < NEH && ems_on[t][h]; h++)
@@ -3957,7 +3976,7 @@ static int ems_newh(int t)
         return -1;
     ems_tabmap(t);
     for (i = 0; i < 8; i++)
-        ET(1280 + h * 8 + i) = 0;
+        ET(ET_NAME + h * 8 + i) = 0;
     return (int)h;
 }
 
@@ -3983,7 +4002,7 @@ static unsigned x57_win(int t, unsigned char typ, unsigned h, unsigned off, unsi
     if (h >= NEH || !ems_on[t][h] || lp >= ems_np[t][h] || (sl = ems_slot(t, h, lp)) < 0)
         return 0;
     ems_tabmap(t);
-    a = PG_LIN(*(pg_t __far *)MK_FP(SCRATCH, sl * 4)) + o;
+    a = PG_LIN(*(pg_t __far *)MK_FP(SCRATCH, ET_BASE + sl * 4)) + o;
     n = 0x4000 - o;
     if (sel == SCRATCH)
         scratch_map(a, n - 1);
@@ -4014,7 +4033,7 @@ static unsigned ems_maplist(int t, unsigned h, unsigned mode, unsigned seg,
         else {
             ems_show(t, pp, ems_slot(t, h, lg));
             ems_mh[t][pp] = (unsigned char)(h + 1);
-            ems_ml[t][pp] = (unsigned char)lg;
+            ems_ml[t][pp] = lg;
         }
     }
     tlb(t);
@@ -4148,7 +4167,7 @@ static void ems(struct v86_frame *f, int t)
                 ERET(0x8A);
             ems_show(t, AL, ems_slot(t, h, BX));
             ems_mh[t][AL] = (unsigned char)(h + 1);
-            ems_ml[t][AL] = (unsigned char)BX;
+            ems_ml[t][AL] = BX;
         }
         tlb(t);
         ERET(0);
@@ -4165,11 +4184,11 @@ static void ems(struct v86_frame *f, int t)
         ems_tabmap(t);
         for (i = 0; i < 4; i++)
             if (AH == 0x47) {
-                ET(1536 + h * 8 + i * 2) = ems_mh[t][i];
-                ET(1536 + h * 8 + i * 2 + 1) = ems_ml[t][i];
+                ET(ET_SAVE + h * 16 + i * 4) = ems_mh[t][i];
+                ETW(ET_SAVE + h * 16 + i * 4 + 2) = ems_ml[t][i];
             } else {
-                ems_mh[t][i] = ET(1536 + h * 8 + i * 2);
-                ems_ml[t][i] = ET(1536 + h * 8 + i * 2 + 1);
+                ems_mh[t][i] = ET(ET_SAVE + h * 16 + i * 4);
+                ems_ml[t][i] = ETW(ET_SAVE + h * 16 + i * 4 + 2);
             }
         if (AH == 0x48) {
             for (i = 0; i < 4; i++)
@@ -4194,22 +4213,22 @@ static void ems(struct v86_frame *f, int t)
             }
         BX = n;
         ERET(0);
-    case 0x4E:                                  /* ganze Zuordnung (8 Byte) */
+    case 0x4E:                                  /* ganze Zuordnung (12 Byte) */
         if (AL == 3) {
-            AL = 8;
+            AL = 12;
             ERET(0);
         }
         if (AL > 3)
             ERET(0x8F);
         if (AL == 0 || AL == 2)
             for (i = 0; i < 4; i++) {
-                wr8(es, di + i * 2, ems_mh[t][i]);
-                wr8(es, di + i * 2 + 1, ems_ml[t][i]);
+                wr8(es, di + i * 3, ems_mh[t][i]);
+                wr16(es, di + i * 3 + 1, ems_ml[t][i]);
             }
         if (AL == 1 || AL == 2) {
             for (i = 0; i < 4; i++) {
-                ems_mh[t][i] = rd8(ds, si + i * 2);
-                ems_ml[t][i] = rd8(ds, si + i * 2 + 1);
+                ems_mh[t][i] = rd8(ds, si + i * 3);
+                ems_ml[t][i] = rd16(ds, si + i * 3 + 1);
                 k = ems_mh[t][i];
                 ems_show(t, i, k && k <= NEH && ems_on[t][k - 1] && ems_ml[t][i] < ems_np[t][k - 1]
                                ? ems_slot(t, k - 1, ems_ml[t][i]) : -1);
@@ -4244,11 +4263,11 @@ static void ems(struct v86_frame *f, int t)
         for (i = 0; i < 8; i++) {
             ems_tabmap(t);
             if (AL == 0)
-                wr8(es, di + i, ET(1280 + h * 8 + i));
+                wr8(es, di + i, ET(ET_NAME + h * 8 + i));
             else {
                 k = rd8(ds, si + i);
                 ems_tabmap(t);
-                ET(1280 + h * 8 + i) = (unsigned char)k;
+                ET(ET_NAME + h * 8 + i) = (unsigned char)k;
             }
         }
         ERET(0);
