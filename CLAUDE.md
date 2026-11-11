@@ -578,6 +578,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   fat.c `name_for` lehnt `"*?/:<>|\` und Steuerzeichen in langen Namen ab
   (8.3 prüfte to83 schon). MD meldet wie MS-DOS „Verzeichnis kann nicht
   erstellt werden“. In QEMU geprüft.
+  Gerätenamen (Liste vom Nutzer, wie MS-DOS/Windows): CON, PRN, AUX, NUL,
+  COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
+  verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
+  Geräte öffnen weiter), MKDIR und MOVE-Ziel -> FAPI_ERR_DENIED.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
