@@ -412,6 +412,8 @@ static void rb_entry_prep(void)
                                             /* sofort (IRQ 0 wartet)      */
 }
 
+static unsigned char rb_way;
+
 unsigned __far rb_run(void)
 {
     unsigned r, t0, d = 0;
@@ -465,6 +467,8 @@ unsigned __far rb_run(void)
         uptime_s += d / 18;                 /* 55 ms je BIOS-Takt     */
         scratch_map(rb_lin, 0xFFFF);
         r = RBW(30);
+        rb_way = r >> 8;                    /* Fehlersuche: wer setzte r */
+        r &= 0xFF;
         rb_pm_t = get_ticks();              /* ab hier laeuft AT-DOS   */
         if (r == RB_TICK) {                 /* Takt: andere Programme  */
             rb_quiet = 1;                   /* laufen lassen, Bild bleibt */
@@ -475,7 +479,9 @@ unsigned __far rb_run(void)
             r = RB_EXIT;                    /* Box beenden, AL = Wert */
             d = RBW(0) & 0xFF;
         } else if (r == RB_EXIT)
-            d = 0xFF;                       /* Strg+Alt+Entf (Stummel) */
+            d = 0xE0 | rb_way;              /* Strg+Alt+Entf (Stummel), */
+                                            /* Weg: 1 INT 9, 2 INT 15h, */
+                                            /* 3 INT 20h, +4 vertagt    */
         break;
     }
     rb_quiet = r == RB_CALL;                /* Dienst: Bild bleibt der Box */

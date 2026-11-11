@@ -26,6 +26,14 @@ nach FreeCOM AL = F0h + Art aus INT 21h 4Dh weiter, wenn COMMAND.COM
 nicht per EXIT endete (1 Strg+C, 2 Fehler/Absturz, 3 resident), der
 Kernel meldet Strg+Alt+Entf mit FFh (vorher kam dort die Taktdifferenz
 als Rückgabewert heraus); RBOX nennt den Grund.
+Danach auf dem SCAT (286-Weg): „Box mit Strg+Alt+Entf beendet“, ohne
+dass die Tasten gedrückt wurden – nur Alt+Esc am FreeDOS-Prompt, auch
+mit RBSLICE=0 (also nicht Stufe 5). In Bochs (286-Weg erzwungen, ohne
+Tasten) läuft die Box stabil, QEMU kann den Reset-Rückweg nicht (startet
+neu). Zur Fehlersuche trägt der Stummel im Hochbyte von [30] ein, wer
+Grund 2 gesetzt hat (1 eigener INT 9, 2 INT 15h/4Fh, 3 INT 20h, +4 über
+den vertagten Wechsel [79] = Grund | Weg << 2 | 40h); der Kernel gibt
+E0h + Weg zurück, RBOX zeigt „(Weg n)“.
 
 ## Zweige und Releases (5.x)
 

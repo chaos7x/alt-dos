@@ -1247,7 +1247,12 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         test    al, al                  ; verlangt: jetzt ausfuehren
         jz      .go
         mov     byte [79], 0
-        mov     ah, 0
+        mov     ah, al                  ; Weg | 4 = vertagt
+        and     al, 3
+        shr     ah, 1
+        shr     ah, 1
+        and     ah, 3
+        or      ah, 4
         mov     [30], ax
         jmp     rbs_saved
 .go:    mov     ss, [20]
@@ -1296,7 +1301,7 @@ rbs_int9:                               ; Alt+Esc: zurueck zu AT-DOS
         mov     al, 0x20
         out     0x20, al
         pop     ax
-        mov     word [cs:30], 2
+        mov     word [cs:30], 0x0102    ; Hochbyte: Weg (Fehlersuche)
         jmp     rbs_topm
 .esc:   push    ds
         xor     ax, ax
@@ -1494,7 +1499,7 @@ rbs_int15:
         jne     .chain
         mov     al, 0x20                ; Strg+Alt+Entf: Box beenden
         out     0x20, al
-        mov     word [cs:30], 2
+        mov     word [cs:30], 0x0202
         jmp     rbs_topm
 .esc:   push    ds
         push    ax
@@ -1556,7 +1561,7 @@ rbs_int8:                               ; Takt: BIOS zaehlt, dann je
 
 rbs_int20:                              ; Programm zu Ende
         cli
-        mov     word [cs:30], 2
+        mov     word [cs:30], 0x0302
         jmp     short rbs_topm
 
 rbs_inte0:                              ; Dienst des Kernels
@@ -1573,11 +1578,17 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         pop     bx
         pop     ax
         jne     .box
-        cmp     word [cs:30], 4         ; Takt-Ausflug: einfach auslassen
+        cmp     byte [cs:30], 4         ; Takt-Ausflug: einfach auslassen
         je      .skip
-        push    ax
-        mov     al, [cs:30]
+        push    ax                      ; [79] = Grund | Weg << 2 | 40h
+        push    cx
+        mov     al, [cs:31]
+        mov     cl, 2
+        shl     al, cl
+        or      al, [cs:30]
+        or      al, 0x40
         mov     [cs:79], al
+        pop     cx
         pop     ax
 .skip:  iret
 .box:   mov     [cs:0], ax

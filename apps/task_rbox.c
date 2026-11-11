@@ -156,6 +156,12 @@ void main(void)
         DosExit(255);
     }
     l = r >> 8;                         /* Grund (RBSHELL, Kernel)   */
+    if (l >= 0xE0 && l < 0xE8) {        /* Weg im Stummel (Fehlersuche) */
+        puts("Box mit Strg+Alt+Entf beendet (Weg ");
+        put_num(l & 7, 0, 0);
+        puts(").\r\n");
+        DosExit(l);
+    }
     puts(l == 0xFF ? "Box mit Strg+Alt+Entf beendet.\r\n" :
          l == 0xF1 ? "Box beendet: COMMAND.COM mit Strg+C abgebrochen.\r\n" :
          l == 0xF2 ? "Box beendet: COMMAND.COM durch einen Fehler abgebrochen.\r\n" :
