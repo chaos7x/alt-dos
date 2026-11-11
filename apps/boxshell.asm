@@ -693,6 +693,8 @@ redir_install:
         push    ds
         mov     ax, 5D06h               ; DS:SI = SDA
         int     21h
+        mov     [cs:sda], si            ; fuer den Lesepuffer
+        mov     [cs:sda + 2], ds
         mov     ah, 11h                 ; dem Kernel melden
         int     0E0h
         pop     ds
@@ -744,7 +746,13 @@ int2f:  cmp     ah, 11h
         jnz     .op
         mov     al, 0FFh
         iret
-.op:    push    ax
+.op:    cmp     al, 08h                 ; READ: Lesepuffer (rd_cache, wie
+        jne     .inval                  ; RBSHELL in 5.1)
+        cmp     cx, CSZ
+        ja      .inval
+        jmp     rd_cache
+.inval: mov     byte [cs:cvalid], 0     ; alles andere: Puffer verwerfen
+.pass:  push    ax
         mov     ah, 10h
         int     0E0h                    ; Kernel: ZF=1 erledigt
         jnz     .not
@@ -754,6 +762,130 @@ int2f:  cmp     ah, 11h
         retf    2                       ; CF des Kernels zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+
+; ---- Lesepuffer fuer kleine READs ----------------------------------------
+; Jeder Redirector-Aufruf ist ein Weg durch den Kernel (Falle in den
+; V86-Monitor, Redirector, FAPI; aus RBSHELL von 5.1). Programme, die byteweise lesen (MEM von FreeDOS liest MEM.DE so,
+; 5 KB = 5.000 Ausfluege), holen sich hier 1 KB auf einmal: READ mit
+; CX <= CSZ an derselben SFT innerhalb des Puffers wird ohne Ausflug
+; bedient. Jeder andere Redirector-Aufruf (WRITE, CLOSE, ...) verwirft den
+; Puffer; die Lage steht in der SFT (+15h), Seek setzt sie dort direkt.
+CSZ     equ     1024
+rd_cache:
+        push    bx
+        push    dx
+        push    si
+        push    ds
+        mov     [cs:cwant], cx
+        mov     byte [cs:cfail], 0
+.again: cmp     byte [cs:cvalid], 0
+        je      .fill
+        cmp     di, [cs:csft]
+        jne     .fill
+        mov     bx, es
+        cmp     bx, [cs:csft + 2]
+        jne     .fill
+        mov     bx, [es:di + 0x0B]      ; Handle von RBOX
+        cmp     bx, [cs:chnd]
+        jne     .fill
+        mov     ax, [es:di + 0x15]      ; Lage - Pufferanfang
+        mov     dx, [es:di + 0x17]
+        sub     ax, [cs:cpos]
+        sbb     dx, [cs:cpos + 2]
+        jnz     .fill                   ; davor oder weit dahinter
+        cmp     ax, [cs:clen]
+        jae     .fill2                  ; hinter dem Puffer
+        mov     bx, [cs:clen]
+        sub     bx, ax                  ; BX = noch im Puffer
+        mov     cx, [cs:cwant]
+        cmp     cx, bx
+        jbe     .serve
+        cmp     word [cs:clen], CSZ     ; Puffer endet vor dem Dateiende:
+        je      .fill                   ; neu fuellen; sonst Dateiende
+        mov     cx, bx
+.serve: push    es                      ; CX Byte ab cbuf + AX in die DTA
+        push    di
+        lds     si, [cs:sda]
+        les     di, [si + 0x0C]
+        push    cs
+        pop     ds
+        mov     si, cbuf
+        add     si, ax
+        push    cx
+        cld
+        rep     movsb
+        pop     cx
+        pop     di
+        pop     es
+        add     [es:di + 0x15], cx      ; Lage weiter
+        adc     word [es:di + 0x17], 0
+        pop     ds
+        pop     si
+        pop     dx
+        pop     bx
+        clc
+        sti
+        retf    2
+.fill2: cmp     word [cs:clen], CSZ     ; Dateiende schon im Puffer: 0
+        je      .fill
+        xor     cx, cx
+        xor     ax, ax
+        jmp     short .serve
+.fill:  cmp     byte [cs:cfail], 0
+        jne     .fail
+        mov     ax, [es:di + 0x15]      ; Lage merken
+        mov     [cs:cpos], ax
+        mov     ax, [es:di + 0x17]
+        mov     [cs:cpos + 2], ax
+        lds     si, [cs:sda]            ; DTA kurz auf den Puffer
+        mov     ax, [si + 0x0C]
+        mov     [cs:cdta], ax
+        mov     ax, [si + 0x0E]
+        mov     [cs:cdta + 2], ax
+        mov     word [si + 0x0C], cbuf
+        mov     [si + 0x0E], cs
+        mov     cx, CSZ
+        mov     ax, 0x1008              ; RBOX: READ in den Puffer
+        int     0xE0
+        lds     si, [cs:sda]            ; DTA zurueck (Flags bleiben)
+        mov     ax, [cs:cdta]
+        mov     [si + 0x0C], ax
+        mov     ax, [cs:cdta + 2]
+        mov     [si + 0x0E], ax
+        jnz     .fail                   ; nicht unser
+        jc      .fail                   ; Fehler: normaler Weg meldet ihn
+        mov     ax, [cs:cpos]           ; Lage wie vorher
+        mov     [es:di + 0x15], ax
+        mov     ax, [cs:cpos + 2]
+        mov     [es:di + 0x17], ax
+        mov     [cs:clen], cx
+        mov     [cs:csft], di
+        mov     [cs:csft + 2], es
+        mov     ax, [es:di + 0x0B]
+        mov     [cs:chnd], ax
+        mov     byte [cs:cvalid], 1
+        mov     byte [cs:cfail], 1      ; zweimal fuellen: nicht noch mal
+        jmp     .again
+.fail:  mov     byte [cs:cvalid], 0
+        mov     byte [cs:cfail], 0
+        mov     cx, [cs:cwant]
+        pop     ds
+        pop     si
+        pop     dx
+        pop     bx
+        mov     ax, 0x1108
+        jmp     int2f.pass
+
+cvalid: db      0
+cfail:  db      0
+cwant:  dw      0
+clen:   dw      0
+cpos:   dd      0
+csft:   dd      0
+chnd:   dw      0
+cdta:   dd      0
+sda:    dd      0
+cbuf:   times   CSZ db 0
 
 ENVSZ     equ 1024
 RDSZ      equ ENVSZ
@@ -766,6 +898,7 @@ old2f     dd 0
 t_path    db "PATH=X:\DOS\MDOS;X:\DOS", 0
 t_nls     db "NLSPATH=X:\DOS\MDOS", 0
           db "LANG=DE", 0
+          db "DIRCMD=/OGN", 0           ; DIR: Verzeichnisse zuerst (wie /O)
 t_envend:
 t_blaster db "BLASTER=A220 I5 D1 H5 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
 has_bl    db 0

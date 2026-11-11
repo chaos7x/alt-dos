@@ -599,6 +599,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   vorübergehendes Kernelsegment (`cfg_sel`, kseg_alloc 4 KB), next_line
   gibt es nach der letzten Zeile zurück (`cfg_release`: Seiten frei,
   GDT-Platz leer). In QEMU mit 1.283 Byte geprüft.
+- DOS-Box (6.0) und Kompatibilitätsbox (5.1): Umgebung mit
+  `DIRCMD=/OGN` (Wunsch des Nutzers: DIR zeigt Verzeichnisse zuerst wie
+  `DIR /O`; ein eigenes DIRCMD aus der Umgebung geht vor). BOXSHELL hat
+  den Lesepuffer aus RBSHELL (`rd_cache`, READ bis 1 KB aus einem
+  1-KB-Puffer, jeder andere Redirector-Aufruf verwirft ihn) – das MEM von
+  FreeDOS liest MEM.DE byteweise, sonst je Byte ein Weg durch den Kernel.
+  In QEMU geprüft: DIR, MEM deutsch, COPY von MEM.DE/COMMAND.COM gleich.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
