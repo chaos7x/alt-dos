@@ -1215,7 +1215,7 @@ static int load_dos(int t, int drive, const char *path)
     dos_line(drive, path, task[t].args, a);
     scopy(keep, task[t].args, FAPI_ARGLEN);
     scopy(task[t].args, a, FAPI_ARGLEN);
-    err = load_img(t, sys_drive, "\\DOS\\BOX\\FREEDOS.IMG");
+    err = load_img(t, sys_drive, "\\DOS\\MDOS\\FREEDOS.IMG");
     for (i = 0; path[i]; i++)
         ;
     if (err == EXEC_ERR_NOTFOUND && path[i - 1] == 'M') {
@@ -1357,7 +1357,7 @@ static int box_reuse(const char *cmd, int s)
         return -1;
     if (dos_cmd(cmd))
         dos_line(dc_d, dc_cn, dc_ar, task[y].args);
-    else if (dc_d == sys_drive && !scmp_k(dc_cn, "\\DOS\\BOX\\FREEDOS.IMG"))
+    else if (dc_d == sys_drive && !scmp_k(dc_cn, "\\DOS\\MDOS\\FREEDOS.IMG"))
         scopy(task[y].args, dc_ar, FAPI_ARGLEN);    /* COMMAND: interaktiv */
     else
         return -1;
@@ -6216,7 +6216,7 @@ void kmain(void)
     scopy(line, "COMSPEC=A:\\CMD.EXE", sizeof(line));
     line[8] = (char)('A' + sys_drive);
     env_set(-1, line);
-    scopy(line, "DOSBOX=A:\\DOS\\BOX\\FREEDOS.IMG", sizeof(line));
+    scopy(line, "DOSBOX=A:\\DOS\\MDOS\\FREEDOS.IMG", sizeof(line));
     line[7] = (char)('A' + sys_drive);  /* Startabbild der DOS-Box       */
     env_set(-1, line);
     {                                           /* TEMP/TMP wie Windows:  */

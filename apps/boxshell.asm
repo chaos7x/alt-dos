@@ -64,7 +64,7 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         call    direct                  ; .COM/.EXE: ohne FreeCOM
         jnc     .run
 .viacom:
-        mov     si, t_cmd               ; "X:\DOS\BOX\ /E:1024 /C befehl"
+        mov     si, t_cmd               ; "X:\DOS\MDOS\ /E:1024 /C befehl"
         mov     di, tail + 1
         call    copystr
         jcxz    .inter
@@ -133,7 +133,7 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
         jmp     copystr
 .r:     ret
 
-; ---- DOSBOX.INI (X:\DOS\BOX) -------------------------------------------
+; ---- DOSBOX.INI (X:\DOS\MDOS) -------------------------------------------
 ; Einstellungen je Programm, die beim Programmstart wirken koennen (DOS=
 ; und RMSIZE= gelten beim Start der Box und stehen in der CONFIG.SYS):
 ;   [*]           fuer alle Programme
@@ -501,7 +501,7 @@ goto_cwd:
         int     21h
 .ret:   ret
 
-; ---- Umgebung: eigene + DOSBOX=X:\DOS\BOX\FREEDOS.IMG ------------------
+; ---- Umgebung: eigene + DOSBOX=X:\DOS\MDOS\FREEDOS.IMG ------------------
 ; (wie unter AT-DOS; SETVER und spaeter andere Werkzeuge finden darueber
 ; das Startlaufwerk)
 build_env:
@@ -560,7 +560,7 @@ build_env:
 .e7:    stosb                           ; zweite Null: Ende
         ret
 
-; ---- SETVER: X:\DOS\BOX\SETVER.LST -> Versionstabelle (LoL+37h) --------
+; ---- SETVER: X:\DOS\MDOS\SETVER.LST -> Versionstabelle (LoL+37h) --------
 ; Zeilen "NAME.EXT n.nn", ';' Kommentar. Tabelle wie beim SETVER-Treiber
 ; von MS-DOS: Laenge, Name, Haupt-, Nebenversion; 0 = Ende.
 setver_load:
@@ -758,15 +758,15 @@ int2f:  cmp     ah, 11h
 ENVSZ     equ 1024
 RDSZ      equ ENVSZ
 SVSZ      equ 768
-t_dosbox  db "DOSBOX=X:\DOS\BOX\FREEDOS.IMG", 0
-t_setver  db "X:\DOS\BOX\SETVER.LST", 0
+t_dosbox  db "DOSBOX=X:\DOS\MDOS\FREEDOS.IMG", 0
+t_setver  db "X:\DOS\MDOS\SETVER.LST", 0
 dmask     dd 0
 old2f     dd 0
 
-t_path    db "PATH=X:\DOS\BOX;X:\DOS", 0
+t_path    db "PATH=X:\DOS\MDOS;X:\DOS", 0
 t_blaster db "BLASTER=A220 I5 D1 H5 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
 has_bl    db 0
-t_ini     db "X:\DOS\BOX\DOSBOX.INI", 0
+t_ini     db "X:\DOS\MDOS\DOSBOX.INI", 0
 t_star    db "*", 0
 t_cmdcom  db "COMMAND.COM", 0
 k_xms     db "XMS_MEMORY_LIMIT", 0
@@ -786,12 +786,12 @@ emskb     dw 2048
 dosver    dw 0
 ibuf      dw 0
 pname     times 13 db 0
-t_comspec db "X:\DOS\BOX\COMMAND.COM", 0
-t_cmd     db " X:\DOS\BOX\ /E:1024 /C ", 0
+t_comspec db "X:\DOS\MDOS\COMMAND.COM", 0
+t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
-drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+16, t_comspec, t_cmd+1
+drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
           dw t_autoexec, t_ini, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0

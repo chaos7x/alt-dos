@@ -17,9 +17,9 @@ und stehen unter der GNU General Public License, Version 2 oder spaeter
 Neu bauen: tools/freedos.sh (holt die Quellen per git und baut beide).
 
 build.sh legt daraus das Startabbild der DOS-Box an (build/freedos.img,
-360 KB, auf dem Ziel \DOS\BOX\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
+360 KB, auf dem Ziel \DOS\MDOS\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
 COMMAND.COM, COUNTRY.SYS, BOXSHELL.COM (apps/boxshell.asm) und CONFIG.SYS
-aus diesem Ordner (COUNTRY=049,437: deutsches Datum und Zeit). COMMAND.COM liegt zusaetzlich in \DOS\BOX (wie \OS2\MDOS bei OS/2):
+aus diesem Ordner (COUNTRY=049,437: deutsches Datum und Zeit). COMMAND.COM liegt zusaetzlich in \DOS\MDOS (wie \OS2\MDOS bei OS/2):
 nach dem Start braucht die Box das Abbild nicht mehr, ihre Laufwerke A:/B:
 sind dann die Disketten von AT-DOS. Eine AUTOEXEC.BAT im Stamm des
 Startlaufwerks fuehrt die interaktive Box aus.

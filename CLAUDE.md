@@ -578,6 +578,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   fat.c `name_for` lehnt `"*?/:<>|\` und Steuerzeichen in langen Namen ab
   (8.3 prüfte to83 schon). MD meldet wie MS-DOS „Verzeichnis kann nicht
   erstellt werden“. In QEMU geprüft.
+- Verzeichnis der DOS-Boxen heißt `\DOS\MDOS` (vorher `\DOS\BOX`;
+  Wunsch des Nutzers, wie OS/2 `\OS2\MDOS`, auch auf 5.x): FREEDOS.IMG,
+  COMMAND.COM, DOSBOX.INI, SETVER.LST; `%DOSBOX%` zeigt dorthin, BOXSHELL
+  `drvpos` (zweiter Buchstabe im PATH jetzt bei t_path+17). Alte Platten:
+  Inhalt von `\DOS\BOX` nach `\DOS\MDOS` verschieben.
   Gerätenamen (Liste vom Nutzer, wie MS-DOS/Windows): CON, PRN, AUX, NUL,
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
@@ -1830,7 +1835,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   neu). build.sh legt `build/freedos.img` an (360 KB, `mformat -B
   fat12com.bin`, KERNEL.SYS zuerst, COMMAND.COM, BOXSHELL.COM, CONFIG.SYS
   mit `SWITCHES=/F /N` und `SHELL=A:\BOXSHELL.COM`, AUTOEXEC.BAT) ->
-  `\DOS\BOX\FREEDOS.IMG`; `DOSBOX.CMD` = `START %DOSBOX%`, die Variable
+  `\DOS\MDOS\FREEDOS.IMG`; `DOSBOX.CMD` = `START %DOSBOX%`, die Variable
   setzt der Kernel wie COMSPEC. Kernel: Endung `.IMG` -> `load_img`
   (Bootsektor nach 0:7C00, DL = 0, Abbild bleibt offen in `box_img[t]`),
   `box_ctl(BOX_READ)` liest einen Sektor nach `box_sec` (mit Kernel-
@@ -1887,20 +1892,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Weiter offen: dieselbe Datei in mehreren Handles gleichzeitig (Leser und
   Schreiber schließen sich aus, Größe je Handle).
   SETVER (Wunsch des Nutzers): `SETVER.EXE` (FAPI, gebunden – läuft auch
-  in der Box), Tabelle als Text in `X:\DOS\BOX\SETVER.LST`
+  in der Box), Tabelle als Text in `X:\DOS\MDOS\SETVER.LST`
   (Startlaufwerk aus %DOSBOX%, sonst %COMSPEC%), höchstens 48 Einträge
   (BOXSHELL liest 1023 Byte). BOXSHELL holt das Startlaufwerk (INT E0h
   13h), liest die Liste und legt die Tabelle im MS-DOS-Format (Länge,
   Name, Haupt-, Nebenversion, 0 = Ende) resident ab, Zeiger in LoL+37h –
   FreeDOS wertet sie beim EXEC aus (task.c `SetverGetVersion`). BOXSHELL
-  gibt FreeCOM eine Umgebung mit `DOSBOX=X:\DOS\BOX\FREEDOS.IMG` mit.
+  gibt FreeCOM eine Umgebung mit `DOSBOX=X:\DOS\MDOS\FREEDOS.IMG` mit.
   Start aus CMD.EXE erledigt (in QEMU geprüft: HALLO, eine DOS-.EXE
   (MZ ohne FX), .BAT, ERRORLEVEL 5/7 kommt an, `COMMAND` interaktiv im
   aktuellen Verzeichnis, DOSSTART=SESSION; FX-Programme, gebundene und
   .CMD weiter nativ): kernel.c `dos_kind()` (.COM, .BAT, .EXE ohne
   FX-Signatur „CH“ bei e_lfanew) -> `load_dos()`: Befehlszeile der Box =
   8.3-Pfad (`ifs_namepath(..., 1)`) + Argumente, `load_img` von
-  `X:\DOS\BOX\FREEDOS.IMG` des Startlaufwerks (fehlt es, ein .COM wie
+  `X:\DOS\MDOS\FREEDOS.IMG` des Startlaufwerks (fehlt es, ein .COM wie
   früher in der nackten Box über `load_com`). Gilt für jedes ExecPgm,
   also auch START/FM. `DOSSTART=SESSION` (`dos_session`): EXEC_SYNC wird
   für DOS-Programme (`dos_cmd`) zu EXEC_ASYNC. BOXSHELL: bei /C erst
@@ -1934,12 +1939,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `task_end` des Besitzers beendet seine geparkte Box. Erstes Code-
   segment jetzt 63,2 KB.
   Kleinere Punkte erledigt (in QEMU geprüft): COMMAND.COM auch in
-  `X:\DOS\BOX` (BOXFILES), BOXSHELL nimmt es von dort (COMSPEC) und
+  `X:\DOS\MDOS` (BOXFILES), BOXSHELL nimmt es von dort (COMSPEC) und
   wechselt beim Start aufs Startlaufwerk – danach braucht die Box das
   Abbild nicht mehr, und `BOX_DRIVES` meldet A:/B: mit (nur „Laufwerk da“
   über vol[].used/present/floppy_lazy, kein Medienzugriff): die Disketten
   von AT-DOS sind in der Box A:/B: (`a:prog` aus CMD geht). PATH der Box
-  `X:\DOS\BOX;X:\DOS` (build_env ersetzt PATH=, Laufwerksbuchstaben über
+  `X:\DOS\MDOS;X:\DOS` (build_env ersetzt PATH=, Laufwerksbuchstaben über
   die Tabelle `drvpos`), interaktiv `/K X:\AUTOEXEC.BAT` nur, wenn es sie
   gibt (4300h), Meldung von BOXSHELL; freedos/AUTOEXEC.BAT entfällt. MEM:
   `v86_pages` (vp_alloc/vp_free in v86.c), `fapi_meminfo.box_kb` ab CX ≥
@@ -1966,7 +1971,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   HIGH,UMB), `RMSIZE=` -> `box_kb`. Box-CONFIG.SYS hat fest
   `DOS=HIGH,UMB` und `DEVICE=A:\ATBOX.SYS` (apps/atbox.asm, tut nichts –
   FreeDOS ruft umb_init nur nach einer DEVICE=-Zeile!). Offen: XMS-Grenze
-  einstellbar erledigt: `\DOS\BOX\DOSBOX.INI` (Entscheidung des
+  einstellbar erledigt: `\DOS\MDOS\DOSBOX.INI` (Entscheidung des
   Nutzers: keine Oberfläche -> Datei; beides: CONFIG.SYS für den Start
   der Box, INI je Programm). BOXSHELL liest sie vor jedem Programm
   (`get_pname` = Name aus der Befehlszeile, `ini_apply`/`ini_pass`: erst

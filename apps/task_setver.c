@@ -7,7 +7,7 @@
  *   SETVER [Laufwerk:Pfad] Datei n.nn       Eintrag setzen
  *   SETVER [Laufwerk:Pfad] Datei /DELETE [/QUIET]
  *
- * Die Tabelle steht als Text in X:\DOS\BOX\SETVER.LST des Startlaufwerks
+ * Die Tabelle steht als Text in X:\DOS\MDOS\SETVER.LST des Startlaufwerks
  * ("NAME.EXT n.nn" je Zeile). BOXSHELL laedt sie beim Start jeder Box
  * und haengt sie in die Liste der Listen des DOS (+37h, wie der
  * SETVER-Treiber von MS-DOS) - das DOS meldet einem so gestarteten
@@ -38,7 +38,7 @@ static void list_path(void)
         d = up(ev[0]);
     file[0] = d;
     file[1] = 0;
-    scat(file, ":\\DOS\\BOX\\SETVER.LST", sizeof(file));
+    scat(file, ":\\DOS\\MDOS\\SETVER.LST", sizeof(file));
 }
 
 /* "n.nn" -> 0 ok */

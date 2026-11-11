@@ -340,7 +340,7 @@ und PC-DOS.
 - DOS-Box mit FreeDOS (6.0, Phase 3 Stufe 3, erster Schritt): **DOSBOX**
   öffnet eine Sitzung, in der der FreeDOS-Kern mit FreeCOM (deutsch)
   läuft – gestartet wie auf einem echten PC vom Bootsektor eines
-  Diskettenabbilds (`\DOS\BOX\FREEDOS.IMG`, Laufwerk A: der Box, nur
+  Diskettenabbilds (`\DOS\MDOS\FREEDOS.IMG`, Laufwerk A: der Box, nur
   lesend). Jedes andere Startabbild (`.IMG`) lässt sich ebenso mit
   `START` starten. EXIT beendet die Box, Strg+C gehört dem DOS darin.
   Eine Box, die nur auf Tasten wartet, gibt die CPU ab. Alle
@@ -362,8 +362,8 @@ und PC-DOS.
   jedes weitere läuft ohne neuen Start; endet der Befehlsinterpreter, wird
   ihr Speicher (≈ 660 KB) frei; MEM zeigt ihn als „DOS-Boxen“. In der Box
   sind A:/B: die Disketten von AT-DOS (das Startabbild braucht sie nach dem
-  Start nicht mehr), PATH ist `X:\DOS\BOX;X:\DOS` (X: = Startlaufwerk;
-  `\DOS\BOX` ist wie `\OS2\MDOS` bei OS/2 das Verzeichnis der DOS-Seite,
+  Start nicht mehr), PATH ist `X:\DOS\MDOS;X:\DOS` (X: = Startlaufwerk;
+  `\DOS\MDOS` ist wie `\OS2\MDOS` bei OS/2 das Verzeichnis der DOS-Seite,
   dort liegt auch COMMAND.COM), die interaktive Box führt `X:\AUTOEXEC.BAT`
   aus, wenn es sie gibt. Eine hängende Box beendet **Strg+Alt+Ende**
   (Strg+C gehört dem DOS darin)
@@ -430,7 +430,7 @@ und PC-DOS.
   1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein
   BIOS in sein ROM, bekommt die Box eine eigene Kopie der Seite (wie
   Schatten-RAM)
-- `\DOS\BOX\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
+- `\DOS\MDOS\DOSBOX.INI`: Einstellungen je DOS-Programm, da es keine
   Oberfläche wie das Einstellungs-Notizbuch von OS/2 gibt – `[*]` für alle,
   `[NAME.EXT]` für eines (geht vor); `XMS_MEMORY_LIMIT=KB` (0–63424,
   Vorgabe 2048), `EMS_MEMORY_LIMIT=KB` (0–4096, Vorgabe 2048), je `-1`
@@ -458,7 +458,7 @@ und PC-DOS.
   Programm neu gelesen; was beim Start der Box gilt (`DOS=`, `RMSIZE=`),
   steht in der CONFIG.SYS
 - `SETVER [Datei n.nn] [/DELETE] [/QUIET]` wie MS-DOS 5/6: Versionstabelle
-  für DOS-Programme in den Boxen (`\DOS\BOX\SETVER.LST` des
+  für DOS-Programme in den Boxen (`\DOS\MDOS\SETVER.LST` des
   Startlaufwerks, Text „NAME.EXT n.nn“). Jede neue Box lädt sie, das DOS
   darin meldet dem Programm auf INT 21h 30h die eingetragene Version
   (ohne Eintrag 7.10). Läuft unter AT-DOS und in der Box FreeDOS-Kern und FreeCOM stehen unter der GPL
