@@ -11,18 +11,23 @@
  * markieren, Umschalt+Entf ausschneiden, Strg+Einfg kopieren,
  * Umschalt+Einfg einfuegen, Strg+Y Zeile loeschen, F3 weitersuchen.
  *
- * Text im Speicher als Lueckenpuffer (gap buffer) in einem eigenen
- * 64-KB-Segment: Zeichen vor der Schreibmarke am Anfang, danach am Ende,
- * dazwischen die Luecke. Die Schreibmarke ist immer der Lueckenanfang.
- * Zeilenende im Speicher nur LF; gespeichert wird CR LF. Tabulatoren
- * werden beim Laden in Leerzeichen umgesetzt (wie MS-DOS EDIT).
- * Grenze: knapp 64 KB Text.
+ * Text im Speicher als Lueckenpuffer (gap buffer) ueber bis zu NSEG
+ * Segmenten zu 64 KB (DosAllocSeg, erst bei Bedarf): Zeichen vor der
+ * Schreibmarke am Anfang, danach am Ende, dazwischen die Luecke. Die
+ * Schreibmarke ist immer der Lueckenanfang. Positionen sind 32 Bit
+ * (tpos): Segment = obere 16 Bit, Offset = untere. Ist die Luecke voll,
+ * kommt ein Segment dazu und alles hinter der Luecke rueckt um 64 KB
+ * (= gleicher Offset, naechstes Segment). Zeilenende im Speicher nur
+ * LF; gespeichert wird CR LF. Tabulatoren werden beim Laden in
+ * Leerzeichen umgesetzt (wie MS-DOS EDIT). Grenze: 512 KB Text.
  */
 #include <i86.h>
 #include "fapi.h"
 #include "util.h"
 
-#define CAP         65520U          /* Groesse des Textsegments        */
+typedef unsigned long tpos;         /* Stelle im Text                  */
+#define NSEG        8               /* hoechstens 8 x 64 KB = 512 KB    */
+#define TNONE       0xFFFFFFFFUL
 static unsigned TROWS = 21;         /* Textzeilen ab Zeile 2           */
 static unsigned SROW = 24;          /* Statuszeile (unterste)          */
 #define TCOLS       78              /* Textspalten 1..78               */
@@ -54,10 +59,13 @@ static unsigned SROW = 24;          /* Statuszeile (unterste)          */
 #define K_F10       0x44
 #define NONE        0xFFFFU
 
-static unsigned tsel, gs, ge;       /* Text, Luecke [gs, ge)            */
+static unsigned segs[NSEG], nseg;   /* Textsegmente                     */
+static tpos     gs, ge;             /* Luecke [gs, ge)                  */
 static unsigned nlines, cur_line;   /* Zeilen gesamt, Zeile der Marke   */
-static unsigned top, top_line, left, want;
-static unsigned anchor, selon;      /* Markierung: anchor .. gs         */
+static tpos     top;                /* Anfang der obersten Zeile        */
+static unsigned top_line, left, want;
+static tpos     anchor;             /* Markierung: anchor .. gs         */
+static unsigned selon;
 static unsigned csel, clen;         /* Zwischenablage                   */
 static int      modified, overwrite, quit, need_all = 1;
 static unsigned last_thumb = NONE;
@@ -153,48 +161,108 @@ static unsigned getkey(void)
 #define M_PRESS()   ((mev.buttons & MOU_LEFT) && !(mprev & MOU_LEFT))
 #define M_RELEASE() (!(mev.buttons & MOU_LEFT) && (mprev & MOU_LEFT))
 
-#define TB  ((char __far *)MK_FP(tsel, 0))
+#define TBP(p)  ((char __far *)MK_FP(segs[(unsigned)((p) >> 16)], (unsigned)(p)))
+#define CAP     ((tpos)nseg << 16)
 
 /* ---- Textpuffer -------------------------------------------------------- */
-static unsigned tlen(void)
+static tpos tlen(void)
 {
     return CAP - (ge - gs);
 }
 
-static char ch(unsigned p)
+static char ch(tpos p)
 {
-    return p < gs ? TB[p] : TB[p + (ge - gs)];
+    return p < gs ? *TBP(p) : *TBP(p + (ge - gs));
 }
 
-/* Luecke (= Schreibmarke) nach p verschieben, Zeilennummer mitfuehren */
-static void move_to(unsigned p)
+/* Luecke (= Schreibmarke) nach p verschieben, Zeilennummer mitfuehren.
+   In Laeufen, die in beiden Segmenten bleiben (Fernzeiger je Lauf). */
+static void move_to(tpos p)
 {
-    char __far *t = TB;
+    char __far *s, __far *d;
+    unsigned long k;
+    unsigned run, i;
     char c;
-    while (gs > p) {
-        c = t[--gs];
-        t[--ge] = c;
-        if (c == '\n')
-            cur_line--;
+
+    while (gs > p) {                    /* rueckwaerts: [.., gs) -> [.., ge) */
+        k = gs - p;
+        run = (unsigned)(gs - 1) + 1u;  /* bis Segmentanfang (0 = 64 KB) */
+        if (run && k > run)
+            k = run;
+        run = (unsigned)(ge - 1) + 1u;
+        if (run && k > run)
+            k = run;
+        run = k > 0xFFFFUL ? 0xFFFFU : (unsigned)k;
+        s = TBP(gs - run);
+        d = TBP(ge - run);
+        for (i = run; i-- > 0; ) {
+            c = s[i];
+            d[i] = c;
+            if (c == '\n')
+                cur_line--;
+        }
+        gs -= run;
+        ge -= run;
     }
-    while (gs < p) {
-        c = t[ge++];
-        t[gs++] = c;
-        if (c == '\n')
-            cur_line++;
+    while (gs < p) {                    /* vorwaerts: [ge, ..) -> [gs, ..) */
+        k = p - gs;
+        run = 0u - (unsigned)gs;        /* bis Segmentende (0 = 64 KB)   */
+        if (run && k > run)
+            k = run;
+        run = 0u - (unsigned)ge;
+        if (run && k > run)
+            k = run;
+        run = k > 0xFFFFUL ? 0xFFFFU : (unsigned)k;
+        s = TBP(ge);
+        d = TBP(gs);
+        for (i = 0; i < run; i++) {
+            c = s[i];
+            d[i] = c;
+            if (c == '\n')
+                cur_line++;
+        }
+        gs += run;
+        ge += run;
     }
 }
 
-static unsigned line_start(unsigned p)
+/* Luecke um 64 KB vergroessern: neues Segment hinten, alles ab ge eine
+   Segmentnummer weiter (gleicher Offset). -1, wenn kein Platz. */
+static int grow(void)
+{
+    unsigned sel, si, o, lo;
+    char __far *s, __far *d;
+
+    if (nseg >= NSEG)
+        return -1;
+    sel = DosAllocSeg(0);
+    if (FAPI_FAILED(sel))
+        return -1;
+    segs[nseg++] = sel;
+    for (si = nseg - 1; si-- > (unsigned)(ge >> 16); ) {
+        s = MK_FP(segs[si], 0);
+        d = MK_FP(segs[si + 1], 0);
+        lo = si == (unsigned)(ge >> 16) ? (unsigned)ge : 0;
+        for (o = 0xFFFFU; ; o--) {
+            d[o] = s[o];
+            if (o == lo)
+                break;
+        }
+    }
+    ge += 0x10000UL;
+    return 0;
+}
+
+static tpos line_start(tpos p)
 {
     while (p > 0 && ch(p - 1) != '\n')
         p--;
     return p;
 }
 
-static unsigned line_end(unsigned p)
+static tpos line_end(tpos p)
 {
-    unsigned n = tlen();
+    tpos n = tlen();
     while (p < n && ch(p) != '\n')
         p++;
     return p;
@@ -202,11 +270,13 @@ static unsigned line_end(unsigned p)
 
 static unsigned cur_col(void)
 {
-    return gs - line_start(gs);
+    return (unsigned)(gs - line_start(gs));
 }
 
 static void text_clear(void)
 {
+    while (nseg > 1)                    /* nur ein Segment behalten      */
+        DosFreeSeg(segs[--nseg]);
     gs = 0;
     ge = CAP;
     nlines = 1;
@@ -217,9 +287,10 @@ static void text_clear(void)
 
 static int ins_char(char c)
 {
-    if (gs == ge)
+    if (gs == ge && grow())
         return -1;                  /* Speicher voll                    */
-    TB[gs++] = c;
+    *TBP(gs) = c;
+    gs++;
     if (c == '\n') {
         nlines++;
         cur_line++;
@@ -228,11 +299,11 @@ static int ins_char(char c)
     return 0;
 }
 
-static void del_range(unsigned a, unsigned b)   /* [a, b) loeschen     */
+static void del_range(tpos a, tpos b)   /* [a, b) loeschen     */
 {
     move_to(a);
     while (b-- > a) {
-        if (TB[ge] == '\n')
+        if (*TBP(ge) == '\n')
             nlines--;
         ge++;
     }
@@ -240,7 +311,7 @@ static void del_range(unsigned a, unsigned b)   /* [a, b) loeschen     */
 }
 
 /* Markierung: Bereich, 0 = keine */
-static int sel_range(unsigned *a, unsigned *b)
+static int sel_range(tpos *a, tpos *b)
 {
     if (!selon || anchor == gs)
         return 0;
@@ -251,7 +322,7 @@ static int sel_range(unsigned *a, unsigned *b)
 
 static int del_sel(void)
 {
-    unsigned a, b;
+    tpos a, b;
     if (!sel_range(&a, &b)) {
         selon = 0;
         return 0;
@@ -617,7 +688,8 @@ static void draw_status(void)
 
 static void draw_text(void)
 {
-    unsigned p = top, n = tlen(), r, c, q, a = 0, b = 0, sb, thumb, step;
+    tpos p = top, n = tlen(), q, a = 0, b = 0;
+    unsigned r, c, sb, thumb, step;
     int sel = sel_range(&a, &b), more = 1;
 
     for (r = 0; r < TROWS; r++) {
@@ -1314,14 +1386,15 @@ static int load(const char *name)       /* 0 ok, 1 nicht da, -1 Fehler  */
 full:
     DosClose(h);
     text_clear();
-    message("Die Datei ist zu gro\xE1 (h\x94" "chstens 64 KB).", 0);
+    message("Die Datei ist zu gro\xE1 (h\x94" "chstens 512 KB).", 0);
     return -1;
 }
 
 static int save(const char *name)       /* 0 ok                          */
 {
     static char b[1024];
-    unsigned h, n = 0, p, len = tlen(), w;
+    unsigned h, n = 0, w;
+    tpos p, len = tlen();
     char c;
 
     h = DosCreate(name);
@@ -1401,13 +1474,18 @@ static int ask_save(void)
 /* ---- Zwischenablage ---------------------------------------------------- */
 static void copy_sel(void)
 {
-    unsigned a, b, i;
+    tpos a, b, i;
     char __far *d;
     if (!sel_range(&a, &b))
         return;
+    if (b - a > 0xFFF0UL) {
+        message("Die Markierung ist zu gro\xE1 f\x81r die",
+                "Zwischenablage (h\x94" "chstens 64 KB).");
+        return;
+    }
     if (csel)
         DosFreeSeg(csel);
-    csel = DosAllocSeg(b - a);
+    csel = DosAllocSeg((unsigned)(b - a));
     clen = 0;
     if (FAPI_FAILED(csel)) {
         csel = 0;
@@ -1449,32 +1527,34 @@ static void paste(void)
     del_sel();
     for (i = 0; i < clen; i++)
         if (s[i] != '\r' && ins_char(s[i])) {
-            message("Kein Platz mehr im Text (64 KB).", 0);
+            message("Kein Platz mehr im Text (512 KB).", 0);
             break;
         }
 }
 
 /* ---- Suchen ------------------------------------------------------------ */
-static unsigned find_from(unsigned from, unsigned to)   /* -> Fund oder NONE */
+static tpos find_from(tpos from, tpos to)   /* -> Fund oder TNONE */
 {
-    unsigned n = slen(find_s), p, i;
+    unsigned n = slen(find_s), i;
+    tpos p;
     if (!n || to < n)
-        return NONE;
+        return TNONE;
     for (p = from; p + n <= to; p++) {
         for (i = 0; i < n && up(ch(p + i)) == up(find_s[i]); i++)
             ;
         if (i == n)
             return p;
     }
-    return NONE;
+    return TNONE;
 }
 
 static int find_next(void)              /* 1 gefunden                   */
 {
-    unsigned p = find_from(gs, tlen()), n = slen(find_s);
-    if (p == NONE)
+    unsigned n = slen(find_s);
+    tpos p = find_from(gs, tlen());
+    if (p == TNONE)
         p = find_from(0, gs + n - 1 < tlen() ? gs + n - 1 : tlen());
-    if (p == NONE) {
+    if (p == TNONE) {
         message("Nicht gefunden:", find_s);
         return 0;
     }
@@ -1486,7 +1566,8 @@ static int find_next(void)              /* 1 gefunden                   */
 
 static void word_at_cursor(char *d, unsigned max)
 {
-    unsigned p = gs, n = 0, len = tlen();
+    tpos p = gs, len = tlen();
+    unsigned n = 0;
     char c;
     while (p > 0 && (c = ch(p - 1)) != ' ' && c != '\n')
         p--;
@@ -1521,7 +1602,8 @@ static void do_change(void)
 {
     static const char *pr[2] = { "Suchen nach:", "\x8Endern in:" };
     char *bp[2];
-    unsigned start, p, n, rn, cnt = 0, end, pass, all = 0;
+    tpos start, p, end;
+    unsigned n, rn, cnt = 0, pass, all = 0;
     int k;
     static char cnts[8];
 
@@ -1541,7 +1623,7 @@ static void do_change(void)
         for (;;) {
             end = pass == 0 ? tlen() : start;
             p = find_from(gs, end);
-            if (p == NONE)
+            if (p == TNONE)
                 break;
             selon = 1;
             anchor = p;
@@ -1679,15 +1761,16 @@ static int is_word(char c)
     return c != ' ' && c != '\n';
 }
 
-static void goto_col(unsigned ls, unsigned col)
+static void goto_col(tpos ls, unsigned col)
 {
-    unsigned e = line_end(ls);
+    tpos e = line_end(ls);
     move_to(ls + col < e ? ls + col : e);
 }
 
 static void nav(unsigned sc, unsigned shiftst)
 {
-    unsigned ls, e, i, len = tlen();
+    tpos ls, e, len = tlen();
+    unsigned i;
     int ctrl = (shiftst & KBDSHIFT_CTRL) != 0, vert = 0;
 
     if (shiftst & KBDSHIFT_SHIFT) {
@@ -1768,9 +1851,10 @@ static void nav(unsigned sc, unsigned shiftst)
 }
 
 /* Anfang der Zeile Nummer l (0 = erste), ab der obersten sichtbaren */
-static unsigned line_pos(unsigned l)
+static tpos line_pos(unsigned l)
 {
-    unsigned p = top, i = top_line, e, n = tlen();
+    tpos p = top, e, n = tlen();
+    unsigned i = top_line;
     while (i > l && p > 0) {
         p = line_start(p - 1);
         i--;
@@ -1828,7 +1912,8 @@ static void mouse_ev(void)
 
 static void type_char(char c)
 {
-    unsigned i, ls, ind = 0;
+    unsigned i, ind = 0;
+    tpos ls;
 
     del_sel();
     if (c == '\n') {                    /* Einrueckung uebernehmen       */
@@ -1855,12 +1940,13 @@ static void type_char(char c)
     want = cur_col();
     return;
 full:
-    message("Kein Platz mehr im Text (64 KB).", 0);
+    message("Kein Platz mehr im Text (512 KB).", 0);
 }
 
 static void key(unsigned k)
 {
-    unsigned c = k & 0xFF, sc = k >> 8, st, ls, e, i;
+    unsigned c = k & 0xFF, sc = k >> 8, st, i;
+    tpos ls, e;
 
     if (k == 0)
         return;                         /* Signal (Strg+C)              */
@@ -1978,8 +2064,9 @@ void main(void)
         puts("Bildschirm-Editor.\r\n\r\nEDIT [Datei]\r\n");
         return;
     }
-    tsel = DosAllocSeg(0);
-    if (FAPI_FAILED(tsel)) {
+    segs[0] = DosAllocSeg(0);
+    nseg = 1;
+    if (FAPI_FAILED(segs[0])) {
         puts("Nicht genug Speicher f\x81r EDIT.\r\n");
         DosExit(1);
     }
