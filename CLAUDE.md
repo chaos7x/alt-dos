@@ -185,7 +185,8 @@ RBOX holt per RB_NEED (8, setzt rb_img_pos) + RB_IMG 8 KB aus der offen
 gehaltenen Datei, das nächste RB_RUN erledigt den INT 13h zuerst. In
 QEMU gezählt: 120 KB statt 720 KB; COMMAND.COM vom Abbild (Rückfall
 ohne \DOS\MDOS\COMMAND.COM) und KERNEL.SYS per COPY gelesen, gleich.
-Vom Nutzer auf dem SCAT bestätigt (Build 240.63): Start deutlich schneller.
+Vom Nutzer auf dem SCAT bestätigt (Build 240.63): Start deutlich schneller. Auch mit 8 MHz
+startet die Box mit PROTECTONLY=NO noch relativ schnell (Nutzer).
 XMS für die Box (Wunsch des Nutzers; FreeCOM blieb mit 74 KB fest im
 Speicher, weil XMS_Swap keinen Block bekam): RBHMA reicht XMS 08h–0Ch/
 0Eh als INT E0h 20h–25h an den Kernel (rbox.c `rb_xms`, im rb_run-
