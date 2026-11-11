@@ -92,6 +92,10 @@ Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
 - **Präemptiv seit Phase 2 Schritt 1** (nur aus Ring 3, siehe unten), **FAPI einziger Weg zur
   Hardware**, **IFS** wie bisher.
 
+AT-DOS 5.1 ist fertig (Zweig `5.x`, Release `v5.1`). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
+abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
+(Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
+
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
 
