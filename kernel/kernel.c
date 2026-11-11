@@ -1913,6 +1913,27 @@ static int dev_name(const char *canon)
     return 0;
 }
 
+/* Geraetename wie MS-DOS/Windows (auch mit Endung): CON PRN AUX NUL,
+   COM1-9, LPT1-9 - als Datei- oder Verzeichnisname verboten */
+static int res_name(const char *canon)
+{
+    const char *b = canon, *p;
+    unsigned n;
+    for (p = canon; *p; p++)
+        if (*p == '\\')
+            b = p + 1;
+    for (n = 0; b[n] && b[n] != '.'; n++)
+        ;
+    if (n == 3)
+        return (b[0] == 'C' && b[1] == 'O' && b[2] == 'N') ||
+               (b[0] == 'P' && b[1] == 'R' && b[2] == 'N') ||
+               (b[0] == 'A' && b[1] == 'U' && b[2] == 'X') ||
+               (b[0] == 'N' && b[1] == 'U' && b[2] == 'L');
+    return n == 4 && b[3] >= '1' && b[3] <= '9' &&
+           ((b[0] == 'C' && b[1] == 'O' && b[2] == 'M') ||
+            (b[0] == 'L' && b[1] == 'P' && b[2] == 'T'));
+}
+
 extern unsigned short irq_hcs[16];
 static unsigned char lpt_retry[3], com_retry[4];
 
@@ -2350,6 +2371,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if ((t = dev_name(canon)) != 0)
             return dev_open(t);
+        if (res_name(canon))
+            return FAPI_ERR_DENIED;             /* CON, COM5 ... als Datei */
         if (in_use(d, canon, 0))
             return FAPI_ERR_INUSE;
         k = of_alloc();
@@ -2413,6 +2436,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (fn != FAPI_MKDIR && in_use(d, canon, fn == FAPI_RMDIR))
             return FAPI_ERR_INUSE;
+        if (fn == FAPI_MKDIR && res_name(canon))
+            return FAPI_ERR_DENIED;
         t = fn == FAPI_DELETE ? ifs_remove(d, canon) :
             fn == FAPI_MKDIR  ? (set_orig(buf), ifs_mkdir(d, canon)) : ifs_rmdir(d, canon);
         ifs_orig[0] = 0;
@@ -2431,6 +2456,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                                                    Pfad: nur Schreibung) */
         if (in_use(d, canon, 1))
             return FAPI_ERR_INUSE;
+        if (res_name(canon2))
+            return FAPI_ERR_DENIED;
         set_orig(buf);                          /* Ziel in Originalschreibung */
         t = ifs_move(d, canon, canon2);
         ifs_orig[0] = 0;
