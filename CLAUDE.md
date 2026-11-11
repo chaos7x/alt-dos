@@ -69,6 +69,23 @@ Dazu rb_keys nur bei stimmigen Zeigern 41Ch/480h/482h (sonst schrieb
 RBS(400h + t) irgendwohin in den DOS-Speicher). In QEMU (386-Weg) und
 Bochs (286-Weg, 25 schnelle Wechsel) geprüft – das Fenster selbst ist
 dort nicht nachstellbar.
+Auch damit noch Absturz (SCAT: Invalid Opcode bei F000:E03E bzw.
+0000:001F). Zwei Umbauten, danach in Bochs (286-Weg erzwungen) mit 25
+schnellen Wechseln während FreeDOS COMMAND.COM lädt sauber, vorher
+reproduzierbar Absturz (RBSHELL „Invalid Opcode at 76D7:8911“):
+(1) INT 13h der Box liest das Abbild nicht mehr über INT 15h/87h des
+BIOS, sondern per Ausflug (Grund 5, `rb_disk` in rbox.c: CHS aus dem
+Zustandsblock, Kopie im PM, AX/CF zurück, gleich weiter in die Box).
+(2) Der Kern des Absturzes (gefunden mit Ausgaben auf Port E9h je
+Rückweg: Grund, CS:IP, AX/CX/DX/ES:BX): der beim Eintritt nachgereichte
+INT 9 ([78], Rahmen am Fortsetzungspunkt der Box) störte FreeDOS mitten
+im Laden – ohne ihn lief alles. Jetzt ruft rbs_entry den INT 9 der Box
+selbst auf seinem Stapel (SS = CS); Alt+Esc/Strg+Alt+Entf merkt INT 15h/
+4Fh ohnehin nur vor, ein Takt dabei läuft über [79]. [78] ist frei.
+Testaufbau Bochs: `t/bx/rsw2.sh Wartezeit Wechsel Abstand` (AUTOEXEC mit
+START CMD + RBOX, Klicks auf USER/OK), Testkernel mit `nop` statt
+`mov byte [_cpu_386], 1` in start.asm (über eine Kopie, nie mit `git
+checkout` zurück – das verwirft ungesicherte Änderungen).
 
 ## Zweige und Releases (5.x)
 

@@ -1186,7 +1186,7 @@ code_end:
 ; 72 BIOS ruft INT 15h/4Fh (dann Tasten dort statt in INT 9), 74 Rueckkehr
 ; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen), 76 287
 ; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte), 78
-; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
+; frei (war: INT 9 nachholen), 79 Wechsel waehrend des
 ; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
 ; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8, 86 vorgemerkter
 ; Wechsel aus INT 15h/4Fh (Grund | Weg << 8). Grund 4 = Takt, 5 = INT 13h
@@ -1235,16 +1235,21 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     bh, 0
         mov     ah, 2                   ; (Umschalttasten 417h/418h/496h
         int     0x10                    ;  stellt rbox.c vor dem Eintritt)
-.quiet: mov     byte [78], 0
-        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+.quiet: in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
         test    al, 1                   ; ist neu eingestellt und sieht die
         jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
         test    al, 0x20                ; als Flanke - abholen, sonst steht
-        jnz     .aux                    ; die Tastatur
-        mov     byte [78], 1            ; INT 9 an der Stelle der Box
-        jmp     short .kok              ; (nicht hier im Stummel: ein Alt+Esc
-.aux:   in      al, 0x60                ; saehe sonst den halben Stummel als
-.kok:   cli                             ; Zustand der Box); Maus: weg
+        jnz     .aux                    ; die Tastatur. Hier im Stummel den
+        push    es                      ; INT 9 der Box rufen: Alt+Esc und
+        xor     ax, ax                  ; Strg+Alt+Entf merkt INT 15h/4Fh
+        mov     es, ax                  ; nur vor, ein Takt dabei geht ueber
+        pushf                           ; [79]. (Frueher ein INT-9-Rahmen am
+        cli                             ; Fortsetzungspunkt der Box - der
+        call    far [es:9 * 4]          ; stoerte FreeDOS mitten im Laden:
+        pop     es                      ; Absturz nach schnellen Wechseln)
+        jmp     short .kok
+.aux:   in      al, 0x60                ; Maus: weg
+.kok:   cli
         mov     al, [79]                ; Wechsel waehrend des Eintritts
         test    al, al                  ; verlangt: jetzt ausfuehren
         jz      .go
@@ -1262,18 +1267,7 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         push    word [26]
         push    word [24]
         push    word [22]
-        cmp     byte [78], 0            ; wie ein Hardware-Interrupt genau
-        je      .noint                  ; am Fortsetzungspunkt: zweiter Rahmen
-        test    byte [27], 2            ; - nur, wenn die Box dort Inter-
-        jz      .noint                  ; rupts zulaesst (IF im Rahmen)
-        mov     ax, [26]                ; in INT 9, IF und TF aus
-        and     ax, 0xFCFF
-        push    ax
-        xor     ax, ax
-        mov     es, ax
-        push    word [es:9 * 4 + 2]
-        push    word [es:9 * 4]
-.noint: mov     ax, [0]
+        mov     ax, [0]
         mov     bx, [2]
         mov     cx, [4]
         mov     dx, [6]
