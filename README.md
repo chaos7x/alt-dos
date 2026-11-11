@@ -1,12 +1,35 @@
 # alt-dos – AT-DOS 5.1 (Zweig 5.x): 5.0 mit Kompatibilitätsbox
 
-Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
-80286 Protected Mode, segmentiert, mit kooperativem Multitasking. AT-DOS 5.1
-bringt dazu eine DOS-Kompatibilitätsbox im echten Real Mode, wie OS/2 1.x
-(`RBOX`); das unveränderte 5.0 steht im Zweig `5.0`. Hardware
-ist nur über die Family API (FAPI) erreichbar. „AT“ steht doppelt: für die
-Rechnerklasse, die es voraussetzt, und für die Alternative – wie bei DR-DOS
-und PC-DOS.
+**AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
+1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
+mehreren gleichzeitig laufenden Programmen, verfolgte ihn dann aber nicht
+weiter und setzte zusammen mit IBM auf OS/2. AT-DOS fragt: Was wäre, wenn
+diese Linie weitergeführt worden wäre?
+
+- **AT-DOS 5.0/5.1** läuft auf dem **286** im Protected Mode. Es bietet
+  mehrere Sitzungen, eine eigene Programmschnittstelle (FAPI, die einzige
+  Brücke zur Hardware), nachladbare Treiber und Dateisysteme, lange
+  Dateinamen und einen Platten-Cache im Kernel. Dazu kommen Werkzeuge im
+  Stil von MS-DOS 6 (EDIT, FDISK, FORMAT, CHKDSK, XCOPY, …) und GNU (LESS,
+  GREP, CUT, TAIL, …), ein Dateimanager, VGA-Grafik und Ton über die Sound
+  Blaster. Version 5.1 bringt eine Kompatibilitätsbox wie OS/2 1.x:
+  FreeDOS im echten Real Mode, mit Zugriff auf die AT-DOS-Laufwerke.
+- **AT-DOS 6.0** nutzt den **386**: Paging, präemptives Multitasking und
+  mehrere DOS-Boxen im V86-Modus. Jede Box hat XMS, EMS, DPMI, eine
+  virtuelle VGA und eine virtuelle Sound Blaster, darin laufen Spiele wie
+  DOOM. Dazu kommen FAT32, VESA-Grafik, PCI-SCSI (NCR 53C8xx),
+  IDE-Busmaster, APM und Speicher bis knapp 4 GB. Der Kernel bleibt dabei
+  bewusst 16 Bit und schlank; Programme bleiben 16 Bit und laufen auf
+  beiden Linien.
+
+Getestet wird in QEMU, Bochs und vor allem in **86Box**, auf
+nachgebildeten Maschinen vom 286 mit SCAT-Chipsatz bis zum ASUS P3B-F.
+Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
+**GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
+voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
+
+Dieser Zweig (`5.x`) ist AT-DOS 5.1; AT-DOS 6.0 entsteht auf `main`, das
+unveränderte 5.0 steht im Zweig `5.0`.
 
 ## Was läuft
 
