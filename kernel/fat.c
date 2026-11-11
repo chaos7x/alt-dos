@@ -1771,6 +1771,8 @@ static int ea_add(int d, clus_t dc, const char *n83, const char *name)
     ea_rec[1] = (unsigned char)use;
     ea_rec[2] = (unsigned char)dc;
     ea_rec[3] = (unsigned char)(dc >> 8);
+    ea_rec[4] = (unsigned char)(dc >> 16);  /* FAT32: Cluster ueber 65.535 */
+    ea_rec[5] = (unsigned char)(dc >> 24);
     for (k = 0; k < 11; k++)
         ea_rec[6 + k] = (unsigned char)n83[k];
     ea_rec[17] = (unsigned char)len;

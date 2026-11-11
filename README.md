@@ -77,7 +77,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   VFAT-Einträge übertragen (wie Windows 95/98 sie liest) und `EA DATA. SF`
   gelöscht – mit `LONGNAMES=EA` in der CONFIG.SYS bleiben sie in der
   EA-Datei, und FAT32 benutzt dann ebenfalls das EA-Format (bei AUTO,
-  wenn im Stamm eine `EA DATA. SF` liegt)
+  wenn im Stamm eine `EA DATA. SF` liegt). `CONVERT X: /LFN:VFAT` bzw.
+  `/LFN:EA` wandelt die langen Namen eines FAT32-Laufwerks nachträglich
+  in die eine oder andere Form (hin und zurück; Zeichen außerhalb CP437
+  werden beim Weg nach EA zu `_`)
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem

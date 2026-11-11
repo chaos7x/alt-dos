@@ -397,6 +397,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   CONVERT -> DIR zeigt sie, mtools liest die VFAT-Namen, fsck sauber,
   Inhalte gleich; mit LONGNAMES=EA bleiben sie in der EA-Datei, neue
   lange Namen landen dort, nach Neustart mit AUTO weiter sichtbar.
+  Nachträglich (Wunsch des Nutzers, abgestimmt: FAT32 zuerst, Aufruf
+  über CONVERT): `CONVERT X: /LFN:VFAT|EA` -> CHKDSK, dann `UFAT32 X:
+  /LFN:VFAT|EA` (ufat32_e2v.c, ohne Bitmaps): VFAT = `e2v_locate` +
+  e2v_run wie beim Umwandeln; EA = `lfn_toea`: alle Verzeichnisse (Stamm
+  + Warteschlange bis 16.383, je bis 64 KB) ablaufen, VFAT-Ketten mit
+  passender Prüfsumme als Sätze (UCS-2 -> CP437 über cp437u, sonst `_`,
+  gezählt) sammeln (bis 64 KB), EA DATA. SF anlegen (Kette, Stammeintrag
+  06h, Datum jetzt), dann die VFAT-Einträge auf E5h; FSInfo frei =
+  unbekannt. Geprüft: VFAT -> EA -> VFAT ergibt dieselben Namen (mdir
+  vorher/nachher gleich), fsck sauber. Dabei behoben: kernel `ea_add`
+  schrieb den Verzeichnis-Cluster nur mit 16 Bit (Bytes 4/5 blieben 0) –
+  auf FAT32 hinter Cluster 65.535 hätten Sätze nicht mehr gepasst.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das

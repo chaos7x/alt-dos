@@ -6,6 +6,7 @@
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
  *   UFAT32 Laufwerk: /CONVERT [/V] [/EA]  FAT16 -> FAT32 (ufat32_conv.c),
  *                     lange Namen nach VFAT, mit /EA in EA DATA. SF lassen
+ *   UFAT32 Laufwerk: /LFN:VFAT | /LFN:EA  lange Namen umwandeln (ufat32_e2v.c)
  *
  * Wie UFAT, aber fuer grosse Datentraeger gebaut: die FAT (bei FAT32
  * leicht viele MB) bleibt auf der Platte und wird ueber einen kleinen
@@ -777,6 +778,7 @@ void main(void)
     char *a = args;
     unsigned reserved;
     int fmt = 0, conv = 0, quick = 0, surface = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
+    int lfnmode = 0;                    /* /LFN:VFAT 1, /LFN:EA 2         */
     static char spec[FAPI_PATHLEN];
 
     drive = DosQCurDisk();
@@ -805,6 +807,8 @@ void main(void)
             defrag = 1;
         else if (a[0] == '/' && up(a[1]) == 'U')
             quick = 1;                  /* DEFRAG /U: nur fragmentierte  */
+        else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'F' && a[4] == ':')
+            lfnmode = up(a[5]) == 'V' ? 1 : up(a[5]) == 'E' ? 2 : 0;
         else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'I')
             ulist = 1;
         else if (a[0] == '/' && up(a[1]) == 'A' && up(a[2]) == 'L')
@@ -836,7 +840,7 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
-    if (undel || defrag)
+    if (undel || defrag || lfnmode)
         fix = 1;                        /* schreibt: Laufwerk sperren    */
     hd = DosOpenDrive(drive, (fix ? DRV_OPEN_LOCK : DRV_OPEN_READ) | DRV_OPEN_LBA);
     if (FAPI_FAILED(hd)) {
@@ -877,6 +881,14 @@ void main(void)
         puts("Ung\x81ltiger Bootsektor.\n");
         DosClose(hd);
         DosExit(3);
+    }
+    if (lfnmode) {                      /* lange Namen EA <-> VFAT       */
+        int rc;
+        fc_init();
+        rc = lfnmode == 1 ? lfn_tovfat() : lfn_toea();
+        fat_flush();
+        DosClose(hd);
+        DosExit(rc);
     }
     nbm = (unsigned)((maxc >> 19) + 1);
     if (nbm > NBMSEG || bm_alloc(useds) || (!undel && !defrag && bm_alloc(auxs))) {

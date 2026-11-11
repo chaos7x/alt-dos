@@ -303,3 +303,319 @@ out:
         DosFreeSeg(e2v_new);
     return rc;
 }
+
+/* ---- CONVERT X: /LFN:VFAT|EA auf einem FAT32-Laufwerk ------------------ */
+
+/* Eintrag "EA DATA SF " im Stamm -> erster Cluster, Groesse; 0 = gefunden */
+static int e2v_locate(unsigned long *first, unsigned long *size)
+{
+    static const char ean[] = "EA DATA SF ";
+    unsigned long c = rootc, steps = 0;
+    unsigned s, o, k;
+    while (valid(c) && steps++ <= maxc) {
+        for (s = 0; s < spc; s++) {
+            if (rd_secs(clus_lba(c) + s, sec, 1))
+                return -1;
+            for (o = 0; o < 512; o += 32) {
+                if (!sec[o])
+                    return -1;
+                if (sec[o] == 0xE5 || sec[o + 11] == 0x0F)
+                    continue;
+                for (k = 0; k < 11 && sec[o + k] == (unsigned char)ean[k]; k++)
+                    ;
+                if (k == 11) {
+                    *first = ((unsigned long)rd16(sec + o + 20) << 16) | rd16(sec + o + 26);
+                    *size = rd32(sec + o + 28);
+                    return 0;
+                }
+            }
+        }
+        c = fat_get(c);
+    }
+    return -1;
+}
+
+/* FSInfo: freie Cluster unbekannt (nach Belegen/Freigeben) */
+static void e2v_fsinfo(void)
+{
+    if (!fsis || fsis == 0xFFFF || rd_secs(fsis, sec, 1) || rd32(sec) != 0x41615252UL)
+        return;
+    wr32(sec + 488, 0xFFFFFFFFUL);
+    wr_sec(fsis, sec);
+}
+
+static int lfn_tovfat(void)
+{
+    unsigned long first, size;
+    if (e2v_locate(&first, &size)) {
+        puts("Keine langen Namen im EA-Format (EA DATA. SF fehlt).\n");
+        return 0;
+    }
+    if (!autom) {
+        puts("Lange Namen aus EA DATA. SF in VFAT-Eintr\x84ge \x81" "bertragen (J/N)? ");
+        if (!yes())
+            return 3;
+    }
+    e2v_names = 0;
+    if (e2v_run(first, size)) {
+        puts("Nicht m\x94glich (Verzeichnis \x81" "ber 64 KB oder zu wenig Platz) - nichts ge\x84ndert.\n");
+        return 3;
+    }
+    e2v_fsinfo();
+    put_num(e2v_names, 0);
+    puts(" lange Namen nach VFAT \x81" "bertragen, EA DATA. SF gel\x94scht.\n");
+    return cv_err ? 3 : 0;
+}
+
+/* VFAT -> EA: UCS-2 -> CP437, Unbekanntes '_' */
+static unsigned char v2e_cp(unsigned u)
+{
+    unsigned i;
+    if (u < 128)
+        return (unsigned char)u;
+    for (i = 0; i < 128; i++)
+        if (cp437u[i] == u)
+            return (unsigned char)(128 + i);
+    return '_';
+}
+
+static unsigned v2e_dq;                 /* Verzeichnis-Startcluster (je 4 Byte) */
+static unsigned v2e_nd, v2e_eab;
+static unsigned long v2e_lost;
+
+/* Verzeichnis (dc 0 = Stamm) ablaufen: phase 0 Saetze sammeln und
+   Unterverzeichnisse merken, phase 1 VFAT-Eintraege loeschen */
+static int v2e_dir(unsigned long dc, int phase)
+{
+    static unsigned char nm[256], seen;
+    static unsigned char chk, parts;
+    unsigned n, bytes, i, k, j, len, dirty = 0;
+    unsigned char __far *e;
+    unsigned long sub;
+    unsigned cb = spc << 9;
+
+    if ((bytes = e2v_read(dc ? dc : rootc, e2v_old, &n)) == 0xFFFF)
+        return -1;
+    parts = 0;
+    for (i = 0; i + 32 <= bytes; i += 32) {
+        e = fpb(e2v_old, i);
+        if (!e[0])
+            break;
+        if (e[0] == 0xE5) {
+            parts = 0;
+            continue;
+        }
+        if (e[11] == 0x0F) {
+            if (phase) {
+                e[0] = 0xE5;
+                dirty = 1;
+                continue;
+            }
+            if (e[0] & 0x40) {
+                parts = e[0] & 0x1F;
+                chk = e[13];
+                seen = 0;
+                for (k = 0; k < 256; k++)
+                    nm[k] = 0;
+            }
+            k = e[0] & 0x1F;
+            if (!parts || !k || k > parts || e[13] != chk || k > 19)
+                parts = 0;
+            else {
+                static const unsigned char pos[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
+                for (j = 0; j < 13; j++) {
+                    unsigned u = e[pos[j]] | ((unsigned)e[pos[j] + 1] << 8);
+                    unsigned at = (k - 1) * 13 + j;
+                    if (at < 255)
+                        nm[at] = u == 0 || u == 0xFFFF ? 0 : v2e_cp(u);
+                    if (u && u != 0xFFFF && u != '_' && v2e_cp(u) == '_')
+                        v2e_lost++;
+                }
+                seen |= (unsigned char)(k == 1);
+            }
+            continue;
+        }
+        if (!phase && parts && seen && e2v_sum(e) == chk && !(e[11] & 8)) {
+            unsigned units, o = v2e_nd;     /* Satz anhaengen             */
+            for (len = 0; len < 255 && nm[len]; len++)
+                ;
+            units = (18 + len + 31) >> 5;
+            if ((unsigned long)o + ((unsigned)units << 5) + 32 > 0xFFFFUL)
+                return -2;                  /* EA-Datei zu gross           */
+            for (k = 0; k < units * 32; k++)
+                *fpb(v2e_eab, o + k) = 0;
+            *fpb(v2e_eab, o) = 'L';
+            *fpb(v2e_eab, o + 1) = (unsigned char)units;
+            for (k = 0; k < 4; k++)
+                *fpb(v2e_eab, o + 2 + k) = (unsigned char)(dc >> (8 * k));
+            for (k = 0; k < 11; k++)
+                *fpb(v2e_eab, o + 6 + k) = e[k];
+            *fpb(v2e_eab, o + 17) = (unsigned char)len;
+            for (k = 0; k < len; k++)
+                *fpb(v2e_eab, o + 18 + k) = nm[k];
+            v2e_nd = o + units * 32;
+            e2v_names++;
+        }
+        parts = 0;
+        if (!phase && (e[11] & 0x10) && e[0] != '.') {      /* Unterverzeichnis */
+            sub = ((unsigned long)rd16f(e + 20) << 16) | rd16f(e + 26);
+            if (valid(sub)) {
+                unsigned long __far *q = (unsigned long __far *)MK_FP(v2e_dq, 0);
+                unsigned long __far *cnt = q;           /* q[0] = Anzahl */
+                if (*cnt >= 16383)
+                    return -1;
+                q[++*cnt] = sub;
+            }
+        }
+    }
+    if (phase && dirty)                 /* geaenderte Sektoren zurueck    */
+        for (k = 0; k < n; k++)
+            for (j = 0; j < spc; j++) {
+                unsigned at = (unsigned)(k * cb + (j << 9)), b;
+                if (at >= bytes)
+                    break;
+                for (b = 0; b < 512; b++)
+                    sec[b] = *fpb(e2v_old, at + b);
+                if (wr_sec(clus_lba(e2v_cl[k]) + j, sec))
+                    return -1;
+            }
+    return 0;
+}
+
+/* alle Verzeichnisse (Stamm, dann Warteschlange) */
+static int v2e_all(int phase)
+{
+    unsigned long __far *q = (unsigned long __far *)MK_FP(v2e_dq, 0);
+    unsigned long i;
+    int rc;
+    if ((rc = v2e_dir(0, phase)) != 0)
+        return rc;
+    for (i = 1; i <= q[0]; i++)
+        if ((rc = v2e_dir(q[i], phase)) != 0)
+            return rc;
+    return 0;
+}
+
+/* EA DATA. SF anlegen: Kette fuer v2e_nd Byte, Inhalt, Eintrag im Stamm */
+static int v2e_write(void)
+{
+    unsigned long c, prev = 0, first = 0, hint = 2;
+    unsigned cb = spc << 9, nc = (unsigned)shr((unsigned long)v2e_nd + cb - 1, cshift), k, s, b, slot;
+    unsigned n, bytes;
+    for (k = 0; k < nc; k++) {
+        for (c = hint; c <= maxc && fat_get(c) != 0; c++)
+            ;
+        if (c > maxc)
+            return -1;
+        hint = c + 1;
+        if (prev)
+            fat_put(prev, c);
+        else
+            first = c;
+        fat_put(c, EOC);
+        prev = c;
+        for (s = 0; s < spc; s++) {
+            unsigned long at = shl(k, cshift) + ((unsigned)s << 9);
+            for (b = 0; b < 512; b++)
+                sec[b] = at + b < v2e_nd ? *fpb(v2e_eab, (unsigned)at + b) : 0;
+            if (wr_sec(clus_lba(c) + s, sec))
+                return -1;
+        }
+    }
+    if ((bytes = e2v_read(rootc, e2v_old, &n)) == 0xFFFF)
+        return -1;
+    for (slot = 0; slot + 32 <= bytes; slot += 32) {
+        unsigned char x = *fpb(e2v_old, slot);
+        if (x == 0 || x == 0xE5)
+            break;
+    }
+    if (slot + 32 > bytes)
+        return -1;                      /* Stamm voll (selten)            */
+    if (rd_secs(clus_lba(e2v_cl[slot / cb]) + ((slot % cb) >> 9), sec, 1))
+        return -1;
+    b = slot & 511;
+    for (k = 0; k < 32; k++)
+        sec[b + k] = 0;
+    for (k = 0; k < 11; k++)
+        sec[b + k] = (unsigned char)"EA DATA SF "[k];
+    sec[b + 11] = 0x06;                 /* versteckt + System             */
+    wr16(sec + b + 20, (unsigned)(first >> 16));
+    wr16(sec + b + 26, (unsigned)first);
+    wr32(sec + b + 28, v2e_nd);
+    {                                   /* Datum/Zeit jetzt (FAT-Format) */
+        static unsigned dt[2];
+        if (FAPI_FAILED(DosGetDateTime(dt)) || !dt[0])
+            dt[0] = 0x0021, dt[1] = 0;  /* 1.1.1980                      */
+        wr16(sec + b + 22, dt[1]);
+        wr16(sec + b + 24, dt[0]);
+        wr16(sec + b + 16, dt[0]);      /* angelegt / letzter Zugriff    */
+        wr16(sec + b + 14, dt[1]);
+        wr16(sec + b + 18, dt[0]);
+    }
+    return wr_sec(clus_lba(e2v_cl[slot / cb]) + ((slot % cb) >> 9), sec);
+}
+
+static int lfn_toea(void)
+{
+    unsigned long f, sz;
+    int rc = 3;
+    if (e2v_locate(&f, &sz) == 0) {
+        puts("Das Laufwerk hat schon EA DATA. SF - erst /LFN:VFAT.\n");
+        return 3;
+    }
+    e2v_old = seg64();
+    v2e_eab = seg64();
+    v2e_dq = seg64();
+    if (!e2v_old || !v2e_eab || !v2e_dq) {
+        puts("Zu wenig Arbeitsspeicher.\n");
+        goto out;
+    }
+    *(unsigned long __far *)MK_FP(v2e_dq, 0) = 0;
+    v2e_nd = 0;
+    v2e_lost = 0;
+    e2v_names = 0;
+    if ((rc = v2e_all(0)) != 0) {
+        puts(rc == -2 ? "Zu viele lange Namen f\x81r EA DATA. SF (64 KB) - nichts ge\x84ndert.\n"
+                      : "Verzeichnis \x81" "ber 64 KB oder Lesefehler - nichts ge\x84ndert.\n");
+        rc = 3;
+        goto out;
+    }
+    if (!e2v_names) {
+        puts("Keine VFAT-Namen gefunden.\n");
+        rc = 0;
+        goto out;
+    }
+    put_num(e2v_names, 0);
+    puts(" lange Namen nach EA DATA. SF \x81" "bertragen");
+    if (v2e_lost) {
+        puts(" (");
+        put_num(v2e_lost, 0);
+        puts(" Zeichen au\xE1" "erhalb CP437 werden '_')");
+    }
+    puts(".\n");
+    if (!autom) {
+        puts("Windows 95/98 sieht die Namen danach nicht mehr. Fortfahren (J/N)? ");
+        if (!yes()) {
+            rc = 3;
+            goto out;
+        }
+    }
+    if (v2e_write() || v2e_all(1)) {
+        puts("Schreibfehler - das Laufwerk ist besch\x84" "digt.\n");
+        rc = 3;
+    } else
+        rc = 0;
+    fat_flush();
+    e2v_fsinfo();
+    if (!rc)
+        puts("Fertig. In der CONFIG.SYS LONGNAMES=EA oder AUTO setzen.\n");
+out:
+    if (e2v_old)
+        DosFreeSeg(e2v_old);
+    if (v2e_eab)
+        DosFreeSeg(v2e_eab);
+    if (v2e_dq)
+        DosFreeSeg(v2e_dq);
+    e2v_old = 0;
+    return rc;
+}
