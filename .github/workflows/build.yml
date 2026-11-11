@@ -51,8 +51,8 @@ jobs:
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
             --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. dos5.img: Diskette A: in 86Box, beliebige 286-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
-      - name: Release "v5.0" veroeffentlichen (Zweig 5.x)
-        if: github.ref == 'refs/heads/5.x' && github.event_name != 'pull_request'
+      - name: Release "v5.0" veroeffentlichen (Zweig 5.0)
+        if: github.ref == 'refs/heads/5.0' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

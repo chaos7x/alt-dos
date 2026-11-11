@@ -20,6 +20,13 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+## Zweig 5.0
+
+Dieser Zweig ist AT-DOS 5.0 (Meilenstein 9) mit seinen Fehlerbehebungen
+und den Übernahmen aus 6.0 bis zum Beginn von 5.1 (fd41ed9); seine CI
+füllt das Release `v5.0`. Weiterentwickelt wird auf `5.x` (5.1, eigenes
+Release `v5.1`) und `main` (6.0). Fehlerbehebungen für 5.0 nur hier.
+
 ## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 9 – 5.0 fertig
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
