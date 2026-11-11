@@ -331,12 +331,19 @@ static void rb_keys(void)
 {
     int k;
     unsigned t, n;
+    unsigned lo, hi;
     scratch2_map(0, 0xFFFF);
+    lo = RBS(0x480);                        /* nur bei stimmigen Zeigern - */
+    hi = RBS(0x482);                        /* sonst schriebe RBS(400h+t)  */
+    if (lo < 0x1E || hi > 0x100 || lo + 2 >= hi)    /* irgendwohin    */
+        lo = 0x1E, hi = 0x3E;
     while ((k = kf_kbd_get()) != -1) {
         t = RBS(0x41C);
+        if (t < lo || t >= hi || (t & 1))
+            break;
         n = t + 2;
-        if (n >= RBS(0x482))
-            n = RBS(0x480);
+        if (n >= hi)
+            n = lo;
         if (n == RBS(0x41A))
             break;                          /* Puffer voll            */
         RBS(0x400 + t) = (unsigned)k;

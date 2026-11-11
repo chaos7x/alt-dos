@@ -1189,7 +1189,8 @@ code_end:
 ; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
 ; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
 ; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8, 86 vorgemerkter
-; Wechsel aus INT 15h/4Fh (Grund | Weg << 8). Grund 4 = Takt.
+; Wechsel aus INT 15h/4Fh (Grund | Weg << 8), 88 Box steckt in INT 15h/87h
+; (IVT-Kopie nicht ueberschreiben). Grund 4 = Takt.
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1442,11 +1443,13 @@ rbs_int13:
         mov     es, ax
         mov     si, di
         call    rbs_ivsave              ; der 286 kehrt per Reset zurueck,
-        mov     ah, 0x87                ; das BIOS legt seinen Stapel dabei
-        pushf                           ; nach 0030:0100 - mitten in die IVT
-        call    far [66]                ; altes INT 15h
-        pushf
-        call    rbs_ivrest
+        mov     byte [88], 1            ; das BIOS legt seinen Stapel dabei
+        mov     ah, 0x87                ; nach 0030:0100 - mitten in die IVT.
+        pushf                           ; [88]: ein Ausflug bis zum Zurueck-
+        call    far [66]                ; holen darf die gute Kopie nicht mit
+        pushf                           ; der zerstoerten Tabelle ueber-
+        call    rbs_ivrest              ; schreiben (rbs_saved)
+        mov     byte [88], 0
         popf
         pop     ax
         jc      .rderr
@@ -1641,8 +1644,10 @@ rbs_saved:                              ; Zustand der Box steht im Block
         fnsave  [0x1C40]
         fwait
         mov     byte [77], 1
-.nofpu: call    rbs_ivsave
-        call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
+.nofpu: cmp     byte [88], 0            ; mitten in INT 15h/87h: die Kopie
+        jne     .ivok                   ; bei 1B00h ist schon die richtige
+        call    rbs_ivsave
+.ivok:  call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
         lgdt    [32]
         mov     ax, 1
         lmsw    ax

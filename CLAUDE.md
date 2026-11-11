@@ -56,6 +56,19 @@ bei IF im Rahmen. Geprüft: QEMU (386-Weg: Wechsel, VER, Strg+Alt+Entf
 USER-Taste – `keyboard: user_shortcut=alt-esc`, Klick per xdotool auf
 USER und dann OK, Box danach heil). Grenze: biegt ein Programm INT 8
 ohne Weiterreichen um, wirkt Alt+Esc erst nach dessen Ende.
+Nächster Stand auf dem SCAT: FreeDOS selbst stürzte ab (endlos „Enter
+the full shell command line: ÉÉÉ“, Invalid Opcode, „MCB chain
+corrupted“). Wahrscheinliche Ursache: rbs_int13 liest das Abbild per
+INT 15h/87h des BIOS; ein 286-BIOS kehrt dabei per Reset zurück und
+legt seinen Stapel nach 0030:0100 – mitten in die IVT 300h–3FFh (INT
+E0h!). Kam im Fenster zwischen der Rückkehr des BIOS und rbs_ivrest ein
+Ausflug (Takt, Alt+Esc), überschrieb rbs_saved die gute Kopie bei 1B00h
+mit der zerstörten Tabelle. Bochs/QEMU kopieren ohne Reset, daher dort
+nie gesehen. Jetzt [88] = 1 während 87h, rbs_saved sichert dann nicht.
+Dazu rb_keys nur bei stimmigen Zeigern 41Ch/480h/482h (sonst schrieb
+RBS(400h + t) irgendwohin in den DOS-Speicher). In QEMU (386-Weg) und
+Bochs (286-Weg, 25 schnelle Wechsel) geprüft – das Fenster selbst ist
+dort nicht nachstellbar.
 
 ## Zweige und Releases (5.x)
 
