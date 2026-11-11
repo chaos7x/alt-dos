@@ -3427,8 +3427,15 @@ static int a20_is_on(void)
     return on;
 }
 
+extern void irq_replay(unsigned n);
+unsigned short rb_drvirq;               /* IRQs der AT-DOS-Treiber (Maske)  */
+unsigned char rb_slice = 2;             /* RBSLICE=: AT-DOS je n BIOS-Takte */
+
+void __far kf_yield(void) { yield(); }
+
 void __far kf_rb_hw(unsigned long lin)
 {
+    unsigned irr, n;
     blk_flush();                            /* die Box kann neu starten */
     if (fpu_owner >= 0) {
         fpu_save(KDATA, (unsigned)fpu_area[fpu_owner]);
@@ -3442,6 +3449,10 @@ void __far kf_rb_hw(unsigned long lin)
     }
     rb_enter();                             /* kommt mit IF = 0 zurueck */
     rb_mods_from_box();
+    outb(0x20, 0x0A);                       /* IRR: was kam fuer AT-DOS- */
+    irr = inb(0x20);                        /* Treiber, waehrend die Box */
+    outb(0xA0, 0x0A);                       /* lief (dort maskiert)?    */
+    irr |= inb(0xA0) << 8;
     /* Alt+Esc kommt mitten aus dem Tastatur-Interrupt des BIOS (INT 15h/
        4Fh): das AT-BIOS hat die Tastatur am 8042 abgeschaltet (ADh) und
        schaltet sie erst am Ende wieder ein - das holen wir nach */
@@ -3458,6 +3469,10 @@ void __far kf_rb_hw(unsigned long lin)
         inb(0x60);                          /* ging so verloren); Maus weg */
     if (!a20_is_on())                       /* nach INT 15h/87h aus     */
         a20_on();
+    irr &= rb_drvirq;                       /* nachholen (der neu einge- */
+    for (n = 3; irr >> n; n++)              /* stellte PIC saehe die     */
+        if ((irr >> n) & 1)                 /* hohen Leitungen nie)      */
+            irq_replay(n);
     if (fpu_ok) {
         fpu_pm_init();
         fpu_reset();
@@ -5102,6 +5117,8 @@ static void config_sys(void)
                 if (*q == ',')              /* dritter Wert: Hoechstgroesse */
                     cache_max = num_arg(q + 1);
             }
+        } else if (kw(line, "RBSLICE")) {      /* 5.1: AT-DOS je n Takte  */
+            rb_slice = (unsigned char)num_arg(v);   /* der Box, 0 = aus   */
         } else if (kw(line, "RBRESET")) {      /* 5.1: KBC oder FAULT     */
             rb_fault = up(v[0]) == 'F';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
@@ -5240,7 +5257,7 @@ void kmain(void)
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "AT-DOS 5.0 - 80286 Protected Mode\n");
+    vio_kputs(s0, "AT-DOS 5.1 - 80286 Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
     udec(mem_free_kb(), num);
     vio_kputs(s0, num);

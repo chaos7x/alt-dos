@@ -1,7 +1,9 @@
-# alt-dos – AT-DOS 5.0, Meilenstein 9 (5.0 fertig)
+# alt-dos – AT-DOS 5.1 (Zweig 5.x): 5.0 mit Kompatibilitätsbox
 
 Alternative Zeitlinie: MT-DOS 4.0 wird fortgeführt, AT-DOS 5.0 läuft im
-80286 Protected Mode, segmentiert, mit kooperativem Multitasking. Hardware
+80286 Protected Mode, segmentiert, mit kooperativem Multitasking. AT-DOS 5.1
+bringt dazu eine DOS-Kompatibilitätsbox im echten Real Mode, wie OS/2 1.x
+(`RBOX`); das unveränderte 5.0 steht im Zweig `5.0`. Hardware
 ist nur über die Family API (FAPI) erreichbar. „AT“ steht doppelt: für die
 Rechnerklasse, die es voraussetzt, und für die Alternative – wie bei DR-DOS
 und PC-DOS.
@@ -163,7 +165,7 @@ und PC-DOS.
   Speicher kopiert sich der Kernel beim Start (noch im Real Mode, per
   BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
   frei (der Kernel liegt hinter der HMA)
-- `RBOX [Abbild.IMG | Datei.COM]` (5.1, in Arbeit): Kompatibilitätsbox im
+- `RBOX [Abbild.IMG | Datei.COM]` (5.1): Kompatibilitätsbox im
   echten Real Mode mit FreeDOS (8086-Bau, `\DOS\BOX\FREEDOS.IMG` als A:,
   nur lesend) – AT-DOS steht, solange sie vorn ist; Alt+Esc wechselt
   zurück in die Sitzungen und wieder hinein, EXIT oder Strg+Alt+Entf
@@ -171,8 +173,12 @@ und PC-DOS.
   Netzlaufwerke (RBOX erledigt die Zugriffe); Platten direkt und der
   erweiterte Speicher bleiben für die Box unsichtbar. Die Box beginnt im
   aktuellen Verzeichnis und hat dieselbe Tastaturbelegung wie AT-DOS (KEYB).
-  Rückweg auf dem 386 per PE löschen, auf dem 286 per Prozessor-Reset;
-  `RBOX \DEMO\RBTEST.COM` testet ohne DOS
+  Rückweg auf dem 386 per PE löschen, auf dem 286 per Prozessor-Reset
+  (`RBRESET=FAULT` per Dreifachfehler wie OS/2); `RBOX \DEMO\RBTEST.COM`
+  testet ohne DOS. Die anderen Programme laufen weiter, während die Box vorn
+  ist (jeder zweite BIOS-Takt ein kurzer Ausflug, `RBSLICE=n` in der
+  CONFIG.SYS, 0 = aus). Grafik und Zustand des 287 überstehen Alt+Esc.
+  Messen: `RBOX \DEMO\RBTIME`
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
   Liste der Programme, Entf beendet mit Rückfrage; auch mit
   Strg+Umschalt+Esc. Kooperativ: ein Programm, das ohne FAPI-Aufruf

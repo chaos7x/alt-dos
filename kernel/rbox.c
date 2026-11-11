@@ -20,7 +20,10 @@
 #include "k2.h"
 
 extern unsigned short rbs_code, rbs_len, rbs_entry_off, rbs_int9_off, rbs_int20_off,
-                      rbs_inte0_off, rbs_int13_off, rbs_int15_off;
+                      rbs_inte0_off, rbs_int13_off, rbs_int15_off, rbs_int8_off;
+extern unsigned short irq_hcs[16], rb_drvirq;
+extern unsigned char rb_slice;
+void __far kf_yield(void);
 extern unsigned char  bios_pic1, bios_pic2;
 extern unsigned short mem_conv_kb, fpu_ok;
 extern unsigned short gdtr[3];
@@ -40,6 +43,8 @@ static unsigned rb_img_u, rb_img_n;     /* Abbild: erste Einheit, Anzahl */
 static unsigned long rb_img_pos;        /* bisher geladen (Byte)         */
 static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
 static unsigned char rb_quiet;          /* letzter Ausflug war ein Dienst */
+static unsigned long rb_pm_t;           /* Kerneltakt bei der Rueckkehr  */
+static unsigned rb_ms;                  /* Rest fuer den BIOS-Takt (ms)  */
 static unsigned rb_gfx_u;               /* Grafik der Box (257 KB)       */
 static unsigned char rb_gfx;            /* ... ist gesichert             */
 #define RB_GFX_UNITS ((0x40000UL + 1024) / MEM_UNIT)
@@ -118,6 +123,10 @@ static unsigned rb_common(void)
     RBS(9 * 4 + 2) = seg;
     RBS(0xE0 * 4) = rbs_inte0_off;
     RBS(0xE0 * 4 + 2) = seg;
+    RBW(82) = RBS(8 * 4);                   /* INT 8: Takt-Ausfluege */
+    RBW(84) = RBS(8 * 4 + 2);
+    RBS(8 * 4) = rbs_int8_off;
+    RBS(8 * 4 + 2) = seg;
     RBW(66) = RBS(0x15 * 4);                /* INT 15h: Tasten (4Fh), */
     RBW(68) = RBS(0x15 * 4 + 2);            /* kein erweiterter Speicher */
     RBS(0x15 * 4) = rbs_int15_off;
@@ -252,6 +261,8 @@ void __far rb_free(void)
     rb_task = -1;
     rb_kind = 0;
     rb_quiet = 0;
+    rb_pm_t = 0;
+    rb_ms = 0;
     if (vio_frozen) {                       /* RBOX mitten im Dienst beendet */
         vio_frozen = 0;
         kf_vio_rehw();
@@ -364,6 +375,43 @@ static unsigned long rtc_secs(void)
     return t + m * 60 + sec;
 }
 
+/* vor jedem Eintritt: (1) Zeit, die AT-DOS seit der letzten Rueckkehr
+   lief, auf den BIOS-Takt der Box (sonst ginge ihre Uhr nach; 10 ms je
+   Kerneltakt, 54,9 ms je BIOS-Takt); (2) IRQs der AT-DOS-Treiber im PIC
+   der Box maskieren - kamen sie dort an, liest kf_rb_hw sie aus dem IRR
+   und holt sie nach; (3) Takte je Ausflug fuer den Stummel. */
+static void rb_entry_prep(void)
+{
+    unsigned long dt = rb_pm_t ? get_ticks() - rb_pm_t : 0;
+    unsigned n, m = 0;
+    unsigned long __far *bt;
+
+    scratch_map(0, 0xFFFF);
+    bt = (unsigned long __far *)MK_FP(SCRATCH, 0x46C);
+    while (dt) {                            /* in Stuecken: 16 Bit     */
+        unsigned k = dt > 6000 ? 6000 : (unsigned)dt;
+        dt -= k;
+        rb_ms += k * 10;
+        while (rb_ms >= 55) {
+            rb_ms -= 55;
+            if (++*bt >= 0x1800B0UL) {      /* Mitternacht            */
+                *bt = 0;
+                RBB(0x470) = 1;
+            }
+        }
+    }
+    for (n = 3; n < 16; n++)
+        if (irq_hcs[n])
+            m |= 1 << n;
+    rb_drvirq = m;
+    scratch_map(rb_lin, 0xFFFF);
+    RBB(28) |= (unsigned char)m;
+    RBB(29) |= (unsigned char)(m >> 8);
+    RBB(80) = rb_slice;                     /* Zaehler bei jedem Eintritt */
+    RBB(81) = rb_slice + 1;                 /* neu: der erste Takt kommt  */
+                                            /* sofort (IRQ 0 wartet)      */
+}
+
 unsigned __far rb_run(void)
 {
     unsigned r, t0, d = 0;
@@ -394,6 +442,7 @@ unsigned __far rb_run(void)
         RBB(74) = rb_quiet;                 /* Stummel: Bild steht noch */
         if (rb_quiet)
             rb_keys();
+        rb_entry_prep();
         scratch_map(0, 0xFFFF);
         t0 = RBW(0x46C);                    /* BIOS-Takt: steht, solange
                                                AT-DOS laeuft          */
@@ -416,6 +465,12 @@ unsigned __far rb_run(void)
         uptime_s += d / 18;                 /* 55 ms je BIOS-Takt     */
         scratch_map(rb_lin, 0xFFFF);
         r = RBW(30);
+        rb_pm_t = get_ticks();              /* ab hier laeuft AT-DOS   */
+        if (r == RB_TICK) {                 /* Takt: andere Programme  */
+            rb_quiet = 1;                   /* laufen lassen, Bild bleibt */
+            kf_yield();
+            continue;
+        }
         if (r == RB_CALL && (RBW(0) >> 8) == 1) {   /* INT E0h 01h:  */
             r = RB_EXIT;                    /* Box beenden, AL = Wert */
             d = RBW(0) & 0xFF;

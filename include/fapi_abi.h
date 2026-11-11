@@ -171,6 +171,7 @@ struct fapi_rbmem {
 #define RB_SWITCH           1
 #define RB_EXIT             2
 #define RB_CALL             3
+#define RB_TICK             4       /* nur im Kernel: Takt-Ausflug (RBSLICE) */
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (Taskmanager, wie 6.0) */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
@@ -421,7 +422,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_FIRST      0xFFF0
 
-#define FAPI_VERSION        0x0500
+#define FAPI_VERSION        0x050A  /* 5.10 (Nebenversion dezimal) */
 #define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
 #define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */

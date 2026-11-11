@@ -214,7 +214,7 @@ puts:   lodsb
 .done:  ret
 
 kname     db "ATDOS   SYS"
-msg_load  db "AT-DOS 5.0 wird geladen", 13, 10, 0
+msg_load  db "AT-DOS 5.1 wird geladen", 13, 10, 0
 msg_nokrn db "ATDOS.SYS fehlt", 0
 msg_err   db "Lesefehler", 0
 

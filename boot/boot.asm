@@ -164,7 +164,7 @@ putc:   push    bx
 
 lba     dw 1
 nsect   dw 0
-msg_load db "AT-DOS 5.0 wird geladen", 0
+msg_load db "AT-DOS 5.1 wird geladen", 0
 msg_err  db 13, 10, "Diskettenfehler!", 0
 msg_nosys db "Keine Systemdiskette - wechseln und Taste dr", 0x81, "cken", 13, 10, 0
 kname    db "ATDOS   SYS"

@@ -27,7 +27,7 @@ das Release `v5.0`; `5.x` = 5.1 in Arbeit, CI veröffentlicht das
 Vorab-Release `v5.1` (vorher überschrieb 5.x die Abbilder von v5.0 – vom
 Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
 
-## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 9 – 5.0 fertig
+## Aktueller Stand: AT-DOS 5.1 (Zweig 5.x, Kompatibilitätsbox fertig); 5.0 im Zweig 5.0
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
@@ -343,6 +343,30 @@ und prüft 448 KB – alte Disketten brauchen SYS (neuer Bootsektor); Start
 von Platte unberührt (hdboot folgt der FAT-Kette). In QEMU: Diskette
 startet, Uptime nach Box-Sitzung richtig. Vom Nutzer auf dem SCAT bestätigt (Build
 240.34): RBTIME mit vielen Alt+Esc läuft ohne Hänger.
+Stufe 5 erledigt – AT-DOS läuft weiter, während die Box vorn ist (wie OS/2
+1.x; in QEMU geprüft: XCOPY \DOS in Sitzung 2 kopiert alle 46 Dateien,
+während die Box vorn ist, Kopien gleich, fsck sauber; 2 × 30 Alt+Esc mit
+LOOP.COM ohne Hänger): der Stummel hängt sich in INT 8 (`rbs_int8`, alter
+Vektor in Byte 82): BIOS-Takt zuerst, dann je [80] Takte (`RBSLICE=n` in
+CONFIG.SYS, Vorgabe 2, 0 = aus) ein Ausflug mit Grund 4 (`RB_TICK`);
+rb_run gibt dann mit `kf_yield` den anderen Programmen eine Runde (gibt
+dabei die Kernelsperre ab) und kehrt ohne RBOX gleich zurück, Bild bleibt
+der Box (rb_quiet). Auf dem eigenen Stapel des Stummels wird ein Takt-
+Ausflug einfach ausgelassen. Lehre: den Zähler [81] nur bei 0 neu setzen
+reichte nicht – nach jedem Eintritt wartet sofort ein IRQ 0, die Box kam
+zwischen zwei Ausflügen kaum voran (FreeDOS blieb beim Start stehen);
+jetzt setzt `rb_entry_prep` ihn bei jedem Eintritt auf slice + 1.
+`rb_entry_prep` addiert außerdem die Zeit, die AT-DOS seit der letzten
+Rückkehr lief, auf den BIOS-Takt der Box (10 ms je Kerneltakt, Rest in
+`rb_ms`, Mitternacht -> 470h) und maskiert die IRQs der AT-DOS-Treiber
+(`irq_hcs`) im PIC der Box; kf_rb_hw liest nach der Rückkehr das IRR
+beider PICs vor der Neueinstellung und ruft für jedes Treiber-IRQ dessen
+Routine über `irq_replay` (start.asm, wie irq_common ohne EOI) – sonst
+gingen die Interrupts von IDE/NCR/SB16 an die BIOS-Routinen der Box.
+Versionsangaben jetzt 5.1 (VER, Titel, MSD, Bootsektoren, ATSYS),
+FAPI_VERSION 050Ah (VER zeigt die Nebenversion dezimal: „5.10“).
+Kosten: auch ohne Hintergrundarbeit ~9 Ausflüge/s (CMD-Sitzungen warten
+mit sleep_ticks) – auf dem 286 einige Prozent; dann `RBSLICE=0`.
 
 - **Alles 16 Bit.** Kein 32-Bit-Code, kein Flat Memory – das kommt erst mit DOS 7.0.
 - **Nur 286-Befehle.** NASM-Dateien beginnen mit `cpu 286`, Watcom baut mit `-2`.

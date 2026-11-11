@@ -688,6 +688,34 @@ irq_common:
         pop     ax
         iret
 
+; 5.1: void irq_replay(unsigned n) - Treiberroutine fuer IRQ n rufen wie
+; irq_common, ohne EOI: der Interrupt kam, waehrend die Box im Real Mode
+; lief (dort maskiert, rbox.c liest ihn aus dem IRR). Mit IF = 0 rufen.
+global irq_replay_
+irq_replay_:
+        push    bx
+        push    ds
+        push    es
+        mov     bx, KDATA
+        mov     ds, bx
+        mov     es, bx
+        mov     bx, ax
+        add     bx, bx
+        cmp     word [_irq_hcs+bx], 0
+        je      .out
+        push    cx
+        mov     cx, [_irq_hoff+bx]
+        mov     [ic_ptr], cx
+        mov     cx, [_irq_hcs+bx]
+        mov     [ic_ptr+2], cx
+        pop     cx
+        mov     ds, [_irq_hds+bx]
+        call    far [es:ic_ptr]
+.out:   pop     es
+        pop     ds
+        pop     bx
+        ret
+
 ; IRQ 2 (Kaskade): maskiert, nur fuer den Fall der Faelle
 irq_other:
         push    ax
@@ -1159,7 +1187,8 @@ code_end:
 ; nach einem Dienst (Bildschirm unveraendert, nicht neu einstellen), 76 287
 ; vorhanden, 77 287-Zustand der Box bei 1C40h gesichert (94 Byte), 78
 ; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
-; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel).
+; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
+; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8. Grund 4 = Takt.
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1509,6 +1538,22 @@ rbs_int15:
         pop     bp
         iret
 
+rbs_int8:                               ; Takt: BIOS zaehlt, dann je
+        pushf                           ; [80] Takte ein Ausflug zu AT-DOS
+        call    far [cs:82]             ; (Stufe 5: Hintergrund laeuft)
+        cmp     byte [cs:80], 0
+        je      .ret
+        dec     byte [cs:81]
+        jnz     .ret
+        push    ax
+        mov     al, [cs:80]
+        mov     [cs:81], al
+        pop     ax
+        cli
+        mov     word [cs:30], 4
+        jmp     rbs_topm
+.ret:   iret
+
 rbs_int20:                              ; Programm zu Ende
         cli
         mov     word [cs:30], 2
@@ -1528,11 +1573,13 @@ rbs_topm:                               ; Stapel: IP, CS, FLAGS der Box
         pop     bx
         pop     ax
         jne     .box
+        cmp     word [cs:30], 4         ; Takt-Ausflug: einfach auslassen
+        je      .skip
         push    ax
         mov     al, [cs:30]
         mov     [cs:79], al
         pop     ax
-        iret
+.skip:  iret
 .box:   mov     [cs:0], ax
         mov     [cs:2], bx
         mov     [cs:4], cx
@@ -1685,7 +1732,7 @@ rb_noidt: dw 0, 0, 0                    ; Grenze 0: jeder Interrupt -> #DF
 global _rb_fault
 _rb_fault: db 0
 global _rbs_code, _rbs_len, _rbs_entry_off, _rbs_int9_off, _rbs_int20_off, _rbs_inte0_off
-global _rbs_int13_off, _rbs_int15_off
+global _rbs_int13_off, _rbs_int15_off, _rbs_int8_off
 _rbs_code:      dw rbs_code
 _rbs_len:       dw rbs_end - rbs_code
 _rbs_entry_off: dw RBO(rbs_entry)
@@ -1694,6 +1741,7 @@ _rbs_int20_off: dw RBO(rbs_int20)
 _rbs_inte0_off: dw RBO(rbs_inte0)
 _rbs_int13_off: dw RBO(rbs_int13)
 _rbs_int15_off: dw RBO(rbs_int15)
+_rbs_int8_off:  dw RBO(rbs_int8)
 
 global _kcode_size
 _kcode_size: dw code_end                ; Codegroesse (Offset in CGROUP)
