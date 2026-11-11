@@ -101,6 +101,14 @@ eigenen Stapel schaltet; dann sicherte der Ausflug den halben Stummel als
 Zustand der Box. Jetzt Merker [78] (gesetzt am Anfang von rbs_entry,
 gelöscht direkt vor dem IRET in die Box). Danach in Bochs mehrere Minuten
 DIR-Schleife mit 30 Wechseln ohne Absturz.
+Vom Nutzer auf dem SCAT bestätigt: oft mitten im DIR umgeschaltet, kein
+Absturz. COMSPEC der Box (Wunsch des Nutzers, wie 6.0): COMMAND.COM liegt
+jetzt auch in `X:\DOS\BOX` (BOXFILES); RBOX `boot_drv` (Startlaufwerk aus
+COMSPEC, nur wenn die Datei dort liegt) -> INT E0h 13h, RBSHELL startet
+FreeCOM von dort (`shellx`/`tailx`), drive_mask meldet dann auch A:/B:
+(die Disketten von AT-DOS über den Redirector); sonst wie bisher vom
+Abbild. In QEMU geprüft (COMSPEC=C:\DOS\BOX\COMMAND.COM, TYPE/DIR A:
+auf einer AT-DOS-Diskette; ohne die Datei Start vom Abbild).
 
 ## Zweige und Releases (5.x)
 

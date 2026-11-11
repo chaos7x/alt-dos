@@ -14,7 +14,9 @@
  * Kernel sie.
  *
  * Weitere INT-E0h-Dienste: 11h SDA ist DS:SI, 12h -> DX:AX Laufwerke,
- * 14h aktuelles Verzeichnis von RBOX (8.3) nach ES:DI, leer bei A:/B:,
+ * 13h Startlaufwerk (AL = Buchstabe, 0 = X:\DOS\BOX\COMMAND.COM fehlt:
+ * dann bleibt A: das Abbild), 14h aktuelles Verzeichnis von RBOX (8.3)
+ * nach ES:DI (leer bei A:/B:, wenn die Box sie nicht ueberlaesst),
  * 15h aktive Tastaturbelegung von AT-DOS (270 Byte: ohne Umschalt, mit
  * Umschalt, mit AltGr, je Scancode 00h-59h) nach ES:DI -> AX = 0.
  *
@@ -519,12 +521,36 @@ static int op(unsigned fn)
     return -1;                                  /* nicht unser           */
 }
 
-/* AT-DOS-Laufwerke ab C: als Bitmaske (A:/B: hat die Box selbst) */
+/* Startlaufwerk (aus COMSPEC), wenn dort \DOS\BOX\COMMAND.COM liegt -
+   dann startet RBSHELL FreeCOM von dort, und A:/B: der Box sind die
+   Disketten von AT-DOS (wie in 6.0); sonst 0, A: bleibt das Abbild */
+static char boot_drv(void)
+{
+    static char cs[FAPI_PATHLEN];
+    static char done, drv;
+    unsigned h;
+    if (done)
+        return drv;
+    done = 1;
+    if (FAILED(DosGetEnv("COMSPEC", cs, sizeof(cs))) || cs[1] != ':')
+        return 0;
+    cs[2] = 0;
+    scat(cs, "\\DOS\\BOX\\COMMAND.COM", sizeof(cs));
+    h = DosOpen(cs);
+    if (FAILED(h))
+        return 0;
+    DosClose(h);
+    drv = up(cs[0]);
+    return drv;
+}
+
+/* AT-DOS-Laufwerke als Bitmaske - A:/B: nur, wenn die Box ihr Abbild nach
+   dem Start nicht mehr braucht (boot_drv) */
 static unsigned long drive_mask(void)
 {
     unsigned long m = 0;
     unsigned d, r;
-    for (d = 2; d < 26; d++) {
+    for (d = boot_drv() ? 0 : 2; d < 26; d++) {
         r = DosQFSInfo(d, &fsi);
         if (!FAILED(r) || r == FAPI_ERR_NOTREADY)
             m |= 1UL << d;
@@ -565,10 +591,14 @@ static void box_call(void)
         rg.ax = (unsigned)m;
         rg.dx = (unsigned)(m >> 16);
         break;
+    case 0x13:                                  /* Startlaufwerk, AL       */
+        rg.ax = (unsigned char)boot_drv();
+        break;
     case 0x14: {                                /* aktuelles Verzeichnis  */
         static char cd[FAPI_CURDIRLEN];         /* von RBOX nach ES:DI    */
-        if (FAILED(DosQCurDir(cd)) || up(cd[0]) < 'C' || slen(cd) > 127)
-            cd[0] = 0;                          /* A:/B: hat die Box selbst */
+        if (FAILED(DosQCurDir(cd)) || slen(cd) > 127 ||
+            (up(cd[0]) < 'C' && !boot_drv()))
+            cd[0] = 0;                          /* A:/B: ist das Abbild    */
         poke(lin(rg.es, rg.di), cd, slen(cd) + 1);
         break;
     }

@@ -11,8 +11,9 @@
 ; INT E0h (nur in der Box): AH=01h Box beenden, AL = Rueckgabewert;
 ; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis); AH=11h SDA
 ; ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke; AH=14h
-; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI (leer bei
-; A:/B:) - FreeCOM beginnt dort; AH=15h Tastaturbelegung von AT-DOS
+; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI - FreeCOM
+; beginnt dort; AH=13h -> AL = Startlaufwerk (FreeCOM aus X:\DOS\BOX, A:/B:
+; sind dann die Disketten von AT-DOS) oder 0 (vom Abbild A:); AH=15h Tastaturbelegung von AT-DOS
 ; (3 x 90 Zeichen) nach ES:DI -> AX = 0.
 cpu 8086
 org 0x100
@@ -45,6 +46,15 @@ start:
         mov     [pb_fcb1 + 2], ax
         mov     [pb_fcb2 + 2], ax
         mov     dx, shell
+        mov     ah, 0x13                        ; Startlaufwerk: FreeCOM aus
+        int     0xE0                            ; X:\DOS\BOX (A:/B: sind dann
+        test    al, al                          ; die Disketten von AT-DOS),
+        jz      .abbild                         ; sonst vom Abbild (A:)
+        mov     [shellx], al
+        mov     [tailx + 2], al
+        mov     word [pb_tail], tailx
+        mov     dx, shellx
+.abbild:
         mov     bx, pblock
         mov     ax, 0x4B00
         int     0x21
@@ -307,6 +317,8 @@ dmask:  dd      0
 old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0
 tail:   db      12, " A:\ /E:1024", 13
+shellx: db      "C:\DOS\BOX\COMMAND.COM", 0
+tailx:  db      20, " C:\DOS\BOX\ /E:1024", 13
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers
 pb_tail: dw     tail, 0
