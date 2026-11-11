@@ -130,6 +130,24 @@ und später 32 Bit) – auf 5.x und main gleich. Alte Platten: Inhalt von
 `\DOS\BOX` nach `\DOS\MDOS` verschieben.
 MEM im Stil des FreeDOS-MEM (Tabelle Größe/Anteil, /C), gleiche Quelle
 wie main (`#ifdef MEMINFO_V60` für 32 Bit und DOS-Boxen).
+Maus in der Box (Wunsch des Nutzers, Weg 1 abgestimmt): CuteMouse 2.1b4
+(github.com/FDOS/mouse dd26852, GPL) mit JWasm (selbst gebaut, Erlaubnis
+des Nutzers) + `wlink format dos com` -> freedos/CTMOUSE.COM, Bau in
+tools/ctmouse.sh (Gross/klein-Links, drei Anpassungen an das strengere
+JWasm). Falle: `jwasm -bin` taugt nicht – CuteMouse legt uninitialisierte
+Variablen über PSP und Startsprung, -bin schreibt dort Nullen und lässt
+die Daten falsch liegen (lief, gab aber nichts aus); OMF + wlink wie
+früher tlink/exe2bin. Kernel rb_entry_prep: IRQ 3/4/12 nicht mehr im
+Box-PIC maskiert (gehören vorn der Box). RBOX INT E0h 16h: MouOpen ->
+AX = Tasten (die Sitzung behält die Maus, keine Konsolenmaus über dem
+Box-Bild), BL = 'P'/'1'/'2' aus den freigegebenen IRQs (DosSysInfo
+irq_used: 12 PS/2, 4 COM1, 3 COM2); RBSHELL `mouse_load` startet
+X:\DOS\MDOS\CTMOUSE.COM mit /P bzw. /S1//S2 (ohne Schalter nahm
+CuteMouse in QEMU den PS/2-Anschluss statt der seriellen Maus von
+MOUSE.SYS). In QEMU mit `-serial msmouse` + MOUSE.SYS /COM1 geprüft:
+INT 33h Reset 3 Tasten, Version 7.05, Bewegung, Klick, Rückruf; danach
+MAUSTEST in AT-DOS geht. PS/2 nur in 86Box prüfbar (QEMU ohne Bildschirm
+schickt der PS/2-Maus keine Bewegungen).
 
 ## Zweige und Releases (5.x)
 

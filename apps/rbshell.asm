@@ -64,6 +64,9 @@ start:
         mov     word [pb_tail], tailx
         mov     dx, shellx
 .abbild:
+        push    dx
+        call    mouse_load                      ; CuteMouse, wenn AT-DOS
+        pop     dx                              ; eine Maus hat
         mov     bx, pblock
         mov     ax, 0x4B00
         int     0x21
@@ -97,6 +100,51 @@ start:
 
 endmsg: db      13, 10, "RBSHELL: COMMAND.COM beendet (Code ungleich 0)."
         db      " Taste beendet die Box.$"
+
+; ---- Maus: CuteMouse aus X:\DOS\MDOS (nur mit COMMAND.COM von dort) ------
+; In der Box gehoert die Maus, solange sie vorn ist, CuteMouse (der Kernel
+; maskiert IRQ 3/4/12 dort nicht); INT E0h 16h -> AX = Tasten der Maus von
+; AT-DOS, 0 = keine.
+mouse_load:
+        cmp     word [pb_tail], tailx           ; nur mit X:\DOS\MDOS
+        jne     .no
+        mov     ah, 0x16
+        int     0xE0
+        test    ax, ax
+        jz      .no
+        mov     di, ctmtail + 1                 ; BL: Anschluss wie MOUSE.SYS
+        cmp     bl, 'P'                         ; (sonst sucht CuteMouse selbst
+        jne     .ser                            ; und nimmt zuerst PS/2)
+        mov     word [di], ' /'
+        mov     word [di + 2], 'P' | 13 << 8
+        mov     byte [ctmtail], 3
+        jmp     short .go
+.ser:   test    bl, bl
+        jz      .go
+        mov     word [di], ' /'
+        mov     byte [di + 2], 'S'
+        mov     [di + 3], bl
+        mov     byte [di + 4], 13
+        mov     byte [ctmtail], 4
+.go:    mov     al, [shellx]
+        mov     [ctm], al
+        mov     ax, [pb_tail]
+        push    ax
+        mov     word [pb_tail], ctmtail
+        mov     ax, cs
+        mov     es, ax
+        mov     dx, ctm
+        mov     bx, pblock
+        mov     ax, 0x4B00
+        int     0x21
+        mov     ax, cs                          ; nach EXEC: SS:SP gueltig
+        mov     es, ax                          ; (DOS 2+ stellt sie her)
+        pop     ax
+        mov     [pb_tail], ax
+.no:    ret
+
+ctm:    db      "C:\DOS\MDOS\CTMOUSE.COM", 0
+ctmtail: db     0, 13, 0, 0, 0, 0
 
 ; ---- Redirector ----------------------------------------------------------
 redir_install:

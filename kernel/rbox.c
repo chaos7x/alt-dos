@@ -411,7 +411,9 @@ static void rb_entry_prep(void)
     for (n = 3; n < 16; n++)
         if (irq_hcs[n])
             m |= 1 << n;
-    rb_drvirq = m;
+    m &= ~((1u << 3) | (1u << 4) | (1u << 12));  /* Maus (seriell, PS/2): */
+    rb_drvirq = m;                          /* gehoert vorn der Box, ihr  */
+                                            /* CuteMouse bedient sie     */
     scratch_map(rb_lin, 0xFFFF);
     RBB(28) |= (unsigned char)m;
     RBB(29) |= (unsigned char)(m >> 8);

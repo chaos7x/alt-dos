@@ -591,6 +591,18 @@ static void box_call(void)
         rg.ax = (unsigned)m;
         rg.dx = (unsigned)(m >> 16);
         break;
+    case 0x16: {                                /* Maus da? AX = Tasten,  */
+        static struct fapi_sysinfo si;          /* BL = Anschluss fuer    */
+        rg.ax = MouOpen();                      /* CuteMouse: 'P' PS/2,   */
+        if (FAILED(rg.ax))                      /* '1'/'2' COM, 0 selbst  */
+            rg.ax = 0;                          /* suchen. Die Sitzung    */
+        rg.bx = 0;                              /* behaelt die Maus (keine */
+        if (rg.ax && !DosSysInfo(&si))          /* Konsolenmaus); der     */
+            rg.bx = (si.irq_used >> 12) & 1 ? 'P' :     /* Anschluss nach */
+                    (si.irq_used >> 4) & 1 ? '1' :      /* den IRQs von  */
+                    (si.irq_used >> 3) & 1 ? '2' : 0;   /* MOUSE.SYS     */
+        break;
+    }
     case 0x13:                                  /* Startlaufwerk, AL       */
         rg.ax = (unsigned char)boot_drv();
         break;
