@@ -157,6 +157,27 @@ ohnehin frei (KMOVE_BASE 110000h), INT 15h/87h lehnt der Stummel ab; beim
 Eintritt (rbs_entry) jetzt auch rbs_a20 – falls das BIOS nach dem Reset
 A20 schließt. In QEMU (386-Weg) und Bochs (286-Weg, 10 Wechsel) geprüft:
 „FreeDOS verwendet die HMA“, 536 KB frei (vorher ~488).
+Box beim Start wie OS/2 1.x (Wunsch des Nutzers): CONFIG.SYS
+`PROTECTONLY=NO` -> rbox.c `rb_perm`; CMD /P fragt FAPI_RBOX `RB_PERM`
+(7) und startet `X:\DOS\RBOX.EXE /P` per EXEC_ASYNC. rb_common setzt
+`rb_hold` – rb_free gibt die 640 KB dann nicht mehr ab, ein neues RBOX
+bekommt sie ohne Prüfung. RBOX /P: INT E0h 13h liefert AH = 1 (erster
+Start) bzw. 2 (nach Strg+Alt+Entf, RBOX startet die Box dann neu, sie
+bleibt vorn); RBSHELL ruft beim ersten Mal `COMMAND.COM ... /K
+X:\DOS\MDOS\RBREADY.COM` (apps/rbready.asm, INT E0h 17h -> rb_run macht
+daraus RB_SWITCH = zurück zu AT-DOS), nach jedem Ende von COMMAND.COM
+startet RBSHELL es neu. Platz im ersten Codesegment dafür: FAPI_RBOX
+ganz nach rbox.c (`rb_fapi`, Thunk `kf_user_ok`), RBSLICE=/RBRESET=/
+PROTECTONLY= in `rb_cfg` -> 65.079 Byte.
+Lesepuffer in RBSHELL (vom Nutzer gemeldet: MEM startet in der Box sehr
+langsam): FreeDOS-MEM (kitten.c) liest MEM.DE byteweise, jedes Byte war
+ein Redirector-READ = Ausflug (286: CPU-Reset). `rd_cache`: READ mit CX
+<= 1 KB an derselben SFT (+ Handle +0Bh) innerhalb des Puffers ohne
+Ausflug, sonst 1 KB über INT E0h 10h in `cbuf` (DTA in der SDA kurz
+umgebogen, Lage in der SFT danach zurück); jeder andere Redirector-
+Aufruf verwirft ihn. In Bochs (286-Weg) MEM in unter 5 s.
+Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
+(`startup[512]`) -> 4 KB (auch auf main und 5.0).
 
 ## Zweige und Releases (5.x)
 

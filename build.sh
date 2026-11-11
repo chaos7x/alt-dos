@@ -229,6 +229,7 @@ DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC
 # Bootsektor, KERNEL.SYS zuerst (8086-Bau), FreeCOM, RBSHELL
 echo "Box: Startabbild freedos.img"
 nasm -f bin apps/rbshell.asm -o $B/rbshell.com
+nasm -f bin apps/rbready.asm -o $B/rbready.com
 nasm -f bin apps/rbhma.asm -o $B/rbhma.sys
 rm -f $B/freedos.img
 mformat -i $B/freedos.img -C -f 360 -B freedos/fat12com.bin -v FREEDOS ::
@@ -237,7 +238,7 @@ for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
 done
 mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
 mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
-BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"

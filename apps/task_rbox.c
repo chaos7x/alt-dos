@@ -106,11 +106,18 @@ void main(void)
     a = skip(args);
     if (a[0] == '/' && a[1] == '?') {
         puts("Startet DOS in der Kompatibilit\x84tsbox (Real Mode).\r\n\r\n"
-             "RBOX [Abbild.IMG | Datei.COM]\r\n\r\n"
+             "RBOX [/P] [Abbild.IMG | Datei.COM]\r\n\r\n"
              "Ohne Angabe startet FreeDOS aus \\DOS\\MDOS\\FREEDOS.IMG des\r\n"
              "Startlaufwerks. Alt+Esc wechselt zu den anderen Sitzungen,\r\n"
-             "Strg+Alt+Entf beendet die Box.\r\n");
+             "Strg+Alt+Entf beendet die Box.\r\n\r\n"
+             "/P: Box beim Start (PROTECTONLY=NO in CONFIG.SYS, wie OS/2 1.x):\r\n"
+             "nach dem ersten Prompt zur\x81" "ck zu AT-DOS, EXIT und\r\n"
+             "Strg+Alt+Entf starten sie neu.\r\n");
         return;
+    }
+    if (a[0] == '/' && (a[1] == 'P' || a[1] == 'p')) {  /* PROTECTONLY=NO */
+        rb_perm = 1;                    /* (CMD /P startet RBOX /P)      */
+        a = skip(a + 2);
     }
     if (!*a) {                          /* Startlaufwerk aus COMSPEC */
         if (FAPI_FAILED(DosGetEnv("COMSPEC", path, sizeof(path))) || path[1] != ':')
@@ -135,6 +142,7 @@ void main(void)
         l += 4;
     }
     e = l >= 4 ? a + l - 4 : a;
+again:
     if (same(e, ".COM"))
         load_com(a);
     else
@@ -156,6 +164,11 @@ void main(void)
         DosExit(255);
     }
     l = r >> 8;                         /* Grund (RBSHELL, Kernel)   */
+    if (rb_perm && (l == 0xFF || (l >= 0xE0 && l < 0xE8))) {
+        puts("Box mit Strg+Alt+Entf zur\x81" "ckgesetzt, startet neu.\r\n");
+        rb_perm = 2;                    /* RBSHELL: ohne RBREADY, die */
+        goto again;                     /* Box bleibt vorn (OS/2 1.x) */
+    }
     if (l >= 0xE0 && l < 0xE8) {        /* Weg im Stummel (Fehlersuche) */
         puts("Box mit Strg+Alt+Entf beendet (Weg ");
         put_num(l & 7, 0, 0);

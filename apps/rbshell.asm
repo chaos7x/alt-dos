@@ -48,10 +48,13 @@ start:
         mov     dx, shell
         mov     ah, 0x13                        ; Startlaufwerk: FreeCOM aus
         int     0xE0                            ; X:\DOS\MDOS (A:/B: sind dann
+        mov     [perm], ah                      ; AH = 1: PROTECTONLY=NO
         test    al, al                          ; die Disketten von AT-DOS),
         jz      .abbild                         ; sonst vom Abbild (A:)
         mov     [shellx], al
         mov     [tailx + 2], al
+        mov     [tailk + 2], al
+        mov     [tailk + 26], al
         mov     [env1], al                      ; Umgebung fuer FreeCOM: PATH
         mov     [env2], al                      ; beginnt mit X:\DOS\MDOS (MEM
         mov     [env3], al                      ; von FreeDOS), deutsche MEM-
@@ -67,7 +70,12 @@ start:
         push    dx
         call    mouse_load                      ; CuteMouse, wenn AT-DOS
         pop     dx                              ; eine Maus hat
-        mov     bx, pblock
+        cmp     byte [perm], 1                  ; Box beim Start (OS/2 1.x):
+        jne     .exec                           ; nach dem ersten Prompt
+        cmp     word [pb_tail], tailx           ; meldet RBREADY.COM "bereit",
+        jne     .exec                           ; AT-DOS kommt nach vorn
+        mov     word [pb_tail], tailk
+.exec:  mov     bx, pblock
         mov     ax, 0x4B00
         int     0x21
         jnc     .ran
@@ -77,8 +85,23 @@ start:
 .e:     or      al, 0xD0
         jmp     .done
 .ran:
+        push    cs
+        pop     ds
         mov     ah, 0x4D                        ; AH = Art des Endes: 0 EXIT,
         int     0x21                            ; 1 Strg+C, 2 kritischer
+        cmp     byte [perm], 0                  ; Box bleibt (wie OS/2 1.x):
+        je      .noperm                         ; EXIT startet COMMAND.COM
+        push    cs                              ; neu, ohne RBREADY
+        pop     es
+        cmp     word [pb_tail], tailk
+        jne     .again
+        mov     word [pb_tail], tailx
+.again: mov     dx, shell
+        cmp     word [pb_tail], tail
+        je      .exec
+        mov     dx, shellx
+        jmp     .exec
+.noperm:
         test    ah, ah                          ; Fehler/Absturz, 3 TSR ->
         jz      .done                           ; RBOX meldet F0h + Art
         mov     al, ah
@@ -151,6 +174,8 @@ redir_install:
         push    ds
         mov     ax, 0x5D06              ; DS:SI = SDA
         int     0x21
+        mov     [cs:sda], si            ; fuer den Lesepuffer
+        mov     [cs:sda + 2], ds
         mov     ah, 0x11                ; RBOX melden
         int     0xE0
         pop     ds
@@ -204,7 +229,13 @@ int2f:  cmp     ah, 0x11
         iret
 .op:    cmp     al, 0x23                ; Namen pruefen: fuer jeden Pfad,
         je      .chain                  ; nie unser (spart einen Ausflug)
-        push    ax
+        cmp     al, 0x08                ; READ: Lesepuffer (rd_cache)
+        jne     .inval
+        cmp     cx, CSZ
+        ja      .inval
+        jmp     rd_cache
+.inval: mov     byte [cs:cvalid], 0     ; alles andere: Puffer verwerfen
+.pass:  push    ax
         mov     ah, 0x10
         int     0xE0                    ; RBOX: ZF=1 erledigt
         jnz     .not
@@ -214,6 +245,130 @@ int2f:  cmp     ah, 0x11
         retf    2                       ; CF von RBOX zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+
+; ---- Lesepuffer fuer kleine READs ----------------------------------------
+; Jeder Redirector-Aufruf ist ein Ausflug zu AT-DOS (beim 286 mit CPU-
+; Reset). Programme, die byteweise lesen (MEM von FreeDOS liest MEM.DE so,
+; 5 KB = 5.000 Ausfluege), holen sich hier 1 KB auf einmal: READ mit
+; CX <= CSZ an derselben SFT innerhalb des Puffers wird ohne Ausflug
+; bedient. Jeder andere Redirector-Aufruf (WRITE, CLOSE, ...) verwirft den
+; Puffer; die Lage steht in der SFT (+15h), Seek setzt sie dort direkt.
+CSZ     equ     1024
+rd_cache:
+        push    bx
+        push    dx
+        push    si
+        push    ds
+        mov     [cs:cwant], cx
+        mov     byte [cs:cfail], 0
+.again: cmp     byte [cs:cvalid], 0
+        je      .fill
+        cmp     di, [cs:csft]
+        jne     .fill
+        mov     bx, es
+        cmp     bx, [cs:csft + 2]
+        jne     .fill
+        mov     bx, [es:di + 0x0B]      ; Handle von RBOX
+        cmp     bx, [cs:chnd]
+        jne     .fill
+        mov     ax, [es:di + 0x15]      ; Lage - Pufferanfang
+        mov     dx, [es:di + 0x17]
+        sub     ax, [cs:cpos]
+        sbb     dx, [cs:cpos + 2]
+        jnz     .fill                   ; davor oder weit dahinter
+        cmp     ax, [cs:clen]
+        jae     .fill2                  ; hinter dem Puffer
+        mov     bx, [cs:clen]
+        sub     bx, ax                  ; BX = noch im Puffer
+        mov     cx, [cs:cwant]
+        cmp     cx, bx
+        jbe     .serve
+        cmp     word [cs:clen], CSZ     ; Puffer endet vor dem Dateiende:
+        je      .fill                   ; neu fuellen; sonst Dateiende
+        mov     cx, bx
+.serve: push    es                      ; CX Byte ab cbuf + AX in die DTA
+        push    di
+        lds     si, [cs:sda]
+        les     di, [si + 0x0C]
+        push    cs
+        pop     ds
+        mov     si, cbuf
+        add     si, ax
+        push    cx
+        cld
+        rep     movsb
+        pop     cx
+        pop     di
+        pop     es
+        add     [es:di + 0x15], cx      ; Lage weiter
+        adc     word [es:di + 0x17], 0
+        pop     ds
+        pop     si
+        pop     dx
+        pop     bx
+        clc
+        sti
+        retf    2
+.fill2: cmp     word [cs:clen], CSZ     ; Dateiende schon im Puffer: 0
+        je      .fill
+        xor     cx, cx
+        xor     ax, ax
+        jmp     short .serve
+.fill:  cmp     byte [cs:cfail], 0
+        jne     .fail
+        mov     ax, [es:di + 0x15]      ; Lage merken
+        mov     [cs:cpos], ax
+        mov     ax, [es:di + 0x17]
+        mov     [cs:cpos + 2], ax
+        lds     si, [cs:sda]            ; DTA kurz auf den Puffer
+        mov     ax, [si + 0x0C]
+        mov     [cs:cdta], ax
+        mov     ax, [si + 0x0E]
+        mov     [cs:cdta + 2], ax
+        mov     word [si + 0x0C], cbuf
+        mov     [si + 0x0E], cs
+        mov     cx, CSZ
+        mov     ax, 0x1008              ; RBOX: READ in den Puffer
+        int     0xE0
+        lds     si, [cs:sda]            ; DTA zurueck (Flags bleiben)
+        mov     ax, [cs:cdta]
+        mov     [si + 0x0C], ax
+        mov     ax, [cs:cdta + 2]
+        mov     [si + 0x0E], ax
+        jnz     .fail                   ; nicht unser
+        jc      .fail                   ; Fehler: normaler Weg meldet ihn
+        mov     ax, [cs:cpos]           ; Lage wie vorher
+        mov     [es:di + 0x15], ax
+        mov     ax, [cs:cpos + 2]
+        mov     [es:di + 0x17], ax
+        mov     [cs:clen], cx
+        mov     [cs:csft], di
+        mov     [cs:csft + 2], es
+        mov     ax, [es:di + 0x0B]
+        mov     [cs:chnd], ax
+        mov     byte [cs:cvalid], 1
+        mov     byte [cs:cfail], 1      ; zweimal fuellen: nicht noch mal
+        jmp     .again
+.fail:  mov     byte [cs:cvalid], 0
+        mov     byte [cs:cfail], 0
+        mov     cx, [cs:cwant]
+        pop     ds
+        pop     si
+        pop     dx
+        pop     bx
+        mov     ax, 0x1108
+        jmp     int2f.pass
+
+cvalid: db      0
+cfail:  db      0
+cwant:  dw      0
+clen:   dw      0
+cpos:   dd      0
+csft:   dd      0
+chnd:   dw      0
+cdta:   dd      0
+sda:    dd      0
+cbuf:   times   CSZ db 0
 
 ; ---- Tastaturbelegung wie AT-DOS (kernel/kbd.c) --------------------------
 ; RBOX liefert die aktive Belegung (KEYB GR/US/GB). Der Haken sitzt im
@@ -383,6 +538,8 @@ env2:   db      "C:\DOS", 0
 env3:   db      "C:\DOS\MDOS", 0
         db      "LANG=DE", 0, 0
 tailx:  db      21, " C:\DOS\MDOS\ /E:1024", 13
+tailk:  db      48, " C:\DOS\MDOS\ /E:1024 /K C:\DOS\MDOS\RBREADY.COM", 13
+perm:   db      0
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers
 pb_tail: dw     tail, 0

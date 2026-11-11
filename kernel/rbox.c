@@ -39,6 +39,10 @@ int __far kf_cur_ses(void);             /* ... und seine Sitzung    */
 #define current     kf_cur()
 
 int rb_task = -1;
+static unsigned char rb_perm;           /* PROTECTONLY=NO: Box beim Start */
+static unsigned char rb_hold;           /* 640 KB bleiben der Box         */
+extern unsigned char rb_fault;
+int __far kf_user_ok(unsigned sel, unsigned off, unsigned len, int write);
 static unsigned long rb_lin;
 static unsigned rb_img_u, rb_img_n;     /* Abbild: erste Einheit, Anzahl */
 static unsigned long rb_img_pos;        /* bisher geladen (Byte)         */
@@ -88,9 +92,12 @@ static unsigned rb_common(void)
         return FAPI_ERROR;
     rb_lin = ((unsigned long)mem_conv_kb << 10) - RB_SIZE;
     hi = (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT);
-    if (!mem_is_free(RB_LO, hi))
-        return FAPI_ERR_INUSE;
-    mem_reserve(RB_LO, hi);
+    if (!rb_hold) {                         /* PROTECTONLY=NO: schon da  */
+        if (!mem_is_free(RB_LO, hi))
+            return FAPI_ERR_INUSE;
+        mem_reserve(RB_LO, hi);
+        rb_hold = rb_perm;                  /* wie OS/2 1.x: bleibt fest */
+    }
     rb_task = current;
     seg = (unsigned)(rb_lin >> 4);
     scratch_map(rb_lin, 0xFFFF);            /* Real-Mode-Teil        */
@@ -243,7 +250,8 @@ void __far rb_free(void)
 
     if (rb_task < 0)
         return;
-    mem_free(RB_LO, (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT) - RB_LO);
+    if (!rb_hold)
+        mem_free(RB_LO, (unsigned)((rb_lin + RB_SIZE) / MEM_UNIT) - RB_LO);
     if (rb_img_u) {
         mem_free(rb_img_u, rb_img_n);
         rb_img_u = 0;
@@ -528,6 +536,8 @@ unsigned __far rb_run(void)
             kf_yield();
             continue;
         }
+        if (r == RB_CALL && (RBW(0) >> 8) == 0x17) /* INT E0h 17h: */
+            r = RB_SWITCH;                  /* bereit (RBREADY) -> zurueck */
         if (r == RB_CALL && (RBW(0) >> 8) == 1) {   /* INT E0h 01h:  */
             r = RB_EXIT;                    /* Box beenden, AL = Wert */
             d = RBW(0) & 0xFF;
@@ -596,4 +606,76 @@ unsigned __far rb_mem(unsigned sel, unsigned long lin, unsigned buf,
         for (i = 0; i < len; i++)
             u[i] = RBB(i);
     return 0;
+}
+
+/* FAPI_RBOX (aus fapi_inner, damit das erste Codesegment Platz behaelt) */
+unsigned __far rb_fapi(unsigned a1, unsigned a2, unsigned a3, unsigned usel)
+{
+    unsigned k;
+
+    if (a1 == RB_LOAD)
+        return kf_user_ok(a2 | 3, 0, a3, 0) ? rb_load(a2 | 3, a3) : FAPI_ERROR;
+    if (a1 == RB_BOOT)
+        return rb_boot(a2);
+    if (a1 == RB_IMG)
+        return kf_user_ok(usel, a2, a3, 0) ? rb_img(usel, a2, a3) : FAPI_ERROR;
+    if (a1 == RB_RUN) {                     /* CX = Register (RB_CALL),  */
+        if (a2) {                           /* DX = 1: vorher setzen     */
+            if (!kf_user_ok(usel, a2, sizeof(struct fapi_rbregs), 1))
+                return FAPI_ERROR;
+            if (a3)
+                rb_regs(usel, a2, 1);
+        }
+        k = rb_run();
+        if (a2 && (k & 0xFF) == RB_CALL)
+            rb_regs(usel, a2, 0);
+        return k;
+    }
+    if (a1 == RB_REGS)
+        return kf_user_ok(usel, a2, sizeof(struct fapi_rbregs), !a3) ?
+               rb_regs(usel, a2, a3) : FAPI_ERROR;
+    if (a1 == RB_MEM) {
+        struct fapi_rbmem __far *m = MK_FP(usel, a2);
+        if (!kf_user_ok(usel, a2, sizeof(*m), 0) || !m->len ||
+            !kf_user_ok(usel, m->buf, m->len, !m->write))
+            return FAPI_ERROR;
+        return rb_mem(usel, m->lin, m->buf, m->len, m->write);
+    }
+    if (a1 == RB_FREE && rb_task == current) {
+        rb_free();
+        return 0;
+    }
+    if (a1 == RB_PERM)                      /* CMD /P: Box beim Start?   */
+        return rb_perm && kmoved && rb_task < 0;
+    return FAPI_ERROR;
+}
+
+static int rb_kw(const char *l, const char *k)
+{
+    while (*k && *l == *k)
+        l++, k++;
+    return *k == 0 && *l == 0;
+}
+
+static unsigned char rb_up(char c)
+{
+    return (unsigned char)(c >= 'a' && c <= 'z' ? c - 32 : c);
+}
+
+/* CONFIG.SYS-Zeilen der Box: k = Schluesselwort (gross), v = Wert */
+int __far rb_cfg(const char *k, const char *v)
+{
+    unsigned n = 0;
+
+    if (rb_kw(k, "RBSLICE")) {              /* AT-DOS je n Takte der Box */
+        while (*v >= '0' && *v <= '9')      /* 0 = aus                   */
+            n = n * 10 + (unsigned)(*v++ - '0');
+        rb_slice = (unsigned char)n;
+    } else if (rb_kw(k, "RBRESET"))         /* KBC oder FAULT            */
+        rb_fault = rb_up(v[0]) == 'F';
+    else if (rb_kw(k, "PROTECTONLY"))       /* NO: Box beim Start laden  */
+        rb_perm = rb_up(v[0]) == 'N';       /* (wie OS/2 1.x)            */
+    else
+        return 0;
+    return 1;
 }

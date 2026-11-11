@@ -317,6 +317,8 @@ unsigned __far rb_run(void);
 void __far rb_free(void);
 unsigned __far rb_regs(unsigned sel, unsigned off, unsigned set);
 unsigned __far rb_mem(unsigned sel, unsigned long lin, unsigned buf, unsigned len, unsigned wr);
+unsigned __far rb_fapi(unsigned a1, unsigned a2, unsigned a3, unsigned usel);
+int __far rb_cfg(const char *k, const char *v);
 extern int rb_task;
 static void fpu_task_end(int t);
 static int mod_mount(int drive);
@@ -1677,6 +1679,10 @@ static int user_ok(unsigned sel, unsigned off, unsigned len, int write)
     lim = sel_limit(sel);
     return off <= lim && len - 1 <= lim - off;
 }
+int __far kf_user_ok(unsigned sel, unsigned off, unsigned len, int write)
+{
+    return user_ok(sel, off, len, write);
+}
 
 /* ---- Dateien in Benutzung ---------------------------------------------- */
 static int scmp(const char __far *a, const char *b)
@@ -2587,40 +2593,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_RBOX:                             /* 5.1: Kompatibilitaetsbox */
-        if (a1 == RB_LOAD)
-            return user_ok(a2 | 3, 0, a3, 0) ? rb_load(a2 | 3, a3) : FAPI_ERROR;
-        if (a1 == RB_BOOT)
-            return rb_boot(a2);
-        if (a1 == RB_IMG)
-            return user_ok(usel, a2, a3, 0) ? rb_img(usel, a2, a3) : FAPI_ERROR;
-        if (a1 == RB_RUN) {                 /* CX = Register (RB_CALL),  */
-            if (a2) {                       /* DX = 1: vorher setzen     */
-                if (!user_ok(usel, a2, sizeof(struct fapi_rbregs), 1))
-                    return FAPI_ERROR;
-                if (a3)
-                    rb_regs(usel, a2, 1);
-            }
-            k = rb_run();
-            if (a2 && (k & 0xFF) == RB_CALL)
-                rb_regs(usel, a2, 0);
-            return k;
-        }
-        if (a1 == RB_REGS)
-            return user_ok(usel, a2, sizeof(struct fapi_rbregs), !a3) ?
-                   rb_regs(usel, a2, a3) : FAPI_ERROR;
-        if (a1 == RB_MEM) {
-            struct fapi_rbmem __far *m = MK_FP(usel, a2);
-            if (!user_ok(usel, a2, sizeof(*m), 0) || !m->len ||
-                !user_ok(usel, m->buf, m->len, !m->write))
-                return FAPI_ERROR;
-            return rb_mem(usel, m->lin, m->buf, m->len, m->write);
-        }
-        if (a1 == RB_FREE && rb_task == current) {
-            rb_free();
-            return 0;
-        }
-        return FAPI_ERROR;
+    case FAPI_RBOX:                             /* 5.1: rbox.c (KTEXT2)  */
+        return rb_fapi(a1, a2, a3, usel);
 
     case FAPI_SYSINFO:
         if (!user_ok(usel, a1, sizeof(struct fapi_sysinfo), 1))
@@ -4868,7 +4842,7 @@ static int find_boot_vol(void)
 }
 
 /* ---- Start ------------------------------------------------------------- */
-static char startup[512];
+static char startup[4096];             /* CONFIG.SYS bis 4 KB (vorher 512) */
 
 /* Datei vom Laufwerk A: nach startup[] lesen; -> Laenge oder -1 */
 static int read_cfg(const char *name)
@@ -5160,10 +5134,8 @@ static void config_sys(void)
                 if (*q == ',')              /* dritter Wert: Hoechstgroesse */
                     cache_max = num_arg(q + 1);
             }
-        } else if (kw(line, "RBSLICE")) {      /* 5.1: AT-DOS je n Takte  */
-            rb_slice = (unsigned char)num_arg(v);   /* der Box, 0 = aus   */
-        } else if (kw(line, "RBRESET")) {      /* 5.1: KBC oder FAULT     */
-            rb_fault = up(v[0]) == 'F';
+        } else if (rb_cfg(line, v)) {          /* 5.1: RBSLICE=, RBRESET=, */
+                                                /* PROTECTONLY= (rbox.c)    */
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
         } else {

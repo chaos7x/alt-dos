@@ -160,6 +160,9 @@ struct fapi_comcfg {
                                        1 setzen (AX..ES, FLAGS ohne IF/TF) */
 #define RB_MEM              6       /* CX = struct fapi_rbmem: Speicher der
                                        Box lesen (write = 0) oder schreiben */
+#define RB_PERM             7       /* -> 1, wenn PROTECTONLY=NO und noch
+                                       keine Box laeuft (CMD /P startet dann
+                                       RBOX /P in eigener Sitzung) */
 struct fapi_rbregs {                /* Zustand der Box bei RB_CALL      */
     unsigned short ax, bx, cx, dx, si, di, bp, ds, es, sp, ss, ip, cs, flags;
 };

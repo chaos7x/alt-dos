@@ -2964,6 +2964,13 @@ void main(void)
         autochk();
         if (DosGetEnv("TEMP", pbuf, sizeof(pbuf)) != FAPI_ERROR && pbuf[0])
             DosMkDir(pbuf);             /* fehlt %TEMP%: anlegen        */
+        if (DosRBox(RB_PERM, 0, 0) == 1) {  /* PROTECTONLY=NO: Box gleich */
+            static char rb[] = "C:\\DOS\\RBOX.EXE /P";   /* starten (OS/2 1.x) */
+            if (DosGetEnv("COMSPEC", pbuf, sizeof(pbuf)) != FAPI_ERROR && pbuf[1] == ':')
+                rb[0] = pbuf[0];
+            if (DosExecPgm(rb, EXEC_ASYNC))
+                puts("PROTECTONLY=NO: RBOX.EXE l\x84\xE1t sich nicht starten.\n");
+        }
     }
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */

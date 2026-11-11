@@ -43,6 +43,7 @@
 #define SFTLEN      0x2B
 
 static struct fapi_rbregs rg;
+static unsigned char rb_perm;           /* RBOX /P: PROTECTONLY=NO      */
 static struct fapi_rbmem rm;
 static unsigned long sda_lin;
 static char p1[128], p2[128], tmpl[11];
@@ -604,7 +605,8 @@ static void box_call(void)
         break;
     }
     case 0x13:                                  /* Startlaufwerk, AL       */
-        rg.ax = (unsigned char)boot_drv();
+        rg.ax = (unsigned char)boot_drv() | (unsigned)rb_perm << 8;  /* AH = 1: Box */
+                                                /* bleibt (RBREADY, EXIT) */
         break;
     case 0x14: {                                /* aktuelles Verzeichnis  */
         static char cd[FAPI_CURDIRLEN];         /* von RBOX nach ES:DI    */

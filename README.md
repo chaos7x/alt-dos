@@ -174,7 +174,13 @@ und PC-DOS.
   der Box zeigt den DOS-Speicher, MEM in AT-DOS den eigenen; die Maus
   bedient in der Box CuteMouse (FreeDOS, dieselbe Maus wie MOUSE.SYS,
   PS/2 oder seriell), solange die Box vorn ist; FreeDOS liegt in der HMA
-  (`RBHMA.SYS`, rund 536 KB frei) – AT-DOS steht, solange sie vorn ist; Alt+Esc wechselt
+  (`RBHMA.SYS`, rund 536 KB frei); kleine Lesezugriffe über die
+  Netzlaufwerke puffert RBSHELL (1 KB je Ausflug statt eines Bytes – MEM
+  von FreeDOS startet dadurch schnell). Mit `PROTECTONLY=NO` in der
+  CONFIG.SYS lädt AT-DOS die Box wie OS/2 1.x gleich beim Start (die
+  640 KB bleiben ihr fest, CMD /P startet `RBOX /P` in eigener Sitzung,
+  nach dem ersten Prompt geht es von selbst zurück zu AT-DOS; Alt+Esc
+  wechselt danach sofort, EXIT und Strg+Alt+Entf starten sie neu) – AT-DOS steht, solange sie vorn ist; Alt+Esc wechselt
   zurück in die Sitzungen und wieder hinein, EXIT oder Strg+Alt+Entf
   beendet sie. Die AT-DOS-Laufwerke ab C: erscheinen in der Box als
   Netzlaufwerke (RBOX erledigt die Zugriffe); Platten direkt und der
