@@ -547,6 +547,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   bei `sig_pending & sig_mask` zurückkehren (KbdCharIn tut es).
   `end_programs()` (SHUTDOWN, Strg+Alt+Entf): SIG_SHUTDOWN, bis 5 s warten,
   Rest mit `task_end` beenden.
+- CONFIG.SYS bis 4 KB (`startup[4096]`; vorher 512 Byte – eine längere
+  Datei wurde ganz übergangen, Start ohne Treiber). In QEMU geprüft.
 - Handles (kernel.c): Einträge der Dateitabelle zählen Verweise (`refs`),
   Eintrag 0 (`CONS`) ist die Konsole, `OF_FILE/OF_PRD/OF_PWR/OF_CON`.
   Programm-Handles 0–2 zeigen über `task.std[]` auf Einträge, eigene ab 3

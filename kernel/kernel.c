@@ -4674,7 +4674,7 @@ static int find_boot_vol(void)
 }
 
 /* ---- Start ------------------------------------------------------------- */
-static char startup[512];
+static char startup[4096];             /* CONFIG.SYS bis 4 KB (vorher 512) */
 
 /* Datei vom Laufwerk A: nach startup[] lesen; -> Laenge oder -1 */
 static int read_cfg(const char *name)
