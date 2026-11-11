@@ -214,6 +214,10 @@ Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
 
 ## Aktueller Stand: AT-DOS 5.1 fertig (Zweig 5.x, Release v5.1); 5.0 im Zweig 5.0
 
+Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
+abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
+(Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
+
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
 nachtragen, im selben Commit.
