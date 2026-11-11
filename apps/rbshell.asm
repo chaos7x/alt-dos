@@ -61,9 +61,23 @@ start:
         jz      .done                           ; RBOX meldet F0h + Art
         mov     al, ah
         or      al, 0xF0
-.done:  mov     ah, 1                           ; Box beenden, AL = Code
+.done:  test    al, al                          ; nicht per EXIT 0 beendet:
+        jz      .quit                           ; anhalten, damit die Meldung
+        push    ax                              ; von FreeDOS (z. B. Invalid
+        push    cs                              ; Opcode) lesbar bleibt
+        pop     ds
+        mov     dx, endmsg
+        mov     ah, 9
+        int     0x21
+        xor     ah, ah
+        int     0x16
+        pop     ax
+.quit:  mov     ah, 1                           ; Box beenden, AL = Code
         int     0xE0
         jmp     $
+
+endmsg: db      13, 10, "RBSHELL: COMMAND.COM beendet (Code ungleich 0)."
+        db      " Taste beendet die Box.$"
 
 ; ---- Redirector ----------------------------------------------------------
 redir_install:

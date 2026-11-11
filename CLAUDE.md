@@ -38,6 +38,10 @@ Ergebnis auf dem SCAT: Meldung ohne „(Weg n)“, also Wert FFh = RBSHELL
 selbst – EXEC von A:\COMMAND.COM war gescheitert (nicht der Stummel).
 RBSHELL gibt jetzt D0h + DOS-Fehler zurück, RBOX nennt ihn (in QEMU mit
 einem Abbild ohne COMMAND.COM geprüft: „DOS-Fehler 2“).
+Auch damit weiter FFh: FreeCOM startet und endet mit 255 (so beendet
+der FreeDOS-Kern ein Programm nach einer CPU-Ausnahme, z. B. Invalid
+Opcode). RBSHELL hält jetzt bei jedem Ende mit Code ungleich 0 an
+(Meldung + Taste), damit der Bildschirm der Box lesbar bleibt.
 
 ## Zweige und Releases (5.x)
 
