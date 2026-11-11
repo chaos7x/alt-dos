@@ -1093,6 +1093,11 @@ static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n
     } else {
         if (clen >= IFS_NAMELEN)
             return IFS_ERR;
+        for (i = 0; i < clen; i++)      /* in langen Namen verboten       */
+            if ((unsigned char)o[i] < ' ' || o[i] == '"' || o[i] == '*' ||
+                o[i] == '?' || o[i] == '/' || o[i] == ':' || o[i] == '<' ||
+                o[i] == '>' || o[i] == '|' || o[i] == '\\')
+                return IFS_ERR;
         gen_short(d, dc, o, n83);       /* VFAT und EA: Kurzname NAME~n   */
     }
     for (i = 0; i < clen; i++)

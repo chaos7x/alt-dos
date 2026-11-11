@@ -699,6 +699,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   behält die Attribute (vom Nutzer gemeldet: Kopien von CD waren alle
   schreibgeschützt – ISO9660.IFS meldet jede Datei mit R). COPY, MOVE und
   FM übernehmen ohnehin keine Attribute.
+  Ziel mit Platzhaltern (vom Nutzer gemeldet: `XCOPY … C:\X\*.*` legte
+  ein Verzeichnis `*.*` an, MD ebenso): XCOPY nimmt das Verzeichnis davor,
+  `*.BAK` u. Ä. gilt als Muster für die Namen (`apply_pat`, namepat.h);
+  fat.c `name_for` lehnt `"*?/:<>|\` und Steuerzeichen in langen Namen ab
+  (8.3 prüfte to83 schon). MD meldet wie MS-DOS „Verzeichnis kann nicht
+  erstellt werden“. In QEMU geprüft.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
