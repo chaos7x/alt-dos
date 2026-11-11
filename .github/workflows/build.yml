@@ -51,19 +51,15 @@ jobs:
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
             --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. dos5.img: Diskette A: in 86Box, beliebige 286-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
-      - name: Release "v5.0" veroeffentlichen (Zweig 5.x)
+      - name: Release "v5.1" veroeffentlichen (Zweig 5.x, in Arbeit)
         if: github.ref == 'refs/heads/5.x' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
-          if gh release view v5.0 >/dev/null 2>&1; then
-            gh release upload v5.0 build/dos5.img build/atdos-hd.zip --clobber
-            BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
-            gh release edit v5.0 --title "AT-DOS 5.0, Build $BNO"
-          else
-            gh release create v5.0 build/dos5.img build/atdos-hd.zip \
-              --target "$GITHUB_SHA" \
-              --title "AT-DOS 5.0" \
-              --notes "AT-DOS 5.0 (Meilenstein 9): 80286 Protected Mode, kooperatives Multitasking, FAPI. Lange Namen, Platten-Cache im Kernel, Stapelsprache wie MS-DOS 6.22/OS/2, Dateimanager FM, EDIT, LESS, GREP und Textwerkzeuge nach GNU, 287 je Task, Joliet-CDs, gemeinsame Codesegmente, FAPI-Programme auch unter MS-DOS, Ton (SB16.SYS: Sound Blaster 1.0 bis AWE, FM-Synthese, MPU-401; PLAY, MIXER). dos5.img: startfaehige Diskette (1,44 MB), beliebige 286-Maschine mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen). Lizenz GPL-2.0-or-later."
-          fi
+          BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
+          gh release delete v5.1 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v5.1 build/dos5.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "AT-DOS 5.1 (in Arbeit), Build $BNO" \
+            --notes "AT-DOS 5.1 in Arbeit (Zweig 5.x): 5.0 plus Kompatibilitaetsbox - FreeDOS im echten Real Mode (RBOX), AT-DOS-Laufwerke, Tastaturbelegung, Alt+Esc. Abbilder wie bei 5.0. Das fertige 5.0 steht im Release v5.0 (Zweig 5.0)."

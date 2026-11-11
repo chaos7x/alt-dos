@@ -20,6 +20,13 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+## Zweige und Releases (5.x)
+
+`5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), CI füllt
+das Release `v5.0`; `5.x` = 5.1 in Arbeit, CI veröffentlicht das
+Vorab-Release `v5.1` (vorher überschrieb 5.x die Abbilder von v5.0 – vom
+Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
+
 ## Aktueller Stand: AT-DOS 5.0 (80286, ~1988/89), Meilenstein 9 – 5.0 fertig
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
