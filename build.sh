@@ -241,8 +241,8 @@ copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
-    mmd $TARGET "${TO}DOS/BOX"
-    copy_list "$BOXFILES" "DOS/BOX/"
+    mmd $TARGET "${TO}DOS/MDOS"
+    copy_list "$BOXFILES" "DOS/MDOS/"
     copy_list "$DEMOFILES" "DEMO/"
 }
 copy_list() {

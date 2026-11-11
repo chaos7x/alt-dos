@@ -103,11 +103,11 @@ gelöscht direkt vor dem IRET in die Box). Danach in Bochs mehrere Minuten
 DIR-Schleife mit 30 Wechseln ohne Absturz.
 Vom Nutzer auf dem SCAT bestätigt: oft mitten im DIR umgeschaltet, kein
 Absturz. COMSPEC der Box (Wunsch des Nutzers, wie 6.0): COMMAND.COM liegt
-jetzt auch in `X:\DOS\BOX` (BOXFILES); RBOX `boot_drv` (Startlaufwerk aus
+jetzt auch in `X:\DOS\MDOS` (BOXFILES); RBOX `boot_drv` (Startlaufwerk aus
 COMSPEC, nur wenn die Datei dort liegt) -> INT E0h 13h, RBSHELL startet
 FreeCOM von dort (`shellx`/`tailx`), drive_mask meldet dann auch A:/B:
 (die Disketten von AT-DOS über den Redirector); sonst wie bisher vom
-Abbild. In QEMU geprüft (COMSPEC=C:\DOS\BOX\COMMAND.COM, TYPE/DIR A:
+Abbild. In QEMU geprüft (COMSPEC=C:\DOS\MDOS\COMMAND.COM, TYPE/DIR A:
 auf einer AT-DOS-Diskette; ohne die Datei Start vom Abbild).
 Ausflüge nur bei Bedarf (Nutzer auf dem SCAT: RBTIME 638 mit RBSLICE=0,
 344 mit Ausflügen, 329 bei laufendem XCOPY): kernel.c `kf_rb_busy` – will
@@ -120,10 +120,14 @@ kopiert, RBTIME am Prompt wie mit RBSLICE=0. Erstes Codesegment jetzt
 65.511 Byte (Grenze 65.520)!
 MEM in der Box (Wunsch des Nutzers, wie OS/2 \OS2\MDOS): FreeDOS MEM
 1.11 (github.com/FDOS/mem 2b2c833, GPL-2, Open Watcom 8086 ohne UPX,
-tools/freedos.sh) als `freedos/MEM.EXE` + `MEM.DE` in `\DOS\BOX`
-(BOXFILES). RBSHELL gibt FreeCOM bei COMMAND.COM aus X:\DOS\BOX eine
-eigene Umgebung (`envblk`): PATH=X:\DOS\BOX;X:\DOS, NLSPATH=X:\DOS\BOX,
+tools/freedos.sh) als `freedos/MEM.EXE` + `MEM.DE` in `\DOS\MDOS`
+(BOXFILES). RBSHELL gibt FreeCOM bei COMMAND.COM aus X:\DOS\MDOS eine
+eigene Umgebung (`envblk`): PATH=X:\DOS\MDOS;X:\DOS, NLSPATH=X:\DOS\MDOS,
 LANG=DE. In QEMU geprüft (MEM deutsch: 631K konventionell, 490K frei).
+Verzeichnis der Box heißt jetzt `\DOS\MDOS` statt `\DOS\BOX` (Wunsch
+des Nutzers, wie OS/2 `\OS2\MDOS`; passt auch für die V86-Boxen von 6.0
+und später 32 Bit) – auf 5.x und main gleich. Alte Platten: Inhalt von
+`\DOS\BOX` nach `\DOS\MDOS` verschieben.
 
 ## Zweige und Releases (5.x)
 
@@ -259,7 +263,7 @@ Rückgabewert, RB_RUN liefert ihn in AH, RBOX gibt ihn per DosExit
 weiter); andere INT-E0h-Aufrufe -> AX = FFFFh. FreeDOS-Kern als
 8086-Bau (`XCPU=86`, „808x compatible“, `tools/freedos.sh`), FreeCOM wie
 in 6.0 (Watcom baut 8086-Code), Startabbild `build/freedos.img` ->
-`\DOS\BOX\FREEDOS.IMG` mit `RBSHELL.COM` (apps/rbshell.asm: startet
+`\DOS\MDOS\FREEDOS.IMG` mit `RBSHELL.COM` (apps/rbshell.asm: startet
 `A:\COMMAND.COM A:\ /E:1024`, nach EXIT INT E0h 01h). `RBOX` ohne
 Argument nimmt das Abbild des Startlaufwerks (COMSPEC), `RBOX x.IMG`
 ein anderes, `.COM` wie Stufe 2. Offen: Tastatur in der Box US (BIOS-

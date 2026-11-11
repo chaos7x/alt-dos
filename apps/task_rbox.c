@@ -2,7 +2,7 @@
 /*
  * RBOX.EXE - Kompatibilitaetsbox (5.1): DOS im echten Real Mode.
  *
- *   RBOX                startet FreeDOS aus X:\DOS\BOX\FREEDOS.IMG
+ *   RBOX                startet FreeDOS aus X:\DOS\MDOS\FREEDOS.IMG
  *   RBOX Abbild.IMG     startet ein anderes Diskettenabbild (A: in der Box)
  *   RBOX Datei.COM      ein .COM ohne DOS bei 1000:0100 (Test)
  *
@@ -107,7 +107,7 @@ void main(void)
     if (a[0] == '/' && a[1] == '?') {
         puts("Startet DOS in der Kompatibilit\x84tsbox (Real Mode).\r\n\r\n"
              "RBOX [Abbild.IMG | Datei.COM]\r\n\r\n"
-             "Ohne Angabe startet FreeDOS aus \\DOS\\BOX\\FREEDOS.IMG des\r\n"
+             "Ohne Angabe startet FreeDOS aus \\DOS\\MDOS\\FREEDOS.IMG des\r\n"
              "Startlaufwerks. Alt+Esc wechselt zu den anderen Sitzungen,\r\n"
              "Strg+Alt+Entf beendet die Box.\r\n");
         return;
@@ -116,7 +116,7 @@ void main(void)
         if (FAPI_FAILED(DosGetEnv("COMSPEC", path, sizeof(path))) || path[1] != ':')
             scopy(path, "C:", sizeof(path));
         path[2] = 0;
-        scat(path, "\\DOS\\BOX\\FREEDOS.IMG", sizeof(path));
+        scat(path, "\\DOS\\MDOS\\FREEDOS.IMG", sizeof(path));
     } else
         word(a, path, sizeof(path));
     a = path;

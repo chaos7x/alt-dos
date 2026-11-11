@@ -166,10 +166,10 @@ und PC-DOS.
   BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
   frei (der Kernel liegt hinter der HMA)
 - `RBOX [Abbild.IMG | Datei.COM]` (5.1): Kompatibilitätsbox im
-  echten Real Mode mit FreeDOS (8086-Bau, startet von `\DOS\BOX\FREEDOS.IMG`;
-  COMMAND.COM kommt aus `X:\DOS\BOX` des Startlaufwerks, dann sind A:/B:
+  echten Real Mode mit FreeDOS (8086-Bau, startet von `\DOS\MDOS\FREEDOS.IMG`;
+  COMMAND.COM kommt aus `X:\DOS\MDOS` des Startlaufwerks, dann sind A:/B:
   in der Box die Disketten von AT-DOS – fehlt die Datei, bleibt A: das
-  Abbild, nur lesend); `PATH` der Box beginnt mit `X:\DOS\BOX`, dort liegt
+  Abbild, nur lesend); `PATH` der Box beginnt mit `X:\DOS\MDOS`, dort liegt
   auch das MEM von FreeDOS (deutsch) – wie `\OS2\MDOS` bei OS/2: MEM in
   der Box zeigt den DOS-Speicher, MEM in AT-DOS den eigenen – AT-DOS steht, solange sie vorn ist; Alt+Esc wechselt
   zurück in die Sitzungen und wieder hinein, EXIT oder Strg+Alt+Entf

@@ -25,9 +25,9 @@ unveraendert:
 Neu bauen: tools/freedos.sh (holt die Quellen per git und baut beide).
 
 build.sh legt daraus das Startabbild der Box an (build/freedos.img, 360 KB,
-auf dem Ziel \DOS\BOX\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
+auf dem Ziel \DOS\MDOS\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
 COMMAND.COM, COUNTRY.SYS, RBSHELL.COM (apps/rbshell.asm) und CONFIG.SYS
 aus diesem Ordner. RBOX ohne Argument startet es. COMMAND.COM, MEM.EXE
-und MEM.DE liegen zusaetzlich in \DOS\BOX: dort startet RBSHELL FreeCOM,
-und der PATH der Box beginnt mit \DOS\BOX - MEM in der Box ist das von
+und MEM.DE liegen zusaetzlich in \DOS\MDOS: dort startet RBSHELL FreeCOM,
+und der PATH der Box beginnt mit \DOS\MDOS - MEM in der Box ist das von
 FreeDOS (wie \OS2\MDOS bei OS/2), MEM in AT-DOS das eigene.

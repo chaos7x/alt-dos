@@ -12,7 +12,7 @@
 ; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis); AH=11h SDA
 ; ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke; AH=14h
 ; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI - FreeCOM
-; beginnt dort; AH=13h -> AL = Startlaufwerk (FreeCOM aus X:\DOS\BOX, A:/B:
+; beginnt dort; AH=13h -> AL = Startlaufwerk (FreeCOM aus X:\DOS\MDOS, A:/B:
 ; sind dann die Disketten von AT-DOS) oder 0 (vom Abbild A:); AH=15h Tastaturbelegung von AT-DOS
 ; (3 x 90 Zeichen) nach ES:DI -> AX = 0.
 cpu 8086
@@ -47,13 +47,13 @@ start:
         mov     [pb_fcb2 + 2], ax
         mov     dx, shell
         mov     ah, 0x13                        ; Startlaufwerk: FreeCOM aus
-        int     0xE0                            ; X:\DOS\BOX (A:/B: sind dann
+        int     0xE0                            ; X:\DOS\MDOS (A:/B: sind dann
         test    al, al                          ; die Disketten von AT-DOS),
         jz      .abbild                         ; sonst vom Abbild (A:)
         mov     [shellx], al
         mov     [tailx + 2], al
         mov     [env1], al                      ; Umgebung fuer FreeCOM: PATH
-        mov     [env2], al                      ; beginnt mit X:\DOS\BOX (MEM
+        mov     [env2], al                      ; beginnt mit X:\DOS\MDOS (MEM
         mov     [env3], al                      ; von FreeDOS), deutsche MEM-
         mov     ax, cs                          ; Meldungen ueber NLSPATH/LANG
         mov     bx, envblk
@@ -326,15 +326,15 @@ dmask:  dd      0
 old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0
 tail:   db      12, " A:\ /E:1024", 13
-shellx: db      "C:\DOS\BOX\COMMAND.COM", 0
+shellx: db      "C:\DOS\MDOS\COMMAND.COM", 0
         align   16
 envblk: db      "PATH="
-env1:   db      "C:\DOS\BOX;"
+env1:   db      "C:\DOS\MDOS;"
 env2:   db      "C:\DOS", 0
         db      "NLSPATH="
-env3:   db      "C:\DOS\BOX", 0
+env3:   db      "C:\DOS\MDOS", 0
         db      "LANG=DE", 0, 0
-tailx:  db      20, " C:\DOS\BOX\ /E:1024", 13
+tailx:  db      21, " C:\DOS\MDOS\ /E:1024", 13
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers
 pb_tail: dw     tail, 0

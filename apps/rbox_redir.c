@@ -14,7 +14,7 @@
  * Kernel sie.
  *
  * Weitere INT-E0h-Dienste: 11h SDA ist DS:SI, 12h -> DX:AX Laufwerke,
- * 13h Startlaufwerk (AL = Buchstabe, 0 = X:\DOS\BOX\COMMAND.COM fehlt:
+ * 13h Startlaufwerk (AL = Buchstabe, 0 = X:\DOS\MDOS\COMMAND.COM fehlt:
  * dann bleibt A: das Abbild), 14h aktuelles Verzeichnis von RBOX (8.3)
  * nach ES:DI (leer bei A:/B:, wenn die Box sie nicht ueberlaesst),
  * 15h aktive Tastaturbelegung von AT-DOS (270 Byte: ohne Umschalt, mit
@@ -521,7 +521,7 @@ static int op(unsigned fn)
     return -1;                                  /* nicht unser           */
 }
 
-/* Startlaufwerk (aus COMSPEC), wenn dort \DOS\BOX\COMMAND.COM liegt -
+/* Startlaufwerk (aus COMSPEC), wenn dort \DOS\MDOS\COMMAND.COM liegt -
    dann startet RBSHELL FreeCOM von dort, und A:/B: der Box sind die
    Disketten von AT-DOS (wie in 6.0); sonst 0, A: bleibt das Abbild */
 static char boot_drv(void)
@@ -535,7 +535,7 @@ static char boot_drv(void)
     if (FAILED(DosGetEnv("COMSPEC", cs, sizeof(cs))) || cs[1] != ':')
         return 0;
     cs[2] = 0;
-    scat(cs, "\\DOS\\BOX\\COMMAND.COM", sizeof(cs));
+    scat(cs, "\\DOS\\MDOS\\COMMAND.COM", sizeof(cs));
     h = DosOpen(cs);
     if (FAILED(h))
         return 0;
