@@ -585,7 +585,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und Multiplikation per Schieben (sonst __U4M). Auch auf 5.x.
 - Verzeichnis der DOS-Boxen heißt `\DOS\MDOS` (vorher `\DOS\BOX`;
   Wunsch des Nutzers, wie OS/2 `\OS2\MDOS`, auch auf 5.x): FREEDOS.IMG,
-  COMMAND.COM, DOSBOX.INI, SETVER.LST; `%DOSBOX%` zeigt dorthin, BOXSHELL
+  COMMAND.COM, MEM.EXE + MEM.DE (FreeDOS-MEM, BOXSHELL setzt
+  NLSPATH/LANG=DE), DOSBOX.INI, SETVER.LST; `%DOSBOX%` zeigt dorthin, BOXSHELL
   `drvpos` (zweiter Buchstabe im PATH jetzt bei t_path+17). Alte Platten:
   Inhalt von `\DOS\BOX` nach `\DOS\MDOS` verschieben.
   Gerätenamen (Liste vom Nutzer, wie MS-DOS/Windows): CON, PRN, AUX, NUL,

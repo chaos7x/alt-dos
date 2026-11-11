@@ -545,11 +545,11 @@ build_env:
         stosb
         test    al, al
         jnz     .e4
-        mov     si, t_path              ; PATH wie \OS2\MDOS bei OS/2
-.e5:    lodsb
-        stosb
-        test    al, al
-        jnz     .e5
+        mov     si, t_path              ; PATH wie \OS2\MDOS bei OS/2,
+.e5:    lodsb                           ; dazu NLSPATH/LANG (Meldungen
+        stosb                           ; von FreeDOS-MEM, MEM.DE)
+        cmp     si, t_envend
+        jb      .e5
         cmp     byte [has_bl], 0        ; virtuelle Sound Blaster (v86.c)
         jne     .e7
         mov     si, t_blaster
@@ -764,6 +764,9 @@ dmask     dd 0
 old2f     dd 0
 
 t_path    db "PATH=X:\DOS\MDOS;X:\DOS", 0
+t_nls     db "NLSPATH=X:\DOS\MDOS", 0
+          db "LANG=DE", 0
+t_envend:
 t_blaster db "BLASTER=A220 I5 D1 H5 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
 has_bl    db 0
 t_ini     db "X:\DOS\MDOS\DOSBOX.INI", 0
@@ -792,7 +795,7 @@ t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
-          dw t_autoexec, t_ini, 0
+          dw t_autoexec, t_ini, t_nls+8, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0
 pb_fcb1   dw fcb, 0

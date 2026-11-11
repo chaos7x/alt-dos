@@ -364,7 +364,8 @@ und PC-DOS.
   sind A:/B: die Disketten von AT-DOS (das Startabbild braucht sie nach dem
   Start nicht mehr), PATH ist `X:\DOS\MDOS;X:\DOS` (X: = Startlaufwerk;
   `\DOS\MDOS` ist wie `\OS2\MDOS` bei OS/2 das Verzeichnis der DOS-Seite,
-  dort liegt auch COMMAND.COM), die interaktive Box führt `X:\AUTOEXEC.BAT`
+  dort liegen auch COMMAND.COM und das MEM von FreeDOS, das XMS, EMS und
+  UMB der Box zeigt), die interaktive Box führt `X:\AUTOEXEC.BAT`
   aus, wenn es sie gibt. Eine hängende Box beendet **Strg+Alt+Ende**
   (Strg+C gehört dem DOS darin)
 - XMS 3.0 in jeder DOS-Box vom Kernel (wie VXMS bei OS/2, kein HIMEM in
