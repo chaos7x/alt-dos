@@ -78,6 +78,8 @@ static unsigned base, r5;               /* Kartenbasis, 5380-Register   */
 static unsigned char blockmode;         /* 53C400-Puffer benutzen       */
 static unsigned char target[DRV_MAXUNITS];
 static unsigned bsz[DRV_MAXUNITS];
+static unsigned char rem[DRV_MAXUNITS]; /* Wechselplatte (INQUIRY RMB)  */
+static unsigned char chg[DRV_MAXUNITS]; /* Unit Attention gesehen       */
 static unsigned nunits;
 static char line[128];
 static unsigned char cdb[12];
@@ -343,6 +345,20 @@ static unsigned req_sense(unsigned id)
     return ((sense[2] & 0x0F) << 8) | sense[12];
 }
 
+/* READ CAPACITY -> Sektoren (0 = keine Antwort / nicht 512 Byte) */
+static unsigned long capacity(unsigned id, unsigned sel, unsigned off)
+{
+    unsigned char __far *buf = MK_FP(sel, off);
+    unsigned k;
+    for (k = 0; k < 12; k++)
+        cdb[k] = 0;
+    cdb[0] = 0x25;
+    if (scsi(id, 10, sel, off, 8) != SCSI_OK || buf[6] != 2 || buf[7] != 0)
+        return 0;
+    return (((unsigned long)buf[0] << 24) | ((unsigned long)buf[1] << 16) |
+            ((unsigned)buf[2] << 8) | buf[3]) + 1;
+}
+
 static char *hex3(char *p, unsigned v)
 {
     return hex(p, v, 3);
@@ -354,7 +370,7 @@ static void init(void)
     struct drv_req __far *r = REQ;
     unsigned char __far *buf = MK_FP(r->buf_sel, r->buf_off);
     unsigned i, id, n = 0, only = 0;
-    int k, rc;
+    int k;
     char *p;
 
     r->units = 0;
@@ -391,32 +407,36 @@ static void init(void)
             continue;
         p = scat(line, "  SCSI-ID ");
         *p++ = (char)('0' + id);
-        p = scat(p, (buf[0] & 0x1F) == 0 ? ": Festplatte " :
+        p = scat(p, (buf[0] & 0x1F) == 0 ? ((buf[1] & 0x80) ? ": Wechselplatte " : ": Festplatte ") :
+                    (buf[0] & 0x1F) == 7 ? ": MO-Laufwerk " :
                     (buf[0] & 0x1F) == 5 ? ": CD-ROM " : ": Ger\x84t ");
         for (k = 8; k < 32; k++)
             *p++ = buf[k] >= 32 ? (char)buf[k] : ' ';
         while (p[-1] == ' ')
             p--;
         *p = 0;
-        if ((buf[0] & 0x1F) == 0 && n < DRV_MAXUNITS) {
+        if (((buf[0] & 0x1F) == 0 || (buf[0] & 0x1F) == 7) && n < DRV_MAXUNITS) {
+            unsigned char rmb = buf[1] & 0x80;  /* ZIP, JAZ, MO, SyQuest  */
+            unsigned long cap;
             for (k = 0; k < 4; k++) {   /* Unit Attention abholen       */
                 cdb6(0x00, 0);
                 if (scsi(id, 6, r->buf_sel, r->buf_off, 0) == SCSI_OK)
                     break;
             }
-            for (k = 0; k < 12; k++)
-                cdb[k] = 0;
-            cdb[0] = 0x25;              /* READ CAPACITY                */
-            rc = scsi(id, 10, r->buf_sel, r->buf_off, 8);
-            if (rc == SCSI_OK && buf[6] == 2 && buf[7] == 0) {
-                unsigned long last = ((unsigned long)buf[0] << 24) |
-                    ((unsigned long)buf[1] << 16) | ((unsigned)buf[2] << 8) | buf[3];
-                r->blocks[n] = last + 1;
+            cap = capacity(id, r->buf_sel, r->buf_off);
+            if (cap || rmb) {           /* Wechselplatte auch leer      */
+                r->blocks[n] = cap;
+                r->bsize[n] = rmb ? 512 | DRV_BS_REMOVABLE : 0;
                 bsz[n] = 512;
+                rem[n] = rmb ? 1 : 0;
+                chg[n] = 0;
                 target[n++] = (unsigned char)id;
-                p = scat(p, ", ");
-                p = udec(p, (unsigned)((last + 1) >> 11));
-                p = scat(p, " MB");
+                if (cap) {
+                    p = scat(p, ", ");
+                    p = udec(p, (unsigned)(cap >> 11));
+                    p = scat(p, " MB");
+                } else
+                    p = scat(p, " (kein Medium)");
             } else
                 p = scat(p, " (nicht bereit)");
         } else if ((buf[0] & 0x1F) == 5 && n < DRV_MAXUNITS) {
@@ -491,6 +511,18 @@ static void xfer(int write)
         /* CD: keine drin (2/3Ah, beim zweiten Mal - nach einem Wechsel
            meldet manches Laufwerk das einmal); laeuft an (2/04h): warten */
         sk = 0;
+        if (rc == SCSI_CHECK && rem[r->unit]) {     /* Wechselplatte    */
+            sk = req_sense(target[r->unit]);
+            chg[r->unit] = 1;
+            if ((sk >> 8) == 6) {                   /* gewechselt       */
+                r->status = DRV_ERR_CHANGED;
+                return;
+            }
+            if (sk == 0x23A) {                      /* kein Medium      */
+                r->status = DRV_ERR_NOTREADY;
+                return;
+            }
+        }
         if (rc == SCSI_CHECK && bsz[r->unit] != 512) {
             sk = req_sense(target[r->unit]);
             if (sk == 0x23A && tries > 0) {
@@ -509,6 +541,51 @@ static void xfer(int write)
             report(write, r->unit, l, rc, tries);
     }
     r->status = DRV_ERR_IO;
+}
+
+/* Wechselplatte: Medium da? gewechselt? (TEST UNIT READY; Wechsel =
+   Unit Attention 6/28h, kein Medium 2/3Ah) */
+static void media(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned u = r->unit, k, sk, spin = 0;
+    unsigned long cap;
+    int rc;
+
+    r->count = 0;
+    r->status = DRV_ERR_IO;
+    if (u >= nunits || !rem[u])
+        return;
+    for (k = 0; k < 6; k++) {
+        cdb6(0x00, 0);
+        if ((rc = scsi(target[u], 6, r->buf_sel, r->buf_off, 0)) == SCSI_OK)
+            break;
+        if (rc != SCSI_CHECK)
+            continue;
+        sk = req_sense(target[u]);
+        if ((sk >> 8) == 6)
+            chg[u] = 1;
+        else if (sk == 0x23A) {
+            chg[u] = 1;
+            r->status = DRV_ERR_NOTREADY;
+            return;
+        } else if (sk == 0x204 && spin < 20) {      /* laeuft an       */
+            spin++;
+            k--;
+            cli();
+            proc_block(0xFFFF, 50);
+        }
+    }
+    if (k == 6)
+        return;
+    if (chg[u]) {
+        if ((cap = capacity(target[u], r->buf_sel, r->buf_off)) == 0)
+            return;
+        r->lba = cap;
+        r->count = 1;
+        chg[u] = 0;
+    }
+    r->status = DRV_OK;
 }
 
 static void flush(void)
@@ -543,6 +620,9 @@ void strategy(void)
         break;
     case DRV_FLUSH:
         flush();
+        break;
+    case DRV_MEDIA:
+        media();
         break;
     default:
         r->status = DRV_ERR_CMD;

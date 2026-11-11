@@ -639,6 +639,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `ems_np`/`ems_ml` 16 Bit, 4Eh-Zuordnung 12 Byte (Handle, Seite als
   Wort). In QEMU mit ET.COM geprüft (-1: 0800h Seiten, 16 MB anlegen,
   Seite 1000/5 mit Mustern, 4E00/4E01, freigeben; Speicher danach gleich).
+  Vom Nutzer in 86Box bestätigt: 32 MB EMS mit -1.
   Elvira selbst stürzt auch unter MS-DOS mit QEMM ab (#6 bei 0000:0073,
   INT 8/9 auf 0:0 – wie in der Box). Auflösung (Nutzer): Elvira wird
   über ELVIRA.BAT gestartet (`runvga gamepc /s >tmp.txt`, vorher
@@ -1460,9 +1461,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   auch für Wechselplatten: `rem_locate` (Sektor 0 mit BPB = ganzes
   Medium, sonst erste FAT-Partition der Tabelle), dann fat_mount;
   `vol_check` (fern) für SELECTDISK/QFSInfo. Meldung „kein Medium
-  eingelegt“ (CMD, CHKDSK, FM) für C: und dahinter. Offen: AHA154X.SYS
-  und NCR5380.SYS genauso (nur in 86Box prüfbar), EJECT-Befehl (START
-  STOP UNIT; die Laufwerke haben eine Auswurftaste).
+  eingelegt“ (CMD, CHKDSK, FM) für C: und dahinter. AHA154X.SYS und
+  NCR5380.SYS genauso umgebaut (`capacity`, `media`, rem/chg, Unit
+  Attention -> DRV_ERR_CHANGED; AHA aus dem Auto-Sense `last_sense`,
+  NCR5380 per req_sense) – nur in 86Box prüfbar, in QEMU nur der Start
+  ohne Karte. Offen: EJECT-Befehl (START STOP UNIT; die Laufwerke haben
+  eine Auswurftaste).
   Vom Nutzer auf der 486 in 86Box bestätigt: ZIP ohne Medium gestartet,
   danach eingelegt – das Laufwerk war da.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
