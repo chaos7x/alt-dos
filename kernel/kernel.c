@@ -5609,22 +5609,41 @@ static int find_boot_vol(void)
 }
 
 /* ---- Start ------------------------------------------------------------- */
-static char startup[512];
+/* CONFIG.SYS bis 4 KB (vorher 512 Byte in DGROUP - eine laengere Datei
+   wurde ganz uebergangen) in einem Kernelsegment, das nach dem Lesen der
+   letzten Zeile wieder frei wird (DGROUP ist knapp, GDT-Plaetze auch) */
+#define CFG_MAX 4096
+static unsigned cfg_sel;
+static void cfg_release(void);
 
-/* Datei vom Laufwerk A: nach startup[] lesen; -> Laenge oder -1 */
 static int read_cfg(const char *name)
 {
     struct ifs_file f;
-    if (ifs_open(sys_drive, name, &f) || f.size > sizeof(startup))
+    if (ifs_open(sys_drive, name, &f) || f.size > CFG_MAX)
         return -1;
-    if (ifs_read(&f, 0, KDATA, (unsigned)startup, (unsigned)f.size) != (int)f.size)
+    if (!cfg_sel && (cfg_sel = kseg_alloc(CFG_MAX)) == 0)
         return -1;
+    if (ifs_read(&f, 0, cfg_sel, 0, (unsigned)f.size) != (int)f.size) {
+        cfg_release();
+        return -1;
+    }
     return (int)f.size;
+}
+
+/* Kernelsegment zurueck: Seiten frei, GDT-Platz leer */
+static void cfg_release(void)
+{
+    if (!cfg_sel)
+        return;
+    mem_free(desc_base(&gdt[cfg_sel >> 3]) >> 12, PAGES(CFG_MAX));
+    gdt[cfg_sel >> 3].access = 0;
+    cfg_sel = 0;
 }
 
 /* naechste Zeile aus CONFIG.SYS: REM und Leerzeilen zaehlen nicht */
 static int next_line(unsigned *p, unsigned len, char *out)
 {
+    const char __far *startup = MK_FP(cfg_sel, 0);
     unsigned k;
     while (*p < len) {
         k = 0;
@@ -5645,6 +5664,7 @@ static int next_line(unsigned *p, unsigned len, char *out)
             continue;
         return 1;
     }
+    cfg_release();
     return 0;
 }
 

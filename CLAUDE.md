@@ -593,6 +593,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
   Geräte öffnen weiter), MKDIR und MOVE-Ziel -> FAPI_ERR_DENIED.
+- CONFIG.SYS bis 4 KB (Fehler, beim 5.1-Test gefunden: `startup[512]` in
+  DGROUP – eine längere Datei wurde ganz übergangen, Start dann ohne
+  Treiber: „Startpartition nicht gefunden“): `read_cfg` liest in ein
+  vorübergehendes Kernelsegment (`cfg_sel`, kseg_alloc 4 KB), next_line
+  gibt es nach der letzten Zeile zurück (`cfg_release`: Seiten frei,
+  GDT-Platz leer). In QEMU mit 1.283 Byte geprüft.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
