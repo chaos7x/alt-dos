@@ -409,6 +409,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   vorher/nachher gleich), fsck sauber. Dabei behoben: kernel `ea_add`
   schrieb den Verzeichnis-Cluster nur mit 16 Bit (Bytes 4/5 blieben 0) –
   auf FAT32 hinter Cluster 65.535 hätten Sätze nicht mehr gepasst.
+  Reihenfolge danach (Entscheidung des Nutzers): SVGA-Zustand der DOS-
+  Boxen, ISA-PnP, dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
