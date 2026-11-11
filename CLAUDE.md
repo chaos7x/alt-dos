@@ -128,6 +128,8 @@ Verzeichnis der Box heißt jetzt `\DOS\MDOS` statt `\DOS\BOX` (Wunsch
 des Nutzers, wie OS/2 `\OS2\MDOS`; passt auch für die V86-Boxen von 6.0
 und später 32 Bit) – auf 5.x und main gleich. Alte Platten: Inhalt von
 `\DOS\BOX` nach `\DOS\MDOS` verschieben.
+MEM im Stil des FreeDOS-MEM (Tabelle Größe/Anteil, /C), gleiche Quelle
+wie main (`#ifdef MEMINFO_V60` für 32 Bit und DOS-Boxen).
 
 ## Zweige und Releases (5.x)
 
