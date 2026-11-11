@@ -5,12 +5,26 @@
 # loeste der GitHub-Rechner archive.ubuntu.com nicht auf), beide aus dem
 # Quelltext bauen (nasm.us, ftp.gnu.org) und nach $HOME/citools legen.
 # Mit CI_FORCE_SRC=1 gleich aus dem Quelltext (zum Pruefen).
+# DNS: vorher auf Quad9 und Google (9.9.9.9, 8.8.8.8) statt des Azure-DNS
+# des Rechners (Wunsch des Nutzers); geht das nicht, bleibt es, wie es ist.
 set -e
 NASM_V=2.16.03
 MTOOLS_V=4.0.48
 P=$HOME/citools
 
 have() { command -v nasm >/dev/null && command -v mcopy >/dev/null; }
+
+if [ -n "$GITHUB_ACTIONS" ] && command -v resolvectl >/dev/null; then
+    sudo mkdir -p /etc/systemd/resolved.conf.d
+    printf '[Resolve]\nDNS=9.9.9.9 8.8.8.8\n' |
+        sudo tee /etc/systemd/resolved.conf.d/ci-dns.conf >/dev/null
+    sudo systemctl restart systemd-resolved || true
+    for i in $(ip -o link show | awk -F': ' '$2 != "lo" {print $2}'); do
+        sudo resolvectl dns "$i" 9.9.9.9 8.8.8.8 2>/dev/null || true
+        sudo resolvectl domain "$i" '~.' 2>/dev/null || true
+    done
+    resolvectl status 2>/dev/null | grep -i 'dns server' | head -3 || true
+fi
 
 if [ -z "$CI_FORCE_SRC" ]; then
     for i in 1 2 3; do
