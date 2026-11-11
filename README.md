@@ -504,7 +504,7 @@ Zeilen.
 Programme auf der Diskette: **EDIT** ist ein Bildschirm-Editor wie MS-DOS
 EDIT (Vollbild, Menüs mit Alt oder F10, Markieren mit Umschalt,
 Umschalt+Entf/Strg+Einfg/Umschalt+Einfg, Strg+Y, Suchen/Weitersuchen (F3)/
-Ändern, Strg+S; Text bis knapp 64 KB, Tabulatoren werden zu Leerzeichen;
+Ändern, Strg+S; Text bis 512 KB, Tabulatoren werden zu Leerzeichen;
 Dialoge mit Tab und Pfeiltasten; Öffnen mit Dateiliste, Verzeichniswechsel
 und Mustern wie `*.TXT`; beim Herunterfahren fragt EDIT, ob geänderter Text
 gespeichert werden soll).

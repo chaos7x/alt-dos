@@ -954,9 +954,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- EDIT ist da (`apps/task_edit.c`): Lückenpuffer in einem 64-KB-Segment,
-  daher Text bis knapp 64 KB – offen: größere Dateien (mehrere Segmente),
-  horizontale Bildlaufleiste. Erledigt: Öffnen-Dialog mit Dateiliste
+- EDIT ist da (`apps/task_edit.c`): Lückenpuffer über bis zu 8
+  DosAllocSeg-Segmente (512 KB, Wunsch des Nutzers: über 64 KB), erst bei
+  Bedarf: Positionen 32 Bit (`tpos`, Segment = obere 16 Bit), `TBP(p)`,
+  `move_to` kopiert in Läufen innerhalb der Segmente, `grow()` hängt ein
+  Segment an und rückt alles hinter der Lücke um 64 KB (gleicher Offset,
+  nächstes Segment). Zwischenablage bleibt bis 64 KB, Zeilennummern 16
+  Bit. In QEMU geprüft (352 KB, 8.000 Zeilen: ans Ende/an den Anfang,
+  tippen, Suchen bis Zeile 7.777, Strg+Y + Einfügen oben, Speichern –
+  Inhalt genau wie erwartet, fsck sauber). Offen: horizontale
+  Bildlaufleiste. Erledigt: Öffnen-Dialog mit Dateiliste
   (`open_dialog`, Verzeichnisse zuerst, `..`, Muster, Laufwerk `D:`),
   Nachfrage bei SIG_SHUTDOWN: Signal setzt nur `shut_req`, `getkey()`
   (statt KbdCharIn überall in EDIT) ruft `shutdown_now()` beim nächsten
