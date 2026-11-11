@@ -1196,6 +1196,15 @@ code_end:
 ; Stapel bis 2000h.
 segment KTEXT2
 %define RBO(x) ((x) - rbs_code + 0x80)
+%macro RBMARK 1                        ; Fehlersuche: Zeichen in die letzte
+        push    es                      ; Bildschirmzelle (rot), zeigt, wie
+        push    ax                      ; weit der Eintritt kam
+        mov     ax, 0xB800
+        mov     es, ax
+        mov     word [es:3998], 0x4F00 | %1
+        pop     ax
+        pop     es
+%endmacro
 rbs_code:
 rbs_entry:                              ; Real Mode, CS = rb_seg
         cli
@@ -1218,10 +1227,12 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     al, [29]
         out     0xA1, al
         sti
+        RBMARK  'A'
         cmp     byte [74], 0            ; nur ein Dienst: Bild steht noch
         jne     .quiet
         mov     ax, 3                   ; BIOS stellt die Karte selbst ein
         int     0x10
+        RBMARK  'B'
         push    es
         mov     ax, 0xB800
         mov     es, ax
@@ -1231,11 +1242,13 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         cld
         rep     movsw
         pop     es
+        RBMARK  'C'
         mov     dx, [46]
         mov     bh, 0
         mov     ah, 2                   ; (Umschalttasten 417h/418h/496h
         int     0x10                    ;  stellt rbox.c vor dem Eintritt)
-.quiet: in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
+.quiet: RBMARK  'D'
+        in      al, 0x64                ; wartet ein Byte im 8042? Der PIC
         test    al, 1                   ; ist neu eingestellt und sieht die
         jz      .kok                    ; schon hohe IRQ-Leitung nie mehr
         test    al, 0x20                ; als Flanke - abholen, sonst steht
@@ -1245,11 +1258,14 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     es, ax                  ; nur vor, ein Takt dabei geht ueber
         pushf                           ; [79]. (Frueher ein INT-9-Rahmen am
         cli                             ; Fortsetzungspunkt der Box - der
+        RBMARK  'E'
         call    far [es:9 * 4]          ; stoerte FreeDOS mitten im Laden:
         pop     es                      ; Absturz nach schnellen Wechseln)
+        RBMARK  'F'
         jmp     short .kok
 .aux:   in      al, 0x60                ; Maus: weg
-.kok:   cli
+.kok:   RBMARK  'G'
+        cli
         mov     al, [79]                ; Wechsel waehrend des Eintritts
         test    al, al                  ; verlangt: jetzt ausfuehren
         jz      .go
@@ -1262,7 +1278,8 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         or      ah, 4
         mov     [30], ax
         jmp     rbs_saved
-.go:    mov     ss, [20]
+.go:    RBMARK  'H'
+        mov     ss, [20]
         mov     sp, [18]
         push    word [26]
         push    word [24]
