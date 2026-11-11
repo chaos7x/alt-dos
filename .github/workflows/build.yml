@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0            # ganze Historie: Build-Nummer fuer VER
 
       - name: NASM und mtools installieren
-        run: sudo apt-get update && sudo apt-get install -y nasm mtools
+        run: sh tools/ci-tools.sh   # apt, sonst aus dem Quelltext
 
       - name: Open Watcom 2.0 installieren
         run: |
