@@ -1380,6 +1380,8 @@ static void cmd_md(char *arg, int rd)
     r = rd ? DosRmDir(p) : DosMkDir(p);
     if (r == FAPI_ERR_DENIED && rd)
         puts("Verzeichnis ist nicht leer.\n");
+    else if (r && !rd && r != FAPI_ERR_NOTREADY)
+        puts("Verzeichnis kann nicht erstellt werden.\n");  /* wie MS-DOS */
     else if (r)
         file_error(r);
 }
