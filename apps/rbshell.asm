@@ -48,8 +48,13 @@ start:
         mov     bx, pblock
         mov     ax, 0x4B00
         int     0x21
-        mov     al, 0xFF
-        jc      .done
+        jnc     .ran
+        cmp     ax, 15                          ; EXEC gescheitert: RBOX
+        jbe     .e                              ; meldet D0h + DOS-Fehler
+        mov     al, 15
+.e:     or      al, 0xD0
+        jmp     .done
+.ran:
         mov     ah, 0x4D                        ; AH = Art des Endes: 0 EXIT,
         int     0x21                            ; 1 Strg+C, 2 kritischer
         test    ah, ah                          ; Fehler/Absturz, 3 TSR ->

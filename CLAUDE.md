@@ -34,6 +34,10 @@ neu). Zur Fehlersuche trägt der Stummel im Hochbyte von [30] ein, wer
 Grund 2 gesetzt hat (1 eigener INT 9, 2 INT 15h/4Fh, 3 INT 20h, +4 über
 den vertagten Wechsel [79] = Grund | Weg << 2 | 40h); der Kernel gibt
 E0h + Weg zurück, RBOX zeigt „(Weg n)“.
+Ergebnis auf dem SCAT: Meldung ohne „(Weg n)“, also Wert FFh = RBSHELL
+selbst – EXEC von A:\COMMAND.COM war gescheitert (nicht der Stummel).
+RBSHELL gibt jetzt D0h + DOS-Fehler zurück, RBOX nennt ihn (in QEMU mit
+einem Abbild ohne COMMAND.COM geprüft: „DOS-Fehler 2“).
 
 ## Zweige und Releases (5.x)
 

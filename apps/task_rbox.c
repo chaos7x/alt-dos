@@ -162,6 +162,14 @@ void main(void)
         puts(").\r\n");
         DosExit(l);
     }
+    if (l >= 0xD0 && l < 0xE0) {        /* RBSHELL: EXEC gescheitert   */
+        puts("Box beendet: COMMAND.COM lie\xE1 sich nicht starten (DOS-Fehler ");
+        put_num(l & 15, 0, 0);
+        puts(l == 0xD2 ? ", Datei nicht gefunden" : l == 0xD8 ? ", zu wenig Speicher" :
+             l == 0xDB ? ", ung\x81ltiges Format" : "");
+        puts(").\r\n");
+        DosExit(l);
+    }
     puts(l == 0xFF ? "Box mit Strg+Alt+Entf beendet.\r\n" :
          l == 0xF1 ? "Box beendet: COMMAND.COM mit Strg+C abgebrochen.\r\n" :
          l == 0xF2 ? "Box beendet: COMMAND.COM durch einen Fehler abgebrochen.\r\n" :
