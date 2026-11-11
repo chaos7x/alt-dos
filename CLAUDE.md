@@ -392,6 +392,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `ANSI [ON|OFF]` (ANSI.EXE, FAPI 4Eh VioSetAnsi, 2 = abfragen), OFF setzt
   die Farbe zurück. COMMAND: `PROMPT $E` = ESC (`$e[1;33m$p$e[0m$g`).
   Vom Nutzer in 86Box bestätigt: farbiger Prompt geht.
+- XCOPY setzt wie NT das Attribut Schreibgeschützt am Ziel zurück, `/K`
+  behält die Attribute (vom Nutzer gemeldet: Kopien von CD waren alle
+  schreibgeschützt – ISO9660.IFS meldet jede Datei mit R). COPY, MOVE und
+  FM übernehmen ohnehin keine Attribute.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;

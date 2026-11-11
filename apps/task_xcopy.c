@@ -2,11 +2,13 @@
 /*
  * XCOPY.EXE - Dateien und Verzeichnisbaeume kopieren (wie MS-DOS 6):
  *
- *   XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/Y | /-Y]
+ *   XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/K] [/Y | /-Y]
  *
  *   /A  nur Dateien mit Archiv-Attribut      /M  dasselbe, Attribut danach weg
  *   /P  vor jeder Datei fragen               /S  Unterverzeichnisse (nicht leere)
  *   /E  auch leere Unterverzeichnisse        /Y  vorhandene Ziele ohne Frage
+ *   /K  Attribute behalten (sonst wird Schreibgeschuetzt zurueckgesetzt wie
+ *       bei NT - wichtig beim Kopieren von CD, dort ist alles schreibgeschuetzt)
  * Versteckte und System-Dateien werden wie bei MS-DOS nicht kopiert. Datum
  * und Uhrzeit bleiben erhalten.
  */
@@ -16,7 +18,7 @@
 static char args[FAPI_ARGLEN], s_arg[FAPI_PATHLEN], d_arg[FAPI_PATHLEN];
 static char src[FAPI_PATHLEN], dst[FAPI_PATHLEN], pat[FAPI_PATHLEN];
 static char to[FAPI_PATHLEN], made[FAPI_PATHLEN];
-static int opt_a, opt_m, opt_p, opt_s, opt_e, yes_all, to_file;
+static int opt_a, opt_m, opt_p, opt_s, opt_e, opt_k, yes_all, to_file;
 static unsigned copied, errors, slen_src;
 
 /* alle Verzeichnisse bis einschliesslich p anlegen */
@@ -109,7 +111,7 @@ static void copy_one(char *path, struct fapi_dirent *e)
         return;
     }
     fi.mask = 3;                        /* Datum/Uhrzeit wie das Original */
-    fi.attr = (e->attr & 0x07) | 0x20;
+    fi.attr = (opt_k ? e->attr & 0x07 : 0) | 0x20;   /* R nur mit /K */
     fi.date = e->date;
     fi.time = e->time;
     DosSetFInfo(to, &fi);
@@ -157,16 +159,18 @@ void main(void)
             case 'P': opt_p = 1; break;
             case 'S': opt_s = 1; break;
             case 'E': opt_e = opt_s = 1; break;
+            case 'K': opt_k = 1; break;
             case 'Y': yes_all = 1; break;
             case 'V': case 'W': break;      /* angenommen, ohne Wirkung */
             case '-': yes_all = 0; break;
             case '?':
                 puts("Kopiert Dateien und Verzeichnisb\x84ume.\r\n\r\n"
-                     "XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/Y | /-Y]\r\n\r\n"
+                     "XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/K] [/Y | /-Y]\r\n\r\n"
                      "  /A  nur Dateien mit Archiv-Attribut\r\n"
                      "  /M  wie /A, Archiv-Attribut der Quelle danach l\x94schen\r\n"
                      "  /P  vor jeder Datei fragen\r\n"
                      "  /S  Unterverzeichnisse (au\xE1" "er leeren)   /E  auch leere\r\n"
+                     "  /K  Attribute behalten (sonst wird Schreibschutz entfernt)\r\n"
                      "  /Y  vorhandene Ziele ohne Frage \x81" "berschreiben\r\n");
                 return;
             default:
