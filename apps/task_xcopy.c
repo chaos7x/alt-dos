@@ -14,11 +14,12 @@
  */
 #include "fapi.h"
 #include "util.h"
+#include "namepat.h"
 
 static char args[FAPI_ARGLEN], s_arg[FAPI_PATHLEN], d_arg[FAPI_PATHLEN];
 static char src[FAPI_PATHLEN], dst[FAPI_PATHLEN], pat[FAPI_PATHLEN];
-static char to[FAPI_PATHLEN], made[FAPI_PATHLEN];
-static int opt_a, opt_m, opt_p, opt_s, opt_e, opt_k, yes_all, to_file;
+static char to[FAPI_PATHLEN], made[FAPI_PATHLEN], dpat[FAPI_PATHLEN], pn[FAPI_PATHLEN];
+static int opt_a, opt_m, opt_p, opt_s, opt_e, opt_k, yes_all, to_file, dwild;
 static unsigned copied, errors, slen_src;
 
 /* alle Verzeichnisse bis einschliesslich p anlegen */
@@ -43,6 +44,12 @@ static void make_to(const char *path)
     if (n && to[n - 1] == '\\' && *r == '\\')
         r++;
     scat(to, r, sizeof(to));
+    if (dpat[0]) {                      /* Ziel mit Muster: *.BAK usw.  */
+        char *b = base_name(to);
+        apply_pat(b, dpat, pn);
+        *b = 0;
+        scat(to, pn, sizeof(to));
+    }
 }
 
 static int exists(const char *p)
@@ -190,6 +197,15 @@ void main(void)
     }
     abs_path(s_arg, src);
     abs_path(d_arg[0] ? d_arg : ".", dst);
+    b = base_name(dst);                 /* Ziel C:\X\*.* bzw. *.BAK: das */
+    if (has_wild(b)) {                  /* Verzeichnis davor, das Muster */
+        dwild = 1;
+        if (!(b[0] == '*' && (!b[1] || (b[1] == '.' && b[2] == '*' && !b[3]))))
+            scopy(dpat, b, sizeof(dpat));   /* gilt fuer die Namen      */
+        *b = 0;
+        if (slen(dst) > 3)
+            dst[slen(dst) - 1] = 0;
+    }
     if (!has_wild(src) && is_dir(src)) {
         scopy(pat, "*.*", sizeof(pat));
     } else {
@@ -203,7 +219,7 @@ void main(void)
     if (src[slen_src - 1] == '\\')
         slen_src--;                     /* "C:\" -> Rest beginnt mit \ */
     if (!is_dir(dst)) {
-        if (!has_wild(pat) && !opt_s) {
+        if (!has_wild(pat) && !opt_s && !dwild) {
             puts("Gibt ");
             puts(d_arg);
             puts(" einen Dateinamen oder ein Verzeichnis an\r\n(D = Datei, V = Verzeichnis)? ");
