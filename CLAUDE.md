@@ -118,6 +118,12 @@ RBSLICE (0xFF) = 2 auf dem 386, 4 auf dem 286. In QEMU geprüft: Platte
 auf 40 KB/s gedrosselt, DETACH XCOPY + RBOX vorn -> alle 46 Dateien
 kopiert, RBTIME am Prompt wie mit RBSLICE=0. Erstes Codesegment jetzt
 65.511 Byte (Grenze 65.520)!
+MEM in der Box (Wunsch des Nutzers, wie OS/2 \OS2\MDOS): FreeDOS MEM
+1.11 (github.com/FDOS/mem 2b2c833, GPL-2, Open Watcom 8086 ohne UPX,
+tools/freedos.sh) als `freedos/MEM.EXE` + `MEM.DE` in `\DOS\BOX`
+(BOXFILES). RBSHELL gibt FreeCOM bei COMMAND.COM aus X:\DOS\BOX eine
+eigene Umgebung (`envblk`): PATH=X:\DOS\BOX;X:\DOS, NLSPATH=X:\DOS\BOX,
+LANG=DE. In QEMU geprüft (MEM deutsch: 631K konventionell, 490K frei).
 
 ## Zweige und Releases (5.x)
 

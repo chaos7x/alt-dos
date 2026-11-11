@@ -52,6 +52,15 @@ start:
         jz      .abbild                         ; sonst vom Abbild (A:)
         mov     [shellx], al
         mov     [tailx + 2], al
+        mov     [env1], al                      ; Umgebung fuer FreeCOM: PATH
+        mov     [env2], al                      ; beginnt mit X:\DOS\BOX (MEM
+        mov     [env3], al                      ; von FreeDOS), deutsche MEM-
+        mov     ax, cs                          ; Meldungen ueber NLSPATH/LANG
+        mov     bx, envblk
+        mov     cl, 4
+        shr     bx, cl
+        add     ax, bx
+        mov     [pblock], ax
         mov     word [pb_tail], tailx
         mov     dx, shellx
 .abbild:
@@ -318,6 +327,13 @@ old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0
 tail:   db      12, " A:\ /E:1024", 13
 shellx: db      "C:\DOS\BOX\COMMAND.COM", 0
+        align   16
+envblk: db      "PATH="
+env1:   db      "C:\DOS\BOX;"
+env2:   db      "C:\DOS", 0
+        db      "NLSPATH="
+env3:   db      "C:\DOS\BOX", 0
+        db      "LANG=DE", 0, 0
 tailx:  db      20, " C:\DOS\BOX\ /E:1024", 13
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers

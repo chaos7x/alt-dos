@@ -235,7 +235,7 @@ for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
     mcopy -i $B/freedos.img freedos/$f ::$f
 done
 mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
-BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"

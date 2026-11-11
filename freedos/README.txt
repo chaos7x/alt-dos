@@ -1,7 +1,8 @@
 FreeDOS fuer die Kompatibilitaetsbox von AT-DOS 5.1
 ===================================================
 
-KERNEL.SYS, COUNTRY.SYS, COMMAND.COM und fat12com.bin stammen aus dem
+KERNEL.SYS, COUNTRY.SYS, COMMAND.COM, MEM.EXE, MEM.DE und fat12com.bin
+stammen aus dem
 FreeDOS-Projekt und stehen unter der GNU General Public License, Version 2
 oder spaeter (siehe COPYING). Sie wurden aus dem Quelltext gebaut,
 unveraendert:
@@ -15,10 +16,18 @@ unveraendert:
   COMMAND.COM   FreeCOM, https://github.com/FDOS/freecom, Stand d52ba90,
                 deutsch (Open Watcom erzeugt 8086-Code):
                   LNG=german ./build.sh wc
+  MEM.EXE       FreeDOS MEM 1.11, https://github.com/FDOS/mem, Stand 2b2c833,
+                Open Watcom, 8086, ohne UPX:
+                  wcl -bt=dos -ms -0 -oahls -s -j mem.c prf.c kitten.c
+  MEM.DE        deutsche Meldungen dazu (nls/mem.de); MEM liest sie ueber
+                NLSPATH und LANG=DE, die RBSHELL in der Box setzt
 
 Neu bauen: tools/freedos.sh (holt die Quellen per git und baut beide).
 
 build.sh legt daraus das Startabbild der Box an (build/freedos.img, 360 KB,
 auf dem Ziel \DOS\BOX\FREEDOS.IMG): FreeDOS-Bootsektor, KERNEL.SYS,
 COMMAND.COM, COUNTRY.SYS, RBSHELL.COM (apps/rbshell.asm) und CONFIG.SYS
-aus diesem Ordner. RBOX ohne Argument startet es.
+aus diesem Ordner. RBOX ohne Argument startet es. COMMAND.COM, MEM.EXE
+und MEM.DE liegen zusaetzlich in \DOS\BOX: dort startet RBSHELL FreeCOM,
+und der PATH der Box beginnt mit \DOS\BOX - MEM in der Box ist das von
+FreeDOS (wie \OS2\MDOS bei OS/2), MEM in AT-DOS das eigene.
