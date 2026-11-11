@@ -37,6 +37,7 @@ static unsigned rootd[CV_NROOT], nroot;
 static unsigned long pick_at, used32, cv_dirs, cv_files;
 static unsigned long ea_first, ea_size, ea_live;
 static int cv_err;
+static int keep_ea;                    /* /EA: Namen in EA DATA. SF lassen */
 static unsigned char ob[512];
 
 static unsigned f16(unsigned long x)
@@ -361,6 +362,8 @@ static int set_ptype(unsigned long start, unsigned char old)
     return -1;
 }
 
+#include "ufat32_e2v.c"
+
 static int do_convert(void)
 {
     static struct fapi_fsinfo fi;
@@ -542,8 +545,8 @@ static int do_convert(void)
     puts(" Verzeichnisse.\n");
     if (ea_live) {
         put_num(ea_live, 0);
-        puts(" lange Namen stehen in EA DATA. SF. FAT32 nimmt VFAT-Namen - die\n"
-             "S\x84tze bleiben erhalten, werden aber noch nicht angezeigt.\n");
+        puts(keep_ea ? " lange Namen in EA DATA. SF bleiben dort (LONGNAMES=EA).\n"
+                     : " lange Namen in EA DATA. SF werden nach VFAT \x81" "bertragen.\n");
     }
     if (!autom) {
         puts("W\x84hrend der Umwandlung darf der Rechner nicht ausgeschaltet werden.\n"
@@ -582,6 +585,17 @@ static int do_convert(void)
     fat_flush();
     if (ferr)
         cv_err = 1;
+    /* lange Namen aus EA DATA. SF nach VFAT (ohne /EA = LONGNAMES=EA) */
+    if (!cv_err && ea_live && !keep_ea) {
+        if (e2v_run(nfirst(ea_first), ea_size) == 0) {
+            put_num(e2v_names, 0);
+            puts(" lange Namen nach VFAT \x81" "bertragen, EA DATA. SF gel\x94scht.\n");
+        } else
+            puts("Lange Namen bleiben in EA DATA. SF (Verzeichnis zu gro\xE1 oder kein\n"
+                 "Platz) - AT-DOS liest sie weiter daraus.\n");
+        if (ferr)
+            cv_err = 1;
+    }
 
     /* FSInfo */
     for (i = 0; i < 512; i++)

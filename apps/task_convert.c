@@ -118,6 +118,12 @@ void main(void)
         puts(": /F ausf\x81hren.\r\n");
         DosExit(3);
     }
-    if (run(path, d, verb ? " /CONVERT /V" : " /CONVERT"))
-        DosExit(3);
+    {                                   /* LONGNAMES=EA (CONFIG.SYS): lange */
+        static char ln[8];              /* Namen in EA DATA. SF lassen,    */
+        int ea = !FAPI_FAILED(DosGetEnv("LONGNAMES", ln, sizeof(ln))) &&
+                 (ln[0] == 'E' || ln[0] == 'e');   /* sonst nach VFAT     */
+        if (run(path, d, verb ? (ea ? " /CONVERT /V /EA" : " /CONVERT /V")
+                              : (ea ? " /CONVERT /EA" : " /CONVERT")))
+            DosExit(3);
+    }
 }

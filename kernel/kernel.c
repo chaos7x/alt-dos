@@ -329,7 +329,7 @@ static void vol_unlock_cur(void);
 #define NVK     (NDRIVE + 1)
 #define MOD_DL  NDRV
 static unsigned char vk_owner[NVK];     /* Task + 1, 0 = frei            */
-static unsigned char dl_owner[NDRV + 1], dl_depth[NDRV + 1];
+static unsigned char dl_owner[2 * NDRV + 1], dl_depth[2 * NDRV + 1];   /* [NDRV+1+d]: Gruppe 1 */
 static unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
 void vol_lock(int d);
 static void drv_lock(int n);
@@ -2007,7 +2007,7 @@ static void locks_task_end(int t)       /* Sicherheitsnetz              */
     for (i = 0; i < NVK; i++)
         if (vk_owner[i] == t + 1)
             vk_owner[i] = 0;
-    for (i = 0; i <= NDRV; i++)
+    for (i = 0; i <= 2 * NDRV; i++)
         if (dl_owner[i] == t + 1)
             dl_owner[i] = 0;
     task[t].vkey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
@@ -4333,25 +4333,30 @@ static void sys_info(struct fapi_sysinfo __far *si)
 /* Auftrag je Treiber (Phase 6): nur der Kopf bis 'count' - READ/WRITE/
    FLUSH brauchen nicht mehr, die INIT-Felder bleiben in 'req' */
 #define DRQ_SIZE 28
-static unsigned char drq[NDRV][DRQ_SIZE];
+static unsigned char drq[2 * NDRV][DRQ_SIZE];     /* [NDRV+d]: Gruppe 1 */
 #define DRQ(d) ((struct drv_req *)drq[d])
+/* Sperre und Auftrag eines Blockgeraets: je Treiber, bei Einheiten mit
+   Sperrgruppe 1 (zweiter IDE-Kanal) eigene - beide Kanaele arbeiten dann
+   gleichzeitig */
+#define DLB(dev)  (blk[dev].grp ? NDRV + 1 + blk[dev].drv : blk[dev].drv)
+#define DRQB(dev) ((struct drv_req *)drq[blk[dev].grp ? NDRV + blk[dev].drv : blk[dev].drv])
 
-static void drv_request(int d)          /* Treibersperre wird gehalten   */
+static void drv_request(int d, struct drv_req *r)  /* Sperre wird gehalten */
 {
-    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)DRQ(d));
+    drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)r);
 }
 
 /* Auftrag in den eigenen DMABUF: waehrend der Treiber wartet, duerfen
    andere Tasks die Kernelsperre haben (proc_block) */
 static int ctx_room(int t);
-static void drv_request_rel(int d)
+static void drv_request_rel(int d, struct drv_req *r)
 {
     if (current < 0) {
-        drv_request(d);
+        drv_request(d, r);
         return;
     }
     task[current].may_rel = (unsigned char)ctx_room(current);
-    drv_request(d);
+    drv_request(d, r);
     task[current].may_rel = 0;
 }
 
@@ -4588,11 +4593,11 @@ static void bc_wb(unsigned i)
     struct bce __far *e = BCE(i);
     int dev = e->dev, own = current >= 0 && ctx_room(current);
     struct blkdev *b = &blk[dev];
-    struct drv_req *r = DRQ(b->drv);
+    struct drv_req *r = DRQB(dev);
     unsigned s, tries, bit;
 
     e->ref |= 0x80;
-    drv_lock(b->drv);
+    drv_lock(DLB(dev));
     for (s = 0; s < 4; s++) {
         bit = 1 << s;
         if (!(e->dirty & bit))
@@ -4610,12 +4615,12 @@ static void bc_wb(unsigned i)
                 r->buf_phys = wbuf_phys;
                 r->buf_sel = WBUF;
                 r->buf_off = 0;
-                drv_request_rel(b->drv);
+                drv_request_rel(b->drv, r);
             } else {
                 r->buf_phys = BC_LIN(i) + (s << 9);
                 r->buf_sel = bc_wsel;
                 r->buf_off = s << 9;
-                drv_request(b->drv);
+                drv_request(b->drv, r);
             }
             if (r->status == DRV_OK)
                 break;
@@ -4627,7 +4632,7 @@ static void bc_wb(unsigned i)
         }
         blk_dirty[dev] = 1;
     }
-    drv_unlock(b->drv);
+    drv_unlock(DLB(dev));
     e->ref &= 0x7F;
     if (!e->dirty && bc_ndirty)
         bc_ndirty--;
@@ -4771,8 +4776,8 @@ static int rem_media(int dev)
 
     if (!blk_chg[dev] && blk_rt[dev] && now - blk_rt[dev] < (blk_nm[dev] ? 100u : 200u))
         return 0;
-    drv_lock(b->drv);
-    r = DRQ(b->drv);
+    drv_lock(DLB(dev));
+    r = DRQB(dev);
     r->cmd = DRV_MEDIA;
     r->unit = b->unit;
     r->count = 0;
@@ -4781,11 +4786,11 @@ static int rem_media(int dev)
     r->buf_phys = dmab_phys;
     r->buf_sel = DMABUF;
     r->buf_off = 0;
-    drv_request(b->drv);
+    drv_request(b->drv, r);
     st = r->status;
     ch = r->count;
     cap = r->lba;
-    drv_unlock(b->drv);
+    drv_unlock(DLB(dev));
     blk_rt[dev] = now;
     if (st == DRV_ERR_NOTREADY) {
         ch = !blk_nm[dev];
@@ -4852,8 +4857,8 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
 
     if (b->drv < 0)
         return fd_read(b->unit, (unsigned)lba) ? -1 : 0;   /* immer einer */
-    drv_lock(b->drv);
-    r = DRQ(b->drv);
+    drv_lock(DLB(dev));
+    r = DRQB(dev);
     r->cmd = DRV_READ;
     r->unit = b->unit;
     r->count = (unsigned char)n;
@@ -4862,12 +4867,12 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     r->buf_phys = dmab_phys;            /* nach drv_lock: unser DMABUF   */
     r->buf_sel = DMABUF;
     r->buf_off = 0;
-    drv_request_rel(b->drv);
+    drv_request_rel(b->drv, r);
     blk_nm[dev] = r->status == DRV_ERR_NOTREADY;    /* CD: keine drin */
     if (r->status == DRV_ERR_CHANGED)
         blk_chg[dev] = 1;
     rc = r->status == DRV_OK ? 0 : -1;
-    drv_unlock(b->drv);
+    drv_unlock(DLB(dev));
     return rc;
 }
 
@@ -4963,8 +4968,8 @@ int blk_write(int dev, unsigned long lba)
     if (b->drv < 0) {
         rc = fd_write(b->unit, (unsigned)lba);
     } else {
-        struct drv_req *r = DRQ(b->drv);
-        drv_lock(b->drv);
+        struct drv_req *r = DRQB(dev);
+        drv_lock(DLB(dev));
         r->cmd = DRV_WRITE;
         r->unit = b->unit;
         r->count = 1;
@@ -4973,11 +4978,11 @@ int blk_write(int dev, unsigned long lba)
         r->buf_phys = dmab_phys;
         r->buf_sel = DMABUF;
         r->buf_off = 0;
-        drv_request_rel(b->drv);
+        drv_request_rel(b->drv, r);
         rc = r->status == DRV_OK ? 0 : r->status == DRV_ERR_WP ? -2 : -1;
         if (r->status == DRV_ERR_CHANGED || r->status == DRV_ERR_NOTREADY)
             blk_chg[dev] = 1;
-        drv_unlock(b->drv);
+        drv_unlock(DLB(dev));
         if (!rc)
             blk_dirty[dev] = 1;
     }
@@ -5011,10 +5016,12 @@ void blk_flush(void)
         for (; dev < nblk; dev++)       /* je Treiber einmal          */
             if (blk[dev].drv == d)
                 blk_dirty[dev] = 0;
-        drv_lock(d);
+        drv_lock(d);                    /* beide Gruppen: FLUSH geht an */
+        drv_lock(NDRV + 1 + d);         /* alle Einheiten               */
         DRQ(d)->cmd = DRV_FLUSH;
         DRQ(d)->status = DRV_ERR_IO;
-        drv_request_rel(d);
+        drv_request_rel(d, DRQ(d));
+        drv_unlock(NDRV + 1 + d);
         drv_unlock(d);
         dev = 0;                        /* von vorn: naechster Treiber */
     }
@@ -5668,8 +5675,9 @@ static int load_driver(const char *line, int is_ifs)
         blk[nblk].drv = (signed char)d;
         blk[nblk].unit = (unsigned char)k;
         blk[nblk].blocks = req.blocks[k];
-        blk[nblk].bsize = (req.bsize[k] & 0x7FFF) ? req.bsize[k] & 0x7FFF : 512;
+        blk[nblk].bsize = (req.bsize[k] & 0x0FFF) ? req.bsize[k] & 0x0FFF : 512;
         blk[nblk].rem = (unsigned char)(req.bsize[k] >> 15);
+        blk[nblk].grp = (unsigned char)((req.bsize[k] >> 12) & 7 ? 1 : 0);
         nblk++;
     }
     return req.units;
@@ -6168,7 +6176,11 @@ static void config_sys(void)
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
+            static char lv[16];
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
+            scopy(lv, lfn_cfg == 1 ? "LONGNAMES=VFAT" : lfn_cfg == 2 ? "LONGNAMES=EA"
+                                   : "LONGNAMES=AUTO", sizeof(lv));
+            env_set(-1, lv);                    /* fuer CONVERT           */
         } else {
             for (i = 0; quiet[i] && !kw(line, quiet[i]); i++)
                 ;

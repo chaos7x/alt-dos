@@ -4,7 +4,8 @@
  *
  *   UFAT32 Laufwerk: [/F] [/R] [/V] [/AUTO]   (/R: ufat32_scan.c)
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
- *   UFAT32 Laufwerk: /CONVERT [/V]   FAT16 -> FAT32    (ufat32_conv.c)
+ *   UFAT32 Laufwerk: /CONVERT [/V] [/EA]  FAT16 -> FAT32 (ufat32_conv.c),
+ *                     lange Namen nach VFAT, mit /EA in EA DATA. SF lassen
  *
  * Wie UFAT, aber fuer grosse Datentraeger gebaut: die FAT (bei FAT32
  * leicht viele MB) bleibt auf der Platte und wird ueber einen kleinen
@@ -813,7 +814,9 @@ void main(void)
             for (k = 0; a[k] && a[k] != ' ' && k < sizeof(spec) - 1; k++)
                 spec[k] = a[k];
             spec[k] = 0;
-        } else if (a[0] == '/' && up(a[1]) == 'R')
+        } else if (a[0] == '/' && up(a[1]) == 'E' && up(a[2]) == 'A')
+            keep_ea = 1;                /* CONVERT bei LONGNAMES=EA      */
+        else if (a[0] == '/' && up(a[1]) == 'R')
             surface = fix = 1;          /* /R: Oberflaechentest, mit /F  */
         else if (a[0] == '/' && up(a[1]) == 'F')
             fix = 1;

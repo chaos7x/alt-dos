@@ -44,6 +44,11 @@ struct drv_header {
                                        der Kernel haengt neu ein          */
 #define DRV_BS_REMOVABLE 0x8000     /* INIT bsize: Wechselplatte (ZIP, MO):
                                        Einheit auch ohne Medium, DRV_MEDIA */
+#define DRV_BS_GROUP(n) ((n) << 12)  /* INIT bsize: Sperrgruppe 0/1 (Bits
+                                       12-14) - Einheiten verschiedener
+                                       Gruppen (IDE-Kanaele) duerfen
+                                       gleichzeitig im Treiber sein; der
+                                       Treiber nimmt REQ nur beim Eintritt */
 
 struct drv_req {
     unsigned char  cmd;

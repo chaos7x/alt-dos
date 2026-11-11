@@ -380,6 +380,23 @@ Win32s), nicht vorziehen, sondern nachfragen.
   danach Start von FAT32, XCOPY, CHKDSK; Abbruch mit N lässt FAT16 gleich.
   Vom Nutzer in 86Box bestätigt: seine Spiele-Platte (FAT16) mit CONVERT
   nach FAT32 umgewandelt.
+  EA -> VFAT beim Umwandeln (Wunsch des Nutzers: „außer in der CONFIG.SYS
+  steht was anderes“; in QEMU geprüft): `apps/ufat32_e2v.c` nach Teil B
+  (neues FAT32 steht, fc_get/fat_put/clus_lba gelten): EA-Datei (bis
+  64 KB) in ein Segment, je Verzeichnis mit Sätzen (`e2v_pass`, erst
+  prüfen, dann schreiben) die Kette (bis 64 KB, `e2v_cl`) lesen, vor jeden
+  8.3-Eintrag mit Satz die VFAT-Einträge (Prüfsumme, UCS-2 aus CP437 über
+  `cp437u`), Verzeichnis wächst bei Bedarf (freie Cluster ab 2, used32),
+  zurückschreiben; danach EA DATA. SF löschen (Eintrag E5h, Kette frei).
+  Passt etwas nicht (Größe, Platz), bleibt alles im EA-Format. `/EA`
+  (CONVERT setzt es bei `LONGNAMES=EA`; der Kernel legt LONGNAMES= aus
+  der CONFIG.SYS in die Systemumgebung) lässt die Sätze stehen. fat.c:
+  FAT32 nimmt EA bei LONGNAMES=EA oder bei AUTO, wenn `EA DATA. SF` im
+  Stamm liegt (`lookup` beim Einhängen), sonst VFAT. Geprüft: FAT16 mit
+  6 langen Namen (Ordner, Unterordner, Umlaut, gemischte Schreibung) ->
+  CONVERT -> DIR zeigt sie, mtools liest die VFAT-Namen, fsck sauber,
+  Inhalte gleich; mit LONGNAMES=EA bleiben sie in der EA-Datei, neue
+  lange Namen landen dort, nach Neustart mit AUTO weiter sichtbar.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
@@ -3060,8 +3077,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die IDE-Platte kopiert (beide liefen gleichzeitig, die Plattensymbole
   blinkten im Wechsel), dabei VER/DIR/TASKMAN bedienbar und DELTREE auf
   der IDE-Platte mitten im Kopieren; CHKDSK auf beiden ohne Fehler.
-  Grenzen: zwei Laufwerke am selben Treiber (IDE-Master/-Slave, zwei
-  Partitionen) und zwei FAT12/16-Laufwerke laufen weiter nacheinander;
+  IDE je Kanal (Wunsch des Nutzers): Treiber melden je Einheit eine
+  Sperrgruppe in `bsize` Bits 12–14 (`DRV_BS_GROUP`, IDE: Kanal), Kernel
+  `blk[].grp`, Sperre `DLB(dev)` (Gruppe 1: dl_owner[NDRV+1+d]) und
+  Auftrag `DRQB(dev)` (drq[NDRV+d]); FLUSH nimmt beide. IDE.SYS nimmt REQ
+  nur beim Eintritt (xfer/dma_xfer bekommen r), PRD-Tabelle, ATAPI-
+  Paket/Sense und issue() Sektor/Kopf je Kanal. In QEMU geprüft (zwei
+  gedrosselte FAT32-Platten an primär/sekundär, zwei XCOPY gleichzeitig:
+  Kopien gleich, fsck sauber) – QEMU zeigt den Gewinn nicht (auch der alte
+  Kernel schrieb dort auf beide gleichzeitig: die gedrosselten Aufträge
+  kommen ohne langes Warten im Treiber zurück); nur in 86Box messbar.
+  Grenzen: zwei Laufwerke am selben IDE-Kanal oder SCSI-Treiber (Master/
+  Slave, zwei Partitionen) und zwei FAT12/16-Laufwerke laufen weiter nacheinander;
   Diskette behält die Sperre; ein Task, der in einer Operation im Treiber
   hängt, ist erst nach deren Ende beendbar. Kanäle/Geräte einzeln sperren
   wäre der nächste Schritt (Treiber müssten wiedereintrittsfest werden).

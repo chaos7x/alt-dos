@@ -73,8 +73,11 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Daten bleiben liegen, nur der künftige FAT-Bereich und der feste Stamm
   werden in freie Cluster kopiert; Partitionstyp 06h/04h -> 0Bh,
   0Eh -> 0Ch, Startcode von AT-DOS wird zum FAT32-Startcode. Bis zur
-  Rückfrage ändert es nichts; lange Namen im EA-Format bleiben in
-  `EA DATA. SF` erhalten (Verweise umgerechnet), FAT32 zeigt sie noch nicht
+  Rückfrage ändert es nichts; lange Namen im EA-Format werden dabei in
+  VFAT-Einträge übertragen (wie Windows 95/98 sie liest) und `EA DATA. SF`
+  gelöscht – mit `LONGNAMES=EA` in der CONFIG.SYS bleiben sie in der
+  EA-Datei, und FAT32 benutzt dann ebenfalls das EA-Format (bei AUTO,
+  wenn im Stamm eine `EA DATA. SF` liegt)
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem
@@ -708,7 +711,8 @@ arbeiten auf anderen Laufwerken weiter – XCOPY auf die SCSI-Platte, eine
 CD-Kopie und eine DOS-Box auf der IDE-Platte laufen wirklich
 gleichzeitig, CMD bleibt daneben bedienbar. Geschützt wird je Laufwerk
 (FAT12/16 teilen sich eine Sperre, FAT32 und CDs haben je eine) und je
-Treiber; jeder Task hat eigenen DMA-Puffer, FAT-Cache und Schreibpuffer,
+Treiber, bei `IDE.SYS` je Kanal (primär und sekundär arbeiten
+gleichzeitig); jeder Task hat eigenen DMA-Puffer, FAT-Cache und Schreibpuffer,
 und was eine Operation über einen Plattenzugriff hinweg hält, tauscht
 der Kernel bei Bedarf aus. Strg+C, der Taskmanager und SHUTDOWN warten,
 bis eine laufende Plattenoperation fertig ist. `IDE.SYS` benutzt IRQ 14/15

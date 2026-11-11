@@ -366,6 +366,16 @@ static void fsinfo(int d, int valid_now)
     wr(d, lba);
 }
 
+struct found {
+    clus_t first;
+    unsigned char attr;
+    unsigned long size;
+    clus_t dc;                          /* Lage des Eintrags            */
+    unsigned idx;
+};
+static int lookup(int d, clus_t dc, const char *n, struct found *f);
+static const char ea_n83[11];
+
 static int __far fat_mount(int d)
 {
     struct volume *v = &vol[d];
@@ -433,7 +443,15 @@ static int __far fat_mount(int d)
     if (v->fat16 && !IS_FLOPPY(v->blk) && blk_read(v->blk, v->fat_lba) == 0)
         v->was_dirty = f32 ? !(rd32(4) & 0x08000000UL)   /* FAT[1] Bit 27 */
                            : !(rd16(2) & CLEAN_BIT);     /* FAT[1] Bit 15 */
-    v->vfat = lfn_cfg == 1 || f32;      /* FAT32 immer VFAT (Windows 95/98) */
+    v->vfat = lfn_cfg == 1 || (f32 && lfn_cfg == 0);  /* FAT32: VFAT (Windows
+                                           95/98), ausser LONGNAMES=EA oder
+                                           EA DATA. SF im Stamm (AUTO)    */
+    if (f32 && lfn_cfg == 0) {
+        struct found ef;
+        dir_cache_reset();
+        if (lookup(d, 0, ea_n83, &ef) == 0)
+            v->vfat = 0;
+    }
     if (lfn_cfg == 0 && !f32) {         /* AUTO: VFAT, wenn der Stamm schon */
         unsigned i;                     /* lange Eintraege hat (Windows 95) */
         unsigned char __far *e;
@@ -548,13 +566,6 @@ static int to83(const char *s, unsigned len, char *n)
     return k ? 0 : -1;
 }
 
-struct found {
-    clus_t first;
-    unsigned char attr;
-    unsigned long size;
-    clus_t dc;                          /* Lage des Eintrags            */
-    unsigned idx;
-};
 
 /* ---- Lange Namen (VFAT, Windows 95) lesen --------------------------------
    Vor dem 8.3-Eintrag stehen Eintraege mit Attribut 0Fh, letzter Teil

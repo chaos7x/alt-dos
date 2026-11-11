@@ -196,12 +196,12 @@ void outl(unsigned port, unsigned lo, unsigned hi);
     __parm [__dx] [__ax] [__bx] __modify __exact [];
 
 static unsigned bm_base[2];             /* 0 = kein Busmaster am Kanal   */
-static unsigned char prdbuf[32];        /* PRD-Tabelle, 16 Byte darin auf
-                                           16 ausgerichtet (keine 64-KB-
-                                           Grenze)                       */
+static unsigned char prdbuf[48];        /* PRD-Tabellen je Kanal, je 16
+                                           Byte auf 16 ausgerichtet (keine
+                                           64-KB-Grenze)                 */
 static unsigned long drv_lin;           /* physische Basis des Treibers  */
-static unsigned long prd_phys;
-static unsigned long *prd;             /* im eigenen DS               */
+static unsigned long prd_phys[2];
+static unsigned long *prd[2];           /* im eigenen DS               */
 
 static void bm_find(void)
 {
@@ -227,8 +227,10 @@ static void bm_find(void)
         if (!(v & 4))                           /* Busmaster an          */
             pci_wr(loc, 0x04, v | 5, 2);
         drv_lin = r->base;
-        prd_phys = (drv_lin + (unsigned)prdbuf + 15) & ~15UL;
-        prd = (unsigned long *)(unsigned)(prd_phys - drv_lin);
+        prd_phys[0] = (drv_lin + (unsigned)prdbuf + 15) & ~15UL;
+        prd_phys[1] = prd_phys[0] + 16;
+        prd[0] = (unsigned long *)(unsigned)(prd_phys[0] - drv_lin);
+        prd[1] = prd[0] + 4;
         for (ch = 0; ch < 2; ch++)
             if (chan[ch].units) {
                 claim(RES_IO, bm_base[ch], 8);
@@ -243,10 +245,11 @@ static void bm_find(void)
 }
 
 /* n Sektoren ab l per DMA; 0 = ok */
-static int dma_xfer(struct unit *u, unsigned long l, unsigned n, int write)
+static int dma_xfer(struct drv_req __far *r, struct unit *u, unsigned long l,
+                    unsigned n, int write)
 {
-    struct drv_req __far *r = REQ;
     unsigned bm = bm_base[u->ch], k = 0;
+    unsigned long *pr = prd[u->ch];
     unsigned long a = r->buf_phys, len = (unsigned long)n << 9, piece;
     unsigned char st, dir = (unsigned char)(write ? 0 : 8);
 
@@ -254,15 +257,15 @@ static int dma_xfer(struct unit *u, unsigned long l, unsigned n, int write)
         piece = 0x10000UL - (a & 0xFFFFUL);
         if (piece > len)
             piece = len;
-        prd[k++] = a;
-        prd[k++] = piece & 0xFFFFUL;
+        pr[k++] = a;
+        pr[k++] = piece & 0xFFFFUL;
         a += piece;
         len -= piece;
     }
-    prd[k - 1] |= 0x80000000UL;                 /* letzter Eintrag       */
+    pr[k - 1] |= 0x80000000UL;                  /* letzter Eintrag       */
     outp(bm, 0);
     outp(bm + 2, (unsigned char)(inp(bm + 2) | 6));
-    outl(bm + 4, (unsigned)prd_phys, (unsigned)(prd_phys >> 16));
+    outl(bm + 4, (unsigned)prd_phys[u->ch], (unsigned)(prd_phys[u->ch] >> 16));
     outp(bm, dir);
     if (issue(u, l, n, write ? 0xCA : 0xC8))
         return -1;
@@ -318,7 +321,10 @@ static unsigned long chs_size(unsigned cyls, unsigned heads, unsigned spt)
    0 = ok, -1 = Laufwerk belegt oder Adresse ausserhalb */
 static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
 {
-    static unsigned sec, head;              /* static: SS ist nicht DS (-zu) */
+    static unsigned secs[2], heads[2];      /* static: SS ist nicht DS (-zu);
+                                               je Kanal (beide gleichzeitig) */
+#define sec secs[u->ch]
+#define head heads[u->ch]
     unsigned long track;
     unsigned cyl = 0, b = u->base;
 
@@ -352,6 +358,8 @@ static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
     settle(u->ctl);
     return 0;
 }
+#undef sec
+#undef head
 
 /* einen Sektor nach id[] lesen (Pruefung der Geometrie); 0 = ok */
 static int test_read(struct unit *u, unsigned long l)
@@ -437,6 +445,7 @@ static void old_disk(int ch, int dev)
     }
     n = chs_size(u->cyls, u->heads, u->spt);
     r->blocks[nunit] = n;
+    r->bsize[nunit] = (unsigned short)(ch ? DRV_BS_GROUP(1) : 0);
     nunit++;
     chan[ch].units++;
     /* echte WD1003-Platten: 17 Sektoren je Spur (MFM) oder 26 (RLL);
@@ -510,7 +519,7 @@ static void probe(int ch, int dev)
         u->chs = 0;
         u->atapi = 1;
         r->blocks[nunit] = 0xFFFFFFFFUL;    /* Groesse haengt an der CD */
-        r->bsize[nunit] = 2048;
+        r->bsize[nunit] = (unsigned short)(2048 | (ch ? DRV_BS_GROUP(1) : 0));
         nunit++;
         chan[ch].units++;
         p = scat(p, "CD-ROM ");
@@ -564,6 +573,7 @@ static void probe(int ch, int dev)
         n = chs_size(u->cyls, u->heads, u->spt);
     }
     r->blocks[nunit] = n;
+    r->bsize[nunit] = (unsigned short)(ch ? DRV_BS_GROUP(1) : 0);
     nunit++;
     chan[ch].units++;
 
@@ -655,7 +665,9 @@ static void init(void)
 
 /* ATAPI: Paketbefehl in pkt[] schicken und len Bytes nach sel:off lesen
    (READ(10): 2048, REQUEST SENSE: 18); 0 = ok */
-static unsigned char pkt[12];
+static unsigned char pkts[2][12];       /* je Kanal: beide Kanaele koennen
+                                           gleichzeitig arbeiten         */
+#define pkt pkts[u->ch]
 
 static int atapi_pkt(struct unit *u, unsigned len, unsigned sel, unsigned off)
 {
@@ -692,7 +704,7 @@ static int atapi_pkt(struct unit *u, unsigned len, unsigned sel, unsigned off)
     return wait_irq(u, 0, 0, 300);
 }
 
-static void pkt_clear(unsigned char op)
+static void pkt_clear(struct unit *u, unsigned char op)
 {
     int i;
     for (i = 0; i < 12; i++)
@@ -703,7 +715,7 @@ static void pkt_clear(unsigned char op)
 /* einen 2048-Byte-Block mit READ(10) lesen; 0 = ok */
 static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned off)
 {
-    pkt_clear(0x28);                        /* READ(10)                 */
+    pkt_clear(u, 0x28);                     /* READ(10)                 */
     pkt[2] = (unsigned char)(l >> 24);
     pkt[3] = (unsigned char)(l >> 16);
     pkt[4] = (unsigned char)(l >> 8);
@@ -713,17 +725,20 @@ static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned of
 }
 
 /* REQUEST SENSE nach einem Fehler: Sense Key << 8 | ASC, -1 = keine Antwort */
-static unsigned char sense[18];
+static unsigned char senses[2][18];
+#define sense senses[u->ch]
 
 static int atapi_sense(struct unit *u)
 {
     void __far *sp = (void __far *)sense;
-    pkt_clear(0x03);
+    pkt_clear(u, 0x03);
     pkt[4] = sizeof(sense);
     if (atapi_pkt(u, sizeof(sense), FP_SEG(sp), FP_OFF(sp)))
         return -1;
     return ((sense[2] & 0x0F) << 8) | sense[12];
 }
+#undef sense
+#undef pkt
 
 /* gescheiterten Versuch ins Startprotokoll (Sitzung 1) melden: Schritt
    (1 Befehl, 2 Daten, 3 Ende), Status- und Fehlerregister. Kommt nur bei
@@ -747,10 +762,11 @@ static void report(struct unit *u, int write, unsigned long l, int step, int t)
     dputs(line);
 }
 
-/* count Sektoren (1-16) lesen oder einen schreiben */
-static void xfer(int write)
+/* count Sektoren (1-16) lesen oder einen schreiben. r kommt aus strategy:
+   beide Kanaele koennen gleichzeitig im Treiber sein (der Kernel sperrt je
+   Kanal, DRV_BS_GROUP) - REQ gilt nur bis zum ersten Schlafen. */
+static void xfer(struct drv_req __far *r, int write)
 {
-    struct drv_req __far *r = REQ;
     struct unit *u = &unit[r->unit];
     unsigned long l = r->lba;
     unsigned b = u->base, n, i;
@@ -796,7 +812,7 @@ static void xfer(int write)
 
     if (u->dma == 3) {                      /* Busmaster                 */
         for (tries = 0; tries < 2; tries++) {
-            if (dma_xfer(u, l, n, write) == 0) {
+            if (dma_xfer(r, u, l, n, write) == 0) {
                 r->status = DRV_OK;
                 return;
             }
@@ -873,13 +889,13 @@ void strategy(void)
         if (r->unit >= nunit)
             r->status = DRV_ERR_IO;
         else
-            xfer(0);
+            xfer(r, 0);
         break;
     case DRV_WRITE:
         if (r->unit >= nunit)
             r->status = DRV_ERR_IO;
         else
-            xfer(1);
+            xfer(r, 1);
         break;
     case DRV_FLUSH:
         flush();
