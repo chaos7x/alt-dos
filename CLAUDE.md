@@ -2380,6 +2380,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   an (trotz Fensterumschaltung über das BIOS). Der senkrechte Strich in der Bild-
   mitte ist VDEMO selbst (zeichnet Byte für Byte, Rand bei Byte 639 =
   Punkt 319 in 16 Bit), auch in QEMU zu sehen.
+  Fensterwechsel direkt in der Karte (Wunsch des Nutzers, seine Karten:
+  ET4000/W32, Cirrus GD5434, S3 Trio3D/2X mit LFB): vgagfx.c `hwbank`
+  fragt beim ersten Wechsel `chip_probe` (erst „Tseng“/„Cirrus“ im
+  Video-BIOS C000:0000–7FFF, dann Schlüssel und ein Register, das einen
+  geschriebenen Wert behalten muss, alter Wert zurück): ET4000 3CDh
+  (Bits 0–3 Schreiben, 4–7 Lesen, 64 KB, nur Granularität 64 KB), W32
+  („W32“ im BIOS, 3CBh behält 11h) dazu 3CBh Bit 0/4 = Bankbit 4 bis
+  2 MB (so in 86Box vid_et4000w32.c, nur gelesen; der X11-Tseng-Treiber
+  nutzt den linearen Speicher und sagt dazu nichts); Cirrus GR9 = Stelle
+  in Granularitätsschritten wie 4F05h (Index von 3CEh/3C4h bleibt). Alles
+  andere weiter über das BIOS. In QEMU mit `-vga cirrus` geprüft (Test-
+  weise LFB übergangen und „cirrus“ klein gesucht – SeaVGABIOS nennt
+  sich so nur in Debug-Texten): VDEMO 640×480×8, jeder Wechsel direkt,
+  Bild richtig; QEMU-Standard-VGA bleibt beim BIOS. ET4000 nur in 86Box
+  prüfbar.
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem

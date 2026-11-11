@@ -125,16 +125,104 @@ static unsigned vp_gmul;                /* 0 = linear, sonst Fenster (VBE 1.2) *
 static unsigned vesa_cb;                /* Fenster der Karte steht auf ...  */
 void __far vesa_bank(unsigned n);       /* vesa.c                        */
 
-/* Fenster-Karten (VBE 1.2): Bildspeicher nur ueber A0000h, 64 KB; der
-   Kernel stellt das Fenster per BIOS (4F05h, Real Mode) um. hwbank
-   sichert SCRATCH/SCRATCH2 (rm_call benutzt SCRATCH). */
+/* Fenster direkt in der Karte stellen statt per BIOS (4F05h, Ausflug in
+   den Real Mode) - ein OUT je Wechsel (Wunsch des Nutzers, seine Karten
+   in 86Box: ET4000/W32, Cirrus GD5434; die S3 hat linearen Speicher):
+   - Tseng ET4000: 3CDh, Bits 0-3 Schreiben, 4-7 Lesen, je 64 KB (nur
+     64-KB-Granularitaet und das erste MB, sonst BIOS); ET4000/W32 dazu
+     3CBh Bit 0/4 = Bankbit 4 fuer Schreiben/Lesen (bis 2 MB; so bildet
+     86Box sie nach, vid_et4000w32.c - nur gelesen);
+   - Cirrus GD54xx: Grafikregister 9 (Offset 0) = Stelle in Granulari-
+     taets-Schritten, wie es das BIOS bei 4F05h schreibt.
+   Erkennung erst lesend: Name im Video-BIOS (C000:0000-7FFF), dann der
+   Schluessel der Karte und ein Register, das einen geschriebenen Wert
+   behalten muss (alter Wert zurueck). */
+#define CHIP_UNK    0
+#define CHIP_NONE   1
+#define CHIP_ET4000 2
+#define CHIP_CIRRUS 3
+static unsigned char svga_chip, et_w32;
+
+static int rom_has(const char *w)
+{
+    unsigned char __far *r = MK_FP(SCRATCH, 0);
+    unsigned i, k;
+    for (i = 0; i < 0x7FF0; i++) {
+        for (k = 0; w[k] && r[i + k] == (unsigned char)w[k]; k++)
+            ;
+        if (!w[k])
+            return 1;
+    }
+    return 0;
+}
+
+static unsigned char chip_probe(void)
+{
+    unsigned char a, b;
+
+    scratch_map(0xC0000UL, 0x7FFF);
+    if (rom_has("Tseng")) {
+        outb(0x3BF, 0x03);                  /* Tseng-Schluessel          */
+        outb(0x3D8, 0xA0);
+        a = inb(0x3CD);
+        outb(0x3CD, 0x55);
+        b = inb(0x3CD);
+        outb(0x3CD, a);
+        if (b != 0x55)
+            return CHIP_NONE;
+        if (rom_has("W32")) {               /* W32: 3CBh muss behalten   */
+            a = inb(0x3CB);
+            outb(0x3CB, 0x11);
+            b = inb(0x3CB);
+            outb(0x3CB, a);
+            et_w32 = (b & 0x11) == 0x11;
+        }
+        return CHIP_ET4000;
+    }
+    if (rom_has("Cirrus") || rom_has("CIRRUS")) {
+        a = inb(0x3C4);                     /* Index des Programms lassen */
+        outb(0x3C4, 0x06);                  /* SR6 = 12h: Erweiterungen  */
+        outb(0x3C5, 0x12);                  /* frei, liest dann 12h      */
+        b = inb(0x3C5);
+        outb(0x3C4, a);
+        return b == 0x12 ? CHIP_CIRRUS : CHIP_NONE;
+    }
+    return CHIP_NONE;
+}
+
+/* Fenster-Karten (VBE 1.2): Bildspeicher nur ueber A0000h, 64 KB. hwbank
+   sichert SCRATCH/SCRATCH2 (rm_call und die Erkennung benutzen SCRATCH). */
 static void hwbank(unsigned b)
 {
     unsigned short w[8];
+    unsigned n;
+    unsigned char gi;
+
     if (!vp_gmul || b == vesa_cb)
         return;
+    if (svga_chip == CHIP_UNK) {
+        win_save(w);
+        svga_chip = chip_probe();
+        win_restore(w);
+    }
+    n = b * vp_gmul;                        /* Granularitaets-Schritte   */
+    if (svga_chip == CHIP_ET4000 && vp_gmul == 1 && b < (et_w32 ? 32 : 16)) {
+        outb(0x3CD, (b & 15) | ((b & 15) << 4));
+        if (et_w32)
+            outb(0x3CB, ((b >> 4) & 1) | (((b >> 4) & 1) << 4));
+        vesa_cb = b;
+        return;
+    }
+    if (svga_chip == CHIP_CIRRUS && n < 256) {
+        gi = inb(0x3CE);                    /* Index des Programms lassen */
+        outb(0x3CE, 0x09);
+        outb(0x3CF, (unsigned char)n);
+        outb(0x3CE, gi);
+        vesa_cb = b;
+        return;
+    }
     win_save(w);
-    vesa_bank(b * vp_gmul);
+    vesa_bank(n);
     win_restore(w);
     vesa_cb = b;
 }

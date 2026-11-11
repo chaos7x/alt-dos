@@ -318,7 +318,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - VESA für FAPI-Programme (6.0): Modi mit linearem Bildspeicher bis
   1024×768×32 (VBE 2.0/3.0, FAPI VioVesa), auf älteren Karten mit
   VBE 1.2 (ET4000, Cirrus, frühe S3) über das umschaltbare 64-KB-Fenster
-  bei A0000h – für Programme gleich (`VESA` zeigt „linear“/„Fenster“). Den Modus stellt der Kernel
+  bei A0000h – für Programme gleich (`VESA` zeigt „linear“/„Fenster“);
+  bei ET4000(/W32) und Cirrus GD54xx schaltet der Kernel das Fenster
+  direkt in der Karte um statt über das BIOS. Den Modus stellt der Kernel
   wie OS/2 1.x über einen kurzen Ausflug in den Real Mode mit dem Video-
   BIOS ein; das Programm sieht das Bild über ein 64-KB-Fenster, das
   VioSetPlane weiterschiebt (passt zu 286-Programmen). Sitzungswechsel
