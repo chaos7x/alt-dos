@@ -198,6 +198,8 @@ nicht. Verfügbar = min(RBXMS-Rest, frei + Cache über der Mindestgröße −
 QEMU und Bochs (286-Weg) geprüft: COMMAND 3,5 KB statt 74 KB, 605 statt
 533 KB frei, XMS 921 KB frei, Programme mehrmals hintereinander, nach
 EXIT ist der Speicher von AT-DOS wie vorher.
+DIR in der Box zeigt Verzeichnisse zuerst: RBSHELL setzt `DIRCMD=/OGN`
+(Wunsch des Nutzers, wie DIR /O). In QEMU geprüft.
 Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 (`startup[512]`) -> 4 KB (auch auf main und 5.0).
 

@@ -536,7 +536,8 @@ env1:   db      "C:\DOS\MDOS;"
 env2:   db      "C:\DOS", 0
         db      "NLSPATH="
 env3:   db      "C:\DOS\MDOS", 0
-        db      "LANG=DE", 0, 0
+        db      "LANG=DE", 0
+        db      "DIRCMD=/OGN", 0, 0             ; DIR: Verzeichnisse zuerst
 tailx:  db      21, " C:\DOS\MDOS\ /E:1024", 13
 tailk:  db      48, " C:\DOS\MDOS\ /E:1024 /K C:\DOS\MDOS\RBREADY.COM", 13
 perm:   db      0
