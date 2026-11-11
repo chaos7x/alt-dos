@@ -98,7 +98,7 @@ void main(void)
     static struct fapi_meminfo mi;
     static struct fapi_cacheinfo ci;
     static char args[FAPI_ARGLEN];
-    unsigned long used, total, fr, rest;
+    unsigned long used, total, fr, rest, boxes;
     char *a;
     int brief = 0;
 
@@ -119,8 +119,15 @@ void main(void)
         puts("DosMemInfo fehlgeschlagen.\n");
         return;
     }
+#ifdef MEMINFO_V60                      /* 6.0: 32 Bit, DOS-Boxen        */
     total = mi.total_kb32 ? mi.total_kb32 : mi.total_kb;   /* 5.0: 16 Bit */
     fr = mi.total_kb32 ? mi.free_kb32 : mi.free_kb;
+    boxes = mi.box_kb;
+#else                                   /* 5.x: 16 Bit, keine V86-Boxen  */
+    total = mi.total_kb;
+    fr = mi.free_kb;
+    boxes = 0;
+#endif
     used = total - fr;
     if (DosCacheInfo(&ci) != 0)
         ci.kb = 0;
@@ -131,9 +138,9 @@ void main(void)
     row("Programme", mi.apps_kb, total);
     row("Angefordert (AllocSeg)", mi.alloc_kb, total);
     row("Platten-Cache", ci.kb, total);
-    if (mi.box_kb)
-        row("DOS-Boxen", mi.box_kb, total);
-    rest = used - mi.kernel_kb - mi.apps_kb - mi.alloc_kb - ci.kb - mi.box_kb;
+    if (boxes)
+        row("DOS-Boxen", boxes, total);
+    rest = used - mi.kernel_kb - mi.apps_kb - mi.alloc_kb - ci.kb - boxes;
     row("BIOS, Boot, Puffer", rest, total);
     line();
     row("Belegt", used, total);
