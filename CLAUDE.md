@@ -42,6 +42,20 @@ Auch damit weiter FFh: FreeCOM startet und endet mit 255 (so beendet
 der FreeDOS-Kern ein Programm nach einer CPU-Ausnahme, z. B. Invalid
 Opcode). RBSHELL hält jetzt bei jedem Ende mit Code ungleich 0 an
 (Meldung + Taste), damit der Bildschirm der Box lesbar bleibt.
+Danach (Nutzer): „rbox geht prinzipiell, nur schnelle oder häufige
+Wechsel nicht“ – Box hängt danach schwarz ohne Tasten. Vermutete
+Ursache: Alt+Esc kam mitten aus dem INT 9 des BIOS (INT 15h/4Fh, IF
+aus); lag beim Zurückkehren schon ein Tastenbyte im 8042 (schnelles
+Umschalten), stellte der Stummel einen INT 9 genau dort zu – der
+INT-9-Handler des BIOS lief verschachtelt. Jetzt merkt INT 15h/4Fh
+Alt+Esc und Strg+Alt+Entf nur vor ([86] = Grund | Weg << 8, Taste mit
+CF = 0 verbraucht), `rbs_int8` führt den Wechsel beim nächsten Takt aus
+(Rahmen = unterbrochenes Programm, IF an); der nachgeholte INT 9 nur noch
+bei IF im Rahmen. Geprüft: QEMU (386-Weg: Wechsel, VER, Strg+Alt+Entf
+„Weg 2“) und Bochs mit erzwungenem 286-Weg (25 schnelle Wechsel per
+USER-Taste – `keyboard: user_shortcut=alt-esc`, Klick per xdotool auf
+USER und dann OK, Box danach heil). Grenze: biegt ein Programm INT 8
+ohne Weiterreichen um, wirkt Alt+Esc erst nach dessen Ende.
 
 ## Zweige und Releases (5.x)
 
