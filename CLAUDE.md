@@ -185,6 +185,7 @@ RBOX holt per RB_NEED (8, setzt rb_img_pos) + RB_IMG 8 KB aus der offen
 gehaltenen Datei, das nächste RB_RUN erledigt den INT 13h zuerst. In
 QEMU gezählt: 120 KB statt 720 KB; COMMAND.COM vom Abbild (Rückfall
 ohne \DOS\MDOS\COMMAND.COM) und KERNEL.SYS per COPY gelesen, gleich.
+Vom Nutzer auf dem SCAT bestätigt (Build 240.63): Start deutlich schneller.
 Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 (`startup[512]`) -> 4 KB (auch auf main und 5.0).
 
