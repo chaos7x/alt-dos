@@ -155,6 +155,16 @@ void main(void)
         puts("Box: unerwarteter R\x81" "ckweg.\r\n");
         DosExit(255);
     }
-    puts("Box beendet.\r\n");
-    DosExit(r >> 8);
+    l = r >> 8;                         /* Grund (RBSHELL, Kernel)   */
+    puts(l == 0xFF ? "Box mit Strg+Alt+Entf beendet.\r\n" :
+         l == 0xF1 ? "Box beendet: COMMAND.COM mit Strg+C abgebrochen.\r\n" :
+         l == 0xF2 ? "Box beendet: COMMAND.COM durch einen Fehler abgebrochen.\r\n" :
+         l == 0xF3 ? "Box beendet: COMMAND.COM blieb resident.\r\n" :
+         "Box beendet.\r\n");
+    if (l && l < 0xF0) {
+        puts("R\x81" "ckgabewert ");
+        put_num(l, 0, 0);
+        puts("\r\n");
+    }
+    DosExit(l);
 }

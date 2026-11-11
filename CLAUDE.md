@@ -20,6 +20,13 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+Box-Ende mit Grund (Anlass: der Nutzer sah nach 5–10 Wechseln „Box
+beendet“, in QEMU mit 25 Wechseln nicht nachgestellt): RBSHELL gibt
+nach FreeCOM AL = F0h + Art aus INT 21h 4Dh weiter, wenn COMMAND.COM
+nicht per EXIT endete (1 Strg+C, 2 Fehler/Absturz, 3 resident), der
+Kernel meldet Strg+Alt+Entf mit FFh (vorher kam dort die Taktdifferenz
+als Rückgabewert heraus); RBOX nennt den Grund.
+
 ## Zweige und Releases (5.x)
 
 `5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), CI füllt

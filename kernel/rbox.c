@@ -474,7 +474,8 @@ unsigned __far rb_run(void)
         if (r == RB_CALL && (RBW(0) >> 8) == 1) {   /* INT E0h 01h:  */
             r = RB_EXIT;                    /* Box beenden, AL = Wert */
             d = RBW(0) & 0xFF;
-        }
+        } else if (r == RB_EXIT)
+            d = 0xFF;                       /* Strg+Alt+Entf (Stummel) */
         break;
     }
     rb_quiet = r == RB_CALL;                /* Dienst: Bild bleibt der Box */

@@ -50,8 +50,12 @@ start:
         int     0x21
         mov     al, 0xFF
         jc      .done
-        mov     ah, 0x4D
-        int     0x21
+        mov     ah, 0x4D                        ; AH = Art des Endes: 0 EXIT,
+        int     0x21                            ; 1 Strg+C, 2 kritischer
+        test    ah, ah                          ; Fehler/Absturz, 3 TSR ->
+        jz      .done                           ; RBOX meldet F0h + Art
+        mov     al, ah
+        or      al, 0xF0
 .done:  mov     ah, 1                           ; Box beenden, AL = Code
         int     0xE0
         jmp     $
