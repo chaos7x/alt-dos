@@ -622,8 +622,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (mit FreeCOM resident; direkt aus CMD 2,5 KB mehr), mit EMS-Rahmen und
   nur 4 KB UMB wie vorher 620 KB; SET, DIR, EXIT, HALLO aus CMD gehen.
   Elvira selbst stürzt auch unter MS-DOS mit QEMM ab (#6 bei 0000:0073,
-  INT 8/9 auf 0:0 – wie in der Box); laut Nutzer lief es früher einmal
-  sauber. Elvira vom Nutzer zurückgestellt.
+  INT 8/9 auf 0:0 – wie in der Box). Auflösung (Nutzer): Elvira wird
+  über ELVIRA.BAT gestartet (`runvga gamepc /s >tmp.txt`, vorher
+  SETUP.EXE); RUNVGA ohne Argumente meldet irreführend „Not enough
+  memory“ und lässt INT 8/9 auf 0:0. So aufgerufen läuft es in der Box.
 - TEMP/TMP (Wunsch des Nutzers): Kernel setzt sie neben COMSPEC/PATH in
   der Systemumgebung auf X:\TEMP (Startlaufwerk; Start von Diskette und
   C: eingehängt -> C:), nur wenn CONFIG.SYS sie nicht per SET setzt;
