@@ -109,6 +109,15 @@ FreeCOM von dort (`shellx`/`tailx`), drive_mask meldet dann auch A:/B:
 (die Disketten von AT-DOS über den Redirector); sonst wie bisher vom
 Abbild. In QEMU geprüft (COMSPEC=C:\DOS\BOX\COMMAND.COM, TYPE/DIR A:
 auf einer AT-DOS-Diskette; ohne die Datei Start vom Abbild).
+Ausflüge nur bei Bedarf (Nutzer auf dem SCAT: RBTIME 638 mit RBSLICE=0,
+344 mit Ausflügen, 329 bei laufendem XCOPY): kernel.c `kf_rb_busy` – will
+außer dem Box-Task ein Programm Rechenzeit (T_BLOCK oder T_READY ohne
+`kwait`; `kwait` setzt KbdCharIn um sein sleep_ticks, die Tasten hat ja
+die Box)? Sonst setzt rb_entry_prep [80] = 0 (keine Ausflüge). Vorgabe
+RBSLICE (0xFF) = 2 auf dem 386, 4 auf dem 286. In QEMU geprüft: Platte
+auf 40 KB/s gedrosselt, DETACH XCOPY + RBOX vorn -> alle 46 Dateien
+kopiert, RBTIME am Prompt wie mit RBSLICE=0. Erstes Codesegment jetzt
+65.511 Byte (Grenze 65.520)!
 
 ## Zweige und Releases (5.x)
 

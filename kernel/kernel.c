@@ -97,6 +97,7 @@ struct task {
     unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
     unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
     unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */
+    unsigned char kwait;                        /* wartet in KbdCharIn      */
     volatile unsigned char block_rc;            /* ProcBlock: 0 geweckt, 1 Frist */
     unsigned long block_id;                     /* ProcBlock: Ereignis       */
     unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
@@ -2319,7 +2320,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 return k;
             if (task[current].sig_pending & task[current].sig_mask)
                 return 0;                       /* Signal: Zustellung    */
-            sleep_ticks(1);                     /* bis zur naechsten Taste */
+            task[current].kwait = 1;            /* (RBOX: braucht keine   */
+            sleep_ticks(1);                     /* Ausfluege, die Tasten  */
+            task[current].kwait = 0;            /* hat die Box)           */
         }
 
     case FAPI_KBDPEEK:
@@ -3456,9 +3459,22 @@ static int a20_is_on(void)
 
 extern void irq_replay(unsigned n);
 unsigned short rb_drvirq;               /* IRQs der AT-DOS-Treiber (Maske)  */
-unsigned char rb_slice = 2;             /* RBSLICE=: AT-DOS je n BIOS-Takte */
+unsigned char rb_slice = 0xFF;          /* RBSLICE=: AT-DOS je n BIOS-Takte,
+                                           FFh = 2 (386) bzw. 4 (286)      */
 
 void __far kf_yield(void) { yield(); }
+
+/* RBOX: will ausser dem Box-Task noch ein Programm Rechenzeit? Wer nur auf
+   Tasten wartet (die gehen an die Box) oder auf ein Kind, nicht. */
+unsigned __far kf_rb_busy(void)
+{
+    int t;
+    for (t = 0; t < NTASK; t++)
+        if (t != current && (task[t].state == T_BLOCK ||
+                             (task[t].state == T_READY && !task[t].kwait)))
+            return 1;
+    return 0;
+}
 
 void __far kf_rb_hw(unsigned long lin)
 {

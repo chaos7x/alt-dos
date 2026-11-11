@@ -22,7 +22,8 @@
 extern unsigned short rbs_code, rbs_len, rbs_entry_off, rbs_int9_off, rbs_int20_off,
                       rbs_inte0_off, rbs_int13_off, rbs_int15_off, rbs_int8_off;
 extern unsigned short irq_hcs[16], rb_drvirq;
-extern unsigned char rb_slice;
+extern unsigned char rb_slice, cpu_386;
+unsigned __far kf_rb_busy(void);
 void __far kf_yield(void);
 extern unsigned char  bios_pic1, bios_pic2;
 extern unsigned short mem_conv_kb, fpu_ok;
@@ -414,8 +415,11 @@ static void rb_entry_prep(void)
     scratch_map(rb_lin, 0xFFFF);
     RBB(28) |= (unsigned char)m;
     RBB(29) |= (unsigned char)(m >> 8);
-    RBB(80) = rb_slice;                     /* Zaehler bei jedem Eintritt */
-    RBB(81) = rb_slice + 1;                 /* neu: der erste Takt kommt  */
+    n = rb_slice == 0xFF ? (cpu_386 ? 2 : 4) : rb_slice;
+    if (!kf_rb_busy())                      /* nichts im Hintergrund: die */
+        n = 0;                              /* Box bekommt alle Zeit      */
+    RBB(80) = (unsigned char)n;             /* Zaehler bei jedem Eintritt */
+    RBB(81) = (unsigned char)(n + 1);       /* neu: der erste Takt kommt  */
                                             /* sofort (IRQ 0 wartet)      */
 }
 

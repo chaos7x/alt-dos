@@ -178,8 +178,9 @@ und PC-DOS.
   Rückweg auf dem 386 per PE löschen, auf dem 286 per Prozessor-Reset
   (`RBRESET=FAULT` per Dreifachfehler wie OS/2); `RBOX \DEMO\RBTEST.COM`
   testet ohne DOS. Die anderen Programme laufen weiter, während die Box vorn
-  ist (jeder zweite BIOS-Takt ein kurzer Ausflug, `RBSLICE=n` in der
-  CONFIG.SYS, 0 = aus). Grafik und Zustand des 287 überstehen Alt+Esc.
+  ist – nur, wenn dort ein Programm Rechenzeit will (wer auf Tasten
+  wartet, zählt nicht): je 2 BIOS-Takte (386) bzw. 4 (286) ein kurzer
+  Ausflug, `RBSLICE=n` in der CONFIG.SYS, 0 = aus. Grafik und Zustand des 287 überstehen Alt+Esc.
   Messen: `RBOX \DEMO\RBTIME`
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
   Liste der Programme, Entf beendet mit Rückfrage; auch mit
