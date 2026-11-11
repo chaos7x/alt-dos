@@ -80,7 +80,9 @@ static unsigned vbe_info(unsigned long *list, unsigned *mem_kb)
 /* ModeInfoBlock nach RM_BUF + 200h; -> 1, wenn brauchbar (Grafik,
    Palette oder direkte Farben, 8/15/16/24/32 Bit). Linearer Bildspeicher
    (VBE 2.0+) -> vb_phys; sonst (VBE 1.2, ET4000/Cirrus/S3 der 386-Zeit)
-   Fenster A bei A000h, 64 KB, lesbar und beschreibbar -> vb_gmul, ohne
+   Fenster A bei A000h, 64 KB, lesbar und beschreibbar (oder wie bei den
+   Tseng-BIOS A nur schreiben + B nur lesen, beide A000h: VB_SPLIT,
+   beide Fenster werden gleich gestellt) -> vb_gmul, ohne
    24 Bit (Punkte laegen ueber der Fenstergrenze). model Bit 7 = Fenster */
 static int vbe_mode(unsigned m, struct fapi_vesamode __far *o)
 {
@@ -107,11 +109,17 @@ static int vbe_mode(unsigned m, struct fapi_vesamode __far *o)
         vb_phys = ((unsigned long)rd16(RM_BUF + 0x200 + 42) << 16) | rd16(RM_BUF + 0x200 + 40);
     if (!vb_phys) {                             /* nur ueber das Fenster */
         unsigned g = rd16(RM_BUF + 0x200 + 4);  /* Granularitaet in KB   */
-        if ((attr & 0x40) || bpp == 24 || (rd8(RM_BUF + 0x200 + 2) & 7) != 7 ||
+        unsigned char wa = rd8(RM_BUF + 0x200 + 2) & 7, wb = rd8(RM_BUF + 0x200 + 3) & 7;
+        int split = 0;                          /* A schreiben, B lesen  */
+        if (wa == 5 && wb == 3 && rd16(RM_BUF + 0x200 + 10) == 0xA000)
+            split = 1;                          /* so die Tseng-BIOS     */
+        else if (wa != 7)
+            return 0;
+        if ((attr & 0x40) || bpp == 24 ||
             rd16(RM_BUF + 0x200 + 6) != 64 || rd16(RM_BUF + 0x200 + 8) != 0xA000 ||
             !g || g > 64 || 64 % g)
             return 0;
-        vb_gmul = 64 / g;
+        vb_gmul = 64 / g | (split ? VB_SPLIT : 0);
         model |= 0x80;
     }
     o->mode = m;
@@ -143,13 +151,19 @@ int __far vesa_bios(unsigned mode)
 }
 
 /* Fenster A auf Stelle n (in Granularitaets-Schritten) */
-void __far vesa_bank(unsigned n)
+void __far vesa_bank(unsigned n, int both)
 {
     struct rmregs r;
     r.ax = 0x4F05;
     r.bx = 0;
     r.dx = n;
     rm_call(&r);
+    if (both) {                             /* Fenster B (Lesen) mit     */
+        r.ax = 0x4F05;
+        r.bx = 1;
+        r.dx = n;
+        rm_call(&r);
+    }
 }
 
 

@@ -253,6 +253,7 @@ unsigned __far paging_tables(void);
 unsigned long __far paging_cr3(void);          /* Seitenverzeichnis des Kernels */
 unsigned long __far pg_win(unsigned sel, unsigned long base, unsigned limit);
 unsigned long __far pg_lfb(unsigned long phys, unsigned pages);   /* VESA */
+#define VB_SPLIT 0x100                  /* gmul: Fenster A schreiben, B lesen */
 int __far vio_setvesa(int s, int t, struct fapi_vesamode __far *o, unsigned pages,
                       unsigned long phys, unsigned gmul);
 extern unsigned win_csel;                       /* Cache-Fenster fuer pg_win */

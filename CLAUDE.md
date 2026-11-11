@@ -2395,6 +2395,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sich so nur in Debug-Texten): VDEMO 640×480×8, jeder Wechsel direkt,
   Bild richtig; QEMU-Standard-VGA bleibt beim BIOS. ET4000 nur in 86Box
   prüfbar.
+  ET4000/W32 meldete beim Nutzer „keine VESA-Karte“: alle Tseng-BIOS
+  aus 86Box (roms/video/et4000w32, VBE 1.2, nur gelesen) beschreiben
+  ihre Modi mit Fenster A nur schreibbar (Attribut 05h) und Fenster B
+  nur lesbar (03h), beide A000h, 64 KB – vbe_mode verlangte A lesbar
+  und beschreibbar. Jetzt nimmt es auch diese Teilung (`VB_SPLIT` =
+  100h in gmul, vgagfx `vp_split`): BIOS-Weg stellt mit 4F05h beide
+  Fenster gleich, der ET4000-Weg setzt ohnehin beide Hälften von 3CDh,
+  Cirrus-Direktweg nur ohne Teilung. In QEMU geprüft, indem vesa.c
+  testweise LFB übergeht und Fenster A als geteilt behandelt: VESA
+  listet die Modi, VDEMO 640 8 über vier Fenster richtig.
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem

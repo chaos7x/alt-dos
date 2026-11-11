@@ -122,8 +122,9 @@ static unsigned char vesa_hw;           /* Karte steht auf VESA          */
 #define VP_SAVE 784                     /* Zeiger-Hintergrund, 2 x 640   */
 static unsigned vp_w, vp_h, vp_pitch, vp_bpp;
 static unsigned vp_gmul;                /* 0 = linear, sonst Fenster (VBE 1.2) */
+static unsigned char vp_split;          /* Fenster A schreiben, B lesen  */
 static unsigned vesa_cb;                /* Fenster der Karte steht auf ...  */
-void __far vesa_bank(unsigned n);       /* vesa.c                        */
+void __far vesa_bank(unsigned n, int both);       /* vesa.c                        */
 
 /* Fenster direkt in der Karte stellen statt per BIOS (4F05h, Ausflug in
    den Real Mode) - ein OUT je Wechsel (Wunsch des Nutzers, seine Karten
@@ -213,7 +214,7 @@ static void hwbank(unsigned b)
         vesa_cb = b;
         return;
     }
-    if (svga_chip == CHIP_CIRRUS && n < 256) {
+    if (svga_chip == CHIP_CIRRUS && !vp_split && n < 256) {
         gi = inb(0x3CE);                    /* Index des Programms lassen */
         outb(0x3CE, 0x09);
         outb(0x3CF, (unsigned char)n);
@@ -222,7 +223,7 @@ static void hwbank(unsigned b)
         return;
     }
     win_save(w);
-    vesa_bank(n);
+    vesa_bank(n, vp_split);
     win_restore(w);
     vesa_cb = b;
 }
@@ -525,6 +526,8 @@ int __far gfx_in(void)
         vp_pitch = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 4);
         vp_bpp = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 6);
         vp_gmul = *(unsigned __far *)MK_FP(SCRATCH, VP_INFO + 8);
+        vp_split = (vp_gmul & VB_SPLIT) != 0;
+        vp_gmul &= ~VB_SPLIT;
         if (vesa_bios(vp_gmul ? ses[fg].vmode : ses[fg].vmode | 0x4000)) {
             win_restore(w);
             return 0;
