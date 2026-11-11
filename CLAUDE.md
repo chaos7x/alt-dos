@@ -186,6 +186,17 @@ gehaltenen Datei, das nächste RB_RUN erledigt den INT 13h zuerst. In
 QEMU gezählt: 120 KB statt 720 KB; COMMAND.COM vom Abbild (Rückfall
 ohne \DOS\MDOS\COMMAND.COM) und KERNEL.SYS per COPY gelesen, gleich.
 Vom Nutzer auf dem SCAT bestätigt (Build 240.63): Start deutlich schneller.
+XMS für die Box (Wunsch des Nutzers; FreeCOM blieb mit 74 KB fest im
+Speicher, weil XMS_Swap keinen Block bekam): RBHMA reicht XMS 08h–0Ch/
+0Eh als INT E0h 20h–25h an den Kernel (rbox.c `rb_xms`, im rb_run-
+Kreis wie RB_DISK, ohne RBOX). Blöcke per mem_alloc (8 Handles,
+`emb_u/emb_n`), Kopieren 0Bh in 32-KB-Stücken über SCRATCH/SCRATCH2
+(Handle 0 = seg:off in der Box, Grenze rb_lin), 0Dh ohne Wirkung, 0Fh
+nicht. Verfügbar = min(RBXMS-Rest, frei + Cache über der Mindestgröße −
+256 KB; `kf_mem_avail_kb` in kernel.c). rb_free gibt alles zurück. In
+QEMU und Bochs (286-Weg) geprüft: COMMAND 3,5 KB statt 74 KB, 605 statt
+533 KB frei, XMS 921 KB frei, Programme mehrmals hintereinander, nach
+EXIT ist der Speicher von AT-DOS wie vorher.
 Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 (`startup[512]`) -> 4 KB (auch auf main und 5.0).
 

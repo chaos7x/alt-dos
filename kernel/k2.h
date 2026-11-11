@@ -59,6 +59,7 @@ void __far kf_vio_flush(void);
 #define vio_flush()                 kf_vio_flush()
 int __far kf_mem_is_free(unsigned from, unsigned to);
 void __far kf_mem_reserve(unsigned from, unsigned to);
+unsigned __far kf_mem_avail_kb(void);  /* frei + Cache, den er abgibt */
 void __far kf_sleep_ticks(unsigned n);
 int __far kf_vio_fg(void);
 void __far kf_rb_hw(unsigned long lin);

@@ -196,8 +196,10 @@ unveränderte 5.0 steht im Zweig `5.0`.
   auch das MEM von FreeDOS (deutsch) – wie `\OS2\MDOS` bei OS/2: MEM in
   der Box zeigt den DOS-Speicher, MEM in AT-DOS den eigenen; die Maus
   bedient in der Box CuteMouse (FreeDOS, dieselbe Maus wie MOUSE.SYS,
-  PS/2 oder seriell), solange die Box vorn ist; FreeDOS liegt in der HMA
-  (`RBHMA.SYS`, rund 536 KB frei); kleine Lesezugriffe über die
+  PS/2 oder seriell), solange die Box vorn ist; FreeDOS liegt in der HMA,
+  COMMAND.COM lagert sich per XMS aus (`RBHMA.SYS`, XMS-Blöcke im
+  erweiterten Speicher von AT-DOS, `RBXMS=` in KB, Vorgabe 1024; rund
+  605 KB frei); kleine Lesezugriffe über die
   Netzlaufwerke puffert RBSHELL (1 KB je Ausflug statt eines Bytes – MEM
   von FreeDOS startet dadurch schnell); vom Startabbild liest RBOX nur, was
   FreeDOS braucht (120 statt 720 KB). Mit `PROTECTONLY=NO` in der

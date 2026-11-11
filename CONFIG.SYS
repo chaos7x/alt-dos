@@ -14,3 +14,4 @@ REM Nicht sauber abgemeldete Platten beim Start pruefen: alle,
 REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK=
 REM DOS-Box (RBOX) gleich beim Start laden, wie OS/2 1.x - nimmt die
 REM 640 KB dauerhaft, Alt+Esc wechselt dann sofort: PROTECTONLY=NO
+REM XMS der DOS-Box in KB (Vorgabe 1024, 0 = keins): RBXMS=1024

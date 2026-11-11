@@ -5,9 +5,14 @@
 ; Die Box laeuft im echten Real Mode. 100000h-10FFEFh (HMA) haelt der
 ; Kernel fuer sie frei (kernel.c, KMOVE_BASE = 110000h), A20 ist in der
 ; Box immer offen (der Stummel in start.asm schaltet sie bei jedem
-; Ausflug ein, INT 15h/87h lehnt er ab). Erweiterten Speicher hat die Box
-; nicht - dieser Treiber kennt daher nur die HMA, wie HIMEM mit 0 KB XMS:
-; mit DOS=HIGH zieht FreeDOS dorthin (fragt nach jeder DEVICE=-Zeile).
+; Ausflug ein, INT 15h/87h lehnt er ab). Mit DOS=HIGH zieht FreeDOS in
+; die HMA (fragt nach jeder DEVICE=-Zeile).
+;
+; XMS-Bloecke (08h-0Fh) haelt der Kernel von AT-DOS im erweiterten
+; Speicher (RBXMS= in der CONFIG.SYS, Vorgabe 1 MB): jeder Aufruf geht
+; ueber INT E0h AH = 20h-25h an den Kernel (ein Ausflug). Der 286 kann
+; die Bloecke nicht einblenden, Programme kopieren nur (0Bh) - genau so
+; lagert sich FreeCOM aus (XMS_Swap: ~70 KB mehr in der Box).
 ;
 ; A20 an/aus (03h-06h) melden Erfolg, ohne den 8042 anzufassen: die
 ; Leitung bleibt offen (wie bisher ohne Treiber). Alte Programme, die den
@@ -44,7 +49,7 @@ xms:    jmp     short .go               ; Kopf wie in der Spezifikation:
 .go:    cmp     ah, 0
         jne     .f1
         mov     ax, 0300h               ; XMS 3.00
-        mov     bx, 0100h               ; Treiberversion
+        mov     bx, 0200h               ; Treiberversion
         mov     dx, 1                   ; HMA vorhanden
         retf
 .f1:    cmp     ah, 1                   ; HMA anfordern
@@ -70,11 +75,27 @@ xms:    jmp     short .go               ; Kopf wie in der Spezifikation:
 .ok:    mov     ax, 1
         xor     bl, bl
         retf
-.f8:    cmp     ah, 8                   ; freier XMS: keiner
-        jne     .no
-        xor     ax, ax
-        xor     dx, dx
-        mov     bl, 0A0h                ; alles vergeben
+.f8:    cmp     ah, 0Dh                 ; entsperren: nichts zu tun
+        je      .ok
+        cmp     ah, 0Fh                 ; Groesse aendern: nicht
+        je      .no
+        cmp     ah, 8                   ; 08h-0Eh: an den Kernel
+        jb      .no
+        cmp     ah, 0Eh
+        ja      .no
+        mov     al, ah                  ; 08h->20h, 09h->21h, 0Ah->22h,
+                                        ; 0Bh->23h, 0Ch->25h, 0Eh->24h
+        sub     al, 8
+        cmp     al, 4
+        jne     .t2
+        mov     al, 5
+        jmp     short .t3
+.t2:    cmp     al, 6
+        jne     .t3
+        mov     al, 4
+.t3:    add     al, 20h
+        mov     ah, al
+        int     0E0h                    ; AX/BX/DX vom Kernel, Rest bleibt
         retf
 .no:    mov     bl, 80h                 ; nicht vorhanden
 .fail:  xor     ax, ax
@@ -122,4 +143,4 @@ intr:   push    ds
         pop     es
         pop     ds
         retf
-msg     db      "RBHMA: HMA fuer die Box (XMS 3.00, 64 KB)", 13, 10, "$"
+msg     db      "RBHMA: HMA und XMS fuer die Box (XMS 3.00)", 13, 10, "$"

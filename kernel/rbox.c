@@ -53,6 +53,14 @@ static unsigned long rb_img_pos;        /* naechstes RB_IMG schreibt hier */
 #define RB_CHUNKS   (2880 / 4)
 static unsigned char rb_have[RB_CHUNKS / 8];
 static unsigned rb_need;                /* fehlendes Stueck              */
+/* XMS der Box (RBHMA.SYS, INT E0h 20h-25h): Bloecke im erweiterten
+   Speicher von AT-DOS, die Box kopiert nur ueber Funktion 0Bh (der 286
+   kann sie nicht einblenden). Anlass: FreeCOM lagert sich per XMS aus. */
+#define RB_NEMB     8
+static unsigned emb_u[RB_NEMB], emb_n[RB_NEMB]; /* Einheit, Anzahl (256 B) */
+static unsigned char emb_on[RB_NEMB];
+static unsigned rb_xms_kb = 1024;       /* RBXMS= (KB, 0 = kein XMS)     */
+#define XMS_RESERVE 256                 /* so viel bleibt AT-DOS frei    */
 static unsigned char rb_dpend;          /* INT 13h wartet darauf         */
 #define HAVE(c)     (rb_have[(c) >> 3] & (1 << ((c) & 7)))
 static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
@@ -281,6 +289,12 @@ void __far rb_free(void)
         mem_free(rb_gfx_u, (unsigned)RB_GFX_UNITS);
         rb_gfx_u = 0;
     }
+    for (i = 0; i < RB_NEMB; i++)           /* XMS-Bloecke der Box      */
+        if (emb_on[i]) {
+            if (emb_n[i])
+                mem_free(emb_u[i], emb_n[i]);
+            emb_on[i] = 0;
+        }
     rb_gfx = 0;
     scratch_map(rb_lin, 0xFFFF);            /* IVT und BIOS-Daten wie */
     scratch2_map(0, 0xFFFF);                /* vor der Box            */
@@ -497,6 +511,144 @@ static int rb_disk(void)
     return 0;
 }
 
+/* XMS fuer RBHMA.SYS: INT E0h AH = 20h frei (AX = groesster, DX =
+   gesamt in KB), 21h anlegen (DX = KB -> DX = Handle), 22h freigeben
+   (DX), 23h kopieren (DS:SI = XMS-Kopierauftrag), 24h Angaben (DX ->
+   DX = KB, BL = freie Handles), 25h sperren (DX -> DX:BX = Adresse).
+   Ergebnis AX = 1, sonst AX = 0 und BL = XMS-Fehlercode. */
+static unsigned xms_avail(void)
+{
+    unsigned i, used = 0, fr = kf_mem_avail_kb();
+    for (i = 0; i < RB_NEMB; i++)
+        if (emb_on[i])
+            used += emb_n[i] >> 2;
+    fr = fr > XMS_RESERVE ? fr - XMS_RESERVE : 0;
+    used = used < rb_xms_kb ? rb_xms_kb - used : 0;
+    return fr < used ? fr : used;
+}
+
+static int xms_side(unsigned h, unsigned long off, unsigned long len, unsigned long *lin)
+{
+    if (h == 0) {                           /* Speicher der Box: seg:off */
+        *lin = ((off >> 16) << 4) + (unsigned)off;
+        return *lin + len <= rb_lin;
+    }
+    h--;
+    if (h >= RB_NEMB || !emb_on[h] || off + len > ((unsigned long)emb_n[h] << 8))
+        return 0;
+    *lin = ((unsigned long)emb_u[h] << 8) + off;
+    return 1;
+}
+
+static void rb_xms(void)
+{
+    unsigned fn, i, kb, n, err = 0;
+    unsigned long len, so, dof, sl, dl;
+    unsigned sh, dh;
+
+    scratch_map(rb_lin, 0xFFFF);
+    fn = RBW(0) >> 8;
+    kb = RBW(6);
+    i = kb - 1;                             /* Handle -> Platz           */
+    switch (fn) {
+    case 0x20:
+        RBW(0) = RBW(6) = xms_avail();
+        RBW(2) = RBW(0) ? 0 : 0xA0;
+        return;
+    case 0x21:
+        for (i = 0; i < RB_NEMB && emb_on[i]; i++)
+            ;
+        if (i == RB_NEMB) {
+            err = 0xA1;                     /* keine Handles mehr        */
+            break;
+        }
+        if (kb > xms_avail() || kb > 16383) {
+            err = 0xA0;
+            break;
+        }
+        n = kb << 2;
+        emb_u[i] = n ? mem_alloc(n) : 0;
+        if (n && !emb_u[i]) {
+            err = 0xA0;
+            break;
+        }
+        emb_n[i] = n;
+        emb_on[i] = 1;
+        RBW(6) = i + 1;
+        break;
+    case 0x22:
+        if (i >= RB_NEMB || !emb_on[i]) {
+            err = 0xA2;
+            break;
+        }
+        if (emb_n[i])
+            mem_free(emb_u[i], emb_n[i]);
+        emb_on[i] = 0;
+        break;
+    case 0x23: {
+        unsigned long m = ((unsigned long)RBW(14) << 4) + RBW(8);
+        if (m + 16 > rb_lin) {
+            err = 0xA7;
+            break;
+        }
+        scratch2_map(m, 15);
+        len = RBS(0) | ((unsigned long)RBS(2) << 16);
+        sh = RBS(4);
+        so = RBS(6) | ((unsigned long)RBS(8) << 16);
+        dh = RBS(10);
+        dof = RBS(12) | ((unsigned long)RBS(14) << 16);
+        if (len & 1) {
+            err = 0xA7;
+            break;
+        }
+        if (!xms_side(sh, so, len, &sl)) {
+            err = sh ? 0xA4 : 0xA3;
+            break;
+        }
+        if (!xms_side(dh, dof, len, &dl)) {
+            err = dh ? 0xA6 : 0xA5;
+            break;
+        }
+        while (len) {
+            n = len > 0x8000UL ? 0x8000U : (unsigned)len;
+            scratch_map(dl, n - 1);
+            scratch2_map(sl, n - 1);
+            far_copy(SCRATCH, 0, SCRATCH2, 0, n);
+            dl += n;
+            sl += n;
+            len -= n;
+        }
+        scratch_map(rb_lin, 0xFFFF);
+        break;
+    }
+    case 0x24:
+        if (i >= RB_NEMB || !emb_on[i]) {
+            err = 0xA2;
+            break;
+        }
+        for (n = 0, kb = 0; kb < RB_NEMB; kb++)
+            if (!emb_on[kb])
+                n++;
+        RBW(2) = n;                         /* BH = 0: nicht gesperrt    */
+        RBW(6) = emb_n[i] >> 2;
+        break;
+    case 0x25:
+        if (i >= RB_NEMB || !emb_on[i]) {
+            err = 0xA2;
+            break;
+        }
+        so = (unsigned long)emb_u[i] << 8;
+        RBW(2) = (unsigned)so;
+        RBW(6) = (unsigned)(so >> 16);
+        break;
+    }
+    if (err) {
+        RBW(0) = 0;
+        RBW(2) = (RBW(2) & 0xFF00) | err;
+    } else
+        RBW(0) = 1;
+}
+
 unsigned __far rb_run(void)
 {
     unsigned r, t0, d = 0;
@@ -570,6 +722,11 @@ unsigned __far rb_run(void)
         if (r == RB_TICK) {                 /* Takt: andere Programme  */
             rb_quiet = 1;                   /* laufen lassen, Bild bleibt */
             kf_yield();
+            continue;
+        }
+        if (r == RB_CALL && (RBW(0) >> 8) >= 0x20 && (RBW(0) >> 8) <= 0x25) {
+            rb_xms();                       /* XMS (RBHMA): gleich weiter */
+            rb_quiet = 1;
             continue;
         }
         if (r == RB_CALL && (RBW(0) >> 8) == 0x17) /* INT E0h 17h: */
@@ -713,7 +870,11 @@ int __far rb_cfg(const char *k, const char *v)
         rb_slice = (unsigned char)n;
     } else if (rb_kw(k, "RBRESET"))         /* KBC oder FAULT            */
         rb_fault = rb_up(v[0]) == 'F';
-    else if (rb_kw(k, "PROTECTONLY"))       /* NO: Box beim Start laden  */
+    else if (rb_kw(k, "RBXMS")) {           /* XMS der Box in KB         */
+        while (*v >= '0' && *v <= '9')
+            n = n * 10 + (unsigned)(*v++ - '0');
+        rb_xms_kb = n > 16383 ? 16383 : n;
+    } else if (rb_kw(k, "PROTECTONLY"))       /* NO: Box beim Start laden  */
         rb_perm = rb_up(v[0]) == 'N';       /* (wie OS/2 1.x)            */
     else
         return 0;

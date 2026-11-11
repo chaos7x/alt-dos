@@ -3717,6 +3717,12 @@ unsigned blk_cache_kb(void)
     return bc_present << 4;
 }
 
+/* frei + Cache ueber der Mindestgroesse (gibt er bei Bedarf ab) */
+unsigned __far kf_mem_avail_kb(void)
+{
+    return mem_free_kb() + ((bc_present > bc_minch ? bc_present - bc_minch : 0) << 4);
+}
+
 /* Speichermangel: saubere Stuecke von hinten freigeben, bis units Platz
    gemacht sind. Nur Tabellen, keine Plattenzugriffe. */
 static unsigned bc_reclaim(unsigned units)
