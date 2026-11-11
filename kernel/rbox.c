@@ -706,6 +706,11 @@ unsigned __far rb_run(void)
             d = (unsigned)s1 * 18 + (unsigned)s1 / 5;   /* 18,2 je s   */
         ticks += (((unsigned long)d << 3) + ((unsigned long)d << 1) + d) >> 1;
         uptime_s += d / 18;                 /* 55 ms je BIOS-Takt     */
+        {                                   /* Minuten mitfuehren     */
+            unsigned sec = d / 18 + up60;
+            uptime_m += sec / 60;
+            up60 = (unsigned char)(sec % 60);
+        }
         scratch_map(rb_lin, 0xFFFF);
         r = RBW(30);
         rb_way = r >> 8;                    /* Fehlersuche: wer setzte r */

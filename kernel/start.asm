@@ -537,6 +537,12 @@ irq0:
         jb      .eoi
         mov     byte [subtick], 0
         inc     word [_uptime_s]
+        inc     byte [_up60]                ; Minuten fuer die Statuszeile
+        cmp     byte [_up60], 60            ; (uptime_s laeuft nach 18 h
+        jb      .upm                        ;  ueber)
+        mov     byte [_up60], 0
+        inc     word [_uptime_m]
+.upm:
 .eoi:
         mov     al, 0x20
         out     0x20, al
@@ -1702,7 +1708,7 @@ geo_heads: dw 16
 segment _BSS
 
 bss_start:
-global _boot_drive, _ticks, _uptime_s
+global _boot_drive, _ticks, _uptime_s, _uptime_m, _up60
 global _fapi_dx, _devhlp_dx
 _fapi_dx:    resw 1
 _devhlp_dx:  resw 1
@@ -1710,6 +1716,8 @@ _boot_drive: resb 1
 subtick:     resb 1
 _ticks:      resw 2
 _uptime_s:   resw 1
+_uptime_m:   resw 1                ; Minuten seit dem Start (45 Tage)
+_up60:       resb 1                ; Sekunden in der Minute
 global _a20_ok
 _a20_ok:     resb 1
 global _kdata_seg
