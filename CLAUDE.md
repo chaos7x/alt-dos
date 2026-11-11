@@ -867,6 +867,11 @@ Werkzeuge in einer neuen Umgebung einrichten (wie `.github/workflows/build.yml`)
     mkdir -p ~/watcom && tar -xJf ow.tar.xz -C ~/watcom
     export WATCOM=~/watcom INCLUDE=~/watcom/h PATH=~/watcom/binl64:$PATH
 
+CI: `tools/ci-tools.sh` installiert NASM und mtools per apt (drei
+Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
+`$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
+Paketquellen nicht auf. `CI_FORCE_SRC=1` erzwingt den Quelltext-Weg.
+
 QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
 `sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
 
