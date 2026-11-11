@@ -1189,8 +1189,8 @@ code_end:
 ; beim Eintritt INT 9 nachholen (Byte im 8042), 79 Wechsel waehrend des
 ; Eintritts verlangt (Grund 1/2, rbs_topm auf eigenem Stapel), 80 Takte je
 ; Ausflug (RBSLICE, 0 = keine), 81 Zaehler, 82 alter INT 8, 86 vorgemerkter
-; Wechsel aus INT 15h/4Fh (Grund | Weg << 8), 88 Box steckt in INT 15h/87h
-; (IVT-Kopie nicht ueberschreiben). Grund 4 = Takt.
+; Wechsel aus INT 15h/4Fh (Grund | Weg << 8). Grund 4 = Takt, 5 = INT 13h
+; lesen (der Kernel kopiert aus dem Abbild, setzt AX und CF).
 ; Stummel ab 80h (bis 5FFh), Bildschirmtext (80x25) ab 600h, IVT+BDA-Kopie
 ; ab 1600h (rbox.c), IVT 300h-3FFh ab 1B00h, GDT fuer INT 15h/87h ab 1C00h,
 ; Stapel bis 2000h.
@@ -1375,103 +1375,13 @@ rbs_int13:
         les     di, [es:di]
         pop     ds
         jmp     .ok
-.read:  push    bx
-        push    cx
-        push    dx
-        push    si
-        push    di
-        push    bp
-        push    ds
-        push    es
-        push    ax
-        mov     bp, cs
-        mov     ds, bp
-        ; LBA = (Zylinder * Koepfe + Kopf) * Sektoren + Sektor - 1
-        mov     di, dx                  ; DH = Kopf (MUL zerstoert DX)
-        mov     al, cl
-        rol     al, 1
-        rol     al, 1
-        and     al, 3
-        mov     ah, al
-        mov     al, ch                  ; AX = Zylinder
-        mul     word [54]
-        mov     dx, di
-        add     al, dh
-        adc     ah, 0
-        mul     word [52]
-        and     cx, 0x3F
-        dec     cx
-        add     ax, cx
-        mov     si, ax                  ; SI = LBA
-        pop     ax
-        push    ax
-        xor     ah, ah
-        mov     bp, ax                  ; BP = Anzahl
-        add     ax, si
-        cmp     ax, [60]
-        ja      .range
-        ; Quelle: Abbild + LBA * 512
-        mov     ax, si
-        mov     dx, si
-        mov     cl, 9
-        shl     ax, cl
-        mov     cl, 7
-        shr     dx, cl
-        add     ax, [56]
-        adc     dx, [58]
-        mov     di, 0x1C00
-        mov     [di + 18], ax
-        mov     [di + 20], dl
-        ; Ziel: ES:BX linear
-        pop     ax
-        pop     cx                      ; ES des Aufrufers
-        push    cx
-        push    ax
-        mov     ax, cx
-        mov     dx, cx
-        mov     cl, 4
-        shl     ax, cl
-        mov     cl, 12
-        shr     dx, cl
-        add     ax, bx
-        adc     dx, 0
-        mov     [di + 26], ax
-        mov     [di + 28], dl
-        mov     cx, bp
-        xchg    ch, cl                  ; Worte = Sektoren * 256
-        mov     ax, cs
-        mov     es, ax
-        mov     si, di
-        call    rbs_ivsave              ; der 286 kehrt per Reset zurueck,
-        mov     byte [88], 1            ; das BIOS legt seinen Stapel dabei
-        mov     ah, 0x87                ; nach 0030:0100 - mitten in die IVT.
-        pushf                           ; [88]: ein Ausflug bis zum Zurueck-
-        call    far [66]                ; holen darf die gute Kopie nicht mit
-        pushf                           ; der zerstoerten Tabelle ueber-
-        call    rbs_ivrest              ; schreiben (rbs_saved)
-        mov     byte [88], 0
-        popf
-        pop     ax
-        jc      .rderr
-        mov     bx, bp
-        mov     al, bl
-        mov     ah, 0
-        jmp     .rdok
-.range: pop     ax
-        mov     ah, 4                   ; Sektor nicht gefunden
-.rderr: mov     al, 0
-        stc
-        jmp     .rdend
-.rdok:  clc
-.rdend: pop     es
-        pop     ds
-        pop     bp
-        pop     di
-        pop     si
-        pop     dx
-        pop     cx
-        pop     bx
-        jc      .err
+.read:  cli                             ; Sektoren holt der Kernel (Grund 5):
+        mov     word [cs:30], 5         ; er kopiert aus dem Abbild direkt in
+        jmp     rbs_topm                ; den Speicher der Box und setzt AX/CF.
+                                        ; Vorher INT 15h/87h des BIOS - das
+                                        ; kehrt auf dem 286 per Reset zurueck
+                                        ; und vertrug sich nicht mit Ausfluegen
+                                        ; (SCAT: Absturz bei F000:E03E)
 .ok:    push    bp
         mov     bp, sp
         and     byte [bp + 6], 0xFE
@@ -1628,8 +1538,8 @@ rbs_saved:                              ; Zustand der Box steht im Block
         mov     ax, [0x450]             ; Cursor Seite 0
         pop     ds
         mov     [46], ax
-        cmp     word [30], 3            ; Dienst (INT E0h): Bild bleibt
-        je      .notxt                  ; stehen - 4000 Byte aus dem ISA-
+        cmp     byte [30], 3            ; Dienst, Takt, Platte: Bild bleibt
+        jae     .notxt                  ; stehen - 4000 Byte aus dem ISA-
         mov     ax, 0xB800              ; Bildspeicher kosten ~2 ms; wird
         mov     ds, ax                  ; derweil weggeschaltet, sichert
         xor     si, si                  ; der Kernel (rbox.c)
@@ -1644,10 +1554,8 @@ rbs_saved:                              ; Zustand der Box steht im Block
         fnsave  [0x1C40]
         fwait
         mov     byte [77], 1
-.nofpu: cmp     byte [88], 0            ; mitten in INT 15h/87h: die Kopie
-        jne     .ivok                   ; bei 1B00h ist schon die richtige
-        call    rbs_ivsave
-.ivok:  call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
+.nofpu: call    rbs_ivsave
+        call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
         lgdt    [32]
         mov     ax, 1
         lmsw    ax

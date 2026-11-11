@@ -420,6 +420,41 @@ static void rb_entry_prep(void)
 }
 
 static unsigned char rb_way;
+#define RB_DISK     5                   /* nur im Kernel: INT 13h lesen  */
+
+/* INT 13h 02h der Box (Grund 5): Sektoren aus dem Abbild nach ES:BX.
+   Register aus dem Zustandsblock, Ergebnis dorthin (AX, CF im FLAGS-Wort,
+   das der Stummel beim IRET nimmt). Ohne 32-Bit-Multiplikation: CHS einer
+   Diskette passt in 16 Bit. */
+static void rb_disk(void)
+{
+    unsigned ax, cx, dx, cyl, sec, lba, cnt, len;
+    unsigned long src, dst;
+
+    scratch_map(rb_lin, 0xFFFF);
+    ax = RBW(0);
+    cx = RBW(4);
+    dx = RBW(6);
+    cnt = ax & 0xFF;
+    cyl = (cx >> 8) | ((cx & 0xC0) << 2);
+    sec = cx & 0x3F;
+    lba = (cyl * RBW(54) + (dx >> 8)) * RBW(52) + sec - 1;
+    dst = ((unsigned long)RBW(16) << 4) + RBW(2);
+    if (!cnt || !sec || cnt > 128 || lba + cnt > RBW(60) ||
+        dst + ((unsigned long)cnt << 9) > rb_lin) {
+        RBW(0) = 0x0400;                    /* Sektor nicht gefunden  */
+        RBW(26) |= 1;
+        return;
+    }
+    src = (unsigned long)rb_img_u * MEM_UNIT + ((unsigned long)lba << 9);
+    len = cnt << 9;                         /* hoechstens 64 KB - 512 */
+    scratch_map(dst, len - 1);
+    scratch2_map(src, len - 1);
+    far_copy(SCRATCH, 0, SCRATCH2, 0, len);
+    scratch_map(rb_lin, 0xFFFF);
+    RBW(0) = cnt;                           /* AH = 0: gut            */
+    RBW(26) &= ~1u;
+}
 
 unsigned __far rb_run(void)
 {
@@ -477,6 +512,11 @@ unsigned __far rb_run(void)
         rb_way = r >> 8;                    /* Fehlersuche: wer setzte r */
         r &= 0xFF;
         rb_pm_t = get_ticks();              /* ab hier laeuft AT-DOS   */
+        if (r == RB_DISK) {                 /* INT 13h: Sektoren holen, */
+            rb_disk();                      /* gleich weiter in die Box */
+            rb_quiet = 1;
+            continue;
+        }
         if (r == RB_TICK) {                 /* Takt: andere Programme  */
             rb_quiet = 1;                   /* laufen lassen, Bild bleibt */
             kf_yield();
