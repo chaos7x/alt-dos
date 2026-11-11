@@ -121,7 +121,7 @@ und PC-DOS.
   `PROMPT $E` für ANSI-Farben; `DIR` zeigt JOIN-Verzeichnisse als
   `<JUNCTION>`
 - Werkzeuge wie MS-DOS 5/6 (Schalter und Meldungen wie dort): `ATTRIB`
-  (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /Y`, Datum bleibt erhalten),
+  (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /K /Y`, Datum bleibt erhalten, Schreibschutz wird wie bei NT nur mit `/K` übernommen – Kopien von CD sind sonst schreibgeschützt),
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
   ERRORLEVEL), `SORT` (`/R /+n`), `FC` (Text mit Resynchronisation wie
   MS-DOS, `/B /C /N /nnnn`, Platzhalter und Verzeichnisse wie COMP); in COMMAND dazu `VOL`, `DATE`, `TIME`.
