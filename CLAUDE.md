@@ -1463,6 +1463,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eingelegt“ (CMD, CHKDSK, FM) für C: und dahinter. Offen: AHA154X.SYS
   und NCR5380.SYS genauso (nur in 86Box prüfbar), EJECT-Befehl (START
   STOP UNIT; die Laufwerke haben eine Auswurftaste).
+  Vom Nutzer auf der 486 in 86Box bestätigt: ZIP ohne Medium gestartet,
+  danach eingelegt – das Laufwerk war da.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“ (vom Nutzer zurückgestellt, DOS-Boxen in 6.0 gehen
   vor): Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne
