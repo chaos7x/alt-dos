@@ -45,7 +45,16 @@ extern unsigned char rb_fault;
 int __far kf_user_ok(unsigned sel, unsigned off, unsigned len, int write);
 static unsigned long rb_lin;
 static unsigned rb_img_u, rb_img_n;     /* Abbild: erste Einheit, Anzahl */
-static unsigned long rb_img_pos;        /* bisher geladen (Byte)         */
+static unsigned long rb_img_pos;        /* naechstes RB_IMG schreibt hier */
+/* Abbild bei Bedarf (Anlass: auf dem 286 dauerte der Start, weil RBOX
+   alle 360 KB vorab las, FreeDOS aber nur ~120 KB braucht): je 4 KB ein
+   Bit, ob das Stueck im Speicher steht. Fehlt eins, gibt rb_run
+   RB_FETCH zurueck, RBOX liest es aus der Datei (RB_NEED, RB_IMG). */
+#define RB_CHUNKS   (2880 / 4)
+static unsigned char rb_have[RB_CHUNKS / 8];
+static unsigned rb_need;                /* fehlendes Stueck              */
+static unsigned char rb_dpend;          /* INT 13h wartet darauf         */
+#define HAVE(c)     (rb_have[(c) >> 3] & (1 << ((c) & 7)))
 static unsigned char rb_kind;           /* 1 .COM, 2 Abbild              */
 static unsigned char rb_quiet;          /* letzter Ausflug war ein Dienst */
 static unsigned long rb_pm_t;           /* Kerneltakt bei der Rueckkehr  */
@@ -197,6 +206,9 @@ unsigned __far rb_boot(unsigned kb)
     }
     rb_img_n = n;
     rb_img_pos = 0;
+    rb_dpend = 0;
+    for (r = 0; r < sizeof(rb_have); r++)
+        rb_have[r] = 0;
     rb_kind = 2;
     scratch_map(rb_lin, 0xFFFF);
     RBW(56) = (unsigned)lin;
@@ -239,6 +251,15 @@ unsigned __far rb_img(unsigned sel, unsigned off, unsigned len)
         scratch_map(0x7C00, 511);
         for (i = 0; i < 512; i++)
             RBB(i) = src[i];
+    }
+    {                                       /* Stuecke als da merken  */
+        unsigned long end = rb_img_pos + len, size = (unsigned long)rb_img_n * MEM_UNIT;
+        unsigned c = (unsigned)(rb_img_pos >> 12);
+        while (((unsigned long)c << 12) < end && c < RB_CHUNKS) {
+            if (((unsigned long)(c + 1) << 12) <= end || end >= size)
+                rb_have[c >> 3] |= (unsigned char)(1 << (c & 7));
+            c++;
+        }
     }
     rb_img_pos += len;
     return 0;
@@ -440,7 +461,7 @@ static unsigned char rb_way;
    Register aus dem Zustandsblock, Ergebnis dorthin (AX, CF im FLAGS-Wort,
    das der Stummel beim IRET nimmt). Ohne 32-Bit-Multiplikation: CHS einer
    Diskette passt in 16 Bit. */
-static void rb_disk(void)
+static int rb_disk(void)
 {
     unsigned ax, cx, dx, cyl, sec, lba, cnt, len;
     unsigned long src, dst;
@@ -458,8 +479,13 @@ static void rb_disk(void)
         dst + ((unsigned long)cnt << 9) > rb_lin) {
         RBW(0) = 0x0400;                    /* Sektor nicht gefunden  */
         RBW(26) |= 1;
-        return;
+        return 0;
     }
+    for (len = lba >> 3; len <= (lba + cnt - 1) >> 3; len++)
+        if (!HAVE(len)) {                   /* Stueck fehlt: RBOX holt */
+            rb_need = len;                  /* es aus der Datei        */
+            return 1;
+        }
     src = (unsigned long)rb_img_u * MEM_UNIT + ((unsigned long)lba << 9);
     len = cnt << 9;                         /* hoechstens 64 KB - 512 */
     scratch_map(dst, len - 1);
@@ -468,6 +494,7 @@ static void rb_disk(void)
     scratch_map(rb_lin, 0xFFFF);
     RBW(0) = cnt;                           /* AH = 0: gut            */
     RBW(26) &= ~1u;
+    return 0;
 }
 
 unsigned __far rb_run(void)
@@ -478,9 +505,15 @@ unsigned __far rb_run(void)
 
     if (rb_task != current)
         return FAPI_ERROR;
-    if (rb_kind == 2 && rb_img_pos < 512)
+    if (rb_kind == 2 && !HAVE(0))
         return FAPI_ERROR;
     for (;;) {
+        if (rb_dpend) {                     /* INT 13h nach RB_FETCH  */
+            if (rb_disk())
+                return RB_FETCH;            /* noch ein Stueck        */
+            rb_dpend = 0;
+            rb_quiet = 1;
+        }
         while (vio_fg() != kf_cur_ses()) {
             if (vio_frozen) {               /* waehrend eines Dienstes   */
                 rb_save_screen();           /* weggeschaltet: Bild der   */
@@ -527,8 +560,11 @@ unsigned __far rb_run(void)
         r &= 0xFF;
         rb_pm_t = get_ticks();              /* ab hier laeuft AT-DOS   */
         if (r == RB_DISK) {                 /* INT 13h: Sektoren holen, */
-            rb_disk();                      /* gleich weiter in die Box */
-            rb_quiet = 1;
+            rb_quiet = 1;                   /* gleich weiter in die Box */
+            if (rb_disk()) {                /* fehlt ein Stueck: RBOX  */
+                rb_dpend = 1;               /* liest es, Bild bleibt   */
+                return RB_FETCH;            /* der Box (wie RB_CALL)   */
+            }
             continue;
         }
         if (r == RB_TICK) {                 /* Takt: andere Programme  */
@@ -644,6 +680,10 @@ unsigned __far rb_fapi(unsigned a1, unsigned a2, unsigned a3, unsigned usel)
     if (a1 == RB_FREE && rb_task == current) {
         rb_free();
         return 0;
+    }
+    if (a1 == RB_NEED && rb_task == current && rb_kind == 2) {
+        rb_img_pos = (unsigned long)rb_need << 12;  /* RB_IMG schreibt dort */
+        return rb_need;
     }
     if (a1 == RB_PERM)                      /* CMD /P: Box beim Start?   */
         return rb_perm && kmoved && rb_task < 0;

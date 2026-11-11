@@ -176,6 +176,15 @@ ein Redirector-READ = Ausflug (286: CPU-Reset). `rd_cache`: READ mit CX
 Ausflug, sonst 1 KB über INT E0h 10h in `cbuf` (DTA in der SDA kurz
 umgebogen, Lage in der SFT danach zurück); jeder andere Redirector-
 Aufruf verwirft ihn. In Bochs (286-Weg) MEM in unter 5 s.
+Abbild bei Bedarf (Nutzer: auf dem 286 dauerte es ~5 s bis zur ersten
+FreeDOS-Meldung): RBOX las FREEDOS.IMG zweimal ganz (Größe zählen, dann
+laden = 720 KB). Jetzt Größe aus dem BPB (Sektoren, +13h), anfangs nur
+8 KB (Bootsektor, FAT, Stamm); rbox.c merkt je 4 KB ein Bit (`rb_have`),
+fehlt bei INT 13h ein Stück -> `rb_dpend`, rb_run gibt RB_FETCH (6),
+RBOX holt per RB_NEED (8, setzt rb_img_pos) + RB_IMG 8 KB aus der offen
+gehaltenen Datei, das nächste RB_RUN erledigt den INT 13h zuerst. In
+QEMU gezählt: 120 KB statt 720 KB; COMMAND.COM vom Abbild (Rückfall
+ohne \DOS\MDOS\COMMAND.COM) und KERNEL.SYS per COPY gelesen, gleich.
 Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 (`startup[512]`) -> 4 KB (auch auf main und 5.0).
 

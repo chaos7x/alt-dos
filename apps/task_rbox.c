@@ -38,33 +38,49 @@ static void box_err(unsigned r)
     DosExit(3);
 }
 
-/* Diskettenabbild: erst die Groesse, dann stueckweise in den Kernel */
+/* Diskettenabbild: nur den Anfang (Bootsektor, FAT, Stamm) gleich laden,
+   den Rest holt fetch(), wenn FreeDOS ihn per INT 13h liest (RB_FETCH).
+   Die Groesse steht im BPB (Gesamtzahl der Sektoren, Offset 13h). Die
+   Datei bleibt offen, solange die Box laeuft. */
+static unsigned img_h = 0xFFFF;
+
 static void load_img(const char *p)
 {
-    unsigned h, n, r;
-    unsigned long size = 0;
+    unsigned n, r, secs;
 
-    h = open_or_die(p);
-    while ((n = DosRead(h, buf, sizeof(buf))) != 0 && !FAPI_FAILED(n))
-        size += n;
-    DosClose(h);
-    if (size < 160UL * 1024 || size > 2880UL * 1024 || (size & 1023)) {
+    if (img_h != 0xFFFF)
+        DosClose(img_h);
+    img_h = open_or_die(p);
+    n = DosRead(img_h, buf, sizeof(buf));
+    secs = FAPI_FAILED(n) || n < 512 ? 0 : (unsigned char)buf[0x13] |
+           (unsigned)(unsigned char)buf[0x14] << 8;
+    if (secs < 320 || secs > 5760 || (secs & 1)) {
         puts("Kein Diskettenabbild (160 KB bis 2,88 MB).\r\n");
         DosExit(3);
     }
-    r = DosRBox(RB_BOOT, (unsigned)(size >> 10), 0);
+    r = DosRBox(RB_BOOT, secs >> 1, 0);
     if (r)
         box_err(r);
-    h = open_or_die(p);
-    while ((n = DosRead(h, buf, sizeof(buf))) != 0 && !FAPI_FAILED(n)) {
-        n &= ~511u;
-        if (DosRBox(RB_IMG, (unsigned)buf, n)) {
-            puts("Abbild unbrauchbar (Bootsektor).\r\n");
-            DosRBox(RB_FREE, 0, 0);
-            DosExit(3);
-        }
+    if (DosRBox(RB_IMG, (unsigned)buf, n & ~511u)) {
+        puts("Abbild unbrauchbar (Bootsektor).\r\n");
+        DosRBox(RB_FREE, 0, 0);
+        DosExit(3);
     }
-    DosClose(h);
+}
+
+/* fehlendes Stueck (4 KB) nachladen, dazu das folgende */
+static void fetch(void)
+{
+    unsigned long pos = (unsigned long)DosRBox(RB_NEED, 0, 0) << 12;
+    unsigned n;
+
+    if (FAPI_FAILED(DosSeek(img_h, &pos)) ||
+        FAPI_FAILED(n = DosRead(img_h, buf, sizeof(buf))) || (n &= ~511u) == 0 ||
+        DosRBox(RB_IMG, (unsigned)buf, n)) {
+        puts("Abbild nicht lesbar.\r\n");
+        DosRBox(RB_FREE, 0, 0);
+        DosExit(3);
+    }
 }
 
 static void load_com(const char *p)
@@ -152,6 +168,10 @@ again:
         l = 0;
         if (r == RB_SWITCH)
             continue;
+        if (r == RB_FETCH) {            /* Stueck des Abbilds holen  */
+            fetch();
+            continue;
+        }
         if (r == RB_CALL) {             /* INT E0h: Redirector usw.  */
             box_call();
             l = 1;

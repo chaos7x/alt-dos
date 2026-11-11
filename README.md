@@ -176,7 +176,8 @@ und PC-DOS.
   PS/2 oder seriell), solange die Box vorn ist; FreeDOS liegt in der HMA
   (`RBHMA.SYS`, rund 536 KB frei); kleine Lesezugriffe über die
   Netzlaufwerke puffert RBSHELL (1 KB je Ausflug statt eines Bytes – MEM
-  von FreeDOS startet dadurch schnell). Mit `PROTECTONLY=NO` in der
+  von FreeDOS startet dadurch schnell); vom Startabbild liest RBOX nur, was
+  FreeDOS braucht (120 statt 720 KB). Mit `PROTECTONLY=NO` in der
   CONFIG.SYS lädt AT-DOS die Box wie OS/2 1.x gleich beim Start (die
   640 KB bleiben ihr fest, CMD /P startet `RBOX /P` in eigener Sitzung,
   nach dem ersten Prompt geht es von selbst zurück zu AT-DOS; Alt+Esc

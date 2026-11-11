@@ -163,6 +163,9 @@ struct fapi_comcfg {
 #define RB_PERM             7       /* -> 1, wenn PROTECTONLY=NO und noch
                                        keine Box laeuft (CMD /P startet dann
                                        RBOX /P in eigener Sitzung) */
+#define RB_NEED             8       /* nach RB_FETCH: -> Nummer des fehlenden
+                                       4-KB-Stuecks des Abbilds; das naechste
+                                       RB_IMG schreibt dorthin */
 struct fapi_rbregs {                /* Zustand der Box bei RB_CALL      */
     unsigned short ax, bx, cx, dx, si, di, bp, ds, es, sp, ss, ip, cs, flags;
 };
@@ -175,6 +178,9 @@ struct fapi_rbmem {
 #define RB_EXIT             2
 #define RB_CALL             3
 #define RB_TICK             4       /* nur im Kernel: Takt-Ausflug (RBSLICE) */
+#define RB_FETCH            6       /* INT 13h braucht ein Stueck des Abbilds,
+                                       das noch nicht geladen ist (RB_NEED,
+                                       RB_IMG, dann wieder RB_RUN) */
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (Taskmanager, wie 6.0) */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
