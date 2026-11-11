@@ -192,11 +192,12 @@ Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 ## Zweige und Releases (5.x)
 
 `5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), CI füllt
-das Release `v5.0`; `5.x` = 5.1 in Arbeit, CI veröffentlicht das
-Vorab-Release `v5.1` (vorher überschrieb 5.x die Abbilder von v5.0 – vom
+das Release `v5.0`; `5.x` = 5.1 (vom Nutzer am 11.11.2026 freigegeben),
+CI veröffentlicht das Release `v5.1` – seitdem kein Vorab-Release mehr
+(vorher überschrieb 5.x die Abbilder von v5.0 – vom
 Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
 
-## Aktueller Stand: AT-DOS 5.1 (Zweig 5.x, Kompatibilitätsbox fertig); 5.0 im Zweig 5.0
+## Aktueller Stand: AT-DOS 5.1 fertig (Zweig 5.x, Release v5.1); 5.0 im Zweig 5.0
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
