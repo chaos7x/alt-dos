@@ -2405,6 +2405,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Cirrus-Direktweg nur ohne Teilung. In QEMU geprüft, indem vesa.c
   testweise LFB übergeht und Fenster A als geteilt behandelt: VESA
   listet die Modi, VDEMO 640 8 über vier Fenster richtig.
+  Vom Nutzer in 86Box bestätigt: VESA läuft auf der ET4000/W32.
   Mauszeiger in VESA (in QEMU mit `-serial msmouse` geprüft – die PS/2-
   Maus bekommt mit `-display none` keine Bewegungen –, 8/16/24/32 Bit,
   Rand unten rechts, Alt+Esc hin und zurück, Neuzeichnen unter dem
