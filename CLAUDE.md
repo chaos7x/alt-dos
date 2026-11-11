@@ -781,6 +781,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (`HBASE`). Freigabe nur über `of_release`. Programme schreiben über
   `puts`/`DosWrite(STDOUT)`, nicht über VioWrtTTY – sonst wirkt keine
   Umleitung (VioWrtTTY nur für Bildschirm-Dialoge wie „-- Mehr --“).
+- Statuszeile rechts: Laufzeit wie `uptime -p` (Wunsch des Nutzers):
+  „seit 2 Tagen, 3 Std., 5 Min.“, Teile mit 0 fallen weg, neu je Minute
+  (vio.c `vio_status`). Zähler `uptime_m` (Minuten, 45 Tage) + `up60` im
+  Takt-Interrupt (start.asm), weil `uptime_s` 16 Bit ist und nach gut
+  18 h überlief (bleibt für DosSysInfo/MSD). Auf 5.x zählt rbox.c die
+  Zeit in der Box auch in Minuten nach.
 - SHUTDOWN/POWEROFF/REBOOT (Wunsch des Nutzers): ohne Schalter Rückfrage
   J/N, `/NOW` sofort, `/T:n` Countdown (Esc bricht ab), `/R` Neustart
   (`cmd_shutdown` in task_cmd.c, in QEMU geprüft).

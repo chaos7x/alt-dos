@@ -224,28 +224,61 @@ static void title_bar(void)
     }
 }
 
+/* Laufzeit wie "uptime -p" unter Linux: "seit 2 Tagen, 3 Std., 5 Min."
+   (Teile mit 0 fallen weg), rechtsbuendig, neu nur jede Minute */
+static char *up_num(char *p, unsigned v)
+{
+    char t[6];
+    int n = 0;
+    do {
+        t[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    while (n)
+        *p++ = t[--n];
+    return p;
+}
+
+static char *up_str(char *p, const char *s)
+{
+    while (*s)
+        *p++ = *s++;
+    return p;
+}
+
 void vio_status(void)
 {
-    char b[6];
-    unsigned v = uptime_s;
-    int i;
-
+    char b[40], *p = b;
+    unsigned m = uptime_m, d = m / 1440, h = (m / 60) % 24, mi = m % 60;
     int sr = hw_lines - 1;                  /* Statuszeile: unterste    */
 
-    if (v == shown_uptime || (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
+    if (m == shown_uptime || (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
         return;                             /* Vollbild: keine Statuszeile */
     if (shown_uptime == 0xFFFF) {
         vfill(sr, STATUS_ATTR);
         vputs(sr, 1, "Alt+Esc: Sitzung wechseln \xB3 Strg+C: Abbruch \xB3", STATUS_ATTR);
-        vputs(sr, 62, "Uptime:       s", STATUS_ATTR);
     }
-    shown_uptime = v;
-    for (i = 4; i >= 0; i--) {
-        b[i] = (char)('0' + v % 10);
-        v /= 10;
+    shown_uptime = m;
+    p = up_str(p, "seit ");
+    if (d) {
+        p = up_num(p, d);
+        p = up_str(p, d == 1 ? " Tag" : " Tagen");
     }
-    b[5] = 0;
-    vputs(sr, 70, b, STATUS_ATTR);
+    if (h) {
+        if (d)
+            p = up_str(p, ", ");
+        p = up_num(p, h);
+        p = up_str(p, " Std.");
+    }
+    if (mi || !(d | h)) {
+        if (d | h)
+            p = up_str(p, ", ");
+        p = up_num(p, mi);
+        p = up_str(p, " Min.");
+    }
+    *p = 0;
+    vputs(sr, 48, "                                ", STATUS_ATTR);
+    vputs(sr, 79 - (int)(p - b), b, STATUS_ATTR);
 }
 
 void redraw(void)
