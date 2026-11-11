@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 in Arbeit (5.0 fertig: Zweig `5.x`, Meilenstein 9)
+# alt-dos – AT-DOS 6.0 in Arbeit (5.1 auf Zweig `5.x`, 5.0 auf `5.0`)
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
