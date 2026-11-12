@@ -5546,6 +5546,9 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_DELAY:
         delay_ticks(bx);
         return 0;
+    case DH_UNINOTE:                    /* Unicode-Original eines Namens */
+        uni_note_ext(dsel, bx, cx, devhlp_dx);
+        return 0;
     case DH_KSEG:                       /* Kernelsegment ohne DMA-Bedingung */
         return kseg_alloc(bx ? bx : 0x10000UL);
     case DH_DMABUF: {

@@ -266,7 +266,7 @@ static int cv_ea(int phase)
                     break;
                 }
                 nx = g + ((unsigned long)dsec[o + 1] << 5);
-                if (dsec[o] != 'L')
+                if (dsec[o] != 'L' && dsec[o] != 'W')
                     continue;
                 if (!phase) {
                     ea_live++;

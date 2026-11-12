@@ -110,7 +110,7 @@ static void check_ea(void)
         u = b[pos + 1];
         if (!u)
             break;
-        if (b[pos] != 'L')
+        if (b[pos] != 'L' && b[pos] != 'W')     /* W: UTF-16 (Unicode Stufe 1) */
             continue;
         c = b[pos + 2] | ((unsigned)b[pos + 3] << 8);   /* FAT12/16: 16 Bit */
         if ((c == 0 || is_dir(c)) && dir_has(c, b + pos + 6))

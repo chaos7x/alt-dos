@@ -114,6 +114,15 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Umlaute); ältere Programme bekommen 8.3-Ersatznamen wie Windows
   (`BRIEFA~1.TXT`), beide Namen gehen in Pfaden. `VOL` zeigt die
   Bezeichnung der CD
+- Unicode-Dateinamen verlustfrei (Stufe 1): Namen mit Zeichen außerhalb
+  von CP437 (Japanisch, Kyrillisch, Griechisch …) sehen Programme mit `_`
+  an diesen Stellen, Kopieren (COPY, XCOPY, FM), Verschieben und der
+  Weg von einer Joliet-CD auf FAT behalten aber das Original – der Kernel
+  merkt es sich je Task, wenn ein Programm den Namen liest, und schreibt
+  es beim Anlegen unter genau diesem Namen. Auf EA-Laufwerken stehen
+  solche Namen als UTF-16 in `EA DATA. SF`; `CONVERT /LFN` überträgt sie
+  in beide Richtungen ohne Verlust. Alle Zeichen von CP437 (auch α, ░,
+  ∞) werden jetzt richtig nach Unicode umgesetzt (vorher nur Latin-1)
 - Lange Namen, Stufe 1: VFAT-Namen (Windows 95) werden gelesen – in
   Verzeichnislisten, als Pfadteil (`CD "Eigene Dateien"`, Anführungszeichen
   halten Namen mit Leerzeichen zusammen) und beim Löschen/Umbenennen mit

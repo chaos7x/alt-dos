@@ -113,6 +113,9 @@ static unsigned long e2v_slba(unsigned long dc, unsigned off)
     return clus_lba(e2v_cl[(unsigned)shr(off, cshift)]) + ((off & ((spc << 9) - 1)) >> 9);
 }
 
+/* Satzarten: L CP437, W UTF-16 (Unicode Stufe 1); klein = schon uebertragen */
+#define E2V_REC(x) ((x) == 'L' || (x) == 'l' || (x) == 'W' || (x) == 'w')
+
 static unsigned char e2v_sum(const unsigned char __far *e)
 {
     unsigned char s = 0;
@@ -131,7 +134,7 @@ static unsigned e2v_find(unsigned long dc, const unsigned char __far *e)
         r = fpb(e2v_ea, o);
         if (!r[1])
             break;
-        if ((r[0] == 'L' || r[0] == 'l') && rd32f(r + 2) == dc) {
+        if (E2V_REC(r[0]) && rd32f(r + 2) == dc) {
             for (k = 0; k < 11 && r[6 + k] == e[k]; k++)
                 ;
             if (k == 11)
@@ -159,9 +162,13 @@ static void e2v_lfn(unsigned off, const unsigned char __far *r, unsigned k, unsi
     for (i = 0; i < 13; i++) {
         idx = (k - 1) * 13 + i;
         if (idx < len) {
-            u = r[18 + idx];
-            if (u >= 128)
-                u = cp437u[u - 128];
+            if ((r[0] | 0x20) == 'w')   /* UTF-16: unveraendert         */
+                u = rd16f(r + 18 + 2 * idx);
+            else {
+                u = r[18 + idx];
+                if (u >= 128)
+                    u = cp437u[u - 128];
+            }
         } else
             u = idx == len ? 0 : 0xFFFF;
         e[pos[i]] = (unsigned char)u;
@@ -194,7 +201,7 @@ static int e2v_dir(unsigned long dc, int write)
                 sum = e2v_sum(e);
                 for (k = parts; k >= 1; k--, o += 32)
                     e2v_lfn(o, fpb(e2v_ea, ro), k, parts, sum);
-                fpb(e2v_ea, ro)[0] = 'l';           /* erledigt           */
+                fpb(e2v_ea, ro)[0] |= 0x20;         /* erledigt (l/w)     */
                 e2v_names++;
                 if (!dc)
                     e2v_rootn++;
@@ -270,11 +277,11 @@ static int e2v_pass(int write)
         r = fpb(e2v_ea, o);
         if (!r[1])
             break;
-        if (r[0] == 'L') {
+        if (r[0] == 'L' || r[0] == 'W') {
             dc = rd32f(r + 2);
             for (p = 0; p < o; ) {      /* Verzeichnis schon behandelt?  */
                 unsigned char __far *q = fpb(e2v_ea, p);
-                if ((q[0] == 'L' || q[0] == 'l') && rd32f(q + 2) == dc)
+                if (E2V_REC(q[0]) && rd32f(q + 2) == dc)
                     break;
                 p += (unsigned)q[1] << 5;
             }
@@ -471,7 +478,8 @@ static unsigned long v2e_lost;
    Unterverzeichnisse merken, phase 1 VFAT-Eintraege loeschen */
 static int v2e_dir(unsigned long dc, int phase)
 {
-    static unsigned char nm[256], seen;
+    static unsigned short nm[256];      /* UCS-2, 0 = Ende               */
+    static unsigned char seen;
     static unsigned char chk, parts;
     unsigned n, bytes, i, k, j, len, dirty = 0;
     unsigned char __far *e;
@@ -510,24 +518,25 @@ static int v2e_dir(unsigned long dc, int phase)
                     unsigned u = e[pos[j]] | ((unsigned)e[pos[j] + 1] << 8);
                     unsigned at = (k - 1) * 13 + j;
                     if (at < 255)
-                        nm[at] = u == 0 || u == 0xFFFF ? 0 : v2e_cp(u);
-                    if (u && u != 0xFFFF && u != '_' && v2e_cp(u) == '_')
-                        v2e_lost++;
+                        nm[at] = (unsigned short)(u == 0xFFFF ? 0 : u);
                 }
                 seen |= (unsigned char)(k == 1);
             }
             continue;
         }
         if (!phase && parts && seen && e2v_sum(e) == chk && !(e[11] & 8)) {
-            unsigned units, o = v2e_nd;     /* Satz anhaengen             */
+            unsigned units, o = v2e_nd, wide = 0;   /* Satz anhaengen     */
             for (len = 0; len < 255 && nm[len]; len++)
-                ;
-            units = (18 + len + 31) >> 5;
+                if (nm[len] != '_' && v2e_cp(nm[len]) == '_')
+                    wide = 1;               /* ausserhalb CP437: Satz W   */
+            if (wide)
+                v2e_lost++;
+            units = (18 + (wide ? 2 * len : len) + 31) >> 5;
             if ((unsigned long)o + ((unsigned)units << 5) + 32 > 0xFFFFUL)
                 return -2;                  /* EA-Datei zu gross           */
             for (k = 0; k < units * 32; k++)
                 *fpb(v2e_eab, o + k) = 0;
-            *fpb(v2e_eab, o) = 'L';
+            *fpb(v2e_eab, o) = (unsigned char)(wide ? 'W' : 'L');
             *fpb(v2e_eab, o + 1) = (unsigned char)units;
             for (k = 0; k < 4; k++)
                 *fpb(v2e_eab, o + 2 + k) = (unsigned char)(dc >> (8 * k));
@@ -535,7 +544,11 @@ static int v2e_dir(unsigned long dc, int phase)
                 *fpb(v2e_eab, o + 6 + k) = e[k];
             *fpb(v2e_eab, o + 17) = (unsigned char)len;
             for (k = 0; k < len; k++)
-                *fpb(v2e_eab, o + 18 + k) = nm[k];
+                if (wide) {
+                    *fpb(v2e_eab, o + 18 + 2 * k) = (unsigned char)nm[k];
+                    *fpb(v2e_eab, o + 19 + 2 * k) = (unsigned char)(nm[k] >> 8);
+                } else
+                    *fpb(v2e_eab, o + 18 + k) = (unsigned char)v2e_cp(nm[k]);
             v2e_nd = o + units * 32;
             e2v_names++;
         }
@@ -669,7 +682,7 @@ static int lfn_toea(void)
     if (v2e_lost) {
         puts(" (");
         put_num(v2e_lost, 0);
-        puts(" Zeichen au\xE1" "erhalb CP437 werden '_')");
+        puts(" mit Zeichen au\xE1" "erhalb CP437 - bleiben erhalten)");
     }
     puts(".\n");
     if (!autom) {

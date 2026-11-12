@@ -95,6 +95,13 @@ Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
 AT-DOS 5.1 ist fertig (Zweig `5.x`, Release `v5.1`). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
+Entscheidung des Nutzers (12.11.2026): Zurückportiert wird erst, wenn
+Phase 6 ganz fertig ist. Vorher alles Offene von 6.0 abarbeiten, außer
+DoubleSpace (6.1): Unicode Stufe 1, Phase 6 Rest (Sperren je IDE-Kanal/
+SCSI-Gerät), Ton (Aufnahme, SB-Pro-Stereo, DSP-MIDI), Platten (NCR
+synchron/Wide, IDE LBA48/UDMA, EJECT), APM-Leerlauf, Grafik-Boxen hinten
+(Latch-Kopien, SVGA), CD (ISO 9660:1999, Rock Ridge), Box (A:/B:, Maus-
+Rückruf im DPMI), COUNTRY=/Codepages, zuletzt der DOOM-Nachbau.
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
@@ -3428,6 +3435,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Schnittstellen für Programme (W-Aufrufe wie Win32) erst mit 7.0 und
   der Grafikoberfläche – der VGA-Textmodus hat nur 256/512 Zeichen.
   Zeitlinie: NT 3.1 (1993) Unicode, OS/2 blieb bei Codepages.
+  Stufe 1 erledigt (in QEMU geprüft: FAT16 mit per mtools angelegten
+  Namen – 日本語.txt, Ελλάδα 2026.txt, α░β Test.txt, Кириллица\Привет
+  мир.txt – per XCOPY auf FAT32 (VFAT) und FAT16 (EA), MOVE in einen
+  Unterordner, COPY *.txt, Joliet-CD (genisoimage -J) -> FAT32: mtools
+  zeigt überall die Originale; CHKDSK sauber, CONVERT F: /LFN:VFAT ->
+  /LFN:EA -> /LFN:VFAT mit gleichem mdir, fsck sauber). Aufbau (fat.c):
+  Tabelle `cp_uni` (ganze CP437, ersetzt lat2cp – vorher wurden auch
+  CP437-Zeichen außerhalb Latin-1 beim Schreiben zu `_`), `uni2cp`.
+  Namensgedächtnis im Kernelsegment von fat.c (`UNI_KSIZE`, hinter EA-
+  Namenspuffer und Sprungindex): je Task (+1 für current < 0) Mitschrift
+  `UNI_CAP` (lfn_feed schreibt die UCS-2-Einheiten mit, `lfn_lossy` im
+  Kontext) und W-Puffer `UNI_WB`, dazu zwei Hälften zu 16 KB mit
+  [Task+1][Länge][CP437][UCS-2] (`uni_note`/`uni_find`, volle Hälfte ->
+  die andere wird geleert). Gemerkt wird nur, wo ein Name ans Programm
+  geht oder ein Pfadteil passt (`uni_take_lfn`/`uni_take_ea` in readdir,
+  lookup_name bei Treffer, namepath) – nicht bei jedem gelesenen Eintrag.
+  Anlegen: new_entry_lfn nimmt die UCS-2 aus dem Gedächtnis, name_for
+  erzwingt dann einen langen Eintrag (`___.txt` aus Japanisch wäre sonst
+  ein gültiger 8.3-Name mit NT-Bits), ea_add schreibt Satz `W` (Länge in
+  Zeichen, UTF-16LE). Nur derselbe Task: COPY/XCOPY/MOVE/FM lesen und
+  schreiben selbst; ein anderer Task, der zufällig `___.txt` anlegt,
+  bekommt nichts. DOS-Boxen sehen nur 8.3 (Kurznamen) – dort gibt es
+  keinen langen Namen zum Mitnehmen. ISO9660.IFS: eigene cp_uni,
+  schreibt in take() `uname` mit und meldet Treffer über den neuen DevHlp
+  `DH_UNINOTE` (20) -> `uni_note_ext`. UFAT (ufat_lfn.c), ufat32_conv.c
+  (Verzeichnis-Cluster umrechnen) und ufat_e2v.c kennen `W` (E2V_REC,
+  e2v_lfn nimmt UTF-16 unverändert, v2e schreibt `W` statt `_`). DGROUP
+  danach 65.312 Byte.
 - Weitere Dateisysteme als `.IFS` (Ideen, Gespräch mit dem Nutzer
   12.11.2026, noch ohne Reihenfolge): je Modul ein Segment (64 KB), dazu
   `U<Name>.EXE` für CHKDSK/FORMAT. Grenzen: FAPI-Dateigröße/-Position 32

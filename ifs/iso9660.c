@@ -74,15 +74,42 @@ static char up(char c)
     return c;
 }
 
-/* Latin-1 0xA0-0xFF -> CP437 (0 = keine Entsprechung) */
-static const unsigned char lat2cp[96] = {
-    0xFF, 0xAD, 0x9B, 0x9C, 0, 0x9D, 0x7C, 0x15, 0, 0, 0xA6, 0xAE, 0xAA, 0x2D, 0, 0,
-    0xF8, 0xF1, 0xFD, 0, 0, 0xE6, 0x14, 0xFA, 0, 0, 0xA7, 0xAF, 0xAC, 0xAB, 0, 0xA8,
-    0, 0, 0, 0, 0x8E, 0x8F, 0x92, 0x80, 0, 0x90, 0, 0, 0, 0, 0, 0,
-    0, 0xA5, 0, 0, 0, 0, 0x99, 0, 0, 0, 0, 0, 0x9A, 0, 0, 0xE1,
-    0x85, 0xA0, 0x83, 0, 0x84, 0x86, 0x91, 0x87, 0x8A, 0x82, 0x88, 0x89, 0x8D, 0xA1, 0x8C, 0x8B,
-    0, 0xA4, 0x95, 0xA2, 0x93, 0, 0x94, 0xF6, 0, 0x97, 0xA3, 0x96, 0x81, 0, 0, 0x98
+/* CP437 80h-FFh -> Unicode (ganze Codepage) */
+static const unsigned short cp_uni[128] = {
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
+    0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
+    0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA,
+    0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
+    0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
+    0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B,
+    0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4,
+    0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
+    0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 };
+
+static unsigned char uni2cp(unsigned u)
+{
+    unsigned i;
+    if (u < 0x80)
+        return (unsigned char)u;
+    for (i = 0; i < 128; i++)
+        if (cp_uni[i] == u)
+            return (unsigned char)(0x80 + i);
+    return 0;
+}
+
+/* Joliet-Name des letzten take() als UCS-2; ent_lossy: hat '_' fuer
+   Zeichen ausserhalb CP437 -> dem Kernel melden (DH_UNINOTE), damit eine
+   Kopie auf FAT das Original bekommt (Unicode Stufe 1) */
+static unsigned short uname[IFS_NAMELEN];
+static unsigned char ent_lossy;
 
 static int ok83(unsigned char c)        /* in 8.3-Namen erlaubt         */
 {
@@ -212,15 +239,17 @@ static void take(unsigned char __far *r)
 
     k = 0;
     if (joliet) {                       /* UCS-2, gross zuerst           */
+        ent_lossy = 0;
         for (i = 0; i + 1 < nl && k < IFS_NAMELEN - 1; i += 2) {
+            unsigned b;
             c = (r[33 + i] << 8) | r[34 + i];
             if (c == ';')
                 break;
-            if (c >= 0xA0 && c <= 0xFF)
-                c = lat2cp[c - 0xA0];
-            else if (c >= 0x80 || c < ' ')
-                c = 0;
-            ent.name[k++] = c ? (char)c : '_';
+            uname[k] = (unsigned short)c;
+            b = c < ' ' ? 0 : uni2cp(c);
+            if (!b)
+                ent_lossy = 1;
+            ent.name[k++] = b ? (char)b : '_';
         }
     } else
         for (k = 0; k < nl && k < IFS_NAMELEN - 1 && r[33 + k] != ';'; k++)
@@ -235,6 +264,17 @@ static void take(unsigned char __far *r)
     y = r[18] < 80 ? 0 : r[18] - 80;    /* Jahre seit 1900 -> seit 1980  */
     ent.date = (y << 9) | ((r[19] & 15) << 5) | (r[20] & 31);
     ent.time = ((r[21] & 31) << 11) | ((r[22] & 63) << 5) | ((r[23] & 63) >> 1);
+}
+
+/* gefundener Eintrag geht an den Kernel: Original des Joliet-Namens melden */
+static void uni_tell(void)
+{
+    unsigned n;
+    if (!joliet || !ent_lossy)
+        return;
+    for (n = 0; ent.name[n]; n++)
+        ;
+    devhlp(DH_UNINOTE, n, (unsigned)ent.name, (unsigned)uname);
 }
 
 /* Verzeichnis (ext, len) durchgehen:
@@ -288,6 +328,7 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
                 if (count++ == n) {
                     take(b + off);
                     ent_idx = n;
+                    uni_tell();
                     return 0;
                 }
                 continue;
@@ -304,6 +345,7 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
                 ;
             if (k == nlen && ent.name[k] == 0) {
                 ent_idx = count;
+                uni_tell();
                 return 0;
             }
             if (kw && !basis(ent.name, eb)) {
@@ -317,6 +359,7 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
                             ;
                     if (++hits == kw) {
                         ent_idx = count;
+                        uni_tell();
                         return 0;
                     }
                 }

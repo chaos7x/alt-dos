@@ -142,6 +142,12 @@ struct drv_req {
 #define RES_IO          1
 #define RES_DMA         2
 #define RES_IRQ         3
+#define DH_UNINOTE      20          /* IFS-Module: BX = Name (CP437, im DS),
+                                       CX = derselbe Name als UCS-2 (je
+                                       Zeichen ein Wort), DX = Laenge in
+                                       Zeichen. Der Kernel merkt sich das
+                                       Original fuer den laufenden Task
+                                       (Kopien auf FAT bekommen es) -> 0 */
 #define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
                                        ohne DMA-Bedingung (genullt), z. B.
                                        Tabellen -> AX = Selektor, 0 = keiner

@@ -571,19 +571,145 @@ static int to83(const char *s, unsigned len, char *n)
    Vor dem 8.3-Eintrag stehen Eintraege mit Attribut 0Fh, letzter Teil
    zuerst (Ordnungszahl | 40h), je 13 UCS-2-Zeichen an den Stellen 1-10,
    14-25, 28-31, dazu die Pruefsumme des 8.3-Namens (Byte 13). Zeichen
-   ausserhalb von CP437 werden zu '_'. */
+   ausserhalb von CP437 werden fuer Programme zu '_' - das Original merkt
+   sich das Namensgedaechtnis (Unicode Stufe 1, weiter unten). */
 static char lfn[IFS_NAMELEN];
 static unsigned char lfn_sum, lfn_next; /* naechste erwartete Ordnungszahl */
 static unsigned char lfn_have;          /* Teile gesammelt                */
 static const unsigned char lfn_pos[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
-/* Latin-1 A0h-FFh -> CP437 (0 = keins) */
-static const unsigned char lat2cp[96] = {
-    0xFF, 0xAD, 0x9B, 0x9C, 0, 0x9D, 0x7C, 0x15, 0, 0, 0xA6, 0xAE, 0xAA, 0x2D, 0, 0,
-    0xF8, 0xF1, 0xFD, 0, 0, 0xE6, 0x14, 0xFA, 0, 0, 0xA7, 0xAF, 0xAC, 0xAB, 0, 0xA8,
-    0, 0, 0, 0, 0x8E, 0x8F, 0x92, 0x80, 0, 0x90, 0, 0, 0, 0, 0, 0,
-    0, 0xA5, 0, 0, 0, 0, 0x99, 0, 0, 0, 0, 0, 0x9A, 0, 0, 0xE1,
-    0x85, 0xA0, 0x83, 0, 0x84, 0x86, 0x91, 0x87, 0x8A, 0x82, 0x88, 0x89, 0x8D, 0xA1, 0x8C, 0x8B,
-    0, 0xA4, 0x95, 0xA2, 0x93, 0, 0x94, 0xF6, 0, 0x97, 0xA3, 0x96, 0x81, 0, 0, 0x98 };
+/* CP437 80h-FFh -> Unicode (ganze Codepage, nicht nur Latin-1) */
+static const unsigned short cp_uni[128] = {
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
+    0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5,
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9,
+    0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192,
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA,
+    0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
+    0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510,
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F,
+    0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B,
+    0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580,
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4,
+    0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229,
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248,
+    0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
+};
+
+static unsigned cp2uni(unsigned char c)
+{
+    return c < 0x80 ? c : cp_uni[c - 0x80];
+}
+
+/* Unicode -> CP437, 0 = keins */
+static unsigned char uni2cp(unsigned u)
+{
+    unsigned i;
+    if (u < 0x80)
+        return (unsigned char)u;
+    for (i = 0; i < 128; i++)
+        if (cp_uni[i] == u)
+            return (unsigned char)(0x80 + i);
+    return 0;
+}
+
+/* ---- Namensgedaechtnis (Unicode Stufe 1) ----------------------------------
+   Programme sehen Namen in CP437; was dort fehlt, wird '_'. Bekommt ein
+   Task einen solchen Namen (Verzeichnis lesen, Pfadteil gefunden), merkt
+   sich der Kernel CP437-Fassung -> UCS-2-Original. Legt derselbe Task
+   danach einen Eintrag mit genau dieser CP437-Fassung an (COPY, XCOPY,
+   MOVE, FM, Redirector der Box), schreibt fat.c das Original (VFAT-Eintraege
+   bzw. Satz 'W' in EA DATA. SF). Ablage im Kernelsegment von fat.c:
+   je Task (+1 fuer den Start) eine Mitschrift des gerade gelesenen langen
+   Namens (512 Byte) und ein Puffer fuer einen W-Satz (544), dazu zwei
+   Haelften zu 16 KB mit Eintraegen [Task+1][Laenge][CP437][UCS-2]; ist die
+   laufende voll, wird die andere geleert und benutzt. */
+#define UNI_OFF   (SKX_OFF + SKX_N * 4U)
+#define UNI_TS    1056U
+#define UNI_SLOT  ((unsigned)(current < 0 || current >= NTASK ? NTASK : current))
+#define UNI_CAP   (UNI_OFF + UNI_SLOT * UNI_TS)
+#define UNI_WB    (UNI_CAP + 512U)
+#define UNI_MEM   (UNI_OFF + (NTASK + 1) * UNI_TS)
+#define UNI_HALF  16384U
+#define UNI_KSIZE (UNI_MEM + 2UL * UNI_HALF)
+extern int current;                     /* kernel.c: laufender Task      */
+static unsigned uni_fill[2];
+static unsigned char uni_cur;
+static unsigned char lfn_lossy;         /* Kontext: Name hat '_' fuer Fremdes */
+
+static unsigned char __far *ufp(unsigned off)
+{
+    return (unsigned char __far *)MK_FP(fat_ksel(), off);
+}
+
+/* Eintrag des laufenden Tasks zu name -> Offset der UCS-2-Zeichen, 0 = keiner */
+static unsigned uni_find(const char __far *name, unsigned len)
+{
+    unsigned h, w, o, k, n, base, sl = UNI_SLOT + 1;
+    unsigned char __far *p;
+    if (!len || len > 255 || !fat_ksel())
+        return 0;
+    for (h = 0; h < 2; h++) {           /* juengere Haelfte zuerst       */
+        w = (uni_cur + h) & 1;
+        base = UNI_MEM + w * UNI_HALF;
+        for (o = 0; o < uni_fill[w]; o += 2 + 3 * n) {
+            p = ufp(base + o);
+            n = p[1];
+            if (p[0] != sl || n != len)
+                continue;
+            for (k = 0; k < len && p[2 + k] == (unsigned char)name[k]; k++)
+                ;
+            if (k == len)
+                return base + o + 2 + len;
+        }
+    }
+    return 0;
+}
+
+/* name (CP437, len Zeichen) <- UCS-2 bei usel:uoff merken */
+static void uni_note(const char __far *name, unsigned len, unsigned usel, unsigned uoff)
+{
+    unsigned o, k, w, need = 2 + 3 * len;
+    unsigned char __far *p;
+    const unsigned char __far *u = (const unsigned char __far *)MK_FP(usel, uoff);
+    if (!len || len > 255 || !fat_ksel())
+        return;
+    if ((o = uni_find(name, len)) != 0) {       /* schon da: erneuern    */
+        p = ufp(o);
+        for (k = 0; k < 2 * len; k++)
+            p[k] = u[k];
+        return;
+    }
+    w = uni_cur;
+    if (uni_fill[w] + need > UNI_HALF) {
+        w ^= 1;
+        uni_cur = (unsigned char)w;
+        uni_fill[w] = 0;
+    }
+    p = ufp(UNI_MEM + w * UNI_HALF + uni_fill[w]);
+    p[0] = (unsigned char)(UNI_SLOT + 1);
+    p[1] = (unsigned char)len;
+    for (k = 0; k < len; k++)
+        p[2 + k] = (unsigned char)name[k];
+    for (k = 0; k < 2 * len; k++)
+        p[2 + len + k] = u[k];
+    uni_fill[w] += need;
+}
+
+/* von aussen (DevHlp DH_UNINOTE, IFS-Module wie Joliet) */
+void __far uni_note_ext(unsigned sel, unsigned name, unsigned ucs, unsigned len)
+{
+    uni_note((const char __far *)MK_FP(sel, name), len, sel, ucs);
+}
+
+static unsigned slen_f(const char __far *s)
+{
+    unsigned n = 0;
+    while (s[n])
+        n++;
+    return n;
+}
 
 static unsigned char sum83(const unsigned char __far *e)
 {
@@ -610,27 +736,43 @@ static int lfn_feed(const unsigned char __far *e)
         lfn_sum = e[13];
         lfn[ord * 13 < IFS_NAMELEN ? ord * 13 : IFS_NAMELEN - 1] = 0;
         lfn_have = 1;
+        lfn_lossy = 0;
     } else if (!lfn_have || ord != lfn_next - 1 || e[13] != lfn_sum) {
         lfn_have = 0;
         return 1;
     }
     lfn_next = (unsigned char)ord;
     p = (ord - 1) * 13;
-    for (i = 0; i < 13; i++) {
+    for (i = 0; i < 13 && p + i < IFS_NAMELEN - 1; i++) {
+        unsigned char b;
         c = e[lfn_pos[i]] | ((unsigned)e[lfn_pos[i] + 1] << 8);
+        if (fat_ksel())                 /* Original mitschreiben         */
+            ((unsigned short __far *)ufp(UNI_CAP))[p + i] = (unsigned short)c;
         if (c == 0) {
             lfn[p + i] = 0;
             break;
         }
-        lfn[p + i] = (char)(c < 0x80 ? c : c >= 0xA0 && c <= 0xFF && lat2cp[c - 0xA0] ?
-                                lat2cp[c - 0xA0] : '_');
+        b = uni2cp(c);
+        if (!b) {
+            b = '_';
+            lfn_lossy = 1;
+        }
+        lfn[p + i] = (char)b;
     }
     return 1;
+}
+
+/* der eben gueltige VFAT-Name geht an das Programm: Original merken */
+static void uni_take_lfn(void)
+{
+    if (lfn_lossy && fat_ksel())
+        uni_note(lfn, slen_f(lfn), fat_ksel(), UNI_CAP);
 }
 
 /* eigenes Format (Stufe 3), weiter unten */
 static void ea_load(int d, clus_t dc);
 static int  ea_find(const unsigned char __far *e, char *out);
+static void uni_take_ea(const char *name);
 static char ea_tmp[IFS_NAMELEN];
 
 /* gehoert der gesammelte lange Name zu diesem 8.3-Eintrag? */
@@ -717,10 +859,14 @@ static int lookup_name(int d, clus_t dc, const char *s, unsigned len,
             continue;
         }
         ok = lfn_valid(e) && lfn_eq(s, len);
+        if (ok)
+            uni_take_lfn();
         if (!ok && !vol[d].vfat && ea_find(e, ea_tmp)) {   /* EA-Name    */
             for (k = 0; k < len && ea_tmp[k] && upc(ea_tmp[k]) == s[k]; k++)
                 ;
             ok = k == len && !ea_tmp[k];
+            if (ok)
+                uni_take_ea(ea_tmp);
         }
         if (!ok && n11) {
             for (k = 0; k < 11 && e[k] == (unsigned char)n11[k]; k++)
@@ -847,8 +993,9 @@ static int __far fat_readdir(int d, const char *dir, unsigned want, struct ifs_d
             for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
                 de->name[k] = lfn[k];
             de->name[k] = 0;
+            uni_take_lfn();
         } else if (!vol[d].vfat && ea_find(e, de->name)) {
-            /* langer Name aus EA DATA. SF                              */
+            uni_take_ea(de->name);      /* langer Name aus EA DATA. SF  */
         } else {
             unsigned dot = 0, low = 0;
             for (k = 0; de->sname[k]; k++) {    /* NT: Byte 12 Bit 3/4 =   */
@@ -1104,17 +1251,6 @@ static int new_entry(int d, clus_t dc, const char *n83, unsigned char attr,
    Sonst lange Eintraege + Kurzname NAME~n.EXT wie Windows 95. */
 static char ln_buf[IFS_NAMELEN];        /* zu schreibender langer Name    */
 
-static unsigned cp2uni(unsigned char c)
-{
-    unsigned i;
-    if (c < 0x80)
-        return c;
-    for (i = 0; i < 96; i++)
-        if (lat2cp[i] == c)
-            return 0xA0 + i;
-    return '_';
-}
-
 /* n freie Eintraege am Stueck (Unterverzeichnis wird verlaengert) */
 static int dir_slots(int d, clus_t dc, unsigned n, unsigned *idx)
 {
@@ -1158,10 +1294,12 @@ static int new_entry_lfn(int d, clus_t dc, const char *ln, const char *n83,
     unsigned char sum;
     int rc;
 
+    unsigned uo;
     for (len = 0; ln[len]; len++)
         ;
     k = (len + 12) / 13;
     rc = dir_slots(d, dc, k + 1, &start);
+    uo = uni_find(ln, len);             /* Original aus dem Gedaechtnis  */
     if (rc)
         return rc;
     {                                   /* Pruefsumme des Kurznamens      */
@@ -1182,7 +1320,9 @@ static int new_entry_lfn(int d, clus_t dc, const char *ln, const char *n83,
         e[13] = sum;
         for (i = 0; i < 13; i++) {
             pos = (ord - 1) * 13 + i;
-            ch = pos < len ? cp2uni((unsigned char)ln[pos]) : pos == len ? 0 : 0xFFFF;
+            ch = pos < len ? (uo ? ((unsigned short __far *)ufp(uo))[pos]
+                                 : cp2uni((unsigned char)ln[pos]))
+                           : pos == len ? 0 : 0xFFFF;
             e[lfn_pos[i]] = (unsigned char)ch;
             e[lfn_pos[i] + 1] = (unsigned char)(ch >> 8);
         }
@@ -1284,11 +1424,14 @@ static int name_for(int d, clus_t dc, const char *comp, unsigned clen, char *n83
                 partup[dot] = 1, up = 1;
         }
         mixed = (partlo[0] && partup[0]) || (partlo[1] && partup[1]);
-        if (!lo)
-            return 0;                   /* alles gross: nur 8.3           */
-        if (!mixed) {                   /* NT: Name/Endung ganz klein     */
-            nt_case = (unsigned char)((partlo[0] ? 0x08 : 0) | (partlo[1] ? 0x10 : 0));
-            return 0;
+        if (!uni_find(o, clen)) {       /* Original bekannt (___.txt aus
+                                           Japanisch): langer Eintrag    */
+            if (!lo)
+                return 0;               /* alles gross: nur 8.3           */
+            if (!mixed) {               /* NT: Name/Endung ganz klein     */
+                nt_case = (unsigned char)((partlo[0] ? 0x08 : 0) | (partlo[1] ? 0x10 : 0));
+                return 0;
+            }
         }
         /* gemischt: VFAT-Eintrag bzw. EA-Satz bewahrt die Schreibung */
     } else {
@@ -1573,10 +1716,13 @@ static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
 /* ---- Lange Namen im eigenen Format (Stufe 3, Entscheidung des Nutzers) ---
    "EA DATA. SF" im Stamm (versteckt, System; MS-DOS-Werkzeuge sehen eine
    normale Datei). Saetze in Einheiten zu 32 Byte:
-     0  'L' = langer Name, 0 = frei      1  Laenge in Einheiten
+     0  'L' = langer Name, 'W' = langer Name in UTF-16, 0 = frei
+     1  Laenge in Einheiten
      2  Startcluster des Verzeichnisses (32 Bit, 0 = Stamm; FAT32-fest)
      6  8.3-Name (11 Byte) - der Rueckverweis auf die Datei
-     17 Laenge des Namens, ab 18 der Name (CP437)
+     17 Laenge des Namens in Zeichen, ab 18 der Name (L: CP437, W: UTF-16
+        little endian, 2 Byte je Zeichen - nur wenn der Name Zeichen
+        ausserhalb von CP437 hat, Unicode Stufe 1)
    Im Verzeichniseintrag steht nichts (OS/2 nimmt Offset 14h, bei FAT32 die
    oberen Clusterbits). Zwischenspeicher: die Namen eines Verzeichnisses
    (das zuletzt gelesene) in einem Kernelsegment, sonst kostete jede Suche
@@ -1587,13 +1733,14 @@ static struct ifs_file ea_f;            /* EA DATA. SF von ea_drv         */
 static int ea_drv = -1;
 static const char ea_n83[11] = { 'E', 'A', ' ', 'D', 'A', 'T', 'A', ' ', 'S', 'F', ' ' };
 static unsigned ea_csel, ea_cused;
+static unsigned ea_uoff;                /* ea_find: UCS-2 des Treffers, 0 = keins */
 
 /* ein Kernelsegment fuer fat.c: Namenspuffer (EA_CSIZE) + Sprungindex
    (die GDT-Plaetze fuer Kernelsegmente sind knapp) */
 static unsigned fat_ksel(void)
 {
     if (!ea_csel)
-        ea_csel = kseg_alloc(EA_CSIZE + SKX_N * 4UL);
+        ea_csel = kseg_alloc(UNI_KSIZE);    /* + Namensgedaechtnis    */
     return ea_csel;
 }
 static clus_t ea_cdc;
@@ -1677,19 +1824,33 @@ static void ea_load(int d, clus_t dc)
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
         if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
             break;
-        if (ea_rec[0] != 'L' || ea_dc() != dc)
+        if ((ea_rec[0] != 'L' && ea_rec[0] != 'W') || ea_dc() != dc)
             continue;
         len = ea_rec[17];
-        if (ea_cused + 12 + len > EA_CSIZE)
+        if (ea_cused + 13 + 3 * len > EA_CSIZE)
             break;                      /* voll: Rest ohne lange Namen    */
-        if (ea_rd(pos + EA_HDR, ea_rec + EA_HDR, len) != len)
-            break;
         for (k = 0; k < 11; k++)
             c[ea_cused + k] = ea_rec[6 + k];
         c[ea_cused + 11] = (unsigned char)len;
-        for (k = 0; k < len; k++)
-            c[ea_cused + 12 + k] = ea_rec[EA_HDR + k];
-        ea_cused += 12 + len;
+        c[ea_cused + 12] = 0;
+        if (ea_rec[0] == 'W') {         /* UTF-16 (Unicode Stufe 1)      */
+            unsigned short __far *u = (unsigned short __far *)(c + ea_cused + 13 + len);
+            unsigned char b;
+            if (fat_read(EAF, pos + EA_HDR, ea_csel, ea_cused + 13 + len, 2 * len) != (int)(2 * len))
+                break;
+            for (k = 0; k < len; k++) {
+                b = uni2cp(u[k]);
+                if (!b)
+                    b = '_', c[ea_cused + 12] = 1;
+                c[ea_cused + 13 + k] = b;
+            }
+        } else {
+            if (ea_rd(pos + EA_HDR, ea_rec + EA_HDR, len) != len)
+                break;
+            for (k = 0; k < len; k++)
+                c[ea_cused + 13 + k] = ea_rec[EA_HDR + k];
+        }
+        ea_cused += 13 + len + (c[ea_cused + 12] ? 2 * len : 0);
     }
 }
 
@@ -1701,18 +1862,26 @@ static int ea_find(const unsigned char __far *e, char *out)
     if (!ea_csel || ea_cdrv < 0)
         return 0;
     c = MK_FP(ea_csel, 0);
-    for (o = 0; o < ea_cused; o += 12 + len) {
+    for (o = 0; o < ea_cused; o += 13 + len + (c[o + 12] ? 2 * len : 0)) {
         len = c[o + 11];
         for (k = 0; k < 11 && c[o + k] == e[k]; k++)
             ;
         if (k == 11) {
             for (k = 0; k < len; k++)
-                out[k] = (char)c[o + 12 + k];
+                out[k] = (char)c[o + 13 + k];
             out[k] = 0;
+            ea_uoff = c[o + 12] ? o + 13 + len : 0;
             return 1;
         }
     }
     return 0;
+}
+
+/* der eben gefundene EA-Name geht an das Programm: Original merken */
+static void uni_take_ea(const char *name)
+{
+    if (ea_uoff && ea_csel)
+        uni_note(name, slen_f(name), ea_csel, ea_uoff);
 }
 
 /* Satz zu (dc, n83) freigeben */
@@ -1725,7 +1894,7 @@ static void ea_del(int d, clus_t dc, const unsigned char *n83)
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
         if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
             break;
-        if (ea_rec[0] != 'L' || ea_dc() != dc)
+        if ((ea_rec[0] != 'L' && ea_rec[0] != 'W') || ea_dc() != dc)
             continue;
         for (k = 0; k < 11 && ea_rec[6 + k] == n83[k]; k++)
             ;
@@ -1744,7 +1913,7 @@ static void ea_del(int d, clus_t dc, const unsigned char *n83)
 static int ea_add(int d, clus_t dc, const char *n83, const char *name)
 {
     unsigned long pos, at = 0xFFFFFFFFUL;
-    unsigned u, len, need, k, use;
+    unsigned u, len, need, k, use, uo;
     int rc;
 
     ea_del(d, dc, (const unsigned char *)n83);
@@ -1752,7 +1921,8 @@ static int ea_add(int d, clus_t dc, const char *n83, const char *name)
         return IFS_FULL;
     for (len = 0; name[len] && len < 255; len++)
         ;
-    need = (EA_HDR + len + 31) >> 5;
+    uo = uni_find(name, len);           /* Original bekannt: Satz 'W'    */
+    need = (EA_HDR + (uo ? 2 * len : len) + 31) >> 5;
     use = need;
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
         if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
@@ -1776,11 +1946,21 @@ static int ea_add(int d, clus_t dc, const char *n83, const char *name)
     for (k = 0; k < 11; k++)
         ea_rec[6 + k] = (unsigned char)n83[k];
     ea_rec[17] = (unsigned char)len;
-    for (k = 0; k < len; k++)
-        ea_rec[EA_HDR + k] = (unsigned char)name[k];
-    /* am Ende ganze Einheiten schreiben, damit der naechste Satz passt */
-    rc = fat_write(EAF, at, KDATA, (unsigned)ea_rec,
-                   at == ea_f.size ? need << 5 : EA_HDR + len);
+    if (uo) {                           /* W-Satz im Puffer des Tasks    */
+        unsigned char __far *w = ufp(UNI_WB);
+        const unsigned char __far *src = ufp(uo);
+        ea_rec[0] = 'W';
+        for (k = 0; k < (need << 5); k++)
+            w[k] = k < EA_HDR ? ea_rec[k] : k < EA_HDR + 2 * len ? src[k - EA_HDR] : 0;
+        rc = fat_write(EAF, at, ea_csel, UNI_WB,
+                       at == ea_f.size ? need << 5 : EA_HDR + 2 * len);
+    } else {
+        for (k = 0; k < len; k++)
+            ea_rec[EA_HDR + k] = (unsigned char)name[k];
+        /* am Ende ganze Einheiten schreiben, damit der naechste Satz passt */
+        rc = fat_write(EAF, at, KDATA, (unsigned)ea_rec,
+                       at == ea_f.size ? need << 5 : EA_HDR + len);
+    }
     k = fat_close(EAF);
     if (ea_cdrv == d && ea_cdc == dc)
         ea_cdrv = -1;
@@ -2128,9 +2308,11 @@ static int __far fat_namepath(int d, const char *path, char *out, int shortn)
             unsigned dc2 = f.dc;
             ea_load(d, dc2);
             e = dir_entry(d, f.dc, f.idx);
-            if (e && ea_find(e, ea_tmp))
+            if (e && ea_find(e, ea_tmp)) {
+                uni_take_ea(ea_tmp);
                 for (k = 0; ea_tmp[k] && k < IFS_NAMELEN - 1; k++)
                     s[k] = ea_tmp[k], s[k + 1] = 0;
+            }
         } else if (!shortn) {           /* langen Namen dazu suchen      */
             unsigned i = f.idx;
             unsigned char __far *x;
@@ -2142,9 +2324,11 @@ static int __far fat_namepath(int d, const char *path, char *out, int shortn)
             for (; i <= f.idx && (x = dir_entry(d, f.dc, i)) != 0; i++)
                 if (!lfn_feed(x) && i < f.idx)
                     lfn_have = 0;
-            if (x && lfn_valid(x))
+            if (x && lfn_valid(x)) {
+                uni_take_lfn();
                 for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
                     s[k] = lfn[k], s[k + 1] = 0;
+            }
             else if (x) {               /* NT-Kleinschreibung            */
                 unsigned dot = 0;
                 for (k = 0; s[k]; k++)
@@ -2449,7 +2633,8 @@ void __far vol_reset(int d)
    gehoeren nicht hinein. */
 const struct ctxblk fat_ctx[] = {
     { lfn, sizeof(lfn) }, { &lfn_sum, sizeof(lfn_sum) }, { &lfn_next, sizeof(lfn_next) },
-    { &lfn_have, sizeof(lfn_have) }, { ea_tmp, sizeof(ea_tmp) }, { ln_buf, sizeof(ln_buf) },
+    { &lfn_have, sizeof(lfn_have) }, { &lfn_lossy, sizeof(lfn_lossy) },
+    { ea_tmp, sizeof(ea_tmp) }, { ln_buf, sizeof(ln_buf) },
     { ea_rec, sizeof(ea_rec) }, { &sp_comp, sizeof(sp_comp) }, { &sp_len, sizeof(sp_len) },
     { &nt_case, sizeof(nt_case) }, { &ferr, sizeof(ferr) }, { &de_lba, sizeof(de_lba) },
     { ifs_orig, sizeof(ifs_orig) }, { &ifs_notready, sizeof(ifs_notready) },
