@@ -248,6 +248,7 @@ unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
 static unsigned char opl_open[NTASK];
 static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
+static void vga_svmap(int t, int bg);
 static void tlb(int t);
 static unsigned char vga_raw[NTASK];
 static unsigned char vga_bgk[NTASK];            /* hinten auf Schatten (Art) */
@@ -2847,6 +2848,8 @@ static void vga_leave(int t)
     int s = box_ses[t];
     if (!vga_raw[t])
         return;
+    if (vga_bgk[t] == 4)
+        vga_svmap(t, 0);                        /* nicht in freie Seiten */
     vga_raw[t] = 0;
     vga_bgk[t] = 0;
     vga_ports(t, 0);
@@ -2883,6 +2886,17 @@ unsigned long __far vio_raw_buf(int s);         /* vgagfx.c (KTEXT2) */
 #define RAW_KIND  61
 #define RAW_ALLOW 62
 #define RAW_VMODE 0x350                         /* VESA-Modus (vioint.h)  */
+#define RAW_SVPG    0x354                       /* VESA hinten (Art 4):  */
+#define RAW_SVPHYS  0x360                       /*   Sicherung, LFB, Groesse, */
+#define RAW_SVBYTES 0x364                       /*   Granularitaet, Fenster */
+#define RAW_SVGMUL  0x368
+#define RAW_SVSPLIT 0x36A
+#define RAW_SVBANK  0x36C
+#define RAW_SVOK    0x35A
+#define NDPP      4                             /* DPMI 0800h je Box     */
+static struct { unsigned long lpg, npg, ppg; } dp_phys[NTASK][NDPP];
+static void pte_set(int t, unsigned i, unsigned long e);
+static int lpte_set(int t, unsigned long lp, unsigned long e);
 #define RAW_ST    0x340                         /* Port-Zustand hinten:  */
 #define ST_SEQ    0                             /* Index Sequenzer       */
 #define ST_GC     1                             /* Index Grafik          */
@@ -2934,10 +2948,61 @@ static void vga_plmap(int t)
     tlb(t);
 }
 
+/* SVGA hinten (Art 4, VESA-Modus): gfx_out hat Zustand und Bild in
+   eigene Seiten gesichert (vgagfx.c raw_svout); dorthin zeigen hinten das
+   Fenster A0000-AFFFF (Stellung wie zuletzt per 4F05h) bzw. die per DPMI
+   0800h eingeblendeten Seiten des linearen Bildspeichers. Was ausserhalb
+   des Bildes liegt (Speicher hinter dem Bild, geteilte Fenster mit
+   verschiedener Stellung), fehlt: der Seitenfehler laesst die Box warten.
+   bg = 0: LFB wieder auf die Karte (das Fenster stellt vga_map). */
+static void vga_svmap(int t, int bg)
+{
+    unsigned char __far *q;
+    unsigned long phys = 0, bytes = 0, sv = 0, np, off = 0, o, e, pp, i;
+    unsigned gmul = 0, ba = 0, bb = 0, k, f;
+    unsigned char split = 0;
+    f = irq_off();
+    if (bg && (q = vga_vr(t)) != 0 && q[RAW_SVOK]) {
+        sv = PG_LIN(*(pg_t __far *)(q + RAW_SVPG));
+        phys = *(unsigned long __far *)(q + RAW_SVPHYS);
+        bytes = *(unsigned long __far *)(q + RAW_SVBYTES);
+        gmul = *(unsigned __far *)(q + RAW_SVGMUL);
+        split = q[RAW_SVSPLIT];
+        ba = *(unsigned __far *)(q + RAW_SVBANK);
+        bb = *(unsigned __far *)(q + RAW_SVBANK + 2);
+    }
+    irq_restore(f);
+    np = (bytes + 4095) >> 12;
+    if (bg && !phys) {                          /* Fenster A0000         */
+        off = (unsigned long)ba << 16;          /* ba * 64 KB / gmul     */
+        for (k = gmul; k > 1; k >>= 1)          /* (gmul ist 2^n)        */
+            off >>= 1;
+        for (k = 0; k < 16; k++) {
+            o = off + ((unsigned long)k << 12);
+            pte_set(t, 0xA0 + k, sv && gmul && (!split || ba == bb) && o < bytes ?
+                    (sv + o) | PTE_BOX : 0);
+        }
+    }
+    for (k = 0; k < NDPP; k++)                  /* LFB ueber DPMI 0800h  */
+        for (i = 0; i < dp_phys[t][k].npg; i++) {
+            pp = dp_phys[t][k].ppg + i;
+            if (!bg)
+                e = PG_LIN(pp) | PTE_BOX;
+            else if (sv && phys && pp >= (phys >> 12) && pp - (phys >> 12) < np)
+                e = (sv + ((pp - (phys >> 12)) << 12)) | PTE_BOX;
+            else
+                e = 0;
+            lpte_set(t, dp_phys[t][k].lpg + i, e);
+        }
+    tlb(t);
+}
+
 static void vga_map(int t, unsigned k)
 {
     unsigned i, a = k == 1 ? 0xA0 : 0xB8, n = k == 1 ? 16 : 8;
     unsigned long b = k ? vio_raw_buf(box_ses[t]) + RAW_LIN : 0;
+    if (!k && vga_bgk[t] == 4)
+        vga_svmap(t, 0);                        /* LFB wieder auf die Karte */
     scratch2_map(PG_LIN(pt_box[t]), 4095);
     for (i = 0xA0; i < 0xC0; i++)
         put32(SCRATCH2, i, k ? vga_spare[t] : ((unsigned long)i << 12) | PTE_BOX);
@@ -2948,6 +3013,8 @@ static void vga_map(int t, unsigned k)
     vga_bgk[t] = (unsigned char)k;
     if (k == 2)
         vga_plmap(t);
+    if (k == 4)
+        vga_svmap(t, 1);
     tlb(t);
 }
 
@@ -2956,9 +3023,20 @@ static void vga_map(int t, unsigned k)
 static void vga_wait(int t);
 static int vga_pf(int t)
 {
-    unsigned long a = k2_cr2();
-    if (!vga_raw[t] || vga_bgk[t] != 2 || a < 0xA0000UL || a >= 0xB0000UL)
+    unsigned long a = k2_cr2(), p = a >> 12;
+    unsigned k;
+    if (!vga_raw[t] || (vga_bgk[t] != 2 && vga_bgk[t] != 4))
         return 0;
+    if (a < 0xA0000UL || a >= 0xB0000UL) {
+        if (vga_bgk[t] != 4)
+            return 0;
+        for (k = 0; k < NDPP; k++)              /* LFB hinten, nicht im Bild */
+            if (dp_phys[t][k].npg && p >= dp_phys[t][k].lpg &&
+                p < dp_phys[t][k].lpg + dp_phys[t][k].npg)
+                break;
+        if (k == NDPP)
+            return 0;
+    }
     vga_wait(t);
     return 1;
 }
@@ -3040,11 +3118,34 @@ static void vga_allow(struct v86_frame *f, int t)
 static int vga_bgint(struct v86_frame *f, int t)
 {
     unsigned char __far *q;
-    unsigned i, n, es = (unsigned)f->r.es, dx = DX;
+    unsigned i, n, es = (unsigned)f->r.es, dx = DX, fl;
     if (AH == 0x0F) {                           /* Modus aus dem BDA     */
         AL = (unsigned char)rd8(BDA, 0x49);
         AH = (unsigned char)rd8(BDA, 0x4A);
         BH = (unsigned char)rd8(BDA, 0x62);
+        return 1;
+    }
+    if (vga_bgk[t] == 4) {                      /* SVGA: nur das Fenster */
+        if (AX != 0x4F05 || BH > 1 || BL > 1)
+            return 0;
+        fl = irq_off();
+        if (!(q = vga_vr(t)) || *(unsigned long __far *)(q + RAW_SVPHYS)) {
+            irq_restore(fl);
+            return 0;
+        }
+        if (BL && !q[RAW_SVSPLIT]) {            /* kein Fenster B: wie das */
+            irq_restore(fl);                    /* BIOS ablehnen           */
+            AX = 0x014F;
+            return 1;
+        }
+        if (BH)
+            DX = *(unsigned __far *)(q + RAW_SVBANK + 2 * BL);
+        else
+            *(unsigned __far *)(q + RAW_SVBANK + 2 * BL) = dx;
+        irq_restore(fl);
+        if (!BH)
+            vga_svmap(t, 1);                    /* Fenster neu einblenden */
+        AX = 0x004F;
         return 1;
     }
     if (AH != 0x10 || !(q = vga_vr(t)))
@@ -3318,6 +3419,17 @@ static unsigned sb_opl(unsigned p)
     return p;
 }
 
+/* VBE-Register der Bochs-/QEMU-Karte (1CEh/1CFh, Wort): vorn frei in der
+   I/O-Bitmap; faellt ein Zugriff, war die Box hinten -> warten, dann
+   als Wort an die Karte (bytweise verstaende die Karte ihn nicht) */
+static int vbe_io(int t, unsigned p)
+{
+    if (!vga_raw[t] || p < 0x1CE || p > 0x1D0)
+        return 0;
+    vga_wait(t);
+    return 1;
+}
+
 static unsigned char port_in(int t, unsigned p)
 {
     unsigned char sv;
@@ -3328,8 +3440,8 @@ static unsigned char port_in(int t, unsigned p)
         return mpu_in(t, p);
     p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
-        if (vga_bgk[t])
-            return vga_pin(t, p);
+        if (vga_bgk[t] && (vga_bgk[t] != 4 || p == 0x3DA))
+            return vga_pin(t, p);               /* SVGA hinten: nur 3DAh */
         vga_wait(t);                            /* (Index 3D4 o. ae. vorn: */
         return (unsigned char)inb(p);           /* Bitmap war noch zu)   */
     }
@@ -3400,7 +3512,7 @@ static void port_out(int t, unsigned p, unsigned char v)
     }
     p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
-        if (vga_bgk[t])
+        if (vga_bgk[t] && vga_bgk[t] != 4)
             vga_pout(t, p, v);
         else {
             vga_wait(t);
@@ -4620,8 +4732,7 @@ static unsigned char dp_lmap[NTASK][LDT_N / 8];
 static struct { unsigned long lpg, npg; } dp_mem[NTASK][NDPM];
 /* DPMI 0800h: eingeblendeter Geraetespeicher (z. B. linearer Bild-
    speicher einer VBE-2.0-Karte); Seiten ohne PTE_OWN, nie freigegeben */
-#define NDPP      4
-static struct { unsigned long lpg, npg, ppg; } dp_phys[NTASK][NDPP];
+
 
 /* Zustandsseite: 0 PM-Vektoren (256 x 6), 1536 Ausnahme-Handler (32 x 6),
    2048 Rahmen (DPCT x 64) */
@@ -5415,6 +5526,8 @@ done501:
                 dphys_unmap(t, k);
                 DERR(0x8013);
             }
+        if (vga_bgk[t] == 4)
+            vga_svmap(t, 1);                    /* hinten: auf die Sicherung */
         tlb(t);
 done800:
         lin = (dp_phys[t][k].lpg << 12) + (ph & 0xFFF);
@@ -6009,7 +6122,12 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         n = op <= 0xE5 ? (unsigned)lrd(lin + 1, 1) : DX;
-        if (emu_port(n)) {                      /* EMU8000: als Wort     */
+        if (vbe_io(t, n)) {                     /* Bochs-VBE: vorn, Wort */
+            if (op & 1)
+                AX = k3_inw(n);
+            else
+                AL = (unsigned char)inb(n);
+        } else if (emu_port(n)) {               /* EMU8000: als Wort     */
             if (box_fg(t)) {
                 emu_take(t, n);
                 if (op & 1)
@@ -6028,7 +6146,12 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return 0;
     case 0xE6: case 0xE7: case 0xEE: case 0xEF: /* OUT                   */
         n = op <= 0xE7 ? (unsigned)lrd(lin + 1, 1) : DX;
-        if (emu_port(n)) {
+        if (vbe_io(t, n)) {
+            if (op & 1)
+                k3_outw(n, AX);
+            else
+                outb(n, AL);
+        } else if (emu_port(n)) {
             if (box_fg(t)) {
                 emu_take(t, n);
                 if (op & 1)
@@ -6323,7 +6446,12 @@ static unsigned monitor(struct v86_frame *f, int t)
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         p = op <= 0xE5 ? rd8(cs, ip++) : DX;
-        if (emu_port(p)) {                      /* EMU8000: Worte; 32 Bit */
+        if (vbe_io(t, p)) {                     /* Bochs-VBE: vorn, Wort */
+            if (op & 1)
+                AX = k3_inw(p);
+            else
+                AL = (unsigned char)inb(p);
+        } else if (emu_port(p)) {               /* EMU8000: Worte; 32 Bit */
             unsigned lo = 0xFFFF, hi = 0xFFFF;  /* = zwei Wortzugriffe   */
             if (box_fg(t)) {
                 emu_take(t, p);
@@ -6349,7 +6477,12 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0xE6: case 0xE7: case 0xEE: case 0xEF: /* OUT                   */
         p = op <= 0xE7 ? rd8(cs, ip++) : DX;
-        if (emu_port(p)) {
+        if (vbe_io(t, p)) {
+            if (op & 1)
+                k3_outw(p, AX);
+            else
+                outb(p, AL);
+        } else if (emu_port(p)) {
             if (box_fg(t)) {
                 emu_take(t, p);
                 if (!(op & 1))

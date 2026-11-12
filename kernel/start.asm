@@ -668,18 +668,22 @@ irq0:
 .pre:   pop     bp
         pushad
         push    es
+        push    fs                      ; Watcom-Code im Kernel benutzt FS/
+        push    gs                      ; GS (DPMI-Programme in Ring 3 auch)
         mov     ax, ds
         mov     es, ax
         cld                             ; das Programm kann DF gesetzt haben
         call    preempt_
-        mov     bx, sp                  ; [es][pushad][ds][ax][eip ...]
-        test    byte [ss:bx+48], 2      ; Box: virtuellen Takt/Tasten
+        mov     bx, sp                  ; [gs][fs][es][pushad][ds][ax][eip ...]
+        test    byte [ss:bx+52], 2      ; Box: virtuellen Takt/Tasten
         jnz     .tk                     ; zustellen (v86.c); DPMI-Programm
-        test    byte [ss:bx+42], 3      ; (Ring 3): nur Einfrieren
+        test    byte [ss:bx+46], 3      ; (Ring 3): nur Einfrieren
         jz      .nov                    ; pruefen (Grafik im Hintergrund)
-.tk:    lea     ax, [bx+38]
+.tk:    lea     ax, [bx+42]
         call    KCODE3:v86_tick_
-.nov:   pop     es
+.nov:   pop     gs
+        pop     fs
+        pop     es
         popad
         jmp     .ret
 .nopre: pop     bp

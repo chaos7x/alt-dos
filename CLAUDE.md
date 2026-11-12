@@ -3164,7 +3164,41 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   1000h/1001h/1002h/1007h/1008h Attribute, 1010h/1012h/1015h/1017h DAC
   in der Registerkopie – in QEMU mit einer Abwandlung von BGTEST geprüft
   (Zeile 100: 0Fh + 1010h grün, 200 Zeilen, grün).
-  Offen: Latch-Kopien und SVGA hinten.
+  SVGA hinten (Art 4; in QEMU geprüft: `\DEMO\SVBG.COM` (apps/svbg.asm) – 640×480×256 über das
+  Fenster, je Takt eine Zeile über alle Bänke – per START, nach 5 s weg,
+  nach 11 s zurück: 84 -> 346 Zeilen, nahtlos über die Bankgrenzen;
+  LFBBG.COM dasselbe als DPMI-Programm über DPMI 0800h: 69 -> 290
+  Zeilen; BGTEST, VBETEST, `command /c ver`, START DOOM 1.2 mit Alt+Esc
+  unverändert): raw_svout legt hinter RAW_SVOK Bildgröße, LFB-Adresse,
+  Granularität, Teilung und die Stellung der Fenster A/B (4F05h BH = 1,
+  `vesa_getbank`) ab und setzt RAW_KIND = 4. v86.c `vga_svmap(t, bg)`:
+  hinten zeigen A0000–AFFFF auf die Sicherung ab Bank · 64 KB / gmul
+  (gmul ist 2^n), bei LFB die PTEs aller dp_phys-Einblendungen auf die
+  Sicherung (Seiten hinter dem Bild: nicht vorhanden); vorn wieder die
+  Karte (vga_map(t, 0), auch vga_leave – sonst schriebe die Box in
+  freigegebene Seiten), 0800h hinten blendet gleich die Sicherung ein.
+  `vga_bgint` bildet 4F05h nach (Stellen/Abfragen, Fenster B ohne
+  Teilung -> 014Fh wie das BIOS, nicht warten – SVBG stellt beide);
+  raw_svin stellt nach 4F04h die hinten gesetzte Stellung ein
+  (`vesa_setwin`). Ports hinten: nur 3DAh nachgebildet, alles andere
+  wartet (die Registerkopie gilt im VESA-Modus nicht – Palette steckt im
+  4F04h-Zustand, dessen Format das BIOS bestimmt). 1CEh/1CFh (Bochs-VBE)
+  bei einer Grafikbox: `vbe_io` wartet und greift als Wort zu (vorher
+  verpufften sie hinten). Seitenfehler im Fenster oder im LFB -> vga_pf
+  -> warten.
+  Dabei behoben (alter Fehler, sichtbar erst jetzt): irq0 sicherte vor
+  preempt/v86_tick FS/GS nicht – Watcom-Code im Kernel benutzt sie, ein
+  DPMI-Programm fand danach in FS einen Kernelselektor (#PF bei Adresse
+  8005506Ch = SCRATCH2-Basis). Jetzt push/pop fs/gs im Ring-3-Zweig.
+  Latch-Kopien hinten (Schreibmodus 1, DOOM in Mode Y) bewusst nicht
+  gebaut (12.11.2026): die CPU liest dabei ein Byte, das die Karte in
+  vier Latches über alle Ebenen hält, und schreibt sie per Map Mask auf
+  bis zu vier Ebenen zurück – nachbilden hieße jeden Zugriff auf
+  A0000–AFFFF per Seitenfehler fangen und den Befehl selbst ausführen
+  (Befehlsdecoder für MOV/MOVS/STOS mit allen Präfixen, 32-Bit-
+  Adressierung im PM). Das kostet je Byte eine Falle (DOOM kopiert so
+  Zehntausende Bytes je Bild) und bringt nichts: Spiele mit Mode Y spielt
+  man vorn, Ton ist hinten ohnehin stumm. Die Box wartet dort wie bisher.
   SVGA-Zustand beim Sitzungswechsel (in QEMU geprüft: BANKT.COM –
   640×480×256 über das Fenster, 5 Bänke gefüllt, Box bleibt auf Bank 2 –
   per START, weg, VER, zurück: Bild gleich, die Box zeichnet danach in

@@ -314,6 +314,8 @@ int __far apm_off(void);                   /* vesa.c: APM aus, nur bei Fehler zu
 struct vbox { unsigned long bytes, phys; unsigned gmul; unsigned char split; };
 int __far vesa_boxinfo(unsigned m, struct vbox __far *o);
 unsigned __far vesa_state(unsigned op, unsigned long lin);
+unsigned __far vesa_getbank(unsigned w);
+void __far vesa_setwin(unsigned w, unsigned n);
 unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
                          struct fapi_vesamode __far *o);
 unsigned __far res_claim(int drv, unsigned type, unsigned start, unsigned len);

@@ -449,8 +449,12 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   bildet der Kernel nach; beim Zurückholen kommt das Bild mit allem, was
   hinten gezeichnet wurde. Planare Modi (12h, EGA, Mode X) laufen hinten
   weiter, solange das Programm einfach schreibt (eine Ebene über die Map
-  Mask – der Kernel blendet die Ebene im Puffer ein); Latch-Kopien
-  (Schreibmodus 1, z. B. DOOM), SVGA und die meisten Aufrufe des Video-
+  Mask – der Kernel blendet die Ebene im Puffer ein). SVGA-Modi (VESA)
+  laufen hinten ebenfalls weiter: über das Bank-Fenster (INT 10h 4F05h
+  bildet der Kernel hinten nach) oder über den linearen Bildspeicher
+  eines DPMI-Programms (DPMI 0800h) schreibt die Box in die Sicherung
+  ihres Bildes. Latch-Kopien (Schreibmodus 1, z. B. DOOM in Mode Y),
+  Palette und Register im SVGA-Modus und die meisten Aufrufe des Video-
   BIOS halten die Box an, bis sie wieder vorn ist – Modus abfragen und
   Palette/Attribute über INT 10h (0Fh, 1000h–1017h) bildet der Kernel
   hinten nach. Test: `START \DEMO\BGTEST [4|12]` (eine Zeile je Takt,
@@ -462,7 +466,7 @@ die MIDI-Daten der Box an den MPU-401 der Karte weiter; die Box im
 Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
   der Kernel beim Wechsel über VBE 4F04h samt Bildspeicher und stellt sie
   beim Zurückholen wieder her, einschließlich der eingestellten Bank
-  (Test: `START BANKT`-artige Programme, VBETEST). Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
+  (Test: `START \DEMO\BANKT`, VBETEST; hinten weiterzeichnen: `START \DEMO\SVBG`). Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip

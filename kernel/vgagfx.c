@@ -491,13 +491,16 @@ static int raw_svout(int s)
     unsigned char __far *q;
     unsigned vm;
     pg_t pg;
-    unsigned np, n;
+    unsigned np, n, ba, bb;
     struct vbox vb;
     scratch_map(base + RAW_REGS, 0xFFF);
     q = MK_FP(SCRATCH, 0);
     vm = *(unsigned __far *)(q + RAW_VMODE);
     q[RAW_SVOK] = 0;
-    if (!vm || vesa_boxinfo(vm, &vb) || vb.bytes > 0x400000UL)
+    if (!vm)
+        return 0;
+    q[RAW_KIND] = 0;                        /* hinten erst mit Sicherung */
+    if (vesa_boxinfo(vm, &vb) || vb.bytes > 0x400000UL)
         return 0;
     np = (unsigned)PAGES(vb.bytes);
     scratch_map(base + RAW_REGS, 0xFFF);
@@ -515,9 +518,18 @@ static int raw_svout(int s)
     *(unsigned __far *)(q + RAW_SVN) = np;
     if (!vesa_state(1, base + RAW_REGS + RAW_STATE))
         return 0;
+    ba = vb.phys ? 0 : vesa_getbank(0);     /* Fenster der Box: hinten  */
+    bb = vb.phys ? 0 : vb.split ? vesa_getbank(1) : ba;     /* weiter so */
     raw_svimg(&vb, PG_LIN(pg), 1);
     scratch_map(base + RAW_REGS, 0xFFF);
+    *(unsigned long __far *)(q + RAW_SVPHYS) = vb.phys;
+    *(unsigned long __far *)(q + RAW_SVBYTES) = vb.bytes;
+    *(unsigned __far *)(q + RAW_SVGMUL) = vb.gmul;
+    q[RAW_SVSPLIT] = vb.split;
+    *(unsigned __far *)(q + RAW_SVBANK) = ba;
+    *(unsigned __far *)(q + RAW_SVBANK + 2) = bb;
     q[RAW_SVOK] = 1;
+    q[RAW_KIND] = 4;                        /* hinten: Bild in den Seiten */
     vesa_hw = 1;                            /* Text danach erst per BIOS 03h */
     return 1;
 }
@@ -530,6 +542,7 @@ static int raw_svin(int s)
     unsigned char __far *q;
     unsigned vm;
     pg_t pg;
+    unsigned ba, bb;
     struct vbox vb;
     scratch_map(base + RAW_REGS, 0xFFF);
     q = MK_FP(SCRATCH, 0);
@@ -537,10 +550,17 @@ static int raw_svin(int s)
         return 0;
     vm = *(unsigned __far *)(q + RAW_VMODE);
     pg = *(pg_t __far *)(q + RAW_SVPG);
+    ba = *(unsigned __far *)(q + RAW_SVBANK);   /* hinten evtl. umgestellt */
+    bb = *(unsigned __far *)(q + RAW_SVBANK + 2);
     if (vesa_boxinfo(vm, &vb) || vesa_bios((vm & 0x7FFF) | 0x8000))
         return 0;
     raw_svimg(&vb, PG_LIN(pg), 0);
     vesa_state(2, base + RAW_REGS + RAW_STATE);
+    if (!vb.phys) {                         /* Fenster, wie die Box es  */
+        vesa_bank(ba, 0);                   /* zuletzt gestellt hat     */
+        if (vb.split)
+            vesa_setwin(1, bb);
+    }
     vesa_hw = 1;
     return 1;
 }

@@ -166,6 +166,25 @@ void __far vesa_bank(unsigned n, int both)
     }
 }
 
+/* Stellung von Fenster w (0 = A, 1 = B) in Granularitaets-Schritten */
+unsigned __far vesa_getbank(unsigned w)
+{
+    struct rmregs r;
+    r.ax = 0x4F05;
+    r.bx = 0x100 | w;
+    r.dx = 0;
+    rm_call(&r);
+    return r.ax == 0x004F ? r.dx : 0;
+}
+
+void __far vesa_setwin(unsigned w, unsigned n)
+{
+    struct rmregs r;
+    r.ax = 0x4F05;
+    r.bx = w;
+    r.dx = n;
+    rm_call(&r);
+}
 
 unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
                          struct fapi_vesamode __far *o)

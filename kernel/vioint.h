@@ -49,6 +49,11 @@ struct session {
 #define RAW_SVPG    0x354           /* Bildspeicher-Sicherung: erste Seite (pg_t) */
 #define RAW_SVN     0x358           /*   und Seitenzahl                   */
 #define RAW_SVOK    0x35A           /* 1 = Zustand + Bild gesichert        */
+#define RAW_SVPHYS  0x360           /* VESA hinten (Art 4): LFB physisch, 0 = Fenster */
+#define RAW_SVBYTES 0x364           /*   Groesse des Bildes            */
+#define RAW_SVGMUL  0x368           /*   64 / Granularitaet (KB)       */
+#define RAW_SVSPLIT 0x36A           /*   Fenster A schreiben, B lesen  */
+#define RAW_SVBANK  0x36C           /*   Stellung Fenster A, B (je Wort) */
 #define RAW_STATE   0x400           /* 4F04h-Zustand (bis 3 KB, im RAW_REGS-Bereich) */
 #define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_LIN + 0x10000UL) : PAGES(GFX_IMG(m) + 768))
 #define VESAGFX     0x81            /* VESA-Modus (linearer Bildspeicher), Bild in vpg Seiten */
