@@ -167,5 +167,6 @@ struct aud_req {
 #define AR_FMRESET      9           /* OPL stumm und auf Null            */
 #define AR_MIDIWRITE    10          /* sel:off, len Bytes an den MPU-401 */
 #define AR_MIDIRESET    11          /* alle Noten aus, Controller zurueck */
+#define AR_AWE          12          /* sel:off, len = struct fapi_awecmd + Daten */
 
 #endif

@@ -5386,6 +5386,14 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
         }
         return 0;
     }
+    case AUD_AWE:                               /* Klangbank (AWELOAD)   */
+        if (b < sizeof(struct fapi_awecmd) || !user_ok(usel, a, b, 1))
+            return FAPI_ERROR;
+        q = &areq[NAUD];
+        q->sel = usel;
+        q->off = a;
+        q->len = b;
+        return aud_call(NAUD, AR_AWE, 0, 0, 0) == DRV_OK ? 0 : FAPI_ERROR;
     case AUD_OPEN: {
         struct fapi_audfmt __far *f = MK_FP(usel, a);
         unsigned bytes;

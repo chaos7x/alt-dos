@@ -441,8 +441,8 @@ static void audio(void)
         sti();
         q->result = mix_res;
         break;
-    case AR_CAPS:
-        q->result = caps;
+    case AR_CAPS:                       /* mit Bank: MIDI geht auch ohne MPU */
+        q->result = caps | (awe_on ? AUDCAP_MPU401 : 0);
         break;
     case AR_FMWRITE: {
         struct fapi_fmreg __far *f = MK_FP(q->sel, q->off);
@@ -459,8 +459,17 @@ static void audio(void)
         if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3))
             opl_reset();
         break;
+    case AR_AWE:
+        if (awe_cmd(q))
+            q->status = DRV_ERR_CMD;
+        break;
     case AR_MIDIWRITE: {
         unsigned char __far *m = MK_FP(q->sel, q->off);
+        if (awe_on && !use_mpu) {       /* Wavetable der AWE             */
+            for (k = 0; k < q->len; k++)
+                awe_midi(m[k]);
+            break;
+        }
         if (!(caps & AUDCAP_MPU401)) {
             q->status = DRV_ERR_CMD;
             break;
@@ -470,6 +479,14 @@ static void audio(void)
         break;
     }
     case AR_MIDIRESET:
+        if (awe_on) {
+            for (k = 0; k < 16; k++) {
+                ch_alloff(k, 1);
+                ch_reset(k);
+                chn[k].prog = 0;
+            }
+            m_st = m_n = m_sysex = 0;
+        }
         if (caps & AUDCAP_MPU401)
             for (k = 0; k < 16; k++) {
                 midi_w((unsigned char)(0xB0 | k));
@@ -746,8 +763,11 @@ static void init(void)
         for (o = 0; o < 4 && !aw_detect(ap[o]); o++)
             ;
         if (ebase) {
+            static unsigned long zlin;
             aw_init();
             caps |= AUDCAP_AWE;
+            zsel = devhlp(DH_DMABUF, 0, AW_BYTES, (unsigned)&zlin);
+            use_mpu = (unsigned char)has_opt(r->args, "MPU");
             claim(RES_IO, ebase, 4);
             claim(RES_IO, ebase + 0x400, 4);
             claim(RES_IO, ebase + 0x800, 4);

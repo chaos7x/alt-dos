@@ -3327,7 +3327,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eingehängt (auch für Disketten- und Plattenabbilder nützlich). Darauf
   `DBLSPACE.IFS` (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6 zum
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
-  `UDBLSPACE.EXE` (CHKDSK). Zeitlich 6.0.
+  `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
+  Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
 - UEFI (Entscheidung des Nutzers: ab 7.0, mit dem 32-Bit-Kernel): Lader wechselt aus Long Mode in den 32-Bit-
   Protected-Mode. Ersatz für alles, was heute im Real Mode vom BIOS kommt
   (Speicherkarte, Plattenparameter, Zeichensätze, Vorladen von CONFIG.SYS)

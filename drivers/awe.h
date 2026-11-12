@@ -390,3 +390,476 @@ static void aw_release(unsigned c)
     DCYSUS(c, 0x8000 | 0x40);
     DCYSUSV(c, 0x8000 | 0x40);
 }
+
+/* ==== Klangbank und MIDI-Synthesizer ==================================
+   Die Bank (Zonen schon in EMU8000-Werten, AWELOAD) liegt in einem
+   eigenen Segment: vorn bis 256 Presets, dahinter die Zonen. Berechnung
+   von Tonhoehe, Lautstaerke und Pan wie im Linux-Treiber (sound/synth/
+   emux/emux_synth.c, emu8000_callback.c; GPL-2.0-or-later; die Tabellen
+   voltab1/voltab2/expressiontab/pan_volumes von dort). */
+
+#define AW_NPRE     256
+#define AW_ZOFF     (AW_NPRE * sizeof(struct fapi_awepre))
+#define AW_BYTES    61440u
+#define AW_NZONE    ((AW_BYTES - AW_ZOFF) / sizeof(struct fapi_awezone))
+#define AWZ(i)      ((struct fapi_awezone __far *)MK_FP(zsel, AW_ZOFF + (i) * sizeof(struct fapi_awezone)))
+#define AWP(i)      ((struct fapi_awepre __far *)MK_FP(zsel, (i) * sizeof(struct fapi_awepre)))
+
+static unsigned zsel;                   /* Segment der Bank (0 = keins) */
+static unsigned nzone, npre;
+static unsigned char awe_on;            /* Bank fertig: MIDI hierher    */
+static unsigned char use_mpu;           /* /MPU: MIDI an den MPU-401    */
+
+/* a * b / c mit 32-Bit-Zwischenergebnis (Ergebnis passt in 16 Bit) */
+int aw_muldiv(int a, int b, int c);
+#pragma aux aw_muldiv = "imul dx" "idiv bx" __parm [__ax] [__dx] [__bx] __value [__ax] __modify [__dx];
+unsigned aw_muldivu(unsigned a, unsigned b, unsigned c);
+#pragma aux aw_muldivu = "mul dx" "div bx" __parm [__ax] [__dx] [__bx] __value [__ax] __modify [__dx];
+
+static const unsigned char voltab1[128] = {
+    0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x2b, 0x29, 0x28, 0x27, 0x26,
+    0x25, 0x24, 0x23, 0x22, 0x21, 0x20, 0x1f, 0x1e, 0x1e, 0x1d, 0x1c, 0x1b, 0x1b, 0x1a, 0x19, 0x19,
+    0x18, 0x17, 0x17, 0x16, 0x16, 0x15, 0x15, 0x14, 0x14, 0x13, 0x13, 0x13, 0x12, 0x12, 0x11, 0x11,
+    0x11, 0x10, 0x10, 0x10, 0x0f, 0x0f, 0x0f, 0x0e, 0x0e, 0x0e, 0x0e, 0x0d, 0x0d, 0x0d, 0x0c, 0x0c,
+    0x0c, 0x0c, 0x0c, 0x0b, 0x0b, 0x0b, 0x0b, 0x0a, 0x0a, 0x0a, 0x0a, 0x09, 0x09, 0x09, 0x09, 0x09,
+    0x08, 0x08, 0x08, 0x08, 0x08, 0x07, 0x07, 0x07, 0x07, 0x06, 0x06, 0x06, 0x06, 0x06, 0x05, 0x05,
+    0x05, 0x05, 0x05, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03, 0x03, 0x03, 0x03, 0x03, 0x02, 0x02, 0x02,
+    0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const unsigned char voltab2[128] = {
+    0x32, 0x31, 0x30, 0x2f, 0x2e, 0x2d, 0x2c, 0x2b, 0x2a, 0x2a, 0x29, 0x28, 0x27, 0x26, 0x25, 0x24,
+    0x24, 0x23, 0x22, 0x21, 0x21, 0x20, 0x1f, 0x1e, 0x1e, 0x1d, 0x1c, 0x1c, 0x1b, 0x1a, 0x1a, 0x19,
+    0x19, 0x18, 0x18, 0x17, 0x16, 0x16, 0x15, 0x15, 0x14, 0x14, 0x13, 0x13, 0x13, 0x12, 0x12, 0x11,
+    0x11, 0x10, 0x10, 0x10, 0x0f, 0x0f, 0x0f, 0x0e, 0x0e, 0x0e, 0x0d, 0x0d, 0x0d, 0x0c, 0x0c, 0x0c,
+    0x0b, 0x0b, 0x0b, 0x0b, 0x0a, 0x0a, 0x0a, 0x0a, 0x09, 0x09, 0x09, 0x09, 0x09, 0x08, 0x08, 0x08,
+    0x08, 0x08, 0x07, 0x07, 0x07, 0x07, 0x07, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x05, 0x05, 0x05,
+    0x05, 0x05, 0x05, 0x05, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
+    0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const unsigned char exprtab[128] = {
+    0x7f, 0x6c, 0x62, 0x5a, 0x54, 0x50, 0x4b, 0x48, 0x45, 0x42, 0x40, 0x3d, 0x3b, 0x39, 0x38, 0x36,
+    0x34, 0x33, 0x31, 0x30, 0x2f, 0x2d, 0x2c, 0x2b, 0x2a, 0x29, 0x28, 0x27, 0x26, 0x25, 0x24, 0x24,
+    0x23, 0x22, 0x21, 0x21, 0x20, 0x1f, 0x1e, 0x1e, 0x1d, 0x1d, 0x1c, 0x1b, 0x1b, 0x1a, 0x1a, 0x19,
+    0x18, 0x18, 0x17, 0x17, 0x16, 0x16, 0x15, 0x15, 0x15, 0x14, 0x14, 0x13, 0x13, 0x12, 0x12, 0x11,
+    0x11, 0x11, 0x10, 0x10, 0x0f, 0x0f, 0x0f, 0x0e, 0x0e, 0x0e, 0x0d, 0x0d, 0x0d, 0x0c, 0x0c, 0x0c,
+    0x0b, 0x0b, 0x0b, 0x0a, 0x0a, 0x0a, 0x09, 0x09, 0x09, 0x09, 0x08, 0x08, 0x08, 0x07, 0x07, 0x07,
+    0x07, 0x06, 0x06, 0x06, 0x06, 0x05, 0x05, 0x05, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03, 0x03, 0x03,
+    0x03, 0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+static const unsigned char panvol[256] = {
+    0x00,0x03,0x06,0x09,0x0c,0x0f,0x12,0x14,0x17,0x1a,0x1d,0x20,0x22,0x25,0x28,0x2a,
+    0x2d,0x30,0x32,0x35,0x37,0x3a,0x3c,0x3f,0x41,0x44,0x46,0x49,0x4b,0x4d,0x50,0x52,
+    0x54,0x57,0x59,0x5b,0x5d,0x60,0x62,0x64,0x66,0x68,0x6a,0x6c,0x6f,0x71,0x73,0x75,
+    0x77,0x79,0x7b,0x7c,0x7e,0x80,0x82,0x84,0x86,0x88,0x89,0x8b,0x8d,0x8f,0x90,0x92,
+    0x94,0x96,0x97,0x99,0x9a,0x9c,0x9e,0x9f,0xa1,0xa2,0xa4,0xa5,0xa7,0xa8,0xaa,0xab,
+    0xad,0xae,0xaf,0xb1,0xb2,0xb3,0xb5,0xb6,0xb7,0xb9,0xba,0xbb,0xbc,0xbe,0xbf,0xc0,
+    0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc8,0xc9,0xca,0xcb,0xcc,0xcd,0xce,0xcf,0xd0,0xd1,
+    0xd2,0xd3,0xd4,0xd5,0xd6,0xd7,0xd7,0xd8,0xd9,0xda,0xdb,0xdc,0xdc,0xdd,0xde,0xdf,
+    0xdf,0xe0,0xe1,0xe2,0xe2,0xe3,0xe4,0xe4,0xe5,0xe6,0xe6,0xe7,0xe8,0xe8,0xe9,0xe9,
+    0xea,0xeb,0xeb,0xec,0xec,0xed,0xed,0xee,0xee,0xef,0xef,0xf0,0xf0,0xf1,0xf1,0xf1,
+    0xf2,0xf2,0xf3,0xf3,0xf3,0xf4,0xf4,0xf5,0xf5,0xf5,0xf6,0xf6,0xf6,0xf7,0xf7,0xf7,
+    0xf7,0xf8,0xf8,0xf8,0xf9,0xf9,0xf9,0xf9,0xf9,0xfa,0xfa,0xfa,0xfa,0xfb,0xfb,0xfb,
+    0xfb,0xfb,0xfc,0xfc,0xfc,0xfc,0xfc,0xfc,0xfc,0xfd,0xfd,0xfd,0xfd,0xfd,0xfd,0xfd,
+    0xfd,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,0xfe,
+    0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+    0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+};
+
+/* MIDI-Kanaele und Stimmen */
+struct awch {
+    unsigned char prog, bank, vol, expr, pan, sus, rpn_l, rpn_h, bendr;
+    int bend;                           /* -8192 .. 8191                */
+};
+static struct awch chn[16];
+#define VS_FREE 0
+#define VS_ON   1
+#define VS_SUS  2                       /* losgelassen, Pedal haelt     */
+#define VS_REL  3                       /* klingt aus                   */
+struct awv {
+    unsigned char ch, key, vel, state, excl;
+    unsigned zone, age;
+};
+static struct awv vo[NAWEV];
+static unsigned vage;
+
+static void ch_reset(unsigned c)
+{
+    struct awch *h = &chn[c];
+    h->bank = 0;
+    h->vol = 100;
+    h->expr = 127;
+    h->pan = 64;
+    h->sus = 0;
+    h->rpn_l = h->rpn_h = 127;
+    h->bendr = 2;
+    h->bend = 0;
+}
+
+static void awe_reset_all(void)
+{
+    unsigned c;
+    for (c = 0; c < NAWEV; c++) {
+        aw_off(c);
+        vo[c].state = VS_FREE;
+    }
+    for (c = 0; c < 16; c++) {
+        ch_reset(c);
+        chn[c].prog = 0;
+    }
+}
+
+static int find_pre(unsigned bank, unsigned prog)
+{
+    unsigned i;
+    for (i = 0; i < npre; i++)
+        if (AWP(i)->bank == bank && AWP(i)->prog == prog)
+            return (int)i;
+    return -1;
+}
+
+/* Tonhoehe der Stimme (IP-Register) */
+static unsigned v_pitch(struct awv *v, struct fapi_awezone __far *z)
+{
+    struct awch *h = &chn[v->ch];
+    int d = (int)(z->fixkey != 0xFF ? z->fixkey : v->key) - (int)z->root;
+    long off;
+    d *= z->scale;                      /* Cent                          */
+    if (d > 9500) d = 9500;
+    if (d < -9500) d = -9500;
+    off = aw_muldiv(d, 4096, 1200);
+    if (h->bend)
+        off += aw_muldiv(h->bend, h->bendr, 24);
+    off += 0xE000L + z->rate;
+    if (off < 0) off = 0;
+    if (off > 0xFFFFL) off = 0xFFFFL;
+    return (unsigned)off;
+}
+
+/* Daempfung (0 laut - 255 still) */
+static unsigned v_vol(struct awv *v, struct fapi_awezone __far *z)
+{
+    struct awch *h = &chn[v->ch];
+    int vol = voltab1[h->vol & 0x7F] + voltab2[v->vel & 0x7F];
+    vol = vol * 8 / 3;
+    vol += z->att;
+    vol += ((0x100 - vol) * exprtab[h->expr & 0x7F]) / 128;
+    if (vol < 0) vol = 0;
+    if (vol > 255) vol = 255;
+    return (unsigned)vol;
+}
+
+static unsigned v_pan(struct awv *v, struct fapi_awezone __far *z)
+{
+    int pan = (int)chn[v->ch].pan - 64;
+    if (z->pan != 0xFF)
+        pan += (int)z->pan - 64;
+    pan = 127 - pan * 2;
+    if (pan < 0) pan = 0;
+    if (pan > 255) pan = 255;
+    return (unsigned)pan;
+}
+
+/* Tonhoehenziel (PTRX/CPF) aus IP, wie die Hardware es erwartet */
+static unsigned v_ptarget(unsigned ip)
+{
+    unsigned long t;
+    if (ip == 0xFFFF)
+        return 0xFFFF;
+    t = 1UL << (ip >> 12);
+    if (t > 0xFFFF)
+        return 0xFFFF;
+    if (ip & 0x800) t += aw_muldivu((unsigned)t, 0x102E, 0x2710);
+    if (ip & 0x400) t += aw_muldivu((unsigned)t, 0x764, 0x2710);
+    if (ip & 0x200) t += aw_muldivu((unsigned)t, 0x389, 0x2710);
+    t += t >> 1;
+    return t > 0xFFFF ? 0xFFFF : (unsigned)t;
+}
+
+static unsigned v_alloc(void)
+{
+    unsigned c, best = 0, pri, bp = 0xFFFF, bage = 0;
+    for (c = 0; c < NAWEV; c++) {
+        /* frei vor ausklingend vor gehalten vor klingend, je die aelteste */
+        pri = vo[c].state == VS_FREE ? 0 : vo[c].state == VS_REL ? 1 :
+              vo[c].state == VS_SUS ? 2 : 3;
+        if (pri < bp || (pri == bp && (unsigned)(vage - vo[c].age) > bage)) {
+            bp = pri;
+            bage = vage - vo[c].age;
+            best = c;
+        }
+    }
+    return best;
+}
+
+static void v_start(unsigned ch, unsigned key, unsigned vel, unsigned zi)
+{
+    struct fapi_awezone __far *z = AWZ(zi);
+    struct awv *v;
+    unsigned c, ip, vol, pan, cut, pt;
+    unsigned char drum = (unsigned char)(ch == 9);
+
+    if (z->excl)                        /* exklusive Klasse: andere aus */
+        for (c = 0; c < NAWEV; c++)
+            if (vo[c].state != VS_FREE && vo[c].ch == ch && vo[c].excl == z->excl) {
+                DCYSUSV(c, 0x807F);
+                vo[c].state = VS_FREE;
+            }
+    c = v_alloc();
+    v = &vo[c];
+    v->ch = (unsigned char)ch;
+    v->key = (unsigned char)key;
+    v->vel = (unsigned char)(z->fixvel != 0xFF ? z->fixvel : vel);
+    v->excl = z->excl;
+    v->zone = zi;
+    v->age = ++vage;
+    v->state = VS_ON;
+
+    ip = v_pitch(v, z);
+    vol = v_vol(v, z);
+    pan = v_pan(v, z);
+    if (!drum && (z->volatkhld & 0xFF) < 0x7D)  /* leiser = dumpfer */
+        cut = ((v->vel < 70 ? 70 : v->vel) * z->cutoff + 0xA0) >> 7;
+    else
+        cut = z->cutoff;
+    pt = v_ptarget(ip);
+
+    DCYSUSV(c, 0x0080);                 /* still und angehalten          */
+    VTFT(c, 0x0000FFFFUL);
+    CVCF(c, 0x0000FFFFUL);
+    PTRX(c, 0);
+    CPF(c, 0);
+    IP(c, ip);
+    ENVVAL(c, z->moddelay);
+    ATKHLD(c, z->modatkhld);
+    DCYSUS(c, z->moddcysus);
+    ENVVOL(c, z->voldelay);
+    ATKHLDV(c, z->volatkhld);
+    IFATN(c, (cut << 8) | vol);
+    PEFE(c, z->pefe);
+    LFO1VAL(c, z->lfo1delay);
+    LFO2VAL(c, z->lfo2delay);
+    FMMOD(c, z->fmmod);
+    TREMFRQ(c, z->tremfrq);
+    FM2FRQ2(c, z->fm2frq2);
+    PSST(c, ((unsigned long)panvol[pan] << 24) | (z->lstart - 1));
+    CSL(c, ((unsigned long)z->chorus << 24) | (z->lend - 1));
+    CCCA(c, ((unsigned long)(z->filterq & 0x0F) << 28) | (z->start - 1));
+    R00A0(c, 0);
+    R0080(c, 0);
+    VTFT(c, (unsigned long)cut << 8);   /* Ziele: Lautstaerke regelt die  */
+    CVCF(c, 0x0000FF00UL);              /* Hullkurve, Filter = Grenze     */
+    PTRX(c, ((unsigned long)pt << 16) | ((unsigned)z->reverb << 8) | panvol[255 - pan]);
+    CPF(c, (unsigned long)pt << 16);
+    DCYSUSV(c, z->voldcysus);           /* Hullkurve los                 */
+}
+
+static void v_release(unsigned c)
+{
+    struct fapi_awezone __far *z = AWZ(vo[c].zone);
+    DCYSUS(c, 0x8000 | (z->modrelease & 0xFF));
+    DCYSUSV(c, 0x8000 | (z->volrelease & 0xFF));
+    vo[c].state = VS_REL;
+}
+
+static void note_on(unsigned ch, unsigned key, unsigned vel)
+{
+    int p;
+    unsigned i;
+    struct fapi_awepre __far *pp;
+    if (ch == 9) {                      /* Schlagzeug: Bank 128          */
+        p = find_pre(128, chn[ch].prog);
+        if (p < 0)
+            p = find_pre(128, 0);
+    } else {
+        p = find_pre(chn[ch].bank, chn[ch].prog);
+        if (p < 0)
+            p = find_pre(0, chn[ch].prog);
+    }
+    if (p < 0)
+        return;
+    pp = AWP(p);
+    for (i = pp->first; i < pp->first + pp->n && i < nzone; i++) {
+        struct fapi_awezone __far *z = AWZ(i);
+        if (key >= z->klo && key <= z->khi && vel >= z->vlo && vel <= z->vhi)
+            v_start(ch, key, vel, i);
+    }
+}
+
+static void note_off(unsigned ch, unsigned key)
+{
+    unsigned c;
+    for (c = 0; c < NAWEV; c++)
+        if (vo[c].state == VS_ON && vo[c].ch == ch && vo[c].key == key) {
+            if (chn[ch].sus)
+                vo[c].state = VS_SUS;
+            else
+                v_release(c);
+        }
+}
+
+/* Lautstaerke/Pan/Tonhoehe klingender Stimmen eines Kanals neu */
+static void ch_update(unsigned ch, int what)
+{
+    unsigned c;
+    for (c = 0; c < NAWEV; c++) {
+        struct fapi_awezone __far *z;
+        if (vo[c].state == VS_FREE || vo[c].ch != ch)
+            continue;
+        z = AWZ(vo[c].zone);
+        if (what == 0)
+            IFATN(c, (er(E_D3, ECMD(1, c)) & 0xFF00) | v_vol(&vo[c], z));
+        else if (what == 1)
+            PSST(c, ((unsigned long)panvol[v_pan(&vo[c], z)] << 24) | (z->lstart - 1));
+        else
+            IP(c, v_pitch(&vo[c], z));
+    }
+}
+
+static void ch_alloff(unsigned ch, int now)
+{
+    unsigned c;
+    for (c = 0; c < NAWEV; c++)
+        if (vo[c].state != VS_FREE && vo[c].ch == ch) {
+            if (now) {
+                DCYSUSV(c, 0x807F);
+                vo[c].state = VS_FREE;
+            } else if (vo[c].state != VS_REL)
+                v_release(c);
+        }
+}
+
+static void control(unsigned ch, unsigned cc, unsigned v)
+{
+    struct awch *h = &chn[ch];
+    switch (cc) {
+    case 0: h->bank = (unsigned char)v; break;
+    case 7: h->vol = (unsigned char)v; ch_update(ch, 0); break;
+    case 11: h->expr = (unsigned char)v; ch_update(ch, 0); break;
+    case 10: h->pan = (unsigned char)v; ch_update(ch, 1); break;
+    case 64:
+        h->sus = (unsigned char)(v >= 64);
+        if (!h->sus) {
+            unsigned c;
+            for (c = 0; c < NAWEV; c++)
+                if (vo[c].state == VS_SUS && vo[c].ch == ch)
+                    v_release(c);
+        }
+        break;
+    case 100: h->rpn_l = (unsigned char)v; break;
+    case 101: h->rpn_h = (unsigned char)v; break;
+    case 6:                             /* RPN 0: Bereich Pitch Bend    */
+        if (h->rpn_h == 0 && h->rpn_l == 0)
+            h->bendr = (unsigned char)(v > 24 ? 24 : v);
+        break;
+    case 120: ch_alloff(ch, 1); break;  /* All Sound Off                */
+    case 123: ch_alloff(ch, 0); break;  /* All Notes Off                */
+    case 121: {                         /* Controller zurueck           */
+        unsigned char b = h->bank;
+        ch_reset(ch);
+        h->bank = b;
+        ch_update(ch, 0);
+        ch_update(ch, 2);
+        break;
+    }
+    }
+}
+
+/* MIDI-Bytes (laufender Status, SysEx und Echtzeit uebergangen) */
+static unsigned char m_st, m_d[2], m_n, m_sysex;
+
+static void awe_midi(unsigned char b)
+{
+    unsigned ch, need;
+    if (b >= 0xF8)
+        return;                         /* Echtzeit                      */
+    if (b == 0xF0) {
+        m_sysex = 1;
+        return;
+    }
+    if (b == 0xF7) {
+        m_sysex = 0;
+        return;
+    }
+    if (m_sysex)
+        return;
+    if (b & 0x80) {
+        m_st = b;
+        m_n = 0;
+        return;
+    }
+    if (m_st < 0x80 || m_st >= 0xF0)
+        return;
+    m_d[m_n++] = b;
+    need = (m_st & 0xE0) == 0xC0 ? 1 : 2;   /* Cx, Dx: ein Datenbyte  */
+    if (m_n < need)
+        return;
+    m_n = 0;
+    ch = m_st & 0x0F;
+    switch (m_st & 0xF0) {
+    case 0x80: note_off(ch, m_d[0]); break;
+    case 0x90:
+        if (m_d[1])
+            note_on(ch, m_d[0], m_d[1]);
+        else
+            note_off(ch, m_d[0]);
+        break;
+    case 0xB0: control(ch, m_d[0], m_d[1]); break;
+    case 0xC0: chn[ch].prog = m_d[0]; break;
+    case 0xE0:
+        chn[ch].bend = (int)((m_d[1] << 7) | m_d[0]) - 8192;
+        ch_update(ch, 2);
+        break;
+    }
+}
+
+/* AR_AWE: Bank laden */
+static int awe_cmd(struct aud_req __far *q)
+{
+    struct fapi_awecmd __far *k = MK_FP(q->sel, q->off);
+    unsigned char __far *d = (unsigned char __far *)(k + 1);
+    unsigned i, n = k->n, room = q->len - sizeof(*k);
+    if (!ebase || !zsel)
+        return -1;
+    switch (k->op) {
+    case AWE_INFO:
+        k->addr = (unsigned long)edram_kb << 9;
+        k->n = AW_NZONE;
+        return 0;
+    case AWE_RESET:
+        awe_on = 0;
+        nzone = npre = 0;
+        awe_reset_all();
+        return 0;
+    case AWE_ZONES:
+        if (n * sizeof(struct fapi_awezone) > room || nzone + n > AW_NZONE)
+            return -1;
+        far_cpy(AWZ(nzone), d, n * sizeof(struct fapi_awezone));
+        nzone += n;
+        return 0;
+    case AWE_PRESETS:
+        if (n * sizeof(struct fapi_awepre) > room || n > AW_NPRE)
+            return -1;
+        far_cpy(AWP(0), d, n * sizeof(struct fapi_awepre));
+        npre = n;
+        return 0;
+    case AWE_SAMPLE: {
+        unsigned short __far *w = (unsigned short __far *)d;
+        if (n * 2 > room || awe_on ||
+            k->addr + n > ((unsigned long)edram_kb << 9))
+            return -1;
+        aw_dma(0, 1);
+        aw_wwait();
+        ewd(E_D1, SMALW, DRAM_OFS + k->addr);
+        for (i = 0; i < n; i++)
+            ew(E_D1, SMLD, w[i]);
+        aw_wwait();
+        aw_dmaclose(0);
+        return 0;
+    }
+    case AWE_DONE:
+        awe_reset_all();
+        awe_on = (unsigned char)(npre && nzone);
+        return 0;
+    }
+    return -1;
+}
