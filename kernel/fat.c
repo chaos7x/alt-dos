@@ -22,6 +22,7 @@
  */
 #include "kern.h"
 #include "ifs.h"
+#include "mem.h"
 #include "k2.h"                         /* zuletzt: lenkt Kernelhilfen um */
 
 struct volume vol[NDRIVE];
@@ -216,7 +217,7 @@ static clus_t skx_first;                /* Startcluster der Datei, 0 = keiner */
 static signed char skx_drive = -1;
 static unsigned char skx_shift;
 static unsigned skx_n;                  /* gueltige Merkpunkte (von vorn)  */
-#define SKX_OFF 16384U                  /* hinter dem Namenspuffer (EA_CSIZE) */
+#define SKX_OFF 0U                      /* vorn im Segment von fat_ksel   */
 #define SKX(i) (((clus_t __far *)MK_FP(fat_ksel(), SKX_OFF))[i])
 
 static int skx_mine(int d, struct ifs_file __far *f)
@@ -1728,14 +1729,34 @@ static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
    (das zuletzt gelesene) in einem Kernelsegment, sonst kostete jede Suche
    Lesezugriffe; reicht er nicht (16 KB), fehlen die uebrigen Namen. */
 #define EA_HDR   18
-#define EA_CSIZE 16384U
 static struct ifs_file ea_f;            /* EA DATA. SF von ea_drv         */
 static int ea_drv = -1;
 static const char ea_n83[11] = { 'E', 'A', ' ', 'D', 'A', 'T', 'A', ' ', 'S', 'F', ' ' };
-static unsigned ea_csel, ea_cused;
+static unsigned ea_csel;                /* Segment von fat_ksel          */
+/* Namen eines Verzeichnisses aus EA DATA. SF: in Stuecken zu 64 KB (bis
+   512 KB, ~12.000 Namen), die bei Bedarf geholt werden, alle ueber einen
+   Selektor (eac_sel, wird auf das Stueck umgelegt - ein GDT-Platz). Vorher
+   16 KB im Segment von fat_ksel: in einem Ordner mit 1.500 langen Namen
+   zeigte AT-DOS nur 362 lang, der Rest kam als LAN~1495.TXT. Gehoert wie
+   bisher unter die EA-Sperre (VK_EA). */
+#define EAC_N  8
+#define EAC_SZ 0xFFF0U
+static unsigned eac_sel;
+static pg_t eac_pg[EAC_N];
+static unsigned eac_used[EAC_N];
+static unsigned char eac_n, eac_last, eac_cur = 0xFF, ea_uchunk;
+
+static unsigned char __far *eac_map(unsigned k)
+{
+    if (k != eac_cur) {
+        set_desc(eac_sel >> 3, PG_LIN(eac_pg[k]), 0xFFFF, ACC_KDATA);
+        eac_cur = (unsigned char)k;
+    }
+    return (unsigned char __far *)MK_FP(eac_sel, 0);
+}
 static unsigned ea_uoff;                /* ea_find: UCS-2 des Treffers, 0 = keins */
 
-/* ein Kernelsegment fuer fat.c: Namenspuffer (EA_CSIZE) + Sprungindex
+/* ein Kernelsegment fuer fat.c: Sprungindex + Namensgedaechtnis
    (die GDT-Plaetze fuer Kernelsegmente sind knapp) */
 static unsigned fat_ksel(void)
 {
@@ -1817,20 +1838,42 @@ static void ea_load(int d, clus_t dc)
         return;
     ea_cdrv = d;
     ea_cdc = dc;
-    ea_cused = 0;
+    eac_last = 0;
+    eac_used[0] = 0;
     if (!fat_ksel())
         return;
     if (ea_open(d, 0))
         return;                         /* keine EA-Datei: keine Namen    */
-    c = MK_FP(ea_csel, 0);
+    if (!eac_sel && !(eac_sel = kseg_alloc(16)))
+        return;
+    while (eac_n > 1)                   /* Stuecke vom letzten grossen Ordner */
+        mem_free(eac_pg[--eac_n], 16);
+    if (!eac_n) {
+        if (!(eac_pg[0] = mem_alloc(16)))
+            return;
+        eac_n = 1;
+    }
+    eac_cur = 0xFF;
+    c = eac_map(0);
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
+        unsigned ea_cused;
         if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
             break;
         if ((ea_rec[0] != 'L' && ea_rec[0] != 'W') || ea_dc() != dc)
             continue;
         len = ea_rec[17];
-        if (ea_cused + 13 + 3 * len > EA_CSIZE)
-            break;                      /* voll: Rest ohne lange Namen    */
+        if (eac_used[eac_last] + 13 + 3 * len > EAC_SZ) {   /* naechstes Stueck */
+            if (eac_last + 1 >= EAC_N)
+                break;                  /* voll: Rest ohne lange Namen    */
+            if (eac_last + 1 >= eac_n) {
+                if (!(eac_pg[eac_n] = mem_alloc(16)))
+                    break;
+                eac_n++;
+            }
+            eac_used[++eac_last] = 0;
+            c = eac_map(eac_last);
+        }
+        ea_cused = eac_used[eac_last];
         for (k = 0; k < 11; k++)
             c[ea_cused + k] = ea_rec[6 + k];
         c[ea_cused + 11] = (unsigned char)len;
@@ -1838,7 +1881,7 @@ static void ea_load(int d, clus_t dc)
         if (ea_rec[0] == 'W') {         /* UTF-16 (Unicode Stufe 1)      */
             unsigned short __far *u = (unsigned short __far *)(c + ea_cused + 13 + len);
             unsigned char b;
-            if (fat_read(EAF, pos + EA_HDR, ea_csel, ea_cused + 13 + len, 2 * len) != (int)(2 * len))
+            if (fat_read(EAF, pos + EA_HDR, eac_sel, ea_cused + 13 + len, 2 * len) != (int)(2 * len))
                 break;
             for (k = 0; k < len; k++) {
                 b = uni2cp(u[k]);
@@ -1852,7 +1895,7 @@ static void ea_load(int d, clus_t dc)
             for (k = 0; k < len; k++)
                 c[ea_cused + 13 + k] = ea_rec[EA_HDR + k];
         }
-        ea_cused += 13 + len + (c[ea_cused + 12] ? 2 * len : 0);
+        eac_used[eac_last] = ea_cused + 13 + len + (c[ea_cused + 12] ? 2 * len : 0);
     }
 }
 
@@ -1860,20 +1903,23 @@ static void ea_load(int d, clus_t dc)
 static int ea_find(const unsigned char __far *e, char *out)
 {
     unsigned char __far *c;
-    unsigned o, k, len;
-    if (!ea_csel || ea_cdrv < 0)
+    unsigned o, k, len, ch;
+    if (!eac_sel || !eac_n || ea_cdrv < 0)
         return 0;
-    c = MK_FP(ea_csel, 0);
-    for (o = 0; o < ea_cused; o += 13 + len + (c[o + 12] ? 2 * len : 0)) {
-        len = c[o + 11];
-        for (k = 0; k < 11 && c[o + k] == e[k]; k++)
-            ;
-        if (k == 11) {
-            for (k = 0; k < len; k++)
-                out[k] = (char)c[o + 13 + k];
-            out[k] = 0;
-            ea_uoff = c[o + 12] ? o + 13 + len : 0;
-            return 1;
+    for (ch = 0; ch <= eac_last; ch++) {
+        c = eac_map(ch);
+        for (o = 0; o < eac_used[ch]; o += 13 + len + (c[o + 12] ? 2 * len : 0)) {
+            len = c[o + 11];
+            for (k = 0; k < 11 && c[o + k] == e[k]; k++)
+                ;
+            if (k == 11) {
+                for (k = 0; k < len; k++)
+                    out[k] = (char)c[o + 13 + k];
+                out[k] = 0;
+                ea_uoff = c[o + 12] ? o + 13 + len : 0;
+                ea_uchunk = (unsigned char)ch;
+                return 1;
+            }
         }
     }
     return 0;
@@ -1882,8 +1928,10 @@ static int ea_find(const unsigned char __far *e, char *out)
 /* der eben gefundene EA-Name geht an das Programm: Original merken */
 static void uni_take_ea(const char *name)
 {
-    if (ea_uoff && ea_csel)
-        uni_note(name, slen_f(name), ea_csel, ea_uoff);
+    if (ea_uoff && eac_sel) {
+        eac_map(ea_uchunk);
+        uni_note(name, slen_f(name), eac_sel, ea_uoff);
+    }
 }
 
 /* Satz zu (dc, n83) freigeben */

@@ -17,7 +17,7 @@
  * Erst wird alles geprueft (Groesse der Verzeichnisse, freie Cluster),
  * geschrieben nur, wenn alles passt - sonst bleibt EA DATA. SF, und der
  * Kernel liest die Namen weiter daraus (LONGNAMES=AUTO sieht die Datei).
- * Grenzen: EA-Datei und jedes Verzeichnis bis 64 KB.
+ * Grenzen: EA-Datei und jedes Verzeichnis bis 512 KB.
  */
 
 /* CP437 128-255 -> Unicode (fuer die VFAT-Eintraege) */
@@ -40,77 +40,167 @@ static const unsigned short cp437u[128] = {
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 };
 
-#define E2V_MAXC 128                    /* Cluster je Verzeichnis (Liste) */
-static unsigned e2v_ea, e2v_old, e2v_new;   /* Segmente zu 64 KB          */
+/* Verzeichnisse bis 512 KB (16.384 Eintraege): der Puffer liegt in bis zu
+   acht Segmenten zu 64 KB, geholt erst bei Bedarf (hp). Vorher ein
+   Segment - bei 32-KB-Clustern scheiterte schon ein Verzeichnis mit zwei
+   Clustern (vom Nutzer gemeldet: "Verzeichnis ueber 64 KB"). Eintraege
+   und Sektoren liegen nie ueber einer Segmentgrenze. */
+#define E2V_NS   8
+#define E2V_MAX  (0x10000UL * E2V_NS - 32)
+#define E2V_MAXC 1024                   /* Cluster je Verzeichnis (Liste) */
+#define E2V_ERR  0xFFFFFFFFUL
+/* EA DATA. SF (gelesen bzw. neu gebaut) bis 512 KB in bis zu acht
+   Segmenten (ep); Saetze beginnen auf 32-Byte-Grenzen, ein Kopf (18 Byte)
+   liegt nie ueber einer Segmentgrenze, ein ganzer Satz schon - Saetze
+   werden ueber e2v_rec (nah) gelesen und geschrieben */
+#define E2V_NE   8
+#define E2V_EMAX (0x10000UL * E2V_NE)
+static unsigned e2v_eh[E2V_NE];
+static unsigned char e2v_rec[18 + 512 + 32];
+static unsigned e2v_dl, e2v_dn;         /* Saetze des Verzeichnisses (Liste) */
+static unsigned e2v_old[E2V_NS], e2v_new[E2V_NS];
 static unsigned long e2v_cl[E2V_MAXC];
 static unsigned long e2v_hint, e2v_need, e2v_names, e2v_rootn;
-static unsigned e2v_eabytes;
+static unsigned long e2v_eabytes;
 
-static unsigned char __far *fpb(unsigned seg, unsigned off)
+/* Byte off im Puffer h aus ns Segmenten (bei Bedarf geholt); 0 = kein
+   Speicher */
+static unsigned char __far *hpn(unsigned *h, unsigned ns, unsigned long off)
 {
-    return (unsigned char __far *)MK_FP(seg, off);
+    unsigned k = (unsigned)(off >> 16);
+    if (k >= ns)
+        return 0;
+    if (!h[k] && !(h[k] = seg64()))
+        return 0;
+    return (unsigned char __far *)MK_FP(h[k], (unsigned)off);
 }
+
+#define hp(h, off) hpn(h, E2V_NS, off)
+static unsigned char __far *ep(unsigned long off) { return hpn(e2v_eh, E2V_NE, off); }
+
+/* n Byte ab Satz off (32-Byte-Grenze) <-> d */
+static int eget(unsigned long off, unsigned char *d, unsigned n)
+{
+    unsigned k, j;
+    unsigned char __far *p;
+    for (k = 0; k < n; k += 32) {
+        if (!(p = ep(off + k)))
+            return -1;
+        for (j = 0; j < 32 && k + j < n; j++)
+            d[k + j] = p[j];
+    }
+    return 0;
+}
+static int eput(unsigned long off, const unsigned char *d, unsigned n)
+{
+    unsigned k, j;
+    unsigned char __far *p;
+    for (k = 0; k < n; k += 32) {
+        if (!(p = ep(off + k)))
+            return -1;
+        for (j = 0; j < 32 && k + j < n; j++)
+            p[j] = d[k + j];
+    }
+    return 0;
+}
+
+static void hfree_n(unsigned *h, unsigned ns)
+{
+    unsigned k;
+    for (k = 0; k < ns; k++)
+        if (h[k]) {
+            DosFreeSeg(h[k]);
+            h[k] = 0;
+        }
+}
+
+static void hfree(unsigned *h)
+{
+    unsigned k;
+    for (k = 0; k < E2V_NS; k++)
+        if (h[k]) {
+            DosFreeSeg(h[k]);
+            h[k] = 0;
+        }
+}
+
 static unsigned rd16f(const unsigned char __far *p) { return p[0] | ((unsigned)p[1] << 8); }
 static unsigned long rd32f(const unsigned char __far *p)
 {
     return rd16f(p) | ((unsigned long)rd16f(p + 2) << 16);
 }
 
-/* Kette ab first in seg lesen (hoechstens 64 KB) -> Bytes, Cluster in
-   e2v_cl und *n; 0xFFFF = zu gross oder Fehler */
-static unsigned e2v_read(unsigned long first, unsigned seg, unsigned *n)
+/* Sektor in den Puffer h bei off (512 Byte, nie ueber eine Grenze) */
+static int e2v_rsec(unsigned long lba, unsigned *h, unsigned long off)
 {
-    unsigned long c = first, steps = 0;
-    unsigned s, k, off = 0, cb = spc << 9;
+    unsigned char __far *p = hp(h, off);
+    unsigned k;
+    if (!p || rd_secs(lba, sec, 1))
+        return -1;
+    for (k = 0; k < 512; k++)
+        p[k] = sec[k];
+    return 0;
+}
+
+/* Sektor aus dem Puffer h bei off schreiben */
+static int e2v_wsec(unsigned long lba, unsigned *h, unsigned long off)
+{
+    unsigned char __far *p = hp(h, off);
+    unsigned k;
+    if (!p)
+        return -1;
+    for (k = 0; k < 512; k++)
+        sec[k] = p[k];
+    return wr_sec(lba, sec);
+}
+
+/* Kette ab first nach h lesen (bis E2V_MAX) -> Bytes, Cluster in e2v_cl
+   und *n; E2V_ERR = zu gross oder Fehler */
+static unsigned long e2v_read(unsigned long first, unsigned *h, unsigned *n)
+{
+    unsigned long c = first, steps = 0, off = 0, cb = (unsigned long)spc << 9;
+    unsigned s;
     *n = 0;
     while (valid(c) && steps++ <= maxc) {
-        if (*n >= E2V_MAXC || (unsigned long)off + cb > 0x10000UL)
-            return 0xFFFF;
+        if (*n >= E2V_MAXC || off + cb > E2V_MAX)
+            return E2V_ERR;
         e2v_cl[(*n)++] = c;
-        for (s = 0; s < spc; s++) {
-            if (rd_secs(clus_lba(c) + s, sec, 1))
-                return 0xFFFF;
-            for (k = 0; k < 512; k++)
-                *fpb(seg, off + k) = sec[k];
-            off += 512;
-        }
+        for (s = 0; s < spc; s++, off += 512)
+            if (e2v_rsec(clus_lba(c) + s, h, off))
+                return E2V_ERR;
         c = fat_get(c);
-        if (off == 0)                   /* genau 64 KB voll              */
-            return 0xFFFF;
     }
     return off;
 }
 
-/* Verzeichnis dc (0 = Stamm) nach seg -> Bytes (0xFFFF = Fehler) */
-static unsigned e2v_dread(unsigned long dc, unsigned seg, unsigned *n)
+/* Verzeichnis dc (0 = Stamm) nach h -> Bytes (E2V_ERR = Fehler) */
+static unsigned long e2v_dread(unsigned long dc, unsigned *h, unsigned *n)
 {
 #if E2V_FIXROOT
     if (!dc) {                          /* fester Stamm (FAT12/16)        */
-        unsigned s, k, ns = (rootents + 15) >> 4;
+        unsigned s, ns = (rootents + 15) >> 4;
         *n = 0;
         if (rootents > 2046)
-            return 0xFFFF;
-        for (s = 0; s < ns; s++) {
-            if (rd_secs(root_lba + s, sec, 1))
-                return 0xFFFF;
-            for (k = 0; k < 512; k++)
-                *fpb(seg, (s << 9) + k) = sec[k];
-        }
-        return rootents << 5;
+            return E2V_ERR;
+        for (s = 0; s < ns; s++)
+            if (e2v_rsec(root_lba + s, h, (unsigned long)s << 9))
+                return E2V_ERR;
+        return (unsigned long)rootents << 5;
     }
 #endif
-    return e2v_read(dc ? dc : rootc, seg, n);
+    return e2v_read(dc ? dc : rootc, h, n);
 }
 
 /* Sektor, in dem Byte off des eben gelesenen Verzeichnisses dc steht */
-static unsigned long e2v_slba(unsigned long dc, unsigned off)
+static unsigned long e2v_slba(unsigned long dc, unsigned long off)
 {
 #if E2V_FIXROOT
     if (!dc)
         return root_lba + (off >> 9);
 #endif
     (void)dc;
-    return clus_lba(e2v_cl[(unsigned)shr(off, cshift)]) + ((off & ((spc << 9) - 1)) >> 9);
+    return clus_lba(e2v_cl[(unsigned)shr(off, cshift)]) +
+           (unsigned)((off & (((unsigned long)spc << 9) - 1)) >> 9);
 }
 
 /* Satzarten: L CP437, W UTF-16 (Unicode Stufe 1); klein = schon uebertragen */
@@ -125,35 +215,46 @@ static unsigned char e2v_sum(const unsigned char __far *e)
     return s;
 }
 
-/* Satz zu diesem 8.3-Namen in Verzeichnis dc? -> Offset in e2v_ea, sonst 0xFFFF */
-static unsigned e2v_find(unsigned long dc, const unsigned char __far *e)
+/* Liste der Saetze von Verzeichnis dc (Offsets, bis 16.384) */
+static void e2v_dlist(unsigned long dc)
 {
-    unsigned o = 0, k;
+    unsigned long o, __far *l = (unsigned long __far *)MK_FP(e2v_dl, 0);
     unsigned char __far *r;
-    while (o + 32 <= e2v_eabytes) {
-        r = fpb(e2v_ea, o);
-        if (!r[1])
+    e2v_dn = 0;
+    for (o = 0; o + 32 <= e2v_eabytes; o += (unsigned long)r[1] << 5) {
+        if (!(r = ep(o)) || !r[1])
             break;
-        if (E2V_REC(r[0]) && rd32f(r + 2) == dc) {
-            for (k = 0; k < 11 && r[6 + k] == e[k]; k++)
-                ;
-            if (k == 11)
-                return o;
-        }
-        if ((unsigned long)o + ((unsigned)r[1] << 5) > 0xFFFFUL)
-            break;
-        o += (unsigned)r[1] << 5;
+        if (E2V_REC(r[0] & 0x7F) && rd32f(r + 2) == dc && e2v_dn < 16384)
+            l[e2v_dn++] = o;
     }
-    return 0xFFFF;
+}
+
+/* Satz zu diesem 8.3-Namen (aus der Liste) -> Offset, sonst E2V_ERR */
+static unsigned long e2v_find(unsigned long dc, const unsigned char __far *e)
+{
+    unsigned long __far *l = (unsigned long __far *)MK_FP(e2v_dl, 0);
+    unsigned i, k;
+    unsigned char __far *r;
+    (void)dc;
+    for (i = 0; i < e2v_dn; i++) {
+        r = ep(l[i]);
+        for (k = 0; k < 11 && r[6 + k] == e[k]; k++)
+            ;
+        if (k == 11)
+            return l[i];
+    }
+    return E2V_ERR;
 }
 
 /* ein VFAT-Eintrag an off in e2v_new: Teil k (1..n) des Namens r */
-static void e2v_lfn(unsigned off, const unsigned char __far *r, unsigned k, unsigned n,
-                    unsigned char sum)
+static int e2v_lfn(unsigned long off, const unsigned char __far *r, unsigned k, unsigned n,
+                   unsigned char sum)
 {
     static const unsigned char pos[13] = { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
-    unsigned char __far *e = fpb(e2v_new, off);
+    unsigned char __far *e = hp(e2v_new, off);
     unsigned len = r[17], i, idx, u;
+    if (!e)
+        return -1;
     for (i = 0; i < 32; i++)
         e[i] = 0;
     e[0] = (unsigned char)(k | (k == n ? 0x40 : 0));
@@ -174,44 +275,56 @@ static void e2v_lfn(unsigned off, const unsigned char __far *r, unsigned k, unsi
         e[pos[i]] = (unsigned char)u;
         e[pos[i] + 1] = (unsigned char)(u >> 8);
     }
+    return 0;
 }
 
 /* Verzeichnis dc (neue Nummer, 0 = Stamm) neu aufbauen; write = 0 nur
    pruefen (Groesse, e2v_need). -> 0 ok, -1 passt nicht */
 static int e2v_dir(unsigned long dc, int write)
 {
-    unsigned long c, prev;
-    unsigned n, bytes, i, o = 0, ro, k, parts, cb = spc << 9;
-    unsigned long nb;
-    unsigned char __far *e;
+    unsigned long c, prev, bytes, i, o = 0, nb, cb = (unsigned long)spc << 9, ro;
+    unsigned n, k, parts;
+    unsigned char __far *e, __far *d;
     unsigned char sum;
 
-    if ((bytes = e2v_dread(dc, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(dc, e2v_old, &n)) == E2V_ERR)
         return -1;
     for (i = 0; i + 32 <= bytes; i += 32) {
-        e = fpb(e2v_old, i);
+        if (!(e = hp(e2v_old, i)))
+            return -1;
         if (!e[0])
             break;
+        if (e[0] == 0xE5)               /* Geloeschtes faellt beim Neuaufbau
+                                           weg (sonst passte ein Ordner nach
+                                           /LFN:EA nicht mehr zurueck) */
+            continue;
         if (e[0] != 0xE5 && e[11] != 0x0F && !(e[11] & 8) &&
-            (ro = e2v_find(dc, e)) != 0xFFFF) {
-            parts = (fpb(e2v_ea, ro)[17] + 12) / 13;
-            if ((unsigned long)o + 32UL * (parts + 1) > 0xFFE0UL)
+            (ro = e2v_find(dc, e)) != E2V_ERR) {
+            unsigned char __far *h = ep(ro);
+            parts = (h[17] + 12) / 13;
+            if (o + 32UL * (parts + 1) > E2V_MAX)
                 return -1;
             if (write) {
+                if (eget(ro, e2v_rec, 18 + ((h[0] | 0x20) == 'w' ? 2 * h[17] : h[17])))
+                    return -1;
                 sum = e2v_sum(e);
                 for (k = parts; k >= 1; k--, o += 32)
-                    e2v_lfn(o, fpb(e2v_ea, ro), k, parts, sum);
-                fpb(e2v_ea, ro)[0] |= 0x20;         /* erledigt (l/w)     */
+                    if (e2v_lfn(o, e2v_rec, k, parts, sum))
+                        return -1;
+                ep(ro)[0] |= 0x20;                  /* erledigt (l/w)     */
                 e2v_names++;
                 if (!dc)
                     e2v_rootn++;
             } else
                 o += 32 * parts;
-        } else if ((unsigned long)o + 32 > 0xFFE0UL)
+        } else if (o + 32 > E2V_MAX)
             return -1;
-        if (write)
+        if (write) {
+            if (!(d = hp(e2v_new, o)) || !(e = hp(e2v_old, i)))
+                return -1;
             for (k = 0; k < 32; k++)
-                *fpb(e2v_new, o + k) = e[k];
+                d[k] = e[k];
+        }
         o += 32;
     }
 #if E2V_FIXROOT
@@ -220,28 +333,30 @@ static int e2v_dir(unsigned long dc, int write)
             return -1;
         if (!write)
             return 0;
-        for (i = o; i < bytes; i++)
-            *fpb(e2v_new, i) = 0;
-        for (i = 0; i < bytes; i += 512) {
-            unsigned j;
-            for (j = 0; j < 512; j++)
-                sec[j] = *fpb(e2v_new, i + j);
-            if (wr_sec(root_lba + (i >> 9), sec))
+        for (i = o; i < bytes; i += 32)
+            if ((d = hp(e2v_new, i)) != 0)
+                for (k = 0; k < 32; k++)
+                    d[k] = 0;
+        for (i = 0; i < bytes; i += 512)
+            if (e2v_wsec(root_lba + (i >> 9), e2v_new, i))
                 return -1;
-        }
         return 0;
     }
 #endif
-    nb = shr((unsigned long)o + 32 + cb - 1, cshift);   /* Platz fuer das Ende */
-    if (nb > E2V_MAXC || shl(nb, cshift) > 0x10000UL)
+    nb = shr(o + 32 + cb - 1, cshift);  /* Platz fuer das Ende           */
+    if (nb > E2V_MAXC || shl(nb, cshift) > E2V_MAX + 32)
         return -1;
     if (!write) {
         if (nb > n)
             e2v_need += nb - n;
         return 0;
     }
-    for (i = o; (unsigned long)i < shl(nb, cshift) && i != 0; i++)
-        *fpb(e2v_new, i) = 0;
+    for (i = o; i < shl(nb, cshift); i += 32) {
+        if (!(d = hp(e2v_new, i)))
+            return -1;
+        for (k = 0; k < 32; k++)
+            d[k] = 0;
+    }
     prev = e2v_cl[n - 1];
     while (n < nb) {                    /* Verzeichnis waechst            */
         for (c = e2v_hint; c <= maxc && fat_get(c) != 0; c++)
@@ -256,54 +371,50 @@ static int e2v_dir(unsigned long dc, int write)
         prev = c;
     }
     for (k = 0; k < n; k++)
-        for (i = 0; i < spc; i++) {
-            unsigned long at = shl(k, cshift) + ((unsigned)i << 9);
-            unsigned j;
-            for (j = 0; j < 512; j++)
-                sec[j] = at < shl(nb, cshift) ? *fpb(e2v_new, (unsigned)at + j) : 0;
-            if (wr_sec(clus_lba(e2v_cl[k]) + i, sec))
+        for (i = 0; i < spc; i++)
+            if (e2v_wsec(clus_lba(e2v_cl[k]) + (unsigned)i, e2v_new, shl(k, cshift) + (i << 9)))
                 return -1;
-        }
     return 0;
 }
 
 /* alle Verzeichnisse mit Saetzen: pruefen (write 0) bzw. umbauen (1) */
 static int e2v_pass(int write)
 {
-    unsigned o = 0, p;
+    unsigned long o, dc, __far *l = (unsigned long __far *)MK_FP(e2v_dl, 0);
     unsigned char __far *r;
-    unsigned long dc;
-    while (o + 32 <= e2v_eabytes) {
-        r = fpb(e2v_ea, o);
-        if (!r[1])
+    unsigned i;
+    int rc = 0;
+    for (o = 0; o + 32 <= e2v_eabytes && !rc; o += (unsigned long)r[1] << 5) {
+        if (!(r = ep(o)) || !r[1])
             break;
-        if (r[0] == 'L' || r[0] == 'W') {
+        if (r[0] == 'L' || r[0] == 'W') {   /* Verzeichnis noch nicht dran */
             dc = rd32f(r + 2);
-            for (p = 0; p < o; ) {      /* Verzeichnis schon behandelt?  */
-                unsigned char __far *q = fpb(e2v_ea, p);
-                if (E2V_REC(q[0]) && rd32f(q + 2) == dc)
-                    break;
-                p += (unsigned)q[1] << 5;
-            }
-            if (p >= o && e2v_dir(dc, write))
-                return -1;
+            e2v_dlist(dc);
+            rc = e2v_dir(dc, write);
+            for (i = 0; i < e2v_dn; i++)    /* Bit 7: Verzeichnis behandelt */
+                ep(l[i])[0] |= 0x80;
         }
-        o += (unsigned)r[1] << 5;
     }
-    return 0;
+    for (o = 0; o + 32 <= e2v_eabytes; o += (unsigned long)r[1] << 5) {
+        if (!(r = ep(o)) || !r[1])
+            break;
+        r[0] &= 0x7F;
+    }
+    return rc;
 }
 
 /* EA DATA. SF im Stamm loeschen (Eintrag frei, Kette frei) */
 static int e2v_drop(void)
 {
-    unsigned n, bytes, i, k;
-    unsigned long c, nx;
+    unsigned n, k;
+    unsigned long c, nx, bytes, i;
     static const char ean[] = "EA DATA SF ";
     unsigned char __far *e;
-    if ((bytes = e2v_dread(0, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(0, e2v_old, &n)) == E2V_ERR)
         return -1;
     for (i = 0; i + 32 <= bytes; i += 32) {
-        e = fpb(e2v_old, i);
+        if (!(e = hp(e2v_old, i)))
+            return -1;
         if (!e[0])
             break;
         for (k = 0; k < 11 && e[k] == (unsigned char)ean[k]; k++)
@@ -319,7 +430,7 @@ static int e2v_drop(void)
         }
         if (rd_secs(e2v_slba(0, i), sec, 1))
             return -1;
-        sec[i & 511] = 0xE5;
+        sec[(unsigned)i & 511] = 0xE5;
         return wr_sec(e2v_slba(0, i), sec);
     }
     return 0;
@@ -328,18 +439,25 @@ static int e2v_drop(void)
 /* -> 0 umgewandelt oder nichts zu tun, 1 Namen bleiben in EA DATA. SF */
 static int e2v_run(unsigned long eafirst, unsigned long easize)
 {
-    unsigned n;
+    unsigned long c = eafirst, off = 0, steps = 0;
+    unsigned s;
     int rc = 1;
     if (!eafirst || !easize)
         return 0;
-    e2v_ea = seg64();
-    e2v_old = seg64();
-    e2v_new = seg64();
-    if (!e2v_ea || !e2v_old || !e2v_new || easize > 0xFFE0UL ||
-        (e2v_eabytes = e2v_read(eafirst, e2v_ea, &n)) == 0xFFFF)
+    if (easize > E2V_EMAX || !(e2v_dl = seg64()))
         goto out;
-    if (e2v_eabytes > (unsigned)easize)
-        e2v_eabytes = (unsigned)easize;
+    while (valid(c) && off < easize && steps++ <= maxc) {   /* EA-Datei lesen */
+        for (s = 0; s < spc && off < easize; s++, off += 512) {
+            unsigned char __far *p = ep(off);
+            unsigned k;
+            if (!p || rd_secs(clus_lba(c) + s, sec, 1))
+                goto out;
+            for (k = 0; k < 512; k++)
+                p[k] = sec[k];
+        }
+        c = fat_get(c);
+    }
+    e2v_eabytes = off < easize ? off : easize;
     e2v_need = 0;
     if (e2v_pass(0))
         goto out;
@@ -358,12 +476,12 @@ static int e2v_run(unsigned long eafirst, unsigned long easize)
     fat_flush();
     rc = 0;
 out:
-    if (e2v_ea)
-        DosFreeSeg(e2v_ea);
-    if (e2v_old)
-        DosFreeSeg(e2v_old);
-    if (e2v_new)
-        DosFreeSeg(e2v_new);
+    hfree_n(e2v_eh, E2V_NE);
+    if (e2v_dl)
+        DosFreeSeg(e2v_dl);
+    e2v_dl = 0;
+    hfree(e2v_old);
+    hfree(e2v_new);
     return rc;
 }
 
@@ -444,7 +562,7 @@ static int lfn_tovfat(void)
     }
     e2v_names = e2v_rootn = 0;
     if (e2v_run(first, size)) {
-        puts("Nicht m\x94glich (Verzeichnis \x81" "ber 64 KB oder zu wenig Platz) - nichts ge\x84ndert.\n");
+        puts("Nicht m\x94glich (Verzeichnis \x81" "ber 512 KB oder zu wenig Platz) - nichts ge\x84ndert.\n");
         return 3;
     }
     e2v_fsinfo();
@@ -471,7 +589,7 @@ static unsigned char v2e_cp(unsigned u)
 }
 
 static unsigned v2e_dq;                 /* Verzeichnis-Startcluster (je 4 Byte) */
-static unsigned v2e_nd, v2e_eab;
+static unsigned long v2e_nd;
 static unsigned long v2e_lost;
 
 /* Verzeichnis (dc 0 = Stamm) ablaufen: phase 0 Saetze sammeln und
@@ -481,15 +599,17 @@ static int v2e_dir(unsigned long dc, int phase)
     static unsigned short nm[256];      /* UCS-2, 0 = Ende               */
     static unsigned char seen;
     static unsigned char chk, parts;
-    unsigned n, bytes, i, k, j, len, dirty = 0;
+    unsigned n, k, j, len, dirty = 0;
+    unsigned long bytes, i;
     unsigned char __far *e;
     unsigned long sub;
 
-    if ((bytes = e2v_dread(dc, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(dc, e2v_old, &n)) == E2V_ERR)
         return -1;
     parts = 0;
     for (i = 0; i + 32 <= bytes; i += 32) {
-        e = fpb(e2v_old, i);
+        if (!(e = hp(e2v_old, i)))
+            return -1;
         if (!e[0])
             break;
         if (e[0] == 0xE5) {
@@ -525,31 +645,34 @@ static int v2e_dir(unsigned long dc, int phase)
             continue;
         }
         if (!phase && parts && seen && e2v_sum(e) == chk && !(e[11] & 8)) {
-            unsigned units, o = v2e_nd, wide = 0;   /* Satz anhaengen     */
+            unsigned units, wide = 0;   /* Satz anhaengen             */
+            unsigned long o = v2e_nd;
             for (len = 0; len < 255 && nm[len]; len++)
                 if (nm[len] != '_' && v2e_cp(nm[len]) == '_')
                     wide = 1;               /* ausserhalb CP437: Satz W   */
             if (wide)
                 v2e_lost++;
             units = (18 + (wide ? 2 * len : len) + 31) >> 5;
-            if ((unsigned long)o + ((unsigned)units << 5) + 32 > 0xFFFFUL)
+            if (o + ((unsigned)units << 5) + 32 > E2V_EMAX)
                 return -2;                  /* EA-Datei zu gross           */
             for (k = 0; k < units * 32; k++)
-                *fpb(v2e_eab, o + k) = 0;
-            *fpb(v2e_eab, o) = (unsigned char)(wide ? 'W' : 'L');
-            *fpb(v2e_eab, o + 1) = (unsigned char)units;
+                e2v_rec[k] = 0;
+            e2v_rec[0] = (unsigned char)(wide ? 'W' : 'L');
+            e2v_rec[1] = (unsigned char)units;
             for (k = 0; k < 4; k++)
-                *fpb(v2e_eab, o + 2 + k) = (unsigned char)(dc >> (8 * k));
+                e2v_rec[2 + k] = (unsigned char)(dc >> (8 * k));
             for (k = 0; k < 11; k++)
-                *fpb(v2e_eab, o + 6 + k) = e[k];
-            *fpb(v2e_eab, o + 17) = (unsigned char)len;
+                e2v_rec[6 + k] = e[k];
+            e2v_rec[17] = (unsigned char)len;
             for (k = 0; k < len; k++)
                 if (wide) {
-                    *fpb(v2e_eab, o + 18 + 2 * k) = (unsigned char)nm[k];
-                    *fpb(v2e_eab, o + 19 + 2 * k) = (unsigned char)(nm[k] >> 8);
+                    e2v_rec[18 + 2 * k] = (unsigned char)nm[k];
+                    e2v_rec[19 + 2 * k] = (unsigned char)(nm[k] >> 8);
                 } else
-                    *fpb(v2e_eab, o + 18 + k) = (unsigned char)v2e_cp(nm[k]);
-            v2e_nd = o + units * 32;
+                    e2v_rec[18 + k] = (unsigned char)v2e_cp(nm[k]);
+            if (eput(o, e2v_rec, units * 32))
+                return -1;
+            v2e_nd = o + (unsigned long)units * 32;
             e2v_names++;
         }
         parts = 0;
@@ -565,12 +688,9 @@ static int v2e_dir(unsigned long dc, int phase)
         }
     }
     if (phase && dirty)                 /* geaenderte Sektoren zurueck    */
-        for (k = 0; k < bytes; k += 512) {
-            for (j = 0; j < 512; j++)
-                sec[j] = *fpb(e2v_old, k + j);
-            if (wr_sec(e2v_slba(dc, k), sec))
+        for (i = 0; i < bytes; i += 512)
+            if (e2v_wsec(e2v_slba(dc, i), e2v_old, i))
                 return -1;
-        }
     return 0;
 }
 
@@ -592,8 +712,9 @@ static int v2e_all(int phase)
 static int v2e_write(void)
 {
     unsigned long c, prev = 0, first = 0, hint = 2;
-    unsigned cb = spc << 9, nc = (unsigned)shr((unsigned long)v2e_nd + cb - 1, cshift), k, s, b, slot;
-    unsigned n, bytes;
+    unsigned long cb = (unsigned long)spc << 9, bytes, slot;
+    unsigned nc = (unsigned)shr((unsigned long)v2e_nd + cb - 1, cshift), k, s, b;
+    unsigned n;
     for (k = 0; k < nc; k++) {
         for (c = hint; c <= maxc && fat_get(c) != 0; c++)
             ;
@@ -609,23 +730,25 @@ static int v2e_write(void)
         for (s = 0; s < spc; s++) {
             unsigned long at = shl(k, cshift) + ((unsigned)s << 9);
             for (b = 0; b < 512; b++)
-                sec[b] = at + b < v2e_nd ? *fpb(v2e_eab, (unsigned)at + b) : 0;
+                sec[b] = at + b < v2e_nd ? ep(at)[b] : 0;
             if (wr_sec(clus_lba(c) + s, sec))
                 return -1;
         }
     }
-    if ((bytes = e2v_dread(0, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(0, e2v_old, &n)) == E2V_ERR)
         return -1;
     for (slot = 0; slot + 32 <= bytes; slot += 32) {
-        unsigned char x = *fpb(e2v_old, slot);
-        if (x == 0 || x == 0xE5)
+        unsigned char __far *x = hp(e2v_old, slot);
+        if (!x)
+            return -1;
+        if (x[0] == 0 || x[0] == 0xE5)
             break;
     }
     if (slot + 32 > bytes)
         return -1;                      /* Stamm voll (selten)            */
     if (rd_secs(e2v_slba(0, slot), sec, 1))
         return -1;
-    b = slot & 511;
+    b = (unsigned)slot & 511;
     for (k = 0; k < 32; k++)
         sec[b + k] = 0;
     for (k = 0; k < 11; k++)
@@ -655,10 +778,8 @@ static int lfn_toea(void)
         puts("Das Laufwerk hat schon EA DATA. SF - erst /LFN:VFAT.\n");
         return 3;
     }
-    e2v_old = seg64();
-    v2e_eab = seg64();
     v2e_dq = seg64();
-    if (!e2v_old || !v2e_eab || !v2e_dq) {
+    if (!v2e_dq) {
         puts("Zu wenig Arbeitsspeicher.\n");
         goto out;
     }
@@ -667,8 +788,8 @@ static int lfn_toea(void)
     v2e_lost = 0;
     e2v_names = 0;
     if ((rc = v2e_all(0)) != 0) {
-        puts(rc == -2 ? "Zu viele lange Namen f\x81r EA DATA. SF (64 KB) - nichts ge\x84ndert.\n"
-                      : "Verzeichnis \x81" "ber 64 KB oder Lesefehler - nichts ge\x84ndert.\n");
+        puts(rc == -2 ? "Zu viele lange Namen f\x81r EA DATA. SF (512 KB) - nichts ge\x84ndert.\n"
+                      : "Verzeichnis \x81" "ber 512 KB oder Lesefehler - nichts ge\x84ndert.\n");
         rc = 3;
         goto out;
     }
@@ -702,12 +823,9 @@ static int lfn_toea(void)
     if (!rc)
         puts("Fertig. In der CONFIG.SYS LONGNAMES=EA oder AUTO setzen.\n");
 out:
-    if (e2v_old)
-        DosFreeSeg(e2v_old);
-    if (v2e_eab)
-        DosFreeSeg(v2e_eab);
+    hfree(e2v_old);
+    hfree_n(e2v_eh, E2V_NE);
     if (v2e_dq)
         DosFreeSeg(v2e_dq);
-    e2v_old = 0;
     return rc;
 }

@@ -432,7 +432,32 @@ Win32s), nicht vorziehen, sondern nachfragen.
   vor der Trennung von Code und Daten). CONVERT nimmt UFAT.EXE für
   „FAT“. Steht danach kein langer Name im Stamm, erkennt AUTO das
   Laufwerk beim Einhängen als EA (Kernel prüft nur den Stamm) – UFAT
-  rät dann zu `LONGNAMES=VFAT`. Dabei behoben: CMD-Umleitung `>
+  rät dann zu `LONGNAMES=VFAT`.
+  Große Ordner (vom Nutzer in 86Box gemeldet: `CONVERT F: /LFN:EA` auf
+  einer 2-GB-FAT16 mit 32-KB-Clustern, 5.268 Dateien -> „Verzeichnis
+  über 64 KB oder Lesefehler“): ufat_e2v.c hielt jedes Verzeichnis und
+  EA DATA. SF in je einem Segment – bei 32-KB-Clustern scheiterte schon
+  ein Verzeichnis mit zwei Clustern. Jetzt Puffer über bis zu acht
+  Segmente, geholt bei Bedarf (`hpn`/`hp`/`ep`, `E2V_NS`/`E2V_NE`):
+  Verzeichnisse und EA-Datei bis 512 KB, Sätze über `eget`/`eput` (ein
+  Satz darf eine Segmentgrenze kreuzen, ein Kopf nicht). Je Verzeichnis
+  erst die Liste seiner Sätze (`e2v_dlist`, Segment `e2v_dl`) – vorher
+  lief jede Suche über die ganze EA-Datei (bei 5.000 Namen ~25 Mio.
+  Vergleiche); e2v_pass markiert behandelte Verzeichnisse mit Bit 7 des
+  Satztyps (danach gelöscht). Gelöschte Einträge (E5h) fallen beim
+  Neuaufbau eines Verzeichnisses weg (nach /LFN:EA stehen dort die alten
+  VFAT-Einträge). In QEMU geprüft: FAT16 mit 32-KB-Clustern, Ordner mit
+  1.500 langen Namen (~140 KB) + japanischer Name -> EA -> VFAT, mdir
+  gleich, fsck sauber.
+  Kernel dabei (zweiter Fehler, gleiche Ursache): der EA-Namenscache je
+  Verzeichnis war 16 KB im Segment von fat_ksel – in diesem Ordner
+  zeigte DIR nur 362 Namen lang, der Rest als `LAN~1495.TXT`. Jetzt
+  eigene Stücke zu 64 KB (bis 8 = 512 KB, `eac_pg`/`eac_used`), alle über
+  einen Selektor `eac_sel` (set_desc legt ihn um, `eac_map`), geholt bei
+  Bedarf, Stücke über dem ersten beim nächsten ea_load wieder frei; das
+  Segment von fat_ksel schrumpft um 16 KB (SKX_OFF 0). Geprüft: DIR
+  zeigt alle 1.500 lang, CHKDSK/fsck sauber. DGROUP 65.412.
+  Dabei behoben: CMD-Umleitung `>
   "Name mit Leerzeichen"` (take_name kannte keine Anführungszeichen).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
