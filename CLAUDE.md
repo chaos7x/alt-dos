@@ -3393,6 +3393,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zwei FAT32-Laufwerke mit LONGNAMES=EA teilten den Cache ohne Schutz.
   Laufwerke ohne EA DATA. SF (VFAT, nur 8.3) nehmen die EA-Sperre nie.
   Messbar nur in 86Box (QEMU: Schreiben landet im Cache, gleiche 23 s).
+  SCSI je Gerät: geprüft und bewusst nicht gebaut (12.11.2026). Gewinn gäbe
+  es nur, wenn sich ein Ziel während des Befehls vom Bus trennt; NCR8XX
+  schickt IDENTIFY 80h (ohne Trennerlaubnis), echte Platten trennen sich
+  dann nie, und 86Box bildet beim 53C8xx gar keine Wiederauswahl nach
+  (scsi_ncr53c8xx.c: kein Weg, über den ein Ziel sich wieder meldet) –
+  nur QEMU trennt sich trotzdem. Mit C0h müsste der Treiber außerdem ein
+  Trennen mitten in den Daten können (Phasenfehler, Restzähler DBC/DNAD,
+  SAVE/RESTORE DATA POINTER) und je Ziel ein SCRIPTS-Programm mit
+  Wiederauswahl über SSID führen; der Kernel bräuchte mehr als eine
+  Zusatzgruppe je Treiber (heute 0/1). Erst sinnvoll mit echter Hardware.
   Grenzen: zwei Laufwerke am selben IDE-Kanal (ATA: ein Befehl je Kanal,
   da gibt es nichts zu holen) oder SCSI-Treiber laufen weiter nacheinander;
   Diskette behält die Sperre; ein Task, der in einer Operation im Treiber
