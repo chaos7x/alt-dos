@@ -1007,9 +1007,9 @@ Erster Test: 486 PVI-4SP3 (`486sp3`, Award 07/22/94, kein PnP-BIOS),
 Dabei gesehen: dieses Board (Intel 420TX) nutzt PCI-Mechanismus 2
 (auch PCI/I-486SP3G, 420ZX; der Nutzer nimmt meist ASUS-Boards) –
 inzwischen unterstützt, s. Busdienste; FM-Erkennung meldet auf der
-AWE32 „OPL2“ (sollte OPL3 sein). Tippen: xdotool schickt US-Tasten,
-AT-DOS wertet deutsch aus – Helfer /tmp/claude-0/86b/typ.py (y/z,
-/ = Umschalt+7, : = Umschalt+Punkt, \ = AltGr+ß, - = US-Schrägstrich).
+AWE32 „OPL2“ (sollte OPL3 sein). Tippen (Vorschlag des Nutzers): zuerst
+`keyb us` (über typ.py mit deutscher Zuordnung: y/z vertauscht), danach
+`xdotool type` direkt – alle Zeichen inkl. \ | * " kommen richtig an.
 
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 Der Nutzer will AT-DOS auch in Proxmox (KVM) laufen lassen: SeaBIOS,
