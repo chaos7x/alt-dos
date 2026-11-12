@@ -660,7 +660,7 @@ selbst nur 8.3 kennt.
 | 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = 5.0) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke; ab CX = 18 Mindest-/Höchstgröße des dynamischen Caches |
-| 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, Abschnitte ~1/32 s statt 4 KB, `AUD_NOWAIT` = AudWrite wartet nie, was nicht passt, fällt weg – für DOS-Boxen), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
+| 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, Abschnitte ~1/32 s statt 4 KB, `AUD_NOWAIT` = AudWrite wartet nie, was nicht passt, fällt weg – für DOS-Boxen), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose, AweCmd (AUD_AWE, CX = struct fapi_awecmd: SoundFont-Bank laden – Info, Zonen, Presets, Samples). Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste / 2 ISA-PnP-Gerät, CX = Nummer, DX = struct fapi_pcidev, fapi_res bzw. fapi_pnpdev → 0, FAPI_ERROR am Ende (MSD) |
 | 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,5 MB Bild) oder bei VBE 1.2 mit 64-KB-Fenster (ohne 24 Bit; `model` Bit 7 = `VESA_BANKED`) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
@@ -790,7 +790,14 @@ Sound Blaster. `PLAY Datei` spielt WAV, VOC, MIDI (über den MPU-401, mit
 `/FM` oder ohne MPU über eigene FM-Instrumente) und IMF (AdLib-Musik aus
 Spielen, `/R:700`) – Beispiele in `\DEMO`: `KLANG.WAV`, `ODE.MID`,
 `ODE.IMF` (Ode an die Freude) –, `MIXER [Regler Wert]`
-stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). Mehrere Programme
+stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). AWE32/64: den
+Wavetable-Chip (EMU8000) erkennt `SB16.SYS` mit; `AWELOAD [Datei.SBK]`
+lädt eine SoundFont-1-Bank (z. B. `SYNTHGM.SBK` von den Creative-
+Treiberdisketten – liegt nicht bei, Vorgabe `\DOS\SYSTEM\SYNTHGM.SBK`) in
+die Karte, danach spielt MIDI (PLAY und der MPU-401 der DOS-Boxen) über
+den AWE als General-MIDI-Synthesizer; `AWELOAD /U` gibt die Bank frei,
+`SB16.SYS /MPU` schickt MIDI stattdessen an einen externen Synthesizer.
+Mehrere Programme
 dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung
 (Spiele), sonst das zuletzt gestartete (Musik im Hintergrund).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,

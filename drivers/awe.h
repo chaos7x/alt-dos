@@ -401,11 +401,16 @@ static void aw_release(unsigned c)
 #define AW_NPRE     256
 #define AW_ZOFF     (AW_NPRE * sizeof(struct fapi_awepre))
 #define AW_BYTES    61440u
-#define AW_NZONE    ((AW_BYTES - AW_ZOFF) / sizeof(struct fapi_awezone))
-#define AWZ(i)      ((struct fapi_awezone __far *)MK_FP(zsel, AW_ZOFF + (i) * sizeof(struct fapi_awezone)))
+#define AW_NZ1      ((AW_BYTES - AW_ZOFF) / sizeof(struct fapi_awezone))
+#define AW_NZ2      (AW_BYTES / sizeof(struct fapi_awezone))
+#define AW_NZONE    (AW_NZ1 + AW_NZ2)  /* zweites Segment erst bei Bedarf */
+#define AWZ(i)      ((i) < AW_NZ1 ? \
+    (struct fapi_awezone __far *)MK_FP(zsel, AW_ZOFF + (i) * sizeof(struct fapi_awezone)) : \
+    (struct fapi_awezone __far *)MK_FP(zsel2, ((i) - AW_NZ1) * sizeof(struct fapi_awezone)))
 #define AWP(i)      ((struct fapi_awepre __far *)MK_FP(zsel, (i) * sizeof(struct fapi_awepre)))
 
 static unsigned zsel;                   /* Segment der Bank (0 = keins) */
+static unsigned zsel2;                  /* zweites (grosse Baenke)      */
 static unsigned nzone, npre;
 static unsigned char awe_on;            /* Bank fertig: MIDI hierher    */
 static unsigned char use_mpu;           /* /MPU: MIDI an den MPU-401    */
@@ -833,8 +838,15 @@ static int awe_cmd(struct aud_req __far *q)
     case AWE_ZONES:
         if (n * sizeof(struct fapi_awezone) > room || nzone + n > AW_NZONE)
             return -1;
-        far_cpy(AWZ(nzone), d, n * sizeof(struct fapi_awezone));
-        nzone += n;
+        if (nzone + n > AW_NZ1 && !zsel2) {
+            static unsigned long zlin2;
+            zsel2 = devhlp(DH_DMABUF, 0, AW_BYTES, (unsigned)&zlin2);
+            if (!zsel2)
+                return -1;
+        }
+        for (i = 0; i < n; i++, nzone++)    /* einzeln: Segmentgrenze */
+            far_cpy(AWZ(nzone), d + i * sizeof(struct fapi_awezone),
+                    sizeof(struct fapi_awezone));
         return 0;
     case AWE_PRESETS:
         if (n * sizeof(struct fapi_awepre) > room || n > AW_NPRE)

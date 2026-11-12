@@ -2775,7 +2775,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Hauptpuffer – Mitschnitt dort (lokal: WAVF_WT). Testbänke (nur zum
   Testen, nicht im Repository): Dell-Paket „dell-r18514“ auf archive.org,
   SFBANK.LIB (InstallShield 3, PKWARE-DCL) mit SYNTHGS/SYNTHMT/SAMPLE.SBK.
-  Offen: Aufnahme,
+  Stufe 3b–3d erledigt (in 86Box mit AWE32 PnP, 512 KB, SYNTHGS.SBK
+  geprüft: `PLAY \DEMO\ODE.MID` – Melodie (Klavier) und Bass im WT-
+  Mitschnitt mit richtigen Tönen; aus der Box über den virtuellen MPU-401
+  Klavier-C4 262 Hz mit Abklingen): FAPI `AUD_AWE` (13, `struct
+  fapi_awecmd`: INFO, RESET, ZONES, PRESETS, SAMPLE, DONE; Zonen als
+  `struct fapi_awezone` 58 Byte schon in EMU8000-Werten) -> `AR_AWE` ->
+  `awe_cmd` (awe.h): Zonen in einem DH_DMABUF-Segment (61.440 Byte),
+  ein zweites erst, wenn die Bank es braucht (SYNTHGS hat 1.238 Zonen),
+  Samples per DMA über Stimme 0 ins Karten-RAM. Synth in awe.h: 30
+  Stimmen (älteste/leiseste wird abgelöst), Kanal 10 = Bank 128,
+  Rückfall auf Bank 0/Programm 0; CC 0/6/7/10/11/64/100/101/120/121/123,
+  Pitch Bend (RPN 0), Lautstärke/Pan/Tonhöhe nach den Tabellen von Linux
+  emux (voltab1/2, exprtab, pan_volumes). MIDI geht zum AWE, wenn er da
+  ist und eine Bank geladen ist, `SB16.SYS /MPU` schickt es an den
+  MPU-401 (externer Synthesizer); AR_CAPS meldet dann MPU-401, damit
+  PLAY den MIDI-Weg nimmt. `AWELOAD [Datei.SBK] [/U]` (apps/
+  task_aweload.c, Vorgabe X:\DOS\SYSTEM\SYNTHGM.SBK): RIFF lesen,
+  pdta in DosAllocSeg-Segmente, je Preset-Zone × Instrument-Zone eine
+  EMU-Zone (Preset-Werte gelten nur, wo das Instrument nichts setzt,
+  Bereiche werden geschnitten), SBK -> SF2 (`sbk2sf2`, nur gesetzte
+  Werte) und SF2 -> EMU8000 nach den Ganzzahl-Formeln aus awesfx
+  (parsesf.c/sbkconv.c/awe_parm.c, GPLv2+, nur nachgerechnet), log2 über
+  eine Tabelle (`ilg`, 1200·log2); Samples ohne Schleife bekommen eine
+  stille Schleife hinter dem Ende. Lehre: Anschlagstärke-Dämpfung in cB
+  ist -2000·log10(v/127) – mit -200 (Faktor 10 daneben) war die Melodie
+  fast stumm (IFATN-Dämpfung BAh im Register-Protokoll von 86Box). Offen:
+  Modulations-LFO/Vibrato über CC 1, Chorus/Hall-Effekte (Sends werden
+  nur gesetzt), SF2-Dateien (nur SoundFont 1), Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
   Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel
