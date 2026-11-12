@@ -337,8 +337,12 @@ static void mou_off(int t);
 static void mou_cb(struct v86_frame *f, int t, int force);
 static void mou_tick(struct v86_iret *r, int t);
 static int mou_ret(struct v86_frame *f, int t);
+static void mou_pmtick(struct v86_iret *r, int t);
+static unsigned mou_pmcb(struct v86_frame *f, int t);
+static void mou_cbdone(void);
 #define MOU_RET  0x0570         /* Maus-Rueckruf zurueck: ARPL E7h        */
 #define MOU_TICK 0x0574         /* Maus-Rueckruf aus dem Takt: ARPL E8h; IRET */
+#define MOU_PM   0x0578         /* Maus-Rueckruf aus dem PM: HLT; IRET(D)  */
 #define MOU_ST   0x0B00         /* Zustand des Maustreibers (F000:0B00)   */
 
 static void k2_cr3(unsigned lo, unsigned hi);
@@ -4713,6 +4717,7 @@ static void k2_lldt(unsigned sel);
 #define CT_CALL   2                     /* 0300h-0302h                   */
 #define CT_DOSAL  3                     /* 0100h                         */
 #define CT_DOSFR  4                     /* 0101h                         */
+#define CT_MOU    5                     /* Maus-Rueckruf aus dem PM      */
 
 static unsigned char dp_on[NTASK], dp_32[NTASK], dp_dep[NTASK];
 static unsigned dp_exss[NTASK];         /* Selektor des Ausnahme-Stapels  */
@@ -5053,6 +5058,7 @@ static unsigned dp_switch(struct v86_frame *f, int t)
     for (i = 0; i < 32; i++)                    /* Standard: HLT -> Ende  */
         put32(SCRATCH, (DP_EXC >> 2) + i, 0x909090F4UL);
     put32(SCRATCH, DP_EXRET >> 2, 0x909090F4UL);
+    put32(SCRATCH, MOU_PM >> 2, dp_32[t] ? 0x90CF66F4UL : 0x9090CFF4UL);
     scratch_map(PG_LIN(dp_st[t]), 4095);
     for (i = 0; i < 32; i++) {
         EXV(t, i)[0] = DP_EXC + i * 4;
@@ -5172,6 +5178,12 @@ static unsigned dp_back(struct v86_frame *f, int t)
         for (i = 0; i < 8; i++)
             (&f->edi)[i] = c->r[i];
         rfl &= ~1UL;                            /* 0300h selbst: geklappt */
+    } else if (type == CT_MOU) {                /* Register des PM zurueck */
+        c = ctx(t, dp_dep[t]);
+        for (i = 0; i < 8; i++)
+            (&f->edi)[i] = c->r[i];
+        rfl = c->eflags;
+        mou_cbdone();
     } else if (type == CT_DOSAL || type == CT_DOSFR) {
         unsigned seg = (unsigned)f->eax, cf = (unsigned)(rfl & 1), bx = (unsigned)f->ebx;
         unsigned paras = (unsigned)c->r[4];     /* BX vorher             */
@@ -5799,7 +5811,9 @@ static void dp_hwint(struct v86_iret *r, int t)
         vcur[t] = (unsigned char)kq_get(t);
         visr[t] |= 2;
         dp_push(r, t, 9);
+        return;
     }
+    mou_pmtick(r, t);                           /* Maus-Rueckruf (0Ch)   */
 }
 
 /* gesperrter Stapel des Hosts (eine Seite): oben Ausnahmen, ab 800h
@@ -6047,6 +6061,8 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return dp_exret(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_CBRET)
         return dp_cbret(f, t);
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == MOU_PM)
+        return mou_pmcb(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip >= DP_EXC &&
         (unsigned)f->r.eip < DP_EXC + 128)
         return 1;                               /* Standard: Ende        */
@@ -6673,6 +6689,14 @@ static void mo_reset(int t)
     mo_ptr(t);
 }
 
+/* INT 33h aus dem PM ohne Uebersetzung (dp_reflect setzt ES auf den Host-
+   Bereich): ES:DX ist dann keine Real-Mode-Adresse - Rueckruf nicht setzen,
+   statt spaeter ins Leere zu springen */
+static int mou_pmseg(struct v86_frame *f, int t)
+{
+    return dp_on[t] && dp_dep[t] && (unsigned)f->r.es == dp_rmseg[t];
+}
+
 static void mou33(struct v86_frame *f, int t)
 {
     unsigned i, a = AX;
@@ -6742,14 +6766,14 @@ static void mou33(struct v86_frame *f, int t)
         mo.mcx = mo.mcy = 0;
         break;
     case 0x0C:                                  /* Rueckruf setzen       */
-        mo.mask = CX;
+        mo.mask = mou_pmseg(f, t) ? 0 : CX;
         mo.cbofs = DX;
         mo.cbseg = (unsigned)f->r.es;
         mo.evp = 0;
         break;
     case 0x14:                                  /* Rueckruf tauschen     */
         i = mo.mask;
-        mo.mask = CX;
+        mo.mask = mou_pmseg(f, t) ? 0 : CX;
         CX = i;
         i = mo.cbofs;
         mo.cbofs = DX;
@@ -6879,6 +6903,80 @@ static int mou_ret(struct v86_frame *f, int t)
     mo.incb = 0;
     mo_save();
     return 0;
+}
+
+/* ---- Rueckruf, waehrend ein DPMI-Programm im PM laeuft -----------------
+   DOS-Extender (DOS/4GW u. a.) melden ihren Rueckruf mit einer Real-Mode-
+   Adresse an (0303h-Callback, INT 33h 0Ch ueber 0300h). Steht die Box im
+   PM, kaeme der Rueckruf sonst nie an (mou_cb nur aus V86). Wie beim Takt:
+   dp_hwint lenkt das Programm per IRET-Rahmen auf den Stummel F000:0578
+   "HLT; IRET(D)", dessen Falle den vollen Rahmen hat; mou_pmcb sichert den
+   PM-Stand (CT_MOU) und ruft den Rueckruf im Real Mode, sein RETF fuehrt
+   ueber DP_BACK zurueck, dp_back stellt die Register her, das IRET des
+   Stummels kehrt ins Programm zurueck. */
+static void mou_pmtick(struct v86_iret *r, int t)
+{
+    unsigned long sp, b, fl;
+    if (box_ses[t] < 0 || rd8(VBIOS, MOU_ST) == 0 || dp_dep[t] >= DPCT)
+        return;
+    mo_load();
+    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
+        return;
+    mo_poll(t);
+    if (!(mo.evp & mo.mask)) {
+        mo_save();
+        return;
+    }
+    mo.incb = 1;                                /* bis der Rueckruf fertig */
+    mo_save();
+    fl = (r->eflags & ~(unsigned long)FL_IF) | (vfl[t] & FL_IF);
+    b = sel_base(t, (unsigned)r->ss);
+    if (dp_32[t]) {
+        sp = r->esp - 12;
+        lwr(b + sp + 8, fl, 4);
+        lwr(b + sp + 4, r->cs, 4);
+        lwr(b + sp, r->eip, 4);
+        r->esp = sp;
+    } else {
+        sp = (r->esp - 6) & 0xFFFF;
+        lwr(b + sp + 4, fl, 2);
+        lwr(b + sp + 2, r->cs, 2);
+        lwr(b + sp, r->eip, 2);
+        r->esp = (r->esp & 0xFFFF0000UL) | sp;
+    }
+    r->cs = dp_stub[t];
+    r->eip = MOU_PM;
+    r->eflags &= ~(unsigned long)FL_TF;
+}
+
+static unsigned mou_pmcb(struct v86_frame *f, int t)
+{
+    unsigned e;
+    f->r.eip++;                                 /* weiter beim IRET(D)   */
+    mo_load();
+    e = mo.evp & mo.mask;
+    mo.evp = 0;
+    if (!e || (!mo.cbseg && !mo.cbofs) || !ctx_push(f, t, CT_MOU)) {
+        mo.incb = 0;
+        mo_save();
+        return 0;
+    }
+    f->eax = e;
+    f->ebx = mo.btn;
+    f->ecx = (unsigned)mo_rx(mo.x);
+    f->edx = (unsigned)mo_ry(mo.y);
+    f->esi = (unsigned)mo.mcx;
+    f->edi = (unsigned)mo.mcy;
+    f->r.ds = f->r.es = f->r.fs = f->r.gs = dp_rmseg[t];
+    mo_save();
+    return rm_go(f, t, mo.cbseg, mo.cbofs, 0, 0, 0);
+}
+
+static void mou_cbdone(void)
+{
+    mo_load();
+    mo.incb = 0;
+    mo_save();
 }
 
 unsigned __far v86_exc(struct v86_frame *f)

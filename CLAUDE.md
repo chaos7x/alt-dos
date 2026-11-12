@@ -3268,8 +3268,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vom Nutzer in 86Box (386) bestätigt: MSD von MS-DOS zeigt Treiber
   Microsoft 8.05, PS/2, IRQ 12, 3 Tasten; „Mouse Hardware: Not
   Detected“ (MSD prüft die Hardware selbst – nur Anzeige).
-  Offen: Zeiger in Grafikmodi (RAWGFX), Rückruf im DPMI-PM, 15h–17h
-  (Zustand sichern) nur Größe 0.
+  Offen: Zeiger in Grafikmodi (RAWGFX), 15h–17h (Zustand sichern) nur
+  Größe 0.
+  Rückruf für DPMI-Programme im PM erledigt (in QEMU mit MCB.COM geprüft
+  – 16-Bit-DPMI, 0303h-Callback, INT 33h 0Ch über 0300h mit Maske 7Fh,
+  dann 5 s rein im PM ohne INT, Maus per `-serial msmouse` bewegt und
+  geklickt, Anzahl als ERRORLEVEL: neuer Kernel ≥ 3, alter 0; DOOM 1.9
+  per START mit Alt+Esc unverändert): Extender melden eine Real-Mode-
+  Adresse an (0303h), mou_cb lief aber nur aus V86 – im PM kam nie ein
+  Rückruf. Jetzt `mou_pmtick` am Ende von dp_hwint (nach jedem PM-Trap
+  und aus v86_tick): steht ein Ereignis an, IRET-Rahmen auf den Stapel
+  des Programms und weiter beim Stummel F000:0578 `MOU_PM` „HLT; IRET(D)“
+  (in dp_switch geschrieben, mo.incb = 1); dessen Falle `mou_pmcb`
+  sichert den PM-Stand (`ctx_push`, neuer Typ `CT_MOU`), setzt AX–DI wie
+  mou_cb und ruft den Rückruf per `rm_go` (RETF nach DP_BACK); dp_back
+  stellt bei CT_MOU alle Register und Flags des PM her und löscht incb,
+  das IRET des Stummels kehrt ins Programm zurück. INT 33h 0Ch/14h, die
+  aus dem PM ohne Übersetzung kommen (ES = Host-Bereich nach dp_reflect),
+  setzen keinen Rückruf (`mou_pmseg`) – ES:DX wäre keine Real-Mode-
+  Adresse. Programme auf A:/B: in der Box gingen schon (BOX_DRIVES, in
+  QEMU nachgeprüft: `a:hallo` aus CMD, `command /c dir a:`).
   24h nach der echten Maus (Wunsch des Nutzers; in QEMU geprüft: PS/2
   0400h, `/COM1` mit `-serial msmouse` 0204h): DH_MOUREG BL = Tasten,
   BH = Art wie INT 33h (1 Bus, 2 seriell, 3 InPort, 4 PS/2), CX = IRQ
