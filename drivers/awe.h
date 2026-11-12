@@ -438,24 +438,36 @@ static void aw_release(unsigned c)
 
 /* ==== Klangbank und MIDI-Synthesizer ==================================
    Die Bank (Zonen schon in EMU8000-Werten, AWELOAD) liegt in einem
-   eigenen Segment: vorn bis 256 Presets, dahinter die Zonen. Berechnung
+   eigenen Kernelsegment (DH_KSEG): vorn bis 512 Presets, dahinter die
+   Zonen; grosse Baenke (2MBGMGS.SF2: 3.098 Zonen) bekommen bei Bedarf bis
+   zu drei weitere Segmente. Berechnung
    von Tonhoehe, Lautstaerke und Pan wie im Linux-Treiber (sound/synth/
    emux/emux_synth.c, emu8000_callback.c; GPL-2.0-or-later; die Tabellen
    voltab1/voltab2/expressiontab/pan_volumes von dort). */
 
-#define AW_NPRE     256
+#define AW_NPRE     512
 #define AW_ZOFF     (AW_NPRE * sizeof(struct fapi_awepre))
-#define AW_BYTES    61440u
+#define AW_BYTES    65472u
+#define AW_NZS      4                   /* Segmente fuer Zonen           */
 #define AW_NZ1      ((AW_BYTES - AW_ZOFF) / sizeof(struct fapi_awezone))
 #define AW_NZ2      (AW_BYTES / sizeof(struct fapi_awezone))
-#define AW_NZONE    (AW_NZ1 + AW_NZ2)  /* zweites Segment erst bei Bedarf */
-#define AWZ(i)      ((i) < AW_NZ1 ? \
-    (struct fapi_awezone __far *)MK_FP(zsel, AW_ZOFF + (i) * sizeof(struct fapi_awezone)) : \
-    (struct fapi_awezone __far *)MK_FP(zsel2, ((i) - AW_NZ1) * sizeof(struct fapi_awezone)))
+#define AW_NZONE    (AW_NZ1 + (AW_NZS - 1) * AW_NZ2)
+#define AWZ(i)      awz(i)
 #define AWP(i)      ((struct fapi_awepre __far *)MK_FP(zsel, (i) * sizeof(struct fapi_awepre)))
 
 static unsigned zsel;                   /* Segment der Bank (0 = keins) */
-static unsigned zsel2;                  /* zweites (grosse Baenke)      */
+static unsigned zseg[AW_NZS];           /* [0] = zsel, weitere bei Bedarf */
+
+static struct fapi_awezone __far *awz(unsigned i)
+{
+    unsigned k;
+    if (i < AW_NZ1)
+        return (struct fapi_awezone __far *)MK_FP(zsel, AW_ZOFF + i * sizeof(struct fapi_awezone));
+    i -= AW_NZ1;
+    k = i / AW_NZ2;
+    return (struct fapi_awezone __far *)MK_FP(zseg[k + 1],
+                                              (i - k * AW_NZ2) * sizeof(struct fapi_awezone));
+}
 static unsigned nzone, npre;
 static unsigned char awe_on;            /* Bank fertig: MIDI hierher    */
 static unsigned char use_mpu;           /* /MPU: MIDI an den MPU-401    */
@@ -922,12 +934,9 @@ static int awe_cmd(struct aud_req __far *q)
     case AWE_ZONES:
         if (n * sizeof(struct fapi_awezone) > room || nzone + n > AW_NZONE)
             return -1;
-        if (nzone + n > AW_NZ1 && !zsel2) {
-            static unsigned long zlin2;
-            zsel2 = devhlp(DH_DMABUF, 0, AW_BYTES, (unsigned)&zlin2);
-            if (!zsel2)
-                return -1;
-        }
+        for (i = 1; i < AW_NZS && nzone + n > AW_NZ1 + (i - 1) * AW_NZ2; i++)
+            if (!zseg[i] && !(zseg[i] = devhlp(DH_KSEG, 0, AW_BYTES, 0)))
+                return -1;              /* kein Speicher/GDT-Platz      */
         for (i = 0; i < n; i++, nzone++)    /* einzeln: Segmentgrenze */
             far_cpy(AWZ(nzone), d + i * sizeof(struct fapi_awezone),
                     sizeof(struct fapi_awezone));

@@ -62,6 +62,10 @@ extern unsigned short fapi_dx;                    /* viertes FAPI-Argument  */
 
 /* ---- Kerneldaten ------------------------------------------------------- */
 struct desc     gdt[NGDT];
+/* feste Selektoren (start.asm, build.sh, mem.h) muessen zur GDT passen */
+typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
+typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
+typedef char gdt_chk3[VWIN == 0x1F0 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
 
@@ -5542,6 +5546,8 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_DELAY:
         delay_ticks(bx);
         return 0;
+    case DH_KSEG:                       /* Kernelsegment ohne DMA-Bedingung */
+        return kseg_alloc(bx ? bx : 0x10000UL);
     case DH_DMABUF: {
         static unsigned long lin;
         n = kseg_dma(bx, &lin);

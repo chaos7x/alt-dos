@@ -763,10 +763,9 @@ static void init(void)
         for (o = 0; o < 4 && !aw_detect(ap[o]); o++)
             ;
         if (ebase) {
-            static unsigned long zlin;
             aw_init();
             caps |= AUDCAP_AWE;
-            zsel = devhlp(DH_DMABUF, 0, AW_BYTES, (unsigned)&zlin);
+            zsel = zseg[0] = devhlp(DH_KSEG, 0, AW_BYTES, 0);
             use_mpu = (unsigned char)has_opt(r->args, "MPU");
             claim(RES_IO, ebase, 4);
             claim(RES_IO, ebase + 0x400, 4);

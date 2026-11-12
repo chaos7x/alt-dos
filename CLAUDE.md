@@ -215,7 +215,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   1000:0000–23FFF; vorher 128 bzw. 96 – Disketten mit altem Bootsektor
   vor dem Überschreiten von 64 KB mit SYS erneuern), BSS dahinter
   nullt `start.asm` selbst.
-- Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
+- Zweites Kernel-Codesegment KCODE2 (Selektor 1E8h, bis zur AWE-Bank 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
   `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `pnp`, `mem`, `paging`, `vesa`, `fat`,
   `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
@@ -230,7 +230,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Nahe Aufrufe aus KTEXT2 ins erste Segment fängt der Linker nicht immer
   ab – neue Hilfen immer über k2.h. Grafik aus vio.c steht in
   `kernel/vgagfx.c`, gemeinsame Sitzungsdaten in `kernel/vioint.h`.
-  Drittes Codesegment KCODE3 (Selektor 218h, `KCODE3_IDX` = letzter
+  Drittes Codesegment KCODE3 (Selektor 238h, vorher 218h, `KCODE3_IDX` = letzter
   GDT-Eintrag): `v86.c` und `redir.c` (build.sh `K3MODS`, `-nt=KTEXT3`,
   Gruppe CGROUP3 hinter CGROUP2, DS = CS + alle drei Größen; start.asm
   ruft v86_exc/dpmi_trap/v86_tick über KCODE3). Vorher prüfen, dass ein
@@ -2828,7 +2828,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   86Box rechnet Hall/Chorus nur, solange eine Stimme aktiv ist – ein
   Nachklang ist dort nicht messbar, geprüft sind die Register (PTRX
   72h bei CC 91 = 127). SF2 geprüft mit einer erzeugten Bank (Sinus mit
-  Schleife, Grundton 69): A4/A5 mit 441/882 Hz. Offen: Aufnahme,
+  Schleife, Grundton 69): A4/A5 mit 441/882 Hz. Echte SF2-Bänke (vom
+  Nutzer genannt: ftp.lysator.liu.se/pub/awe32/soundfonts, nur zum
+  Testen, nicht im Repository) in 86Box geprüft: `512gm-b.sf2` (153
+  ROM- + 53 RAM-Samples, 511 KB; 129 Presets, 573 Zonen) und
+  `2MBGMGS.SF2` (AWE32 mit 2 MB in 86Box: `[Sound Blaster AWE32 PnP #1]
+  onboard_ram = 2048`; 327 Presets, 3.098 Zonen, 1.801 KB) – Klavier,
+  Gitarre, Trompete, Flöte, Bass und Schlagzeug mit richtigen Tönen.
+  Dafür: AWELOAD lädt Abschnitte mit 4-Byte-Sätzen bis 256 KB in bis zu
+  vier Segmente (`cseg`, `CPTR`; igen dort 191 KB), meldet „keine Klänge
+  geladen“ (ERRORLEVEL 1), wenn nichts passt (2-MB-Bank auf 512 KB);
+  Treiber: bis 512 Presets, Zonen in bis zu vier Segmenten (`awz`, 4.172
+  Zonen) über den neuen DevHlp `DH_KSEG` (19, gewöhnliches Kernel-
+  segment – DH_DMABUF belegte doppelt unter 16 MB). Die GDT-Plätze für
+  Kernelsegmente reichten dafür nicht mehr (Bitmap, EA-Cache, Disketten-
+  puffer, Cache-Fenster + -Tabellen, Pfade, Umgebung, Dateien, Pipes,
+  SB-DMA, AWE, bei Bedarf FM-Kopien, Zwischenablage): `NKSEG` 12 -> 16,
+  KCODE2/VWIN/KCODE3 rücken nach (kern.h, start.asm, build.sh; kernel.c
+  prüft beim Übersetzen, dass die festen Werte zur GDT passen). In QEMU
+  danach XCOPY, Box (`command /c ver`), CHKDSK, MEM, fsck sauber. Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
   Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel

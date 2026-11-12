@@ -142,6 +142,10 @@ struct drv_req {
 #define RES_IO          1
 #define RES_DMA         2
 #define RES_IRQ         3
+#define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
+                                       ohne DMA-Bedingung (genullt), z. B.
+                                       Tabellen -> AX = Selektor, 0 = keiner
+                                       (die GDT-Plaetze sind knapp: NKSEG) */
 
 /* Audio (DRV_AUDIO): der Kernel waehlt, wessen Ton zu hoeren ist, der
    Treiber spielt einen Datenstrom */

@@ -721,7 +721,8 @@ INT 41h/46h, vom Kernel beim Start im Real Mode gesichert), `DH_SETIRQ`/
 `DH_UNSETIRQ` (IRQ belegen: der Kernel ruft die Routine des Treibers mit
 dessen DS und schickt danach das EOI), `DH_PROCBLOCK`/`DH_PROCRUN` (Task
 schläft im Treiber bis zum Ereignis oder zur Frist, andere Tasks laufen
-weiter; die Interruptroutine weckt ihn).
+weiter; die Interruptroutine weckt ihn), `DH_DMABUF` (Puffer für ISA-DMA),
+`DH_KSEG` (gewöhnliches Kernelsegment bis 64 KB, z. B. für Tabellen).
 
 Treiber mit Interrupt: Während ein Task in einem Treiber auf das Gerät
 wartet, gibt er seit 6.0 die Kernelsperre ab (Phase 6): andere Tasks
@@ -795,7 +796,8 @@ Spielen, `/R:700`) – Beispiele in `\DEMO`: `KLANG.WAV`, `ODE.MID`,
 `ODE.IMF` (Ode an die Freude) –, `MIXER [Regler Wert]`
 stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). AWE32/64: den
 Wavetable-Chip (EMU8000) erkennt `SB16.SYS` mit; `AWELOAD [Datei.SBK|.SF2]`
-lädt eine SoundFont-Bank (1 oder 2) (z. B. `SYNTHGM.SBK` von den Creative-
+lädt eine SoundFont-Bank (1 oder 2, auch große GS-Bänke für Karten mit
+2 MB und mehr) (z. B. `SYNTHGM.SBK` von den Creative-
 Treiberdisketten – liegt nicht bei, Vorgabe `\DOS\SYSTEM\SYNTHGM.SBK`) in
 die Karte, danach spielt MIDI (PLAY und der MPU-401 der DOS-Boxen) über
 den AWE als General-MIDI-Synthesizer (mit Hall/Chorus, CC 91/93, und

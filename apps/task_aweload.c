@@ -293,19 +293,20 @@ static unsigned long rd32(unsigned long pos)
 /* Teil der Datei in ein eigenes Segment (DosRead liest nur ins DS) */
 static unsigned load_seg(unsigned long pos, unsigned long len)
 {
-    unsigned sel, o, k;
-    if (len > 0xFFF0UL)
+    unsigned sel, k;
+    unsigned long o;
+    if (len > 0x10000UL)
         return 0;
-    sel = DosAllocSeg((unsigned)len + 16);
+    sel = DosAllocSeg(len > 0xFFF0UL ? 0 : (unsigned)len + 16);  /* 0 = 64 KB */
     if (FAPI_FAILED(sel))
         return 0;
-    for (o = 0; o < (unsigned)len; o += k) {
-        k = (unsigned)len - o > sizeof(rbuf) ? sizeof(rbuf) : (unsigned)len - o;
+    for (o = 0; o < len; o += k) {
+        k = len - o > sizeof(rbuf) ? sizeof(rbuf) : (unsigned)(len - o);
         if (rd(pos + o, rbuf, k))
             return 0;
         {
             unsigned i;
-            unsigned char __far *d = MK_FP(sel, o);
+            unsigned char __far *d = MK_FP(sel, (unsigned)o);
             for (i = 0; i < k; i++)
                 d[i] = rbuf[i];
         }
@@ -316,13 +317,21 @@ static unsigned load_seg(unsigned long pos, unsigned long len)
 /* Abschnitte der Bank */
 enum { C_PHDR, C_PBAG, C_PGEN, C_INST, C_IBAG, C_IGEN, C_SHDR, NCH };
 static const char ckid[NCH][5] = { "phdr", "pbag", "pgen", "inst", "ibag", "igen", "shdr" };
-static unsigned csel[NCH];
+/* Abschnitte mit 4-Byte-Saetzen (Bags, Generatoren) duerfen bis 256 KB
+   gross sein (2MBGMGS.SF2: igen 191 KB) - je 64 KB ein Segment, kein Satz
+   ueber eine Grenze; die anderen hoechstens 64 KB in csel[c] = cseg[c][0] */
+#define NCSEG 4
+static unsigned cseg[NCH][NCSEG];
+#define csel(c) cseg[c][0]
 static unsigned cnum[NCH];
+static unsigned long cbytes[NCH];
 static const unsigned char csize[NCH] = { 38, 4, 4, 22, 4, 4, 0 };
 static unsigned long smpl_pos, smpl_len;
 
-#define W16(c, i, o)  (*(unsigned short __far *)MK_FP(csel[c], (i) * csize[c] + (o)))
-#define I16(c, i, o)  (*(short __far *)MK_FP(csel[c], (i) * csize[c] + (o)))
+#define CPTR(c, i, o) (csize[c] == 4 ? MK_FP(cseg[c][(i) >> 14], (((i) & 0x3FFF) << 2) + (o)) \
+                                     : MK_FP(cseg[c][0], (i) * csize[c] + (o)))
+#define W16(c, i, o)  (*(unsigned short __far *)CPTR(c, i, o))
+#define I16(c, i, o)  (*(short __far *)CPTR(c, i, o))
 
 static int same4(const char *a, const char *b)
 {
@@ -351,10 +360,17 @@ static int scan(unsigned long pos, unsigned long end)
         } else
             for (c = 0; c < NCH; c++)
                 if (same4(id, ckid[c])) {
-                    csel[c] = load_seg(pos + 8, n);
-                    if (!csel[c])
+                    unsigned k;
+                    if (csize[c] == 4 ? n >= 0x40000UL : n > 0xFFFFUL)
                         return -1;
-                    cnum[c] = (unsigned)n;      /* Bytes, unten Saetze */
+                    for (k = 0; (unsigned long)k << 16 < n; k++) {
+                        unsigned long r = n - ((unsigned long)k << 16);
+                        cseg[c][k] = load_seg(pos + 8 + ((unsigned long)k << 16),
+                                              r > 0x10000UL ? 0x10000UL : r);
+                        if (!cseg[c][k])
+                            return -1;
+                    }
+                    cbytes[c] = n;              /* unten Saetze           */
                 }
         pos += 8 + n + (n & 1);
     }
@@ -371,14 +387,14 @@ static unsigned skipped;
 
 static unsigned long sh32(unsigned i, unsigned o)
 {
-    return *(unsigned long __far *)MK_FP(csel[C_SHDR], i * shsize + o);
+    return *(unsigned long __far *)MK_FP(csel(C_SHDR), i * shsize + o);
 }
 
 static int s_rom(unsigned i)
 {
     if (sfver == 1)
         return i < first_ram;
-    return (*(unsigned short __far *)MK_FP(csel[C_SHDR], i * shsize + 44) & 0x8000) != 0;
+    return (*(unsigned short __far *)MK_FP(csel(C_SHDR), i * shsize + 44) & 0x8000) != 0;
 }
 
 /* ---- Ausgabe an den Treiber ----------------------------------------- */
@@ -390,7 +406,7 @@ static struct {
 static unsigned nz, zsent;
 static struct {
     struct fapi_awecmd k;
-    struct fapi_awepre p[256];
+    struct fapi_awepre p[512];          /* wie AW_NPRE im Treiber    */
 } pc;
 #define pre pc.p
 static unsigned npre;
@@ -487,12 +503,12 @@ static int make_zone(void)
         root = 60;
         tune = 0;
     } else {
-        root = *(unsigned char __far *)MK_FP(csel[C_SHDR], si * shsize + 40);
-        tune = *(signed char __far *)MK_FP(csel[C_SHDR], si * shsize + 41);
+        root = *(unsigned char __far *)MK_FP(csel(C_SHDR), si * shsize + 40);
+        tune = *(signed char __far *)MK_FP(csel(C_SHDR), si * shsize + 41);
     }
     if (ct.set[58] && v[58] >= 0)
         root += v[58] - (sfver == 1 ? 60 :
-                *(unsigned char __far *)MK_FP(csel[C_SHDR], si * shsize + 40));
+                *(unsigned char __far *)MK_FP(csel(C_SHDR), si * shsize + 40));
     if (sfver == 1)
         tune += v[51] * scale + muldiv(v[52], scale, 100);
     else
@@ -625,7 +641,7 @@ static int do_preset(unsigned p)
             return -1;
         n += r;
     }
-    if (n && npre < 256) {
+    if (n && npre < 512) {
         pre[npre].bank = (unsigned char)bank;
         pre[npre].prog = (unsigned char)prog;
         pre[npre].first = first;
@@ -711,14 +727,14 @@ void main(void)
     if (rd(0, rbuf, 12) || !same4(rbuf, "RIFF") || !same4(rbuf + 8, "sfbk"))
         fail("keine SoundFont-Datei");
     if (scan(12, rd32(4) + 8))
-        fail("Datei unvollst\x84ndig oder zu gro\xE1 (Abschnitt \x81""ber 64 KB)");
+        fail("Datei unvollst\x84ndig oder zu gro\xE1 (Abschnitt \x81""ber 64 bzw. 256 KB)");
     for (c = 0; c < NCH; c++)
-        if (!csel[c])
+        if (!csel(c))
             fail("Datei unvollst\x84ndig");
     shsize = sfver == 1 ? 16 : 46;
-    nsamp = cnum[C_SHDR] / shsize;
+    nsamp = (unsigned)cbytes[C_SHDR] / shsize;
     for (c = 0; c < C_SHDR; c++)
-        cnum[c] /= csize[c];
+        cnum[c] = csize[c] == 4 ? (unsigned)(cbytes[c] >> 2) : (unsigned)cbytes[c] / csize[c];
     first_ram = nsamp;
     if (sfver == 1)                     /* RAM beginnt bei Adresse 0     */
         for (c = 0; c < nsamp; c++)
@@ -773,4 +789,8 @@ void main(void)
         puts(" Zonen ohne Platz \x81""bergangen");
     }
     puts("\r\n");
+    if (!npre) {                        /* nichts spielbar: MIDI bleibt  */
+        puts("  Keine Kl\x84nge geladen - MIDI geht weiter an FM bzw. MPU-401.\r\n");
+        DosExit(1);
+    }
 }
