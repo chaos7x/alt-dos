@@ -310,6 +310,50 @@ static int aw_detect(unsigned b)
     return 1;
 }
 
+/* Effekte wie die Vorgabe von Linux emu8000.c: Equalizer Bass 0 dB /
+   Hoehen +8 dB (Stellung der Hardware), Chorus 3, Hall 2. Hall-Werte:
+   28 Worte an INIT1-4 (Tabellen reverb_parm/reverb_cmds) */
+static const unsigned short rv_cmd[28] = {      /* Bit 15: DATA2        */
+    0x43, 0x45, 0x807F, 0x47, 0x8054, 0x8056, 0x4F, 0x57,
+    0x5F, 0x8047, 0x804F, 0x8057, 0x805D, 0x805F, 0x61, 0x63,
+    0x49, 0x4B, 0x51, 0x53, 0x59, 0x5B, 0x8041, 0x8043,
+    0x8049, 0x804B, 0x8051, 0x8053
+};
+static const unsigned short rv_hall2[28] = {
+    0xB488, 0xA470, 0x9570, 0x84B5, 0x383A, 0x3EB5, 0x7254,
+    0x7234, 0x7224, 0x7254, 0x7264, 0x7294, 0x44C3, 0x45C3,
+    0xA404, 0xA504, 0x842A, 0x852A, 0x842A, 0x852A, 0x8429,
+    0x8529, 0x8429, 0x8529, 0x8428, 0x8528, 0x8428, 0x8528
+};
+#define INIT3(c, v)     ew(E_D1, ECMD(3, c), v)
+#define INIT4(c, v)     ew(E_D2, ECMD(3, c), v)
+
+static void aw_fx(void)
+{
+    unsigned i;
+    INIT4(0x01, 0xC208);                /* Bass 0 dB                     */
+    INIT4(0x11, 0xC308);
+    INIT3(0x11, 0x821E);                /* Hoehen +8 dB                  */
+    INIT3(0x13, 0xD208);
+    INIT3(0x1B, 0x031E);
+    INIT4(0x07, 0xD308);
+    INIT4(0x0B, 0x0219);
+    INIT4(0x0D, 0xD26E);
+    INIT4(0x17, 0x8319);
+    INIT4(0x19, 0xD36E);
+    INIT4(0x15, 0x0001 + 0x0002 + 0x0262);
+    INIT4(0x1D, 0x0001 + 0x0002 + 0x8362);
+    INIT3(0x09, 0xE610);                /* Chorus 3                      */
+    INIT3(0x0C, 0x031A);
+    INIT4(0x03, 0xBC84);
+    ewd(E_D1, HWCF4, 0);
+    ewd(E_D1, HWCF5, 0x83);
+    ewd(E_D1, HWCF6, 0x8000);
+    ewd(E_D1, ECMD(1, 14), 0);          /* HWCF7 (nicht dokumentiert)    */
+    for (i = 0; i < 28; i++)
+        ew((rv_cmd[i] & 0x8000) ? E_D2 : E_D1, rv_cmd[i] & 0x7FFF, rv_hall2[i]);
+}
+
 static void aw_init(void)
 {
     unsigned c;
@@ -346,6 +390,7 @@ static void aw_init(void)
         aw_off(c);
     edram_kb = aw_dramsize();
     ew(E_D1, HWCF3, 4);                 /* Ausgabe an                    */
+    aw_fx();
 }
 
 /* Stimme c mit einem Sample starten (Wortadressen, Ende/Schleife wie im
@@ -473,6 +518,7 @@ static const unsigned char panvol[256] = {
 /* MIDI-Kanaele und Stimmen */
 struct awch {
     unsigned char prog, bank, vol, expr, pan, sus, rpn_l, rpn_h, bendr;
+    unsigned char mod, press, rev, cho;     /* CC 1, Dx, CC 91, CC 93   */
     int bend;                           /* -8192 .. 8191                */
 };
 static struct awch chn[16];
@@ -498,6 +544,35 @@ static void ch_reset(unsigned c)
     h->rpn_l = h->rpn_h = 127;
     h->bendr = 2;
     h->bend = 0;
+    h->mod = h->press = 0;
+    h->rev = 40;                        /* Vorgabe wie GS                */
+    h->cho = 0;
+}
+
+/* Modulationsrad + Kanaldruck -> Vibrato, voller Ausschlag etwa 50 Cent
+   (ein Schritt im Hochbyte ~9,4 Cent; Linux emux nimmt nur 18/1200 je
+   Schritt - kaum hoerbar). Auf LFO2 (Vibrato-LFO) nur, wenn die Zone
+   dort eine Frequenz hat - SBK-Baenke lassen ihn meist auf 0 Hz -, sonst
+   auf LFO1 (FMMOD: Hochbyte Tonhoehe, Tiefbyte Filter). r = Registerwert
+   der Zone, use = dieser LFO bekommt das Rad */
+static unsigned v_lfo(unsigned r, unsigned ch, int use)
+{
+    int p = (signed char)(r >> 8);
+    unsigned m = chn[ch].mod + chn[ch].press;
+    if (!use || !m)
+        return r;
+    p += (int)((m * 5 + 63) / 127);
+    if (p > 127)
+        p = 127;
+    return ((unsigned)(unsigned char)p << 8) | (r & 0xFF);
+}
+#define LFO2_ON(z)      (((z)->fm2frq2 & 0xFF) != 0)
+
+/* Effekt-Anteile: Zone + Kanal (CC 91/93) * 9/10, hoechstens 255 */
+static unsigned v_send(unsigned char zv, unsigned char cv)
+{
+    unsigned t = zv + (cv * 9) / 10;
+    return t > 255 ? 255 : t;
 }
 
 static void awe_reset_all(void)
@@ -643,17 +718,17 @@ static void v_start(unsigned ch, unsigned key, unsigned vel, unsigned zi)
     PEFE(c, z->pefe);
     LFO1VAL(c, z->lfo1delay);
     LFO2VAL(c, z->lfo2delay);
-    FMMOD(c, z->fmmod);
+    FMMOD(c, v_lfo(z->fmmod, ch, !LFO2_ON(z)));
     TREMFRQ(c, z->tremfrq);
-    FM2FRQ2(c, z->fm2frq2);
+    FM2FRQ2(c, v_lfo(z->fm2frq2, ch, LFO2_ON(z)));
     PSST(c, ((unsigned long)panvol[pan] << 24) | (z->lstart - 1));
-    CSL(c, ((unsigned long)z->chorus << 24) | (z->lend - 1));
+    CSL(c, ((unsigned long)v_send(z->chorus, chn[ch].cho) << 24) | (z->lend - 1));
     CCCA(c, ((unsigned long)(z->filterq & 0x0F) << 28) | (z->start - 1));
     R00A0(c, 0);
     R0080(c, 0);
     VTFT(c, (unsigned long)cut << 8);   /* Ziele: Lautstaerke regelt die  */
     CVCF(c, 0x0000FF00UL);              /* Hullkurve, Filter = Grenze     */
-    PTRX(c, ((unsigned long)pt << 16) | ((unsigned)z->reverb << 8) | panvol[255 - pan]);
+    PTRX(c, ((unsigned long)pt << 16) | (v_send(z->reverb, chn[ch].rev) << 8) | panvol[255 - pan]);
     CPF(c, (unsigned long)pt << 16);
     DCYSUSV(c, z->voldcysus);           /* Hullkurve los                 */
 }
@@ -715,6 +790,10 @@ static void ch_update(unsigned ch, int what)
             IFATN(c, (er(E_D3, ECMD(1, c)) & 0xFF00) | v_vol(&vo[c], z));
         else if (what == 1)
             PSST(c, ((unsigned long)panvol[v_pan(&vo[c], z)] << 24) | (z->lstart - 1));
+        else if (what == 3) {
+            FMMOD(c, v_lfo(z->fmmod, ch, !LFO2_ON(z)));
+            FM2FRQ2(c, v_lfo(z->fm2frq2, ch, LFO2_ON(z)));
+        }
         else
             IP(c, v_pitch(&vo[c], z));
     }
@@ -738,6 +817,9 @@ static void control(unsigned ch, unsigned cc, unsigned v)
     struct awch *h = &chn[ch];
     switch (cc) {
     case 0: h->bank = (unsigned char)v; break;
+    case 1: h->mod = (unsigned char)v; ch_update(ch, 3); break;
+    case 91: h->rev = (unsigned char)v; break;      /* gilt ab der     */
+    case 93: h->cho = (unsigned char)v; break;      /* naechsten Note  */
     case 7: h->vol = (unsigned char)v; ch_update(ch, 0); break;
     case 11: h->expr = (unsigned char)v; ch_update(ch, 0); break;
     case 10: h->pan = (unsigned char)v; ch_update(ch, 1); break;
@@ -764,6 +846,7 @@ static void control(unsigned ch, unsigned cc, unsigned v)
         h->bank = b;
         ch_update(ch, 0);
         ch_update(ch, 2);
+        ch_update(ch, 3);
         break;
     }
     }
@@ -810,6 +893,7 @@ static void awe_midi(unsigned char b)
         break;
     case 0xB0: control(ch, m_d[0], m_d[1]); break;
     case 0xC0: chn[ch].prog = m_d[0]; break;
+    case 0xD0: chn[ch].press = m_d[0]; ch_update(ch, 3); break;
     case 0xE0:
         chn[ch].bend = (int)((m_d[1] << 7) | m_d[0]) - 8192;
         ch_update(ch, 2);

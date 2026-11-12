@@ -794,11 +794,12 @@ Sound Blaster. `PLAY Datei` spielt WAV, VOC, MIDI (über den MPU-401, mit
 Spielen, `/R:700`) – Beispiele in `\DEMO`: `KLANG.WAV`, `ODE.MID`,
 `ODE.IMF` (Ode an die Freude) –, `MIXER [Regler Wert]`
 stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). AWE32/64: den
-Wavetable-Chip (EMU8000) erkennt `SB16.SYS` mit; `AWELOAD [Datei.SBK]`
-lädt eine SoundFont-1-Bank (z. B. `SYNTHGM.SBK` von den Creative-
+Wavetable-Chip (EMU8000) erkennt `SB16.SYS` mit; `AWELOAD [Datei.SBK|.SF2]`
+lädt eine SoundFont-Bank (1 oder 2) (z. B. `SYNTHGM.SBK` von den Creative-
 Treiberdisketten – liegt nicht bei, Vorgabe `\DOS\SYSTEM\SYNTHGM.SBK`) in
 die Karte, danach spielt MIDI (PLAY und der MPU-401 der DOS-Boxen) über
-den AWE als General-MIDI-Synthesizer; `AWELOAD /U` gibt die Bank frei,
+den AWE als General-MIDI-Synthesizer (mit Hall/Chorus, CC 91/93, und
+Vibrato über das Modulationsrad); `AWELOAD /U` gibt die Bank frei,
 `SB16.SYS /MPU` schickt MIDI stattdessen an einen externen Synthesizer.
 Mehrere Programme
 dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung

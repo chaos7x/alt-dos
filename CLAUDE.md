@@ -2814,9 +2814,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eine Tabelle (`ilg`, 1200·log2); Samples ohne Schleife bekommen eine
   stille Schleife hinter dem Ende. Lehre: Anschlagstärke-Dämpfung in cB
   ist -2000·log10(v/127) – mit -200 (Faktor 10 daneben) war die Melodie
-  fast stumm (IFATN-Dämpfung BAh im Register-Protokoll von 86Box). Offen:
-  Modulations-LFO/Vibrato über CC 1, Chorus/Hall-Effekte (Sends werden
-  nur gesetzt), SF2-Dateien (nur SoundFont 1), Aufnahme,
+  fast stumm (IFATN-Dämpfung BAh im Register-Protokoll von 86Box).
+  Effekte und Vibrato (in 86Box geprüft): `aw_fx` nach dem Einrichten
+  wie die Vorgabe von Linux emu8000.c (Equalizer Bass 0/Höhen +8 dB,
+  Chorus 3, Hall 2 – 28 Worte an INIT1–4), Hall-/Chorus-Anteil = Zone +
+  CC 91/93 · 9/10 (Vorgabe 40/0 wie GS, gilt ab der nächsten Note);
+  Modulationsrad (CC 1) + Kanaldruck (Dx) -> Vibrato bis ~50 Cent
+  (`v_lfo`, 5 Schritte im Tonhöhen-Byte – Linux emux nimmt 18/1200 je
+  Schritt, kaum hörbar), auf LFO2 nur, wenn die Zone dort eine Frequenz
+  hat – SBK-Bänke lassen den Vibrato-LFO auf 0 Hz (Vorgabe −15600,
+  FM2FRQ2 = 0500h im Protokoll: Tiefe da, LFO stand) –, sonst auf LFO1
+  (FMMOD). Messung: A4 mit Rad 28 Cent Spanne im 93-ms-Fenster, ohne 0.
+  86Box rechnet Hall/Chorus nur, solange eine Stimme aktiv ist – ein
+  Nachklang ist dort nicht messbar, geprüft sind die Register (PTRX
+  72h bei CC 91 = 127). SF2 geprüft mit einer erzeugten Bank (Sinus mit
+  Schleife, Grundton 69): A4/A5 mit 441/882 Hz. Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
   Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel
