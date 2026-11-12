@@ -831,12 +831,38 @@ static void summary(const unsigned char *bs)
 #include "ufat_defrag.c"
 #include "ufat_lfn.c"
 
+/* lange Namen EA <-> VFAT (/LFN:VFAT|EA, Aufruf ueber CONVERT) */
+#define E2V_FIXROOT 1
+#define E2V_USED(d) ((void)0)
+#define ENT_CLUS(e) ((unsigned long)rd16f((e) + 26))
+#define rootc 0
+static int cv_err;
+static void wr32(unsigned char *p, unsigned long v)
+{
+    wr16(p, (unsigned)v);
+    wr16(p + 2, (unsigned)(v >> 16));
+}
+static unsigned seg64(void)
+{
+    unsigned s = DosAllocSeg(0);
+    return FAPI_FAILED(s) ? 0 : s;
+}
+static void fat_flush(void)
+{
+    unsigned k;
+    write_fat();
+    for (k = 0; k < sizeof(fdirty); k++)
+        fdirty[k] = 0;
+}
+#include "ufat_e2v.c"
+
 void main(void)
 {
     char *a = args;
     unsigned reserved;
     unsigned long rootsecs, fatsecs;
     int fmt = 0, quick = 0, undel = 0, ulist = 0, uall = 0, surface = 0, defrag = 0, donly = 0;
+    int lfnmode = 0;                    /* /LFN:VFAT 1, /LFN:EA 2         */
     unsigned fkb = 0, r_undel;
     static char uspec[200] = "\\*.*";
 
@@ -857,6 +883,8 @@ void main(void)
             defrag = 1;                 /* /DEFRAG                       */
         else if (a[0] == '/' && up(a[1]) == 'U' && (a[2] == 0 || a[2] == ' '))
             donly = 1;                  /* DEFRAG /U: nur Fragmente      */
+        else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'F' && a[4] == ':')
+            lfnmode = up(a[5]) == 'V' ? 1 : up(a[5]) == 'E' ? 2 : 0;
         else if (a[0] == '/' && up(a[1]) == 'L' && up(a[2]) == 'I')
             ulist = 1;
         else if (a[0] == '/' && up(a[1]) == 'R')
@@ -897,7 +925,8 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
-    hd = DosOpenDrive(drive, fix || defrag || (undel && !ulist) ? DRV_OPEN_LOCK : DRV_OPEN_READ);
+    hd = DosOpenDrive(drive, fix || defrag || lfnmode || (undel && !ulist) ? DRV_OPEN_LOCK
+                                                                           : DRV_OPEN_READ);
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Das Laufwerk ist gesperrt oder in Benutzung.\n"
                                   : "Laufwerk kann nicht ge\x94" "ffnet werden.\n");
@@ -935,6 +964,16 @@ void main(void)
     if (load_fat()) {
         DosClose(hd);
         DosExit(3);
+    }
+    if (lfnmode) {                      /* lange Namen EA <-> VFAT       */
+        if (spc > 64) {
+            puts("Zuordnungseinheiten \x81" "ber 32 KB werden nicht unterst\x81tzt.\n");
+            r_undel = 3;
+        } else
+            r_undel = (unsigned)(lfnmode == 1 ? lfn_tovfat() : lfn_toea());
+        fat_flush();
+        DosClose(hd);
+        DosExit(r_undel);
     }
     if (defrag) {
         r_undel = do_defrag(donly);

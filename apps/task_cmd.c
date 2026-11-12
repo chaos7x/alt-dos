@@ -2786,10 +2786,14 @@ static char *take_name(char **pp)
     char *p = *pp, *d = nb[ni++ % (NSEG * 2)];
     unsigned k = 0;
 
+    int q = 0;
+
     while (*p == ' ')
         p++;
-    while (*p && *p != ' ' && *p != '<' && *p != '>' && *p != '|') {
-        if (k < FAPI_PATHLEN - 1)
+    while (*p && (q || (*p != ' ' && *p != '<' && *p != '>' && *p != '|'))) {
+        if (*p == '"')                  /* "Name mit Leerzeichen" wie NT */
+            q = !q;
+        else if (k < FAPI_PATHLEN - 1)
             d[k++] = *p;
         *p++ = ' ';
     }

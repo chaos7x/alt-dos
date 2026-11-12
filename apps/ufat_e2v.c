@@ -1,8 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
+ * Lange Namen EA DATA. SF <-> VFAT, gemeinsam fuer UFAT32.EXE (eingebunden
+ * ueber ufat32_conv.c: /CONVERT und /LFN) und UFAT.EXE (FAT12/16, /LFN).
+ * Der Gastgeber setzt vorher E2V_FIXROOT (1 = fester Stamm wie FAT12/16,
+ * root_lba/rootents; 0 = Stamm als Kette ab rootc), E2V_USED(d) (Zaehler
+ * belegter Cluster) und ENT_CLUS(e) (Startcluster eines Eintrags).
+ *
  * UFAT32.EXE /CONVERT, letzter Schritt: lange Namen aus EA DATA. SF in
- * VFAT-Eintraege uebertragen (eingebunden in task_ufat32.c ueber
- * ufat32_conv.c). FAT32 schreibt lange Namen als VFAT (wie Windows 95/98);
+ * VFAT-Eintraege uebertragen. FAT32 schreibt lange Namen als VFAT (wie Windows 95/98);
  * nach der Umwandlung stehen die Namen eines FAT16-Laufwerks aber noch in
  * EA DATA. SF. Ohne /EA (CONVERT setzt es bei LONGNAMES=EA in der
  * CONFIG.SYS) wird jedes betroffene Verzeichnis neu geschrieben: vor dem
@@ -38,7 +43,7 @@ static const unsigned short cp437u[128] = {
 #define E2V_MAXC 128                    /* Cluster je Verzeichnis (Liste) */
 static unsigned e2v_ea, e2v_old, e2v_new;   /* Segmente zu 64 KB          */
 static unsigned long e2v_cl[E2V_MAXC];
-static unsigned long e2v_hint, e2v_need, e2v_names;
+static unsigned long e2v_hint, e2v_need, e2v_names, e2v_rootn;
 static unsigned e2v_eabytes;
 
 static unsigned char __far *fpb(unsigned seg, unsigned off)
@@ -74,6 +79,38 @@ static unsigned e2v_read(unsigned long first, unsigned seg, unsigned *n)
             return 0xFFFF;
     }
     return off;
+}
+
+/* Verzeichnis dc (0 = Stamm) nach seg -> Bytes (0xFFFF = Fehler) */
+static unsigned e2v_dread(unsigned long dc, unsigned seg, unsigned *n)
+{
+#if E2V_FIXROOT
+    if (!dc) {                          /* fester Stamm (FAT12/16)        */
+        unsigned s, k, ns = (rootents + 15) >> 4;
+        *n = 0;
+        if (rootents > 2046)
+            return 0xFFFF;
+        for (s = 0; s < ns; s++) {
+            if (rd_secs(root_lba + s, sec, 1))
+                return 0xFFFF;
+            for (k = 0; k < 512; k++)
+                *fpb(seg, (s << 9) + k) = sec[k];
+        }
+        return rootents << 5;
+    }
+#endif
+    return e2v_read(dc ? dc : rootc, seg, n);
+}
+
+/* Sektor, in dem Byte off des eben gelesenen Verzeichnisses dc steht */
+static unsigned long e2v_slba(unsigned long dc, unsigned off)
+{
+#if E2V_FIXROOT
+    if (!dc)
+        return root_lba + (off >> 9);
+#endif
+    (void)dc;
+    return clus_lba(e2v_cl[(unsigned)shr(off, cshift)]) + ((off & ((spc << 9) - 1)) >> 9);
 }
 
 static unsigned char e2v_sum(const unsigned char __far *e)
@@ -136,13 +173,13 @@ static void e2v_lfn(unsigned off, const unsigned char __far *r, unsigned k, unsi
    pruefen (Groesse, e2v_need). -> 0 ok, -1 passt nicht */
 static int e2v_dir(unsigned long dc, int write)
 {
-    unsigned long first = dc ? dc : rootc, c, prev;
+    unsigned long c, prev;
     unsigned n, bytes, i, o = 0, ro, k, parts, cb = spc << 9;
     unsigned long nb;
     unsigned char __far *e;
     unsigned char sum;
 
-    if ((bytes = e2v_read(first, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(dc, e2v_old, &n)) == 0xFFFF)
         return -1;
     for (i = 0; i + 32 <= bytes; i += 32) {
         e = fpb(e2v_old, i);
@@ -159,6 +196,8 @@ static int e2v_dir(unsigned long dc, int write)
                     e2v_lfn(o, fpb(e2v_ea, ro), k, parts, sum);
                 fpb(e2v_ea, ro)[0] = 'l';           /* erledigt           */
                 e2v_names++;
+                if (!dc)
+                    e2v_rootn++;
             } else
                 o += 32 * parts;
         } else if ((unsigned long)o + 32 > 0xFFE0UL)
@@ -168,6 +207,24 @@ static int e2v_dir(unsigned long dc, int write)
                 *fpb(e2v_new, o + k) = e[k];
         o += 32;
     }
+#if E2V_FIXROOT
+    if (!dc) {                          /* fester Stamm: waechst nicht    */
+        if (o > bytes)
+            return -1;
+        if (!write)
+            return 0;
+        for (i = o; i < bytes; i++)
+            *fpb(e2v_new, i) = 0;
+        for (i = 0; i < bytes; i += 512) {
+            unsigned j;
+            for (j = 0; j < 512; j++)
+                sec[j] = *fpb(e2v_new, i + j);
+            if (wr_sec(root_lba + (i >> 9), sec))
+                return -1;
+        }
+        return 0;
+    }
+#endif
     nb = shr((unsigned long)o + 32 + cb - 1, cshift);   /* Platz fuer das Ende */
     if (nb > E2V_MAXC || shl(nb, cshift) > 0x10000UL)
         return -1;
@@ -187,7 +244,7 @@ static int e2v_dir(unsigned long dc, int write)
         e2v_hint = c + 1;
         fat_put(prev, c);
         fat_put(c, EOC);
-        used32++;
+        E2V_USED(1);
         e2v_cl[n++] = c;
         prev = c;
     }
@@ -236,7 +293,7 @@ static int e2v_drop(void)
     unsigned long c, nx;
     static const char ean[] = "EA DATA SF ";
     unsigned char __far *e;
-    if ((bytes = e2v_read(rootc, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(0, e2v_old, &n)) == 0xFFFF)
         return -1;
     for (i = 0; i + 32 <= bytes; i += 32) {
         e = fpb(e2v_old, i);
@@ -246,18 +303,17 @@ static int e2v_drop(void)
             ;
         if (k < 11 || e[11] == 0x0F)
             continue;
-        c = ((unsigned long)rd16f(e + 20) << 16) | rd16f(e + 26);
+        c = ENT_CLUS(e);
         while (valid(c)) {
             nx = fat_get(c);
             fat_put(c, 0);
-            if (used32)
-                used32--;
+            E2V_USED(-1);
             c = nx;
         }
-        if (rd_secs(clus_lba(e2v_cl[i / (spc << 9)]) + ((i % (spc << 9)) >> 9), sec, 1))
+        if (rd_secs(e2v_slba(0, i), sec, 1))
             return -1;
         sec[i & 511] = 0xE5;
-        return wr_sec(clus_lba(e2v_cl[i / (spc << 9)]) + ((i % (spc << 9)) >> 9), sec);
+        return wr_sec(e2v_slba(0, i), sec);
     }
     return 0;
 }
@@ -307,42 +363,65 @@ out:
 /* ---- CONVERT X: /LFN:VFAT|EA auf einem FAT32-Laufwerk ------------------ */
 
 /* Eintrag "EA DATA SF " im Stamm -> erster Cluster, Groesse; 0 = gefunden */
-static int e2v_locate(unsigned long *first, unsigned long *size)
+/* ein Stammsektor in sec: 1 gefunden, -1 Ende des Stamms, 0 weiter */
+static int e2v_ckea(unsigned long *first, unsigned long *size)
 {
     static const char ean[] = "EA DATA SF ";
-    unsigned long c = rootc, steps = 0;
-    unsigned s, o, k;
-    while (valid(c) && steps++ <= maxc) {
-        for (s = 0; s < spc; s++) {
-            if (rd_secs(clus_lba(c) + s, sec, 1))
-                return -1;
-            for (o = 0; o < 512; o += 32) {
-                if (!sec[o])
-                    return -1;
-                if (sec[o] == 0xE5 || sec[o + 11] == 0x0F)
-                    continue;
-                for (k = 0; k < 11 && sec[o + k] == (unsigned char)ean[k]; k++)
-                    ;
-                if (k == 11) {
-                    *first = ((unsigned long)rd16(sec + o + 20) << 16) | rd16(sec + o + 26);
-                    *size = rd32(sec + o + 28);
-                    return 0;
-                }
-            }
+    unsigned o, k;
+    for (o = 0; o < 512; o += 32) {
+        if (!sec[o])
+            return -1;
+        if (sec[o] == 0xE5 || sec[o + 11] == 0x0F)
+            continue;
+        for (k = 0; k < 11 && sec[o + k] == (unsigned char)ean[k]; k++)
+            ;
+        if (k == 11) {
+            *first = ENT_CLUS((unsigned char __far *)(sec + o));
+            *size = rd32(sec + o + 28);
+            return 1;
         }
+    }
+    return 0;
+}
+
+static int e2v_locate(unsigned long *first, unsigned long *size)
+{
+    int r;
+#if E2V_FIXROOT
+    unsigned s;
+    for (s = 0; s < (rootents + 15) >> 4; s++)
+        if (rd_secs(root_lba + s, sec, 1) || (r = e2v_ckea(first, size)) < 0)
+            return -1;
+        else if (r)
+            return 0;
+    return -1;
+#else
+    unsigned long c = rootc, steps = 0;
+    unsigned s;
+    while (valid(c) && steps++ <= maxc) {
+        for (s = 0; s < spc; s++)
+            if (rd_secs(clus_lba(c) + s, sec, 1) || (r = e2v_ckea(first, size)) < 0)
+                return -1;
+            else if (r)
+                return 0;
         c = fat_get(c);
     }
     return -1;
+#endif
 }
 
 /* FSInfo: freie Cluster unbekannt (nach Belegen/Freigeben) */
 static void e2v_fsinfo(void)
 {
+#if E2V_FIXROOT
+}
+#else
     if (!fsis || fsis == 0xFFFF || rd_secs(fsis, sec, 1) || rd32(sec) != 0x41615252UL)
         return;
     wr32(sec + 488, 0xFFFFFFFFUL);
     wr_sec(fsis, sec);
 }
+#endif
 
 static int lfn_tovfat(void)
 {
@@ -356,7 +435,7 @@ static int lfn_tovfat(void)
         if (!yes())
             return 3;
     }
-    e2v_names = 0;
+    e2v_names = e2v_rootn = 0;
     if (e2v_run(first, size)) {
         puts("Nicht m\x94glich (Verzeichnis \x81" "ber 64 KB oder zu wenig Platz) - nichts ge\x84ndert.\n");
         return 3;
@@ -364,6 +443,11 @@ static int lfn_tovfat(void)
     e2v_fsinfo();
     put_num(e2v_names, 0);
     puts(" lange Namen nach VFAT \x81" "bertragen, EA DATA. SF gel\x94scht.\n");
+#if E2V_FIXROOT
+    if (e2v_names && !e2v_rootn)        /* AUTO erkennt VFAT am Stamm     */
+        puts("Im Stammverzeichnis steht kein langer Name: damit AT-DOS neue lange\n"
+             "Namen auch als VFAT schreibt, LONGNAMES=VFAT in die CONFIG.SYS setzen.\n");
+#endif
     return cv_err ? 3 : 0;
 }
 
@@ -392,9 +476,8 @@ static int v2e_dir(unsigned long dc, int phase)
     unsigned n, bytes, i, k, j, len, dirty = 0;
     unsigned char __far *e;
     unsigned long sub;
-    unsigned cb = spc << 9;
 
-    if ((bytes = e2v_read(dc ? dc : rootc, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(dc, e2v_old, &n)) == 0xFFFF)
         return -1;
     parts = 0;
     for (i = 0; i + 32 <= bytes; i += 32) {
@@ -458,7 +541,7 @@ static int v2e_dir(unsigned long dc, int phase)
         }
         parts = 0;
         if (!phase && (e[11] & 0x10) && e[0] != '.') {      /* Unterverzeichnis */
-            sub = ((unsigned long)rd16f(e + 20) << 16) | rd16f(e + 26);
+            sub = ENT_CLUS(e);
             if (valid(sub)) {
                 unsigned long __far *q = (unsigned long __far *)MK_FP(v2e_dq, 0);
                 unsigned long __far *cnt = q;           /* q[0] = Anzahl */
@@ -469,16 +552,12 @@ static int v2e_dir(unsigned long dc, int phase)
         }
     }
     if (phase && dirty)                 /* geaenderte Sektoren zurueck    */
-        for (k = 0; k < n; k++)
-            for (j = 0; j < spc; j++) {
-                unsigned at = (unsigned)(k * cb + (j << 9)), b;
-                if (at >= bytes)
-                    break;
-                for (b = 0; b < 512; b++)
-                    sec[b] = *fpb(e2v_old, at + b);
-                if (wr_sec(clus_lba(e2v_cl[k]) + j, sec))
-                    return -1;
-            }
+        for (k = 0; k < bytes; k += 512) {
+            for (j = 0; j < 512; j++)
+                sec[j] = *fpb(e2v_old, k + j);
+            if (wr_sec(e2v_slba(dc, k), sec))
+                return -1;
+        }
     return 0;
 }
 
@@ -522,7 +601,7 @@ static int v2e_write(void)
                 return -1;
         }
     }
-    if ((bytes = e2v_read(rootc, e2v_old, &n)) == 0xFFFF)
+    if ((bytes = e2v_dread(0, e2v_old, &n)) == 0xFFFF)
         return -1;
     for (slot = 0; slot + 32 <= bytes; slot += 32) {
         unsigned char x = *fpb(e2v_old, slot);
@@ -531,7 +610,7 @@ static int v2e_write(void)
     }
     if (slot + 32 > bytes)
         return -1;                      /* Stamm voll (selten)            */
-    if (rd_secs(clus_lba(e2v_cl[slot / cb]) + ((slot % cb) >> 9), sec, 1))
+    if (rd_secs(e2v_slba(0, slot), sec, 1))
         return -1;
     b = slot & 511;
     for (k = 0; k < 32; k++)
@@ -552,7 +631,7 @@ static int v2e_write(void)
         wr16(sec + b + 14, dt[1]);
         wr16(sec + b + 18, dt[0]);
     }
-    return wr_sec(clus_lba(e2v_cl[slot / cb]) + ((slot % cb) >> 9), sec);
+    return wr_sec(e2v_slba(0, slot), sec);
 }
 
 static int lfn_toea(void)

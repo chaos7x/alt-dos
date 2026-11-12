@@ -3,11 +3,12 @@
  * CONVERT.EXE - Dateisystem eines Laufwerks umwandeln (wie Windows NT):
  *
  *   CONVERT Laufwerk: /FS:FAT32 [/V]
- *   CONVERT Laufwerk: /LFN:VFAT | /LFN:EA   lange Namen umwandeln (FAT32)
+ *   CONVERT Laufwerk: /LFN:VFAT | /LFN:EA   lange Namen umwandeln
  *
  * Wie FORMAT und CHKDSK nur der Verteiler: erst CHKDSK Laufwerk: (bricht
  * bei Fehlern ab), dann U<Ziel>.EXE Laufwerk: /CONVERT aus \DOS\SYSTEM
- * des Startlaufwerks. Heute: FAT16 -> FAT32 (UFAT32.EXE, ufat32_conv.c).
+ * des Startlaufwerks. Heute: FAT16 -> FAT32 (UFAT32.EXE, ufat32_conv.c),
+ * lange Namen auf FAT12/16 (UFAT.EXE) und FAT32 (UFAT32.EXE, ufat_e2v.c).
  * ERRORLEVEL: 0 umgewandelt, 3 abgebrochen/Fehler, 4 falscher Aufruf.
  */
 #include "fapi.h"
@@ -82,7 +83,7 @@ void main(void)
                  "  /FS:FAT32  FAT16-Partition in FAT32 umwandeln (kleinere\r\n"
                  "             Zuordnungseinheiten, mehr Platz); nicht umkehrbar\r\n"
                  "  /LFN:VFAT  lange Namen aus EA DATA. SF in VFAT-Eintr\x84ge (wie\r\n"
-                 "             Windows 95/98) - nur FAT32\r\n"
+                 "             Windows 95/98)\r\n"
                  "  /LFN:EA    lange VFAT-Namen nach EA DATA. SF (zur\x81" "ck)\r\n"
                  "  /V         Einzelheiten anzeigen\r\n\r\n"
                  "Vorher wird das Laufwerk mit CHKDSK gepr\x81" "ft.\r\n");
@@ -94,17 +95,21 @@ void main(void)
             DosExit(4);
         }
     }
-    if (d != 0xFFFF && lfn[0]) {        /* lange Namen umwandeln (FAT32) */
+    if (d != 0xFFFF && lfn[0]) {        /* lange Namen umwandeln         */
+        const char *u;
         if (!same(lfn, "VFAT") && !same(lfn, "EA")) {
             puts("Aufruf: CONVERT Laufwerk: /LFN:VFAT oder /LFN:EA\r\n");
             DosExit(4);
         }
-        if (DosQFSInfo(d, &fi) || !same(fi.fsname, "FAT32")) {
-            puts("Lange Namen umwandeln geht nur auf FAT32-Laufwerken.\r\n");
+        if (DosQFSInfo(d, &fi) || (fi.flags & FSI_READONLY) ||
+            (!same(fi.fsname, "FAT32") && !same(fi.fsname, "FAT"))) {
+            puts("Lange Namen umwandeln geht nur auf beschreibbaren FAT-Laufwerken.\r\n");
             DosExit(3);
         }
-        if (sys_prog(path, "SYSTEM\\", "UFAT32.EXE") || sys_prog(chk, "", "CHKDSK.EXE")) {
-            puts("UFAT32.EXE oder CHKDSK.EXE fehlt.\r\n");
+        u = same(fi.fsname, "FAT32") ? "UFAT32.EXE" : "UFAT.EXE";
+        if (sys_prog(path, "SYSTEM\\", u) || sys_prog(chk, "", "CHKDSK.EXE")) {
+            puts(u);
+            puts(" oder CHKDSK.EXE fehlt.\r\n");
             DosExit(3);
         }
         puts("Das Laufwerk wird gepr\x81" "ft ...\r\n");

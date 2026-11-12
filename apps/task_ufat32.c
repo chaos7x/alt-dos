@@ -6,7 +6,7 @@
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
  *   UFAT32 Laufwerk: /CONVERT [/V] [/EA]  FAT16 -> FAT32 (ufat32_conv.c),
  *                     lange Namen nach VFAT, mit /EA in EA DATA. SF lassen
- *   UFAT32 Laufwerk: /LFN:VFAT | /LFN:EA  lange Namen umwandeln (ufat32_e2v.c)
+ *   UFAT32 Laufwerk: /LFN:VFAT | /LFN:EA  lange Namen umwandeln (ufat_e2v.c)
  *
  * Wie UFAT, aber fuer grosse Datentraeger gebaut: die FAT (bei FAT32
  * leicht viele MB) bleibt auf der Platte und wird ueber einen kleinen

@@ -78,9 +78,12 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   gelöscht – mit `LONGNAMES=EA` in der CONFIG.SYS bleiben sie in der
   EA-Datei, und FAT32 benutzt dann ebenfalls das EA-Format (bei AUTO,
   wenn im Stamm eine `EA DATA. SF` liegt). `CONVERT X: /LFN:VFAT` bzw.
-  `/LFN:EA` wandelt die langen Namen eines FAT32-Laufwerks nachträglich
-  in die eine oder andere Form (hin und zurück; Zeichen außerhalb CP437
-  werden beim Weg nach EA zu `_`)
+  `/LFN:EA` wandelt die langen Namen eines FAT-Laufwerks (FAT12/16/32,
+  auch Disketten) nachträglich in die eine oder andere Form (hin und
+  zurück; Zeichen außerhalb CP437 werden beim Weg nach EA zu `_`; der
+  feste Stamm von FAT12/16 wächst nicht – passt etwas nicht, bleibt alles,
+  wie es war). Umleitungen nehmen Namen in Anführungszeichen
+  (`echo x > "Brief an Hans.txt"`)
 - Gerätetreiber als Dateien: `CONFIG.SYS` lädt per `DEVICE=` Ring-0-Treiber,
   die über DevHlp mit dem Kernel sprechen. Dabei: `AHA154X.SYS` (Adaptec
   AHA-1540/1542, SCSI, Busmaster mit Mailboxen; läuft auch mit dem

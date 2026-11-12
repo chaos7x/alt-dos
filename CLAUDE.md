@@ -381,7 +381,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Vom Nutzer in 86Box bestätigt: seine Spiele-Platte (FAT16) mit CONVERT
   nach FAT32 umgewandelt.
   EA -> VFAT beim Umwandeln (Wunsch des Nutzers: „außer in der CONFIG.SYS
-  steht was anderes“; in QEMU geprüft): `apps/ufat32_e2v.c` nach Teil B
+  steht was anderes“; in QEMU geprüft): `apps/ufat_e2v.c` (früher ufat32_e2v.c) nach Teil B
   (neues FAT32 steht, fc_get/fat_put/clus_lba gelten): EA-Datei (bis
   64 KB) in ein Segment, je Verzeichnis mit Sätzen (`e2v_pass`, erst
   prüfen, dann schreiben) die Kette (bis 64 KB, `e2v_cl`) lesen, vor jeden
@@ -399,7 +399,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   lange Namen landen dort, nach Neustart mit AUTO weiter sichtbar.
   Nachträglich (Wunsch des Nutzers, abgestimmt: FAT32 zuerst, Aufruf
   über CONVERT): `CONVERT X: /LFN:VFAT|EA` -> CHKDSK, dann `UFAT32 X:
-  /LFN:VFAT|EA` (ufat32_e2v.c, ohne Bitmaps): VFAT = `e2v_locate` +
+  /LFN:VFAT|EA` (ufat_e2v.c, ohne Bitmaps): VFAT = `e2v_locate` +
   e2v_run wie beim Umwandeln; EA = `lfn_toea`: alle Verzeichnisse (Stamm
   + Warteschlange bis 16.383, je bis 64 KB) ablaufen, VFAT-Ketten mit
   passender Prüfsumme als Sätze (UCS-2 -> CP437 über cp437u, sonst `_`,
@@ -411,7 +411,21 @@ Win32s), nicht vorziehen, sondern nachfragen.
   auf FAT32 hinter Cluster 65.535 hätten Sätze nicht mehr gepasst.
   Reihenfolge danach (Entscheidung des Nutzers): SVGA-Zustand der DOS-
   Boxen (erledigt, s. virtuelle VGA), ISA-PnP (erledigt, s. Busdienste),
-  dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
+  dann /LFN auch für FAT12/16 – erledigt (in QEMU geprüft: FAT16 mit
+  6 EA-Namen in Stamm, Unter-/Unterunterordner und gemischter
+  Schreibung -> VFAT (mtools zeigt alle, fsck sauber) -> EA -> VFAT,
+  mdir vorher/nachher gleich; FAT12-Diskette mit langem Namen nur im
+  Unterordner): `ufat_e2v.c` gilt für UFAT und UFAT32, der Gastgeber
+  setzt `E2V_FIXROOT` (fester Stamm root_lba/rootents: `e2v_dread`
+  liest ihn, `e2v_slba` rechnet Sektoren, er wächst nicht – passt die
+  VFAT-Kette nicht, bleibt alles EA), `E2V_USED(d)`, `ENT_CLUS(e)`
+  (FAT12/16 nur Byte 26/27 – OS/2 legt bei 14h den EA-Verweis ab). UFAT
+  hatte Platz genug (Code 15 KB, Daten 43 KB; „knapp an 64 KB“ galt
+  vor der Trennung von Code und Daten). CONVERT nimmt UFAT.EXE für
+  „FAT“. Steht danach kein langer Name im Stamm, erkennt AUTO das
+  Laufwerk beim Einhängen als EA (Kernel prüft nur den Stamm) – UFAT
+  rät dann zu `LONGNAMES=VFAT`. Dabei behoben: CMD-Umleitung `>
+  "Name mit Leerzeichen"` (take_name kannte keine Anführungszeichen).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das

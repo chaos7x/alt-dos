@@ -362,7 +362,10 @@ static int set_ptype(unsigned long start, unsigned char old)
     return -1;
 }
 
-#include "ufat32_e2v.c"
+#define E2V_FIXROOT 0
+#define E2V_USED(d) (used32 += (d))
+#define ENT_CLUS(e) (((unsigned long)rd16f((e) + 20) << 16) | rd16f((e) + 26))
+#include "ufat_e2v.c"
 
 static int do_convert(void)
 {
