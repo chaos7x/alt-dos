@@ -988,6 +988,26 @@ Platten (Stand der cfg): IDE am Board, Master `atdos-hd.img` (130/16/63),
 Slave 100 MB (776/8/33); am Adaptec SCSI-ID 6 CD-ROM (für Adaptec-Tests
 hängt der Nutzer zeitweise eine SCSI-Platte an ID 0).
 
+86Box in der Umgebung (Erlaubnis des Nutzers, 12.11.2026): Quelltext
+nach /tmp/claude-0/ref/86Box (git clone), gebaut ohne Qt: apt
+libsdl2-dev libfreetype-dev libpng-dev libopenal-dev libslirp-dev
+libsndfile1-dev libevdev-dev libxkbcommon-dev libzstd-dev, dann `cmake
+-G Ninja -DQT=OFF -DSDL2=ON -DRTMIDI=OFF -DFLUIDSYNTH=OFF`, ninja (~10
+min). ROMs aus github.com/86Box/roms als sparse checkout (nur
+machines/<Board>, sound/creative, video/…, floppy, hdd, scsi; 13 MB).
+Lauf unter `Xvfb :99` mit `86Box -P <vm-Ordner> -R <roms>`, 86box.cfg
+im vm-Ordner (`vid_renderer = sdl_software`), Monitor-Befehle über
+stdin (fifo: fddload, screenshot, hardreset, exit), Tasten mit
+`xdotool key/type --window`, Bild mit `import -window root`. Nach dem
+Start meldet das BIOS einen CMOS-Fehler -> F1. Nicht ins Repository.
+Erster Test: 486 PVI-4SP3 (`486sp3`, Award 07/22/94, kein PnP-BIOS),
+16 MB, ET4000/W32p PCI, AWE32 PnP – ISA-PnP schaltet CTL0031 (220h/
+330h/388h, IRQ 5, DMA 1/5), CTL2011 (IDE 168h/36Eh, IRQ 10), CTL7001
+(200h) und CTL0021 (620h) ein, SB16.SYS findet „DSP 4.13 an 220h“.
+Dabei gesehen: dieses Board (Intel 420TX) nutzt PCI-Mechanismus 2 –
+der Kernel kennt nur 1 und meldet „ISA (AT)“; FM-Erkennung meldet
+auf der AWE32 „OPL2“ (sollte OPL3 sein).
+
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 Der Nutzer will AT-DOS auch in Proxmox (KVM) laufen lassen: SeaBIOS,
 i440fx, Platte an IDE oder am „LSI 53C895A“ (NCR8XX.SYS), nicht VirtIO.
@@ -1438,7 +1458,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Start unverändert, SB16 (nicht PnP) weiter erkannt, isapc mit 4 MB.
   86Box: SB16 PnP / AWE32 PnP starten dort ohne Ressourcen (nur PnP-BIOS
   oder Betriebssystem stellen sie ein, src/sound/snd_sb.c) – Test nur
-  beim Nutzer. Offen: AWE32-Wavetable (620h), Einstellungen von Hand.
+  beim Nutzer. Danach in 86Box (hier gebaut, s. „Bauen und testen“)
+  bestätigt: AWE32 PnP auf dem 486 PVI-4SP3 – alle vier logischen Geräte
+  eingeschaltet, SB16.SYS findet die Karte, MSD listet sie. Offen:
+  AWE32-Wavetable (620h), Einstellungen von Hand.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
