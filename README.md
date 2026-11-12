@@ -111,7 +111,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
   bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt.
   Joliet-CDs (Windows 95) zeigen lange Namen in Originalschreibung (auch
-  Umlaute); ältere Programme bekommen 8.3-Ersatznamen wie Windows
+  Umlaute), ebenso CDs nach ISO 9660:1999 (Namen bis 207 Zeichen) und
+  Unix-CDs mit Rock Ridge (Namen bis 255 Zeichen, UTF-8, auch tiefe
+  Verzeichnisse); gibt es mehrere, gilt Joliet; ältere Programme bekommen 8.3-Ersatznamen wie Windows
   (`BRIEFA~1.TXT`), beide Namen gehen in Pfaden. `VOL` zeigt die
   Bezeichnung der CD
 - Unicode-Dateinamen verlustfrei (Stufe 1): Namen mit Zeichen außerhalb

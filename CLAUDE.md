@@ -1360,10 +1360,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Groß/klein und Ersatznamen (`STAMM~k.EXT`). Neue Modulaufrufe
   `IFSM_LABEL` (Bezeichnung aus dem PVD, VOL) und `IFSM_NAMEPATH` (CD
   zeigt `D:\Neuer Ordner`, alte Programme bekommen 8.3) -> `mod_label`/
-  `mod_namepath` im Kernel. Offen: ISO 9660:1999 (Level 4, bis 207
-  Zeichen) und Rock Ridge. Kopieren auf FAT braucht dann die
-  `.LONGNAME`-EAs (siehe unten), sonst 8.3-Ersatznamen. UDF (DVD, ab 1996)
-  als eigenes `UDF.IFS` – zeitlich DOS 6.0/7.0.
+  `mod_namepath` im Kernel. UDF (DVD, ab 1996) als eigenes `UDF.IFS` –
+  zeitlich DOS 6.0/7.0.
+  ISO 9660:1999 und Rock Ridge erledigt (in QEMU geprüft mit genisoimage:
+  `-R`, `-iso-level 4 -D`, `-J -joliet-long -R` und ohne alles; Baum mit
+  206-Zeichen-Namen, UTF-8-Namen (Größe, Griechisch), `Neuer Ordner`,
+  10 Ebenen tief: DIR /B, DIR "d:\neuer ordner", TYPE der tiefen Datei,
+  XCOPY D:\ C:\CDT\ /S /E – der griechische Name steht auf dem EA-
+  Laufwerk als W-Satz im Original): `mount` wählt Joliet vor dem EVD
+  (Deskriptor Typ 2, Version 2 = ISO 9660:1999, Namen bis 207 Byte ohne
+  `;1`) vor Rock Ridge (SP BE EF am Anfang des System Use im "." des
+  Stamms, `sp_skip`) vor reinem ISO. `lng` = lange Namen (8.3-Ersatz-
+  namen, uni_tell), `bytes` = Namen als Bytes -> `name_bytes`: gültiges
+  UTF-8 (2/3 Byte, 4 Byte -> `_`) sonst Latin-1, dann uni2cp wie Joliet.
+  Rock Ridge (`su_parse` hinter Name + Füllbyte + sp_skip): NM-Teile
+  sammeln (ohne CURRENT/PARENT), CE-Fortsetzungen (bis 4) und CL
+  (verlegtes tiefes Verzeichnis: Größe aus dessen "."-Eintrag) liest
+  `getent` nach und lädt danach den Verzeichnisblock wieder in den
+  DMA-Puffer; Einträge mit RE fallen weg, `rr_moved` im Stamm ist
+  versteckt. Rechte (PX), Zeiten (TF) und Links (SL) bleiben unbenutzt.
+  Joliet geht vor Rock Ridge (Entscheidung beim Bau, wie Windows): auf
+  CDs mit beidem kürzt Joliet lange Namen auf seine Grenze (64 bzw. 103
+  Zeichen mit -joliet-long). Modul danach 6,1 KB.
 - `COPY` mit Verketten (`A+B [Ziel]`, ohne Ziel an A anhängen) und Datum/
   Uhrzeit der Quelle (wie MS-DOS) – erledigt, in QEMU geprüft. Verketten
   binär (kein ^Z-Textmodus). `HELP Befehl` = `Befehl /?`, `HELP` zeigt
