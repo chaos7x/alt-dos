@@ -680,6 +680,7 @@ selbst nur 8.3 kennt.
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste / 2 ISA-PnP-Gerät, CX = Nummer, DX = struct fapi_pcidev, fapi_res bzw. fapi_pnpdev → 0, FAPI_ERROR am Ende (MSD) |
 | 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,5 MB Bild) oder bei VBE 1.2 mit 64-KB-Fenster (ohne 24 Bit; `model` Bit 7 = `VESA_BANKED`) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte) → 0: kürzen oder mit Nullen verlängern (wie OS/2) |
+| 85 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
@@ -753,9 +754,14 @@ Busmaster-DMA (6.0): sitzt der IDE-Controller am PCI (PIIX3/4 wie im
 ASUS P3B-F, QEMU) im Kompatibilitätsmodus und hat das BIOS der Platte
 einen DMA-Modus eingestellt, überträgt `IDE.SYS` per READ/WRITE DMA
 direkt in den Puffer (PRD-Tabelle, Startmeldung „Busmaster-DMA“);
-`/NODMA` schaltet es ab, `/DMA` stellt Multiword-DMA 2 ein, wenn das BIOS
-keinen Modus gesetzt hat (SeaBIOS/QEMU). Nach Fehlern geht die Platte
-auf PIO zurück. CD-ROMs bleiben bei PIO.
+`/NODMA` schaltet es ab, `/DMA` stellt selbst einen Modus ein, wenn das
+BIOS keinen gesetzt hat (SeaBIOS/QEMU): am Intel PIIX4 UDMA bis Modus 2
+(Platte und Chipsatz), sonst Multiword-DMA 2; die Startmeldung nennt den
+Modus. Nach Fehlern geht die Platte auf PIO zurück. CD-ROMs bleiben bei
+PIO. Platten über 128 GB (LBA48) werden ganz genutzt – bis 2 TB, weil
+der Kernel Sektoren mit 32 Bit zählt; Startmeldung „… GB (LBA48)“.
+`EJECT X:` wirft CDs (IDE/ATAPI, SCSI) und SCSI-Wechselplatten (ZIP, MO)
+aus, solange dort keine Datei offen ist.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.

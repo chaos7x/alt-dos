@@ -58,6 +58,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosOpenDrive(d, mode)  F2(FAPI_OPENDRIVE, (d), (mode))  /* DRV_OPEN_* */
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
+#define DosEject(d)         fapi_call(FAPI_EJECT, (d), 0, 0)
 #define DosProc(w, i, p)    fapi_call(FAPI_PROC, (w), (i), (unsigned short)(p))   /* struct fapi_proc */
 #define DosBusInfo(w, i, p) fapi_call(FAPI_BUSINFO, (w), (i), (unsigned short)(p))
 #define VioVesa(sub, n, p)  fapi_call(FAPI_VESA, (sub), (n), (unsigned short)(p))   /* struct fapi_vesamode */

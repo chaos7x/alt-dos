@@ -58,6 +58,10 @@ struct unit {
     unsigned char  chs;
     unsigned char  atapi;               /* CD-ROM: Paketbefehle            */
     unsigned char  old;                 /* WD1003: kein IDENTIFY, kein FLUSH */
+    unsigned char  lba48;               /* Platte ueber 128 GB (EXT-Befehle) */
+    unsigned char  udma;                /* UDMA-Modi 0-2 der Platte (Bitmaske) */
+    unsigned char  mode;                /* eingestellt: 0 keiner, 1-3 MWDMA 0-2,
+                                           10h+n UDMA n                   */
     unsigned char  dma;                 /* 1 DMA-Modus eingestellt, 2 nur
                                            moeglich (mit /DMA einstellen),
                                            3 Busmaster benutzen         */
@@ -196,6 +200,9 @@ void outl(unsigned port, unsigned lo, unsigned hi);
     __parm [__dx] [__ax] [__bx] __modify __exact [];
 
 static unsigned bm_base[2];             /* 0 = kein Busmaster am Kanal   */
+static unsigned bm_loc;                 /* PCI-Ort des Controllers       */
+static unsigned bm_piix4;               /* Intel PIIX4 (8086:7111): UDMA 0-2
+                                           selbst einstellbar             */
 static unsigned char prdbuf[48];        /* PRD-Tabellen je Kanal, je 16
                                            Byte auf 16 ausgerichtet (keine
                                            64-KB-Grenze)                 */
@@ -223,6 +230,8 @@ static void bm_find(void)
             continue;
         bm_base[0] = (unsigned)v & 0xFFFC;
         bm_base[1] = bm_base[0] + 8;
+        bm_loc = loc;
+        bm_piix4 = pci_rd(loc, 0x00) == 0x71118086UL;
         v = pci_rd(loc, 0x04);
         if (!(v & 4))                           /* Busmaster an          */
             pci_wr(loc, 0x04, v | 5, 2);
@@ -344,6 +353,22 @@ static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
         outp(b + R_SECTOR, (unsigned char)(sec + 1));   /* ab 1      */
         outp(b + R_CYL_LO, (unsigned char)cyl);
         outp(b + R_CYL_HI, (unsigned char)(cyl >> 8));
+    } else if (u->lba48 && l + n > 0x0FFFFFFFUL) {
+        /* LBA48 nur hinter der 28-Bit-Grenze (128 GB): jedes Register
+           zweimal, erst die hohen Bytes (Zaehler 15-8, LBA 31-24, 39-32,
+           47-40 - die beiden oberen sind bei 32-Bit-Sektornummern 0),
+           dann die niedrigen; Befehl als EXT-Fassung */
+        outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel));
+        outp(b + R_COUNT, 0);
+        outp(b + R_SECTOR, (unsigned char)(l >> 24));
+        outp(b + R_CYL_LO, 0);
+        outp(b + R_CYL_HI, 0);
+        outp(b + R_COUNT, (unsigned char)n);
+        outp(b + R_SECTOR, (unsigned char)l);
+        outp(b + R_CYL_LO, (unsigned char)(l >> 8));
+        outp(b + R_CYL_HI, (unsigned char)(l >> 16));
+        cmd = cmd == 0x20 ? 0x24 : cmd == 0x30 ? 0x34 : cmd == 0xC8 ? 0x25 :
+              cmd == 0xCA ? 0x35 : cmd;
     } else {
         outp(b + R_DRIVE, (unsigned char)(0xE0 | u->sel |
                                            ((unsigned)(l >> 24) & 0x0F)));
@@ -473,7 +498,7 @@ static void probe(int ch, int dev)
     unsigned char s, sig1, sig2;
     static unsigned c, h, sp;               /* static: SS ist nicht DS (-zu) */
     char *p;
-    int bios;
+    int bios, i;
 
     outp(base + R_DRIVE, (unsigned char)(0xA0 | (dev << 4)));
     settle(ctl);
@@ -541,14 +566,32 @@ static void probe(int ch, int dev)
     u->atapi = 0;
     u->old = 0;
     u->dma = 0;
+    u->lba48 = 0;
+    u->udma = (unsigned char)((id[53] & 4) ? id[88] & 0x07 : 0);
+    u->mode = 0;
     if (id[49] & 0x0100) {                  /* DMA moeglich             */
-        if ((id[63] & 0x0700) || ((id[53] & 4) && (id[88] & 0x7F00)))
-            u->dma = 1;                     /* Modus eingestellt (BIOS) */
-        else if (id[63] & 0x0004)
-            u->dma = 2;                     /* MWDMA 2 ginge            */
+        if ((id[53] & 4) && (id[88] & 0x7F00)) {
+            u->dma = 1;                     /* UDMA eingestellt (BIOS)  */
+            for (i = 0; i < 7 && !(id[88] & (0x100 << i)); i++)
+                ;
+            u->mode = (unsigned char)(0x10 + i);
+        } else if (id[63] & 0x0700) {
+            u->dma = 1;                     /* MWDMA eingestellt        */
+            u->mode = (unsigned char)(id[63] & 0x0400 ? 3 : id[63] & 0x0200 ? 2 : 1);
+        } else if ((id[63] & 0x0004) || u->udma)
+            u->dma = 2;                     /* ginge, mit /DMA einstellen */
     }
     bios = 0;
     n = id[60] | ((unsigned long)id[61] << 16);     /* LBA-Sektoren */
+    if ((id[83] & 0x4400) == 0x4400 && (id[49] & 0x0200)) {   /* LBA48 */
+        unsigned long n48 = id[100] | ((unsigned long)id[101] << 16);
+        if (id[102] || id[103])
+            n48 = 0xFFFFFFFFUL;         /* ueber 2 TB: Kernel rechnet 32 Bit */
+        if (n48 > 0x0FFFFFFFUL) {
+            n = n48;
+            u->lba48 = 1;
+        }
+    }
     if (!(id[49] & 0x0200) || n == 0) {
         /* kein LBA: aktuelle Geometrie (Wort 54-56); sonst die des BIOS,
            wenn sie in die Platte passt (ESDI: BIOS stellt weniger ein),
@@ -580,14 +623,20 @@ static void probe(int ch, int dev)
     p = where(ch, dev);
     p = model(p);
     p = scat(p, ", ");
-    p = udec(p, (unsigned)(n >> 11));
-    scat(p, !u->chs ? " MB\n" : bios ? " MB (CHS, BIOS)\n" : " MB (CHS)\n");
+    if ((n >> 11) > 65535UL) {          /* ab 64 GB in GB              */
+        p = udec(p, (unsigned)(n >> 21));
+        scat(p, u->lba48 ? " GB (LBA48)\n" : " GB\n");
+    } else {
+        p = udec(p, (unsigned)(n >> 11));
+        scat(p, !u->chs ? " MB\n" : bios ? " MB (CHS, BIOS)\n" : " MB (CHS)\n");
+    }
     dputs(line);
 }
 
-/* SET FEATURES 03h: Multiword-DMA 2 (nur mit /DMA, wenn das BIOS keinen
-   Modus eingestellt hat - z. B. SeaBIOS in QEMU); 0 = ok */
-static int set_mwdma2(struct unit *u)
+/* SET FEATURES 03h (Transfermodus): 22h Multiword-DMA 2, 40h+n UDMA n
+   (nur mit /DMA, wenn das BIOS keinen Modus eingestellt hat - z. B.
+   SeaBIOS in QEMU); 0 = ok */
+static int set_xfer(struct unit *u, unsigned char m)
 {
     unsigned b = u->base;
     outp(b + R_DRIVE, (unsigned char)(0xA0 | u->sel));
@@ -595,7 +644,7 @@ static int set_mwdma2(struct unit *u)
     if (wait_idle(b, 300))
         return -1;
     outp(b + R_ERROR, 0x03);
-    outp(b + R_COUNT, 0x22);
+    outp(b + R_COUNT, m);
     outp(b + R_CMD, 0xEF);
     settle(u->ctl);
     return wait_status(b, 0, 0, 300);
@@ -646,16 +695,41 @@ static void init(void)
             u->dma = 0;
             continue;
         }
-        if (u->dma == 2) {                  /* /DMA: MWDMA 2 einstellen  */
-            if (!has_opt(r->args, "/DMA") || set_mwdma2(u)) {
+        if (u->dma == 2) {                  /* /DMA: Modus selbst einstellen */
+            if (!has_opt(r->args, "/DMA")) {
                 u->dma = 0;
                 continue;
+            }
+            if (bm_piix4 && u->udma) {      /* PIIX4: UDMA bis 2 (33 MB/s) */
+                unsigned m = u->udma & 4 ? 2 : u->udma & 2 ? 1 : 0;
+                unsigned dv = u->sel ? 1 : 0, b = u->ch * 2 + dv;
+                unsigned long v;
+                if (set_xfer(u, (unsigned char)(0x40 | m)) == 0) {
+                    v = pci_rd(bm_loc, 0x48);   /* 48h UDMACTL, 4Ah UDMATIM */
+                    v |= 1UL << b;              /* UDMA fuer diese Platte    */
+                    v &= ~(3UL << (16 + u->ch * 8 + dv * 4));
+                    v |= (unsigned long)m << (16 + u->ch * 8 + dv * 4);
+                    pci_wr(bm_loc, 0x48, v, 4);
+                    u->mode = (unsigned char)(0x10 + m);
+                }
+            }
+            if (!u->mode) {
+                if (set_xfer(u, 0x22)) {    /* sonst Multiword-DMA 2     */
+                    u->dma = 0;
+                    continue;
+                }
+                u->mode = 3;
             }
         }
         u->dma = 3;
         p = scat(line, "  Einheit ");
         p = udec(p, (unsigned)i);
-        scat(p, ": Busmaster-DMA\n");
+        p = scat(p, ": Busmaster-DMA");
+        if (u->mode) {
+            p = scat(p, u->mode & 0x10 ? ", UDMA " : ", Multiword-DMA ");
+            p = udec(p, u->mode & 0x10 ? u->mode & 0x0F : u->mode - 1);
+        }
+        scat(p, "\n");
         dputs(line);
     }
     r->units = (unsigned char)nunit;
@@ -856,6 +930,20 @@ static void xfer(struct drv_req __far *r, int write)
     r->status = DRV_ERR_IO;
 }
 
+/* CD auswerfen: PREVENT ALLOW (1Eh, 0) und START STOP UNIT (1Bh, LoEj) */
+static void eject(struct drv_req __far *r)
+{
+    struct unit *u = &unit[r->unit];
+    r->status = DRV_ERR_CMD;
+    if (!u->atapi)
+        return;
+    pkt_clear(u, 0x1E);
+    atapi_pkt(u, 0, 0, 0);
+    pkt_clear(u, 0x1B);
+    pkts[u->ch][4] = 0x02;
+    r->status = atapi_pkt(u, 0, 0, 0) ? DRV_ERR_IO : DRV_OK;
+}
+
 /* FLUSH CACHE an alle Platten; aeltere Platten kennen den Befehl nicht
    und brechen ihn ab - die haben dann auch keinen Schreib-Cache */
 static void flush(void)
@@ -899,6 +987,12 @@ void strategy(void)
         break;
     case DRV_FLUSH:
         flush();
+        break;
+    case DRV_EJECT:
+        if (r->unit >= nunit)
+            r->status = DRV_ERR_IO;
+        else
+            eject(r);
         break;
     default:
         r->status = DRV_ERR_CMD;

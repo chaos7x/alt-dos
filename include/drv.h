@@ -32,6 +32,10 @@ struct drv_header {
                                        oder NOTREADY, count = 1 gewechselt
                                        (seit der letzten Frage), lba = Sektoren */
 
+#define DRV_EJECT       6           /* Medium auswerfen (CD, ZIP, MO):
+                                       START STOP UNIT mit LoEj -> OK,
+                                       sonst ERR_CMD (kann es nicht)      */
+
 #define DRV_MAXUNITS    8
 
 #define DRV_OK          0

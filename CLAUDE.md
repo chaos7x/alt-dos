@@ -3281,8 +3281,40 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `/NODMA`. CD-ROMs bleiben PIO. Vom Nutzer auf dem P3B-F bestätigt:
   „IDE-Busmaster an D800h, Einheit 0: Busmaster-DMA“ (Award stellt den
   Modus ein); CD -> IDE-Platte kopiert (744 MB, 1.054 Dateien), FC /B
-  auf die 200-MB-Datei gleich, CHKDSK ohne Fehler. Offen: LBA48, UDMA-Zeiten
-  selbst einstellen.
+  auf die 200-MB-Datei gleich, CHKDSK ohne Fehler.
+  LBA48 (in QEMU geprüft: 200-GB-Platte, FAT32-Partition ab Sektor
+  300.000.000 = 143 GB, vorher mit mtools beschriebene Datei gelesen,
+  XCOPY \DOS hin, Inhalte gleich, fsck sauber): IDENTIFY Wort 83 Bit
+  10 + Wort 100–103 (`u->lba48` nur über 0FFFFFFFh Sektoren, über
+  2^32 gekappt – der Kernel zählt 32 Bit, also bis 2 TB). `issue`
+  nimmt die EXT-Befehle (24h/34h/25h/35h) nur, wenn der Auftrag über die
+  28-Bit-Grenze reicht; Register doppelt, hohe Bytes zuerst. Start-
+  meldung ab 64 GB in GB („(LBA48)“).
+  UDMA selbst einstellen (`/DMA`, nur wenn das BIOS keinen Modus gesetzt
+  hat): am Intel PIIX4 (8086:7111, `bm_piix4`) UDMA 0–2 – SET FEATURES
+  03h mit 40h+n (`set_xfer`, früher set_mwdma2) und Chipsatz: 48h Bit
+  Kanal·2+Platte (UDMACTL), 4Ah Feld bei Kanal·8 + Platte·4 (UDMATIM);
+  sonst Multiword-DMA 2 wie bisher. Ohne Chipsatz-Umstellung liefe die
+  Platte in UDMA und der PIIX im alten Takt – deshalb nur dieser
+  Controller. Startmeldung nennt den Modus (`u->mode` aus Wort 88/63,
+  auch wenn das BIOS ihn gesetzt hat). In QEMU (PIIX3) nur der Weg
+  Multiword-DMA 2 geprüft (XCOPY, fsck sauber); UDMA am PIIX4 nur in
+  86Box mit abgeschaltetem DMA im BIOS prüfbar.
+  EJECT (in QEMU geprüft: CD am IDE und Wechselplatte `scsi-hd,
+  removable=on` am lsi53c895a – `info block` zeigt danach „tray open“,
+  DIR meldet „keine CD/kein Medium eingelegt“, nach `change` wieder da,
+  vorher geschriebene Datei erhalten; C: abgelehnt): Treiberbefehl
+  `DRV_EJECT` (6): NCR8XX/AHA154X/NCR5380 PREVENT ALLOW (1Eh, 0), dann
+  START STOP UNIT (1Bh, Byte 4 = 02h), `chg` gesetzt; IDE.SYS dasselbe als
+  ATAPI-Paket (nur CDs). FAPI 55h `DosEject` (kernel.c): nur Wechsel-
+  platten und CDs, FAPI_ERR_INUSE bei offenen Dateien, vol_lock, dann
+  `blk_eject` (Cache des Geräts weg, blk_nm/blk_chg), FAT-Volumes neu
+  einhängen (das CD-Modul prüft selbst – vol_reset machte daraus
+  „Ungültiges Laufwerk“). `EJECT.EXE` (apps/task_eject.c).
+  NCR synchron/Wide: geprüft und zurückgestellt (12.11.2026) – 86Box und
+  QEMU beantworten SDTR immer mit Offset 0 (asynchron, scsi_ncr53c8xx.c
+  `ncr53c8xx_do_sdtr(dev, arg, 0x00)`), Wide nur am 875 mit „wide“, und
+  die Emulation wird dadurch nicht schneller. Erst mit echter Hardware.
 - APM (Phase 5, Rest; in QEMU geprüft: SHUTDOWN /NOW schaltet aus, QEMU
   endet, fsck sauber; mit `APM=OFF` die alte Meldung; VESA unverändert):
   Ausschalten über die Real-Mode-Schnittstelle des APM-BIOS wie POWER.EXE

@@ -177,6 +177,11 @@ struct fapi_sysinfo {
                                        verlaengern (wie DosNewSize bei OS/2) */
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (6.0, Taskmanager) */
+#define FAPI_EJECT          0x55    /* BX = Laufwerk (0 = A:): Medium auswerfen
+                                       (CD, ZIP, MO) -> 0, FAPI_ERR_INUSE
+                                       (Dateien offen), FAPI_ERR_DENIED (kein
+                                       Wechseldatentraeger / Treiber kann es
+                                       nicht), FAPI_ERROR (Fehler) */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
 #define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne
                                        Rueckfrage an das Programm) -> 0,

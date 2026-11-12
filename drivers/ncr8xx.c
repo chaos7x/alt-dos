@@ -529,6 +529,22 @@ static void media(void)
     r->status = DRV_OK;
 }
 
+/* Auswerfen: erst Entnahme erlauben (PREVENT ALLOW 1Eh mit 0), dann
+   START STOP UNIT (1Bh) mit LoEj = 1, Start = 0 */
+static void eject(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned u = r->unit;
+    r->status = DRV_ERR_CMD;
+    if (u >= nunits || (!rem[u] && bsz[u] == 512))
+        return;
+    cdb6(0x1E, 0);
+    run(target[u], 6, 0, 0, 300);
+    cdb6(0x1B, 0x02);
+    r->status = run(target[u], 6, 0, 0, 1000) == SCSI_OK ? DRV_OK : DRV_ERR_IO;
+    chg[u] = 1;
+}
+
 static void flush(void)
 {
     unsigned u, i;
@@ -563,6 +579,9 @@ void strategy(void)
         break;
     case DRV_MEDIA:
         media();
+        break;
+    case DRV_EJECT:
+        eject();
         break;
     default:
         r->status = DRV_ERR_CMD;

@@ -325,6 +325,7 @@ void reboot_request(void)
 static void task_end(int t);
 static void dmab_free(int t);
 static void bc_flush_some(unsigned max);
+static int blk_eject(int dev);
 static int any_in_op(void);
 static int others_in_op(void);
 static int in_op(int t);
@@ -3582,6 +3583,29 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_EJECT: {                          /* Medium auswerfen      */
+        int dev, st;
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
+            subst_real(a1) != a1)
+            return FAPI_ERROR;
+        dev = vol[a1].blk;
+        if (dev < 0 || dev >= nblk || IS_FLOPPY(dev) ||
+            (!IS_REM(dev) && blk[dev].bsize != 2048))
+            return FAPI_ERR_DENIED;
+        for (k = 1; k < NFILE; k++)
+            if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+                vol[files[k].f.drive].blk == dev)
+                return FAPI_ERR_INUSE;
+        vol_lock(a1);                           /* nichts mehr unterwegs */
+        st = blk_eject(dev);
+        if (st == DRV_ERR_CMD)
+            return FAPI_ERR_DENIED;
+        for (k = 0; k < NDRIVE; k++)            /* FAT neu einhaengen; das */
+            if (vol_present(k) && vol[k].blk == dev && vol[k].drv == &fat_driver)
+                vol_reset(k);                   /* CD-Modul prueft selbst */
+        return st == DRV_OK ? 0 : FAPI_ERROR;
+    }
+
     case FAPI_OPENDISK: {                       /* ganze Platte (FDISK)  */
         int dev = disk_blk(a1), d;
         if (dev < 0)
@@ -4848,6 +4872,32 @@ static int rem_media(int dev)
         bc_drop_dev(dev);
     }
     return ch;
+}
+
+/* Medium auswerfen (FAPI_EJECT): Treiberbefehl DRV_EJECT, danach gilt
+   das Medium als weg (Cache des Geraets verworfen) -> Treiberstatus */
+static int blk_eject(int dev)
+{
+    struct drv_req *r;
+    int st;
+    drv_lock(DLB(dev));
+    r = DRQB(dev);
+    r->cmd = DRV_EJECT;
+    r->unit = blk[dev].unit;
+    r->status = DRV_ERR_CMD;
+    r->buf_phys = dmab_phys;
+    r->buf_sel = DMABUF;
+    r->buf_off = 0;
+    drv_request(blk[dev].drv, r);
+    st = r->status;
+    drv_unlock(DLB(dev));
+    if (st != DRV_ERR_CMD) {
+        lc_dev = -1;
+        bc_drop_dev(dev);
+        blk_nm[dev] = 1;
+        blk_chg[dev] = 1;
+    }
+    return st;
 }
 
 int blk_media(int dev)
