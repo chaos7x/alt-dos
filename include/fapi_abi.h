@@ -201,6 +201,17 @@ struct fapi_proc {
 #define PROC_PROT           2       /* nicht beendbar                   */
 #define BUS_PCI             0       /* struct fapi_pcidev               */
 #define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
+#define BUS_PNP             2       /* struct fapi_pnpdev (ISA-PnP)     */
+struct fapi_pnpdev {
+    unsigned char  csn, ldn;        /* Kartennummer, logisches Geraet   */
+    unsigned char  act;             /* 1 vom Kernel eingeschaltet, 2 vom BIOS */
+    unsigned char  rsv;
+    unsigned char  vid[4];          /* EISA-Kennung der Karte           */
+    unsigned char  lid[4];          /* ... des logischen Geraets        */
+    unsigned short io[4];           /* 0 = keiner                       */
+    unsigned char  irq[2];          /* 0 = keiner                       */
+    unsigned char  dma[2];          /* 4 = keiner                       */
+};
 struct fapi_pcidev {
     unsigned short loc;             /* Bus << 8 | Geraet << 3 | Funktion */
     unsigned short vendor, device;

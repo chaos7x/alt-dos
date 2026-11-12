@@ -217,7 +217,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   nullt `start.asm` selbst.
 - Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
-  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `mem`, `paging`, `vesa`, `fat`,
+  `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `pnp`, `mem`, `paging`, `vesa`, `fat`,
   `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
   Segment damit 62,0 KB).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des
@@ -410,7 +410,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   schrieb den Verzeichnis-Cluster nur mit 16 Bit (Bytes 4/5 blieben 0) –
   auf FAT32 hinter Cluster 65.535 hätten Sätze nicht mehr gepasst.
   Reihenfolge danach (Entscheidung des Nutzers): SVGA-Zustand der DOS-
-  Boxen (erledigt, s. virtuelle VGA), ISA-PnP, dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
+  Boxen (erledigt, s. virtuelle VGA), ISA-PnP (erledigt, s. Busdienste),
+  dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
@@ -955,6 +956,14 @@ Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
 `$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
 Paketquellen nicht auf. `CI_FORCE_SRC=1` erzwingt den Quelltext-Weg.
 
+Aus der Cloud-Umgebung lassen sich Commits pushen, aber keine Zweige
+oder Tags löschen bzw. anlegen (Git-Zugang meldet HTTP 403) – keine
+Arbeitszweige auf GitHub anlegen; Löschen macht der Nutzer im Browser.
+CI-Läufe blieben im November 2026 mehrfach in der Warteschlange hängen
+(„not queued yet“, weder abbrechen noch löschen ging); ein von Hand
+gestarteter Lauf (workflow_dispatch) lief durch, `concurrency` bricht
+dann den älteren ab.
+
 Regel für `main` auf GitHub (Ruleset): kein Löschen, kein Force-Push,
 lineare Historie, Pull Request – mit Ausnahme „Repository admin“
 (Always allow), damit die Claude-Sitzung direkt pushen kann (sie pusht
@@ -1399,7 +1408,37 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `pci_wr`. Alle Treiber melden ihre Ports an. FAPI 51h DosBusInfo
   (BUS_PCI/BUS_RES) -> MSD: Computer-Seite PCI-Liste mit Hersteller-
   und Klassennamen, IRQ-Seite Besitzer, Treiber-Seite Ports/DMA/IRQ.
-  Offen: ISA-PnP (`ISAPNP.SYS`, früh laden) zusammen mit SB16 PnP.
+  ISA-PnP erledigt (Reihenfolge des Nutzers nach dem SVGA-Zustand; im
+  Kernel statt ISAPNP.SYS, passend zu den Busdiensten): `kernel/pnp.c`
+  (KTEXT2), `pnp_start` in kernel.c ruft `pnp_init` vor der CONFIG.SYS-
+  Schleife (PNP=OFF wird vorab im Puffer gesucht, darf überall stehen).
+  Ablauf nach der Spezifikation 1.0a: Initiation Key (LFSR ab 6Ah) an
+  279h, CSN zurücksetzen (02h = 04h), Wake[0], Lese-Port aus einer Liste
+  (nur einer, der FFh liest), serielle Isolation (72 Paare 55h/AAh,
+  Prüfsumme), CSN vergeben; dann zwei Durchgänge über die Ressourcen-
+  daten (Status 05h Bit 0, Daten 04h): erst Geräte merken, die ein PnP-
+  BIOS schon eingeschaltet hat (30h Bit 0, act = 2, Ressourcen gelten
+  als belegt), dann je logischem Gerät die erste abhängige Funktion, die
+  ganz passt (`want_io`: Ports frei = alle Bytes FFh bei ausgeschalteter
+  Karte und nicht an ein anderes PnP-Gerät vergeben; `want_irq` nach
+  Rangfolge 5, 7, 10, 9, 11 …, nie 0/1/2/6/8/12/13/14/15, IRQs der COM-
+  Ports aus dem BDA und der PCI-Geräte; `want_dma` 1, 3, 5, 6, 7, 0 zuletzt
+  – Refresh –, nie 2/4), schreiben (60h+2k, 70h/71h Flanke steigend,
+  74h+k), 30h = 1. Passt keine Funktion, bleibt das Gerät aus. Zuletzt
+  02h = 02h (Wait for Key). Tabelle `pnp[8]` in DGROUP (danach 64.990
+  Byte), Startmeldung „ISA-PnP: CTL0031 220h 330h 388h, IRQ 5, DMA 1,
+  DMA 5“, FAPI_BUSINFO `BUS_PNP` (`struct fapi_pnpdev`), MSD zeigt die
+  Geräte auf der Computer-Seite. Ausnahme von „erst lesen“: 279h/A79h
+  sind nach der Spezifikation reine Schreibports (279h = Status von
+  LPT2, Schreiben harmlos). Geprüft: auf dem Entwicklungsrechner gegen
+  eine nachgebildete SB16 PnP (3 abhängige Funktionen + Gameport) und
+  ein Modem (`tools/pnptest`, Aufruf im Kopf von sim.c): Normalfall
+  220h/IRQ 5/DMA 1+5, 220h belegt -> 240h/300h, vom BIOS eingeschaltet
+  -> bleibt, das Modem weicht dessen IRQ aus; in QEMU (keine PnP-Karten)
+  Start unverändert, SB16 (nicht PnP) weiter erkannt, isapc mit 4 MB.
+  86Box: SB16 PnP / AWE32 PnP starten dort ohne Ressourcen (nur PnP-BIOS
+  oder Betriebssystem stellen sie ein, src/sound/snd_sb.c) – Test nur
+  beim Nutzer. Offen: AWE32-Wavetable (620h), Einstellungen von Hand.
 - Weitere SCSI-Treiber, Ziel NCR-Familie (in 86Box vorhanden): zeitlich
   passend für 5.0 der ISA-NCR 53C400 (z. B. Trantor T130B, PIO); die
   PCI-Chips 53C810/825/875 (SCRIPTS-Prozessor, PCI-Konfiguration mit
@@ -1470,7 +1509,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   IMF/MID spielen auf SB16/AWE.
   ATDOS.SYS jetzt 73,6 KB (Grenze 80 KB des Diskettenladers) – Platz wird
   knapp, Seltenes nach KTEXT2 verschieben.
-  Offen: ISA-PnP
+  ISA-PnP erledigt (s. Busdienste). Offen:
   (SB16 PnP/AWE32 PnP, nach der Intel/Microsoft-Spezifikation), AWE32-
   Wavetable (6.0). SBEMU/VSBHDA (GPL) nur als Nachschlagewerk für die
   virtuelle SB der DOS-Boxen in 6.0.

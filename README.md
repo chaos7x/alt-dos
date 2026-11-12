@@ -653,7 +653,7 @@ selbst nur 8.3 kennt.
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = 5.0) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke; ab CX = 18 Mindest-/Höchstgröße des dynamischen Caches |
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, ~1/16 s statt 8 KB), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
-| 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste, CX = Nummer, DX = struct fapi_pcidev bzw. fapi_res → 0, FAPI_ERROR am Ende (MSD) |
+| 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste / 2 ISA-PnP-Gerät, CX = Nummer, DX = struct fapi_pcidev, fapi_res bzw. fapi_pnpdev → 0, FAPI_ERROR am Ende (MSD) |
 | 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,5 MB Bild) oder bei VBE 1.2 mit 64-KB-Fenster (ohne 24 Bit; `model` Bit 7 = `VESA_BANKED`) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte) → 0: kürzen oder mit Nullen verlängern (wie OS/2) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
@@ -741,6 +741,15 @@ als DevHlp bereit (`DH_PCIFIND`, `DH_PCICLASS`, `DH_PCIREAD`,
 `DH_PCIWRITE`, wie OEMHLP$ bei OS/2). Treiber melden ihre Ports,
 DMA-Kanäle und IRQs in einer Belegungsliste an (`DH_CLAIM`); ein
 Bereich gehört nur einem Treiber. MSD zeigt PCI-Geräte und Belegung.
+ISA Plug and Play (6.0): vor der ersten `DEVICE=`-Zeile isoliert der
+Kernel alle PnP-Karten (z. B. Sound Blaster 16/AWE32 PnP), gibt ihnen
+eine Kartennummer und schaltet jedes logische Gerät mit der ersten
+passenden Konfiguration ein (Ports, die frei sind; IRQ und DMA, die kein
+PCI-Gerät, COM-Port oder Systemteil hat). Was ein PnP-BIOS schon
+eingeschaltet hat, bleibt so. Danach finden die Treiber die Karte wie
+eine feste ISA-Karte. Die Startmeldung und MSD (Computer) zeigen jedes
+Gerät mit Kennung und Einstellung; `PNP=OFF` in der CONFIG.SYS schaltet
+es ab.
 `NCR8XX.SYS` (6.0, braucht einen 386) spricht PCI-SCSI-Controller mit
 NCR/Symbios 53C810, 815, 820, 825, 860, 875, 895, 895A und 896 an: findet
 die Karte über den PCI-Dienst des Kernels, I/O-Basis aus

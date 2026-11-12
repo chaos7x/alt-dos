@@ -302,6 +302,11 @@ void __far pci_write(unsigned loc, unsigned reg, unsigned long v, unsigned size)
 unsigned __far pci_find(unsigned vendor, unsigned device, unsigned n);
 unsigned __far pci_findclass(unsigned cs, unsigned n);
 int __far pci_info(unsigned i, struct fapi_pcidev __far *p);
+/* pnp.c (KTEXT2): ISA Plug and Play beim Start */
+struct fapi_pnpdev;
+unsigned __far pnp_init(void);                 /* -> Anzahl logischer Geraete */
+int __far pnp_info(unsigned i, struct fapi_pnpdev __far *p);
+void __far pnp_line(unsigned i, char __far *buf);  /* Startmeldung       */
 /* vesa.c (KTEXT2): VBE ueber einen kurzen Real-Mode-Aufruf */
 int __far apm_off(void);                   /* vesa.c: APM aus, nur bei Fehler zurueck */
 /* SVGA-Zustand der DOS-Boxen (vesa.c, fuer vgagfx.c) */

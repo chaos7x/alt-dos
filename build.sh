@@ -85,10 +85,10 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx bus mem paging k2misc vesa fat"
+K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86 redir"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus paging v86 redir k2misc vesa k2thunk; do
+for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir k2misc vesa k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac

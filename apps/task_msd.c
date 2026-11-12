@@ -25,6 +25,7 @@ static struct fapi_fsinfo fi;
 static struct fapi_diskinfo di;
 static struct fapi_mouevent mev;
 static struct fapi_pcidev pd;
+static struct fapi_pnpdev pn;
 static struct fapi_res rs;
 static char args[FAPI_ARGLEN];
 static char lines[NL][LW + 1], sum[NB][34], row[81];
@@ -157,6 +158,48 @@ static char *line(const char *a, const char *b)
     return first;
 }
 
+/* ISA-PnP-Geraete (vom Kernel beim Start eingestellt) */
+static void aphex(char *d, unsigned v);
+static void aphex2(char *d, unsigned v);
+static void pnp_lines(void)
+{
+    char v[80];
+    unsigned i, k;
+    if (DosBusInfo(BUS_PNP, 0, &pn) != 0)
+        return;
+    line("ISA-PnP:", 0);
+    for (i = 0; DosBusInfo(BUS_PNP, i, &pn) == 0 && nl < NL; i++) {
+        v[0] = 0;
+        ap(v, "  ");
+        k = slen(v);                    /* EISA-Kennung: 3 Buchstaben    */
+        v[k] = (char)('@' + ((pn.lid[0] >> 2) & 31));
+        v[k + 1] = (char)('@' + (((pn.lid[0] & 3) << 3) | (pn.lid[1] >> 5)));
+        v[k + 2] = (char)('@' + (pn.lid[1] & 31));
+        v[k + 3] = 0;
+        aphex2(v, pn.lid[2]);
+        aphex2(v, pn.lid[3]);
+        for (k = 0; k < 4; k++)
+            if (pn.io[k]) {
+                ap(v, k ? ", " : "  ");
+                aphex(v, pn.io[k]);
+                ap(v, "h");
+            }
+        for (k = 0; k < 2; k++)
+            if (pn.irq[k]) {
+                ap(v, ", IRQ ");
+                apn(v, pn.irq[k]);
+            }
+        for (k = 0; k < 2; k++)
+            if (pn.dma[k] < 8 && pn.dma[k] != 4) {
+                ap(v, ", DMA ");
+                apn(v, pn.dma[k]);
+            }
+        if (pn.act == 2)
+            ap(v, " (BIOS)");
+        line(v, 0);
+    }
+}
+
 static const char *fdname(unsigned t)
 {
     return t == 1 ? "5,25\" 360 KB" : t == 2 ? "5,25\" 1,2 MB" : t == 3 ? "3,5\" 720 KB" :
@@ -201,6 +244,7 @@ static void detail(unsigned k)
         line("Laufzeit:", v);
         if (DosBusInfo(BUS_PCI, 0, &pd) != 0) {
             line("Bus:", "ISA (AT)");
+            pnp_lines();
             break;
         }
         line("Bus:", "ISA und PCI");
@@ -230,6 +274,7 @@ static void detail(unsigned k)
             }
             line(v, 0);
         }
+        pnp_lines();
         break;
     case 1:
         v[0] = 0;

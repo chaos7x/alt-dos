@@ -3216,6 +3216,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 return FAPI_ERROR;
             return 0;
         }
+        if (a1 == BUS_PNP) {
+            if (!user_ok(usel, a3, sizeof(struct fapi_pnpdev), 1) ||
+                pnp_info(a2, MK_FP(usel, a3)))
+                return FAPI_ERROR;
+            return 0;
+        }
         if (a1 == BUS_RES) {
             struct fapi_res __far *r = MK_FP(usel, a3);
             unsigned ty, st, ln;
@@ -6067,19 +6073,50 @@ static unsigned num_arg(const char *v)
     return n;
 }
 
+/* ISA-PnP vor den Treibern; PNP=OFF in CONFIG.SYS (vorab gesucht, die
+   Zeile darf irgendwo stehen) schaltet es ab */
+static void pnp_start(int size)
+{
+    char m[80];                         /* Stapel: DGROUP ist knapp      */
+    const char __far *c = MK_FP(cfg_sel, 0);
+    unsigned p = 0, n, i;
+    while (size > 0 && p + 7 <= (unsigned)size) {
+        if ((p == 0 || c[p - 1] == '\n') && (c[p] | 32) == 'p' &&
+            (c[p + 1] | 32) == 'n' && (c[p + 2] | 32) == 'p') {
+            for (i = p + 3; i < (unsigned)size && c[i] == ' '; i++)
+                ;
+            if (i + 2 < (unsigned)size && c[i] == '=') {
+                while (++i < (unsigned)size && c[i] == ' ')
+                    ;
+                if (i + 1 < (unsigned)size && (c[i] | 32) == 'o' && (c[i + 1] | 32) == 'f')
+                    return;
+            }
+        }
+        p++;
+    }
+    n = pnp_init();
+    for (i = 0; i < n; i++) {
+        pnp_line(i, m);
+        vio_kputs(boot_session, "\xFE ISA-PnP: ");
+        vio_kputs(boot_session, m);
+        vio_kputs(boot_session, "\n");
+    }
+}
+
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
     static const char *const quiet[] = {
         "STACKS", "FCBS", "BREAK", "LASTDRIVE", "DOS", "SHELL", "COUNTRY",
         "INSTALL", "INSTALLHIGH", "NUMLOCK", "SWITCHES", "SET", "MENUITEM",
-        "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", 0
+        "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", "PNP", 0
     };
     unsigned p = 0, n;
     int size, dev0, i;
     char *v;
 
     size = read_cfg("\\CONFIG.SYS");
+    pnp_start(size);                    /* vor der ersten DEVICE=-Zeile  */
     if (size < 0)
         return;
     while (next_line(&p, (unsigned)size, line)) {
