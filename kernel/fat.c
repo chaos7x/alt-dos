@@ -1751,6 +1751,7 @@ static unsigned char ea_rec[EA_HDR + IFS_NAMELEN + 32];
 
 static void ea_forget(int d)            /* Laufwerk neu/gewechselt        */
 {
+    kf_ea_lock();
     if (ea_drv == d)
         ea_drv = -1;
     if (ea_cdrv == d)
@@ -1811,6 +1812,7 @@ static void ea_load(int d, clus_t dc)
     unsigned u, len, k;
     unsigned char __far *c;
 
+    kf_ea_lock();                       /* Cache gehoert allen EA-Laufwerken */
     if (ea_cdrv == d && ea_cdc == dc)
         return;
     ea_cdrv = d;
@@ -1889,6 +1891,7 @@ static void ea_del(int d, clus_t dc, const unsigned char *n83)
 {
     unsigned long pos;
     unsigned u, k;
+    kf_ea_lock();
     if (ea_open(d, 0))
         return;
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
@@ -1916,6 +1919,7 @@ static int ea_add(int d, clus_t dc, const char *n83, const char *name)
     unsigned u, len, need, k, use, uo;
     int rc;
 
+    kf_ea_lock();
     ea_del(d, dc, (const unsigned char *)n83);
     if (ea_open(d, 1))
         return IFS_FULL;

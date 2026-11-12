@@ -103,6 +103,7 @@ struct task {
     unsigned char v86;                          /* DOS-Box (v86.c)          */
     /* Phase 6, Stufe 3: Sperren je Laufwerk/Treiber */
     unsigned char vkey;                         /* gehaltene Laufwerkssperre + 1 */
+    unsigned char eakey;                        /* haelt die EA-Sperre (VK_EA)  */
     unsigned char wait_k;                       /* wartet: Laufwerk + 1, 80h|Treiber */
     unsigned char may_rel;                      /* Treiberauftrag mit eigenem DMABUF:
                                                    ProcBlock gibt die Kernelsperre ab */
@@ -329,7 +330,7 @@ static int others_in_op(void);
 static int in_op(int t);
 static void locks_task_end(int t);
 static void vol_unlock_cur(void);
-#define VK_FAT  NDRIVE
+#define VK_EA   NDRIVE                  /* Namenscache von EA DATA. SF   */
 #define NVK     (NDRIVE + 1)
 #define MOD_DL  NDRV
 static unsigned char vk_owner[NVK];     /* Task + 1, 0 = frei            */
@@ -1887,9 +1888,13 @@ static void schedule_next(void)
    dabei weiterlaufen darf, schuetzen zwei weitere Sperren:
    - je Laufwerk (vk_owner): von resolve() bzw. dem ersten IFS-Aufruf bis
      zum Ende des FAPI-Aufrufs; ein Task haelt hoechstens eine (vor einer
-     anderen gibt er seine ab - keine Verklemmung). FAT12/16 teilen sich
-     eine (VK_FAT: der Namenscache von EA DATA. SF ist gemeinsam), FAT32
-     und nachgeladene Dateisysteme haben je eine.
+     anderen gibt er seine ab - keine Verklemmung). Je Laufwerk eine, auch
+     fuer FAT12/16 (bis Phase 6 Rest teilten die sich VK_FAT).
+   - der Namenscache von EA DATA. SF (fat.c, gemeinsam fuer alle EA-
+     Laufwerke): VK_EA, genommen bei ea_load/ea_add/ea_del, abgegeben mit
+     der Laufwerkssperre - also auch beim Wechsel auf ein anderes
+     Laufwerk, sonst koennte A (EA, wartet auf Laufwerk von B) und B
+     (Laufwerk, wartet auf EA) sich verklemmen.
    - je Treiber (dl_owner), [NDRV] fuer die IFS-Module (gemeinsames ireq):
      vom Fuellen des Auftrags bis zur Antwort.
    Reihenfolge Laufwerk -> Modul -> Treiber; gewartet wird immer ohne die
@@ -1921,7 +1926,7 @@ static int any_in_op(void)
 
 static int vol_key(int d)
 {
-    return vol[d].drv == &fat_driver && vol[d].fat16 != 2 ? VK_FAT : d;
+    return d;
 }
 
 /* wartet jemand auf die Sperre w (wait_k-Kodierung)? -> Task, sonst -1.
@@ -1950,6 +1955,30 @@ static void vol_unlock_cur(void)
         vk_owner[tk->vkey - 1] = (unsigned char)(w >= 0 ? w + 1 : 0);
     }
     tk->vkey = 0;
+    if (tk->eakey && vk_owner[VK_EA] == current + 1) {
+        w = lock_waiter(VK_EA + 1);
+        vk_owner[VK_EA] = (unsigned char)(w >= 0 ? w + 1 : 0);
+    }
+    tk->eakey = 0;
+}
+
+/* EA-Namenscache (fat.c) bis zum Ende der Laufwerksoperation */
+void ea_lock(void)
+{
+    struct task *tk;
+    if (current < 0 || klock != current)
+        return;
+    tk = &task[current];
+    if (tk->eakey)
+        return;
+    while (vk_owner[VK_EA] && vk_owner[VK_EA] != current + 1) {
+        tk->wait_k = (unsigned char)(VK_EA + 1);
+        tk->wake = 0;
+        sched(bkl_hold ? 1 : 2);
+    }
+    tk->wait_k = 0;
+    vk_owner[VK_EA] = (unsigned char)(current + 1);
+    tk->eakey = 1;
 }
 
 void vol_lock(int d)
@@ -2014,7 +2043,7 @@ static void locks_task_end(int t)       /* Sicherheitsnetz              */
     for (i = 0; i <= 2 * NDRV; i++)
         if (dl_owner[i] == t + 1)
             dl_owner[i] = 0;
-    task[t].vkey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
+    task[t].vkey = task[t].eakey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
     task[t].lock_depth = 0;
 }
 

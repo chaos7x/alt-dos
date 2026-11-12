@@ -64,6 +64,7 @@ void __far kf_vio_flush(void);
 /* fat.c */
 int __far kf_blk_read(int dev, unsigned long lba);
 void __far kf_vol_lock(int d);
+void __far kf_ea_lock(void);
 int __far kf_blk_read_n(int dev, unsigned long lba, unsigned n);
 int __far kf_blk_write(int dev, unsigned long lba);
 void __far kf_blk_invalidate(void);

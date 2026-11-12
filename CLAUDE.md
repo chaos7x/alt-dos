@@ -3380,8 +3380,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Kopien gleich, fsck sauber) – QEMU zeigt den Gewinn nicht (auch der alte
   Kernel schrieb dort auf beide gleichzeitig: die gedrosselten Aufträge
   kommen ohne langes Warten im Treiber zurück); nur in 86Box messbar.
-  Grenzen: zwei Laufwerke am selben IDE-Kanal oder SCSI-Treiber (Master/
-  Slave, zwei Partitionen) und zwei FAT12/16-Laufwerke laufen weiter nacheinander;
+  Phase 6 Rest, FAT12/16 je Laufwerk (in QEMU geprüft: zwei frische
+  FAT16-Laufwerke im EA-Format gleichzeitig per START beschrieben –
+  C:\DOS und Unicode-Namen –, Inhalte gleich, je 6 W-Sätze richtig, fsck
+  sauber; zwei Sitzungen auf demselben EA-Laufwerk mit MD langer Namen,
+  CHKDSK sauber): `vol_key` = Laufwerk für alle Dateisysteme (VK_FAT
+  entfällt), der gemeinsame EA-Namenscache hat seine eigene Sperre
+  `VK_EA` (`ea_lock`, Thunk kf_ea_lock in ea_load/ea_add/ea_del/
+  ea_forget, `task.eakey`), abgegeben mit der Laufwerkssperre – auch beim
+  Wechsel auf ein anderes Laufwerk, sonst Verklemmung (A hält EA und
+  wartet auf das Laufwerk von B, B wartet auf EA). Nebenbei geschlossen:
+  zwei FAT32-Laufwerke mit LONGNAMES=EA teilten den Cache ohne Schutz.
+  Laufwerke ohne EA DATA. SF (VFAT, nur 8.3) nehmen die EA-Sperre nie.
+  Messbar nur in 86Box (QEMU: Schreiben landet im Cache, gleiche 23 s).
+  Grenzen: zwei Laufwerke am selben IDE-Kanal (ATA: ein Befehl je Kanal,
+  da gibt es nichts zu holen) oder SCSI-Treiber laufen weiter nacheinander;
   Diskette behält die Sperre; ein Task, der in einer Operation im Treiber
   hängt, ist erst nach deren Ende beendbar. Kanäle/Geräte einzeln sperren
   wäre der nächste Schritt (Treiber müssten wiedereintrittsfest werden).
