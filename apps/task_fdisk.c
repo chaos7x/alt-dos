@@ -464,24 +464,29 @@ static long numval(int *was_pct)
 /* Bezeichnung und Dateisystem aus dem Bootsektor der Partition */
 static void vol_info(unsigned long start, char *label, char *sys)
 {
-    unsigned i;
+    unsigned i, o;
     scopy(label, "", 12);
     scopy(sys, "UNBEKANNT", 10);
     if (rw(start, 0) || sec[510] != 0x55 || sec[511] != 0xAA ||
         sec[11] != 0 || sec[12] != 2)   /* 512 Byte je Sektor           */
         return;
-    if (sec[0x26] == 0x29) {
+    /* erweiterter BPB: FAT12/16 bei 26h, FAT32 (Sektoren je FAT 16 Bit
+       = 0) bei 42h - Bezeichnung und Dateisystem liegen dort 1Ch weiter */
+    o = !sec[0x16] && !sec[0x17] && sec[0x42] == 0x29 ? 0x1C : 0;
+    if (sec[0x26 + o] == 0x29) {
         for (i = 0; i < 11; i++)
-            label[i] = sec[0x2B + i];
+            label[i] = sec[0x2B + o + i];
         label[11] = 0;
         for (i = 11; i > 0 && label[i - 1] == ' '; i--)
             label[i - 1] = 0;
         if (label[0] == 'N' && label[1] == 'O' && label[2] == ' ')
             label[0] = 0;               /* "NO NAME"                    */
-        for (i = 0; i < 8 && sec[0x36 + i] != ' '; i++)
-            sys[i] = sec[0x36 + i];
+        for (i = 0; i < 8 && sec[0x36 + o + i] != ' '; i++)
+            sys[i] = sec[0x36 + o + i];
         sys[i] = 0;
-    } else
+    } else if (o == 0 && !sec[0x16] && !sec[0x17])
+        scopy(sys, "FAT32", 10);
+    else
         scopy(sys, "FAT", 10);
 }
 

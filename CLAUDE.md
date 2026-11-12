@@ -387,7 +387,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Startlaufwerk C: im Betrieb mit EA-Namen (Verweise richtig umgerechnet),
   danach Start von FAT32, XCOPY, CHKDSK; Abbruch mit N lässt FAT16 gleich.
   Vom Nutzer in 86Box bestätigt: seine Spiele-Platte (FAT16) mit CONVERT
-  nach FAT32 umgewandelt.
+  nach FAT32 umgewandelt. Danach zeigte FDISK (Anzeigen der Partitio-
+  nierungsdaten) als System weiter „FAT“ (vom Nutzer gemeldet): `vol_info`
+  las Bezeichnung und Dateisystem nur am erweiterten BPB von FAT12/16
+  (26h/2Bh/36h); bei FAT32 (Sektoren je FAT bei 16h = 0) liegen sie 1Ch
+  weiter (42h/47h/52h). CONVERT schrieb sie richtig – nur die Anzeige.
+  In QEMU mit einer 700-MB-FAT32-Platte (Bezeichnung SPIELE) geprüft.
   EA -> VFAT beim Umwandeln (Wunsch des Nutzers: „außer in der CONFIG.SYS
   steht was anderes“; in QEMU geprüft): `apps/ufat_e2v.c` (früher ufat32_e2v.c) nach Teil B
   (neues FAT32 steht, fc_get/fat_put/clus_lba gelten): EA-Datei (bis
