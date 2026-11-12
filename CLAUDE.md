@@ -1488,7 +1488,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ausgewertet): `SB16.SYS` (drivers/sb16.c) – DSP-Reset (vorher lesen:
   alle Leseports FFh = nichts), Version E1h, beim SB16 IRQ/DMA aus Mixer
   80h/81h; 16-KB-DMA-Puffer (neuer DevHlp `DH_DMABUF` = kseg_dma, physische
-  Adresse in den Treiber), zwei Hälften, Auto-Init (SB16 41h + B6h/C6h,
+  Adresse in den Treiber), zwei Hälften (seit dem DX4-Test vier Abschnitte),
+  Auto-Init (SB16 41h + B6h/C6h,
   DSP 2/3: Zeitkonstante 40h + 48h + 1Ch), IRQ füllt eine nicht volle
   Hälfte mit Stille. Mixer SB16 30h–3Ah, SB Pro 22h/04h/26h/28h/2Eh.
   Kernel: `DH_AUDREG`, `FAPI_AUDIO` (4Fh, ohne Kernelsperre – Schreiben
@@ -2632,6 +2633,31 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nicht (unter 8 KB, nie gestartet).
   Vom Nutzer auf dem ASUS P3B-F in 86Box bestätigt: DOOM funktioniert
   (Spiel, Tasten, Ton der Waffe ohne Verzögerung).
+  DOOM-Ton auf dem DX4-100 langsamer als unter MS-DOS (Nutzer; P2 rund):
+  in 86Box nachgemessen (PVI-486SP3C, Am486DX4-100, SB16, IDE-Platte
+  mit DOOM 1.9, `doom -timedemo demo1`): FreeDOS direkt 4686 Takte,
+  AT-DOS-Box 7123, mit `-nosound` 4765. Gefunden mit einem Stichproben-
+  Profil (86Box lokal ergänzt: alle 100 µs CS:EIP/VM/CPL in eine Datei,
+  Funktionen über `wdis build/v86.o`; die Stichprobe aus irq0 im Gast
+  sieht die Fallen nicht – sie laufen mit IF = 0). (1) 15 % Leerlauf:
+  SB16.SYS hatte zwei Hälften, die virtuelle SB liefert im Takt der
+  Karte genau eine Hälfte voraus – jeder kleine Vorsprung ließ die Box
+  in aud_write bis zum Karten-IRQ schlafen. Jetzt vier Abschnitte
+  (`NSEG`, IRQ je Abschnitt, Start bei zwei vollen, `play`/`fill`),
+  AUD_SMALL = 1/32 s je Abschnitt (gleiche Latenz), neu `AUD_NOWAIT`
+  (40h): voll -> Rest verwerfen, kein Echtzeit-Schlaf im Kernel; die
+  Box öffnet damit -> 6395. (2) Jedes CLI im PM (ohne PVI eine Falle,
+  ~800/s) kopierte für den POPF-Patch 1 KB und suchte – `cli_done` merkt
+  die letzten 16 untersuchten Stellen -> 5794. (3) Je Falle billiger:
+  PM-Vektoren 0–15 als Bitmaske `pm_hk` (ändern sich nur über 0205h),
+  pit_run liest den echten PIT im Gleichlauf nicht mehr (nur pit_now bei
+  Lesen/Latch von 40h), Prüfungen billig zuerst, Basis des letzten
+  Selektors gemerkt (`sbc_*`, LDT-Änderungen verwerfen), get_ticks/
+  vio_fg/box_ctl(BOX_TASK) direkt (`ticks`, `fg`, `current` – `current`
+  in kernel.c dafür nicht mehr static) -> 5091. Rest: ~3000 Fallen/s
+  (CLI 800, STI 420, Ports 1320 – PIC 700, SB 366, DMA 258 –, gepatchte
+  POPF 380), Kernelanteil 10 %. PLAY (KLANG.WAV) und S16.COM in der Box
+  in QEMU mitgeschnitten: richtig, ohne Lücken.
   BLASTER und Länderdaten (Wunsch des Nutzers; in QEMU geprüft):
   BOXSHELL hängt `BLASTER=A220 I5 D1 T3` an die Umgebung der Box, wenn
   sie keins hat (IRQ 5 oder 7 geht beides, siehe `irql`). COMMAND.COM

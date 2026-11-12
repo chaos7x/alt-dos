@@ -10,10 +10,13 @@
  * Mixer-Registern 80h/81h; aeltere Karten (DSP 2.xx/3.xx) nehmen /I und
  * /D oder 5 und 1.
  *
- * Wiedergabe ueber Auto-Init-DMA in einem 16-KB-Puffer aus zwei Haelften:
- * der Schreiber fuellt die Haelfte, die gerade nicht spielt; ist sie beim
+ * Wiedergabe ueber Auto-Init-DMA in einem Puffer aus vier Abschnitten
+ * (Interrupt je Abschnitt): der Schreiber fuellt reihum die Abschnitte vor
+ * dem spielenden, gestartet wird mit zwei vollen; ist der naechste beim
  * Interrupt noch nicht voll, wird der Rest mit Stille aufgefuellt (kein
- * Knacken durch alte Daten). SB16: 8 und 16 Bit, mono und stereo, 5000-
+ * Knacken durch alte Daten). Vier statt zwei Teile, damit ein Schreiber,
+ * der im selben Takt liefert wie die Karte spielt (virtuelle SB der DOS-
+ * Boxen), nicht bei jedem kleinen Vorsprung warten muss. SB16: 8 und 16 Bit, mono und stereo, 5000-
  * 44100 Hz (16 Bit ueber den 16-Bit-DMA-Kanal); DSP 2/3: 8 Bit mono bis
  * 22050 Hz ueber die Zeitkonstante. Mixer: SB16 (30h-3Ah) und SB Pro.
  *
@@ -24,7 +27,9 @@
 #include "../include/fapi_abi.h"
 
 #define BUFSZ   16384u
-#define HALF    half            /* Haelfte des gespielten Puffers */
+#define NSEG    4               /* Abschnitte des Puffers (Zweierpotenz) */
+#define SEG     seg             /* Groesse eines Abschnitts       */
+#define START   2               /* volle Abschnitte bis zum Start */
 #define EV_AUD  1
 
 #define AREQ ((struct aud_req __far *)MK_FP(req_sel, req_off))
@@ -50,8 +55,9 @@ static char line[128], name[64];
 
 /* Wiedergabe */
 static unsigned rate, chans, bits16;
-static unsigned half = BUFSZ / 2;      /* AUD_SMALL: kurz (DOS-Boxen)   */
-static volatile unsigned char playing, fill, fill_full, cur_dma16;
+static unsigned seg = BUFSZ / NSEG;    /* AUD_SMALL: kurz (DOS-Boxen)   */
+static unsigned char nowait;            /* AUD_NOWAIT: nie warten        */
+static volatile unsigned char playing, play, fill, fill_full, cur_dma16;
 static volatile unsigned fill_off, irq_count, gen;
 static unsigned char silence;
 
@@ -120,8 +126,8 @@ static void dma_start(void)
         outp(0xC0 + c * 4, (unsigned char)w);
         outp(0xC0 + c * 4, (unsigned char)(w >> 8));
         outp(page16[c], (unsigned char)((bphys >> 16) & 0xFE));
-        outp(0xC2 + c * 4, (unsigned char)((HALF - 1) & 0xFF));
-        outp(0xC2 + c * 4, (unsigned char)((HALF - 1) >> 8));
+        outp(0xC2 + c * 4, (unsigned char)((NSEG / 2 * SEG - 1) & 0xFF));
+        outp(0xC2 + c * 4, (unsigned char)((NSEG / 2 * SEG - 1) >> 8));
         outp(0xD4, (unsigned char)c);           /* frei                  */
     } else {
         c = dma8 & 3;
@@ -131,8 +137,8 @@ static void dma_start(void)
         outp(c * 2, (unsigned char)bphys);
         outp(c * 2, (unsigned char)(bphys >> 8));
         outp(page8[c], (unsigned char)(bphys >> 16));
-        outp(c * 2 + 1, (unsigned char)((2 * HALF - 1) & 0xFF));
-        outp(c * 2 + 1, (unsigned char)((2 * HALF - 1) >> 8));
+        outp(c * 2 + 1, (unsigned char)((NSEG * SEG - 1) & 0xFF));
+        outp(c * 2 + 1, (unsigned char)((NSEG * SEG - 1) >> 8));
         outp(0x0A, (unsigned char)c);
     }
 }
@@ -146,13 +152,13 @@ static void dma_stop(void)
 }
 
 /* ---- Wiedergabe ----------------------------------------------------- */
-/* DSP 1.xx (Sound Blaster 1.0): eine Haelfte als Einzelblock; der 8237
+/* DSP 1.xx (Sound Blaster 1.0): ein Abschnitt als Einzelblock; der 8237
    laeuft im Auto-Init weiter, der Interrupt startet den naechsten Block */
 static void single_block(void)
 {
     dsp_w(0x14);
-    dsp_w((unsigned char)((HALF - 1) & 0xFF));
-    dsp_w((unsigned char)((HALF - 1) >> 8));
+    dsp_w((unsigned char)((SEG - 1) & 0xFF));
+    dsp_w((unsigned char)((SEG - 1) >> 8));
 }
 
 static void dsp_start(void)
@@ -160,7 +166,7 @@ static void dsp_start(void)
     unsigned n;
     dsp_w(0xD1);                        /* Lautsprecher an (aeltere DSP) */
     if (dspv >= 0x400) {
-        n = (bits16 ? HALF / 2 : HALF) - 1;     /* Werte je Haelfte - 1  */
+        n = (bits16 ? SEG / 2 : SEG) - 1;       /* Werte je Abschnitt - 1 */
         dsp_w(0x41);
         dsp_w((unsigned char)(rate >> 8));
         dsp_w((unsigned char)rate);
@@ -175,8 +181,8 @@ static void dsp_start(void)
             single_block();             /* Block fuer Block (14h)        */
         else {
             dsp_w(0x48);                /* Blockgroesse                  */
-            dsp_w((unsigned char)((HALF - 1) & 0xFF));
-            dsp_w((unsigned char)((HALF - 1) >> 8));
+            dsp_w((unsigned char)((SEG - 1) & 0xFF));
+            dsp_w((unsigned char)((SEG - 1) >> 8));
             dsp_w(0x1C);                /* 8 Bit, Auto-Init              */
         }
     }
@@ -188,9 +194,7 @@ static void start_play(void)
     dma_start();
     dsp_start();
     playing = 1;
-    fill = 1;
-    fill_off = 0;
-    fill_full = 0;
+    play = 0;                           /* fill/fill_off laufen weiter   */
 }
 
 static void stop_play(void)
@@ -210,6 +214,7 @@ static void stop_play(void)
         dma_stop();
     }
     playing = 0;
+    play = 0;
     fill = 0;
     fill_off = 0;
     fill_full = 0;
@@ -233,13 +238,20 @@ static void sb_irq(unsigned n)
         return;
     if (dspv < 0x200)
         single_block();                 /* DSP 1.xx: naechster Block     */
-    /* eine Haelfte ist fertig, die DMA spielt jetzt "fill": nicht voll
-       geworden -> Rest Stille (sonst klingen alte Daten nach) */
-    if (!fill_full)
-        far_set(MK_FP(bsel, fill * HALF + fill_off), silence, HALF - fill_off);
-    fill ^= 1;
-    fill_off = 0;
-    fill_full = 0;
+    /* ein Abschnitt ist fertig, die DMA spielt den naechsten. War der
+       Schreiber voll, wird der eben fertige frei; spielt die Karte jetzt
+       den Abschnitt, den er gerade fuellt (zu spaet), Rest Stille (sonst
+       klingen alte Daten nach) und weiter beim naechsten */
+    play = (unsigned char)((play + 1) & (NSEG - 1));
+    if (fill_full) {
+        fill = (unsigned char)((fill + 1) & (NSEG - 1));
+        fill_off = 0;
+        fill_full = 0;
+    } else if (playing && fill == play) {
+        far_set(MK_FP(bsel, fill * SEG + fill_off), silence, SEG - fill_off);
+        fill = (unsigned char)((fill + 1) & (NSEG - 1));
+        fill_off = 0;
+    }
     irq_count++;
     proc_run(EV_AUD);
 }
@@ -247,31 +259,39 @@ static void sb_irq(unsigned n)
 static void aud_write(struct aud_req __far *q)
 {
     unsigned done = 0, n, my = gen;
+    unsigned char nx;
     unsigned char __far *src = MK_FP(q->sel, q->off);
 
     while (done < q->len) {
         if (gen != my)
             break;                      /* anderer Strom ist dran        */
         cli();
-        if (fill_full && playing) {     /* warten, bis eine Haelfte frei ist */
+        if (fill_full && playing) {     /* warten, bis ein Abschnitt frei ist */
+            if (nowait)
+                break;                  /* DOS-Box: Rest verwerfen       */
             if (proc_block(EV_AUD, 100))
                 if (fill_full && gen == my)
                     break;              /* Karte steht: aufgeben         */
             continue;
         }
         sti();
-        n = HALF - fill_off;
+        n = SEG - fill_off;
         if (n > q->len - done)
             n = q->len - done;
-        far_cpy(MK_FP(bsel, fill * HALF + fill_off), src + done, n);
+        far_cpy(MK_FP(bsel, fill * SEG + fill_off), src + done, n);
         done += n;
         cli();
         fill_off += n;
-        if (fill_off == HALF) {
-            if (!playing)
-                start_play();           /* erste Haelfte voll: los       */
-            else
-                fill_full = 1;
+        if (fill_off == SEG) {
+            nx = (unsigned char)((fill + 1) & (NSEG - 1));
+            if (playing && nx == play)
+                fill_full = 1;          /* alles voll bis zum spielenden */
+            else {
+                fill = nx;
+                fill_off = 0;
+                if (!playing && fill == START)
+                    start_play();       /* genug Vorlauf: los            */
+            }
         }
         sti();
     }
@@ -281,23 +301,34 @@ static void aud_write(struct aud_req __far *q)
 
 static void aud_drain(void)
 {
-    unsigned my = gen, want, t;
+    unsigned my = gen, want, t, k;
+    unsigned char nx;
     cli();
     if (!playing) {
-        if (fill_off == 0) {
+        if (fill == 0 && fill_off == 0) {
             sti();
             return;
         }
-        far_set(MK_FP(bsel, fill_off), silence, HALF - fill_off);
+        for (k = fill; k < NSEG; k++) {         /* Rest des Puffers Stille */
+            far_set(MK_FP(bsel, k * SEG + fill_off), silence, SEG - fill_off);
+            fill_off = 0;
+        }
+        k = fill + 1;                           /* Abschnitte mit Daten  */
+        fill = NSEG - 1;
         start_play();
-        want = irq_count + 1;
-    } else if (fill_off > 0 || fill_full) {
-        if (!fill_full)
-            far_set(MK_FP(bsel, fill * HALF + fill_off), silence, HALF - fill_off);
-        fill_full = 1;
-        want = irq_count + 2;
-    } else
-        want = irq_count + 1;
+        want = irq_count + k;
+    } else {
+        k = (fill - play) & (NSEG - 1);         /* davor noch zu spielen */
+        if (!fill_full)                         /* Rest Stille           */
+            far_set(MK_FP(bsel, fill * SEG + fill_off), silence, SEG - fill_off);
+        if (fill_off > 0 || fill_full) {
+            k++;
+            nx = (unsigned char)((fill + 1) & (NSEG - 1));
+            if (nx != play)                     /* dahinter keine alten  */
+                far_set(MK_FP(bsel, nx * SEG), silence, SEG);   /* Daten */
+        }
+        want = irq_count + (k ? k : 1);
+    }
     sti();
     t = devhlp(DH_TICKS, 0, 0, 0);
     for (;;) {
@@ -315,7 +346,7 @@ static void aud_drain(void)
 
 static int fmt_ok(unsigned r, unsigned c, unsigned b)
 {
-    b &= ~AUD_SMALL;
+    b &= ~(AUD_SMALL | AUD_NOWAIT);
     if (dspv >= 0x400)
         return r >= 5000 && r <= 44100 && (c == 1 || c == 2) &&
                (b == 8 || (b == 16 && dma16 >= 5));
@@ -379,15 +410,16 @@ static void audio(void)
         }
         rate = q->a1;
         chans = q->a2;
-        bits16 = (q->a3 & ~AUD_SMALL) == 16;
-        half = BUFSZ / 2;
-        if (q->a3 & AUD_SMALL) {        /* etwa 1/16 s je Haelfte       */
-            half = (rate >> 4) * chans << bits16;
-            half = (half + 15) & ~15u;
-            if (half < 512)
-                half = 512;
-            if (half > BUFSZ / 2)
-                half = BUFSZ / 2;
+        bits16 = (q->a3 & ~(AUD_SMALL | AUD_NOWAIT)) == 16;
+        nowait = (unsigned char)((q->a3 & AUD_NOWAIT) != 0);
+        seg = BUFSZ / NSEG;
+        if (q->a3 & AUD_SMALL) {        /* etwa 1/32 s je Abschnitt     */
+            seg = (rate >> 5) * chans << bits16;
+            seg = (seg + 15) & ~15u;
+            if (seg < 256)
+                seg = 256;
+            if (seg > BUFSZ / NSEG)
+                seg = BUFSZ / NSEG;
         }
         silence = bits16 ? 0 : 0x80;
         break;

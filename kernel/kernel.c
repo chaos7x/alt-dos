@@ -115,7 +115,7 @@ static struct desc    ldt[NTASK][NLDT];
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
 static unsigned       image_units;                /* Seiten Programmabbilder */
-static int            current = -1;
+int                   current = -1;   /* auch v86.c */
 
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
    (wie MS-DOS: fuer alle Programme zusammen) */
@@ -5399,7 +5399,7 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
             return FAPI_ERR_INUSE;
         if (aud_call(NAUD, AR_CHECK, f->rate, f->channels, f->bits) != DRV_OK)
             return FAPI_ERROR;
-        bytes = (unsigned)f->channels * ((f->bits & ~AUD_SMALL) >> 3);
+        bytes = (unsigned)f->channels * ((f->bits & ~(AUD_SMALL | AUD_NOWAIT)) >> 3);
         aud[i].rate = f->rate;
         aud[i].ch = f->channels;
         aud[i].bits = f->bits;
@@ -5425,7 +5425,7 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
             aud_call(i, AR_WRITE, 0, 0, 0);
             return b;                           /* Rest ging beim Wechsel unter */
         }
-        if (aud[i].bpt)                         /* stumm: Echtzeit abwarten */
+        if (aud[i].bpt && !(aud[i].bits & AUD_NOWAIT))  /* stumm: Echtzeit abwarten */
             sleep_ticks(b / aud[i].bpt + 1);
         return b;
     case AUD_DRAIN:

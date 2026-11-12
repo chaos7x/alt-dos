@@ -267,6 +267,8 @@ struct fapi_audfmt {
     unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
 };                                  /* | AUD_SMALL: kurzer Puffer        */
 #define AUD_SMALL           0x80    /* (kleine Verzoegerung, DOS-Boxen)  */
+#define AUD_NOWAIT          0x40    /* | AUD_NOWAIT: AUD_WRITE wartet nie,
+                                       was nicht passt, faellt weg (Box) */
 /* Platten-Cache (MEM): BX = struct fapi_cacheinfo, CX = Groesse (0 = 5.0) -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {

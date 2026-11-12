@@ -75,6 +75,21 @@
 #include "v86int.h"
 #include "../include/fapi_abi.h"
 
+/* Je Falle gebraucht - direkt statt ueber Fern-Thunks (gleiches DS):
+   auf dem 486 trappt jedes CLI/STI einer Box, tausende Male je Sekunde */
+extern volatile unsigned long ticks;    /* start.asm                     */
+extern int fg;                          /* vio.c: Vordergrund-Sitzung    */
+extern int current;                     /* kernel.c: laufender Task      */
+static unsigned long k3_ticks(void)
+{
+    unsigned f = irq_off();
+    unsigned long v = ticks;
+    irq_restore(f);
+    return v;
+}
+#undef get_ticks
+#define get_ticks()     k3_ticks()
+
 static pg_t pd_box[NTASK], pt_box[NTASK];
 static unsigned short vfl[NTASK];       /* IF/IOPL/NT der Box            */
 static signed char box_ses[NTASK] = { -1, -1, -1, -1, -1, -1, -1, -1 };
@@ -206,6 +221,7 @@ static const unsigned char hwvec[] = { 0x08, 0x09, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
                                        0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77 };
 static unsigned long ivt_save[NTASK][sizeof(hwvec)];    /* Kerneltakt des letzten INT 8 der Box */         /* Zustellung aus irq0 (Takt erlaubt) */
 static int pm_hooked(int t, unsigned n);
+static unsigned pm_hk[NTASK];           /* PM-Vektor 0-15 eingehaengt (Bit n) */
 static void dp_hwint(struct v86_iret *r, int t);
 static void pvi_in(struct v86_iret *r, int t);
 static void vme_in(struct v86_iret *r, int t);
@@ -241,6 +257,10 @@ static unsigned char dp_inirq[NTASK];
 static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
 #define NPATCH 24
 static unsigned long dp_patch[NTASK][NPATCH];   /* POPF -> HLT (linear)  */
+#define NCLID 16                        /* untersuchte CLI-Stellen       */
+static unsigned long cli_done[NCLID];
+static unsigned char cli_nd;
+static signed char cli_dt = -1;         /* fuer diese Box                */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
 static void xms_table(int t);
@@ -771,7 +791,7 @@ int __far v86_fgbox(void)
         ;
     if (t == NTASK)
         return 0;
-    s = kf_vio_fg();
+    s = fg;
     for (t = 0; t < NTASK; t++)
         if (box_ses[t] == s && img_secs[t])
             return 1;
@@ -813,13 +833,13 @@ void __far v86_poll(void)
 
     for (t = 0; t < NTASK; t++)         /* Lautsprecher nur vorn         */
         if ((spk_open[t] || opl_open[t] || emu_owner == t + 1) &&
-            !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg())) {
+            !(box_ses[t] >= 0 && box_ses[t] == fg)) {
             spk_ports(t, 0);
             opl_ports(t, 0);
             emu_off(t);
         }
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
-        int s = kf_vio_fg(), ok = 0;
+        int s = fg, ok = 0;
         for (t = 0; t < NTASK; t++)
             if (box_ses[t] == s && s >= 0 && pit_rl[t])
                 ok = 1;
@@ -842,7 +862,7 @@ void __far v86_poll(void)
         if ((e8 | e9) & PTE_D) {
             kf_vio_dirty(box_ses[t]);
             if (cur == -2)
-                cur = kf_box_ctl(BOX_TASK, 0);
+                cur = current;
             if (cur == t)                   /* TLB hat noch D=1: leeren  */
                 k2_cr3((unsigned)k2_get_cr3(), (unsigned)(k2_get_cr3() >> 16));
         }
@@ -859,7 +879,7 @@ void __far v86_key(unsigned sc)
         ;
     if (t == NTASK)
         return;                         /* keine Box: schnell zurueck    */
-    s = kf_vio_fg();
+    s = fg;
     for (t = 0; t < NTASK; t++)
         if (box_ses[t] == s && pt_box[t]) {
             n = (unsigned char)((kq_h[t] + 1) & 15);
@@ -1076,11 +1096,16 @@ static unsigned long pit_div(int t)
 }
 
 /* Zeit fortschreiben: Zaehler und faellige INT 8 */
+static int pit_sync(int t)
+{
+    return kpit_div && kpit_div == pit_div(t) && box_fg(t);
+}
+
 static void pit_run(int t)
 {
-    unsigned long el = pit_elapsed(t), dv = pit_div(t), c;
+    unsigned long el, dv = pit_div(t), c;
     unsigned n = irq0_n;
-    if (kpit_div && kpit_div == dv && box_fg(t)) {
+    if (pit_sync(t)) {
         /* Der echte Kanal 0 laeuft mit dem Teiler der Box: jeder echte
            irq0 ist genau ein INT 8 der Box, der Zaehler ist der echte.
            Ueber die gemessene Zeit kam ein Takt, der gerade faellig war,
@@ -1093,10 +1118,15 @@ static void pit_run(int t)
         while (n-- && vt_pend[t] < 2)
             vt_pend[t]++;
         pit_acc[t] = 0;
-        pit_cnt[t] = pit_lastc;
+        /* den echten Zaehler liest pit_in nur, wenn die Box ihn will -
+           pit_run laeuft nach jeder Falle (auf dem 486 tausende Male je
+           Sekunde, drei ISA-Zugriffe) */
+        pit_t0[t] = get_ticks();
+        pit_c0[t] = kpit_acc;
         return;
     }
     pit_n0[t] = n;
+    el = pit_elapsed(t);
     if (!el)
         return;
     pit_acc[t] += el;
@@ -1109,6 +1139,16 @@ static void pit_run(int t)
     pit_cnt[t] = (unsigned)c;
 }
 
+/* Zaehlerstand fuer die Box (Lesen/Latch): im Gleichlauf der echte */
+static void pit_now(int t)
+{
+    pit_run(t);
+    if (pit_sync(t)) {
+        pit_elapsed(t);
+        pit_cnt[t] = pit_lastc;
+    }
+}
+
 static unsigned char pit_in(int t, unsigned p)
 {
     unsigned v;
@@ -1117,7 +1157,7 @@ static unsigned char pit_in(int t, unsigned p)
         pit_ff[t] ^= 1;
         return (unsigned char)(pit_ff[t] ? pit_c[t] : pit_c[t] >> 8);
     }
-    pit_run(t);
+    pit_now(t);
     v = pit_latd[t] ? pit_lat[t] : pit_cnt[t];
     if (pit_acc_m[t] == 1) {
         pit_latd[t] = 0;
@@ -1139,7 +1179,7 @@ static unsigned char pit_in(int t, unsigned p)
 /* Lautsprecher gehoert der Box nur im Vordergrund */
 static int box_fg(int t)
 {
-    return box_ses[t] >= 0 && kf_vio_fg() == box_ses[t];
+    return box_ses[t] >= 0 && fg == box_ses[t];
 }
 
 /* Lautsprecher-Ports 42h/61h direkt freigeben (I/O-Bitmap), solange die
@@ -1356,7 +1396,7 @@ static void sb_stop(int t)
 {
     sb[t].act = 0;
     if (sb[t].aud) {                    /* der Kernel ordnet Ton dem Task */
-        if (kf_box_ctl(BOX_TASK, 0) == t)       /* zu (sonst raeumt     */
+        if (current == t)       /* zu (sonst raeumt     */
             kf_box_aud(AUD_CLOSE, 0, 0);        /* task_end auf)        */
         sb[t].aud = 0;
     }
@@ -1410,7 +1450,7 @@ static unsigned char mpu_in(int t, unsigned p)
    Tasks ohnehin auf, beim Parken lebt der Task weiter) */
 static void mpu_off(int t)
 {
-    if ((mpu_st[t] & 2) && kf_box_ctl(BOX_TASK, 0) == t)
+    if ((mpu_st[t] & 2) && current == t)
         kf_box_aud(AUD_MIDICLOSE, 0, 0);
     mpu_st[t] = 0;
 }
@@ -1420,7 +1460,8 @@ static int sb_open(unsigned rate, unsigned ch, unsigned bits)
     static struct fapi_audfmt fmt;
     fmt.rate = rate;
     fmt.channels = (unsigned char)ch;
-    fmt.bits = (unsigned char)(bits | AUD_SMALL);   /* Spiele: Ton sofort */
+    fmt.bits = (unsigned char)(bits | AUD_SMALL | AUD_NOWAIT);  /* Spiele: Ton
+                                       sofort, die Box schlaeft nie beim Schreiben */
     return kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
 }
 
@@ -1847,7 +1888,7 @@ static void pit_out(int t, unsigned p, unsigned char v)
         if (ch != 0)
             return;
         if (!(v & 0x30)) {              /* Latch                         */
-            pit_run(t);
+            pit_now(t);
             pit_lat[t] = pit_cnt[t];
             pit_latd[t] = 1;
             pit_ff[t] = 0;
@@ -1889,9 +1930,9 @@ static void pit_out(int t, unsigned p, unsigned char v)
 static void account(int t)
 {
     unsigned long now, d;
-    if (!vec_def(8) || pit_rl[t] || pm_hooked(t, 8)) {  /* eigener Takt/Teiler */
+    if (pit_rl[t] || pm_hooked(t, 8) || !vec_def(8)) {  /* eigener Takt/Teiler */
         pit_run(t);                     /* Rate des Programms            */
-        if (vt_pend[t] && vec_def(8) && vec_def(0x1C) && !pm_hooked(t, 8)) {
+        if (vt_pend[t] && !pm_hooked(t, 8) && vec_def(8) && vec_def(0x1C)) {
             bda_ticks(vt_pend[t]);      /* (Teiler ohne Routine)         */
             vt_pend[t] = 0;
         }
@@ -2016,7 +2057,7 @@ static void inject(struct v86_iret *r, int t)
 /* aus irq0, wenn er die Box unterbrochen hat (nach preempt) */
 void __far v86_tick(struct v86_iret *r)
 {
-    int t = kf_box_ctl(BOX_TASK, 0);
+    int t = current;
     if (t < 0 || !pt_box[t])
         return;
     from_tick = 1;                              /* je irq0 hoechstens ein */
@@ -2292,7 +2333,7 @@ static int key(int t, int wait)
 {
     int s = box_ses[t], k;
     for (;;) {
-        if (kf_vio_fg() == s) {
+        if (fg == s) {
             k = wait ? kf_kbd_get() : kf_kbd_peek();
             if (k >= 0)
                 return k;
@@ -2856,7 +2897,7 @@ static int vga_pf(int t)
 static void vga_wait(int t)
 {
     unsigned f = irq_off();
-    if (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX)) {
+    if (vga_raw[t] && (fg != box_ses[t] || hw_gfx != RAWGFX)) {
         if (spk[t])
             spk_hw(t, 0);
         spk_ports(t, 0);
@@ -2867,7 +2908,7 @@ static void vga_wait(int t)
                                            Zurueckholen ewig auf den Block-
                                            IRQ (DOOM ohne Effekte) */
         enable_ints();
-        while (vga_raw[t] && (kf_vio_fg() != box_ses[t] || hw_gfx != RAWGFX))
+        while (vga_raw[t] && (fg != box_ses[t] || hw_gfx != RAWGFX))
             kf_box_ctl(BOX_SLEEP, 2);
         irq_off();
         sb[t].last = get_ticks();       /* Pause nicht nachholen         */
@@ -2884,7 +2925,7 @@ static void vga_freeze(int t)
     unsigned k;
     if (!vga_raw[t])
         return;
-    if (kf_vio_fg() == box_ses[t] && hw_gfx == RAWGFX) {
+    if (fg == box_ses[t] && hw_gfx == RAWGFX) {
         if (vga_bgk[t])
             vga_map(t, 0);
         return;
@@ -4535,6 +4576,13 @@ static void lwr(unsigned long lin, unsigned long v, unsigned n)
         *(unsigned char __far *)MK_FP(VWIN, i) = (unsigned char)v;
 }
 
+/* Basis des zuletzt gefragten Selektors (dp_trap liest je Falle CS):
+   jede Aenderung der LDT laeuft ueber ldesc/ldt_free/dp31 und verwirft
+   ihn */
+static unsigned sbc_sel;
+static signed char sbc_t = -1;
+static unsigned long sbc_base;
+
 static unsigned char __far *ldt_e(int t, unsigned i)      /* 8 Byte  */
 {
     scratch_map(PG_LIN(dp_ldt[t]), 4095);
@@ -4545,6 +4593,7 @@ static void ldesc(int t, unsigned i, unsigned long base, unsigned long lim,
                   unsigned char acc, unsigned char fl)
 {
     unsigned char __far *d = ldt_e(t, i);
+    sbc_t = -1;
     if (lim > 0xFFFFFUL) {                      /* Seitengranularitaet  */
         lim >>= 12;
         fl |= 0x80;
@@ -4564,9 +4613,14 @@ static unsigned long sel_base(int t, unsigned s)
     unsigned char __far *d;
     if (!(s & 4) || IDX(s) >= LDT_N)
         return 0;
+    if (sbc_t == t && sbc_sel == s)
+        return sbc_base;
     d = ldt_e(t, IDX(s));
-    return d[2] | ((unsigned long)d[3] << 8) | ((unsigned long)d[4] << 16) |
-           ((unsigned long)d[7] << 24);
+    sbc_base = d[2] | ((unsigned long)d[3] << 8) | ((unsigned long)d[4] << 16) |
+               ((unsigned long)d[7] << 24);
+    sbc_sel = s;
+    sbc_t = (signed char)t;
+    return sbc_base;
 }
 
 static int sel_ok(int t, unsigned s)            /* gueltiger Datenselektor */
@@ -4596,6 +4650,7 @@ static int ldt_alloc(int t, unsigned n)         /* n am Stueck -> Index */
 static void ldt_free(int t, unsigned i)
 {
     unsigned char __far *d;
+    sbc_t = -1;
     dp_lmap[t][i >> 3] &= (unsigned char)~(1 << (i & 7));
     d = ldt_e(t, i);
     d[5] = 0;
@@ -4704,6 +4759,7 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
     unsigned i;
     dp_inirq[t] = 0;
     dp_npatch[t] = 0;
+    cli_dt = -1;
     pvi_t[t] = 0;
     sb[t].irql = sb[t].noirq = 0;
     if (!dp_on[t])
@@ -4719,11 +4775,12 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
         }
     gdt[LDT_IDX(t)] = dp_oldldt[t];     /* wieder die Task-LDT          */
     tss[t].ldt = 0;
-    if (kf_box_ctl(BOX_TASK, 0) == t)
+    if (current == t)
         k2_lldt(LDT_SEL(t));
     vp_free(dp_ldt[t]);
     vp_free(dp_st[t]);
     dp_ldt[t] = dp_st[t] = 0;
+    sbc_t = -1;
     dp_on[t] = dp_dep[t] = 0;
     tlb(t);
 }
@@ -4795,6 +4852,7 @@ static unsigned dp_switch(struct v86_frame *f, int t)
         v[0] = DP_STUB + i * 4;
         *(unsigned short __far *)((char __far *)v + 4) = dp_stub[t];
     }
+    pm_hk[t] = 0;
     scratch_map(pte_get(t, 0xF0) & ~0xFFFUL, 4095);
     for (i = 0; i < 32; i++)                    /* Standard: HLT -> Ende  */
         put32(SCRATCH, (DP_EXC >> 2) + i, 0x909090F4UL);
@@ -4967,6 +5025,7 @@ static unsigned dp31(struct v86_frame *f, int t)
     unsigned long lin, base, lim, n;
     struct dpctx __far *c;
 
+    sbc_t = -1;                                 /* LDT kann sich aendern */
     DOK;
     switch (AX) {
     case 0x0000:                                /* Deskriptoren anlegen  */
@@ -5118,6 +5177,12 @@ static unsigned dp31(struct v86_frame *f, int t)
         v = pmvec(t, BL);
         v[0] = dp_32[t] ? f->edx : DX;
         *(unsigned short __far *)((char __far *)v + 4) = CX;
+        if (BL < 16) {                          /* Merker fuer pm_hooked */
+            if (CX == dp_stub[t] && v[0] == DP_STUB + BL * 4)
+                pm_hk[t] &= ~(1u << BL);
+            else
+                pm_hk[t] |= 1u << BL;
+        }
         if (BL == 0x0D || BL == 0x0F) {         /* Sound Blaster: zuletzt */
             sb[t].irql = (unsigned char)(BL == 0x0D ? 5 : 7);   /* eingehaengt */
             sb[t].noirq &= (unsigned char)~(1 << sb[t].irql);
@@ -5371,6 +5436,8 @@ static int pm_hooked(int t, unsigned n)
     unsigned long __far *v;
     if (!dp_on[t] || !dp_st[t])
         return 0;
+    if (n < 16)                                 /* ohne Fenster: je Falle */
+        return (pm_hk[t] >> n) & 1;             /* gefragt (dp_hwint)    */
     v = pmvec(t, n);
     return !(*(unsigned short __far *)((char __far *)v + 4) == dp_stub[t] &&
              v[0] == DP_STUB + n * 4);
@@ -5529,7 +5596,7 @@ static void dp_hwint(struct v86_iret *r, int t)
             }
         }
     }
-    if (pm_hooked(t, 9) && key_ready(t)) {
+    if (key_ready(t) && pm_hooked(t, 9)) {
         key_t0[t] = get_ticks();
         vcur[t] = (unsigned char)kq_get(t);
         visr[t] |= 2;
@@ -5712,7 +5779,11 @@ static unsigned dp_exret(struct v86_frame *f, int t)  /* nach RETF        */
    (#GP), dp_trap bildet POPF nach (dp_patched). Das Register muss
    passen - so trifft die Suche keine Daten. Hardware-Haltepunkte
    gingen auf echten CPUs, 86Box bildet sie aber nur mit einer Option
-   nach. */
+   nach.
+   Jede schon untersuchte CLI-Stelle merkt sich cli_done (die letzten 16,
+   fuer eine Box): ohne PVI (486) trappt jedes CLI, und die Suche kopiert
+   jedes Mal 1 KB - DOOM 1.9 lief auf dem DX4-100 deshalb spuerbar
+   langsamer als unter MS-DOS. */
 static void dp_patch_popf(int t, unsigned long lin)
 {
     unsigned i;
@@ -5720,6 +5791,16 @@ static void dp_patch_popf(int t, unsigned long lin)
     if (lrd(lin - 2, 1) != 0x9C || r < 0x58 || r > 0x5F || dp_npatch[t] >= NPATCH ||
         (box_hk[t] & HK_POPF))
         return;
+    if (cli_dt != t) {
+        cli_dt = (signed char)t;
+        cli_nd = 0;
+    }
+    for (i = 0; i < cli_nd && i < NCLID; i++)
+        if (cli_done[i] == lin)
+            return;
+    cli_done[cli_nd & (NCLID - 1)] = lin;
+    if (!++cli_nd)
+        cli_nd = NCLID;                 /* Ueberlauf: alle 16 gelten     */
     r = (unsigned char)(r - 8);                 /* POP reg -> PUSH reg   */
     lwin(VWIN_IDX, lin + 1);
     far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, sizeof(sb_buf));
@@ -5883,7 +5964,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
 
 unsigned __far dpmi_trap(struct v86_frame *f)
 {
-    int t = kf_box_ctl(BOX_TASK, 0);
+    int t = current;
     unsigned rc;
     if (t < 0 || !dp_on[t])
         return 1;
@@ -6525,7 +6606,7 @@ static int mou_ret(struct v86_frame *f, int t)
 
 unsigned __far v86_exc(struct v86_frame *f)
 {
-    int t = kf_box_ctl(BOX_TASK, 0);
+    int t = current;
     unsigned rc;
 
     if (t >= 0)
