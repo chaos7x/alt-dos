@@ -105,7 +105,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Boxen zählen den abgebbaren Teil als frei. MEM zeigt Größe, Spanne,
   „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
-  `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
+  `COUNTRY=nnn` (Land wie MS-DOS: Datum, Uhrzeit, Tausendertrenner in CMD
+  und FM, auch in der DOS-Box; je Sitzung mit `SET COUNTRY=nnn` änderbar),
+  `SET=` und die Menübefehle von MS-DOS 6 werden angenommen bzw.
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk

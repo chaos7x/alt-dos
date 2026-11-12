@@ -15,6 +15,7 @@
 #include <i86.h>
 #include "fapi.h"
 #include "../build/version.h"
+#include "country.h"
 
 #define LINE 126                        /* wie MS-DOS 127 mit Nullbyte */
 
@@ -90,7 +91,7 @@ static void put_numx(unsigned long v, int w, int dots)
     for (i = 0; i < n; i++) {
         o[k++] = d[i];
         if (dots && (n - i - 1) % 3 == 0 && i != n - 1)
-            o[k++] = '.';
+            o[k++] = ctry.th;               /* Tausender nach COUNTRY=  */
     }
     o[k] = 0;
     for (i = k; i < w; i++)
@@ -697,6 +698,7 @@ static void cmd_dir(char *arg)
     int all = 0, page = 0, lines = 4, bare = 0, wide = 0;
     unsigned wcol = 0;
 
+    ctry_init();
     dir[0] = 0;
     for (; *arg; arg = next_word(arg)) {
         if (arg[0] == '/' && up(arg[1]) == 'A') {   /* /A, /A:H, /A-D ...  */
@@ -852,15 +854,16 @@ static void cmd_dir(char *arg)
             }
             continue;
         }
-        put2(e.date & 31);
-        putc('.');
-        put2((e.date >> 5) & 15);
-        putc('.');
-        put_numx(1980 + (e.date >> 9), 4, 0);
-        puts("  ");
-        put2(e.time >> 11);
-        putc(':');
-        put2((e.time >> 5) & 63);
+        {
+            static char dt_[12];
+            ctry_date(dt_, e.date);
+            puts(dt_);
+            puts("  ");
+            ctry_time(dt_, e.time, 0);
+            puts(dt_);
+            if (!ctry.h12)
+                putc(' ');                  /* gleiche Spalte wie 12 h  */
+        }
         jd = (e.attr & 0x10) ? join_at(adir, e.name) : 0;
         if (jd)
             puts("    <JUNCTION>    ");
@@ -1591,8 +1594,10 @@ static void cmd_date(char *arg)
     int w;
     char *p = arg;
 
+    ctry_init();
     DosGetDateTime(dt);
     if (!*p) {
+        static char ds_[24];
         d = dt[0] & 31; m = (dt[0] >> 5) & 15; y = 1980 + (dt[0] >> 9);
         k = m < 3 ? y - 1 : y;          /* Wochentag (Zeller)          */
         j = m < 3 ? m + 12 : m;
@@ -1600,13 +1605,22 @@ static void cmd_date(char *arg)
         puts("Aktuelles Datum: ");
         puts(wd[(w + 6) % 7]);
         putc(' ');
-        put2(d); putc('.'); put2(m); putc('.');
-        put_numx(y, 4, 0);
-        p = ask_line("\nNeues Datum eingeben (TT.MM.JJ): ");
+        ctry_date(ds_, dt[0]);
+        puts(ds_);
+        puts("\nNeues Datum eingeben (");
+        ctry_dpat(ds_);
+        puts(ds_);
+        p = ask_line("): ");
         if (!*p)
             return;
     }
-    if (nums(p, v) != 3 || v[0] < 1 || v[0] > 31 || v[1] < 1 || v[1] > 12) {
+    k = nums(p, v);
+    if (k == 3 && ctry.dfmt == 0) {             /* M T J -> T M J        */
+        j = v[0]; v[0] = v[1]; v[1] = j;
+    } else if (k == 3 && ctry.dfmt == 2) {      /* J M T -> T M J        */
+        j = v[0]; v[0] = v[2]; v[2] = j;
+    }
+    if (k != 3 || v[0] < 1 || v[0] > 31 || v[1] < 1 || v[1] > 12) {
         puts("Ung\x81ltiges Datum\n");
         return;
     }
@@ -1628,11 +1642,13 @@ static void cmd_time(char *arg)
     int n;
     char *p = arg;
 
+    ctry_init();
     DosGetDateTime(dt);
     if (!*p) {
+        static char ts_[12];
         puts("Aktuelle Uhrzeit: ");
-        put2(dt[1] >> 11); putc(':'); put2((dt[1] >> 5) & 63); putc(':');
-        put2((dt[1] & 31) << 1);
+        ctry_time(ts_, dt[1], 1);
+        puts(ts_);
         p = ask_line("\nNeue Uhrzeit eingeben: ");
         if (!*p)
             return;
@@ -1745,16 +1761,17 @@ static void show_prompt(void)
         case 'H': puts("\b \b"); break;
         case 'V': puts("AT-DOS 6.0"); break;
         case 'E': putc(27); break;      /* ESC, fuer ANSI-Folgen        */
-        case 'D':
+        case 'D': case 'T': {
+            static char pd_[12];
+            ctry_init();
             DosGetDateTime(dt);
-            put2(dt[0] & 31); putc('.'); put2((dt[0] >> 5) & 15); putc('.');
-            put_numx(1980 + (dt[0] >> 9), 4, 0);
+            if (up(*p) == 'D')
+                ctry_date(pd_, dt[0]);
+            else
+                ctry_time(pd_, dt[1], 1);
+            puts(pd_);
             break;
-        case 'T':
-            DosGetDateTime(dt);
-            put2(dt[1] >> 11); putc(':'); put2((dt[1] >> 5) & 63); putc(':');
-            put2((dt[1] & 31) * 2);
-            break;
+        }
         }
     }
 }
@@ -2955,6 +2972,7 @@ void main(void)
     static char args[FAPI_ARGLEN];
     char *p;
 
+    ctry_init();
     DosGetArgs(args);
     for (p = args; *p; p = next_word(p)) {
         if (same(p, "/P"))

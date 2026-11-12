@@ -1423,6 +1423,7 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
 /* DOSSTART=SESSION (CONFIG.SYS): DOS-Programme wie bei OS/2 in einer
    eigenen Sitzung statt wie NT in der des Aufrufers */
 static unsigned char dos_session;
+static unsigned box_ctry;               /* COUNTRY= fuer die DOS-Box (0 = 049) */
 unsigned char dos_high, dos_umb;        /* DOS=HIGH,UMB: HMA/UMBs der Boxen */
 unsigned char ems_none;                 /* EMS_FRAME_LOCATION=NONE: kein Rahmen */
 static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
@@ -4207,10 +4208,25 @@ int box_ctl(unsigned op, unsigned a)
         return 0;
     case BOX_READ: {                    /* Sektor a des Startabbilds     */
         int r;
+        unsigned k, j;
+        static const char cpat[] = "COUNTRY=049,437,";
         klock_enter();
         r = ifs_read(&box_img[current], (unsigned long)a << 9, KDATA,
                      (unsigned)box_sec, 512) != 512;
         klock_leave();
+        /* Land aus der CONFIG.SYS von AT-DOS in die Box-CONFIG.SYS des
+           Abbilds tragen (nur im gelesenen Sektor, die Datei bleibt) */
+        if (!r && box_ctry && box_ctry != 49)
+            for (k = 0; k + 16 <= 512; k++) {
+                for (j = 0; j < 16 && box_sec[k + j] == cpat[j]; j++)
+                    ;
+                if (j == 16) {
+                    box_sec[k + 8] = (char)('0' + box_ctry / 100 % 10);
+                    box_sec[k + 9] = (char)('0' + box_ctry / 10 % 10);
+                    box_sec[k + 10] = (char)('0' + box_ctry % 10);
+                    break;
+                }
+            }
         return r;
     }
     case BOX_ARGS:
@@ -6310,6 +6326,18 @@ static void config_sys(void)
             apm_none = up(v[0]) == 'O' && up(v[1]) == 'F';
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
+        } else if (kw(line, "COUNTRY")) {      /* nnn[,cp[,datei]]        */
+            static char cv[12] = "COUNTRY=";
+            unsigned n = 0;
+            for (i = 0; v[i] >= '0' && v[i] <= '9' && i < 3; i++)
+                n = n * 10 + (unsigned)(v[i] - '0');
+            if (n) {                            /* fuer Programme (country.h) */
+                cv[8] = (char)('0' + n / 100 % 10);
+                cv[9] = (char)('0' + n / 10 % 10);
+                cv[10] = (char)('0' + n % 10);
+                env_set(-1, cv);
+                box_ctry = n;                   /* und fuer die DOS-Box   */
+            }
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             static char lv[16];
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;

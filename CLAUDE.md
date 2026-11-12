@@ -3597,6 +3597,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Ziel: Land aus der CONFIG.SYS für Datum/Zeit/Zahlen/Währung in CMD und
   den Werkzeugen (FAPI-Abfrage wie OS/2 DosGetCtryInfo) und an die Box
   weiterreichen.
+  Stufe 1 (Land) erledigt (in QEMU geprüft: `COUNTRY=001,437` -> DIR
+  `11/12/2026  06:54p  2,315`, DATE fragt „(MM/TT/JJ)“, TIME 12 h,
+  `command /c date` in der Box „mm-dd-[cc]yy“; `SET COUNTRY=046` -> DIR
+  `2026-11-12  18.54  2 315`, DATE „(JJ-MM-TT)“): statt eines FAPI-
+  Aufrufs (DGROUP des Kernels hat noch ~70 Byte) legt der Kernel
+  `COUNTRY=nnn` wie LONGNAMES= in die Systemumgebung – jede Sitzung erbt
+  es und kann es mit SET ändern. `apps/country.h` (per #include) hat die
+  Tabelle wie MS-DOS 5/6 (27 Länder: Datumsfolge/-trenner, Zeittrenner,
+  12/24 h, Tausender/Dezimal, Währung, übliche Codepage), `ctry_init`
+  (Vorgabe 049), `ctry_date` (4-stelliges Jahr), `ctry_time`, `ctry_dpat`;
+  `CTRY_MIN` nur Tabelle/Trenner. Benutzt von CMD (DIR, DATE mit Umordnen
+  der Eingabe, TIME, PROMPT $D/$T, Tausendertrenner in put_numx) und FM
+  (Datumsspalte, Größen). Box: `BOX_READ` ersetzt im gelesenen Sektor des
+  Startabbilds `COUNTRY=049,437,` durch das Land (`box_ctry`, Datei
+  bleibt unverändert) – FreeDOS lädt es aus seiner COUNTRY.SYS.
 - Unicode (Wunsch des Nutzers, abgestimmt in drei Stufen): (1) Datei-
   namen verlustfrei, bald: heute wird jedes Zeichen außerhalb CP437 beim
   Lesen eines VFAT-Namens zu `_` (`lat2cp`) und so auch ins Ziel kopiert;

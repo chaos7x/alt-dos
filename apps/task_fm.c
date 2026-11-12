@@ -18,6 +18,8 @@
 #include <i86.h>
 #include "fapi.h"
 #include "util.h"
+#define CTRY_MIN
+#include "country.h"
 
 #define A_PANEL     0x1B            /* hellcyan auf blau               */
 #define A_DIR       0x1F            /* Verzeichnisse weiss             */
@@ -132,7 +134,7 @@ static void fmt_num(unsigned long v, char *o)
             o[n++] = (char)('0' + d);
             any = 1;
             if (i == 0 || i == 3 || i == 6)
-                o[n++] = '.';
+                o[n++] = ctry.th;
         }
     }
     o[n] = 0;
@@ -301,7 +303,7 @@ static void plain_num(unsigned long v, char *o)     /* ohne Punkte  */
     unsigned i, n = 0;
     fmt_num(v, t);
     for (i = 0; t[i]; i++)
-        if (t[i] != '.')
+        if (t[i] != ctry.th)
             o[n++] = t[i];
     o[n] = 0;
 }
@@ -309,14 +311,20 @@ static void plain_num(unsigned long v, char *o)     /* ohne Punkte  */
 static void date_time(const struct ent *e, char *d, char *t)
 {
     static char nb[3];
-    fmt2(e->date & 31, nb);
-    d[0] = nb[0]; d[1] = nb[1]; d[2] = '.';
-    fmt2((e->date >> 5) & 15, nb);
-    d[3] = nb[0]; d[4] = nb[1]; d[5] = '.';
-    fmt2(((e->date >> 9) + 80) % 100, nb);
-    d[6] = nb[0]; d[7] = nb[1]; d[8] = 0;
+    unsigned v[3], i;
+    v[0] = e->date & 31;                        /* in der Folge des Landes */
+    v[1] = (e->date >> 5) & 15;                 /* (COUNTRY=), Jahr zwei-  */
+    v[2] = ((e->date >> 9) + 80) % 100;         /* stellig wie bisher      */
+    if (ctry.dfmt == 0) { i = v[0]; v[0] = v[1]; v[1] = i; }
+    else if (ctry.dfmt == 2) { i = v[0]; v[0] = v[2]; v[2] = i; }
+    for (i = 0; i < 3; i++) {
+        fmt2(v[i], nb);
+        d[i * 3] = nb[0];
+        d[i * 3 + 1] = nb[1];
+        d[i * 3 + 2] = i < 2 ? ctry.dsep : 0;
+    }
     fmt2(e->time >> 11, nb);
-    t[0] = nb[0]; t[1] = nb[1]; t[2] = ':';
+    t[0] = nb[0]; t[1] = nb[1]; t[2] = ctry.tsep;
     fmt2((e->time >> 5) & 63, nb);
     t[3] = nb[0]; t[4] = nb[1]; t[5] = 0;
 }
@@ -1685,6 +1693,7 @@ void main(void)
     unsigned k;
     char *a;
 
+    ctry_init();
     DosGetArgs(args);
     a = skip(args);
     if (a[0] == '/' && a[1] == '?') {
