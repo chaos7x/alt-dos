@@ -1007,7 +1007,7 @@ Erster Test: 486 PVI-4SP3 (`486sp3`, Award 07/22/94, kein PnP-BIOS),
 Dabei gesehen: dieses Board (Intel 420TX) nutzt PCI-Mechanismus 2
 (auch PCI/I-486SP3G, 420ZX; der Nutzer nimmt meist ASUS-Boards) –
 inzwischen unterstützt, s. Busdienste; FM-Erkennung meldet auf der
-AWE32 „OPL2“ (sollte OPL3 sein). Tippen (Vorschlag des Nutzers): zuerst
+AWE32 „OPL2“ (behoben, s. AWE). Tippen (Vorschlag des Nutzers): zuerst
 `keyb us` (über typ.py mit deutscher Zuordnung: y/z vertauscht), danach
 `xdotool type` direkt – alle Zeichen inkl. \ | * " kommen richtig an.
 
@@ -2686,6 +2686,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   1234/5678 und beim Parken 32 × DCYSUSV. Lehre: beim Test in 86Box
   darauf achten, wovon gestartet wird – eine SCSI-Platte mit altem
   Kernel ging vor der Diskette.
+  OPL3-Erkennung (in 86Box AWE32 jetzt „OPL3“, QEMU-AdLib weiter „OPL2“):
+  der Spiegeltest über 102h/104h braucht vorher NEW (105h = 1) – ein
+  echter OPL3 leitet die zweite Bank sonst ebenfalls auf die erste (ymfm
+  in 86Box tut das wie die Hardware), beim OPL2 trifft es Register 05h.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
