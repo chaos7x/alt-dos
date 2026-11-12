@@ -1008,7 +1008,7 @@ t_nls     db "NLSPATH=X:\DOS\MDOS", 0
           db "LANG=DE", 0
           db "DIRCMD=/OGN", 0           ; DIR: Verzeichnisse zuerst (wie /O)
 t_envend:
-t_blaster db "BLASTER=A220 I5 D1 H5 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
+t_blaster db "BLASTER=A220 I5 D1 H5 P330 T6", 0  ; SB16; IRQ 5 oder 7 geht beides
 has_bl    db 0
 t_ini     db "X:\DOS\MDOS\DOSBOX.INI", 0
 t_star    db "*", 0

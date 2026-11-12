@@ -445,7 +445,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   bei Zeile 100 Farbe per Port auf Rot), wegschalten, nach ein paar
   Sekunden zurück. AWE32/64: Spiele mit eigenem AWE-Treiber sprechen den
 Wavetable-Chip (EMU8000, 620h/A20h/E20h) im Vordergrund direkt an,
-hinten ist er stumm. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
+hinten ist er stumm. Ein virtueller MPU-401 (330h, UART-Betrieb) gibt
+die MIDI-Daten der Box an den MPU-401 der Karte weiter; die Box im
+Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
   der Kernel beim Wechsel über VBE 4F04h samt Bildspeicher und stellt sie
   beim Zurückholen wieder her, einschließlich der eingestellten Bank
   (Test: `START BANKT`-artige Programme, VBETEST). Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,

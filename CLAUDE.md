@@ -2690,6 +2690,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   der Spiegeltest über 102h/104h braucht vorher NEW (105h = 1) – ein
   echter OPL3 leitet die zweite Bank sonst ebenfalls auf die erste (ymfm
   in 86Box tut das wie die Hardware), beim OPL2 trifft es Register 05h.
+  Schritt 2, virtueller MPU-401 (in 86Box mit AWE32 PnP geprüft, MPU-
+  Protokoll von 86Box um die UART-Daten ergänzt): v86.c `mpu_in`/
+  `mpu_out` an 330h/331h – Status Bit 7 = 0 nur bei wartender
+  Bestätigung, Bit 6 immer 0 (bereit); Befehl FFh Reset (FEh außer im
+  UART-Betrieb, schließt einen offenen MIDI-Platz), 3Fh UART + FEh, alles
+  andere nur FEh (intelligenter Betrieb nicht nachgebildet). Datenbytes
+  gehen einzeln per `kf_box_aud(AUD_MIDIWRITE)` (Byte `mpu_b` in KDATA)
+  an die Audio-FAPI – Vorrang Vordergrund, md_track/md_load beim Wechsel
+  wie für FAPI-Programme. Erstes Byte öffnet (AUD_MIDIOPEN; ohne MPU-401
+  der Karte verpufft es), `mpu_off` beim Parken und Ende (neben
+  sb_stop). `mpu_st[t]` (UART/offen/FEh wartet). BLASTER jetzt mit P330.
+  Test MPT.COM (Reset, 3Fh, Note 90 3C 7F): Box sieht „AA“, am echten
+  MPU kommen Kanal-Reset/Programme, die Note und beim Parken die
+  Kanal-Resets an. Hörbar nur mit MIDI-Ausgang in 86Box.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im

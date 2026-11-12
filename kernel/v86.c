@@ -160,6 +160,8 @@ struct vsb {
 };
 static struct vsb sb[NTASK];
 static void sb_stop(int t);
+static void mpu_off(int t);
+static unsigned char mpu_st[NTASK];             /* MPU-401: Bit 0 UART, 1 offen, 2 FEh wartet */
 static void sb_reset(int t);
 static void lwin(unsigned idx, unsigned long lin);
 static void kpit_set(unsigned dv);
@@ -395,6 +397,7 @@ void __far v86_destroy(int t)
     }
     opl_trk[t] = 0;
     sb_stop(t);
+    mpu_off(t);
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -731,6 +734,7 @@ void __far v86_park(int t)
     opl_ports(t, 0);
     emu_off(t);
     sb_stop(t);
+    mpu_off(t);
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -1356,6 +1360,59 @@ static void sb_stop(int t)
             kf_box_aud(AUD_CLOSE, 0, 0);        /* task_end auf)        */
         sb[t].aud = 0;
     }
+}
+
+/* ---- virtueller MPU-401 (330h/331h) ---------------------------------------
+   Die meisten Spiele kennen nur "General MIDI ueber MPU-401" im UART-
+   Betrieb. Die Box schickt ihre MIDI-Bytes ueber die Audio-FAPI an den
+   Kernel (wie die virtuelle SB) - der gibt sie an den echten MPU-401 der
+   Karte, der Vordergrund hat Vorrang, Programm/Lautstaerke je Kanal kommen
+   beim Wechsel zurueck (md_track/md_load). Intelligenter Betrieb: nur
+   bestaetigt (FEh), nicht nachgebildet. */
+static unsigned char mpu_b;                     /* ein Byte, in KDATA     */
+
+static void mpu_out(int t, unsigned p, unsigned char v)
+{
+    if (p == 0x331) {                           /* Befehl                */
+        if (v == 0xFF) {                        /* Reset                 */
+            if (!(mpu_st[t] & 1))
+                mpu_st[t] |= 4;                 /* FEh nur ausserhalb UART */
+            mpu_st[t] &= (unsigned char)~1;
+            if (mpu_st[t] & 2) {                /* alles verstummt        */
+                kf_box_aud(AUD_MIDICLOSE, 0, 0);
+                mpu_st[t] &= (unsigned char)~2;
+            }
+        } else {
+            if (v == 0x3F)
+                mpu_st[t] |= 1;                 /* UART-Betrieb          */
+            mpu_st[t] |= 4;
+        }
+        return;
+    }
+    if (!(mpu_st[t] & 2)) {                     /* erstes Byte: oeffnen  */
+        if (kf_box_aud(AUD_MIDIOPEN, 0, 0))
+            return;                             /* kein MPU-401 da       */
+        mpu_st[t] |= 2;
+    }
+    mpu_b = v;
+    kf_box_aud(AUD_MIDIWRITE, (unsigned)&mpu_b, 1);
+}
+
+static unsigned char mpu_in(int t, unsigned p)
+{
+    if (p == 0x331)                             /* Bit 7 = 0: Byte da,   */
+        return (unsigned char)((mpu_st[t] & 4) ? 0x3F : 0xBF);  /* 6 = 0: bereit */
+    mpu_st[t] &= (unsigned char)~4;
+    return 0xFE;                                /* Bestaetigung           */
+}
+
+/* Parken, Ende: MIDI-Platz zurueckgeben (der Kernel raeumt beim Ende des
+   Tasks ohnehin auf, beim Parken lebt der Task weiter) */
+static void mpu_off(int t)
+{
+    if ((mpu_st[t] & 2) && kf_box_ctl(BOX_TASK, 0) == t)
+        kf_box_aud(AUD_MIDICLOSE, 0, 0);
+    mpu_st[t] = 0;
 }
 
 static int sb_open(unsigned rate, unsigned ch, unsigned bits)
@@ -3155,6 +3212,8 @@ static unsigned char port_in(int t, unsigned p)
     int k;
     if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
         return sv;
+    if (p == 0x330 || p == 0x331)               /* virtueller MPU-401    */
+        return mpu_in(t, p);
     p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t])
@@ -3223,6 +3282,10 @@ static void port_out(int t, unsigned p, unsigned char v)
     unsigned o, cur;
     if (sb_out(t, p, v))                        /* virtuelle Sound Blaster */
         return;
+    if (p == 0x330 || p == 0x331) {             /* virtueller MPU-401    */
+        mpu_out(t, p, v);
+        return;
+    }
     p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t])
