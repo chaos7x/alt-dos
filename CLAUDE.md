@@ -2671,6 +2671,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Mitschnitt, Musik läuft durch (vorher nach 12 s still); DOOM 1.2 mit
   Effekten und Musik.
   Vom Nutzer in 86Box bestätigt: DOTT (CD-Fassung) spricht.
+  AWE32/64-Wavetable in der Box, Schritt 1 (abgestimmt: Ports durch-
+  reichen -> virtueller MPU-401 -> EMU8000-Synthesizer in SB16.SYS; in
+  86Box auf dem PCI/I-486SP3 mit AWE32 PnP geprüft): v86.c `emu_port`
+  (620h/640h/660h/680h + 400h/800h, je 4 Ports), Box vorn -> `emu_take`
+  und Zugriff direkt durch den Monitor – als Wort (`k3_inw`/`k3_outw`,
+  der EMU8000 verträgt keine Bytezerlegung), 32 Bit (PM, 66h) als zwei
+  Wortzugriffe; hinten FFFFh/verworfen. Die I/O-Bitmap reicht nur bis
+  3DFh, also bleibt jeder Zugriff eine Falle (spürbar erst bei Spielen
+  mit viel AWE-Musik). `emu_off` (bei allen Stellen von opl_ports(t, 0):
+  hinten, Parken, Ende) setzt DCYSUSV aller 32 Stimmen auf 807Fh
+  (Ausklingen). Test EMUT.COM (PTRX schreiben/lesen): 86Box-Protokoll
+  (`-DENABLE_EMU8K_LOG=1 -DEMU8K_DEBUG_REGISTERS=1`) zeigt WRITE/READ
+  1234/5678 und beim Parken 32 × DCYSUSV. Lehre: beim Test in 86Box
+  darauf achten, wovon gestartet wird – eine SCSI-Platte mit altem
+  Kernel ging vor der Diskette.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im

@@ -215,6 +215,9 @@ static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void spk_ports(int t, int on);
 static void opl_ports(int t, int on);
+static void emu_off(int t);
+static unsigned char emu_owner;                 /* EMU8000: Task + 1, 0 = keiner */
+static unsigned emu_base;                       /* 620h, 640h, 660h, 680h */
 static pg_t own_page(void);
 static pg_t opl_pg[NTASK];
 static unsigned char opl_trk[NTASK];            /* Bit 0 mitschreiben, 1 Kopie gilt, 2 Bank 1 benutzt */
@@ -385,6 +388,7 @@ void __far v86_destroy(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    emu_off(t);
     if (opl_pg[t]) {
         vp_free(opl_pg[t]);
         opl_pg[t] = 0;
@@ -725,6 +729,7 @@ void __far v86_park(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    emu_off(t);
     sb_stop(t);
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
@@ -803,9 +808,11 @@ void __far v86_poll(void)
     int t, cur = -2;
 
     for (t = 0; t < NTASK; t++)         /* Lautsprecher nur vorn         */
-        if ((spk_open[t] || opl_open[t]) && !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg())) {
+        if ((spk_open[t] || opl_open[t] || emu_owner == t + 1) &&
+            !(box_ses[t] >= 0 && box_ses[t] == kf_vio_fg())) {
             spk_ports(t, 0);
             opl_ports(t, 0);
+            emu_off(t);
         }
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
         int s = kf_vio_fg(), ok = 0;
@@ -1201,6 +1208,48 @@ static void opl_restore(int t)
             opl_wr(b ? 0x38A : 0x388, r, v);
         }
     opl_wr(0x388, 0x01, c[0x01]);               /* (sonst bleibt die alte) */
+}
+
+
+/* ---- EMU8000 (Wavetable der AWE32/64) -----------------------------------
+   Spiele mit eigenem AWE-Treiber (DOOM, Duke 3D ...) sprechen den Chip
+   direkt an: Datenregister 620h/A20h/E20h (+2: A22h, E22h = Zeiger) bei
+   EMU-Basis 620h (SB 220h), 640h ... - als 16-Bit-Ports, die man nicht
+   in Bytes zerlegen darf. Die Box im Vordergrund greift ueber den Monitor
+   direkt durch (wie beim AdLib), hinten ist der Chip stumm. Die I/O-
+   Bitmap reicht nur bis 3DFh, also bleibt jeder Zugriff eine Falle. */
+
+unsigned k3_inw(unsigned port);
+#pragma aux k3_inw = "in ax,dx" __parm [__dx] __value [__ax];
+void k3_outw(unsigned port, unsigned v);
+#pragma aux k3_outw = "out dx,ax" __parm [__dx] [__ax];
+
+static int emu_port(unsigned p)
+{
+    unsigned q = p & 0x3FF;
+    return p >= 0x400 && p < 0x1000 && q >= 0x220 && q <= 0x283 && !(q & 0x1C);
+}
+
+/* Box nimmt den Chip (vorn) */
+static void emu_take(int t, unsigned p)
+{
+    emu_owner = (unsigned char)(t + 1);
+    emu_base = 0x400 | (p & 0x3E0);
+}
+
+/* hinten, Parken, Ende: alle 32 Stimmen in die Ausklingphase */
+static void emu_off(int t)
+{
+    unsigned ch, f;
+    if (emu_owner != t + 1)
+        return;
+    f = irq_off();
+    for (ch = 0; ch < 32; ch++) {
+        k3_outw(emu_base + 0x802, (5 << 5) | ch);   /* DCYSUSV (Data1) */
+        k3_outw(emu_base + 0x400, 0x807F);
+    }
+    irq_restore(f);
+    emu_owner = 0;
 }
 
 static void opl_ports(int t, int on)
@@ -1852,10 +1901,11 @@ static void inject(struct v86_iret *r, int t)
     }
     if (box_fg(t))                              /* 0417h aktuell halten  */
         bios_shift();
-    if ((spk[t] || spk_open[t] || opl_open[t]) && !box_fg(t)) {
+    if ((spk[t] || spk_open[t] || opl_open[t] || emu_owner == t + 1) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
         opl_ports(t, 0);
+        emu_off(t);
     }
     if (pit_rl[t])
         kpit_check(t);                          /* vorn schneller Takt   */
@@ -2754,6 +2804,7 @@ static void vga_wait(int t)
             spk_hw(t, 0);
         spk_ports(t, 0);
         opl_ports(t, 0);
+        emu_off(t);
         kpit_set(0);                    /* die virtuelle SB nicht anhalten:
                                            sonst wartet das Spiel nach dem
                                            Zurueckholen ewig auf den Block-
@@ -2793,6 +2844,7 @@ static void vga_freeze(int t)
         spk_hw(t, 0);
     spk_ports(t, 0);
     opl_ports(t, 0);
+    emu_off(t);
     kpit_set(0);
     vga_map(t, k);
 }
@@ -5728,7 +5780,18 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         n = op <= 0xE5 ? (unsigned)lrd(lin + 1, 1) : DX;
-        if (op & 1)
+        if (emu_port(n)) {                      /* EMU8000: als Wort     */
+            if (box_fg(t)) {
+                emu_take(t, n);
+                if (op & 1)
+                    AX = k3_inw(n);
+                else
+                    AL = (unsigned char)inb(n);
+            } else if (op & 1)
+                AX = 0xFFFF;
+            else
+                AL = 0xFF;
+        } else if (op & 1)
             AX = port_in(t, n) | (port_in(t, n + 1) << 8);
         else
             AL = port_in(t, n);
@@ -5736,9 +5799,19 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return 0;
     case 0xE6: case 0xE7: case 0xEE: case 0xEF: /* OUT                   */
         n = op <= 0xE7 ? (unsigned)lrd(lin + 1, 1) : DX;
-        port_out(t, n, AL);
-        if (op & 1)
-            port_out(t, n + 1, AH);
+        if (emu_port(n)) {
+            if (box_fg(t)) {
+                emu_take(t, n);
+                if (op & 1)
+                    k3_outw(n, AX);
+                else
+                    outb(n, AL);
+            }
+        } else {
+            port_out(t, n, AL);
+            if (op & 1)
+                port_out(t, n + 1, AH);
+        }
         f->r.eip += op <= 0xE7 ? 2 : 1;
         return 0;
     }
@@ -5962,7 +6035,24 @@ static unsigned monitor(struct v86_frame *f, int t)
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         p = op <= 0xE5 ? rd8(cs, ip++) : DX;
-        if (op & 1) {
+        if (emu_port(p)) {                      /* EMU8000: Worte; 32 Bit */
+            unsigned lo = 0xFFFF, hi = 0xFFFF;  /* = zwei Wortzugriffe   */
+            if (box_fg(t)) {
+                emu_take(t, p);
+                if (op & 1) {
+                    lo = k3_inw(p);
+                    if (o32)
+                        hi = k3_inw(p + 2);
+                } else
+                    lo = inb(p);
+            }
+            if (!(op & 1))
+                AL = (unsigned char)lo;
+            else if (o32)
+                f->eax = ((unsigned long)hi << 16) | lo;
+            else
+                AX = lo;
+        } else if (op & 1) {
             AX = port_in(t, p) | (port_in(t, p + 1) << 8);
             if (o32)
                 f->eax = AX | 0xFFFF0000UL;
@@ -5971,9 +6061,22 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0xE6: case 0xE7: case 0xEE: case 0xEF: /* OUT                   */
         p = op <= 0xE7 ? rd8(cs, ip++) : DX;
-        port_out(t, p, AL);
-        if (op & 1)
-            port_out(t, p + 1, AH);
+        if (emu_port(p)) {
+            if (box_fg(t)) {
+                emu_take(t, p);
+                if (!(op & 1))
+                    outb(p, AL);
+                else {
+                    k3_outw(p, AX);
+                    if (o32)
+                        k3_outw(p + 2, (unsigned)(f->eax >> 16));
+                }
+            }
+        } else {
+            port_out(t, p, AL);
+            if (op & 1)
+                port_out(t, p + 1, AH);
+        }
         break;
     case 0x6C: case 0x6D: case 0x6E: case 0x6F: /* INS/OUTS              */
         if (rep)

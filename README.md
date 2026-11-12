@@ -443,7 +443,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Palette/Attribute über INT 10h (0Fh, 1000h–1017h) bildet der Kernel
   hinten nach. Test: `START \DEMO\BGTEST [4|12]` (eine Zeile je Takt,
   bei Zeile 100 Farbe per Port auf Rot), wegschalten, nach ein paar
-  Sekunden zurück. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
+  Sekunden zurück. AWE32/64: Spiele mit eigenem AWE-Treiber sprechen den
+Wavetable-Chip (EMU8000, 620h/A20h/E20h) im Vordergrund direkt an,
+hinten ist er stumm. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
   der Kernel beim Wechsel über VBE 4F04h samt Bildspeicher und stellt sie
   beim Zurückholen wieder her, einschließlich der eingestellten Bank
   (Test: `START BANKT`-artige Programme, VBETEST). Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
