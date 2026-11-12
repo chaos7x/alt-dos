@@ -3252,6 +3252,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Schnittstellen für Programme (W-Aufrufe wie Win32) erst mit 7.0 und
   der Grafikoberfläche – der VGA-Textmodus hat nur 256/512 Zeichen.
   Zeitlinie: NT 3.1 (1993) Unicode, OS/2 blieb bei Codepages.
+- Weitere Dateisysteme als `.IFS` (Ideen, Gespräch mit dem Nutzer
+  12.11.2026, noch ohne Reihenfolge): je Modul ein Segment (64 KB), dazu
+  `U<Name>.EXE` für CHKDSK/FORMAT. Grenzen: FAPI-Dateigröße/-Position 32
+  Bit (über 4 GB bräuchte es 64-Bit-Aufrufe wie OS/2 DosOpenL),
+  Sektornummern 32 Bit (2 TB), Namen nur so weit CP437 reicht (Unicode-
+  Plan). **HPFS** (OS/2 1.2, 1989) passt in die Zeitlinie: lange Namen,
+  EAs, B-Baum-Verzeichnisse; lesen + schreiben, UHPFS.EXE; Nachschlage-
+  werke „Inside the HPFS“, Linux `fs/hpfs` (GPLv2). **NTFS** (NT 3.1,
+  1993): Stufe 1 nur lesend (MFT, Run-Listen, residente Attribute,
+  Index), Stufe 2 Schreiben nur auf sauber heruntergefahrene Volumes
+  (sonst nur lesend einhängen), später UNTFS.EXE. Nachschlagewerke:
+  Linux **ntfs3** (Paragon, seit 5.15, GPLv2-only – mit GPLv2+ verträglich,
+  legt aber das Gesamtwerk auf v2 fest, nicht mit GRUB-Code mischen;
+  ~25.000 Zeilen 32/64-Bit-C am Linux-Unterbau, also nicht übernehmbar,
+  nur als Vorlage – besonders fürs Schreiben: Run-Listen, Bitmap,
+  Attributliste, Indexknoten teilen, Fixups/USA, $LogFile nachspielen)
+  und ntfs-3g (GPLv2+). **exFAT** (2006, Spezifikation seit 2019 offen)
+  eher 7.0 mit USB. Kleinere: UDF, Rock Ridge, Minix.
 - Idee: ext4 als `.IFS`, zuerst nur lesend (Vorbild: GRUB `ext2.c`, liest
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
