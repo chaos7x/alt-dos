@@ -172,6 +172,10 @@ struct vsb {
     unsigned char dpage[2], dff[2];
     unsigned char e2v, e2c;             /* DSP E2h: Wert, Zaehler        */
     unsigned char quick;                /* kurzer Block: sofort fertig   */
+    unsigned char rec;                  /* laufender Block ist Aufnahme  */
+    unsigned char m0e;                  /* SB-Pro-Mixer 0Eh (Bit 1 stereo) */
+    unsigned char muart;                /* DSP-MIDI im UART-Betrieb (34h-37h) */
+    unsigned prate;                     /* Abtastrate je Kanal beim Start */
 };
 static struct vsb sb[NTASK];
 static void sb_stop(int t);
@@ -1410,6 +1414,18 @@ static void sb_stop(int t)
    bestaetigt (FEh), nicht nachgebildet. */
 static unsigned char mpu_b;                     /* ein Byte, in KDATA     */
 
+/* ein MIDI-Byte der Box (MPU-401 oder DSP-MIDI) an den Kernel */
+static void midi_send(int t, unsigned char v)
+{
+    if (!(mpu_st[t] & 2)) {                     /* erstes Byte: oeffnen  */
+        if (kf_box_aud(AUD_MIDIOPEN, 0, 0))
+            return;                             /* kein MIDI-Ausgang da   */
+        mpu_st[t] |= 2;
+    }
+    mpu_b = v;
+    kf_box_aud(AUD_MIDIWRITE, (unsigned)&mpu_b, 1);
+}
+
 static void mpu_out(int t, unsigned p, unsigned char v)
 {
     if (p == 0x331) {                           /* Befehl                */
@@ -1428,13 +1444,7 @@ static void mpu_out(int t, unsigned p, unsigned char v)
         }
         return;
     }
-    if (!(mpu_st[t] & 2)) {                     /* erstes Byte: oeffnen  */
-        if (kf_box_aud(AUD_MIDIOPEN, 0, 0))
-            return;                             /* kein MPU-401 da       */
-        mpu_st[t] |= 2;
-    }
-    mpu_b = v;
-    kf_box_aud(AUD_MIDIWRITE, (unsigned)&mpu_b, 1);
+    midi_send(t, v);
 }
 
 static unsigned char mpu_in(int t, unsigned p)
@@ -1475,16 +1485,21 @@ static void sb_start(int t, unsigned long len, int ai)
         return;
     if (!b->rate)
         b->rate = 11025;
-    if (!b->aud || b->orate != b->rate || b->och != ch || b->obits != bits) {
+    /* SB Pro stereo (Mixer 0Eh, 8-Bit-Befehle): die Zeitkonstante gilt fuer
+       beide Kanaele zusammen - je Kanal die halbe Rate */
+    b->prate = b->st && b->cmd < 0xB0 ? b->rate >> 1 : b->rate;
+    if (b->rec)                                 /* Aufnahme: nichts zur  */
+        ;                                       /* Karte                 */
+    else if (!b->aud || b->orate != b->prate || b->och != ch || b->obits != bits) {
         if (b->aud)
             kf_box_aud(AUD_CLOSE, 0, 0);
         b->conv = 0;
-        b->aud = (unsigned char)sb_open(b->rate, ch, bits);
+        b->aud = (unsigned char)sb_open(b->prate, ch, bits);
         if (!b->aud && (ch != 1 || bits != 8)) {
-            b->aud = (unsigned char)sb_open(b->rate, 1, 8);
+            b->aud = (unsigned char)sb_open(b->prate, 1, 8);
             b->conv = 1;
         }
-        b->orate = b->rate;
+        b->orate = b->prate;
         b->och = (unsigned char)ch;
         b->obits = (unsigned char)bits;
     }
@@ -1498,7 +1513,7 @@ static void sb_start(int t, unsigned long len, int ai)
        1 Byte mit 14h und wartet in einer Zaehlschleife auf den IRQ - auf
        schnellen Rechnern weit unter 10 ms): gleich beim Ruecksprung
        fertig melden statt erst beim naechsten Takt */
-    b->quick = (unsigned char)(!ai && len <= (unsigned long)(b->rate / 100) << (b->b16 + b->st));
+    b->quick = (unsigned char)(!ai && len <= (unsigned long)(b->prate / 100) << (b->b16 + b->st));
 }
 
 /* Vorzeichen anpassen (Karte: 8 Bit ohne, 16 Bit mit), ggf. auf 8 Bit
@@ -1542,8 +1557,8 @@ static void sb_pump(int t)
     b->last = now;
     fr = 0;
     while (d--) {                               /* Abtastwerte je 10 ms  */
-        fr += b->rate / 100;
-        b->frac += b->rate % 100;
+        fr += b->prate / 100;
+        b->frac += b->prate % 100;
         if (b->frac >= 100) {
             b->frac -= 100;
             fr++;
@@ -1565,8 +1580,14 @@ static void sb_pump(int t)
         else
             lin = ((unsigned long)b->dpage[c] << 16) + b->dcur[c];
         lwin(VWIN_IDX, lin);
-        far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, k);
-        if (b->aud && (b->spk || b->b16 || b->dsp4) && box_fg(t)) {
+        if (b->rec) {                           /* Aufnahme: Stille in den */
+            unsigned char __far *q = MK_FP(VWIN, 0);   /* Puffer der Box */
+            unsigned j;
+            for (j = 0; j < k; j++)
+                q[j] = (unsigned char)(b->b16 ? 0 : b->sgn ? 0 : 0x80);
+        } else
+            far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, k);
+        if (!b->rec && b->aud && (b->spk || b->b16 || b->dsp4) && box_fg(t)) {
             w = sb_conv(b, k);
             if (w)
                 kf_box_aud(AUD_WRITE, (unsigned)sb_buf, w);
@@ -1623,19 +1644,25 @@ static void sb_e2(int t, unsigned char a)
     }
 }
 
-/* DSP-Befehle: alles bis DSP 4.05 (SB16) ausser Aufnahme und MIDI */
+/* DSP-Befehle bis DSP 4.05 (SB16). Aufnahme liefert Stille im richtigen
+   Takt (mit IRQ und DMA-Zaehler - Programme, die aufnehmen oder damit die
+   Karte pruefen, laufen weiter); MIDI ueber die DSP (38h, UART 34h-37h)
+   geht wie der MPU-401 an den Kernel. */
 static void sb_cmd(int t, unsigned char v)
 {
     struct vsb *b = &sb[t];
     unsigned d;
+    if (b->muart) {                             /* UART: alles ist MIDI  */
+        midi_send(t, v);
+        return;
+    }
     if (b->need) {                              /* Argument              */
         b->args[b->nargs++] = v;
         if (b->nargs < b->need)
             return;
         b->need = 0;
         if (b->cmd >= 0xB0 && b->cmd <= 0xCF) { /* SB16: Bx 16, Cx 8 Bit */
-            if (b->cmd & 8)
-                return;                         /* Aufnahme: nicht da    */
+            b->rec = (unsigned char)((b->cmd & 8) != 0);    /* Bit 3: Eingang */
             b->b16 = (unsigned char)(b->cmd < 0xC0);
             b->ch = b->b16;                     /* 16 Bit ueber DMA 5    */
             b->st = (unsigned char)((b->args[0] & 0x20) != 0);
@@ -1657,9 +1684,14 @@ static void sb_cmd(int t, unsigned char v)
         case 0x48:
             b->blk8 = (b->args[0] | (b->args[1] << 8)) + 1;
             break;
-        case 0x14: case 0x91:
-            b->b16 = b->st = b->sgn = b->ch = 0;
+        case 0x14: case 0x91: case 0x24:       /* 24h: Aufnahme         */
+            b->b16 = b->sgn = b->ch = 0;
+            b->st = (unsigned char)((b->m0e & 2) != 0);
+            b->rec = (unsigned char)(b->cmd == 0x24);
             sb_start(t, (b->args[0] | (b->args[1] << 8)) + 1UL, 0);
+            break;
+        case 0x38:                              /* MIDI-Byte senden      */
+            midi_send(t, b->args[0]);
             break;
         case 0xE0:
             sb_put(t, (unsigned char)~b->args[0]);
@@ -1688,8 +1720,22 @@ static void sb_cmd(int t, unsigned char v)
         b->need = 2;
         break;
     case 0x1C: case 0x90:                       /* Auto-Init mit 48h     */
-        b->b16 = b->st = b->sgn = b->ch = 0;
+    case 0x2C: case 0x98:                       /* ... Aufnahme          */
+        b->b16 = b->sgn = b->ch = 0;
+        b->st = (unsigned char)((b->m0e & 2) != 0);
+        b->rec = (unsigned char)(v == 0x2C || v == 0x98);
         sb_start(t, b->blk8 ? b->blk8 : 2048, 1);
+        break;
+    case 0x99:                                  /* Aufnahme einzeln (48h) */
+        b->b16 = b->sgn = b->ch = 0;
+        b->st = (unsigned char)((b->m0e & 2) != 0);
+        b->rec = 1;
+        sb_start(t, b->blk8 ? b->blk8 : 2048, 0);
+        break;
+    case 0x34: case 0x35: case 0x36: case 0x37: /* MIDI UART bis Reset   */
+        b->muart = 1;
+        break;
+    case 0x30: case 0x31:                       /* MIDI lesen: nichts da */
         break;
     case 0xD0: case 0xD5: b->act = 0; break;    /* anhalten              */
     case 0xD4: case 0xD6:                       /* weiter                */
@@ -1712,6 +1758,20 @@ static void sb_cmd(int t, unsigned char v)
     }
 }
 
+/* SB-Pro-Lautstaerken (4 Bit links | 4 Bit rechts) auf die SB16-Register
+   (je Kanal 5 Bit oben): 22h Gesamt, 04h Wave, 26h FM, 28h CD, 2Eh Line */
+static unsigned char sbp_reg(unsigned char i)
+{
+    switch (i) {
+    case 0x22: return 0x30;
+    case 0x04: return 0x32;
+    case 0x26: return 0x34;
+    case 0x28: return 0x36;
+    case 0x2E: return 0x38;
+    }
+    return 0;
+}
+
 static unsigned char sb_mixget(int t, unsigned char i)
 {
     struct vsb *b = &sb[t];
@@ -1726,6 +1786,10 @@ static unsigned char sb_mixget(int t, unsigned char i)
         return b->ist;
     if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
         return b->mix[i - 0x30];
+    if (i == 0x0E)
+        return b->m0e;
+    if ((l = sbp_reg(i)) != 0)                  /* SB Pro: links/rechts  */
+        return (unsigned char)((b->mix[l - 0x30] & 0xF0) | (b->mix[l + 1 - 0x30] >> 4));
     return 0;
 }
 
@@ -1741,6 +1805,12 @@ static void sb_mixset(int t, unsigned char i, unsigned char v)
             b->irql = 7;
     } else if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
         b->mix[i - 0x30] = v;
+    else if (i == 0x0E)
+        b->m0e = v;                             /* Bit 1 stereo, 5 Filter */
+    else if ((i = sbp_reg(i)) != 0) {
+        b->mix[i - 0x30] = (unsigned char)(v & 0xF0);
+        b->mix[i + 1 - 0x30] = (unsigned char)(v << 4);
+    }
 }
 
 /* 8237-Ports: Kanal 1 (8 Bit) und 5 (16 Bit) virtuell, die anderen
@@ -1847,6 +1917,8 @@ static int sb_out(int t, unsigned p, unsigned char v)
             b->rst = 0;
             sb_stop(t);
             b->need = 0;
+            b->muart = 0;                       /* Reset beendet UART-MIDI */
+            b->rec = 0;
             b->on_ = b->oh = 0;
             b->spk = 0;
             b->ist = 0;

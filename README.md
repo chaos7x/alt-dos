@@ -471,7 +471,10 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   16 Bit/Stereo, Mixer):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
   Effekte, Sprache in Day of the Tentacle; OPL auch an 220h/228h, DSP
-  E2h), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Die Box wartet beim
+  E2h), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Dazu SB-Pro-
+  Stereo (Mixer 0Eh, SB-Pro-Lautstärken 04h/22h/26h/28h/2Eh), MIDI über
+  die DSP (38h, UART 34h–37h) und Aufnahme (24h/2Ch/98h/99h, SB16 mit
+  Eingabe-Bit) – Aufnahme liefert Stille im richtigen Takt mit IRQ. Die Box wartet beim
   Ton nie auf die Karte (`AUD_NOWAIT`); auf CPUs ohne VME/PVI (386/486)
   kosten die Fallen für CLI/STI/Ports weniger als früher – DOOM 1.9 mit
   Sound Blaster auf einem DX4-100 (86Box) braucht für `-timedemo demo1`

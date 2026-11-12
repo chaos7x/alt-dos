@@ -101,7 +101,8 @@ DoubleSpace (6.1): Unicode Stufe 1, Phase 6 Rest (Sperren je IDE-Kanal/
 SCSI-Gerät), Ton (Aufnahme, SB-Pro-Stereo, DSP-MIDI), Platten (NCR
 synchron/Wide, IDE LBA48/UDMA, EJECT), APM-Leerlauf, Grafik-Boxen hinten
 (Latch-Kopien, SVGA), CD (ISO 9660:1999, Rock Ridge), Box (A:/B:, Maus-
-Rückruf im DPMI), COUNTRY=/Codepages, zuletzt der DOOM-Nachbau.
+Rückruf im DPMI), COUNTRY=/Codepages. Der DOOM-Nachbau ist ebenfalls
+zurückgestellt (Entscheidung des Nutzers, 12.11.2026).
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
@@ -2853,8 +2854,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   SB-DMA, AWE, bei Bedarf FM-Kopien, Zwischenablage): `NKSEG` 12 -> 16,
   KCODE2/VWIN/KCODE3 rücken nach (kern.h, start.asm, build.sh; kernel.c
   prüft beim Übersetzen, dass die festen Werte zur GDT passen). In QEMU
-  danach XCOPY, Box (`command /c ver`), CHKDSK, MEM, fsck sauber. Offen: Aufnahme,
-  SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
+  danach XCOPY, Box (`command /c ver`), CHKDSK, MEM, fsck sauber.
+  Virtuelle SB, Rest (in QEMU mit SBT.COM geprüft: Mixer 22h zurück-
+  lesbar, 24h füllt 1.000 Byte mit 80h und meldet IRQ 5, Mixer 0Eh = 2
+  + 14h mit IRQ, 38h/35h + Reset liefert wieder AAh): `vsb` hat `rec`
+  (Block ist Aufnahme: sb_pump schreibt Stille – 80h bzw. 0 – in den
+  Puffer der Box, nichts zur Karte; 24h, 2Ch/98h Auto-Init, 99h, Bx/Cx
+  mit Bit 3), `m0e` (SB-Pro-Mixer 0Eh; Bit 1 macht 8-Bit-Ausgabe über
+  die alten Befehle stereo, `prate` = Rate je Kanal = halbe Zeitkonstan-
+  tenrate, sb_pump/sb_start rechnen mit prate), `muart` (34h–37h: jedes
+  Byte an 22Ch ist MIDI bis zum DSP-Reset). MIDI der DSP geht wie der
+  MPU-401 über `midi_send` (aus mpu_out herausgelöst). SB-Pro-
+  Lautstärken (`sbp_reg`) auf die SB16-Register 30h–39h abgebildet
+  (4 Bit oben/unten). Echte Aufnahme über die Karte bräuchte einen
+  Eingabeweg in SB16.SYS (FAPI AudRead) – noch nicht. DGROUP 65.360.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
   Vordergrund auf 388h–38Bh zu, meldet `opl_ports` das dem Kernel
   (`kf_box_aud(BOX_AUD_FM, 1)` -> `fm_box`): FAPI-FM-Programme werden
