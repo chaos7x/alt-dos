@@ -3168,8 +3168,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Fenster, je Takt eine Zeile über alle Bänke – per START, nach 5 s weg,
   nach 11 s zurück: 84 -> 346 Zeilen, nahtlos über die Bankgrenzen;
   LFBBG.COM dasselbe als DPMI-Programm über DPMI 0800h: 69 -> 290
-  Zeilen; BGTEST, VBETEST, `command /c ver`, START DOOM 1.2 mit Alt+Esc
-  unverändert): raw_svout legt hinter RAW_SVOK Bildgröße, LFB-Adresse,
+  Zeilen; BGTEST, VBETEST, `command /c ver`
+  unverändert; DOOM 1.9 mit SB + AdLib per START, Alt+Esc weg und
+  zurück: Demo läuft weiter, Ton vor und nach dem Wechsel): raw_svout legt hinter RAW_SVOK Bildgröße, LFB-Adresse,
   Granularität, Teilung und die Stellung der Fenster A/B (4F05h BH = 1,
   `vesa_getbank`) ab und setzt RAW_KIND = 4. v86.c `vga_svmap(t, bg)`:
   hinten zeigen A0000–AFFFF auf die Sicherung ab Bank · 64 KB / gmul
