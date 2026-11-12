@@ -3617,6 +3617,36 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Datumsspalte, Größen). Box: `BOX_READ` ersetzt im gelesenen Sektor des
   Startabbilds `COUNTRY=049,437,` durch das Land (`box_ctry`, Datei
   bleibt unverändert) – FreeDOS lädt es aus seiner COUNTRY.SYS.
+  Stufe 2 (Codepages, Unicode Stufe 2) erledigt (in QEMU geprüft mit
+  `CODEPAGE=850,437`: CHCP zeigt „850“ und „850 437“, TYPE einer Datei mit
+  9Dh/D5h zeigt unter 850 Ø/ı, unter 437 ¥/╒; der VFAT-Name „Øre
+  Test.txt“ einer Diskette erscheint unter 850 richtig, unter 437 als
+  `_re Test.txt`; `CHCP 852` ohne Vorbereitung abgelehnt; XCOPY auf das
+  EA-Laufwerk C: legt für ihn einen W-Satz an, fsck sauber; die Box
+  startet mit `COUNTRY=049,850`): wie OS/2 `CODEPAGE=850,437` (bis
+  `NCP` 4, erste gilt beim Start), systemweit (der Zeichensatz der Karte
+  gilt für alle Sitzungen). Zeichensätze `freedos/cp/CPnnn.FNT` (6.400
+  Byte: 8x16, 8x8, Unicode 80h–FFh; tools/mkcp.py aus den UPX-gepackten
+  CPI-Dateien von FreeDOS cpidos 3.0a, GPL v2 – mit upx -d entpacken,
+  Herkunft in freedos/README.txt; nur auf atdos-hd.img, auf der Diskette
+  fehlt der Platz) -> `\DOS\SYSTEM`. kernel.c `cp_load` (vor der Shell,
+  Startlaufwerk eingehängt) liest sie in ein Kernelsegment `cp_sel`,
+  `cp_set` setzt `cp_utab` (aktive Tabelle, fat.c) und `cp_fontlin`
+  (vio.c `load_font` nimmt dann die Datei statt des ROM) und ruft
+  `vio_refont` (hw_lines = 0, redraw). FAPI 56h `FAPI_CODEPAGE`
+  (DosGetCp/DosSetCp/DosCpList), CMD `CHCP` (ohne Zahl: aktiv +
+  vorbereitet). fat.c: cp2uni/uni2cp über die aktive Tabelle; Sätze `L` in
+  EA DATA. SF sind fest CP437 – ea_load rechnet sie über Unicode in die
+  aktive Codepage um (Unpassendes `_` mit UTF-16 wie ein W-Satz), ea_add
+  schreibt `L` in CP437 oder, wenn ein Zeichen dort fehlt, `W` aus der
+  Codepage (`uni437`, `w437`). 8.3-Kurznamen bleiben wie bei MS-DOS
+  Bytes der OEM-Codepage. ISO9660.IFS holt die Tabelle bei jedem
+  Einhängen über den neuen DevHlp `DH_CPTAB` (21: BX 0 Selektor, 1
+  Offset, Selektor 0 = 437). Box: BOX_READ setzt auch die Codepage in
+  `COUNTRY=049,437,` ein. DGROUP danach 65.528 Byte (8 frei!) – vor
+  weiteren Daten im Kernel erst Platz schaffen. Offen: Tastatur-
+  belegungen je Codepage (KEYB liefert weiter CP437-Bytes; für Deutsch
+  gleich), Codepage je Sitzung wie OS/2.
 - Unicode (Wunsch des Nutzers, abgestimmt in drei Stufen): (1) Datei-
   namen verlustfrei, bald: heute wird jedes Zeichen außerhalb CP437 beim
   Lesen eines VFAT-Namens zu `_` (`lat2cp`) und so auch ins Ziel kopiert;

@@ -2727,13 +2727,24 @@ static int execute(char *l)
             on_off("KEYS", &keys_on, arg);
     } else if (same(cmd, "TRUENAME"))
         cmd_truename(arg);
-    else if (same(cmd, "CHCP")) {
-        if (!*arg || same(arg, "437"))
-            puts("Aktive Codeseite: 437\n");
-        else if (same(arg, "850"))
-            puts("Codeseite 850 ist nicht vorbereitet (Zeichensatz fehlt).\n");
-        else
-            puts("Ung\x81ltige Codeseite.\n");
+    else if (same(cmd, "CHCP")) {               /* wie OS/2: CODEPAGE=   */
+        unsigned n = 0, i, c;
+        for (; *arg >= '0' && *arg <= '9'; arg++)
+            n = n * 10 + (unsigned)(*arg - '0');
+        if (n && FAPI_FAILED(DosSetCp(n))) {
+            puts("Codeseite ");
+            put_numx(n, 0, 0);
+            puts(" ist nicht vorbereitet (CODEPAGE= in der CONFIG.SYS).\n");
+        } else if (!n) {
+            puts("Aktive Codeseite: ");
+            put_numx(DosGetCp(), 0, 0);
+            puts("\nVorbereitete Codeseiten:");
+            for (i = 0; (c = DosCpList(i)) != 0; i++) {
+                putc(' ');
+                put_numx(c, 0, 0);
+            }
+            puts(i ? "\n" : " 437\n");
+        }
     } else if (same(cmd, "CTTY"))
         cmd_ctty(arg);
     else if (same(cmd, "LH") || same(cmd, "LOADHIGH")) {

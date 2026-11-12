@@ -1424,6 +1424,65 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
    eigenen Sitzung statt wie NT in der des Aufrufers */
 static unsigned char dos_session;
 static unsigned box_ctry;               /* COUNTRY= fuer die DOS-Box (0 = 049) */
+
+/* ---- Codepages (CODEPAGE=, CHCP) ----------------------------------------
+   Wie OS/2: CODEPAGE=850,437 bereitet bis zu NCP Codepages vor, die erste
+   gilt ab dem Start, FAPI_CODEPAGE (CHCP) schaltet systemweit um. Je
+   Codepage \DOS\SYSTEM\CPnnn.FNT (tools/mkcp.py aus den CPI-Dateien von
+   FreeDOS): 8x16, 8x8, Unicode 80h-FFh, zusammen in einem Kernelsegment.
+   437 ist der Zeichensatz im ROM und die Tabelle in fat.c. */
+#define NCP      4
+#define CP_SZ    6400
+#define CP_UNI   6144
+unsigned short __far *cp_utab;          /* aktive Tabelle, 0 = CP437 (fat.c) */
+unsigned long cp_fontlin;               /* aktiver Zeichensatz, 0 = ROM (vio.c) */
+static unsigned cp_cur = 437, cp_list[NCP], cp_sel;
+static unsigned char cp_n;
+
+static int cp_set(unsigned cp)
+{
+    unsigned i;
+    if (cp == 437) {
+        cp_utab = 0;
+        cp_fontlin = 0;
+    } else {
+        for (i = 0; i < cp_n && cp_list[i] != cp; i++)
+            ;
+        if (i == cp_n || !cp_sel)
+            return -1;
+        cp_utab = MK_FP(cp_sel, i * CP_SZ + CP_UNI);
+        cp_fontlin = desc_base(&gdt[cp_sel >> 3]) + i * CP_SZ;
+    }
+    cp_cur = cp;
+    vio_refont();
+    return 0;
+}
+
+/* nach CONFIG.SYS (Startlaufwerk eingehaengt): Zeichensaetze laden */
+static void cp_load(int s)
+{
+    static char nm[] = "\\DOS\\SYSTEM\\CP000.FNT";
+    struct ifs_file f;
+    unsigned i, c;
+    if (!cp_n || !(cp_sel = kseg_alloc((unsigned)(cp_n * CP_SZ))))
+        return;
+    for (i = 0; i < cp_n; i++) {
+        if ((c = cp_list[i]) == 437)
+            continue;
+        nm[14] = (char)('0' + c / 100 % 10);
+        nm[15] = (char)('0' + c / 10 % 10);
+        nm[16] = (char)('0' + c % 10);
+        if (c > 999 || ifs_open(sys_drive, nm, &f) ||
+            ifs_read(&f, 0, cp_sel, i * CP_SZ, CP_SZ) != CP_SZ) {
+            vio_kputs(s, "\xFE fehlt: ");     /* (DGROUP ist knapp)   */
+            vio_kputs(s, nm);
+            vio_kputs(s, "\n");
+            cp_list[i] = 0;
+        }
+    }
+    if (cp_list[0])
+        cp_set(cp_list[0]);
+}
 unsigned char dos_high, dos_umb;        /* DOS=HIGH,UMB: HMA/UMBs der Boxen */
 unsigned char ems_none;                 /* EMS_FRAME_LOCATION=NONE: kein Rahmen */
 static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
@@ -3584,6 +3643,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_CODEPAGE:                         /* CHCP                  */
+        if (a1 == 0)
+            return cp_cur;
+        if (a1 == 0xFFFF)
+            return a2 < cp_n ? cp_list[a2] : 0;
+        return cp_set(a1) ? FAPI_ERROR : 0;
     case FAPI_EJECT: {                          /* Medium auswerfen      */
         int dev, st;
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
@@ -4216,14 +4281,21 @@ int box_ctl(unsigned op, unsigned a)
         klock_leave();
         /* Land aus der CONFIG.SYS von AT-DOS in die Box-CONFIG.SYS des
            Abbilds tragen (nur im gelesenen Sektor, die Datei bleibt) */
-        if (!r && box_ctry && box_ctry != 49)
+        if (!r && ((box_ctry && box_ctry != 49) || cp_cur != 437))
             for (k = 0; k + 16 <= 512; k++) {
                 for (j = 0; j < 16 && box_sec[k + j] == cpat[j]; j++)
                     ;
                 if (j == 16) {
-                    box_sec[k + 8] = (char)('0' + box_ctry / 100 % 10);
-                    box_sec[k + 9] = (char)('0' + box_ctry / 10 % 10);
-                    box_sec[k + 10] = (char)('0' + box_ctry % 10);
+                    if (box_ctry) {
+                        box_sec[k + 8] = (char)('0' + box_ctry / 100 % 10);
+                        box_sec[k + 9] = (char)('0' + box_ctry / 10 % 10);
+                        box_sec[k + 10] = (char)('0' + box_ctry % 10);
+                    }
+                    if (cp_cur < 1000) {        /* Codepage der Box      */
+                        box_sec[k + 12] = (char)('0' + cp_cur / 100 % 10);
+                        box_sec[k + 13] = (char)('0' + cp_cur / 10 % 10);
+                        box_sec[k + 14] = (char)('0' + cp_cur % 10);
+                    }
                     break;
                 }
             }
@@ -5643,6 +5715,8 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_DELAY:
         delay_ticks(bx);
         return 0;
+    case DH_CPTAB:                      /* Unicode-Tabelle der Codepage  */
+        return bx ? FP_OFF(cp_utab) : FP_SEG(cp_utab);
     case DH_UNINOTE:                    /* Unicode-Original eines Namens */
         uni_note_ext(dsel, bx, cx, devhlp_dx);
         return 0;
@@ -6338,6 +6412,17 @@ static void config_sys(void)
                 env_set(-1, cv);
                 box_ctry = n;                   /* und fuer die DOS-Box   */
             }
+        } else if (kw(line, "CODEPAGE")) {     /* 850,437 wie OS/2        */
+            unsigned n;
+            cp_n = 0;
+            for (i = 0; v[i] && cp_n < NCP; ) {
+                for (n = 0; v[i] >= '0' && v[i] <= '9'; i++)
+                    n = n * 10 + (unsigned)(v[i] - '0');
+                if (n)
+                    cp_list[cp_n++] = n;
+                while (v[i] && (v[i] < '0' || v[i] > '9'))
+                    i++;
+            }
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             static char lv[16];
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
@@ -6617,6 +6702,7 @@ void kmain(void)
        OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
+    cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
         vio_kputs(s0, "\xFE PROTSHELL=");

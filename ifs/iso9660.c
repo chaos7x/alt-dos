@@ -104,13 +104,16 @@ static const unsigned short cp_uni[128] = {
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 };
 
+/* Tabelle der aktiven Codepage (CHCP), beim Einhaengen geholt; 0 = 437 */
+static unsigned short __far *ctab;
+
 static unsigned char uni2cp(unsigned u)
 {
     unsigned i;
     if (u < 0x80)
         return (unsigned char)u;
     for (i = 0; i < 128; i++)
-        if (cp_uni[i] == u)
+        if ((ctab ? ctab[i] : cp_uni[i]) == u)
             return (unsigned char)(0x80 + i);
     return 0;
 }
@@ -217,6 +220,8 @@ static int mount(unsigned dev)
     unsigned o;
 
     joliet = lng = bytes = rr = sp_skip = 0;
+    k = devhlp(DH_CPTAB, 0, 0, 0);      /* Codepage kann sich aendern  */
+    ctab = k ? MK_FP(k, devhlp(DH_CPTAB, 0, 1, 0)) : 0;
     for (lba = 16; lba < 48; lba++) {
         if (rd(dev, lba))
             return -1;

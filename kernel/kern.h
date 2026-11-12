@@ -250,6 +250,7 @@ int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
 void vio_dirty(int s);                          /* ganze Sitzung neu zeigen */
+void vio_refont(void);                          /* Zeichensatz der Codepage laden */
 /* paging.c (KTEXT2): Seitentabellen 1:1 und Alias ab KALIAS, CR0.PG */
 unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);

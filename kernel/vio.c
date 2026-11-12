@@ -45,6 +45,7 @@ unsigned char hw_lines = 25;        /* Zeilen, auf die die Karte steht  */
 
 extern unsigned char  vga_ok;       /* start.asm, aus dem Real Mode     */
 extern unsigned short vga_font8a[2], vga_font8b[2], vga_font16[2];
+extern unsigned long cp_fontlin;        /* kernel.c: Zeichensatz der Codepage */
 
 /* ---- Maus ---------------------------------------------------------------
    Position in Mickeys wie beim Maustreiber von Microsoft: 8 je Spalte,
@@ -134,7 +135,11 @@ static void load_font(unsigned h)
     scratch2_map(0xA0000UL, 256 * 32 - 1);
     d = MK_FP(SCRATCH2, 0);
     for (c = 0; c < 256; c++) {
-        if (h == 16) {
+        if (cp_fontlin) {                   /* CHCP: aus CPnnn.FNT      */
+            if (c == 0)
+                scratch_map(cp_fontlin + (h == 16 ? 0 : 4096), h * 256 - 1);
+            f = MK_FP(SCRATCH, c * h);
+        } else if (h == 16) {
             if (c == 0)
                 scratch_map(seg_lin(vga_font16), 256 * 16 - 1);
             f = MK_FP(SCRATCH, c * 16);
@@ -279,6 +284,17 @@ void vio_status(void)
     *p = 0;
     vputs(sr, 48, "                                ", STATUS_ATTR);
     vputs(sr, 79 - (int)(p - b), b, STATUS_ATTR);
+}
+
+/* Codepage gewechselt: Zeichensatz neu laden (im Grafikbetrieb erst beim
+   Zurueck auf Text, hw_text setzt hw_lines ebenfalls auf 0) */
+void vio_refont(void)
+{
+    unsigned f = irq_off();
+    hw_lines = 0;
+    if (!hw_gfx && vga_ok)
+        redraw();
+    irq_restore(f);
 }
 
 void redraw(void)

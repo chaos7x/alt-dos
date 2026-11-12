@@ -183,6 +183,11 @@ struct fapi_sysinfo {
                                        (Dateien offen), FAPI_ERR_DENIED (kein
                                        Wechseldatentraeger / Treiber kann es
                                        nicht), FAPI_ERROR (Fehler) */
+#define FAPI_CODEPAGE       0x56    /* BX = 0: aktive Codepage -> AX; BX = FFFFh:
+                                       CX = Platz in der Liste aus CODEPAGE=
+                                       -> Codepage (0 = Ende); sonst BX =
+                                       Codepage einschalten (437 immer, sonst
+                                       nur vorbereitete) -> 0 / FAPI_ERROR */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
 #define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne
                                        Rueckfrage an das Programm) -> 0,

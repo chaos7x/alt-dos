@@ -30,3 +30,11 @@ XMS, EMS und UMB der Box, MEM in AT-DOS das eigene):
 nach dem Start braucht die Box das Abbild nicht mehr, ihre Laufwerke A:/B:
 sind dann die Disketten von AT-DOS. Eine AUTOEXEC.BAT im Stamm des
 Startlaufwerks fuehrt die interaktive Box aus.
+
+cp/CPnnn.FNT  Zeichensaetze fuer CODEPAGE=/CHCP von AT-DOS (850, 852, 857,
+              858, 860, 863, 865, 866, 737): 8x16 und 8x8 aus den CPI-
+              Dateien des FreeDOS-Pakets cpidos 3.0a (Henrique Peron,
+              GNU GPL Version 2; gitlab.com/FreeDOS/base/cpidos, CPI/*.CPX,
+              UPX-gepackt), dazu die Unicode-Tabelle 80h-FFh aus den
+              Python-Codecs. Neu erzeugen: CPX mit `upx -d` entpacken, dann
+              tools/mkcp.py <Ordner mit *.cpi> freedos/cp

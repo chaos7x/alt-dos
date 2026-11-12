@@ -146,6 +146,9 @@ struct drv_req {
 #define RES_IO          1
 #define RES_DMA         2
 #define RES_IRQ         3
+#define DH_CPTAB        21          /* IFS-Module: BX = 0 -> Selektor, 1 -> Offset
+                                       der Unicode-Tabelle der aktiven Codepage
+                                       (80h-FFh, 128 Worte); Selektor 0 = CP437 */
 #define DH_UNINOTE      20          /* IFS-Module: BX = Name (CP437, im DS),
                                        CX = derselbe Name als UCS-2 (je
                                        Zeichen ein Wort), DX = Laenge in
