@@ -53,6 +53,8 @@ static unsigned bsel;
 static unsigned long bphys;
 static char line[128], name[64];
 
+#include "awe.h"
+
 /* Wiedergabe */
 static unsigned rate, chans, bits16;
 static unsigned seg = BUFSZ / NSEG;    /* AUD_SMALL: kurz (DOS-Boxen)   */
@@ -515,7 +517,9 @@ static const char __far *arg(const char __far *s, char key)
     const char __far *a;
     for (a = s; *a; a++)
         if ((a[0] == key || a[0] == key + 32) &&
-            (a == s || a[-1] == ' ' || a[-1] == '/' || a[-1] == '\t')) {
+            (a == s || a[-1] == ' ' || a[-1] == '/' || a[-1] == '\t') &&
+            (a[1] == ':' || a[1] == '=' || (a[1] >= '0' && a[1] <= '9'))) {
+            /* nur /A:220, A220 - nicht /AWETEST */
             a++;
             if (*a == ':' || *a == '=')
                 a++;
@@ -735,6 +739,31 @@ static void init(void)
         if (dspv >= 0x400 && (mix_r(0x34) >> 3) == 0) {
             mix_w(0x34, 0xC0);          /* FM-Regler auf 0: 75 %          */
             mix_w(0x35, 0xC0);
+        }
+    }
+    if (dspv >= 0x400 && !has_opt(r->args, "NOAWE")) {
+        static const unsigned ap[4] = { 0x620, 0x640, 0x660, 0x680 };
+        for (o = 0; o < 4 && !aw_detect(ap[o]); o++)
+            ;
+        if (ebase) {
+            aw_init();
+            caps |= AUDCAP_AWE;
+            claim(RES_IO, ebase, 4);
+            claim(RES_IO, ebase + 0x400, 4);
+            claim(RES_IO, ebase + 0x800, 4);
+            p = scat(line, "  Wavetable EMU8000 (AWE) an ");
+            p = hex(p, ebase, 3);
+            p = scat(p, "h, ");
+            p = udec(p, edram_kb);
+            scat(p, " KB RAM\n");
+            dputs(line);
+            if (has_opt(r->args, "AWETEST")) {     /* Testton aus der ROM */
+                aw_start(0, 0x1EEUL, 0x2B8CUL, 0x4537UL, 0xE000, 0, 128);
+                delay(100);
+                aw_release(0);
+                delay(50);
+                aw_off(0);
+            }
         }
     }
     if ((a = arg(r->args, 'M')) != 0)

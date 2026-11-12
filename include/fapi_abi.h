@@ -251,6 +251,7 @@ struct fapi_res {
 #define AUDCAP_OPL2         0x02
 #define AUDCAP_OPL3         0x04    /* 18 Stimmen, Register 100h-1FFh    */
 #define AUDCAP_MPU401       0x08
+#define AUDCAP_AWE          0x10    /* Wavetable EMU8000 (AWE32/AWE64)   */
 struct fapi_fmreg {
     unsigned short reg;             /* 000h-0F5h, OPL3 auch 100h-1F5h    */
     unsigned char  val, rsv;

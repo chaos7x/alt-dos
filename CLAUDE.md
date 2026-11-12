@@ -2753,6 +2753,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Test MPT.COM (Reset, 3Fh, Note 90 3C 7F): Box sieht „AA“, am echten
   MPU kommen Kanal-Reset/Programme, die Note und beim Parken die
   Kanal-Resets an. Hörbar nur mit MIDI-Ausgang in 86Box.
+  Schritt 3 (Wunsch des Nutzers: GM-Synthesizer auf dem EMU8000 mit
+  SYNTHGM.SBK von den Creative-Disketten; die SBK kommt nicht ins
+  Repository – der Nutzer kopiert sie; MIDI geht dann an den AWE, `/MPU`
+  für externe Synthesizer – Entscheidung des Nutzers, er hat keinen;
+  ohne SBK bleibt es bei FM). Aufbau wie sfxload: `AWELOAD.EXE` rechnet
+  die SoundFont-Parameter in EMU8000-Werte um (Tabellen statt Gleit-
+  komma), der Treiber spielt. Stufe 3a erledigt (in 86Box mit AWE32 PnP
+  geprüft): `drivers/awe.h` (von sb16.c eingebunden) – Erkennung an
+  620h/640h/660h/680h nur bei DSP 4.xx (erst lesen: PTR und DATA1 FFFFh
+  = nichts; dann HWCF1/2 schreiben und zurücklesen wie Linux), Init wie
+  Linux emu8000.c (Tabellen init1–4 aus dem ADIP, Herkunft im Kopf von
+  awe.h, GPL-2.0-or-later), Stimmen 30/31 DRAM-Refresh, RAM-Größe in
+  512-KB-Schritten über Stimme 0/1 im DMA-Betrieb; `AUDCAP_AWE` (10h),
+  `/NOAWE`, Testton `/AWETEST` (Klavier aus der GM-ROM, Wortadresse
+  1EEh, Schleife 2B8Ch–4537h, 1 s). Startmeldung „Wavetable EMU8000
+  (AWE) an 620h, 512 KB RAM“. Dabei behoben: `arg()` in sb16.c nahm
+  `/AWETEST` als `/A` (Port „WETEST“ = 0) – Treffer nur noch mit `:`,
+  `=` oder Ziffer dahinter. Lehre: 86Box mischt die AWE über den
+  Wavetable-Puffer (44,1 kHz, givealbuffer_wt), nicht über den
+  Hauptpuffer – Mitschnitt dort (lokal: WAVF_WT). Testbänke (nur zum
+  Testen, nicht im Repository): Dell-Paket „dell-r18514“ auf archive.org,
+  SFBANK.LIB (InstallShield 3, PKWARE-DCL) mit SYNTHGS/SYNTHMT/SAMPLE.SBK.
   Offen: Aufnahme,
   SB-Pro-Stereo (Mixer 0Eh), DSP-MIDI.
   AdLib teilen (Wunsch des Nutzers; in QEMU geprüft): greift eine Box im
