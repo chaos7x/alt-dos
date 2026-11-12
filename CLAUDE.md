@@ -2669,6 +2669,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (CLI 800, STI 420, Ports 1320 – PIC 700, SB 366, DMA 258 –, gepatchte
   POPF 380), Kernelanteil 10 %. PLAY (KLANG.WAV) und S16.COM in der Box
   in QEMU mitgeschnitten: richtig, ohne Lücken.
+  Zweite Runde (Profil im Interpreter-Modus von 86Box – Sampler auch in
+  exec386_common, genau je Befehl; Dynarec- und Interpreter-Modus
+  rechnen Takte verschieden, nur gleiche Modi vergleichen): FreeDOS
+  4182, Box vorher 4504, jetzt 4452 (+6,5 %). Geändert: `dp_more` –
+  nach einer Falle im PM die nächsten Befehle ansehen (MOV EDX,imm32,
+  XOR/SUB EAX/EDX mit sich selbst ausführen; folgt CLI/STI, HLT oder
+  IN/OUT auf einen gefangenen Port – `io_trap` –, gleich mit erledigen;
+  nur 32-Bit-Code, nicht über das Seitenende lesen); lrd/lwr ein Zugriff
+  passender Breite (vorher je Byte mit 32-Bit-Schiebeschleife und ES
+  neu); `sbc_*` vier Einträge (CS und SS verdrängten sich). Der Rest ist
+  der Weg der Falle selbst (CPU, exc_common, Fensterumlegen) – weiter
+  nur mit weniger Fallen.
   BLASTER und Länderdaten (Wunsch des Nutzers; in QEMU geprüft):
   BOXSHELL hängt `BLASTER=A220 I5 D1 T3` an die Umgebung der Box, wenn
   sie keins hat (IRQ 5 oder 7 geht beides, siehe `irql`). COMMAND.COM

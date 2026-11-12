@@ -463,7 +463,8 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   Ton nie auf die Karte (`AUD_NOWAIT`); auf CPUs ohne VME/PVI (386/486)
   kosten die Fallen für CLI/STI/Ports weniger als früher – DOOM 1.9 mit
   Sound Blaster auf einem DX4-100 (86Box) braucht für `-timedemo demo1`
-  5091 statt 7123 Takte, unter FreeDOS direkt 4686. Datum und
+  5091 statt 7123 Takte, unter FreeDOS direkt 4686 (im genaueren
+  Interpreter-Modus von 86Box: 4452 gegen 4182, also gut 6 % langsamer). Datum und
   Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Maus in der Box
   über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h, Version 24h mit Art und IRQ der echten Maus – MSD
