@@ -968,6 +968,17 @@ Regel für `main` auf GitHub (Ruleset): kein Löschen, kein Force-Push,
 lineare Historie, Pull Request – mit Ausnahme „Repository admin“
 (Always allow), damit die Claude-Sitzung direkt pushen kann (sie pusht
 im Namen des Nutzers, eine Ausnahme nur für die App greift nicht).
+Der direkte Push ist eine Übergangslösung, solange der Nutzer allein
+arbeitet. Geplant (Entscheidung des Nutzers), sobald mehrere Personen
+mitarbeiten: (1) Regel für `main` verschärfen – Pull Request für alle,
+„Require status checks to pass“ mit dem CI-Build als Pflichtprüfung,
+evtl. Freigabe durch eine zweite Person; (2) die Admin-Ausnahme fällt
+weg, auch Claude-Sitzungen arbeiten über Arbeitszweige + PR (dafür muss
+die Umgebung Zweige anlegen dürfen – heute HTTP 403 über den Proxy);
+(3) Auto-merge und „Automatically delete head branches“ einschalten
+(PR öffnen, Auto-merge an, GitHub mergt nach grünem Build und löscht
+den Zweig); (4) hängen die Actions wieder in der Warteschlange wie im
+November 2026, hängen auch die Merges – Ausweg: eigener Runner.
 
 QEMU-Tests ohne Bildschirm: `-display none -monitor unix:...`, Tasten per
 `sendkey`, Bild per `screendump` (PPM -> PNG mit Pillow) ansehen.
