@@ -4385,6 +4385,8 @@ static void sys_info(struct fapi_sysinfo __far *si)
 {
     unsigned i, k;
     sys_info2(si, ~pic_mask & ~4u);         /* ohne Kaskade (k2misc.c)    */
+    if (apm_none)
+        si->rsv |= 0x80;                    /* APM=OFF                    */
     for (i = 0; i < 6; i++) {
         si->drivers[i][0] = 0;
         if (i < NDRV && drv[i].used)

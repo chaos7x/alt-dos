@@ -298,6 +298,16 @@ static void apm(struct rmregs *r, unsigned ax, unsigned bx, unsigned cx)
     rm_call(r);
 }
 
+/* APM-Version fuer MSD (5300h, BX = 'PM') -> 12h fuer 1.2, 0 = keins */
+unsigned __far apm_ver(void)
+{
+    static struct rmregs r;
+    apm(&r, 0x5300, 0, 0);
+    if ((r.flags & 1) || r.bx != 0x504D)
+        return 0;
+    return ((r.ax >> 4) & 0xF0) | (r.ax & 0x0F);
+}
+
 int __far apm_off(void)
 {
     static struct rmregs r;

@@ -3327,7 +3327,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   CONFIG.SYS `APM=OFF` (`apm_none`). SeaBIOS schaltet dabei per ACPI ab.
   Vom Nutzer auf dem P3B-F in 86Box bestätigt: SHUTDOWN schaltet aus
   (das 86Box-Fenster schließt sich).
-  Offen: Leerlauf über APM (CPU Idle 5305h), Anzeige in MSD.
+  Anzeige in MSD erledigt (in QEMU geprüft: „APM: 1.2 (SHUTDOWN
+  schaltet aus)“): `apm_ver` (vesa.c, 5300h über rm_call) legt die
+  Version ins bisher freie Byte `fapi_sysinfo.rsv` (12h = 1.2, Bit 7 =
+  APM=OFF) – Strukturgröße unverändert, alte Programme passen.
+  Leerlauf über APM (CPU Idle 5305h) geprüft und zurückgestellt
+  (12.11.2026): der Kernel erreicht das APM-BIOS nur per Real-Mode-
+  Ausflug (PIC gesperrt, Paging aus) – je Leerlauf viel teurer als das
+  HLT, das der Scheduler schon macht, und Interrupts warteten so lange.
+  Billig ginge es nur über die 16-Bit-PM-Schnittstelle (5302h, eigene
+  Code-/Datendeskriptoren), deren BIOS-Code aber den Selektor 40h als
+  BIOS-Datenbereich annehmen darf – bei uns ist 40h SCRATCH2. Wirkung
+  hätte es nur auf echten Notebooks (Takt drosseln), in 86Box/QEMU
+  keine.
 - Phase 6, Sperren je Laufwerk statt der einen Kernelsperre (Entwurf,
   Stufe 1 erledigt). Bestandsaufnahme: der Kernel wird nie unterbrochen,
   geschützt werden muss nur, was über einen Schlafpunkt hinweg lebt

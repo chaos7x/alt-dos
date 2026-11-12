@@ -239,6 +239,16 @@ static void detail(unsigned k)
         ap(l, "h");
         line("BIOS:", si.bios_name[0] ? si.bios_name : "(kein Text gefunden)");
         v[0] = 0;
+        if (si.rsv & 0x7F) {                /* APM-Version (6.0)       */
+            apn(v, (si.rsv >> 4) & 7);
+            ap(v, ".");
+            apn(v, si.rsv & 15);
+            ap(v, si.rsv & 0x80 ? " (APM=OFF: SHUTDOWN schaltet nicht aus)"
+                                : " (SHUTDOWN schaltet aus)");
+        } else
+            ap(v, "nicht vorhanden");
+        line("APM:", v);
+        v[0] = 0;
         apn(v, si.uptime_s / 60);
         ap(v, " min");
         line("Laufzeit:", v);

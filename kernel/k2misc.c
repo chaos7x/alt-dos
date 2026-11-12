@@ -23,7 +23,7 @@ void __far sys_info2(struct fapi_sysinfo __far *si, unsigned irq_used)
     si->bios_date[8] = 0;
     si->fdtype[0] = (unsigned char)fd_type(0);
     si->fdtype[1] = (unsigned char)fd_type(1);
-    si->rsv = 0;
+    si->rsv = (unsigned char)apm_ver();     /* APM-Version, Bit 7 kernel.c */
     si->equip = bios_equip;
     for (i = 0; i < 4; i++)
         si->com[i] = bios_ports[i];

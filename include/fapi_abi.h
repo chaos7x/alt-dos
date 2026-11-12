@@ -141,7 +141,8 @@ struct fapi_sysinfo {
     unsigned char  model;           /* BIOS-Modellbyte F000:FFFE        */
     char           bios_date[9];    /* F000:FFF5, "MM/TT/JJ"            */
     unsigned char  fdtype[2];       /* Diskettenlaufwerke (CMOS-Typ)    */
-    unsigned char  rsv;
+    unsigned char  rsv;             /* 6.0: APM-Version (12h = 1.2, 0 = keins),
+                                       Bit 7 = APM=OFF in der CONFIG.SYS */
     unsigned short equip;           /* INT 11h                          */
     unsigned short com[4], lpt[3];  /* Portadressen, 0 = keiner         */
     unsigned short conv_kb, ext_kb; /* Speicher laut BIOS               */

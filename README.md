@@ -760,6 +760,7 @@ BIOS keinen gesetzt hat (SeaBIOS/QEMU): am Intel PIIX4 UDMA bis Modus 2
 Modus. Nach Fehlern geht die Platte auf PIO zurück. CD-ROMs bleiben bei
 PIO. Platten über 128 GB (LBA48) werden ganz genutzt – bis 2 TB, weil
 der Kernel Sektoren mit 32 Bit zählt; Startmeldung „… GB (LBA48)“.
+MSD zeigt die APM-Version des BIOS.
 `EJECT X:` wirft CDs (IDE/ATAPI, SCSI) und SCSI-Wechselplatten (ZIP, MO)
 aus, solange dort keine Datei offen ist.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,

@@ -308,6 +308,7 @@ unsigned __far pnp_init(void);                 /* -> Anzahl logischer Geraete */
 int __far pnp_info(unsigned i, struct fapi_pnpdev __far *p);
 void __far pnp_line(unsigned i, char __far *buf);  /* Startmeldung       */
 /* vesa.c (KTEXT2): VBE ueber einen kurzen Real-Mode-Aufruf */
+unsigned __far apm_ver(void);               /* vesa.c: APM-Version (12h = 1.2) */
 int __far apm_off(void);                   /* vesa.c: APM aus, nur bei Fehler zurueck */
 /* SVGA-Zustand der DOS-Boxen (vesa.c, fuer vgagfx.c) */
 struct vbox { unsigned long bytes, phys; unsigned gmul; unsigned char split; };
