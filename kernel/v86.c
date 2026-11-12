@@ -1121,8 +1121,7 @@ static void pit_run(int t)
         /* den echten Zaehler liest pit_in nur, wenn die Box ihn will -
            pit_run laeuft nach jeder Falle (auf dem 486 tausende Male je
            Sekunde, drei ISA-Zugriffe) */
-        pit_t0[t] = get_ticks();
-        pit_c0[t] = kpit_acc;
+        pit_t0[t] = 0;                  /* danach pit_elapsed: neu anfangen */
         return;
     }
     pit_n0[t] = n;
@@ -4559,29 +4558,36 @@ struct dpctx {
     unsigned long eip, eflags, esp, lin, r[8];  /* r: EDI..EAX       */
 };
 
-static unsigned long lrd(unsigned long lin, unsigned n)   /* 1/2/4 Byte */
+/* 1/2/4 Byte mit einem Zugriff passender Breite (je Falle mehrfach:
+   Befehl lesen, Stapel - byteweise mit 32-Bit-Schieben war es teuer) */
+static unsigned long lrd(unsigned long lin, unsigned n)
 {
-    unsigned long v = 0;
     lwin(VWIN_IDX, lin);
-    while (n--)
-        v = (v << 8) | *(unsigned char __far *)MK_FP(VWIN, n);
-    return v;
+    if (n == 1)
+        return *(unsigned char __far *)MK_FP(VWIN, 0);
+    if (n == 2)
+        return *(unsigned short __far *)MK_FP(VWIN, 0);
+    return *(unsigned long __far *)MK_FP(VWIN, 0);
 }
 
 static void lwr(unsigned long lin, unsigned long v, unsigned n)
 {
-    unsigned i;
     lwin(VWIN_IDX, lin);
-    for (i = 0; i < n; i++, v >>= 8)
-        *(unsigned char __far *)MK_FP(VWIN, i) = (unsigned char)v;
+    if (n == 1)
+        *(unsigned char __far *)MK_FP(VWIN, 0) = (unsigned char)v;
+    else if (n == 2)
+        *(unsigned short __far *)MK_FP(VWIN, 0) = (unsigned short)v;
+    else
+        *(unsigned long __far *)MK_FP(VWIN, 0) = v;
 }
 
 /* Basis des zuletzt gefragten Selektors (dp_trap liest je Falle CS):
    jede Aenderung der LDT laeuft ueber ldesc/ldt_free/dp31 und verwirft
    ihn */
-static unsigned sbc_sel;
-static signed char sbc_t = -1;
-static unsigned long sbc_base;
+#define NSBC 4                          /* je Selektor (sel >> 3) & 3    */
+static unsigned sbc_sel[NSBC];
+static signed char sbc_t = -1;          /* gilt fuer diese Box            */
+static unsigned long sbc_base[NSBC];
 
 static unsigned char __far *ldt_e(int t, unsigned i)      /* 8 Byte  */
 {
@@ -4611,16 +4617,23 @@ static void ldesc(int t, unsigned i, unsigned long base, unsigned long lim,
 static unsigned long sel_base(int t, unsigned s)
 {
     unsigned char __far *d;
+    unsigned k;
     if (!(s & 4) || IDX(s) >= LDT_N)
         return 0;
-    if (sbc_t == t && sbc_sel == s)
-        return sbc_base;
+    k = (s >> 3) & (NSBC - 1);
+    if (sbc_t == t && sbc_sel[k] == s)
+        return sbc_base[k];
+    if (sbc_t != t) {
+        for (k = 0; k < NSBC; k++)
+            sbc_sel[k] = 0;
+        sbc_t = (signed char)t;
+        k = (s >> 3) & (NSBC - 1);
+    }
     d = ldt_e(t, IDX(s));
-    sbc_base = d[2] | ((unsigned long)d[3] << 8) | ((unsigned long)d[4] << 16) |
-               ((unsigned long)d[7] << 24);
-    sbc_sel = s;
-    sbc_t = (signed char)t;
-    return sbc_base;
+    sbc_base[k] = d[2] | ((unsigned long)d[3] << 8) | ((unsigned long)d[4] << 16) |
+                  ((unsigned long)d[7] << 24);
+    sbc_sel[k] = s;
+    return sbc_base[k];
 }
 
 static int sel_ok(int t, unsigned s)            /* gueltiger Datenselektor */
@@ -5962,15 +5975,74 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     return dp_exc(f, t);
 }
 
+/* Port trappt? (I/O-Bitmap des TSS reicht bis 3DFh, darueber immer) */
+static int io_trap(int t, unsigned p)
+{
+    return p >= 0x3E0 || (tss[t].iob[p >> 3] & (1 << (p & 7)));
+}
+
+/* Nach einer erledigten Falle: folgt gleich die naechste (CLI/STI, IN/OUT
+   auf einen gefangenen Port, HLT), hoechstens nach MOV EDX,imm32 oder
+   XOR/SUB reg,reg (EAX/EDX)? Dann diese einfachen Befehle hier
+   ausfuehren und die Falle gleich mit erledigen - DMX (DOOM-Ton) hat
+   Folgen wie OUT; MOV EDX,20h; OUT; MOV EDX,0A0h; SUB EAX,EAX; IN, auf
+   dem 486 (ohne PVI) je Befehl eine Falle. Nur 32-Bit-Code ohne
+   Praefixe. -> 1 naechster Befehl trappt (eip steht davor) */
+static int dp_more(struct v86_frame *f, int t)
+{
+    unsigned long lin = sel_base(t, (unsigned)f->r.cs) + f->r.eip, v;
+    unsigned k, op, p;
+    if (!dp_32[t] || (f->r.eflags & FL_TF))
+        return 0;
+    for (k = 0; ; k++) {
+        if (((unsigned)lin & 0xFFF) > 0xFF7)    /* nicht ueber die Seite */
+            return 0;                           /* hinaus lesen          */
+        v = lrd(lin, 4);
+        op = (unsigned)v & 0xFF;
+        if (k < 3 && op == 0xBA) {              /* MOV EDX,imm32         */
+            f->edx = lrd(lin + 1, 4);
+            f->r.eip += 5;
+            lin += 5;
+            continue;
+        }
+        if (k < 3 && ((unsigned)v == 0xD231 || (unsigned)v == 0xC031 ||
+                      (unsigned)v == 0xD229 || (unsigned)v == 0xC029)) {
+            if (((unsigned)v >> 8) == 0xD2)     /* XOR/SUB EDX/EAX, selbst */
+                f->edx = 0;
+            else
+                f->eax = 0;
+            f->r.eflags = (f->r.eflags & ~0x08D5UL) | 0x44;    /* ZF PF */
+            f->r.eip += 2;
+            lin += 2;
+            continue;
+        }
+        break;
+    }
+    if (op == 0xFA || op == 0xFB)
+        return !(pvi_cur & CR4_PVI);
+    if (op == 0xF4)
+        return 1;
+    if (op >= 0xEC && op <= 0xEF)
+        p = (unsigned)f->edx;
+    else if (op >= 0xE4 && op <= 0xE7)
+        p = (unsigned)(v >> 8) & 0xFF;
+    else
+        return 0;
+    return io_trap(t, p) || (op & 1 && io_trap(t, p + 1));
+}
+
 unsigned __far dpmi_trap(struct v86_frame *f)
 {
     int t = current;
-    unsigned rc;
+    unsigned rc, k;
     if (t < 0 || !dp_on[t])
         return 1;
     pvi_in(&f->r, t);
     enable_ints();
     rc = dp_trap(f, t);
+    if (f->vec == 13 && !f->err)                /* gleich die naechste   */
+        for (k = 0; rc == 0 && k < 4 && dp_on[t] && dp_more(f, t); k++)
+            rc = dp_trap(f, t);
     irq_off();
     vga_freeze(t);
     if (rc == 0) {
