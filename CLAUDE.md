@@ -1004,9 +1004,12 @@ Erster Test: 486 PVI-4SP3 (`486sp3`, Award 07/22/94, kein PnP-BIOS),
 16 MB, ET4000/W32p PCI, AWE32 PnP – ISA-PnP schaltet CTL0031 (220h/
 330h/388h, IRQ 5, DMA 1/5), CTL2011 (IDE 168h/36Eh, IRQ 10), CTL7001
 (200h) und CTL0021 (620h) ein, SB16.SYS findet „DSP 4.13 an 220h“.
-Dabei gesehen: dieses Board (Intel 420TX) nutzt PCI-Mechanismus 2 –
-der Kernel kennt nur 1 und meldet „ISA (AT)“; FM-Erkennung meldet
-auf der AWE32 „OPL2“ (sollte OPL3 sein).
+Dabei gesehen: dieses Board (Intel 420TX) nutzt PCI-Mechanismus 2
+(auch PCI/I-486SP3G, 420ZX; der Nutzer nimmt meist ASUS-Boards) –
+inzwischen unterstützt, s. Busdienste; FM-Erkennung meldet auf der
+AWE32 „OPL2“ (sollte OPL3 sein). Tippen: xdotool schickt US-Tasten,
+AT-DOS wertet deutsch aus – Helfer /tmp/claude-0/86b/typ.py (y/z,
+/ = Umschalt+7, : = Umschalt+Punkt, \ = AltGr+ß, - = US-Schrägstrich).
 
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 Der Nutzer will AT-DOS auch in Proxmox (KVM) laufen lassen: SeaBIOS,
@@ -1428,6 +1431,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `pci_wr`. Alle Treiber melden ihre Ports an. FAPI 51h DosBusInfo
   (BUS_PCI/BUS_RES) -> MSD: Computer-Seite PCI-Liste mit Hersteller-
   und Klassennamen, IRQ-Seite Besitzer, Treiber-Seite Ports/DMA/IRQ.
+  PCI-Mechanismus 2 (frühe Intel-Boards 420TX/ZX, z. B. ASUS PCI/I-
+  486SP3/SP3G; in 86Box geprüft: PCI/I-486SP3 zeigt Host-Brücke, den
+  eingebauten NCR 53C810 (IRQ 9), ISA-Brücke und ET4000/W32p; NCR8XX.SYS
+  startet von der SCSI-Platte, XCOPY + CHKDSK sauber; QEMU mit
+  Mechanismus 1 unverändert): bus.c `pci_ok` 1/2, `m2_on` (CF8h = F0h |
+  Funktion << 1, CFAh = Bus, Register bei C000h + Gerät · 100h, danach
+  CF8h = 0), 16 Geräte je Bus. Erkennung erst nach Mechanismus 1 (sonst
+  läse der Kernel auf Mechanismus-1-Boards bei C000h – dort kann ein
+  Gerät sitzen): CF8h und CFAh byteweise 00h, dann Kennung der Host-
+  Brücke bei C000h. Lehre: 86Box liefert auf Mechanismus-2-Boards beim
+  32-Bit-Lesen von CF8h FFFFFFFFh – das galt vorher als „kein PCI“.
   ISA-PnP erledigt (Reihenfolge des Nutzers nach dem SVGA-Zustand; im
   Kernel statt ISAPNP.SYS, passend zu den Busdiensten): `kernel/pnp.c`
   (KTEXT2), `pnp_start` in kernel.c ruft `pnp_init` vor der CONFIG.SYS-

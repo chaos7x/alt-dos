@@ -735,7 +735,8 @@ auf PIO zurück. CD-ROMs bleiben bei PIO.
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.
 Busdienste (6.0): Der Kernel durchsucht beim Start den PCI-Bus
-(Mechanismus 1, auch hinter PCI-PCI-Brücken; auf ISA-Rechnern wird
+(Mechanismus 1, bei frühen Intel-Boards wie dem ASUS PCI/I-486SP3
+auch Mechanismus 2; auch hinter PCI-PCI-Brücken; auf ISA-Rechnern wird
 CF8h nur gelesen) und stellt Treibern Suche und Konfigurationszugriff
 als DevHlp bereit (`DH_PCIFIND`, `DH_PCICLASS`, `DH_PCIREAD`,
 `DH_PCIWRITE`, wie OEMHLP$ bei OS/2). Treiber melden ihre Ports,

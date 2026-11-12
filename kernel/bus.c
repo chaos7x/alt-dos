@@ -8,7 +8,9 @@
  * Karte ueber DevHlp DH_PCIFIND/DH_PCICLASS und lesen/schreiben die
  * Konfiguration mit DH_PCIREAD/DH_PCIWRITE - kein Treiber spricht CF8h
  * selbst an (wie OEMHLP$ bei OS/2). Mechanismus 2 (nur fruehe PCI-
- * Boards 1992/93) wird nicht unterstuetzt.
+ * Boards 1992/93, z. B. ASUS PCI/I-486SP3 mit Intel 420TX/ZX): Byte an
+ * CF8h = Schluessel (Bit 4-7) + Funktion (Bit 1-3), CFAh = Bus, Register
+ * von Geraet d bei C000h + d * 100h (16 Geraete je Bus).
  *
  * Belegungsliste: Treiber melden Ports, DMA-Kanaele und IRQs an
  * (DH_CLAIM, DH_SETIRQ traegt IRQs selbst ein). Eine zweite Anmeldung
@@ -39,11 +41,20 @@ static struct {
     unsigned char  cls, sub, progif, irq;
 } pci_tab[NPCI];
 static unsigned npci;
-static unsigned char pci_ok;
+static unsigned char pci_ok;            /* 1 Mechanismus 1, 2 Mechanismus 2 */
+static unsigned long k2_inl_p(unsigned port) { return k2_inl(port); }
 
 static void cfg_addr(unsigned loc, unsigned reg)
 {
     k2_outl(0xCF8, ((loc & 0xFF) << 8) | (reg & 0xFC), 0x8000 | (loc >> 8));
+}
+
+/* Mechanismus 2: Konfigurationsraum ein (Funktion, Bus) -> Portbasis */
+static unsigned m2_on(unsigned loc)
+{
+    outb(0xCF8, 0xF0 | ((loc & 7) << 1));
+    outb(0xCFA, loc >> 8);
+    return 0xC000 | (((loc >> 3) & 15) << 8);
 }
 
 unsigned long __far pci_read(unsigned loc, unsigned reg)
@@ -53,8 +64,13 @@ unsigned long __far pci_read(unsigned loc, unsigned reg)
     if (!pci_ok)
         return 0xFFFFFFFFUL;
     f = irq_off();                      /* Adresse + Daten nicht trennen */
-    cfg_addr(loc, reg);
-    v = k2_inl(0xCFC);
+    if (pci_ok == 2) {
+        v = k2_inl_p(m2_on(loc) | (reg & 0xFC));
+        outb(0xCF8, 0);
+    } else {
+        cfg_addr(loc, reg);
+        v = k2_inl(0xCFC);
+    }
     irq_restore(f);
     return v;
 }
@@ -66,13 +82,25 @@ void __far pci_write(unsigned loc, unsigned reg, unsigned long v, unsigned size)
     if (!pci_ok)
         return;
     f = irq_off();
-    cfg_addr(loc, reg);
-    if (size == 4)
-        k2_outl(0xCFC, (unsigned)v, (unsigned)(v >> 16));
-    else {
-        outb(0xCFC + (reg & 3), (unsigned char)v);
-        if (size == 2)
-            outb(0xCFD + (reg & 3), (unsigned char)(v >> 8));
+    if (pci_ok == 2) {
+        unsigned b = m2_on(loc) | (reg & 0xFC);
+        if (size == 4)
+            k2_outl(b, (unsigned)v, (unsigned)(v >> 16));
+        else {
+            outb(b + (reg & 3), (unsigned char)v);
+            if (size == 2)
+                outb(b + (reg & 3) + 1, (unsigned char)(v >> 8));
+        }
+        outb(0xCF8, 0);
+    } else {
+        cfg_addr(loc, reg);
+        if (size == 4)
+            k2_outl(0xCFC, (unsigned)v, (unsigned)(v >> 16));
+        else {
+            outb(0xCFC + (reg & 3), (unsigned char)v);
+            if (size == 2)
+                outb(0xCFD + (reg & 3), (unsigned char)(v >> 8));
+        }
     }
     irq_restore(f);
 }
@@ -82,7 +110,7 @@ static void scan_bus(unsigned bus, unsigned depth)
     unsigned dev, fn, nfn, loc;
     unsigned long id, cl, hd;
 
-    for (dev = 0; dev < 32; dev++) {
+    for (dev = 0; dev < (pci_ok == 2 ? 16u : 32u); dev++) {
         nfn = 1;
         for (fn = 0; fn < nfn; fn++) {
             loc = (bus << 8) | (dev << 3) | fn;
@@ -122,17 +150,31 @@ unsigned __far pci_init(void)
     unsigned long old, v;
     unsigned f = irq_off();
     old = k2_inl(0xCF8);
-    if (old & 3) {
-        irq_restore(f);
-        return 0;
+    if (!(old & 3)) {                   /* 32-Bit-Register da?           */
+        k2_outl(0xCF8, 0x0000, 0x8000);
+        v = k2_inl(0xCF8);
+        k2_outl(0xCF8, (unsigned)old, (unsigned)(old >> 16));
+        if (v == 0x80000000UL)
+            pci_ok = 1;
     }
-    k2_outl(0xCF8, 0x0000, 0x8000);
-    v = k2_inl(0xCF8);
-    k2_outl(0xCF8, (unsigned)old, (unsigned)(old >> 16));
+    if (pci_ok)
+        ;
+    /* sonst Mechanismus 2 (erst danach, damit auf Mechanismus-1-Boards
+       nie bei C000h gelesen wird; ein 32-Bit-Lesen von CF8h liefert dort
+       oft FFFFFFFFh): CF8h (Schluessel/Funktion) und CFAh (Bus) lesen
+       sich byteweise als 00h (ISA: FFh) - erst dann den Raum
+       einschalten und die Kennung der Host-Bruecke (Geraet 0) pruefen */
+    else if (inb(0xCF8) == 0 && inb(0xCFA) == 0) {
+        outb(0xCF8, 0xF0);
+        outb(0xCFA, 0);
+        v = k2_inl(0xC000);
+        outb(0xCF8, 0);
+        if ((unsigned)v != 0xFFFF && (unsigned)v != 0 && (unsigned)(v >> 16) != 0xFFFF)
+            pci_ok = 2;
+    }
     irq_restore(f);
-    if (v != 0x80000000UL)
+    if (!pci_ok)
         return 0;
-    pci_ok = 1;
     scan_bus(0, 0);
     return npci;
 }
