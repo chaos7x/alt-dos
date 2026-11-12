@@ -451,10 +451,123 @@ static void raw_lin(int s, unsigned kind, int out)
     }
 }
 
+/* SVGA-Modus einer Box (VESA, 4F02h): Bildspeicher des Modus zwischen
+   Karte und eigenen Seiten kopieren - linear ueber pg_lfb, sonst Fenster
+   fuer Fenster ueber das BIOS (4F05h). out = 1: sichern */
+static void raw_svimg(struct vbox *vb, unsigned long save, int out)
+{
+    unsigned long off, lin = 0, n;
+    unsigned b = 0, half;
+    if (vb->phys && (lin = pg_lfb(vb->phys, (unsigned)PAGES(vb->bytes))) == 0)
+        return;
+    for (off = 0; off < vb->bytes; off += 0x10000UL, b++) {
+        n = vb->bytes - off > 0x10000UL ? 0x10000UL : vb->bytes - off;
+        if (lin)
+            set_desc(SCRATCH2 >> 3, lin + off, 0xFFFF, ACC_KDATA);
+        else {
+            vesa_bank(b * vb->gmul, vb->split);
+            scratch2_map(0xA0000UL, 0xFFFF);
+        }
+        scratch_map(save + off, 0xFFFF);
+        half = n > 0x8000UL ? 0x8000 : (unsigned)n;
+        if (out)
+            far_copy(SCRATCH, 0, SCRATCH2, 0, half);
+        else
+            far_copy(SCRATCH2, 0, SCRATCH, 0, half);
+        if (n > 0x8000UL) {
+            if (out)
+                far_copy(SCRATCH, 0x8000, SCRATCH2, 0x8000, (unsigned)(n - 0x8000UL));
+            else
+                far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, (unsigned)(n - 0x8000UL));
+        }
+    }
+}
+
+/* VESA-Modus der Box sichern (vor allem anderen in raw_out): Zustand per
+   4F04h, Bildspeicher in eigene Seiten. -> 1 gesichert */
+static int raw_svout(int s)
+{
+    unsigned long base = PG_LIN(ses[s].gfx_save);
+    unsigned char __far *q;
+    unsigned vm;
+    pg_t pg;
+    unsigned np, n;
+    struct vbox vb;
+    scratch_map(base + RAW_REGS, 0xFFF);
+    q = MK_FP(SCRATCH, 0);
+    vm = *(unsigned __far *)(q + RAW_VMODE);
+    q[RAW_SVOK] = 0;
+    if (!vm || vesa_boxinfo(vm, &vb) || vb.bytes > 0x400000UL)
+        return 0;
+    np = (unsigned)PAGES(vb.bytes);
+    scratch_map(base + RAW_REGS, 0xFFF);
+    pg = *(pg_t __far *)(q + RAW_SVPG);
+    n = *(unsigned __far *)(q + RAW_SVN);
+    if (pg && n != np) {                    /* andere Groesse: neu        */
+        mem_free(pg, n);
+        pg = 0;
+    }
+    if (!pg && (pg = mem_alloc_hi(np)) == 0) {
+        *(pg_t __far *)(q + RAW_SVPG) = 0;
+        return 0;
+    }
+    *(pg_t __far *)(q + RAW_SVPG) = pg;
+    *(unsigned __far *)(q + RAW_SVN) = np;
+    if (!vesa_state(1, base + RAW_REGS + RAW_STATE))
+        return 0;
+    raw_svimg(&vb, PG_LIN(pg), 1);
+    scratch_map(base + RAW_REGS, 0xFFF);
+    q[RAW_SVOK] = 1;
+    vesa_hw = 1;                            /* Text danach erst per BIOS 03h */
+    return 1;
+}
+
+/* zurueck: Modus per BIOS (Bild nicht loeschen), Bild, dann der Zustand
+   (setzt auch die Bank der Box wieder) -> 1 = erledigt */
+static int raw_svin(int s)
+{
+    unsigned long base = PG_LIN(ses[s].gfx_save);
+    unsigned char __far *q;
+    unsigned vm;
+    pg_t pg;
+    struct vbox vb;
+    scratch_map(base + RAW_REGS, 0xFFF);
+    q = MK_FP(SCRATCH, 0);
+    if (!q[RAW_SVOK])
+        return 0;
+    vm = *(unsigned __far *)(q + RAW_VMODE);
+    pg = *(pg_t __far *)(q + RAW_SVPG);
+    if (vesa_boxinfo(vm, &vb) || vesa_bios((vm & 0x7FFF) | 0x8000))
+        return 0;
+    raw_svimg(&vb, PG_LIN(pg), 0);
+    vesa_state(2, base + RAW_REGS + RAW_STATE);
+    vesa_hw = 1;
+    return 1;
+}
+
+/* Sicherung des SVGA-Bildes freigeben (Box verlaesst die Grafik) */
+static void raw_svfree(int s)
+{
+    unsigned char __far *q;
+    pg_t pg;
+    if (!ses[s].gfx_save)
+        return;
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 0xFFF);
+    q = MK_FP(SCRATCH, 0);
+    if (*(unsigned __far *)(q + RAW_VMODE))
+        vesa_hw = 1;                        /* SVGA-Modus: Text per BIOS 03h */
+    pg = *(pg_t __far *)(q + RAW_SVPG);
+    if (pg)
+        mem_free(pg, *(unsigned __far *)(q + RAW_SVN));
+    *(pg_t __far *)(q + RAW_SVPG) = 0;
+}
+
 static void raw_out(int s)
 {
     unsigned i, k;
     unsigned char __far *q;
+    if (raw_svout(s))                       /* VESA-Modus: Zustand + Bild */
+        return;
     raw_regs_in();
     scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
     q = MK_FP(SCRATCH, 0);
@@ -474,6 +587,8 @@ static void raw_in(int s)
 {
     unsigned i, k;
     unsigned char __far *q;
+    if (raw_svin(s))
+        return;
     raw_copy(s, 0);
     scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
     q = MK_FP(SCRATCH, 0);
@@ -632,6 +747,8 @@ int __far vio_setgfx(int s, int t, unsigned mode)
         if (ses[s].gfx_sel)
             ldt_drop(ses[s].gfx_task, ses[s].gfx_sel);
         ses[s].gfx_sel = 0;
+        if (ses[s].gfx == RAWGFX)
+            raw_svfree(s);
         mem_free(ses[s].gfx_save, GFX_UNITS_S(s));
         ses[s].gfx = 0;
         ses[s].gfx_save = 0;
@@ -656,6 +773,9 @@ int __far vio_setgfx(int s, int t, unsigned mode)
         scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
         *(unsigned char __far *)MK_FP(SCRATCH, RAW_KIND) = 0;
         *(unsigned char __far *)MK_FP(SCRATCH, RAW_ALLOW) = 0;
+        *(unsigned __far *)MK_FP(SCRATCH, RAW_VMODE) = 0;
+        *(pg_t __far *)MK_FP(SCRATCH, RAW_SVPG) = 0;
+        *(unsigned char __far *)MK_FP(SCRATCH, RAW_SVOK) = 0;
         win_restore(w);
         ses[s].gfx_plane = 1;               /* frisch                   */
         ses[s].gfx_task = (signed char)t;

@@ -443,7 +443,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Palette/Attribute über INT 10h (0Fh, 1000h–1017h) bildet der Kernel
   hinten nach. Test: `START \DEMO\BGTEST [4|12]` (eine Zeile je Takt,
   bei Zeile 100 Farbe per Port auf Rot), wegschalten, nach ein paar
-  Sekunden zurück. Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
+  Sekunden zurück. SVGA-Modi (VESA, auch über das Bank-Fenster) sichert
+  der Kernel beim Wechsel über VBE 4F04h samt Bildspeicher und stellt sie
+  beim Zurückholen wieder her, einschließlich der eingestellten Bank
+  (Test: `START BANKT`-artige Programme, VBETEST). Virtueller Zeitgeber: Kanal 0 tickt mit der Rate,
   die das Programm einstellt (Spiele stellen oft 100–1000 Hz ein), der
   Zähler läuft nach echter Zeit; Kanal 2 und Port 61h (PC-Lautsprecher)
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip

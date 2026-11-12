@@ -304,6 +304,10 @@ unsigned __far pci_findclass(unsigned cs, unsigned n);
 int __far pci_info(unsigned i, struct fapi_pcidev __far *p);
 /* vesa.c (KTEXT2): VBE ueber einen kurzen Real-Mode-Aufruf */
 int __far apm_off(void);                   /* vesa.c: APM aus, nur bei Fehler zurueck */
+/* SVGA-Zustand der DOS-Boxen (vesa.c, fuer vgagfx.c) */
+struct vbox { unsigned long bytes, phys; unsigned gmul; unsigned char split; };
+int __far vesa_boxinfo(unsigned m, struct vbox __far *o);
+unsigned __far vesa_state(unsigned op, unsigned long lin);
 unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
                          struct fapi_vesamode __far *o);
 unsigned __far res_claim(int drv, unsigned type, unsigned start, unsigned len);

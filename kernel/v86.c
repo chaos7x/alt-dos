@@ -2586,10 +2586,15 @@ static void vga_ports(int t, int on)
     unsigned i;
     for (i = 0x3B0 >> 3; i <= 0x3DF >> 3; i++)
         tss[t].iob[i] = on ? 0 : 0xFF;
-    if (on)                             /* VBE der Bochs-/QEMU-/Proxmox- */
-        tss[t].iob[0x1CE >> 3] &= 0x3F; /* Standard-VGA (1CEh/1CFh)      */
-    else
+    if (on) {                           /* VBE der Bochs-/QEMU-/Proxmox- */
+        tss[t].iob[0x1CE >> 3] &= 0x3F; /* Standard-VGA (1CEh/1CFh); ein  */
+        tss[t].iob[0x1D0 >> 3] &= 0xFE; /* Wort an 1CFh beruehrt auch 1D0h
+                                           (sonst liest das BIOS FFFFh und
+                                           4F05h scheitert)              */
+    } else {
         tss[t].iob[0x1CE >> 3] |= 0xC0;
+        tss[t].iob[0x1D0 >> 3] |= 0x01;
+    }
 }
 
 static int vga_enter(int t)
@@ -2658,6 +2663,7 @@ unsigned long __far vio_raw_buf(int s);         /* vgagfx.c (KTEXT2) */
 #define RAW_LIN   0x41000UL
 #define RAW_KIND  61
 #define RAW_ALLOW 62
+#define RAW_VMODE 0x350                         /* VESA-Modus (vioint.h)  */
 #define RAW_ST    0x340                         /* Port-Zustand hinten:  */
 #define ST_SEQ    0                             /* Index Sequenzer       */
 #define ST_GC     1                             /* Index Grafik          */
@@ -2798,9 +2804,12 @@ static void vga_allow(struct v86_frame *f, int t)
     unsigned char __far *q;
     unsigned fl = irq_off();
     q = vga_vr(t);
-    if (q)
+    if (q) {
         q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 :
                                        m == 0x0D || m == 0x0E || m == 0x10 || m == 0x12 ? 2 : 0);
+        *(unsigned __far *)(q + RAW_VMODE) =    /* VESA: beim Wegschalten */
+            AX == 0x4F02 && (BX & 0x1FF) >= 0x100 ? BX : 0;     /* 4F04h */
+    }
     irq_restore(fl);
 }
 

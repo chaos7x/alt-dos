@@ -198,6 +198,85 @@ unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
     return FAPI_ERROR;
 }
 
+/* ---- SVGA-Zustand der DOS-Boxen (vgagfx.c raw_out/raw_in) -------------
+   Chipunabhaengig ueber VBE: 4F04h sichert/laedt den Zustand der Karte
+   (Register, BIOS-Daten, DAC, SVGA-Register samt Bank), den Bildspeicher
+   des Modus kopiert vgagfx.c selbst (linear oder Fenster fuer Fenster). */
+
+/* Modus m (wie die Box ihn per 4F02h verlangt hat) beschreiben; 0 = ok */
+int __far vesa_boxinfo(unsigned m, struct vbox __far *o)
+{
+    struct rmregs r;
+    unsigned attr, wa, wb, g;
+    unsigned char model;
+    unsigned long list;
+    unsigned mem_kb;
+    o->bytes = 0;
+    if (!vbe_info(&list, &mem_kb))
+        return -1;
+    r.ax = 0x4F01;
+    r.cx = m & 0x1FF;
+    r.es = (unsigned)(RM_BUF >> 4);
+    r.di = 0x200;
+    rm_call(&r);
+    if (r.ax != 0x004F)
+        return -1;
+    attr = rd16(RM_BUF + 0x200);
+    model = rd8(RM_BUF + 0x200 + 27);
+    if (!(attr & 0x10) || (model != 4 && model != 6))
+        return -1;                      /* Text, planar: wie VGA         */
+    o->bytes = mul16(rd16(RM_BUF + 0x200 + 16), rd16(RM_BUF + 0x200 + 20));
+    if (vb_ver >= 0x300 && (m & 0x4000))
+        o->bytes = mul16(rd16(RM_BUF + 0x200 + 50), rd16(RM_BUF + 0x200 + 20));
+    o->phys = (m & 0x4000) && (attr & 0x80) && vb_ver >= 0x200 ?
+              ((unsigned long)rd16(RM_BUF + 0x200 + 42) << 16) | rd16(RM_BUF + 0x200 + 40) : 0;
+    wa = rd8(RM_BUF + 0x200 + 2) & 7;
+    wb = rd8(RM_BUF + 0x200 + 3) & 7;
+    g = rd16(RM_BUF + 0x200 + 4);
+    o->split = (unsigned char)(wa == 5 && wb == 3);
+    o->gmul = g && g <= 64 && !(64 % g) ? 64 / g : 0;
+    if (!o->phys && (!o->gmul || (attr & 0x40) || rd16(RM_BUF + 0x200 + 8) != 0xA000 ||
+                     (wa != 7 && !o->split)))
+        return -1;                      /* weder linear noch Fenster     */
+    return 0;
+}
+
+/* 4F04h: op 0 = Groesse in Byte (0 = nicht da), 1 = sichern nach lin,
+   2 = aus lin laden. Puffer im ersten MB bei RM_BUF (hoechstens 3 KB). */
+unsigned __far vesa_state(unsigned op, unsigned long lin)
+{
+    struct rmregs r;
+    unsigned n;
+    r.ax = 0x4F04;
+    r.dx = 0;
+    r.cx = 0x000F;
+    rm_call(&r);
+    if (r.ax != 0x004F || !r.bx || r.bx > 48)
+        return 0;
+    n = r.bx << 6;
+    if (op == 2) {
+        scratch_map(RM_BUF, n - 1);
+        scratch2_map(lin, n - 1);
+        far_copy(SCRATCH, 0, SCRATCH2, 0, n);
+    }
+    if (op) {
+        r.ax = 0x4F04;
+        r.dx = op;                      /* 1 sichern, 2 laden            */
+        r.cx = 0x000F;
+        r.es = (unsigned)(RM_BUF >> 4);
+        r.bx = 0;
+        rm_call(&r);
+        if (r.ax != 0x004F)
+            return 0;
+    }
+    if (op == 1) {
+        scratch_map(RM_BUF, n - 1);
+        scratch2_map(lin, n - 1);
+        far_copy(SCRATCH2, 0, SCRATCH, 0, n);
+    }
+    return n;
+}
+
 /* ---- APM (Ausschalten) -------------------------------------------------
    Wie DOS/Windows mit POWER.EXE: ueber die Real-Mode-Schnittstelle des
    APM-BIOS (INT 15h 53xxh) - derselbe kurze Ausflug in den Real Mode wie

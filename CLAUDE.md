@@ -410,7 +410,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   schrieb den Verzeichnis-Cluster nur mit 16 Bit (Bytes 4/5 blieben 0) –
   auf FAT32 hinter Cluster 65.535 hätten Sätze nicht mehr gepasst.
   Reihenfolge danach (Entscheidung des Nutzers): SVGA-Zustand der DOS-
-  Boxen, ISA-PnP, dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
+  Boxen (erledigt, s. virtuelle VGA), ISA-PnP, dann /LFN auch für FAT12/16 (UFAT, dort Platz schaffen).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
@@ -2869,6 +2869,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   in der Registerkopie – in QEMU mit einer Abwandlung von BGTEST geprüft
   (Zeile 100: 0Fh + 1010h grün, 200 Zeilen, grün).
   Offen: Latch-Kopien und SVGA hinten.
+  SVGA-Zustand beim Sitzungswechsel (in QEMU geprüft: BANKT.COM –
+  640×480×256 über das Fenster, 5 Bänke gefüllt, Box bleibt auf Bank 2 –
+  per START, weg, VER, zurück: Bild gleich, die Box zeichnet danach in
+  Bank 2 an der richtigen Stelle; VBETEST mit LFB pixelgleich; BGTEST
+  unverändert; VDEMO + BANKT + BGTEST + CMD reihum, VDEMO danach
+  pixelgleich): v86.c `vga_allow` merkt den VESA-Modus der Box (4F02h-
+  BX ab 100h) im Puffer (`RAW_VMODE`, vioint.h). vgagfx.c `raw_out`
+  sichert dann statt der Standardregister: Zustand per VBE 4F04h (vesa.c
+  `vesa_state`, Hardware/BIOS/DAC/Register, über RM_BUF, höchstens 3 KB
+  bei `RAW_STATE`) und das Bild in eigene Seiten (`RAW_SVPG`/`RAW_SVN`,
+  mem_alloc_hi, bis 4 MB) – linear über pg_lfb oder Bank für Bank über
+  4F05h (`raw_svimg`, Maße/Fenster aus `vesa_boxinfo` = 4F01h). `raw_in`
+  stellt den Modus per BIOS ohne Löschen ein (Bit 15), kopiert das Bild
+  zurück, dann 4F04h DL=2 (stellt auch die Bank der Box wieder her).
+  Danach `vesa_hw` = 1, damit der nächste Textmodus erst BIOS 03h macht;
+  ebenso `raw_svfree` beim Verlassen einer VESA-Box (sonst blieb die VBE-
+  Erweiterung an, CMD schrieb in ein Grafikbild). Dabei behoben:
+  `vga_ports` gibt auch 1D0h frei – SeaVGABIOS liest die Bank per Wort an
+  1CFh zurück, das berührt 1D0h; gesperrt kam FFFFh, 4F05h scheiterte.
+  Karten ohne 4F04h fallen auf die Standardregister zurück (wie vorher).
+  Echte Karten (S3, ET4000, Cirrus) nur in 86Box prüfbar.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

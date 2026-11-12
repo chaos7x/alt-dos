@@ -45,6 +45,11 @@ struct session {
 #define RAW_KIND    61              /* Bytes hinter den 61 Registern: Art des Schattens */
 #define RAW_ALLOW   62              /*   (0 keiner, 1 A0000 64 KB, 3 B8000 32 KB), BIOS-Modus erlaubt es */
 #define RAW_ST      0x340           /* Zustand der Ports hinten (Indizes, DAC-Zaehler) */
+#define RAW_VMODE   0x350           /* VESA-Modus der Box (4F02h-BX), 0 = VGA */
+#define RAW_SVPG    0x354           /* Bildspeicher-Sicherung: erste Seite (pg_t) */
+#define RAW_SVN     0x358           /*   und Seitenzahl                   */
+#define RAW_SVOK    0x35A           /* 1 = Zustand + Bild gesichert        */
+#define RAW_STATE   0x400           /* 4F04h-Zustand (bis 3 KB, im RAW_REGS-Bereich) */
 #define GFX_UNITS(m) ((m) == RAWGFX ? PAGES(RAW_LIN + 0x10000UL) : PAGES(GFX_IMG(m) + 768))
 #define VESAGFX     0x81            /* VESA-Modus (linearer Bildspeicher), Bild in vpg Seiten */
 #define GFX_UNITS_S(s) (ses[s].gfx == VESAGFX ? ses[s].vpg + 1u : GFX_UNITS(ses[s].gfx))
