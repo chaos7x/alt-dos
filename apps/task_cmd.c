@@ -462,7 +462,7 @@ static void read_line(void)
             tabbed = 0;
         if (c == 13) {
             break;
-        } else if (c == 0 || c == 0xE0) {   /* Sondertasten         */
+        } else if KEY_EXT(c, sc) {   /* Sondertasten         */
             switch (sc) {
             case 0x4B:                      /* links                */
                 if (pos) {

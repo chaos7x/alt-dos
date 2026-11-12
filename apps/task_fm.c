@@ -590,7 +590,7 @@ static int input(const char *title, const char *prompt, char *b, unsigned max)
             return 1;
         if (c == 27)
             return 0;
-        if (c == 0 || c == 0xE0) {
+        if KEY_EXT(c, sc) {
             if (sc == K_LEFT && pos) pos--;
             else if (sc == K_RIGHT && pos < n) pos++;
             else if (sc == K_HOME) pos = 0;
@@ -1381,7 +1381,7 @@ static void viewer(const char *path, unsigned long size)
         sc = (unsigned char)(k >> 8);
         if (c == 27 || (c == 0 && (sc == K_F1 + 2 || sc == K_F10)) || c == 'q' || c == 'Q')
             break;
-        if (c == 0 || c == 0xE0) {
+        if KEY_EXT(c, sc) {
             switch (sc) {
             case K_DOWN:
                 if (vnext(vtop) < vsize)
@@ -1587,12 +1587,12 @@ static void key(unsigned k)
         mouse_event();
         return;
     }
-    if ((c == 0 || c == 0xE0) && (sc == K_F1 || sc == K_F1 + 1) &&
+    if (KEY_EXT(c, sc) && (sc == K_F1 || sc == K_F1 + 1) &&
         (KbdShift() & KBDSHIFT_ALT)) {  /* Alt+F1/F2 (Treiber: Scancode) */
         do_drive(sc == K_F1 + 1);
         return;
     }
-    if (c == 0 || c == 0xE0) {
+    if KEY_EXT(c, sc) {
         switch (sc) {
         case K_UP:    if (p->cur) p->cur--; break;
         case K_DOWN:  if (p->cur + 1 < p->n) p->cur++; break;

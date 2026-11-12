@@ -1425,6 +1425,31 @@ static int split_cmd(const char *cmd, char *path, char *name, char *args)
 static unsigned char dos_session;
 static unsigned box_ctry;               /* COUNTRY= fuer die DOS-Box (0 = 049) */
 
+/* Codepage fuer die Box: nur Paare, die die COUNTRY.SYS von FreeDOS kennt
+   (850 und 858 hat jedes Land), sonst 850 */
+static unsigned box_cp(unsigned c, unsigned cp)
+{
+    int ok;
+    switch (cp) {
+    case 850: case 858: ok = 1; break;
+    case 437: ok = !(c == 2 || c == 36 || c == 38 || c == 40 || c == 42 || c == 45 ||
+                     c == 47 || c == 48 || c == 90 || (c >= 351 && c <= 999 &&
+                     c != 352 && c != 353 && c != 356 && c != 358));
+              break;
+    case 852: ok = c == 7 || c == 36 || c == 38 || c == 40 || c == 42 || c == 48 ||
+                   c == 355 || (c >= 381 && c <= 387 && c != 384) || c == 420 || c == 421;
+              break;
+    case 865: ok = c == 45 || c == 46 || c == 47 || c == 354 || c == 358; break;
+    case 737: ok = c == 30; break;
+    case 857: ok = c == 90; break;
+    case 860: ok = c == 351; break;
+    case 863: ok = c == 2; break;
+    case 866: ok = c == 7 || c == 359 || c == 380; break;
+    default:  ok = 0;
+    }
+    return ok ? cp : 850;
+}
+
 /* ---- Codepages (CODEPAGE=, CHCP) ----------------------------------------
    Wie OS/2: CODEPAGE=850,437 bereitet bis zu NCP Codepages vor, die erste
    gilt ab dem Start, FAPI_CODEPAGE (CHCP) schaltet systemweit um. Je
@@ -1454,6 +1479,7 @@ static int cp_set(unsigned cp)
         cp_fontlin = desc_base(&gdt[cp_sel >> 3]) + i * CP_SZ;
     }
     cp_cur = cp;
+    kbd_derive();                       /* Tasten liefern die neue Codepage */
     vio_refont();
     return 0;
 }
@@ -3939,17 +3965,23 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_QCURDISK:
         return task[current].drive;
 
-    case FAPI_KBDSETLAYOUT:
+    case FAPI_KBDSETLAYOUT: {                   /* -> fehlende Zeichen   */
+        int r;
         if (a1 == 0)
-            return kbd_set_layout(0, 0) ? FAPI_ERROR : 0;
-        if (!user_ok(usel, a1, KBL_SIZE_BYTES, 0))
+            r = kbd_set_layout(0, 0);
+        else if (!user_ok(usel, a1, 4, 0) ||
+                 !user_ok(usel, a1, ((unsigned char __far *)MK_FP(usel, a1))[3] == 2 ?
+                          KBL2_SIZE_BYTES : KBL_SIZE_BYTES, 0))
             return FAPI_ERROR;
-        return kbd_set_layout(usel, a1) ? FAPI_ERROR : 0;
+        else
+            r = kbd_set_layout(usel, a1);
+        return r < 0 ? FAPI_ERROR : (unsigned)r;
+    }
 
     case FAPI_KBDGETLAYOUT:
-        if (!user_ok(usel, a1, 4, 1))
+        if (!user_ok(usel, a1, 4, 1) || !kbd_sel)
             return FAPI_ERROR;
-        far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id(), 4);
+        far_copy(usel, a1, kbd_sel, 4, 4);
         return 0;
 
     case FAPI_GETENV: {
@@ -4291,11 +4323,10 @@ int box_ctl(unsigned op, unsigned a)
                         box_sec[k + 9] = (char)('0' + box_ctry / 10 % 10);
                         box_sec[k + 10] = (char)('0' + box_ctry % 10);
                     }
-                    if (cp_cur < 1000) {        /* Codepage der Box      */
-                        box_sec[k + 12] = (char)('0' + cp_cur / 100 % 10);
-                        box_sec[k + 13] = (char)('0' + cp_cur / 10 % 10);
-                        box_sec[k + 14] = (char)('0' + cp_cur % 10);
-                    }
+                    j = box_cp(box_ctry ? box_ctry : 49, cp_cur);
+                    box_sec[k + 12] = (char)('0' + j / 100 % 10);  /* Codepage */
+                    box_sec[k + 13] = (char)('0' + j / 10 % 10);
+                    box_sec[k + 14] = (char)('0' + j % 10);
                     break;
                 }
             }

@@ -245,7 +245,8 @@ DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_sb16.sys SB16.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE  $B/task_ufat32.exe UFAT32.EXE
-       $B/US.KBL US.KBL  $B/GB.KBL GB.KBL"
+       $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/FR.KBL FR.KBL  $B/SP.KBL SP.KBL  $B/IT.KBL IT.KBL
+       $B/DK.KBL DK.KBL  $B/NO.KBL NO.KBL  $B/SV.KBL SV.KBL  $B/PL.KBL PL.KBL"
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE

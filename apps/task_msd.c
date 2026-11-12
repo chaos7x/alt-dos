@@ -647,7 +647,7 @@ static int input(int *sel)
             for (i = 0; i < NB; i++)
                 if (c == (unsigned)bkey[i])
                     return (int)i;
-            if ((k & 0xFF) == 0 || (k & 0xFF) == 0xE0) {
+            if (KEY_EXT(k & 0xFF, k >> 8)) {
                 c = k >> 8;
                 if (c == 0x48 && *sel % 5) (*sel)--;          /* hoch    */
                 else if (c == 0x50 && *sel % 5 < 4) (*sel)++;  /* runter  */

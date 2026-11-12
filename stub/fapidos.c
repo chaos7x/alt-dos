@@ -373,7 +373,7 @@ static int brk(void)
 
 static unsigned kbd_norm(unsigned k)
 {
-    if ((k & 0xFF) == 0xE0 && (k >> 8))
+    if ((k & 0xFF) == 0xE0 && (k >> 8) >= 0x47 && (k >> 8) <= 0x53)
         k &= 0xFF00;                    /* graue Tasten wie die anderen */
     return k;
 }

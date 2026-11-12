@@ -39,9 +39,14 @@
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
                                        DX = Verzeichnis (0 = aktuelles)  */
-#define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 Bytes), 0 = eingebaut */
+#define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 oder 728 Bytes), 0 = eingebaut */
 #define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
-#define KBL_SIZE_BYTES      278
+#define KBL_SIZE_BYTES      278     /* Version 1: CP437, 3 Ebenen       */
+#define KBL2_SIZE_BYTES     728     /* Version 2: Unicode, 4 Ebenen
+                                       (normal, Umschalt, AltGr,
+                                       Umschalt+AltGr); KbdSetLayout -> Zahl
+                                       der Zeichen, die die aktive Codepage
+                                       nicht hat */
 #define FAPI_CHDIR          0x14    /* BX = Pfad                        */
 #define FAPI_QCURDIR        0x15    /* BX = Puffer -> "C:\DOS"; 130 Bytes, mit
                                        FX_FLAG_LONGNAMES bis 263 (FAPI_PATHLEN+2);

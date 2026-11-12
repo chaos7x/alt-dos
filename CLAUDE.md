@@ -3644,9 +3644,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Einhängen über den neuen DevHlp `DH_CPTAB` (21: BX 0 Selektor, 1
   Offset, Selektor 0 = 437). Box: BOX_READ setzt auch die Codepage in
   `COUNTRY=049,437,` ein. DGROUP danach 65.528 Byte (8 frei!) – vor
-  weiteren Daten im Kernel erst Platz schaffen. Offen: Tastatur-
-  belegungen je Codepage (KEYB liefert weiter CP437-Bytes; für Deutsch
-  gleich), Codepage je Sitzung wie OS/2.
+  weiteren Daten im Kernel erst Platz schaffen. Offen: Codepage je
+  Sitzung wie OS/2.
+  Tastaturbelegungen je Codepage erledigt (Wunsch des Nutzers; in QEMU
+  geprüft mit `CODEPAGE=850,865,852`: DK unter 850 æ ø å Æ Ø Å ½ @ [ |,
+  Feststelltaste macht Æ/Ø, unter 437 meldet KEYB 5 fehlende Zeichen;
+  `KEYB SV,865`; PL unter 852 ą ł ż Ą Ł Ż ó Ó ś Ś mit AltGr, Umschalt+
+  AltGr und Feststelltaste; Ó in CMD, EDIT und in der Box): `.KBL`
+  Version 2 = "KBL" 02h, Kennung, 4 × 90 Worte Unicode (normal, Umschalt,
+  AltGr, Umschalt+AltGr), 728 Byte (`KBL2_SIZE_BYTES`); Version 1 (CP437,
+  3 Ebenen) bleibt gültig, die eingebaute GR (kbd_gr.h) ist Version 1.
+  kbd.c: Belegung nicht mehr in DGROUP (276 Byte frei, DGROUP 65.252),
+  sondern im Kernelsegment `kbd_sel` (Kopf, 4 × 90 abgeleitete Bytes, 4 ×
+  90 Worte Vorlage); `kbd_derive` setzt die Bytes über `cp_from_uni`
+  (fat.c, aktive Tabelle; § und ¶ fallen auf 15h/14h zurück) und zählt,
+  was fehlt – cp_set ruft es bei CHCP. `up_uni` (Feststelltaste: Latin-1,
+  Latin Extended-A, griechisch, kyrillisch); AltGr + Umschalt nimmt die
+  vierte Ebene, sonst die dritte. FAPI KbdSetLayout -> Zahl der
+  fehlenden Zeichen. mkkbl.py: US, GB (aus den CP437-Tabellen), FR, SP,
+  IT, DK, NO, SV, PL ohne Tottasten (Akzente sind Zeichen), kein € (keine
+  Codepage hier hat es). KEYB: `KEYB xx,nnn` stellt vorher die Codepage
+  um. Lehre: E0h ist in 852 (Ó) und 737 (ω) ein Buchstabe, aber auch die
+  Kennung grauer Tasten – graue Tasten haben immer Scancode 47h–53h:
+  `KEY_EXT(c, sc)` in fapi.h statt `c == 0 || c == 0xE0` (CMD, EDIT, FM,
+  LESS, MSD, TASKMAN, Stub); die Box gibt ein getipptes E0h wie Alt+224
+  mit AH = 0 (FreeCOM hielt es sonst für eine graue Taste). Dabei
+  behoben: die Box-CONFIG.SYS bekam `COUNTRY=049,852` – das Paar kennt
+  die COUNTRY.SYS von FreeDOS nicht („could not find country info“);
+  `box_cp` gibt der Box nur Paare, die es dort gibt, sonst 850.
 - Unicode (Wunsch des Nutzers, abgestimmt in drei Stufen): (1) Datei-
   namen verlustfrei, bald: heute wird jedes Zeichen außerhalb CP437 beim
   Lesen eines VFAT-Namens zu `_` (`lat2cp`) und so auch ins Ziel kopiert;

@@ -331,7 +331,13 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   startet neu; hängt ein Programm, nach spätestens 5 s trotzdem (zweimal
   drücken: sofort)
 - Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
-  eingebaut; `KEYB US` oder `KEYB GB` lädt andere Belegungen aus `.KBL`-Dateien
+  eingebaut; `KEYB US`, `GB`, `FR`, `SP`, `IT`, `DK`, `NO`, `SV`, `PL`
+  (Polnisch für Programmierer, AltGr + Buchstabe) lädt andere Belegungen aus
+  `.KBL`-Dateien. Die Belegungen sind Unicode (vier Ebenen: normal,
+  Umschalt, AltGr, Umschalt+AltGr; Feststelltaste auch für Umlaute und
+  Akzentbuchstaben); der Kernel leitet daraus die Zeichen der aktiven
+  Codepage ab, auch nach `CHCP`. `KEYB DK,865` stellt die Codepage gleich
+  mit um; fehlen Zeichen in der Codepage, sagt KEYB wie viele
 - A20 über den Tastaturcontroller, GDT/IDT, Wechsel per `LMSW`
 - PIC auf 20h/28h umgelegt, Systemtakt 100 Hz
 - FAPI-Call-Gate (Selektor 0023h) von Ring 3 nach Ring 0
@@ -632,7 +638,7 @@ selbst nur 8.3 kennt.
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
 | 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
-| 18 | KbdSetLayout    | BX = `.KBL`-Daten (278 Bytes), 0 = eingebaute |
+| 18 | KbdSetLayout    | BX = `.KBL`-Daten (Version 1: 278 Bytes CP437, Version 2: 728 Bytes Unicode), 0 = eingebaute → Anzahl Zeichen, die die aktive Codepage nicht hat / FAPI_ERROR |
 | 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung |
 | 20 | DosChDir        | BX = Pfad                       |
 | 21 | DosQCurDir      | BX = Puffer (130 Bytes) → z. B. `C:\DOS` |

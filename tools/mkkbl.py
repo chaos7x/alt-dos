@@ -4,10 +4,14 @@
 
     mkkbl.py AUSGABEVERZEICHNIS
 
-Erzeugt GR.KBL, US.KBL, GB.KBL (Belegungsdateien fuer KEYB.EXE) und
-kbd_gr.h (die deutsche Belegung, fest im Kernel eingebaut).
+Erzeugt US, GB, FR, SP, IT, DK, NO, SV, PL als .KBL (Belegungsdateien fuer
+KEYB.EXE, Version 2) und kbd_gr.h (die deutsche Belegung, fest im Kernel
+eingebaut, Version 1).
 
-Format einer .KBL-Datei (278 Bytes):
+Version 2 (728 Bytes): "KBL" 02h, Kennung, dann vier Tabellen zu 90 Worten
+in Unicode: normal, Umschalt, AltGr, Umschalt+AltGr.
+
+Version 1 (278 Bytes, kbd_gr.h; KEYB nimmt sie weiter an):
     4 Bytes  "KBL" 01h
     4 Bytes  Kennung, z. B. "US" mit Nullen aufgefuellt
     90 Bytes Zeichen ohne Umschalttaste   (Scancode 00h-59h, Satz 1)
@@ -74,17 +78,117 @@ LAYOUTS = {
 }
 
 
+
+# Version 2: Unicode, vier Ebenen (normal, Umschalt, AltGr, Umschalt+AltGr).
+# Der Kernel leitet daraus die Zeichen der aktiven Codepage ab; was dort
+# fehlt, meldet KEYB. Tottasten gibt es nicht - Akzente sind Zeichen.
+def utab(rows, extra=None):
+    t = [0] * N
+    for start, chars in rows:
+        for k, c in enumerate(chars):
+            t[start + k] = ord(c)
+    for sc, c in (extra or {}).items():
+        t[sc] = ord(c) if isinstance(c, str) else c
+    return t
+
+
+def from437(t):
+    """CP437-Tabelle -> Unicode (Steuerzeichen unter 20h bleiben)."""
+    return [c if c < 0x80 else ord(bytes([c]).decode('cp437')) for c in t]
+
+
+UCOMMON = {sc: (c if isinstance(c, int) else ord(c)) for sc, c in COMMON.items()}
+NORD = [(0x10, 'qwertyuiop'), (0x1E, 'asdfghjkl'), (0x2C, 'zxcvbnm,.-')]
+NORDS = [(0x10, 'QWERTYUIOP'), (0x1E, 'ASDFGHJKL'), (0x2C, 'ZXCVBNM;:_')]
+NUM = (0x02, '1234567890')
+
+ULAYOUTS = {
+    'US': [from437(t) for t in LAYOUTS['US']] + [[0] * N],
+    'GB': [from437(t) for t in LAYOUTS['GB']] + [[0] * N],
+    'FR': (
+        utab([(0x02, '&é"\'(-è_çà)='), (0x10, 'azertyuiop^$'),
+              (0x1E, 'qsdfghjklmù'), (0x2C, 'wxcvbn,;:!')],
+             {**UCOMMON, 0x29: '²', 0x2B: '*', 0x56: '<'}),
+        utab([(0x02, '1234567890°+'), (0x10, 'AZERTYUIOP¨£'),
+              (0x1E, 'QSDFGHJKLM%'), (0x2C, 'WXCVBN?./§')],
+             {**UCOMMON, 0x2B: 'µ', 0x56: '>'}),
+        utab([(0x03, '~#{[|`\\^@]}')], {0x1B: '¤'}),
+        [0] * N,
+    ),
+    'SP': (
+        utab([(0x02, "1234567890'¡"), (0x10, 'qwertyuiop`+'),
+              (0x1E, 'asdfghjklñ´'), (0x2C, 'zxcvbnm,.-')],
+             {**UCOMMON, 0x29: 'º', 0x2B: 'ç', 0x56: '<'}),
+        utab([(0x02, '!"·$%&/()=?¿'), (0x10, 'QWERTYUIOP^*'),
+              (0x1E, 'ASDFGHJKLÑ¨'), (0x2C, 'ZXCVBNM;:_')],
+             {**UCOMMON, 0x29: 'ª', 0x2B: 'Ç', 0x56: '>'}),
+        utab([(0x02, '|@#~'), (0x1A, '[]')],
+             {0x29: '\\', 0x07: '¬', 0x28: '{', 0x2B: '}'}),
+        [0] * N,
+    ),
+    'IT': (
+        utab([(0x02, "1234567890'ì"), (0x10, 'qwertyuiopè+'),
+              (0x1E, 'asdfghjklòà'), (0x2C, 'zxcvbnm,.-')],
+             {**UCOMMON, 0x29: '\\', 0x2B: 'ù', 0x56: '<'}),
+        utab([(0x02, '!"£$%&/()=?^'), (0x10, 'QWERTYUIOPé*'),
+              (0x1E, 'ASDFGHJKLç°'), (0x2C, 'ZXCVBNM;:_')],
+             {**UCOMMON, 0x29: '|', 0x2B: '§', 0x56: '>'}),
+        utab([(0x1A, '[]'), (0x27, '@#')]),
+        utab([(0x1A, '{}')]),
+    ),
+    'DK': (
+        utab([NUM, (0x0C, '+´'), (0x1A, 'å¨'), (0x27, 'æø')] + NORD,
+             {**UCOMMON, 0x29: '½', 0x2B: "'", 0x56: '<'}),
+        utab([(0x02, '!"#¤%&/()=?`'), (0x1A, 'Å^'), (0x27, 'ÆØ')] + NORDS,
+             {**UCOMMON, 0x29: '§', 0x2B: '*', 0x56: '>'}),
+        utab([(0x03, '@£$'), (0x08, '{[]}')], {0x0D: '|', 0x1B: '~', 0x56: '\\'}),
+        [0] * N,
+    ),
+    'NO': (
+        utab([NUM, (0x0C, '+\\'), (0x1A, 'å¨'), (0x27, 'øæ')] + NORD,
+             {**UCOMMON, 0x29: '|', 0x2B: "'", 0x56: '<'}),
+        utab([(0x02, '!"#¤%&/()=?`'), (0x1A, 'Å^'), (0x27, 'ØÆ')] + NORDS,
+             {**UCOMMON, 0x29: '§', 0x2B: '*', 0x56: '>'}),
+        utab([(0x03, '@£$'), (0x08, '{[]}')], {0x0D: '´', 0x1B: '~'}),
+        [0] * N,
+    ),
+    'SV': (
+        utab([NUM, (0x0C, '+´'), (0x1A, 'å¨'), (0x27, 'öä')] + NORD,
+             {**UCOMMON, 0x29: '§', 0x2B: "'", 0x56: '<'}),
+        utab([(0x02, '!"#¤%&/()=?`'), (0x1A, 'Å^'), (0x27, 'ÖÄ')] + NORDS,
+             {**UCOMMON, 0x29: '½', 0x2B: '*', 0x56: '>'}),
+        utab([(0x03, '@£$'), (0x08, '{[]}\\')], {0x1B: '~', 0x56: '|'}),
+        [0] * N,
+    ),
+    # Polnisch (Programmierer): US, dazu AltGr + Buchstabe
+    'PL': (
+        from437(LAYOUTS['US'][0]), from437(LAYOUTS['US'][1]),
+        utab([], {0x1E: 'ą', 0x2E: 'ć', 0x12: 'ę', 0x26: 'ł',
+                  0x31: 'ń', 0x18: 'ó', 0x1F: 'ś', 0x2D: 'ź',
+                  0x2C: 'ż'}),
+        utab([], {0x1E: 'Ą', 0x2E: 'Ć', 0x12: 'Ę', 0x26: 'Ł',
+                  0x31: 'Ń', 0x18: 'Ó', 0x1F: 'Ś', 0x2D: 'Ź',
+                  0x2C: 'Ż'}),
+    ),
+}
+
+
+def blob2(ident, tabs):
+    return (b'KBL\x02' + ident.encode().ljust(4, b'\0') +
+            b''.join(c.to_bytes(2, 'little') for t in tabs for c in t))
+
+
 def blob(ident, tabs):
     return b'KBL\x01' + ident.encode().ljust(4, b'\0') + b''.join(bytes(t) for t in tabs)
 
 
 def main():
     out = sys.argv[1]
-    for ident, tabs in LAYOUTS.items():
-        data = blob(ident, tabs)
-        assert len(data) == 8 + 3 * N
-        if ident != 'GR':
-            open(os.path.join(out, ident + '.KBL'), 'wb').write(data)
+    for ident, tabs in ULAYOUTS.items():
+        assert len(tabs) == 4 and all(len(t) == N for t in tabs), ident
+        data = blob2(ident, tabs)
+        assert len(data) == 8 + 8 * N
+        open(os.path.join(out, ident + '.KBL'), 'wb').write(data)
     data = blob('GR', LAYOUTS['GR'])
     with open(os.path.join(out, 'kbd_gr.h'), 'w') as f:
         f.write('/* erzeugt von tools/mkkbl.py - nicht von Hand aendern */\n')

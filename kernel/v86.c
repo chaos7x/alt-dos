@@ -2411,6 +2411,10 @@ static int key(int t, int wait)
     for (;;) {
         if (fg == s) {
             k = wait ? kf_kbd_get() : kf_kbd_peek();
+            if (k >= 0 && (k & 0xFF) == 0xE0 && ((unsigned)k >> 8 < 0x47 ||
+                                                (unsigned)k >> 8 > 0x53))
+                k = 0xE0;               /* Buchstabe E0h (852: Ó) wie Alt+224:
+                                           AH = 0, sonst gilt er als graue Taste */
             if (k >= 0)
                 return k;
         }
@@ -2564,7 +2568,7 @@ static void svc(int n, struct v86_frame *f, int t)
         if (AH == 0x00 || AH == 0x10) {
             i = AH;
             AX = (unsigned)key(t, 1);
-            if (i == 0 && AL == 0xE0)
+            if (i == 0 && AL == 0xE0 && AH >= 0x47 && AH <= 0x53)
                 AL = 0;                         /* graue Tasten wie AT-BIOS 00h */
         } else if (AH == 0x01 || AH == 0x11) {
             k = key(t, 0);
