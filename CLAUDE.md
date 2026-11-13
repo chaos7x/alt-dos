@@ -299,6 +299,9 @@ zweiten Zonen-Segment, danach fehlte der Platz für das FM-Segment
 kernel.c prüft beim Übersetzen KCODE2 == KCODE2_IDX · 8). FmOpen meldet
 dann FAPI_ERR_FULL. In 86Box (486, AWE32 ohne PnP) geprüft: AWELOAD
 mit SYNTHGS, danach IMF und MID.
+Vom Nutzer in 86Box bestätigt (Abbild mit NKSEG 16): von CD nach C:
+(IDE) und D: (SCSI) kopiert, CHKDSK /F auf beiden ohne Fehler; AWELOAD,
+danach IMF und MID mit Ton; COPY in RBOX, CHKDSK danach sauber.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
