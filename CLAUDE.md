@@ -278,6 +278,20 @@ gefunden“). Der Bereich geht erst nach CONFIG.SYS an die Speicher-
 verwaltung (auch im Fall kmoved, `pc`). In QEMU geprüft: Rock-Ridge-CD
 (genisoimage -R) zeigt „Ein ziemlich langer Dateiname über Größe.txt“,
 MEM danach gleich bis auf das geladene Modul.
+Platten und Ton aus main (in QEMU geprüft: PLAY KLANG.WAV über SB16 im
+Mitschnitt, EJECT der CD am IDE – danach „keine CD eingelegt“; 160-GB-
+Platte mit FAT16-Partition ab Sektor 300.000.000: TYPE, COPY dorthin,
+Kopie gleich, fsck sauber). Treiber ide.c/aha154x.c/ncr5380.c/sb16.c/
+awe.h, drvlib.h und drv.h wörtlich von main (dcrt0 bleibt `cpu 286`);
+ide.c: `outl` nur mit `_M_IX86 >= 300` als 32-Bit-OUT, sonst zwei Wort-
+OUT (ohne PCI gibt es auf 5.x keinen Busmaster, wird nie gerufen).
+Kernel: Wechselplatten aus d0e8795 (rem_media/blk_chg/rem_locate/
+vol_check, mit dem einen `req` statt Treibersperren), bsize-Bits 12–14
+(Sperrgruppe) ausmaskiert, FAPI 57h DosEject + blk_eject, AUD_AWE ->
+AR_AWE, DH_KSEG (19). DH_PCI*/DH_CLAIM gibt es nicht – Standardantwort
+FFFFh (pci_find: keins; claim wird nicht ausgewertet). EJECT.EXE und
+AWELOAD.EXE von main. AWE und Wechselplatten an AHA/NCR5380 nur in
+86Box prüfbar (QEMU hat beides nicht).
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

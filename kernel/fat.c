@@ -1300,20 +1300,65 @@ static int new_entry_n(int d, unsigned dc, const char *n83, unsigned char attr,
     return rc;
 }
 
-/* Diskette: vor jeder Operation neu einhaengen, sie koennte gewechselt sein */
+/* Wechselplatte: Partition auf dem eingelegten Medium suchen - ohne
+   Partitionstabelle (Bootsektor mit BPB, "Superfloppy") das ganze Medium,
+   sonst die erste FAT-Partition (ZIP-Disketten von Iomega: Nr. 4) */
+static int rem_locate(int d)
+{
+    int dev = vol[d].blk, i;
+    unsigned char __far *b;
+    unsigned char t;
+
+    if (blk_read(dev, 0))
+        return -1;
+    b = MK_FP(DMABUF, 0);
+    if (b[510] != 0x55 || b[511] != 0xAA)
+        return -1;
+    if ((b[0] == 0xEB || b[0] == 0xE9) && b[11] == 0 && b[12] == 2 && b[13] &&
+        !(b[13] & (b[13] - 1)) && (b[16] == 1 || b[16] == 2)) {
+        vol[d].start = 0;
+        vol[d].psize = blk[dev].blocks;
+        vol[d].ptype = 0;
+        vol[d].part = 0;
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        t = b[0x1BE + 16 * i + 4];
+        if (t == 0x01 || t == 0x04 || t == 0x06 || t == 0x0E || t == 0x0B || t == 0x0C) {
+            vol[d].start = *(unsigned long __far *)(b + 0x1BE + 16 * i + 8);
+            vol[d].psize = *(unsigned long __far *)(b + 0x1BE + 16 * i + 12);
+            vol[d].ptype = t;
+            vol[d].part = (unsigned char)(i + 1);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* Diskette und Wechselplatte: vor jeder Operation neu einhaengen, sie
+   koennte gewechselt sein */
 static int revalidate(int d)
 {
-    if (!IS_FLOPPY(vol[d].blk))
+    int b = vol[d].blk;
+    if (!IS_FLOPPY(b) && !IS_REM(b))
         return 0;
-    if (blk_media(vol[d].blk) == 0 && vol[d].used)
+    if (blk_media(b) == 0 && vol[d].used && !(IS_REM(b) && blk_nomedia(b)))
         return 0;                       /* nicht gewechselt: alles gilt */
     fc_drive = -1;
     fc_dirty = 0;
     dir_cache_reset();
     blk_invalidate();
-    if (blk_nomedia(vol[d].blk)) {
+    if (blk_nomedia(b)) {
         ifs_notready = 1;               /* FAPI meldet "nicht bereit"   */
         return IFS_ERR;
+    }
+    if (IS_REM(b)) {
+        vol[d].used = 0;
+        if (rem_locate(d) || fat_mount(d))
+            return IFS_ERR;
+        vol[d].used = 1;
+        vol[d].locked = 0;
+        return 0;
     }
     return fat_mount(d) ? IFS_ERR : 0;
 }
@@ -2187,7 +2232,15 @@ int __far vol_present(int d)
         else
             ifs_mount(d, vol[d].blk, 0, &fat_driver);
     }
+    if (d >= 2 && !vol[d].used && vol[d].present && IS_REM(vol[d].blk))
+        revalidate(d);                  /* Wechselplatte: Medium da?   */
     return vol[d].used || vol[d].present;
+}
+
+/* Wechselplatte/Diskette jetzt pruefen (SELECTDISK, QFSInfo) */
+int __far vol_check(int d)
+{
+    return revalidate(d);
 }
 
 /* Dateisystem eingehaengt; gesperrte Laufwerke (CHKDSK /F, FORMAT) sind zu */

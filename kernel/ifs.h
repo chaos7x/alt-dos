@@ -94,6 +94,7 @@ void __far vol_move(int from, int to);
 /* Namensgedaechtnis (fat.c, Unicode Stufe 1): CP437-Name <- UCS-2 */
 void __far uni_note_ext(unsigned sel, unsigned name, unsigned ucs, unsigned len);
 int __far  vol_present(int d);
+int __far  vol_check(int d);            /* Wechselplatte: Medium pruefen */
 void __far vol_reset(int d);
 void __far ifs_shutdown(void);
 int __far  ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,

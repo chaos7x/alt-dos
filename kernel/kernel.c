@@ -2253,6 +2253,7 @@ static unsigned sig_deliver(unsigned r)
     return sig;                                 /* AX = Signal           */
 }
 
+static int blk_eject(int dev);
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3);
 
@@ -2902,7 +2903,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].pipe = (unsigned char)(a2 == DRV_OPEN_LOCK);
         if (a2 == DRV_OPEN_LOCK)
             vol[a1].locked = 1;
-        if (IS_FLOPPY(vol[a1].blk))
+        if (IS_FLOPPY(vol[a1].blk) || IS_REM(vol[a1].blk))
             blk_media(vol[a1].blk);             /* gewechselt? neu lesen */
         return k + HBASE;
 
@@ -2938,6 +2939,28 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a1 == 0xFFFF)
             return a2 < cp_n ? cp_list[a2] : 0;
         return cp_set(a1) ? FAPI_ERROR : 0;
+    case FAPI_EJECT: {                          /* Medium auswerfen      */
+        int dev, st;
+        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
+            subst_real(a1) != a1)
+            return FAPI_ERROR;
+        dev = vol[a1].blk;
+        if (dev < 0 || dev >= nblk || IS_FLOPPY(dev) ||
+            (!IS_REM(dev) && blk[dev].bsize != 2048))
+            return FAPI_ERR_DENIED;
+        for (k = 1; k < NFILE; k++)
+            if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+                vol[files[k].f.drive].blk == dev)
+                return FAPI_ERR_INUSE;
+        st = blk_eject(dev);
+        if (st == DRV_ERR_CMD)
+            return FAPI_ERR_DENIED;
+        for (k = 0; k < NDRIVE; k++)            /* FAT neu einhaengen; das */
+            if (vol_present(k) && vol[k].blk == dev && vol[k].drv == &fat_driver)
+                vol_reset(k);                   /* CD-Modul prueft selbst */
+        return st == DRV_OK ? 0 : FAPI_ERROR;
+    }
+
     case FAPI_OPENDISK: {                       /* ganze Platte (FDISK)  */
         int dev = disk_blk(a1), d;
         if (dev < 0)
@@ -3021,6 +3044,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         dv = vol[a1].blk;
         if (IS_FLOPPY(dv) && !vol[a1].locked && blk_media(dv) == 1)
             vol_reset(a1);                  /* andere Diskette: neu      */
+        if (IS_REM(dv) && !vol[a1].locked && vol_check(a1))
+            ifs_notready = 0;               /* Wechselplatte: nur FSI_NOMEDIA */
         if (vol[a1].drv == &mod_driver && mod_mount(a1))
             ifs_notready = 0;               /* nur FSI_NOMEDIA, kein Fehler */
         nm = vol[a1].drv == &mod_driver ? drv_name(vol[a1].mod) : vol[a1].drv->name;
@@ -3182,6 +3207,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (vol_present(a1) && vol[a1].drv == &mod_driver && mod_mount(a1) &&
             blk_nomedia(vol[a1].blk))
             return FAPI_ERR_NOTREADY;           /* keine CD              */
+        if (vol_present(a1) && IS_REM(vol[a1].blk) && !vol[a1].locked &&
+            vol_check(a1) && blk_nomedia(vol[a1].blk))
+            return FAPI_ERR_NOTREADY;           /* kein ZIP/MO-Medium    */
         if (a1 != task[current].drive) {        /* Verzeichnisse tauschen */
             char __far *oc = dcwd(current, task[current].drive, 1);
             fscopy(oc, (char __far *)task[current].cwd, IFS_PATHLEN);
@@ -3574,6 +3602,8 @@ void __far kf_rb_hw(unsigned long lin)
 struct blkdev blk[NBLK];
 int nblk;
 static unsigned char blk_nm[NBLK];    /* letztes Lesen: kein Medium (CD) */
+static unsigned char blk_chg[NBLK];   /* Wechselplatte: Unit Attention   */
+static unsigned blk_rt[NBLK];         /* Wechselplatte: letzte Frage (Takt) */
 
 extern void drv_call(unsigned code_sel, unsigned data_sel, unsigned entry,
                      unsigned req_off);
@@ -4017,14 +4047,83 @@ static int bc_due(void)
 
 static int bc_writeback(int dev)
 {
-    return bc_delay && !bc_sync && !IS_FLOPPY(dev);
+    return bc_delay && !bc_sync && !IS_FLOPPY(dev) && !IS_REM(dev);
 }
 
 /* Diskette gewechselt? Der Treiber erkennt Wechsel und Format; dann
    Groesse neu und ihre Cache-Eintraege weg. -> 1 gewechselt/neu */
+/* Wechselplatte (SCSI-ZIP/MO): Treiber fragen (TEST UNIT READY), aber
+   hoechstens alle 2 s (ohne Medium 1 s) - einen Wechsel dazwischen meldet
+   das Geraet beim naechsten Zugriff als Unit Attention (blk_chg). */
+static int rem_media(int dev)
+{
+    struct blkdev *b = &blk[dev];
+    struct drv_req *r;
+    unsigned now = get_ticks() | 1, st, ch;
+    unsigned long cap;
+
+    if (!blk_chg[dev] && blk_rt[dev] && now - blk_rt[dev] < (blk_nm[dev] ? 100u : 200u))
+        return 0;
+    r = &req;                           /* 5.x: ein Auftrag fuer alle  */
+    r->cmd = DRV_MEDIA;
+    r->unit = b->unit;
+    r->count = 0;
+    r->status = DRV_ERR_IO;
+    r->lba = 0;
+    r->buf_phys = DMABUF_LIN;
+    r->buf_sel = DMABUF;
+    r->buf_off = 0;
+    drv_request(b->drv);
+    st = r->status;
+    ch = r->count;
+    cap = r->lba;
+    blk_rt[dev] = now;
+    if (st == DRV_ERR_NOTREADY) {
+        ch = !blk_nm[dev];
+        blk_nm[dev] = 1;
+        blk_chg[dev] = 0;
+    } else if (st == DRV_OK) {
+        ch = ch || blk_nm[dev] || blk_chg[dev];
+        blk_nm[dev] = 0;
+        blk_chg[dev] = 0;
+        if (ch && cap)
+            b->blocks = cap;
+    } else
+        return 0;
+    if (ch) {
+        lc_dev = -1;
+        bc_drop_dev(dev);
+    }
+    return ch;
+}
+
+/* Medium auswerfen (FAPI_EJECT): Treiberbefehl DRV_EJECT, danach gilt
+   das Medium als weg (Cache des Geraets verworfen) -> Treiberstatus */
+static int blk_eject(int dev)
+{
+    int st;
+    req.cmd = DRV_EJECT;
+    req.unit = blk[dev].unit;
+    req.status = DRV_ERR_CMD;
+    req.buf_phys = DMABUF_LIN;
+    req.buf_sel = DMABUF;
+    req.buf_off = 0;
+    drv_request(blk[dev].drv);
+    st = req.status;
+    if (st != DRV_ERR_CMD) {
+        lc_dev = -1;
+        bc_drop_dev(dev);
+        blk_nm[dev] = 1;
+        blk_chg[dev] = 1;
+    }
+    return st;
+}
+
 int blk_media(int dev)
 {
     int r;
+    if (dev >= 0 && dev < nblk && IS_REM(dev))
+        return rem_media(dev);
     if (dev < 0 || !IS_FLOPPY(dev))
         return 0;
     r = fd_check(blk[dev].unit);
@@ -4074,6 +4173,8 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     req.buf_off = 0;
     drv_request(b->drv);
     blk_nm[dev] = req.status == DRV_ERR_NOTREADY;   /* CD: keine drin */
+    if (req.status == DRV_ERR_CHANGED)
+        blk_chg[dev] = 1;
     return req.status == DRV_OK ? 0 : -1;
 }
 
@@ -4179,6 +4280,8 @@ int blk_write(int dev, unsigned long lba)
         req.buf_off = 0;
         drv_request(b->drv);
         rc = req.status == DRV_OK ? 0 : req.status == DRV_ERR_WP ? -2 : -1;
+        if (req.status == DRV_ERR_CHANGED || req.status == DRV_ERR_NOTREADY)
+            blk_chg[dev] = 1;
         if (!rc)
             blk_dirty[dev] = 1;
     }
@@ -4550,6 +4653,14 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
         }
         return 0;
     }
+    case AUD_AWE:                               /* Klangbank (AWELOAD)   */
+        if (b < sizeof(struct fapi_awecmd) || !user_ok(usel, a, b, 1))
+            return FAPI_ERROR;
+        q = &areq[NAUD];
+        q->sel = usel;
+        q->off = a;
+        q->len = b;
+        return aud_call(NAUD, AR_AWE, 0, 0, 0) == DRV_OK ? 0 : FAPI_ERROR;
     case AUD_OPEN: {
         struct fapi_audfmt __far *f = MK_FP(usel, a);
         unsigned bytes;
@@ -4838,7 +4949,8 @@ static int load_driver(const char *line, int is_ifs)
         blk[nblk].drv = (signed char)d;
         blk[nblk].unit = (unsigned char)k;
         blk[nblk].blocks = req.blocks[k];
-        blk[nblk].bsize = req.bsize[k] ? req.bsize[k] : 512;
+        blk[nblk].bsize = (req.bsize[k] & 0x0FFF) ? req.bsize[k] & 0x0FFF : 512;  /* Bits 12-14: Sperrgruppe (6.0) */
+        blk[nblk].rem = (unsigned char)(req.bsize[k] >> 15);
         nblk++;
     }
     return req.units;
@@ -4880,6 +4992,15 @@ static void mount_disk(int dev)
 
     if (blk[dev].bsize != 512)
         return;                         /* CD-ROM: siehe cd_drives()    */
+    if (IS_REM(dev)) {                  /* Wechselplatte: ein Buchstabe, */
+        if (next_drive < NDRIVE) {      /* eingehaengt wird bei Bedarf   */
+            vol[next_drive].blk = dev;  /* (fat.c revalidate)            */
+            vol[next_drive].drv = &fat_driver;
+            vol[next_drive].present = 1;
+            vol_present(next_drive++);
+        }
+        return;
+    }
     if (blk_read(dev, 0))
         return;
     b = MK_FP(DMABUF, 0);

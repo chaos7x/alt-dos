@@ -190,6 +190,11 @@ struct fapi_rbmem {
 /* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
    DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_EJECT          0x57    /* BX = Laufwerk (0 = A:): Medium auswerfen
+                                       (CD, ZIP, MO) -> 0, FAPI_ERR_INUSE
+                                       (Dateien offen), FAPI_ERR_DENIED (kein
+                                       Wechseldatentraeger / Treiber kann es
+                                       nicht), FAPI_ERROR (Fehler) */
 #define FAPI_CODEPAGE       0x56    /* BX = 0: aktive Codepage -> AX; BX = FFFFh:
                                        CX = Platz in der Liste aus CODEPAGE=
                                        -> Codepage (0 = Ende); sonst BX =
@@ -303,10 +308,53 @@ struct fapi_sysinfo {
 #define AUD_MIDIOPEN        10
 #define AUD_MIDIWRITE       11      /* CX = Bytes, DX = Anzahl -> 0      */
 #define AUD_MIDICLOSE       12
+/* AWE32/64-Wavetable (EMU8000): Klangbank laden (AWELOAD.EXE). CX =
+   struct fapi_awecmd + Daten, DX = Laenge -> 0 / FAPI_ERROR. Ist eine
+   Bank geladen, spielt der Treiber MIDI auf dem EMU8000 (AUDCAP_MPU401
+   wird dann mit gemeldet) - ohne Bank wie bisher an den MPU-401. */
+#define AUD_AWE             13
+struct fapi_awecmd {
+    unsigned short op;              /* AWE_*                             */
+    unsigned short n;               /* Anzahl (Zonen, Presets, Worte)    */
+    unsigned long  addr;            /* AWE_SAMPLE: Wortadresse im RAM der
+                                       Karte (ab 0); AWE_INFO: Ergebnis   */
+};                                  /* danach die Daten                  */
+#define AWE_INFO            0       /* -> addr = RAM der Karte in Worten,
+                                       n = hoechstens Zonen              */
+#define AWE_RESET           1       /* Bank verwerfen (MIDI wieder an den
+                                       MPU-401)                          */
+#define AWE_ZONES           2       /* n struct fapi_awezone anhaengen   */
+#define AWE_PRESETS         3       /* n struct fapi_awepre (alle auf einmal) */
+#define AWE_SAMPLE          4       /* n Worte ins RAM der Karte ab addr */
+#define AWE_DONE            5       /* Bank fertig: MIDI auf den EMU8000 */
+/* Eine Zone: ein Sample mit allen Parametern, schon in EMU8000-Werten
+   (AWELOAD rechnet sie aus dem SoundFont um) */
+struct fapi_awezone {
+    unsigned char  klo, khi, vlo, vhi;      /* Tasten-/Anschlagbereich   */
+    unsigned long  start, lstart, lend;     /* Wortadressen: ROM ab 0,
+                                               RAM ab 200000h; Schleife  */
+    short          rate;            /* Tonhoehe auf der Grundtaste: 4096 je
+                                       Oktave, 0 = 44,1 kHz ohne Versatz */
+    unsigned char  root, scale;     /* Grundtaste; Cent je Taste / 2     */
+    unsigned char  att, pan;        /* Daempfung 0-255; Pan 0 links -
+                                       127 rechts, FFh = Mitte/Kanal     */
+    unsigned char  excl, fixkey;    /* exklusive Klasse; feste Taste
+                                       (FFh = keine)                     */
+    unsigned char  cutoff, filterq, chorus, reverb;
+    unsigned short moddelay, modatkhld, moddcysus, modrelease;
+    unsigned short voldelay, volatkhld, voldcysus, volrelease;
+    unsigned short lfo1delay, lfo2delay, pefe, fmmod, tremfrq, fm2frq2;
+    unsigned char  fixvel, rsv;     /* feste Anschlagstaerke (FFh = keine) */
+};
+struct fapi_awepre {
+    unsigned char  bank, prog;      /* Bank 128 = Schlagzeug             */
+    unsigned short first, n;        /* Zonen first .. first + n - 1      */
+};
 #define AUDCAP_PCM          0x01    /* digitaler Ton (AUD_OPEN)          */
 #define AUDCAP_OPL2         0x02
 #define AUDCAP_OPL3         0x04    /* 18 Stimmen, Register 100h-1FFh    */
 #define AUDCAP_MPU401       0x08
+#define AUDCAP_AWE          0x10    /* Wavetable EMU8000 (AWE32/AWE64)   */
 struct fapi_fmreg {
     unsigned short reg;             /* 000h-0F5h, OPL3 auch 100h-1F5h    */
     unsigned char  val, rsv;
@@ -321,7 +369,10 @@ struct fapi_audfmt {
     unsigned short rate;            /* Abtastrate, z. B. 22050           */
     unsigned char  channels;        /* 1 mono, 2 stereo                  */
     unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
-};
+};                                  /* | AUD_SMALL: kurzer Puffer        */
+#define AUD_SMALL           0x80    /* (kleine Verzoegerung, DOS-Boxen)  */
+#define AUD_NOWAIT          0x40    /* | AUD_NOWAIT: AUD_WRITE wartet nie,
+                                       was nicht passt, faellt weg (Box) */
 /* Platten-Cache (MEM): BX = struct fapi_cacheinfo, CX = Groesse (0 = 5.0) -> 0 */
 #define FAPI_CACHEINFO      0x4D
 struct fapi_cacheinfo {

@@ -28,6 +28,13 @@ struct drv_header {
 #define DRV_WRITE       2           /* einen Block schreiben (nur 512)  */
 #define DRV_FLUSH       3           /* Schreib-Cache der Geraete leeren  */
 #define DRV_AUDIO       4           /* Audio: ES:BX = struct aud_req     */
+#define DRV_MEDIA       5           /* Wechselplatte: Medium da? -> status OK
+                                       oder NOTREADY, count = 1 gewechselt
+                                       (seit der letzten Frage), lba = Sektoren */
+
+#define DRV_EJECT       6           /* Medium auswerfen (CD, ZIP, MO):
+                                       START STOP UNIT mit LoEj -> OK,
+                                       sonst ERR_CMD (kann es nicht)      */
 
 #define DRV_MAXUNITS    8
 
@@ -37,6 +44,15 @@ struct drv_header {
 #define DRV_ERR_CMD     3           /* unbekannter Befehl               */
 #define DRV_ERR_WP      4           /* schreibgeschuetzt                */
 #define DRV_ERR_NOTREADY 5          /* kein Medium im Laufwerk (CD)     */
+#define DRV_ERR_CHANGED 6           /* Medium gewechselt (Unit Attention):
+                                       der Kernel haengt neu ein          */
+#define DRV_BS_REMOVABLE 0x8000     /* INIT bsize: Wechselplatte (ZIP, MO):
+                                       Einheit auch ohne Medium, DRV_MEDIA */
+#define DRV_BS_GROUP(n) ((n) << 12)  /* INIT bsize: Sperrgruppe 0/1 (Bits
+                                       12-14) - Einheiten verschiedener
+                                       Gruppen (IDE-Kanaele) duerfen
+                                       gleichzeitig im Treiber sein; der
+                                       Treiber nimmt REQ nur beim Eintritt */
 
 struct drv_req {
     unsigned char  cmd;
@@ -83,7 +99,8 @@ struct drv_req {
 #define DH_PROCRUN      8           /* BX = Ereignis: alle darauf schlafenden
                                        Tasks wecken (auch aus der Interrupt-
                                        routine) -> AX = Anzahl */
-#define DH_MOUREG       9           /* BX = Anzahl Maustasten: Maus anmelden.
+#define DH_MOUREG       9           /* BX = Anzahl Maustasten (5.x; 6.0: BL
+                                       Tasten, BH Art, CX IRQ): Maus anmelden.
                                        Ein Treiber ohne Blockgeraete meldet
                                        beim INIT units = 0 und DRV_OK */
 #define DH_MOUEVENT     10          /* aus der Interruptroutine: BX = Tasten
@@ -105,10 +122,30 @@ struct drv_req {
                                        Adresse -> AX = Selektor, 0 = keiner */
 #define DH_AUDREG       13          /* Treiber ist das Audiogeraet (FAPI_AUDIO
                                        kommt als DRV_AUDIO an)           */
-/* 14-18 PCI/Belegung: nur 6.0 (5.x antwortet mit Fehler) */
-#define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
-                                       ohne DMA-Bedingung (genullt), z. B.
-                                       Tabellen -> AX = Selektor, 0 = keiner */
+/* PCI (nur 6.0; 5.x: PCIFIND/PCICLASS -> FFFFh, PCIREAD -> 1, CLAIM -> 0):
+   der Kernel durchsucht den Bus beim Start; loc = Bus << 8 |
+   Geraet << 3 | Funktion. Ohne PCI liefern die Aufrufe FFFFh/1. */
+#define DH_PCIFIND      14          /* BX = Hersteller, CX = Geraet (FFFFh =
+                                       jedes), DX = n (0 = erstes) -> AX = loc,
+                                       FFFFh = keins                     */
+#define DH_PCICLASS     15          /* BX = Klasse << 8 | Unterklasse (FFh =
+                                       jede), DX = n -> AX = loc, FFFFh   */
+#define DH_PCIREAD      16          /* BX = loc, CX = Register (Doppelwort),
+                                       DX = 4 Byte im Treiber-DS <- Wert
+                                       -> AX = 0, 1 = kein PCI           */
+#define DH_PCIWRITE     17          /* BX = loc, CX = Register | Groesse << 8
+                                       (1, 2, 4 Byte), DX = 4 Byte im
+                                       Treiber-DS mit dem Wert -> AX = 0  */
+#define DH_CLAIM        18          /* BX = RES_*, CX = Anfang, DX = Laenge:
+                                       Ports/DMA anmelden (Belegungsliste,
+                                       MSD) -> AX = 0 ok, 1 = gehoert schon
+                                       einem anderen Treiber, 2 = voll.
+                                       IRQs traegt DH_SETIRQ selbst ein.
+                                       Scheitert INIT, loescht der Kernel
+                                       die Eintraege des Treibers.       */
+#define RES_IO          1
+#define RES_DMA         2
+#define RES_IRQ         3
 #define DH_CPTAB        21          /* IFS-Module: BX = 0 -> Selektor, 1 -> Offset
                                        der Unicode-Tabelle der aktiven Codepage
                                        (80h-FFh, 128 Worte); Selektor 0 = CP437 */
@@ -118,6 +155,10 @@ struct drv_req {
                                        Zeichen. Der Kernel merkt sich das
                                        Original fuer den laufenden Task
                                        (Kopien auf FAT bekommen es) -> 0 */
+#define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
+                                       ohne DMA-Bedingung (genullt), z. B.
+                                       Tabellen -> AX = Selektor, 0 = keiner
+                                       (die GDT-Plaetze sind knapp: NKSEG) */
 
 /* Audio (DRV_AUDIO): der Kernel waehlt, wessen Ton zu hoeren ist, der
    Treiber spielt einen Datenstrom */
@@ -143,5 +184,6 @@ struct aud_req {
 #define AR_FMRESET      9           /* OPL stumm und auf Null            */
 #define AR_MIDIWRITE    10          /* sel:off, len Bytes an den MPU-401 */
 #define AR_MIDIRESET    11          /* alle Noten aus, Controller zurueck */
+#define AR_AWE          12          /* sel:off, len = struct fapi_awecmd + Daten */
 
 #endif

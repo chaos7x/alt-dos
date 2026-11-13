@@ -144,7 +144,9 @@ struct blkdev {
     unsigned char  unit;
     unsigned long  blocks;
     unsigned       bsize;           /* 512, CD-ROM 2048                    */
+    unsigned char  rem;             /* Wechselplatte (ZIP, MO): DRV_MEDIA  */
 };
+#define IS_REM(dev) (blk[dev].rem)
 extern struct blkdev blk[NBLK];
 extern int nblk;
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */

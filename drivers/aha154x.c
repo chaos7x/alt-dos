@@ -64,6 +64,8 @@ static volatile struct mbox mb[2];      /* [0] ausgehend, [1] eingehend  */
 static struct ccb ccb;
 static unsigned char target[DRV_MAXUNITS];
 static unsigned bsz[DRV_MAXUNITS];      /* 512 Platte, 2048 CD-ROM      */
+static unsigned char rem[DRV_MAXUNITS]; /* Wechselplatte (INQUIRY RMB)  */
+static unsigned char chg[DRV_MAXUNITS]; /* Unit Attention gesehen       */
 static unsigned nunits;
 static char line[128];                  /* 80 war bei IDE.SYS zu knapp  */
 static unsigned irq;                    /* 0 = keiner                    */
@@ -328,13 +330,27 @@ static void cdb6(unsigned char op, unsigned char alloc)
     cdb[4] = alloc;
 }
 
+/* READ CAPACITY -> Sektoren (0 = keine Antwort / nicht 512 Byte) */
+static unsigned long capacity(unsigned id, unsigned long phys,
+                              unsigned char __far *buf)
+{
+    unsigned k;
+    for (k = 0; k < 12; k++)
+        cdb[k] = 0;
+    cdb[0] = 0x25;
+    if (scsi(id, 8, phys, 10) != SCSI_OK || buf[6] != 2 || buf[7] != 0)
+        return 0;
+    return (((unsigned long)buf[0] << 24) | ((unsigned long)buf[1] << 16) |
+            ((unsigned)buf[2] << 8) | buf[3]) + 1;
+}
+
 /* ---- Initialisierung --------------------------------------------------- */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
     unsigned char __far *buf = MK_FP(r->buf_sel, r->buf_off);
     unsigned i, id, host, n = 0;
-    int rc, k;
+    int k;
     unsigned char dma, lock, irqs;
     char *p;
 
@@ -413,10 +429,13 @@ static void init(void)
     }
     p = scat(p, "DMA ");
     for (k = 0; k < 8; k++)
-        if (dma & (1 << k))
+        if (dma & (1 << k)) {
             *p++ = (char)('0' + k);
+            claim(RES_DMA, k, 1);
+        }
     scat(p, "\n");
     dputs(line);
+    claim(RES_IO, base, 4);
 
     for (id = 0; id < 8; id++) {
         if (id == host)
@@ -426,7 +445,8 @@ static void init(void)
             continue;
         p = scat(line, "  SCSI-ID ");
         *p++ = (char)('0' + id);
-        p = scat(p, (buf[0] & 0x1F) == 0 ? ": Festplatte " :
+        p = scat(p, (buf[0] & 0x1F) == 0 ? ((buf[1] & 0x80) ? ": Wechselplatte " : ": Festplatte ") :
+                    (buf[0] & 0x1F) == 7 ? ": MO-Laufwerk " :
                     (buf[0] & 0x1F) == 5 ? ": CD-ROM " : ": Ger\x84t ");
         for (k = 8; k < 32; k++)
             *p++ = buf[k] >= 32 ? (char)buf[k] : ' ';
@@ -434,25 +454,28 @@ static void init(void)
             p--;
         *p = 0;
 
-        if ((buf[0] & 0x1F) == 0 && n < DRV_MAXUNITS) {
+        if (((buf[0] & 0x1F) == 0 || (buf[0] & 0x1F) == 7) && n < DRV_MAXUNITS) {
+            unsigned char rmb = buf[1] & 0x80;  /* ZIP, JAZ, MO, SyQuest */
+            unsigned long cap;
             for (k = 0; k < 4; k++) {       /* Unit Attention abholen   */
                 cdb6(0x00, 0);              /* TEST UNIT READY          */
                 if (scsi(id, 0, 0, 6) == SCSI_OK)
                     break;
             }
-            for (k = 0; k < 12; k++)
-                cdb[k] = 0;
-            cdb[0] = 0x25;                  /* READ CAPACITY            */
-            rc = scsi(id, 8, r->buf_phys, 10);
-            if (rc == SCSI_OK && buf[6] == 2 && buf[7] == 0) {   /* 512 Byte */
-                unsigned long last = ((unsigned long)buf[0] << 24) |
-                    ((unsigned long)buf[1] << 16) | ((unsigned)buf[2] << 8) | buf[3];
-                r->blocks[n] = last + 1;
+            cap = capacity(id, r->buf_phys, buf);
+            if (cap || rmb) {               /* Wechselplatte auch leer  */
+                r->blocks[n] = cap;
+                r->bsize[n] = rmb ? 512 | DRV_BS_REMOVABLE : 0;
                 bsz[n] = 512;
+                rem[n] = rmb ? 1 : 0;
+                chg[n] = 0;
                 target[n++] = (unsigned char)id;
-                p = scat(p, ", ");
-                p = udec(p, (unsigned)((last + 1) >> 11));
-                p = scat(p, " MB");
+                if (cap) {
+                    p = scat(p, ", ");
+                    p = udec(p, (unsigned)(cap >> 11));
+                    p = scat(p, " MB");
+                } else
+                    p = scat(p, " (kein Medium)");
             } else {
                 p = scat(p, " (nicht bereit)");
             }
@@ -548,6 +571,17 @@ static void xfer(int write)
             r->status = DRV_OK;
             return;
         }
+        if (rc == SCSI_CHECK && rem[r->unit]) {     /* Wechselplatte    */
+            chg[r->unit] = 1;
+            if ((last_sense >> 8) == 6) {           /* gewechselt       */
+                r->status = DRV_ERR_CHANGED;
+                return;
+            }
+            if (last_sense == 0x23A) {              /* kein Medium      */
+                r->status = DRV_ERR_NOTREADY;
+                return;
+            }
+        }
         /* CD: keine drin (2/3Ah, beim zweiten Mal - nach einem Wechsel
            meldet manches Laufwerk das einmal); laeuft an (2/04h): warten */
         if (rc == SCSI_CHECK && bsz[r->unit] != 512) {
@@ -569,6 +603,66 @@ static void xfer(int write)
             report(write, r->unit, l, rc, tries);
     }
     r->status = DRV_ERR_IO;
+}
+
+/* Wechselplatte: Medium da? gewechselt? (TEST UNIT READY; Wechsel =
+   Unit Attention 6/28h, kein Medium 2/3Ah) */
+/* Auswerfen (PREVENT ALLOW 1Eh mit 0, dann START STOP UNIT mit LoEj) */
+static void eject(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned u = r->unit;
+    r->status = DRV_ERR_CMD;
+    if (u >= nunits || (!rem[u] && bsz[u] == 512))
+        return;
+    cdb6(0x1E, 0);
+    scsi(target[u], 0, 0, 6);
+    cdb6(0x1B, 0x02);
+    r->status = scsi(target[u], 0, 0, 6) == SCSI_OK ? DRV_OK : DRV_ERR_IO;
+    chg[u] = 1;
+}
+
+static void media(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned u = r->unit, k, spin = 0;
+    unsigned char __far *buf = MK_FP(r->buf_sel, r->buf_off);
+    unsigned long cap;
+    int rc;
+
+    r->count = 0;
+    r->status = DRV_ERR_IO;
+    if (u >= nunits || !rem[u])
+        return;
+    for (k = 0; k < 6; k++) {
+        cdb6(0x00, 0);
+        if ((rc = scsi(target[u], 0, 0, 6)) == SCSI_OK)
+            break;
+        if (rc != SCSI_CHECK)
+            continue;
+        if ((last_sense >> 8) == 6)
+            chg[u] = 1;
+        else if (last_sense == 0x23A) {
+            chg[u] = 1;
+            r->status = DRV_ERR_NOTREADY;
+            return;
+        } else if (last_sense == 0x204 && spin < 20) {   /* laeuft an */
+            spin++;
+            k--;
+            cli();
+            proc_block(0x7F, 50);
+        }
+    }
+    if (k == 6)
+        return;
+    if (chg[u]) {
+        if ((cap = capacity(target[u], r->buf_phys, buf)) == 0)
+            return;
+        r->lba = cap;
+        r->count = 1;
+        chg[u] = 0;
+    }
+    r->status = DRV_OK;
 }
 
 /* SYNCHRONIZE CACHE(10) an alle Platten; Platten ohne Cache lehnen den
@@ -606,6 +700,12 @@ void strategy(void)
         break;
     case DRV_FLUSH:
         flush();
+        break;
+    case DRV_MEDIA:
+        media();
+        break;
+    case DRV_EJECT:
+        eject();
         break;
     default:
         r->status = DRV_ERR_CMD;

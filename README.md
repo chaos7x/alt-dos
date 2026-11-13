@@ -57,7 +57,10 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   vier IDE-Platten an primärem und sekundärem Kanal, PIO, LBA oder CHS für
   Platten ohne LBA; ATAPI-CD-ROMs als Einheit; dazu MFM/RLL-Platten am
   WD1003 und ESDI am WD1007, Geometrie aus der Tabelle des BIOS) – beide lesen und schreiben,
-  CD-ROMs (2048-Byte-Blöcke) nur lesen
+  CD-ROMs (2048-Byte-Blöcke) nur lesen. 5.2 (aus 6.0): IDE-Platten über
+  128 GB mit LBA48; Wechselplatten (ZIP, MO) an `AHA154X.SYS` und
+  `NCR5380.SYS` auch ohne Medium beim Start, Wechsel wird erkannt;
+  `EJECT X:` wirft CDs und Wechselplatten aus (FAPI DosEject)
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
@@ -498,6 +501,7 @@ selbst nur 8.3 kennt.
 | 84 | DosProc         | Taskmanager (wie 6.0): BX = PROC_INFO (CX = Platz, DX = struct fapi_proc: Zustand, Sitzung, Aufrufer, Größe, Name, Befehlszeile) oder PROC_KILL (beenden wie Strg+C; nicht der Aufrufer, seine Aufrufer und die Shell der ersten Sitzung) |
 | 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (CX = Registerpuffer oder 0, DX = 1 vorher setzen; Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH, RB_CALL INT E0h mit gefülltem Puffer), RB_REGS (CX = struct fapi_rbregs, DX = 0 holen/1 setzen), RB_MEM (CX = struct fapi_rbmem: Speicher der Box lesen/schreiben), RB_FREE |
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR (5.2) |
+| 87 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) (5.2) |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
@@ -584,6 +588,11 @@ Spielen, `/R:700`) – Beispiele in `\DEMO`: `KLANG.WAV`, `ODE.MID`,
 stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). Mehrere Programme
 dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung
 (Spiele), sonst das zuletzt gestartete (Musik im Hintergrund).
+Wavetable der AWE32/AWE64 (EMU8000, 5.2 aus 6.0): `SB16.SYS` richtet ihn
+ein, `AWELOAD [Datei.SBK|.SF2] [/U]` lädt eine SoundFont-Bank (Vorgabe
+`\DOS\SYSTEM\SYNTHGM.SBK` von den Creative-Disketten, nicht dabei) –
+danach spielt MIDI auf dem EMU8000 (`SB16.SYS /MPU`: weiter an den
+MPU-401 für einen externen Synthesizer).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,
 Anzeige beim Start) und schläft, bis die Karte die Eingangs-Mailbox
 beschrieben hat; ebenfalls mit Rückfall und `/NOIRQ`. Beide Treiber melden

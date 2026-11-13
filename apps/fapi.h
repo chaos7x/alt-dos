@@ -59,6 +59,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
 #define DosRBox(f, a, b)    fapi_call(FAPI_RBOX, (f), (a), (b))
+#define AweCmd(b, n)        fapi_call(FAPI_AUDIO, AUD_AWE, (unsigned short)(b), (n))
+#define DosEject(d)         fapi_call(FAPI_EJECT, (d), 0, 0)
 #define DosGetCp()          fapi_call(FAPI_CODEPAGE, 0, 0, 0)
 #define DosCpList(i)        fapi_call(FAPI_CODEPAGE, 0xFFFF, (i), 0)
 #define DosSetCp(cp)        fapi_call(FAPI_CODEPAGE, (cp), 0, 0)
