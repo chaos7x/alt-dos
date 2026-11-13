@@ -266,7 +266,7 @@ mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     copy_list "$FILES" ""
-    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/MDOS" "${TO}DEMO"
+    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DOS/MDOS" "${TO}DEMO"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
     copy_list "$BOXFILES" "DOS/MDOS/"

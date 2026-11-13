@@ -2874,7 +2874,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ist und eine Bank geladen ist, `SB16.SYS /MPU` schickt es an den
   MPU-401 (externer Synthesizer); AR_CAPS meldet dann MPU-401, damit
   PLAY den MIDI-Weg nimmt. `AWELOAD [Datei.SBK] [/U]` (apps/
-  task_aweload.c, Vorgabe X:\DOS\SYSTEM\SYNTHGM.SBK): RIFF lesen,
+  task_aweload.c, Vorgabe X:\DOS\SYSTEM\SFBANK\SYNTHGM.SBK – eigenes
+  Verzeichnis, Wunsch des Nutzers, build.sh legt es an; Rückfall auf den
+  alten Ort \DOS\SYSTEM\SYNTHGM.SBK, ein Name ohne Pfad wird erst im
+  aktuellen Verzeichnis, dann in SFBANK gesucht): RIFF lesen,
   pdta in DosAllocSeg-Segmente, je Preset-Zone × Instrument-Zone eine
   EMU-Zone (Preset-Werte gelten nur, wo das Instrument nichts setzt,
   Bereiche werden geschnitten), SBK -> SF2 (`sbk2sf2`, nur gesetzte

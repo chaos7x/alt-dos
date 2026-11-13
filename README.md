@@ -842,7 +842,8 @@ stellt die Lautstärke (MASTER, WAVE, FM, CD, LINE, MIC). AWE32/64: den
 Wavetable-Chip (EMU8000) erkennt `SB16.SYS` mit; `AWELOAD [Datei.SBK|.SF2]`
 lädt eine SoundFont-Bank (1 oder 2, auch große GS-Bänke für Karten mit
 2 MB und mehr) (z. B. `SYNTHGM.SBK` von den Creative-
-Treiberdisketten – liegt nicht bei, Vorgabe `\DOS\SYSTEM\SYNTHGM.SBK`) in
+Treiberdisketten – liegt nicht bei; Ablage `\DOS\SYSTEM\SFBANK`, Vorgabe
+`SFBANK\SYNTHGM.SBK`, ein Name ohne Pfad wird auch dort gesucht) in
 die Karte, danach spielt MIDI (PLAY und der MPU-401 der DOS-Boxen) über
 den AWE als General-MIDI-Synthesizer (mit Hall/Chorus, CC 91/93, und
 Vibrato über das Modulationsrad); `AWELOAD /U` gibt die Bank frei,
