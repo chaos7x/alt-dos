@@ -402,8 +402,10 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB und die Demos
-GRAFIK, MAUSTEST, FPUTEST (`BINDAPPS` in build.sh, `mkfx.py --bind`).
+WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+DELTREE, CHOICE, REPLACE, LABEL, MSD und die Demos GRAFIK, MAUSTEST,
+FPUTEST (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit
+auch in RBOX.
 Unter DOS nicht möglich: Sitzungen, Pipes im Kernel, Laufwerke als Ganzes
 (CHKDSK, FORMAT, FDISK), SUBST/JOIN, lange Namen. Möglich macht es der
 Gate-Zeiger: Programme rufen die FAPI über `call far [2]`, der Zeiger am

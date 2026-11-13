@@ -704,6 +704,15 @@ static unsigned qcurdir(unsigned off, unsigned d1)
 /* freie Bytes, Sektoren: AX Sektoren/Cluster, BX frei, CX Bytes/Sektor */
 static int disk_free(unsigned d)
 {
+    /* Phantomlaufwerk (ein Diskettenlaufwerk als A: und B:): steht es
+       gerade auf dem anderen Buchstaben, nicht anfassen - DOS fragte
+       sonst "Insert diskette in drive B:" (MSD geht alle Laufwerke ab) */
+    rclr();
+    r.ax = 0x440E;
+    r.bx = d + 1;
+    dos();
+    if (!(r.flags & CF) && (r.ax & 0xFF) && (r.ax & 0xFF) != d + 1)
+        return 0;
     rclr();
     r.ax = 0x3600;
     r.dx = d + 1;
