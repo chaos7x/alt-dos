@@ -59,6 +59,9 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
 #define DosRBox(f, a, b)    fapi_call(FAPI_RBOX, (f), (a), (b))
+#define DosGetCp()          fapi_call(FAPI_CODEPAGE, 0, 0, 0)
+#define DosCpList(i)        fapi_call(FAPI_CODEPAGE, 0xFFFF, (i), 0)
+#define DosSetCp(cp)        fapi_call(FAPI_CODEPAGE, (cp), 0, 0)
 #define DosProc(w, i, p)    fapi_call(FAPI_PROC, (w), (i), (unsigned short)(p))   /* struct fapi_proc */
 #define DosSubst(d, path)   F2(FAPI_SUBST, (d), (path))
 #define DosQSubst(d, buf)   F2(FAPI_QSUBST, (d), (buf))

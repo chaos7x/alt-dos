@@ -109,6 +109,9 @@ struct drv_req {
 #define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
                                        ohne DMA-Bedingung (genullt), z. B.
                                        Tabellen -> AX = Selektor, 0 = keiner */
+#define DH_CPTAB        21          /* IFS-Module: BX = 0 -> Selektor, 1 -> Offset
+                                       der Unicode-Tabelle der aktiven Codepage
+                                       (80h-FFh, 128 Worte); Selektor 0 = CP437 */
 #define DH_UNINOTE      20          /* IFS-Module: BX = Name (CP437, im DS),
                                        CX = derselbe Name als UCS-2 (je
                                        Zeichen ein Wort), DX = Laenge in

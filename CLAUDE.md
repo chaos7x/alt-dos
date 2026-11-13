@@ -253,6 +253,16 @@ dem EA-Namenspuffer (`UNI_OFF` = EA_CSIZE, ein Kernelsegment über
 fat_ksel, auch für ea_load), kein Kontext je Task; `current` in
 kernel.c nicht mehr static. drv.h: DH_UNINOTE 20 und DH_KSEG 19 mit
 denselben Nummern wie main (14–18 gibt es auf 5.x nicht).
+COUNTRY= und Codepages aus main (4103300, 36f6b24; in QEMU geprüft mit
+`COUNTRY=001` + `CODEPAGE=850,437`: DIR/DATE im US-Format, CHCP zeigt
+850 und 850 437, TYPE von 9Dh/D5h unter 850 Ø/ı, unter 437 ¥/╒, CHCP
+852 abgelehnt; RBOX: FreeDOS-DATE „mm-dd-[cc]yy“, danach in AT-DOS
+wieder Zeichensatz 850). Kein BOX_READ auf 5.x: RBOX.EXE trägt Land
+und Codepage beim Laden des Abbilds selbst in die Box-CONFIG.SYS ein
+(`ctry_patch` + `box_cp` wie main, Land aus %COUNTRY%, Codepage über
+DosGetCp). cp_fontlin aus base_lo/base_hi der GDT (5.x hat kein
+desc_base). ISO9660.IFS ganz von main (ISO 9660:1999, Rock Ridge,
+Codepage über DH_CPTAB 21).
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

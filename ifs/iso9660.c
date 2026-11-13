@@ -17,8 +17,14 @@
  * (UCS-2 -> CP437, Unbekanntes als '_'), dazu je Eintrag ein 8.3-Ersatzname
  * fuer Programme ohne FX_FLAG_LONGNAMES (NAME~n.EXT, n = Nummer des
  * Eintrags im Verzeichnis, also eindeutig und bei jedem Lesen gleich).
- * Pfade duerfen beide Namen mischen. Kein Rock Ridge. Dateien in mehreren
- * Extents (sehr selten) werden nicht gelesen.
+ * Pfade duerfen beide Namen mischen. Ohne Joliet: ISO 9660:1999 (Enhanced
+ * Volume Descriptor, Version 2, Namen bis 207 Byte) oder Rock Ridge (Unix-
+ * CDs: Namen in den NM-Eintraegen des System Use Area, auch ueber Fort-
+ * setzungsbloecke CE, verlegte tiefe Verzeichnisse ueber CL/RE). Solche
+ * Namen sind Bytes - gueltiges UTF-8 wird als UTF-8 gelesen, sonst
+ * Latin-1, beides nach CP437. Vorrang: Joliet, 9660:1999, Rock Ridge,
+ * nur ISO. Rechte, Zeiten und Links aus Rock Ridge werden nicht benutzt.
+ * Dateien in mehreren Extents (sehr selten) werden nicht gelesen.
  *
  * Gebaut mit -zu wie die Treiber: SS ist der Kernelstack, also keine
  * Adressen lokaler Variablen weitergeben.
@@ -36,6 +42,10 @@ void far_cpy(void __far *dst, const void __far *src, unsigned n);
 static unsigned      dmasel;            /* DMA-Puffer des Kernels (2048 Byte) */
 static unsigned long root_ext, root_len;
 static unsigned char joliet;            /* Baum aus dem Joliet-Deskriptor  */
+static unsigned char lng;               /* lange Namen (Joliet, 1999, RR)  */
+static unsigned char bytes;             /* Namen als Bytes (1999, RR)      */
+static unsigned char rr;                /* Rock Ridge (SUSP im PVD-Baum)   */
+static unsigned char sp_skip;           /* SUSP: Bytes vor dem System Use  */
 static char          volid[12];         /* Bezeichnung (aus dem PVD)       */
 
 /* gefundener Verzeichniseintrag */
@@ -94,13 +104,16 @@ static const unsigned short cp_uni[128] = {
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 };
 
+/* Tabelle der aktiven Codepage (CHCP), beim Einhaengen geholt; 0 = 437 */
+static unsigned short __far *ctab;
+
 static unsigned char uni2cp(unsigned u)
 {
     unsigned i;
     if (u < 0x80)
         return (unsigned char)u;
     for (i = 0; i < 128; i++)
-        if (cp_uni[i] == u)
+        if ((ctab ? ctab[i] : cp_uni[i]) == u)
             return (unsigned char)(0x80 + i);
     return 0;
 }
@@ -203,7 +216,12 @@ static int mount(unsigned dev)
     int found = 0;
     unsigned k;
 
-    joliet = 0;
+    unsigned long ev_ext = 0, ev_len = 0;
+    unsigned o;
+
+    joliet = lng = bytes = rr = sp_skip = 0;
+    k = devhlp(DH_CPTAB, 0, 0, 0);      /* Codepage kann sich aendern  */
+    ctab = k ? MK_FP(k, devhlp(DH_CPTAB, 0, 1, 0)) : 0;
     for (lba = 16; lba < 48; lba++) {
         if (rd(dev, lba))
             return -1;
@@ -226,10 +244,104 @@ static int mount(unsigned dev)
             root_ext = le32(b + 156 + 2);       /* Joliet: UCS-2-Baum    */
             root_len = le32(b + 156 + 10);
             joliet = 1;
+        } else if (b[0] == 2 && b[6] == 2) {    /* ISO 9660:1999 (EVD)   */
+            ev_ext = le32(b + 156 + 2);
+            ev_len = le32(b + 156 + 10);
         } else if (b[0] == 255)
             break;
     }
-    return found ? 0 : -1;
+    if (!found)
+        return -1;
+    if (joliet) {
+        lng = 1;
+        return 0;
+    }
+    if (ev_ext) {
+        root_ext = ev_ext;
+        root_len = ev_len;
+        lng = bytes = 1;
+        return 0;
+    }
+    /* Rock Ridge: "." des Stamms beginnt sein System Use mit SP BE EF */
+    if (rd(dev, root_ext))
+        return -1;
+    b = blk();
+    o = 34;                             /* 33 + Namenslaenge 1 (ungerade) */
+    if (b[0] >= o + 7 && b[o] == 'S' && b[o + 1] == 'P' &&
+        b[o + 4] == 0xBE && b[o + 5] == 0xEF) {
+        sp_skip = b[o + 6];
+        rr = lng = bytes = 1;
+    }
+    return 0;
+}
+
+/* Name aus Bytes (ISO 9660:1999, Rock Ridge): gueltiges UTF-8 als UTF-8,
+   sonst Latin-1; nach CP437 wie bei Joliet */
+static unsigned char raw[256];
+static unsigned rlen;
+
+static unsigned name_bytes(void)
+{
+    unsigned i = 0, k = 0, c, b;
+    ent_lossy = 0;
+    while (i < rlen && k < IFS_NAMELEN - 1) {
+        c = raw[i];
+        if (c >= 0xC2 && c <= 0xDF && i + 1 < rlen && (raw[i + 1] & 0xC0) == 0x80) {
+            c = ((c & 0x1F) << 6) | (raw[i + 1] & 0x3F);
+            i += 2;
+        } else if (c >= 0xE0 && c <= 0xEF && i + 2 < rlen &&
+                   (raw[i + 1] & 0xC0) == 0x80 && (raw[i + 2] & 0xC0) == 0x80) {
+            c = ((c & 0x0F) << 12) | ((raw[i + 1] & 0x3F) << 6) | (raw[i + 2] & 0x3F);
+            i += 3;
+            if (c < 0x800)
+                c = '_';                /* ueberlange Form              */
+        } else if (c >= 0xF0 && c <= 0xF4 && i + 3 < rlen &&
+                   (raw[i + 1] & 0xC0) == 0x80) {
+            c = 0xFFFD;                 /* ausserhalb UCS-2              */
+            i += 4;
+        } else
+            i++;                        /* ASCII oder Latin-1            */
+        if (c == ';' && !rr)
+            break;                      /* 1999: Versionsnummer          */
+        uname[k] = (unsigned short)(c == 0xFFFD ? '_' : c);
+        b = c < ' ' ? 0 : uni2cp(c);
+        if (!b)
+            ent_lossy = 1;
+        ent.name[k++] = b ? (char)b : '_';
+    }
+    return k;
+}
+
+/* Rock Ridge: Zustand des laufenden Eintrags */
+static unsigned char rr_nm, rr_re;
+static unsigned long ce_blk, cl_loc;
+static unsigned ce_off, ce_len;
+
+/* SUSP-Eintraege eines System Use Area auswerten */
+static void su_parse(unsigned char __far *p, unsigned n)
+{
+    unsigned l, k;
+    while (n >= 4) {
+        l = p[2];
+        if (l < 4 || l > n)
+            break;
+        if (p[0] == 'N' && p[1] == 'M' && l >= 5 && !(p[4] & 6)) {
+            for (k = 5; k < l && rlen < sizeof(raw); k++)
+                raw[rlen++] = p[k];
+            rr_nm = 1;
+        } else if (p[0] == 'C' && p[1] == 'E' && l >= 28) {
+            ce_blk = le32(p + 4);
+            ce_off = (unsigned)le32(p + 12);
+            ce_len = (unsigned)le32(p + 20);
+        } else if (p[0] == 'R' && p[1] == 'E')
+            rr_re = 1;
+        else if (p[0] == 'C' && p[1] == 'L' && l >= 12)
+            cl_loc = le32(p + 4);
+        else if (p[0] == 'S' && p[1] == 'T')
+            break;
+        p += l;
+        n -= l;
+    }
 }
 
 /* Eintrag in ent uebernehmen */
@@ -238,7 +350,11 @@ static void take(unsigned char __far *r)
     unsigned nl = r[32], k, y, i, c;
 
     k = 0;
-    if (joliet) {                       /* UCS-2, gross zuerst           */
+    if (bytes && !rr) {                 /* ISO 9660:1999                 */
+        for (rlen = 0; rlen < nl && rlen < sizeof(raw); rlen++)
+            raw[rlen] = r[33 + rlen];
+        k = name_bytes();
+    } else if (joliet) {                       /* UCS-2, gross zuerst           */
         ent_lossy = 0;
         for (i = 0; i + 1 < nl && k < IFS_NAMELEN - 1; i += 2) {
             unsigned b;
@@ -264,13 +380,60 @@ static void take(unsigned char __far *r)
     y = r[18] < 80 ? 0 : r[18] - 80;    /* Jahre seit 1900 -> seit 1980  */
     ent.date = (y << 9) | ((r[19] & 15) << 5) | (r[20] & 31);
     ent.time = ((r[21] & 31) << 11) | ((r[22] & 63) << 5) | ((r[23] & 63) >> 1);
+    if (rr) {                           /* System Use hinter dem Namen   */
+        i = 33 + nl + !(nl & 1) + sp_skip;
+        rlen = 0;
+        rr_nm = rr_re = 0;
+        ce_len = 0;
+        cl_loc = 0;
+        if (i < r[0])
+            su_parse(r + i, r[0] - i);
+    }
+}
+
+/* Eintrag bei off im Block lba nach ent; bei Rock Ridge Fortsetzungen
+   (CE) und verlegte Verzeichnisse (CL) nachlesen, danach den Verzeich-
+   nisblock wieder in den Puffer. 0 = ok, 1 = auslassen (RE), -1 = Fehler */
+static int getent(unsigned dev, unsigned long lba, unsigned off)
+{
+    unsigned n, reread = 0, co, cn;
+    take(blk() + off);
+    if (!rr)
+        return 0;
+    for (n = 0; ce_len && n < 4; n++) {
+        co = ce_off;
+        cn = ce_len;
+        ce_len = 0;
+        if (co >= 2048 || cn > 2048 - co)
+            break;
+        reread = 1;
+        if (rd(dev, ce_blk))
+            break;
+        su_parse(blk() + co, cn);
+    }
+    if (cl_loc) {                       /* tiefes Verzeichnis, verlegt   */
+        reread = 1;
+        if (rd(dev, cl_loc) == 0) {
+            ent.ext = cl_loc;
+            ent.size = le32(blk() + 10);    /* aus seinem "."-Eintrag    */
+            ent.flags |= 2;
+        }
+    }
+    if (reread && rd(dev, lba))
+        return -1;
+    if (rr_nm) {
+        n = name_bytes();
+        ent.name[n] = 0;
+    } else
+        ent_lossy = 0;
+    return rr_re;
 }
 
 /* gefundener Eintrag geht an den Kernel: Original des Joliet-Namens melden */
 static void uni_tell(void)
 {
     unsigned n;
-    if (!joliet || !ent_lossy)
+    if (!lng || !ent_lossy)
         return;
     for (n = 0; ent.name[n]; n++)
         ;
@@ -302,7 +465,7 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
         for (k = 0; nm[k] && nm[k] != '.'; k++)
             if (nm[k] == '~')
                 t = k;
-        if (joliet && t != 0xFFFF && nm[t + 1] >= '1' && nm[t + 1] <= '9') {
+        if (lng && t != 0xFFFF && nm[t + 1] >= '1' && nm[t + 1] <= '9') {
             for (k = t + 1; nm[k] >= '0' && nm[k] <= '9'; k++)
                 kw = kw * 10 + (nm[k] - '0');
             if (nm[k] && nm[k] != '.')
@@ -324,16 +487,21 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
                 continue;               /* "." und ".."                  */
             if (b[off + 25] & 0x04)
                 continue;               /* zugeordnete Datei             */
+            if ((k = getent(dev, ext + i, off)) != 0) {
+                if (k == 1)
+                    continue;           /* RR: verlegt (RE)              */
+                return -1;
+            }
+            if (rr && ext == root_ext && !strcmp_n(ent.name, "rr_moved"))
+                ent.flags |= 1;         /* wie -hide-rr-moved: versteckt */
             if (mode == SC_INDEX) {
                 if (count++ == n) {
-                    take(b + off);
                     ent_idx = n;
                     uni_tell();
                     return 0;
                 }
                 continue;
             }
-            take(b + off);
             if (mode == SC_COUNT) {
                 if (count++ >= n)
                     return hits;
@@ -380,7 +548,7 @@ static void fill_alias(unsigned dev, unsigned long ext, unsigned long len)
     unsigned d2 = ent.date, t2 = ent.time;
 
     ent.alias[0] = 0;
-    if (!joliet)
+    if (!lng)
         return;
     if (basis(ent.name, b)) {           /* schon 8.3: nur Schreibung     */
         for (k = 0; b[k] && b[k] == ent.name[k]; k++)
@@ -572,7 +740,7 @@ void strategy(void)
         dmasel = r->buf_sel;
         r->units = IFS_CLASS_CD;
         r->status = DRV_OK;
-        dputs("  ISO 9660 und Joliet f\x81r CD-ROMs, nur lesend\n");
+        dputs("  ISO 9660, Joliet, ISO 9660:1999 und Rock Ridge f\x81r CD-ROMs, nur lesend\n");
         return;
     }
     request();

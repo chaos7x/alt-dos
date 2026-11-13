@@ -193,6 +193,7 @@ void vio_mou_show(int s, int on);
 int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
 unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
 void vio_showbuf(int s, unsigned a, unsigned b);
+void vio_refont(void);                          /* Zeichensatz der Codepage laden */
 int __far vio_setgfx(int s, int t, unsigned mode);   /* 13h / 0 = Text        */
 unsigned long __far vio_gfx_base(int s);
 unsigned __far vio_gfx_limit(int s);

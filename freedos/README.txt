@@ -40,3 +40,11 @@ und der PATH der Box beginnt mit \DOS\MDOS - MEM in der Box ist das von
 FreeDOS (wie \OS2\MDOS bei OS/2), MEM in AT-DOS das eigene. CTMOUSE.COM
 laedt RBSHELL beim Start der Box, wenn AT-DOS eine Maus hat (mit /P bzw.
 /S1, /S2 wie MOUSE.SYS): solange die Box vorn ist, gehoert ihr die Maus.
+
+cp/CPnnn.FNT  Zeichensaetze fuer CODEPAGE=/CHCP von AT-DOS (850, 852, 857,
+              858, 860, 863, 865, 866, 737): 8x16 und 8x8 aus den CPI-
+              Dateien des FreeDOS-Pakets cpidos 3.0a (Henrique Peron,
+              GNU GPL Version 2; gitlab.com/FreeDOS/base/cpidos, CPI/*.CPX,
+              UPX-gepackt), dazu die Unicode-Tabelle 80h-FFh aus den
+              Python-Codecs. Neu erzeugen: CPX mit `upx -d` entpacken, dann
+              tools/mkcp.py <Ordner mit *.cpi> freedos/cp

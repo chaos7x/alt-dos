@@ -184,6 +184,11 @@ struct fapi_rbmem {
 /* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
    DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_CODEPAGE       0x56    /* BX = 0: aktive Codepage -> AX; BX = FFFFh:
+                                       CX = Platz in der Liste aus CODEPAGE=
+                                       -> Codepage (0 = Ende); sonst BX =
+                                       Codepage einschalten (437 immer, sonst
+                                       nur vorbereitete) -> 0 / FAPI_ERROR */
 #define BUS_PCI             0       /* struct fapi_pcidev               */
 #define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
 #define BUS_PNP             2       /* struct fapi_pnpdev (ISA-PnP)     */

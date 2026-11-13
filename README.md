@@ -69,13 +69,22 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   frei); braucht ein Programm den Speicher, gibt er saubere
   16-KB-Stücke ab; MEM zeigt Größe, Spanne, „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `LONGNAMES=AUTO|VFAT|EA`; `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
-  `COUNTRY=`, `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
+  `COUNTRY=nnn` (5.2: Land wie MS-DOS: Datum, Uhrzeit, Tausendertrenner in
+  CMD und FM, auch in der Kompatibilitätsbox; je Sitzung mit `SET
+  COUNTRY=nnn` änderbar), `CODEPAGE=850,437` (5.2, wie OS/2: vorbereitete
+  Codepages, die erste gilt ab dem Start; `CHCP 437`/`CHCP 850` schaltet
+  um – Zeichensatz auf dem Bildschirm, Umsetzung langer Dateinamen und die
+  Codepage der Box; vorhanden: 437, 850, 852, 857, 858, 860, 863, 865,
+  866, 737, Zeichensätze aus FreeDOS cpidos in `\DOS\SYSTEM\CPnnn.FNT`),
+  `SET=` und die Menübefehle von MS-DOS 6 werden angenommen und
   übergangen, Zeilen mit `;` sind Kommentare
 - Nachladbare Dateisysteme: `IFS=` in `CONFIG.SYS`. Erstes Modul ist
   `ISO9660.IFS` für CD-ROMs an IDE (ATAPI) und am Adaptec; jedes CD-Laufwerk
   bekommt einen Buchstaben, ein CD-Wechsel wird bei jedem Zugriff erkannt.
   Joliet-CDs (Windows 95) zeigen lange Namen in Originalschreibung (auch
-  Umlaute); ältere Programme bekommen 8.3-Ersatznamen wie Windows
+  Umlaute), ebenso CDs nach ISO 9660:1999 (Namen bis 207 Zeichen) und
+  Unix-CDs mit Rock Ridge (Namen bis 255 Zeichen, UTF-8, auch tiefe
+  Verzeichnisse; 5.2); gibt es mehrere, gilt Joliet; ältere Programme bekommen 8.3-Ersatznamen wie Windows
   (`BRIEFA~1.TXT`), beide Namen gehen in Pfaden. `VOL` zeigt die
   Bezeichnung der CD
 - Lange Namen, Stufe 1: VFAT-Namen (Windows 95) werden gelesen – in
@@ -480,6 +489,7 @@ selbst nur 8.3 kennt.
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 84 | DosProc         | Taskmanager (wie 6.0): BX = PROC_INFO (CX = Platz, DX = struct fapi_proc: Zustand, Sitzung, Aufrufer, Größe, Name, Befehlszeile) oder PROC_KILL (beenden wie Strg+C; nicht der Aufrufer, seine Aufrufer und die Shell der ersten Sitzung) |
 | 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (CX = Registerpuffer oder 0, DX = 1 vorher setzen; Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH, RB_CALL INT E0h mit gefülltem Puffer), RB_REGS (CX = struct fapi_rbregs, DX = 0 holen/1 setzen), RB_MEM (CX = struct fapi_rbmem: Speicher der Box lesen/schreiben), RB_FREE |
+| 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR (5.2) |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |

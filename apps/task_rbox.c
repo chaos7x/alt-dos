@@ -43,6 +43,7 @@ static void box_err(unsigned r)
    Die Groesse steht im BPB (Gesamtzahl der Sektoren, Offset 13h). Die
    Datei bleibt offen, solange die Box laeuft. */
 static unsigned img_h = 0xFFFF;
+static void ctry_patch(unsigned n);
 
 static void load_img(const char *p)
 {
@@ -61,10 +62,67 @@ static void load_img(const char *p)
     r = DosRBox(RB_BOOT, secs >> 1, 0);
     if (r)
         box_err(r);
+    ctry_patch(n);
     if (DosRBox(RB_IMG, (unsigned)buf, n & ~511u)) {
         puts("Abbild unbrauchbar (Bootsektor).\r\n");
         DosRBox(RB_FREE, 0, 0);
         DosExit(3);
+    }
+}
+
+/* Land und Codepage von AT-DOS in die Box-CONFIG.SYS des Abbilds tragen
+   (nur im geladenen Stueck, die Datei bleibt): "COUNTRY=049,437," wird zu
+   COUNTRY=nnn,cp. FreeDOS kennt nicht jedes Paar - dann 850 (wie main). */
+static unsigned box_cp(unsigned c, unsigned cp)
+{
+    int ok;
+    switch (cp) {
+    case 850: case 858: ok = 1; break;
+    case 437: ok = !(c == 2 || c == 36 || c == 38 || c == 40 || c == 42 || c == 45 ||
+                     c == 47 || c == 48 || c == 90 || (c >= 351 && c <= 999 &&
+                     c != 352 && c != 353 && c != 356 && c != 358));
+              break;
+    case 852: ok = c == 7 || c == 36 || c == 38 || c == 40 || c == 42 || c == 48 ||
+                   c == 355 || (c >= 381 && c <= 387 && c != 384) || c == 420 || c == 421;
+              break;
+    case 865: ok = c == 45 || c == 46 || c == 47 || c == 354 || c == 358; break;
+    case 737: ok = c == 30; break;
+    case 857: ok = c == 90; break;
+    case 860: ok = c == 351; break;
+    case 863: ok = c == 2; break;
+    case 866: ok = c == 7 || c == 359 || c == 380; break;
+    default:  ok = 0;
+    }
+    return ok ? cp : 850;
+}
+
+static void put3(char *d, unsigned v)
+{
+    d[0] = (char)('0' + v / 100 % 10);
+    d[1] = (char)('0' + v / 10 % 10);
+    d[2] = (char)('0' + v % 10);
+}
+
+static void ctry_patch(unsigned n)
+{
+    static const char pat[] = "COUNTRY=049,437,";
+    static char cb[12];
+    unsigned i, j, c = 49, cp = DosGetCp();
+    if (FAPI_FAILED(cp) || cp == 0 || cp > 999)
+        cp = 437;                       /* Kernel ohne Codepages       */
+    if (!FAPI_FAILED(DosGetEnv("COUNTRY", cb, sizeof(cb))) && cb[0] >= '0' && cb[0] <= '9')
+        for (c = 0, i = 0; cb[i] >= '0' && cb[i] <= '9'; i++)
+            c = c * 10 + (unsigned)(cb[i] - '0');
+    if (c == 49 && cp == 437)
+        return;
+    for (i = 0; i + 16 <= n; i++) {
+        for (j = 0; j < 16 && buf[i + j] == pat[j]; j++)
+            ;
+        if (j == 16) {
+            put3(buf + i + 8, c);
+            put3(buf + i + 12, box_cp(c, cp));
+            return;
+        }
     }
 }
 
@@ -76,7 +134,7 @@ static void fetch(void)
 
     if (FAPI_FAILED(DosSeek(img_h, &pos)) ||
         FAPI_FAILED(n = DosRead(img_h, buf, sizeof(buf))) || (n &= ~511u) == 0 ||
-        DosRBox(RB_IMG, (unsigned)buf, n)) {
+        (ctry_patch(n), DosRBox(RB_IMG, (unsigned)buf, n))) {
         puts("Abbild nicht lesbar.\r\n");
         DosRBox(RB_FREE, 0, 0);
         DosExit(3);

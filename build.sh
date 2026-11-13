@@ -274,6 +274,11 @@ python3 tools/sysboot.py $HD $((63 * 512)) $B/hdboot.bin
 mcopy $B/ATDOS.SYS c:ATDOS.SYS
 mattrib +r +s +h c:ATDOS.SYS
 TARGET="" TO="c:" copy_files
+# Zeichensaetze fuer CODEPAGE=/CHCP (freedos/cp, tools/mkcp.py) - nur auf der
+# Platte, auf der Diskette ist kein Platz (je 6,25 KB)
+CPFILES=""
+for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
+TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

@@ -439,13 +439,30 @@ static const unsigned short cp_uni[128] = {
     0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0
 };
 
+/* Codepage (CHCP, kernel.c): Programme sehen Namen in der aktiven
+   Codepage; cp_utab = deren Tabelle 80h-FFh, 0 = CP437 (cp_uni). Saetze
+   'L' in EA DATA. SF sind immer CP437 und werden umgerechnet. */
+extern unsigned short __far *cp_utab;
+
 static unsigned cp2uni(unsigned char c)
 {
-    return c < 0x80 ? c : cp_uni[c - 0x80];
+    return c < 0x80 ? c : cp_utab ? cp_utab[c - 0x80] : cp_uni[c - 0x80];
 }
 
-/* Unicode -> CP437, 0 = keins */
+/* Unicode -> aktive Codepage, 0 = keins */
 static unsigned char uni2cp(unsigned u)
+{
+    unsigned i;
+    if (u < 0x80)
+        return (unsigned char)u;
+    for (i = 0; i < 128; i++)
+        if ((cp_utab ? cp_utab[i] : cp_uni[i]) == u)
+            return (unsigned char)(0x80 + i);
+    return 0;
+}
+
+/* Unicode -> CP437 (Saetze 'L'), 0 = keins */
+static unsigned char uni437(unsigned u)
 {
     unsigned i;
     if (u < 0x80)
@@ -1605,8 +1622,17 @@ static void ea_load(int d, unsigned dc)
         } else {
             if (ea_rd(pos + EA_HDR, ea_rec + EA_HDR, len) != len)
                 break;
-            for (k = 0; k < len; k++)
-                c[ea_cused + 13 + k] = ea_rec[EA_HDR + k];
+            for (k = 0; k < len; k++) {
+                unsigned char b = ea_rec[EA_HDR + k];
+                if (b >= 0x80 && cp_utab) { /* CP437 -> aktive Codepage   */
+                    unsigned uc = cp_uni[b - 0x80];
+                    ((unsigned short __far *)(c + ea_cused + 13 + len))[k] = uc;
+                    if ((b = uni2cp(uc)) == 0)
+                        b = '_', c[ea_cused + 12] = 1;
+                } else
+                    ((unsigned short __far *)(c + ea_cused + 13 + len))[k] = b;
+                c[ea_cused + 13 + k] = b;
+            }
         }
         ea_cused += 13 + len + (c[ea_cused + 12] ? 2 * len : 0);
     }
@@ -1671,7 +1697,7 @@ static void ea_del(int d, unsigned dc, const unsigned char *n83)
 static int ea_add(int d, unsigned dc, const char *n83, const char *name)
 {
     unsigned long pos, at = 0xFFFFFFFFUL;
-    unsigned u, len, need, k, use, uo;
+    unsigned u, len, need, k, use, uo, w437 = 0;
     int rc;
 
     ea_del(d, dc, (const unsigned char *)n83);
@@ -1680,7 +1706,12 @@ static int ea_add(int d, unsigned dc, const char *n83, const char *name)
     for (len = 0; name[len] && len < 255; len++)
         ;
     uo = uni_find(name, len);           /* Original bekannt: Satz 'W'    */
-    need = (EA_HDR + (uo ? 2 * len : len) + 31) >> 5;
+    if (!uo && cp_utab)                 /* andere Codepage: geht es in   */
+        for (k = 0; k < len; k++)       /* CP437 ('L'), sonst 'W'        */
+            if ((unsigned char)name[k] >= 0x80 &&
+                !uni437(cp2uni((unsigned char)name[k])))
+                w437 = 1;
+    need = (EA_HDR + ((uo || w437) ? 2 * len : len) + 31) >> 5;
     use = need;
     for (pos = 0; pos + EA_HDR <= ea_f.size; pos += (unsigned long)u << 5) {
         if (ea_rd(pos, ea_rec, EA_HDR) != EA_HDR || !(u = ea_rec[1]))
@@ -1710,9 +1741,23 @@ static int ea_add(int d, unsigned dc, const char *n83, const char *name)
             w[k] = k < EA_HDR ? ea_rec[k] : k < EA_HDR + 2 * len ? src[k - EA_HDR] : 0;
         rc = fat_write(EAF, at, ea_csel, UNI_WB,
                        at == ea_f.size ? need << 5 : EA_HDR + 2 * len);
+    } else if (w437) {                  /* W-Satz aus der Codepage       */
+        unsigned char __far *w = ufp(UNI_WB);
+        ea_rec[0] = 'W';
+        for (k = 0; k < (need << 5); k++)
+            w[k] = k < EA_HDR ? ea_rec[k] : 0;
+        for (k = 0; k < len; k++) {
+            u = cp2uni((unsigned char)name[k]);
+            w[EA_HDR + 2 * k] = (unsigned char)u;
+            w[EA_HDR + 2 * k + 1] = (unsigned char)(u >> 8);
+        }
+        rc = fat_write(EAF, at, ea_csel, UNI_WB,
+                       at == ea_f.size ? need << 5 : EA_HDR + 2 * len);
     } else {
-        for (k = 0; k < len; k++)
-            ea_rec[EA_HDR + k] = (unsigned char)name[k];
+        for (k = 0; k < len; k++) {     /* 'L' immer in CP437            */
+            unsigned char b = (unsigned char)name[k];
+            ea_rec[EA_HDR + k] = b >= 0x80 && cp_utab ? uni437(cp2uni(b)) : b;
+        }
         /* am Ende ganze Einheiten schreiben, damit der naechste Satz passt */
         rc = fat_write(EAF, at, KDATA, (unsigned)ea_rec,
                        at == ea_f.size ? need << 5 : EA_HDR + len);
