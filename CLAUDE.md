@@ -3763,6 +3763,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Verzeichnis-Cluster umrechnen) und ufat_e2v.c kennen `W` (E2V_REC,
   e2v_lfn nimmt UTF-16 unverändert, v2e schreibt `W` statt `_`). DGROUP
   danach 65.312 Byte.
+- Mehrsprachige Programme (Wunsch des Nutzers, für später, noch nicht
+  begonnen): wie FreeDOS (Kitten/`NLSPATH`, `LANG=`) – Programme bringen
+  ihre Meldungen in Deutsch und Englisch mit, gewählt über `LANG=DE|EN`
+  (Systemumgebung, z. B. per `SET LANG=EN` in CONFIG.SYS; Vorgabe DE,
+  sinnvoll auch aus COUNTRY= abgeleitet). Entwurf zum Abstimmen: Texte
+  je Programm als Katalogdatei (`\DOS\NLS\NAME.DE`/`.EN`, Zeilen
+  `Satz.Nr:Text` wie Kitten) mit deutschem Rückfall im Programm, oder
+  beide Sprachen fest im Programm (kostet DGROUP – CMD, UFAT, FDISK
+  sind knapp). Kernelmeldungen (Startzeilen, Fehler) zuletzt, dort ist
+  DGROUP voll. Zuerst klären: Kitten-Format übernehmen (FreeDOS-Kataloge
+  der Box nutzen schon NLSPATH/LANG=DE), welche Programme zuerst.
 - Weitere Dateisysteme als `.IFS` (Ideen, Gespräch mit dem Nutzer
   12.11.2026, noch ohne Reihenfolge): je Modul ein Segment (64 KB), dazu
   `U<Name>.EXE` für CHKDSK/FORMAT. Grenzen: FAPI-Dateigröße/-Position 32
