@@ -1,17 +1,79 @@
-REM AT-DOS 6.0 - Geraetetreiber
-REM Adaptec AHA-154x (SCSI) und IDE-Platten (bis zu vier)
+REM ===================================================================
+REM AT-DOS 6.0 - CONFIG.SYS
+REM Zeilen mit REM am Anfang sind Erklaerungen bzw. Beispiele; zum
+REM Einschalten REM weglassen. Hoechstens 4 KB, eine Zeile bis 127 Zeichen.
+REM ===================================================================
+
+REM --- Speicher und Dateien ------------------------------------------
+REM FILES=n      offene Dateien fuer alle Programme zusammen (8-255)
 FILES=30
+REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20
-STACKS=9,256
-DEVICEHIGH /L:1 =AHA154X.SYS
+REM CACHE=kb,s,max  Platten-Cache im Kernel: Mindestgroesse in KB,
+REM   verzoegertes Schreiben nach s Sekunden (0 = sofort), Hoechstgroesse
+REM   in KB (bis 8192). Ohne Angabe nach Speicher; dazwischen waechst und
+REM   schrumpft er mit dem freien Speicher. Beispiel:
+REM CACHE=512,5,4096
+
+REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---------------
+REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb
+DEVICE=AHA154X.SYS
+REM IDE/ATAPI, MFM/RLL/ESDI. /DMA stellt Busmaster-DMA selbst ein (PIIX4:
+REM UDMA 2), /NODMA schaltet DMA ab, /NOIRQ = Abfragebetrieb
 DEVICE=IDE.SYS
+REM Trantor T130B (NCR 53C400). /P:350|340|250|240 Port, /PIO ohne Block
 DEVICE=NCR5380.SYS
+REM PCI-SCSI NCR/LSI 53C8xx. /NOIRQ = Abfragebetrieb, /ID:n eigene ID
 DEVICE=NCR8XX.SYS
+REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
+REM Sound Blaster 1.0-AWE64, AdLib, MPU-401. /A:220 /I:5 /D:1 /H:5 /M:330
+REM von Hand, /NOFM /NOMPU /NOAWE abschalten, /MPU = MIDI an den MPU-401
+REM statt an den AWE-Synthesizer, /AWETEST Probeton der AWE
 DEVICE=SB16.SYS
+REM DEVICEHIGH lassen andere DOS auch zu; AT-DOS laedt beides gleich:
+REM DEVICEHIGH /L:1 =IDE.SYS
+
+REM --- Dateisysteme ---------------------------------------------------
+REM CD-ROM: ISO 9660, Joliet, ISO 9660:1999, Rock Ridge (nur lesend)
 IFS=ISO9660.IFS
+REM Lange Namen auf FAT12/16: AUTO (was auf dem Laufwerk ist, sonst EA),
+REM VFAT (wie Windows 95) oder EA (wie OS/2, EA DATA. SF). FAT32 = VFAT.
+LONGNAMES=AUTO
+REM Nicht sauber abgemeldete Platten beim Start pruefen: ohne Zeile alle,
+REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK= (leer)
+REM AUTOCHECK=CD
+
+REM --- Land, Zeichensatz, Tastatur -------------------------------------
+REM COUNTRY=nnn  Datum, Uhrzeit, Zahlen wie MS-DOS: 001 USA, 002 Kanada,
+REM 003 Lateinamerika, 031 NL, 032 B, 033 F, 034 E, 039 I, 041 CH, 044 GB,
+REM 045 DK, 046 S, 047 N, 048 PL, 049 D, 351 P, 358 FIN, 420 CZ u. a.
+COUNTRY=049
+REM CODEPAGE=a,b  Zeichensaetze (erste gilt beim Start, CHCP wechselt):
+REM 437 (eingebaut), 737, 850, 852, 857, 858, 860, 863, 865, 866 - nur
+REM von Platte (CPnnn.FNT in \DOS\SYSTEM). Beispiel:
+REM CODEPAGE=850,437
+REM Tastatur: KEYB in AUTOEXEC.CMD, z. B. KEYB DK oder KEYB PL,852
+
+REM --- Befehlsinterpreter und Umgebung --------------------------------
 PROTSHELL=CMD.EXE /P
-REM DOS-Boxen: DOS im oberen Speicher (HMA) und UMBs, wie bei OS/2
+REM SET NAME=WERT legt Variablen fuer alle Sitzungen an, z. B.:
+REM SET TEMP=D:\TEMP
+
+REM --- DOS-Boxen -------------------------------------------------------
+REM DOS in der HMA und obere Speicherbloecke (UMB), wie OS/2
 DOS=HIGH,UMB
-REM Nicht sauber abgemeldete Platten beim Start pruefen: alle,
-REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK=
+REM Konventioneller Speicher je Box in KB (256-640)
+REM RMSIZE=640
+REM Kein EMS-Seitenrahmen (64 KB mehr UMB): EMS_FRAME_LOCATION=NONE
+REM EMS_FRAME_LOCATION=NONE
+REM DOS-Programme aus CMD in eigener Sitzung starten (wie OS/2) statt
+REM in derselben (wie NT):
+REM DOSSTART=SESSION
+REM Einstellungen je Programm: \DOS\MDOS\DOSBOX.INI
+
+REM --- Hardware ---------------------------------------------------------
+REM ISA-PnP-Karten nicht einstellen (z. B. wenn ein PnP-BIOS es tut)
+REM PNP=OFF
+REM SHUTDOWN schaltet ueber APM aus; APM=OFF zeigt nur die Meldung
+REM APM=OFF

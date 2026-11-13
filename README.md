@@ -92,6 +92,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Platten ohne LBA; ATAPI-CD-ROMs als Einheit; dazu MFM/RLL-Platten am
   WD1003 und ESDI am WD1007, Geometrie aus der Tabelle des BIOS) – beide lesen und schreiben,
   CD-ROMs (2048-Byte-Blöcke) nur lesen
+- Die mitgelieferte `CONFIG.SYS` nennt alle Einstellungen mit Erklärung
+  (Treiberschalter, Cache, lange Namen, Land/Codepage, Boxen); was nicht
+  gebraucht wird, steht als `REM`-Beispiel darin.
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie

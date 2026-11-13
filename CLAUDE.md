@@ -685,6 +685,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
   Geräte öffnen weiter), MKDIR und MOVE-Ziel -> FAPI_ERR_DENIED.
+- Mitgelieferte CONFIG.SYS (Wunsch des Nutzers): alle Schlüsselwörter
+  und Treiberschalter mit REM-Erklärung, Ungenutztes als REM-Beispiel
+  (next_line überspringt REM-Zeilen, preload nur Zeilen, die mit DEVICE/
+  IFS beginnen); AHA154X mit DEVICE (DEVICEHIGH nur als Beispiel, es
+  wirkt wie DEVICE). Grenze 4 KB im Blick behalten (6.0: 3,7 KB). Neue
+  Schlüsselwörter oder Schalter dort mit eintragen.
 - CONFIG.SYS bis 4 KB (Fehler, beim 5.1-Test gefunden: `startup[512]` in
   DGROUP – eine längere Datei wurde ganz übergangen, Start dann ohne
   Treiber: „Startpartition nicht gefunden“): `read_cfg` liest in ein
