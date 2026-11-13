@@ -127,7 +127,11 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   trotzdem (der Kernel nimmt dann `CMD.EXE /P`)
 - `CMD.EXE`: Zeileneditor und Befehlsspeicher wie DOSKEY eingebaut
   (Pfeil auf/ab, links/rechts, Pos1/Ende, Einfg/Entf, F3, Esc, Bild auf/ab;
-  `DOSKEY /HISTORY` listet die letzten 16 Befehle). **Tab** vervollständigt
+  `DOSKEY /HISTORY` listet die letzten 16 Befehle); Makros wie MS-DOS 6: `DOSKEY name=text` mit
+  `$1`–`$9`, `$*`, `$T`, `$G`/`$G$G`/`$L`/`$B`, `DOSKEY name=` löscht,
+  `/MACROS` zeigt, `/MACROFILE=datei` lädt Zeilen `name=text`; nur für
+  getippte Zeilen, je Sitzung, mit START gestartete CMD-Sitzungen erben
+  sie). **Tab** vervollständigt
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
   Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,
   zweites Tab listet die Möglichkeiten.

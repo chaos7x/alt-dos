@@ -292,6 +292,18 @@ AR_AWE, DH_KSEG (19). DH_PCI*/DH_CLAIM gibt es nicht – Standardantwort
 FFFFh (pci_find: keins; claim wird nicht ausgewertet). EJECT.EXE und
 AWELOAD.EXE von main. AWE und Wechselplatten an AHA/NCR5380 nur in
 86Box prüfbar (QEMU hat beides nicht).
+DOSKEY-Makros (Wunsch des Nutzers, auch 5.2; in QEMU geprüft): in
+CMD (apps/task_cmd.c, `mac_*`) – `DOSKEY name=text`, `name=`,
+`/MACROS`, `/MACROFILE=` (Zeilen name=text, `;` Kommentar), im Text
+`$1`–`$9`, `$*`, `$T` (-> `&`), `$G`, `$G$G`, `$L`, `$B`, `$$`.
+Speicher 4 KB per DosAllocSeg erst beim ersten Makro. Ersetzt wird nur
+die getippte Zeile in der Hauptschleife (nicht in Stapeldateien, nicht
+bei CMD /C), führendes Leerzeichen umgeht es. Je Sitzung (wie NT);
+run_program gibt sie an eine gestartete CMD-Sitzung (nicht /C) weiter:
+`%TEMP%\DKxxxx.MAC` + Variable DOSKEYF, die neue Sitzung lädt und
+löscht die Datei (`mac_pass`/`mac_inherit`). Geprüft: anlegen, $1/$2/$*,
+$T, $G, Liste, Löschen, Leerzeichen, Stapeldatei, MACROFILE, START CMD
+erbt, Datei danach weg.
 Kernelsegmente (vom Nutzer gemeldet: nach AWELOAD spielte IMF nicht –
 „keine FM-Synthese“): mit 12 GDT-Plätzen scheiterte schon AWELOAD am
 zweiten Zonen-Segment, danach fehlte der Platz für das FM-Segment
