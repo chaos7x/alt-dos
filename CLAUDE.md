@@ -244,6 +244,15 @@ Platz für Unicode/Codepages im ersten Segment. Mit dmpobj geprüft:
 fat.o ruft nichts Nahes außerhalb, kernel.o nur ferne ifs_*/vol_*.
 In QEMU: XCOPY C:\DOS nach „D:\Kopie von DOS“ (Inhalte gleich, fsck
 sauber), CHKDSK, RBOX sieht D:.
+Unicode Stufe 1 aus main (fb8845f übernommen; in QEMU geprüft: Diskette
+mit 日本語.txt, Ελλάδα 2026.txt, α░β Test.txt, Кириллица\Привет мир.txt
+per mtools -> XCOPY A:\ D:\UNI\ /S auf ein EA-Laufwerk -> CONVERT D:
+/LFN:VFAT -> mtools zeigt alle Originale, fsck sauber). Anders als auf
+main: kein Sprungindex, darum liegt das Namensgedächtnis direkt hinter
+dem EA-Namenspuffer (`UNI_OFF` = EA_CSIZE, ein Kernelsegment über
+fat_ksel, auch für ea_load), kein Kontext je Task; `current` in
+kernel.c nicht mehr static. drv.h: DH_UNINOTE 20 und DH_KSEG 19 mit
+denselben Nummern wie main (14–18 gibt es auf 5.x nicht).
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

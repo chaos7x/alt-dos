@@ -169,6 +169,14 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
 - `CHKDSK /R` (wie Windows NT): Oberflächentest, defekte freie Cluster
   werden gesperrt, belegte verlegt (Lesbares gerettet); `SCANDISK X:` ruft
   `CHKDSK X: /F /R`
+- Unicode-Dateinamen verlustfrei (5.2, aus 6.0): Namen mit Zeichen außerhalb
+  von CP437 (Japanisch, Kyrillisch, Griechisch …) sehen Programme mit `_`
+  an diesen Stellen, Kopieren (COPY, XCOPY, FM), Verschieben und der
+  Weg von einer Joliet-CD auf FAT behalten aber das Original – der Kernel
+  merkt es sich je Task, wenn ein Programm den Namen liest, und schreibt
+  es beim Anlegen unter genau diesem Namen. Auf EA-Laufwerken stehen
+  solche Namen als UTF-16 in `EA DATA. SF`; `CONVERT /LFN` überträgt sie
+  in beide Richtungen ohne Verlust
 - `CONVERT X: /LFN:VFAT | /LFN:EA` (5.2, aus 6.0): lange Namen eines
   FAT-Laufwerks zwischen `EA DATA. SF` und VFAT-Einträgen (Windows 95)
   umwandeln – vorher läuft CHKDSK, die Arbeit macht `UFAT /LFN:…`

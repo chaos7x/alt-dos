@@ -111,7 +111,7 @@ static struct desc    ldt[NTASK][NLDT];
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* per DosAllocSeg       */
 static unsigned       image_units;                /* Programmabbilder      */
-static int            current = -1;
+int                   current = -1;   /* auch fat.c (Unicode-Gedaechtnis) */
 
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
    (wie MS-DOS: fuer alle Programme zusammen) */
@@ -4622,6 +4622,11 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_DELAY:
         delay_ticks(bx);
         return 0;
+    case DH_UNINOTE:                    /* Unicode-Original eines Namens */
+        uni_note_ext(dsel, bx, cx, devhlp_dx);
+        return 0;
+    case DH_KSEG:                       /* Kernelsegment ohne DMA-Bedingung */
+        return kseg_alloc(bx ? bx : 0x10000UL);
     case DH_DMABUF: {
         static unsigned long lin;
         n = kseg_dma(bx, &lin);

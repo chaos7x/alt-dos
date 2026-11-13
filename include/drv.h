@@ -105,6 +105,16 @@ struct drv_req {
                                        Adresse -> AX = Selektor, 0 = keiner */
 #define DH_AUDREG       13          /* Treiber ist das Audiogeraet (FAPI_AUDIO
                                        kommt als DRV_AUDIO an)           */
+/* 14-18 PCI/Belegung: nur 6.0 (5.x antwortet mit Fehler) */
+#define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
+                                       ohne DMA-Bedingung (genullt), z. B.
+                                       Tabellen -> AX = Selektor, 0 = keiner */
+#define DH_UNINOTE      20          /* IFS-Module: BX = Name (CP437, im DS),
+                                       CX = derselbe Name als UCS-2 (je
+                                       Zeichen ein Wort), DX = Laenge in
+                                       Zeichen. Der Kernel merkt sich das
+                                       Original fuer den laufenden Task
+                                       (Kopien auf FAT bekommen es) -> 0 */
 
 /* Audio (DRV_AUDIO): der Kernel waehlt, wessen Ton zu hoeren ist, der
    Treiber spielt einen Datenstrom */

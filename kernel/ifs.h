@@ -91,6 +91,8 @@ extern int floppy_lazy;
 
 int __far ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv);
 void __far vol_move(int from, int to);
+/* Namensgedaechtnis (fat.c, Unicode Stufe 1): CP437-Name <- UCS-2 */
+void __far uni_note_ext(unsigned sel, unsigned name, unsigned ucs, unsigned len);
 int __far  vol_present(int d);
 void __far vol_reset(int d);
 void __far ifs_shutdown(void);
