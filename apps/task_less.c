@@ -421,7 +421,7 @@ void main(void)
             show_status(num);
             continue;
         }
-        if (ch == 0 || ch == 0xE0) {            /* Sondertasten         */
+        if KEY_EXT(ch, sc) {            /* Sondertasten         */
             switch (sc) {
             case 0x50: ch = 'j'; break;         /* Pfeil ab             */
             case 0x48: ch = 'k'; break;         /* Pfeil auf            */

@@ -461,6 +461,17 @@ static unsigned char uni2cp(unsigned u)
     return 0;
 }
 
+/* fuer die Tastatur (kbd.c, erstes Codesegment) */
+unsigned __far cp_from_uni(unsigned u)
+{
+    return uni2cp(u);
+}
+
+unsigned __far cp437_uni(unsigned c)
+{
+    return c < 0x80 ? c : cp_uni[(c - 0x80) & 0x7F];
+}
+
 /* Unicode -> CP437 (Saetze 'L'), 0 = keins */
 static unsigned char uni437(unsigned u)
 {

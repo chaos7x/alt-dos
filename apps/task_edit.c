@@ -576,7 +576,7 @@ static int menu_run(int m, int open)
         sc = k >> 8;
         if (k == KEY_ALT || c == 27 || (c == 0 && sc == K_F10))
             return C_NONE;
-        if (c == 0 || c == 0xE0) {
+        if KEY_EXT(c, sc) {
             switch (sc) {
             case K_LEFT:  m = (m + 3) % 4; sel = 0; continue;
             case K_RIGHT: m = (m + 1) % 4; sel = 0; continue;
@@ -843,7 +843,7 @@ static int next_focus(unsigned c, unsigned sc, int foc, int n)
 {
     if (c == 9)
         return (KbdShift() & KBDSHIFT_SHIFT) ? (foc + n - 1) % n : (foc + 1) % n;
-    if (c == 0 || c == 0xE0) {
+    if KEY_EXT(c, sc) {
         if (sc == 0x0F || sc == K_LEFT)         /* Umschalt+Tab, links  */
             return (foc + n - 1) % n;
         if (sc == K_RIGHT)
@@ -959,7 +959,7 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
         g = -1;
         if (c == 9 || (c == 0 && sc == 0x0F))   /* Tab, Umschalt+Tab     */
             g = next_focus(c, sc, f, nf + 2);
-        else if (f >= nf && (c == 0 || c == 0xE0) &&
+        else if (f >= nf && KEY_EXT(c, sc) &&
                  (sc == K_LEFT || sc == K_RIGHT))   /* zwischen Knoepfen */
             g = nf + (f - nf + 1) % 2;
         if (g >= 0) {
@@ -976,7 +976,7 @@ static int input(const char *title, int nf, const char **prompt, char **buf, uns
             continue;
         }
         n = slen(buf[f]);
-        if (c == 0 || c == 0xE0) {
+        if KEY_EXT(c, sc) {
             fresh = 0;
             if (sc == K_LEFT && pos > 0) pos--;
             else if (sc == K_RIGHT && pos < n) pos++;
@@ -1094,7 +1094,7 @@ static void field_key(char *b, unsigned max, unsigned *pos, int *fresh,
                       unsigned c, unsigned sc)
 {
     unsigned n = slen(b), i;
-    if (c == 0 || c == 0xE0) {
+    if KEY_EXT(c, sc) {
         *fresh = 0;
         if (sc == K_LEFT && *pos > 0) (*pos)--;
         else if (sc == K_RIGHT && *pos < n) (*pos)++;
@@ -1269,7 +1269,7 @@ static int open_dialog(char *out)
             continue;
         }
         if (f == 1 && nent) {                       /* Liste             */
-            if (c == 0 || c == 0xE0) {
+            if KEY_EXT(c, sc) {
                 if (sc == K_LEFT && sel > 0) sel--;
                 else if (sc == K_RIGHT && sel + 1 < nent) sel++;
                 else if (sc == K_UP && sel >= LCOLS) sel -= LCOLS;
@@ -1294,7 +1294,7 @@ static int open_dialog(char *out)
             return 1;
         }
         if (f >= 2) {                               /* Knoepfe           */
-            if ((c == 0 || c == 0xE0) && (sc == K_LEFT || sc == K_RIGHT))
+            if (KEY_EXT(c, sc) && (sc == K_LEFT || sc == K_RIGHT))
                 f = f == 2 ? 3 : 2;
             if (c != 13 && c != ' ')
                 continue;
@@ -1958,7 +1958,7 @@ static void key(unsigned k)
         command(menu_run(0, 0));
         return;
     }
-    if (c == 0 || c == 0xE0) {
+    if KEY_EXT(c, sc) {
         st = KbdShift();
         for (i = 0; i < 4; i++)
             if (c == 0 && sc == menus[i].altsc) {

@@ -217,8 +217,11 @@ unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
 void vio_rehw(void);
 extern unsigned char vio_frozen;     /* 5.1: Bildschirm gehoert der Box */
-int  kbd_set_layout(unsigned sel, unsigned off);   /* 0 = ok    */
-const char *kbd_layout_id(void);
+int  kbd_set_layout(unsigned sel, unsigned off);   /* fehlende Zeichen, -1 */
+int  kbd_derive(void);                  /* nach CHCP                        */
+extern unsigned kbd_sel;                /* Belegung (Kennung bei Offset 4)  */
+unsigned __far cp_from_uni(unsigned u); /* fat.c: Unicode -> aktive Codepage */
+unsigned __far cp437_uni(unsigned c);   /* fat.c: CP437 -> Unicode          */
 extern volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 
 #endif

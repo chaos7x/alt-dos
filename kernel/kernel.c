@@ -1160,6 +1160,7 @@ static int cp_set(unsigned cp)
                       gdt[cp_sel >> 3].base_lo) + i * CP_SZ;
     }
     cp_cur = cp;
+    kbd_derive();                       /* Tasten liefern die neue Codepage */
     vio_refont();
     return 0;
 }
@@ -3198,18 +3199,26 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_QCURDISK:
         return task[current].drive;
 
-    case FAPI_KBDSETLAYOUT:
+    case FAPI_KBDSETLAYOUT: {                   /* -> fehlende Zeichen   */
+        int r;
         if (a1 == 0)
-            return kbd_set_layout(0, 0) ? FAPI_ERROR : 0;
-        if (!user_ok(usel, a1, KBL_SIZE_BYTES, 0))
+            r = kbd_set_layout(0, 0);
+        else if (!user_ok(usel, a1, 4, 0) ||
+                 !user_ok(usel, a1, ((unsigned char __far *)MK_FP(usel, a1))[3] == 2 ?
+                          KBL2_SIZE_BYTES : KBL_SIZE_BYTES, 0))
             return FAPI_ERROR;
-        return kbd_set_layout(usel, a1) ? FAPI_ERROR : 0;
+        else
+            r = kbd_set_layout(usel, a1);
+        return r < 0 ? FAPI_ERROR : (unsigned)r;
+    }
 
     case FAPI_KBDGETLAYOUT:
         k = a2 >= KBL_BYTES ? KBL_BYTES : 4;    /* CX: ganze Tabelle (5.1) */
-        if (!user_ok(usel, a1, k, 1))
+        if (!user_ok(usel, a1, k, 1) || !kbd_sel)
             return FAPI_ERROR;
-        far_copy(usel, a1, KDATA, (unsigned)kbd_layout_id() - (k == 4 ? 0 : 4), k);
+        far_copy(usel, a1, kbd_sel, k == 4 ? 4 : 0, k);
+        if (k != 4)                         /* Box: Zeichen der Codepage, */
+            ((unsigned char __far *)MK_FP(usel, a1))[3] = 1;   /* Version 1 */
         return 0;
 
     case FAPI_GETENV: {

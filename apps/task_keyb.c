@@ -4,11 +4,40 @@
  *
  *   KEYB        zeigt die aktuelle Belegung
  *   KEYB GR     deutsche Belegung (fest im Kernel)
- *   KEYB US     laedt US.KBL von der Diskette, ebenso jede andere Kennung
+ *   KEYB US     laedt US.KBL (\DOS\SYSTEM), ebenso jede andere Kennung
+ *   KEYB DK,865 stellt vorher die Codepage um (wie CHCP, muss vorbereitet
+ *               sein: CODEPAGE= in der CONFIG.SYS)
+ *
+ * Belegungen der Version 2 sind Unicode; der Kernel leitet die Zeichen der
+ * aktiven Codepage ab und meldet, wie viele dort fehlen.
  */
 #include "fapi.h"
 
-static unsigned char kbl[KBL_SIZE_BYTES];
+static unsigned char kbl[KBL2_SIZE_BYTES];
+
+static void put_u(unsigned v)
+{
+    char d[6];
+    int k = 5;
+    d[5] = 0;
+    do {
+        d[--k] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    puts(d + k);
+}
+
+/* Zeichen der Belegung, die die aktive Codepage nicht hat */
+static void missing(unsigned r)
+{
+    if (!r || r == FAPI_ERROR)
+        return;
+    put_u(r);
+    puts(" Zeichen");
+    puts(r == 1 ? " der Belegung fehlt in Codepage " : " der Belegung fehlen in Codepage ");
+    put_u(DosGetCp());
+    puts(" (CHCP 850 o. \x84.).\n");
+}
 
 void main(void)
 {
@@ -16,7 +45,7 @@ void main(void)
     static char id[5];
     static char file[13];
     char *a = args;
-    unsigned h, n;
+    unsigned h, n, r, cp;
     int i;
 
     DosGetArgs(args);
@@ -31,13 +60,26 @@ void main(void)
         return;
     }
 
-    for (i = 0; i < 8 && a[i] && a[i] != ' '; i++)
+    for (i = 0; i < 8 && a[i] && a[i] != ' ' && a[i] != ','; i++)
         file[i] = (a[i] >= 'a' && a[i] <= 'z') ? (char)(a[i] - 32) : a[i];
     file[i] = 0;
+    a += i;
+    while (*a == ' ' || *a == ',')
+        a++;
+    if (*a >= '0' && *a <= '9') {               /* Codepage dazu         */
+        cp = 0;
+        while (*a >= '0' && *a <= '9')
+            cp = cp * 10 + (unsigned)(*a++ - '0');
+        if (FAPI_FAILED(DosSetCp(cp))) {
+            puts("Codepage nicht vorbereitet (CODEPAGE= in der CONFIG.SYS).\n");
+            DosExit(1);
+        }
+    }
 
     if (file[0] == 'G' && file[1] == 'R' && file[2] == 0) {
-        KbdSetLayout(0);
+        r = KbdSetLayout(0);
         puts("Tastaturbelegung: GR (eingebaut)\n");
+        missing(r);
         return;
     }
 
@@ -72,12 +114,14 @@ void main(void)
     }
     n = DosRead(h, kbl, sizeof(kbl));
     DosClose(h);
-    if (n != sizeof(kbl) || KbdSetLayout(kbl) == FAPI_ERROR) {
+    if (!((n == KBL_SIZE_BYTES && kbl[3] == 1) || (n == KBL2_SIZE_BYTES && kbl[3] == 2)) ||
+        (r = KbdSetLayout(kbl)) == FAPI_ERROR) {
         puts("Ung\x81ltige Belegungsdatei.\n");
-        return;
+        DosExit(1);
     }
     KbdGetLayout(id);
     puts("Tastaturbelegung: ");
     puts(id);
     puts("\n");
+    missing(r);
 }

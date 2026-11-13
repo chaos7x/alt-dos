@@ -263,6 +263,14 @@ und Codepage beim Laden des Abbilds selbst in die Box-CONFIG.SYS ein
 DosGetCp). cp_fontlin aus base_lo/base_hi der GDT (5.x hat kein
 desc_base). ISO9660.IFS ganz von main (ISO 9660:1999, Rock Ridge,
 Codepage über DH_CPTAB 21).
+KEYB in Unicode aus main (5759162; in QEMU mit `CODEPAGE=850,865,852`
+geprüft wie dort: GR eingebaut, DK unter 850 mit Feststelltaste, unter
+437 „5 Zeichen fehlen“, PL unter 852 mit Ó/ł). KbdGetLayout mit CX ≥ 278
+bleibt (RBOX): liefert Kopf + 3 × 90 abgeleitete Bytes aus kbd_sel, Byte
+3 auf 1 gesetzt. In der Box kommen die Bytes der Codepage an (DK unter
+850: æ ø å Æ), angezeigt mit dem ROM-Zeichensatz 437 – das Video-BIOS
+lädt ihn beim Moduswechsel der Box; dafür bräuchte die Box DISPLAY.SYS.
+KEY_EXT, Stub, MSD, TASKMAN usw. wie main.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

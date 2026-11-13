@@ -9,7 +9,10 @@
  * Interrupt, damit es auch bei einem haengenden Programm wirkt.
  *
  * Die deutsche Belegung ist fest eingebaut, andere laedt KEYB.EXE aus
- * .KBL-Dateien (KbdSetLayout).
+ * .KBL-Dateien (KbdSetLayout). Version 1 (CP437, drei Ebenen) und 2
+ * (Unicode, vier Ebenen mit Umschalt+AltGr): der Kernel haelt die Belegung
+ * als Unicode-Vorlage und leitet daraus die Zeichen der aktiven Codepage
+ * ab (kbd_derive, auch nach CHCP). Beides liegt in einem Kernelsegment.
  */
 #include "kern.h"
 #include "../include/fapi_abi.h"
@@ -24,12 +27,17 @@ static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
 /* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
    mit Umschalt und mit AltGr (Format siehe tools/mkkbl.py) */
 #include "../build/kbd_gr.h"
-#define KBL_SIZE  sizeof(kbl_gr)
 #define KBL_N     0x5A
-static unsigned char kbl[KBL_SIZE];
-#define NORM(sc)  kbl[8 + (sc)]
-#define SHFT(sc)  kbl[8 + KBL_N + (sc)]
-#define ALTG(sc)  kbl[8 + 2 * KBL_N + (sc)]
+#define KB_HDR    8                     /* "KBL" Version, Kennung      */
+#define KB_UNI    (KB_HDR + 4 * KBL_N)  /* Vorlage: 4 Ebenen in Unicode */
+#define KB_SZ     (KB_UNI + 8 * KBL_N)
+unsigned kbd_sel;                       /* Kernelsegment der Belegung  */
+#define KB        ((unsigned char __far *)MK_FP(kbd_sel, 0))
+#define KBU       ((unsigned short __far *)MK_FP(kbd_sel, KB_UNI))
+#define NORM(sc)  KB[KB_HDR + (sc)]
+#define SHFT(sc)  KB[KB_HDR + KBL_N + (sc)]
+#define ALTG(sc)  KB[KB_HDR + 2 * KBL_N + (sc)]
+#define SALT(sc)  KB[KB_HDR + 3 * KBL_N + (sc)]
 
 static void put(unsigned short k)
 {
@@ -40,29 +48,66 @@ static void put(unsigned short k)
     }
 }
 
-/* neue Belegung aus sel:off (KBL_SIZE Bytes), 0 = ok. sel 0 = eingebaute */
+/* Zeichen der aktiven Codepage aus der Vorlage; -> Anzahl Zeichen, die
+   es dort nicht gibt (Taste liefert dann nur den Scancode) */
+int kbd_derive(void)
+{
+    unsigned i, u, c;
+    int miss = 0;
+    if (!kbd_sel)
+        return 0;
+    for (i = 0; i < 4 * KBL_N; i++) {
+        u = KBU[i];
+        c = u < 0x80 ? u : cp_from_uni(u);
+        if (!c && (u == 0xA7 || u == 0xB6))
+            c = u == 0xA7 ? 0x15 : 0x14;    /* § und ¶ wie CP437 (unter 20h) */
+        if (u && !c)
+            miss++;
+        KB[KB_HDR + i] = (unsigned char)c;
+    }
+    return miss;
+}
+
+/* neue Belegung aus sel:off, sel 0 = eingebaute; -> fehlende Zeichen
+   (0 = alle da), -1 = keine Belegung */
 int kbd_set_layout(unsigned sel, unsigned off)
 {
     const unsigned char __far *p;
-    unsigned f, i;
+    unsigned i;
 
     if (sel == 0) {
         sel = KDATA;
         off = (unsigned)kbl_gr;
     }
     p = MK_FP(sel, off);
-    if (p[0] != 'K' || p[1] != 'B' || p[2] != 'L' || p[3] != 1)
+    if (p[0] != 'K' || p[1] != 'B' || p[2] != 'L' || (p[3] != 1 && p[3] != 2) ||
+        (!kbd_sel && !(kbd_sel = kseg_alloc(KB_SZ))))
         return -1;
-    f = irq_off();
-    for (i = 0; i < KBL_SIZE; i++)
-        kbl[i] = p[i];
-    irq_restore(f);
-    return 0;
+    for (i = 0; i < KB_HDR; i++)
+        KB[i] = p[i];
+    if (p[3] == 1)                      /* CP437, ohne Umschalt+AltGr  */
+        for (i = 0; i < 4 * KBL_N; i++)
+            KBU[i] = i < 3 * KBL_N ? cp437_uni(p[KB_HDR + i]) : 0;
+    else
+        for (i = 0; i < 4 * KBL_N; i++)
+            KBU[i] = p[KB_HDR + 2 * i] | ((unsigned)p[KB_HDR + 2 * i + 1] << 8);
+    return kbd_derive();
 }
 
-const char *kbd_layout_id(void)
+/* Grossbuchstabe zu einem Kleinbuchstaben (Feststelltaste) in Unicode:
+   lateinisch, Latin-1, Latin Extended-A, griechisch, kyrillisch */
+static unsigned up_uni(unsigned u)
 {
-    return (const char *)kbl + 4;
+    if ((u >= 'a' && u <= 'z') || (u >= 0xE0 && u <= 0xFE && u != 0xF7) ||
+        (u >= 0x3B1 && u <= 0x3C9 && u != 0x3C2) || (u >= 0x430 && u <= 0x44F))
+        return u - 32;
+    if (u >= 0x450 && u <= 0x45F)
+        return u - 80;
+    if ((((u >= 0x101 && u <= 0x137) || (u >= 0x14B && u <= 0x177)) && (u & 1) &&
+         u != 0x131) ||
+        (((u >= 0x13A && u <= 0x148) || (u >= 0x17A && u <= 0x17E)) && !(u & 1)))
+        return u - 1;                   /* Latin Extended-A: Paare      */
+    return 0;
 }
 
 void kbd_irq(unsigned sc)
@@ -121,15 +166,18 @@ void kbd_irq(unsigned sc)
         return;
     }
 
-    if (code >= KBL_N || (alt && !altgr)) {
+    if (!kbd_sel || code >= KBL_N || (alt && !altgr)) {
         c = 0;                      /* Alt+Taste: nur Scancode (BIOS)   */
-    } else if (altgr) {
-        c = ALTG(code);
+    } else if (altgr) {                 /* Umschalt+AltGr: 4. Ebene,   */
+        c = (shift != (caps && up_uni(KBU[2 * KBL_N + code]) != 0)) ?
+            SALT(code) : 0;                 /* Feststelltaste wie Umschalt */
+        if (!c)
+            c = ALTG(code);
     } else {
         base = NORM(code);
         c = shift ? SHFT(code) : base;
-        if (caps && base >= 'a' && base <= 'z')
-            c = shift ? base : (unsigned char)(base - 32);
+        if (caps && up_uni(KBU[code]))      /* Buchstabe: Feststelltaste */
+            c = shift ? base : SHFT(code);
         if (ctrl && base >= 'a' && base <= 'z')
             c = (unsigned char)(base - 'a' + 1);
     }

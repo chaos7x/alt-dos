@@ -247,7 +247,7 @@ static void interactive(void)
         c = k & 0xFF;
         if (c == 27)
             break;
-        if (c && c != 0xE0)
+        if (!KEY_EXT(c, k >> 8))
             continue;
         c = k >> 8;
         if (c == 0x48)
