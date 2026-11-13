@@ -310,6 +310,8 @@ build.sh legt es an), Rückfall \DOS\SYSTEM\SYNTHGM.SBK – wie main.
 Gebunden auch XCOPY, MOVE, DELTREE, CHOICE, REPLACE, LABEL, MSD (vom
 Nutzer vermisst: XCOPY ging in RBOX nicht); Stub übergeht das Phantom-
 laufwerk B: (440Eh). In QEMU in RBOX geprüft.
+Vom Nutzer bestätigt: SBK-Dateien in RBOX per XCOPY von CD nach
+\DOS\SYSTEM\SFBANK kopiert, AWELOAD lädt sie von dort.
 Mitgelieferte CONFIG.SYS (Wunsch des Nutzers): alle Schlüsselwörter und
 Treiberschalter mit REM-Erklärung, Ungenutztes als REM-Beispiel, dazu
 die RBOX-Einstellungen (PROTECTONLY, RBXMS, RBSLICE, RBRESET); AHA154X
