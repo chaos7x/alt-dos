@@ -431,7 +431,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_FIRST      0xFFF0
 
-#define FAPI_VERSION        0x050A  /* 5.10 (Nebenversion dezimal) */
+#define FAPI_VERSION        0x0514  /* 5.20 (Nebenversion dezimal) */
 #define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
 #define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */

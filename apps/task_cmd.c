@@ -1649,7 +1649,7 @@ static void cmd_time(char *arg)
 static void cmd_ver(void)
 {
     unsigned v = DosGetVersion();
-    puts("\nAT-DOS 5.1 (alternative Zeitlinie), 80286 Protected Mode\n"
+    puts("\nAT-DOS 5.2 (alternative Zeitlinie), 80286 Protected Mode\n"
          "Build " ATDOS_BUILD " (" ATDOS_REV ", " ATDOS_DATE "), FAPI-Version ");
     putc((char)('0' + (v >> 8)));
     putc('.');
@@ -1740,7 +1740,7 @@ static void show_prompt(void)
         case '$': putc('$'); break;
         case '_': puts("\n"); break;
         case 'H': puts("\b \b"); break;
-        case 'V': puts("AT-DOS 5.1"); break;
+        case 'V': puts("AT-DOS 5.2"); break;
         case 'E': putc(27); break;      /* ESC, fuer ANSI-Folgen        */
         case 'D':
             DosGetDateTime(dt);
@@ -2958,7 +2958,7 @@ void main(void)
         }
     }
 
-    puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 5.1\n"
+    puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 5.2\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
     if (permanent) {
         autochk();

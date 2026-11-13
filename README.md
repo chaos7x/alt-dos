@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.1 (Zweig 5.x): 5.0 mit Kompatibilitätsbox
+# alt-dos – AT-DOS 5.2 in Arbeit (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -6,7 +6,7 @@ mehreren gleichzeitig laufenden Programmen, verfolgte ihn dann aber nicht
 weiter und setzte zusammen mit IBM auf OS/2. AT-DOS fragt: Was wäre, wenn
 diese Linie weitergeführt worden wäre?
 
-- **AT-DOS 5.0/5.1** läuft auf dem **286** im Protected Mode. Es bietet
+- **AT-DOS 5.0/5.1/5.2** läuft auf dem **286** im Protected Mode. Es bietet
   mehrere Sitzungen, eine eigene Programmschnittstelle (FAPI, die einzige
   Brücke zur Hardware), nachladbare Treiber und Dateisysteme, lange
   Dateinamen und einen Platten-Cache im Kernel. Dazu kommen Werkzeuge im
@@ -28,8 +28,9 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 **GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
-Dieser Zweig (`5.x`) ist AT-DOS 5.1; AT-DOS 6.0 entsteht auf `main`, das
-unveränderte 5.0 steht im Zweig `5.0`.
+Dieser Zweig (`5.x`) ist AT-DOS 5.2 in Arbeit (5.1 plus Rückportierungen
+aus 6.0); das fertige 5.1 steht im Zweig `5.1` (Release `v5.1`), 5.0 im
+Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
 
 ## Was läuft
 

@@ -51,15 +51,15 @@ jobs:
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
             --notes "Automatisch gebaut aus ${GITHUB_SHA::7}. dos5.img: Diskette A: in 86Box, beliebige 286-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
-      - name: Release "v5.1" veroeffentlichen (Zweig 5.x)
+      - name: Vorabversion "v5.2" veroeffentlichen (Zweig 5.x)
         if: github.ref == 'refs/heads/5.x' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
-          gh release delete v5.1 --yes --cleanup-tag 2>/dev/null || true
-          gh release create v5.1 build/dos5.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" \
-            --title "AT-DOS 5.1, Build $BNO" \
-            --notes "AT-DOS 5.1 (Zweig 5.x): 5.0 plus Kompatibilitaetsbox wie OS/2 1.x - FreeDOS im echten Real Mode (RBOX) mit den AT-DOS-Laufwerken als Netzlaufwerke, Tastaturbelegung, Maus (CuteMouse), MEM von FreeDOS, DOS in der HMA (rund 533 KB frei), Alt+Esc hin und zurueck; PROTECTONLY=NO in der CONFIG.SYS laedt die Box schon beim Start. Dazu EDIT bis 512 KB, CONFIG.SYS bis 4 KB. Abbilder: dos5.img (Diskette) und atdos-hd.zip (Platte). Das unveraenderte 5.0 steht im Release v5.0 (Zweig 5.0)."
+          gh release delete v5.2 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v5.2 build/dos5.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "AT-DOS 5.2 (in Arbeit), Build $BNO" \
+            --notes "AT-DOS 5.2 in Arbeit (Zweig 5.x): 5.1 plus Rueckportierungen aus 6.0. Das fertige 5.1 steht im Release v5.1 (Zweig 5.1), 5.0 im Release v5.0."

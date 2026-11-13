@@ -206,13 +206,23 @@ Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 
 ## Zweige und Releases (5.x)
 
-`5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), CI füllt
-das Release `v5.0`; `5.x` = 5.1 (vom Nutzer am 11.11.2026 freigegeben),
-CI veröffentlicht das Release `v5.1` – seitdem kein Vorab-Release mehr
-(vorher überschrieb 5.x die Abbilder von v5.0 – vom
-Nutzer gewünscht: 5.0 bleibt sichtbar); `main` = 6.0.
+`5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), Release
+`v5.0`; `5.1` = das freigegebene 5.1 (7838b78, Build 240.76 im Release
+`v5.1`; der Tag `v5.1` zeigt noch auf b7a9c89 – die CI hat beim Erneuern
+des Releases den alten Tag stehen lassen); `5.x` = 5.2 in Arbeit, die CI
+veröffentlicht die Vorabversion `v5.2`; `main` = 6.0.
+Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.1 fertig (Zweig 5.x, Release v5.1); 5.0 im Zweig 5.0
+## Aktueller Stand: AT-DOS 5.2 in Arbeit (Zweig 5.x); 5.1 im Zweig 5.1, 5.0 im Zweig 5.0
+
+5.2 (Entscheidung des Nutzers, 13.11.2026, nach Phase 6 auf main): aus
+6.0 zurück kommen Kleinkram (CMD-Umleitung mit "...", MSD, OPL3-
+Erkennung, ISO 9660:1999/Rock Ridge, CONVERT /LFN für FAT12/16), Länder/
+Codepages/Tastatur (COUNTRY=, CODEPAGE=/CHCP, KEYB in Unicode, Unicode-
+Dateinamen) und Platten/Ton (Wechselplatten an AHA154X/NCR5380, EJECT,
+IDE LBA48, AWE32-Wavetable). Kein FAT32, kein VESA. Titel/VER „5.2“,
+FAPI_VERSION 0514h. FAPI-Nummern bleiben über beide Linien eindeutig:
+55h = DosRBox (nur 5.x), DosEject ist auf beiden 57h.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

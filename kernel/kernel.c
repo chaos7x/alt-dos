@@ -5278,7 +5278,7 @@ void kmain(void)
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "AT-DOS 5.1 - 80286 Protected Mode\n");
+    vio_kputs(s0, "AT-DOS 5.2 - 80286 Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
     udec(mem_free_kb(), num);
     vio_kputs(s0, num);
