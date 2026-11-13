@@ -26,7 +26,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosQChildRC()       F2(FAPI_QCHILDRC, 0, 0)
 #define DosAllocSeg(size)   F2(FAPI_ALLOCSEG, (size), 0)
 #define DosFreeSeg(sel)     F2(FAPI_FREESEG, (sel), 0)
-#define DosMemInfo(p)       F2(FAPI_MEMINFO, (p), 0)
+#define DosMemInfo(p)       F2(FAPI_MEMINFO, (p), sizeof(struct fapi_meminfo))
 #define DosExecPgm(cmd, m)  F2(FAPI_EXECPGM, (cmd), (m))
 #define DosGetArgs(buf)     F2(FAPI_GETARGS, (buf), 0)
 #define DosOpen(name)       F2(FAPI_OPEN, (name), 0)
@@ -90,6 +90,12 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosQTicks()         F2(FAPI_QTICKS, 0, 0)
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
+/* Sondertaste (Zeichen 0 oder E0h = graue Taste wie beim AT-BIOS)? E0h ist
+   in manchen Codepages auch ein Buchstabe (852: Ó, 737: ω) - graue Tasten
+   haben immer Scancode 47h-53h, getippte Zeichen nie */
+#define KEY_EXT(c, sc)      ((c) == 0 || ((c) == 0xE0 && (unsigned char)(sc) >= 0x47 && \
+                                          (unsigned char)(sc) <= 0x53))
+#define DosBusInfo(w, i, p) fapi_call(FAPI_BUSINFO, (w), (i), (unsigned short)(p))
 #define KbdPeek()           F2(FAPI_KBDPEEK, 0, 0)
 #define KbdSetLayout(p)     F2(FAPI_KBDSETLAYOUT, (p), 0)
 #define KbdGetLayout(p)     F2(FAPI_KBDGETLAYOUT, (p), 0)

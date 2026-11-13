@@ -223,6 +223,20 @@ Dateinamen) und Platten/Ton (Wechselplatten an AHA154X/NCR5380, EJECT,
 IDE LBA48, AWE32-Wavetable). Kein FAT32, kein VESA. Titel/VER „5.2“,
 FAPI_VERSION 0514h. FAPI-Nummern bleiben über beide Linien eindeutig:
 55h = DosRBox (nur 5.x), DosEject ist auf beiden 57h.
+Kleinkram erledigt (in QEMU geprüft): CMD-Umleitung nach `"Name mit
+Leerzeichen"` (take_name), MSD und DOS-Stub (fapidos.c) wörtlich von
+main – MSD erkennt fehlendes DosBusInfo/total_kb32 selbst und nimmt die
+Version jetzt aus DosGetVersion („AT-DOS 5.20“); dafür in fapi_abi.h
+FAPI_BUSINFO + BUS_*/fapi_pcidev/fapi_res/fapi_pnpdev (5.x antwortet
+FAPI_ERROR), fapi_meminfo mit total/free_kb32 und box_kb (5.x lässt sie
+0), DosMemInfo übergibt sizeof, KEY_EXT in fapi.h. SB16.SYS opl_detect
+wie main (OPL2-Spiegel, NEW vor dem Bank-1-Test), fm_load schreibt
+D0h–D8h mit dem Wert von C0h–C8h. CONVERT.EXE (nur /LFN; /FS:FAT32 ->
+„erst ab AT-DOS 6.0“, Prüfung über DosGetVersion, dieselbe Quelle wie
+main), task_ufat.c/ufat_e2v.c/ufat_lfn.c/ufat_undel.c von main (/LFN,
+W-Sätze, UNDELETE-Anzeige der Dateiangaben). Geprüft: zweite FAT16-
+Platte, lange Namen per CMD angelegt, CONVERT D: /LFN:VFAT (mtools zeigt
+die VFAT-Namen, fsck sauber), /LFN:EA zurück (DIR gleich), CHKDSK, MSD.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

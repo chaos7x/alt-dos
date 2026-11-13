@@ -241,7 +241,7 @@ static int do_undelete(const char *spec, int list, int all)
     puts(":");
     puts(dir[0] ? dir : "\\");
     puts("\nDateiangaben: ");
-    puts(p[0] ? p + 1 : "*.*");
+    puts(p[1] ? p + 1 : "*.*");
     puts("\n\n");
 
     ncand = 0;

@@ -181,6 +181,34 @@ struct fapi_rbmem {
 #define RB_FETCH            6       /* INT 13h braucht ein Stueck des Abbilds,
                                        das noch nicht geladen ist (RB_NEED,
                                        RB_IMG, dann wieder RB_RUN) */
+/* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
+   DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
+#define FAPI_BUSINFO        0x51
+#define BUS_PCI             0       /* struct fapi_pcidev               */
+#define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
+#define BUS_PNP             2       /* struct fapi_pnpdev (ISA-PnP)     */
+struct fapi_pnpdev {
+    unsigned char  csn, ldn;        /* Kartennummer, logisches Geraet   */
+    unsigned char  act;             /* 1 vom Kernel eingeschaltet, 2 vom BIOS */
+    unsigned char  rsv;
+    unsigned char  vid[4];          /* EISA-Kennung der Karte           */
+    unsigned char  lid[4];          /* ... des logischen Geraets        */
+    unsigned short io[4];           /* 0 = keiner                       */
+    unsigned char  irq[2];          /* 0 = keiner                       */
+    unsigned char  dma[2];          /* 4 = keiner                       */
+};
+struct fapi_pcidev {
+    unsigned short loc;             /* Bus << 8 | Geraet << 3 | Funktion */
+    unsigned short vendor, device;
+    unsigned char  cls, sub, progif;    /* Klasse, Unterklasse, Schnittstelle */
+    unsigned char  irq;             /* Register 3Ch, FFh = keiner       */
+};
+struct fapi_res {
+    unsigned char  type;            /* 1 Ports, 2 DMA, 3 IRQ            */
+    unsigned char  rsv;
+    unsigned short start, len;
+    char           owner[13];       /* Treiberdatei                     */
+};
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (Taskmanager, wie 6.0) */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
@@ -456,7 +484,11 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     unsigned short kernel_kb;       /* vom Kernel reserviert            */
     unsigned short apps_kb;         /* fuer Programmabbilder reserviert */
     unsigned short alloc_kb;        /* per DosAllocSeg vergeben         */
+    /* nur 6.0 fuellt sie (CX = Groesse); 5.x laesst sie stehen */
+    unsigned long  total_kb32, free_kb32;
+    unsigned long  box_kb;
 };
+#define MEMINFO_V60  18
 
 struct fapi_dirent {                /* DosFindEntry                     */
     char           name[256];       /* Dateiname, auch fuer lange Namen */

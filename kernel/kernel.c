@@ -4297,9 +4297,12 @@ static void fm_load(int i)
     aud_call(NAUD, AR_FMRESET, 0, 0, 0);
     for (r = 0; r < 4 + 2 * 0xD6; r++) {
         unsigned reg = r < 4 ? first[r] : ((r - 4) < 0xD6 ? 0x20 + (r - 4) : 0x120 + (r - 4 - 0xD6));
-        unsigned char v = sh[reg];
-        if ((reg & 0xFF) >= 0xB0 && (reg & 0xFF) <= 0xB8)
+        unsigned char v = sh[reg], lo = (unsigned char)reg;
+        if (lo >= 0xB0 && lo <= 0xB8)
             v &= ~0x20;
+        if (lo >= 0xD0 && lo < 0xE0)
+            v = sh[reg - 0x10];         /* gibt es nicht - QEMU nimmt es als
+                                           C0h-C8h: denselben Wert schreiben */
         fm_buf[n].reg = reg;
         fm_buf[n].val = v;
         if (++n == 64 || r == 4 + 2 * 0xD6 - 1) {

@@ -169,6 +169,11 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
 - `CHKDSK /R` (wie Windows NT): Oberflächentest, defekte freie Cluster
   werden gesperrt, belegte verlegt (Lesbares gerettet); `SCANDISK X:` ruft
   `CHKDSK X: /F /R`
+- `CONVERT X: /LFN:VFAT | /LFN:EA` (5.2, aus 6.0): lange Namen eines
+  FAT-Laufwerks zwischen `EA DATA. SF` und VFAT-Einträgen (Windows 95)
+  umwandeln – vorher läuft CHKDSK, die Arbeit macht `UFAT /LFN:…`
+  (Verzeichnisse und EA-Datei bis 512 KB, Zuordnungseinheiten bis 32 KB);
+  `/FS:FAT32` gibt es erst in 6.0
 - Drucker: Gerätenamen `PRN`, `LPT1`–`LPT3` und `NUL` in jedem Verzeichnis
   (`COPY BRIEF.TXT PRN`, `DIR > LPT1`); der Kernel gibt über den Parallel-
   port aus (Abfragebetrieb, andere Tasks laufen, solange der Drucker
@@ -227,7 +232,9 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
 - `MSD [/S]` Systemdiagnose wie MSD von MS-DOS 6: Knöpfe mit Kurzangabe
   (Computer, Speicher, Video, Betriebssystem, Maus, Laufwerke, LPT, COM,
   IRQ-Status, Treiber), Einzelheiten im Fenster, Bedienung mit Buchstaben,
-  Pfeilen oder Maus; `/S` als Bericht auf die Standardausgabe
+  Pfeilen oder Maus; `/S` als Bericht auf die Standardausgabe; lange
+  Werte (PATH) werden umbrochen, die Maus-Seite nennt Anschluss und IRQ
+  (5.2, aus 6.0 – Version aus dem Kernel, dieselbe Quelle wie dort)
 - `SUBST [X: [Y:]Pfad] | X: /D` wie MS-DOS: der Kernel setzt X:-Pfade auf
   das Verzeichnis um; Programme sehen X: (aktuelles Verzeichnis, Eingabeaufforderung)
 - `JOIN [X: [Y:]Pfad] | X: /D` wie MS-DOS 3.1–5.0: hängt ein Laufwerk in ein

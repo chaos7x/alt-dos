@@ -24,9 +24,12 @@ static struct fapi_meminfo mi;
 static struct fapi_fsinfo fi;
 static struct fapi_diskinfo di;
 static struct fapi_mouevent mev;
+static struct fapi_pcidev pd;
+static struct fapi_pnpdev pn;
+static struct fapi_res rs;
 static char args[FAPI_ARGLEN];
 static char lines[NL][LW + 1], sum[NB][34], row[81];
-static unsigned nl, nbtn, rows;
+static unsigned nl, nbtn, rows, ptr_on;
 
 static const char *const bname[NB] = {
     "Computer...", "Speicher...", "Video...", "Betriebssystem...", "Maus...",
@@ -84,22 +87,117 @@ static void aphex(char *d, unsigned v)
     ap(d, b);
 }
 
-static char *line(const char *a, const char *b)  /* "Name:   Wert"    */
+static void aphex2(char *d, unsigned v)
 {
-    char *l;
-    unsigned n;
-    if (nl >= NL)
-        return lines[NL - 1];
-    l = lines[nl++];
-    l[0] = 0;
-    ap(l, a);
-    for (n = slen(l); b && n < 24; n++)
-        l[n] = ' ';
-    l[n] = 0;
-    for (; b && *b && n < LW; n++)          /* auf Fensterbreite kuerzen */
-        l[n] = *b++;
-    l[n] = 0;
-    return l;
+    static char b[3];
+    b[0] = "0123456789ABCDEF"[(v >> 4) & 15];
+    b[1] = "0123456789ABCDEF"[v & 15];
+    b[2] = 0;
+    ap(d, b);
+}
+
+/* bekannte PCI-Hersteller und -Klassen (Auswahl) */
+static const struct { unsigned id; const char *n; } vendors[] = {
+    { 0x8086, "Intel" }, { 0x1000, "NCR/Symbios" }, { 0x1022, "AMD" },
+    { 0x1106, "VIA" }, { 0x1039, "SiS" }, { 0x10B9, "ALi" }, { 0x1013, "Cirrus" },
+    { 0x5333, "S3" }, { 0x1002, "ATI" }, { 0x10DE, "nVidia" }, { 0x102B, "Matrox" },
+    { 0x121A, "3dfx" }, { 0x100C, "Tseng" }, { 0x1023, "Trident" }, { 0x10EC, "Realtek" },
+    { 0x1011, "DEC" }, { 0x10B7, "3Com" }, { 0x9004, "Adaptec" }, { 0x104B, "BusLogic" },
+    { 0x1274, "Ensoniq" }, { 0x1102, "Creative" }, { 0x125D, "ESS" }, { 0x1234, "Bochs/QEMU" },
+    { 0x1AF4, "virtio" }, { 0x80EE, "VirtualBox" }, { 0x15AD, "VMware" }
+};
+
+static const char *pci_kind(unsigned c, unsigned s)
+{
+    switch (c) {
+    case 0x00: return s == 1 ? "VGA (alt)" : "Ger\x84t (alt)";
+    case 0x01: return s == 0 ? "SCSI-Controller" : s == 1 ? "IDE-Controller" :
+                      s == 2 ? "Diskettencontroller" : "Massenspeicher";
+    case 0x02: return "Netzwerk";
+    case 0x03: return s == 0 ? "VGA-Grafik" : "Grafik";
+    case 0x04: return s == 1 ? "Audio" : "Multimedia";
+    case 0x05: return "Speicher";
+    case 0x06: return s == 0 ? "Host-Br\x81\x63ke" : s == 1 ? "ISA-Br\x81\x63ke" :
+                      s == 4 ? "PCI-PCI-Br\x81\x63ke" : s == 7 ? "CardBus" : "Br\x81\x63ke";
+    case 0x07: return "Kommunikation";
+    case 0x08: return "Systemger\x84t";
+    case 0x0C: return s == 3 ? "USB" : s == 5 ? "SMBus" : "Serieller Bus";
+    }
+    return "unbekannt";
+}
+
+/* "Name:   Wert"; ein zu langer Wert (PATH) geht in Folgezeilen weiter,
+   umbrochen nach ';' oder ' ' */
+static char *line(const char *a, const char *b)
+{
+    char *l, *first = 0;
+    unsigned n, k, brk;
+    do {
+        if (nl >= NL)
+            return first ? first : lines[NL - 1];
+        l = lines[nl++];
+        if (!first)
+            first = l;
+        l[0] = 0;
+        ap(l, a);
+        a = "";
+        for (n = slen(l); b && n < 24; n++)
+            l[n] = ' ';
+        if (b && slen(b) > LW - n) {        /* passt nicht: Bruchstelle  */
+            for (brk = 0, k = 0; k < LW - n; k++)
+                if (b[k] == ';' || b[k] == ' ')
+                    brk = k + 1;
+            if (!brk)
+                brk = LW - n;
+        } else
+            brk = b ? slen(b) : 0;
+        for (k = 0; k < brk; k++)
+            l[n++] = *b++;
+        l[n] = 0;
+    } while (b && *b);
+    return first;
+}
+
+/* ISA-PnP-Geraete (vom Kernel beim Start eingestellt) */
+static void aphex(char *d, unsigned v);
+static void aphex2(char *d, unsigned v);
+static void pnp_lines(void)
+{
+    char v[80];
+    unsigned i, k;
+    if (DosBusInfo(BUS_PNP, 0, &pn) != 0)
+        return;
+    line("ISA-PnP:", 0);
+    for (i = 0; DosBusInfo(BUS_PNP, i, &pn) == 0 && nl < NL; i++) {
+        v[0] = 0;
+        ap(v, "  ");
+        k = slen(v);                    /* EISA-Kennung: 3 Buchstaben    */
+        v[k] = (char)('@' + ((pn.lid[0] >> 2) & 31));
+        v[k + 1] = (char)('@' + (((pn.lid[0] & 3) << 3) | (pn.lid[1] >> 5)));
+        v[k + 2] = (char)('@' + (pn.lid[1] & 31));
+        v[k + 3] = 0;
+        aphex2(v, pn.lid[2]);
+        aphex2(v, pn.lid[3]);
+        for (k = 0; k < 4; k++)
+            if (pn.io[k]) {
+                ap(v, k ? ", " : "  ");
+                aphex(v, pn.io[k]);
+                ap(v, "h");
+            }
+        for (k = 0; k < 2; k++)
+            if (pn.irq[k]) {
+                ap(v, ", IRQ ");
+                apn(v, pn.irq[k]);
+            }
+        for (k = 0; k < 2; k++)
+            if (pn.dma[k] < 8 && pn.dma[k] != 4) {
+                ap(v, ", DMA ");
+                apn(v, pn.dma[k]);
+            }
+        if (pn.act == 2)
+            ap(v, " (BIOS)");
+        line(v, 0);
+    }
 }
 
 static const char *fdname(unsigned t)
@@ -109,9 +207,22 @@ static const char *fdname(unsigned t)
 }
 
 /* ---- Einzelheiten je Knopf -------------------------------------------- */
+/* erweiterter Speicher: aus der Speicherkarte (6.0), sonst INT 15h/88h */
+static unsigned long ext_kb(void)
+{
+    return mi.total_kb32 > si.conv_kb ? mi.total_kb32 - si.conv_kb : si.ext_kb;
+}
+
+static int same_name(const char *a, const char *b)
+{
+    while (*a && *a == *b)
+        a++, b++;
+    return *a == *b;
+}
+
 static void detail(unsigned k)
 {
-    static char v[LW + 1];
+    static char v[264];                 /* auch fuer lange PATH-Werte  */
     unsigned i, n, d;
     char *l;
 
@@ -127,11 +238,53 @@ static void detail(unsigned k)
         l = line("BIOS-Modellbyte:", v + 2);
         ap(l, "h");
         line("BIOS:", si.bios_name[0] ? si.bios_name : "(kein Text gefunden)");
-        line("Bus:", "ISA (AT)");
+        v[0] = 0;
+        if (si.rsv & 0x7F) {                /* APM-Version (6.0)       */
+            apn(v, (si.rsv >> 4) & 7);
+            ap(v, ".");
+            apn(v, si.rsv & 15);
+            ap(v, si.rsv & 0x80 ? " (APM=OFF: SHUTDOWN schaltet nicht aus)"
+                                : " (SHUTDOWN schaltet aus)");
+        } else
+            ap(v, "nicht vorhanden");
+        line("APM:", v);
         v[0] = 0;
         apn(v, si.uptime_s / 60);
         ap(v, " min");
         line("Laufzeit:", v);
+        if (DosBusInfo(BUS_PCI, 0, &pd) != 0) {
+            line("Bus:", "ISA (AT)");
+            pnp_lines();
+            break;
+        }
+        line("Bus:", "ISA und PCI");
+        for (i = 0; DosBusInfo(BUS_PCI, i, &pd) == 0 && nl < NL; i++) {
+            v[0] = 0;
+            ap(v, "  ");
+            aphex2(v, pd.loc >> 8);
+            ap(v, ":");
+            aphex2(v, (pd.loc >> 3) & 31);
+            ap(v, ".");
+            apn(v, pd.loc & 7);
+            ap(v, "  ");
+            aphex(v, pd.vendor);
+            ap(v, ":");
+            aphex(v, pd.device);
+            ap(v, "  ");
+            for (n = 0; n < sizeof(vendors) / sizeof(vendors[0]); n++)
+                if (vendors[n].id == pd.vendor) {
+                    ap(v, vendors[n].n);
+                    ap(v, " ");
+                    break;
+                }
+            ap(v, pci_kind(pd.cls, pd.sub));
+            if (pd.irq && pd.irq < 16) {
+                ap(v, ", IRQ ");
+                apn(v, pd.irq);
+            }
+            line(v, 0);
+        }
+        pnp_lines();
         break;
     case 1:
         v[0] = 0;
@@ -139,15 +292,15 @@ static void detail(unsigned k)
         ap(v, " KB");
         line("Konventionell:", v);
         v[0] = 0;
-        apn(v, si.ext_kb);
+        apn(v, ext_kb());
         ap(v, " KB");
         line("Erweitert (ab 1 MB):", v);
         v[0] = 0;
-        apn(v, mi.total_kb);
+        apn(v, mi.total_kb32 ? mi.total_kb32 : mi.total_kb);
         ap(v, " KB");
         line("Verwaltet:", v);
         v[0] = 0;
-        apn(v, mi.free_kb);
+        apn(v, mi.total_kb32 ? mi.free_kb32 : mi.free_kb);
         ap(v, " KB");
         line("Frei:", v);
         v[0] = 0;
@@ -178,7 +331,8 @@ static void detail(unsigned k)
         apn(v, n & 0xFF);
         line("Betriebssystem:", "AT-DOS (alternative Zeitlinie)");
         line("FAPI-Version:", v);
-        line("Betriebsart:", "16-Bit Protected Mode, kooperatives Multitasking");
+        line("Betriebsart:", n >= 0x0600 ? "16-Bit Protected Mode, pr\x84" "emptiv" :
+                             "16-Bit Protected Mode, kooperativ");
         if (!FAPI_FAILED(DosGetEnv("COMSPEC", v, sizeof(v))))
             line("COMSPEC:", v);
         if (!FAPI_FAILED(DosGetEnv("PATH", v, sizeof(v))))
@@ -192,7 +346,35 @@ static void detail(unsigned k)
         v[0] = 0;
         apn(v, nbtn);
         line("Tasten:", v);
-        line("Treiber:", "MOUSE.SYS (PS/2, seriell oder Busmaus)");
+        {                                   /* Art aus der Belegung      */
+            unsigned mi = 0xFF, mp = 0;
+            for (n = 0; DosBusInfo(BUS_RES, n, &rs) == 0; n++)
+                if (same_name(rs.owner, "MOUSE.SYS")) {
+                    if (rs.type == 3)
+                        mi = rs.start;
+                    else if (rs.type == 1 && !mp)
+                        mp = rs.start;
+                }
+            line("Treiber:", "MOUSE.SYS");
+            v[0] = 0;
+            if (mi == 12)
+                ap(v, "PS/2 (Tastaturcontroller)");
+            else if (mp == 0x3F8 || mp == 0x2F8 || mp == 0x3E8 || mp == 0x2E8) {
+                ap(v, "seriell an COM");
+                apn(v, mp == 0x3F8 ? 1 : mp == 0x2F8 ? 2 : mp == 0x3E8 ? 3 : 4);
+            } else if (mp) {
+                ap(v, "Busmaus an ");
+                aphex(v, mp);
+                ap(v, "h");
+            } else
+                ap(v, "unbekannt");
+            line("Anschluss:", v);
+            if (mi != 0xFF) {
+                v[0] = 0;
+                apn(v, mi);
+                line("IRQ:", v);
+            }
+        }
         break;
     case 5:
         for (d = 0; d < 26; d++) {
@@ -282,7 +464,10 @@ static void detail(unsigned k)
             l = line(v, 0);
             ap(l, "  ");
             ap(l, (si.irq_used >> i) & 1 || i == 2 || (i == 13 && si.fpu) ? "belegt  " : "frei    ");
-            ap(l, use[i]);
+            for (n = 0; DosBusInfo(BUS_RES, n, &rs) == 0; n++)
+                if (rs.type == 3 && rs.start == i)
+                    break;
+            ap(l, DosBusInfo(BUS_RES, n, &rs) == 0 ? rs.owner : use[i]);
         }
         break;
     case 9:
@@ -293,6 +478,25 @@ static void detail(unsigned k)
                 line(si.drivers[i], e > 4 && si.drivers[i][e - 3] == 'I' && si.drivers[i][e - 2] == 'F' ?
                      "Dateisystem (IFS=)" : "Ger\x84tetreiber (DEVICE=)");
                 n++;
+                v[0] = 0;
+                for (d = 0; DosBusInfo(BUS_RES, d, &rs) == 0; d++) {
+                    if (!same_name(rs.owner, si.drivers[i]))
+                        continue;
+                    ap(v, v[0] ? ", " : "  ");
+                    if (rs.type == 1) {
+                        aphex(v, rs.start);
+                        if (rs.len > 1) {
+                            ap(v, "-");
+                            aphex(v, rs.start + rs.len - 1);
+                        }
+                        ap(v, "h");
+                    } else {
+                        ap(v, rs.type == 2 ? "DMA " : "IRQ ");
+                        apn(v, rs.start);
+                    }
+                }
+                if (v[0])
+                    line(v, 0);
             }
             }
         if (!n)
@@ -313,7 +517,7 @@ static void summary(void)
         ap(sum[0], si.fpu == 1 ? ", 80287" : si.cpu == 3 ? ", 80387" : ", 80287XL");
     apn(sum[1], si.conv_kb);
     ap(sum[1], "K + ");
-    apn(sum[1], si.ext_kb);
+    apn(sum[1], ext_kb());
     ap(sum[1], "K");
     ap(sum[2], si.vga ? "VGA" : "keine VGA");
     if (si.vbios_name[0]) {
@@ -322,7 +526,15 @@ static void summary(void)
             sum[2][d] = si.vbios_name[i];
         sum[2][d] = 0;
     }
-    ap(sum[3], "AT-DOS 5.20");
+    {                                       /* Version aus dem Kernel   */
+        unsigned v = DosGetVersion();
+        ap(sum[3], "AT-DOS ");
+        apn(sum[3], v >> 8);
+        ap(sum[3], ".");
+        if ((v & 0xFF) < 10)
+            ap(sum[3], "0");
+        apn(sum[3], v & 0xFF);
+    }
     if (nbtn) {
         apn(sum[4], nbtn);
         ap(sum[4], " Tasten");
@@ -405,9 +617,11 @@ static void draw_main(int sel)
 
 static void draw_box(unsigned k)
 {
-    unsigned top, h, i, n;
-    h = nl + 4;
-    top = (rows - h) / 2;
+    unsigned top, h, i, n, ns = nl;
+    if (ns > rows - 5)                      /* passt nicht: kuerzen      */
+        ns = rows - 5;
+    h = ns + 5;                             /* Rahmen, Leer, Text, Leer, */
+    top = (rows - h) / 2;                   /* Knopf, Rahmen             */
     for (i = 0; i < h; i++) {
         for (n = 0; n < LW + 4; n++)
             row[n] = ' ';
@@ -421,9 +635,9 @@ static void draw_box(unsigned k)
     }
     put_at(top, 7, " ", 0x70);
     put_at(top, 8, bname[k], 0x70);
-    for (i = 0; i < nl; i++)
+    for (i = 0; i < ns; i++)
         put_at(top + 2 + i, 7, lines[i], 0x70);
-    put_at(top + h - 1, 5 + LW / 2 - 2, " OK ", 0x0F);
+    put_at(top + h - 2, 5 + LW / 2 - 1, "   OK   ", 0x0F);
 }
 
 /* Taste oder Mausklick -> Knopf (0..NB-1), -2 = Ende, -1 = nichts */
@@ -441,7 +655,7 @@ static int input(int *sel)
             for (i = 0; i < NB; i++)
                 if (c == (unsigned)bkey[i])
                     return (int)i;
-            if ((k & 0xFF) == 0 || (k & 0xFF) == 0xE0) {
+            if (KEY_EXT(k & 0xFF, k >> 8)) {
                 c = k >> 8;
                 if (c == 0x48 && *sel % 5) (*sel)--;          /* hoch    */
                 else if (c == 0x50 && *sel % 5 < 4) (*sel)++;  /* runter  */
@@ -452,6 +666,10 @@ static int input(int *sel)
             continue;
         }
         if (nbtn && MouReadEvent(&mev, 0) == 0) {
+            if (!ptr_on) {                  /* Zeiger erst, wenn die Maus */
+                MouShowPtr(1);              /* bewegt wird (sonst steht   */
+                ptr_on = 1;                 /* er als Block in der Mitte) */
+            }
             if (!(mev.buttons & MOU_LEFT))
                 continue;
             for (i = 0; i < NB; i++)
@@ -506,8 +724,6 @@ void main(void)
     rows = VioSetMode(1);
     if (FAPI_FAILED(rows) || rows < 25)
         rows = 25;
-    if (nbtn)
-        MouShowPtr(1);
     VioSetCurPos(0xFF, 0);                  /* Cursor aus                */
     for (;;) {
         draw_main(sel);
@@ -524,7 +740,7 @@ void main(void)
         if (r == -2)
             r = 0;                          /* ESC nur Fenster zu        */
     }
-    if (nbtn)
+    if (ptr_on)
         MouShowPtr(0);
     VioSetMode(0);
 }

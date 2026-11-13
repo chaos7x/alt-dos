@@ -373,7 +373,7 @@ static int brk(void)
 
 static unsigned kbd_norm(unsigned k)
 {
-    if ((k & 0xFF) == 0xE0 && (k >> 8))
+    if ((k & 0xFF) == 0xE0 && (k >> 8) >= 0x47 && (k >> 8) <= 0x53)
         k &= 0xFF00;                    /* graue Tasten wie die anderen */
     return k;
 }
@@ -952,7 +952,7 @@ static unsigned sysinfo(unsigned off)
     return 0;
 }
 
-static unsigned meminfo(unsigned off)
+static unsigned meminfo(unsigned off, unsigned size)
 {
     static struct fapi_meminfo mi;
     rclr();
@@ -964,7 +964,9 @@ static unsigned meminfo(unsigned off)
     dos();
     mi.free_kb = r.bx >> 6;
     mi.kernel_kb = mi.apps_kb = mi.alloc_kb = 0;
-    to_app(off, &mi, sizeof(mi));
+    mi.total_kb32 = mi.total_kb;
+    mi.free_kb32 = mi.free_kb;
+    to_app(off, &mi, size >= sizeof(mi) ? sizeof(mi) : 10);
     return 0;
 }
 
@@ -1057,7 +1059,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
     case FAPI_EXIT:         exit_now(a1); break;
     case FAPI_YIELD:        yield(); rc = 0; break;
     case FAPI_SLEEP:        rc = sleep_ms(a1); break;
-    case FAPI_MEMINFO:      rc = meminfo(a1); break;
+    case FAPI_MEMINFO:      rc = meminfo(a1, a2); break;
     case FAPI_ALLOCSEG:
         i = dos_alloc(a1 ? (a1 + 15) >> 4 : 0x1000);
         if (i) {
@@ -1087,8 +1089,8 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         rc = 0;
         break;
     }
-    case FAPI_OPEN:
-        rc = dos_path(0x3D00, a1, 0);
+    case FAPI_OPEN:                         /* OPEN_RW -> DOS-Modus 2 */
+        rc = dos_path(a2 ? 0x3D02 : 0x3D00, a1, 0);
         if (!rc)
             rc = r.ax;
         break;
@@ -1118,6 +1120,21 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         r.dx = *(unsigned __far *)AP(a2);
         r.cx = *(unsigned __far *)AP(a2 + 2);
         dos();
+        rc = (r.flags & CF) ? FAPI_ERROR : 0;
+        break;
+    case FAPI_NEWSIZE:                      /* DOS: hinsetzen, 0 Byte */
+        rclr();                             /* schreiben              */
+        r.ax = 0x4200;
+        r.bx = a1;
+        r.dx = *(unsigned __far *)AP(a2);
+        r.cx = *(unsigned __far *)AP(a2 + 2);
+        dos();
+        if (!(r.flags & CF)) {
+            rclr();
+            r.ax = 0x4000;
+            r.bx = a1;
+            dos();
+        }
         rc = (r.flags & CF) ? FAPI_ERROR : 0;
         break;
     case FAPI_DELETE:       rc = dos_path(0x4100, a1, 0); break;
