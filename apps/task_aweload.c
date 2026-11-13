@@ -2,7 +2,9 @@
 /*
  * AWELOAD.EXE - Klangbank (SoundFont) fuer den Wavetable der AWE32/AWE64
  *
- *   AWELOAD [Datei]   Bank laden; ohne Datei X:\DOS\SYSTEM\SYNTHGM.SBK
+ *   AWELOAD [Datei]   Bank laden; ohne Datei X:\DOS\SYSTEM\SFBANK\SYNTHGM.SBK
+ *                     (Rueckfall X:\DOS\SYSTEM\SYNTHGM.SBK), Name ohne Pfad
+ *                     auch in X:\DOS\SYSTEM\SFBANK
  *                     (X = Startlaufwerk). SoundFont 1 (.SBK, Creative)
  *                     und SoundFont 2 (.SF2).
  *   AWELOAD /U        Bank entfernen: MIDI wieder an den MPU-401
@@ -683,6 +685,18 @@ static void fail(const char *m)
     DosExit(1);
 }
 
+/* file = X:\\DOS\\SYSTEM\\SFBANK\\name, X = Startlaufwerk (aus COMSPEC) */
+static void bank_path(const char *name)
+{
+    static char cs[FAPI_PATHLEN];
+    file[0] = 'C';
+    if (!FAPI_FAILED(DosGetEnv("COMSPEC", cs, sizeof(cs))) && cs[1] == ':')
+        file[0] = cs[0];
+    file[1] = 0;
+    scat(file, ":\\DOS\\SYSTEM\\SFBANK\\", sizeof(file));
+    scat(file, name, sizeof(file));
+}
+
 void main(void)
 {
     struct fapi_awecmd k;
@@ -693,7 +707,8 @@ void main(void)
     a = skip(args);
     if (a[0] == '/' && (a[1] == '?' )) {
         puts("AWELOAD [Datei]  Klangbank (SBK/SF2) f\x81r den Wavetable der AWE32/64 laden\r\n"
-             "                 ohne Datei: \\DOS\\SYSTEM\\SYNTHGM.SBK des Startlaufwerks\r\n"
+             "                 ohne Datei: \\DOS\\SYSTEM\\SFBANK\\SYNTHGM.SBK des Startlaufwerks,\r\n"
+             "                 Name ohne Pfad: erst hier, dann in \\DOS\\SYSTEM\\SFBANK\r\n"
              "AWELOAD /U       Klangbank entfernen (MIDI wieder an den MPU-401)\r\n");
         return;
     }
@@ -709,21 +724,32 @@ void main(void)
         puts("AWELOAD: Klangbank entfernt\r\n");
         return;
     }
-    if (*a)
-        word(a, file, sizeof(file));
-    else {
-        file[0] = 'C';
-        if (!FAPI_FAILED(DosGetEnv("COMSPEC", pv, sizeof(pv))) && pv[1] == ':')
-            file[0] = pv[0];
-        file[1] = 0;
-        scat(file, ":\\DOS\\SYSTEM\\SYNTHGM.SBK", sizeof(file));
+    if (*a) {                           /* Name ohne Pfad: erst hier,  */
+        word(a, file, sizeof(file));    /* dann in \DOS\SYSTEM\SFBANK */
+        fh = DosOpen(file);
+        for (c = 0; file[c] && file[c] != '\\' && file[c] != ':'; c++)
+            ;
+        if (FAPI_FAILED(fh) && !file[c]) {
+            scopy(pv, file, sizeof(pv));
+            bank_path(pv);
+            fh = DosOpen(file);
+        }
+    } else {                            /* Vorgabe; alter Ort Rueckfall */
+        bank_path("SYNTHGM.SBK");
+        if (FAPI_FAILED(fh = DosOpen(file))) {
+            scopy(pv, file, sizeof(pv));
+            file[3] = 0;
+            scat(file, "DOS\\SYSTEM\\SYNTHGM.SBK", sizeof(file));
+            if (FAPI_FAILED(fh = DosOpen(file)))
+                scopy(file, pv, sizeof(file));
+        }
     }
-    fh = DosOpen(file);
     if (FAPI_FAILED(fh)) {
         puts("AWELOAD: ");
         puts(file);
         puts(" nicht gefunden\r\n"
-             "  Die Klangbank (SYNTHGM.SBK) liegt den Treiberdisketten der Karte bei.\r\n");
+             "  Die Klangbank (SYNTHGM.SBK) liegt den Treiberdisketten der Karte bei;\r\n"
+             "  abgelegt wird sie in \\DOS\\SYSTEM\\SFBANK des Startlaufwerks.\r\n");
         DosExit(1);
     }
     if (rd(0, rbuf, 12) || !same4(rbuf, "RIFF") || !same4(rbuf + 8, "sfbk"))

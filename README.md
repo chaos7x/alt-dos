@@ -593,7 +593,8 @@ dürfen gleichzeitig Ton ausgeben: zu hören ist die Vordergrund-Sitzung
 (Spiele), sonst das zuletzt gestartete (Musik im Hintergrund).
 Wavetable der AWE32/AWE64 (EMU8000, 5.2 aus 6.0): `SB16.SYS` richtet ihn
 ein, `AWELOAD [Datei.SBK|.SF2] [/U]` lädt eine SoundFont-Bank (Vorgabe
-`\DOS\SYSTEM\SYNTHGM.SBK` von den Creative-Disketten, nicht dabei) –
+`\DOS\SYSTEM\SFBANK\SYNTHGM.SBK` von den Creative-Disketten, nicht dabei;
+ein Name ohne Pfad wird auch in `SFBANK` gesucht) –
 danach spielt MIDI auf dem EMU8000 (`SB16.SYS /MPU`: weiter an den
 MPU-401 für einen externen Synthesizer).
 `AHA154X.SYS` liest den IRQ aus der Konfiguration der Karte (Befehl 0Bh,

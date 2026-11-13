@@ -242,7 +242,7 @@ mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
-    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DEMO"
+    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DEMO"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
     mmd $TARGET "${TO}DOS/MDOS"

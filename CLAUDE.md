@@ -305,6 +305,8 @@ also keine 386-Befehle aus dem 6.0-Code durchgerutscht): von CD nach C:
 danach IMF und MID mit Ton; COPY in RBOX, CHKDSK danach sauber.
 Ebenso bestätigt: KEYB PL und KEYB DK (Zeichen werden angezeigt),
 EJECT wirft die CD aus.
+AWELOAD sucht Klangbänke in X:\DOS\SYSTEM\SFBANK (Wunsch des Nutzers,
+build.sh legt es an), Rückfall \DOS\SYSTEM\SYNTHGM.SBK – wie main.
 Mitgelieferte CONFIG.SYS (Wunsch des Nutzers): alle Schlüsselwörter und
 Treiberschalter mit REM-Erklärung, Ungenutztes als REM-Beispiel, dazu
 die RBOX-Einstellungen (PROTECTONLY, RBXMS, RBSLICE, RBRESET); AHA154X
