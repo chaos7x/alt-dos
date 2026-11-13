@@ -526,7 +526,15 @@ static void summary(void)
             sum[2][d] = si.vbios_name[i];
         sum[2][d] = 0;
     }
-    ap(sum[3], "AT-DOS 6.00");
+    {                                       /* Version aus dem Kernel   */
+        unsigned v = DosGetVersion();
+        ap(sum[3], "AT-DOS ");
+        apn(sum[3], v >> 8);
+        ap(sum[3], ".");
+        if ((v & 0xFF) < 10)
+            ap(sum[3], "0");
+        apn(sum[3], v & 0xFF);
+    }
     if (nbtn) {
         apn(sum[4], nbtn);
         ap(sum[4], " Tasten");

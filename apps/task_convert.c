@@ -80,8 +80,8 @@ void main(void)
             puts("Wandelt das Dateisystem eines Laufwerks um, ohne Daten zu l\x94schen.\r\n\r\n"
                  "CONVERT Laufwerk: /FS:FAT32 [/V]\r\n"
                  "CONVERT Laufwerk: /LFN:VFAT | /LFN:EA\r\n\r\n"
-                 "  /FS:FAT32  FAT16-Partition in FAT32 umwandeln (kleinere\r\n"
-                 "             Zuordnungseinheiten, mehr Platz); nicht umkehrbar\r\n"
+                 "  /FS:FAT32  FAT16-Partition in FAT32 umwandeln (ab AT-DOS 6.0;\r\n"
+                 "             kleinere Zuordnungseinheiten); nicht umkehrbar\r\n"
                  "  /LFN:VFAT  lange Namen aus EA DATA. SF in VFAT-Eintr\x84ge (wie\r\n"
                  "             Windows 95/98)\r\n"
                  "  /LFN:EA    lange VFAT-Namen nach EA DATA. SF (zur\x81" "ck)\r\n"
@@ -121,6 +121,10 @@ void main(void)
     }
     if (d == 0xFFFF || !fs[0]) {
         puts("Aufruf: CONVERT Laufwerk: /FS:FAT32 bzw. /LFN:VFAT|EA\r\n");
+        DosExit(4);
+    }
+    if (DosGetVersion() < 0x0600) {     /* 5.x: kein FAT32 im Kernel     */
+        puts("FAT32 gibt es erst ab AT-DOS 6.0.\r\n");
         DosExit(4);
     }
     if (!same(fs, "FAT32")) {
