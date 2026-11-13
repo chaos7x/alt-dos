@@ -15,6 +15,9 @@
 #if MEMMAP_SEL != KSEG_IDX(0) * 8
 #error MEMMAP_SEL passt nicht zu KSEG_IDX(0)
 #endif
+#if KCODE2 != KCODE2_IDX * 8
+#error KCODE2 passt nicht zu KCODE2_IDX (auch build.sh anpassen)
+#endif
 #include "ifs.h"
 #include "../include/drv.h"
 
@@ -4560,7 +4563,7 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
         if (!(aud_caps() & (fm ? (AUDCAP_OPL2 | AUDCAP_OPL3) : AUDCAP_MPU401)))
             return FAPI_ERROR;
         if (fm && !fm_sel && !(fm_sel = kseg_alloc(NFM * 512UL)))
-            return FAPI_ERROR;
+            return FAPI_ERR_FULL;       /* kein Kernelsegment frei        */
         i = cl_find(fm ? fmc : mdc, current);
         if (i < 0)
             for (i = 0; i < NFM && (fm ? fmc[i].task : mdc[i].task) >= 0; i++)

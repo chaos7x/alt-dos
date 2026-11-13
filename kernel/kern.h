@@ -30,10 +30,10 @@
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
-#define NKSEG       12              /* eigene Kernelsegmente (kseg_alloc)  */
+#define NKSEG       16              /* eigene Kernelsegmente (kseg_alloc)  */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x1C8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x1E8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define NGDT        (KCODE2_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 

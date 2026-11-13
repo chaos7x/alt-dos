@@ -292,6 +292,13 @@ AR_AWE, DH_KSEG (19). DH_PCI*/DH_CLAIM gibt es nicht – Standardantwort
 FFFFh (pci_find: keins; claim wird nicht ausgewertet). EJECT.EXE und
 AWELOAD.EXE von main. AWE und Wechselplatten an AHA/NCR5380 nur in
 86Box prüfbar (QEMU hat beides nicht).
+Kernelsegmente (vom Nutzer gemeldet: nach AWELOAD spielte IMF nicht –
+„keine FM-Synthese“): mit 12 GDT-Plätzen scheiterte schon AWELOAD am
+zweiten Zonen-Segment, danach fehlte der Platz für das FM-Segment
+`fm_sel`. Wie main 6.0: `NKSEG` 16, KCODE2 1E8h (kern.h, build.sh;
+kernel.c prüft beim Übersetzen KCODE2 == KCODE2_IDX · 8). FmOpen meldet
+dann FAPI_ERR_FULL. In 86Box (486, AWE32 ohne PnP) geprüft: AWELOAD
+mit SYNTHGS, danach IMF und MID.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
@@ -771,7 +778,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   ist (vorher fest 160 = 80 KB – Disketten mit altem Bootsektor mit SYS
   erneuern), Grenze in build.sh 448 KB; BSS dahinter nullt `start.asm`
   selbst.
-- Zweites Kernel-Codesegment KCODE2 (Selektor 1C8h, `KCODE2_IDX` am Ende
+- Zweites Kernel-Codesegment KCODE2 (Selektor 1E8h, bis 5.2 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
   `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`).
   Ihre Einsprünge sind `__far`; sie selbst erreichen Kernelhilfen des

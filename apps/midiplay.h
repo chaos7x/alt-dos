@@ -221,7 +221,9 @@ static int fm_start(int use3)
 {
     unsigned r = FmOpen(), k;
     if (FAPI_FAILED(r)) {
-        err(r == FAPI_ERR_INUSE ? "FM-Synthese belegt" : "keine FM-Synthese (OPL)", "");
+        err(r == FAPI_ERR_INUSE ? "FM-Synthese belegt" :
+            r == FAPI_ERR_FULL ? "kein Platz im Kernel f\x81r die FM-Register" :
+            "keine FM-Synthese (OPL)", "");
         return -1;
     }
     opl3 = use3 && (AudCaps() & AUDCAP_OPL3) != 0;
