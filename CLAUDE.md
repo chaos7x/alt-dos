@@ -303,6 +303,13 @@ Vom Nutzer auf dem SCAT-286 in 86Box bestätigt (Abbild mit NKSEG 16 –
 also keine 386-Befehle aus dem 6.0-Code durchgerutscht): von CD nach C:
 (IDE) und D: (SCSI) kopiert, CHKDSK /F auf beiden ohne Fehler; AWELOAD,
 danach IMF und MID mit Ton; COPY in RBOX, CHKDSK danach sauber.
+Ebenso bestätigt: KEYB PL und KEYB DK (Zeichen werden angezeigt),
+EJECT wirft die CD aus.
+Mitgelieferte CONFIG.SYS (Wunsch des Nutzers): alle Schlüsselwörter und
+Treiberschalter mit REM-Erklärung, Ungenutztes als REM-Beispiel, dazu
+die RBOX-Einstellungen (PROTECTONLY, RBXMS, RBSLICE, RBRESET); AHA154X
+mit DEVICE. Grenze 4 KB (heute 3,4 KB). Neue Schlüsselwörter dort mit
+eintragen.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
