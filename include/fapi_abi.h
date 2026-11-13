@@ -183,7 +183,8 @@ struct fapi_sysinfo {
                                        verlaengern (wie DosNewSize bei OS/2) */
 #define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
                                        struct fapi_proc (6.0, Taskmanager) */
-#define FAPI_EJECT          0x55    /* BX = Laufwerk (0 = A:): Medium auswerfen
+/* 0x55 = FAPI_RBOX in AT-DOS 5.1/5.2 (Kompatibilitaetsbox) - hier frei */
+#define FAPI_EJECT          0x57    /* BX = Laufwerk (0 = A:): Medium auswerfen
                                        (CD, ZIP, MO) -> 0, FAPI_ERR_INUSE
                                        (Dateien offen), FAPI_ERR_DENIED (kein
                                        Wechseldatentraeger / Treiber kann es

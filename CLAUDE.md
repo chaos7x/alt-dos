@@ -3394,6 +3394,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `blk_eject` (Cache des Geräts weg, blk_nm/blk_chg), FAT-Volumes neu
   einhängen (das CD-Modul prüft selbst – vol_reset machte daraus
   „Ungültiges Laufwerk“). `EJECT.EXE` (apps/task_eject.c).
+  Nummer 57h (vorher 55h – das ist in 5.1/5.2 `FAPI_RBOX`; Nummern
+  bleiben über beide Linien eindeutig, damit ein Programm der anderen
+  Linie nie eine fremde Funktion trifft).
   NCR synchron/Wide: geprüft und zurückgestellt (12.11.2026) – 86Box und
   QEMU beantworten SDTR immer mit Offset 0 (asynchron, scsi_ncr53c8xx.c
   `ncr53c8xx_do_sdtr(dev, arg, 0x00)`), Wide nur am 875 mit „wide“, und
