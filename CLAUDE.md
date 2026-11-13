@@ -1014,9 +1014,9 @@ Paketquellen nicht auf. `CI_FORCE_SRC=1` erzwingt den Quelltext-Weg.
 
 Aus der Cloud-Umgebung lassen sich Commits pushen. Zweige anlegen geht
 seit dem 13.11.2026 (Test `zweigtest` per `git push origin
-HEAD:refs/heads/zweigtest` angelegt), Löschen weiterhin nicht (`git push
---delete` bricht ab: „unexpected disconnect“) – Löschen macht der Nutzer
-im Browser. Tags: noch nicht erneut geprüft (früher HTTP 403). Keine
+HEAD:refs/heads/zweigtest` angelegt) und Löschen auch: `git push
+--delete` meldet zwar „unexpected disconnect“, der Zweig war danach aber
+weg (ls-remote direkt danach zeigte ihn noch – kurz warten, erneut prüfen). Tags: noch nicht erneut geprüft (früher HTTP 403). Keine
 Arbeitszweige ohne Absprache anlegen.
 CI-Läufe blieben im November 2026 mehrfach in der Warteschlange hängen
 („not queued yet“, weder abbrechen noch löschen ging); ein von Hand
