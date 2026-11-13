@@ -184,7 +184,7 @@ nasm -f bin apps/vbetest.asm -o $B/vbetest.com
 nasm -f bin apps/opltest.asm -o $B/opltest.com
 # Programme, die auch unter MS-DOS laufen (gebunden wie mit BIND bei OS/2:
 # der Stub uebersetzt die FAPI in DOS-/BIOS-Aufrufe, die .EXE wird groesser)
-BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest"
+BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
 LFNAPPS="cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
@@ -250,7 +250,7 @@ SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.s
 python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE
-       $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
+       $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL
 echo "DOS-Box: Startabbild freedos.img"
@@ -303,6 +303,9 @@ TARGET="" TO="c:" copy_files
 CPFILES=""
 for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
 TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
+# KLANG.WAV (22 KB) ebenso nur auf der Platte: auf der Diskette brauchen die
+# gebundenen Werkzeuge (XCOPY, MOVE, ...) den Platz
+TARGET="" TO="c:" copy_list "$B/KLANG.WAV KLANG.WAV" "DEMO/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

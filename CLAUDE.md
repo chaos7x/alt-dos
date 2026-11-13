@@ -1721,6 +1721,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `tools/snapshow.py`): EDIT, FM (Betrachter, Befehlszeile über COMSPEC),
   LESS, GRAFIK in allen drei Modi. Unter AT-DOS unverändert.
   Strg+C und Maus unter DOS noch nicht geprüft.
+  Nachgezogen (vom Nutzer vermisst: XCOPY ging in der Box nicht):
+  XCOPY, MOVE, DELTREE, CHOICE, REPLACE, LABEL, MSD gebunden (beide
+  Zweige). Auf main dafür MAUSTEST/FPUTEST nicht mehr gebunden und
+  KLANG.WAV nur auf der Platte – sonst war die Diskette voll (danach
+  11,5 KB frei). Stub `disk_free`: Phantomlaufwerk B: (440Eh meldet einen
+  anderen Buchstaben) nicht anfassen – MSD fragte sonst in der Box
+  „Insert diskette in drive B:“. In QEMU in der Box (6.0) und in RBOX
+  (5.2) geprüft: XCOPY /S, MOVE, DELTREE, REPLACE /A, CHOICE, LABEL,
+  MSD /S.
 - Lange Namen auf FAT – Entscheidung des Nutzers: Bonus, erst wenn 5.0 alle
   nötigen Funktionen hat, aber auf jeden Fall vor der DOS-Box von 5.1.
   Reihenfolge also: 5.0 komplett -> lange Namen -> 5.1 (Kompatibilitätsbox).
