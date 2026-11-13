@@ -569,21 +569,6 @@ static void read_line(void)
     hist_add(line, n);
 }
 
-/* DOSKEY /HISTORY: gemerkte Befehle zeigen (DOSKEY selbst ist eingebaut) */
-static void cmd_doskey(char *arg)
-{
-    unsigned i;
-    if (!*arg) {
-        puts("DOSKEY ist eingebaut: Pfeiltasten, Pos1/Ende, Einfg/Entf, F3, Esc, Tab.\n"
-             "DOSKEY /HISTORY zeigt die letzten Befehle.\n");
-        return;
-    }
-    for (i = hist_n; i > 1; i--) {      /* ohne diesen Aufruf selbst */
-        puts(hist_get(i - 1));
-        puts("\n");
-    }
-}
-
 /* ein Wort aus der Eingabe als eigene Zeichenkette */
 static char *word(char *p, char *out, int max)
 {
@@ -621,6 +606,324 @@ static void scat(char *d, const char *src, unsigned max)
     unsigned n = slen(d);
     if (n < max)
         scopy(d + n, src, max - n);
+}
+
+/* ---- DOSKEY-Makros (wie MS-DOS 6 / NT) ----------------------------------
+   DOSKEY name=text legt an, name= loescht, /MACROS listet, /MACROFILE=datei
+   laedt Zeilen "name=text". Im Text: $1-$9, $* (Argumente), $T (naechster
+   Befehl), $G $G$G $L $B (> >> < |), $$ ($). Nur getippte Zeilen werden
+   ersetzt (nicht in Stapeldateien, nicht mit CMD /C), ein Leerzeichen vor
+   dem Befehl umgeht das Makro. Speicher erst beim ersten Makro (DosAllocSeg);
+   je CMD-Sitzung eigene Makros, eine von hier gestartete CMD-Sitzung erbt sie
+   ueber eine kurzlebige Datei in %TEMP% (Variable DOSKEYF). */
+#define MACSZ 4096
+static unsigned mac_sel, mac_len;       /* Eintraege "NAME\0TEXT\0"...   */
+static void set_var(const char *name, const char *arg);
+
+static unsigned mac_find(const char *n, unsigned nl)
+{
+    char __far *m = MK_FP(mac_sel, 0);
+    unsigned o = 0, i;
+    while (o < mac_len) {
+        for (i = 0; i < nl && m[o + i] == up(n[i]); i++)
+            ;
+        if (i == nl && m[o + i] == 0)
+            return o;
+        while (m[o++])
+            ;
+        while (m[o++])
+            ;
+    }
+    return 0xFFFF;
+}
+
+/* "name=text" (name ohne Leerzeichen); 0 gut, 1 Syntax, 2 voll, 3 kein Speicher */
+static int mac_def(const char *s)
+{
+    char __far *m;
+    const char *n, *t;
+    unsigned nl, tl, o, e, i;
+
+    while (*s == ' ')
+        s++;
+    for (n = s, nl = 0; n[nl] && n[nl] != '=' && n[nl] != ' '; nl++)
+        ;
+    for (t = n + nl; *t == ' '; t++)
+        ;
+    if (!nl || *t != '=')
+        return 1;
+    for (t++; *t == ' '; t++)
+        ;
+    tl = slen(t);
+    while (tl && (t[tl - 1] == '\r' || t[tl - 1] == '\n'))
+        tl--;
+    if (!mac_sel) {
+        if (!tl)
+            return 0;
+        mac_sel = DosAllocSeg(MACSZ);
+        if (FAPI_FAILED(mac_sel)) {
+            mac_sel = 0;
+            return 3;
+        }
+    }
+    m = MK_FP(mac_sel, 0);
+    if ((o = mac_find(n, nl)) != 0xFFFF) {     /* alten Eintrag entfernen */
+        for (e = o; m[e++]; )
+            ;
+        while (m[e++])
+            ;
+        for (i = 0; e + i < mac_len; i++)
+            m[o + i] = m[e + i];
+        mac_len -= e - o;
+    }
+    if (!tl)
+        return 0;
+    if (mac_len + nl + tl + 2 > MACSZ)
+        return 2;
+    for (i = 0; i < nl; i++)
+        m[mac_len++] = up(n[i]);
+    m[mac_len++] = 0;
+    for (i = 0; i < tl; i++)
+        m[mac_len++] = t[i];
+    m[mac_len++] = 0;
+    return 0;
+}
+
+/* alle Makros als "NAME=text\r\n" nach h */
+static void mac_write(unsigned h)
+{
+    static char l[LINE + 40];
+    char __far *m = MK_FP(mac_sel, 0);
+    unsigned o = 0, k;
+    while (o < mac_len) {
+        k = 0;
+        while (m[o] && k < sizeof(l) - 3)
+            l[k++] = m[o++];
+        o++;
+        l[k++] = '=';
+        while (m[o] && k < sizeof(l) - 3)
+            l[k++] = m[o++];
+        o++;
+        l[k++] = '\r';
+        l[k++] = '\n';
+        DosWrite(h, l, k);
+    }
+}
+
+/* Datei mit Zeilen "name=text" laden; 0 = nicht lesbar */
+static int mac_load(const char *f)
+{
+    static char rb[256], l[LINE + 40];
+    unsigned h = DosOpen(f), n, i, k = 0, bad = 0;
+    if (FAPI_FAILED(h))
+        return 0;
+    for (;;) {
+        n = DosRead(h, rb, sizeof(rb));
+        if (FAPI_FAILED(n) || n == 0)
+            break;
+        for (i = 0; i < n; i++) {
+            if (rb[i] == '\n' || rb[i] == '\r' || rb[i] == 0x1A) {
+                l[k] = 0;
+                if (k && l[0] != ';' && mac_def(l))
+                    bad++;
+                k = 0;
+            } else if (k < sizeof(l) - 1)
+                l[k++] = rb[i];
+        }
+    }
+    l[k] = 0;
+    if (k && l[0] != ';' && mac_def(l))
+        bad++;
+    DosClose(h);
+    if (bad)
+        puts("Einige Makros wurden nicht \x81" "bernommen (Syntax oder kein Platz).\n");
+    return 1;
+}
+
+/* getippte Zeile: erstes Wort ein Makro? Dann ersetzt nach out (1) */
+static int mac_expand(const char *in, char *out, unsigned max)
+{
+    char __far *m;
+    const char *a[9], *rest, *p;
+    unsigned al[9], na = 0, nl, o, k = 0, i;
+    char c;
+
+    if (!mac_len || in[0] == ' ')
+        return 0;
+    for (nl = 0; in[nl] && in[nl] != ' '; nl++)
+        ;
+    if ((o = mac_find(in, nl)) == 0xFFFF)
+        return 0;
+    for (rest = in + nl; *rest == ' '; rest++)
+        ;
+    for (p = rest; *p && na < 9; ) {          /* Argumente $1-$9         */
+        a[na] = p;
+        if (*p == '"') {
+            for (p++; *p && *p != '"'; p++)
+                ;
+            if (*p)
+                p++;
+        } else
+            while (*p && *p != ' ')
+                p++;
+        al[na] = (unsigned)(p - a[na]);
+        na++;
+        while (*p == ' ')
+            p++;
+    }
+    m = MK_FP(mac_sel, 0);
+    while (m[o++])
+        ;
+    for (; m[o]; o++) {
+        c = m[o];
+        if (c == '$' && m[o + 1]) {
+            c = up(m[++o]);
+            if (c >= '1' && c <= '9') {
+                i = (unsigned)(c - '1');
+                if (i < na) {
+                    for (p = a[i]; p < a[i] + al[i] && k < max - 1; )
+                        out[k++] = *p++;
+                }
+                continue;
+            } else if (c == '*') {
+                for (p = rest; *p && k < max - 1; )
+                    out[k++] = *p++;
+                continue;
+            } else if (c == 'T')
+                c = '&';
+            else if (c == 'G') {
+                if (m[o + 1] == '$' && up(m[o + 2]) == 'G') {
+                    o += 2;
+                    if (k < max - 1)
+                        out[k++] = '>';
+                }
+                c = '>';
+            } else if (c == 'L')
+                c = '<';
+            else if (c == 'B')
+                c = '|';
+            else if (c != '$') {
+                if (k < max - 1)
+                    out[k++] = '$';
+            }
+        }
+        if (k < max - 1)
+            out[k++] = c;
+        else
+            break;
+    }
+    if (m[o]) {
+        puts("Das Makro ist zu lang.\n");
+        out[0] = 0;
+        return 1;
+    }
+    out[k] = 0;
+    return 1;
+}
+
+/* Vererbung: vor dem Start einer CMD-Sitzung die Makros in %TEMP% legen */
+static int mac_pass(const char *prog, const char *args)
+{
+    static char fn[FAPI_PATHLEN];
+    static const char hx[] = "0123456789ABCDEF";
+    const char *b = prog;
+    unsigned h, t, k;
+
+    if (!mac_len || (args[0] == '/' && up(args[1]) == 'C'))
+        return 0;
+    for (; *prog; prog++)
+        if (*prog == '\\' || *prog == ':')
+            b = prog + 1;
+    if (!same(b, "CMD.EXE") && !same(b, "CMD"))
+        return 0;
+    if (FAPI_FAILED(DosGetEnv("TEMP", fn, sizeof(fn) - 16)) || !fn[0])
+        return 0;
+    k = slen(fn);
+    if (fn[k - 1] != '\\')
+        fn[k++] = '\\';
+    t = DosQTicks();
+    fn[k++] = 'D'; fn[k++] = 'K';
+    fn[k++] = hx[t >> 12 & 15]; fn[k++] = hx[t >> 8 & 15];
+    fn[k++] = hx[t >> 4 & 15]; fn[k++] = hx[t & 15];
+    scopy(fn + k, ".MAC", 5);
+    h = DosCreate(fn);
+    if (FAPI_FAILED(h))
+        return 0;
+    mac_write(h);
+    DosClose(h);
+    set_var("DOSKEYF", fn);
+    return 1;
+}
+
+/* beim Start: von der Elternsitzung geerbte Makros */
+static void mac_inherit(void)
+{
+    static char fn[FAPI_PATHLEN];
+    if (FAPI_FAILED(DosGetEnv("DOSKEYF", fn, sizeof(fn))) || !fn[0])
+        return;
+    mac_load(fn);
+    DosDelete(fn);
+    set_var("DOSKEYF", "");
+}
+
+/* DOSKEY [/HISTORY] [/MACROS] [/MACROFILE=datei] [name=[text]] */
+static void cmd_doskey(char *arg)
+{
+    unsigned i;
+    int r;
+
+    if (!*arg || (arg[0] == '/' && arg[1] == '?')) {
+        puts("DOSKEY ist eingebaut: Pfeiltasten, Pos1/Ende, Einfg/Entf, F3, Esc, Tab.\n"
+             "DOSKEY /HISTORY        zeigt die letzten Befehle\n"
+             "DOSKEY name=text       legt ein Makro an ($1-$9, $*, $T, $G, $L, $B, $$)\n"
+             "DOSKEY name=           l\x94scht es\n"
+             "DOSKEY /MACROS         zeigt alle Makros\n"
+             "DOSKEY /MACROFILE=d    l\x84" "dt Makros aus einer Datei (Zeilen name=text)\n");
+        return;
+    }
+    while (*arg == '/') {
+        char *o = arg + 1;
+        if (same(o, "H") || same(o, "HISTORY")) {
+            for (i = hist_n; i > 1; i--) {      /* ohne diesen Aufruf selbst */
+                puts(hist_get(i - 1));
+                puts("\n");
+            }
+        } else if (same(o, "M") || same(o, "MACROS")) {
+            if (mac_len)
+                mac_write(STDOUT);
+        } else if (up(o[0]) == 'M' && up(o[1]) == 'A' && up(o[5]) == 'F') {
+            char *f = o;                        /* /MACROFILE=datei     */
+            static char fn[FAPI_PATHLEN];
+            while (*f && *f != '=')
+                f++;
+            if (*f)
+                f++;
+            for (i = 0; f[i] && f[i] != ' ' && i < sizeof(fn) - 1; i++)
+                fn[i] = f[i];
+            fn[i] = 0;
+            if (!fn[0] || !mac_load(fn)) {
+                puts("Makrodatei nicht gefunden - ");
+                puts(fn);
+                puts("\n");
+            }
+        } else if (!same(o, "REINSTALL") && !same(o, "INSERT") &&
+                   !same(o, "OVERSTRIKE")) {
+            puts("Ung\x81ltiger Schalter - ");
+            puts(arg);
+            puts("\n");
+            return;
+        }
+        arg = skip(next_word(arg));
+    }
+    if (!*arg)
+        return;
+    r = mac_def(arg);
+    if (r == 1)
+        puts("Syntax: DOSKEY name=text\n");
+    else if (r == 2)
+        puts("Kein Platz mehr f\x81r Makros (4 KB).\n");
+    else if (r == 3)
+        puts("Nicht gen\x81gend Speicher f\x81r Makros.\n");
 }
 
 /* JOIN-Verzeichnisse fuer DIR: wie Windows "<JUNCTION>" mit Ziel */
@@ -1499,6 +1802,7 @@ static void cmd_help(void)
          "  VER / VOL       Version / Datentr\x84gerbezeichnung anzeigen\n"
          "  DATE / TIME     Datum / Uhrzeit anzeigen und stellen\n"
          "  DOSKEY /HISTORY letzte Befehle; Pfeil auf/ab holt sie zur\x81" "ck, F3, Einfg\n"
+         "  DOSKEY n=text   Makro anlegen ($1-$9, $*, $T); /MACROS zeigt alle\n"
          "  ECHO Text       Text ausgeben\n"
          "  START Programm  Programm in eigener Sitzung starten, DETACH: im Hintergrund\n"
          "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
@@ -2566,7 +2870,10 @@ static int run_program(char *cmd, int sync, int call)
         puts("Befehlszeile zu lang.\n");
         return 1;
     }
+    k = sync != 2 && mac_pass(path, args);   /* CMD erbt die Makros   */
     r = DosExecPgm(cl, sync == 2 ? EXEC_BG : sync ? EXEC_SYNC : EXEC_ASYNC);
+    if (k)
+        set_var("DOSKEYF", "");
     if (r) {
         exec_error(r);
         errorlevel = 1;
@@ -3011,11 +3318,13 @@ void main(void)
         echo_on = 1;
         puts("\n");
     }
+    mac_inherit();                      /* Makros der Elternsitzung     */
     for (;;) {
+        static char mx[CMDLEN];
         if (echo_on)
             show_prompt();
         read_line();
-        if (!run_chain(line))
+        if (!run_chain(mac_expand(line, mx, sizeof(mx)) ? mx : line))
             break;
     }
 }

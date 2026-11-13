@@ -6,4 +6,7 @@ REM Temporaere Dateien: TEMP und TMP stellt der Kernel auf X:\TEMP
 REM (Startlaufwerk, von Diskette C:); anderer Ort z. B.:
 REM SET TEMP=D:\TEMP
 REM SET TMP=D:\TEMP
+REM DOSKEY-Makros, z. B.:
+REM DOSKEY ll=DIR /W /O $*
+REM DOSKEY /MACROFILE=C:\DOS\MAKROS.TXT
 PROMPT $P$G

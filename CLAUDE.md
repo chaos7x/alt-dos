@@ -685,6 +685,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
   Geräte öffnen weiter), MKDIR und MOVE-Ziel -> FAPI_ERR_DENIED.
+- DOSKEY-Makros (Wunsch des Nutzers, auch 5.2; in QEMU geprüft): in
+  CMD (apps/task_cmd.c, `mac_*`) – `DOSKEY name=text`, `name=`,
+  `/MACROS`, `/MACROFILE=` (Zeilen name=text, `;` Kommentar), im Text
+  `$1`–`$9`, `$*`, `$T` (-> `&`), `$G`, `$G$G`, `$L`, `$B`, `$$`.
+  Speicher 4 KB per DosAllocSeg erst beim ersten Makro. Ersetzt wird nur
+  die getippte Zeile in der Hauptschleife (nicht in Stapeldateien, nicht
+  bei CMD /C), führendes Leerzeichen umgeht es. Je Sitzung (wie NT);
+  run_program gibt sie an eine gestartete CMD-Sitzung (nicht /C) weiter:
+  `%TEMP%\DKxxxx.MAC` + Variable DOSKEYF, die neue Sitzung lädt und
+  löscht die Datei (`mac_pass`/`mac_inherit`). Geprüft: anlegen, $1/$2/$*,
+  $T, $G, Liste, Löschen, Leerzeichen, Stapeldatei, MACROFILE, START CMD
+  erbt, Datei danach weg.
 - Mitgelieferte CONFIG.SYS (Wunsch des Nutzers): alle Schlüsselwörter
   und Treiberschalter mit REM-Erklärung, Ungenutztes als REM-Beispiel
   (next_line überspringt REM-Zeilen, preload nur Zeilen, die mit DEVICE/
