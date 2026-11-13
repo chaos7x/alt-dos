@@ -61,6 +61,9 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   128 GB mit LBA48; Wechselplatten (ZIP, MO) an `AHA154X.SYS` und
   `NCR5380.SYS` auch ohne Medium beim Start, Wechsel wird erkannt;
   `EJECT X:` wirft CDs und Wechselplatten aus (FAPI DosEject)
+- Die mitgelieferte `CONFIG.SYS` nennt alle Einstellungen mit Erklärung
+  (Treiberschalter, Cache, lange Namen, Land/Codepage, Boxen); was nicht
+  gebraucht wird, steht als `REM`-Beispiel darin.
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
