@@ -1008,9 +1008,12 @@ Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
 `$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
 Paketquellen nicht auf. `CI_FORCE_SRC=1` erzwingt den Quelltext-Weg.
 
-Aus der Cloud-Umgebung lassen sich Commits pushen, aber keine Zweige
-oder Tags löschen bzw. anlegen (Git-Zugang meldet HTTP 403) – keine
-Arbeitszweige auf GitHub anlegen; Löschen macht der Nutzer im Browser.
+Aus der Cloud-Umgebung lassen sich Commits pushen. Zweige anlegen geht
+seit dem 13.11.2026 (Test `zweigtest` per `git push origin
+HEAD:refs/heads/zweigtest` angelegt), Löschen weiterhin nicht (`git push
+--delete` bricht ab: „unexpected disconnect“) – Löschen macht der Nutzer
+im Browser. Tags: noch nicht erneut geprüft (früher HTTP 403). Keine
+Arbeitszweige ohne Absprache anlegen.
 CI-Läufe blieben im November 2026 mehrfach in der Warteschlange hängen
 („not queued yet“, weder abbrechen noch löschen ging); ein von Hand
 gestarteter Lauf (workflow_dispatch) lief durch, `concurrency` bricht
