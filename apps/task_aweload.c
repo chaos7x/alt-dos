@@ -722,7 +722,9 @@ void main(void)
     if (FAPI_FAILED(fh)) {
         puts("AWELOAD: ");
         puts(file);
-        fail("nicht gefunden (die Klangbank liegt den Treiberdisketten der Karte bei)");
+        puts(" nicht gefunden\r\n"
+             "  Die Klangbank (SYNTHGM.SBK) liegt den Treiberdisketten der Karte bei.\r\n");
+        DosExit(1);
     }
     if (rd(0, rbuf, 12) || !same4(rbuf, "RIFF") || !same4(rbuf + 8, "sfbk"))
         fail("keine SoundFont-Datei");
