@@ -75,7 +75,7 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx rbox"
+K2MODS="floppy vgagfx rbox fat"
 for m in kernel mem floppy fat vio kbd preload vgagfx rbox k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2 -os" ;; esac   # selten: klein statt schnell

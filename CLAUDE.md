@@ -237,6 +237,13 @@ main), task_ufat.c/ufat_e2v.c/ufat_lfn.c/ufat_undel.c von main (/LFN,
 W-Sätze, UNDELETE-Anzeige der Dateiangaben). Geprüft: zweite FAT16-
 Platte, lange Namen per CMD angelegt, CONVERT D: /LFN:VFAT (mtools zeigt
 die VFAT-Namen, fsck sauber), /LFN:EA zurück (DIR gleich), CHKDSK, MSD.
+fat.c im zweiten Codesegment wie auf main (03d3b31 übernommen: `__far`
+in ifs.h, Thunks kf_blk_*/kf_kseg_alloc), dazu `kf_rtc_stamp` (auf 5.x
+liegt rtc_stamp noch in kernel.c). Danach Code 51.019 + 30.584 Byte –
+Platz für Unicode/Codepages im ersten Segment. Mit dmpobj geprüft:
+fat.o ruft nichts Nahes außerhalb, kernel.o nur ferne ifs_*/vol_*.
+In QEMU: XCOPY C:\DOS nach „D:\Kopie von DOS“ (Inhalte gleich, fsck
+sauber), CHKDSK, RBOX sieht D:.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2

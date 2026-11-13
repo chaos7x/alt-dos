@@ -297,9 +297,9 @@ void preload(void)
 }
 
 /* ---- Pseudo-Dateisystem BOOT (Protected Mode) --------------------------- */
-static int pre_mount(int drive) { (void)drive; return 0; }
+static int __far pre_mount(int drive) { (void)drive; return 0; }
 
-static int pre_open(int drive, const char *path, struct ifs_file __far *f)
+static int __far pre_open(int drive, const char *path, struct ifs_file __far *f)
 {
     char n[12];
     int i, k;
@@ -321,7 +321,7 @@ static int pre_open(int drive, const char *path, struct ifs_file __far *f)
     return -1;
 }
 
-static int pre_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+static int __far pre_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     struct pre_file *p = &pre[f->first];
@@ -334,13 +334,13 @@ static int pre_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
     return (int)len;
 }
 
-static int pre_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
+static int __far pre_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
 {
     (void)drive; (void)dir; (void)n; (void)d;
     return -1;
 }
 
-static int pre_isdir(int drive, const char *path)
+static int __far pre_isdir(int drive, const char *path)
 {
     (void)drive;
     return path[0] == '\\' && path[1] == 0;

@@ -37,3 +37,13 @@ int __far kf_kbd_get(void) { return kbd_get(); }
 void __far kf_kbd_flush(void) { kbd_flush(); }
 unsigned kbd_mods(unsigned set);
 unsigned __far kf_kbd_mods(unsigned set) { return kbd_mods(set); }
+
+/* fat.c (FAT-Treiber in KTEXT2) */
+int __far kf_blk_read(int dev, unsigned long lba) { return blk_read(dev, lba); }
+int __far kf_blk_read_n(int dev, unsigned long lba, unsigned n) { return blk_read_n(dev, lba, n); }
+int __far kf_blk_write(int dev, unsigned long lba) { return blk_write(dev, lba); }
+void __far kf_blk_invalidate(void) { blk_invalidate(); }
+int __far kf_blk_media(int dev) { return blk_media(dev); }
+int __far kf_blk_nomedia(int dev) { return blk_nomedia(dev); }
+unsigned __far kf_kseg_alloc(unsigned long bytes) { return kseg_alloc(bytes); }
+unsigned long __far kf_rtc_stamp(void) { return rtc_stamp(); }

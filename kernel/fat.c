@@ -2,6 +2,9 @@
 /*
  * AT-DOS 5.0 - IFS-Treiber FAT (12 und 16 Bit) und IFS-Verteiler
  *
+ * Seit 6.0 im zweiten Codesegment (KTEXT2, Platz fuer FAT32): Einspruenge
+ * fern, Kernelhilfen ueber k2.h.
+ *
  * Wie bei OS/2 steckt FAT fest im Kernel. Ein Laufwerk ist eine Partition
  * (oder eine Diskette ab Sektor 0) auf einem Blockgeraet. Sektornummern
  * sind 32 Bit breit, Multiplikationen mit der Clustergroesse laufen ueber
@@ -19,6 +22,7 @@
  */
 #include "kern.h"
 #include "ifs.h"
+#include "k2.h"                         /* zuletzt: lenkt Kernelhilfen um */
 
 struct volume vol[NDRIVE];
 char ifs_orig[IFS_NAMELEN];             /* siehe ifs.h                    */
@@ -243,7 +247,7 @@ static unsigned long clus_lba(struct volume *v, unsigned c)
    setzen. Beim Start prueft COMMAND /P Laufwerke ohne das Bit. */
 #define CLEAN_BIT 0x8000
 
-static int fat_mount(int d)
+static int __far fat_mount(int d)
 {
     struct volume *v = &vol[d];
     unsigned bps, reserved, nfats, spf, spc, n;
@@ -633,7 +637,7 @@ static int walk(int d, const char *path, struct found *f)
 
 static int revalidate(int d);
 
-static int fat_open(int d, const char *path, struct ifs_file __far *fl)
+static int __far fat_open(int d, const char *path, struct ifs_file __far *fl)
 {
     struct found f;
     if (revalidate(d) || walk(d, path, &f) || (f.attr & ATTR_DIR))
@@ -650,13 +654,13 @@ static int fat_open(int d, const char *path, struct ifs_file __far *fl)
     return 0;
 }
 
-static int fat_isdir(int d, const char *path)
+static int __far fat_isdir(int d, const char *path)
 {
     struct found f;
     return walk(d, path, &f) == 0 && (f.attr & ATTR_DIR);
 }
 
-static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent *de)
+static int __far fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent *de)
 {
     struct found f;
     unsigned char __far *e;
@@ -711,7 +715,7 @@ static int fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent 
     return -1;
 }
 
-static int fat_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+static int __far fat_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
     int d = f->drive;
@@ -1141,7 +1145,7 @@ static int revalidate(int d)
     return fat_mount(d) ? IFS_ERR : 0;
 }
 
-static int fat_create(int d, const char *path, struct ifs_file __far *fl)
+static int __far fat_create(int d, const char *path, struct ifs_file __far *fl)
 {
     struct found par, f;
     char n[11];
@@ -1191,7 +1195,7 @@ static unsigned next_or_alloc(int d, unsigned c)
     return n != FAT_END ? n : alloc_cluster(d, c);
 }
 
-static int fat_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+static int __far fat_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                      unsigned off, unsigned len)
 {
     int d = f->drive;
@@ -1269,7 +1273,7 @@ static int fat_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
     return (int)done;
 }
 
-static int fat_close(struct ifs_file __far *f)
+static int __far fat_close(struct ifs_file __far *f)
 {
     unsigned char __far *e;
     int d = f->drive;
@@ -1292,7 +1296,7 @@ static int fat_close(struct ifs_file __far *f)
 
 /* Datei kuerzen (DosNewSize): Kette hinter dem Cluster mit Byte size-1
    freigeben, Groesse und Eintrag beim Schliessen */
-static int fat_truncate(struct ifs_file __far *f, unsigned long size)
+static int __far fat_truncate(struct ifs_file __far *f, unsigned long size)
 {
     int d = f->drive;
     struct volume *v = &vol[d];
@@ -1528,7 +1532,7 @@ static int ea_add(int d, unsigned dc, const char *n83, const char *name)
     return rc < 0 ? rc : (int)k;
 }
 
-static int fat_remove(int d, const char *path)
+static int __far fat_remove(int d, const char *path)
 {
     struct found f;
     unsigned char __far *e;
@@ -1559,7 +1563,7 @@ static int fat_remove(int d, const char *path)
     return done_op(0);
 }
 
-static int fat_mkdir(int d, const char *path)
+static int __far fat_mkdir(int d, const char *path)
 {
     struct found par, f;
     char n[11];
@@ -1597,7 +1601,7 @@ static int fat_mkdir(int d, const char *path)
     return done_op(0);
 }
 
-static int fat_rmdir(int d, const char *path)
+static int __far fat_rmdir(int d, const char *path)
 {
     struct found f;
     unsigned char __far *e;
@@ -1632,7 +1636,7 @@ static int fat_rmdir(int d, const char *path)
 }
 
 /* umbenennen oder verschieben (gleiches Laufwerk) */
-static int fat_move(int d, const char *from, const char *to)
+static int __far fat_move(int d, const char *from, const char *to)
 {
     static unsigned char ent[32];
     struct found f, par, g;
@@ -1710,7 +1714,7 @@ static int fat_move(int d, const char *from, const char *to)
 /* freie Cluster: einmal zaehlen, danach fuehrt fat_set() den Zaehler mit.
    FAT16 sektorweise direkt im Cache - 65536 Einzelaufrufe kosten auf dem
    286 spuerbar Zeit. */
-static int fat_space(int d, unsigned long *bytes)
+static int __far fat_space(int d, unsigned long *bytes)
 {
     struct volume *v = &vol[d];
     unsigned c, n = 0, end = v->clusters + 2, k, last;
@@ -1747,7 +1751,7 @@ static int fat_space(int d, unsigned long *bytes)
 }
 
 /* Attribute und/oder Zeitstempel eines Eintrags setzen */
-static int fat_setinfo(int d, const char *path, unsigned mask, unsigned attr,
+static int __far fat_setinfo(int d, const char *path, unsigned mask, unsigned attr,
                        unsigned date, unsigned time)
 {
     struct found f;
@@ -1772,7 +1776,7 @@ static int fat_setinfo(int d, const char *path, unsigned mask, unsigned attr,
 
 /* Datentraegerbezeichnung: Eintrag mit Attribut 08h im Stamm, dazu die
    Kopie im erweiterten BPB (ab 2Bh, wenn Signatur 29h) */
-static int fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
+static int __far fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
 {
     unsigned char __far *e;
     unsigned i, k, found = 0xFFFF;
@@ -1824,7 +1828,7 @@ static int fat_label(int d, char *lbl, unsigned long *serial, const char *nl)
 }
 
 /* Pfad -> 8.3-Namen (shortn) oder Namen in Originalschreibung */
-static int fat_namepath(int d, const char *path, char *out, int shortn)
+static int __far fat_namepath(int d, const char *path, char *out, int shortn)
 {
     struct found f;
     char n[11], s[IFS_NAMELEN];
@@ -1902,7 +1906,7 @@ struct ifs_driver fat_driver = {
 };
 
 /* ---- IFS-Verteiler ----------------------------------------------------- */
-int ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
+int __far ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
 {
     struct volume *v = &vol[drive];
     v->blk = blk;
@@ -1921,7 +1925,7 @@ unsigned char ifs_notready;
 int floppy_lazy;
 
 /* Laufwerk vorhanden (auch unformatiert: FORMAT, DosOpenDrive) */
-int vol_present(int d)
+int __far vol_present(int d)
 {
     if ((unsigned)d >= NDRIVE)
         return 0;
@@ -1942,30 +1946,30 @@ static int vol_ok(int d)
 }
 #define VOL_OK(d) vol_ok(d)
 
-int ifs_open(int drive, const char *path, struct ifs_file __far *f)
+int __far ifs_open(int drive, const char *path, struct ifs_file __far *f)
 {
     return VOL_OK(drive) ? vol[drive].drv->open(drive, path, f) : -1;
 }
 
-int ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+int __far ifs_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
              unsigned off, unsigned len)
 {
     return VOL_OK(f->drive) ? vol[f->drive].drv->read(f, pos, sel, off, len) : -1;
 }
 
-int ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
+int __far ifs_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *d)
 {
     return VOL_OK(drive) ? vol[drive].drv->readdir(drive, dir, n, d) : -1;
 }
 
-int ifs_namepath(int drive, const char *path, char *out, int shortn)
+int __far ifs_namepath(int drive, const char *path, char *out, int shortn)
 {
     if (VOL_OK(drive) && vol[drive].drv->namepath)
         return vol[drive].drv->namepath(drive, path, out, shortn);
     return -1;
 }
 
-int ifs_isdir(int drive, const char *path)
+int __far ifs_isdir(int drive, const char *path)
 {
     return VOL_OK(drive) ? vol[drive].drv->isdir(drive, path) : 0;
 }
@@ -1991,7 +1995,7 @@ static void mark_in_use(int d)
     }
 }
 
-void ifs_shutdown(void)
+void __far ifs_shutdown(void)
 {
     int d;
     unsigned val;
@@ -2009,13 +2013,13 @@ void ifs_shutdown(void)
 
 #define MARK(d) do { if (VOL_OK(d)) mark_in_use(d); } while (0)
 
-int ifs_create(int drive, const char *path, struct ifs_file __far *f)
+int __far ifs_create(int drive, const char *path, struct ifs_file __far *f)
 {
     MARK(drive);
     return HAS(drive, create) ? vol[drive].drv->create(drive, path, f) : IFS_WP;
 }
 
-int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
+int __far ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len)
 {
     MARK(f->drive);
@@ -2023,7 +2027,7 @@ int ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
 }
 
 /* Groesse setzen: kuerzen ueber den Treiber, verlaengern mit Nullen */
-int ifs_setsize(struct ifs_file __far *f, unsigned long size)
+int __far ifs_setsize(struct ifs_file __far *f, unsigned long size)
 {
     static char zero[512];
     unsigned n;
@@ -2044,43 +2048,43 @@ int ifs_setsize(struct ifs_file __far *f, unsigned long size)
     return 0;
 }
 
-int ifs_close(struct ifs_file __far *f)
+int __far ifs_close(struct ifs_file __far *f)
 {
     return HAS(f->drive, close) ? vol[f->drive].drv->close(f) : 0;
 }
 
-int ifs_remove(int drive, const char *path)
+int __far ifs_remove(int drive, const char *path)
 {
     MARK(drive);
     return HAS(drive, remove) ? vol[drive].drv->remove(drive, path) : IFS_WP;
 }
 
-int ifs_mkdir(int drive, const char *path)
+int __far ifs_mkdir(int drive, const char *path)
 {
     MARK(drive);
     return HAS(drive, mkdir) ? vol[drive].drv->mkdir(drive, path) : IFS_WP;
 }
 
-int ifs_rmdir(int drive, const char *path)
+int __far ifs_rmdir(int drive, const char *path)
 {
     MARK(drive);
     return HAS(drive, rmdir) ? vol[drive].drv->rmdir(drive, path) : IFS_WP;
 }
 
-int ifs_move(int drive, const char *from, const char *to)
+int __far ifs_move(int drive, const char *from, const char *to)
 {
     MARK(drive);
     return HAS(drive, move) ? vol[drive].drv->move(drive, from, to) : IFS_WP;
 }
 
-int ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
+int __far ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
                 unsigned date, unsigned time)
 {
     MARK(d);
     return HAS(d, setinfo) ? vol[d].drv->setinfo(d, path, mask, attr, date, time) : IFS_WP;
 }
 
-int ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
+int __far ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
 {
     if (newlbl)
         MARK(d);
@@ -2094,7 +2098,7 @@ int ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
     return vol[d].drv->label(d, lbl, serial, newlbl);
 }
 
-int ifs_space(int drive, unsigned long *free_bytes)
+int __far ifs_space(int drive, unsigned long *free_bytes)
 {
     if (!VOL_OK(drive))
         return IFS_ERR;
@@ -2107,7 +2111,7 @@ int ifs_space(int drive, unsigned long *free_bytes)
 
 /* Laufwerk from nach to verschieben, die dazwischen rutschen eins nach
    hinten (from > to). Nur beim Start, solange keine Datei offen ist. */
-void vol_move(int from, int to)
+void __far vol_move(int from, int to)
 {
     static struct volume tmp;
     int d;
@@ -2127,7 +2131,7 @@ void vol_move(int from, int to)
 /* nach DosOpenDrive (Sperre aufgehoben): alles Zwischengespeicherte des
    Laufwerks verwerfen und neu einhaengen - CHKDSK /F kann FAT und
    Verzeichnisse geaendert haben */
-void vol_reset(int d)
+void __far vol_reset(int d)
 {
     fat_flush();
     if (fc_drive == d) {

@@ -68,4 +68,22 @@ void __far kf_rb_hw(unsigned long lin);
 #define sleep_ticks(n)              kf_sleep_ticks(n)
 #define vio_fg()                    kf_vio_fg()
 
+/* fat.c */
+int __far kf_blk_read(int dev, unsigned long lba);
+int __far kf_blk_read_n(int dev, unsigned long lba, unsigned n);
+int __far kf_blk_write(int dev, unsigned long lba);
+void __far kf_blk_invalidate(void);
+int __far kf_blk_media(int dev);
+int __far kf_blk_nomedia(int dev);
+unsigned __far kf_kseg_alloc(unsigned long bytes);
+unsigned long __far kf_rtc_stamp(void);
+#define blk_read(d, l)              kf_blk_read((d), (l))
+#define blk_read_n(d, l, n)         kf_blk_read_n((d), (l), (n))
+#define blk_write(d, l)             kf_blk_write((d), (l))
+#define blk_invalidate()            kf_blk_invalidate()
+#define blk_media(d)                kf_blk_media(d)
+#define blk_nomedia(d)              kf_blk_nomedia(d)
+#define kseg_alloc(b)               kf_kseg_alloc(b)
+#define rtc_stamp()                 kf_rtc_stamp()
+
 #endif
