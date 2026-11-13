@@ -195,9 +195,15 @@ static int wait_irq(struct unit *u, unsigned char mask, unsigned char want,
    wenn ein DMA-Modus eingestellt ist (Wort 63/88 - das macht das BIOS). */
 static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd);
 void outl(unsigned port, unsigned lo, unsigned hi);
+#if defined(_M_IX86) && _M_IX86 >= 300 /* 6.0: Treiber sind 386-Code  */
 #pragma aux outl = "push ebx" "shl ebx,16" "mov bx,ax" "xchg eax,ebx" \
     "out dx,eax" "xchg eax,ebx" "pop ebx" \
     __parm [__dx] [__ax] [__bx] __modify __exact [];
+#else                                   /* 5.x (286): ohne PCI gibt es keinen
+                                           Busmaster - nie aufgerufen   */
+#pragma aux outl = "out dx,ax" "inc dx" "inc dx" "mov ax,bx" "out dx,ax" \
+    __parm [__dx] [__ax] [__bx] __modify [__ax __dx];
+#endif
 
 static unsigned bm_base[2];             /* 0 = kein Busmaster am Kanal   */
 static unsigned bm_loc;                 /* PCI-Ort des Controllers       */
