@@ -92,7 +92,11 @@ Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
 - **Präemptiv seit Phase 2 Schritt 1** (nur aus Ring 3, siehe unten), **FAPI einziger Weg zur
   Hardware**, **IFS** wie bisher.
 
-AT-DOS 5.1 ist fertig (Zweig `5.x`, Release `v5.1`). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
+AT-DOS 5.1 ist fertig (Release `v5.1`). Zweige (Entscheidung des
+Nutzers, 13.11.2026, wie bei 5.0): `5.0` und `5.1` halten den
+freigegebenen Stand fest (`5.1` = Tag `v5.1`, b7a9c89), weitergearbeitet
+wird in `5.x` – die Commits nach v5.1 (RBOX-XMS, DIRCMD, Laufzeit wie
+uptime) gehören damit zu 5.2. Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
 Entscheidung des Nutzers (12.11.2026): Zurückportiert wird erst, wenn
