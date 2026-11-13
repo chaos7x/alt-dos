@@ -90,6 +90,7 @@ extern unsigned char boot_drive;    /* BIOS-Nummer, ab 80h Festplatte      */
 extern unsigned char pre_err;
 extern unsigned long boot_hidden, boot_serial;
 extern int npre;
+extern unsigned pre_seg;            /* Ablage der vorgeladenen Dateien    */
 void preload(void);                 /* nur im Real Mode                    */
 int  rm_geometry(void);             /* INT 13h/08h fuer boot_drive, 0 = ok */
 int  rm_read(unsigned long lba);    /* ein Sektor nach 0000:8000, 0 = ok   */

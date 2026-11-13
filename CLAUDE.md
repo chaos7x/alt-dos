@@ -271,6 +271,13 @@ bleibt (RBOX): liefert Kopf + 3 × 90 abgeleitete Bytes aus kbd_sel, Byte
 850: æ ø å Æ), angezeigt mit dem ROM-Zeichensatz 437 – das Video-BIOS
 lädt ihn beim Moduswechsel der Box; dafür bräuchte die Box DISPLAY.SYS.
 KEY_EXT, Stub, MSD, TASKMAN usw. wie main.
+Vorladen beim Plattenstart nach 80000h (60 KB, 16 Dateien) wie main
+(104dd70): mit dem größeren ISO9660.IFS passten die Treiber der
+Standard-CONFIG.SYS nicht mehr in 0600h–7BFFh („ISO9660.IFS: nicht
+gefunden“). Der Bereich geht erst nach CONFIG.SYS an die Speicher-
+verwaltung (auch im Fall kmoved, `pc`). In QEMU geprüft: Rock-Ridge-CD
+(genisoimage -R) zeigt „Ein ziemlich langer Dateiname über Größe.txt“,
+MEM danach gleich bis auf das geladene Modul.
 
 Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
