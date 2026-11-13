@@ -227,7 +227,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   1000:0000–23FFF; vorher 128 bzw. 96 – Disketten mit altem Bootsektor
   vor dem Überschreiten von 64 KB mit SYS erneuern), BSS dahinter
   nullt `start.asm` selbst.
-- Zweites Kernel-Codesegment KCODE2 (Selektor 1E8h, bis zur AWE-Bank 1C8h, `KCODE2_IDX` am Ende
+- Zweites Kernel-Codesegment KCODE2 (Selektor 208h, vorher 1E8h bzw. 1C8h, `KCODE2_IDX` am Ende
   der GDT): selten gebrauchte, abgeschlossene Teile werden mit
   `wcc -nt=KTEXT2` übersetzt (build.sh `K2MODS`, heute `floppy`, `vgagfx`, `bus`, `pnp`, `mem`, `paging`, `vesa`, `fat`,
   `k2misc` – Echtzeituhr `rtc_stamp`/`rtc_set` und `rom_str` für MSD; erstes
@@ -242,7 +242,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Nahe Aufrufe aus KTEXT2 ins erste Segment fängt der Linker nicht immer
   ab – neue Hilfen immer über k2.h. Grafik aus vio.c steht in
   `kernel/vgagfx.c`, gemeinsame Sitzungsdaten in `kernel/vioint.h`.
-  Drittes Codesegment KCODE3 (Selektor 238h, vorher 218h, `KCODE3_IDX` = letzter
+  Drittes Codesegment KCODE3 (Selektor 258h, vorher 238h/218h, `KCODE3_IDX` = letzter
   GDT-Eintrag): `v86.c` und `redir.c` (build.sh `K3MODS`, `-nt=KTEXT3`,
   Gruppe CGROUP3 hinter CGROUP2, DS = CS + alle drei Größen; start.asm
   ruft v86_exc/dpmi_trap/v86_tick über KCODE3). Vorher prüfen, dass ein
@@ -2910,6 +2910,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KCODE2/VWIN/KCODE3 rücken nach (kern.h, start.asm, build.sh; kernel.c
   prüft beim Übersetzen, dass die festen Werte zur GDT passen). In QEMU
   danach XCOPY, Box (`command /c ver`), CHKDSK, MEM, fsck sauber.
+  Auch 16 reichten nicht (vom Nutzer gemeldet: nach AWELOAD spielte
+  `PLAY ODE.MID`, `PLAY ODE.IMF` meldete „keine FM-Synthese“): SYNTHGS
+  braucht zwei Zonen-Segmente, dazu Tastatur (KEYB) und Codepages –
+  danach war kein Platz für das FM-Segment `fm_sel`, das erst beim
+  ersten FmOpen angelegt wird. `NKSEG` 20 (KCODE2 208h, VWIN 210h,
+  KCODE3 258h); FmOpen meldet dann FAPI_ERR_FULL („kein Platz im Kernel
+  für die FM-Register“), AWELOAD „zu viele Zonen oder kein Kernel-
+  segment frei“. In 86Box (486, AWE32 ohne PnP) geprüft: AWELOAD, dann
+  IMF und MID.
   Virtuelle SB, Rest (in QEMU mit SBT.COM geprüft: Mixer 22h zurück-
   lesbar, 24h füllt 1.000 Byte mit 80h und meldet IRQ 5, Mixer 0Eh = 2
   + 14h mit IRQ, 38h/35h + Reset liefert wieder AAh): `vsb` hat `rec`

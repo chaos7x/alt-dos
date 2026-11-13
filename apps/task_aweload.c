@@ -758,9 +758,9 @@ void main(void)
     }
     for (p = 0; p + 1 < cnum[C_PHDR]; p++)
         if (do_preset(p) < 0)
-            fail("zu viele Zonen f\x81r den Treiber");
+            fail("zu viele Zonen oder kein Kernelsegment frei");
     if (flush_zones())
-        fail("zu viele Zonen f\x81r den Treiber");
+        fail("zu viele Zonen oder kein Kernelsegment frei");
     {
         pc.k.op = AWE_PRESETS;
         pc.k.n = npre;

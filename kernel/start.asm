@@ -14,9 +14,9 @@ cpu 386
 
 KCODE   equ 0x08
 KDATA   equ 0x10
-VWIN    equ 0x1F0                       ; = VWIN_IDX * 8 (kern.h)
-KCODE2  equ 0x1E8                       ; zweites Codesegment (kern.h)
-KCODE3  equ 0x238                       ; drittes Codesegment (v86.c, redir.c)
+VWIN    equ 0x210                       ; = VWIN_IDX * 8 (kern.h)
+KCODE2  equ 0x208                       ; zweites Codesegment (kern.h)
+KCODE3  equ 0x258                       ; drittes Codesegment (v86.c, redir.c)
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16

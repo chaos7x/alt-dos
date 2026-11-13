@@ -30,16 +30,16 @@
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
-#define NKSEG       16              /* eigene Kernelsegmente (kseg_alloc)  */
+#define NKSEG       20              /* eigene Kernelsegmente (kseg_alloc)  */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x1E8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x208           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define VWIN_IDX    (KCODE2_IDX + 1) /* Fenster in den Speicher einer DOS-Box */
 #define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
 #define RWIN_IDX(t) (KCODE2_IDX + 2 + (t))   /* Fenster je Box (redir.c) */
 #define RWIN_SEL(t) (RWIN_IDX(t) * 8)
 #define KCODE3_IDX  (KCODE2_IDX + 2 + NTASK)  /* drittes Codesegment (v86.c, redir.c) */
-#define KCODE3      0x238           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
+#define KCODE3      0x258           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
 #define FCACHE_IDX  (KCODE3_IDX + 1) /* FAT-Cache (fat.c), fest bei FCACHE_LIN */
 #define FCACHE_SEL  (FCACHE_IDX * 8)
 #define CTXWIN_IDX  (KCODE3_IDX + 2) /* Ablage des Kontexts je Task (Phase 6) */
