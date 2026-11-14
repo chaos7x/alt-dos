@@ -1615,6 +1615,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   aic7xxx (GPLv2 bzw. BSD-dual) und FreeBSD ahc nur als Nachschlagewerk,
   deren Sequenzer-Assembler nicht übernehmen. Zuerst prüfen, wie
   vollständig 86Box den Sequenzer nachbildet.
+  Stand (14.11.2026, in Arbeit, noch ungetestet): 86Box (seit Nov. 2026,
+  src/scsi/scsi_aic7xxx.c) bildet den Sequenzer Befehl für Befehl nach,
+  Bus und DMA laufen über eigene Zeitgeber – also auch bei angehaltenem
+  Sequenzer. Erste Stufe `drivers/aic7xxx.c` daher ohne Sequenzer-
+  Programm: HCNTRL PAUSE, Auswahl mit ENSELO|ENAUTOATNO, IDENTIFY 80h,
+  CDB/Status/Meldungen per automatischem PIO (SPIOEN, SCSIDATL), Daten
+  per Chip-DMA (STCNT/HCNT/HADDR, DFCNTRL SCSIEN|SDMAEN|HDMAEN, am Ende
+  FIFOFLUSH), Überzähliges per BITBUCKET; Abfragebetrieb (erst pausenlos,
+  dann je Takt schlafen). PCI 9004h: 7078/7178/7278/7478 (AIC-7870),
+  8078/8178/8278/8478 (AIC-7880). Schmal (IDs 0–7). Test-VM: P3B-F mit
+  `scsicard_1 = aha2940u` (Karten-BIOS aus, Vorgabe), SCSI-Platte
+  `hdd_02_scsi_location = 0:00`. Danach: IRQ, Wide.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
   `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde
