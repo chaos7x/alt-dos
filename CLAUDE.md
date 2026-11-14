@@ -3646,6 +3646,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zwei FAT32-Laufwerke mit LONGNAMES=EA teilten den Cache ohne Schutz.
   Laufwerke ohne EA DATA. SF (VFAT, nur 8.3) nehmen die EA-Sperre nie.
   Messbar nur in 86Box (QEMU: Schreiben landet im Cache, gleiche 23 s).
+  Vom Nutzer in 86Box bestätigt (14.11.2026): zwei FAT16-Laufwerke
+  gleichzeitig mit langen Namen beschrieben (Dateien aus einem lokalen
+  Repo), CHKDSK auf beiden ohne Fehler.
   SCSI je Gerät: geprüft und bewusst nicht gebaut (12.11.2026). Gewinn gäbe
   es nur, wenn sich ein Ziel während des Befehls vom Bus trennt; NCR8XX
   schickt IDENTIFY 80h (ohne Trennerlaubnis), echte Platten trennen sich
