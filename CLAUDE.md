@@ -2468,6 +2468,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Mode oder DPMI); gibt es ihn zurück, leert es im Vordergrund den
   Puffer. In QEMU geprüft (START COMMAND, DOOM 1.9 mit Pfeil hoch/Enter
   im Spiel, Beenden, `ver` kommt sauber an).
+  Gebundenes EDIT in derselben Box zeigte danach nur `_` (vom Nutzer
+  gemeldet, nachgestellt): DOOM schaltet über das echte Video-BIOS auf
+  13h, das 44Ah = 40 Spalten schreibt; die Nachbildung von INT 10h 00h
+  (Textmodus) setzte nur 449h – der Stub (VioShowBuf nur bei 80 Spalten)
+  zeigte nichts. Jetzt setzt sie auch 44Ah/44Ch/484h.
   Digger (Remastered, DOS, von digger.org – in QEMU nachgestellt) fror am
   Highscore ein: es wartet in einer Schleife, die den PIT latcht/liest und
   INT 16h 11h/INT 21h 0Bh ruft; dabei trappt die Box so oft, dass irq0

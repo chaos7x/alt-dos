@@ -2292,6 +2292,13 @@ static void int10(struct v86_frame *f, int t)
     case 0x00:                                  /* Modus                 */
         wr8(BDA, 0x49, AL & 0x7F);
         if ((AL & 0x7F) <= 3 || (AL & 0x7F) == 7) {
+            /* Textbild der Box ist immer 80x25: Spalten/Zeilen/Seitengroesse
+               neu setzen - ein Grafikmodus ueber das echte BIOS (DOOM: 13h)
+               liess 40 Spalten stehen, gebundene Programme (EDIT im Stub)
+               zeigten danach nichts */
+            wr16(BDA, 0x4A, COLS);
+            wr16(BDA, 0x4C, 4096);
+            wr8(BDA, 0x84, ROWS - 1);
             if (!(AL & 0x80))
                 vscroll(1, 0, 0, 0, ROWS - 1, COLS - 1, 7);
             crow = ccol = 0;
