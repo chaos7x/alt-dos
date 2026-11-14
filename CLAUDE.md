@@ -333,7 +333,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Bootsektor-Kopie (BPB +50). preload.c: FAT32 am BPB (spf16 = 0, Sig.
   29h bei 66), Stamm als Kette, `next_clus` 28 Bit, Seriennummer bei 67
   (auch find_boot_vol); start.asm `rm_read` mit LBA-Erweiterungen
-  (`geo_lba`, `geo_dap`) – damit auch FAT16-Start über 8 GB. CHS-Weg des
+  (`geo_lba`, `geo_dap`) – damit auch FAT16-Start über 8 GB.
+  rm_read nimmt CHS, solange der Sektor in 1024 Zylinder passt, 42h nur
+  dahinter (vom Nutzer auf dem P3B-F gemeldet, in 86Box nachgestellt:
+  Platte mit BIOS-Autoerkennung -> „0 Datei(en) vorgeladen“, „Start-
+  partition nicht gefunden“ – das Award-BIOS meldete bei 42h Erfolg und
+  lieferte Nullen; hdboot liest per CHS und kam durch). In QEMU mit
+  Geometrie 1/2 (CHS-Grenze 1 MB) geprüft: Treiber kommen über 42h. CHS-Weg des
   FAT32-Bootsektors in QEMU geprüft, indem `mov byte [uselba], 1` im
   geschriebenen Bootsektor auf 0 gepatcht wurde (Muster C6 06 08 7B 01):
   Start mit ATDOS.SYS hinter Cluster 65.536 klappt. Testfalle:

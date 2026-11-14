@@ -1141,7 +1141,10 @@ rm_geometry_:
         ret
 
 ; int rm_read(unsigned long lba) - DX:AX = LBA, ein Sektor nach 0000:8000
-; ueber INT 13h (CHS), Real Mode. 0 = ok
+; ueber INT 13h, Real Mode. 0 = ok. CHS, solange der Sektor in 1024
+; Zylinder passt, sonst INT 13h/42h: das Award-BIOS des ASUS P3B-F (in
+; 86Box) meldet bei 42h Erfolg und liefert Nullen - der Bootsektor liest
+; per CHS und kam durch, CONFIG.SYS wurde nicht gefunden
 global rm_read_
 rm_read_:
         push    bx
@@ -1154,8 +1157,9 @@ rm_read_:
 .again:
         push    ax
         push    dx
-        cmp     byte [geo_lba], 0       ; mit Erweiterungen ueber LBA
-        je      .chs                    ; (FAT32-Partitionen ueber 8 GB)
+        jmp     .chs                    ; erst CHS, LBA nur dahinter
+.lba:   cmp     byte [geo_lba], 0       ; mit Erweiterungen ueber LBA
+        je      .bad                    ; (FAT32-Partitionen ueber 8 GB)
         mov     [geo_dap + 8], ax
         mov     [geo_dap + 10], dx
         mov     si, geo_dap
@@ -1182,11 +1186,17 @@ rm_read_:
         xor     dx, dx
         div     word [geo_heads]
         test    ax, ax
-        jnz     .bad
+        jnz     .far
         mov     ax, bx
         div     word [geo_heads]        ; AX = Zylinder, DX = Kopf
         cmp     ax, 1024
-        jae     .bad
+        jb      .near
+.far:   pop     dx                      ; hinter Zylinder 1023: LBA
+        pop     ax
+        push    ax
+        push    dx
+        jmp     .lba
+.near:
         mov     ch, al
         mov     cl, ah
         shl     cl, 6
