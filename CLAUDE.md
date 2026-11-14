@@ -111,6 +111,10 @@ synchron/Wide, IDE LBA48/UDMA, EJECT), APM-Leerlauf, Grafik-Boxen hinten
 (Latch-Kopien, SVGA), CD (ISO 9660:1999, Rock Ridge), Box (A:/B:, Maus-
 Rückruf im DPMI), COUNTRY=/Codepages. Der DOOM-Nachbau ist ebenfalls
 zurückgestellt (Entscheidung des Nutzers, 12.11.2026).
+Neu im Plan für 6.0 (Wunsch des Nutzers, 14.11.2026): `AIC7XXX.SYS`
+für die Adaptec-PCI-Controller AHA-2940 (AIC-7870), AHA-2940 Ultra
+(AIC-7880) und AHA-2944UW, die 86Box jetzt nachbildet – siehe „Weitere
+SCSI-Treiber“. Nur 6.0 (PCI, 386), nicht 5.x.
 
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
@@ -1598,6 +1602,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   32-Bit-Portzugriffen) gehören zu 6.0 auf dem 386/486. Die 53C8xx sind
   die Standard-SCSI-Controller des Nutzers auf PCI-Maschinen: für 6.0 der
   wichtigste neue Plattentreiber (`NCR8XX.SYS`, mit Interrupt).
+- Adaptec AIC-7xxx (PCI), geplant für 6.0 (Wunsch des Nutzers,
+  14.11.2026; 86Box bildet AHA-2940 / AIC-7870, AHA-2940 Ultra /
+  AIC-7880 und AHA-2944UW nach): eigener Treiber `AIC7XXX.SYS`, der
+  AHA154X-Code passt nicht (anderer Chip: programmierbarer Sequenzer mit
+  eigenem Programm im Chip-RAM, SCBs statt Mailboxen). Vorgehen wie
+  NCR8XX: PCI-Suche über die Busdienste (Hersteller 9004h, Geräte-IDs
+  aus 86Box), BAR I/O, Busmaster; Sequenzer-Programm selbst schreiben
+  (einfach: ein Befehl zur Zeit, ohne Trennen/Tagged Queuing), dann IRQ,
+  Wechselplatten/CD (DRV_MEDIA, DRV_EJECT, Sense), Sperrgruppe. Register
+  und Ablauf aus dem Datenblatt bzw. der 86Box-Nachbildung lesen; Linux
+  aic7xxx (GPLv2 bzw. BSD-dual) und FreeBSD ahc nur als Nachschlagewerk,
+  deren Sequenzer-Assembler nicht übernehmen. Zuerst prüfen, wie
+  vollständig 86Box den Sequenzer nachbildet.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
   `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde
