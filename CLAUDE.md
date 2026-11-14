@@ -699,6 +699,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte
   Geräte öffnen weiter), MKDIR und MOVE-Ziel -> FAPI_ERR_DENIED.
+- DIR in CMD (vom Nutzer beim DOSKEY-Test bemerkt: `dir /w /o` -> „Datei
+  nicht gefunden“, /O galt als Dateimuster): `/O[[:]Folge]` wie MS-DOS
+  (N, E, S, D, G, `-` davor kehrt um, `/O` allein = GN, `/-O` hebt auf),
+  Sätze zu 64 Byte in einem DosAllocSeg-Segment (`ds_*`, bis 980 Einträge,
+  darüber unsortiert; Namen über 51 Zeichen beim Ausgeben neu geholt),
+  Shellsort; DIRCMD wird vor der Befehlszeile gelesen; unbekannter Schalter
+  -> „Ungültiger Schalter - /X“; Muster ohne Endung bekommt `.*` (DIR C* =
+  C*.*). In QEMU geprüft. Diskette war dafür voll: die Testprogramme
+  MAUSTEST, FPUTEST, BUSY, BGTEST, BANKT, SVBG, OPLTEST, VBETEST, VDEMO
+  liegen nur noch auf atdos-hd.img (`HDDEMO` in build.sh), Diskette danach
+  15 KB frei.
 - DOSKEY-Makros (Wunsch des Nutzers, auch 5.2; in QEMU geprüft): in
   CMD (apps/task_cmd.c, `mac_*`) – `DOSKEY name=text`, `name=`,
   `/MACROS`, `/MACROFILE=` (Zeilen name=text, `;` Kommentar), im Text

@@ -1011,6 +1011,141 @@ static void not_ready(const char *p)
     not_ready_d(p[0] && p[1] == ':' ? (unsigned)(up(p[0]) - 'A') : DosQCurDisk());
 }
 
+/* DIR /O: Eintraege sammeln und sortieren (wie MS-DOS: N Name, E Endung,
+   S Groesse, D Datum/Zeit, G Verzeichnisse zuerst, - davor kehrt um; /O
+   allein = GN). Saetze zu 64 Byte in einem DosAllocSeg-Segment: Nummer
+   fuer DosFindEntry, Attribut, Datum, Zeit, Groesse, Name bis 51 Zeichen
+   (laenger: beim Ausgeben neu holen); dahinter die Reihenfolge. */
+#define DS_MAX  980
+#define DS_REC  64
+#define DS_IDX  (DS_MAX * DS_REC)
+static unsigned ds_sel, ds_n;
+static char ds_ord[8];
+
+static unsigned char __far *ds_rec(unsigned i)
+{
+    return (unsigned char __far *)MK_FP(ds_sel, i * DS_REC);
+}
+
+static unsigned __far *ds_ix(unsigned i)
+{
+    return (unsigned __far *)MK_FP(ds_sel, DS_IDX + i * 2);
+}
+
+/* Name (ext = 0) bzw. Endung (ext = 1) ohne Gross/klein vergleichen */
+static int ds_namecmp(const unsigned char __far *a, const unsigned char __far *b, int ext)
+{
+    unsigned la = a[11], lb = b[11], pa = la, pb = lb, i;
+    const unsigned char __far *x = a + 12, __far *y = b + 12;
+    for (i = la; i; i--)
+        if (x[i - 1] == '.') { pa = i - 1; break; }
+    for (i = lb; i; i--)
+        if (y[i - 1] == '.') { pb = i - 1; break; }
+    if (ext) {                          /* Endung hinter dem letzten Punkt */
+        x += pa < la ? pa + 1 : la;
+        y += pb < lb ? pb + 1 : lb;
+        la = la > pa ? la - pa - 1 : 0;
+        lb = lb > pb ? lb - pb - 1 : 0;
+    } else {
+        la = pa;
+        lb = pb;
+    }
+    for (i = 0; i < la && i < lb; i++) {
+        char c = up((char)x[i]), d = up((char)y[i]);
+        if (c != d)
+            return (unsigned char)c < (unsigned char)d ? -1 : 1;
+    }
+    return la < lb ? -1 : la > lb ? 1 : 0;
+}
+
+static unsigned long ds_l(const unsigned char __far *r)
+{
+    return r[7] | ((unsigned)r[8] << 8) | ((unsigned long)r[9] << 16) |
+           ((unsigned long)r[10] << 24);
+}
+
+static int ds_cmp(unsigned i, unsigned j)
+{
+    const unsigned char __far *a = ds_rec(i), __far *b = ds_rec(j);
+    const char *o;
+    int c, neg;
+    for (o = ds_ord; *o; o++) {
+        neg = *o == '-';
+        if (neg && !*++o)
+            break;
+        c = 0;
+        switch (up(*o)) {
+        case 'N': c = ds_namecmp(a, b, 0); if (!c) c = ds_namecmp(a, b, 1); break;
+        case 'E': c = ds_namecmp(a, b, 1); break;
+        case 'S': c = ds_l(a) < ds_l(b) ? -1 : ds_l(a) > ds_l(b) ? 1 : 0; break;
+        case 'D': {
+            unsigned long x = ((unsigned long)(a[3] | (a[4] << 8)) << 16) | (a[5] | (a[6] << 8));
+            unsigned long y = ((unsigned long)(b[3] | (b[4] << 8)) << 16) | (b[5] | (b[6] << 8));
+            c = x < y ? -1 : x > y ? 1 : 0;
+            break;
+        }
+        case 'G': c = ((b[2] & 0x10) != 0) - ((a[2] & 0x10) != 0); break;
+        }
+        if (c)
+            return neg ? -c : c;
+    }
+    return i < j ? -1 : 1;              /* sonst Reihenfolge der Platte    */
+}
+
+static void ds_put(unsigned i, const struct fapi_dirent *e, unsigned n)
+{
+    unsigned char __far *r = ds_rec(i);
+    unsigned k, l = slen(e->name);
+    r[0] = (unsigned char)n;
+    r[1] = (unsigned char)(n >> 8);
+    r[2] = e->attr;
+    r[3] = (unsigned char)e->date;
+    r[4] = (unsigned char)(e->date >> 8);
+    r[5] = (unsigned char)e->time;
+    r[6] = (unsigned char)(e->time >> 8);
+    r[7] = (unsigned char)e->size;
+    r[8] = (unsigned char)(e->size >> 8);
+    r[9] = (unsigned char)(e->size >> 16);
+    r[10] = (unsigned char)(e->size >> 24);
+    r[11] = (unsigned char)(l > DS_REC - 13 ? 0xFF : l);
+    for (k = 0; k < l && k < DS_REC - 13; k++)
+        r[12 + k] = e->name[k];
+    if (l > DS_REC - 13)                /* fuer den Vergleich gekuerzt     */
+        r[11] = DS_REC - 13;
+    r[DS_REC - 1] = (unsigned char)(l > DS_REC - 13);
+    *ds_ix(i) = i;
+}
+
+static void ds_sort(void)
+{
+    unsigned gap, i, j, t;
+    for (gap = ds_n / 2; gap; gap /= 2)
+        for (i = gap; i < ds_n; i++)
+            for (j = i; j >= gap && ds_cmp(*ds_ix(j - gap), *ds_ix(j)) > 0; j -= gap) {
+                t = *ds_ix(j);
+                *ds_ix(j) = *ds_ix(j - gap);
+                *ds_ix(j - gap) = t;
+            }
+}
+
+/* k-ter Eintrag der sortierten Liste nach e */
+static void ds_get(unsigned k, struct fapi_dirent *e, const char *dir)
+{
+    unsigned char __far *r = ds_rec(*ds_ix(k));
+    unsigned i;
+    if (r[DS_REC - 1]) {                /* langer Name: neu holen          */
+        DosFindEntry(e, r[0] | (r[1] << 8), dir[0] ? dir : 0);
+        return;
+    }
+    e->attr = r[2];
+    e->date = r[3] | (r[4] << 8);
+    e->time = r[5] | (r[6] << 8);
+    e->size = ds_l(r);
+    for (i = 0; i < r[11]; i++)
+        e->name[i] = r[12 + i];
+    e->name[i] = 0;
+}
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
@@ -1021,9 +1156,32 @@ static void cmd_dir(char *arg)
     int all = 0, page = 0, lines = 4, bare = 0, wide = 0;
     unsigned wcol = 0;
 
+    static char dcmd[64], *src;
+    int sorted = 0, pass2;
     ctry_init();
     dir[0] = 0;
-    for (; *arg; arg = next_word(arg)) {
+    ds_ord[0] = 0;
+    if (FAPI_FAILED(DosGetEnv("DIRCMD", dcmd, sizeof(dcmd))))
+        dcmd[0] = 0;                    /* wie MS-DOS: erst DIRCMD        */
+    for (pass2 = 0; pass2 < 2; pass2++)
+    for (src = pass2 ? arg : dcmd; *src; src = next_word(src)) {
+        char *arg = src;
+        if (arg[0] == '/' && up(arg[1]) == 'O') {   /* /O, /O:-D, /ON ... */
+            char *q = arg + 2;
+            unsigned k = 0;
+            if (*q == ':')
+                q++;
+            for (; *q && *q != ' ' && *q != '/' && k < sizeof(ds_ord) - 1; q++)
+                ds_ord[k++] = *q;
+            ds_ord[k] = 0;
+            if (!k)
+                scopy(ds_ord, "GN", sizeof(ds_ord));
+            continue;
+        }
+        if (arg[0] == '/' && up(arg[1]) == '-' && up(arg[2]) == 'O') {
+            ds_ord[0] = 0;              /* /-O hebt DIRCMD auf            */
+            continue;
+        }
         if (arg[0] == '/' && up(arg[1]) == 'A') {   /* /A, /A:H, /A-D ...  */
             char *q = arg + 2;
             int neg = 0;
@@ -1050,7 +1208,14 @@ static void cmd_dir(char *arg)
             bare = 1;                   /* nur Namen                     */
         else if (same(arg, "/W"))
             wide = 1;                   /* breit, Verzeichnisse in [ ]   */
-        else
+        else if (arg[0] == '/') {
+            static char sw[16];
+            word(arg, sw, sizeof(sw));
+            puts("Ung\x81ltiger Schalter - ");
+            puts(sw);
+            puts("\n");
+            return;
+        } else
             word(arg, dir, sizeof(dir));
     }
     pat[0] = 0;
@@ -1059,6 +1224,16 @@ static void cmd_dir(char *arg)
         for (n = 0; b[n] && n < sizeof(pat) - 1; n++)
             pat[n] = b[n];
         pat[n] = 0;
+        {                               /* wie MS-DOS: C* = C*.*, CMD = CMD.* */
+            unsigned k;
+            for (k = 0; pat[k] && pat[k] != '.'; k++)
+                ;
+            if (!pat[k] && n < sizeof(pat) - 3) {
+                pat[n] = '.';
+                pat[n + 1] = '*';
+                pat[n + 2] = 0;
+            }
+        }
         *b = 0;
         n = slen(dir);                          /* "\DOS\" -> "\DOS"   */
         if (n > 1 && dir[n - 1] == '\\' && dir[n - 2] != ':')
@@ -1131,10 +1306,44 @@ static void cmd_dir(char *arg)
         if (join_mask)
             dir_abs(dir, adir);
     }
+    if (ds_ord[0]) {                    /* DIR /O: sammeln, sortieren     */
+        if (!ds_sel) {
+            ds_sel = DosAllocSeg(0);
+            if (FAPI_FAILED(ds_sel))
+                ds_sel = 0;
+        }
+        ds_n = 0;
+        for (n = 0; ds_sel && DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
+            if (!all && (e.attr & 0x06) && !(e.name[0] == '.' &&
+                (!e.name[1] || (e.name[1] == '.' && !e.name[2]))))
+                continue;
+            if ((e.attr & want) != want || (e.attr & nowant))
+                continue;
+            if (pat[0] && !match(e.name, pat))
+                continue;
+            if (ds_n == DS_MAX) {       /* zu viele: unsortiert           */
+                ds_n = 0xFFFF;
+                break;
+            }
+            ds_put(ds_n++, &e, n);
+        }
+        if (ds_sel && ds_n != 0xFFFF) {
+            ds_sort();
+            sorted = 1;
+        }
+    }
     for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
-    for (n = 0; DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
-        if (((e.attr & 0x10) != 0) != (pass == 0))
-            continue;
+    for (n = 0; ; n++) {
+        if (sorted) {
+            if (pass || n >= ds_n)
+                break;
+            ds_get(n, &e, dir);
+        } else {
+            if (DosFindEntry(&e, n, dir[0] ? dir : 0) == FAPI_ERROR)
+                break;
+            if (((e.attr & 0x10) != 0) != (pass == 0))
+                continue;
+        }
         if (!all && (e.attr & 0x06) && !(e.name[0] == '.' &&
             (!e.name[1] || (e.name[1] == '.' && !e.name[2]))))
             continue;                           /* versteckt, System - "."
