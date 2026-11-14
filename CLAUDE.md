@@ -3754,6 +3754,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gemischte Rahmenzeichen nur unter 437, 737, 860–863, 865, 866
   (`cp437()` in task_fm.c), sonst ╦ ╠ ╣. Die anderen Programme benutzen
   solche Zeichen nicht (grep nach B5–B8, BD, BE, C6, C7, CF–D8).
+  Verzeichnisse lesen (vom Nutzer gemeldet: DIR eines alten Windows-
+  Verzeichnisses in der Box auf dem 386DX/40 sehr langsam): fat_readdir
+  lief für jede Nummer ab Eintrag 0 – DIR über n Dateien kostete n²/2
+  Einträge, in der Box doppelt (der Redirector fragt want - 1 nach). Jetzt
+  Lesemerker `rd_drive/rd_dir/rd_want/rd_i0/rd_i1`: dieselbe oder die
+  nächste Nummer geht an der gemerkten Stelle weiter; MARK (jede Änderung)
+  und dir_cache_reset vergessen ihn. In QEMU: DIR über 800 lange Namen in
+  CMD vollständig.
   Tastaturbelegungen je Codepage erledigt (Wunsch des Nutzers; in QEMU
   geprüft mit `CODEPAGE=850,865,852`: DK unter 850 æ ø å Æ Ø Å ½ @ [ |,
   Feststelltaste macht Æ/Ø, unter 437 meldet KEYB 5 fehlende Zeichen;
