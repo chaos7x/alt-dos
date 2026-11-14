@@ -96,7 +96,11 @@ AT-DOS 5.1 ist fertig (Release `v5.1`). Zweige (Entscheidung des
 Nutzers, 13.11.2026, wie bei 5.0): `5.0` und `5.1` halten den
 freigegebenen Stand fest (`5.1` = Tag `v5.1`, b7a9c89), weitergearbeitet
 wird in `5.x` – die Commits nach v5.1 (RBOX-XMS, DIRCMD, Laufzeit wie
-uptime) gehören damit zu 5.2. Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
+uptime) gehören damit zu 5.2. AT-DOS 5.2 ist fertig (Entscheidung des Nutzers,
+14.11.2026): Zweig `5.2` (b273531) – ein Push dorthin erzeugt per CI das
+Release `v5.2`; `5.x` geht weiter, Fehlerbehebungen werden 5.2.1, die CI
+veröffentlicht dort die Vorabversion `v5.x`. Tags legt die CI an (aus der
+Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
 Entscheidung des Nutzers (12.11.2026): Zurückportiert wird erst, wenn
