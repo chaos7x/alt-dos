@@ -3695,6 +3695,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `COUNTRY=049,437,` ein. DGROUP danach 65.528 Byte (8 frei!) – vor
   weiteren Daten im Kernel erst Platz schaffen. Offen: Codepage je
   Sitzung wie OS/2.
+  CHCP wirkt sofort auf alle Namen (vom Nutzer gemeldet: griechische
+  Namen nach Neustart + CHCP 737 weiter `____`; in QEMU mit Joliet-CD
+  `genisoimage -input-charset utf-8 -J` und CODEPAGE=850,737 geprüft):
+  ea_load merkt die Tabelle (`ea_ctab`) und rechnet bei anderer
+  Codepage neu um; ISO9660.IFS holt die Tabelle bei jedem Aufruf statt
+  nur beim Einhängen. name_for: Bytes über 7Fh, die in CP437 nicht
+  dasselbe Zeichen oder ein Kleinbuchstabe sind (`oem83`), bekommen
+  einen langen Eintrag/EA-Satz – vorher landete „Ελλάδα“ unter 737 als
+  8.3-Name mit rohen 737-Bytes (unter 850 dann `äóóßøÿ`).
   Tastaturbelegungen je Codepage erledigt (Wunsch des Nutzers; in QEMU
   geprüft mit `CODEPAGE=850,865,852`: DK unter 850 æ ø å Æ Ø Å ½ @ [ |,
   Feststelltaste macht Æ/Ø, unter 437 meldet KEYB 5 fehlende Zeichen;

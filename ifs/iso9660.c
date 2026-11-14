@@ -220,8 +220,6 @@ static int mount(unsigned dev)
     unsigned o;
 
     joliet = lng = bytes = rr = sp_skip = 0;
-    k = devhlp(DH_CPTAB, 0, 0, 0);      /* Codepage kann sich aendern  */
-    ctab = k ? MK_FP(k, devhlp(DH_CPTAB, 0, 1, 0)) : 0;
     for (lba = 16; lba < 48; lba++) {
         if (rd(dev, lba))
             return -1;
@@ -673,6 +671,10 @@ static void request(void)
     unsigned k;
 
     r->status = 1;
+    /* aktive Codepage bei jedem Aufruf holen - CHCP gilt sofort, auch
+       fuer eine schon eingehaengte CD */
+    k = devhlp(DH_CPTAB, 0, 0, 0);
+    ctab = k ? MK_FP(k, devhlp(DH_CPTAB, 0, 1, 0)) : 0;
     switch (r->cmd) {
     case IFSM_MOUNT:
         if (mount(r->dev) == 0)

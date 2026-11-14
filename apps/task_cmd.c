@@ -711,6 +711,26 @@ static void mac_write(unsigned h)
 }
 
 /* Datei mit Zeilen "name=text" laden; 0 = nicht lesbar */
+/* eine Zeile der Makrodatei: name=text; geduldet wie bei Stapeldateien
+   ein vorangestelltes [@]DOSKEY und Leerzeichen, ; und REM = Kommentar.
+   1 = Fehler */
+static int mac_line(char *l)
+{
+    static const char dk[] = "DOSKEY";
+    unsigned i;
+    while (*l == ' ' || *l == '\t' || *l == '@')
+        l++;
+    for (i = 0; i < 6 && (l[i] & 0xDF) == dk[i]; i++)
+        ;
+    if (i == 6 && (l[6] == ' ' || l[6] == '\t'))
+        for (l += 6; *l == ' ' || *l == '\t'; l++)
+            ;
+    if (!*l || *l == ';' || ((l[0] & 0xDF) == 'R' && (l[1] & 0xDF) == 'E'
+            && (l[2] & 0xDF) == 'M' && (!l[3] || l[3] == ' ')))
+        return 0;
+    return mac_def(l);
+}
+
 static int mac_load(const char *f)
 {
     static char rb[256], l[LINE + 40];
@@ -724,7 +744,7 @@ static int mac_load(const char *f)
         for (i = 0; i < n; i++) {
             if (rb[i] == '\n' || rb[i] == '\r' || rb[i] == 0x1A) {
                 l[k] = 0;
-                if (k && l[0] != ';' && mac_def(l))
+                if (mac_line(l))
                     bad++;
                 k = 0;
             } else if (k < sizeof(l) - 1)
@@ -732,7 +752,7 @@ static int mac_load(const char *f)
         }
     }
     l[k] = 0;
-    if (k && l[0] != ';' && mac_def(l))
+    if (mac_line(l))
         bad++;
     DosClose(h);
     if (bad)
