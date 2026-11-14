@@ -2461,6 +2461,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Spiel gedrückten Tasten landen auch im Tastaturpuffer des Kernels, CMD
   las danach Pfeil hoch (letzter Befehl) + Enter. `v86_park`/`v86_destroy`
   leeren den Puffer (`kf_kbd_flush`), wenn die Box vorn war.
+  Dasselbe in einer Box mit FreeCOM (vom Nutzer gemeldet: `COMMAND`,
+  dann DOOM -> nach dem Beenden endlos neu; nach START COMMAND + DOOM
+  stand ein `z` vor dem nächsten Befehl): die Box parkt dort nicht.
+  inject merkt in `k9_def` Bit 1, dass ein Programm INT 9 hatte (Real
+  Mode oder DPMI); gibt es ihn zurück, leert es im Vordergrund den
+  Puffer. In QEMU geprüft (START COMMAND, DOOM 1.9 mit Pfeil hoch/Enter
+  im Spiel, Beenden, `ver` kommt sauber an).
   Digger (Remastered, DOS, von digger.org – in QEMU nachgestellt) fror am
   Highscore ein: es wartet in einer Schleife, die den PIT latcht/liest und
   INT 16h 11h/INT 21h 0Bh ruft; dabei trappt die Box so oft, dass irq0

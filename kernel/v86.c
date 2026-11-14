@@ -2110,15 +2110,26 @@ static void inject(struct v86_iret *r, int t)
         int_raw(r, t, 8, (unsigned)r->eip);
         return;
     }
+    /* Bit 1: ein Programm hatte INT 9 (Real Mode oder DPMI). Gibt es ihn
+       zurueck, liegen seine Tasten auch im Puffer der Sitzung (INT 16h
+       kommt aus dem Kernel) - DOOM in einer Box mit FreeCOM: Pfeil hoch
+       + Enter aus dem Spiel holten "doom" zurueck, es startete endlos neu */
+    if (!vec_def(9) || pm_hooked(t, 9))
+        k9_def[t] |= 2;
+    else if (k9_def[t] & 2) {
+        k9_def[t] &= (unsigned char)~2;
+        if (box_fg(t))
+            kf_kbd_flush();
+    }
     if (vec_def(9))
-        k9_def[t] = 1;
-    else if (k9_def[t]) {
+        k9_def[t] |= 1;
+    else if (k9_def[t] & 1) {
         /* INT 9 gerade umgebogen: was vorher im Ring lag, haette auf
            echter Hardware das BIOS laengst verarbeitet (bei uns kommt
            es ueber INT 16h aus dem Kernel). Sonst traf z. B. das
            Loslassen von Enter Diggers Handler, bevor der alten Vektor
            gemerkt hatte. */
-        k9_def[t] = 0;
+        k9_def[t] &= (unsigned char)~1;
         if (!pm_hooked(t, 9))
             kq_t[t] = kq_h[t];
     }
