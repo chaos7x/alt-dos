@@ -3801,6 +3801,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nächste Nummer geht an der gemerkten Stelle weiter; MARK (jede Änderung)
   und dir_cache_reset vergessen ihn. In QEMU: DIR über 800 lange Namen in
   CMD vollständig.
+  Vom Nutzer in 86Box bestätigt (14.11.2026, Build nach 8e56ded): DIR im
+  alten Windows-Verzeichnis (386DX/40) in CMD und Box deutlich schneller;
+  griechische Namen nach Neustart + CHCP 737 (Joliet-CD, groß und klein);
+  FM-Rahmen unter 850; ebenso die übrigen Fehlerbehebungen dieses Tages:
+  P3B-F startet mit automatisch erkannter Platte (rm_read CHS zuerst),
+  DOOM 1.9 in einer Box mit COMMAND startet nach dem Beenden nicht mehr
+  neu, gebundenes EDIT danach normal, SB 1.0 spielt durch (find_irq),
+  DOSKEY /MACROFILE mit `doskey name=text`-Zeilen, MSD in der Box zeigt
+  XMS/EMS. Unter CHCP 737 erscheinen die festen deutschen Umlaute der
+  Meldungen griechisch („DatentrEger“ – 84h ist dort Ε): erwartet, die
+  Texte sind CP437 (mehrsprachige Programme, s. unten).
   Tastaturbelegungen je Codepage erledigt (Wunsch des Nutzers; in QEMU
   geprüft mit `CODEPAGE=850,865,852`: DK unter 850 æ ø å Æ Ø Å ½ @ [ |,
   Feststelltaste macht Æ/Ø, unter 437 meldet KEYB 5 fehlende Zeichen;
