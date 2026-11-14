@@ -1642,6 +1642,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Testschalter `/V:105` bzw. `/V:200` (alte DSP-Version vortäuschen)
   nachgestellt: Ton 1 s, danach Stille. Auf SB 1.0/1.5 in 86Box noch zu
   bestätigen (86Box: SB 1.0 = DSP 1.05, SB 1.5 = DSP 2.00).
+  Vom Nutzer bestätigt: SB 1.5 spielt und endet sauber. SB 1.0 brach
+  nach einer Sekunde ab: 86Box steckt ihn auf IRQ 7, SB16.SYS nahm vor
+  dem SB16 fest 5 an – nur der erste Einzelblock lief. Jetzt `find_irq`:
+  DSP F2h löst einen Interrupt aus, mit CLI das IRR beider PICs ver-
+  gleichen (Kandidaten 9, 3, 5, 7, 10, genau einer neu -> der), danach
+  Basis+0Eh lesen; `/I:` geht vor. In 86Box mit SB 1.0 und 2.0 geprüft
+  (KLANG.WAV volle 2 s im Mitschnitt).
   IMF/MID auf SB16/AWE in 86Box stumm (vom Nutzer gemeldet): echter OPL3 –
   im OPL3-Betrieb (105h = 1) braucht jeder Kanal in C0h die Ausgänge L/R
   (Bits 4–5); IMF ist für den OPL2 geschrieben -> PLAY schaltet für IMF

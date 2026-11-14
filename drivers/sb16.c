@@ -153,6 +153,45 @@ static void dma_stop(void)
         outp(0x0A, (unsigned char)(4 | (dma8 & 3)));
 }
 
+/* IRQ der Karte vor dem SB16 (Steckbruecke, kein Mixerregister): DSP F2h
+   loest einen 8-Bit-Interrupt aus, die Leitung bleibt bis zum Lesen von
+   Basis+0Eh oben. Gesucht wird wie bei der Busmaus ueber das IRR beider
+   PICs (mit gesperrten Interrupts, sonst nimmt die CPU ihn weg); genau
+   eine neue Leitung unter 2/9, 3, 5, 7, 10 -> die. Sonst Vorgabe. */
+static unsigned irr_now(void)
+{
+    outp(0x20, 0x0A);                   /* OCW3: IRR lesen              */
+    outp(0xA0, 0x0A);
+    return inp(0x20) | ((unsigned)inp(0xA0) << 8);
+}
+
+static unsigned find_irq(unsigned def)
+{
+    static const unsigned char cand[] = { 9, 3, 5, 7, 10 };
+    unsigned off, on = 0, i, k, n = 0, found = def;
+    cli();
+    off = irr_now();
+    for (i = 0; i < 200; i++)
+        off |= irr_now();
+    dsp_w(0xF2);
+    for (i = 0; i < 20000; i++) {
+        on = irr_now() & ~off;
+        for (k = 0; k < sizeof(cand); k++)
+            if (on & (1u << cand[k]))
+                break;
+        if (k < sizeof(cand))
+            break;
+    }
+    inp(base + 0x0E);                   /* Interrupt quittieren          */
+    sti();
+    for (k = 0; k < sizeof(cand); k++)
+        if (on & (1u << cand[k])) {
+            found = cand[k];
+            n++;
+        }
+    return n == 1 ? found : def;
+}
+
 /* ---- Wiedergabe ----------------------------------------------------- */
 /* DSP 1.xx (Sound Blaster 1.0): ein Abschnitt als Einzelblock; der 8237
    laeuft im Auto-Init weiter, der Interrupt startet den naechsten Block */
@@ -582,8 +621,11 @@ static int init_pcm(struct drv_req __far *r)
         m = mix_r(0x81);
         dma8 = (m & 1) ? 0 : (m & 2) ? 1 : (m & 8) ? 3 : dma8;
         dma16 = (m & 0x20) ? 5 : (m & 0x40) ? 6 : (m & 0x80) ? 7 : 0;
-    } else
+    } else {
         dma16 = 0;
+        if (!arg(r->args, 'I'))
+            irq = find_irq(irq);        /* vor dem SB16: IRQ nur gesteckt */
+    }
     if ((a = arg(r->args, 'I')) != 0)
         irq = decval(a) == 2 ? 9 : decval(a);
     if ((a = arg(r->args, 'D')) != 0)
