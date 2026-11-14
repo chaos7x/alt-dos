@@ -3724,6 +3724,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dasselbe Zeichen oder ein Kleinbuchstabe sind (`oem83`), bekommen
   einen langen Eintrag/EA-Satz – vorher landete „Ελλάδα“ unter 737 als
   8.3-Name mit rohen 737-Bytes (unter 850 dann `äóóßøÿ`).
+  FM-Rahmen unter 850 (vom Nutzer gemeldet: Ð, Ã, Â statt ╤ ╟ ╢):
+  gemischte Rahmenzeichen nur unter 437, 737, 860–863, 865, 866
+  (`cp437()` in task_fm.c), sonst ╦ ╠ ╣. Die anderen Programme benutzen
+  solche Zeichen nicht (grep nach B5–B8, BD, BE, C6, C7, CF–D8).
   Tastaturbelegungen je Codepage erledigt (Wunsch des Nutzers; in QEMU
   geprüft mit `CODEPAGE=850,865,852`: DK unter 850 æ ø å Æ Ø Å ½ @ [ |,
   Feststelltaste macht Æ/Ø, unter 437 meldet KEYB 5 fehlende Zeichen;
