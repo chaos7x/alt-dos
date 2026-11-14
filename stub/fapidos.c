@@ -14,6 +14,8 @@
  * Namen (DOS kennt nur 8.3). Hintergrund-Programme laufen nacheinander.
  */
 #include <i86.h>
+#include <conio.h>
+#pragma intrinsic(inp, outp)
 #include "../include/fapi_abi.h"
 #include "../include/fx.h"
 
@@ -939,7 +941,7 @@ static unsigned sysinfo(unsigned off)
     rclr();
     do_int(0x11, &r);
     si.equip = r.ax;
-    si.fpu = (r.ax & 2) ? 1 : 0;
+    si.fpu = (r.ax & 2) ? (si.cpu >= 3 ? 2 : 1) : 0;   /* 386: 387er Kern */
     si.vga = vga;
     si.model = *(unsigned char __far *)MK_FP(0xF000, 0xFFFE);
     f = MK_FP(0xF000, 0xFFF5);
@@ -957,6 +959,12 @@ static unsigned sysinfo(unsigned off)
     do_int(0x15, &r);
     if (!(r.flags & CF) && si.cpu >= 2)
         si.ext_kb = r.ax;
+    if (!si.ext_kb && si.cpu >= 2) {    /* HIMEM/DOS-Box: 88h meldet 0 -  */
+        outp(0x70, 0x17);               /* Groesse beim Start aus dem CMOS */
+        si.ext_kb = inp(0x71);
+        outp(0x70, 0x18);
+        si.ext_kb |= inp(0x71) << 8;
+    }
     to_app(off, &si, sizeof(si));
     return 0;
 }
