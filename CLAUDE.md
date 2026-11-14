@@ -1641,7 +1641,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `hdd_02_scsi_location = 0:00`. Geprüft (P3B-F, AHA-2940 Ultra, 100-MB-
   Platte an ID 0): auf Anhieb erkannt und eingehängt (D:), XCOPY C:\DOS
   (86 Dateien), CHKDSK sauber, COMP alle gleich, nach SHUTDOWN fsck
-  sauber. Danach: IRQ, Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR).
+  sauber. IRQ (danach, ebenso geprüft): PCI-IRQ aus 3Ch, `later2(sm0,
+  sm1)` – erst 2.000 Abfragen, dann CLRINT SCSIINT, SIMODE0/1 auf die
+  erwarteten Ereignisse (Auswahl: SELDO/SELTO, DMA: DMADONE/PHASEMIS/
+  BUSFREE, sonst REQINIT/BUSFREE), HCNTRL INTEN, schlafen (höchstens 2
+  Takte); `aic_irq` prüft INTEN + INTSTAT (geteilter IRQ), nimmt INTEN weg
+  und weckt. `/NOIRQ`. Offen: Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR),
+  synchron/Ultra (SDTR), echte Hardware.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
   `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde

@@ -4,7 +4,7 @@
  * 2940 Ultra (UW), 2944UW und der Chip auf Hauptplatinen - AT-DOS 6.0,
  * braucht einen 386
  *
- * CONFIG.SYS:  DEVICE=AIC7XXX.SYS [/ID:7]
+ * CONFIG.SYS:  DEVICE=AIC7XXX.SYS [/ID:7] [/NOIRQ]
  *
  * Der Chip hat einen eigenen kleinen Prozessor (Sequenzer), dessen
  * Programm sonst der Treiber laedt. Dieser Treiber laesst ihn angehalten
@@ -12,8 +12,9 @@
  * 80h (LUN 0, ohne Trennen), Befehl, Status und Meldungen Byte fuer Byte
  * ueber SCSIDATL (automatisches PIO, SPIOEN), die Daten per Busmaster-
  * DMA des Chips direkt in den Puffer des Kernels (STCNT/HCNT/HADDR,
- * DFCNTRL). Mehr Daten als erwartet nimmt BITBUCKET ab. Abfragebetrieb:
- * kurz pausenlos nachsehen, danach je Takt schlafen.
+ * DFCNTRL). Mehr Daten als erwartet nimmt BITBUCKET ab. Warten: kurz
+ * pausenlos nachsehen, danach schlafen bis zum PCI-Interrupt des Chips
+ * (SIMODE0/1 je nach erwartetem Ereignis), mit /NOIRQ je Takt.
  * Register und Ablauf: AIC-7870-Datenbuch bzw. die Nachbildung in 86Box
  * (src/scsi/scsi_aic7xxx.c, nur gelesen); Linux aic7xxx (GPLv2/BSD)
  * nicht uebernommen.
@@ -63,6 +64,7 @@
 #define SIMODE1     0x11
 #define SBLKCTL     0x1F
 #define HCNTRL      0x87
+#define  INTEN      0x02
 #define  PAUSE      0x04
 #define  CHIPRST    0x01
 #define HADDR       0x88                /* 4 Byte                          */
@@ -100,19 +102,53 @@ static unsigned long phys(const void *p)
 }
 
 /* Warten: erst kurz pausenlos (der Chip antwortet meist in Mikrosekunden),
-   dann je Takt schlafen. t0 = Start in Takten, tmo = Frist. 0 = Frist um */
+   dann schlafen - mit IRQ, bis der Chip eines der Ereignisse meldet, auf
+   die gewartet wird (sm0/sm1 = SIMODE0/1), sonst je Takt. Die Interrupt-
+   routine nimmt INTEN wieder weg und weckt; geschlafen wird hoechstens
+   2 Takte (verlorener oder geteilter IRQ haelt nichts auf). t0 = Start
+   in Takten, tmo = Frist. 0 = Frist um */
 static unsigned t0, tmo, spins;
+static volatile unsigned char irq_on, woke;
+#define EV_AIC 1
 
-static int later(void)
+static void aic_irq(unsigned n)
+{
+    (void)n;
+    if (!(rd8(HCNTRL) & INTEN) || !(rd8(INTSTAT) & 0x0F))
+        return;                         /* nicht unserer (geteilter IRQ)  */
+    wr8(HCNTRL, PAUSE);                 /* Leitung frei, Sequenzer steht  */
+    woke = 1;
+    proc_run(EV_AIC);
+}
+
+static int later2(unsigned char sm0, unsigned char sm1)
 {
     if (++spins < 2000)
         return 1;
     if ((unsigned)(devhlp(DH_TICKS, 0, 0, 0) - t0) > tmo)
         return 0;
     cli();
-    proc_block(0xFFFF, 1);              /* kehrt mit STI zurueck         */
+    if (irq_on) {
+        woke = 0;
+        wr8(CLRINT, 0x04);              /* altes SCSIINT weg, die Masken  */
+        wr8(SIMODE0, sm0);              /* melden, was jetzt schon gilt   */
+        wr8(SIMODE1, sm1);
+        wr8(HCNTRL, PAUSE | INTEN);
+        if (!woke)
+            proc_block(EV_AIC, 2);      /* kehrt mit STI zurueck         */
+        else
+            sti();
+        cli();
+        wr8(HCNTRL, PAUSE);
+        wr8(SIMODE0, 0);
+        wr8(SIMODE1, 0);
+        sti();
+    } else
+        proc_block(0xFFFF, 1);
     return 1;
 }
+
+#define later() later2(0, BUSFREE | SCSIRSTI | 0x01)    /* REQINIT     */
 
 static void chip_reset(void)
 {
@@ -165,7 +201,7 @@ static unsigned long dma(unsigned long buf, unsigned long n, int out)
             break;
         if (rd8(SSTAT1) & (PHASEMIS | BUSFREE | SCSIRSTI))
             break;
-        if (!(rd8(SCSISIG) & BSYI) || !later())
+        if (!(rd8(SCSISIG) & BSYI) || !later2(DMADONE, PHASEMIS | BUSFREE | SCSIRSTI))
             break;
     }
     if (!out) {                         /* Rest im FIFO in den Speicher   */
@@ -209,7 +245,7 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
             wr8(SSTAT1, SELTO);
             return SCSI_NODEV;
         }
-        if (!later()) {
+        if (!later2(SELDO, SELTO | SCSIRSTI)) {
             chip_reset();
             return SCSI_NODEV;
         }
@@ -390,9 +426,12 @@ static void init(void)
     p = hex(p, dev, 2);
     p = scat(p, ") an ");
     p = hex(p, io, 4);
+    k = irq && irq < 16 ? (has_opt(r->args, "/NOIRQ") ? 2 : set_irq(irq, aic_irq) ? 1 : 0) : 3;
+    irq_on = k == 0;
     p = scat(p, "h, IRQ ");
     p = udec(p, irq);
-    p = scat(p, " (Abfragebetrieb)");
+    p = scat(p, k == 1 ? " belegt, Abfragebetrieb" : k == 2 ? " nicht benutzt (/NOIRQ)" :
+                k == 3 ? " ung\x81ltig, Abfragebetrieb" : "");
     p = scat(p, ", SCSI-ID ");
     p = udec(p, host);
     scat(p, "\n");
