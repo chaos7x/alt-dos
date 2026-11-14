@@ -209,11 +209,14 @@ Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 `5.0` = AT-DOS 5.0 mit Fehlerbehebungen bis vor 5.1 (fd41ed9), Release
 `v5.0`; `5.1` = das freigegebene 5.1 (7838b78, Build 240.76 im Release
 `v5.1`; der Tag `v5.1` zeigt noch auf b7a9c89 – die CI hat beim Erneuern
-des Releases den alten Tag stehen lassen); `5.x` = 5.2 in Arbeit, die CI
-veröffentlicht die Vorabversion `v5.2`; `main` = 6.0.
+des Releases den alten Tag stehen lassen); `5.2` = das freigegebene 5.2
+(Entscheidung des Nutzers, 14.11.2026; ein Push auf `5.2` erzeugt per CI
+das fertige Release `v5.2`); `5.x` = Weiterarbeit nach 5.2, Fehler-
+behebungen werden 5.2.1 (dann Titel/VER/FAPI_VERSION anheben), die CI
+veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.2 in Arbeit (Zweig 5.x); 5.1 im Zweig 5.1, 5.0 im Zweig 5.0
+## Aktueller Stand: AT-DOS 5.2 fertig (Zweig 5.2), Weiterarbeit in 5.x; 5.1 im Zweig 5.1, 5.0 im Zweig 5.0
 
 5.2 (Entscheidung des Nutzers, 13.11.2026, nach Phase 6 auf main): aus
 6.0 zurück kommen Kleinkram (CMD-Umleitung mit "...", MSD, OPL3-
