@@ -152,9 +152,12 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   als Rückverweis) den langen Namen; im Verzeichniseintrag steht nichts,
   MS-DOS sieht nur Kurznamen und eine versteckte Datei. XCOPY und MOVE
   kopieren lange Namen mit; Befehlszeilen bis 127 Zeichen; `DIR /B`, `/W`
+- `AIC7XXX.SYS`: Adaptec AHA-2940 / 2940 Ultra (UW) / 2944UW (PCI,
+  AIC-7870/7880) – Platten, Wechselplatten, CD; erste Stufe im
+  Abfragebetrieb, schmaler Bus (IDs 0–7)
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
-  unbekannte Schalter werden gemeldet
+  unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter
 - Lange Namen, Stufe 4: CHKDSK prüft VFAT-Ketten und die Sätze in
   `EA DATA. SF` und räumt mit `/F` verwaiste lange Namen auf (z. B. nach
   Umbenennen mit einem alten DOS-Werkzeug). EDIT zeigt lange Namen in der

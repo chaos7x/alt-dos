@@ -705,7 +705,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Sätze zu 64 Byte in einem DosAllocSeg-Segment (`ds_*`, bis 980 Einträge,
   darüber unsortiert; Namen über 51 Zeichen beim Ausgeben neu geholt),
   Shellsort; DIRCMD wird vor der Befehlszeile gelesen; unbekannter Schalter
-  -> „Ungültiger Schalter - /X“; Muster ohne Endung bekommt `.*` (DIR C* =
+  -> „Ungültiger Schalter - /X“, `DIR /?` zeigt die Schalter (vom Nutzer
+  gemeldet: /? galt als Dateimuster); Muster ohne Endung bekommt `.*` (DIR C* =
   C*.*). In QEMU geprüft. Diskette war dafür voll: die Testprogramme
   MAUSTEST, FPUTEST, BUSY, BGTEST, BANKT, SVBG, OPLTEST, VBETEST, VDEMO
   liegen nur noch auf atdos-hd.img (`HDDEMO` in build.sh), Diskette danach
@@ -1626,7 +1627,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   aic7xxx (GPLv2 bzw. BSD-dual) und FreeBSD ahc nur als Nachschlagewerk,
   deren Sequenzer-Assembler nicht übernehmen. Zuerst prüfen, wie
   vollständig 86Box den Sequenzer nachbildet.
-  Stand (14.11.2026, in Arbeit, noch ungetestet): 86Box (seit Nov. 2026,
+  Stand (14.11.2026, erste Stufe in 86Box geprüft): 86Box (seit Nov. 2026,
   src/scsi/scsi_aic7xxx.c) bildet den Sequenzer Befehl für Befehl nach,
   Bus und DMA laufen über eigene Zeitgeber – also auch bei angehaltenem
   Sequenzer. Erste Stufe `drivers/aic7xxx.c` daher ohne Sequenzer-
@@ -1637,7 +1638,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dann je Takt schlafen). PCI 9004h: 7078/7178/7278/7478 (AIC-7870),
   8078/8178/8278/8478 (AIC-7880). Schmal (IDs 0–7). Test-VM: P3B-F mit
   `scsicard_1 = aha2940u` (Karten-BIOS aus, Vorgabe), SCSI-Platte
-  `hdd_02_scsi_location = 0:00`. Danach: IRQ, Wide.
+  `hdd_02_scsi_location = 0:00`. Geprüft (P3B-F, AHA-2940 Ultra, 100-MB-
+  Platte an ID 0): auf Anhieb erkannt und eingehängt (D:), XCOPY C:\DOS
+  (86 Dateien), CHKDSK sauber, COMP alle gleich, nach SHUTDOWN fsck
+  sauber. Danach: IRQ, Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR).
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
   `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde

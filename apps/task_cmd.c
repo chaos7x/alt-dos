@@ -1208,7 +1208,22 @@ static void cmd_dir(char *arg)
             bare = 1;                   /* nur Namen                     */
         else if (same(arg, "/W"))
             wide = 1;                   /* breit, Verzeichnisse in [ ]   */
-        else if (arg[0] == '/') {
+        else if (arg[0] == '/' && arg[1] == '?') {
+            puts("Zeigt Dateien und Unterverzeichnisse eines Verzeichnisses an.\n\n"
+                 "DIR [Laufwerk:][Pfad][Dateiname] [/P] [/W] [/B] [/A[[:]Attribute]]\n"
+                 "    [/O[[:]Sortierfolge]]\n\n"
+                 "  /P  h\x84lt nach jeder Bildschirmseite an\n"
+                 "  /W  breites Format (Verzeichnisse in [ ])\n"
+                 "  /B  nur Namen\n"
+                 "  /A  auch versteckte und Systemdateien; Attribute: H versteckt,\n"
+                 "      S System, D Verzeichnis, R schreibgesch\x81tzt, A Archiv,\n"
+                 "      - davor = nicht\n"
+                 "  /O  sortiert: N Name, E Endung, S Gr\x94\xE1e, D Datum/Zeit,\n"
+                 "      G Verzeichnisse zuerst, - davor kehrt um; /O allein = GN\n\n"
+                 "Schalter lassen sich in der Umgebungsvariablen DIRCMD voreinstellen;\n"
+                 "/-O hebt die Sortierung wieder auf.\n");
+            return;
+        } else if (arg[0] == '/') {
             static char sw[16];
             word(arg, sw, sizeof(sw));
             puts("Ung\x81ltiger Schalter - ");
@@ -2015,8 +2030,8 @@ static void cmd_ren(char *arg)
 static void cmd_help(void)
 {
     puts("Interne Befehle:\n"
-         "  DIR [Pfad] [/A[:HSDRA]] [/P]  Dateien, Verzeichnisse zuerst (/A alle,\n"
-         "                  /A:H nur versteckte, /A:-D ohne Verzeichnisse; /P Seiten)\n"
+         "  DIR [Pfad] [/A[:HSDRA]] [/P] [/W] [/B] [/O[:NESDG]]  Dateien anzeigen\n"
+         "                  (DIR /? zeigt die Schalter, DIRCMD voreinstellen)\n"
          "  CD [Pfad]       Verzeichnis wechseln oder anzeigen\n"
          "  C:              Laufwerk wechseln\n"
          "  TYPE Datei      Textdatei ausgeben\n"
