@@ -1238,6 +1238,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
 - Bildschirmtexte in CP437: Umlaute als Escape (`\x84` ä, `\x94` ö, `\x81` ü,
   `\xE1` ß), auf folgende Hex-Ziffern achten.
 
+- Fehlerbehebungen aus dem 6.0-Test (14.11.2026, aus main übernommen):
+  CHCP wirkt sofort auf EA-Namen (`ea_ctab`) und eingehängte CDs
+  (ISO9660.IFS holt die Tabelle je Aufruf); Bytes über 7Fh, die in CP437
+  anders oder klein sind, bekommen einen langen Eintrag (`oem83`);
+  SB16.SYS erkennt den IRQ alter Karten über DSP F2h (`find_irq`, SB 1.0
+  in 86Box auf IRQ 7); DOSKEY /MACROFILE duldet `[@]DOSKEY` vor
+  name=text, REM und Leerzeilen; MSD unter DOS: erweiterter Speicher aus
+  CMOS 17h/18h. In QEMU geprüft (CODEPAGE=850,737 + Joliet-CD,
+  SB16.SYS /V:200 mit SB auf IRQ 7).
+
 ## Bauen und testen
 
     ./build.sh          # NASM + Open Watcom -> build/dos5.img

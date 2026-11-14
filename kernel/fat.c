@@ -449,6 +449,21 @@ static unsigned cp2uni(unsigned char c)
     return c < 0x80 ? c : cp_utab ? cp_utab[c - 0x80] : cp_uni[c - 0x80];
 }
 
+/* Byte ueber 7Fh im Namen: darf es so in einen 8.3-Eintrag? Nur, wenn es
+   dort dasselbe Zeichen ist wie in CP437 (andere Systeme lesen Kurznamen
+   so) und kein Kleinbuchstabe (8.3 ist gross). Sonst bekommt der Name
+   einen langen Eintrag bzw. EA-Satz mit dem Unicode-Original. */
+static int oem83(unsigned char c)
+{
+    unsigned u = cp2uni(c);
+    if (u != cp_uni[c - 0x80])
+        return 0;
+    if ((u >= 0xDF && u <= 0xFF && u != 0xF7) || u == 0x192 ||
+        (u >= 0x3B1 && u <= 0x3C9))     /* Latin-1, f, griechisch klein */
+        return 0;
+    return 1;
+}
+
 /* Unicode -> aktive Codepage, 0 = keins */
 static unsigned char uni2cp(unsigned u)
 {
@@ -1257,7 +1272,10 @@ static int name_for(int d, unsigned dc, const char *comp, unsigned clen, char *n
                 partup[dot] = 1, up = 1;
         }
         mixed = (partlo[0] && partup[0]) || (partlo[1] && partup[1]);
-        if (!uni_find(o, clen)) {       /* Original bekannt (___.txt aus
+        for (i = 0; i < clen; i++)      /* Zeichen ueber 7Fh: 8.3 nur mit  */
+            if ((unsigned char)o[i] >= 0x80 && !oem83((unsigned char)o[i]))
+                mixed = 1;              /* Grossbuchstaben wie in CP437   */
+        if (!uni_find(o, clen) && !mixed) {       /* Original bekannt (___.txt aus
                                            Japanisch): langer Eintrag    */
             if (!lo)
                 return 0;               /* alles gross: nur 8.3           */
@@ -1576,6 +1594,7 @@ static unsigned fat_ksel(void)
 }
 static unsigned ea_cdc;
 static int ea_cdrv = -1;
+static unsigned short __far *ea_ctab;    /* Codepage beim Laden        */
 static unsigned char ea_rec[EA_HDR + IFS_NAMELEN + 32];
 
 #define EAF ((struct ifs_file __far *)&ea_f)
@@ -1642,8 +1661,9 @@ static void ea_load(int d, unsigned dc)
     unsigned u, len, k;
     unsigned char __far *c;
 
-    if (ea_cdrv == d && ea_cdc == dc)
-        return;
+    if (ea_cdrv == d && ea_cdc == dc && ea_ctab == cp_utab)
+        return;                         /* (CHCP: Namen neu umrechnen)    */
+    ea_ctab = cp_utab;
     ea_cdrv = d;
     ea_cdc = dc;
     ea_cused = 0;

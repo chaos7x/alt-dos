@@ -303,6 +303,10 @@ static void detail(unsigned k)
         apn(v, mi.total_kb32 ? mi.free_kb32 : mi.free_kb);
         ap(v, " KB");
         line("Frei:", v);
+        if (!si.kernel_kb) {            /* gebunden unter DOS (Stub)     */
+            line("EMS/XMS:", "vom DOS (HIMEM/EMM386, DOS-Box)");
+            break;
+        }
         v[0] = 0;
         apn(v, si.kernel_kb);
         ap(v, " KB");
