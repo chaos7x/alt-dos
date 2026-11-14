@@ -256,6 +256,24 @@ static void read_panel(struct panel *p, const char *keep)
 #define C_S2    24
 #define C_S3    33
 
+/* Rahmenzeichen mit gemischten Linien (einfach/doppelt, B5h-B8h, BDh,
+   BEh, C6h, C7h, CFh-D8h) haben nur CP437 und die Codepages mit
+   demselben Grafikbereich (737, 860-863, 865, 866); 850, 852, 857, 858
+   u. a. haben dort Buchstaben (vom Nutzer gemeldet: unter 850 standen
+   Ð, Ã und Â im Rahmen). Dann die doppelten Nachbarn ╦ ╠ ╣, die es
+   ueberall gibt. */
+static int cp437(void)
+{
+    static const unsigned full[] = { 437, 737, 860, 861, 862, 863, 865, 866 };
+    unsigned cp = DosGetCp(), i;
+    if (FAPI_FAILED(cp) || cp == 0)
+        return 1;                       /* unbekannt (alter Kernel)      */
+    for (i = 0; i < sizeof(full) / sizeof(full[0]); i++)
+        if (cp == full[i])
+            return 1;
+    return 0;
+}
+
 static void frame_line(int r, int x, char l, char m, char j, char rr, unsigned char a)
 {
     int i;
@@ -332,7 +350,7 @@ static void date_time(const struct ent *e, char *d, char *t)
 static void draw_panel(int k)
 {
     struct panel *p = &pn[k];
-    int x = k * 40, r, i;
+    int x = k * 40, r, i, k437;
     unsigned rows = PROWS(), idx, n;
     unsigned char a, as;
     static char nb[16], db[10], tb[8], nm13[14];
@@ -343,7 +361,8 @@ static void draw_panel(int k)
     if (p->cur >= p->top + rows)
         p->top = p->cur - rows + 1;
     /* oben: Rahmen mit Pfad in der Mitte */
-    frame_line(0, x, '\xC9', '\xCD', '\xD1', '\xBB', A_PANEL);
+    k437 = cp437();
+    frame_line(0, x, '\xC9', '\xCD', k437 ? '\xD1' : '\xCB', '\xBB', A_PANEL);
     n = slen(p->dir);
     if (n > 34) {
         scopy(tmp, "...", sizeof(tmp));
@@ -397,7 +416,8 @@ static void draw_panel(int k)
         }
     }
     /* Trennlinie und Kurzanzeige */
-    frame_line(2 + rows, x, '\xC7', '\xC4', '\xC1', '\xB6', A_PANEL);
+    frame_line(2 + rows, x, k437 ? '\xC7' : '\xCC', '\xC4', '\xC1',
+               k437 ? '\xB6' : '\xB9', A_PANEL);
     for (i = 0; i < 38; i++)
         line[i] = ' ';
     line[38] = 0;
