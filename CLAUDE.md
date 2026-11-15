@@ -1651,8 +1651,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   das CD-ROM (ID 6) am Adaptec erkannt, Start von der Adaptec-Platte C:.
   Danach (15.11.2026) ebenso bestätigt: XCOPY von der CD G: gleichzeitig
   auf D: und E: (beide am Adaptec), CHKDSK auf beiden ohne Fehler, DIR G:
-  richtig. Offen: Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR),
-  synchron/Ultra (SDTR), echte Hardware.
+  richtig.
+  Wide (Wunsch des Nutzers, 15.11.2026; in 86Box geprüft mit AHA-2944UW,
+  Platten an ID 0 und ID 9: beide „(Wide)“, XCOPY C:->D:->E:, CHKDSK
+  beider sauber, COMP gleich): chip_reset liest beim ersten Mal SBLKCTL
+  – SELWIDE ohne SELBUSB = Karte mit 16-Bit-Anschluss (so meldet die
+  Karte ihre Verdrahtung nach dem Reset, 86Box wie das Datenbuch) – und
+  schreibt danach SELWIDE zurück; Suche dann über IDs 0–15, `/ID:` bis
+  15. Je Ziel `wd[id]` (0 offen, 1 Wide, 2 schmal): beim ersten Befehl
+  nach IDENTIFY die WDTR-Meldung 01 02 03 01 (ATN erst vor dem letzten
+  Byte weg, `mo`/`mon`/`moi`), Antwort in MSG IN als erweiterte Meldung
+  (`mi`/`mii`, eine 00 darin ist kein COMMAND COMPLETE), MESSAGE REJECT
+  oder keine Antwort = schmal; vor jeder Auswahl SCSIRATE WIDEXFER nach
+  wd. chip_reset nach Fehlern setzt wd zurück (neu verhandeln).
+  `/NOWIDE`. Alle Längen sind gerade (INQUIRY 36, Sense 18, Sektoren) –
+  WIDEODD braucht es nicht. Units weiter höchstens 8 (DRV_MAXUNITS).
+  Offen: synchron/Ultra (SDTR; 86Box überträgt ohnehin ohne Takt), echte
+  Hardware.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
   `-audiodev wav` geprüft (Mitschnitt nach Frequenz je Viertelsekunde

@@ -4,7 +4,7 @@
  * 2940 Ultra (UW), 2944UW und der Chip auf Hauptplatinen - AT-DOS 6.0,
  * braucht einen 386
  *
- * CONFIG.SYS:  DEVICE=AIC7XXX.SYS [/ID:7] [/NOIRQ]
+ * CONFIG.SYS:  DEVICE=AIC7XXX.SYS [/ID:7] [/NOIRQ] [/NOWIDE]
  *
  * Der Chip hat einen eigenen kleinen Prozessor (Sequenzer), dessen
  * Programm sonst der Treiber laedt. Dieser Treiber laesst ihn angehalten
@@ -15,6 +15,12 @@
  * DFCNTRL). Mehr Daten als erwartet nimmt BITBUCKET ab. Warten: kurz
  * pausenlos nachsehen, danach schlafen bis zum PCI-Interrupt des Chips
  * (SIMODE0/1 je nach erwartetem Ereignis), mit /NOIRQ je Takt.
+ *
+ * Wide (2940W/UW, 2944UW): die Karte meldet ihren 16-Bit-Anschluss nach
+ * dem Chip-Reset in SBLKCTL (SELWIDE). Dann werden die IDs 0-15
+ * abgesucht und mit jedem Geraet beim ersten Befehl die Breite
+ * verhandelt (WDTR hinter IDENTIFY); sagt es ja, gilt fuer seine
+ * Datenphasen SCSIRATE WIDEXFER. /NOWIDE bleibt schmal (IDs 0-7).
  * Register und Ablauf: AIC-7870-Datenbuch bzw. die Nachbildung in 86Box
  * (src/scsi/scsi_aic7xxx.c, nur gelesen); Linux aic7xxx (GPLv2/BSD)
  * nicht uebernommen.
@@ -48,6 +54,7 @@
 #define  P_STATUS   0xC0
 #define  P_MESGIN   0xE0
 #define SCSIRATE    0x04
+#define  WIDEXFER   0x80
 #define SCSIID      0x05
 #define SCSIDATL    0x06
 #define STCNT       0x08                /* 3 Byte                          */
@@ -63,6 +70,8 @@
 #define SIMODE0     0x10
 #define SIMODE1     0x11
 #define SBLKCTL     0x1F
+#define  SELWIDE    0x02
+#define  SELBUSB    0x08
 #define HCNTRL      0x87
 #define  INTEN      0x02
 #define  PAUSE      0x04
@@ -90,6 +99,12 @@ static unsigned char rd8(unsigned r) { return inp(io + r); }
 static void wr8(unsigned r, unsigned char v) { outp(io + r, v); }
 
 static unsigned char cdb[12], stat, msg;
+
+/* Breite: wide = Karte mit 16-Bit-Bus (und nicht /NOWIDE), wd[id] =
+   Stand der Verhandlung je Ziel: 0 offen, 1 Wide, 2 schmal */
+static unsigned char wide, probed, wd[16];
+static unsigned char mo[5], mon, moi;   /* Meldung an das Geraet           */
+static unsigned char mi[8], mii;        /* erweiterte Meldung vom Geraet   */
 
 #define SCSI_OK     0
 #define SCSI_NODEV  1                   /* Auswahl-Zeitueberschreitung     */
@@ -159,7 +174,14 @@ static void chip_reset(void)
     wr8(HCNTRL, PAUSE);                 /* Sequenzer bleibt angehalten    */
     for (k = 0; k < 1000 && !(rd8(HCNTRL) & PAUSE); k++)
         ;
-    wr8(SBLKCTL, 0);                    /* Kanal A, schmal                */
+    if (!probed) {                      /* Anschluss der Karte: 02h = Wide */
+        probed = 1;
+        if ((rd8(SBLKCTL) & (SELWIDE | SELBUSB)) != SELWIDE)
+            wide = 0;
+    }
+    wr8(SBLKCTL, wide ? SELWIDE : 0);   /* Kanal A                        */
+    for (k = 0; k < 16; k++)            /* nach einem Reset neu verhandeln */
+        wd[k] = 0;
     wr8(SCSISEQ, 0);
     wr8(SXFRCTL0, CLRSTCNT | CLRCHN);
     wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);    /* Auswahlfrist ~256 ms */
@@ -235,6 +257,17 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
     wr8(SSTAT0, 0xFF);
     wr8(SSTAT1, 0xFF);
     wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
+    wr8(SCSIRATE, wd[id] == 1 ? WIDEXFER : 0);
+    mo[0] = 0x80;                       /* IDENTIFY, LUN 0, ohne Trennen   */
+    mon = 1;
+    if (wide && !wd[id]) {              /* WDTR: 16 Bit anbieten           */
+        mo[1] = 0x01;
+        mo[2] = 0x02;
+        mo[3] = 0x03;
+        mo[4] = 0x01;
+        mon = 5;
+    }
+    moi = mii = 0;
     wr8(SCSIID, (unsigned char)((id << 4) | host));
     wr8(SCSISEQ, ENSELO | ENAUTOATNO);  /* Auswahl mit ATN                */
     for (;;) {
@@ -266,10 +299,12 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
         wr8(SCSISIG, ph);               /* Phase uebernehmen              */
         wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
         switch (ph) {
-        case P_MESGOUT:                 /* IDENTIFY, LUN 0, ohne Trennen  */
-            wr8(SSTAT1, CLRATNO);       /* letztes Byte: ATN weg           */
+        case P_MESGOUT:                 /* IDENTIFY [+ WDTR], dann NOP     */
+            if (moi + 1 >= mon)
+                wr8(SSTAT1, CLRATNO);   /* letztes Byte: ATN weg           */
             wr8(SXFRCTL0, SPIOEN);
-            wr8(SCSIDATL, 0x80);
+            wr8(SCSIDATL, moi < mon ? mo[moi] : 0x08);
+            moi++;
             break;
         case P_COMMAND:
             wr8(SXFRCTL0, SPIOEN);
@@ -294,9 +329,26 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
             break;
         case P_MESGIN:
             wr8(SXFRCTL0, SPIOEN);
-            msg = rd8(SCSIDATL);
-            if (msg == 0)
-                ok = 1;                 /* COMMAND COMPLETE               */
+            ph = rd8(SCSIDATL);
+            if (mii) {                  /* erweiterte Meldung: Rest        */
+                if (mii < sizeof(mi))
+                    mi[mii] = ph;
+                if (++mii >= 2 && mii >= 2u + mi[1]) {
+                    if (mi[1] == 2 && mi[2] == 0x03 && mon > 1) {  /* WDTR */
+                        wd[id] = mi[3] ? 1 : 2;
+                        wr8(SCSIRATE, mi[3] ? WIDEXFER : 0);
+                    }
+                    mii = 0;
+                }
+            } else if (ph == 0x01)      /* EXTENDED MESSAGE                */
+                mii = 1;
+            else {
+                msg = ph;
+                if (msg == 0)
+                    ok = 1;             /* COMMAND COMPLETE               */
+                else if (msg == 0x07 && mon > 1 && !wd[id])
+                    wd[id] = 2;         /* MESSAGE REJECT auf WDTR         */
+            }
             break;
         default:
             wr8(SXFRCTL0, SPIOEN);      /* unbekannt: Byte abnehmen        */
@@ -307,6 +359,8 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
     wr8(SXFRCTL0, 0);
     wr8(SSTAT0, 0xFF);
     wr8(SSTAT1, 0xFF);
+    if (ok && mon > 1 && !wd[id])
+        wd[id] = 2;                     /* WDTR ohne Antwort: schmal       */
     if (!ok) {
         chip_reset();
         return SCSI_FAIL;
@@ -394,9 +448,13 @@ static void init(void)
     if ((a = has_opt(r->args, "/ID:") ? r->args : 0) != 0) {
         for (; *a && !(a[0] == ':' && a[-1] == 'D'); a++)
             ;
-        if (*a == ':' && a[1] >= '0' && a[1] <= '7')
+        if (*a == ':' && a[1] >= '0' && a[1] <= '9') {
             host = a[1] - '0';
+            if (a[2] >= '0' && a[2] <= '9')
+                host = host * 10 + a[2] - '0';
+        }
     }
+    wide = has_opt(r->args, "/NOWIDE") ? 0 : 1;     /* chip_reset prueft */
     if (find_card()) {
         dputs("  AIC7XXX.SYS: kein Adaptec AIC-7870/7880 gefunden\n");
         return;
@@ -417,14 +475,17 @@ static void init(void)
     v = pci_rd(ploc, 0x04);
     pci_wr(ploc, 0x04, (unsigned)v | 0x0005, 2);        /* I/O + Busmaster */
     chip_reset();
+    if (host > (wide ? 15u : 7u))
+        host = 7;
+    wr8(SCSIID, (unsigned char)host);
 
     p = scat(line, "  Adaptec ");
     p = scat(p, chip);
-    p = scat(p, " (PCI ");
+    p = scat(p, ", PCI ");
     p = hex(p, bus, 2);
     p = scat(p, ":");
     p = hex(p, dev, 2);
-    p = scat(p, ") an ");
+    p = scat(p, ", ");
     p = hex(p, io, 4);
     k = irq && irq < 16 ? (has_opt(r->args, "/NOIRQ") ? 2 : set_irq(irq, aic_irq) ? 1 : 0) : 3;
     irq_on = k == 0;
@@ -432,19 +493,20 @@ static void init(void)
     p = udec(p, irq);
     p = scat(p, k == 1 ? " belegt, Abfragebetrieb" : k == 2 ? " nicht benutzt (/NOIRQ)" :
                 k == 3 ? " ung\x81ltig, Abfragebetrieb" : "");
-    p = scat(p, ", SCSI-ID ");
+    p = scat(p, wide ? ", Wide" : "");
+    p = scat(p, ", ID ");
     p = udec(p, host);
     scat(p, "\n");
     dputs(line);
 
-    for (id = 0; id < 8; id++) {
+    for (id = 0; id < (wide ? 16u : 8u); id++) {
         if (id == host)
             continue;
         cdb6(0x12, 36);                 /* INQUIRY                         */
         if (run(id, 6, r->buf_phys, 36, 100) != SCSI_OK)
             continue;
         p = scat(line, "  SCSI-ID ");
-        *p++ = (char)('0' + id);
+        p = udec(p, id);
         p = scat(p, (buf[0] & 0x1F) == 0 ? ((buf[1] & 0x80) ? ": Wechselplatte " : ": Festplatte ") :
                     (buf[0] & 0x1F) == 7 ? ": MO-Laufwerk " :
                     (buf[0] & 0x1F) == 5 ? ": CD-ROM " : ": Ger\x84t ");
@@ -453,6 +515,8 @@ static void init(void)
         while (p[-1] == ' ')
             p--;
         *p = 0;
+        if (wd[id] == 1)
+            p = scat(p, " (Wide)");
         if (((buf[0] & 0x1F) == 0 || (buf[0] & 0x1F) == 7) && n < DRV_MAXUNITS) {
             unsigned char rmb = buf[1] & 0x80;  /* ZIP, JAZ, MO, SyQuest  */
             unsigned long cap;
