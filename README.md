@@ -160,6 +160,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Trennerlaubnis, Wiederauswahl per Interrupt): eine CD, die gerade sucht,
   hält die Platte am selben Adaptec nicht mehr auf – jedes Gerät hat
   seine eigene Sperre im Kernel. `/NODISC` schaltet das ab
+- `DIR /S` zeigt auch alle Unterverzeichnisse wie MS-DOS (je Verzeichnis
+  mit Treffern eine Liste und eine Summe, am Ende „Anzahl der angezeigten
+  Dateien“; mit `/B` volle Pfade, geht mit `/W`, `/O`, `/A` und Mustern)
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter
@@ -479,7 +482,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   `COMMAND.COM` öffnet die DOS-Befehlszeile in derselben Sitzung (EXIT kehrt
   zurück), `COMMAND /C befehl` führt einen DOS-Befehl aus. Mit
   `DOSSTART=SESSION` in CONFIG.SYS bekommt wie bei OS/2 jedes DOS-Programm
-  eine eigene Sitzung. Die Box bleibt danach geparkt offen (wie NTVDM bei
+  eine eigene Sitzung. Umleitung und Pipes wirken auch für DOS-Programme
+  (`MEM > datei`, `prog < ein.txt`, `type x | prog | find "a"`, `COMMAND
+  /C befehl >> datei`): die Box schreibt und liest dann direkt über die
+  Handles von CMD. Die Box bleibt danach geparkt offen (wie NTVDM bei
   NT): FreeDOS startet nur beim ersten DOS-Programm eines Befehlsinterpreters,
   jedes weitere läuft ohne neuen Start; endet der Befehlsinterpreter, wird
   ihr Speicher (≈ 660 KB) frei; MEM zeigt ihn als „DOS-Boxen“. In der Box

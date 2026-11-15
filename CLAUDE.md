@@ -864,9 +864,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   steht. In QEMU (32 MB): DOOM 1.9 mit -mx=9 (1.837.506 Byte, 7-Zip -mx=9
   1.657.143 – keine Preisrechnung), 7ZDEC t/x, das entpackte DOOM läuft
   `-timedemo demo1`; 7-Zip-Archiv mit 4-MB-Wörterbuch ohne Zwischendatei.
-  Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
-  /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
-  Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).
+  Erledigt (15.11.2026, in QEMU geprüft): `DIR /S` in CMD (`dir_tree`
+  ohne Rekursion wie walk_tree, `dir_list` je Verzeichnis, Zustand in
+  `d_*`-Statics; Überschrift erst vor dem ersten Treffer, „.“/„..“
+  zählen dort nicht, /B /S volle Pfade, Schlussblock „Anzahl der
+  angezeigten Dateien“) und Umleitung für DOS-Programme, s. „Umleitung
+  in die Box“.
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
@@ -3482,8 +3485,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   QEMU ohne VME ebenso. Übrig: INT 16h – wäre nur ohne Falle zu haben,
   wenn ein Merker „keine Taste“ im Speicher der Box die Abfrage im Real
   Mode beantwortete (Leerlauf-Erkennung müsste dann anders zählen).
-  Bemerkt: `C:\DOS\MDOS\MEM.EXE > datei` aus CMD landet ebenfalls auf
-  dem Bildschirm (wie `command /c prog > datei`, offen).
+  Umleitung in die Box (erledigt, 15.11.2026; vorher landete `MEM.EXE >
+  datei` oder `command /c prog > datei` aus CMD auf dem Bildschirm –
+  FreeDOS schrieb auf sein CON): die Box-Task erbt std[0..2] von CMD
+  (std_set). BOXSHELL fragt vor jedem Programm mit Befehlszeile INT E0h
+  1D00h (`BOX_STDQ`: Bit i = Handle i ist nicht die Konsole), sichert
+  Handle i (45h), schickt 1D01h BL = i (`redir_std`: das nächste OPEN/
+  CREATE über den Redirector bekommt kein neues FAPI-Handle, sondern
+  Handle i der Box-Task – gleiche Dateistelle wie CMD, kein FAPI_DUP),
+  öffnet `X:\ATSTD.$$$` (Name zählt nicht) und legt es mit 46h auf i;
+  danach (std_off) zurück. redir.c: std-Handles (< 3) werden beim CLOSE
+  nicht geschlossen, READ/WRITE ohne SEEK (Pipes, Konsole), Schreiben
+  von 0 Byte kürzt dort nichts; rd_cache übergeht SFT-Handles <= 3.
+  1D02h nimmt den Merker zurück (OPEN gescheitert). Interaktives COMMAND
+  bleibt an der Konsole. Geprüft: `command /c ver > x`, HALLO > und >>,
+  MEM > x, Filter mit `<` und `>`, `type x | up.com > y`, `up.com < x |
+  find`, `command /c dir > x`, danach interaktives COMMAND, fsck sauber.
   XMS über 3 MB (Phase 4, Rest; in QEMU geprüft): EMBs im Adressraum
   der Box von 110000h bis 64 MB (`XMS_TOP` 4000h, `XMS_MAXPG` 63.424 KB,
   INI `XMS_MEMORY_LIMIT` bis 63424, Vorgabe weiter 2048). `emb_map`/

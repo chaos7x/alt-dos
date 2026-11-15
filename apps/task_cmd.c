@@ -1146,21 +1146,266 @@ static void ds_get(unsigned k, struct fapi_dirent *e, const char *dir)
     e->name[i] = 0;
 }
 
+/* DIR: Zustand fuer dir_list (statisch, App-Stack nur 2 KB) */
+static struct fapi_dirent d_e;
+static char d_dir[FAPI_PATHLEN], d_pat[FAPI_PATHLEN], d_adir[FAPI_PATHLEN];
+static unsigned d_want, d_nowant, d_files, d_dirs, d_wcol;
+static unsigned long d_total;
+static int d_all, d_page, d_lines, d_bare, d_wide, d_sub, d_hdr;
+
+/* " Verzeichnis von X" (bei /S erst vor dem ersten Treffer) */
+static void dir_head(void)
+{
+    static char cur[FAPI_CURDIRLEN + 2];
+    char *dir = d_dir;
+    unsigned n;
+    d_hdr = 0;
+    if (d_bare)
+        return;
+    puts("\n Verzeichnis von ");
+    if (dir[0] && dir[1] == ':') {
+        dir[0] = up(dir[0]);
+        puts(dir);
+        if (!dir[2])
+            putc('\\');                    /* "D:" -> "D:\\"           */
+    } else {
+        DosQCurDir(cur);
+        if (dir[0] == '\\') {                  /* absolut: nur Laufwerk */
+            cur[2] = 0;
+        } else if (dir[0] && cur[3]) {
+            n = slen(cur);
+            cur[n] = '\\';
+            cur[n + 1] = 0;
+        }
+        puts(cur);
+        puts(dir);
+    }
+    puts("\n\n");
+    d_lines += 3;
+}
+
+static int dir_dot(const char *s)       /* "." oder ".."                 */
+{
+    return s[0] == '.' && (!s[1] || (s[1] == '.' && !s[2]));
+}
+
+/* ein Verzeichnis (d_dir) ausgeben, zaehlt in d_files/d_dirs/d_total */
+static void dir_list(void)
+{
+    struct fapi_dirent *ep = &d_e;
+    char *dir = d_dir;
+    unsigned n, pass, jd;
+    int sorted = 0;
+#define e (*ep)
+    if (join_mask)
+        dir_abs(dir, d_adir);
+    d_wcol = 0;
+    if (ds_ord[0]) {                    /* DIR /O: sammeln, sortieren     */
+        if (!ds_sel) {
+            ds_sel = DosAllocSeg(0);
+            if (FAPI_FAILED(ds_sel))
+                ds_sel = 0;
+        }
+        ds_n = 0;
+        for (n = 0; ds_sel && DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
+            if (!d_all && (e.attr & 0x06) && !dir_dot(e.name))
+                continue;
+            if ((e.attr & d_want) != d_want || (e.attr & d_nowant))
+                continue;
+            if (d_pat[0] && !match(e.name, d_pat))
+                continue;
+            if (ds_n == DS_MAX) {       /* zu viele: unsortiert           */
+                ds_n = 0xFFFF;
+                break;
+            }
+            ds_put(ds_n++, &e, n);
+        }
+        if (ds_sel && ds_n != 0xFFFF) {
+            ds_sort();
+            sorted = 1;
+        }
+    }
+    for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
+    for (n = 0; ; n++) {
+        if (sorted) {
+            if (pass || n >= ds_n)
+                break;
+            ds_get(n, &e, dir);
+        } else {
+            if (DosFindEntry(&e, n, dir[0] ? dir : 0) == FAPI_ERROR)
+                break;
+            if (((e.attr & 0x10) != 0) != (pass == 0))
+                continue;
+        }
+        if (!d_all && (e.attr & 0x06) && !dir_dot(e.name))
+            continue;                           /* versteckt, System - "."
+                                                   und ".." immer (macOS
+                                                   legt sie versteckt an) */
+        if ((e.attr & d_want) != d_want || (e.attr & d_nowant))
+            continue;
+        if (d_pat[0] && !match(e.name, d_pat))
+            continue;
+        if (d_sub && dir_dot(e.name))           /* /S: nur echte Treffer */
+            continue;                           /* oeffnen die Ueberschrift */
+        if (d_hdr)
+            dir_head();
+        if (e.attr & 0x10)
+            d_dirs++;
+        else {
+            d_files++;
+            d_total += e.size;
+        }
+        if (d_bare) {                           /* DIR /B                */
+            if (dir_dot(e.name))
+                continue;
+            if (d_sub) {                        /* /B /S: voller Pfad    */
+                puts(dir);
+                if (dir[slen(dir) - 1] != '\\')
+                    putc('\\');
+            }
+            puts(e.name);
+            puts("\n");
+            continue;
+        }
+        if (d_wide) {                           /* DIR /W: Spalten zu 16 */
+            unsigned l = slen(e.name) + ((e.attr & 0x10) ? 2 : 0);
+            if (d_wcol && d_wcol + l > 79) {
+                puts("\n");
+                d_wcol = 0;
+            }
+            if (e.attr & 0x10)
+                putc('[');
+            puts(e.name);
+            if (e.attr & 0x10)
+                putc(']');
+            d_wcol += l;
+            for (; d_wcol % 16; d_wcol++)
+                putc(' ');
+            if (d_wcol >= 80) {
+                puts("\n");
+                d_wcol = 0;
+            }
+            continue;
+        }
+        {
+            static char dt_[12];
+            ctry_date(dt_, e.date);
+            puts(dt_);
+            puts("  ");
+            ctry_time(dt_, e.time, 0);
+            puts(dt_);
+            if (!ctry.h12)
+                putc(' ');                  /* gleiche Spalte wie 12 h  */
+        }
+        jd = (e.attr & 0x10) ? join_at(d_adir, e.name) : 0;
+        if (jd)
+            puts("    <JUNCTION>    ");
+        else if (e.attr & 0x10)
+            puts("    <DIR>         ");
+        else
+            put_num(e.size, 18);
+        putc(' ');
+        puts(e.name);
+        if (jd) {                               /* Ziel wie bei Windows  */
+            puts(" [");
+            putc((char)('A' + jd - 1));
+            puts(":\\]");
+        }
+        puts("\n");
+        if (d_page && ++d_lines >= VioGetRows() - 1) {  /* eine Seite    */
+            puts("Weiter mit beliebiger Taste . . .");
+            KbdCharIn();
+            puts("\n");
+            d_lines = 0;
+        }
+    }
+    if (d_wcol)
+        puts("\n");
+#undef e
+}
+
+/* Summenzeilen: Dateien/Bytes, bei last auch Verzeichnisse und frei */
+static void dir_sum(unsigned files, unsigned long total, int last)
+{
+    put_num(files, 16);
+    puts(" Datei(en),");
+    put_num(total, 15);
+    puts(" Bytes\n");
+    if (!last) {
+        puts("\n");
+        return;
+    }
+    put_num(d_dirs, 16);
+    puts(" Verzeichnis(se),");
+    {
+        static unsigned long fb;
+        unsigned drv = (d_dir[0] && d_dir[1] == ':') ? (unsigned)(up(d_dir[0]) - 'A') : DosQCurDisk();
+        if (DosFreeSpace(drv, &fb) == 0)
+            put_num(fb, 15);
+        else
+            puts("               ?");
+    }
+    puts(" Bytes frei\n\n");
+}
+
+/* DIR /S: Baum ohne Rekursion ablaufen (wie walk_tree), d_dir absolut */
+#define DS_DEPTH 24
+static void dir_tree(void)
+{
+    static struct fapi_dirent t;
+    static unsigned idx[DS_DEPTH], len[DS_DEPTH];
+    static unsigned long ptot;
+    unsigned depth = 0, n = 0, l, pf;
+    for (;;) {
+        if (n == 0) {                   /* Verzeichnis neu: ausgeben     */
+            pf = d_files;
+            ptot = d_total;
+            d_hdr = 1;
+            dir_list();
+            if (!d_hdr && !d_bare) {    /* Treffer: Summe je Verzeichnis */
+                if (d_wide)
+                    puts("\n");
+                dir_sum(d_files - pf, d_total - ptot, 0);
+            }
+        }
+        if (DosFindEntry(&t, n, d_dir) == FAPI_ERROR) {
+            if (depth == 0)
+                return;
+            depth--;
+            d_dir[len[depth]] = 0;
+            n = idx[depth];
+            continue;
+        }
+        n++;
+        if (!(t.attr & 0x10) || dir_dot(t.name) || (!d_all && (t.attr & 0x06)))
+            continue;
+        l = slen(d_dir);
+        if (depth >= DS_DEPTH || l + slen(t.name) + 2 >= FAPI_PATHLEN)
+            continue;
+        idx[depth] = n;
+        len[depth] = l;
+        depth++;
+        if (d_dir[l - 1] != '\\')
+            scat(d_dir, "\\", FAPI_PATHLEN);
+        scat(d_dir, t.name, FAPI_PATHLEN);
+        n = 0;
+    }
+}
+
 static void cmd_dir(char *arg)
 {
     static struct fapi_dirent e;
-    static char dir[FAPI_PATHLEN], cur[FAPI_CURDIRLEN + 2], pat[FAPI_PATHLEN], adir[FAPI_PATHLEN];
-    unsigned jd;
-    unsigned n, files = 0, dirs = 0, want = 0, nowant = 0, pass;
-    unsigned long total = 0;
-    int all = 0, page = 0, lines = 4, bare = 0, wide = 0;
-    unsigned wcol = 0;
-
+    char *dir = d_dir, *pat = d_pat;
+    unsigned n;
     static char dcmd[64], *src;
-    int sorted = 0, pass2;
+    int pass2;
     ctry_init();
     dir[0] = 0;
     ds_ord[0] = 0;
+    d_want = d_nowant = d_files = d_dirs = 0;
+    d_total = 0;
+    d_all = d_page = d_bare = d_wide = d_sub = 0;
+    d_lines = 4;
     if (FAPI_FAILED(DosGetEnv("DIRCMD", dcmd, sizeof(dcmd))))
         dcmd[0] = 0;                    /* wie MS-DOS: erst DIRCMD        */
     for (pass2 = 0; pass2 < 2; pass2++)
@@ -1185,7 +1430,7 @@ static void cmd_dir(char *arg)
         if (arg[0] == '/' && up(arg[1]) == 'A') {   /* /A, /A:H, /A-D ...  */
             char *q = arg + 2;
             int neg = 0;
-            all = 1;
+            d_all = 1;
             if (*q == ':')
                 q++;
             for (; *q && *q != ' '; q++) {
@@ -1196,32 +1441,37 @@ static void cmd_dir(char *arg)
                     neg = 1;
                 else if (b) {
                     if (neg)
-                        nowant |= b;
+                        d_nowant |= b;
                     else
-                        want |= b;
+                        d_want |= b;
                     neg = 0;
                 }
             }
         } else if (same(arg, "/P"))
-            page = 1;
+            d_page = 1;
         else if (same(arg, "/B"))
-            bare = 1;                   /* nur Namen                     */
+            d_bare = 1;                 /* nur Namen                     */
         else if (same(arg, "/W"))
-            wide = 1;                   /* breit, Verzeichnisse in [ ]   */
+            d_wide = 1;                 /* breit, Verzeichnisse in [ ]   */
+        else if (same(arg, "/S"))
+            d_sub = 1;                  /* mit Unterverzeichnissen       */
+        else if (same(arg, "/-S"))
+            d_sub = 0;
         else if (arg[0] == '/' && arg[1] == '?') {
             puts("Zeigt Dateien und Unterverzeichnisse eines Verzeichnisses an.\n\n"
-                 "DIR [Laufwerk:][Pfad][Dateiname] [/P] [/W] [/B] [/A[[:]Attribute]]\n"
+                 "DIR [Laufwerk:][Pfad][Dateiname] [/P] [/W] [/B] [/S] [/A[[:]Attribute]]\n"
                  "    [/O[[:]Sortierfolge]]\n\n"
                  "  /P  h\x84lt nach jeder Bildschirmseite an\n"
                  "  /W  breites Format (Verzeichnisse in [ ])\n"
-                 "  /B  nur Namen\n"
+                 "  /B  nur Namen (mit /S voller Pfad)\n"
+                 "  /S  auch alle Unterverzeichnisse\n"
                  "  /A  auch versteckte und Systemdateien; Attribute: H versteckt,\n"
                  "      S System, D Verzeichnis, R schreibgesch\x81tzt, A Archiv,\n"
                  "      - davor = nicht\n"
                  "  /O  sortiert: N Name, E Endung, S Gr\x94\xE1" "e, D Datum/Zeit,\n"
                  "      G Verzeichnisse zuerst, - davor kehrt um; /O allein = GN\n\n"
                  "Schalter lassen sich in der Umgebungsvariablen DIRCMD voreinstellen;\n"
-                 "/-O hebt die Sortierung wieder auf.\n");
+                 "/-O hebt die Sortierung wieder auf, /-S die Suche in Unterverzeichnissen.\n");
             return;
         } else if (arg[0] == '/') {
             static char sw[16];
@@ -1231,19 +1481,19 @@ static void cmd_dir(char *arg)
             puts("\n");
             return;
         } else
-            word(arg, dir, sizeof(dir));
+            word(arg, dir, FAPI_PATHLEN);
     }
     pat[0] = 0;
     if (dir[0] && (has_wild(dir) || !is_dir(dir))) {    /* DIR \DOS\*.EXE */
         char *b = base_name(dir);
-        for (n = 0; b[n] && n < sizeof(pat) - 1; n++)
+        for (n = 0; b[n] && n < FAPI_PATHLEN - 1; n++)
             pat[n] = b[n];
         pat[n] = 0;
         {                               /* wie MS-DOS: C* = C*.*, CMD = CMD.* */
             unsigned k;
             for (k = 0; pat[k] && pat[k] != '.'; k++)
                 ;
-            if (!pat[k] && n < sizeof(pat) - 3) {
+            if (!pat[k] && n < FAPI_PATHLEN - 3) {
                 pat[n] = '.';
                 pat[n + 1] = '*';
                 pat[n + 2] = 0;
@@ -1274,7 +1524,7 @@ static void cmd_dir(char *arg)
         puts("Verzeichnis nicht gefunden.\n");
         return;
     }
-    if (!bare)
+    if (!d_bare)
     {                                       /* Kopf wie MS-DOS          */
         static struct fapi_label lb;
         unsigned dv = (dir[0] && dir[1] == ':') ? (unsigned)(up(dir[0]) - 'A') : DosQCurDisk();
@@ -1291,174 +1541,41 @@ static void cmd_dir(char *arg)
             }
         }
     }
-    if (!bare) {
-    puts("\n Verzeichnis von ");
-    if (dir[0] && dir[1] == ':') {
-        dir[0] = up(dir[0]);
-        puts(dir);
-        if (!dir[2])
-            putc('\\');                    /* "D:" -> "D:\\"           */
-    } else {
-        DosQCurDir(cur);
-        if (dir[0] == '\\') {                  /* absolut: nur Laufwerk */
-            cur[2] = 0;
-        } else if (dir[0] && cur[3]) {
-            n = slen(cur);
-            cur[n] = '\\';
-            cur[n + 1] = 0;
-        }
-        puts(cur);
-        puts(dir);
-    }
-    puts("\n\n");
-    }
     {
         static char q[FAPI_CURDIRLEN];
         join_mask = 0;
         for (n = 0; n < 26; n++)
             if (DosQJoin(n, q) == 0)
                 join_mask |= 1UL << n;
-        if (join_mask)
-            dir_abs(dir, adir);
     }
-    if (ds_ord[0]) {                    /* DIR /O: sammeln, sortieren     */
-        if (!ds_sel) {
-            ds_sel = DosAllocSeg(0);
-            if (FAPI_FAILED(ds_sel))
-                ds_sel = 0;
+    if (d_sub) {                            /* DIR /S                   */
+        static char ab[FAPI_PATHLEN];
+        dir_abs(dir, ab);
+        scopy(dir, ab, FAPI_PATHLEN);
+        dir_tree();
+        if (!d_files && !d_dirs) {
+            if (!d_bare)
+                puts("\nDatei nicht gefunden.\n\n");
+            return;
         }
-        ds_n = 0;
-        for (n = 0; ds_sel && DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
-            if (!all && (e.attr & 0x06) && !(e.name[0] == '.' &&
-                (!e.name[1] || (e.name[1] == '.' && !e.name[2]))))
-                continue;
-            if ((e.attr & want) != want || (e.attr & nowant))
-                continue;
-            if (pat[0] && !match(e.name, pat))
-                continue;
-            if (ds_n == DS_MAX) {       /* zu viele: unsortiert           */
-                ds_n = 0xFFFF;
-                break;
-            }
-            ds_put(ds_n++, &e, n);
-        }
-        if (ds_sel && ds_n != 0xFFFF) {
-            ds_sort();
-            sorted = 1;
-        }
+        if (d_bare)
+            return;
+        puts("\n     Anzahl der angezeigten Dateien:\n");
+        dir_sum(d_files, d_total, 1);
+        return;
     }
-    for (pass = 0; pass < 2; pass++)            /* Verzeichnisse zuerst */
-    for (n = 0; ; n++) {
-        if (sorted) {
-            if (pass || n >= ds_n)
-                break;
-            ds_get(n, &e, dir);
-        } else {
-            if (DosFindEntry(&e, n, dir[0] ? dir : 0) == FAPI_ERROR)
-                break;
-            if (((e.attr & 0x10) != 0) != (pass == 0))
-                continue;
-        }
-        if (!all && (e.attr & 0x06) && !(e.name[0] == '.' &&
-            (!e.name[1] || (e.name[1] == '.' && !e.name[2]))))
-            continue;                           /* versteckt, System - "."
-                                                   und ".." immer (macOS
-                                                   legt sie versteckt an) */
-        if ((e.attr & want) != want || (e.attr & nowant))
-            continue;
-        if (pat[0] && !match(e.name, pat))
-            continue;
-        if (e.attr & 0x10)
-            dirs++;
-        else {
-            files++;
-            total += e.size;
-        }
-        if (bare) {                             /* DIR /B                */
-            if (e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2])))
-                continue;
-            puts(e.name);
-            puts("\n");
-            continue;
-        }
-        if (wide) {                             /* DIR /W: Spalten zu 16 */
-            unsigned l = slen(e.name) + ((e.attr & 0x10) ? 2 : 0);
-            if (wcol && wcol + l > 79) {
-                puts("\n");
-                wcol = 0;
-            }
-            if (e.attr & 0x10)
-                putc('[');
-            puts(e.name);
-            if (e.attr & 0x10)
-                putc(']');
-            wcol += l;
-            for (; wcol % 16; wcol++)
-                putc(' ');
-            if (wcol >= 80) {
-                puts("\n");
-                wcol = 0;
-            }
-            continue;
-        }
-        {
-            static char dt_[12];
-            ctry_date(dt_, e.date);
-            puts(dt_);
-            puts("  ");
-            ctry_time(dt_, e.time, 0);
-            puts(dt_);
-            if (!ctry.h12)
-                putc(' ');                  /* gleiche Spalte wie 12 h  */
-        }
-        jd = (e.attr & 0x10) ? join_at(adir, e.name) : 0;
-        if (jd)
-            puts("    <JUNCTION>    ");
-        else if (e.attr & 0x10)
-            puts("    <DIR>         ");
-        else
-            put_num(e.size, 18);
-        putc(' ');
-        puts(e.name);
-        if (jd) {                               /* Ziel wie bei Windows  */
-            puts(" [");
-            putc((char)('A' + jd - 1));
-            puts(":\\]");
-        }
-        puts("\n");
-        if (page && ++lines >= VioGetRows() - 1) {  /* eine Bildschirmseite */
-            puts("Weiter mit beliebiger Taste . . .");
-            KbdCharIn();
-            puts("\n");
-            lines = 0;
-        }
-    }
-    if (wcol)
-        puts("\n");
-    if (pat[0] && !files && !dirs) {
-        if (!bare)
+    dir_head();
+    dir_list();
+    if (pat[0] && !d_files && !d_dirs) {
+        if (!d_bare)
             puts("Datei nicht gefunden.\n\n");
         return;
     }
-    if (bare)
+    if (d_bare)
         return;
-    if (wide)
+    if (d_wide)
         puts("\n");
-    put_num(files, 16);
-    puts(" Datei(en),");
-    put_num(total, 15);
-    puts(" Bytes\n");
-    put_num(dirs, 16);
-    puts(" Verzeichnis(se),");
-    {
-        static unsigned long fb;
-        unsigned drv = (dir[0] && dir[1] == ':') ? (unsigned)(up(dir[0]) - 'A') : DosQCurDisk();
-        if (DosFreeSpace(drv, &fb) == 0)
-            put_num(fb, 15);
-        else
-            puts("               ?");
-    }
-    puts(" Bytes frei\n\n");
+    dir_sum(d_files, d_total, 1);
 }
 
 static void cmd_cd(char *arg)

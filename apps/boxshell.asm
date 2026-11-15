@@ -15,7 +15,9 @@
 ; wert; AH=10h Redirector-Aufruf AL (ZF=1 erledigt, CF/AX Ergebnis);
 ; AH=11h SDA ist DS:SI; AH=12h -> DX:AX Bitmaske der AT-DOS-Laufwerke;
 ; AH=13h -> AL = Startlaufwerk der AT-DOS (0 = A:); AH=14h aktuelles
-; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI; AH=15h Programm
+; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI; AH=1Dh AL=0 ->
+; AL = umgeleitete Handles 0-2, AL=1 naechstes OPEN = Handle BL, AL=2
+; Merker weg; AH=15h Programm
 ; fertig, AL = Rueckgabewert: der Kernel parkt die Box bis zum naechsten
 ; DOS-Programm des Aufrufers (kehrt dann zurueck) oder beendet sie.
 
@@ -62,6 +64,7 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     di, cmd
         xor     ah, ah                  ; Befehlszeile der Box
         int     0E0h
+        mov     [clen0], cx             ; 0 = interaktiv (ohne Umleitung)
         push    cx
         jcxz    .cwd                    ; /C: Bildschirm leeren - die Box
         mov     ax, 0003h               ; gibt beim Ende nur die Ausgabe
@@ -112,6 +115,7 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     [pb_tail+2], cs
         mov     [pb_fcb1+2], cs
         mov     [pb_fcb2+2], cs
+        call    std_on                  ; Umleitung aus CMD (> < |)
         mov     bx, pblock
         mov     ax, 4B00h               ; FreeCOM starten und warten
         int     21h
@@ -119,7 +123,8 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         jc      .exit
         mov     ah, 4Dh                 ; dessen Rueckgabewert
         int     21h
-.exit:  cmp     word [dosver], 0        ; DOS_VERSION zuruecknehmen
+.exit:  call    std_off
+        cmp     word [dosver], 0        ; DOS_VERSION zuruecknehmen
         je      .park
         push    ax
         mov     ax, 122Fh
@@ -590,6 +595,86 @@ direct: push    cx
         stc
         ret
 
+; ---- Umleitung aus CMD: prog > datei, < datei, | --------------------------
+; Die Handles 0-2 des Box-Tasks erbt der Kernel vom Aufrufer (Datei oder
+; Pipe), FreeDOS kennt davon nichts - seine Handles 0-2 zeigen auf CON.
+; Fuer jedes umgeleitete Handle i (INT E0h 1D00h): eigenes Handle i
+; sichern (45h), dem Kernel melden, dass das naechste OPEN ueber den
+; Redirector Handle i meint (1D01h, BL = i), irgendeinen Namen auf dem
+; Startlaufwerk oeffnen (der Name zaehlt nicht) und auf i legen (46h).
+; Das Programm erbt es. Danach std_off: gesicherte Handles zurueck.
+; Interaktiv (COMMAND ohne Befehl) bleibt alles an der Konsole.
+std_on: mov     byte [stdm], 0
+        cmp     word [clen0], 0
+        je      .ret
+        push    dx
+        mov     ax, 1D00h
+        int     0E0h
+        and     al, 7
+        mov     [stdm], al
+        xor     cx, cx                  ; CX = Handle i
+.l:     mov     al, [stdm]
+        shr     al, cl
+        test    al, 1
+        jz      .n
+        mov     bx, cx
+        mov     ah, 45h                 ; Konsole sichern
+        int     21h
+        jc      .drop
+        mov     si, cx
+        shl     si, 1
+        mov     [stdsave + si], ax
+        mov     ax, 1D01h               ; naechstes OPEN = Handle i
+        mov     bx, cx
+        int     0E0h
+        mov     dx, t_std
+        mov     ax, 3D02h
+        int     21h
+        jc      .undo
+        mov     bx, ax
+        push    bx
+        mov     ah, 46h                 ; auf Handle i (CX)
+        int     21h
+        pop     bx
+        mov     ah, 3Eh
+        int     21h
+        jmp     short .n
+.undo:  mov     ax, 1D02h               ; Merker im Kernel loeschen
+        int     0E0h
+        mov     bx, [stdsave + si]
+        mov     ah, 3Eh
+        int     21h
+.drop:  mov     al, 1                   ; Bit i weg
+        shl     al, cl
+        not     al
+        and     [stdm], al
+.n:     inc     cx
+        cmp     cx, 3
+        jb      .l
+        pop     dx
+.ret:   ret
+
+std_off:                                ; AX bleibt (Rueckgabewert)
+        push    ax
+        xor     cx, cx
+.l:     mov     al, [stdm]
+        shr     al, cl
+        test    al, 1
+        jz      .n
+        mov     si, cx
+        shl     si, 1
+        mov     bx, [stdsave + si]
+        mov     ah, 46h                 ; Konsole zurueck auf i
+        int     21h
+        mov     ah, 3Eh
+        int     21h
+.n:     inc     cx
+        cmp     cx, 3
+        jb      .l
+        mov     byte [stdm], 0
+        pop     ax
+        ret
+
 ; ---- Laufwerk und Verzeichnis des Aufrufers (INT E0h 14h, 8.3) ----------
 goto_cwd:
         push    cs
@@ -916,6 +1001,8 @@ rd_cache:
         push    ds
         mov     [cs:cwant], cx
         mov     byte [cs:cfail], 0
+        cmp     word [es:di + 0x0B], 3  ; Umleitung (Handle 0-2, Pipe):
+        jbe     .fail                   ; nicht vorauslesen
 .again: cmp     byte [cs:cvalid], 0
         je      .fill
         cmp     di, [cs:csft]
@@ -1063,10 +1150,14 @@ pname     times 13 db 0
 t_comspec db "X:\DOS\MDOS\COMMAND.COM", 0
 t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0
+t_std     db "X:\ATSTD.$$$", 0         ; Name zaehlt nicht (s. std_on)
+clen0     dw 0
+stdm      db 0
+stdsave   dw 0, 0, 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
-          dw t_autoexec, t_ini, t_nls+8, 0
+          dw t_autoexec, t_ini, t_nls+8, t_std, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0
 pb_fcb1   dw fcb, 0

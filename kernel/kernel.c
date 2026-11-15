@@ -4412,6 +4412,13 @@ int box_ctl(unsigned op, unsigned a)
     }
     case BOX_SYSDRV:
         return sys_drive;
+    case BOX_STDQ: {                    /* Umleitung des Aufrufers (> < |) */
+        unsigned m = 0, i;
+        for (i = 0; i < 3; i++)
+            if (files[task[current].std[i]].kind != OF_CON)
+                m |= 1u << i;
+        return (int)m;
+    }
     case BOX_LOCK:
         if (a)
             klock_enter();

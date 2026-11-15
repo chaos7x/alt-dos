@@ -2856,6 +2856,14 @@ static void svc(int n, struct v86_frame *f, int t)
             svc_zf = mon2f(f);
         } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
             b2f[t] = 1;
+        else if (AH == 0x1D) {                  /* Umleitung (> < |) aus CMD */
+            if (AL == 0)                        /* AL = Bit i: Handle i umgeleitet */
+                AL = (unsigned char)kf_box_ctl(BOX_STDQ, 0);
+            else if (AL == 2)                   /* Merker zuruecknehmen */
+                redir_std(t, 0);
+            else                                /* naechstes OPEN ueber den */
+                redir_std(t, (BX & 3) + 1);     /* Redirector = Handle BL   */
+        }
         else if (AH == 0x10) {                  /* Redirector (BOXSHELL) */
             k = redir(f, t);
             svc_zf = k >= 0;                    /* ZF: erledigt          */

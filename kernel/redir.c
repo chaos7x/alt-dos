@@ -59,6 +59,21 @@ static char sdir[NTASK][4][80];         /* Verzeichnisse laufender Suchen */
 static unsigned char sdir_next[NTASK];
 static char slast[NTASK][4][11];        /* zuletzt gefundener Name       */
 
+/* Umleitung aus CMD (prog > datei, < datei, |): BOXSHELL meldet ueber
+   INT E0h 1Dh, dass das naechste OPEN ueber den Redirector kein Datei-
+   name ist, sondern Standard-Handle h-1 des Box-Tasks (geerbt vom
+   Aufrufer: Datei oder Pipe). Die SFT bekommt dieses Handle (1-3 statt
+   ab HBASE+1), FreeDOS-Programme schreiben dann ueber ihre Handles in die
+   Datei. Gelesen/geschrieben wird der Reihe nach (kein Seek - bei >>
+   steht das Handle schon am Ende, Pipes kennen keine Stelle), CLOSE
+   schliesst es nicht. */
+static unsigned char rd_std[NTASK];
+void __far redir_std(int t, unsigned h)
+{
+    rd_std[t] = (unsigned char)h;
+}
+#define IS_STDH(h)  ((h) < 3)
+
 void __far redir_sda(int t, unsigned seg, unsigned off)
 {
     sda_seg[t] = seg;
@@ -397,7 +412,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (cnt)
             w16(s, --cnt);
         if (cnt == 0 && h != 0xFFFF) {
-            FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
+            if (!IS_STDH(h))
+                FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
             w16(bp(t, es, di + 0x0B), 0);
         }
         return 0;
@@ -414,10 +430,14 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (h == 0xFFFF)
             return E_HANDLE;
         l32 = pos;
-        if (FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
+        if (!IS_STDH(h) && FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
             return E_DENIED;
         cnt = CX;
         err = 0;
+        if (cnt == 0 && fn == 9 && IS_STDH(h)) {
+            CX = 0;                             /* Umleitung: nichts     */
+            return 0;
+        }
         if (cnt == 0 && fn == 9) {              /* Groesse setzen (DOS): */
             l32 = pos;                          /* kuerzen/verlaengern   */
             r = FAPI(FAPI_NEWSIZE, KDATA, h, (unsigned)&l32, 0);
@@ -515,6 +535,17 @@ static int op(struct v86_frame *f, int t, unsigned fn)
     case 0x2E: {                                /* erweitert             */
         unsigned mode = arg & 0xFF, act = 0, exists;
         get_fn(t, 0x9E, p1);
+        if (rd_std[t]) {                        /* Umleitung (BOXSHELL)  */
+            h = rd_std[t] - 1;
+            rd_std[t] = 0;
+            de.attr = 0x20;
+            de.size = 0;
+            de.date = de.time = 0;
+            sft_fill(t, es, di, h, 2, p1);
+            if (fn == 0x2E)
+                CX = 1;
+            return 0;
+        }
         exists = stat_path(p1) == 0;
         if (exists && (de.attr & 0x18))
             return E_DENIED;                    /* Verzeichnis/Bezeichnung */
