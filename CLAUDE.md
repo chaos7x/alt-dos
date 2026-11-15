@@ -744,8 +744,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Box (FreeCOM-Stapeldatei) LHA a/l und ARJ a.
   ZOO (`apps/task_zoo.c`, FMT_ZOO in lzpack.c): Archivkopf 42 Byte wie
   Zoo 2.10 (Start 42, -42, Version 2.0, Typ 1, Generationen 3), Einträge
-  Typ 2 (56 Byte + Namenslänge, Verzeichnislänge, langer Name nur wenn
-  der 8.3-Name nicht passt, Verzeichnis ohne '/', System 1, Zeitzone 127,
+  Typ 2 (56 Byte + Namenslänge, Verzeichnislänge – beide mit Null –,
+  langer Name nur wenn der 8.3-Name nicht passt, Verzeichnis ohne '/', System 1, Zeitzone 127,
   CRC-16 über den Eintrag mit 0 bei 54), Daten direkt hinter dem Eintrag,
   `next` = Stelle danach, Ende = leerer Typ-2-Eintrag. Immer lh5 mit
   Endmarke (`lze_end(1)`), nicht kleiner -> Methode 0. Alte Einträge:
@@ -758,7 +758,11 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Original nicht geprüft (Bau aus fremdem Quelltext nicht erlaubt).
   Vom Nutzer in 86Box bestätigt (15.11.2026): ein mit dem FreeDOS-zoo
   angelegtes stunts.zoo entpackt, das Spiel startete und ließ sich
-  spielen. Gegenprobe (unser ZOO a -> FreeDOS-zoo) steht noch aus.
+  spielen. Gegenprobe vom Nutzer: FreeDOS-zoo listete unser Archiv
+  richtig, `zoo x` scheiterte aber an „STUNTS↑↑↑…“ – Zoo zählt Namens-
+  und Verzeichnislänge mit abschließender Null (zooadd2.c strlen + 1),
+  wir schrieben sie ohne. Jetzt mit Null (`zoo_mkhdr`); unarc liest
+  beides. Erneute Gegenprobe steht aus.
   7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
   lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
   decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-

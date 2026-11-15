@@ -381,13 +381,19 @@ static unsigned zoo_mkhdr(unsigned char *h, const char *name, unsigned meth,
         if (i == nl)
             nl = 0;                     /* 8.3 reicht                    */
     }
-    n = 56;
-    h[n++] = (unsigned char)nl;
-    h[n++] = (unsigned char)dl;
-    for (i = 0; i < nl; i++)
-        h[n++] = (unsigned char)fn[i];
-    for (i = 0; i < dl; i++)
-        h[n++] = (unsigned char)name[i];
+    n = 56;                             /* Laengen mit Null wie Zoo 2.10 */
+    h[n++] = (unsigned char)(nl ? nl + 1 : 0);
+    h[n++] = (unsigned char)(dl ? dl + 1 : 0);
+    if (nl) {
+        for (i = 0; i < nl; i++)
+            h[n++] = (unsigned char)fn[i];
+        h[n++] = 0;
+    }
+    if (dl) {
+        for (i = 0; i < dl; i++)
+            h[n++] = (unsigned char)name[i];
+        h[n++] = 0;
+    }
     p16(h + n, 1);                      /* System MS-DOS                 */
     n += 2;
     h[n++] = 0;                         /* keine Attribute               */
