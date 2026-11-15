@@ -770,7 +770,7 @@ selbst nur 8.3 kennt.
 | 85 | –               | in 6.0 frei (in 5.1/5.2 DosRBox, Kompatibilitätsbox) |
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR |
 | 87 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) |
-| 88 | DosLoadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz |
+| 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk oder Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
@@ -859,9 +859,14 @@ nach – wie `modprobe` unter Linux. Ein Name ohne Pfad wird im aktuellen
 Verzeichnis, dann in `\DOS\SYSTEM` und `\DOS` des Startlaufwerks gesucht.
 Neue Platten und Partitionen bekommen die nächsten freien Laufwerks-
 buchstaben, CD-Laufwerke ebenso, sobald ein CD-Dateisystem geladen ist.
-`DEVLOAD /L` zeigt die geladenen Treiber mit ihren Laufwerken; in
-`LINUX.MAC` heißen die beiden `modprobe` und `lsmod`. Entladen kommt
-als nächste Stufe.
+`DEVLOAD /L` zeigt die geladenen Treiber mit ihren Laufwerken,
+`DEVLOAD /U Name` entlädt einen (wie `rmmod`) – nur wenn auf seinen
+Laufwerken nichts offen ist, kein Programm dort sein aktuelles Laufwerk
+hat, kein SUBST/JOIN darauf zeigt und (beim Tontreiber) kein Programm
+spielt. Entladen können NCR8XX, AIC7XXX, SB16, MOUSE und die IFS-Module;
+andere Treiber lehnen ab. Beim nächsten Laden bekommen die Laufwerke
+wieder die freien Buchstaben. In `LINUX.MAC` heißen die drei `modprobe`,
+`lsmod` und `rmmod`.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.

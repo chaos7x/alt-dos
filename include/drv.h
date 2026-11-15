@@ -36,6 +36,13 @@ struct drv_header {
                                        START STOP UNIT mit LoEj -> OK,
                                        sonst ERR_CMD (kann es nicht)      */
 
+#define DRV_DEINIT      7           /* Treiber wird entladen (DEVLOAD /U):
+                                       Hardware anhalten, Interrupts der
+                                       Karte aus -> DRV_OK; IRQ, Belegungen,
+                                       Kernelsegmente und Speicher gibt der
+                                       Kernel danach selbst frei. Wer den
+                                       Befehl nicht kennt (DRV_ERR_CMD),
+                                       bleibt geladen. */
 #define DRV_MAXUNITS    8
 
 #define DRV_OK          0

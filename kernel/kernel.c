@@ -5774,6 +5774,9 @@ static int drv_of(unsigned dsel)
     return -1;
 }
 
+static unsigned char kseg_own[NKSEG];  /* Treiber + 1, der es holte (DevHlp) */
+static signed char mou_drv = -1;        /* Maustreiber (DH_MOUREG)        */
+
 /* DevHlp: Dienste des Kernels fuer Treiber */
 unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
 {
@@ -5816,6 +5819,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         d = drv_of(dsel);
         return proc_run(((unsigned long)(d & 0xFF) << 16) | bx);
     case DH_MOUREG:
+        mou_drv = (signed char)drv_of(dsel);
         vio_mou_reg(bx, cx);
         return 0;
     case DH_MOUEVENT:
@@ -5848,12 +5852,16 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         uni_note_ext(dsel, bx, cx, devhlp_dx);
         return 0;
     case DH_KSEG:                       /* Kernelsegment ohne DMA-Bedingung */
-        return kseg_alloc(bx ? bx : 0x10000UL);
+        n = kseg_alloc(bx ? bx : 0x10000UL);
+        goto kown;
     case DH_DMABUF: {
         static unsigned long lin;
         n = kseg_dma(bx, &lin);
         if (n)
             *(unsigned long __far *)MK_FP(dsel, cx) = lin;
+    kown:
+        if (n)                          /* DEVLOAD /U gibt es frei        */
+            kseg_own[(n >> 3) - KSEG_IDX(0)] = (unsigned char)(drv_of(dsel) + 1);
         return n;
     }
     case DH_AUDREG:
@@ -5886,6 +5894,8 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
 #define NIFSMOD 2
 static struct { int drv; unsigned classes; } ifsmod[NIFSMOD];
 static int nifsmod;
+
+static unsigned ld_new;                 /* Bit n: Blockgeraet n neu       */
 
 /* Treiber oder IFS-Modul laden und initialisieren;
    -> Anzahl Einheiten (IFS: 1) oder -1 */
@@ -5992,14 +6002,22 @@ static int load_driver(const char *line, int is_ifs)
         }
         return 1;
     }
-    for (k = 0; k < req.units && nblk < NBLK; k++) {
-        blk[nblk].drv = (signed char)d;
-        blk[nblk].unit = (unsigned char)k;
-        blk[nblk].blocks = req.blocks[k];
-        blk[nblk].bsize = (req.bsize[k] & 0x0FFF) ? req.bsize[k] & 0x0FFF : 512;
-        blk[nblk].rem = (unsigned char)(req.bsize[k] >> 15);
-        blk[nblk].grp = xg_slot(d, (req.bsize[k] >> 12) & 7);
-        nblk++;
+    ld_new = 0;
+    for (k = 0; k < req.units; k++) {
+        for (j = 1; j < nblk && !(blk[j].bsize == 0 && blk[j].drv == NDRV); j++)
+            ;                           /* Luecke von DEVLOAD /U?        */
+        if (j == nblk) {
+            if (nblk == NBLK)
+                break;
+            nblk++;
+        }
+        ld_new |= 1u << j;
+        blk[j].drv = (signed char)d;
+        blk[j].unit = (unsigned char)k;
+        blk[j].blocks = req.blocks[k];
+        blk[j].bsize = (req.bsize[k] & 0x0FFF) ? req.bsize[k] & 0x0FFF : 512;
+        blk[j].rem = (unsigned char)(req.bsize[k] >> 15);
+        blk[j].grp = xg_slot(d, (req.bsize[k] >> 12) & 7);
     }
     return req.units;
 }
@@ -6354,7 +6372,8 @@ static void cd_drives(void)
         for (m = 0; m < nifsmod && !(ifsmod[m].classes & IFS_CLASS_CD); m++)
             ;
         if (m == nifsmod) {
-            vio_kputs(boot_session, "\xFE CD-ROM ohne Dateisystem (IFS=ISO9660.IFS fehlt)\n");
+            if (current < 0)            /* nur beim Start melden          */
+                vio_kputs(boot_session, "\xFE CD-ROM ohne Dateisystem (IFS=ISO9660.IFS fehlt)\n");
             continue;
         }
         vol[next_drive].used = 1;
@@ -6367,55 +6386,183 @@ static void cd_drives(void)
     }
 }
 
-/* FAPI 58h: Treiber und IFS-Module zur Laufzeit laden (DEVLOAD) und
-   auflisten. Meldungen von Kernel und Treiber gehen in die Sitzung des
+/* FAPI 58h: Treiber und IFS-Module zur Laufzeit laden (DEVLOAD), entladen
+   und auflisten. Meldungen von Kernel und Treiber gehen in die Sitzung des
    Aufrufers; die Kernelsperre bleibt bis zum Ende (bkl_hold). */
+static int drv_ifs(int d)               /* -> Platz in ifsmod oder -1     */
+{
+    int k;
+    for (k = 0; k < nifsmod; k++)
+        if (ifsmod[k].drv == d)
+            return k;
+    return -1;
+}
+
+/* Laufwerke eines Treibers (seine Blockgeraete) bzw. IFS-Moduls */
+static unsigned long drv_mask(int d)
+{
+    unsigned long m = 0;
+    int x, ifs = drv_ifs(d) >= 0;
+    for (x = 2; x < NDRIVE; x++)
+        if ((vol[x].used || vol[x].present) && x != PRE_DRIVE &&
+            (ifs ? vol[x].drv == &mod_driver && vol[x].mod == d
+                 : blk[vol[x].blk].drv == d))
+            m |= 1UL << x;
+    return m;
+}
+
+/* geladener Treiber mit diesem Namen ("NCR8XX.SYS", auch ohne Endung) */
+static int drv_byname(const char *p)
+{
+    int d;
+    unsigned i;
+    for (d = 0; d < NDRV; d++) {
+        if (!drv[d].used)
+            continue;
+        for (i = 0; drv[d].name[i] && up(drv[d].name[i]) == up(p[i]); i++)
+            ;
+        if ((!p[i] || p[i] == ' ') && (!drv[d].name[i] || drv[d].name[i] == '.'))
+            return d;
+    }
+    return -1;
+}
+
+/* entladen: nichts darf mehr auf seinen Laufwerken stehen; der Treiber
+   haelt die Hardware an (DRV_DEINIT), den Rest raeumt der Kernel auf */
+static unsigned drv_unload(int d)
+{
+    unsigned long m = drv_mask(d);
+    int x, k, mi = drv_ifs(d);
+    unsigned f;
+
+    if (m & (1UL << sys_drive))
+        return FAPI_ERR_DENIED;
+    for (k = 1; k < NFILE; k++)
+        if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
+            (files[k].kind == OF_DASD && files[k].f.attr == DASD_DISK
+                 ? blk[files[k].f.drive].drv == d && mi < 0
+                 : (m >> files[k].f.drive) & 1))
+            return FAPI_ERR_INUSE;
+    for (k = 0; k < NTASK; k++)
+        if (task[k].state != T_FREE && ((m >> task[k].drive) & 1))
+            return FAPI_ERR_INUSE;
+    for (x = 0; x < NDRIVE; x++)
+        if ((subst_drv[x] >= 0 && ((m >> subst_drv[x]) & 1)) ||
+            (join_drv[x] >= 0 && (((m >> join_drv[x]) & 1) || ((m >> x) & 1))))
+            return FAPI_ERR_INUSE;
+    if (aud_drv == d)
+        for (k = 0; k < NFM; k++)       /* NAUD == NFM                   */
+            if (aud[k].task >= 0 || fmc[k].task >= 0 || mdc[k].task >= 0)
+                return FAPI_ERR_INUSE;
+    for (x = 2; x < NDRIVE; x++)        /* Sauber-Bit, alles auf die Platte */
+        if (((m >> x) & 1) && vol[x].drv == &fat_driver)
+            ifs_clean(x);
+    blk_flush();
+    if (mi < 0) {                       /* Treiber: Hardware anhalten    */
+        drv_lock(d);
+        for (k = 0; k < NXG; k++)
+            if (xg_grp[k] && xg_drv[k] == d)
+                drv_lock(NDRV + 1 + k);
+        req.cmd = DRV_DEINIT;
+        req.status = DRV_ERR_CMD;
+        drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
+        for (k = NXG; k-- > 0; )
+            if (xg_grp[k] && xg_drv[k] == d)
+                drv_unlock(NDRV + 1 + k);
+        drv_unlock(d);
+        if (req.status != DRV_OK)
+            return FAPI_ERR_DENIED;     /* kennt DRV_DEINIT nicht        */
+    } else {                            /* IFS-Modul: Platz in ifsmod    */
+        nifsmod--;
+        ifsmod[mi].drv = ifsmod[nifsmod].drv;
+        ifsmod[mi].classes = ifsmod[nifsmod].classes;
+    }
+    for (x = 2; x < NDRIVE; x++)
+        if ((m >> x) & 1)
+            vol_drop(x);
+    for (k = 1; k < nblk; k++)          /* Luecken; load_driver fuellt sie */
+        if (blk[k].drv == d && mi < 0) {
+            bc_drop_dev(k);
+            blk[k].drv = NDRV;
+            blk[k].bsize = 0;
+            blk[k].blocks = 0;
+            blk[k].rem = blk[k].grp = 0;
+            blk_nm[k] = blk_chg[k] = 0;
+        }
+    for (k = 0; k < NXG; k++)
+        if (xg_drv[k] == d)
+            xg_grp[k] = 0;
+    for (k = 3; k < 16; k++)            /* IRQ, falls noch eingehaengt   */
+        if (irq_hcs[k] == DRVC_SEL(d)) {
+            pic_mask |= 1u << k;
+            pic_update();
+            f = irq_off();
+            irq_hcs[k] = 0;
+            irq_restore(f);
+        }
+    res_free(d, 0, 0);
+    for (k = 0; k < NKSEG; k++)         /* DMA-Puffer, Kernelsegmente    */
+        if (kseg_own[k] == d + 1) {
+            mem_free(desc_base(&gdt[KSEG_IDX(k)]) >> 12, PAGES(sel_limit(KSEG_IDX(k) * 8) + 1UL));
+            gdt[KSEG_IDX(k)].access = 0;
+            kseg_own[k] = 0;
+        }
+    if (aud_drv == d)
+        aud_drv = aud_cur = fm_cur = md_cur = -1;
+    if (mou_drv == d) {
+        vio_mou_unreg();
+        mou_drv = -1;
+    }
+    mem_free(desc_base(&gdt[DRVC_IDX(d) + 1]) >> 12, UNITS(sel_limit(DRVD_SEL(d)) + 1UL));
+    gdt[DRVC_IDX(d)].access = 0;
+    gdt[DRVC_IDX(d) + 1].access = 0;
+    drv[d].used = 0;
+    return 0;
+}
+
 static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
 {
     static unsigned char busy;
-    int d, k, x, old, n, dev0;
+    int d, k, old, n;
     unsigned i;
 
     if (a1 == DRVL_INFO) {
         struct fapi_drvinfo __far *di = MK_FP(usel, a3);
-        unsigned long m = 0;
         if (a2 >= NDRV || !user_ok(usel, a3, sizeof(*di), 1))
             return FAPI_ERROR;
         d = (int)a2;
         di->units = 0;
-        di->kind = drv[d].used ? 1 : 0;
-        for (k = 0; k < nifsmod; k++)
-            if (drv[d].used && ifsmod[k].drv == d)
-                di->kind = 2;
+        di->kind = !drv[d].used ? 0 : drv_ifs(d) >= 0 ? 2 : 1;
         for (k = 0; k < 13; k++)
             di->name[k] = drv[d].used ? drv[d].name[k] : 0;
-        for (k = 0; k < nblk; k++)
+        for (k = 1; k < nblk; k++)
             if (drv[d].used && blk[k].drv == d)
                 di->units++;
-        for (x = 2; x < NDRIVE && drv[d].used; x++)
-            if ((vol[x].used || vol[x].present) && x != PRE_DRIVE &&
-                (di->kind == 2 ? vol[x].drv == &mod_driver && vol[x].mod == d
-                               : blk[vol[x].blk].drv == d))
-                m |= 1UL << x;
         di->rsv = 0;
-        di->drives = m;
+        di->drives = drv[d].used ? drv_mask(d) : 0;
         return 0;
     }
-    if (a1 != DRVL_LOAD || user_str(usel, a2, fi_buf, FAPI_ARGLEN))
+    if (user_str(usel, a2, fi_buf, FAPI_ARGLEN))
         return FAPI_ERROR;
     if (busy)
         return FAPI_ERR_INUSE;
+    if (a1 == DRVL_UNLOAD) {
+        if ((d = drv_byname(fi_buf)) < 0)
+            return FAPI_ERROR;
+        busy = 1;
+        bkl_hold++;
+        i = drv_unload(d);
+        bkl_hold--;
+        busy = 0;
+        return i;
+    }
+    if (a1 != DRVL_LOAD)
+        return FAPI_ERROR;
     for (i = 0, k = 0; fi_buf[i] && fi_buf[i] != ' '; i++)   /* Dateiname */
         if (fi_buf[i] == '\\' || fi_buf[i] == ':')
             k = (int)i + 1;
-    for (d = 0; d < NDRV; d++) {
-        if (!drv[d].used)
-            continue;
-        for (i = 0; drv[d].name[i] && up(drv[d].name[i]) == up(fi_buf[k + i]); i++)
-            ;
-        if (!drv[d].name[i] && (!fi_buf[k + i] || fi_buf[k + i] == ' '))
-            return FAPI_ERR_EXIST;
-    }
+    if (drv_byname(fi_buf + k) >= 0)
+        return FAPI_ERR_EXIST;
     for (d = 0; d < NDRV && drv[d].used; d++)
         ;
     if (d == NDRV || ((a3 & DRVL_IFS) && nifsmod == NIFSMOD))
@@ -6424,11 +6571,12 @@ static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
     bkl_hold++;
     old = boot_session;
     boot_session = task[current].session;
-    dev0 = nblk;
+    next_drive = 2;                     /* Luecken von DEVLOAD /U zuerst */
     n = load_driver(fi_buf, a3 & DRVL_IFS);
     if (n > 0 && !(a3 & DRVL_IFS))
-        for (k = dev0; k < nblk; k++)
-            mount_disk(k);
+        for (k = 1; k < nblk; k++)
+            if (ld_new & (1u << k))
+                mount_disk(k);
     if (n > 0)
         cd_drives();
     boot_session = old;

@@ -208,6 +208,13 @@ struct fapi_sysinfo {
                                        Buchstaben, CDs nach einem IFS-Modul */
 #define DRVL_INFO           1       /* CX = Platz, DX = struct fapi_drvinfo
                                        -> 0, FAPI_ERROR hinter dem letzten */
+#define DRVL_UNLOAD         2       /* CX = Name ("NCR8XX.SYS" oder "NCR8XX")
+                                       -> 0, FAPI_ERROR (nicht geladen),
+                                       FAPI_ERR_INUSE (Dateien offen, aktuelles
+                                       Laufwerk eines Programms, SUBST/JOIN,
+                                       Ton offen), FAPI_ERR_DENIED (Start-
+                                       laufwerk, oder der Treiber kann es
+                                       nicht - kennt DRV_DEINIT nicht) */
 #define DRVL_IFS            1
 struct fapi_drvinfo {
     char           name[13];        /* "" = Platz frei                  */

@@ -2,6 +2,7 @@
 /*
  * DEVLOAD.EXE - Treiber und IFS-Module zur Laufzeit laden (wie modprobe):
  *   DEVLOAD Treiber [Argumente]     Treiber (.SYS) oder Dateisystem (.IFS)
+ *   DEVLOAD /U Name                 Treiber entladen (wie rmmod)
  *   DEVLOAD /L                      geladene Treiber mit Laufwerken
  * Ueber FAPI 58h. Ein Name ohne Pfad wird im aktuellen Verzeichnis, dann
  * in X:\DOS\SYSTEM und X:\DOS des Startlaufwerks gesucht (X aus COMSPEC).
@@ -87,15 +88,40 @@ void main(void)
     if (a[0] == '/' && a[1] == '?') {
         puts("L\x84" "dt einen Ger\x84tetreiber oder ein Dateisystem zur Laufzeit.\r\n\r\n"
              "DEVLOAD Treiber [Argumente]\r\n"
+             "DEVLOAD /U Name\r\n"
              "DEVLOAD /L\r\n\r\n"
              "  Treiber  .SYS (wie DEVICE=) oder .IFS (wie IFS=); ohne Pfad\r\n"
              "           im aktuellen Verzeichnis, dann in \\DOS\\SYSTEM und \\DOS\r\n"
+             "  /U       entl\x84" "dt einen Treiber (z. B. /U NCR8XX), wenn auf seinen\r\n"
+             "           Laufwerken nichts offen ist\r\n"
              "  /L       geladene Treiber und ihre Laufwerke\r\n");
         return;
     }
     if (!*a || (a[0] == '/' && up(a[1]) == 'L')) {
         list();
         return;
+    }
+    if (a[0] == '/' && up(a[1]) == 'U') {
+        word(skip(next_word(a)), name, sizeof(name));
+        for (n = 0; name[n]; n++)
+            name[n] = up(name[n]);
+        if (!name[0]) {
+            puts("Aufruf: DEVLOAD /U Name\r\n");
+            DosExit(4);
+        }
+        rc = DosUnloadDriver(name);
+        if (rc == 0) {
+            puts(name);
+            puts(" entladen.\r\n");
+            return;
+        }
+        puts(name);
+        puts(rc == FAPI_ERR_INUSE ? ": auf seinen Laufwerken ist noch etwas offen (Dateien,\r\n"
+                                    "  aktuelles Laufwerk eines Programms, SUBST/JOIN) oder der Ton l\x84uft\r\n" :
+             rc == FAPI_ERR_DENIED ? ": kann nicht entladen werden (Startlaufwerk oder der\r\n"
+                                     "  Treiber unterst\x81tzt es nicht)\r\n" :
+             ": ist nicht geladen\r\n");
+        DosExit(1);
     }
     rest = word(a, name, sizeof(name));
     rest = skip(rest);

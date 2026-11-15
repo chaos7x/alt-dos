@@ -909,6 +909,11 @@ void strategy(void)
     case DRV_EJECT:
         eject();
         break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: Interrupts aus,    */
+        wr8(SCSISEQ, 0);                /* keine Wiederauswahl mehr       */
+        wr8(HCNTRL, PAUSE);
+        r->status = DRV_OK;
+        break;
     default:
         r->status = DRV_ERR_CMD;
     }

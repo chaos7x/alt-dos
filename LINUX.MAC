@@ -21,6 +21,7 @@ ps=TASKMAN /L
 kill=TASKMAN /K $*
 modprobe=DEVLOAD $*
 lsmod=DEVLOAD /L
+rmmod=DEVLOAD /U $*
 uname=VER
 history=DOSKEY /HISTORY
 nano=EDIT $*

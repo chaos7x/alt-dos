@@ -4161,13 +4161,33 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Laufzeit). Ein eigenes IFSLOAD gibt es nicht – DEVLOAD erkennt `.IFS`
   (wie modprobe für alle Module). Grenzen: NDRV 6, NIFSMOD 2 (dritter
   IFS -> „kein Treiberplatz“). Erstes Codesegment danach 63.140 Byte.
-  Stufe 2 Entladen (`DEVLOAD /U Name`): neuer Treiberbefehl `DRV_DEINIT`
-  (IRQ abmelden, Hardware anhalten, Ressourcen frei; wer ihn nicht kennt,
-  bleibt geladen), Kernel prüft offene Dateien, aktuelle Verzeichnisse,
-  SUBST/JOIN, leert den Cache, meldet die Laufwerke ab, Blockgeräte-
-  Tabelle bekommt Lücken (nicht zusammenrücken). Zuerst NCR8XX, AIC7XXX,
-  SB16, MOUSE. `NDRV` (6 Plätze für Treiber + IFS) anheben; Code nach
-  KTEXT2.
+  Stufe 2 Entladen erledigt (`DEVLOAD /U Name`, in QEMU geprüft: NCR8XX
+  mit aktuellem Laufwerk D: abgelehnt, sonst entladen und wieder geladen
+  – gleicher Buchstabe, Treiberplatz wiederverwendet –, SB16/MOUSE/
+  ISO9660 entladen und neu geladen, PLAY danach, IDE.SYS abgelehnt; zwei
+  Runden Laden/Entladen, MEM danach genau gleich): Treiberbefehl
+  `DRV_DEINIT` (7, drv.h) – der Treiber hält nur die Hardware an
+  (NCR8XX SIEN0/1, DIEN = 0; AIC7XXX SCSISEQ 0, HCNTRL PAUSE ohne INTEN;
+  SB16 stop_play, OPL/AWE still, DSP-Reset; MOUSE PS/2 F5h + A7h, seriell
+  IER/MCR 0, Bus bus_irqs(0)), wer ihn nicht kennt (DRV_ERR_CMD), bleibt
+  geladen. kernel.c `drv_unload` (FAPI 58h `DRVL_UNLOAD`, Name mit oder
+  ohne Endung, `drv_byname`): prüft Startlaufwerk (DENIED), offene
+  Dateien/DASD, aktuelles Laufwerk jedes Tasks, SUBST/JOIN, offene
+  Ton-Clients (aud/fmc/mdc), dann ifs_clean + blk_flush, DEINIT unter
+  allen Sperren des Treibers; danach `vol_drop` (fat.c: Caches weg,
+  vol[] genullt), Blockgeräte werden Lücken (bsize 0, drv = NDRV –
+  load_driver füllt sie wieder, `ld_new` merkt die neuen Geräte, Laden
+  zur Laufzeit beginnt bei next_drive = 2), xg-Plätze, IRQs die noch auf
+  den Treiber zeigen, `res_free`, Kernelsegmente aus DH_KSEG/DH_DMABUF
+  (`kseg_own[NKSEG]` = Treiber + 1), aud_drv, Maus (`mou_drv`,
+  `vio_mou_unreg`), Speicher und GDT-Einträge. IFS-Module ohne DEINIT
+  (keine Hardware), Platz in ifsmod wird frei. MOUSE.SYS holt nach dem
+  Einschalten des Hilfsports alte Bytes ab (sonst scheiterte das erste
+  Neuladen). Zur Laufzeit meldet cd_drives „CD-ROM ohne Dateisystem“
+  nicht mehr. Erstes Codesegment danach 64.448 Byte (~1 KB frei – vor
+  weiterem Code im ersten Segment Seltenes nach KTEXT2), DGROUP 65.128.
+  Offen: `NDRV` (6) und NIFSMOD (2) anheben, DEINIT für die übrigen
+  Treiber (IDE, AHA154X, NCR5380).
 - Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
   nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
   (1) Netzwerkkartentreiber mit IRQ (RTL8139 zuerst – läuft in

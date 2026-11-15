@@ -240,6 +240,7 @@ void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
 void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
 void vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
 void vio_mou_reg(unsigned buttons, unsigned irq);   /* Maus angemeldet    */
+void vio_mou_unreg(void);                           /* Maustreiber entladen */
 extern unsigned char mou_kind, mou_irqn;        /* INT 33h 24h           */
 void vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
 unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */

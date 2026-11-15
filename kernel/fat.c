@@ -2793,6 +2793,21 @@ void __far vol_reset(int d)
         vol[d].used = vol[d].drv->mount(d) == 0;
 }
 
+/* Laufwerk ganz abmelden (Treiber wird entladen): Caches weg, Eintrag leer */
+void __far vol_drop(int d)
+{
+    unsigned char *p = (unsigned char *)&vol[d];
+    unsigned i;
+    fat_flush();
+    if (fc_drive == d) {
+        fc_drive = -1;
+        fc_dirty = 0;
+    }
+    dir_cache_reset();
+    for (i = 0; i < sizeof(vol[d]); i++)
+        p[i] = 0;
+}
+
 /* Kontext je Task (Phase 6): laufende Variablen einer Operation, siehe
    kernel.c ctx_take. Gemeinsame Caches (fc_*, lc_*, ea_drv/ea_c*, skx_*)
    gehoeren nicht hinein. */

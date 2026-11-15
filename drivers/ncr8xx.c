@@ -587,6 +587,12 @@ void strategy(void)
     case DRV_EJECT:
         eject();
         break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: Interrupts aus     */
+        wr8(SIEN0, 0);
+        wr8(SIEN1, 0);
+        wr8(DIEN, 0);
+        r->status = DRV_OK;
+        break;
     default:
         r->status = DRV_ERR_CMD;
     }
