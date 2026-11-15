@@ -656,6 +656,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Handle (`struct ifs_file`), Angehängtes eines anderen Tasks sieht ein
   offenes Handle nicht – TAIL öffnet daher alle 500 ms neu und springt
   per DosSeek an die alte Stelle (wie `tail -F`).
+  CAT (Wunsch des Nutzers, 15.11.2026: `cat` eigenständig, weil es mehr
+  kann als TYPE; `apps/task_cat.c`, nur auf der Platte): -A -b -e -E -n -s
+  -t -T -u -v wie GNU, Dateien hintereinander, `-` = Standardeingabe,
+  Platzhalter selbst aufgelöst (DosFindEntry), ohne Schalter direkt
+  durchgereicht; CR LF ist Zeilenende (-E schreibt `$` vor das CR, -v
+  zeigt es nicht als ^M), Zeilennummern 6 Stellen + Tab ohne 32-Bit-
+  Division. In QEMU geprüft (-n, -A, -sb über zwei Dateien, `\t*.txt`,
+  Pipe, fehlende Datei).
+  `\DOS\LINUX.MAC` (Wunsch des Nutzers, Linux-Admin): DOSKEY-Makros ll,
+  la, ls, l, .., pwd, cp, mv, rm, clear, diff, man, free, ps, kill, uname,
+  history, nano, vi, mc – nicht aktiv, AUTOEXEC.CMD nennt den Aufruf. In
+  QEMU geprüft (ll, ps, .., pwd, uname).
 - Packprogramme (Wunsch des Nutzers, 15.11.2026; abgestimmt: TAR,
   gzip/Deflate, ZIP zuerst, danach nur Entpacken von 7z/LZMA, ZOO, ARJ;
   bzip2 zurückgestellt; packende ARJ/7z-Fassungen laufen in der Box):

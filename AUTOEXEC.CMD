@@ -9,4 +9,6 @@ REM SET TMP=D:\TEMP
 REM DOSKEY-Makros, z. B.:
 REM DOSKEY ll=DIR /W /O $*
 REM DOSKEY /MACROFILE=C:\DOS\MAKROS.TXT
+REM Gewohnte Namen von Linux (ll, ls, cat, cp, mv, rm, ...):
+REM DOSKEY /MACROFILE=C:\DOS\LINUX.MAC
 PROMPT $P$G

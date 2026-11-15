@@ -179,7 +179,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   `$1`–`$9`, `$*`, `$T`, `$G`/`$G$G`/`$L`/`$B`, `DOSKEY name=` löscht,
   `/MACROS` zeigt, `/MACROFILE=datei` lädt Zeilen `name=text`; nur für
   getippte Zeilen, je Sitzung, mit START gestartete CMD-Sitzungen erben
-  sie). **Tab** vervollständigt
+  sie; `\DOS\LINUX.MAC` bringt die gewohnten Namen von Linux mit – `ll`,
+  `la`, `ls`, `..`, `pwd`, `cp`, `mv`, `rm`, `clear`, `diff`, `man`,
+  `free`, `ps`, `kill`, `uname`, `history`, `nano`/`vi`, `mc` –, nicht
+  aktiv, Beispiel in AUTOEXEC.CMD). **Tab** vervollständigt
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
   Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,
   zweites Tab listet die Möglichkeiten.
@@ -330,7 +333,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   [Aus]]` (gleiche Nachbarzeilen, meist hinter `SORT`) und `TR [-c -d -s]
   Satz1 [Satz2]` (Zeichen ersetzen/löschen, Bereiche `a-z`, `\r`,
   `[:upper:]` …), z. B. `TYPE BRIEF.TXT | TR -d \r` oder
-  `SORT < NAMEN.TXT | UNIQ -c`
+  `SORT < NAMEN.TXT | UNIQ -c`; `CAT [-A -b -e -E -n -s -t -T -v]
+  [Datei…]` hängt Dateien aneinander (Platzhalter, `-` = Standardeingabe,
+  nummerieren, Leerzeilen zusammenfassen, Steuerzeichen sichtbar)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
@@ -652,7 +657,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, CAT, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der
