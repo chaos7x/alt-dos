@@ -593,7 +593,8 @@ static int unpark(void)
 static pg_t mem_get(unsigned n)
 {
     pg_t u;
-    while ((u = mem_alloc(n)) == 0 && unpark())
+    unsigned k = 0;
+    while ((u = mem_alloc(n)) == 0 && (unpark() || (k++ < 16 && swap_out(n + 16))))
         ;
     return u;
 }
@@ -695,7 +696,7 @@ static int sys_drive = 0;
    im Kernelsegment subst_sel, je IFS_PATHLEN Bytes. Programme sehen
    X:-Pfade (aktuelles Verzeichnis, QCurDir); die IFS-Treiber bekommen
    den umgesetzten Pfad auf dem Ziellaufwerk. */
-static signed char subst_drv[NDRIVE];
+signed char subst_drv[NDRIVE];          /* auch blkmnt.c */
 static unsigned subst_sel;
 
 /* Laufwerk + kanonischer Pfad auf das Ziel umsetzen; -1 = zu lang */
@@ -3166,8 +3167,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             p->total_kb32 = tk;
             p->free_kb32 = fk;
         }
-        if (a2 >= sizeof(*p))
+        if (a2 >= MEMINFO_V60B)
             p->box_kb = v86_pages << 2;
+        if (a2 >= MEMINFO_V61)
+            swap_info(&p->swap_kb, &p->swapped_kb);
         return 0;
     }
 
@@ -5351,6 +5354,48 @@ void blk_flush(void)
     }
 }
 
+/* ---- Auslagerung (swap.c): Hilfen im ersten Segment -------------------- */
+extern unsigned sw_buf;
+extern unsigned long sw_bphys;
+void __far kf_klock_enter(void) { klock_enter(); }
+void __far kf_klock_leave(void) { klock_leave(); }
+void __far kf_blk_flush(void) { blk_flush(); }
+
+/* n Sektoren ab lba direkt ueber den Treiber von/nach sw_buf:off (ohne
+   Cache - die Sektoren der Auslagerungsdatei liest sonst niemand) */
+int __far kf_swap_rw(int dev, unsigned long lba, unsigned n, unsigned off, int wr)
+{
+    struct drv_req *r;
+    int g = DLB(dev), d = blk[dev].drv;
+    unsigned k;
+
+    if (current >= 0 && dl_owner[g] == current + 1)
+        return -1;                      /* mitten im eigenen Auftrag     */
+    drv_lock(g);
+    r = DRQB(dev);
+    while (n) {
+        k = n < drv[d].maxcnt || !drv[d].maxcnt ? n : drv[d].maxcnt;
+        r->cmd = wr ? DRV_WRITE : DRV_READ;
+        r->unit = blk[dev].unit;
+        r->count = (unsigned char)k;
+        r->status = DRV_ERR_IO;
+        r->lba = lba;
+        r->buf_phys = sw_bphys + off;
+        r->buf_sel = sw_buf;
+        r->buf_off = off;
+        drv_request(d, r);
+        if (r->status != DRV_OK)
+            break;
+        lba += k;
+        off += k << 9;
+        n -= k;
+    }
+    drv_unlock(g);
+    if (wr && !n)
+        blk_dirty[dev] = 1;
+    return n ? -1 : 0;
+}
+
 /* ---- Ton (FAPI_AUDIO) --------------------------------------------------
    Mehrere Programme duerfen das Audiogeraet oeffnen (bis NAUD). Zu hoeren
    ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geoeffnete
@@ -6040,100 +6085,12 @@ static int load_driver(const char *line, int is_ifs)
     return req.units;
 }
 
-/* Partitionstabelle lesen und FAT-Partitionen als C:, D:, ... einhaengen */
-static int next_drive = 2;
-
-#define IS_FATPART(t) ((t) == 0x01 || (t) == 0x04 || (t) == 0x06 || (t) == 0x0E || \
-                       (t) == 0x0B || (t) == 0x0C)   /* FAT32 (CHS, LBA) */
-#define IS_EXTPART(t) ((t) == 0x05 || (t) == 0x0F)
-
-static unsigned long rd32(unsigned sel, unsigned off)
-{
-    return rd16(sel, off) | ((unsigned long)rd16(sel, off + 2) << 16);
-}
-
-/* naechster freier Buchstabe (zur Laufzeit liegen dazwischen SUBST-
-   Laufwerke oder Luecken) -> 0, wenn keiner mehr frei ist */
-static int nd_free(void)
-{
-    while (next_drive < NDRIVE && (vol[next_drive].used || vol[next_drive].present ||
-                                   subst_drv[next_drive] >= 0 || next_drive == PRE_DRIVE))
-        next_drive++;
-    return next_drive < NDRIVE;
-}
-
-static void mount_one(int dev, unsigned long start, unsigned long size,
-                      unsigned char type, unsigned part)
-{
-    if (!nd_free())
-        return;
-    vol[next_drive].psize = size;
-    ifs_mount(next_drive, dev, start, &fat_driver);  /* auch unformatiert:
-                                       Buchstabe fuer FORMAT    */
-    vol[next_drive].present = 1;
-    vol[next_drive].ptype = type;
-    vol[next_drive].part = (unsigned char)part;
-    next_drive++;
-}
-
-/* Partitionen einer Platte: erst die primaeren (FAT), dann die logischen
-   Laufwerke in einer erweiterten Partition (05h/0Fh, Kette von EBRs: im
-   EBR Eintrag 1 = logisches Laufwerk relativ zum EBR, Eintrag 2 = naechster
-   EBR relativ zum Anfang der erweiterten Partition - wie bei MS-DOS) */
-static void mount_disk(int dev)
-{
-    unsigned char __far *b;
-    unsigned char t[4], lt, nt;
-    unsigned long st[4], sz[4], ebr, ls, lz, ns;
-    int i, n;
-
-    if (blk[dev].bsize != 512)
-        return;                         /* CD-ROM: siehe cd_drives()    */
-    if (IS_REM(dev)) {                  /* Wechselplatte: ein Buchstabe, */
-        if (nd_free()) {                /* eingehaengt wird bei Bedarf   */
-            vol[next_drive].blk = dev;  /* (fat.c revalidate)            */
-            vol[next_drive].drv = &fat_driver;
-            vol[next_drive].present = 1;
-            vol_present(next_drive++);
-        }
-        return;
-    }
-    if (blk_read(dev, 0))
-        return;
-    b = MK_FP(DMABUF, 0);
-    if (b[510] != 0x55 || b[511] != 0xAA)
-        return;
-    for (i = 0; i < 4; i++) {           /* Tabelle merken (ifs_mount    */
-        t[i] = b[0x1BE + 16 * i + 4];   /* benutzt DMABUF)              */
-        st[i] = rd32(DMABUF, 0x1BE + 16 * i + 8);
-        sz[i] = rd32(DMABUF, 0x1BE + 16 * i + 12);
-    }
-    for (i = 0; i < 4 && next_drive < NDRIVE; i++)
-        if (IS_FATPART(t[i]))
-            mount_one(dev, st[i], sz[i], t[i], (unsigned)i + 1);
-    for (i = 0; i < 4; i++) {
-        if (!IS_EXTPART(t[i]))
-            continue;
-        ebr = st[i];
-        for (n = 0; n < 24 && next_drive < NDRIVE; n++) {
-            if (blk_read(dev, ebr))
-                break;
-            b = MK_FP(DMABUF, 0);
-            if (b[510] != 0x55 || b[511] != 0xAA)
-                break;
-            lt = b[0x1BE + 4];
-            ls = rd32(DMABUF, 0x1BE + 8);
-            lz = rd32(DMABUF, 0x1BE + 12);
-            nt = b[0x1CE + 4];
-            ns = rd32(DMABUF, 0x1CE + 8);
-            if (IS_FATPART(lt) && lz)
-                mount_one(dev, ebr + ls, lz, lt, 5 + (unsigned)n);
-            if (!IS_EXTPART(nt) || !ns)
-                break;
-            ebr = st[i] + ns;
-        }
-    }
-}
+/* Partitionstabelle lesen und einhaengen: blkmnt.c (KTEXT2) */
+extern int next_drive;
+int __far nd_free(void);
+void __far mount_one(int dev, unsigned long start, unsigned long size,
+                     unsigned char type, unsigned part);
+void __far mount_disk(int dev);
 
 /* Startpartition unter den eingehaengten Laufwerken: gleicher Startsektor
    und gleiche Seriennummer wie der Bootsektor, den das BIOS geladen hat */
@@ -6548,6 +6505,23 @@ static unsigned drv_unload(int d)
 }
 
 /* ---- Loop-Laufwerke (FAPI 59h): Bindeglied zu loop.c ------------------ */
+/* Datei als Eintrag des Kernels in der Dateitabelle (Auslagerung):
+   zum Schreiben markiert - niemand sonst kann sie oeffnen oder loeschen */
+struct ifs_file __far * __far kf_kopen(int d, const char *canon, int create)
+{
+    int k = of_alloc();
+    if (k < 0)
+        return 0;
+    files[k].owner = -1;
+    if (create ? ifs_create(d, canon, &files[k].f) : ifs_open(d, canon, &files[k].f)) {
+        files[k].refs = 0;
+        return 0;
+    }
+    files[k].f.flags |= IFS_F_WRITE;
+    far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)canon, IFS_PATHLEN);
+    return &files[k].f;
+}
+
 static unsigned long loop_mask(int dev)
 {
     unsigned long m = 0;
@@ -6911,6 +6885,9 @@ static void config_sys(void)
                 while (v[i] && (v[i] < '0' || v[i] > '9'))
                     i++;
             }
+        } else if (kw(line, "SWAPPATH")) {     /* wie OS/2: Ort, KB       */
+            line[8] = '=';
+            env_set(-1, line);
         } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
             static char lv[16];
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
@@ -7128,6 +7105,11 @@ void kmain(void)
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
+    i = env_find(-1, "SWAPPATH", 8);            /* Auslagerungsdatei      */
+    swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
+              sys_drive, line);
+    if (line[0])
+        vio_kputs(boot_session, line);
     files[CONS].refs = 255;
     pipe_sel = kseg_alloc(NPIPE * PIPESZ);
     if (!pipe_sel)

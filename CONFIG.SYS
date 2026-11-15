@@ -14,6 +14,9 @@ REM   verzoegertes Schreiben nach s Sekunden (0 = sofort), Hoechstgroesse
 REM   in KB (bis 8192). Ohne Angabe nach Speicher; dazwischen waechst und
 REM   schrumpft er mit dem freien Speicher. Beispiel:
 REM CACHE=512,5,4096
+REM SWAPPATH=X:\Verz kb  Auslagerungsdatei SWAPPER.DAT fuer DOS-Boxen;
+REM   ohne Angabe bis 16 MB RAM X:\DOS\SYSTEM, 2x RAM (2-8 MB); OFF = keine
+REM SWAPPATH=C:\DOS\SYSTEM 4096
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---------------
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb

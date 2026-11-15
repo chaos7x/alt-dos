@@ -568,8 +568,12 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
        Felder oben sind bei mehr als 64 MB auf FFFFh gekappt */
     unsigned long  total_kb32, free_kb32;
     unsigned long  box_kb;          /* ab 6.0 (CX >= 22): DOS-Boxen     */
+    unsigned long  swap_kb;         /* ab 6.1 (CX >= 30): Auslagerungs- */
+    unsigned long  swapped_kb;      /* datei und davon belegt           */
 };
 #define MEMINFO_V60  18             /* Groesse mit total/free_kb32      */
+#define MEMINFO_V60B 22             /* dazu box_kb                      */
+#define MEMINFO_V61  30             /* dazu swap_kb, swapped_kb         */
 
 /* FAPI_VESA (6.0): VESA-Modi mit linearem Bildspeicher oder (VBE 1.2)
    umschaltbarem 64-KB-Fenster - fuer Programme gleich */

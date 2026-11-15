@@ -204,6 +204,15 @@ extern int nblk;
 extern unsigned loop_sel[NLOOP], loop_free;
 int __far loop_read(int dev, unsigned long lba);
 int __far loop_drop(int dev);           /* loop_attach/loop_info: ifs.h */
+/* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
+   Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
+#define PTE_SWP     0x400UL
+unsigned __far swap_out(unsigned n);    /* n Seiten hinaus -> geschafft */
+int __far swap_pf(void);                /* Seitenfehler: 1 = eingelagert */
+int __far swap_need(int t, unsigned long lp);
+void __far swap_slot_free(unsigned long e);
+void __far swap_info(unsigned long __far *total_kb, unsigned long __far *used_kb);
+void __far swap_boot(const char __far *spec, int sys, char *msg);
 void vol_lock(int d);                       /* Phase 6: Laufwerkssperre */
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
 int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */

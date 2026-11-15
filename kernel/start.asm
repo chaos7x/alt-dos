@@ -45,7 +45,7 @@ extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
-extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_
+extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_, swap_pf_
 extern _kpit_div, _kpit_acc
 
 ; ---------------------------------------------------------------------------
@@ -563,7 +563,7 @@ exc_common:
         mov     bp, sp                  ; einer Box? (CS-RPL im Rahmen)
         test    byte [bp+12], 3
         pop     bp
-        jz      .kf
+        jz      .k0
         pushad
         push    ds
         push    es
@@ -596,6 +596,31 @@ exc_common:
         pop     es
         pop     ds
         popad
+.k0:    push    bp                      ; Ring 0: Seitenfehler auf eine
+        mov     bp, sp                  ; ausgelagerte Seite einer Box
+        cmp     word [bp+2], 14         ; (Kernel greift fuer sie ueber
+        pop     bp                      ; VWIN/RWIN zu)? Dann einlagern
+        jne     .kf                     ; und den Befehl wiederholen
+        pushad
+        push    ds
+        push    es
+        push    fs
+        push    gs
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        cld
+        call    KCODE2:swap_pf_         ; -> 1 eingelagert
+        mov     [swap_rc], al
+        pop     gs
+        pop     fs
+        pop     es
+        pop     ds
+        popad
+        cmp     byte [ss:swap_rc], 0
+        je      .kf
+        add     sp, 6                   ; Vektor + Fehlercode
+        iretd
 .kf:    mov     bp, sp
         mov     ax, KDATA
         mov     ds, ax
@@ -1466,6 +1491,7 @@ _devhlp_dx:  resw 1
 _boot_drive: resb 1
 subtick:     resb 1
 kpend:       resb 1                     ; irq0: noch zu zaehlende Kerneltakte
+swap_rc:     resb 1                     ; Ring-0-Seitenfehler: eingelagert?
 _ticks:      resw 2
 _uptime_s:   resw 1
 _uptime_m:   resw 1                ; Minuten seit dem Start (45 Tage)

@@ -90,7 +90,7 @@ static unsigned long k3_ticks(void)
 #undef get_ticks
 #define get_ticks()     k3_ticks()
 
-static pg_t pd_box[NTASK], pt_box[NTASK];
+pg_t pd_box[NTASK], pt_box[NTASK];   /* auch swap.c */
 static unsigned short vfl[NTASK];       /* IF/IOPL/NT der Box            */
 static signed char box_ses[NTASK] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 static unsigned long vt_last[NTASK];    /* Kerneltakt der letzten Abrechnung */
@@ -132,9 +132,13 @@ static unsigned char idle_sens[NTASK];  /* IDLE_SENSITIVITY + 1, 0 = Vorgabe */
 static unsigned idle_tk[NTASK];         /* Takt, zu dem idle_n zaehlt      */
 
 unsigned long v86_pages;                /* Seiten aller Boxen (MEM)      */
+/* reicht der Speicher nicht (auch nicht nach dem Cache), lagert swap_out
+   selten benutzte Seiten der Boxen aus (Auslagerungsdatei) */
 static pg_t vp_alloc(void)
 {
     pg_t p = mem_alloc(1);
+    if (!p && swap_out(16))
+        p = mem_alloc(1);
     if (p)
         v86_pages++;
     return p;
@@ -142,6 +146,8 @@ static pg_t vp_alloc(void)
 static pg_t vp_alloc_hi(void)           /* Box-Speicher: auch ueber 2 GB */
 {
     pg_t p = mem_alloc_hi(1);
+    if (!p && swap_out(16))
+        p = mem_alloc_hi(1);
     if (p)
         v86_pages++;
     return p;
@@ -150,6 +156,13 @@ static void vp_free(pg_t p)
 {
     mem_free(p, 1);
     v86_pages--;
+}
+static void pte_drop(unsigned long e)   /* Seite aus einem Eintrag frei,   */
+{                                       /* auch ausgelagert               */
+    if (e & PTE_P)
+        vp_free(e >> 12);
+    else if (e & PTE_SWP)
+        swap_slot_free(e);
 }
 
 static void xms_end(int t);
@@ -454,8 +467,8 @@ void __far v86_destroy(int t)
             for (j = 0; j < 1024; j++) {
                 scratch_map(e & ~0xFFFUL, 4095);
                 ee = get32(SCRATCH, j);
-                if ((ee & PTE_P) && (ee & PTE_OWN))
-                    vp_free(ee >> 12);
+                if (ee & PTE_OWN)
+                    pte_drop(ee);
             }
             vp_free(e >> 12);
         }
@@ -464,8 +477,8 @@ void __far v86_destroy(int t)
         scratch_map(PG_LIN(pt_box[t]), 4095);
         for (i = 0; i < 0x400; i++) {           /* bis 4 MB, auch XMS     */
             e = get32(SCRATCH, i);
-            if ((e & PTE_P) && (i <= 0xA0 || i == 0xF0 || (e & PTE_OWN)))  /* nicht B8/B9! */
-                vp_free(e >> 12);
+            if ((e & (PTE_P | PTE_SWP)) && (i <= 0xA0 || i == 0xF0 || (e & PTE_OWN)))  /* nicht B8/B9! */
+                pte_drop(e);
         }
         vp_free(pt_box[t]);
         pt_box[t] = 0;
@@ -829,8 +842,11 @@ void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsign
             k = n;
         scratch2_map(PG_LIN(pt_box[t]), 4095);
         e = get32(SCRATCH2, (unsigned)(lin >> 12));
-        if (!(e & PTE_P))
+        if (!(e & PTE_P)) {
+            if ((e & PTE_SWP) && swap_need(t, lin >> 12))
+                continue;               /* eingelagert: noch einmal       */
             return;
+        }
         scratch2_map(e & ~0xFFFUL, 4095);
         far_copy(SCRATCH2, o, sel, off, k);
         lin += k;
@@ -3978,8 +3994,7 @@ static void emb_unmap(int t, unsigned base, unsigned n)
     unsigned long e;
     while (n--) {
         e = lpte_get(t, base + n);
-        if (e & PTE_P)
-            vp_free(e >> 12);
+        pte_drop(e);
         lpte_set(t, base + n, 0);
     }
 }
@@ -4303,7 +4318,7 @@ static void xms(struct v86_frame *f, int t)
             XFAIL(0xB2);
         BCLR(umb_head[t], p);
         do {
-            vp_free(pte_get(t, p) >> 12);
+            pte_drop(pte_get(t, p));
             pte_set(t, p, PG_LIN(p) | PTE_ROM);
             BCLR(umb_used[t], p);
             p++;
@@ -5083,8 +5098,8 @@ static void dmem_unmap(int t, unsigned long lp, unsigned long n)
     unsigned long e;
     while (n--) {
         e = lpte_get(t, lp + n);
-        if (e & PTE_P) {
-            vp_free(e >> 12);
+        if (e & (PTE_P | PTE_SWP)) {
+            pte_drop(e);
             lpte_set(t, lp + n, 0);
         }
     }
@@ -6226,7 +6241,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     unsigned char op;
     unsigned n, cs = (unsigned)f->r.cs;
 
-    if (f->vec == 14 && vga_pf(t))              /* Bildspeicher hinten   */
+    if (f->vec == 14 && (swap_pf() || vga_pf(t)))   /* ausgelagert, Bild hinten */
         return 0;
     if (f->vec != 13)
         return dp_exc(f, t);
@@ -6572,7 +6587,7 @@ static unsigned monitor(struct v86_frame *f, int t)
     case 13:
         break;
     case 14:                                    /* Seitenfehler          */
-        return vga_pf(t) || rom_cow(f, t) ? 0 : 1;
+        return swap_pf() || vga_pf(t) || rom_cow(f, t) ? 0 : 1;
     default:
         return 1;
     }

@@ -1463,7 +1463,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
-  Laufwerke + DriveSpace, fat.c-Zustand je Operation (LOOP-DBLSPACE.md,
+  Laufwerke + Auslagerungsdatei (Entscheidung des Nutzers: vor
+  DoubleSpace) + DriveSpace, fat.c-Zustand je Operation (LOOP-DBLSPACE.md,
   BIGLOCK.md); 6.2 Netzwerk, Sperren je Objekt; 6.3 VirtIO, SMB/Domäne,
   `klock` entfällt; 5.4 = 5.x mit DEVLOAD; GUI/Win16 (GUI-WIN16.md)
   Stufe 0 erst nach Klärung der offenen Entwurfsfragen dort (gemeinsame
@@ -1477,6 +1478,57 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   frühes Wine als Vorlage (Lizenzstände!), Win32 später. **System und
   Daten trennen**: `docs/SYSTEM-DATEN.md` (Variablen, MOUNT wie /home,
   Netzlaufwerk). Noch kein Code.
+
+- **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
+  15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen
+  Rechnern mit 2 bis 4 MB“; in QEMU geprüft: 4 MB – sechs FreeDOS-Boxen
+  gleichzeitig (2,1 MB ausgelagert), jede danach benutzt (DIR, FreeDOS-
+  MEM), alle beendet -> Datei wieder 0 KB belegt, Speicher genau wie
+  vorher; XT.COM (1 MB XMS mit Mustern, dann 4 weitere Boxen, dann
+  prüfen) „XMS OK“ – die XMS-Kopie über VWIN/RWIN holt ausgelagerte
+  Seiten per Ring-0-Seitenfehler; XCOPY \DOS nebenbei, alle Kopien
+  gleich; SHUTDOWN mit ausgelagerten Boxen, fsck sauber; zweiter Start
+  nimmt die vorhandene Datei; isapc 2 MB drei Boxen (1,5 MB
+  ausgelagert); 32 MB ohne Datei unverändert): `kernel/swap.c`
+  (KTEXT2). Datei `SWAPPER.DAT` (versteckt+System), `SWAPPATH=[X:]\Verz
+  [KB]` in CONFIG.SYS (landet in der Systemumgebung), ohne Angabe bei
+  RAM <= 16 MB und Start von Platte X:\DOS\SYSTEM, 2×RAM, 2–8 MB, `OFF`;
+  höchstens 65.532 KB. Beim Start (`swap_boot` nach der Dateitabelle):
+  öffnen/anlegen über `kf_kopen` (Eintrag des Kernels, IFS_F_WRITE –
+  niemand sonst kann sie öffnen, löschen, kopieren), `ifs_setsize` auf
+  die Größe (Nullen, einmalig), `blk_flush`, dann `ifs_bmap` -> Bereiche
+  in einem Kernelsegment (Kopf `struct swhdr`, Bereiche, Bitmap der
+  4-KB-Plätze), Puffer 4 KB unter 16 MB (`kseg_dma`, ISA-Busmaster).
+  E/A `kf_swap_rw` (kernel.c): direkt über den Treiber in den Puffer,
+  ohne Cache, unter Treibersperre; abgelehnt, wenn der Task mitten im
+  eigenen Auftrag für dieses Gerät steht. Ausgelagerter Eintrag: P = 0,
+  `PTE_SWP` (400h), Platz in Bit 12–31, W/U/OWN bleiben. Auslagern
+  (`swap_out(n)`, Uhr-Verfahren über das Zugriffsbit, Hand je Task/Seite
+  im Kopf): erst Eintrag umsetzen (CR3 neu, wenn die laufende Box), dann
+  Seite in den Puffer, schreiben, Seite frei – alles unter der Kernel-
+  sperre (klock_enter zählt): wer die Seite in dem Moment braucht, wartet
+  und liest danach. Nie: Seiten 0–Fh (IVT/BDA, HMA-Umlauf auf 0–64 KB),
+  A0–C7, F0–10F, oberhalb 640 KB ohne PTE_OWN (EMS-Rahmen, ROM, Bild,
+  dp_phys), EMS-Seiten, Seitentabellen. Auslöser: `vp_alloc`/
+  `vp_alloc_hi` (Box-Speicher, 16 Seiten) und `mem_get` (Programme, n +
+  16, bis 16 Runden – Segmente brauchen Seiten am Stück) nach dem Cache
+  (mem_reclaim) und den geparkten Boxen. Einlagern: `swap_pf` aus
+  v86_exc (#PF, vor vga_pf/rom_cow), dp_trap (DPMI) und neu aus Ring 0
+  (start.asm `.k0`: Vektor 14 im Kernel -> swap_pf, eingelagert ->
+  IRETD, sonst fault wie bisher); `swap_pf` sichert dabei den Deskriptor
+  VWIN (alle Boxen teilen ihn, lwin legt ihn um, während man schläft).
+  v86_copy (fremder Zusammenhang) holt Seiten über `swap_need`. Frei-
+  geben über `pte_drop` (vp_free oder Platz frei) in v86_destroy,
+  emb_unmap, dmem_unmap, UMB 11h. FAPI_MEMINFO ab CX >= 30
+  (`MEMINFO_V61`) swap_kb/swapped_kb, MEM zeigt „Auslagerungsdatei n K,
+  davon belegt m K“. Platz dafür: mount_disk/mount_one/nd_free nach
+  `kernel/blkmnt.c` (KTEXT2; next_drive, subst_drv nicht mehr static);
+  erstes Codesegment 64.872 Byte, DGROUP 65.386, KTEXT2 ~55,8 KB.
+  Grenzen: Programme (Segmente) werden nicht ausgelagert (Teil 2, wie
+  OS/2 1.x je Segment), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
+  EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht
+  mit (eine Box sieht nur den freien RAM als XMS). DPMI-Programme unter
+  Auslagerung (DOOM) noch nicht geprüft – in 86Box auf dem 386 mit 4 MB.
 
 - **Loop-Laufwerke Stufe 1 erledigt** (6.1, nur lesend; in QEMU geprüft:
   ISO in 1-KB-Lücken auf FAT16 zerstückelt (6 Stücke, 2048er-Blöcke über

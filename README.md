@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke
+# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke, Auslagerungsdatei
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -107,7 +107,14 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   sobald ein Programm oder eine DOS-Box Speicher braucht; DPMI/XMS der
   Boxen zählen den abgebbaren Teil als frei. MEM zeigt Größe, Spanne,
   „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
-  Untergrenze), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  Untergrenze), `SWAPPATH=[X:]\Verzeichnis [KB]` (6.1, wie OS/2:
+  Auslagerungsdatei `SWAPPER.DAT` für die DOS-Boxen; ohne Angabe auf
+  Rechnern bis 16 MB in `\DOS\SYSTEM` des Startlaufwerks, doppelte
+  RAM-Größe, 2–8 MB; `SWAPPATH=OFF` schaltet ab. Reicht der Speicher
+  nicht – auch nicht, nachdem der Platten-Cache abgegeben hat –, gehen
+  selten benutzte Seiten der Boxen in die Datei und kommen beim nächsten
+  Zugriff zurück; so laufen z. B. sechs Boxen auf einem 4-MB-Rechner,
+  drei auf 2 MB. MEM zeigt Größe und Belegung), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=nnn` (Land wie MS-DOS: Datum, Uhrzeit, Tausendertrenner in CMD
   und FM, auch in der DOS-Box; je Sitzung mit `SET COUNTRY=nnn` änderbar),
   `CODEPAGE=850,437` (wie OS/2: vorbereitete Codepages, die erste gilt ab
