@@ -391,6 +391,27 @@ static int is_x32(unsigned i)
                 DosRead(h, b, 2) == 2 &&
                 ((b[0] == 'P' && b[1] == 'E') || (b[0] == 'L' && (b[1] == 'E' || b[1] == 'X'))))
                 r = 1;
+            else {                      /* gebunden (DOS/4GW): LE/LX-Kopf */
+                unsigned n, k, keep = 0;    /* hinter dem Lader suchen   */
+                unsigned long at = 0;
+                sp = 0;
+                DosSeek(h, &sp);
+                while (!r && at < 0x80000UL &&
+                       (n = DosRead(h, db + keep, sizeof(db) - keep)) != 0 && !FAPI_FAILED(n)) {
+                    n += keep;
+                    for (k = 0; k + 8 <= n; k++)
+                        if (db[k] == 'L' && (db[k + 1] == 'E' || db[k + 1] == 'X') &&
+                            !db[k + 2] && !db[k + 3] && !db[k + 4] && !db[k + 5] &&
+                            !db[k + 6] && !db[k + 7]) {
+                            r = 1;
+                            break;
+                        }
+                    keep = n < 7 ? n : 7;
+                    for (k = 0; k < keep; k++)
+                        db[k] = db[n - keep + k];
+                    at += n - keep;
+                }
+            }
         }
     }
     DosClose(h);
@@ -817,7 +838,7 @@ void main(void)
         DosDelete(arcfull);
     }
     nfsel = DosAllocSeg(0);
-    if (FAPI_FAILED(nfsel) || !nfsel || (level && lme_open())) {
+    if (FAPI_FAILED(nfsel) || !nfsel || (level && lme_open(level))) {
         puts("7za: zu wenig Speicher\r\n");
         DosExit(8);
     }

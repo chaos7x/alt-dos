@@ -19,7 +19,7 @@
 #include "../include/drv.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
-#define NLDT        16
+#define NLDT        512             /* LDT-Eintraege je Task (bis 32 MB)   */
 #define LDT_FIRST_FREE 2
 #define USEL(idx)   (((idx) << 3) | 4 | 3)  /* TI=1 (LDT), RPL 3          */
 #define UCODE       USEL(0)
@@ -115,7 +115,11 @@ struct task {
 static struct task    task[NTASK];
 static struct tss386  tss_k;
 struct tss386  tss[NTASK];
-static struct desc    ldt[NTASK][NLDT];
+/* LDTs aller Tasks: ein Block NTASK * 4 KB im erweiterten Speicher (ldt_init),
+   Zugriff ueber LDTD. Fruehere 16 Eintraege in DGROUP reichten nur fuer
+   rund 900 KB je Programm. */
+#define LDT(t, i)   ((struct desc __far *)MK_FP(LDTD, ((unsigned)(t) * NLDT + (i)) << 3))
+#define D_ALIAS     0x0010          /* AVL-Bit (Byte 6): Eintrag ist Alias  */
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
@@ -154,7 +158,7 @@ static unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
 unsigned char k_alias;                  /* paging.c: Kernel sieht ab KALIAS */
 
-static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
+static void put_desc(struct desc __far *d, unsigned long base, unsigned short limit,
                      unsigned char acc)
 {
     if (k_alias)
@@ -167,7 +171,7 @@ static void put_desc(struct desc *d, unsigned long base, unsigned short limit,
 }
 
 /* lineare Basis eines Deskriptors (32 Bit) */
-static unsigned long desc_base(const struct desc *d)
+static unsigned long desc_base(const struct desc __far *d)
 {
     return (d->base_lo | ((unsigned long)d->base_hi << 16) |
             ((unsigned long)(d->rsv & 0xFF00) << 16)) - (k_alias ? KALIAS : 0);
@@ -176,6 +180,19 @@ static unsigned long desc_base(const struct desc *d)
 void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
 {
     put_desc(&gdt[i], base, limit, acc);
+}
+
+/* LDTs aller Tasks am Stueck (NTASK * NLDT * 8 = 32 KB), geleert */
+static void ldt_init(void)
+{
+    pg_t u = mem_alloc(PAGES((unsigned long)NTASK * NLDT * 8));
+    unsigned i;
+    if (!u)
+        panic("kein Speicher fuer die LDTs");
+    set_desc(LDTD_IDX, PG_LIN(u), NTASK * NLDT * 8 - 1, ACC_KDATA);
+    zero_seg(LDTD, NTASK * NLDT * 4);
+    for (i = 0; i < NTASK; i++)
+        set_desc(LDT_IDX(i), PG_LIN(u) + (unsigned long)i * NLDT * 8, NLDT * 8 - 1, ACC_LDT);
 }
 
 void gdt_build(void)
@@ -206,7 +223,6 @@ void gdt_build(void)
     set_desc(KSEG_IDX(0), MEMMAP_LIN, 8191, ACC_KDATA); /* mem.c-Bitmap    */
     for (i = 0; i < NTASK; i++) {
         set_desc(TSS_IDX(i), LIN(&tss[i]), sizeof(struct tss386) - 1, ACC_TSS);
-        set_desc(LDT_IDX(i), LIN(ldt[i]),  sizeof(ldt[i]) - 1, ACC_LDT);
     }
 
     for (i = 0; i < 48; i++) {
@@ -560,7 +576,7 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
 
     units = size ? PAGES(size) : 16;
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-        if (ldt[t][idx].access == 0)
+        if (LDT(t, idx)->access == 0)
             break;
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
@@ -572,16 +588,14 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
     scratch_map(base, units * MEM_PAGE - 1);
     zero_seg(SCRATCH, units * (MEM_PAGE / 2));  /* nie fremde Altdaten  */
 
-    put_desc(&ldt[t][idx], base, size ? size - 1 : 0xFFFF, ACC_UDATA);
+    put_desc(LDT(t, idx), base, size ? size - 1 : 0xFFFF, ACC_UDATA);
     alloc_units += units;
     return USEL(idx);
 }
 
 /* LDT-Eintraege, die nur auf fremden Speicher zeigen (VioGetBuf: der
    Sitzungspuffer gehoert dem Kernel) - beim Freigeben kein mem_free.
-   Die reservierten Deskriptorbytes taugen dafuer nicht: beim 386 stehen
-   dort Basis und Grenze. */
-static unsigned short ldt_alias[NTASK];
+   Merker: AVL-Bit des Deskriptors (D_ALIAS), frei fuer Software. */
 
 /* Alias-Eintrag umbiegen (Grafik: Bildspeicher <-> Puffer) / entfernen.
    Laeuft nur im Kernel; beim Ruecksprung laedt die CPU DS/ES neu. */
@@ -589,33 +603,34 @@ void ldt_set(int t, unsigned sel, unsigned long base, unsigned limit)
 {
     unsigned idx = sel >> 3;
     if (t < 0 || t >= NTASK || idx < LDT_FIRST_FREE || idx >= NLDT ||
-        !(ldt_alias[t] & (1u << idx)))
+        !(LDT(t, idx)->rsv & D_ALIAS))
         return;
-    put_desc(&ldt[t][idx], base, limit, ACC_UDATA);
+    put_desc(LDT(t, idx), base, limit, ACC_UDATA);
+    LDT(t, idx)->rsv |= D_ALIAS;
 }
 
 void ldt_drop(int t, unsigned sel)
 {
     unsigned idx = sel >> 3;
     if (t < 0 || t >= NTASK || idx < LDT_FIRST_FREE || idx >= NLDT ||
-        !(ldt_alias[t] & (1u << idx)))
+        !(LDT(t, idx)->rsv & D_ALIAS))
         return;
-    ldt[t][idx].access = 0;
-    ldt_alias[t] &= ~(1u << idx);
+    LDT(t, idx)->access = 0;
+    LDT(t, idx)->rsv = 0;
 }
 
 static unsigned seg_free(int t, unsigned sel)
 {
     unsigned idx = sel >> 3, units;
-    struct desc *d;
+    struct desc __far *d;
 
     if (!(sel & 4) || idx < LDT_FIRST_FREE || idx >= NLDT)
         return FAPI_ERROR;
-    d = &ldt[t][idx];
+    d = LDT(t, idx);
     if (d->access == 0)
         return FAPI_ERROR;
-    if (ldt_alias[t] & (1u << idx)) {
-        ldt_alias[t] &= ~(1u << idx);
+    if (d->rsv & D_ALIAS) {
+        d->rsv = 0;
         d->access = 0;
         return 0;
     }
@@ -1365,13 +1380,15 @@ static int load_program(int t, int drive, const char *path)
     task[t].code_fsize = ld_fsize;
     if (ld_cu && !ld_shared)
         image_units += ld_cn;
-    for (n = 0; n < NLDT; n++)
-        ldt[t][n].access = 0;
+    for (n = 0; n < NLDT; n++) {
+        LDT(t, n)->access = 0;
+        LDT(t, n)->rsv = 0;
+    }
     if (ld_cu)                                  /* V2: eigenes Codesegment */
-        put_desc(&ldt[t][0], PG_LIN(ld_cu), h.code_size - 1, ACC_UCODE);
+        put_desc(LDT(t, 0), PG_LIN(ld_cu), h.code_size - 1, ACC_UCODE);
     else
-        put_desc(&ldt[t][0], base, h.image_size - 1, ACC_UCODE);
-    put_desc(&ldt[t][1], base, (unsigned)(seg - 1), ACC_UDATA);
+        put_desc(LDT(t, 0), base, h.image_size - 1, ACC_UCODE);
+    put_desc(LDT(t, 1), base, (unsigned)(seg - 1), ACC_UDATA);
 
     ts = &tss[t];
     tss_init(t, paging_cr3());
@@ -1729,7 +1746,7 @@ static void task_end(int t)
         v86_destroy(t);                     /* (merkt sich ihren Text)  */
     }
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-        if (ldt[t][idx].access != 0)
+        if (LDT(t, idx)->access != 0)
             seg_free(t, USEL(idx));
     if (task[t].img_unit) {
         mem_free(task[t].img_unit, task[t].img_cnt);
@@ -4088,12 +4105,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_VIOGETBUF: {                      /* LVB wie bei OS/2 1.x  */
         unsigned idx;
         for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-            if (ldt[current][idx].access == 0)
+            if (LDT(current, idx)->access == 0)
                 break;
         if (idx == NLDT)
             return FAPI_ERROR;
-        put_desc(&ldt[current][idx], vio_buf_lin(s), SBYTES - 1, ACC_UDATA);
-        ldt_alias[current] |= 1u << idx;
+        put_desc(LDT(current, idx), vio_buf_lin(s), SBYTES - 1, ACC_UDATA);
+        LDT(current, idx)->rsv |= D_ALIAS;
         return USEL(idx);
     }
 
@@ -4109,12 +4126,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (!vio_is_gfx(s))
             return FAPI_ERROR;
         for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-            if (ldt[current][idx].access == 0)
+            if (LDT(current, idx)->access == 0)
                 break;
         if (idx == NLDT)
             return FAPI_ERROR;
-        put_desc(&ldt[current][idx], vio_gfx_base(s), vio_gfx_limit(s), ACC_UDATA);
-        ldt_alias[current] |= 1u << idx;
+        put_desc(LDT(current, idx), vio_gfx_base(s), vio_gfx_limit(s), ACC_UDATA);
+        LDT(current, idx)->rsv |= D_ALIAS;
         vio_gfx_reg(s, current, USEL(idx));
         return USEL(idx);
     }
@@ -6570,6 +6587,8 @@ void kmain(void)
        freigeben: bis dahin endet der konventionelle Speicher dort */
     mem_init((KDATA_LIN + kdata_size + MEM_PAGE - 1) >> 12,
              (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb);
+    ldt_init();                         /* LDTs der Tasks (vor paging:   */
+                                        /* alias_on rechnet sie um)      */
     paging_init();                      /* 1:1, Seitentabellen aus mem   */
     tss_k.cr3 = paging_cr3();           /* (die CPU schreibt CR3 nie zurueck) */
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */

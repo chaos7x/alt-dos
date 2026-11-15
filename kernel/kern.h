@@ -46,7 +46,9 @@
 #define CTXWIN      (CTXWIN_IDX * 8)
 #define WBUF_IDX    (KCODE3_IDX + 3) /* Schreibpuffer je Task (bc_wb, Phase 6) */
 #define WBUF        (WBUF_IDX * 8)
-#define NGDT        (KCODE3_IDX + 4)
+#define LDTD_IDX    (KCODE3_IDX + 4) /* Datenfenster auf die LDTs aller Tasks */
+#define LDTD        (LDTD_IDX * 8)
+#define NGDT        (KCODE3_IDX + 5)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */

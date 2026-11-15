@@ -6,9 +6,11 @@
  *
  * Bereichscodierer: low 32 Bit + Uebertrag (`carry`) statt 64 Bit,
  * (range >> 11) * p ueber zwei 16x16-Multiplikationen (kein __U4M).
- * Suche: Woerterbuch 128 KB als Ring in zwei 64-KB-Segmenten, Kopf-
- * tabelle (32K Eintraege zu 32 Bit, 2 Segmente) und Kette mit 16-Bit-
- * Abstaenden je Stelle (4 Segmente). Entscheidung ohne Preisrechnung:
+ * Suche: Woerterbuch 128 KB bis 4 MB (nach Stufe und freiem Speicher) als
+ * Ring aus wn 64-KB-Segmenten, Kopftabelle (64K Eintraege zu 32 Bit, 4
+ * Segmente) und Kette mit 16-Bit-Abstaenden je Stelle (2 * wn Segmente;
+ * weiter als 64 KB zurueck endet die Kette - der Kopf zeigt trotzdem auf
+ * die juengste Stelle im ganzen Woerterbuch). Entscheidung ohne Preisrechnung:
  * Wiederholungsabstand vor neuem Treffer, wenn er hoechstens 1 kuerzer
  * ist; verzoegerte Suche (eine Stelle) ab Stufe 4; 1-Byte-Wiederholung
  * (ShortRep), wenn das Byte an rep0 passt.
@@ -28,12 +30,13 @@ unsigned long lme_nout;
 unsigned long mul16(unsigned a, unsigned b);
 #endif
 
-#define WMASK    0x1FFFFUL
 #define MAXM     273
-#define DMAX     (0x20000UL - 8192)     /* groesster Abstand             */
 #define CHUNK    4096
+#define WN_MAX   64                     /* 4 MB                          */
 
-static unsigned wsel[2], hsel[2], csel[4];
+static unsigned wsel[WN_MAX], hsel[4], csel[2 * WN_MAX], wn;
+static unsigned long dmax;              /* groesster Abstand             */
+unsigned long lme_dict;
 static unsigned long pos, wend;
 static unsigned depth, nice, lazy;
 static int werr;
@@ -172,15 +175,15 @@ static void model_init(void)
 /* ---- Fenster ------------------------------------------------------------- */
 static unsigned char wb(unsigned long a)
 {
-    return *((unsigned char __far *)MK_FP(wsel[(unsigned)(a >> 16) & 1], (unsigned)a));
+    return *((unsigned char __far *)MK_FP(wsel[(unsigned)(a >> 16) & (wn - 1)], (unsigned)a));
 }
 
 static unsigned mlen(unsigned long p, unsigned long c, unsigned max)
 {
     unsigned o1 = (unsigned)p, o2 = (unsigned)c, n = 0;
     if (o1 < 0xFFFFU - MAXM && o2 < 0xFFFFU - MAXM) {
-        unsigned char __far *a = MK_FP(wsel[(unsigned)(p >> 16) & 1], o1);
-        unsigned char __far *b = MK_FP(wsel[(unsigned)(c >> 16) & 1], o2);
+        unsigned char __far *a = MK_FP(wsel[(unsigned)(p >> 16) & (wn - 1)], o1);
+        unsigned char __far *b = MK_FP(wsel[(unsigned)(c >> 16) & (wn - 1)], o2);
         while (n < max && a[n] == b[n])
             n++;
         return n;
@@ -191,12 +194,13 @@ static unsigned mlen(unsigned long p, unsigned long c, unsigned max)
 }
 
 #define HD(h)  ((unsigned long __far *)MK_FP(hsel[(h) >> 14], ((h) & 0x3FFF) << 2))
-#define CH(p)  ((unsigned short __far *)MK_FP(csel[(unsigned)((p) >> 15) & 3], \
+#define CH(p)  ((unsigned short __far *)MK_FP(csel[(unsigned)((p) >> 15) & (2 * wn - 1)], \
                                               ((unsigned)(p) & 0x7FFF) << 1))
 
 static unsigned hash(unsigned long p)
 {
-    return (((unsigned)wb(p) << 7) ^ ((unsigned)wb(p + 1) << 4) ^ wb(p + 2)) & 0x7FFF;
+    return ((unsigned)wb(p) << 8) ^ ((unsigned)wb(p + 1) << 4) ^ wb(p + 2) ^
+           ((unsigned)wb(p + 1) << 12);
 }
 
 static void insert(unsigned long p)
@@ -224,7 +228,7 @@ static unsigned find(unsigned long p, unsigned maxl, unsigned long *dist)
     c = c1 - 1;
     for (;;) {
         d = p - c;
-        if (d == 0 || d > DMAX || d > p)
+        if (d == 0 || d > dmax || d > p)
             break;
         if (wb(c + best) == wb(p + best) && wb(c) == wb(p)) {
             l = mlen(p, c, maxl);
@@ -417,32 +421,49 @@ single:
 }
 
 /* ---- Schnittstelle ------------------------------------------------------- */
-int lme_open(void)
+int lme_open(int level)
 {
-    unsigned i, s;
-    for (i = 0; i < 8; i++) {
+    unsigned i, s, want;
+    want = level <= 3 ? 2 : level <= 5 ? 8 : level == 6 ? 16 : level == 7 ? 32 : WN_MAX;
+    for (i = 0; i < 4; i++) {
         s = DosAllocSeg(0);
         if (FAPI_FAILED(s) || !s)
             return 1;
-        if (i < 2)
-            wsel[i] = s;
-        else if (i < 4)
-            hsel[i - 2] = s;
-        else
-            csel[i - 4] = s;
+        hsel[i] = s;
     }
+    for (wn = want; wn >= 2; wn >>= 1) {    /* zu wenig Speicher: kleiner  */
+        for (i = 0; i < 3 * wn; i++) {
+            s = DosAllocSeg(0);
+            if (FAPI_FAILED(s) || !s)
+                break;
+            if (i < wn)
+                wsel[i] = s;
+            else
+                csel[i - wn] = s;
+        }
+        if (i == 3 * wn)
+            break;
+        while (i--)
+            DosFreeSeg(i < wn ? wsel[i] : csel[i - wn]);
+        for (i = 0; i < WN_MAX; i++)
+            wsel[i] = csel[i] = csel[i + WN_MAX] = 0;
+    }
+    if (wn < 2)
+        return 1;
+    lme_dict = (unsigned long)wn << 16;
+    dmax = lme_dict - 8192;
     return 0;
 }
 
 void lme_close(void)
 {
     unsigned i;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < WN_MAX; i++)
         if (wsel[i]) DosFreeSeg(wsel[i]);
-        if (hsel[i]) DosFreeSeg(hsel[i]);
-    }
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 2 * WN_MAX; i++)
         if (csel[i]) DosFreeSeg(csel[i]);
+    for (i = 0; i < 4; i++)
+        if (hsel[i]) DosFreeSeg(hsel[i]);
 }
 
 void lme_props(unsigned char *p5)
@@ -450,15 +471,15 @@ void lme_props(unsigned char *p5)
     p5[0] = 0x5D;                       /* (pb * 5 + lp) * 9 + lc        */
     p5[1] = 0;
     p5[2] = 0;
-    p5[3] = (unsigned char)(LME_DICT >> 16);
-    p5[4] = 0;
+    p5[3] = (unsigned char)wn;
+    p5[4] = (unsigned char)(wn >> 8);
 }
 
 void lme_begin(int level)
 {
     unsigned i;
     unsigned long __far *h;
-    for (i = 0; i < 2; i++) {           /* Kopftabelle leeren            */
+    for (i = 0; i < 4; i++) {           /* Kopftabelle leeren            */
         unsigned j;
         h = MK_FP(hsel[i], 0);
         for (j = 0; j < 0x4000; j++)
@@ -497,7 +518,7 @@ int lme_feed(const unsigned char *p, unsigned n)
             off = (unsigned)wend;
             room = 0x10000UL - off;
             m = room < k ? (unsigned)room : k;
-            w = MK_FP(wsel[(unsigned)(wend >> 16) & 1], off);
+            w = MK_FP(wsel[(unsigned)(wend >> 16) & (wn - 1)], off);
             k -= m;
             wend += m;
             while (m--)

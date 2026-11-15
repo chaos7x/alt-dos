@@ -214,7 +214,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Die Speicherverwaltung beginnt direkt hinter den Kerneldaten
   (`mem_init(low, ...)`), MEM zeigt die echte Kernelgröße.
 - Jeder Task hat eine eigene LDT: Eintrag 0 Code, 1 Daten/Stack, ab 2 per
-  `DosAllocSeg`. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
+  `DosAllocSeg`. Seit 15.11.2026 512 Einträge je Task (vorher 16 in
+  DGROUP – Programme kamen nur an ~900 KB): alle LDTs am Stück in einem
+  32-KB-Block (`ldt_init` nach mem_init, NTASK × 4 KB), Zugriff über den
+  GDT-Eintrag `LDTD` (letzter, hinter WBUF – feste Selektoren bleiben),
+  `LDT(t, i)` als Fernzeiger; Alias-Einträge (VioGetBuf/GetPhysBuf)
+  tragen das AVL-Bit (`D_ALIAS`, Byte 6 Bit 4) statt `ldt_alias[]`.
+  DGROUP danach 64.296 Byte. In QEMU geprüft: Start, 7ZDEC mit 3,6-MB-
+  Ring, DOS-Box, DOOM 1.9 Timedemo (DPMI). Alte Grenzen in Programmen
+  (UFAT32 „14 freie LDT-Plätze“, 7ZDEC LM_NSEG 12) lassen sich anheben. Anwendungen sehen keine GDT-Segmente außer dem FAPI-Gate.
   Der Kernel greift über das GDT-Fenster `SCRATCH` (30h) auf beliebigen
   Speicher zu (zweites Fenster `SCRATCH2`, 40h), Laufwerke lesen per DMA in
   `DMABUF` (38h, linear 8000h, 2 KB für CD-Blöcke; Platten nutzen 512).
@@ -817,6 +825,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   einem ELF als LS.BIN: 7ZDEC t/x, 7-Zip `t` „Everything is Ok“, 7-Zip
   zeigt „LZMA:17 BCJ“, Inhalt gleich. Offen: gepackter Kopf, Ergänzen. 7ZDEC nimmt die Zwischendatei nur noch, wenn der Ring kleiner
   ist als das Wörterbuch (bzw. der Ordner) – Abstände sind nie größer.
+  Mit den großen LDTs: Ring bis 256 Segmente (`LM_NSEG`, 16 MB); reicht
+  der Speicher nicht für das ganze Wörterbuch, gibt lm_ring bis auf
+  `LM_NSMALL` (12) zurück und es geht über die Zwischendatei. 7ZA:
+  `lme_open(level)` – Ring wn = 2/8/16/32/64 Segmente (128 KB–4 MB),
+  Kette 2·wn Segmente, Kopf 64K Einträge (4 Segmente, 16-Bit-Hash), bei
+  Speichermangel halbiert; Eigenschaften = wn << 16. Gebundene DOS/4GW-
+  Programme (MZ, dann „BW“, LE-Kopf ohne Verweis bei e_lfanew – DOOM.EXE
+  bei 27ACCh): BCJ, wenn in den ersten 512 KB `LE`/`LX` + 6 Nullbytes
+  steht. In QEMU (32 MB): DOOM 1.9 mit -mx=9 (1.837.506 Byte, 7-Zip -mx=9
+  1.657.143 – keine Preisrechnung), 7ZDEC t/x, das entpackte DOOM läuft
+  `-timedemo demo1`; 7-Zip-Archiv mit 4-MB-Wörterbuch ohne Zwischendatei.
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
   Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).

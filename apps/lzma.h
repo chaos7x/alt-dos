@@ -11,7 +11,8 @@
 #ifndef LZMA_H
 #define LZMA_H
 
-#define LM_NSEG 12
+#define LM_NSEG 256                     /* Ring bis 16 MB (LDT 512 Eintraege) */
+#define LM_NSMALL 12                    /* reicht es nicht: kleiner Ring */
 
 extern unsigned (*lm_read)(unsigned char *buf, unsigned n);        /* 0 = Ende */
 extern int      (*lm_write)(const unsigned char *p, unsigned n);   /* 0 = ok   */

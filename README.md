@@ -309,15 +309,18 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `7ZDEC [e|x|l|t] [-l -t -o -n -j -q -d Ziel] Archiv[.7Z] [Ziel\]
   [Name…]` entpackt 7z-Archive von 7-Zip (Copy, LZMA, LZMA2, BCJ x86,
   Delta; gepackter Kopf, feste und einzelne Ordner) und `.LZMA`-Dateien
-  (eigener LZMA-Kern `lzma.c`). Wörterbuch so groß wie der Speicher
-  erlaubt (etwa 576 KB); größere Ordner laufen über eine Zwischendatei –
-  so entpackt es auch Archive mit 16-MB-Wörterbuch. Nicht: BCJ2, PPMd,
+  (eigener LZMA-Kern `lzma.c`). Wörterbuch im Speicher bis 16 MB, wenn
+  er reicht; sonst über eine Zwischendatei mit kleinem Ring – so entpackt
+  es jedes Archiv. Nicht: BCJ2, PPMd,
   Verschlüsselung
 - `7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei…]` legt 7z-Archive
-  an (eigener LZMA-Packer `lzmaenc.c`, Wörterbuch 128 KB, fester Ordner,
+  an (eigener LZMA-Packer `lzmaenc.c`, Wörterbuch nach Stufe 128 KB
+  (1–3), 512 KB (4–5), 1 MB (6), 2 MB (7), 4 MB (8–9), kleiner bei wenig
+  Speicher – Bedarf etwa das Dreifache; fester Ordner,
   Namen UTF-16, Datum, Attribute; `-mx=0` speichert); `x e l t` ruft
   7ZDEC. 32-Bit-Programme (PE, LE/LX von DOS/4GW, ELF) kommen in einen
-  eigenen Ordner mit BCJ-x86-Filter davor. 7-Zip liest die Archive. Nur
+  eigenen Ordner mit BCJ-x86-Filter davor (auch mit DOS/4GW gebundene
+  wie DOOM.EXE). 7-Zip liest die Archive. Nur
   neue Archive (`-y` überschreibt), noch kein gepackter Kopf
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),

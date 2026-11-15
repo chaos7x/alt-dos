@@ -42,6 +42,9 @@ int lm_ring(unsigned long want)
     }
     if (!rn)
         return LM_EMEM;
+    if (((unsigned long)rn << 16) < want)   /* nicht ganz: kleiner Ring und  */
+        while (rn > LM_NSMALL)              /* Zwischendatei, Speicher fuer  */
+            DosFreeSeg(rsel[--rn]);         /* die anderen zurueck           */
     lm_rsize = (unsigned long)rn << 16;
     return 0;
 }
