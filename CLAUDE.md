@@ -4142,6 +4142,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geräte bekommen gleich den nächsten freien Buchstaben (Partitionen
   einhängen, CDs an ISO9660), Werkzeug `DEVLOAD Treiber [Argumente]`,
   `DEVLOAD /L` listet; `modprobe`/`lsmod` als Makros in LINUX.MAC.
+  Stufe 1 erledigt (in QEMU geprüft: Start ohne NCR8XX/ISO9660, beide
+  per DEVLOAD nachgeladen – SCSI-Platte und CD bekommen D:/E: in der
+  Reihenfolge des Ladens, XCOPY \DOS auf die SCSI-Platte, CHKDSK, DIR
+  der CD, SHUTDOWN, fsck sauber, Inhalte gleich; doppelt -> „ist schon
+  geladen“, AIC7XXX ohne Karte -> „kein Gerät gefunden“, Platz wieder
+  frei): FAPI 58h `FAPI_DRIVER` (`drv_fapi` in kernel.c) – `DRVL_LOAD`
+  mit vollem Pfad (die Suche in \DOS\SYSTEM/\DOS macht DEVLOAD, der
+  Name kommt groß), `DRVL_IFS` vom Programm nach der Endung; während des
+  Ladens `bkl_hold` und `boot_session` = Sitzung des Aufrufers (Meldungen
+  von Kernel und Treiber landen dort), danach mount_disk für die neuen
+  Geräte und cd_drives (überspringt CDs, die schon einen Buchstaben
+  haben). `nd_free()` sucht den nächsten freien Buchstaben (nicht
+  belegt, kein SUBST, nicht Z:) – zur Laufzeit liegen Lücken dazwischen.
+  `DRVL_INFO` -> `struct fapi_drvinfo` (Name, Art, Geräte, Laufwerke
+  als Bitmaske; ein IDE-CD erscheint bei IDE.SYS und bei ISO9660.IFS).
+  load_driver nimmt `resolve(current, …)` (mit Laufwerkssperre zur
+  Laufzeit). Ein eigenes IFSLOAD gibt es nicht – DEVLOAD erkennt `.IFS`
+  (wie modprobe für alle Module). Grenzen: NDRV 6, NIFSMOD 2 (dritter
+  IFS -> „kein Treiberplatz“). Erstes Codesegment danach 63.140 Byte.
   Stufe 2 Entladen (`DEVLOAD /U Name`): neuer Treiberbefehl `DRV_DEINIT`
   (IRQ abmelden, Hardware anhalten, Ressourcen frei; wer ihn nicht kennt,
   bleibt geladen), Kernel prüft offene Dateien, aktuelle Verzeichnisse,

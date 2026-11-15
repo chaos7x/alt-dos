@@ -3071,6 +3071,7 @@ static union {
 #define buf fi_buf
 #define canon fi_canon
 #define de fi_de
+static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3)
 {
@@ -3736,6 +3737,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a1 == 0xFFFF)
             return a2 < cp_n ? cp_list[a2] : 0;
         return cp_set(a1) ? FAPI_ERROR : 0;
+    case FAPI_DRIVER:                           /* DEVLOAD               */
+        return drv_fapi(usel, a1, a2, a3);
+
     case FAPI_EJECT: {                          /* Medium auswerfen      */
         int dev, st;
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
@@ -5905,7 +5909,7 @@ static int load_driver(const char *line, int is_ifs)
     path[k] = 0;
     while (*args == ' ')
         args++;
-    if (resolve(-1, path, &drive, canon))
+    if (resolve(current, path, &drive, canon))
         return -1;
     err = load_image(drive, canon, &h, &u, &n, &seg);
     for (k = 0; path[k] && path[k] != '\\' && path[k] != ':'; k++)
@@ -6012,9 +6016,21 @@ static unsigned long rd32(unsigned sel, unsigned off)
     return rd16(sel, off) | ((unsigned long)rd16(sel, off + 2) << 16);
 }
 
+/* naechster freier Buchstabe (zur Laufzeit liegen dazwischen SUBST-
+   Laufwerke oder Luecken) -> 0, wenn keiner mehr frei ist */
+static int nd_free(void)
+{
+    while (next_drive < NDRIVE && (vol[next_drive].used || vol[next_drive].present ||
+                                   subst_drv[next_drive] >= 0 || next_drive == PRE_DRIVE))
+        next_drive++;
+    return next_drive < NDRIVE;
+}
+
 static void mount_one(int dev, unsigned long start, unsigned long size,
                       unsigned char type, unsigned part)
 {
+    if (!nd_free())
+        return;
     vol[next_drive].psize = size;
     ifs_mount(next_drive, dev, start, &fat_driver);  /* auch unformatiert:
                                        Buchstabe fuer FORMAT    */
@@ -6038,7 +6054,7 @@ static void mount_disk(int dev)
     if (blk[dev].bsize != 512)
         return;                         /* CD-ROM: siehe cd_drives()    */
     if (IS_REM(dev)) {                  /* Wechselplatte: ein Buchstabe, */
-        if (next_drive < NDRIVE) {      /* eingehaengt wird bei Bedarf   */
+        if (nd_free()) {                /* eingehaengt wird bei Bedarf   */
             vol[next_drive].blk = dev;  /* (fat.c revalidate)            */
             vol[next_drive].drv = &fat_driver;
             vol[next_drive].present = 1;
@@ -6327,9 +6343,14 @@ static void cd_drives(void)
 {
     int dev, m;
 
-    for (dev = 1; dev < nblk && next_drive < PRE_DRIVE; dev++) {
+    for (dev = 1; dev < nblk && nd_free() && next_drive < PRE_DRIVE; dev++) {
         if (blk[dev].bsize != 2048)
             continue;
+        for (m = 2; m < NDRIVE && !(vol[m].used && vol[m].blk == dev &&
+                                    vol[m].drv == &mod_driver); m++)
+            ;
+        if (m < NDRIVE)
+            continue;                   /* hat schon einen (DEVLOAD)     */
         for (m = 0; m < nifsmod && !(ifsmod[m].classes & IFS_CLASS_CD); m++)
             ;
         if (m == nifsmod) {
@@ -6344,6 +6365,76 @@ static void cd_drives(void)
         vol[next_drive].part = 0;
         next_drive++;
     }
+}
+
+/* FAPI 58h: Treiber und IFS-Module zur Laufzeit laden (DEVLOAD) und
+   auflisten. Meldungen von Kernel und Treiber gehen in die Sitzung des
+   Aufrufers; die Kernelsperre bleibt bis zum Ende (bkl_hold). */
+static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
+{
+    static unsigned char busy;
+    int d, k, x, old, n, dev0;
+    unsigned i;
+
+    if (a1 == DRVL_INFO) {
+        struct fapi_drvinfo __far *di = MK_FP(usel, a3);
+        unsigned long m = 0;
+        if (a2 >= NDRV || !user_ok(usel, a3, sizeof(*di), 1))
+            return FAPI_ERROR;
+        d = (int)a2;
+        di->units = 0;
+        di->kind = drv[d].used ? 1 : 0;
+        for (k = 0; k < nifsmod; k++)
+            if (drv[d].used && ifsmod[k].drv == d)
+                di->kind = 2;
+        for (k = 0; k < 13; k++)
+            di->name[k] = drv[d].used ? drv[d].name[k] : 0;
+        for (k = 0; k < nblk; k++)
+            if (drv[d].used && blk[k].drv == d)
+                di->units++;
+        for (x = 2; x < NDRIVE && drv[d].used; x++)
+            if ((vol[x].used || vol[x].present) && x != PRE_DRIVE &&
+                (di->kind == 2 ? vol[x].drv == &mod_driver && vol[x].mod == d
+                               : blk[vol[x].blk].drv == d))
+                m |= 1UL << x;
+        di->rsv = 0;
+        di->drives = m;
+        return 0;
+    }
+    if (a1 != DRVL_LOAD || user_str(usel, a2, fi_buf, FAPI_ARGLEN))
+        return FAPI_ERROR;
+    if (busy)
+        return FAPI_ERR_INUSE;
+    for (i = 0, k = 0; fi_buf[i] && fi_buf[i] != ' '; i++)   /* Dateiname */
+        if (fi_buf[i] == '\\' || fi_buf[i] == ':')
+            k = (int)i + 1;
+    for (d = 0; d < NDRV; d++) {
+        if (!drv[d].used)
+            continue;
+        for (i = 0; drv[d].name[i] && up(drv[d].name[i]) == up(fi_buf[k + i]); i++)
+            ;
+        if (!drv[d].name[i] && (!fi_buf[k + i] || fi_buf[k + i] == ' '))
+            return FAPI_ERR_EXIST;
+    }
+    for (d = 0; d < NDRV && drv[d].used; d++)
+        ;
+    if (d == NDRV || ((a3 & DRVL_IFS) && nifsmod == NIFSMOD))
+        return FAPI_ERR_FULL;
+    busy = 1;
+    bkl_hold++;
+    old = boot_session;
+    boot_session = task[current].session;
+    dev0 = nblk;
+    n = load_driver(fi_buf, a3 & DRVL_IFS);
+    if (n > 0 && !(a3 & DRVL_IFS))
+        for (k = dev0; k < nblk; k++)
+            mount_disk(k);
+    if (n > 0)
+        cd_drives();
+    boot_session = old;
+    bkl_hold--;
+    busy = 0;
+    return n < 0 ? FAPI_ERROR : drv[d].used ? (unsigned)d : FAPI_ERR_NOTREADY;
 }
 
 /* CONFIG.SYS wie MS-DOS. Wirksam: DEVICE=, DEVICEHIGH= (wie DEVICE, im

@@ -59,6 +59,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)
 #define DosEject(d)         fapi_call(FAPI_EJECT, (d), 0, 0)
+#define DosLoadDriver(l, f) fapi_call(FAPI_DRIVER, DRVL_LOAD, (unsigned short)(l), (f))
+#define DosDrvInfo(i, p)    fapi_call(FAPI_DRIVER, DRVL_INFO, (i), (unsigned short)(p))   /* struct fapi_drvinfo */
 #define DosGetCp()          fapi_call(FAPI_CODEPAGE, 0, 0, 0)
 #define DosCpList(i)        fapi_call(FAPI_CODEPAGE, 0xFFFF, (i), 0)
 #define DosSetCp(cp)        fapi_call(FAPI_CODEPAGE, (cp), 0, 0)
