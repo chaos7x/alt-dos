@@ -266,26 +266,23 @@ void scratch_map(unsigned long base, unsigned limit)
    die ohne Kernelsperre laufen (vio), waehrend ein anderer Task mitten in
    einer Dateioperation ueber die Fenster in einem Treiber schlaeft. Beim
    Taskwechsel laedt die CPU die Segmentregister neu aus der GDT. */
+/* Fenster SCRATCH/SCRATCH2 sichern und zurueck (Kernelteile ohne Sperre:
+   vio, Fallen der DOS-Boxen). Gesichert werden die Merker scr_b/scr_l,
+   zurueck ueber swin - so stimmen Merker, Deskriptor und (ueber 2 GB) der
+   Fensterplatz von pg_win wieder; frueher kamen nur die rohen Deskriptoren
+   zurueck, die Merker blieben auf dem Wert des Zwischenaufrufs. */
 void win_save(unsigned short *b)
 {
-    unsigned short *a = (unsigned short *)&gdt[SCRATCH >> 3];
-    unsigned short *c = (unsigned short *)&gdt[SCRATCH2 >> 3];
-    int i;
-    for (i = 0; i < 4; i++) {
-        b[i] = a[i];
-        b[4 + i] = c[i];
-    }
+    *(unsigned long *)b = scr_b[0];
+    *(unsigned long *)(b + 2) = scr_b[1];
+    b[4] = scr_l[0];
+    b[5] = scr_l[1];
 }
 
 void win_restore(const unsigned short *b)
 {
-    unsigned short *a = (unsigned short *)&gdt[SCRATCH >> 3];
-    unsigned short *c = (unsigned short *)&gdt[SCRATCH2 >> 3];
-    int i;
-    for (i = 0; i < 4; i++) {
-        a[i] = b[i];
-        c[i] = b[4 + i];
-    }
+    swin(SCRATCH, *(const unsigned long *)b, b[4]);
+    swin(SCRATCH2, *(const unsigned long *)(b + 2), b[5]);
 }
 
 void scratch2_map(unsigned long base, unsigned limit)
@@ -2237,7 +2234,22 @@ static void kill_pending(void)
 /* keep = 0: Kernelsperre abgeben (freiwillig, auch die Laufwerkssperre),
    1: behalten, 2: abgeben, Laufwerks-/Treibersperren behalten (Warten im
    Treiber oder auf eine Sperre) */
+static void sched_in(int keep);
+
+/* Waehrend ein Task schlaeft (mit oder ohne Kernelsperre), laufen andere -
+   auch die Fallen der DOS-Boxen ohne Sperre - und legen SCRATCH/SCRATCH2
+   um. Seine Fenster kommen beim Aufwachen zurueck (Anlass: unter
+   Speicherdruck mit zwei Boxen las load_image von MEM.EXE in fremden
+   Speicher - "Kein FAPI-Programm" - und far_copy endete in #GP). */
 static void sched(int keep)
+{
+    unsigned short w[8];
+    win_save(w);
+    sched_in(keep);
+    win_restore(w);
+}
+
+static void sched_in(int keep)
 {
     int n, t, any;
     unsigned long now;

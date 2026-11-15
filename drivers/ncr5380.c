@@ -557,6 +557,10 @@ static void eject(void)
     scsi(target[u], 6, r->buf_sel, r->buf_off, 0);
     cdb6(0x1B, 0x02);
     r->status = scsi(target[u], 6, r->buf_sel, r->buf_off, 0) == SCSI_OK ? DRV_OK : DRV_ERR_IO;
+    if (bsz[u] == 512) {                    /* Wechselplatte: dazu Stop  */
+        cdb6(0x1B, 0x00);                   /* (Iomega-ZIP wirft so aus, */
+        scsi(target[u], 6, r->buf_sel, r->buf_off, 0);  /* 86Box nur so) */
+    }
     chg[u] = 1;
 }
 

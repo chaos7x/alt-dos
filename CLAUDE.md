@@ -3951,6 +3951,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
     (`kill_req`, `kill_pending`) nur ohne laufende Operation; PROC_KILL
     eines Tasks in einer Operation setzt kill_req. end_programs wartet,
     bis die anderen fertig sind, dann `bkl_hold`. `box_sec` im Kontext.
+  Fenster beim Schlafen (vom Nutzer gemeldet, 386DX mit 4 MB: XCOPY aus
+  zwei Boxen, dann MEM in CMD „Kein FAPI-Programm“, START CMD -> Kernel-
+  Panik #GP in far_copy, eine Box abgebrochen; in QEMU mit 4 MB nach-
+  gestellt): SCRATCH/SCRATCH2 gehören dem, der gerade läuft – auch den
+  Fallen der Boxen, die ohne Sperre laufen. Ein Task, der mitten in
+  einer Operation schläft (ProcBlock im Treiber, mit oder ohne Sperre),
+  fand beim Aufwachen fremde Fenster vor; der Kontexttausch half nicht,
+  weil er erst sichert, wenn ein anderer die Sperre nimmt – dazwischen
+  hatte eine Box scr_b schon umgelegt. Und win_save/win_restore stellten
+  nur die rohen Deskriptoren zurück, die Merker scr_b/scr_l blieben auf
+  dem Wert des Zwischenaufrufs. Jetzt: win_save sichert die Merker,
+  win_restore legt per swin neu (auch den pg_win-Platz über 2 GB); sched()
+  sichert die Fenster beim Eintritt und stellt sie beim Aufwachen her
+  (sched_in = alter Rumpf). In QEMU (4 MB, zwei Boxen mit XCOPY, MEM
+  mehrmals, START CMD): MEM läuft, keine Panik, Kopien gleich.
   Vom Nutzer in 86Box bestätigt: DOTT-CD gleichzeitig auf die NCR- und
   die IDE-Platte kopiert (beide liefen gleichzeitig, die Plattensymbole
   blinkten im Wechsel), dabei VER/DIR/TASKMAN bedienbar und DELTREE auf
