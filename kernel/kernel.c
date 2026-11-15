@@ -21,7 +21,7 @@
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT_MAX    512             /* LDT-Eintraege je Task (bis 32 MB)   */
 #define NLDT_MIN    64              /* unter 4 MB RAM: 4 MB je Programm    */
-static unsigned nldt = NLDT_MAX;        /* ldt_init: nach Speichergroesse  */
+unsigned nldt = NLDT_MAX;               /* auch codeswap.c */        /* ldt_init: nach Speichergroesse  */
 #define NLDT        nldt
 #define LDT_FIRST_FREE 2
 #define USEL(idx)   (((idx) << 3) | 4 | 3)  /* TI=1 (LDT), RPL 3          */
@@ -72,61 +72,20 @@ typedef char gdt_chk3[VWIN == 0x210 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
 
-#define T_FREE  0
-#define T_READY 1           /* laeuft oder schlaeft bis 'wake'           */
-#define T_WAIT  2           /* wartet auf das Ende eines Kindprogramms   */
-#define T_BLOCK 3           /* schlaeft in einem Treiber (DevHlp ProcBlock) */
 
-struct task {
-    unsigned char state;
-    unsigned long wake;
-    int           session;
-    int           parent;   /* -1: Sitzungsinhaber                       */
-    char          name[13];                       /* fuer die Titelzeile   */
-    char          args[FAPI_ARGLEN];
-    unsigned char drive;                          /* aktuelles Laufwerk    */
-    char          cwd[IFS_PATHLEN];               /* "" = Stamm, "\DOS"   */
-    pg_t          img_unit, code_unit;      /* Seiten: Daten (V1: alles), */
-    unsigned      img_cnt, code_cnt;        /* V2: Code, geteilt         */
-    unsigned long code_key, code_fsize;     /* gleiches Programm?        */
-    unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
-    unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
-    unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
-    unsigned char lfn;                          /* FX_FLAG_LONGNAMES         */
-    unsigned char sig_pending, in_sig;
-    unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
-    unsigned char rc;                           /* Rueckgabewert (DosExit)  */
-    unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
-    unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
-    unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
-    unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */
-    volatile unsigned char block_rc;            /* ProcBlock: 0 geweckt, 1 Frist */
-    unsigned long block_id;                     /* ProcBlock: Ereignis       */
-    unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
-    unsigned char v86;                          /* DOS-Box (v86.c)          */
-    /* Phase 6, Stufe 3: Sperren je Laufwerk/Treiber */
-    unsigned char vkey;                         /* gehaltene Laufwerkssperre + 1 */
-    unsigned char eakey;                        /* haelt die EA-Sperre (VK_EA)  */
-    unsigned char wait_k;                       /* wartet: Laufwerk + 1, 80h|Treiber */
-    unsigned char may_rel;                      /* Treiberauftrag mit eigenem DMABUF:
-                                                   ProcBlock gibt die Kernelsperre ab */
-    unsigned char kill_req;                     /* beenden, sobald die Operation fertig */
-    unsigned char lk_quiet;                     /* Sperre freiwillig abgegeben (EXEC,
-                                                   Schlafen): kein Plattenzustand offen */
-};
+#include "task.h"                       /* struct task (auch codeswap.c) */
 
-static struct task    task[NTASK];
+struct task           task[NTASK];      /* auch codeswap.c */
 static struct tss386  tss_k;
 struct tss386  tss[NTASK];
 /* LDTs aller Tasks: ein Block NTASK * 4 KB im erweiterten Speicher (ldt_init),
    Zugriff ueber LDTD. Fruehere 16 Eintraege in DGROUP reichten nur fuer
    rund 900 KB je Programm. */
-#define LDT(t, i)   ((struct desc __far *)MK_FP(LDTD, ((unsigned)(t) * NLDT + (i)) << 3))
 #define D_ALIAS     0x0010          /* AVL-Bit (Byte 6): Eintrag ist Alias  */
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
-static unsigned       image_units;                /* Seiten Programmabbilder */
+unsigned              image_units;      /* auch codeswap.c */                /* Seiten Programmabbilder */
 int                   current = -1;   /* auch v86.c */
 
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
@@ -594,7 +553,9 @@ static pg_t mem_get(unsigned n)
 {
     pg_t u;
     unsigned k = 0;
-    while ((u = mem_alloc(n)) == 0 && (unpark() || (k++ < 16 && swap_out(n + 16))))
+    while ((u = mem_alloc(n)) == 0 &&
+           (unpark() || swap_make_run(n) || code_drop() ||
+            (k++ < 16 && swap_out(n + 16))))
         ;
     return u;
 }
@@ -1414,8 +1375,12 @@ static int load_program(int t, int drive, const char *path)
         LDT(t, n)->access = 0;
         LDT(t, n)->rsv = 0;
     }
-    if (ld_cu)                                  /* V2: eigenes Codesegment */
+    task[t].code_gone = 0;
+    if (ld_cu) {                                /* V2: eigenes Codesegment */
         put_desc(LDT(t, 0), PG_LIN(ld_cu), h.code_size - 1, ACC_UCODE);
+        scratch_map(PG_LIN(ld_cu), ld_cn * MEM_PAGE - 1);   /* verwerfbar: */
+        code_note(t, drive, path, code_sum(SCRATCH, h.code_size));
+    }
     else
         put_desc(LDT(t, 0), base, h.image_size - 1, ACC_UCODE);
     put_desc(LDT(t, 1), base, (unsigned)(seg - 1), ACC_UDATA);

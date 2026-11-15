@@ -45,7 +45,7 @@ extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_, preempt_
 extern fpu_nm_
 extern _gdtr, _idtr
-extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_, swap_pf_
+extern v86_exc_, v86_tick_, _fault_vm, dpmi_trap_, swap_pf_, code_np_
 extern _kpit_div, _kpit_acc
 
 ; ---------------------------------------------------------------------------
@@ -573,9 +573,17 @@ exc_common:
         mov     ds, ax
         mov     es, ax
         cld
-        mov     ax, sp
+        mov     bp, sp                  ; #NP auf verworfenen Code (Task-
+        cmp     word [bp+40], 11        ; wechsel in ein Programm, dessen
+        jne     .dpm                    ; Code weg ist)?
+        call    kx_call
+        or      al, al
+        mov     al, 0
+        jnz     .dpok
+.dpm:   mov     ax, sp
         add     ax, 4                   ; -> struct v86_frame (ab ES)
         call    KCODE3:dpmi_trap_       ; 0 weiter, 1 Fehler, 2 nach V86
+.dpok:
         cmp     al, 1
         je      .r3f
         cmp     al, 2
@@ -599,8 +607,12 @@ exc_common:
 .k0:    push    bp                      ; Ring 0: Seitenfehler auf eine
         mov     bp, sp                  ; ausgelagerte Seite einer Box
         cmp     word [bp+2], 14         ; (Kernel greift fuer sie ueber
-        pop     bp                      ; VWIN/RWIN zu)? Dann einlagern
-        jne     .kf                     ; und den Befehl wiederholen
+        je      .kx                     ; VWIN/RWIN zu) oder #NP auf
+        cmp     word [bp+2], 11         ; verworfenen Programmcode (IRET/
+        pop     bp                      ; RETF zurueck ins Programm)? Dann
+        jne     .kf                     ; holen und den Befehl wiederholen
+        push    bp
+.kx:    pop     bp
         pushad
         push    ds
         push    es
@@ -610,7 +622,7 @@ exc_common:
         mov     ds, ax
         mov     es, ax
         cld
-        call    KCODE2:swap_pf_         ; -> 1 eingelagert
+        call    kx_call                 ; -> AL = 1 erledigt
         mov     [swap_rc], al
         pop     gs
         pop     fs
@@ -631,6 +643,21 @@ exc_common:
         mov     cx, [bp+6]              ; IP
         call    fault_                  ; kehrt nicht zurueck
         jmp     halt_forever_
+
+; Seitenfehler/#NP im Kernel bzw. #NP aus Ring 3: Stapel ab SP+2 wie
+; in exc_common (gs fs es ds, PUSHAD, Vektor, Fehlercode) -> AL
+kx_call:
+        push    bp
+        mov     bp, sp
+        cmp     word [bp+4+40], 11
+        jne     .pf
+        mov     ax, [bp+4+42]           ; Fehlercode = Selektor
+        call    KCODE2:code_np_
+        pop     bp
+        ret
+.pf:    call    KCODE2:swap_pf_
+        pop     bp
+        ret
 
 ; IRQ 0: Systemtakt, 100 Hz
 irq0:

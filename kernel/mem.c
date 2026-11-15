@@ -250,6 +250,23 @@ pg_t __far mem_alloc_hi(unsigned n)
     return p;
 }
 
+/* fuer swap.c (Bereich am Stueck freiraeumen, wie MEMMAN=MOVE bei OS/2):
+   Seite belegt? Eine Seite ausserhalb von [lo, hi)? */
+int __far mem_used(pg_t p)
+{
+    return p == 0 || p >= max_pg || USED(p);
+}
+
+pg_t __far mem_alloc_out(pg_t lo, pg_t hi)
+{
+    pg_t p, top = max_pg < MEM_LOW_PG ? max_pg : MEM_LOW_PG;
+    if (!free_pg)
+        return 0;
+    if ((p = alloc_hi(1)) == 0 && (p = try_alloc(1, hi, top)) == 0)
+        p = try_alloc(1, 1, lo);
+    return p;
+}
+
 /* unter 16 MB (ISA-DMA, 386SX-Adressraum) */
 pg_t __far mem_alloc_low(unsigned n)
 {

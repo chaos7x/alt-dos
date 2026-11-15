@@ -208,11 +208,17 @@ int __far loop_drop(int dev);           /* loop_attach/loop_info: ifs.h */
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL
 unsigned __far swap_out(unsigned n);    /* n Seiten hinaus -> geschafft */
+unsigned __far swap_make_run(unsigned n);   /* n Seiten am Stueck freiraeumen */
 int __far swap_pf(void);                /* Seitenfehler: 1 = eingelagert */
 int __far swap_need(int t, unsigned long lp);
 void __far swap_slot_free(unsigned long e);
 void __far swap_info(unsigned long __far *total_kb, unsigned long __far *used_kb);
 void __far swap_boot(const char __far *spec, int sys, char *msg);
+/* Codesegmente verwerfen und nachladen (codeswap.c, KTEXT2) */
+int __far code_drop(void);
+int __far code_np(unsigned err);
+unsigned __far code_sum(unsigned sel, unsigned n);
+void __far code_note(int t, int drive, const char *path, unsigned sum);
 void vol_lock(int d);                       /* Phase 6: Laufwerkssperre */
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
 int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */

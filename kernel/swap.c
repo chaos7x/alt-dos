@@ -66,7 +66,9 @@ struct swhdr {
     unsigned long  cp;                  /* Uhr: lineare Seite             */
     unsigned long  outs, ins;           /* Zaehler                        */
     unsigned       last;                /* zuletzt getroffener Bereich    */
+    unsigned       mm;                  /* Offset der Umzugs-Bitmap       */
 };
+#define MM_PG   4096U                   /* Umzug nur unter 16 MB          */
 #define SW_EXT  32
 unsigned sw_sel, sw_buf;                /* Tabelle, Puffer (4 KB)          */
 unsigned long sw_bphys;                 /* physische Adresse des Puffers  */
@@ -267,6 +269,100 @@ unsigned __far swap_out(unsigned n)
     return done;
 }
 
+/* ---- Bereich am Stueck freiraeumen (Teil 2, Schritt 2: wie MOVE) -------
+   Programmsegmente brauchen bis 16 Seiten am Stueck; ausgelagerte oder
+   freigegebene Box-Seiten liegen aber verstreut. swap_make_run sucht n
+   Seiten am Stueck, die frei sind oder Box-Seiten, die umziehen duerfen
+   (victim), und raeumt sie: Box-Seite in eine freie Seite ausserhalb
+   kopieren und den Eintrag umsetzen, gibt es keine, auslagern. */
+#define MM(p)   (((unsigned char __far *)MK_FP(sw_sel, SH->mm))[(unsigned)(p) >> 3])
+
+/* alle Box-Eintraege durchgehen: want = 0 Bitmap fuellen, sonst den
+   Eintrag mit dieser Seite suchen -> 1 gefunden (*rt, *rlp, *rpt, *re) */
+static int box_walk(pg_t want, int *rt, unsigned long *rlp, unsigned long *rpt,
+                    unsigned long *re)
+{
+    int t;
+    unsigned pdi, i;
+    unsigned long pde, e, lp;
+    pg_t p;
+    for (t = 0; t < NTASK; t++) {
+        if (!pd_box[t])
+            continue;
+        for (pdi = 0; pdi < 512; pdi++) {
+            scratch_map(PG_LIN(pd_box[t]), 4095);
+            pde = rd32(SCRATCH, pdi);
+            if (!(pde & PTE_P))
+                continue;
+            scratch2_map(pde & ~0xFFFUL, 4095);
+            for (i = 0; i < 1024; i++) {
+                e = rd32(SCRATCH2, i);
+                lp = ((unsigned long)pdi << 10) | i;
+                if (!victim(lp, e))
+                    continue;
+                p = (pg_t)(e >> 12);
+                if (!want) {
+                    if (p < MM_PG)
+                        MM(p) |= (unsigned char)(1 << ((unsigned)p & 7));
+                } else if (p == want) {
+                    *rt = t;
+                    *rlp = lp;
+                    *rpt = pde & ~0xFFFUL;
+                    *re = e;
+                    return 1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+unsigned __far swap_make_run(unsigned n)
+{
+    unsigned short w[8];
+    unsigned i, ok = 0;
+    pg_t s, p, q;
+    unsigned long lp, pt, e;
+    int t;
+
+    if (!sw_sel || current < 0 || n == 0 || n > 16)
+        return 0;
+    kf_klock_enter();
+    win_save(w);
+    for (i = 0; i < MM_PG / 8; i++)
+        ((unsigned char __far *)MK_FP(sw_sel, SH->mm))[i] = 0;
+    box_walk(0, &t, &lp, &pt, &e);
+    for (s = 1; s + n <= MM_PG && !ok; s++) {
+        for (i = 0; i < n; i++) {
+            p = s + i;
+            if (mem_used(p) && !(MM(p) & (1 << ((unsigned)p & 7))))
+                break;
+        }
+        if (i < n)
+            continue;
+        for (i = 0; i < n; i++) {       /* gefunden: Box-Seiten raus     */
+            p = s + i;
+            if (!mem_used(p) || !box_walk(p, &t, &lp, &pt, &e))
+                continue;
+            if ((q = mem_alloc_out(s, s + n)) != 0) {
+                scratch_map(PG_LIN(p), 4095);
+                scratch2_map(PG_LIN(q), 4095);
+                far_copy(SCRATCH2, 0, SCRATCH, 0, 4096);
+                pte_put(pt, lp, (e & 0xFFFUL) | PG_LIN(q));
+                mem_free(p, 1);
+                tlb_if(t);
+            } else
+                page_out(t, lp, pt, e);
+        }
+        for (ok = 1, i = 0; i < n; i++)
+            if (mem_used(s + i))
+                ok = 0;
+    }
+    win_restore(w);
+    kf_klock_leave();
+    return ok;
+}
+
 /* Seite lp der Box t zurueck; -> 1 da (oder war nie draussen), 0 Fehler */
 static int page_in(int t, unsigned long lp)
 {
@@ -440,12 +536,12 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
     n = ifs_bmap(f, 0, 0, 0);
     slots = (unsigned)(kb >> 2);
     bmb = (slots + 7) >> 3;
-    if (n <= 0 || (unsigned long)SW_EXT + ((unsigned long)n << 3) + bmb > 0xFFF0UL) {
+    if (n <= 0 || (unsigned long)SW_EXT + ((unsigned long)n << 3) + bmb + MM_PG / 8 > 0xFFF0UL) {
         mcat(msg, nomsg);
         return;
     }
     if (!(sw_buf = kseg_dma(4096, &sw_bphys)) ||
-        !(sw_sel = kseg_alloc(SW_EXT + ((unsigned long)n << 3) + bmb))) {
+        !(sw_sel = kseg_alloc(SW_EXT + ((unsigned long)n << 3) + bmb + MM_PG / 8))) {
         sw_sel = 0;
         mcat(msg, nomsg);
         return;
@@ -454,6 +550,7 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
     SH->n = n;
     SH->slots = slots;
     SH->bm = SW_EXT + n * 8;
+    SH->mm = SH->bm + bmb;
     ifs_bmap(f, sw_sel, SW_EXT, n);
     {
         char num[8], *q;

@@ -1550,7 +1550,33 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Deskriptor ändern – auf 5.x das eigentliche Problem, 64-KB-Segmente
   brauchen Seiten am Stück); (3) Datensegmente in SWAPPER.DAT. Die
   Kompatibilitätsbox bleibt wie bei OS/2 1.x fest im Speicher (ihre
-  640 KB im Hintergrund wegschreiben wäre Kür, später entscheiden), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
+  640 KB im Hintergrund wegschreiben wäre Kür, später entscheiden),
+  Schritt 1 und der Box-Teil von Schritt 2 erledigt (in QEMU geprüft, 4 MB:
+  EDIT, FM, drei Boxen, dann 7ZA -mx=9 – über Port E9h mitgezählt:
+  Code mehrfach verworfen und nachgeladen, nie gescheitert; EDIT und FM
+  arbeiten danach normal; 16 MB XCOPY/Box/CHKDSK/SHUTDOWN, fsck sauber):
+  `kernel/codeswap.c` (KTEXT2), `kernel/task.h` (struct task, T_*, LDT()
+  aus kernel.c; task[], nldt, image_units nicht mehr static). code_note
+  beim Laden (Laufwerk, Pfad, Wortsumme des Codes in einem Kernel-
+  segment `cs_sel`, NTASK × 264 Byte); code_drop: Uhr-Verfahren über das
+  Accessed-Bit von LDT-Eintrag 0 aller Teilhaber (nicht current, keine
+  Box), Pages frei, Eintrag P = 0, `task.code_gone`; code_np (Vektor 11,
+  Fehlercode 0004h = LDT-Index 0): unter klock neu laden (oder einem
+  anderen Task mit demselben Code mitgeben), Summe vergleichen, alle
+  Teilhaber umsetzen. start.asm: `.k0` nimmt Vektor 11 und 14 (kx_call),
+  der Ring-3-Weg prüft Vektor 11 vor dpmi_trap (Taskwechsel in einen
+  Task, dessen Code weg ist – neue Tasks starten mit UCODE im TSS).
+  Schritt 2 für Box-Seiten: `swap_make_run(n)` (swap.c) – Umzugs-Bitmap
+  der Box-Seiten unter 16 MB (512 Byte im Segment sw_sel), ersten Lauf
+  aus freien und umziehbaren Seiten suchen, Box-Seiten in Seiten
+  außerhalb kopieren (`mem_alloc_out`, mem.c; `mem_used`), sonst aus-
+  lagern. mem_get: unpark, swap_make_run, code_drop, swap_out. Anlass:
+  ohne das scheiterte 7ZA („zu viele Dateien“ – DosAllocSeg(0) fand
+  keine 16 Seiten am Stück, Auslagern gibt Seiten verstreut frei).
+  Offen: Programm-Datensegmente verschieben (Schritt 2 Rest) und aus-
+  lagern (Schritt 3); verworfener Code bei geänderter EXE ungeprüft.
+  Diskette dafür: CUT, HEAD, TAIL, WC, UNIQ, TR, COMPRESS nur noch auf
+  der Platte (`HDDOS`), danach 105 KB frei. EMS-Seiten nicht; die Datei wächst nicht; XMS-/
   EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht
   mit (eine Box sieht nur den freien RAM als XMS). DPMI-Programme unter
   Auslagerung (DOOM) noch nicht geprüft – in 86Box auf dem 386 mit 4 MB.
