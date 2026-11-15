@@ -4109,6 +4109,31 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   2944UW (Wide) mit Platten an ID 0 und ID 9, ZIP an ID 5 (XCOPY drauf,
   CHKDSK, EJECT -> „kein Medium eingelegt“) und CD an ID 6 gleichzeitig.
   QEMU: IDE zweiter Kanal + NCR8XX gleichzeitig, fsck sauber.
+- Speicher sparen für den 386SX mit 2 MB (Wunsch des Nutzers, 15.11.2026;
+  „mach, du bist der Experte“). Vorgehen: jede Vergabe (mem_alloc*,
+  kseg_alloc) vorübergehend auf Port E9h ausgegeben, in QEMU (isapc,
+  2 MB) mitgeschnitten und ausgewertet. Gefunden und geändert:
+  (1) Fehler im Treiberlader: `load_driver` benutzte `n` (Seitenzahl)
+  für die Namenslänge, bevor im Fehlerfall `mem_free(u, n)` lief – jeder
+  Treiber ohne Gerät (AHA154X, NCR5380, NCR8XX … in der mitgelieferten
+  CONFIG.SYS) behielt seinen Speicher, zusammen 52 KB; (2) LDTs: unter
+  3,5 MB RAM 64 statt 512 Einträge je Task (`nldt`, 4 statt 32 KB);
+  (3) Namensgedächtnis (Unicode): Hälften 4 statt 16 KB unter 3,5 MB
+  (`uni_half`, 20 statt 44 KB); (4) Spurpuffer der Diskette 36 Sektoren
+  nur mit 2,88-MB-Laufwerk, sonst 18; (5) unterhalb des Kernels werden
+  nach dem Start 1000h–5FFFh und B000h–FFFFh frei (40 KB; Seite 0,
+  6000h–7FFFh für Real-Mode-Aufrufe/Bootsektor, 8000h DMABUF, 9000h–
+  AFFFh Bitmap bleiben); (6) geparkte DOS-Boxen (~740 KB, BOX_PARK hält
+  sie wie NTVDM offen) gibt `mem_get` (Programme laden, DosAllocSeg)
+  auf, wenn sonst kein Speicher da ist – vorher meldeten auf 2 MB nach
+  einem DOS-Programm aus CMD 7ZDEC und CHKDSK „zu wenig Speicher“.
+  Gemessen mit 2 MB direkt nach dem Start: „BIOS, Boot, Puffer“ 373 ->
+  229 KB, verfügbar 836 -> 980 KB. Geprüft in QEMU: 2 MB – DOS-Programm,
+  dann 7ZDEC t, CHKDSK, DIR A:, XCOPY \DOS, wieder ein DOS-Programm,
+  fsck sauber; 16 MB – 7ZDEC mit 4-MB-Wörterbuch ohne Zwischendatei, Box.
+  Weitere Kandidaten (klein): SUBST/JOIN-Pfade 24 KB fest, Seite nur
+  für den Deskriptor des Cache-Fensters (kseg_alloc(16)), KCODE3 (60 KB
+  Box-Code) auch ohne Box.
 - Treiber zur Laufzeit laden wie modprobe (Wunsch des Nutzers,
   15.11.2026, vor dem Netzwerk): Stufe 1 Laden – FAPI `DosLoadDriver`
   (mit Kernelsperre) über das vorhandene `load_driver()`, neue Block-

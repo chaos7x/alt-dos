@@ -573,8 +573,9 @@ int __far fd_init(unsigned types)
         fd[d].known = 0;
         fd[d].pcyl = 0xFF;
     }
-    if (!tb_sel)
-        tb_sel = kseg_dma(MAXSPT * 512U, &tb_lin);
+    if (!tb_sel)                /* Spurpuffer: 36 Sektoren nur fuer 2,88 MB */
+        tb_sel = kseg_dma((fd[0].type == 5 || fd[1].type == 5 ? MAXSPT : 18) * 512U,
+                          &tb_lin);
     if (!tb_sel)
         return -1;
     motors = 0;

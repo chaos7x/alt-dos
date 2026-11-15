@@ -19,7 +19,10 @@
 #include "../include/drv.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
-#define NLDT        512             /* LDT-Eintraege je Task (bis 32 MB)   */
+#define NLDT_MAX    512             /* LDT-Eintraege je Task (bis 32 MB)   */
+#define NLDT_MIN    64              /* unter 4 MB RAM: 4 MB je Programm    */
+static unsigned nldt = NLDT_MAX;        /* ldt_init: nach Speichergroesse  */
+#define NLDT        nldt
 #define LDT_FIRST_FREE 2
 #define USEL(idx)   (((idx) << 3) | 4 | 3)  /* TI=1 (LDT), RPL 3          */
 #define UCODE       USEL(0)
@@ -182,17 +185,22 @@ void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
     put_desc(&gdt[i], base, limit, acc);
 }
 
-/* LDTs aller Tasks am Stueck (NTASK * NLDT * 8 = 32 KB), geleert */
+/* LDTs aller Tasks am Stueck (NTASK * NLDT * 8 = 32 bzw. 4 KB), geleert */
 static void ldt_init(void)
 {
-    pg_t u = mem_alloc(PAGES((unsigned long)NTASK * NLDT * 8));
+    pg_t u;
     unsigned i;
+    /* mit wenig Speicher bekaeme ein Programm ohnehin nicht 512 Segmente
+       zu 64 KB: dann 64 Eintraege (4 KB fuer alle LDTs statt 32 KB) */
+    if (mem_ram_kb() < 3584)
+        nldt = NLDT_MIN;
+    u = mem_alloc(PAGES((unsigned long)(NTASK * NLDT * 8)));     /* <= 32 KB */
     if (!u)
         panic("kein Speicher fuer die LDTs");
     set_desc(LDTD_IDX, PG_LIN(u), NTASK * NLDT * 8 - 1, ACC_KDATA);
     zero_seg(LDTD, NTASK * NLDT * 4);
     for (i = 0; i < NTASK; i++)
-        set_desc(LDT_IDX(i), PG_LIN(u) + (unsigned long)i * NLDT * 8, NLDT * 8 - 1, ACC_LDT);
+        set_desc(LDT_IDX(i), PG_LIN(u) + (unsigned)(i * NLDT * 8), NLDT * 8 - 1, ACC_LDT);
 }
 
 void gdt_build(void)
@@ -566,6 +574,30 @@ static void tmsg(int t, const char *a, const char *b, const char *c)
 }
 
 /* ---- Segmente fuer Anwendungen ----------------------------------------- */
+/* Speicher fuer Programme: reicht er nicht, zuerst geparkte DOS-Boxen
+   (BOX_PARK, wie NTVDM offen gehalten - je ~750 KB) aufgeben; ihr
+   Besitzer startet beim naechsten DOS-Programm eben eine neue */
+static unsigned char park_owner[NTASK];
+static int unpark(void)
+{
+    int i;
+    for (i = 0; i < NTASK; i++)
+        if (park_owner[i]) {
+            park_owner[i] = 0;
+            task_end(i);
+            return 1;
+        }
+    return 0;
+}
+
+static pg_t mem_get(unsigned n)
+{
+    pg_t u;
+    while ((u = mem_alloc(n)) == 0 && unpark())
+        ;
+    return u;
+}
+
 static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
 {
     unsigned idx, units;
@@ -578,7 +610,7 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
             break;
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
-    u = mem_alloc(units);
+    u = mem_get(units);
     if (u == 0)
         return FAPI_ERROR;                      /* kein Speicher        */
 
@@ -962,7 +994,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         return EXEC_ERR_FORMAT;
 
     tn = UNITS(f.size);                         /* Zwischenpuffer       */
-    tu = mem_alloc(tn);
+    tu = mem_get(tn);
     if (tu == 0)
         return EXEC_ERR_NOMEM;
     scratch_map(PG_LIN(tu), tn * MEM_PAGE - 1);
@@ -1006,7 +1038,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
             }
         if (!ld_shared) {
             ld_cn = UNITS(csz);
-            ld_cu = mem_alloc(ld_cn);
+            ld_cu = mem_get(ld_cn);
             if (ld_cu == 0) {
                 mem_free(tu, tn);
                 return EXEC_ERR_NOMEM;
@@ -1016,7 +1048,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         }
     }
     n = UNITS(seg);
-    u = mem_alloc(n);
+    u = mem_get(n);
     if (u == 0) {
         if (csz && !ld_shared)
             mem_free(ld_cu, ld_cn);
@@ -1131,7 +1163,6 @@ static int load_com(int t, int drive, const char *path)
 static struct ifs_file box_img[NTASK];
 unsigned char box_sec[512];             /* Sektorpuffer fuer v86.c       */
 
-static unsigned char park_owner[NTASK];
 /* DOSBOX.INI beim Anlegen einer Box: soll sie einen EMS-Rahmen haben?
    Der Rahmen steht fest, bevor FreeDOS die UMBs verteilt - also hier und
    nicht erst bei EMS_MEMORY_LIMIT je Programm (BOXSHELL). Kein Rahmen bei
@@ -5861,7 +5892,7 @@ static int load_driver(const char *line, int is_ifs)
     unsigned long base, seg;
     pg_t u;
     unsigned n, entry;
-    int d, k, drive, err;
+    int d, k, j, drive, err;
     const char *args = line;
 
     for (d = 0; d < NDRV; d++)
@@ -5913,10 +5944,10 @@ static int load_driver(const char *line, int is_ifs)
     set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
-    for (k = 0, n = 0; path[k]; k++)                /* Name ohne Pfad    */
+    for (k = 0, j = 0; path[k]; k++)                /* Name ohne Pfad    */
         if (path[k] == '\\' || path[k] == ':')
-            n = k + 1;
-    scopy(drv[d].name, path + n, sizeof(drv[d].name));
+            j = k + 1;
+    scopy(drv[d].name, path + j, sizeof(drv[d].name));   /* n = Seiten! */
     drv[d].entry = entry;
 
     req.cmd = DRV_INIT;
@@ -6752,6 +6783,13 @@ void kmain(void)
         }
     }
 
+    /* unterhalb des Kernels (10000h) nach dem Start frei: 1000h-5FFFh
+       (Vorladebereich ab 0600h, ist verbraucht) und B000h-FFFFh. Bleiben:
+       Seite 0 (IVT, BIOS-Daten), 6000h-7FFFh (Real-Mode-Stapel, -Register
+       und -Puffer fuer Video-BIOS/APM, Bootsektor bei 7C00h), 8000h
+       (DMABUF/FAT-Cache ohne eigene Seite), 9000h-AFFFh (Bitmap) */
+    mem_free(0x1, 5);
+    mem_free(0xB, 5);
     list_drives();
     if (cache_kb == 0xFFFF) {           /* ohne CACHE=: nach Speicher    */
         cache_kb = mem_ext_kb >= 4096 ? 1024 : mem_ext_kb >= 1536 ? 256 :

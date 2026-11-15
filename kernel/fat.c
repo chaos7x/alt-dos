@@ -677,8 +677,9 @@ static unsigned char uni437(unsigned u)
 #define UNI_CAP   (UNI_OFF + UNI_SLOT * UNI_TS)
 #define UNI_WB    (UNI_CAP + 512U)
 #define UNI_MEM   (UNI_OFF + (NTASK + 1) * UNI_TS)
-#define UNI_HALF  16384U
+#define UNI_HALF  uni_half                /* 16 KB, unter 4 MB RAM 4 KB   */
 #define UNI_KSIZE (UNI_MEM + 2UL * UNI_HALF)
+static unsigned uni_half = 16384U;
 extern int current;                     /* kernel.c: laufender Task      */
 static unsigned uni_fill[2];
 static unsigned char uni_cur;
@@ -1831,8 +1832,11 @@ static unsigned ea_uoff;                /* ea_find: UCS-2 des Treffers, 0 = kein
    (die GDT-Plaetze fuer Kernelsegmente sind knapp) */
 static unsigned fat_ksel(void)
 {
-    if (!ea_csel)
+    if (!ea_csel) {
+        if (mem_ram_kb() < 3584)        /* wenig Speicher: kleineres  */
+            uni_half = 4096U;           /* Namensgedaechtnis          */
         ea_csel = kseg_alloc(UNI_KSIZE);    /* + Namensgedaechtnis    */
+    }
     return ea_csel;
 }
 static clus_t ea_cdc;
