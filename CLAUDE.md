@@ -214,7 +214,9 @@ des Releases den alten Tag stehen lassen); `5.2` = das freigegebene 5.2
 das fertige Release `v5.2`); `5.3` = das freigegebene 5.3 (Entscheidung
 des Nutzers, 15.11.2026, ein Push auf `5.3` erzeugt das Release `v5.3`,
 „neueste“ bis 5.3.1); `5.3.1` = Fehlerbehebungen für 5.3 (15.11.2026,
-Release `v5.3.1`, jetzt „neueste“); `5.x` = Weiterarbeit, die CI
+Release `v5.3.1`); `5.3.2` = 5.3.1 plus DIR /S (15.11.2026, Release
+`v5.3.2`; „neueste“ ist seitdem `v6.0`, die 5.x-Releases setzen
+`--latest=false`); `5.x` = Weiterarbeit, die CI
 veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
