@@ -3905,8 +3905,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
 - Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
   nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
-  (1) Netzwerkkartentreiber mit IRQ (NE2000 ISA für 86Box, RTL8139/
-  ne2k_pci für QEMU/Proxmox, später PCnet/Intel) und TCP/IP (ARP, IP,
+  (1) Netzwerkkartentreiber mit IRQ (RTL8139 zuerst – läuft in
+  86Box, QEMU und Proxmox –, NE2000 ISA/ne2k_pci, später PCnet/Intel) und TCP/IP (ARP, IP,
   ICMP, UDP, TCP) als Treiber/Modul mit eigenen Segmenten – DGROUP des
   Kernels ist voll; FAPI-Sockets für Programme. (2) DHCP-Client, DNS,
   SNTP, `PING`, `IPCONFIG`. (3) `WGET` und `CURL` (HTTP/1.1, FTP); HTTPS
