@@ -756,6 +756,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   auf dem Rechner ein Python-Prüfer (Kopf, Verkettung, Eintrags-CRC) und
   lhasa t auf die in ein LZH umgesetzten lh5-Daten. Mit dem Zoo-
   Original nicht geprüft (Bau aus fremdem Quelltext nicht erlaubt).
+  Vom Nutzer in 86Box bestätigt (15.11.2026): ZOO mit stunts.zoo –
+  entpackt, das Spiel startete und ließ sich spielen.
   7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
   lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
   decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-
