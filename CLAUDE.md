@@ -717,6 +717,32 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und `unlha x`, CHKDSK sauber. Test-Archive nur im Scratchpad. Kein
   zoo-Packer auf dem Rechner (Bau aus fremdem Quelltext nicht erlaubt) –
   ZOO lh5 ungeprüft (gleicher Kern wie LHA lh5).
+  7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
+  lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
+  decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-
+  scheinlichkeiten in DGROUP (lc + lp <= 4, 28 KB), Wörterbuch = Ring aus
+  ganzen 64-KB-Segmenten (`lm_ring`, Stelle als Segment/Offset). Liegt
+  ein Rückgriff weiter zurück als der Ring, liest `lm_back` aus dem schon
+  Ausgegebenen: ist der Ordner größer als der Ring, geht sein LZ-Strom in
+  `7ZDEC$$.TMP` (Zielverzeichnis, DosOpenRW, Lesen per Seek und zurück),
+  danach Filter + Verteilung auf die Dateien; `.LZMA` nimmt die Ausgabe-
+  datei selbst. LZMA2: Stücke (ungepackt 1/2, LZMA 80h–FFh mit Reset-Art,
+  Eigenschaften), Bereichsdecoder je Stück neu, gelesene Bytes gegen die
+  Packgröße abgeglichen. BCJ x86 auf einem 4-KB-Puffer (Rest < 5 Byte
+  bleibt), Delta mit 256-Byte-Verlauf. 7z-Kopf bis 128 KB (2 Segmente;
+  gepackter Kopf = Ordner 0 in dieselben Segmente), Zahlen 32 Bit (sonst
+  Fehler), Tabellen in 3 Segmenten (Pack-/Teilströme, 1.920 Ordner zu
+  34 Byte, 2.730 Dateien), Ordner: 1 Coder oder Filter <- LZ (Bindepaar),
+  sonst „nicht unterstützt“ (BCJ2, PPMd, AES); nichts Gewähltes im Ordner
+  -> nicht entpackt. Namen UTF-16 -> ASCII/Latin-1 nach CP437, sonst `_`.
+  FILETIME -> FAT über `dv16` (div 32/16, zweimal) und Abzug 2:B6109100h.
+  Nicht in LZHAPPS (lzh.o brächte 16 KB BSS), eigene `lm_crc32`.
+  Geprüft: Kern auf dem Entwicklungsrechner gegen 7-Zip 23.01 und Python
+  lzma (gepackte Köpfe, LZMA2 inkl. ungepackter Stücke, Ring 64 KB mit
+  Rückgriffen über 300 KB); in QEMU def/mx9/LZMA/LZMA2 einzeln/Copy/Delta/
+  BCJ/4-MB-Wörterbuch über die Zwischendatei, 2-MB-Quellbaum mit -mx=9
+  (131 Dateien gleich), `.LZMA` (xz --format=lzma), BCJ2 sauber abgelehnt,
+  in der Box `command /c 7zdec x def.7z \x\box\`; CHKDSK sauber.
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
   Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).

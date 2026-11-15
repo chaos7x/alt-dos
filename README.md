@@ -296,6 +296,13 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   selbstentpackenden `.EXE`/`.COM`. ARJ Methode 0–4, ZOO gespeichert/
   LZW/lh5, LHA/LHarc/LArc lh0/lh1/lh4–lh7/lz4/lzs/lz5 (Kopfstufen 0–2);
   `unarj e a.arj c:\ziel\` wie das Original
+- `7ZDEC [e|x|l|t] [-l -t -o -n -j -q -d Ziel] Archiv[.7Z] [Ziel\]
+  [Name…]` entpackt 7z-Archive von 7-Zip (Copy, LZMA, LZMA2, BCJ x86,
+  Delta; gepackter Kopf, feste und einzelne Ordner) und `.LZMA`-Dateien
+  (eigener LZMA-Kern `lzma.c`). Wörterbuch so groß wie der Speicher
+  erlaubt (bis 768 KB); größere Ordner laufen über eine Zwischendatei –
+  so entpackt es auch Archive mit 16-MB-Wörterbuch. Nicht: BCJ2, PPMd,
+  Verschlüsselung
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
@@ -626,7 +633,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, 7ZDEC, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der
