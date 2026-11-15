@@ -313,6 +313,11 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   erlaubt (etwa 576 KB); größere Ordner laufen über eine Zwischendatei –
   so entpackt es auch Archive mit 16-MB-Wörterbuch. Nicht: BCJ2, PPMd,
   Verschlüsselung
+- `7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei…]` legt 7z-Archive
+  an (eigener LZMA-Packer `lzmaenc.c`, Wörterbuch 128 KB, fester Ordner,
+  Namen UTF-16, Datum, Attribute; `-mx=0` speichert); `x e l t` ruft
+  7ZDEC. 7-Zip liest die Archive. Nur neue Archive (`-y` überschreibt),
+  noch kein BCJ und kein gepackter Kopf
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
@@ -643,7 +648,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der

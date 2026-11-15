@@ -790,6 +790,23 @@ Win32s), nicht vorziehen, sondern nachfragen.
   BCJ/4-MB-Wörterbuch über die Zwischendatei, 2-MB-Quellbaum mit -mx=9
   (131 Dateien gleich), `.LZMA` (xz --format=lzma), BCJ2 sauber abgelehnt,
   in der Box `command /c 7zdec x def.7z \x\box\`; CHKDSK sauber.
+  7ZA (`apps/task_7za.c` + `apps/lzmaenc.c`, eigener LZMA-Packer nach
+  lzma-specification.txt): Bereichscoder mit 32-Bit-`low` + Übertrag,
+  Grenze über mul16; Modell wie der Decoder (Zustände, Literal mit
+  Treffer-Byte, Längen, posSlot/Align, rep0–3, ShortRep). Wörterbuch
+  128 KB als Ring in 2 Segmenten, Hash-Köpfe 32 K × 32 Bit (2 Segmente),
+  Kette 16-Bit-Abstände (4 Segmente), Stufen 1–9 (Tiefe 4–512, verzögerte
+  Suche ab 4, 3-Byte-Treffer nur bis 32 KB Abstand). Archiv: Dateien
+  sammeln wie lzpack (3.640), ein fester Ordner (LZMA 030101, Eigen-
+  schaften 5D/128 KB; -mx=0 Copy), Kopf mit SubStreams-CRCs, EmptyStream/
+  EmptyFile, Namen UTF-16 (cp437u), MTime, Attribute; Startkopf zuletzt
+  per Seek. x/e/l/t startet 7ZDEC aus dem PATH. Geprüft: Kern auf dem
+  Entwicklungsrechner gegen Python lzma (Stufen 1/5/9, leer, 1 Byte,
+  Zufall, Nullen, 1 MB Quelltext: 241 KB, xz -9 204 KB); in QEMU Stufen
+  0/1/5/9 mit -r/Unterverzeichnis/leerer Datei, 7ZDEC l/t/x, 7-Zip 23.01
+  `t` „Everything is Ok“, Inhalte gleich. Offen: BCJ, gepackter Kopf,
+  Ergänzen, 7ZDEC nimmt bei Ordnern über dem Ring die Zwischendatei, auch
+  wenn das Wörterbuch passen würde.
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
   Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).
