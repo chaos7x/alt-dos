@@ -281,6 +281,15 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `CUT -c|-b|-f LISTE [-d X] [-s] [--complement] [--output-delimiter=T]
   [Datei…]` nach dem Vorbild von GNU cut (Zeichen oder Felder je Zeile,
   auch in Pipes: `DIR /B | CUT -c1-8`)
+- Packprogramme (eigener Deflate-Kern nach RFC 1951, kein fremder Code;
+  nur auf der Platte, gebunden – laufen auch unter MS-DOS und in den
+  Boxen): `GZIP`/`GUNZIP [-d -c -k -f -l -t -v -1..-9] [Datei…]` wie GNU
+  gzip (`BRIEF.TXT` -> `BRIEF.TXT.gz`, ohne Datei als Filter, mehrteilige
+  `.gz`), `TAR -c|-t|-x [-v -z -k] [-f Archiv] [-C Verz] [Name…]` wie GNU
+  tar (`tar xzvf a.tgz`, ustar mit langen Namen über 100 Zeichen, gzip
+  wird beim Lesen erkannt), `ZIP [-r -j -0..-9 -q] Archiv Datei…` (ergänzt
+  vorhandene Archive) und `UNZIP [-l -v -t -o -n -j -q -d Ziel] Archiv
+  [Name…]` wie Info-ZIP (PKZIP 2.x: gespeichert und Deflate)
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
@@ -611,7 +620,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der

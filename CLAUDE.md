@@ -648,6 +648,53 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Handle (`struct ifs_file`), Angehängtes eines anderen Tasks sieht ein
   offenes Handle nicht – TAIL öffnet daher alle 500 ms neu und springt
   per DosSeek an die alte Stelle (wie `tail -F`).
+- Packprogramme (Wunsch des Nutzers, 15.11.2026; abgestimmt: TAR,
+  gzip/Deflate, ZIP zuerst, danach nur Entpacken von 7z/LZMA, ZOO, ARJ;
+  bzip2 zurückgestellt; packende ARJ/7z-Fassungen laufen in der Box):
+  `apps/flate.c` – eigener Deflate-Kern nach RFC 1951 (kein zlib-/gzip-
+  Code; gzip ist GPLv3): inflate mit 9-Bit-Schnelltabelle + Bit-für-Bit-
+  Rückfall, 16-Bit-Bitpuffer, Fenster 32 KB in DGROUP (zugleich Ausgabe-
+  puffer); nach dem Strom werden ganze Bytes im Bitpuffer zurückgegeben
+  (`pb`, für gzip-Schluss/nächstes Glied). deflate: Hash-Ketten (15 Bit),
+  verzögerte Suche, Stufen 1–9 wie die bekannten Tabellen, dynamische/
+  feste/gespeicherte Blöcke nach Kosten, Huffman mit Längengrenze durch
+  Halbieren der Häufigkeiten; vier DosAllocSeg-Segmente (Fenster 64 KB,
+  Kopf, Kette, Symbole), Puffer des Packers im Fenster des Entpackers
+  (nie gleichzeitig) – sonst war DGROUP von GZIP bei 63 KB. Ziehen
+  (`deflate`, fl_read) oder Schieben (`deflate_begin/feed/end`, für TAR
+  -z). CRC-32 über Tabelle; Multiplikationen über `fl_mul` (sonst __U4M).
+  Auf dem Entwicklungsrechner gegen zlib geprüft (Text 119.448 Byte bei
+  Stufe 6, zlib 9: 118.983; Zufall, Nullen, leer, 1 Byte; zlib-Daten
+  entpackt; Schieben in Zufallsstücken bitgleich). `apps/arcutil.c`:
+  FAT <-> Unix-Zeit (Ortszeit, `au_mul16`/`au_div`), Prozent, Oktal.
+  Programme (build.sh `ARCAPPS`, gebunden + LFN, nur auf der Platte –
+  `HDDOS`): `GZIP`/`GUNZIP` (task_gunzip.c = task_gzip.c mit -DGUNZIP)
+  wie GNU gzip, `.gz`-Name lang, sonst 8.3-Rückfall wie gzip für DOS
+  (MIX.BIN -> MIX.BIZ); Quelle gelöscht außer -k/-c, Ziel bekommt ihr
+  Datum. `TAR` (ustar, Namen über 100: Vorsilbe oder GNU 'L', liest auch
+  pax 'x' path=; Lesen als Datenstrom `feed`, damit inflate direkt
+  hineinschreiben kann; gzip am Kopf erkannt, beim Anlegen an .tgz/.gz;
+  ".." in Namen übergangen; Links übergangen). `ZIP` (lokaler Kopf mit
+  Nullen, Daten, Kopf per DosSeek nachgetragen; Zentralverzeichnis in bis
+  zu 8 Segmenten; vorhandenes Archiv: Verzeichnis einlesen, ab seiner
+  Stelle weiterschreiben, gleicher Name ersetzt den Satz – alte Daten
+  bleiben als Lücke; DosNewSize schneidet ab). `UNZIP` (Ende des
+  Verzeichnisses rückwärts suchen, Methode 0/8, CRC, -d/-j/-o/-n,
+  Rückfrage J/N/A/K, UTF-8-Namen -> `_`). In QEMU geprüft: gzip -k/-9/
+  -l/-t/-c/Filter/mehrteilig (GNU gzip -t sauber), TAR cvf/tvf/czf/xzvf
+  (GNU tar liest sie; GNU-, ustar- und pax-Archive mit 120-Zeichen-
+  Pfaden, Leerzeichen, leerer Datei entpackt – über TAR zurück auf den
+  Entwicklungsrechner: diff gleich), ZIP -r + Ergänzen + Ersetzen (Info-
+  ZIP und Python: fehlerfrei), UNZIP -t/-l/-v/-d eines Python-Archivs.
+  Dabei behoben (util.c, CMD, GREP): Muster wurden am ersten Punkt
+  geteilt, Namen am letzten – `text.bin.gz` passte nie auf sich selbst.
+  Lehre: DosWrite nimmt höchstens 7FFFh Byte – größer in Stücken.
+  In der DOS-Box (gebundener Stub unter FreeDOS) geprüft: `gzip -k`
+  legt per 8.3-Rückfall MIX.BIZ an (GNU gzip entpackt es), `zip`, `unzip
+  -t`, `tar tzf` laufen; fsck nach allem sauber.
+  Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
+  /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
+  Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`

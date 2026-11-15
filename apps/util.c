@@ -149,7 +149,14 @@ int match(const char *name, const char *pat)
         if (*nd != '.')
             nd = x;
     }
-    while (*pd && *pd != '.') pd++;
+    {                                   /* Muster ebenso am letzten Punkt */
+        const char *x;
+        for (x = pat; *x; x++)
+            if (*x == '.')
+                pd = x;
+        if (*pd != '.')
+            pd = x;
+    }
     nl = (unsigned)(nd - name);
     pl = (unsigned)(pd - pat);
     if (!match_part(name, nl, pat, pl))

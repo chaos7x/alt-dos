@@ -157,11 +157,15 @@ nasm -f obj apps/crt0.asm -o $B/crt0.o
 ALINK="option quiet format dos option nodefaultlibs \
       option map order clname CODE clname BEGDATA clname DATA clname BSS"
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject"
+ARCAPPS="gzip gunzip tar zip unzip"
+UTILAPPS="$ARCAPPS attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
+wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
+wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     U=""
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
+    case " $ARCAPPS " in *" $t "*) U="$U file $B/flate.o file $B/arcutil.o" ;; esac
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true
@@ -184,10 +188,10 @@ nasm -f bin apps/vbetest.asm -o $B/vbetest.com
 nasm -f bin apps/opltest.asm -o $B/opltest.com
 # Programme, die auch unter MS-DOS laufen (gebunden wie mit BIND bei OS/2:
 # der Stub uebersetzt die FAPI in DOS-/BIOS-Aufrufe, die .EXE wird groesser)
-BINDAPPS="setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
+BINDAPPS="$ARCAPPS setver more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
+LFNAPPS="$ARCAPPS cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -251,6 +255,8 @@ python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_grafik.exe GRAFIK.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM
        $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
+# Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE"
 # Testprogramme nur auf der Platte (auf der Diskette fehlt der Platz)
 HDDEMO="$B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
@@ -309,6 +315,7 @@ TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
 # gebundenen Werkzeuge (XCOPY, MOVE, ...) den Platz
 TARGET="" TO="c:" copy_list "$B/KLANG.WAV KLANG.WAV" "DEMO/"
 TARGET="" TO="c:" copy_list "$HDDEMO" "DEMO/"
+TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

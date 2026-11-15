@@ -327,7 +327,14 @@ static int wmatch(const char *name, const char *pat2)
         if (*nd != '.')
             nd = x;
     }
-    while (*pd && *pd != '.') pd++;
+    {                                   /* Muster ebenso am letzten Punkt */
+        const char *x;
+        for (x = pat2; *x; x++)
+            if (*x == '.')
+                pd = x;
+        if (*pd != '.')
+            pd = x;
+    }
     if (!wmatch_part(name, (unsigned)(nd - name), pat2, (unsigned)(pd - pat2)))
         return 0;
     if (*nd) nd++;
