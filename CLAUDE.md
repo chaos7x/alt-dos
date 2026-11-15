@@ -1666,6 +1666,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   wd. chip_reset nach Fehlern setzt wd zurück (neu verhandeln).
   `/NOWIDE`. Alle Längen sind gerade (INQUIRY 36, Sense 18, Sektoren) –
   WIDEODD braucht es nicht. Units weiter höchstens 8 (DRV_MAXUNITS).
+  Vom Nutzer in 86Box bestätigt (15.11.2026): Wide-Karte mit einer
+  Platte an ID 14 (F:), XCOPY von der CD auf F:, CHKDSK ohne Fehler.
   Offen: synchron/Ultra (SDTR; 86Box überträgt ohnehin ohne Takt), echte
   Hardware.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
