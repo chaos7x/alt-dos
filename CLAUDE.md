@@ -3651,6 +3651,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   schreiben nur bestätigt) und CF8h/CFCh lesend (`pci_cfg`/`pci_pin`)
   über die Busdienste. Die ISA-GD5434 von 86Box bleibt auf dem P3B-F im
   Video-BIOS hängen (86Box-Kombination, nicht AT-DOS).
+  Grafik-Box mit wenig Speicher (vom Nutzer gemeldet: Digger auf dem
+  386SX mit 2 MB – Ton ja, Bild nein, „hängt in der Konsole“; mit 4 MB
+  läuft es): vio_setgfx(RAWGFX) holte den 324-KB-Puffer gleich beim
+  Umschalten, scheiterte das, blieb die Box im Text und der Moduswechsel
+  wurde nur nachgebildet. Jetzt geht Rohgrafik auch ohne Puffer (direkt
+  auf der Karte); `gfx_out` holt ihn erst beim Wegschalten (`raw_init`),
+  fehlt der Platz dann, ist nur das Bild verloren (gfx_plane 2) und
+  `gfx_in` stellt beim Zurückkommen den zuletzt gesetzten BIOS-Modus ein
+  (`vio_raw_mode` aus vga_allow, ses[].vmode; vesa_bios nimmt unter 100h
+  INT 10h 00h). In QEMU isapc 2 MB: BGTEST per START läuft, Alt+Esc zu
+  CMD (Text sauber, 196 KB frei), zurück – Modus 13h, Bild leer; mit
+  16 MB Bild wie vorher zurück. Dabei behoben: `rm_call` nahm `intno`
+  aus dem Aufrufer, die meisten ließen es ungesetzt (Stack) – stand dort
+  15h, wäre ein Video-Aufruf an APM gegangen; jetzt Merker `rm_apm`.
+  IDE.SYS `/DMA` am PIIX4 in 86Box geprüft (Testbau, der den BIOS-Modus
+  übergeht): beide Platten „UDMA 2“, XCOPY C:->D:, COMP gleich, CHKDSK
+  nach hartem Abbruch sauber.
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum

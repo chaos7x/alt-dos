@@ -593,6 +593,27 @@ static void raw_svfree(int s)
     *(pg_t __far *)(q + RAW_SVPG) = 0;
 }
 
+/* Kopf des Rohgrafik-Puffers leeren (Merker der Box) */
+static void raw_init(int s)
+{
+    unsigned short w[8];
+    win_save(w);
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+    *(unsigned char __far *)MK_FP(SCRATCH, RAW_KIND) = 0;
+    *(unsigned char __far *)MK_FP(SCRATCH, RAW_ALLOW) = 0;
+    *(unsigned __far *)MK_FP(SCRATCH, RAW_VMODE) = 0;
+    *(pg_t __far *)MK_FP(SCRATCH, RAW_SVPG) = 0;
+    *(unsigned char __far *)MK_FP(SCRATCH, RAW_SVOK) = 0;
+    win_restore(w);
+}
+
+/* fuer v86.c: BIOS-Modus der Box (fuer das Zurueckholen ohne Puffer) */
+void __far vio_raw_mode(int s, unsigned m)
+{
+    if (s >= 0 && ses[s].gfx == RAWGFX)
+        ses[s].vmode = m;
+}
+
 static void raw_out(int s)
 {
     unsigned i, k;
@@ -701,6 +722,10 @@ int __far gfx_in(void)
     if (ses[fg].gfx == RAWGFX) {            /* DOS-Box: alles zurueck    */
         if (!ses[fg].gfx_plane)
             raw_in(fg);
+        else if (ses[fg].gfx_plane == 2 && ses[fg].vmode) {
+            vesa_bios(ses[fg].vmode);       /* ohne Puffer: nur der Modus */
+            ses[fg].gfx_plane = 1;
+        }
         hw_gfx = RAWGFX;
         gp_drawn = 0;
         win_restore(w);
@@ -733,9 +758,15 @@ void __far gfx_out(void)
     gptr_remove();                          /* Zeiger nicht mitsichern  */
     win_save(w);
     if (hw_gfx == RAWGFX) {
-        raw_out(fg);
-        ses[fg].gfx_plane = 0;
-    } else if (hw_gfx == VESAGFX) {
+        if (!ses[fg].gfx_save &&            /* erst jetzt: Puffer holen  */
+            (ses[fg].gfx_save = mem_alloc(GFX_UNITS(RAWGFX))) != 0)
+            raw_init(fg);
+        if (ses[fg].gfx_save) {
+            raw_out(fg);
+            ses[fg].gfx_plane = 0;
+        } else
+            ses[fg].gfx_plane = 2;          /* kein Platz: Bild verloren, */
+    } else if (hw_gfx == VESAGFX) {         /* beim Zurueck nur der Modus */
         vesa_copy(fg, 1);
         map_save(fg, 4);
         dac_io(0, 0, 256, MK_FP(SCRATCH, 0));
@@ -785,7 +816,8 @@ int __far vio_setgfx(int s, int t, unsigned mode)
         ses[s].gfx_sel = 0;
         if (ses[s].gfx == RAWGFX)
             raw_svfree(s);
-        mem_free(ses[s].gfx_save, GFX_UNITS_S(s));
+        if (ses[s].gfx_save)                /* Rohgrafik: evtl. keiner  */
+            mem_free(ses[s].gfx_save, GFX_UNITS_S(s));
         ses[s].gfx = 0;
         ses[s].gfx_save = 0;
         if (s == fg)
@@ -798,21 +830,18 @@ int __far vio_setgfx(int s, int t, unsigned mode)
         vio_setgfx(s, t, 0);
     if (!ses[s].gfx) {
         ses[s].gfx_save = mem_alloc(GFX_UNITS(mode));
-        if (!ses[s].gfx_save)
-            return -1;
+        if (!ses[s].gfx_save && mode != RAWGFX)
+            return -1;                      /* Rohgrafik (Box) auch ohne:
+                                               Puffer erst beim Wegschalten
+                                               (gfx_out) - auf 2 MB fehlen
+                                               die 324 KB oft */
     }
     ses[s].gfx = (unsigned char)mode;
     ses[s].gfx_plane = 0;
     ses[s].gfx_page = 0;
     if (mode == RAWGFX) {                   /* Inhalt kommt vom BIOS    */
-        win_save(w);
-        scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
-        *(unsigned char __far *)MK_FP(SCRATCH, RAW_KIND) = 0;
-        *(unsigned char __far *)MK_FP(SCRATCH, RAW_ALLOW) = 0;
-        *(unsigned __far *)MK_FP(SCRATCH, RAW_VMODE) = 0;
-        *(pg_t __far *)MK_FP(SCRATCH, RAW_SVPG) = 0;
-        *(unsigned char __far *)MK_FP(SCRATCH, RAW_SVOK) = 0;
-        win_restore(w);
+        raw_init(s);
+        ses[s].vmode = 0;
         ses[s].gfx_plane = 1;               /* frisch                   */
         ses[s].gfx_task = (signed char)t;
         if (s == fg) {

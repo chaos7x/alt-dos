@@ -3232,6 +3232,7 @@ static void vga_allow(struct v86_frame *f, int t)
     unsigned m = AH == 0x00 ? AL & 0x7F : (BX & 0x1FF) < 0x100 ? BX & 0x7F : 0xFF;
     unsigned char __far *q;
     unsigned fl = irq_off();
+    vio_raw_mode(box_ses[t], AH == 0x00 ? AL & 0x7F : BX & 0x41FF);
     q = vga_vr(t);
     if (q) {
         q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 :

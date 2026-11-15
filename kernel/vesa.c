@@ -21,13 +21,15 @@ unsigned long rm_kcr3;                  /* start.asm: CR3 waehrend des Aufrufs *
 unsigned      rm_cs16;                  /* Real-Mode-Segment von CGROUP2   */
 void __far rm_int10(void);
 
+static unsigned char rm_apm;            /* naechster rm_call: INT 15h (APM) */
+
 /* INT 10h im Real Mode; r wird mit den Rueckgabewerten ueberschrieben */
 static void rm_call(struct rmregs *r)
 {
     struct rmregs __far *p;
     unsigned i;
-    if (r->intno != 0x15)
-        r->intno = 0x10;
+    r->intno = rm_apm ? 0x15 : 0x10;    /* nicht aus r: die meisten Aufrufer */
+    rm_apm = 0;                         /* lassen intno ungesetzt (Stack)    */
     rm_kcr3 = paging_cr3();
     rm_cs16 = (unsigned)(KCODE2_LIN >> 4);
     scratch_map(RM_REGS, sizeof(struct rmregs) - 1);
@@ -164,8 +166,8 @@ static int vbe_mode(unsigned m, struct fapi_vesamode __far *o)
 int __far vesa_bios(unsigned mode)
 {
     struct rmregs r;
-    if (mode == 3) {
-        r.ax = 0x0003;
+    if (mode < 0x100) {                 /* VGA-/Chip-Modus: INT 10h 00h */
+        r.ax = mode & 0xFF;
         rm_call(&r);
         return 0;
     }
@@ -338,7 +340,7 @@ static void apm(struct rmregs *r, unsigned ax, unsigned bx, unsigned cx)
     r->ax = ax;
     r->bx = bx;
     r->cx = cx;
-    r->intno = 0x15;
+    rm_apm = 1;
     rm_call(r);
 }
 
