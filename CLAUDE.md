@@ -1464,6 +1464,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Daten trennen**: `docs/SYSTEM-DATEN.md` (Variablen, MOUNT wie /home,
   Netzlaufwerk). Noch kein Code.
 
+- **Loop-Laufwerke und DriveSpace** (Konzept 15.11.2026, Version 6.1):
+  `docs/LOOP-DBLSPACE.md` – Datei als Blockgerät (ISO, IMG, VHD), zuerst
+  über eine Extent-Liste, darauf DBLSPACE.SYS im DriveSpace-6.x-Format.
+  **Big Lock abbauen über die Versionen** (Wunsch des Nutzers: `klock`
+  ist vor 7.0 weg): `docs/BIGLOCK.md`. Noch kein Code.
+
 - EDIT ist da (`apps/task_edit.c`): Lückenpuffer über bis zu 8
   DosAllocSeg-Segmente (512 KB, Wunsch des Nutzers: über 64 KB), erst bei
   Bedarf: Positionen 32 Bit (`tpos`, Segment = obere 16 Bit), `TBP(p)`,
