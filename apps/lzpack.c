@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Gemeinsamer Rahmen von LHA.EXE und ARJ.EXE (task_lha.c/task_arj.c setzen
- * FMT_LHA bzw. FMT_ARJ): Archive anlegen und pflegen, Bedienung wie die
- * Originale (nur Verhalten nachgebaut, kein fremder Code):
+ * Gemeinsamer Rahmen von LHA.EXE, ARJ.EXE und ZOO.EXE (task_lha.c/
+ * task_arj.c/task_zoo.c setzen FMT_LHA, FMT_ARJ bzw. FMT_ZOO): Archive
+ * anlegen und pflegen, Bedienung wie die Originale (nur Verhalten
+ * nachgebaut, kein fremder Code):
  *
  *   LHA a|u|f|m|d [-r] [-o5|-o6|-o7|-z] [-h1|-h2] [-q] Archiv[.LZH] [Datei...]
  *   ARJ a|u|f|m|d [-r] [-m0..-m3] [-q] Archiv[.ARJ] [Datei...]
+ *   ZOO a|u|f|m|d [-r] [-q] Archiv[.ZOO] [Datei...]  (immer lh5 wie "zoo ah")
  *   ... x|e|l|v|t  wie UNLHA/UNARJ (unarc.c)
  *
  * a fuegt hinzu (gleiche Namen werden ersetzt), u nur Neues oder Neueres,
@@ -22,6 +24,8 @@
 
 #ifdef FMT_ARJ
 #define PNAME "arj"
+#elif defined FMT_ZOO
+#define PNAME "zoo"
 #else
 #define PNAME "lha"
 #endif
@@ -32,7 +36,7 @@ static int lvl = 6, ometh;
 #endif
 #ifdef FMT_ARJ
 static int amethod = 1;                 /* -m1 Vorgabe wie ARJ           */
-#else
+#elif defined FMT_LHA
 static int hlev = 1;
 #endif
 static char tname[FAPI_PATHLEN], dirp[FAPI_PATHLEN], pat[FAPI_PATHLEN];
@@ -319,6 +323,84 @@ static unsigned arj_mkhdr(unsigned char *h, const char *name, int type, unsigned
     p16(b + bs + 4, 0);
     return 4 + bs + 4 + 2;
 }
+#elif defined FMT_ZOO
+/* ZOO-Eintrag Typ 2 (zoo.h von Zoo 2.10): fester Teil 56 Byte, dann
+ * Namenslaenge, Verzeichnislaenge, langer Name, Verzeichnis, System-ID,
+ * Attribute (3), Versionsmerker (1), Versionsnummer (2); CRC-16 ueber den
+ * ganzen Eintrag mit 0 an Stelle 54. Leerer Name = Endeintrag. */
+static unsigned zoo_mkhdr(unsigned char *h, const char *name, unsigned meth,
+                          unsigned long next, unsigned long off, unsigned long cs,
+                          unsigned long us, unsigned crc, unsigned date, unsigned time)
+{
+    unsigned dl = 0, nl, i, k, b, e, n, vl;
+    const char *fn = name;
+    char sn[13];
+
+    for (i = 0; i < 56; i++)
+        h[i] = 0;
+    p32(h, 0xFDC4A7DCUL);
+    h[4] = 2;
+    if (!name[0]) {                     /* Endeintrag                    */
+        p16(h + 54, crc16(0, h, 56));
+        return 56;
+    }
+    for (i = 0; name[i]; i++)
+        if (name[i] == '/') {
+            dl = i;                     /* Verzeichnis ohne Schraegstrich */
+            fn = name + i + 1;
+        }
+    nl = slen(fn);
+    for (e = nl; e > 0 && fn[e - 1] != '.'; e--)
+        ;
+    b = e ? e - 1 : nl;                 /* Ende des Grundnamens          */
+    for (i = k = 0; i < b && k < 8; i++)
+        if (fn[i] != '.' && fn[i] != ' ')
+            sn[k++] = fn[i];
+    if (e) {
+        sn[k++] = '.';
+        for (i = e; i < nl && i < e + 3; i++)
+            sn[k++] = fn[i];
+    }
+    sn[k] = 0;
+    h[5] = (unsigned char)meth;
+    p32(h + 6, next);
+    p32(h + 10, off);
+    p16(h + 14, date);
+    p16(h + 16, time);
+    p16(h + 18, crc);
+    p32(h + 20, us);
+    p32(h + 24, cs);
+    h[28] = meth ? 2 : 1;               /* noetige Version: lh5 2.1      */
+    h[29] = meth ? 1 : 0;
+    for (i = 0; i <= k; i++)
+        h[38 + i] = (unsigned char)sn[i];
+    h[53] = 127;                        /* Zeitzone unbekannt            */
+    if (k == nl) {
+        for (i = 0; i < nl && sn[i] == fn[i]; i++)
+            ;
+        if (i == nl)
+            nl = 0;                     /* 8.3 reicht                    */
+    }
+    n = 56;
+    h[n++] = (unsigned char)nl;
+    h[n++] = (unsigned char)dl;
+    for (i = 0; i < nl; i++)
+        h[n++] = (unsigned char)fn[i];
+    for (i = 0; i < dl; i++)
+        h[n++] = (unsigned char)name[i];
+    p16(h + n, 1);                      /* System MS-DOS                 */
+    n += 2;
+    h[n++] = 0;                         /* keine Attribute               */
+    h[n++] = 0;
+    h[n++] = 0;
+    h[n++] = 0;                         /* keine Versionen               */
+    h[n++] = 0;
+    h[n++] = 0;
+    vl = n - 56;
+    p16(h + 51, vl);
+    p16(h + 54, crc16(0, h, n));
+    return n;
+}
 #else
 /* LHA-Kopf Stufe 1 (Name im Grundkopf, Verzeichnis und Attribut als
  * Zusatzkopf, Packgroesse mit Zusatzkoepfen) oder Stufe 2 */
@@ -432,6 +514,9 @@ static int add_one(unsigned i)
 #ifdef FMT_ARJ
     meth = amethod;
     hl = arj_mkhdr(eh, aname, 0, meth, 0, us, 0, nfl[i].date, nfl[i].time, nfl[i].attr);
+#elif defined FMT_ZOO
+    meth = ometh ? 2 : 0;
+    hl = zoo_mkhdr(eh, aname, meth, 0, 0, 0, us, 0, nfl[i].date, nfl[i].time);
 #else
     meth = ometh;
     hl = lha_mkhdr(eh, aname, meth, 0, us, 0, nfl[i].date, nfl[i].time, nfl[i].attr);
@@ -444,6 +529,8 @@ static int add_one(unsigned i)
     if (meth) {
 #ifdef FMT_ARJ
         lze_begin(LZE_ARJ, meth == 1 ? 9 : meth == 2 ? 6 : 3);
+#elif defined FMT_ZOO
+        lze_begin(LZE_LH5, lvl);
 #else
         lze_begin(meth, lvl);
 #endif
@@ -456,7 +543,11 @@ static int add_one(unsigned i)
 #endif
             lze_feed(db, n);
         }
+#ifdef FMT_ZOO
+        lze_end(1);                     /* Zoo erwartet die Endmarke     */
+#else
         lze_end(0);
+#endif
         if (tpos - dpos >= us) {        /* nicht kleiner: speichern      */
             stored = 1;
             tseek(dpos);
@@ -483,6 +574,9 @@ static int add_one(unsigned i)
     cs = tpos - dpos;
 #ifdef FMT_ARJ
     hl = arj_mkhdr(eh, aname, 0, meth, cs, us, crc, nfl[i].date, nfl[i].time, nfl[i].attr);
+#elif defined FMT_ZOO
+    hl = zoo_mkhdr(eh, aname, meth, tpos, hpos + hl, cs, us, (unsigned)crc,
+                   nfl[i].date, nfl[i].time);
 #else
     hl = lha_mkhdr(eh, aname, meth, cs, us, (unsigned)crc, nfl[i].date, nfl[i].time, nfl[i].attr);
 #endif
@@ -517,6 +611,27 @@ static int copy_old(unsigned long from, unsigned long to)
     return twerr;
 }
 
+#ifdef FMT_ZOO
+/* ZOO-Eintraege verweisen absolut aufeinander: Kopf mit neuen Stellen
+ * schreiben (Daten direkt dahinter), CRC neu */
+static int zoo_copy(void)
+{
+    unsigned long hp = tpos, dp = hp + e_zhl;
+    unsigned i;
+    for (i = 0; i < e_zhl; i++)
+        eh[i] = hb[i];
+    p32(eh + 6, dp + e_cs);
+    p32(eh + 10, dp);
+    if (e_zhl >= 56) {
+        p16(eh + 54, 0);
+        p16(eh + 54, crc16(0, eh, e_zhl));
+    }
+    if (wr_tmp(eh, e_zhl))
+        return 1;
+    return copy_old(e_data, e_data + e_cs);
+}
+#endif
+
 static void pusage(void)
 {
 #ifdef FMT_ARJ
@@ -526,6 +641,12 @@ static void pusage(void)
          "  m  verschieben  d  l\x94schen   x/e  entpacken   l/v  zeigen   t  pr\x81" "fen\r\n"
          "  -r  Unterverzeichnisse   -m0..-m3  Methode (0 speichern, 1 beste)\r\n"
          "  -q  still\r\n");
+#elif defined FMT_ZOO
+    puts("Legt ZOO-Archive an und pflegt sie (lh5 wie \"zoo ah\").\r\n\r\n"
+         "ZOO Befehl [Optionen] Archiv[.ZOO] [Datei...]\r\n\r\n"
+         "  a  hinzuf\x81gen   u  Neues/Neueres   f  nur Vorhandenes erneuern\r\n"
+         "  m  verschieben  d  l\x94schen   x/e  entpacken   l/v  zeigen   t  pr\x81" "fen\r\n"
+         "  -r  Unterverzeichnisse   -z  nur speichern   -q  still\r\n");
 #else
     puts("Legt LHA-Archive an und pflegt sie (lh5/lh6/lh7 wie LHA 2.x).\r\n\r\n"
          "LHA Befehl [Optionen] Archiv[.LZH] [Datei...]\r\n\r\n"
@@ -551,6 +672,10 @@ void main(void)
     }
     word(a, wbuf, sizeof(wbuf));
     k = up(wbuf[0]);
+#ifdef FMT_ZOO
+    if (k == 'A' || k == 'U' || k == 'F' || k == 'M' || k == 'D')
+        wbuf[1] = 0;                    /* Zusaetze wie "ah" uebergehen  */
+#endif
     if (wbuf[0] && !wbuf[1] && (k == 'X' || k == 'E' || k == 'L' || k == 'V' || k == 'T')) {
         unarc_main(a);                  /* entpacken, zeigen, pruefen    */
         DosExit(errors ? 1 : 0);
@@ -560,7 +685,7 @@ void main(void)
         DosExit(wbuf[0] == '/' || wbuf[0] == '-' ? 0 : 10);
     }
     cmd = k;
-#ifdef FMT_LHA
+#ifndef FMT_ARJ
     ometh = 5;
 #endif
     nfsel = DosAllocSeg(0);
@@ -584,6 +709,9 @@ void main(void)
 #ifdef FMT_ARJ
                 else if (k == 'M' && w[2] >= '0' && w[2] <= '4')
                     amethod = w[2] == '4' ? 3 : w[2] - '0';
+#elif defined FMT_ZOO
+                else if (k == 'Z')
+                    ometh = 0;
 #else
                 else if (k == 'O' && (w[2] == 0 || w[2] == '5' || w[2] == '6' || w[2] == '7'))
                     ometh = w[2] ? w[2] - '0' : 5;
@@ -639,6 +767,8 @@ void main(void)
         fmt = detect();
 #ifdef FMT_ARJ
         if (fmt != 'A') {
+#elif defined FMT_ZOO
+        if (fmt != 'Z') {
 #else
         if (fmt != 'L') {
 #endif
@@ -680,6 +810,21 @@ void main(void)
         k = arj_mkhdr(eh, base_name(arcfull), 2, 0, ((unsigned long)d << 16) | t, 0, 0, d, t, 0);
         wr_tmp(eh, k);
     }
+#elif defined FMT_ZOO
+    {                                   /* Archivkopf wie Zoo 2.10       */
+        static const char zt[] = "ZOO 2.10 Archive.\x1A";
+        for (k = 0; k < 42; k++)
+            eh[k] = 0;
+        for (k = 0; zt[k]; k++)
+            eh[k] = (unsigned char)zt[k];
+        p32(eh + 20, 0xFDC4A7DCUL);
+        p32(eh + 24, 42);
+        p32(eh + 28, 0xFFFFFFD6UL);    /* -42                           */
+        eh[32] = 2;
+        eh[34] = 1;
+        eh[41] = 3;                     /* Generationsgrenze 3           */
+        wr_tmp(eh, 42);
+    }
 #endif
     if (old) {
         if (!o_qq)
@@ -706,7 +851,11 @@ void main(void)
                 if (!keep && cmd == 'F')
                     nfl[j].flag |= 4;   /* darf erneuert werden          */
             }
+#ifdef FMT_ZOO
+            if (keep && zoo_copy()) {
+#else
             if (keep && copy_old(e_hstart, apos)) {
+#endif
                 twerr = 1;
                 break;
             }
@@ -730,6 +879,8 @@ void main(void)
     eh[1] = 0xEA;
     eh[2] = eh[3] = 0;
     wr_tmp(eh, 4);
+#elif defined FMT_ZOO
+    wr_tmp(eh, zoo_mkhdr(eh, "", 0, 0, 0, 0, 0, 0, 0, 0));
 #else
     eh[0] = 0;
     wr_tmp(eh, 1);

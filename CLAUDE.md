@@ -742,6 +742,20 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Geprüft in QEMU, danach auf dem Rechner: lhasa t/v (lh5/6/7, Stufe 1/2,
   lh0), arj t/l (m0/m1/m3, nach u/m/d), entpackte Bäume gleich, in der
   Box (FreeCOM-Stapeldatei) LHA a/l und ARJ a.
+  ZOO (`apps/task_zoo.c`, FMT_ZOO in lzpack.c): Archivkopf 42 Byte wie
+  Zoo 2.10 (Start 42, -42, Version 2.0, Typ 1, Generationen 3), Einträge
+  Typ 2 (56 Byte + Namenslänge, Verzeichnislänge, langer Name nur wenn
+  der 8.3-Name nicht passt, Verzeichnis ohne '/', System 1, Zeitzone 127,
+  CRC-16 über den Eintrag mit 0 bei 54), Daten direkt hinter dem Eintrag,
+  `next` = Stelle danach, Ende = leerer Typ-2-Eintrag. Immer lh5 mit
+  Endmarke (`lze_end(1)`), nicht kleiner -> Methode 0. Alte Einträge:
+  `zoo_copy` schreibt den Kopf (hb, Länge `e_zhl` aus zoo_next) mit neuen
+  Stellen und neuer CRC, dahinter die Daten. Kein LZW-Packer. Geprüft
+  in QEMU: a -r (langer Name, Unterverzeichnis, Zufall, leere Datei), l/
+  t/x, d, u, Anhängen an sample.zoo (LZW bleibt lesbar), x in der Box;
+  auf dem Rechner ein Python-Prüfer (Kopf, Verkettung, Eintrags-CRC) und
+  lhasa t auf die in ein LZH umgesetzten lh5-Daten. Mit dem Zoo-
+  Original nicht geprüft (Bau aus fremdem Quelltext nicht erlaubt).
   7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
   lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
   decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-

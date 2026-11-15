@@ -38,6 +38,7 @@ static char e_mname[8];
 static unsigned long e_cs, e_us, e_crc, e_data, crc;
 static unsigned e_date, e_time, e_attr, e_c32, e_dir, e_nocrc;
 static unsigned long e_hstart;          /* Anfang des Kopfes im Archiv   */
+static unsigned e_zhl;                 /* ZOO: Laenge des Eintrags      */
 
 static void say(const char *a, const char *b, const char *c)
 {
@@ -164,6 +165,10 @@ static int zoo_next(void)
             return -1;
         if (w32(hb + 6) == 0)
             return 0;
+        e_hstart = apos;
+        e_zhl = hb[4] == 2 ? 56 + w16(hb + 51) : 51;
+        if (e_zhl > n)
+            return -1;
         apos = w32(hb + 6);
         if (hb[30])                     /* geloescht                    */
             continue;

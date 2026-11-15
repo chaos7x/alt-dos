@@ -302,6 +302,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Neueres, nur Vorhandenes erneuern, verschieben, löschen; `x e l v t`
   wie UNLHA/UNARJ. Was nicht kleiner wird, wird gespeichert. Die
   Archive lesen LHA 2.x/lhasa bzw. ARJ 2.x/3.x
+- `ZOO a|u|f|m|d [-r] [-z] Archiv[.ZOO] [Datei…]` legt ZOO-Archive an und
+  pflegt sie (immer lh5 wie `zoo ah`, Zusätze am Befehl wie `ah` werden
+  angenommen); alte Einträge, auch LZW, bleiben erhalten, gelöschte
+  fallen beim Neuaufbau weg; `x e l v t` wie UNZOO
 - `7ZDEC [e|x|l|t] [-l -t -o -n -j -q -d Ziel] Archiv[.7Z] [Ziel\]
   [Name…]` entpackt 7z-Archive von 7-Zip (Copy, LZMA, LZMA2, BCJ x86,
   Delta; gepackter Kopf, feste und einzelne Ordner) und `.LZMA`-Dateien
@@ -639,7 +643,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, 7ZDEC, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der
