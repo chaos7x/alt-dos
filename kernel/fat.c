@@ -2344,20 +2344,28 @@ static void mark_in_use(int d)
     }
 }
 
+/* Laufwerk sauber abmelden (Sauber-Bit) - beim Herunterfahren und vor
+   dem Auswerfen einer Wechselplatte */
+void __far ifs_clean(int d)
+{
+    unsigned val;
+
+    if (vol[d].used && vol[d].in_use && !vol[d].locked) {
+        val = fat_raw(d, 1);
+        fat_set(d, 1, val | CLEAN_BIT);
+        bc_sync = 1;
+        fat_flush();
+        bc_sync = 0;
+        vol[d].in_use = 0;
+    }
+}
+
 void __far ifs_shutdown(void)
 {
     int d;
-    unsigned val;
 
     for (d = 0; d < NDRIVE; d++)
-        if (vol[d].used && vol[d].in_use && !vol[d].locked) {
-            val = fat_raw(d, 1);
-            fat_set(d, 1, val | CLEAN_BIT);
-            bc_sync = 1;
-            fat_flush();
-            bc_sync = 0;
-            vol[d].in_use = 0;
-        }
+        ifs_clean(d);
 }
 
 #define MARK(d) do { rd_drive = -1; if (VOL_OK(d)) mark_in_use(d); } while (0)

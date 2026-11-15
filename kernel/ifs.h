@@ -97,6 +97,7 @@ int __far  vol_present(int d);
 int __far  vol_check(int d);            /* Wechselplatte: Medium pruefen */
 void __far vol_reset(int d);
 void __far ifs_shutdown(void);
+void __far ifs_clean(int d);
 int __far  ifs_setinfo(int d, const char *path, unsigned mask, unsigned attr,
                  unsigned date, unsigned time);
 int __far  ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl);            /* alle FAT16-Platten als sauber markieren */              /* Caches weg, neu einhaengen       */            /* da (A: ggf. einhaengen), Sperre egal */

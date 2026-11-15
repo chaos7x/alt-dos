@@ -2955,6 +2955,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
                 vol[files[k].f.drive].blk == dev)
                 return FAPI_ERR_INUSE;
+        for (k = 0; k < NDRIVE; k++)            /* Sauber-Bit wie beim     */
+            if (vol[k].blk == dev && vol[k].drv == &fat_driver)
+                ifs_clean(k);                   /* Herunterfahren          */
         st = blk_eject(dev);
         if (st == DRV_ERR_CMD)
             return FAPI_ERR_DENIED;
@@ -4850,7 +4853,7 @@ static int load_driver(const char *line, int is_ifs)
     struct fx_header h;
     unsigned long base, seg;
     unsigned u, n, entry;
-    int d, k, drive, err;
+    int d, k, j, drive, err;
     const char *args = line;
 
     for (d = 0; d < NDRV; d++)
@@ -4902,10 +4905,10 @@ static int load_driver(const char *line, int is_ifs)
     set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
-    for (k = 0, n = 0; path[k]; k++)                /* Name ohne Pfad    */
+    for (k = 0, j = 0; path[k]; k++)                /* Name ohne Pfad    */
         if (path[k] == '\\' || path[k] == ':')
-            n = k + 1;
-    scopy(drv[d].name, path + n, sizeof(drv[d].name));
+            j = k + 1;
+    scopy(drv[d].name, path + j, sizeof(drv[d].name));   /* n = Seiten! */
     n = 0;
     drv[d].entry = entry;
     drv[d].unit = u;
@@ -5419,6 +5422,17 @@ static void list_drives(void)
         n = 3;
         if (vol[d].drv == &mod_driver) {
             scopy(msg + n, "CD-ROM", sizeof(msg) - n);
+        } else if (b->rem && !vol[d].used) {    /* eingehaengt bei Bedarf */
+            scopy(msg + n, b->blocks ? "Wechselplatte, " : "Wechselplatte, kein Medium",
+                  sizeof(msg) - n);
+            if (b->blocks) {
+                while (msg[n])
+                    n++;
+                udec((unsigned)(b->blocks >> 11), msg + n);
+                while (msg[n])
+                    n++;
+                scopy(msg + n, " MB", sizeof(msg) - n);
+            }
         } else {
             if (vol[d].part >= 5) {     /* in der erweiterten Partition */
                 scopy(msg + n, "logisch ", sizeof(msg) - n);
@@ -5511,7 +5525,7 @@ void kmain(void)
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "AT-DOS 5.3 - 80286 Protected Mode\n");
+    vio_kputs(s0, "AT-DOS 5.3.1 - 80286 Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
     udec(mem_free_kb(), num);
     vio_kputs(s0, num);

@@ -213,12 +213,24 @@ des Releases den alten Tag stehen lassen); `5.2` = das freigegebene 5.2
 (Entscheidung des Nutzers, 14.11.2026; ein Push auf `5.2` erzeugt per CI
 das fertige Release `v5.2`); `5.3` = das freigegebene 5.3 (Entscheidung
 des Nutzers, 15.11.2026, ein Push auf `5.3` erzeugt das Release `v5.3`,
-jetzt „neueste“); `5.x` = Weiterarbeit nach 5.3, Fehlerbehebungen werden
-5.3.1 (dann Titel/VER/FAPI_VERSION anheben), die CI veröffentlicht die
-Vorabversion `v5.x`; `main` = 6.0.
+„neueste“ bis 5.3.1); `5.3.1` = Fehlerbehebungen für 5.3 (15.11.2026,
+Release `v5.3.1`, jetzt „neueste“); `5.x` = Weiterarbeit, die CI
+veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.3 fertig (Zweig 5.3), Weiterarbeit in 5.x; 5.2/5.1/5.0 in ihren Zweigen
+## Aktueller Stand: AT-DOS 5.3.1 fertig (Zweig 5.3.1), Weiterarbeit in 5.x; 5.3/5.2/5.1/5.0 in ihren Zweigen
+
+5.3.1 (Entscheidung des Nutzers, 15.11.2026): Fehlerbehebungen aus 6.0 –
+`load_driver` gab einen Treiber ohne Gerät nicht frei (`n` = Seiten-
+zahl wurde für die Namenslänge benutzt, `mem_free(u, n)` lief danach
+mit dem falschen Wert), DosEject setzt vorher das Sauber-Bit
+(`ifs_clean`, aus ifs_shutdown herausgelöst), die Laufwerksliste nennt
+eine leere Wechselplatte „Wechselplatte, kein Medium“. Titel/VER „5.3.1“
+(Titelzeile: Trenner zwei Spalten weiter), FAPI_VERSION bleibt 051Eh
+(Schnittstelle unverändert), Bootsektoren melden weiter „5.3“ (kein
+Platz). Zweig `5.3.1` -> Release `v5.3.1` (neueste). In QEMU (isapc,
+2 MB) geprüft: Start, VER, XCOPY, MEM, SHUTDOWN, fsck sauber.
+
 
 5.3 (Entscheidung des Nutzers, 15.11.2026: „Tools sind ja hinzu-
 gekommen“): 5.2 plus aus 6.0 die Packprogramme GZIP/GUNZIP, TAR, ZIP/
