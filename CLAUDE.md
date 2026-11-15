@@ -805,8 +805,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Zufall, Nullen, 1 MB Quelltext: 241 KB, xz -9 204 KB); in QEMU Stufen
   0/1/5/9 mit -r/Unterverzeichnis/leerer Datei, 7ZDEC l/t/x, 7-Zip 23.01
   `t` „Everything is Ok“, Inhalte gleich. Offen: BCJ, gepackter Kopf,
-  Ergänzen, 7ZDEC nimmt bei Ordnern über dem Ring die Zwischendatei, auch
-  wenn das Wörterbuch passen würde.
+  Ergänzen. 7ZDEC nimmt die Zwischendatei nur noch, wenn der Ring kleiner
+  ist als das Wörterbuch (bzw. der Ordner) – Abstände sind nie größer.
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
   Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).

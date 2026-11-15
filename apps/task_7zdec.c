@@ -1013,11 +1013,13 @@ static void do_folder(unsigned f, unsigned first)
             want = F->lsz;
         if (want < 4096)
             want = 4096;
-        rc = lm_ring(want);
+        rc = lm_ring(want);             /* Abstaende <= Woerterbuch:     */
+                                        /* reicht der Ring dafuer, keine */
+                                        /* Zwischendatei                 */
         lm_read = rd_pack;
         lm_back = 0;
         htmp = 0xFFFF;
-        if (!rc && lm_rsize < F->lsz) {     /* ueber eine Zwischendatei */
+        if (!rc && lm_rsize < want) {      /* ueber eine Zwischendatei */
             scopy(tname, ddir[0] ? ddir : ".", sizeof(tname));
             if (tname[slen(tname) - 1] != '\\')
                 scat(tname, "\\", sizeof(tname));
