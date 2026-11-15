@@ -101,4 +101,4 @@ jobs:
           gh release create v5.3.1 build/dos5.img build/atdos-hd.zip \
             --target "$GITHUB_SHA" --latest \
             --title "AT-DOS 5.3.1, Build $BNO" \
-            --notes "AT-DOS 5.3.1 (Zweig 5.3.1): Fehlerbehebungen fuer 5.3 - Treiber ohne Geraet gaben ihren Speicher nicht frei (Treiberlader), EJECT setzt vorher das Sauber-Bit (kein AUTOCHECK nach dem Wiedereinlegen), leere Wechselplatte heisst beim Start Wechselplatte, kein Medium. Sonst wie 5.3. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User)."
+            --notes "AT-DOS 5.3.1 (Zweig 5.3.1): Fehlerbehebungen fuer 5.3 - Treiber ohne Geraet gaben ihren Speicher nicht frei (Treiberlader), EJECT setzt vorher das Sauber-Bit (kein AUTOCHECK nach dem Wiedereinlegen), leere Wechselplatte heisst beim Start Wechselplatte, kein Medium, DIR mit /O (Sortierung), DIRCMD, /? und Meldung bei unbekannten Schaltern wie in 6.0 (vorher galten sie als Dateimuster - Datei nicht gefunden). Sonst wie 5.3. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User)."

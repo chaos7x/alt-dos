@@ -208,7 +208,7 @@ void main(void)
             puts("Spielt WAV, VOC, MIDI und IMF ab.\r\n\r\n"
                  "PLAY [/Q] [/FM] [/R:700] Datei...\r\n\r\n"
                  "  /Q      keine Anzeige            Esc bricht ab.\r\n"
-                 "  /FM     MIDI \x81ber die FM-Synthese statt den MPU-401\r\n"
+                 "  /FM     MIDI \x81" "ber die FM-Synthese statt den MPU-401\r\n"
                  "  /R:700  IMF mit 700 Hz statt 560 Hz\r\n"
                  "Lautst\x84rke mit MIXER, Treiber: DEVICE=SB16.SYS\r\n");
             return;
