@@ -1535,7 +1535,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `kernel/blkmnt.c` (KTEXT2; next_drive, subst_drv nicht mehr static);
   erstes Codesegment 64.872 Byte, DGROUP 65.386, KTEXT2 ~55,8 KB.
   Grenzen: Programme (Segmente) werden nicht ausgelagert (Teil 2, wie
-  OS/2 1.x je Segment), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
+  OS/2 1.x je Segment: Deskriptor „nicht vorhanden“, #NP beim Laden des
+  Selektors; Entscheidung des Nutzers, 15.11.2026: erst auf `main`, dann
+  nach `5.x` zurück für 5.4 – dort ohne Paging, der 286 kann Segmente
+  auslagern; damit wird `PROTECTONLY=NO` (Kompatibilitätsbox fest im
+  Speicher) auch auf 2-MB-Rechnern brauchbar), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
   EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht
   mit (eine Box sieht nur den freien RAM als XMS). DPMI-Programme unter
   Auslagerung (DOOM) noch nicht geprüft – in 86Box auf dem 386 mit 4 MB.
