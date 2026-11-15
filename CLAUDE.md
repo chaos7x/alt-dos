@@ -3918,7 +3918,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
   nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
   (1) Netzwerkkartentreiber mit IRQ (RTL8139 zuerst – läuft in
-  86Box, QEMU und Proxmox –, NE2000 ISA/ne2k_pci, später PCnet/Intel) und TCP/IP (ARP, IP,
+  86Box, QEMU und Proxmox –, dann PCnet – auch VMware (vlance, Vorgabe
+  bei DOS-Gästen) und VirtualBox –, dann Intel e1000 – VMware,
+  VirtualBox, QEMU/Proxmox –, NE2000 ISA/ne2k_pci zuletzt) und TCP/IP (ARP, IP,
   ICMP, UDP, TCP) als Treiber/Modul mit eigenen Segmenten – DGROUP des
   Kernels ist voll; FAPI-Sockets für Programme. (2) DHCP-Client, DNS,
   SNTP, `PING`, `IPCONFIG`. (3) `WGET` und `CURL` (HTTP/1.1, FTP); HTTPS
@@ -3935,6 +3937,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   OS/2 LAN Server), damit sie unter 7.0 unverändert laufen; dort neu nur
   Treiber, TCP/IP und IFS. Später: Netzwerkkarte für die DOS-Boxen
   (virtueller NE2000 oder Packet-Driver-Schnittstelle).
+- VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
+  6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
+  I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –
+  bei i440fx (Vorgabe in Proxmox) haben die Geräte den Legacy-Teil; q35
+  mit PCIe-Ports schaltet ihn ab, dann nur VirtIO 1.0 über MMIO-BARs,
+  evtl. 64 Bit über 4 GB (ohne PAE nicht erreichbar) – zuerst nur
+  legacy, Startmeldung bei reinem 1.0-Gerät. Reihenfolge: virtio-blk
+  (Platte), virtio-scsi (Platten + CD, Sperrgruppe), virtio-net,
+  virtio-balloon (passt zum dynamischen Cache: Seiten abgeben/zurück-
+  holen), virtio-serial mit qemu-guest-agent (Proxmox: Herunterfahren,
+  IP-Anzeige), virtio-rng. Start von virtio-blk braucht das SeaBIOS-
+  INT 13h nur für Bootsektor/preload.
 - UEFI (Entscheidung des Nutzers: ab 7.0, mit dem 32-Bit-Kernel): Lader wechselt aus Long Mode in den 32-Bit-
   Protected-Mode. Ersatz für alles, was heute im Real Mode vom BIOS kommt
   (Speicherkarte, Plattenparameter, Zeichensätze, Vorladen von CONFIG.SYS)
