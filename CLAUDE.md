@@ -1304,6 +1304,10 @@ Werkzeuge in einer neuen Umgebung einrichten (wie `.github/workflows/build.yml`)
     mkdir -p ~/watcom && tar -xJf ow.tar.xz -C ~/watcom
     export WATCOM=~/watcom INCLUDE=~/watcom/h PATH=~/watcom/binl64:$PATH
 
+Für AT-DOS 7.0 (32 Bit) richtet `tools/setup-32.sh` die Werkzeuge ein
+(Open Watcom 32, GCC i686-elf, MinGW, Bochs, 86Box), getrennt vom
+16-Bit-Bau – siehe `docs/BUILD-32.md`.
+
 CI: `tools/ci-tools.sh` installiert NASM und mtools per apt (drei
 Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
 `$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
