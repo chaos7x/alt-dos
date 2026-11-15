@@ -2004,6 +2004,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eine Auswurftaste).
   Vom Nutzer auf der 486 in 86Box bestätigt: ZIP ohne Medium gestartet,
   danach eingelegt – das Laufwerk war da.
+  Anzeige und Auswerfen (vom Nutzer am 2944UW gemeldet: das leere ZIP
+  hieß beim Start „Partition 0, nicht formatiert, 0 MB“; in 86Box
+  geprüft): die Laufwerksliste zeigt eine nicht eingehängte Wechsel-
+  platte als „Wechselplatte, kein Medium“ bzw. mit Größe. DosEject
+  setzt vorher das Sauber-Bit (`ifs_clean(d)` in fat.c, aus
+  ifs_shutdown herausgelöst) – ein beschriebenes, ausgeworfenes ZIP galt
+  sonst beim nächsten Einlegen als „nicht ordnungsgemäß abgemeldet“
+  (AUTOCHECK). Geprüft: Datei aufs ZIP, EJECT, FAT[1] = FFFFh, fsck
+  sauber.
 - Laufwerkszugriffe asynchron statt synchron (andere Tasks laufen weiter)
 - Idee „AT-DOS 5.1“ (vom Nutzer zurückgestellt, DOS-Boxen in 6.0 gehen
   vor): Kompatibilitätsbox wie bei OS/2 1.x – eine einzelne

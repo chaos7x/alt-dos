@@ -3719,6 +3719,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 vol[files[k].f.drive].blk == dev)
                 return FAPI_ERR_INUSE;
         vol_lock(a1);                           /* nichts mehr unterwegs */
+        for (k = 0; k < NDRIVE; k++)            /* Sauber-Bit wie beim     */
+            if (vol[k].blk == dev && vol[k].drv == &fat_driver)
+                ifs_clean(k);                   /* Herunterfahren          */
         st = blk_eject(dev);
         if (st == DRV_ERR_CMD)
             return FAPI_ERR_DENIED;
@@ -6563,6 +6566,17 @@ static void list_drives(void)
         n = 3;
         if (vol[d].drv == &mod_driver) {
             scopy(msg + n, "CD-ROM", sizeof(msg) - n);
+        } else if (b->rem && !vol[d].used) {    /* eingehaengt bei Bedarf */
+            scopy(msg + n, b->blocks ? "Wechselplatte, " : "Wechselplatte, kein Medium",
+                  sizeof(msg) - n);
+            if (b->blocks) {
+                while (msg[n])
+                    n++;
+                udec((unsigned)(b->blocks >> 11), msg + n);
+                while (msg[n])
+                    n++;
+                scopy(msg + n, " MB", sizeof(msg) - n);
+            }
         } else {
             if (vol[d].part >= 5) {     /* in der erweiterten Partition */
                 scopy(msg + n, "logisch ", sizeof(msg) - n);
