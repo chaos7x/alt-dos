@@ -762,7 +762,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   richtig, `zoo x` scheiterte aber an „STUNTS↑↑↑…“ – Zoo zählt Namens-
   und Verzeichnislänge mit abschließender Null (zooadd2.c strlen + 1),
   wir schrieben sie ohne. Jetzt mit Null (`zoo_mkhdr`); unarc liest
-  beides. Erneute Gegenprobe steht aus.
+  beides. Danach vom Nutzer bestätigt (15.11.2026): mit unserem ZOO a
+  gepacktes Archiv entpackt das FreeDOS-zoo fehlerfrei.
   7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
   lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
   decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-
