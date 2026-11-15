@@ -49,6 +49,7 @@ struct session {
 #define RAW_SVPG    0x354           /* Bildspeicher-Sicherung: erste Seite (pg_t) */
 #define RAW_SVN     0x358           /*   und Seitenzahl                   */
 #define RAW_SVOK    0x35A           /* 1 = Zustand + Bild gesichert        */
+#define RAW_SVNOST  0x35B           /*   1 = ohne 4F04h (nur DAC bei +64)  */
 #define RAW_SVPHYS  0x360           /* VESA hinten (Art 4): LFB physisch, 0 = Fenster */
 #define RAW_SVBYTES 0x364           /*   Groesse des Bildes            */
 #define RAW_SVGMUL  0x368           /*   64 / Granularitaet (KB)       */

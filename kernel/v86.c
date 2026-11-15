@@ -2439,6 +2439,83 @@ static void idle_poll(int t)
 
 static unsigned char svc_cf, svc_zf;    /* 0xFF = unveraendert          */
 
+/* PCI-Konfiguration ueber CF8h/CFCh (Mechanismus 1), nur lesend - PCI-
+   Video-BIOSe lesen so ihre BARs */
+static unsigned long pci_cfg[NTASK];
+
+static unsigned long pci_pin(int t, unsigned p)
+{
+    if (p < 0xCFC)
+        return pci_cfg[t] >> ((p - 0xCF8) * 8);
+    if (!(pci_cfg[t] & 0x80000000UL))
+        return 0xFFFFFFFFUL;
+    return pci_read((unsigned)(pci_cfg[t] >> 8), (unsigned)pci_cfg[t] & 0xFC) >>
+           ((p - 0xCFC) * 8);
+}
+
+/* INT 1Ah B1xxh, PCI-BIOS 2.1 lesend: PCI-Video-BIOSe suchen fuer VBE
+   ihre eigene Karte (Cirrus GD54xx: ohne das scheitert 4F01h in der
+   Box). Ueber die Busdienste des Kernels (bus.c); Schreiben wird nur
+   bestaetigt, eine Box verstellt nichts am Bus. */
+static void pci_svc(struct v86_frame *f)
+{
+    unsigned loc, n, i;
+    unsigned long v;
+    svc_cf = 1;
+    switch (AL) {
+    case 0x01:                                  /* da?                   */
+        if (pci_read(0, 0) == 0xFFFFFFFFUL) {
+            AH = 0x81;
+            return;
+        }
+        AX = 0x0001;                            /* Mechanismus 1         */
+        BX = 0x0210;
+        CL = 0;
+        f->edx = 0x20494350UL;                  /* "PCI "                */
+        break;
+    case 0x02:                                  /* Geraet CX, Hersteller DX */
+        loc = pci_find(DX, CX, (unsigned)f->esi);
+        if (loc == 0xFFFF) {
+            AH = 0x86;
+            return;
+        }
+        BX = loc;
+        AH = 0;
+        break;
+    case 0x03:                                  /* Klasse ECX            */
+        for (i = 0, n = (unsigned)f->esi; ; i++) {
+            loc = pci_findclass((unsigned)(f->ecx >> 8), i);
+            if (loc == 0xFFFF) {
+                AH = 0x86;
+                return;
+            }
+            if ((unsigned char)(pci_read(loc, 8) >> 8) == CL && !n--)
+                break;
+        }
+        BX = loc;
+        AH = 0;
+        break;
+    case 0x08: case 0x09: case 0x0A:            /* lesen Byte/Wort/Dword */
+        v = pci_read(BX, DI & 0xFC) >> ((DI & 3) * 8);
+        if (AL == 0x08)
+            CL = (unsigned char)v;
+        else if (AL == 0x09)
+            CX = (unsigned)v;
+        else
+            f->ecx = v;
+        AH = 0;
+        break;
+    case 0x0B: case 0x0C: case 0x0D:            /* schreiben: nur ja     */
+        AH = 0;
+        break;
+    default:
+        AH = 0x81;
+        return;
+    }
+    svc_cf = 0;
+}
+
+
 /* Taste: warten (wait = 1) oder nachsehen; -> Zeichen | Scancode << 8,
    -1 = keine */
 static int key(int t, int wait)
@@ -2628,6 +2705,10 @@ static void svc(int n, struct v86_frame *f, int t)
         kf_box_ctl(BOX_EXIT, 0);
         break;
     case 0x1A:                                  /* Uhr                   */
+        if (AH == 0xB1) {                       /* PCI-BIOS (Video-BIOS) */
+            pci_svc(f);
+            break;
+        }
         st = rtc_stamp();
         if (AH == 0x00) {
             idle_poll(t);                       /* Warteschleife?        */
@@ -3155,8 +3236,13 @@ static void vga_allow(struct v86_frame *f, int t)
     if (q) {
         q[RAW_ALLOW] = (unsigned char)(m == 0x13 ? 1 : m >= 4 && m <= 6 ? 3 :
                                        m == 0x0D || m == 0x0E || m == 0x10 || m == 0x12 ? 2 : 0);
-        *(unsigned __far *)(q + RAW_VMODE) =    /* VESA: beim Wegschalten */
-            AX == 0x4F02 && (BX & 0x1FF) >= 0x100 ? BX : 0;     /* 4F04h */
+        if (AX == 0x4F02 && (BX & 0x1FF) >= 0x100)  /* VESA: beim Wegschalten */
+            *(unsigned __far *)(q + RAW_VMODE) = BX;    /* 4F04h + Bild  */
+        else if (AH == 0x00 && m > 0x13) {      /* Chip-Modus (2Eh ...): */
+            if (!*(unsigned __far *)(q + RAW_VMODE))    /* SVGA, Text    */
+                *(unsigned __far *)(q + RAW_VMODE) = 0x7F00 | m;   /* per BIOS */
+        } else                                  /* (das Tseng-BIOS setzt   */
+            *(unsigned __far *)(q + RAW_VMODE) = 0; /* 4F02h intern per 00h) */
     }
     irq_restore(fl);
 }
@@ -3243,6 +3329,30 @@ static int vga_bgint(struct v86_frame *f, int t)
     return 0;
 }
 
+/* VBE 4F00h/4F01h ueber den Real-Mode-Weg des Kernels (vesa_boxq), das
+   Ergebnis in den Puffer der Box; Zeiger des VBE-2.0-Infoblocks, die in
+   den Kernelpuffer (0700h:xxxx) zeigen, auf den Puffer der Box umrechnen */
+static unsigned char vbe_buf[512];
+static void vbe_box(struct v86_frame *f)
+{
+    static const unsigned char po[5] = { 6, 14, 22, 26, 30 };
+    unsigned es = (unsigned)f->r.es, di = DI, n = AL ? 256 : 512, i, o;
+    unsigned long sig = rd16(es, di) | ((unsigned long)rd16(es, di + 2) << 16);
+    AX = vesa_boxq(AX, CX, sig, (unsigned char __far *)vbe_buf);
+    if (AX != 0x004F)
+        return;
+    if (n == 512)
+        for (i = 0; i < 5; i++) {
+            o = po[i];
+            if (*(unsigned *)(vbe_buf + o + 2) == 0x0700) {
+                *(unsigned *)(vbe_buf + o) += di;
+                *(unsigned *)(vbe_buf + o + 2) = es;
+            }
+        }
+    for (i = 0; i < n; i++)
+        wr8(es, di + i, vbe_buf[i]);
+}
+
 /* INT 10h: 1 = an das Video-BIOS geben */
 static int vga_want(struct v86_frame *f, int t)
 {
@@ -3274,6 +3384,10 @@ static int vga_want(struct v86_frame *f, int t)
         vga_wait(t);                            /* hinten gestartet: erst vorn */
         vga_allow(f, t);
         return 1;
+    }
+    if (AX == 0x4F00 || AX == 0x4F01) {         /* Info: ueber den Kernel */
+        vbe_box(f);
+        return 2;
     }
     return AH == 0x4F;                          /* VESA-Abfragen: BIOS   */
 }
@@ -6520,7 +6634,15 @@ static unsigned monitor(struct v86_frame *f, int t)
         return 0;
     case 0xE4: case 0xE5: case 0xEC: case 0xED: /* IN                    */
         p = op <= 0xE5 ? rd8(cs, ip++) : DX;
-        if (vbe_io(t, p)) {                     /* Bochs-VBE: vorn, Wort */
+        if (p >= 0xCF8 && p <= 0xCFF) {         /* PCI-Konfiguration     */
+            unsigned long pv = pci_pin(t, p);
+            if (!(op & 1))
+                AL = (unsigned char)pv;
+            else if (o32)
+                f->eax = pv;
+            else
+                AX = (unsigned)pv;
+        } else if (vbe_io(t, p)) {              /* Bochs-VBE: vorn, Wort */
             if (op & 1)
                 AX = k3_inw(p);
             else
@@ -6551,7 +6673,18 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0xE6: case 0xE7: case 0xEE: case 0xEF: /* OUT                   */
         p = op <= 0xE7 ? rd8(cs, ip++) : DX;
-        if (vbe_io(t, p)) {
+        if (p >= 0xCF8 && p <= 0xCFB) {         /* PCI-Adresse merken    */
+            if ((op & 1) && o32 && p == 0xCF8)
+                pci_cfg[t] = f->eax;
+            else {
+                unsigned sh = (p - 0xCF8) * 8, w = op & 1 ? 16 : 8;
+                unsigned long m = (w == 16 ? 0xFFFFUL : 0xFFUL) << sh;
+                pci_cfg[t] = (pci_cfg[t] & ~m) |
+                             (((unsigned long)(op & 1 ? AX : AL) << sh) & m);
+            }
+        } else if (p >= 0xCFC && p <= 0xCFF) {
+            ;                                   /* schreiben: verpufft   */
+        } else if (vbe_io(t, p)) {
             if (op & 1)
                 k3_outw(p, AX);
             else

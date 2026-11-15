@@ -491,7 +491,7 @@ static int raw_svout(int s)
     unsigned char __far *q;
     unsigned vm;
     pg_t pg;
-    unsigned np, n, ba, bb;
+    unsigned np, n, ba, bb, nost;
     struct vbox vb;
     scratch_map(base + RAW_REGS, 0xFFF);
     q = MK_FP(SCRATCH, 0);
@@ -499,6 +499,10 @@ static int raw_svout(int s)
     q[RAW_SVOK] = 0;
     if (!vm)
         return 0;
+    vesa_hw = 1;                            /* Text danach erst per BIOS 03h,
+                                               auch wenn das Sichern scheitert
+                                               (sonst bleiben die SVGA-
+                                               Register der Karte stehen) */
     q[RAW_KIND] = 0;                        /* hinten erst mit Sicherung */
     if (vesa_boxinfo(vm, &vb) || vb.bytes > 0x400000UL)
         return 0;
@@ -516,8 +520,11 @@ static int raw_svout(int s)
     }
     *(pg_t __far *)(q + RAW_SVPG) = pg;
     *(unsigned __far *)(q + RAW_SVN) = np;
-    if (!vesa_state(1, base + RAW_REGS + RAW_STATE))
-        return 0;
+    nost = !vesa_state(1, base + RAW_REGS + RAW_STATE);
+    scratch_map(base + RAW_REGS, 0xFFF);    /* ohne 4F04h (VBE 1.2, z. B.  */
+    q[RAW_SVNOST] = (unsigned char)nost;    /* Tseng): Modus stellt das    */
+    if (nost)                               /* BIOS, dazu nur die Palette  */
+        dac_io(0, 0, 256, q + 64);
     ba = vb.phys ? 0 : vesa_getbank(0);     /* Fenster der Box: hinten  */
     bb = vb.phys ? 0 : vb.split ? vesa_getbank(1) : ba;     /* weiter so */
     raw_svimg(&vb, PG_LIN(pg), 1);
@@ -555,7 +562,11 @@ static int raw_svin(int s)
     if (vesa_boxinfo(vm, &vb) || vesa_bios((vm & 0x7FFF) | 0x8000))
         return 0;
     raw_svimg(&vb, PG_LIN(pg), 0);
-    vesa_state(2, base + RAW_REGS + RAW_STATE);
+    scratch_map(base + RAW_REGS, 0xFFF);
+    if (q[RAW_SVNOST])                      /* ohne 4F04h: nur die Palette */
+        dac_io(1, 0, 256, q + 64);
+    else
+        vesa_state(2, base + RAW_REGS + RAW_STATE);
     if (!vb.phys) {                         /* Fenster, wie die Box es  */
         vesa_bank(ba, 0);                   /* zuletzt gestellt hat     */
         if (vb.split)
@@ -640,6 +651,11 @@ int __far gfx_in(void)
 {
     unsigned short w[8];
     if (vesa_hw && (fg < 0 || ses[fg].gfx != VESAGFX)) {
+        vesa_bank(0, 1);                    /* Fenster auf 0: Modus 03h setzt
+                                               das Segmentregister nicht immer
+                                               zurueck (ET4000 3CDh) - sonst
+                                               landet der Text in einer Bank */
+        vesa_cb = 0;
         vesa_bios(3);                       /* SVGA-Register ueber das BIOS */
         vesa_hw = 0;                        /* zuruecksetzen            */
         hw_gfx = 0xFF;

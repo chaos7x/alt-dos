@@ -40,6 +40,31 @@ static void rm_call(struct rmregs *r)
         ((unsigned short *)r)[i] = ((unsigned short __far *)p)[i];
 }
 
+/* fuer v86.c: VBE-Abfrage (4F00h/4F01h) einer Box ueber den Real Mode -
+   im V86-Modus scheitern sie bei BIOSen, die dabei ihre Erweiterungs-
+   register lesen (Cirrus GD54xx: die VGA-Ports der Box sind gesperrt).
+   sig = erste 4 Byte des Aufrufers ("VBE2"), Ergebnis 512 Byte nach out.
+   -> AX */
+unsigned __far vesa_boxq(unsigned ax, unsigned cx, unsigned long sig,
+                         unsigned char __far *out)
+{
+    struct rmregs r;
+    unsigned i;
+    scratch_map(RM_BUF, 511);
+    *(unsigned long __far *)MK_FP(SCRATCH, 0) = sig;
+    r.ax = ax;
+    r.bx = r.dx = r.si = r.bp = r.ds = r.flags = 0;
+    r.cx = cx;
+    r.es = (unsigned)(RM_BUF >> 4);
+    r.di = 0;
+    r.intno = 0x10;
+    rm_call(&r);
+    scratch_map(RM_BUF, 511);
+    for (i = 0; i < 512; i++)
+        out[i] = *(unsigned char __far *)MK_FP(SCRATCH, i);
+    return r.ax;
+}
+
 /* 16 x 16 -> 32 Bit ohne Laufzeitbibliothek */
 static unsigned long mul16(unsigned a, unsigned b);
 #pragma aux mul16 = "mul dx" __parm [__ax] [__dx] __value [__dx __ax] __modify [__ax __dx];

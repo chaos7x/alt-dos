@@ -3627,7 +3627,30 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `vga_ports` gibt auch 1D0h frei – SeaVGABIOS liest die Bank per Wort an
   1CFh zurück, das berührt 1D0h; gesperrt kam FFFFh, 4F05h scheiterte.
   Karten ohne 4F04h fallen auf die Standardregister zurück (wie vorher).
-  Echte Karten (S3, ET4000, Cirrus) nur in 86Box prüfbar.
+  In 86Box geprüft (15.11.2026, P3B-F lokal: S3 Trio64V+, ET4000/W32p,
+  Cirrus GD5434 PCI; BANKT per START, weg, VER, zurück – pixelgleich;
+  SVBG zeichnet hinten über alle Bänke weiter). Dabei drei Fehler
+  behoben: (1) Tseng-BIOS setzt VBE-Modi intern per `INT 10h AH=00h`
+  mit dem Chip-Modus (2Eh) – der verschachtelte Aufruf landete in
+  vga_allow und löschte RAW_VMODE, der Rückweg in den Text lief dann
+  ohne BIOS 03h über die Standardregister (Streifen statt Text, CMD
+  schrieb in den Bildspeicher der Box). Jetzt löscht AH=00h mit Modus
+  über 13h den Merker nicht, ohne VESA-Merker gilt er selbst als SVGA
+  (0x7F00|m: Text per BIOS 03h). raw_svout setzt vesa_hw schon, bevor
+  das Sichern scheitern kann; ohne 4F04h (Tseng VBE 1.2) sichert es das
+  Bild trotzdem, dazu nur die Palette (`RAW_SVNOST`, DAC bei +64), den
+  Modus stellt beim Zurückholen das BIOS; gfx_in stellt vor BIOS 03h
+  beide Fenster auf 0 (Segmentregister 3CDh bleibt sonst stehen).
+  (2) Cirrus: 4F00h/4F01h scheiterten in der Box (AX unverändert) – das
+  BIOS liest dabei seine Erweiterungsregister, die VGA-Ports der Box
+  sind außerhalb des Rohbetriebs gesperrt. Jetzt beantwortet der Kernel
+  sie über seinen Real-Mode-Weg (`vesa_boxq` in vesa.c, `vbe_box` in
+  v86.c, 512/256 Byte in den Puffer der Box, VBE-2.0-Zeiger auf
+  0700h:xxxx umgerechnet). (3) Dazu für PCI-Video-BIOSe: INT 1Ah B1xxh
+  lesend (`pci_svc`: 01 da, 02 Gerät, 03 Klasse, 08–0A lesen, 0B–0D
+  schreiben nur bestätigt) und CF8h/CFCh lesend (`pci_cfg`/`pci_pin`)
+  über die Busdienste. Die ISA-GD5434 von 86Box bleibt auf dem P3B-F im
+  Video-BIOS hängen (86Box-Kombination, nicht AT-DOS).
   Entscheidung des Nutzers (Start von DOS-Programmen aus CMD.EXE):
   **wie NT in derselben Sitzung** – DOS-`.EXE`/`.COM`/`.BAT` und
   `COMMAND.COM` laufen synchron in einer Box (Vollbild, danach zurück zum
