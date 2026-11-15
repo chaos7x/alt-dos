@@ -2759,6 +2759,43 @@ int __far ifs_space(int drive, unsigned long *free_bytes)
     return vol[drive].drv->space(drive, free_bytes);
 }
 
+/* Loop-Laufwerke (loop.c): Plattenbereiche einer offenen Datei als Folge
+   (Stelle in der Datei, Sektor auf dem Blockgeraet), je 8 Byte nach
+   sel:off, in 512-Byte-Einheiten. Benachbarte Cluster werden zusammen-
+   gefasst. Hoechstens max Eintraege, gezaehlt wird weiter -> Anzahl, -1
+   Fehler (kein FAT, kaputte Kette). Nur FAT - CDs (ISO9660.IFS) liegen
+   ohnehin am Stueck, die rechnet loop.c selbst. */
+int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max)
+{
+    int d = f->drive;
+    struct volume *v = &vol[d];
+    unsigned long need, u = 0, lba, nl = 0;
+    unsigned n = 0, k;
+    clus_t c;
+
+    VLOCK(d);
+    if (!VOL_OK(d) || v->drv != &fat_driver)
+        return -1;
+    need = (f->size + 511) >> 9;
+    for (c = f->first; u < need; c = next_cluster(d, c)) {
+        if (!valid(v, c))
+            return -1;
+        lba = clus_lba(v, c);
+        if (!n || lba != nl) {          /* neuer Bereich                 */
+            if (n < max) {
+                k = off + n * 8;
+                *(unsigned long __far *)MK_FP(sel, k) = u;
+                *(unsigned long __far *)MK_FP(sel, k + 4) = lba;
+            }
+            if (n < 0x7FFF)
+                n++;
+        }
+        u += v->spc;
+        nl = lba + v->spc;
+    }
+    return (int)n;
+}
+
 /* Laufwerk from nach to verschieben, die dazwischen rutschen eins nach
    hinten (from > to). Nur beim Start, solange keine Datei offen ist. */
 void __far vol_move(int from, int to)

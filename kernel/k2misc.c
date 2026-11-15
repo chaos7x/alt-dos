@@ -5,6 +5,31 @@
  */
 #include "../include/fapi_abi.h"
 #include "k2.h"
+#include "ifs.h"
+
+void __far kf_vio_kputs(int s, const char *str);
+const char * __far kf_drv_name(int d);
+
+static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
+{
+    char t[6];
+    int i = 0, j = 0;
+    do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (i)
+        b[j++] = t[--i];
+    b[j] = 0;
+}
+
+static void scopy(char *d, const char *s, int max)
+{
+    int i;
+    for (i = 0; i < max - 1 && s[i]; i++)
+        d[i] = s[i];
+    d[i] = 0;
+}
+
+/* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move;
+   aus kernel.c, dort war das erste Codesegment voll) */
 
 extern unsigned short mem_conv_kb, mem_ext_kb;   /* start.asm, Real Mode  */
 extern unsigned char cpu_386, bios_date[9], bios_model, vga_ok;
@@ -149,5 +174,87 @@ void __far rom_str(unsigned long lin, unsigned len, char __far *out, unsigned ma
     for (i = 0; i < best; i++)
         out[i] = p[bs + i];
     out[i] = 0;
+}
+
+
+static const char *fd_name(unsigned blocks)
+{
+    return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
+           blocks == 5760 ? "2,88 MB" : "1,44 MB";
+}
+
+void __far list_drives(int fd_ok, int boot_session)
+{
+    static char msg[80];
+    static const unsigned tsize[6] = { 0, 720, 2400, 1440, 2880, 5760 };
+    int d, n;
+    struct blkdev *b;
+
+    for (d = (boot_drive & 0x80) ? 0 : 1; d < 2; d++)
+        if (fd_ok && fd_type(d)) {          /* Diskettenlaufwerke         */
+            kf_vio_kputs(boot_session, d ? "\xFE Laufwerk B: Diskette " : "\xFE Laufwerk A: Diskette ");
+            kf_vio_kputs(boot_session, fd_name(tsize[fd_type(d)]));
+            kf_vio_kputs(boot_session, "\n");
+        }
+
+    for (d = 2; d < NDRIVE; d++) {
+        if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
+            continue;
+        b = &blk[vol[d].blk];
+        msg[0] = (char)('A' + d);
+        scopy(msg + 1, ": ", sizeof(msg) - 1);
+        n = 3;
+        if (vol[d].drv == &mod_driver) {
+            scopy(msg + n, "CD-ROM", sizeof(msg) - n);
+        } else if (b->rem && !vol[d].used) {    /* eingehaengt bei Bedarf */
+            scopy(msg + n, b->blocks ? "Wechselplatte, " : "Wechselplatte, kein Medium",
+                  sizeof(msg) - n);
+            if (b->blocks) {
+                while (msg[n])
+                    n++;
+                udec((unsigned)(b->blocks >> 11), msg + n);
+                while (msg[n])
+                    n++;
+                scopy(msg + n, " MB", sizeof(msg) - n);
+            }
+        } else {
+            if (vol[d].part >= 5) {     /* in der erweiterten Partition */
+                scopy(msg + n, "logisch ", sizeof(msg) - n);
+                n += 8;
+                udec(vol[d].part - 4, msg + n);
+                while (msg[n])
+                    n++;
+            } else {
+                scopy(msg + n, "Partition ", sizeof(msg) - n);
+                n += 10;
+                msg[n++] = (char)('0' + vol[d].part);
+            }
+            scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
+                           vol[d].fat16 == 2 ? ", FAT32, " : vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
+            while (msg[n])
+                n++;
+            udec((unsigned)(vol[d].psize >> 11), msg + n);
+            while (msg[n])
+                n++;
+            scopy(msg + n, " MB", sizeof(msg) - n);
+        }
+        while (msg[n])
+            n++;
+        if (b->drv >= 0) {
+            scopy(msg + n, "  (", sizeof(msg) - n);
+            n += 3;
+            scopy(msg + n, kf_drv_name(b->drv), sizeof(msg) - n);
+            while (msg[n])
+                n++;
+            scopy(msg + n, ", Einheit ", sizeof(msg) - n);
+            n += 10;
+            msg[n++] = (char)('0' + b->unit);
+            msg[n++] = ')';
+        }
+        msg[n++] = '\n';
+        msg[n] = 0;
+        kf_vio_kputs(boot_session, "\xFE Laufwerk ");
+        kf_vio_kputs(boot_session, msg);
+    }
 }
 

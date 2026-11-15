@@ -1474,6 +1474,45 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Daten trennen**: `docs/SYSTEM-DATEN.md` (Variablen, MOUNT wie /home,
   Netzlaufwerk). Noch kein Code.
 
+- **Loop-Laufwerke Stufe 1 erledigt** (6.1, nur lesend; in QEMU geprüft:
+  ISO in 1-KB-Lücken auf FAT16 zerstückelt (6 Stücke, 2048er-Blöcke über
+  Stückgrenzen), Diskettenabbild in 3 Stücken, feste VHD mit Partitions-
+  tabelle, IMG und ISO auf einer CD (ISO im ISO); DIR/TYPE/COPY, Inhalte
+  gleich (md5), Schreiben -> „schreibgeschützt“, DEL/REN der Datei ->
+  „wird benutzt“, Aushängen mit aktuellem Laufwerk abgelehnt, DOS-Box
+  (`command /c dir e:\sub`), CHKDSK des Abbilds, MEM nach Ein-/Aushängen
+  gleich, SHUTDOWN mit eingehängten Abbildern, fsck sauber; isapc 4 MB):
+  `kernel/loop.c` (KTEXT2) – je Loop ein Kernelsegment mit Kopf (`struct
+  lhdr`) und Stücken zu 8 Byte (Stelle in der Datei, Sektor des Trägers,
+  in 512er-Einheiten; binäre Suche, letzter Treffer gemerkt). `loop_read`
+  liest über `blk_read`/`blk_read_n` des Trägers (also über seinen Cache,
+  vorausgelesen bis Stückende), 2048er-Blöcke von hinten Sektor für Sektor
+  nach DMABUF (über Stückgrenzen), Träger-CD: Block holen und Teil nach
+  vorn. blk[].drv = `DRV_LOOP` (-2, `IS_FLOPPY` ist jetzt `== -1`),
+  unit = Platz; blk_read_n verzweigt vor dem Cache (das Loop-Gerät wird
+  nicht gecacht), blk_write -> schreibgeschützt, disk_blk zählt Loops
+  nicht (FDISK). fat.c `ifs_bmap` (fern, statt eines Eintrags in `struct
+  ifs_driver` – spart DGROUP): Kette einmal ablaufen, benachbarte Cluster
+  zusammen; ISO9660.IFS braucht keinen Aufruf (eine Datei = ein Stück ab
+  `fsdata`). Erkennung in loop_attach: „CD001“ bei 8000h -> ISO (2048),
+  „conectix“ in den letzten 512 Byte -> feste VHD (Typ 2, Fußteil weg),
+  am Anfang -> dynamisch (abgelehnt), sonst BPB in Sektor 0 -> ganzes
+  Gerät (`mount_one`), Partitionstabelle -> `mount_disk`. Nutzbar sind
+  nur ganze Blöcke (Größe abgerundet – kein Lesen hinter dem Dateiende).
+  Bindeglied kernel.c `loop_glue` (FAPI 59h `FAPI_LOOP`, LOOP_ATTACH/
+  DETACH/INFO, mit Kernelsperre): Datei über einen Eintrag der Datei-
+  tabelle offen (owner -1, gehört dem Kernel; damit greift `in_use` für
+  DEL/REN/OPEN_RW), Buchstabe über next_drive/nd_free, Aushängen prüft
+  `drives_busy` (aus drv_unload herausgelöst) und ruft vol_drop.
+  `FAPI_ERR_FRAG` (FFF8h) für über 8.188 Stücke. `NBLK` 8 -> 12, `NLOOP`
+  4, `loop_sel[]` in DGROUP. `LOOP.EXE` (nur auf der Platte, `mount`/
+  `umount` in LINUX.MAC). Platz: `list_drives` nach k2misc.c (erstes
+  Codesegment 64.897 Byte, DGROUP 65.264). Die Diskette war danach voll
+  (ATSYS.COM fehlte!) – AWELOAD nur noch auf der Platte (`HDDOS`), 6,6 KB
+  frei. Grenzen: Medienwechsel am Träger (Abbild auf CD/ZIP) erkennt das
+  Loop-Gerät nicht (liest dann Falsches/Fehler) – aushängen vor dem
+  Wechsel. Nächste Stufe: Schreiben (`blk_read_to/blk_write_from`), `LOOP=`.
+
 - **Loop-Laufwerke und DriveSpace** (Konzept 15.11.2026, Version 6.1):
   `docs/LOOP-DBLSPACE.md` – Datei als Blockgerät (ISO, IMG, VHD), zuerst
   über eine Extent-Liste, darauf DBLSPACE.SYS im DriveSpace-6.x-Format.

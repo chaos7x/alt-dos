@@ -2665,7 +2665,7 @@ static int disk_blk(unsigned n)
 {
     int dev;
     for (dev = 1; dev < nblk; dev++)
-        if (blk[dev].bsize == 512 && !IS_FLOPPY(dev) && n-- == 0)   /* B: nicht */
+        if (blk[dev].bsize == 512 && blk[dev].drv >= 0 && n-- == 0)  /* B:, Loop nicht */
             return dev;
     return -1;
 }
@@ -3072,6 +3072,7 @@ static union {
 #define canon fi_canon
 #define de fi_de
 static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
+static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3)
 {
@@ -3739,6 +3740,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return cp_set(a1) ? FAPI_ERROR : 0;
     case FAPI_DRIVER:                           /* DEVLOAD               */
         return drv_fapi(usel, a1, a2, a3);
+
+    case FAPI_LOOP:                             /* Datei als Laufwerk    */
+        return loop_glue(usel, a1, a2, a3);
 
     case FAPI_EJECT: {                          /* Medium auswerfen      */
         int dev, st;
@@ -5199,6 +5203,13 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
     if (lba >= b->blocks)
         return -1;
     lc_dev = -1;
+    if (b->drv == DRV_LOOP) {           /* Loop: liest ueber den Traeger */
+        if (loop_read(dev, lba))
+            return -1;
+        lc_dev = dev;
+        lc_lba = lba;
+        return 0;
+    }
     s = (unsigned)lba & 3;
     if (bc_n && b->bsize == 512 && (i = bc_lookup(dev, lba & ~3UL)) != BC_END &&
         (BCE(i)->valid & (1 << s))) {
@@ -5257,8 +5268,8 @@ int blk_write(int dev, unsigned long lba)
     lc_dev = -1;
     if (dev < 0 || dev >= nblk || lba >= b->blocks)
         return -1;
-    if (b->bsize != 512)
-        return -2;                      /* CD-ROM                     */
+    if (b->bsize != 512 || b->drv == DRV_LOOP)
+        return -2;                      /* CD-ROM, Loop (Stufe 1)     */
     if (bc_n && bc_writeback(dev)) {    /* verzoegert                 */
         i = bc_put(dev, lba, 0, 0);
         if (i != BC_END) {
@@ -6436,18 +6447,16 @@ static int drv_byname(const char *p)
 
 /* entladen: nichts darf mehr auf seinen Laufwerken stehen; der Treiber
    haelt die Hardware an (DRV_DEINIT), den Rest raeumt der Kernel auf */
-static unsigned drv_unload(int d)
+/* Laufwerke m (Bitmaske) abmelden duerfen? Treiber d (-1: Loop) -> 0 */
+static unsigned drives_busy(unsigned long m, int d)
 {
-    unsigned long m = drv_mask(d);
-    int x, k, mi = drv_ifs(d);
-    unsigned f;
-
+    int x, k;
     if (m & (1UL << sys_drive))
         return FAPI_ERR_DENIED;
     for (k = 1; k < NFILE; k++)
         if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
             (files[k].kind == OF_DASD && files[k].f.attr == DASD_DISK
-                 ? blk[files[k].f.drive].drv == d && mi < 0
+                 ? d >= 0 && blk[files[k].f.drive].drv == d
                  : (m >> files[k].f.drive) & 1))
             return FAPI_ERR_INUSE;
     for (k = 0; k < NTASK; k++)
@@ -6457,6 +6466,17 @@ static unsigned drv_unload(int d)
         if ((subst_drv[x] >= 0 && ((m >> subst_drv[x]) & 1)) ||
             (join_drv[x] >= 0 && (((m >> join_drv[x]) & 1) || ((m >> x) & 1))))
             return FAPI_ERR_INUSE;
+    return 0;
+}
+
+static unsigned drv_unload(int d)
+{
+    unsigned long m = drv_mask(d);
+    int x, k, mi = drv_ifs(d);
+    unsigned f;
+
+    if ((f = drives_busy(m, mi < 0 ? d : -1)) != 0)
+        return f;
     if (aud_drv == d)
         for (k = 0; k < NFM; k++)       /* NAUD == NFM                   */
             if (aud[k].task >= 0 || fmc[k].task >= 0 || mdc[k].task >= 0)
@@ -6525,6 +6545,105 @@ static unsigned drv_unload(int d)
     gdt[DRVC_IDX(d) + 1].access = 0;
     drv[d].used = 0;
     return 0;
+}
+
+/* ---- Loop-Laufwerke (FAPI 59h): Bindeglied zu loop.c ------------------ */
+static unsigned long loop_mask(int dev)
+{
+    unsigned long m = 0;
+    int x;
+    for (x = 2; x < NDRIVE; x++)
+        if ((vol[x].used || vol[x].present) && vol[x].blk == dev)
+            m |= 1UL << x;
+    return m;
+}
+
+static void loop_undo(int dev, unsigned long m)
+{
+    int x, k;
+    for (x = 2; x < NDRIVE; x++)
+        if ((m >> x) & 1)
+            vol_drop(x);
+    lc_dev = -1;
+    if (dev >= 0 && (k = loop_drop(dev)) >= 0)
+        of_release(k);
+    if (loop_free) {
+        mem_free(desc_base(&gdt[loop_free >> 3]) >> 12,
+                 PAGES(sel_limit(loop_free) + 1UL));
+        gdt[loop_free >> 3].access = 0;
+        loop_free = 0;
+    }
+}
+
+static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
+{
+    struct fapi_loopinfo __far *li;
+    unsigned long m;
+    int d, k, dev, old;
+    unsigned r;
+
+    if (a1 == LOOP_INFO) {
+        li = MK_FP(usel, a3);
+        if (!user_ok(usel, a3, sizeof(*li), 1) || (k = loop_info(a2, li)) == -2)
+            return FAPI_ERROR;
+        li->path[0] = 0;
+        if (k >= 0) {
+            li->cdrive = files[k].f.drive;
+            far_copy(usel, FP_OFF(li->path), FP_SEG(files), FP_OFF(files[k].path),
+                     IFS_PATHLEN);
+        }
+        return 0;
+    }
+    if (a1 == LOOP_DETACH) {
+        if (a2 >= NDRIVE || !vol_present(a2) || blk[dev = vol[a2].blk].drv != DRV_LOOP)
+            return FAPI_ERROR;
+        m = loop_mask(dev);
+        if ((r = drives_busy(m, -1)) != 0)
+            return r == FAPI_ERR_DENIED ? FAPI_ERR_INUSE : r;
+        loop_undo(dev, m);
+        return 0;
+    }
+    if (a1 != LOOP_ATTACH || user_str(usel, a2, fi_buf, FAPI_PATHLEN) ||
+        resolve(current, fi_buf, &d, fi_canon) || dev_name(fi_canon))
+        return FAPI_ERROR;
+    if (open_for_write(d, fi_canon))
+        return FAPI_ERR_INUSE;
+    if ((k = of_alloc()) < 0)
+        return FAPI_ERR_FULL;
+    files[k].owner = -1;                /* gehoert dem Kernel, nicht dem Task */
+    if (ifs_open(d, fi_canon, &files[k].f)) {
+        files[k].refs = 0;
+        return FAPI_ERROR;
+    }
+    far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)fi_canon, IFS_PATHLEN);
+    if ((dev = loop_attach(k, &files[k].f, d)) < 0) {
+        of_release(k);
+        if (loop_free)
+            loop_undo(-1, 0);
+        return (unsigned)dev;
+    }
+    old = next_drive;
+    next_drive = a3 >= 2 && a3 < NDRIVE ? a3 : 2;
+    r = FAPI_ERR_EXIST;
+    if (nd_free() && (!a3 || next_drive == (int)a3)) {
+        r = FAPI_ERR_NOTREADY;
+        if (blk[dev].bsize == 2048)
+            cd_drives();
+        else if (blk_read(dev, 0) == 0) {
+            unsigned char __far *b = MK_FP(DMABUF, 0);
+            if ((b[0] == 0xEB || b[0] == 0xE9) && rd16(DMABUF, 11) == 512)
+                mount_one(dev, 0, blk[dev].blocks, 0, 0);   /* Diskette, Partition */
+            else
+                mount_disk(dev);        /* Platte mit Partitionstabelle  */
+        }
+    }
+    next_drive = old;
+    m = loop_mask(dev);
+    for (d = 2; d < NDRIVE; d++)
+        if (((m >> d) & 1) && vol[d].used)
+            return d;
+    loop_undo(dev, m);
+    return r;
 }
 
 static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
@@ -6820,80 +6939,8 @@ static const char *fd_name(unsigned blocks)
            blocks == 5760 ? "2,88 MB" : "1,44 MB";
 }
 
-static void list_drives(void)
-{
-    static char msg[80];
-    static const unsigned tsize[6] = { 0, 720, 2400, 1440, 2880, 5760 };
-    int d, n;
-    struct blkdev *b;
-
-    for (d = (boot_drive & 0x80) ? 0 : 1; d < 2; d++)
-        if (fd_ok && fd_type(d)) {          /* Diskettenlaufwerke         */
-            vio_kputs(boot_session, d ? "\xFE Laufwerk B: Diskette " : "\xFE Laufwerk A: Diskette ");
-            vio_kputs(boot_session, fd_name(tsize[fd_type(d)]));
-            vio_kputs(boot_session, "\n");
-        }
-
-    for (d = 2; d < NDRIVE; d++) {
-        if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
-            continue;
-        b = &blk[vol[d].blk];
-        msg[0] = (char)('A' + d);
-        scopy(msg + 1, ": ", sizeof(msg) - 1);
-        n = 3;
-        if (vol[d].drv == &mod_driver) {
-            scopy(msg + n, "CD-ROM", sizeof(msg) - n);
-        } else if (b->rem && !vol[d].used) {    /* eingehaengt bei Bedarf */
-            scopy(msg + n, b->blocks ? "Wechselplatte, " : "Wechselplatte, kein Medium",
-                  sizeof(msg) - n);
-            if (b->blocks) {
-                while (msg[n])
-                    n++;
-                udec((unsigned)(b->blocks >> 11), msg + n);
-                while (msg[n])
-                    n++;
-                scopy(msg + n, " MB", sizeof(msg) - n);
-            }
-        } else {
-            if (vol[d].part >= 5) {     /* in der erweiterten Partition */
-                scopy(msg + n, "logisch ", sizeof(msg) - n);
-                n += 8;
-                udec(vol[d].part - 4, msg + n);
-                while (msg[n])
-                    n++;
-            } else {
-                scopy(msg + n, "Partition ", sizeof(msg) - n);
-                n += 10;
-                msg[n++] = (char)('0' + vol[d].part);
-            }
-            scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
-                           vol[d].fat16 == 2 ? ", FAT32, " : vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
-            while (msg[n])
-                n++;
-            udec((unsigned)(vol[d].psize >> 11), msg + n);
-            while (msg[n])
-                n++;
-            scopy(msg + n, " MB", sizeof(msg) - n);
-        }
-        while (msg[n])
-            n++;
-        if (b->drv >= 0) {
-            scopy(msg + n, "  (", sizeof(msg) - n);
-            n += 3;
-            scopy(msg + n, drv[b->drv].name, sizeof(msg) - n);
-            while (msg[n])
-                n++;
-            scopy(msg + n, ", Einheit ", sizeof(msg) - n);
-            n += 10;
-            msg[n++] = (char)('0' + b->unit);
-            msg[n++] = ')';
-        }
-        msg[n++] = '\n';
-        msg[n] = 0;
-        vio_kputs(boot_session, "\xFE Laufwerk ");
-        vio_kputs(boot_session, msg);
-    }
-}
+void __far list_drives(int fdok, int bs);    /* k2misc.c */
+const char * __far kf_drv_name(int d) { return drv_name(d); }
 
 void kmain(void)
 {
@@ -7036,7 +7083,7 @@ void kmain(void)
        (DMABUF/FAT-Cache ohne eigene Seite), 9000h-AFFFh (Bitmap) */
     mem_free(0x1, 5);
     mem_free(0xB, 5);
-    list_drives();
+    list_drives(fd_ok, boot_session);
     if (cache_kb == 0xFFFF) {           /* ohne CACHE=: nach Speicher    */
         cache_kb = mem_ext_kb >= 4096 ? 1024 : mem_ext_kb >= 1536 ? 256 :
                    mem_ext_kb >= 512 ? 128 : 32;

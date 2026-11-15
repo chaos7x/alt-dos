@@ -118,5 +118,10 @@ int __far ifs_mkdir(int drive, const char *path);
 int __far ifs_rmdir(int drive, const char *path);
 int __far ifs_move(int drive, const char *from, const char *to);
 int __far ifs_space(int drive, unsigned long *free_bytes);
+struct fapi_loopinfo;
+int __far loop_attach(int fk, struct ifs_file __far *f, int d);   /* loop.c */
+int __far loop_info(unsigned i, struct fapi_loopinfo __far *li);
+/* Plattenbereiche einer Datei fuer Loop-Laufwerke -> Anzahl, -1 */
+int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max);
 
 #endif

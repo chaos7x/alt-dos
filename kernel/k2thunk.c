@@ -29,6 +29,7 @@ void __far kf_ldt_set(int t, unsigned sel, unsigned long b, unsigned l) { ldt_se
 void __far kf_ldt_drop(int t, unsigned sel) { ldt_drop(t, sel); }
 void __far kf_redraw(void) { redraw(); }
 void __far kf_vio_flush(void) { vio_flush(); }
+void __far kf_vio_kputs(int s, const char *str) { vio_kputs(s, str); }
 
 /* v86.c */
 int __far kf_box_ctl(unsigned op, unsigned a) { return box_ctl(op, a); }

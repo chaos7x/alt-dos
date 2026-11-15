@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 # Plan: Loop-Laufwerke und Plattenkomprimierung (6.1)
 
-Stand: 15.11.2026, Konzept mit dem Nutzer besprochen. Nur Plan – noch
-kein Code. Siehe auch [BIGLOCK.md](BIGLOCK.md).
+Stand: 15.11.2026, Konzept mit dem Nutzer besprochen. Stufe 1 (Loop
+lesend) gebaut, siehe CLAUDE.md; der Rest ist Plan. Siehe auch [BIGLOCK.md](BIGLOCK.md).
 
 ## Kurzfassung
 
@@ -146,8 +146,11 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
 
 ## Stufen
 
-1. Loop lesend: Backend-Schnittstelle, NBLK/blk[] ins Kernelsegment,
-   `bmap` (fat.c, ISO9660.IFS), DRV_LOOP, LOOP.EXE, FAPI 59h.
+1. Loop lesend – **erledigt** (15.11.2026): `bmap` als `ifs_bmap` in fat.c
+   (ISO braucht keinen Aufruf), DRV_LOOP, LOOP.EXE, FAPI 59h; `blk[]`
+   blieb in DGROUP (NBLK 12), Platz kam aus `list_drives` -> KTEXT2.
+   Offene Punkte 1, 3 und 4 unten sind damit erledigt, 2 nur teilweise
+   (Medienwechsel am Träger nicht erkannt).
 2. Loop schreibend + Platten/VHD, `blk_read_to/blk_write_from`, `LOOP=`.
 3. MSCDEX in der DOS-Box.
 4. DBLSPACE.SYS lesend.

@@ -61,6 +61,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosEject(d)         fapi_call(FAPI_EJECT, (d), 0, 0)
 #define DosLoadDriver(l, f) fapi_call(FAPI_DRIVER, DRVL_LOAD, (unsigned short)(l), (f))
 #define DosUnloadDriver(n)  fapi_call(FAPI_DRIVER, DRVL_UNLOAD, (unsigned short)(n), 0)
+#define DosLoop(w, a, b)    fapi_call(FAPI_LOOP, (w), (unsigned short)(a), (unsigned short)(b))   /* LOOP_*, struct fapi_loopinfo */
 #define DosDrvInfo(i, p)    fapi_call(FAPI_DRIVER, DRVL_INFO, (i), (unsigned short)(p))   /* struct fapi_drvinfo */
 #define DosGetCp()          fapi_call(FAPI_CODEPAGE, 0, 0, 0)
 #define DosCpList(i)        fapi_call(FAPI_CODEPAGE, 0xFFFF, (i), 0)

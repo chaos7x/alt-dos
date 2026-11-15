@@ -184,9 +184,11 @@ unsigned proc_run(unsigned long id);
 #define SLEEP_EVENT 0xFF0000UL          /* niemand weckt: nur Frist      */
 
 /* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
-#define NBLK        8
+#define NBLK        12
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
-#define IS_FLOPPY(dev) (blk[dev].drv < 0)   /* B: ist Geraet 1, wenn da   */
+#define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
+#define DRV_LOOP    (-2)            /* Loop-Laufwerk (loop.c), unit = Platz */
+#define NLOOP       4
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;
@@ -198,6 +200,10 @@ struct blkdev {
 #define IS_REM(dev) (blk[dev].rem)
 extern struct blkdev blk[NBLK];
 extern int nblk;
+/* Loop-Laufwerke (loop.c, KTEXT2) */
+extern unsigned loop_sel[NLOOP], loop_free;
+int __far loop_read(int dev, unsigned long lba);
+int __far loop_drop(int dev);           /* loop_attach/loop_info: ifs.h */
 void vol_lock(int d);                       /* Phase 6: Laufwerkssperre */
 int  blk_read(int dev, unsigned long lba);  /* -> DMABUF, 0 = ok         */
 int  blk_read_n(int dev, unsigned long lba, unsigned n);  /* dazu n-1 voraus */
