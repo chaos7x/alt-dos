@@ -1287,7 +1287,8 @@ AWE32 „OPL2“ (behoben, s. AWE). Tippen (Vorschlag des Nutzers): zuerst
 `keyb us` (über typ.py mit deutscher Zuordnung: y/z vertauscht), danach
 `xdotool type` direkt – alle Zeichen inkl. \ | * " kommen richtig an.
 
-Obergrenze in 86Box (cfg vom Nutzer, 15.11.2026): ASUS P3B-F (`p3bf`),
+Obergrenze in 86Box (Konfiguration: `86box/p3bf.cfg`, vom Nutzer,
+15.11.2026): ASUS P3B-F (`p3bf`),
 Pentium II Deschutes 233 MHz, Dynarec, 256 MB, PS/2-Tastatur und -Maus,
 S3 Trio3D/2X AGP (8 MB), Sound Blaster AWE32 (28 MB Karten-RAM),
 Adaptec AHA-2944UW: ID 0 `atdos-hd.img` (130/16/63), ID 1 Spiele.vhd
