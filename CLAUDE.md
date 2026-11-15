@@ -211,12 +211,32 @@ Dabei gefunden: CONFIG.SYS über 512 Byte wurde ganz übergangen
 `v5.1`; der Tag `v5.1` zeigt noch auf b7a9c89 – die CI hat beim Erneuern
 des Releases den alten Tag stehen lassen); `5.2` = das freigegebene 5.2
 (Entscheidung des Nutzers, 14.11.2026; ein Push auf `5.2` erzeugt per CI
-das fertige Release `v5.2`); `5.x` = Weiterarbeit nach 5.2, Fehler-
-behebungen werden 5.2.1 (dann Titel/VER/FAPI_VERSION anheben), die CI
-veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
+das fertige Release `v5.2`); `5.3` = das freigegebene 5.3 (Entscheidung
+des Nutzers, 15.11.2026, ein Push auf `5.3` erzeugt das Release `v5.3`,
+jetzt „neueste“); `5.x` = Weiterarbeit nach 5.3, Fehlerbehebungen werden
+5.3.1 (dann Titel/VER/FAPI_VERSION anheben), die CI veröffentlicht die
+Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.2 fertig (Zweig 5.2), Weiterarbeit in 5.x; 5.1 im Zweig 5.1, 5.0 im Zweig 5.0
+## Aktueller Stand: AT-DOS 5.3 fertig (Zweig 5.3), Weiterarbeit in 5.x; 5.2/5.1/5.0 in ihren Zweigen
+
+5.3 (Entscheidung des Nutzers, 15.11.2026: „Tools sind ja hinzu-
+gekommen“): 5.2 plus aus 6.0 die Packprogramme GZIP/GUNZIP, TAR, ZIP/
+UNZIP, UNARJ/UNZOO/UNLHA, LHA/ARJ/ZOO, 7ZDEC/7ZA (Quellen wörtlich von
+main: flate.c, arcutil.c, lzh.c, lzhenc.c, lzpack.c, unarc.c, lzma.c,
+lzmaenc.c, bcj.c), CAT, `\DOS\LINUX.MAC` (Beispiel in AUTOEXEC.CMD), der
+Lesemerker in fat_readdir (DIR großer Verzeichnisse, 962fe91) und die
+Musterteilung am letzten Punkt (util.c, CMD, GREP). Packer nur auf
+atdos-hd.img (`HDDOS`), gebunden + LFN wie auf main. Grenze: 16 LDT-
+Einträge je Task (14 frei) – 7ZDEC entpackt große Wörterbücher über die
+Zwischendatei, 7ZA bleibt bei 128 KB Wörterbuch (lme_open halbiert, bis
+es passt). Titel/VER „5.3“, FAPI_VERSION 051Eh. In QEMU geprüft: 7ZA
+-mx=9 (7-Zip „Everything is Ok“), 7ZDEC x eines 7-Zip-Archivs mit 4-MB-
+Wörterbuch über die Zwischendatei (Inhalte gleich), gzip -k (zcat
+gleich), TAR czf (GNU tar liest es), ZIP + UNZIP -t (Info-ZIP fehler-
+frei), LHA/ARJ/ZOO a + UN* t (lhasa und arj t sauber), CAT -n gleich GNU
+cat, DIR \DOS vollständig, fsck sauber.
+
 
 5.2 (Entscheidung des Nutzers, 13.11.2026, nach Phase 6 auf main): aus
 6.0 zurück kommen Kleinkram (CMD-Umleitung mit "...", MSD, OPL3-

@@ -321,9 +321,11 @@ static unsigned lc_dir, lc_n, lc_clus;
 static unsigned long de_lba;            /* Sektor des letzten dir_entry()  */
 
 static void ea_forget(int d);
+static signed char rd_drive;
 static void dir_cache_reset(void)
 {
     int d;
+    rd_drive = -1;
     lc_drive = -1;
     for (d = 0; d < NDRIVE; d++)        /* EA-Datei/Namen neu lesen       */
         ea_forget(d);
@@ -851,18 +853,35 @@ static int __far fat_isdir(int d, const char *path)
     return walk(d, path, &f) == 0 && (f.attr & ATTR_DIR);
 }
 
+/* Lesemerker: Programme lesen Verzeichnisse Eintrag fuer Eintrag (want =
+   0, 1, 2 ...), der Redirector der DOS-Box fragt dazu jedesmal want - 1
+   nach. Ohne Merker lief jede Abfrage ab Eintrag 0 - DIR ueber n Dateien
+   kostete n*n/2 Eintraege (vom Nutzer gemeldet: altes Windows-Verzeichnis
+   in der Box auf dem 386 sehr langsam). rd_i0 = Rohindex, ab dem Eintrag
+   rd_want gesucht wurde, rd_i1 = Rohindex hinter ihm. Jede Aenderung
+   (MARK) und dir_cache_reset vergessen ihn. */
+static signed char rd_drive = -1;
+static unsigned rd_dir;
+static unsigned rd_want, rd_i0, rd_i1;
+
 static int __far fat_readdir(int d, const char *dir, unsigned want, struct ifs_dirent *de)
 {
     struct found f;
     unsigned char __far *e;
-    unsigned i, k, n = 0;
+    unsigned i = 0, k, n = 0, i0;
 
     if ((want == 0 && revalidate(d)) || walk(d, dir, &f) || !(f.attr & ATTR_DIR))
         return -1;
     lfn_have = 0;
     if (!vol[d].vfat)
         ea_load(d, f.first);
-    for (i = 0; (e = dir_entry(d, f.first, i)) != 0; i++) {
+    if (rd_drive == d && rd_dir == f.first && want) {
+        if (want == rd_want)
+            i = rd_i0, n = want;
+        else if (want == rd_want + 1)
+            i = rd_i1, n = want;
+    }
+    for (i0 = i; (e = dir_entry(d, f.first, i)) != 0; i++) {
         if (e[0] == 0)
             return -1;
         if (lfn_feed(e))
@@ -873,8 +892,14 @@ static int __far fat_readdir(int d, const char *dir, unsigned want, struct ifs_d
         }
         if (n++ != want) {
             lfn_have = 0;
+            i0 = i + 1;
             continue;
         }
+        rd_drive = (signed char)d;
+        rd_dir = f.first;
+        rd_want = want;
+        rd_i0 = i0;
+        rd_i1 = i + 1;
         name83(e, de->sname);
         if (lfn_valid(e)) {             /* langer Name                  */
             for (k = 0; lfn[k] && k < IFS_NAMELEN - 1; k++)
@@ -2335,7 +2360,7 @@ void __far ifs_shutdown(void)
         }
 }
 
-#define MARK(d) do { if (VOL_OK(d)) mark_in_use(d); } while (0)
+#define MARK(d) do { rd_drive = -1; if (VOL_OK(d)) mark_in_use(d); } while (0)
 
 int __far ifs_create(int drive, const char *path, struct ifs_file __far *f)
 {

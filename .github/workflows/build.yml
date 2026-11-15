@@ -61,8 +61,8 @@ jobs:
           gh release delete v5.x --yes --cleanup-tag 2>/dev/null || true
           gh release create v5.x build/dos5.img build/atdos-hd.zip \
             --target "$GITHUB_SHA" --prerelease \
-            --title "AT-DOS 5.x nach 5.2 (in Arbeit), Build $BNO" \
-            --notes "Weiterarbeit nach 5.2 (Zweig 5.x), Fehlerbehebungen werden 5.2.1. Das fertige 5.2 steht im Release v5.2 (Zweig 5.2), 5.1 in v5.1, 5.0 in v5.0."
+            --title "AT-DOS 5.x nach 5.3 (in Arbeit), Build $BNO" \
+            --notes "Weiterarbeit nach 5.3 (Zweig 5.x), Fehlerbehebungen werden 5.3.1. Das fertige 5.3 steht im Release v5.3 (Zweig 5.3), 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
 
       - name: Release "v5.2" veroeffentlichen (Zweig 5.2)
         if: github.ref == 'refs/heads/5.2' && github.event_name != 'pull_request'
@@ -73,6 +73,19 @@ jobs:
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
           gh release delete v5.2 --yes --cleanup-tag 2>/dev/null || true
           gh release create v5.2 build/dos5.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" --latest \
+            --target "$GITHUB_SHA" \
             --title "AT-DOS 5.2, Build $BNO" \
             --notes "AT-DOS 5.2 (Zweig 5.2): 5.1 plus Rueckportierungen aus 6.0 - Laender und Codepages (COUNTRY=, CODEPAGE=, CHCP, KEYB mit Codepage), Unicode-Dateinamen, RBOX mit XMS, DOSKEY-Makros, DIRCMD, Laufzeit wie uptime, AWE32/64-Wavetable mit AWELOAD, EJECT, gebundene Werkzeuge (XCOPY, MOVE, DELTREE, MSD ...) auch unter DOS und in RBOX, kommentierte CONFIG.SYS. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User)."
+
+      - name: Release "v5.3" veroeffentlichen (Zweig 5.3)
+        if: github.ref == 'refs/heads/5.3' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd build && zip -q atdos-hd.zip atdos-hd.img)
+          BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
+          gh release delete v5.3 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v5.3 build/dos5.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --latest \
+            --title "AT-DOS 5.3, Build $BNO" \
+            --notes "AT-DOS 5.3 (Zweig 5.3): 5.1 plus Rueckportierungen aus 6.0 - Packprogramme GZIP/GUNZIP, TAR, ZIP/UNZIP, LHA/ARJ/ZOO (+ UNLHA/UNARJ/UNZOO), 7ZA/7ZDEC, CAT, LINUX.MAC; Laender und Codepages (COUNTRY=, CODEPAGE=, CHCP, KEYB mit Codepage), Unicode-Dateinamen, RBOX mit XMS, DOSKEY-Makros, DIRCMD, Laufzeit wie uptime, AWE32/64-Wavetable mit AWELOAD, EJECT, gebundene Werkzeuge (XCOPY, MOVE, DELTREE, MSD ...) auch unter DOS und in RBOX, kommentierte CONFIG.SYS. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User)."

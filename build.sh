@@ -135,11 +135,25 @@ nasm -f obj apps/crt0.asm -o $B/crt0.o
 ALINK="option quiet format dos option nodefaultlibs \
       option map order clname CODE clname BEGDATA clname DATA clname BSS"
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
-UTILAPPS="attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag taskman rbox convert eject aweload"
+ARCAPPS="gzip gunzip tar zip unzip"
+LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr play mixer undel scandisk msd print defrag taskman rbox convert eject aweload"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
+wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
+wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
+wcc $CFLAGS -fo=$B/lzh.o apps/lzh.c          # LH5-Familie, lh1, ARJ, ZOO-LZW
+wcc $CFLAGS -fo=$B/lzhenc.o apps/lzhenc.c    # Packer LH5-Familie (LHA, ARJ)
+wcc $CFLAGS -fo=$B/lzma.o apps/lzma.c        # LZMA/LZMA2, Delta (7ZDEC)
+wcc $CFLAGS -fo=$B/bcj.o apps/bcj.c          # BCJ x86 (7ZDEC, 7ZA)
+wcc $CFLAGS -fo=$B/lzmaenc.o apps/lzmaenc.c  # LZMA-Packer (7ZA)
 for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     U=""
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
+    case " $ARCAPPS " in *" $t "*) U="$U file $B/flate.o file $B/arcutil.o" ;; esac
+    case " $LZHAPPS " in *" $t "*) U="$U file $B/lzh.o file $B/arcutil.o" ;; esac
+    case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
+    [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
+    [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true
@@ -155,10 +169,10 @@ echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin
 # Programme, die auch unter MS-DOS laufen (gebunden wie mit BIND bei OS/2:
 # der Stub uebersetzt die FAPI in DOS-/BIOS-Aufrufe, die .EXE wird groesser)
-BINDAPPS="more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest xcopy move deltree choice replace label msd"
+BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat more find grep less sort fc comp cut head tail wc uniq tr expand compress edit fm tree attrib grafik mtest fputest xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -202,7 +216,7 @@ mattrib -i $IMG +r +s +h ::ATDOS.SYS
 # alle uebrigen Dateien: Quelle Ziel (Stamm), dann \DOS
 FILES="$B/task_cmd.exe CMD.EXE
        CONFIG.SYS CONFIG.SYS  AUTOEXEC.CMD AUTOEXEC.CMD"
-DOSFILES="$B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
+DOSFILES="LINUX.MAC LINUX.MAC  $B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EXE
        $B/task_more.exe MORE.EXE  $B/task_find.exe FIND.EXE  $B/task_grep.exe GREP.EXE
        $B/task_less.exe LESS.EXE  $B/task_chkdsk.exe CHKDSK.EXE
        $B/task_attrib.exe ATTRIB.EXE  $B/task_move.exe MOVE.EXE  $B/task_deltree.exe DELTREE.EXE
@@ -280,6 +294,9 @@ TARGET="" TO="c:" copy_files
 CPFILES=""
 for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
 TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
+# Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE"
+TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.2 in Arbeit (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0
+# alt-dos – AT-DOS 5.3 (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -6,7 +6,7 @@ mehreren gleichzeitig laufenden Programmen, verfolgte ihn dann aber nicht
 weiter und setzte zusammen mit IBM auf OS/2. AT-DOS fragt: Was wäre, wenn
 diese Linie weitergeführt worden wäre?
 
-- **AT-DOS 5.0/5.1/5.2** läuft auf dem **286** im Protected Mode. Es bietet
+- **AT-DOS 5.0–5.3** läuft auf dem **286** im Protected Mode. Es bietet
   mehrere Sitzungen, eine eigene Programmschnittstelle (FAPI, die einzige
   Brücke zur Hardware), nachladbare Treiber und Dateisysteme, lange
   Dateinamen und einen Platten-Cache im Kernel. Dazu kommen Werkzeuge im
@@ -28,9 +28,11 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 **GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
-Dieser Zweig (`5.x`) ist AT-DOS 5.2 in Arbeit (5.1 plus Rückportierungen
-aus 6.0); das fertige 5.1 steht im Zweig `5.1` (Release `v5.1`), 5.0 im
-Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
+Dieser Zweig (`5.x`) ist die Weiterarbeit an der 286-Linie (5.1 plus
+Rückportierungen aus 6.0). AT-DOS 5.3 steht im Zweig `5.3` (Release
+`v5.3`): 5.2 plus die Packprogramme (GZIP, TAR, ZIP, LHA, ARJ, ZOO, 7z),
+CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
+5.0 in `5.0`; AT-DOS 6.0 entsteht auf `main`.
 
 ## Was läuft
 
@@ -131,7 +133,10 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   `$1`–`$9`, `$*`, `$T`, `$G`/`$G$G`/`$L`/`$B`, `DOSKEY name=` löscht,
   `/MACROS` zeigt, `/MACROFILE=datei` lädt Zeilen `name=text`; nur für
   getippte Zeilen, je Sitzung, mit START gestartete CMD-Sitzungen erben
-  sie). **Tab** vervollständigt
+  sie; `\DOS\LINUX.MAC` (5.3) bringt die gewohnten Namen von Linux mit –
+  `ll`, `la`, `ls`, `..`, `pwd`, `cp`, `mv`, `rm`, `clear`, `diff`, `man`,
+  `free`, `ps`, `kill`, `uname`, `history`, `nano`/`vi`, `mc` –, nicht
+  aktiv, Beispiel in AUTOEXEC.CMD). **Tab** vervollständigt
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
   Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,
   zweites Tab listet die Möglichkeiten.
@@ -277,6 +282,46 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
 - `CUT -c|-b|-f LISTE [-d X] [-s] [--complement] [--output-delimiter=T]
   [Datei…]` nach dem Vorbild von GNU cut (Zeichen oder Felder je Zeile,
   auch in Pipes: `DIR /B | CUT -c1-8`)
+- Packprogramme (5.3, aus 6.0; eigener Deflate-Kern nach RFC 1951, kein fremder Code;
+  nur auf der Platte, gebunden – laufen auch unter MS-DOS und in den
+  Boxen): `GZIP`/`GUNZIP [-d -c -k -f -l -t -v -1..-9] [Datei…]` wie GNU
+  gzip (`BRIEF.TXT` -> `BRIEF.TXT.gz`, ohne Datei als Filter, mehrteilige
+  `.gz`), `TAR -c|-t|-x [-v -z -k] [-f Archiv] [-C Verz] [Name…]` wie GNU
+  tar (`tar xzvf a.tgz`, ustar mit langen Namen über 100 Zeichen, gzip
+  wird beim Lesen erkannt), `ZIP [-r -j -0..-9 -q] Archiv Datei…` (ergänzt
+  vorhandene Archive) und `UNZIP [-l -v -t -o -n -j -q -d Ziel] Archiv
+  [Name…]` wie Info-ZIP (PKZIP 2.x: gespeichert und Deflate)
+- Entpacker für ältere DOS-Archive (eigener Kern `lzh.c`): `UNARJ`,
+  `UNZOO` und `UNLHA [e|x|l|v|t] [-l -v -t -o -n -j -q -d Ziel] Archiv
+  [Ziel\] [Name…]` – jedes erkennt ARJ, ZOO und LHA am Inhalt, auch in
+  selbstentpackenden `.EXE`/`.COM`. ARJ Methode 0–4, ZOO gespeichert/
+  LZW/lh5, LHA/LHarc/LArc lh0/lh1/lh4–lh7/lz4/lzs/lz5 (Kopfstufen 0–2);
+  `unarj e a.arj c:\ziel\` wie das Original
+- `LHA` und `ARJ` legen solche Archive auch an (eigener Packer `lzhenc.c`):
+  `LHA a|u|f|m|d [-r] [-o5|-o6|-o7|-z] [-h1|-h2] Archiv [Datei…]` und
+  `ARJ a|u|f|m|d [-r] [-m0..-m3] Archiv [Datei…]` – hinzufügen, nur
+  Neueres, nur Vorhandenes erneuern, verschieben, löschen; `x e l v t`
+  wie UNLHA/UNARJ. Was nicht kleiner wird, wird gespeichert. Die
+  Archive lesen LHA 2.x/lhasa bzw. ARJ 2.x/3.x
+- `ZOO a|u|f|m|d [-r] [-z] Archiv[.ZOO] [Datei…]` legt ZOO-Archive an und
+  pflegt sie (immer lh5 wie `zoo ah`, Zusätze am Befehl wie `ah` werden
+  angenommen); alte Einträge, auch LZW, bleiben erhalten, gelöschte
+  fallen beim Neuaufbau weg; `x e l v t` wie UNZOO
+- `7ZDEC [e|x|l|t] [-l -t -o -n -j -q -d Ziel] Archiv[.7Z] [Ziel\]
+  [Name…]` entpackt 7z-Archive von 7-Zip (Copy, LZMA, LZMA2, BCJ x86,
+  Delta; gepackter Kopf, feste und einzelne Ordner) und `.LZMA`-Dateien
+  (eigener LZMA-Kern `lzma.c`). Wörterbuch im Speicher bis knapp 1 MB
+  (5.x: 16 LDT-Einträge je Programm); größere über eine Zwischendatei –
+  so entpackt es jedes Archiv. Nicht: BCJ2, PPMd,
+  Verschlüsselung
+- `7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei…]` legt 7z-Archive
+  an (eigener LZMA-Packer `lzmaenc.c`, Wörterbuch auf 5.x 128 KB – mehr
+  Segmente erlaubt die LDT von 5.x nicht, 6.0 nimmt bis 4 MB; fester Ordner,
+  Namen UTF-16, Datum, Attribute; `-mx=0` speichert); `x e l t` ruft
+  7ZDEC. 32-Bit-Programme (PE, LE/LX von DOS/4GW, ELF) kommen in einen
+  eigenen Ordner mit BCJ-x86-Filter davor (auch mit DOS/4GW gebundene
+  wie DOOM.EXE). 7-Zip liest die Archive. Nur
+  neue Archive (`-y` überschreibt), noch kein gepackter Kopf
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
@@ -285,7 +330,10 @@ Zweig `5.0`, AT-DOS 6.0 entsteht auf `main`.
   [Aus]]` (gleiche Nachbarzeilen, meist hinter `SORT`) und `TR [-c -d -s]
   Satz1 [Satz2]` (Zeichen ersetzen/löschen, Bereiche `a-z`, `\r`,
   `[:upper:]` …), z. B. `TYPE BRIEF.TXT | TR -d \r` oder
-  `SORT < NAMEN.TXT | UNIQ -c`
+  `SORT < NAMEN.TXT | UNIQ -c`; `CAT [-A -b -e -E -n -s -t -T -v]
+  [Datei…]` (5.3) hängt Dateien aneinander (Platzhalter, `-` =
+  Standardeingabe, nummerieren, Leerzeilen zusammenfassen, Steuerzeichen
+  sichtbar)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
@@ -405,7 +453,7 @@ DOS-, BIOS- und Maustreiber-Aufrufe übersetzt (Dateien, Verzeichnisse,
 Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
-Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
+Gebunden sind GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, CAT, MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
 WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD und die Demos GRAFIK, MAUSTEST,
 FPUTEST (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit
