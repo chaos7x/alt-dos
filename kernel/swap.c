@@ -344,7 +344,7 @@ void __far swap_info(unsigned long __far *total_kb, unsigned long __far *used_kb
 }
 
 /* ---- Start: SWAPPATH=[X:]\Verzeichnis [KB] -------------------------------
-   Ohne Angabe auf Rechnern bis 16 MB: X:\DOS\SYSTEM des Startlaufwerks
+   Ohne Angabe auf Rechnern bis 16 MB: X:\SWAP des Startlaufwerks
    (nur Festplatte), doppelte RAM-Groesse, 2-8 MB. SWAPPATH=OFF: keine.
    Die Datei SWAPPER.DAT wird angelegt bzw. auf die Groesse gebracht. */
 static char *mcat(char *m, const char *a)
@@ -392,8 +392,8 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
     } else {
         if (ram > 16384UL || sys < 2)
             return;
-        for (; "\\DOS\\SYSTEM"[j]; j++)
-            sw_path[j] = "\\DOS\\SYSTEM"[j];
+        for (; "\\SWAP"[j]; j++)          /* eigenes Verzeichnis: weder   */
+            sw_path[j] = "\\SWAP"[j];     /* Stamm noch \DOS\SYSTEM     */
     }
     if (!kb)                            /* Vorgabe: doppelter RAM, bis 8 MB */
         kb = ram > 4096 ? 8192 : ram << 1;
@@ -401,8 +401,8 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
         kb = 2048;
     if (kb > 65532UL)
         kb = 65532UL;                   /* 16.383 Plaetze                */
-    if (j > 1 && sw_path[j - 1] == '\\')
-        j--;
+    if (j > 0 && sw_path[j - 1] == '\\')
+        j--;                            /* "\" (Stamm) -> ""            */
     for (i = 0; "\\SWAPPER.DAT"[i]; i++)
         sw_path[j + i] = "\\SWAPPER.DAT"[i];
     sw_path[j + i] = 0;
@@ -412,6 +412,12 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
         return;
     }
     sz = kb << 10;
+    if (j) {                            /* Verzeichnis anlegen, wenn noetig */
+        sw_path[j] = 0;
+        if (!ifs_isdir(d, sw_path))
+            ifs_mkdir(d, sw_path);
+        sw_path[j] = '\\';
+    }
     f = kf_kopen(d, sw_path, 0);
     if (!f && !(f = kf_kopen(d, sw_path, 1))) {
         mcat(msg, nomsg);
@@ -422,7 +428,13 @@ void __far swap_boot(const char __far *spec, int sys, char *msg)
             mcat(msg, nomsg);
             return;
         }
+        ifs_close(f);                   /* Groesse in den Verzeichnis-   */
         ifs_setinfo(d, sw_path, 1, ATTR_HIDDEN | ATTR_SYSTEM, 0, 0);
+        if (ifs_open(d, sw_path, f)) {  /* eintrag (sonst 0 Byte mit     */
+            mcat(msg, nomsg);           /* belegten Clustern bis zum     */
+            return;                     /* Herunterfahren)               */
+        }
+        f->flags |= IFS_F_WRITE;
     }
     kf_blk_flush();                     /* nichts Geaendertes im Cache   */
     n = ifs_bmap(f, 0, 0, 0);

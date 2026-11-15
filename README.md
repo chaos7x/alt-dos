@@ -109,7 +109,8 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als
   Untergrenze), `SWAPPATH=[X:]\Verzeichnis [KB]` (6.1, wie OS/2:
   Auslagerungsdatei `SWAPPER.DAT` für die DOS-Boxen; ohne Angabe auf
-  Rechnern bis 16 MB in `\DOS\SYSTEM` des Startlaufwerks, doppelte
+  Rechnern bis 16 MB in `\SWAP` des Startlaufwerks (eigenes Verzeichnis:
+  nicht im Stamm, nicht bei den Systemdateien), doppelte
   RAM-Größe, 2–8 MB; `SWAPPATH=OFF` schaltet ab. Reicht der Speicher
   nicht – auch nicht, nachdem der Platten-Cache abgegeben hat –, gehen
   selten benutzte Seiten der Boxen in die Datei und kommen beim nächsten

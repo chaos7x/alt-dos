@@ -76,8 +76,8 @@ static int copy_dir(const char *rel)
     if (!is_dir(ddir))
         DosMkDir(ddir);
     for (n = 0; DosFindEntry(&e, n, sdir) != FAPI_ERROR; n++) {
-        if (e.attr & 0x18)
-            continue;
+        if (e.attr & 0x1C)              /* Verzeichnisse, Bezeichnung,   */
+            continue;                   /* Systemdateien (SWAPPER.DAT)   */
         scopy(name, rel, sizeof(name));
         scat(name, "\\", sizeof(name));
         scat(name, e.name, sizeof(name));

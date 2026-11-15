@@ -131,15 +131,15 @@ org 0x100
         mov     al, [dst_letter]
         mov     [dst_dir], al
         mov     ah, 0x4E
-        mov     cx, 0x07
-        mov     dx, pat_buf
+        mov     cx, 0x01                ; ohne versteckte/System-Dateien
+        mov     dx, pat_buf             ; (SWAPPER.DAT, falls SWAPPATH dort)
         int     0x21
         jc      .sdnext                 ; gibt es auf der Quelle nicht
         mov     ah, 0x39                ; Zielverzeichnis anlegen; gibt es schon: egal
         mov     dx, dst_dir
         int     0x21
         mov     ah, 0x4E
-        mov     cx, 0x07
+        mov     cx, 0x01
         mov     dx, pat_buf
         int     0x21
 .dfile: call    copy_file

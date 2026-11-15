@@ -1492,7 +1492,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ausgelagert); 32 MB ohne Datei unverändert): `kernel/swap.c`
   (KTEXT2). Datei `SWAPPER.DAT` (versteckt+System), `SWAPPATH=[X:]\Verz
   [KB]` in CONFIG.SYS (landet in der Systemumgebung), ohne Angabe bei
-  RAM <= 16 MB und Start von Platte X:\DOS\SYSTEM, 2×RAM, 2–8 MB, `OFF`;
+  RAM <= 16 MB und Start von Platte X:\SWAP (Entscheidung des Nutzers:
+  eigenes Verzeichnis – nicht im Stamm, nicht in \DOS\SYSTEM, das SYS/
+  ATSYS ganz kopieren und das später schreibgeschützt werden soll;
+  angelegt, wenn es fehlt), 2×RAM, 2–8 MB, `OFF`; SYS und ATSYS lassen
+  Systemdateien aus den Unterverzeichnissen weg (falls jemand SWAPPATH
+  doch dorthin legt). Nach dem Anlegen schließt swap_boot die Datei
+  einmal und öffnet sie neu – sonst stand bis zum Herunterfahren 0 Byte
+  mit belegten Clustern im Verzeichnis (DIR, CHKDSK). `SWAPPATH=C:\`
+  (Stamm) geprüft;
   höchstens 65.532 KB. Beim Start (`swap_boot` nach der Dateitabelle):
   öffnen/anlegen über `kf_kopen` (Eintrag des Kernels, IFS_F_WRITE –
   niemand sonst kann sie öffnen, löschen, kopieren), `ifs_setsize` auf
