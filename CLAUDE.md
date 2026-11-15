@@ -122,7 +122,10 @@ DIR-Überarbeitung aus 6.0) DIR /O, DIRCMD, /?, „Ungültiger Schalter“,
 C* = C*.* (9537827, Zweig 5.3.1 neu gesetzt, CI baut v5.3.1 neu).
 Dabei gefunden (auch 6.0): `"\x94\xE1e"` und `"\x81ber"` – Watcom
 liest e/b als weitere Hex-Ziffer; Escape vor Hex-Buchstaben immer mit
-`" "` trennen (Suche: `grep -rnE '\\x[0-9A-Fa-f]{3}'`). `5.x` geht weiter. Tags legt die CI an (aus der
+`" "` trennen (Suche: `grep -rnE '\\x[0-9A-Fa-f]{3}'`). AT-DOS 5.3.2
+(Entscheidung des Nutzers, 15.11.2026): Zweig `5.3.2` (aa5442f, Release
+`v5.3.2`) = 5.3.1 plus DIR /S aus 6.0; die 5.x-Releases setzen seitdem
+`--latest=false` („neueste“ ist `v6.0`). `5.x` geht weiter. Tags legt die CI an (aus der
 Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
