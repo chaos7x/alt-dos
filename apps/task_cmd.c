@@ -1218,7 +1218,7 @@ static void cmd_dir(char *arg)
                  "  /A  auch versteckte und Systemdateien; Attribute: H versteckt,\n"
                  "      S System, D Verzeichnis, R schreibgesch\x81tzt, A Archiv,\n"
                  "      - davor = nicht\n"
-                 "  /O  sortiert: N Name, E Endung, S Gr\x94\xE1e, D Datum/Zeit,\n"
+                 "  /O  sortiert: N Name, E Endung, S Gr\x94\xE1" "e, D Datum/Zeit,\n"
                  "      G Verzeichnisse zuerst, - davor kehrt um; /O allein = GN\n\n"
                  "Schalter lassen sich in der Umgebungsvariablen DIRCMD voreinstellen;\n"
                  "/-O hebt die Sortierung wieder auf.\n");

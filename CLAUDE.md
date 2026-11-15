@@ -107,7 +107,13 @@ fat_readdir; 7z dort mit 16 LDT-Einträgen (7ZA 128 KB Wörterbuch, 7ZDEC
 über die Zwischendatei). AT-DOS 5.3.1 (Entscheidung des Nutzers,
 15.11.2026): Zweig `5.3.1` (7acd6ae, Release `v5.3.1`) = 5.3 plus
 Fehlerbehebungen aus 6.0 (Speicherleck im Treiberlader, EJECT mit
-Sauber-Bit, „Wechselplatte, kein Medium“). `5.x` geht weiter. Tags legt die CI an (aus der
+Sauber-Bit, „Wechselplatte, kein Medium“); nachgezogen (vom Nutzer
+gemeldet: `dir /?` -> „Datei nicht gefunden“, auf 5.x fehlte die ganze
+DIR-Überarbeitung aus 6.0) DIR /O, DIRCMD, /?, „Ungültiger Schalter“,
+C* = C*.* (9537827, Zweig 5.3.1 neu gesetzt, CI baut v5.3.1 neu).
+Dabei gefunden (auch 6.0): `"\x94\xE1e"` und `"\x81ber"` – Watcom
+liest e/b als weitere Hex-Ziffer; Escape vor Hex-Buchstaben immer mit
+`" "` trennen (Suche: `grep -rnE '\\x[0-9A-Fa-f]{3}'`). `5.x` geht weiter. Tags legt die CI an (aus der
 Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
