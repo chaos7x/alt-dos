@@ -790,6 +790,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   BCJ/4-MB-Wörterbuch über die Zwischendatei, 2-MB-Quellbaum mit -mx=9
   (131 Dateien gleich), `.LZMA` (xz --format=lzma), BCJ2 sauber abgelehnt,
   in der Box `command /c 7zdec x def.7z \x\box\`; CHKDSK sauber.
+  Vom Nutzer in 86Box bestätigt (15.11.2026): ein unter FreeDOS mit
+  dessen 7za gepacktes Archiv entpackt 7ZDEC unter AT-DOS.
   7ZA (`apps/task_7za.c` + `apps/lzmaenc.c`, eigener LZMA-Packer nach
   lzma-specification.txt): Bereichscoder mit 32-Bit-`low` + Übertrag,
   Grenze über mul16; Modell wie der Decoder (Zustände, Literal mit
