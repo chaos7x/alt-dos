@@ -1287,6 +1287,17 @@ AWE32 „OPL2“ (behoben, s. AWE). Tippen (Vorschlag des Nutzers): zuerst
 `keyb us` (über typ.py mit deutscher Zuordnung: y/z vertauscht), danach
 `xdotool type` direkt – alle Zeichen inkl. \ | * " kommen richtig an.
 
+Obergrenze in 86Box (cfg vom Nutzer, 15.11.2026): ASUS P3B-F (`p3bf`),
+Pentium II Deschutes 233 MHz, Dynarec, 256 MB, PS/2-Tastatur und -Maus,
+S3 Trio3D/2X AGP (8 MB), Sound Blaster AWE32 (28 MB Karten-RAM),
+Adaptec AHA-2944UW: ID 0 `atdos-hd.img` (130/16/63), ID 1 Spiele.vhd
+(4158/16/63, ~2 GB), ID 2 OS.vhd (1219/16/63, ~600 MB), ID 5 ZIP 250,
+ID 6 DVD/CD; zwei 2,88-MB-Diskettenlaufwerke; Netzwerk RTL8139C+ über
+pcap am echten LAN des Nutzers (dort läuft sein Samba-AD) – damit
+lassen sich DHCP, TCP/IP und später die Domäne direkt testen. Der C+
+kennt neben dem Deskriptorbetrieb den klassischen 8139-Betrieb
+(10ECh:8139h) – der Treiber nimmt den klassischen.
+
 Start von Platte in QEMU: `qemu-system-i386 -hda build/atdos-hd.img -boot c`.
 Der Nutzer will AT-DOS auch in Proxmox (KVM) laufen lassen: SeaBIOS,
 i440fx, Platte an IDE oder am „LSI 53C895A“ (NCR8XX.SYS), nicht VirtIO.
