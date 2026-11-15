@@ -3978,6 +3978,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
   `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
+- Treiber zur Laufzeit laden wie modprobe (Wunsch des Nutzers,
+  15.11.2026, vor dem Netzwerk): Stufe 1 Laden – FAPI `DosLoadDriver`
+  (mit Kernelsperre) über das vorhandene `load_driver()`, neue Block-
+  geräte bekommen gleich den nächsten freien Buchstaben (Partitionen
+  einhängen, CDs an ISO9660), Werkzeug `DEVLOAD Treiber [Argumente]`,
+  `DEVLOAD /L` listet; `modprobe`/`lsmod` als Makros in LINUX.MAC.
+  Stufe 2 Entladen (`DEVLOAD /U Name`): neuer Treiberbefehl `DRV_DEINIT`
+  (IRQ abmelden, Hardware anhalten, Ressourcen frei; wer ihn nicht kennt,
+  bleibt geladen), Kernel prüft offene Dateien, aktuelle Verzeichnisse,
+  SUBST/JOIN, leert den Cache, meldet die Laufwerke ab, Blockgeräte-
+  Tabelle bekommt Lücken (nicht zusammenrücken). Zuerst NCR8XX, AIC7XXX,
+  SB16, MOUSE. `NDRV` (6 Plätze für Treiber + IFS) anheben; Code nach
+  KTEXT2.
 - Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
   nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
   (1) Netzwerkkartentreiber mit IRQ (RTL8139 zuerst – läuft in
