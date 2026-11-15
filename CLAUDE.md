@@ -4048,6 +4048,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
   `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
+- SCSI je Gerät für den Adaptec (Wunsch des Nutzers, 15.11.2026: der
+  AHA-2940UW ist sein Haupt-Controller, damals im echten Pentium 166;
+  Vorschlag: vor DEVLOAD). Anders als beim NCR bildet 86Box beim
+  AIC-7xxx Trennen und Wiederauswahl nach (scsi_aic7xxx.c `AFTER_DISC`,
+  `aic_reselect_try`, Gerätezeit über `timed_dev`) – aber nur beim Lesen
+  mit Trennerlaubnis (IDENTIFY C0h, `disc_ok`); Schreiben bleibt
+  verbunden (ein Puffer je Gerät in der Nachbildung). Die AHA-154x-
+  Nachbildung (scsi_x54x.c) arbeitet Mailboxen streng nacheinander ab –
+  dort kein Gewinn in 86Box (echte 1542-Firmware trennt selbst: dort
+  reichten mehrere CCBs gleichzeitig). Stufen: (1) Kernel: Sperrgruppen
+  je Gerät (heute 2 je Treiber, bsize Bits 12–14 erlauben 8; Auftrags-
+  köpfe `drq` nicht in DGROUP – voll – sondern in einem Kernelsegment);
+  (2) AIC7XXX.SYS: Auftrag je Ziel statt global, IDENTIFY C0h beim
+  Lesen, SAVE DATA POINTER/DISCONNECT -> Bus frei, Zustand je Ziel
+  merken, Wiederauswahl (ENRSELI, SELDI) per IRQ erkennen und den
+  Befehl fortsetzen – möglichst weiter ohne Sequenzer-Programm (prüfen,
+  ob die Nachbildung das mit angehaltenem Sequenzer mitmacht); (3) Test
+  in 86Box: zwei Leser auf Platten am selben 2940 gleichzeitig, Zeit
+  gegen heute; danach evtl. AHA154X mit mehreren CCBs.
 - Treiber zur Laufzeit laden wie modprobe (Wunsch des Nutzers,
   15.11.2026, vor dem Netzwerk): Stufe 1 Laden – FAPI `DosLoadDriver`
   (mit Kernelsperre) über das vorhandene `load_driver()`, neue Block-
