@@ -692,6 +692,31 @@ Win32s), nicht vorziehen, sondern nachfragen.
   In der DOS-Box (gebundener Stub unter FreeDOS) geprüft: `gzip -k`
   legt per 8.3-Rückfall MIX.BIZ an (GNU gzip entpackt es), `zip`, `unzip
   -t`, `tar tzf` laufen; fsck nach allem sauber.
+  Entpacker ARJ/ZOO/LHA (abgestimmt: nur entpacken): `apps/lzh.c` –
+  eigener Kern, ein 64-KB-Ring (DosAllocSeg, 16-Bit-Stellen laufen von
+  selbst um), Bits MSB zuerst wie ar002: statischer Huffman (lh4–lh7,
+  ARJ 1–3 = np 17/pbit 5, ZOO lh5; kanonische Tabelle 12/8 Bit + Bit-für-
+  Bit-Rückfall), adaptiver Huffman lh1 wie LZHUF (Positionen: feste
+  Längen 3–8 der oberen 6 Bit), ARJ 4, LArc lzs/lz5 (absolute Ring-
+  stellen, Schreibstelle 17/18 vor dem Ringende, lz5-Vorbelegung wie
+  LArc 3.33), ZOO-LZW (9–13 Bit, LSB zuerst, 256 = CLEAR, 257 = Ende);
+  Vorbelegung mit Leerzeichen vor Stelle 0 (LHarc verweist darauf);
+  CRC-16 (A001h) und CRC-32. `apps/unarc.c` = Rahmen (Bedienung wie
+  UNZIP, dazu Befehlsbuchstabe e/x/l/v/t vorn und `Ziel\` wie UNARJ/LHA),
+  `task_unarj.c`/`task_unzoo.c`/`task_unlha.c` setzen nur PROG/DEFEXT –
+  alle drei erkennen alle Formate (ZOO-Kennung bei 20, sonst bis 256 KB
+  nach ARJ-Kopf mit gültiger CRC bzw. LHA-Kopf suchen: Selbstentpacker).
+  ARJ für UNIX (Host-OS 2/8) speichert Unix-Zeit statt DOS-Zeit. build.sh
+  `LZHAPPS` (lzh.o + arcutil.o, nicht flate.o – dessen 32-KB-Fenster
+  läge sonst in DGROUP). Geprüft: Kern auf dem Entwicklungsrechner (gcc,
+  `unsigned` -> 16 Bit per sed) gegen arj 3.10 (-m0..-m4), jlha (lh5–7,
+  Kopfstufen 0–2), die Testarchive von lhasa (LHarc 1.13 lh1, LArc 3.33
+  lz5 inkl. initial.lzs, Rohströme lh1/5/6/7/lzs/lz5 mit CRC-32) und
+  sample.zoo (LZW) aus Zoo 2.10; in QEMU alle entpackten Bäume gleich
+  (diff -r), Selbstentpacker sfx.exe, in der Box `unarj e a1 \x\box\`
+  und `unlha x`, CHKDSK sauber. Test-Archive nur im Scratchpad. Kein
+  zoo-Packer auf dem Rechner (Bau aus fremdem Quelltext nicht erlaubt) –
+  ZOO lh5 ungeprüft (gleicher Kern wie LHA lh5).
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
   Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).

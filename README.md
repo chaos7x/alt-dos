@@ -290,6 +290,12 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   wird beim Lesen erkannt), `ZIP [-r -j -0..-9 -q] Archiv Datei…` (ergänzt
   vorhandene Archive) und `UNZIP [-l -v -t -o -n -j -q -d Ziel] Archiv
   [Name…]` wie Info-ZIP (PKZIP 2.x: gespeichert und Deflate)
+- Entpacker für ältere DOS-Archive (eigener Kern `lzh.c`): `UNARJ`,
+  `UNZOO` und `UNLHA [e|x|l|v|t] [-l -v -t -o -n -j -q -d Ziel] Archiv
+  [Ziel\] [Name…]` – jedes erkennt ARJ, ZOO und LHA am Inhalt, auch in
+  selbstentpackenden `.EXE`/`.COM`. ARJ Methode 0–4, ZOO gespeichert/
+  LZW/lh5, LHA/LHarc/LArc lh0/lh1/lh4–lh7/lz4/lzs/lz5 (Kopfstufen 0–2);
+  `unarj e a.arj c:\ziel\` wie das Original
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,
@@ -620,7 +626,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der
