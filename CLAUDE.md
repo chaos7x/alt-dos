@@ -1649,7 +1649,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und weckt. `/NOIRQ`. Vom Nutzer in 86Box bestätigt (P3B-F, statt
   NCR8XX): alle vier Platten (63 MB, 2 GB, 600 MB, eine unformatiert) und
   das CD-ROM (ID 6) am Adaptec erkannt, Start von der Adaptec-Platte C:.
-  und weckt. `/NOIRQ`. Offen: Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR),
+  Danach (15.11.2026) ebenso bestätigt: XCOPY von der CD G: gleichzeitig
+  auf D: und E: (beide am Adaptec), CHKDSK auf beiden ohne Fehler, DIR G:
+  richtig. Offen: Wide (IDs 8–15: SBLKCTL SELWIDE + WDTR),
   synchron/Ultra (SDTR), echte Hardware.
 - Ton (Wunsch des Nutzers: lieber SB16 als AIC-6360; Vorrang Vordergrund
   für Spiele), Stufe 1 und 2 erledigt, in QEMU mit `-device sb16` und
