@@ -31,3 +31,15 @@ System in `\DOS`, `\DOS\SYSTEM`, `\DOS\MDOS`; dazu `\TEMP`.
 5. **Benutzerverzeichnisse je Person**: erst mit Anmeldung.
 
 Siehe auch [GUI-WIN16.md](GUI-WIN16.md).
+
+## Offene Punkte (Durchsicht 15.11.2026)
+
+- Die Variablen `DOCS=`/`DESKTOP=` lassen sich sofort einführen (wie
+  TEMP im Kernel bzw. `SET` in CONFIG.SYS) und helfen schon CMD, FM und
+  EDIT – guter erster Schritt vor jeder GUI.
+- MOUNT auf JOIN aufgebaut übernimmt dessen Grenzen (Ziel leer, Laufwerk
+  unbenutzt, nicht das Startlaufwerk) – beim Start unkritisch, zur
+  Laufzeit prüfen. DOS-Boxen sehen den Ordner über den Redirector mit,
+  als 8.3-Name (`EIGENE~1`).
+- Datei als Quelle für MOUNT: siehe Loop-Laufwerke in
+  [LOOP-DBLSPACE.md](LOOP-DBLSPACE.md).

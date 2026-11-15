@@ -158,3 +158,27 @@ Parallel (BIGLOCK.md, 6.1): fat.c-Zustand je Operation, dann Tiefe 2 und
 Backend 2.
 
 Offen: Name `LOOP` oder `MOUNT`; 6.22-Container zum Testen beim Nutzer?
+
+## Offene Punkte (Durchsicht 15.11.2026)
+
+1. **Gleicher Stand wie der Platten-Cache**: das Loop-Gerät liest und
+   schreibt über den Cache des Trägers (`blk_read`/`blk_write` bzw. die
+   neuen `_to/_from`-Hilfen mit Cache-Abfrage), nie direkt am Treiber –
+   eine eben kopierte Datei liegt wegen des verzögerten Schreibens oft
+   noch nicht auf der Platte.
+2. **Wechselplatte/Diskette als Träger**: bei Medienwechsel meldet das
+   Loop-Gerät „nicht bereit“ und verwirft die Extent-Liste. Disketten
+   gehen über den Spurpuffer und geben die Kernelsperre nie ab – ein
+   Loop auf A: geht, hält aber das System auf, solange es arbeitet.
+3. **`blk[]` ins Kernelsegment**: 63 Zugriffe in kernel.c, ferne
+   Zugriffe kosten zusammen grob 200–300 Byte im ersten Codesegment
+   (~1 KB frei). Vorher den seltenen Teil der Blockgeräte-Schicht
+   (mount_disk, cd_drives, Partitionen, Laden/Entladen) nach KTEXT2.
+4. **Letzter Extent** endet an der Dateigröße, nicht am Clusterende;
+   Zugriffe dahinter lehnt das Loop-Gerät ab (sonst Fremddaten).
+5. **DoubleSpace-Format** vor Stufe 4 an einem echten 6.22-Container in
+   86Box prüfen; danach Container und Inhalt mit ScanDisk von MS-DOS
+   6.22 gegenprüfen, nicht nur mit UDBLSPACE.
+6. Container liegt versteckt/System/schreibgeschützt im Stamm –
+   `OPEN_RW` darf dafür nicht am Attribut scheitern (eigener Merker
+   beim Einhängen).

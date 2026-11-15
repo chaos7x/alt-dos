@@ -1457,6 +1457,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
+  Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
+  Laufwerke + DriveSpace, fat.c-Zustand je Operation (LOOP-DBLSPACE.md,
+  BIGLOCK.md); 6.2 Netzwerk, Sperren je Objekt; 6.3 VirtIO, SMB/Domäne,
+  `klock` entfällt; 5.4 = 5.x mit DEVLOAD; GUI/Win16 (GUI-WIN16.md)
+  Stufe 0 erst nach Klärung der offenen Entwurfsfragen dort (gemeinsame
+  LDT, große LDT auf 5.x, Ring 2); `DOCS=`/`DESKTOP=` (SYSTEM-DATEN.md)
+  jederzeit als kleiner Schritt. Offene Punkte stehen je Dokument unter
+  „Offene Punkte“/„Offene Entwurfsfragen“.
+
 - **GUI und Win16** (abgestimmt 15.11.2026): `docs/GUI-WIN16.md` –
   Win16 nativ auch unter 5.x, GUI als eigener Prozess, CUA-Look (eigene
   Symbole), Desktop/Eigene Dateien, Treiber VGA/ET4000-W32/GD5434/Trio3D,

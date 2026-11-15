@@ -143,3 +143,38 @@ zuerst im Textmodus (wie FM/MSD), Oberfläche über `DOSBOX.INI`
 (`[*]`, `[NAME.EXT]`, Erklärung und Wertebereich je Schlüssel) und die
 Startdateien; keine Registry. Später als Win16-Programm. Noch nicht
 zugesagt.
+
+## Offene Entwurfsfragen (Durchsicht 15.11.2026)
+
+Vor Stufe 0 klären, noch nicht entschieden:
+
+1. **Gemeinsamer Adressraum.** Win16 setzt eine LDT für alle Programme
+   voraus (GMEM_SHARE, DDE, Zwischenablage, OLE, Datensegmente von
+   USER/GDI; Office 4.3 baut darauf). AT-DOS gibt jedem Task eine eigene
+   LDT. Bewährter Weg wie WOW (NT) und WIN-OS/2: alle Win16-Programme im
+   GUI-Prozess als Tasks mit **einer gemeinsamen LDT**, untereinander
+   kooperativ unter einer Sperre (Win16Mutex) – auch für die USER-Logik
+   (Nachrichtenschlangen, Fensterliste), nicht nur fürs Zeichnen –,
+   gegenüber CMD und Boxen präemptiv. Braucht im Kernel „Tasks mit
+   gemeinsamer LDT“ (im Kern Threads) früher als geplant.
+2. **5.x hat die große LDT nicht** (512 Einträge nur auf `main`); ein
+   Win16-Programm braucht schnell Hunderte Selektoren. Win16 auf 5.x
+   heißt: erst die große LDT zurückportieren (eigener Schritt in
+   Stufe 0). Auf 6.0 bekommen Rechner unter 3,5 MB nur 64 Einträge
+   (`nldt`) – für Win16-Tasks wieder mehr.
+3. **Ring 2 für Grafiktreiber** (IOPL-Segment wie OS/2 1.x): Stapel für
+   Ring 2 in jedem TSS, IOPL 2 je Task, Code-Selektoren mit DPL 2. Auf
+   6.0 verdrängt `irq0` nur Ring 3 – die Prüfung muss „Ring 2 oder 3“
+   werden, sonst läuft Treibercode wie Kernelcode ununterbrochen.
+4. **Wine als Vorlage**: die Stände mit passender Lizenz (2000–2002)
+   sind überwiegend Win32 mit 16-Bit-Thunks. Übernehmbar vor allem die
+   Logik von Steuerelementen und Dialogen (umgebaut auf Watcom 16 Bit)
+   und die `.spec`-Exporttabellen; sonst mit eigenem Code rechnen.
+5. **Platz im Kernel**: NE-Lader nach KTEXT2 (erstes Codesegment ~1 KB
+   frei), Tabellen nicht in DGROUP; die GDT-Plätze für Kernelsegmente
+   (NKSEG 20) sind fast vergeben – mit Punkt 1 gehören die Segmente der
+   DLLs in die gemeinsame LDT.
+6. **Sperren**: auch ohne `klock` (BIGLOCK.md, 6.3) bleibt der Win16Mutex
+   nötig – er sitzt im GUI-Prozess, nicht im Kernel.
+7. Strg+Esc für die Fensterliste ist im Kernel frei (Alt+Esc und
+   Strg+Umschalt+Esc belegt).

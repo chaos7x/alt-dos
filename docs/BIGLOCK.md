@@ -53,3 +53,13 @@ das Loop-Backend „durchs Dateisystem“.
   386 mit 4 MB (Untergrenze) und in 86Box beim Nutzer.
 - Schnittstellen nach außen (FAPI, Treiber-DevHlp) ändern sich dadurch
   nicht.
+
+## Offene Punkte (Durchsicht 15.11.2026)
+
+- Tiefe 2 geht nicht mit dem heutigen Kontexttausch (`ctx_take` tauscht
+  nur zwischen Tasks – ein verschachtelter Aufruf desselben Tasks
+  überschriebe seinen eigenen Stand). Deshalb zuerst „fat.c-Zustand je
+  Operation“, dann Tiefe 2 – wie in der Tabelle.
+- Die GUI (GUI-WIN16.md) braucht unabhängig davon ihre eigene Sperre für
+  die Win16-Programme (Win16Mutex im GUI-Prozess).
+- Gemeinsamer Fahrplan der Pläne: CLAUDE.md, „Fahrplan nach 6.0“.
