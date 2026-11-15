@@ -1539,7 +1539,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Selektors; Entscheidung des Nutzers, 15.11.2026: erst auf `main`, dann
   nach `5.x` zurück für 5.4 – dort ohne Paging, der 286 kann Segmente
   auslagern; damit wird `PROTECTONLY=NO` (Kompatibilitätsbox fest im
-  Speicher) auch auf 2-MB-Rechnern brauchbar), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
+  Speicher) auch auf 2-MB-Rechnern brauchbar). Reihenfolge nach dem
+  Vorbild OS/2 1.x (`MEMMAN=SWAP,MOVE`, abgestimmt 15.11.2026): (1) Code-
+  segmente verwerfen statt auslagern – neu aus der EXE laden (keine
+  Schreibzugriffe; Prüfsumme beim Laden gemerkt, beim Nachladen
+  verglichen – passt sie nicht, wurde die EXE überschrieben: Programm
+  mit Meldung beenden); #NP fällt meist im Ring 0 beim IRET/RETF zurück
+  ins Programm (irq0, FAPI-Rücksprung) oder beim Taskwechsel; (2)
+  Segmente verschieben (MOVE: Lücken schließen, nur die Basis im
+  Deskriptor ändern – auf 5.x das eigentliche Problem, 64-KB-Segmente
+  brauchen Seiten am Stück); (3) Datensegmente in SWAPPER.DAT. Die
+  Kompatibilitätsbox bleibt wie bei OS/2 1.x fest im Speicher (ihre
+  640 KB im Hintergrund wegschreiben wäre Kür, später entscheiden), EMS-Seiten nicht; die Datei wächst nicht; XMS-/
   EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht
   mit (eine Box sieht nur den freien RAM als XMS). DPMI-Programme unter
   Auslagerung (DOOM) noch nicht geprüft – in 86Box auf dem 386 mit 4 MB.
