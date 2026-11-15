@@ -104,8 +104,10 @@ veröffentlicht dort die Vorabversion `v5.x`. AT-DOS 5.3 ist fertig
 Zweig `5.3` (a9da8ea, Release `v5.3`) = 5.2 plus Packprogramme (GZIP,
 TAR, ZIP, LHA/ARJ/ZOO, 7ZDEC/7ZA), CAT, LINUX.MAC, Lesemerker in
 fat_readdir; 7z dort mit 16 LDT-Einträgen (7ZA 128 KB Wörterbuch, 7ZDEC
-über die Zwischendatei). `5.x` geht weiter, Fehlerbehebungen werden
-5.3.1. Tags legt die CI an (aus der
+über die Zwischendatei). AT-DOS 5.3.1 (Entscheidung des Nutzers,
+15.11.2026): Zweig `5.3.1` (7acd6ae, Release `v5.3.1`) = 5.3 plus
+Fehlerbehebungen aus 6.0 (Speicherleck im Treiberlader, EJECT mit
+Sauber-Bit, „Wechselplatte, kein Medium“). `5.x` geht weiter. Tags legt die CI an (aus der
 Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
