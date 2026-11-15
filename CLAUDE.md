@@ -4011,7 +4011,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vom Nutzer in 86Box bestätigt (14.11.2026): zwei FAT16-Laufwerke
   gleichzeitig mit langen Namen beschrieben (Dateien aus einem lokalen
   Repo), CHKDSK auf beiden ohne Fehler.
-  SCSI je Gerät: geprüft und bewusst nicht gebaut (12.11.2026). Gewinn gäbe
+  SCSI je Gerät beim NCR: geprüft und bewusst nicht gebaut (12.11.2026; für den
+  AIC-7xxx inzwischen gebaut, s. „SCSI je Gerät für den Adaptec“). Gewinn gäbe
   es nur, wenn sich ein Ziel während des Befehls vom Bus trennt; NCR8XX
   schickt IDENTIFY 80h (ohne Trennerlaubnis), echte Platten trennen sich
   dann nie, und 86Box bildet beim 53C8xx gar keine Wiederauswahl nach
@@ -4048,25 +4049,53 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
   `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
-- SCSI je Gerät für den Adaptec (Wunsch des Nutzers, 15.11.2026: der
-  AHA-2940UW ist sein Haupt-Controller, damals im echten Pentium 166;
-  Vorschlag: vor DEVLOAD). Anders als beim NCR bildet 86Box beim
-  AIC-7xxx Trennen und Wiederauswahl nach (scsi_aic7xxx.c `AFTER_DISC`,
-  `aic_reselect_try`, Gerätezeit über `timed_dev`) – aber nur beim Lesen
-  mit Trennerlaubnis (IDENTIFY C0h, `disc_ok`); Schreiben bleibt
-  verbunden (ein Puffer je Gerät in der Nachbildung). Die AHA-154x-
-  Nachbildung (scsi_x54x.c) arbeitet Mailboxen streng nacheinander ab –
-  dort kein Gewinn in 86Box (echte 1542-Firmware trennt selbst: dort
-  reichten mehrere CCBs gleichzeitig). Stufen: (1) Kernel: Sperrgruppen
-  je Gerät (heute 2 je Treiber, bsize Bits 12–14 erlauben 8; Auftrags-
-  köpfe `drq` nicht in DGROUP – voll – sondern in einem Kernelsegment);
-  (2) AIC7XXX.SYS: Auftrag je Ziel statt global, IDENTIFY C0h beim
-  Lesen, SAVE DATA POINTER/DISCONNECT -> Bus frei, Zustand je Ziel
-  merken, Wiederauswahl (ENRSELI, SELDI) per IRQ erkennen und den
-  Befehl fortsetzen – möglichst weiter ohne Sequenzer-Programm (prüfen,
-  ob die Nachbildung das mit angehaltenem Sequenzer mitmacht); (3) Test
-  in 86Box: zwei Leser auf Platten am selben 2940 gleichzeitig, Zeit
-  gegen heute; danach evtl. AHA154X mit mehreren CCBs.
+- SCSI je Gerät für den Adaptec – erledigt (Wunsch des Nutzers, 15.11.2026:
+  der AHA-2940UW ist sein Haupt-Controller, damals im echten Pentium
+  166). 86Box bildet beim AIC-7xxx Trennen und Wiederauswahl nach
+  (scsi_aic7xxx.c `AFTER_DISC`, `aic_reselect_try`, Gerätezeit über
+  `timed_dev`), aber nur beim Lesen mit Trennerlaubnis (`disc_ok`);
+  Schreiben bleibt verbunden (ein Puffer je Gerät in der Nachbildung).
+  Die AHA-154x-Nachbildung (scsi_x54x.c) arbeitet Mailboxen streng
+  nacheinander ab – dort kein Gewinn in 86Box (echte 1542-Firmware
+  trennt selbst: dort reichten mehrere CCBs gleichzeitig; offen).
+  Kernel: Sperrgruppen 0–7 je Treiber (`DRV_BS_GROUP`, bsize Bits 12–14);
+  jedes Paar (Treiber, Gruppe 1–7) bekommt einen von `NXG` (12) Plätzen
+  (`xg_slot`, `xg_drv`/`xg_grp`; blk[].grp = Platz + 1) mit eigener
+  Sperre (`dl_owner[NDRV+1+x]`) und eigenem Auftrag (`drq[NDRV+x]`);
+  alle belegt -> Sperre des Treibers. FLUSH nimmt alle Plätze des
+  Treibers (aufsteigend). DRV_MEDIA und DRV_EJECT gehen jetzt über
+  `drv_request_rel` (eigener DMABUF) – sonst hielte ein ZIP-Mediencheck
+  die Kernelsperre, während ein anderer Task im Treiber auf den Bus
+  wartet. DGROUP 65.060. AIC7XXX.SYS: Einheit n = Gruppe n; Befehl je
+  Ziel in `cm[id]` (CDB, Puffer, Zeiger `done`/`sdp`, Meldungen, Frist),
+  `run()` kopiert den CDB vor dem ersten Warten; Bus-Besitzer `own`,
+  getrennte Befehle `ndisc`. `serve()` führt die Phasen bis Bus frei:
+  02h SAVE DATA POINTER, 03h RESTORE, 04h DISCONNECT -> ST_DISC, Bus
+  frei (`bus_release`: SCSISEQ ENRSELI, Wartende wecken). Wiederauswahl:
+  SSTAT0 SELDI, SELID Bits 4–7, IDENTIFY in MSG IN überlesen, Zeiger
+  zurück (`done = sdp`) – `resel()` bedient sie, wer gerade im Treiber
+  läuft, auch für einen schlafenden Task (alles steht in cm[], Daten per
+  DMA an die physische Adresse). Auswahl bricht bei SELDI ab und versucht
+  es danach neu. Interrupt: `rearm()` = Ereignisse des Besitzers
+  (own_sm0/1) bzw. bei freiem Bus und ndisc ENSELDI; die Routine nimmt
+  INTEN weg und weckt alle (EV_AIC), jeder legt vor dem Schlafen neu an.
+  Unerwartete Wiederauswahl oder ein Gerät, das nicht zurückkommt
+  (Frist) -> Bus-Reset, alle getrennten Befehle scheitern. chip_reset
+  lässt wd[] getrennter Ziele stehen. IDENTIFY C0h nur mit IRQ (im
+  Abfragebetrieb kostete jede Wiederauswahl einen Takt Schlaf – FC von
+  der CD lief dadurch mehrfach langsamer), `/NODISC` schaltet es ab;
+  Startzeile „, Trennen“. Geprüft in 86Box (P3B-F): mit Zählern im
+  Treiber – jeder Lesebefehl trennt und kommt zurück; Plattenzugriffe
+  sind in 86Box so kurz, dass zwei Platten nichts gewinnen (die Platte
+  ist zurück, bevor der andere Task läuft; Suchzeiten zählen dort kaum).
+  Mit einer CD am selben Adaptec (2-fach, 12 MB) + 60 MB von der Platte
+  gleichzeitig: 42 s statt 50 s mit `/NODISC` (CD 42 s wie allein,
+  Platte 14 s nebenher), 29.000 Auswahlen, während ein anderer Befehl
+  getrennt war. Belastung (danach fsck sauber, Inhalte gleich): XCOPY
+  \DOS nach D: neben CD->E: + XCOPY nach E:; dasselbe mit /NOIRQ;
+  2944UW (Wide) mit Platten an ID 0 und ID 9, ZIP an ID 5 (XCOPY drauf,
+  CHKDSK, EJECT -> „kein Medium eingelegt“) und CD an ID 6 gleichzeitig.
+  QEMU: IDE zweiter Kanal + NCR8XX gleichzeitig, fsck sauber.
 - Treiber zur Laufzeit laden wie modprobe (Wunsch des Nutzers,
   15.11.2026, vor dem Netzwerk): Stufe 1 Laden – FAPI `DosLoadDriver`
   (mit Kernelsperre) über das vorhandene `load_driver()`, neue Block-

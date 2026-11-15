@@ -25,7 +25,8 @@ REM Trantor T130B (NCR 53C400). /P:350|340|250|240 Port, /PIO ohne Block
 DEVICE=NCR5380.SYS
 REM PCI-SCSI NCR/LSI 53C8xx. /NOIRQ = Abfragebetrieb, /ID:n eigene ID
 DEVICE=NCR8XX.SYS
-REM Adaptec AHA-2940/2940U(W)/2944UW (PCI). /ID:n eigene ID, /NOWIDE
+REM Adaptec AHA-2940/2940U(W)/2944UW (PCI). /ID:n eigene ID, /NOWIDE,
+REM /NOIRQ, /NODISC (Geraete trennen sich nicht vom Bus)
 DEVICE=AIC7XXX.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS

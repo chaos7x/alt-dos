@@ -32,6 +32,7 @@
 /* ---- AIC-7xxx-Register (I/O, BAR 0) ------------------------------------ */
 #define SCSISEQ     0x00
 #define  ENSELO     0x40
+#define  ENRSELI    0x10
 #define  ENAUTOATNO 0x08
 #define  SCSIRSTO   0x01
 #define SXFRCTL0    0x01
@@ -60,6 +61,7 @@
 #define STCNT       0x08                /* 3 Byte                          */
 #define SSTAT0      0x0B                /* schreiben: CLRSINT0             */
 #define  SELDO      0x40
+#define  SELDI      0x20
 #define  DMADONE    0x01
 #define SSTAT1      0x0C                /* schreiben: CLRSINT1             */
 #define  SELTO      0x80
@@ -69,6 +71,7 @@
 #define  SCSIRSTI   0x20
 #define SIMODE0     0x10
 #define SIMODE1     0x11
+#define SELID       0x19                /* Bits 4-7: wer uns auswaehlt     */
 #define SBLKCTL     0x1F
 #define  SELWIDE    0x02
 #define  SELBUSB    0x08
@@ -98,31 +101,57 @@ static const char *chip;
 static unsigned char rd8(unsigned r) { return inp(io + r); }
 static void wr8(unsigned r, unsigned char v) { outp(io + r, v); }
 
-static unsigned char cdb[12], stat, msg;
+static unsigned char cdb[12];           /* wird gebaut, run() kopiert ihn  */
 
 /* Breite: wide = Karte mit 16-Bit-Bus (und nicht /NOWIDE), wd[id] =
    Stand der Verhandlung je Ziel: 0 offen, 1 Wide, 2 schmal */
 static unsigned char wide, probed, wd[16];
-static unsigned char mo[5], mon, moi;   /* Meldung an das Geraet           */
-static unsigned char mi[8], mii;        /* erweiterte Meldung vom Geraet   */
 
 #define SCSI_OK     0
 #define SCSI_NODEV  1                   /* Auswahl-Zeitueberschreitung     */
 #define SCSI_CHECK  2                   /* Check Condition                 */
 #define SCSI_FAIL   3
 
+/* ---- Befehle je Ziel, Trennen und Wiederauswahl ------------------------
+   Jedes Ziel hat hoechstens einen Befehl (der Kernel sperrt je Einheit,
+   jede Einheit hat ihre eigene Sperrgruppe), sein Stand steht ganz in
+   cm[id]. Mit Trennerlaubnis (IDENTIFY C0h) gibt ein Geraet den Bus frei,
+   waehrend es sucht (SAVE DATA POINTER, DISCONNECT), und waehlt uns
+   spaeter wieder aus (SELDI, SELID). Den Bus fuehrt immer nur einer
+   (own); wer gerade im Treiber laeuft und den Bus frei findet, bedient
+   eine anstehende Wiederauswahl - auch fuer einen anderen Task, der
+   schlaeft: alles Noetige steht in cm[], die Daten gehen per DMA an die
+   physische Adresse. Der Treiber laeuft nie gleichzeitig (der Kernel
+   unterbricht ihn nicht), Wartepunkte sind nur wait_ev/proc_block. */
+#define ST_WANT 1                       /* will auf den Bus                */
+#define ST_ON   2                       /* auf dem Bus                     */
+#define ST_DISC 3                       /* getrennt, wartet auf das Geraet */
+#define ST_DONE 4
+
+static struct cmd {
+    unsigned char cdb[12], cdblen, st, rc;
+    unsigned char stat, msg, ok, dmsg, idm;
+    unsigned char mo[5], mon, moi, mi[8], mii;
+    unsigned      ci, t0, tmo, spins;
+    unsigned long buf, len, done, sdp;
+} cm[16];
+
+static unsigned own;                    /* Ziel + 1, das den Bus hat       */
+static unsigned ndisc;                  /* getrennte Befehle               */
+static unsigned char own_sm0, own_sm1;  /* worauf der Besitzer wartet      */
+static unsigned char discon;            /* Trennen erlauben (nach INIT)    */
+
 static unsigned long phys(const void *p)
 {
     return lin + (unsigned)p;
 }
 
-/* Warten: erst kurz pausenlos (der Chip antwortet meist in Mikrosekunden),
-   dann schlafen - mit IRQ, bis der Chip eines der Ereignisse meldet, auf
-   die gewartet wird (sm0/sm1 = SIMODE0/1), sonst je Takt. Die Interrupt-
-   routine nimmt INTEN wieder weg und weckt; geschlafen wird hoechstens
-   2 Takte (verlorener oder geteilter IRQ haelt nichts auf). t0 = Start
-   in Takten, tmo = Frist. 0 = Frist um */
-static unsigned t0, tmo, spins;
+/* Warten: mit IRQ, bis der Chip eines der Ereignisse meldet - die des
+   Busbesitzers (own_sm0/1) oder, bei freiem Bus und getrennten Befehlen,
+   eine Wiederauswahl (SELDI) -, sonst je Takt; geschlafen wird hoechstens
+   2 Takte (verlorener oder geteilter IRQ haelt nichts auf). Die Interrupt-
+   routine nimmt INTEN weg und weckt alle Wartenden; jeder legt vor dem
+   naechsten Schlaf neu an. 0 = Frist (t0, tmo in Takten) um */
 static volatile unsigned char irq_on, woke;
 #define EV_AIC 1
 
@@ -136,34 +165,62 @@ static void aic_irq(unsigned n)
     proc_run(EV_AIC);
 }
 
-static int later2(unsigned char sm0, unsigned char sm1)
+static void rearm(void)                 /* mit CLI                        */
 {
-    if (++spins < 2000)
-        return 1;
+    unsigned char m0 = own ? own_sm0 : 0, m1 = own ? own_sm1 : 0;
+    if (!own && ndisc)
+        m0 |= SELDI;                    /* ENSELDI = Bit von SELDI         */
+    wr8(CLRINT, 0x04);                  /* altes SCSIINT weg, die Masken  */
+    wr8(SIMODE0, m0);                   /* melden, was jetzt schon gilt   */
+    wr8(SIMODE1, m1);
+    wr8(HCNTRL, (m0 | m1) && irq_on ? PAUSE | INTEN : PAUSE);
+}
+
+static int wait_ev(unsigned t0, unsigned tmo)
+{
     if ((unsigned)(devhlp(DH_TICKS, 0, 0, 0) - t0) > tmo)
         return 0;
     cli();
     if (irq_on) {
         woke = 0;
-        wr8(CLRINT, 0x04);              /* altes SCSIINT weg, die Masken  */
-        wr8(SIMODE0, sm0);              /* melden, was jetzt schon gilt   */
-        wr8(SIMODE1, sm1);
-        wr8(HCNTRL, PAUSE | INTEN);
+        rearm();
         if (!woke)
             proc_block(EV_AIC, 2);      /* kehrt mit STI zurueck         */
         else
             sti();
-        cli();
-        wr8(HCNTRL, PAUSE);
-        wr8(SIMODE0, 0);
-        wr8(SIMODE1, 0);
-        sti();
     } else
         proc_block(0xFFFF, 1);
     return 1;
 }
 
-#define later() later2(0, BUSFREE | SCSIRSTI | 0x01)    /* REQINIT     */
+/* Besitzer wartet auf ein Bus-Ereignis: erst kurz pausenlos (der Chip
+   antwortet meist in Mikrosekunden), dann schlafen */
+static int later2(struct cmd *c, unsigned char sm0, unsigned char sm1)
+{
+    if (++c->spins < 2000)
+        return 1;
+    own_sm0 = sm0;
+    own_sm1 = sm1;
+    return wait_ev(c->t0, c->tmo);
+}
+
+#define later(c) later2(c, 0, BUSFREE | SCSIRSTI | 0x01)    /* REQINIT  */
+
+/* Bus freigeben: Wiederauswahl annehmen, solange jemand getrennt ist,
+   und die Wartenden wecken (sie brauchen den Bus) */
+static void bus_release(void)
+{
+    own = 0;
+    own_sm0 = own_sm1 = 0;
+    wr8(SXFRCTL0, 0);
+    wr8(SSTAT0, 0xFF & ~SELDI);
+    wr8(SSTAT1, 0xFF);
+    wr8(SCSISEQ, ndisc ? ENRSELI : 0);
+    cli();
+    rearm();
+    sti();
+    proc_run(EV_AIC);
+}
 
 static void chip_reset(void)
 {
@@ -181,7 +238,8 @@ static void chip_reset(void)
     }
     wr8(SBLKCTL, wide ? SELWIDE : 0);   /* Kanal A                        */
     for (k = 0; k < 16; k++)            /* nach einem Reset neu verhandeln */
-        wd[k] = 0;
+        if (cm[k].st != ST_DISC)        /* (nicht, wer gleich zurueckkommt) */
+            wd[k] = 0;
     wr8(SCSISEQ, 0);
     wr8(SXFRCTL0, CLRSTCNT | CLRCHN);
     wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);    /* Auswahlfrist ~256 ms */
@@ -193,6 +251,27 @@ static void chip_reset(void)
     wr8(SSTAT0, 0xFF);                  /* CLRSINT0/1: alles loeschen     */
     wr8(SSTAT1, 0xFF);
     wr8(CLRINT, 0x1F);
+    wr8(SCSISEQ, ndisc ? ENRSELI : 0);
+}
+
+/* Bus-Reset (Geraet meldet sich zurueck, ohne dass ein Befehl auf es
+   wartet): alle getrennten Befehle sind verloren */
+static void bus_reset(void)
+{
+    unsigned k;
+    wr8(SCSISEQ, SCSIRSTO);
+    for (k = 0; k < 200; k++)
+        inp(0x80);
+    wr8(SCSISEQ, 0);
+    for (k = 0; k < 16; k++)
+        if (cm[k].st == ST_DISC) {
+            cm[k].st = ST_DONE;
+            cm[k].rc = SCSI_FAIL;
+        }
+    ndisc = 0;
+    chip_reset();
+    for (k = 0; k < 16; k++)
+        wd[k] = 0;
 }
 
 static void put24(unsigned r, unsigned long v)
@@ -203,10 +282,11 @@ static void put24(unsigned r, unsigned long v)
 }
 
 /* Datenphase per DMA: n Bytes ab buf, out = zum Geraet. -> uebertragen */
-static unsigned long dma(unsigned long buf, unsigned long n, int out)
+static unsigned long dma(struct cmd *c, unsigned long buf, unsigned long n, int out)
 {
     unsigned char st;
     unsigned long left;
+    unsigned k;
     wr8(SXFRCTL0, 0);
     wr8(DFCNTRL, FIFORESET);
     put24(STCNT, n);
@@ -223,75 +303,38 @@ static unsigned long dma(unsigned long buf, unsigned long n, int out)
             break;
         if (rd8(SSTAT1) & (PHASEMIS | BUSFREE | SCSIRSTI))
             break;
-        if (!(rd8(SCSISIG) & BSYI) || !later2(DMADONE, PHASEMIS | BUSFREE | SCSIRSTI))
+        if (!(rd8(SCSISIG) & BSYI) || !later2(c, DMADONE, PHASEMIS | BUSFREE | SCSIRSTI))
             break;
     }
     if (!out) {                         /* Rest im FIFO in den Speicher   */
         wr8(DFCNTRL, HDMAEN | FIFOFLUSH);
-        for (spins = 0; !(rd8(DFSTATUS) & FIFOEMP) && spins < 20000; spins++)
+        for (k = 0; !(rd8(DFSTATUS) & FIFOEMP) && k < 20000; k++)
             ;
     }
     wr8(DFCNTRL, 0);
-    for (spins = 0; (rd8(DFCNTRL) & (SCSIEN | SDMAEN | HDMAEN)) && spins < 20000; spins++)
+    for (k = 0; (rd8(DFCNTRL) & (SCSIEN | SDMAEN | HDMAEN)) && k < 20000; k++)
         ;
     left = rd8(STCNT) | ((unsigned)rd8(STCNT + 1) << 8) |
            ((unsigned long)rd8(STCNT + 2) << 16);
     return n - left;
 }
 
-/* Befehl: Ziel id, CDB (cdblen), Daten n Bytes ab der physischen Adresse
-   buf (Richtung nach der Phase, die das Geraet waehlt). t = Frist in Takten */
-static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long len,
-               unsigned t)
+/* Phasen des Befehls auf dem Bus (nach Auswahl oder Wiederauswahl), bis
+   das Geraet den Bus freigibt; danach ist er fertig, getrennt oder
+   gescheitert. Gibt den Bus frei. */
+static void serve(struct cmd *c, unsigned id)
 {
     unsigned char ph, s1;
-    unsigned ci = 0;
-    unsigned long done = 0;
-    int ok = 0;
 
-    stat = 0xFF;
-    msg = 0xFF;
-    t0 = devhlp(DH_TICKS, 0, 0, 0);
-    tmo = t;
-    spins = 0;
-    wr8(SSTAT0, 0xFF);
-    wr8(SSTAT1, 0xFF);
-    wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
-    wr8(SCSIRATE, wd[id] == 1 ? WIDEXFER : 0);
-    mo[0] = 0x80;                       /* IDENTIFY, LUN 0, ohne Trennen   */
-    mon = 1;
-    if (wide && !wd[id]) {              /* WDTR: 16 Bit anbieten           */
-        mo[1] = 0x01;
-        mo[2] = 0x02;
-        mo[3] = 0x03;
-        mo[4] = 0x01;
-        mon = 5;
-    }
-    moi = mii = 0;
-    wr8(SCSIID, (unsigned char)((id << 4) | host));
-    wr8(SCSISEQ, ENSELO | ENAUTOATNO);  /* Auswahl mit ATN                */
-    for (;;) {
-        if (rd8(SSTAT0) & SELDO)
-            break;
-        if (rd8(SSTAT1) & SELTO) {
-            wr8(SCSISEQ, 0);
-            wr8(SSTAT1, SELTO);
-            return SCSI_NODEV;
-        }
-        if (!later2(SELDO, SELTO | SCSIRSTI)) {
-            chip_reset();
-            return SCSI_NODEV;
-        }
-    }
-    wr8(SCSISEQ, 0);
-    wr8(SSTAT0, SELDO);
-    spins = 0;
+    c->st = ST_ON;
+    c->spins = 0;
+    c->dmsg = 0;
     for (;;) {                          /* Phasen, wie das Geraet sie will */
         s1 = rd8(SSTAT1);
         if (!(rd8(SCSISIG) & BSYI) || (s1 & SCSIRSTI))
             break;                      /* Bus frei                       */
         if (!(rd8(SCSISIG) & REQI)) {
-            if (!later())
+            if (!later(c))
                 break;
             continue;
         }
@@ -300,53 +343,61 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
         wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
         switch (ph) {
         case P_MESGOUT:                 /* IDENTIFY [+ WDTR], dann NOP     */
-            if (moi + 1 >= mon)
+            if (c->moi + 1 >= c->mon)
                 wr8(SSTAT1, CLRATNO);   /* letztes Byte: ATN weg           */
             wr8(SXFRCTL0, SPIOEN);
-            wr8(SCSIDATL, moi < mon ? mo[moi] : 0x08);
-            moi++;
+            wr8(SCSIDATL, c->moi < c->mon ? c->mo[c->moi] : 0x08);
+            c->moi++;
             break;
         case P_COMMAND:
             wr8(SXFRCTL0, SPIOEN);
-            wr8(SCSIDATL, ci < cdblen ? cdb[ci] : 0);
-            ci++;
+            wr8(SCSIDATL, c->ci < c->cdblen ? c->cdb[c->ci] : 0);
+            c->ci++;
             break;
         case P_DATAIN:
         case P_DATAOUT:
-            if (done < len)
-                done += dma(buf + done, len - done, ph == P_DATAOUT);
+            if (c->done < c->len)
+                c->done += dma(c, c->buf + c->done, c->len - c->done, ph == P_DATAOUT);
             else {                      /* mehr als erwartet: verwerfen    */
                 wr8(SXFRCTL0, 0);
                 wr8(SXFRCTL1, BITBUCKET | ENSTIMER | ACTNEGEN | STPWEN);
-                while ((rd8(SCSISIG) & (BSYI | PHASE_MASK)) == (BSYI | ph) && later())
+                while ((rd8(SCSISIG) & (BSYI | PHASE_MASK)) == (BSYI | ph) && later(c))
                     ;
                 wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
             }
             break;
         case P_STATUS:
             wr8(SXFRCTL0, SPIOEN);
-            stat = rd8(SCSIDATL);
+            c->stat = rd8(SCSIDATL);
             break;
         case P_MESGIN:
             wr8(SXFRCTL0, SPIOEN);
             ph = rd8(SCSIDATL);
-            if (mii) {                  /* erweiterte Meldung: Rest        */
-                if (mii < sizeof(mi))
-                    mi[mii] = ph;
-                if (++mii >= 2 && mii >= 2u + mi[1]) {
-                    if (mi[1] == 2 && mi[2] == 0x03 && mon > 1) {  /* WDTR */
-                        wd[id] = mi[3] ? 1 : 2;
-                        wr8(SCSIRATE, mi[3] ? WIDEXFER : 0);
+            if (c->mii) {               /* erweiterte Meldung: Rest        */
+                if (c->mii < sizeof(c->mi))
+                    c->mi[c->mii] = ph;
+                if (++c->mii >= 2 && c->mii >= 2u + c->mi[1]) {
+                    if (c->mi[1] == 2 && c->mi[2] == 0x03 && c->mon > 1) {  /* WDTR */
+                        wd[id] = c->mi[3] ? 1 : 2;
+                        wr8(SCSIRATE, c->mi[3] ? WIDEXFER : 0);
                     }
-                    mii = 0;
+                    c->mii = 0;
                 }
             } else if (ph == 0x01)      /* EXTENDED MESSAGE                */
-                mii = 1;
+                c->mii = 1;
+            else if (ph & 0x80)
+                ;                       /* IDENTIFY der Wiederauswahl      */
+            else if (ph == 0x02)        /* SAVE DATA POINTER               */
+                c->sdp = c->done;
+            else if (ph == 0x03)        /* RESTORE POINTERS                */
+                c->done = c->sdp;
+            else if (ph == 0x04)        /* DISCONNECT                      */
+                c->dmsg = 1;
             else {
-                msg = ph;
-                if (msg == 0)
-                    ok = 1;             /* COMMAND COMPLETE               */
-                else if (msg == 0x07 && mon > 1 && !wd[id])
+                c->msg = ph;
+                if (ph == 0)
+                    c->ok = 1;          /* COMMAND COMPLETE               */
+                else if (ph == 0x07 && c->mon > 1 && !wd[id])
                     wd[id] = 2;         /* MESSAGE REJECT auf WDTR         */
             }
             break;
@@ -354,20 +405,151 @@ static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long le
             wr8(SXFRCTL0, SPIOEN);      /* unbekannt: Byte abnehmen        */
             rd8(SCSIDATL);
         }
-        spins = 0;
+        c->spins = 0;
     }
     wr8(SXFRCTL0, 0);
-    wr8(SSTAT0, 0xFF);
-    wr8(SSTAT1, 0xFF);
-    if (ok && mon > 1 && !wd[id])
+    if (c->ok && c->mon > 1 && !wd[id])
         wd[id] = 2;                     /* WDTR ohne Antwort: schmal       */
-    if (!ok) {
+    if (c->ok) {
+        c->rc = c->stat == 0 ? SCSI_OK : c->stat == 2 ? SCSI_CHECK : SCSI_FAIL;
+        c->st = ST_DONE;
+    } else if (c->dmsg && !(rd8(SCSISIG) & BSYI)) {
+        c->st = ST_DISC;                /* kommt per Wiederauswahl zurueck */
+        c->t0 = devhlp(DH_TICKS, 0, 0, 0);
+        ndisc++;
+    } else {
+        c->rc = SCSI_FAIL;
+        c->st = ST_DONE;
         chip_reset();
-        return SCSI_FAIL;
     }
-    if (stat == 0)
-        return SCSI_OK;
-    return stat == 2 ? SCSI_CHECK : SCSI_FAIL;
+    bus_release();
+}
+
+/* Ein Geraet waehlt uns wieder aus (Bus frei, SELDI): seinen Befehl
+   fortsetzen - wem er auch gehoert */
+static void resel(void)
+{
+    unsigned id = rd8(SELID) >> 4;
+    struct cmd *c = &cm[id];
+    wr8(SSTAT0, SELDI);
+    if (c->st != ST_DISC) {             /* niemand erwartet es             */
+        bus_reset();
+        bus_release();
+        return;
+    }
+    ndisc--;
+    own = id + 1;
+    c->done = c->sdp;                   /* Zeiger wie zuletzt gesichert    */
+    wr8(SCSIRATE, wd[id] == 1 ? WIDEXFER : 0);
+    wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
+    serve(c, id);
+}
+
+/* Auswahl des Ziels; der Bus ist frei. Kommt dabei eine Wiederauswahl
+   dazwischen, wird abgebrochen (der Befehl bleibt ST_WANT). */
+static void select(struct cmd *c, unsigned id)
+{
+    own = id + 1;
+    c->spins = 0;
+    wr8(SSTAT0, 0xFF & ~SELDI);
+    wr8(SSTAT1, 0xFF);
+    wr8(SXFRCTL1, ENSTIMER | ACTNEGEN | STPWEN);
+    wr8(SCSIRATE, wd[id] == 1 ? WIDEXFER : 0);
+    wr8(SCSIID, (unsigned char)((id << 4) | host));
+    wr8(SCSISEQ, ENSELO | ENAUTOATNO | (ndisc ? ENRSELI : 0));  /* mit ATN */
+    for (;;) {
+        if (rd8(SSTAT0) & SELDO)
+            break;
+        if (rd8(SSTAT0) & SELDI) {      /* ein getrenntes Geraet war schneller */
+            wr8(SCSISEQ, ENRSELI);
+            own = 0;
+            resel();
+            return;
+        }
+        if (rd8(SSTAT1) & SELTO) {
+            wr8(SCSISEQ, 0);
+            wr8(SSTAT1, SELTO);
+            c->rc = SCSI_NODEV;
+            c->st = ST_DONE;
+            bus_release();
+            return;
+        }
+        if (!later2(c, SELDO | SELDI, SELTO | SCSIRSTI)) {
+            c->rc = SCSI_NODEV;
+            c->st = ST_DONE;
+            chip_reset();
+            bus_release();
+            return;
+        }
+    }
+    wr8(SCSISEQ, 0);
+    wr8(SSTAT0, SELDO);
+    serve(c, id);
+}
+
+/* Befehl: Ziel id, CDB (cdblen, aus cdb[]), Daten len Bytes ab der
+   physischen Adresse buf (Richtung nach der Phase, die das Geraet waehlt).
+   t = Frist in Takten */
+static int run(unsigned id, unsigned cdblen, unsigned long buf, unsigned long len,
+               unsigned t)
+{
+    struct cmd *c = &cm[id];
+    unsigned k;
+
+    for (k = 0; k < 12; k++)
+        c->cdb[k] = cdb[k];
+    c->cdblen = (unsigned char)cdblen;
+    c->buf = buf;
+    c->len = len;
+    c->done = c->sdp = 0;
+    c->stat = c->msg = 0xFF;
+    c->ok = 0;
+    c->ci = 0;
+    c->moi = c->mii = 0;
+    c->mo[0] = discon ? 0xC0 : 0x80;    /* IDENTIFY, LUN 0, Trennen erlaubt? */
+    c->mon = 1;
+    if (wide && !wd[id]) {              /* WDTR: 16 Bit anbieten           */
+        c->mo[1] = 0x01;
+        c->mo[2] = 0x02;
+        c->mo[3] = 0x03;
+        c->mo[4] = 0x01;
+        c->mon = 5;
+    }
+    c->t0 = devhlp(DH_TICKS, 0, 0, 0);
+    c->tmo = t;
+    c->st = ST_WANT;
+    for (;;) {
+        if (c->st == ST_DONE)
+            break;
+        if (!own) {                     /* Bus frei: wer zuerst?          */
+            if (rd8(SSTAT0) & SELDI) {
+                resel();
+                continue;
+            }
+            if (c->st == ST_WANT) {
+                select(c, id);
+                continue;
+            }
+        }
+        if (c->st == ST_ON) {           /* ein anderer fuehrt ihn gerade  */
+            cli();                      /* (seine eigene Frist gilt)      */
+            proc_block(EV_AIC, 2);
+            continue;
+        }
+        if (!wait_ev(c->t0, c->tmo)) {  /* Frist um                       */
+            if (c->st == ST_DISC) {     /* Geraet kam nicht zurueck        */
+                ndisc--;
+                if (!own) {
+                    bus_reset();
+                    bus_release();
+                }
+            }
+            c->rc = c->st == ST_WANT ? SCSI_NODEV : SCSI_FAIL;
+            break;
+        }
+    }
+    c->st = 0;
+    return c->rc;
 }
 
 static void cdb6(unsigned char o, unsigned char alloc)
@@ -379,15 +561,16 @@ static void cdb6(unsigned char o, unsigned char alloc)
     cdb[4] = alloc;
 }
 
-/* REQUEST SENSE: Sense Key << 8 | ASC, 0 = keine Antwort */
-static unsigned char sense[18];
+/* REQUEST SENSE: Sense Key << 8 | ASC, 0 = keine Antwort (Puffer je Ziel:
+   ein anderer Task kann derweil dasselbe fuer sein Geraet tun) */
+static unsigned char sense[16][18];
 
 static unsigned req_sense(unsigned id)
 {
-    cdb6(0x03, sizeof(sense));
-    if (run(id, 6, phys(sense), sizeof(sense), 300) != SCSI_OK)
+    cdb6(0x03, 18);
+    if (run(id, 6, phys(sense[id]), 18, 300) != SCSI_OK)
         return 0;
-    return ((sense[2] & 0x0F) << 8) | sense[12];
+    return ((sense[id][2] & 0x0F) << 8) | sense[id][12];
 }
 
 /* ---- Geraete ------------------------------------------------------------ */
@@ -494,6 +677,7 @@ static void init(void)
     p = scat(p, k == 1 ? " belegt, Abfragebetrieb" : k == 2 ? " nicht benutzt (/NOIRQ)" :
                 k == 3 ? " ung\x81ltig, Abfragebetrieb" : "");
     p = scat(p, wide ? ", Wide" : "");
+    p = scat(p, k == 0 && !has_opt(r->args, "/NODISC") ? ", Trennen" : "");
     p = scat(p, ", ID ");
     p = udec(p, host);
     scat(p, "\n");
@@ -529,7 +713,7 @@ static void init(void)
             cap = capacity(id, r->buf_phys, buf);
             if (cap || rmb) {
                 r->blocks[n] = cap;
-                r->bsize[n] = rmb ? 512 | DRV_BS_REMOVABLE : 0;
+                r->bsize[n] = (rmb ? 512 | DRV_BS_REMOVABLE : 0) | DRV_BS_GROUP(n);
                 bsz[n] = 512;
                 rem[n] = rmb ? 1 : 0;
                 chg[n] = 0;
@@ -550,7 +734,7 @@ static void init(void)
                 req_sense(id);
             }
             r->blocks[n] = 0xFFFFFFFFUL;
-            r->bsize[n] = 2048;
+            r->bsize[n] = 2048 | DRV_BS_GROUP(n);
             bsz[n] = 2048;
             target[n++] = (unsigned char)id;
         }
@@ -558,6 +742,9 @@ static void init(void)
         dputs(line);
     }
     nunits = n;
+    /* ab jetzt trennen - nur mit IRQ: im Abfragebetrieb kostete jede
+       Wiederauswahl einen Takt Schlaf */
+    discon = irq_on && !has_opt(r->args, "/NODISC");
     r->units = (unsigned char)n;
     r->count = 16;                      /* Bloecke je READ(10)             */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
@@ -685,6 +872,7 @@ static void eject(void)
 
 static void flush(void)
 {
+    struct drv_req __far *r = REQ;      /* REQ gilt nur beim Eintritt     */
     unsigned u, i;
     for (u = 0; u < nunits; u++) {
         if (bsz[u] != 512)
@@ -694,7 +882,7 @@ static void flush(void)
         cdb[0] = 0x35;                  /* SYNCHRONIZE CACHE               */
         run(target[u], 10, 0, 0, 1000);
     }
-    REQ->status = DRV_OK;
+    r->status = DRV_OK;
 }
 
 void strategy(void)

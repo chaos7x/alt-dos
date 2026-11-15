@@ -348,7 +348,8 @@ static void vol_unlock_cur(void);
 #define NVK     (NDRIVE + 1)
 #define MOD_DL  NDRV
 static unsigned char vk_owner[NVK];     /* Task + 1, 0 = frei            */
-static unsigned char dl_owner[2 * NDRV + 1], dl_depth[2 * NDRV + 1];   /* [NDRV+1+d]: Gruppe 1 */
+#define NXG 12                          /* Sperrgruppen ueber 0 (alle Treiber) */
+static unsigned char dl_owner[NDRV + 1 + NXG], dl_depth[NDRV + 1 + NXG];   /* [NDRV+1+x]: Gruppe x */
 static unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
 void vol_lock(int d);
 static void drv_lock(int n);
@@ -2141,7 +2142,7 @@ static void locks_task_end(int t)       /* Sicherheitsnetz              */
     for (i = 0; i < NVK; i++)
         if (vk_owner[i] == t + 1)
             vk_owner[i] = 0;
-    for (i = 0; i <= 2 * NDRV; i++)
+    for (i = 0; i < NDRV + 1 + NXG; i++)
         if (dl_owner[i] == t + 1)
             dl_owner[i] = 0;
     task[t].vkey = task[t].eakey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
@@ -4546,13 +4547,36 @@ static void sys_info(struct fapi_sysinfo __far *si)
 /* Auftrag je Treiber (Phase 6): nur der Kopf bis 'count' - READ/WRITE/
    FLUSH brauchen nicht mehr, die INIT-Felder bleiben in 'req' */
 #define DRQ_SIZE 28
-static unsigned char drq[2 * NDRV][DRQ_SIZE];     /* [NDRV+d]: Gruppe 1 */
+static unsigned char drq[NDRV + NXG][DRQ_SIZE];   /* [NDRV+x]: Gruppe x+1 */
 #define DRQ(d) ((struct drv_req *)drq[d])
-/* Sperre und Auftrag eines Blockgeraets: je Treiber, bei Einheiten mit
-   Sperrgruppe 1 (zweiter IDE-Kanal) eigene - beide Kanaele arbeiten dann
-   gleichzeitig */
-#define DLB(dev)  (blk[dev].grp ? NDRV + 1 + blk[dev].drv : blk[dev].drv)
-#define DRQB(dev) ((struct drv_req *)drq[blk[dev].grp ? NDRV + blk[dev].drv : blk[dev].drv])
+/* Sperre und Auftrag eines Blockgeraets: je Treiber; meldet der Treiber
+   fuer eine Einheit eine Sperrgruppe 1-7 (IDE-Kanal, SCSI-Ziel), bekommt
+   jedes Paar (Treiber, Gruppe) einen eigenen Platz x (blk[].grp = x + 1)
+   mit eigener Sperre und eigenem Auftrag - die Gruppen arbeiten dann
+   gleichzeitig im Treiber. Sind alle NXG Plaetze vergeben, bleibt es bei
+   der Sperre des Treibers (richtig, nur nacheinander). */
+static signed char xg_drv[NXG];         /* Treiber des Platzes          */
+static unsigned char xg_grp[NXG];       /* Gruppe 1-7, 0 = Platz frei   */
+#define DLB(dev)  (blk[dev].grp ? NDRV + blk[dev].grp : blk[dev].drv)
+#define DRQB(dev) ((struct drv_req *)drq[blk[dev].grp ? NDRV + blk[dev].grp - 1 : blk[dev].drv])
+
+static unsigned char xg_slot(int d, unsigned g)  /* -> blk[].grp */
+{
+    unsigned x, f = NXG;
+    if (!g)
+        return 0;
+    for (x = 0; x < NXG; x++) {
+        if (xg_drv[x] == d && xg_grp[x] == g)
+            return (unsigned char)(x + 1);
+        if (!xg_grp[x] && f == NXG)
+            f = x;
+    }
+    if (f == NXG)
+        return 0;
+    xg_drv[f] = (signed char)d;
+    xg_grp[f] = (unsigned char)g;
+    return (unsigned char)(f + 1);
+}
 
 static void drv_request(int d, struct drv_req *r)  /* Sperre wird gehalten */
 {
@@ -4999,7 +5023,7 @@ static int rem_media(int dev)
     r->buf_phys = dmab_phys;
     r->buf_sel = DMABUF;
     r->buf_off = 0;
-    drv_request(b->drv, r);
+    drv_request_rel(b->drv, r);         /* eigener DMABUF: Sperre darf weg */
     st = r->status;
     ch = r->count;
     cap = r->lba;
@@ -5038,7 +5062,7 @@ static int blk_eject(int dev)
     r->buf_phys = dmab_phys;
     r->buf_sel = DMABUF;
     r->buf_off = 0;
-    drv_request(blk[dev].drv, r);
+    drv_request_rel(blk[dev].drv, r);   /* eigener DMABUF: Sperre darf weg */
     st = r->status;
     drv_unlock(DLB(dev));
     if (st != DRV_ERR_CMD) {
@@ -5246,6 +5270,7 @@ int blk_write(int dev, unsigned long lba)
 void blk_flush(void)
 {
     int dev, d;
+    unsigned x;
     bc_flush();                         /* verzoegerte Daten zuerst      */
     fd_sync();                          /* Spurpuffer der Diskette       */
     for (dev = 1; dev < nblk; dev++) {
@@ -5255,12 +5280,16 @@ void blk_flush(void)
         for (; dev < nblk; dev++)       /* je Treiber einmal          */
             if (blk[dev].drv == d)
                 blk_dirty[dev] = 0;
-        drv_lock(d);                    /* beide Gruppen: FLUSH geht an */
-        drv_lock(NDRV + 1 + d);         /* alle Einheiten               */
+        drv_lock(d);                    /* alle Gruppen: FLUSH geht an  */
+        for (x = 0; x < NXG; x++)       /* alle Einheiten (aufsteigend) */
+            if (xg_grp[x] && xg_drv[x] == d)
+                drv_lock(NDRV + 1 + x);
         DRQ(d)->cmd = DRV_FLUSH;
         DRQ(d)->status = DRV_ERR_IO;
         drv_request_rel(d, DRQ(d));
-        drv_unlock(NDRV + 1 + d);
+        for (x = NXG; x-- > 0; )
+            if (xg_grp[x] && xg_drv[x] == d)
+                drv_unlock(NDRV + 1 + x);
         drv_unlock(d);
         dev = 0;                        /* von vorn: naechster Treiber */
     }
@@ -5931,7 +5960,7 @@ static int load_driver(const char *line, int is_ifs)
         blk[nblk].blocks = req.blocks[k];
         blk[nblk].bsize = (req.bsize[k] & 0x0FFF) ? req.bsize[k] & 0x0FFF : 512;
         blk[nblk].rem = (unsigned char)(req.bsize[k] >> 15);
-        blk[nblk].grp = (unsigned char)((req.bsize[k] >> 12) & 7 ? 1 : 0);
+        blk[nblk].grp = xg_slot(d, (req.bsize[k] >> 12) & 7);
         nblk++;
     }
     return req.units;

@@ -193,7 +193,7 @@ struct blkdev {
     unsigned long  blocks;
     unsigned       bsize;           /* 512, CD-ROM 2048                    */
     unsigned char  rem;             /* Wechselplatte (ZIP, MO): DRV_MEDIA  */
-    unsigned char  grp;             /* Sperrgruppe im Treiber (IDE-Kanal)  */
+    unsigned char  grp;             /* Sperrplatz x + 1 (Treiber, Gruppe), 0 = Treiber */
 };
 #define IS_REM(dev) (blk[dev].rem)
 extern struct blkdev blk[NBLK];
