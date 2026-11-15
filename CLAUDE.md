@@ -1330,6 +1330,15 @@ AWE32 „OPL2“ (behoben, s. AWE). Tippen (Vorschlag des Nutzers): zuerst
 `keyb us` (über typ.py mit deutscher Zuordnung: y/z vertauscht), danach
 `xdotool type` direkt – alle Zeichen inkl. \ | * " kommen richtig an.
 
+Untergrenze in 86Box (vom Nutzer, 15.11.2026): `86box/386dx.cfg` (ASUS
+ISA-386C `asus386`, 386DX/40, 4 MB, 387, Cirrus GD5434 ISA, AHA-154xC
+mit atdos-hd.img an ID 0, AWE32) und `86box/386sx.cfg` (`arb1374`,
+386SX/40, 2 MB – für Digger braucht es dort 4 MB –, ET4000/W32i,
+AHA-154xC). ROMs dafür lokal per sparse checkout (machines/asus386,
+machines/arb1374). Beobachtungen des Nutzers auf dem 386: FAT32 mit
+4 MB ist zäh (CHKDSK lange), XCOPY aus der Box auf die Platte langsam,
+zwei Plattenaufträge gleichzeitig bringen ohne DMA nichts (PIO
+lastet die CPU aus).
 Obergrenze in 86Box (Konfiguration: `86box/p3bf.cfg`, vom Nutzer,
 15.11.2026): ASUS P3B-F (`p3bf`),
 Pentium II Deschutes 233 MHz, Dynarec, 256 MB, PS/2-Tastatur und -Maus,
