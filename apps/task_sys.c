@@ -99,7 +99,8 @@ void main(void)
         if (a[0] == '/' && a[1] == '?') {
             puts("\x9A" "bertr\x84gt AT-DOS auf einen Datentr\x84ger.\r\n\r\n"
                  "SYS [Quelle:] Ziel: [/A]\r\n\r\n"
-                 "  /A  auch alle Programme aus \\DOS kopieren\r\n");
+                 "  /A  auch alle Programme aus \\DOS, die DOS-Box (\\DOS\\MDOS) und die\r\n"
+                 "      Klangb\x84nke (\\DOS\\SYSTEM\\SFBANK) kopieren\r\n");
             return;
         }
         if (a[0] == '/' && up(a[1]) == 'A') {
@@ -156,8 +157,9 @@ void main(void)
         DosMkDir(ddir);
     if (copy_dir("DOS\\SYSTEM"))
         DosExit(1);
-    if (all) {
-        if (copy_dir("DOS"))
+    if (all) {                          /* /A: alle Werkzeuge, DOS-Box,  */
+        if (copy_dir("DOS") || copy_dir("DOS\\MDOS") ||   /* Klangbaenke */
+            copy_dir("DOS\\SYSTEM\\SFBANK"))
             DosExit(1);
     } else
         cp("DOS\\CHKDSK.EXE", 0, 0);  /* Pruefung beim Start braucht es */

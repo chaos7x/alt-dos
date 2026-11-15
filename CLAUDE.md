@@ -166,7 +166,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und `KEYB` fallen bei reinem Dateinamen auf `\DOS\SYSTEM`, dann `\DOS`
   zurück; CHKDSK sucht `U*.EXE` fest in `\DOS\SYSTEM` des Startlaufwerks,
   erst danach im PATH. Standard-PATH `X:\DOS;X:\`. `ATSYS` kopiert die
-  Unterverzeichnisse aus der Tabelle `subdirs` (Eltern zuerst).
+  Unterverzeichnisse aus der Tabelle `subdirs` (Eltern zuerst; seit 6.1
+  auch `DOS\SYSTEM\SFBANK` und `DOS\MDOS`, Namenspuffer 36 Byte);
+  `SYS /A` ebenso (vom Nutzer gemeldet: MDOS fehlte; in QEMU geprüft).
 - `tools/atsys.asm` – `ATSYS.COM` für MS-DOS (wie SYS); `tools/sysboot.py`
   macht dasselbe für Abbilder beim Bauen
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,

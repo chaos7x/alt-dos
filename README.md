@@ -386,7 +386,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `CMD.EXE`, `\DOS\SYSTEM`,
   `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
   Startcode in den Bootsektor; mit `/A` zusätzlich alle Programme aus
-  `\DOS` (vollständige Installation). Disketten nur leer (`FORMAT A: /S`). Der
+  `\DOS`, die DOS-Box (`\DOS\MDOS`) und die Klangbänke
+  (`\DOS\SYSTEM\SFBANK`) – vollständige Installation. `ATSYS` (unter
+  MS-DOS) kopiert dieselben Verzeichnisse; Systemdateien (z. B. eine
+  dorthin gelegte `SWAPPER.DAT`) lassen beide aus. Disketten nur leer (`FORMAT A: /S`). Der
   Diskettenbootsektor meldet „Keine Systemdiskette“, wenn `ATDOS.SYS` fehlt.
 - `CHKDSK [X:] [/F] [/V]` wie MS-DOS: prüft FAT, Ketten, Dateigrößen,
   Querverbindungen und verlorene Zuordnungseinheiten; `/F` repariert
