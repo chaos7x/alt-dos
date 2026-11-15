@@ -300,7 +300,7 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   [Name…]` entpackt 7z-Archive von 7-Zip (Copy, LZMA, LZMA2, BCJ x86,
   Delta; gepackter Kopf, feste und einzelne Ordner) und `.LZMA`-Dateien
   (eigener LZMA-Kern `lzma.c`). Wörterbuch so groß wie der Speicher
-  erlaubt (bis 768 KB); größere Ordner laufen über eine Zwischendatei –
+  erlaubt (etwa 576 KB); größere Ordner laufen über eine Zwischendatei –
   so entpackt es auch Archive mit 16-MB-Wörterbuch. Nicht: BCJ2, PPMd,
   Verschlüsselung
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
