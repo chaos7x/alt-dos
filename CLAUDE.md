@@ -3903,6 +3903,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
   `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
+- Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
+  nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
+  (1) Netzwerkkartentreiber mit IRQ (NE2000 ISA für 86Box, RTL8139/
+  ne2k_pci für QEMU/Proxmox, später PCnet/Intel) und TCP/IP (ARP, IP,
+  ICMP, UDP, TCP) als Treiber/Modul mit eigenen Segmenten – DGROUP des
+  Kernels ist voll; FAPI-Sockets für Programme. (2) DHCP-Client, DNS,
+  SNTP, `PING`, `IPCONFIG`. (3) `WGET` und `CURL` (HTTP/1.1, FTP); HTTPS
+  braucht TLS 1.2 (ECDHE/RSA, AES-GCM, SHA-256 – große Zahlen ohne
+  32-Bit-Multiplikation in C, also mul16-Hilfen oder Assembler) – als
+  eigene Stufe. (4) Als Letztes für 6.x: AD-Beitritt mit Kerberos an
+  das Samba-AD des Nutzers: DNS-SRV (`_kerberos._tcp`, `_ldap._tcp`),
+  Kerberos v5 (AES-CTS/HMAC-SHA1, RC4-HMAC als Rückfall, Tickets,
+  Keytab), LDAP mit SASL/GSSAPI und kpasswd/SAMR für das Rechnerkonto
+  (`DOMJOIN`), SMB2/3-Client als `.IFS` (SPNEGO, Signierung HMAC-SHA256/
+  AES-CMAC; NTLMv2 als Zwischenschritt, `NET USE`), Anmeldung des
+  Domänenbenutzers beim Start, Wechsel des Maschinenkennworts. Kerberos,
+  LDAP und Beitritt als FAPI-Programme im Ring 3 (wie die Dienste von
+  OS/2 LAN Server), damit sie unter 7.0 unverändert laufen; dort neu nur
+  Treiber, TCP/IP und IFS. Später: Netzwerkkarte für die DOS-Boxen
+  (virtueller NE2000 oder Packet-Driver-Schnittstelle).
 - UEFI (Entscheidung des Nutzers: ab 7.0, mit dem 32-Bit-Kernel): Lader wechselt aus Long Mode in den 32-Bit-
   Protected-Mode. Ersatz für alles, was heute im Real Mode vom BIOS kommt
   (Speicherkarte, Plattenparameter, Zeichensätze, Vorladen von CONFIG.SYS)
