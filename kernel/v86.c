@@ -229,6 +229,7 @@ static unsigned pm_hk[NTASK];           /* PM-Vektor 0-15 eingehaengt (Bit n) */
 static void dp_hwint(struct v86_iret *r, int t);
 static void pvi_in(struct v86_iret *r, int t);
 static void vme_in(struct v86_iret *r, int t);
+static unsigned char b2f[NTASK];         /* BOXSHELL hat INT 2Fh eingehaengt */
 static unsigned char vme_on[NTASK];     /* VIF gilt (letzter Ruecksprung mit VME) */
 static void vme_out(struct v86_iret *r, int t);
 static void pvi_out(struct v86_iret *r, int t);
@@ -269,6 +270,7 @@ static signed char cli_dt = -1;         /* fuer diese Box                */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
 static void xms_table(int t);
+static int mon2f(struct v86_frame *f);
 static unsigned emb_free_pg(int t);
 
 /* PVI (CR4 Bit 1, ab Pentium): CLI/STI eines DPMI-Programms in Ring 3
@@ -698,6 +700,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     for (i = 0; i < 256; i++)
         put32(SCRATCH, i, 0x90CF0063UL | ((unsigned long)i << 8));
     put32(SCRATCH, INT8_STUB >> 2, 0x1CCD0863UL);   /* 63 08 CD 1C       */
+    put32(SCRATCH, 0x2A, 0x909090CFUL);             /* INT 2Ah: IRET     */
     put32(SCRATCH, XMS_STUB >> 2, 0x90CBE163UL);    /* 63 E1 CB: XMS     */
     put32(SCRATCH, EMS_RET >> 2, 0x90CBE663UL);     /* 63 E6 CB: EMS 56h */
     put32(SCRATCH, MOU_RET >> 2, 0x9090E763UL);     /* 63 E7: Maus       */
@@ -722,6 +725,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, (DPT_OFF >> 2) + 2, 0x0000080FUL);
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
+    b2f[t] = 0;
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -982,6 +986,20 @@ static int vec_def(unsigned n)
     if (n == 0x67)
         return rd16(0, 0x19E) == 0xF060 && rd16(0, 0x19C) == 0x0020;
     return rd16(0, n * 4 + 2) == VBIOS && rd16(0, n * 4) == (n == 8 ? INT8_STUB : n * 4);
+}
+
+/* Umleitungs-Bitmap (VME): Bit 0 = INT n laeuft ohne Falle ueber die IVT
+   der Box. Nur fuer Vektoren, bei denen der Monitor nichts tut, solange
+   sie nicht auf seinen Stummel zeigen (INT 21h/29h nach dem Laden des
+   DOS: FreeDOS-MEM schreibt jedes Zeichen einzeln - je Zeichen INT 21h,
+   INT 29h und INT 10h, vorher drei Fallen, jetzt eine). */
+static void irb_set(int t, unsigned n)
+{
+    unsigned char m = (unsigned char)(1 << (n & 7));
+    if (n == 0x2F ? !b2f[t] : n != 0x2A && vec_def(n))
+        tss[t].irb[n >> 3] |= m;
+    else
+        tss[t].irb[n >> 3] &= (unsigned char)~m;
 }
 
 /* INT n ohne Dienst: FLAGS, CS, IP auf den Stack, ueber die IVT */
@@ -2752,6 +2770,11 @@ static void svc(int n, struct v86_frame *f, int t)
             CX = i;
         } else if (AH == 0x01)
             kf_box_ctl(BOX_EXIT, AL);
+        else if (AH == 0x1B) {                  /* INT 2Fh DX nachbilden */
+            AX = DX;                            /* (BOXSHELL, VME)       */
+            svc_zf = mon2f(f);
+        } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
+            b2f[t] = 1;
         else if (AH == 0x10) {                  /* Redirector (BOXSHELL) */
             k = redir(f, t);
             svc_zf = k >= 0;                    /* ZF: erledigt          */
@@ -3265,10 +3288,12 @@ static void vga_bios(struct v86_frame *f)
 }
 
 /* INT n wie im Real Mode, ip = Ruecksprung */
-static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
+/* INT 2Fh, die der Monitor selbst beantwortet (DPMI/XMS da?): aus do_int
+   oder - hat BOXSHELL INT 2Fh eingehaengt und laesst VME den Vektor ohne
+   Falle durch - von BOXSHELL ueber INT E0h 1Bh. 1 = erledigt. */
+static int mon2f(struct v86_frame *f)
 {
-    if (n == 0x2F && AX == 0x1687) {            /* DPMI da?              */
-        f->r.eip = ip;
+    if (AX == 0x1687) {                         /* DPMI da?              */
         AX = 0;
         BX = 1;                                 /* 32-Bit-Programme gehen */
         CL = 3;
@@ -3276,24 +3301,31 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
         *(unsigned short *)&f->esi = 0x0400 >> 4;     /* Absaetze fuer den Host (DP_RMSTK) */
         f->r.es = VBIOS;
         DI = 0x0510;
-        return;
+        return 1;
     }
-    if (n == 0x2F && AX == 0x4309) {            /* HIMEM-Handle-Tabelle  */
-        f->r.eip = ip;                          /* (MS-DOS-MEM zaehlt    */
-        xms_table(t);                           /* daraus XMS insgesamt) */
-        AL = 0x43;
+    if (AX == 0x4309) {                         /* HIMEM-Handle-Tabelle  */
+        xms_table(current);                     /* (MS-DOS-MEM zaehlt    */
+        AL = 0x43;                              /* daraus XMS insgesamt) */
         f->r.es = VBIOS;
         BX = XMS_TAB;
-        return;
+        return 1;
     }
-    if (n == 0x2F && (AX == 0x4300 || AX == 0x4310)) {  /* XMS da?      */
-        f->r.eip = ip;                          /* (vor dem DOS: FreeDOS */
-        if (AL == 0)                            /* reicht 43h nicht weiter) */
-            AL = 0x80;
+    if (AX == 0x4300 || AX == 0x4310) {         /* XMS da? (vor dem DOS: */
+        if (AL == 0)                            /* FreeDOS reicht 43h    */
+            AL = 0x80;                          /* nicht weiter)         */
         else {
             f->r.es = VBIOS;
             BX = XMS_STUB;
         }
+        return 1;
+    }
+    return 0;
+}
+
+static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
+{
+    if (n == 0x2F && mon2f(f)) {
+        f->r.eip = ip;
         return;
     }
     if (n == 0x10 && vec_def(0x10)) {           /* Grafik: Video-BIOS    */
@@ -5755,6 +5787,10 @@ static void vme_out(struct v86_iret *r, int t)
             r->eflags |= FL_VIF;
         else if (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])
             r->eflags |= FL_VIP;
+        irb_set(t, 0x21);               /* gehoert INT 21h/29h dem DOS,  */
+        irb_set(t, 0x29);               /* ohne Falle durch die IVT;     */
+        irb_set(t, 0x2A);               /* 2Ah nie (Stummel ist IRET),   */
+        irb_set(t, 0x2F);               /* 2Fh nach BOXSHELL             */
         vme_on[t] = 1;
         pvi_t[t] |= CR4_VME;
     } else

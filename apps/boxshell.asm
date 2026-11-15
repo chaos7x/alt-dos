@@ -846,9 +846,22 @@ redir_install:
         mov     dx, int2f
         mov     ax, 252Fh
         int     21h
+        mov     ah, 1Ch                 ; Kernel: INT 2Fh geht jetzt zuerst
+        int     0E0h                    ; hierher (mit VME ohne Falle)
         ret
 
-int2f:  cmp     ah, 11h
+; INT 2Fh: DPMI-/XMS-Abfragen beantwortet der Monitor (INT E0h 1Bh, AX in
+; DX) - mit VME laeuft INT 2Fh ohne Falle bis hierher, FreeDOS reicht 43h
+; nicht an den alten Vektor weiter.
+int2f:  cmp     ax, 1687h
+        je      .mon
+        cmp     ax, 4300h
+        je      .mon
+        cmp     ax, 4309h
+        je      .mon
+        cmp     ax, 4310h
+        je      .mon
+        cmp     ah, 11h
         jne     .chain
         test    al, al                  ; Installationsabfrage
         jnz     .op
@@ -870,6 +883,23 @@ int2f:  cmp     ah, 11h
         retf    2                       ; CF des Kernels zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+.mon:   mov     [cs:m2fax], ax
+        push    dx
+        mov     dx, ax
+        mov     ah, 1Bh
+        int     0E0h                    ; ZF=1: erledigt
+        jnz     .mnot
+        cmp     word [cs:m2fax], 1687h  ; DPMI liefert DX (Version)
+        je      .mdx
+        pop     dx
+        iret
+.mdx:   inc     sp
+        inc     sp
+        iret
+.mnot:  pop     dx
+        mov     ax, [cs:m2fax]
+        jmp     far [cs:old2f]
+m2fax:  dw      0
 
 ; ---- Lesepuffer fuer kleine READs ----------------------------------------
 ; Jeder Redirector-Aufruf ist ein Weg durch den Kernel (Falle in den

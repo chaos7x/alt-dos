@@ -811,7 +811,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (131 Dateien gleich), `.LZMA` (xz --format=lzma), BCJ2 sauber abgelehnt,
   in der Box `command /c 7zdec x def.7z \x\box\`; CHKDSK sauber.
   Vom Nutzer in 86Box bestätigt (15.11.2026): ein unter FreeDOS mit
-  dessen 7za gepacktes Archiv entpackt 7ZDEC unter AT-DOS.
+  dessen 7za gepacktes Archiv entpackt 7ZDEC unter AT-DOS; umgekehrt ein
+  mit 7ZA gepacktes Stunts mit dem 7za von FreeDOS entpackt, das Spiel
+  startet.
   7ZA (`apps/task_7za.c` + `apps/lzmaenc.c`, eigener LZMA-Packer nach
   lzma-specification.txt): Bereichscoder mit 32-Bit-`low` + Übertrag,
   Grenze über mul16; Modell wie der Decoder (Zustände, Literal mit
@@ -3430,6 +3432,26 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `HALLO.COM > X.TXT` + `TYPE X.TXT`, danach `DEL X.TXT`.
   Vom Nutzer auf dem P3B-F (Pentium II) in 86Box bestätigt: DOOM 1.9 mit
   Sound Blaster läuft flüssig, auch bei Kämpfen.
+  INT n ohne Falle mit VME (Anlass, vom Nutzer: MEM von FreeDOS läuft in
+  der Box zäher als MEM von MS-DOS – es schreibt jedes Zeichen einzeln
+  per INT 21h 40h (prf.c) und liest MEM.DE byteweise): in Bochs gezählt
+  je Lauf ~21.000 Fallen, davon INT 16h ~7.000 (Strg+C-Prüfung von
+  FreeDOS je DOS-Aufruf), INT 2Ah ~6.400 (kritische Abschnitte), INT 2Fh
+  ~5.100 (jedes gelesene Byte über den Redirector, auch wenn BOXSHELL es
+  aus rd_cache liefert), INT 10h ~1.500. Jetzt löscht `vme_out` in der
+  Umleitungs-Bitmap des TSS (`irb_set`) die Bits für 21h/29h (wenn nicht
+  der Stummel), 2Ah (Stummel ist jetzt ein bloßes IRET – der Monitor tat
+  dort nichts) und 2Fh, sobald BOXSHELL sich eingehängt hat (INT E0h 1Ch
+  -> `b2f[t]`). Die Abfragen, die do_int abfing (1687h, 4300h, 4309h,
+  4310h – `mon2f`), beantwortet BOXSHELL dann über INT E0h 1Bh (AX in DX;
+  bei 43xx DX zurück). Ohne VME (386/486) unverändert. Ergebnis in Bochs:
+  21.035 -> 9.254 Fallen (−56 %), zweiter Lauf 18.686 -> 7.591; XMS/EMS/
+  HMA in FreeDOS-MEM und DPMI für DOOM 1.9 (Timedemo) gehen weiter, in
+  QEMU ohne VME ebenso. Übrig: INT 16h – wäre nur ohne Falle zu haben,
+  wenn ein Merker „keine Taste“ im Speicher der Box die Abfrage im Real
+  Mode beantwortete (Leerlauf-Erkennung müsste dann anders zählen).
+  Bemerkt: `C:\DOS\MDOS\MEM.EXE > datei` aus CMD landet ebenfalls auf
+  dem Bildschirm (wie `command /c prog > datei`, offen).
   XMS über 3 MB (Phase 4, Rest; in QEMU geprüft): EMBs im Adressraum
   der Box von 110000h bis 64 MB (`XMS_TOP` 4000h, `XMS_MAXPG` 63.424 KB,
   INI `XMS_MEMORY_LIMIT` bis 63424, Vorgabe weiter 2048). `emb_map`/
