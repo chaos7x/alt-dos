@@ -717,6 +717,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und `unlha x`, CHKDSK sauber. Test-Archive nur im Scratchpad. Kein
   zoo-Packer auf dem Rechner (Bau aus fremdem Quelltext nicht erlaubt) –
   ZOO lh5 ungeprüft (gleicher Kern wie LHA lh5).
+  Vom Nutzer in 86Box bestätigt (15.11.2026): mit den FreeDOS-Packern
+  angelegte LHA-, ZOO-, ZIP- und ARJ-Archive (ARJ -m2 und -m4) entpackt,
+  das entpackte Programm lief danach.
   Packer LHA/ARJ (Wunsch des Nutzers: packen auch, schwere Fälle auf dem
   P3B-F): `apps/lzhenc.c` – Suche wie flate.c (Fenster 32 KB in 64 KB,
   Hash-Ketten, verzögerte Suche, Stufen 1–9), Ausgabe im Format von
