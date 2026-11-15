@@ -1513,6 +1513,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Loop-Gerät nicht (liest dann Falsches/Fehler) – aushängen vor dem
   Wechsel. Nächste Stufe: Schreiben (`blk_read_to/blk_write_from`), `LOOP=`.
 
+- **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
+  vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
+  Handler, zuerst verwerfbare Code-Segmente (neu aus der EXE), dann
+  Auslagerungsdatei über den Extent-Weg (`ifs_bmap`), Auswahl über das
+  Zugriffsbit; Vorbilder OS/2 1.x SWAPPATH, Windows 3.x Standardmodus.
+  Noch kein Code.
+
 - **Loop-Laufwerke und DriveSpace** (Konzept 15.11.2026, Version 6.1):
   `docs/LOOP-DBLSPACE.md` – Datei als Blockgerät (ISO, IMG, VHD), zuerst
   über eine Extent-Liste, darauf DBLSPACE.SYS im DriveSpace-6.x-Format.
