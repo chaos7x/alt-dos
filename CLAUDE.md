@@ -4057,7 +4057,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Schreiben bleibt verbunden (ein Puffer je Gerät in der Nachbildung).
   Die AHA-154x-Nachbildung (scsi_x54x.c) arbeitet Mailboxen streng
   nacheinander ab – dort kein Gewinn in 86Box (echte 1542-Firmware
-  trennt selbst: dort reichten mehrere CCBs gleichzeitig; offen).
+  trennt selbst: dort reichten mehrere CCBs gleichzeitig; offen). Am
+  15.11.2026 gegen 86Box-master (6619b5dac) geprüft: unverändert.
+  Absprache mit dem Nutzer: ab und zu in master nachsehen (vor dem
+  Release von 6.0 noch einmal); kommt Trennen dort dazu, AHA154X.SYS mit
+  mehreren CCBs nachziehen.
   Kernel: Sperrgruppen 0–7 je Treiber (`DRV_BS_GROUP`, bsize Bits 12–14);
   jedes Paar (Treiber, Gruppe 1–7) bekommt einen von `NXG` (12) Plätzen
   (`xg_slot`, `xg_drv`/`xg_grp`; blk[].grp = Platz + 1) mit eigener
