@@ -20,7 +20,16 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.0 in Arbeit (`main`), 5.0 fertig (Zweig `5.x`)
+## Aktueller Stand: AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`), Weiterarbeit auf `main`
+
+AT-DOS 6.0 ist fertig (Entscheidung des Nutzers, 15.11.2026: „da wir
+nichts mehr auf der Liste haben“): Zweig `6.0` = Stand der Freigabe, ein
+Push dorthin baut per CI das Release `v6.0` (als neuestes markiert).
+`main` geht weiter (Weiterarbeit nach 6.0; „latest“ ist dort die
+Vorabversion). Vor der Freigabe in 86Box-master (3446231b4) nachgesehen:
+die AHA-154x-Nachbildung (scsi_x54x.c) trennt weiter nicht – AHA154X.SYS
+bleibt bei einem Auftrag zur Zeit. Als Nächstes im Plan (6.x): Netzwerk,
+DoubleSpace (6.1), VirtIO; danach evtl. 5.4 mit DEVLOAD.
 
 README aktuell halten (Wunsch des Nutzers): jede Neuerung gleich im
 README („Was läuft“, FAPI-Tabelle, Meilenstein in der Überschrift)
