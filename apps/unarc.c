@@ -37,6 +37,7 @@ static int  e_meth;                     /* LZ_*, 0 gespeichert, -1 nicht */
 static char e_mname[8];
 static unsigned long e_cs, e_us, e_crc, e_data, crc;
 static unsigned e_date, e_time, e_attr, e_c32, e_dir, e_nocrc;
+static unsigned long e_hstart;          /* Anfang des Kopfes im Archiv   */
 
 static void say(const char *a, const char *b, const char *c)
 {
@@ -96,6 +97,7 @@ static int arj_next(void)
     unsigned long pos;
 
     for (;;) {
+        e_hstart = apos;
         if (!arj_hdr(apos, &bs))
             return -1;
         if (bs == 0)
@@ -250,6 +252,7 @@ static int lha_next(void)
     unsigned long data;
     unsigned char *x;
 
+    e_hstart = apos;
     if (seek(apos) || rdn(hb, 22) < 22 || hb[0] == 0)
         return 0;                       /* Ende (0-Byte oder Dateiende)  */
     if (!lha_ok(hb))
@@ -642,14 +645,23 @@ static int open_arc(const char *ext)
     return !FAPI_FAILED(harc);
 }
 
+#ifdef UNARC_LIB
+static void unarc_main(char *a)
+#else
 void main(void)
+#endif
 {
-    char *a, *w;
+#ifndef UNARC_LIB
+    char *a;
+#endif
+    char *w;
     unsigned k, need_d = 0, ml = 0, npos = 0;
     int r;
 
+#ifndef UNARC_LIB
     DosGetArgs(args);
     a = skip(args);
+#endif
     if (!*a) {
         usage();
         DosExit(10);

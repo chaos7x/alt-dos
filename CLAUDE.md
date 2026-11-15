@@ -717,6 +717,28 @@ Win32s), nicht vorziehen, sondern nachfragen.
   und `unlha x`, CHKDSK sauber. Test-Archive nur im Scratchpad. Kein
   zoo-Packer auf dem Rechner (Bau aus fremdem Quelltext nicht erlaubt) –
   ZOO lh5 ungeprüft (gleicher Kern wie LHA lh5).
+  Packer LHA/ARJ (Wunsch des Nutzers: packen auch, schwere Fälle auf dem
+  P3B-F): `apps/lzhenc.c` – Suche wie flate.c (Fenster 32 KB in 64 KB,
+  Hash-Ketten, verzögerte Suche, Stufen 1–9), Ausgabe im Format von
+  lzh.c (Block: 16 Bit Symbolzahl, Codelängenbaum mit Sonderstelle 3,
+  Literal/Länge-Baum NC 510, Abstandsbaum np/pbit; ein einziges Symbol =
+  Länge 0 wie ar002), kanonische MSB-Codes, Längen bis 16 durch Halbieren.
+  lh5 8 KB, lh6/lh7 32 KB (lh7 nur np 17), ARJ Abstand bis 26.112 (Ring
+  der Entpacker 26.624). `apps/lzpack.c` = Rahmen (task_lha.c/task_arj.c,
+  FMT_LHA/FMT_ARJ), bindet unarc.c mit `UNARC_LIB` ein (unarc_main für x/e/
+  l/v/t, Parser liefern `e_hstart`): Dateien sammeln wie ZIP (fernes
+  Verzeichnis `nf`, 4.096 Einträge, Namen in bis zu 3 Segmenten), Archiv
+  immer über NAME.$$$ neu – alte Einträge roh kopiert (e_hstart..apos),
+  ersetzt bei a/m, u/f nach Datum, d über Pfad oder bloßen Dateinamen;
+  Kopf erst mit Nullen, nach den Daten neu geschrieben; nicht kleiner ->
+  zurückspulen und speichern (lh0/m0), am Ende DosNewSize. LHA Kopfstufe
+  1 (Vorgabe, Verzeichnis 0x02 mit FFh, Attribut 0x40, Packgröße mit
+  Zusatzköpfen) oder 2 (Unix-Zeit, Größe mit Low-Byte 0 -> ein Füllbyte),
+  ARJ Hauptkopf neu (Datum auch bei +12 = geändert), Pfade mit '/' und
+  Flag 10h. Verzeichnisse und ARJ-Bezeichnungen werden nicht abgelegt.
+  Geprüft in QEMU, danach auf dem Rechner: lhasa t/v (lh5/6/7, Stufe 1/2,
+  lh0), arj t/l (m0/m1/m3, nach u/m/d), entpackte Bäume gleich, in der
+  Box (FreeCOM-Stapeldatei) LHA a/l und ARJ a.
   7ZDEC (`apps/task_7zdec.c` + `apps/lzma.c`, eigene Umsetzung nach
   lzma-specification.txt/7zFormat.txt, gemeinfrei, nur gelesen): Bereichs-
   decoder mit `mul16` (zwei 16x16-Multiplikationen statt __U4M), Wahr-
