@@ -17,7 +17,9 @@
 ; AH=13h -> AL = Startlaufwerk der AT-DOS (0 = A:); AH=14h aktuelles
 ; Laufwerk:Verzeichnis des Aufrufers (8.3) nach ES:DI; AH=15h Programm
 ; fertig, AL = Rueckgabewert: der Kernel parkt die Box bis zum naechsten
-; DOS-Programm des Aufrufers (kehrt dann zurueck) oder beendet sie.
+; DOS-Programm des Aufrufers (kehrt dann zurueck) oder beendet sie;
+; AH=1Dh -> AL Bit i: Handle i des Box-Tasks umgeleitet; AH=1Eh Handle
+; AL (0 lesen, 1/2 schreiben), ES:DI Puffer, CX Bytes -> AX.
 
 cpu 8086
 org 100h
@@ -112,9 +114,15 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     [pb_tail+2], cs
         mov     [pb_fcb1+2], cs
         mov     [pb_fcb2+2], cs
+        push    dx                      ; Dateiname fuer 4B00h
+        call    std_on                  ; prog > datei aus CMD
+        pop     dx
         mov     bx, pblock
         mov     ax, 4B00h               ; FreeCOM starten und warten
         int     21h
+        pushf
+        call    std_off
+        popf
         mov     al, 0FFh
         jc      .exit
         mov     ah, 4Dh                 ; dessen Rueckgabewert
@@ -134,6 +142,78 @@ next:   push    cs                      ; (nach dem Parken: naechstes Programm)
         mov     sp, stack_top
         sti
         jmp     next
+
+; ---- Umleitung aus CMD ----------------------------------------------------
+; Hat der Box-Task im Kernel umgeleitete Standard-Handles (CMD: prog > datei,
+; prog < datei, a | prog), bekommt das Programm statt CON die Geraete von
+; ATBOX.SYS (ATIN$/ATOUT$/ATERR$, roh), die ueber INT E0h 1Eh lesen und
+; schreiben. Danach wieder CON.
+std_on: mov     ah, 1Dh                 ; -> AL Bit i: Handle i umgeleitet
+        int     0E0h
+        mov     [redm], al
+        xor     si, si
+.l:     mov     byte [saved+si], 0FFh
+        mov     al, [redm]
+        mov     cx, si
+        shr     al, cl
+        test    al, 1
+        jz      .nx
+        mov     bx, si
+        shl     bx, 1
+        mov     dx, [devtab+bx]
+        mov     ax, 3D02h
+        int     21h
+        jc      .nx
+        mov     di, ax                  ; neues Handle
+        mov     bx, ax
+        mov     ax, 4400h               ; roh (Bit 5), sonst liest DOS
+        int     21h                     ; zeilenweise und wertet ^Z aus
+        or      dl, 20h
+        xor     dh, dh
+        mov     ax, 4401h
+        int     21h
+        mov     bx, si                  ; CON merken
+        mov     ah, 45h
+        int     21h
+        jc      .cl
+        mov     [saved+si], al
+        mov     bx, di                  ; Geraet auf Handle si
+        mov     cx, si
+        mov     ah, 46h
+        int     21h
+.cl:    mov     bx, di
+        mov     ah, 3Eh
+        int     21h
+.nx:    inc     si
+        cmp     si, 3
+        jb      .l
+        ret
+
+std_off:
+        xor     si, si
+.l:     mov     bl, [saved+si]
+        cmp     bl, 0FFh
+        je      .nx
+        xor     bh, bh
+        mov     cx, si
+        mov     ah, 46h                 ; CON zurueck
+        push    bx
+        int     21h
+        pop     bx
+        mov     ah, 3Eh
+        int     21h
+        mov     byte [saved+si], 0FFh
+.nx:    inc     si
+        cmp     si, 3
+        jb      .l
+        ret
+
+redm:   db      0
+saved:  db      0FFh, 0FFh, 0FFh
+devtab: dw      n_in, n_out, n_err
+n_in:   db      "ATIN$", 0
+n_out:  db      "ATOUT$", 0
+n_err:  db      "ATERR$", 0
 
 ; ---- sich selbst in eine UMB verlegen ------------------------------------
 ; Spiele wie Elvira (1990) brauchen fast den ganzen konventionellen Speicher

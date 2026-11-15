@@ -58,7 +58,22 @@ static int exists(const char *p)
 }
 
 /* Datei suchen: wie angegeben, sonst X:\DOS\SYSTEM, X:\DOS */
-static int find(void)
+static int find1(void);
+static int find(void)                   /* ohne Endung: .SYS anhaengen  */
+{
+    char *b = base_name(name);
+    unsigned k;
+    if (find1())
+        return 1;
+    for (k = 0; b[k] && b[k] != '.'; k++)
+        ;
+    if (b[k] || slen(name) + 4 >= sizeof(name))
+        return 0;
+    scat(name, ".SYS", sizeof(name));
+    return find1();
+}
+
+static int find1(void)
 {
     char *b = base_name(name);
     if (abs_path(name, path) == 0 && exists(path))
@@ -118,8 +133,8 @@ void main(void)
         puts(name);
         puts(rc == FAPI_ERR_INUSE ? ": auf seinen Laufwerken ist noch etwas offen (Dateien,\r\n"
                                     "  aktuelles Laufwerk eines Programms, SUBST/JOIN) oder der Ton l\x84uft\r\n" :
-             rc == FAPI_ERR_DENIED ? ": kann nicht entladen werden (Startlaufwerk oder der\r\n"
-                                     "  Treiber unterst\x81tzt es nicht)\r\n" :
+             rc == FAPI_ERR_DENIED ? ": tr\x84gt das Startlaufwerk, bleibt geladen\r\n" :
+             rc == FAPI_ERR_NOTREADY ? ": kann nicht entladen werden (der Treiber kennt es nicht)\r\n" :
              ": ist nicht geladen\r\n");
         DosExit(1);
     }

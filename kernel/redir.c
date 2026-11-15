@@ -266,6 +266,29 @@ static unsigned xfer(int t, unsigned fn, unsigned h, unsigned long lin, unsigned
     return done;
 }
 
+/* Standard-Handle h der Box (umgeleitet aus CMD, ATBOX.SYS-Geraete
+   ATIN$/ATOUT$/ATERR$): h = 0 lesen, 1/2 schreiben -> Bytes */
+unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned n)
+{
+    unsigned err, done = 0, r, idle = 0;
+    unsigned long lin = ((unsigned long)seg << 4) + off;
+    if (!h)                                 /* lesen: was da ist          */
+        return xfer(t, FAPI_READ, 0, lin, n, &err);
+    while (done < n) {                      /* schreiben: alles (Pipe voll */
+        r = xfer(t, FAPI_WRITE, h, lin + done, n - done, &err);   /* -> warten) */
+        done += r;
+        if (err)
+            break;
+        if (r)
+            idle = 0;
+        else if (++idle > 500)              /* 5 s nichts: aufgeben       */
+            break;
+        else
+            kf_box_ctl(BOX_SLEEP, 1);
+    }
+    return done;
+}
+
 /* ---- Suche -------------------------------------------------------------------- */
 
 /* naechsten passenden Eintrag ab Suchzustand sdb (in der Box) */
@@ -589,3 +612,5 @@ const struct ctxblk redir_ctx[] = {
     { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) }
 };
 const unsigned redir_nctx = sizeof(redir_ctx) / sizeof(redir_ctx[0]);
+
+

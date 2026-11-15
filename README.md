@@ -162,7 +162,17 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   seine eigene Sperre im Kernel. `/NODISC` schaltet das ab
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
-  unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter
+  unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;
+  `DIR /S` zeigt auch alle Unterverzeichnisse (je Verzeichnis mit
+  Treffern Kopf und Summe, am Ende „Anzahl angezeigter Dateien“; mit
+  `/B` die vollen Pfade)
+- Umleitung und Pipes auch für DOS-Programme aus CMD: `prog > datei`,
+  `>>`, `prog < datei` und `a | prog | b` – die Box bekommt dafür statt
+  CON die Geräte `ATIN$`/`ATOUT$`/`ATERR$` (ATBOX.SYS), die über den
+  Kernel in die Handles des Aufrufers lesen und schreiben. Ein DOS-
+  Programm, das als Teil einer Pipe im Hintergrund läuft, übernimmt den
+  Bildschirm nicht mehr. Programme, die direkt in den Bildschirmspeicher
+  oder über das BIOS schreiben, lassen sich wie unter MS-DOS nicht umleiten
 - Lange Namen, Stufe 4: CHKDSK prüft VFAT-Ketten und die Sätze in
   `EA DATA. SF` und räumt mit `/F` verwaiste lange Namen auf (z. B. nach
   Umbenennen mit einem alten DOS-Werkzeug). EDIT zeigt lange Namen in der

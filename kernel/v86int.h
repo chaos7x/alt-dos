@@ -19,4 +19,5 @@ struct v86_frame {
    -> 0 erledigt, > 0 DOS-Fehlercode (CF), -1 nicht zustaendig */
 int __far redir(struct v86_frame *f, int t);
 void __far redir_sda(int t, unsigned seg, unsigned off);
+unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned n);
 #endif

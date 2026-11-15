@@ -213,8 +213,8 @@ struct fapi_sysinfo {
                                        FAPI_ERR_INUSE (Dateien offen, aktuelles
                                        Laufwerk eines Programms, SUBST/JOIN,
                                        Ton offen), FAPI_ERR_DENIED (Start-
-                                       laufwerk, oder der Treiber kann es
-                                       nicht - kennt DRV_DEINIT nicht) */
+                                       laufwerk), FAPI_ERR_NOTREADY (der
+                                       Treiber kennt DRV_DEINIT nicht) */
 #define DRVL_IFS            1
 struct fapi_drvinfo {
     char           name[13];        /* "" = Platz frei                  */

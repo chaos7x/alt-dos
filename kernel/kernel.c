@@ -1601,7 +1601,7 @@ static int box_reuse(const char *cmd, int s)
     park_owner[y] = 0;
     task[y].parent = current;
     task[y].session = s;
-    v86_start(y, s);
+    v86_start(y, task[current].bg ? -1 : s);    /* Pipe: ohne Bildschirm */
     task[y].state = T_READY;
     return y;
 }
@@ -1749,8 +1749,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
         zero_seg(CTXWIN, 8);
         ((int __far *)MK_FP(CTXWIN, 0))[0] = -1;
     }
-    if (task[t].v86)
-        v86_start(t, session);              /* Vollbild, B800 = Puffer  */
+    if (task[t].v86)                            /* Vollbild, B800 = Puffer;  */
+        v86_start(t, from >= 0 && task[from].bg ? -1 : session);   /* Pipe: nicht */
     task[t].state   = T_READY;
     return t;
 }
@@ -1807,7 +1807,7 @@ static void task_end(int t)
     task[t].state = T_FREE;
     vio_task_end(s, t);                     /* Vollbild zuruecknehmen   */
     if (task[t].v86) {                      /* Text der Box stehen lassen */
-        v86_replay(p >= 0 && task[p].session == s ? s : -1);
+        v86_replay(p >= 0 && task[p].session == s && !task[p].bg ? s : -1);
         task[t].v86 = 0;
     }
 
@@ -4412,6 +4412,13 @@ int box_ctl(unsigned op, unsigned a)
     }
     case BOX_SYSDRV:
         return sys_drive;
+    case BOX_STDRED: {                  /* prog > datei aus CMD          */
+        int m = 0, i;
+        for (i = 0; i < 3; i++)
+            if (files[task[current].std[i]].kind != OF_CON)
+                m |= 1 << i;
+        return m;
+    }
     case BOX_LOCK:
         if (a)
             klock_enter();
@@ -6471,7 +6478,7 @@ static unsigned drv_unload(int d)
                 drv_unlock(NDRV + 1 + k);
         drv_unlock(d);
         if (req.status != DRV_OK)
-            return FAPI_ERR_DENIED;     /* kennt DRV_DEINIT nicht        */
+            return FAPI_ERR_NOTREADY;   /* kennt DRV_DEINIT nicht        */
     } else {                            /* IFS-Modul: Platz in ifsmod    */
         nifsmod--;
         ifsmod[mi].drv = ifsmod[nifsmod].drv;

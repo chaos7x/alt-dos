@@ -293,6 +293,7 @@ int box_ctl(unsigned op, unsigned a);                  /* kernel.c, fuer v86.c *
 #define BOX_LOCK    7                   /* a=1 Kernelsperre nehmen, 0 abgeben */
 #define BOX_SYSDRV  8                   /* -> Startlaufwerk (0 = A:)       */
 #define BOX_PARK    9                   /* a = Rueckgabewert: parken/beenden */
+#define BOX_STDRED  10                  /* -> Bit i: Handle i umgeleitet (nicht Konsole) */
 unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 extern unsigned char box_sec[512];
 void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs);

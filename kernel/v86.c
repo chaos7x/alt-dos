@@ -737,6 +737,10 @@ void __far v86_start(int t, int s)
 
     if (!pt_box[t])
         return;
+    if (s < 0) {                        /* Teil einer Pipe im Hintergrund: */
+        box_ses[t] = -1;                /* Bildschirm der Sitzung bleibt  */
+        return;                         /* (B800 = Ersatzseite)           */
+    }
     kf_vio_setmode(s, 1, t);            /* leer, alle Zeilen             */
     b = kf_vio_buf_lin(s);
     scratch2_map(PG_LIN(pt_box[t]), 4095);
@@ -2864,7 +2868,12 @@ static void svc(int n, struct v86_frame *f, int t)
                 svc_cf = 1;
             } else if (k == 0)
                 svc_cf = 0;
-        } else if (AH == 0x13)                  /* Startlaufwerk (0 = A:) */
+        } else if (AH == 0x1D) {                /* umgeleitete Handles   */
+            AL = (unsigned char)kf_box_ctl(BOX_STDRED, 0);
+        }
+        else if (AH == 0x1E)                    /* Handle AL lesen/schreiben */
+            AX = redir_std(t, AL < 3 ? AL : 1, (unsigned)f->r.es, DI, CX);
+        else if (AH == 0x13)                    /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
         else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 4;

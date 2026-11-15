@@ -864,9 +864,31 @@ Win32s), nicht vorziehen, sondern nachfragen.
   steht. In QEMU (32 MB): DOOM 1.9 mit -mx=9 (1.837.506 Byte, 7-Zip -mx=9
   1.657.143 – keine Preisrechnung), 7ZDEC t/x, das entpackte DOOM läuft
   `-timedemo demo1`; 7-Zip-Archiv mit 4-MB-Wörterbuch ohne Zwischendatei.
-  Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
-  /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
-  Bildschirm statt in der Datei (FreeDOS schreibt auf sein CON).
+  Bemerkt, erledigt (15.11.2026, in QEMU geprüft): `DIR /S` in CMD
+  (`dir_one` = Ausgabe eines Verzeichnisses, Kopf erst beim ersten
+  Treffer, Summe je Verzeichnis; Baumgang ohne Rekursion über einen
+  Stapel in einem DosAllocSeg-Segment – Pfade + Index je Ebene, bis 32
+  Ebenen –, am Ende „Anzahl angezeigter Dateien“, `/B /S` volle Pfade;
+  geprüft: `dir \dos\*.ini /s`, `dir /s /b c:\demo\*.mid`, `dir c:\ /s
+  /b` = alle 130 Einträge). Umleitung für DOS-Programme: ATBOX.SYS hat
+  neben EMMXXXX0 drei Zeichengeräte ATIN$/ATOUT$/ATERR$ (Kette in einer
+  Datei, Lesen/Schreiben über INT E0h 1Eh -> redir.c `redir_std` ->
+  FAPI READ/WRITE auf Handle 0/1/2 des Box-Tasks; Schreiben wartet bei
+  voller Pipe, 5 s ohne Fortschritt = Abbruch). BOXSHELL fragt vor jedem
+  Programm INT E0h 1Dh (`BOX_STDRED`: Bit i = Handle i nicht Konsole),
+  öffnet die Geräte, stellt sie roh (4401h Bit 5) und legt sie per 46h
+  auf 0–2, danach CON zurück (`std_on`/`std_off`; Lehre: DX = Dateiname
+  von 4B00h vorher sichern). Eine Box, deren Aufrufer ein Pipe-Teil im
+  Hintergrund ist (`task[from].bg`, CMD startet Pipe-Teile per EXEC_BG),
+  bekommt keinen Bildschirm (`v86_start(t, -1)`, B800 = Ersatzseite, kein
+  Zurückspielen) – sonst deckte das Vollbild der Box die Ausgabe des
+  Lesers (FIND) zu und stellte beim Ende den alten Inhalt her. Geprüft:
+  `command /c ver > v.txt`, MEM von FreeDOS `>`/`>>`/`| find`/`| more`,
+  `command /c dir c:\dos | find "MEM"`, eigenes UPCASE.COM mit `<` und
+  in der Mitte einer Pipe. Grenzen: FreeCOM interaktiv (`command <
+  datei`) liest die Tastatur über das BIOS, nicht die Datei; was ein
+  Programm über INT 10h/B800 schreibt, lässt sich nicht umleiten (wie
+  bei MS-DOS).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
@@ -3482,8 +3504,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   QEMU ohne VME ebenso. Übrig: INT 16h – wäre nur ohne Falle zu haben,
   wenn ein Merker „keine Taste“ im Speicher der Box die Abfrage im Real
   Mode beantwortete (Leerlauf-Erkennung müsste dann anders zählen).
-  Bemerkt: `C:\DOS\MDOS\MEM.EXE > datei` aus CMD landet ebenfalls auf
-  dem Bildschirm (wie `command /c prog > datei`, offen).
+  Bemerkt: `C:\DOS\MDOS\MEM.EXE > datei` aus CMD landete ebenfalls auf
+  dem Bildschirm – erledigt (ATOUT$, s. Packprogramme/„Bemerkt“).
   XMS über 3 MB (Phase 4, Rest; in QEMU geprüft): EMBs im Adressraum
   der Box von 110000h bis 64 MB (`XMS_TOP` 4000h, `XMS_MAXPG` 63.424 KB,
   INI `XMS_MEMORY_LIMIT` bis 63424, Vorgabe weiter 2048). `emb_map`/
@@ -4193,7 +4215,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nicht mehr. Erstes Codesegment danach 64.448 Byte (~1 KB frei – vor
   weiterem Code im ersten Segment Seltenes nach KTEXT2), DGROUP 65.128.
   Offen: `NDRV` (6) und NIFSMOD (2) anheben, DEINIT für die übrigen
-  Treiber (IDE, AHA154X, NCR5380).
+  Treiber (IDE, AHA154X, NCR5380). Vom Nutzer auf dem P3B-F bestätigt:
+  SB16 und MOUSE entladen/neu laden, AIC7XXX mit Startplatte abgelehnt.
+  Danach: `DEVLOAD mouse` hängt .SYS an, wenn der Name ohne Endung
+  nicht gefunden wird; Startlaufwerk (FAPI_ERR_DENIED) und „Treiber
+  kennt DRV_DEINIT nicht“ (FAPI_ERR_NOTREADY) getrennt gemeldet.
+  86Box auf dem Mac (vom Nutzer, 15.11.2026): EJECT eines ZIP stürzt
+  86Box ab (`MediaMenu::rdiskUpdateMenu` aus dem Emulationsfaden, AppKit
+  bricht ab) – Fehler in 86Box, CD-EJECT geht; ZIP dort über das Menü
+  auswerfen.
 - Netzwerk in 6.x (Wunsch des Nutzers, 15.11.2026; noch nicht begonnen,
   nach dem Release von 6.0): erst die Grundlage, die Domäne zuletzt.
   (1) Netzwerkkartentreiber mit IRQ (RTL8139 zuerst – läuft in
