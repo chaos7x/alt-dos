@@ -6,7 +6,8 @@
  *   7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei...]
  *   7ZA x|e|l|t ...       -> an 7ZDEC.EXE weitergereicht
  *
- * Ein Ordner fuer alle Dateien (solid), Methode LZMA (lc 3, lp 0, pb 2,
+ * Ein Ordner fuer alle Dateien (solid), 32-Bit-Programme (PE/LE/LX/ELF) in
+ * einem zweiten mit BCJ x86 davor, Methode LZMA (lc 3, lp 0, pb 2,
  * Woerterbuch 128 KB), -mx=0 speichert (Copy). Kopf ungepackt, Namen in
  * UTF-16 (aus CP437), Zeit (FILETIME) und Attribute. Leere Dateien als
  * leere Stroeme, Verzeichnisse werden nicht abgelegt. Ein vorhandenes
@@ -17,6 +18,7 @@
 #include "util.h"
 #include "lzmaenc.h"
 #include "arcutil.h"
+#include "lzma.h"                      /* bcj_x86 (bcj.c)               */
 
 #pragma aux mul16 = "mul bx" __parm [__ax] [__bx] __value [__dx __ax] __modify [__dx];
 unsigned long mul16(unsigned a, unsigned b);
@@ -61,7 +63,7 @@ struct nf {
     unsigned long size, crc;
     unsigned date, time, attr;
     unsigned po;
-    unsigned char ps, flag;             /* flag 1: weglassen              */
+    unsigned char ps, flag;             /* flag 1: weglassen, 2: BCJ      */
 };
 #define NF_MAX 3640
 #define NPS    4
@@ -345,70 +347,208 @@ static unsigned uni(unsigned char c)
 }
 
 /* ---- Packen -------------------------------------------------------------- */
-static unsigned long total;
+/* Zwei Ordner: 0 alles andere (LZMA bzw. Copy), 1 32-Bit-Programme mit BCJ
+ * davor. In jedem Ordner liegen die Dateien in der Reihenfolge von ord[]. */
+static unsigned long total, tot[2], pk[2];
+static unsigned nds[2], fkind[2], nfold, ord[NF_MAX];
+
+/* 32-Bit-Code (PE, LE/LX von DOS/4GW, OS/2 2.x, ELF)? Nur nach Endung
+ * geoeffnet - BCJ hilft 16-Bit-Programmen nicht. */
+static int is_x32(unsigned i)
+{
+    static const char *ext[] = { "EXE", "DLL", "DRV", "SYS", "OCX", "CPL",
+                                 "SCR", "VXD", "386", "OVL", "BIN", 0 };
+    static unsigned char b[64];
+    static unsigned long sp;
+    char __far *a = nf_aname(i), __far *e = 0;
+    unsigned h, k, j, r = 0;
+    for (; *a; a++)
+        if (*a == '.')
+            e = a + 1;
+        else if (*a == '/')
+            e = 0;
+    if (!e)
+        return 0;
+    for (k = 0; ext[k]; k++) {
+        for (j = 0; e[j] && ext[k][j] && up(e[j]) == ext[k][j]; j++)
+            ;
+        if (!e[j] && !ext[k][j])
+            break;
+    }
+    if (!ext[k])
+        return 0;
+    nf_full(i, full);
+    h = DosOpen(full);
+    if (FAPI_FAILED(h))
+        return 0;
+    if (DosRead(h, b, 64) == 64) {
+        if (b[0] == 0x7F && b[1] == 'E' && b[2] == 'L' && b[3] == 'F')
+            r = 1;
+        else if (b[0] == 'M' && b[1] == 'Z') {
+            sp = b[60] | ((unsigned long)b[61] << 8) | ((unsigned long)b[62] << 16) |
+                 ((unsigned long)b[63] << 24);
+            if (sp >= 64 && sp + 2 < nfl[i].size && !FAPI_FAILED(DosSeek(h, &sp)) &&
+                DosRead(h, b, 2) == 2 &&
+                ((b[0] == 'P' && b[1] == 'E') || (b[0] == 'L' && (b[1] == 'E' || b[1] == 'X'))))
+                r = 1;
+        }
+    }
+    DosClose(h);
+    return r;
+}
+
+static void classify(void)
+{
+    unsigned i, p, n = 0;
+    if (level)
+        for (i = 0; i < nfn; i++)
+            if (nfl[i].size >= 64 && is_x32(i))
+                nfl[i].flag |= 2;
+    for (p = 0; p < 2; p++)
+        for (i = 0; i < nfn; i++)
+            if ((nfl[i].flag & 2) == p * 2)
+                ord[n++] = i;
+}
+
+static unsigned char bb[4096];          /* BCJ-Puffer                     */
+static unsigned bn, bst;
+static unsigned long bip;
+
+static void feed(int bcj, const unsigned char *p, unsigned n)
+{
+    unsigned k, m;
+    if (!level) {
+        wr_arc(p, n);
+        return;
+    }
+    if (!bcj) {
+        lme_feed(p, n);
+        return;
+    }
+    while (n) {
+        k = sizeof(bb) - bn;
+        if (k > n)
+            k = n;
+        for (m = 0; m < k; m++)
+            bb[bn + m] = p[m];
+        bn += k;
+        p += k;
+        n -= k;
+        if (bn == sizeof(bb)) {
+            k = bcj_x86(bb, bn, bip, &bst, 1);
+            lme_feed(bb, k);
+            bip += k;
+            for (m = k; m < bn; m++)
+                bb[m - k] = bb[m];
+            bn -= k;
+        }
+    }
+}
 
 static int pack_all(void)
 {
-    unsigned i, h, n;
-    unsigned long got, crc;
-    for (i = 0; i < nfn && !werr; i++) {
-        if (!nfl[i].size)
+    unsigned i, j, h, n, p, any;
+    unsigned long got, crc, start;
+    for (p = 0; p < 2 && !werr; p++) {
+        for (j = any = 0; j < nfn; j++)
+            if ((nfl[ord[j]].flag & 3) == p * 2 && nfl[ord[j]].size)
+                any = 1;
+        if (!any)
             continue;
-        nf_full(i, full);
-        h = DosOpen(full);
-        if (FAPI_FAILED(h)) {
-            say("7za: ", full, ": kann nicht gelesen werden\r\n");
-            errors++;
-            nfl[i].flag = 1;
-            continue;
-        }
-        got = 0;
-        crc = 0;
-        while ((n = DosRead(h, db, sizeof(db))) != 0 && !FAPI_FAILED(n)) {
-            crc = crc32(crc, db, n);
-            got += n;
-            if (level)
-                lme_feed(db, n);
-            else
-                wr_arc(db, n);
-        }
-        DosClose(h);
-        nfl[i].size = got;
-        nfl[i].crc = crc;
-        total += got;
-        if (!o_q) {
-            puts("  gepackt:  ");
-            nf_full(i, pbuf);
-            for (n = 0; pbuf[n]; n++)
-                ;
-            {
+        fkind[nfold] = p;
+        start = apos;
+        tot[nfold] = 0;
+        bn = bst = 0;
+        bip = 0;
+        if (level)
+            lme_begin(level);
+        for (j = 0; j < nfn && !werr; j++) {
+            i = ord[j];
+            if ((nfl[i].flag & 3) != p * 2 || !nfl[i].size)
+                continue;
+            nf_full(i, full);
+            h = DosOpen(full);
+            if (FAPI_FAILED(h)) {
+                say("7za: ", full, ": kann nicht gelesen werden\r\n");
+                errors++;
+                nfl[i].flag |= 1;
+                continue;
+            }
+            got = 0;
+            crc = 0;
+            while ((n = DosRead(h, db, sizeof(db))) != 0 && !FAPI_FAILED(n)) {
+                crc = crc32(crc, db, n);
+                got += n;
+                feed(p, db, n);
+            }
+            DosClose(h);
+            nfl[i].size = got;
+            nfl[i].crc = crc;
+            tot[nfold] += got;
+            if (!o_q) {
                 char __far *a = nf_aname(i);
                 unsigned k;
+                puts(p ? "  gepackt:  (BCJ) " : "  gepackt:  ");
                 for (k = 0; a[k] && k + 1 < sizeof(pbuf); k++)
                     pbuf[k] = a[k];
                 pbuf[k] = 0;
+                puts(pbuf);
+                puts("\r\n");
             }
-            puts(pbuf);
-            puts("\r\n");
         }
+        if (level) {
+            if (p && bn) {              /* Rest: was geht umrechnen      */
+                bcj_x86(bb, bn, bip, &bst, 1);
+                lme_feed(bb, bn);
+            }
+            lme_end();
+        }
+        pk[nfold] = apos - start;
+        total += tot[nfold];
+        nfold++;
     }
     return werr;
 }
 
-static void write_header(unsigned long packed)
+static void coder_lzma(void)
 {
-    unsigned i, k, nd = 0, ne = 0, nfiles = 0, w[4];
+    unsigned char pr[5];
+    unsigned i;
+    if (level) {
+        hw(0x23);
+        hw(0x03); hw(0x01); hw(0x01);
+        wnum(5);
+        lme_props(pr);
+        for (i = 0; i < 5; i++)
+            hw(pr[i]);
+    } else {
+        hw(0x01);
+        hw(0x00);
+    }
+}
+
+/* Datei i liegt in Ordner f (nur fuer Dateien mit Daten) */
+static unsigned in_fold(unsigned i)
+{
+    return nfold == 2 ? (nfl[i].flag & 2) >> 1 : 0;
+}
+
+static void write_header(void)
+{
+    unsigned i, j, k, f, nd = 0, ne = 0, nfiles = 0, w[4], more = 0;
     unsigned long nlen = 0;
-    unsigned char pr[5], bits;
+    unsigned char bits;
     char __far *a;
 
+    nds[0] = nds[1] = 0;
     for (i = 0; i < nfn; i++) {
-        if (nfl[i].flag)
+        if (nfl[i].flag & 1)
             continue;
         nfiles++;
-        if (nfl[i].size)
+        if (nfl[i].size) {
             nd++;
-        else
+            nds[in_fold(i)]++;
+        } else
             ne++;
         for (a = nf_aname(i), k = 0; a[k]; k++)
             ;
@@ -417,45 +557,62 @@ static void write_header(unsigned long packed)
     hw(0x01);                           /* Header                        */
     if (nd) {
         hw(0x04);                       /* MainStreamsInfo               */
-        hw(0x06);
+        hw(0x06);                       /* PackInfo                      */
         wnum(0);
-        wnum(1);
+        wnum(nfold);
         hw(0x09);
-        wnum(packed);
+        for (f = 0; f < nfold; f++)
+            wnum(pk[f]);
         hw(0x00);
         hw(0x07);                       /* UnPackInfo                    */
         hw(0x0B);
-        wnum(1);
+        wnum(nfold);
         hw(0x00);
-        wnum(1);                        /* ein Coder                     */
-        if (level) {
-            hw(0x23);
-            hw(0x03); hw(0x01); hw(0x01);
-            wnum(5);
-            lme_props(pr);
-            for (i = 0; i < 5; i++)
-                hw(pr[i]);
-        } else {
-            hw(0x01);
-            hw(0x00);
+        for (f = 0; f < nfold; f++) {
+            if (fkind[f]) {             /* BCJ <- LZMA                   */
+                wnum(2);
+                hw(0x04);
+                hw(0x03); hw(0x03); hw(0x01); hw(0x03);
+                coder_lzma();
+                wnum(0);                /* Bindepaar: Eingang 0 <- Ausgang 1 */
+                wnum(1);
+            } else {
+                wnum(1);
+                coder_lzma();
+            }
         }
         hw(0x0C);
-        wnum(total);
+        for (f = 0; f < nfold; f++) {
+            wnum(tot[f]);
+            if (fkind[f])
+                wnum(tot[f]);
+        }
         hw(0x00);
         hw(0x08);                       /* SubStreamsInfo                */
         hw(0x0D);
-        wnum(nd);
-        if (nd > 1) {
+        for (f = 0; f < nfold; f++) {
+            wnum(nds[f]);
+            if (nds[f] > 1)
+                more = 1;
+        }
+        if (more) {
             hw(0x09);
-            for (i = 0, k = 0; i < nfn; i++)
-                if (!nfl[i].flag && nfl[i].size && ++k < nd)
-                    wnum(nfl[i].size);
+            for (f = 0; f < nfold; f++)
+                for (j = 0, k = 0; j < nfn; j++) {
+                    i = ord[j];
+                    if (!(nfl[i].flag & 1) && nfl[i].size && in_fold(i) == f &&
+                        ++k < nds[f])
+                        wnum(nfl[i].size);
+                }
         }
         hw(0x0A);
         hw(0x01);
-        for (i = 0; i < nfn; i++)
-            if (!nfl[i].flag && nfl[i].size)
-                hw32(nfl[i].crc);
+        for (f = 0; f < nfold; f++)
+            for (j = 0; j < nfn; j++) {
+                i = ord[j];
+                if (!(nfl[i].flag & 1) && nfl[i].size && in_fold(i) == f)
+                    hw32(nfl[i].crc);
+            }
         hw(0x00);
         hw(0x00);
     }
@@ -464,8 +621,9 @@ static void write_header(unsigned long packed)
     if (ne) {
         hw(0x0E);                       /* EmptyStream                   */
         wnum((nfiles + 7) / 8);
-        for (i = 0, k = 0, bits = 0; i < nfn; i++) {
-            if (nfl[i].flag)
+        for (j = 0, k = 0, bits = 0; j < nfn; j++) {
+            i = ord[j];
+            if (nfl[i].flag & 1)
                 continue;
             if (!nfl[i].size)
                 bits |= (unsigned char)(0x80 >> (k & 7));
@@ -484,8 +642,9 @@ static void write_header(unsigned long packed)
     hw(0x11);                           /* Name                          */
     wnum(nlen + 1);
     hw(0x00);
-    for (i = 0; i < nfn; i++) {
-        if (nfl[i].flag)
+    for (j = 0; j < nfn; j++) {
+        i = ord[j];
+        if (nfl[i].flag & 1)
             continue;
         for (a = nf_aname(i); *a; a++) {
             unsigned u = uni((unsigned char)*a);
@@ -499,8 +658,9 @@ static void write_header(unsigned long packed)
     wnum(2 + 8UL * nfiles);
     hw(0x01);
     hw(0x00);
-    for (i = 0; i < nfn; i++) {
-        if (nfl[i].flag)
+    for (j = 0; j < nfn; j++) {
+        i = ord[j];
+        if (nfl[i].flag & 1)
             continue;
         filetime(nfl[i].date, nfl[i].time, w);
         for (k = 0; k < 4; k++) {
@@ -512,9 +672,11 @@ static void write_header(unsigned long packed)
     wnum(2 + 4UL * nfiles);
     hw(0x01);
     hw(0x00);
-    for (i = 0; i < nfn; i++)
-        if (!nfl[i].flag)
+    for (j = 0; j < nfn; j++) {
+        i = ord[j];
+        if (!(nfl[i].flag & 1))
             hw32(nfl[i].attr & 0x27);
+    }
     hw(0x00);
     hw(0x00);
     hflush();
@@ -529,7 +691,7 @@ static int seek(unsigned long p)
 
 static void pusage(void)
 {
-    puts("Legt 7z-Archive an (LZMA, ein Ordner fuer alle Dateien).\r\n\r\n"
+    puts("Legt 7z-Archive an (LZMA, 32-Bit-Programme mit BCJ).\r\n\r\n"
          "7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei...]\r\n"
          "7ZA x|e|l|t ...     wie 7ZDEC (entpacken, zeigen, pruefen)\r\n\r\n"
          "  -r   Unterverzeichnisse   -mx=N  Stufe (0 speichern, 5 Vorgabe, 9 beste)\r\n"
@@ -681,17 +843,14 @@ void main(void)
     wr_arc(sh, 32);
     if (!o_q)
         say("Archiv: ", arcfull, "\r\n");
-    if (level) {
-        lme_write = wr_arc;
-        lme_begin(level);
-    }
-    pack_all();
     if (level)
-        lme_end();
+        lme_write = wr_arc;
+    classify();
+    pack_all();
     packed = apos - 32;
     hcrc = 0;
     hsize = 0;
-    write_header(packed);
+    write_header();
     asize = apos;
     if (!werr) {                        /* Startkopf                     */
         sh[0] = '7'; sh[1] = 'z'; sh[2] = 0xBC; sh[3] = 0xAF; sh[4] = 0x27; sh[5] = 0x1C;

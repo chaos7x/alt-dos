@@ -316,8 +316,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `7ZA a [-r] [-mx=0..9] [-q] [-y] Archiv[.7Z] [Datei…]` legt 7z-Archive
   an (eigener LZMA-Packer `lzmaenc.c`, Wörterbuch 128 KB, fester Ordner,
   Namen UTF-16, Datum, Attribute; `-mx=0` speichert); `x e l t` ruft
-  7ZDEC. 7-Zip liest die Archive. Nur neue Archive (`-y` überschreibt),
-  noch kein BCJ und kein gepackter Kopf
+  7ZDEC. 32-Bit-Programme (PE, LE/LX von DOS/4GW, ELF) kommen in einen
+  eigenen Ordner mit BCJ-x86-Filter davor. 7-Zip liest die Archive. Nur
+  neue Archive (`-y` überschreibt), noch kein gepackter Kopf
 - Textwerkzeuge nach dem Vorbild von GNU, alle auch in Pipes:
   `HEAD [-n N] [-c N] [-q|-v] [Datei…]` (Anfang, Vorgabe 10 Zeilen),
   `TAIL [-n N|+N] [-c N] [-f] [Datei…]` (Ende; `-f` bleibt dran und zeigt,

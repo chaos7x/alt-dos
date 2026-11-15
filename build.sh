@@ -165,7 +165,8 @@ wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
 wcc $CFLAGS -fo=$B/lzh.o apps/lzh.c          # LH5-Familie, lh1, ARJ, ZOO-LZW
 wcc $CFLAGS -fo=$B/lzhenc.o apps/lzhenc.c    # Packer LH5-Familie (LHA, ARJ)
-wcc $CFLAGS -fo=$B/lzma.o apps/lzma.c        # LZMA/LZMA2, BCJ, Delta (7ZDEC)
+wcc $CFLAGS -fo=$B/lzma.o apps/lzma.c        # LZMA/LZMA2, Delta (7ZDEC)
+wcc $CFLAGS -fo=$B/bcj.o apps/bcj.c          # BCJ x86 (7ZDEC, 7ZA)
 wcc $CFLAGS -fo=$B/lzmaenc.o apps/lzmaenc.c  # LZMA-Packer (7ZA)
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     U=""
@@ -173,8 +174,8 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     case " $ARCAPPS " in *" $t "*) U="$U file $B/flate.o file $B/arcutil.o" ;; esac
     case " $LZHAPPS " in *" $t "*) U="$U file $B/lzh.o file $B/arcutil.o" ;; esac
     case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
-    [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/arcutil.o"   # 7z (lzma.c)
-    [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/arcutil.o"  # 7z-Packer
+    [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
+    [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
           file $B/crt0.o file $B/task_$t.o $U 2>&1 | grep -v W1014 || true

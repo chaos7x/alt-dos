@@ -33,7 +33,7 @@ int  lm_ring(unsigned long want);       /* Segmente fuer min(want, Platz) */
 void lm_ring_free(void);
 int  lm_decode(int kind, const unsigned char *props, unsigned np, unsigned long size);
 
-unsigned bcj_x86(unsigned char *buf, unsigned n, unsigned long ip, unsigned *state);
+unsigned bcj_x86(unsigned char *buf, unsigned n, unsigned long ip, unsigned *state, int enc);  /* bcj.c */
 unsigned long lm_crc32(unsigned long crc, const unsigned char *p, unsigned n);
 void     delta_dec(unsigned char *buf, unsigned n, unsigned dist,
                    unsigned char *hist, unsigned char *hpos);

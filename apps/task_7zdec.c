@@ -895,7 +895,7 @@ static int filt(const unsigned char *p, unsigned n)
         p += k;
         n -= k;
         if (fn == 4096) {
-            k = bcj_x86(fb, fn, fip, &fst);
+            k = bcj_x86(fb, fn, fip, &fst, 0);
             split(fb, k);
             fip += k;
             for (i = k; i < fn; i++)
@@ -910,7 +910,7 @@ static void filt_end(void)
 {
     unsigned k;
     if (fkind == 1 && fn) {
-        k = bcj_x86(fb, fn, fip, &fst);
+        k = bcj_x86(fb, fn, fip, &fst, 0);
         (void)k;
         split(fb, fn);                  /* Rest unveraendert             */
     }

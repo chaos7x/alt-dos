@@ -804,8 +804,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Entwicklungsrechner gegen Python lzma (Stufen 1/5/9, leer, 1 Byte,
   Zufall, Nullen, 1 MB Quelltext: 241 KB, xz -9 204 KB); in QEMU Stufen
   0/1/5/9 mit -r/Unterverzeichnis/leerer Datei, 7ZDEC l/t/x, 7-Zip 23.01
-  `t` „Everything is Ok“, Inhalte gleich. Offen: BCJ, gepackter Kopf,
-  Ergänzen. 7ZDEC nimmt die Zwischendatei nur noch, wenn der Ring kleiner
+  `t` „Everything is Ok“, Inhalte gleich. BCJ: `apps/bcj.c` (aus lzma.c
+  herausgelöst, `enc` 1 = packen, für 7ZDEC und 7ZA): Dateien mit Endung
+  EXE/DLL/DRV/SYS/OCX/CPL/SCR/VXD/386/OVL/BIN werden geöffnet, PE/LE/LX
+  bei e_lfanew oder ELF -> Flag 2, `ord[]` legt erst die übrigen, dann
+  diese ab; zweiter Ordner mit zwei Codern (BCJ 03030103 <- LZMA,
+  Bindepaar Eingang 0 <- Ausgang 1), am Stromende Rest wie der Entpacker
+  (umrechnen, was geht, alles ausgeben). 16-Bit-Programme bleiben im
+  ersten Ordner (BCJ kennt nur 32-Bit-Abstände). Geprüft in QEMU mit
+  einem ELF als LS.BIN: 7ZDEC t/x, 7-Zip `t` „Everything is Ok“, 7-Zip
+  zeigt „LZMA:17 BCJ“, Inhalt gleich. Offen: gepackter Kopf, Ergänzen. 7ZDEC nimmt die Zwischendatei nur noch, wenn der Ring kleiner
   ist als das Wörterbuch (bzw. der Ordner) – Abstände sind nie größer.
   Bemerkt (offen): `DIR /S` fehlt in CMD (MS-DOS hat es); `CMD: command
   /c prog > datei` – die Ausgabe eines DOS-Programms landet auf dem
