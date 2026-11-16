@@ -1850,9 +1850,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   vom eingehängten Laufwerk; PACKDISK /CHECK meldet aber 1.492 Sektoren
   „belegt, als frei markiert“ und 1 umgekehrt – vermutlich liest PACKDISK
   (und damit auch der Schreibweg in loop.c, gleiche Deutung) etwas am
-  echten Format falsch. Ungeklärt; dafür `/CHECK … /V` (erste Abweichungen
-  mit Sektor, Cluster, rohem MDFAT-Eintrag, FAT-Wert und Aufbau). Bis zur
-  Klärung echte MS-DOS-Container nur lesend einhängen, kein /F.
+  echten Format falsch. Dafür `/CHECK … /V` (erste Abweichungen mit
+  Sektor, Cluster, rohem MDFAT-Eintrag, FAT-Wert und Aufbau). Danach lief
+  beim Nutzer ScanDisk unter MS-DOS (keine Meldung) – seitdem stimmen
+  alle 32.559 Cluster mit der BITFAT überein (die Deutung des Formats
+  gilt; die 1.492 lagen vermutlich an einer veralteten BITFAT – DRVSPACE
+  schreibt sie verzögert –, die ScanDisk still neu schrieb). Übrig: 17
+  Sektoren „frei, als belegt markiert“ am Stück direkt am Datenanfang
+  (ab 1.123, Daten ab 1.107; Aufbau: Bootblock 801, MDFAT ab 258,
+  dcluster 0011h) – unschädlich, Herkunft offen (evtl. von MS-DOS
+  reserviert); dort kein /F, unser Schreibweg nimmt nur freie Bits.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
