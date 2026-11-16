@@ -1846,7 +1846,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   loop_attach setzt IFS_F_WRITE auf dem Eintrag des Kernels, damit
   greift open_for_write. Vom Nutzer in 86Box: echter MS-DOS-6.22-
   Container (DriveSpace Version 2, innen 453 MB FAT16, 8-KB-Cluster,
-  65.509 Cluster) angelegt – Test unter AT-DOS steht aus.
+  65.509 Cluster) angelegt – vom Nutzer in 86Box: NC und Spiele laufen
+  vom eingehängten Laufwerk; PACKDISK /CHECK meldet aber 1.492 Sektoren
+  „belegt, als frei markiert“ und 1 umgekehrt – vermutlich liest PACKDISK
+  (und damit auch der Schreibweg in loop.c, gleiche Deutung) etwas am
+  echten Format falsch. Ungeklärt; dafür `/CHECK … /V` (erste Abweichungen
+  mit Sektor, Cluster, rohem MDFAT-Eintrag, FAT-Wert und Aufbau). Bis zur
+  Klärung echte MS-DOS-Container nur lesend einhängen, kein /F.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

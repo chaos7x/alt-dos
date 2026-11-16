@@ -90,6 +90,16 @@ static void say(const char *a, unsigned long v, const char *b)
     puts(b);
 }
 
+static void hexn(unsigned long v, unsigned d)
+{
+    char b[9];
+    unsigned i;
+    for (i = d; i; i--, v >>= 4)
+        b[i - 1] = "0123456789ABCDEF"[(unsigned)v & 15];
+    b[d] = 0;
+    puts(b);
+}
+
 static char *opt(char *p, const char *o)   /* "/X" in der Zeile -> dahinter */
 {
     unsigned n = slen(o), k;
@@ -281,7 +291,10 @@ static unsigned long dst, dend, nds, mdf, bb, fatc;
 static unsigned mdn, spc, sh, d3, spf;
 static int dcl;
 static unsigned long md_sec = 0xFFFFFFFFUL, fat_sec = 0xFFFFFFFFUL;
-static int md_dirty, fix;
+static int md_dirty, fix, verb;
+static unsigned long vsec[8];         /* /V: abweichende Sektoren     */
+static unsigned char vkind[8];
+static unsigned nv;
 
 static unsigned char __far *bit(unsigned long k, unsigned char *m)
 {
@@ -355,6 +368,57 @@ static void claim(unsigned long s, unsigned n)
     }
 }
 
+/* /V: zu den abweichenden Sektoren den Cluster mit rohem MDFAT-Eintrag */
+static void explain(unsigned long ncl, int f16)
+{
+    unsigned long cl, s, k;
+    unsigned char *e;
+    unsigned i, n, hit;
+    puts("Aufbau: Bootblock ");
+    put_num(bb, 0, 1);
+    puts(", MDFAT ab ");
+    put_num(mdf, 0, 1);
+    puts(", Daten ");
+    put_num(dst, 0, 1);
+    puts("-");
+    put_num(dend, 0, 1);
+    puts(", dcluster ");
+    hexn((unsigned)dcl, 4);
+    puts("\r\n");
+    for (i = 0; i < nv; i++) {
+        puts(vkind[i] ? "frei, belegt markiert: Sektor " : "belegt, frei markiert: Sektor ");
+        put_num(vsec[i], 0, 1);
+        hit = 0;
+        for (cl = 2; cl < ncl + 2 && !hit; cl++) {
+            if ((e = md_ent((unsigned)cl)) == 0)
+                break;
+            if (d3) {
+                s = e[0] | ((unsigned)e[1] << 8) | ((unsigned long)e[2] << 16);
+                n = (e[3] >> 2) + 1;
+                k = e[4] & 0x80;
+            } else {
+                k = rd32(e);
+                s = k & 0x1FFFFFUL;
+                n = ((unsigned)(k >> 22) & 15) + 1;
+                k &= 0x80000000UL;
+            }
+            if (!k || vsec[i] < s + 1 || vsec[i] > s + n)
+                continue;
+            hit = 1;
+            puts(", Cluster ");
+            put_num(cl, 0, 1);
+            puts(", MDFAT ");
+            if (d3) {
+                hexn(e[4], 2); hexn(e[3], 2); hexn(e[2], 2); hexn(e[1], 2); hexn(e[0], 2);
+            } else
+                hexn(rd32(e), 8);
+            puts(", FAT ");
+            hexn(fat_get((unsigned)cl, f16), 4);
+        }
+        puts("\r\n");
+    }
+}
+
 static int check(char *rest)
 {
     unsigned long units, tot, din, ncl, used = 0, stor = 0, unp = 0, cl, s, k, bf_bad = 0, bf_lost = 0;
@@ -362,8 +426,9 @@ static int check(char *rest)
     unsigned char *e, m, __far *p;
     rest = word(skip(rest), name, FAPI_PATHLEN);
     fix = opt(rest, "/F") != 0;
+    verb = opt(rest, "/V") != 0;
     if (!name[0]) {
-        puts("Aufruf: PACKDISK /CHECK Datei [/F]\r\n");
+        puts("Aufruf: PACKDISK /CHECK Datei [/F] [/V]\r\n");
         return 4;
     }
     hd = fix ? DosOpenRW(name) : DosOpen(name);
@@ -544,10 +609,19 @@ static int check(char *rest)
             n = rd16(sec + 2 * i);
             if (n != w) {
                 for (fc = 0; fc < 16; fc++) {
-                    if ((w & ~n) & (0x8000 >> fc))
+                    if ((w & ~n) & (0x8000 >> fc)) {
                         bf_bad++;       /* belegt, als frei markiert     */
-                    else if ((n & ~w) & (0x8000 >> fc))
+                        if (nv < 6) {
+                            vkind[nv] = 0;
+                            vsec[nv++] = dst + k + ((unsigned long)i << 4) + fc;
+                        }
+                    } else if ((n & ~w) & (0x8000 >> fc)) {
                         bf_lost++;      /* frei, als belegt markiert     */
+                        if (nv < 8) {
+                            vkind[nv] = 1;
+                            vsec[nv++] = dst + k + ((unsigned long)i << 4) + fc;
+                        }
+                    }
                 }
                 wr16(sec + 2 * i, w);
                 x = 1;
@@ -556,6 +630,8 @@ static int check(char *rest)
         if (x && fix && wr(1 + (k >> 12), sec))
             n_err++;
     }
+    if (verb)
+        explain(ncl, f16);
     DosClose(hd);
 
     say("", used, " Cluster belegt");
@@ -605,12 +681,13 @@ void main(void)
     else {
         puts("Legt komprimierte Laufwerke an und pr\x81" "ft sie.\r\n\r\n"
              "PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n"
-             "PACKDISK /CHECK Datei [/F]\r\n\r\n"
+             "PACKDISK /CHECK Datei [/F] [/V]\r\n\r\n"
              "  /CREATE  leerer Container im DriveSpace-6.22-Format (bis 512 MB),\r\n"
              "           mit /DS3 im DriveSpace-3-Format (32-KB-Cluster, bis 2047 MB)\r\n"
              "  /RATIO:n gesch\x84tzte Packrate n:1 f\x81r die Gr\x94\xE1" "e innen (Vorgabe 2)\r\n"
              "  /CHECK   MDFAT, BITFAT und FAT pr\x81" "fen, Packrate zeigen\r\n"
-             "  /F       Fehler in BITFAT/MDFAT beheben\r\n\r\n"
+             "  /F       Fehler in BITFAT/MDFAT beheben\r\n"
+             "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n\r\n"
              "Einh\x84ngen mit LOOP X: Datei, aush\x84ngen mit LOOP X: /D.\r\n");
         rc = 4;
     }
