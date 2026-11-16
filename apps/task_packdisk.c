@@ -637,6 +637,19 @@ static int check(char *rest)
     }
     say("Pr\x81" "fe ", units >> 11, d3 ? " MB (DriveSpace-3-Format)" : " MB (DriveSpace-6-Format)");
     say(", ", ncl, " Cluster innen ...\r\n");
+    if (verb) {                         /* Superblock roh (Vergleich mit */
+        say("Datei ", units, " Sektoren, Superblock:\r\n");  /* echten Containern) */
+        for (i = 0; i < 96; i++) {
+            if (!(i & 15)) {
+                hexn(i, 2);
+                puts(":");
+            }
+            puts(" ");
+            hexn(sb[i], 2);
+            if ((i & 15) == 15)
+                puts("\r\n");
+        }
+    }
 
     /* Durchgang 1: MDFAT gegen FAT, Bereiche, Stuecke */
     for (cl = 2; cl < ncl + 2; cl++) {
