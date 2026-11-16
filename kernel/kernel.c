@@ -6528,6 +6528,30 @@ static void loop_undo(int dev, unsigned long m)
 
 static unsigned loop_att(unsigned a3);
 static void loop_boot(void);
+
+/* \AUTOCHK.LST des Startlaufwerks nennt eine Umwandlung (CONVERT hat
+   das Laufwerk nicht sperren koennen): dann bleiben Auslagerungsdatei
+   und LOOP= zu, CMD.EXE /P wandelt um und startet neu (wie NT) */
+static int conv_pending(void)
+{
+    int k = of_alloc(), r = 0;
+    unsigned n, i;
+    if (k < 0)
+        return 0;
+    files[k].owner = -1;
+    scopy(fi_buf, "\\AUTOCHK.LST", sizeof(fi_buf));
+    if (ifs_open(sys_drive, fi_buf, &files[k].f) == 0) {
+        n = (unsigned)ifs_read(&files[k].f, 0, KDATA, (unsigned)fi_buf, 255);
+        ifs_close(&files[k].f);
+        if (n > 255)
+            n = 0;
+        for (i = 0; i + 3 < n; i++)
+            if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
+                r = 1;
+    }
+    files[k].refs = 0;
+    return r;
+}
 static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
 {
     struct fapi_loopinfo __far *li;
@@ -7155,12 +7179,17 @@ void kmain(void)
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
-    i = env_find(-1, "SWAPPATH", 8);            /* Auslagerungsdatei      */
-    swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
-              sys_drive, line, fi_canon);
-    if (line[0])
-        vio_kputs(boot_session, line);
-    loop_boot();                                /* LOOP= aus CONFIG.SYS   */
+    if (conv_pending()) {                       /* CONVERT beim Start: */
+        vio_kputs(boot_session, "\xFE Umwandlung vorgemerkt - ohne "
+                  "Auslagerungsdatei und LOOP=\n");
+    } else {                                    /* nichts darf offen sein */
+        i = env_find(-1, "SWAPPATH", 8);        /* Auslagerungsdatei      */
+        swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
+                  sys_drive, line, fi_canon);
+        if (line[0])
+            vio_kputs(boot_session, line);
+        loop_boot();                            /* LOOP= aus CONFIG.SYS   */
+    }
     files[CONS].refs = 255;
     pipe_sel = kseg_alloc(NPIPE * PIPESZ);
     if (!pipe_sel)

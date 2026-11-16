@@ -3127,9 +3127,9 @@ static int run_program(char *cmd, int sync, int call);
    beim Pruefen nicht bei jedem Start wiederkommt. */
 static void autochk(void)
 {
-    static char lst[256], cl[40], ac[32], todo[26];
+    static char lst[256], cl[40], ac[32], todo[26], conv[4][56];
     static struct fapi_fsinfo fi;
-    unsigned h, n, i, k, d;
+    unsigned h, n, i, k, d, nconv = 0;
 
     h = DosOpen("\\AUTOCHK.LST");
     if (!FAPI_FAILED(h)) {
@@ -3141,8 +3141,38 @@ static void autochk(void)
         lst[n] = 0;
         for (i = 0; lst[i]; i++)
             if (lst[i + 1] == ':' && up(lst[i]) >= 'A' && up(lst[i]) <= 'Z' &&
-                (i == 0 || lst[i - 1] == '\n'))
-                todo[up(lst[i]) - 'A'] = 1;
+                (i == 0 || lst[i - 1] == '\n')) {
+                for (k = i + 2; lst[k] && lst[k] != '\r' && lst[k] != '\n' &&
+                     !(lst[k] == '/' && up(lst[k + 1]) == 'C' && up(lst[k + 2]) == 'O'); k++)
+                    ;
+                if (lst[k] != '/' || nconv >= 4) {
+                    todo[up(lst[i]) - 'A'] = 1;
+                    continue;
+                }
+                /* "X: /CONVERT /FS:.. /LFN:.." -> "CONVERT X: /FS:.. /AUTO"
+                   (vorgemerkt von CONVERT, wie autoconv bei NT) */
+                scopy(conv[nconv], "CONVERT ", sizeof(conv[0]));
+                n = slen(conv[nconv]);
+                conv[nconv][n++] = up(lst[i]);
+                conv[nconv][n++] = ':';
+                for (k += 8; lst[k] && lst[k] != '\r' && lst[k] != '\n' &&
+                     n < sizeof(conv[0]) - 8; k++)
+                    conv[nconv][n++] = lst[k];
+                conv[nconv][n] = 0;
+                scat(conv[nconv++], " /AUTO", sizeof(conv[0]));
+            }
+    }
+    for (i = 0; i < nconv; i++) {       /* zuerst umwandeln, dann neu    */
+        puts("Umwandlung beim Start: ");  /* starten (Auslagerungsdatei   */
+        puts(conv[i]);                  /* und LOOP= hat der Kernel     */
+        puts("\n");                     /* dafuer ausgelassen)          */
+        run_program(conv[i], 1, 0);
+        puts("\n");
+    }
+    if (nconv) {
+        puts("Neustart ...\n");
+        DosSleep(2000);
+        DosShutdown(1);
     }
     if (FAPI_FAILED(DosGetEnv("AUTOCHECK", ac, sizeof(ac))))
         ac[0] = 0;                          /* nicht gesetzt: alle      */

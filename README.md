@@ -86,7 +86,9 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   EA-Format bleiben, VFAT-Namen ebenso; `/LFN:VFAT` bzw. `/LFN:EA`
   zusammen mit `/FS:` legt die Form der langen Namen danach fest, in
   beide Richtungen; den geänderten Partitionstyp liest der Kernel gleich
-  neu ein, hin und zurück geht ohne Neustart). `CONVERT X: /LFN:VFAT` bzw.
+  neu ein, hin und zurück geht ohne Neustart; ist das Laufwerk belegt –
+  etwa das Startlaufwerk mit Auslagerungsdatei –, merkt CONVERT es wie NT
+  für den nächsten Start vor, wandelt dann um und startet neu). `CONVERT X: /LFN:VFAT` bzw.
   `/LFN:EA` wandelt die langen Namen eines FAT-Laufwerks (FAT12/16/32,
   auch Disketten) nachträglich in die eine oder andere Form (hin und
   zurück; Zeichen außerhalb CP437 werden beim Weg nach EA zu `_`; der

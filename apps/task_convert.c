@@ -36,6 +36,8 @@ static int sys_prog(char *out, const char *sub, const char *name)
     return 0;
 }
 
+static int aut;                         /* /AUTO: beim Start, ohne Fragen */
+
 static unsigned run(const char *prog, unsigned d, const char *opt)
 {
     unsigned k;
@@ -46,6 +48,8 @@ static unsigned run(const char *prog, unsigned d, const char *opt)
     cmd[k++] = ':';
     cmd[k] = 0;
     scat(cmd, opt, sizeof(cmd));
+    if (aut && *opt)                    /* U*.EXE: alle Fragen mit Ja    */
+        scat(cmd, " /AUTO", sizeof(cmd));
     if (DosExecPgm(cmd, EXEC_SYNC)) {
         puts("Programm kann nicht gestartet werden: ");
         puts(prog);
@@ -53,6 +57,59 @@ static unsigned run(const char *prog, unsigned d, const char *opt)
         return 3;
     }
     return DosQChildRC();
+}
+
+/* Wie NT: laesst sich das Laufwerk nicht sperren (Startlaufwerk mit
+   Auslagerungsdatei, offene Dateien), fuer den naechsten Start in
+   \AUTOCHK.LST vormerken - CMD.EXE /P ruft dann CONVERT ... /AUTO,
+   bevor Auslagerungsdatei und LOOP= die Platte belegen */
+static void need_lock(unsigned d)
+{
+    static char line[48];
+    unsigned h = DosOpenDrive(d, DRV_OPEN_LOCK);
+    if (!FAPI_FAILED(h)) {
+        DosClose(h);
+        return;
+    }
+    if (h == FAPI_ERR_WP) {
+        puts("Der Datentr\x84ger ist schreibgesch\x81tzt.\r\n");
+        DosExit(3);
+    }
+    if (aut) {
+        puts("Das Laufwerk kann nicht gesperrt werden.\r\n");
+        DosExit(3);
+    }
+    puts("Das Laufwerk kann nicht gesperrt werden, weil Dateien darauf ge\x94" "ffnet\r\n"
+         "sind (z. B. Startlaufwerk). Soll es beim n\x84" "chsten Neustart umgewandelt\r\n"
+         "werden (J/N)? ");
+    if (!ask_yn())
+        DosExit(3);
+    line[0] = (char)('A' + d);
+    line[1] = 0;
+    scat(line, ": /CONVERT", sizeof(line));
+    if (fs[0]) {
+        scat(line, " /FS:", sizeof(line));
+        scat(line, fs, sizeof(line));
+    }
+    if (lfn[0]) {
+        scat(line, " /LFN:", sizeof(line));
+        scat(line, lfn, sizeof(line));
+    }
+    scat(line, "\r\n", sizeof(line));
+    path[0] = 'C';                      /* Liste auf dem Startlaufwerk   */
+    if (!FAPI_FAILED(DosGetEnv("COMSPEC", cs, sizeof(cs))) && cs[1] == ':')
+        path[0] = up(cs[0]);
+    path[1] = 0;
+    scat(path, ":\\AUTOCHK.LST", sizeof(path));
+    h = DosAppend(path);
+    if (FAPI_FAILED(h)) {
+        puts("AUTOCHK.LST kann nicht geschrieben werden.\r\n");
+        DosExit(3);
+    }
+    DosWrite(h, line, slen(line));
+    DosClose(h);
+    puts("Das Laufwerk wird beim n\x84" "chsten Neustart umgewandelt.\r\n");
+    DosExit(0);
 }
 
 void main(void)
@@ -77,6 +134,8 @@ void main(void)
             lfn[k] = 0;
         } else if (a[0] == '/' && up(a[1]) == 'V')
             verb = 1;
+        else if (a[0] == '/' && up(a[1]) == 'A' && up(a[2]) == 'U')
+            aut = 1;
         else if (a[0] == '/' && a[1] == '?') {
             puts("Wandelt das Dateisystem eines Laufwerks um, ohne Daten zu l\x94schen.\r\n\r\n"
                  "CONVERT Laufwerk: /FS:FAT32 | /FS:FAT16 [/LFN:VFAT | /LFN:EA] [/V]\r\n"
@@ -118,7 +177,7 @@ void main(void)
             DosExit(3);
         }
         puts("Das Laufwerk wird gepr\x81" "ft ...\r\n");
-        if (run(chk, d, "") != 0) {
+        if ((need_lock(d), run(chk, d, "")) != 0) {
             puts("CHKDSK hat Fehler gefunden - zuerst CHKDSK /F ausf\x81hren.\r\n");
             DosExit(3);
         }
@@ -143,7 +202,7 @@ void main(void)
             DosExit(3);
         }
         puts("Das Laufwerk wird gepr\x81" "ft ...\r\n");
-        if (run(chk, d, "") != 0) {
+        if ((need_lock(d), run(chk, d, "")) != 0) {
             puts("CHKDSK hat Fehler gefunden - zuerst CHKDSK /F ausf\x81hren.\r\n");
             DosExit(3);
         }
@@ -182,7 +241,7 @@ void main(void)
         DosExit(3);
     }
     puts("Das Laufwerk wird gepr\x81" "ft ...\r\n");
-    if (run(chk, d, "") != 0) {
+    if ((need_lock(d), run(chk, d, "")) != 0) {
         puts("CHKDSK hat Fehler gefunden - zuerst CHKDSK ");
         putc((char)('A' + d));
         puts(": /F ausf\x81hren.\r\n");

@@ -619,6 +619,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   In QEMU geprüft: FAT32 -> FAT16 -> FAT32 ohne Neustart (der zweite
   Schritt scheiterte vorher an „Unbekannter Partitionstyp“), Typ 0Ch,
   fsck sauber, Inhalte gleich.
+  Umwandeln beim Neustart wie NT (Wunsch des Nutzers; bei ihm ging C:
+  schon direkt, weil nichts offen war – nötig, wenn SWAPPER.DAT oder
+  LOOP= auf dem Laufwerk liegen; in QEMU mit 16 MB und Auslagerungsdatei
+  auf C: geprüft: FAT16 -> FAT32 -> FAT16, je Start danach von C:, fsck
+  sauber): CONVERT `need_lock` prüft vor CHKDSK die Sperre, scheitert
+  sie, „beim nächsten Neustart umwandeln (J/N)“ -> Zeile `X: /CONVERT
+  [/FS:..] [/LFN:..]` in X:\AUTOCHK.LST des Startlaufwerks. Kernel
+  `conv_pending` (kmain, vor swap_boot) liest die Liste: steht /CONVERT
+  darin, bleiben Auslagerungsdatei und LOOP= zu. CMD /P `autochk` macht
+  daraus `CONVERT X: ... /AUTO` (CONVERT reicht /AUTO an UFAT/UFAT32
+  weiter: alle Fragen Ja), danach DosShutdown(1).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
