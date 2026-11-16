@@ -929,7 +929,8 @@ und zählt die Packart (Kopf JM/DS) aller gepackten Cluster. `PACKDISK /COMPRESS
 Laufwerk (nicht das Startlaufwerk) Datei für Datei in `X:\DRVSPACE.000`
 um: der Container beginnt mit dem freien Platz und wächst, sobald die
 gelöschten Originale Platz gemacht haben; eine Datei liegt immer ganz auf
-einer Seite, ein abgebrochener Lauf setzt mit demselben Aufruf fort.
+einer Seite, ein abgebrochener Lauf setzt mit demselben Aufruf fort;
+Systemdateien im Stamm (Startdateien) bleiben auf dem Laufwerk.
 Schalter und
 Dateiname dürfen in beliebiger Reihenfolge stehen (`PACKDISK C:\X.CVF
 /V /CHECK`). Geschrieben

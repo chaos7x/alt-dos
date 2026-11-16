@@ -920,6 +920,10 @@ static int c_visit(char *path, struct fapi_dirent *e, int what, int depth)
     }
     if ((e->attr & 0x08) || (depth == 0 && (same(e->name, "EA DATA. SF") || same(e->name, base_name(name)))))
         return 0;
+    if (depth == 0 && what == WT_FILE && (e->attr & 0x04))
+        return 0;                       /* Systemdateien im Stamm (Start-
+                                           dateien eines DOS) bleiben wie
+                                           bei DRVSPACE auf dem Traeger  */
     scopy(c_dest, path, FAPI_PATHLEN);
     c_dest[0] = (char)('A' + c_ldrv);
     if (what == WT_DIR) {

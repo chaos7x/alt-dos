@@ -1924,7 +1924,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Containerdatei durch die Lücken (> ~6.000 Stücke -> DEFRAG, dann
   fortsetzen). Vom Nutzer in 86Box bestätigt (16.11.2026): ZIP 250
   (126 Dateien) komprimiert – 237-MB-Container DS6, CHKDSK innen und
-  /CHECK /V sauber, 273 von 314 Clustern gepackt. PACKDISK nimmt Schalter und Namen in jeder Reihen-
+  /CHECK /V sauber, 273 von 314 Clustern gepackt (die versteckte Datei
+  innen war ATDOS.SYS – der Nutzer hatte danach SYS I: auf das Loop-
+  Laufwerk gemacht). Vorsorglich bleiben Dateien mit Attribut System im
+  Stamm (Startdateien anderer DOS) wie bei DRVSPACE auf dem Träger. PACKDISK nimmt Schalter und Namen in jeder Reihen-
   folge (`opt` nur am Wortanfang, ohne ':' mit Wortende; `posw` = n-tes
   Wort ohne '/'; in QEMU geprüft). Danach unter AT-DOS beschrieben (XCOPY C:\DOS, 105
   Dateien, Löschen): CHKDSK und /CHECK /V sauber, 333 neue Cluster „JM
