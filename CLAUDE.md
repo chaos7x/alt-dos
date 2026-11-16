@@ -2545,6 +2545,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `tools/snapshow.py`): EDIT, FM (Betrachter, Befehlszeile über COMSPEC),
   LESS, GRAFIK in allen drei Modi. Unter AT-DOS unverändert.
   Strg+C und Maus unter DOS noch nicht geprüft.
+  Alt allein (EDIT-Menü) unter MS-DOS (vom Nutzer gemeldet: ging nicht –
+  das BIOS meldet bloßes Alt nicht): Stub `alt_poll`/`kbd_peek_a` liest
+  die linke Alt-Taste aus 0418h Bit 1 (ohne erweiterte Tastatur 0417h
+  Bit 3), Alt allein unten und wieder los ohne Taste dazwischen ->
+  KEY_ALT, erst zwei BIOS-Takte nach dem Loslassen (kommt bis dahin
+  eine Taste, verfällt es); eine gelesene Taste bei gedrücktem Alt
+  macht das Loslassen wirkungslos (sonst schloss es das eben mit
+  Alt+B geöffnete Menü wieder). In QEMU in der Box (FreeCOM, gebundenes
+  EDIT) geprüft: Alt, Alt+B/D/S, Esc, Tippen, je zweimal.
   Nachgezogen (vom Nutzer vermisst: XCOPY ging in der Box nicht):
   XCOPY, MOVE, DELTREE, CHOICE, REPLACE, LABEL, MSD gebunden (beide
   Zweige). Auf main dafür MAUSTEST/FPUTEST nicht mehr gebunden und
