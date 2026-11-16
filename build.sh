@@ -159,7 +159,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop setup"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -252,7 +252,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_keyb.exe KEYB.EXE  $B/task_mem.exe MEM.EX
        $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
        $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE  $B/task_convert.exe CONVERT.EXE
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
-       $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_eject.exe EJECT.EXE  $B/task_devload.exe DEVLOAD.EXE
+       $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_eject.exe EJECT.EXE  $B/task_devload.exe DEVLOAD.EXE  $B/task_setup.exe SETUP.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
        $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE
        apps/dosbox.cmd DOSBOX.CMD"
@@ -265,9 +265,9 @@ python3 tools/mkaudio.py $B                # Klangbeispiele fuer PLAY
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_c.exe TASKC.EXE
        $B/task_grafik.exe GRAFIK.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM
        $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
-# Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
+# Werkzeuge der Setup-Diskette 2 (Packprogramme, GNU-Textwerkzeuge, ...)
 HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_loop.exe LOOP.EXE  $B/task_aweload.exe AWELOAD.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_compress.exe COMPRESS.EXE"
-# Testprogramme nur auf der Platte (auf der Diskette fehlt der Platz)
+# Testprogramme (Setup-Diskette 2)
 HDDEMO="$B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL
@@ -282,13 +282,25 @@ mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+# Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
+# Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
+# bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.
+CPFILES=""
+for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     copy_list "$FILES" ""
-    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DOS/MDOS" "${TO}DEMO"
+    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
+}
+copy_extra() {
+    mmd $TARGET "${TO}DOS/MDOS" "${TO}DEMO"
     copy_list "$BOXFILES" "DOS/MDOS/"
+    copy_list "$CPFILES" "DOS/SYSTEM/"
+    copy_list "$HDDOS" "DOS/"
     copy_list "$DEMOFILES" "DEMO/"
+    copy_list "$B/KLANG.WAV KLANG.WAV" "DEMO/"
+    copy_list "$HDDEMO" "DEMO/"
 }
 copy_list() {
     sub=$2
@@ -300,8 +312,27 @@ copy_list() {
 }
 TARGET="-i $IMG" TO="::" copy_files
 mcopy -i $IMG $B/atsys.com ::ATSYS.COM
+# Startdatei der Diskette 1 ruft SETUP auf (SETUP laesst die Zeile weg)
+{ cat AUTOEXEC.CMD; printf 'SETUP /START\r\n'; } > $B/autoexec.fd
+mcopy -o -i $IMG $B/autoexec.fd ::AUTOEXEC.CMD
+mlabel -i $IMG '::AT-DOS 1'
+# Diskette 2 (nicht startfaehig)
+IMG2=$B/atdos-fd2.img
+rm -f $IMG2
+mformat -i $IMG2 -C -f 1440 -v 'AT-DOS 2' ::
+mmd -i $IMG2 ::DOS ::DOS/SYSTEM
+TARGET="-i $IMG2" TO="::" copy_extra
+# SETUP.ID: Nummer, belegte KB beider Disketten (Fortschritt, Platz)
+used_kb() { mdu -s -i "$1" :: | awk '{print int($2 / 2)}'; }
+KB1=$(used_kb $IMG); KB2=$(used_kb $IMG2)
+printf 'ATDOS 1 %s %s\r\n' $KB1 $KB2 > $B/setup1.id
+printf 'ATDOS 2 %s %s\r\n' $KB1 $KB2 > $B/setup2.id
+mcopy -i $IMG $B/setup1.id ::SETUP.ID
+mcopy -i $IMG2 $B/setup2.id ::SETUP.ID
 mdir -a -i $IMG :: | sed 's/^/  /'
 mdir -i $IMG ::DOS | sed 's/^/  /'
+echo "Setup-Diskette 2 (atdos-fd2.img)"
+mdir -i $IMG2 :: | tail -2 | sed 's/^/  /'
 
 echo "Festplatte (atdos-hd.img, 130/16/63 = 63 MB, FAT16)"
 HD=$B/atdos-hd.img
@@ -316,16 +347,7 @@ python3 tools/sysboot.py $HD $((63 * 512)) $B/hdboot.bin
 mcopy $B/ATDOS.SYS c:ATDOS.SYS
 mattrib +r +s +h c:ATDOS.SYS
 TARGET="" TO="c:" copy_files
-# Zeichensaetze fuer CODEPAGE=/CHCP (freedos/cp, tools/mkcp.py) - nur auf der
-# Platte, auf der Diskette ist kein Platz (je 6,25 KB)
-CPFILES=""
-for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
-TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
-# KLANG.WAV (22 KB) ebenso nur auf der Platte: auf der Diskette brauchen die
-# gebundenen Werkzeuge (XCOPY, MOVE, ...) den Platz
-TARGET="" TO="c:" copy_list "$B/KLANG.WAV KLANG.WAV" "DEMO/"
-TARGET="" TO="c:" copy_list "$HDDEMO" "DEMO/"
-TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
+TARGET="" TO="c:" copy_extra
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

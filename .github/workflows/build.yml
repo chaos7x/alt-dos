@@ -43,6 +43,7 @@ jobs:
           name: alt-dos-image
           path: |
             build/atdos-fd.img
+            build/atdos-fd2.img
             build/atdos-hd.img
 
       - name: Als Release "latest" veroeffentlichen
@@ -52,10 +53,10 @@ jobs:
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
-          gh release create latest build/atdos-fd.img build/atdos-hd.zip \
+          gh release create latest build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
             --prerelease \
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
-            --notes "Weiterarbeit nach AT-DOS 6.0 (Zweig main), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). Das fertige 6.0 steht im Release v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Diskette A: in 86Box, 386-Maschine mit VGA. atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+            --notes "Weiterarbeit nach AT-DOS 6.0 (Zweig main), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). Das fertige 6.0 steht im Release v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Setup-Diskette 1 (startfähig, Notfalldiskette, SETUP richtet AT-DOS auf der Festplatte ein), atdos-fd2.img: Setup-Diskette 2 (DOS-Box, Packprogramme, Zeichensätze, Demos). atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
       - name: Release "v6.0" veroeffentlichen (Zweig 6.0)
         if: github.ref == 'refs/heads/6.0' && github.event_name != 'pull_request'

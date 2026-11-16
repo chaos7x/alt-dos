@@ -81,6 +81,29 @@ Vorbilder der Zeit (Windows 3.1 erweitert, OS/2 2.0) brauchten real
 Diskettenabbild heißt seit 6.0 `build/atdos-fd.img` (vorher `dos5.img`,
 Wunsch des Nutzers), OEM-Kennung `ALTDOS60`.
 
+Zwei Setup-Disketten + SETUP (6.1, Wunsch des Nutzers „wie MS-DOS oder
+FreeDOS, das schafft Luft“; in QEMU geprüft: leere 100-MB-Platte ->
+SETUP -> FDISK -> Neustart -> FORMAT -> Kopieren beider Disketten ->
+Start von C: (nur gefundene Treiber vorgeladen), Inhalt gleich
+atdos-hd.img, fsck sauber; zweiter Lauf mit 4 MB aktualisiert, legt
+CONFIG.NEW/AUTOEXEC.NEW an): build.sh `copy_files` (Diskette 1 =
+Stamm, `DOSFILES`, `SYSFILES`) und `copy_extra` (Diskette 2 = BOXFILES
+-> \DOS\MDOS, CPFILES, HDDOS, DEMOFILES, KLANG.WAV, HDDEMO); die Platte
+bekommt beides. Diskette 1 hat statt AUTOEXEC.CMD `build/autoexec.fd`
+(+ `SETUP /START`), Bezeichnungen „AT-DOS 1“/„AT-DOS 2“, `SETUP.ID` im
+Stamm „ATDOS n kb1 kb2“ (mdu, belegte KB). `apps/task_setup.c`: Quelle
+= COMSPEC-Laufwerk, Ziel = erste feste Platte mit 512er-Sektoren (mehrere:
+wählen), keine -> FDISK, RAW -> `FORMAT X: /Q /V:AT-DOS` (fragt J/N im
+Textbetrieb), CONFIG.SYS gefiltert (DEVICE=/IFS= nicht geladener Treiber
+-> `REM `, DosDrvInfo), AUTOEXEC.CMD ohne `SETUP /START`, dann `SYS A:
+X:` (kopiert ATDOS.SYS, CMD, \DOS\SYSTEM), danach walk_tree über beide
+Disketten (Stamm und \DOS\SYSTEM von Disk 1 übersprungen, Attribute und
+Datum übernommen). Am Ende Diskette 1 zurück (CMD/Code-Verwerfen lädt
+von dort). Diskette 1 danach ~615 KB frei, Diskette 2 ~300 KB.
+Neues Werkzeug nur auf Diskette 2: in `HDDOS`/`HDDEMO` eintragen.
+CI veröffentlicht `atdos-fd2.img` mit im Release `latest`. Ungeprüft:
+86Box, echte Disketten.
+
 Regeln auf `main` (6.0); für `5.x` gelten weiter die 5.0-Regeln (nur
 286-Befehle, kooperativ):
 

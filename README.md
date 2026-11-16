@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke, Auslagerungsdatei
+# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -310,7 +310,7 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   [Datei…]` nach dem Vorbild von GNU cut (Zeichen oder Felder je Zeile,
   auch in Pipes: `DIR /B | CUT -c1-8`)
 - Packprogramme (eigener Deflate-Kern nach RFC 1951, kein fremder Code;
-  nur auf der Platte, gebunden – laufen auch unter MS-DOS und in den
+  auf Setup-Diskette 2, gebunden – laufen auch unter MS-DOS und in den
   Boxen): `GZIP`/`GUNZIP [-d -c -k -f -l -t -v -1..-9] [Datei…]` wie GNU
   gzip (`BRIEF.TXT` -> `BRIEF.TXT.gz`, ohne Datei als Filter, mehrteilige
   `.gz`), `TAR -c|-t|-x [-v -z -k] [-f Archiv] [-C Verz] [Name…]` wie GNU
@@ -688,8 +688,7 @@ Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
 WC, UNIQ, TR, CAT, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
-den DOS-Boxen. Auf der Diskette fehlt dafür KLANG.WAV (nur auf der
-Platte).
+den DOS-Boxen.
 Unter DOS nicht möglich: Sitzungen, Pipes im Kernel, Laufwerke als Ganzes
 (CHKDSK, FORMAT, FDISK), SUBST/JOIN, lange Namen. Möglich macht es der
 Gate-Zeiger: Programme rufen die FAPI über `call far [2]`, der Zeiger am
@@ -997,13 +996,34 @@ etwas weniger ein. Bei Platten ohne LBA und ohne gültige aktuelle Geometrie
 Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
-    ./build.sh      # -> build/atdos-fd.img (1,44 MB, FAT12) und build/atdos-hd.img
+    ./build.sh      # -> build/atdos-fd.img, build/atdos-fd2.img (je 1,44 MB) und build/atdos-hd.img
+
+Verteilt wird AT-DOS wie MS-DOS 6 auf **zwei Setup-Disketten**:
+`atdos-fd.img` (Diskette 1, startfähig: System, alle Werkzeuge in `\DOS`,
+Treiber – zugleich Notfalldiskette) und `atdos-fd2.img` (Diskette 2: DOS-Box
+`\DOS\MDOS`, Zeichensätze, Packprogramme und GNU-Textwerkzeuge, LOOP,
+AWELOAD, `\DEMO`). Beide tragen im Stamm `SETUP.ID` (Nummer, belegte KB
+beider Disketten). Startet man von Diskette 1, ruft `AUTOEXEC.CMD`
+**SETUP** auf (F3 = Eingabeaufforderung):
+
+1. Ziellaufwerk suchen (bei mehreren wählen); fehlt eine Partition, startet
+   SETUP FDISK (danach Neustart, SETUP läuft von selbst weiter), ist sie
+   nicht formatiert, `FORMAT /Q`.
+2. `CONFIG.SYS` schreiben – `DEVICE=`/`IFS=`-Zeilen von Treibern, die beim
+   Start der Diskette kein Gerät fanden, stehen dort als `REM` – und
+   `AUTOEXEC.CMD` (ohne den SETUP-Aufruf); danach `SYS`.
+3. Diskette 1 kopieren, Diskette 2 anfordern und kopieren (Fortschritts-
+   balken, Fehler: Wiederholen/Überspringen), Diskette 1 zurück, Neustart.
+
+Ist schon ein AT-DOS da, wird es aktualisiert: `CONFIG.SYS` und
+`AUTOEXEC.CMD` bleiben, die neuen Fassungen heißen `CONFIG.NEW` und
+`AUTOEXEC.NEW`. `atdos-hd.img` enthält dasselbe wie beide Disketten.
 
 `CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
 findet, wird wieder entladen.
 
 Im Stammverzeichnis liegen nur `ATDOS.SYS`, `CMD.EXE`, `CONFIG.SYS`,
-`AUTOEXEC.CMD` (und auf der Diskette `ATSYS.COM`). Wie bei OS/2 (`\OS2`,
+`AUTOEXEC.CMD` (und auf Diskette 1 `ATSYS.COM` und `SETUP.ID`). Wie bei OS/2 (`\OS2`,
 `\OS2\BOOT`, `\OS2\DLL`) getrennt:
 
 - `\DOS` – was man aufruft: Werkzeuge wie `LESS`, `GREP`, `XCOPY`, `CHKDSK`
@@ -1038,6 +1058,7 @@ erst beim ersten Zugriff eingehängt.
 
 Zwei Wege auf die Platte:
 
+- **SETUP** von den zwei Setup-Disketten (siehe „Bauen“).
 - **Fertige Platte:** `build/atdos-hd.img` (im Release als
   `atdos-hd.zip`), 63 MB, Geometrie 130 Zylinder / 16 Köpfe / 63 Sektoren.
   In 86Box als IDE-Platte einhängen und im BIOS-Setup als Typ „User“ mit
