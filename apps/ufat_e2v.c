@@ -775,8 +775,8 @@ static int lfn_toea(void)
     unsigned long f, sz;
     int rc = 3;
     if (e2v_locate(&f, &sz) == 0) {
-        puts("Das Laufwerk hat schon EA DATA. SF - erst /LFN:VFAT.\n");
-        return 3;
+        puts("Die langen Namen stehen schon in EA DATA. SF.\n");
+        return 0;
     }
     v2e_dq = seg64();
     if (!v2e_dq) {
@@ -793,9 +793,12 @@ static int lfn_toea(void)
         rc = 3;
         goto out;
     }
-    if (!e2v_names) {
-        puts("Keine VFAT-Namen gefunden.\n");
-        rc = 0;
+    if (!e2v_names) {                   /* leere EA DATA. SF als Merker: */
+        rc = v2e_write() ? 3 : 0;       /* AUTO nimmt dann EA (sonst bei  */
+        fat_flush();                    /* FAT32 VFAT)                    */
+        puts(rc ? "Schreibfehler.\n" :
+             "Keine VFAT-Namen gefunden. Leere EA DATA. SF angelegt - neue lange\n"
+             "Namen kommen damit auch bei LONGNAMES=AUTO ins EA-Format.\n");
         goto out;
     }
     put_num(e2v_names, 0);

@@ -2,8 +2,8 @@
 /*
  * CONVERT.EXE - Dateisystem eines Laufwerks umwandeln (wie Windows NT):
  *
- *   CONVERT Laufwerk: /FS:FAT32 [/V]
- *   CONVERT Laufwerk: /FS:FAT16 [/V]     FAT32 -> FAT16 (ufat32_to16.c)
+ *   CONVERT Laufwerk: /FS:FAT32 [/LFN:VFAT|EA] [/V]
+ *   CONVERT Laufwerk: /FS:FAT16 [/LFN:VFAT|EA] [/V]  FAT32 -> FAT16 (ufat32_to16.c)
  *   CONVERT Laufwerk: /LFN:VFAT | /LFN:EA   lange Namen umwandeln
  *
  * Wie FORMAT und CHKDSK nur der Verteiler: erst CHKDSK Laufwerk: (bricht
@@ -79,7 +79,7 @@ void main(void)
             verb = 1;
         else if (a[0] == '/' && a[1] == '?') {
             puts("Wandelt das Dateisystem eines Laufwerks um, ohne Daten zu l\x94schen.\r\n\r\n"
-                 "CONVERT Laufwerk: /FS:FAT32 | /FS:FAT16 [/V]\r\n"
+                 "CONVERT Laufwerk: /FS:FAT32 | /FS:FAT16 [/LFN:VFAT | /LFN:EA] [/V]\r\n"
                  "CONVERT Laufwerk: /LFN:VFAT | /LFN:EA\r\n\r\n"
                  "  /FS:FAT32  FAT16-Partition in FAT32 umwandeln (ab AT-DOS 6.0;\r\n"
                  "             kleinere Zuordnungseinheiten)\r\n"
@@ -88,6 +88,8 @@ void main(void)
                  "  /LFN:VFAT  lange Namen aus EA DATA. SF in VFAT-Eintr\x84ge (wie\r\n"
                  "             Windows 95/98)\r\n"
                  "  /LFN:EA    lange VFAT-Namen nach EA DATA. SF (zur\x81" "ck)\r\n"
+                 "             Mit /FS: Form der langen Namen danach (sonst bei\r\n"
+                 "             FAT32 nach LONGNAMES=, bei FAT16 wie sie sind)\r\n"
                  "  /V         Einzelheiten anzeigen\r\n\r\n"
                  "Vorher wird das Laufwerk mit CHKDSK gepr\x81" "ft.\r\n");
             return;
@@ -98,12 +100,12 @@ void main(void)
             DosExit(4);
         }
     }
-    if (d != 0xFFFF && lfn[0]) {        /* lange Namen umwandeln         */
+    if (lfn[0] && !same(lfn, "VFAT") && !same(lfn, "EA")) {
+        puts("Aufruf: CONVERT Laufwerk: /LFN:VFAT oder /LFN:EA\r\n");
+        DosExit(4);
+    }
+    if (d != 0xFFFF && lfn[0] && !fs[0]) {  /* nur lange Namen umwandeln */
         const char *u;
-        if (!same(lfn, "VFAT") && !same(lfn, "EA")) {
-            puts("Aufruf: CONVERT Laufwerk: /LFN:VFAT oder /LFN:EA\r\n");
-            DosExit(4);
-        }
         if (DosQFSInfo(d, &fi) || (fi.flags & FSI_READONLY) ||
             (!same(fi.fsname, "FAT32") && !same(fi.fsname, "FAT"))) {
             puts("Lange Namen umwandeln geht nur auf beschreibbaren FAT-Laufwerken.\r\n");
@@ -145,7 +147,16 @@ void main(void)
             puts("CHKDSK hat Fehler gefunden - zuerst CHKDSK /F ausf\x81hren.\r\n");
             DosExit(3);
         }
-        DosExit(run(path, d, verb ? " /TO16 /V" : " /TO16") ? 3 : 0);
+        if (run(path, d, verb ? " /TO16 /V" : " /TO16"))
+            DosExit(3);
+        if (lfn[0]) {                   /* danach lange Namen (jetzt FAT16) */
+            if (sys_prog(path, "SYSTEM\\", "UFAT.EXE")) {
+                puts("UFAT.EXE fehlt - lange Namen nicht umgewandelt.\r\n");
+                DosExit(3);
+            }
+            DosExit(run(path, d, lfn[0] == 'V' ? " /LFN:VFAT" : " /LFN:EA") ? 3 : 0);
+        }
+        DosExit(0);
     }
     if (!same(fs, "FAT32")) {
         puts("Umwandeln nach ");
@@ -177,12 +188,16 @@ void main(void)
         puts(": /F ausf\x81hren.\r\n");
         DosExit(3);
     }
-    {                                   /* LONGNAMES=EA (CONFIG.SYS): lange */
-        static char ln[8];              /* Namen in EA DATA. SF lassen,    */
-        int ea = !FAPI_FAILED(DosGetEnv("LONGNAMES", ln, sizeof(ln))) &&
-                 (ln[0] == 'E' || ln[0] == 'e');   /* sonst nach VFAT     */
+    {                                   /* /LFN:EA oder LONGNAMES=EA:     */
+        static char ln[8];              /* lange Namen in EA DATA. SF      */
+        int ea = lfn[0] ? lfn[0] == 'E' :   /* lassen, sonst nach VFAT    */
+                 !FAPI_FAILED(DosGetEnv("LONGNAMES", ln, sizeof(ln))) &&
+                 (ln[0] == 'E' || ln[0] == 'e');
         if (run(path, d, verb ? (ea ? " /CONVERT /V /EA" : " /CONVERT /V")
                               : (ea ? " /CONVERT /EA" : " /CONVERT")))
+            DosExit(3);
+        if (ea && lfn[0] &&             /* /LFN:EA: auch VFAT-Namen der   */
+            run(path, d, " /LFN:EA"))   /* Quelle nach EA (oder Merker)   */
             DosExit(3);
     }
 }

@@ -348,8 +348,9 @@ static int do_to16(void)
     int r;
 
     if (DosQFSInfo(drive, &fi) || (fi.flags & (FSI_READONLY | FSI_REMOVABLE)) ||
-        (fi.ptype != 0x0B && fi.ptype != 0x0C)) {
-        puts("Umwandeln geht nur f\x81r FAT32-Partitionen (Typ 0Bh/0Ch) auf Festplatten.\n");
+        fi.fsname[3] != '3' || !fi.ptype) {   /* Typ selbst egal: nach    */
+        /* CONVERT ohne Neustart meldet der Kernel noch den alten Typ */
+        puts("Umwandeln geht nur f\x81r FAT32-Partitionen auf Festplatten.\n");
         return 3;
     }
     for (kj = 1; kj < 7 && (spc << kj) <= 64; kj++) {      /* Clustergroesse */
@@ -622,7 +623,7 @@ static int do_to16(void)
     for (i = 0; i < 512; i++)           /* zum Wiederfinden (set_ptype) */
         ob[i] = b[i];
     DosClose(hd);
-    if (set_ptype2(fi.hidden, fi.ptype, fi.ptype == 0x0C ? 0x0E : 0x06))
+    if (set_ptype2(fi.hidden))
         puts("Hinweis: Partitionstyp konnte nicht ge\x84ndert werden (AT-DOS liest das\n"
              "Laufwerk trotzdem, MS-DOS erst mit Typ 06h/0Eh).\n");
     puts("Umwandlung beendet: FAT16, ");

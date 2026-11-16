@@ -286,18 +286,19 @@ static int cv_ea(int phase)
     return 0;
 }
 
-static unsigned char pt_new;          /* 0 = FAT16 -> FAT32-Typ        */
+static unsigned char pt_new;          /* 0 = FAT32-Typ, 1 = FAT16-Typ  */
 
-/* Eintrag mit Typ old und Anfang start in Tabelle sec (Sektor at) -> 1 */
+/* FAT-Eintrag mit Anfang start in Tabelle sec (Sektor at) -> 1 */
 static int pt_patch(unsigned h, unsigned long at, unsigned long base, unsigned n,
-                    unsigned long start, unsigned char old)
+                    unsigned long start)
 {
     static unsigned long pos;
     unsigned i;
     unsigned char *t;
     for (i = 0; i < n; i++) {
         t = sec + 446 + i * 16;
-        if (t[4] == old && base + rd32(t + 8) == start) {
+        if ((t[4] == 0x04 || t[4] == 0x06 || t[4] == 0x0B || t[4] == 0x0C ||
+             t[4] == 0x0E) && base + rd32(t + 8) == start) {
             unsigned k;                 /* derselbe Bootsektor? (ob)     */
             pos = start;
             if (DosSeek(h, &pos) || DosRead(h, dsec, 512) != 512)
@@ -307,7 +308,10 @@ static int pt_patch(unsigned h, unsigned long at, unsigned long base, unsigned n
                 ;
             if (k < 90)
                 continue;               /* andere Platte, gleiche Lage    */
-            t[4] = pt_new ? pt_new : old == 0x0E ? 0x0C : 0x0B;
+            /* Typ aus der Tabelle, nicht aus DosQFSInfo: der Kernel liest
+               ihn nur beim Start (nach einer Umwandlung ohne Neustart alt) */
+            k = t[4] == 0x0C || t[4] == 0x0E;   /* hinter 1024 Zylindern */
+            t[4] = pt_new ? (k ? 0x0E : 0x06) : (k ? 0x0C : 0x0B);
             pos = at;
             return DosSeek(h, &pos) || DosWrite(h, sec, 512) != 512 ? -1 : 1;
         }
@@ -324,7 +328,7 @@ static int pt_read(unsigned h, unsigned long at)
 }
 
 /* Partitionstyp im MBR bzw. in der EBR-Kette aendern -> 0 */
-static int set_ptype(unsigned long start, unsigned char old)
+static int set_ptype(unsigned long start)
 {
     static struct fapi_diskinfo di;
     unsigned n, h, i, k;
@@ -346,11 +350,11 @@ static int set_ptype(unsigned long start, unsigned char old)
                 if (t[4] == 5 || t[4] == 0x0F)
                     ext = rd32(t + 8);
             }
-            r = pt_patch(h, 0, 0, 4, start, old);
+            r = pt_patch(h, 0, 0, 4, start);
             for (ebr = ext, k = 0; !r && ext && k < 64; k++) {
                 if (pt_read(h, ebr))
                     break;
-                r = pt_patch(h, ebr, ebr, 1, start, old);
+                r = pt_patch(h, ebr, ebr, 1, start);
                 t = sec + 446 + 16;
                 if (t[4] != 5 && t[4] != 0x0F)
                     break;
@@ -364,11 +368,11 @@ static int set_ptype(unsigned long start, unsigned char old)
     return -1;
 }
 
-static int set_ptype2(unsigned long start, unsigned char old, unsigned char nw)
+static int set_ptype2(unsigned long start)
 {
     int r;
-    pt_new = nw;
-    r = set_ptype(start, old);
+    pt_new = 1;
+    r = set_ptype(start);
     pt_new = 0;
     return r;
 }
@@ -675,7 +679,7 @@ static int do_convert(void)
         puts("Fehler beim Umwandeln - das Laufwerk ist besch\x84" "digt.\n");
         return 3;
     }
-    if (set_ptype(fi.hidden, fi.ptype))
+    if (set_ptype(fi.hidden))
         puts("Hinweis: Partitionstyp konnte nicht ge\x84ndert werden (AT-DOS liest das\n"
              "Laufwerk trotzdem, Windows 95/98 erst mit Typ 0Bh/0Ch).\n");
     puts("Umwandlung beendet: FAT32, ");

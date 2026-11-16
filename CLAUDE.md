@@ -600,6 +600,17 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Fehler, vor dem Commit): Kurzname `EA DATA SF ` falsch geschrieben ->
   EA-Sätze der Unterordner nicht umgerechnet (CHKDSK: 49 verwaiste).
   Nicht geprüft: Startlaufwerk im Betrieb, Start danach von FAT16.
+  Danach (Wünsche/Meldungen des Nutzers, in QEMU geprüft): `/FS:` und
+  `/LFN:` zusammen – nach /TO16 ruft CONVERT `UFAT X: /LFN:x`, nach
+  /CONVERT mit /LFN:EA `UFAT32 X: /LFN:EA` (VFAT-Namen der Quelle nach
+  EA); „schon EA“ ist kein Fehler mehr (rc 0). Rückwandlung direkt nach
+  CONVERT ohne Neustart scheiterte („nur Typ 0Bh/0Ch“): der Kernel liest
+  den Partitionstyp nur beim Start, DosQFSInfo meldete noch 0Eh. Jetzt
+  zählt das Dateisystem, `pt_patch` sucht jeden FAT-Typ (04/06/0B/0C/0E)
+  mit passendem Start + Bootsektor und nimmt den neuen Typ aus dem
+  gefundenen (0C/0E -> 0C bzw. 0E). `/LFN:EA` ohne VFAT-Namen legt eine
+  leere `EA DATA. SF` an (Cluster 0, Größe 0 – ea_add hängt an) als
+  Merker für AUTO (vom Nutzer gemeldet: auf FAT32 nahm AUTO sonst VFAT).
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
