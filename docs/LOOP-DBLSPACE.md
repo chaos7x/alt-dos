@@ -180,7 +180,12 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    MDFAT gepflegt, frei gewordene Cluster aus FAT-Änderungen erkannt.
    Offen: `PACKDISK /CHECK`, `LOOP /INFO` (Packrate, freier Platz).
 6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, Start von C:.
-7. DriveSpace 3 (Windows 95 Plus!/98; abgestimmt 16.11.2026): Ziel sind
+7. DriveSpace 3 lesen und schreiben – erledigt (16.11.2026, siehe
+   CLAUDE.md): 5-Byte-MDFAT, zerstückelte Cluster lesen und freigeben,
+   SQ = rohes Deflate entpacken, geschrieben wird JM (laut dmsdos nimmt
+   DriveSpace 3 JM-0-0/JM-0-1 an), nie zerstückelt; Puffer im zweiten
+   Segment. Offen: `PACKDISK /COMPRESS`, ein echter Container aus
+   Windows 95/98. Ursprünglicher Plan: Ziel sind
    große FAT16-Laufwerke bis 2 GB (32-KB-Cluster, Container bis 2 GB),
    Zielrechner P3B-F und schneller – nicht der 386. Kein eigenes Format
    mit FAT32 im Container (liest sonst niemand; eigene Komprimierung

@@ -6517,12 +6517,13 @@ static void loop_undo(int dev, unsigned long m)
     lc_dev = -1;
     if (dev >= 0 && (k = loop_drop(dev)) >= 0)
         of_release(k);
-    if (loop_free) {
-        mem_free(desc_base(&gdt[loop_free >> 3]) >> 12,
-                 PAGES(sel_limit(loop_free) + 1UL));
-        gdt[loop_free >> 3].access = 0;
-        loop_free = 0;
-    }
+    for (k = 0; k < 2; k++)
+        if (loop_fr[k]) {
+            mem_free(desc_base(&gdt[loop_fr[k] >> 3]) >> 12,
+                     PAGES(sel_limit(loop_fr[k]) + 1UL));
+            gdt[loop_fr[k] >> 3].access = 0;
+            loop_fr[k] = 0;
+        }
 }
 
 static unsigned loop_att(unsigned a3);
@@ -6623,7 +6624,7 @@ static unsigned loop_att(unsigned a3)
     far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)fi_canon, IFS_PATHLEN);
     if ((dev = loop_attach(k, &files[k].f, d, a3 & LOOP_RO)) < 0) {
         of_release(k);
-        if (loop_free)
+        if (loop_fr[0])
             loop_undo(-1, 0);
         return (unsigned)dev;
     }

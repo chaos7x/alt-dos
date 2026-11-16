@@ -205,7 +205,7 @@ struct blkdev {
 extern struct blkdev blk[NBLK];
 extern int nblk;
 /* Loop-Laufwerke (loop.c, KTEXT2) */
-extern unsigned loop_sel[NLOOP], loop_free;
+extern unsigned loop_sel[NLOOP], loop_fr[2];
 int __far loop_read(int dev, unsigned long lba);
 int __far loop_write(int dev, unsigned long lba);
 int __far loop_drop(int dev);

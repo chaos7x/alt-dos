@@ -1772,9 +1772,39 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geraten (2). Erstes Codesegment 65.502 Byte (18 frei!), KTEXT2 65.323
   (213 frei!) – vor weiterem Kernelcode Platz schaffen (Seltenes nach
   KTEXT3 oder ein viertes Segment).
-  Nächste Stufe (abgestimmt 16.11.2026): DriveSpace 3 für FAT16-Laufwerke
-  bis 2 GB, Zielrechner P3B-F und schneller; kein eigenes FAT32-im-
-  Container-Format (docs/LOOP-DBLSPACE.md Stufe 7).
+  DriveSpace 3 lesend und schreibend erledigt (16.11.2026; Stufe 7,
+  Zielrechner P3B-F und schneller, kein eigenes FAT32-im-Container-
+  Format): loop.c erkennt es wie dmsdos an mehr als 16 Sektoren je
+  Cluster oder Versionsbyte 51 = 3 (`dblh.d3`). MDFAT 5 Byte je Eintrag,
+  102 je Sektor (2 Byte Rest; Index durch 102 nur 16 Bit – Cluster bis
+  65.535): s24, Byte 3 Bit 1 = zerstückelt, l6 << 2, Byte 4 h6 | 40h
+  ungepackt | 80h belegt; `struct mde` + `md_get`/`md_put` für beide
+  Formate. Zerstückelte Cluster (Windows legt sie an, wenn der Platz
+  nicht am Stück reicht): erster Sektor = Liste (Anzahl, je Stück 3 Byte
+  Sektor - 1 und Länge - 1 << 2), gepackte Daten ab (Anzahl + 1) · 4 im
+  ersten Sektor, ungepackte ab dem nächsten Sektor; gelesen über
+  `fr_list` (Liste nach DB_HEAD), freigegeben über `md_rel` (alle
+  Stücke) in dbl_free und dbl_sync; an Ort und Stelle wird ein
+  zerstückelter Cluster nie überschrieben (voll -> -3). Verfahren SQ ist
+  rohes Deflate (RFC 1951) hinter „SQ“ + Version – eigener Entpacker
+  `sq_unpack` (Bit für Bit über kanonische Codes wie puff, Tabellen in
+  DB_HEAD; gespeicherte, feste und eigene Blöcke). Geschrieben wird JM
+  (dmsdos: DriveSpace 3 nimmt JM-0-0/JM-0-1), Packer wie bisher, Kette
+  jetzt als Ring über 8.192 Stellen (gelesen wird nur bis 4.414 zurück).
+  Die 32-KB-Puffer (entpackt 0, gepackt 8000h) liegen in einem zweiten
+  Segment (`loop_sel2`, 64 KB, `dblh.ds/oo/io`; bei 6.x zeigen sie wie
+  bisher ins erste); `loop_fr[2]` gibt beide frei. Segment 1 neu
+  geordnet: dblh, T1, T2, HEAD, PREV, dann (nur 6.x) OUT/IN. In QEMU
+  geprüft mit einem in Python gebauten Container (`mkcvf3.py`, innen
+  FAT16 140 MB mit 64 Sektoren je Cluster; SQ über zlib roh: dynamisch,
+  fest, mit leerem gespeicherten Block; JM, roh, kurz; jeder 4. Cluster
+  zerstückelt, Stück 2 hinten) und Prüfer `cvfchk3.py` (beide im
+  Scratchpad): LOOP, COMP aller 15 Dateien gleich, XCOPY /S hinein,
+  DEL der Dateien mit zerstückelten Clustern, Ersetzen, COPY aus der Box,
+  CHKDSK, Aushängen, SHUTDOWN – danach 0 Fehler (BITFAT/MDFAT/FAT),
+  fsck des inneren und des Trägerlaufwerks sauber, 17 Dateien gleich.
+  Erstes Codesegment 58.454, KTEXT4 18.881, DGROUP 61.682 Byte. Nicht
+  geprüft: ein echter Container aus Windows 95 Plus!/98 (beim Nutzer).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
