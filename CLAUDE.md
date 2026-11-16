@@ -1738,6 +1738,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geraten (2). Erstes Codesegment 65.502 Byte (18 frei!), KTEXT2 65.323
   (213 frei!) – vor weiterem Kernelcode Platz schaffen (Seltenes nach
   KTEXT3 oder ein viertes Segment).
+  Nächste Stufe (abgestimmt 16.11.2026): DriveSpace 3 für FAT16-Laufwerke
+  bis 2 GB, Zielrechner P3B-F und schneller; kein eigenes FAT32-im-
+  Container-Format (docs/LOOP-DBLSPACE.md Stufe 7).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

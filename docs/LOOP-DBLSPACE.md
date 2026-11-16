@@ -179,7 +179,18 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    gepuffert, gepackt beim Wechsel und am Ende jeder Operation, BitFAT/
    MDFAT gepflegt, frei gewordene Cluster aus FAT-Änderungen erkannt.
    Offen: `PACKDISK /CHECK`, `LOOP /INFO` (Packrate, freier Platz).
-6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, DriveSpace 3 lesen, Start von C:.
+6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, Start von C:.
+7. DriveSpace 3 (Windows 95 Plus!/98; abgestimmt 16.11.2026): Ziel sind
+   große FAT16-Laufwerke bis 2 GB (32-KB-Cluster, Container bis 2 GB),
+   Zielrechner P3B-F und schneller – nicht der 386. Kein eigenes Format
+   mit FAT32 im Container (liest sonst niemand; eigene Komprimierung
+   gehört ins Dateisystem). Lesen: MDFAT mit 5 Byte je Eintrag,
+   zerstückelte Cluster, Verfahren SQ entpacken (dmsdos als Nach-
+   schlagewerk). Schreiben: prüfen, ob DriveSpace 3 JM-Cluster annimmt
+   (dann reicht der vorhandene Packer), sonst SQ packen. Puffer für
+   32-KB-Cluster passen nicht mehr in ein Segment (zwei je Container).
+   Vorher Platz im Kernel schaffen (erstes Segment und KTEXT2 voll).
+   `PACKDISK /COMPRESS` für ein 2-GB-Laufwerk an Ort und Stelle.
 
 Parallel (BIGLOCK.md, 6.1): fat.c-Zustand je Operation, dann Tiefe 2 und
 Backend 2.
