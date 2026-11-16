@@ -2,11 +2,15 @@
 /*
  * AT-DOS 6.1 - Loop-Laufwerke: eine Datei als Blockgeraet (KTEXT2)
  *
- * Stufe 1, nur lesend (docs/LOOP-DBLSPACE.md): beim Einhaengen werden die
+ * Stufe 1 lesend, Stufe 2 auch schreibend (docs/LOOP-DBLSPACE.md):
+ * Abbilder mit 512er-Bloecken auf einem FAT-Traeger sind beschreibbar,
+ * ausser mit /RO, schreibgeschuetzter Datei, ISO oder CD als Traeger.
+ * Beim Einhaengen werden die
  * Plattenbereiche der Datei einmal ermittelt (ifs_bmap, Extent-Liste);
  * danach liest das Loop-Geraet direkt Sektoren des Traegers - ueber
- * blk_read und damit ueber dessen Platten-Cache (eben geschriebene Daten
- * liegen dort oft noch verzoegert). Keine verschachtelten Dateisystem-
+ * blk_read/blk_write und damit ueber dessen Platten-Cache (eben
+ * geschriebene Daten liegen dort oft noch verzoegert; Schreiben des Loop-
+ * Geraets wird dort ebenso verzoegert). Keine verschachtelten Dateisystem-
  * aufrufe. Die Datei haelt ein Eintrag der Dateitabelle offen (kernel.c
  * loop_glue): wer sie schreiben, loeschen oder verschieben will, bekommt
  * "in Benutzung"; CHKDSK /F, DEFRAG, CONVERT sperren nur ohne offene
@@ -28,7 +32,7 @@ struct lhdr {
     int            dev, carrier, fk;    /* Blockgeraet, Traeger, Datei   */
     unsigned       n, last;             /* Bereiche, zuletzt getroffen   */
     unsigned char  lsh, csh;            /* 512 << lsh Loop, << csh Traeger */
-    unsigned char  kind, rsv;
+    unsigned char  kind, ro;           /* LOOPK_*, schreibgeschuetzt     */
     unsigned long  units;               /* nutzbare 512er-Einheiten       */
 };
 unsigned loop_sel[NLOOP];
@@ -105,10 +109,26 @@ int __far loop_read(int dev, unsigned long lba)
     return lmap(i, u, &c, &run) || blk_read(cd, c) ? -1 : 0;
 }
 
+/* DMABUF (Offset 0) in Block lba des Loop-Geraets; 0 = ok, -2 schreib-
+   geschuetzt. Beschreibbar sind nur 512er-Geraete auf 512er-Traegern. */
+int __far loop_write(int dev, unsigned long lba)
+{
+    int i = blk[dev].unit;
+    unsigned long c, run;
+
+    if (i >= NLOOP || !loop_sel[i])
+        return -1;
+    if (LH(i)->ro)
+        return -2;
+    if (lmap(i, lba, &c, &run))
+        return -1;
+    return blk_write(LH(i)->carrier, c);
+}
+
 /* Datei (offen in files[fk], f) auf Laufwerk d als Loop-Geraet anmelden
    -> Blockgeraet oder FAPI-Fehler (negativ). Eingehaengt wird danach in
    kernel.c (loop_glue). */
-int __far loop_attach(int fk, struct ifs_file __far *f, int d)
+int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
 {
     struct volume *v = &vol[d];
     struct lhdr __far *h;
@@ -144,6 +164,7 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d)
     h->last = 0;
     h->lsh = 0;
     h->csh = blk[v->blk].bsize == 2048 ? 2 : 0;
+    h->ro = ro || h->csh || (f->attr & ATTR_RO);
     h->units = units = f->size >> 9;
     if (v->drv == &fat_driver)
         ifs_bmap(f, loop_sel[i], LH_EXT, n);
@@ -163,6 +184,7 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d)
     if (units > 64 && blk_read(dev, 64) == 0 && b[1] == 'C' && b[2] == 'D' &&
         b[3] == '0' && b[4] == '0' && b[5] == '1') {
         h->kind = LOOPK_ISO;            /* Deskriptor bei 8000h          */
+        h->ro = 1;
         h->lsh = 2;
         blk[dev].bsize = 2048;
         blk[dev].blocks = units >> 2;
@@ -222,6 +244,6 @@ int __far loop_info(unsigned i, struct fapi_loopinfo __far *li)
     li->blocks = blk[h->dev].blocks;
     li->bsize = blk[h->dev].bsize;
     li->extents = h->n;
-    li->kind = h->kind;
+    li->kind = h->kind | (h->ro ? LOOPK_RO : 0);
     return h->fk;
 }

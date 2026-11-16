@@ -1641,7 +1641,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (ATSYS.COM fehlte!) – AWELOAD nur noch auf der Platte (`HDDOS`), 6,6 KB
   frei. Grenzen: Medienwechsel am Träger (Abbild auf CD/ZIP) erkennt das
   Loop-Gerät nicht (liest dann Falsches/Fehler) – aushängen vor dem
-  Wechsel. Nächste Stufe: Schreiben (`blk_read_to/blk_write_from`), `LOOP=`.
+  Wechsel.
+  Stufe 2 erledigt (16.11.2026; in QEMU geprüft: Disketten-Abbild per
+  `LOOP=E:,C:\FL.IMG` beim Start, Plattenabbild mit Partitionstabelle
+  per LOOP, je COPY/MD/XCOPY von 70 Dateien, `command /c copy` aus der
+  Box, CHKDSK der Loop-Laufwerke, `/RO`-Abbild bleibt bytegleich,
+  Aushängen, SHUTDOWN; danach fsck auf Platte und Abbildern sauber,
+  Dateien gleich): kernel.c blk_write -> `loop_write` (loop.c: lmap,
+  dann blk_write des Trägers mit DMABUF – über dessen Cache, verzögert;
+  bc_sync gilt dabei mit, das Sauber-Bit geht sofort durch). Nur lesend
+  (`lhdr.ro`): `LOOP_RO` (DX Bit 8 von LOOP_ATTACH, LOOP.EXE `/RO`),
+  Attribut R der Datei, ISO, Träger CD; LOOP_INFO meldet es als
+  `LOOPK_RO` in kind. loop_undo ruft ifs_clean vor vol_drop. SHUTDOWN:
+  ifs_shutdown in Laufwerksreihenfolge, Daten des Loop-Laufwerks landen
+  nach dem Sauber-Bit des Trägers noch in dessen Datenbereich (nur
+  Inhalt, keine FAT – unschädlich), danach blk_flush. CONFIG.SYS
+  `LOOP=[X:,]Datei[,/RO]` -> LOOP1..LOOP4 in der Systemumgebung (sichtbar
+  in SET), `loop_boot` nach swap_boot (Meldung „LOOP Datei -> X:“);
+  ATTACH-Kern als `loop_att(a3)` aus loop_glue herausgelöst. Erstes
+  Codesegment danach 65.450 Byte (70 frei!), DGROUP 65.492 – vor
+  weiterem Kernelcode Seltenes nach KTEXT2. CONFIG.SYS-Kopfzeilen
+  gekürzt (3.796 Byte). Grenzen: Datum der Abbilddatei bleibt beim
+  Schreiben stehen; Medienwechsel am Träger weiter nicht erkannt.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

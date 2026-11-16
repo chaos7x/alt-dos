@@ -227,7 +227,8 @@ struct fapi_drvinfo {
                                        Laufwerk (6.1, LOOP) */
 #define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
                                        feste VHD), DX = Laufwerk 2..25 oder 0
-                                       = naechster freier -> erstes Laufwerk,
+                                       = naechster freier, | LOOP_RO nur
+                                       lesend -> erstes Laufwerk,
                                        FAPI_ERROR (fehlt, Verzeichnis),
                                        FAPI_ERR_INUSE (zum Schreiben offen),
                                        FAPI_ERR_EXIST (Buchstabe belegt),
@@ -236,6 +237,7 @@ struct fapi_drvinfo {
                                        FAPI_ERR_DENIED (Traeger weder FAT noch
                                        CD, dynamische VHD), FAPI_ERR_NOTREADY
                                        (kein Dateisystem im Abbild) */
+#define LOOP_RO             0x100   /* ATTACH: nur lesend einhaengen    */
 #define LOOP_DETACH         1       /* CX = Laufwerk -> 0, FAPI_ERROR (kein
                                        Loop-Laufwerk), FAPI_ERR_INUSE (offen,
                                        aktuell, SUBST/JOIN) */
@@ -256,6 +258,7 @@ struct fapi_loopinfo {
 #define LOOPK_IMG           2       /* Diskette/Partition ohne Tabelle  */
 #define LOOPK_DISK          3       /* Platte mit Partitionstabelle     */
 #define LOOPK_VHD           4       /* feste VHD                        */
+#define LOOPK_RO            0x80    /* in kind: nur lesend              */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
 #define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne
                                        Rueckfrage an das Programm) -> 0,

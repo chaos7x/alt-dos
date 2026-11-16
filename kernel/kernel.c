@@ -5236,8 +5236,10 @@ int blk_write(int dev, unsigned long lba)
     lc_dev = -1;
     if (dev < 0 || dev >= nblk || lba >= b->blocks)
         return -1;
-    if (b->bsize != 512 || b->drv == DRV_LOOP)
-        return -2;                      /* CD-ROM, Loop (Stufe 1)     */
+    if (b->bsize != 512)
+        return -2;                      /* CD-ROM, ISO-Loop           */
+    if (b->drv == DRV_LOOP)
+        return loop_write(dev, lba);    /* ueber den Traeger          */
     if (bc_n && bc_writeback(dev)) {    /* verzoegert                 */
         i = bc_put(dev, lba, 0, 0);
         if (i != BC_END) {
@@ -6501,8 +6503,10 @@ static void loop_undo(int dev, unsigned long m)
 {
     int x, k;
     for (x = 2; x < NDRIVE; x++)
-        if ((m >> x) & 1)
+        if ((m >> x) & 1) {
+            ifs_clean(x);               /* beschreibbar: Sauber-Bit   */
             vol_drop(x);
+        }
     lc_dev = -1;
     if (dev >= 0 && (k = loop_drop(dev)) >= 0)
         of_release(k);
@@ -6514,11 +6518,13 @@ static void loop_undo(int dev, unsigned long m)
     }
 }
 
+static unsigned loop_att(unsigned a3);
+static void loop_boot(void);
 static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
 {
     struct fapi_loopinfo __far *li;
     unsigned long m;
-    int d, k, dev, old;
+    int k, dev;
     unsigned r;
 
     if (a1 == LOOP_INFO) {
@@ -6542,8 +6548,61 @@ static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
         loop_undo(dev, m);
         return 0;
     }
-    if (a1 != LOOP_ATTACH || user_str(usel, a2, fi_buf, FAPI_PATHLEN) ||
-        resolve(current, fi_buf, &d, fi_canon) || dev_name(fi_canon))
+    if (a1 != LOOP_ATTACH || user_str(usel, a2, fi_buf, FAPI_PATHLEN))
+        return FAPI_ERROR;
+    return loop_att(a3);
+}
+
+/* LOOP=[X:,]Datei[,/RO] aus CONFIG.SYS (LOOP1..LOOP4 in der System-
+   umgebung) beim Start einhaengen */
+static void loop_boot(void)
+{
+    static char nm[] = "LOOP1";
+    char *p, *q;
+    int i;
+    unsigned a3, r;
+
+    for (nm[4] = '1'; nm[4] <= '4'; nm[4]++) {
+        if ((i = env_find(-1, nm, 5)) < 0)
+            continue;
+        fscopy((char __far *)fi_buf, MK_FP(env_sel, env_off(-1) + i + 6), FAPI_PATHLEN);
+        p = fi_buf;
+        a3 = 0;
+        if (p[0] && p[1] == ':' && p[2] == ',') {
+            a3 = (unsigned)(up(p[0]) - 'A');
+            p += 3;
+        }
+        for (q = p; *q && *q != ','; q++)
+            ;
+        if (*q) {
+            *q++ = 0;
+            while (*q == ' ')
+                q++;
+            if (q[0] == '/' && up(q[1]) == 'R')
+                a3 |= LOOP_RO;
+        }
+        for (q = fi_buf; (*q = *p) != 0; q++, p++)
+            ;                           /* Pfad an den Anfang          */
+        vio_kputs(boot_session, "\xFE LOOP ");
+        vio_kputs(boot_session, fi_buf);
+        r = loop_att(a3);
+        if (r < FAPI_ERR_FIRST) {
+            static char dl[] = " -> X:\n";
+            dl[4] = (char)('A' + r);
+            vio_kputs(boot_session, dl);
+        } else
+            vio_kputs(boot_session, ": geht nicht\n");
+    }
+}
+
+/* Datei fi_buf als Loop-Laufwerk einhaengen; a3 = Laufwerk | LOOP_RO */
+static unsigned loop_att(unsigned a3)
+{
+    unsigned long m;
+    int d, k, dev, old;
+    unsigned r;
+
+    if (resolve(current, fi_buf, &d, fi_canon) || dev_name(fi_canon))
         return FAPI_ERROR;
     if (open_for_write(d, fi_canon))
         return FAPI_ERR_INUSE;
@@ -6555,13 +6614,14 @@ static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
         return FAPI_ERROR;
     }
     far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)fi_canon, IFS_PATHLEN);
-    if ((dev = loop_attach(k, &files[k].f, d)) < 0) {
+    if ((dev = loop_attach(k, &files[k].f, d, a3 & LOOP_RO)) < 0) {
         of_release(k);
         if (loop_free)
             loop_undo(-1, 0);
         return (unsigned)dev;
     }
     old = next_drive;
+    a3 &= 0xFF;
     next_drive = a3 >= 2 && a3 < NDRIVE ? a3 : 2;
     r = FAPI_ERR_EXIST;
     if (nd_free() && (!a3 || next_drive == (int)a3)) {
@@ -6850,6 +6910,23 @@ static void config_sys(void)
                 while (v[i] && (v[i] < '0' || v[i] > '9'))
                     i++;
             }
+        } else if (kw(line, "LOOP")) {         /* LOOP=[X:,]Datei[,/RO]   */
+            static unsigned char loop_cn;      /* -> LOOP1..LOOP4 in der  */
+            char *d = line + 6;                /*    Systemumgebung       */
+            unsigned k = 1;
+            while (v[k - 1])
+                k++;
+            if (loop_cn < 4 && k < sizeof(line) - 6) {
+                if (d > v)
+                    while (k--)
+                        d[k] = v[k];
+                else
+                    for (i = 0; i < (int)k; i++)
+                        d[i] = v[i];
+                line[4] = (char)('1' + loop_cn++);
+                line[5] = '=';
+                env_set(-1, line);
+            }
         } else if (kw(line, "SWAPPATH")) {     /* wie OS/2: Ort, KB       */
             line[8] = '=';
             env_set(-1, line);
@@ -7075,6 +7152,7 @@ void kmain(void)
               sys_drive, line);
     if (line[0])
         vio_kputs(boot_session, line);
+    loop_boot();                                /* LOOP= aus CONFIG.SYS   */
     files[CONS].refs = 255;
     pipe_sel = kseg_alloc(NPIPE * PIPESZ);
     if (!pipe_sel)

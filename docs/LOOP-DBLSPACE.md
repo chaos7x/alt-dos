@@ -151,7 +151,14 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    blieb in DGROUP (NBLK 12), Platz kam aus `list_drives` -> KTEXT2.
    Offene Punkte 1, 3 und 4 unten sind damit erledigt, 2 nur teilweise
    (Medienwechsel am Träger nicht erkannt).
-2. Loop schreibend + Platten/VHD, `blk_read_to/blk_write_from`, `LOOP=`.
+2. Loop schreibend + Platten/VHD, `LOOP=` – erledigt (16.11.2026):
+   `loop_write` schreibt den Sektor aus DMABUF per `blk_write` auf den
+   Träger (also über dessen Cache, verzögert wie jede Plattenschrift);
+   `blk_read_to/blk_write_from` waren dafür nicht nötig (Loop-Blöcke
+   sind 512 Byte, ein Block = ein Trägersektor). Nur lesend: `/RO`
+   (`LOOP_RO`), Datei mit Attribut R, ISO, Träger CD. `LOOP=` legt
+   LOOP1..LOOP4 in die Systemumgebung, `loop_boot` hängt nach der
+   Auslagerungsdatei ein. Aushängen setzt das Sauber-Bit (ifs_clean).
 3. MSCDEX in der DOS-Box.
 4. DBLSPACE.SYS lesend.
 5. DBLSPACE.SYS schreibend, Cluster-Cache, UDBLSPACE.EXE.

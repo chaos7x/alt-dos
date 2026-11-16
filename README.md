@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
+# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke (lesen und schreiben, `LOOP=`), Auslagerungsdatei, zwei Setup-Disketten mit SETUP
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -794,7 +794,7 @@ selbst nur 8.3 kennt.
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR |
 | 87 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) |
 | 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk oder Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) |
-| 89 | DosLoop         | BX = 0 (`LOOP_ATTACH`): CX = Pfad der Datei, DX = Laufwerk (2 = C: … 25, 0 = nächster freier) → erstes Laufwerk; FAPI_ERR_INUSE (zum Schreiben offen), FAPI_ERR_EXIST (Buchstabe belegt), FAPI_ERR_FULL (kein Platz), FAPI_ERR_FRAG (FFF8h, über 8.188 Stücke), FAPI_ERR_DENIED (nicht auf FAT/CD, dynamische VHD), FAPI_ERR_NOTREADY (kein Dateisystem im Abbild). BX = 1 (`LOOP_DETACH`): CX = Laufwerk → 0, FAPI_ERR_INUSE. BX = 2 (`LOOP_INFO`): CX = Platz 0–3 → `struct fapi_loopinfo` bei DX (Laufwerke, Blöcke, Blockgröße, Stücke, Art, Laufwerk und Pfad der Datei) |
+| 89 | DosLoop         | BX = 0 (`LOOP_ATTACH`): CX = Pfad der Datei, DX = Laufwerk (2 = C: … 25, 0 = nächster freier), dazu `LOOP_RO` (100h) = nur lesend → erstes Laufwerk; FAPI_ERR_INUSE (zum Schreiben offen), FAPI_ERR_EXIST (Buchstabe belegt), FAPI_ERR_FULL (kein Platz), FAPI_ERR_FRAG (FFF8h, über 8.188 Stücke), FAPI_ERR_DENIED (nicht auf FAT/CD, dynamische VHD), FAPI_ERR_NOTREADY (kein Dateisystem im Abbild). BX = 1 (`LOOP_DETACH`): CX = Laufwerk → 0, FAPI_ERR_INUSE. BX = 2 (`LOOP_INFO`): CX = Platz 0–3 → `struct fapi_loopinfo` bei DX (Laufwerke, Blöcke, Blockgröße, Stücke, Art – Bit 7 `LOOPK_RO` = nur lesend –, Laufwerk und Pfad der Datei) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
@@ -891,17 +891,21 @@ spielt. Entladen können NCR8XX, AIC7XXX, SB16, MOUSE und die IFS-Module;
 andere Treiber lehnen ab. Beim nächsten Laden bekommen die Laufwerke
 wieder die freien Buchstaben. In `LINUX.MAC` heißen die drei `modprobe`,
 `lsmod` und `rmmod`.
-`LOOP [X:] Datei` hängt eine Datei als Laufwerk ein (6.1, Stufe 1: nur
-lesend) – ein CD-Abbild (`.ISO`, braucht `ISO9660.IFS`, unter AT-DOS ohne
+`LOOP [X:] Datei [/RO]` hängt eine Datei als Laufwerk ein (6.1) – ein CD-Abbild (`.ISO`, braucht `ISO9660.IFS`, unter AT-DOS ohne
 MSCDEX), ein Disketten- oder Partitionsabbild (`.IMG`/`.IMA`), ein
 Plattenabbild mit Partitionstabelle (je Partition ein Buchstabe) oder
 eine feste VHD (z. B. aus 86Box). Die Datei darf auf FAT12/16/32 oder
 auf einer CD liegen und zerstückelt sein (bis 8.188 Stücke); gelesen
-wird über den Platten-Cache des Trägers. Solange sie eingehängt ist,
-lässt sie sich nicht schreiben, löschen oder umbenennen. `LOOP` zeigt
-die eingehängten Dateien, `LOOP X: /D` hängt aus. Höchstens 4 zugleich;
-DOS-Boxen sehen die Laufwerke über den Redirector. In `LINUX.MAC`:
-`mount` und `umount`. Nur auf der Festplatte (wie die Packprogramme).
+und geschrieben wird über den Platten-Cache des Trägers. Disketten-,
+Platten- und VHD-Abbilder sind beschreibbar (Stufe 2), außer mit `/RO`,
+bei schreibgeschützter Datei oder auf einer CD; ISOs immer nur lesend.
+Solange die Datei eingehängt ist, lässt sie sich nicht öffnen zum
+Schreiben, löschen oder umbenennen. `LOOP` zeigt die eingehängten
+Dateien und ob sie beschreibbar sind, `LOOP X: /D` hängt aus (setzt
+vorher das Sauber-Bit). In CONFIG.SYS hängt `LOOP=[X:,]Datei[,/RO]`
+(bis zu vier Zeilen) beim Start ein. Höchstens 4 zugleich; DOS-Boxen
+sehen die Laufwerke über den Redirector, auch zum Schreiben. In
+`LINUX.MAC`: `mount` und `umount`. Auf Setup-Diskette 2.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
 Byte für Byte per PIO.

@@ -1,10 +1,10 @@
-REM ===================================================================
+REM ========================================
 REM AT-DOS 6.0 - CONFIG.SYS
 REM Zeilen mit REM am Anfang sind Erklaerungen bzw. Beispiele; zum
 REM Einschalten REM weglassen. Hoechstens 4 KB, eine Zeile bis 127 Zeichen.
-REM ===================================================================
+REM ========================================
 
-REM --- Speicher und Dateien ------------------------------------------
+REM --- Speicher und Dateien ---
 REM FILES=n      offene Dateien fuer alle Programme zusammen (8-255)
 FILES=30
 REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
@@ -17,8 +17,10 @@ REM CACHE=512,5,4096
 REM SWAPPATH=X:\Verz kb  Auslagerungsdatei SWAPPER.DAT fuer DOS-Boxen;
 REM   ohne Angabe bis 16 MB RAM X:\SWAP, 2x RAM (2-8 MB); OFF = keine
 REM SWAPPATH=C:\SWAP 4096
+REM LOOP=[X:,]Datei[,/RO]  Abbild (ISO, IMG, VHD) als Laufwerk, bis 4 Zeilen
+REM LOOP=E:,C:\ISO\SPIEL.ISO
 
-REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---------------
+REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb
 DEVICE=AHA154X.SYS
 REM IDE/ATAPI, MFM/RLL/ESDI. /DMA stellt Busmaster-DMA selbst ein (PIIX4:
@@ -40,7 +42,7 @@ DEVICE=SB16.SYS
 REM DEVICEHIGH lassen andere DOS auch zu; AT-DOS laedt beides gleich:
 REM DEVICEHIGH /L:1 =IDE.SYS
 
-REM --- Dateisysteme ---------------------------------------------------
+REM --- Dateisysteme ---
 REM CD-ROM: ISO 9660, Joliet, ISO 9660:1999, Rock Ridge (nur lesend)
 IFS=ISO9660.IFS
 REM Lange Namen auf FAT12/16: AUTO (was auf dem Laufwerk ist, sonst EA),
@@ -50,7 +52,7 @@ REM Nicht sauber abgemeldete Platten beim Start pruefen: ohne Zeile alle,
 REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK= (leer)
 REM AUTOCHECK=CD
 
-REM --- Land, Zeichensatz, Tastatur -------------------------------------
+REM --- Land, Zeichensatz, Tastatur ---
 REM COUNTRY=nnn  Datum, Uhrzeit, Zahlen wie MS-DOS: 001 USA, 002 Kanada,
 REM 003 Lateinamerika, 031 NL, 032 B, 033 F, 034 E, 039 I, 041 CH, 044 GB,
 REM 045 DK, 046 S, 047 N, 048 PL, 049 D, 351 P, 358 FIN, 420 CZ u. a.
@@ -61,12 +63,12 @@ REM von Platte (CPnnn.FNT in \DOS\SYSTEM). Beispiel:
 REM CODEPAGE=850,437
 REM Tastatur: KEYB in AUTOEXEC.CMD, z. B. KEYB DK oder KEYB PL,852
 
-REM --- Befehlsinterpreter und Umgebung --------------------------------
+REM --- Befehlsinterpreter und Umgebung ---
 PROTSHELL=CMD.EXE /P
 REM SET NAME=WERT legt Variablen fuer alle Sitzungen an, z. B.:
 REM SET TEMP=D:\TEMP
 
-REM --- DOS-Boxen -------------------------------------------------------
+REM --- DOS-Boxen ---
 REM DOS in der HMA und obere Speicherbloecke (UMB), wie OS/2
 DOS=HIGH,UMB
 REM Konventioneller Speicher je Box in KB (256-640)
@@ -78,7 +80,7 @@ REM in derselben (wie NT):
 REM DOSSTART=SESSION
 REM Einstellungen je Programm: \DOS\MDOS\DOSBOX.INI
 
-REM --- Hardware ---------------------------------------------------------
+REM --- Hardware ---
 REM ISA-PnP-Karten nicht einstellen (z. B. wenn ein PnP-BIOS es tut)
 REM PNP=OFF
 REM SHUTDOWN schaltet ueber APM aus; APM=OFF zeigt nur die Meldung

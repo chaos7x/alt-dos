@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * LOOP.EXE - Datei als Laufwerk einhaengen (wie mount -o loop):
- *   LOOP [X:] Datei      ISO, Disketten-/Plattenabbild (IMG, IMA), feste VHD
+ *   LOOP [X:] Datei [/RO] ISO, Disketten-/Plattenabbild (IMG, IMA), feste VHD
  *   LOOP X: /D           aushaengen
  *   LOOP                 eingehaengte Dateien zeigen
- * Ueber FAPI 59h. Stufe 1: nur lesend. Ohne X: der naechste freie
+ * Ueber FAPI 59h. Abbilder sind beschreibbar (Stufe 2), ausser mit /RO,
+ * schreibgeschuetzter Datei, ISO oder Datei auf CD. Ohne X: der naechste freie
  * Buchstabe; ein Plattenabbild bekommt je Partition einen.
  * ERRORLEVEL: 0 ok, 1 Fehler, 4 Aufruf.
  */
@@ -14,31 +15,35 @@
 static char args[FAPI_ARGLEN], name[FAPI_PATHLEN], path[FAPI_PATHLEN];
 static struct fapi_loopinfo li;
 
-static void put_drives(unsigned long m)
+static unsigned put_drives(unsigned long m)  /* -> Zeichen            */
 {
-    unsigned x;
+    unsigned x, n = 0;
     for (x = 0; x < 26; x++)
         if (m & (1UL << x)) {
             putc((char)('A' + x));
             putc(':');
             putc(' ');
+            n += 3;
         }
+    return n;
 }
 
 static void list(void)
 {
-    unsigned i, n = 0, k;
+    unsigned i, n = 0, k, kd;
     static const char *kind[5] = { "?", "ISO", "Abbild", "Platte", "VHD" };
     for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++) {
         if (!li.drives)
             continue;
         if (!n++)
-            puts("Laufwerk  Art     Bereiche  Datei\r\n");
-        put_drives(li.drives);
-        puts("     ");
-        puts(kind[li.kind < 5 ? li.kind : 0]);
-        for (k = slen(kind[li.kind < 5 ? li.kind : 0]); k < 8; k++)
+            puts("Laufwerk  Art     Zugriff   Bereiche  Datei\r\n");
+        for (k = put_drives(li.drives); k < 10; k++)
             putc(' ');
+        kd = li.kind & ~LOOPK_RO;
+        puts(kind[kd < 5 ? kd : 0]);
+        for (k = slen(kind[kd < 5 ? kd : 0]); k < 8; k++)
+            putc(' ');
+        puts(li.kind & LOOPK_RO ? "nur lesen " : "schreiben ");
         put_num(li.extents, 8, 0);
         puts("  ");
         putc((char)('A' + li.cdrive));
@@ -52,20 +57,22 @@ static void list(void)
 
 static void usage(void)
 {
-    puts("H\x84ngt eine Datei als Laufwerk ein (nur lesend).\r\n\r\n"
-         "LOOP [X:] Datei\r\n"
+    puts("H\x84ngt eine Datei als Laufwerk ein.\r\n\r\n"
+         "LOOP [X:] Datei [/RO]\r\n"
          "LOOP X: /D\r\n"
          "LOOP\r\n\r\n"
          "  Datei  ISO (CD-Abbild), Disketten- oder Plattenabbild (IMG, IMA),\r\n"
          "         feste VHD\r\n"
          "  X:     Laufwerksbuchstabe, ohne Angabe der n\x84" "chste freie\r\n"
-         "  /D     h\x84ngt das Laufwerk wieder aus\r\n");
+         "  /RO    nur lesend (ISO und Dateien auf CD immer)\r\n"
+         "  /D     h\x84ngt das Laufwerk wieder aus\r\n"
+         "In CONFIG.SYS: LOOP=[X:,]Datei[,/RO] (bis zu vier Zeilen)\r\n");
 }
 
 void main(void)
 {
     char *a, *rest;
-    unsigned rc, drive = 0;
+    unsigned rc, drive = 0, ro = 0;
 
     DosGetArgs(args);
     a = skip(args);
@@ -102,14 +109,18 @@ void main(void)
              ": ist kein eingeh\x84ngtes Abbild\r\n");
         DosExit(1);
     }
-    rest = word(a, name, sizeof(name));
-    if (!name[0] || *skip(rest)) {
+    rest = skip(word(a, name, sizeof(name)));
+    if (rest[0] == '/' && up(rest[1]) == 'R' && up(rest[2]) == 'O') {
+        ro = LOOP_RO;
+        rest = skip(next_word(rest));
+    }
+    if (!name[0] || *rest) {
         usage();
         DosExit(4);
     }
     if (abs_path(name, path))
         scopy(path, name, sizeof(path));
-    rc = DosLoop(LOOP_ATTACH, path, drive);
+    rc = DosLoop(LOOP_ATTACH, path, drive | ro);
     if (rc < FAPI_ERR_FIRST) {
         unsigned i;
         for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++)

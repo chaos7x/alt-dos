@@ -203,6 +203,7 @@ extern int nblk;
 /* Loop-Laufwerke (loop.c, KTEXT2) */
 extern unsigned loop_sel[NLOOP], loop_free;
 int __far loop_read(int dev, unsigned long lba);
+int __far loop_write(int dev, unsigned long lba);
 int __far loop_drop(int dev);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
