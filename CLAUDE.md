@@ -1877,6 +1877,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Ohne gepackten Cluster bleibt es bei der Kennung. In QEMU geprüft
   (Testcontainer auf „MSDBL6.0“ umgestellt, COPY hinein: neue Cluster
   „JM 00 00“, cvfchk 0 Fehler, fsck sauber, Inhalte gleich).
+  Vom Nutzer in 86Box bestätigt (16.11.2026): gesicherte VHD zurück,
+  unter AT-DOS `XCOPY C:\DOS` in den echten MS-DOS-6.22-Container,
+  /CHECK /V: alle 23.457 gepackten Cluster „JM 00 00“; ScanDisk von
+  MS-DOS 6.22: „DriveSpace-Datenträger E enthielt keine Fehler“. Damit
+  ist Schreiben in echte DriveSpace-6-Container bestätigt (DS3/Windows
+  98 weiter ungeprüft).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
