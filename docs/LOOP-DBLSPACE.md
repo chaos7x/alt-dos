@@ -175,7 +175,10 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    loop.c (`LOOP E: C:\DBLSPACE.000`): Kennung im Superblock, MDFAT,
    Entpacker DS/JM, ein Cluster-Puffer. Formatdetails nach der dmsdos-
    Doku geprüft, ein echter 6.22-Container steht noch aus.
-5. Schreibend (Packer, BitFAT, MDFAT), Cluster-Cache, `PACKDISK /CHECK`.
+5. Schreibend – erledigt (16.11.2026, siehe CLAUDE.md): ein Cluster
+   gepuffert, gepackt beim Wechsel und am Ende jeder Operation, BitFAT/
+   MDFAT gepflegt, frei gewordene Cluster aus FAT-Änderungen erkannt.
+   Offen: `PACKDISK /CHECK`, `LOOP /INFO` (Packrate, freier Platz).
 6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, DriveSpace 3 lesen, Start von C:.
 
 Parallel (BIGLOCK.md, 6.1): fat.c-Zustand je Operation, dann Tiefe 2 und

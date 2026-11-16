@@ -114,7 +114,7 @@ static int fat_flush_fat(void)
             rc = blk_write(v->blk, lba + i);
             if (rc) {
                 if (!ferr)
-                    ferr = rc == -2 ? IFS_WP : IFS_ERR;
+                    ferr = rc < -1 ? rc : IFS_ERR;  /* -2 WP, -3 voll */
                 fc_drive = -1;          /* Cache stimmt nicht mehr      */
                 return -1;
             }
@@ -1197,7 +1197,7 @@ static void wr(int d, unsigned long lba)
 {
     int rc = blk_write(vol[d].blk, lba);
     if (rc && !ferr)
-        ferr = rc == -2 ? IFS_WP : IFS_ERR;
+        ferr = rc < -1 ? rc : IFS_ERR;  /* -2 WP, -3 voll (Loop) */
 }
 
 /* Ende einer Operation: FAT schreiben, Fehler melden */

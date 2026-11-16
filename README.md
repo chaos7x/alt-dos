@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke (lesen und schreiben, `LOOP=`), DoubleSpace/DriveSpace lesend, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
+# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke (lesen und schreiben, `LOOP=`), DoubleSpace/DriveSpace lesen und schreiben, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -905,8 +905,12 @@ Dateien und ob sie beschreibbar sind, `LOOP X: /D` hängt aus (setzt
 vorher das Sauber-Bit). In CONFIG.SYS hängt `LOOP=[X:,]Datei[,/RO]`
 (bis zu vier Zeilen) beim Start ein. Auch komprimierte Laufwerke von
 MS-DOS 6.0–6.22 (`DBLSPACE.nnn` von DoubleSpace, `DRVSPACE.nnn` von
-DriveSpace) lassen sich so einhängen, vorerst nur lesend (`LOOP` zeigt
-„gepackt“); DriveSpace 3 (Windows 95/98) noch nicht. Höchstens 4 zugleich; DOS-Boxen
+DriveSpace) lassen sich so einhängen, lesen und schreiben (`LOOP` zeigt
+„gepackt“): neue Cluster werden im Format des Containers gepackt (DS bzw.
+JM), gelöschte Dateien geben ihren Platz im Container frei, ein voller
+Container meldet „Datenträger voll“. Der angezeigte freie Platz ist der
+des inneren Laufwerks (ohne Schätzung der Packrate). DriveSpace 3
+(Windows 95/98) noch nicht. Höchstens 4 zugleich; DOS-Boxen
 sehen die Laufwerke über den Redirector, auch zum Schreiben. In
 `LINUX.MAC`: `mount` und `umount`. Auf Setup-Diskette 2.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,

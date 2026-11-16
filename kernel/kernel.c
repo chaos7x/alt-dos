@@ -314,7 +314,7 @@ static void vol_unlock_cur(void);
 #define VK_EA   NDRIVE                  /* Namenscache von EA DATA. SF   */
 #define NVK     (NDRIVE + 1)
 #define MOD_DL  NDRV
-static unsigned char vk_owner[NVK];     /* Task + 1, 0 = frei            */
+unsigned char vk_owner[NVK];            /* loop.c liest mit              */     /* Task + 1, 0 = frei            */
 #define NXG 12                          /* Sperrgruppen ueber 0 (alle Treiber) */
 static unsigned char dl_owner[NDRV + 1 + NXG], dl_depth[NDRV + 1 + NXG];   /* [NDRV+1+x]: Gruppe x */
 static unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
@@ -1969,6 +1969,8 @@ static void klock_leave(void)
 {
     if (current < 0 || klock != current)
         return;
+    if (klock_depth == 1 && task[current].vkey)
+        loop_vsync(task[current].vkey - 1);     /* gepackter Cluster    */
     if (--klock_depth == 0) {
         klock = -1;
         vol_unlock_cur();               /* Operation fertig              */
@@ -2090,6 +2092,8 @@ void vol_lock(int d)
     k = vol_key(d);
     if (tk->vkey == k + 1)
         return;
+    if (tk->vkey)
+        loop_vsync(tk->vkey - 1);
     vol_unlock_cur();
     while (vk_owner[k] && vk_owner[k] != current + 1) {
         tk->wait_k = (unsigned char)(k + 1);
@@ -5297,6 +5301,7 @@ void blk_flush(void)
 {
     int dev, d;
     unsigned x;
+    loop_sync_all();                    /* gepackte Cluster der Loops    */
     bc_flush();                         /* verzoegerte Daten zuerst      */
     fd_sync();                          /* Spurpuffer der Diskette       */
     for (dev = 1; dev < nblk; dev++) {

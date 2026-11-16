@@ -37,25 +37,38 @@ struct lhdr {
     unsigned       dbo;                 /* DriveSpace: Stelle von struct dblh */
 };
 
-/* DoubleSpace 6.0/6.2 und DriveSpace 6.22 (CVF), nur lesend. Format nach
-   der Beschreibung in dmsdos (doc/cvfinfo.doc, GPL, nur gelesen):
-   Sektor 0 Superblock ("MSDBL6.0"/"MSDSP6.0"), BITFAT, MDFAT (4 Byte je
+/* DoubleSpace 6.0/6.2 und DriveSpace 6.22 (CVF). Format nach der
+   Beschreibung in dmsdos (doc/cvfinfo.doc, GPL, nur gelesen):
+   Sektor 0 Superblock ("MSDBL6.0"/"MSDSP6.0"), BITFAT (ab Sektor 1, ein
+   Bit je Datensektor, Worte mit hoechstem Bit zuerst), MDFAT (4 Byte je
    Cluster: u c hhhh llll ? s21), Bootblock (BPB des inneren Laufwerks),
-   FAT, Stamm, gepackte Cluster. Das Loop-Geraet zeigt das innere FAT-
-   Laufwerk: Sektor n < Datenbeginn liegt ungepackt im CVF, dahinter wird
-   der Cluster ueber die MDFAT geholt und entpackt (DS/JM). */
+   FAT, Stamm, gepackte Cluster, "MDR" im letzten Sektor. Das Loop-Geraet
+   zeigt das innere FAT-Laufwerk: Sektor n < Datenbeginn liegt ungepackt
+   im CVF, dahinter wird der Cluster ueber die MDFAT geholt und entpackt
+   (DS/JM). Schreiben: Cluster im Puffer aendern (dirty), beim Wechsel des
+   Clusters bzw. am Ende der Operation (loop_vsync) packen, freie Sektoren
+   in der BITFAT suchen, schreiben, MDFAT umhaengen, alte Sektoren frei.
+   FAT-Schreiben vergleicht mit dem alten Sektor: Cluster, die frei
+   werden, verlieren ihren MDFAT-Eintrag und ihre Sektoren. */
 struct dblh {
     unsigned long  bb, fatc, rootc, mdf; /* Bootblock, FAT, Stamm, MDFAT (CVF) */
-    unsigned       res;                 /* reservierte Sektoren (innen)   */
     unsigned long  rootin, din;         /* inneres Laufwerk: Stamm, Daten */
     unsigned long  cl;                  /* Cluster im Puffer, 0 = keiner  */
+    unsigned long  dst, dend, hint;     /* Datensektoren (BITFAT), Suche */
+    unsigned       res, spf, mdn;       /* innen: reserviert, FAT; MDFAT-Sekt. */
     int            dcl;                 /* MDFAT-Verschiebung (signed)    */
-    unsigned char  spc, sh;             /* Sektoren je Cluster, log2      */
+    unsigned char  spc, sh, dirty, f16, jm, ver, busy;
 };
-#define DB_OUT   48                     /* hinter dblh: Cluster entpackt  */
+#define DB_OUT   64U                    /* hinter dblh: Cluster entpackt  */
 #define DB_IN    (DB_OUT + 8192)        /* gepackte Daten                 */
-#define DB_SIZE  (DB_IN + 8192)
+#define DB_T1    (DB_IN + 8192)         /* FAT-Sektor neu                 */
+#define DB_T2    (DB_T1 + 512)          /* FAT-Sektor alt                 */
+#define DB_HEAD  (DB_T2 + 512)          /* Packer: 4096 Koepfe            */
+#define DB_PREV  (DB_HEAD + 8192)       /* Packer: Kette je Stelle        */
+#define DB_SIZE  (DB_PREV + 16384U)
 typedef char dblh_fits[sizeof(struct dblh) <= DB_OUT ? 1 : -1];
+extern unsigned char vk_owner[];       /* kernel.c: Laufwerkssperren    */
+extern int current;
 unsigned loop_sel[NLOOP];
 unsigned loop_free;                     /* von loop_drop: Segment frei geben */
 #define LH(i)    ((struct lhdr __far *)MK_FP(loop_sel[i], 0))
@@ -230,18 +243,287 @@ static int dz_unpack(unsigned sel, unsigned in, unsigned lin, unsigned out, unsi
     return 0;
 }
 
+/* ---- Packer DS/JM (Gegenstueck zum Entpacker oben, eigene Umsetzung):
+   Hash-Ketten ueber 3 Byte, Treffer nie ueber eine 512-Byte-Grenze, an
+   jeder Grenze und am Ende das Gleichlaufzeichen (Abstand 113Fh) ---- */
+struct bw {
+    unsigned __far *o;
+    unsigned n, lim, w, c;
+};
+
+static void bw_put(struct bw *b, unsigned v, unsigned k)  /* k <= 15 */
+{
+    b->w |= v << b->c;
+    b->c += k;
+    if (b->c >= 16) {
+        if (b->n < b->lim)
+            b->o[b->n] = b->w;
+        b->n++;
+        b->c -= 16;
+        b->w = b->c ? v >> (k - b->c) : 0;
+    }
+}
+
+static void bw_off(struct bw *b, unsigned off, unsigned jm)
+{
+    if (jm) {
+        bw_put(b, 1, 2);
+        if (off < 64)
+            bw_put(b, off << 1, 7);
+        else if (off < 320)
+            bw_put(b, 1 | ((off - 64) << 2), 10);
+        else
+            bw_put(b, 3 | ((off - 320) << 2), 14);
+    } else if (off < 64)
+        bw_put(b, off << 2, 8);
+    else if (off < 320)
+        bw_put(b, 3 | ((off - 64) << 3), 11);
+    else
+        bw_put(b, 7 | ((off - 320) << 3), 15);
+}
+
+/* len Byte ab DB_OUT nach DB_IN -> Worte, 0xFFFF = groesser als lim */
+static unsigned dz_pack(unsigned sel, unsigned base, unsigned len, unsigned lim,
+                        unsigned jm, unsigned ver)
+{
+    unsigned char __far *s = MK_FP(sel, base + DB_OUT);
+    unsigned __far *hd = MK_FP(sel, base + DB_HEAD);
+    unsigned __far *pv = MK_FP(sel, base + DB_PREV);
+    struct bw bb, *b = &bb;
+    unsigned p = 0, q, m, k, best, bo, room, dep, x;
+
+    b->o = MK_FP(sel, base + DB_IN);
+    b->n = 0;
+    b->lim = lim;
+    b->w = b->c = 0;
+    for (k = 0; k < 4096; k++)
+        hd[k] = 0;
+    bw_put(b, jm ? 0x4A : 0x44, 8);     /* "JM" bzw. "DS", Version       */
+    bw_put(b, jm ? 0x4D : 0x53, 8);
+    bw_put(b, 0, 8);
+    bw_put(b, ver, 8);
+    while (p < len) {
+        if (b->n > lim)
+            return 0xFFFF;
+        if (p && !(p & 511))
+            bw_off(b, 0x113F, jm);
+        room = 512 - (p & 511);
+        best = bo = 0;
+        if (room >= 3) {
+            m = hd[((s[p] << 4) ^ (s[p + 1] << 2) ^ s[p + 2]) & 0xFFF];
+            for (dep = 16; m && dep; dep--) {
+                q = m - 1;
+                if (p - q > 4414)
+                    break;
+                for (k = 0; k < room && s[q + k] == s[p + k]; k++)
+                    ;
+                if (k > best) {
+                    best = k;
+                    bo = p - q;
+                    if (k == room)
+                        break;
+                }
+                m = pv[q];
+            }
+        }
+        if (best >= 3) {
+            bw_off(b, bo, jm);
+            if (!jm)
+                best++;                 /* DS zaehlt eins mehr           */
+            if (best >= 258) {
+                bw_put(b, 256, 9);
+                bw_put(b, best - 258, 8);
+            } else {
+                x = best - 2;
+                for (k = 0; x >> (k + 1); k++)
+                    ;
+                bw_put(b, 1u << k, k + 1);
+                if (k)
+                    bw_put(b, x - (1u << k), k);
+            }
+            if (!jm)
+                best--;
+        } else {
+            k = s[p];
+            if (jm)
+                bw_put(b, k < 128 ? k << 1 : 3 | ((k & 127) << 2), k < 128 ? 8 : 9);
+            else
+                bw_put(b, (k >= 128 ? 1 : 2) | ((k & 127) << 2), 9);
+            best = 1;
+        }
+        for (; best; best--, p++)
+            if (p + 2 < len) {
+                x = ((s[p] << 4) ^ (s[p + 1] << 2) ^ s[p + 2]) & 0xFFF;
+                pv[p] = hd[x];
+                hd[x] = p + 1;
+            }
+    }
+    bw_off(b, 0x113F, jm);
+    if (b->c)
+        bw_put(b, 0, 16 - b->c);
+    return b->n > lim ? 0xFFFF : b->n;
+}
+
+/* CVF-Sektor u aus DMABUF schreiben */
+static int rawwr(int i, unsigned long u)
+{
+    unsigned long c, run;
+    if (lmap(i, u, &c, &run))
+        return -1;
+    return blk_write(LH(i)->carrier, c);
+}
+
+/* MDFAT-Eintrag des Clusters: Sektor nach DMABUF, *e = Wert -> Offset */
+static int md_get(int i, struct dblh __far *d, unsigned long cl, unsigned long *e)
+{
+    unsigned long idx = cl + (long)d->dcl;
+    if ((idx >> 7) >= d->mdn || raw(i, d->mdf + (idx >> 7)))
+        return -1;
+    *e = *(unsigned long __far *)MK_FP(DMABUF, ((unsigned)idx & 127) << 2);
+    return ((unsigned)idx & 127) << 2;
+}
+
+/* n Datensektoren ab s in der BITFAT setzen (v 1) oder freigeben */
+static int bf_mark(int i, struct dblh __far *d, unsigned long s, unsigned n, int v)
+{
+    unsigned long k, sec = 0;
+    unsigned __far *w;
+    unsigned m;
+
+    for (; n; n--, s++) {
+        if (s < d->dst || s > d->dend)
+            continue;
+        k = s - d->dst;
+        if (1 + (k >> 12) != sec) {
+            if (sec && rawwr(i, sec))
+                return -1;
+            sec = 1 + (k >> 12);
+            if (raw(i, sec))
+                return -1;
+        }
+        w = MK_FP(DMABUF, ((unsigned)(k >> 4) & 255) << 1);
+        m = 0x8000 >> ((unsigned)k & 15);
+        *w = v ? *w | m : *w & ~m;
+    }
+    return sec ? rawwr(i, sec) : 0;
+}
+
+/* n freie Datensektoren am Stueck -> erster, 0 = kein Platz */
+static unsigned long bf_alloc(int i, struct dblh __far *d, unsigned n)
+{
+    unsigned long k, end = d->dend - d->dst + 1, start = 0, sec = 0, from;
+    unsigned run, pass, w;
+
+    from = d->hint < end ? d->hint : 0;
+    for (pass = 0; pass < 2; pass++) {
+        run = 0;
+        for (k = pass ? 0 : from; k < end; k++) {
+            if (1 + (k >> 12) != sec) {
+                sec = 1 + (k >> 12);
+                if (raw(i, sec))
+                    return 0;
+            }
+            w = *(unsigned __far *)MK_FP(DMABUF, ((unsigned)(k >> 4) & 255) << 1);
+            if (w == 0xFFFF && !((unsigned)k & 15)) {
+                run = 0;
+                k += 15;
+                continue;
+            }
+            if (w & (0x8000 >> ((unsigned)k & 15))) {
+                run = 0;
+                continue;
+            }
+            if (!run)
+                start = k;
+            if (++run == n) {
+                d->hint = start + n;
+                return d->dst + start;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Cluster cl frei: MDFAT-Eintrag 0, Sektoren in der BITFAT frei */
+static int dbl_free(int i, struct dblh __far *d, unsigned long cl)
+{
+    unsigned long e;
+    int o;
+    if (d->cl == cl)
+        d->cl = d->dirty = 0;
+    if ((o = md_get(i, d, cl, &e)) < 0)
+        return -1;
+    if (!(e & 0x80000000UL))
+        return 0;
+    *(unsigned long __far *)MK_FP(DMABUF, o) = 0;
+    if (rawwr(i, d->mdf + ((cl + (long)d->dcl) >> 7)))
+        return -1;
+    return bf_mark(i, d, (e & 0x1FFFFFUL) + 1, ((unsigned)(e >> 22) & 15) + 1, 0);
+}
+
+/* geaenderten Cluster packen und schreiben; 0 = ok */
+static int dbl_sync(int i, struct dblh __far *d)
+{
+    unsigned sel = loop_sel[i], base = LH(i)->dbo, h, l, k, ol, src;
+    unsigned __far *o = MK_FP(sel, base + DB_OUT);
+    unsigned long e, s, ms;
+    int off, inpl = 0, rw;
+
+    if (!d->dirty)
+        return 0;
+    for (h = d->spc; h > 1; h--) {      /* Nullsektoren am Ende weglassen */
+        for (k = 0; k < 256 && !o[((h - 1) << 8) + k]; k++)
+            ;
+        if (k < 256)
+            break;
+    }
+    k = h > 1 ? dz_pack(sel, base, h << 9, (h - 1) << 8, d->jm, d->ver) : 0xFFFF;
+    rw = k == 0xFFFF;
+    l = rw ? h : (k + 255) >> 8;
+    src = rw ? DB_OUT : DB_IN;
+    if ((off = md_get(i, d, d->cl, &e)) < 0)
+        return -1;
+    ol = (e & 0x80000000UL) ? ((unsigned)(e >> 22) & 15) + 1 : 0;
+    if ((s = bf_alloc(i, d, l)) == 0) {
+        if (l > ol)
+            return -3;                  /* voll (IFS_FULL)               */
+        s = (e & 0x1FFFFFUL) + 1;       /* an Ort und Stelle             */
+        inpl = 1;
+    }
+    for (k = 0; k < l; k++) {
+        far_copy(DMABUF, 0, sel, base + src + (k << 9), 512);
+        if (rawwr(i, s + k))
+            return -1;
+    }
+    if (!inpl && bf_mark(i, d, s, l, 1))
+        return -1;
+    ms = d->mdf + ((d->cl + (long)d->dcl) >> 7);
+    if (raw(i, ms))
+        return -1;
+    *(unsigned long __far *)MK_FP(DMABUF, off) = 0x80000000UL |
+        (rw ? 0x40000000UL : 0) | ((unsigned long)(h - 1) << 26) |
+        ((unsigned long)(l - 1) << 22) | ((s - 1) & 0x1FFFFFUL);
+    if (rawwr(i, ms))
+        return -1;
+    d->dirty = 0;
+    if (inpl)
+        return l < ol ? bf_mark(i, d, s + l, ol - l, 0) : 0;
+    return ol ? bf_mark(i, d, (e & 0x1FFFFFUL) + 1, ol, 0) : 0;
+}
+
 /* Cluster cl des inneren Laufwerks entpackt in den Puffer; 0 = ok */
 static int dbl_load(int i, struct dblh __far *d, unsigned long cl)
 {
     unsigned sel = loop_sel[i], base = LH(i)->dbo, k, l, h;
-    unsigned long e, s, idx;
+    unsigned long e, s;
     unsigned char __far *o = MK_FP(sel, base + DB_OUT);
+    int rc;
 
+    if ((rc = dbl_sync(i, d)) != 0)
+        return rc;
     d->cl = 0;
-    idx = cl + (long)d->dcl;
-    if (raw(i, d->mdf + (idx >> 7)))
+    if (md_get(i, d, cl, &e) < 0)
         return -1;
-    e = *(unsigned long __far *)MK_FP(DMABUF, ((unsigned)idx & 127) << 2);
     for (k = 0; k < (unsigned)d->spc << 9; k++)
         o[k] = 0;                       /* unbelegt oder kurz: Nullen    */
     if (e & 0x80000000UL) {
@@ -257,31 +539,146 @@ static int dbl_load(int i, struct dblh __far *d, unsigned long cl)
         }
         if (e & 0x40000000UL)           /* ungepackt                     */
             far_copy(sel, base + DB_OUT, sel, base + DB_IN, (l + 1) << 9);
-        else if (dz_unpack(sel, base + DB_IN, (l + 1) << 9, base + DB_OUT, (h + 1) << 9))
-            return -1;
+        else {
+            if (dz_unpack(sel, base + DB_IN, (l + 1) << 9, base + DB_OUT, (h + 1) << 9))
+                return -1;
+            d->ver = *(unsigned char __far *)MK_FP(sel, base + DB_IN + 3);
+        }
     }
     d->cl = cl;
     return 0;
 }
 
-/* Sektor lba des inneren Laufwerks nach DMABUF */
-static int dbl_read(int i, unsigned long lba)
+/* FAT-Sektor fl aus DMABUF schreiben: frei gewordene Cluster abgeben */
+static int dbl_fatw(int i, struct dblh __far *d, unsigned fl)
+{
+    unsigned sel = loop_sel[i], base = LH(i)->dbo, j, e, eo, en, bo, k;
+    unsigned char __far *nb = MK_FP(sel, base + DB_T1);
+    unsigned char __far *ob = MK_FP(sel, base + DB_T2);
+    unsigned char pb = 0, xb = 0, c[4];
+
+    far_copy(sel, base + DB_T1, DMABUF, 0, 512);
+    if (raw(i, d->fatc + fl))
+        return -1;
+    far_copy(sel, base + DB_T2, DMABUF, 0, 512);
+    if (d->f16) {
+        for (j = 0; j < 256; j++) {
+            e = (fl << 8) + j;
+            if (e >= 2 && (ob[2 * j] | ob[2 * j + 1]) && !(nb[2 * j] | nb[2 * j + 1]) &&
+                dbl_free(i, d, e))
+                return -1;
+        }
+    } else {                            /* FAT12: Eintraege ueber die    */
+        if (fl && raw(i, d->fatc + fl - 1) == 0)    /* Sektorgrenze      */
+            pb = *(unsigned char __far *)MK_FP(DMABUF, 511);
+        if (fl + 1 < d->spf && raw(i, d->fatc + fl + 1) == 0)
+            xb = *(unsigned char __far *)MK_FP(DMABUF, 0);
+        for (e = fl ? fl * 1024 / 3 - 1 : 2; ; e++) {
+            bo = (e * 3 >> 1) + 1;              /* +1: pb vorn           */
+            if (bo < fl * 512)
+                continue;
+            bo -= fl * 512;
+            if (bo > 512)
+                break;
+            for (k = 0; k < 2; k++) {
+                j = bo + k;
+                c[k] = j == 0 ? pb : j == 513 ? xb : ob[j - 1];
+                c[k + 2] = j == 0 ? pb : j == 513 ? xb : nb[j - 1];
+            }
+            eo = c[0] | (c[1] << 8);
+            en = c[2] | (c[3] << 8);
+            if (e & 1) {
+                eo >>= 4;
+                en >>= 4;
+            }
+            if (e >= 2 && (eo & 0xFFF) && !(en & 0xFFF) && dbl_free(i, d, e))
+                return -1;
+        }
+    }
+    far_copy(DMABUF, 0, sel, base + DB_T1, 512);
+    return rawwr(i, d->fatc + fl);
+}
+
+/* innerer Sektor lba nach DMABUF (wr 0) bzw. aus DMABUF (wr 1) */
+static int dbl_io(int i, unsigned long lba, int wr)
 {
     struct dblh __far *d = MK_FP(loop_sel[i], LH(i)->dbo);
-    unsigned long rel, cl;
+    unsigned base = LH(i)->dbo, off;
+    unsigned long rel, cl, fl;
+    int rc;
+
+    if (wr == 2)
+        return dbl_sync(i, d);
 
     if (lba < d->res)                   /* Bootblock, reserviert         */
-        return raw(i, d->bb + lba);
-    if (lba < d->rootin)                /* FAT (nur eine)                */
-        return raw(i, d->fatc + (lba - d->res));
-    if (lba < d->din)                   /* Stamm                         */
-        return raw(i, d->rootc + (lba - d->rootin));
+        return wr ? rawwr(i, d->bb + lba) : raw(i, d->bb + lba);
+    if (lba < d->rootin) {              /* FAT (nur eine; Kopie 2 = 1)   */
+        fl = lba - d->res;
+        while (fl >= d->spf)
+            if (wr)
+                return 0;
+            else
+                fl -= d->spf;
+        return wr ? dbl_fatw(i, d, (unsigned)fl) : raw(i, d->fatc + fl);
+    }
+    if (lba < d->din) {                 /* Stamm                         */
+        lba = d->rootc + (lba - d->rootin);
+        return wr ? rawwr(i, lba) : raw(i, lba);
+    }
     rel = lba - d->din;
     cl = (rel >> d->sh) + 2;
-    if (d->cl != cl && dbl_load(i, d, cl))
-        return -1;
-    far_copy(DMABUF, 0, loop_sel[i], LH(i)->dbo + DB_OUT + (((unsigned)rel & (d->spc - 1)) << 9), 512);
+    off = base + DB_OUT + (((unsigned)rel & (d->spc - 1)) << 9);
+    if (wr)
+        far_copy(loop_sel[i], base + DB_T1, DMABUF, 0, 512);
+    if (d->cl != cl && (rc = dbl_load(i, d, cl)) != 0)
+        return rc;                      /* -3: Container voll            */
+    if (!wr) {
+        far_copy(DMABUF, 0, loop_sel[i], off, 512);
+        return 0;
+    }
+    far_copy(loop_sel[i], off, loop_sel[i], base + DB_T1, 512);
+    d->dirty = 1;
     return 0;
+}
+
+static int dbl_call(int i, unsigned long lba, int wr)
+{
+    struct dblh __far *d = MK_FP(loop_sel[i], LH(i)->dbo);
+    int rc;
+    d->busy = 1;
+    rc = dbl_io(i, lba, wr);
+    d->busy = 0;
+    return rc;
+}
+
+/* Ende einer Operation auf Laufwerk x (kernel.c, mit dessen Sperre):
+   gepufferten Cluster schreiben */
+void __far loop_vsync(int x)
+{
+    int dev, i;
+    if (x < 0 || x >= NDRIVE || !vol[x].used)
+        return;
+    dev = vol[x].blk;
+    i = blk[dev].unit;
+    if (blk[dev].drv == DRV_LOOP && i < NLOOP && loop_sel[i] && LH(i)->kind == LOOPK_DBL)
+        dbl_call(i, 0, 2);
+}
+
+/* blk_flush: alle, die gerade niemand bearbeitet */
+void __far loop_sync_all(void)
+{
+    int i, x;
+    struct dblh __far *d;
+    for (i = 0; i < NLOOP; i++) {
+        if (!loop_sel[i] || LH(i)->kind != LOOPK_DBL)
+            continue;
+        d = MK_FP(loop_sel[i], LH(i)->dbo);
+        for (x = 0; x < NDRIVE && !(vol[x].used && vol[x].blk == LH(i)->dev); x++)
+            ;
+        if (d->dirty && !d->busy &&
+            (x == NDRIVE || !vk_owner[x] || vk_owner[x] == current + 1))
+            dbl_call(i, 0, 2);
+    }
 }
 
 /* Block lba des Loop-Geraets nach DMABUF (Offset 0); 0 = ok */
@@ -296,7 +693,7 @@ int __far loop_read(int dev, unsigned long lba)
         return -1;
     h = LH(i);
     if (h->kind == LOOPK_DBL)
-        return dbl_read(i, lba);
+        return dbl_call(i, lba, 0);
     cd = h->carrier;
     n = 1 << h->lsh;                    /* Einheiten je Loop-Block       */
     u = lba << h->lsh;
@@ -337,6 +734,8 @@ int __far loop_write(int dev, unsigned long lba)
         return -1;
     if (LH(i)->ro)
         return -2;
+    if (LH(i)->kind == LOOPK_DBL)
+        return dbl_call(i, lba, 1);
     if (lmap(i, lba, &c, &run))
         return -1;
     return blk_write(LH(i)->carrier, c);
@@ -411,16 +810,30 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         unsigned k, spc;
         h->dbo = (LH_EXT + n * 8 + 15) & ~15;
         h->kind = LOOPK_DBL;
-        h->ro = 1;                      /* Stufe 1: nur lesend           */
         db = MK_FP(loop_sel[i], h->dbo);
         if (raw(i, 0))
             goto bad;
+        db->jm = b[6] == 'S';           /* MSDSP: JM, MSDBL: DS          */
+        db->ver = db->jm ? 0 : 2;       /* bis ein Cluster es verraet    */
+        db->dirty = db->busy = 0;
+        db->hint = 0;
+        db->dst = *(unsigned __far *)(b + 39) + (unsigned long)*(unsigned __far *)(b + 43) + 2;
         db->bb = *(unsigned __far *)(b + 39);
         db->fatc = db->bb + *(unsigned __far *)(b + 14);
         db->rootc = db->bb + *(unsigned __far *)(b + 41);
         db->mdf = *(unsigned __far *)(b + 36) + 1UL;
         db->dcl = *(int __far *)(b + 45);
         db->cl = 0;
+        db->mdn = (unsigned)(db->bb - db->mdf);
+        db->dend = 0;                   /* "MDR" im letzten Sektor       */
+        if (raw(i, units - 1) == 0 && b[0] == 'M' && b[1] == 'D' && b[2] == 'R')
+            db->dend = units - 2;
+        else if (raw(i, units - 2) == 0 && b[0] == 'M' && b[1] == 'D' && b[2] == 'R')
+            db->dend = units - 3;
+        if (db->dend > db->dst + ((db->mdf - 1) << 12) - 1)
+            db->dend = db->dst + ((db->mdf - 1) << 12) - 1;   /* BITFAT  */
+        if (db->dend < db->dst)
+            h->ro = 1;                  /* Ende nicht gefunden: lesen    */
         if (raw(i, db->bb) || b[510] != 0x55 || b[511] != 0xAA ||
             *(unsigned __far *)(b + 11) != 512)
             goto bad;
@@ -432,6 +845,7 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         db->spc = (unsigned char)spc;
         db->sh = (unsigned char)k;
         db->res = *(unsigned __far *)(b + 14);
+        db->spf = *(unsigned __far *)(b + 22);
         db->rootin = db->res +
                      (unsigned long)(b[16] * *(unsigned __far *)(b + 22));
         db->din = db->rootin + (*(unsigned __far *)(b + 17) >> 4);
@@ -439,6 +853,7 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         if (!units)
             units = *(unsigned long __far *)(b + 32);
         blk[dev].blocks = units;
+        db->f16 = ((units - db->din) >> k) >= 4085;
         return dev;
 bad:
         loop_drop(dev);
@@ -481,6 +896,8 @@ int __far loop_drop(int dev)
     int i = blk[dev].unit, fk;
     if (blk[dev].drv != DRV_LOOP || i >= NLOOP || !loop_sel[i])
         return -1;
+    if (LH(i)->kind == LOOPK_DBL)
+        dbl_call(i, 0, 2);              /* gepufferten Cluster schreiben */
     fk = LH(i)->fk;
     loop_free = loop_sel[i];
     loop_sel[i] = 0;

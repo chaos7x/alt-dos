@@ -63,7 +63,7 @@ static void usage(void)
          "LOOP\r\n\r\n"
          "  Datei  ISO (CD-Abbild), Disketten- oder Plattenabbild (IMG, IMA),\r\n"
          "         feste VHD, DoubleSpace/DriveSpace-Datei (DBLSPACE.nnn,\r\n"
-         "         DRVSPACE.nnn, nur lesend)\r\n"
+         "         DRVSPACE.nnn)\r\n"
          "  X:     Laufwerksbuchstabe, ohne Angabe der n\x84" "chste freie\r\n"
          "  /RO    nur lesend (ISO und Dateien auf CD immer)\r\n"
          "  /D     h\x84ngt das Laufwerk wieder aus\r\n"

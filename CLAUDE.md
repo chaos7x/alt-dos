@@ -1692,6 +1692,52 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Cluster scheiterten). Spc nur Zweierpotenz bis 16 (DriveSpace 3 hat
   64 – abgelehnt). Nicht geprüft: ein echter Container von MS-DOS 6.22
   (beim Nutzer in 86Box). KTEXT2 danach 60.948 Byte.
+  DriveSpace schreibend erledigt (16.11.2026; in QEMU geprüft mit den
+  beiden Python-Containern, Generator jetzt mit richtiger BitFAT und 2 MB
+  frei, Prüfer `cvfchk.py` im Scratchpad: packt mit der nachgebauten
+  dmsdos-Routine aus, gleicht BitFAT gegen MDFAT und FAT gegen MDFAT ab,
+  schreibt das innere Abbild für fsck/mtools): MD + XCOPY /S, DEL,
+  Ersetzen einer großen durch eine kleine Datei, COPY aus der Box, DEL
+  auf DS, CHKDSK, Aushängen, SHUTDOWN – danach je 0 Fehler, fsck
+  sauber, Inhalte gleich, 66 von 81 bzw. 93 von 117 Clustern gepackt;
+  XCOPY \DOS bis das innere Laufwerk voll ist (381/381 Cluster, 327
+  gepackt, alles gleich); 2,6 MB Zufall in einen Container mit 2 MB
+  Platz -> „Datenträger oder Verzeichnis voll“, danach BitFAT genau wie
+  vorher. loop.c: `struct dblh` (64 Byte) mit dst/dend (Datensektoren
+  der BitFAT: Bootblock + Superblock 43 + 2 bis vor „MDR“ im letzten
+  bzw. vorletzten Sektor; ohne MDR nur lesend), spf, mdn (MDFAT-
+  Sektoren), f16 (innere Cluster >= 4085), jm (MSDSP), ver (Version im
+  Packkopf, aus dem ersten gepackten Cluster, sonst JM 0 / DS 2 wie
+  dmsdos), dirty, busy. Segment jetzt Kopf + Stücke + 42 KB: Cluster,
+  gepackt, zwei FAT-Sektoren, Packer 4.096 Köpfe + 8.192 Ketten (Lehre:
+  `DB_SIZE` > 32.767 als `int` wurde negativ – kseg_alloc bekam einen
+  Riesenwert, „kein Platz mehr frei“; Konstanten mit U). `dbl_io`:
+  Bootblock/reserviert, FAT (Kopie 2 der inneren BPB liest Kopie 1,
+  Schreiben dorthin verworfen – der CVF hat nur eine), Stamm direkt;
+  Datensektor in den Cluster-Puffer, `dirty`. `dbl_sync`: Nullsektoren
+  am Ende weglassen (h), `dz_pack` (eigener Packer, Gegenstück zum
+  Entpacker: Hash über 3 Byte, Ketten bis 16 tief, Abstand bis 4.414,
+  nie über eine 512-Byte-Grenze, Gleichlauf 113Fh an jeder Grenze und
+  am Ende) – nur wenn mindestens ein Sektor gespart wird, sonst roh;
+  `bf_alloc` sucht l freie Sektoren am Stück ab `hint` (Wort FFFFh
+  überspringen), schreibt Daten, setzt BitFAT, hängt MDFAT um, gibt die
+  alten frei; kein Platz -> an Ort und Stelle, wenn der neue nicht
+  größer ist, sonst -3 (fat.c reicht -2/-3 jetzt als IFS_WP/IFS_FULL
+  durch). `dbl_fatw`: neuer FAT-Sektor gegen den alten – Einträge
+  ungleich 0 -> 0 geben MDFAT-Eintrag und Sektoren frei (`dbl_free`);
+  FAT12 über die Sektorgrenze mit je einem Byte der Nachbarsektoren.
+  Sync-Punkte: Clusterwechsel, kernel.c `klock_leave` am Ende jeder
+  Operation (`loop_vsync(vkey - 1)` unter der Laufwerkssperre), vor dem
+  Wechsel der Laufwerkssperre in vol_lock, `blk_flush` (`loop_sync_all`:
+  nur Loops, deren Laufwerk niemand hält und die nicht `busy` sind;
+  `vk_owner` dafür nicht mehr static), loop_drop. Grenzen: scheitert das
+  Schreiben erst am Ende einer Operation (voll), bleibt der Cluster
+  gepuffert und wird beim nächsten Mal versucht – die Operation selbst
+  meldet dann keinen Fehler; freier Platz = der des inneren FAT (keine
+  Schätzung wie MS-DOS); DoubleSpace-Version bei leeren DS-Containern
+  geraten (2). Erstes Codesegment 65.502 Byte (18 frei!), KTEXT2 65.323
+  (213 frei!) – vor weiterem Kernelcode Platz schaffen (Seltenes nach
+  KTEXT3 oder ein viertes Segment).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
