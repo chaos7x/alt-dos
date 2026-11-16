@@ -925,7 +925,9 @@ geschätzten Packrate, Vorgabe 2:1, größer angelegt), `PACKDISK /CHECK
 Datei [/F]` prüft einen nicht eingehängten Container (MDFAT gegen BITFAT
 und FAT, Überschneidungen, verlorene Cluster), zeigt Packrate und
 geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT; `/V` zeigt die ersten Abweichungen mit Cluster und MDFAT-Eintrag
-und zählt die Packart (Kopf JM/DS) aller gepackten Cluster. Geschrieben
+und zählt die Packart (Kopf JM/DS) aller gepackten Cluster. Schalter und
+Dateiname dürfen in beliebiger Reihenfolge stehen (`PACKDISK C:\X.CVF
+/V /CHECK`). Geschrieben
 wird in der Packart, die der Container schon enthält (MS-DOS 6.22 legt
 auch DriveSpace-Container mit der Kennung „MSDBL6.0“ an). In 86Box
 geprüft: unter AT-DOS in einen Container von MS-DOS 6.22 geschrieben,

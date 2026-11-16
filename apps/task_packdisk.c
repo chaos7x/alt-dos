@@ -100,16 +100,36 @@ static void hexn(unsigned long v, unsigned d)
     puts(b);
 }
 
-static char *opt(char *p, const char *o)   /* "/X" in der Zeile -> dahinter */
+/* Schalter "/X" an beliebiger Stelle der Zeile -> Zeiger dahinter.
+   Nur am Wortanfang; ohne ':' am Ende muss der Schalter dort enden
+   (sonst traefe "/V" auch "/V:Name"). */
+static char *opt(char *p, const char *o)
 {
     unsigned n = slen(o), k;
-    for (; *p; p++) {
+    for (p = skip(p); *p; p = next_word(p)) {
         if (*p != '/')
             continue;
         for (k = 1; k < n && up(p[k]) == o[k]; k++)
             ;
-        if (k == n)
+        if (k < n)
+            continue;
+        if (o[n - 1] == ':' || !p[n] || p[n] == ' ' || p[n] == '\t' || p[n] == '/')
             return p + n;
+    }
+    return 0;
+}
+
+/* n-tes Wort der Zeile, das kein Schalter ist (0 = erstes) */
+static int posw(char *p, unsigned n, char *b, unsigned len)
+{
+    b[0] = 0;
+    for (p = skip(p); *p; p = next_word(p)) {
+        if (*p == '/')
+            continue;
+        if (!n--) {
+            word(p, b, len);
+            return 1;
+        }
     }
     return 0;
 }
@@ -130,8 +150,8 @@ static int create(char *rest)
     char *p, *q;
     unsigned long bb, mdf, fatc, rootc, dst;
 
-    rest = word(skip(rest), name, FAPI_PATHLEN);
-    word(skip(rest), tmp, 16);
+    posw(rest, 0, name, FAPI_PATHLEN);
+    posw(rest, 1, tmp, 16);
     mb = (unsigned)num(tmp);
     d3 = opt(rest, "/DS3") != 0;
     ratio = (p = opt(rest, "/RATIO:")) != 0 ? (unsigned)num(p) : 2;
@@ -494,10 +514,7 @@ static int check(char *rest)
     unsigned char *e, m, __far *p;
     fix = opt(rest, "/F") != 0;
     verb = opt(rest, "/V") != 0;
-    rest = skip(rest);                  /* Schalter vor dem Namen        */
-    while (*rest == '/')
-        rest = skip(next_word(rest));
-    word(rest, name, FAPI_PATHLEN);
+    posw(rest, 0, name, FAPI_PATHLEN);
     if (!name[0]) {
         puts("Aufruf: PACKDISK /CHECK Datei [/F] [/V]\r\n");
         return 4;
@@ -745,12 +762,11 @@ void main(void)
     char *p;
     int rc;
     DosGetArgs(args);
-    p = skip(args);
-    word(p, tmp, 16);
-    if (same(tmp, "/CREATE"))
-        rc = create(next_word(p));
-    else if (same(tmp, "/CHECK"))
-        rc = check(next_word(p));
+    p = skip(args);                     /* Schalter in jeder Reihenfolge */
+    if (opt(p, "/CREATE") && !opt(p, "/CHECK"))
+        rc = create(p);
+    else if (opt(p, "/CHECK") && !opt(p, "/CREATE"))
+        rc = check(p);
     else {
         puts("Legt komprimierte Laufwerke an und pr\x81" "ft sie.\r\n\r\n"
              "PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n"
@@ -761,6 +777,7 @@ void main(void)
              "  /CHECK   MDFAT, BITFAT und FAT pr\x81" "fen, Packrate zeigen\r\n"
              "  /F       Fehler in BITFAT/MDFAT beheben\r\n"
              "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n\r\n"
+             "Schalter d\x81rfen in beliebiger Reihenfolge stehen.\r\n"
              "Einh\x84ngen mit LOOP X: Datei, aush\x84ngen mit LOOP X: /D.\r\n");
         rc = 4;
     }
