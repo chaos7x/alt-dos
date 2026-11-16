@@ -913,6 +913,13 @@ des inneren Laufwerks (ohne Schätzung der Packrate). Ebenso DriveSpace 3
 (Windows 95 Plus!/98, große Laufwerke bis 2 GB mit 32-KB-Clustern):
 gelesen werden alle Arten (JM, SQ, ungepackt, zerstückelte Cluster),
 geschrieben wird JM; jeder solche Container braucht 64 KB zusätzlich.
+`PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]` legt einen
+leeren Container an (DriveSpace-6.22-Format bis 512 MB, mit `/DS3`
+DriveSpace-3-Format bis 2047 MB; das innere Laufwerk wird mit der
+geschätzten Packrate, Vorgabe 2:1, größer angelegt), `PACKDISK /CHECK
+Datei [/F]` prüft einen nicht eingehängten Container (MDFAT gegen BITFAT
+und FAT, Überschneidungen, verlorene Cluster), zeigt Packrate und
+geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT.
 Höchstens 4 zugleich; DOS-Boxen
 sehen die Laufwerke über den Redirector, auch zum Schreiben. In
 `LINUX.MAC`: `mount` und `umount`. Auf Setup-Diskette 2.

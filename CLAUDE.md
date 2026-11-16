@@ -1805,6 +1805,34 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   fsck des inneren und des Trägerlaufwerks sauber, 17 Dateien gleich.
   Erstes Codesegment 58.454, KTEXT4 18.881, DGROUP 61.682 Byte. Nicht
   geprüft: ein echter Container aus Windows 95 Plus!/98 (beim Nutzer).
+  PACKDISK Stufe 1 erledigt (16.11.2026, `apps/task_packdisk.c`, nur auf
+  der Platte – HDDOS): `/CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]`
+  legt einen leeren Container an – Superblock (Kopie des Bootblocks +
+  MSDSP6.0, 36/39/41/43/45, Version 2 bzw. 3, 57 „16  “/„12  “, 62
+  Größe in MB), BITFAT ab Sektor 1, MDFAT (dcluster -2), Bootblock
+  (innen: 1 reservierter Sektor = Bootblock, eine FAT, 512 Stamm-
+  einträge, F8h), FAT direkt dahinter, Stamm (mit Bezeichnung), Daten,
+  „MDR“ im letzten Sektor; Aufteilung in 6 Runden angenähert (innen =
+  Datensektoren × Packrate, höchstens 65.518 Cluster, FAT12 unter 4.085),
+  Datenbereich per DosNewSize (Nullen). DS6 bis 512 MB, DS3 bis 2047 MB.
+  `/CHECK Datei [/F]`: Größe über DosFindEntry im Verzeichnis (DosSeek
+  meldet die Stelle nicht zurück), Belegung der Datensektoren als Bitmap
+  in bis zu 8 DosAllocSeg-Segmenten (4 Mi Sektoren = 2 GB); Durchgang 1
+  MDFAT gegen FAT (verloren = belegt im MDFAT, frei im FAT; /F nullt den
+  Eintrag), Längen, Bereiche, Stücklisten, Überschneidungen; Durchgang 2
+  BITFAT gegen die Bitmap (/F schreibt sie neu). Packrate in Zehnteln und
+  geschätzter freier Platz (ohne 32-Bit-Mul/Div: `mulu`, `udiv`). Ein
+  eingehängter Container ist in Benutzung (Meldung „erst LOOP X: /D“).
+  ERRORLEVEL 0/1/2 (behoben)/3/4. In QEMU geprüft: 20-MB-DS6 (innen
+  FAT16 40 MB) und 10-MB-DS3 (innen FAT12 20 MB) angelegt, eingehängt,
+  XCOPY /S, CHKDSK, ausgehängt, /CHECK „Keine Fehler“; der DS3-Test-
+  container mit SQ und Stücken ebenso; eine Kopie mit drei eingebauten
+  Fehlern (BITFAT-Bit gelöscht, freies Bit gesetzt, verlorener Cluster)
+  – alle drei gemeldet, /F behoben, danach fehlerfrei, Inhalte gleich;
+  außerhalb cvfchk.py/cvfchk3.py 0 Fehler, fsck der inneren Abbilder und
+  des Trägers sauber, 30 Dateien gleich. Unbekannt bleibt, ob MS-DOS
+  6.22/Windows einen von PACKDISK angelegten Container annimmt (beim
+  Nutzer in 86Box). Offen: `/COMPRESS`.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

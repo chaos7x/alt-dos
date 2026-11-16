@@ -179,7 +179,9 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    gepuffert, gepackt beim Wechsel und am Ende jeder Operation, BitFAT/
    MDFAT gepflegt, frei gewordene Cluster aus FAT-Änderungen erkannt.
    Offen: `PACKDISK /CHECK`, `LOOP /INFO` (Packrate, freier Platz).
-6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, Start von C:.
+6. `PACKDISK /CREATE` und `/CHECK [/F]` – erledigt (16.11.2026, siehe
+   CLAUDE.md). Offen: `/COMPRESS` (vorhandenes Laufwerk umwandeln),
+   Größe ändern, Defragmentieren im Container, Start von C:.
 7. DriveSpace 3 lesen und schreiben – erledigt (16.11.2026, siehe
    CLAUDE.md): 5-Byte-MDFAT, zerstückelte Cluster lesen und freigeben,
    SQ = rohes Deflate entpacken, geschrieben wird JM (laut dmsdos nimmt
