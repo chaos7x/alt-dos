@@ -2461,7 +2461,25 @@ static void int10(struct v86_frame *f, int t)
    je Kerneltakt; mehr als sens/4 + 1 davon -> bis zum naechsten Takt
    schlafen. Ohne INI-Wert nicht bei Spielen mit eigenem Takt (pit_rl) -
    Digger fragt in seiner Warteschleife staendig ab und lief langsamer. */
-static void idle_poll(int t)
+/* Hat die Box seit dem letzten v86_poll in den Textbildschirm geschrieben?
+   (Dirty-Bit von B8/B9; v86_poll loescht es) */
+static int scr_written(int t)
+{
+    unsigned short w[8];
+    unsigned long e;
+
+    if (!pt_box[t] || vga_raw[t])
+        return 0;
+    win_save(w);
+    scratch_map(PG_LIN(pt_box[t]), 4095);
+    e = get32(SCRATCH, 0xB8) | get32(SCRATCH, 0xB9);
+    win_restore(w);
+    return (e & PTE_D) != 0;
+}
+
+/* vid: Abfrage des Strahlruecklaufs (3DAh/3BAh) - wer dabei in den
+   Bildschirm schreibt (NC, Programme gegen CGA-Schnee), wartet nicht */
+static void idle_poll(int t, int vid)
 {
     unsigned sens = idle_sens[t] ? idle_sens[t] - 1u : 75u, tk;
     if (sens >= 100 || (!idle_sens[t] && pit_rl[t]))
@@ -2473,6 +2491,8 @@ static void idle_poll(int t)
     }
     if (++idle_n[t] >= sens / 4 + 1) {
         idle_n[t] = 0;
+        if (vid && scr_written(t))
+            return;
         kf_box_ctl(BOX_SLEEP, 1);
     }
 }
@@ -2732,7 +2752,7 @@ static void svc(int n, struct v86_frame *f, int t)
                 AX = (unsigned)k;
                 idle_n[t] = 0;
             } else
-                idle_poll(t);                   /* fragt nur ab          */
+                idle_poll(t, 0);                /* fragt nur ab          */
         } else if (AH == 0x02 || AH == 0x12) {
             k = bios_shift();
             AL = (unsigned char)k;
@@ -2753,7 +2773,7 @@ static void svc(int n, struct v86_frame *f, int t)
         }
         st = rtc_stamp();
         if (AH == 0x00) {
-            idle_poll(t);                       /* Warteschleife?        */
+            idle_poll(t, 0);                    /* Warteschleife?        */
             DX = rd16(BDA, 0x6C);
             CX = rd16(BDA, 0x6E);
             AL = rd8(BDA, 0x70);
@@ -3559,7 +3579,7 @@ static unsigned char vga_pin(int t, unsigned p)
     case 0x3D5: return crt_idx[t] < 25 ? q[6 + crt_idx[t]] : 0xFF;
     case 0x3DA:
         st[ST_AFF] = 0;
-        idle_poll(t);
+        idle_poll(t, 1);
         tgl[t] ^= 0x09;
         return (unsigned char)(tgl[t] & 0x09);
     }
@@ -3699,7 +3719,7 @@ static unsigned char port_in(int t, unsigned p)
         return v;
     }
     case 0x3DA: case 0x3BA:
-        idle_poll(t);
+        idle_poll(t, 1);
         tgl[t] ^= 0x09;                         /* Ruecklauf kommt und geht */
         return (unsigned char)(tgl[t] & 0x09);
     case 0x3D5:

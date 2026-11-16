@@ -3940,6 +3940,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Erkennung bei Spielen mit eigenem Takt (`pit_rl`) aus (Digger). Test
   POLL.COM (fragt 3DAh und INT 16h 01 ab) per START im Hintergrund,
   BUSY 60000 vorn: 10 s mit Vorgabe, mit 100 nach über 2 min nicht fertig.
+  Rücklauf beim Schreiben (vom Nutzer gemeldet: NC in der Box baut das
+  Bild langsam auf): wer vor jedem Zeichen auf 3DAh wartet (gegen CGA-
+  Schnee), las je Bild ~4.000-mal 3DAh und schlief ~200 Takte. Jetzt
+  `idle_poll(t, vid)`: beim Erreichen der Schwelle über 3DAh/3BAh erst
+  `scr_written` – Dirty-Bit der PTE B8/B9 (v86_poll löscht es) gesetzt
+  -> kein Schlaf. In QEMU mit SNOW.COM (10 Bilder, je Zeichen auf den
+  Rücklauf warten) geprüft: 384 -> 7 BIOS-Takte; POLL.COM (nur 3DAh +
+  INT 16h) im Hintergrund nimmt BUSY vorn weiter keine Zeit.
   `XMS_MEMORY_LIMIT=-1` bzw. `EMS_MEMORY_LIMIT=-1` (Wunsch des Nutzers)
   = so viel, wie die Box ansprechen kann (63.424 KB XMS, 32.768 KB EMS):
   BOXSHELL `pnum` liefert bei `-` FFFFh, der Kernel kappt.

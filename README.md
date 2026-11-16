@@ -618,7 +618,9 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   `IDLE_SENSITIVITY=n` (0–100 wie OS/2, Vorgabe 75, 100 = aus: wer im
   Takt öfter leer die Tastatur, die Uhr oder den Strahlrücklauf abfragt,
   gibt die Zeitscheibe ab; ohne Angabe nicht bei Spielen mit eigenem
-  Takt), `ADLIB_COPY=ON` (Vorgabe aus: der Kernel schreibt die AdLib-
+  Takt; wer dabei in den Textbildschirm schreibt – wie der Norton
+  Commander, der vor jedem Zeichen auf den Rücklauf wartet –, gilt nicht
+  als untätig), `ADLIB_COPY=ON` (Vorgabe aus: der Kernel schreibt die AdLib-
   Register der Box von Anfang an mit, damit ihre Instrumente zurückkommen,
   wenn zwischendurch ein FAPI-Programm wie `PLAY /FM` gespielt hat; ohne
   Angabe nur, wenn beim Zugriff der Box schon eines FM offen hat – das
