@@ -85,7 +85,8 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Bootsektor und Partitionstyp 0Bh -> 06h, 0Ch -> 0Eh; lange Namen im
   EA-Format bleiben, VFAT-Namen ebenso; `/LFN:VFAT` bzw. `/LFN:EA`
   zusammen mit `/FS:` legt die Form der langen Namen danach fest, in
-  beide Richtungen). `CONVERT X: /LFN:VFAT` bzw.
+  beide Richtungen; den geänderten Partitionstyp liest der Kernel gleich
+  neu ein, hin und zurück geht ohne Neustart). `CONVERT X: /LFN:VFAT` bzw.
   `/LFN:EA` wandelt die langen Namen eines FAT-Laufwerks (FAT12/16/32,
   auch Disketten) nachträglich in die eine oder andere Form (hin und
   zurück; Zeichen außerhalb CP437 werden beim Weg nach EA zu `_`; der

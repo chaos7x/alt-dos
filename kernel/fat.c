@@ -2815,11 +2815,51 @@ void __far vol_move(int from, int to)
     vol[to] = tmp;
 }
 
+/* Partitionstyp neu aus MBR/EBR-Kette lesen (wie Linux nach partprobe):
+   CONVERT aendert ihn, DosQFSInfo meldete sonst bis zum Neustart den
+   alten. Eintrag ueber den Startsektor gefunden. Nur Platten (keine
+   Diskette, kein Loop), nur Partitionen. */
+static void pt_reread(int d)
+{
+    int dev = vol[d].blk, i, n;
+    unsigned char __far *b, __far *e;
+    unsigned long ext = 0, ebr = 0, st;
+
+    if (!vol[d].part || !vol[d].ptype || blk[dev].drv < 0 || blk[dev].rem)
+        return;
+    for (n = 0; n < 32; n++) {
+        if (blk_read(dev, ebr))
+            return;
+        b = MK_FP(DMABUF, 0);
+        if (b[510] != 0x55 || b[511] != 0xAA)
+            return;
+        for (i = 0; i < 4; i++) {
+            e = b + 0x1BE + 16 * i;
+            st = ebr + *(unsigned long __far *)(e + 8);
+            if (e[4] && e[4] != 0x05 && e[4] != 0x0F && st == vol[d].start) {
+                vol[d].ptype = e[4];
+                return;
+            }
+        }
+        for (i = 0; i < 4 && b[0x1BE + 16 * i + 4] != 0x05 &&
+                            b[0x1BE + 16 * i + 4] != 0x0F; i++)
+            ;
+        if (i == 4)
+            return;
+        st = *(unsigned long __far *)(b + 0x1BE + 16 * i + 8);
+        if (!ext)
+            ebr = ext = st;
+        else
+            ebr = ext + st;
+    }
+}
+
 /* nach DosOpenDrive (Sperre aufgehoben): alles Zwischengespeicherte des
    Laufwerks verwerfen und neu einhaengen - CHKDSK /F kann FAT und
    Verzeichnisse geaendert haben */
 void __far vol_reset(int d)
 {
+    pt_reread(d);
     fat_flush();
     if (fc_drive == d) {
         fc_drive = -1;

@@ -611,6 +611,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   gefundenen (0C/0E -> 0C bzw. 0E). `/LFN:EA` ohne VFAT-Namen legt eine
   leere `EA DATA. SF` an (Cluster 0, Größe 0 – ea_add hängt an) als
   Merker für AUTO (vom Nutzer gemeldet: auf FAT32 nahm AUTO sonst VFAT).
+  Kernel liest den Partitionstyp jetzt selbst neu (Anregung des Nutzers:
+  „wie Linux“): fat.c `pt_reread` in `vol_reset` (nach jedem Entsperren
+  von DosOpenDrive – CHKDSK, CONVERT, FORMAT) sucht in MBR und EBR-Kette
+  den Eintrag mit dem Startsektor des Laufwerks und übernimmt den Typ
+  (nur Partitionen fester Platten, keine Disketten/Loops/Wechselplatten).
+  In QEMU geprüft: FAT32 -> FAT16 -> FAT32 ohne Neustart (der zweite
+  Schritt scheiterte vorher an „Unbekannter Partitionstyp“), Typ 0Ch,
+  fsck sauber, Inhalte gleich.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das
