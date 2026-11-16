@@ -1860,6 +1860,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (ab 1.123, Daten ab 1.107; Aufbau: Bootblock 801, MDFAT ab 258,
   dcluster 0011h) – unschädlich, Herkunft offen (evtl. von MS-DOS
   reserviert); dort kein /F, unser Schreibweg nimmt nur freie Bits.
+  Danach schrieb der Nutzer unter AT-DOS in den Container (257 Cluster
+  mehr, /CHECK und CHKDSK sauber, die 17 unverändert); ScanDisk von
+  MS-DOS 6.22 meldet seitdem in E:\NC „Daten, die mit DoubleSpace
+  komprimiert wurden“ (braucht DRVSPACE.MR1 + DBLSPACE.BIN) – MS-DOS
+  hält unsere gepackten Cluster für DoubleSpace-Daten. Unser Packer
+  schreibt „JM“ 00 ver (ver aus dem ersten gelesenen gepackten Cluster,
+  sonst 0) und Bit 21 des MDFAT-Eintrags immer 0. Zur Klärung zählt
+  `/CHECK … /V` jetzt Kopf (4 Byte) und Bit 21 aller gepackten Cluster
+  (`survey`). Bis dahin echte Container nicht beschreiben.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

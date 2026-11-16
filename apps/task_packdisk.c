@@ -419,6 +419,74 @@ static void explain(unsigned long ncl, int f16)
     }
 }
 
+/* /V: Kopfbytes der gepackten Cluster und Bit 21 des MDFAT zaehlen
+   (MS-DOS 6.22 unterscheidet DoubleSpace- und DriveSpace-Daten je
+   Cluster - welches Merkmal es nimmt, soll das zeigen) */
+static unsigned long sv_n[8], sv_cl[8];
+static unsigned char sv_h[8][5];
+static void survey(unsigned long ncl)
+{
+    unsigned long cl, k, s, r21[2];
+    unsigned char *e, h[5];
+    unsigned i, j, nk = 0;
+
+    r21[0] = r21[1] = 0;
+    for (cl = 2; cl < ncl + 2; cl++) {
+        if ((e = md_ent((unsigned)cl)) == 0)
+            break;
+        if (d3) {
+            if (!(e[4] & 0x80) || (e[4] & 0x40) || (e[3] & 2))
+                continue;
+            s = e[0] | ((unsigned)e[1] << 8) | ((unsigned long)e[2] << 16);
+            h[4] = e[3] & 1;
+        } else {
+            k = rd32(e);
+            if (!(k & 0x80000000UL))
+                continue;
+            h[4] = (unsigned char)((k >> 21) & 1);
+            if (k & 0x40000000UL) {     /* ungepackt: nur Bit 21 zaehlen */
+                r21[h[4]]++;
+                continue;
+            }
+            s = k & 0x1FFFFFUL;
+        }
+        if (rd(s + 1, sec, 1))
+            continue;
+        h[0] = sec[0]; h[1] = sec[1]; h[2] = sec[2]; h[3] = sec[3];
+        for (i = 0; i < nk; i++) {
+            for (j = 0; j < 5 && sv_h[i][j] == h[j]; j++)
+                ;
+            if (j == 5)
+                break;
+        }
+        if (i == nk) {
+            if (nk == 8)
+                i = 7;                  /* Rest unter dem letzten        */
+            else {
+                for (j = 0; j < 5; j++)
+                    sv_h[nk][j] = h[j];
+                sv_cl[nk++] = cl;
+            }
+        }
+        sv_n[i]++;
+    }
+    for (i = 0; i < nk; i++) {
+        puts("Gepackt, Kopf ");
+        for (j = 0; j < 4; j++) {
+            hexn(sv_h[i][j], 2);
+            putc(' ');
+        }
+        puts(d3 ? "Bit0 " : "Bit21 ");
+        putc((char)('0' + sv_h[i][4]));
+        say(": ", sv_n[i], " Cluster");
+        say(", erster ", sv_cl[i], "\r\n");
+    }
+    if (!d3) {
+        say("Ungepackt: Bit21 0: ", r21[0], "");
+        say(", Bit21 1: ", r21[1], "\r\n");
+    }
+}
+
 static int check(char *rest)
 {
     unsigned long units, tot, din, ncl, used = 0, stor = 0, unp = 0, cl, s, k, bf_bad = 0, bf_lost = 0;
@@ -633,8 +701,10 @@ static int check(char *rest)
         if (x && fix && wr(1 + (k >> 12), sec))
             n_err++;
     }
-    if (verb)
+    if (verb) {
         explain(ncl, f16);
+        survey(ncl);
+    }
     DosClose(hd);
 
     say("", used, " Cluster belegt");
