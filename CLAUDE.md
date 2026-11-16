@@ -1702,7 +1702,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - **Loop-Laufwerke und DriveSpace** (Konzept 15.11.2026, Version 6.1):
   `docs/LOOP-DBLSPACE.md` – Datei als Blockgerät (ISO, IMG, VHD), zuerst
-  über eine Extent-Liste, darauf DBLSPACE.SYS im DriveSpace-6.x-Format.
+  über eine Extent-Liste, darauf die Loop-Art im DriveSpace-6.x-Format (Werkzeug PACKDISK).
   **Big Lock abbauen über die Versionen** (Wunsch des Nutzers: `klock`
   ist vor 7.0 weg): `docs/BIGLOCK.md`. Noch kein Code.
 
@@ -4345,9 +4345,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   der Grundlage: **Laufwerk aus einer Datei** (Loop-Device) im Kernel –
   eine Datei auf einem eingehängten Laufwerk wird als Blockgerät
   eingehängt (auch für Disketten- und Plattenabbilder nützlich). Darauf
-  `DBLSPACE.IFS` (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6 zum
-  Austausch), Werkzeuge `DBLSPACE.EXE` (anlegen, einhängen) und
-  `UDBLSPACE.EXE` (CHKDSK). Zurückgestellt auf 6.1 (Entscheidung des
+  die Loop-Art LOOPK_DBL (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6
+  zum Austausch), Werkzeug `PACKDISK` (anlegen, einhängen, /CHECK). Name
+  (Entscheidung des Nutzers, 16.11.2026): eigene Programme tragen keine
+  Microsoft-Produktnamen; DoubleSpace/DriveSpace nur beschreibend für das
+  Format, `DBLSPACE.nnn`/`DRVSPACE.nnn` und `MSDBL6.0`/`MSDSP6.0` bleiben
+  (gehören zum Format). Zurückgestellt auf 6.1 (Entscheidung des
   Nutzers, 12.11.2026) – gehört nicht mehr zum Release von 6.0.
 - SCSI je Gerät für den Adaptec – erledigt (Wunsch des Nutzers, 15.11.2026:
   der AHA-2940UW ist sein Haupt-Controller, damals im echten Pentium

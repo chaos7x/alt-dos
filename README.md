@@ -906,7 +906,7 @@ vorher das Sauber-Bit). In CONFIG.SYS hängt `LOOP=[X:,]Datei[,/RO]`
 (bis zu vier Zeilen) beim Start ein. Auch komprimierte Laufwerke von
 MS-DOS 6.0–6.22 (`DBLSPACE.nnn` von DoubleSpace, `DRVSPACE.nnn` von
 DriveSpace) lassen sich so einhängen, vorerst nur lesend (`LOOP` zeigt
-„DrvSpace“); DriveSpace 3 (Windows 95/98) noch nicht. Höchstens 4 zugleich; DOS-Boxen
+„gepackt“); DriveSpace 3 (Windows 95/98) noch nicht. Höchstens 4 zugleich; DOS-Boxen
 sehen die Laufwerke über den Redirector, auch zum Schreiben. In
 `LINUX.MAC`: `mount` und `umount`. Auf Setup-Diskette 2.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,

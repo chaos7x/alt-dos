@@ -13,7 +13,7 @@ Umsetzung über eine beim Einhängen ermittelte Liste ihrer Plattenbereiche
 verschachtelte Dateisystemaufrufe. Damit gehen ISO-Dateien (über
 ISO9660.IFS, unter AT-DOS selbst ohne MSCDEX), Disketten- und
 Plattenabbilder, feste VHDs aus 86Box. Darauf setzt die Komprimierung als
-Übersetzer-Treiber **DBLSPACE.SYS** im DriveSpace-6.x-Format auf; das
+Loop-Art im DriveSpace-6.x-Format auf (Werkzeug **PACKDISK**); das
 innere FAT bedient weiter `fat.c`.
 
 ## Loop-Laufwerk
@@ -34,7 +34,7 @@ durchs Dateisystem (wiedereintrittsfester Kernel + eigener Faden je
 Gerät).
 
 **Schnittstelle mit austauschbarem Backend** (Funktionszeiger lesen/
-schreiben). LOOP-Befehl, FAPI, `LOOP=` und DBLSPACE.SYS kennen nur
+schreiben). LOOP-Befehl, FAPI, `LOOP=` und PACKDISK kennen nur
 „Blockgerät aus Datei“, nie das Verfahren:
 
 - Backend 1 (6.1): Extents.
@@ -121,7 +121,7 @@ vermerken. Stac-/Microsoft-Patente von ca. 1990–95 sind abgelaufen.
 ```
 fat.c (inneres FAT12/16)
   |  Blockgerät X:, 512, virtuelle Sektoren
-DBLSPACE.SYS – MDFAT, BitFAT, Kompression, Cluster-Cache
+Loop-Art LOOPK_DBL – MDFAT, BitFAT, Kompression, Cluster-Cache
   |  blk_read_to/blk_write_from
 Loop-Gerät über C:\DBLSPACE.000
   |
@@ -135,9 +135,13 @@ Träger C: – IDE/NCR/AIC
   umhängen, alten Platz frei – in dieser Reihenfolge. Unpackbares roh.
 - Cluster-Cache 4–8 Cluster im eigenen Kernelsegment (DH_KSEG),
   verzögert; DRV_FLUSH/SHUTDOWN leeren.
-- Freier Platz: geschätzt wie MS-DOS; `DBLSPACE /INFO` zeigt den Heap.
-- Werkzeuge: `DBLSPACE /MOUNT /UNMOUNT /INFO /CREATE`, später
-  `/COMPRESS`; `UDBLSPACE.EXE` (MDFAT gegen BitFAT/FAT), inneres FAT
+- Freier Platz: geschätzt wie MS-DOS; `PACKDISK /INFO` zeigt den Heap.
+- Werkzeug `PACKDISK` (Name: Entscheidung des Nutzers, 16.11.2026 – keine
+  Microsoft-Produktnamen für eigene Programme; die Formate DoubleSpace/
+  DriveSpace werden nur beschreibend genannt, Dateinamen `DBLSPACE.nnn`/
+  `DRVSPACE.nnn` und Kennungen bleiben, weil sie zum Format gehören):
+  `PACKDISK /MOUNT /UNMOUNT /INFO /CREATE`, später `/COMPRESS`;
+  `PACKDISK /CHECK` (MDFAT gegen BitFAT/FAT), inneres FAT
   über UFAT.
 - Buchstabe: neues Laufwerk; Tausch C:/H: erst, wenn Start davon geklärt.
 - DOS-Box sieht es über den Redirector.
@@ -166,8 +170,8 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    loop.c (`LOOP E: C:\DBLSPACE.000`): Kennung im Superblock, MDFAT,
    Entpacker DS/JM, ein Cluster-Puffer. Formatdetails nach der dmsdos-
    Doku geprüft, ein echter 6.22-Container steht noch aus.
-5. Schreibend (Packer, BitFAT, MDFAT), Cluster-Cache, UDBLSPACE.EXE.
-6. `/CREATE`, evtl. `/COMPRESS`, DriveSpace 3 lesen, Start von C:.
+5. Schreibend (Packer, BitFAT, MDFAT), Cluster-Cache, `PACKDISK /CHECK`.
+6. `PACKDISK /CREATE`, evtl. `/COMPRESS`, DriveSpace 3 lesen, Start von C:.
 
 Parallel (BIGLOCK.md, 6.1): fat.c-Zustand je Operation, dann Tiefe 2 und
 Backend 2.
@@ -193,7 +197,7 @@ Offen: Name `LOOP` oder `MOUNT`; 6.22-Container zum Testen beim Nutzer?
    Zugriffe dahinter lehnt das Loop-Gerät ab (sonst Fremddaten).
 5. **DoubleSpace-Format** vor Stufe 4 an einem echten 6.22-Container in
    86Box prüfen; danach Container und Inhalt mit ScanDisk von MS-DOS
-   6.22 gegenprüfen, nicht nur mit UDBLSPACE.
+   6.22 gegenprüfen, nicht nur mit `PACKDISK /CHECK`.
 6. Container liegt versteckt/System/schreibgeschützt im Stamm –
    `OPEN_RW` darf dafür nicht am Attribut scheitern (eigener Merker
    beim Einhängen).

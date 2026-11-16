@@ -31,7 +31,7 @@ static unsigned put_drives(unsigned long m)  /* -> Zeichen            */
 static void list(void)
 {
     unsigned i, n = 0, k, kd;
-    static const char *kind[6] = { "?", "ISO", "Abbild", "Platte", "VHD", "DrvSpace" };
+    static const char *kind[6] = { "?", "ISO", "Abbild", "Platte", "VHD", "gepackt" };
     for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++) {
         if (!li.drives)
             continue;
