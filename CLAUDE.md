@@ -2009,8 +2009,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Komprimierungs-Agenten). loop.c nimmt bei Version 2 JM (6.22 schreibt
   „MSDBL6.0“). In QEMU geprüft: DS6 und DS3 mit 12 MB angelegt, XCOPY
   \DOS, CHKDSK, /CHECK, cvfchk/cvfchk3 0 Fehler, fsck innen und außen
-  sauber, 105 Dateien gleich. Offen: Annahme durch Windows 98/MS-DOS
-  (beim Nutzer in 86Box).
+  sauber, 105 Dateien gleich. Beim Nutzer danach: MS-DOS-ScanDisk
+  „FAT-Datenträgerbyte fehlt“, Windows 98 DS6 „beschädigt, Ladefehler
+  13“ (DRVSPACE045, also als Format erkannt), DS3 weiter DRVSPACE474.
+  Zweiter Schritt: beide echten Container haben die FAT immer mit 256
+  Sektoren (für 65.536 Einträge) und den Datenbeginn direkt hinter dem
+  Stamm (2Bh = res + 256 + 32, schon Vielfaches von spc) – PACKDISK nahm
+  eine knappe FAT und eine Lücke vor den Daten; jetzt `spf = 256` fest.
+  `/CHECK /V` zeigt zusätzlich die ersten 64 Byte des Bootblocks und 8
+  Byte der FAT. In QEMU geprüft (12 MB DS6 mit FAT12, 12 MB DS3, 20 MB
+  DS6 mit FAT16: Superblock 29h/2Bh/2Dh = 0110h/0130h/0011h wie MS-DOS;
+  XCOPY \DOS, CHKDSK, /CHECK, cvfchk 0 Fehler, fsck innen/außen
+  sauber, 105 Dateien gleich). Offen: Annahme durch Windows 98/MS-DOS;
+  für DS3 fehlt eine Vorlage, die Windows 98 selbst neu angelegt hat
+  (der verglichene Container war umgewandelt, Version 0).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

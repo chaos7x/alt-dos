@@ -179,7 +179,7 @@ static unsigned cv_spc, cv_quiet;
 static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
 {
     unsigned long T, data = 0, inner, ncl = 0, tot, k;
-    unsigned spc, sh, nbf = 1, nmd = 1, spf = 1, f16 = 0, i, res, drel, dcl;
+    unsigned spc, sh, nbf = 1, nmd = 1, spf = 256, f16 = 0, i, res, drel, dcl;
     unsigned long bb, mdf, fatc, rootc, dst;
 
     spc = d3 ? 64 : 16;
@@ -197,8 +197,9 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         if (ncl > 65518UL)
             ncl = 65518UL;
         f16 = ncl >= 4085;
-        spf = f16 ? (unsigned)((ncl + 2 + 255) >> 8)
-                  : (unsigned)(((ncl + 2) + ((ncl + 2) << 1) + 1023) >> 10);
+        spf = 256;                      /* wie MS-DOS/Windows: FAT immer
+                                           fuer 65.536 Eintraege, Daten
+                                           direkt hinter dem Stamm       */
         nmd = d3 ? (unsigned)ncl / 102 + 3 /* dcl < 100 */
                  : (unsigned)((ncl + dcl + 2 + 127) >> 7) + 1;
         nbf = (unsigned)((data + 4095) >> 12);
@@ -668,6 +669,25 @@ static int check(char *rest)
             hexn(sb[i], 2);
             if ((i & 15) == 15)
                 puts("\r\n");
+        }
+        say("Bootblock (Sektor ", bb, "):\r\n");  /* innerer BPB    */
+        for (i = 0; i < 64; i++) {
+            if (!(i & 15)) {
+                hexn(i, 2);
+                puts(":");
+            }
+            puts(" ");
+            hexn(sec[i], 2);
+            if ((i & 15) == 15)
+                puts("\r\n");
+        }
+        if (rd(fatc, fl, 1) == 0) {
+            say("FAT (Sektor ", fatc, "):");
+            for (i = 0; i < 8; i++) {
+                puts(" ");
+                hexn(fl[i], 2);
+            }
+            puts("\r\n");
         }
     }
 

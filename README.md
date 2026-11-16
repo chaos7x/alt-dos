@@ -937,12 +937,12 @@ DriveSpace-3-Format bis 2047 MB; das innere Laufwerk wird mit der
 geschätzten Packrate, Vorgabe 2:1, größer angelegt; Superblock Feld für
 Feld wie bei Containern von MS-DOS 6.22 bzw. Windows 98: Kennung
 „MSDBL6.0“, FAT 16/32 Sektoren hinter dem Bootblock, Datenbeginn auf
-Clustergrenze, dcluster daraus), `PACKDISK /CHECK
+Clustergrenze, FAT immer 256 Sektoren, dcluster daraus), `PACKDISK /CHECK
 Datei [/F]` prüft einen nicht eingehängten Container (MDFAT gegen BITFAT
 und FAT, Überschneidungen, verlorene Cluster), zeigt Packrate und
 geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT; `/V` zeigt die ersten Abweichungen mit Cluster und MDFAT-Eintrag
 und zählt die Packart (Kopf JM/DS) aller gepackten Cluster, dazu die
-ersten 96 Byte des Superblocks. `PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]` zieht ein
+ersten 96 Byte des Superblocks, Bootblock und FAT-Anfang. `PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]` zieht ein
 Laufwerk (nicht das Startlaufwerk) Datei für Datei in `X:\DRVSPACE.000`
 um: der Container beginnt mit dem freien Platz und wächst, sobald die
 gelöschten Originale Platz gemacht haben; eine Datei liegt immer ganz auf
