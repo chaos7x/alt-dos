@@ -2023,6 +2023,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sauber, 105 Dateien gleich). Offen: Annahme durch Windows 98/MS-DOS;
   für DS3 fehlt eine Vorlage, die Windows 98 selbst neu angelegt hat
   (der verglichene Container war umgewandelt, Version 0).
+  Dritter Schritt (Build 714 beim Nutzer weiter „FAT-Datenträgerbyte
+  fehlt“; Vergleich mit einem frisch von MS-DOS 6.22 angelegten 38-MB-
+  Container per `/CHECK /V`): der innere Bootblock von MS-DOS meldet
+  **zwei FATs** (10h = 2, im Container gibt es nur eine – die zweite
+  spiegelt die erste; der Stamm liegt für das innere Laufwerk hinter
+  beiden), Gesamtzahl 20h = Superblock + 256, Geometrie 32/64, Laufwerk
+  24h = 0, Bezeichnung „COMPRESSED“; der Superblock dagegen 1 FAT und
+  17/6. PACKDISK schreibt das jetzt genauso (loop.c und /CHECK rechneten
+  ohnehin mit der Zahl der FATs aus dem Bootblock). Der MS-DOS-Container
+  hatte Sprung EB 3C (der 236-MB-Container EB 58) und BITFAT/MDFAT für
+  512 MB auch bei 38 MB – PACKDISK legt sie weiter nach /CREATE-Größe an.
+  In QEMU geprüft (12 MB DS6, 12 MB DS3, 20 MB DS6: XCOPY \DOS, CHKDSK,
+  cvfchk 0 Fehler, fsck innen/außen sauber, 105 Dateien gleich).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

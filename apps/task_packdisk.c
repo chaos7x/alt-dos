@@ -242,17 +242,15 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     wr16(sec + 11, 512);
     sec[13] = (unsigned char)spc;
     wr16(sec + 14, res);                /* reserviert: Bootblock + Luecke */
-    sec[16] = 1;                        /* eine FAT                      */
+    sec[16] = 2;                        /* zwei FATs wie MS-DOS: die
+                                           zweite gibt es im Container
+                                           nicht, sie spiegelt die erste */
     wr16(sec + 17, 512);
-    if (tot < 65536UL)
-        wr16(sec + 19, (unsigned)tot);
-    else
-        wr32(sec + 32, tot);
+    wr32(sec + 32, tot + spf);          /* innen mit der zweiten FAT     */
     sec[21] = 0xF8;
     wr16(sec + 22, spf);
-    wr16(sec + 24, 17);                 /* Geometrie wie MS-DOS          */
-    wr16(sec + 26, 6);
-    sec[36] = 0x80;
+    wr16(sec + 24, 32);                 /* Geometrie wie MS-DOS innen    */
+    wr16(sec + 26, 64);
     sec[38] = 0x29;
     DosGetDateTime(dt);
     wr16(sec + 39, dt[1] ^ DosQTicks());    /* Seriennummer              */
@@ -274,7 +272,9 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         sb[3 + i] = "MSDBL6.0"[i];
     for (i = 11; i < 32; i++)
         sb[i] = sec[i];
-    wr16(sb + 19, 0);                   /* Gesamtzahl immer bei 20h      */
+    sb[16] = 1;                         /* Superblock: eine FAT, 17/6    */
+    wr16(sb + 24, 17);
+    wr16(sb + 26, 6);
     wr32(sb + 32, tot);                 /* bestimmt den hoechsten Cluster */
     wr16(sb + 36, (unsigned)mdf - 1);
     sb[38] = 9;                         /* log2 Bytes je Sektor          */
