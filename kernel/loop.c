@@ -1166,7 +1166,8 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         if (raw(i, 0))
             goto bad;
         db->d3 = dbl == 2;
-        db->jm = b[6] == 'S' || db->d3; /* MSDSP: JM, MSDBL: DS; DS3: JM */
+        db->jm = b[6] == 'S' || db->d3 || b[51] == 2;  /* MSDSP, DS3 oder
+                                           Version 2 (6.22): JM, sonst DS */
         db->ver = db->jm ? 0 : 2;       /* bis ein Cluster es verraet    */
         if (db->d3) {
             if ((loop_sel2[i] = kseg_alloc(0x10000UL)) == 0)

@@ -1989,6 +1989,28 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ScanDisk von Windows 98: „DriveSpace-Laufwerk E: enthielt keine
   Fehler“ – Schreiben in echte DriveSpace-3-Container bestätigt. Offen:
   zerstückelte Cluster (keine entstanden).
+  Superblock wie das Original (16.11.2026; Anlass: Windows 98 lehnte
+  einen PACKDISK-Container ab – „DRVSPACE474, mit dieser Version nicht
+  kompatibel“): PACKDISK kopierte den inneren Bootblock in den
+  Superblock, dadurch standen bei 26h 29h (Signatur des erweiterten BPB)
+  und ab 27h Seriennummer/Bezeichnung/„FAT16“ an Stellen, die DriveSpace
+  selbst belegt. Verglichen mit `/CHECK /V` (zeigt jetzt die ersten 96
+  Byte) an einem leeren Container von MS-DOS 6.22 und dem Windows-98-
+  Container: Kennung „MSDBL6.0“ (beide), Sprung EB 58/EB 6E, 0Eh = FAT
+  ab Bootblock (16 bei DS6, 32 bei DS3, innerer Bootblock ebenso
+  reserviert), 13h = 0 und 20h–23h immer die vorgetäuschte Gesamtzahl,
+  18h/1Ah = 17/6, 24h MDFAT − 1, 26h = 9 (log2 Bytes je Sektor), 27h
+  Bootblock, 29h Stamm, 2Bh Daten − 2 als Vielfaches von spc (MS-DOS:
+  304 = 19·16, Windows: 320 = 5·64), 2Dh dcluster = 2Bh / spc − 2
+  (17 bzw. 3 – kein freier Wert), 32h log2 spc, 33h Version (2 bei 6.22,
+  0 bei Windows 98 DS3), 39h „16  “/„12  “ nur DS6, 3Eh Größe in MB.
+  Unbekannt und 0 gelassen: 30h/34h (Windows 98: 1), 36h (6.22: 091Ah,
+  Windows 98: 10C8h), 40h/44h (Windows 98: 14h/0Ah, vermutlich vom
+  Komprimierungs-Agenten). loop.c nimmt bei Version 2 JM (6.22 schreibt
+  „MSDBL6.0“). In QEMU geprüft: DS6 und DS3 mit 12 MB angelegt, XCOPY
+  \DOS, CHKDSK, /CHECK, cvfchk/cvfchk3 0 Fehler, fsck innen und außen
+  sauber, 105 Dateien gleich. Offen: Annahme durch Windows 98/MS-DOS
+  (beim Nutzer in 86Box).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

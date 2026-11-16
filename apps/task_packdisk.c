@@ -17,7 +17,7 @@
  * doc/cvfinfo.doc (GPL, nur gelesen) wie kernel/loop.c: Superblock,
  * BITFAT, MDFAT, Bootblock, FAT, Stamm, Daten, "MDR" im letzten Sektor.
  * Kein Microsoft-Produktname im Programm (Entscheidung des Nutzers);
- * Kennung MSDSP6.0 und Dateiname DRVSPACE.nnn gehoeren zum Format.
+ * Kennung MSDBL6.0 und Dateiname DRVSPACE.nnn gehoeren zum Format.
  * ERRORLEVEL: 0 ok, 1 Fehler gefunden (nicht behoben), 2 Fehler behoben,
  * 3 Container nicht lesbar/anzulegen, 4 Aufruf.
  */
@@ -179,14 +179,18 @@ static unsigned cv_spc, cv_quiet;
 static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
 {
     unsigned long T, data = 0, inner, ncl = 0, tot, k;
-    unsigned spc, sh, nbf = 1, nmd = 1, spf = 1, f16 = 0, i;
+    unsigned spc, sh, nbf = 1, nmd = 1, spf = 1, f16 = 0, i, res, drel, dcl;
     unsigned long bb, mdf, fatc, rootc, dst;
 
     spc = d3 ? 64 : 16;
     sh = d3 ? 6 : 4;
+    res = d3 ? 32 : 16;                 /* FAT ab Bootblock + res (wie
+                                           MS-DOS 6.22 bzw. Windows 98)  */
     T = (unsigned long)mb << 11;
     for (i = 0; i < 6; i++) {           /* Aufteilung annaehern          */
-        data = T - 1 - nbf - nmd - 1 - spf - 32 - 1;
+        drel = (res + spf + 32 + spc - 1) & ~(spc - 1); /* Daten - 2      */
+        dcl = (drel >> sh) - 2;         /* MDFAT-Eintrag = Cluster + dcl */
+        data = T - 1 - nbf - nmd - drel - 2 - 1;
         for (inner = 0, k = 0; k < ratio; k++)
             inner += data;
         ncl = inner >> sh;
@@ -195,15 +199,18 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         f16 = ncl >= 4085;
         spf = f16 ? (unsigned)((ncl + 2 + 255) >> 8)
                   : (unsigned)(((ncl + 2) + ((ncl + 2) << 1) + 1023) >> 10);
-        nmd = d3 ? (unsigned)ncl / 102 + 2 : (unsigned)((ncl + 127) >> 7) + 1;
+        nmd = d3 ? (unsigned)ncl / 102 + 3 /* dcl < 100 */
+                 : (unsigned)((ncl + dcl + 2 + 127) >> 7) + 1;
         nbf = (unsigned)((data + 4095) >> 12);
     }
+    drel = (res + spf + 32 + spc - 1) & ~(spc - 1);
+    dcl = (drel >> sh) - 2;
     mdf = 1 + nbf;
     bb = mdf + nmd;
-    fatc = bb + 1;
+    fatc = bb + res;
     rootc = fatc + spf;
-    dst = rootc + 32;
-    tot = 1 + spf + 32 + (ncl << sh);   /* inneres Laufwerk              */
+    dst = bb + drel + 2;
+    tot = res + spf + 32 + (ncl << sh); /* inneres Laufwerk              */
     cv_spc = spc;
     if (!tnow || tnow > T)
         tnow = T;
@@ -233,7 +240,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         sec[3 + i] = "ATDOS6.1"[i];
     wr16(sec + 11, 512);
     sec[13] = (unsigned char)spc;
-    wr16(sec + 14, 1);                  /* reserviert = Bootblock        */
+    wr16(sec + 14, res);                /* reserviert: Bootblock + Luecke */
     sec[16] = 1;                        /* eine FAT                      */
     wr16(sec + 17, 512);
     if (tot < 65536UL)
@@ -242,8 +249,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         wr32(sec + 32, tot);
     sec[21] = 0xF8;
     wr16(sec + 22, spf);
-    wr16(sec + 24, 63);
-    wr16(sec + 26, 16);
+    wr16(sec + 24, 17);                 /* Geometrie wie MS-DOS          */
+    wr16(sec + 26, 6);
     sec[36] = 0x80;
     sec[38] = 0x29;
     DosGetDateTime(dt);
@@ -257,19 +264,29 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     sec[63] = 0x18;
     sec[510] = 0x55;
     sec[511] = 0xAA;
-    /* Superblock = Bootblock + Lage des Containers */
-    for (i = 0; i < 512; i++)
-        sb[i] = sec[i];
+    /* Superblock: Aufbau wie die Container von MS-DOS 6.22 (DriveSpace,
+       Version 2) und Windows 98 (DriveSpace 3), Byte fuer Byte verglichen.
+       Nur die BPB-Felder bis 1Fh stimmen mit dem Bootblock ueberein. */
+    zero(sb, 512);
+    sb[0] = 0xEB; sb[1] = d3 ? 0x6E : 0x58; sb[2] = 0x90;
     for (i = 0; i < 8; i++)
-        sb[3 + i] = "MSDSP6.0"[i];
-    wr16(sb + 14, 1);                   /* FAT ab Bootblock + 1          */
+        sb[3 + i] = "MSDBL6.0"[i];
+    for (i = 11; i < 32; i++)
+        sb[i] = sec[i];
+    wr16(sb + 19, 0);                   /* Gesamtzahl immer bei 20h      */
+    wr32(sb + 32, tot);                 /* bestimmt den hoechsten Cluster */
     wr16(sb + 36, (unsigned)mdf - 1);
+    sb[38] = 9;                         /* log2 Bytes je Sektor          */
     wr16(sb + 39, (unsigned)bb);
     wr16(sb + 41, (unsigned)(rootc - bb));
-    wr16(sb + 43, (unsigned)(dst - bb - 2));
-    wr16(sb + 45, (unsigned)-2);        /* MDFAT-Eintrag 0 = Cluster 2   */
-    sb[51] = d3 ? 3 : 2;
-    sb[57] = '1'; sb[58] = f16 ? '6' : '2'; sb[59] = ' '; sb[60] = ' ';
+    wr16(sb + 43, drel);                /* Daten - 2, Vielfaches von spc */
+    wr16(sb + 45, dcl);
+    sb[50] = (unsigned char)sh;         /* log2 Sektoren je Cluster      */
+    sb[51] = d3 ? 0 : 2;                /* Version: 2 = DriveSpace 6.22,
+                                           Windows 98 schreibt bei DS3 0 */
+    if (!d3) {
+        sb[57] = '1'; sb[58] = f16 ? '6' : '2'; sb[59] = ' '; sb[60] = ' ';
+    }
     wr16(sb + 62, mb);
     if (wr(0, sb))
         goto werr;
@@ -279,6 +296,9 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
             goto werr;
     if (wr(bb, sec))
         goto werr;
+    for (k = bb + 1; k < fatc; k++)     /* reservierte Sektoren          */
+        if (wr(k, fl))
+            goto werr;
     fl[0] = 0xF8; fl[1] = 0xFF; fl[2] = 0xFF;
     if (f16)
         fl[3] = 0xFF;
