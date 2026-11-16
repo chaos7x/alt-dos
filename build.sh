@@ -209,7 +209,7 @@ nasm -f bin apps/opltest.asm -o $B/opltest.com
 BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za setver more find grep less sort fc comp cut head tail wc uniq tr cat expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat packdisk"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac

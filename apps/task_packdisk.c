@@ -143,12 +143,12 @@ static unsigned long num(const char *p)
 }
 
 /* ---- /CREATE ------------------------------------------------------------- */
+static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio);
+
 static int create(char *rest)
 {
-    unsigned long T, data = 0, inner, ncl = 0, tot, k;
-    unsigned spc, sh, nbf = 1, nmd = 1, spf = 1, f16 = 0, ratio, i, d3, mb;
+    unsigned ratio, i, d3, mb;
     char *p, *q;
-    unsigned long bb, mdf, fatc, rootc, dst;
 
     posw(rest, 0, name, FAPI_PATHLEN);
     posw(rest, 1, tmp, 16);
@@ -169,6 +169,19 @@ static int create(char *rest)
         puts(d3 ? "Gr\x94\xE1" "e 1 bis 2047 MB.\r\n" : "Gr\x94\xE1" "e 1 bis 512 MB (gr\x94\xE1" "er mit /DS3).\r\n");
         return 4;
     }
+    return mkcvf(mb, 0, d3, ratio);
+}
+
+/* Container anlegen: Aufteilung (BITFAT, MDFAT, inneres FAT) fuer mb MB,
+   die Datei selbst nur tnow Sektoren lang (0 = ganz) - /COMPRESS laesst
+   ihn danach wachsen (cvf_grow), Feld 62 nennt die Hoechstgroesse. */
+static unsigned cv_spc, cv_quiet;
+static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
+{
+    unsigned long T, data = 0, inner, ncl = 0, tot, k;
+    unsigned spc, sh, nbf = 1, nmd = 1, spf = 1, f16 = 0, i;
+    unsigned long bb, mdf, fatc, rootc, dst;
+
     spc = d3 ? 64 : 16;
     sh = d3 ? 6 : 4;
     T = (unsigned long)mb << 11;
@@ -191,6 +204,13 @@ static int create(char *rest)
     rootc = fatc + spf;
     dst = rootc + 32;
     tot = 1 + spf + 32 + (ncl << sh);   /* inneres Laufwerk              */
+    cv_spc = spc;
+    if (!tnow || tnow > T)
+        tnow = T;
+    if (tnow < dst + 64) {
+        puts("Zu wenig Platz f\x81r den Container.\r\n");
+        return 3;
+    }
 
     if ((hd = DosOpen(name)) != 0 && !FAPI_FAILED(hd)) {
         DosClose(hd);
@@ -280,22 +300,28 @@ static int create(char *rest)
     puts("Lege den Datenbereich an ...\r\n");
     {
         static unsigned long sz;
-        sz = (T - 1) << 9;
+        sz = (tnow - 1) << 9;
         if (DosNewSize(hd, &sz))
             goto werr;
     }
     zero(fl, 512);
     fl[0] = 'M'; fl[1] = 'D'; fl[2] = 'R';
-    if (wr(T - 1, fl))
+    if (wr(tnow - 1, fl))
         goto werr;
     DosClose(hd);
-    say("Container angelegt: ", (unsigned long)mb, " MB");
+    if (tnow < T) {
+        say("Container angelegt: ", tnow >> 11, " MB");
+        say(" (w\x84" "chst bis ", (unsigned long)mb, " MB)");
+    } else
+        say("Container angelegt: ", (unsigned long)mb, " MB");
     puts(d3 ? " (32-KB-Cluster)\r\n" : " (8-KB-Cluster)\r\n");
     say("Inneres Laufwerk:   ", ncl << (sh - 1), " KB");
     say(" bei Packrate ", (unsigned long)ratio, ":1\r\n");
-    puts("Einh\x84ngen mit: LOOP X: ");
-    puts(name);
-    puts("\r\n");
+    if (!cv_quiet) {
+        puts("Einh\x84ngen mit: LOOP X: ");
+        puts(name);
+        puts("\r\n");
+    }
     return 0;
 werr:
     DosClose(hd);
@@ -757,26 +783,363 @@ static int check(char *rest)
     return fix && !n_err && !n_cross && !n_range ? 2 : 1;
 }
 
+/* ---- /COMPRESS ----------------------------------------------------------- */
+/* Laufwerk X: in einen Container X:\DRVSPACE.000 umziehen, Datei fuer
+   Datei: kopieren, Datum/Attribute uebernehmen, Original loeschen - eine
+   Datei liegt immer ganz auf einer der beiden Seiten (Abbruch = hoechstens
+   eine doppelte Kopie). Der Container beginnt mit dem freien Platz und
+   waechst, sobald geloeschte Originale Platz gemacht haben: aushaengen,
+   Datei verlaengern, "MDR" ans neue Ende, wieder einhaengen. Ein
+   abgebrochener Lauf setzt mit demselben Aufruf fort. */
+static unsigned long cv_units, cv_dst, cv_dend, cv_mdf, cv_max;
+static unsigned long c_free, c_moved, c_skip, c_bytes;
+static unsigned c_drv, c_ldrv, c_grow, c_want;
+static char c_path[FAPI_PATHLEN], c_dest[FAPI_PATHLEN], c_root[8];
+
+static unsigned long fsize(const char *nm)   /* Groesse aus dem Verzeichnis */
+{
+    char *bn;
+    unsigned i;
+    if (abs_path(nm, tmp))
+        return 0;
+    bn = base_name(tmp);
+    scopy((char *)fl, bn, 260);
+    *bn = 0;
+    if (slen(tmp) > 3)
+        tmp[slen(tmp) - 1] = 0;
+    for (i = 0; DosFindEntry(&de, i, tmp) != FAPI_ERROR; i++)
+        if (same(de.name, (char *)fl))
+            return de.size;
+    return 0;
+}
+
+/* Lage des (geschlossenen) Containers name; hd offen zum Schreiben */
+static int cvf_geom(void)
+{
+    cv_units = fsize(name) >> 9;
+    hd = DosOpenRW(name);
+    if (FAPI_FAILED(hd))
+        return -1;
+    if (cv_units < 64 || rd(0, sb, 1) || sb[3] != 'M' || sb[4] != 'S' || sb[8] != '6') {
+        DosClose(hd);
+        return -2;
+    }
+    cv_mdf = rd16(sb + 36) + 1UL;
+    cv_dst = rd16(sb + 39) + (unsigned long)rd16(sb + 43) + 2;
+    cv_max = (unsigned long)rd16(sb + 62) << 11;
+    if (cv_max > cv_dst + ((cv_mdf - 1) << 12) + 1)
+        cv_max = cv_dst + ((cv_mdf - 1) << 12) + 1;   /* BITFAT reicht so weit */
+    cv_dend = 0;
+    if (rd(cv_units - 1, sec, 1) == 0 && sec[0] == 'M' && sec[1] == 'D' && sec[2] == 'R')
+        cv_dend = cv_units - 2;
+    if (!cv_dend) {
+        DosClose(hd);
+        return -2;
+    }
+    return 0;
+}
+
+static unsigned long cvf_free(void)     /* freie Datensektoren (BITFAT)  */
+{
+    unsigned long k, nds = cv_dend - cv_dst + 1, f = 0;
+    unsigned i, w, n;
+    for (k = 0; k < nds; k += 4096) {
+        if (rd(1 + (k >> 12), sec, 1))
+            return 0;
+        for (i = 0; i < 256 && k + ((unsigned long)i << 4) < nds; i++) {
+            w = rd16(sec + 2 * i);
+            if (w == 0 && k + ((unsigned long)i << 4) + 16 <= nds) {
+                f += 16;
+                continue;
+            }
+            for (n = 0; n < 16 && k + ((unsigned long)i << 4) + n < nds; n++)
+                if (!(w & (0x8000 >> n)))
+                    f++;
+        }
+    }
+    return f;
+}
+
+static int cvf_grow(unsigned long add)  /* -> 1 gewachsen                 */
+{
+    static unsigned long sz;
+    unsigned long nu = cv_units + add;
+    if (nu > cv_max)
+        nu = cv_max;
+    if (nu < cv_units + 64)
+        return 0;
+    sz = nu << 9;
+    if (DosNewSize(hd, &sz))
+        return 0;
+    zero(fl, 512);
+    wr(cv_units - 1, fl);               /* altes Ende wird Datenbereich   */
+    fl[0] = 'M'; fl[1] = 'D'; fl[2] = 'R';
+    if (wr(nu - 1, fl))
+        return 0;
+    cv_units = nu;
+    cv_dend = nu - 2;
+    return 1;
+}
+
+static unsigned long host_free(void)    /* freie Sektoren auf X: ohne Rest */
+{
+    static unsigned long fb4;
+    unsigned long f;
+    if (DosFreeSpace(c_drv, &fb4))
+        return 0;
+    f = fb4 >> 9;
+    return f > c_grow ? f - c_grow : 0;
+}
+
+static int c_attach(void)
+{
+    unsigned rc = DosLoop(LOOP_ATTACH, name, 0);
+    if (rc >= FAPI_ERR_FIRST) {
+        puts(rc == FAPI_ERR_FRAG ? "Container zu stark zerst\x81" "ckelt - DEFRAG und danach PACKDISK /COMPRESS erneut.\r\n" :
+             rc == FAPI_ERR_INUSE ? "Container schon eingeh\x84ngt - erst LOOP X: /D.\r\n" :
+                                    "Container l\x84\xE1t sich nicht einh\x84ngen.\r\n");
+        return -1;
+    }
+    c_ldrv = rc;
+    return 0;
+}
+
+#define C_MARGIN(spc) (2UL * (spc) + 16)     /* Verzeichnis-Cluster usw.  */
+
+static int c_visit(char *path, struct fapi_dirent *e, int what, int depth)
+{
+    static struct fapi_finfo fi;
+    unsigned long need;
+    static unsigned long ifree;
+    int rc;
+
+    if (what == WT_LEAVE) {
+        if (depth == 0 || slen(path) <= 3)
+            return 0;
+        return DosRmDir(path) ? 0 : WT_REMOVED;
+    }
+    if ((e->attr & 0x08) || (depth == 0 && (same(e->name, "EA DATA. SF") || same(e->name, base_name(name)))))
+        return 0;
+    scopy(c_dest, path, FAPI_PATHLEN);
+    c_dest[0] = (char)('A' + c_ldrv);
+    if (what == WT_DIR) {
+        DosMkDir(c_dest);
+        return WT_DESCEND;
+    }
+    need = ((e->size + 511) >> 9) + C_MARGIN(cv_spc);
+    if (need > c_free) {
+        c_want = 1;                     /* nach dem Wachsen noch einmal  */
+        return 0;
+    }
+    if (DosFreeSpace(c_ldrv, &ifree) == 0 && ifree < e->size + 65536UL) {
+        puts("Inneres Laufwerk voll (Packrate zu niedrig gesch\x84tzt) - Rest bleibt.\r\n");
+        c_free = 0;
+        cv_max = 0;                     /* kein Wachsen mehr               */
+        return WT_STOP;
+    }
+    rc = copy_file(path, c_dest);
+    if (rc == -7) {                     /* doch voll: wachsen             */
+        c_free = 0;
+        c_want = 1;
+        return 0;
+    }
+    if (rc) {
+        puts("  \x81" "bersprungen: ");
+        puts(path);
+        puts(rc == -6 || rc == -1 ? " (in Benutzung oder nicht lesbar)\r\n" : " (Fehler beim Kopieren)\r\n");
+        c_skip++;
+        return 0;
+    }
+    fi.mask = 3;
+    fi.attr = e->attr & 0x27;
+    fi.date = e->date;
+    fi.time = e->time;
+    DosSetFInfo(c_dest, &fi);
+    if (e->attr & 1) {                  /* schreibgeschuetzt: zum Loeschen */
+        fi.mask = 1;
+        fi.attr = e->attr & 0x26;
+        DosSetFInfo(path, &fi);
+    }
+    if (DosDelete(path)) {              /* Original bleibt -> Kopie weg  */
+        DosDelete(c_dest);
+        puts("  \x81" "bersprungen (nicht l\x94schbar): ");
+        puts(path);
+        puts("\r\n");
+        c_skip++;
+        return 0;
+    }
+    c_free -= need - C_MARGIN(cv_spc);
+    c_moved++;
+    c_bytes += e->size;
+    if ((c_moved & 15) == 0) {
+        say("\r", c_moved, " Dateien, ");
+        say("", c_bytes >> 10, " KB verschoben    ");
+    }
+    return WT_REMOVED;
+}
+
+static int compress(char *rest)
+{
+    static struct fapi_fsinfo fs;
+    static unsigned long fb4;
+    static struct fapi_loopinfo li;
+    unsigned d3, ratio, mb, i, grew;
+    unsigned long total, tnow, before;
+    char *p;
+    int r;
+
+    posw(rest, 0, tmp, 16);
+    if (!tmp[0] || tmp[1] != ':' || tmp[2]) {
+        puts("Aufruf: PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n");
+        return 4;
+    }
+    c_drv = (unsigned)(up(tmp[0]) - 'A');
+    d3 = opt(rest, "/DS3") != 0;
+    ratio = (p = opt(rest, "/RATIO:")) != 0 ? (unsigned)num(p) : 2;
+    c_grow = (unsigned)((p = opt(rest, "/RESERVE:")) != 0 ? num(p) : 1) << 11;
+    if (ratio < 1 || ratio > 16 || c_drv > 25)
+        return 4;
+    if (DosQFSInfo(c_drv, &fs) || (!same(fs.fsname, "FAT") && !same(fs.fsname, "FAT32")) || fs.bsize != 512) {
+        puts("Nur FAT-Laufwerke lassen sich komprimieren.\r\n");
+        return 3;
+    }
+    for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++)
+        if (li.drives & (1UL << c_drv)) {
+            puts("Das ist selbst ein Loop-Laufwerk.\r\n");
+            return 3;
+        }
+    c_root[0] = up(tmp[0]);
+    c_root[1] = ':';
+    c_root[2] = '\\';
+    c_root[3] = 0;
+    scopy(name, c_root, FAPI_PATHLEN);
+    scat(name, "ATDOS.SYS", FAPI_PATHLEN);
+    if (fsize(name)) {
+        puts("Das Startlaufwerk l\x84\xE1t sich (noch) nicht komprimieren.\r\n");
+        return 3;
+    }
+    scopy(name, c_root, FAPI_PATHLEN);
+    scat(name, "DRVSPACE.000", FAPI_PATHLEN);
+    if (fsize(name)) {
+        for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++)   /* abgebrochen? */
+            if (li.drives && li.cdrive == c_drv && same(li.path, "\\DRVSPACE.000")) {
+                for (r = 2; r < 26 && !(li.drives & (1UL << r)); r++)
+                    ;
+                if (DosLoop(LOOP_DETACH, r, 0)) {
+                    puts("Container ist eingeh\x84ngt und in Benutzung - erst LOOP X: /D.\r\n");
+                    return 3;
+                }
+                break;
+            }
+        puts("Setze fort mit ");
+        puts(name);
+        puts("\r\n");
+    } else {
+        total = fs.sectors >> 11;
+        mb = total > (d3 ? 2047UL : 512UL) ? (d3 ? 2047 : 512) : (unsigned)total;
+        if (DosFreeSpace(c_drv, &fb4))
+            return 3;
+        tnow = fb4 >> 9;
+        if (tnow <= c_grow + 2048) {
+            puts("Zu wenig freier Platz (mindestens 1 MB plus Rest /RESERVE).\r\n");
+            return 3;
+        }
+        tnow -= c_grow;
+        puts("Laufwerk ");
+        puts(c_root);
+        say(" komprimieren: Container bis ", (unsigned long)mb, " MB");
+        puts(d3 ? ", DriveSpace 3" : ", DriveSpace 6");
+        if (!d3 && total > 512)
+            puts(" (Laufwerk gr\x94\xE1" "er als 512 MB - /DS3 nimmt bis 2047 MB)");
+        puts(".\r\nDateien werden einzeln verschoben.\r\n");
+        if (!opt(rest, "/Y")) {
+            puts("Fortfahren (J/N)? ");
+            if (!ask_yn())
+                return 1;
+        }
+        label[0] = 0;
+        cv_quiet = 1;
+        if ((r = mkcvf(mb, tnow, d3, ratio)) != 0)
+            return r;
+        {
+            static struct fapi_finfo fi;
+            fi.mask = 1;
+            fi.attr = 0x06;             /* versteckt + System wie DRVSPACE */
+            DosSetFInfo(name, &fi);
+        }
+    }
+    for (;;) {
+        if (cvf_geom()) {
+            puts("Container nicht lesbar: ");
+            puts(name);
+            puts("\r\n");
+            return 3;
+        }
+        grew = 0;
+        {                               /* wachsen um den freien Platz    */
+            unsigned long add = host_free();
+            if (add >= 64 && cv_units < cv_max && cvf_grow(add)) {
+                grew = 1;
+                say("\rContainer jetzt ", cv_units >> 11, " MB                        \r\n");
+            }
+        }
+        rd(rd16(sb + 39), sec, 1);
+        cv_spc = sec[13];
+        c_free = cvf_free();
+        DosClose(hd);
+        c_free = c_free > C_MARGIN(cv_spc) ? c_free - C_MARGIN(cv_spc) : 0;
+        if (c_attach())
+            return 3;
+        scopy(c_path, c_root, FAPI_PATHLEN);
+        before = c_moved;
+        c_want = 0;
+        c_skip = 0;
+        r = walk_tree(c_path, c_visit);
+        DosLoop(LOOP_DETACH, c_ldrv, 0);
+        if (r || !c_want)
+            break;                      /* fertig oder inneres voll       */
+        if (cv_units >= cv_max || host_free() < 64 || (!grew && c_moved == before)) {
+            puts("\r\nKein Platz mehr zum Wachsen - der Rest bleibt auf dem Laufwerk.\r\n");
+            break;
+        }
+    }
+    say("\r", c_moved, " Dateien verschoben (");
+    say("", c_bytes >> 10, " KB)");
+    if (c_skip)
+        say(", ", c_skip, " \x81" "bersprungen");
+    puts(".\r\nEinh\x84ngen mit: LOOP X: ");
+    puts(name);
+    puts("\r\nbeim Start mit CONFIG.SYS: LOOP=X:,");
+    puts(name);
+    puts("\r\n");
+    return c_skip ? 1 : 0;
+}
+
 void main(void)
 {
     char *p;
     int rc;
     DosGetArgs(args);
     p = skip(args);                     /* Schalter in jeder Reihenfolge */
-    if (opt(p, "/CREATE") && !opt(p, "/CHECK"))
+    if (opt(p, "/CREATE") && !opt(p, "/CHECK") && !opt(p, "/COMPRESS"))
         rc = create(p);
     else if (opt(p, "/CHECK") && !opt(p, "/CREATE"))
         rc = check(p);
+    else if (opt(p, "/COMPRESS") && !opt(p, "/CREATE") && !opt(p, "/CHECK"))
+        rc = compress(p);
     else {
         puts("Legt komprimierte Laufwerke an und pr\x81" "ft sie.\r\n\r\n"
              "PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n"
-             "PACKDISK /CHECK Datei [/F] [/V]\r\n\r\n"
+             "PACKDISK /CHECK Datei [/F] [/V]\r\n"
+             "PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n\r\n"
              "  /CREATE  leerer Container im DriveSpace-6.22-Format (bis 512 MB),\r\n"
              "           mit /DS3 im DriveSpace-3-Format (32-KB-Cluster, bis 2047 MB)\r\n"
              "  /RATIO:n gesch\x84tzte Packrate n:1 f\x81r die Gr\x94\xE1" "e innen (Vorgabe 2)\r\n"
              "  /CHECK   MDFAT, BITFAT und FAT pr\x81" "fen, Packrate zeigen\r\n"
              "  /F       Fehler in BITFAT/MDFAT beheben\r\n"
-             "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n\r\n"
+             "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n"
+             "  /COMPRESS Dateien von X: in X:\\DRVSPACE.000 verschieben (fortsetzbar),\r\n"
+             "           /RESERVE:MB bleibt auf X: frei (Vorgabe 1)\r\n\r\n"
              "Schalter d\x81rfen in beliebiger Reihenfolge stehen.\r\n"
              "Einh\x84ngen mit LOOP X: Datei, aush\x84ngen mit LOOP X: /D.\r\n");
         rc = 4;

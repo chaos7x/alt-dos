@@ -1894,7 +1894,35 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   MDFAT-Eintrags (DS3) steht bei allen SQ-Clustern – vermutlich Merker
   des Agenten, loop.c liest darüber hinweg und schreibt 0. Eingehängt
   (/RO): mc, Textdateien und Stunts laufen – SQ-Entpacker an echten
-  Daten bestätigt. PACKDISK nimmt Schalter und Namen in jeder Reihen-
+  Daten bestätigt. PACKDISK /COMPRESS X: (Wunsch des Nutzers, 16.11.
+  2026; in QEMU geprüft: 40-MB-FAT16 mit 146 Dateien und 13 MB frei –
+  DS6 in einem Lauf, Container 11 -> 23 MB; DS3 mit Strg+C nach ~70
+  Dateien abgebrochen, derselbe Aufruf setzt fort, wächst 11 -> 38 MB;
+  je cvfchk 0 Fehler, fsck innen/außen sauber, alle 146 Inhalte gleich,
+  X: danach nur noch DRVSPACE.000): mkcvf(mb, tnow, …) aus /CREATE
+  herausgelöst – BITFAT/MDFAT/inneres FAT für die Höchstgröße (Feld 62),
+  Datei nur tnow Sektoren (freier Platz minus /RESERVE, Vorgabe 1 MB);
+  loop.c nimmt dend ohnehin aus der Dateigröße. Schleife: cvf_geom +
+  Wachsen um den freien Platz (`cvf_grow`: DosNewSize, altes MDR nullen,
+  MDR ans neue Ende, höchstens bis BITFAT/Feld 62), cvf_free (Nullbits
+  der BITFAT) minus Rand 2·spc+16, LOOP_ATTACH, walk_tree `c_visit`:
+  Verzeichnisse anlegen, je Datei passt ceil(size/512) + Rand nicht in
+  den geschätzten Platz -> merken (c_want) und weiter, sonst copy_file,
+  Datum/Attribute, R am Original weg, Original löschen (geht das nicht:
+  Kopie wieder weg), leere Verzeichnisse beim Verlassen per RmDir;
+  übersprungen: Container, EA DATA. SF, Bezeichnung, Offenes/Unlesbares.
+  Die Schätzung ist eine obere Grenze (gepackt nie größer, Nullsektoren
+  am Ende fallen weg) – so läuft der Container nie voll (dort meldete
+  loop.c einen Fehler erst beim Sync). Danach LOOP_DETACH, nächste
+  Runde, Ende wenn nichts mehr gemerkt ist oder weder gewachsen noch
+  verschoben wurde. Fortsetzen: vorhandenes X:\DRVSPACE.000 wird
+  genommen, ein vom Abbruch noch eingehängtes vorher ausgehängt (LOOP_INFO
+  cdrive/path). Startlaufwerk (ATDOS.SYS im Stamm) abgelehnt, Container
+  versteckt+System; PACKDISK hat jetzt den LFN-Merker (lange Namen
+  bleiben – innen im EA-Format bei LONGNAMES=AUTO). Grenzen: Buchstaben
+  werden nicht getauscht (Hinweis auf LOOP=), Zerstückelung der
+  Containerdatei durch die Lücken (> ~6.000 Stücke -> DEFRAG, dann
+  fortsetzen). PACKDISK nimmt Schalter und Namen in jeder Reihen-
   folge (`opt` nur am Wortanfang, ohne ':' mit Wortende; `posw` = n-tes
   Wort ohne '/'; in QEMU geprüft). Danach unter AT-DOS beschrieben (XCOPY C:\DOS, 105
   Dateien, Löschen): CHKDSK und /CHECK /V sauber, 333 neue Cluster „JM
