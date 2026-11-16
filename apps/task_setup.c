@@ -558,7 +558,6 @@ void main(void)
     copy_disk(1, 1);
     insert_disk(2);
     copy_disk(0, 0);
-    insert_disk(1);                     /* CMD.EXE kommt von Diskette 1 */
 
     quit_rc = 0;
     screen("EINGABE=Neu starten  F3=Zur Eingabeaufforderung");

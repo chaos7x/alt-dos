@@ -98,8 +98,9 @@ Textbetrieb), CONFIG.SYS gefiltert (DEVICE=/IFS= nicht geladener Treiber
 -> `REM `, DosDrvInfo), AUTOEXEC.CMD ohne `SETUP /START`, dann `SYS A:
 X:` (kopiert ATDOS.SYS, CMD, \DOS\SYSTEM), danach walk_tree über beide
 Disketten (Stamm und \DOS\SYSTEM von Disk 1 übersprungen, Attribute und
-Datum übernommen). Am Ende Diskette 1 zurück (CMD/Code-Verwerfen lädt
-von dort). Diskette 1 danach ~615 KB frei, Diskette 2 ~300 KB.
+Datum übernommen). Code von Wechselmedien (Diskette, CD, ZIP, Loop)
+verwirft der Kernel nie (codeswap.c `removable`, Wunsch des Nutzers) –
+SETUP fragt am Ende nicht mehr nach Diskette 1. Diskette 1 danach ~615 KB frei, Diskette 2 ~300 KB.
 Neues Werkzeug nur auf Diskette 2: in `HDDOS`/`HDDEMO` eintragen.
 CI veröffentlicht `atdos-fd2.img` mit im Release `latest`. Ungeprüft:
 86Box, echte Disketten.
@@ -1583,7 +1584,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   beim Laden (Laufwerk, Pfad, Wortsumme des Codes in einem Kernel-
   segment `cs_sel`, NTASK × 264 Byte); code_drop: Uhr-Verfahren über das
   Accessed-Bit von LDT-Eintrag 0 aller Teilhaber (nicht current, keine
-  Box), Pages frei, Eintrag P = 0, `task.code_gone`; code_np (Vektor 11,
+  Box, nicht von Wechselmedien – Diskette/CD/ZIP/Loop, das Medium kann
+  gewechselt sein), Pages frei, Eintrag P = 0, `task.code_gone`; code_np (Vektor 11,
   Fehlercode 0004h = LDT-Index 0): unter klock neu laden (oder einem
   anderen Task mit demselben Code mitgeben), Summe vergleichen, alle
   Teilhaber umsetzen. start.asm: `.k0` nimmt Vektor 11 und 14 (kx_call),

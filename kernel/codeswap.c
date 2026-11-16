@@ -16,7 +16,9 @@
  * einmal. Beim Laden gemerkte Pruefsumme schuetzt vor einer inzwischen
  * ueberschriebenen EXE: passt sie nicht, endet das Programm mit Meldung.
  * Pfade fuer das Nachladen in einem Kernelsegment (cs_sel), angelegt beim
- * ersten Programm.
+ * ersten Programm. Code von Wechselmedien (Diskette, CD, ZIP, Loop) wird
+ * nie verworfen - das Medium kann inzwischen ein anderes sein (SETUP
+ * wechselt die Disketten).
  */
 #include "kern.h"
 #include "ifs.h"
@@ -60,6 +62,15 @@ void __far code_note(int t, int drive, const char *path, unsigned sum)
     e[3 + i] = 0;
 }
 
+static int removable(unsigned d)        /* Laufwerk auf Wechselmedium? */
+{
+    int b;
+    if (d >= NDRIVE)
+        return 1;
+    b = vol[d].blk;
+    return b < 0 || b >= nblk || blk[b].drv < 0 || blk[b].rem || blk[b].bsize == 2048;
+}
+
 static int sharer(int k, int t)         /* teilt k den Code von t?       */
 {
     return task[k].state != T_FREE && (task[k].code_unit ? task[k].code_unit == task[t].code_unit
@@ -77,7 +88,7 @@ int __far code_drop(void)
     for (pass = 0; pass < 2; pass++)
         for (t = 0; t < NTASK; t++) {
             if (task[t].state == T_FREE || !task[t].code_unit || task[t].v86 ||
-                CSE(t)[3] == 0)
+                CSE(t)[3] == 0 || removable(CSE(t)[0]))
                 continue;
             busy = 0;
             for (k = 0; k < NTASK; k++)
