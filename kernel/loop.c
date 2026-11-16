@@ -1187,6 +1187,8 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
             units = *(unsigned long __far *)(b + 32);
         blk[dev].blocks = units;
         db->f16 = ((units - db->din) >> k) >= 4085;
+        if (!h->ro)
+            f->flags |= IFS_F_WRITE;
         return dev;
 bad:
         loop_drop(dev);
@@ -1218,6 +1220,8 @@ bad:
         !((b[0] == 0xEB || b[0] == 0xE9) && b[11] == 0 && b[12] == 2) &&
         b[510] == 0x55 && b[511] == 0xAA)
         h->kind = LOOPK_DISK;           /* Partitionstabelle, kein BPB   */
+    if (!h->ro)                         /* beschreibbar: niemand sonst   */
+        f->flags |= IFS_F_WRITE;        /* darf die Datei oeffnen        */
     return dev;
 }
 

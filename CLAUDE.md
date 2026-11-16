@@ -1833,6 +1833,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   des Trägers sauber, 30 Dateien gleich. Unbekannt bleibt, ob MS-DOS
   6.22/Windows einen von PACKDISK angelegten Container annimmt (beim
   Nutzer in 86Box). Offen: `/COMPRESS`.
+  Test mit Spielen (16.11.2026, in QEMU): DOOM 1.9 Shareware und Digger
+  per XCOPY in je einen 20-MB-Container (DS6 und DS3), COMP gleich,
+  `doom -timedemo demo1` und Digger vom Container in der Box, CHKDSK,
+  PACKDISK /CHECK, cvfchk/fsck danach sauber. Dabei behoben: (1) eine
+  geparkte Box kannte Laufwerke nicht, die nach ihrem Start eingehängt
+  wurden (LOOP, DEVLOAD) – „Ungültiges Laufwerk“; BOXSHELL gleicht die
+  CDS jetzt vor jedem Programm ab (`cds_sync`: neue eintragen, aus-
+  gehängte mit Flags C000h löschen, vorhandene behalten ihr
+  Verzeichnis). (2) Ein beschreibbar eingehängtes Abbild ließ sich von
+  anderen öffnen (PACKDISK /CHECK lief auf den eingehängten Container) –
+  loop_attach setzt IFS_F_WRITE auf dem Eintrag des Kernels, damit
+  greift open_for_write. Vom Nutzer in 86Box: echter MS-DOS-6.22-
+  Container (DriveSpace Version 2, innen 453 MB FAT16, 8-KB-Cluster,
+  65.509 Cluster) angelegt – Test unter AT-DOS steht aus.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

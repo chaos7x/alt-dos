@@ -59,7 +59,8 @@ org 100h
         add     ax, bx
         mov     [2Ch], ax
 
-next:   push    cs                      ; (nach dem Parken: naechstes Programm)
+next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
+        push    cs
         pop     es
         mov     di, cmd
         xor     ah, ah                  ; Befehlszeile der Box
@@ -886,6 +887,25 @@ redir_install:
         mov     ah, 11h                 ; dem Kernel melden
         int     0E0h
         pop     ds
+        call    cds_sync
+        mov     ax, 352Fh
+        int     21h
+        mov     [old2f], bx
+        mov     [old2f+2], es
+        mov     dx, int2f
+        mov     ax, 252Fh
+        int     21h
+        mov     ah, 1Ch                 ; Kernel: INT 2Fh geht jetzt zuerst
+        int     0E0h                    ; hierher (mit VME ohne Falle)
+        ret
+
+;
+; AT-DOS-Laufwerke in die CDS eintragen - beim Start und vor jedem Programm
+; (die Box bleibt offen; LOOP/DEVLOAD haengen derweil Laufwerke ein oder
+; aus). Schon eingetragene behalten ihr aktuelles Verzeichnis, nicht mehr
+; vorhandene (Flags C000h) werden ungueltig.
+cds_sync:
+        push    es
         mov     ah, 12h                 ; welche Laufwerke hat AT-DOS?
         int     0E0h
         mov     [dmask], ax
@@ -897,7 +917,7 @@ redir_install:
         xor     ch, ch
         xor     si, si                  ; Laufwerk
 .d:     cmp     si, cx
-        jae     .hook
+        jae     .done
         mov     bx, si
         mov     ax, [dmask]
         mov     dx, [dmask+2]
@@ -908,7 +928,9 @@ redir_install:
         dec     bx
         jmp     .sh
 .tst:   test    al, 1
-        jz      .next
+        jz      .gone
+        cmp     word [es:di+43h], 0C000h
+        je      .next                   ; schon da: Verzeichnis bleibt
         mov     ax, si
         add     al, 'A'
         mov     [es:di], al             ; "X:"
@@ -916,18 +938,14 @@ redir_install:
         mov     byte [es:di+3], 0
         mov     word [es:di+43h], 0C000h    ; Netz + physisch
         mov     word [es:di+4Fh], 2     ; Stamm-Backslash
+        jmp     .next
+.gone:  cmp     word [es:di+43h], 0C000h
+        jne     .next
+        mov     word [es:di+43h], 0     ; ausgehaengt
 .next:  add     di, 58h
         inc     si
         jmp     .d
-.hook:  mov     ax, 352Fh
-        int     21h
-        mov     [old2f], bx
-        mov     [old2f+2], es
-        mov     dx, int2f
-        mov     ax, 252Fh
-        int     21h
-        mov     ah, 1Ch                 ; Kernel: INT 2Fh geht jetzt zuerst
-        int     0E0h                    ; hierher (mit VME ohne Falle)
+.done:  pop     es
         ret
 
 ; INT 2Fh: DPMI-/XMS-Abfragen beantwortet der Monitor (INT E0h 1Bh, AX in

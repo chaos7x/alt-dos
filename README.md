@@ -921,7 +921,9 @@ Datei [/F]` prüft einen nicht eingehängten Container (MDFAT gegen BITFAT
 und FAT, Überschneidungen, verlorene Cluster), zeigt Packrate und
 geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT.
 Höchstens 4 zugleich; DOS-Boxen
-sehen die Laufwerke über den Redirector, auch zum Schreiben. In
+sehen die Laufwerke über den Redirector, auch zum Schreiben – auch eine
+schon laufende Box sieht ein später eingehängtes Laufwerk beim nächsten
+Programm. Ein beschreibbar eingehängtes Abbild kann sonst niemand öffnen. In
 `LINUX.MAC`: `mount` und `umount`. Auf Setup-Diskette 2.
 `NCR5380.SYS` (in Arbeit) spricht SCSI-Karten mit NCR 5380/53C400 an,
 zunächst den Trantor T130B (Ports 350h/340h/250h/240h, `/P:340` legt fest),
