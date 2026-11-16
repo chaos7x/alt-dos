@@ -330,7 +330,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   vio_flush direkt statt über kf_redraw/kf_vio_flush. Geprüft mit
   dmpobj (globale EXTDEFs von loop.o/vio.o nur ferne Funktionen). Stand
   danach: Code 58.425 + 56.628 + 60.526 + 16.070 Byte, DGROUP 65.502
-  (GDT-Eintrag + kcode4_size: 34 Byte frei!). In QEMU geprüft: Start
+  (GDT-Eintrag + kcode4_size: 34 Byte frei!) – danach Platz in DGROUP
+  (16.11.2026): der gemerkte Bildschirmtext einer beendeten Box (v86.c
+  `cap`, 25 × 80 Worte für v86_replay) liegt in einer eigenen Seite
+  (`cap_pg`, mem_alloc beim capture, frei nach dem Ausgeben; kein
+  Speicher -> Text geht verloren), DGROUP 61.506 Byte (4 KB frei). In
+  QEMU geprüft: HALLO und `command /c dir` aus CMD – Text steht danach
+  da; nach fünf Läufen MEM gleich (kein Leck). Wer DGROUP misst: wdis
+  zeigt je Objekt die BSS-Symbole mit Offsets (`wdis build/x.o`), die
+  Map nur öffentliche. Weitere Kandidaten: v86.c `dp_mem` (1,5 KB),
+  `sb_buf` (1 KB), `xh`/`dp_patch` (je 768 Byte). In QEMU geprüft: Start
   von Platte und Diskette, MODE CON LINES=50, START GRAFIK 12 mit Maus
   + Alt+Esc zurück, Box, EDIT, MEM, LOOP/DriveSpace schreibend (COMP
   gleich), SHUTDOWN, fsck sauber.

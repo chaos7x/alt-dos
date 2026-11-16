@@ -386,9 +386,25 @@ static unsigned long get32(unsigned sel, unsigned i)
 
 /* ---- Box anlegen und abbauen (im Kontext des Aufrufers) ---------------- */
 
-static unsigned short cap[ROWS * COLS];  /* letzter Text einer Box (Zeichen + Farbe) */
+/* letzter Text einer Box (Zeichen + Farbe, 25 x 80 Worte) in einer eigenen
+   Seite statt in DGROUP (4.000 Byte), nur von capture bis v86_replay belegt */
+static pg_t cap_pg;
 static unsigned char cap_rows, cap_len_r[ROWS];
 static unsigned cap_len;                /* 0 = nichts gemerkt            */
+
+static void cap_free(void)
+{
+    if (cap_pg)
+        mem_free(cap_pg, 1);
+    cap_pg = 0;
+    cap_len = 0;
+}
+
+static unsigned cap_get(unsigned i)
+{
+    scratch2_map(PG_LIN(cap_pg), 4095);
+    return *(unsigned short __far *)MK_FP(SCRATCH2, i * 2);
+}
 
 /* Text der Box (Zeilen bis zum Cursor) mit Farben fuer v86_replay merken
    (DOOMs Abschlussseite ENDOOM ist farbig) */
@@ -397,7 +413,9 @@ static void capture(int t)
     unsigned long e;
     unsigned r, c, last, crow, v;
 
-    cap_len = 0;
+    cap_free();
+    if ((cap_pg = mem_alloc(1)) == 0)
+        return;                         /* kein Speicher: Text geht verloren */
     scratch2_map(PG_LIN(pt_box[t]), 4095);
     e = get32(SCRATCH2, 0xB8);
     scratch_map(get32(SCRATCH2, 0) & ~0xFFFUL, 4095);
@@ -407,10 +425,11 @@ static void capture(int t)
     if (crow > ROWS)
         crow = ROWS;
     scratch_map(e & ~0xFFFUL, 4095);
+    scratch2_map(PG_LIN(cap_pg), 4095);
     for (r = 0; r < crow; r++) {
         for (c = 0, last = 0; c < COLS; c++) {
             v = *(unsigned short __far *)MK_FP(SCRATCH, (r * COLS + c) * 2);
-            cap[r * COLS + c] = (unsigned short)v;
+            *(unsigned short __far *)MK_FP(SCRATCH2, (r * COLS + c) * 2) = (unsigned short)v;
             if ((v & 0xFF) != ' ' || (v & 0x7000))  /* Zeichen oder Hintergrund */
                 last = c + 1;
         }
@@ -418,6 +437,8 @@ static void capture(int t)
     }
     cap_rows = (unsigned char)crow;
     cap_len = crow ? 1 : 0;
+    if (!cap_len)
+        cap_free();
 }
 
 void __far v86_destroy(int t)
@@ -565,22 +586,23 @@ void __far v86_replay(int s)
 static void replay_text(int s)
 {
     static char b[96];
-    unsigned r, c, n, a, cur = 0x07, col = kf_vio_ansi(s, 2);
+    unsigned r, c, n, a, v, cur = 0x07, col = kf_vio_ansi(s, 2);
     unsigned char ch;
     if (s < 0 || !cap_len) {
-        cap_len = 0;
+        cap_free();
         return;
     }
     for (r = 0; r < cap_rows; r++) {
         for (c = 0, n = 0; c < cap_len_r[r]; c++) {
-            a = cap[r * COLS + c] >> 8;
+            v = cap_get(r * COLS + c);
+            a = v >> 8;
             if (col && a != cur) {
                 if (n)
                     kf_vio_tty(s, KDATA, (unsigned)b, n);
                 n = ansi_seq(b, a);
                 cur = a;
             }
-            ch = (unsigned char)cap[r * COLS + c];
+            ch = (unsigned char)v;
             b[n++] = ch < ' ' ? ' ' : (char)ch;
             if (n > sizeof(b) - 20) {
                 kf_vio_tty(s, KDATA, (unsigned)b, n);
@@ -595,7 +617,7 @@ static void replay_text(int s)
             b[n++] = '\n';
         kf_vio_tty(s, KDATA, (unsigned)b, n);
     }
-    cap_len = 0;
+    cap_free();
 }
 
 /* BIOS-Takte seit Mitternacht aus der Echtzeituhr (ohne 32-Bit-Division) */
