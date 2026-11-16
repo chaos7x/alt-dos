@@ -1922,7 +1922,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   bleiben – innen im EA-Format bei LONGNAMES=AUTO). Grenzen: Buchstaben
   werden nicht getauscht (Hinweis auf LOOP=), Zerstückelung der
   Containerdatei durch die Lücken (> ~6.000 Stücke -> DEFRAG, dann
-  fortsetzen). PACKDISK nimmt Schalter und Namen in jeder Reihen-
+  fortsetzen). Vom Nutzer in 86Box bestätigt (16.11.2026): ZIP 250
+  (126 Dateien) komprimiert – 237-MB-Container DS6, CHKDSK innen und
+  /CHECK /V sauber, 273 von 314 Clustern gepackt. PACKDISK nimmt Schalter und Namen in jeder Reihen-
   folge (`opt` nur am Wortanfang, ohne ':' mit Wortende; `posw` = n-tes
   Wort ohne '/'; in QEMU geprüft). Danach unter AT-DOS beschrieben (XCOPY C:\DOS, 105
   Dateien, Löschen): CHKDSK und /CHECK /V sauber, 333 neue Cluster „JM
