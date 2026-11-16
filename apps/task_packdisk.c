@@ -424,9 +424,12 @@ static int check(char *rest)
     unsigned long units, tot, din, ncl, used = 0, stor = 0, unp = 0, cl, s, k, bf_bad = 0, bf_lost = 0;
     unsigned res, nfat, rents, i, fc, n, w, x, f16, packed = 0, frag = 0;
     unsigned char *e, m, __far *p;
-    rest = word(skip(rest), name, FAPI_PATHLEN);
     fix = opt(rest, "/F") != 0;
     verb = opt(rest, "/V") != 0;
+    rest = skip(rest);                  /* Schalter vor dem Namen        */
+    while (*rest == '/')
+        rest = skip(next_word(rest));
+    word(rest, name, FAPI_PATHLEN);
     if (!name[0]) {
         puts("Aufruf: PACKDISK /CHECK Datei [/F] [/V]\r\n");
         return 4;
