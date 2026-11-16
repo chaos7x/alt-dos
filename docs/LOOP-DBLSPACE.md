@@ -135,13 +135,18 @@ Träger C: – IDE/NCR/AIC
   umhängen, alten Platz frei – in dieser Reihenfolge. Unpackbares roh.
 - Cluster-Cache 4–8 Cluster im eigenen Kernelsegment (DH_KSEG),
   verzögert; DRV_FLUSH/SHUTDOWN leeren.
-- Freier Platz: geschätzt wie MS-DOS; `PACKDISK /INFO` zeigt den Heap.
+- Freier Platz: geschätzt wie MS-DOS; `LOOP /INFO X:` zeigt Packrate, belegten und geschätzten freien Platz.
 - Werkzeug `PACKDISK` (Name: Entscheidung des Nutzers, 16.11.2026 – keine
   Microsoft-Produktnamen für eigene Programme; die Formate DoubleSpace/
   DriveSpace werden nur beschreibend genannt, Dateinamen `DBLSPACE.nnn`/
   `DRVSPACE.nnn` und Kennungen bleiben, weil sie zum Format gehören):
-  `PACKDISK /MOUNT /UNMOUNT /INFO /CREATE`, später `/COMPRESS`;
-  `PACKDISK /CHECK` (MDFAT gegen BitFAT/FAT), inneres FAT
+  Aufteilung (16.11.2026, Nutzer: „das Tool zum Packen“): Einhängen,
+  Aushängen und Anzeige über `LOOP` wie bei allen Abbildern (`LOOP X:
+  Datei`, `LOOP X: /D`, `LOOP=`, neu `LOOP /INFO X:`); `PACKDISK` nur
+  für das, was Container anlegt oder verändert: `/CREATE` (leerer
+  Container), `/COMPRESS` (vorhandenes Laufwerk umwandeln, das eigent-
+  liche Packwerkzeug), `/CHECK` (MDFAT gegen BitFAT/FAT), später Größe
+  ändern und Defragmentieren im Container; inneres FAT
   über UFAT.
 - Buchstabe: neues Laufwerk; Tausch C:/H: erst, wenn Start davon geklärt.
 - DOS-Box sieht es über den Redirector.

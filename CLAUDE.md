@@ -4346,7 +4346,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eine Datei auf einem eingehängten Laufwerk wird als Blockgerät
   eingehängt (auch für Disketten- und Plattenabbilder nützlich). Darauf
   die Loop-Art LOOPK_DBL (Containerdatei `DBLSPACE.nnn`, Format von MS-DOS 6
-  zum Austausch), Werkzeug `PACKDISK` (anlegen, einhängen, /CHECK). Name
+  zum Austausch), Einhängen über `LOOP`, Werkzeug `PACKDISK` zum Anlegen,
+  Umwandeln und Prüfen (/CREATE, /COMPRESS, /CHECK). Name
   (Entscheidung des Nutzers, 16.11.2026): eigene Programme tragen keine
   Microsoft-Produktnamen; DoubleSpace/DriveSpace nur beschreibend für das
   Format, `DBLSPACE.nnn`/`DRVSPACE.nnn` und `MSDBL6.0`/`MSDSP6.0` bleiben
