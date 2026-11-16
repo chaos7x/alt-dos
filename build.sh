@@ -85,13 +85,16 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat loop swap blkmnt codeswap"
+K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat swap blkmnt codeswap"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86 redir"
+# KTEXT4: viertes Codesegment (KCODE4), Erreichbarkeit wie KTEXT2 (k2.h)
+K4MODS="loop vio"
 for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir k2misc vesa loop swap blkmnt codeswap k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
+    case " $K4MODS " in *" $m "*) S="-nt=KTEXT4" ;; esac
     wcc $KCFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
@@ -108,7 +111,7 @@ nrel, hdr, relo = struct.unpack('<H', d[6:8])[0], struct.unpack('<H', d[8:10])[0
 g = {}
 for l in open(sys.argv[3]):
     f = l.split()
-    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'DGROUP') and ':' in f[1]:
+    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'CGROUP4', 'DGROUP') and ':' in f[1]:
         s, o = f[1].split(':')
         g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
 code, data = g['CGROUP'][1], g['DGROUP'][1]
@@ -118,7 +121,10 @@ if c2[0] != (code + 15) & ~15:
 c3 = g.get('CGROUP3', ((c2[0] + c2[1] + 15) & ~15, 0))
 if c3[0] != (c2[0] + c2[1] + 15) & ~15:
     sys.exit('FEHLER: CGROUP3 liegt nicht direkt hinter CGROUP2')
-if g['DGROUP'][0] != (c3[0] + c3[1] + 15) & ~15:
+c4 = g.get('CGROUP4', ((c3[0] + c3[1] + 15) & ~15, 0))
+if c4[0] != (c3[0] + c3[1] + 15) & ~15:
+    sys.exit('FEHLER: CGROUP4 liegt nicht direkt hinter CGROUP3')
+if g['DGROUP'][0] != (c4[0] + c4[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
@@ -134,16 +140,18 @@ for i in range(nrel):
         sel = 0x208
     elif v == c3[0] >> 4:
         sel = 0x258
+    elif v == c4[0] >> 4 and c4[1]:
+        sel = 0x280
     else:
-        sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3 erlaubt)' % v)
+        sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
 open(sys.argv[2], 'wb').write(d[img:])
 if code > 65520:
     sys.exit('FEHLER: erstes Kernel-Codesegment %d Bytes ueber 65520 (start.asm rundet auf 16)' % code)
-if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or data > 65536:
-    sys.exit('FEHLER: Kernel-Code %d/%d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], c3[1], data))
-print('  kernel: %d Bytes Datei, Code %d + %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
-      % (len(d) - img, code, c2[1], c3[1], data, nrel))
+if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or c4[1] > 65536 or data > 65536:
+    sys.exit('FEHLER: Kernel-Code %d/%d/%d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], c3[1], c4[1], data))
+print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
+      % (len(d) - img, code, c2[1], c3[1], c4[1], data, nrel))
 PYEOF
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
 # der Diskettenbootsektor laedt nach Dateigroesse ab 1000:0000; Platz bis

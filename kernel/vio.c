@@ -34,6 +34,7 @@
 #define STATUS_ATTR 0x70
 
 #include "vioint.h"
+#include "k2.h"                      /* KTEXT4: Kernelhilfen fern, k2.h zuletzt */
 
 struct session ses[NTASK];              /* mit vgagfx.c (KCODE2) geteilt */
 int fg = -1;
@@ -251,7 +252,7 @@ static char *up_str(char *p, const char *s)
     return p;
 }
 
-void vio_status(void)
+void __far vio_status(void)
 {
     char b[40], *p = b;
     unsigned m = uptime_m, d = m / 1440, h = (m / 60) % 24, mi = m % 60;
@@ -288,7 +289,7 @@ void vio_status(void)
 
 /* Codepage gewechselt: Zeichensatz neu laden (im Grafikbetrieb erst beim
    Zurueck auf Text, hw_text setzt hw_lines ebenfalls auf 0) */
-void vio_refont(void)
+void __far vio_refont(void)
 {
     unsigned f = irq_off();
     hw_lines = 0;
@@ -297,7 +298,7 @@ void vio_refont(void)
     irq_restore(f);
 }
 
-void redraw(void)
+void __far redraw(void)
 {
     int r;
     p_drawn = 0;                            /* Bildspeicher wird neu    */
@@ -348,7 +349,7 @@ static void scroll(int s)
         mark(0, (unsigned char)(n - 1));
 }
 
-void vio_cls(int s)
+void __far vio_cls(int s)
 {
     int r;
     for (r = 0; r < SLINES_MAX; r++)
@@ -360,7 +361,7 @@ void vio_cls(int s)
     }
 }
 
-int vio_open(const char *title)
+int __far vio_open(const char *title)
 {
     int s;
     pg_t u;
@@ -397,7 +398,7 @@ int vio_open(const char *title)
     return s;
 }
 
-void vio_title(int s, const char *title)
+void __far vio_title(int s, const char *title)
 {
     int i;
     for (i = 0; i < 12 && title[i]; i++)
@@ -407,7 +408,7 @@ void vio_title(int s, const char *title)
         title_bar();
 }
 
-void vio_close(int s)
+void __far vio_close(int s)
 {
     if (!ses[s].used)
         return;
@@ -428,17 +429,17 @@ void vio_close(int s)
     }
 }
 
-int vio_used(int s)
+int __far vio_used(int s)
 {
     return ses[s].used;
 }
 
-int vio_fg(void)
+int __far vio_fg(void)
 {
     return fg;
 }
 
-void vio_focus(int s)
+void __far vio_focus(int s)
 {
     if (s < 0 || s >= NTASK || !ses[s].used || s == fg)
         return;
@@ -448,7 +449,7 @@ void vio_focus(int s)
     redraw();
 }
 
-void vio_next(void)
+void __far vio_next(void)
 {
     int n, s;
     for (n = 1; n <= NTASK; n++) {
@@ -635,7 +636,7 @@ static void tty_char(int s, char ch)
     }
 }
 
-void vio_tty(int s, unsigned sel, unsigned off, unsigned len)
+void __far vio_tty(int s, unsigned sel, unsigned off, unsigned len)
 {
     const char __far *p = MK_FP(sel, 0);
     if (s < 0 || !ses[s].used)
@@ -649,7 +650,7 @@ void vio_tty(int s, unsigned sel, unsigned off, unsigned len)
 }
 
 /* VioSetAnsi: on 0/1, 2 = nur abfragen -> bisheriger Zustand */
-int vio_ansi(int s, unsigned on)
+int __far vio_ansi(int s, unsigned on)
 {
     int old;
     if (s < 0 || !ses[s].used)
@@ -664,7 +665,7 @@ int vio_ansi(int s, unsigned on)
     return old;
 }
 
-void vio_kputs(int s, const char *str)
+void __far vio_kputs(int s, const char *str)
 {
     unsigned n = 0;
     while (str[n])
@@ -674,7 +675,7 @@ void vio_kputs(int s, const char *str)
 }
 
 /* geaenderte Zeilen der Vordergrund-Sitzung in den Bildspeicher */
-void vio_flush(void)
+void __far vio_flush(void)
 {
     unsigned a, b, f;
 
@@ -717,7 +718,7 @@ void vio_flush(void)
     ptr_draw();
 }
 
-void vio_str(int s, int row, int col, unsigned sel, unsigned off,
+void __far vio_str(int s, int row, int col, unsigned sel, unsigned off,
              unsigned limit, unsigned char attr)
 {
     const char __far *p = MK_FP(sel, 0);
@@ -735,7 +736,7 @@ void vio_str(int s, int row, int col, unsigned sel, unsigned off,
     }
 }
 
-int vio_rows(int s)
+int __far vio_rows(int s)
 {
     return (s >= 0 && ses[s].used) ? ses[s].rows : SROWS;
 }
@@ -743,7 +744,7 @@ int vio_rows(int s)
 
 /* Vollbild ein/aus. Der normale Inhalt wird gesichert und danach wieder
    hergestellt (wie bei MS-DOS EDIT); das Vollbild beginnt leer. */
-void vio_setmode(int s, int full, int owner)
+void __far vio_setmode(int s, int full, int owner)
 {
     struct session *p;
     unsigned short w[8];
@@ -785,12 +786,12 @@ void vio_setmode(int s, int full, int owner)
    Zeilen - erst dann werden sie als geaendert markiert und gezeigt. So
    sieht man nie halbfertige Bilder, und es braucht keinen FAPI-Aufruf je
    Zeile. */
-unsigned long vio_buf_lin(int s)
+unsigned long __far vio_buf_lin(int s)
 {
     return PG_LIN(ses[s].unit);
 }
 
-void vio_showbuf(int s, unsigned a, unsigned b)
+void __far vio_showbuf(int s, unsigned a, unsigned b)
 {
     if (s < 0 || !ses[s].used || s != fg || a > b)
         return;                             /* Hintergrund: beim Wechsel
@@ -803,14 +804,14 @@ void vio_showbuf(int s, unsigned a, unsigned b)
 }
 
 /* DOS-Box hat in ihren Bildschirm (= Sitzungspuffer) geschrieben */
-void vio_dirty(int s)
+void __far vio_dirty(int s)
 {
     if (s >= 0 && s == fg && ses[s].used)
         mark(0, (unsigned char)(ses[s].rows - 1));
 }
 
 /* Programm endet: hatte es das Vollbild verlangt, wieder normal */
-void vio_task_end(int s, int t)
+void __far vio_task_end(int s, int t)
 {
     if (s >= 0 && ses[s].used && ses[s].gfx && ses[s].gfx_task == t)
         vio_setgfx(s, t, 0);                /* Grafik zuruecknehmen     */
@@ -930,7 +931,7 @@ static void sel_finish(void)
 
 /* naechstes eingefuegtes Zeichen fuer kbd_get (take = 1) / kbd_peek;
    -1 = nichts einzufuegen. CR, LF und CR LF werden zu Enter. */
-int vio_paste(int take)
+int __far vio_paste(int take)
 {
     const char __far *d;
     unsigned char c;
@@ -960,7 +961,7 @@ int vio_paste(int take)
 }
 
 /* ClipPut/ClipGet: Zwischenablage <-> sel:off (Laenge geprueft) */
-unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len)
+unsigned __far vio_clip_put(unsigned sel, unsigned off, unsigned len)
 {
     if (!clip_sel)
         return 0;
@@ -971,7 +972,7 @@ unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len)
     return len;
 }
 
-unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max)
+unsigned __far vio_clip_get(unsigned sel, unsigned off, unsigned max)
 {
     unsigned n = clip_len < max ? clip_len : max;
     if (clip_sel && n)
@@ -980,7 +981,7 @@ unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max)
 }
 
 /* Treiber meldet die Maus an (DevHlp MouReg) */
-void vio_mou_reg(unsigned buttons, unsigned irq)
+void __far vio_mou_reg(unsigned buttons, unsigned irq)
 {
     mou_kind = (unsigned char)(buttons >> 8);   /* fuer INT 33h 24h     */
     mou_irqn = (unsigned char)irq;
@@ -991,14 +992,14 @@ void vio_mou_reg(unsigned buttons, unsigned irq)
     clip_init();
 }
 
-void vio_mou_unreg(void)
+void __far vio_mou_unreg(void)
 {
     ptr_remove();
     mou_nbtn = 0;
 }
 
 /* aus der Interruptroutine (IF aus): bewegen, Ereignis einreihen */
-void vio_mou_event(unsigned buttons, int dx, int dy)
+void __far vio_mou_event(unsigned buttons, int dx, int dy)
 {
     unsigned or_ = (unsigned)my >> 4, oc = (unsigned)mx >> 3, r, c, n;
     unsigned char gm = fg >= 0 ? ses[fg].gfx : 0;
@@ -1089,7 +1090,7 @@ void vio_mou_event(unsigned buttons, int dx, int dy)
 }
 
 /* MouOpen: Ereignisse fuer die Sitzung an -> Tasten, 0 = keine Maus */
-unsigned vio_mou_open(int s, int t)
+unsigned __far vio_mou_open(int s, int t)
 {
     unsigned f;
     if (!mou_nbtn || s < 0 || !ses[s].used)
@@ -1104,7 +1105,7 @@ unsigned vio_mou_open(int s, int t)
 
 /* naechstes Ereignis nach e (8 Byte: Tasten, Zeile, Spalte, 0, x, y);
    0 = keins */
-int vio_mou_read(int s, unsigned char *e)
+int __far vio_mou_read(int s, unsigned char *e)
 {
     unsigned f;
     struct mouev *q;
@@ -1132,7 +1133,7 @@ int vio_mou_read(int s, unsigned char *e)
 
 /* DOS-Box (INT 33h): gesammelte Mickeys seit dem letzten Abruf und
    Tasten jetzt; -> Tasten */
-unsigned vio_mou_delta(int s, int *dx, int *dy)
+unsigned __far vio_mou_delta(int s, int *dx, int *dy)
 {
     unsigned f = irq_off();
     *dx = *dy = 0;
@@ -1146,7 +1147,7 @@ unsigned vio_mou_delta(int s, int *dx, int *dy)
 }
 
 /* DOS-Box im Textmodus: Zeiger an Zeile/Spalte (die Box rechnet selbst) */
-void vio_mou_pos(int s, int row, int col)
+void __far vio_mou_pos(int s, int row, int col)
 {
     unsigned f;
     if (s != fg || ses[s].gfx)
@@ -1159,7 +1160,7 @@ void vio_mou_pos(int s, int row, int col)
 }
 
 /* Maus der Sitzung wieder frei (DOS-Box geparkt / Programm zu Ende) */
-void vio_mou_close(int s, int t)
+void __far vio_mou_close(int s, int t)
 {
     if (s < 0 || !ses[s].used || ses[s].mou_owner != t)
         return;
@@ -1168,7 +1169,7 @@ void vio_mou_close(int s, int t)
     cur_dirty = 1;
 }
 
-void vio_mou_show(int s, int on)
+void __far vio_mou_show(int s, int on)
 {
     if (s < 0 || !ses[s].used || ses[s].mou_owner < 0)
         return;
@@ -1176,7 +1177,7 @@ void vio_mou_show(int s, int on)
     cur_dirty = 1;
 }
 
-void vio_setcur(int s, int row, int col)
+void __far vio_setcur(int s, int row, int col)
 {
     if (s < 0 || !ses[s].used)
         return;
@@ -1196,7 +1197,7 @@ void vio_setcur(int s, int row, int col)
 /* Bildschirmzeilen der Sitzung (MODE CON LINES=): 25, 43, 50 (nur VGA);
    0 = nur fragen. Nicht im Vollbild. Der Inhalt wird geloescht.
    -> Zeilenzahl oder -1 */
-int vio_setlines(int s, int n)
+int __far vio_setlines(int s, int n)
 {
     if (s < 0 || !ses[s].used)
         return -1;

@@ -453,9 +453,10 @@ static char *mcat(char *m, const char *a)
     return m;
 }
 static const char nomsg[] = "\xFE Keine Auslagerungsdatei (Laufwerk, Platz?)\n";
-void __far swap_boot(const char __far *spec, int sys, char *msg)
+/* sw_path: Puffer des Aufrufers (IFS_PATHLEN) - der Startstapel hat nur
+   1 KB, mit dem Pfad darauf lief er beim Anlegen der Datei ueber */
+void __far swap_boot(const char __far *spec, int sys, char *msg, char *sw_path)
 {
-    char sw_path[IFS_PATHLEN];          /* Stapel: DGROUP ist voll       */
     unsigned long kb = 0, ram = mem_ram_kb(), sz;
     struct ifs_file __far *f;
     unsigned i = 0, j = 0, slots, bmb, kv = 0;

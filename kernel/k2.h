@@ -58,8 +58,6 @@ void __far kf_vio_flush(void);
 #define set_desc(i, b, l, a)        kf_set_desc((i), (b), (l), (a))
 #define ldt_set(t, s, b, l)         kf_ldt_set((t), (s), (b), (l))
 #define ldt_drop(t, s)              kf_ldt_drop((t), (s))
-#define redraw()                    kf_redraw()
-#define vio_flush()                 kf_vio_flush()
 
 /* fat.c */
 int __far kf_blk_read(int dev, unsigned long lba);
@@ -78,5 +76,7 @@ unsigned __far kf_kseg_alloc(unsigned long bytes);
 #define blk_media(d)                kf_blk_media(d)
 #define blk_nomedia(d)              kf_blk_nomedia(d)
 #define kseg_alloc(b)               kf_kseg_alloc(b)
+void __far kf_kbd_flush(void);
+#define kbd_flush()                 kf_kbd_flush()
 
 #endif

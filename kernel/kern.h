@@ -48,7 +48,9 @@
 #define WBUF        (WBUF_IDX * 8)
 #define LDTD_IDX    (KCODE3_IDX + 4) /* Datenfenster auf die LDTs aller Tasks */
 #define LDTD        (LDTD_IDX * 8)
-#define NGDT        (KCODE3_IDX + 5)
+#define KCODE4_IDX  (KCODE3_IDX + 5) /* viertes Codesegment (loop.c u. a.) */
+#define KCODE4      0x280           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
+#define NGDT        (KCODE3_IDX + 6)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -74,6 +76,8 @@ extern unsigned kcode2_size;        /* start.asm: Groesse von CGROUP2      */
 #define KCODE2_LIN  (KCODE_LIN + ((kcode_size + 15) & ~15u))
 extern unsigned kcode3_size;        /* start.asm: Groesse von CGROUP3      */
 #define KCODE3_LIN  (KCODE2_LIN + ((kcode2_size + 15) & ~15u))
+extern unsigned kcode4_size;        /* start.asm: Groesse von CGROUP4      */
+#define KCODE4_LIN  (KCODE3_LIN + ((kcode3_size + 15) & ~15u))
 extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
 extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
 #define KDATA_LIN   ((unsigned long)kdata_seg << 4)
@@ -216,7 +220,7 @@ int __far swap_pf(void);                /* Seitenfehler: 1 = eingelagert */
 int __far swap_need(int t, unsigned long lp);
 void __far swap_slot_free(unsigned long e);
 void __far swap_info(unsigned long __far *total_kb, unsigned long __far *used_kb);
-void __far swap_boot(const char __far *spec, int sys, char *msg);
+void __far swap_boot(const char __far *spec, int sys, char *msg, char *sw_path);
 /* Codesegmente verwerfen und nachladen (codeswap.c, KTEXT2) */
 int __far code_drop(void);
 int __far code_np(unsigned err);
@@ -242,42 +246,42 @@ extern unsigned char bc_sync;       /* 1: blk_write sofort (Sauber-Bit)    */
 #define SLINES_MAX  50              /* Bildschirmzeilen hoechstens (VGA)   */
 #define SBYTES      (SLINES_MAX * SCOLS * 2)    /* Puffer reicht fuer alles */
 
-int  vio_open(const char *title);   /* -> Sitzung oder -1                  */
-void vio_close(int s);
-void vio_title(int s, const char *title);
-void vio_focus(int s);
-void vio_next(void);
-int  vio_fg(void);
-int  vio_used(int s);
-void vio_cls(int s);
-void vio_tty(int s, unsigned sel, unsigned off, unsigned len);
-void vio_str(int s, int row, int col, unsigned sel, unsigned off,
+int __far vio_open(const char *title);   /* -> Sitzung oder -1                  */
+void __far vio_close(int s);
+void __far vio_title(int s, const char *title);
+void __far vio_focus(int s);
+void __far vio_next(void);
+int __far vio_fg(void);
+int __far vio_used(int s);
+void __far vio_cls(int s);
+void __far vio_tty(int s, unsigned sel, unsigned off, unsigned len);
+void __far vio_str(int s, int row, int col, unsigned sel, unsigned off,
              unsigned limit, unsigned char attr);
-void vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
-int  vio_ansi(int s, unsigned on);          /* ANSI an/aus, 2 = abfragen */
-void vio_status(void);
-void vio_flush(void);               /* Schattenpuffer -> Bildspeicher      */
-int  vio_rows(int s);               /* Zeilen der Sitzung (z. B. 23/25)    */
-int  vio_setlines(int s, int n);    /* 25/43/50 Bildschirmzeilen, 0 = fragen
+void __far vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
+int __far vio_ansi(int s, unsigned on);          /* ANSI an/aus, 2 = abfragen */
+void __far vio_status(void);
+void __far vio_flush(void);               /* Schattenpuffer -> Bildspeicher      */
+int __far vio_rows(int s);               /* Zeilen der Sitzung (z. B. 23/25)    */
+int __far vio_setlines(int s, int n);    /* 25/43/50 Bildschirmzeilen, 0 = fragen
                                        -> Zeilenzahl oder -1                 */
-void vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
-void vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
-void vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
-void vio_mou_reg(unsigned buttons, unsigned irq);   /* Maus angemeldet    */
-void vio_mou_unreg(void);                           /* Maustreiber entladen */
+void __far vio_setmode(int s, int full, int owner);   /* owner: Task oder -1 */
+void __far vio_task_end(int s, int t);    /* Vollbild des Tasks zuruecknehmen   */
+void __far vio_setcur(int s, int row, int col);       /* row 0xFF = verbergen */
+void __far vio_mou_reg(unsigned buttons, unsigned irq);   /* Maus angemeldet    */
+void __far vio_mou_unreg(void);                           /* Maustreiber entladen */
 extern unsigned char mou_kind, mou_irqn;        /* INT 33h 24h           */
-void vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
-unsigned vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
-int  vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
-void vio_mou_show(int s, int on);
-unsigned vio_mou_delta(int s, int *dx, int *dy);    /* DOS-Box: Mickeys */
-void vio_mou_pos(int s, int row, int col);
-void vio_mou_close(int s, int t);
-int  vio_paste(int take);                       /* Konsolenmaus: einfuegen */
-unsigned long vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
-void vio_showbuf(int s, unsigned a, unsigned b);
-void vio_dirty(int s);                          /* ganze Sitzung neu zeigen */
-void vio_refont(void);                          /* Zeichensatz der Codepage laden */
+void __far vio_mou_event(unsigned buttons, int dx, int dy);  /* aus dem Interrupt */
+unsigned __far vio_mou_open(int s, int t);            /* -> Tasten, 0 = keine  */
+int __far vio_mou_read(int s, unsigned char *e);     /* 1 = Ereignis (3 Byte) */
+void __far vio_mou_show(int s, int on);
+unsigned __far vio_mou_delta(int s, int *dx, int *dy);    /* DOS-Box: Mickeys */
+void __far vio_mou_pos(int s, int row, int col);
+void __far vio_mou_close(int s, int t);
+int __far vio_paste(int take);                       /* Konsolenmaus: einfuegen */
+unsigned long __far vio_buf_lin(int s);               /* VioGetBuf: Pufferbasis */
+void __far vio_showbuf(int s, unsigned a, unsigned b);
+void __far vio_dirty(int s);                          /* ganze Sitzung neu zeigen */
+void __far vio_refont(void);                          /* Zeichensatz der Codepage laden */
 /* paging.c (KTEXT2): Seitentabellen 1:1 und Alias ab KALIAS, CR0.PG */
 unsigned __far paging_init(void);              /* -> Seitentabellen, 0 = aus */
 unsigned __far paging_tables(void);
@@ -365,8 +369,8 @@ int __far vio_is_gfx(int s);
 void __far vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off);
 void ldt_set(int t, unsigned sel, unsigned long base, unsigned limit);
 void ldt_drop(int t, unsigned sel);
-unsigned vio_clip_put(unsigned sel, unsigned off, unsigned len);
-unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
+unsigned __far vio_clip_put(unsigned sel, unsigned off, unsigned len);
+unsigned __far vio_clip_get(unsigned sel, unsigned off, unsigned max);
 
 /* ---- Tastatur (kbd.c) -------------------------------------------------- */
 void kbd_init(void);

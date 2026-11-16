@@ -69,7 +69,7 @@ extern int vp_xm, vp_ym;                /* vgagfx.c: Mausgrenzen VESA     */
 extern unsigned char gp_drawn;          /* vgagfx.c: Grafikzeiger gezeichnet */
 extern unsigned char  vga_ok;           /* start.asm, aus dem Real Mode     */
 
-void redraw(void);                      /* vio.c                            */
+void __far redraw(void);                      /* vio.c                            */
 
 /* vgagfx.c liegt in KCODE2: fern */
 int  __far gfx_in(void);

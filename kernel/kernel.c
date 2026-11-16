@@ -68,6 +68,7 @@ struct desc     gdt[NGDT];
 /* feste Selektoren (start.asm, build.sh, mem.h) muessen zur GDT passen */
 typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
 typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
+typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
 typedef char gdt_chk3[VWIN == 0x210 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
@@ -171,6 +172,7 @@ void gdt_build(void)
     set_desc(1, KCODE_LIN, ((kcode_size + 15) & ~15u) - 1, ACC_KCODE);
     set_desc(KCODE2_IDX, KCODE2_LIN, kcode2_size ? kcode2_size - 1 : 0, ACC_KCODE);
     set_desc(KCODE3_IDX, KCODE3_LIN, kcode3_size ? kcode3_size - 1 : 0, ACC_KCODE);
+    set_desc(KCODE4_IDX, KCODE4_LIN, kcode4_size ? kcode4_size - 1 : 0, ACC_KCODE);
     set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
     set_desc(3, 0xB8000UL, 80 * 50 * 2 - 1, ACC_KDATA);   /* bis 50 Zeilen */
 
@@ -7154,7 +7156,7 @@ void kmain(void)
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
     i = env_find(-1, "SWAPPATH", 8);            /* Auslagerungsdatei      */
     swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
-              sys_drive, line);
+              sys_drive, line, fi_canon);
     if (line[0])
         vio_kputs(boot_session, line);
     loop_boot();                                /* LOOP= aus CONFIG.SYS   */

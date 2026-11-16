@@ -319,6 +319,31 @@ Win32s), nicht vorziehen, sondern nachfragen.
   44.510 Byte – das erste Segment bleibt voll, KTEXT2 hat wieder ~50 KB
   frei (Ziel für Seltenes aus kernel.c), KTEXT3 ~20 KB für die Boxen.
   Stand vorher: Code 48 + 8 KB (vorher 56 KB in einem Segment).
+  Viertes Codesegment KCODE4 (16.11.2026, Selektor 280h, `KCODE4_IDX` =
+  KCODE3_IDX + 5 hinter LDTD, NGDT + 1; build.sh `K4MODS`, `-nt=KTEXT4`,
+  Gruppe CGROUP4 hinter CGROUP3, DS = CS + alle vier Größen; Anlass:
+  erstes Segment 65.502, KTEXT2 65.323 Byte nach DriveSpace schreibend).
+  Darin `loop.c` und `vio.c` – vio.c bindet k2.h ein (Kernelhilfen über
+  die Thunks, Ports/CLI inline; neu `kbd_flush` -> kf_kbd_flush), alle
+  exportierten vio-Funktionen und `redraw` sind `__far` (kern.h,
+  vioint.h); kernel.c/kbd.c rufen sie fern, vgagfx.c ruft redraw/
+  vio_flush direkt statt über kf_redraw/kf_vio_flush. Geprüft mit
+  dmpobj (globale EXTDEFs von loop.o/vio.o nur ferne Funktionen). Stand
+  danach: Code 58.425 + 56.628 + 60.526 + 16.070 Byte, DGROUP 65.502
+  (GDT-Eintrag + kcode4_size: 34 Byte frei!). In QEMU geprüft: Start
+  von Platte und Diskette, MODE CON LINES=50, START GRAFIK 12 mit Maus
+  + Alt+Esc zurück, Box, EDIT, MEM, LOOP/DriveSpace schreibend (COMP
+  gleich), SHUTDOWN, fsck sauber.
+  Dabei gefunden (alter Fehler, seit der Auslagerungsdatei): beim Start
+  von Platte meldete `MODE CON LINES=50` „kann die Grafikkarte nicht“.
+  Der Startstapel (start.asm `kstack`, 1 KB, liegt im BSS direkt hinter
+  `vga_ok` und den ROM-Zeichensatz-Zeigern) lief in `swap_boot` über
+  (Pfad mit 261 Byte auf dem Stapel, darunter Anlegen der Datei über
+  FAT und IDE.SYS) und löschte vga_ok. Gemessen über Port E9h (unbe-
+  rührte Bytes am Stapelende): vorher 366 frei vor swap_boot, danach 0;
+  jetzt bekommt swap_boot den Puffer `fi_canon` von kmain, Rest 218–
+  284 Byte. Lehre: im Startpfad (kmain) keine großen Puffer auf den
+  Stapel – der Startstapel bleibt der Stapel des Leerlaufs.
   6.0, vor FAT32 (in QEMU geprüft: Start von C:, XCOPY \DOS, CHKDSK /F,
   SHUTDOWN, fsck sauber, Kopien gleich): `fat.c` (14 KB) nach KTEXT2 –
   `struct ifs_driver` hat `__far`-Funktionszeiger, fat_*/mod_*/pre_*

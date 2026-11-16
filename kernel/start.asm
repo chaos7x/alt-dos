@@ -17,6 +17,7 @@ KDATA   equ 0x10
 VWIN    equ 0x210                       ; = VWIN_IDX * 8 (kern.h)
 KCODE2  equ 0x208                       ; zweites Codesegment (kern.h)
 KCODE3  equ 0x258                       ; drittes Codesegment (v86.c, redir.c)
+KCODE4  equ 0x280                       ; viertes Codesegment (loop.c u. a.)
 
 segment _TEXT  public class=CODE align=1 use16
 segment _TEXTEND public class=CODE align=1 use16
@@ -28,6 +29,9 @@ segment KTEXT2END public class=CODE align=1 use16
 ; drittes Codesegment (KCODE3): DOS-Boxen (v86.c, redir.c), wcc -nt=KTEXT3
 segment KTEXT3 public class=CODE align=16 use16
 segment KTEXT3END public class=CODE align=1 use16
+; viertes Codesegment (KCODE4): wcc -nt=KTEXT4 (build.sh K4MODS)
+segment KTEXT4 public class=CODE align=16 use16
+segment KTEXT4END public class=CODE align=1 use16
 segment _DSTART public class=DATA align=16 use16
 segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
@@ -37,6 +41,7 @@ segment _BSSEND public class=BSS align=2 use16
 group CGROUP _TEXT _TEXTEND
 group CGROUP2 KTEXT2 KTEXT2END
 group CGROUP3 KTEXT3 KTEXT3END
+group CGROUP4 KTEXT4 KTEXT4END
 group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
 extern preload_, reboot_
@@ -91,7 +96,7 @@ _start:
           db "Auf dem 80286 l", 0x84, "uft AT-DOS 5.x.", 13, 10, 0
 .is386:
         cli
-        ; Datensegment: erster Paragraph hinter den drei Codesegmenten
+        ; Datensegment: erster Paragraph hinter den vier Codesegmenten
         mov     ax, code_end
         add     ax, 15
         shr     ax, 4
@@ -100,6 +105,10 @@ _start:
         shr     bx, 4
         add     ax, bx
         mov     bx, code3_end
+        add     bx, 15
+        shr     bx, 4
+        add     ax, bx
+        mov     bx, code4_end
         add     bx, 15
         shr     bx, 4
         add     ax, bx
@@ -1468,6 +1477,9 @@ code2_end:
 segment KTEXT3END
 code3_end:
 
+segment KTEXT4END
+code4_end:
+
 segment _DATA
 
 global _kcode_size
@@ -1476,6 +1488,8 @@ global _kcode2_size
 _kcode2_size: dw code2_end              ; zweites Codesegment (CGROUP2)
 global _kcode3_size
 _kcode3_size: dw code3_end              ; drittes Codesegment (CGROUP3)
+global _kcode4_size
+_kcode4_size: dw code4_end              ; viertes Codesegment (CGROUP4)
 global _kdata_size
 _kdata_size: dw bss_end                 ; Datengroesse samt BSS (DGROUP)
 
