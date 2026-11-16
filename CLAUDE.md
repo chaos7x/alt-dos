@@ -2036,6 +2036,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   512 MB auch bei 38 MB – PACKDISK legt sie weiter nach /CREATE-Größe an.
   In QEMU geprüft (12 MB DS6, 12 MB DS3, 20 MB DS6: XCOPY \DOS, CHKDSK,
   cvfchk 0 Fehler, fsck innen/außen sauber, 105 Dateien gleich).
+  Beim Nutzer danach: Datenträgerbyte in Ordnung, ScanDisk meldet „Die
+  Sicherungskopie der FAT ist falsch“. Vierter Schritt: Feld 3Eh =
+  Höchstgröße wie MS-DOS (bei FAT16 immer 512 MB, DS3 2048 MB; FAT12 nur
+  bis 32 MB, dann die echte Größe – dmsdos leitet die FAT-Art aus 3Eh ab,
+  > 32 = FAT16), BITFAT und MDFAT dafür (`mx`, `TX`, `mcl` in mkcvf).
+  Vermutung: DRVSPACE bestimmt aus 3Eh, wo es die gespiegelte zweite FAT
+  liest. /COMPRESS wächst weiter nur bis zum freien Platz.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

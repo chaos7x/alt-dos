@@ -180,7 +180,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
 {
     unsigned long T, data = 0, inner, ncl = 0, tot, k;
     unsigned spc, sh, nbf = 1, nmd = 1, spf = 256, f16 = 0, i, res, drel, dcl;
-    unsigned long bb, mdf, fatc, rootc, dst;
+    unsigned long bb, mdf, fatc, rootc, dst, TX, mcl;
+    unsigned mx = mb;
 
     spc = d3 ? 64 : 16;
     sh = d3 ? 6 : 4;
@@ -197,12 +198,24 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         if (ncl > 65518UL)
             ncl = 65518UL;
         f16 = ncl >= 4085;
+        /* Hoechstgroesse (Feld 62) wie MS-DOS/Windows: bei FAT16 immer
+           512 MB (DS6) bzw. 2048 MB (DS3), BITFAT und MDFAT dafuer -
+           DriveSpace leitet aus Feld 62 die FAT ab (bis 32 MB FAT12) */
+        mx = f16 ? (d3 ? 2048 : 512) : mb;
+        TX = (unsigned long)mx << 11;
+        for (mcl = 0, k = 0; k < ratio; k++)
+            mcl += TX;
+        mcl >>= sh;
+        if (mcl < ncl)
+            mcl = ncl;
+        if (mcl > 65518UL)
+            mcl = 65518UL;
         spf = 256;                      /* wie MS-DOS/Windows: FAT immer
                                            fuer 65.536 Eintraege, Daten
                                            direkt hinter dem Stamm       */
-        nmd = d3 ? (unsigned)ncl / 102 + 3 /* dcl < 100 */
-                 : (unsigned)((ncl + dcl + 2 + 127) >> 7) + 1;
-        nbf = (unsigned)((data + 4095) >> 12);
+        nmd = d3 ? (unsigned)mcl / 102 + 3 /* dcl < 100 */
+                 : (unsigned)((mcl + dcl + 2 + 127) >> 7) + 1;
+        nbf = (unsigned)((TX + 4095) >> 12);
     }
     drel = (res + spf + 32 + spc - 1) & ~(spc - 1);
     dcl = (drel >> sh) - 2;
@@ -288,7 +301,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     if (!d3) {
         sb[57] = '1'; sb[58] = f16 ? '6' : '2'; sb[59] = ' '; sb[60] = ' ';
     }
-    wr16(sb + 62, mb);
+    wr16(sb + 62, mx);
     if (wr(0, sb))
         goto werr;
     zero(fl, 512);
