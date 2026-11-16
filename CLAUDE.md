@@ -1888,8 +1888,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Grenze 65.535 von loop.c): PACKDISK /CHECK /V „Keine Fehler“, 8.319
   Cluster „JM 00 00“, 115 „JM 00 01“, kein SQ, nichts zerstückelt
   (Compression Agent nicht gelaufen); eingehängt CHKDSK sauber, mc
-  läuft vom Laufwerk. Offen: Schreiben + ScanDisk unter Windows 98, SQ
-  und zerstückelte Cluster (nach HiPack/UltraPack).
+  läuft vom Laufwerk. Danach Komprimierungs-Agent (UltraPack für alte
+  Dateien, sonst HiPack): /CHECK /V „Keine Fehler“, 809 Cluster „SQ 00
+  00“, 7.639 „JM 00 01“, 4 „JM 00 01“ mit Bit 0; Bit 0 von Byte 3 des
+  MDFAT-Eintrags (DS3) steht bei allen SQ-Clustern – vermutlich Merker
+  des Agenten, loop.c liest darüber hinweg und schreibt 0. Eingehängt
+  (/RO): mc, Textdateien und Stunts laufen – SQ-Entpacker an echten
+  Daten bestätigt. Offen: Schreiben + ScanDisk unter Windows 98,
+  zerstückelte Cluster (keine entstanden).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
