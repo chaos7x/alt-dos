@@ -286,6 +286,8 @@ static int cv_ea(int phase)
     return 0;
 }
 
+static unsigned char pt_new;          /* 0 = FAT16 -> FAT32-Typ        */
+
 /* Eintrag mit Typ old und Anfang start in Tabelle sec (Sektor at) -> 1 */
 static int pt_patch(unsigned h, unsigned long at, unsigned long base, unsigned n,
                     unsigned long start, unsigned char old)
@@ -305,7 +307,7 @@ static int pt_patch(unsigned h, unsigned long at, unsigned long base, unsigned n
                 ;
             if (k < 90)
                 continue;               /* andere Platte, gleiche Lage    */
-            t[4] = old == 0x0E ? 0x0C : 0x0B;
+            t[4] = pt_new ? pt_new : old == 0x0E ? 0x0C : 0x0B;
             pos = at;
             return DosSeek(h, &pos) || DosWrite(h, sec, 512) != 512 ? -1 : 1;
         }
@@ -360,6 +362,15 @@ static int set_ptype(unsigned long start, unsigned char old)
             return r > 0 ? 0 : -1;
     }
     return -1;
+}
+
+static int set_ptype2(unsigned long start, unsigned char old, unsigned char nw)
+{
+    int r;
+    pt_new = nw;
+    r = set_ptype(start, old);
+    pt_new = 0;
+    return r;
 }
 
 #define E2V_FIXROOT 0

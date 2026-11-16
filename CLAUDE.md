@@ -576,6 +576,30 @@ Win32s), nicht vorziehen, sondern nachfragen.
   zeigt alle 1.500 lang, CHKDSK/fsck sauber. DGROUP 65.412.
   Dabei behoben: CMD-Umleitung `>
   "Name mit Leerzeichen"` (take_name kannte keine Anführungszeichen).
+  FAT32 -> FAT16 (Wunsch des Nutzers, 16.11.2026; in QEMU geprüft mit
+  einer 300-MB-FAT32-Partition von mkfs.fat, 4-KB-Cluster -> 8 KB, 139
+  Dateien in 6 Verzeichnissen, VFAT-Namen und – nach `CONVERT /LFN:EA` –
+  EA-Namen in Unterordnern: 133 Einträge verlegt, CHKDSK sauber, DIR zeigt
+  die langen Namen, fsck sauber, alle Inhalte gleich, Typ 0Ch -> 0Eh):
+  `CONVERT X: /FS:FAT16 [/V]` -> CHKDSK, dann `UFAT32 X: /TO16`
+  (`apps/ufat32_to16.c`). Je k = 2^kj alte Cluster werden ein neuer an
+  derselben Stelle (Gruppe ab Cluster 2), der Datenbeginn rückt m
+  Gruppen in den alten FAT-Bereich, alter Cluster p = 2 + m + (p-2)/k.
+  Teil A (FAT32 bleibt gültig, unterbrechbar): Sätze aller Einträge
+  (`struct trec`, 6 Segmente, 21.840), Besitzer je Gruppe (`osegs`);
+  was nicht in ganzen eigenen Gruppen liegt, wird wie DEFRAG in freie
+  Gruppen kopiert (`t_move`: Daten, Kette, Eintrag, `.`/`..` und Lage
+  der Kindereinträge, `ea_fix` für die Verzeichnis-Cluster in EA DATA.
+  SF, alte Kette frei; Verzeichnisse bis 256 Gruppen). Teil B: FAT16 im
+  Speicher (dieselben Segmente), alle Einträge und EA-Sätze umgerechnet
+  (Hochwort 0), Rest der letzten Gruppe eines Verzeichnisses genullt,
+  FATs, Stamm (512 Einträge, eigenes Segment – DGROUP war voll),
+  Bootsektor (war es der Startcode von AT-DOS: FAT16-Startcode, sonst
+  „Kein Systemdatenträger“), Partitionstyp. Mehr als 512 Stammeinträge
+  oder über ~2 GB -> Abbruch ohne Änderung. Dabei behoben (eigener
+  Fehler, vor dem Commit): Kurzname `EA DATA SF ` falsch geschrieben ->
+  EA-Sätze der Unterordner nicht umgerechnet (CHKDSK: 49 verwaiste).
+  Nicht geprüft: Startlaufwerk im Betrieb, Start danach von FAT16.
   ATSYS entfällt für FAT32 (MS-DOS kennt kein FAT32). REN: konnte gar
   keine Platzhalter (auch nicht auf FAT16) – jetzt wie MS-DOS
   (`cmd_ren`: Treffer erst sammeln, 4 KB, dann `ren_pat` – ? nimmt das

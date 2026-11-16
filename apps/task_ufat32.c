@@ -4,6 +4,7 @@
  *
  *   UFAT32 Laufwerk: [/F] [/R] [/V] [/AUTO]   (/R: ufat32_scan.c)
  *   UFAT32 Laufwerk: /FORMAT [/Q] [/V:Bezeichnung]     (ufat32_fmt.c)
+ *   UFAT32 Laufwerk: /TO16 [/V]           FAT32 -> FAT16 (ufat32_to16.c)
  *   UFAT32 Laufwerk: /CONVERT [/V] [/EA]  FAT16 -> FAT32 (ufat32_conv.c),
  *                     lange Namen nach VFAT, mit /EA in EA DATA. SF lassen
  *   UFAT32 Laufwerk: /LFN:VFAT | /LFN:EA  lange Namen umwandeln (ufat_e2v.c)
@@ -772,6 +773,7 @@ static char flabel[12];
 #include "ufat32_undel.c"
 #include "ufat32_defrag.c"
 #include "ufat32_conv.c"
+#include "ufat32_to16.c"
 
 void main(void)
 {
@@ -779,6 +781,7 @@ void main(void)
     unsigned reserved;
     int fmt = 0, conv = 0, quick = 0, surface = 0, undel = 0, defrag = 0, ulist = 0, uall = 0;
     int lfnmode = 0;                    /* /LFN:VFAT 1, /LFN:EA 2         */
+    int to16 = 0;                       /* /TO16: FAT32 -> FAT16          */
     static char spec[FAPI_PATHLEN];
 
     drive = DosQCurDisk();
@@ -794,6 +797,8 @@ void main(void)
             fmt = 1;
         else if (a[0] == '/' && up(a[1]) == 'C' && up(a[2]) == 'O')
             conv = 1;
+        else if (a[0] == '/' && up(a[1]) == 'T' && up(a[2]) == 'O')
+            to16 = 1;
         else if (a[0] == '/' && up(a[1]) == 'Q')
             quick = 1;
         else if (a[0] == '/' && up(a[1]) == 'V' && a[2] == ':') {
@@ -840,7 +845,7 @@ void main(void)
     pathbuf[2] = '\\';
     pathbuf[3] = 0;
 
-    if (undel || defrag || lfnmode)
+    if (undel || defrag || lfnmode || to16)
         fix = 1;                        /* schreibt: Laufwerk sperren    */
     hd = DosOpenDrive(drive, (fix ? DRV_OPEN_LOCK : DRV_OPEN_READ) | DRV_OPEN_LBA);
     if (FAPI_FAILED(hd)) {
@@ -888,6 +893,15 @@ void main(void)
         rc = lfnmode == 1 ? lfn_tovfat() : lfn_toea();
         fat_flush();
         DosClose(hd);
+        DosExit(rc);
+    }
+    if (to16) {                         /* FAT32 -> FAT16                 */
+        int rc;
+        fc_init();
+        rc = do_to16();
+        fat_flush();
+        if (rc)
+            DosClose(hd);
         DosExit(rc);
     }
     nbm = (unsigned)((maxc >> 19) + 1);

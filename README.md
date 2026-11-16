@@ -77,7 +77,13 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   VFAT-Einträge übertragen (wie Windows 95/98 sie liest) und `EA DATA. SF`
   gelöscht – mit `LONGNAMES=EA` in der CONFIG.SYS bleiben sie in der
   EA-Datei, und FAT32 benutzt dann ebenfalls das EA-Format (bei AUTO,
-  wenn im Stamm eine `EA DATA. SF` liegt). `CONVERT X: /LFN:VFAT` bzw.
+  wenn im Stamm eine `EA DATA. SF` liegt). `CONVERT X: /FS:FAT16 [/V]`
+  wandelt umgekehrt eine FAT32-Partition bis etwa 2 GB zurück in FAT16
+  (größere Zuordnungseinheiten; erst werden Dateien so geordnet, dass je
+  neue Zuordnungseinheit nur eine Datei liegt – unterbrechbar, das
+  Laufwerk bleibt dabei FAT32 –, dann FAT, Stamm mit 512 Einträgen,
+  Bootsektor und Partitionstyp 0Bh -> 06h, 0Ch -> 0Eh; lange Namen im
+  EA-Format bleiben, VFAT-Namen ebenso). `CONVERT X: /LFN:VFAT` bzw.
   `/LFN:EA` wandelt die langen Namen eines FAT-Laufwerks (FAT12/16/32,
   auch Disketten) nachträglich in die eine oder andere Form (hin und
   zurück; Zeichen außerhalb CP437 werden beim Weg nach EA zu `_`; der

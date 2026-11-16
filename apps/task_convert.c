@@ -3,6 +3,7 @@
  * CONVERT.EXE - Dateisystem eines Laufwerks umwandeln (wie Windows NT):
  *
  *   CONVERT Laufwerk: /FS:FAT32 [/V]
+ *   CONVERT Laufwerk: /FS:FAT16 [/V]     FAT32 -> FAT16 (ufat32_to16.c)
  *   CONVERT Laufwerk: /LFN:VFAT | /LFN:EA   lange Namen umwandeln
  *
  * Wie FORMAT und CHKDSK nur der Verteiler: erst CHKDSK Laufwerk: (bricht
@@ -78,10 +79,12 @@ void main(void)
             verb = 1;
         else if (a[0] == '/' && a[1] == '?') {
             puts("Wandelt das Dateisystem eines Laufwerks um, ohne Daten zu l\x94schen.\r\n\r\n"
-                 "CONVERT Laufwerk: /FS:FAT32 [/V]\r\n"
+                 "CONVERT Laufwerk: /FS:FAT32 | /FS:FAT16 [/V]\r\n"
                  "CONVERT Laufwerk: /LFN:VFAT | /LFN:EA\r\n\r\n"
                  "  /FS:FAT32  FAT16-Partition in FAT32 umwandeln (ab AT-DOS 6.0;\r\n"
-                 "             kleinere Zuordnungseinheiten); nicht umkehrbar\r\n"
+                 "             kleinere Zuordnungseinheiten)\r\n"
+                 "  /FS:FAT16  FAT32-Partition bis etwa 2 GB zur\x81" "ck in FAT16 (gr\x94\xE1" "ere\r\n"
+                 "             Zuordnungseinheiten, Dateien werden dazu neu geordnet)\r\n"
                  "  /LFN:VFAT  lange Namen aus EA DATA. SF in VFAT-Eintr\x84ge (wie\r\n"
                  "             Windows 95/98)\r\n"
                  "  /LFN:EA    lange VFAT-Namen nach EA DATA. SF (zur\x81" "ck)\r\n"
@@ -120,17 +123,34 @@ void main(void)
         DosExit(run(path, d, lfn[0] == 'V' ? " /LFN:VFAT" : " /LFN:EA"));
     }
     if (d == 0xFFFF || !fs[0]) {
-        puts("Aufruf: CONVERT Laufwerk: /FS:FAT32 bzw. /LFN:VFAT|EA\r\n");
+        puts("Aufruf: CONVERT Laufwerk: /FS:FAT32|FAT16 bzw. /LFN:VFAT|EA\r\n");
         DosExit(4);
     }
     if (DosGetVersion() < 0x0600) {     /* 5.x: kein FAT32 im Kernel     */
         puts("FAT32 gibt es erst ab AT-DOS 6.0.\r\n");
         DosExit(4);
     }
+    if (same(fs, "FAT16")) {            /* FAT32 -> FAT16                */
+        if (DosQFSInfo(d, &fi) || (fi.flags & (FSI_READONLY | FSI_REMOVABLE)) ||
+            !same(fi.fsname, "FAT32")) {
+            puts("Nur FAT32-Partitionen auf Festplatten lassen sich nach FAT16 umwandeln.\r\n");
+            DosExit(3);
+        }
+        if (sys_prog(path, "SYSTEM\\", "UFAT32.EXE") || sys_prog(chk, "", "CHKDSK.EXE")) {
+            puts("UFAT32.EXE oder CHKDSK.EXE fehlt.\r\n");
+            DosExit(3);
+        }
+        puts("Das Laufwerk wird gepr\x81" "ft ...\r\n");
+        if (run(chk, d, "") != 0) {
+            puts("CHKDSK hat Fehler gefunden - zuerst CHKDSK /F ausf\x81hren.\r\n");
+            DosExit(3);
+        }
+        DosExit(run(path, d, verb ? " /TO16 /V" : " /TO16") ? 3 : 0);
+    }
     if (!same(fs, "FAT32")) {
         puts("Umwandeln nach ");
         puts(fs);
-        puts(" wird nicht unterst\x81tzt (nur FAT32).\r\n");
+        puts(" wird nicht unterst\x81tzt (FAT32 oder FAT16).\r\n");
         DosExit(4);
     }
     if (DosQFSInfo(d, &fi) || (fi.flags & (FSI_READONLY | FSI_REMOVABLE))) {
