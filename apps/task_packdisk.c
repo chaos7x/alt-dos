@@ -369,7 +369,8 @@ static int check(char *rest)
     hd = fix ? DosOpenRW(name) : DosOpen(name);
     if (FAPI_FAILED(hd)) {
         puts(hd == FAPI_ERR_INUSE ? "Die Datei ist in Benutzung (eingeh\x84ngt? Erst LOOP X: /D).\r\n"
-                                  : "Datei nicht gefunden.\r\n");
+             : hd == FAPI_ERR_DENIED ? "Die Datei ist schreibgesch\x81tzt - f\x81r /F erst ATTRIB -R.\r\n"
+                                     : "Datei nicht gefunden.\r\n");
         return 3;
     }
     units = 0;                          /* Groesse aus dem Verzeichnis   */
