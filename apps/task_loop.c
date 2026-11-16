@@ -31,17 +31,17 @@ static unsigned put_drives(unsigned long m)  /* -> Zeichen            */
 static void list(void)
 {
     unsigned i, n = 0, k, kd;
-    static const char *kind[5] = { "?", "ISO", "Abbild", "Platte", "VHD" };
+    static const char *kind[6] = { "?", "ISO", "Abbild", "Platte", "VHD", "DrvSpace" };
     for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++) {
         if (!li.drives)
             continue;
         if (!n++)
-            puts("Laufwerk  Art     Zugriff   Bereiche  Datei\r\n");
+            puts("Laufwerk  Art       Zugriff   Bereiche  Datei\r\n");
         for (k = put_drives(li.drives); k < 10; k++)
             putc(' ');
         kd = li.kind & ~LOOPK_RO;
-        puts(kind[kd < 5 ? kd : 0]);
-        for (k = slen(kind[kd < 5 ? kd : 0]); k < 8; k++)
+        puts(kind[kd < 6 ? kd : 0]);
+        for (k = slen(kind[kd < 6 ? kd : 0]); k < 10; k++)
             putc(' ');
         puts(li.kind & LOOPK_RO ? "nur lesen " : "schreiben ");
         put_num(li.extents, 8, 0);
@@ -62,7 +62,8 @@ static void usage(void)
          "LOOP X: /D\r\n"
          "LOOP\r\n\r\n"
          "  Datei  ISO (CD-Abbild), Disketten- oder Plattenabbild (IMG, IMA),\r\n"
-         "         feste VHD\r\n"
+         "         feste VHD, DoubleSpace/DriveSpace-Datei (DBLSPACE.nnn,\r\n"
+         "         DRVSPACE.nnn, nur lesend)\r\n"
          "  X:     Laufwerksbuchstabe, ohne Angabe der n\x84" "chste freie\r\n"
          "  /RO    nur lesend (ISO und Dateien auf CD immer)\r\n"
          "  /D     h\x84ngt das Laufwerk wieder aus\r\n"

@@ -258,6 +258,7 @@ struct fapi_loopinfo {
 #define LOOPK_IMG           2       /* Diskette/Partition ohne Tabelle  */
 #define LOOPK_DISK          3       /* Platte mit Partitionstabelle     */
 #define LOOPK_VHD           4       /* feste VHD                        */
+#define LOOPK_DBL           5       /* DoubleSpace/DriveSpace 6.x (CVF) */
 #define LOOPK_RO            0x80    /* in kind: nur lesend              */
 #define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
 #define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne

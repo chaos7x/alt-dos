@@ -1,8 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 # Plan: Loop-Laufwerke und Plattenkomprimierung (6.1)
 
-Stand: 15.11.2026, Konzept mit dem Nutzer besprochen. Stufe 1 (Loop
-lesend) gebaut, siehe CLAUDE.md; der Rest ist Plan. Siehe auch [BIGLOCK.md](BIGLOCK.md).
+Stand: 16.11.2026, Konzept mit dem Nutzer besprochen. Stufen 1, 2 und 4
+(Loop lesend/schreibend, DoubleSpace lesend) gebaut, siehe CLAUDE.md; der
+Rest ist Plan. Siehe auch [BIGLOCK.md](BIGLOCK.md).
 
 ## Kurzfassung
 
@@ -160,8 +161,12 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    LOOP1..LOOP4 in die Systemumgebung, `loop_boot` hängt nach der
    Auslagerungsdatei ein. Aushängen setzt das Sauber-Bit (ifs_clean).
 3. MSCDEX in der DOS-Box.
-4. DBLSPACE.SYS lesend.
-5. DBLSPACE.SYS schreibend, Cluster-Cache, UDBLSPACE.EXE.
+4. DoubleSpace/DriveSpace 6.x lesend – erledigt (16.11.2026), anders als
+   geplant nicht als DBLSPACE.SYS, sondern als Loop-Art `LOOPK_DBL` in
+   loop.c (`LOOP E: C:\DBLSPACE.000`): Kennung im Superblock, MDFAT,
+   Entpacker DS/JM, ein Cluster-Puffer. Formatdetails nach der dmsdos-
+   Doku geprüft, ein echter 6.22-Container steht noch aus.
+5. Schreibend (Packer, BitFAT, MDFAT), Cluster-Cache, UDBLSPACE.EXE.
 6. `/CREATE`, evtl. `/COMPRESS`, DriveSpace 3 lesen, Start von C:.
 
 Parallel (BIGLOCK.md, 6.1): fat.c-Zustand je Operation, dann Tiefe 2 und

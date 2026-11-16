@@ -1665,6 +1665,33 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   weiterem Kernelcode Seltenes nach KTEXT2. CONFIG.SYS-Kopfzeilen
   gekürzt (3.796 Byte). Grenzen: Datum der Abbilddatei bleibt beim
   Schreiben stehen; Medienwechsel am Träger weiter nicht erkannt.
+  DoubleSpace/DriveSpace 6.x lesend erledigt (16.11.2026; in QEMU
+  geprüft mit zwei in Python gebauten Containern – `MSDSP6.0`/JM und
+  `MSDBL6.0`/DS, 3 MB innen, spc 16, dcluster -2, Leersektoren zwischen
+  Bootblock/FAT/Stamm, gepackte, rohe, verkürzte (Rest Nullen) und
+  unbelegte Cluster; Packer und Prüf-Entpacker im Scratchpad: LOOP E:/F:,
+  COMP aller Dateien gleich, Schreiben/MD -> schreibgeschützt, CHKDSK,
+  `command /c copy` aus der Box, Aushängen, SHUTDOWN, fsck sauber):
+  loop.c erkennt beim Einhängen die Kennung bei 3 im ersten Sektor der
+  Datei (vor dem Anlegen des Segments: `ifs_bmap` nur des ersten
+  Stücks), Art `LOOPK_DBL` (5), immer nur lesend. Hinter den Stücken
+  `struct dblh` (bei `lhdr.dbo`, höchstens DB_OUT = 48 Byte, beim
+  Übersetzen geprüft) und zwei 8-KB-Puffer (entpackter Cluster, gepackte
+  Daten) – höchstens 8.188 - 2.062 Stücke. Lage wie dmsdos
+  `doc/cvfinfo.doc` (GPL, nur gelesen): Superblock 36 MDFAT - 1, 39
+  Bootblock, 14 FAT, 41 Stamm (beide relativ zum Bootblock), 45
+  dcluster (mit Vorzeichen); innere Sektoren < res -> Bootblock + lba,
+  < Stamm -> FAT, < Daten -> Stamm, sonst Cluster ((lba - din) >> sh) +
+  2: MDFAT-Eintrag (Cluster + dcluster) `u c hhhh llll ? s21`, l + 1
+  Sektoren ab s + 1, roh kopieren oder entpacken, fehlender Rest Nullen,
+  zuletzt entpackter Cluster gemerkt (`dblh.cl`). Entpacker DS/JM eigene
+  Umsetzung nach dmsdos `dblspace_dec.c` (Bits ab dem niedrigsten in
+  16-Bit-Worten, Bitleser `struct dz` auf dem Stapel – DGROUP ist voll;
+  Gleichlauf 113Fh). Lehre: `f() | (f() << 8)` – die Reihenfolge der
+  Aufrufe legt C nicht fest, Watcom rief die rechte zuerst (gepackte
+  Cluster scheiterten). Spc nur Zweierpotenz bis 16 (DriveSpace 3 hat
+  64 – abgelehnt). Nicht geprüft: ein echter Container von MS-DOS 6.22
+  (beim Nutzer in 86Box). KTEXT2 danach 60.948 Byte.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
