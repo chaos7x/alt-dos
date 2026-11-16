@@ -914,7 +914,9 @@ Container meldet „Datenträger voll“. Der angezeigte freie Platz ist der
 des inneren Laufwerks (ohne Schätzung der Packrate). Ebenso DriveSpace 3
 (Windows 95 Plus!/98, große Laufwerke bis 2 GB mit 32-KB-Clustern):
 gelesen werden alle Arten (JM, SQ, ungepackt, zerstückelte Cluster),
-geschrieben wird JM; jeder solche Container braucht 64 KB zusätzlich.
+geschrieben wird JM; jeder solche Container braucht 64 KB zusätzlich
+(ein unter Windows 98 angelegter Container mit 2 GB innen in 86Box
+gelesen und geprüft).
 `PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]` legt einen
 leeren Container an (DriveSpace-6.22-Format bis 512 MB, mit `/DS3`
 DriveSpace-3-Format bis 2047 MB; das innere Laufwerk wird mit der

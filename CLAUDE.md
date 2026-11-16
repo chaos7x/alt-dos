@@ -1881,8 +1881,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   unter AT-DOS `XCOPY C:\DOS` in den echten MS-DOS-6.22-Container,
   /CHECK /V: alle 23.457 gepackten Cluster „JM 00 00“; ScanDisk von
   MS-DOS 6.22: „DriveSpace-Datenträger E enthielt keine Fehler“. Damit
-  ist Schreiben in echte DriveSpace-6-Container bestätigt (DS3/Windows
-  98 weiter ungeprüft).
+  ist Schreiben in echte DriveSpace-6-Container bestätigt.
+  DriveSpace 3 (Windows 98, vom Nutzer in 86Box, 16.11.2026): Laufwerk
+  unter Windows 98 auf DriveSpace 3 umgestellt (479-MB-Container, innen
+  2 GB FAT16 mit 32-KB-Clustern, 65.509 Cluster – knapp unter der
+  Grenze 65.535 von loop.c): PACKDISK /CHECK /V „Keine Fehler“, 8.319
+  Cluster „JM 00 00“, 115 „JM 00 01“, kein SQ, nichts zerstückelt
+  (Compression Agent nicht gelaufen); eingehängt CHKDSK sauber, mc
+  läuft vom Laufwerk. Offen: Schreiben + ScanDisk unter Windows 98, SQ
+  und zerstückelte Cluster (nach HiPack/UltraPack).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
