@@ -860,12 +860,43 @@ static int dbl_load(int i, struct dblh __far *d, unsigned long cl)
         } else {
             if (dz_unpack(d->ds, d->io + st, n - st, d->oo, lo))
                 return -1;
-            if (!d->d3)
+            if (!d->d3 && (in[st] == 'J' || !d->jm)) {
+                d->jm = in[st] == 'J';  /* JM gesehen: so schreiben     */
                 d->ver = in[st + 3];
+            }
         }
     }
     d->cl = cl;
     return 0;
+}
+
+/* DS6: Kopf des ersten gepackten Clusters lesen (die ersten 32 MDFAT-
+   Sektoren) -> jm/ver. Die Kennung im Superblock sagt es nicht sicher:
+   von MS-DOS 6.22 umgewandelte oder angelegte Container tragen teils
+   "MSDBL6.0", packen aber JM; DoubleSpace-Daten ("DS") in einem solchen
+   Container liest MS-DOS 6.22 nur mit DRVSPACE.MR1. */
+static void dbl_probe(int i, struct dblh __far *d)
+{
+    unsigned k, o;
+    unsigned long e;
+    unsigned char __far *b = MK_FP(DMABUF, 0);
+
+    for (k = 0; k < d->mdn && k < 32; k++) {
+        if (raw(i, d->mdf + k))
+            return;
+        for (o = 0; o < 512; o += 4) {
+            e = *(unsigned long __far *)(b + o);
+            if ((e & 0xC0000000UL) != 0x80000000UL)
+                continue;               /* frei oder ungepackt           */
+            if (raw(i, (e & 0x1FFFFFUL) + 1))
+                return;
+            if ((b[0] == 'J' && b[1] == 'M') || (b[0] == 'D' && b[1] == 'S')) {
+                d->jm = b[0] == 'J';
+                d->ver = b[3];
+            }
+            return;
+        }
+    }
 }
 
 /* FAT-Sektor fl aus DMABUF schreiben: frei gewordene Cluster abgeben */
@@ -1158,6 +1189,9 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         db->dcl = *(int __far *)(b + 45);
         db->cl = 0;
         db->mdn = (unsigned)(db->bb - db->mdf);   /* MDFAT-Sektoren */
+        if (!db->d3)                    /* Packart am ersten gepackten   */
+            dbl_probe(i, db);           /* Cluster (MS-DOS 6.22 behaelt
+                                           oft "MSDBL6.0", packt aber JM) */
         db->dend = 0;                   /* "MDR" im letzten Sektor       */
         if (raw(i, units - 1) == 0 && b[0] == 'M' && b[1] == 'D' && b[2] == 'R')
             db->dend = units - 2;

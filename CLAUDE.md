@@ -1868,7 +1868,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   schreibt „JM“ 00 ver (ver aus dem ersten gelesenen gepackten Cluster,
   sonst 0) und Bit 21 des MDFAT-Eintrags immer 0. Zur Klärung zählt
   `/CHECK … /V` jetzt Kopf (4 Byte) und Bit 21 aller gepackten Cluster
-  (`survey`). Bis dahin echte Container nicht beschreiben.
+  (`survey`). Ergebnis beim Nutzer: MS-DOS-Cluster „JM 00 00“ (23.229),
+  unsere „DS 00 02“ (224), Bit 21 überall 0. Ursache: der Container
+  trägt die Kennung „MSDBL6.0“ (MS-DOS 6.22 legt ihn so an), loop.c nahm
+  daraus DoubleSpace. Jetzt liest `dbl_probe` beim Einhängen den Kopf
+  des ersten gepackten Clusters (erste 32 MDFAT-Sektoren) und nimmt
+  dessen Art und Version; beim Lesen gilt: einmal JM gesehen -> JM.
+  Ohne gepackten Cluster bleibt es bei der Kennung. In QEMU geprüft
+  (Testcontainer auf „MSDBL6.0“ umgestellt, COPY hinein: neue Cluster
+  „JM 00 00“, cvfchk 0 Fehler, fsck sauber, Inhalte gleich).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

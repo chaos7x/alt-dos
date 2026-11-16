@@ -921,7 +921,10 @@ DriveSpace-3-Format bis 2047 MB; das innere Laufwerk wird mit der
 geschätzten Packrate, Vorgabe 2:1, größer angelegt), `PACKDISK /CHECK
 Datei [/F]` prüft einen nicht eingehängten Container (MDFAT gegen BITFAT
 und FAT, Überschneidungen, verlorene Cluster), zeigt Packrate und
-geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT; `/V` zeigt die ersten Abweichungen mit Cluster und MDFAT-Eintrag.
+geschätzten freien Platz und behebt mit `/F` Fehler in BITFAT/MDFAT; `/V` zeigt die ersten Abweichungen mit Cluster und MDFAT-Eintrag
+und zählt die Packart (Kopf JM/DS) aller gepackten Cluster. Geschrieben
+wird in der Packart, die der Container schon enthält (MS-DOS 6.22 legt
+auch DriveSpace-Container mit der Kennung „MSDBL6.0“ an).
 Höchstens 4 zugleich; DOS-Boxen
 sehen die Laufwerke über den Redirector, auch zum Schreiben – auch eine
 schon laufende Box sieht ein später eingehängtes Laufwerk beim nächsten
