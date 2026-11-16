@@ -916,7 +916,8 @@ des inneren Laufwerks (ohne Schätzung der Packrate). Ebenso DriveSpace 3
 gelesen werden alle Arten (JM, SQ, ungepackt, zerstückelte Cluster),
 geschrieben wird JM; jeder solche Container braucht 64 KB zusätzlich
 (ein unter Windows 98 angelegter Container mit 2 GB innen in 86Box
-gelesen und geprüft, auch mit UltraPack/HiPack umgepackt).
+gelesen, beschrieben und von ScanDisk unter Windows 98 fehlerfrei
+geprüft, auch mit UltraPack/HiPack umgepackt).
 `PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]` legt einen
 leeren Container an (DriveSpace-6.22-Format bis 512 MB, mit `/DS3`
 DriveSpace-3-Format bis 2047 MB; das innere Laufwerk wird mit der

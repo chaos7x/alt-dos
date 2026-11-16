@@ -1894,7 +1894,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   MDFAT-Eintrags (DS3) steht bei allen SQ-Clustern – vermutlich Merker
   des Agenten, loop.c liest darüber hinweg und schreibt 0. Eingehängt
   (/RO): mc, Textdateien und Stunts laufen – SQ-Entpacker an echten
-  Daten bestätigt. Offen: Schreiben + ScanDisk unter Windows 98,
+  Daten bestätigt. Danach unter AT-DOS beschrieben (XCOPY C:\DOS, 105
+  Dateien, Löschen): CHKDSK und /CHECK /V sauber, 333 neue Cluster „JM
+  00 00“, „JM 00 01“ von 7.639 auf 7.520 (frei gewordener Platz);
+  ScanDisk von Windows 98: „DriveSpace-Laufwerk E: enthielt keine
+  Fehler“ – Schreiben in echte DriveSpace-3-Container bestätigt. Offen:
   zerstückelte Cluster (keine entstanden).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
