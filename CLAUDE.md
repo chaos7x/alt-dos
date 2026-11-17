@@ -2115,9 +2115,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   keine Fehler“, Trägerlaufwerk M ebenso – PACKDISK-Container (DS6) von
   MS-DOS angenommen. Lehre: das ZIP vorher mit EJECT/SHUTDOWN abmelden –
   sonst steht im FAT-Eintrag 1 der Merker „nicht sauber“ (7FFFh), den
-  ScanDisk von MS-DOS 6.22 als „Datenträgerbyte fehlte“ meldet. Offen
-  (Frage an den Nutzer): Merker auf Wechselplatten weglassen wie bei
-  Disketten. Nächster Schritt: /DS3 unter Windows 98, dann DoubleSpace.
+  ScanDisk von MS-DOS 6.22 als „Datenträgerbyte fehlte“ meldet (auch
+  mtools liest die FAT dann nicht). Entscheidung des Nutzers: auf
+  Wechselplatten den Merker nicht benutzen (EJECT bringt 86Box auf dem
+  Mac zum Absturz) – fat.c `mark_in_use` lässt ihn bei IS_REM stehen,
+  setzt einen alten 7FFFh beim ersten Schreiben zurück, macht FSInfo
+  (FAT32) trotzdem ungültig; fat_mount wertet ihn dort nicht aus (kein
+  AUTOCHECK, wie Disketten). In QEMU geprüft (scsi-hd removable, 7FFFh
+  vorbelegt, MD ohne SHUTDOWN, QEMU hart beendet: FFFFh, fsck sauber).
+  Auch auf 5.x. Nächster Schritt: /DS3 unter Windows 98, dann DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
