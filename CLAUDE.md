@@ -840,7 +840,9 @@ FreeDOS-MEM „Expanded (EMS) 4.080K“, 2-MB-Karte -> 2048K; das Original
 von lo-tech ebenso (2048K). Mehrere Karten zusammen kann LTEMM nicht. Vom Nutzer auf dem SCAT
 (286) bestätigt: 4.080K EMS in der Box. Danach (vom Nutzer bemerkt) kein
 Klicken mehr im PC-Lautsprecher beim Speichertest (imgchk schaltete Port
-61h Bit 1 um); Vorgabe im Box-Abbild /p:D000.
+61h Bit 1 um); Vorgabe im Box-Abbild /p:D000. Box-CONFIG.SYS mit `STACKS=0,0` (wie
+die 6.x-Box; Wunsch des Nutzers „1 KB mehr“): in 86Box größtes Programm
+mit LTEMM 604K (618.800 Byte) statt 599K.
 Everex EV-159: in 86Box als erweiterter Speicher einstellbar (Start-
 adresse hinter dem RAM, zusammenhängende Größe 3072, EMS aus) – dann
 nutzt AT-DOS ihn ohne Treiber.
