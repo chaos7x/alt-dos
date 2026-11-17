@@ -2055,6 +2055,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sauber, 105 Dateien gleich; 20-MB-Superblock 24h = 0101h, 27h = 0321h
   wie MS-DOS). Reihenfolge der Prüfung beim Nutzer: erst DRVSPACE
   (MS-DOS 6.22), dann /DS3 (Windows 98), dann DoubleSpace.
+  Beim Nutzer weiter „Datenträgerbyte fehlte“. Statt weiter zu raten:
+  `PACKDISK /CMP Vorlage Datei` vergleicht die Verwaltungssektoren
+  zweier Container jeweils an der gleichen Stelle ihres Aufbaus
+  (Superblock, 1. BITFAT-/MDFAT-Sektor, Bootblock, reservierte Sektoren
+  dahinter – nur Abweichungen –, 1./2./letzter FAT-Sektor, 1. Stamm-
+  sektor, die letzten beiden Sektoren); je Sektor höchstens 30
+  Abweichungen als Stelle:Vorlage/Datei, passt auf einen Bildschirm.
+  In QEMU geprüft (20 MB gegen 16 MB: nur Gesamtzahl, FAT-Art,
+  Bezeichnung, Seriennummer).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

@@ -1196,6 +1196,127 @@ static int compress(char *rest)
     return c_skip ? 1 : 0;
 }
 
+/* ---- /CMP: zwei Container Sektor fuer Sektor an denselben Stellen ------- */
+static unsigned ch[2];
+static unsigned long cbb[2], cfat[2], croot[2], cmdf[2], cend[2];
+static unsigned c_lines;
+
+static int c_open(char *nm, int i)
+{
+    ch[i] = DosOpen(nm);
+    if (FAPI_FAILED(ch[i])) {
+        puts("Datei nicht gefunden: ");
+        puts(nm);
+        puts("\r\n");
+        return -1;
+    }
+    hd = ch[i];
+    if (rd(0, sb, 1) || sb[3] != 'M' || sb[4] != 'S' || sb[8] != '6') {
+        puts("Kein DriveSpace-Container: ");
+        puts(nm);
+        puts("\r\n");
+        return -1;
+    }
+    cbb[i] = rd16(sb + 39);
+    cfat[i] = cbb[i] + rd16(sb + 14);
+    croot[i] = cbb[i] + rd16(sb + 41);
+    cmdf[i] = rd16(sb + 36) + 1UL;
+    cend[i] = (fsize(nm) >> 9) - 1;
+    return 0;
+}
+
+/* Sektor a der ersten gegen Sektor b der zweiten Datei: Abweichungen als
+   Stelle:alt/neu, hoechstens 30 je Sektor */
+static void c_sec(const char *what, unsigned long a, unsigned long b)
+{
+    unsigned i, n = 0, col = 0;
+    hd = ch[0];
+    if (rd(a, sec, 1))
+        zero(sec, 512);
+    hd = ch[1];
+    if (rd(b, fl, 1))
+        zero(fl, 512);
+    for (i = 0; i < 512; i++)
+        if (sec[i] != fl[i])
+            n++;
+    if (!n) {
+        if (!c_lines) {
+            puts(what);
+            puts(": gleich\r\n");
+        }
+        return;
+    }
+    puts(what);
+    puts(": ");
+    put_num((unsigned long)n, 0, 1);
+    puts(" Byte anders\r\n");
+    for (i = 0, n = 0; i < 512 && n < 30; i++) {
+        if (sec[i] == fl[i])
+            continue;
+        if (!col)
+            puts("  ");
+        hexn(i, 3);
+        puts(":");
+        hexn(sec[i], 2);
+        puts("/");
+        hexn(fl[i], 2);
+        n++;
+        if (++col == 7) {
+            puts("\r\n");
+            col = 0;
+        } else
+            puts(" ");
+    }
+    if (col)
+        puts("\r\n");
+}
+
+static int cmp(char *rest)
+{
+    static char n2[FAPI_PATHLEN];
+    unsigned k;
+    posw(rest, 0, name, FAPI_PATHLEN);
+    posw(rest, 1, n2, FAPI_PATHLEN);
+    if (!name[0] || !n2[0]) {
+        puts("Aufruf: PACKDISK /CMP Vorlage Datei\r\n");
+        return 4;
+    }
+    if (c_open(name, 0) || c_open(n2, 1))
+        return 3;
+    c_lines = 0;
+    puts("Vergleich (Vorlage/zweite Datei), Stellen hexadezimal:\r\n");
+    c_sec("Superblock", 0, 0);
+    c_sec("BITFAT 1. Sektor", 1, 1);
+    c_sec("MDFAT 1. Sektor", cmdf[0], cmdf[1]);
+    c_sec("Bootblock", cbb[0], cbb[1]);
+    c_lines = 1;                        /* reservierte: nur Abweichungen */
+    for (k = 1; cbb[0] + k < cfat[0] && cbb[1] + k < cfat[1]; k++) {
+        static char t[24];
+        char *q = t;
+        const char *s0 = "Bootblock+";
+        while (*s0)
+            *q++ = *s0++;
+        if (k >= 10)
+            *q++ = (char)('0' + k / 10);
+        *q++ = (char)('0' + k % 10);
+        *q = 0;
+        c_sec(t, cbb[0] + k, cbb[1] + k);
+    }
+    c_lines = 0;
+    puts("Bootblock+1 bis +");
+    put_num((unsigned long)(k - 1), 0, 1);
+    puts(": sonst gleich\r\n");
+    c_sec("FAT 1. Sektor", cfat[0], cfat[1]);
+    c_sec("FAT 2. Sektor", cfat[0] + 1, cfat[1] + 1);
+    c_sec("FAT letzter Sektor", croot[0] - 1, croot[1] - 1);
+    c_sec("Stamm 1. Sektor", croot[0], croot[1]);
+    c_sec("vorletzter Sektor", cend[0] - 1, cend[1] - 1);
+    c_sec("letzter Sektor", cend[0], cend[1]);
+    DosClose(ch[0]);
+    DosClose(ch[1]);
+    return 0;
+}
+
 void main(void)
 {
     char *p;
@@ -1208,11 +1329,14 @@ void main(void)
         rc = check(p);
     else if (opt(p, "/COMPRESS") && !opt(p, "/CREATE") && !opt(p, "/CHECK"))
         rc = compress(p);
+    else if (opt(p, "/CMP"))
+        rc = cmp(p);
     else {
         puts("Legt komprimierte Laufwerke an und pr\x81" "ft sie.\r\n\r\n"
              "PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n"
              "PACKDISK /CHECK Datei [/F] [/V]\r\n"
-             "PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n\r\n"
+             "PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n"
+             "PACKDISK /CMP Vorlage Datei\r\n\r\n"
              "  /CREATE  leerer Container im DriveSpace-6.22-Format (bis 512 MB),\r\n"
              "           mit /DS3 im DriveSpace-3-Format (32-KB-Cluster, bis 2047 MB)\r\n"
              "  /RATIO:n gesch\x84tzte Packrate n:1 f\x81r die Gr\x94\xE1" "e innen (Vorgabe 2)\r\n"
@@ -1220,7 +1344,8 @@ void main(void)
              "  /F       Fehler in BITFAT/MDFAT beheben\r\n"
              "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n"
              "  /COMPRESS Dateien von X: in X:\\DRVSPACE.000 verschieben (fortsetzbar),\r\n"
-             "           /RESERVE:MB bleibt auf X: frei (Vorgabe 1)\r\n\r\n"
+             "           /RESERVE:MB bleibt auf X: frei (Vorgabe 1)\r\n"
+             "  /CMP     Verwaltungssektoren zweier Container vergleichen\r\n\r\n"
              "Schalter d\x81rfen in beliebiger Reihenfolge stehen.\r\n"
              "Einh\x84ngen mit LOOP X: Datei, aush\x84ngen mit LOOP X: /D.\r\n");
         rc = 4;
