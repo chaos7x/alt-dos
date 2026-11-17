@@ -204,6 +204,8 @@ static unsigned alloc_cluster(int d, unsigned prev)
     struct volume *v = &vol[d];
     unsigned n, c = v->hint;
 
+    if (ferr || !loop_room(v->blk))     /* DriveSpace: Container voll    */
+        return 0;
     for (n = 0; n < v->clusters; n++, c++) {
         if (!valid(v, c))
             c = 2;

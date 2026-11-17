@@ -147,6 +147,7 @@ int __far loop_read(int dev, unsigned long lba);
 int __far loop_write(int dev, unsigned long lba);
 int __far loop_drop(int dev);
 void __far loop_sync_all(void);
+int __far loop_room(int dev);
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;

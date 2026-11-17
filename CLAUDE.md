@@ -221,10 +221,18 @@ Release `v5.3.1`); `5.3.2` = 5.3.1 plus DIR /S (15.11.2026, Release
 DoubleSpace/DriveSpace/PACKDISK, DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM,
 HEXDUMP/XXD, schnellere Maussuche, Mode-X-Zeiger; Titel/VER „5.4“,
 FAPI_VERSION 0528h, Bootsektoren „5.4“; Release `v5.4`, ebenfalls
-`--latest=false`). Bekannt (auch 6.1): läuft ein DriveSpace-Container
-beim Kopieren voll, bleiben im Inneren verlorene Ketten (CHKDSK /F
-räumt auf) – fat.c gibt bei einem Schreibfehler mitten in der Datei
-die schon belegten Cluster nicht zurück. `5.x` = Weiterarbeit, die CI
+`--latest=false`). Nach dem Release behoben (17.11.2026, auch auf
+main): lief ein DriveSpace-Container beim Kopieren voll, blieben im
+Inneren verlorene Ketten – loop.c hielt den Cluster, der nicht mehr
+passte, gepuffert, danach scheiterte jeder Zugriff auf andere Cluster
+(auch Verzeichnisse), die FAT bekam die Ketten, die Einträge nicht.
+Jetzt fragt fat.c `alloc_cluster` vorher `loop_room` (Platz für den
+gepufferten und einen neuen Cluster, ungepackt), dbl_load verwirft
+einen Cluster, der nicht mehr passt; in QEMU (isapc 4 MB) geprüft:
+2-MB-Container voll, CHKDSK/PACKDISK /CHECK/cvfchk/fsck sauber, Inhalte
+gleich. SYS /A kopiert jetzt auch `\DOS\MDOS`, `\DOS\SYSTEM\SFBANK` und
+`\DEMO`, ATSYS ebenso (vom Nutzer gemeldet; Fix aus main), beide ohne
+Systemdateien. `5.x` = Weiterarbeit, die CI
 veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 

@@ -5,7 +5,7 @@
 ;
 ; Wie SYS: kopiert alle Dateien des aktuellen Laufwerks (der AT-DOS-
 ; Diskette) ins Stammverzeichnis des Ziels, auch die versteckte ATDOS.SYS,
-; dazu \DOS, \DOS\SYSTEM und \DEMO, und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
+; dazu \DOS, \DOS\SYSTEM (mit SFBANK), \DOS\MDOS und \DEMO, und ersetzt danach den Code im Bootsektor der Partition. Der BPB (Bytes
 ; 3..61) bleibt stehen. Verweigert Laufwerke mit IO.SYS, MSDOS.SYS oder
 ; IBMBIO.COM, damit eine MS-DOS-Startplatte nicht unbrauchbar wird.
 ;
@@ -103,7 +103,7 @@ org 0x100
         int     0x21
         jnc     .file
 
-        ; Unterverzeichnisse \DOS, \DOS\SYSTEM, \DEMO (Reihenfolge: Eltern zuerst)
+        ; Unterverzeichnisse aus subdirs (Reihenfolge: Eltern zuerst)
         mov     si, subdirs
 .sd:    cmp     byte [si], 0
         je      .nodos
@@ -131,15 +131,15 @@ org 0x100
         mov     al, [dst_letter]
         mov     [dst_dir], al
         mov     ah, 0x4E
-        mov     cx, 0x07
-        mov     dx, pat_buf
+        mov     cx, 0x01                ; ohne versteckte/System-Dateien
+        mov     dx, pat_buf             ; (SWAPPER.DAT, falls SWAPPATH dort)
         int     0x21
         jc      .sdnext                 ; gibt es auf der Quelle nicht
         mov     ah, 0x39                ; Zielverzeichnis anlegen; gibt es schon: egal
         mov     dx, dst_dir
         int     0x21
         mov     ah, 0x4E
-        mov     cx, 0x07
+        mov     cx, 0x01
         mov     dx, pat_buf
         int     0x21
 .dfile: call    copy_file
@@ -307,16 +307,16 @@ src_path    db "A:\*.*", 0
 chk_path    db "C:\", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 src_file:
 src_letter  db "A:\"
-src_name    times 26 db 0
+src_name    times 36 db 0          ; Praefix bis 18 + 8.3 + 0
 dst_file:
 dst_letter  db "C:\"
-dst_name    times 26 db 0
-subdirs     db "DOS\", 0, "DOS\SYSTEM\", 0, "DEMO\", 0, 0
+dst_name    times 36 db 0
+subdirs     db "DOS\", 0, "DOS\SYSTEM\", 0, "DOS\SYSTEM\SFBANK\", 0, "DOS\MDOS\", 0, "DEMO\", 0, 0
 star        db "*.*", 0
 pat_buf     db "A:\", 0
-            times 20 db 0
+            times 30 db 0
 dst_dir     db "C:\", 0
-            times 20 db 0
+            times 30 db 0
 pfx_ptr     dw 0
 subdir      db 0
 
