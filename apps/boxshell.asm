@@ -951,7 +951,9 @@ cds_sync:
 ; INT 2Fh: DPMI-/XMS-Abfragen beantwortet der Monitor (INT E0h 1Bh, AX in
 ; DX) - mit VME laeuft INT 2Fh ohne Falle bis hierher, FreeDOS reicht 43h
 ; nicht an den alten Vektor weiter.
-int2f:  cmp     ax, 1687h
+int2f:  cmp     ah, 15h                 ; MSCDEX: Kernel (INT E0h 20h,
+        je      .cd                     ; AL = Unterfunktion)
+        cmp     ax, 1687h
         je      .mon
         cmp     ax, 4300h
         je      .mon
@@ -981,6 +983,21 @@ int2f:  cmp     ax, 1687h
         retf    2                       ; CF des Kernels zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+.cd:    push    ax
+        mov     ah, 20h
+        int     0E0h                    ; ZF=1 erledigt, CF Fehler
+        jnz     .cdn
+        inc     sp                      ; AX ist das Ergebnis; INC laesst
+        inc     sp                      ; CF stehen
+        pushf                           ; (CMP aendert CF)
+        cmp     ah, 20h                 ; AX nicht gesetzt: wie vorher
+        jne     .cdr
+        mov     ah, 15h
+.cdr:   popf
+        sti
+        retf    2
+.cdn:   pop     ax
+        jmp     far [cs:old2f]
 .mon:   mov     [cs:m2fax], ax
         push    dx
         mov     dx, ax

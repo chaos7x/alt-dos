@@ -614,3 +614,199 @@ const struct ctxblk redir_ctx[] = {
 const unsigned redir_nctx = sizeof(redir_ctx) / sizeof(redir_ctx[0]);
 
 
+
+/* ---- MSCDEX (INT 2Fh 15xxh) ----------------------------------------------
+   Viele CD-Spiele und Installationsprogramme fragen MSCDEX ab, bevor sie
+   die CD ueber DOS lesen (Dateien gehen ohnehin ueber den Redirector).
+   BOXSHELL reicht AH = 15h mit INT E0h 20h hierher (AL = Unterfunktion).
+   Version 2.21 wie MSCDEX von MS-DOS 6.22; CD-Laufwerke sind alle AT-DOS-
+   Laufwerke mit 2048-Byte-Bloecken (auch ISO-Loop). Gelesen wird direkt
+   ueber das Blockgeraet (kf_cd_read). Keine CD-Audio-Wiedergabe: Abspiel-
+   befehle melden "erledigt", Spuren gibt es nur als Datenspur.
+   -> 0 erledigt, > 0 Fehler (CF, AX), -1 nicht zustaendig */
+unsigned long __far kf_cd_blocks(int d);
+int __far kf_cd_read(int d, unsigned long lba, unsigned sel, unsigned off);
+#define SI  (*(unsigned short *)&f->esi)
+#define E_BADDRV 15
+
+static int cd_first(unsigned *n)
+{
+    int d, first = -1;
+    *n = 0;
+    for (d = 0; d < 26; d++)
+        if (kf_cd_blocks(d)) {
+            if (first < 0)
+                first = d;
+            ++*n;
+        }
+    return first;
+}
+
+/* count Bloecke ab lba nach seg:off der Box; 0 = ok */
+static int cd_rd(int t, int d, unsigned long lba, unsigned count, unsigned seg, unsigned off)
+{
+    unsigned long lin = ((unsigned long)seg << 4) + off;
+    int r;
+    while (count--) {
+        bp(t, (unsigned)(lin >> 4), 0);
+        if ((r = kf_cd_read(d, lba++, RWIN_SEL(t), (unsigned)lin & 15)) != 0)
+            return r;
+        lin += 2048;
+    }
+    return 0;
+}
+
+/* Groesse der CD in Bloecken: aus dem PVD (der Treiber kennt sie oft
+   nicht), sonst vom Blockgeraet */
+static unsigned long cd_size(int d)
+{
+    unsigned long n = kf_cd_blocks(d);
+    if (!kf_cd_read(d, 16, 0, 0)) {
+        unsigned char __far *b = MK_FP(DMABUF, 0);
+        if (b[1] == 'C' && b[2] == 'D' && b[3] == '0')
+            n = r32(b + 80);
+    }
+    return n;
+}
+
+/* Geraeteauftrag (1510h) bei ES:BX fuer Laufwerk d */
+static void cd_req(int t, int d, unsigned seg, unsigned off)
+{
+    unsigned char __far *q = bp(t, seg, off);
+    unsigned st = 0x0100, cmd = q[2], ts, to, n;
+    unsigned long lba, v = 0;
+    unsigned char code;
+    unsigned char __far *c;
+
+    ts = r16(q + 0x10);                 /* Uebergabeadresse (fern)        */
+    to = r16(q + 0x0E);
+    if (cmd == 3) {                     /* IOCTL Eingabe                  */
+        c = bp(t, ts, to);
+        code = c[0];
+        switch (code) {
+        case 0: w32(c + 1, 0); break;               /* Kopf des Treibers */
+        case 1: c[1] = 0; w32(c + 2, 0); break;     /* Lage des Kopfs    */
+        case 4: for (n = 1; n < 9; n++) c[n] = (unsigned char)(n & 1 ? n / 2 : 0xFF); break;
+        case 6: w32(c + 1, 0x00000202UL); break;    /* entriegelt, Red Book */
+        case 7: c[1] = 0; w16(c + 2, 2048); break;  /* Sektorgroesse      */
+        case 8: v = cd_size(d); c = bp(t, ts, to); w32(c + 1, v); break;
+        case 9: c[1] = 1; break;                    /* nicht gewechselt   */
+        case 10: c[1] = 1; c[2] = 1;                /* eine (Daten-)Spur  */
+            v = cd_size(d) + 150;                   /* Ende als MSF       */
+            c = bp(t, ts, to);
+            for (n = 0; v >= 4500 && n < 99; n++)   /* ohne 32-Bit-Division */
+                v -= 4500;
+            c[5] = (unsigned char)n;
+            c[4] = (unsigned char)((unsigned)v / 75);
+            c[3] = (unsigned char)((unsigned)v % 75);
+            c[6] = 0;
+            break;
+        case 11: c[2] = 2; c[3] = 0; c[4] = 0; c[5] = 0; c[6] = 0x40; break;  /* Spur 1: 00:02:00, Daten */
+        case 12: case 15: for (n = 1; n < 11; n++) c[n] = 0; break;
+        default: st = 0x8103;
+        }
+        q = bp(t, seg, off);
+    } else if (cmd == 128) {            /* READ LONG                      */
+        lba = r32(q + 0x14);
+        if (q[0x0D] == 1)               /* Red Book (MSF) -> Block        */
+        {
+            unsigned m = (unsigned)(lba >> 16) & 0xFF;
+            v = (unsigned)((lba >> 8) & 0xFF) * 75u + ((unsigned)lba & 0xFF);
+            while (m--)                 /* ohne 32-Bit-Multiplikation    */
+                v += 4500;
+            lba = v - 150;
+        }
+        n = r16(q + 0x12);
+        if (q[0x18])                    /* roh (2352 Byte) gibt es nicht  */
+            st = 0x8103;
+        else if ((v = (unsigned long)cd_rd(t, d, lba, n, ts, to)) != 0)
+            st = v == 1 ? 0x8102 : 0x810F;
+        q = bp(t, seg, off);
+    } else if (cmd != 13 && cmd != 14 && cmd != 7 && cmd != 12 && cmd != 131 &&
+               cmd != 132 && cmd != 133 && cmd != 136)
+        st = 0x8103;                    /* unbekannter Befehl             */
+    w16(q + 3, st);
+}
+
+int __far mscdex(struct v86_frame *f, int t)
+{
+    unsigned char sub = AL;
+    unsigned n, i, k, seg = f->r.es;
+    int d, r;
+    unsigned char __far *p;
+    unsigned char __far *s;
+
+    if (sub != 0 && sub != 0x0B && sub != 0x0C && sub != 0x0D &&
+        (CX >= 26 || !kf_cd_blocks(CX)))
+        return sub <= 0x10 ? (AX = E_BADDRV, 1) : -1;
+    kf_box_ctl(BOX_LOCK, 1);
+    r = 0;
+    switch (sub) {
+    case 0x00:                          /* Installation: Zahl, erstes     */
+        d = cd_first(&n);
+        BX = n;
+        CX = d < 0 ? 0 : (unsigned)d;
+        break;
+    case 0x01:                          /* Treiberliste: Untereinheit +   */
+        for (d = 0, k = 0; d < 26; d++)  /* (kein) Kopf                   */
+            if (kf_cd_blocks(d)) {
+                p = bp(t, seg, BX + k * 5);
+                p[0] = (unsigned char)k;
+                w32(p + 1, 0);
+                k++;
+            }
+        break;
+    case 0x02: case 0x03: case 0x04:    /* Dateinamen aus dem PVD         */
+        if (kf_cd_read(CX, 16, 0, 0)) {
+            AX = E_NOTREADY;
+            r = 1;
+            break;
+        }
+        s = MK_FP(DMABUF, 702 + (sub - 2) * 37);
+        p = bp(t, seg, BX);
+        for (i = 0; i < 37 && s[i] != ' ' && s[i]; i++)
+            p[i] = s[i];
+        p[i] = 0;
+        break;
+    case 0x05:                          /* VTOC lesen (DX = Index)        */
+        if ((k = (unsigned)cd_rd(t, CX, 16UL + DX, 1, seg, BX)) != 0) {
+            AX = k == 1 ? E_NOTREADY : 0x1F;
+            r = 1;
+        } else
+            AX = bp(t, seg, BX)[0] == 1 ? 1 : bp(t, seg, BX)[0] == 0xFF ? 0xFF : 0;
+        break;
+    case 0x08:                          /* absolut lesen: SI:DI, DX Stueck */
+        if ((k = (unsigned)cd_rd(t, CX, ((unsigned long)SI << 16) | DI, DX, seg, BX)) != 0) {
+            AX = k == 1 ? E_NOTREADY : 0x1F;
+            r = 1;
+        }
+        break;
+    case 0x09:                          /* schreiben: nein                */
+        AX = 0x13;                      /* schreibgeschuetzt              */
+        r = 1;
+        break;
+    case 0x0B:                          /* Laufwerk CX ein CD?            */
+        AX = CX < 26 && kf_cd_blocks(CX) ? 0x5AD8 : 0;
+        BX = 0xADAD;
+        break;
+    case 0x0C:
+        BX = 0x0215;                    /* Version 2.21                   */
+        break;
+    case 0x0D:                          /* Buchstaben (0 = A:) nach ES:BX */
+        for (d = 0, k = 0; d < 26; d++)
+            if (kf_cd_blocks(d))
+                bp(t, seg, BX + k++)[0] = (unsigned char)d;
+        break;
+    case 0x0E: case 0x0F:               /* Vorgaben / Verzeichniseintrag   */
+        AX = 1;                         /* nicht unterstuetzt              */
+        r = 1;
+        break;
+    case 0x10:                          /* Geraeteauftrag ES:BX            */
+        cd_req(t, CX, seg, BX);
+        break;
+    default:
+        r = -1;
+    }
+    kf_box_ctl(BOX_LOCK, 0);
+    return r;
+}

@@ -533,7 +533,11 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Netzlaufwerk, über die Dateifunktionen des Kernels – auch CD, SUBST,
   JOIN): DIR, CD, MD, RD, COPY, REN, DEL, TYPE, Umleitung, Programme
   von C: starten, Dateien zum Lesen und Schreiben öffnen, kürzen und
-  verlängern.
+  verlängern. CD-Laufwerke (auch ISO-Abbilder über LOOP) meldet die Box
+  wie MSCDEX 2.21 (INT 2Fh 15xxh: Laufwerke, Version, VTOC, Sektoren
+  lesen, Gerätaufträge wie Status, Größe, READ LONG) – für CD-Spiele und
+  Installationsprogramme, die nach MSCDEX fragen; keine CD-Audio-
+  Wiedergabe.
 - DOS-Programme direkt aus CMD.EXE wie bei NT: `.COM`, `.BAT` und `.EXE`
   ohne FX-Kopf startet der Kernel in einer FreeDOS-Box in derselben
   Sitzung (Vollbild, im aktuellen Laufwerk und Verzeichnis), CMD wartet,

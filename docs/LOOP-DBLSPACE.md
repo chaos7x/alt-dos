@@ -169,7 +169,7 @@ einem echten MS-DOS-6.22-Container in 86Box prüfen.
    (`LOOP_RO`), Datei mit Attribut R, ISO, Träger CD. `LOOP=` legt
    LOOP1..LOOP4 in die Systemumgebung, `loop_boot` hängt nach der
    Auslagerungsdatei ein. Aushängen setzt das Sauber-Bit (ifs_clean).
-3. MSCDEX in der DOS-Box.
+3. MSCDEX in der DOS-Box – erledigt (17.11.2026, siehe CLAUDE.md).
 4. DoubleSpace/DriveSpace 6.x lesend – erledigt (16.11.2026), anders als
    geplant nicht als DBLSPACE.SYS, sondern als Loop-Art `LOOPK_DBL` in
    loop.c (`LOOP E: C:\DBLSPACE.000`): Kennung im Superblock, MDFAT,

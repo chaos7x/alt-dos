@@ -2918,6 +2918,12 @@ static void svc(int n, struct v86_frame *f, int t)
             svc_zf = mon2f(f);
         } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
             b2f[t] = 1;
+        else if (AH == 0x20) {                  /* MSCDEX (INT 2Fh 15xxh) */
+            k = mscdex(f, t);
+            svc_zf = k >= 0;
+            if (k >= 0)
+                svc_cf = k > 0;
+        }
         else if (AH == 0x10) {                  /* Redirector (BOXSHELL) */
             k = redir(f, t);
             svc_zf = k >= 0;                    /* ZF: erledigt          */

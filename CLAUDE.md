@@ -1773,6 +1773,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nur 64 LDT-Einträge – dort wird die LDT eher voll als der Speicher.
   Nicht geprüft: 286/5.x (Rückport für 5.4), DPMI-Boxen daneben,
   verworfener Code bei geänderter EXE.
+
+- **MSCDEX in der DOS-Box** erledigt (17.11.2026, für 6.1 abgestimmt;
+  in QEMU mit einer genisoimage-CD und einem Testprogramm geprüft – nur
+  im Scratchpad): BOXSHELL leitet INT 2Fh AH = 15h über INT E0h 20h (AL
+  = Unterfunktion) an `mscdex` (redir.c, KTEXT3); ändert der Kernel AX
+  nicht, stellt BOXSHELL AH = 15h wieder her (CF dabei über PUSHF
+  sichern – CMP zerstörte es). CD-Laufwerke = AT-DOS-Laufwerke mit
+  2048-Byte-Blöcken (`kf_cd_blocks`, kernel.c; ISO-Loop zählt mit),
+  Blöcke lesen über `kf_cd_read` (blk_read, sel 0 = im DMABUF lassen).
+  Unterfunktionen 00 (Zahl/erstes), 01 (Liste ohne Treiberkopf), 02–04
+  (Dateinamen aus dem PVD), 05 (VTOC), 08 (absolut lesen), 09 (schreib-
+  geschützt), 0B (AX 5AD8h, BX ADADh), 0C (2.21), 0D (Buchstaben), 0E/0F
+  nicht unterstützt, 10 Geräteauftrag: IOCTL-Eingabe 0/1/4/6/7/8/9/10/
+  11/12/15 (Größe aus dem PVD – Treiber melden oft FFFFFFFFh), READ LONG
+  (gekocht, HSG oder Red Book), Öffnen/Schließen/Abspielen/Halt als
+  „erledigt“, sonst 8103h. Keine CD-Audio-Wiedergabe. MSF ohne 32-Bit-
+  Mul/Div. Ergebnis: 1500h BX=1 CX=4 (E:), 1505h CD001, 1508h Block 16,
+  1510h Größe 175 = ISO, 1502h Copyright-Datei. Offen: echte Spiele mit
+  MSCDEX-Prüfung (beim Nutzer), CD-Audio.
   Diskette dafür: CUT, HEAD, TAIL, WC, UNIQ, TR, COMPRESS nur noch auf
   der Platte (`HDDOS`), danach 105 KB frei. EMS-Seiten nicht; die Datei wächst nicht; XMS-/
   EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht

@@ -5453,6 +5453,37 @@ extern unsigned sw_buf;
 extern unsigned long sw_bphys;
 void __far kf_klock_enter(void) { klock_enter(); }
 int __far kf_in_op(int t) { return in_op(t); }
+
+/* MSCDEX in der DOS-Box (redir.c): Laufwerk d ein CD-Laufwerk (Blockgroesse
+   2048, auch ISO-Loop)? -> Bloecke, 0 = nein */
+unsigned long __far kf_cd_blocks(int d)
+{
+    int dev;
+    if (d < 0 || d >= NDRIVE || !vol_present(d) || join_hidden(d) || subst_real(d) != (unsigned)d)
+        return 0;
+    dev = vol[d].blk;
+    if (dev < 0 || dev >= nblk || blk[dev].bsize != 2048)
+        return 0;
+    return blk[dev].blocks ? blk[dev].blocks : 1;
+}
+
+/* Block lba von CD-Laufwerk d nach sel:off (2048 Byte); 0 = ok, 1 kein
+   Medium, -1 Fehler */
+int __far kf_cd_read(int d, unsigned long lba, unsigned sel, unsigned off)
+{
+    int dev, r;
+    if (!kf_cd_blocks(d))
+        return -1;
+    dev = vol[d].blk;
+    klock_enter();
+    r = blk_read(dev, lba);
+    if (!r && sel)                      /* sel 0: im DMABUF lassen        */
+        far_copy(sel, off, DMABUF, 0, 2048);
+    else if (blk_nm[dev])
+        r = 1;
+    klock_leave();
+    return r;
+}
 void __far kf_seg_acct(int img, int pages)  /* codeswap.c: ein/aus       */
 {
     if (img)
