@@ -269,6 +269,7 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Sektor gelesen und Fehlerhaftes gesperrt. Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
   Wechselplatten (ZIP, MO) bekommen wie unter MS-DOS das Datenträgerbyte F0h.
+  FDISK legt Partitionen wie MS-DOS nur bis zum letzten Zylinder an, den das BIOS meldet.
 - `DISKCOPY [A: [B:]] [/V]` wie MS-DOS: alle Diskettenformate, mit einem
   Laufwerk über Diskettenwechsel, in mehreren Durchgängen, wenn der
   Speicher nicht reicht; unformatierte oder anders formatierte Ziel-

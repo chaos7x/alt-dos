@@ -162,6 +162,16 @@ static int load_disk(void)
         spt = 63;
     }
     cylsz = heads * spt;
+    if (di.heads && di.rsv) {           /* wie MS-DOS nur bis zum letzten
+                                           Zylinder des BIOS - dahinter
+                                           liest MS-DOS per INT 13h nicht */
+        unsigned long c = 0;
+        while (c + cylsz <= di.sectors)
+            c += cylsz;
+        for (i = 0; i < di.rsv && c >= cylsz; i++)
+            c -= cylsz;
+        di.sectors = c;
+    }
     if (ext < 4) {                      /* Kette der logischen Laufwerke */
         ebr = pt[ext].start;
         while (nlg < MAXLOG && !rw(ebr, 0) && sec[510] == 0x55 && sec[511] == 0xAA) {

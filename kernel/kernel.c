@@ -2591,7 +2591,7 @@ static const char *drv_name(int d);
 extern unsigned char bios_geo_h[4], bios_geo_s[4];
 extern unsigned short bios_geo_c[4];
 
-static void disk_geo(int want, unsigned *h, unsigned *s)
+static void disk_geo(int want, unsigned *h, unsigned *s, unsigned char *gap)
 {
     unsigned char used[4];
     unsigned long cap, diff, bd;
@@ -2601,6 +2601,7 @@ static void disk_geo(int want, unsigned *h, unsigned *s)
     for (i = 0; i < 4; i++)
         used[i] = 0;
     *h = *s = 0;
+    *gap = 0;
     for (dev = 1; dev < nblk; dev++) {
         if (blk[dev].bsize != 512)
             continue;
@@ -2626,6 +2627,12 @@ static void disk_geo(int want, unsigned *h, unsigned *s)
         if (dev == want) {
             *h = bios_geo_h[best] + 1;
             *s = bios_geo_s[best];
+            if (bios_geo_c[best] < 1024) {  /* Zylinder, die das BIOS nicht
+                                               sieht (MS-DOS liest dort nicht) */
+                hs = *h * *s;
+                for (diff = bd; diff >= hs; diff -= hs)
+                    (*gap)++;
+            }
             return;
         }
     }
@@ -3699,9 +3706,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         di->rsv = 0;
         {
             unsigned gh, gs;
-            disk_geo(dev, &gh, &gs);
+            unsigned char gg;
+            disk_geo(dev, &gh, &gs, &gg);
             di->heads = gh;
             di->spt = gs;
+            di->rsv = gg;
         }
         return 0;
     }

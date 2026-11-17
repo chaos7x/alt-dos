@@ -2090,6 +2090,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   F0h. Jetzt meldet DosQFSInfo Wechselplatten mit `FSI_REMDISK` (10h),
   FORMAT (ufat_fmt.c) nimmt dort F0h in BPB und FAT (in QEMU mit
   `scsi-hd,removable=on` am lsi53c895a geprüft, fsck sauber).
+  Zweiter Fund dabei (50-MB-IDE-Platte in 86Box, mit AT-DOS-FDISK
+  angelegt): ScanDisk von MS-DOS konnte die letzten Cluster (27.652 bis
+  27.706, ein Zylinder) nicht lesen – FDISK legte die Partition bis zum
+  echten Plattenende an, das BIOS meldet per INT 13h/08h aber einen oder
+  mehrere Zylinder weniger, MS-DOS liest dahinter nichts. Jetzt meldet
+  DosDiskInfo in `rsv` die ganzen Zylinder, die das BIOS nicht sieht
+  (disk_geo, nur bei BIOS-Zylindern unter 1024), FDISK rechnet die
+  Platte darauf herunter wie das FDISK von MS-DOS. In QEMU geprüft
+  (Platte 102 Zylinder, BIOS-Geometrie 100: FDISK zeigt 48 statt 50 MB).
+  Vorhandene Partitionen bleiben, wie sie sind (neu anlegen).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
