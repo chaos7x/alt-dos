@@ -149,7 +149,15 @@ liest e/b als weitere Hex-Ziffer; Escape vor Hex-Buchstaben immer mit
 `" "` trennen (Suche: `grep -rnE '\\x[0-9A-Fa-f]{3}'`). AT-DOS 5.3.2
 (Entscheidung des Nutzers, 15.11.2026): Zweig `5.3.2` (aa5442f, Release
 `v5.3.2`) = 5.3.1 plus DIR /S aus 6.0; die 5.x-Releases setzen seitdem
-`--latest=false` („neueste“ ist `v6.0`). `5.x` geht weiter. Tags legt die CI an (aus der
+`--latest=false` („neueste“ ist `v6.0`). AT-DOS 5.4 (Entscheidung des
+Nutzers, 17.11.2026): Zweig `5.4` (b103716, Release `v5.4`) = 5.3.2 plus
+Rückportierungen aus 6.1 – Code verwerfen, Segmente verschieben,
+SWAPPATH= (dort nur mit Angabe), LOOP/DoubleSpace/DriveSpace/PACKDISK,
+DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD, Maussuche, Mode-X-
+Zeiger. Bekannt (auch hier auf main): läuft ein DriveSpace-Container
+beim Kopieren voll, bleiben innen verlorene Ketten (fat.c gibt bei einem
+Schreibfehler mitten in der Datei die belegten Cluster nicht zurück;
+CHKDSK /F räumt auf). `5.x` geht weiter. Tags legt die CI an (aus der
 Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
