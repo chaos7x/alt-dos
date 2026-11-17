@@ -804,6 +804,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   zeigt es nicht als ^M), Zeilennummern 6 Stellen + Tab ohne 32-Bit-
   Division. In QEMU geprüft (-n, -A, -sb über zwei Dateien, `\t*.txt`,
   Pipe, fehlende Datei).
+  STRINGS (Wunsch des Nutzers, 17.11.2026, „das Hacker-Tool“;
+  `apps/task_strings.c`, nur auf der Platte, gebunden + LFN): wie GNU
+  strings ohne Objektformat (immer ganze Datei, -a/-d ohne Wirkung), -n N
+  / -N / --bytes= (bis 1024), -t d|o|x / --radix= / -o (Stelle `%7`
+  + Leerzeichen, ohne 32-Bit-Division), -f, -w, -e s|S|l|b; Platzhalter,
+  `-` und Pipe. Wie GNU rückt ein ungültiges 16-Bit-Zeichen nur um ein
+  Byte weiter (zweites Byte zurückgelegt). In QEMU gegen GNU strings auf
+  dem Rechner verglichen (CMD.EXE, UTF-16 LE/BE, Zufallsdaten mit
+  ungerade versetzten UTF-16-Ketten, -w, -f mit Platzhalter, Pipe):
+  gleich bis auf CR LF.
   `\DOS\LINUX.MAC` (Wunsch des Nutzers, Linux-Admin): DOSKEY-Makros ll,
   la, ls, l, .., pwd, cp, mv, rm, clear, diff, man, free, ps, kill, uname,
   history, nano, vi, mc – nicht aktiv, AUTOEXEC.CMD nennt den Aufruf. In
@@ -2193,7 +2203,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   angelegt, XCOPY \DOS, CHKDSK, /CHECK, SHUTDOWN; 227 Cluster „DS 00
   02“, cvfchk 0 Fehler, fsck innen sauber, Dateien gleich; gegen die
   leere 6.20-Vorlage weicht der Superblock nur in der Gesamtzahl ab.
-  Offen: Annahme durch MS-DOS 6.20 (beim Nutzer).
+  Vom Nutzer in 86Box bestätigt (17.11.2026): mit PACKDISK /DBL unter
+  AT-DOS angelegter Container – ScanDisk von MS-DOS 6.20 ohne Fehler.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
