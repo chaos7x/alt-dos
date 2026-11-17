@@ -2043,6 +2043,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   > 32 = FAT16), BITFAT und MDFAT dafür (`mx`, `TX`, `mcl` in mkcvf).
   Vermutung: DRVSPACE bestimmt aus 3Eh, wo es die gespiegelte zweite FAT
   liest. /COMPRESS wächst weiter nur bis zum freien Platz.
+  Beim Nutzer (Build 716) weiter „MS-DOS-Datenträgerbyte fehlte“.
+  Fünfter Schritt: die Lage folgt in beiden Vorlagen fest aus der
+  Höchstgröße – BITFAT = MB/2 + 1 Sektoren, MDFAT = Einträge für 65.536
+  Cluster + 31 (DS6 512 + 31 = 543, DS3 643 + 31 = 674), Bootblock also
+  801 bzw. 1.700 wie bei MS-DOS 6.22/Windows 98 (PACKDISK lag 1 bzw. 30
+  Sektoren daneben); dazu Sprung EB 3C (DS6), innere OEM-Kennung
+  „MSDBL6.0“, unbekannte Felder wie die Vorlagen (DS6 2Fh = 40h, 36h =
+  091Ah; DS3 30h = 34h = 1, 36h = 10C8h). In QEMU geprüft (20/12 MB DS6,
+  12 MB DS3: XCOPY \DOS, CHKDSK, cvfchk 0 Fehler, fsck innen/außen
+  sauber, 105 Dateien gleich; 20-MB-Superblock 24h = 0101h, 27h = 0321h
+  wie MS-DOS). Reihenfolge der Prüfung beim Nutzer: erst DRVSPACE
+  (MS-DOS 6.22), dann /DS3 (Windows 98), dann DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

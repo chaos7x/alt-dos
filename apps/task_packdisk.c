@@ -213,9 +213,12 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         spf = 256;                      /* wie MS-DOS/Windows: FAT immer
                                            fuer 65.536 Eintraege, Daten
                                            direkt hinter dem Stamm       */
-        nmd = d3 ? (unsigned)mcl / 102 + 3 /* dcl < 100 */
-                 : (unsigned)((mcl + dcl + 2 + 127) >> 7) + 1;
-        nbf = (unsigned)((TX + 4095) >> 12);
+        /* wie MS-DOS 6.22 (512 MB: BITFAT 257, MDFAT 543 Sektoren,
+           Bootblock 801) und Windows 98 (2048 MB: 1025, 674, 1700):
+           BITFAT = MB/2 + 1, MDFAT = Eintraege fuer 65.536 Cluster
+           (FAT12: 4.096) + 31 */
+        nmd = (f16 ? (d3 ? 643 : 512) : (d3 ? 41 : 32)) + 31;
+        nbf = (unsigned)(TX >> 12) + 1;
     }
     drel = (res + spf + 32 + spc - 1) & ~(spc - 1);
     dcl = (drel >> sh) - 2;
@@ -251,7 +254,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     zero(sec, 512);
     sec[0] = 0xEB; sec[1] = 0x3C; sec[2] = 0x90;
     for (i = 0; i < 8; i++)
-        sec[3 + i] = "ATDOS6.1"[i];
+        sec[3 + i] = "MSDBL6.0"[i];  /* wie der innere Bootblock von MS-DOS */
     wr16(sec + 11, 512);
     sec[13] = (unsigned char)spc;
     wr16(sec + 14, res);                /* reserviert: Bootblock + Luecke */
@@ -280,7 +283,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
        Version 2) und Windows 98 (DriveSpace 3), Byte fuer Byte verglichen.
        Nur die BPB-Felder bis 1Fh stimmen mit dem Bootblock ueberein. */
     zero(sb, 512);
-    sb[0] = 0xEB; sb[1] = d3 ? 0x6E : 0x58; sb[2] = 0x90;
+    sb[0] = 0xEB; sb[1] = d3 ? 0x6E : 0x3C; sb[2] = 0x90;
     for (i = 0; i < 8; i++)
         sb[3 + i] = "MSDBL6.0"[i];
     for (i = 11; i < 32; i++)
@@ -302,6 +305,14 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         sb[57] = '1'; sb[58] = f16 ? '6' : '2'; sb[59] = ' '; sb[60] = ' ';
     }
     wr16(sb + 62, mx);
+    /* Felder unbekannter Bedeutung wie in den Vorlagen: 6.22 frisch
+       2Fh = 40h, 36h = 091Ah; Windows 98 (DS3) 30h = 34h = 1,
+       36h = 10C8h */
+    if (d3) {
+        sb[48] = 1; sb[52] = 1; wr16(sb + 54, 0x10C8);
+    } else {
+        sb[47] = 0x40; wr16(sb + 54, 0x091A);
+    }
     if (wr(0, sb))
         goto werr;
     zero(fl, 512);
