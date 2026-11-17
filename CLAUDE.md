@@ -845,7 +845,7 @@ legte mehr an; Wunsch des Nutzers „1 KB mehr für 600K“; mit 0,0 waren
 es in 86Box 604K, 9,256 nach Absprache als sichere Mitte: 602K = 616.480 Byte). Vorgabe-
 Rahmen /p:D000 (Entscheidung des Nutzers: E000h ging bei ihm auf dem
 SCAT, auf dem asus386 in 86Box fand LTEMM dort nichts – D000h geht auf
-beiden).
+beiden, auf dem SCAT vom Nutzer bestätigt).
 Everex EV-159: in 86Box als erweiterter Speicher einstellbar (Start-
 adresse hinter dem RAM, zusammenhängende Größe 3072, EMS aus) – dann
 nutzt AT-DOS ihn ohne Treiber.
