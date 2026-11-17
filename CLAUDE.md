@@ -747,7 +747,20 @@ unvollständig). In QEMU isapc 2 MB mit SB16 und serieller Maus geprüft:
 Entladen/Laden je dreimal, „Verfügbar“ danach gleich (MEM „Frei“
 schwankt, weil der Cache Freies alle 5 s zurückholt), Maus und CD
 danach, IDE abgelehnt (Startlaufwerk)),
-(3) Auslagern von Segmenten (docs/SWAP-5X.md), Loop/DriveSpace/PACKDISK.
+(3) Auslagern von Segmenten (docs/SWAP-5X.md): Stufe 1 erledigt –
+Code verwerfen wie 6.1 codeswap.c, hier direkt in kernel.c (erstes
+Segment hatte Platz): `code_note` beim Laden (Laufwerk, Pfad, Wortsumme
+in `cs_sel`), `mem_get` = mem_alloc, sonst `code_drop` (Uhr über das
+A-Bit von LDT-Eintrag 0, nicht current, nicht `code_pin` – den Code,
+den load_image gerade teilt –, nicht von Wechselmedien), P = 0 und
+`task.code_gone`; start.asm `exc11` -> `code_np` (Fehlercode 0004h,
+mit Kernelsperre nachladen oder vom Teilhaber übernehmen, sonst Ende
+des Programms); neue Tasks bekommen das A-Bit (zweite Chance).
+`MEMMAN=NOSWAP` schaltet es ab. In QEMU isapc 2 MB geprüft (EDIT und FM
+in eigenen Sitzungen, dreimal TASKB gleichzeitig: Code von CMD, EDIT und
+FM verworfen und beim Zurückkehren nachgeladen, über Port E9h gezählt;
+EDIT, FM, CMD danach normal). Offen: Segmente verschieben (MOVE) und
+Datensegmente in eine Auslagerungsdatei; Loop/DriveSpace/PACKDISK.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
 ## Aufbau

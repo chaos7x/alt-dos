@@ -65,6 +65,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   128 GB mit LBA48; Wechselplatten (ZIP, MO) an `AHA154X.SYS` und
   `NCR5380.SYS` auch ohne Medium beim Start, Wechsel wird erkannt;
   `EJECT X:` wirft CDs und Wechselplatten aus (FAPI DosEject);
+  Bei Speichermangel verwirft der Kernel (5.4) den Code ruhender Programme
+  und lädt ihn bei Bedarf aus der EXE nach (wie OS/2 1.x, Windows 3.x);
+  `MEMMAN=NOSWAP` in der CONFIG.SYS schaltet das ab;
   `DEVLOAD [/L] [/U] Treiber [Argumente]` (5.4) lädt Treiber und IFS-Module zur
   Laufzeit wie modprobe (neue Laufwerke bekommen die nächsten freien
   Buchstaben), `/U` entlädt sie wieder (SB16, MOUSE, IFS-Module), `/L` listet

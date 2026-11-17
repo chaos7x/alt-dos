@@ -104,6 +104,7 @@ struct task {
     volatile unsigned char block_rc;            /* ProcBlock: 0 geweckt, 1 Frist */
     unsigned long block_id;                     /* ProcBlock: Ereignis       */
     unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
+    unsigned char code_gone;                    /* Code verworfen (5.4)     */
 };
 
 static struct task    task[NTASK];
@@ -328,6 +329,9 @@ static int __far mod_mount(int drive);
 static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b);
 static void aud_task_end(int t);
 static void schedule_next(void);
+static void klock_leave(void);
+static unsigned mem_get(unsigned n);
+static unsigned char mem_noswap;        /* MEMMAN=NOSWAP: nichts verwerfen */
 static void klock_enter(void);
 
 /* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
@@ -593,7 +597,7 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
             break;
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
-    u = mem_alloc(units);
+    u = mem_get(units);
     if (u == 0)
         return FAPI_ERROR;                      /* kein Speicher        */
 
@@ -1044,6 +1048,193 @@ static unsigned long path_key(int drive, const char *p)
     return k;
 }
 
+/* ---- Code verwerfen (5.4, aus 6.1 codeswap.c) ---------------------------
+   Der Code eines FX-Programms (Version 2: eigenes Codesegment, LDT-
+   Eintrag 0, unter Instanzen geteilt) steht unveraendert in seiner EXE.
+   Wird der Speicher knapp (mem_get, nach dem Platten-Cache), gibt
+   code_drop den Code eines Programms frei, das gerade nicht laeuft und
+   dessen Codesegment seit der letzten Runde nicht benutzt wurde (Accessed-
+   Bit, Uhr-Verfahren, wie Windows 3.x im Standardmodus und OS/2 1.x).
+   Der Deskriptor wird "nicht vorhanden"; laedt die CPU den Selektor
+   wieder (beim RETF zurueck aus der FAPI oder beim Taskwechsel), kommt
+   #NP (Vektor 11, Fehlercode 0004h) - code_np laedt den Code aus der EXE
+   neu und der Befehl laeuft noch einmal. Eine Pruefsumme schuetzt vor
+   einer inzwischen ueberschriebenen EXE. Nie von Wechselmedien. */
+#define CS_ENT  (IFS_PATHLEN + 3)       /* Laufwerk, Pruefsumme, Pfad    */
+static unsigned cs_sel;
+#define CSE(t)  ((unsigned char __far *)MK_FP(cs_sel, (t) * CS_ENT))
+static unsigned ld_sum, code_pin;       /* Summe beim Laden; nicht verwerfen */
+static unsigned code_drops, code_loads; /* Zaehler (MEM)                  */
+
+static unsigned code_sum(unsigned sel, unsigned off, unsigned n)
+{
+    const unsigned __far *p = MK_FP(sel, off);
+    unsigned s = 0;
+    for (n >>= 1; n; n--)
+        s += *p++;
+    return s;
+}
+
+static void code_note(int t, int drive, const char *path, unsigned sum)
+{
+    unsigned char __far *e;
+    unsigned i;
+    if (!cs_sel && !(cs_sel = kseg_alloc((unsigned long)NTASK * CS_ENT)))
+        return;
+    e = CSE(t);
+    e[0] = (unsigned char)drive;
+    e[1] = (unsigned char)sum;
+    e[2] = (unsigned char)(sum >> 8);
+    for (i = 0; i < IFS_PATHLEN - 1 && path[i]; i++)
+        e[3 + i] = path[i];
+    e[3 + i] = 0;
+}
+
+static int code_removable(unsigned d)   /* Laufwerk auf Wechselmedium?   */
+{
+    int b;
+    if (d >= NDRIVE)
+        return 1;
+    b = vol[d].blk;
+    return b < 0 || b >= nblk || IS_FLOPPY(b) || blk[b].rem || blk[b].bsize == 2048;
+}
+
+static int code_sharer(int k, int t)    /* teilt k den Code von t?       */
+{
+    return task[k].state != T_FREE && task[k].code_unit &&
+           task[k].code_unit == task[t].code_unit;
+}
+
+/* einen Code verwerfen -> 1 */
+static int code_drop(void)
+{
+    int t, k, pass, busy;
+    unsigned u;
+
+    if (!cs_sel || mem_noswap)
+        return 0;
+    for (pass = 0; pass < 2; pass++)
+        for (t = 0; t < NTASK; t++) {
+            if (task[t].state == T_FREE || !task[t].code_unit ||
+                task[t].code_unit == code_pin || CSE(t)[3] == 0 ||
+                code_removable(CSE(t)[0]))
+                continue;
+            busy = 0;
+            for (k = 0; k < NTASK; k++)
+                if (code_sharer(k, t) && (k == current || CSE(k)[3] == 0 ||
+                                          (ldt[k][0].access & 1)))
+                    busy = 1;
+            if (busy) {                 /* zweite Chance: A-Bits weg     */
+                for (k = 0; k < NTASK; k++)
+                    if (code_sharer(k, t) && k != current)
+                        ldt[k][0].access &= (unsigned char)~1;
+                continue;
+            }
+            u = task[t].code_unit;
+            for (k = 0; k < NTASK; k++)
+                if (k != t && code_sharer(k, t)) {
+                    task[k].code_unit = 0;
+                    task[k].code_gone = 1;
+                    ldt[k][0].access &= (unsigned char)~0x80;
+                }
+            task[t].code_unit = 0;
+            task[t].code_gone = 1;
+            ldt[t][0].access &= (unsigned char)~0x80;
+            mem_free(u, task[t].code_cnt);
+            image_units -= task[t].code_cnt;
+            code_drops++;
+            return 1;
+        }
+    return 0;
+}
+
+/* Speicher fuer Programme: erst mem_alloc (gibt Cache ab), dann Code
+   verwerfen */
+static unsigned mem_get(unsigned n)
+{
+    unsigned u;
+    while (!(u = mem_alloc(n)) && code_drop())
+        ;
+    return u;
+}
+
+/* Code von t aus der EXE neu laden (oder von einem Teilhaber); 0 = ok */
+static int code_load(int t)
+{
+    static struct ifs_file f;
+    static struct fx_header h;
+    static char p[IFS_PATHLEN];
+    unsigned char __far *e = CSE(t);
+    unsigned i, n = task[t].code_cnt, fx, op = 0;
+    unsigned u;
+    int k, r = -1;
+
+    for (k = 0; k < NTASK; k++)         /* anderer Task hat ihn schon    */
+        if (k != t && task[k].state != T_FREE && task[k].code_unit &&
+            task[k].code_key == task[t].code_key && task[k].code_fsize == task[t].code_fsize) {
+            u = task[k].code_unit;
+            goto share;
+        }
+    for (i = 0; i < IFS_PATHLEN - 1 && e[3 + i]; i++)
+        p[i] = (char)e[3 + i];
+    p[i] = 0;
+    if (!(u = mem_get(n)))
+        return -1;
+    if (ifs_open(e[0], p, &f) || (op = 1, f.size != task[t].code_fsize) ||
+        ifs_read(&f, 0x3C, KDATA, (unsigned)&fx, 2) != 2 ||
+        ifs_read(&f, fx, KDATA, (unsigned)&h, sizeof(h)) != (int)sizeof(h))
+        goto out;
+    scratch_map((unsigned long)u << 8, n * MEM_UNIT - 1);
+    if (h.code_size == 0 || UNITS(h.code_size) != n ||
+        ifs_read(&f, h.image_off, SCRATCH, 0, h.code_size) != (int)h.code_size)
+        goto out;
+    if (code_sum(SCRATCH, 0, h.code_size) != (e[1] | ((unsigned)e[2] << 8)))
+        goto out;
+    r = 0;
+out:
+    if (op)
+        ifs_close(&f);
+    if (r) {
+        mem_free(u, n);
+        return r;
+    }
+    image_units += n;
+    code_loads++;
+share:
+    for (k = 0; k < NTASK; k++)
+        if (task[k].state != T_FREE && task[k].code_gone &&
+            task[k].code_key == task[t].code_key && task[k].code_fsize == task[t].code_fsize) {
+            task[k].code_unit = u;
+            task[k].code_gone = 0;
+            ldt[k][0].base_lo = (unsigned short)((unsigned long)u << 8);
+            ldt[k][0].base_hi = (unsigned char)(u >> 8);
+            ldt[k][0].access |= 0x80;
+        }
+    return 0;
+}
+
+/* #NP (start.asm exc11) mit Fehlercode err: verworfener Code des
+   laufenden Tasks? -> 1 nachgeladen (Befehl wiederholen), 0 nicht
+   zustaendig (dann wie jede Ausnahme) */
+unsigned code_np(unsigned err)
+{
+    int t = current, r;
+    if (t < 0 || !task[t].code_gone || (err & 0xFFFC) != 4 || !cs_sel)
+        return 0;
+    klock_enter();
+    r = task[t].code_gone ? code_load(t) : 0;   /* vielleicht schon da   */
+    if (r) {
+        tmsg(t, "\n", task[t].name, ": ");
+        tmsg(t, "Programmcode nicht nachladbar (EXE ge\x84ndert oder fehlt, "
+                "kein Speicher)", "", "\nProgramm abgebrochen.\n");
+        task[t].rc = 255;
+        task_end(t);                    /* haelt die Sperre noch         */
+        schedule_next();                /* kehrt nicht zurueck           */
+    }
+    klock_leave();
+    return 1;
+}
+
 static int load_image(int drive, const char *path, struct fx_header *h,
                       unsigned *unit, unsigned *cnt, unsigned long *segsize)
 {
@@ -1058,7 +1249,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         return EXEC_ERR_FORMAT;
 
     tn = UNITS(f.size);                         /* Zwischenpuffer       */
-    tu = mem_alloc(tn);
+    tu = mem_get(tn);
     if (tu == 0)
         return EXEC_ERR_NOMEM;
     scratch_map((unsigned long)tu << 8, tn * MEM_UNIT - 1);
@@ -1102,7 +1293,8 @@ static int load_image(int drive, const char *path, struct fx_header *h,
             }
         if (!ld_shared) {
             ld_cn = UNITS(csz);
-            ld_cu = mem_alloc(ld_cn);
+            code_pin = 0;
+            ld_cu = mem_get(ld_cn);
             if (ld_cu == 0) {
                 mem_free(tu, tn);
                 return EXEC_ERR_NOMEM;
@@ -1111,8 +1303,12 @@ static int load_image(int drive, const char *path, struct fx_header *h,
             far_copy(SCRATCH2, 0, SCRATCH, h->image_off, csz);
         }
     }
+    if (csz)                            /* fuer das Nachladen (5.4)      */
+        ld_sum = code_sum(SCRATCH, h->image_off, csz);
     n = UNITS(seg);
-    u = mem_alloc(n);
+    code_pin = ld_cu;                   /* geteilten Code nicht verwerfen */
+    u = mem_get(n);
+    code_pin = 0;
     if (u == 0) {
         if (csz && !ld_shared)
             mem_free(ld_cu, ld_cn);
@@ -1164,8 +1360,12 @@ static int load_program(int t, int drive, const char *path)
         image_units += ld_cn;
     for (n = 0; n < NLDT; n++)
         ldt[t][n].access = 0;
-    if (ld_cu)                                  /* V2: eigenes Codesegment */
+    task[t].code_gone = 0;
+    if (ld_cu) {                                /* V2: eigenes Codesegment */
         put_desc(&ldt[t][0], (unsigned long)ld_cu << 8, h.code_size - 1, ACC_UCODE);
+        ldt[t][0].access |= 1;                  /* zweite Chance beim Start */
+        code_note(t, drive, path, ld_sum);
+    }
     else
         put_desc(&ldt[t][0], base, h.image_size - 1, ACC_UCODE);
     put_desc(&ldt[t][1], base, (unsigned)(seg - 1), ACC_UDATA);
@@ -5662,6 +5862,10 @@ static void config_sys(void)
             scopy(ac, "AUTOCHECK=", sizeof(ac));
             scopy(ac + 10, *v ? v : "-", sizeof(ac) - 10);
             env_set(-1, ac);
+        } else if (kw(line, "MEMMAN")) {       /* wie OS/2: NOSWAP = Code bleibt */
+            for (i = 0; v[i]; i++)
+                if (up(v[i]) == 'N' && up(v[i + 1]) == 'O' && up(v[i + 2]) == 'S')
+                    mem_noswap = 1;
         } else if (kw(line, "PROTSHELL")) {
             scopy(protshell, v, sizeof(protshell));
         } else if (kw(line, "BUFFERS")) {

@@ -7,6 +7,8 @@ REM ===================================================================
 REM --- Speicher und Dateien ------------------------------------------
 REM FILES=n      offene Dateien fuer alle Programme zusammen (8-255)
 FILES=30
+REM MEMMAN=NOSWAP  Programmcode nie verwerfen (Vorgabe: bei Speichermangel
+REM                 wird Code ruhender Programme frei und aus der EXE nachgeladen)
 REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20
 REM CACHE=kb,s,max  Platten-Cache im Kernel: Mindestgroesse in KB,

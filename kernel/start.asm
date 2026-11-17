@@ -38,7 +38,7 @@ extern preload_, reboot_
 extern _reboot_count
 extern gdt_build_, kmain_, fapi_dispatch_, fault_, kbd_irq_, devhlp_dispatch_
 extern fdc_isr_
-extern fpu_nm_
+extern fpu_nm_, code_np_
 extern _gdtr, _idtr, _kmoved, _kcode_lin, _kmove_fail, _gdt
 
 ; ---------------------------------------------------------------------------
@@ -476,7 +476,29 @@ EXC 6
 EXC_ERR 8
 EXC 9
 EXC_ERR 10
-EXC_ERR 11
+; #NP (11): verworfener Programmcode (5.4) - code_np laedt ihn nach und
+; gibt 1 zurueck, dann wird der Befehl (meist RETF aus der FAPI oder der
+; Taskwechsel) wiederholt; sonst wie jede Ausnahme.
+exc11:  pusha
+        push    ds
+        push    es
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        mov     bp, sp
+        mov     ax, [bp+20]             ; Fehlercode (unter es, ds, pusha)
+        sti
+        call    code_np_
+        cli
+        pop     es
+        pop     ds
+        test    ax, ax
+        popa
+        jz      .fault
+        add     sp, 2                   ; Fehlercode weg
+        iret
+.fault: push    word 11
+        jmp     exc_common
 EXC_ERR 12
 EXC_ERR 13
 EXC 14
