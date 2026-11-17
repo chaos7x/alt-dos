@@ -2149,8 +2149,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   In QEMU geprüft: 30 MB DS3 gleich der Windows-Vorlage bis auf
   Bezeichnung/Seriennummer/Startcode, XCOPY \DOS, /CHECK „Keine
   Fehler“, /COMPRESS lässt ihn auf 97 MB wachsen (Füllwort danach
-  7FFFh), cvfchk3 0 Fehler, fsck innen/außen sauber. Offen: ob Windows
-  98 ihn damit lädt.
+  7FFFh), cvfchk3 0 Fehler, fsck innen/außen sauber. Vom Nutzer in
+  86Box bestätigt (17.11.2026): ein so angelegter 30-MB-DS3-Container
+  wird von Windows 98 direkt eingebunden – die Füllbits waren die
+  Ursache für DRVSPACE045. Nächster Schritt: DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
