@@ -150,7 +150,7 @@ liest e/b als weitere Hex-Ziffer; Escape vor Hex-Buchstaben immer mit
 (Entscheidung des Nutzers, 15.11.2026): Zweig `5.3.2` (aa5442f, Release
 `v5.3.2`) = 5.3.1 plus DIR /S aus 6.0; die 5.x-Releases setzen seitdem
 `--latest=false` („neueste“ ist `v6.0`). AT-DOS 5.4 (Entscheidung des
-Nutzers, 17.11.2026): Zweig `5.4` (b103716, Release `v5.4`) = 5.3.2 plus
+Nutzers, 17.11.2026): Zweig `5.4` (a6ad1a7, Release `v5.4`; nachgezogen mit den Korrekturen unten und SYS /A) = 5.3.2 plus
 Rückportierungen aus 6.1 – Code verwerfen, Segmente verschieben,
 SWAPPATH= (dort nur mit Angabe), LOOP/DoubleSpace/DriveSpace/PACKDISK,
 DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD, Maussuche, Mode-X-
