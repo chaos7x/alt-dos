@@ -709,7 +709,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   `GRAFIK X` (Farbverlauf + Quadrat, je Bild verdeckt gezeichnet, Klick
   setzt das Quadrat). In 86Box vom Nutzer bestätigt (Bild und
   Sitzungswechsel). Mauszeiger nimmt in 256-Farben-Modi die Farben 15
-  und 0 der Palette (wie der Microsoft-Treiber).
+  und 0 der Palette (wie der Microsoft-Treiber) – liegen die zu dicht
+  beieinander (GRAFIK X: beide Cyan im Regenbogen, der Zeiger „ver-
+  schwand“ im Farbband; vom Nutzer gemeldet, 17.11.2026), die hellste
+  und die dunkelste Farbe der Palette (vgagfx.c `gp_colors`, je Sitzung
+  gemerkt, VioSetPal verwirft es; Farben stehen in `struct gpst`, damit
+  das Entfernen dieselben vergleicht). Gilt für 13h, Mode X, VESA 8 Bit.
+  In QEMU geprüft (GRAFIK X weiß mit dunklem Rand, 13h/12h unverändert).
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile
