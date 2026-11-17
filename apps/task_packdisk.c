@@ -7,6 +7,9 @@
  *       (8-KB-Cluster, bis 512 MB) bzw. mit /DS3 von DriveSpace 3
  *       (32-KB-Cluster, bis 2 GB). Das innere Laufwerk wird mit der
  *       geschaetzten Packrate n:1 (Vorgabe 2) groesser angelegt.
+ *       /DBL: Format von DoubleSpace 6.0/6.20 (Kennung MSDSP6.0,
+ *       Version 0, gepackt wird im DS-Verfahren - kernel/loop.c
+ *       erkennt es an der Version).
  *   PACKDISK /CHECK Datei [/F]
  *       prueft MDFAT gegen BITFAT und FAT (Bereiche, Ueberschneidungen,
  *       verlorene Cluster), zeigt Packrate und Platz; /F schreibt die
@@ -17,7 +20,8 @@
  * doc/cvfinfo.doc (GPL, nur gelesen) wie kernel/loop.c: Superblock,
  * BITFAT, MDFAT, Bootblock, FAT, Stamm, Daten, "MDR" im letzten Sektor.
  * Kein Microsoft-Produktname im Programm (Entscheidung des Nutzers);
- * Kennung MSDBL6.0 und Dateiname DRVSPACE.nnn gehoeren zum Format.
+ * Kennungen MSDBL6.0/MSDSP6.0 und Dateinamen DRVSPACE.nnn/DBLSPACE.nnn
+ * gehoeren zum Format.
  * ERRORLEVEL: 0 ok, 1 Fehler gefunden (nicht behoben), 2 Fehler behoben,
  * 3 Container nicht lesbar/anzulegen, 4 Aufruf.
  */
@@ -28,6 +32,9 @@
 static char args[FAPI_ARGLEN], name[FAPI_PATHLEN], tmp[FAPI_PATHLEN], label[12];
 static unsigned char sec[512], sb[512], fl[512], md[512], fb[1024];
 static unsigned hd;
+static unsigned dbl;                    /* /DBL: DoubleSpace 6.0/6.20     */
+#define CVF_ID (dbl ? "MSDSP6.0" : "MSDBL6.0")
+#define CVF_NAME (dbl ? "DBLSPACE.000" : "DRVSPACE.000")
 static unsigned short dt[2];            /* Datum, Uhrzeit (FAT-Format)   */
 static struct fapi_dirent de;
 
@@ -173,6 +180,7 @@ static int create(char *rest)
     posw(rest, 1, tmp, 16);
     mb = (unsigned)num(tmp);
     d3 = opt(rest, "/DS3") != 0;
+    dbl = opt(rest, "/DBL") != 0;
     ratio = (p = opt(rest, "/RATIO:")) != 0 ? (unsigned)num(p) : 2;
     label[0] = 0;
     if ((p = opt(rest, "/V:")) != 0) {
@@ -180,8 +188,8 @@ static int create(char *rest)
             label[i] = up(*q);
         label[i] = 0;
     }
-    if (!name[0] || !mb || ratio < 1 || ratio > 16) {
-        puts("Aufruf: PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n");
+    if (!name[0] || !mb || ratio < 1 || ratio > 16 || (d3 && dbl)) {
+        puts("Aufruf: PACKDISK /CREATE Datei MB [/DS3|/DBL] [/RATIO:n] [/V:Name]\r\n");
         return 4;
     }
     if (mb > (d3 ? 2047 : 512) || mb < 1) {
@@ -275,7 +283,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     zero(sec, 512);
     sec[0] = 0xEB; sec[1] = d3 ? 0x6E : 0x3C; sec[2] = 0x90;
     for (i = 0; i < 8; i++)
-        sec[3 + i] = "MSDBL6.0"[i];  /* wie der innere Bootblock von MS-DOS */
+        sec[3 + i] = CVF_ID[i];      /* wie der innere Bootblock von MS-DOS */
     wr16(sec + 11, 512);
     sec[13] = (unsigned char)spc;
     wr16(sec + 14, res);                /* reserviert: Bootblock + Luecke */
@@ -306,7 +314,9 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     zero(sb, 512);
     sb[0] = 0xEB; sb[1] = d3 ? 0x6E : 0x3C; sb[2] = 0x90;
     for (i = 0; i < 8; i++)
-        sb[3 + i] = "MSDBL6.0"[i];
+        sb[3 + i] = CVF_ID[i];      /* MS-DOS 6.20 schreibt MSDSP6.0,
+                                           6.22 MSDBL6.0 - nur die
+                                           Version unterscheidet sie */
     for (i = 11; i < 32; i++)
         sb[i] = sec[i];
     sb[16] = 1;                         /* Superblock: eine FAT, 17/6    */
@@ -320,7 +330,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     wr16(sb + 43, drel);                /* Daten - 2, Vielfaches von spc */
     wr16(sb + 45, dcl);
     sb[50] = (unsigned char)sh;         /* log2 Sektoren je Cluster      */
-    sb[51] = d3 ? 0 : 2;                /* Version: 2 = DriveSpace 6.22,
+    sb[51] = d3 || dbl ? 0 : 2;         /* Version: 2 = DriveSpace 6.22,
+                                           0 = DoubleSpace 6.0/6.20,
                                            Windows 98 schreibt bei DS3 0 */
     if (!d3) {
         sb[57] = '1'; sb[58] = f16 ? '6' : '2'; sb[59] = ' '; sb[60] = ' ';
@@ -396,7 +407,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         say(" (w\x84" "chst bis ", (unsigned long)mb, " MB)");
     } else
         say("Container angelegt: ", (unsigned long)mb, " MB");
-    puts(d3 ? " (32-KB-Cluster)\r\n" : " (8-KB-Cluster)\r\n");
+    puts(d3 ? " (32-KB-Cluster)\r\n" : dbl ? " (8-KB-Cluster, DoubleSpace)\r\n" : " (8-KB-Cluster)\r\n");
     say("Inneres Laufwerk:   ", ncl << (sh - 1), " KB");
     if (d3)
         puts(" (wie Windows 98 immer 2 GB)\r\n");
@@ -720,7 +731,8 @@ static int check(char *rest)
                 break;
         }
     }
-    say("Pr\x81" "fe ", units >> 11, d3 ? " MB (DriveSpace-3-Format)" : " MB (DriveSpace-6-Format)");
+    say("Pr\x81" "fe ", units >> 11, d3 ? " MB (DriveSpace-3-Format)" :
+        sb[51] == 0 ? " MB (DoubleSpace-Format)" : " MB (DriveSpace-6-Format)");
     say(", ", ncl, " Cluster innen ...\r\n");
     if (verb) {                         /* Superblock roh (Vergleich mit */
         say("Datei ", units, " Sektoren, Superblock:\r\n");  /* echten Containern) */
@@ -1122,11 +1134,14 @@ static int compress(char *rest)
 
     posw(rest, 0, tmp, 16);
     if (!tmp[0] || tmp[1] != ':' || tmp[2]) {
-        puts("Aufruf: PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n");
+        puts("Aufruf: PACKDISK /COMPRESS X: [/DS3|/DBL] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n");
         return 4;
     }
     c_drv = (unsigned)(up(tmp[0]) - 'A');
     d3 = opt(rest, "/DS3") != 0;
+    dbl = opt(rest, "/DBL") != 0;
+    if (d3 && dbl)
+        return 4;
     ratio = (p = opt(rest, "/RATIO:")) != 0 ? (unsigned)num(p) : 2;
     c_grow = (unsigned)((p = opt(rest, "/RESERVE:")) != 0 ? num(p) : 1) << 11;
     if (ratio < 1 || ratio > 16 || c_drv > 25)
@@ -1151,10 +1166,16 @@ static int compress(char *rest)
         return 3;
     }
     scopy(name, c_root, FAPI_PATHLEN);
-    scat(name, "DRVSPACE.000", FAPI_PATHLEN);
+    scat(name, "DBLSPACE.000", FAPI_PATHLEN);   /* Fortsetzen: Art aus */
+    if (fsize(name))                            /* dem Dateinamen      */
+        dbl = 1;
+    else if (!dbl) {
+        scopy(name, c_root, FAPI_PATHLEN);
+        scat(name, "DRVSPACE.000", FAPI_PATHLEN);
+    }
     if (fsize(name)) {
         for (i = 0; DosLoop(LOOP_INFO, i, &li) == 0; i++)   /* abgebrochen? */
-            if (li.drives && li.cdrive == c_drv && same(li.path, "\\DRVSPACE.000")) {
+            if (li.drives && li.cdrive == c_drv && same(li.path + 1, CVF_NAME)) {
                 for (r = 2; r < 26 && !(li.drives & (1UL << r)); r++)
                     ;
                 if (DosLoop(LOOP_DETACH, r, 0)) {
@@ -1180,7 +1201,7 @@ static int compress(char *rest)
         puts("Laufwerk ");
         puts(c_root);
         say(" komprimieren: Container bis ", (unsigned long)mb, " MB");
-        puts(d3 ? ", DriveSpace 3" : ", DriveSpace 6");
+        puts(d3 ? ", DriveSpace 3" : dbl ? ", DoubleSpace" : ", DriveSpace 6");
         if (!d3 && total > 512)
             puts(" (Laufwerk gr\x94\xE1" "er als 512 MB - /DS3 nimmt bis 2047 MB)");
         puts(".\r\nDateien werden einzeln verschoben.\r\n");
@@ -1384,17 +1405,19 @@ void main(void)
         rc = cmp(p);
     else {
         puts("Legt komprimierte Laufwerke an und pr\x81" "ft sie.\r\n\r\n"
-             "PACKDISK /CREATE Datei MB [/DS3] [/RATIO:n] [/V:Name]\r\n"
+             "PACKDISK /CREATE Datei MB [/DS3|/DBL] [/RATIO:n] [/V:Name]\r\n"
              "PACKDISK /CHECK Datei [/F] [/V]\r\n"
-             "PACKDISK /COMPRESS X: [/DS3] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n"
+             "PACKDISK /COMPRESS X: [/DS3|/DBL] [/RATIO:n] [/RESERVE:MB] [/Y]\r\n"
              "PACKDISK /CMP Vorlage Datei\r\n\r\n"
              "  /CREATE  leerer Container im DriveSpace-6.22-Format (bis 512 MB),\r\n"
-             "           mit /DS3 im DriveSpace-3-Format (32-KB-Cluster, bis 2047 MB)\r\n"
+             "           mit /DS3 im DriveSpace-3-Format (32-KB-Cluster, bis 2047 MB),\r\n"
+             "           mit /DBL im DoubleSpace-Format von MS-DOS 6.0/6.20\r\n"
              "  /RATIO:n gesch\x84tzte Packrate n:1 f\x81r die Gr\x94\xE1" "e innen (Vorgabe 2)\r\n"
              "  /CHECK   MDFAT, BITFAT und FAT pr\x81" "fen, Packrate zeigen\r\n"
              "  /F       Fehler in BITFAT/MDFAT beheben\r\n"
              "  /V       erste Abweichungen mit Cluster und MDFAT-Eintrag zeigen\r\n"
-             "  /COMPRESS Dateien von X: in X:\\DRVSPACE.000 verschieben (fortsetzbar),\r\n"
+             "  /COMPRESS Dateien von X: in X:\\DRVSPACE.000 (/DBL: DBLSPACE.000)\r\n"
+             "           verschieben (fortsetzbar),\r\n"
              "           /RESERVE:MB bleibt auf X: frei (Vorgabe 1)\r\n"
              "  /CMP     Verwaltungssektoren zweier Container vergleichen\r\n\r\n"
              "Schalter d\x81rfen in beliebiger Reihenfolge stehen.\r\n"

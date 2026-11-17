@@ -2177,14 +2177,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gepackte Cluster, alle „DS 00 02“ wie unser Packer, Bit 21 überall 0;
   cvfchk 0 Fehler. In QEMU: Container eingehängt, XCOPY F:\STUNTS nach
   C:, alle 220 Dateien gleich mit den nachgebaut entpackten – Entpacker
-  DS an echten Daten bestätigt. Offen: PACKDISK /DBL (Kennung MSDSP6.0,
-  Version 0) zum Anlegen von DoubleSpace-Containern. Das ZIP
+  DS an echten Daten bestätigt. Das ZIP
   hatte von MS-DOS-FORMAT selbst BPB F0h, FAT F8h – daher meldete
   ScanDisk 6.20 „FAT-Datenträgerbyte fehlt“ (nicht AT-DOS).
   Vom Nutzer in 86Box bestätigt (17.11.2026): unter AT-DOS weitere
   Spiele in den echten DoubleSpace-6.20-Container kopiert, danach
   ScanDisk von MS-DOS 6.20: „DoubleSpace-Datenträger F enthielt keine
   Fehler“, Trägerlaufwerk M ebenso – Schreiben in DoubleSpace bestätigt.
+  PACKDISK /DBL (Wunsch des Nutzers, 17.11.2026): `/CREATE … /DBL` und
+  `/COMPRESS X: /DBL` (Container X:\DBLSPACE.000; vorhandenes
+  DBLSPACE.000 wird beim Fortsetzen ohne Schalter erkannt) – Aufbau wie
+  DS6, nur Kennung „MSDSP6.0“ in Superblock und innerem Bootblock und
+  Version 0 (`dbl`, `CVF_ID`, `CVF_NAME`); loop.c packt danach DS.
+  /CHECK nennt Version 0 „DoubleSpace-Format“. In QEMU geprüft: 20 MB
+  angelegt, XCOPY \DOS, CHKDSK, /CHECK, SHUTDOWN; 227 Cluster „DS 00
+  02“, cvfchk 0 Fehler, fsck innen sauber, Dateien gleich; gegen die
+  leere 6.20-Vorlage weicht der Superblock nur in der Gesamtzahl ab.
+  Offen: Annahme durch MS-DOS 6.20 (beim Nutzer).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
