@@ -1470,6 +1470,10 @@ Für AT-DOS 7.0 (32 Bit) richtet `tools/setup-32.sh` die Werkzeuge ein
 Speicherkarte (physisch, linear mit Kernel-Alias, je DOS-Box, 5.x, Plan
 7.0): `docs/SPEICHERKARTE.md`.
 
+Startcode nach dem Booten freigeben (Init-Segment für Kernel und
+Treiber, gemessen ~20 KB Kernel + 27–59 % jedes Treibers; Vorschlag,
+noch kein Code): `docs/INIT-SEGMENT.md`.
+
 CI: `tools/ci-tools.sh` installiert NASM und mtools per apt (drei
 Versuche), sonst aus dem Quelltext (nasm.us, ftp.gnu.org) nach
 `$HOME/citools` – im November 2026 löste der GitHub-Rechner die Ubuntu-
