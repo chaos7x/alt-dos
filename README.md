@@ -926,6 +926,8 @@ auf einer CD liegen und zerstückelt sein (bis 8.188 Stücke); gelesen
 und geschrieben wird über den Platten-Cache des Trägers. Disketten-,
 Platten- und VHD-Abbilder sind beschreibbar (Stufe 2), außer mit `/RO`,
 bei schreibgeschützter Datei oder auf einer CD; ISOs immer nur lesend.
+Bei DoubleSpace/DriveSpace-Containern zählt das Attribut R nicht (MS-DOS
+und Windows legen sie schreibgeschützt an) – nur `/RO`.
 Solange die Datei eingehängt ist, lässt sie sich nicht öffnen zum
 Schreiben, löschen oder umbenennen. `LOOP` zeigt die eingehängten
 Dateien und ob sie beschreibbar sind, `LOOP X: /D` hängt aus (setzt

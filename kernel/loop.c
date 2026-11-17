@@ -1141,7 +1141,9 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
     h->last = 0;
     h->lsh = 0;
     h->csh = blk[v->blk].bsize == 2048 ? 2 : 0;
-    h->ro = ro || h->csh || (f->attr & ATTR_RO);
+    h->ro = ro || h->csh || (!dbl && (f->attr & ATTR_RO));
+                                        /* CVF: MS-DOS/Windows legen sie
+                                           mit R an - nur /RO gilt       */
     h->units = units = f->size >> 9;
     if (v->drv == &fat_driver)
         ifs_bmap(f, loop_sel[i], LH_EXT, n);

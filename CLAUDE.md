@@ -1741,7 +1741,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dann blk_write des Trägers mit DMABUF – über dessen Cache, verzögert;
   bc_sync gilt dabei mit, das Sauber-Bit geht sofort durch). Nur lesend
   (`lhdr.ro`): `LOOP_RO` (DX Bit 8 von LOOP_ATTACH, LOOP.EXE `/RO`),
-  Attribut R der Datei, ISO, Träger CD; LOOP_INFO meldet es als
+  Attribut R der Datei (nicht bei DoubleSpace/DriveSpace-Containern –
+  MS-DOS/Windows legen DRVSPACE.nnn mit R an; Wunsch des Nutzers,
+  17.11.2026, in QEMU geprüft: Container mit SHR, LOOP beschreibbar,
+  COPY/MD, CHKDSK, cvfchk 0 Fehler, fsck sauber, Inhalt gleich), ISO,
+  Träger CD; LOOP_INFO meldet es als
   `LOOPK_RO` in kind. loop_undo ruft ifs_clean vor vol_drop. SHUTDOWN:
   ifs_shutdown in Laufwerksreihenfolge, Daten des Loop-Laufwerks landen
   nach dem Sauber-Bit des Trägers noch in dessen Datenbereich (nur
@@ -2155,7 +2159,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Ursache für DRVSPACE045. Danach unter Windows 98 Dateien hinein-
   kopiert, ScanDisk von Windows 98 ohne Fehler (vom Nutzer bestätigt,
   17.11.2026) – PACKDISK /DS3 damit unter Windows 98 lesend und
-  schreibend angenommen. Nächster Schritt: DoubleSpace.
+  schreibend angenommen; danach auch mit ScanDisk unter AT-DOS (`PACKDISK
+  /CHECK /V`) „Keine Fehler“. Nächster Schritt: DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
