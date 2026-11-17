@@ -220,6 +220,43 @@ struct fapi_drvinfo {
     unsigned char  rsv;
     unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */
 };
+#define FAPI_LOOP           0x59    /* BX = LOOP_*, CX/DX siehe dort: Datei als
+                                       Laufwerk (6.1, LOOP) */
+#define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
+                                       feste VHD), DX = Laufwerk 2..25 oder 0
+                                       = naechster freier, | LOOP_RO nur
+                                       lesend -> erstes Laufwerk,
+                                       FAPI_ERROR (fehlt, Verzeichnis),
+                                       FAPI_ERR_INUSE (zum Schreiben offen),
+                                       FAPI_ERR_EXIST (Buchstabe belegt),
+                                       FAPI_ERR_FULL (kein Platz frei),
+                                       FAPI_ERR_FRAG (zu stark zerstueckelt),
+                                       FAPI_ERR_DENIED (Traeger weder FAT noch
+                                       CD, dynamische VHD), FAPI_ERR_NOTREADY
+                                       (kein Dateisystem im Abbild) */
+#define LOOP_RO             0x100   /* ATTACH: nur lesend einhaengen    */
+#define LOOP_DETACH         1       /* CX = Laufwerk -> 0, FAPI_ERROR (kein
+                                       Loop-Laufwerk), FAPI_ERR_INUSE (offen,
+                                       aktuell, SUBST/JOIN) */
+#define LOOP_INFO           2       /* CX = Platz 0..3, DX = struct
+                                       fapi_loopinfo -> 0 (drives 0 = Platz
+                                       frei), FAPI_ERROR hinter dem letzten */
+#define FAPI_ERR_FRAG       0xFFF8  /* LOOP: Datei zu stark zerstueckelt  */
+struct fapi_loopinfo {
+    unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */
+    unsigned long  blocks;          /* Bloecke des Loop-Geraets         */
+    unsigned       bsize;           /* 512 oder 2048 (ISO)              */
+    unsigned       extents;         /* Plattenbereiche der Datei        */
+    unsigned char  cdrive;          /* Laufwerk der Datei               */
+    unsigned char  kind;            /* LOOPK_*                          */
+    char           path[261];       /* kanonisch, ohne Laufwerk         */
+};
+#define LOOPK_ISO           1
+#define LOOPK_IMG           2       /* Diskette/Partition ohne Tabelle  */
+#define LOOPK_DISK          3       /* Platte mit Partitionstabelle     */
+#define LOOPK_VHD           4       /* feste VHD                        */
+#define LOOPK_DBL           5       /* DoubleSpace/DriveSpace 6.x (CVF) */
+#define LOOPK_RO            0x80    /* in kind: nur lesend              */
 #define FAPI_KLOG           0x5A    /* Kernelmeldungen (DMESG): BX = Puffer,
                                        CX = Laenge, DX = Stelle ab der
                                        aeltesten Meldung -> AX = kopierte

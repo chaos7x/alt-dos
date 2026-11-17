@@ -113,7 +113,10 @@ int __far ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len);
 int __far ifs_close(struct ifs_file __far *f);
 int __far ifs_setsize(struct ifs_file __far *f, unsigned long size);
-int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max);   /* DosNewSize */
+int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max);
+struct fapi_loopinfo;
+int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro);   /* loop.c */
+int __far loop_info(unsigned i, struct fapi_loopinfo __far *li);   /* DosNewSize */
 int __far ifs_remove(int drive, const char *path);
 int __far ifs_mkdir(int drive, const char *path);
 int __far ifs_rmdir(int drive, const char *path);

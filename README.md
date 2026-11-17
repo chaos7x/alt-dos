@@ -70,6 +70,12 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   und schiebt Datensegmente zusammen, wenn kein Stück am Stück frei ist;
   mit `SWAPPATH=C:\SWAP 2048` lagert er Datensegmente ruhender Programme in
   `SWAPPER.DAT` aus (wie OS/2 1.x, `MEMMAN=SWAP,MOVE`);
+  `LOOP Datei [X:] [/RO]` (5.4) hängt eine Datei als Laufwerk ein – ISO,
+  Disketten- und Plattenabbilder, feste VHD, DoubleSpace/DriveSpace-
+  Container (lesen und schreiben, DriveSpace 3 eingeschlossen) –, `LOOP X: /D`
+  hängt aus, `LOOP` listet; `LOOP=` in der CONFIG.SYS beim Start;
+  `PACKDISK /CREATE Datei MB [/DS3|/DBL]`, `/CHECK Datei [/F]`,
+  `/COMPRESS X:` legt Container an, prüft und packt Laufwerke;
   `MEMMAN=NOSWAP` in der CONFIG.SYS schaltet das ab;
   `DEVLOAD [/L] [/U] Treiber [Argumente]` (5.4) lädt Treiber und IFS-Module zur
   Laufzeit wie modprobe (neue Laufwerke bekommen die nächsten freien

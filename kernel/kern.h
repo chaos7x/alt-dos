@@ -138,7 +138,15 @@ unsigned proc_run(unsigned long id);
 /* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
 #define NBLK        8
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
-#define IS_FLOPPY(dev) (blk[dev].drv < 0)   /* B: ist Geraet 1, wenn da   */
+#define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
+#define DRV_LOOP    (-2)            /* Loop-Laufwerk (loop.c), unit = Platz */
+#define NLOOP       4
+/* Loop-Laufwerke (loop.c, KTEXT2; aus 6.1) */
+extern unsigned loop_sel[NLOOP], loop_fr[2];
+int __far loop_read(int dev, unsigned long lba);
+int __far loop_write(int dev, unsigned long lba);
+int __far loop_drop(int dev);
+void __far loop_sync_all(void);
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;

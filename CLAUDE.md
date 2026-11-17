@@ -791,7 +791,22 @@ geprüft: drei `DETACH FRAGTEST /S:32 /T:40` + `FRAGTEST /B` – 18
 Segmente hinaus und zurück (Port E9h), das große Programm bekam 14 ×
 64 KB, alle Muster gleich; DEL der Datei abgelehnt, CHKDSK, SHUTDOWN,
 fsck sauber. Nicht geprüft: echter 286 (SCAT in 86Box).
-Offen: Loop/DriveSpace/PACKDISK.
+Loop/DoubleSpace/DriveSpace/PACKDISK erledigt: `kernel/loop.c` aus 6.1
+unverändert bis auf die Laufwerkssperren (vk_owner weg – auf 5.x läuft
+alles unter klock) und `blk[].grp`; übersetzt mit `-2` ohne 32-Bit-
+Hilfsroutinen, in KTEXT2 (K2MODS, Code danach 63.437 + 45.730 Byte).
+kern.h `DRV_LOOP` (-2), `IS_FLOPPY` jetzt `drv == -1`, dev_read/
+blk_read_n/blk_write/blk_flush wie 6.1; klock_leave ruft vor dem Abgeben
+`loop_sync_all` (statt loop_vsync je Laufwerk). kernel.c `loop_glue`/
+`loop_att`/`loop_boot`/`loop_undo`/`kseg_drop`, `drives_busy` (aus
+drv_unload herausgelöst), FAPI 59h, `LOOP=` -> LOOP1..4. LOOP.EXE und
+PACKDISK nur auf der Platte (HDDOS), mount/umount in LINUX.MAC. Nicht
+übernommen: fat.c reicht -3 (Container voll) noch als IFS_ERR statt
+IFS_FULL durch. In QEMU isapc 2 MB geprüft: ISO als E: (TYPE),
+`PACKDISK /CREATE C:\DBLSPACE.001 8`, LOOP als F:, XCOPY C:\DOS (106
+Dateien), CHKDSK, COMP 73 gleich/0 Unterschiede, FC /B, Aushängen,
+PACKDISK /CHECK „Keine Fehler“ (233 von 261 Clustern gepackt), SHUTDOWN,
+fsck sauber, cvfchk.py 0 Fehler, fsck des Inneren sauber.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
 ## Aufbau

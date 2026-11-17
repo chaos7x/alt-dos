@@ -11,6 +11,8 @@ REM MEMMAN=NOSWAP  Programmcode nie verwerfen (Vorgabe: bei Speichermangel
 REM                 wird Code ruhender Programme frei und aus der EXE nachgeladen)
 REM SWAPPATH=C:\SWAP 2048  Auslagerungsdatei SWAPPER.DAT (KB, 1024-8192) fuer
 REM                 Datensegmente ruhender Programme; ohne Angabe keine
+REM LOOP=E:,C:\DISK.IMG,/RO  Datei als Laufwerk beim Start (ISO, IMG, VHD,
+REM                 DoubleSpace/DriveSpace-Container; bis 4 Zeilen)
 REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20
 REM CACHE=kb,s,max  Platten-Cache im Kernel: Mindestgroesse in KB,
