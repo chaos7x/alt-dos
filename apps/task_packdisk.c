@@ -312,6 +312,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
        36h = 10C8h */
     if (d3) {
         sb[48] = 1; sb[52] = 1; wr16(sb + 54, 0x10C8);
+        sb[64] = 0x14; sb[68] = 0x0A;   /* wie Windows 98 (Bedeutung offen) */
     } else {
         sb[47] = 0x40; wr16(sb + 54, 0x091A);
     }
@@ -329,6 +330,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     fl[0] = 0xF8;                       /* Windows 98: nur F8h           */
     if (!d3) {
         fl[1] = 'D'; fl[2] = 'R'; fl[4] = 0xF8;
+    } else {
+        fl[1] = 0x08; fl[2] = 0x22;     /* wie Windows 98 (Bedeutung offen) */
     }
     for (k = bb + 1; k < fatc; k++) {   /* reservierte Sektoren          */
         if (wr(k, fl))

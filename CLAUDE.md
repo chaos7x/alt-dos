@@ -2124,6 +2124,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   AUTOCHECK, wie Disketten). In QEMU geprüft (scsi-hd removable, 7FFFh
   vorbelegt, MD ohne SHUTDOWN, QEMU hart beendet: FFFFh, fsck sauber).
   Auch auf 5.x. Nächster Schritt: /DS3 unter Windows 98, dann DoubleSpace.
+  /DS3 unter Windows 98 (Build 724): „Ladefehler Nr. 13, DRVSPACE045“
+  (Format erkannt, beim Laden abgelehnt). Gegen die Windows-98-Vorlage
+  fehlten nur Superblock 40h/44h = 14h/0Ah und `08 22` hinter F8h im
+  Sektor nach dem Bootblock – jetzt wie die Vorlage (Bedeutung offen; die
+  Vorlage war umgewandelt und vom Agenten behandelt). Erbeten: ein von
+  Windows 98 frisch angelegter leerer DS3-Container als Vorlage.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
