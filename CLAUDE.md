@@ -2130,6 +2130,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Sektor nach dem Bootblock – jetzt wie die Vorlage (Bedeutung offen; die
   Vorlage war umgewandelt und vom Agenten behandelt). Erbeten: ein von
   Windows 98 frisch angelegter leerer DS3-Container als Vorlage.
+  Beim Nutzer weiter DRVSPACE045. Vorlage geschickt (ZIP 250, Windows 98
+  „Leeres Laufwerk erstellen“ über das ganze ZIP, 237 MB): im ganzen
+  Verwaltungsbereich Byte für Byte gleich wie PACKDISK, nur Bezeichnung,
+  Seriennummer, Startcode (Windows: Nullen) und Eintrag „ZIP“ im inneren
+  Stamm anders. Ursache ist die Größe: `PACKDISK /CREATE … 200 /DS3`
+  lädt Windows 98 (vom Nutzer bestätigt, 17.11.2026), 30 MB nicht –
+  innen fest 2 GB ist bei kleinen Containern ein zu hohes Verhältnis
+  (30 MB: 68 : 1). Offen: Regel von Windows 98 für kleine Container
+  (Vorlage mit ~30 MB erbeten); bis dahin DS3 groß anlegen.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
