@@ -41,6 +41,9 @@ jobs:
           REF: ${{ inputs.ref }}
         run: |
           set -e
+          case "$TAG$REF" in *[!A-Za-z0-9._/-]*) echo "ungueltiger Name"; exit 1;; esac
+          case "$TAG" in -*|"") echo "ungueltiger Tag"; exit 1;; esac
+          case "$REF" in -*) echo "ungueltiger Ref"; exit 1;; esac
           git fetch -q origin "$REF" 2>/dev/null || true
           sha=$(git rev-parse --verify "origin/$REF^{commit}" 2>/dev/null || git rev-parse --verify "$REF^{commit}")
           git config user.name "github-actions[bot]"
@@ -53,5 +56,10 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
         run: |
+          set -e
+          REF=x
+          case "$TAG$REF" in *[!A-Za-z0-9._/-]*) echo "ungueltiger Name"; exit 1;; esac
+          case "$TAG" in -*|"") echo "ungueltiger Tag"; exit 1;; esac
+          case "$REF" in -*) echo "ungueltiger Ref"; exit 1;; esac
           git push origin --delete "refs/tags/$TAG"
           echo "Tag $TAG geloescht"
