@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Tag anlegen oder loeschen, von Hand gestartet (Actions -> Tag -> Run
+# workflow, oder aus einer Claude-Sitzung ueber die Actions-Schnittstelle).
+# Grund: die Cloud-Umgebung darf Zweige pushen, Tags nicht (HTTP 403 am
+# Git-Proxy). Das Ruleset "Version" schuetzt refs/tags/v* vor Loeschen und
+# Ueberschreiben; der CI-Token faellt nicht unter die Admin-Ausnahme, also
+# lassen sich v*-Tags hier nur anlegen, loeschen nur in GitHub selbst.
+name: Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Name des Tags, z. B. v5.4'
+        required: true
+      ref:
+        description: 'Zweig oder Commit (beim Anlegen)'
+        required: false
+        default: 'main'
+      action:
+        description: 'anlegen oder loeschen'
+        required: true
+        default: 'anlegen'
+        type: choice
+        options: [anlegen, loeschen]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Tag setzen
+        if: inputs.action == 'anlegen'
+        env:
+          TAG: ${{ inputs.tag }}
+          REF: ${{ inputs.ref }}
+        run: |
+          set -e
+          git fetch -q origin "$REF" 2>/dev/null || true
+          sha=$(git rev-parse --verify "origin/$REF^{commit}" 2>/dev/null || git rev-parse --verify "$REF^{commit}")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$sha" -m "$TAG"
+          git push origin "refs/tags/$TAG"
+          echo "Tag $TAG -> $sha"
+      - name: Tag loeschen
+        if: inputs.action == 'loeschen'
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          git push origin --delete "refs/tags/$TAG"
+          echo "Tag $TAG geloescht"

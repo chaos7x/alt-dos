@@ -1519,7 +1519,7 @@ Aus der Cloud-Umgebung lassen sich Commits pushen. Zweige anlegen geht
 seit dem 13.11.2026 (Test `zweigtest` per `git push origin
 HEAD:refs/heads/zweigtest` angelegt) und Löschen auch: `git push
 --delete` meldet zwar „unexpected disconnect“, der Zweig war danach aber
-weg (ls-remote direkt danach zeigte ihn noch – kurz warten, erneut prüfen). Tags: noch nicht erneut geprüft (früher HTTP 403). Keine
+weg (ls-remote direkt danach zeigte ihn noch – kurz warten, erneut prüfen). Tags: weiter HTTP 403 am Git-Proxy der Umgebung (17.11.2026 geprüft, auch für Namen außerhalb des Rulesets `v*`). Umweg (vom Nutzer ausdrücklich freigegeben): Workflow `.github/workflows/tag.yml` (Tag, Ref, anlegen/loeschen), gestartet über die Actions-Schnittstelle; `v*`-Tags lassen sich dort nur anlegen (Ruleset „Version“: Löschen/Überschreiben nur Admins), löschen in GitHub. Keine
 Arbeitszweige ohne Absprache anlegen.
 CI-Läufe blieben im November 2026 mehrfach in der Warteschlange hängen
 („not queued yet“, weder abbrechen noch löschen ging); ein von Hand
