@@ -216,11 +216,19 @@ des Nutzers, 15.11.2026, ein Push auf `5.3` erzeugt das Release `v5.3`,
 „neueste“ bis 5.3.1); `5.3.1` = Fehlerbehebungen für 5.3 (15.11.2026,
 Release `v5.3.1`); `5.3.2` = 5.3.1 plus DIR /S (15.11.2026, Release
 `v5.3.2`; „neueste“ ist seitdem `v6.0`, die 5.x-Releases setzen
-`--latest=false`); `5.x` = Weiterarbeit, die CI
+`--latest=false`); `5.4` = 5.3.2 plus Rückportierungen aus 6.1
+(Entscheidung des Nutzers, 17.11.2026: Speicher wie OS/2 1.x, LOOP/
+DoubleSpace/DriveSpace/PACKDISK, DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM,
+HEXDUMP/XXD, schnellere Maussuche, Mode-X-Zeiger; Titel/VER „5.4“,
+FAPI_VERSION 0528h, Bootsektoren „5.4“; Release `v5.4`, ebenfalls
+`--latest=false`). Bekannt (auch 6.1): läuft ein DriveSpace-Container
+beim Kopieren voll, bleiben im Inneren verlorene Ketten (CHKDSK /F
+räumt auf) – fat.c gibt bei einem Schreibfehler mitten in der Datei
+die schon belegten Cluster nicht zurück. `5.x` = Weiterarbeit, die CI
 veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.3.1 fertig (Zweig 5.3.1), Weiterarbeit in 5.x; 5.3/5.2/5.1/5.0 in ihren Zweigen
+## Aktueller Stand: AT-DOS 5.4 fertig (Zweig 5.4), Weiterarbeit in 5.x; 5.3.x/5.2/5.1/5.0 in ihren Zweigen
 
 5.3.1 (Entscheidung des Nutzers, 15.11.2026): Fehlerbehebungen aus 6.0 –
 `load_driver` gab einen Treiber ohne Gerät nicht frei (`n` = Seiten-

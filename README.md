@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.3.2 (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0
+# alt-dos – AT-DOS 5.4 (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0/6.1
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -29,8 +29,11 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
 Dieser Zweig (`5.x`) ist die Weiterarbeit an der 286-Linie (5.1 plus
-Rückportierungen aus 6.0). AT-DOS 5.3.2 (5.3.1 plus `DIR /S`) steht im
-Zweig `5.3.2` (Release `v5.3.2`), 5.3.1 (Fehlerbehebungen) im Zweig
+Rückportierungen aus 6.0/6.1). AT-DOS 5.4 steht im Zweig `5.4` (Release
+`v5.4`): 5.3.2 plus Speicherverwaltung wie OS/2 1.x (Code verwerfen,
+Segmente verschieben, `SWAPPATH=`), LOOP mit DoubleSpace/DriveSpace,
+PACKDISK, DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD. AT-DOS
+5.3.2 (5.3.1 plus `DIR /S`) steht im Zweig `5.3.2` (Release `v5.3.2`), 5.3.1 (Fehlerbehebungen) im Zweig
 `5.3.1` (Release `v5.3.1`), AT-DOS 5.3 im Zweig `5.3` (Release
 `v5.3`): 5.2 plus die Packprogramme (GZIP, TAR, ZIP, LHA, ARJ, ZOO, 7z),
 CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,

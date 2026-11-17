@@ -61,8 +61,8 @@ jobs:
           gh release delete v5.x --yes --cleanup-tag 2>/dev/null || true
           gh release create v5.x build/dos5.img build/atdos-hd.zip \
             --target "$GITHUB_SHA" --prerelease \
-            --title "AT-DOS 5.x nach 5.3.2 (in Arbeit), Build $BNO" \
-            --notes "Weiterarbeit nach 5.3.2 (Zweig 5.x). Das fertige 5.3.2 steht im Release v5.3.2 (Zweig 5.3.2), 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
+            --title "AT-DOS 5.x nach 5.4 (in Arbeit), Build $BNO" \
+            --notes "Weiterarbeit nach 5.4 (Zweig 5.x). Das fertige 5.4 steht im Release v5.4 (Zweig 5.4), 5.3.2 in v5.3.2, 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
 
       - name: Release "v5.2" veroeffentlichen (Zweig 5.2)
         if: github.ref == 'refs/heads/5.2' && github.event_name != 'pull_request'
@@ -115,3 +115,16 @@ jobs:
             --target "$GITHUB_SHA" --latest=false \
             --title "AT-DOS 5.3.2, Build $BNO" \
             --notes "AT-DOS 5.3.2 (Zweig 5.3.2) fuer den 286: 5.3.1 plus DIR /S aus 6.0 (Unterverzeichnisse, mit /B volle Pfade). Enthaelt die Fehlerbehebungen von 5.3.1 (Treiberlader, EJECT mit Sauber-Bit, Wechselplatte ohne Medium, DIR /O und /?). dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User). Fuer den 386: AT-DOS 6.0 (Release v6.0)."
+
+      - name: Release "v5.4" veroeffentlichen (Zweig 5.4)
+        if: github.ref == 'refs/heads/5.4' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd build && zip -q atdos-hd.zip atdos-hd.img)
+          BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
+          gh release delete v5.4 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v5.4 build/dos5.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --latest=false \
+            --title "AT-DOS 5.4, Build $BNO" \
+            --notes "AT-DOS 5.4 (Zweig 5.4) fuer den 286: 5.3.2 plus Rueckportierungen aus 6.1 - Speicher wie OS/2 1.x (Programmcode bei Speichermangel verwerfen und aus der EXE nachladen, Datensegmente verschieben, mit SWAPPATH= in SWAPPER.DAT auslagern; MEMMAN=NOSWAP), LOOP (ISO, Disketten-/Plattenabbilder, VHD, DoubleSpace/DriveSpace lesen und schreiben, LOOP=), PACKDISK, DEVLOAD (Treiber laden und entladen), DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD, schnellere Maussuche. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User). Fuer den 386: AT-DOS 6.x."

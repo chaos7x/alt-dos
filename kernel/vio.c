@@ -217,12 +217,12 @@ static void title_bar(void)
 {
     static char n[] = "Sitzung ?";
     vfill(0, TITLE_ATTR);
-    vputs(0, 1, "AT-DOS 5.3.2", TITLE_ATTR);
+    vputs(0, 1, "AT-DOS 5.4", TITLE_ATTR);
     if (fg >= 0) {
         n[8] = (char)('1' + fg);
-        vputs(0, 14, "\xB3", TITLE_ATTR);
-        vputs(0, 16, n, TITLE_ATTR);
-        vputs(0, 26, ses[fg].title, TITLE_ATTR);
+        vputs(0, 12, "\xB3", TITLE_ATTR);
+        vputs(0, 14, n, TITLE_ATTR);
+        vputs(0, 24, ses[fg].title, TITLE_ATTR);
     }
 }
 
