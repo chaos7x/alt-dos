@@ -185,37 +185,69 @@ static int looks_like_uart(unsigned b)
     return !(iir & 0x30) && !(mcr & 0xE0);
 }
 
-/* Schnittstelle einstellen, Maus zuruecksetzen; -> Tasten (2/3), 0 = keine */
-static unsigned probe(unsigned b)
+/* Beide Schnittstellen zugleich pruefen (Maske m: Bit i = COM i+1):
+   einstellen, Maus stromlos (DTR/RTS aus), dann an - eine Microsoft-Maus
+   meldet sich mit 'M' (Logitech danach '3'). Frueher Port fuer Port mit
+   fester Wartezeit (0,9 s beim Start); jetzt eine gemeinsame Pause und
+   Schluss, sobald eine Maus geantwortet hat. -> Port-Index, Tasten in *nb;
+   -1 = keine. Ports ohne Maus bekommen DTR/RTS wieder weg. */
+static unsigned probe_nb;                /* Tasten der gefundenen Maus   */
+
+static int probe_all(unsigned m)
 {
-    unsigned start, got = 0, three = 0;
+    unsigned start, i, b, got[2], three[2], hit = 0;
+    int r = -1;
     unsigned char c;
 
-    if (!looks_like_uart(b))
-        return 0;
-    outp(IER(b), 0x00);                 /* keine Interrupts             */
-    outp(LCR(b), 0x80);                 /* DLAB                         */
-    outp(DLL(b), 96);                   /* 115200 / 1200                */
-    outp(DLM(b), 0);
-    outp(LCR(b), 0x02);                 /* 7 Bit, keine Paritaet, 1 Stopp */
-    outp(MCR(b), 0x00);                 /* DTR/RTS aus: Maus ohne Strom  */
+    for (i = 0; i < 2; i++) {
+        got[i] = three[i] = 0;
+        if (!(m & (1u << i)) || !looks_like_uart(com_port[i])) {
+            m &= ~(1u << i);
+            continue;
+        }
+        b = com_port[i];
+        outp(IER(b), 0x00);             /* keine Interrupts             */
+        outp(LCR(b), 0x80);             /* DLAB                         */
+        outp(DLL(b), 96);               /* 115200 / 1200                */
+        outp(DLM(b), 0);
+        outp(LCR(b), 0x02);             /* 7 Bit, keine Paritaet, 1 Stopp */
+        outp(MCR(b), 0x00);             /* DTR/RTS aus: Maus ohne Strom  */
+    }
+    if (!m)
+        return -1;
     delay(15);
-    while (inp(LSR(b)) & 1)             /* Reste wegwerfen              */
-        inp(RBR(b));
-    outp(MCR(b), MCR_DTR | MCR_RTS);    /* an: Maus meldet sich         */
+    for (i = 0; i < 2; i++)
+        if (m & (1u << i)) {
+            b = com_port[i];
+            while (inp(LSR(b)) & 1)     /* Reste wegwerfen              */
+                inp(RBR(b));
+            outp(MCR(b), MCR_DTR | MCR_RTS);    /* an: Maus meldet sich */
+        }
     start = ticks();
-    while ((unsigned)(ticks() - start) < 30) {
-        if (inp(LSR(b)) & 1) {
-            c = inp(RBR(b));
-            if (c == 'M')
-                got = 1;
-            else if (got && c == '3')
-                three = 1;
+    /* bis 250 ms auf 'M'; danach noch 50 ms fuer die '3' (1200 Baud:
+       ein Zeichen braucht ~7 ms) */
+    while ((unsigned)(ticks() - start) < (hit ? hit + 5 : 25)) {
+        for (i = 0; i < 2; i++) {
+            if (!(m & (1u << i)) || !(inp(LSR(com_port[i])) & 1))
+                continue;
+            c = inp(RBR(com_port[i]));
+            if (c == 'M') {
+                got[i] = 1;
+                if (!hit)
+                    hit = ticks() - start + 1;
+            } else if (got[i] && c == '3')
+                three[i] = 1;
         }
     }
-    if (!got)
-        return 0;
-    return three ? 3 : 2;
+    for (i = 0; i < 2; i++)
+        if (m & (1u << i)) {
+            if (r < 0 && got[i]) {
+                r = (int)i;
+                probe_nb = three[i] ? 3 : 2;
+            } else
+                outp(MCR(com_port[i]), 0x00);
+        }
+    return r;
 }
 
 /* ---- Busmaus ------------------------------------------------------- */
@@ -439,14 +471,12 @@ static void init(void)
         devhlp(DH_KBDLOCK, 0, 0, 0);
         nbtn = 0;
     }
-    for (i = 0; i < 2 && only < 2; i++) {
-        if (only >= 0 && i != only)
-            continue;
-        nbtn = (unsigned char)probe(com_port[i]);
-        if (nbtn) {
+    if (only < 2) {
+        i = probe_all(only < 0 ? 3 : 1u << only);
+        if (i >= 0) {
+            nbtn = (unsigned char)probe_nb;
             base = com_port[i];
             irq = com_irq[i];
-            break;
         }
     }
     if (!base && (only < 0 || only == 3) && bus_probe(r->args)) {

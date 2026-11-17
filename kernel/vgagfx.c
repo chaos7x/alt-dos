@@ -349,6 +349,9 @@ int __far vio_is_gfx(int s)
     return s >= 0 && ses[s].used && ses[s].gfx;
 }
 
+static unsigned char gp_cw = 15, gp_cb; /* Farben fuer Sitzung gp_cs     */
+static signed char gp_cs = -1;
+
 /* VioSetPalette: n Eintraege ab first (je 3 Byte, 0-63) aus sel:off */
 void __far vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned off)
 {
@@ -358,6 +361,8 @@ void __far vio_setpal(int s, unsigned first, unsigned n, unsigned sel, unsigned 
     win_save(w);
     map_save(s, 4);
     far_copy(SCRATCH, first * 3, sel, off, n * 3);
+    if (s == gp_cs)
+        gp_cs = -1;                         /* Zeigerfarben neu bestimmen */
     if (s == fg && hw_gfx == ses[s].gfx)
         dac_io(1, first, n, MK_FP(sel, off));
     win_restore(w);
@@ -382,11 +387,47 @@ struct gpst {
     int x, y;
     unsigned page;                      /* Mode X: Anfang der Seite     */
     unsigned char mode;
+    unsigned char cw, cb;               /* 256 Farben: Farbe Pfeil/Rand  */
     unsigned char save[16][12];         /* 13h/X: Punkte; 12h: 3 Byte x 4 Ebenen */
 };
 static struct gpst gst[2];
 static unsigned char gci;               /* gst[gci] ist gezeichnet      */
 static unsigned long gp_check;          /* letzte Pruefung (Takte)      */
+
+/* 256 Farben: wie der Microsoft-Treiber Farbe 15 fuer den Pfeil und 0 fuer
+   den Rand - setzt das Programm dort Farben ohne Abstand (GRAFIK X:
+   Regenbogen, beide Cyan), nimmt der Zeiger die hellste und die dunkelste
+   Farbe der Palette. Gerufen mit gesicherten Fenstern. */
+static void gp_colors(void)
+{
+    unsigned char __far *p = MK_FP(SCRATCH, 0);
+    unsigned i, l, hi = 0, lo = 0xFFFF;
+
+    if (gp_cs == fg)
+        return;
+    gp_cs = (signed char)fg;
+    gp_cw = 15;
+    gp_cb = 0;
+    if (fg < 0 || !ses[fg].gfx_save)
+        return;
+    map_save(fg, 4);
+#define LUM(k) ((unsigned)p[(k) * 3] * 30 + (unsigned)p[(k) * 3 + 1] * 59 + \
+                (unsigned)p[(k) * 3 + 2] * 11)
+    if (LUM(15) >= LUM(0) + 3000)           /* 15 deutlich heller als 0 */
+        return;
+    for (i = 0; i < 256; i++) {
+        l = LUM(i);
+        if (l > hi || i == 0) {
+            hi = l;
+            gp_cw = (unsigned char)i;
+        }
+        if (l < lo) {
+            lo = l;
+            gp_cb = (unsigned char)i;
+        }
+    }
+#undef LUM
+}
 
 /* Bytemaske des Pfeils fuer Byte i (0-2) einer Zeile, Verschiebung sh */
 static unsigned char gmask(unsigned short m, unsigned i, unsigned sh)
@@ -440,10 +481,10 @@ static void gcomb_px(const struct gpst *o, struct gpst *n)
             } else
                 a = (unsigned)y * 320 + (unsigned)x;
             cur = v[a];
-            bg = oc >= 0 && cur == (unsigned char)oc ? o->save[y - o->y][x - o->x] : cur;
+            bg = oc >= 0 && cur == (oc ? o->cw : o->cb) ? o->save[y - o->y][x - o->x] : cur;
             if (nc >= 0) {
                 n->save[y - n->y][x - n->x] = bg;
-                val = (unsigned char)nc;
+                val = nc ? n->cw : n->cb;
             } else
                 val = bg;
             if (val != cur)
@@ -559,6 +600,14 @@ static void gptr_to(int x, int y, unsigned page)
     n->y = y;
     n->page = page;
     n->mode = hw_gfx;
+    if (hw_gfx != 0x12) {                   /* Farben bei gesicherten Fenstern */
+        unsigned short w[8];
+        win_save(w);
+        gp_colors();
+        win_restore(w);
+    }
+    n->cw = gp_cw;
+    n->cb = gp_cb;
     gcomb(gp_drawn && gst[gci].mode == hw_gfx ? &gst[gci] : 0, n);
     gci ^= 1;
     gp_drawn = 1;
