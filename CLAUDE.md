@@ -1638,6 +1638,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Gewinn erst messen (wdis/Map je Funktion), dann entscheiden: eigenes
   Codesegment KTEXTI hinter den anderen, Daten in einem Kernelsegment,
   beides nach dem Start mem_free; Thunks wie bei KTEXT2.
+  Gemessen und ausgearbeitet in `docs/INIT-SEGMENT.md` (~18 KB Code +
+  ~2 KB Texte im Kernel, 27–59 % je Treiber; Vorschlag dort: Segment vorn
+  bei 10000h statt hinter DGROUP, Treiber-INIT mit Antwort `keep`).
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
