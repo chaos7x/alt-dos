@@ -2099,6 +2099,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (disk_geo, nur bei BIOS-Zylindern unter 1024), FDISK rechnet die
   Platte darauf herunter wie das FDISK von MS-DOS. In QEMU geprüft
   (Platte 102 Zylinder, BIOS-Geometrie 100: FDISK zeigt 48 statt 50 MB).
+  Dazu immer auf ganze BIOS-Zylinder abgerundet: die 50-MB-Platte des
+  Nutzers hatte 111.150 Sektoren bei 64 × 32 (54,27 Zylinder), FDISK legte
+  die Partition bis Sektor 111.149 an, ScanDisk markierte Cluster 27.652–
+  27.717 als defekt (Abbilder vorher/nachher verglichen: sonst nichts
+  geändert). Offen: FORMAT schreibt in den BPB fest 16 Köpfe/63 Sektoren
+  statt der BIOS-Geometrie (MS-DOS-Bootsektoren lesen damit per CHS –
+  nur für SYS von MS-DOS auf eine AT-DOS-Partition wichtig).
   Vorhandene Partitionen bleiben, wie sie sind (neu anlegen).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,

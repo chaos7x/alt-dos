@@ -162,9 +162,11 @@ static int load_disk(void)
         spt = 63;
     }
     cylsz = heads * spt;
-    if (di.heads && di.rsv) {           /* wie MS-DOS nur bis zum letzten
-                                           Zylinder des BIOS - dahinter
-                                           liest MS-DOS per INT 13h nicht */
+    if (di.heads) {                     /* wie MS-DOS nur ganze Zylinder
+                                           bis zum letzten des BIOS -
+                                           dahinter liest MS-DOS per INT 13h
+                                           nicht (angebrochener Zylinder am
+                                           Ende, rsv = fehlende ganze)    */
         unsigned long c = 0;
         while (c + cylsz <= di.sectors)
             c += cylsz;
