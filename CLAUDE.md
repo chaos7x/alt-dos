@@ -825,6 +825,23 @@ PACKDISK /CHECK „Keine Fehler“ (233 von 261 Clustern gepackt), SHUTDOWN,
 fsck sauber, cvfchk.py 0 Fehler, fsck des Inneren sauber.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
+LTEMM (17.11.2026, Wunsch des Nutzers: EMS in der Kompatibilitätsbox für
+Lotus & Co.): `ltemm/` = EMS-Treiber der Lo-tech-EMS-Karte (lo-tech.co.uk
+LTEMM-r01, BSD-3-Clause, Herkunft und Änderungen in `ltemm/HERKUNFT.txt`),
+gebaut mit Open Watcom wasm (PUSH/POP mit mehreren Registern aufgeteilt,
+REPZ MOVS -> REP), PAGE_MAX 255 (4080 KB, Seite 255 = FFh bleibt als
+Abschaltsignal frei), `aliaschk` gegen Spiegelseiten einer 2-MB-Karte.
+Die 4-MB-Fassung von hkzlab nicht übernommen (CC BY-NC-SA). build.sh legt
+LTEMM.EXE + LTEMM.TXT (Lizenz) ins Box-Abbild, dessen CONFIG.SYS hat
+`REM DEVICE=A:\LTEMM.EXE /p:E000 /i:260`. In 86Box geprüft (asus386,
+4 MB, AHA-154xC, Lo-tech-Karte bei 260h, Rahmen D000h – Abschnitt
+`[Other peripherals]`, `isamem0_type = lotechems`): 4-MB-Karte ->
+FreeDOS-MEM „Expanded (EMS) 4.080K“, 2-MB-Karte -> 2048K; das Original
+von lo-tech ebenso (2048K). Mehrere Karten zusammen kann LTEMM nicht.
+Everex EV-159: in 86Box als erweiterter Speicher einstellbar (Start-
+adresse hinter dem RAM, zusammenhängende Größe 3072, EMS aus) – dann
+nutzt AT-DOS ihn ohne Treiber.
+
 ## Aufbau
 
 - `boot/` – `boot.asm`: Diskette, Standard-FAT12-BPB, lädt `ATDOS.SYS` (erste
