@@ -1179,7 +1179,7 @@ t_comspec db "X:\DOS\MDOS\COMMAND.COM", 0
 t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
-t_hello   db "DOS-Box von AT-DOS 6.0 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+t_hello   db "DOS-Box von AT-DOS 6.1 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
           dw t_autoexec, t_ini, t_nls+8, 0
 pblock    dw 0                          ; Umgebung erben

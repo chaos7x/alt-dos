@@ -20,7 +20,19 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`), Weiterarbeit auf `main`
+## Aktueller Stand: AT-DOS 6.1 fertig (Zweig `6.1`, Release `v6.1`), Weiterarbeit auf `main`
+
+AT-DOS 6.1 ist fertig (Entscheidung des Nutzers, 17.11.2026: „dann
+spricht eigentlich nichts gegen die 6.1“): Zweig `6.1` = Stand der
+Freigabe, ein Push dorthin baut per CI das Release `v6.1` (als neuestes
+markiert; `v6.0` baut seitdem mit `--latest=false`). Titel/VER „AT-DOS
+6.1“, `FAPI_VERSION` 060Ah (VER zeigt „6.10“), Bootsektoren „6.1“.
+Inhalt gegenüber 6.0: Setup-Disketten, Code verwerfen/Segmente
+verschieben/auslagern, Loop, DoubleSpace/DriveSpace/PACKDISK, CONVERT
+FAT32 -> FAT16 und beim Neustart, MSCDEX, AHCI, ACPI-Ausschalten, DMESG,
+STRINGS/MD5SUM/SHA1SUM/HEXDUMP/XXD. Ungeprüft auf echter Hardware.
+Als Nächstes im Plan (6.x): Netzwerk, VirtIO.
+
 
 AT-DOS 6.0 ist fertig (Entscheidung des Nutzers, 15.11.2026: „da wir
 nichts mehr auf der Liste haben“): Zweig `6.0` = Stand der Freigabe, ein

@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: AHCI, Loop-Laufwerke (lesen und schreiben, `LOOP=`), DoubleSpace/DriveSpace (auch DriveSpace 3) lesen und schreiben, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
+# alt-dos – AT-DOS 6.1 fertig (Zweig `6.1`, Release `v6.1`; 6.0 auf `6.0`, 5.4 auf `5.4`, Weiterarbeit 5.x auf `5.x`): Setup-Disketten, Speicher wie OS/2 1.x mit Auslagerungsdatei, Loop-Laufwerke, DoubleSpace/DriveSpace (auch DriveSpace 3) lesen und schreiben, AHCI, MSCDEX in der Box
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -28,8 +28,9 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 **GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
-Zweige: `main` = AT-DOS 6.0 (in Arbeit), `5.x` = AT-DOS 5.1 (5.0 mit
-Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
+Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
+386-Fassungen, `5.x` = Weiterarbeit der 286-Linie (freigegeben: `5.0` bis
+`5.4`).
 
 ## Was läuft
 
