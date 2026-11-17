@@ -197,6 +197,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         ncl = inner >> sh;
         if (ncl > 65518UL)
             ncl = 65518UL;
+        if (d3)                         /* Windows 98: innen immer 2 GB  */
+            ncl = 65509UL;              /* (Gesamtzahl 3FFA80h)          */
         f16 = ncl >= 4085;
         /* Hoechstgroesse (Feld 62) wie MS-DOS/Windows: bei FAT16 immer
            512 MB (DS6) bzw. 2048 MB (DS3), BITFAT und MDFAT dafuer -
@@ -252,7 +254,7 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     }
     /* Bootblock = BPB des inneren Laufwerks */
     zero(sec, 512);
-    sec[0] = 0xEB; sec[1] = 0x3C; sec[2] = 0x90;
+    sec[0] = 0xEB; sec[1] = d3 ? 0x6E : 0x3C; sec[2] = 0x90;
     for (i = 0; i < 8; i++)
         sec[3 + i] = "MSDBL6.0"[i];  /* wie der innere Bootblock von MS-DOS */
     wr16(sec + 11, 512);
@@ -265,8 +267,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     wr32(sec + 32, tot + spf);          /* innen mit der zweiten FAT     */
     sec[21] = 0xF8;
     wr16(sec + 22, spf);
-    wr16(sec + 24, 32);                 /* Geometrie wie MS-DOS innen    */
-    wr16(sec + 26, 64);
+    wr16(sec + 24, d3 ? 17 : 32);       /* Geometrie wie MS-DOS (32/64)  */
+    wr16(sec + 26, d3 ? 6 : 64);        /* bzw. Windows 98 (17/6) innen  */
     sec[38] = 0x29;
     DosGetDateTime(dt);
     wr16(sec + 39, dt[1] ^ DosQTicks());    /* Seriennummer              */
@@ -321,9 +323,18 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
             goto werr;
     if (wr(bb, sec))
         goto werr;
-    for (k = bb + 1; k < fatc; k++)     /* reservierte Sektoren          */
+    /* Sektor hinter dem Bootblock wie bei MS-DOS 6.22: "\xF8" "DR" 0,
+       Datentraegerbyte F8h - fehlt es, meldet ScanDisk "MS-DOS-
+       Datentraegerbyte fehlte" */
+    fl[0] = 0xF8;                       /* Windows 98: nur F8h           */
+    if (!d3) {
+        fl[1] = 'D'; fl[2] = 'R'; fl[4] = 0xF8;
+    }
+    for (k = bb + 1; k < fatc; k++) {   /* reservierte Sektoren          */
         if (wr(k, fl))
             goto werr;
+        zero(fl, 8);
+    }
     fl[0] = 0xF8; fl[1] = 0xFF; fl[2] = 0xFF;
     if (f16)
         fl[3] = 0xFF;
@@ -351,6 +362,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     }
     zero(fl, 512);
     fl[0] = 'M'; fl[1] = 'D'; fl[2] = 'R';
+    if (!d3)
+        fl[4] = 0xF8;                   /* Datentraegerbyte wie MS-DOS   */
     if (wr(tnow - 1, fl))
         goto werr;
     DosClose(hd);
@@ -361,7 +374,10 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
         say("Container angelegt: ", (unsigned long)mb, " MB");
     puts(d3 ? " (32-KB-Cluster)\r\n" : " (8-KB-Cluster)\r\n");
     say("Inneres Laufwerk:   ", ncl << (sh - 1), " KB");
-    say(" bei Packrate ", (unsigned long)ratio, ":1\r\n");
+    if (d3)
+        puts(" (wie Windows 98 immer 2 GB)\r\n");
+    else
+        say(" bei Packrate ", (unsigned long)ratio, ":1\r\n");
     if (!cv_quiet) {
         puts("Einh\x84ngen mit: LOOP X: ");
         puts(name);
@@ -869,6 +885,7 @@ static int check(char *rest)
    Datei verlaengern, "MDR" ans neue Ende, wieder einhaengen. Ein
    abgebrochener Lauf setzt mit demselben Aufruf fort. */
 static unsigned long cv_units, cv_dst, cv_dend, cv_mdf, cv_max;
+static unsigned cv_d3;
 static unsigned long c_free, c_moved, c_skip, c_bytes;
 static unsigned c_drv, c_ldrv, c_grow, c_want;
 static char c_path[FAPI_PATHLEN], c_dest[FAPI_PATHLEN], c_root[8];
@@ -901,6 +918,7 @@ static int cvf_geom(void)
         DosClose(hd);
         return -2;
     }
+    cv_d3 = sb[13] > 16;
     cv_mdf = rd16(sb + 36) + 1UL;
     cv_dst = rd16(sb + 39) + (unsigned long)rd16(sb + 43) + 2;
     cv_max = (unsigned long)rd16(sb + 62) << 11;
@@ -951,6 +969,8 @@ static int cvf_grow(unsigned long add)  /* -> 1 gewachsen                 */
     zero(fl, 512);
     wr(cv_units - 1, fl);               /* altes Ende wird Datenbereich   */
     fl[0] = 'M'; fl[1] = 'D'; fl[2] = 'R';
+    if (!cv_d3)
+        fl[4] = 0xF8;
     if (wr(nu - 1, fl))
         return 0;
     cv_units = nu;

@@ -2064,6 +2064,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Abweichungen als Stelle:Vorlage/Datei, passt auf einen Bildschirm.
   In QEMU geprüft (20 MB gegen 16 MB: nur Gesamtzahl, FAT-Art,
   Bezeichnung, Seriennummer).
+  Sechster Schritt (17.11.2026): der Nutzer hat je einen leeren
+  Container von MS-DOS 6.22 (38 MB, DS6) und von Windows 98 (DS3, vom
+  Komprimierungs-Agenten behandelt) als Datei geschickt (nur zum Testen,
+  nicht im Repository). Byte für Byte verglichen: Superblock und FAT bis
+  auf Größe gleich. Gefehlt hat das Datenträgerbyte an zwei Stellen –
+  Sektor hinter dem Bootblock (DS6 `F8 'D' 'R' 00 F8`, DS3 nur `F8`) und
+  im MDR-Sektor Byte 4 = F8h (nur DS6; DS3 hat dort 0); der Rest des
+  MDR-Sektors ist alter Platteninhalt. DS3 wie Windows 98: innen immer
+  2 GB (65.509 Cluster zu 32 KB, Gesamtzahl 3FFA80h, unabhängig von der
+  Containergröße), innerer Bootblock Geometrie 17/6 und Sprung EB 6E
+  (DS6: 32/64, EB 3C). Offen: Superblock 40h/44h (Windows 98: 14h/0Ah,
+  vermutlich Agent). In QEMU geprüft (30 MB DS6, 12 MB DS6/DS3: XCOPY
+  \DOS, CHKDSK, cvfchk/cvfchk3 0 Fehler, fsck innen/außen sauber, je 105
+  Dateien gleich; Vergleich mit den Vorlagen nur noch Größe, Bezeichnung,
+  Seriennummer, Startcode).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
