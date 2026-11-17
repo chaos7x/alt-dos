@@ -2499,6 +2499,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zweiter Klick öffnet; msgbox-Knöpfe per `button_hit`); `input()`
   (Suchen/Ändern/Speichern unter): Klick ins Feld setzt den Cursor,
   Klick auf OK/Abbrechen drückt (in QEMU geprüft).
+  Seriell schneller (17.11.2026; Anlass: Messung in 86Box, MOUSE.SYS
+  kostete beim Start 0,9 s – je Port 150 ms stromlos + 300 ms Warten):
+  `probe_all` prüft COM1 und COM2 zugleich (eine gemeinsame Pause, dann
+  bis 250 ms auf 'M', nach dem ersten 'M' nur noch 50 ms für die '3'),
+  Ports ohne Maus bekommen DTR/RTS wieder weg; ohne UART gar kein
+  Warten. Höchstens 0,4 s statt 0,9 s, mit Maus ~0,2 s. In QEMU geprüft
+  (/COM1 und /COM2 mit `-serial msmouse` „Logitech, 3 Tasten“, /COM1
+  ohne Maus „keine Maus gefunden“, Bewegung). Auch auf 5.x.
   Busmaus (nach seriell, `/BUS`), in 86Box vom Nutzer bestätigt (wird
   erkannt; QEMU hat keine): InPort an 23Ch/238h über
   die Kennung (Basis+2 abwechselnd DEh/Version, nur lesen), Modus 11h
