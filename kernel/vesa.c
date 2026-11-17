@@ -222,7 +222,7 @@ unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
         if (!vbe_info(&list, &mem_kb) || !vbe_mode(n, o))
             return FAPI_ERROR;
         pages = (unsigned)((mul16(o->pitch, o->height) + 4095) >> 12);
-        if (pages > 896 || vio_setvesa(s, t, o, pages, vb_phys, vb_gmul))
+        if (pages > 880 || vio_setvesa(s, t, o, pages, vb_phys, vb_gmul))
             return FAPI_ERROR;
         o->mem_kb = mem_kb;
         o->version = 0;
@@ -234,7 +234,7 @@ unsigned __far vesa_fapi(int s, int t, unsigned sub, unsigned n,
         m = rd16(list + i * 2);
         if (m == 0xFFFF)
             break;
-        if (vbe_mode(m, o) && ((mul16(o->pitch, o->height) + 4095) >> 12) <= 896 &&
+        if (vbe_mode(m, o) && ((mul16(o->pitch, o->height) + 4095) >> 12) <= 880 &&
             k++ == n) {
             o->mem_kb = mem_kb;
             o->version = ver;

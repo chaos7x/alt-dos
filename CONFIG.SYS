@@ -33,6 +33,8 @@ DEVICE=NCR8XX.SYS
 REM Adaptec AHA-2940/2940U(W)/2944UW (PCI). /ID:n eigene ID, /NOWIDE,
 REM /NOIRQ, /NODISC (Geraete trennen sich nicht vom Bus)
 DEVICE=AIC7XXX.SYS
+REM SATA-Platten und -CD am AHCI-Controller (VMs, ICH6+). /NOIRQ
+DEVICE=AHCI.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
 REM Sound Blaster 1.0-AWE64, AdLib, MPU-401. /A:220 /I:5 /D:1 /H:5 /M:330

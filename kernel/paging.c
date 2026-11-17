@@ -167,9 +167,12 @@ unsigned __far paging_init(void)
 
 /* Linearen Bildspeicher (VESA) ab Platz WIN_SLOTS * WIN_PG der Fenster-
    Tabelle abbilden, mit U-Bit (das Programm schreibt ueber seinen Selektor
-   direkt hinein). Hoechstens WIN_LFB Seiten (3,5 MB). -> Basis fuer
-   Deskriptoren (put_desc addiert KALIAS), 0 = zu gross */
-#define WIN_LFB   (1024 - WIN_SLOTS * WIN_PG)
+   direkt hinein). Hoechstens WIN_LFB Seiten (3,4 MB). -> Basis fuer
+   Deskriptoren (put_desc addiert KALIAS), 0 = zu gross. Die letzten
+   WIN_MMIO Seiten der Tabelle gehoeren den Geraeteregistern (pg_mmio). */
+#define WIN_MMIO  16
+#define WIN_LFB   (1024 - WIN_SLOTS * WIN_PG - WIN_MMIO)
+#define WIN_MMIO0 (1024 - WIN_MMIO)
 unsigned long __far pg_lfb(unsigned long phys, unsigned pages)
 {
     unsigned i;
@@ -183,6 +186,52 @@ unsigned long __far pg_lfb(unsigned long phys, unsigned pages)
     win_first[0] = 0;                   /* SCRATCH zeigte auf win_pt     */
     tlb_flush();
     return WIN_LIN + ((unsigned long)WIN_SLOTS * WIN_PG << 12) - KALIAS;
+}
+
+/* Register eines Geraets (PCI-Speicher-BAR, z. B. AHCI) abbilden: pages
+   Seiten ab phys in die freien Plaetze am Ende der Fenster-Tabelle,
+   ohne U, ohne Cache (PCD/PWT - der 386 kennt die Bits nicht, dort gibt
+   es solche Karten nicht). Gilt in jedem Adressraum (PDE 1023 teilen
+   alle, auch die Boxen) - Interruptroutinen erreichen die Register also
+   immer. -> Basis fuer Deskriptoren (+ Stelle in der Seite), 0 = kein
+   Platz. Der Aufrufer sichert SCRATCH (win_save). */
+static unsigned mmio_used;              /* Bit i = Platz WIN_MMIO0 + i   */
+
+unsigned long __far pg_mmio(unsigned long phys, unsigned pages)
+{
+    unsigned i, k;
+    pg_t first = phys >> 12;
+    for (i = 0; i + pages <= WIN_MMIO; i++) {
+        for (k = 0; k < pages && !(mmio_used & (1u << (i + k))); k++)
+            ;
+        if (k == pages)
+            break;
+    }
+    if (!pages || i + pages > WIN_MMIO)
+        return 0;
+    set_desc(SCRATCH >> 3, PG_LIN(win_pt), 4095, ACC_KDATA);
+    for (k = 0; k < pages; k++) {
+        mmio_used |= 1u << (i + k);
+        put32(SCRATCH, WIN_MMIO0 + i + k, PG_LIN(first + k) | PTE_P | PTE_W | 0x18);
+    }
+    win_first[0] = 0;                   /* SCRATCH zeigte auf win_pt     */
+    tlb_flush();
+    return WIN_LIN + ((unsigned long)(WIN_MMIO0 + i) << 12) + (phys & 0xFFF) - KALIAS;
+}
+
+/* Abbildung wieder frei (Treiber entladen): base wie von pg_mmio */
+void __far pg_mmio_free(unsigned long base, unsigned pages)
+{
+    unsigned i = (unsigned)((base + KALIAS - WIN_LIN) >> 12) - WIN_MMIO0, k;
+    if (i >= WIN_MMIO)
+        return;
+    set_desc(SCRATCH >> 3, PG_LIN(win_pt), 4095, ACC_KDATA);
+    for (k = 0; k < pages && i + k < WIN_MMIO; k++) {
+        mmio_used &= ~(1u << (i + k));
+        put32(SCRATCH, WIN_MMIO0 + i + k, 0);
+    }
+    win_first[0] = 0;
+    tlb_flush();
 }
 
 /* Fenster fuer Selektor sel auf [base, base + limit] (physisch) legen:

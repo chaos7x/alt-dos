@@ -19,8 +19,9 @@
 #include "kern.h"
 #include "ifs.h"
 
-/* Ablage der vorgeladenen Dateien: ab 6.0 bei 80000h (bis 60 KB; die
-   Speicherverwaltung gibt den Bereich erst nach CONFIG.SYS frei, kmain),
+/* Ablage der vorgeladenen Dateien: ab 6.0 bei 80000h bis vor die EBDA
+   (0040:0013, meist ~127 KB; Stellen in Paragraphen - die Speicher-
+   verwaltung gibt den Bereich erst nach CONFIG.SYS frei, kmain),
    auf Rechnern mit weniger als 600 KB konventionellem Speicher wie
    bisher 0600h-7BFFh (knapp 30 KB) */
 #define PRE_SEG     pre_seg
@@ -30,12 +31,12 @@
 
 struct pre_file {
     char           name[12];        /* "AHA154X SYS" (FAT-Verzeichnisform) */
-    unsigned       off, size;
+    unsigned       off, size;       /* off in Paragraphen ab PRE_SEG      */
 };
 
 struct pre_file pre[NPRE];
 int             npre;
-unsigned        pre_seg = 0x0060, pre_max = 0x7600;
+unsigned        pre_seg = 0x0060, pre_max = 0x760;     /* max in Paragraphen */
 unsigned char   pre_err;            /* PRE_ERR_*                          */
 unsigned long   boot_hidden;        /* Startsektor der Startpartition     */
 unsigned long   boot_serial;        /* Seriennummer der Startpartition    */
@@ -202,7 +203,7 @@ static int load(const char *n)
     }
     if (find(n, &clus, &size))
         return -1;                  /* fehlt: meldet spaeter der Kernel */
-    if (size > PRE_MAX - pre_used) {
+    if (((size + 15) >> 4) > PRE_MAX - pre_used) {
         pre_err = PRE_ERR_FULL;
         return -1;
     }
@@ -211,7 +212,7 @@ static int load(const char *n)
         p->name[i] = n[i];
     p->off = pre_used;
     p->size = (unsigned)size;
-    dst = MK_FP(PRE_SEG, pre_used);
+    dst = MK_FP(PRE_SEG + pre_used, 0);
     len = (unsigned)size;
     while (len && live(clus)) {
         for (k = 0, j = spc; j > 1; j >>= 1)    /* (clus-2) * spc       */
@@ -234,7 +235,7 @@ static int load(const char *n)
         pre_err = PRE_ERR_READ;
         return -1;
     }
-    pre_used += (p->size + 15) & ~15;
+    pre_used += (unsigned)(((unsigned long)p->size + 15) >> 4);
     npre++;
     return 0;
 }
@@ -270,14 +271,14 @@ void preload(void)
     }
 
     if (*(unsigned __far *)MK_FP(0x40, 0x13) >= 600) {
-        pre_seg = 0x8000;           /* linear 80000h, bis 60 KB           */
-        pre_max = 0xF000;
+        pre_seg = 0x8000;           /* linear 80000h bis vor die EBDA      */
+        pre_max = (*(unsigned __far *)MK_FP(0x40, 0x13) << 6) - 0x8000;
     }
     if (to83("CONFIG.SYS", name) || load(name))
         return;                     /* ohne CONFIG.SYS keine Treiber    */
 
     /* DEVICE=- und IFS=-Zeilen: nur den Dateinamen, Argumente bleiben in CONFIG.SYS */
-    c = MK_FP(PRE_SEG, pre[0].off);
+    c = MK_FP(PRE_SEG + pre[0].off, 0);
     n = pre[0].size;
     for (i = 0; i < n; ) {
         unsigned s = i, k;
@@ -363,8 +364,8 @@ static int __far pre_read(struct ifs_file __far *f, unsigned long pos, unsigned 
         return 0;
     if (len > p->size - (unsigned)pos)
         len = p->size - (unsigned)pos;
-    scratch2_map((unsigned long)PRE_SEG << 4, PRE_MAX - 1);
-    far_copy(sel, off, SCRATCH2, p->off + (unsigned)pos, len);
+    scratch2_map((unsigned long)(PRE_SEG + p->off) << 4, 0xFFFF);
+    far_copy(sel, off, SCRATCH2, (unsigned)pos, len);
     return (int)len;
 }
 

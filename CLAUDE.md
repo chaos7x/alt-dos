@@ -1579,7 +1579,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
   Laufwerke + Auslagerungsdatei (Entscheidung des Nutzers: vor
   DoubleSpace) + DriveSpace, fat.c-Zustand je Operation (LOOP-DBLSPACE.md,
-  BIGLOCK.md); 6.2 Netzwerk, Sperren je Objekt; 6.3 VirtIO, SMB/Domäne,
+  BIGLOCK.md); 6.2 Netzwerk, Sperren je Objekt; 6.3 VirtIO (AHCI vorher erledigt), SMB/Domäne,
   `klock` entfällt; 5.4 = 5.x mit DEVLOAD; GUI/Win16 (GUI-WIN16.md)
   Stufe 0 erst nach Klärung der offenen Entwurfsfragen dort (gemeinsame
   LDT, große LDT auf 5.x, Ring 2); `DOCS=`/`DESKTOP=` (SYSTEM-DATEN.md)
@@ -2533,6 +2533,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   >= 600 KB konventionell 8000:0000 (60 KB, 16 Dateien) statt 0060:0000
   (30 KB, 8); kmain gibt der Speicherverwaltung erst nach CONFIG.SYS den
   Bereich ab 80000h (`mem_init(..., 512, ...)`, dann `mem_free`).
+  Seit AHCI.SYS (17.11.2026) reichten 60 KB nicht mehr (ISO9660.IFS
+  „nicht gefunden“, 66,8 KB vorgeladen): Stellen in `pre[]` sind jetzt
+  Paragraphen (`off`, `pre_used`, `pre_max`), Bereich bei >= 600 KB
+  von 8000:0000 bis vor die EBDA (0040:0013 · 64 − 8000h, ~127 KB),
+  sonst wie bisher 0060:0000 (`pre_max` 760h); `pre_read` blendet
+  SCRATCH2 auf die Datei ein.
 - Busdienste (Vorschlag mit dem Nutzer abgestimmt: im Kernel statt
   PCI.SYS/ISA.SYS, wie OEMHLP$ bei OS/2), in QEMU geprüft (PC mit NCR
   und SB16, `isapc` ohne PCI): `kernel/bus.c` in KTEXT2 (erstes
@@ -3719,7 +3725,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `rm_call`, `vbe_info` („VBE2“), `vbe_mode` (Attribute 99h: da, Farbe,
   Grafik, LFB; Modell 4/6; 8/15/16/24/32 Bit; Pitch aus LinBytesPerScan-
   Line), `vesa_bios(mode)` (3 = Text), FAPI 53h `vesa_fapi` (VESA_MODE,
-  VESA_SET, Bild höchstens 896 Seiten = 3,5 MB). paging.c `pg_lfb`:
+  VESA_SET, Bild höchstens 880 Seiten = 3,4 MB; seit AHCI 16 Seiten weniger). paging.c `pg_lfb`:
   Bildspeicher in die Fenster-Seitentabelle ab Platz 128 (PTE mit U, PDE
   1023 jetzt mit U – die Fensterplätze haben kein U, die Boxen kopieren
   die PDE ohne U). vgagfx.c: Sitzungsart `VESAGFX` (0x81), `ses[].vmode/
@@ -4989,6 +4995,42 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   OS/2 LAN Server), damit sie unter 7.0 unverändert laufen; dort neu nur
   Treiber, TCP/IP und IFS. Später: Netzwerkkarte für die DOS-Boxen
   (virtueller NE2000 oder Packet-Driver-Schnittstelle).
+- **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
+  VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
+  86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
+  AIC7XXX, `/NOIRQ`). PCI-Klasse 01/06/01, ABAR = BAR 5 (Speicher, 64-
+  Bit-BAR mit Hochteil 0 geht), Befehlsregister Speicher + Busmaster,
+  GHC.AE. Neuer DevHlp `DH_PHYSMAP` (22, drv.h): DX:CX physisch, BX
+  Größe (0 = 64 KB) -> Selektor; kernel.c nimmt einen freien KSEG-Platz,
+  paging.c `pg_mmio` blendet die Seiten in die letzten 16 Plätze der
+  Fenster-Seitentabelle (PDE 1023, in allen Adressräumen, auch den
+  Boxen) mit PCD|PWT ohne U ein, `kseg_own` Bit 7 = MMIO (drv_unload
+  ruft `pg_mmio_free` statt mem_free). Dafür VESA-Bild höchstens 880
+  statt 896 Seiten (`WIN_LFB` rückt 16 Plätze nach vorn). Zugriffe
+  32 Bit über ECX (pragma `mrd`/`mwr`, nie zwei 16-Bit-Hälften). Je
+  Port (bis 8 Einheiten) 2 KB im Treiber-DS: Befehlsliste (nur Platz 0),
+  FIS-Empfang, Befehlstabelle mit einem PRD-Eintrag, 512 Byte Puffer
+  (Bereich auf 1 KB ausgerichtet). Port: DET = 3 in SSTS, SIG 101h ATA
+  bzw. EB140101h ATAPI; Start = CLB/FB, SUD|POD, `port_run` (erst FRE,
+  SERR/IS löschen, auf TFD BSY/DRQ warten, dann ST). Befehl: H2D-FIS
+  (27h, C = 80h; LBA48 25h/35h/EAh, sonst C8h/CAh/E7h, Gerät 40h),
+  Kopf 5 Dwords + A (ATAPI, Paket A0h mit CDB bei 40h, Features Bit 0 =
+  DMA) + W, CI = 1, Warten mit ProcBlock auf den IRQ (je 2 Takte, danach
+  CI selbst prüfen) bzw. Abfrage; Fehler/Frist -> Port neu starten,
+  ATAPI R_CHECK -> REQUEST SENSE. Lehre: der Neustart nach einem ATAPI-
+  Fehler löschte FRE und setzte es nicht wieder – danach lief jeder
+  Befehl 10 s in die Frist (DIR auf leeres Laufwerk hing); `port_run`
+  setzt FRE jetzt immer. Sperrgruppe je Port (`DRV_BS_GROUP`), REQ nur
+  bis zum ersten Schlafen gültig. CD 2048 + Medienwechsel/Sense/EJECT,
+  ATAPI-Typ 0 als Wechselplatte, FLUSH, DRV_DEINIT (GHC.IE, Port-IE,
+  Ports anhalten). In QEMU geprüft: q35 Start von SATA (über SeaBIOS,
+  danach AHCI.SYS), zwei Platten + DVD, XCOPY \DOS auf beide Platten
+  gleichzeitig (START + vorn) neben XCOPY von der CD, CHKDSK, FC /B,
+  EJECT/`change`, `DEVLOAD /U AHCI` + neu laden (dreimal, gleicher
+  Buchstabe, gleiche ABAR-Einblendung), SHUTDOWN, fsck sauber, Inhalte
+  gleich; i440fx mit IDE + `-device ahci`; Start von IDE und Diskette
+  (isapc 4 MB) unverändert. Ungeprüft: echte Hardware, VirtualBox/
+  VMware/Proxmox, Port-Multiplier, NCQ (nicht benutzt).
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
   I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –

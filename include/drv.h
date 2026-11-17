@@ -162,6 +162,14 @@ struct drv_req {
                                        Zeichen. Der Kernel merkt sich das
                                        Original fuer den laufenden Task
                                        (Kopien auf FAT bekommen es) -> 0 */
+#define DH_PHYSMAP      22          /* BX = Bytes (0 = 64 KB), CX/DX = physische
+                                       Adresse unten/oben: Register eines
+                                       Geraets (PCI-Speicher-BAR) ohne Cache
+                                       einblenden -> AX = Selektor, 0 = kein
+                                       Platz (16 Seiten fuer alle Treiber).
+                                       Gilt in jedem Adressraum, auch in der
+                                       Interruptroutine. DEVLOAD /U gibt es
+                                       frei. */
 #define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
                                        ohne DMA-Bedingung (genullt), z. B.
                                        Tabellen -> AX = Selektor, 0 = keiner

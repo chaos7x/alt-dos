@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: Loop-Laufwerke (lesen und schreiben, `LOOP=`), DoubleSpace/DriveSpace (auch DriveSpace 3) lesen und schreiben, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
+# alt-dos – AT-DOS 6.0 fertig (Zweig `6.0`, Release `v6.0`; 5.3.2 auf `5.3.2`, Weiterarbeit 5.x auf `5.x`), auf `main` 6.1: AHCI, Loop-Laufwerke (lesen und schreiben, `LOOP=`), DoubleSpace/DriveSpace (auch DriveSpace 3) lesen und schreiben, Auslagerungsdatei, zwei Setup-Disketten mit SETUP
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -184,6 +184,12 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Trennerlaubnis, Wiederauswahl per Interrupt): eine CD, die gerade sucht,
   hält die Platte am selben Adaptec nicht mehr auf – jedes Gerät hat
   seine eigene Sperre im Kernel. `/NODISC` schaltet das ab
+- `AHCI.SYS`: SATA-Platten und -CD/DVD am AHCI-Controller (Intel ab
+  ICH6, QEMU `-M q35` bzw. `-device ahci`, Proxmox/VirtualBox/VMware mit
+  SATA) – LBA48, Wechselplatten, EJECT, DMA über den Controller, PCI-
+  Interrupt (`/NOIRQ` = Abfragebetrieb), jeder Port mit eigener Sperre
+  (zwei Platten arbeiten gleichzeitig). Start von einer SATA-Platte geht
+  über das BIOS (SeaBIOS kann es); entladbar mit `DEVLOAD /U AHCI`
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;
@@ -806,7 +812,7 @@ selbst nur 8.3 kennt.
 | 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits; Bits | `AUD_SMALL` = kurzer Puffer, Abschnitte ~1/32 s statt 4 KB, `AUD_NOWAIT` = AudWrite wartet nie, was nicht passt, fällt weg – für DOS-Boxen), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose, AweCmd (AUD_AWE, CX = struct fapi_awecmd: SoundFont-Bank laden – Info, Zonen, Presets, Samples). Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 81 | DosBusInfo      | BX = 0 PCI-Gerät / 1 Belegungsliste / 2 ISA-PnP-Gerät, CX = Nummer, DX = struct fapi_pcidev, fapi_res bzw. fapi_pnpdev → 0, FAPI_ERROR am Ende (MSD) |
-| 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,5 MB Bild) oder bei VBE 1.2 mit 64-KB-Fenster (ohne 24 Bit; `model` Bit 7 = `VESA_BANKED`) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
+| 83 | VioVesa         | BX = 0 (`VESA_MODE`): CX = n → n-ter brauchbare VESA-Modus mit linearem Bildspeicher (8/15/16/24/32 Bit, bis 3,4 MB Bild) oder bei VBE 1.2 mit 64-KB-Fenster (ohne 24 Bit; `model` Bit 7 = `VESA_BANKED`) in `struct fapi_vesamode` bei DX (Nummer, Breite, Höhe, Byte je Zeile, Bit, Farbmodell, Bildspeicher der Karte, VBE-Version), Fehler hinter dem letzten; BX = 1 (`VESA_SET`): CX = Modusnummer einstellen (DX wie oben). Danach VioGetPhysBuf = 64-KB-Fenster aufs Bild, VioSetPlane(n) = n-ter 64-KB-Abschnitt, VioSetPal für 8 Bit, VioSetGfx(0) = zurück auf Text. Sitzungswechsel sichert das Bild, im Hintergrund zeichnet das Programm in den Puffer |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte) → 0: kürzen oder mit Nullen verlängern (wie OS/2) |
 | 85 | –               | in 6.0 frei (in 5.1/5.2 DosRBox, Kompatibilitätsbox) |
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR |
@@ -867,7 +873,9 @@ INT 41h/46h, vom Kernel beim Start im Real Mode gesichert), `DH_SETIRQ`/
 dessen DS und schickt danach das EOI), `DH_PROCBLOCK`/`DH_PROCRUN` (Task
 schläft im Treiber bis zum Ereignis oder zur Frist, andere Tasks laufen
 weiter; die Interruptroutine weckt ihn), `DH_DMABUF` (Puffer für ISA-DMA),
-`DH_KSEG` (gewöhnliches Kernelsegment bis 64 KB, z. B. für Tabellen).
+`DH_KSEG` (gewöhnliches Kernelsegment bis 64 KB, z. B. für Tabellen),
+`DH_PHYSMAP` (Geräteregister im Speicher – PCI-MMIO, auch über 2 GB – als
+Selektor einblenden, ungecacht; z. B. AHCI).
 
 Treiber mit Interrupt: Während ein Task in einem Treiber auf das Gerät
 wartet, gibt er seit 6.0 die Kernelsperre ab (Phase 6): andere Tasks
@@ -905,7 +913,7 @@ buchstaben, CD-Laufwerke ebenso, sobald ein CD-Dateisystem geladen ist.
 `DEVLOAD /U Name` entlädt einen (wie `rmmod`) – nur wenn auf seinen
 Laufwerken nichts offen ist, kein Programm dort sein aktuelles Laufwerk
 hat, kein SUBST/JOIN darauf zeigt und (beim Tontreiber) kein Programm
-spielt. Entladen können NCR8XX, AIC7XXX, SB16, MOUSE und die IFS-Module;
+spielt. Entladen können NCR8XX, AIC7XXX, AHCI, SB16, MOUSE und die IFS-Module;
 andere Treiber lehnen ab. Beim nächsten Laden bekommen die Laufwerke
 wieder die freien Buchstaben. In `LINUX.MAC` heißen die drei `modprobe`,
 `lsmod` und `rmmod`.

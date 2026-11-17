@@ -5898,6 +5898,23 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     case DH_UNINOTE:                    /* Unicode-Original eines Namens */
         uni_note_ext(dsel, bx, cx, devhlp_dx);
         return 0;
+    case DH_PHYSMAP: {                  /* Geraeteregister einblenden    */
+        unsigned short w[8];
+        unsigned long ph = ((unsigned long)devhlp_dx << 16) | cx, b;
+        unsigned long sz = bx ? bx : 0x10000UL;
+        for (n = 0; n < NKSEG && gdt[KSEG_IDX(n)].access; n++)
+            ;
+        if (n == NKSEG)
+            return 0;
+        win_save(w);
+        b = pg_mmio(ph, (unsigned)(((ph & 0xFFF) + sz + 0xFFF) >> 12));
+        win_restore(w);
+        if (!b)
+            return 0;
+        set_desc(KSEG_IDX(n), b, (unsigned)(sz - 1), ACC_KDATA);
+        kseg_own[n] = (unsigned char)(0x80 | (drv_of(dsel) + 1));
+        return KSEG_IDX(n) * 8;
+    }
     case DH_KSEG:                       /* Kernelsegment ohne DMA-Bedingung */
         n = kseg_alloc(bx ? bx : 0x10000UL);
         goto kown;
@@ -6470,8 +6487,16 @@ static unsigned drv_unload(int d)
         }
     res_free(d, 0, 0);
     for (k = 0; k < NKSEG; k++)         /* DMA-Puffer, Kernelsegmente    */
-        if (kseg_own[k] == d + 1) {
-            mem_free(desc_base(&gdt[KSEG_IDX(k)]) >> 12, PAGES(sel_limit(KSEG_IDX(k) * 8) + 1UL));
+        if ((kseg_own[k] & 0x7F) == d + 1) {
+            unsigned long b = desc_base(&gdt[KSEG_IDX(k)]);
+            unsigned np = (unsigned)(((b & 0xFFF) + sel_limit(KSEG_IDX(k) * 8) + 0x1000UL) >> 12);
+            if (kseg_own[k] & 0x80) {   /* eingeblendete Register      */
+                unsigned short w[8];
+                win_save(w);
+                pg_mmio_free(b, np);
+                win_restore(w);
+            } else
+                mem_free(b >> 12, np);
             gdt[KSEG_IDX(k)].access = 0;
             kseg_own[k] = 0;
         }
