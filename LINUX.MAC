@@ -3,7 +3,8 @@
 ;  (z. B. in AUTOEXEC.CMD), anzeigen mit  DOSKEY /MACROS.
 ;  Zeilen name=text, $1-$9 Argumente, $* alle, $T trennt Befehle.
 ;  Schalter bleiben die von AT-DOS (DIR /A statt ls -a). cat, grep,
-;  less, head, tail, wc, uniq, tr, cut, tar, gzip sind eigene Programme.
+;  less, head, tail, wc, uniq, tr, cut, strings, tar, gzip sind eigene
+;  Programme.
 ll=DIR /O $*
 la=DIR /A /O $*
 ls=DIR /W /O $*
