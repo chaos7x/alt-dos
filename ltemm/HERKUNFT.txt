@@ -1,0 +1,34 @@
+LTEMM - EMS-4.0-Treiber fuer die Lo-tech-EMS-Karte (und Nachbauten)
+====================================================================
+
+Herkunft: LTEMM-r01.zip von https://www.lo-tech.co.uk/wiki/LTEMM.EXE
+(Quelltext LTEMM.ASM, LTEMM.INC, LTEMM.MAC und README.TXT), heruntergeladen
+am 17.11.2026.
+
+Lizenz: BSD 3-Clause (laut Kopf der Quelldateien und README.TXT):
+"Based on original works Copyright (c) 1988, Alex Tsourikov. All rights
+reserved. Original source kindly provided subject to the BSD 3-Clause
+License" - Text der Lizenz siehe LICENSE.txt. Die Aenderungen von lo-tech
+stehen unter deren Nutzungsbedingungen (kostenlos, ohne Gewaehr).
+Die Aenderungen fuer AT-DOS stehen ebenfalls unter BSD 3-Clause.
+
+Aenderungen fuer AT-DOS:
+- Bau mit Open Watcom wasm statt TASM: PUSH/POP mit mehreren Registern in
+  einzelne Befehle aufgeteilt, REPZ vor MOVS/STOS als REP geschrieben,
+  Zeilenenden LF. Gegen das mitgelieferte LTEMM.EXE verglichen: gleiche
+  Befehle bis auf andere Kodierungen (Kurzformen, NOP-Fueller).
+- PAGE_MAX 255 statt 128: bis 4080 KB fuer Karten mit 4 MB (86Box bildet
+  die Lo-tech-Karte bis 4 MB nach). Seite 255 bleibt ungenutzt, weil der
+  Treiber mit FFh eine Fensterseite abschaltet.
+- aliaschk: ab Seite 128 wird geprueft, ob die Seite nur ein Spiegel der
+  Seite n-128 ist (Karte mit 2 MB) - dann endet die Suche dort.
+- Hilfetext: Hinweis auf 4080 KB.
+
+Die 4-MB-Fassung aus github.com/hkzlab/ISA_EMS_4Mb wurde nicht verwendet
+(CC BY-NC-SA, nicht mit der GPL des Projekts vertraeglich).
+
+Benutzung (Kompatibilitaetsbox von AT-DOS 5.x): im Startabbild
+\DOS\MDOS\FREEDOS.IMG liegt A:\LTEMM.EXE, die CONFIG.SYS dort hat die
+Zeile "REM DEVICE=A:\LTEMM.EXE /p:E000 /i:260" - REM entfernen (z. B.
+LOOP C:\DOS\MDOS\FREEDOS.IMG, EDIT, LOOP X: /D). Seitenrahmen nicht auf
+C800h-CFFFh (Karten-BIOS, ROM-Karte des SCAT).

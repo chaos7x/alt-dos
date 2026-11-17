@@ -260,7 +260,13 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   PS/2 oder seriell), solange die Box vorn ist; FreeDOS liegt in der HMA,
   COMMAND.COM lagert sich per XMS aus (`RBHMA.SYS`, XMS-Blöcke im
   erweiterten Speicher von AT-DOS, `RBXMS=` in KB, Vorgabe 1024; rund
-  605 KB frei); kleine Lesezugriffe über die
+  605 KB frei); EMS gibt es in der Box über eine echte EMS-Karte: im
+  Startabbild liegt `LTEMM.EXE` (EMS-4.0-Treiber für die Lo-tech-Karte und
+  Nachbauten, BSD-Lizenz, `ltemm/HERKUNFT.txt`, für AT-DOS bis 4080 KB je
+  Karte), in dessen CONFIG.SYS als `REM DEVICE=A:\LTEMM.EXE /p:E000
+  /i:260` – REM entfernen (`LOOP C:\DOS\MDOS\FREEDOS.IMG`, EDIT, `LOOP X:
+  /D`), Seitenrahmen auf einen freien Bereich (nicht C800h–CFFFh beim
+  SCAT); kleine Lesezugriffe über die
   Netzlaufwerke puffert RBSHELL (1 KB je Ausflug statt eines Bytes – MEM
   von FreeDOS startet dadurch schnell); vom Startabbild liest RBOX nur, was
   FreeDOS braucht (120 statt 720 KB). Mit `PROTECTONLY=NO` in der

@@ -246,6 +246,10 @@ echo "Box: Startabbild freedos.img"
 nasm -f bin apps/rbshell.asm -o $B/rbshell.com
 nasm -f bin apps/rbready.asm -o $B/rbready.com
 nasm -f bin apps/rbhma.asm -o $B/rbhma.sys
+# LTEMM (EMS-Treiber der Lo-tech-Karte, BSD, ltemm/HERKUNFT.txt): wasm
+(cd ltemm && wasm -q -fo=../$B/ltemm.o LTEMM.ASM) || exit 1
+wlink op quiet format dos name $B/ltemm.exe file $B/ltemm.o 2>&1 | grep -v -i "stack" || true
+[ -s $B/ltemm.exe ] || { echo "FEHLER: ltemm.exe"; exit 1; }
 rm -f $B/freedos.img
 mformat -i $B/freedos.img -C -f 360 -B freedos/fat12com.bin -v FREEDOS ::
 for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
@@ -253,6 +257,8 @@ for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
 done
 mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
 mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
+mcopy -i $B/freedos.img $B/ltemm.exe ::LTEMM.EXE
+mcopy -i $B/freedos.img ltemm/LICENSE.txt ::LTEMM.TXT
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
