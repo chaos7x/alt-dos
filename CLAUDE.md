@@ -2152,7 +2152,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   7FFFh), cvfchk3 0 Fehler, fsck innen/außen sauber. Vom Nutzer in
   86Box bestätigt (17.11.2026): ein so angelegter 30-MB-DS3-Container
   wird von Windows 98 direkt eingebunden – die Füllbits waren die
-  Ursache für DRVSPACE045. Nächster Schritt: DoubleSpace.
+  Ursache für DRVSPACE045. Danach unter Windows 98 Dateien hinein-
+  kopiert, ScanDisk von Windows 98 ohne Fehler (vom Nutzer bestätigt,
+  17.11.2026) – PACKDISK /DS3 damit unter Windows 98 lesend und
+  schreibend angenommen. Nächster Schritt: DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
