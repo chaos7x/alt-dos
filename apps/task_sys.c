@@ -73,6 +73,8 @@ static int copy_dir(const char *rel)
     unsigned n;
     mk(sdir, src, rel);
     mk(ddir, dst, rel);
+    if (!is_dir(sdir))                  /* gibt es auf der Quelle nicht  */
+        return 0;
     if (!is_dir(ddir))
         DosMkDir(ddir);
     for (n = 0; DosFindEntry(&e, n, sdir) != FAPI_ERROR; n++) {
@@ -100,7 +102,7 @@ void main(void)
             puts("\x9A" "bertr\x84gt AT-DOS auf einen Datentr\x84ger.\r\n\r\n"
                  "SYS [Quelle:] Ziel: [/A]\r\n\r\n"
                  "  /A  auch alle Programme aus \\DOS, die DOS-Box (\\DOS\\MDOS) und die\r\n"
-                 "      Klangb\x84nke (\\DOS\\SYSTEM\\SFBANK) kopieren\r\n");
+                 "      Klangb\x84nke (\\DOS\\SYSTEM\\SFBANK) und \\DEMO kopieren\r\n");
             return;
         }
         if (a[0] == '/' && up(a[1]) == 'A') {
@@ -158,8 +160,8 @@ void main(void)
     if (copy_dir("DOS\\SYSTEM"))
         DosExit(1);
     if (all) {                          /* /A: alle Werkzeuge, DOS-Box,  */
-        if (copy_dir("DOS") || copy_dir("DOS\\MDOS") ||   /* Klangbaenke */
-            copy_dir("DOS\\SYSTEM\\SFBANK"))
+        if (copy_dir("DOS") || copy_dir("DOS\\MDOS") ||   /* Klangbaenke, */
+            copy_dir("DOS\\SYSTEM\\SFBANK") || copy_dir("DEMO"))  /* Demos */
             DosExit(1);
     } else
         cp("DOS\\CHKDSK.EXE", 0, 0);  /* Pruefung beim Start braucht es */

@@ -287,6 +287,8 @@ static clus_t alloc_cluster(int d, clus_t prev)
     struct volume *v = &vol[d];
     clus_t n, c = v->hint;
 
+    if (ferr || !loop_room(v->blk))     /* DriveSpace: Container voll    */
+        return 0;
     for (n = 0; n < v->clusters; n++, c++) {
         if (!valid(v, c))
             c = 2;

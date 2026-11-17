@@ -154,10 +154,22 @@ Nutzers, 17.11.2026): Zweig `5.4` (b103716, Release `v5.4`) = 5.3.2 plus
 Rückportierungen aus 6.1 – Code verwerfen, Segmente verschieben,
 SWAPPATH= (dort nur mit Angabe), LOOP/DoubleSpace/DriveSpace/PACKDISK,
 DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD, Maussuche, Mode-X-
-Zeiger. Bekannt (auch hier auf main): läuft ein DriveSpace-Container
-beim Kopieren voll, bleiben innen verlorene Ketten (fat.c gibt bei einem
-Schreibfehler mitten in der Datei die belegten Cluster nicht zurück;
-CHKDSK /F räumt auf). `5.x` geht weiter. Tags legt die CI an (aus der
+Zeiger. Behoben nach dem Release (auf 5.x und main, 17.11.2026): lief
+ein DriveSpace-Container beim Kopieren voll, blieben innen verlorene
+Ketten (41 bzw. 50). Ursache in loop.c: scheiterte das Packen eines
+gepufferten Clusters (voll), blieb er gepuffert, und jeder Zugriff auf
+einen anderen Cluster (auch Verzeichnisse, Löschen der halben Kopie)
+scheiterte – die FAT (direkt geschrieben) bekam die Ketten, die
+Einträge nicht. Jetzt fragt fat.c `alloc_cluster` vorher `loop_room`
+(Platz für den gepufferten und einen neuen Cluster, je ungepackt am
+Stück – `bf_room` wie bf_alloc ohne zu belegen; sonst „voll“, nichts
+belegt), und dbl_load verwirft einen Cluster, der nicht mehr passt
+(nur noch beim Überschreiben mit schlechter Packbarem möglich), statt
+das Laufwerk zu blockieren; alloc_cluster belegt nichts mehr, wenn
+ferr schon steht. In QEMU geprüft (main 16 MB, 5.x isapc 4 MB):
+2-MB-Container, XCOPY \DOS bis voll („unzureichender Speicherplatz“),
+CHKDSK innen sauber, PACKDISK /CHECK, danach DEL + COPY geht, cvfchk 0
+Fehler, fsck innen/außen sauber, alle Dateien gleich. `5.x` geht weiter. Tags legt die CI an (aus der
 Umgebung weiter nicht geprüft). Entscheidung des Nutzers (11.11.2026): Die 5.x-Linie ist mit 5.1 vorerst
 abgeschlossen. Was später aus 6.0 zurückportiert wird, wird AT-DOS 5.2
 (Zweig `5.x`, dann Titel/VER „5.2“ und Release `v5.2`).
@@ -200,7 +212,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   erst danach im PATH. Standard-PATH `X:\DOS;X:\`. `ATSYS` kopiert die
   Unterverzeichnisse aus der Tabelle `subdirs` (Eltern zuerst; seit 6.1
   auch `DOS\SYSTEM\SFBANK` und `DOS\MDOS`, Namenspuffer 36 Byte);
-  `SYS /A` ebenso (vom Nutzer gemeldet: MDOS fehlte; in QEMU geprüft).
+  `SYS /A` ebenso, dazu `\DEMO` wie ATSYS; Verzeichnisse, die es auf
+  der Quelle nicht gibt, legt SYS nicht mehr leer an (vom Nutzer
+  gemeldet: MDOS fehlte, auf 5.x noch bis 17.11.2026; in QEMU geprüft).
 - `tools/atsys.asm` – `ATSYS.COM` für MS-DOS (wie SYS); `tools/sysboot.py`
   macht dasselbe für Abbilder beim Bauen
 - `kernel/` – `start.asm` (Einstieg, Gate, ISRs, CPU-Hilfsroutinen), `kernel.c`,

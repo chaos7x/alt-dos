@@ -515,6 +515,43 @@ static unsigned long bf_alloc(int i, struct dblh __far *d, unsigned n)
     return 0;
 }
 
+/* Platz fuer cnt Cluster (je n Sektoren am Stueck)? 1 = ja. Wie bf_alloc,
+   ohne etwas zu belegen. */
+static int bf_room(int i, struct dblh __far *d, unsigned n, unsigned cnt)
+{
+    unsigned long k, end = d->dend - d->dst + 1, sec = 0, from, stop;
+    unsigned run, pass, w;
+
+    from = d->hint < end ? d->hint : 0;
+    for (pass = 0; pass < 2; pass++) {
+        run = 0;
+        stop = pass ? from : end;       /* zweiter Durchgang: Rest vorn  */
+        for (k = pass ? 0 : from; k < stop; k++) {
+            if (1 + (k >> 12) != sec) {
+                sec = 1 + (k >> 12);
+                if (raw(i, sec))
+                    return 0;
+            }
+            w = *(unsigned __far *)MK_FP(DMABUF, ((unsigned)(k >> 4) & 255) << 1);
+            if (w == 0xFFFF && !((unsigned)k & 15)) {
+                run = 0;
+                k += 15;
+                continue;
+            }
+            if (w & (0x8000 >> ((unsigned)k & 15))) {
+                run = 0;
+                continue;
+            }
+            if (++run == n) {
+                if (--cnt == 0)
+                    return 1;
+                run = 0;
+            }
+        }
+    }
+    return 0;
+}
+
 /* Sektor - 1 aus Eintrag k der Stueckliste t (DriveSpace 3) */
 static unsigned long fr_sec(unsigned char __far *t, unsigned k)
 {
@@ -816,8 +853,15 @@ static int dbl_load(int i, struct dblh __far *d, unsigned long cl)
     struct mde m;
     int rc;
 
-    if ((rc = dbl_sync(i, d)) != 0)
+    if ((rc = dbl_sync(i, d)) != 0) {
+        /* Passt der geaenderte Cluster nicht mehr (voll), wird er
+           verworfen - sonst scheiterte danach jeder Zugriff auf einen
+           anderen Cluster, auch Verzeichnisse und Loeschen (verlorene
+           Ketten). Der Fehler geht an diese Operation. */
+        if (rc == -3)
+            d->cl = d->dirty = 0;
         return rc;
+    }
     d->cl = 0;
     if (md_get(i, d, cl, &m, &ms) < 0)
         return -1;
@@ -1012,6 +1056,25 @@ void __far loop_vsync(int x)
     i = blk[dev].unit;
     if (blk[dev].drv == DRV_LOOP && i < NLOOP && loop_sel[i] && LH(i)->kind == LOOPK_DBL)
         dbl_call(i, 0, 2);
+}
+
+/* fat.c vor dem Belegen eines Clusters: ist im Container noch Platz fuer
+   den gepufferten und einen neuen Cluster, beide ungepackt? 1 = ja (auch
+   bei allem, was kein DriveSpace-Loop ist). So laeuft der Container nicht
+   mitten in einer Datei voll, das Dateisystem bleibt stimmig. */
+int __far loop_room(int dev)
+{
+    int i = blk[dev].unit, r;
+    struct dblh __far *d;
+
+    if (blk[dev].drv != DRV_LOOP || i >= NLOOP || !loop_sel[i] ||
+        LH(i)->kind != LOOPK_DBL)
+        return 1;
+    d = MK_FP(loop_sel[i], LH(i)->dbo);
+    d->busy = 1;
+    r = bf_room(i, d, d->spc, d->dirty ? 2 : 1);
+    d->busy = 0;
+    return r;
 }
 
 /* blk_flush: alle, die gerade niemand bearbeitet */

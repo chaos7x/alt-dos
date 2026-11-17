@@ -428,8 +428,8 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
 - `SYS [Quelle:] Ziel: [/A]` überträgt `ATDOS.SYS`, `CMD.EXE`, `\DOS\SYSTEM`,
   `CHKDSK.EXE` und (falls fehlend) `CONFIG.SYS`/`AUTOEXEC.CMD`, dazu den
   Startcode in den Bootsektor; mit `/A` zusätzlich alle Programme aus
-  `\DOS`, die DOS-Box (`\DOS\MDOS`) und die Klangbänke
-  (`\DOS\SYSTEM\SFBANK`) – vollständige Installation. `ATSYS` (unter
+  `\DOS`, die DOS-Box (`\DOS\MDOS`), die Klangbänke
+  (`\DOS\SYSTEM\SFBANK`) und `\DEMO` – vollständige Installation. `ATSYS` (unter
   MS-DOS) kopiert dieselben Verzeichnisse; Systemdateien (z. B. eine
   dorthin gelegte `SWAPPER.DAT`) lassen beide aus. Disketten nur leer (`FORMAT A: /S`). Der
   Diskettenbootsektor meldet „Keine Systemdiskette“, wenn `ATDOS.SYS` fehlt.
@@ -958,7 +958,8 @@ MS-DOS 6.0–6.22 (`DBLSPACE.nnn` von DoubleSpace, `DRVSPACE.nnn` von
 DriveSpace) lassen sich so einhängen, lesen und schreiben (`LOOP` zeigt
 „gepackt“): neue Cluster werden im Format des Containers gepackt (DS bzw.
 JM), gelöschte Dateien geben ihren Platz im Container frei, ein voller
-Container meldet „Datenträger voll“. Der angezeigte freie Platz ist der
+Container meldet „Datenträger voll“ (schon bevor ein neuer Cluster nicht
+mehr ungepackt hineinpasst – das Dateisystem innen bleibt stimmig). Der angezeigte freie Platz ist der
 des inneren Laufwerks (ohne Schätzung der Packrate). Ebenso DriveSpace 3
 (Windows 95 Plus!/98, große Laufwerke bis 2 GB mit 32-KB-Clustern):
 gelesen werden alle Arten (JM, SQ, ungepackt, zerstückelte Cluster),
