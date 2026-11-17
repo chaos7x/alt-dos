@@ -5029,8 +5029,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   EJECT/`change`, `DEVLOAD /U AHCI` + neu laden (dreimal, gleicher
   Buchstabe, gleiche ABAR-Einblendung), SHUTDOWN, fsck sauber, Inhalte
   gleich; i440fx mit IDE + `-device ahci`; Start von IDE und Diskette
-  (isapc 4 MB) unverändert. Ungeprüft: echte Hardware, VirtualBox/
-  VMware/Proxmox, Port-Multiplier, NCQ (nicht benutzt).
+  (isapc 4 MB) unverändert. Vom Nutzer in Proxmox 9.2 bestätigt
+  (17.11.2026, VM mit SATA-Platte, Controller an PCI 00:07, IRQ 11):
+  Start von C: (63 MB, AHCI.SYS Einheit 0), CD am IDE als D:. Ungeprüft:
+  echte Hardware, VirtualBox/VMware, Port-Multiplier, NCQ (nicht benutzt).
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
   I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –
