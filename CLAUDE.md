@@ -2181,6 +2181,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Version 0) zum Anlegen von DoubleSpace-Containern. Das ZIP
   hatte von MS-DOS-FORMAT selbst BPB F0h, FAT F8h – daher meldete
   ScanDisk 6.20 „FAT-Datenträgerbyte fehlt“ (nicht AT-DOS).
+  Vom Nutzer in 86Box bestätigt (17.11.2026): unter AT-DOS weitere
+  Spiele in den echten DoubleSpace-6.20-Container kopiert, danach
+  ScanDisk von MS-DOS 6.20: „DoubleSpace-Datenträger F enthielt keine
+  Fehler“, Trägerlaufwerk M ebenso – Schreiben in DoubleSpace bestätigt.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
