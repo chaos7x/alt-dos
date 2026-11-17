@@ -814,6 +814,28 @@ Win32s), nicht vorziehen, sondern nachfragen.
   dem Rechner verglichen (CMD.EXE, UTF-16 LE/BE, Zufallsdaten mit
   ungerade versetzten UTF-16-Ketten, -w, -f mit Platzhalter, Pipe):
   gleich bis auf CR LF.
+  MD5SUM/SHA1SUM, HEXDUMP/XXD (Vorschlag von mir als Hilfe beim Testen
+  in 86Box, vom Nutzer gewünscht, 17.11.2026; nur auf der Platte,
+  gebunden + LFN): `task_md5sum.c` (eigenes MD5 nach RFC 1321 und SHA-1
+  nach FIPS 180-1, 32-Bit-Addition/Rotation ohne Mul/Div; task_sha1sum.c
+  = mit SHA1), Ausgabe `Summe  Name` / `-b` ` *` / `--tag`, `-c` liest
+  alle drei Formen, GNU-Escape `\` vorn und `/` als Trenner (Listen von
+  Linux), --quiet/--status/-w/--ignore-missing, ERRORLEVEL 1.
+  `task_hexdump.c` (task_xxd.c = mit XXD): hexdump wie util-linux
+  (Vorgabe 16-Bit-Worte, -C/-b/-c/-d/-o/-x, -n/-s, '*' für gleiche
+  Zeilen außer -v, Schlussstelle; mehrere Dateien je für sich, nicht als
+  ein Strom wie util-linux), xxd wie vim (-a mit den Regeln von xxd: erste
+  Nullzeile, ab der dritten '*', die letzte bei genau zwei bzw. am
+  Dateiende; -b -c -e -g -i -l -o -p -s -u, Ausgabedatei; -r und -r -p:
+  vorhandene Ausgabedatei wird an den Stellen überschrieben, hinter dem
+  Ende mit Nullen aufgefüllt). textin.h: Ausgabe über `to_h` (Vorgabe
+  STDOUT). Zahlen 0x/0-oktal/k/m. Werte als eigenes Wort (`-s 5`) werden
+  im zweiten Durchgang übersprungen (`VALOPT`). In QEMU gegen md5sum/
+  sha1sum/hexdump/xxd des Rechners verglichen (42 Fälle: leere Datei,
+  300 KB Zufall, alle Formate, -s/-n/-l/-o, Pipe, -c mit OK/FEHLER/
+  fehlender Datei/kaputter Zeile, xxd -p | xxd -r -p und xxd -r über die
+  Hexansicht bytegleich, Patch gleich wie xxd -r): gleich bis auf CR LF.
+  Bemerkt: TYPE hängt ein Zeilenende an, wenn die Datei keins hat.
   `\DOS\LINUX.MAC` (Wunsch des Nutzers, Linux-Admin): DOSKEY-Makros ll,
   la, ls, l, .., pwd, cp, mv, rm, clear, diff, man, free, ps, kill, uname,
   history, nano, vi, mc – nicht aktiv, AUTOEXEC.CMD nennt den Aufruf. In

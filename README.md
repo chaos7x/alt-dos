@@ -386,7 +386,14 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   nummerieren, Leerzeilen zusammenfassen, Steuerzeichen sichtbar);
   `STRINGS [-f] [-n N] [-t d|o|x] [-o] [-w] [-e s|S|l|b] [Datei…]` wie
   GNU strings: lesbare Zeichenketten in Programmen und anderen
-  Binärdateien (Mindestlänge, Stelle in der Datei, `-e l` UTF-16)
+  Binärdateien (Mindestlänge, Stelle in der Datei, `-e l` UTF-16);
+  `MD5SUM`/`SHA1SUM [-b] [--tag] [Datei…]` bilden Prüfsummen wie GNU,
+  `-c Liste [--quiet] [--status] [-w] [--ignore-missing]` prüft sie
+  (auch Listen von Linux mit `/`), ERRORLEVEL 1 bei Abweichung;
+  `HEXDUMP [-C|-b|-c|-d|-o|-x] [-n n] [-s n] [-v]` wie util-linux und
+  `XXD [-a -b -c n -e -g n -i -l n -o n -p -r -s n -u] [Ein [Aus]]` wie
+  xxd – `XXD -r` wandelt zurück und überschreibt in einer vorhandenen
+  Datei nur die Stellen der Zeilen (Patchen: `XXD -r PATCH.TXT PROG.EXE`)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
@@ -713,7 +720,7 @@ Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
 Gebunden sind MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
-WC, UNIQ, TR, CAT, STRINGS, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
+WC, UNIQ, TR, CAT, STRINGS, MD5SUM, SHA1SUM, HEXDUMP, XXD, EXPAND, COMPRESS, GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD, SETVER und die Demo GRAFIK
 (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit auch in
 den DOS-Boxen.
