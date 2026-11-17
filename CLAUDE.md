@@ -1623,6 +1623,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **Startcode nach dem Booten freigeben** (Wunsch des Nutzers,
+  17.11.2026, für eine der nächsten Versionen; noch kein Code): Init-Code
+  und Tabellen, die nur beim Start gebraucht werden, in einen eigenen
+  Abschnitt (wie `__init` bei Linux, INIT-Segmente bei OS/2-Treibern),
+  den der Kernel nach dem Start wieder abgibt. Kandidaten: preload.c
+  (Real Mode, CONFIG.SYS vorladen), Auswertung der CONFIG.SYS, pnp.c,
+  Teile von kmain, Startmeldungen. Vorsicht: was DEVLOAD zur Laufzeit
+  braucht (load_driver, mount_disk, cd_drives, Busdienste), bleibt.
+  Gewinn erst messen (wdis/Map je Funktion), dann entscheiden: eigenes
+  Codesegment KTEXTI hinter den anderen, Daten in einem Kernelsegment,
+  beides nach dem Start mem_free; Thunks wie bei KTEXT2.
+
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
   Laufwerke + Auslagerungsdatei (Entscheidung des Nutzers: vor
