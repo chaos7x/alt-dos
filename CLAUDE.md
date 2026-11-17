@@ -833,16 +833,18 @@ REPZ MOVS -> REP), PAGE_MAX 255 (4080 KB, Seite 255 = FFh bleibt als
 Abschaltsignal frei), `aliaschk` gegen Spiegelseiten einer 2-MB-Karte.
 Die 4-MB-Fassung von hkzlab nicht übernommen (CC BY-NC-SA). build.sh legt
 LTEMM.EXE + LTEMM.TXT (Lizenz) ins Box-Abbild, dessen CONFIG.SYS hat
-`REM DEVICE=A:\LTEMM.EXE /p:D000 /i:260`. In 86Box geprüft (asus386,
+`REM DEVICE=A:\LTEMM.EXE /p:E000 /i:260`. In 86Box geprüft (asus386,
 4 MB, AHA-154xC, Lo-tech-Karte bei 260h, Rahmen D000h – Abschnitt
 `[Other peripherals]`, `isamem0_type = lotechems`): 4-MB-Karte ->
 FreeDOS-MEM „Expanded (EMS) 4.080K“, 2-MB-Karte -> 2048K; das Original
 von lo-tech ebenso (2048K). Mehrere Karten zusammen kann LTEMM nicht. Vom Nutzer auf dem SCAT
 (286) bestätigt: 4.080K EMS in der Box. Danach (vom Nutzer bemerkt) kein
 Klicken mehr im PC-Lautsprecher beim Speichertest (imgchk schaltete Port
-61h Bit 1 um); Vorgabe im Box-Abbild /p:D000. Box-CONFIG.SYS mit `STACKS=0,0` (wie
-die 6.x-Box; Wunsch des Nutzers „1 KB mehr“): in 86Box größtes Programm
-mit LTEMM 604K (618.800 Byte) statt 599K.
+61h Bit 1 um); Box-CONFIG.SYS mit `STACKS=9,256` (vorher keine Angabe, FreeDOS
+legte mehr an; Wunsch des Nutzers „1 KB mehr für 600K“; mit 0,0 waren
+es in 86Box 604K, 9,256 nach Absprache als sichere Mitte: 602K = 616.480 Byte). Vorgabe-
+Rahmen /p:E000 (auf dem SCAT bewährt, vom Nutzer); auf dem asus386 in
+86Box fand LTEMM bei E000h nichts, dort D000h.
 Everex EV-159: in 86Box als erweiterter Speicher einstellbar (Start-
 adresse hinter dem RAM, zusammenhängende Größe 3072, EMS aus) – dann
 nutzt AT-DOS ihn ohne Treiber.

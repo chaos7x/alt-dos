@@ -31,6 +31,6 @@ Die 4-MB-Fassung aus github.com/hkzlab/ISA_EMS_4Mb wurde nicht verwendet
 
 Benutzung (Kompatibilitaetsbox von AT-DOS 5.x): im Startabbild
 \DOS\MDOS\FREEDOS.IMG liegt A:\LTEMM.EXE, die CONFIG.SYS dort hat die
-Zeile "REM DEVICE=A:\LTEMM.EXE /p:D000 /i:260" - REM entfernen (z. B.
+Zeile "REM DEVICE=A:\LTEMM.EXE /p:E000 /i:260" - REM entfernen (z. B.
 LOOP C:\DOS\MDOS\FREEDOS.IMG, EDIT, LOOP X: /D). Seitenrahmen nicht auf
 C800h-CFFFh (Karten-BIOS, ROM-Karte des SCAT).
