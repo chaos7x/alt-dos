@@ -64,7 +64,10 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   CD-ROMs (2048-Byte-Blöcke) nur lesen. 5.2 (aus 6.0): IDE-Platten über
   128 GB mit LBA48; Wechselplatten (ZIP, MO) an `AHA154X.SYS` und
   `NCR5380.SYS` auch ohne Medium beim Start, Wechsel wird erkannt;
-  `EJECT X:` wirft CDs und Wechselplatten aus (FAPI DosEject)
+  `EJECT X:` wirft CDs und Wechselplatten aus (FAPI DosEject);
+  `DEVLOAD [/L] [/U] Treiber [Argumente]` (5.4) lädt Treiber und IFS-Module zur
+  Laufzeit wie modprobe (neue Laufwerke bekommen die nächsten freien
+  Buchstaben), `/U` entlädt sie wieder (SB16, MOUSE, IFS-Module), `/L` listet
 - Die mitgelieferte `CONFIG.SYS` nennt alle Einstellungen mit Erklärung
   (Treiberschalter, Cache, lange Namen, Land/Codepage, Boxen); was nicht
   gebraucht wird, steht als `REM`-Beispiel darin.
@@ -570,6 +573,8 @@ selbst nur 8.3 kennt.
 | 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (CX = Registerpuffer oder 0, DX = 1 vorher setzen; Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH, RB_CALL INT E0h mit gefülltem Puffer), RB_REGS (CX = struct fapi_rbregs, DX = 0 holen/1 setzen), RB_MEM (CX = struct fapi_rbmem: Speicher der Box lesen/schreiben), RB_FREE |
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR (5.2) |
 | 87 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) (5.2) |
+| 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk), FAPI_ERR_NOTREADY (Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) | (5.4)
+| 90 | DosKlog         | Kernelmeldungen (`DMESG`): BX = Puffer, CX = Länge, DX = Stelle ab der ältesten → kopierte Bytes; CX = 0 → Länge des Protokolls (bis 8 KB, `KLOG_SIZE`); CX = 0, DX = FFFFh → löschen | (5.4)
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |

@@ -875,6 +875,16 @@ void strategy(void)
     case DRV_AUDIO:
         audio();
         break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: alles still        */
+        stop_play();
+        if (caps & (AUDCAP_OPL2 | AUDCAP_OPL3))
+            opl_reset();
+        if (caps & AUDCAP_AWE)
+            awe_reset_all();
+        if (dspv)
+            dsp_reset(base);
+        r->status = DRV_OK;
+        break;
     default:
         r->status = DRV_ERR_CMD;
     }

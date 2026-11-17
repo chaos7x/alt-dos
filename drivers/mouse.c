@@ -135,6 +135,8 @@ static unsigned ps2_probe(void)
         return 0;                       /* kein Hilfsport (AT-Controller) */
     if (kbc_cmd(0xA8))                  /* Hilfsport an                 */
         return 0;
+    while (kbc_read(2) >= 0)            /* Reste der Maus (nach DEVLOAD /U) */
+        ;
     if (aux_cmd(0xFF) ||                /* Reset; Selbsttest bis 1 s    */
         kbc_read(100) != 0xAA) {
         kbc_cmd(0xA7);                  /* keine Maus: Hilfsport aus    */
@@ -535,6 +537,20 @@ void strategy(void)
     case DRV_INIT:
         devhlp_ptr = MK_FP(r->devhlp_sel, r->devhlp_off);
         init();
+        break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: Maus schweigt      */
+        if (irq == 12 && !base && !bus) {
+            devhlp(DH_KBDLOCK, 0, 1, 0);
+            aux_cmd(0xF5);              /* Maus sendet nichts mehr        */
+            kbc_cmd(0xA7);              /* Hilfsport aus                  */
+            devhlp(DH_KBDLOCK, 0, 0, 0);
+        } else if (bus)
+            bus_irqs(0);
+        else if (base) {
+            outp(IER(base), 0x00);
+            outp(MCR(base), 0x00);
+        }
+        r->status = DRV_OK;
         break;
     default:
         r->status = DRV_ERR_CMD;

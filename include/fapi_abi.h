@@ -191,6 +191,35 @@ struct fapi_rbmem {
 /* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
    DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_DRIVER         0x58    /* BX = DRVL_*, CX/DX siehe dort: Treiber und
+                                       IFS-Module zur Laufzeit (6.0, DEVLOAD) */
+#define DRVL_LOAD           0       /* CX = "Pfad [Argumente]" (voller Pfad),
+                                       DX = DRVL_IFS fuer ein IFS-Modul ->
+                                       Platz 0.., FAPI_ERR_EXIST (schon
+                                       geladen), FAPI_ERR_FULL (kein Platz),
+                                       FAPI_ERR_NOTREADY (kein Geraet
+                                       gefunden), FAPI_ERR_INUSE (laeuft
+                                       gerade), FAPI_ERROR (Datei fehlt oder
+                                       kein Treiber). Neue Blockgeraete
+                                       bekommen die naechsten freien
+                                       Buchstaben, CDs nach einem IFS-Modul */
+#define DRVL_INFO           1       /* CX = Platz, DX = struct fapi_drvinfo
+                                       -> 0, FAPI_ERROR hinter dem letzten */
+#define DRVL_UNLOAD         2       /* CX = Name ("NCR8XX.SYS" oder "NCR8XX")
+                                       -> 0, FAPI_ERROR (nicht geladen),
+                                       FAPI_ERR_INUSE (Dateien offen, aktuelles
+                                       Laufwerk eines Programms, SUBST/JOIN,
+                                       Ton offen), FAPI_ERR_DENIED (Start-
+                                       laufwerk), FAPI_ERR_NOTREADY (der
+                                       Treiber kennt DRV_DEINIT nicht) */
+#define DRVL_IFS            1
+struct fapi_drvinfo {
+    char           name[13];        /* "" = Platz frei                  */
+    unsigned char  kind;            /* 0 frei, 1 Treiber, 2 IFS-Modul   */
+    unsigned char  units;           /* Blockgeraete des Treibers        */
+    unsigned char  rsv;
+    unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */
+};
 #define FAPI_KLOG           0x5A    /* Kernelmeldungen (DMESG): BX = Puffer,
                                        CX = Laenge, DX = Stelle ab der
                                        aeltesten Meldung -> AX = kopierte

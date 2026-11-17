@@ -995,6 +995,12 @@ void vio_mou_reg(unsigned buttons)
     clip_init();
 }
 
+void vio_mou_unreg(void)
+{
+    ptr_remove();
+    mou_nbtn = 0;
+}
+
 /* aus der Interruptroutine (IF aus): bewegen, Ereignis einreihen */
 void vio_mou_event(unsigned buttons, int dx, int dy)
 {

@@ -137,7 +137,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg play mixer undel scandisk msd print defrag taskman rbox convert eject aweload"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -222,7 +222,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_attrib.exe ATTRIB.EXE  $B/task_move.exe MOVE.EXE  $B/task_deltree.exe DELTREE.EXE
        $B/task_tree.exe TREE.EXE  $B/task_label.exe LABEL.EXE  $B/task_choice.exe CHOICE.EXE
        $B/task_sort.exe SORT.EXE  $B/task_fc.exe FC.EXE  $B/task_xcopy.exe XCOPY.EXE
-       $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE  $B/task_convert.exe CONVERT.EXE  $B/task_eject.exe EJECT.EXE
+       $B/task_format.exe FORMAT.EXE  $B/task_sys.exe SYS.EXE  $B/task_convert.exe CONVERT.EXE  $B/task_eject.exe EJECT.EXE  $B/task_devload.exe DEVLOAD.EXE
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
        $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_aweload.exe AWELOAD.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE

@@ -737,7 +737,16 @@ nur Platte – `HDDOS`, gebunden + LFN; in QEMU isapc 2 MB geprüft,
 Prüfsummen gleich md5sum/sha1sum des Rechners), (2) DMESG (erledigt:
 kernel.c `klog` wie 6.1, Ring im Segment `subst_sel`, FAPI 5Ah, auch auf
 Diskette 1; vio.c liegt hier im ersten Segment – kein Thunk; in QEMU
-isapc 2 MB geprüft: -n, Pipe, -C), DEVLOAD,
+isapc 2 MB geprüft: -n, Pipe, -C), DEVLOAD (erledigt: FAPI 58h
+LOAD/INFO/UNLOAD wie 6.1 ohne Treibersperren/xg, `kseg_own` – Kernel-
+segmente aus DH_KSEG/DH_DMABUF werden über ihren Deskriptor frei –,
+DRV_DEINIT in SB16.SYS und MOUSE.SYS; IDE/AHA154X/NCR5380 bleiben
+geladen. Dabei behoben: load_driver hatte auf 5.x noch `n = 0` – ein
+Treiber ohne Gerät behielt seinen Speicher (der 5.3.1-Rückport war
+unvollständig). In QEMU isapc 2 MB mit SB16 und serieller Maus geprüft:
+Entladen/Laden je dreimal, „Verfügbar“ danach gleich (MEM „Frei“
+schwankt, weil der Cache Freies alle 5 s zurückholt), Maus und CD
+danach, IDE abgelehnt (Startlaufwerk)),
 (3) Auslagern von Segmenten (docs/SWAP-5X.md), Loop/DriveSpace/PACKDISK.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
