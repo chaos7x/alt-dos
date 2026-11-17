@@ -499,7 +499,27 @@ exc11:  pusha
         iret
 .fault: push    word 11
         jmp     exc_common
-EXC_ERR 12
+; #SS (12): ausgelagertes Stapelsegment (5.4), sonst wie jede Ausnahme
+exc12:  pusha
+        push    ds
+        push    es
+        mov     ax, KDATA
+        mov     ds, ax
+        mov     es, ax
+        mov     bp, sp
+        mov     ax, [bp+20]
+        sti
+        call    code_np_
+        cli
+        pop     es
+        pop     ds
+        test    ax, ax
+        popa
+        jz      .fault
+        add     sp, 2
+        iret
+.fault: push    word 12
+        jmp     exc_common
 EXC_ERR 13
 EXC 14
 EXC 15

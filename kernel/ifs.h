@@ -112,7 +112,8 @@ int __far ifs_create(int drive, const char *path, struct ifs_file __far *f);
 int __far ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
               unsigned off, unsigned len);
 int __far ifs_close(struct ifs_file __far *f);
-int __far ifs_setsize(struct ifs_file __far *f, unsigned long size);   /* DosNewSize */
+int __far ifs_setsize(struct ifs_file __far *f, unsigned long size);
+int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max);   /* DosNewSize */
 int __far ifs_remove(int drive, const char *path);
 int __far ifs_mkdir(int drive, const char *path);
 int __far ifs_rmdir(int drive, const char *path);

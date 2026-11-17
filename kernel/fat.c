@@ -2397,6 +2397,39 @@ int __far ifs_write(struct ifs_file __far *f, unsigned long pos, unsigned sel,
 }
 
 /* Groesse setzen: kuerzen ueber den Treiber, verlaengern mit Nullen */
+/* Lage einer Datei auf dem Geraet (5.4, aus 6.1 fuer die Auslagerungs-
+   datei): Bereiche aus je 8 Byte (Stelle in der Datei, Sektor auf dem
+   Geraet, beide in 512er-Einheiten) nach sel:off, hoechstens max ->
+   Anzahl der Bereiche, -1 = kein FAT-Laufwerk oder kaputte Kette */
+int __far ifs_bmap(struct ifs_file __far *f, unsigned sel, unsigned off, unsigned max)
+{
+    int d = f->drive;
+    struct volume *v = &vol[d];
+    unsigned long need, u = 0, lba, nl = 0;
+    unsigned n = 0, k, c;
+
+    if (d < 0 || d >= NDRIVE || !v->used || v->drv != &fat_driver)
+        return -1;
+    need = (f->size + 511) >> 9;
+    for (c = (unsigned)f->first; u < need; c = next_cluster(d, c)) {
+        if (!valid(v, c))
+            return -1;
+        lba = clus_lba(v, c);
+        if (!n || lba != nl) {          /* neuer Bereich                 */
+            if (n < max) {
+                k = off + n * 8;
+                *(unsigned long __far *)MK_FP(sel, k) = u;
+                *(unsigned long __far *)MK_FP(sel, k + 4) = lba;
+            }
+            if (n < 0x7FFF)
+                n++;
+        }
+        u += v->spc;
+        nl = lba + v->spc;
+    }
+    return (int)n;
+}
+
 int __far ifs_setsize(struct ifs_file __far *f, unsigned long size)
 {
     static char zero[512];

@@ -334,6 +334,11 @@ static unsigned mem_get(unsigned n);
 static unsigned char mem_noswap;        /* MEMMAN=NOSWAP: nichts verwerfen */
 static int klock;                       /* Kernelsperre (unten)          */
 static int seg_cur;                     /* seg_compact: eigene Segmente  */
+static int seg_drop_sw(int t, unsigned idx);
+static struct drv_req req;
+static void drv_request(int d);
+static int of_alloc(void);
+static char swappath[IFS_PATHLEN];      /* SWAPPATH= aus der CONFIG.SYS   */
 static void klock_enter(void);
 
 /* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
@@ -651,6 +656,8 @@ static unsigned seg_free(int t, unsigned sel)
     d = &ldt[t][idx];
     if (d->access == 0)
         return FAPI_ERROR;
+    if (seg_drop_sw(t, idx))                    /* ausgelagert (5.4)     */
+        return 0;
     if (ldt_alias[t] & (1u << idx)) {
         ldt_alias[t] &= ~(1u << idx);
         d->access = 0;
@@ -1171,7 +1178,7 @@ static unsigned seg_start(const struct desc *d)
 static int seg_movable(int t, unsigned i)
 {
     const struct desc *d = &ldt[t][i];
-    if (task[t].state == T_FREE || !(d->access & 0x80) || (d->access & 0x18) != 0x10 ||
+    if (task[t].state == T_FREE || t == rb_task || !(d->access & 0x80) || (d->access & 0x18) != 0x10 ||
         (ldt_alias[t] & (1u << i)) || (!task[t].img_unit && i == 1))
         return 0;
     if (i == 1 && !task[t].code_unit && !task[t].code_gone && (ldt[t][0].access & 0x80))
@@ -1267,12 +1274,316 @@ static int seg_compact(unsigned n)
     return q == p + n;                  /* nur Erfolg, wenn es frei ist  */
 }
 
+/* ---- Datensegmente auslagern (5.4, wie OS/2 1.x MEMMAN=SWAP) ----------
+   Nur mit SWAPPATH= in der CONFIG.SYS: Datei SWAPPER.DAT (versteckt,
+   System) fester Groesse, beim Start angelegt und vom Kernel offen
+   gehalten; ihre Lage auf der Platte (ifs_bmap) steht in einem Kernel-
+   segment, gelesen und geschrieben wird direkt ueber den Treiber in einen
+   eigenen 4-KB-Puffer, am Platten-Cache vorbei. Plaetze zu 4 KB, ein
+   Segment belegt k Plaetze am Stueck. Ausgelagert: Deskriptor P = 0, Typ
+   und Grenze bleiben, base_lo = erster Platz, base_hi = SW_MARK. Laedt
+   jemand den Selektor (Programm, oder der Kernel beim Ruecksprung bzw.
+   beim Zugriff auf Puffer), kommt #NP (11) bzw. #SS (12) mit dem
+   Selektor als Fehlercode; seg_np holt das Segment zurueck und der Befehl
+   laeuft noch einmal. Hinaus geht nur, was ein anderer, nicht gerade im
+   Kernel arbeitender FX-Task hat und seit der letzten Runde nicht benutzt
+   wurde (Accessed-Bit, Uhr). */
+#define SW_MARK 0xA5
+static unsigned sw_sel, sw_buf, sw_n, sw_slots, sw_bm, sw_used;
+static int sw_dev = -1, sw_ct;
+static unsigned sw_ci = 1;
+static unsigned long sw_bphys;
+#define SWX(k)  ((unsigned long __far *)MK_FP(sw_sel, (k) * 8))
+#define SWB(s)  (((unsigned char __far *)MK_FP(sw_sel, sw_bm))[(s) >> 3])
+
+/* 4-KB-Platz s schreiben (wr = 1) bzw. lesen, ueber den Puffer sw_buf */
+static int sw_slot(unsigned s, int wr)
+{
+    unsigned long u = (unsigned long)s << 3, c, run;
+    unsigned done = 0, k, i, lo, hi, m;
+    struct blkdev *b = &blk[sw_dev];
+
+    while (done < 8) {
+        lo = 0;
+        hi = sw_n;
+        while (hi - lo > 1) {
+            m = (lo + hi) >> 1;
+            if (SWX(m)[0] <= u)
+                lo = m;
+            else
+                hi = m;
+        }
+        c = SWX(lo)[1] + (u - SWX(lo)[0]);
+        run = (lo + 1 < sw_n ? SWX(lo + 1)[0] : (unsigned long)sw_slots << 3) - u;
+        k = 8 - done;
+        if (run < k)
+            k = (unsigned)run;
+        if (!k)
+            return -1;
+        for (i = 0; i < k; i++) {
+            req.cmd = wr ? DRV_WRITE : DRV_READ;
+            req.unit = b->unit;
+            req.count = 1;
+            req.status = DRV_ERR_IO;
+            req.lba = c + i;
+            req.buf_phys = sw_bphys + ((done + i) << 9);
+            req.buf_sel = sw_buf;
+            req.buf_off = (done + i) << 9;
+            drv_request(b->drv);
+            if (req.status != DRV_OK)
+                return -1;
+        }
+        done += k;
+        u += k;
+    }
+    return 0;
+}
+
+static int sw_run_alloc(unsigned k)     /* k Plaetze am Stueck -> erster */
+{
+    unsigned s, i;
+    for (s = 0; s + k <= sw_slots; s++) {
+        for (i = 0; i < k; i++)
+            if (SWB(s + i) & (1 << ((s + i) & 7)))
+                break;
+        if (i == k) {
+            for (i = 0; i < k; i++)
+                SWB(s + i) |= (unsigned char)(1 << ((s + i) & 7));
+            sw_used += k;
+            return (int)s;
+        }
+        s += i;
+    }
+    return -1;
+}
+
+static void sw_run_free(unsigned s, unsigned k)
+{
+    for (; k; k--, s++)
+        if (SWB(s) & (1 << (s & 7))) {
+            SWB(s) &= (unsigned char)~(1 << (s & 7));
+            sw_used--;
+        }
+}
+
+static int sw_out(const struct desc *d)  /* ausgelagert?                 */
+{
+    return !(d->access & 0x80) && (d->access & 0x18) == 0x10 && d->base_hi == SW_MARK;
+}
+
+/* Segment (t, i) mit units Einheiten: Plaetze */
+static unsigned sw_k(unsigned units)
+{
+    return (unsigned)(((unsigned long)units * MEM_UNIT + 4095) >> 12);
+}
+
+static unsigned seg_ucnt(int t, unsigned i)
+{
+    return i == 1 ? task[t].img_cnt : (ldt[t][i].limit >> 8) + 1;
+}
+
+/* ein Segment hinausschreiben -> 1 */
+static int seg_out(void)
+{
+    unsigned look, i, units, k, j, len, st;
+    int t, sl;
+    struct desc *d;
+
+    if (!sw_sel || mem_noswap)
+        return 0;
+    for (look = 0; look < 2u * NTASK * NLDT; look++) {
+        if (++sw_ci >= NLDT) {
+            sw_ci = 1;
+            if (++sw_ct >= NTASK)
+                sw_ct = 0;
+        }
+        t = sw_ct;
+        i = sw_ci;
+        if (t == current || !seg_movable(t, i))
+            continue;
+        d = &ldt[t][i];
+        if (d->access & 1) {            /* zweite Chance                 */
+            d->access &= (unsigned char)~1;
+            continue;
+        }
+        units = seg_ucnt(t, i);
+        k = sw_k(units);
+        if ((sl = sw_run_alloc(k)) < 0)
+            continue;
+        st = seg_start(d);
+        for (j = 0; j < k; j++) {
+            len = units * MEM_UNIT - j * 4096U;
+            if (len > 4096 || len == 0)
+                len = 4096;
+            scratch_map(((unsigned long)st << 8) + ((unsigned long)j << 12), len - 1);
+            far_copy(sw_buf, 0, SCRATCH, 0, len);
+            if (sw_slot((unsigned)sl + j, 1)) {
+                sw_run_free((unsigned)sl, k);
+                return 0;
+            }
+        }
+        d->access &= (unsigned char)~0x80;
+        d->base_lo = (unsigned)sl;
+        d->base_hi = SW_MARK;
+        mem_free(st, units);
+        if (i == 1) {
+            task[t].img_unit = 0;
+            image_units -= units;
+        } else
+            alloc_units -= units;
+        return 1;
+    }
+    return 0;
+}
+
+/* #NP/#SS fuer (t, idx): ausgelagert? -> zurueckholen, 1 */
+static int seg_np(int t, unsigned idx)
+{
+    struct desc *d;
+    unsigned units, k, j, len, s, u;
+
+    if (idx == 0 || idx >= NLDT || !sw_sel)
+        return 0;
+    d = &ldt[t][idx];
+    if (!sw_out(d))
+        return 0;
+    units = seg_ucnt(t, idx);
+    k = sw_k(units);
+    s = d->base_lo;
+    klock_enter();
+    if (!(u = mem_get(units))) {
+        tmsg(t, "\n", task[t].name, ": ");
+        tmsg(t, "Ausgelagertes Segment: kein Speicher", "", "\nProgramm abgebrochen.\n");
+        task[t].rc = 255;
+        task_end(t);
+        schedule_next();                /* kehrt nicht zurueck           */
+    }
+    for (j = 0; j < k; j++) {
+        len = units * MEM_UNIT - j * 4096U;
+        if (len > 4096 || len == 0)
+            len = 4096;
+        if (sw_slot(s + j, 0))
+            panic("Auslagerungsdatei nicht lesbar.");
+        scratch_map(((unsigned long)u << 8) + ((unsigned long)j << 12), len - 1);
+        far_copy(SCRATCH, 0, sw_buf, 0, len);
+    }
+    sw_run_free(s, k);
+    d->base_lo = (unsigned short)((unsigned long)u << 8);
+    d->base_hi = (unsigned char)(u >> 8);
+    d->access |= 0x81;
+    if (idx == 1) {
+        task[t].img_unit = u;
+        image_units += units;
+    } else
+        alloc_units += units;
+    klock_leave();
+    return 1;
+}
+
+/* DosFreeSeg/Programmende: ausgelagertes Segment -> Plaetze frei, 1 */
+static int seg_drop_sw(int t, unsigned idx)
+{
+    struct desc *d = &ldt[t][idx];
+    if (!sw_sel || !sw_out(d))
+        return 0;
+    sw_run_free(d->base_lo, sw_k(seg_ucnt(t, idx)));
+    d->access = 0;
+    return 1;
+}
+
+/* Start: SWAPPATH=[X:]\Verzeichnis [KB] (Vorgabe 2 x RAM, 1-8 MB) */
+static void swap_boot(const char *spec)
+{
+    static char p[IFS_PATHLEN], msg[80];
+    unsigned i = 0, j = 0, kb = 0, slots;
+    int d = sys_drive, n, k;
+    struct ifs_file __far *f;
+
+    while (spec[i] == ' ')
+        i++;
+    if (spec[i] && spec[i + 1] == ':') {
+        d = up(spec[i]) - 'A';
+        i += 2;
+    }
+    if (spec[i] != '\\')
+        p[j++] = '\\';
+    while (spec[i] && spec[i] != ' ' && j < IFS_PATHLEN - 14)
+        p[j++] = up(spec[i++]);
+    while (spec[i] == ' ')
+        i++;
+    while (spec[i] >= '0' && spec[i] <= '9' && kb < 6553)
+        kb = kb * 10 + (spec[i++] - '0');
+    if (!kb)
+        kb = mem_free_kb() * 2;
+    if (kb < 1024)
+        kb = 1024;
+    if (kb > 8192)
+        kb = 8192;
+    if (j > 0 && p[j - 1] == '\\')
+        j--;
+    if (d < 2 || d >= NDRIVE || !vol[d].used || vol[d].drv != &fat_driver ||
+        IS_FLOPPY(vol[d].blk) || blk[vol[d].blk].rem)
+        goto bad;
+    if (j) {
+        p[j] = 0;
+        if (!ifs_isdir(d, p))
+            ifs_mkdir(d, p);
+    }
+    scopy(p + j, "\\SWAPPER.DAT", sizeof(p) - j);
+    if ((k = of_alloc()) < 0)
+        goto bad;
+    files[k].owner = -1;
+    f = &files[k].f;
+    if (ifs_open(d, p, f) && ifs_create(d, p, f)) {
+        files[k].refs = 0;
+        goto bad;
+    }
+    f->flags |= IFS_F_WRITE;
+    far_copy(FP_SEG(files), FP_OFF(files[k].path), KDATA, (unsigned)p, IFS_PATHLEN);
+    if (f->size != (unsigned long)kb << 10) {
+        if (ifs_setsize(f, (unsigned long)kb << 10))
+            goto bad;
+        ifs_close(f);
+        ifs_setinfo(d, p, 1, 0x06, 0, 0);   /* versteckt + System    */
+        if (ifs_open(d, p, f))
+            goto bad;
+        f->flags |= IFS_F_WRITE;
+    }
+    blk_flush();                        /* nichts Geaendertes im Cache   */
+    n = ifs_bmap(f, 0, 0, 0);
+    slots = kb >> 2;
+    if (n <= 0 || n > 4000)
+        goto bad;
+    if (!(sw_buf = kseg_dma(4096, &sw_bphys)) ||
+        !(sw_sel = kseg_alloc((unsigned long)n * 8 + (slots + 7) / 8))) {
+        sw_sel = 0;
+        goto bad;
+    }
+    sw_dev = vol[d].blk;
+    sw_n = (unsigned)n;
+    sw_slots = slots;
+    sw_bm = n * 8;
+    ifs_bmap(f, sw_sel, 0, n);
+    scopy(msg, "\xFE Auslagerungsdatei ", sizeof(msg));
+    for (i = 0; msg[i]; i++)
+        ;
+    msg[i++] = (char)('A' + d);
+    msg[i++] = ':';
+    msg[i] = 0;
+    vio_kputs(boot_session, msg);
+    vio_kputs(boot_session, p);
+    vio_kputs(boot_session, "\n");
+    return;
+bad:
+    vio_kputs(boot_session, "\xFE Keine Auslagerungsdatei (Laufwerk, Platz?)\n");
+}
+
 /* Speicher fuer Programme: erst mem_alloc (gibt Cache ab), dann
    Segmente zusammenschieben, dann Code verwerfen */
 static unsigned mem_get(unsigned n)
 {
     unsigned u;
-    while (!(u = mem_alloc(n)) && (seg_compact(n) || code_drop()))
+    while (!(u = mem_alloc(n)) && (seg_compact(n) || code_drop() || seg_out()))
         ;
     return u;
 }
@@ -1338,6 +1649,8 @@ share:
 unsigned code_np(unsigned err)
 {
     int t = current, r;
+    if (t >= 0 && (err & 4) && (err >> 3) && seg_np(t, err >> 3))
+        return 1;                       /* ausgelagertes Datensegment    */
     if (t < 0 || !task[t].code_gone || (err & 0xFFFC) != 4 || !cs_sel)
         return 0;
     klock_enter();
@@ -1746,6 +2059,7 @@ static void task_end(int t)
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
             seg_free(t, USEL(idx));
+    seg_drop_sw(t, 1);                          /* ausgelagert (5.4)     */
     if (task[t].img_unit) {
         mem_free(task[t].img_unit, task[t].img_cnt);
         image_units -= task[t].img_cnt;
@@ -5981,6 +6295,10 @@ static void config_sys(void)
             scopy(ac, "AUTOCHECK=", sizeof(ac));
             scopy(ac + 10, *v ? v : "-", sizeof(ac) - 10);
             env_set(-1, ac);
+        } else if (kw(line, "SWAPPATH")) {     /* wie OS/2 (5.4)         */
+            scopy(swappath, v, sizeof(swappath));
+            if (!swappath[0])
+                swappath[0] = ' ';
         } else if (kw(line, "MEMMAN")) {       /* wie OS/2: NOSWAP = Code bleibt */
             for (i = 0; v[i]; i++)
                 if (up(v[i]) == 'N' && up(v[i + 1]) == 'O' && up(v[i + 2]) == 'S')
@@ -6304,6 +6622,8 @@ void kmain(void)
        OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
+    if (swappath[0])                            /* SWAPPATH= (5.4)       */
+        swap_boot(swappath);
     cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
