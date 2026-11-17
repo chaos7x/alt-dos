@@ -78,5 +78,7 @@ unsigned __far kf_kseg_alloc(unsigned long bytes);
 #define kseg_alloc(b)               kf_kseg_alloc(b)
 void __far kf_kbd_flush(void);
 #define kbd_flush()                 kf_kbd_flush()
+void __far kf_klog(unsigned s, unsigned o, unsigned n);
+#define klog(s, o, n)               kf_klog(s, o, n)
 
 #endif

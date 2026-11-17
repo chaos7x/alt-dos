@@ -226,6 +226,13 @@ struct fapi_drvinfo {
 };
 #define FAPI_LOOP           0x59    /* BX = LOOP_*, CX/DX siehe dort: Datei als
                                        Laufwerk (6.1, LOOP) */
+#define FAPI_KLOG           0x5A    /* Kernelmeldungen (DMESG): BX = Puffer,
+                                       CX = Laenge, DX = Stelle ab der
+                                       aeltesten Meldung -> AX = kopierte
+                                       Bytes; CX = 0 -> AX = Laenge des
+                                       Protokolls; CX = 0, DX = FFFFh ->
+                                       loeschen */
+#define KLOG_SIZE           8192u   /* Ringpuffer im Kernel               */
 #define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
                                        feste VHD), DX = Laufwerk 2..25 oder 0
                                        = naechster freier, | LOOP_RO nur

@@ -704,12 +704,99 @@ static unsigned subst_real(unsigned d)
 static signed char join_drv[NDRIVE];
 static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
 #define JOIN_OFF (NDRIVE * IFS_PATHLEN)
+/* Protokoll der Kernelmeldungen (DMESG): Ring im selben Segment hinter
+   den Pfaden (kein eigener GDT-Platz), jede Zeile mit [h:mm:ss] */
+#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
+static unsigned klog_head, klog_len;    /* naechste Stelle, belegt       */
+static unsigned char klog_mid;          /* mitten in einer Zeile          */
+
+static void kl_put(char c)
+{
+    char __far *r = MK_FP(subst_sel, KLOG_OFF);
+    r[klog_head] = c;
+    klog_head = (klog_head + 1) & (KLOG_SIZE - 1);
+    if (klog_len < KLOG_SIZE)
+        klog_len++;
+}
+
+static void kl_dec(unsigned v, int two)
+{
+    char b[6];
+    int n = 0;
+    do {
+        b[n++] = (char)('0' + v % 10);
+        v /= 10;
+    } while (v);
+    if (two && n < 2)
+        b[n++] = '0';
+    while (n)
+        kl_put(b[--n]);
+}
+
+void klog(unsigned sel, unsigned off, unsigned n)
+{
+    const char __far *s = MK_FP(sel, off);
+    unsigned m;
+    char c;
+
+    if (!subst_sel)
+        return;
+    while (n--) {
+        c = *s++;
+        if (!klog_mid && c != '\r' && c != '\n') {   /* Zeilenanfang: Zeit */
+            m = uptime_m;
+            kl_put('[');
+            kl_dec(m / 60, 0);
+            kl_put(':');
+            kl_dec(m % 60, 1);
+            kl_put(':');
+            kl_dec(up60, 1);
+            kl_put(']');
+            kl_put(' ');
+            klog_mid = 1;
+        }
+        if (c == '\n') {
+            kl_put('\r');
+            klog_mid = 0;
+        } else if (c == '\r')
+            continue;
+        kl_put(c);
+    }
+}
+
+/* FAPI_KLOG: ab Stelle pos (von der aeltesten) bis len Bytes kopieren */
+static unsigned klog_read(unsigned usel, unsigned buf, unsigned len, unsigned pos)
+{
+    unsigned st, k, n = 0;
+    if (!len) {
+        if (pos == 0xFFFF)
+            klog_len = klog_mid = 0;
+        return klog_len;
+    }
+    if (pos >= klog_len)
+        return 0;
+    if (len > klog_len - pos)
+        len = klog_len - pos;
+    st = (klog_head - klog_len + pos) & (KLOG_SIZE - 1);
+    while (n < len) {                   /* hoechstens zwei Stuecke       */
+        k = KLOG_SIZE - st;
+        if (k > len - n)
+            k = len - n;
+        far_copy(usel, buf + n, subst_sel, KLOG_OFF + st, k);
+        n += k;
+        st = (st + k) & (KLOG_SIZE - 1);
+    }
+    return n;
+}
 
 /* Aktuelles Verzeichnis anderer Laufwerke (wie MS-DOS: CD A:\\X von C:
    aus) je Task, bis NDCWD Laufwerke; im selben Kernelsegment hinter SUBST
    und JOIN. Satz: Laufwerk (0xFF frei) + Pfad wie task.cwd. */
 #define NDCWD    4
 #define DCWD_SZ  (1 + IFS_PATHLEN)
+#if NDCWD * DCWD_SZ != 4 * (1 + IFS_PATHLEN)
+#error KLOG_OFF passt nicht zu NDCWD/DCWD_SZ
+#endif
 #define DCWD_OFF (2 * NDRIVE * IFS_PATHLEN)
 static char __far *dcwd(int t, int d, int create)
 {
@@ -3730,6 +3817,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_LOOP:                             /* Datei als Laufwerk    */
         return loop_glue(usel, a1, a2, a3);
 
+    case FAPI_KLOG:                             /* DMESG                 */
+        if (a2 && !user_ok(usel, a1, a2, 1))
+            return FAPI_ERROR;
+        return klog_read(usel, a1, a2, a3);
+
     case FAPI_EJECT: {                          /* Medium auswerfen      */
         int dev, st;
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
@@ -4481,6 +4573,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
     static char kmsg[80];
     const char *m = msg;
     int vm = fault_vm;
+    unsigned n;
 
     fault_vm = 0;
     hex4(cs, msg + 5);
@@ -4496,8 +4589,14 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         m = pf;
     }
 
-    if (vm)                             /* Vollbild der Box ist gleich weg: */
+    if (vm) {                           /* Vollbild der Box ist gleich weg: */
         scat(box_fmsg, scat(box_fmsg, 0, exc_name(vec), 40), m, 86);  /* fuer CMD merken */
+        klog(KDATA, (unsigned)"DOS-Box abgebrochen: ", 21);
+        for (n = 0; box_fmsg[n]; n++)
+            ;
+        klog(KDATA, (unsigned)box_fmsg, n);
+        klog(KDATA, (unsigned)"\n", 1);
+    }
     if (((cs & 3) == 3 || vm) && current >= 0) {
         /* Fehler in einer Anwendung oder DOS-Box: nur sie beenden */
         tmsg(current, "\n", task[current].name, ": ");
@@ -5890,6 +5989,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         for (n = 0; n < 200 && p[n]; n++)
             ;
         vio_tty(boot_session, dsel, bx, n);
+        klog(dsel, bx, n);
         return 0;
     case DH_TICKS:
         return (unsigned)get_ticks();
@@ -7065,7 +7165,7 @@ void kmain(void)
     for (i = 0; i < NDRIVE; i++)        /* vor dem ersten resolve()   */
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
-    subst_sel = kseg_alloc(2UL * NDRIVE * IFS_PATHLEN + (unsigned long)NTASK * NDCWD * DCWD_SZ);
+    subst_sel = kseg_alloc((unsigned long)KLOG_OFF + KLOG_SIZE);  /* + Protokoll */
     for (i = 0; i < NDRIVE; i++)
         join_drv[i] = -1;
     join_sel = subst_sel;

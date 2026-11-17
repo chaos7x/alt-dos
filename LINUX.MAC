@@ -4,7 +4,7 @@
 ;  Zeilen name=text, $1-$9 Argumente, $* alle, $T trennt Befehle.
 ;  Schalter bleiben die von AT-DOS (DIR /A statt ls -a). cat, grep,
 ;  less, head, tail, wc, uniq, tr, cut, strings, md5sum, sha1sum, hexdump,
-;  xxd, tar, gzip sind eigene
+;  xxd, dmesg, tar, gzip sind eigene
 ;  Programme.
 ll=DIR /O $*
 la=DIR /A /O $*

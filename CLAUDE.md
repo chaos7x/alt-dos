@@ -836,6 +836,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
   fehlender Datei/kaputter Zeile, xxd -p | xxd -r -p und xxd -r über die
   Hexansicht bytegleich, Patch gleich wie xxd -r): gleich bis auf CR LF.
   Bemerkt: TYPE hängt ein Zeilenende an, wenn die Datei keins hat.
+  DMESG (Vorschlag von mir, damit Meldungen aus 86Box nicht verloren
+  gehen – Port E9h gibt es dort nicht; 17.11.2026; auch auf Diskette 1):
+  kernel.c `klog(sel, off, n)` schreibt in einen Ring von 8 KB
+  (`KLOG_SIZE`) hinter den SUBST/JOIN/dcwd-Pfaden im Segment `subst_sel`
+  (`KLOG_OFF`, kein eigener GDT-Platz; Prüfung per #error, dass er zu
+  NDCWD/DCWD_SZ passt), jede Zeile mit `[h:mm:ss] ` aus uptime_m/up60
+  (Leerzeilen ohne), LF -> CR LF. Gefüttert von vio_kputs (vio.c, über
+  Thunk kf_klog) – also allen Kernelmeldungen inkl. tmsg/Abbrüchen –,
+  DH_PUTS der Treiber und fault() für DOS-Boxen („DOS-Box abgebrochen:
+  …“, sonst nur im Vollbild). FAPI 5Ah `FAPI_KLOG` (mit Sperre). In QEMU
+  geprüft: Startzeilen ab der Titelzeile, Box mit `mov eax,cr0`,
+  `DMESG > D:\DM.TXT`, `-n 4`, Pipe. Kosten: 8 KB im Kernelsegment, 514
+  Byte Code im ersten Segment, 26 Byte DGROUP.
   `\DOS\LINUX.MAC` (Wunsch des Nutzers, Linux-Admin): DOSKEY-Makros ll,
   la, ls, l, .., pwd, cp, mv, rm, clear, diff, man, free, ps, kill, uname,
   history, nano, vi, mc – nicht aktiv, AUTOEXEC.CMD nennt den Aufruf. In

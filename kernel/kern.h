@@ -258,6 +258,7 @@ void __far vio_tty(int s, unsigned sel, unsigned off, unsigned len);
 void __far vio_str(int s, int row, int col, unsigned sel, unsigned off,
              unsigned limit, unsigned char attr);
 void __far vio_kputs(int s, const char *str);     /* Kerneltext als TTY        */
+void klog(unsigned sel, unsigned off, unsigned n);  /* ins Protokoll (DMESG)  */
 int __far vio_ansi(int s, unsigned on);          /* ANSI an/aus, 2 = abfragen */
 void __far vio_status(void);
 void __far vio_flush(void);               /* Schattenpuffer -> Bildspeicher      */
