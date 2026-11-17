@@ -112,7 +112,8 @@ struct fapi_diskinfo {
     char           driver[13];      /* "IDE.SYS"                        */
     unsigned char  unit;            /* Einheit des Treibers             */
     unsigned char  nvol;            /* Laufwerksbuchstaben darauf       */
-    unsigned char  rsv;
+    unsigned char  rsv;             /* ganze Zylinder am Ende, die das
+                                       BIOS nicht meldet (6.0)          */
     unsigned short heads, spt;      /* Geometrie des BIOS (INT 13h/08h),
                                        0 = unbekannt (Platte ohne BIOS)  */
 };
