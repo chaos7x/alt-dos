@@ -184,7 +184,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Sektor gelesen und Fehlerhaftes gesperrt. Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
   Wechselplatten (ZIP, MO) bekommen wie unter MS-DOS das Datenträgerbyte F0h.
-  FDISK legt Partitionen wie MS-DOS nur bis zum letzten Zylinder an, den das BIOS meldet.
+  FDISK legt Partitionen wie MS-DOS nur über ganze Zylinder bis zum letzten an, den das BIOS meldet.
 - `DISKCOPY [A: [B:]] [/V]` wie MS-DOS: alle Diskettenformate, mit einem
   Laufwerk über Diskettenwechsel, in mehreren Durchgängen, wenn der
   Speicher nicht reicht; unformatierte oder anders formatierte Ziel-
