@@ -2173,8 +2173,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Version: 2 -> JM, 0 -> DS (DS3 weiter JM). In QEMU geprüft: der echte
   Container (SHR) eingehängt, XCOPY \DOS, CHKDSK, SHUTDOWN, cvfchk 0
   Fehler (227 Cluster „DS 00 02“), fsck des Inneren sauber, Inhalte
-  gleich. Offen: ob DoubleSpace 6.20 selbst „DS 00 02“ oder „DS 00 00“
-  schreibt (Vorlage mit Dateien erbeten) und PACKDISK /DBL. Das ZIP
+  gleich. Zweites Abbild (Stunts unter MS-DOS 6.20 hineinkopiert): 147
+  gepackte Cluster, alle „DS 00 02“ wie unser Packer, Bit 21 überall 0;
+  cvfchk 0 Fehler. In QEMU: Container eingehängt, XCOPY F:\STUNTS nach
+  C:, alle 220 Dateien gleich mit den nachgebaut entpackten – Entpacker
+  DS an echten Daten bestätigt. Offen: PACKDISK /DBL (Kennung MSDSP6.0,
+  Version 0) zum Anlegen von DoubleSpace-Containern. Das ZIP
   hatte von MS-DOS-FORMAT selbst BPB F0h, FAT F8h – daher meldete
   ScanDisk 6.20 „FAT-Datenträgerbyte fehlt“ (nicht AT-DOS).
 
