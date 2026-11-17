@@ -263,7 +263,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   605 KB frei); EMS gibt es in der Box über eine echte EMS-Karte: im
   Startabbild liegt `LTEMM.EXE` (EMS-4.0-Treiber für die Lo-tech-Karte und
   Nachbauten, BSD-Lizenz, `ltemm/HERKUNFT.txt`, für AT-DOS bis 4080 KB je
-  Karte), in dessen CONFIG.SYS als `REM DEVICE=A:\LTEMM.EXE /p:E000
+  Karte), in dessen CONFIG.SYS als `REM DEVICE=A:\LTEMM.EXE /p:D000
   /i:260` – REM entfernen (`LOOP C:\DOS\MDOS\FREEDOS.IMG`, EDIT, `LOOP X:
   /D`), Seitenrahmen auf einen freien Bereich (nicht C800h–CFFFh beim
   SCAT); kleine Lesezugriffe über die

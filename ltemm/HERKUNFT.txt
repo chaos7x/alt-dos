@@ -23,12 +23,14 @@ Aenderungen fuer AT-DOS:
 - aliaschk: ab Seite 128 wird geprueft, ob die Seite nur ein Spiegel der
   Seite n-128 ist (Karte mit 2 MB) - dann endet die Suche dort.
 - Hilfetext: Hinweis auf 4080 KB.
+- Kein Klicken beim Speichertest: imgchk schaltete alle vier Seiten Bit 1
+  von Port 61h (PC-Lautsprecher) ein und wieder aus (vom Nutzer bemerkt).
 
 Die 4-MB-Fassung aus github.com/hkzlab/ISA_EMS_4Mb wurde nicht verwendet
 (CC BY-NC-SA, nicht mit der GPL des Projekts vertraeglich).
 
 Benutzung (Kompatibilitaetsbox von AT-DOS 5.x): im Startabbild
 \DOS\MDOS\FREEDOS.IMG liegt A:\LTEMM.EXE, die CONFIG.SYS dort hat die
-Zeile "REM DEVICE=A:\LTEMM.EXE /p:E000 /i:260" - REM entfernen (z. B.
+Zeile "REM DEVICE=A:\LTEMM.EXE /p:D000 /i:260" - REM entfernen (z. B.
 LOOP C:\DOS\MDOS\FREEDOS.IMG, EDIT, LOOP X: /D). Seitenrahmen nicht auf
 C800h-CFFFh (Karten-BIOS, ROM-Karte des SCAT).

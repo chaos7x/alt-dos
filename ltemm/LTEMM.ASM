@@ -3,7 +3,8 @@
 ; Aenderungen fuer AT-DOS (2026, siehe ltemm/HERKUNFT.txt): mit Open
 ; Watcom wasm gebaut (PUSH/POP mit mehreren Registern aufgeteilt, REPZ vor
 ; MOVS/STOS als REP), bis 255 Seiten = 4080 KB fuer 4-MB-Karten (PAGE_MAX
-; in LTEMM.INC), Pruefung aliaschk gegen Spiegelseiten einer 2-MB-Karte.
+; in LTEMM.INC), Pruefung aliaschk gegen Spiegelseiten einer 2-MB-Karte,
+; kein Klicken im Lautsprecher beim Speichertest.
 ;
 		PAGE	90,132
 		NAME	LTEMM
@@ -3345,11 +3346,7 @@ imgchk		PROC	NEAR
 		PUSH	DS
 		PUSH	CS			;set ES <- CS..
 		POP	ES
-                test    ah,3
-                jnz     imgchk2
-		IN	AL,I8042+1
-		or	AL,2
-		OUT	I8042+1,AL
+; AT-DOS: kein Klicken mehr im PC-Lautsprecher (Port 61h Bit 1)
 imgchk2:
 		MOV	AL,AH
                 CBW
@@ -3357,9 +3354,6 @@ imgchk2:
 		CALL	dbinasc			;change binary -> ascii.
 		MOV	SI,OFFSET tstpage	;display message..
 		CALL	strdsp
-		IN	AL,I8042+1
-		and	AL,0fdh
-		OUT	I8042+1,AL
 		MOV	AX,page_frame_seg
 		MOV	ES,AX
 		MOV	ax,chkchr
