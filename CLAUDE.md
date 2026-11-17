@@ -30,7 +30,13 @@ markiert; `v6.0` baut seitdem mit `--latest=false`). Titel/VER „AT-DOS
 Inhalt gegenüber 6.0: Setup-Disketten, Code verwerfen/Segmente
 verschieben/auslagern, Loop, DoubleSpace/DriveSpace/PACKDISK, CONVERT
 FAT32 -> FAT16 und beim Neustart, MSCDEX, AHCI, ACPI-Ausschalten, DMESG,
-STRINGS/MD5SUM/SHA1SUM/HEXDUMP/XXD. Ungeprüft auf echter Hardware.
+STRINGS/MD5SUM/SHA1SUM/HEXDUMP/XXD.
+
+Prüfstufen (Entscheidung des Nutzers, 17.11.2026: „86Box ist das
+beste, was wir haben“ – echte Hardware hat praktisch niemand mehr):
+QEMU (schnell, nachsichtig), **86Box (Referenz)**, Proxmox/KVM (VMs).
+In der Doku nicht „ungeprüft auf echter Hardware“ schreiben, sondern
+nennen, auf welcher dieser Stufen geprüft ist.
 Als Nächstes im Plan (6.x): Netzwerk, VirtIO.
 
 
