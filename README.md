@@ -183,6 +183,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Disketten werden ohne `/Q` Spur für Spur formatiert, danach wird jeder
   Sektor gelesen und Fehlerhaftes gesperrt. Das Startlaufwerk wird nicht formatiert.
   Unformatierte Partitionen bekommen trotzdem einen Buchstaben.
+  Wechselplatten (ZIP, MO) bekommen wie unter MS-DOS das Datenträgerbyte F0h.
 - `DISKCOPY [A: [B:]] [/V]` wie MS-DOS: alle Diskettenformate, mit einem
   Laufwerk über Diskettenwechsel, in mehreren Durchgängen, wenn der
   Speicher nicht reicht; unformatierte oder anders formatierte Ziel-

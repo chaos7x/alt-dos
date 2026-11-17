@@ -114,6 +114,8 @@ static int do_format(int quick, unsigned fkb)
         return 3;
     }
     nfats = 2;
+    if (ffi.flags & FSI_REMDISK)        /* ZIP/MO: wie MS-DOS F0h (ScanDisk */
+        media = 0xF0;                   /* vergleicht mit dem Wert von DOS) */
     if (ffi.flags & FSI_REMOVABLE) {                /* Disketten          */
         if (fkb)
             n = (unsigned long)fkb << 1;
