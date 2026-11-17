@@ -5031,7 +5031,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gleich; i440fx mit IDE + `-device ahci`; Start von IDE und Diskette
   (isapc 4 MB) unverändert. Vom Nutzer in Proxmox 9.2 bestätigt
   (17.11.2026, VM mit SATA-Platte, Controller an PCI 00:07, IRQ 11):
-  Start von C: (63 MB, AHCI.SYS Einheit 0), CD am IDE als D:. Ungeprüft:
+  Start von C: (63 MB, AHCI.SYS Einheit 0), CD am IDE als D:; danach
+  XCOPY von der SATA-CD auf die SATA-Platte, CHKDSK sauber. Offen
+  (Proxmox/KVM): POWEROFF schaltet dort nicht aus (in QEMU ohne KVM mit
+  i440fx + AHCI, 2 GB schon), mit `APM=OFF` normales Herunterfahren –
+  der Nutzer vermutet den Maschinentyp. Zu klären: Maschinentyp, ob das
+  Bild stehen bleibt, MSD-Zeile „APM:“. Ungeprüft:
   echte Hardware, VirtualBox/VMware, Port-Multiplier, NCQ (nicht benutzt).
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
