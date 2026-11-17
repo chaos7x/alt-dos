@@ -2159,8 +2159,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Ursache für DRVSPACE045. Danach unter Windows 98 Dateien hinein-
   kopiert, ScanDisk von Windows 98 ohne Fehler (vom Nutzer bestätigt,
   17.11.2026) – PACKDISK /DS3 damit unter Windows 98 lesend und
-  schreibend angenommen; danach auch mit ScanDisk unter AT-DOS (`PACKDISK
-  /CHECK /V`) „Keine Fehler“. Nächster Schritt: DoubleSpace.
+  schreibend angenommen; danach unter AT-DOS `PACKDISK /CHECK
+  /V` „Keine Fehler“. Nächster Schritt: DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
