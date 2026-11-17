@@ -19,7 +19,7 @@
    (memmap_lin), Selektor MEMMAP_SEL (kern.h) */
 #define bitmap ((unsigned char __far *)MK_FP(MEMMAP_SEL, 0))
 #define BITMAP_SIZE 8192U
-static unsigned      free_units;
+static unsigned      free_units, mem_end;
 
 #define USED(u)     (bitmap[(u) >> 3] & (1 << ((u) & 7)))
 #define SET(u)      (bitmap[(u) >> 3] |= (unsigned char)(1 << ((u) & 7)))
@@ -53,6 +53,7 @@ void mem_init(unsigned low, unsigned conv_kb, unsigned ext_kb)
     if (end > 0xFFFFUL)
         end = 0xFFFFUL;                 /* letzte Einheit opfern wir     */
     release_range(MEM_HIGH_START, (unsigned)end);
+    mem_end = (unsigned)end;
 }
 
 unsigned (*mem_reclaim)(unsigned units);
@@ -128,6 +129,24 @@ void mem_reserve(unsigned from, unsigned to)
 void mem_free(unsigned start, unsigned units)
 {
     release_range(start, start + units);
+}
+
+int mem_used(unsigned u)                /* Einheit belegt? (seg_compact) */
+{
+    return USED(u) != 0;
+}
+
+void mem_take(unsigned u)               /* freie Einheit festhalten      */
+{
+    if (!USED(u)) {
+        SET(u);
+        free_units--;
+    }
+}
+
+unsigned mem_top(void)                  /* hinter der letzten Einheit    */
+{
+    return mem_end;
 }
 
 unsigned mem_free_kb(void)

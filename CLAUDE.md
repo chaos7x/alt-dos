@@ -759,8 +759,21 @@ des Programms); neue Tasks bekommen das A-Bit (zweite Chance).
 `MEMMAN=NOSWAP` schaltet es ab. In QEMU isapc 2 MB geprüft (EDIT und FM
 in eigenen Sitzungen, dreimal TASKB gleichzeitig: Code von CMD, EDIT und
 FM verworfen und beim Zurückkehren nachgeladen, über Port E9h gezählt;
-EDIT, FM, CMD danach normal). Offen: Segmente verschieben (MOVE) und
-Datensegmente in eine Auslagerungsdatei; Loop/DriveSpace/PACKDISK.
+EDIT, FM, CMD danach normal). Stufe 2 erledigt – Segmente verschieben
+(MEMMAN=MOVE wie 6.1 `seg_compact`, in Einheiten zu 256 Byte): mem_get
+ruft vor code_drop `seg_compact(n)` – Bitmap „Einheit gehört einem
+verschiebbaren Segment“ in einer geliehenen Einheit über SCRATCH2 (mem.c
+`mem_used`/`mem_take`/`mem_top`), erstes Fenster aus n Einheiten, freie
+festhalten, Segmente kleiner als n umziehen (nur Basis im Deskriptor,
+img_unit bei Eintrag 1), Erfolg nur bei ganz freiem Fenster.
+Verschiebbar: Eintrag 1 und DosAllocSeg-Segmente von FX-Programmen,
+keine Aliase, nicht der Inhaber der Kernelsperre; der laufende Task nur
+aus seg_alloc (`seg_cur`). FRAGTEST kam dafür mit (`/T:s` wartet s
+Sekunden statt auf eine Taste – für DETACH). In QEMU isapc 2 MB geprüft:
+zwei `DETACH FRAGTEST /S:32 /T:25 > Fn.TXT` halten 32-KB-Löcher,
+`FRAGTEST /B` bekommt 8 × 64 KB (4 Umzüge, über Port E9h gezählt), beide
+Halter finden danach ihre Muster unverändert. Offen: Datensegmente in
+eine Auslagerungsdatei; Loop/DriveSpace/PACKDISK.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
 ## Aufbau

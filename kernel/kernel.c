@@ -332,6 +332,8 @@ static void schedule_next(void);
 static void klock_leave(void);
 static unsigned mem_get(unsigned n);
 static unsigned char mem_noswap;        /* MEMMAN=NOSWAP: nichts verwerfen */
+static int klock;                       /* Kernelsperre (unten)          */
+static int seg_cur;                     /* seg_compact: eigene Segmente  */
 static void klock_enter(void);
 
 /* Programme mit SIG_SHUTDOWN-Handler duerfen aufraeumen (bis 5 s), danach
@@ -597,7 +599,9 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
             break;
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
-    u = mem_get(units);
+    seg_cur = 1;                                /* eigene Segmente duerfen */
+    u = mem_get(units);                         /* umziehen (MEMMAN=MOVE) */
+    seg_cur = 0;
     if (u == 0)
         return FAPI_ERROR;                      /* kein Speicher        */
 
@@ -1148,12 +1152,127 @@ static int code_drop(void)
     return 0;
 }
 
-/* Speicher fuer Programme: erst mem_alloc (gibt Cache ab), dann Code
-   verwerfen */
+/* ---- Segmente verschieben (5.4, wie OS/2 1.x MEMMAN=MOVE) ---------------
+   mem_get findet keine n Einheiten am Stueck, obwohl genug frei ist
+   (Segmente brauchen ihren Speicher am Stueck). Gesucht wird ein Fenster
+   aus n Einheiten, in dem jede frei ist oder zu einem verschiebbaren
+   Datensegment gehoert; diese ziehen um, nur die Basis im Deskriptor
+   aendert sich - der Kernel fasst Programmsegmente ueber Selektoren an,
+   ein Taskwechsel laedt die Register neu. Verschiebbar: LDT-Eintrag 1
+   und DosAllocSeg-Segmente von FX-Programmen, keine Aliase, nicht der
+   Task, der die Kernelsperre haelt (er koennte eine lineare Adresse
+   halten); den laufenden nur aus seg_alloc (seg_cur). */
+
+static unsigned seg_start(const struct desc *d)
+{
+    return (d->base_lo >> 8) | ((unsigned)d->base_hi << 8);
+}
+
+static int seg_movable(int t, unsigned i)
+{
+    const struct desc *d = &ldt[t][i];
+    if (task[t].state == T_FREE || !(d->access & 0x80) || (d->access & 0x18) != 0x10 ||
+        (ldt_alias[t] & (1u << i)) || (!task[t].img_unit && i == 1))
+        return 0;
+    if (i == 1 && !task[t].code_unit && !task[t].code_gone && (ldt[t][0].access & 0x80))
+        return 0;                       /* Version 1: Code im selben Block */
+    if (t == current)
+        return seg_cur;
+    return klock != t;
+}
+
+static unsigned seg_units(int t, unsigned i)
+{
+    return i == 1 ? task[t].img_cnt : (ldt[t][i].limit >> 8) + 1;
+}
+
+static int seg_compact(unsigned n)
+{
+    unsigned top = mem_top(), u, p, q, i, k, s, nu, nm = 0, oldu[NLDT], oldn[NLDT];
+    unsigned bmu, bmn;
+    unsigned char __far *bm;
+    int t, r = 0;
+    static unsigned char took[32];      /* bis 256 Einheiten             */
+
+    if (n > 256 || mem_noswap)
+        return 0;
+    bmn = UNITS((top >> 3) + 1);
+    if (!(bmu = mem_alloc(bmn)))
+        return 0;
+    scratch2_map((unsigned long)bmu << 8, bmn * MEM_UNIT - 1);
+    bm = MK_FP(SCRATCH2, 0);
+    for (i = 0; i < bmn * MEM_UNIT; i++)
+        bm[i] = 0;
+    for (t = 0; t < NTASK; t++)         /* Einheit gehoert verschiebbarem */
+        for (i = 1; i < NLDT; i++) {
+            if (!seg_movable(t, i) || (k = seg_units(t, i)) >= n)
+                continue;
+            for (u = seg_start(&ldt[t][i]); k; k--, u++)
+                bm[u >> 3] |= (unsigned char)(1 << (u & 7));
+        }
+    for (p = 1; p + n <= top && p + n > p; p++) {
+        for (q = p, k = 0; q < p + n; q++) {
+            if (!mem_used(q))
+                continue;
+            if (!(bm[q >> 3] & (1 << (q & 7))))
+                break;
+            k++;
+        }
+        if (q == p + n && k)
+            break;
+        if (q < p + n)
+            p = q;
+    }
+    mem_free(bmu, bmn);
+    if (p + n > top || p + n <= p)
+        return 0;
+    for (i = 0; i < 32; i++)
+        took[i] = 0;
+    for (q = p; q < p + n; q++)         /* freie Einheiten festhalten    */
+        if (!mem_used(q)) {
+            mem_take(q);
+            took[(q - p) >> 3] |= (unsigned char)(1 << ((q - p) & 7));
+        }
+    for (t = 0; t < NTASK && r >= 0; t++)
+        for (i = 1; i < NLDT; i++) {
+            struct desc *d = &ldt[t][i];
+            if (!seg_movable(t, i) || (k = seg_units(t, i)) >= n)
+                continue;
+            s = seg_start(d);
+            if (s + k <= p || s >= p + n)
+                continue;
+            if (nm == NLDT || !(nu = mem_alloc(k))) {
+                r = -1;
+                break;
+            }
+            scratch_map((unsigned long)s << 8, k * MEM_UNIT - 1);
+            scratch2_map((unsigned long)nu << 8, k * MEM_UNIT - 1);
+            far_copy(SCRATCH2, 0, SCRATCH, 0, k == 256 ? 0x8000 : k * MEM_UNIT);
+            if (k == 256)
+                far_copy(SCRATCH2, 0x8000, SCRATCH, 0x8000, 0x8000);
+            d->base_lo = (unsigned short)((unsigned long)nu << 8);
+            d->base_hi = (unsigned char)(nu >> 8);
+            if (i == 1)
+                task[t].img_unit = nu;
+            oldu[nm] = s;
+            oldn[nm++] = k;
+        }
+    for (q = p; q < p + n; q++)
+        if (took[(q - p) >> 3] & (1 << ((q - p) & 7)))
+            mem_free(q, 1);
+    for (i = 0; i < nm; i++)
+        mem_free(oldu[i], oldn[i]);
+    for (q = p; q < p + n && !mem_used(q); q++)
+        ;
+    return q == p + n;                  /* nur Erfolg, wenn es frei ist  */
+}
+
+/* Speicher fuer Programme: erst mem_alloc (gibt Cache ab), dann
+   Segmente zusammenschieben, dann Code verwerfen */
 static unsigned mem_get(unsigned n)
 {
     unsigned u;
-    while (!(u = mem_alloc(n)) && code_drop())
+    while (!(u = mem_alloc(n)) && (seg_compact(n) || code_drop()))
         ;
     return u;
 }

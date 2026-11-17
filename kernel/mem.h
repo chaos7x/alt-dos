@@ -13,6 +13,9 @@ void     mem_free(unsigned start, unsigned units);
 void     mem_reserve(unsigned from, unsigned to);  /* [from, to) belegen */
 int      mem_is_free(unsigned from, unsigned to);  /* [from, to) ganz frei */
 unsigned mem_free_kb(void);
+int      mem_used(unsigned u);
+void     mem_take(unsigned u);
+unsigned mem_top(void);
 /* Rueckruf bei Speichermangel (Platten-Cache gibt saubere Stuecke ab):
    -> freigegebene Einheiten, 0 = nichts mehr abzugeben. Darf keine
    Plattenzugriffe machen (mem_alloc kommt auch ohne Kernelsperre). */
