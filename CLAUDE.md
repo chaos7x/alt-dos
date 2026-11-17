@@ -2079,6 +2079,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   \DOS, CHKDSK, cvfchk/cvfchk3 0 Fehler, fsck innen/außen sauber, je 105
   Dateien gleich; Vergleich mit den Vorlagen nur noch Größe, Bezeichnung,
   Seriennummer, Startcode).
+  Beim Nutzer (86Box, MS-DOS 6.22, 17.11.2026): ein mit Build 719 frisch
+  angelegter 30-MB-Container wird von DRVSPACE beim Start eingebunden
+  (MSD: E: DriveSpace 58 MB, CVF L:\DRVSPACE.000; DriveSpace schreibt
+  beim Einbinden Bytes 6–8 im Sektor hinter dem Bootblock). Die Meldung
+  „MS-DOS-Datenträgerbyte fehlte“ betraf das Trägerlaufwerk, ein ZIP 250
+  (Iomega-Aufteilung, Partition 4), das unser FORMAT mit F8h angelegt
+  hatte: ScanDisk ersetzte FAT[0] durch F0h (BPB blieb F8h) – MS-DOS
+  sieht das ZIP über das Adaptec-BIOS als Wechsellaufwerk und erwartet
+  F0h. Jetzt meldet DosQFSInfo Wechselplatten mit `FSI_REMDISK` (10h),
+  FORMAT (ufat_fmt.c) nimmt dort F0h in BPB und FAT (in QEMU mit
+  `scsi-hd,removable=on` am lsi53c895a geprüft, fsck sauber).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
