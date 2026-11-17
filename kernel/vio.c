@@ -681,6 +681,7 @@ void vio_kputs(int s, const char *str)
     while (str[n])
         n++;
     vio_tty(s, KDATA, (unsigned)str, n);
+    klog(KDATA, (unsigned)str, n);  /* auch ins Protokoll (DMESG)       */
     vio_flush();                    /* Kernelmeldungen sofort zeigen    */
 }
 

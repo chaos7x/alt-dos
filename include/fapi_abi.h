@@ -191,6 +191,13 @@ struct fapi_rbmem {
 /* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
    DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
 #define FAPI_BUSINFO        0x51
+#define FAPI_KLOG           0x5A    /* Kernelmeldungen (DMESG): BX = Puffer,
+                                       CX = Laenge, DX = Stelle ab der
+                                       aeltesten Meldung -> AX = kopierte
+                                       Bytes; CX = 0 -> AX = Laenge des
+                                       Protokolls; CX = 0, DX = FFFFh ->
+                                       loeschen (wie 6.1) */
+#define KLOG_SIZE           8192u   /* Ringpuffer im Kernel               */
 #define FAPI_EJECT          0x57    /* BX = Laufwerk (0 = A:): Medium auswerfen
                                        (CD, ZIP, MO) -> 0, FAPI_ERR_INUSE
                                        (Dateien offen), FAPI_ERR_DENIED (kein

@@ -342,7 +342,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   [-e s|S|l|b] [Datei…]` wie GNU strings, `MD5SUM`/`SHA1SUM [-b] [--tag]
   [-c Liste] [Datei…]` wie GNU, `HEXDUMP [-C|-b|-c|-d|-o|-x] [-n n]
   [-s n] [-v]` wie util-linux und `XXD [-a -b -c n -e -g n -i -l n -o n
-  -p -r -s n -u] [Ein [Aus]]` wie xxd (`XXD -r` patcht)
+  -p -r -s n -u] [Ein [Aus]]` wie xxd (`XXD -r` patcht); `DMESG [-c] [-C]
+  [-n Zeilen]` zeigt die letzten 8 KB der Kernelmeldungen mit der Zeit
+  seit dem Start (Startzeilen, Treiber, abgebrochene Programme)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

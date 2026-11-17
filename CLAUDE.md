@@ -734,7 +734,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
 
 Abgestimmt: (1) Werkzeuge STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD (erledigt,
 nur Platte – `HDDOS`, gebunden + LFN; in QEMU isapc 2 MB geprüft,
-Prüfsummen gleich md5sum/sha1sum des Rechners), (2) DMESG, DEVLOAD,
+Prüfsummen gleich md5sum/sha1sum des Rechners), (2) DMESG (erledigt:
+kernel.c `klog` wie 6.1, Ring im Segment `subst_sel`, FAPI 5Ah, auch auf
+Diskette 1; vio.c liegt hier im ersten Segment – kein Thunk; in QEMU
+isapc 2 MB geprüft: -n, Pipe, -C), DEVLOAD,
 (3) Auslagern von Segmenten (docs/SWAP-5X.md), Loop/DriveSpace/PACKDISK.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
