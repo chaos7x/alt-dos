@@ -289,7 +289,8 @@ static int __far fat_mount(int d)
     v->fat16 = cl >= 4085;
     v->in_use = 0;
     v->was_dirty = 0;
-    if (v->fat16 && !IS_FLOPPY(v->blk) && blk_read(v->blk, v->fat_lba) == 0)
+    if (v->fat16 && !IS_FLOPPY(v->blk) && !IS_REM(v->blk) &&
+        blk_read(v->blk, v->fat_lba) == 0)
         v->was_dirty = !(rd16(2) & CLEAN_BIT);  /* FAT[1] Bit 15        */
     v->vfat = lfn_cfg == 1;
     if (lfn_cfg == 0) {                 /* AUTO: VFAT, wenn der Stamm schon */
@@ -2336,6 +2337,18 @@ static void mark_in_use(int d)
         return;
     v->in_use = 1;
     val = fat_raw(d, 1);
+    if (IS_REM(v->blk)) {               /* Wechselplatte: Merker bleibt
+                                           "sauber" (ScanDisk von MS-DOS
+                                           6.22 haelt 7FFFh fuer ein
+                                           fehlendes Datentraegerbyte) */
+        if (!(val & CLEAN_BIT)) {       /* alter Merker: zuruecksetzen  */
+            fat_set(d, 1, val | CLEAN_BIT);
+            bc_sync = 1;
+            fat_flush();
+            bc_sync = 0;
+        }
+        return;
+    }
     if (val & CLEAN_BIT) {              /* sofort auf die Platte, vor   */
         fat_set(d, 1, val & ~CLEAN_BIT);    /* allen verzoegerten Daten */
         bc_sync = 1;
