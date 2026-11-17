@@ -338,7 +338,11 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `SORT < NAMEN.TXT | UNIQ -c`; `CAT [-A -b -e -E -n -s -t -T -v]
   [Datei…]` (5.3) hängt Dateien aneinander (Platzhalter, `-` =
   Standardeingabe, nummerieren, Leerzeilen zusammenfassen, Steuerzeichen
-  sichtbar)
+  sichtbar); aus 6.1 (5.4): `STRINGS [-f] [-n N] [-t d|o|x] [-o] [-w]
+  [-e s|S|l|b] [Datei…]` wie GNU strings, `MD5SUM`/`SHA1SUM [-b] [--tag]
+  [-c Liste] [Datei…]` wie GNU, `HEXDUMP [-C|-b|-c|-d|-o|-x] [-n n]
+  [-s n] [-v]` wie util-linux und `XXD [-a -b -c n -e -g n -i -l n -o n
+  -p -r -s n -u] [Ein [Aus]]` wie xxd (`XXD -r` patcht)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
@@ -458,7 +462,7 @@ DOS-, BIOS- und Maustreiber-Aufrufe übersetzt (Dateien, Verzeichnisse,
 Umgebung, Programmstart, Tastatur, Bildschirm samt VioGetBuf und
 Vollbild, VGA-Grafik 13h/12h/Mode X, Maus über INT 33h, Strg+C als
 SIG_BREAK). Dieselbe Datei läuft also unter AT-DOS und unter MS-DOS.
-Gebunden sind GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, CAT, MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
+Gebunden sind GZIP, GUNZIP, TAR, ZIP, UNZIP, UNARJ, UNZOO, UNLHA, LHA, ARJ, ZOO, 7ZDEC, 7ZA, CAT, STRINGS, MD5SUM, SHA1SUM, HEXDUMP, XXD, MORE, FIND, GREP, LESS, SORT, FC, COMP, CUT, HEAD, TAIL,
 WC, UNIQ, TR, EXPAND, COMPRESS, EDIT, FM, TREE, ATTRIB, XCOPY, MOVE,
 DELTREE, CHOICE, REPLACE, LABEL, MSD und die Demos GRAFIK, MAUSTEST,
 FPUTEST (`BINDAPPS` in build.sh, `mkfx.py --bind`) – sie laufen damit

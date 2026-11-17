@@ -7,7 +7,7 @@
 #define TEXTIN_H
 
 static unsigned char ti_buf[2048], to_buf[2048];
-static unsigned ti_pos, ti_len, to_pos, ti_h;
+static unsigned ti_pos, ti_len, to_pos, ti_h, to_h = STDOUT;   /* to_h: Ausgabe */
 
 static void ti_open(unsigned h)
 {
@@ -31,7 +31,7 @@ static int ti_get(void)
 static void to_flush(void)
 {
     if (to_pos)
-        DosWrite(STDOUT, to_buf, to_pos);
+        DosWrite(to_h, to_buf, to_pos);
     to_pos = 0;
 }
 

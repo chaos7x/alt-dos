@@ -730,6 +730,14 @@ mit sleep_ticks) – auf dem 286 einige Prozent; dann `RBSLICE=0`.
 Was zu einer späteren Version gehört (präemptiv, Paging/Swap, V86, Journaling-FS,
 Win32s), nicht vorziehen, sondern nachfragen.
 
+## Weiterarbeit 5.4 (Rückport aus 6.1, Wunsch des Nutzers, 17.11.2026)
+
+Abgestimmt: (1) Werkzeuge STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD (erledigt,
+nur Platte – `HDDOS`, gebunden + LFN; in QEMU isapc 2 MB geprüft,
+Prüfsummen gleich md5sum/sha1sum des Rechners), (2) DMESG, DEVLOAD,
+(3) Auslagern von Segmenten (docs/SWAP-5X.md), Loop/DriveSpace/PACKDISK.
+FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
+
 ## Aufbau
 
 - `boot/` – `boot.asm`: Diskette, Standard-FAT12-BPB, lädt `ATDOS.SYS` (erste
