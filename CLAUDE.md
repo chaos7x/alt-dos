@@ -2109,6 +2109,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Vorhandene Partitionen bleiben, wie sie sind (neu anlegen).
   Alle drei Änderungen (F0h, rsv, ganze Zylinder) auf `5.x` zurückportiert
   (Wunsch des Nutzers; in QEMU fdisk /status geprüft).
+  Vom Nutzer in 86Box bestätigt (17.11.2026, Build 724): ZIP neu
+  formatiert, Container mit PACKDISK /CREATE angelegt, unter MS-DOS 6.22
+  von DRVSPACE eingebunden; ScanDisk: „DriveSpace-Datenträger F enthielt
+  keine Fehler“, Trägerlaufwerk M ebenso – PACKDISK-Container (DS6) von
+  MS-DOS angenommen. Lehre: das ZIP vorher mit EJECT/SHUTDOWN abmelden –
+  sonst steht im FAT-Eintrag 1 der Merker „nicht sauber“ (7FFFh), den
+  ScanDisk von MS-DOS 6.22 als „Datenträgerbyte fehlte“ meldet. Offen
+  (Frage an den Nutzer): Merker auf Wechselplatten weglassen wie bei
+  Disketten. Nächster Schritt: /DS3 unter Windows 98, dann DoubleSpace.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
