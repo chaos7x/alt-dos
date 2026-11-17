@@ -772,8 +772,26 @@ aus seg_alloc (`seg_cur`). FRAGTEST kam dafür mit (`/T:s` wartet s
 Sekunden statt auf eine Taste – für DETACH). In QEMU isapc 2 MB geprüft:
 zwei `DETACH FRAGTEST /S:32 /T:25 > Fn.TXT` halten 32-KB-Löcher,
 `FRAGTEST /B` bekommt 8 × 64 KB (4 Umzüge, über Port E9h gezählt), beide
-Halter finden danach ihre Muster unverändert. Offen: Datensegmente in
-eine Auslagerungsdatei; Loop/DriveSpace/PACKDISK.
+Halter finden danach ihre Muster unverändert. Stufe 3 erledigt –
+Datensegmente in eine Auslagerungsdatei, nur mit `SWAPPATH=[X:]\Verz
+[KB]` (1024–8192, Vorgabe 2 × frei; ohne Angabe keine Datei – anders als
+6.x, wie in SWAP-5X.md geplant): fat.c `ifs_bmap` (aus 6.1, 16-Bit-
+Cluster), kernel.c `swap_boot` (nach der Dateitabelle: Datei über einen
+Eintrag mit owner -1 offen, IFS_F_WRITE – DEL/REN „wird benutzt“;
+setsize, versteckt+System, blk_flush, Bereiche in `sw_sel`, Puffer
+`kseg_dma(4096)`), `sw_slot` liest/schreibt 4-KB-Plätze sektorweise
+direkt über den Treiber (am Cache vorbei), `seg_out` (Uhr über Tasks und
+LDT-Einträge, A-Bit als zweite Chance, nicht current/klock/rb_task) –
+P = 0, base_lo = erster Platz, base_hi = SW_MARK (A5h), Einheiten frei;
+`seg_np` aus code_np für jeden LDT-Selektor (start.asm exc11 und neu
+exc12 für #SS) holt es unter klock zurück; seg_free/task_end geben
+Plätze über `seg_drop_sw` frei. mem_get: mem_alloc, seg_compact,
+code_drop, seg_out. In QEMU isapc 2 MB mit `SWAPPATH=C:\SWAP 2048`
+geprüft: drei `DETACH FRAGTEST /S:32 /T:40` + `FRAGTEST /B` – 18
+Segmente hinaus und zurück (Port E9h), das große Programm bekam 14 ×
+64 KB, alle Muster gleich; DEL der Datei abgelehnt, CHKDSK, SHUTDOWN,
+fsck sauber. Nicht geprüft: echter 286 (SCAT in 86Box).
+Offen: Loop/DriveSpace/PACKDISK.
 FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
 
 ## Aufbau
