@@ -947,6 +947,14 @@ FAT32 gehört nicht zu 5.x (Entscheidung des Nutzers).
   gemerkt, VioSetPal verwirft es; Farben stehen in `struct gpst`, damit
   das Entfernen dieselben vergleicht). Gilt für 13h, Mode X, VESA 8 Bit.
   In QEMU geprüft (GRAFIK X weiß mit dunklem Rand, 13h/12h unverändert).
+  Danach (Build 755, vom Nutzer: „nach dem oberen Drittel verschwindet
+  der Mauszeiger“; in 86Box P3B-F mit Trio3D/2X nachgestellt): VioSetPage
+  nahm den Zeiger über gptr_to sofort auch von der alten, noch sichtbaren
+  Seite – bis zum Umschalten zeigte die Karte sie ohne Zeiger, unterhalb
+  der Strahlstelle fehlte er. Jetzt `gptr_to_k(..., keep = 1)`: erst neu
+  malen, umschalten, dann alt entfernen. Dazu die Fristen beim Warten auf
+  den Rücklauf je 4 statt zusammen 2 Takte (2 Takte konnten gut 10 ms
+  sein – Bild zerriss unten). In 86Box und QEMU geprüft.
 - Zeilenzahl je Sitzung (`MODE CON LINES=25|43|50`, FAPI VioSetLines/
   VioGetRows): `ses[].lines`, Puffer immer für 50 Zeilen (`SLINES_MAX`,
   `SBYTES` 8000), normal `lines - 2` Zeilen, Vollbild alle, Statuszeile

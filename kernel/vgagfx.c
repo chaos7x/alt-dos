@@ -592,8 +592,10 @@ void __far gptr_remove(void)
     }
 }
 
-/* Zeiger nach (x,y) auf Seite page; alter wird im selben Zug entfernt */
-static void gptr_to(int x, int y, unsigned page)
+/* Zeiger nach (x,y) auf Seite page; alter wird im selben Zug entfernt
+   (keep = 1: alter bleibt stehen - VioSetPage nimmt ihn erst nach dem
+   Umschalten weg) */
+static void gptr_to_k(int x, int y, unsigned page, int keep)
 {
     struct gpst *n = &gst[gci ^ 1];
     n->x = x;
@@ -608,9 +610,14 @@ static void gptr_to(int x, int y, unsigned page)
     }
     n->cw = gp_cw;
     n->cb = gp_cb;
-    gcomb(gp_drawn && gst[gci].mode == hw_gfx ? &gst[gci] : 0, n);
+    gcomb(!keep && gp_drawn && gst[gci].mode == hw_gfx ? &gst[gci] : 0, n);
     gci ^= 1;
     gp_drawn = 1;
+}
+
+static void gptr_to(int x, int y, unsigned page)
+{
+    gptr_to_k(x, y, page, 0);
 }
 
 static unsigned gfx_pagestart(void)
@@ -694,14 +701,23 @@ int __far vio_setpage(int s, unsigned p)
            umschalten, dann von der alten nehmen - nie ohne Zeiger */
         int was = gp_drawn;
         struct gpst *o = &gst[gci];
+        /* gptr_to nahm den alten Zeiger sofort mit weg (andere Seite) -
+           bis zum Umschalten (bis zu einem Bild) zeigte die Karte die
+           alte Seite ohne Zeiger: in 86Box unterhalb der Strahlstelle
+           verschwunden (vom Nutzer gemeldet) */
         if (was)
-            gptr_to(o->x, o->y, p ? PAGEX : 0);   /* gci zeigt nun auf neu */
+            gptr_to_k(o->x, o->y, p ? PAGEX : 0, 1);  /* gci zeigt nun auf neu */
+        /* Fristen je 4 Takte: 2 Takte konnten wegen der Taktgrenze gut
+           10 ms sein, ein Bild dauert 14-17 ms - dann zeigte die Karte
+           noch die alte Seite, waehrend das Programm schon hineinzeichnete
+           (Zeiger in 86Box unten weg, Bild zerrissen) */
         t = get_ticks();
-        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+        while ((inb(0x3DA) & 0x08) && get_ticks() - t < 4)
             ;                               /* laufenden Ruecklauf abwarten */
         set_start(p ? PAGEX : 0);
         ses[s].gfx_page = (unsigned char)p;
-        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 2)
+        t = get_ticks();
+        while (!(inb(0x3DA) & 0x08) && get_ticks() - t < 4)
             ;                               /* neuer Anfang uebernommen */
         if (was)
             gcomb(o, 0);                    /* alte Seite aufraeumen    */
