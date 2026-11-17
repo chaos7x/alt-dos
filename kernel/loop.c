@@ -1168,8 +1168,12 @@ int __far loop_attach(int fk, struct ifs_file __far *f, int d, int ro)
         if (raw(i, 0))
             goto bad;
         db->d3 = dbl == 2;
-        db->jm = b[6] == 'S' || db->d3 || b[51] == 2;  /* MSDSP, DS3 oder
-                                           Version 2 (6.22): JM, sonst DS */
+        db->jm = db->d3 || b[51] == 2;  /* DS3 oder Version 2 (DriveSpace
+                                           6.22): JM; Version 0 (Double-
+                                           Space 6.0/6.2) DS - die Kennung
+                                           MSDBL/MSDSP sagt nichts: 6.20
+                                           schreibt MSDSP6.0, 6.22
+                                           MSDBL6.0                      */
         db->ver = db->jm ? 0 : 2;       /* bis ein Cluster es verraet    */
         if (db->d3) {
             if ((loop_sel2[i] = kseg_alloc(0x10000UL)) == 0)

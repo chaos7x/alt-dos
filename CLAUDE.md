@@ -2161,6 +2161,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   17.11.2026) – PACKDISK /DS3 damit unter Windows 98 lesend und
   schreibend angenommen; danach unter AT-DOS `PACKDISK /CHECK
   /V` „Keine Fehler“. Nächster Schritt: DoubleSpace.
+  DoubleSpace (MS-DOS 6.20, 17.11.2026): Abbild eines ZIP 250 vom
+  Nutzer (nur zum Testen, nicht im Repository), leerer Container
+  DBLSPACE.000 (45 MB, SHR) – Aufbau Byte für Byte wie DriveSpace 6.22
+  (MDFAT 258, Bootblock 801, FAT 256 Sektoren, dcluster 17, 3Eh = 512,
+  2Fh = 40h, 36h = 091Ah, „F8 44 52 00 F8“ hinter dem Bootblock, MDR mit
+  F8h), nur Kennung „MSDSP6.0“ (6.22: „MSDBL6.0“ – die Kennung taugt
+  also nicht zur Unterscheidung) und Version 33h = 0 (6.22: 2).
+  Unterschied liegt im Packverfahren (DS statt JM – Folge des Stac-
+  Prozesses 1994). loop.c nahm wegen „MSDSP“ JM; jetzt zählt nur die
+  Version: 2 -> JM, 0 -> DS (DS3 weiter JM). In QEMU geprüft: der echte
+  Container (SHR) eingehängt, XCOPY \DOS, CHKDSK, SHUTDOWN, cvfchk 0
+  Fehler (227 Cluster „DS 00 02“), fsck des Inneren sauber, Inhalte
+  gleich. Offen: ob DoubleSpace 6.20 selbst „DS 00 02“ oder „DS 00 00“
+  schreibt (Vorlage mit Dateien erbeten) und PACKDISK /DBL. Das ZIP
+  hatte von MS-DOS-FORMAT selbst BPB F0h, FAT F8h – daher meldete
+  ScanDisk 6.20 „FAT-Datenträgerbyte fehlt“ (nicht AT-DOS).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
