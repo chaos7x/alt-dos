@@ -2134,11 +2134,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   „Leeres Laufwerk erstellen“ über das ganze ZIP, 237 MB): im ganzen
   Verwaltungsbereich Byte für Byte gleich wie PACKDISK, nur Bezeichnung,
   Seriennummer, Startcode (Windows: Nullen) und Eintrag „ZIP“ im inneren
-  Stamm anders. Ursache ist die Größe: `PACKDISK /CREATE … 200 /DS3`
-  lädt Windows 98 (vom Nutzer bestätigt, 17.11.2026), 30 MB nicht –
-  innen fest 2 GB ist bei kleinen Containern ein zu hohes Verhältnis
-  (30 MB: 68 : 1). Offen: Regel von Windows 98 für kleine Container
-  (Vorlage mit ~30 MB erbeten); bis dahin DS3 groß anlegen.
+  Stamm anders. `PACKDISK /CREATE … 200 /DS3` lädt Windows 98 (vom
+  Nutzer bestätigt, 17.11.2026), 30 MB nicht. Vermutung „innen 2 GB zu
+  viel“ widerlegt: ein von Windows 98 per „Leeres Laufwerk erstellen“
+  auf der Festplatte angelegter 30-MB-Container hat innen ebenfalls 2 GB
+  und denselben Aufbau. Einziger Unterschied: Windows setzt in der
+  BITFAT die Bits hinter dem letzten Datensektor bis zum Ende ihres
+  16-Bit-Worts (MDR-Sektor und was hinter dem Dateiende läge) auf
+  „belegt“ – beim 237-MB-Container endete der Datenbereich auf einer
+  Wortgrenze, bei 200 MB nicht (lud trotzdem). MS-DOS 6.22 (DS6) setzt
+  sie nicht. PACKDISK jetzt bei /DS3 ebenso (`bf_pad`: beim Anlegen,
+  beim Wachsen in /COMPRESS alte löschen und neue setzen; /CHECK
+  vergleicht nur Bits im Datenbereich und lässt die anderen stehen).
+  In QEMU geprüft: 30 MB DS3 gleich der Windows-Vorlage bis auf
+  Bezeichnung/Seriennummer/Startcode, XCOPY \DOS, /CHECK „Keine
+  Fehler“, /COMPRESS lässt ihn auf 97 MB wachsen (Füllwort danach
+  7FFFh), cvfchk3 0 Fehler, fsck innen/außen sauber. Offen: ob Windows
+  98 ihn damit lädt.
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-

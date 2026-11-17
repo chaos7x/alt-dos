@@ -77,6 +77,25 @@ static int wr(unsigned long lba, void *buf)
     return DosWrite(hd, buf, 512) == 512 ? 0 : -1;
 }
 
+/* DriveSpace 3 (Windows 98): die BITFAT-Bits hinter dem letzten Daten-
+   sektor bis zum Ende ihres 16-Bit-Worts (MDR und was hinter dem Datei-
+   ende laege) stehen auf "belegt". k = MDR - Datenbeginn; set 0 loescht
+   sie wieder (Container waechst). MS-DOS 6.22 (DS6) setzt sie nicht. */
+static int bf_pad(unsigned long k, int set)
+{
+    static unsigned char bp[512];
+    unsigned o = ((unsigned)(k >> 4) & 255) << 1, m = 0, b, w;
+    if (!((unsigned)k & 15))
+        return 0;
+    if (rd(1 + (k >> 12), bp, 1))
+        return -1;
+    for (b = (unsigned)k & 15; b < 16; b++)
+        m |= 0x8000 >> b;
+    w = rd16(bp + o);
+    wr16(bp + o, set ? w | m : w & ~m);
+    return wr(1 + (k >> 12), bp);
+}
+
 static void zero(unsigned char *p, unsigned n)
 {
     while (n--)
@@ -322,6 +341,8 @@ static int mkcvf(unsigned mb, unsigned long tnow, unsigned d3, unsigned ratio)
     for (k = 1; k < bb; k++)            /* BITFAT und MDFAT leer         */
         if (wr(k, fl))
             goto werr;
+    if (d3 && bf_pad(tnow - 1 - dst, 1))
+        goto werr;
     if (wr(bb, sec))
         goto werr;
     /* Sektor hinter dem Bootblock wie bei MS-DOS 6.22: "\xF8" "DR" 0,
@@ -600,7 +621,7 @@ static void survey(unsigned long ncl)
 static int check(char *rest)
 {
     unsigned long units, tot, din, ncl, used = 0, stor = 0, unp = 0, cl, s, k, bf_bad = 0, bf_lost = 0;
-    unsigned res, nfat, rents, i, fc, n, w, x, f16, packed = 0, frag = 0;
+    unsigned res, nfat, rents, i, fc, n, n2, mk, w, x, f16, packed = 0, frag = 0;
     unsigned char *e, m, __far *p;
     fix = opt(rest, "/F") != 0;
     verb = opt(rest, "/V") != 0;
@@ -817,6 +838,11 @@ static int check(char *rest)
                     w |= 0x8000 >> n;
             }
             n = rd16(sec + 2 * i);
+            mk = 0xFFFF;                /* Bits hinter dem Datenbereich  */
+            if (k + ((unsigned long)i << 4) + 16 > nds)   /* (DS3: belegt) */
+                mk = (unsigned)(0xFFFF0000UL >> (unsigned)(nds - k - ((unsigned long)i << 4)));
+            n2 = n & ~mk;
+            n &= mk;
             if (n != w) {
                 for (fc = 0; fc < 16; fc++) {
                     if ((w & ~n) & (0x8000 >> fc)) {
@@ -833,7 +859,7 @@ static int check(char *rest)
                         }
                     }
                 }
-                wr16(sec + 2 * i, w);
+                wr16(sec + 2 * i, w | n2);
                 x = 1;
             }
         }
@@ -975,6 +1001,8 @@ static int cvf_grow(unsigned long add)  /* -> 1 gewachsen                 */
     if (!cv_d3)
         fl[4] = 0xF8;
     if (wr(nu - 1, fl))
+        return 0;
+    if (cv_d3 && (bf_pad(cv_units - 1 - cv_dst, 0) || bf_pad(nu - 1 - cv_dst, 1)))
         return 0;
     cv_units = nu;
     cv_dend = nu - 2;
