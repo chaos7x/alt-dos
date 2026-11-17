@@ -223,6 +223,9 @@ void __far swap_info(unsigned long __far *total_kb, unsigned long __far *used_kb
 void __far swap_boot(const char __far *spec, int sys, char *msg, char *sw_path);
 /* Codesegmente verwerfen und nachladen (codeswap.c, KTEXT2) */
 int __far code_drop(void);
+unsigned __far seg_compact(unsigned n, int cur); /* Datensegmente verschieben */
+unsigned __far seg_out(unsigned n);              /* ein Datensegment auslagern */
+int __far seg_drop_sw(int t, unsigned idx);      /* ausgelagert: Plaetze frei  */
 int __far code_np(unsigned err);
 unsigned __far code_sum(unsigned sel, unsigned n);
 void __far code_note(int t, int drive, const char *path, unsigned sum);

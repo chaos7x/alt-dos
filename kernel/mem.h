@@ -35,6 +35,7 @@ extern unsigned char mem_hi_ok;     /* paging.c: Fenster bereit           */
 void          __far mem_free(pg_t start, unsigned pages);
 int           __far mem_used(pg_t p);       /* swap.c: Bereich freiraeumen */
 pg_t          __far mem_alloc_out(pg_t lo, pg_t hi);
+void          __far mem_take(pg_t p);           /* codeswap.c: Seite festhalten */
 unsigned long __far mem_free_kb(void);
 unsigned long __far mem_total_kb(void);
 unsigned long __far mem_ram_kb(void);

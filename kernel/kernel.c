@@ -82,7 +82,6 @@ struct tss386  tss[NTASK];
 /* LDTs aller Tasks: ein Block NTASK * 4 KB im erweiterten Speicher (ldt_init),
    Zugriff ueber LDTD. Fruehere 16 Eintraege in DGROUP reichten nur fuer
    rund 900 KB je Programm. */
-#define D_ALIAS     0x0010          /* AVL-Bit (Byte 6): Eintrag ist Alias  */
 #define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
 static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
 static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
@@ -554,13 +553,16 @@ static int unpark(void)
     return 0;
 }
 
+/* seg_cur: der laufende Task darf seine eigenen Datensegmente verschieben
+   lassen (nur DosAllocSeg - der Kernel haelt dabei keinen Zeiger hinein) */
+static unsigned char seg_cur;
 static pg_t mem_get(unsigned n)
 {
     pg_t u;
     unsigned k = 0;
     while ((u = mem_alloc(n)) == 0 &&
-           (unpark() || swap_make_run(n) || code_drop() ||
-            (k++ < 16 && swap_out(n + 16))))
+           (unpark() || swap_make_run(n) || seg_compact(n, seg_cur) || code_drop() ||
+            seg_out(n) || (k++ < 16 && swap_out(n + 16))))
         ;
     return u;
 }
@@ -577,7 +579,9 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
             break;
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
+    seg_cur = 1;
     u = mem_get(units);
+    seg_cur = 0;
     if (u == 0)
         return FAPI_ERROR;                      /* kein Speicher        */
 
@@ -626,6 +630,8 @@ static unsigned seg_free(int t, unsigned sel)
     d = LDT(t, idx);
     if (d->access == 0)
         return FAPI_ERROR;
+    if (seg_drop_sw(t, idx))                    /* ausgelagert: nur Plaetze */
+        return 0;
     if (d->rsv & D_ALIAS) {
         d->rsv = 0;
         d->access = 0;
@@ -1835,6 +1841,8 @@ static void task_end(int t)
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (LDT(t, idx)->access != 0)
             seg_free(t, USEL(idx));
+    if (!task[t].v86)
+        seg_drop_sw(t, 1);                  /* Daten ausgelagert         */
     if (task[t].img_unit) {
         mem_free(task[t].img_unit, task[t].img_cnt);
         image_units -= task[t].img_cnt;
@@ -5444,6 +5452,26 @@ void blk_flush(void)
 extern unsigned sw_buf;
 extern unsigned long sw_bphys;
 void __far kf_klock_enter(void) { klock_enter(); }
+int __far kf_in_op(int t) { return in_op(t); }
+void __far kf_seg_acct(int img, int pages)  /* codeswap.c: ein/aus       */
+{
+    if (img)
+        image_units += pages;
+    else
+        alloc_units += pages;
+}
+
+/* laufendes Programm beenden (Segment/Code nicht zurueckzuholen) - wie
+   eine Ausnahme in Ring 3, auch wenn es im Kernel passiert */
+void __far kf_abort_current(void)
+{
+    int t = current;
+    task[t].rc = 255;
+    klock_enter();
+    task_end(t);
+    schedule_next();
+    halt_forever();
+}
 void __far kf_klock_leave(void) { klock_leave(); }
 void __far kf_blk_flush(void) { blk_flush(); }
 

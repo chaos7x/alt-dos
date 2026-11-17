@@ -257,6 +257,15 @@ int __far mem_used(pg_t p)
     return p == 0 || p >= max_pg || USED(p);
 }
 
+/* eine bestimmte freie Seite belegen (codeswap.c, Umzug) */
+void __far mem_take(pg_t p)
+{
+    if (p && p < max_pg && !USED(p)) {
+        BYTE(p) |= (unsigned char)BIT(p);
+        free_pg--;
+    }
+}
+
 pg_t __far mem_alloc_out(pg_t lo, pg_t hi)
 {
     pg_t p, top = max_pg < MEM_LOW_PG ? max_pg : MEM_LOW_PG;

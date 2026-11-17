@@ -130,8 +130,10 @@ Kompatibilitätsbox), `5.0` = das unveränderte 5.0 mit Fehlerbehebungen.
   Zugriff zurück; so laufen z. B. sechs Boxen auf einem 4-MB-Rechner,
   drei auf 2 MB. MEM zeigt Größe und Belegung. Wie bei OS/2 1.x wird
   außerdem der Code ruhender Programme verworfen und bei Bedarf aus der
-  EXE nachgeladen, und Box-Seiten ziehen um, damit Programme ihre
-  Segmente am Stück bekommen), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
+  EXE nachgeladen, Box-Seiten und Datensegmente von Programmen ziehen um,
+  damit Programme ihre Segmente am Stück bekommen, und Datensegmente
+  ruhender Programme gehen ebenfalls in die Datei – sie kommen zurück,
+  sobald das Programm sie anfasst), `LONGNAMES=AUTO|VFAT|EA`, `DOSSTART=SESSION`, `DOS=HIGH,UMB`, `RMSIZE=` und `EMS_FRAME_LOCATION=NONE` (für die DOS-Boxen, wie bei OS/2); `STACKS=`, `FCBS=`, `BREAK=`, `LASTDRIVE=`, `DOS=`, `SHELL=`,
   `COUNTRY=nnn` (Land wie MS-DOS: Datum, Uhrzeit, Tausendertrenner in CMD
   und FM, auch in der DOS-Box; je Sitzung mit `SET COUNTRY=nnn` änderbar),
   `CODEPAGE=850,437` (wie OS/2: vorbereitete Codepages, die erste gilt ab

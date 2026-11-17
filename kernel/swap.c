@@ -571,3 +571,57 @@ void __far swap_boot(const char __far *spec, int sys, char *msg, char *sw_path)
         mcat(msg, " KB\n");
     }
 }
+
+/* ---- Teil 2, Schritt 3: Datensegmente von Programmen (codeswap.c) ------
+   k Plaetze am Stueck (ein ausgelagertes Segment merkt sich nur den
+   ersten im Deskriptor) -> erster Platz, -1 = keiner */
+int __far swap_run_alloc(unsigned k)
+{
+    struct swhdr __far *h;
+    unsigned s, i;
+    if (!sw_sel || !k)
+        return -1;
+    h = SH;
+    for (s = 0; s + k <= h->slots; s++) {
+        for (i = 0; i < k; i++)
+            if (BM(s + i) & (1 << ((s + i) & 7)))
+                break;
+        if (i == k) {
+            for (i = 0; i < k; i++)
+                BM(s + i) |= (unsigned char)(1 << ((s + i) & 7));
+            h->used += k;
+            return (int)s;
+        }
+        s += i;                         /* hinter den belegten Platz     */
+    }
+    return -1;
+}
+
+void __far swap_run_free(unsigned s, unsigned k)
+{
+    while (k--)
+        swap_slot_free((unsigned long)s++ << 12);
+}
+
+/* Seite pg nach Platz s schreiben (wr = 1) bzw. von dort lesen; 0 = ok */
+int __far swap_page_io(unsigned s, pg_t pg, int wr)
+{
+    unsigned short w[8];
+    int r;
+    win_save(w);
+    if (wr) {
+        scratch_map(PG_LIN(pg), 4095);
+        far_copy(sw_buf, 0, SCRATCH, 0, 4096);
+    }
+    r = slot_io(s, wr);
+    if (!r && !wr) {
+        scratch_map(PG_LIN(pg), 4095);
+        far_copy(SCRATCH, 0, sw_buf, 0, 4096);
+    }
+    if (wr && !r)
+        SH->outs++;
+    else if (!r)
+        SH->ins++;
+    win_restore(w);
+    return r;
+}

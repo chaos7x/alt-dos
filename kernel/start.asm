@@ -584,8 +584,10 @@ exc_common:
         cld
         mov     bp, sp                  ; #NP auf verworfenen Code (Task-
         cmp     word [bp+40], 11        ; wechsel in ein Programm, dessen
-        jne     .dpm                    ; Code weg ist)?
-        call    kx_call
+        je      .dnp                    ; Code weg ist) oder #NP/#SS auf ein
+        cmp     word [bp+40], 12        ; ausgelagertes Datensegment?
+        jne     .dpm
+.dnp:   call    kx_call
         or      al, al
         mov     al, 0
         jnz     .dpok
@@ -618,8 +620,10 @@ exc_common:
         cmp     word [bp+2], 14         ; (Kernel greift fuer sie ueber
         je      .kx                     ; VWIN/RWIN zu) oder #NP auf
         cmp     word [bp+2], 11         ; verworfenen Programmcode (IRET/
-        pop     bp                      ; RETF zurueck ins Programm)? Dann
-        jne     .kf                     ; holen und den Befehl wiederholen
+        je      .kx                     ; RETF zurueck ins Programm) oder
+        cmp     word [bp+2], 12         ; #NP/#SS auf ein ausgelagertes
+        pop     bp                      ; Datensegment? Dann holen und den
+        jne     .kf                     ; Befehl wiederholen
         push    bp
 .kx:    pop     bp
         pushad
@@ -659,7 +663,10 @@ kx_call:
         push    bp
         mov     bp, sp
         cmp     word [bp+4+40], 11
+        je      .np
+        cmp     word [bp+4+40], 12
         jne     .pf
+.np:
         mov     ax, [bp+4+42]           ; Fehlercode = Selektor
         call    KCODE2:code_np_
         pop     bp

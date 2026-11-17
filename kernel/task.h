@@ -55,6 +55,7 @@ extern unsigned image_units;            /* Seiten der Programmabbilder (MEM) */
 #ifndef NLDT
 #define NLDT        nldt
 #endif
+#define D_ALIAS     0x0010          /* AVL-Bit (Byte 6): Eintrag ist Alias  */
 #define LDT(t, i)   ((struct desc __far *)MK_FP(LDTD, ((unsigned)(t) * NLDT + (i)) << 3))
 
 #endif

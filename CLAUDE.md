@@ -1734,8 +1734,45 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   lagern. mem_get: unpark, swap_make_run, code_drop, swap_out. Anlass:
   ohne das scheiterte 7ZA („zu viele Dateien“ – DosAllocSeg(0) fand
   keine 16 Seiten am Stück, Auslagern gibt Seiten verstreut frei).
-  Offen: Programm-Datensegmente verschieben (Schritt 2 Rest) und aus-
-  lagern (Schritt 3); verworfener Code bei geänderter EXE ungeprüft.
+  Schritt 2 Rest und Schritt 3 erledigt (17.11.2026, Wunsch des
+  Nutzers; codeswap.c): `seg_compact(n, cur)` – Bitmap „Seite gehört
+  einem verschiebbaren Datensegment“ in einer geliehenen Seite (über
+  SCRATCH2, erste 128 MB), erstes Fenster aus n Seiten, in dem alles frei
+  oder verschiebbar ist; nur Segmente kleiner als n (sonst gewinnt der
+  Umzug nichts – vorher blieb es bei einem 64-KB-Segment); freie Seiten
+  des Fensters per `mem_take` (mem.c) festhalten, Segmente in neue Seiten
+  kopieren, nur die Basis im Deskriptor ändern (img_unit bei Eintrag 1),
+  Erfolg nur, wenn das Fenster danach ganz frei ist (sonst schöbe mem_get
+  endlos). Verschiebbar: Eintrag 1 und DosAllocSeg-Segmente von FX-
+  Programmen, keine Aliase, keine Boxen, keine Tasks mitten in einer
+  Operation (`kf_in_op` – sie könnten eine lineare Adresse halten), den
+  laufenden Task nur aus seg_alloc (`seg_cur`). Grundlage: der Kernel
+  fasst Programmsegmente nur über Selektoren an (far_copy lädt den
+  Selektor neu, Taskwechsel laden die Register aus dem TSS).
+  `seg_out` (Uhr über alle Tasks/LDT-Einträge, Accessed-Bit als zweite
+  Chance): Segment in k Plätze am Stück (`swap_run_alloc`, swap.c,
+  `swap_page_io`), Deskriptor P = 0, base_lo = erster Platz, base_hi =
+  `SW_MARK` (A5h), Seiten frei, Zähler über `kf_seg_acct`. Zurück:
+  `code_np` nimmt jetzt jeden LDT-Selektor – `seg_np` lädt unter klock
+  (Speicher über seg_compact/code_drop/seg_out/swap_out), Plätze frei;
+  start.asm leitet auch Vektor 12 (#SS, Stapel = Eintrag 1) aus Ring 3
+  und Ring 0 dorthin. Scheitert das Zurückholen (oder das Nachladen von
+  Code), endet nur das Programm (`kf_abort_current`) statt Kernel-Panik
+  (vorher gesehen: CMD-Code bei zerstückeltem Speicher nicht nachladbar
+  -> Panik; code_load nimmt jetzt auch seg_compact/seg_out). DosFreeSeg/
+  task_end geben ausgelagerte Segmente über `seg_drop_sw` frei. mem_get:
+  unpark, swap_make_run, seg_compact, code_drop, seg_out, swap_out.
+  Test `\DEMO\FRAGTEST [/S:kb] [/W] [/B]` (nur Platte): kleine Segmente
+  mit Muster bis der Speicher voll ist, jedes zweite frei, dann 64-KB-
+  Segmente, am Ende alle Muster prüfen. In QEMU (6 MB, Datei 8 MB):
+  allein 16-KB-Löcher -> vorher 1, jetzt 15 große Segmente; zweite
+  Sitzung hält 153 × 16 KB (/W), erste bekommt alle 64 × 64 KB, dabei
+  2.108 KB ausgelagert, danach prüft die zweite fehlerfrei (zurückgeholt),
+  Datei wieder 0 KB, freier Speicher wie vorher. Gegenprobe 4 MB: XCOPY
+  (gleich, fsck sauber), Box, CHKDSK, EDIT. Unter 3,5 MB hat jeder Task
+  nur 64 LDT-Einträge – dort wird die LDT eher voll als der Speicher.
+  Nicht geprüft: 286/5.x (Rückport für 5.4), DPMI-Boxen daneben,
+  verworfener Code bei geänderter EXE.
   Diskette dafür: CUT, HEAD, TAIL, WC, UNIQ, TR, COMPRESS nur noch auf
   der Platte (`HDDOS`), danach 105 KB frei. EMS-Seiten nicht; die Datei wächst nicht; XMS-/
   EMS-Grenzen der Boxen rechnen den freien Platz der Datei noch nicht
