@@ -426,8 +426,11 @@ static void system_down(int restart)
     outb(0x3F2, 0x0C);                          /* Diskettenmotor aus   */
     if (restart)
         reboot();
-    if (!apm_none)
+    if (!(apm_none & 1)) {
+        if (!(apm_none & 2))
+            acpi_off();                         /* ACPI S5, sonst zurueck */
         apm_off();                              /* kehrt nur bei Fehler zurueck */
+    }
     vio_kputs(boot_session, "\n  Alle Dateien sind geschlossen.\n"
                             "  Der Rechner kann jetzt ausgeschaltet werden.\n"
                             "  (Strg+Alt+Entf startet neu.)\n");
@@ -4567,7 +4570,7 @@ static void sys_info(struct fapi_sysinfo __far *si)
 {
     unsigned i, k;
     sys_info2(si, ~pic_mask & ~4u);         /* ohne Kaskade (k2misc.c)    */
-    if (apm_none)
+    if (apm_none & 1)
         si->rsv |= 0x80;                    /* APM=OFF                    */
     for (i = 0; i < 6; i++) {
         si->drivers[i][0] = 0;
@@ -6952,6 +6955,9 @@ static void config_sys(void)
             ems_none = up(v[0]) == 'N';
         } else if (kw(line, "APM")) {          /* OFF: nicht ausschalten */
             apm_none = up(v[0]) == 'O' && up(v[1]) == 'F';
+        } else if (kw(line, "ACPI")) {         /* OFF: nur ueber APM aus  */
+            if (up(v[0]) == 'O' && up(v[1]) == 'F')
+                apm_none |= 2;
         } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
         } else if (kw(line, "COUNTRY")) {      /* nnn[,cp[,datei]]        */

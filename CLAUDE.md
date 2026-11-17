@@ -4629,6 +4629,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   CONFIG.SYS `APM=OFF` (`apm_none`). SeaBIOS schaltet dabei per ACPI ab.
   Vom Nutzer auf dem P3B-F in 86Box bestätigt: SHUTDOWN schaltet aus
   (das 86Box-Fenster schließt sich).
+  Ausschalten über ACPI (17.11.2026; Anlass: in Proxmox/KVM blieb
+  POWEROFF über das APM von SeaBIOS hängen – q35 11.1/8.0 und i440fx
+  8.2, nicht nachstellbar ohne KVM): vesa.c `acpi_off` vor apm_off,
+  ohne Real-Mode-Ausflug. RSDP im ersten KB der EBDA bzw. E0000h–FFFFFh
+  (Prüfsumme), RSDT -> FADT („FACP“): PM1a/PM1b_CNT (+64/+68, bei 0
+  X_PM1a_CNT +176, nur I/O), SMI_CMD +48, ACPI_ENABLE +52, DSDT +40; in
+  der DSDT NameOp „_S5_“ (auch \_S5_), PackageOp, PkgLength, Elemente
+  (BytePrefix 0Ah, Zero/One). SCI_EN aus -> ACPI_ENABLE an SMI_CMD (bis
+  3 s warten), dann SLP_TYP << 10 | 2000h an PM1a/PM1b, 1 s warten,
+  sonst weiter mit APM. Gelesen über SCRATCH, über 1 MB immer über
+  pg_win (die Tabellen liegen hinter dem RAM – über den Alias gab es
+  #PF); unter 1 MB nicht über pg_win (win_first 0 heißt dort „leer“,
+  Seite 0 würde nie eingeblendet). CONFIG.SYS `ACPI=OFF` (apm_none Bit
+  1) nimmt nur APM, `APM=OFF` schaltet gar nicht aus. In QEMU geprüft:
+  ACPI allein (APM testweise aus) und mit Rückfall bei i440fx/q35 mit
+  16 MB, 2 GB, 3,5 GB, jeweils aus. isapc (kein ACPI) hängt wie vorher
+  im APM von SeaBIOS (es hält ohne PM1a-Port an) – Eigenheit des BIOS.
   Anzeige in MSD erledigt (in QEMU geprüft: „APM: 1.2 (SHUTDOWN
   schaltet aus)“): `apm_ver` (vesa.c, 5300h über rm_call) legt die
   Version ins bisher freie Byte `fapi_sysinfo.rsv` (12h = 1.2, Bit 7 =
@@ -5032,11 +5049,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (isapc 4 MB) unverändert. Vom Nutzer in Proxmox 9.2 bestätigt
   (17.11.2026, VM mit SATA-Platte, Controller an PCI 00:07, IRQ 11):
   Start von C: (63 MB, AHCI.SYS Einheit 0), CD am IDE als D:; danach
-  XCOPY von der SATA-CD auf die SATA-Platte, CHKDSK sauber. Offen
-  (Proxmox/KVM): POWEROFF schaltet dort nicht aus (in QEMU ohne KVM mit
-  i440fx + AHCI, 2 GB schon), mit `APM=OFF` normales Herunterfahren –
-  der Nutzer vermutet den Maschinentyp. Zu klären: Maschinentyp, ob das
-  Bild stehen bleibt, MSD-Zeile „APM:“. Ungeprüft:
+  XCOPY von der SATA-CD auf die SATA-Platte, CHKDSK sauber, CD jetzt
+  auch am SATA (AHCI.SYS Einheit 1). POWEROFF blieb dort nach „Dateien
+  werden geschlossen“ stehen (q35 11.1 und 8.0, i440fx 8.2, alle unter
+  KVM; in QEMU ohne KVM ging es) – siehe ACPI-Ausschalten unter APM.
+  Ungeprüft:
   echte Hardware, VirtualBox/VMware, Port-Multiplier, NCQ (nicht benutzt).
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,

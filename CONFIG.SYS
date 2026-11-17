@@ -85,5 +85,6 @@ REM Einstellungen je Programm: \DOS\MDOS\DOSBOX.INI
 REM --- Hardware ---
 REM ISA-PnP-Karten nicht einstellen (z. B. wenn ein PnP-BIOS es tut)
 REM PNP=OFF
-REM SHUTDOWN schaltet ueber APM aus; APM=OFF zeigt nur die Meldung
+REM SHUTDOWN schaltet ueber ACPI/APM aus; APM=OFF: nur Meldung,
+REM ACPI=OFF: nur ueber APM
 REM APM=OFF

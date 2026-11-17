@@ -371,3 +371,145 @@ int __far apm_off(void)
     apm(&r, 0x5307, 1, 3);                      /* alles aus            */
     return -2;
 }
+
+/* ---- Ausschalten ueber ACPI (S5) --------------------------------------
+   Wie Linux, ohne den Rest von ACPI: RSDP im EBDA (erstes KB) oder in
+   E0000h-FFFFFh suchen, ueber die RSDT die FADT ("FACP"), daraus
+   PM1a/PM1b_CNT (bei 0 die erweiterte Adresse X_PM1a_CNT, nur I/O),
+   SMI_CMD/ACPI_ENABLE und die DSDT; in der DSDT das Paket \_S5 (SLP_TYPa/
+   SLP_TYPb). Ist SCI_EN aus, erst ACPI_ENABLE an SMI_CMD. Dann SLP_TYP <<
+   10 | SLP_EN (2000h) an PM1a/PM1b. Kehrt zurueck, wenn es kein ACPI gibt
+   oder der Rechner danach noch laeuft (dann APM). Anlass: Proxmox mit
+   q35/KVM – das APM von SeaBIOS blieb dort haengen. Nur in system_down. */
+unsigned k2_inw(unsigned port);
+#pragma aux k2_inw = "in ax,dx" __parm [__dx] __value [__ax];
+void k2_outw(unsigned port, unsigned v);
+#pragma aux k2_outw = "out dx,ax" __parm [__dx] [__ax];
+
+static unsigned long aw_base = 0xFFFFFFFFUL;
+
+static unsigned char pb(unsigned long a)
+{
+    if (aw_base == 0xFFFFFFFFUL || a < aw_base || a - aw_base >= 0xF000UL) {
+        aw_base = a;
+        scratch_map(a, 0xFFFF);
+        if (a >= 0x100000UL)            /* Tabellen liegen hinter dem RAM, */
+            set_desc(SCRATCH >> 3,      /* dort reicht der Alias nicht:   */
+                     pg_win(SCRATCH, a, 0xFFFF), 0xFFFF, ACC_KDATA);
+    }
+    return *(unsigned char __far *)MK_FP(SCRATCH, (unsigned)(a - aw_base));
+}
+
+static unsigned long p32(unsigned long a)
+{
+    return (unsigned long)pb(a) | ((unsigned long)pb(a + 1) << 8) |
+           ((unsigned long)pb(a + 2) << 16) | ((unsigned long)pb(a + 3) << 24);
+}
+
+/* RSDP in [a, a+n) auf 16-Byte-Grenzen */
+static unsigned long rsdp_scan(unsigned long a, unsigned long n)
+{
+    unsigned long e = a + n;
+    unsigned i;
+    unsigned char s;
+    for (; a < e; a += 16) {
+        if (pb(a) != 'R' || pb(a + 1) != 'S' || pb(a + 2) != 'D' ||
+            pb(a + 3) != ' ' || pb(a + 4) != 'P' || pb(a + 5) != 'T' ||
+            pb(a + 6) != 'R' || pb(a + 7) != ' ')
+            continue;
+        for (s = 0, i = 0; i < 20; i++)
+            s += pb(a + i);
+        if (!s)
+            return a;
+    }
+    return 0;
+}
+
+static unsigned s5_val(unsigned long *q)
+{
+    unsigned char b = pb(*q);
+    if (b == 0x0A) {                            /* BytePrefix            */
+        b = pb(*q + 1);
+        *q += 2;
+        return b;
+    }
+    *q += 1;                                    /* ZeroOp/OneOp/Wert     */
+    return b == 0xFF ? 0 : b;
+}
+
+int __far acpi_off(void)
+{
+    unsigned long r, rsdt, f, dsdt, len, i, q;
+    unsigned pm1a, pm1b, smi, en, ta, tb, k;
+    unsigned long t0;
+
+    aw_base = 0xFFFFFFFFUL;
+    r = 0;
+    k = (unsigned)p32(0x40E) & 0xFFFF;          /* EBDA-Segment          */
+    if (k >= 0x8000 && k < 0xA000)
+        r = rsdp_scan((unsigned long)k << 4, 1024);
+    if (!r)
+        r = rsdp_scan(0xE0000UL, 0x20000UL);
+    if (!r)
+        return -1;
+    rsdt = p32(r + 16);
+    if (!rsdt || p32(rsdt) != 0x54445352UL)     /* "RSDT"                */
+        return -1;
+    len = p32(rsdt + 4);
+    if (len > 4096)
+        return -1;
+    f = 0;
+    for (i = 36; i + 4 <= len; i += 4) {
+        q = p32(rsdt + i);
+        if (q && p32(q) == 0x50434146UL) {      /* "FACP"                */
+            f = q;
+            break;
+        }
+    }
+    if (!f)
+        return -1;
+    len = p32(f + 4);
+    dsdt = p32(f + 40);
+    smi = (unsigned)p32(f + 48);
+    en = pb(f + 52);
+    pm1a = (unsigned)p32(f + 64);
+    pm1b = (unsigned)p32(f + 68);
+    if (!pm1a && len >= 184 && pb(f + 172) == 1) /* X_PM1a_CNT, I/O      */
+        pm1a = (unsigned)p32(f + 176);
+    if (!pm1a || !dsdt || p32(dsdt) != 0x54445344UL)   /* "DSDT"         */
+        return -1;
+    len = p32(dsdt + 4);
+    if (len > 0x100000UL)
+        len = 0x100000UL;
+    for (i = 36; i + 8 < len; i++) {
+        if (pb(dsdt + i) != '_' || pb(dsdt + i + 1) != 'S' ||
+            pb(dsdt + i + 2) != '5' || pb(dsdt + i + 3) != '_')
+            continue;
+        if (pb(dsdt + i - 1) != 0x08 &&         /* NameOp, auch \_S5_    */
+            (pb(dsdt + i - 1) != '\\' || pb(dsdt + i - 2) != 0x08))
+            continue;
+        q = dsdt + i + 4;
+        if (pb(q) != 0x12)                      /* PackageOp             */
+            continue;
+        q += 1 + ((pb(q + 1) >> 6) & 3) + 1;    /* PkgLength             */
+        q++;                                    /* NumElements           */
+        ta = s5_val(&q);
+        tb = s5_val(&q);
+        if (!(k2_inw(pm1a) & 1) && smi && en) { /* SCI_EN aus            */
+            outb(smi, en);
+            t0 = get_ticks();
+            while (!(k2_inw(pm1a) & 1) && get_ticks() - t0 < 300)
+                ;
+        }
+        irq_off();
+        k2_outw(pm1a, ((ta & 7) << 10) | 0x2000);
+        if (pm1b)
+            k2_outw(pm1b, ((tb & 7) << 10) | 0x2000);
+        enable_ints();
+        t0 = get_ticks();
+        while (get_ticks() - t0 < 100)          /* 1 s warten            */
+            ;
+        return -2;
+    }
+    return -1;
+}
