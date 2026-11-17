@@ -2107,6 +2107,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   statt der BIOS-Geometrie (MS-DOS-Bootsektoren lesen damit per CHS –
   nur für SYS von MS-DOS auf eine AT-DOS-Partition wichtig).
   Vorhandene Partitionen bleiben, wie sie sind (neu anlegen).
+  Alle drei Änderungen (F0h, rsv, ganze Zylinder) auf `5.x` zurückportiert
+  (Wunsch des Nutzers; in QEMU fdisk /status geprüft).
 
 - **Segmente auslagern auf dem 286** (Baustein für 5.4 neben DEVLOAD,
   vom Nutzer freigegeben 15.11.2026): `docs/SWAP-5X.md` – #NP/#SS-
