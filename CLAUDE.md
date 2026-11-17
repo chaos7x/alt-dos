@@ -4649,6 +4649,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ACPI allein (APM testweise aus) und mit Rückfall bei i440fx/q35 mit
   16 MB, 2 GB, 3,5 GB, jeweils aus. isapc (kein ACPI) hängt wie vorher
   im APM von SeaBIOS (es hält ohne PM1a-Port an) – Eigenheit des BIOS.
+  Vom Nutzer in Proxmox (KVM) bestätigt (17.11.2026): POWEROFF schaltet
+  i440fx und q35 (je Version 11) ohne APM=OFF aus.
   Anzeige in MSD erledigt (in QEMU geprüft: „APM: 1.2 (SHUTDOWN
   schaltet aus)“): `apm_ver` (vesa.c, 5300h über rm_call) legt die
   Version ins bisher freie Byte `fapi_sysinfo.rsv` (12h = 1.2, Bit 7 =
