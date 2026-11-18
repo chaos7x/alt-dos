@@ -208,6 +208,8 @@ static unsigned nf(const char *p) { return no_dir(p) ? E_NOPATH : E_NOFILE; }
 #define NHP 32
 static char hp[NHP][80];
 static unsigned char hpa[NHP];          /* Attribut + 80h = nachtragen  */
+static unsigned hpd[NHP][3];            /* Datum aus 5701h eines SFT,   */
+                                        /* der vor dem letzten schloss  */
 static void hp_note(unsigned h, const char *p, unsigned a)
 {
     unsigned i;
@@ -217,6 +219,66 @@ static void hp_note(unsigned h, const char *p, unsigned a)
         hp[h][i] = p[i];
     hp[h][i] = 0;
     hpa[h] = (unsigned char)a;
+}
+
+/* SHARE (18.11.2026, wie auf main redir.c): oeffnet die Box eine Datei
+   noch einmal, teilen sich beide SFTs den Handle von AT-DOS (Stelle je
+   SFT, Groesse nur einmal); Freigabemodi gegen die anderen Oeffnungen,
+   Bereichssperren (110Ah). SFT+0Bh = E000h | Platz, sonst Handle + 1. */
+#define NSH 16
+#define NLK 8
+#define SH_MARK 0xE000
+static struct shf {
+    unsigned       h1;
+    unsigned long  hash, size;
+    unsigned char  refs, rd, wr, dr, dw, kw;
+} sh[NSH];
+static struct shl {
+    unsigned char  used, slot;
+    unsigned long  ofs, len;
+} lk[NLK];
+
+static unsigned long phash(const char *p)
+{
+    unsigned long h = 5381;
+    while (*p)
+        h = ((h << 5) + h) ^ up(*p++);
+    return h;
+}
+static int sh_find(unsigned long hv)
+{
+    int i;
+    for (i = 0; i < NSH; i++)
+        if (sh[i].h1 && sh[i].hash == hv)
+            return i;
+    return -1;
+}
+#define M_RD(m)  (((m) & 3) != 1)
+#define M_WR(m)  (((m) & 3) != 0)
+#define M_DR(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 3)
+#define M_DW(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 2)
+static void sh_add(struct shf *e, unsigned m, int d)
+{
+    e->rd += M_RD(m) ? d : 0;
+    e->wr += M_WR(m) ? d : 0;
+    e->dr += M_DR(m) ? d : 0;
+    e->dw += M_DW(m) ? d : 0;
+}
+static int sh_ok(const struct shf *e, unsigned m)
+{
+    return !((M_RD(m) && e->dr) || (M_WR(m) && e->dw) ||
+             (M_DR(m) && e->rd) || (M_DW(m) && e->wr));
+}
+static unsigned sft_h(unsigned v, struct shf **e)
+{
+    *e = 0;
+    if ((v & 0xFF00) == SH_MARK) {
+        if ((v & 0xFF) >= NSH || !sh[v & 0xFF].h1)
+            return 0xFFFF;
+        *e = &sh[v & 0xFF];
+        return (*e)->h1 - 1;
+    }
+    return v - 1;
 }
 
 static int stat_path(const char *p)
@@ -428,12 +490,36 @@ static int op(unsigned fn)
         if (stat_path(p1) || !(de.attr & 0x10))
             return E_NOPATH;
         return 0;
-    case 0x06:                                  /* CLOSE                 */
+    case 0x06: {                                /* CLOSE                 */
+        struct shf *e;
         peek(sl, sft, SFTLEN);
         cnt = r16(sft);
-        h = r16(sft + 0x0B) - 1;
+        k = r16(sft + 0x0B);
+        h = sft_h(k, &e);
         if (cnt)
             w16(sft, --cnt);
+        if (cnt == 0 && h != 0xFFFF && e) {     /* geteilt: erst die      */
+            sh_add(e, r16(sft + 2), -1);        /* letzte Oeffnung        */
+            if (--e->refs) {                    /* schliesst              */
+                if (r16(sft + 5) & 0x4000 && h < NHP) {     /* Datum bis */
+                    hpd[h][2] = 1;              /* dahin merken           */
+                    hpd[h][0] = r16(sft + 0x0D);
+                    hpd[h][1] = r16(sft + 0x0F);
+                }
+                w16(sft + 0x0B, 0);
+                poke(sl, sft, SFTLEN);
+                return 0;
+            }
+            e->h1 = 0;
+            for (r = 0; r < NLK; r++)
+                if (lk[r].slot == (k & 0xFF))
+                    lk[r].used = 0;
+            if (!(r16(sft + 5) & 0x4000) && h < NHP && hpd[h][2]) {
+                w16(sft + 5, r16(sft + 5) | 0x4000);    /* Datum eines   */
+                w16(sft + 0x0D, hpd[h][0]);     /* frueheren SFT          */
+                w16(sft + 0x0F, hpd[h][1]);
+            }
+        }
         if (cnt == 0 && h != 0xFFFF) {
             DosClose(h);
             w16(sft + 0x0B, 0);
@@ -451,18 +537,58 @@ static int op(unsigned fn)
                 DosSetFInfo(hp[h], &fin);
             }
             if (h < NHP)
-                hp[h][0] = 0;
+                hp[h][0] = 0, hpd[h][2] = 0;
         }
         poke(sl, sft, SFTLEN);
         return 0;
+    }
+    case 0x0A: {                                /* LOCK/UNLOCK: BL = 1    */
+        struct shf *e;                          /* entsperren, DS:DX ->   */
+        unsigned long o, n;                     /* Stelle, Laenge         */
+        static unsigned char pb[8];
+        peek(sl, sft, SFTLEN);
+        k = r16(sft + 0x0B);
+        if (sft_h(k, &e) == 0xFFFF)
+            return E_HANDLE;
+        if (!e)
+            return 0;
+        peek(lin(rg.ds, rg.dx), pb, 8);
+        o = r32(pb);
+        n = r32(pb + 4);
+        k &= 0xFF;
+        for (r = 0; r < NLK; r++) {
+            struct shl *l = &lk[r];
+            if (!l->used || l->slot != k)
+                continue;
+            if (rg.bx & 0xFF) {
+                if (l->ofs == o && l->len == n) {
+                    l->used = 0;
+                    return 0;
+                }
+            } else if (o < l->ofs + l->len && l->ofs < o + n)
+                return 0x21;
+        }
+        if (rg.bx & 0xFF)
+            return 0x21;
+        for (r = 0; r < NLK; r++)
+            if (!lk[r].used) {
+                lk[r].used = 1;
+                lk[r].slot = (unsigned char)k;
+                lk[r].ofs = o;
+                lk[r].len = n;
+                return 0;
+            }
+        return 0x24;
+    }
     case 0x07:                                  /* COMMIT                */
-    case 0x0A: case 0x0B:                       /* LOCK/UNLOCK           */
+    case 0x0B:                                  /* (FreeDOS: 0Ah + BL)   */
     case 0x1D: case 0x22:                       /* alle zu, Prozessende  */
         return 0;
     case 0x08:                                  /* READ                  */
-    case 0x09:                                  /* WRITE                 */
+    case 0x09: {                                /* WRITE                 */
+        struct shf *e;
         peek(sl, sft, SFTLEN);
-        h = r16(sft + 0x0B) - 1;
+        h = sft_h(r16(sft + 0x0B), &e);
         pos = r32(sft + 0x15);
         size = r32(sft + 0x11);
         if (h == 0xFFFF)
@@ -478,6 +604,8 @@ static int op(unsigned fn)
                 return errmap(r, E_DENIED);
             w32(sft + 0x11, pos);
             poke(sl, sft, SFTLEN);
+            if (e)
+                e->size = pos;
             return 0;
         }
         peek(sda_lin + 0x0C, word2, 4);         /* DTA                   */
@@ -489,8 +617,11 @@ static int op(unsigned fn)
         if (fn == 9 && pos > size)
             w32(sft + 0x11, pos);
         poke(sl, sft, SFTLEN);
+        if (e && fn == 9 && pos > e->size)
+            e->size = pos;
         rg.cx = k;
         return 0;
+    }
     case 0x0C: {                                /* freier Platz          */
         static struct fapi_fsinfo2 fs2;
         unsigned spc = 1, sh = 9;
@@ -581,6 +712,8 @@ static int op(unsigned fn)
     case 0x17:                                  /* CREATE (kuerzen)      */
     case 0x2E: {                                /* erweitert             */
         unsigned mode = arg & 0xFF, act, exists, cattr = arg;
+        unsigned long hv;
+        int slot;
         get_fn(0x9E, p1);
         exists = stat_path(p1) == 0;
         if (exists && (de.attr & 0x18))
@@ -600,6 +733,37 @@ static int op(unsigned fn)
             act = fn == 0x17 ? (exists ? 3 : 2) : 1;
         if (act == 1 && !exists)
             return nf(p1);
+        if (fn == 0x17)
+            mode = 2;                           /* arg ist das Attribut   */
+        hv = phash(p1);
+        slot = sh_find(hv);
+        if (slot >= 0) {                        /* Box hat sie schon offen */
+            struct shf *e = &sh[slot];
+            if (act != 1 || !sh_ok(e, mode))
+                return E_SHARE;
+            if (M_WR(mode) && !e->kw) {         /* Handle nur lesend      */
+                DosClose(e->h1 - 1);
+                h = DosOpenRW(p1);
+                if (FAILED(h)) {
+                    r = DosOpen(p1);
+                    e->h1 = FAILED(r) ? 0 : r + 1;
+                    return errmap(h, E_DENIED);
+                }
+                hp_note(h, p1, 0);
+                e->h1 = h + 1;
+                e->kw = 1;
+            }
+            e->refs++;
+            sh_add(e, mode, 1);
+            if (e->size > de.size)
+                de.size = e->size;
+            peek(sl, sft, SFTLEN);
+            sft_fill((SH_MARK | slot) - 1, mode, p1);
+            poke(sl, sft, SFTLEN);
+            if (fn == 0x2E)
+                rg.cx = act;
+            return 0;
+        }
         if (act == 1)                           /* vorhanden: lesen oder  */
             h = (mode & 3) ? DosOpenRW(p1) : DosOpen(p1);   /* lesen+schr. */
         else
@@ -613,8 +777,19 @@ static int op(unsigned fn)
             stat_path(p1);                      /* Datum/Uhrzeit         */
             de.size = 0;
         }
-        if (fn == 0x17)
-            mode = 2;                           /* arg ist das Attribut;  */
+        for (slot = 0; slot < NSH && sh[slot].h1; slot++)
+            ;
+        if (slot < NSH) {
+            struct shf *e = &sh[slot];
+            e->h1 = h + 1;
+            e->hash = hv;
+            e->size = de.size;
+            e->refs = 1;
+            e->rd = e->wr = e->dr = e->dw = 0;
+            e->kw = act != 1 || (mode & 3);
+            sh_add(e, mode, 1);
+            h = (SH_MARK | slot) - 1;
+        }
         peek(sl, sft, SFTLEN);                  /* DOS prueft den Modus   */
         sft_fill(h, mode, p1);
         poke(sl, sft, SFTLEN);
@@ -631,8 +806,12 @@ static int op(unsigned fn)
         return k;
     case 0x21: {                                /* SEEK vom Ende         */
         unsigned long off = ((unsigned long)rg.cx << 16) | rg.dx;
+        struct shf *e;
         peek(sl, sft, SFTLEN);
-        pos = r32(sft + 0x11) + off;
+        size = r32(sft + 0x11);
+        if (sft_h(r16(sft + 0x0B), &e) != 0xFFFF && e && e->size > size)
+            size = e->size;
+        pos = size + off;
         w32(sft + 0x15, pos);
         poke(sl, sft, SFTLEN);
         rg.dx = (unsigned)(pos >> 16);
@@ -707,6 +886,10 @@ static void box_call(void)
         break;
     case 0x11:                                  /* SDA ist DS:SI          */
         sda_lin = lin(rg.ds, rg.si);
+        for (r = 0; r < NSH; r++)           /* neue Box: nichts offen     */
+            sh[r].h1 = 0;
+        for (r = 0; r < NLK; r++)
+            lk[r].used = 0;
         break;
     case 0x12:                                  /* -> DX:AX Laufwerke     */
         m = drive_mask();

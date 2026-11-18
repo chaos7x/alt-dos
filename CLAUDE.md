@@ -32,6 +32,14 @@ Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
 nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
 Laufwerke als „fern“, Drucken.
 
+SHARE in der Kompatibilitätsbox (Wunsch des Nutzers, 18.11.2026, wie
+auf main): rbox_redir.c `sh[16]`/`lk[8]` – mehrfach geöffnete Datei =
+ein Handle von AT-DOS (SFT+0Bh = E000h | Platz), Freigabemodi (20h),
+Sperren über 110Ah (BL, DS:DX), ein lesender Handle wird bei Bedarf RW
+neu geöffnet (`hp_note` neu); Datum aus 5701h eines früher schließenden
+SFT bis zum letzten Schließen gemerkt (`hpd`). RBSHELL: INT 2Fh 1000h ->
+FFh, 10A0h–10A6h -> 0. In QEMU mit BIOSCMP (rbox) geprüft.
+
 Word 5.5 und Lotus Works 3.0 in der Kompatibilitätsbox (vom Nutzer
 gemeldet, 18.11.2026: Word-SETUP fror auf dem SCAT bei „Druckerdiskette
 2“ ein; Abbilder nur zum Testen, nicht im Repository): Fehler im

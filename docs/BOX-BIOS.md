@@ -64,7 +64,8 @@ BIOS der DOS-Box (6.x `kernel/v86.c`):
 | INT 10h 12h BL=10h | CL fehlte | CL = 9 (Schalter) |
 | INT 10h 1Bh, statische Tabelle | Byte 8/9 vertauscht | wie die echten Video-BIOSe (02 08) |
 | INT 13h 01h | Fehler | letzter Status (BDA 441h) |
-| INT 14h, INT 17h Status | fehlten (Register unverändert) | Status wie ohne angeschlossenes Gerät |
+| INT 14h Status | fehlte (Register unverändert) | „Sendepuffer leer“, Senden läuft ab |
+| INT 17h | Ausdrucke gingen verloren | Zeichen über das LPT-Gerät des Kernels (`lpt_out`), Status 90h |
 | INT 15h C0h | fehlte | Tabelle F000:0890 (AT, Modell FCh) |
 | INT 15h 90h/91h | CF = 1 | CF = 0 |
 | INT 15h 2400h–2403h | fehlten | A20 wie über XMS |
@@ -86,7 +87,7 @@ Programm auf Grafik (oder VESA), geht jedes INT 10h ans echte Video-BIOS
 | 14h | Status „Sendepuffer leer“, Senden läuft ab | keine serielle Übertragung (Maus über INT 33h) |
 | 15h | 4Fh, 86h, 88h (0), 90h/91h, 2400h–2403h, C0h | C1h (keine EBDA), C2xx (PS/2-Maus), E801h, E820h, 53xx (APM): Fehler wie ein BIOS ohne |
 | 16h | 00–02, 05, 09, 0A, 10–12, 0306h | 03 (Rate setzen) ohne Wirkung |
-| 17h | Status 90h bzw. 30h ohne Port | **Drucken aus der Box offen** (siehe unten) |
+| 17h | 00–02: Zeichen über LPTn des Kernels, Status 90h bzw. 30h ohne Port | Handle bleibt bis zum Ende der Box offen |
 | 18h/19h | Box beenden | |
 | 1Ah | 00–04, B1xx (PCI lesend) | 05 (Datum setzen) ohne Wirkung |
 | 1Eh | Diskettenparameter F000:0800 | |
@@ -111,7 +112,7 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 | 01 RMDIR, 03 MKDIR, 05 CHDIR | ja |
 | 06 CLOSE (mit Datum/Attribut), 07 COMMIT | ja |
 | 08 READ, 09 WRITE (0 Byte = Größe setzen) | ja |
-| 0A/0B LOCK/UNLOCK | „erledigt“ ohne Wirkung |
+| 0A LOCK/UNLOCK (BL), SHARE | ja, je Datei der Box |
 | 0C freier Platz (echte Clusterzahl) | ja |
 | 0E/0F Attribut setzen/holen | ja |
 | 11 RENAME, 13 DELETE (Platzhalter) | ja |
@@ -123,21 +124,34 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 
 ## Offene Punkte – Entscheidung des Nutzers
 
-1. **Dieselbe Datei zweimal zum Schreiben öffnen** (BIOSCMP „3D zweimal
-   schreibend“): DOS ohne SHARE erlaubt es, AT-DOS lehnt mit 20h ab (Leser
-   und Schreiber schließen sich aus). Erlauben hieße zwei Handles mit
-   eigener Größe auf eine Datei – DOS hat dieselbe Gefahr (verlorene
-   Ketten). Vorschlag: nur für Handles desselben Box-Tasks erlauben, wenn
-   ein Programm daran scheitert.
+1. ~~Dieselbe Datei zweimal zum Schreiben öffnen~~ – erledigt mit SHARE
+   im Redirector (18.11.2026, Wunsch des Nutzers „SHARE als Stub“): öffnet
+   die Box eine Datei noch einmal, teilen sich beide SFTs den Handle von
+   AT-DOS (Stelle je SFT, Größe nur einmal – DOS ohne SHARE meldet dort die
+   alte Größe, BIOSCMP „SHARE Größe“: Bezug 200, Box 250). Freigabemodi
+   (Bits 4–6) gegen die anderen Öffnungen der Box -> 20h, Bereichssperren
+   110Ah je Datei (Überschneidung/nicht gesperrt 21h, Tabelle voll 24h),
+   INT 2Fh 1000h meldet SHARE (BOXSHELL/RBSHELL), 10A0h–10A6h des
+   FreeDOS-Kerns für lokale Dateien (nur das Startabbild) „erlaubt“.
+   Je Box 12 (6.x) bzw. 16 (5.x) Dateien in der Tabelle, darüber ohne
+   Freigabeprüfung wie vorher; 4 bzw. 8 Sperren. Kompatibilitätsmodus gilt
+   innerhalb der Box als „nichts verbieten“ (eine Box ist für AT-DOS ein
+   Task); zwischen Boxen und FAPI-Programmen gelten die Regeln von AT-DOS.
 2. **Box-Laufwerke als Netzlaufwerke** (4408h/4409h/440Dh/6900h): DOS
    meldet sie als „fern“ (4409h Bit 12), Geräte-IOCTL scheitert mit 0Fh.
    Installationsprogramme, die nicht auf Netzlaufwerke wollen, oder
    Werkzeuge, die die Seriennummer per 6900h lesen, scheitern daran.
    Vorschlag: BOXSHELL beantwortet 4408h/4409h/6900h für AT-DOS-Laufwerke
    selbst wie für ein lokales Laufwerk, sobald ein Programm daran hängt.
-3. **Drucken aus der Box** (INT 17h 00h, PRN): geht heute verloren
-   (Status „bereit“). Weiterleiten an LPT über den Kernel wäre ein
-   eigener kleiner Schritt.
+3. ~~Drucken aus der Box~~ – erledigt (18.11.2026): INT 17h 00h geht
+   über das LPT-Gerät des Kernels (FAPI OPEN/WRITE auf `LPTn` im Task
+   der Box). Geprüft in QEMU (`-parallel file:`) und 86Box (386DX/40,
+   „Generic Text Printer“ an LPT1: `echo … > prn` und `copy datei prn`
+   aus der Box landen in `printer\*.txt` des VM-Ordners). Zum Testen ohne
+   Drucker in 86Box: LPT1 = Generic Text Printer (Textdateien), Generic
+   ESC/P 2 Dot-Matrix (Seiten als Bilder) oder Generic PostScript
+   Printer (PDF, braucht Ghostscript auf dem Rechner). Die Kompatibili-
+   tätsbox (5.x) druckt über das echte BIOS direkt auf den Port.
 
-Platz: KTEXT3 (v86.c, redir.c) hat danach noch rund 100 Byte frei – vor
-weiterem Box-Code Seltenes in ein anderes Segment verschieben.
+Platz: `redir.c` liegt seitdem in KTEXT4 (ruft nur ferne Funktionen),
+KTEXT3 (v86.c) hat wieder rund 6,8 KB frei.

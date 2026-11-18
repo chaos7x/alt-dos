@@ -1291,6 +1291,122 @@ t_files:
 .n3:    mov     bx, [h1]
         mov     ah, 3Eh
         int     21h
+        T       'SHARE schreibschutz, dann W/R'
+        mov     ax, 3D22h               ; RW, andere duerfen nicht schreiben
+        mov     dx, n_a
+        int     21h
+        mov     [h1], ax
+        mov     ax, 3D01h               ; schreiben: 20h
+        mov     dx, n_a
+        int     21h
+        call    snap
+        call    dosres
+        test    word [r_fl], 1
+        jnz     .s1
+        mov     bx, [r_ax]
+        mov     ah, 3Eh
+        int     21h
+.s1:    mov     ax, 3D40h               ; lesen, nichts verbieten: geht
+        mov     dx, n_a
+        int     21h
+        call    snap
+        call    dosres
+        test    word [r_fl], 1
+        jnz     .s2
+        mov     bx, [r_ax]
+        mov     ah, 3Eh
+        int     21h
+.s2:    mov     bx, [h1]
+        mov     ah, 3Eh
+        int     21h
+        T       'SHARE alles verboten'
+        mov     ax, 3D10h
+        mov     dx, n_a
+        int     21h
+        mov     [h1], ax
+        mov     ax, 3D40h
+        mov     dx, n_a
+        int     21h
+        call    snap
+        call    dosres
+        test    word [r_fl], 1
+        jnz     .s3
+        mov     bx, [r_ax]
+        mov     ah, 3Eh
+        int     21h
+.s3:    mov     bx, [h1]
+        mov     ah, 3Eh
+        int     21h
+        T       'SHARE Groesse ueber zwei Handles'
+        mov     ax, 3D42h
+        mov     dx, n_a
+        int     21h
+        mov     [h1], ax
+        mov     ax, 3D42h
+        mov     dx, n_a
+        int     21h
+        mov     [h2], ax
+        mov     ax, 4202h
+        mov     bx, [h1]
+        xor     cx, cx
+        xor     dx, dx
+        int     21h
+        mov     ah, 40h
+        mov     bx, [h1]
+        mov     cx, 50
+        mov     dx, pattern
+        int     21h
+        mov     ax, 4202h
+        mov     bx, [h2]
+        xor     cx, cx
+        xor     dx, dx
+        int     21h
+        call    snap
+        call    dosres
+        R       ax
+        T       'SHARE Sperren'
+        mov     ax, 5C00h
+        mov     bx, [h1]
+        xor     cx, cx
+        mov     dx, 10h
+        xor     si, si
+        mov     di, 10h
+        int     21h
+        call    snap
+        call    dosres
+        mov     ax, 5C00h               ; ueberschneidet sich: 21h
+        mov     bx, [h2]
+        xor     cx, cx
+        mov     dx, 18h
+        xor     si, si
+        mov     di, 10h
+        int     21h
+        call    snap
+        call    dosres
+        mov     ax, 5C01h
+        mov     bx, [h1]
+        xor     cx, cx
+        mov     dx, 10h
+        xor     si, si
+        mov     di, 10h
+        int     21h
+        call    snap
+        call    dosres
+        mov     ax, 5C01h               ; nicht (mehr) gesperrt: 21h
+        mov     bx, [h1]
+        xor     cx, cx
+        mov     dx, 10h
+        xor     si, si
+        mov     di, 10h
+        int     21h
+        call    snap
+        call    dosres
+        mov     bx, [h2]
+        mov     ah, 3Eh
+        int     21h
+        mov     bx, [h1]
+        mov     ah, 3Eh
+        int     21h
         T       'DOS 4300 Attribut'
         mov     ax, 4300h
         mov     dx, n_a

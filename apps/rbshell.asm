@@ -221,7 +221,9 @@ redir_install:
         int     0x21
         ret
 
-int2f:  cmp     ah, 0x11
+int2f:  cmp     ah, 0x10                ; SHARE: Freigabe pruefen
+        je      .share                  ; RBOX (Redirector) und Kernel
+        cmp     ah, 0x11
         jne     .chain
         test    al, al                  ; Installationsabfrage
         jnz     .op
@@ -234,6 +236,12 @@ int2f:  cmp     ah, 0x11
         cmp     cx, CSZ
         ja      .inval
         jmp     rd_cache
+.share: test    al, al                  ; 1000h: geladen (FFh); die
+        jnz     .shf                    ; Aufrufe des FreeDOS-Kerns fuer
+        mov     al, 0xFF                ; lokale Dateien (Startabbild A:)
+        iret                            ; 10A0h-10A6h: erlaubt
+.shf:   xor     ax, ax
+        iret
 .inval: mov     byte [cs:cvalid], 0     ; alles andere: Puffer verwerfen
 .pass:  push    ax
         mov     ah, 0x10
