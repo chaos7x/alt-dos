@@ -249,6 +249,11 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Speicher kopiert sich der Kernel beim Start (noch im Real Mode, per
   BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
   frei (der Kernel liegt hinter der HMA)
+- Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` ruft
+  rund 180 BIOS- und DOS-Dienste auf, `tools/bioscmp.sh X rbox`
+  vergleicht FreeDOS direkt mit der Kompatibilitätsbox
+  (`docs/BOX-BIOS.md`). Behoben dabei im Redirector: Dateidatum (5701h)
+  und Attribut beim Anlegen, 5Bh, Fehlercodes 03h/05h/10h wie DOS
 - `RBOX [Abbild.IMG | Datei.COM]` (5.1): Kompatibilitätsbox im
   echten Real Mode mit FreeDOS (8086-Bau, startet von `\DOS\MDOS\FREEDOS.IMG`;
   COMMAND.COM kommt aus `X:\DOS\MDOS` des Startlaufwerks, dann sind A:/B:

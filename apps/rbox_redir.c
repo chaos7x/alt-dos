@@ -189,6 +189,36 @@ static unsigned errmap(unsigned r, unsigned def)
 
 /* Eintrag zu Pfad p in de suchen (Stamm: Verzeichnis) -> 0 gefunden */
 static char st_dir[80], st_fcb[11];
+static int stat_path(const char *p);
+
+/* Fehlt das Verzeichnis, in dem p liegen soll? MS-DOS unterscheidet:
+   Datei fehlt 02h, Verzeichnis fehlt 03h (BIOSCMP) */
+static char np_dir[80];
+static int no_dir(const char *p)
+{
+    split(p, np_dir);
+    if (!np_dir[3])
+        return 0;
+    return stat_path(np_dir) || !(de.attr & 0x10);
+}
+static unsigned nf(const char *p) { return no_dir(p) ? E_NOPATH : E_NOFILE; }
+
+/* Was beim Schliessen nachzutragen ist (DOS setzt 5701h nur im SFT, ein
+   Attribut beim Anlegen kennt DosCreate nicht): Pfad je Handle */
+#define NHP 32
+static char hp[NHP][80];
+static unsigned char hpa[NHP];          /* Attribut + 80h = nachtragen  */
+static void hp_note(unsigned h, const char *p, unsigned a)
+{
+    unsigned i;
+    if (h >= NHP)
+        return;
+    for (i = 0; i < 79 && p[i]; i++)
+        hp[h][i] = p[i];
+    hp[h][i] = 0;
+    hpa[h] = (unsigned char)a;
+}
+
 static int stat_path(const char *p)
 {
     const char *n = split(p, st_dir);
@@ -353,6 +383,8 @@ static int find_first(void)
         srch[k] = 0;
     k = find_next();
     poke(sda_lin + 0x19E, srch, 21);
+    if (k == E_NOMORE && no_dir(p1))
+        k = E_NOPATH;                       /* Verzeichnis fehlt: 03h    */
     return k;                           /* ohne Treffer 12h wie FreeDOS
                                            (fatdir.c) und MS-DOS - Lotus
                                            Works INSTALL hielt 02h fuer
@@ -377,8 +409,20 @@ static int op(unsigned fn)
     case 0x01:                                  /* RMDIR                 */
     case 0x03:                                  /* MKDIR                 */
         get_fn(0x9E, p1);
+        if (fn == 1) {                          /* aktuelles Verzeichnis */
+            peek(sda_lin + 0x282, word2, 4);    /* (CDS bei SDA+282h):   */
+            peek(lin(r16(word2 + 2), r16(word2)), one, 67);   /* 10h      */
+            for (k = 0; k < 67 && p1[k] && up(one[k]) == up(p1[k]); k++)
+                ;
+            if (k < 67 && !p1[k] && !one[k])
+                return 0x10;
+        }
         r = fn == 1 ? DosRmDir(p1) : DosMkDir(p1);
-        return FAILED(r) ? errmap(r, fn == 1 ? E_DENIED : E_NOPATH) : 0;
+        if (!FAILED(r))
+            return 0;
+        if (fn == 3 && r == FAPI_ERR_EXIST)
+            return E_DENIED;                    /* MKDIR wie MS-DOS: 05h */
+        return errmap(r, fn == 1 ? (no_dir(p1) ? E_NOPATH : E_DENIED) : E_NOPATH);
     case 0x05:                                  /* CHDIR: gibt es das?   */
         get_fn(0x9E, p1);
         if (stat_path(p1) || !(de.attr & 0x10))
@@ -393,6 +437,21 @@ static int op(unsigned fn)
         if (cnt == 0 && h != 0xFFFF) {
             DosClose(h);
             w16(sft + 0x0B, 0);
+            if (h < NHP && hp[h][0] && ((r16(sft + 5) & 0x4000) || (hpa[h] & 0x80))) {
+                fin.mask = 0;                   /* Datum (5701h) und      */
+                if (r16(sft + 5) & 0x4000) {    /* Attribut nachtragen    */
+                    fin.mask |= 2;
+                    fin.time = r16(sft + 0x0D);
+                    fin.date = r16(sft + 0x0F);
+                }
+                if (hpa[h] & 0x80) {
+                    fin.mask |= 1;
+                    fin.attr = hpa[h] & 0x27;
+                }
+                DosSetFInfo(hp[h], &fin);
+            }
+            if (h < NHP)
+                hp[h][0] = 0;
         }
         poke(sl, sft, SFTLEN);
         return 0;
@@ -470,11 +529,11 @@ static int op(unsigned fn)
         fin.mask = 1;
         fin.attr = arg & 0x27;
         r = DosSetFInfo(p1, &fin);
-        return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+        return FAILED(r) ? errmap(r, nf(p1)) : 0;
     case 0x0F:                                  /* Attribut holen        */
         get_fn(0x9E, p1);
         if (stat_path(p1))
-            return E_NOFILE;
+            return nf(p1);
         rg.ax = de.attr;
         rg.bx = (unsigned)(de.size >> 16);
         rg.di = (unsigned)de.size;
@@ -485,14 +544,16 @@ static int op(unsigned fn)
         get_fn(0x9E, p1);
         get_fn(0x11E, p2);
         r = DosMove(p1, p2);
-        return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+        if (r == FAPI_ERR_EXIST)
+            return E_DENIED;                    /* Ziel gibt es: 05h     */
+        return FAILED(r) ? errmap(r, nf(p1)) : 0;
     case 0x13: {                                /* DELETE (auch *.*)     */
         const char *n;
         unsigned i = 0, hits = 0, j, l;
         get_fn(0x9E, p1);
         if (!has_wild(p1)) {
             r = DosDelete(p1);
-            return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+            return FAILED(r) ? errmap(r, nf(p1)) : 0;
         }
         n = split(p1, dir);
         to_fcb(n, tmpl);
@@ -514,12 +575,12 @@ static int op(unsigned fn)
             else
                 hits++;
         }
-        return hits ? 0 : E_NOFILE;
+        return hits ? 0 : nf(p1);
     }
     case 0x16:                                  /* OPEN                  */
     case 0x17:                                  /* CREATE (kuerzen)      */
     case 0x2E: {                                /* erweitert             */
-        unsigned mode = arg & 0xFF, act, exists;
+        unsigned mode = arg & 0xFF, act, exists, cattr = arg;
         get_fn(0x9E, p1);
         exists = stat_path(p1) == 0;
         if (exists && (de.attr & 0x18))
@@ -527,23 +588,27 @@ static int op(unsigned fn)
         if (fn == 0x2E) {
             unsigned a = sda16(0x2DD);
             mode = sda16(0x2E1) & 0xFF;
+            cattr = sda16(0x2DF);
             if (exists && (a & 0x0F) == 0)
                 return E_EXISTS;
             if (!exists && !(a & 0xF0))
-                return E_NOFILE;
+                return nf(p1);
             act = !exists ? 2 : (a & 0x0F) == 2 ? 3 : 1;
-        } else
+        } else if (fn == 0x17 && (arg & 0x100) && exists)
+            return E_EXISTS;                    /* 5Bh: nur neu anlegen  */
+        else
             act = fn == 0x17 ? (exists ? 3 : 2) : 1;
         if (act == 1 && !exists)
-            return E_NOFILE;
+            return nf(p1);
         if (act == 1)                           /* vorhanden: lesen oder  */
             h = (mode & 3) ? DosOpenRW(p1) : DosOpen(p1);   /* lesen+schr. */
         else
             h = DosCreate(p1);
         if (FAILED(h))
-            return errmap(h, act == 1 ? E_NOFILE : E_DENIED);
+            return errmap(h, act == 1 ? E_NOFILE : no_dir(p1) ? E_NOPATH : E_DENIED);
+        hp_note(h, p1, act != 1 && (cattr & 0x07) ? 0x80 | 0x20 | (cattr & 0x27) : 0);
         if (act != 1) {
-            de.attr = 0x20;
+            de.attr = 0x20 | (cattr & 0x07);
             de.size = 0;
             stat_path(p1);                      /* Datum/Uhrzeit         */
             de.size = 0;

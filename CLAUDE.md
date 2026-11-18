@@ -20,6 +20,18 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
+`tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`
+(QEMU: FreeDOS-8086 direkt gegen RBOX, eingetippt über den Monitor),
+Liste in `docs/BOX-BIOS.md`. Behoben in `apps/rbox_redir.c`: Datum aus
+5701h und Attribut beim Anlegen gingen beim Schließen verloren (jetzt
+Pfad je Handle `hp[]`, nach DosClose DosSetFInfo), 5Bh überschrieb
+(Attribut | 100h), Fehlercodes 03h/05h/10h (RMDIR des aktuellen über
+die CDS bei SDA+282h). Das BIOS ist das echte – dort nichts geändert.
+Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
+nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
+Laufwerke als „fern“, Drucken.
+
 Word 5.5 und Lotus Works 3.0 in der Kompatibilitätsbox (vom Nutzer
 gemeldet, 18.11.2026: Word-SETUP fror auf dem SCAT bei „Druckerdiskette
 2“ ein; Abbilder nur zum Testen, nicht im Repository): Fehler im

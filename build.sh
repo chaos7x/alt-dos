@@ -237,6 +237,7 @@ nasm -f bin apps/rbtest.asm -o $B/rbtest.com  # Test der Kompatibilitaetsbox (5.
 nasm -f bin apps/rbgfx.asm -o $B/rbgfx.com
 nasm -f bin apps/rbfpu.asm -o $B/rbfpu.com
 nasm -f bin apps/rbtime.asm -o $B/rbtime.com
+nasm -f bin tools/bioscmp.asm -o $B/bioscmp.com          # Vergleichstest (docs/BOX-BIOS.md)
 DEMOFILES="$B/task_a.exe TASKA.EXE  $B/task_b.exe TASKB.EXE  $B/task_fragtest.exe FRAGTEST.EXE  $B/task_c.exe TASKC.EXE
        $B/task_mtest.exe MAUSTEST.EXE  $B/task_grafik.exe GRAFIK.EXE  $B/task_fputest.exe FPUTEST.EXE
        $B/KLANG.WAV KLANG.WAV  $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF  $B/rbtest.com RBTEST.COM  $B/rbgfx.com RBGFX.COM  $B/rbfpu.com RBFPU.COM  $B/rbtime.com RBTIME.COM"
@@ -303,6 +304,7 @@ TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
 # Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
 HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE"
 TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
+TARGET="" TO="c:" copy_list "$B/bioscmp.com BIOSCMP.COM" "DEMO/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC
