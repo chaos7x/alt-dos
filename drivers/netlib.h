@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Hilfen fuer Netzwerk-Treiber (Kartentreiber und TCPIP.SYS):
- * ferne Einspruenge ueber dcrt0 (fent0..4), 32-Bit-Ports, Kopieren.
+ * ferne Einspruenge ueber dcrt0 (fent0..4), 16-Bit-Ports, Kopieren.
+ * Nur 286-Befehle (NE2000.SYS und TCPIP.SYS sollen auch auf 5.x laufen);
+ * 32-Bit-Ports stehen im jeweiligen PCI-Treiber.
  */
 #ifndef NETLIB_H
 #define NETLIB_H
@@ -24,22 +26,17 @@ static unsigned fent(int n, fent_t f)
     return (unsigned)tab[n];
 }
 
-unsigned long inl(unsigned port);
-#pragma aux inl = "in eax,dx" "mov edx,eax" "shr edx,16" \
-    __parm [__dx] __value [__dx __ax] __modify __exact [__ax __dx];
-void outl(unsigned port, unsigned lo, unsigned hi);
-#pragma aux outl = "push ebx" "shl ebx,16" "mov bx,ax" "xchg eax,ebx" \
-    "out dx,eax" "xchg eax,ebx" "pop ebx" \
-    __parm [__dx] [__ax] [__bx] __modify __exact [];
+unsigned getds(void);
+#pragma aux getds = "mov ax,ds" __value [__ax];
 unsigned inw(unsigned port);
 #pragma aux inw = "in ax,dx" __parm [__dx] __value [__ax];
 void outw(unsigned port, unsigned v);
 #pragma aux outw = "out dx,ax" __parm [__dx] [__ax];
 
-/* n Bytes fern kopieren (rep movsb, 32 Bit wo es geht) */
+/* n Bytes fern kopieren (wortweise, 286) */
 void fmove(void __far *d, const void __far *s, unsigned n);
-#pragma aux fmove = "push ds" "cld" "mov ds,dx" "mov ax,cx" "shr cx,2" \
-    "rep movsd" "mov cx,ax" "and cx,3" "rep movsb" "pop ds" \
+#pragma aux fmove = "push ds" "cld" "mov ds,dx" "shr cx,1" \
+    "rep movsw" "adc cx,cx" "rep movsb" "pop ds" \
     __parm [__es __di] [__dx __si] [__cx] __modify [__ax __cx __si __di];
 
 #endif

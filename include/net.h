@@ -89,6 +89,9 @@ struct net_ctl {                    /* DH_NETCTL -> ctl_off der Karte      */
 #define NC_MCAST        2           /* sel:off = len/6 Mehrfachadressen    */
 #define NC_PROMISC      3           /* arg = 1 an, 0 aus                   */
 #define NC_STATS        4           /* sel:off = struct net_stats          */
+#define NC_POLL         5           /* Karte ohne IRQ (net_reg.irq = 0):
+                                       Empfangenes jetzt abholen; der Stapel
+                                       ruft es aus dem Nachlauf            */
 
 struct net_stats {
     unsigned long rx_ok, tx_ok, rx_err, tx_err, rx_drop, tx_coll;

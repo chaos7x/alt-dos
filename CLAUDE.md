@@ -5271,6 +5271,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Watcom warnt mit W112 „Pointer truncated“). CONFIG.SYS jetzt 4.009
   Byte (Grenze 4 KB!). Nicht geprüft: 86Box, Proxmox. Weiter: UDP/TCP-
   Sockets als Handles (OF_SOCK), DNS, dann IPv6.
+  NE2000 und 286 (Entscheidung des Nutzers, 18.11.2026: auch der SCAT
+  soll ins Netz – NE2000.SYS und TCPIP.SYS 286-tauglich, später nach 5.x
+  zurück, Version entscheidet der Nutzer): beide mit `$CFLAGS` (-2)
+  übersetzt (build.sh Abschnitt „Netzwerk“, Objekt net_*.o), netlib.h
+  nur noch 286 (fmove mit movsw, getds), inl/outl stehen in rtl8139.c.
+  `NE2000.SYS` (drivers/ne2000.c, 4,5 KB): DP8390, Senden Seiten 40h–45h,
+  Ring 46h–7Fh (NE1000 8 Bit: 20h/26h–3Fh), Remote-DMA per insw/outsw
+  direkt in den Platz des Stapels, Überlauf nach Datenblatt, Mehrfach-
+  filter; Suche /P:, dann PCI-Klone (10EC:8029 …), dann ISA 300h/280h/
+  320h/340h/360h/240h – Befehlsregister lesen (QEMU meldet 00h statt
+  21h!), Zähler-Probe wie Linux, Reset, PROM mit „WW“ (16 Bit: Bytes
+  doppelt); IRQ-Suche: Remote-DMA mit 0 Byte löst RDC aus, IRR der PICs.
+  Neu `NC_POLL` (net.h): Karten ohne IRQ (net_reg.irq = 0) holt TCPIP im
+  Nachlauf ab. In QEMU geprüft: isapc 4 MB mit ne2k_isa 300h/IRQ 9
+  (gefunden) und 320h /NOIRQ, ne2k_pci mit 20 × PING 1.472 Byte (Ring
+  läuft mehrfach um) – DHCP, PING, keine Fehler. Nicht geprüft: 86Box
+  (NE2000, RTL8019AS PnP), echte 8-Bit-NE1000.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

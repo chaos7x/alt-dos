@@ -227,8 +227,10 @@ for t in aha154x ahci aic7xxx ide mouse ncr5380 ncr8xx rtl8139 sb16; do
 done
 
 echo "Netzwerk"
-for t in tcpip; do
-    wcc $KCFLAGS -zu -fo=$B/net_$t.o net/$t.c
+# 286-Befehle ($CFLAGS): NE2000.SYS und TCPIP.SYS sollen auch auf 5.x laufen
+for t in tcpip ne2000; do
+    S=net; [ $t = ne2000 ] && S=drivers
+    wcc $CFLAGS -zu -fo=$B/net_$t.o $S/$t.c
     wlink $LINK name $B/net_$t.bin option map=$B/net_$t.map \
           file $B/dcrt0.o file $B/net_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/net_$t.bin $B/net_$t.map $B/net_$t.sys
@@ -273,7 +275,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
-SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/net_tcpip.sys TCPIP.SYS
+SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE  $B/task_ufat32.exe UFAT32.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/FR.KBL FR.KBL  $B/SP.KBL SP.KBL  $B/IT.KBL IT.KBL
        $B/DK.KBL DK.KBL  $B/NO.KBL NO.KBL  $B/SV.KBL SV.KBL  $B/PL.KBL PL.KBL"

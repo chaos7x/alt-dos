@@ -41,8 +41,10 @@ REM Sound Blaster 1.0-AWE64, AdLib, MPU-401. /A:220 /I:5 /D:1 /H:5 /M:330
 REM von Hand, /NOFM /NOMPU /NOAWE abschalten, /MPU = MIDI an den MPU-401
 REM statt an den AWE-Synthesizer, /AWETEST Probeton der AWE
 DEVICE=SB16.SYS
-REM Netz: Karte, dann TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
+REM Netz: Karte (NE2000 /P:300 /I:3), dann TCPIP /IP:a.b.c.d/n /GW:x
+REM /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
+REM DEVICE=NE2000.SYS
 REM DEVICE=TCPIP.SYS
 REM DEVICEHIGH lassen andere DOS auch zu; AT-DOS laedt beides gleich:
 REM DEVICEHIGH /L:1 =IDE.SYS

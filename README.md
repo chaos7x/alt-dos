@@ -195,7 +195,10 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   über das BIOS (SeaBIOS kann es); entladbar mit `DEVLOAD /U AHCI`
 - Netzwerk (6.2, erste Stufe; Entwurf `docs/NETZWERK.md`):
   `RTL8139.SYS` für Realtek RTL8139/8139C/8139C+ (PCI; QEMU
-  `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster, darüber
+  `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster,
+  `NE2000.SYS` für NE1000/NE2000 und Nachbauten (ISA, RTL8019AS, PCI-
+  Klone wie RTL8029; sucht 300h, 280h, 320h, 340h, 360h, 240h und den
+  IRQ selbst, `/P:300 /I:3` legt fest, `/NOIRQ` = Abfragebetrieb), darüber
   `TCPIP.SYS` mit ARP, IPv4, ICMP und DHCP-Client –
   `DEVICE=TCPIP.SYS [/IP:a.b.c.d/n /GW:x /DNS:x[,y]] [/HOST:name]`
   (ohne /IP holt er die Adresse per DHCP). `IPCONFIG [/ALL] [/RELEASE]

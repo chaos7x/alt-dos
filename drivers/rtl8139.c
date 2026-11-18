@@ -17,6 +17,15 @@
 #include "drvlib.h"
 #include "netlib.h"
 
+/* 32-Bit-Ports (386, PCI) */
+unsigned long inl(unsigned port);
+#pragma aux inl = "in eax,dx" "mov edx,eax" "shr edx,16" \
+    __parm [__dx] __value [__dx __ax] __modify __exact [__ax __dx];
+void outl(unsigned port, unsigned lo, unsigned hi);
+#pragma aux outl = "push ebx" "shl ebx,16" "mov bx,ax" "xchg eax,ebx" \
+    "out dx,eax" "xchg eax,ebx" "pop ebx" \
+    __parm [__dx] [__ax] [__bx] __modify __exact [];
+
 /* Register (I/O) */
 #define IDR0    0x00                    /* MAC                             */
 #define MAR0    0x08                    /* Mehrfach-Filter (64 Bit)        */
@@ -221,6 +230,10 @@ static unsigned rtl_ctl(void __far *v)
     case NC_PROMISC:
         promisc = c->arg ? RCR_AAP : 0;
         wr32(RCR, RCR_VAL | promisc);
+        return 0;
+    case NC_POLL:
+        if (!irq_on)
+            rtl_irq(0);
         return 0;
     case NC_STATS:
         fmove(MK_FP(c->sel, c->off), &st, sizeof(st));

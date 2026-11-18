@@ -24,8 +24,6 @@ typedef unsigned char __far *fp;
 #define G16(p)      ((unsigned)(p)[0] << 8 | (p)[1])
 #define P16(p, v)   ((p)[0] = (unsigned char)((v) >> 8), (p)[1] = (unsigned char)(v))
 
-unsigned getds(void);
-#pragma aux getds = "mov ax,ds" __value [__ax];
 unsigned seglim(unsigned sel);
 #pragma aux seglim = "xor cx,cx" "lsl cx,dx" __parm [__dx] __value [__cx];
 
@@ -41,6 +39,7 @@ static unsigned long rx_drop;
 /* ---- Schnittstellen -------------------------------------------------- */
 struct nif {
     unsigned char  up;
+    unsigned char  poll;                /* Karte ohne IRQ: abfragen      */
     unsigned char  mac[6];
     unsigned char  ip[4], mask[4], gw[4], dns[2][4];
     unsigned char  fixed;               /* feste Adresse (/IP:)          */
@@ -581,6 +580,9 @@ static unsigned e_done(void __far *v)   /* IRQ: Rahmen liegt da          */
     return 0;
 }
 
+static struct net_reg ri;
+static struct net_ctl nc;
+
 static unsigned e_run(void __far *v)    /* Nachlauf                      */
 {
     struct net_run __far *r = v;
@@ -590,6 +592,12 @@ static unsigned e_run(void __far *v)    /* Nachlauf                      */
         sec_base += 100;
         secs++;
     }
+    for (i = 0; i < NNETIF; i++)
+        if (nif[i].up && nif[i].poll) {
+            nc.ifc = i;
+            nc.cmd = NC_POLL;
+            devhlp(DH_NETCTL, 0, (unsigned)&nc, 0);
+        }
     while (rtail != rhead) {
         unsigned char t = rtail;
         frame_in(rifc[t], (fp)MK_FP(rsel, t * SLOT), rlen[t]);
@@ -602,8 +610,6 @@ static unsigned e_run(void __far *v)    /* Nachlauf                      */
     return 1;                           /* je Takt wieder                */
 }
 
-static struct net_reg ri;
-static struct net_ctl nc;
 
 static unsigned e_link(void __far *v)   /* neue Karte                    */
 {
@@ -615,6 +621,7 @@ static unsigned e_link(void __far *v)   /* neue Karte                    */
     n = &nif[i];
     zero(n, sizeof(*n));
     cpy(n->mac, ri.mac, 6);
+    n->poll = ri.irq == 0;
     nc.ifc = i;                         /* nur eigene Adresse + Rundruf  */
     nc.cmd = NC_MCAST;
     nc.len = 0;
