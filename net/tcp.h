@@ -43,12 +43,26 @@
 #define RTO_MIN 20                      /* 200 ms                          */
 #define RTO_MAX 6000                    /* 60 s                            */
 
-static unsigned isn_ctr;
+/* Startnummer wie RFC 6528: ISN = M + F(Adressen, Ports, Geheimnis),
+   M = Takt in 4-us-Schritten (10 ms = 2500 = 2048+256+128+64+4, ohne
+   Multiplikation). Das Geheimnis entsteht bei der ersten Verbindung aus
+   dem gesammelten Zufall. */
+#define HALFMAX 4                       /* halboffene Verbindungen, alle   */
+static unsigned long syn_drop;          /* deshalb verworfene SYN          */
+static unsigned long isn_key;
 
-static unsigned long isn_new(void)
+static unsigned long isn_new(struct sock *s)
 {
-    isn_ctr += 0x3D5B;
-    return ((unsigned long)ticks() << 16) ^ ((unsigned long)isn_ctr << 7) ^ now;
+    unsigned long h, t = now;
+    unsigned k;
+    if (!isn_key)
+        isn_key = rnd32() | 1;
+    h = isn_key ^ ((unsigned long)s->lport << 16 | s->rport);
+    for (k = 12; k < 16; k++)
+        h = rotl7(h ^ s->laddr[k]) + 0x7F4A7C15UL;
+    for (k = 12; k < 16; k++)
+        h = rotl7(h ^ s->raddr[k]) + 0x9E3779B9UL;
+    return (t << 11) + (t << 8) + (t << 7) + (t << 6) + (t << 2) + h;
 }
 
 static unsigned rwnd(struct sock *s)    /* eigenes Fenster                 */
@@ -201,9 +215,9 @@ static void tcp_closed(int k, unsigned char err)
     if (s->orphan)
         sk_free(k);
     else
-        proc_run(SEV(k));
+        wake(k);
     if (s->parent >= 0)
-        proc_run(SEV(s->parent));
+        wake(s->parent);
 }
 
 static void rtt_sample(struct sock *s, unsigned m)
@@ -322,9 +336,16 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
     if (s->st == TS_LISTEN) {           /* neue Verbindung                 */
         if (!fw_allow(s->prog, FWP_TCP, dp, f + 26, sp, i))
             return;                     /* Lauschen allein oeffnet nichts  */
-        for (k = n = 0; k < NSOCK; k++)
+        for (k = n = c = 0; k < NSOCK; k++) {
             if (sk[k].used && sk[k].parent == si)
                 n++;
+            if (sk[k].used && sk[k].type == SOCK_STREAM && sk[k].st == TS_SYNRCVD)
+                c++;
+        }
+        if (c >= HALFMAX) {             /* halboffen ueber alle: SYN-Flut  */
+            syn_drop++;                 /* darf die Sockets nicht leeren   */
+            return;
+        }
         if (n >= s->backlog || (c = sock_new()) < 0)
             return;                     /* voll: Gegenseite versucht es neu */
         s = &sk[c];
@@ -342,7 +363,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
             s->mss = TMSS;
         s->cwnd = 2 * s->mss;
         s->snd_wnd = w;
-        s->iss = isn_new();
+        s->iss = isn_new(s);
         s->snd_una = s->iss;
         s->tx_seq = s->iss + 1;
         s->st = TS_SYNRCVD;
@@ -380,15 +401,17 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
             s->rtt_on = 0;
         }
         tcp_seg(s, TF_ACK, s->snd_nxt, 0, 0);
-        proc_run(SEV(si));
+        wake(si);
         tcp_output(s, 0);
         return;
     }
 
     /* synchronisierte Zustaende */
-    if (fl & TF_RST) {
-        if (SEQ_GE(seq, s->rcv_nxt) && SEQ_LE(seq, s->rcv_nxt + rwnd(s)))
+    if (fl & TF_RST) {                  /* RFC 5961: nur genau an rcv_nxt */
+        if (seq == s->rcv_nxt)
             tcp_closed(si, 1);
+        else if (SEQ_GE(seq, s->rcv_nxt) && SEQ_LE(seq, s->rcv_nxt + rwnd(s)))
+            tcp_seg(s, TF_ACK, s->snd_nxt, 0, 0);       /* Challenge-ACK   */
         return;
     }
     if (fl & TF_SYN) {                  /* SYN mitten drin: nur ACK        */
@@ -418,7 +441,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         s->tmr = 0;
         s->retries = 0;
         if (s->parent >= 0)
-            proc_run(SEV(s->parent));
+            wake(s->parent);
     }
 
     /* ACK verarbeiten */
@@ -450,7 +473,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         s->retries = 0;
         s->dupacks = 0;
         s->tmr = s->snd_una == s->snd_max ? 0 : now + s->trto;
-        proc_run(SEV(si));              /* Platz im Sendepuffer            */
+        wake(si);                       /* Platz im Sendepuffer            */
     } else if (ack == s->snd_una && !dlen && s->snd_max != s->snd_una &&
                w == s->snd_wnd && !(fl & TF_FIN)) {
         if (++s->dupacks == 3) {        /* schnelle Wiederholung           */
@@ -514,7 +537,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
             }
             if (n < dlen)
                 s->ackp = 2;            /* Fenster voll                    */
-            proc_run(SEV(si));
+            wake(si);
         }
     }
     tcp_output(s, 0);
@@ -586,7 +609,7 @@ static unsigned tcp_connect(int k, unsigned ms)
     }
     if (!s->lport && !(s->lport = port_new(SOCK_STREAM)))
         return FAPI_ERR_FULL;
-    s->iss = isn_new();
+    s->iss = isn_new(s);
     s->snd_una = s->iss;
     s->snd_nxt = s->snd_max = s->iss + 1;
     s->tx_seq = s->iss + 1;

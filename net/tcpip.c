@@ -126,6 +126,33 @@ static unsigned csum(unsigned long s)
     return ~(unsigned)s;
 }
 
+/* Zufall (Haertung): ein 32-Bit-Speicher, gefuettert mit der Ankunftszeit
+   und Laenge jedes Rahmens (IRQ) und Bytes aus den Kopfdaten; ausgegeben
+   ueber xorshift. Nicht kryptographisch, aber von aussen nicht aus der
+   Laufzeit abzulesen - reicht fuer ISN (RFC 6528) und Absenderports
+   (RFC 6056), Multiplikationen gibt es hier nicht (sonst __U4M). */
+static unsigned long rnd_s = 0x6D2B79F5UL;
+
+static unsigned long rotl7(unsigned long x)
+{
+    return x << 7 | x >> 25;
+}
+
+static void rnd_mix(unsigned long v)
+{
+    rnd_s = rotl7(rnd_s ^ v) + 0x9E3779B9UL;
+}
+
+static unsigned long rnd32(void)
+{
+    unsigned long x = rnd_s ^ ticks();
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    rnd_s = x;
+    return x;
+}
+
 static int is_zero4(const unsigned char __far *a)
 {
     return !(a[0] | a[1] | a[2] | a[3]);
@@ -348,6 +375,8 @@ static void icmp_in(int i, fp f, unsigned len, unsigned hl)
     if (m[0] == 8 && ml <= sizeof(txb) - 34) {  /* Echo-Anfrage: antworten,
                                        mit Firewall nur im eigenen Netz  */
         unsigned char src[4];
+        if (f[30] == 255 && f[31] == 255 && f[32] == 255 && f[33] == 255)
+            return;                     /* kein Echo auf Rundruf           */
         if (fw_on && !same_net(&nif[i], f + 26) &&
             !fw_allow("", FWP_ICMP, 0, f + 26, 0, i))
             return;
@@ -538,6 +567,11 @@ static void ip4_in(int i, fp f, unsigned len)
         return;
     if (G16(f + 20) & 0x3FFF)           /* Bruchstueck: noch nicht       */
         return;
+    if (hl != 20)                       /* IP-Optionen (Source-Route ...): */
+        return;                         /* gar nicht erst ansehen          */
+    if (f[26] == 0 || f[26] == 127 || f[26] >= 224 || eq(f + 26, n->ip, 4))
+        return;                         /* unsinniger Absender             */
+    rnd_mix((unsigned long)G16(f + 18) << 16 | G16(f + 24));
     if (!(eq(f + 30, n->ip, 4) && !is_zero4(n->ip)) &&
         !(f[30] == 255 && f[31] == 255 && f[32] == 255 && f[33] == 255) &&
         n->dstate != D_DISCOVER && n->dstate != D_REQUEST)
@@ -584,6 +618,7 @@ static unsigned e_done(void __far *v)   /* IRQ: Rahmen liegt da          */
         return 1;
     rlen[h] = p->len;
     rifc[h] = (unsigned char)p->ifc;
+    rnd_mix((unsigned long)ticks() << 16 | p->len);
     rhead = (unsigned char)((h + 1) % NSLOT);
     return 0;
 }
@@ -827,6 +862,8 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
         return fw_ctl(c);
     case NET_SOCKLIST:
         return sk_list(c);
+    case NET_SELECT:
+        return sk_select(c);
     }
     if (c->fn >= NET_SOCKET)
         return sk_call(c);

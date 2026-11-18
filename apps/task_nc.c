@@ -4,6 +4,9 @@
  *   NC Rechner Port [Text]      TCP verbinden; Tastatur -> Netz, Netz ->
  *                               Bildschirm; mit Text: senden, Antwort zeigen
  *   NC -l Port                  TCP: auf eine Verbindung warten
+ *   NC -l -k Port               TCP: weiter lauschen, mehrere Verbindungen
+ *                               zugleich (NET_SELECT); Empfangenes mit
+ *                               Absender, getippte Zeilen gehen an alle
  *   NC -u Rechner Port [Text]   UDP: Datagramm senden, Antworten zeigen
  *   NC -u -l Port               UDP: auf Datagramme warten
  *   -w s   Frist (Verbinden, Antworten); Vorgabe 10 s bzw. 3 s bei UDP
@@ -73,6 +76,91 @@ static unsigned drain(unsigned h, unsigned ms)
     }
 }
 
+/* -k: Listener lh und bis zu NSEL_MAX-1 Verbindungen ueber NET_SELECT */
+static struct fapi_select sel;
+static unsigned cl[NSEL_MAX - 1];
+static char cname[NSEL_MAX - 1][24];
+
+static void say(const char *a, const char *b, const char *c)
+{
+    VioWrtTTY(a, slen(a));
+    VioWrtTTY(b, slen(b));
+    VioWrtTTY(c, slen(c));
+}
+
+static void serve_multi(unsigned lh)
+{
+    unsigned ncl = 0, k, j, r, c, n = 0;
+    char line[130];
+    VioWrtTTY("Warte auf Verbindungen (-k, Strg+C beendet) ...\r\n", 49);
+    for (;;) {
+        sel.e[0].h = lh;
+        sel.e[0].want = SEL_READ;
+        for (k = 0; k < ncl; k++) {
+            sel.e[k + 1].h = cl[k];
+            sel.e[k + 1].want = SEL_READ;
+        }
+        sel.n = ncl + 1;
+        sel.timeout = 50;               /* dazwischen die Tastatur        */
+        r = DosNet(NET_SELECT, &sel, sizeof(sel));
+        if (r >= 0xFFF0)
+            err("SELECT fehlgeschlagen.", 2);
+        if (sel.e[0].ready & SEL_READ) {
+            c = sio(NET_ACCEPT, lh, 0, 0, 0);
+            if (c < 0xFFF0) {
+                show_peer();
+                if (ncl < NSEL_MAX - 1) {
+                    cl[ncl] = c;
+                    scopy(cname[ncl], ts, sizeof(cname[0]));
+                    ncl++;
+                    say("[Verbunden mit ", ts, "]\r\n");
+                } else {
+                    DosClose(c);
+                    say("[Abgewiesen (voll): ", ts, "]\r\n");
+                }
+            }
+        }
+        for (k = 0; k < ncl; k++) {
+            if (!sel.e[k + 1].ready)
+                continue;
+            r = sio(NET_RECV, cl[k], buf, sizeof(buf), 0);
+            if (r == 0 || r >= 0xFFF0) {
+                say("[Getrennt: ", cname[k], "]\r\n");
+                DosClose(cl[k]);
+                for (j = k; j + 1 < ncl; j++) {
+                    cl[j] = cl[j + 1];
+                    scopy(cname[j], cname[j + 1], sizeof(cname[0]));
+                    sel.e[j + 1].ready = sel.e[j + 2].ready;
+                }
+                ncl--;
+                k--;
+                continue;
+            }
+            say("[", cname[k], "] ");
+            DosWrite(STDOUT, buf, r);
+        }
+        while ((c = KbdPeek()) != 0) {  /* Zeile an alle                  */
+            c = KbdCharIn();
+            if ((c & 0xFF) == '\r') {
+                VioWrtTTY("\r\n", 2);
+                line[n++] = '\r';
+                line[n++] = '\n';
+                for (k = 0; k < ncl; k++)
+                    sio(NET_SEND, cl[k], line, n, 0);
+                n = 0;
+            } else if ((c & 0xFF) == '\b') {
+                if (n) {
+                    n--;
+                    VioWrtTTY("\b \b", 3);
+                }
+            } else if ((c & 0xFF) >= ' ' && n < sizeof(line) - 3) {
+                line[n++] = (char)c;
+                VioWrtTTY(line + n - 1, 1);
+            }
+        }
+    }
+}
+
 static void tcp_session(unsigned h, int interactive)
 {
     unsigned r, n = 0, c;
@@ -99,7 +187,7 @@ static void tcp_session(unsigned h, int interactive)
         r = sio(NET_RECV, h, buf, sizeof(buf), 50);
         if (r == 0) {
             if (DosQHandType(STDOUT) == HT_CONSOLE)
-                VioWrtTTY("\r\n[Verbindung von der Gegenseite geschlossen]\r\n", 46);
+                VioWrtTTY("\r\n[Verbindung von der Gegenseite geschlossen]\r\n", 47);
             return;
         }
         if (r < 0xFFF0)
@@ -130,15 +218,16 @@ static void tcp_session(unsigned h, int interactive)
 void main(void)
 {
     char *a;
-    unsigned port = 0, wait = 0, udp = 0, lst = 0, h, r, got = 0, k, n = 0, c;
+    unsigned port = 0, wait = 0, udp = 0, lst = 0, keep = 0, h, r, got = 0, k, n = 0, c;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
         if (*a == '-' && a[1] == 'u') udp = 1;
         else if (*a == '-' && a[1] == 'l') lst = 1;
+        else if (*a == '-' && a[1] == 'k') keep = 1;
         else if (*a == '-' && a[1] == 'w') { a = next_word(a); wait = num(a); }
         else if (*a == '-' || *a == '/')
-            err("NC [-u] Rechner Port [Text]  |  NC [-u] -l Port  [-w s]", 2);
+            err("NC [-u] Rechner Port [Text]  |  NC [-u] -l [-k] Port  [-w s]", 2);
         else if (lst && !port) port = num(a);
         else if (!lst && !host[0]) word(a, host, sizeof(host));
         else if (!lst && !port) port = num(a);
@@ -172,8 +261,10 @@ void main(void)
 
     if (!udp) {
         if (lst) {
-            if (sio(NET_LISTEN, h, 0, 1, 0))
+            if (sio(NET_LISTEN, h, 0, keep ? 7 : 1, 0))
                 err("Lauschen nicht m\x94glich.", 2);
+            if (keep)
+                serve_multi(h);
             VioWrtTTY("Warte auf eine Verbindung ...\r\n", 31);
             c = sio(NET_ACCEPT, h, 0, 0, wait * 1000);
             if (c >= 0xFFF0)

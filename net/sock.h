@@ -86,6 +86,15 @@ static struct sock {
     unsigned long  tmr, ack_t, tw;      /* Wiederholung, ACK, Zeitgrenze   */
 } sk[NSOCK];
 #define SEV(i)  (0x200 + (i))           /* Weckereignis je Socket          */
+#define SEL_EV  0x2FF                   /* Weckereignis fuer NET_SELECT    */
+static unsigned char sel_n;             /* Tasks, die in SELECT warten     */
+
+static void wake(int i)                 /* Socket i hat sich geaendert     */
+{
+    proc_run(SEV(i));
+    if (sel_n)
+        proc_run(SEL_EV);
+}
 
 static unsigned eph;                    /* naechster freie Absenderport    */
 
@@ -122,8 +131,7 @@ static int port_used(unsigned char type, unsigned p)
 static unsigned port_new(unsigned char type)
 {
     unsigned k, p;
-    if (eph < 49152)
-        eph = 49152 + ((unsigned)now * 37 & 0x3FFF);
+    eph = 49152 + ((unsigned)rnd32() & 0x3FFF); /* RFC 6056: zufaellig */
     for (k = 0; k < 16384; k++) {
         p = eph++;
         if (eph < 49152)
@@ -316,7 +324,7 @@ static void udp_in(int i, fp f, unsigned len, unsigned hl)
                    !fw_allow(s->prog, FWP_UDP, dp, f + 26, sp, i))
             return;                     /* niemand hat gefragt, keine Regel */
         if (ring_put(s, src, sp, u + 8, ul - 8) == 0)
-            proc_run(SEV(k));
+            wake(k);
         return;
     }
     fw_drop++;                          /* kein Socket: schweigen          */
@@ -521,7 +529,7 @@ static void sk_free(int i)
     if (s->type == SOCK_STREAM)
         blk_put(s->tb);
     s->used = 0;
-    proc_run(SEV(i));                   /* Wartende wecken                 */
+    wake(i);                   /* Wartende wecken                 */
 }
 
 /* warten, bis cond() oder Frist (ms, 0 = ewig) */
@@ -715,7 +723,7 @@ static unsigned sk_call(struct net_call __far *c)
             }
             if (u->len != 1)
                 s->flags |= SF_NORD;
-            proc_run(SEV(i));
+            wake(i);
             return 0;
         case NET_GETPEER:
             if (s->st < TS_SYNRCVD)
@@ -753,7 +761,7 @@ static unsigned sk_call(struct net_call __far *c)
         return 0;
     case NET_SHUTDOWN:
         s->flags |= u->len == 0 ? SF_NORD : u->len == 1 ? SF_NOWR : SF_NORD | SF_NOWR;
-        proc_run(SEV(i));
+        wake(i);
         return 0;
     case NET_SETOPT:
     case NET_GETOPT: {
@@ -817,4 +825,61 @@ static unsigned sk_list(struct net_call __far *c)
     u->rq = s->ru;
     u->sq = s->type == SOCK_STREAM ? s->tq : 0;
     return 0;
+}
+
+/* NET_SELECT: Bereitschaft von Socket i (SEL_*) */
+static unsigned char sk_ready(int i)
+{
+    struct sock *s = &sk[i];
+    unsigned char r = 0;
+    int c;
+    if (i < 0 || i >= NSOCK || !s->used)
+        return SEL_ERR;
+    if (s->type == SOCK_DGRAM)
+        return (s->ru ? SEL_READ : 0) | SEL_WRITE;
+    if (s->st == TS_LISTEN) {
+        for (c = 0; c < NSOCK; c++)
+            if (sk[c].used && sk[c].parent == i &&
+                (sk[c].st >= TS_EST || (sk[c].st == TS_CLOSED && sk[c].rxfin)))
+                return SEL_READ;
+        return 0;
+    }
+    if (s->ru || s->rxfin || (s->flags & SF_NORD))
+        r |= SEL_READ;
+    if ((s->st == TS_EST || s->st == TS_CLOSEWT) && s->tq < BLK && !(s->flags & SF_NOWR))
+        r |= SEL_WRITE;
+    if (s->err || (s->st == TS_CLOSED && s->rport))
+        r |= SEL_ERR | SEL_READ;
+    return r;
+}
+
+/* Der Kernel hat die Handles schon in Socketnummern uebersetzt (Kopie auf
+   seinem Stapel) und legt ready zurueck. */
+static unsigned sk_select(struct net_call __far *c)
+{
+    struct fapi_select __far *u = uptr(c->usel, c->p, sizeof(struct fapi_select));
+    unsigned k, n, t0 = ticks(), lim, w;
+    if (!u || u->n == 0 || u->n > NSEL_MAX)
+        return FAPI_ERROR;
+    lim = u->timeout == 0xFFFF ? 0 : u->timeout / 10 + 1;
+    for (;;) {
+        cli();
+        for (k = n = 0; k < u->n; k++) {
+            u->e[k].ready = sk_ready(u->e[k].h) & (u->e[k].want | SEL_ERR);
+            if (u->e[k].ready)
+                n++;
+        }
+        if (n || u->timeout == 0) {
+            sti();
+            return n;
+        }
+        w = ticks() - t0;
+        if (lim && w >= lim) {
+            sti();
+            return 0;
+        }
+        sel_n++;
+        proc_block(SEL_EV, lim ? lim - w : 100);
+        sel_n--;
+    }
 }

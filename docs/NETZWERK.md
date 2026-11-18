@@ -99,7 +99,7 @@ im Modul und wachen über `net_kick` bzw. Fristen auf.
   über `files[k].first`.
 - Aufrufe wie BSD (OS/2 TCP/IP, Winsock dachten genauso): SOCKET
   (Familie AF_INET/AF_INET6, TCP/UDP), BIND, CONNECT, LISTEN, ACCEPT, SEND/RECV, SENDTO/RECVFROM,
-  SHUTDOWN, SELECT (bis 16 Handles, Frist in ms), GETOPT/SETOPT
+  SHUTDOWN, SELECT (bis 8 Handles, Frist in ms; umgesetzt 18.11.2026), GETOPT/SETOPT
   (nicht blockierend, Fristen, Puffergrößen), GETNAME/GETPEER.
   Signale (Strg+C) brechen Warten ab.
 - Adressen wie BSD/RFC 3493: `struct fapi_sockaddr` mit Länge und
@@ -205,6 +205,13 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
 - Härtung: zufällige ISN und Absenderports, keine IP-Optionen/Source-
   Routing, ICMP-Redirects ignorieren, kein Echo auf Rundruf, Grenze für
   halboffene Verbindungen, strenge Längen-/Prüfsummenprüfung.
+  Umgesetzt 18.11.2026: ISN = Zeitanteil (4 µs-Schritte wie RFC 6528)
+  + Hash aus geheimem Schlüssel und Adressen/Ports, Absenderports
+  zufällig ab 49152, Zufall aus Takt und Ankunftszeiten der Rahmen;
+  höchstens 4 halboffene Verbindungen über alle Listener; RST nur bei
+  genau passender Folgenummer, sonst ACK (RFC 5961); IP-Kopf mit
+  Optionen und Absender 0/127/224+/eigene Adresse verworfen; ICMP kennt
+  nur Echo (Redirects fallen weg), kein Echo auf 255.255.255.255.
 - Reihenfolge: Prüfpunkte und Vorgabe zusammen mit TCP (Stufe 2), Regeln
   je Programm, INI und Werkzeug direkt danach – bevor ein Programm lauscht.
 - Packet-Driver-Boxen laufen später durch denselben Filter.

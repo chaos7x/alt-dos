@@ -210,6 +210,27 @@ unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n)
     c.p = p;
     c.n = n;
     c.sock = 0xFFFF;
+    if (fn == NET_SELECT) {             /* Handles -> Sockets in einer     */
+        struct fapi_select ks;          /* Kopie auf dem Kernelstapel     */
+        struct fapi_select __far *u = MK_FP(usel, p);
+        unsigned k;
+        l = seglim(usel);
+        if (!l || p > l || l - p < sizeof(ks) - 1 || n < sizeof(ks))
+            return FAPI_ERROR;
+        fcopy(&ks, u, sizeof(ks));
+        if (!ks.n || ks.n > NSEL_MAX)
+            return FAPI_ERROR;
+        for (k = 0; k < ks.n; k++)
+            if ((ks.e[k].h = kf_sock_id(ks.e[k].h)) == 0xFFFF)
+                return FAPI_ERROR;
+        c.usel = KDATA;                 /* SS = DS = KDATA im Kernel      */
+        c.p = (unsigned)&ks;
+        c.n = sizeof(ks);
+        r = ncall(&c);
+        for (k = 0; k < ks.n; k++)
+            u->e[k].ready = ks.e[k].ready;
+        return r;
+    }
     if (fn > NET_SOCKET) {
         l = seglim(usel);
         if (!l || p >= l)

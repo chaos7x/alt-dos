@@ -363,6 +363,22 @@ struct fapi_sockinfo {
 #define NET_GETPEER         0x1B    /* h -> addr (Gegenseite)               */
 #define NET_SETOPT          0x1C    /* h, len = SO_*, flags = Wert          */
 #define NET_GETOPT          0x1D    /* h, len = SO_* -> AX = Wert           */
+#define NET_SELECT          0x1E    /* struct fapi_select: auf mehrere
+                                       Sockets warten -> Zahl der bereiten,
+                                       0 = Frist abgelaufen                */
+#define NSEL_MAX            8
+#define SEL_READ            0x01    /* Daten, Ende der Gegenseite, ACCEPT  */
+#define SEL_WRITE           0x02    /* Platz im Sendepuffer / verbunden    */
+#define SEL_ERR             0x04    /* Fehler, abgebrochen (immer gemeldet) */
+struct fapi_select {
+    unsigned short n;               /* Eintraege (1..NSEL_MAX)          */
+    unsigned short timeout;         /* ms; 0 = nur nachsehen, FFFFh = ewig */
+    struct {
+        unsigned short h;           /* Handle                           */
+        unsigned char  want;        /* SEL_READ | SEL_WRITE             */
+        unsigned char  ready;       /* Rueckgabe                        */
+    } e[NSEL_MAX];
+};
 #define FAPI_ERR_AGAIN      0xFFF5  /* nicht blockierend: noch nichts da   */
 #define FAPI_ERR_RESET      0xFFF4  /* Verbindung abgelehnt/abgebrochen    */
 #define SOCK_STREAM         1       /* TCP                                  */

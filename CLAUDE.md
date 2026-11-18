@@ -5391,6 +5391,30 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Firewall). TCPIP.SYS danach 21,9 KB. Nächster Schritt (abgestimmt):
   Firewall-Regeln je Programm (NET_FWCTL, FIREWALL.INI, FIREWALL.EXE)
   vor allem, was lauscht; dann SELECT, IPv6.
+  Härtung und SELECT erledigt (18.11.2026, „Ok. Los.“ des Nutzers; in
+  QEMU und 86Box (386DX/40 4 MB, NE2000) geprüft: `NC -l -k 5556` mit drei gleichzeitigen Verbindungen vom
+  Rechner – Eingänge mit Absender, Trennen einer lässt die anderen
+  weiterlaufen, getippte Zeile kommt bei beiden Gegenstellen an;
+  NETSTAT -a zeigt zufällige UDP-Ports (53538, 62471); 1 MB hin und
+  zurück MD5 gleich, PING): tcpip.c Zufall `rnd32` (xorshift, gemischt
+  mit Takt und Länge/IP-Kennung jedes Rahmens), IP-Kopf nur 20 Byte
+  (Optionen -> verworfen), Absender 0/127/224+/eigene verworfen, kein
+  Echo auf 255.255.255.255. tcp.h: `isn_new` = Takt · 2500 + Hash aus
+  `isn_key` (beim ersten Gebrauch aus rnd32) und Adressen/Ports;
+  `HALFMAX` 4 halboffene über alle Listener (`syn_drop` zählt); RST
+  schließt nur bei seq == rcv_nxt, im Fenster -> ACK (RFC 5961).
+  sock.h: Absenderport je Aufruf zufällig 49152–65535; `wake(i)` statt
+  proc_run(SEV) weckt zusätzlich die SELECT-Warter (`SEL_EV`, `sel_n`);
+  `sk_ready`/`sk_select` (NET_SELECT 1Eh, `struct fapi_select`, bis
+  `NSEL_MAX` 8, Frist in ms, FFFFh ohne). Kernel net.c übersetzt die
+  Handles auf eine Kopie im Kernelstapel (kf_sock_id) und legt ready
+  zurück. NC `-k` (`serve_multi`, Rückstau 7). Testfalle: ein vorher
+  hängender NC-Lauf ließ einen Test scheitern – vor jedem Lauf mit
+  TASKMAN /K NC aufräumen; eine noch laufende QEMU mit hostfwd auf 5556
+  fängt die Verbindungen für 86Box ab (in 86Box kam „nichts an“) – vor
+  dem 86Box-Test QEMU beenden. Dabei behoben: NC gab bei zwei Meldungen
+  feste, falsche Längen an VioWrtTTY (2 Byte Müll „ S“ bzw. ein Zeichen
+  zu wenig). Nicht geprüft: SYN-Flut (kein Werkzeug).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
