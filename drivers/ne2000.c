@@ -100,6 +100,26 @@ static void card_read(unsigned addr, void __far *d, unsigned n)
     rdma_wait();
 }
 
+/* txb (n Bytes) in den Sendepuffer der Karte und senden */
+static void tx_start(unsigned n)
+{
+    wr(ISR, I_RDC);
+    wr(RBCR0, n);
+    wr(RBCR1, n >> 8);
+    wr(RSAR0, 0);
+    wr(RSAR1, txpage);
+    wr(CR, C_RWRITE | C_START);
+    if (w16)
+        outsw_far(io + DATA, getds(), (unsigned)txb, n >> 1);
+    else
+        outsb_far(io + DATA, getds(), (unsigned)txb, n);
+    rdma_wait();
+    wr(TPSR, txpage);
+    wr(TBCR0, n);
+    wr(TBCR1, n >> 8);
+    wr(CR, C_NODMA | C_START | C_TXP);
+}
+
 /* ---- Empfang --------------------------------------------------------- */
 static void rx(void)
 {
@@ -221,22 +241,8 @@ static unsigned ne_send(void __far *v)
         txb[n++] = 0;
     if (w16 && (n & 1))
         txb[n++] = 0;
-    wr(ISR, I_RDC);
-    wr(RBCR0, n);
-    wr(RBCR1, n >> 8);
-    wr(RSAR0, 0);
-    wr(RSAR1, txpage);
-    wr(CR, C_RWRITE | C_START);
-    if (w16)
-        outsw_far(io + DATA, getds(), (unsigned)txb, n >> 1);
-    else
-        outsb_far(io + DATA, getds(), (unsigned)txb, n);
-    rdma_wait();
-    wr(TPSR, txpage);
-    wr(TBCR0, n);
-    wr(TBCR1, n >> 8);
     txbusy = 1;
-    wr(CR, C_NODMA | C_START | C_TXP);
+    tx_start(n);
     return NS_OK;
 }
 
@@ -350,7 +356,7 @@ static unsigned irr_now(void)
     return inp(0x20) | ((unsigned)inp(0xA0) << 8);
 }
 
-/* Karte einen Interrupt ausloesen lassen (Remote-DMA mit 0 Bytes) */
+/* Karte einen Interrupt ausloesen lassen (Remote-DMA mit 0 Bytes, wie Linux) */
 static unsigned find_irq(void)
 {
     static const unsigned char cand[] = { 3, 5, 9, 10, 11, 12, 15, 7, 4 };
@@ -360,12 +366,18 @@ static unsigned find_irq(void)
     for (i = 0; i < 200; i++)
         off |= irr_now();
     wr(ISR, 0xFF);
-    wr(IMR, I_RDC);
+    wr(IMR, 0);
     wr(RBCR0, 0);
     wr(RBCR1, 0);
     wr(CR, C_RREAD | C_START);
+    /* Erst RDC stehen lassen, dann freigeben: INT = ISR & IMR bleibt oben,
+       bis ISR geloescht wird (86Box gibt beim Remote-DMA selbst nur einen
+       kurzen Puls, der im PIC nicht stehen bleibt) */
+    for (i = 0; i < 1000 && !(rd(ISR) & I_RDC); i++)
+        ;
+    wr(IMR, I_RDC);
     for (i = 0; i < 20000; i++) {
-        on = irr_now() & ~off;
+        on = irr_now() & ~off & ~0x0107u;       /* Takt, Tastatur, Kaskade */
         if (on)
             break;
     }

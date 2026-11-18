@@ -30,6 +30,23 @@ unsigned nf_call(unsigned cs, unsigned ip, unsigned ds, unsigned es, unsigned bx
 
 static struct net_reg nif[NNETIF];      /* Kopie der Anmeldung           */
 static unsigned char nif_drv[NNETIF];   /* Treiber + 1, 0 = frei         */
+/* Nachlauf auf eigenem Stapel: net_poll kommt auch aus dem Scheduler-
+   Durchlauf, also auf dem Kernelstapel eines Tasks, der mitten in einem
+   Plattenauftrag schlaeft (FAPI -> FAT -> Treiber -> ProcBlock -> sched).
+   TCP und Kartentreiber kaemen dort oben drauf. Gemessen (86Box, 386,
+   1 MB per TCP): ~400 Byte; der Rest ist fuer IRQs waehrenddessen. */
+#define NSTK 512                        /* Worte                         */
+static unsigned short net_stk[NSTK];
+
+unsigned nf_call_stk(unsigned cs, unsigned ip, unsigned ds, unsigned es, unsigned bx,
+                     unsigned top);
+#pragma aux nf_call_stk = \
+    "mov cx,sp" "mov sp,di" "push cx" "push ds" "push bp" "push ax" "push dx" \
+    "mov bp,sp" "mov ds,si" "call dword ptr ss:[bp]" "add sp,4" "pop bp" "pop ds" \
+    "pop cx" "mov sp,cx" \
+    __parm [__ax] [__dx] [__si] [__es] [__bx] [__di] __value [__ax] \
+    __modify [__bx __cx __dx __si __di __es];
+
 static struct net_proto np;
 static unsigned char np_drv;            /* Stapel: Treiber + 1           */
 static volatile unsigned char net_pend; /* Nachlauf faellig              */
@@ -153,8 +170,9 @@ void __far net_poll(void)
     net_pend = 0;
     net_last = now;
     nl_run.ticks = now;
-    net_tick = (unsigned char)(nf_call(PCS(), np.run_off, PDS(), KDATA,
-                                       (unsigned)&nl_run) & 1);
+    net_tick = (unsigned char)(nf_call_stk(PCS(), np.run_off, PDS(), KDATA,
+                                           (unsigned)&nl_run,
+                                           (unsigned)&net_stk[NSTK]) & 1);
     net_busy = 0;
 }
 

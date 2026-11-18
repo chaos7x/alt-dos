@@ -37,6 +37,17 @@ beste, was wir haben“ – echte Hardware hat praktisch niemand mehr):
 QEMU (schnell, nachsichtig), **86Box (Referenz)**, Proxmox/KVM (VMs).
 In der Doku nicht „ungeprüft auf echter Hardware“ schreiben, sondern
 nennen, auf welcher dieser Stufen geprüft ist.
+Regel (Entscheidung des Nutzers, 18.11.2026): QEMU zum schnellen
+Ausprobieren während der Arbeit; **86Box ist Pflicht vor dem Commit**,
+sobald Hardware im Spiel ist (Treiber, Ports, IRQ/DMA, Zeitverhalten,
+BIOS-Aufrufe, Boxen) – reine Programmlogik braucht es nicht. Commit und
+Doku nennen die Stufe. Werkzeug: 86Box hier gebaut (siehe „Bauen und
+testen“), VMs unter /tmp/claude-0/86b (`n386` = 386DX/40, 4 MB,
+AHA-154xC, NE2000 an 300h/IRQ 10, SLiRP mit Weiterleitung 5556;
+`p3n` = P3B-F mit RTL8139), `run86.sh`, `typ.py` (tippt mit deutscher
+Zuordnung). Der Start dauert in 86Box ~2 min (Auslagerungsdatei).
+Der SCAT (286) läuft nicht mit `main` (386-Kernel) – für ihn erst der
+Rückport nach 5.x.
 Als Nächstes im Plan (6.x): Netzwerk, VirtIO.
 
 
@@ -5313,6 +5324,31 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Lehre: Wer im Ring-0-Modul wartet (proc_block ohne Kernelsperre), kann
   per Strg+C beendet werden – Zustand im Modul darf nicht an der
   wartenden Funktion hängen (Freigabe über NETK_CLOSE beim Schließen).
+  86Box-Gegenprobe der Stufen 1–2b (18.11.2026, 386DX/40 4 MB mit
+  NE2000 ISA und P3B-F mit RTL8139, SLiRP): DHCP, PING, NSLOOKUP, NC
+  UDP/TCP, 1 MB herunter und hinauf (MD5 gleich) neben DETACH XCOPY
+  \DOS, eingehend per Weiterleitung mit /NOFW, CHKDSK sauber. Drei
+  Funde, die QEMU nicht zeigte: (1) **FAT zerstört** beim Download
+  (verlorene Ketten, auch unbeteiligte Dateien): `irq_common` und
+  `devhlp_entry_` (start.asm) sicherten FS/GS nicht – bisher riefen
+  IRQ-Routinen nur kleine DevHlp, die NE2000 läuft aus dem IRQ durch
+  net.c (Fernzeiger in FS/GS) bis in den Stapel; unterbrach sie fat.c,
+  schrieb der FAT-Code danach in ein falsches Segment. Jetzt beide
+  gesichert, zurückgeladen nur, was `verr` noch als gültig meldet (ein
+  DevHlp kann Segmente freigeben – sonst Kernel-Panik beim Start, #GP
+  0190h). Lehre: Wer aus einer Interruptroutine Kernel-C ruft, braucht
+  FS/GS gesichert. (2) NE2000-IRQ nicht gefunden: 86Box gibt beim
+  Remote-DMA mit 0 Byte nur einen Puls (DP8390_FLAG_CLEAR_IRQ), im PIC
+  bleibt nichts – find_irq stellt erst RDC her und gibt dann IMR frei
+  (INT = ISR & IMR bleibt oben, wie bei der echten Karte), Takt/
+  Tastatur/Kaskade ausgeblendet. Auf IRQ 3 (86Box-Vorgabe) kam in
+  dieser VM gar nichts an (COM2 sitzt dort) – VM auf IRQ 10. (3)
+  `/DNS:` ging bei DHCP verloren, gilt jetzt vor dem DHCP-DNS. Dazu
+  vorsorglich: net_poll läuft auf eigenem Stapel (`net_stk`, 1 KB in
+  DGROUP; gemessen ~400 Byte), weil er aus dem Scheduler auf dem
+  Kernelstapel eines Tasks mitten im Plattenauftrag liefe. Testfalle:
+  NC mit Konsole als Eingabe schickt Getipptes an den Server – der
+  schließt mit ungelesenen Daten per RST (Download bricht ab).
   Stufe 2b TCP erledigt (18.11.2026; in QEMU geprüft mit Diensten auf
   dem Rechner – Echo 7777, 1-MB-Sender 7780, MD5-Senke 7781, Skript im
   Scratchpad: NC Echo, 1 MB herunter (`NC … > DATEI`, MD5 gleich) und

@@ -483,7 +483,7 @@ static void dhcp_in(int i, fp d, unsigned dl)
         cpy(n->ip, d + 16, 4);          /* ACK                           */
         cpy(n->mask, mask, 4);
         cpy(n->gw, gw, 4);
-        cpy(n->dns, dns, 8);
+        cpy(n->dns, is_zero4(cfg_dns[0]) ? dns[0] : cfg_dns[0], 8); /* /DNS geht vor */
         if (!is_zero4(srv))
             cpy(n->dsrv, srv, 4);
         n->lease = lease;

@@ -848,6 +848,8 @@ irq13:  push    ax
 irq_common:                             ; PUSHAD liegt schon (irqN)
         push    ds
         push    es
+        push    fs                      ; Kernel-C haelt Fernzeiger in FS/GS;
+        push    gs                      ; IRQ-Routinen rufen DevHlp (Netz)
         mov     bx, KDATA
         mov     ds, bx
         mov     es, bx
@@ -890,7 +892,17 @@ irq_common:                             ; PUSHAD liegt schon (irqN)
         jb      .m
         out     0xA0, al
 .m:     out     0x20, al
-.out:   pop     es
+.out:   pop     bx                      ; GS/FS nur zurueck, wenn der
+        verr    bx                      ; Deskriptor noch gilt (Handler
+        jz      .g1                     ; kann Segmente freigeben)
+        xor     bx, bx
+.g1:    mov     gs, bx
+        pop     bx
+        verr    bx
+        jz      .f1
+        xor     bx, bx
+.f1:    mov     fs, bx
+        pop     es
         pop     ds
         popad
         iretd
@@ -1122,6 +1134,8 @@ global devhlp_entry_
 devhlp_entry_:
         push    ds
         push    es
+        push    fs                      ; Kernel-C benutzt FS/GS - dem
+        push    gs                      ; Treiber (auch im IRQ) erhalten
         push    si
         push    di
         push    bp
@@ -1139,12 +1153,27 @@ devhlp_entry_:
         mov     dx, si
         call    devhlp_dispatch_
         pop     word [_devhlp_dx]
-        pop     cx
+        mov     bp, sp                  ; FS/GS nur zurueck, wenn noch
+        mov     bx, [bp+12]             ; gueltig (DevHlp gibt Segmente
+        verr    bx                      ; frei: DH_KSEG, Entladen ...)
+        jz      .dg
+        mov     word [bp+12], 0
+.dg:    mov     bx, [bp+14]
+        verr    bx
+        jz      .df
+        mov     word [bp+14], 0
+.df:    mov     bx, [bp+16]             ; ES ebenso
+        verr    bx
+        jz      .de
+        mov     word [bp+16], 0
+.de:    pop     cx
         pop     bx
         pop     dx
         pop     bp
         pop     di
         pop     si
+        pop     gs
+        pop     fs
         pop     es
         pop     ds
         retf

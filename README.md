@@ -201,7 +201,7 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   IRQ selbst, `/P:300 /I:3` legt fest, `/NOIRQ` = Abfragebetrieb), darüber
   `TCPIP.SYS` mit ARP, IPv4, ICMP und DHCP-Client –
   `DEVICE=TCPIP.SYS [/IP:a.b.c.d/n /GW:x /DNS:x[,y]] [/HOST:name]`
-  (ohne /IP holt er die Adresse per DHCP). `IPCONFIG [/ALL] [/RELEASE]
+  (ohne /IP holt er die Adresse per DHCP; /DNS gilt auch dann). `IPCONFIG [/ALL] [/RELEASE]
   [/RENEW]` und `PING [-t] [-n n] [-l Größe] [-w ms] [-i TTL] Ziel` wie
   bei Windows; AT-DOS antwortet selbst auf ARP und PING. Beide lassen
   sich mit DEVLOAD laden und (erst TCPIP, dann die Karte) entladen.
@@ -215,7 +215,8 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Lauschen/Annehmen, Slow Start, schnelles Wiederholen, Nagle,
   verzögertes ACK, RTO nach Jacobson) – `NC Rechner Port [Text]`,
   `NC -l Port`, `NC r p < DATEI` / `> DATEI`. Eingehende Verbindungen
-  erst mit `/NOFW` (Regeln je Programm folgen). Noch nicht: IPv6
+  erst mit `/NOFW` (Regeln je Programm folgen). Geprüft in QEMU und
+  86Box (386DX/40 mit NE2000, P3B-F mit RTL8139). Noch nicht: IPv6
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;
