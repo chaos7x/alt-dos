@@ -4855,6 +4855,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   6.x/5.x: 20h bei Konflikt, Größe über zwei Handles, Sperren 0/21h),
   Word 5.5 danach wieder vollständig installiert. Reine Programmlogik –
   kein 86Box-Lauf.
+  Bezug MS-DOS 6.22 (vom Nutzer, mit und ohne SHARE):
+  `docs/bioscmp/msdos622*.txt`; daraus übernommen: Freigabekonflikt beim
+  Öffnen 05h statt 20h (beide Linien). FreeDOS-Abweichung gefunden: FCB-
+  Suche mit normalem FCB findet versteckte Dateien (fcbfns.c `wAttr =
+  D_ALL`) – offen (Kern neu bauen).
   Platz danach (Wunsch des Nutzers, „Kernel freischaufeln“): die Tabellen
   je Box des Redirectors (Suchverzeichnisse 2,5 KB, SHARE 1,9 KB) liegen
   in einem Kernelsegment für alle Boxen (`struct rbx`, `RBX(t)`, angelegt

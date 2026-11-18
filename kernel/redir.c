@@ -796,7 +796,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (slot >= 0) {                        /* Box hat sie schon offen */
             struct shf __far *e = &RBX(t)->sh[slot];
             if (act != 1 || !sh_ok(e, mode))
-                return E_SHARE;
+                return E_DENIED;                /* MS-DOS 6.22 mit SHARE: */
+                                                /* 05h (BIOSCMP)          */
             if (M_WR(mode) && !e->kw) {         /* Handle nur lesend:     */
                 FAPI(FAPI_CLOSE, KDATA, e->h1 - 1, 0, 0);   /* neu RW     */
                 h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_RW, 0);
