@@ -25,6 +25,7 @@ struct task {
     unsigned      sig_tramp, sig_mask;          /* DosSetSigHandler      */
     unsigned char std[3];                       /* Eintraege fuer Handle 0-2 */
     unsigned char bg;                           /* EXEC_BG: weckt/schliesst nichts */
+    unsigned char nocon;                        /* EXEC_DETACH: ohne Konsole (erbt) */
     unsigned char lfn;                          /* FX_FLAG_LONGNAMES         */
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */

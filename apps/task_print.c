@@ -229,7 +229,7 @@ static void start_worker(void)
     cmd[0] = lpath[0];
     cmd[1] = 0;
     scat(cmd, ":\\DOS\\PRINT.EXE /WORK", sizeof(cmd));
-    if (DosExecPgm(cmd, EXEC_BG))
+    if (DosExecPgm(cmd, EXEC_DETACH))
         puts("PRINT: Hintergrunddruck kann nicht gestartet werden.\r\n");
 }
 

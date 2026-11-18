@@ -298,7 +298,7 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   bleiben ein Wort; Strg+C fragt „Stapelverarbeitung abbrechen (J/N)?“.
   Außerdem `TRUENAME` (echter Pfad hinter SUBST/JOIN), `BREAK`, `VERIFY`,
   `CHCP`, `CTTY COM1` (Bedienung über die serielle Leitung), `KEYS
-  ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund), `CD A:\X` von C:
+  ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund, ohne Konsole: es nimmt keine Tasten weg, liest von der Tastatur Dateiende wie `< NUL`), `CD A:\X` von C:
   aus (jedes Programm merkt sich das Verzeichnis weiterer Laufwerke),
   `PROMPT $E` für ANSI-Farben; `DIR` zeigt JOIN-Verzeichnisse als
   `<JUNCTION>`
@@ -806,7 +806,7 @@ selbst nur 8.3 kennt.
 | 9  | KbdPeek         | wie 8, wartet nicht, 0 = nichts |
 | 10 | VioWrtTTY       | BX = Text, CX = Länge           |
 | 11 | VioCls          | –                               |
-| 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung |
+| 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung / 2 nebenher in dieser Sitzung (Teil einer Pipe, behält die Konsole) / 3 `EXEC_DETACH` losgelöst: ohne Konsole – Eingabe von der Konsole wird NUL (Dateiende), KbdCharIn/MouOpen melden `FAPI_ERR_NOCON` (FFF3h), KbdPeek nichts; Kinder in derselben Sitzung erben es |
 | 13 | DosGetArgs      | BX = Puffer (81 Bytes)          |
 | 14 | DosOpen         | BX = Pfad, CX = 0 lesen / 2 lesen+schreiben (`DosOpenRW`, Datei muss da sein) → Handle |
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |

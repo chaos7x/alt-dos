@@ -3264,7 +3264,7 @@ static int run_program(char *cmd, int sync, int call)
         return 1;
     }
     k = sync != 2 && mac_pass(path, args);   /* CMD erbt die Makros   */
-    r = DosExecPgm(cl, sync == 2 ? EXEC_BG : sync ? EXEC_SYNC : EXEC_ASYNC);
+    r = DosExecPgm(cl, sync == 2 ? EXEC_DETACH : sync ? EXEC_SYNC : EXEC_ASYNC);
     if (k)
         set_var("DOSKEYF", "");
     if (r) {

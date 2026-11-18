@@ -732,6 +732,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_DENIED     0xFFFB  /* Attribut verbietet es / nicht leer */
 #define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
+#define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
 #define FAPI_ERR_FIRST      0xFFF0
 
 #define FAPI_VERSION        0x060A
@@ -743,6 +744,8 @@ struct fapi_fsinfo {
 #define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
 #define EXEC_ASYNC          1       /* eigene Sitzung, laeuft nebenher    */
 #define EXEC_BG             2       /* diese Sitzung, laeuft nebenher (Pipes) */
+#define EXEC_DETACH         3       /* losgeloest (DETACH): ohne Konsole, Eingabe
+                                       NUL, Kbd/Mou -> FAPI_ERR_NOCON; Kinder erben */
 #define EXEC_ERR_NOTFOUND   1
 #define EXEC_ERR_NOMEM      2
 #define EXEC_ERR_FORMAT     3

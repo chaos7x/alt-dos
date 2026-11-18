@@ -1645,6 +1645,8 @@ static int scmp_k(const char *a, const char *b)
 }
 static void dcwd_copy(int t, int from);
 static void std_set(int t, int from);
+static void nocon_std(int t);
+static int of_alloc(void);
 static int box_reuse(const char *cmd, int s)
 {
     int y;
@@ -1664,10 +1666,13 @@ static int box_reuse(const char *cmd, int s)
     scopy(task[y].cwd, task[current].cwd, IFS_PATHLEN);
     dcwd_copy(y, current);
     std_set(y, current);                /* Umleitung des Aufrufers       */
+    task[y].nocon = task[current].nocon;
+    if (task[y].nocon)
+        nocon_std(y);
     park_owner[y] = 0;
     task[y].parent = current;
     task[y].session = s;
-    v86_start(y, task[current].bg ? -1 : s);    /* Pipe: ohne Bildschirm */
+    v86_start(y, task[current].bg || task[y].nocon ? -1 : s);   /* Pipe: ohne */
     task[y].state = T_READY;
     return y;
 }
@@ -1771,6 +1776,20 @@ static void dcwd_copy(int t, int from)
 static char tc_path[IFS_PATHLEN], tc_canon[IFS_PATHLEN];  /* Kontext */
 #define path tc_path
 #define canon tc_canon
+static unsigned char exec_nocon;        /* naechster task_create: DETACH  */
+
+/* Losgeloester Task: Eingabe von der Konsole wird NUL (wie "< NUL") */
+static void nocon_std(int t)
+{
+    int k;
+    if (files[task[t].std[0]].kind != OF_CON || (k = of_alloc()) < 0)
+        return;
+    files[k].kind = OF_NUL;
+    files[k].owner = -1;
+    of_release(task[t].std[0]);
+    task[t].std[0] = (unsigned char)k;
+}
+
 static int task_create(const char *cmd, int session, int parent, int from)
 {
     int t, err, d;
@@ -1801,11 +1820,16 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].sig_tramp = task[t].sig_mask = 0;
     task[t].sig_pending = task[t].in_sig = 0;
     task[t].bg = 0;
+    task[t].nocon = exec_nocon ||               /* DETACH, auch die Kinder */
+        (from >= 0 && task[from].nocon && task[from].session == session);
+    exec_nocon = 0;
     task[t].rc = 0;
     task[t].child_rc = 0;
     task[t].hold = 0;
     task[t].want_lock = 0;
     std_set(t, from);                           /* Standard-Handles erben */
+    if (task[t].nocon)
+        nocon_std(t);
     dmab_np[t] = ctx_pages();                   /* DMABUF + Kontext (Phase 6) */
     dmab_pg[t] = mem_alloc_low(dmab_np[t]);
     if (!dmab_pg[t])                            /* ohne Kontext: nur DMABUF */
@@ -1816,7 +1840,7 @@ static int task_create(const char *cmd, int session, int parent, int from)
         ((int __far *)MK_FP(CTXWIN, 0))[0] = -1;
     }
     if (task[t].v86)                            /* Vollbild, B800 = Puffer;  */
-        v86_start(t, from >= 0 && task[from].bg ? -1 : session);   /* Pipe: nicht */
+        v86_start(t, task[t].nocon || (from >= 0 && task[from].bg) ? -1 : session);
     task[t].state   = T_READY;
     return t;
 }
@@ -2975,6 +2999,8 @@ static int con_read(unsigned sel, unsigned off, unsigned len)
     int s = task[current].session, k;
     unsigned n = 0;
 
+    if (task[current].nocon)
+        return 0;                       /* DETACH: Dateiende wie NUL     */
     for (;;) {
         if (vio_fg() != s || (k = kbd_get()) < 0) {
             if (sig_waiting())
@@ -3238,6 +3264,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return kbd_shift();
 
     case FAPI_KBDCHARIN:
+        if (task[current].nocon)
+            return FAPI_ERR_NOCON;              /* DETACH: keine Tastatur */
         for (;;) {
             if (vio_fg() == s && (k = kbd_get()) >= 0)
                 return k;
@@ -3247,7 +3275,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         }
 
     case FAPI_KBDPEEK:
-        if (vio_fg() == s && (k = kbd_peek()) >= 0)
+        if (!task[current].nocon && vio_fg() == s && (k = kbd_peek()) >= 0)
             return k;
         return 0;
 
@@ -3307,10 +3335,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             schedule_next();
             return 0;
         }
+        exec_nocon = a2 == EXEC_DETACH;
         t = task_create(buf, s, current, current);
+        exec_nocon = 0;
         if (t < 0)
             return -t;
-        if (a2 == EXEC_BG) {                    /* Pipe: nicht warten    */
+        if (a2 == EXEC_BG || a2 == EXEC_DETACH) {                    /* Pipe: nicht warten    */
             task[t].bg = 1;
             return 0;
         }
@@ -4251,6 +4281,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_MOUOPEN:
+        if (task[current].nocon)
+            return FAPI_ERR_NOCON;
         return vio_mou_open(s, current);
 
     case FAPI_MOUREADEVENT: {

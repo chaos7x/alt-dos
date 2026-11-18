@@ -5415,6 +5415,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dem 86Box-Test QEMU beenden. Dabei behoben: NC gab bei zwei Meldungen
   feste, falsche Längen an VioWrtTTY (2 Byte Müll „ S“ bzw. ein Zeichen
   zu wenig). Nicht geprüft: SYN-Flut (kein Werkzeug).
+  DETACH ohne Konsole (Meldung des Nutzers: ein NC im Hintergrund nahm
+  die getippten Befehle weg; abgestimmt 18.11.2026 – Besitz der Konsole
+  wie bei Unix, Verhalten beim Lesen wie OS/2 DETACH, kein Anhalten ohne
+  `fg`): DosExecPgm `EXEC_DETACH` (3) statt EXEC_BG nur für DETACH (CMD
+  run_program sync 2) und PRINT /WORK; Pipe-Teile (run_bg) bleiben
+  EXEC_BG und behalten die Tastatur (MORE). kernel.c: `task.nocon`
+  (task.h), gesetzt über `exec_nocon` in task_create, geerbt von Kindern
+  in derselben Sitzung (START = eigene Sitzung bekommt wieder eine
+  Konsole), auch für eine wiederverwendete Box (box_reuse); `nocon_std`
+  ersetzt eine Konsolen-Standardeingabe durch einen NUL-Eintrag (also
+  DosQHandType = Gerät, Lesen 0 Byte – NC nimmt dann den Weg ohne
+  Tastatur); con_read liefert 0, KbdCharIn/MouOpen `FAPI_ERR_NOCON`
+  (FFF3h), KbdPeek 0; eine Box ohne Konsole bekommt keinen Bildschirm
+  (v86_start -1). Ausgaben auf den Bildschirm bleiben. In QEMU geprüft:
+  `DETACH NC -l -w 60 5556` ohne `< NUL`, Verbindung vom Rechner offen,
+  währenddessen VER/DIR im Vordergrund richtig; `DIR | MORE` blättert;
+  `DETACH MEM > X`, `DETACH COMMAND /C DIR > X`, PRINT. Stub (MS-DOS):
+  EXEC_DETACH wie EXEC_BG abgelehnt. Testfalle: qkde3.py setzt die
+  deutsche Belegung voraus – nach `keyb us` tippt es `-` als `/`.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
