@@ -5288,6 +5288,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (gefunden) und 320h /NOIRQ, ne2k_pci mit 20 × PING 1.472 Byte (Ring
   läuft mehrfach um) – DHCP, PING, keine Fehler. Nicht geprüft: 86Box
   (NE2000, RTL8019AS PnP), echte 8-Bit-NE1000.
+  Firewall (abgestimmt 18.11.2026, `docs/NETZWERK.md`): in TCPIP.SYS,
+  zustandsbehaftet, eingehend nur Antworten, Regeln je Programm,
+  FIREWALL.INI + FIREWALL.EXE; Entscheidung des Nutzers: ab Werk an,
+  PING von außen nur aus dem eigenen Netz. Kommt mit Stufe 2 (TCP).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

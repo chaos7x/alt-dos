@@ -185,6 +185,30 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
 6. Weitere Karten: PCnet (VMware, VirtualBox), e1000, NE2000 ISA/
    ne2k_pci (86Box SCAT/486).
 
+## Firewall (abgestimmt 18.11.2026, kommt mit Stufe 2)
+
+- In TCPIP.SYS: je ein Prüfpunkt am Eingang und Ausgang der IP-Schicht,
+  ein Code für IPv4 und IPv6, Regelliste linear (auch auf dem 286 billig).
+- Zustandsbehaftet, Vorgabe wie Windows: eingehend gesperrt außer
+  Antworten (TCP über die Verbindungstabelle, UDP-Anfragen 30–60 s
+  gemerkt), ausgehend frei; ARP, DHCP-Antworten und später ND immer.
+  Geschlossene Ports schweigen (kein RST, kein „Port unerreichbar“).
+- Entscheidung des Nutzers: **ab Werk an** (`FIREWALL OFF` schaltet ab);
+  **PING von außen nur aus dem eigenen Netz** (Präfix der Schnittstelle),
+  sonst still.
+- Regeln je Programm (der Stapel kennt den Besitzer jedes Sockets):
+  „FTPD.EXE darf auf 21 lauschen, nur aus 192.168.1.0/24“ – Lauschen
+  allein öffnet nichts.
+- `\DOS\SYSTEM\FIREWALL.INI` (CONFIG.SYS ist voll) und `FIREWALL.EXE`
+  (Regeln/Zähler zeigen, zur Laufzeit ändern, an/aus); Abgewiesenes
+  gedrosselt in DMESG.
+- Härtung: zufällige ISN und Absenderports, keine IP-Optionen/Source-
+  Routing, ICMP-Redirects ignorieren, kein Echo auf Rundruf, Grenze für
+  halboffene Verbindungen, strenge Längen-/Prüfsummenprüfung.
+- Reihenfolge: Prüfpunkte und Vorgabe zusammen mit TCP (Stufe 2), Regeln
+  je Programm, INI und Werkzeug direkt danach – bevor ein Programm lauscht.
+- Packet-Driver-Boxen laufen später durch denselben Filter.
+
 ## Offene Punkte
 
 - Platz im Kernel für `net.c`: KTEXT4 hat ~45 KB frei; DGROUP nur ein
