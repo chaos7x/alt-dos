@@ -266,7 +266,8 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   getippte Zeilen, je Sitzung, mit START gestartete CMD-Sitzungen erben
   sie; `\DOS\LINUX.MAC` bringt die gewohnten Namen von Linux mit – `ll`,
   `la`, `ls`, `..`, `pwd`, `cp`, `mv`, `rm`, `clear`, `diff`, `man`,
-  `free`, `ps`, `kill`, `uname`, `history`, `nano`/`vi`, `mc` –, nicht
+  `free`, `ps`, `kill`, `bg` (= DETACH), `jobs` (= TASKMAN /L), `uname`,
+  `history`, `nano`/`vi`, `mc` –, nicht
   aktiv, Beispiel in AUTOEXEC.CMD). **Tab** vervollständigt
   wie bash: erstes Wort aus internen Befehlen und Programmen im PATH, sonst
   Dateien und Verzeichnisse; mehrdeutig ergänzt den gemeinsamen Anfang,

@@ -5434,6 +5434,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `DETACH MEM > X`, `DETACH COMMAND /C DIR > X`, PRINT. Stub (MS-DOS):
   EXEC_DETACH wie EXEC_BG abgelehnt. Testfalle: qkde3.py setzt die
   deutsche Belegung voraus – nach `keyb us` tippt es `-` als `/`.
+  bg/fg wie bei Linux (Frage des Nutzers, 18.11.2026; Entscheidung:
+  jetzt nicht bauen, vormerken): volle Jobsteuerung (Strg+Z anhalten –
+  kollidiert mit Strg+Z = Dateiende –, Zustand „angehalten“, SIGTSTP/
+  SIGCONT, Jobliste in CMD) lohnt nicht, Sitzungen (START, Alt+Esc)
+  decken den Fall ab wie bei OS/2/NT. Bei Bedarf die kleine Fassung:
+  `JOBS` (losgelöste Programme der Sitzung) und `FG n` (Kernelaufruf
+  nimmt nocon zurück, CMD wartet) – wirkt nur bei Programmen, die über
+  KbdCharIn lesen, nicht bei schon gelesenem Dateiende der Eingabe.
+  Bis dahin in LINUX.MAC `bg=DETACH $*`, `jobs=TASKMAN /L` (in QEMU
+  geprüft: `bg mem`, `jobs`).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
