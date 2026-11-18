@@ -54,7 +54,21 @@ static struct fapi_label lb;
 static unsigned long l32;
 static char sdir[4][80];                /* Verzeichnisse laufender Suchen */
 static unsigned char sdir_next;
-static char slast[4][11];               /* zuletzt gefundener Name       */
+static unsigned char sgen[4];           /* Generation je Platz (DTA 16)  */
+static char ff_dir[80];
+
+/* DOS haelt den Suchzustand im DTA (21 Byte, gehoeren dem Redirector):
+   0 Laufwerk|80h, 1-11 Muster, 12 Attribute, 13/14 Eintrag, 15 Platz,
+   16 Generation, 17/18 Pruefsumme des zuletzt gefundenen Namens. Word 5.5
+   SETUP setzt eine Suche nach anderen Suchen fort - mit 4 reihum belegten
+   Plaetzen lief FINDNEXT im falschen Verzeichnis weiter. */
+static unsigned h11(const char *f)
+{
+    unsigned h = 0, k;
+    for (k = 0; k < 11; k++)
+        h = (h << 5) + h + (unsigned char)f[k];
+    return h;
+}
 static unsigned char sft[SFTLEN], srch[21], hit[32], word2[4];
 static char xbuf[8192];                 /* Daten Datei <-> Box           */
 
@@ -89,8 +103,21 @@ static unsigned sda16(unsigned x)
 
 static void get_fn(unsigned x, char *d)
 {
+    unsigned i, o = 0, k;
     peek(sda_lin + x, d, 128);
     d[127] = 0;
+    for (i = 0; d[i]; i++) {            /* DOS denkt in 8+3-Feldern:      */
+        if (d[i] == ' ') {              /* "LW .LLD" ist LW.LLD (Lotus    */
+            for (k = i; d[k] == ' '; k++)   /* Works INSTALL) - Leerzeichen */
+                ;                       /* vor Punkt, Trenner, Ende weg   */
+            if (!d[k] || d[k] == '.' || d[k] == '\\') {
+                i = k - 1;
+                continue;
+            }
+        }
+        d[o++] = d[i];
+    }
+    d[o] = 0;
 }
 
 /* ---- Namen ---------------------------------------------------------------- */
@@ -236,10 +263,12 @@ static unsigned xfer(int wr, unsigned h, unsigned long l, unsigned n, unsigned *
 static int find_next(void)
 {
     static char fcb[11], tp[11];
-    unsigned n = r16(srch + 13), slot = srch[15] & 3, k;
+    unsigned n = r16(srch + 13), slot = srch[15] & 3, k, lh = r16(srch + 17);
     unsigned char mask = srch[12], a;
     if (n == 0xFFFF)
         return E_NOMORE;                    /* nach der Bezeichnung      */
+    if (mask != 0x08 && srch[16] != sgen[slot])
+        return E_NOMORE;                    /* Platz inzwischen anders   */
     if (mask == 0x08) {                     /* nur Datentraegerbezeichnung */
         if (FAILED(DosLabel(srch[0] & 0x1F, &lb, 0)) || !lb.label[0])
             return E_NOMORE;
@@ -260,9 +289,7 @@ static int find_next(void)
        Suchschritten)? Dann sind alle folgenden eins nach vorn gerueckt. */
     if (n && n < 0xFFFE && !FAILED(DosFindEntry(&de, n - 1, sdir[slot]))) {
         to_fcb(de.name, fcb);
-        for (k = 0; k < 11 && fcb[k] == slast[slot][k]; k++)
-            ;
-        if (k < 11)
+        if (h11(fcb) != lh)
             n--;
     }
     for (;; n++) {
@@ -279,9 +306,8 @@ static int find_next(void)
         break;
     }
 found:
-    for (k = 0; k < 11; k++)
-        slast[slot][k] = fcb[k];
     w16(srch + 13, n + 1);
+    w16(srch + 17, h11(fcb));
     for (k = 0; k < 11; k++)                /* gefundener Eintrag        */
         hit[k] = fcb[k];
     hit[11] = de.attr;
@@ -298,10 +324,22 @@ found:
 static int find_first(void)
 {
     const char *n;
-    unsigned slot = sdir_next++ & 3, k;
+    unsigned slot, k, i;
     unsigned char a;
     get_fn(0x9E, p1);
-    n = split(p1, sdir[slot]);
+    n = split(p1, ff_dir);
+    for (slot = 0; slot < 4; slot++) {      /* gleiches Verzeichnis:     */
+        for (i = 0; ff_dir[i] && ff_dir[i] == sdir[slot][i]; i++)
+            ;                               /* gleicher Platz            */
+        if (ff_dir[i] == sdir[slot][i])
+            break;
+    }
+    if (slot == 4) {
+        slot = sdir_next++ & 3;
+        for (i = 0; (sdir[slot][i] = ff_dir[i]) != 0; i++)
+            ;
+        sgen[slot]++;
+    }
     to_fcb(*n ? n : "????????.???", tmpl);
     peek(sda_lin + 0x24D, &a, 1);
     srch[0] = (unsigned char)(0x80 | (up(p1[0]) - 'A'));
@@ -310,11 +348,15 @@ static int find_first(void)
     srch[12] = a;
     w16(srch + 13, 0);
     srch[15] = (unsigned char)slot;
-    for (k = 16; k < 21; k++)
+    srch[16] = sgen[slot];
+    for (k = 17; k < 21; k++)
         srch[k] = 0;
     k = find_next();
     poke(sda_lin + 0x19E, srch, 21);
-    return k == E_NOMORE ? E_NOFILE : k;
+    return k;                           /* ohne Treffer 12h wie FreeDOS
+                                           (fatdir.c) und MS-DOS - Lotus
+                                           Works INSTALL hielt 02h fuer
+                                           einen Lesefehler */
 }
 
 /* ---- Verteiler ---------------------------------------------------------------- */
@@ -391,6 +433,7 @@ static int op(unsigned fn)
         rg.cx = k;
         return 0;
     case 0x0C: {                                /* freier Platz          */
+        static struct fapi_fsinfo2 fs2;
         unsigned spc = 1, sh = 9;
         unsigned long tot, fr;
         peek(sl, sft, 1);
@@ -401,6 +444,19 @@ static int op(unsigned fn)
         while ((tot >> (sh - 9)) > 0xFFF0UL && spc < 128) {
             spc <<= 1;
             sh++;
+        }
+        if (!FAILED(fapi_call(FAPI_QFSINFO, k, (unsigned short)&fs2, 1)) &&
+            fs2.spc && !(fs2.spc & (fs2.spc - 1))) {
+            unsigned long cl = fs2.clusters;    /* FAT: echte Aufteilung  */
+            unsigned cs;                        /* wie MS-DOS - Lotus     */
+            for (spc = cs = fs2.spc, sh = 9; cs > 1; cs >>= 1)
+                sh++;                           /* Works waehlt danach die */
+            while (cl > 0xFFF0UL && spc < 128) {    /* Diskettenaufteilung */
+                spc <<= 1;
+                sh++;
+                cl >>= 1;
+            }
+            tot = cl << (sh - 9);
         }
         fr = l32 >> sh;                         /* Bytes -> Cluster       */
         rg.ax = spc;

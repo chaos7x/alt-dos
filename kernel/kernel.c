@@ -3791,6 +3791,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fi), 1))
             return FAPI_ERROR;
+        if (a3 == 1 && !user_ok(usel, a2, sizeof(struct fapi_fsinfo2), 1))
+            return FAPI_ERROR;
         fi = MK_FP(usel, a2);
         dv = vol[a1].blk;
         if (IS_FLOPPY(dv) && !vol[a1].locked && blk_media(dv) == 1)
@@ -3814,6 +3816,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0) |
                     (IS_REM(dv) ? FSI_REMDISK : 0);
+        if (a3 == 1) {                      /* Aufteilung (Redirector)  */
+            struct fapi_fsinfo2 __far *f2 = (struct fapi_fsinfo2 __far *)fi;
+            int fat = vol[a1].used && vol[a1].drv == &fat_driver;
+            f2->spc = fat ? vol[a1].spc : 0;
+            f2->clusters = fat ? vol[a1].clusters : 0;
+        }
         return 0;
     }
 

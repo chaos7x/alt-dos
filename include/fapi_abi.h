@@ -560,7 +560,8 @@ struct fapi_mouevent {
 /* Tastencodes (KbdCharIn): Alt+Taste liefert wie das BIOS Zeichen 0 und den
    Scancode; Alt allein gedrueckt und losgelassen liefert KEY_ALT. */
 #define KEY_ALT             0x3800
-#define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo */
+#define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo,
+                                       DX = 1: struct fapi_fsinfo2 (Aufteilung) */
 struct fapi_fsinfo {
     char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE;
                                        "RAW" = nicht formatiert */
@@ -570,6 +571,13 @@ struct fapi_fsinfo {
     unsigned long  hidden;          /* erster Sektor der Partition (BPB) */
     unsigned char  ptype;           /* Partitionstyp im MBR, 0 = keiner  */
     unsigned char  rsv;
+};
+/* DX = 1: dazu die Aufteilung des FAT-Dateisystems (sonst spc = 0) -
+   der Redirector der Box meldet damit INT 21h 36h wie MS-DOS */
+struct fapi_fsinfo2 {
+    struct fapi_fsinfo f;
+    unsigned short spc;             /* Sektoren je Cluster, 0 = kein FAT */
+    unsigned long  clusters;        /* Cluster im Datenbereich          */
 };
 #define FSI_REMOVABLE       0x01
 #define FSI_READONLY        0x02

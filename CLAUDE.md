@@ -20,6 +20,24 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+Word 5.5 und Lotus Works 3.0 in der Kompatibilitätsbox (vom Nutzer
+gemeldet, 18.11.2026: Word-SETUP fror auf dem SCAT bei „Druckerdiskette
+2“ ein; Abbilder nur zum Testen, nicht im Repository): Fehler im
+Redirector `apps/rbox_redir.c`, dieselben wie in der Box von 6.x (dort
+redir.c): (1) Suche wie DOS mit dem Zustand im DTA (Byte 15 Platz,
+16 Generation `sgen`, 17/18 Prüfsumme `h11` des zuletzt gefundenen
+Namens, Verzeichnis `ff_dir`) – vorher 4 Plätze reihum, ein FINDNEXT
+nach mehreren eigenen Suchen (Word-SETUP: `A:\MACROCNV.???`) lief im
+falschen Verzeichnis weiter; (2) FINDFIRST ohne Treffer 12h statt 02h;
+(3) Namen wie DOS als 8+3-Felder (`LW .LLD`: Leerzeichen vor Punkt,
+Trenner und Ende fallen weg); (4) INT 21h 36h mit echter Cluster-
+größe/-zahl: neu `DosQFSInfo` mit DX = 1 -> `struct fapi_fsinfo2`
+(spc, clusters; nur FAT) – Programme wählen nach der Clusterzahl die
+Diskettenaufteilung. In QEMU geprüft (alle 10 Word-Disketten, Lotus
+Works), in 86Box auf dem SCAT (286, 4 MB, B: 3,5″): Word-SETUP mit
+allen Disketten inkl. Druckerdiskette 2 (Drucker TA 7020, Treiber in
+Unterverzeichnissen), Word startet.
+
 Box-Ende mit Grund (Anlass: der Nutzer sah nach 5–10 Wechseln „Box
 beendet“, in QEMU mit 25 Wechseln nicht nachgestellt): RBSHELL gibt
 nach FreeCOM AL = F0h + Art aus INT 21h 4Dh weiter, wenn COMMAND.COM
