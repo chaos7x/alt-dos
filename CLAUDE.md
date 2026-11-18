@@ -4855,6 +4855,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   6.x/5.x: 20h bei Konflikt, Größe über zwei Handles, Sperren 0/21h),
   Word 5.5 danach wieder vollständig installiert. Reine Programmlogik –
   kein 86Box-Lauf.
+  Platz danach (Wunsch des Nutzers, „Kernel freischaufeln“): die Tabellen
+  je Box des Redirectors (Suchverzeichnisse 2,5 KB, SHARE 1,9 KB) liegen
+  in einem Kernelsegment für alle Boxen (`struct rbx`, `RBX(t)`, angelegt
+  in redir_sda beim ersten Start einer Box; ohne Platz ist der Redirector
+  aus), Pfade für FAPI über `fn_dir` (Kontext). DGROUP 64.872 -> 60.502
+  Byte. Weitere Kandidaten in v86.c: `dp_mem` 1,5 KB, `sb_buf` 1 KB,
+  `xh`/`dp_patch` je 768 Byte.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

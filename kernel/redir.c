@@ -57,9 +57,7 @@ static struct fapi_dirent de;
 static struct fapi_fsinfo fsi;
 static struct fapi_finfo fin;
 static unsigned long l32;
-static char sdir[NTASK][4][80];         /* Verzeichnisse laufender Suchen */
-static unsigned char sdir_next[NTASK];
-static unsigned char sgen[NTASK][4];    /* Generation je Platz (im DTA:  */
+/* (sgen: Generation je Platz, im DTA:  */
                                         /* Byte 16; Platz neu belegt ->  */
                                         /* alte Suche endet)             */
 static char ff_dir[80];
@@ -96,18 +94,31 @@ struct shl {
     unsigned char  used, slot;
     unsigned long  ofs, len;
 };
-static struct shf sh[NTASK][NSH];
-static struct shl lk[NTASK][NLK];
+/* Was je Box bleibt (Suchverzeichnisse, SHARE) liegt nicht in DGROUP
+   (dort waren nur noch 660 Byte frei), sondern in einem Kernelsegment
+   fuer alle Boxen, angelegt beim ersten Start einer Box */
+struct rbx {
+    char           sdir[4][80];         /* Verzeichnisse laufender Suchen */
+    unsigned char  sgen[4], snext;      /* Generation je Platz, naechster */
+    struct shf     sh[NSH];
+    struct shl     lk[NLK];
+};
+static unsigned rb_sel;
+#define RBX(t)  ((struct rbx __far *)MK_FP(rb_sel, (unsigned)(t) * sizeof(struct rbx)))
 
 void __far redir_sda(int t, unsigned seg, unsigned off)
 {
     unsigned i;
     sda_seg[t] = seg;
     sda_off[t] = off;
+    if (!rb_sel)
+        rb_sel = kseg_alloc((unsigned long)NTASK * sizeof(struct rbx));
+    if (!rb_sel)
+        return;
     for (i = 0; i < NSH; i++)           /* neue Box: nichts offen         */
-        sh[t][i].h1 = 0;
+        RBX(t)->sh[i].h1 = 0;
     for (i = 0; i < NLK; i++)
-        lk[t][i].used = 0;
+        RBX(t)->lk[i].used = 0;
 }
 
 /* PSP des laufenden DOS-Programms der Box (SDA+10h, fuer DPMI) */
@@ -296,7 +307,7 @@ static int sh_find(int t, unsigned long hv)
 {
     int i;
     for (i = 0; i < NSH; i++)
-        if (sh[t][i].h1 && sh[t][i].hash == hv)
+        if (RBX(t)->sh[i].h1 && RBX(t)->sh[i].hash == hv)
             return i;
     return -1;
 }
@@ -306,27 +317,27 @@ static int sh_find(int t, unsigned long hv)
 #define M_WR(m)  (((m) & 3) != 0)
 #define M_DR(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 3)
 #define M_DW(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 2)
-static void sh_add(struct shf *e, unsigned m, int d)
+static void sh_add(struct shf __far *e, unsigned m, int d)
 {
     e->rd += M_RD(m) ? d : 0;
     e->wr += M_WR(m) ? d : 0;
     e->dr += M_DR(m) ? d : 0;
     e->dw += M_DW(m) ? d : 0;
 }
-static int sh_ok(const struct shf *e, unsigned m)
+static int sh_ok(const struct shf __far *e, unsigned m)
 {
     return !((M_RD(m) && e->dr) || (M_WR(m) && e->dw) ||
              (M_DR(m) && e->rd) || (M_DW(m) && e->wr));
 }
 
 /* SFT+0Bh -> Handle des Kernels (FFFFh = keiner), *e = geteilter Eintrag */
-static unsigned sft_h(int t, unsigned v, struct shf **e)
+static unsigned sft_h(int t, unsigned v, struct shf __far **e)
 {
     *e = 0;
     if ((v & 0xFF00) == SH_MARK) {
-        if ((v & 0xFF) >= NSH || !sh[t][v & 0xFF].h1)
+        if ((v & 0xFF) >= NSH || !RBX(t)->sh[v & 0xFF].h1)
             return 0xFFFF;
-        *e = &sh[t][v & 0xFF];
+        *e = &RBX(t)->sh[v & 0xFF];
         return (*e)->h1 - 1;
     }
     return v - 1;
@@ -407,7 +418,7 @@ unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned
 /* ---- Suche -------------------------------------------------------------------- */
 
 /* naechsten passenden Eintrag ab Suchzustand sdb (in der Box) */
-static char fn_fcb[11], fn_tp[11];              /* Kontext */
+static char fn_fcb[11], fn_tp[11], fn_dir[80];  /* Kontext */
 static struct fapi_label fn_lb;
 #define fcb fn_fcb
 #define tp fn_tp
@@ -420,8 +431,11 @@ static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsig
     (void)sdb_unused;
     if (n == 0xFFFF)
         return E_NOMORE;                    /* nach der Bezeichnung      */
-    if (mask != 0x08 && s[16] != sgen[t][slot])
+    if (mask != 0x08 && s[16] != RBX(t)->sgen[slot])
         return E_NOMORE;                    /* Platz inzwischen anders   */
+    for (k = 0; k < 79 && (fn_dir[k] = RBX(t)->sdir[slot][k]) != 0; k++)
+        ;                                   /* Pfad nach DGROUP (FAPI)   */
+    fn_dir[k] = 0;
     if (mask == 0x08) {                     /* nur Datentraegerbezeichnung */
         if (FAILED(FAPI(FAPI_LABEL, KDATA, s[0] & 0x1F, (unsigned)&lb, 0)) || !lb.label[0])
             return E_NOMORE;
@@ -441,13 +455,13 @@ static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsig
     /* Eintrag n-1 inzwischen geloescht (DEL *.* loescht zwischen den
        Suchschritten)? Dann sind alle folgenden eins nach vorn gerueckt. */
     if (n && n < 0xFFFE &&
-        !FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n - 1, (unsigned)sdir[t][slot]))) {
+        !FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n - 1, (unsigned)fn_dir))) {
         to_fcb(de.name, fcb);
         if (h11(fcb) != lh)
             n--;
     }
     for (;; n++) {
-        if (FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n, (unsigned)sdir[t][slot])))
+        if (FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n, (unsigned)fn_dir)))
             return E_NOMORE;
         a = de.attr;
         if ((a & 0x08) && mask != 0x08)
@@ -487,16 +501,16 @@ static int find_first(int t)
     get_fn(t, 0x9E, p1);
     n = split(p1, ff_dir);
     for (slot = 0; slot < 4; slot++) {      /* gleiches Verzeichnis:     */
-        for (i = 0; ff_dir[i] && ff_dir[i] == sdir[t][slot][i]; i++)
+        for (i = 0; ff_dir[i] && ff_dir[i] == RBX(t)->sdir[slot][i]; i++)
             ;                               /* gleicher Platz (Word-5.5- */
-        if (ff_dir[i] == sdir[t][slot][i])  /* SETUP sucht verschachtelt */
+        if (ff_dir[i] == RBX(t)->sdir[slot][i])  /* SETUP sucht verschachtelt */
             break;                          /* in A:\ und C:\WORD)      */
     }
     if (slot == 4) {
-        slot = sdir_next[t]++ & 3;
-        for (i = 0; (sdir[t][slot][i] = ff_dir[i]) != 0; i++)
+        slot = RBX(t)->snext++ & 3;
+        for (i = 0; (RBX(t)->sdir[slot][i] = ff_dir[i]) != 0; i++)
             ;
-        sgen[t][slot]++;
+        RBX(t)->sgen[slot]++;
     }
     to_fcb(*n ? n : "????????.???", tmpl);
     s = sda(t, 0x19E);
@@ -506,7 +520,7 @@ static int find_first(int t)
     s[12] = *sda(t, 0x24D);
     w16(s + 13, 0);
     s[15] = (unsigned char)slot;
-    s[16] = sgen[t][slot];
+    s[16] = RBX(t)->sgen[slot];
     for (k = 17; k < 21; k++)
         s[k] = 0;
     k = find_next(t, 0, sda_seg[t], sda_off[t] + 0x19E);
@@ -561,7 +575,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             return E_NOPATH;
         return 0;
     case 0x06: {                                /* CLOSE                 */
-        struct shf *e;
+        struct shf __far *e;
         s = bp(t, es, di);
         cnt = r16(s);
         k = r16(s + 0x0B);
@@ -577,8 +591,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
                     FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
                     e->h1 = 0;                  /* Sperren weg            */
                     for (r = 0; r < NLK; r++)
-                        if (lk[t][r].slot == (k & 0xFF))
-                            lk[t][r].used = 0;
+                        if (RBX(t)->lk[r].slot == (k & 0xFF))
+                            RBX(t)->lk[r].used = 0;
                 }
             } else
                 FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
@@ -587,7 +601,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         return 0;
     }
     case 0x0A: {                                /* LOCK/UNLOCK: BL = 1    */
-        struct shf *e;                          /* entsperren, DS:DX ->   */
+        struct shf __far *e;                          /* entsperren, DS:DX ->   */
         unsigned long o, n;                     /* Stelle, Laenge (DWORD) */
         unsigned char __far *pb;
         k = r16(bp(t, es, di + 0x0B));
@@ -600,7 +614,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         n = r32(pb + 4);
         k &= 0xFF;
         for (r = 0; r < NLK; r++) {
-            struct shl *l = &lk[t][r];
+            struct shl __far *l = &RBX(t)->lk[r];
             if (!l->used || l->slot != k)
                 continue;
             if (*(unsigned char *)&f->ebx) {    /* entsperren: genau der  */
@@ -614,11 +628,11 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (*(unsigned char *)&f->ebx)
             return 0x21;                        /* nicht gesperrt         */
         for (r = 0; r < NLK; r++)
-            if (!lk[t][r].used) {
-                lk[t][r].used = 1;
-                lk[t][r].slot = (unsigned char)k;
-                lk[t][r].ofs = o;
-                lk[t][r].len = n;
+            if (!RBX(t)->lk[r].used) {
+                RBX(t)->lk[r].used = 1;
+                RBX(t)->lk[r].slot = (unsigned char)k;
+                RBX(t)->lk[r].ofs = o;
+                RBX(t)->lk[r].len = n;
                 return 0;
             }
         return 0x24;                            /* Sperrtabelle voll      */
@@ -629,7 +643,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         return 0;
     case 0x08:                                  /* READ                  */
     case 0x09: {                                /* WRITE                 */
-        struct shf *e;
+        struct shf __far *e;
         s = bp(t, es, di);
         h = sft_h(t, r16(s + 0x0B), &e);
         pos = r32(s + 0x15);
@@ -780,7 +794,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         hv = phash(p1);                         /* DOS prueft den Modus   */
         slot = sh_find(t, hv);
         if (slot >= 0) {                        /* Box hat sie schon offen */
-            struct shf *e = &sh[t][slot];
+            struct shf __far *e = &RBX(t)->sh[slot];
             if (act != 1 || !sh_ok(e, mode))
                 return E_SHARE;
             if (M_WR(mode) && !e->kw) {         /* Handle nur lesend:     */
@@ -817,10 +831,10 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             stat_path(p1);                      /* Datum/Uhrzeit         */
             de.size = 0;
         }
-        for (slot = 0; slot < NSH && sh[t][slot].h1; slot++)
+        for (slot = 0; slot < NSH && RBX(t)->sh[slot].h1; slot++)
             ;
         if (slot < NSH) {                       /* in die Tabelle         */
-            struct shf *e = &sh[t][slot];
+            struct shf __far *e = &RBX(t)->sh[slot];
             e->h1 = h + 1;
             e->hash = hv;
             e->size = de.size;
@@ -841,7 +855,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         return find_next(t, 0, es, di);
     case 0x21: {                                /* SEEK vom Ende         */
         unsigned long off = ((unsigned long)CX << 16) | DX;
-        struct shf *e;
+        struct shf __far *e;
         s = bp(t, es, di);
         size = r32(s + 0x11);
         if (sft_h(t, r16(s + 0x0B), &e) != 0xFFFF && e && e->size > size)
@@ -862,7 +876,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
 int __far redir(struct v86_frame *f, int t)
 {
     int r;
-    if (!sda_seg[t])
+    if (!sda_seg[t] || !rb_sel)             /* (kein Kernelsegment frei) */
         return -1;
     kf_box_ctl(BOX_LOCK, 1);
     r = op(f, t, AL);
@@ -875,7 +889,7 @@ const struct ctxblk redir_ctx[] = {
     { p1, sizeof(p1) }, { p2, sizeof(p2) }, { tmpl, sizeof(tmpl) }, { &de, sizeof(de) },
     { &fsi, sizeof(fsi) }, { &fin, sizeof(fin) }, { &l32, sizeof(l32) },
     { st_dir, sizeof(st_dir) }, { st_fcb, sizeof(st_fcb) }, { sf_dir, sizeof(sf_dir) },
-    { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { &fn_lb, sizeof(fn_lb) },
+    { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { fn_dir, sizeof(fn_dir) }, { &fn_lb, sizeof(fn_lb) },
     { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) },
     { np_dir, sizeof(np_dir) }, { ff_dir, sizeof(ff_dir) }
 };
