@@ -686,8 +686,9 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Wie beim echten
   BIOS: Tastaturpuffer im BIOS-Datenbereich (INT 16h AH=05h, Programme
   lesen ihn direkt), INT 10h AH=1Bh, INT 21h 36h mit echter Clusterzahl,
-  FINDFIRST ohne Treffer 12h – Lotus Works 3.0 installiert sich damit
-  von Diskette (in QEMU und 86Box geprüft). Maus in der Box
+  FINDFIRST ohne Treffer 12h, Suchzustand im DTA wie DOS (verschachtelte
+  Suchen) – Lotus Works 3.0 und Word 5.5 installieren sich damit von
+  Diskette (Lotus in QEMU und 86Box, Word in QEMU geprüft). Maus in der Box
   über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h – auch für DPMI-Programme
   im Protected Mode (DOS-Extender), Version 24h mit Art und IRQ der echten Maus – MSD

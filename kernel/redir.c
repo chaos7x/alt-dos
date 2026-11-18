@@ -58,7 +58,21 @@ static struct fapi_finfo fin;
 static unsigned long l32;
 static char sdir[NTASK][4][80];         /* Verzeichnisse laufender Suchen */
 static unsigned char sdir_next[NTASK];
-static char slast[NTASK][4][11];        /* zuletzt gefundener Name       */
+static unsigned char sgen[NTASK][4];    /* Generation je Platz (im DTA:  */
+                                        /* Byte 16; Platz neu belegt ->  */
+                                        /* alte Suche endet)             */
+static char ff_dir[80];
+
+/* DOS haelt den Suchzustand im DTA (21 Byte, gehoeren dem Redirector):
+   0 Laufwerk|80h, 1-11 Muster, 12 Attribute, 13/14 Eintrag, 15 Platz,
+   16 Generation, 17/18 Pruefsumme des zuletzt gefundenen Namens */
+static unsigned h11(const char *f)
+{
+    unsigned h = 0, k;
+    for (k = 0; k < 11; k++)
+        h = (h << 5) + h + (unsigned char)f[k];
+    return h;
+}
 
 void __far redir_sda(int t, unsigned seg, unsigned off)
 {
@@ -310,11 +324,13 @@ static struct fapi_label fn_lb;
 static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsigned off)
 {
     unsigned char __far *s = bp(t, seg, off);
-    unsigned n = r16(s + 13), slot = s[15] & 3, k;
+    unsigned n = r16(s + 13), slot = s[15] & 3, k, lh = r16(s + 17);
     unsigned char mask = s[12], a;
     (void)sdb_unused;
     if (n == 0xFFFF)
         return E_NOMORE;                    /* nach der Bezeichnung      */
+    if (mask != 0x08 && s[16] != sgen[t][slot])
+        return E_NOMORE;                    /* Platz inzwischen anders   */
     if (mask == 0x08) {                     /* nur Datentraegerbezeichnung */
         if (FAILED(FAPI(FAPI_LABEL, KDATA, s[0] & 0x1F, (unsigned)&lb, 0)) || !lb.label[0])
             return E_NOMORE;
@@ -336,9 +352,7 @@ static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsig
     if (n && n < 0xFFFE &&
         !FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n - 1, (unsigned)sdir[t][slot]))) {
         to_fcb(de.name, fcb);
-        for (k = 0; k < 11 && fcb[k] == slast[t][slot][k]; k++)
-            ;
-        if (k < 11)
+        if (h11(fcb) != lh)
             n--;
     }
     for (;; n++) {
@@ -355,10 +369,9 @@ static int find_next(int t, unsigned char __far *sdb_unused, unsigned seg, unsig
         break;
     }
 found:
-    for (k = 0; k < 11; k++)
-        slast[t][slot][k] = fcb[k];
     s = bp(t, seg, off);
     w16(s + 13, n + 1);
+    w16(s + 17, h11(fcb));
     s = sda(t, 0x1B3);                      /* gefundener Eintrag        */
     for (k = 0; k < 11; k++)
         s[k] = fcb[k];
@@ -379,9 +392,21 @@ static int find_first(int t)
 {
     const char *n;
     unsigned char __far *s;
-    unsigned slot = sdir_next[t]++ & 3, k;
+    unsigned slot, k, i;
     get_fn(t, 0x9E, p1);
-    n = split(p1, sdir[t][slot]);
+    n = split(p1, ff_dir);
+    for (slot = 0; slot < 4; slot++) {      /* gleiches Verzeichnis:     */
+        for (i = 0; ff_dir[i] && ff_dir[i] == sdir[t][slot][i]; i++)
+            ;                               /* gleicher Platz (Word-5.5- */
+        if (ff_dir[i] == sdir[t][slot][i])  /* SETUP sucht verschachtelt */
+            break;                          /* in A:\ und C:\WORD)      */
+    }
+    if (slot == 4) {
+        slot = sdir_next[t]++ & 3;
+        for (i = 0; (sdir[t][slot][i] = ff_dir[i]) != 0; i++)
+            ;
+        sgen[t][slot]++;
+    }
     to_fcb(*n ? n : "????????.???", tmpl);
     s = sda(t, 0x19E);
     s[0] = (unsigned char)(0x80 | (up(p1[0]) - 'A'));
@@ -390,7 +415,8 @@ static int find_first(int t)
     s[12] = *sda(t, 0x24D);
     w16(s + 13, 0);
     s[15] = (unsigned char)slot;
-    for (k = 16; k < 21; k++)
+    s[16] = sgen[t][slot];
+    for (k = 17; k < 21; k++)
         s[k] = 0;
     k = find_next(t, 0, sda_seg[t], sda_off[t] + 0x19E);
     return k;                           /* ohne Treffer 12h wie FreeDOS

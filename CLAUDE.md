@@ -4814,6 +4814,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   FreeDOS-Quellen (/home/user/fdos) und MS-DOS 4.0 als Nachschlagewerk
   zuerst ansehen (Hinweis des Nutzers). 86Box-Monitor liest Befehle nur
   von einem Terminal: `script -qfc` um 86Box (run86t.sh).
+- **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
+  Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
+  Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht
+  `A:\MACROCNV.???` und setzt die Suche nach mehreren eigenen Suchen und
+  Kopien (C:\WORD) mit FINDNEXT fort. Der Redirector hielt das
+  Verzeichnis einer Suche nur in 4 Plätzen je Box (reihum) – FINDNEXT
+  lief danach in C:\WORD weiter und meldete MACROCNV.TXT auf A:. Jetzt
+  wie DOS mit dem Zustand im DTA (21 Byte, gehören dem Redirector): eine
+  Suche im selben Verzeichnis nimmt denselben Platz, ein neu belegter
+  Platz bekommt eine neue Generation (Byte 16), eine alte Suche endet dann
+  mit „keine weiteren Dateien“ statt Falsches zu liefern; der zuletzt
+  gefundene Name (Erkennung von Löschen zwischen den Schritten) steht als
+  Prüfsumme in Byte 17/18 statt in einer gemeinsamen Tabelle (`slast`
+  entfällt). SETUP erkennt die Disketten an der Bezeichnung (SETUP_55,
+  PRINT2_55 …) – die Box meldet sie richtig. In QEMU geprüft: alle 10
+  Disketten mit Wechsel, Word startet; `DEL *.*` über 80 Dateien in der
+  Box, DIR. Den Einfrierer unter 5.x (Kompatibilitätsbox, Druckerdiskette
+  2) betrifft das nicht – eigene Ursache, siehe 5.x.
 - Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
   geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
   beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO
