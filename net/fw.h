@@ -39,25 +39,24 @@ static int prog_eq(const char *r, const char __far *p)
     return 1;
 }
 
-/* IPv4-Absender a (4 Byte) im Netz der Regel? */
+/* Absender a (16 Byte, IPv4 als ::ffff:a.b.c.d) im Netz der Regel?
+   LOCAL: IPv4 im Netz der Karte, IPv6 link-lokal oder eigenes Praefix.
+   Sonst die ersten plen Bit (ANY = 0: alle; IPv4-Netze haben 96 + n). */
 static int net_in(struct fapi_fwrule *r, const unsigned char __far *a, int i)
 {
-    unsigned b, k;
+    unsigned b = r->plen, k;
     if (r->flags & FWR_LOCAL)
-        return i >= 0 && same_net(&nif[i], a);
-    if (r->plen <= 96)
-        return 1;                       /* /0: alle                        */
-    b = r->plen - 96;
-    for (k = 0; k < 4 && b; k++) {
+        return i >= 0 && (is_v4(a) ? same_net(&nif[i], a + 12) : v6_onlink(i, a));
+    for (k = 0; k < 16 && b; k++) {
         unsigned char m = b >= 8 ? 0xFF : (unsigned char)(0xFF << (8 - b));
-        if ((a[k] & m) != (r->net[12 + k] & m))
+        if ((a[k] & m) != (r->net[k] & m))
             return 0;
         b = b >= 8 ? b - 8 : 0;
     }
     return 1;
 }
 
-static char fw_line[112];
+static char fw_line[144];
 
 static char *fw_dec(char *p, unsigned v)
 {
@@ -72,11 +71,21 @@ static char *fw_dec(char *p, unsigned v)
     return p;
 }
 
+static char *fw_hex(char *p, unsigned w)
+{
+    static const char hx[] = "0123456789abcdef";
+    if (w >= 0x1000) *p++ = hx[w >> 12];
+    if (w >= 0x100) *p++ = hx[(w >> 8) & 15];
+    if (w >= 0x10) *p++ = hx[(w >> 4) & 15];
+    *p++ = hx[w & 15];
+    return p;
+}
+
 static void fw_note(unsigned char proto, const unsigned char __far *a, unsigned sp,
                     unsigned dp, const char __far *prog)
 {
     char *p = fw_line;
-    unsigned k;
+    unsigned k, v6 = !is_v4(a);
     fw_drop++;
     if (!fw_log)
         return;
@@ -88,10 +97,18 @@ static void fw_note(unsigned char proto, const unsigned char __far *a, unsigned 
     p = scat(p, "Firewall: ");
     p = scat(p, proto == FWP_TCP ? "TCP" : proto == FWP_UDP ? "UDP" : "ICMP");
     p = scat(p, " von ");
-    for (k = 0; k < 4; k++) {
-        p = fw_dec(p, a[k]);
-        *p++ = k < 3 ? '.' : ':';
-    }
+    if (v6) {                           /* [a:b:...]:port, ohne "::"     */
+        *p++ = '[';
+        for (k = 0; k < 16; k += 2) {
+            p = fw_hex(p, (unsigned)a[k] << 8 | a[k + 1]);
+            *p++ = k < 14 ? ':' : ']';
+        }
+        *p++ = ':';
+    } else
+        for (k = 12; k < 16; k++) {
+            p = fw_dec(p, a[k]);
+            *p++ = k < 15 ? '.' : ':';
+        }
     if (proto == FWP_ICMP)
         p--;
     else {
@@ -117,7 +134,8 @@ static void fw_note(unsigned char proto, const unsigned char __far *a, unsigned 
 }
 
 /* Eingehendes ohne Antwortbezug: erlaubt eine Regel es? Zaehlt und meldet,
-   wenn nicht. prog = Programm des Sockets ("" ICMP/System). */
+   wenn nicht. prog = Programm des Sockets ("" ICMP/System), a = Absender
+   (16 Byte). */
 static int fw_allow(const char __far *prog, unsigned char proto, unsigned dp,
                     const unsigned char __far *a, unsigned sp, int i)
 {

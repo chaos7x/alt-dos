@@ -15,7 +15,6 @@
  */
 
 static void __far *uptr(unsigned sel, unsigned off, unsigned n);
-static void map4(unsigned char __far *d, const unsigned char __far *a);
 static const char __far *ip_parse(const char __far *a, unsigned char __far *ip);
 
 /* ---- Pufferbloecke ---------------------------------------------------- */
@@ -62,7 +61,7 @@ static struct sock {
     unsigned       rh, rt, ru;          /* Ring: Kopf, Ende, belegt        */
     unsigned       rto;                 /* Vorgabefrist (ms, 0 = ewig)     */
     struct {
-        unsigned char a[4];
+        unsigned char a[16];
         unsigned      port;
         unsigned long t;
     } peer[NPEER];                      /* Firewall: wem gesendet wurde    */
@@ -101,22 +100,6 @@ static unsigned eph;                    /* naechster freie Absenderport    */
 static unsigned swap16(unsigned v)
 {
     return v << 8 | v >> 8;
-}
-
-static int is_v4(const unsigned char __far *a)
-{
-    static const unsigned char v4[12] = { 0,0,0,0,0,0,0,0,0,0,0xFF,0xFF };
-    return eq(a, v4, 12);
-}
-
-static unsigned l4sum(const unsigned char __far *src, const unsigned char __far *dst,
-                      unsigned char proto, const unsigned char __far *seg, unsigned len)
-{
-    unsigned long s = csum_add(0, src, 4);
-    s = csum_add(s, dst, 4);
-    s += proto;
-    s += len;
-    return csum(csum_add(s, seg, len));
 }
 
 static int port_used(unsigned char type, unsigned p)
@@ -171,56 +154,59 @@ static void sa_put(struct fapi_sockaddr __far *a, int fam, const unsigned char _
     a->port = swap16(port);
 }
 
-static void peer_note(struct sock *s, const unsigned char __far *a4, unsigned port)
+static void peer_note(struct sock *s, const unsigned char __far *a16, unsigned port)
 {
     int k, o = 0;
     for (k = 0; k < NPEER; k++) {
-        if (eq(s->peer[k].a, a4, 4) && s->peer[k].port == port) {
+        if (eq(s->peer[k].a, a16, 16) && s->peer[k].port == port) {
             s->peer[k].t = secs;
             return;
         }
         if (s->peer[k].t < s->peer[o].t)
             o = k;
     }
-    cpy(s->peer[o].a, a4, 4);
+    cpy(s->peer[o].a, a16, 16);
     s->peer[o].port = port;
     s->peer[o].t = secs ? secs : 1;
 }
 
-static int peer_ok(struct sock *s, const unsigned char __far *a4, unsigned port)
+static int peer_ok(struct sock *s, const unsigned char __far *a16, unsigned port)
 {
     int k;
     for (k = 0; k < NPEER; k++)
         if (s->peer[k].t && secs - s->peer[k].t < 120 &&
-            eq(s->peer[k].a, a4, 4) && s->peer[k].port == port)
+            eq(s->peer[k].a, a16, 16) && s->peer[k].port == port)
             return 1;
     return 0;
 }
 
-/* UDP senden: Daten (fern) ab txb+42, Absenderport sport */
-static int udp_tx(const unsigned char __far *d4, unsigned sport, unsigned dport,
+/* UDP senden an d (16 Byte, beide Familien), Absenderport sport */
+static int udp_tx(const unsigned char __far *d, unsigned sport, unsigned dport,
                   const void __far *data, unsigned len)
 {
-    unsigned char hop[4];
+    unsigned char src[16], *h;
     unsigned cs;
     int i;
-    if (len > 1472)
+    if (len > (is_v4(d) ? 1472 : 1452) || (i = route_any(d, src)) < 0)
         return -1;
-    if (d4[0] == 255 && d4[1] == 255 && d4[2] == 255 && d4[3] == 255) {
-        for (i = 0; i < NNETIF && !(nif[i].up && !is_zero4(nif[i].ip)); i++)
-            ;
-        if (i == NNETIF)
-            return -1;
-    } else if ((i = route4(d4, hop)) < 0)
-        return -1;
-    cpy(txb + 42, data, len);
-    P16(txb + 34, sport);
-    P16(txb + 36, dport);
-    P16(txb + 38, 8 + len);
-    P16(txb + 40, 0);
-    cs = l4sum(nif[i].ip, d4, 17, txb + 34, 8 + len);
-    P16(txb + 40, cs ? cs : 0xFFFF);
-    return ip4_out(i, d4, 17, 8 + len, 64) < 0 ? -1 : 0;
+    h = txb + L4OFF(d);
+    cpy(h + 8, data, len);
+    P16(h, sport);
+    P16(h + 2, dport);
+    P16(h + 4, 8 + len);
+    P16(h + 6, 0);
+    cs = l4sum(src, d, 17, h, 8 + len);
+    P16(h + 6, cs ? cs : 0xFFFF);
+    return ip_send(i, src, d, 17, 8 + len, 64) < 0 ? -1 : 0;
+}
+
+/* passt Paket der Familie von rx_s zum Socket? (AF_INET nur IPv4,
+   AF_INET6 beide ausser mit IPV6_V6ONLY) */
+static int fam_ok(struct sock *s, const unsigned char __far *a)
+{
+    if (is_v4(a))
+        return s->fam == AF_INET || !(s->flags & SF_V6ONLY);
+    return s->fam == AF_INET6;
 }
 
 /* Datagramm in den Ring des Sockets */
@@ -282,24 +268,23 @@ static unsigned dns_rlen, dns_id, dns_lport;
 static volatile unsigned char dns_done, dns_busy;
 static struct {
     char           n[64];
-    unsigned char  a[4][4];
-    unsigned char  cnt;
+    unsigned char  a[4][16];
+    unsigned char  cnt, fam;
     unsigned long  exp;
 } dcache[8];
 static unsigned char dc_next;
 
-static void udp_in(int i, fp f, unsigned len, unsigned hl)
+/* UDP-Datagramm u (sl Byte bis Paketende), Adressen in rx_s/rx_d */
+static void udp_in(int i, fp u, unsigned sl)
 {
-    fp u = f + 14 + hl;
     unsigned ul = G16(u + 4), sp = G16(u), dp = G16(u + 2), k;
     unsigned char src[16];
     struct sock *s;
-    (void)i;
-    if (ul < 8 || 14 + hl + ul > len)
+    if (ul < 8 || ul > sl)
         return;
-    if (G16(u + 6) && l4sum(f + 26, f + 30, 17, u, ul))
-        return;                         /* Pruefsumme falsch               */
-    if (dp == 68 && sp == 67) {
+    if ((G16(u + 6) || !is_v4(rx_s)) && l4sum(rx_s, rx_d, 17, u, ul))
+        return;                         /* Pruefsumme falsch (bei IPv6 Pflicht) */
+    if (dp == 68 && sp == 67 && is_v4(rx_s)) {
         dhcp_in(i, u + 8, ul - 8);
         return;
     }
@@ -312,16 +297,17 @@ static void udp_in(int i, fp f, unsigned len, unsigned hl)
         }
         return;
     }
-    map4(src, f + 26);
+    cpy(src, rx_s, 16);
     for (k = 0; k < NSOCK; k++) {
         s = &sk[k];
-        if (!s->used || s->type != SOCK_DGRAM || s->lport != dp || (s->flags & SF_NORD))
+        if (!s->used || s->type != SOCK_DGRAM || s->lport != dp || (s->flags & SF_NORD) ||
+            !fam_ok(s, src))
             continue;
         if (s->flags & SF_CONN) {
             if (s->rport != sp || !eq(s->raddr, src, 16))
                 continue;
-        } else if (fw_on && !peer_ok(s, f + 26, sp) &&
-                   !fw_allow(s->prog, FWP_UDP, dp, f + 26, sp, i))
+        } else if (fw_on && !peer_ok(s, src, sp) &&
+                   !fw_allow(s->prog, FWP_UDP, dp, src, sp, i))
             return;                     /* niemand hat gefragt, keine Regel */
         if (ring_put(s, src, sp, u + 8, ul - 8) == 0)
             wake(k);
@@ -330,7 +316,7 @@ static void udp_in(int i, fp f, unsigned len, unsigned hl)
     fw_drop++;                          /* kein Socket: schweigen          */
 }
 
-static unsigned dns_build(const char __far *name, unsigned char __far *q)
+static unsigned dns_build(const char __far *name, unsigned char __far *q, unsigned qt)
 {
     unsigned n = 12, l, k;
     zero(q, 12);
@@ -350,7 +336,7 @@ static unsigned dns_build(const char __far *name, unsigned char __far *q)
             name++;
     }
     q[n++] = 0;
-    P16(q + n, 1);                      /* A                               */
+    P16(q + n, qt);                     /* A (1) oder AAAA (28)            */
     P16(q + n + 2, 1);                  /* IN                              */
     return n + 4;
 }
@@ -368,29 +354,36 @@ static unsigned dns_skip(unsigned p)    /* Name ueberspringen              */
     return dns_rlen;
 }
 
-/* eine Anfrage; -> Zahl der Adressen, 0 = Name unbekannt, -1 = keine
-   Antwort/kein Server */
-static int dns_ask(const char __far *name, unsigned char __far *out, unsigned long __far *ttl)
+/* eine Anfrage (qt = 1 A, 28 AAAA); -> Zahl der Adressen (in out, je 16
+   Byte, hoechstens max), 0 = Name unbekannt, -1 = keine Antwort/kein Server.
+   Server: die IPv4-Server der Karte, dann der aus dem RA (RDNSS). */
+static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out, int max,
+                   unsigned long __far *ttl)
 {
     static unsigned char q[300];        /* Stapel ist knapp; dns_busy     */
-    unsigned ql, try, w, an, p, k, rl, t0;
+    static unsigned char srv[3][16];
+    unsigned ql, try, w, an, p, k, rl, t0, ns = 0;
     int i, cnt;
-    const unsigned char *srv;
 
-    for (i = 0; i < NNETIF && !(nif[i].up && !is_zero4(nif[i].dns[0])); i++)
-        ;
-    if (i == NNETIF)
+    for (i = 0; i < NNETIF; i++)
+        if (nif[i].up) {
+            for (k = 0; k < 2 && ns < 3; k++)
+                if (!is_zero4(nif[i].dns[k]))
+                    map4(srv[ns++], nif[i].dns[k]);
+            if (!is_zero16(nif[i].dns6) && nif[i].llst == 2 && ns < 3)
+                cpy(srv[ns++], nif[i].dns6, 16);
+        }
+    if (!ns)
         return -1;
     if (!dns_lport)
         dns_lport = port_new(SOCK_DGRAM);
     for (try = 0; try < 4; try++) {
-        srv = nif[i].dns[(try & 1) && !is_zero4(nif[i].dns[1]) ? 1 : 0];
         dns_id = (unsigned)ticks() * 2053u + try + 1;
-        if (!(ql = dns_build(name, q)))
+        if (!(ql = dns_build(name, q, qt)))
             return 0;
         dns_done = 0;
-        if (udp_tx(srv, dns_lport, 53, q, ql) < 0)
-            return -1;
+        if (udp_tx(srv[try % ns], dns_lport, 53, q, ql) < 0)
+            continue;
         t0 = ticks();
         while (!dns_done && (w = ticks() - t0) < 200) {
             cli();
@@ -416,9 +409,12 @@ static int dns_ask(const char __far *name, unsigned char __far *out, unsigned lo
             if (p + 10 > dns_rlen)
                 break;
             rl = G16(dns_r + p + 8);
-            if (G16(dns_r + p) == 1 && G16(dns_r + p + 2) == 1 && rl == 4 &&
-                p + 14 <= dns_rlen && cnt < 4) {
-                map4(out + 16 * cnt, dns_r + p + 10);
+            if (G16(dns_r + p) == qt && G16(dns_r + p + 2) == 1 &&
+                rl == (qt == 1 ? 4 : 16) && p + 10 + rl <= dns_rlen && cnt < max) {
+                if (qt == 1)
+                    map4(out + 16 * cnt, dns_r + p + 10);
+                else
+                    cpy(out + 16 * cnt, dns_r + p + 10, 16);
                 cnt++;
                 *ttl = (unsigned long)G16(dns_r + p + 4) << 16 | G16(dns_r + p + 6);
             }
@@ -445,8 +441,8 @@ static unsigned net_resolve(struct net_call __far *c)
     static char full[128];
     unsigned long ttl;
     const char __far *e;
-    unsigned k, l, w;
-    int n = -1, j;
+    unsigned k, l, w, want6;
+    int n, j, got = 0;                  /* got: ein Server hat geantwortet */
 
     if (!u || c->n < sizeof(struct fapi_resolve))
         return FAPI_ERROR;
@@ -458,12 +454,11 @@ static unsigned net_resolve(struct net_call __far *c)
         u->ttl = 0;
         return 0;
     }
-    if (u->family == AF_INET6)
-        return FAPI_ERROR;              /* AAAA folgt mit IPv6             */
     for (k = 0; k < 8; k++)             /* Cache                           */
-        if (dcache[k].cnt && secs < dcache[k].exp && name_eq(dcache[k].n, u->name)) {
+        if (dcache[k].cnt && dcache[k].fam == u->family && secs < dcache[k].exp &&
+            name_eq(dcache[k].n, u->name)) {
             for (j = 0; j < dcache[k].cnt; j++)
-                map4(u->addr[j], dcache[k].a[j]);
+                cpy(u->addr[j], dcache[k].a[j], 16);
             u->count = dcache[k].cnt;
             u->ttl = dcache[k].exp - secs;
             return 0;
@@ -481,6 +476,7 @@ static unsigned net_resolve(struct net_call __far *c)
     for (l = 0; u->name[l]; l++)
         ;
     /* ohne Punkt: erst mit dem Suffix aus DHCP */
+    full[0] = 0;
     for (k = 0; k < l && u->name[k] != '.'; k++)
         ;
     if (k == l) {
@@ -493,17 +489,30 @@ static unsigned net_resolve(struct net_call __far *c)
             for (k = 0; nif[i].domain[k] && l + 1 + k < sizeof(full) - 1; k++)
                 full[l + 1 + k] = nif[i].domain[k];
             full[l + 1 + k] = 0;
-            n = dns_ask(full, out, &ttl);
         }
     }
-    if (n <= 0)
-        n = dns_ask(u->name, out, &ttl);
+    /* Familie 0: AAAA zuerst, wenn es eine globale IPv6-Adresse gibt
+       (RFC 6724 vereinfacht), dann A; sonst nur A */
+    for (k = 0; k < NNETIF && nif[k].gast != 2; k++)
+        ;
+    want6 = u->family == AF_INET6 || (u->family == 0 && k < NNETIF);
+    n = 0;
+    ttl = 3600;
+    for (j = want6 ? 0 : 1; j < (u->family == AF_INET6 ? 1 : 2) && n < 4; j++) {
+        int r = -1;
+        if (full[0])
+            r = dns_ask(full, j ? 1 : 28, out + 16 * n, 4 - n, &ttl);
+        if (r <= 0)
+            r = dns_ask(u->name, j ? 1 : 28, out + 16 * n, 4 - n, &ttl);
+        if (r > 0)
+            n += r;
+        if (r >= 0)
+            got = 1;
+    }
     dns_busy = 0;
     proc_run(DNS_EV + 1);
-    if (n < 0)
-        return FAPI_ERR_TIMEOUT;
-    if (n == 0)
-        return FAPI_ERROR;
+    if (!n)
+        return got ? FAPI_ERROR : FAPI_ERR_TIMEOUT;
     for (j = 0; j < n; j++)
         cpy(u->addr[j], out + 16 * j, 16);
     u->count = n;
@@ -512,8 +521,9 @@ static unsigned net_resolve(struct net_call __far *c)
         k = dc_next++ & 7;
         cpy(dcache[k].n, u->name, l + 1);
         for (j = 0; j < n; j++)
-            cpy(dcache[k].a[j], out + 16 * j + 12, 4);
+            cpy(dcache[k].a[j], out + 16 * j, 16);
         dcache[k].cnt = (unsigned char)n;
+        dcache[k].fam = (unsigned char)u->family;
         dcache[k].exp = secs + (ttl > 86400UL ? 86400UL : ttl);
     }
     return 0;
@@ -594,17 +604,17 @@ static unsigned sk_send(int i, const unsigned char __far *d16, unsigned dport,
         return FAPI_ERR_RESET;
     if (!(src = uptr(usel, buf, len ? len : 1)))
         return FAPI_ERROR;
-    if (!is_v4(d16))
-        return FAPI_ERR_NONET;          /* IPv6 folgt                      */
-    if (len > 1472)
+    if (!fam_ok(s, d16))
+        return FAPI_ERROR;              /* IPv6-Ziel fuer AF_INET usw.     */
+    if (len > (is_v4(d16) ? 1472 : 1452))
         return FAPI_ERROR;
-    if (d16[12] == 255 && d16[13] == 255 && d16[14] == 255 && d16[15] == 255 &&
-        !(s->flags & SF_BCAST))
+    if (is_v4(d16) && d16[12] == 255 && d16[13] == 255 && d16[14] == 255 &&
+        d16[15] == 255 && !(s->flags & SF_BCAST))
         return FAPI_ERR_DENIED;
     if (!s->lport && !(s->lport = port_new(SOCK_DGRAM)))
         return FAPI_ERR_FULL;
-    peer_note(s, d16 + 12, dport);
-    if (udp_tx(d16 + 12, s->lport, dport, src, len) < 0)
+    peer_note(s, d16, dport);
+    if (udp_tx(d16, s->lport, dport, src, len) < 0)
         return FAPI_ERR_NONET;
     return len;
 }
@@ -684,7 +694,7 @@ static unsigned sk_call(struct net_call __far *c)
         s->flags |= SF_BOUND;
         return 0;
     case NET_CONNECT:
-        if (sa_get(&u->addr, s->raddr, &s->rport))
+        if (sa_get(&u->addr, s->raddr, &s->rport) || !fam_ok(s, s->raddr))
             return FAPI_ERROR;
         if (s->type == SOCK_STREAM)
             return tcp_connect(i, u->timeout);
@@ -745,6 +755,11 @@ static unsigned sk_call(struct net_call __far *c)
     case NET_RECVFROM:
         return sk_recv(i, c->usel, u->buf, u->len, u->flags, u->timeout, &u->addr);
     case NET_GETNAME:
+        if ((is_zero16(s->laddr) || (is_v4(s->laddr) && is_zero4(s->laddr + 12))) &&
+            (s->rport ? route_any(s->raddr, a) >= 0 : 0)) {
+            sa_put(&u->addr, s->fam, a, s->lport);  /* Adresse der Karte   */
+            return 0;
+        }
         if (is_zero4(s->laddr + 12) && is_v4(s->laddr))
             for (port = 0; port < NNETIF; port++)
                 if (nif[port].up && !is_zero4(nif[port].ip)) {
@@ -815,11 +830,11 @@ static unsigned sk_list(struct net_call __far *c)
     u->rport = s->rport;
     cpy(u->laddr, s->laddr, 16);
     cpy(u->raddr, s->raddr, 16);
-    if (is_zero4(u->laddr + 12) && s->rport && is_v4(s->raddr)) {
-        unsigned char hop[4];           /* verbunden: Adresse der Karte    */
-        int k = route4(s->raddr + 12, hop);
-        if (k >= 0)
-            map4(u->laddr, nif[k].ip);
+    if ((is_zero16(u->laddr) || (is_v4(u->laddr) && is_zero4(u->laddr + 12))) &&
+        s->rport && !is_zero16(s->raddr)) {
+        unsigned char a[16];            /* verbunden: Adresse der Karte    */
+        if (route_any(s->raddr, a) >= 0)
+            cpy(u->laddr, a, 16);
     }
     cpy(u->prog, s->prog, 13);
     u->rq = s->ru;

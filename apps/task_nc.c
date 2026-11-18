@@ -19,7 +19,6 @@
 #include "fapi.h"
 #include "util.h"
 #define NET_RESOLVE_FN
-#define NET_NO_PTON
 #include "net.h"
 
 static char args[FAPI_ARGLEN], ts[48], host[64], text[128];
@@ -43,14 +42,11 @@ static void err(const char *m, unsigned rc)
     DosExit(rc);
 }
 
-static void show_peer(void)
-{
+static void show_peer(void)            /* Sockets sind AF_INET6: IPv4    */
+{                                       /* kommt als ::ffff:a.b.c.d        */
     unsigned k;
-    for (k = 0; k < 10; k++)
-        ad[k] = 0;
-    ad[10] = ad[11] = 0xFF;
-    for (k = 0; k < 4; k++)
-        ad[12 + k] = io.addr.a4[k];
+    for (k = 0; k < 16; k++)
+        ad[k] = io.addr.a6[k];
     net_ntop(ad, ts);
 }
 
@@ -226,8 +222,10 @@ void main(void)
         else if (*a == '-' && a[1] == 'l') lst = 1;
         else if (*a == '-' && a[1] == 'k') keep = 1;
         else if (*a == '-' && a[1] == 'w') { a = next_word(a); wait = num(a); }
+        else if (*a == '-' && a[1] == '4') net_fam = AF_INET;
+        else if (*a == '-' && a[1] == '6') net_fam = AF_INET6;
         else if (*a == '-' || *a == '/')
-            err("NC [-u] Rechner Port [Text]  |  NC [-u] -l [-k] Port  [-w s]", 2);
+            err("NC [-u] [-4|-6] Rechner Port [Text]  |  NC [-u] -l [-k] Port  [-w s]", 2);
         else if (lst && !port) port = num(a);
         else if (!lst && !host[0]) word(a, host, sizeof(host));
         else if (!lst && !port) port = num(a);
@@ -240,13 +238,13 @@ void main(void)
     }
     if (!port)
         err("Port fehlt.", 2);
-    so.family = AF_INET;
+    so.family = AF_INET6;               /* beide Familien (::ffff:a.b.c.d) */
     so.type = udp ? SOCK_DGRAM : SOCK_STREAM;
     h = DosNet(NET_SOCKET, &so, sizeof(so));
     if (h >= 0xFFF0)
         err(h == FAPI_ERR_NONET ? "Kein Netz (TCPIP.SYS fehlt)." : "Kein Socket frei.", 2);
-    io.addr.len = 16;
-    io.addr.family = AF_INET;
+    io.addr.len = 28;
+    io.addr.family = AF_INET6;
     io.addr.port = htons(port);
     if (lst) {
         io.h = h;
@@ -255,8 +253,8 @@ void main(void)
     } else {
         if (net_lookup(host, ad))
             err("Rechner nicht gefunden.", 2);
-        for (k = 0; k < 4; k++)
-            io.addr.a4[k] = ad[12 + k];
+        for (k = 0; k < 16; k++)
+            io.addr.a6[k] = ad[k];
     }
 
     if (!udp) {

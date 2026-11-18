@@ -69,7 +69,8 @@ void main(void)
                 return;
             }
             if (o == 'T') { forever = 1; continue; }
-            if (o == '4' || o == '6') continue;
+            if (o == '4') { net_fam = AF_INET; continue; }
+            if (o == '6') { net_fam = AF_INET6; continue; }
             if (o == 'N' || o == 'L' || o == 'W' || o == 'I') {
                 a = next_word(a);
                 if (*a < '0' || *a > '9') {
@@ -91,7 +92,7 @@ void main(void)
         usage();
         DosExit(4);
     }
-    if (len > 1472) {
+    if (len > 1472) {               /* IPv6 1452: meldet der Stapel   */
         puts("Die Gr\x94\xE1" "e darf h\x94" "chstens 1472 Byte sein.\r\n");
         DosExit(4);
     }
@@ -156,8 +157,10 @@ void main(void)
                 put_u(pg.rtt);
                 puts("ms");
             }
-            puts(" TTL=");
-            put_u(pg.ttl);
+            if (net_is4(pg.from)) {     /* IPv6: wie Windows ohne TTL    */
+                puts(" TTL=");
+                put_u(pg.ttl);
+            }
             puts("\r\n");
             sum += pg.rtt;
             if (pg.rtt < mn) mn = pg.rtt;

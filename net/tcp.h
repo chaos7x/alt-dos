@@ -74,9 +74,9 @@ static unsigned rwnd(struct sock *s)    /* eigenes Fenster                 */
 static void tcp_seg(struct sock *s, unsigned char fl, unsigned long seq,
                     unsigned doff, unsigned dlen)
 {
-    unsigned char hop[4], *h = txb + 34;
+    unsigned char src[16], *h = txb + L4OFF(s->raddr);
     unsigned hl = fl & TF_SYN ? 24 : 20, cs, p, n;
-    int i = route4(s->raddr + 12, hop);
+    int i = route_any(s->raddr, src);
     if (i < 0)
         return;
     P16(h, s->lport);
@@ -91,7 +91,7 @@ static void tcp_seg(struct sock *s, unsigned char fl, unsigned long seq,
     if (fl & TF_SYN) {
         h[20] = 2;
         h[21] = 4;
-        P16(h + 22, TMSS);
+        P16(h + 22, is_v4(s->raddr) ? TMSS : TMSS - 20);  /* IPv6: 40 Byte Kopf */
     }
     if (dlen) {                         /* aus dem Ring, ggf. in zwei Teilen */
         p = (s->ts + doff) & (BLK - 1);
@@ -100,22 +100,23 @@ static void tcp_seg(struct sock *s, unsigned char fl, unsigned long seq,
         if (n < dlen)
             cpy(h + hl + n, BP(s->tb), dlen - n);
     }
-    cs = l4sum(nif[i].ip, s->raddr + 12, 6, h, hl + dlen);
+    cs = l4sum(src, s->raddr, 6, h, hl + dlen);
     P16(h + 16, cs);
     if (fl & TF_ACK)
         s->ackp = 0, s->ack_t = 0;
-    ip4_out(i, s->raddr + 12, 6, hl + dlen, 64);
+    ip_send(i, src, s->raddr, 6, hl + dlen, 64);
 }
 
-/* RST ohne Socket (Firewall aus): Antwort auf ein fremdes Segment */
-static void tcp_rst_to(int i, fp f, unsigned hl, fp t, unsigned dlen)
+/* RST ohne Socket (Firewall aus): Antwort auf ein fremdes Segment (rx_s) */
+static void tcp_rst_to(int i, fp t, unsigned dlen)
 {
-    unsigned char *h = txb + 34, src[4];
+    unsigned char *h = txb + L4OFF(rx_s), to[16], me[16];
     unsigned char fl = t[13];
     unsigned long seq = G32(t + 4), ack = G32(t + 8);
     if (fl & TF_RST)
         return;
-    cpy(src, f + 26, 4);
+    cpy(to, rx_s, 16);
+    cpy(me, rx_d, 16);
     P16(h, G16(t + 2));
     P16(h + 2, G16(t));
     if (fl & TF_ACK) {
@@ -131,9 +132,8 @@ static void tcp_rst_to(int i, fp f, unsigned hl, fp t, unsigned dlen)
     P16(h + 14, 0);
     P16(h + 16, 0);
     P16(h + 18, 0);
-    P16(h + 16, l4sum(nif[i].ip, src, 6, h, 20));
-    ip4_out(i, src, 6, 20, 64);
-    (void)hl;
+    P16(h + 16, l4sum(me, to, 6, h, 20));
+    ip_send(i, me, to, 6, 20, 64);
 }
 
 static void tcp_timer_on(struct sock *s)
@@ -286,18 +286,18 @@ static unsigned opt_mss(fp t, unsigned hl)
     return 536;
 }
 
-static void tcp_in(int i, fp f, unsigned len, unsigned hl)
+/* TCP-Segment t (tl Byte), Adressen in rx_s/rx_d */
+static void tcp_in(int i, fp t, unsigned tl)
 {
-    fp t = f + 14 + hl;
-    unsigned tl = G16(f + 16) - hl, thl, dlen, sp, dp, k, n, room, w;
+    unsigned thl, dlen, sp, dp, k, n, room, w;
     unsigned long seq, ack;
     unsigned char fl, src[16];
     struct sock *s = 0;
     int si = -1, c;
 
-    if (tl < 20 || 14 + hl + tl > len)
+    if (tl < 20)
         return;
-    if (l4sum(f + 26, f + 30, 6, t, tl))
+    if (l4sum(rx_s, rx_d, 6, t, tl))
         return;
     thl = (t[12] >> 4) * 4;
     if (thl < 20 || thl > tl)
@@ -309,7 +309,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
     fl = t[13];
     w = G16(t + 14);
     dlen = tl - thl;
-    map4(src, f + 26);
+    cpy(src, rx_s, 16);
 
     for (k = 0; k < NSOCK; k++)         /* Verbindung                      */
         if (sk[k].used && sk[k].type == SOCK_STREAM && sk[k].st > TS_LISTEN &&
@@ -320,7 +320,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
     if (si < 0 && (fl & (TF_SYN | TF_ACK | TF_RST)) == TF_SYN)
         for (k = 0; k < NSOCK; k++)     /* Listener                        */
             if (sk[k].used && sk[k].type == SOCK_STREAM && sk[k].st == TS_LISTEN &&
-                sk[k].lport == dp) {
+                sk[k].lport == dp && fam_ok(&sk[k], src)) {
                 si = k;
                 break;
             }
@@ -328,13 +328,13 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         if (fw_on)
             fw_drop++;
         else
-            tcp_rst_to(i, f, hl, t, dlen);
+            tcp_rst_to(i, t, dlen);
         return;
     }
     s = &sk[si];
 
     if (s->st == TS_LISTEN) {           /* neue Verbindung                 */
-        if (!fw_allow(s->prog, FWP_TCP, dp, f + 26, sp, i))
+        if (!fw_allow(s->prog, FWP_TCP, dp, src, sp, i))
             return;                     /* Lauschen allein oeffnet nichts  */
         for (k = n = c = 0; k < NSOCK; k++) {
             if (sk[k].used && sk[k].parent == si)
@@ -359,8 +359,8 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         s->parent = (signed char)si;
         s->rcv_nxt = seq + 1;
         s->mss = opt_mss(t, thl);
-        if (s->mss > TMSS)
-            s->mss = TMSS;
+        if (s->mss > (is_v4(src) ? TMSS : TMSS - 20))
+            s->mss = is_v4(src) ? TMSS : TMSS - 20;
         s->cwnd = 2 * s->mss;
         s->snd_wnd = w;
         s->iss = isn_new(s);
@@ -376,7 +376,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
     if (s->st == TS_SYNSENT) {
         if ((fl & TF_ACK) && ack != s->iss + 1) {
             if (!(fl & TF_RST))
-                tcp_rst_to(i, f, hl, t, dlen);
+                tcp_rst_to(i, t, dlen);
             return;
         }
         if (fl & TF_RST) {
@@ -390,8 +390,8 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         s->snd_una = ack;
         s->snd_wnd = w;
         s->mss = opt_mss(t, thl);
-        if (s->mss > TMSS)
-            s->mss = TMSS;
+        if (s->mss > (is_v4(src) ? TMSS : TMSS - 20))
+            s->mss = is_v4(src) ? TMSS : TMSS - 20;
         s->cwnd = 2 * s->mss;
         s->st = TS_EST;
         s->tmr = 0;
@@ -600,11 +600,9 @@ static unsigned tcp_connect(int k, unsigned ms)
     unsigned t0 = ticks(), r;
     if (s->st != TS_CLOSED)
         return FAPI_ERR_INUSE;
-    if (!is_v4(s->raddr))
-        return FAPI_ERR_NONET;
     {
-        unsigned char hop[4];
-        if (route4(s->raddr + 12, hop) < 0)
+        unsigned char src[16];
+        if (route_any(s->raddr, src) < 0)
             return FAPI_ERR_NONET;
     }
     if (!s->lport && !(s->lport = port_new(SOCK_STREAM)))

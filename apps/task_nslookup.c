@@ -16,7 +16,8 @@ static struct fapi_netif ni;
 void main(void)
 {
     char *a;
-    unsigned r, k;
+    unsigned r, k, n, n6;
+    static unsigned char six[4][16];
 
     DosGetArgs(args);
     a = skip(args);
@@ -26,12 +27,34 @@ void main(void)
     }
     word(a, rs.name, sizeof(rs.name));
     ni.ifc = 0;
-    if (DosNet(NET_IFINFO, &ni, sizeof(ni)) == 0 && ni.dns[0][10] == 0xFF) {
+    if (DosNet(NET_IFINFO, &ni, sizeof(ni)) == 0 && (ni.dns[0][0] || ni.dns[0][10])) {
         puts("Server:  ");
         puts(net_ntop(ni.dns[0], ts));
         puts("\r\n\r\n");
     }
+    rs.family = AF_INET6;               /* erst AAAA, dann A dazu          */
     r = DosNet(NET_RESOLVE, &rs, sizeof(rs));
+    if (r == 0)
+        for (k = 0; k < rs.count; k++)
+            for (n = 0; n < 16; n++)
+                six[k][n] = rs.addr[k][n];
+    n6 = r == 0 ? rs.count : 0;
+    rs.family = AF_INET;
+    r = DosNet(NET_RESOLVE, &rs, sizeof(rs));
+    if (r && n6) {                      /* nur IPv6                       */
+        rs.count = 0;
+        r = 0;
+    }
+    if (r == 0) {
+        for (k = rs.count; k > 0; k--)  /* IPv4 hinter die IPv6           */
+            if (k - 1 + n6 < 4)
+                for (n = 0; n < 16; n++)
+                    rs.addr[k - 1 + n6][n] = rs.addr[k - 1][n];
+        for (k = 0; k < n6; k++)
+            for (n = 0; n < 16; n++)
+                rs.addr[k][n] = six[k][n];
+        rs.count = rs.count + n6 > 4 ? 4 : rs.count + n6;
+    }
     if (r == FAPI_ERR_NONET || r == FAPI_ERR_TIMEOUT) {
         puts(r == FAPI_ERR_NONET ? "Kein Netz oder kein DNS-Server.\r\n" :
              "Zeit\x81" "berschreitung: der DNS-Server antwortet nicht.\r\n");

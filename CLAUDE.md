@@ -5444,6 +5444,57 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KbdCharIn lesen, nicht bei schon gelesenem Dateiende der Eingabe.
   Bis dahin in LINUX.MAC `bg=DETACH $*`, `jobs=TASKMAN /L` (in QEMU
   geprüft: `bg mem`, `jobs`).
+  IPv6 erledigt (18.11.2026, „weiter mit IPv6“; ohne DHCPv6, MLD,
+  Fragmente, Pfad-MTU, Datenschutzadressen): `net/ip6.h` (in tcpip.c
+  vor sock.h) – link-lokal fe80::EUI-64 beim Anmelden der Karte, DAD
+  (NS von ::, 1 s), RS bis 3 × je 4 s, RA: Standard-Router, Präfix /64
+  mit A-Bit -> globale Adresse (auch mit DAD), RDNSS (Option 25) als
+  DNS, SLLA des Routers; NS/NA (`nd_mine`, Zustände je Adresse 0 keine,
+  1 DAD, 2 gilt, 3 doppelt -> DMESG); ICMPv6-Echo beantworten (nicht an
+  Multicast, von außerhalb der eigenen Netze nur per Regel) und senden
+  (`ping6`, Fehler 1/3 als 3/11 wie IPv4); `route6`/`v6_src`/`ip6_out`
+  (Multicast -> 33:33:xx, sonst Nachbar oder Router). tcpip.c: ein
+  Nachbarcache für ARP und ND (Schlüssel 16 Byte, `arp_request` ->
+  `nd_ask` bei IPv6, `arp_upd`), `l4sum` für beide (Pseudokopf aus 4
+  bzw. 16 Byte), `rx_s`/`rx_d`/`rx_hl` für das Paket in Arbeit (udp_in/
+  tcp_in bekommen nur noch Segment + Länge), `ip6_in` (Hop-by-Hop/
+  Zieloptionen überspringen, Rest verwerfen; angenommen an eigene
+  gültige Adressen, ff02::1, Solicited-Node), `route_any`/`ip_send`/
+  `L4OFF` (Nutzdaten ab 34 bzw. 54), Mehrfachliste der Karte 33:33:0:0:
+  0:1 und 33:33:ff:xx:xx:xx, IFINFO mit globaler/link-lokaler Adresse,
+  gw6, IPv6-DNS, `/NOIPV6`. Rahmen mit der eigenen MAC als Absender
+  werden verworfen (QEMUs Socketnetz spiegelt sie zurück, DAD hielt die
+  eigene NS für einen Widerspruch – RFC 7527 beschreibt das Problem).
+  sock.h: Familienprüfung `fam_ok` (AF_INET nur IPv4, AF_INET6 beide,
+  außer V6ONLY), Gegenstellen der Firewall 16 Byte, udp_tx für beide,
+  DNS mit AAAA (`dns_ask(name, qt, …)`; Familie 0: AAAA zuerst, wenn es
+  eine globale IPv6-Adresse gibt, dann A), Server = IPv4-DNS der Karte,
+  dann RDNSS; Cache je Familie. tcp.h: route_any, MSS 1440 bei IPv6.
+  fw.h: 16-Byte-Adressen, Präfix über alle 128 Bit, LOCAL = link-lokal
+  oder eigenes Präfix, DMESG `[a:b:…]`. Programme: NC dual (AF_INET6-
+  Socket, `-4`/`-6`), net_lookup nimmt IPv6-Zahlenadressen (net_pton),
+  PING `-4`/`-6` ohne TTL bei IPv6, NSLOOKUP fragt AAAA und A, IPCONFIG
+  Einrückung des zweiten Gateways/DNS, FIREWALL-Text „…nach diesen
+  Regeln:“. TCPIP.SYS danach 46,8 KB (von 64). Lehre: W112 „Pointer
+  truncated“ in Treibern ernst nehmen – snm() bekam einen nahen Zeiger
+  auf ein Feld auf dem Stapel (SS ≠ DS).
+  Geprüft: QEMU mit Slirp (PING an fec0::2/fe80::2, SLAAC + IPv4 per
+  DHCP nebeneinander, IPv4 1 MB hin/zurück, eingehend IPv4 an den
+  zweisprachigen NC) und mit einer eigenen Gegenstelle am Socketnetz
+  (`v6peer.py` im Scratchpad: RA mit fd00::/64 + RDNSS, ND, Echo, DNS,
+  UDP-Echo, kleiner TCP mit Echo/100 KB senden/MD5-Senke, Verbinden zum
+  Gast): SLAAC, PING beide Richtungen, NSLOOKUP AAAA+A, NC UDP/TCP,
+  100 KB hin und zurück MD5 gleich, eingehend ohne Regel abgewiesen
+  (DMESG), mit `FROM LOCAL` angenommen. 86Box (386DX/40 NE2000 und
+  P3B-F RTL8139, Mehrfachfilter der Karten): SLAAC, PING global und
+  link-lokal, IPv4 1 MB MD5 gleich, CHKDSK sauber. Testfallen: QEMU
+  `-netdev user,ipv6=on` ohne `ipv4=on` schaltet IPv4 ab (DHCP schweigt);
+  die Umgebung hier hat kein IPv6 im Kernel – Slirp kann IPv6 nicht zum
+  Rechner weiterleiten (daher v6peer.py); 86Box schaltet IPv6 für SLiRP
+  nur beim Modem ein – in der lokalen Testkopie per Umgebungsvariable
+  `SLIRP_V6` (net_slirp.c, run86.sh). Offen: Durchsatz TCP ~14 KB/s in
+  QEMU (alter Stand gleich: 730 Segmente in 72 s) – Fenster 4 KB und
+  Abarbeitung je Takt; DHCPv6, MLD, Fragmente, Pfad-MTU.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

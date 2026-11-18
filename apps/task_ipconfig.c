@@ -139,7 +139,7 @@ static void show(int all)
         puts(net_ntop(ni.gw6, ts));
         puts("\r\n");
         if (!zero16(ni.gw4))
-            puts("                                       ");
+            puts("                                         ");
     }
     if (!zero16(ni.gw4))
         puts(net_ntop(ni.gw4, ts));
@@ -159,7 +159,7 @@ static void show(int all)
         puts(net_ntop(ni.dns[0], ts));
     puts("\r\n");
     if (!zero16(ni.dns[1])) {
-        puts("                                       ");
+        puts("                                         ");
         puts(net_ntop(ni.dns[1], ts));
         puts("\r\n");
     }

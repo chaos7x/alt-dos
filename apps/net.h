@@ -12,24 +12,6 @@
 #define htons(v)            ((unsigned short)((v) << 8 | (unsigned short)(v) >> 8))
 #define ntohs(v)            htons(v)
 
-#ifdef NET_RESOLVE_FN
-static struct fapi_resolve net_rs;
-/* Name oder Zahlenadresse -> erste Adresse; 0 = ok, sonst FAPI-Fehler */
-static unsigned net_lookup(const char *name, unsigned char *a)
-{
-    unsigned k, r;
-    for (k = 0; name[k] && k < sizeof(net_rs.name) - 1; k++)
-        net_rs.name[k] = name[k];
-    net_rs.name[k] = 0;
-    net_rs.family = 0;
-    r = DosNet(NET_RESOLVE, &net_rs, sizeof(net_rs));
-    if (r)
-        return r;
-    for (k = 0; k < 16; k++)
-        a[k] = net_rs.addr[0][k];
-    return 0;
-}
-#endif
 
 static int net_is4(const unsigned char *a)
 {
@@ -165,6 +147,31 @@ static int net_pton(const char *s, unsigned char *a)
         a[2 * i] = t[2 * k];
         a[2 * i + 1] = t[2 * k + 1];
     }
+    return 0;
+}
+#endif
+
+#ifdef NET_RESOLVE_FN
+static struct fapi_resolve net_rs;
+static unsigned net_fam;                /* 0 beliebig, AF_INET, AF_INET6   */
+/* Name oder Zahlenadresse (auch IPv6) -> erste Adresse; 0 = ok, sonst
+   FAPI-Fehler. net_fam waehlt die Familie (-4/-6 der Programme). */
+static unsigned net_lookup(const char *name, unsigned char *a)
+{
+    unsigned k, r;
+#ifndef NET_NO_PTON
+    if (!net_pton(name, a))
+        return 0;
+#endif
+    for (k = 0; name[k] && k < sizeof(net_rs.name) - 1; k++)
+        net_rs.name[k] = name[k];
+    net_rs.name[k] = 0;
+    net_rs.family = net_fam;
+    r = DosNet(NET_RESOLVE, &net_rs, sizeof(net_rs));
+    if (r)
+        return r;
+    for (k = 0; k < 16; k++)
+        a[k] = net_rs.addr[0][k];
     return 0;
 }
 #endif

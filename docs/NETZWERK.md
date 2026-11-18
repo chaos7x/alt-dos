@@ -140,6 +140,11 @@ im Modul und wachen über `net_kick` bzw. Fristen auf.
   1122: MSS, Fenster, Wiederholung mit RTT-Schätzung (Jacobson/Karels),
   verzögertes ACK, Nagle, TIME_WAIT gekürzt; kein SACK, keine Fenster-
   skalierung (16-Bit-Fenster reicht hier).
+- IPv6 umgesetzt 18.11.2026 (`net/ip6.h`), abweichend vom Entwurf
+  unten: Fragmente werden verworfen, kein MLD, keine Pfad-MTU, kein
+  DHCPv6 (DNS nur aus RDNSS), keine Datenschutzadressen; Kennung EUI-64
+  statt RFC 7217. Ein Nachbarcache für ARP und ND (16-Byte-Schlüssel),
+  eigene gespiegelte Rahmen (gleiche Absender-MAC) werden verworfen.
 - IPv6 (eigene Stufe): Kopf + Erweiterungsköpfe überspringen (Hop-by-
   Hop, Routing Typ 0 verwerfen, Fragment – Zusammensetzen wie IPv4),
   ICMPv6 (Echo, Fehler, Packet Too Big -> Pfad-MTU je Ziel), Neighbor
@@ -180,7 +185,7 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
 4. TCP, Sockets komplett, DNS. Test gegen einen Server auf dem Rechner
    (QEMU `guestfwd`/10.0.2.2), Durchsatz messen.
 5. IPv6: ND, SLAAC, ICMPv6, RDNSS/DHCPv6 – TCP/UDP und Sockets
-   bleiben, wie sie sind. Test in QEMU (`ipv6=on`, fec0::/64) und am
+   bleiben, wie sie sind. (Erledigt 18.11.2026 ohne DHCPv6.) Test in QEMU (`ipv6=on`, fec0::/64) und am
    LAN des Nutzers.
 6. Weitere Karten: PCnet (VMware, VirtualBox), e1000, NE2000 ISA/
    ne2k_pci (86Box SCAT/486).

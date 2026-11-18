@@ -296,7 +296,7 @@ static void show(void)
         puts("\r\nKeine Regeln (FIREWALL ALLOW ...).\r\n");
         return;
     }
-    puts(" und\r\n\r\n  Nr  Programm      Proto  Ports        Herkunft             Treffer\r\n");
+    puts(" und nach diesen Regeln:\r\n\r\n  Nr  Programm      Proto  Ports        Herkunft             Treffer\r\n");
     for (i = 0; i < fc.nrules; i++) {
         fc.idx = i;
         if (ctl(FW_GET))

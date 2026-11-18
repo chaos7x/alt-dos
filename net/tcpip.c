@@ -13,6 +13,7 @@
  * gegenseitig, nur an Schlafpunkten von call (proc_block) laeuft run.
  *
  * Schalter: /IP:a.b.c.d/n /GW:a.b.c.d /DNS:a.b.c.d[,a.b.c.d] /HOST:name
+ *           /NOFW (Firewall aus), /NOIPV6
  *           (/IP schaltet DHCP fuer die erste Karte ab)
  */
 #include "../drivers/drvlib.h"
@@ -51,6 +52,15 @@ struct nif {
     unsigned       dtry;
     unsigned long  lease, lstart;       /* Sekunden                      */
     char           domain[32];
+    /* IPv6 (ip6.h): Zustaende 0 keine, 1 DAD laeuft, 2 gilt, 3 doppelt */
+    unsigned char  ll[16], ga[16];      /* link-lokal, global (SLAAC)    */
+    unsigned char  llst, gast, gplen;
+    unsigned long  lldad, gadad;        /* Takt: DAD fertig              */
+    unsigned long  gaexp, rtrexp;       /* Sekunden: gueltig bis         */
+    unsigned char  rtr[16];             /* Standard-Router (link-lokal)  */
+    unsigned char  dns6[16];            /* RDNSS aus dem RA              */
+    unsigned char  rsn;                 /* Router Solicitations gesendet */
+    unsigned long  rst;
 };
 #define D_OFF       0
 #define D_DISCOVER  1
@@ -63,6 +73,7 @@ static char host[32] = "ATDOS";
 static unsigned char cfg_ip[4], cfg_mask[4], cfg_gw[4], cfg_dns[2][4], cfg_fixed;
 
 static unsigned char fw_on = 1;         /* Firewall (ab Werk an, /NOFW)  */
+static unsigned char v6_on = 1;         /* IPv6 (/NOIPV6 schaltet ab)    */
 static unsigned long now;               /* Takt (100 Hz)                 */
 static unsigned long secs, sec_base;    /* Sekunden seit dem Laden       */
 static unsigned ipid = 1;
@@ -158,21 +169,66 @@ static int is_zero4(const unsigned char __far *a)
     return !(a[0] | a[1] | a[2] | a[3]);
 }
 
-/* ---- ARP ------------------------------------------------------------- */
+static int is_v4(const unsigned char __far *a)  /* ::ffff:a.b.c.d       */
+{
+    static const unsigned char v4[12] = { 0,0,0,0,0,0,0,0,0,0,0xFF,0xFF };
+    return eq(a, v4, 12);
+}
+
+static void map4(unsigned char __far *d, const unsigned char __far *a)
+{
+    zero(d, 10);
+    d[10] = d[11] = 0xFF;
+    cpy(d + 12, a, 4);
+}
+
+static int is_zero16(const unsigned char __far *a)
+{
+    int k;
+    for (k = 0; k < 16; k++)
+        if (a[k])
+            return 0;
+    return 1;
+}
+
+/* Pruefsumme mit Pseudokopf, Adressen 16 Byte: IPv4 (RFC 793) nimmt die
+   letzten 4, IPv6 (RFC 8200, 8.1) alle 16 - Laenge und Protokoll gehen
+   bei beiden einfach in die Summe ein. */
+static unsigned l4sum(const unsigned char __far *src, const unsigned char __far *dst,
+                      unsigned char proto, const unsigned char __far *seg, unsigned len)
+{
+    unsigned n = is_v4(src) ? 4 : 16;
+    unsigned long s = csum_add(0, src + 16 - n, n);
+    s = csum_add(s, dst + 16 - n, n);
+    s += proto;
+    s += len;
+    return csum(csum_add(s, seg, len));
+}
+
+/* Paket in Arbeit (ip4_in/ip6_in fuer UDP, TCP, ICMPv6) */
+static unsigned char rx_s[16], rx_d[16];        /* Absender, Ziel        */
+static unsigned char rx_hl;                     /* TTL / Hop-Limit       */
+
+/* ---- Nachbarn: ARP (IPv4) und Neighbor Discovery (IPv6) --------------
+   Ein Cache fuer beide, Schluessel ist die 16-Byte-Adresse (IPv4 als
+   ::ffff:a.b.c.d). Unbekanntes Ziel: Rahmen parken (4 Plaetze) und fragen -
+   ARP-Anfrage bzw. Neighbor Solicitation (nd_ask, ip6.h). */
 #define NARP    16
 static struct arp {
-    unsigned char  ip[4], mac[6], ifc, state;   /* 0 frei, 1 fragt, 2 da */
+    unsigned char  ip[16], mac[6], ifc, state;  /* 0 frei, 1 fragt, 2 da */
     unsigned long  t, rq;               /* angelegt, letzte Frage        */
     unsigned       plen;                /* wartender Rahmen (0 = keiner) */
     unsigned char  pend[1514];
 } arp[4];                               /* nur 4 mit Puffer             */
-static struct { unsigned char ip[4], mac[6], ifc, state; unsigned long t; } arpc[NARP];
+static struct { unsigned char ip[16], mac[6], ifc, state; unsigned long t; } arpc[NARP];
+
+static void nd_ask(int i, const unsigned char __far *ip16);    /* ip6.h  */
 
 static void arp_put(int i, const unsigned char __far *ip, const unsigned char __far *mac)
 {
     int k, f = -1, o = 0;
     for (k = 0; k < NARP; k++) {
-        if (arpc[k].state && arpc[k].ifc == i && eq(arpc[k].ip, ip, 4)) {
+        if (arpc[k].state && arpc[k].ifc == i && eq(arpc[k].ip, ip, 16)) {
             f = k;
             break;
         }
@@ -183,13 +239,13 @@ static void arp_put(int i, const unsigned char __far *ip, const unsigned char __
     }
     if (f < 0)
         f = o;                          /* aeltesten ersetzen            */
-    cpy(arpc[f].ip, ip, 4);
+    cpy(arpc[f].ip, ip, 16);
     cpy(arpc[f].mac, mac, 6);
     arpc[f].ifc = (unsigned char)i;
     arpc[f].state = 2;
     arpc[f].t = now;
     for (k = 0; k < 4; k++)             /* wartende Rahmen losschicken   */
-        if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, ip, 4)) {
+        if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, ip, 16)) {
             arp[k].state = 0;
             if (arp[k].plen) {
                 cpy(txb, arp[k].pend, arp[k].plen);
@@ -200,9 +256,30 @@ static void arp_put(int i, const unsigned char __far *ip, const unsigned char __
         }
 }
 
-static void arp_request(int i, const unsigned char __far *ip)
+/* bekannt oder gefragt? Dann auffrischen (Antworten, die niemand bestellt
+   hat, legen nichts an) */
+static void arp_upd(int i, const unsigned char __far *ip, const unsigned char __far *mac)
+{
+    int k;
+    for (k = 0; k < NARP; k++)
+        if (arpc[k].state && arpc[k].ifc == i && eq(arpc[k].ip, ip, 16)) {
+            arp_put(i, ip, mac);
+            return;
+        }
+    for (k = 0; k < 4; k++)
+        if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, ip, 16)) {
+            arp_put(i, ip, mac);
+            return;
+        }
+}
+
+static void arp_request(int i, const unsigned char __far *ip16)
 {
     struct nif *n = &nif[i];
+    if (!is_v4(ip16)) {
+        nd_ask(i, ip16);
+        return;
+    }
     cpy(txb, bcast, 6);
     cpy(txb + 6, n->mac, 6);
     P16(txb + 12, 0x0806);
@@ -214,7 +291,7 @@ static void arp_request(int i, const unsigned char __far *ip)
     cpy(txb + 22, n->mac, 6);
     cpy(txb + 28, n->ip, 4);
     zero(txb + 32, 6);
-    cpy(txb + 38, ip, 4);
+    cpy(txb + 38, ip16 + 12, 4);
     eth_send(i, 42);
 }
 
@@ -222,11 +299,13 @@ static void arp_in(int i, fp f, unsigned len)
 {
     struct nif *n = &nif[i];
     unsigned op;
+    unsigned char a16[16];
     if (len < 42 || G16(f + 14) != 1 || G16(f + 16) != 0x0800 || f[18] != 6 || f[19] != 4)
         return;
     op = G16(f + 20);
+    map4(a16, f + 28);
     if (!is_zero4(n->ip) && eq(f + 38, n->ip, 4)) {
-        arp_put(i, f + 28, f + 22);     /* wer fragt, wird gemerkt       */
+        arp_put(i, a16, f + 22);        /* wer fragt, wird gemerkt       */
         if (op == 1) {                  /* Antwort                        */
             cpy(txb, f + 22, 6);
             cpy(txb + 6, n->mac, 6);
@@ -239,29 +318,22 @@ static void arp_in(int i, fp f, unsigned len)
             cpy(txb + 38, f + 28, 4);
             eth_send(i, 42);
         }
-    } else if (op == 2) {
-        int k;
-        for (k = 0; k < NARP; k++)      /* nur Bekanntes auffrischen     */
-            if (arpc[k].state && arpc[k].ifc == i && eq(arpc[k].ip, f + 28, 4))
-                arp_put(i, f + 28, f + 22);
-        for (k = 0; k < 4; k++)
-            if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, f + 28, 4))
-                arp_put(i, f + 28, f + 22);
-    }
+    } else if (op == 2)
+        arp_upd(i, a16, f + 22);
 }
 
-/* Ziel-MAC fuer ip in txb eintragen; unbekannt -> Rahmen parken, fragen.
+/* Ziel-MAC fuer ip16 in txb eintragen; unbekannt -> Rahmen parken, fragen.
    -> 0 gesendet, 1 geparkt, -1 kein Platz */
 static int arp_send(int i, const unsigned char __far *ip, unsigned len)
 {
     int k, f = -1;
     for (k = 0; k < NARP; k++)
-        if (arpc[k].state == 2 && arpc[k].ifc == i && eq(arpc[k].ip, ip, 4)) {
+        if (arpc[k].state == 2 && arpc[k].ifc == i && eq(arpc[k].ip, ip, 16)) {
             cpy(txb, arpc[k].mac, 6);
             return eth_send(i, len);
         }
     for (k = 0; k < 4; k++)
-        if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, ip, 4)) {
+        if (arp[k].state == 1 && arp[k].ifc == i && eq(arp[k].ip, ip, 16)) {
             f = k;                      /* fragt schon: Rahmen ersetzen  */
             break;
         } else if (!arp[k].state && f < 0)
@@ -270,11 +342,11 @@ static int arp_send(int i, const unsigned char __far *ip, unsigned len)
         return -1;
     arp[f].state = 1;
     arp[f].ifc = (unsigned char)i;
-    cpy(arp[f].ip, ip, 4);
+    cpy(arp[f].ip, ip, 16);
     arp[f].t = arp[f].rq = now;
     arp[f].plen = len;
     cpy(arp[f].pend, txb, len);
-    arp_request(i, ip);
+    arp_request(i, arp[f].ip);
     return 1;
 }
 
@@ -306,6 +378,15 @@ static int same_net(struct nif *n, const unsigned char __far *a)
     return 1;
 }
 
+#define IS_LL(a)    ((a)[0] == 0xFE && ((a)[1] & 0xC0) == 0x80)
+#define IS_MC(a)    ((a)[0] == 0xFF)
+
+/* IPv6-Ziel a direkt an Karte i (link-lokal oder eigenes Praefix)? */
+static int v6_onlink(int i, const unsigned char __far *a)
+{
+    return IS_LL(a) || (nif[i].gast == 2 && eq(a, nif[i].ga, 8));
+}
+
 #include "fw.h"                         /* Firewall-Regeln               */
 
 /* Karte und naechsten Halt fuer Ziel a -> Karte oder -1 */
@@ -330,7 +411,7 @@ static int route4(const unsigned char __far *a, unsigned char __far *hop)
 static int ip4_out(int i, const unsigned char __far *dst, unsigned char proto,
                    unsigned dlen, unsigned char ttl)
 {
-    unsigned char hop[4];
+    unsigned char hop[16];
     struct nif *n = &nif[i];
     txb[14] = 0x45;
     txb[15] = 0;
@@ -350,10 +431,7 @@ static int ip4_out(int i, const unsigned char __far *dst, unsigned char proto,
         cpy(txb, bcast, 6);
         return eth_send(i, 34 + dlen);
     }
-    if (same_net(n, dst))
-        cpy(hop, dst, 4);
-    else
-        cpy(hop, n->gw, 4);
+    map4(hop, same_net(n, dst) ? dst : n->gw);
     return arp_send(i, hop, 34 + dlen);
 }
 
@@ -363,7 +441,7 @@ static struct ping {
     unsigned char  used, done;
     unsigned       id, seq;
     unsigned       t0, t1;              /* Takt, untere 16 Bit           */
-    unsigned char  from[4], ttl, type, code;
+    unsigned char  from[16], ttl, type, code;
 } pg[NPING];
 
 static void icmp_in(int i, fp f, unsigned len, unsigned hl)
@@ -374,18 +452,18 @@ static void icmp_in(int i, fp f, unsigned len, unsigned hl)
         return;
     if (m[0] == 8 && ml <= sizeof(txb) - 34) {  /* Echo-Anfrage: antworten,
                                        mit Firewall nur im eigenen Netz  */
-        unsigned char src[4];
+        unsigned char src[16];
         if (f[30] == 255 && f[31] == 255 && f[32] == 255 && f[33] == 255)
             return;                     /* kein Echo auf Rundruf           */
+        map4(src, f + 26);
         if (fw_on && !same_net(&nif[i], f + 26) &&
-            !fw_allow("", FWP_ICMP, 0, f + 26, 0, i))
+            !fw_allow("", FWP_ICMP, 0, src, 0, i))
             return;
-        cpy(src, f + 26, 4);
         cpy(txb + 34, m, ml);
         txb[34] = 0;
         P16(txb + 36, 0);
         P16(txb + 36, csum(csum_add(0, txb + 34, ml)));
-        ip4_out(i, src, 1, ml, 64);
+        ip4_out(i, src + 12, 1, ml, 64);
         return;
     }
     if (m[0] == 0) {                    /* Echo-Antwort                  */
@@ -404,7 +482,7 @@ static void icmp_in(int i, fp f, unsigned len, unsigned hl)
         if (pg[k].used && !pg[k].done && pg[k].id == id && pg[k].seq == seq) {
             pg[k].done = 1;
             pg[k].t1 = (unsigned)now;
-            cpy(pg[k].from, f + 26, 4);
+            map4(pg[k].from, f + 26);
             pg[k].ttl = f[22];
             pg[k].type = m[0];
             pg[k].code = m[1];
@@ -553,6 +631,7 @@ static void dhcp_tick(int i)
     n->dnext = secs + (n->dtry < 4 ? 1u << n->dtry : 16u);
 }
 
+#include "ip6.h"                        /* IPv6: ND, SLAAC, ICMPv6       */
 #include "sock.h"                       /* Sockets, UDP, DNS (Stufe 2a)  */
 
 /* ---- Eingang --------------------------------------------------------- */
@@ -576,12 +655,60 @@ static void ip4_in(int i, fp f, unsigned len)
         !(f[30] == 255 && f[31] == 255 && f[32] == 255 && f[33] == 255) &&
         n->dstate != D_DISCOVER && n->dstate != D_REQUEST)
         return;
-    if (f[23] == 1)
+    if (f[23] == 1) {
         icmp_in(i, f, len, hl);
-    else if (f[23] == 17 && tl >= hl + 8)
-        udp_in(i, f, len, hl);
+        return;
+    }
+    map4(rx_s, f + 26);
+    map4(rx_d, f + 30);
+    rx_hl = f[22];
+    if (f[23] == 17 && tl >= hl + 8)
+        udp_in(i, f + 14 + hl, tl - hl);
     else if (f[23] == 6)
-        tcp_in(i, f, len, hl);
+        tcp_in(i, f + 14 + hl, tl - hl);
+}
+
+/* IPv6 (RFC 8200): Hop-by-Hop- und Zieloptionen werden uebersprungen,
+   Routing- und Fragmentkoepfe verworfen (zerlegt wird nur beim Absender,
+   Mindest-MTU 1280). Angenommen wird an die eigenen gueltigen Adressen,
+   an alle Knoten (ff02::1) und an die eigene Solicited-Node-Gruppe. */
+static void ip6_in(int i, fp f, unsigned len)
+{
+    struct nif *n = &nif[i];
+    unsigned pl, o = 54, e;
+    unsigned char nh;
+    fp d = f + 38;
+    if (!v6_on || len < 54 || (f[14] >> 4) != 6)
+        return;
+    pl = G16(f + 18);
+    if (54 + pl > len)
+        return;
+    e = 54 + pl;
+    if (IS_MC(f + 22))
+        return;                         /* Absender Multicast: unsinnig   */
+    if (!((n->llst == 2 && eq(d, n->ll, 16)) || (n->gast == 2 && eq(d, n->ga, 16)) ||
+          eq(d, allnodes, 16) ||
+          (eq(d, allnodes, 11) && d[11] == 1 && d[12] == 0xFF && eq(d + 13, n->ll + 13, 3))))
+        return;
+    nh = f[20];
+    while (nh == 0 || nh == 60) {       /* Optionskoepfe ueberspringen    */
+        if (o + 8 > e)
+            return;
+        nh = f[o];
+        o += (f[o + 1] + 1) * 8;
+    }
+    if (o > e)
+        return;
+    cpy(rx_s, f + 22, 16);
+    cpy(rx_d, d, 16);
+    rx_hl = f[21];
+    rnd_mix((unsigned long)G16(f + 16) << 16 | G16(f + 52));
+    if (nh == 58)
+        icmp6_in(i, f + o, e - o);
+    else if (nh == 17 && e - o >= 8)
+        udp_in(i, f + o, e - o);
+    else if (nh == 6)
+        tcp_in(i, f + o, e - o);
 }
 
 static void frame_in(int i, fp f, unsigned len)
@@ -589,11 +716,17 @@ static void frame_in(int i, fp f, unsigned len)
     unsigned t;
     if (i >= NNETIF || !nif[i].up || len < 14)
         return;
+    if (eq(f + 6, nif[i].mac, 6))
+        return;                         /* eigener Rahmen zurueckgespiegelt
+                                           (sonst haelt DAD die eigene NS
+                                           fuer einen Widerspruch, RFC 7527) */
     t = G16(f + 12);
     if (t == 0x0806)
         arp_in(i, f, len);
     else if (t == 0x0800)
         ip4_in(i, f, len);
+    else if (t == 0x86DD)
+        ip6_in(i, f, len);
 }
 
 /* ---- Einspruenge vom Kernel ------------------------------------------ */
@@ -649,8 +782,10 @@ static unsigned e_run(void __far *v)    /* Nachlauf                      */
     arp_tick();
     tcp_tick();
     for (i = 0; i < NNETIF; i++)
-        if (nif[i].up)
+        if (nif[i].up) {
             dhcp_tick(i);
+            nd_tick(i);
+        }
     return 1;                           /* je Takt wieder                */
 }
 
@@ -666,13 +801,21 @@ static unsigned e_link(void __far *v)   /* neue Karte                    */
     zero(n, sizeof(*n));
     cpy(n->mac, ri.mac, 6);
     n->poll = ri.irq == 0;
-    nc.ifc = i;                         /* nur eigene Adresse + Rundruf  */
-    nc.cmd = NC_MCAST;
-    nc.len = 0;
+    nc.ifc = i;                         /* eigene Adresse + Rundruf, mit */
+    nc.cmd = NC_MCAST;                  /* IPv6 alle Knoten und die       */
+    nc.len = 0;                         /* Solicited-Node-Gruppe          */
     nc.sel = getds();
     nc.off = (unsigned)txb;
+    if (v6_on) {
+        static const unsigned char mc[12] = { 0x33, 0x33, 0, 0, 0, 1, 0x33, 0x33, 0xFF };
+        cpy(txb, mc, 12);
+        cpy(txb + 9, n->mac + 3, 3);    /* EUI-64: dieselben 3 Byte       */
+        nc.len = 12;
+    }
     devhlp(DH_NETCTL, 0, (unsigned)&nc, 0);
     n->up = 1;
+    if (v6_on)
+        v6_start(i);
     if (cfg_fixed && i == 0) {
         cpy(n->ip, cfg_ip, 4);
         cpy(n->mask, cfg_mask, 4);
@@ -694,12 +837,6 @@ static void __far *uptr(unsigned sel, unsigned off, unsigned n)
     return MK_FP(sel, off);
 }
 
-static void map4(unsigned char __far *d, const unsigned char __far *a)
-{
-    zero(d, 10);
-    d[10] = d[11] = 0xFF;
-    cpy(d + 12, a, 4);
-}
 
 static unsigned net_ifinfo(struct net_call __far *c)
 {
@@ -733,11 +870,25 @@ static unsigned net_ifinfo(struct net_call __far *c)
         u->addr[0].kind = n->fixed ? NA_STATIC : NA_DHCP;
         u->naddr = 1;
     }
+    if (n->gast == 2) {
+        cpy(u->addr[u->naddr].a, n->ga, 16);
+        u->addr[u->naddr].plen = n->gplen;
+        u->addr[u->naddr++].kind = NA_SLAAC;
+    }
+    if (n->llst == 2) {
+        cpy(u->addr[u->naddr].a, n->ll, 16);
+        u->addr[u->naddr].plen = 64;
+        u->addr[u->naddr++].kind = NA_LINK;
+    }
+    if (!is_zero16(n->rtr))
+        cpy(u->gw6, n->rtr, 16);
     if (!is_zero4(n->gw))
         map4(u->gw4, n->gw);
     for (k = 0; k < 2; k++)
         if (!is_zero4(n->dns[k]))
             map4(u->dns[k], n->dns[k]);
+    if (!is_zero16(n->dns6))            /* IPv6-DNS vor einem zweiten v4  */
+        cpy(u->dns[is_zero16(u->dns[0]) ? 0 : 1], n->dns6, 16);
     if (n->dstate == D_BOUND) {
         map4(u->dhcp, n->dsrv);
         u->lease = n->lease - (secs - n->lstart);
@@ -769,10 +920,10 @@ static unsigned net_ping(struct net_call __far *c)
 
     if (!u || c->n < sizeof(struct fapi_ping))
         return FAPI_ERROR;
-    if (!eq(u->addr, v4, 12))
-        return FAPI_ERROR;              /* IPv6: spaetere Stufe          */
-    cpy(dst, u->addr + 12, 4);
     len = u->len;
+    if (!eq(u->addr, v4, 12))           /* IPv6: Echo ueber ICMPv6        */
+        return ping6(c, u);
+    cpy(dst, u->addr + 12, 4);
     if (len > 1472)
         return FAPI_ERROR;
     if ((i = route4(dst, hop)) < 0)
@@ -818,7 +969,7 @@ static unsigned net_ping(struct net_call __far *c)
     u->ttl = q->ttl;
     u->type = q->type;
     u->code = q->code;
-    map4(u->from, q->from);
+    cpy(u->from, q->from, 16);
     q->used = 0;
     return 0;
 }
@@ -936,6 +1087,8 @@ static void init(void)
     }
     if (has_opt(r->args, "/NOFW"))
         fw_on = 0;
+    if (has_opt(r->args, "/NOIPV6"))
+        v6_on = 0;
     rsel = devhlp(DH_KSEG, 0, NSLOT * SLOT, 0);
     psel = devhlp(DH_KSEG, 0, 0, 0);    /* 64 KB: Socketpuffer           */
     if (!rsel || !psel) {
@@ -951,7 +1104,7 @@ static void init(void)
     pr.link_off = fent(4, e_link);
     now = ticks();
     sec_base = now;
-    p = scat(line, "  TCP/IP: IPv4, ");
+    p = scat(line, v6_on ? "  TCP/IP: IPv4 und IPv6, " : "  TCP/IP: IPv4, ");
     if (cfg_fixed) {
         p = scat(p, "Adresse ");
         for (k = 0; k < 4; k++) {
