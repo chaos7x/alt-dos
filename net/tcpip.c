@@ -50,6 +50,7 @@ struct nif {
     unsigned long  xid;
     unsigned long  dnext;               /* naechster Versuch (Sekunden)  */
     unsigned       dtry;
+    unsigned char  dwait;               /* Erneuern gefragt, ACK erwartet */
     unsigned long  lease, lstart;       /* Sekunden                      */
     char           domain[32];
     /* IPv6 (ip6.h): Zustaende 0 keine, 1 DAD laeuft, 2 gilt, 3 doppelt */
@@ -180,6 +181,15 @@ static void map4(unsigned char __far *d, const unsigned char __far *a)
     zero(d, 10);
     d[10] = d[11] = 0xFF;
     cpy(d + 12, a, 4);
+}
+
+static int is_zero12(const unsigned char __far *a)     /* ::x.x.x.x  */
+{
+    int k;
+    for (k = 0; k < 12; k++)
+        if (a[k])
+            return 0;
+    return 1;
 }
 
 static int is_zero16(const unsigned char __far *a)
@@ -541,10 +551,16 @@ static void dhcp_send(int i, unsigned char type)
 static void dhcp_start(int i)
 {
     struct nif *n = &nif[i];
-    n->xid = now ^ ((unsigned long)n->mac[4] << 24 | (unsigned long)n->mac[5] << 16 | i);
+    n->xid = rnd32();                   /* nicht erratbar                 */
+    n->dwait = 0;
     n->dstate = D_DISCOVER;
     n->dtry = 0;
     n->dnext = secs;
+}
+
+static int dhcp_sane(const unsigned char __far *a)    /* angebotene Adresse */
+{
+    return a[0] && a[0] != 127 && a[0] < 224;
 }
 
 static void dhcp_in(int i, fp d, unsigned dl)
@@ -582,14 +598,17 @@ static void dhcp_in(int i, fp d, unsigned dl)
         }
         o += 2 + l;
     }
-    if (type == 2 && n->dstate == D_DISCOVER) {         /* OFFER         */
+    if (type == 2 && n->dstate == D_DISCOVER && dhcp_sane(d + 16)) {   /* OFFER */
         cpy(n->doffer, d + 16, 4);
         cpy(n->dsrv, srv, 4);
         n->dstate = D_REQUEST;
         n->dtry = 0;
         dhcp_send(i, 3);
         n->dnext = secs + 2;
-    } else if (type == 5 && (n->dstate == D_REQUEST || n->dstate == D_BOUND)) {
+    } else if (type == 5 && (n->dstate == D_REQUEST || (n->dstate == D_BOUND && n->dwait)) &&
+               dhcp_sane(d + 16) && (n->dstate == D_REQUEST || is_zero4(srv) ||
+                                     eq(srv, n->dsrv, 4))) {
+        n->dwait = 0;                   /* nur ACK auf eigene Anfrage     */
         cpy(n->ip, d + 16, 4);          /* ACK                           */
         cpy(n->mask, mask, 4);
         cpy(n->gw, gw, 4);
@@ -601,7 +620,8 @@ static void dhcp_in(int i, fp d, unsigned dl)
         n->dstate = D_BOUND;
         n->dnext = secs + (lease >> 1); /* T1: erneuern                  */
         n->dtry = 0;
-    } else if (type == 6) {             /* NAK: von vorn                 */
+    } else if (type == 6 && (n->dstate == D_REQUEST || n->dwait)) {   /* NAK */
+        n->dwait = 0;
         zero(n->ip, 4);
         dhcp_start(i);
     }
@@ -618,6 +638,8 @@ static void dhcp_tick(int i)
             dhcp_start(i);
             return;
         }
+        n->xid = rnd32();               /* neue Kennung je Anfrage        */
+        n->dwait = 1;
         dhcp_send(i, 3);                /* erneuern                      */
         n->dnext = secs + 60;
         return;
@@ -655,6 +677,10 @@ static void ip4_in(int i, fp f, unsigned len)
         !(f[30] == 255 && f[31] == 255 && f[32] == 255 && f[33] == 255) &&
         n->dstate != D_DISCOVER && n->dstate != D_REQUEST)
         return;
+    if (!eq(f + 30, n->ip, 4) || is_zero4(n->ip)) {
+        if (f[23] != 17)                /* Rundruf/DHCP-Phase: nur UDP     */
+            return;
+    }
     if (f[23] == 1) {
         icmp_in(i, f, len, hl);
         return;
@@ -684,8 +710,11 @@ static void ip6_in(int i, fp f, unsigned len)
     if (54 + pl > len)
         return;
     e = 54 + pl;
-    if (IS_MC(f + 22))
-        return;                         /* Absender Multicast: unsinnig   */
+    if (IS_MC(f + 22) || eq(f + 22, d, 16) || is_v4(f + 22) || is_v4(d) ||
+        (is_zero12(f + 22) && !is_zero16(f + 22)))
+        return;                         /* Absender Multicast, ::1, ::a.b.c.d,
+                                           ::ffff:a.b.c.d (taeuschte IPv4
+                                           vor) oder gleich dem Ziel      */
     if (!((n->llst == 2 && eq(d, n->ll, 16)) || (n->gast == 2 && eq(d, n->ga, 16)) ||
           eq(d, allnodes, 16) ||
           (eq(d, allnodes, 11) && d[11] == 1 && d[12] == 0xFF && eq(d + 13, n->ll + 13, 3))))
@@ -703,6 +732,10 @@ static void ip6_in(int i, fp f, unsigned len)
     cpy(rx_d, d, 16);
     rx_hl = f[21];
     rnd_mix((unsigned long)G16(f + 16) << 16 | G16(f + 52));
+    if (nh != 58 && is_zero16(rx_s))
+        return;                         /* von :: nur ND (DAD)             */
+    if (nh == 6 && IS_MC(d))
+        return;                         /* TCP an eine Gruppe: unsinnig    */
     if (nh == 58)
         icmp6_in(i, f + o, e - o);
     else if (nh == 17 && e - o >= 8)

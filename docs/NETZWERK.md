@@ -217,6 +217,12 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
   genau passender Folgenummer, sonst ACK (RFC 5961); IP-Kopf mit
   Optionen und Absender 0/127/224+/eigene Adresse verworfen; ICMP kennt
   nur Echo (Redirects fallen weg), kein Echo auf 255.255.255.255.
+  Geprüft mit dem Störsender `tools/netfuzz.py` (über 30.000 verstümmelte
+  Rahmen, 18.11.2026); dabei behoben: RTL8139 nach Kurzrahmen taub,
+  Leck je abgelaufener halboffener Verbindung, SYN-Flut sperrte den Port
+  (jetzt zufälliger halboffener geopfert), verlorene Takte unter Last,
+  DHCP-ACK ohne Anfrage, DNS-Antworten von Fremden, IPv6-Absender
+  ::ffff:a.b.c.d/::1/::a.b.c.d, MSS unter 64.
 - Reihenfolge: Prüfpunkte und Vorgabe zusammen mit TCP (Stufe 2), Regeln
   je Programm, INI und Werkzeug direkt danach – bevor ein Programm lauscht.
 - Packet-Driver-Boxen laufen später durch denselben Filter.

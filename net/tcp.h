@@ -212,12 +212,17 @@ static void tcp_closed(int k, unsigned char err)
     if (err && !s->err)
         s->err = err;
     s->tmr = 0;
+    if (s->parent >= 0) {               /* nie angenommen: ACCEPT nimmt es */
+        int p = s->parent;              /* nur mit FIN, sonst bliebe es    */
+        if (!s->rxfin)                  /* fuer immer belegt (Leck bei     */
+            sk_free(k);                 /* gefaelschten SYN)               */
+        wake(p);
+        return;
+    }
     if (s->orphan)
         sk_free(k);
     else
         wake(k);
-    if (s->parent >= 0)
-        wake(s->parent);
 }
 
 static void rtt_sample(struct sock *s, unsigned m)
@@ -280,7 +285,8 @@ static unsigned opt_mss(fp t, unsigned hl)
         if (p + 1 >= hl || t[p + 1] < 2)
             break;
         if (k == 2 && t[p + 1] == 4 && p + 4 <= hl)
-            return G16(t + p + 2);
+            return G16(t + p + 2) < 64 ? 64 : G16(t + p + 2);  /* winzige MSS:
+                                           Flut kleiner Segmente          */
         p += t[p + 1];
     }
     return 536;
@@ -342,9 +348,17 @@ static void tcp_in(int i, fp t, unsigned tl)
             if (sk[k].used && sk[k].type == SOCK_STREAM && sk[k].st == TS_SYNRCVD)
                 c++;
         }
-        if (c >= HALFMAX) {             /* halboffen ueber alle: SYN-Flut  */
-            syn_drop++;                 /* darf die Sockets nicht leeren   */
-            return;
+        if (c >= HALFMAX) {             /* halboffen ueber alle: SYN-Flut. */
+            unsigned r = (unsigned)rnd32() % c;      /* Einen zufaellig    */
+            syn_drop++;                 /* opfern (wie ein SYN-Cache), sonst */
+            for (k = 0; k < NSOCK; k++) /* sperren vier gefaelschte SYN    */
+                if (sk[k].used && sk[k].type == SOCK_STREAM &&   /* den Port */
+                    sk[k].st == TS_SYNRCVD && !r--) {           /* minutenlang */
+                    if (sk[k].parent == si)
+                        n--;
+                    sk_free(k);
+                    break;
+                }
         }
         if (n >= s->backlog || (c = sock_new()) < 0)
             return;                     /* voll: Gegenseite versucht es neu */
@@ -564,7 +578,7 @@ static void tcp_tick(void)
         if (!s->tmr || now < s->tmr)
             continue;
         s->tmr = 0;
-        if (++s->retries > (s->st < TS_EST ? 6 : 10)) {
+        if (++s->retries > (s->st == TS_SYNRCVD ? 3 : s->st < TS_EST ? 6 : 10)) {
             if (s->st >= TS_EST)
                 tcp_seg(s, TF_RST | TF_ACK, s->snd_nxt, 0, 0);
             tcp_closed(k, 2);           /* Gegenseite antwortet nicht      */

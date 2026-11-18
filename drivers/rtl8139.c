@@ -102,15 +102,16 @@ static void rx(void)
     for (k = 0; k < 64 && !(rd8(CR) & CR_BUFE); k++) {
         stat = *(unsigned __far *)(b + rxpos);
         len = *(unsigned __far *)(b + rxpos + 2);   /* mit 4 Byte CRC  */
-        if (!(stat & 1) || len < 64 || len > 1522) {
+        if (!(stat & 1) || len < 18 || len > 1522) {
             st.rx_err++;                /* Ring kaputt: Empfang neu        */
-            wr8(CR, CR_TE);
-            wr32(RBSTART, bphys);
-            wr8(CR, CR_RE | CR_TE);
+            wr8(CR, CR_TE);             /* (kurze Rahmen unter 64 Byte     */
+            wr32(RBSTART, bphys);       /* sind kein Fehler - QEMU reicht  */
+            wr8(CR, CR_RE | CR_TE);     /* sie ungepolstert durch)         */
             wr32(RCR, RCR_VAL | promisc);
             rxpos = 0;
-            return;
-        }
+            outw(io + CAPR, 0xFFF0);    /* Lesestelle mit zurueck, sonst   */
+            return;                     /* gilt der Ring als voll und die  */
+        }                               /* Karte empfaengt nie wieder      */
         rp.ifc = ifc;
         rp.len = len - 4;
         if (devhlp(DH_NETRX, 0, (unsigned)&rp, 0) == 0) {

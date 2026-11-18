@@ -5495,6 +5495,51 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `SLIRP_V6` (net_slirp.c, run86.sh). Offen: Durchsatz TCP ~14 KB/s in
   QEMU (alter Stand gleich: 730 Segmente in 72 s) – Fenster 4 KB und
   Abarbeitung je Takt; DHCPv6, MLD, Fragmente, Pfad-MTU.
+  Störsender (Anregung über eine andere Claude-Instanz, vom Nutzer
+  beauftragt, 18.11.2026): `tools/netfuzz.py` (Python, QEMU `-netdev
+  socket,mcast=…` mit rtl8139; Gegenstelle mit ARP/ND/DHCP/RA/DNS – DNS
+  teils absichtlich kaputt: Zeigerschleifen, Längen über das Ende,
+  65.535 Antworten –, dann Runden mit 22 Arten verstümmelter Rahmen:
+  verbogene IPv4-/UDP-/TCP-Längen mit richtiger Prüfsumme, TCP-Optionen
+  mit Länge 0/1/255 und MSS 0/1, Datenoffset 0/15, SYN-Flut von
+  wechselnden Absendern, ICMP-Fehler mit Müll innen, IPv6-Kopfketten,
+  ND/RA mit kaputten Optionen, Absender ::, ::1, ::a.b.c.d,
+  ::ffff:a.b.c.d, Multicast, TCP an Rundruf/Gruppen, DHCP-Antworten
+  ohne Anfrage, Riesen-/Kurzrahmen; nach jeder Runde PING v4/v6 und
+  TCP-Handshake). Im Gast TCPIP.SYS /NOFW, DHCP, `DETACH NC -l -k 5556`,
+  NSLOOKUP-Schleife. Zwei Läufe mit 12.300 und 20.300 Rahmen: danach
+  PING, TCP, DNS, XCOPY, Box, CHKDSK in Ordnung. Gefunden und behoben:
+  (1) **RTL8139 empfing nach einem Rahmen unter 64 Byte nie wieder**:
+  rx() hielt ihn für einen kaputten Ring, startete den Empfang neu,
+  setzte CAPR aber nicht zurück – die Karte hielt den Ring für voll.
+  Jetzt erst unter 18 Byte ein Fehler, CAPR = FFF0h beim Neustart.
+  (2) **Leck je halboffener Verbindung**: lief ein SYN_EMPFANGEN ab
+  oder kam ein RST, blieb der Kind-Socket mit zwei 4-KB-Blöcken für
+  immer belegt (ACCEPT nimmt nur verbundene) – gefälschte SYN füllten
+  so alle 16 Sockets. tcp_closed gibt nie angenommene Kinder frei (außer
+  mit FIN). (3) SYN-Flut: statt neue SYN zu verwerfen (4 gefälschte
+  sperrten den Port eine Minute), wird ein zufälliger halboffener
+  geopfert (SYN-Cache), SYN_EMPFANGEN nur noch 3 Wiederholungen. (4)
+  **Takte gingen unter Last verloren** (Uptime 2 statt 9 Min.):
+  preempt rief net_poll im Takt-Interrupt bei gesperrten Interrupts –
+  jetzt mit STI (EOI ist durch; ein Takt darin trifft Ring 0 und ruft
+  preempt nicht erneut). (5) DHCP: ACK/NAK im gebundenen Zustand nur
+  nach eigener Erneuerung (`dwait`, sonst konnte jeder per Rundruf
+  Adresse/Maske tauschen), Kennung (xid) zufällig je Anfrage, Adresse
+  0/127/224+ abgelehnt, Erneuerung nur vom bisherigen Server. (6) DNS:
+  Antwort nur vom gefragten Server, Port und Kennung je Anfrage zufällig
+  (gegen Fälschung), Satzlänge über das Ende -> Abbruch. (7) IPv6:
+  Absender ::1, ::a.b.c.d, ::ffff:a.b.c.d (täuschte sonst eine IPv4-
+  Gegenstelle vor – Firewall, Sockets) und Absender = Ziel verworfen,
+  von :: nur ICMPv6 (DAD), TCP an Gruppen verworfen; IPv4 an Rundruf
+  oder in der DHCP-Phase nur UDP. (8) MSS unter 64 gilt als 64 (sonst
+  Flut winziger Segmente). Testfallen: QEMUs rtl8139 nimmt ungepolsterte
+  Rahmen unter 60 Byte an, die Karte im 86Box wohl nicht; nach einer
+  Flut bleibt der Empfangsring (16 Plätze) kurz voll – PING direkt
+  danach geht verloren, die Wiederholung kommt an. In 86Box (P3B-F,
+  RTL8139) danach DHCP, PING, NSLOOKUP, NC UDP/TCP, 1 MB hin und zurück
+  MD5 gleich. Bekannt: `nc -u Name` nimmt die IPv6-Adresse zuerst und
+  fällt nicht auf IPv4 zurück (`-4` hilft).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

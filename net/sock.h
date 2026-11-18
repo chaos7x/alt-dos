@@ -265,6 +265,7 @@ static void ring_drop(struct sock *s)
 #define DNS_EV  0x300
 static unsigned char dns_r[512];
 static unsigned dns_rlen, dns_id, dns_lport;
+static unsigned char dns_cur[16];      /* gefragter Server               */
 static volatile unsigned char dns_done, dns_busy;
 static struct {
     char           n[64];
@@ -288,7 +289,7 @@ static void udp_in(int i, fp u, unsigned sl)
         dhcp_in(i, u + 8, ul - 8);
         return;
     }
-    if (dns_busy && dp == dns_lport && sp == 53 && !dns_done) {
+    if (dns_busy && dp == dns_lport && sp == 53 && !dns_done && eq(rx_s, dns_cur, 16)) {
         if (ul - 8 >= 12 && G16(u + 8) == dns_id) {
             dns_rlen = ul - 8 > sizeof(dns_r) ? sizeof(dns_r) : ul - 8;
             cpy(dns_r, u + 8, dns_rlen);
@@ -375,10 +376,10 @@ static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out
         }
     if (!ns)
         return -1;
-    if (!dns_lport)
-        dns_lport = port_new(SOCK_DGRAM);
     for (try = 0; try < 4; try++) {
-        dns_id = (unsigned)ticks() * 2053u + try + 1;
+        dns_lport = port_new(SOCK_DGRAM);       /* Port und Kennung je   */
+        dns_id = (unsigned)rnd32();             /* Anfrage zufaellig     */
+        cpy(dns_cur, srv[try % ns], 16);
         if (!(ql = dns_build(name, q, qt)))
             return 0;
         dns_done = 0;
@@ -409,6 +410,8 @@ static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out
             if (p + 10 > dns_rlen)
                 break;
             rl = G16(dns_r + p + 8);
+            if (rl > dns_rlen)
+                break;
             if (G16(dns_r + p) == qt && G16(dns_r + p + 2) == 1 &&
                 rl == (qt == 1 ? 4 : 16) && p + 10 + rl <= dns_rlen && cnt < max) {
                 if (qt == 1)

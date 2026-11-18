@@ -2290,9 +2290,18 @@ static int lock_wait(int t)
 /* Takt-Interrupt hat ein Programm in Ring 3 unterbrochen (start.asm irq0,
    EOI ist schon geschickt): wie beim Ruecksprung aus der FAPI wechseln,
    wenn die Scheibe um ist oder Strg+C/Alt+Esc/Neustart/Wecken anstehen */
+void k_sti(void);
+#pragma aux k_sti = "sti";
+void k_cli(void);
+#pragma aux k_cli = "cli";
+
 void preempt(void)
 {
-    net_poll();                         /* Netz auch bei Rechenprogrammen */
+    k_sti();                            /* Netz auch bei Rechenprogrammen; */
+    net_poll();                         /* mit Interrupts (EOI ist durch):   */
+    k_cli();                            /* eine Flut verschluckte sonst Takte -
+                                           ein Takt darin landet im Kernel
+                                           und ruft preempt nicht erneut   */
     if (current >= 0 &&
         (kbd_break_req || kbd_switch_req || kbd_tm_req || reboot_count || resched_req ||
          get_ticks() - slice_start >= SLICE))

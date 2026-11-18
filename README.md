@@ -227,7 +227,10 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   4 halboffene Verbindungen (gegen SYN-Fluten), RST nur mit genau
   passender Folgenummer (sonst ACK zur Prüfung, RFC 5961), keine IP-
   Optionen, Absender 0/127/Multicast/eigene Adresse verworfen, kein
-  Echo auf Rundruf. `SELECT` wartet auf bis zu 8 Handles zugleich –
+  Echo auf Rundruf; DHCP- und DNS-Antworten nur auf eigene Anfrage
+  (Kennung und Port zufällig), bei SYN-Fluten wird ein zufälliger
+  halboffener Eintrag geopfert. Geprüft mit dem Störsender
+  `tools/netfuzz.py` (über 30.000 verstümmelte Rahmen in QEMU). `SELECT` wartet auf bis zu 8 Handles zugleich –
   `NC -l -k Port` nimmt damit bis zu 7 Verbindungen gleichzeitig an
   (Eingegangenes mit Absender, getippte Zeilen an alle). Geprüft in QEMU und 86Box
   (386DX/40 mit NE2000, P3B-F mit RTL8139). IPv6 (neben IPv4, ab Werk
