@@ -1,0 +1,186 @@
+
+INT11 Ausstattung: ax=4021
+INT11 Video: ax=0020
+INT12 konventionell>=512K: 1
+BDA: 10=4467 17=20 18=00 96=10 97=12 1A=0026 1C=0026 80=001E 82=003E 49=03 4A=0050 4C=1000 4E=0000 50=1800 60=0607 62=00 63=03D4 65=09 66=30 84=18 85=0010 87=60 88=09 89=11 8A=0B 3E=03 3F=12 41=00 8B=09 8F=71 90=C7 91=17 75=02 71=00 72=0000
+INT10 0F Modus: ax=5003 bxH=00
+INT10 03 Cursor: cx=0607
+INT10 02/03 setzen: dx=0510
+INT10 09/08 Zeichen: ax=1E41
+INT10 0E TTY/Cursor: dx=0511
+INT10 13 Zeichenkette: dx=0603
+INT10 06 Rollen: ax=1F20
+INT10 1A00 Kombination: axL=1A bx=0008
+INT10 1200/10 EGA-Info: bx=0003 cxL=09
+INT10 1130 Zeichensatz: cx=0010 dxL=18
+INT10 1B Zustand: axL=1B 03500000100000050A0000000000000000000000000000070600D4030930191000080010000802000011000000030000000000000000000000000000
+INT10 1B Tabelle:FFE00F00000000070208FF0E00003F00
+INT10 1C00 Zustandsgroesse: axL=1C bx=000F
+INT10 1008 Rand: bxH=00
+INT10 1007 Attribut 1: bxH=01
+INT10 1015 DAC 7: dxH=2A cx=2A2A
+INT10 101A DAC-Seite: bx=0000
+INT10 4F00 VBE: ax=004F
+INT10 FE00 TopView: di=1234
+INT16 02 Umschalt: axL=20
+INT16 12 erweitert: ax=0020
+INT16 01 leer: ZF=1
+INT16 11 leer: ZF=1
+INT16 05 ablegen: axL=00
+INT16 01 nach 05: ZF=0 ax=1E61
+INT16 00 nach 05: ax=1E61
+INT16 05 FFFF: ax=FFFF
+INT16 05 voll: 01
+INT16 BDA-Puffer leer: 0000
+INT16 09 Faehigkeiten: axL=00
+INT16 03 Rate: CF=0
+INT1A 00 Takt: laeuft=1
+INT1A 02 RTC-Zeit: CF=0
+INT1A 04 RTC-Datum: CF=0 Jh=20
+INT1A B101 PCI: axH=00 CF=0
+BIOS F000:FFFE Modell: FC
+INT15 C0 Konfiguration: CF=0 axH=00 0800FC0100740000
+INT15 C1 EBDA: CF=0
+INT15 88 erweitert>0: CF=0 1
+INT15 2402 A20: CF=1
+INT15 2403 A20-Art: CF=0
+INT15 86 warten: CF=0
+INT15 C200 PS2-Maus: CF=1
+INT15 4F Tastenhaken: CF=1 axL=9E
+INT15 90/91: CF=0
+INT15 E801: CF=0
+INT15 53 APM: CF=0
+INT13 08 A:: CF=0 bxL=05 cx=4F24 dx=0102
+INT13 15 A:: CF=0 axH=02
+INT13 15 B:: CF=0 axH=02
+INT13 00 A:: CF=0 axH=00
+INT13 01 Status: axH=00
+INT13 02 A: Sektor 1: CF=1 axH=80 sig=0000
+INT13 16 A:: CF=1 axH=06
+INT13 08 80h: CF=0 Platten=02
+INT13 41 80h: CF=0
+INT13 15 80h: CF=0 axH=03
+INT1E Diskettenparameter:DF022502241BFF54F60F08
+INT14 03 COM1: axH=60
+INT17 02 LPT1: axH=90
+INT33 0000 Maus: ax=0000
+DOS 30 Version: ax=1606
+DOS 3306 echte Version: bx=1606
+DOS 3305 Startlaufwerk: dxL=03
+DOS 3300 Untbr: dxL=00
+DOS 54 Verify: axL=00
+DOS 37 Schalterzeichen: dxL=2F
+DOS 0B Taste da: axL=00
+DOS 48 FFFF: CF=1 ax=0008
+DOS 48/49 1000h: CF=0 CF=0
+DOS 58 Strategie: CF=0 axL=00
+DOS 5802 UMB-Kette: CF=0 axL=00
+DOS 59 erweiterter Fehler: ax=0003 bx=0803 cxH=02
+DOS 29 Parse: axL=00 .LW         
+DOS 19 Laufwerk: C
+DOS 0E Laufwerke: >=3:1
+DOS 36 frei: ax=0040 cx=0200 gesamt>frei:1
+DOS 1C FAT-Info: axL=40 cx=0200
+DOS 47 Verzeichnis: CF=0 \
+DOS 3B nicht da: CF=1 ax=0003
+DOS 39 BCT: CF=1 ax=0005
+DOS 39 BCT noch mal: CF=1 ax=0005
+DOS 39 SUB: CF=1 ax=0005
+DOS 3B BCT: CF=0
+DOS 47 in BCT: \BCT
+DOS 3C A.TXT: CF=0
+DOS 40 schreiben 300: CF=0 ax=012C
+DOS 42 Ende: CF=0 dx=0000 ax=012C
+DOS 42 -10 von hier: CF=0 ax=0122
+DOS 42 vor den Anfang: CF=0 dx=FFFF ax=FFF0
+DOS 42 hinter das Ende+lesen: CF=0 ax=0000
+DOS 40 Laenge 0 kuerzt: ax=00C8
+DOS 45 Dup: CF=0 ax=00C8
+DOS 5700 Zeit lesen: CF=0 cx=6000 dx=2B6E
+DOS 3E A.TXT: CF=0
+DOS 3E noch mal: CF=1 ax=0006
+DOS 5700 nach Schliessen: cx=6000 dx=2B6E ax=00C8 353C434A51585F666D74
+DOS 3D nicht da: CF=1 ax=0002
+DOS 3D Pfad nicht da: CF=1 ax=0003
+DOS 3D Verzeichnis: CF=1 ax=0005
+DOS 3D Name mit Leerzeichen: CF=0
+DOS 3D a.txt klein: CF=0
+DOS 3D zweimal lesen: CF=0
+DOS 3D zweimal schreibend: CF=0
+SHARE schreibschutz, dann W/R: CF=1 ax=0005 CF=0
+SHARE alles verboten: CF=1 ax=0005
+SHARE Groesse ueber zwei Handles: CF=0 ax=00FA
+SHARE Sperren: CF=0 CF=1 ax=0021 CF=0 CF=1 ax=0021
+DOS 4300 Attribut: CF=0 cx=0020
+DOS 4300 Verzeichnis: CF=0 cx=0010
+DOS 4301 R: CF=0
+DOS 3D R schreibend: CF=1 ax=0005
+DOS 3C R ueberschreiben: CF=1 ax=0005
+DOS 41 R loeschen: CF=1 ax=0005
+DOS 5B neu, gibt es: CF=1 ax=0050
+DOS 5B neu B.TXT: CF=0
+DOS 56 auf vorhandenen: CF=1 ax=0005
+DOS 56 in SUB: CF=0
+DOS 56 nicht da: CF=1 ax=0002
+DOS 5A Zwischendatei: CF=0 Laenge=09
+DOS 6C oeffnen/anlegen: CF=0 cx=0002
+DOS 6C noch mal: CF=0 cx=0001
+DOS 6C ersetzen: CF=0 cx=0003
+DOS 6C nicht da, nicht anlegen: CF=1 ax=0002
+DOS 60 Truename: CF=0 :\BCT\A.TXT
+DOS 3A nicht leer: CF=1 ax=0005
+DOS 3A aktuelles: CF=1 ax=0010
+DOS 41 Platzhalter: CF=1 ax=0003
+DOS 5C sperren: CF=0 CF=0
+DOS 68 Commit: CF=0
+DOS 4400 Datei: CF=0 dx=0040
+DOS 440A Datei fern: CF=0 dx=0042
+FIND *.*: CF=0 A.TXT/00/000000FA C.TXT/20/00000000 D1.TXT/20/00000000 D3.TXT/20/00000000 0012
+FIND *.* versteckt: CF=0 A.TXT/00/000000FA C.TXT/20/00000000 D1.TXT/20/00000000 D2.TXT/22/00000000 D3.TXT/20/00000000 0012
+FIND *.* Verzeichnisse: CF=0 ./10/00000000 ../10/00000000 SUB/10/00000000 A.TXT/00/000000FA C.TXT/20/00000000 D1.TXT/20/00000000 D3.TXT/20/00000000 0012
+FIND D?.TXT: CF=0 D1.TXT/20/00000000 D3.TXT/20/00000000 0012
+FIND *: CF=1 ax=0012 0012
+FIND D*: CF=1 ax=0012 0012
+FIND .: CF=0 BCT/10/00000000 0012
+FIND kein Treffer: CF=1 ax=0012 0012
+FIND Pfad nicht da: CF=1 ax=0003 0003
+FIND SUB\*.*: CF=0 ./10/00000000 ../10/00000000 B.TXT/20/00000000 0012
+FIND Bezeichnung: CF=0 DOS/28/00000000 0012
+FIND ohne Platzhalter: CF=0 A.TXT/00/000000FA 0012
+FIND Leerzeichen: CF=0 D1.TXT/20/00000000 0012
+FIND verschachtelt: D1.TXT/20/00000000 D3.TXT/20/00000000 0012
+FIND Loeschen dabei: D1.TXT/20/00000000 D3.TXT/20/00000000 0012
+FIND 4F ohne 4E: CF=1 ax=0012
+FCB 11 Suche: axL=00 D3      TXT axL=FF D3      TXT
+FCB 16 anlegen: axL=00 Satz=0080
+FCB 15 schreiben: axL=00
+FCB 10 schliessen: axL=00
+FCB 0F oeffnen: axL=00 Groesse=00000080
+FCB 14 lesen: axL=00 axL=01
+FCB 23 Groesse: axL=00 Saetze=0004
+FCB 17 umbenennen: axL=00
+FCB 13 loeschen: axL=00
+FCB 0F nicht da: axL=FF
+IOCTL 4400 Handle 0: CF=0 dx=80D3
+IOCTL 4408 Wechselmedium: CF=0 ax=0001
+IOCTL 4409 fern: CF=0 dx=08C2
+IOCTL 440E logisch: CF=0 axL=00
+IOCTL 440D 0860 Parameter: CF=0 000240
+IOCTL 440D 0866 Seriennummer: CF=0 FAT16   
+DOS 6900 Seriennummer: CF=0 FAT16   
+DOS 3D EMMXXXX0: CF=1
+DOS 3D NUL: CF=0 dx=80C4
+INT2F: 0100 axL=00
+INT2F: 0600 axL=00
+INT2F: 1000 axL=FF
+INT2F: 1100 axL=00
+INT2F: 1400 axL=00
+INT2F: 1500 ax=1500
+INT2F: 1600 axL=00
+INT2F: 1A00 axL=00
+INT2F: 4300 axL=00
+INT2F: 4800 axL=00
+INT2F: 4A10 ax=4A10
+INT2F: B700 axL=00
+INT2F: AD00 axL=00
+Aufraeumen: CF=1 ax=0002

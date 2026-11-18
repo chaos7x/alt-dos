@@ -740,7 +740,8 @@ static int op(unsigned fn)
         if (slot >= 0) {                        /* Box hat sie schon offen */
             struct shf *e = &sh[slot];
             if (act != 1 || !sh_ok(e, mode))
-                return E_SHARE;
+                return E_DENIED;                /* MS-DOS 6.22 mit SHARE: */
+                                                /* 05h (BIOSCMP)          */
             if (M_WR(mode) && !e->kw) {         /* Handle nur lesend      */
                 DosClose(e->h1 - 1);
                 h = DosOpenRW(p1);

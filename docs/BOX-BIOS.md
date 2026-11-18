@@ -34,6 +34,29 @@ Geprüft (18.11.2026): QEMU (SeaBIOS) 6.x und 5.x, 86Box 386DX/40
 (AMI-BIOS, Cirrus GD5434) 6.x, 86Box SCAT 286 (5.x, Kompatibilitätsbox im
 echten Real Mode).
 
+## Bezug MS-DOS 6.22 (vom Nutzer, 18.11.2026)
+
+`docs/bioscmp/msdos622.txt` (ohne SHARE) und `msdos622-share.txt` (mit
+SHARE), MS-DOS 6.22 ohne EMM386 in 86Box (P3B-F), Testlaufwerk C: FAT16.
+Für einen Vergleich mit der Box nur den DOS-Teil ab Zeile 67 nehmen
+(BIOS und Maschine sind andere). Was MS-DOS anders macht als FreeDOS
+(und damit als die Box):
+
+| Fall | MS-DOS 6.22 | FreeDOS/Box | Folge |
+|---|---|---|---|
+| Freigabekonflikt beim Öffnen (SHARE) | 05h | Box gab 20h | **übernommen**: 05h |
+| FCB-Suche 11h mit normalem FCB | findet keine versteckten Dateien | FreeDOS findet sie (fcbfns.c: `wAttr = D_ALL`) | Fehler im FreeDOS-Kern, offen |
+| 59h nach „Pfad fehlt“ | Klasse 08h, Aktion 03h, Ort 02h | 0/0/0 | FreeDOS, unkritisch |
+| 5Ah Zwischendatei | 9 Zeichen Name | 8 | unkritisch |
+| 3300h BREAK | aus | an (Box-CONFIG) | Einstellung |
+| 4408h/4409h/440Dh/6900h | lokales Laufwerk | Box: Netzlaufwerk | offener Punkt 2 |
+| 2F 1400h NLSFUNC | nicht geladen | FreeDOS eingebaut | unkritisch |
+
+Mit SHARE stimmt die Box sonst überein: Größe über zwei Handles, Sperren
+(0/21h), INT 2Fh 1000h = FFh. Bei MS-DOS ruft ein Konflikt im Kompati-
+bilitätsmodus INT 24h auf („Unzulässige SHARE-Operation …“) – die Box
+nicht.
+
 ## Gefunden und behoben
 
 Redirector (6.x `kernel/redir.c`, 5.x `apps/rbox_redir.c`):
@@ -129,7 +152,7 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
    die Box eine Datei noch einmal, teilen sich beide SFTs den Handle von
    AT-DOS (Stelle je SFT, Größe nur einmal – DOS ohne SHARE meldet dort die
    alte Größe, BIOSCMP „SHARE Größe“: Bezug 200, Box 250). Freigabemodi
-   (Bits 4–6) gegen die anderen Öffnungen der Box -> 20h, Bereichssperren
+   (Bits 4–6) gegen die anderen Öffnungen der Box -> 05h (wie MS-DOS), Bereichssperren
    110Ah je Datei (Überschneidung/nicht gesperrt 21h, Tabelle voll 24h),
    INT 2Fh 1000h meldet SHARE (BOXSHELL/RBSHELL), 10A0h–10A6h des
    FreeDOS-Kerns für lokale Dateien (nur das Startabbild) „erlaubt“.
