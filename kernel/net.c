@@ -158,18 +158,74 @@ void __far net_poll(void)
     net_busy = 0;
 }
 
-/* FAPI_NET: BX = Unterfunktion, CX = Parameterblock, DX = Groesse */
+unsigned seglim(unsigned sel);
+#pragma aux seglim = "xor cx,cx" "lsl cx,dx" __parm [__dx] __value [__cx];
+
+static unsigned ncall(struct net_call *c)
+{
+    c->task = (unsigned)current;        /* Kernelstapel: SS = KDATA      */
+    return nf_call(PCS(), np.call_off, PDS(), KDATA, (unsigned)c);
+}
+
+/* FAPI_NET: BX = Unterfunktion, CX = Parameterblock, DX = Groesse.
+   Socket-Aufrufe tragen vorn das Handle - der Kernel setzt die Nummer des
+   Sockets im Stapel ein; SOCKET/ACCEPT liefern einen Socket, der Kernel
+   macht daraus ein Handle. */
 unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n)
 {
-    struct net_call c;                  /* Kernelstapel: SS = KDATA      */
+    struct net_call c;
+    unsigned r, l, h;
     if (!np_drv || !np.call_off)
         return FAPI_ERR_NONET;
+    if (fn >= 0x80)
+        return FAPI_ERROR;
     c.fn = fn;
     c.usel = usel;
     c.p = p;
     c.n = n;
-    c.task = (unsigned)current;
-    return nf_call(PCS(), np.call_off, PDS(), KDATA, (unsigned)&c);
+    c.sock = 0xFFFF;
+    if (fn > NET_SOCKET) {
+        l = seglim(usel);
+        if (!l || p >= l)
+            return FAPI_ERROR;
+        if ((c.sock = kf_sock_id(*(unsigned __far *)MK_FP(usel, p))) == 0xFFFF)
+            return FAPI_ERROR;
+    }
+    r = ncall(&c);
+    if ((fn == NET_SOCKET || fn == NET_ACCEPT) && r < 0xFFF0) {
+        h = kf_sock_new(r);
+        if (h == 0xFFFF) {
+            net_sclose(r);
+            return FAPI_ERR_FULL;
+        }
+        return h;
+    }
+    return r;
+}
+
+/* DosRead/DosWrite auf einem Socket-Handle (ohne Kernelsperre) */
+unsigned __far net_srw(unsigned id, int wr, unsigned usel, unsigned off, unsigned n)
+{
+    struct net_call c;
+    if (!np_drv)
+        return FAPI_ERROR;
+    c.fn = wr ? NETK_WRITE : NETK_READ;
+    c.usel = usel;
+    c.p = off;
+    c.n = n;
+    c.sock = id;
+    return ncall(&c);
+}
+
+void __far net_sclose(unsigned id)
+{
+    struct net_call c;
+    if (!np_drv)
+        return;
+    c.fn = NETK_CLOSE;
+    c.usel = c.p = c.n = 0;
+    c.sock = id;
+    ncall(&c);
 }
 
 /* DEVLOAD /U: Karte mit angemeldetem Stapel bleibt (1 = belegt) */

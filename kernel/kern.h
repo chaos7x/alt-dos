@@ -217,7 +217,11 @@ unsigned __far net_devhlp(unsigned fn, int d, unsigned dsel, unsigned bx, unsign
 void __far net_poll(void);
 unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n);
 int __far net_inuse(int d);
-void __far net_drop(int d);           /* loop_attach/loop_info: ifs.h */
+void __far net_drop(int d);
+unsigned __far net_srw(unsigned id, int wr, unsigned usel, unsigned off, unsigned n);
+void __far net_sclose(unsigned id);
+unsigned __far kf_sock_new(unsigned id);       /* kernel.c: Socket -> Handle */
+unsigned __far kf_sock_id(unsigned h);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL

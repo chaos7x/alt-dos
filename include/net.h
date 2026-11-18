@@ -113,12 +113,16 @@ struct net_run {
     unsigned long  ticks;           /* Systemtakt (100 Hz)                 */
 };
 
+#define NETK_READ       0x80        /* Kernel: DosRead auf einen Socket      */
+#define NETK_WRITE      0x81        /* Kernel: DosWrite                     */
+#define NETK_CLOSE      0x82        /* Kernel: Handle geschlossen           */
 struct net_call {                   /* FAPI_NET eines Programms            */
     unsigned short fn;              /* BX: NET_* (fapi_abi.h)               */
     unsigned short usel;            /* DS des Programms                     */
     unsigned short p;               /* CX: Parameterblock im DS             */
     unsigned short n;               /* DX: dessen Groesse                   */
     unsigned short task;            /* Tasknummer                           */
+    unsigned short sock;            /* Socket im Stapel (Handle uebersetzt) */
 };
 #pragma pack()
 

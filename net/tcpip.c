@@ -62,6 +62,7 @@ static unsigned char bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static char host[32] = "ATDOS";
 static unsigned char cfg_ip[4], cfg_mask[4], cfg_gw[4], cfg_dns[2][4], cfg_fixed;
 
+static unsigned char fw_on = 1;         /* Firewall (ab Werk an, /NOFW)  */
 static unsigned long now;               /* Takt (100 Hz)                 */
 static unsigned long secs, sec_base;    /* Sekunden seit dem Laden       */
 static unsigned ipid = 1;
@@ -342,8 +343,11 @@ static void icmp_in(int i, fp f, unsigned len, unsigned hl)
     unsigned ml = G16(f + 16) - hl, k, id, seq;
     if (ml + 14 + hl > len || ml < 8 || csum(csum_add(0, m, ml)))
         return;
-    if (m[0] == 8 && ml <= sizeof(txb) - 34) {  /* Echo-Anfrage: antworten */
+    if (m[0] == 8 && ml <= sizeof(txb) - 34) {  /* Echo-Anfrage: antworten,
+                                       mit Firewall nur im eigenen Netz  */
         unsigned char src[4];
+        if (fw_on && !same_net(&nif[i], f + 26))
+            return;
         cpy(src, f + 26, 4);
         cpy(txb + 34, m, ml);
         txb[34] = 0;
@@ -517,6 +521,8 @@ static void dhcp_tick(int i)
     n->dnext = secs + (n->dtry < 4 ? 1u << n->dtry : 16u);
 }
 
+#include "sock.h"                       /* Sockets, UDP, DNS (Stufe 2a)  */
+
 /* ---- Eingang --------------------------------------------------------- */
 static void ip4_in(int i, fp f, unsigned len)
 {
@@ -535,11 +541,8 @@ static void ip4_in(int i, fp f, unsigned len)
         return;
     if (f[23] == 1)
         icmp_in(i, f, len, hl);
-    else if (f[23] == 17 && tl >= hl + 8) {
-        fp u = f + 14 + hl;
-        if (G16(u + 2) == 68 && G16(u) == 67)
-            dhcp_in(i, u + 8, tl - hl - 8);
-    }
+    else if (f[23] == 17 && tl >= hl + 8)
+        udp_in(i, f, len, hl);
 }
 
 static void frame_in(int i, fp f, unsigned len)
@@ -812,7 +815,11 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
         return net_ping(c);
     case NET_DHCP:
         return net_dhcp(c);
+    case NET_RESOLVE:
+        return net_resolve(c);
     }
+    if (c->fn >= NET_SOCKET)
+        return sk_call(c);
     return FAPI_ERROR;
 }
 
@@ -829,7 +836,7 @@ static const char __far *opt(const char __far *a, const char *k)
     return 0;
 }
 
-static const char __far *ip_parse(const char __far *a, unsigned char *ip)
+static const char __far *ip_parse(const char __far *a, unsigned char __far *ip)
 {
     unsigned k, v;
     for (k = 0; k < 4; k++) {
@@ -880,8 +887,11 @@ static void init(void)
             host[k] = a[k];
         host[k] = 0;
     }
+    if (has_opt(r->args, "/NOFW"))
+        fw_on = 0;
     rsel = devhlp(DH_KSEG, 0, NSLOT * SLOT, 0);
-    if (!rsel) {
+    psel = devhlp(DH_KSEG, 0, 0, 0);    /* 64 KB: Socketpuffer           */
+    if (!rsel || !psel) {
         dputs("  TCPIP.SYS: kein Speicher f\x81r den Empfangsring\n");
         return;
     }
@@ -906,6 +916,7 @@ static void init(void)
         p = scat(p, "Adresse per DHCP");
     p = scat(p, ", Rechner ");
     p = scat(p, host);
+    p = scat(p, fw_on ? ", Firewall an" : ", Firewall aus");
     scat(p, "\n");
     dputs(line);
     if (devhlp(DH_NETPROTO, 0, (unsigned)&pr, 0)) {
@@ -926,6 +937,10 @@ void strategy(void)
         init();
         break;
     case DRV_DEINIT:                    /* DEVLOAD /U: nur ohne Wartende */
+        if (sk_any() || dns_busy) {
+            r->status = DRV_ERR_IO;
+            return;
+        }
         for (k = 0; k < NPING; k++)
             if (pg[k].used) {
                 r->status = DRV_ERR_IO;

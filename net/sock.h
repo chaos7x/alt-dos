@@ -1,0 +1,707 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * TCPIP.SYS, Stufe 2a: Sockets (Puffer, UDP), Namensaufloesung (DNS),
+ * Firewall-Grundregeln. Wird von tcpip.c eingebunden (gemeinsame Daten).
+ *
+ * Adressen sind innen 16 Byte (IPv4 als ::ffff:a.b.c.d). Jeder Socket hat
+ * einen Empfangsring von 4 KB aus einem Kernelsegment (16 Bloecke).
+ * Ein Datagramm im Ring: Laenge (2), Absender (16), Port (2), Daten;
+ * passt es nicht mehr ans Ende, steht dort FFFFh und es geht vorn weiter.
+ *
+ * Firewall (docs/NETZWERK.md, ab Werk an): eingehende Datagramme nur fuer
+ * verbundene Sockets von ihrer Gegenseite oder von Adressen, an die der
+ * Socket in den letzten 2 Minuten gesendet hat. Geschlossene Ports
+ * schweigen (keine ICMP-Antwort). Regeln je Programm folgen mit TCP.
+ */
+
+static void __far *uptr(unsigned sel, unsigned off, unsigned n);
+static void map4(unsigned char __far *d, const unsigned char __far *a);
+static const char __far *ip_parse(const char __far *a, unsigned char __far *ip);
+
+/* ---- Pufferbloecke ---------------------------------------------------- */
+#define NBLK    16
+#define BLK     4096u
+static unsigned psel;
+static unsigned blk_used;
+#define BP(k)   ((unsigned char __far *)MK_FP(psel, (unsigned)(k) * BLK))
+
+static int blk_get(void)
+{
+    int k;
+    for (k = 0; k < NBLK; k++)
+        if (!(blk_used & (1u << k))) {
+            blk_used |= 1u << k;
+            return k;
+        }
+    return -1;
+}
+
+static void blk_put(int k)
+{
+    if (k >= 0)
+        blk_used &= ~(1u << k);
+}
+
+/* ---- Sockets ---------------------------------------------------------- */
+#define NSOCK   16
+#define SF_BOUND    0x01                /* ausdruecklich gebunden          */
+#define SF_CONN     0x02                /* Gegenseite fest (connect)       */
+#define SF_NB       0x04                /* nicht blockierend               */
+#define SF_BCAST    0x08                /* Rundruf erlaubt                 */
+#define SF_V6ONLY   0x10
+#define SF_NORD     0x20                /* shutdown lesen                  */
+#define SF_NOWR     0x40                /* shutdown schreiben              */
+#define NPEER   4
+
+static struct sock {
+    unsigned char  used, type, fam, flags;
+    signed char    task;
+    signed char    rb;                  /* Empfangsblock                   */
+    unsigned       lport, rport;
+    unsigned char  laddr[16], raddr[16];
+    unsigned       rh, rt, ru;          /* Ring: Kopf, Ende, belegt        */
+    unsigned       rto;                 /* Vorgabefrist (ms, 0 = ewig)     */
+    struct {
+        unsigned char a[4];
+        unsigned      port;
+        unsigned long t;
+    } peer[NPEER];                      /* Firewall: wem gesendet wurde    */
+    unsigned char  pn;
+} sk[NSOCK];
+#define SEV(i)  (0x200 + (i))           /* Weckereignis je Socket          */
+
+static unsigned long fw_drop;           /* abgewiesene Pakete              */
+static unsigned eph;                    /* naechster freie Absenderport    */
+
+static unsigned swap16(unsigned v)
+{
+    return v << 8 | v >> 8;
+}
+
+static int is_v4(const unsigned char __far *a)
+{
+    static const unsigned char v4[12] = { 0,0,0,0,0,0,0,0,0,0,0xFF,0xFF };
+    return eq(a, v4, 12);
+}
+
+static unsigned l4sum(const unsigned char __far *src, const unsigned char __far *dst,
+                      unsigned char proto, const unsigned char __far *seg, unsigned len)
+{
+    unsigned long s = csum_add(0, src, 4);
+    s = csum_add(s, dst, 4);
+    s += proto;
+    s += len;
+    return csum(csum_add(s, seg, len));
+}
+
+static int port_used(unsigned char type, unsigned p)
+{
+    int i;
+    for (i = 0; i < NSOCK; i++)
+        if (sk[i].used && sk[i].type == type && sk[i].lport == p)
+            return 1;
+    return 0;
+}
+
+static unsigned port_new(unsigned char type)
+{
+    unsigned k, p;
+    if (eph < 49152)
+        eph = 49152 + ((unsigned)now * 37 & 0x3FFF);
+    for (k = 0; k < 16384; k++) {
+        p = eph++;
+        if (eph < 49152)
+            eph = 49152;
+        if (!port_used(type, p))
+            return p;
+    }
+    return 0;
+}
+
+/* sockaddr des Programms -> Adresse (16) + Port */
+static int sa_get(const struct fapi_sockaddr __far *a, unsigned char __far *ad, unsigned __far *port)
+{
+    if (a->family == AF_INET)
+        map4(ad, a->a4);
+    else if (a->family == AF_INET6)
+        cpy(ad, a->a6, 16);
+    else
+        return -1;
+    *port = swap16(a->port);
+    return 0;
+}
+
+static void sa_put(struct fapi_sockaddr __far *a, int fam, const unsigned char __far *ad,
+                   unsigned port)
+{
+    zero(a, sizeof(*a));
+    if (fam == AF_INET6) {
+        a->len = 28;
+        a->family = AF_INET6;
+        cpy(a->a6, ad, 16);
+    } else {
+        a->len = 16;
+        a->family = AF_INET;
+        cpy(a->a4, ad + 12, 4);
+    }
+    a->port = swap16(port);
+}
+
+static void peer_note(struct sock *s, const unsigned char __far *a4, unsigned port)
+{
+    int k, o = 0;
+    for (k = 0; k < NPEER; k++) {
+        if (eq(s->peer[k].a, a4, 4) && s->peer[k].port == port) {
+            s->peer[k].t = secs;
+            return;
+        }
+        if (s->peer[k].t < s->peer[o].t)
+            o = k;
+    }
+    cpy(s->peer[o].a, a4, 4);
+    s->peer[o].port = port;
+    s->peer[o].t = secs ? secs : 1;
+}
+
+static int peer_ok(struct sock *s, const unsigned char __far *a4, unsigned port)
+{
+    int k;
+    for (k = 0; k < NPEER; k++)
+        if (s->peer[k].t && secs - s->peer[k].t < 120 &&
+            eq(s->peer[k].a, a4, 4) && s->peer[k].port == port)
+            return 1;
+    return 0;
+}
+
+/* UDP senden: Daten (fern) ab txb+42, Absenderport sport */
+static int udp_tx(const unsigned char __far *d4, unsigned sport, unsigned dport,
+                  const void __far *data, unsigned len)
+{
+    unsigned char hop[4];
+    unsigned cs;
+    int i;
+    if (len > 1472)
+        return -1;
+    if (d4[0] == 255 && d4[1] == 255 && d4[2] == 255 && d4[3] == 255) {
+        for (i = 0; i < NNETIF && !(nif[i].up && !is_zero4(nif[i].ip)); i++)
+            ;
+        if (i == NNETIF)
+            return -1;
+    } else if ((i = route4(d4, hop)) < 0)
+        return -1;
+    cpy(txb + 42, data, len);
+    P16(txb + 34, sport);
+    P16(txb + 36, dport);
+    P16(txb + 38, 8 + len);
+    P16(txb + 40, 0);
+    cs = l4sum(nif[i].ip, d4, 17, txb + 34, 8 + len);
+    P16(txb + 40, cs ? cs : 0xFFFF);
+    return ip4_out(i, d4, 17, 8 + len, 64) < 0 ? -1 : 0;
+}
+
+/* Datagramm in den Ring des Sockets */
+static int ring_put(struct sock *s, const unsigned char __far *src16, unsigned sport,
+                    const unsigned char __far *data, unsigned n)
+{
+    unsigned char __far *b = BP(s->rb);
+    unsigned r = (20 + n + 1) & ~1u;
+    if (s->ru + r > BLK)
+        return -1;
+    if (s->rh + r > BLK) {              /* ans Ende passt es nicht        */
+        if (s->ru + (BLK - s->rh) + r > BLK)
+            return -1;
+        *(unsigned __far *)(b + s->rh) = 0xFFFF;
+        s->ru += BLK - s->rh;
+        s->rh = 0;
+    }
+    *(unsigned __far *)(b + s->rh) = n;
+    cpy(b + s->rh + 2, src16, 16);
+    *(unsigned __far *)(b + s->rh + 18) = sport;
+    cpy(b + s->rh + 20, data, n);
+    s->rh += r;
+    if (s->rh == BLK)
+        s->rh = 0;
+    s->ru += r;
+    return 0;
+}
+
+/* naechstes Datagramm -> Stelle im Block, -1 = keins */
+static int ring_peek(struct sock *s)
+{
+    if (!s->ru)
+        return -1;
+    if (*(unsigned __far *)(BP(s->rb) + s->rt) == 0xFFFF) {
+        s->ru -= BLK - s->rt;
+        s->rt = 0;
+        if (!s->ru)
+            return -1;
+    }
+    return (int)s->rt;
+}
+
+static void ring_drop(struct sock *s)
+{
+    unsigned n = *(unsigned __far *)(BP(s->rb) + s->rt);
+    unsigned r = (20 + n + 1) & ~1u;
+    s->rt += r;
+    if (s->rt >= BLK)
+        s->rt = 0;
+    s->ru -= r;
+    if (!s->ru)
+        s->rh = s->rt = 0;
+}
+
+/* ---- DNS-Aufloeser ---------------------------------------------------- */
+#define DNS_EV  0x300
+static unsigned char dns_r[512];
+static unsigned dns_rlen, dns_id, dns_lport;
+static volatile unsigned char dns_done, dns_busy;
+static struct {
+    char           n[64];
+    unsigned char  a[4][4];
+    unsigned char  cnt;
+    unsigned long  exp;
+} dcache[8];
+static unsigned char dc_next;
+
+static void udp_in(int i, fp f, unsigned len, unsigned hl)
+{
+    fp u = f + 14 + hl;
+    unsigned ul = G16(u + 4), sp = G16(u), dp = G16(u + 2), k;
+    unsigned char src[16];
+    struct sock *s;
+    (void)i;
+    if (ul < 8 || 14 + hl + ul > len)
+        return;
+    if (G16(u + 6) && l4sum(f + 26, f + 30, 17, u, ul))
+        return;                         /* Pruefsumme falsch               */
+    if (dp == 68 && sp == 67) {
+        dhcp_in(i, u + 8, ul - 8);
+        return;
+    }
+    if (dns_busy && dp == dns_lport && sp == 53 && !dns_done) {
+        if (ul - 8 >= 12 && G16(u + 8) == dns_id) {
+            dns_rlen = ul - 8 > sizeof(dns_r) ? sizeof(dns_r) : ul - 8;
+            cpy(dns_r, u + 8, dns_rlen);
+            dns_done = 1;
+            proc_run(DNS_EV);
+        }
+        return;
+    }
+    map4(src, f + 26);
+    for (k = 0; k < NSOCK; k++) {
+        s = &sk[k];
+        if (!s->used || s->type != SOCK_DGRAM || s->lport != dp || (s->flags & SF_NORD))
+            continue;
+        if (s->flags & SF_CONN) {
+            if (s->rport != sp || !eq(s->raddr, src, 16))
+                continue;
+        } else if (fw_on && !peer_ok(s, f + 26, sp)) {
+            fw_drop++;                  /* Firewall: niemand hat gefragt   */
+            return;
+        }
+        if (ring_put(s, src, sp, u + 8, ul - 8) == 0)
+            proc_run(SEV(k));
+        return;
+    }
+    fw_drop++;                          /* kein Socket: schweigen          */
+}
+
+static unsigned dns_build(const char __far *name, unsigned char __far *q)
+{
+    unsigned n = 12, l, k;
+    zero(q, 12);
+    P16(q, dns_id);
+    P16(q + 2, 0x0100);                 /* Rekursion erwuenscht            */
+    P16(q + 4, 1);
+    while (*name) {
+        for (l = 0; name[l] && name[l] != '.'; l++)
+            ;
+        if (l == 0 || l > 63 || n + l + 6 > 300)
+            return 0;
+        q[n++] = (unsigned char)l;
+        for (k = 0; k < l; k++)
+            q[n++] = (unsigned char)name[k];
+        name += l;
+        if (*name == '.')
+            name++;
+    }
+    q[n++] = 0;
+    P16(q + n, 1);                      /* A                               */
+    P16(q + n + 2, 1);                  /* IN                              */
+    return n + 4;
+}
+
+static unsigned dns_skip(unsigned p)    /* Name ueberspringen              */
+{
+    while (p < dns_rlen) {
+        unsigned c = dns_r[p];
+        if (!c)
+            return p + 1;
+        if ((c & 0xC0) == 0xC0)
+            return p + 2;
+        p += c + 1;
+    }
+    return dns_rlen;
+}
+
+/* eine Anfrage; -> Zahl der Adressen, 0 = Name unbekannt, -1 = keine
+   Antwort/kein Server */
+static int dns_ask(const char __far *name, unsigned char __far *out, unsigned long __far *ttl)
+{
+    static unsigned char q[300];        /* Stapel ist knapp; dns_busy     */
+    unsigned ql, try, w, an, p, k, rl, t0;
+    int i, cnt;
+    const unsigned char *srv;
+
+    for (i = 0; i < NNETIF && !(nif[i].up && !is_zero4(nif[i].dns[0])); i++)
+        ;
+    if (i == NNETIF)
+        return -1;
+    if (!dns_lport)
+        dns_lport = port_new(SOCK_DGRAM);
+    for (try = 0; try < 4; try++) {
+        srv = nif[i].dns[(try & 1) && !is_zero4(nif[i].dns[1]) ? 1 : 0];
+        dns_id = (unsigned)ticks() * 2053u + try + 1;
+        if (!(ql = dns_build(name, q)))
+            return 0;
+        dns_done = 0;
+        if (udp_tx(srv, dns_lport, 53, q, ql) < 0)
+            return -1;
+        t0 = ticks();
+        while (!dns_done && (w = ticks() - t0) < 200) {
+            cli();
+            if (!dns_done)
+                proc_block(DNS_EV, 200 - w);
+            else
+                sti();
+        }
+        if (!dns_done)
+            continue;
+        if (!(dns_r[2] & 0x80))
+            continue;
+        if ((dns_r[3] & 15) == 3)
+            return 0;                   /* NXDOMAIN                        */
+        if (dns_r[3] & 15)
+            continue;
+        an = G16(dns_r + 6);
+        p = dns_skip(12) + 4;           /* Frage ueberspringen             */
+        cnt = 0;
+        *ttl = 3600;
+        for (k = 0; k < an && p + 10 <= dns_rlen; k++) {
+            p = dns_skip(p);
+            if (p + 10 > dns_rlen)
+                break;
+            rl = G16(dns_r + p + 8);
+            if (G16(dns_r + p) == 1 && G16(dns_r + p + 2) == 1 && rl == 4 &&
+                p + 14 <= dns_rlen && cnt < 4) {
+                map4(out + 16 * cnt, dns_r + p + 10);
+                cnt++;
+                *ttl = (unsigned long)G16(dns_r + p + 4) << 16 | G16(dns_r + p + 6);
+            }
+            p += 10 + rl;
+        }
+        return cnt;
+    }
+    return -1;
+}
+
+static int name_eq(const char __far *a, const char __far *b)
+{
+    for (; *a && *b; a++, b++)
+        if ((*a | 32) != (*b | 32))
+            return 0;
+    return !*a && !*b;
+}
+
+static unsigned net_resolve(struct net_call __far *c)
+{
+    struct fapi_resolve __far *u = uptr(c->usel, c->p, sizeof(struct fapi_resolve));
+    unsigned char ip[4];
+    static unsigned char out[64];       /* unter dns_busy                  */
+    static char full[128];
+    unsigned long ttl;
+    const char __far *e;
+    unsigned k, l, w;
+    int n = -1, j;
+
+    if (!u || c->n < sizeof(struct fapi_resolve))
+        return FAPI_ERROR;
+    u->name[sizeof(u->name) - 1] = 0;
+    u->count = 0;
+    if ((e = ip_parse(u->name, ip)) != 0 && !*e) {     /* schon eine Adresse */
+        map4(u->addr[0], ip);
+        u->count = 1;
+        u->ttl = 0;
+        return 0;
+    }
+    if (u->family == AF_INET6)
+        return FAPI_ERROR;              /* AAAA folgt mit IPv6             */
+    for (k = 0; k < 8; k++)             /* Cache                           */
+        if (dcache[k].cnt && secs < dcache[k].exp && name_eq(dcache[k].n, u->name)) {
+            for (j = 0; j < dcache[k].cnt; j++)
+                map4(u->addr[j], dcache[k].a[j]);
+            u->count = dcache[k].cnt;
+            u->ttl = dcache[k].exp - secs;
+            return 0;
+        }
+    for (w = 0; dns_busy && w < 500; w++) {  /* eine Anfrage zur Zeit      */
+        cli();
+        if (dns_busy)
+            proc_block(DNS_EV + 1, 2);
+        else
+            sti();
+    }
+    if (dns_busy)
+        return FAPI_ERR_TIMEOUT;
+    dns_busy = 1;
+    for (l = 0; u->name[l]; l++)
+        ;
+    /* ohne Punkt: erst mit dem Suffix aus DHCP */
+    for (k = 0; k < l && u->name[k] != '.'; k++)
+        ;
+    if (k == l) {
+        int i;
+        for (i = 0; i < NNETIF && !(nif[i].up && nif[i].domain[0]); i++)
+            ;
+        if (i < NNETIF) {
+            cpy(full, u->name, l);
+            full[l] = '.';
+            for (k = 0; nif[i].domain[k] && l + 1 + k < sizeof(full) - 1; k++)
+                full[l + 1 + k] = nif[i].domain[k];
+            full[l + 1 + k] = 0;
+            n = dns_ask(full, out, &ttl);
+        }
+    }
+    if (n <= 0)
+        n = dns_ask(u->name, out, &ttl);
+    dns_busy = 0;
+    proc_run(DNS_EV + 1);
+    if (n < 0)
+        return FAPI_ERR_TIMEOUT;
+    if (n == 0)
+        return FAPI_ERROR;
+    for (j = 0; j < n; j++)
+        cpy(u->addr[j], out + 16 * j, 16);
+    u->count = n;
+    u->ttl = ttl;
+    if (l < 64) {                       /* merken (hoechstens 1 Tag)       */
+        k = dc_next++ & 7;
+        cpy(dcache[k].n, u->name, l + 1);
+        for (j = 0; j < n; j++)
+            cpy(dcache[k].a[j], out + 16 * j + 12, 4);
+        dcache[k].cnt = (unsigned char)n;
+        dcache[k].exp = secs + (ttl > 86400UL ? 86400UL : ttl);
+    }
+    return 0;
+}
+
+/* ---- Socket-Aufrufe --------------------------------------------------- */
+static void sk_free(int i)
+{
+    struct sock *s = &sk[i];
+    if (!s->used)
+        return;
+    blk_put(s->rb);
+    s->used = 0;
+    proc_run(SEV(i));                   /* Wartende wecken                 */
+}
+
+/* warten, bis cond() oder Frist (ms, 0 = ewig) */
+static unsigned sk_wait(int i, unsigned ms, unsigned t0)
+{
+    unsigned lim = ms ? ms / 10 + 1 : 0, w = ticks() - t0;
+    if (lim && w >= lim)
+        return FAPI_ERR_TIMEOUT;
+    proc_block(SEV(i), lim ? lim - w : 100);
+    return 0;
+}
+
+static unsigned sk_recv(int i, unsigned usel, unsigned buf, unsigned len, unsigned flags,
+                        unsigned ms, struct fapi_sockaddr __far *from)
+{
+    struct sock *s = &sk[i];
+    unsigned char __far *b;
+    unsigned char __far *dst;
+    unsigned n, t0 = ticks(), r;
+    int at;
+
+    if (!(dst = uptr(usel, buf, len ? len : 1)))
+        return FAPI_ERROR;
+    if (!ms)
+        ms = s->rto;
+    for (;;) {
+        if (!s->used)
+            return FAPI_ERR_RESET;
+        if ((at = ring_peek(s)) >= 0)
+            break;
+        if (s->flags & (SF_NB | SF_NORD))
+            return s->flags & SF_NORD ? 0 : FAPI_ERR_AGAIN;
+        cli();
+        if (ring_peek(s) < 0) {
+            if ((r = sk_wait(i, ms, t0)) != 0) {
+                sti();
+                return r;
+            }
+        } else
+            sti();
+    }
+    b = BP(s->rb) + at;
+    n = *(unsigned __far *)b;
+    if (n > len)
+        n = len;                        /* Rest des Datagramms geht verloren */
+    cpy(dst, b + 20, n);
+    if (from)
+        sa_put(from, s->fam, b + 2, *(unsigned __far *)(b + 18));
+    if (!(flags & MSG_PEEK))
+        ring_drop(s);
+    return n;
+}
+
+static unsigned sk_send(int i, const unsigned char __far *d16, unsigned dport,
+                        unsigned usel, unsigned buf, unsigned len)
+{
+    struct sock *s = &sk[i];
+    const unsigned char __far *src;
+    if (s->flags & SF_NOWR)
+        return FAPI_ERR_RESET;
+    if (!(src = uptr(usel, buf, len ? len : 1)))
+        return FAPI_ERROR;
+    if (!is_v4(d16))
+        return FAPI_ERR_NONET;          /* IPv6 folgt                      */
+    if (len > 1472)
+        return FAPI_ERROR;
+    if (d16[12] == 255 && d16[13] == 255 && d16[14] == 255 && d16[15] == 255 &&
+        !(s->flags & SF_BCAST))
+        return FAPI_ERR_DENIED;
+    if (!s->lport && !(s->lport = port_new(SOCK_DGRAM)))
+        return FAPI_ERR_FULL;
+    peer_note(s, d16 + 12, dport);
+    if (udp_tx(d16 + 12, s->lport, dport, src, len) < 0)
+        return FAPI_ERR_NONET;
+    return len;
+}
+
+static unsigned sk_call(struct net_call __far *c)
+{
+    struct fapi_sockio __far *u;
+    struct sock *s;
+    unsigned char a[16];
+    unsigned port, i = c->sock;
+
+    if (c->fn == NET_SOCKET) {
+        struct fapi_socket __far *q = uptr(c->usel, c->p, sizeof(struct fapi_socket));
+        int b;
+        if (!q || (q->family != AF_INET && q->family != AF_INET6))
+            return FAPI_ERROR;
+        if (q->type != SOCK_DGRAM)
+            return FAPI_ERROR;          /* TCP folgt (Stufe 2b)            */
+        for (i = 0; i < NSOCK && sk[i].used; i++)
+            ;
+        if (i == NSOCK || (b = blk_get()) < 0)
+            return FAPI_ERR_FULL;
+        s = &sk[i];
+        zero(s, sizeof(*s));
+        s->used = 1;
+        s->type = (unsigned char)q->type;
+        s->fam = (unsigned char)q->family;
+        s->task = (signed char)c->task;
+        s->rb = (signed char)b;
+        return i;
+    }
+    if (i >= NSOCK || !sk[i].used)
+        return FAPI_ERROR;
+    s = &sk[i];
+    switch (c->fn) {
+    case NETK_CLOSE:
+        sk_free(i);
+        return 0;
+    case NETK_READ:
+        return sk_recv(i, c->usel, c->p, c->n, 0, 0, 0);
+    case NETK_WRITE:
+        if (!(s->flags & SF_CONN))
+            return FAPI_ERROR;
+        return sk_send(i, s->raddr, s->rport, c->usel, c->p, c->n);
+    }
+    if (!(u = uptr(c->usel, c->p, sizeof(struct fapi_sockio))) || c->n < sizeof(struct fapi_sockio))
+        return FAPI_ERROR;
+    switch (c->fn) {
+    case NET_BIND:
+        if (sa_get(&u->addr, a, &port))
+            return FAPI_ERROR;
+        if (!port && !(port = port_new(s->type)))
+            return FAPI_ERR_FULL;
+        if (port_used(s->type, port) && s->lport != port)
+            return FAPI_ERR_INUSE;
+        s->lport = port;
+        cpy(s->laddr, a, 16);
+        s->flags |= SF_BOUND;
+        return 0;
+    case NET_CONNECT:
+        if (sa_get(&u->addr, s->raddr, &s->rport))
+            return FAPI_ERROR;
+        if (!s->lport && !(s->lport = port_new(s->type)))
+            return FAPI_ERR_FULL;
+        s->flags |= SF_CONN;
+        return 0;
+    case NET_SEND:
+        if (!(s->flags & SF_CONN))
+            return FAPI_ERROR;
+        return sk_send(i, s->raddr, s->rport, c->usel, u->buf, u->len);
+    case NET_SENDTO:
+        if (sa_get(&u->addr, a, &port))
+            return FAPI_ERROR;
+        return sk_send(i, a, port, c->usel, u->buf, u->len);
+    case NET_RECV:
+        return sk_recv(i, c->usel, u->buf, u->len, u->flags, u->timeout, 0);
+    case NET_RECVFROM:
+        return sk_recv(i, c->usel, u->buf, u->len, u->flags, u->timeout, &u->addr);
+    case NET_GETNAME:
+        if (is_zero4(s->laddr + 12) && is_v4(s->laddr))
+            for (port = 0; port < NNETIF; port++)
+                if (nif[port].up && !is_zero4(nif[port].ip)) {
+                    map4(a, nif[port].ip);
+                    sa_put(&u->addr, s->fam, a, s->lport);
+                    return 0;
+                }
+        sa_put(&u->addr, s->fam, s->laddr, s->lport);
+        return 0;
+    case NET_GETPEER:
+        if (!(s->flags & SF_CONN))
+            return FAPI_ERROR;
+        sa_put(&u->addr, s->fam, s->raddr, s->rport);
+        return 0;
+    case NET_SHUTDOWN:
+        s->flags |= u->len == 0 ? SF_NORD : u->len == 1 ? SF_NOWR : SF_NORD | SF_NOWR;
+        proc_run(SEV(i));
+        return 0;
+    case NET_SETOPT:
+    case NET_GETOPT: {
+        static const unsigned char bit[5] = { 0, SF_NB, 0, SF_BCAST, SF_V6ONLY };
+        if (u->len == SO_RCVTIMEO) {
+            if (c->fn == NET_SETOPT)
+                s->rto = u->flags;
+            return s->rto;
+        }
+        if (u->len < 1 || u->len > 4 || !bit[u->len])
+            return FAPI_ERROR;
+        if (c->fn == NET_SETOPT) {
+            if (u->flags)
+                s->flags |= bit[u->len];
+            else
+                s->flags &= ~bit[u->len];
+        }
+        return (s->flags & bit[u->len]) != 0;
+    }
+    }
+    return FAPI_ERROR;                  /* LISTEN/ACCEPT: nur TCP          */
+}
+
+static int sk_any(void)                 /* noch Sockets offen?             */
+{
+    int i;
+    for (i = 0; i < NSOCK; i++)
+        if (sk[i].used)
+            return 1;
+    return 0;
+}

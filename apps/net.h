@@ -9,6 +9,27 @@
 #include "fapi.h"
 
 #define DosNet(fn, p, n)    fapi_call(FAPI_NET, (fn), (unsigned short)(p), (n))
+#define htons(v)            ((unsigned short)((v) << 8 | (unsigned short)(v) >> 8))
+#define ntohs(v)            htons(v)
+
+#ifdef NET_RESOLVE_FN
+static struct fapi_resolve net_rs;
+/* Name oder Zahlenadresse -> erste Adresse; 0 = ok, sonst FAPI-Fehler */
+static unsigned net_lookup(const char *name, unsigned char *a)
+{
+    unsigned k, r;
+    for (k = 0; name[k] && k < sizeof(net_rs.name) - 1; k++)
+        net_rs.name[k] = name[k];
+    net_rs.name[k] = 0;
+    net_rs.family = 0;
+    r = DosNet(NET_RESOLVE, &net_rs, sizeof(net_rs));
+    if (r)
+        return r;
+    for (k = 0; k < 16; k++)
+        a[k] = net_rs.addr[0][k];
+    return 0;
+}
+#endif
 
 static int net_is4(const unsigned char *a)
 {

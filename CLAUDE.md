@@ -5292,6 +5292,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   zustandsbehaftet, eingehend nur Antworten, Regeln je Programm,
   FIREWALL.INI + FIREWALL.EXE; Entscheidung des Nutzers: ab Werk an,
   PING von außen nur aus dem eigenen Netz. Kommt mit Stufe 2 (TCP).
+  Stufe 2a erledigt (18.11.2026; in QEMU geprüft mit einem DNS- und
+  UDP-Echo-Dienst auf dem Rechner hinter 10.0.2.2 – Skript im Scratch-
+  pad: NSLOOKUP Name/mehrere Adressen/NXDOMAIN, PING mit Namen, NC -u
+  Hin und Rück, Port ohne Antwort -> Frist; Firewall: hostfwd udp an
+  einen lauschenden NC -l wird abgewiesen, mit /NOFW kommt es an;
+  Strg+C beendet ein wartendes NC und gibt das Socket frei, danach
+  DEVLOAD /U TCPIP): Kernel `OF_SOCK` (9, f.first = Nummer im Stapel) –
+  DosRead/DosWrite ohne Kernelsperre (fapi_nolock) -> `net_srw`,
+  of_release -> `net_sclose`; `kf_sock_new`/`kf_sock_id` (kernel.c,
+  of_alloc ohne Sperre – schläft nicht). net.c: Socket-Aufrufe tragen
+  vorn das Handle, net_fapi übersetzt es (lsl-Prüfung) in `net_call.sock`;
+  SOCKET/ACCEPT -> Handle. Stapel `net/sock.h` (in tcpip.c eingebunden):
+  16 Sockets, Puffer 16 × 4 KB in einem DH_KSEG-Segment (64 KB),
+  Datagramm-Ring je Socket, Absenderports ab 49152, sockaddr wie BSD
+  (Port in Netzbytefolge), DNS-Aufloeser (eine Anfrage zur Zeit,
+  Puffer static – Kernelstapel knapp!, Cache 8, Suffix aus DHCP-Option
+  15), Firewall: Peer-Liste je Socket (4, 2 min). Programme NSLOOKUP,
+  NC (-u), PING mit Namen; apps/net.h net_lookup (NET_RESOLVE_FN).
+  Lehre: Wer im Ring-0-Modul wartet (proc_block ohne Kernelsperre), kann
+  per Strg+C beendet werden – Zustand im Modul darf nicht an der
+  wartenden Funktion hängen (Freigabe über NETK_CLOSE beim Schließen).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

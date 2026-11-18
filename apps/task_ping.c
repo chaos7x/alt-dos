@@ -7,6 +7,7 @@
  */
 #include "fapi.h"
 #include "util.h"
+#define NET_RESOLVE_FN
 #include "net.h"
 
 static char args[FAPI_ARGLEN], target[64], ts[48];
@@ -57,7 +58,7 @@ void main(void)
     unsigned n = 4, len = 32, to = 4000, ttl = 0, sent = 0, got = 0, mn = 0xFFFF,
              mx = 0, rc, t0;
     unsigned long sum = 0;
-    int forever = 0;
+    int forever = 0, named = 0;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -95,14 +96,28 @@ void main(void)
         DosExit(4);
     }
     if (net_pton(target, pg.addr)) {
-        puts("Ping-Anforderung konnte Host \"");
-        puts(target);
-        puts("\" nicht finden (Namensaufl\x94sung gibt es noch nicht).\r\n");
-        DosExit(1);
+        rc = net_lookup(target, pg.addr);
+        if (rc == FAPI_ERR_NONET) {
+            puts("Kein Netz: TCPIP.SYS oder Netzwerkkarte fehlt, oder kein DNS-Server.\r\n");
+            DosExit(2);
+        }
+        if (rc) {
+            puts("Ping-Anforderung konnte Host \"");
+            puts(target);
+            puts("\" nicht finden. \x9A" "berpr\x81" "fen Sie den Namen, und versuchen Sie es erneut.\r\n");
+            DosExit(1);
+        }
+        named = 1;
     }
     net_ntop(pg.addr, ts);
     puts("\r\nPing wird ausgef\x81hrt f\x81r ");
-    puts(ts);
+    if (named) {
+        puts(target);
+        puts(" [");
+        puts(ts);
+        puts("]");
+    } else
+        puts(ts);
     puts(" mit ");
     put_u(len);
     puts(" Bytes Daten:\r\n");

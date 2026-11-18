@@ -293,6 +293,63 @@ struct fapi_netcmd {
     unsigned short ifc;
     unsigned short arg;
 };
+#define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
+                                       (DNS, Zahlenadressen direkt) -> 0,
+                                       FAPI_ERROR (unbekannt), TIMEOUT    */
+#define NET_FWCTL           5       /* Firewall (FIREWALL.EXE), spaeter   */
+/* Sockets (wie BSD). Sie sind Handles: DosRead/DosWrite/DosClose gehen,
+   beim Programmende schliesst der Kernel sie. SOCKET/ACCEPT -> Handle. */
+#define NET_SOCKET          0x10    /* struct fapi_socket -> Handle         */
+#define NET_BIND            0x11    /* struct fapi_sockio: h, addr          */
+#define NET_CONNECT         0x12    /* h, addr, timeout                     */
+#define NET_LISTEN          0x13    /* h, len = Warteschlange               */
+#define NET_ACCEPT          0x14    /* h, timeout -> neues Handle, addr     */
+#define NET_SEND            0x15    /* h, buf, len, flags -> Bytes          */
+#define NET_RECV            0x16    /* h, buf, len, flags, timeout -> Bytes
+                                       (0 = Gegenseite hat geschlossen)     */
+#define NET_SENDTO          0x17    /* wie SEND, Ziel in addr               */
+#define NET_RECVFROM        0x18    /* wie RECV, Absender nach addr         */
+#define NET_SHUTDOWN        0x19    /* h, len = 0 lesen/1 schreiben/2 beides */
+#define NET_GETNAME         0x1A    /* h -> addr (eigene)                   */
+#define NET_GETPEER         0x1B    /* h -> addr (Gegenseite)               */
+#define NET_SETOPT          0x1C    /* h, len = SO_*, flags = Wert          */
+#define NET_GETOPT          0x1D    /* h, len = SO_* -> AX = Wert           */
+#define FAPI_ERR_AGAIN      0xFFF5  /* nicht blockierend: noch nichts da   */
+#define FAPI_ERR_RESET      0xFFF4  /* Verbindung abgelehnt/abgebrochen    */
+#define SOCK_STREAM         1       /* TCP                                  */
+#define SOCK_DGRAM          2       /* UDP                                  */
+#define SO_NONBLOCK         1       /* Wert 1 = nicht blockierend           */
+#define SO_RCVTIMEO         2       /* Vorgabefrist in ms (0 = ewig)        */
+#define SO_BROADCAST        3       /* UDP an 255.255.255.255 erlaubt       */
+#define SO_V6ONLY           4       /* AF_INET6 nimmt kein IPv4             */
+#define MSG_PEEK            0x02
+/* Adresse wie BSD/RFC 3493: sockaddr_in (16 Byte) ist der Anfang von
+   sockaddr_in6 (28 Byte); Port in Netzbytefolge (htons) */
+struct fapi_sockaddr {
+    unsigned char  len, family;     /* family AF_INET / AF_INET6        */
+    unsigned short port;            /* Netzbytefolge                    */
+    unsigned char  a4[4];           /* AF_INET: Adresse; AF_INET6: flowinfo */
+    unsigned char  a6[16];          /* AF_INET6: Adresse                */
+    unsigned long  scope;
+};
+struct fapi_socket {
+    unsigned short family, type, proto;
+};
+struct fapi_sockio {
+    unsigned short h;
+    unsigned short buf;             /* Puffer im DS des Programms       */
+    unsigned short len;
+    unsigned short flags;
+    unsigned short timeout;         /* ms, 0 = Vorgabe des Sockets      */
+    struct fapi_sockaddr addr;
+};
+struct fapi_resolve {
+    char           name[128];
+    unsigned short family;          /* 0 = beliebig, AF_INET, AF_INET6  */
+    unsigned short count;           /* Rueckgabe: Adressen              */
+    unsigned long  ttl;             /* Rueckgabe: Sekunden              */
+    unsigned char  addr[4][16];
+};
 #define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
                                        feste VHD), DX = Laufwerk 2..25 oder 0
                                        = naechster freier, | LOOP_RO nur

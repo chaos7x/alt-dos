@@ -112,6 +112,7 @@ struct ofile {
 #define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
 #define OF_NUL  7           /* NUL                                      */
 #define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
+#define OF_SOCK 9           /* Socket (TCPIP.SYS), f.first = Nummer im Stapel */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
@@ -2660,7 +2661,9 @@ static void of_release(int k)
             if (was)                    /* Sauber-Bit ist geloescht: beim */
                 vol[o->f.drive].in_use = 1; /* Herunterfahren wieder setzen */
         }
-    } else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
+    } else if (o->kind == OF_SOCK)
+        net_sclose((unsigned)o->f.first);   /* Socket im Stapel schliessen */
+    else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
 }
@@ -2800,6 +2803,25 @@ static int h2e(unsigned h)
     if (h >= NFILE || !files[h].refs || files[h].owner != current)
         return -1;
     return (int)h;
+}
+
+/* Sockets (net.c): Eintrag fuer Socket id anlegen -> Handle, Handle ->
+   id (FFFFh = kein Socket des laufenden Programms). Ohne Kernelsperre:
+   of_alloc schlaeft nicht und belegt den Eintrag sofort. */
+unsigned __far kf_sock_new(unsigned id)
+{
+    int k = of_alloc();
+    if (k < 0)
+        return 0xFFFF;
+    files[k].kind = OF_SOCK;
+    files[k].f.first = id;
+    return k + HBASE;
+}
+
+unsigned __far kf_sock_id(unsigned h)
+{
+    int k = current >= 0 ? h2e(h) : -1;
+    return k >= 0 && files[k].kind == OF_SOCK ? (unsigned)files[k].f.first : 0xFFFF;
 }
 
 static void yield(void)
@@ -3100,7 +3122,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_WRITE:
         k = h2e(a1);
         return k >= 0 && (files[k].kind == OF_CON || files[k].kind == OF_PRD ||
-                          files[k].kind == OF_PWR);
+                          files[k].kind == OF_PWR || files[k].kind == OF_SOCK);
     }
     return 0;
 }
@@ -3385,6 +3407,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_COM:
             t = com_io(k, usel, a2, a3, 1);
             return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
+        case OF_SOCK:
+            return net_srw((unsigned)files[k].f.first, 1, usel, a2, a3);
         }
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -3687,6 +3711,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return 0;                       /* nichts zu lesen           */
         case OF_COM:
             return (unsigned)com_io(k, usel, a2, a3, 0);
+        case OF_SOCK:
+            return net_srw((unsigned)files[k].f.first, 0, usel, a2, a3);
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
