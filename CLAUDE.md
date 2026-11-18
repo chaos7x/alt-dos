@@ -5241,6 +5241,36 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   OS/2 LAN Server), damit sie unter 7.0 unverändert laufen; dort neu nur
   Treiber, TCP/IP und IFS. Später: Netzwerkkarte für die DOS-Boxen
   (virtueller NE2000 oder Packet-Driver-Schnittstelle).
+  Entwurf abgestimmt (18.11.2026): `docs/NETZWERK.md` – TCP/IP als
+  Ring-0-Modul, eigene Kartenschnittstelle (Muster wie Packet Driver:
+  Platz holen, kopieren, fertig melden; Nachlauf wie Linux 2.0), Sockets
+  als Handles, IPv6 von Anfang an mitgedacht (Adressen innen 16 Byte,
+  sockaddr mit Länge/Familie, net_reg mit Version/Merkmalen).
+  Stufe 1 erledigt (18.11.2026; in QEMU geprüft: `-netdev user` – DHCP
+  10.0.2.15/Gateway/DNS, PING 10.0.2.2, nicht vorhandene Adresse ->
+  Frist; zwei AT-DOS-VMs über `-netdev socket,mcast=230.0.0.1:12345`
+  mit festen Adressen – ARP und Echo in beide Richtungen, 1.472 Byte;
+  DEVLOAD laden/entladen (Karte abgelehnt, solange TCPIP daran hängt),
+  Start über CONFIG.SYS mit 4 MB, isapc ohne PCI): Kernel `kernel/net.c`
+  (KTEXT4, ~1,3 KB) – DevHlp 23–30 (`include/net.h`: DH_NETREG/PROTO/RX/
+  RXDONE/SEND/CTL/INFO/KICK), Weiterleitung per `nf_call` (fern, DS =
+  Treiberdaten, ES:BX = Struktur), `net_poll` aus dem Scheduler-Durchlauf
+  und preempt, `FAPI_NET` (5Bh, ohne Kernelsperre) -> call_off des
+  Stapels; drv_unload/fehlgeschlagenes INIT -> net_drop, net_inuse.
+  Treiber: ferne Einsprünge über `fent0`–`fent4` in dcrt0.asm
+  (`drivers/netlib.h`: fent(n, f), inl/outl, fmove). `RTL8139.SYS`
+  (drivers/rtl8139.c, 3,4 KB): Ring 8 KB + WRAP, vier Sendepuffer im
+  DH_DMABUF-Puffer, IRQ, Mehrfachfilter über CRC-32, NC_LINK/STATS.
+  `TCPIP.SYS` (net/tcpip.c, 9 KB): Empfangsring 16 × 1.536 in einem
+  DH_KSEG-Segment, ARP (Cache 16, 4 wartende Rahmen), IPv4 ohne
+  Zerlegen, ICMP Echo + NET_PING (Warten per proc_block), DHCP (DISCOVER/
+  REQUEST/ACK, Erneuern bei T1, Release), NET_IFINFO/NET_DHCP. Programme
+  `PING`, `IPCONFIG` (apps/net.h: net_pton/net_ntop mit IPv6/RFC 5952).
+  Lehre: in Treibern liegen lokale Felder auf dem Kernelstapel (SS ≠
+  DS) – Hilfsfunktionen, die Zeiger darauf bekommen, brauchen `__far`
+  (Watcom warnt mit W112 „Pointer truncated“). CONFIG.SYS jetzt 4.009
+  Byte (Grenze 4 KB!). Nicht geprüft: 86Box, Proxmox. Weiter: UDP/TCP-
+  Sockets als Handles (OF_SOCK), DNS, dann IPv6.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

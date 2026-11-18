@@ -193,6 +193,16 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Interrupt (`/NOIRQ` = Abfragebetrieb), jeder Port mit eigener Sperre
   (zwei Platten arbeiten gleichzeitig). Start von einer SATA-Platte geht
   über das BIOS (SeaBIOS kann es); entladbar mit `DEVLOAD /U AHCI`
+- Netzwerk (6.2, erste Stufe; Entwurf `docs/NETZWERK.md`):
+  `RTL8139.SYS` für Realtek RTL8139/8139C/8139C+ (PCI; QEMU
+  `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster, darüber
+  `TCPIP.SYS` mit ARP, IPv4, ICMP und DHCP-Client –
+  `DEVICE=TCPIP.SYS [/IP:a.b.c.d/n /GW:x /DNS:x[,y]] [/HOST:name]`
+  (ohne /IP holt er die Adresse per DHCP). `IPCONFIG [/ALL] [/RELEASE]
+  [/RENEW]` und `PING [-t] [-n n] [-l Größe] [-w ms] [-i TTL] Ziel` wie
+  bei Windows; AT-DOS antwortet selbst auf ARP und PING. Beide lassen
+  sich mit DEVLOAD laden und (erst TCPIP, dann die Karte) entladen.
+  Noch nicht: Namen (DNS), UDP/TCP für Programme, IPv6
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;
@@ -842,6 +852,7 @@ selbst nur 8.3 kennt.
 | 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk oder Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) |
 | 89 | DosLoop         | BX = 0 (`LOOP_ATTACH`): CX = Pfad der Datei, DX = Laufwerk (2 = C: … 25, 0 = nächster freier), dazu `LOOP_RO` (100h) = nur lesend → erstes Laufwerk; FAPI_ERR_INUSE (zum Schreiben offen), FAPI_ERR_EXIST (Buchstabe belegt), FAPI_ERR_FULL (kein Platz), FAPI_ERR_FRAG (FFF8h, über 8.188 Stücke), FAPI_ERR_DENIED (nicht auf FAT/CD, dynamische VHD), FAPI_ERR_NOTREADY (kein Dateisystem im Abbild). BX = 1 (`LOOP_DETACH`): CX = Laufwerk → 0, FAPI_ERR_INUSE. BX = 2 (`LOOP_INFO`): CX = Platz 0–3 → `struct fapi_loopinfo` bei DX (Laufwerke, Blöcke, Blockgröße, Stücke, Art – 1 ISO, 2 Abbild, 3 Platte, 4 VHD, 5 `LOOPK_DBL` DoubleSpace/DriveSpace, Bit 7 `LOOPK_RO` = nur lesend –, Laufwerk und Pfad der Datei) |
 | 90 | DosKlog         | Kernelmeldungen (`DMESG`): BX = Puffer, CX = Länge, DX = Stelle ab der ältesten → kopierte Bytes; CX = 0 → Länge des Protokolls (bis 8 KB, `KLOG_SIZE`); CX = 0, DX = FFFFh → löschen |
+| 91 | DosNet          | Netzwerk (6.2, `TCPIP.SYS`): BX = `NET_*`, CX = Parameterblock, DX = dessen Größe; ohne Stapel FAPI_ERR_NONET (FFF7h). `NET_IFINFO` (1): `struct fapi_netif` mit vorgegebener Karte → Name, MAC, Verbindung, Adressen (immer 16 Byte, IPv4 als ::ffff:a.b.c.d, mit Präfixlänge und Herkunft), Gateways, DNS, DHCP-Server und Lease, Zähler, Rechnername; FAPI_ERROR hinter der letzten Karte. `NET_PING` (2): `struct fapi_ping` (Ziel, Größe, Frist in ms, Folgenummer, TTL) → Laufzeit, TTL, Absender, ICMP-Typ/-Code; FAPI_ERR_TIMEOUT (FFF6h). `NET_DHCP` (3): `struct fapi_netcmd` (Karte, 0 erneuern, 1 freigeben) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
@@ -899,6 +910,15 @@ weiter; die Interruptroutine weckt ihn), `DH_DMABUF` (Puffer für ISA-DMA),
 `DH_KSEG` (gewöhnliches Kernelsegment bis 64 KB, z. B. für Tabellen),
 `DH_PHYSMAP` (Geräteregister im Speicher – PCI-MMIO, auch über 2 GB – als
 Selektor einblenden, ungecacht; z. B. AHCI).
+
+Netzwerk (6.2, `include/net.h`): eine Karte meldet sich mit `DH_NETREG`
+(MAC, MTU, Merkmale, ferne Einsprünge für Senden und Steuerung), der
+Stapel mit `DH_NETPROTO`. Der Kernel kennt keine Protokolle und
+vermittelt nur: im IRQ holt die Karte mit `DH_NETRX` einen Platz im
+Empfangsring des Stapels, kopiert den Rahmen einmal dorthin und meldet
+ihn mit `DH_NETRXDONE`; die Protokollarbeit macht ein Nachlauf, den der
+Scheduler ruft (antwortet auch, wenn kein Programm das Netz benutzt).
+Gesendet wird über `DH_NETSEND` direkt in den Sendepuffer der Karte.
 
 Treiber mit Interrupt: Während ein Task in einem Treiber auf das Gerät
 wartet, gibt er seit 6.0 die Kernelsperre ab (Phase 6): andere Tasks

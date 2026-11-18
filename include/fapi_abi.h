@@ -233,6 +233,66 @@ struct fapi_drvinfo {
                                        Protokolls; CX = 0, DX = FFFFh ->
                                        loeschen */
 #define KLOG_SIZE           8192u   /* Ringpuffer im Kernel               */
+#define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
+                                       CX = Parameterblock, DX = Groesse;
+                                       ohne Netz FAPI_ERR_NONET */
+#define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
+#define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
+#define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->
+                                       0, FAPI_ERROR hinter der letzten */
+#define NET_PING            2       /* struct fapi_ping: ICMP-Echo, wartet
+                                       bis Antwort/Fehler/Frist -> 0,
+                                       FAPI_ERR_TIMEOUT, FAPI_ERROR      */
+#define NET_DHCP            3       /* struct fapi_netcmd: arg 0 erneuern,
+                                       1 freigeben -> 0                  */
+/* Adressen immer 16 Byte: IPv4 als ::ffff:a.b.c.d (RFC 4291) */
+#define AF_INET             2
+#define AF_INET6            10
+struct fapi_netaddr {
+    unsigned char  a[16];
+    unsigned char  plen;            /* Praefixlaenge (IPv4: 96 + Maske) */
+    unsigned char  kind;            /* NA_*                             */
+};
+#define NA_STATIC           1
+#define NA_DHCP             2
+#define NA_LINK             3       /* IPv6 link-lokal                  */
+#define NA_SLAAC            4
+#define NET_MAXADDR         4
+struct fapi_netif {
+    unsigned short ifc;             /* Eingabe: Karte 0..               */
+    char           name[12];        /* Treiber, z. B. "RTL8139"         */
+    unsigned char  mac[6];
+    unsigned short mtu, irq, io;
+    unsigned short link;            /* Bit 0 Verbindung, Bit 1 voll-
+                                       duplex, Bits 8-15 Mbit/10        */
+    unsigned short naddr;
+    struct fapi_netaddr addr[NET_MAXADDR];
+    unsigned char  gw4[16], gw6[16];
+    unsigned char  dns[2][16];
+    unsigned char  dhcp[16];        /* DHCP-Server, 0 = fest            */
+    unsigned long  lease;           /* Restzeit in Sekunden             */
+    unsigned long  rx_ok, tx_ok, rx_err, tx_err, rx_drop;
+    char           host[32], domain[32];
+};
+struct fapi_ping {
+    unsigned char  addr[16];        /* Ziel                             */
+    unsigned short len;             /* Nutzdaten (0..1472)              */
+    unsigned short timeout;         /* ms                               */
+    unsigned short seq;
+    unsigned short ttl_out;         /* 0 = Vorgabe 64                   */
+    /* Rueckgabe */
+    unsigned short rtt;             /* ms                               */
+    unsigned char  ttl;
+    unsigned char  type;            /* 0 Antwort, sonst ICMP-Typ (3 =
+                                       unerreichbar, 11 = TTL)         */
+    unsigned char  code;
+    unsigned char  rsv;
+    unsigned char  from[16];
+};
+struct fapi_netcmd {
+    unsigned short ifc;
+    unsigned short arg;
+};
 #define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
                                        feste VHD), DX = Laufwerk 2..25 oder 0
                                        = naechster freier, | LOOP_RO nur

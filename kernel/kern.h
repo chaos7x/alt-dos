@@ -211,7 +211,13 @@ int __far loop_write(int dev, unsigned long lba);
 int __far loop_drop(int dev);
 void __far loop_vsync(int x);
 void __far loop_sync_all(void);
-int __far loop_room(int dev);           /* loop_attach/loop_info: ifs.h */
+int __far loop_room(int dev);
+/* net.c (KTEXT4): Netzwerk, Vermittlung Karte <-> Stapel (6.2) */
+unsigned __far net_devhlp(unsigned fn, int d, unsigned dsel, unsigned bx, unsigned cx);
+void __far net_poll(void);
+unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n);
+int __far net_inuse(int d);
+void __far net_drop(int d);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL

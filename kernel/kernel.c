@@ -17,6 +17,7 @@
 #endif
 #include "ifs.h"
 #include "../include/drv.h"
+#include "../include/net.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT_MAX    512             /* LDT-Eintraege je Task (bis 32 MB)   */
@@ -2266,6 +2267,7 @@ static int lock_wait(int t)
    wenn die Scheibe um ist oder Strg+C/Alt+Esc/Neustart/Wecken anstehen */
 void preempt(void)
 {
+    net_poll();                         /* Netz auch bei Rechenprogrammen */
     if (current >= 0 &&
         (kbd_break_req || kbd_switch_req || kbd_tm_req || reboot_count || resched_req ||
          get_ticks() - slice_start >= SLICE))
@@ -2388,6 +2390,7 @@ static void sched_in(int keep)
         now = get_ticks();
         fd_tick();                      /* Diskettenmotoren aus          */
         v86_poll();                     /* DOS-Boxen: Bild geaendert?    */
+        net_poll();                     /* Netz: Nachlauf des Stapels    */
         vio_flush();                    /* Programm wartet: Bild zeigen  */
         vio_status();
         any = 0;
@@ -3091,7 +3094,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
-    case FAPI_QTICKS:
+    case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -3824,6 +3827,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_LOOP:                             /* Datei als Laufwerk    */
         return loop_glue(usel, a1, a2, a3);
+
+    case FAPI_NET:                              /* Netzwerk (TCPIP.SYS)  */
+        return net_fapi(usel, a1, a2, a3);
 
     case FAPI_KLOG:                             /* DMESG                 */
         if (a2 && !user_ok(usel, a1, a2, 1))
@@ -6113,6 +6119,8 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
             ((unsigned char __far *)MK_FP(dsel, cx))[n] = bios_fdpt[bx * 16 + n];
         return 0;
     }
+    if (fn >= DH_NETREG && fn <= DH_NETKICK)    /* Netzwerk (net.c)     */
+        return net_devhlp(fn, drv_of(dsel), dsel, bx, cx);
     return 0xFFFF;
 }
 
@@ -6213,6 +6221,7 @@ static int load_driver(const char *line, int is_ifs)
         mem_free(u, n);
         drv[d].used = 0;
         res_free(d, 0, 0);              /* Belegungsliste                */
+        net_drop(d);
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
@@ -6597,6 +6606,8 @@ static unsigned drv_unload(int d)
 
     if ((f = drives_busy(m, mi < 0 ? d : -1)) != 0)
         return f;
+    if (net_inuse(d))                   /* Karte, an der TCPIP.SYS haengt */
+        return FAPI_ERR_INUSE;
     if (aud_drv == d)
         for (k = 0; k < NFM; k++)       /* NAUD == NFM                   */
             if (aud[k].task >= 0 || fmc[k].task >= 0 || mdc[k].task >= 0)
@@ -6664,6 +6675,7 @@ static unsigned drv_unload(int d)
         }
     if (aud_drv == d)
         aud_drv = aud_cur = fm_cur = md_cur = -1;
+    net_drop(d);
     if (mou_drv == d) {
         vio_mou_unreg();
         mou_drv = -1;

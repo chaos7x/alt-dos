@@ -41,9 +41,27 @@ irq_entry_:
         call    [_irq_fn]
         retf
 
+; Ferne Einspruenge fuer Netzwerk (include/net.h): der Kernel ruft mit
+; DS = Treiberdaten, ES:BX = Struktur -> Routine aus fent_fn[n] bekommt
+; ES:BX als fernen Zeiger (DX:AX), Rueckgabe in AX (netlib.h)
+%macro FENT 1
+global fent%1_
+fent%1_:
+        mov     ax, bx
+        mov     dx, es
+        call    [_fent_fn + 2 * %1]
+        retf
+%endmacro
+FENT 0
+FENT 1
+FENT 2
+FENT 3
+FENT 4
+
 segment _BSS
-global _req_sel, _req_off, _devhlp, _irq_fn
+global _req_sel, _fent_fn, _req_off, _devhlp, _irq_fn
 _req_sel:   resw 1
 _req_off:   resw 1
 _devhlp:    resd 1
 _irq_fn:    resw 1
+_fent_fn:   resw 5
