@@ -4842,6 +4842,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Platz: `redir.c` nach KTEXT4 (K4MODS, nur ferne Aufrufe – dmpobj),
   KTEXT3 danach 58.741 Byte. BIOSCMP liegt auch auf Diskette 2
   (\DEMO, DEMOFILES) zum Testen unter MS-DOS.
+  SHARE danach (Wunsch des Nutzers, „SHARE als Stub“): im Redirector
+  (redir.c `sh[NTASK][12]`/`lk[NTASK][4]`, DGROUP danach 64.872 Byte –
+  ~660 frei!; 5.x rbox_redir.c `sh[16]`/`lk[8]`): gleiche Datei (Hash
+  des vollen Pfads) -> gleicher Kernel-Handle, SFT+0Bh = E000h | Platz;
+  wird ein lesend geteilter Handle zum Schreiben gebraucht, schließt und
+  öffnet ihn der Redirector neu (RW); Freigabe-Zähler rd/wr/dr/dw aus dem
+  Modus im SFT (+2), Sperren über 110Ah (FreeDOS: BL = entsperren, DS:DX
+  -> Stelle/Länge, CX = 1). BOXSHELL/RBSHELL: INT 2Fh 1000h -> FFh,
+  10A0h–10A6h -> 0 (FreeDOS fragt sie dann für lokale Dateien).
+  Tabellen leert redir_sda (Start der Box). Geprüft in QEMU (BIOSCMP
+  6.x/5.x: 20h bei Konflikt, Größe über zwei Handles, Sperren 0/21h),
+  Word 5.5 danach wieder vollständig installiert. Reine Programmlogik –
+  kein 86Box-Lauf.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

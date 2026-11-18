@@ -75,10 +75,39 @@ static unsigned h11(const char *f)
     return h;
 }
 
+/* ---- SHARE (18.11.2026, Wunsch des Nutzers) -------------------------------
+   Wie SHARE.EXE, aber im Redirector: oeffnet ein Programm der Box eine
+   Datei, die die Box schon offen hat, teilen sich beide SFTs denselben
+   Handle des Kernels (die Stelle steht je SFT, READ/WRITE setzen sie
+   vorher) - die Groesse gibt es nur einmal, nichts laeuft auseinander.
+   Freigabemodi (Bits 4-6 des Modus) gegen die anderen Oeffnungen der Box,
+   Bereichssperren (110Ah) je Datei. Zwischen Boxen und FAPI-Programmen
+   gelten die Regeln des Kernels. SFT+0Bh = E000h | Platz (sonst Handle
+   + 1, wenn die Tabelle voll ist: dann ohne Freigabepruefung). */
+#define NSH 12
+#define NLK 4
+#define SH_MARK 0xE000
+struct shf {
+    unsigned       h1;                  /* Handle des Kernels + 1, 0 frei */
+    unsigned long  hash, size;          /* Pfad; groesste geschriebene   */
+    unsigned char  refs, rd, wr, dr, dw, kw;    /* Stelle; kw: Handle RW */
+};
+struct shl {
+    unsigned char  used, slot;
+    unsigned long  ofs, len;
+};
+static struct shf sh[NTASK][NSH];
+static struct shl lk[NTASK][NLK];
+
 void __far redir_sda(int t, unsigned seg, unsigned off)
 {
+    unsigned i;
     sda_seg[t] = seg;
     sda_off[t] = off;
+    for (i = 0; i < NSH; i++)           /* neue Box: nichts offen         */
+        sh[t][i].h1 = 0;
+    for (i = 0; i < NLK; i++)
+        lk[t][i].used = 0;
 }
 
 /* PSP des laufenden DOS-Programms der Box (SDA+10h, fuer DPMI) */
@@ -254,6 +283,54 @@ static int no_dir(const char *p)
     return stat_path(np_dir) || !(de.attr & 0x10);
 }
 static unsigned nf(const char *p) { return no_dir(p) ? E_NOPATH : E_NOFILE; }
+
+static unsigned long phash(const char *p)
+{
+    unsigned long h = 5381;
+    while (*p)
+        h = ((h << 5) + h) ^ up(*p++);
+    return h;
+}
+
+static int sh_find(int t, unsigned long hv)
+{
+    int i;
+    for (i = 0; i < NSH; i++)
+        if (sh[t][i].h1 && sh[t][i].hash == hv)
+            return i;
+    return -1;
+}
+
+/* Modus m (Zugriff Bits 0-1, Freigabe Bits 4-6) zaehlen bzw. pruefen */
+#define M_RD(m)  (((m) & 3) != 1)
+#define M_WR(m)  (((m) & 3) != 0)
+#define M_DR(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 3)
+#define M_DW(m)  ((((m) >> 4) & 7) == 1 || (((m) >> 4) & 7) == 2)
+static void sh_add(struct shf *e, unsigned m, int d)
+{
+    e->rd += M_RD(m) ? d : 0;
+    e->wr += M_WR(m) ? d : 0;
+    e->dr += M_DR(m) ? d : 0;
+    e->dw += M_DW(m) ? d : 0;
+}
+static int sh_ok(const struct shf *e, unsigned m)
+{
+    return !((M_RD(m) && e->dr) || (M_WR(m) && e->dw) ||
+             (M_DR(m) && e->rd) || (M_DW(m) && e->wr));
+}
+
+/* SFT+0Bh -> Handle des Kernels (FFFFh = keiner), *e = geteilter Eintrag */
+static unsigned sft_h(int t, unsigned v, struct shf **e)
+{
+    *e = 0;
+    if ((v & 0xFF00) == SH_MARK) {
+        if ((v & 0xFF) >= NSH || !sh[t][v & 0xFF].h1)
+            return 0xFFFF;
+        *e = &sh[t][v & 0xFF];
+        return (*e)->h1 - 1;
+    }
+    return v - 1;
+}
 
 /* ---- SFT -------------------------------------------------------------------- */
 
@@ -483,27 +560,78 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (stat_path(p1) || !(de.attr & 0x10))
             return E_NOPATH;
         return 0;
-    case 0x06:                                  /* CLOSE                 */
+    case 0x06: {                                /* CLOSE                 */
+        struct shf *e;
         s = bp(t, es, di);
         cnt = r16(s);
-        h = r16(s + 0x0B) - 1;
+        k = r16(s + 0x0B);
+        h = sft_h(t, k, &e);
         if (cnt)
             w16(s, --cnt);
         if (cnt == 0 && h != 0xFFFF) {
             if (r16(s + 5) & 0x4000)            /* Datum per 5701h gesetzt */
                 kf_hmeta(h, 1, 0, r16(s + 0x0F), r16(s + 0x0D));
-            FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
+            if (e) {
+                sh_add(e, r16(s + 2), -1);
+                if (--e->refs == 0) {           /* letzte Oeffnung: zu,   */
+                    FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
+                    e->h1 = 0;                  /* Sperren weg            */
+                    for (r = 0; r < NLK; r++)
+                        if (lk[t][r].slot == (k & 0xFF))
+                            lk[t][r].used = 0;
+                }
+            } else
+                FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
             w16(bp(t, es, di + 0x0B), 0);
         }
         return 0;
+    }
+    case 0x0A: {                                /* LOCK/UNLOCK: BL = 1    */
+        struct shf *e;                          /* entsperren, DS:DX ->   */
+        unsigned long o, n;                     /* Stelle, Laenge (DWORD) */
+        unsigned char __far *pb;
+        k = r16(bp(t, es, di + 0x0B));
+        if (sft_h(t, k, &e) == 0xFFFF)
+            return E_HANDLE;
+        if (!e)                                 /* ohne Tabellenplatz     */
+            return 0;
+        pb = bp(t, (unsigned)f->r.ds, DX);
+        o = r32(pb);
+        n = r32(pb + 4);
+        k &= 0xFF;
+        for (r = 0; r < NLK; r++) {
+            struct shl *l = &lk[t][r];
+            if (!l->used || l->slot != k)
+                continue;
+            if (*(unsigned char *)&f->ebx) {    /* entsperren: genau der  */
+                if (l->ofs == o && l->len == n) {   /* Bereich           */
+                    l->used = 0;
+                    return 0;
+                }
+            } else if (o < l->ofs + l->len && l->ofs < o + n)
+                return 0x21;                    /* ueberschneidet sich    */
+        }
+        if (*(unsigned char *)&f->ebx)
+            return 0x21;                        /* nicht gesperrt         */
+        for (r = 0; r < NLK; r++)
+            if (!lk[t][r].used) {
+                lk[t][r].used = 1;
+                lk[t][r].slot = (unsigned char)k;
+                lk[t][r].ofs = o;
+                lk[t][r].len = n;
+                return 0;
+            }
+        return 0x24;                            /* Sperrtabelle voll      */
+    }
     case 0x07:                                  /* COMMIT                */
-    case 0x0A: case 0x0B:                       /* LOCK/UNLOCK           */
+    case 0x0B:                                  /* (FreeDOS: 0Ah + BL)   */
     case 0x1D: case 0x22:                       /* alle zu, Prozessende  */
         return 0;
     case 0x08:                                  /* READ                  */
-    case 0x09:                                  /* WRITE                 */
+    case 0x09: {                                /* WRITE                 */
+        struct shf *e;
         s = bp(t, es, di);
-        h = r16(s + 0x0B) - 1;
+        h = sft_h(t, r16(s + 0x0B), &e);
         pos = r32(s + 0x15);
         size = r32(s + 0x11);
         if (h == 0xFFFF)
@@ -519,6 +647,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             if (FAILED(r))
                 return errmap(r, E_DENIED);
             w32(bp(t, es, di + 0x11), pos);
+            if (e)
+                e->size = pos;
             CX = 0;
             return 0;
         }
@@ -532,8 +662,11 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         w32(s + 0x15, pos);
         if (fn == 9 && pos > size)
             w32(s + 0x11, pos);
+        if (e && fn == 9 && pos > e->size)      /* fuer die anderen SFTs */
+            e->size = pos;
         CX = k;
         return 0;
+    }
     case 0x0C: {                                /* freier Platz          */
         unsigned spc = 1, sh = 9, cs;
         unsigned long tot, fr, cl;
@@ -621,6 +754,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
     case 0x17:                                  /* CREATE (kuerzen)      */
     case 0x2E: {                                /* erweitert             */
         unsigned mode = arg & 0xFF, act = 0, exists, cattr = arg;
+        unsigned long hv;
+        int slot;
         get_fn(t, 0x9E, p1);
         exists = stat_path(p1) == 0;
         if (exists && (de.attr & 0x18))
@@ -640,6 +775,34 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             act = fn == 0x17 ? (exists ? 3 : 2) : 1;
         if (act == 1 && !exists)
             return nf(p1);
+        if (fn == 0x17)
+            mode = 2;                           /* arg ist das Attribut;  */
+        hv = phash(p1);                         /* DOS prueft den Modus   */
+        slot = sh_find(t, hv);
+        if (slot >= 0) {                        /* Box hat sie schon offen */
+            struct shf *e = &sh[t][slot];
+            if (act != 1 || !sh_ok(e, mode))
+                return E_SHARE;
+            if (M_WR(mode) && !e->kw) {         /* Handle nur lesend:     */
+                FAPI(FAPI_CLOSE, KDATA, e->h1 - 1, 0, 0);   /* neu RW     */
+                h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_RW, 0);
+                if (FAILED(h)) {
+                    r = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_READ, 0);
+                    e->h1 = FAILED(r) ? 0 : r + 1;
+                    return errmap(h, E_DENIED);
+                }
+                e->h1 = h + 1;
+                e->kw = 1;
+            }
+            e->refs++;
+            sh_add(e, mode, 1);
+            if (e->size > de.size)
+                de.size = e->size;
+            sft_fill(t, es, di, (SH_MARK | slot) - 1, mode, p1);
+            if (fn == 0x2E)
+                CX = act;
+            return 0;
+        }
         if (act == 1)                           /* vorhanden: lesen oder  */
             h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, (mode & 3) ? OPEN_RW : OPEN_READ, 0);
         else                                    /* lesen+schreiben        */
@@ -654,9 +817,20 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             stat_path(p1);                      /* Datum/Uhrzeit         */
             de.size = 0;
         }
-        if (fn == 0x17)
-            mode = 2;                           /* arg ist das Attribut;  */
-        sft_fill(t, es, di, h, mode, p1);       /* DOS prueft den Modus   */
+        for (slot = 0; slot < NSH && sh[t][slot].h1; slot++)
+            ;
+        if (slot < NSH) {                       /* in die Tabelle         */
+            struct shf *e = &sh[t][slot];
+            e->h1 = h + 1;
+            e->hash = hv;
+            e->size = de.size;
+            e->refs = 1;
+            e->rd = e->wr = e->dr = e->dw = 0;
+            e->kw = act != 1 || (mode & 3);
+            sh_add(e, mode, 1);
+            h = (SH_MARK | slot) - 1;
+        }
+        sft_fill(t, es, di, h, mode, p1);
         if (fn == 0x2E)
             CX = act;
         return 0;
@@ -667,8 +841,12 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         return find_next(t, 0, es, di);
     case 0x21: {                                /* SEEK vom Ende         */
         unsigned long off = ((unsigned long)CX << 16) | DX;
+        struct shf *e;
         s = bp(t, es, di);
-        pos = r32(s + 0x11) + off;
+        size = r32(s + 0x11);
+        if (sft_h(t, r16(s + 0x0B), &e) != 0xFFFF && e && e->size > size)
+            size = e->size;                     /* ein anderer SFT schrieb */
+        pos = size + off;
         w32(s + 0x15, pos);
         DX = (unsigned)(pos >> 16);
         AX = (unsigned)pos;

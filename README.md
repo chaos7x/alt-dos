@@ -584,6 +584,10 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Fehlercodes 03h/05h/10h wie DOS, Diskettenparameter (INT 1Eh), INT 10h
   1Ch/1007h/1008h/1015h/1017h/101Ah, INT 13h 01h, INT 14h/17h-Status,
   INT 15h C0h/90h/2400h, INT 16h 09h/0Ah
+- SHARE in der DOS-Box (beide Linien): der Redirector teilt eine Datei,
+  die ein Programm mehrfach öffnet, über einen Handle von AT-DOS (Größe
+  stimmt in allen Handles), prüft die Freigabemodi und Bereichssperren
+  (5Ch); INT 2Fh 1000h meldet SHARE als geladen
 - Drucken aus der DOS-Box: INT 17h (also auch `PRN`, `COPY datei PRN`
   und das Drucken aus Programmen) geht über das LPT-Gerät von AT-DOS.
   In 86Box ohne Drucker: LPT1 auf „Generic Text Printer“, „Generic ESC/P

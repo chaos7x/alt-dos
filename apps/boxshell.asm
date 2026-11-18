@@ -961,6 +961,8 @@ int2f:  cmp     ah, 15h                 ; MSCDEX: Kernel (INT E0h 20h,
         je      .mon
         cmp     ax, 4310h
         je      .mon
+        cmp     ah, 10h                 ; SHARE: die Freigabe pruefen
+        je      .share                  ; Redirector und Kernel
         cmp     ah, 11h
         jne     .chain
         test    al, al                  ; Installationsabfrage
@@ -972,6 +974,12 @@ int2f:  cmp     ah, 15h                 ; MSCDEX: Kernel (INT E0h 20h,
         cmp     cx, CSZ
         ja      .inval
         jmp     rd_cache
+.share: test    al, al                  ; 1000h: geladen (FFh). Die
+        jnz     .shf                    ; Aufrufe des FreeDOS-Kerns fuer
+        mov     al, 0FFh                ; lokale Dateien (nur das Start-
+        iret                            ; abbild A:) 10A0h-10A6h: erlaubt
+.shf:   xor     ax, ax                  ; (Platz 0, keine Sperre)
+        iret
 .inval: mov     byte [cs:cvalid], 0     ; alles andere: Puffer verwerfen
 .pass:  push    ax
         mov     ah, 10h

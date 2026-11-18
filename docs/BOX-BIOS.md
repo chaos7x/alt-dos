@@ -108,7 +108,7 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 | 01 RMDIR, 03 MKDIR, 05 CHDIR | ja |
 | 06 CLOSE (mit Datum/Attribut), 07 COMMIT | ja |
 | 08 READ, 09 WRITE (0 Byte = Größe setzen) | ja |
-| 0A/0B LOCK/UNLOCK | „erledigt“ ohne Wirkung |
+| 0A LOCK/UNLOCK (BL), SHARE | ja, je Datei der Box |
 | 0C freier Platz (echte Clusterzahl) | ja |
 | 0E/0F Attribut setzen/holen | ja |
 | 11 RENAME, 13 DELETE (Platzhalter) | ja |
@@ -120,12 +120,19 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 
 ## Offene Punkte – Entscheidung des Nutzers
 
-1. **Dieselbe Datei zweimal zum Schreiben öffnen** (BIOSCMP „3D zweimal
-   schreibend“): DOS ohne SHARE erlaubt es, AT-DOS lehnt mit 20h ab (Leser
-   und Schreiber schließen sich aus). Erlauben hieße zwei Handles mit
-   eigener Größe auf eine Datei – DOS hat dieselbe Gefahr (verlorene
-   Ketten). Vorschlag: nur für Handles desselben Box-Tasks erlauben, wenn
-   ein Programm daran scheitert.
+1. ~~Dieselbe Datei zweimal zum Schreiben öffnen~~ – erledigt mit SHARE
+   im Redirector (18.11.2026, Wunsch des Nutzers „SHARE als Stub“): öffnet
+   die Box eine Datei noch einmal, teilen sich beide SFTs den Handle von
+   AT-DOS (Stelle je SFT, Größe nur einmal – DOS ohne SHARE meldet dort die
+   alte Größe, BIOSCMP „SHARE Größe“: Bezug 200, Box 250). Freigabemodi
+   (Bits 4–6) gegen die anderen Öffnungen der Box -> 20h, Bereichssperren
+   110Ah je Datei (Überschneidung/nicht gesperrt 21h, Tabelle voll 24h),
+   INT 2Fh 1000h meldet SHARE (BOXSHELL/RBSHELL), 10A0h–10A6h des
+   FreeDOS-Kerns für lokale Dateien (nur das Startabbild) „erlaubt“.
+   Je Box 12 (6.x) bzw. 16 (5.x) Dateien in der Tabelle, darüber ohne
+   Freigabeprüfung wie vorher; 4 bzw. 8 Sperren. Kompatibilitätsmodus gilt
+   innerhalb der Box als „nichts verbieten“ (eine Box ist für AT-DOS ein
+   Task); zwischen Boxen und FAPI-Programmen gelten die Regeln von AT-DOS.
 2. **Box-Laufwerke als Netzlaufwerke** (4408h/4409h/440Dh/6900h): DOS
    meldet sie als „fern“ (4409h Bit 12), Geräte-IOCTL scheitert mit 0Fh.
    Installationsprogramme, die nicht auf Netzlaufwerke wollen, oder
