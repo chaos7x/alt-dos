@@ -66,6 +66,7 @@
 #define XMS_STUB 0x0500         /* XMS-Einsprung: ARPL E1h; RETF          */
 #define EMS_RET  0x0560         /* EMS 56h zurueck: ARPL E6h; RETF        */
 #define XMS_TAB 0x0900          /* Handle-Tabelle wie HIMEM (INT 2Fh 4309h) */
+#define CFG_OFF 0x0890          /* Konfigurationstabelle INT 15h C0h     */
 #define PTE_OWN 0x200           /* eigene Seite (EMB/UMB): bei Ende frei  */
 #define BDA     0x0040
 #define VSEG    0xB800
@@ -703,6 +704,14 @@ unsigned long __far v86_create(int t, unsigned kb)
     for (i = 0; i < 256; i++)
         put32(SCRATCH, i, i == 0x67 ? 0xF0600020UL :      /* EMS: F060:0020 */
                           ((unsigned long)VBIOS << 16) | (i == 8 ? INT8_STUB : i << 2));
+    /* Datenzeiger statt Stummel (BIOSCMP: INT 1Eh zeigte auf Code):
+       Diskettenparameter, Videoparameter und Zeichensaetze des echten
+       BIOS (liegen im ROM, 1:1 eingeblendet) */
+    put32(SCRATCH, 0x1E, ((unsigned long)VBIOS << 16) | DPT_OFF);
+    scratch2_map(0, 0x3FF);
+    put32(SCRATCH, 0x1D, get32(SCRATCH2, 0x1D));
+    put32(SCRATCH, 0x1F, get32(SCRATCH2, 0x1F));
+    put32(SCRATCH, 0x43, get32(SCRATCH2, 0x43));
     /* BIOS-Datenbereich: der echte (Ports, Ausstattung), dann Bildschirm
        80x25 Farbe, Speichergroesse, Takt seit Mitternacht */
     tk = rtc_ticks();
@@ -759,9 +768,15 @@ unsigned long __far v86_create(int t, unsigned kb)
     put32(SCRATCH, 0x534 >> 2, 0x90CFE463UL);       /* Raw RM -> PM: ARPL E4 */
     *(unsigned char __far *)MK_FP(SCRATCH, INT8_STUB + 4) = 0xCF;
     /* Diskettenparameter (INT 13h 08h, INT 1Eh) bei F000:0800, 1,44 MB */
-    put32(SCRATCH, DPT_OFF >> 2, 0x122502AFUL);
-    put32(SCRATCH, (DPT_OFF >> 2) + 1, 0xF66CFF1BUL);
-    put32(SCRATCH, (DPT_OFF >> 2) + 2, 0x0000080FUL);
+    /* AF 02 25 02 12 1B FF 6C F6 0F 08 (vorher fehlte die Sektorgroesse
+       02 - FreeDOS trug die Sektoren je Spur an falscher Stelle ein) */
+    put32(SCRATCH, DPT_OFF >> 2, 0x022502AFUL);
+    put32(SCRATCH, (DPT_OFF >> 2) + 1, 0x6CFF1B12UL);
+    put32(SCRATCH, (DPT_OFF >> 2) + 2, 0x00080FF6UL);
+    /* Rechnerkonfiguration (INT 15h C0h) bei F000:0890: Laenge 8, AT (FCh),
+       Untermodell 0, Stand 1, zweiter PIC + Echtzeituhr, INT 16h 09h */
+    put32(SCRATCH, CFG_OFF >> 2, 0x00FC0008UL);
+    put32(SCRATCH, (CFG_OFF >> 2) + 1, 0x00406001UL);
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
     b2f[t] = 0;
@@ -2351,6 +2366,15 @@ static void blink_hw(int off)
     outb(0x3C0, v);
 }
 
+/* Farbe i der Standardpalette im Textmodus (die ersten 64 = EGA-Farben
+   rgbRGB, Rest 0), Anteil c (0 rot, 1 gruen, 2 blau) -> 0..63 */
+static unsigned char dac_def(unsigned i, int c)
+{
+    if (i >= 64)
+        return 0;
+    return (unsigned char)(((i >> (2 - c)) & 1) * 42 + ((i >> (5 - c)) & 1) * 21);
+}
+
 static void int10(struct v86_frame *f, int t)
 {
     unsigned i, r, c, n;
@@ -2417,7 +2441,22 @@ static void int10(struct v86_frame *f, int t)
             noblink[t] = BL == 0;
             if (box_fg(t))
                 blink_hw(noblink[t]);
-        }
+        } else if (AL == 0x07) {                /* Attributregister lesen */
+            static const unsigned char atr[16] = {  /* Textmodus 03h     */
+                0, 1, 2, 3, 4, 5, 0x14, 7, 0x38, 0x39, 0x3A, 0x3B,
+                0x3C, 0x3D, 0x3E, 0x3F };
+            BH = BL < 16 ? atr[BL] : 0;
+        } else if (AL == 0x08)                  /* Rand                  */
+            BH = 0;
+        else if (AL == 0x15) {                  /* DAC-Farbe lesen       */
+            DH = dac_def(BL, 0);
+            CH = dac_def(BL, 1);
+            CL = dac_def(BL, 2);
+        } else if (AL == 0x17) {                /* DAC-Block ES:DX       */
+            for (i = 0; i < CX * 3; i++)
+                wr8((unsigned)f->r.es, DX + i, dac_def(BX + i / 3, i % 3));
+        } else if (AL == 0x1A)                  /* DAC-Seite: Modus 0, 0 */
+            BX = 0;
         break;
     case 0x11:
         if (AL == 0x30) {
@@ -2429,7 +2468,32 @@ static void int10(struct v86_frame *f, int t)
         if (BL == 0x10) {
             BH = 0;                             /* Farbe                 */
             BL = 3;                             /* 256 KB                */
+            CH = 0;                             /* Merkmalsbits          */
+            CL = 9;                             /* Schalter: EGA Farbe   */
         }
+        break;
+    case 0x1C:                                  /* Zustand sichern: nur   */
+        if (AL == 0) {                          /* BIOS-Daten (128 Byte)  */
+            BX = 2;
+        } else if (AL == 1 || AL == 2) {
+            for (i = 0; i < 0x1E; i++)
+                if (AL == 1)
+                    wr8((unsigned)f->r.es, BX + i, rd8(BDA, 0x49 + i));
+                else
+                    wr8(BDA, 0x49 + i, rd8((unsigned)f->r.es, BX + i));
+            for (i = 0; i < 7; i++)
+                if (AL == 1)
+                    wr8((unsigned)f->r.es, BX + 0x20 + i, rd8(BDA, 0x84 + i));
+                else
+                    wr8(BDA, 0x84 + i, rd8((unsigned)f->r.es, BX + 0x20 + i));
+            if (AL == 2) {
+                cur_get();                      /* Cursor aus dem BDA    */
+                cur_put(t);
+                AL = 0x1C;
+                return;
+            }
+        }
+        AL = 0x1C;
         break;
     case 0x13:                                  /* Zeichenkette ES:BP    */
         if (DH >= ROWS || DL >= COLS)
@@ -2465,7 +2529,7 @@ static void int10(struct v86_frame *f, int t)
             break;                              /* fehlte -> Modus 7 und */
         {                                       /* Teilung durch 0)      */
             static const unsigned char sft[16] = {      /* bei F000:0880 */
-                0xFF, 0xE0, 0x0F, 0, 0, 0, 0, 0x07, 8, 2, 0xFF, 0x0E, 0, 0, 0x3F, 0 };
+                0xFF, 0xE0, 0x0F, 0, 0, 0, 0, 0x07, 2, 8, 0xFF, 0x0E, 0, 0, 0x3F, 0 };
             unsigned es = (unsigned)f->r.es, di = (unsigned)f->edi;
             cur_put(t);
             for (i = 0; i < 16; i++)
@@ -2706,11 +2770,17 @@ static void out_ch(int t, unsigned char ch)
 }
 
 /* INT 13h: Laufwerk 0 ist das Startabbild (nur lesen), sonst nichts */
-static void int13(struct v86_frame *f, int t)
+static void int13x(struct v86_frame *f, int t)
 {
     unsigned i, n, c, h, sct, lba, cyl;
     unsigned long lin;
 
+    if (AH == 0x01) {                           /* letzter Status        */
+        AH = rd8(BDA, 0x41);
+        AL = 0;
+        svc_cf = AH != 0;
+        return;
+    }
     if (!img_secs[t] || (DL != 0 && AH != 0x08)) {
         AH = DL >= 0x80 && AH == 0x15 ? 0 : 1;  /* keine Platte         */
         svc_cf = 1;
@@ -2787,6 +2857,17 @@ static void int13(struct v86_frame *f, int t)
     svc_cf = 1;
 }
 
+static void int13(struct v86_frame *f, int t)
+{
+    unsigned fn = AH;
+    int13x(f, t);
+    if (fn != 0x01 && fn != 0x08 && fn != 0x15)
+        wr8(BDA, 0x41, AH);                     /* Status fuer 01h       */
+}
+
+static int a20_set(int t, int on);
+static unsigned char a20_on[NTASK];
+
 static void svc(int n, struct v86_frame *f, int t)
 {
     unsigned i, off;
@@ -2828,6 +2909,23 @@ static void svc(int n, struct v86_frame *f, int t)
         } else if (AH == 0x88) {                /* erweiterter Speicher  */
             AX = 0;
             svc_cf = 0;
+        } else if (AH == 0xC0) {                /* Konfigurationstabelle */
+            f->r.es = VBIOS;
+            BX = CFG_OFF;
+            AH = 0;
+            svc_cf = 0;
+        } else if (AH == 0x90 || AH == 0x91) {  /* Geraet beschaeftigt/  */
+            AH = 0;                             /* fertig: nichts zu tun */
+            svc_cf = 0;
+        } else if (AH == 0x24 && AL <= 3) {     /* A20 (wie ueber XMS)   */
+            if (AL < 2)
+                a20_set(t, AL);
+            else if (AL == 2)
+                AL = a20_on[t];
+            else
+                BX = 0;                         /* weder 8042 noch 92h   */
+            AH = 0;
+            svc_cf = 0;
         } else if (AH != 0x4F) {
             AH = 0x86;
             svc_cf = 1;
@@ -2853,6 +2951,12 @@ static void svc(int n, struct v86_frame *f, int t)
             if (AH == 0x12)
                 AH = (unsigned char)(k >> 8);
         }
+        else if (AH == 0x09)                    /* Faehigkeiten: 0Ah und */
+            AL = 0x30;                          /* 0306h                 */
+        else if (AH == 0x0A)                    /* Tastaturkennung MF2   */
+            BX = 0x41AB;
+        else if (AX == 0x0306)                  /* Wiederholrate: 500 ms, */
+            BX = 0x010C;                        /* 10 Zeichen/s          */
         else if (AH == 0x05) {                  /* Taste CX ablegen      */
             i = rd16(BDA, 0x1C);
             if (i < kb_lo() || i >= kb_hi())
@@ -2865,6 +2969,18 @@ static void svc(int n, struct v86_frame *f, int t)
                 AL = 0;
             }
         }
+        break;
+    case 0x14:                                  /* seriell: keine Daten,  */
+        if (!rd16(BDA, DX * 2))                 /* Senden laeuft ab       */
+            AX = 0x8000;
+        else if (AH == 0x00 || AH == 0x03)
+            AX = 0x6000;                        /* Sendepuffer leer      */
+        else if (AH <= 0x02)
+            AH = 0x80;
+        break;
+    case 0x17:                                  /* Drucker: Status        */
+        if (AH <= 0x02 && DX < 3)
+            AH = rd16(BDA, 8 + DX * 2) ? 0x90 : 0x30;
         break;
     case 0x18: case 0x19:                       /* kein BASIC, kein Neustart */
     case 0x20:

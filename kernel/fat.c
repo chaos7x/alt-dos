@@ -1741,18 +1741,26 @@ static int __far fat_close(struct ifs_file __far *f)
     int d = f->drive;
 
     ferr = 0;
-    if (!(f->flags & IFS_F_DIRTY))
+    if (!(f->flags & (IFS_F_DIRTY | IFS_F_TIME | IFS_F_ATTR)))
         return 0;
     e = dir_entry(d, f->dir_clus, f->dir_idx);
     if (!e)
         return IFS_ERR;
-    put_clus(d, e, f->first);
-    put16(e, 28, (unsigned)f->size);
-    put16(e, 30, (unsigned)(f->size >> 16));
-    e[11] |= 0x20;
-    stamp(e);
+    if (f->flags & IFS_F_DIRTY) {
+        put_clus(d, e, f->first);
+        put16(e, 28, (unsigned)f->size);
+        put16(e, 30, (unsigned)(f->size >> 16));
+        e[11] |= 0x20;
+        stamp(e);
+    }
+    if (f->flags & IFS_F_TIME) {            /* DOS 5701h in der Box      */
+        put16(e, 22, (unsigned)f->fsdata);
+        put16(e, 24, (unsigned)(f->fsdata >> 16));
+    }
+    if (f->flags & IFS_F_ATTR)              /* Attribut beim Anlegen     */
+        e[11] = (e[11] & 0x10) | (f->attr & 0x27);
     wr(d, de_lba);
-    f->flags &= ~IFS_F_DIRTY;
+    f->flags &= ~(IFS_F_DIRTY | IFS_F_TIME | IFS_F_ATTR);
     return done_op(0);
 }
 

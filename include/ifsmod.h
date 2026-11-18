@@ -35,6 +35,9 @@ struct ifs_file {
 };
 #define IFS_F_WRITE  0x01               /* zum Schreiben geoeffnet          */
 #define IFS_F_DIRTY  0x02               /* Eintrag beim Schliessen schreiben */
+#define IFS_F_TIME   0x04               /* beim Schliessen Datum/Uhrzeit aus
+                                           fsdata (Datum << 16 | Uhrzeit) */
+#define IFS_F_ATTR   0x08               /* beim Schliessen Attribut aus attr */
 
 /* Fehler der schreibenden Funktionen (negativ) */
 #define IFS_ERR      (-1)               /* nicht gefunden, E/A-Fehler       */

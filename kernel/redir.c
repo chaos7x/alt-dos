@@ -29,6 +29,7 @@
 
 int  __far kf_box_ctl(unsigned op, unsigned a);
 int __far fat_geom(int d, unsigned *spc, unsigned long *clusters);
+int __far kf_hmeta(unsigned h, unsigned what, unsigned attr, unsigned date, unsigned time);
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 #define FAPI(fn, sel, a, b, c)  kf_box_fapi((fn), (sel), (a), (b), (c))
 
@@ -241,6 +242,19 @@ static int stat_path(const char *p)
 #undef dir
 #undef fcb
 
+/* Fehlt das Verzeichnis, in dem p liegen soll? MS-DOS unterscheidet:
+   Datei fehlt 02h, Verzeichnis fehlt 03h (BIOSCMP: der Redirector gab
+   immer 02h bzw. bei der Suche 12h) */
+static char np_dir[80];                         /* Kontext */
+static int no_dir(const char *p)
+{
+    split(p, np_dir);
+    if (!np_dir[3])                         /* "C:" gibt es immer       */
+        return 0;
+    return stat_path(np_dir) || !(de.attr & 0x10);
+}
+static unsigned nf(const char *p) { return no_dir(p) ? E_NOPATH : E_NOFILE; }
+
 /* ---- SFT -------------------------------------------------------------------- */
 
 static char sf_dir[80];                         /* Kontext */
@@ -419,6 +433,8 @@ static int find_first(int t)
     for (k = 17; k < 21; k++)
         s[k] = 0;
     k = find_next(t, 0, sda_seg[t], sda_off[t] + 0x19E);
+    if (k == E_NOMORE && no_dir(p1))
+        k = E_NOPATH;                       /* Verzeichnis fehlt: 03h    */
     return k;                           /* ohne Treffer 12h wie FreeDOS
                                            (fatdir.c) und MS-DOS - Lotus
                                            Works INSTALL hielt 02h fuer
@@ -445,8 +461,23 @@ static int op(struct v86_frame *f, int t, unsigned fn)
     case 0x01:                                  /* RMDIR                 */
     case 0x03:                                  /* MKDIR                 */
         get_fn(t, 0x9E, p1);
+        if (fn == 1) {                          /* aktuelles Verzeichnis */
+            unsigned char __far *c;             /* des Laufwerks (CDS bei */
+            s = sda(t, 0x282);                  /* SDA+282h): 10h wie DOS */
+            c = bp(t, r16(s + 2), r16(s));
+            for (k = 0; k < 67 && p1[k] && up(c[k]) == up(p1[k]); k++)
+                ;
+            if (k < 67 && !p1[k] && !c[k])
+                return 0x10;
+        }
         r = FAPI(fn == 1 ? FAPI_RMDIR : FAPI_MKDIR, KDATA, (unsigned)p1, 0, 0);
-        return FAILED(r) ? errmap(r, fn == 1 ? E_DENIED : E_NOPATH) : 0;
+        if (!FAILED(r))
+            return 0;
+        if (fn == 3 && r == FAPI_ERR_EXIST)
+            return E_DENIED;                    /* MKDIR wie MS-DOS: 05h */
+        if (fn == 1 && r == FAPI_ERR_INUSE)
+            return 0x10;                        /* aktuelles Verzeichnis */
+        return errmap(r, fn == 1 ? (no_dir(p1) ? E_NOPATH : E_DENIED) : E_NOPATH);
     case 0x05:                                  /* CHDIR: gibt es das?   */
         get_fn(t, 0x9E, p1);
         if (stat_path(p1) || !(de.attr & 0x10))
@@ -459,6 +490,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (cnt)
             w16(s, --cnt);
         if (cnt == 0 && h != 0xFFFF) {
+            if (r16(s + 5) & 0x4000)            /* Datum per 5701h gesetzt */
+                kf_hmeta(h, 1, 0, r16(s + 0x0F), r16(s + 0x0D));
             FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
             w16(bp(t, es, di + 0x0B), 0);
         }
@@ -536,11 +569,11 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         fin.mask = 1;
         fin.attr = arg & 0x27;
         r = FAPI(FAPI_SETFINFO, KDATA, (unsigned)p1, (unsigned)&fin, 0);
-        return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+        return FAILED(r) ? errmap(r, nf(p1)) : 0;
     case 0x0F:                                  /* Attribut holen        */
         get_fn(t, 0x9E, p1);
         if (stat_path(p1))
-            return E_NOFILE;
+            return nf(p1);
         AX = de.attr;
         BX = (unsigned)(de.size >> 16);
         DI = (unsigned)de.size;
@@ -551,14 +584,16 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         get_fn(t, 0x9E, p1);
         get_fn(t, 0x11E, p2);
         r = FAPI(FAPI_MOVE, KDATA, (unsigned)p1, (unsigned)p2, 0);
-        return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+        if (r == FAPI_ERR_EXIST)
+            return E_DENIED;                    /* Ziel gibt es: 05h     */
+        return FAILED(r) ? errmap(r, nf(p1)) : 0;
     case 0x13: {                                /* DELETE (auch *.*)     */
         const char *n;
         unsigned i = 0, hit = 0, j, l;
         get_fn(t, 0x9E, p1);
         if (!has_wild(p1)) {
             r = FAPI(FAPI_DELETE, KDATA, (unsigned)p1, 0, 0);
-            return FAILED(r) ? errmap(r, E_NOFILE) : 0;
+            return FAILED(r) ? errmap(r, nf(p1)) : 0;
         }
         n = split(p1, dir);
         to_fcb(n, tmpl);
@@ -580,12 +615,12 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             else
                 hit++;
         }
-        return hit ? 0 : E_NOFILE;
+        return hit ? 0 : nf(p1);
     }
     case 0x16:                                  /* OPEN                  */
     case 0x17:                                  /* CREATE (kuerzen)      */
     case 0x2E: {                                /* erweitert             */
-        unsigned mode = arg & 0xFF, act = 0, exists;
+        unsigned mode = arg & 0xFF, act = 0, exists, cattr = arg;
         get_fn(t, 0x9E, p1);
         exists = stat_path(p1) == 0;
         if (exists && (de.attr & 0x18))
@@ -593,23 +628,28 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         if (fn == 0x2E) {
             unsigned a = r16(sda(t, 0x2DD));
             mode = r16(sda(t, 0x2E1)) & 0xFF;
+            cattr = r16(sda(t, 0x2DF));
             if (exists && (a & 0x0F) == 0)
                 return E_EXISTS;
             if (!exists && !(a & 0xF0))
-                return E_NOFILE;
+                return nf(p1);
             act = !exists ? 2 : (a & 0x0F) == 2 ? 3 : 1;
-        } else
+        } else if (fn == 0x17 && (arg & 0x100) && exists)
+            return E_EXISTS;                    /* 5Bh: nur neu anlegen  */
+        else
             act = fn == 0x17 ? (exists ? 3 : 2) : 1;
         if (act == 1 && !exists)
-            return E_NOFILE;
+            return nf(p1);
         if (act == 1)                           /* vorhanden: lesen oder  */
             h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, (mode & 3) ? OPEN_RW : OPEN_READ, 0);
         else                                    /* lesen+schreiben        */
             h = FAPI(FAPI_CREATE, KDATA, (unsigned)p1, 0, 0);
         if (FAILED(h))
-            return errmap(h, act == 1 ? E_NOFILE : E_DENIED);
+            return errmap(h, act == 1 ? E_NOFILE : no_dir(p1) ? E_NOPATH : E_DENIED);
         if (act != 1) {
-            de.attr = 0x20;
+            if (cattr & 0x07)                   /* versteckt/System/R:   */
+                kf_hmeta(h, 2, (cattr & 0x27) | 0x20, 0, 0);  /* beim Schliessen */
+            de.attr = 0x20 | (cattr & 0x07);
             de.size = 0;
             stat_path(p1);                      /* Datum/Uhrzeit         */
             de.size = 0;
@@ -658,7 +698,8 @@ const struct ctxblk redir_ctx[] = {
     { &fsi, sizeof(fsi) }, { &fin, sizeof(fin) }, { &l32, sizeof(l32) },
     { st_dir, sizeof(st_dir) }, { st_fcb, sizeof(st_fcb) }, { sf_dir, sizeof(sf_dir) },
     { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { &fn_lb, sizeof(fn_lb) },
-    { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) }
+    { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) },
+    { np_dir, sizeof(np_dir) }, { ff_dir, sizeof(ff_dir) }
 };
 const unsigned redir_nctx = sizeof(redir_ctx) / sizeof(redir_ctx[0]);
 

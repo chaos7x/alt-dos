@@ -4814,6 +4814,27 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   FreeDOS-Quellen (/home/user/fdos) und MS-DOS 4.0 als Nachschlagewerk
   zuerst ansehen (Hinweis des Nutzers). 86Box-Monitor liest Befehle nur
   von einem Terminal: `script -qfc` um 86Box (run86t.sh).
+- **Vergleichstest BIOSCMP** (Wunsch des Nutzers, 18.11.2026: „das BIOS
+  komplett durchgehen“, abgestimmt: Vergleichstest + Bestandsliste):
+  `tools/bioscmp.asm` (8086, `\DEMO\BIOSCMP.COM`) + `tools/bioscmp.sh`
+  (QEMU: FreeDOS direkt gegen Box, `diff`; `rbox` für 5.x über den
+  QEMU-Monitor eingetippt), Liste und Funde in `docs/BOX-BIOS.md`. In
+  86Box von Hand: Platte mit einem Ketten-MBR, der den Startsektor der
+  Diskette lädt (das AMI-BIOS des 386 startet sonst von C:), FreeDOS-
+  Diskette als Bezug; SCAT ohne Festplatte im BIOS: beide Läufe auf B:.
+  Behoben (6.x redir.c/v86.c, fat.c `IFS_F_TIME`/`IFS_F_ATTR` über
+  kernel.c `kf_hmeta`, 5.x rbox_redir.c mit Pfad je Handle): Datum aus
+  5701h und Attribut beim Anlegen gingen beim Schließen verloren, 5Bh
+  überschrieb (FreeDOS schickt 1117h mit Attribut | 100h), Fehlercodes
+  03h/05h/10h, INT 1Eh zeigte auf Code und die Tabelle bei F000:0800 war
+  um ein Byte verschoben (alter Fehler), INT 10h/13h/14h/15h/16h/17h-
+  Lücken. Geprüft: QEMU 6.x/5.x, 86Box 386DX/40 (6.x) und SCAT (5.x);
+  Word 5.5 und Lotus Works danach in QEMU wie vorher, Word-Dateien
+  behalten ihr Datum (1991). Lehre: SeaVGABIOS ist kein Maßstab (INT 10h
+  1Bh Zeilen 24 statt 25) – mehrere echte BIOSe vergleichen. Offen
+  (Entscheidung des Nutzers, s. Liste): zweimal schreibend öffnen,
+  Laufwerke als „fern“ (4409h), Drucken aus der Box. KTEXT3 danach
+  65.431 Byte (~100 frei) – vor weiterem Box-Code Platz schaffen.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

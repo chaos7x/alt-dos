@@ -2838,6 +2838,26 @@ static int h2e(unsigned h)
     return (int)h;
 }
 
+/* DOS-Box (redir.c): Datum/Uhrzeit (what Bit 0) bzw. Attribut (Bit 1)
+   einer offenen Datei, die das Dateisystem beim Schliessen eintraegt -
+   DOS setzt 5701h nur im SFT, ein Attribut beim Anlegen (3Ch CX) kennt
+   FAPI_CREATE nicht */
+int __far kf_hmeta(unsigned h, unsigned what, unsigned attr, unsigned date, unsigned time)
+{
+    int k = h2e(h);
+    if (k < 0 || files[k].kind != OF_FILE)
+        return -1;
+    if (what & 1) {
+        files[k].f.fsdata = ((unsigned long)date << 16) | time;
+        files[k].f.flags |= IFS_F_TIME;
+    }
+    if (what & 2) {
+        files[k].f.attr = (unsigned char)attr;
+        files[k].f.flags |= IFS_F_ATTR;
+    }
+    return 0;
+}
+
 /* Sockets (net.c): Eintrag fuer Socket id anlegen -> Handle, Handle ->
    id (FFFFh = kein Socket des laufenden Programms). Ohne Kernelsperre:
    of_alloc schlaeft nicht und belegt den Eintrag sofort. */
