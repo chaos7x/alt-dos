@@ -1,0 +1,15 @@
+diff --git a/kernel/fcbfns.c b/kernel/fcbfns.c
+index a2ddba9..624df0c 100644
+--- a/kernel/fcbfns.c
++++ b/kernel/fcbfns.c
+@@ -667,7 +667,9 @@ UBYTE FcbFindFirstNext(xfcb FAR * lpXfcb, BOOL First)
+     Dmatch.dm_entry = lpFcb->fcb_strtclst;
+     Dmatch.dm_dircluster = lpFcb->fcb_dirclst;
+ 
+-    wAttr = D_ALL;
++    /* normales FCB: nur normale Dateien wie MS-DOS (AT-DOS, BIOSCMP:
++       vorher D_ALL - versteckte und Systemdateien wurden gefunden) */
++    wAttr = 0;
+   }
+   
+   if ((xfcb FAR *) lpFcb != lpXfcb)

@@ -32,6 +32,13 @@ Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
 nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
 Laufwerke als „fern“, Drucken.
 
+Laufwerke lokal, FCB-Suche (Entscheidung des Nutzers, 18.11.2026, wie
+auf main): FreeDOS-Kern (8086) mit `freedos/patches/fcb-search.patch`
+neu gebaut; RBSHELL fängt die Laufwerks-IOCTL ab, Werte über INT E0h
+18h -> rbox_redir.c `dinfo` (20h–25h ist XMS von RBHMA und erreicht RBOX
+nicht). Geprüft: BIOSCMP in QEMU (rbox) und 86Box SCAT (B: als
+Wechselmedium FAT12).
+
 SHARE in der Kompatibilitätsbox (Wunsch des Nutzers, 18.11.2026, wie
 auf main): rbox_redir.c `sh[16]`/`lk[8]` – mehrfach geöffnete Datei =
 ein Handle von AT-DOS (SFT+0Bh = E000h | Platz), Freigabemodi (20h),

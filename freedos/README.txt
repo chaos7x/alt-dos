@@ -11,6 +11,10 @@ unveraendert:
                 (Submodul country 7f83e04), Open Watcom, 8086 (die Box laeuft
                 auch auf dem 286), FAT32, ohne UPX:
                   make all COMPILER=owlinux XCPU=86 XFAT=32 XUPX=
+                Geaendert (AT-DOS, 18.11.2026): patches/fcb-search.patch -
+                die FCB-Suche (21h/11h) mit normalem FCB fand auch
+                versteckte und Systemdateien (fcbfns.c wAttr = D_ALL), wie
+                MS-DOS 6.22 jetzt nur normale (BIOSCMP, docs/BOX-BIOS.md)
   fat12com.bin  FAT12-Bootsektor aus demselben Stand (boot/fat12com.bin)
   COUNTRY.SYS   Laenderdaten aus demselben Stand: nasm -o country.sys country.asm
   COMMAND.COM   FreeCOM, https://github.com/FDOS/freecom, Stand d52ba90,

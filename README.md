@@ -249,6 +249,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Speicher kopiert sich der Kernel beim Start (noch im Real Mode, per
   BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
   frei (der Kernel liegt hinter der HMA)
+- AT-DOS-Laufwerke gelten in der Kompatibilitätsbox als lokale (IOCTL
+  4408h/4409h/440Dh, 6900h wie MS-DOS); FCB-Suche ohne versteckte Dateien
+  (Korrektur im FreeDOS-Kern, `freedos/patches/`)
 - SHARE in der Kompatibilitätsbox: eine mehrfach geöffnete Datei teilt
   sich einen Handle von AT-DOS, Freigabemodi und Bereichssperren (5Ch)
   wie mit SHARE.EXE, INT 2Fh 1000h meldet SHARE als geladen

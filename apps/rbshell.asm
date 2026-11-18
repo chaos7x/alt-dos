@@ -219,7 +219,200 @@ redir_install:
         mov     dx, int2f
         mov     ax, 0x252F
         int     0x21
+        mov     ax, 0x3521              ; Laufwerksabfragen (IOCTL)
+        int     0x21
+        mov     [old21], bx
+        mov     [old21+2], es
+        mov     dx, int21
+        mov     ax, 0x2521
+        int     0x21
         ret
+
+; INT 21h: die AT-DOS-Laufwerke wie lokale melden (Wunsch des Nutzers,
+; BIOSCMP gegen MS-DOS 6.22) - FreeDOS beantwortet IOCTL fuer Netzlauf-
+; werke mit Fehlern oder "fern". Abgefangen: 4408h (Wechselmedium),
+; 4409h (fern?), 440Ah (Handle fern?), 440Dh 0860h/0866h/0846h (Parameter,
+; Seriennummer lesen/setzen), 440Eh/440Fh (logische Laufwerke), 6900h/
+; 6901h. Die Werte kommen vom Kernel (INT E0h 18h -> dbuf, RBOX). CD-ROMs und
+; Laufwerke ohne Medium bleiben, was sie waren.
+int21:  cmp     ah, 44h
+        je      .io
+        cmp     ah, 69h
+        jne     .ch
+        cmp     al, 1
+        jbe     .dr
+.ch:    jmp     far [cs:old21]
+.io:    cmp     al, 0Ah
+        je      .rh
+        cmp     al, 08h
+        je      .dr
+        cmp     al, 09h
+        je      .dr
+        cmp     al, 0Eh
+        je      .dr
+        cmp     al, 0Fh
+        je      .dr
+        cmp     al, 0Dh
+        jne     .ch
+        cmp     ch, 08h                 ; Kategorie Platte
+        jne     .ch
+        cmp     cl, 60h
+        je      .dr
+        cmp     cl, 66h
+        je      .dr
+        cmp     cl, 46h
+        jne     .ch
+.dr:    call    dmine                   ; Laufwerk BL ein AT-DOS-Laufwerk?
+        jc      .ch                     ; nein: wie bisher
+        cmp     ah, 69h
+        je      .sn
+        cmp     al, 08h
+        jne     .n9
+        mov     ax, 1                   ; fest = 1, Wechselmedium = 0
+        cmp     byte [cs:dbuf], 2
+        jne     .ok
+        dec     ax
+        jmp     .ok
+.n9:    cmp     al, 09h
+        jne     .ne
+        mov     dx, 08C2h               ; Geraeteattribute wie MS-DOS,
+        jmp     .ok                     ; Bit 12 (fern) aus
+.ne:    cmp     al, 0Dh
+        je      .gd
+        xor     al, al                  ; 440Eh/440Fh: nur ein Buchstabe
+        jmp     .ok
+.gd:    cmp     cl, 60h
+        je      .par
+        cmp     cl, 46h
+        je      .deny
+.mid:   push    di                      ; 0866h/6900h: Info-Stufe, Serie,
+        push    si                      ; Bezeichnung, Dateisystem
+        push    cx
+        push    es
+        push    ds
+        pop     es
+        mov     di, dx
+        xor     ax, ax
+        stosw
+        mov     si, dbuf + 8
+        mov     cx, 4 + 11 + 8
+.cp:    mov     al, [cs:si]
+        stosb
+        inc     si
+        loop    .cp
+        pop     es
+        pop     cx
+        pop     si
+        pop     di
+        xor     ax, ax
+        jmp     .ok
+.sn:    test    al, al
+        jz      .mid
+.deny:  mov     ax, 5                   ; setzen: nicht erlaubt
+        stc
+        sti
+        retf    2
+.par:   push    bx                      ; 0860h: Geraeteparameter mit BPB
+        push    di
+        mov     di, dx
+        mov     al, 5                   ; fest: 5, Diskette 1,44 MB: 7
+        cmp     byte [cs:dbuf], 2
+        jne     .p1
+        mov     al, 7
+.p1:    mov     [di + 1], al
+        xor     ax, ax
+        cmp     byte [cs:dbuf], 2
+        je      .p2
+        inc     ax                      ; nicht wechselbar
+.p2:    mov     [di + 2], ax
+        mov     word [di + 4], 1024     ; Zylinder (geschaetzt)
+        mov     byte [di + 6], 0
+        mov     ax, [cs:dbuf + 2]
+        mov     [di + 7], ax            ; Bytes je Sektor
+        mov     al, [cs:dbuf + 1]
+        mov     [di + 9], al            ; Sektoren je Cluster
+        mov     word [di + 10], 1       ; reservierte Sektoren
+        mov     byte [di + 12], 2       ; FATs
+        mov     word [di + 13], 512     ; Stammeintraege
+        mov     word [di + 15], 0       ; Sektoren (16 Bit)
+        mov     al, [cs:dbuf + 31]
+        mov     [di + 17], al           ; Medienbyte
+        mov     ax, [cs:dbuf + 4]       ; Sektoren je FAT ~ Cluster/256
+        mov     bx, [cs:dbuf + 6]
+        mov     al, ah
+        mov     ah, bl
+        inc     ax
+        mov     [di + 18], ax
+        mov     word [di + 20], 63      ; Sektoren je Spur
+        mov     word [di + 22], 16      ; Koepfe
+        mov     word [di + 24], 0       ; versteckte Sektoren
+        mov     word [di + 26], 0
+        mov     ax, [cs:dbuf + 4]       ; Sektoren gesamt = Cluster *
+        mov     bx, [cs:dbuf + 6]       ; Sektoren je Cluster
+        mov     cl, [cs:dbuf + 1]
+.mul:   shr     cl, 1
+        jz      .mdn
+        shl     ax, 1
+        rcl     bx, 1
+        jmp     .mul
+.mdn:   mov     [di + 28], ax
+        mov     [di + 30], bx
+        mov     cx, 0860h
+        pop     di
+        pop     bx
+        xor     ax, ax
+.ok:    clc
+        sti
+        retf    2
+.rh:    pushf                           ; 440Ah: Handle fern? FreeDOS
+        call    far [cs:old21]          ; setzt Bit 15 (SFT ueber den
+        jc      .rhe                    ; Redirector) - lokal melden
+        and     dh, 7Fh
+        clc
+.rhe:   sti
+        retf    2
+
+; Laufwerk BL (0 = aktuelles, 1 = A:) ein AT-DOS-Laufwerk? -> CF = 0 und
+; dbuf gefuellt, sonst CF = 1; Register bleiben
+dmine:  push    ax
+        push    bx
+        push    cx
+        push    di
+        push    es
+        mov     al, bl
+        dec     al
+        test    bl, bl
+        jnz     .k
+        mov     ah, 19h
+        pushf
+        call    far [cs:old21]
+.k:     cmp     al, 31
+        ja      .no
+        mov     bl, al
+        xor     bh, bh
+        mov     cl, bl
+        and     cl, 7
+        shr     bx, 1
+        shr     bx, 1
+        shr     bx, 1
+        mov     ch, 1
+        shl     ch, cl
+        test    [cs:dmask + bx], ch
+        jz      .no
+        push    cs
+        pop     es
+        mov     di, dbuf
+        mov     ah, 18h                 ; (20h-25h ist XMS von RBHMA)
+        int     0E0h                    ; CF = 1: CD, leer, unbekannt
+        jmp     .e
+.no:    stc
+.e:     pop     es
+        pop     di
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 
 int2f:  cmp     ah, 0x10                ; SHARE: Freigabe pruefen
         je      .share                  ; RBOX (Redirector) und Kernel
@@ -534,6 +727,8 @@ kb_altg: times  90 db 0
 
 cdbuf:  times   130 db 0
 dmask:  dd      0
+old21:  dd      0
+dbuf:   times   32 db 0
 old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0
 tail:   db      12, " A:\ /E:1024", 13

@@ -862,6 +862,54 @@ static unsigned long drive_mask(void)
 
 /* INT E0h der Box (ausser 01h, das erledigt der Kernel); RB_RUN hat die
    Register nach rg geholt und setzt sie beim naechsten Aufruf zurueck */
+/* INT E0h 18h (RBSHELL): Laufwerk d (0 = A:) fuer die IOCTL-Abfragen, die
+   DOS bei einem Netzlaufwerk ablehnt (wie main redir.c redir_dinfo):
+   nach ES:DI 32 Byte - +0 Art (1 fest, 2 Wechsel), +1 Sektoren je
+   Cluster, +2 Bytes je Sektor, +4 Cluster, +8 Seriennummer, +12
+   Bezeichnung, +23 Dateisystem, +31 Medienbyte. -> 0, sonst nicht */
+static int dinfo(unsigned d)
+{
+    static struct fapi_fsinfo2 fs2;
+    static unsigned char o[32];
+    unsigned k, n, spc;
+    unsigned long cl;
+    if (FAILED(fapi_call(FAPI_QFSINFO, d, (unsigned short)&fs2, 1)))
+        return 1;
+    if (fs2.f.bsize == 2048 || (fs2.f.flags & FSI_NOMEDIA))
+        return 1;
+    spc = fs2.spc ? fs2.spc : 1;
+    cl = fs2.spc ? fs2.clusters : fs2.f.sectors;
+    while (cl > 0xFFF0UL && spc < 128)
+        spc <<= 1, cl >>= 1;
+    lb.label[0] = 0;
+    lb.serial = 0;
+    DosLabel(d, &lb, 0);
+    for (k = 0; k < 32; k++)
+        o[k] = 0;
+    o[0] = (fs2.f.flags & FSI_REMOVABLE) && !(fs2.f.flags & FSI_REMDISK) ? 2 : 1;
+    o[1] = (unsigned char)spc;
+    w16(o + 2, fs2.f.bsize);
+    w32(o + 4, cl);
+    w32(o + 8, lb.serial);
+    for (k = 0; k < 11 + 8; k++)
+        o[12 + k] = ' ';
+    for (k = 0, n = 0; lb.label[k] && n < 11; k++)
+        if (lb.label[k] != '.')
+            o[12 + n++] = lb.label[k];
+    if (fs2.f.fsname[0] == 'F' && fs2.f.fsname[1] == 'A' && fs2.f.fsname[2] == 'T') {
+        o[23] = 'F', o[24] = 'A', o[25] = 'T';
+        if (fs2.f.fsname[3] == '3')
+            o[26] = '3', o[27] = '2';
+        else if (cl >= 4085)
+            o[26] = '1', o[27] = '6';
+        else
+            o[26] = '1', o[27] = '2';
+    }
+    o[31] = o[0] == 2 || (fs2.f.flags & FSI_REMDISK) ? 0xF0 : 0xF8;
+    poke(lin(rg.es, rg.di), o, 32);
+    return 0;
+}
+
 static void box_call(void)
 {
     int r;
@@ -896,6 +944,12 @@ static void box_call(void)
         m = drive_mask();
         rg.ax = (unsigned)m;
         rg.dx = (unsigned)(m >> 16);
+        break;
+    case 0x18:                                  /* Laufwerk AL wie lokal  */
+        if (dinfo(rg.ax & 0xFF))                /* (IOCTL, RBSHELL)       */
+            rg.flags |= 1;
+        else
+            rg.flags &= ~1;
         break;
     case 0x16: {                                /* Maus da? AX = Tasten,  */
         static struct fapi_sysinfo si;          /* BL = Anschluss fuer    */

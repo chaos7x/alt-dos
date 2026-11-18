@@ -45,11 +45,11 @@ Für einen Vergleich mit der Box nur den DOS-Teil ab Zeile 67 nehmen
 | Fall | MS-DOS 6.22 | FreeDOS/Box | Folge |
 |---|---|---|---|
 | Freigabekonflikt beim Öffnen (SHARE) | 05h | Box gab 20h | **übernommen**: 05h |
-| FCB-Suche 11h mit normalem FCB | findet keine versteckten Dateien | FreeDOS findet sie (fcbfns.c: `wAttr = D_ALL`) | Fehler im FreeDOS-Kern, offen |
+| FCB-Suche 11h mit normalem FCB | findet keine versteckten Dateien | FreeDOS fand sie (fcbfns.c: `wAttr = D_ALL`) | **behoben** im FreeDOS-Kern der Boxen (`freedos/patches/fcb-search.patch`) |
 | 59h nach „Pfad fehlt“ | Klasse 08h, Aktion 03h, Ort 02h | 0/0/0 | FreeDOS, unkritisch |
 | 5Ah Zwischendatei | 9 Zeichen Name | 8 | unkritisch |
 | 3300h BREAK | aus | an (Box-CONFIG) | Einstellung |
-| 4408h/4409h/440Dh/6900h | lokales Laufwerk | Box: Netzlaufwerk | offener Punkt 2 |
+| 4408h/4409h/440Dh/6900h/440Ah | lokales Laufwerk | Box war Netzlaufwerk | **übernommen**: lokal |
 | 2F 1400h NLSFUNC | nicht geladen | FreeDOS eingebaut | unkritisch |
 
 Mit SHARE stimmt die Box sonst überein: Größe über zwei Handles, Sperren
@@ -160,12 +160,17 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
    Freigabeprüfung wie vorher; 4 bzw. 8 Sperren. Kompatibilitätsmodus gilt
    innerhalb der Box als „nichts verbieten“ (eine Box ist für AT-DOS ein
    Task); zwischen Boxen und FAPI-Programmen gelten die Regeln von AT-DOS.
-2. **Box-Laufwerke als Netzlaufwerke** (4408h/4409h/440Dh/6900h): DOS
-   meldet sie als „fern“ (4409h Bit 12), Geräte-IOCTL scheitert mit 0Fh.
-   Installationsprogramme, die nicht auf Netzlaufwerke wollen, oder
-   Werkzeuge, die die Seriennummer per 6900h lesen, scheitern daran.
-   Vorschlag: BOXSHELL beantwortet 4408h/4409h/6900h für AT-DOS-Laufwerke
-   selbst wie für ein lokales Laufwerk, sobald ein Programm daran hängt.
+2. ~~Box-Laufwerke als Netzlaufwerke~~ – erledigt (18.11.2026,
+   Entscheidung des Nutzers „LW als lokal melden“): BOXSHELL/RBSHELL
+   fangen INT 21h 4408h, 4409h, 440Ah (Handle), 440Dh 0860h/0866h/0846h,
+   440Eh/440Fh und 6900h/6901h für AT-DOS-Laufwerke ab, bevor FreeDOS sie
+   als Netzlaufwerk ablehnt; die Werte (fest/Wechsel, Aufteilung,
+   Seriennummer, Bezeichnung, FAT12/16/32, Medienbyte) holt der Kernel
+   (6.x INT E0h 21h -> redir.c `redir_dinfo`, 5.x INT E0h 18h -> RBOX
+   `dinfo`). 4409h meldet 08C2h wie MS-DOS, 440Ah löscht Bit 15, Setzen
+   der Seriennummer (0846h/6901h) 05h. CD-ROMs und leere Laufwerke bleiben
+   Netzlaufwerke (MSCDEX-Art). INT 2Fh 1100h meldet den Redirector weiter
+   (ohne ihn ginge nichts).
 3. ~~Drucken aus der Box~~ – erledigt (18.11.2026): INT 17h 00h geht
    über das LPT-Gerät des Kernels (FAPI OPEN/WRITE auf `LPTn` im Task
    der Box). Geprüft in QEMU (`-parallel file:`) und 86Box (386DX/40,
