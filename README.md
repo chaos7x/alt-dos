@@ -249,7 +249,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Speicher kopiert sich der Kernel beim Start (noch im Real Mode, per
   BIOS-Blockkopie) nach 1 MB; der konventionelle Speicher ab 64 KB wird
   frei (der Kernel liegt hinter der HMA)
-- Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` ruft
+- Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf der Diskette) ruft
   rund 180 BIOS- und DOS-Dienste auf, `tools/bioscmp.sh X rbox`
   vergleicht FreeDOS direkt mit der Kompatibilitätsbox
   (`docs/BOX-BIOS.md`). Behoben dabei im Redirector: Dateidatum (5701h)
