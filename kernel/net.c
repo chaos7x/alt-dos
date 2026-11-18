@@ -15,6 +15,9 @@
 #include "../include/drv.h"
 #include "../include/net.h"
 #include "../include/fapi_abi.h"
+#include "ifs.h"
+#include "mem.h"
+#include "task.h"
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
 
 extern volatile unsigned long ticks;    /* start.asm                     */
@@ -181,7 +184,12 @@ unsigned seglim(unsigned sel);
 
 static unsigned ncall(struct net_call *c)
 {
+    unsigned k = 0;
     c->task = (unsigned)current;        /* Kernelstapel: SS = KDATA      */
+    if (current >= 0)
+        for (; k < 13 && task[current].name[k]; k++)
+            c->prog[k] = task[current].name[k];
+    c->prog[k] = 0;
     return nf_call(PCS(), np.call_off, PDS(), KDATA, (unsigned)c);
 }
 

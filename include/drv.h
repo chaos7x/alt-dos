@@ -170,6 +170,9 @@ struct drv_req {
                                        Gilt in jedem Adressraum, auch in der
                                        Interruptroutine. DEVLOAD /U gibt es
                                        frei. */
+#define DH_KLOG         31          /* BX = Text (DS des Treibers), CX = Laenge:
+                                       nur ins Protokoll (DMESG), nicht auf
+                                       den Bildschirm - auch aus dem IRQ */
 #define DH_KSEG         19          /* BX = Bytes (0 = 64 KB): Kernelsegment
                                        ohne DMA-Bedingung (genullt), z. B.
                                        Tabellen -> AX = Selektor, 0 = keiner

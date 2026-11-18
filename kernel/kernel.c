@@ -6145,6 +6145,12 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
             ((unsigned char __far *)MK_FP(dsel, cx))[n] = bios_fdpt[bx * 16 + n];
         return 0;
     }
+    if (fn == DH_KLOG) {
+        if (cx > 200)
+            cx = 200;
+        klog(dsel, bx, cx);
+        return 0;
+    }
     if (fn >= DH_NETREG && fn <= DH_NETKICK)    /* Netzwerk (net.c)     */
         return net_devhlp(fn, drv_of(dsel), dsel, bx, cx);
     return 0xFFFF;

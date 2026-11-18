@@ -320,10 +320,8 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
     s = &sk[si];
 
     if (s->st == TS_LISTEN) {           /* neue Verbindung                 */
-        if (fw_on) {                    /* Regeln folgen: ohne /NOFW zu    */
-            fw_drop++;
-            return;
-        }
+        if (!fw_allow(s->prog, FWP_TCP, dp, f + 26, sp, i))
+            return;                     /* Lauschen allein oeffnet nichts  */
         for (k = n = 0; k < NSOCK; k++)
             if (sk[k].used && sk[k].parent == si)
                 n++;
@@ -332,6 +330,7 @@ static void tcp_in(int i, fp f, unsigned len, unsigned hl)
         s = &sk[c];
         s->fam = sk[si].fam;
         s->task = sk[si].task;
+        cpy(s->prog, sk[si].prog, 13);
         s->lport = dp;
         cpy(s->laddr, sk[si].laddr, 16);
         cpy(s->raddr, src, 16);

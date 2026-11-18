@@ -67,6 +67,7 @@ static struct sock {
         unsigned long t;
     } peer[NPEER];                      /* Firewall: wem gesendet wurde    */
     unsigned char  pn;
+    char           prog[13];            /* Programm (Firewall, NETSTAT)    */
     /* TCP (tcp.h) */
     unsigned char  st;                  /* TS_*                            */
     signed char    tb;                  /* Sendeblock                      */
@@ -86,7 +87,6 @@ static struct sock {
 } sk[NSOCK];
 #define SEV(i)  (0x200 + (i))           /* Weckereignis je Socket          */
 
-static unsigned long fw_drop;           /* abgewiesene Pakete              */
 static unsigned eph;                    /* naechster freie Absenderport    */
 
 static unsigned swap16(unsigned v)
@@ -312,10 +312,9 @@ static void udp_in(int i, fp f, unsigned len, unsigned hl)
         if (s->flags & SF_CONN) {
             if (s->rport != sp || !eq(s->raddr, src, 16))
                 continue;
-        } else if (fw_on && !peer_ok(s, f + 26, sp)) {
-            fw_drop++;                  /* Firewall: niemand hat gefragt   */
-            return;
-        }
+        } else if (fw_on && !peer_ok(s, f + 26, sp) &&
+                   !fw_allow(s->prog, FWP_UDP, dp, f + 26, sp, i))
+            return;                     /* niemand hat gefragt, keine Regel */
         if (ring_put(s, src, sp, u + 8, ul - 8) == 0)
             proc_run(SEV(k));
         return;
@@ -619,6 +618,8 @@ static unsigned sk_call(struct net_call __far *c)
                 return FAPI_ERR_FULL;
             sk[b].fam = (unsigned char)q->family;
             sk[b].task = (signed char)c->task;
+            cpy(sk[b].prog, c->prog, 13);
+            sk[b].prog[12] = 0;
             return b;
         }
         if (q->type != SOCK_DGRAM)
@@ -633,6 +634,8 @@ static unsigned sk_call(struct net_call __far *c)
         s->type = (unsigned char)q->type;
         s->fam = (unsigned char)q->family;
         s->task = (signed char)c->task;
+        cpy(s->prog, c->prog, 13);
+        s->prog[12] = 0;
         s->rb = (signed char)b;
         s->tb = s->parent = -1;
         return i;
@@ -780,5 +783,38 @@ static int sk_any(void)                 /* noch Sockets offen?             */
     for (i = 0; i < NSOCK; i++)
         if (sk[i].used)
             return 1;
+    return 0;
+}
+
+/* NETSTAT: Platz idx beschreiben (frei: type 0) */
+static unsigned sk_list(struct net_call __far *c)
+{
+    struct fapi_sockinfo __far *u = uptr(c->usel, c->p, sizeof(struct fapi_sockinfo));
+    struct sock *s;
+    if (!u || c->n < sizeof(struct fapi_sockinfo))
+        return FAPI_ERROR;
+    if (u->idx >= NSOCK)
+        return FAPI_ERROR;
+    s = &sk[u->idx];
+    zero((unsigned char __far *)u + 2, sizeof(struct fapi_sockinfo) - 2);
+    if (!s->used)
+        return 0;
+    u->type = s->type;
+    u->state = s->type == SOCK_STREAM ? s->st : 0;
+    u->family = s->fam;
+    u->task = (unsigned char)s->task;
+    u->lport = s->lport;
+    u->rport = s->rport;
+    cpy(u->laddr, s->laddr, 16);
+    cpy(u->raddr, s->raddr, 16);
+    if (is_zero4(u->laddr + 12) && s->rport && is_v4(s->raddr)) {
+        unsigned char hop[4];           /* verbunden: Adresse der Karte    */
+        int k = route4(s->raddr + 12, hop);
+        if (k >= 0)
+            map4(u->laddr, nif[k].ip);
+    }
+    cpy(u->prog, s->prog, 13);
+    u->rq = s->ru;
+    u->sq = s->type == SOCK_STREAM ? s->tq : 0;
     return 0;
 }

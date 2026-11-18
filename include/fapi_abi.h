@@ -296,7 +296,56 @@ struct fapi_netcmd {
 #define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
                                        (DNS, Zahlenadressen direkt) -> 0,
                                        FAPI_ERROR (unbekannt), TIMEOUT    */
-#define NET_FWCTL           5       /* Firewall (FIREWALL.EXE), spaeter   */
+#define NET_FWCTL           5       /* struct fapi_fwctl: Firewall
+                                       (FIREWALL.EXE) -> 0 / Regelnummer  */
+#define NET_SOCKLIST        6       /* struct fapi_sockinfo, idx vorgeben
+                                       (NETSTAT) -> 0, FAPI_ERROR dahinter */
+/* Firewall: eingehend gesperrt ausser Antworten und Regeln (nur
+   Erlaubnisse); ausgehend frei. Regel: Programm ("*" = jedes), Protokoll,
+   Ports, Herkunft (Netz/Praefix, FWR_LOCAL = eigenes Netz der Karte). */
+#define FW_GET              0       /* Zustand, Zaehler; idx < nrules: Regel */
+#define FW_SET              1       /* on = 0 aus, 1 an                     */
+#define FW_ADD              2       /* r -> AX = Nummer                     */
+#define FW_DEL              3       /* idx                                  */
+#define FW_CLEAR            4       /* alle Regeln weg                      */
+#define FW_LOG              5       /* on = Abgewiesenes ins DMESG          */
+#define FWP_ANY             0
+#define FWP_ICMP            1
+#define FWP_TCP             6
+#define FWP_UDP             17
+#define FWR_LOCAL           0x01    /* Herkunft: eigenes Netz               */
+struct fapi_fwrule {
+    char           prog[13];        /* "NC.EXE", "*" = jedes Programm   */
+    unsigned char  proto;           /* FWP_*                            */
+    unsigned short lo, hi;          /* Ports (ICMP: ohne Bedeutung)     */
+    unsigned char  net[16];         /* Herkunft (IPv4 als ::ffff:..)    */
+    unsigned char  plen;            /* Praefix (IPv4: 96 + n), 0 = alle */
+    unsigned char  flags;           /* FWR_*                            */
+    unsigned long  hits;            /* durchgelassen                    */
+};
+struct fapi_fwctl {
+    unsigned char  op, on;          /* FW_*; Rueckgabe on = Zustand     */
+    unsigned short idx;
+    unsigned char  log, rsv;
+    unsigned long  drop, pass;      /* abgewiesen / per Regel erlaubt   */
+    unsigned short nrules, maxrules;
+    struct fapi_fwrule r;
+};
+struct fapi_sockinfo {
+    unsigned short idx;             /* Eingabe: Platz 0..               */
+    unsigned char  type;            /* 0 frei, SOCK_STREAM, SOCK_DGRAM  */
+    unsigned char  state;           /* TCP: TS_* (0 geschlossen, 1 lauscht,
+                                       2 SYN gesendet, 3 SYN empfangen,
+                                       4 verbunden, 5/6 FIN_WAIT1/2,
+                                       7 CLOSE_WAIT, 8 CLOSING, 9 LAST_ACK,
+                                       10 TIME_WAIT)                   */
+    unsigned char  family, task;
+    unsigned short lport, rport;    /* Hostbytefolge                    */
+    unsigned char  laddr[16], raddr[16];
+    char           prog[13];
+    unsigned char  rsv;
+    unsigned short rq, sq;          /* Bytes im Empfangs-/Sendepuffer   */
+};
 /* Sockets (wie BSD). Sie sind Handles: DosRead/DosWrite/DosClose gehen,
    beim Programmende schliesst der Kernel sie. SOCKET/ACCEPT -> Handle. */
 #define NET_SOCKET          0x10    /* struct fapi_socket -> Handle         */

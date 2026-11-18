@@ -279,6 +279,8 @@ static int same_net(struct nif *n, const unsigned char __far *a)
     return 1;
 }
 
+#include "fw.h"                         /* Firewall-Regeln               */
+
 /* Karte und naechsten Halt fuer Ziel a -> Karte oder -1 */
 static int route4(const unsigned char __far *a, unsigned char __far *hop)
 {
@@ -346,7 +348,8 @@ static void icmp_in(int i, fp f, unsigned len, unsigned hl)
     if (m[0] == 8 && ml <= sizeof(txb) - 34) {  /* Echo-Anfrage: antworten,
                                        mit Firewall nur im eigenen Netz  */
         unsigned char src[4];
-        if (fw_on && !same_net(&nif[i], f + 26))
+        if (fw_on && !same_net(&nif[i], f + 26) &&
+            !fw_allow("", FWP_ICMP, 0, f + 26, 0, i))
             return;
         cpy(src, f + 26, 4);
         cpy(txb + 34, m, ml);
@@ -820,6 +823,10 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
         return net_dhcp(c);
     case NET_RESOLVE:
         return net_resolve(c);
+    case NET_FWCTL:
+        return fw_ctl(c);
+    case NET_SOCKLIST:
+        return sk_list(c);
     }
     if (c->fn >= NET_SOCKET)
         return sk_call(c);

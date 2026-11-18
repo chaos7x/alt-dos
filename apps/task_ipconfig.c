@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * IPCONFIG.EXE - Netzwerkeinstellungen anzeigen (wie IPCONFIG von Windows):
- *   IPCONFIG [/ALL] [/RELEASE [n]] [/RENEW [n]]
+ *   IPCONFIG [/ALL] [/RELEASE [n]] [/RENEW [n]] [/WAIT[:s]]
+ * /WAIT wartet (Vorgabe 30 s), bis eine Karte eine Adresse hat - fuer
+ * Stapeldateien direkt nach dem Laden von TCPIP.SYS (DHCP dauert).
  * Ueber FAPI_NET NET_IFINFO/NET_DHCP (TCPIP.SYS); zeigt beide Familien.
- * ERRORLEVEL: 0 ok, 1 Fehler, 2 kein Netz.
+ * ERRORLEVEL: 0 ok, 1 Fehler (auch: /WAIT ohne Adresse), 2 kein Netz.
  */
 #include "fapi.h"
 #include "util.h"
@@ -179,20 +181,30 @@ void main(void)
 {
     char *a;
     int all = 0, cmd = -1, i, any = 0;
-    unsigned only = 0xFFFF, rc;
+    unsigned only = 0xFFFF, rc, wait = 0, w, got = 0;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
         if (*a == '/' || *a == '-') {
             if (a[1] == '?') {
                 puts("Zeigt die Netzwerkeinstellungen an.\r\n\r\n"
-                     "IPCONFIG [/ALL] [/RELEASE [Karte]] [/RENEW [Karte]]\r\n\r\n"
+                     "IPCONFIG [/ALL] [/RELEASE [Karte]] [/RENEW [Karte]] [/WAIT[:s]]\r\n\r\n"
                      "  /ALL      alle Angaben\r\n"
                      "  /RELEASE  DHCP-Adresse zur\x81" "ckgeben\r\n"
-                     "  /RENEW    DHCP-Adresse neu anfordern\r\n");
+                     "  /RENEW    DHCP-Adresse neu anfordern\r\n"
+                     "  /WAIT:s   warten, bis eine Adresse da ist (Vorgabe 30 s)\r\n");
                 return;
             }
             if (up(a[1]) == 'A') all = 1;
+            else if (up(a[1]) == 'W') {
+                char *q = a + 2;
+                while (*q && *q != ':' && *q != ' ')
+                    q++;
+                for (wait = 0, q += *q == ':'; *q >= '0' && *q <= '9'; q++)
+                    wait = wait * 10 + (*q - '0');
+                if (!wait)
+                    wait = 30;
+            }
             else if (up(a[1]) == 'R' && up(a[3]) == 'L') cmd = 1;
             else if (up(a[1]) == 'R') cmd = 0;
             else {
@@ -201,6 +213,21 @@ void main(void)
             }
         } else if (*a >= '0' && *a <= '9')
             only = (unsigned)(*a - '0');
+    }
+    for (w = 0; wait && w < wait * 10; w++) {   /* /WAIT: Adresse abwarten */
+        for (i = 0; i < 4; i++) {
+            ni.ifc = i;
+            rc = DosNet(NET_IFINFO, &ni, sizeof(ni));
+            if (rc == FAPI_ERR_NONET) {
+                puts("Kein Netz: TCPIP.SYS ist nicht geladen.\r\n");
+                DosExit(2);
+            }
+            if (rc == 0 && ni.naddr)
+                got = 1;
+        }
+        if (got)
+            break;
+        DosSleep(100);
     }
     puts("\r\nAT-DOS-IP-Konfiguration\r\n");
     if (all) {
@@ -244,6 +271,10 @@ void main(void)
     }
     if (!any) {
         puts("\r\nKeine Netzwerkkarte angemeldet (z. B. DEVICE=RTL8139.SYS).\r\n");
+        DosExit(1);
+    }
+    if (wait && !got) {
+        puts("\r\nKeine Adresse nach der Wartezeit.\r\n");
         DosExit(1);
     }
 }

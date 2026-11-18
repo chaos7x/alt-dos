@@ -5324,6 +5324,32 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Lehre: Wer im Ring-0-Modul wartet (proc_block ohne Kernelsperre), kann
   per Strg+C beendet werden – Zustand im Modul darf nicht an der
   wartenden Funktion hängen (Freigabe über NETK_CLOSE beim Schließen).
+  Firewall-Regeln je Programm erledigt (18.11.2026, Wunsch des Nutzers
+  „baue Werkzeuge, die du brauchst“; in QEMU und 86Box 386/NE2000
+  geprüft: eingehend TCP ohne Regel abgewiesen – gezählt, DMESG
+  gedrosselt einmal je Sekunde –, mit `ALLOW NC.EXE TCP 5556 FROM
+  LOCAL` angenommen (Treffer gezählt), nur 192.168.0.0/16 erlaubt ->
+  10.0.2.2 abgewiesen, UDP ohne/mit Regel, `/LOAD` mit Fehlerzeilen
+  (Zeilennummer, Rest gilt), OFF/ON, Start mit `FIREWALL /LOAD /Q` in
+  AUTOEXEC.CMD still ohne Netz): `net/fw.h` (in tcpip.c hinter
+  same_net) – 16 Regeln `struct fapi_fwrule` (Programm, „*“ = jedes,
+  Protokoll, Ports, Netz/Präfix oder FWR_LOCAL), nur Erlaubnisse;
+  `fw_allow` beim SYN an einen Listener (Programm des Listeners), bei UDP
+  ohne Peer-Eintrag, bei ICMP-Echo von außerhalb des eigenen Netzes
+  (Programm „“, trifft nur „*“-Regeln). Geschlossene Ports zählen still
+  (sonst flutet jeder Rundruf das DMESG). Programmname: der Kernel legt
+  ihn in `net_call.prog` (task[current].name, net.c ncall), der Socket
+  merkt ihn (`sk[].prog`, Kinder von ACCEPT erben). DevHlp 31 `DH_KLOG`
+  (Text nur ins Protokoll, nicht auf den Bildschirm wie DH_PUTS). FAPI
+  NET_FWCTL (FW_GET/SET/ADD/DEL/CLEAR/LOG), NET_SOCKLIST. Werkzeuge
+  `FIREWALL.EXE` (gleiche Befehle in `\DOS\SYSTEM\FIREWALL.INI`, nur
+  Kommentare ab Werk), `NETSTAT [-a]` (Zustände wie im deutschen
+  Windows, Programm-Spalte; lokale Adresse einer Verbindung = Adresse
+  der Karte über route4), `IPCONFIG /WAIT[:s]` (Stapeldateien warten
+  auf DHCP). Testfalle: ein Programm im Hintergrund (DETACH) liest die
+  Tastatur der Sitzung mit – NC im Hintergrund interaktiv schluckte die
+  Tasten; dort `< NUL` geben. Offen: Regeln je Programm ausgehend,
+  Härtung (zufällige ISN, Grenze halboffener Verbindungen).
   86Box-Gegenprobe der Stufen 1–2b (18.11.2026, 386DX/40 4 MB mit
   NE2000 ISA und P3B-F mit RTL8139, SLiRP): DHCP, PING, NSLOOKUP, NC
   UDP/TCP, 1 MB herunter und hinauf (MD5 gleich) neben DETACH XCOPY

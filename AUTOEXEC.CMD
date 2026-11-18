@@ -11,4 +11,6 @@ REM DOSKEY ll=DIR /W /O $*
 REM DOSKEY /MACROFILE=C:\DOS\MAKROS.TXT
 REM Gewohnte Namen von Linux (ll, ls, cat, cp, mv, rm, ...):
 REM DOSKEY /MACROFILE=C:\DOS\LINUX.MAC
+REM Regeln der Firewall (nur wenn TCPIP.SYS geladen ist):
+FIREWALL /LOAD /Q
 PROMPT $P$G

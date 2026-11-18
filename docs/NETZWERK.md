@@ -185,7 +185,7 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
 6. Weitere Karten: PCnet (VMware, VirtualBox), e1000, NE2000 ISA/
    ne2k_pci (86Box SCAT/486).
 
-## Firewall (abgestimmt 18.11.2026, kommt mit Stufe 2)
+## Firewall (abgestimmt 18.11.2026, Regeln je Programm umgesetzt 18.11.2026)
 
 - In TCPIP.SYS: je ein Prüfpunkt am Eingang und Ausgang der IP-Schicht,
   ein Code für IPv4 und IPv6, Regelliste linear (auch auf dem 286 billig).

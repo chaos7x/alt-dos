@@ -123,6 +123,8 @@ struct net_call {                   /* FAPI_NET eines Programms            */
     unsigned short n;               /* DX: dessen Groesse                   */
     unsigned short task;            /* Tasknummer                           */
     unsigned short sock;            /* Socket im Stapel (Handle uebersetzt) */
+    char           prog[14];        /* Programm des Tasks (z. B. "NC.EXE"),
+                                       "" fuer den Kernel - Firewall-Regeln */
 };
 #pragma pack()
 
