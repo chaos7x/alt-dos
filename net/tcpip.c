@@ -543,6 +543,8 @@ static void ip4_in(int i, fp f, unsigned len)
         icmp_in(i, f, len, hl);
     else if (f[23] == 17 && tl >= hl + 8)
         udp_in(i, f, len, hl);
+    else if (f[23] == 6)
+        tcp_in(i, f, len, hl);
 }
 
 static void frame_in(int i, fp f, unsigned len)
@@ -607,6 +609,7 @@ static unsigned e_run(void __far *v)    /* Nachlauf                      */
         rtail = (unsigned char)((t + 1) % NSLOT);
     }
     arp_tick();
+    tcp_tick();
     for (i = 0; i < NNETIF; i++)
         if (nif[i].up)
             dhcp_tick(i);

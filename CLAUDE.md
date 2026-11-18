@@ -5313,6 +5313,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Lehre: Wer im Ring-0-Modul wartet (proc_block ohne Kernelsperre), kann
   per Strg+C beendet werden – Zustand im Modul darf nicht an der
   wartenden Funktion hängen (Freigabe über NETK_CLOSE beim Schließen).
+  Stufe 2b TCP erledigt (18.11.2026; in QEMU geprüft mit Diensten auf
+  dem Rechner – Echo 7777, 1-MB-Sender 7780, MD5-Senke 7781, Skript im
+  Scratchpad: NC Echo, 1 MB herunter (`NC … > DATEI`, MD5 gleich) und
+  hinauf (`NC … < DATEI`, Senke meldet gleiche MD5), eingehend per
+  hostfwd: mit Firewall „Keine Verbindung“, mit /NOFW angenommen, Daten
+  in beide Richtungen): `net/tcp.h` (in sock.h eingebunden) – Zustände
+  wie RFC 793, Senden go-back-N aus dem 4-KB-Puffer des Sockets, RTO
+  nach Jacobson in Takten (Rückzug verdoppelt, 60 s Schluss), Slow
+  Start/Congestion Avoidance, schnelles Wiederholen nach 3 doppelten
+  ACKs, Nagle, verzögertes ACK, Fenster 4 KB, MSS 1460 (aus SYN
+  übernommen), TIME_WAIT 2 s, verwaistes FIN_WAIT2 60 s. LISTEN legt
+  Kinder an (Rückstau bis 7, Vorgabe 4), ACCEPT liefert ein neues
+  Handle. Eingehendes SYN bei Firewall an: verworfen (RST nur ohne
+  Firewall). TCPIP.SYS danach 21,9 KB. Nächster Schritt (abgestimmt):
+  Firewall-Regeln je Programm (NET_FWCTL, FIREWALL.INI, FIREWALL.EXE)
+  vor allem, was lauscht; dann SELECT, IPv6.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

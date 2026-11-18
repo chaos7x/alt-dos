@@ -67,6 +67,22 @@ static struct sock {
         unsigned long t;
     } peer[NPEER];                      /* Firewall: wem gesendet wurde    */
     unsigned char  pn;
+    /* TCP (tcp.h) */
+    unsigned char  st;                  /* TS_*                            */
+    signed char    tb;                  /* Sendeblock                      */
+    signed char    parent;              /* Listener, bis accept            */
+    unsigned char  backlog;
+    unsigned char  err;                 /* 1 Reset, 2 Frist                */
+    unsigned char  rxfin;               /* FIN der Gegenseite gelesen      */
+    unsigned char  ackp;                /* ACK faellig (verzoegert)        */
+    unsigned char  retries, dupacks;
+    unsigned char  finq, finsent, orphan, rtt_on;
+    unsigned long  iss, snd_una, snd_nxt, snd_max, rcv_nxt, tx_seq, rtt_seq;
+    unsigned       snd_wnd, cwnd, ssthresh, ca_cnt, mss;
+    unsigned       ts, tq;              /* Sendering: Anfang, Menge        */
+    unsigned       trto, srtt, rttv;    /* Takte (srtt * 8, rttv * 4)      */
+    unsigned       rtt_t;
+    unsigned long  tmr, ack_t, tw;      /* Wiederholung, ACK, Zeitgrenze   */
 } sk[NSOCK];
 #define SEV(i)  (0x200 + (i))           /* Weckereignis je Socket          */
 
@@ -503,6 +519,8 @@ static void sk_free(int i)
     if (!s->used)
         return;
     blk_put(s->rb);
+    if (s->type == SOCK_STREAM)
+        blk_put(s->tb);
     s->used = 0;
     proc_run(SEV(i));                   /* Wartende wecken                 */
 }
@@ -516,6 +534,8 @@ static unsigned sk_wait(int i, unsigned ms, unsigned t0)
     proc_block(SEV(i), lim ? lim - w : 100);
     return 0;
 }
+
+#include "tcp.h"                        /* TCP (Stufe 2b)                  */
 
 static unsigned sk_recv(int i, unsigned usel, unsigned buf, unsigned len, unsigned flags,
                         unsigned ms, struct fapi_sockaddr __far *from)
@@ -594,8 +614,15 @@ static unsigned sk_call(struct net_call __far *c)
         int b;
         if (!q || (q->family != AF_INET && q->family != AF_INET6))
             return FAPI_ERROR;
+        if (q->type == SOCK_STREAM) {
+            if ((b = sock_new()) < 0)
+                return FAPI_ERR_FULL;
+            sk[b].fam = (unsigned char)q->family;
+            sk[b].task = (signed char)c->task;
+            return b;
+        }
         if (q->type != SOCK_DGRAM)
-            return FAPI_ERROR;          /* TCP folgt (Stufe 2b)            */
+            return FAPI_ERROR;
         for (i = 0; i < NSOCK && sk[i].used; i++)
             ;
         if (i == NSOCK || (b = blk_get()) < 0)
@@ -607,6 +634,7 @@ static unsigned sk_call(struct net_call __far *c)
         s->fam = (unsigned char)q->family;
         s->task = (signed char)c->task;
         s->rb = (signed char)b;
+        s->tb = s->parent = -1;
         return i;
     }
     if (i >= NSOCK || !sk[i].used)
@@ -614,11 +642,18 @@ static unsigned sk_call(struct net_call __far *c)
     s = &sk[i];
     switch (c->fn) {
     case NETK_CLOSE:
-        sk_free(i);
+        if (s->type == SOCK_STREAM)
+            tcp_close(i);
+        else
+            sk_free(i);
         return 0;
     case NETK_READ:
+        if (s->type == SOCK_STREAM)
+            return tcp_recv(i, c->usel, c->p, c->n, 0, 0);
         return sk_recv(i, c->usel, c->p, c->n, 0, 0, 0);
     case NETK_WRITE:
+        if (s->type == SOCK_STREAM)
+            return tcp_send(i, c->usel, c->p, c->n);
         if (!(s->flags & SF_CONN))
             return FAPI_ERROR;
         return sk_send(i, s->raddr, s->rport, c->usel, c->p, c->n);
@@ -640,10 +675,52 @@ static unsigned sk_call(struct net_call __far *c)
     case NET_CONNECT:
         if (sa_get(&u->addr, s->raddr, &s->rport))
             return FAPI_ERROR;
+        if (s->type == SOCK_STREAM)
+            return tcp_connect(i, u->timeout);
         if (!s->lport && !(s->lport = port_new(s->type)))
             return FAPI_ERR_FULL;
         s->flags |= SF_CONN;
         return 0;
+    case NET_LISTEN:
+        if (s->type != SOCK_STREAM || s->st != TS_CLOSED)
+            return FAPI_ERROR;
+        if (!s->lport && !(s->lport = port_new(SOCK_STREAM)))
+            return FAPI_ERR_FULL;
+        s->backlog = (unsigned char)(u->len && u->len < 8 ? u->len : 4);
+        tcp_free_tx(s);                 /* Listener sendet nichts          */
+        s->st = TS_LISTEN;
+        return 0;
+    case NET_ACCEPT:
+        if (s->type != SOCK_STREAM)
+            return FAPI_ERROR;
+        return tcp_accept(i, u->timeout, &u->addr);
+    }
+    if (s->type == SOCK_STREAM)
+        switch (c->fn) {
+        case NET_SEND:
+        case NET_SENDTO:
+            return tcp_send(i, c->usel, u->buf, u->len);
+        case NET_RECV:
+            return tcp_recv(i, c->usel, u->buf, u->len, u->flags, u->timeout);
+        case NET_RECVFROM:
+            sa_put(&u->addr, s->fam, s->raddr, s->rport);
+            return tcp_recv(i, c->usel, u->buf, u->len, u->flags, u->timeout);
+        case NET_SHUTDOWN:
+            if (u->len != 0) {
+                s->flags |= SF_NOWR;
+                tcp_fin(s);
+            }
+            if (u->len != 1)
+                s->flags |= SF_NORD;
+            proc_run(SEV(i));
+            return 0;
+        case NET_GETPEER:
+            if (s->st < TS_SYNRCVD)
+                return FAPI_ERROR;
+            sa_put(&u->addr, s->fam, s->raddr, s->rport);
+            return 0;
+        }
+    switch (c->fn) {
     case NET_SEND:
         if (!(s->flags & SF_CONN))
             return FAPI_ERROR;
