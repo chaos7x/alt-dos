@@ -4860,6 +4860,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Öffnen 05h statt 20h (beide Linien). FreeDOS-Abweichung gefunden: FCB-
   Suche mit normalem FCB findet versteckte Dateien (fcbfns.c `wAttr =
   D_ALL`) – offen (Kern neu bauen).
+  Danach (Entscheidung des Nutzers, „FCB-Fehler beheben und LW als lokal
+  melden“): FreeDOS-Kern beider Linien neu gebaut mit
+  `freedos/patches/fcb-search.patch` (normales FCB sucht mit Attribut 0
+  statt D_ALL; tools/freedos.sh wendet ihn an, README.txt nennt es).
+  BOXSHELL/RBSHELL fangen die Laufwerks-IOCTL (4408h/4409h/440Ah/440Dh
+  60h/66h/46h/440Eh/440Fh/6900h/6901h) für AT-DOS-Laufwerke ab, Werte
+  vom Kernel (6.x INT E0h 21h -> redir.c `redir_dinfo`; 5.x INT E0h 18h
+  -> RBOX `dinfo` – 20h–25h ist dort XMS von RBHMA und geht am Programm
+  vorbei an den Kernel!). Geprüft: BIOSCMP in QEMU (6.x/5.x) und 86Box
+  386DX/40 (6.x, zweimal gleich) und SCAT (5.x, Diskette B: als Wechsel-
+  medium FAT12) – DOS-Teil gleich MS-DOS 6.22 bis auf Version, Box-eigene
+  Treiber und Kleinigkeiten von FreeDOS (59h-Klasse, 5Ah-Länge); Word 5.5
+  in QEMU vollständig. Ein automatischer Lauf auf dem 386 endete einmal
+  mit „Stapelverarbeitung abbrechen“ ohne Ergebnis, zweimal danach nicht
+  – Ursache offen (vermutlich das F1 gegen die CMOS-Meldung, das in die
+  Box ging).
   Platz danach (Wunsch des Nutzers, „Kernel freischaufeln“): die Tabellen
   je Box des Redirectors (Suchverzeichnisse 2,5 KB, SHARE 1,9 KB) liegen
   in einem Kernelsegment für alle Boxen (`struct rbx`, `RBX(t)`, angelegt

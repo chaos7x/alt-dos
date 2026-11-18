@@ -21,4 +21,5 @@ int __far redir(struct v86_frame *f, int t);
 void __far redir_sda(int t, unsigned seg, unsigned off);
 unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned n);
 int __far mscdex(struct v86_frame *f, int t);   /* INT 2Fh 15xxh */
+int __far redir_dinfo(struct v86_frame *f, int t);  /* INT E0h 21h */
 #endif

@@ -3180,6 +3180,8 @@ static void svc(int n, struct v86_frame *f, int t)
             svc_zf = mon2f(f);
         } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
             b2f[t] = 1;
+        else if (AH == 0x21)                    /* Laufwerk AL wie lokal  */
+            svc_cf = redir_dinfo(f, t) != 0;    /* (IOCTL, BOXSHELL)      */
         else if (AH == 0x20) {                  /* MSCDEX (INT 2Fh 15xxh) */
             k = mscdex(f, t);
             svc_zf = k >= 0;

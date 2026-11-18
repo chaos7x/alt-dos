@@ -9,6 +9,7 @@ mkdir -p "$D"
 [ -d "$D/freecom" ] || git clone --depth 1 https://github.com/FDOS/freecom "$D/freecom"
 [ -d "$D/mem" ] || git clone --depth 1 https://github.com/FDOS/mem "$D/mem"
 (cd "$D/kernel" && git submodule update --init --depth 1 &&
+ git apply "$OLDPWD/freedos/patches/fcb-search.patch" &&
  rm -f kernel/exeflat.rsp && make all COMPILER=owlinux XCPU=386 XFAT=32 XUPX=)
 (cd "$D/freecom" && LNG=german ./build.sh wc)
 cp "$D/kernel/bin/kernel.sys" freedos/KERNEL.SYS

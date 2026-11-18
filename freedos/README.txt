@@ -3,11 +3,16 @@ FreeDOS fuer die DOS-Boxen von AT-DOS 6.0
 
 KERNEL.SYS, COUNTRY.SYS, COMMAND.COM, MEM.EXE, MEM.DE und fat12com.bin stammen aus dem FreeDOS-Projekt
 und stehen unter der GNU General Public License, Version 2 oder spaeter
-(siehe COPYING). Sie wurden aus dem Quelltext gebaut, unveraendert:
+(siehe COPYING). Sie wurden aus dem Quelltext gebaut, unveraendert bis auf
+eine Korrektur im Kern (unten):
 
   KERNEL.SYS    FreeDOS-Kern, https://github.com/FDOS/kernel, Stand d6791ad
                 (Submodul country 7f83e04), Open Watcom, 386, FAT32, ohne UPX:
                   make all COMPILER=owlinux XCPU=386 XFAT=32 XUPX=
+                Geaendert (AT-DOS, 18.11.2026): patches/fcb-search.patch -
+                die FCB-Suche (21h/11h) mit normalem FCB fand auch
+                versteckte und Systemdateien (fcbfns.c wAttr = D_ALL), wie
+                MS-DOS 6.22 jetzt nur normale (BIOSCMP, docs/BOX-BIOS.md)
   fat12com.bin  FAT12-Bootsektor aus demselben Stand (boot/fat12com.bin)
   COUNTRY.SYS   Laenderdaten aus demselben Stand (Submodul country 7f83e04):
                   nasm -o country.sys country.asm

@@ -588,6 +588,10 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   die ein Programm mehrfach öffnet, über einen Handle von AT-DOS (Größe
   stimmt in allen Handles), prüft die Freigabemodi und Bereichssperren
   (5Ch); INT 2Fh 1000h meldet SHARE als geladen
+- Die AT-DOS-Laufwerke gelten in der DOS-Box als lokale Laufwerke
+  (IOCTL 4408h/4409h/440Dh, Seriennummer 6900h wie MS-DOS); die FCB-Suche
+  findet wie MS-DOS keine versteckten Dateien mehr (Korrektur im
+  FreeDOS-Kern, `freedos/patches/`)
 - Drucken aus der DOS-Box: INT 17h (also auch `PRN`, `COPY datei PRN`
   und das Drucken aus Programmen) geht über das LPT-Gerät von AT-DOS.
   In 86Box ohne Drucker: LPT1 auf „Generic Text Printer“, „Generic ESC/P

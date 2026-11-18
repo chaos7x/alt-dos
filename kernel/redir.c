@@ -885,6 +885,69 @@ int __far redir(struct v86_frame *f, int t)
     return r;
 }
 
+/* INT E0h 21h (BOXSHELL): Laufwerk AL (0 = A:) fuer die IOCTL-Abfragen,
+   die DOS bei einem Netzlaufwerk ablehnt (4408h, 440Dh, 6900h) - die Box
+   meldet die AT-DOS-Laufwerke wie MS-DOS lokale (Wunsch des Nutzers,
+   BIOSCMP gegen MS-DOS 6.22). Nach ES:DI, 32 Byte: +0 Art (1 fest, 2
+   Wechsel, 3 CD), +1 Sektoren je Cluster, +2 Bytes je Sektor, +4 Cluster
+   (DWORD), +8 Seriennummer, +12 Bezeichnung (11), +23 Dateisystem (8),
+   +31 Medienbyte. -> 0, sonst kein solches Laufwerk */
+static struct fapi_label di_lb;                 /* Kontext                */
+static int dinfo(struct v86_frame *f, int t);
+int __far redir_dinfo(struct v86_frame *f, int t)
+{
+    int r;
+    kf_box_ctl(BOX_LOCK, 1);
+    r = dinfo(f, t);
+    kf_box_ctl(BOX_LOCK, 0);
+    return r;
+}
+static int dinfo(struct v86_frame *f, int t)
+{
+    unsigned char __far *o;
+    unsigned d = AL, k, cs = 0, spc;
+    unsigned long cl = 0;
+    if (FAILED(FAPI(FAPI_QFSINFO, KDATA, d, (unsigned)&fsi, 0)))
+        return 1;
+    if (fsi.bsize == 2048 || (fsi.flags & FSI_NOMEDIA))
+        return 1;                               /* CD/leer: wie bisher    */
+    if (fat_geom(d, &cs, &cl) || !cs) {
+        cs = 1;
+        cl = fsi.sectors;
+    }
+    for (spc = cs; cl > 0xFFF0UL && spc < 128; spc <<= 1)
+        cl >>= 1;
+    di_lb.label[0] = 0;
+    di_lb.serial = 0;
+    FAPI(FAPI_LABEL, KDATA, d, (unsigned)&di_lb, 0);
+    o = bp(t, (unsigned)f->r.es, DI);
+    for (k = 0; k < 32; k++)
+        o[k] = 0;
+    o[0] = (fsi.flags & FSI_REMOVABLE) && !(fsi.flags & FSI_REMDISK) ? 2 : 1;
+    o[1] = (unsigned char)spc;
+    w16(o + 2, fsi.bsize);
+    w32(o + 4, cl);
+    w32(o + 8, di_lb.serial);
+    for (k = 0; k < 11; k++)                    /* Bezeichnung ohne Punkt */
+        o[12 + k] = ' ';
+    for (k = 0, d = 0; di_lb.label[k] && d < 11; k++)
+        if (di_lb.label[k] != '.')
+            o[12 + d++] = di_lb.label[k];
+    for (k = 0; k < 8; k++)
+        o[23 + k] = ' ';
+    if (fsi.fsname[0] == 'F' && fsi.fsname[1] == 'A' && fsi.fsname[2] == 'T') {
+        o[23] = 'F', o[24] = 'A', o[25] = 'T';
+        if (fsi.fsname[3] == '3')
+            o[26] = '3', o[27] = '2';
+        else if (cl >= 4085)
+            o[26] = '1', o[27] = '6';
+        else
+            o[26] = '1', o[27] = '2';
+    }
+    o[31] = o[0] == 2 || (fsi.flags & FSI_REMDISK) ? 0xF0 : 0xF8;
+    return 0;
+}
+
 /* Kontext je Task (Phase 6, kernel.c ctx_take) */
 const struct ctxblk redir_ctx[] = {
     { p1, sizeof(p1) }, { p2, sizeof(p2) }, { tmpl, sizeof(tmpl) }, { &de, sizeof(de) },
@@ -892,7 +955,7 @@ const struct ctxblk redir_ctx[] = {
     { st_dir, sizeof(st_dir) }, { st_fcb, sizeof(st_fcb) }, { sf_dir, sizeof(sf_dir) },
     { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { fn_dir, sizeof(fn_dir) }, { &fn_lb, sizeof(fn_lb) },
     { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) },
-    { np_dir, sizeof(np_dir) }, { ff_dir, sizeof(ff_dir) }
+    { np_dir, sizeof(np_dir) }, { ff_dir, sizeof(ff_dir) }, { &di_lb, sizeof(di_lb) }
 };
 const unsigned redir_nctx = sizeof(redir_ctx) / sizeof(redir_ctx[0]);
 
