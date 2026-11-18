@@ -28,6 +28,7 @@
 #include "v86int.h"
 
 int  __far kf_box_ctl(unsigned op, unsigned a);
+int __far fat_geom(int d, unsigned *spc, unsigned long *clusters);
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 #define FAPI(fn, sel, a, b, c)  kf_box_fapi((fn), (sel), (a), (b), (c))
 
@@ -104,10 +105,19 @@ unsigned __far redir_psp(int t)
 static void get_fn(int t, unsigned x, char *d)
 {
     unsigned char __far *s = sda(t, x);
-    unsigned i;
-    for (i = 0; i < 127 && s[i]; i++)
-        d[i] = s[i];
-    d[i] = 0;
+    unsigned i, o = 0, k;
+    for (i = 0; i < 127 && s[i]; i++) {
+        if (s[i] == ' ') {              /* DOS denkt in 8+3-Feldern:      */
+            for (k = i; k < 127 && s[k] == ' '; k++)   /* "LW .LLD" ist  */
+                ;                       /* LW.LLD (Lotus-Works-INSTALL);  */
+            if (k >= 127 || !s[k] || s[k] == '.' || s[k] == '\\') {
+                i = k - 1;              /* Leerzeichen vor Punkt, Trenner */
+                continue;               /* und Ende fallen weg             */
+            }
+        }
+        d[o++] = s[i];
+    }
+    d[o] = 0;
 }
 
 /* ---- Namen ------------------------------------------------------------------ */
@@ -383,7 +393,10 @@ static int find_first(int t)
     for (k = 16; k < 21; k++)
         s[k] = 0;
     k = find_next(t, 0, sda_seg[t], sda_off[t] + 0x19E);
-    return k == E_NOMORE ? E_NOFILE : k;
+    return k;                           /* ohne Treffer 12h wie FreeDOS
+                                           (fatdir.c) und MS-DOS - Lotus
+                                           Works INSTALL hielt 02h fuer
+                                           einen Lesefehler */
 }
 
 /* ---- Verteiler ---------------------------------------------------------------- */
@@ -463,8 +476,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         CX = k;
         return 0;
     case 0x0C: {                                /* freier Platz          */
-        unsigned spc = 1, sh = 9;
-        unsigned long tot, fr;
+        unsigned spc = 1, sh = 9, cs;
+        unsigned long tot, fr, cl;
         s = bp(t, es, di);
         k = up(s[0]) - 'A';
         if (FAILED(FAPI(FAPI_QFSINFO, KDATA, k, (unsigned)&fsi, 0)) ||
@@ -474,6 +487,16 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         while ((tot >> (sh - 9)) > 0xFFF0UL && spc < 128) {
             spc <<= 1;
             sh++;
+        }
+        if (fat_geom(k, &cs, &cl) == 0 && cs && !(cs & (cs - 1))) {
+            for (spc = cs, sh = 9; cs > 1; cs >>= 1)
+                sh++;                           /* FAT: echte Aufteilung  */
+            while (cl > 0xFFF0UL && spc < 128) {
+                spc <<= 1;                      /* zu gross fuer 16 Bit:  */
+                sh++;                           /* Cluster zusammenfassen */
+                cl >>= 1;
+            }
+            tot = cl << (sh - 9);
         }
         fr = l32 >> sh;                         /* Bytes -> Cluster       */
         AX = spc;

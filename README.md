@@ -683,7 +683,11 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   Sound Blaster auf einem DX4-100 (86Box) braucht für `-timedemo demo1`
   5091 statt 7123 Takte, unter FreeDOS direkt 4686 (im genaueren
   Interpreter-Modus von 86Box: 4452 gegen 4182, also gut 6 % langsamer). Datum und
-  Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Maus in der Box
+  Zeit in der Box deutsch (COUNTRY.SYS von FreeDOS). Wie beim echten
+  BIOS: Tastaturpuffer im BIOS-Datenbereich (INT 16h AH=05h, Programme
+  lesen ihn direkt), INT 10h AH=1Bh, INT 21h 36h mit echter Clusterzahl,
+  FINDFIRST ohne Treffer 12h – Lotus Works 3.0 installiert sich damit
+  von Diskette (in QEMU und 86Box geprüft). Maus in der Box
   über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h – auch für DPMI-Programme
   im Protected Mode (DOS-Extender), Version 24h mit Art und IRQ der echten Maus – MSD

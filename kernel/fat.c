@@ -2523,6 +2523,25 @@ struct ifs_driver fat_driver = {
     fat_move, fat_space, fat_setinfo, fat_label, fat_namepath, fat_truncate
 };
 
+/* Aufteilung fuer den Redirector der DOS-Boxen (INT 2Fh 110Ch -> INT 21h
+   36h): echte Clusterzahl wie bei MS-DOS. Lotus Works INSTALL waehlt die
+   Diskettenaufteilung nach genau diesem Wert (1,2 MB = 2371 Cluster).
+   -> 0, oder -1 kein FAT-Laufwerk */
+int __far fat_geom(int d, unsigned *spc, unsigned long *clusters)
+{
+    struct volume *v;
+    if (d < 0 || d >= NDRIVE)
+        return -1;
+    v = &vol[d];
+    if (!v->used || v->drv != &fat_driver)
+        return -1;
+    *spc = v->spc;
+    *clusters = v->clusters;
+    return 0;
+}
+
+
+
 /* ---- IFS-Verteiler ----------------------------------------------------- */
 int __far ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
 {

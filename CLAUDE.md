@@ -4785,6 +4785,35 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   abgeschaltetem Weg über v86_exc (nur Takt): Klick auf „Windows…“
   öffnet das Fenster; seriell und PS/2.
   Vom Nutzer auf dem P3B-F bestätigt: Klicks und Alt in MSD 2.11 gehen.
+- **Lotus Works 3.0 in der DOS-Box** (vom Nutzer gemeldet, 18.11.2026:
+  INSTALL von Diskette meldete „Error loading LW.LLD file“; Abbild
+  von winworldpc, nur zum Testen, nicht im Repository). Fünf Abweichungen
+  von MS-DOS/BIOS gefunden, Vergleich mit reinem FreeDOS in QEMU und dem
+  FreeDOS-Kern (fatdir.c): (1) INSTALL öffnet `LW .LLD` – DOS denkt in
+  8+3-Feldern, Leerzeichen vor Punkt/Trenner/Ende fallen weg (redir.c
+  `get_fn`). (2) INT 16h AH=05h (Taste ablegen) fehlte – INSTALL legt FFFFh
+  ab und wartet mit AH=11h darauf; jetzt Tastaturpuffer der Box im BIOS-
+  Datenbereich (41Ah/41Ch, Grenzen 480h/482h, beim Anlegen leer), `key()`
+  nimmt ihn zuerst und liefert `long` (FFFFh ist eine Taste, -1L keine).
+  (3) INT 10h AH=1Bh (Zustand, 64 Byte nach ES:DI, Tabelle bei F000:0880)
+  fehlte – INSTALL nahm Modus 7 und teilte durch 0. (4) INSTALL liest
+  Tasten direkt aus dem BIOS-Puffer und kettet seinen INT 9 an den des
+  BIOS: der Stummel-INT-9 und inject (INT 9 nicht umgebogen) legen die
+  Tasten des Kernels jetzt dort ab (`kb_pump`). (5) FINDFIRST ohne Treffer
+  gab 02h statt 12h (FreeDOS fatdir.c, MS-DOS) – INSTALL hielt das für
+  einen Lesefehler. (6) INT 21h 36h über den Redirector meldete die
+  Sektor- statt der Clusterzahl; INSTALL wählt die Diskettenaufteilung
+  aus INSDSK23.RI nach genau diesem Wert (1,2 MB = 2371 Cluster) und
+  verlangte sonst eine Datei der 360-KB-Aufteilung. Jetzt `fat_geom`
+  (fat.c) mit echter Clustergröße/-zahl. In QEMU geprüft (alle drei
+  Disketten, Geräteeinstellung, Schriften, LW startet; DOOM 1.9 Timedemo
+  und Digger mit Tasten danach unverändert, keine verirrten Tasten in
+  CMD) und in 86Box (386DX/40, 4 MB, 5,25"-Laufwerk A:): Übertragung aller
+  drei Disketten mit Wechsel. Lehre: Programme der Zeit prüfen genaue
+  Werte (Clusterzahl, Fehlercode 12h) und lesen BIOS-Daten direkt – die
+  FreeDOS-Quellen (/home/user/fdos) und MS-DOS 4.0 als Nachschlagewerk
+  zuerst ansehen (Hinweis des Nutzers). 86Box-Monitor liest Befehle nur
+  von einem Terminal: `script -qfc` um 86Box (run86t.sh).
 - Taskmanager (Wunsch des Nutzers: hängende DOS-Box beenden; in QEMU
   geprüft: START DOSBOX, TASKMAN /L zeigt sie, im Vollbild Entf + J ->
   beendet): FAPI 54h DosProc (kernel.c, mit Kernelsperre) PROC_INFO

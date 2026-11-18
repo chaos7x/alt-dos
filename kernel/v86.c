@@ -722,6 +722,10 @@ unsigned long __far v86_create(int t, unsigned kb)
     *(unsigned __far *)MK_FP(SCRATCH, 0x46E) = (unsigned)(tk >> 16);
     *(unsigned char __far *)MK_FP(SCRATCH, 0x470) = 0;
     *(unsigned char __far *)MK_FP(SCRATCH, 0x484) = ROWS - 1;
+    *(unsigned __far *)MK_FP(SCRATCH, 0x41A) = 0x1E;    /* Tastaturpuffer   */
+    *(unsigned __far *)MK_FP(SCRATCH, 0x41C) = 0x1E;    /* leer (INT 16h 05h) */
+    *(unsigned __far *)MK_FP(SCRATCH, 0x480) = 0x1E;
+    *(unsigned __far *)MK_FP(SCRATCH, 0x482) = 0x3E;
     /* Laufwerke: ein Diskettenlaufwerk (das Startabbild), keine Platten -
        die AT-DOS-Laufwerke kommen ueber den Redirector */
     *(unsigned __far *)MK_FP(SCRATCH, 0x410) =
@@ -2127,6 +2131,8 @@ static unsigned bios_shift(void)
     return lo | hi << 8;
 }
 
+static void kb_pump(int t);
+
 static void inject(struct v86_iret *r, int t)
 {
     if (sti_step[t]) {                          /* Einzelschritt erledigt */
@@ -2193,6 +2199,8 @@ static void inject(struct v86_iret *r, int t)
         if (!pm_hooked(t, 9))
             kq_t[t] = kq_h[t];
     }
+    if (vec_def(9) && !pm_hooked(t, 9) && box_fg(t))
+        kb_pump(t);                             /* wie das BIOS: Puffer 41Eh */
     if (!vec_def(9) && key_ready(t)) {
         key_t0[t] = get_ticks();
         vcur[t] = (unsigned char)kq_get(t);
@@ -2452,6 +2460,36 @@ static void int10(struct v86_frame *f, int t)
             BX = 0x0008;                        /* VGA Farbe             */
         }
         break;
+    case 0x1B:                                  /* Zustand nach ES:DI    */
+        if (BX)                                 /* (Lotus Works INSTALL: */
+            break;                              /* fehlte -> Modus 7 und */
+        {                                       /* Teilung durch 0)      */
+            static const unsigned char sft[16] = {      /* bei F000:0880 */
+                0xFF, 0xE0, 0x0F, 0, 0, 0, 0, 0x07, 8, 2, 0xFF, 0x0E, 0, 0, 0x3F, 0 };
+            unsigned es = (unsigned)f->r.es, di = (unsigned)f->edi;
+            cur_put(t);
+            for (i = 0; i < 16; i++)
+                wr8(VBIOS, 0x880 + i, sft[i]);
+            for (i = 0; i < 64; i++)
+                wr8(es, di + i, 0);
+            wr16(es, di, 0x880);
+            wr16(es, di + 2, VBIOS);
+            for (i = 0; i < 0x1E; i++)      /* Modus .. aktive Seite: */
+                wr8(es, di + 4 + i, rd8(BDA, 0x49 + i));   /* BDA 449h-466h */
+            wr16(es, di + 0x1E, rd16(BDA, 0x63));
+            wr8(es, di + 0x20, rd8(BDA, 0x65));
+            wr8(es, di + 0x21, rd8(BDA, 0x66));
+            wr8(es, di + 0x22, (unsigned char)(rd8(BDA, 0x84) + 1));
+            wr16(es, di + 0x23, rd16(BDA, 0x85) ? rd16(BDA, 0x85) : 16);
+            wr8(es, di + 0x25, 8);              /* VGA Farbe             */
+            wr16(es, di + 0x27, 16);            /* Farben                */
+            wr8(es, di + 0x29, 8);              /* Seiten                */
+            wr8(es, di + 0x2A, 2);              /* 400 Zeilen            */
+            wr8(es, di + 0x2D, 0x20);           /* Blinken an            */
+            wr8(es, di + 0x31, 3);              /* 256 KB                */
+            AL = 0x1B;
+        }
+        return;
     }
     cur_put(t);
 }
@@ -2580,10 +2618,64 @@ static void pci_svc(struct v86_frame *f)
 
 /* Taste: warten (wait = 1) oder nachsehen; -> Zeichen | Scancode << 8,
    -1 = keine */
-static int key(int t, int wait)
+/* Tastaturpuffer der Box im BIOS-Datenbereich (41Ah Kopf, 41Ch Ende,
+   Grenzen 480h/482h): dort legt INT 16h AH=05h Tasten ab - Lotus Works
+   INSTALL schreibt eine hinein und wartet, bis AH=11h sie meldet */
+static unsigned kb_lo(void)
+{
+    unsigned a = rd16(BDA, 0x80), b = rd16(BDA, 0x82);
+    return a >= 0x1E && b > a + 2 && b <= 0x100 ? a : 0x1E;
+}
+
+static unsigned kb_hi(void)
+{
+    unsigned a = rd16(BDA, 0x80), b = rd16(BDA, 0x82);
+    return a >= 0x1E && b > a + 2 && b <= 0x100 ? b : 0x3E;
+}
+
+static unsigned kb_next(unsigned p)
+{
+    p += 2;
+    return p >= kb_hi() ? kb_lo() : p;
+}
+
+/* Getippte Tasten in den Puffer der Box legen, wie der INT 9 des BIOS -
+   Programme lesen ihn auch direkt (Lotus Works INSTALL fragt nur INT 16h
+   AH=02 und schaut in 41Ah/41Ch). INT 16h nimmt sie von dort (key). */
+static void kb_pump(int t)
+{
+    unsigned i;
+    int k;
+    (void)t;
+    for (;;) {
+        i = rd16(BDA, 0x1C);
+        if (i < kb_lo() || i >= kb_hi() || rd16(BDA, 0x1A) < kb_lo() ||
+            rd16(BDA, 0x1A) >= kb_hi()) {
+            wr16(BDA, 0x1A, kb_lo());           /* zerstoert: leeren      */
+            wr16(BDA, 0x1C, i = kb_lo());
+        }
+        if (kb_next(i) == rd16(BDA, 0x1A) || (k = kf_kbd_peek()) < 0)
+            return;
+        k = kf_kbd_get();
+        if ((k & 0xFF) == 0xE0 && ((unsigned)k >> 8 < 0x47 || (unsigned)k >> 8 > 0x53))
+            k = 0xE0;                           /* wie key()              */
+        wr16(BDA, i, (unsigned)k);
+        wr16(BDA, 0x1C, kb_next(i));
+    }
+}
+
+static long key(int t, int wait)       /* -1L: keine Taste (FFFFh ist eine) */
 {
     int s = box_ses[t], k;
+    unsigned h;
     for (;;) {
+        h = rd16(BDA, 0x1A);
+        if (h != rd16(BDA, 0x1C) && h >= kb_lo() && h < kb_hi()) {
+            k = (int)rd16(BDA, h);      /* abgelegte Taste zuerst         */
+            if (wait)
+                wr16(BDA, 0x1A, kb_next(h));
+            return (long)(unsigned)k;
+        }
         if (fg == s) {
             k = wait ? kf_kbd_get() : kf_kbd_peek();
             if (k >= 0 && (k & 0xFF) == 0xE0 && ((unsigned)k >> 8 < 0x47 ||
@@ -2594,7 +2686,7 @@ static int key(int t, int wait)
                 return k;
         }
         if (!wait)
-            return -1;
+            return -1L;
         kf_box_ctl(BOX_SLEEP, 1);
         account(t);                     /* Takt im BIOS-Datenbereich     */
     }
@@ -2707,7 +2799,9 @@ static void svc(int n, struct v86_frame *f, int t)
         visr[t] &= ~1;
         break;
     case 0x09:                                  /* Tastatur (verkettet)  */
-        visr[t] &= ~2;
+        visr[t] &= ~2;                          /* wie das BIOS: Taste in */
+        if (box_fg(t))                          /* den Puffer 41Eh (Lotus */
+            kb_pump(t);                         /* Works INSTALL kettet)  */
         break;
     case 0x0D:                                  /* IRQ 5/7 ohne Handler: */
         visr[t] &= ~0x20;                       /* quittieren            */
@@ -2746,10 +2840,10 @@ static void svc(int n, struct v86_frame *f, int t)
             if (i == 0 && AL == 0xE0 && AH >= 0x47 && AH <= 0x53)
                 AL = 0;                         /* graue Tasten wie AT-BIOS 00h */
         } else if (AH == 0x01 || AH == 0x11) {
-            k = key(t, 0);
-            svc_zf = k < 0;
-            if (k >= 0) {
-                AX = (unsigned)k;
+            long kk = key(t, 0);
+            svc_zf = kk < 0;
+            if (kk >= 0) {
+                AX = (unsigned)kk;
                 idle_n[t] = 0;
             } else
                 idle_poll(t, 0);                /* fragt nur ab          */
@@ -2759,8 +2853,18 @@ static void svc(int n, struct v86_frame *f, int t)
             if (AH == 0x12)
                 AH = (unsigned char)(k >> 8);
         }
-        else if (AH == 0x05)
-            AL = 1;                             /* Puffer voll           */
+        else if (AH == 0x05) {                  /* Taste CX ablegen      */
+            i = rd16(BDA, 0x1C);
+            if (i < kb_lo() || i >= kb_hi())
+                i = kb_lo(), wr16(BDA, 0x1A, i);
+            if (kb_next(i) == rd16(BDA, 0x1A))
+                AL = 1;                         /* Puffer voll           */
+            else {
+                wr16(BDA, i, CX);
+                wr16(BDA, 0x1C, kb_next(i));
+                AL = 0;
+            }
+        }
         break;
     case 0x18: case 0x19:                       /* kein BASIC, kein Neustart */
     case 0x20:
@@ -2811,9 +2915,8 @@ static void svc(int n, struct v86_frame *f, int t)
             if (DL != 0xFF)
                 out_ch(t, DL);
             else {
-                k = key(t, 0);
-                svc_zf = k < 0;
-                AL = k < 0 ? 0 : (unsigned char)key(t, 1);
+                svc_zf = key(t, 0) < 0;
+                AL = svc_zf ? 0 : (unsigned char)key(t, 1);
             }
             break;
         case 0x07: case 0x08:
