@@ -575,7 +575,7 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   COMMAND, bleibt ihr Text stehen. Alt+Esc und Strg+C bleiben beim
   Kernel. Tests: `\DEMO\HALLO [Text] [/W]`, `\DEMO\BOXTEST` (wie ein
   Spiel: B800, INT 1Ch, INT 9, 3DAh; Esc beendet), auch mit `START`
-- Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` ruft
+- Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box
   laufen und vergleicht. Bestandsliste, Funde und erwartete Unterschiede:
@@ -584,6 +584,10 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Fehlercodes 03h/05h/10h wie DOS, Diskettenparameter (INT 1Eh), INT 10h
   1Ch/1007h/1008h/1015h/1017h/101Ah, INT 13h 01h, INT 14h/17h-Status,
   INT 15h C0h/90h/2400h, INT 16h 09h/0Ah
+- Drucken aus der DOS-Box: INT 17h (also auch `PRN`, `COPY datei PRN`
+  und das Drucken aus Programmen) geht über das LPT-Gerät von AT-DOS.
+  In 86Box ohne Drucker: LPT1 auf „Generic Text Printer“, „Generic ESC/P
+  2 Dot-Matrix“ oder „Generic PostScript Printer“ (PDF) stellen
 - DOS-Box mit FreeDOS (6.0, Phase 3 Stufe 3, erster Schritt): **DOSBOX**
   öffnet eine Sitzung, in der der FreeDOS-Kern mit FreeCOM (deutsch)
   läuft – gestartet wie auf einem echten PC vom Bootsektor eines

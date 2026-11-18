@@ -633,6 +633,8 @@ static unsigned long rtc_ticks(void)
 }
 
 /* -> CR3 der neuen Box, 0 = kein Speicher. Speicher genullt. */
+static unsigned lpt_h[NTASK];           /* INT 17h: Handle + 1 (lpt_out) */
+
 unsigned long __far v86_create(int t, unsigned kb)
 {
     unsigned long kcr3 = paging_cr3(), e, tk;
@@ -780,6 +782,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
     b2f[t] = 0;
+    lpt_h[t] = 0;                       /* (task_end schloss ihn)        */
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -2868,6 +2871,38 @@ static void int13(struct v86_frame *f, int t)
 static int a20_set(int t, int on);
 static unsigned char a20_on[NTASK];
 
+/* INT 17h 00h: Zeichen an LPT1-3 ueber die Geraete des Kernels (wie
+   PRINT/COPY nach PRN in AT-DOS) - der Handle bleibt bis zum Ende der
+   Box offen, task_end schliesst ihn. Vorher gingen Ausdrucke aus der
+   Box verloren (BIOSCMP, docs/BOX-BIOS.md). -> 0 gesendet */
+static unsigned char lpt_n[NTASK];      /* fuer welchen Port             */
+static char lpt_name[] = "LPT1";
+static unsigned char lpt_c;
+static int lpt_out(int t, unsigned port, unsigned char c)
+{
+    unsigned r;
+    int e = 0;
+    kf_box_ctl(BOX_LOCK, 1);
+    if (lpt_h[t] && lpt_n[t] != port) {
+        kf_box_fapi(FAPI_CLOSE, KDATA, lpt_h[t] - 1, 0, 0);
+        lpt_h[t] = 0;
+    }
+    if (!lpt_h[t]) {
+        lpt_name[3] = (char)('1' + port);
+        r = kf_box_fapi(FAPI_OPEN, KDATA, (unsigned)lpt_name, OPEN_RW, 0);
+        if (r < FAPI_ERR_FIRST) {
+            lpt_h[t] = r + 1;
+            lpt_n[t] = (unsigned char)port;
+        }
+    }
+    lpt_c = c;
+    if (!lpt_h[t] ||
+        kf_box_fapi(FAPI_WRITE, KDATA, lpt_h[t] - 1, (unsigned)&lpt_c, 1) != 1)
+        e = 1;
+    kf_box_ctl(BOX_LOCK, 0);
+    return e;
+}
+
 static void svc(int n, struct v86_frame *f, int t)
 {
     unsigned i, off;
@@ -2978,9 +3013,17 @@ static void svc(int n, struct v86_frame *f, int t)
         else if (AH <= 0x02)
             AH = 0x80;
         break;
-    case 0x17:                                  /* Drucker: Status        */
-        if (AH <= 0x02 && DX < 3)
-            AH = rd16(BDA, 8 + DX * 2) ? 0x90 : 0x30;
+    case 0x17:                                  /* Drucker                */
+        if (AH > 0x02 || DX > 2)
+            break;
+        if (!rd16(BDA, 8 + DX * 2)) {
+            AH = 0x30;                          /* kein Port              */
+            break;
+        }
+        if (AH == 0x00 && lpt_out(t, DX, AL))   /* Zeichen ueber den      */
+            AH = 0x09;                          /* Kernel (LPTn), Fehler: */
+        else                                    /* Zeitueberschreitung    */
+            AH = 0x90;
         break;
     case 0x18: case 0x19:                       /* kein BASIC, kein Neustart */
     case 0x20:

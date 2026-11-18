@@ -362,7 +362,7 @@ Win32s), nicht vorziehen, sondern nachfragen.
   ab – neue Hilfen immer über k2.h. Grafik aus vio.c steht in
   `kernel/vgagfx.c`, gemeinsame Sitzungsdaten in `kernel/vioint.h`.
   Drittes Codesegment KCODE3 (Selektor 258h, vorher 238h/218h, `KCODE3_IDX` = letzter
-  GDT-Eintrag): `v86.c` und `redir.c` (build.sh `K3MODS`, `-nt=KTEXT3`,
+  GDT-Eintrag): `v86.c` (`redir.c` seit 18.11.2026 in KTEXT4; build.sh `K3MODS`, `-nt=KTEXT3`,
   Gruppe CGROUP3 hinter CGROUP2, DS = CS + alle drei Größen; start.asm
   ruft v86_exc/dpmi_trap/v86_tick über KCODE3). Vorher prüfen, dass ein
   verschobenes Modul nah nur eigene Funktionen ruft (dmpobj: „Self“-
@@ -4833,8 +4833,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   behalten ihr Datum (1991). Lehre: SeaVGABIOS ist kein Maßstab (INT 10h
   1Bh Zeilen 24 statt 25) – mehrere echte BIOSe vergleichen. Offen
   (Entscheidung des Nutzers, s. Liste): zweimal schreibend öffnen,
-  Laufwerke als „fern“ (4409h), Drucken aus der Box. KTEXT3 danach
-  65.431 Byte (~100 frei) – vor weiterem Box-Code Platz schaffen.
+  Laufwerke als „fern“ (4409h). Drucken aus der Box danach erledigt
+  (Vorschlag des Nutzers: Dateidrucker in 86Box): v86.c `lpt_out` –
+  INT 17h 00h über FAPI OPEN/WRITE auf `LPTn` im Task der Box (Handle
+  `lpt_h[t]` bis zum Ende der Box), Status 90h/30h; in QEMU
+  (`-parallel file:`) und 86Box 386DX/40 (`lpt1_device = text_prt` in
+  `[Ports (COM & LPT)]`, Ausgabe in `printer\` des VM-Ordners) geprüft.
+  Platz: `redir.c` nach KTEXT4 (K4MODS, nur ferne Aufrufe – dmpobj),
+  KTEXT3 danach 58.741 Byte. BIOSCMP liegt auch auf Diskette 2
+  (\DEMO, DEMOFILES) zum Testen unter MS-DOS.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht
