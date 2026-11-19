@@ -244,6 +244,13 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Adressen und Namen (`-4`/`-6` wählt die Familie), FIREWALL-Regeln
   nehmen IPv6-Netze (`FROM fd00::/8`, `LOCAL` = link-lokal oder eigenes
   Präfix). Noch nicht: DHCPv6, MLD, Fragmente, Datenschutzadressen
+- `WGET` holt Dateien über HTTP/1.1 (Bedienung wie GNU wget): `-O Datei`
+  (`-O -` = Standardausgabe), `-P Verzeichnis`, `-c` setzt eine
+  abgebrochene Datei fort (Range), `-q`, `-S` (Kopfzeilen), `-T s`,
+  `-4`/`-6`; Content-Length oder chunked, bis zu 5 Weiterleitungen,
+  Fortschritt mit KB/s, Dateiname aus der URL (auch lang, `%20` wird
+  Leerzeichen); vorhandene Dateien nur mit `-O`/`-c`. ERRORLEVEL wie
+  GNU wget (3 Datei, 4 Netz, 8 Fehlerantwort). https:// kommt mit TLS
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;

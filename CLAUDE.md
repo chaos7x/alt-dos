@@ -5755,6 +5755,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   RTL8139) danach DHCP, PING, NSLOOKUP, NC UDP/TCP, 1 MB hin und zurück
   MD5 gleich. Bekannt: `nc -u Name` nimmt die IPv6-Adresse zuerst und
   fällt nicht auf IPv4 zurück (`-4` hilft).
+  WGET (6.2, 19.11.2026; `apps/task_wget.c`, LFN): HTTP/1.1 mit
+  Connection: close, Content-Length/chunked/bis Verbindungsende,
+  Weiterleitungen 301/302/303/307/308 (relativ und absolut, bis 5),
+  `-c` über Range + DosOpenRW/DosSeek (Größe per DosFindEntry), 416 =
+  schon vollständig, User-Agent `Wget/1.0 (AT-DOS)`, Zahlen ohne
+  32-Bit-Mul/Div (`udiv`, `mul10`/`mul100`). In QEMU (Testserver
+  `/tmp/claude-0/wg/srv.py` im Scratch: Range, chunked in Zufalls-
+  stücken, Weiterleitungen, ohne Länge, 404) und 86Box 386DX/40 mit
+  NE2000 (~90–150 KB/s) geprüft: 1 MB je Weg bytegleich, Fortsetzen ab
+  400.000, langer Name „Mein Text.txt“, ERRORLEVEL 8/3/1. Testfalle: in
+  Stapeldateien `%%20` statt `%20` (sonst ersetzt CMD `%2`).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

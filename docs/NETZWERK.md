@@ -168,7 +168,8 @@ im Modul und wachen über `net_kick` bzw. Fristen auf.
 
 Stufe 1: `PING` (wie Windows: -n -t -l -w, -4/-6, Name oder Adresse),
 `IPCONFIG` (/ALL, /RELEASE, /RENEW; zeigt beide Familien). Stufe 2: `NETSTAT`, `NSLOOKUP`,
-`TFTP`, `FTP`, `TELNET`. Stufe 3: `WGET`/`CURL` (HTTP/1.1, FTP), danach
+`TFTP`, `FTP`, `TELNET`. Stufe 3: `WGET`/`CURL` (HTTP/1.1, FTP; WGET
+erledigt 19.11.2026), danach
 TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
 
 ## Reihenfolge
