@@ -189,7 +189,8 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
    bleiben, wie sie sind. (Erledigt 18.11.2026 ohne DHCPv6.) Test in QEMU (`ipv6=on`, fec0::/64) und am
    LAN des Nutzers.
 6. Weitere Karten: PCnet (VMware, VirtualBox), e1000, NE2000 ISA/
-   ne2k_pci (86Box SCAT/486).
+   ne2k_pci (86Box SCAT/486). Erledigt: NE2000 (18.11.2026), PCNET.SYS
+   und E1000.SYS (19.11.2026; E1000 nur in QEMU geprüft, 86Box hat keine).
 
 ## Firewall (abgestimmt 18.11.2026, Regeln je Programm umgesetzt 18.11.2026)
 

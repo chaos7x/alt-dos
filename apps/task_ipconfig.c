@@ -105,12 +105,18 @@ static void show(int all)
         } else
             puts("keine\r\n");
         field("Anschluss");
-        puts("I/O ");
-        hexb((unsigned char)(ni.io >> 8));
-        hexb((unsigned char)ni.io);
-        puts("h, IRQ ");
-        put_num(ni.irq, 0, 0);
-        puts("\r\n");
+        if (ni.io) {                    /* E1000: Register im Speicher     */
+            puts("I/O ");
+            hexb((unsigned char)(ni.io >> 8));
+            hexb((unsigned char)ni.io);
+            puts("h, ");
+        }
+        if (ni.irq) {
+            puts("IRQ ");
+            put_num(ni.irq, 0, 0);
+            puts("\r\n");
+        } else
+            puts("ohne IRQ (Abfrage)\r\n");
         field("DHCP aktiviert");
         puts(ni.naddr && ni.addr[0].kind == NA_STATIC ? "Nein\r\n" : "Ja\r\n");
     }

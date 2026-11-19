@@ -198,7 +198,12 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster,
   `NE2000.SYS` für NE1000/NE2000 und Nachbauten (ISA, RTL8019AS, PCI-
   Klone wie RTL8029; sucht 300h, 280h, 320h, 340h, 360h, 240h und den
-  IRQ selbst, `/P:300 /I:3` legt fest, `/NOIRQ` = Abfragebetrieb), darüber
+  IRQ selbst, `/P:300 /I:3` legt fest, `/NOIRQ` = Abfragebetrieb),
+  `PCNET.SYS` für AMD PCnet-PCI (Am79C970/970A/971/972/973/975 – die
+  Karte von VMware, VirtualBox, QEMU `-device pcnet` und 86Box) und
+  `E1000.SYS` für Intel PRO/1000 (8254x, z. B. 82540EM/82545EM – QEMU/
+  Proxmox `e1000`, VirtualBox, VMware; Register über den Speicher-BAR),
+  beide mit IRQ und Busmaster, `/NOIRQ`, `/PROMISC`, entladbar; darüber
   `TCPIP.SYS` mit ARP, IPv4, ICMP und DHCP-Client –
   `DEVICE=TCPIP.SYS [/IP:a.b.c.d/n /GW:x /DNS:x[,y]] [/HOST:name]`
   (ohne /IP holt er die Adresse per DHCP; /DNS gilt auch dann). `IPCONFIG [/ALL] [/RELEASE]

@@ -5786,6 +5786,29 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   umgeleiteter Eingabe; TELNET Verhandlung, Zeichen, ANSI-Farbe, Ende
   durch den Server. Nicht geprüft: aktiver Modus (QEMU-SLiRP leitet die
   Rückverbindung nicht weiter), IPv6/EPSV, 86Box (reine Programmlogik).
+  PCNET.SYS und E1000.SYS (6.2, 19.11.2026; `drivers/pcnet.c`,
+  `drivers/e1000.c`, Muster RTL8139): PCnet-PCI 1022:2000 (Chip aus
+  CSR88/89: Am79C970/970A/971/972/973/975), 16-Bit-Ports (WIO), Reset
+  durch Lesen von +14h, erst CSR0 = STOP lesen (Erkennung), BCR20 = 2
+  (32-Bit-Deskriptoren zu 16 Byte), Ringe 16/8 zu 1.536 Byte und Init-
+  Block in einem DH_DMABUF-Puffer, CSR4 APAD_XMT, Adressfilter ganz
+  offen (NF_ALLMULTI), RAP bleibt immer auf CSR0 (IRQ und Senden nur
+  dort, Senden unter CLI). E1000: Intel 8254x (100E, 100F, 1004 …),
+  Register über BAR 0 mit DH_PHYSMAP (24 KB) – den I/O-Zugang IOADDR/
+  IODATA bildet QEMU nicht nach (lieferte nur Nullen); MAC aus RAL0/RAH0
+  (sonst EERD), Ringe 8 × 2 KB / 8 × 1,5 KB, RCTL EN|BAM|MPE|SECRC, TCTL
+  wie im Handbuch, ein Sendeplatz bleibt frei. Lehre: QEMU schreibt beim
+  Empfang das Fehlerbyte nicht neu – Deskriptoren beim Anlegen und nach
+  jedem Rahmen ganz nullen, nur Rahmenfehler (97h) zählen (vorher wurde
+  das DHCP-Angebot verworfen). IPCONFIG zeigt „I/O“ nur, wenn es Ports
+  gibt, ohne IRQ „ohne IRQ (Abfrage)“. DEVLOAD: Meldung, wenn TCPIP
+  wegen noch offener Verbindungen (TIME_WAIT) nicht entladen werden kann.
+  CONFIG.SYS: Netzkarten in einer REM-Zeile (Grenze 4 KB, jetzt 4.054).
+  Geprüft: QEMU `-device pcnet` und `-device e1000` (DHCP, IPv6, PING,
+  je 1 MB über FTP hin/zurück und WGET bytegleich, ~3 MB/s, DEVLOAD /U
+  und neu laden); PCnet in 86Box (P3B-F, `pcnetpci` = Am79C970A, SLiRP).
+  86Box hat kein e1000 (nur i8255x) – E1000 ungeprüft in 86Box, VMware,
+  VirtualBox und auf echter Hardware.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
