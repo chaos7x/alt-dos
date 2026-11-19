@@ -48,7 +48,12 @@ AHA-154xC, NE2000 an 300h/IRQ 10, SLiRP mit Weiterleitung 5556;
 Zuordnung). Der Start dauert in 86Box ~2 min (Auslagerungsdatei).
 Der SCAT (286) läuft nicht mit `main` (386-Kernel) – für ihn erst der
 Rückport nach 5.x.
-Als Nächstes im Plan (6.x): Netzwerk, VirtIO.
+Umfang 6.2 (Entscheidung des Nutzers, 19.11.2026): Netz fertig machen –
+WGET, FTP, TELNET, Karten PCnet und e1000, SNTP – und der 6.2-Teil von
+docs/BIGLOCK.md (Sperren je Objekt, ISO9660.IFS/Redirector je
+Operation). In 6.3: Module für die DOS-Box nach dem Vorbild der VDDs
+von OS/2 (v86.c in KTEXT3 mit 61.980 Byte fast voll), TLS, VirtIO,
+SMB/Domäne.
 
 
 AT-DOS 6.0 ist fertig (Entscheidung des Nutzers, 15.11.2026: „da wir
