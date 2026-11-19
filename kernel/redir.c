@@ -157,6 +157,7 @@ unsigned __far redir_psp(int t)
     return p[0] | (p[1] << 8);
 }
 
+static unsigned long cd_size(int d);
 static void get_fn(int t, unsigned x, char *d)
 {
     unsigned char __far *s = sda(t, x);
@@ -173,6 +174,16 @@ static void get_fn(int t, unsigned x, char *d)
         d[o++] = s[i];
     }
     d[o] = 0;
+    if (d[0] == '\\' && d[1] == '\\' && d[3] == '.' && d[4] == '\\' &&
+        d[6] == '.') {                  /* CD-Laufwerk wie MSCDEX: Stamm   */
+        d[1] = ':';                     /* "\\E.\A." -> "E:", Rest dahinter */
+        d[0] = d[2];
+        for (i = 7, k = 2; d[i]; )
+            d[k++] = d[i++];
+        if (k == 2)
+            d[k++] = '\\';
+        d[k] = 0;
+    }
 }
 
 /* ---- Namen ------------------------------------------------------------------ */
@@ -685,11 +696,13 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         unsigned spc = 1, sh = 9, cs;
         unsigned long tot, fr, cl;
         s = bp(t, es, di);
-        k = up(s[0]) - 'A';
+        k = up(s[0] == '\\' ? s[2] : s[0]) - 'A';  /* CD: "\\X.\A." */
+        l32 = 0;                                /* CD: nichts frei (MSCDEX) */
         if (FAILED(FAPI(FAPI_QFSINFO, KDATA, k, (unsigned)&fsi, 0)) ||
-            FAILED(FAPI(FAPI_FREESPACE, KDATA, k, (unsigned)&l32, 0)))
+            (fsi.bsize != 2048 &&
+             FAILED(FAPI(FAPI_FREESPACE, KDATA, k, (unsigned)&l32, 0))))
             return E_NOTREADY;
-        tot = fsi.bsize == 2048 ? fsi.sectors << 2 : fsi.sectors;
+        tot = fsi.bsize == 2048 ? cd_size(k) << 2 : fsi.sectors;  /* CD: PVD */
         while ((tot >> (sh - 9)) > 0xFFF0UL && spc < 128) {
             spc <<= 1;
             sh++;

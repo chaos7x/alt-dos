@@ -125,11 +125,33 @@ A: als 5¼" führt und IO.SYS sonst hängt):
 | Ctrl-Break | Off | On | BREAK=OFF in der CONFIG.SYS der Box |
 | MSCDEX 1501h | – | Nullzeiger als Treiberkopf | Kopf „MSCD001“ (C800h) bei F000:0AE0 |
 
+Dritter Durchgang (19.11.2026): zweite Diskette des Nutzers mit ASPI4DOS/
+ASPICD/MSCDEX (CONFIG.SYS: `DEVICE=A:\ASPI4DOS.SYS /P334` – der Adaptec
+der VM liegt auf 334h –, `DEVICE=A:\ASPICD.SYS /D:ASPICD0`; AUTOEXEC.BAT:
+`MSCDEX /D:ASPICD0 /L:E`; COMMAND.COM der Diskette war nicht 6.22, auf der
+Kopie ersetzt), im CMOS der VM A: auf 1,44 MB und das Koprozessor-Bit
+gesetzt. Prüfprogramm (CDS, IOCTL, 1500h/150Bh/1501h, 36h) unter MS-DOS
+und in der Box:
+
+| | MSCDEX 2.23 | Box vorher | jetzt |
+|---|---|---|---|
+| CDS-Pfad / Flags / Offset | `\\E.\A.` / C080h / 7 | `E:\` / C000h / 2 | wie MSCDEX (BOXSHELL `cds_sync` fragt den Kernel per 150Bh) |
+| 4408h / 4409h | Fehler 1 / 1000h | gleich | gleich |
+| 1501h | Kopf „ASPICD0“, Laufwerk 05, 1 Einheit | Nullzeiger | Kopf „MSCD001“, Laufwerk, Einheiten |
+| 36h (frei) | 0 | Platz der Platte (Laufwerk falsch gelesen) | 0, Größe aus dem PVD |
+
+Die CheckIt-Laufwerksliste zeigt das CD auch unter MS-DOS als „Network“
+– der vermeintliche Fehler ist das Originalverhalten. Redirector: Namen
+`\\X.\A.\…` werden in `get_fn` zu `X:\…`, 0Ch nimmt den Laufwerksbuch-
+staben aus Stelle 2 des CDS-Pfads. Koprozessor: auch mit gesetztem CMOS-
+Bit FAILED unter MS-DOS (das AMI-BIOS findet den 387 von 86Box selbst
+nicht) – 86Box. Geprüft in QEMU und 86Box 386DX/40 (CD am Adaptec: CD
+wechseln, Programm starten, TYPE, COPY, DIR), BIOSCMP unverändert.
+
 Unverändert und gleich wie unter MS-DOS: Koprozessor FAILED in 86Box
 (also 86Box), Uhrabstand ~2 s, doppelte Listeneinträge nach Bild↓ (Eigenheit
-von CheckIt). Offen/kosmetisch: die Laufwerksliste nennt das CD-ROM
-„Network“ (die Multimedia-Seite erkennt MSCDEX 2.21 an D:; CheckIt fragt
-150Bh nur für C:), NumLock aus statt an. Performance: CPU-Benchmark in
+von CheckIt). Offen/kosmetisch: NumLock aus statt an (das CD-ROM als
+„Network“ ist wie unter MS-DOS, siehe dritter Durchgang). Performance: CPU-Benchmark in
 86Box 11.467 Einheiten (32,5 × XT); in QEMU läuft er nie durch (FreeDOS
 direkt hängt dort, die Box beendet SYSINFO) – QEMU-Eigenheit. Platten-
 Benchmark: „nicht vorhanden“ (keine BIOS-Platten), Video läuft.

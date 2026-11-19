@@ -4910,6 +4910,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   tritt unter MS-DOS auf derselben VM genauso auf (86Box). Lehre: in
   SYSINFO öffnet Esc wieder das zuletzt benutzte Menü – Tastenfolgen
   dort enden sonst auf „Exit to DOS“.
+  Dritter Durchgang mit MSCDEX 2.23 des Nutzers (ASPI4DOS /P334, ASPICD):
+  CD-Laufwerke der Box haben jetzt eine CDS wie MSCDEX (`\\X.\A.`,
+  C080h, Offset 7; BOXSHELL `cds_sync` fragt INT E0h 200Bh), redir.c
+  `get_fn` macht daraus `X:\…`, 0Ch liest den Buchstaben an Stelle 2 und
+  meldet für CDs 0 frei und die Größe aus dem PVD (`cd_size`). CheckIt
+  nennt das CD auch unter MS-DOS „Network“. Testfalle: mtools verweigert
+  ein Abbild, dessen FAT16-Sauber-Bit gelöscht ist („Error reading FAT“)
+  – `MTOOLS_SKIP_CHECK=1`.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

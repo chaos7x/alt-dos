@@ -955,8 +955,17 @@ cds_sync:
         jmp     .sh
 .tst:   test    al, 1
         jz      .gone
-        cmp     word [es:di+43h], 0C000h
+        mov     ax, [es:di+43h]
+        and     ax, 0FF7Fh
+        cmp     ax, 0C000h
         je      .next                   ; schon da: Verzeichnis bleibt
+        push    cx
+        mov     ax, 200Bh               ; CD-ROM? (wie MSCDEX 150Bh)
+        mov     cx, si
+        int     0E0h
+        pop     cx
+        cmp     ax, 5AD8h
+        je      .cd
         mov     ax, si
         add     al, 'A'
         mov     [es:di], al             ; "X:"
@@ -965,7 +974,19 @@ cds_sync:
         mov     word [es:di+43h], 0C000h    ; Netz + physisch
         mov     word [es:di+4Fh], 2     ; Stamm-Backslash
         jmp     .next
-.gone:  cmp     word [es:di+43h], 0C000h
+.cd:    mov     word [es:di], 5C5Ch     ; wie MSCDEX: "\\X.\A.", Flags
+        mov     ax, si                  ; C080h, Stamm ab Stelle 7 (CheckIt
+        add     al, 'A'                 ; erkennt CDs daran)
+        mov     ah, '.'
+        mov     [es:di+2], ax
+        mov     word [es:di+4], 415Ch   ; "\A"
+        mov     word [es:di+6], 002Eh   ; ".", 0
+        mov     word [es:di+43h], 0C080h
+        mov     word [es:di+4Fh], 7
+        jmp     .next
+.gone:  mov     ax, [es:di+43h]
+        and     ax, 0FF7Fh
+        cmp     ax, 0C000h
         jne     .next
         mov     word [es:di+43h], 0     ; ausgehaengt
 .next:  add     di, 58h
