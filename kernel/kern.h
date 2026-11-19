@@ -227,9 +227,11 @@ struct vdd_call;
 unsigned __far vdd_reg(int d, unsigned dsel, unsigned bx);
 unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx);
 void __far vdd_drop(int d);
-unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val);
+unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val, int fgb);
 unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
-void __far vdd_event(int t, unsigned ev);           /* loop_attach/loop_info: ifs.h */
+void __far vdd_event(int t, unsigned ev, unsigned val);
+void __far vdd_tick(int t, int fgb);
+unsigned __far v86_vsvc(int t, unsigned fn, unsigned a1, unsigned a2, unsigned a3);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL

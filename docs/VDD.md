@@ -167,3 +167,45 @@ Reihenfolge:
 - Unbekannte Ports kosten jetzt einen Fernaufruf ins Modul; VCOM lehnt
   alles außerhalb 278h–3FFh sofort ab, ohne den BDA zu lesen (Joystick
   201h fragen Spiele in Schleifen ab).
+
+## Stand: Stufe 2 erledigt – Ton als `VSB.VDD` (19.11.2026)
+
+- Neue Dienste (`include/vdd.h`, Kernelseite `v86_vsvc` in v86.c, über
+  vdd.c): `VS_IRQ` (virtuelle Leitung 2–7 der Box; der Monitor stellt
+  sie in inject/dp_hwint zu wie seine eigenen, auch an PM-Handler;
+  Leitungen ohne Handler ruhen – `vidle`, gesetzt in dp_trap, gelöscht
+  durch einen Real-Mode-Handler oder DPMI 0205h; vorher `sb.noirq`),
+  `VS_VECDEF` (Vektoren 08h–0Fh auf dem Stummel / im PM eingehängt),
+  `VS_TICK` (Takt-Rückruf `tick_off`, höchstens einmal je Kerneltakt,
+  2 = auch gleich beim nächsten Rücksprung), `VS_IOPERM` (Ports unter
+  3E0h in der I/O-Bitmap der Box frei/gesperrt), `VS_FGRES` (Modul gab
+  der Box Hardware: beim Wechsel nach hinten kommt `VDD_EV_BG`),
+  `VS_AUD` (Audio-FAPI im Namen der Box, Puffer im DS des Moduls –
+  `box_aud` nimmt jetzt den Selektor), `VS_HK` (DOSBOX.INI-Schalter),
+  `VS_WR` (Box-Speicher schreiben). VS_RD/VS_WR nur unter 4 MB (eine
+  Seitentabelle `pt_box`).
+- Neue Ereignisse: `VDD_EV_BG`, `VDD_EV_RESUME` (nach dem Einfrieren,
+  Pause nicht nachholen), `VDD_EV_PMHOOK` (0205h mit Vektor),
+  `VDD_EV_PMEND`. Port-Aufrufe tragen in `flags` Bit 0 „Box vorn“;
+  Wortzugriffe auf Ports über 3FFh gehen als `VDD_INW`/`VDD_OUTW` an die
+  Module (EMU8000 verträgt keine Bytes), sonst wie bisher in Bytes.
+- `VSB.VDD` (drivers/vsb.c): virtuelle SB bis DSP 4.05 mit DMA 1/5,
+  Mixer, E2h, Aufnahme (Stille), DSP-MIDI; OPL an 388h–38Bh und
+  220h–223h/228h/229h mit Durchgriff über die Bitmap und Registerkopie
+  (jetzt 512 Byte je Box im Modul statt einer eigenen Seite), Teilen
+  mit FAPI-FM-Programmen; MPU-401; EMU8000 durchgereicht. Code fast
+  unverändert aus v86.c; DMA-Daten über VS_RD/VS_WR statt VWIN.
+  `DEVICE=VSB.VDD` in der CONFIG.SYS, `DEVLOAD /U VSB` verstummt alle
+  Boxen. VCOM liest den BDA jetzt höchstens einmal je Takt und Box
+  (MIDI an 330h fiel sonst bei jedem Byte durch einen Lesezugriff).
+- KTEXT3 (v86.c) 61.102 -> 56.350 Byte (−4,7 KB), DGROUP 61.370 Byte.
+- Geprüft in QEMU (`-device sb16`, WAV-Mitschnitt): DOOM 1.9
+  `-timedemo demo1` mit SB-Effekten – Lautstärkeverlauf wie der gute Lauf
+  vor der Umstellung (leise Abschnitte, kein Dauerbrei); mit AdLib-Musik
+  (`-device adlib`) spielt die Musik die ganze Demo durch. BIOSCMP
+  unverändert (dieselben 31 Abweichungen).
+  86Box DX4-100 (486SP3C, SB16, Start von Diskette): DOOM 1.9
+  `-timedemo demo1` – Mitschnitt der Karte mit demselben Verlauf wie der
+  Bezugslauf vor der Umstellung, Spiel läuft.
+- Nächste Stufe: EMS/XMS (`VEMS.VDD`, `VXMS.VDD`) – braucht Dienste für
+  Seitentabellen der Box.

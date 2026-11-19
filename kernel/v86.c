@@ -178,34 +178,12 @@ static void pte_drop(unsigned long e)   /* Seite aus einem Eintrag frei,   */
 
 static void xms_end(int t);
 static void vga_freeze(int t);
-struct vsb {
-    unsigned char on, rst, cmd, need, nargs, args[3];
-    unsigned char out[4], on_, oh;      /* Ausgabe an 22Ah (Ring)        */
-    unsigned char spk, act, ai, irqp, aud, irql, dsp4;
-    unsigned char b16, st, sgn, ch;     /* laufende Ausgabe: 16 Bit, stereo,
-                                           mit Vorzeichen, DMA 1 (0) / 5 (1) */
-    unsigned char conv, ist;            /* auf 8 Bit mono gerechnet; Mixer 82h */
-    unsigned char noirq;                /* Leitungen ohne Handler (Bitmaske) */
-    unsigned char och, obits;           /* geoeffnetes Format            */
-    unsigned char mix_i, mix[24];       /* Mixer: Index, Register 30h-47h */
-    unsigned rate, orate, blk8, frac;   /* Rate, Blocklaenge 48h         */
-    unsigned long blk, pos;             /* Block in Bytes, Stand         */
-    unsigned long last;                 /* Kerneltakt der letzten Abrechnung */
-    unsigned dbase[2], dcnt[2], dcur[2], dleft[2];  /* DMA 1 / 5: Basis,
-                                           Laenge-1, aktuell, Rest (Einheiten) */
-    unsigned char dpage[2], dff[2];
-    unsigned char e2v, e2c;             /* DSP E2h: Wert, Zaehler        */
-    unsigned char quick;                /* kurzer Block: sofort fertig   */
-    unsigned char rec;                  /* laufender Block ist Aufnahme  */
-    unsigned char m0e;                  /* SB-Pro-Mixer 0Eh (Bit 1 stereo) */
-    unsigned char muart;                /* DSP-MIDI im UART-Betrieb (34h-37h) */
-    unsigned prate;                     /* Abtastrate je Kanal beim Start */
-};
-static struct vsb sb[NTASK];
-static void sb_stop(int t);
-static void mpu_off(int t);
-static unsigned char mpu_st[NTASK];             /* MPU-401: Bit 0 UART, 1 offen, 2 FEh wartet */
-static void sb_reset(int t);
+/* Module (VSB.VDD u. a.): virtuelle IRQ-Leitungen, Takt, Hardware vorn */
+static unsigned char virq[NTASK];       /* Leitungen 2-7 warten (Bit n)  */
+static unsigned char vidle[NTASK];      /* Leitung ruht: kein Handler     */
+static unsigned char vtk[NTASK];        /* Bit 0 Takt, 1 auch gleich      */
+static unsigned vtl[NTASK];             /* Kerneltakt des letzten Takts   */
+static unsigned char vfgr[NTASK];       /* Modul gab Hardware (vorn)     */
 static void lwin(unsigned idx, unsigned long lin);
 static void kpit_set(unsigned dv);
 static void hlt_wait(int t);
@@ -261,16 +239,9 @@ static int box_fg(int t);
 static void blink_hw(int off);
 static void spk_hw(int t, int on);
 static void spk_ports(int t, int on);
-static void opl_ports(int t, int on);
-static void emu_off(int t);
-static unsigned char emu_owner;                 /* EMU8000: Task + 1, 0 = keiner */
-static unsigned emu_base;                       /* 620h, 640h, 660h, 680h */
+static void vdd_bg(int t);
+static void vdd_tk(int t);
 static pg_t own_page(void);
-static pg_t opl_pg[NTASK];
-static unsigned char opl_trk[NTASK];            /* Bit 0 mitschreiben, 1 Kopie gilt, 2 Bank 1 benutzt */
-static unsigned char opl_idx[NTASK][2];
-unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
-static unsigned char opl_open[NTASK];
 static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
 static void vga_svmap(int t, int bg);
@@ -460,22 +431,14 @@ void __far v86_destroy(int t)
 
     if (!pd_box[t])
         return;
-    vdd_event(t, VDD_EV_DESTROY);       /* Module (VCOM.VDD)             */
+    vdd_event(t, VDD_EV_DESTROY, 0);       /* Module (VCOM.VDD)             */
     dpmi_end(t);
     if (box_ses[t] >= 0 && box_fg(t))
         kf_kbd_flush();                 /* wie v86_park                  */
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
-    opl_ports(t, 0);
-    emu_off(t);
-    if (opl_pg[t]) {
-        vp_free(opl_pg[t]);
-        opl_pg[t] = 0;
-    }
-    opl_trk[t] = 0;
-    sb_stop(t);
-    mpu_off(t);
+    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.VDD (Ereignis oben)  */
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -708,8 +671,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     pit_acc[t] = pit_t0[t] = 0;
     pit_acc_m[t] = 3;
     pit_latd[t] = pit_wlo[t] = pit_ff[t] = 0;
-    spk[t] = spk_open[t] = opl_open[t] = 0;   /* (tss_init sperrt alle Ports) */
-    sb_reset(t);
+    spk[t] = spk_open[t] = 0;           /* (tss_init sperrt alle Ports) */
+    virq[t] = vidle[t] = vtk[t] = vfgr[t] = 0;
     vt_pend[t] = 0;
     vcur[t] = vhide[t] = 0;
     vt_last[t] = get_ticks();
@@ -804,7 +767,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     vimr2[t] = 0xFF;                    /* wie nach dem BIOS: alle gesperrt */
     picw[t][0] = picw[t][1] = 0;
     pic_isr[t][0] = pic_isr[t][1] = 0;
-    vdd_event(t, VDD_EV_CREATE);        /* Module (COM/LPT: VCOM.VDD)    */
+    vdd_event(t, VDD_EV_CREATE, 0);        /* Module (COM/LPT: VCOM.VDD)    */
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -836,7 +799,7 @@ void __far v86_start(int t, int s)
 void __far v86_park(int t)
 {
     int s = box_ses[t];
-    vdd_event(t, VDD_EV_PARK);          /* Module                        */
+    vdd_event(t, VDD_EV_PARK, 0);          /* Module                        */
     if (s < 0)
         return;
     if (box_fg(t))                      /* Tasten des DOS-Programms (Spiele
@@ -848,10 +811,7 @@ void __far v86_park(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
-    opl_ports(t, 0);
-    emu_off(t);
-    sb_stop(t);
-    mpu_off(t);
+    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.VDD (Ereignis oben)  */
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -942,11 +902,10 @@ void __far v86_poll(void)
     int t, cur = -2;
 
     for (t = 0; t < NTASK; t++)         /* Lautsprecher nur vorn         */
-        if ((spk_open[t] || opl_open[t] || emu_owner == t + 1) &&
+        if ((spk_open[t] || vfgr[t]) &&
             !(box_ses[t] >= 0 && box_ses[t] == fg)) {
             spk_ports(t, 0);
-            opl_ports(t, 0);
-            emu_off(t);
+            vdd_bg(t);
         }
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
         int s = fg, ok = 0;
@@ -1305,6 +1264,86 @@ static int box_fg(int t)
     return box_ses[t] >= 0 && fg == box_ses[t];
 }
 
+/* ---- Dienste fuer die Module (VSB.VDD: Ton) -------------------------------
+   Die Nachbildung der Karte steht im Modul; hier bleibt, was den Monitor
+   selbst betrifft: virtuelle IRQ-Leitungen (zugestellt in inject und
+   dp_hwint wie die eigenen), der Takt-Rueckruf, Ports in der I/O-Bitmap
+   und das Abgeben von Hardware beim Wechsel nach hinten. */
+
+/* Modul gab der Box Hardware (OPL, EMU8000) - Box ist nicht mehr vorn */
+static void vdd_bg(int t)
+{
+    if (!vfgr[t])
+        return;
+    vfgr[t] = 0;
+    vdd_event(t, VDD_EV_BG, 0);
+}
+
+/* Takt an die Module, hoechstens einmal je Kerneltakt (oder sofort nach
+   VS_TICK 2); im Ruecksprung in die Box mit IF aus */
+static void vdd_tk(int t)
+{
+    unsigned now;
+    if (!vtk[t])
+        return;
+    now = (unsigned)get_ticks();
+    if (!(vtk[t] & 2) && now == vtl[t])
+        return;
+    vtl[t] = now;
+    vtk[t] &= 1;
+    enable_ints();
+    vdd_tick(t, box_fg(t));
+    irq_off();
+}
+
+unsigned __far v86_vsvc(int t, unsigned fn, unsigned a1, unsigned a2, unsigned a3)
+{
+    unsigned m, i, r;
+    if (t < 0 || t >= NTASK || !pd_box[t])
+        return 0xFFFF;
+    switch (fn) {
+    case VS_IRQ:                        /* Leitung a1 der Box            */
+        if (a1 < 2 || a1 > 7 || t != current)
+            return 0xFFFF;
+        m = 1 << a1;
+        if (vidle[t] & m) {             /* ruht (DOOM 1.9: DMX liest die  */
+            if (vec_def(8 + a1))        /* DMA-Stelle, der IRQ ging ueber */
+                return 1;               /* DOS/4GW zum leeren Stummel),  */
+            vidle[t] &= (unsigned char)~m;  /* bis ein Handler kommt     */
+        }
+        virq[t] |= (unsigned char)m;
+        return 0;
+    case VS_VECDEF:
+        if (t != current)
+            return 0xFFFF;
+        for (r = 0, i = 0; i < 8; i++) {
+            if (vec_def(8 + i))
+                r |= 1 << i;
+            if (pm_hooked(t, 8 + i))
+                r |= 0x100 << i;
+        }
+        return r;
+    case VS_TICK:
+        vtk[t] = (unsigned char)(a1 == 2 ? 3 : a1 ? 1 : 0);
+        return 0;
+    case VS_IOPERM:
+        for (i = 0; i < a2 && a1 + i < 0x3E0; i++) {
+            m = a1 + i;
+            if (a3)
+                tss[t].iob[m >> 3] &= (unsigned char)~(1 << (m & 7));
+            else
+                tss[t].iob[m >> 3] |= (unsigned char)(1 << (m & 7));
+        }
+        return 0;
+    case VS_FGRES:
+        vfgr[t] = (unsigned char)(a1 != 0);
+        return 0;
+    case VS_HK:
+        return box_hk[t];
+    }
+    return 0xFFFF;
+}
+
 /* Lautsprecher-Ports 42h/61h direkt freigeben (I/O-Bitmap), solange die
    Box vorn ist: Spiele (Digger) schreiben bei viel Action staendig
    dorthin, jeder Trap kostet - das Spiel wurde langsamer */
@@ -1324,741 +1363,11 @@ static void spk_ports(int t, int on)
     }
 }
 
-/* OPL (AdLib, FM-Musik) an 388h-38Bh: im Vordergrund direkt an den Chip
-   (DOOM/DMX, Spiele mit AdLib-Musik), hinten gesperrt, alle Stimmen aus */
-static void opl_wr(unsigned base, unsigned reg, unsigned val)
-{
-    unsigned i;
-    outb(base, reg);
-    for (i = 0; i < 6; i++)
-        inb(base);
-    outb(base + 1, val);
-    for (i = 0; i < 35; i++)
-        inb(base);
-}
-
-/* Registerkopie der Box (AdLib teilen): die Box schreibt sonst direkt,
-   und hat inzwischen ein FAPI-Programm gespielt, fehlen ihr beim
-   Zurueckkommen die Instrumente. Fallen auf 388h sind teuer (Treiber
-   lesen nach jedem Register 30-40-mal den Status am selben Port) - daher
-   nur, wenn es noetig ist: ein FAPI-Programm hat FM offen, wenn die Box
-   den Chip nimmt, oder DOSBOX.INI ADLIB_SHADOW=ON. Dann bleiben die
-   Ports gesperrt, port_out merkt Index und Wert (je Bank 256 Byte in
-   einer eigenen Seite) und reicht sie durch; nimmt die Box den Chip
-   wieder, laedt opl_restore ihre Kopie (Tasten los). */
-
-/* gibt es das OPL-Register? (Operatoren 0-15h je 20h-Block, Kanaele 0-8,
-   BDh, kein D0h-DFh) */
-#define OPL_REG(r)  ((r) >= 0xE0 || ((r) < 0xA0 ? ((r) & 0x1F) <= 0x15 : \
-                     (r) == 0xBD || ((r) < 0xD0 && ((r) & 0x0F) <= 8)))
-
-static void opl_restore(int t)
-{
-    unsigned char __far *c;
-    unsigned r, b, v;
-    static const unsigned first[3] = { 0x105, 0x104, 0x008 };
-    scratch_map(PG_LIN(opl_pg[t]), 511);
-    c = MK_FP(SCRATCH, 0);
-    for (r = 0; r < 3; r++)                     /* Bank 1 nur, wenn die Box */
-        if (!(first[r] & 0x100) || (opl_trk[t] & 4))    /* sie benutzt hat: */
-            opl_wr(first[r] & 0x100 ? 0x38A : 0x388, first[r] & 0xFF, c[first[r]]);
-    opl_wr(0x388, 0x01, 0x20);                  /* Wellenformen erst mit WSE an */
-    for (b = 0; b < 1 + ((opl_trk[t] >> 2) & 1); b++)   /* (OPL2: 38Ah spiegelt 388h) */
-        for (r = 0x20; r <= 0xF5; r++) {
-            if (!OPL_REG(r))
-                continue;                       /* Luecken (D0h-D8h waere */
-            v = c[b * 256 + r];                 /* in QEMU C0h-C8h!)     */
-            if (r >= 0xB0 && r <= 0xB8)
-                v &= ~0x20;                     /* Tasten los            */
-            else if (r == 0xBD)
-                v &= 0xE0;                      /* Rhythmus-Tasten los   */
-            opl_wr(b ? 0x38A : 0x388, r, v);
-        }
-    opl_wr(0x388, 0x01, c[0x01]);               /* (sonst bleibt die alte) */
-}
-
-
-/* ---- EMU8000 (Wavetable der AWE32/64) -----------------------------------
-   Spiele mit eigenem AWE-Treiber (DOOM, Duke 3D ...) sprechen den Chip
-   direkt an: Datenregister 620h/A20h/E20h (+2: A22h, E22h = Zeiger) bei
-   EMU-Basis 620h (SB 220h), 640h ... - als 16-Bit-Ports, die man nicht
-   in Bytes zerlegen darf. Die Box im Vordergrund greift ueber den Monitor
-   direkt durch (wie beim AdLib), hinten ist der Chip stumm. Die I/O-
-   Bitmap reicht nur bis 3DFh, also bleibt jeder Zugriff eine Falle. */
-
 unsigned k3_inw(unsigned port);
 #pragma aux k3_inw = "in ax,dx" __parm [__dx] __value [__ax];
 void k3_outw(unsigned port, unsigned v);
 #pragma aux k3_outw = "out dx,ax" __parm [__dx] [__ax];
-
-static int emu_port(unsigned p)
-{
-    unsigned q = p & 0x3FF;
-    return p >= 0x400 && p < 0x1000 && q >= 0x220 && q <= 0x283 && !(q & 0x1C);
-}
-
-/* Box nimmt den Chip (vorn) */
-static void emu_take(int t, unsigned p)
-{
-    emu_owner = (unsigned char)(t + 1);
-    emu_base = 0x400 | (p & 0x3E0);
-}
-
-/* hinten, Parken, Ende: alle 32 Stimmen in die Ausklingphase */
-static void emu_off(int t)
-{
-    unsigned ch, f;
-    if (emu_owner != t + 1)
-        return;
-    f = irq_off();
-    for (ch = 0; ch < 32; ch++) {
-        k3_outw(emu_base + 0x802, (5 << 5) | ch);   /* DCYSUSV (Data1) */
-        k3_outw(emu_base + 0x400, 0x807F);
-    }
-    irq_restore(f);
-    emu_owner = 0;
-}
-
-static void opl_ports(int t, int on)
-{
-    unsigned c;
-    if (on == opl_open[t])
-        return;
-    opl_open[t] = (unsigned char)on;
-    kf_box_aud(BOX_AUD_FM, on, 0);              /* FM-Programme warten   */
-    if (on) {
-        if ((opl_trk[t] & 2) && opl_pg[t])
-            opl_restore(t);                     /* eigene Instrumente    */
-        if ((box_hk[t] & HK_ADLIB) || (opl_trk[t] & 2) ||
-            kf_box_aud(BOX_AUD_FMQ, 0, 0)) {
-            if (!opl_pg[t])
-                opl_pg[t] = own_page();
-            if (opl_pg[t]) {
-                opl_trk[t] |= 1;                /* gesperrt: mitschreiben */
-                return;
-            }
-        }
-        opl_trk[t] &= ~1;
-        tss[t].iob[0x388 >> 3] &= (unsigned char)~0x0F;     /* 388h-38Bh */
-    } else {
-        tss[t].iob[0x388 >> 3] |= 0x0F;
-        for (c = 0; c < 9; c++) {               /* Tasten los            */
-            opl_wr(0x388, 0xB0 + c, 0);
-            opl_wr(0x38A, 0xB0 + c, 0);
-        }
-        opl_wr(0x388, 0xBD, 0);                 /* Rhythmus aus          */
-    }
-}
-
-
-/* ---- Virtuelle Sound Blaster 2.0 (DSP 2.01, 220h, DMA 1, IRQ 5/7) --------
-   Die Box sieht eine SB 2.0: DSP-Ports 226h/22Ah/22Ch/22Eh, 8237-Kanal 1
-   (Ports 02h/03h/0Ah/0Bh/0Ch/83h) nur virtuell. Laeuft eine DMA-Ausgabe
-   (14h einmal, 1Ch Auto-Init), holt sb_pump bei jedem Ruecksprung in die
-   Box die faelligen Bytes aus ihrem Speicher und gibt sie ueber die
-   Audio-Schnittstelle des Kernels (SB16.SYS) aus; am Blockende IRQ 5
-   bzw. 7 - welcher, entscheidet der eingehaengte Vektor (0Dh/0Fh). */
-unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b);
-static unsigned div3216(unsigned long n, unsigned d);
-#pragma aux div3216 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
-static char sb_buf[1024];              /* auch Suche in dp_patch_popf */
-
-/* Leitung der virtuellen Karte (Bitmaske): die das Programm zuletzt per
-   DPMI 0205h eingehaengt hat (DOS/4GW haengt beim Start alle ein, DMX
-   danach nur seine), sonst im Real Mode umgebogenes 0Fh -> 7, sonst 5 */
-static unsigned char sb_line(int t)
-{
-    unsigned char l;
-    if (sb[t].irql)
-        l = (unsigned char)(1 << sb[t].irql);
-    else
-        l = (unsigned char)(!vec_def(0x0F) && vec_def(0x0D) ? 0x80 : 0x20);
-    /* Leitung ohne Handler (DOOM 1.9: DMX liest die DMA-Stelle, der IRQ
-       ging ueber DOS/4GW in den Real Mode zum leeren Stummel - 55-mal je
-       Sekunde PM -> RM -> PM fuer nichts): dort nicht mehr ausloesen, bis
-       ein Real-Mode-Handler oder 0205h kommt */
-    if ((l & sb[t].noirq) && !vec_def(l == 0x80 ? 0x0F : 0x0D))
-        sb[t].noirq &= (unsigned char)~l;
-    return (unsigned char)(l & ~sb[t].noirq);
-}
-
-static void sb_put(int t, unsigned char v)
-{
-    if (sb[t].on_ < 4) {
-        sb[t].out[(sb[t].oh + sb[t].on_) & 3] = v;
-        sb[t].on_++;
-    }
-}
-
-/* Grundzustand (Box angelegt, DSP-Reset); Mixer nur beim Anlegen und
-   bei Mixer-Reset (Register 0) */
-static void sb_mixreset(struct vsb *b)
-{
-    unsigned i;
-    for (i = 0; i < sizeof(b->mix); i++)
-        b->mix[i] = 0;
-    for (i = 0; i < 6; i++)                     /* 30h-35h Lautstaerken  */
-        b->mix[i] = 0xC0;
-    b->mix[0x3C - 0x30] = 0x1F;                 /* Ausgaenge an          */
-    b->mix[0x46 - 0x30] = b->mix[0x47 - 0x30] = 0x80;
-}
-
-static void sb_reset(int t)
-{
-    struct vsb *b = &sb[t];
-    unsigned char *p = (unsigned char *)b;
-    unsigned i;
-    for (i = 0; i < sizeof(*b); i++)
-        p[i] = 0;
-    b->rate = 11025;
-    b->e2v = 0xAA;
-    sb_mixreset(b);
-}
-
-static void sb_stop(int t)
-{
-    sb[t].act = 0;
-    if (sb[t].aud) {                    /* der Kernel ordnet Ton dem Task */
-        if (current == t)       /* zu (sonst raeumt     */
-            kf_box_aud(AUD_CLOSE, 0, 0);        /* task_end auf)        */
-        sb[t].aud = 0;
-    }
-}
-
-/* ---- virtueller MPU-401 (330h/331h) ---------------------------------------
-   Die meisten Spiele kennen nur "General MIDI ueber MPU-401" im UART-
-   Betrieb. Die Box schickt ihre MIDI-Bytes ueber die Audio-FAPI an den
-   Kernel (wie die virtuelle SB) - der gibt sie an den echten MPU-401 der
-   Karte, der Vordergrund hat Vorrang, Programm/Lautstaerke je Kanal kommen
-   beim Wechsel zurueck (md_track/md_load). Intelligenter Betrieb: nur
-   bestaetigt (FEh), nicht nachgebildet. */
-static unsigned char mpu_b;                     /* ein Byte, in KDATA     */
-
-/* ein MIDI-Byte der Box (MPU-401 oder DSP-MIDI) an den Kernel */
-static void midi_send(int t, unsigned char v)
-{
-    if (!(mpu_st[t] & 2)) {                     /* erstes Byte: oeffnen  */
-        if (kf_box_aud(AUD_MIDIOPEN, 0, 0))
-            return;                             /* kein MIDI-Ausgang da   */
-        mpu_st[t] |= 2;
-    }
-    mpu_b = v;
-    kf_box_aud(AUD_MIDIWRITE, (unsigned)&mpu_b, 1);
-}
-
-static void mpu_out(int t, unsigned p, unsigned char v)
-{
-    if (p == 0x331) {                           /* Befehl                */
-        if (v == 0xFF) {                        /* Reset                 */
-            if (!(mpu_st[t] & 1))
-                mpu_st[t] |= 4;                 /* FEh nur ausserhalb UART */
-            mpu_st[t] &= (unsigned char)~1;
-            if (mpu_st[t] & 2) {                /* alles verstummt        */
-                kf_box_aud(AUD_MIDICLOSE, 0, 0);
-                mpu_st[t] &= (unsigned char)~2;
-            }
-        } else {
-            if (v == 0x3F)
-                mpu_st[t] |= 1;                 /* UART-Betrieb          */
-            mpu_st[t] |= 4;
-        }
-        return;
-    }
-    midi_send(t, v);
-}
-
-static unsigned char mpu_in(int t, unsigned p)
-{
-    if (p == 0x331)                             /* Bit 7 = 0: Byte da,   */
-        return (unsigned char)((mpu_st[t] & 4) ? 0x3F : 0xBF);  /* 6 = 0: bereit */
-    mpu_st[t] &= (unsigned char)~4;
-    return 0xFE;                                /* Bestaetigung           */
-}
-
-/* Parken, Ende: MIDI-Platz zurueckgeben (der Kernel raeumt beim Ende des
-   Tasks ohnehin auf, beim Parken lebt der Task weiter) */
-static void mpu_off(int t)
-{
-    if ((mpu_st[t] & 2) && current == t)
-        kf_box_aud(AUD_MIDICLOSE, 0, 0);
-    mpu_st[t] = 0;
-}
-
-static int sb_open(unsigned rate, unsigned ch, unsigned bits)
-{
-    static struct fapi_audfmt fmt;
-    fmt.rate = rate;
-    fmt.channels = (unsigned char)ch;
-    fmt.bits = (unsigned char)(bits | AUD_SMALL | AUD_NOWAIT);  /* Spiele: Ton
-                                       sofort, die Box schlaeft nie beim Schreiben */
-    return kf_box_aud(AUD_OPEN, (unsigned)&fmt, 0) == 0;
-}
-
-/* Ausgabe beginnen: len Bytes je Block; Format aus b16/st/sgn/ch.
-   Kann die Karte das Format nicht (SB 2.0 und 16 Bit/Stereo), geht der
-   Ton heruntergerechnet als 8 Bit mono hinaus (conv) */
-static void sb_start(int t, unsigned long len, int ai)
-{
-    struct vsb *b = &sb[t];
-    unsigned ch = b->st ? 2 : 1, bits = b->b16 ? 16 : 8;
-    if (!len)
-        return;
-    if (!b->rate)
-        b->rate = 11025;
-    /* SB Pro stereo (Mixer 0Eh, 8-Bit-Befehle): die Zeitkonstante gilt fuer
-       beide Kanaele zusammen - je Kanal die halbe Rate */
-    b->prate = b->st && b->cmd < 0xB0 ? b->rate >> 1 : b->rate;
-    if (b->rec)                                 /* Aufnahme: nichts zur  */
-        ;                                       /* Karte                 */
-    else if (!b->aud || b->orate != b->prate || b->och != ch || b->obits != bits) {
-        if (b->aud)
-            kf_box_aud(AUD_CLOSE, 0, 0);
-        b->conv = 0;
-        b->aud = (unsigned char)sb_open(b->prate, ch, bits);
-        if (!b->aud && (ch != 1 || bits != 8)) {
-            b->aud = (unsigned char)sb_open(b->prate, 1, 8);
-            b->conv = 1;
-        }
-        b->orate = b->prate;
-        b->och = (unsigned char)ch;
-        b->obits = (unsigned char)bits;
-    }
-    b->blk = len;
-    b->pos = 0;
-    b->frac = 0;
-    b->ai = (unsigned char)ai;
-    b->act = 1;
-    b->last = get_ticks();
-    /* Einzelblock kuerzer als ein Takt (Erkennung: DOTT/CT-VOICE schickt
-       1 Byte mit 14h und wartet in einer Zaehlschleife auf den IRQ - auf
-       schnellen Rechnern weit unter 10 ms): gleich beim Ruecksprung
-       fertig melden statt erst beim naechsten Takt */
-    b->quick = (unsigned char)(!ai && len <= (unsigned long)(b->prate / 100) << (b->b16 + b->st));
-}
-
-/* Vorzeichen anpassen (Karte: 8 Bit ohne, 16 Bit mit), ggf. auf 8 Bit
-   mono herunterrechnen (linker Kanal) -> Bytes zum Ausgeben */
-static unsigned sb_conv(struct vsb *b, unsigned n)
-{
-    unsigned i, o, fs;
-    unsigned char x = 0;
-    if (b->b16 && !b->sgn)
-        x = 0x80;                               /* hohes Byte kippen     */
-    else if (!b->b16 && b->sgn)
-        x = 0x80;
-    if (x)
-        for (i = b->b16; i < n; i += 1 + b->b16)
-            sb_buf[i] ^= x;
-    if (!b->conv)
-        return n;
-    fs = (1 + b->b16) * (b->st ? 2 : 1);
-    for (i = o = 0; i + fs <= n; i += fs)
-        sb_buf[o++] = (char)(b->b16 ? sb_buf[i + 1] ^ 0x80 : sb_buf[i]);
-    return o;
-}
-
-/* faellige Bytes ausgeben, Blockende -> IRQ; im Ruecksprung in die Box
-   (inject, dp_hwint) */
-static void sb_pump(int t)
-{
-    struct vsb *b = &sb[t];
-    unsigned long now, lin, n, room;
-    unsigned d, fr, u, k, w;
-    int c;
-    if (!b->act)
-        return;
-    now = get_ticks();
-    d = now - b->last > 20 ? 20 : (unsigned)(now - b->last);
-    if (b->quick && !d)
-        d = 1;
-    b->quick = 0;
-    if (!d)
-        return;
-    b->last = now;
-    fr = 0;
-    while (d--) {                               /* Abtastwerte je 10 ms  */
-        fr += b->prate / 100;
-        b->frac += b->prate % 100;
-        if (b->frac >= 100) {
-            b->frac -= 100;
-            fr++;
-        }
-    }
-    n = (unsigned long)fr << (b->b16 + b->st);  /* Bytes                */
-    c = b->ch;
-    u = 1 + c;                                  /* DMA-Einheit in Bytes  */
-    enable_ints();
-    while (n && b->act) {
-        k = (unsigned)(n > sizeof(sb_buf) ? sizeof(sb_buf) : n);
-        if (k > b->blk - b->pos)                /* bis zum Blockende     */
-            k = (unsigned)(b->blk - b->pos);
-        room = ((unsigned long)b->dleft[c] + 1) << c;
-        if (k > room)                           /* bis zum Pufferende    */
-            k = (unsigned)room;
-        if (c)
-            lin = ((unsigned long)(b->dpage[c] & 0xFE) << 16) + ((unsigned long)b->dcur[c] << 1);
-        else
-            lin = ((unsigned long)b->dpage[c] << 16) + b->dcur[c];
-        lwin(VWIN_IDX, lin);
-        if (b->rec) {                           /* Aufnahme: Stille in den */
-            unsigned char __far *q = MK_FP(VWIN, 0);   /* Puffer der Box */
-            unsigned j;
-            for (j = 0; j < k; j++)
-                q[j] = (unsigned char)(b->b16 ? 0 : b->sgn ? 0 : 0x80);
-        } else
-            far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, k);
-        if (!b->rec && b->aud && (b->spk || b->b16 || b->dsp4) && box_fg(t)) {
-            w = sb_conv(b, k);
-            if (w)
-                kf_box_aud(AUD_WRITE, (unsigned)sb_buf, w);
-        }
-        n -= k;
-        b->pos += k;
-        w = k / u;
-        b->dcur[c] += w;
-        if (w > b->dleft[c]) {                  /* Puffer zu Ende: 8237  */
-            b->dcur[c] = b->dbase[c];           /* im Auto-Init          */
-            b->dleft[c] = b->dcnt[c];
-        } else
-            b->dleft[c] -= w;
-        if (b->pos >= b->blk) {                 /* Block fertig: IRQ     */
-            b->irqp = sb_line(t);
-            b->ist |= (unsigned char)(b->b16 ? 2 : 1);
-            b->pos = 0;
-            if (!b->ai)
-                b->act = 0;
-        }
-    }
-    irq_off();
-}
-
-/* DSP E2h (DMA-Erkennung, undokumentiert): die DSP schreibt per DMA
-   (Kanal 1) ein Byte, das aus dem Argument und den vorigen E2h-Aufrufen
-   folgt; Erkennungsroutinen (z. B. CT-VOICE in DOTT) pruefen es und
-   nehmen die Karte sonst nicht.  Tabelle wie in DOSBox (GPL, src/hardware/
-   sblaster.cpp, E2_incr_table) - Verhalten der echten DSP. */
-static const signed char e2_tab[4][9] = {
-    {  1,  -2,  -4,  8, -16,  32,  64, -128, -106 },
-    { -1,   2,  -4,  8,  16, -32,  64, -128,  -91 },
-    { -1,   2,   4, -8,  16, -32, -64, -128,  105 },
-    {  1,  -2,   4, -8, -16,  32, -64, -128,   90 }
-};
-static void sb_e2(int t, unsigned char a)
-{
-    struct vsb *b = &sb[t];
-    const signed char *e = e2_tab[b->e2c & 3];
-    unsigned i;
-    for (i = 0; i < 8; i++)
-        if (a & (1 << i))
-            b->e2v = (unsigned char)(b->e2v + e[i]);
-    b->e2v = (unsigned char)(b->e2v + e[8]);
-    b->e2c++;
-    lwin(VWIN_IDX, ((unsigned long)b->dpage[0] << 16) + b->dcur[0]);
-    *(unsigned char __far *)MK_FP(VWIN, 0) = b->e2v;
-    b->dcur[0]++;                               /* 8237 zaehlt weiter    */
-    if (b->dleft[0])
-        b->dleft[0]--;
-    else {
-        b->dcur[0] = b->dbase[0];
-        b->dleft[0] = b->dcnt[0];
-    }
-}
-
-/* DSP-Befehle bis DSP 4.05 (SB16). Aufnahme liefert Stille im richtigen
-   Takt (mit IRQ und DMA-Zaehler - Programme, die aufnehmen oder damit die
-   Karte pruefen, laufen weiter); MIDI ueber die DSP (38h, UART 34h-37h)
-   geht wie der MPU-401 an den Kernel. */
-static void sb_cmd(int t, unsigned char v)
-{
-    struct vsb *b = &sb[t];
-    unsigned d;
-    if (b->muart) {                             /* UART: alles ist MIDI  */
-        midi_send(t, v);
-        return;
-    }
-    if (b->need) {                              /* Argument              */
-        b->args[b->nargs++] = v;
-        if (b->nargs < b->need)
-            return;
-        b->need = 0;
-        if (b->cmd >= 0xB0 && b->cmd <= 0xCF) { /* SB16: Bx 16, Cx 8 Bit */
-            b->rec = (unsigned char)((b->cmd & 8) != 0);    /* Bit 3: Eingang */
-            b->b16 = (unsigned char)(b->cmd < 0xC0);
-            b->ch = b->b16;                     /* 16 Bit ueber DMA 5    */
-            b->st = (unsigned char)((b->args[0] & 0x20) != 0);
-            b->sgn = (unsigned char)((b->args[0] & 0x10) != 0);
-            sb_start(t, ((unsigned long)(b->args[1] | (b->args[2] << 8)) + 1) << b->b16,
-                     (b->cmd & 4) != 0);
-            return;
-        }
-        switch (b->cmd) {
-        case 0x40:
-            d = 256 - b->args[0];
-            if (d < 16)
-                d = 16;
-            b->rate = div3216(1000000UL, d);
-            break;
-        case 0x41: case 0x42:                   /* SB16: Rate direkt     */
-            b->rate = (b->args[0] << 8) | b->args[1];
-            break;
-        case 0x48:
-            b->blk8 = (b->args[0] | (b->args[1] << 8)) + 1;
-            break;
-        case 0x14: case 0x91: case 0x24:       /* 24h: Aufnahme         */
-            b->b16 = b->sgn = b->ch = 0;
-            b->st = (unsigned char)((b->m0e & 2) != 0);
-            b->rec = (unsigned char)(b->cmd == 0x24);
-            sb_start(t, (b->args[0] | (b->args[1] << 8)) + 1UL, 0);
-            break;
-        case 0x38:                              /* MIDI-Byte senden      */
-            midi_send(t, b->args[0]);
-            break;
-        case 0xE0:
-            sb_put(t, (unsigned char)~b->args[0]);
-            break;
-        case 0xE4:
-            b->args[2] = b->args[0];            /* Testregister          */
-            break;
-        case 0xE2:
-            sb_e2(t, b->args[0]);
-            break;
-        }
-        return;
-    }
-    b->cmd = v;
-    b->nargs = 0;
-    if (v >= 0xB0 && v <= 0xCF) {
-        b->need = 3;
-        return;
-    }
-    switch (v) {
-    case 0x10: case 0x40: case 0xE0: case 0xE2: case 0xE4: case 0x38:
-        b->need = 1;
-        break;
-    case 0x14: case 0x48: case 0x91: case 0x16: case 0x17: case 0x74: case 0x75:
-    case 0x41: case 0x42: case 0x24:
-        b->need = 2;
-        break;
-    case 0x1C: case 0x90:                       /* Auto-Init mit 48h     */
-    case 0x2C: case 0x98:                       /* ... Aufnahme          */
-        b->b16 = b->sgn = b->ch = 0;
-        b->st = (unsigned char)((b->m0e & 2) != 0);
-        b->rec = (unsigned char)(v == 0x2C || v == 0x98);
-        sb_start(t, b->blk8 ? b->blk8 : 2048, 1);
-        break;
-    case 0x99:                                  /* Aufnahme einzeln (48h) */
-        b->b16 = b->sgn = b->ch = 0;
-        b->st = (unsigned char)((b->m0e & 2) != 0);
-        b->rec = 1;
-        sb_start(t, b->blk8 ? b->blk8 : 2048, 0);
-        break;
-    case 0x34: case 0x35: case 0x36: case 0x37: /* MIDI UART bis Reset   */
-        b->muart = 1;
-        break;
-    case 0x30: case 0x31:                       /* MIDI lesen: nichts da */
-        break;
-    case 0xD0: case 0xD5: b->act = 0; break;    /* anhalten              */
-    case 0xD4: case 0xD6:                       /* weiter                */
-        if (b->blk) {
-            b->act = 1;
-            b->last = get_ticks();
-        }
-        break;
-    case 0xDA: case 0xD9: b->ai = 0; break;     /* Auto-Init beenden     */
-    case 0xD1: b->spk = 1; break;
-    case 0xD3: b->spk = 0; break;
-    case 0xD8: sb_put(t, b->spk ? 0xFF : 0); break;
-    case 0xE1:                                  /* DSP 4.05 (SB16)       */
-        sb_put(t, 4); sb_put(t, 5);
-        b->dsp4 = 1;
-        break;
-    case 0xE8: sb_put(t, b->args[2]); break;
-    case 0xF2: b->irqp = sb_line(t); b->ist |= 1; break;    /* IRQ   */
-    case 0xF3: b->irqp = sb_line(t); b->ist |= 2; break;
-    }
-}
-
-/* SB-Pro-Lautstaerken (4 Bit links | 4 Bit rechts) auf die SB16-Register
-   (je Kanal 5 Bit oben): 22h Gesamt, 04h Wave, 26h FM, 28h CD, 2Eh Line */
-static unsigned char sbp_reg(unsigned char i)
-{
-    switch (i) {
-    case 0x22: return 0x30;
-    case 0x04: return 0x32;
-    case 0x26: return 0x34;
-    case 0x28: return 0x36;
-    case 0x2E: return 0x38;
-    }
-    return 0;
-}
-
-static unsigned char sb_mixget(int t, unsigned char i)
-{
-    struct vsb *b = &sb[t];
-    unsigned char l;
-    if (i == 0x80) {                            /* IRQ-Auswahl           */
-        l = sb_line(t);
-        return (unsigned char)(l & 0x80 ? 4 : 2);
-    }
-    if (i == 0x81)                              /* DMA 1 und 5           */
-        return 0x22;
-    if (i == 0x82)                              /* anstehende IRQ        */
-        return b->ist;
-    if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
-        return b->mix[i - 0x30];
-    if (i == 0x0E)
-        return b->m0e;
-    if ((l = sbp_reg(i)) != 0)                  /* SB Pro: links/rechts  */
-        return (unsigned char)((b->mix[l - 0x30] & 0xF0) | (b->mix[l + 1 - 0x30] >> 4));
-    return 0;
-}
-
-static void sb_mixset(int t, unsigned char i, unsigned char v)
-{
-    struct vsb *b = &sb[t];
-    if (i == 0)
-        sb_mixreset(b);
-    else if (i == 0x80) {                       /* Programm stellt die   */
-        if (v & 2)                              /* Leitung ein           */
-            b->irql = 5;
-        else if (v & 4)
-            b->irql = 7;
-    } else if (i >= 0x30 && i < 0x30 + sizeof(b->mix))
-        b->mix[i - 0x30] = v;
-    else if (i == 0x0E)
-        b->m0e = v;                             /* Bit 1 stereo, 5 Filter */
-    else if ((i = sbp_reg(i)) != 0) {
-        b->mix[i - 0x30] = (unsigned char)(v & 0xF0);
-        b->mix[i + 1 - 0x30] = (unsigned char)(v << 4);
-    }
-}
-
-/* 8237-Ports: Kanal 1 (8 Bit) und 5 (16 Bit) virtuell, die anderen
-   verpuffen - die echte DMA gehoert den Treibern */
-static int sb_dma_in(struct vsb *b, unsigned p, unsigned char *v)
-{
-    int c;
-    unsigned w;
-    switch (p) {
-    case 0x02: case 0x03: c = 0; break;
-    case 0xC4: case 0xC6: c = 1; break;
-    case 0x08:
-        *v = (unsigned char)(b->act && !b->ch ? 0 : 0x02);  /* TC Kanal 1 */
-        return 1;
-    case 0xD0:
-        *v = (unsigned char)(b->act && b->ch ? 0 : 0x02);   /* TC Kanal 5 */
-        return 1;
-    case 0x83: *v = b->dpage[0]; return 1;
-    case 0x8B: *v = b->dpage[1]; return 1;
-    default:
-        return 0;
-    }
-    w = (p == 0x02 || p == 0xC4) ? b->dcur[c] : b->dleft[c];
-    *v = (unsigned char)(b->dff[c] ? w >> 8 : w);
-    b->dff[c] ^= 1;
-    return 1;
-}
-
-static int sb_dma_out(struct vsb *b, unsigned p, unsigned char v)
-{
-    int c = p >= 0xC0;
-    switch (p) {
-    case 0x02: case 0xC4:                       /* Adresse               */
-        if (b->dff[c]) b->dbase[c] = (b->dbase[c] & 0xFF) | (v << 8);
-        else b->dbase[c] = (b->dbase[c] & 0xFF00) | v;
-        b->dff[c] ^= 1;
-        b->dcur[c] = b->dbase[c];
-        return 1;
-    case 0x03: case 0xC6:                       /* Laenge - 1            */
-        if (b->dff[c]) b->dcnt[c] = (b->dcnt[c] & 0xFF) | (v << 8);
-        else b->dcnt[c] = (b->dcnt[c] & 0xFF00) | v;
-        b->dff[c] ^= 1;
-        b->dleft[c] = b->dcnt[c];
-        return 1;
-    case 0x0C: case 0xD8:
-        b->dff[c] = 0;
-        return 1;
-    case 0x83: b->dpage[0] = v; return 1;
-    case 0x8B: b->dpage[1] = v; return 1;
-    case 0x00: case 0x01: case 0x04: case 0x05: case 0x06: case 0x07:
-    case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0D: case 0x0E: case 0x0F:
-    case 0xC0: case 0xC2: case 0xC8: case 0xCA: case 0xCC: case 0xCE:
-    case 0xD0: case 0xD2: case 0xD4: case 0xD6: case 0xDA: case 0xDC: case 0xDE:
-    case 0x81: case 0x82: case 0x87: case 0x89: case 0x8A: case 0x8F:
-        return 1;                               /* Maske/Modus: egal     */
-    }
-    return 0;
-}
-
-static int sb_in(int t, unsigned p, unsigned char *v)
-{
-    struct vsb *b = &sb[t];
-    switch (p) {
-    case 0x22A:
-        if (b->on_) {
-            *v = b->out[b->oh];
-            b->oh = (unsigned char)((b->oh + 1) & 3);
-            b->on_--;
-        } else
-            *v = 0xAA;
-        return 1;
-    case 0x22C:
-        *v = 0x7F;                              /* bereit                */
-        return 1;
-    case 0x22E:                                 /* auch 8-Bit-IRQ quittieren */
-        b->ist &= (unsigned char)~1;
-        *v = (unsigned char)(b->on_ ? 0xFF : 0x7F);
-        return 1;
-    case 0x22F:                                 /* 16-Bit-IRQ quittieren */
-        b->ist &= (unsigned char)~2;
-        *v = 0xFF;
-        return 1;
-    case 0x224:
-        *v = b->mix_i;
-        return 1;
-    case 0x225:
-        *v = sb_mixget(t, b->mix_i);
-        return 1;
-    case 0x226:
-        *v = 0xFF;
-        return 1;
-    }
-    return sb_dma_in(b, p, v);
-}
-
-static int sb_out(int t, unsigned p, unsigned char v)
-{
-    struct vsb *b = &sb[t];
-    switch (p) {
-    case 0x226:                                 /* Reset                 */
-        if (v & 1)
-            b->rst = 1;
-        else if (b->rst) {
-            b->rst = 0;
-            sb_stop(t);
-            b->need = 0;
-            b->muart = 0;                       /* Reset beendet UART-MIDI */
-            b->rec = 0;
-            b->on_ = b->oh = 0;
-            b->spk = 0;
-            b->ist = 0;
-            b->e2v = 0xAA;
-            b->e2c = 0;
-            sb_put(t, 0xAA);
-        }
-        return 1;
-    case 0x22C:
-        sb_cmd(t, v);
-        return 1;
-    case 0x224:
-        b->mix_i = v;
-        return 1;
-    case 0x225:
-        sb_mixset(t, b->mix_i, v);
-        return 1;
-    }
-    return sb_dma_out(b, p, v);
-}
+static char pf_buf[1024];              /* Suche in dp_patch_popf        */
 
 static void spk_hw(int t, int on)
 {
@@ -2201,33 +1510,32 @@ static void inject(struct v86_iret *r, int t)
         shf_last[t] = kf_kbd_shift();           /* Aenderung (wie das BIOS: */
         bios_shift();                           /* Speichertests legen dort */
     }                                           /* Muster ab - CheckIt)     */
-    if ((spk[t] || spk_open[t] || opl_open[t] || emu_owner == t + 1) && !box_fg(t)) {
+    if ((spk[t] || spk_open[t] || vfgr[t]) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
-        opl_ports(t, 0);
-        emu_off(t);
+        vdd_bg(t);
     }
     if (pit_rl[t])
         kpit_check(t);                          /* vorn schneller Takt   */
     vga_freeze(t);
     account(t);
-    sb_pump(t);
+    vdd_tk(t);
     if (!(vfl[t] & FL_IF) || sti_sh)
         return;
-    if (sb[t].irqp) {                           /* Sound Blaster fertig: */
-        unsigned q;                             /* IRQ 5 und 7 (welche   */
-        for (q = 5; q <= 7; q += 2) {           /* Leitung das Spiel     */
-            unsigned m = 1 << q;                /* nutzt, sieht man nicht) */
-            if (!(sb[t].irqp & m) || (visr[t] & ((m << 1) - 1)) || (vimr[t] & m))
+    if (virq[t]) {                              /* Modul (Sound Blaster) */
+        unsigned q;
+        for (q = 2; q <= 7; q++) {
+            unsigned m = 1 << q;
+            if (!(virq[t] & m) || (visr[t] & ((m << 1) - 1)) || (vimr[t] & m))
                 continue;
             if (!vec_def(8 + q)) {              /* Real-Mode-Handler     */
-                sb[t].irqp &= (unsigned char)~m;
+                virq[t] &= (unsigned char)~m;
                 visr[t] |= (unsigned char)m;
                 int_raw(r, t, 8 + q, (unsigned)r->eip);
                 return;
             }
             if (!pm_hooked(t, 8 + q))
-                sb[t].irqp &= (unsigned char)~m;    /* niemand will ihn  */
+                virq[t] &= (unsigned char)~m;   /* niemand will ihn      */
         }
     }
     if (alrm_on[t] && (unsigned)get_ticks() - alrm_tk[t] >= 50) {
@@ -3572,8 +2880,7 @@ static void vga_wait(int t)
         if (spk[t])
             spk_hw(t, 0);
         spk_ports(t, 0);
-        opl_ports(t, 0);
-        emu_off(t);
+        vdd_bg(t);
         kpit_set(0);                    /* die virtuelle SB nicht anhalten:
                                            sonst wartet das Spiel nach dem
                                            Zurueckholen ewig auf den Block-
@@ -3582,7 +2889,7 @@ static void vga_wait(int t)
         while (vga_raw[t] && (fg != box_ses[t] || hw_gfx != RAWGFX))
             kf_box_ctl(BOX_SLEEP, 2);
         irq_off();
-        sb[t].last = get_ticks();       /* Pause nicht nachholen         */
+        vdd_event(t, VDD_EV_RESUME, 0); /* Pause nicht nachholen         */
     }
     if (vga_raw[t] && vga_bgk[t])
         vga_map(t, 0);
@@ -3612,8 +2919,7 @@ static void vga_freeze(int t)
     if (spk[t])
         spk_hw(t, 0);
     spk_ports(t, 0);
-    opl_ports(t, 0);
-    emu_off(t);
+    vdd_bg(t);
     kpit_set(0);
     vga_map(t, k);
 }
@@ -3975,18 +3281,6 @@ static void vga_pout(int t, unsigned p, unsigned char v)
     }
 }
 
-/* OPL der Sound Blaster: 220h-223h (SB Pro/SB16, beide Baenke) und
-   228h/229h (OPL2-Sicht) sind derselbe Chip wie 388h-38Bh.  DOTT sucht
-   den OPL bei Basis+8 und gibt ohne ihn auch den Digitalton auf.     */
-static unsigned sb_opl(unsigned p)
-{
-    if (p >= 0x220 && p <= 0x223)
-        return p + (0x388 - 0x220);
-    if (p == 0x228 || p == 0x229)
-        return p + (0x388 - 0x228);
-    return p;
-}
-
 /* VBE-Register der Bochs-/QEMU-Karte (1CEh/1CFh, Wort): vorn frei in der
    I/O-Bitmap; faellt ein Zugriff, war die Box hinten -> warten, dann
    als Wort an die Karte (bytweise verstaende die Karte ihn nicht) */
@@ -4000,14 +3294,8 @@ static int vbe_io(int t, unsigned p)
 
 static unsigned char port_in(int t, unsigned p)
 {
-    unsigned char sv;
     unsigned o;
     int k;
-    if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
-        return sv;
-    if (p == 0x330 || p == 0x331)               /* virtueller MPU-401    */
-        return mpu_in(t, p);
-    p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t] && (vga_bgk[t] != 4 || p == 0x3DA))
             return vga_pin(t, p);               /* SVGA hinten: nur 3DAh */
@@ -4071,14 +3359,8 @@ static unsigned char port_in(int t, unsigned p)
         return 0;
     case 0x3CC:
         return 0x67;
-    case 0x388: case 0x389: case 0x38A: case 0x38B:
-        if (box_fg(t)) {                        /* OPL: vorn direkt      */
-            opl_ports(t, 1);
-            return (unsigned char)inb(p);
-        }
-        return 0xFF;
     }
-    if ((o = vdd_io(t, VDD_IN, p, 0)) != VDD_NOTMINE)  /* Module (VCOM) */
+    if ((o = vdd_io(t, VDD_IN, p, 0, box_fg(t))) != VDD_NOTMINE)  /* Module */
         return (unsigned char)o;
     return 0xFF;
 }
@@ -4086,13 +3368,6 @@ static unsigned char port_in(int t, unsigned p)
 static void port_out(int t, unsigned p, unsigned char v)
 {
     unsigned o, cur;
-    if (sb_out(t, p, v))                        /* virtuelle Sound Blaster */
-        return;
-    if (p == 0x330 || p == 0x331) {             /* virtueller MPU-401    */
-        mpu_out(t, p, v);
-        return;
-    }
-    p = sb_opl(p);
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
         if (vga_bgk[t] && vga_bgk[t] != 4)
             vga_pout(t, p, v);
@@ -4153,23 +3428,7 @@ static void port_out(int t, unsigned p, unsigned char v)
         }
         break;
     default:
-        vdd_io(t, VDD_OUT, p, v);               /* Module (VCOM)         */
-        break;
-    case 0x388: case 0x389: case 0x38A: case 0x38B:
-        if (box_fg(t)) {                        /* OPL: vorn direkt      */
-            opl_ports(t, 1);                    /* (FM-Programme erst still) */
-            if (opl_trk[t] & 1) {               /* Kopie mitschreiben    */
-                unsigned bk = (p >> 1) & 1;
-                if (!(p & 1))
-                    opl_idx[t][bk] = v;
-                else {
-                    scratch_map(PG_LIN(opl_pg[t]), 511);
-                    *(unsigned char __far *)MK_FP(SCRATCH, bk * 256 + opl_idx[t][bk]) = v;
-                    opl_trk[t] |= (unsigned char)(2 | bk << 2);   /* Bit 2: Bank 1 */
-                }
-            }
-            outb(p, v);
-        }
+        vdd_io(t, VDD_OUT, p, v, box_fg(t));    /* Module (VCOM, VSB)    */
         break;
     case 0x61:
         spk[t] = (unsigned char)(v & 3);
@@ -4302,7 +3561,6 @@ static void xms_end(int t)              /* aus v86_destroy               */
     xms_lim[t] = 0;
     xms_snap[t] = 0;
     box_hk[t] = 0;
-    opl_trk[t] = 0;                             /* Kopie gilt nicht mehr */
     idle_sens[t] = 0;
     for (i = 0; i < 6; i++)
         umb_used[t][i] = umb_head[t][i] = 0;
@@ -5590,7 +4848,8 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
     dp_npatch[t] = 0;
     cli_dt = -1;
     pvi_t[t] = 0;
-    sb[t].irql = sb[t].noirq = 0;
+    vidle[t] = 0;
+    vdd_event(t, VDD_EV_PMEND, 0);
     if (!dp_on[t])
         return;
     for (i = 0; i < NDPM; i++)
@@ -6019,10 +5278,9 @@ static unsigned dp31(struct v86_frame *f, int t)
             else
                 pm_hk[t] |= 1u << BL;
         }
-        if (BL == 0x0D || BL == 0x0F) {         /* Sound Blaster: zuletzt */
-            sb[t].irql = (unsigned char)(BL == 0x0D ? 5 : 7);   /* eingehaengt */
-            sb[t].noirq &= (unsigned char)~(1 << sb[t].irql);
-        }
+        if (BL >= 8 && BL < 16)                 /* Leitung hat einen Handler */
+            vidle[t] &= (unsigned char)~(1 << (BL - 8));
+        vdd_event(t, VDD_EV_PMHOOK, BL);        /* (VSB: Leitung der SB) */
         return 0;
     }
     case 0x0300: case 0x0301: case 0x0302: {    /* Real Mode aufrufen    */
@@ -6359,7 +5617,7 @@ static void vme_out(struct v86_iret *r, int t)
     if (pvi_ok && !dp_on[t] && !(box_hk[t] & HK_PVI) && !(r->eflags & FL_TF)) {
         if (vfl[t] & FL_IF)
             r->eflags |= FL_VIF;
-        else if (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])
+        else if (vt_pend[t] || virq[t] || kq_h[t] != kq_t[t])
             r->eflags |= FL_VIP;
         irb_set(t, 0x21);               /* gehoert INT 21h/29h dem DOS,  */
         irb_set(t, 0x29);               /* ohne Falle durch die IVT;     */
@@ -6395,7 +5653,7 @@ static void pvi_out(struct v86_iret *r, int t)
         return;
     if (vfl[t] & FL_IF)
         r->eflags |= FL_VIF;
-    else if (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])
+    else if (vt_pend[t] || virq[t] || kq_h[t] != kq_t[t])
         r->eflags |= FL_VIP;                    /* STI soll trappen      */
 }
 
@@ -6404,7 +5662,7 @@ static void dp_hwint(struct v86_iret *r, int t)
     if (!dp_on[t] || (r->cs & 3) != 3)
         return;
     account(t);
-    sb_pump(t);
+    vdd_tk(t);
     if (!(vfl[t] & FL_IF)) {
         /* PUSHF/CLI/.../POPF: das POPF trappt in Ring 3 nicht und laesst
            das IF stehen - das virtuelle IF bliebe fuer immer aus (DMX in
@@ -6425,13 +5683,13 @@ static void dp_hwint(struct v86_iret *r, int t)
         dp_push(r, t, 8);
         return;
     }
-    if (sb[t].irqp) {                           /* Sound Blaster (DMX)   */
+    if (virq[t]) {                              /* Modul (DMX: SB)       */
         unsigned q;
-        for (q = 5; q <= 7; q += 2) {
+        for (q = 2; q <= 7; q++) {
             unsigned m = 1 << q;
-            if ((sb[t].irqp & m) && !(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m) &&
+            if ((virq[t] & m) && !(visr[t] & ((m << 1) - 1)) && !(vimr[t] & m) &&
                 pm_hooked(t, 8 + q)) {
-                sb[t].irqp &= (unsigned char)~m;
+                virq[t] &= (unsigned char)~m;
                 visr[t] |= (unsigned char)m;
                 dp_push(r, t, 8 + q);
                 return;
@@ -6647,13 +5905,13 @@ static void dp_patch_popf(int t, unsigned long lin)
         cli_nd = NCLID;                 /* Ueberlauf: alle 16 gelten     */
     r = (unsigned char)(r - 8);                 /* POP reg -> PUSH reg   */
     lwin(VWIN_IDX, lin + 1);
-    far_copy(KDATA, (unsigned)sb_buf, VWIN, 0, sizeof(sb_buf));
-    for (i = 1; i < sizeof(sb_buf); i++) {
-        if ((unsigned char)sb_buf[i - 1] != r)
+    far_copy(KDATA, (unsigned)pf_buf, VWIN, 0, sizeof(pf_buf));
+    for (i = 1; i < sizeof(pf_buf); i++) {
+        if ((unsigned char)pf_buf[i - 1] != r)
             continue;
-        if ((unsigned char)sb_buf[i] == 0xF4 && dp_patched(t, lin + 1 + i))
+        if ((unsigned char)pf_buf[i] == 0xF4 && dp_patched(t, lin + 1 + i))
             return;                             /* schon erledigt        */
-        if ((unsigned char)sb_buf[i] == 0x9D) {
+        if ((unsigned char)pf_buf[i] == 0x9D) {
             lwr(lin + 1 + i, 0xF4, 1);
             dp_patch[t][dp_npatch[t]++] = lin + 1 + i;
             return;
@@ -6718,8 +5976,9 @@ static unsigned dp_trap(struct v86_frame *f, int t)
             /* IRQ 3-7 ohne Handler auch im Real Mode: gleich quittieren
                statt PM -> RM -> PM (der Stummel tut dort nichts) */
             visr[t] &= (unsigned char)~(1 << (n - 8));
-            if ((n == 0x0D || n == 0x0F) && !(box_hk[t] & HK_IDLE))  /* SB: Leitung */
-                sb[t].noirq |= (unsigned char)(1 << (n - 8));   /* ruht */
+            if (!(box_hk[t] & HK_IDLE))         /* Leitung ruht: ein Modul */
+                vidle[t] |= (unsigned char)(1 << (n - 8));  /* (SB) loest  */
+                                                /* sie nicht mehr aus     */
             return 0;
         }
         return dp_reflect(f, t, n);
@@ -6775,18 +6034,9 @@ static unsigned dp_trap(struct v86_frame *f, int t)
                 AX = k3_inw(n);
             else
                 AL = (unsigned char)inb(n);
-        } else if (emu_port(n)) {               /* EMU8000: als Wort     */
-            if (box_fg(t)) {
-                emu_take(t, n);
-                if (op & 1)
-                    AX = k3_inw(n);
-                else
-                    AL = (unsigned char)inb(n);
-            } else if (op & 1)
-                AX = 0xFFFF;
-            else
-                AL = 0xFF;
-        } else if (op & 1)
+        } else if (n >= 0x400 && (op & 1))     /* ueber 3FFh als Wort an */
+            AX = vdd_io(t, VDD_INW, n, 0, box_fg(t));   /* die Module (EMU8000) */
+        else if (op & 1)
             AX = port_in(t, n) | (port_in(t, n + 1) << 8);
         else
             AL = port_in(t, n);
@@ -6799,15 +6049,9 @@ static unsigned dp_trap(struct v86_frame *f, int t)
                 k3_outw(n, AX);
             else
                 outb(n, AL);
-        } else if (emu_port(n)) {
-            if (box_fg(t)) {
-                emu_take(t, n);
-                if (op & 1)
-                    k3_outw(n, AX);
-                else
-                    outb(n, AL);
-            }
-        } else {
+        } else if (n >= 0x400 && (op & 1))
+            vdd_io(t, VDD_OUTW, n, AX, box_fg(t));
+        else {
             port_out(t, n, AL);
             if (op & 1)
                 port_out(t, n + 1, AH);
@@ -7224,21 +6468,11 @@ static unsigned monitor(struct v86_frame *f, int t)
                 AX = k3_inw(p);
             else
                 AL = (unsigned char)inb(p);
-        } else if (emu_port(p)) {               /* EMU8000: Worte; 32 Bit */
-            unsigned lo = 0xFFFF, hi = 0xFFFF;  /* = zwei Wortzugriffe   */
-            if (box_fg(t)) {
-                emu_take(t, p);
-                if (op & 1) {
-                    lo = k3_inw(p);
-                    if (o32)
-                        hi = k3_inw(p + 2);
-                } else
-                    lo = inb(p);
-            }
-            if (!(op & 1))
-                AL = (unsigned char)lo;
-            else if (o32)
-                f->eax = ((unsigned long)hi << 16) | lo;
+        } else if (p >= 0x400 && (op & 1)) {   /* ueber 3FFh als Wort an */
+            unsigned fb = box_fg(t), lo;        /* die Module (EMU8000); */
+            lo = vdd_io(t, VDD_INW, p, 0, fb);  /* 32 Bit = zwei Worte   */
+            if (o32)
+                f->eax = ((unsigned long)vdd_io(t, VDD_INW, p + 2, 0, fb) << 16) | lo;
             else
                 AX = lo;
         } else if (op & 1) {
@@ -7266,17 +6500,11 @@ static unsigned monitor(struct v86_frame *f, int t)
                 k3_outw(p, AX);
             else
                 outb(p, AL);
-        } else if (emu_port(p)) {
-            if (box_fg(t)) {
-                emu_take(t, p);
-                if (!(op & 1))
-                    outb(p, AL);
-                else {
-                    k3_outw(p, AX);
-                    if (o32)
-                        k3_outw(p + 2, (unsigned)(f->eax >> 16));
-                }
-            }
+        } else if (p >= 0x400 && (op & 1)) {
+            unsigned fb = box_fg(t);
+            vdd_io(t, VDD_OUTW, p, AX, fb);
+            if (o32)
+                vdd_io(t, VDD_OUTW, p + 2, (unsigned)(f->eax >> 16), fb);
         } else {
             port_out(t, p, AL);
             if (op & 1)
@@ -7781,7 +7009,7 @@ unsigned __far v86_exc(struct v86_frame *f)
         inject(&f->r, t);
         if (f->r.cs == ocs && f->r.eip == oip)
             mou_cb(f, t, 0);            /* Maus-Ereignis an den Rueckruf */
-        if (sti_sh && (vt_pend[t] || sb[t].irqp || kq_h[t] != kq_t[t])) {
+        if (sti_sh && (vt_pend[t] || virq[t] || kq_h[t] != kq_t[t])) {
             sti_step[t] = 1;            /* nach dem naechsten Befehl     */
             f->r.eflags |= FL_TF;
         }

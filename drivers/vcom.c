@@ -27,11 +27,19 @@ static struct vuart {
 static unsigned lpt_h[NT];              /* Handle + 1                    */
 static unsigned char lpt_n[NT];         /* fuer welchen Port             */
 static unsigned short bda[8];           /* 0400h-040Fh der Box           */
+static unsigned bda_t = 0xFFFF, bda_tk; /* fuer welche Box, wann gelesen */
 static struct vdd_svc sv;
 static struct vdd_reg reg;
 
+/* hoechstens einmal je Kerneltakt und Box (MIDI an 330h, Ton an 388h
+   fallen sonst bei jedem Byte durch einen Lesezugriff) */
 static void bda_get(unsigned t)
 {
+    unsigned now = ticks();
+    if (t == bda_t && now == bda_tk)
+        return;
+    bda_t = t;
+    bda_tk = now;
     sv.fn = VS_RD;
     sv.task = t;
     sv.lin = 0x400;
@@ -161,7 +169,8 @@ static unsigned io(void __far *a)
     struct vdd_call __far *c = a;
     unsigned t = c->task;
     int k;
-    if (t >= NT || c->port < 0x278 || c->port > 0x3FF)
+    if (t >= NT || c->port < 0x278 || c->port > 0x3FF ||
+        c->fn == VDD_INW || c->fn == VDD_OUTW)
         return VDD_NOTMINE;             /* schnell: Joystick 201h u. a.,
                                            ohne den BDA zu lesen (Basen
                                            der Karten: 278h-3FFh)        */
@@ -203,6 +212,7 @@ static unsigned int_fn(void __far *a)
     unsigned t = c->task, dx = c->dx;
     if (t >= NT)
         return VDD_NOTMINE;
+    bda_t = 0xFFFF;                             /* frisch lesen          */
     bda_get(t);
     if (c->port == 0x14) {                      /* seriell: keine Daten,  */
         if (dx > 3 || !bda[dx])                 /* Senden laeuft ab       */
@@ -235,6 +245,7 @@ static unsigned event(void __far *a)
     unsigned t = c->task, i;
     if (t >= NT)
         return 0;
+    bda_t = 0xFFFF;
     if (c->fn == VDD_EV_CREATE || c->fn == VDD_EV_DESTROY) {
         lpt_h[t] = 0;                   /* Handle schliesst task_end      */
         lpt_cr[t][0] = lpt_cr[t][1] = lpt_cr[t][2] = 0;

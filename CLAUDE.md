@@ -42,8 +42,12 @@ Kernel, Gewinn < 3 KB, heißer Pfad). Stufe 1 (Modulrahmen + VCOM.VDD)
 erledigt, Stand und Prüfung in `docs/VDD.md` „Stand: Stufe 1“. Neue
 Module: Treiber mit `DH_VDDREG`, Kernelseite `kernel/vdd.c` (KTEXT4),
 Box-Speicher lesen über `v86_xfer(..., 1)` (`v86_copy` SCHREIBT in die
-Box – beim ersten Versuch überschrieb VS_RD so den BDA der Box). Nächste
-Stufe: Ton (`VSB.VDD`).
+Box – beim ersten Versuch überschrieb VS_RD so den BDA der Box). Stufe 2
+(Ton als `VSB.VDD`: SB16/OPL/MPU/AWE, Dienste VS_IRQ/VS_TICK/VS_IOPERM/
+VS_FGRES/VS_AUD, KTEXT3 56.350 Byte) erledigt, geprüft QEMU + 86Box DX4
+(DOOM-Timedemo mit Mitschnitt). Nächste Stufe: EMS/XMS. Testfalle: von
+Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –
+DOS-Programme melden dann „Befehl oder Dateiname nicht gefunden“.
 
 AT-DOS 6.1 ist fertig (Entscheidung des Nutzers, 17.11.2026: „dann
 spricht eigentlich nichts gegen die 6.1“): Zweig `6.1` = Stand der

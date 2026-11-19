@@ -40,8 +40,8 @@ unsigned __far kf_kbd_shift(void) { return kbd_shift(); }
 void __far kf_kbd_flush(void) { kbd_flush(); }
 void __far kf_klog(unsigned s, unsigned o, unsigned n) { klog(s, o, n); }
 int __far kf_vio_ansi(int s, unsigned on) { return vio_ansi(s, on); }
-unsigned box_aud(unsigned fn, unsigned a, unsigned b);
-unsigned __far kf_box_aud(unsigned fn, unsigned a, unsigned b) { return box_aud(fn, a, b); }
+unsigned box_aud(unsigned usel, unsigned fn, unsigned a, unsigned b);
+unsigned __far kf_box_aud(unsigned usel, unsigned fn, unsigned a, unsigned b) { return box_aud(usel, fn, a, b); }
 void __far kf_vio_tty(int s, unsigned sel, unsigned off, unsigned len) { vio_tty(s, sel, off, len); }
 void __far kf_vio_setmode(int s, int full, int owner) { vio_setmode(s, full, owner); }
 void __far kf_vio_setcur(int s, int row, int col) { vio_setcur(s, row, col); }

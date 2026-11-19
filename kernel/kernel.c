@@ -4594,11 +4594,11 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
     return r;
 }
 
-/* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (v86.c), Puffer in
-   KDATA, ohne Kernelsperre wie FAPI_AUDIO */
+/* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (VSB.VDD ueber
+   vdd.c), Puffer im DS des Moduls, ohne Kernelsperre wie FAPI_AUDIO */
 static void fm_box(int on);
 static unsigned fm_count(void);
-unsigned box_aud(unsigned fn, unsigned a, unsigned b)
+unsigned box_aud(unsigned usel, unsigned fn, unsigned a, unsigned b)
 {
     if (fn == BOX_AUD_FM) {             /* Box nimmt/gibt den OPL-Chip   */
         fm_box(a);
@@ -4606,7 +4606,7 @@ unsigned box_aud(unsigned fn, unsigned a, unsigned b)
     }
     if (fn == BOX_AUD_FMQ)
         return fm_count();
-    return aud_fapi(KDATA, fn, a, b);
+    return aud_fapi(usel, fn, a, b);
 }
 
 /* Dienste fuer den V86-Monitor (v86.c, zweites Codesegment) */

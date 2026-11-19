@@ -16,6 +16,7 @@
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
 
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
+unsigned __far kf_box_aud(unsigned usel, unsigned fn, unsigned a, unsigned b);
 int  __far kf_box_ctl(unsigned op, unsigned a);
 
 /* Fernaufruf cs:ip mit DS = ds, ES:BX = es:bx -> AX (wie net.c) */
@@ -77,7 +78,7 @@ void __far vdd_drop(int d)
 
 /* Port, den der Monitor nicht kennt: IN -> Wert, OUT -> 0; VDD_NOTMINE,
    wenn kein Modul ihn nimmt */
-unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val)
+unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val, int fgb)
 {
     struct vdd_call c;                  /* Kernelstapel (SS = KDATA): das
                                            Modul darf ueber VS_FAPI schlafen */
@@ -91,9 +92,10 @@ unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val)
         c.task = (unsigned)t;
         c.port = port;
         c.val = val;
+        c.flags = (unsigned)fgb;
         r = vd_call(CS(i), vt[i].io_off, DS(i), KDATA, (unsigned)&c);
         if (r != VDD_NOTMINE)
-            return fn == VDD_IN ? c.val : 0;
+            return fn == VDD_IN || fn == VDD_INW ? c.val : 0;
     }
     return VDD_NOTMINE;
 }
@@ -120,8 +122,8 @@ unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c)
     return VDD_NOTMINE;
 }
 
-/* Ereignis der Box an alle Module */
-void __far vdd_event(int t, unsigned ev)
+/* Ereignis der Box an alle Module (val: VDD_EV_PMHOOK Vektor) */
+void __far vdd_event(int t, unsigned ev, unsigned val)
 {
     struct vdd_call c;
     unsigned i;
@@ -130,8 +132,26 @@ void __far vdd_event(int t, unsigned ev)
             continue;
         c.fn = ev;
         c.task = (unsigned)t;
-        c.port = c.val = 0;
+        c.port = 0;
+        c.val = val;
         vd_call(CS(i), vt[i].ev_off, DS(i), KDATA, (unsigned)&c);
+    }
+}
+
+/* Takt an die Module, die ihn wollen (v86.c ruft nur, wenn eins fuer diese
+   Box VS_TICK gesetzt hat; IF an) */
+void __far vdd_tick(int t, int fgb)
+{
+    struct vdd_call c;
+    unsigned i;
+    for (i = 0; i < NVDD; i++) {
+        if (!vt_drv[i] || !vt[i].tick_off)
+            continue;
+        c.fn = VDD_TICK;
+        c.task = (unsigned)t;
+        c.port = c.val = 0;
+        c.flags = (unsigned)fgb;        /* Bit 0: Box vorn               */
+        vd_call(CS(i), vt[i].tick_off, DS(i), KDATA, (unsigned)&c);
     }
 }
 
@@ -153,10 +173,18 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx)
         return 0xFFFF;
     switch (k.fn) {
     case VS_RD:                         /* Box-Speicher -> Puffer        */
+    case VS_WR:                         /* Puffer -> Box-Speicher        */
+        if (k.lin >= 0x400000UL || k.len > 0x400000UL - k.lin)
+            return 0xFFFF;              /* nur die Seitentabelle pt_box  */
         win_save(w);
-        v86_xfer(k.task, k.lin, dsel, k.buf, k.len, 1);
+        v86_xfer(k.task, k.lin, dsel, k.buf, k.len, k.fn == VS_RD);
         win_restore(w);
         return 0;
+    case VS_AUD:                        /* Ton im Namen der Box          */
+        if (k.ffn < 0xFE && (int)k.task != kf_box_ctl(BOX_TASK, 0))
+            return 0xFFFF;              /* (der Kernel ordnet Ton dem
+                                           laufenden Task zu)            */
+        return kf_box_aud(dsel, k.ffn, k.a1, k.a2);
     case VS_FAPI:                       /* im Namen der Box (current)    */
         n = k.len > VDD_FBUF ? VDD_FBUF : k.len;
         a[0] = k.a1;
@@ -173,5 +201,7 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx)
             fcopy(MK_FP(dsel, k.buf), vs_buf, n);
         return r;
     }
+    if (k.fn >= VS_IRQ && k.fn <= VS_HK)        /* Zustand der Box       */
+        return v86_vsvc(k.task, k.fn, k.a1, k.a2, k.a3);
     return 0xFFFF;
 }

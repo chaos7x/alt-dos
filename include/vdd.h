@@ -32,6 +32,7 @@ struct vdd_reg {
     unsigned short int_off;         /* Interrupts aus ints[]             */
     unsigned short ev_off;          /* Ereignisse VDD_EV_*               */
     unsigned char  ints[VDD_NINT];  /* Vektoren (0 = frei)               */
+    unsigned short tick_off;        /* Takt (VS_TICK), 0 = keiner         */
 };
 #define VDDF_ANYPORT    0x01        /* io_off fuer jeden Port, den der
                                        Kernel nicht selbst behandelt (das
@@ -45,15 +46,26 @@ struct vdd_call {
     unsigned short val;             /* OUT: Wert; Rueckgabe IN: Wert     */
     unsigned short ax, bx, cx, dx;  /* INT: Register der Box (ein/aus)   */
     unsigned short si, di, ds, es;
-    unsigned short flags;           /* INT: FLAGS der Box (CF = Bit 0)   */
+    unsigned short flags;           /* INT: FLAGS der Box (CF = Bit 0);
+                                       IN/OUT: Bit 0 = Box vorn          */
 };
 #define VDD_IN          1           /* -> AX = Wert, VDD_NOTMINE        */
 #define VDD_OUT         2           /* -> 0, VDD_NOTMINE                */
 #define VDD_INT         3           /* -> 0 erledigt (Register in der
                                           Struktur), VDD_NOTMINE weiter  */
+#define VDD_INW         4           /* Port ueber 3FFh als Wort (EMU8000) */
+#define VDD_OUTW        5
+#define VDD_TICK        6           /* Takt: mit IF an, im Zusammenhang
+                                       der Box (current), vor der Rueckkehr */
 #define VDD_EV_DESTROY  0x10        /* Box endet (Handles schliessen)    */
 #define VDD_EV_PARK     0x11        /* Box wird geparkt (Programmende)   */
 #define VDD_EV_CREATE   0x12        /* Box angelegt (Zustand zuruecksetzen) */
+#define VDD_EV_BG       0x13        /* Box nicht mehr vorn: Hardware, die
+                                       das Modul ihr gab (VS_FGRES), zurueck */
+#define VDD_EV_RESUME   0x14        /* Box war eingefroren und laeuft
+                                       weiter (Pause nicht nachholen)    */
+#define VDD_EV_PMHOOK   0x15        /* DPMI 0205h: val = Vektor          */
+#define VDD_EV_PMEND    0x16        /* DPMI-Programm zu Ende             */
 #define VDD_NOTMINE     0xFFFF
 
 /* Dienste des Kernels fuer das Modul (DH_VDDSVC) */
@@ -76,5 +88,24 @@ struct vdd_svc {
                                        buf (len Byte, kopiert hin und
                                        zurueck) -> AX wie die FAPI      */
 #define VDD_FBUF        128
+/* nur im Zusammenhang der Box (task = current; Ports, Takt):          */
+#define VS_IRQ          4           /* a1 = Leitung 2-7: virtueller IRQ  ->
+                                       0, 1 = ruht (kein Handler, verworfen) */
+#define VS_VECDEF       5           /* -> Bit n: Vektor von IRQ n (0-7)
+                                       steht im Real Mode auf dem Stummel;
+                                       Bit 8+n: im PM eingehaengt (DPMI) */
+#define VS_TICK         6           /* a1 = 0 aus, 1 je Takt, 2 je Takt und
+                                       beim naechsten Ruecksprung        */
+#define VS_IOPERM       7           /* Ports a1..a1+a2-1 (unter 3E0h) in der
+                                       I/O-Bitmap: a3 = 1 frei, 0 Falle  */
+#define VS_FGRES        8           /* Modul gab der Box Hardware: beim
+                                       Wechsel nach hinten kommt VDD_EV_BG */
+#define VS_AUD          9           /* Audio-FAPI ffn(a1, a2), Puffer im DS
+                                       des Moduls (a1 Offset) -> AX; ffn
+                                       FFh/FEh: Box nimmt/gibt den OPL,
+                                       FAPI-Programme mit FM (auch ohne
+                                       current) */
+#define VS_HK           10          /* -> Schalter aus DOSBOX.INI (HK_*)  */
+#define VDD_HK_ADLIB    16          /* ADLIB_COPY=ON                     */
 
 #endif
