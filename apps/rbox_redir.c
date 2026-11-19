@@ -533,7 +533,10 @@ static void ext_act(unsigned act)
     ss = sda16(0x266);
     w16(word2, act);
     poke(lin(ss, sp + 4), word2, 2);
-}
+    word2[0] = 0;                       /* EXTOPEN_ON (SDA+2D6h): MS-DOS */
+    poke(sda_lin + 0x2D6, word2, 1);    /* loescht es nach dem Redirector */
+}                                       /* selbst, PC DOS 6.3/2000 nicht  */
+                                        /* und traegt sonst 1 ein         */
 
 static int op(unsigned fn)
 {

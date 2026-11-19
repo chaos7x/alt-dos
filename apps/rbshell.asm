@@ -75,7 +75,14 @@ start:
         jne     .exec                           ; nach dem ersten Prompt
         cmp     word [pb_tail], tailx           ; meldet RBREADY.COM "bereit",
         jne     .exec                           ; AT-DOS kommt nach vorn
-        mov     word [pb_tail], tailk
+        cmp     byte [nok], 0                   ; DOS vor 6.0 kennt /K nicht
+        je      .k                              ; (der Pfad dahinter gaelte
+        push    dx                              ; als Suchpfad - dann erbt
+        mov     ah, 0x17                        ; COMMAND.COM die Umgebung
+        int     0xE0                            ; nicht): selbst melden
+        pop     dx
+        jmp     .exec
+.k:     mov     word [pb_tail], tailk
 .exec:  mov     bx, pblock
         mov     ax, 0x4B00
         int     0x21
@@ -135,7 +142,12 @@ other_dos:
         mov     ah, 0x30
         int     0x21
         cmp     bh, 0xFD                ; FreeDOS: alles wie bisher
-        pop     ax
+        je      .fd
+        cmp     al, 6                   ; COMMAND.COM vor DOS 6.0: kein /K
+        jae     .fd
+        mov     byte [nok], 1
+.fd:    pop     ax
+        cmp     bh, 0xFD
         je      .r
         mov     al, [shellx]            ; Startlaufwerk (AL ist hier schon
         mov     [od_drv], al            ; ueberschrieben)
@@ -225,6 +237,7 @@ copyz:  lodsb                           ; ... mit der Null
         jnz     copyz
         ret
 od_drv: db      0
+nok:    db      0                       ; 1: COMMAND.COM ohne /K
 iname:  times   13 db 0
 obase:  times   32 db 0
 s_mdos: db      ":\DOS\MDOS\", 0

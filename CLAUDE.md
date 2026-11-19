@@ -57,7 +57,15 @@ RBOX, über den Monitor eingetippt) für MS-DOS 5.0/6.0/6.20/6.22 und PC DOS
 2000; FreeDOS-RBOX per `bioscmp.sh … rbox` unverändert; SET mit PROMPT/
 PATH. 86Box SCAT (286, 4 MB, Start von Diskette, C: über IDE.SYS): MS-DOS
 5.00 startet in RBOX, SET/DIR, BIOSCMP – DOS-Teil gleich wie in QEMU,
-übrig nur das BIOS des SCAT. Dazu NumLock in kbd.c wie main (acfb3d5; in QEMU geprüft: Ziffernblock ohne Num Pfeile, mit Num `12-+/`).
+übrig nur das BIOS des SCAT. Danach (vom Nutzer gemeldet: MS-DOS 5 mit PROTECTONLY=NO schaltete nicht
+zurück zu AT-DOS, PATH/PROMPT fehlten): COMMAND.COM kennt `/K` erst ab DOS
+6.0 (MS-DOS 6.0, PC DOS 6.x) – MS-DOS/PC DOS 5 hielt den Pfad hinter /K
+für einen Suchpfad, erbte die Umgebung nicht und führte RBREADY nie aus.
+RBSHELL (`nok`) meldet „bereit“ bei DOS < 6 selbst (INT E0h 17h) und
+startet COMMAND.COM ohne /K. In QEMU und 86Box (386DX/40, 4 MB,
+PROTECTONLY=NO) geprüft: AT-DOS kommt von selbst nach vorn, Alt+Esc ->
+MS-DOS 5.00 mit PATH/PROMPT. Dazu 6Ch-Aktionscode unter PC DOS 6.3/2000
+(EXTOPEN_ON, SDA+2D6h, wie main; in QEMU geprüft). Dazu NumLock in kbd.c wie main (acfb3d5; in QEMU geprüft: Ziffernblock ohne Num Pfeile, mit Num `12-+/`).
 
 Laufwerke lokal, FCB-Suche (Entscheidung des Nutzers, 18.11.2026, wie
 auf main): FreeDOS-Kern (8086) mit `freedos/patches/fcb-search.patch`

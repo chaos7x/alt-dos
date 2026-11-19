@@ -103,10 +103,14 @@ als erstes Argument (mit Suchpfad erbt es die Umgebung nicht – MS-DOS 4.0
 INIT.ASM `CHKSRCHSPEC`), dazu `PROMPT=$P$G`. Redirector wie auf main
 (`\` am Ende, REN mit Platzhaltern, FCB, 6Ch). `tools/doscmp.sh` vergleicht
 BIOSCMP unter dem DOS direkt mit RBOX: MS-DOS 5.0/6.0/6.20/6.22, PC DOS
-5.0/6.3/2000 – DOS-Teil gleich, offen 6Ch bei PC DOS 6.3/2000 (wie main).
+5.0/6.3/2000 – DOS-Teil gleich.
 Übrig die bekannten Abweichungen der Kompatibilitätsbox (Platten und
 erweiterter Speicher unsichtbar, XMS von RBHMA, SHARE im Redirector,
 CuteMouse). 86Box SCAT (286): MS-DOS 5.00 in RBOX, DOS-Teil gleich.
+COMMAND.COM von DOS 5 kennt `/K` nicht (erst ab 6.0) – RBSHELL nimmt es
+dort nicht (PROTECTONLY=NO meldet RBSHELL selbst „bereit“). 6Ch unter PC
+DOS 6.3/2000: der Redirector löscht EXTOPEN_ON (SDA+2D6h) wie MS-DOS,
+seitdem DOS-Teil bei allen sieben Versionen gleich.
 
 ## Bestand: BIOS der DOS-Box (6.x)
 
