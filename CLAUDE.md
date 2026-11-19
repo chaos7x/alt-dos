@@ -5812,6 +5812,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eigene, noch offene Ausgabedatei als verlorene Kette).
   86Box hat kein e1000 (nur i8255x) – E1000 ungeprüft in 86Box, VMware,
   VirtualBox und auf echter Hardware.
+  SNTP (6.2, 19.11.2026; `apps/task_sntp.c` + arcutil.o): eine Anfrage
+  (Version 4, Modus 3) an UDP 123, drei Versuche, Antwort Modus 4, Stratum
+  0 oder LI 3 = ungültig; Zeit = Sendezeit des Servers + halbe Laufzeit
+  (DosQTicks). TZ nach POSIX (Name auch `<+0530>`, Versatz hh[:mm[:ss]],
+  Regeln nur `Mm.w.d[/Zeit]`, Süd-Halbkugel über Beginn > Ende); ohne TZ
+  CET/CEST. Stellen: auf die nächste gerade Sekunde warten (FAT-Zeit hat
+  2-s-Schritte), DosSetDateTime. In QEMU gegen einen NTP-Testserver
+  (Python, feste Zeiten) geprüft: Juli/Januar in CET, UTC0, EST5EDT,
+  AEST/AEDT, IST-5:30; Umschalten MEZ/MESZ am 29.3. und 25.10.2026,
+  EDT/EST am 1.11.; nach dem Stellen Abweichung 0 s; ohne Server
+  ERRORLEVEL 1. Testfalle: in CMD ist `<` Umleitung – `SET TZ=<+0530>…`
+  geht nur in der CONFIG.SYS. Kein Kernelteil geändert, DosSetDateTime
+  wie bei DATE/TIME – kein 86Box-Lauf. Offen: DHCP-Option 42 (NTP-Server).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach

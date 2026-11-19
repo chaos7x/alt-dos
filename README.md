@@ -271,6 +271,12 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   (NAWS); ohne ECHO des Servers Zeilenbetrieb mit eigenem Echo (SMTP,
   POP3 …). Pfeil-, Bild-, Pos1/Ende- und F1–F4-Tasten als VT100-Folgen,
   `-b` sendet ^H statt DEL. Strg+] beendet
+- `SNTP [Server] [/N] [/Q] [/W:s] [-4|-6]` stellt die Uhr aus dem Netz
+  (SNTP, Server aus `%NTPSERVER%`, sonst pool.ntp.org; `/N` nur
+  anzeigen). Zeitzone über `TZ` im POSIX-Format wie Unix/DJGPP, z. B.
+  `SET TZ=EST5EDT,M3.2.0,M11.1.0`; ohne TZ Mitteleuropa mit Sommerzeit
+  (`CET-1CEST,M3.5.0,M10.5.0/3`). Die Uhr hält wie bei DOS Ortszeit,
+  gestellt wird auf die volle Sekunde; Beispiel in AUTOEXEC.CMD
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;

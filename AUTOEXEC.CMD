@@ -13,4 +13,7 @@ REM Gewohnte Namen von Linux (ll, ls, cat, cp, mv, rm, ...):
 REM DOSKEY /MACROFILE=C:\DOS\LINUX.MAC
 REM Regeln der Firewall (nur wenn TCPIP.SYS geladen ist):
 FIREWALL /LOAD /Q
+REM Uhr aus dem Netz stellen (Zeitzone: SET TZ=CET-1CEST,M3.5.0,M10.5.0/3):
+REM IPCONFIG /WAIT:10 > NUL
+REM SNTP /Q
 PROMPT $P$G

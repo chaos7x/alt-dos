@@ -33,3 +33,4 @@ history=DOSKEY /HISTORY
 nano=EDIT $*
 vi=EDIT $*
 mc=FM $*
+ntpdate=SNTP $*
