@@ -39,6 +39,13 @@ neu gebaut; RBSHELL fängt die Laufwerks-IOCTL ab, Werte über INT E0h
 nicht). Geprüft: BIOSCMP in QEMU (rbox) und 86Box SCAT (B: als
 Wechselmedium FAT12).
 
+Disketten ohne 55AAh (19.11.2026, wie auf main, gefunden mit CheckIt Pro
+1.11 – dessen Disketten schrieb das Kopierprogramm „DUPLICAT“ ohne
+Kennung): fat.c `fat_mount` nimmt einen Bootsektor mit Sprung EBh/E9h
+auch ohne 55AAh (wie MS-DOS). In QEMU geprüft (`dir a:` zeigt die
+Dateien). Die übrigen CheckIt-Korrekturen von main betreffen den V86-
+Monitor – die Kompatibilitätsbox läuft im echten Real Mode.
+
 SHARE in der Kompatibilitätsbox (Wunsch des Nutzers, 18.11.2026, wie
 auf main): rbox_redir.c `sh[16]`/`lk[8]` – mehrfach geöffnete Datei =
 ein Handle von AT-DOS (SFT+0Bh = E000h | Platz), Freigabemodi (20h),
