@@ -325,7 +325,31 @@ Systemdateien. `5.x` = Weiterarbeit, die CI
 veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.4 fertig (Zweig 5.4), Weiterarbeit in 5.x; 5.3.x/5.2/5.1/5.0 in ihren Zweigen
+## Aktueller Stand: AT-DOS 5.5 in der Prüfung (Zweig 5.5), 5.4 fertig (Zweig 5.4), Weiterarbeit in 5.x
+
+5.5 (Wunsch des Nutzers, 19.11.2026: „Falls da noch was aus 6.2 fehlen
+sollte, noch backporten. Branch erstellen.“ – er testet; Fehler werden
+auf `5.5` und `5.x` behoben, danach Release `v5.5`): 5.4 plus das Netz
+aus 6.2. Kernel: `kernel/net.c` (KTEXT2 statt KTEXT4; Task und Programm-
+name über `kf_net_who`, weil `task[]` hier static ist), `OF_SOCK`,
+`kf_sock_new/id`, DevHlp 23–31 (DH_NETREG … DH_KLOG), FAPI 5Bh, net_poll
+im Scheduler-Durchlauf (kein preempt – kooperativ), DETACH ohne Konsole
+(`task.nocon`, `EXEC_DETACH`), DH_CLAIM -> 0 und PCIREAD/PCIWRITE -> 1
+ausdrücklich (vorher fiel CLAIM auf FFFFh = „belegt“: NE2000 fand keine
+Karte). Vorladen bis vor die EBDA (preload.c wie 6.x, sonst passte
+TCPIP.SYS nicht mehr). Treiber/Stapel/Werkzeuge wörtlich von main:
+NE2000.SYS, TCPIP.SYS (beide schon 286), PING, IPCONFIG, NSLOOKUP, NC,
+NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP – nur auf der Platte (Diskette
+24 KB frei), FIREWALL.INI in \DOS\SYSTEM. XCOPY /I. FAPI_VERSION 0532h
+(VER „5.50“). CI: Zweig `5.5` -> Testfassung `test-5.5`. Kernel danach
+Code 64.582 + 47.729, Daten 47.696 Byte. Geprüft: QEMU isapc 4 MB mit
+ne2k_isa (DHCP, SLAAC, PING, WGET 1 MB und chunked, NC-Upload 1 MB – MD5
+gleich, XCOPY /I, DETACH NC nimmt keine Tasten, fsck sauber) und 86Box
+SCAT (286/25 MHz, 4 MB, NE2000 300h/IRQ 10, SLiRP; Start von Diskette,
+DEVLOAD NE2000/TCPIP von C: – „16 Bit“, DHCP, link-lokale IPv6-Adresse,
+PING, WGET 1 MB mit 54 KB/s, NC-Upload 1 MB, MD5 beider gleich, DETACH NC
+lauscht, VER danach normal, NETSTAT zeigt ihn, SHUTDOWN, fsck sauber).
+
 
 5.3.1 (Entscheidung des Nutzers, 15.11.2026): Fehlerbehebungen aus 6.0 –
 `load_driver` gab einen Treiber ohne Gerät nicht frei (`n` = Seiten-

@@ -222,6 +222,188 @@ struct fapi_drvinfo {
 };
 #define FAPI_LOOP           0x59    /* BX = LOOP_*, CX/DX siehe dort: Datei als
                                        Laufwerk (6.1, LOOP) */
+#define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
+                                       CX = Parameterblock, DX = Groesse;
+                                       ohne Netz FAPI_ERR_NONET */
+#define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
+#define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
+#define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->
+                                       0, FAPI_ERROR hinter der letzten */
+#define NET_PING            2       /* struct fapi_ping: ICMP-Echo, wartet
+                                       bis Antwort/Fehler/Frist -> 0,
+                                       FAPI_ERR_TIMEOUT, FAPI_ERROR      */
+#define NET_DHCP            3       /* struct fapi_netcmd: arg 0 erneuern,
+                                       1 freigeben -> 0                  */
+/* Adressen immer 16 Byte: IPv4 als ::ffff:a.b.c.d (RFC 4291) */
+#define AF_INET             2
+#define AF_INET6            10
+struct fapi_netaddr {
+    unsigned char  a[16];
+    unsigned char  plen;            /* Praefixlaenge (IPv4: 96 + Maske) */
+    unsigned char  kind;            /* NA_*                             */
+};
+#define NA_STATIC           1
+#define NA_DHCP             2
+#define NA_LINK             3       /* IPv6 link-lokal                  */
+#define NA_SLAAC            4
+#define NET_MAXADDR         4
+struct fapi_netif {
+    unsigned short ifc;             /* Eingabe: Karte 0..               */
+    char           name[12];        /* Treiber, z. B. "RTL8139"         */
+    unsigned char  mac[6];
+    unsigned short mtu, irq, io;
+    unsigned short link;            /* Bit 0 Verbindung, Bit 1 voll-
+                                       duplex, Bits 8-15 Mbit/10        */
+    unsigned short naddr;
+    struct fapi_netaddr addr[NET_MAXADDR];
+    unsigned char  gw4[16], gw6[16];
+    unsigned char  dns[2][16];
+    unsigned char  dhcp[16];        /* DHCP-Server, 0 = fest            */
+    unsigned long  lease;           /* Restzeit in Sekunden             */
+    unsigned long  rx_ok, tx_ok, rx_err, tx_err, rx_drop;
+    char           host[32], domain[32];
+};
+struct fapi_ping {
+    unsigned char  addr[16];        /* Ziel                             */
+    unsigned short len;             /* Nutzdaten (0..1472)              */
+    unsigned short timeout;         /* ms                               */
+    unsigned short seq;
+    unsigned short ttl_out;         /* 0 = Vorgabe 64                   */
+    /* Rueckgabe */
+    unsigned short rtt;             /* ms                               */
+    unsigned char  ttl;
+    unsigned char  type;            /* 0 Antwort, sonst ICMP-Typ (3 =
+                                       unerreichbar, 11 = TTL)         */
+    unsigned char  code;
+    unsigned char  rsv;
+    unsigned char  from[16];
+};
+struct fapi_netcmd {
+    unsigned short ifc;
+    unsigned short arg;
+};
+#define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
+                                       (DNS, Zahlenadressen direkt) -> 0,
+                                       FAPI_ERROR (unbekannt), TIMEOUT    */
+#define NET_FWCTL           5       /* struct fapi_fwctl: Firewall
+                                       (FIREWALL.EXE) -> 0 / Regelnummer  */
+#define NET_SOCKLIST        6       /* struct fapi_sockinfo, idx vorgeben
+                                       (NETSTAT) -> 0, FAPI_ERROR dahinter */
+/* Firewall: eingehend gesperrt ausser Antworten und Regeln (nur
+   Erlaubnisse); ausgehend frei. Regel: Programm ("*" = jedes), Protokoll,
+   Ports, Herkunft (Netz/Praefix, FWR_LOCAL = eigenes Netz der Karte). */
+#define FW_GET              0       /* Zustand, Zaehler; idx < nrules: Regel */
+#define FW_SET              1       /* on = 0 aus, 1 an                     */
+#define FW_ADD              2       /* r -> AX = Nummer                     */
+#define FW_DEL              3       /* idx                                  */
+#define FW_CLEAR            4       /* alle Regeln weg                      */
+#define FW_LOG              5       /* on = Abgewiesenes ins DMESG          */
+#define FWP_ANY             0
+#define FWP_ICMP            1
+#define FWP_TCP             6
+#define FWP_UDP             17
+#define FWR_LOCAL           0x01    /* Herkunft: eigenes Netz               */
+struct fapi_fwrule {
+    char           prog[13];        /* "NC.EXE", "*" = jedes Programm   */
+    unsigned char  proto;           /* FWP_*                            */
+    unsigned short lo, hi;          /* Ports (ICMP: ohne Bedeutung)     */
+    unsigned char  net[16];         /* Herkunft (IPv4 als ::ffff:..)    */
+    unsigned char  plen;            /* Praefix (IPv4: 96 + n), 0 = alle */
+    unsigned char  flags;           /* FWR_*                            */
+    unsigned long  hits;            /* durchgelassen                    */
+};
+struct fapi_fwctl {
+    unsigned char  op, on;          /* FW_*; Rueckgabe on = Zustand     */
+    unsigned short idx;
+    unsigned char  log, rsv;
+    unsigned long  drop, pass;      /* abgewiesen / per Regel erlaubt   */
+    unsigned short nrules, maxrules;
+    struct fapi_fwrule r;
+};
+struct fapi_sockinfo {
+    unsigned short idx;             /* Eingabe: Platz 0..               */
+    unsigned char  type;            /* 0 frei, SOCK_STREAM, SOCK_DGRAM  */
+    unsigned char  state;           /* TCP: TS_* (0 geschlossen, 1 lauscht,
+                                       2 SYN gesendet, 3 SYN empfangen,
+                                       4 verbunden, 5/6 FIN_WAIT1/2,
+                                       7 CLOSE_WAIT, 8 CLOSING, 9 LAST_ACK,
+                                       10 TIME_WAIT)                   */
+    unsigned char  family, task;
+    unsigned short lport, rport;    /* Hostbytefolge                    */
+    unsigned char  laddr[16], raddr[16];
+    char           prog[13];
+    unsigned char  rsv;
+    unsigned short rq, sq;          /* Bytes im Empfangs-/Sendepuffer   */
+};
+/* Sockets (wie BSD). Sie sind Handles: DosRead/DosWrite/DosClose gehen,
+   beim Programmende schliesst der Kernel sie. SOCKET/ACCEPT -> Handle. */
+#define NET_SOCKET          0x10    /* struct fapi_socket -> Handle         */
+#define NET_BIND            0x11    /* struct fapi_sockio: h, addr          */
+#define NET_CONNECT         0x12    /* h, addr, timeout                     */
+#define NET_LISTEN          0x13    /* h, len = Warteschlange               */
+#define NET_ACCEPT          0x14    /* h, timeout -> neues Handle, addr     */
+#define NET_SEND            0x15    /* h, buf, len, flags -> Bytes          */
+#define NET_RECV            0x16    /* h, buf, len, flags, timeout -> Bytes
+                                       (0 = Gegenseite hat geschlossen)     */
+#define NET_SENDTO          0x17    /* wie SEND, Ziel in addr               */
+#define NET_RECVFROM        0x18    /* wie RECV, Absender nach addr         */
+#define NET_SHUTDOWN        0x19    /* h, len = 0 lesen/1 schreiben/2 beides */
+#define NET_GETNAME         0x1A    /* h -> addr (eigene)                   */
+#define NET_GETPEER         0x1B    /* h -> addr (Gegenseite)               */
+#define NET_SETOPT          0x1C    /* h, len = SO_*, flags = Wert          */
+#define NET_GETOPT          0x1D    /* h, len = SO_* -> AX = Wert           */
+#define NET_SELECT          0x1E    /* struct fapi_select: auf mehrere
+                                       Sockets warten -> Zahl der bereiten,
+                                       0 = Frist abgelaufen                */
+#define NSEL_MAX            8
+#define SEL_READ            0x01    /* Daten, Ende der Gegenseite, ACCEPT  */
+#define SEL_WRITE           0x02    /* Platz im Sendepuffer / verbunden    */
+#define SEL_ERR             0x04    /* Fehler, abgebrochen (immer gemeldet) */
+struct fapi_select {
+    unsigned short n;               /* Eintraege (1..NSEL_MAX)          */
+    unsigned short timeout;         /* ms; 0 = nur nachsehen, FFFFh = ewig */
+    struct {
+        unsigned short h;           /* Handle                           */
+        unsigned char  want;        /* SEL_READ | SEL_WRITE             */
+        unsigned char  ready;       /* Rueckgabe                        */
+    } e[NSEL_MAX];
+};
+#define FAPI_ERR_AGAIN      0xFFF5  /* nicht blockierend: noch nichts da   */
+#define FAPI_ERR_RESET      0xFFF4  /* Verbindung abgelehnt/abgebrochen    */
+#define SOCK_STREAM         1       /* TCP                                  */
+#define SOCK_DGRAM          2       /* UDP                                  */
+#define SO_NONBLOCK         1       /* Wert 1 = nicht blockierend           */
+#define SO_RCVTIMEO         2       /* Vorgabefrist in ms (0 = ewig)        */
+#define SO_BROADCAST        3       /* UDP an 255.255.255.255 erlaubt       */
+#define SO_V6ONLY           4       /* AF_INET6 nimmt kein IPv4             */
+#define MSG_PEEK            0x02
+/* Adresse wie BSD/RFC 3493: sockaddr_in (16 Byte) ist der Anfang von
+   sockaddr_in6 (28 Byte); Port in Netzbytefolge (htons) */
+struct fapi_sockaddr {
+    unsigned char  len, family;     /* family AF_INET / AF_INET6        */
+    unsigned short port;            /* Netzbytefolge                    */
+    unsigned char  a4[4];           /* AF_INET: Adresse; AF_INET6: flowinfo */
+    unsigned char  a6[16];          /* AF_INET6: Adresse                */
+    unsigned long  scope;
+};
+struct fapi_socket {
+    unsigned short family, type, proto;
+};
+struct fapi_sockio {
+    unsigned short h;
+    unsigned short buf;             /* Puffer im DS des Programms       */
+    unsigned short len;
+    unsigned short flags;
+    unsigned short timeout;         /* ms, 0 = Vorgabe des Sockets      */
+    struct fapi_sockaddr addr;
+};
+struct fapi_resolve {
+    char           name[128];
+    unsigned short family;          /* 0 = beliebig, AF_INET, AF_INET6  */
+    unsigned short count;           /* Rueckgabe: Adressen              */
+    unsigned long  ttl;             /* Rueckgabe: Sekunden              */
+    unsigned char  addr[4][16];
+};
 #define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
                                        feste VHD), DX = Laufwerk 2..25 oder 0
                                        = naechster freier, | LOOP_RO nur
@@ -604,9 +786,10 @@ struct fapi_fsinfo2 {
 #define FAPI_ERR_DENIED     0xFFFB  /* Attribut verbietet es / nicht leer */
 #define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
+#define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
 #define FAPI_ERR_FIRST      0xFFF0
 
-#define FAPI_VERSION        0x0528  /* 5.40 (Nebenversion dezimal) */
+#define FAPI_VERSION        0x0532  /* 5.50 (Nebenversion dezimal) */
 #define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
 #define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */
@@ -615,6 +798,8 @@ struct fapi_fsinfo2 {
 #define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
 #define EXEC_ASYNC          1       /* eigene Sitzung, laeuft nebenher    */
 #define EXEC_BG             2       /* diese Sitzung, laeuft nebenher (Pipes) */
+#define EXEC_DETACH         3       /* losgeloest (DETACH): ohne Konsole, Eingabe
+                                       NUL, Kbd/Mou -> FAPI_ERR_NOCON; Kinder erben */
 #define EXEC_ERR_NOTFOUND   1
 #define EXEC_ERR_NOMEM      2
 #define EXEC_ERR_FORMAT     3

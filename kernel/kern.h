@@ -148,6 +148,16 @@ int __far loop_write(int dev, unsigned long lba);
 int __far loop_drop(int dev);
 void __far loop_sync_all(void);
 int __far loop_room(int dev);
+/* net.c (KTEXT2): Netzwerk, Vermittlung Karte <-> Stapel (5.5, aus 6.2) */
+unsigned __far net_devhlp(unsigned fn, int d, unsigned dsel, unsigned bx, unsigned cx);
+void __far net_poll(void);
+unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n);
+int __far net_inuse(int d);
+void __far net_drop(int d);
+unsigned __far net_srw(unsigned id, int wr, unsigned usel, unsigned off, unsigned n);
+void __far net_sclose(unsigned id);
+unsigned __far kf_sock_new(unsigned id);       /* kernel.c: Socket -> Handle */
+unsigned __far kf_sock_id(unsigned h);
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
     unsigned char  unit;

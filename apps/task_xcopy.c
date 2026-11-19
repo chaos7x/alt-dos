@@ -2,13 +2,16 @@
 /*
  * XCOPY.EXE - Dateien und Verzeichnisbaeume kopieren (wie MS-DOS 6):
  *
- *   XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/K] [/Y | /-Y]
+ *   XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/I] [/K] [/Y | /-Y]
  *
  *   /A  nur Dateien mit Archiv-Attribut      /M  dasselbe, Attribut danach weg
  *   /P  vor jeder Datei fragen               /S  Unterverzeichnisse (nicht leere)
  *   /E  auch leere Unterverzeichnisse        /Y  vorhandene Ziele ohne Frage
  *   /K  Attribute behalten (sonst wird Schreibgeschuetzt zurueckgesetzt wie
  *       bei NT - wichtig beim Kopieren von CD, dort ist alles schreibgeschuetzt)
+ * /I wie Windows NT: fehlt das Ziel und werden mehrere Dateien kopiert, ist
+ *     es ein Verzeichnis (das galt hier ohnehin) - fuer Stapeldateien aus
+ *     NT/Windows. Ein Ziel mit \ am Ende ist immer ein Verzeichnis.
  * Versteckte und System-Dateien werden wie bei MS-DOS nicht kopiert. Datum
  * und Uhrzeit bleiben erhalten.
  */
@@ -167,16 +170,18 @@ void main(void)
             case 'S': opt_s = 1; break;
             case 'E': opt_e = opt_s = 1; break;
             case 'K': opt_k = 1; break;
+            case 'I': break;                /* wie NT, s. oben             */
             case 'Y': yes_all = 1; break;
             case 'V': case 'W': break;      /* angenommen, ohne Wirkung */
             case '-': yes_all = 0; break;
             case '?':
                 puts("Kopiert Dateien und Verzeichnisb\x84ume.\r\n\r\n"
-                     "XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/K] [/Y | /-Y]\r\n\r\n"
+                     "XCOPY Quelle [Ziel] [/A | /M] [/P] [/S [/E]] [/I] [/K] [/Y | /-Y]\r\n\r\n"
                      "  /A  nur Dateien mit Archiv-Attribut\r\n"
                      "  /M  wie /A, Archiv-Attribut der Quelle danach l\x94schen\r\n"
                      "  /P  vor jeder Datei fragen\r\n"
                      "  /S  Unterverzeichnisse (au\xE1" "er leeren)   /E  auch leere\r\n"
+                     "  /I  fehlendes Ziel ist ein Verzeichnis (wie NT; Ziel\\ ebenso)\r\n"
                      "  /K  Attribute behalten (sonst wird Schreibschutz entfernt)\r\n"
                      "  /Y  vorhandene Ziele ohne Frage \x81" "berschreiben\r\n");
                 return;
@@ -219,7 +224,9 @@ void main(void)
     if (src[slen_src - 1] == '\\')
         slen_src--;                     /* "C:\" -> Rest beginnt mit \ */
     if (!is_dir(dst)) {
-        if (!has_wild(pat) && !opt_s && !dwild) {
+        unsigned dl = slen(d_arg);
+        if (!has_wild(pat) && !opt_s && !dwild &&
+            !(dl && (d_arg[dl - 1] == '\\' || d_arg[dl - 1] == '/'))) {
             puts("Gibt ");
             puts(d_arg);
             puts(" einen Dateinamen oder ein Verzeichnis an\r\n(D = Datei, V = Verzeichnis)? ");

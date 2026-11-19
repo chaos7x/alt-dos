@@ -20,6 +20,7 @@
 #endif
 #include "ifs.h"
 #include "../include/drv.h"
+#include "../include/net.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT        16
@@ -105,6 +106,7 @@ struct task {
     unsigned long block_id;                     /* ProcBlock: Ereignis       */
     unsigned long block_until;                  /* ProcBlock: Frist, 0 = keine */
     unsigned char code_gone;                    /* Code verworfen (5.4)     */
+    unsigned char nocon;                        /* EXEC_DETACH: ohne Konsole (erbt) */
 };
 
 static struct task    task[NTASK];
@@ -139,6 +141,7 @@ struct ofile {
 #define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
 #define OF_NUL  7           /* NUL                                      */
 #define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
+#define OF_SOCK 9           /* Socket (TCPIP.SYS), f.first = Nummer im Stapel */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 static struct ofile __far *files;
@@ -2000,6 +2003,20 @@ static int env_set(int t, const char *entry)
    'from' (oder A:\ bei from < 0). -> Tasknummer oder -(EXEC_ERR_*)    */
 static void of_ref(int k);
 static void of_release(int k);
+static int of_alloc(void);
+static unsigned char exec_nocon;        /* naechster task_create: DETACH  */
+
+/* Losgeloester Task: Eingabe von der Konsole wird NUL (wie "< NUL") */
+static void nocon_std(int t)
+{
+    int k;
+    if (files[task[t].std[0]].kind != OF_CON || (k = of_alloc()) < 0)
+        return;
+    files[k].kind = OF_NUL;
+    files[k].owner = -1;
+    of_release(task[t].std[0]);
+    task[t].std[0] = (unsigned char)k;
+}
 
 static int task_create(const char *cmd, int session, int parent, int from)
 {
@@ -2042,6 +2059,11 @@ static int task_create(const char *cmd, int session, int parent, int from)
         task[t].std[i] = from >= 0 ? task[from].std[i] : CONS;
         of_ref(task[t].std[i]);
     }
+    task[t].nocon = exec_nocon ||               /* DETACH, auch die Kinder */
+        (from >= 0 && task[from].nocon && task[from].session == session);
+    exec_nocon = 0;
+    if (task[t].nocon)
+        nocon_std(t);
     task[t].state   = T_READY;
     return t;
 }
@@ -2325,6 +2347,7 @@ static void sched(int keep)
             shutdown();
         now = get_ticks();
         fd_tick();                      /* Diskettenmotoren aus          */
+        net_poll();                     /* Netz: Nachlauf des Stapels    */
         vio_flush();                    /* Programm wartet: Bild zeigen  */
         vio_status();
         any = 0;
@@ -2591,7 +2614,9 @@ static void of_release(int k)
             if (was)                    /* Sauber-Bit ist geloescht: beim */
                 vol[o->f.drive].in_use = 1; /* Herunterfahren wieder setzen */
         }
-    } else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
+    } else if (o->kind == OF_SOCK)
+        net_sclose((unsigned)o->f.first);   /* Socket im Stapel schliessen */
+    else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
 }
@@ -2717,6 +2742,35 @@ static int h2e(unsigned h)
     if (h >= NFILE || !files[h].refs || files[h].owner != current)
         return -1;
     return (int)h;
+}
+
+/* Sockets (net.c): Eintrag fuer Socket id anlegen -> Handle, Handle ->
+   id (FFFFh = kein Socket des laufenden Programms) */
+unsigned __far kf_sock_new(unsigned id)
+{
+    int k = of_alloc();
+    if (k < 0)
+        return 0xFFFF;
+    files[k].kind = OF_SOCK;
+    files[k].f.first = id;
+    return k + HBASE;
+}
+
+unsigned __far kf_sock_id(unsigned h)
+{
+    int k = current >= 0 ? h2e(h) : -1;
+    return k >= 0 && files[k].kind == OF_SOCK ? (unsigned)files[k].f.first : 0xFFFF;
+}
+
+/* net.c (KTEXT2): laufender Task und sein Programmname (Firewall) */
+unsigned __far kf_net_who(char *prog)
+{
+    unsigned k = 0;
+    if (current >= 0)
+        for (; k < 13 && task[current].name[k]; k++)
+            prog[k] = task[current].name[k];
+    prog[k] = 0;
+    return (unsigned)current;
 }
 
 static void yield(void)
@@ -3015,13 +3069,13 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
-    case FAPI_QTICKS:
+    case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
         k = h2e(a1);
         return k >= 0 && (files[k].kind == OF_CON || files[k].kind == OF_PRD ||
-                          files[k].kind == OF_PWR);
+                          files[k].kind == OF_PWR || files[k].kind == OF_SOCK);
     }
     return 0;
 }
@@ -3117,6 +3171,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return kbd_shift();
 
     case FAPI_KBDCHARIN:
+        if (task[current].nocon)
+            return FAPI_ERR_NOCON;              /* DETACH: keine Tastatur */
         for (;;) {
             if (vio_fg() == s && (k = kbd_get()) >= 0)
                 return k;
@@ -3128,7 +3184,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         }
 
     case FAPI_KBDPEEK:
-        if (vio_fg() == s && (k = kbd_peek()) >= 0)
+        if (!task[current].nocon && vio_fg() == s && (k = kbd_peek()) >= 0)
             return k;
         return 0;
 
@@ -3170,10 +3226,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             vio_focus(ns);
             return 0;
         }
+        exec_nocon = a2 == EXEC_DETACH;
         t = task_create(buf, s, current, current);
+        exec_nocon = 0;
         if (t < 0)
             return -t;
-        if (a2 == EXEC_BG) {                    /* Pipe: nicht warten    */
+        if (a2 == EXEC_BG || a2 == EXEC_DETACH) {   /* Pipe/DETACH: nicht warten */
             task[t].bg = 1;
             return 0;
         }
@@ -3270,6 +3328,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_COM:
             t = com_io(k, usel, a2, a3, 1);
             return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
+        case OF_SOCK:
+            return net_srw((unsigned)files[k].f.first, 1, usel, a2, a3);
         }
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -3541,6 +3601,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return 0;                       /* nichts zu lesen           */
         case OF_COM:
             return (unsigned)com_io(k, usel, a2, a3, 0);
+        case OF_SOCK:
+            return net_srw((unsigned)files[k].f.first, 0, usel, a2, a3);
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
@@ -3681,6 +3743,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_DRIVER:                           /* DEVLOAD               */
         return drv_fapi(usel, a1, a2, a3);
+
+    case FAPI_NET:                              /* Netzwerk (TCPIP.SYS)  */
+        return net_fapi(usel, a1, a2, a3);
 
     case FAPI_KLOG:                             /* DMESG                 */
         if (a2 && !user_ok(usel, a1, a2, 1))
@@ -4085,6 +4150,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_MOUOPEN:
+        if (task[current].nocon)
+            return FAPI_ERR_NOCON;
         return vio_mou_open(s, current);
 
     case FAPI_MOUREADEVENT: {
@@ -5521,6 +5588,8 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
     unsigned n, f;
     int d;
 
+    if (fn >= DH_NETREG && fn <= DH_NETKICK)    /* Netzwerk (net.c)     */
+        return net_devhlp(fn, drv_of(dsel), dsel, bx, cx);
     switch (fn) {
     case DH_SETIRQ:
         d = drv_of(dsel);
@@ -5577,6 +5646,9 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         vio_tty(boot_session, dsel, bx, n);
         klog(dsel, bx, n);
         return 0;
+    case DH_KLOG:                       /* nur ins Protokoll (DMESG)     */
+        klog(dsel, bx, cx > 200 ? 200 : cx);
+        return 0;
     case DH_TICKS:
         return (unsigned)get_ticks();
     case DH_DELAY:
@@ -5609,8 +5681,13 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         for (n = 0; n < 16; n++)
             ((unsigned char __far *)MK_FP(dsel, cx))[n] = bios_fdpt[bx * 16 + n];
         return 0;
+    case DH_CLAIM:                      /* 5.x fuehrt keine Belegungsliste */
+        return 0;
+    case DH_PCIREAD:                    /* kein PCI auf 5.x (drv.h)      */
+    case DH_PCIWRITE:
+        return 1;
     }
-    return 0xFFFF;
+    return 0xFFFF;                      /* auch PCIFIND/PCICLASS: keins  */
 }
 
 /* nachgeladene Dateisysteme (IFS=): Treiberplatz und Medienklassen */
@@ -5710,6 +5787,7 @@ static int load_driver(const char *line, int is_ifs)
         gdt[DRVC_IDX(d) + 1].access = 0;
         mem_free(u, n);
         drv[d].used = 0;
+        net_drop(d);
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
@@ -6074,6 +6152,8 @@ static unsigned drv_unload(int d)
 
     if ((f = drives_busy(m, mi < 0 ? d : -1)) != 0)
         return f;
+    if (net_inuse(d))                   /* Karte, an der TCPIP.SYS haengt */
+        return FAPI_ERR_INUSE;
     if (aud_drv == d)
         for (k = 0; k < NFM; k++)       /* NAUD == NFM                   */
             if (aud[k].task >= 0 || fmc[k].task >= 0 || mdc[k].task >= 0)
@@ -6127,6 +6207,7 @@ static unsigned drv_unload(int d)
         vio_mou_unreg();
         mou_drv = -1;
     }
+    net_drop(d);
     mem_free(drv[d].unit, drv[d].cnt);
     gdt[DRVC_IDX(d)].access = 0;
     gdt[DRVC_IDX(d) + 1].access = 0;
@@ -6710,7 +6791,7 @@ void kmain(void)
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "AT-DOS 5.4 - 80286 Protected Mode\n");
+    vio_kputs(s0, "AT-DOS 5.5 - 80286 Protected Mode\n");
     vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
     udec(mem_free_kb(), num);
     vio_kputs(s0, num);

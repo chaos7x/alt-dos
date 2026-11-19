@@ -883,7 +883,7 @@ static unsigned exec(unsigned off, unsigned mode)
     static char path[80], tail[130];
     char __far *s = AP(off);
     unsigned i = 0, k = 0, last = 0, dot = 0;
-    if (mode == EXEC_BG)
+    if (mode == EXEC_BG || mode == EXEC_DETACH)
         return EXEC_ERR_NOSLOT;         /* DOS hat keine Pipes           */
     while (*s == ' ')
         s++;

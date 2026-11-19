@@ -132,9 +132,10 @@ void main(void)
         }
         puts(name);
         puts(rc == FAPI_ERR_INUSE ? ": auf seinen Laufwerken ist noch etwas offen (Dateien,\r\n"
-                                    "  aktuelles Laufwerk eines Programms, SUBST/JOIN) oder der Ton l\x84uft\r\n" :
+                                    "  aktuelles Laufwerk eines Programms, SUBST/JOIN), der Ton l\x84uft oder\r\n  TCPIP.SYS benutzt die Netzwerkkarte (erst DEVLOAD /U TCPIP)\r\n" :
              rc == FAPI_ERR_DENIED ? ": tr\x84gt das Startlaufwerk, bleibt geladen\r\n" :
-             rc == FAPI_ERR_NOTREADY ? ": kann nicht entladen werden (der Treiber kennt es nicht)\r\n" :
+             rc == FAPI_ERR_NOTREADY ? ": kann gerade nicht entladen werden (der Treiber lehnt ab oder\r\n"
+                                       "  kennt es nicht; TCPIP: Verbindungen noch offen, gleich nochmal)\r\n" :
              ": ist nicht geladen\r\n");
         DosExit(1);
     }

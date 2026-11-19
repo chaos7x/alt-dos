@@ -1,0 +1,294 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * AT-DOS 5.5 - Netzwerk: Vermittlung zwischen Kartentreibern und Stapel
+ * (aus 6.2; hier KTEXT2, Entwurf docs/NETZWERK.md, Schnittstelle include/net.h)
+ *
+ * Der Kernel kennt keine Protokolle. Er merkt sich die angemeldeten
+ * Karten (DH_NETREG) und den Stapel (DH_NETPROTO), reicht Empfang,
+ * Senden und Steuerung als ferne Aufrufe zwischen ihnen weiter, ruft aus
+ * dem Scheduler den Nachlauf des Stapels und leitet FAPI_NET dorthin.
+ * Ohne Kernelsperre: der Kernel wird nie unterbrochen ausser durch IRQs;
+ * rx/done laufen mit gesperrten Interrupts, alles andere zwischen
+ * Schlafpunkten.
+ */
+#include "kern.h"
+#include "../include/drv.h"
+#include "../include/net.h"
+#include "../include/fapi_abi.h"
+#include "ifs.h"
+#include "mem.h"
+#include "k2.h"                         /* KTEXT2, k2.h zuletzt           */
+
+extern volatile unsigned long ticks;    /* start.asm                     */
+unsigned __far kf_net_who(char *prog);  /* kernel.c: Task + Programmname */
+
+/* Fernaufruf cs:ip mit DS = ds, ES:BX = es:bx -> AX */
+unsigned nf_call(unsigned cs, unsigned ip, unsigned ds, unsigned es, unsigned bx);
+#pragma aux nf_call = \
+    "push ds" "push bp" "push ax" "push dx" "mov bp,sp" "mov ds,si" \
+    "call dword ptr ss:[bp]" "add sp,4" "pop bp" "pop ds" \
+    __parm [__ax] [__dx] [__si] [__es] [__bx] __value [__ax] \
+    __modify [__bx __cx __dx __si __di __es];
+
+static struct net_reg nif[NNETIF];      /* Kopie der Anmeldung           */
+static unsigned char nif_drv[NNETIF];   /* Treiber + 1, 0 = frei         */
+/* Nachlauf auf eigenem Stapel: net_poll kommt auch aus dem Scheduler-
+   Durchlauf, also auf dem Kernelstapel eines Tasks, der mitten in einem
+   Plattenauftrag schlaeft (FAPI -> FAT -> Treiber -> ProcBlock -> sched).
+   TCP und Kartentreiber kaemen dort oben drauf. Gemessen (86Box, 386,
+   1 MB per TCP): ~400 Byte; der Rest ist fuer IRQs waehrenddessen. */
+#define NSTK 512                        /* Worte                         */
+static unsigned short net_stk[NSTK];
+
+unsigned nf_call_stk(unsigned cs, unsigned ip, unsigned ds, unsigned es, unsigned bx,
+                     unsigned top);
+#pragma aux nf_call_stk = \
+    "mov cx,sp" "mov sp,di" "push cx" "push ds" "push bp" "push ax" "push dx" \
+    "mov bp,sp" "mov ds,si" "call dword ptr ss:[bp]" "add sp,4" "pop bp" "pop ds" \
+    "pop cx" "mov sp,cx" \
+    __parm [__ax] [__dx] [__si] [__es] [__bx] [__di] __value [__ax] \
+    __modify [__bx __cx __dx __si __di __es];
+
+static struct net_proto np;
+static unsigned char np_drv;            /* Stapel: Treiber + 1           */
+static volatile unsigned char net_pend; /* Nachlauf faellig              */
+static unsigned char net_tick;          /* Stapel will je Takt laufen    */
+static unsigned char net_busy;          /* Nachlauf laeuft gerade        */
+static unsigned long net_last;
+static struct net_pkt nl_pkt;           /* link_off                      */
+static struct net_run nl_run;
+
+#define PCS()   DRVC_SEL(np_drv - 1)
+#define PDS()   DRVD_SEL(np_drv - 1)
+#define CCS(i)  DRVC_SEL(nif_drv[i] - 1)
+#define CDS(i)  DRVD_SEL(nif_drv[i] - 1)
+
+static void fcopy(void __far *d, const void __far *s, unsigned n)
+{
+    unsigned char __far *a = d;
+    const unsigned char __far *b = s;
+    while (n--)
+        *a++ = *b++;
+}
+
+static void link_tell(int i)            /* Stapel: neue Karte i          */
+{
+    if (!np_drv || !np.link_off)
+        return;
+    nl_pkt.ifc = i;
+    nl_pkt.len = nl_pkt.off = nl_pkt.sel = 0;
+    nf_call(PCS(), np.link_off, PDS(), KDATA, (unsigned)&nl_pkt);
+}
+
+/* DevHlp 23-30 (kernel.c devhlp_dispatch); d = Treiber des Aufrufers */
+unsigned __far net_devhlp(unsigned fn, int d, unsigned dsel, unsigned bx, unsigned cx)
+{
+    struct net_pkt __far *p = MK_FP(dsel, bx);
+    unsigned i, n;
+
+    if (d < 0)
+        return 0xFFFF;
+    switch (fn) {
+    case DH_NETREG: {
+        const struct net_reg __far *r = MK_FP(dsel, bx);
+        if (r->version != 1 || r->size < 20)
+            return 0xFFFF;
+        for (i = 0; i < NNETIF && nif_drv[i]; i++)
+            ;
+        if (i == NNETIF)
+            return 0xFFFF;
+        n = r->size < sizeof(struct net_reg) ? r->size : sizeof(struct net_reg);
+        {
+            unsigned char *z = (unsigned char *)&nif[i];
+            unsigned k;
+            for (k = 0; k < sizeof(struct net_reg); k++)
+                z[k] = 0;
+        }
+        fcopy(&nif[i], r, n);
+        nif_drv[i] = (unsigned char)(d + 1);
+        link_tell(i);
+        return i;
+    }
+    case DH_NETPROTO: {
+        const struct net_proto __far *r = MK_FP(dsel, bx);
+        unsigned char *z = (unsigned char *)&np;
+        if (r->version != 1 || np_drv)
+            return 1;
+        for (i = 0; i < sizeof(np); i++)
+            z[i] = 0;
+        fcopy(&np, r, r->size < sizeof(np) ? r->size : sizeof(np));
+        np_drv = (unsigned char)(d + 1);
+        net_pend = 1;
+        for (i = 0; i < NNETIF; i++)
+            if (nif_drv[i])
+                link_tell(i);
+        return 0;
+    }
+    case DH_NETRX:                      /* Karte im IRQ: Platz holen     */
+        p->sel = p->off = 0;
+        if (!np_drv || p->ifc >= NNETIF || nif_drv[p->ifc] != d + 1)
+            return 1;
+        nf_call(PCS(), np.rx_off, PDS(), dsel, bx);
+        return p->sel == 0;
+    case DH_NETRXDONE:
+        if (!np_drv || !p->sel)
+            return 1;
+        nf_call(PCS(), np.done_off, PDS(), dsel, bx);
+        net_pend = 1;
+        return 0;
+    case DH_NETSEND:                    /* Stapel -> Karte               */
+        i = p->ifc;
+        if (i >= NNETIF || !nif_drv[i] || np_drv != d + 1)
+            return NS_ERR;
+        return nf_call(CCS(i), nif[i].send_off, CDS(i), dsel, bx);
+    case DH_NETCTL:
+        i = ((struct net_ctl __far *)p)->ifc;
+        if (i >= NNETIF || !nif_drv[i] || !nif[i].ctl_off)
+            return 1;
+        return nf_call(CCS(i), nif[i].ctl_off, CDS(i), dsel, bx);
+    case DH_NETINFO:
+        if (bx >= NNETIF || !nif_drv[bx])
+            return 1;
+        fcopy(MK_FP(dsel, cx), &nif[bx], sizeof(struct net_reg));
+        return 0;
+    case DH_NETKICK:
+        net_pend = 1;
+        return 0;
+    }
+    return 0xFFFF;
+}
+
+/* Nachlauf: aus dem Scheduler (vor HLT, bei jedem Durchlauf) und am Ende
+   jedes FAPI-Aufrufs (5.x ist kooperativ, es gibt kein preempt) */
+
+void __far net_poll(void)
+{
+    unsigned long now;
+    if (!np_drv || net_busy)
+        return;
+    now = ticks;
+    if (!net_pend && !(net_tick && now != net_last))
+        return;
+    net_busy = 1;
+    net_pend = 0;
+    net_last = now;
+    nl_run.ticks = now;
+    net_tick = (unsigned char)(nf_call_stk(PCS(), np.run_off, PDS(), KDATA,
+                                           (unsigned)&nl_run,
+                                           (unsigned)&net_stk[NSTK]) & 1);
+    net_busy = 0;
+}
+
+unsigned seglim(unsigned sel);
+#pragma aux seglim = "xor cx,cx" "lsl cx,dx" __parm [__dx] __value [__cx];
+
+static unsigned ncall(struct net_call *c)
+{
+    c->task = kf_net_who(c->prog);      /* Kernelstapel: SS = KDATA      */
+    return nf_call(PCS(), np.call_off, PDS(), KDATA, (unsigned)c);
+}
+
+/* FAPI_NET: BX = Unterfunktion, CX = Parameterblock, DX = Groesse.
+   Socket-Aufrufe tragen vorn das Handle - der Kernel setzt die Nummer des
+   Sockets im Stapel ein; SOCKET/ACCEPT liefern einen Socket, der Kernel
+   macht daraus ein Handle. */
+unsigned __far net_fapi(unsigned usel, unsigned fn, unsigned p, unsigned n)
+{
+    struct net_call c;
+    unsigned r, l, h;
+    if (!np_drv || !np.call_off)
+        return FAPI_ERR_NONET;
+    if (fn >= 0x80)
+        return FAPI_ERROR;
+    c.fn = fn;
+    c.usel = usel;
+    c.p = p;
+    c.n = n;
+    c.sock = 0xFFFF;
+    if (fn == NET_SELECT) {             /* Handles -> Sockets in einer     */
+        struct fapi_select ks;          /* Kopie auf dem Kernelstapel     */
+        struct fapi_select __far *u = MK_FP(usel, p);
+        unsigned k;
+        l = seglim(usel);
+        if (!l || p > l || l - p < sizeof(ks) - 1 || n < sizeof(ks))
+            return FAPI_ERROR;
+        fcopy(&ks, u, sizeof(ks));
+        if (!ks.n || ks.n > NSEL_MAX)
+            return FAPI_ERROR;
+        for (k = 0; k < ks.n; k++)
+            if ((ks.e[k].h = kf_sock_id(ks.e[k].h)) == 0xFFFF)
+                return FAPI_ERROR;
+        c.usel = KDATA;                 /* SS = DS = KDATA im Kernel      */
+        c.p = (unsigned)&ks;
+        c.n = sizeof(ks);
+        r = ncall(&c);
+        for (k = 0; k < ks.n; k++)
+            u->e[k].ready = ks.e[k].ready;
+        return r;
+    }
+    if (fn > NET_SOCKET) {
+        l = seglim(usel);
+        if (!l || p >= l)
+            return FAPI_ERROR;
+        if ((c.sock = kf_sock_id(*(unsigned __far *)MK_FP(usel, p))) == 0xFFFF)
+            return FAPI_ERROR;
+    }
+    r = ncall(&c);
+    if ((fn == NET_SOCKET || fn == NET_ACCEPT) && r < 0xFFF0) {
+        h = kf_sock_new(r);
+        if (h == 0xFFFF) {
+            net_sclose(r);
+            return FAPI_ERR_FULL;
+        }
+        return h;
+    }
+    return r;
+}
+
+/* DosRead/DosWrite auf einem Socket-Handle (ohne Kernelsperre) */
+unsigned __far net_srw(unsigned id, int wr, unsigned usel, unsigned off, unsigned n)
+{
+    struct net_call c;
+    if (!np_drv)
+        return FAPI_ERROR;
+    c.fn = wr ? NETK_WRITE : NETK_READ;
+    c.usel = usel;
+    c.p = off;
+    c.n = n;
+    c.sock = id;
+    return ncall(&c);
+}
+
+void __far net_sclose(unsigned id)
+{
+    struct net_call c;
+    if (!np_drv)
+        return;
+    c.fn = NETK_CLOSE;
+    c.usel = c.p = c.n = 0;
+    c.sock = id;
+    ncall(&c);
+}
+
+/* DEVLOAD /U: Karte mit angemeldetem Stapel bleibt (1 = belegt) */
+int __far net_inuse(int d)
+{
+    int i;
+    for (i = 0; i < NNETIF; i++)
+        if (nif_drv[i] == d + 1 && np_drv)
+            return 1;
+    return 0;
+}
+
+/* Treiber d ist weg (entladen oder INIT gescheitert) */
+void __far net_drop(int d)
+{
+    int i;
+    for (i = 0; i < NNETIF; i++)
+        if (nif_drv[i] == d + 1)
+            nif_drv[i] = 0;
+    if (np_drv == d + 1) {
+        np_drv = 0;
+        net_tick = 0;
+    }
+}

@@ -1,5 +1,5 @@
 @ECHO OFF
-REM AT-DOS 5.4 - Startdatei des Befehlsinterpreters (CMD.EXE /P).
+REM AT-DOS 5.5 - Startdatei des Befehlsinterpreters (CMD.EXE /P).
 REM AUTOEXEC.BAT bleibt der DOS-Box vorbehalten (ab AT-DOS 6.0).
 REM Weitere Programme in eigenen Sitzungen: START Programm
 REM Temporaere Dateien: TEMP und TMP stellt der Kernel auf X:\TEMP
@@ -11,4 +11,9 @@ REM DOSKEY ll=DIR /W /O $*
 REM DOSKEY /MACROFILE=C:\DOS\MAKROS.TXT
 REM Gewohnte Namen von Linux (ll, ls, cat, cp, mv, rm, ...):
 REM DOSKEY /MACROFILE=C:\DOS\LINUX.MAC
+REM Netz (nur Platte, TCPIP.SYS in der CONFIG.SYS): Firewall-Regeln laden
+REM FIREWALL /LOAD /Q
+REM Uhr aus dem Netz stellen (Zeitzone: SET TZ=CET-1CEST,M3.5.0,M10.5.0/3):
+REM IPCONFIG /WAIT:10 > NUL
+REM SNTP /Q
 PROMPT $P$G

@@ -130,6 +130,7 @@ static void ctry_time(char *o, unsigned t, int sec)
     *o = 0;
 }
 
+#ifndef CTRY_NO_DPAT
 /* Eingabeformat fuer DATE: "TT.MM.JJ" in der Folge des Landes */
 static void ctry_dpat(char *o)
 {
@@ -141,4 +142,5 @@ static void ctry_dpat(char *o)
     }
     *o = 0;
 }
+#endif
 #endif

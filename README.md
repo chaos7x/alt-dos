@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.4 (Zweig 5.x): 5.1 mit Rückportierungen aus 6.0/6.1
+# alt-dos – AT-DOS 5.5 im Test (Zweig 5.x, Stand zur Prüfung in `5.5`): 5.4 plus Netzwerk aus 6.2 (TCP/IP mit IPv6 und Firewall auf dem 286)
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -29,7 +29,11 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
 Dieser Zweig (`5.x`) ist die Weiterarbeit an der 286-Linie (5.1 plus
-Rückportierungen aus 6.0/6.1). AT-DOS 5.4 steht im Zweig `5.4` (Release
+Rückportierungen aus 6.0/6.1/6.2). AT-DOS 5.5 (Zweig `5.5`, zur Prüfung,
+Testfassung `test-5.5`) = 5.4 plus das Netzwerk aus 6.2: `NE2000.SYS`,
+`TCPIP.SYS` (IPv4/IPv6, TCP, UDP, DHCP, DNS, Firewall), PING, IPCONFIG,
+NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP – nur auf der
+Festplatte –, dazu DETACH ohne Konsole und XCOPY /I. AT-DOS 5.4 steht im Zweig `5.4` (Release
 `v5.4`): 5.3.2 plus Speicherverwaltung wie OS/2 1.x (Code verwerfen,
 Segmente verschieben, `SWAPPATH=`), LOOP mit DoubleSpace/DriveSpace,
 PACKDISK, DEVLOAD, DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD. AT-DOS
@@ -40,6 +44,21 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
 5.0 in `5.0`; AT-DOS 6.0 (386) ist fertig: Zweig `6.0`, Release `v6.0`.
 
 ## Was läuft
+
+- Netzwerk (5.5, aus 6.2; nur auf der Festplatte, die Diskette ist voll):
+  `NE2000.SYS` für NE1000/NE2000 und Nachbauten (ISA; sucht 300h, 280h,
+  320h, 340h, 360h, 240h und den IRQ selbst, `/P:300 /I:3` legt fest,
+  `/NOIRQ` = Abfragebetrieb), darüber `TCPIP.SYS` mit ARP, IPv4, IPv6
+  (SLAAC, ND), ICMP, UDP, TCP, DHCP-Client, DNS und Firewall (ab Werk an:
+  eingehend nur Antworten und Regeln) – `DEVICE=TCPIP.SYS [/IP:a.b.c.d/n
+  /GW:x /DNS:x] [/HOST:name] [/NOFW] [/NOIPV6]`. Werkzeuge wie unter 6.2:
+  `IPCONFIG`, `PING`, `NSLOOKUP`, `NC`, `NETSTAT`, `FIREWALL` (Regeln in
+  `\DOS\SYSTEM\FIREWALL.INI`), `WGET`, `FTP`, `TELNET`, `SNTP`. Programme
+  sehen Sockets als Handles (FAPI 91, `DosNet`) – dieselben EXE-Dateien
+  laufen auf beiden Linien. Den Nachlauf des Stapels ruft der Scheduler
+  (5.x ist kooperativ: ein Programm, das ohne FAPI-Aufrufe rechnet, hält
+  auch das Netz an). Ein Programm mit `DETACH` bekommt keine Konsole mehr
+  (Eingabe = NUL), nimmt also keine Tasten weg; `XCOPY /I` wie unter NT.
 
 - Standard-FAT12-Diskette: Der Kernel ist die Datei `ATDOS.SYS` (versteckt,
   System), die wie einst `IO.SYS` als erste Datei zusammenhängend liegt
@@ -620,6 +639,7 @@ selbst nur 8.3 kennt.
 | 87 | DosEject        | BX = Laufwerk (0 = A:): Medium auswerfen (CD, ZIP, MO; Treiberbefehl `DRV_EJECT` = START STOP UNIT mit LoEj) → FAPI_ERR_INUSE (Dateien offen), FAPI_ERR_DENIED (kein Wechseldatenträger oder Treiber kann es nicht) (5.2) |
 | 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk), FAPI_ERR_NOTREADY (Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) | (5.4)
 | 90 | DosKlog         | Kernelmeldungen (`DMESG`): BX = Puffer, CX = Länge, DX = Stelle ab der ältesten → kopierte Bytes; CX = 0 → Länge des Protokolls (bis 8 KB, `KLOG_SIZE`); CX = 0, DX = FFFFh → löschen | (5.4)
+| 91 | DosNet          | Netzwerk (5.5/6.2, `TCPIP.SYS`): BX = `NET_*`, CX = Parameterblock, DX = dessen Größe; ohne Stapel FAPI_ERR_NONET (FFF7h). `NET_IFINFO` (1): `struct fapi_netif` mit vorgegebener Karte → Name, MAC, Verbindung, Adressen (immer 16 Byte, IPv4 als ::ffff:a.b.c.d, mit Präfixlänge und Herkunft), Gateways, DNS, DHCP-Server und Lease, Zähler, Rechnername; FAPI_ERROR hinter der letzten Karte. `NET_PING` (2): `struct fapi_ping` (Ziel, Größe, Frist in ms, Folgenummer, TTL) → Laufzeit, TTL, Absender, ICMP-Typ/-Code; FAPI_ERR_TIMEOUT (FFF6h). `NET_DHCP` (3): `struct fapi_netcmd` (Karte, 0 erneuern, 1 freigeben) `NET_RESOLVE` (4): `struct fapi_resolve` (Name → bis 4 Adressen, TTL; Zahlenadressen direkt; Familie 0 = A, mit globaler IPv6-Adresse erst AAAA, `AF_INET`/`AF_INET6` nur A bzw. AAAA) → 0, FAPI_ERROR (unbekannt), FAPI_ERR_TIMEOUT. `NET_FWCTL` (5): `struct fapi_fwctl` – `FW_GET` (Zustand, Zähler, Regel idx), `FW_SET`, `FW_ADD` (`struct fapi_fwrule`: Programm, Protokoll, Ports, Netz/Präfix oder FWR_LOCAL → Nummer), `FW_DEL`, `FW_CLEAR`, `FW_LOG`. `NET_SOCKLIST` (6): `struct fapi_sockinfo` für Platz idx (Art, TCP-Zustand, Adressen, Ports, Programm, Pufferfüllung) → 0, FAPI_ERROR dahinter. `NET_SELECT` (1Eh): `struct fapi_select` (Anzahl bis 8, Frist in ms – 0 nur nachsehen, FFFFh ohne Frist –, je Eintrag Handle und gewünscht SEL_READ/SEL_WRITE) → Zahl der bereiten Einträge (0 = Frist um), in `ready` SEL_READ/SEL_WRITE/SEL_ERR; lauschende Sockets sind lesebereit, wenn eine Verbindung zum Annehmen wartet. Sockets wie BSD, Handles wie Dateien: `NET_SOCKET` (10h, `struct fapi_socket`: Familie AF_INET/AF_INET6, Art SOCK_DGRAM oder SOCK_STREAM) → Handle; `NET_BIND`/`CONNECT`/`LISTEN`/`ACCEPT` (ACCEPT → neues Handle)/`SEND`/`RECV`/`SENDTO`/`RECVFROM`/`SHUTDOWN`/`GETNAME`/`GETPEER`/`SETOPT`/`GETOPT` (11h–1Dh) mit `struct fapi_sockio` (Handle, Puffer, Länge, Merker, Frist in ms, `struct fapi_sockaddr` mit Länge/Familie wie sockaddr_in6, Port in Netzbytefolge); FAPI_ERR_AGAIN (FFF5h) nicht blockierend, FAPI_ERR_RESET (FFF4h). | (5.5)
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
