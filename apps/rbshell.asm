@@ -65,6 +65,7 @@ start:
         add     ax, bx
         mov     [pblock], ax
         mov     word [pb_tail], tailx
+        call    other_dos               ; MS-DOS/PC DOS: dessen COMMAND.COM
         mov     dx, shellx
 .abbild:
         push    dx
@@ -124,6 +125,120 @@ start:
 endmsg: db      13, 10, "RBSHELL: COMMAND.COM beendet (Code ungleich 0)."
         db      " Taste beendet die Box.$"
 
+; ---- anderes DOS als FreeDOS (Abbild von MKDOSIMG) ----------------------
+; RBOX meldet ueber INT E0h 19h den Namen des Abbilds (ohne .IMG, leer bei
+; FreeDOS); dessen COMMAND.COM und Werkzeuge liegen in X:\DOS\MDOS\NAME\.
+; Shell, Befehlszeilen und Umgebung (PATH mit NAME vorn, COMSPEC) werden
+; dorthin umgestellt. Startlaufwerk aus shellx.
+other_dos:
+        push    ax
+        mov     ah, 0x30
+        int     0x21
+        cmp     bh, 0xFD                ; FreeDOS: alles wie bisher
+        pop     ax
+        je      .r
+        mov     al, [shellx]            ; Startlaufwerk (AL ist hier schon
+        mov     [od_drv], al            ; ueberschrieben)
+        push    cs
+        pop     es
+        mov     di, iname
+        mov     ah, 0x19
+        int     0xE0
+        cmp     byte [iname], 0
+        je      .r
+        mov     di, obase               ; obase = X:\DOS\MDOS\NAME
+        call    od_mdos
+        mov     si, iname
+        call    cpy
+        mov     byte [di], 0
+        mov     di, shellx              ; X:\DOS\MDOS\NAME\COMMAND.COM
+        mov     si, obase
+        call    cpy
+        mov     si, s_com
+        call    copyz
+        mov     di, tailx + 1           ; " /E:1024"
+        call    od_tail
+        mov     ax, di
+        sub     ax, tailx + 1
+        mov     [tailx], al
+        mov     byte [di], 13
+        mov     di, tailk + 1           ; dazu " /K X:\DOS\MDOS\RBREADY.COM"
+        call    od_tail
+        mov     si, s_k
+        call    cpy
+        call    od_mdos
+        mov     si, s_rbr
+        call    cpy
+        mov     ax, di
+        sub     ax, tailk + 1
+        mov     [tailk], al
+        mov     byte [di], 13
+        mov     di, envo                ; PATH=NAME;MDOS;DOS, COMSPEC
+        mov     si, s_path
+        call    cpy
+        mov     si, obase
+        call    cpy
+        mov     al, ';'
+        stosb
+        call    od_mdos
+        dec     di                      ; "\" am Ende weg
+        mov     al, ';'
+        stosb
+        mov     al, [od_drv]
+        stosb
+        mov     si, s_dos
+        call    copyz
+        mov     si, s_cspec
+        call    cpy
+        mov     si, shellx
+        call    copyz
+        mov     si, s_dircmd
+        call    copyz
+        mov     si, s_prompt            ; MS-DOS 5 nimmt sonst $N$G
+        call    copyz
+        xor     al, al
+        stosb
+        mov     ax, cs
+        mov     bx, envo
+        mov     cl, 4
+        shr     bx, cl
+        add     ax, bx
+        mov     [pblock], ax
+.r:     ret
+od_mdos:                                ; "X:\DOS\MDOS\" nach DI
+        mov     al, [od_drv]
+        stosb
+        mov     si, s_mdos
+        jmp     cpy
+od_tail:                                ; " /E:1024" - ohne Verzeichnis:
+        mov     si, s_e                 ; COMMAND.COM von MS-DOS erbt mit
+        jmp     cpy                     ; einem Suchpfad die Umgebung nicht
+cpy:    lodsb                           ; DS:SI -> ES:DI ohne die Null
+        test    al, al
+        jz      .e
+        stosb
+        jmp     cpy
+.e:     ret
+copyz:  lodsb                           ; ... mit der Null
+        stosb
+        test    al, al
+        jnz     copyz
+        ret
+od_drv: db      0
+iname:  times   13 db 0
+obase:  times   32 db 0
+s_mdos: db      ":\DOS\MDOS\", 0
+s_dos:  db      ":\DOS", 0
+s_com:  db      "\COMMAND.COM", 0
+s_e:    db      " /E:1024", 0
+s_k:    db      " /K ", 0
+s_rbr:  db      "RBREADY.COM", 0
+s_path: db      "PATH=", 0
+s_cspec: db     "COMSPEC=", 0
+s_dircmd: db    "DIRCMD=/OGN", 0
+s_prompt: db    "PROMPT=$P$G", 0
+a4409:  dw      0x08C2                  ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
+
 ; ---- Maus: CuteMouse aus X:\DOS\MDOS (nur mit COMMAND.COM von dort) ------
 ; In der Box gehoert die Maus, solange sie vorn ist, CuteMouse (der Kernel
 ; maskiert IRQ 3/4/12 dort nicht); INT E0h 16h -> AX = Tasten der Maus von
@@ -176,7 +291,18 @@ redir_install:
         int     0x21
         mov     [cs:sda], si            ; fuer den Lesepuffer
         mov     [cs:sda + 2], ds
-        mov     ah, 0x11                ; RBOX melden
+        mov     ah, 0x30                ; welches DOS? (BH: FDh FreeDOS,
+        int     0x21                    ; FFh MS-DOS, 00h PC DOS) - DS:SI
+        mov     bl, bh                  ; bleibt
+        test    bh, bh                  ; PC DOS ab 6.30 meldet bei 4409h
+        jnz     .nibm                   ; Bit 14 mit
+        cmp     al, 6
+        jb      .nibm
+        ja      .ibm
+        cmp     ah, 30
+        jb      .nibm
+.ibm:   mov     word [cs:a4409], 0x48C2
+.nibm:  mov     ah, 0x11                ; RBOX melden (BL = OEM)
         int     0xE0
         pop     ds
         mov     ah, 0x12                ; welche Laufwerke hat AT-DOS?
@@ -275,7 +401,7 @@ int21:  cmp     ah, 44h
         jmp     .ok
 .n9:    cmp     al, 09h
         jne     .ne
-        mov     dx, 08C2h               ; Geraeteattribute wie MS-DOS,
+        mov     dx, [cs:a4409]          ; Geraeteattribute wie MS-DOS,
         jmp     .ok                     ; Bit 12 (fern) aus
 .ne:    cmp     al, 0Dh
         je      .gd
@@ -733,6 +859,7 @@ old2f:  dd      0
 shell:  db      "A:\COMMAND.COM", 0
 tail:   db      12, " A:\ /E:1024", 13
 shellx: db      "C:\DOS\MDOS\COMMAND.COM", 0
+        times   24 db 0                 ; Platz fuer \NAME (anderes DOS)
         align   16
 envblk: db      "PATH="
 env1:   db      "C:\DOS\MDOS;"
@@ -742,7 +869,11 @@ env3:   db      "C:\DOS\MDOS", 0
         db      "LANG=DE", 0
         db      "DIRCMD=/OGN", 0, 0             ; DIR: Verzeichnisse zuerst
 tailx:  db      21, " C:\DOS\MDOS\ /E:1024", 13
+        times   12 db 0
 tailk:  db      48, " C:\DOS\MDOS\ /E:1024 /K C:\DOS\MDOS\RBREADY.COM", 13
+        times   12 db 0
+        align   16
+envo:   times   160 db 0                ; Umgebung fuer ein anderes DOS
 perm:   db      0
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers

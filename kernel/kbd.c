@@ -23,6 +23,7 @@ volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 static unsigned short buf[NBUF];
 static unsigned char  head, tail;
 static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
+static unsigned char  num, e1;          /* NumLock, Rest einer E1-Folge (Pause) */
 
 /* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
    mit Umschalt und mit AltGr (Format siehe tools/mkkbl.py) */
@@ -110,6 +111,19 @@ static unsigned up_uni(unsigned u)
     return 0;
 }
 
+/* Dezimalzeichen des Ziffernblocks wie KEYB von MS-DOS: Komma bei den
+   Belegungen mit Dezimalkomma, sonst Punkt */
+static unsigned char kp_dec(void)
+{
+    static const char cm[] = "GRSPDKNOSVPL";
+    unsigned i;
+    if (kbd_sel)
+        for (i = 0; i < sizeof cm - 1; i += 2)
+            if (KB[4] == cm[i] && KB[5] == cm[i + 1])
+                return ',';
+    return '.';
+}
+
 void kbd_irq(unsigned sc)
 {
     unsigned char rel = (unsigned char)(sc & 0x80), c, base;
@@ -119,6 +133,14 @@ void kbd_irq(unsigned sc)
         e0 = 1;
         return;
     }
+    if (sc == 0xE1) {               /* Pause: E1 1D 45 (E1 9D C5) - die  */
+        e1 = 2;                     /* beiden Folgebytes sind nicht Strg */
+        return;                     /* und nicht NumLock                 */
+    }
+    if (e1) {
+        e1--;
+        return;
+    }
     if (!rel && code != 0x38)
         alt_only = 0;               /* Alt nicht mehr allein gedrueckt  */
     if (e0) {                       /* erweiterte Tasten                */
@@ -126,6 +148,7 @@ void kbd_irq(unsigned sc)
         if (code == 0x38) altgr = !rel;
         else if (code == 0x1D) ctrl = !rel;
         else if (code == 0x1C && !rel) put(13 | (0x1C << 8));
+        else if (code == 0x35 && !rel && !alt) put('/' | (0x35 << 8));  /* / */
         else if (code == 0x53 && !rel && ctrl && (alt || altgr))
             reboot_request();               /* Strg+Alt+Entf (Entf-Taste)       */
         else if (!rel && code >= 0x47 && code <= 0x53)
@@ -147,6 +170,7 @@ void kbd_irq(unsigned sc)
         alt = !rel;
         return;
     case 0x3A: if (!rel) caps = !caps; return;
+    case 0x45: if (!rel) num = !num; return;
     }
     if (rel)
         return;
@@ -166,6 +190,18 @@ void kbd_irq(unsigned sc)
         return;
     }
 
+    if (code >= 0x47 && code <= 0x53 && !alt && !altgr && !ctrl) {
+        c = 0;                      /* Ziffernblock wie das BIOS: mit   */
+        if (code == 0x4A)           /* NumLock (oder Umschalt ohne)     */
+            c = '-';                /* Ziffern, sonst Pfeile & Co.      */
+        else if (code == 0x4E)
+            c = '+';
+        else if (num != (shift != 0))
+            c = (unsigned char)(code == 0x53 ? kp_dec() :
+                                "789-456+1230"[code - 0x47]);
+        put(c | (code << 8));
+        return;
+    }
     if (!kbd_sel || code >= KBL_N || (alt && !altgr)) {
         c = 0;                      /* Alt+Taste: nur Scancode (BIOS)   */
     } else if (altgr) {                 /* Umschalt+AltGr: 4. Ebene,   */
@@ -205,7 +241,8 @@ int kbd_get(void)
 unsigned kbd_shift(void)
 {
     return (shift ? KBDSHIFT_SHIFT : 0) | (ctrl ? KBDSHIFT_CTRL : 0) |
-           (alt ? KBDSHIFT_ALT : 0) | (altgr ? KBDSHIFT_ALTGR : 0);
+           (alt ? KBDSHIFT_ALT : 0) | (altgr ? KBDSHIFT_ALTGR : 0) |
+           (num ? KBDSHIFT_NUM : 0) | (caps ? KBDSHIFT_CAPS : 0);
 }
 
 int kbd_peek(void)
@@ -248,6 +285,7 @@ void kbd_init(void)
     /* Reste im Ausgabepuffer des Controllers abholen (nur lesen) */
     for (i = 0; i < 16 && (inb(0x64) & 1); i++)
         inb(0x60);
+    num = (bios_kbf >> 5) & 1;      /* NumLock wie beim Start (BIOS)    */
     kbd_set_layout(0, 0);           /* eingebaut: deutsch               */
     kbd_flush();
 }

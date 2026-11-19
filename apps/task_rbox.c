@@ -171,6 +171,48 @@ static void load_com(const char *p)
         box_err(r);
 }
 
+/* DOSBOX.INI in X:\DOS\MDOS (d endet mit "\"): DOS_IMAGE=NAME.IMG unter
+   [*] waehlt das Abbild statt FREEDOS.IMG (Abbild von MKDOSIMG aus der
+   eigenen DOS-Kopie, wie in 6.x). Andere Schluessel gelten nur in 6.x. */
+static void ini_image(char *d)
+{
+    static char ip[FAPI_PATHLEN];
+    unsigned h, n, i, k, sect = 0, l = slen(d);
+    scopy(ip, d, sizeof(ip));
+    scat(ip, "DOSBOX.INI", sizeof(ip));
+    scat(d, "FREEDOS.IMG", FAPI_PATHLEN);
+    h = DosOpen(ip);
+    if (FAPI_FAILED(h))
+        return;
+    n = DosRead(h, buf, sizeof(buf) - 1);
+    DosClose(h);
+    if (FAPI_FAILED(n))
+        return;
+    buf[n] = 0;
+    for (i = 0; buf[i]; ) {
+        while (buf[i] == ' ' || buf[i] == '\t')
+            i++;
+        if (buf[i] == '[')
+            sect = buf[i + 1] == '*' && buf[i + 2] == ']';
+        else if (sect) {
+            static const char key[] = "DOS_IMAGE=";
+            for (k = 0; key[k] && up(buf[i + k]) == key[k]; k++)
+                ;
+            if (!key[k] && buf[i + k] > ' ') {
+                d[l] = 0;
+                for (i += k; buf[i] > ' ' && l < FAPI_PATHLEN - 1; i++)
+                    d[l++] = buf[i];
+                d[l] = 0;
+                return;
+            }
+        }
+        while (buf[i] && buf[i] != '\n')
+            i++;
+        if (buf[i])
+            i++;
+    }
+}
+
 void main(void)
 {
     char *a, *e;
@@ -197,7 +239,8 @@ void main(void)
         if (FAPI_FAILED(DosGetEnv("COMSPEC", path, sizeof(path))) || path[1] != ':')
             scopy(path, "C:", sizeof(path));
         path[2] = 0;
-        scat(path, "\\DOS\\MDOS\\FREEDOS.IMG", sizeof(path));
+        scat(path, "\\DOS\\MDOS\\", sizeof(path));
+        ini_image(path);                /* DOS_IMAGE= aus DOSBOX.INI   */
     } else
         word(a, path, sizeof(path));
     a = path;
@@ -216,6 +259,14 @@ void main(void)
         l += 4;
     }
     e = l >= 4 ? a + l - 4 : a;
+    if (same(e, ".IMG")) {              /* Name fuer RBSHELL (INT E0h 19h) */
+        const char *b = base_name(a);
+        for (r = 0; r < 12 && b[r] && b[r] != '.'; r++)
+            rb_iname[r] = up(b[r]);
+        rb_iname[r] = 0;
+        if (same(rb_iname, "FREEDOS"))
+            rb_iname[0] = 0;
+    }
 again:
     if (same(e, ".COM"))
         load_com(a);

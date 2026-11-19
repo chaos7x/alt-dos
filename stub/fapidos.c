@@ -429,6 +429,7 @@ static unsigned kbd_shift(void)
     if (BIOS(0x18) & 2) f |= KBDSHIFT_ALT;  /* linke Alt-Taste (Erweiterte) */
     else if ((s & 8) && !(BIOS(0x96) & 8)) f |= KBDSHIFT_ALT;
     if (BIOS(0x96) & 8) f |= KBDSHIFT_ALTGR;
+    f |= s & (KBDSHIFT_NUM | KBDSHIFT_CAPS);
     return f;
 }
 

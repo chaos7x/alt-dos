@@ -94,6 +94,20 @@ BIOS der DOS-Box (6.x `kernel/v86.c`):
 | INT 15h 2400h–2403h | fehlten | A20 wie über XMS |
 | INT 16h 09h/0Ah/0306h | fehlten | Fähigkeiten 30h, MF2-Kennung, Rate |
 
+## MS-DOS in der Kompatibilitätsbox (5.x, 19.11.2026)
+
+Rückport von main: MKDOSIMG, eigener Startsektor, `DOS_IMAGE=` in
+DOSBOX.INI (nur `[*]`), RBSHELL baut für ein anderes DOS die Umgebung
+selbst (MS-DOS gibt SHELL= keine) und gibt COMMAND.COM kein Verzeichnis
+als erstes Argument (mit Suchpfad erbt es die Umgebung nicht – MS-DOS 4.0
+INIT.ASM `CHKSRCHSPEC`), dazu `PROMPT=$P$G`. Redirector wie auf main
+(`\` am Ende, REN mit Platzhaltern, FCB, 6Ch). `tools/doscmp.sh` vergleicht
+BIOSCMP unter dem DOS direkt mit RBOX: MS-DOS 5.0/6.0/6.20/6.22, PC DOS
+5.0/6.3/2000 – DOS-Teil gleich, offen 6Ch bei PC DOS 6.3/2000 (wie main).
+Übrig die bekannten Abweichungen der Kompatibilitätsbox (Platten und
+erweiterter Speicher unsichtbar, XMS von RBHMA, SHARE im Redirector,
+CuteMouse). 86Box SCAT (286): MS-DOS 5.00 in RBOX, DOS-Teil gleich.
+
 ## Bestand: BIOS der DOS-Box (6.x)
 
 Im Textmodus beantwortet die Box die Video-Aufrufe selbst; schaltet ein

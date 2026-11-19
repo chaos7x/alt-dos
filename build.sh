@@ -46,15 +46,21 @@ VEREOF
 echo "Bootsektoren"
 nasm -f bin boot/boot.asm -o $B/boot.bin
 nasm -f bin boot/hdboot.asm -o $B/hdboot.bin
+nasm -f bin boot/mdosboot.asm -o $B/mdosboot.bin    # MKDOSIMG
 # Bootcode fuer FORMAT/SYS (UFAT.EXE, SYS.EXE) als C-Feld
-python3 - $B/boot.bin $B/hdboot.bin > $B/bootcode.h <<'PYEOF'
+python3 - $B/boot.bin $B/hdboot.bin $B/mdosboot.bin > $B/bootcode.h <<'PYEOF'
 import sys
-for name, path in (("boot_fd", sys.argv[1]), ("boot_hd", sys.argv[2])):
+for name, path in (("boot_fd", sys.argv[1]), ("boot_hd", sys.argv[2]), ("boot_md", sys.argv[3])):
     d = open(path, "rb").read()
+    if name == "boot_fd":
+        print("#ifndef BOOTMD                  /* MKDOSIMG nur boot_md */")
+    if name == "boot_md":
+        print("#else")
     print("static const unsigned char %s[512] = {" % name)
     for i in range(0, 512, 16):
         print("    " + ", ".join("0x%02X" % b for b in d[i:i+16]) + ",")
     print("};")
+print("#endif")
 PYEOF
 nasm -f bin boot/mbr.asm -o $B/mbr.bin
 # Startcode des MBR (ohne Partitionstabelle) fuer FDISK
@@ -137,7 +143,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk mkdosimg"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -260,7 +266,7 @@ mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
 mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
 mcopy -i $B/freedos.img $B/ltemm.exe ::LTEMM.EXE
 mcopy -i $B/freedos.img ltemm/LICENSE.txt ::LTEMM.TXT
-BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  $B/rbshell.com RBSHELL.COM  $B/rbhma.sys RBHMA.SYS  freedos/DOSBOX.INI DOSBOX.INI  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DEMO"
@@ -302,7 +308,7 @@ CPFILES=""
 for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
 TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
 # Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
-HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE"
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE"
 TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'

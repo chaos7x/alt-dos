@@ -40,10 +40,13 @@
 #define E_EXISTS    80
 
 #define FAILED(r)   ((r) >= FAPI_ERR_FIRST)
-#define SFTLEN      0x2B
+#define SFTLEN      0x3B              /* bis sf_PID (31h) und mehr  */
 
 static struct fapi_rbregs rg;
-static unsigned char rb_perm;           /* RBOX /P: PROTECTONLY=NO      */
+static unsigned char rb_perm;
+static unsigned char ms_dos;            /* DOS der Box ist nicht FreeDOS */
+static char rb_iname[13];               /* Abbild von MKDOSIMG (ohne .IMG),
+                                           leer bei FreeDOS */           /* RBOX /P: PROTECTONLY=NO      */
 static struct fapi_rbmem rm;
 static unsigned long sda_lin;
 static char p1[128], p2[128], tmpl[11];
@@ -117,6 +120,8 @@ static void get_fn(unsigned x, char *d)
         }
         d[o++] = d[i];
     }
+    if (o > 3 && d[o - 1] == '\\')      /* MS-DOS fragt "C:\T3\" (1105h,  */
+        o--;                            /* XCOPY) - wie "C:\T3"           */
     d[o] = 0;
 }
 
@@ -309,7 +314,8 @@ static void sft_fill(unsigned h, unsigned mode, const char *path)
 {
     static char dir[80];
     unsigned k;
-    w16(sft + 0x02, mode);
+    w16(sft + 0x02, (r16(sft + 0x02) & 0x8000) | mode);  /* sf_isFCB (MS-DOS
+                                           setzt es vor dem Oeffnen) bleibt */
     sft[0x04] = de.attr;
     w16(sft + 0x05, 0x8040 | (up(path[0]) - 'A'));
     w32(sft + 0x07, 0);
@@ -318,6 +324,9 @@ static void sft_fill(unsigned h, unsigned mode, const char *path)
     w16(sft + 0x0F, de.date);
     w32(sft + 0x11, de.size);
     w32(sft + 0x15, 0);
+    w16(sft + 0x31, sda16(0x10));       /* sf_PID = aktueller PSP: MS-DOS */
+                                        /* setzt es bei Netzdateien nicht, */
+                                        /* prueft es aber bei FCBs        */
     to_fcb(split(path, dir), tmpl);
     for (k = 0; k < 11; k++)
         sft[0x20 + k] = tmpl[k];
@@ -456,6 +465,76 @@ static int find_first(void)
 /* ---- Verteiler ---------------------------------------------------------------- */
 
 /* -> -1 nicht unser, 0 erledigt, sonst DOS-Fehler */
+/* REN mit Platzhaltern (p1, p2 aus der SDA). FreeDOS loest sie selbst
+   auf, MS-DOS reicht sie an den Redirector durch: je Treffer von p1 den
+   neuen Namen nach der FCB-Regel bilden (? = Zeichen der Quelle an
+   dieser Stelle, sonst Zeichen des Musters), im Zielverzeichnis von p2. */
+static char rw_dir[80], rw_fcb[11], rw_one[96];
+static void fcb_name(const char *f, char *o)    /* "NAME    EXT" -> o */
+{
+    unsigned k, l = 0;
+    for (k = 0; k < 8 && f[k] != ' '; k++)
+        o[l++] = f[k];
+    if (f[8] != ' ') {
+        o[l++] = '.';
+        for (k = 8; k < 11 && f[k] != ' '; k++)
+            o[l++] = f[k];
+    }
+    o[l] = 0;
+}
+static int ren_wild(void)
+{
+    char t2[11], nn[11];
+    const char *n;
+    unsigned i = 0, hits = 0, k, l, r, err = 0;
+    to_fcb(split(p2, ff_dir), t2);              /* Ziel: ff_dir + Muster  */
+    n = split(p1, rw_dir);
+    to_fcb(n, tmpl);
+    while (!FAILED(DosFindEntry(&de, i++, rw_dir))) {
+        to_fcb(de.name, rw_fcb);
+        if ((de.attr & 0x1E) || !fcb_match(tmpl, rw_fcb))
+            continue;
+        for (k = 0; k < 11; k++)
+            nn[k] = t2[k] == '?' ? rw_fcb[k] : t2[k];
+        for (l = 0; rw_dir[l] && l < 80; l++)
+            rw_one[l] = rw_dir[l];
+        if (rw_one[l - 1] != '\\')
+            rw_one[l++] = '\\';
+        for (k = 0; de.name[k] && l < 95; k++)
+            rw_one[l++] = de.name[k];
+        rw_one[l] = 0;
+        for (l = 0; ff_dir[l] && l < 80; l++)
+            p2[l] = ff_dir[l];
+        if (p2[l - 1] != '\\')
+            p2[l++] = '\\';
+        fcb_name(nn, p2 + l);
+        r = DosMove(rw_one, p2);
+        if (FAILED(r))
+            err = r == FAPI_ERR_EXIST ? E_DENIED : errmap(r, E_DENIED);
+        else
+            hits++;
+    }
+    if (!hits)
+        return err ? err : nf(p1);
+    return 0;                                   /* wie MS-DOS: Teilerfolg */
+}
+
+/* Aktionscode von 6Ch (1 geoeffnet, 2 angelegt, 3 ersetzt): FreeDOS
+   nimmt ihn aus CX, MS-DOS gibt dem Aufrufer bei einem Redirector nur AX
+   zurueck - dort steht er in dessen Registerrahmen (SDA+264h/266h, CX
+   bei +4; MS-DOS 5.0 bis 6.22, PC DOS) */
+static void ext_act(unsigned act)
+{
+    unsigned sp, ss;
+    rg.cx = act;
+    if (!ms_dos)
+        return;
+    sp = sda16(0x264);
+    ss = sda16(0x266);
+    w16(word2, act);
+    poke(lin(ss, sp + 4), word2, 2);
+}
+
 static int op(unsigned fn)
 {
     static char dir[80], fcb[11], one[96];
@@ -674,6 +753,8 @@ static int op(unsigned fn)
     case 0x11:                                  /* RENAME                */
         get_fn(0x9E, p1);
         get_fn(0x11E, p2);
+        if (has_wild(p1) || has_wild(p2))
+            return ren_wild();
         r = DosMove(p1, p2);
         if (r == FAPI_ERR_EXIST)
             return E_DENIED;                    /* Ziel gibt es: 05h     */
@@ -762,7 +843,7 @@ static int op(unsigned fn)
             sft_fill((SH_MARK | slot) - 1, mode, p1);
             poke(sl, sft, SFTLEN);
             if (fn == 0x2E)
-                rg.cx = act;
+                ext_act(act);
             return 0;
         }
         if (act == 1)                           /* vorhanden: lesen oder  */
@@ -795,7 +876,7 @@ static int op(unsigned fn)
         sft_fill(h, mode, p1);
         poke(sl, sft, SFTLEN);
         if (fn == 0x2E)
-            rg.cx = act;
+            ext_act(act);
         return 0;
     }
     case 0x1B:                                  /* FINDFIRST             */
@@ -837,7 +918,12 @@ static char boot_drv(void)
     if (FAILED(DosGetEnv("COMSPEC", cs, sizeof(cs))) || cs[1] != ':')
         return 0;
     cs[2] = 0;
-    scat(cs, "\\DOS\\MDOS\\COMMAND.COM", sizeof(cs));
+    scat(cs, "\\DOS\\MDOS\\", sizeof(cs));
+    if (rb_iname[0]) {                  /* anderes DOS: dessen COMMAND.COM */
+        scat(cs, rb_iname, sizeof(cs)); /* in \DOS\MDOS\NAME (MKDOSIMG)  */
+        scat(cs, "\\", sizeof(cs));
+    }
+    scat(cs, "COMMAND.COM", sizeof(cs));
     h = DosOpen(cs);
     if (FAILED(h))
         return 0;
@@ -935,6 +1021,7 @@ static void box_call(void)
         break;
     case 0x11:                                  /* SDA ist DS:SI          */
         sda_lin = lin(rg.ds, rg.si);
+        ms_dos = (rg.bx & 0xFF) != 0xFD;        /* BL: OEM aus INT 21h 30h */
         for (r = 0; r < NSH; r++)           /* neue Box: nichts offen     */
             sh[r].h1 = 0;
         for (r = 0; r < NLK; r++)
@@ -975,6 +1062,9 @@ static void box_call(void)
         poke(lin(rg.es, rg.di), cd, slen(cd) + 1);
         break;
     }
+    case 0x19:                                  /* Name des Abbilds       */
+        poke(lin(rg.es, rg.di), rb_iname, slen(rb_iname) + 1);
+        break;
     case 0x15: {                                /* Tastaturbelegung von   */
         static unsigned char kb[KBL_BYTES];     /* AT-DOS (3 x 90 Zeichen) */
         if (FAILED(fapi_call(FAPI_KBDGETLAYOUT, (unsigned)kb, KBL_BYTES, 0)) ||

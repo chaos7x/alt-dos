@@ -32,6 +32,33 @@ Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
 nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
 Laufwerke als „fern“, Drucken.
 
+MS-DOS in der Kompatibilitätsbox (Wunsch des Nutzers, 19.11.2026,
+Rückport von main): `MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]`
+(apps/task_mkdosimg.c, nur Platte – HDDOS) baut aus der eigenen DOS-Kopie
+(Startdiskette oder Platte mit installiertem DOS 4.0–6.22 bzw. PC DOS)
+`\DOS\MDOS\NAME.IMG` mit eigenem Startsektor (`boot/mdosboot.asm`, wie
+main), RBSHELL.COM/RBHMA.SYS und eigener CONFIG.SYS; COMMAND.COM und die
+Werkzeuge nach `\DOS\MDOS\NAME\`. `DOS_IMAGE=NAME.IMG` unter `[*]` in
+`\DOS\MDOS\DOSBOX.INI` (jetzt mitgeliefert, BOXFILES) wählt es für RBOX
+ohne Angabe (task_rbox.c `ini_image`, `rb_iname`); `RBOX NAME.IMG` geht
+auch. RBSHELL `other_dos`: bei BH ≠ FDh (INT 21h 30h) und Namen (INT E0h
+19h) COMMAND.COM aus `\DOS\MDOS\NAME\` ohne Verzeichnis als erstes
+Argument (sonst erbt COMMAND.COM von MS-DOS die Umgebung nicht), eigene
+Umgebung PATH=NAME;MDOS;DOS, COMSPEC, DIRCMD, PROMPT=$P$G; 4409h für PC DOS
+ab 6.30 mit Bit 14. Redirector (rbox_redir.c `ms_dos`): `\` am Pfadende,
+REN mit Platzhaltern (`ren_wild`), FCB (sf_mode Bit 15, sf_PID), 6Ch-
+Aktion in CX des Aufrufers. boot_drv() sucht dann
+`\DOS\MDOS\NAME\COMMAND.COM`. Dabei gefunden (eigener Fehler vor dem
+Commit): other_dos nahm das Startlaufwerk aus AL, das vorher schon
+überschrieben war – „Diskette in Laufwerk B: einlegen“ bzw. DOS-Fehler 3.
+Geprüft: QEMU mit `tools/doscmp.sh` (5.x-Fassung: BIOSCMP direkt gegen
+RBOX, über den Monitor eingetippt) für MS-DOS 5.0/6.0/6.20/6.22 und PC DOS
+5.0/6.3/2000 – DOS-Teil gleich, offen wie auf main 6Ch bei PC DOS 6.3/
+2000; FreeDOS-RBOX per `bioscmp.sh … rbox` unverändert; SET mit PROMPT/
+PATH. 86Box SCAT (286, 4 MB, Start von Diskette, C: über IDE.SYS): MS-DOS
+5.00 startet in RBOX, SET/DIR, BIOSCMP – DOS-Teil gleich wie in QEMU,
+übrig nur das BIOS des SCAT. Dazu NumLock in kbd.c wie main (acfb3d5; in QEMU geprüft: Ziffernblock ohne Num Pfeile, mit Num `12-+/`).
+
 Laufwerke lokal, FCB-Suche (Entscheidung des Nutzers, 18.11.2026, wie
 auf main): FreeDOS-Kern (8086) mit `freedos/patches/fcb-search.patch`
 neu gebaut; RBSHELL fängt die Laufwerks-IOCTL ab, Werte über INT E0h

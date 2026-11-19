@@ -297,6 +297,14 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   wartet, zählt nicht): je 2 BIOS-Takte (386) bzw. 4 (286) ein kurzer
   Ausflug, `RBSLICE=n` in der CONFIG.SYS, 0 = aus. Grafik und Zustand des 287 überstehen Alt+Esc.
   Messen: `RBOX \DEMO\RBTIME`
+- MS-DOS statt FreeDOS in der Kompatibilitätsbox (wie auf 6.x): **MKDOSIMG**
+  `Quelle: [Werkzeuge] [/N:NAME.IMG]` baut aus der eigenen DOS-Kopie
+  (Startdiskette oder Festplatte mit installiertem MS-DOS 4.0–6.22 bzw.
+  PC DOS) `\DOS\MDOS\NAME.IMG`, COMMAND.COM und Werkzeuge kommen nach
+  `\DOS\MDOS\NAME\`; `DOS_IMAGE=NAME.IMG` unter `[*]` in
+  `\DOS\MDOS\DOSBOX.INI` wählt es für RBOX (oder `RBOX NAME.IMG`). In
+  QEMU mit MS-DOS 5.0/6.0/6.20/6.22 und PC DOS 5.0/6.3/2000 geprüft
+  (BIOSCMP), in 86Box auf dem SCAT (286) mit MS-DOS 5.00.
 - `TASKMAN [/L | /K Nummer|Name]` Taskmanager (aus 6.0): Vollbild mit der
   Liste der Programme, Entf beendet mit Rückfrage; auch mit
   Strg+Umschalt+Esc. Kooperativ: ein Programm, das ohne FAPI-Aufruf
