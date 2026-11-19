@@ -20,7 +20,16 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.1 fertig (Zweig `6.1`, Release `v6.1`), Weiterarbeit auf `main`
+## Aktueller Stand: AT-DOS 6.2 in der Prüfung (Zweig `6.2`), 6.1 fertig, Weiterarbeit (6.3) auf `main`
+
+AT-DOS 6.2 zur Prüfung (Wunsch des Nutzers, 19.11.2026: „Setz schon mal
+die Version hoch und mach einen branch dazu“ – er testet, findet er
+Fehler, werden sie auf `6.2` behoben und danach freigegeben): Titel/VER
+„AT-DOS 6.2“, `FAPI_VERSION` 0614h (VER zeigt „6.20“), Bootsektoren
+„6.2“. Ein Push auf `6.2` baut per CI die Testfassung `test-6.2`
+(Vorabversion, nicht neueste, Tag ohne `v` wegen des Rulesets); erst
+nach der Freigabe kommt ein Schritt für das Release `v6.2` dazu (wie
+bei 6.1, als neuestes). Fehlerbehebungen dann auf `6.2` und `main`.
 
 AT-DOS 6.1 ist fertig (Entscheidung des Nutzers, 17.11.2026: „dann
 spricht eigentlich nichts gegen die 6.1“): Zweig `6.1` = Stand der

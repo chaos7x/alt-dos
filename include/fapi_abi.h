@@ -737,7 +737,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
 #define FAPI_ERR_FIRST      0xFFF0
 
-#define FAPI_VERSION        0x060A
+#define FAPI_VERSION        0x0614
 #define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
 #define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
 #define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */

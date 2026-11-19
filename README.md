@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.1 fertig (Zweig `6.1`, Release `v6.1`; 6.0 auf `6.0`, 5.4 auf `5.4`, Weiterarbeit 5.x auf `5.x`): Setup-Disketten, Speicher wie OS/2 1.x mit Auslagerungsdatei, Loop-Laufwerke, DoubleSpace/DriveSpace (auch DriveSpace 3) lesen und schreiben, AHCI, MSCDEX in der Box
+# alt-dos – AT-DOS 6.2 im Test (Zweig `6.2`; freigegeben: 6.1 auf `6.1`, 6.0 auf `6.0`, 286-Linie 5.4 auf `5.4`, 5.5 im Test auf `5.5`): Netzwerk mit TCP/IP und IPv6, Firewall, WGET, FTP, TELNET, SNTP, Karten NE2000/RTL8139/PCnet/e1000, Sperren je Laufwerk auch für CD-Dateisysteme, acht Loop-Laufwerke
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -20,7 +20,9 @@ diese Linie weitergeführt worden wäre?
   DOOM. Dazu kommen FAT32, VESA-Grafik, PCI-SCSI (NCR 53C8xx),
   IDE-Busmaster, APM und Speicher bis knapp 4 GB. Der Kernel bleibt dabei
   bewusst 16 Bit und schlank; Programme bleiben 16 Bit und laufen auf
-  beiden Linien.
+  beiden Linien. 6.1 brachte Setup-Disketten, Auslagerung wie OS/2 1.x,
+  Loop-Laufwerke und DoubleSpace/DriveSpace, 6.2 das Netzwerk (TCP/IP
+  mit IPv6 und Firewall, WGET, FTP, TELNET, SNTP).
 
 Getestet wird in QEMU, Bochs und vor allem in **86Box**, auf
 nachgebildeten Maschinen vom 286 mit SCAT-Chipsatz bis zum ASUS P3B-F.
@@ -28,9 +30,9 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 **GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
-Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
-386-Fassungen, `5.x` = Weiterarbeit der 286-Linie (freigegeben: `5.0` bis
-`5.4`).
+Zweige: `main` = Weiterarbeit (6.3), `6.2` = Stand zur Prüfung vor der
+Freigabe, `6.1`/`6.0` = freigegebene 386-Fassungen, `5.x` = Weiterarbeit
+der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 
 ## Was läuft
 

@@ -92,7 +92,7 @@ _start:
         jmp     .nput
 .nhalt: hlt
         jmp     .nhalt
-.msg    db 13, 10, "AT-DOS 6.1 braucht einen 80386 oder neuer.", 13, 10
+.msg    db 13, 10, "AT-DOS 6.2 braucht einen 80386 oder neuer.", 13, 10
           db "Auf dem 80286 l", 0x84, "uft AT-DOS 5.x.", 13, 10, 0
 .is386:
         cli

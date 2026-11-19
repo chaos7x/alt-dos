@@ -1525,8 +1525,8 @@ t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_bscom   db "\COMMAND.COM", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
-t_hello   db "DOS-Box von AT-DOS 6.1 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
-t_hello2  db "DOS-Box von AT-DOS 6.1 - EXIT beendet die Box.", 13, 10, "$"
+t_hello   db "DOS-Box von AT-DOS 6.2 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+t_hello2  db "DOS-Box von AT-DOS 6.2 - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0

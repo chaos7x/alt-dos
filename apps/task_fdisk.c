@@ -1161,7 +1161,7 @@ static void main_menu(void)
 {
     unsigned i, act;
     screen(0);
-    center(1, "AT-DOS Version 6.1", 0x07);
+    center(1, "AT-DOS Version 6.2", 0x07);
     center(2, "Festplatten-Setup-Programm", 0x07);
     center(4, "FDISK-Optionen", A_HI);
     cur_disk(6);
