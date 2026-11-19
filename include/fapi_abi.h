@@ -695,6 +695,8 @@ struct fapi_mouevent {
 #define KBDSHIFT_CTRL       0x02
 #define KBDSHIFT_ALT        0x04    /* linke Alt-Taste                  */
 #define KBDSHIFT_ALTGR      0x08
+#define KBDSHIFT_NUM        0x20    /* NumLock an (Bits wie 0040:0017)  */
+#define KBDSHIFT_CAPS       0x40    /* Feststelltaste an                */
 /* Tastencodes (KbdCharIn): Alt+Taste liefert wie das BIOS Zeichen 0 und den
    Scancode; Alt allein gedrueckt und losgelassen liefert KEY_ALT. */
 #define KEY_ALT             0x3800

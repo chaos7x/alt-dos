@@ -150,8 +150,10 @@ wechseln, Programm starten, TYPE, COPY, DIR), BIOSCMP unverändert.
 
 Unverändert und gleich wie unter MS-DOS: Koprozessor FAILED in 86Box
 (also 86Box), Uhrabstand ~2 s, doppelte Listeneinträge nach Bild↓ (Eigenheit
-von CheckIt). Offen/kosmetisch: NumLock aus statt an (das CD-ROM als
-„Network“ ist wie unter MS-DOS, siehe dritter Durchgang). Performance: CPU-Benchmark in
+von CheckIt). Das CD-ROM als „Network“ ist wie unter MS-DOS (siehe dritter
+Durchgang). NumLock (vorher in der Box immer aus) behoben: der Kernel
+übernimmt den Startzustand des BIOS (0040:0017 Bit 5), die Num-Taste schaltet,
+die Box sieht NumLock/Feststelltaste in 0417h. Performance: CPU-Benchmark in
 86Box 11.467 Einheiten (32,5 × XT); in QEMU läuft er nie durch (FreeDOS
 direkt hängt dort, die Box beendet SYSINFO) – QEMU-Eigenheit. Platten-
 Benchmark: „nicht vorhanden“ (keine BIOS-Platten), Video läuft.

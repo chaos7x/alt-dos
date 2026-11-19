@@ -335,6 +335,8 @@ _start:
         mov     di, _bios_ports
         mov     cx, 7
         rep     movsw
+        mov     al, [0x17]              ; Umschaltzustand (NumLock beim Start)
+        mov     [es:_bios_kbf], al
         mov     ax, 0xF000              ; Datum F000:FFF5, Modell FFFE
         mov     ds, ax
         mov     si, 0xFFF5
@@ -1595,7 +1597,7 @@ _bios_fdpt:   resb 32
 _bios_geo_h:  resb 4                    ; Koepfe - 1 (INT 13h/08h)
 _bios_geo_s:  resb 4                    ; Sektoren je Spur, 0 = keine
 _bios_geo_c:  resw 4                    ; Zylinder
-global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model
+global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model, _bios_kbf
 _cpu_386:     resb 1
 _fpu_ok:      resw 1
 _fpu_sw:      resw 1
@@ -1603,6 +1605,7 @@ _bios_equip:  resw 1
 _bios_ports:  resw 7                    ; COM1-4, LPT1-3
 _bios_date:   resb 9
 _bios_model:  resb 1
+_bios_kbf:    resb 1                    ; 0040:0017 beim Start
 global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
 _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)

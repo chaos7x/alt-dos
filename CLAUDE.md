@@ -4910,6 +4910,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   tritt unter MS-DOS auf derselben VM genauso auf (86Box). Lehre: in
   SYSINFO öffnet Esc wieder das zuletzt benutzte Menü – Tastenfolgen
   dort enden sonst auf „Exit to DOS“.
+  NumLock (Wunsch des Nutzers, 19.11.2026): kbd.c kannte keine Num-
+  Taste – Ziffernblock gab immer Pfeile, `-`/`+`/`/` fehlten, Pause
+  (E1 1D 45) setzte Strg. Jetzt `num` (Start aus 0040:0017 Bit 5 im
+  Real Mode, start.asm `bios_kbf`), 45h schaltet, Ziffern bei NumLock
+  ungleich Umschalt, Dezimalzeichen `,` bei GR/SP/DK/NO/SV/PL (`kp_dec`),
+  E1-Folge übersprungen; KbdShift meldet `KBDSHIFT_NUM`/`_CAPS` (20h/
+  40h wie BIOS), bios_shift schreibt sie in 0417h der Box. LEDs schaltet
+  der Kernel weiter nicht. In QEMU (SeaBIOS: aus) und 86Box 386 (AMI: an,
+  Box `20`, nach Num `00`) geprüft.
   Dritter Durchgang mit MSCDEX 2.23 des Nutzers (ASPI4DOS /P334, ASPICD):
   CD-Laufwerke der Box haben jetzt eine CDS wie MSCDEX (`\\X.\A.`,
   C080h, Offset 7; BOXSHELL `cds_sync` fragt INT E0h 200Bh), redir.c

@@ -2175,7 +2175,8 @@ static int t8_ok(int t)
 static unsigned bios_shift(void)
 {
     unsigned k = kf_kbd_shift(), lo, hi;
-    lo = (rd8(BDA, 0x17) & 0xF0) | (k & KBDSHIFT_SHIFT ? 0x02 : 0) |
+    lo = (rd8(BDA, 0x17) & 0x90) | (k & (KBDSHIFT_NUM | KBDSHIFT_CAPS)) |
+         (k & KBDSHIFT_SHIFT ? 0x02 : 0) |
          (k & KBDSHIFT_CTRL ? 0x04 : 0) | (k & (KBDSHIFT_ALT | KBDSHIFT_ALTGR) ? 0x08 : 0);
     hi = (rd8(BDA, 0x18) & 0xF0) | (k & KBDSHIFT_CTRL ? 0x01 : 0) |
          (k & KBDSHIFT_ALT ? 0x02 : 0) | (k & KBDSHIFT_ALTGR ? 0x08 : 0);
