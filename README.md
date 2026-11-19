@@ -251,6 +251,21 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   Fortschritt mit KB/s, Dateiname aus der URL (auch lang, `%20` wird
   Leerzeichen); vorhandene Dateien nur mit `-O`/`-c`. ERRORLEVEL wie
   GNU wget (3 Datei, 4 Netz, 8 Fehlerantwort). https:// kommt mit TLS
+- `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
+  [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
+  dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,
+  mdelete, mkdir, rmdir, rename, binary, ascii, type, size, prompt, hash,
+  passive, verbose, debug, status, quote/literal, bye/quit, help
+  (eindeutig abkürzbar). Passiv als Vorgabe (PASV, bei IPv6 EPSV),
+  `passive` schaltet auf aktiv (PORT/EPRT – braucht eine Firewall-Regel
+  für FTP.EXE). Platzhalter bei mget/mdelete wertet FTP selbst aus (wie
+  Unix: `d1*` trifft `d1.dat`). Ausgaben gehen nach STDOUT (umleitbar),
+  `-s:Datei` oder umgeleitete Eingabe für Skripte
+- `TELNET [-4|-6] [-b] [-e] Rechner [Port]`: Terminal mit ANSI-Farben,
+  Optionen ECHO, SUPPRESS-GO-AHEAD, Terminaltyp „ANSI“, Fenstergröße
+  (NAWS); ohne ECHO des Servers Zeilenbetrieb mit eigenem Echo (SMTP,
+  POP3 …). Pfeil-, Bild-, Pos1/Ende- und F1–F4-Tasten als VT100-Folgen,
+  `-b` sendet ^H statt DEL. Strg+] beendet
 - `DIR /O` sortiert wie MS-DOS (`N`, `E`, `S`, `D`, `G`, `-` kehrt um; `/O`
   allein = `GN`), `DIRCMD` gilt auch in CMD, `DIR C*` heißt `C*.*`,
   unbekannte Schalter werden gemeldet, `DIR /?` zeigt die Schalter;

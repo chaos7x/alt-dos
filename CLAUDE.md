@@ -5767,6 +5767,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   NE2000 (~90–150 KB/s) geprüft: 1 MB je Weg bytegleich, Fortsetzen ab
   400.000, langer Name „Mein Text.txt“, ERRORLEVEL 8/3/1. Testfalle: in
   Stapeldateien `%%20` statt `%20` (sonst ersetzt CMD `%2`).
+  FTP und TELNET (6.2, 19.11.2026; `apps/task_ftp.c` mit LFN,
+  `apps/task_telnet.c`): FTP wie das ftp von MS-DOS/Windows (Befehle,
+  eindeutige Abkürzungen, `-s:Datei`, `-n -v -i -d -A -4 -6`), Antworten
+  mehrzeilig (`123-` … `123 `), passiv PASV/EPSV (PASV mit privater
+  Adresse, die nicht zur Steuerverbindung passt, -> Adresse der
+  Steuerverbindung, NAT), aktiv PORT/EPRT über NET_BIND Port 0 +
+  NET_GETNAME. Platzhalter bei mget/mdelete selbst (`gmatch` wie Unix,
+  NLST des Verzeichnisteils – pyftpdlib und viele Server kennen keine
+  Platzhalter bei NLST), Ausgabe über STDOUT, Tastatur-Echo über
+  VioWrtTTY. TELNET: Optionen nur bei Zustandsänderung beantworten
+  (keine Schleifen), ECHO/SGA vom Server, TTYPE „ANSI“, NAWS 80 × Zeilen
+  der Sitzung, Zeilenbetrieb ohne Server-ECHO, Zeichenbetrieb sonst
+  (Enter = CR NUL), Tasten als VT100. In QEMU geprüft (pyftpdlib auf dem
+  Rechner im Scratchpad, eigener Telnet-Testserver): 700 KB hin/zurück
+  bytegleich, mget/mput/mdelete, ASCII, rename/mkdir/rmdir/delete/size,
+  550 für fehlende Datei, Mitschrift per `> DATEI`, anonym mit
+  umgeleiteter Eingabe; TELNET Verhandlung, Zeichen, ANSI-Farbe, Ende
+  durch den Server. Nicht geprüft: aktiver Modus (QEMU-SLiRP leitet die
+  Rückverbindung nicht weiter), IPv6/EPSV, 86Box (reine Programmlogik).
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
