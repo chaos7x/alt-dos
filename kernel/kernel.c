@@ -316,7 +316,6 @@ static void locks_task_end(int t);
 static void vol_unlock_cur(void);
 #define VK_EA   NDRIVE                  /* Namenscache von EA DATA. SF   */
 #define NVK     (NDRIVE + 1)
-#define MOD_DL  NDRV
 unsigned char vk_owner[NVK];            /* loop.c liest mit              */     /* Task + 1, 0 = frei            */
 #define NXG 12                          /* Sperrgruppen ueber 0 (alle Treiber) */
 static unsigned char dl_owner[NDRV + 1 + NXG], dl_depth[NDRV + 1 + NXG];   /* [NDRV+1+x]: Gruppe x */
@@ -2183,9 +2182,11 @@ static void schedule_next(void)
      der Laufwerkssperre - also auch beim Wechsel auf ein anderes
      Laufwerk, sonst koennte A (EA, wartet auf Laufwerk von B) und B
      (Laufwerk, wartet auf EA) sich verklemmen.
-   - je Treiber (dl_owner), [NDRV] fuer die IFS-Module (gemeinsames ireq):
-     vom Fuellen des Auftrags bis zur Antwort.
-   Reihenfolge Laufwerk -> Modul -> Treiber; gewartet wird immer ohne die
+   - je Treiber (dl_owner): vom Fuellen des Auftrags bis zur Antwort;
+     [NDRV] ist frei (bis 6.1 eine Sperre fuer alle IFS-Module - seit 6.2
+     liegt ireq im Kontext je Task und das Modul haelt Zustand je Geraet,
+     die Laufwerkssperre reicht).
+   Reihenfolge Laufwerk -> Treiber; gewartet wird immer ohne die
    Kernelsperre. Hausarbeit des Schedulers (Strg+C, Taskmanager, Neustart,
    kill_req) nur, wenn niemand mitten in einer Operation steht. */
 
@@ -4490,7 +4491,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
    wieder hat - wie beim 287 nur, wenn es wirklich noetig ist. Gemeinsame
    Caches (FAT-Cache, Platten-Cache, Verzeichnis-/EA-Cache) gehoeren NICHT
    hinein: was ein anderer dort aendert, muss bleiben. */
+static struct ifs_req ireq;             /* Auftrag an ein IFS-Modul      */
 static const struct ctxblk kern_ctx[] = {
+    { &ireq, sizeof(ireq) },
     { nj_tp, sizeof(nj_tp) }, { nj_rb, sizeof(nj_rb) },
     { lcm_psp, sizeof(lcm_psp) }, { &dk_f, sizeof(dk_f) }, { dk_hb, sizeof(dk_hb) },
     { dl_sp, sizeof(dl_sp) }, { ld_a, sizeof(ld_a) }, { ld_keep, sizeof(ld_keep) },
@@ -6503,7 +6506,10 @@ static const char *exec_err(int e)
 }
 
 /* ---- Bruecke zu nachgeladenen Dateisystemen --------------------------- */
-static struct ifs_req ireq;
+/* ireq liegt im Kontext je Task (kern_ctx), das Modul haelt seinen Zustand
+   je Geraet: Auftraege an verschiedene Laufwerke laufen nebeneinander, die
+   Laufwerkssperre (vol_lock) reicht (6.2; vorher eine Sperre MOD_DL fuer
+   alle Module und Laufwerke) */
 
 static int mod_call(int drive, unsigned char cmd)
 {
@@ -6589,66 +6595,45 @@ static int mod_namepath_(int drive, const char *path, char *out, int shortn)
 
 static int __far mod_open(int drive, const char *path, struct ifs_file __far *f)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_open_(drive, path, f);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_open_(drive, path, f);
 }
 
 static int __far mod_read(struct ifs_file __far *f, unsigned long pos, unsigned sel,
                     unsigned off, unsigned len)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_read_(f, pos, sel, off, len);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(f->drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_read_(f, pos, sel, off, len);
 }
 
 static int __far mod_readdir(int drive, const char *dir, unsigned n, struct ifs_dirent *de)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_readdir_(drive, dir, n, de);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_readdir_(drive, dir, n, de);
 }
 
 static int __far mod_isdir(int drive, const char *path)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_isdir_(drive, path);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_isdir_(drive, path);
 }
 
 static int __far mod_label(int drive, char *lbl, unsigned long *serial, const char *newlbl)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_label_(drive, lbl, serial, newlbl);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_label_(drive, lbl, serial, newlbl);
 }
 
 static int __far mod_namepath(int drive, const char *path, char *out, int shortn)
 {
-    int r;
-    drv_lock(MOD_DL);                   /* ireq und das Modul: einer zur Zeit */
-    r = mod_namepath_(drive, path, out, shortn);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);                   /* die Laufwerkssperre schuetzt */
+    return mod_namepath_(drive, path, out, shortn);
 }
 
 static int __far mod_mount(int drive)
 {
-    int r;
-    drv_lock(MOD_DL);
-    r = mod_mount_(drive);
-    drv_unlock(MOD_DL);
-    return r;
+    vol_lock(drive);
+    return mod_mount_(drive);
 }
 
 struct ifs_driver mod_driver = {

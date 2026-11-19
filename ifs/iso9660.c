@@ -40,31 +40,85 @@ void far_cpy(void __far *dst, const void __far *src, unsigned n);
     __parm [__es __di] [__dx __si] [__cx] __modify [__di __si __cx];
 
 static unsigned      dmasel;            /* DMA-Puffer des Kernels (2048 Byte) */
-static unsigned long root_ext, root_len;
-static unsigned char joliet;            /* Baum aus dem Joliet-Deskriptor  */
-static unsigned char lng;               /* lange Namen (Joliet, 1999, RR)  */
-static unsigned char bytes;             /* Namen als Bytes (1999, RR)      */
-static unsigned char rr;                /* Rock Ridge (SUSP im PVD-Baum)   */
-static unsigned char sp_skip;           /* SUSP: Bytes vor dem System Use  */
-static char          volid[12];         /* Bezeichnung (aus dem PVD)       */
 
-/* gefundener Verzeichniseintrag */
-static struct {
-    char          name[IFS_NAMELEN];
-    char          alias[13];            /* 8.3-Ersatzname, "" = name ist 8.3 */
-    unsigned long ext, size;
-    unsigned char flags;                /* 02h Verzeichnis, 01h versteckt  */
-    unsigned      date, time;           /* FAT-Format                      */
-} ent;
+/* Zustand je Blockgeraet (6.2, Big Lock): der Kernel ruft das Modul je
+   Laufwerk unter dessen Laufwerkssperre - zwei CDs (oder CD und ISO-Loop)
+   arbeiten gleichzeitig, ein Auftrag kann beim Lesen schlafen, waehrend
+   ein anderer fuer ein anderes Geraet laeuft. Alles, was ueber einen
+   Lesezugriff lebt, steht deshalb hier; S zeigt auf den Zustand des
+   laufenden Auftrags und wird nach jedem Lesen (rd) neu gesetzt. */
+#define NSLOT 4                         /* gleichzeitig benutzte Geraete  */
+struct st {
+    unsigned      dev;                  /* Blockgeraet, FFFFh = frei      */
+    unsigned char busy;                 /* Auftrag laeuft (evtl. schlafend) */
+    unsigned char ok;                   /* eingehaengt (mount gelungen)    */
+    unsigned      age;                  /* zuletzt benutzt (Zaehler)       */
+    unsigned long root_ext, root_len;
+    unsigned char joliet;               /* Baum aus dem Joliet-Deskriptor  */
+    unsigned char lng;                  /* lange Namen (Joliet, 1999, RR)  */
+    unsigned char bytes;                /* Namen als Bytes (1999, RR)      */
+    unsigned char rr;                   /* Rock Ridge (SUSP im PVD-Baum)   */
+    unsigned char sp_skip;              /* SUSP: Bytes vor dem System Use  */
+    char          volid[12];            /* Bezeichnung (aus dem PVD)       */
+    struct {                            /* gefundener Verzeichniseintrag   */
+        char          name[IFS_NAMELEN];
+        char          alias[13];        /* 8.3-Ersatzname, "" = name ist 8.3 */
+        unsigned long ext, size;
+        unsigned char flags;            /* 02h Verzeichnis, 01h versteckt  */
+        unsigned      date, time;       /* FAT-Format                      */
+    } ent;
+    unsigned short uname[IFS_NAMELEN];  /* Joliet-/UTF-8-Name als UCS-2    */
+    unsigned char ent_lossy;
+    unsigned char raw[256];             /* Name als Bytes (1999, RR)       */
+    unsigned      rlen;
+    unsigned char rr_nm, rr_re;         /* Rock Ridge: laufender Eintrag   */
+    unsigned long ce_blk, cl_loc;
+    unsigned      ce_off, ce_len;
+    unsigned      ent_idx;
+    char          want[13], cand[13], eb[13], nm[IFS_NAMELEN];
+    char          fa_sv[IFS_NAMELEN], fa_b[13];         /* fill_alias      */
+    char          np_out[IFS_PATHLEN], np_comp[IFS_PATHLEN];  /* namepath  */
+};
+static struct st st_tab[NSLOT];
+static struct st *S;
+static unsigned clock_;
+#define root_ext  (S->root_ext)
+#define root_len  (S->root_len)
+#define joliet    (S->joliet)
+#define lng       (S->lng)
+#define bytes     (S->bytes)
+#define rr        (S->rr)
+#define sp_skip   (S->sp_skip)
+#define volid     (S->volid)
+#define ent       (S->ent)
+#define uname     (S->uname)
+#define ent_lossy (S->ent_lossy)
+#define raw       (S->raw)
+#define rlen      (S->rlen)
+#define rr_nm     (S->rr_nm)
+#define rr_re     (S->rr_re)
+#define ce_blk    (S->ce_blk)
+#define cl_loc    (S->cl_loc)
+#define ce_off    (S->ce_off)
+#define ce_len    (S->ce_len)
+#define ent_idx   (S->ent_idx)
+#define want      (S->want)
+#define cand      (S->cand)
+#define eb        (S->eb)
+#define nm        (S->nm)
 
 static unsigned char __far *blk(void)
 {
     return MK_FP(dmasel, 0);
 }
 
+/* Block lesen - Schlafpunkt: danach gilt wieder der eigene Zustand */
 static int rd(unsigned dev, unsigned long lba)
 {
-    return devhlp(DH_BLKREAD, (unsigned)(lba >> 16), dev, (unsigned)lba) ? -1 : 0;
+    struct st *me = S;
+    int r = devhlp(DH_BLKREAD, (unsigned)(lba >> 16), dev, (unsigned)lba) ? -1 : 0;
+    S = me;
+    return r;
 }
 
 static unsigned long le32(unsigned char __far *p)
@@ -121,8 +175,6 @@ static unsigned char uni2cp(unsigned u)
 /* Joliet-Name des letzten take() als UCS-2; ent_lossy: hat '_' fuer
    Zeichen ausserhalb CP437 -> dem Kernel melden (DH_UNINOTE), damit eine
    Kopie auf FAT das Original bekommt (Unicode Stufe 1) */
-static unsigned short uname[IFS_NAMELEN];
-static unsigned char ent_lossy;
 
 static int ok83(unsigned char c)        /* in 8.3-Namen erlaubt         */
 {
@@ -275,8 +327,6 @@ static int mount(unsigned dev)
 
 /* Name aus Bytes (ISO 9660:1999, Rock Ridge): gueltiges UTF-8 als UTF-8,
    sonst Latin-1; nach CP437 wie bei Joliet */
-static unsigned char raw[256];
-static unsigned rlen;
 
 static unsigned name_bytes(void)
 {
@@ -311,9 +361,6 @@ static unsigned name_bytes(void)
 }
 
 /* Rock Ridge: Zustand des laufenden Eintrags */
-static unsigned char rr_nm, rr_re;
-static unsigned long ce_blk, cl_loc;
-static unsigned ce_off, ce_len;
 
 /* SUSP-Eintraege eines System Use Area auswerten */
 static void su_parse(unsigned char __far *p, unsigned n)
@@ -446,8 +493,6 @@ static void uni_tell(void)
 #define SC_NAME  0
 #define SC_INDEX 1
 #define SC_COUNT 2
-static unsigned ent_idx;
-static char want[13], cand[13], eb[13], nm[IFS_NAMELEN];
 
 static int scan(unsigned dev, unsigned long ext, unsigned long len,
                 const char __far *name, unsigned nlen, unsigned n, int mode)
@@ -539,7 +584,7 @@ static int scan(unsigned dev, unsigned long ext, unsigned long len,
 /* 8.3-Ersatzname des gefundenen Eintrags (ent, ent_idx) bilden */
 static void fill_alias(unsigned dev, unsigned long ext, unsigned long len)
 {
-    static char sv[IFS_NAMELEN], b[13];
+    char *sv = S->fa_sv, *b = S->fa_b;
     unsigned k, cnt;
     unsigned long e2 = ent.ext, s2 = ent.size;
     unsigned char f2 = ent.flags;
@@ -596,7 +641,7 @@ static int walk(unsigned dev, const char __far *path)
 /* Pfad Teil fuer Teil in die Schreibung der CD umsetzen (n = 1: 8.3) */
 static void namepath(struct ifs_req __far *r)
 {
-    static char out[IFS_PATHLEN], comp[IFS_PATHLEN];
+    char *out = S->np_out, *comp = S->np_comp;
     const char __far *p = r->path, __far *q;
     const char *src;
     unsigned o = 0, k;
@@ -665,19 +710,60 @@ static void do_read(struct ifs_req __far *r)
     r->status = 0;
 }
 
+/* Platz fuer ein Geraet: seiner, sonst ein freier, sonst der am laengsten
+   unbenutzte, der gerade nicht arbeitet (dessen Zustand ist dann weg:
+   ok = 0, der naechste Auftrag haengt neu ein). 0 = keiner frei */
+static struct st *slot(unsigned dev)
+{
+    struct st *p, *best = 0;
+    unsigned i;
+    for (i = 0; i < NSLOT; i++)
+        if (st_tab[i].dev == dev) {
+            st_tab[i].age = ++clock_;
+            return &st_tab[i];
+        }
+    for (i = 0; i < NSLOT; i++) {
+        p = &st_tab[i];
+        if (p->busy)
+            continue;
+        if (p->dev == 0xFFFF) {
+            best = p;
+            break;
+        }
+        if (!best || (unsigned)(clock_ - p->age) > (unsigned)(clock_ - best->age))
+            best = p;
+    }
+    if (best) {
+        best->dev = dev;
+        best->ok = 0;
+        best->age = ++clock_;
+    }
+    return best;
+}
+
 static void request(void)
 {
     struct ifs_req __far *r = IREQ;
     unsigned k;
 
     r->status = 1;
+    S = slot(r->dev);
+    if (!S)
+        return;                         /* alle Plaetze arbeiten gerade   */
+    S->busy = 1;
     /* aktive Codepage bei jedem Aufruf holen - CHCP gilt sofort, auch
        fuer eine schon eingehaengte CD */
     k = devhlp(DH_CPTAB, 0, 0, 0);
     ctab = k ? MK_FP(k, devhlp(DH_CPTAB, 0, 1, 0)) : 0;
+    if (r->cmd != IFSM_MOUNT && r->cmd != IFSM_READ && !S->ok &&
+        !(S->ok = mount(r->dev) == 0)) {
+        S->busy = 0;                    /* Platz war vergeben: neu einhaengen */
+        return;
+    }
     switch (r->cmd) {
     case IFSM_MOUNT:
-        if (mount(r->dev) == 0)
+        S->ok = mount(r->dev) == 0;
+        if (S->ok)
             r->status = 0;
         break;
     case IFSM_OPEN:
@@ -731,15 +817,19 @@ static void request(void)
         namepath(r);
         break;
     }
+    S->busy = 0;
 }
 
 void strategy(void)
 {
     struct drv_req __far *r = REQ;
+    unsigned k;
 
     if (r->cmd == DRV_INIT) {
         devhlp_ptr = MK_FP(r->devhlp_sel, r->devhlp_off);
         dmasel = r->buf_sel;
+        for (k = 0; k < NSLOT; k++)
+            st_tab[k].dev = 0xFFFF;
         r->units = IFS_CLASS_CD;
         r->status = DRV_OK;
         dputs("  ISO 9660, Joliet, ISO 9660:1999 und Rock Ridge f\x81r CD-ROMs, nur lesend\n");

@@ -5825,6 +5825,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ERRORLEVEL 1. Testfalle: in CMD ist `<` Umleitung – `SET TZ=<+0530>…`
   geht nur in der CONFIG.SYS. Kein Kernelteil geändert, DosSetDateTime
   wie bei DATE/TIME – kein 86Box-Lauf. Offen: DHCP-Option 42 (NTP-Server).
+  Big Lock Teil 6.2 (19.11.2026, docs/BIGLOCK.md „Stand 6.2“): das
+  meiste war mit Phase 6 schon da; übrig war die IFS-Brücke. `ireq` liegt
+  jetzt im Kontext je Task (kern_ctx), `MOD_DL` entfällt (Laufwerkssperre
+  genügt, dl_owner[NDRV] ist frei), ISO9660.IFS hält seinen Zustand in
+  vier Plätzen je Gerät (`struct st`, Zeiger `S`, nach jedem rd() neu
+  gesetzt, Felder per #define wie bisher benannt; verdrängter Platz hängt
+  beim nächsten Auftrag neu ein). Lehre: in QEMU fiel die alte Sperre nicht
+  auf (zwei gedrosselte CDs alt wie neu 61 s) – Gewinn ist Struktur, nicht
+  Tempo. In QEMU geprüft (s. BIGLOCK.md), kein 86Box (keine Hardware).
+  Bemerkt, alt wie neu: in AUTOEXEC.CMD erscheint nach `COMMAND /C DIR F:\
+  > X` die Ausgabe eines zweiten `COMMAND /C TYPE … >> X` nicht.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
   VM-Betrieb“, vor VirtIO; selbstständig gebaut und in QEMU geprüft –
   86Box hat kein AHCI): `drivers/ahci.c` -> `AHCI.SYS` (CONFIG.SYS nach
