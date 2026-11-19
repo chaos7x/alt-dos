@@ -387,8 +387,10 @@ static int __far fat_mount(int d)
 
     if (blk_read(v->blk, v->start))
         return -1;
-    if (rd16(510) != 0xAA55)
-        return -1;
+    if (rd16(510) != 0xAA55 && dma()[0] != 0xEB && dma()[0] != 0xE9)
+        return -1;                      /* wie MS-DOS: Sprung genuegt (alte
+                                           Kopierprogramme wie DUPLICAT
+                                           schreiben kein 55AAh)          */
     bps      = rd16(11);
     spc      = dma()[13];
     reserved = rd16(14);

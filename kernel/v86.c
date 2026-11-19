@@ -102,7 +102,15 @@ static unsigned char kq[NTASK][16], kq_h[NTASK], kq_t[NTASK];   /* Scancodes */
 static unsigned char vcur[NTASK];       /* zuletzt an Port 60h           */
 static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
-static unsigned char cmos_idx[NTASK];    /* Port 70h der Box              */
+static unsigned char cmos_idx[NTASK];
+static unsigned shf_last[NTASK];         /* zuletzt nach 0417h gelegt    */
+static unsigned char vimr2[NTASK];       /* Maske des zweiten PIC (A1h)   */
+static unsigned char picw[NTASK][2];     /* noch erwartete ICW2-4 je PIC  */
+static unsigned alrm[NTASK];            /* INT 1Ah 06h: Weckzeit (DOS-Zeit) */
+static unsigned char alrm_on[NTASK];     /* 1 gesetzt, 2 erst nach Mitternacht */
+static unsigned alrm_tk[NTASK];          /* zuletzt geprueft (Kerneltakt)  */
+static unsigned char cmos_ov[NTASK][128], cmos_om[NTASK][16];  /* geschriebene
+                                           CMOS-Bytes (nur fuer die Box)    */    /* Port 70h der Box              */
 static unsigned char noblink[NTASK];     /* INT 10h 1003h: Hintergrund hell */
 static unsigned pit_c[NTASK];          /* (alt, ungenutzt)              */
 /* virtueller PIT: Kanal 0 mit der Rate des Programms, Zaehler nach
@@ -531,6 +539,7 @@ static unsigned ansi_seq(char *b, unsigned a)
 static struct { unsigned char v; unsigned cs, ip, ax; } trc[8];
 static unsigned char trn;
 static unsigned long trc_ivt[3];
+static unsigned char trc_code[8];       /* Befehlsbytes bei CS:IP        */
 static void replay_text(int s);
 extern char box_fmsg[];                 /* kernel.c fault: Abbruch der Box */
 
@@ -566,6 +575,9 @@ static void trace_out(int s)
         b[n++] = ':';
         n = hx(b, n, (unsigned)trc_ivt[i], 4);
     }
+    b[n++] = ' ';                               /* Befehl bei CS:IP      */
+    for (i = 0; i < 8; i++)
+        n = hx(b, n, trc_code[i], 2);
     b[n++] = '\n';
     kf_vio_tty(s, KDATA, (unsigned)b, n);
 }
@@ -633,6 +645,10 @@ static unsigned long rtc_ticks(void)
 }
 
 /* -> CR3 der neuen Box, 0 = kein Speicher. Speicher genullt. */
+static unsigned char lpt_d[NTASK][3], lpt_cr[NTASK][3];  /* Portregister */
+static struct vuart {
+    unsigned char dll, dlm, ier, lcr, mcr, scr, rbr, dr;
+} vu[NTASK][4];
 static unsigned lpt_h[NTASK];           /* INT 17h: Handle + 1 (lpt_out) */
 
 unsigned long __far v86_create(int t, unsigned kb)
@@ -783,6 +799,19 @@ unsigned long __far v86_create(int t, unsigned kb)
     idle_n[t] = 0;
     b2f[t] = 0;
     lpt_h[t] = 0;                       /* (task_end schloss ihn)        */
+    lpt_cr[t][0] = lpt_cr[t][1] = lpt_cr[t][2] = 0;
+    for (i = 0; i < 16; i++)
+        cmos_om[t][i] = 0;
+    alrm_on[t] = 0;
+    shf_last[t] = 0xFFFF;
+    vimr2[t] = 0;
+    picw[t][0] = picw[t][1] = 0;
+    for (i = 0; i < 4; i++) {           /* 9600 Baud, 8N1                */
+        vu[t][i].dll = 0x0C;
+        vu[t][i].dlm = vu[t][i].ier = vu[t][i].mcr = vu[t][i].scr = 0;
+        vu[t][i].lcr = 3;
+        vu[t][i].dr = 0;
+    }
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -2100,8 +2129,14 @@ static void account(int t)
     now = get_ticks();
     d = now - vt_last[t];
     vt_last[t] = now;
-    if (d > 100)
-        d = 100;
+    if (d > 100) {                      /* lange nicht gelaufen (geparkt, */
+        unsigned long tk = rtc_ticks(), o = ((unsigned long)rd16(BDA, 0x6E) << 16) | rd16(BDA, 0x6C);
+        if (o > tk + 786000UL)          /* angehalten): Uhr der Box aus der */
+            wr8(BDA, 0x70, 1);          /* Echtzeituhr neu (vorher gingen */
+        wr16(BDA, 0x6C, (unsigned)tk);  /* die Sekunden verloren - CheckIt: */
+        wr16(BDA, 0x6E, (unsigned)(tk >> 16));  /* DOS 17 s hinter RTC)  */
+        d = 0;
+    }
     vt_acc[t] += (unsigned)d * 182;
     while (vt_acc[t] >= 1000) {
         vt_acc[t] -= 1000;
@@ -2157,8 +2192,10 @@ static void inject(struct v86_iret *r, int t)
         sti_step[t] = 0;
         r->eflags &= ~(unsigned long)FL_TF;
     }
-    if (box_fg(t))                              /* 0417h aktuell halten  */
-        bios_shift();
+    if (box_fg(t) && kf_kbd_shift() != shf_last[t]) {   /* 0417h nur bei */
+        shf_last[t] = kf_kbd_shift();           /* Aenderung (wie das BIOS: */
+        bios_shift();                           /* Speichertests legen dort */
+    }                                           /* Muster ab - CheckIt)     */
     if ((spk[t] || spk_open[t] || opl_open[t] || emu_owner == t + 1) && !box_fg(t)) {
         spk_hw(t, 0);                           /* hinten: stumm         */
         spk_ports(t, 0);
@@ -2186,6 +2223,17 @@ static void inject(struct v86_iret *r, int t)
             }
             if (!pm_hooked(t, 8 + q))
                 sb[t].irqp &= (unsigned char)~m;    /* niemand will ihn  */
+        }
+    }
+    if (alrm_on[t] && (unsigned)get_ticks() - alrm_tk[t] >= 50) {
+        unsigned now = (unsigned)rtc_stamp();   /* Weckzeit (INT 1Ah 06h): */
+        alrm_tk[t] = (unsigned)get_ticks();     /* je halbe Sekunde pruefen */
+        if (alrm_on[t] == 2 && now < alrm[t])
+            alrm_on[t] = 1;                     /* Mitternacht vorbei      */
+        else if (alrm_on[t] == 1 && now >= alrm[t]) {
+            alrm_on[t] = 0;                     /* wie der BIOS-Handler    */
+            int_raw(r, t, 0x4A, (unsigned)r->eip);  /* von IRQ 8: INT 4Ah */
+            return;
         }
     }
     if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && t8_ok(t)) {
@@ -2763,6 +2811,10 @@ static unsigned bcd(unsigned v)
 {
     return ((v / 10) << 4) | (v % 10);
 }
+static unsigned ubcd(unsigned v)
+{
+    return (v >> 4) * 10 + (v & 15);
+}
 
 static void out_ch(int t, unsigned char ch)
 {
@@ -2887,8 +2939,11 @@ static int lpt_out(int t, unsigned port, unsigned char c)
         kf_box_fapi(FAPI_CLOSE, KDATA, lpt_h[t] - 1, 0, 0);
         lpt_h[t] = 0;
     }
-    if (!lpt_h[t]) {
-        lpt_name[3] = (char)('1' + port);
+    if (!lpt_h[t]) {                    /* 0-2 LPT1-3, 4-7 COM1-4        */
+        lpt_name[0] = port >= 4 ? 'C' : 'L';
+        lpt_name[1] = port >= 4 ? 'O' : 'P';
+        lpt_name[2] = port >= 4 ? 'M' : 'T';
+        lpt_name[3] = (char)('1' + (port & 3));
         r = kf_box_fapi(FAPI_OPEN, KDATA, (unsigned)lpt_name, OPEN_RW, 0);
         if (r < FAPI_ERR_FIRST) {
             lpt_h[t] = r + 1;
@@ -2901,6 +2956,86 @@ static int lpt_out(int t, unsigned port, unsigned char c)
         e = 1;
     kf_box_ctl(BOX_LOCK, 0);
     return e;
+}
+
+/* Serielle Ports (Basis aus dem BDA der Box) als einfacher 8250 ohne
+   FIFO und ohne Interrupt: Teiler, LCR, MCR, IER, SCR behalten ihren
+   Wert, Loopback (MCR Bit 4) spiegelt THR nach RBR und MCR nach MSR,
+   sonst gehen gesendete Bytes ueber das FAPI-Geraet COMn (wie lpt_out).
+   Vorher las die Box dort FFh (CheckIt: "1 Baud"). */
+static int com_reg(unsigned p)
+{
+    unsigned i, b;
+    for (i = 0; i < 4; i++) {
+        b = rd16(BDA, 2 * i);
+        if (b && p >= b && p <= b + 7)
+            return (int)(i * 8 + p - b);
+    }
+    return -1;
+}
+static unsigned char com_in(int t, int k)
+{
+    struct vuart *u = &vu[t][k >> 3];
+    unsigned char m;
+    switch (k & 7) {
+    case 0:
+        if (u->lcr & 0x80)
+            return u->dll;
+        u->dr = 0;
+        return u->rbr;
+    case 1:
+        return u->lcr & 0x80 ? u->dlm : (unsigned char)(u->ier & 0x0F);
+    case 2:
+        return 0x01;                            /* kein Interrupt        */
+    case 3:
+        return u->lcr;
+    case 4:
+        return (unsigned char)(u->mcr & 0x1F);
+    case 5:
+        return (unsigned char)(0x60 | u->dr);   /* Sender leer           */
+    case 6:
+        if (!(u->mcr & 0x10))
+            return 0xB0;                        /* DCD, DSR, CTS         */
+        m = u->mcr;
+        return (unsigned char)(((m & 1) << 5) | ((m & 2) << 3) |
+                               ((m & 4) << 4) | ((m & 8) << 4));
+    }
+    return u->scr;
+}
+static void com_out(int t, int k, unsigned char v)
+{
+    struct vuart *u = &vu[t][k >> 3];
+    switch (k & 7) {
+    case 0:
+        if (u->lcr & 0x80)
+            u->dll = v;
+        else if (u->mcr & 0x10) {
+            u->rbr = v;
+            u->dr = 1;
+        } else
+            lpt_out(t, 4 + (k >> 3), v);
+        break;
+    case 1:
+        if (u->lcr & 0x80) u->dlm = v; else u->ier = v;
+        break;
+    case 3: u->lcr = v; break;
+    case 4: u->mcr = v; break;
+    case 7: u->scr = v; break;
+    }
+}
+
+/* Register der Parallelports (Basis aus dem BDA der Box): Datenlatch,
+   Status "bereit", Steuerregister; fallende Flanke von STROBE (Bit 0)
+   druckt das Datenbyte wie INT 17h.  -> Port 0-2 * 4 + Register, sonst -1 */
+static int lpt_reg(unsigned p)
+{
+    unsigned i, b;
+    for (i = 0; i < 3; i++) {
+        b = rd16(BDA, 8 + 2 * i);
+        if (b && p >= b && p <= b + 2)
+            return (int)(i * 4 + p - b);
+    }
+    return -1;
 }
 
 static void svc(int n, struct v86_frame *f, int t)
@@ -3006,8 +3141,10 @@ static void svc(int n, struct v86_frame *f, int t)
         }
         break;
     case 0x14:                                  /* seriell: keine Daten,  */
-        if (!rd16(BDA, DX * 2))                 /* Senden laeuft ab       */
+        if (DX > 3 || !rd16(BDA, DX * 2))       /* Senden laeuft ab       */
             AX = 0x8000;
+        else if (AH == 0x01)                    /* senden ueber COMn      */
+            AH = lpt_out(t, 4 + DX, AL) ? 0x80 : 0x60;
         else if (AH == 0x00 || AH == 0x03)
             AX = 0x6000;                        /* Sendepuffer leer      */
         else if (AH <= 0x02)
@@ -3050,6 +3187,18 @@ static void svc(int n, struct v86_frame *f, int t)
             CL = (unsigned char)bcd((i >> 5) & 63);
             DH = (unsigned char)bcd((i & 31) << 1);
             DL = 0;
+            svc_cf = 0;
+        } else if (AH == 0x06) {                /* Weckzeit setzen: INT 4Ah */
+            if (alrm_on[t]) {                   /* zur Zeit (inject)       */
+                svc_cf = 1;                     /* schon gesetzt: CF       */
+                break;
+            }
+            alrm[t] = (ubcd(CH) << 11) | (ubcd(CL) << 5) | (ubcd(DH) >> 1);
+            alrm_on[t] = alrm[t] <= (unsigned)st ? 2 : 1;
+            alrm_tk[t] = (unsigned)get_ticks();
+            svc_cf = 0;
+        } else if (AH == 0x07) {                /* Weckzeit loeschen       */
+            alrm_on[t] = 0;
             svc_cf = 0;
         } else if (AH == 0x04) {
             i = (unsigned)(st >> 16);
@@ -3960,6 +4109,10 @@ static unsigned char port_in(int t, unsigned p)
         return 0;
     case 0x21:
         return vimr[t];
+    case 0xA0:
+        return 0;
+    case 0xA1:
+        return vimr2[t];
     case 0x60:
         if (vec_def(9) && !pm_hooked(t, 9) && (k = kq_get(t)) >= 0)
             vcur[t] = (unsigned char)k;         /* ohne INT 9: abfragen  */
@@ -3982,6 +4135,8 @@ static unsigned char port_in(int t, unsigned p)
             return (unsigned char)kb;
         if (cmos_idx[t] == 0x18 || cmos_idx[t] == 0x31)
             return (unsigned char)(kb >> 8);
+        if (cmos_om[t][cmos_idx[t] >> 3] & (1 << (cmos_idx[t] & 7)))
+            return cmos_ov[t][cmos_idx[t]];
         f = irq_off();
         outb(0x70, cmos_idx[t]);
         v = (unsigned char)inb(0x71);
@@ -4008,6 +4163,15 @@ static unsigned char port_in(int t, unsigned p)
         }
         return 0xFF;
     }
+    if ((k = com_reg(p)) >= 0)                  /* serieller Port        */
+        return com_in(t, k);
+    if ((k = lpt_reg(p)) >= 0) {                /* Parallelport          */
+        if ((k & 3) == 0)
+            return lpt_d[t][k >> 2];
+        if ((k & 3) == 1)
+            return 0xDF;                        /* bereit, gewaehlt      */
+        return (unsigned char)(lpt_cr[t][k >> 2] | 0xE0);
+    }
     return 0xFF;
 }
 
@@ -4031,20 +4195,59 @@ static void port_out(int t, unsigned p, unsigned char v)
         return;
     }
     switch (p) {
+    case 0xA0:                                  /* zweiter PIC: ICW1     */
+        if (v & 0x10)                           /* (Masken behalten ihren */
+            picw[t][1] = (unsigned char)(v & 1 ? 3 : 2);    /* Wert)      */
+        break;
+    case 0xA1:
+        if (picw[t][1])
+            picw[t][1]--;
+        else
+            vimr2[t] = v;
+        break;
     case 0x20:
+        if (v & 0x10) {                         /* ICW1: Folge ICW2-4    */
+            picw[t][0] = (unsigned char)(v & 1 ? 3 : 2);
+            break;
+        }
         if (v == 0x20)                          /* EOI: niedrigstes Bit  */
             visr[t] &= (unsigned char)(visr[t] - 1);
         else if ((v & 0xF8) == 0x60)            /* spezifisches EOI (Digger) */
             visr[t] &= (unsigned char)~(1 << (v & 7));
         break;
     case 0x21:
-        vimr[t] = v;
+        if (picw[t][0])                         /* ICW2-4, nicht Maske   */
+            picw[t][0]--;
+        else
+            vimr[t] = v;
         break;
     case 0x40: case 0x41: case 0x42: case 0x43:
         pit_out(t, p, v);
         break;
     case 0x70:
         cmos_idx[t] = (unsigned char)(v & 0x7F);
+        break;
+    case 0x71:                                  /* CMOS schreiben: nur in */
+        o = cmos_idx[t];                        /* die Kopie der Box: die */
+        if (o >= 0x0E || o == 1 || o == 3 || o == 5 || o == 0x0B) {
+            cmos_ov[t][o] = v;                  /* Uhr laeuft weiter, Weck- */
+                                                /* register und Status B  */
+                                                /* liest die Box zurueck  */
+            cmos_om[t][cmos_idx[t] >> 3] |= (unsigned char)(1 << (cmos_idx[t] & 7));
+        }
+        break;
+    default:
+        if ((o = (unsigned)com_reg(p)) < 32)    /* serieller Port        */
+            com_out(t, (int)o, v);
+        else if ((o = (unsigned)lpt_reg(p)) < 12) {  /* Parallelport     */
+            if ((o & 3) == 0)
+                lpt_d[t][o >> 2] = v;
+            else if ((o & 3) == 2) {
+                if ((lpt_cr[t][o >> 2] & 1) && !(v & 1))
+                    lpt_out(t, o >> 2, lpt_d[t][o >> 2]);
+                lpt_cr[t][o >> 2] = (unsigned char)(v & 0x1F);
+            }
+        }
         break;
     case 0x388: case 0x389: case 0x38A: case 0x38B:
         if (box_fg(t)) {                        /* OPL: vorn direkt      */
@@ -6800,6 +7003,93 @@ static int rom_cow(struct v86_frame *f, int t)
     return 1;
 }
 
+/* Schreiben auf die Stummelseite F0000h (bei echter Hardware ROM):
+   verpufft wie beim ROM.  Den Befehl bei CS:IP decodieren und ueber-
+   springen (RAM-Proben im oberen Speicher, z. B. CheckIt: 55AAh nach
+   F000:0000 schreiben und zuruecklesen).  -> 1 uebersprungen */
+static int rom_skip(struct v86_frame *f, int t)
+{
+    unsigned long a = k2_cr2();
+    unsigned cs = (unsigned)f->r.cs, ip = (unsigned)f->r.eip, i, m, md, rm;
+    unsigned char op, o32 = 0, a32 = 0, rep = 0, imm = 0, mod = 1;
+    (void)t;
+    if ((f->err & 7) != 7 || (unsigned)(a >> 12) != 0xF0)
+        return 0;
+    for (i = 0; i < 15; i++) {
+        op = rd8(cs, ip + i);
+        if (op == 0x66) o32 = 1;
+        else if (op == 0x67) a32 = 1;
+        else if (op == 0xF2 || op == 0xF3) rep = 1;
+        else if (op != 0xF0 && op != 0x26 && op != 0x2E && op != 0x36 &&
+                 op != 0x3E && op != 0x64 && op != 0x65)
+            break;
+    }
+    ip += i + 1;
+    if (op == 0xA4 || op == 0xA5 || op == 0xAA || op == 0xAB) {  /* MOVS/STOS */
+        unsigned long n = rep ? (a32 ? f->ecx : (f->ecx & 0xFFFF)) : 1, d;
+        d = n << (op & 1 ? (o32 ? 2 : 1) : 0);   /* ohne __U4M */
+        if (f->r.eflags & 0x400)
+            d = 0 - d;
+        if (a32) {
+            f->edi += d;
+            if (op < 0xAA) f->esi += d;
+        } else {
+            f->edi = (f->edi & 0xFFFF0000UL) | ((unsigned)f->edi + (unsigned)d);
+            if (op < 0xAA)
+                f->esi = (f->esi & 0xFFFF0000UL) | ((unsigned)f->esi + (unsigned)d);
+        }
+        if (rep)
+            f->ecx = a32 ? 0 : f->ecx & 0xFFFF0000UL;
+        f->r.eip = ip;
+        return 1;
+    }
+    if (op == 0x0F) {                   /* SETcc, BTS/BTR/BTC, SHLD/SHRD */
+        op = rd8(cs, ip++);
+        if (op == 0xA4 || op == 0xAC || op == 0xBA)
+            imm = 1;
+        else if (!((op >= 0x90 && op <= 0x9F) || op == 0xA5 || op == 0xAD ||
+                   op == 0xAB || op == 0xB3 || op == 0xBB))
+            return 0;
+    } else if (op < 0x40 && (op & 7) < 4)
+        ;                               /* ALU r/m, reg               */
+    else if (op == 0x80 || op == 0x83 || op == 0xC0 || op == 0xC1 || op == 0xC6)
+        imm = 1;
+    else if (op == 0x81 || op == 0xC7)
+        imm = o32 ? 4 : 2;
+    else if (op == 0x86 || op == 0x87 || op == 0x88 || op == 0x89 ||
+             op == 0x8C || op == 0x8F || (op >= 0xD0 && op <= 0xD3) ||
+             op == 0xFE || op == 0xFF || (op >= 0xD8 && op <= 0xDF))
+        ;
+    else if (op == 0xF6 || op == 0xF7) {
+        if (!(rd8(cs, ip) & 0x30))      /* TEST mit Wert (schreibt nicht) */
+            return 0;
+    } else if (op == 0xA2 || op == 0xA3) {  /* MOV moffs, AL/AX          */
+        mod = 0;
+        imm = a32 ? 4 : 2;
+    } else
+        return 0;
+    if (mod) {
+        m = rd8(cs, ip++);
+        md = m >> 6;
+        rm = m & 7;
+        if (md == 3)
+            return 0;
+        if (a32) {
+            if (rm == 4 && (rd8(cs, ip++) & 7) == 5 && md == 0)
+                ip += 4;
+            if (md == 0 && rm == 5) ip += 4;
+            else if (md == 1) ip++;
+            else if (md == 2) ip += 4;
+        } else {
+            if (md == 0 && rm == 6) ip += 2;
+            else if (md == 1) ip++;
+            else if (md == 2) ip += 2;
+        }
+    }
+    f->r.eip = ip + imm;
+    return 1;
+}
+
 /* Kopien der ROM-Seiten verwerfen (Ende einer Grafiksitzung): das
    naechste Mal beginnt das Video-BIOS wieder mit seinem Startzustand;
    eigene Seiten fuer UMBs und den EMS-Rahmen bleiben */
@@ -6899,7 +7189,7 @@ static unsigned monitor(struct v86_frame *f, int t)
     case 13:
         break;
     case 14:                                    /* Seitenfehler          */
-        return swap_pf() || vga_pf(t) || rom_cow(f, t) ? 0 : 1;
+        return swap_pf() || vga_pf(t) || rom_cow(f, t) || rom_skip(f, t) ? 0 : 1;
     default:
         return 1;
     }
@@ -6919,6 +7209,36 @@ static unsigned monitor(struct v86_frame *f, int t)
     }
     ip += i + 1;
     switch (op) {
+    case 0x0F:                                  /* MOV r32,CRn/DRn (lesen) */
+        v = rd8(cs, ip);                        /* und MOV CRn/DRn,r32: wie */
+        if (v == 0x06 || v == 0x08 || v == 0x09) {  /* CLTS, INVD, WBINVD */
+            ip++;                               /* (Cache-Tests): ohne      */
+            break;                              /* Wirkung                 */
+        }
+        p = rd8(cs, ip + 1);                    /* EMM386 nachgebildet,    */
+        if (v < 0x20 || v > 0x23 || (p & 0xC0) != 0xC0)   /* Schreiben    */
+            return 1;                           /* wirkt nicht             */
+        ip += 2;
+        if (!(v & 2)) {
+            unsigned long x = 0;
+            if (v == 0x20 && !(p & 0x38))
+                x = 0x80000011UL;               /* CR0: PG, ET, PE         */
+            else if (v == 0x21 && (p & 0x38) == 0x30)
+                x = 0xFFFF0FF0UL;               /* DR6 Ruhewert            */
+            else if (v == 0x21 && (p & 0x38) == 0x38)
+                x = 0x00000400UL;               /* DR7 Ruhewert            */
+            switch (p & 7) {
+            case 0: f->eax = x; break;
+            case 1: f->ecx = x; break;
+            case 2: f->edx = x; break;
+            case 3: f->ebx = x; break;
+            case 4: f->r.esp = x; break;
+            case 5: f->ebp = x; break;
+            case 6: f->esi = x; break;
+            default: f->edi = x; break;
+            }
+        }
+        break;
     case 0xFA:                                  /* CLI                   */
         vfl[t] &= ~FL_IF;
         break;
@@ -7510,7 +7830,7 @@ static void mou_cbdone(void)
 unsigned __far v86_exc(struct v86_frame *f)
 {
     int t = current;
-    unsigned rc;
+    unsigned rc, i;
 
     if (t >= 0)
         vme_in(&f->r, t);
@@ -7532,6 +7852,8 @@ unsigned __far v86_exc(struct v86_frame *f)
         trc_ivt[0] = ((unsigned long)rd16(0, 0x22) << 16) | rd16(0, 0x20);
         trc_ivt[1] = ((unsigned long)rd16(0, 0x26) << 16) | rd16(0, 0x24);
         trc_ivt[2] = ((unsigned long)rd16(0, 0x72) << 16) | rd16(0, 0x70);
+        for (i = 0; i < 8; i++)
+            trc_code[i] = rd8((unsigned)f->r.cs, (unsigned)f->r.eip + i);
     }
     if (rc == 0) {
         unsigned long ocs = f->r.cs, oip = f->r.eip;

@@ -4883,6 +4883,24 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   aus), Pfade für FAPI über `fn_dir` (Kontext). DGROUP 64.872 -> 60.502
   Byte. Weitere Kandidaten in v86.c: `dp_mem` 1,5 KB, `sb_buf` 1 KB,
   `xh`/`dp_patch` je 768 Byte.
+- **CheckIt Pro 1.11 in der DOS-Box** (Upload des Nutzers, 19.11.2026,
+  „zum Ausreizen der DOS-Emulation“; nur zum Testen, nicht im
+  Repository): Funde und Ergebnis in `docs/BOX-BIOS.md`. Behoben: fat.c
+  nimmt Bootsektoren ohne 55AAh mit Sprung EBh/E9h (beide Linien;
+  DUPLICAT-Disketten); v86.c `monitor` 0F 20–23 (MOV r32,CRn/DRn lesen,
+  Schreiben verworfen), 0F 06/08/09 ohne Wirkung; `rom_skip` (Befehl
+  bei Schreibfehler auf Seite F0 decodieren und überspringen); `lpt_reg`/
+  `com_reg` (virtuelle LPT-/8250-Register je Box, Basis aus dem BDA,
+  Ausgabe über `lpt_out` = FAPI LPTn/COMn); CMOS-Kopie `cmos_ov` (ab 0Eh,
+  01h/03h/05h, 0Bh); INT 1Ah 06h/07h (`alrm`, INT 4Ah aus inject);
+  `vimr2`/`picw` (zweiter PIC, ICW-Folgen); 0417h nur bei Änderung
+  (`shf_last`); `account` stellt 46Ch nach mehr als 1 s Pause aus der
+  Echtzeituhr. Absturzmeldung der Box zeigt jetzt 8 Befehlsbytes bei
+  CS:IP (`trc_code`) – so war `0F 20 C0` sofort zu sehen. Geprüft: QEMU
+  und 86Box 386DX/40 (SYSINFO, Platinen-, Port-, Drucker-, Speicher-,
+  Videotest), BIOSCMP unverändert, DOOM 1.9 Timedemo. Lehre: SYSINFO.EXE
+  ist gepackt – Befehle nur zur Laufzeit lesbar (Spur über Port E9h mit
+  Codebytes).
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

@@ -90,6 +90,39 @@ BIOS der DOS-Box (6.x `kernel/v86.c`):
 | INT 15h 2400h–2403h | fehlten | A20 wie über XMS |
 | INT 16h 09h/0Ah/0306h | fehlten | Fähigkeiten 30h, MF2-Kennung, Rate |
 
+## CheckIt Pro 1.11 in der Box (19.11.2026)
+
+Diagnoseprogramm von 1993 (vom Nutzer, nur zum Testen, nicht im
+Repository), prüft die Hardware über Ports, CMOS und Privilegbefehle –
+gut, um die Nachbildung auszureizen. Bezug: FreeDOS direkt auf derselben
+Maschine (QEMU, 86Box 386DX/40). Behoben:
+
+| Fund | vorher | jetzt |
+|---|---|---|
+| Diskette ohne 55AAh im Bootsektor (Kopierprogramm „DUPLICAT“) | Laufwerk leer (fat.c verlangte 55AAh) | wie MS-DOS: Sprungbefehl EBh/E9h genügt (beide Linien) |
+| `MOV EAX,CR0` in V86 (Prozessorerkennung) | #GP, Box abgebrochen | MOV r32,CR0/CR2/CR3/DRn liefert wie EMM386 Werte (CR0 80000011h), Schreiben wirkt nicht |
+| INVD/WBINVD/CLTS (Cache-Test) | #GP | ohne Wirkung |
+| Schreiben auf F000:0000 (RAM-Probe im oberen Speicher) | #PF, Box abgebrochen | verpufft wie beim ROM (`rom_skip`: Befehl decodiert und übersprungen; Stummelseite bleibt heil) |
+| Parallelport-Register 378h–37Ah | FFh („0P“) | Datenlatch, Status DFh, Steuerregister; Strobe druckt über LPTn des Kernels |
+| COM-Register (8250) | FFh („1 Baud“) | Teiler/LCR/MCR/IER/SCR behalten den Wert, Loopback, Senden über COMn; INT 14h 01h sendet |
+| CMOS schreiben (Weckregister 01h/03h/05h, Status B, ab 0Eh) | verworfen („Clock: None“, „DIP Switches“, „XT“) | Kopie je Box, Uhr läuft weiter |
+| INT 1Ah 06h/07h (Weckzeit) | fehlte („Alarm Function FAILED“) | Weckzeit je Box, INT 4Ah zur Zeit |
+| zweiter PIC (A0h/A1h) | FFh („IRQ controller #2 failed“) | Maske A1h, ICW-Folgen an 20h/A0h verstellen keine Masken |
+| 0417h/0418h bei jeder Zustellung neu geschrieben | Speichertest: „Bad Bits“ dort | nur noch bei Änderung des Tastaturzustands |
+| geparkte Box zählt ihren Takt nicht | DOS-Zeit 17 s hinter der Uhr | nach langer Pause 46Ch aus der Echtzeituhr neu |
+
+Ergebnis danach: SYSINFO (alle Seiten), Systemplatine (CPU, PIC, Uhr,
+Weckzeit, DMA), serieller und Parallelport, Drucker (Ausgabe kommt an),
+Speicher (konventionell, EMS, Video), Video bestehen in QEMU und 86Box.
+Erwartet/übersprungen: „Protected Mode“ (in V86 nicht möglich),
+erweiterter Speicher (gehört XMS, wie unter HIMEM), Festplatte (keine
+BIOS-Platten in der Box), Diskette 0 = 360-KB-Startabbild. Nicht der Box
+zuzurechnen: „Interrupt Bug“ nur in QEMU (TCG lässt nach `POP SS` mit TF
+den Einzelschritt sofort zu; in 86Box bestanden), „Numerical Processor
+FAILED“ nur in 86Box (387-Nachbildung; der Test hängt dort unter FreeDOS
+direkt sogar), FreeDOS direkt bricht ohne `STACKS=` mit „Stack overflow“
+ab – die Box nicht (Stapel des Monitors).
+
 ## Bestand: BIOS der DOS-Box (6.x)
 
 Im Textmodus beantwortet die Box die Video-Aufrufe selbst; schaltet ein
@@ -103,12 +136,12 @@ Programm auf Grafik (oder VESA), geht jedes INT 10h ans echte Video-BIOS
 | 10h | 00–03, 05–0A, 0E, 0F, 1003, 1007, 1008, 1015, 1017, 101A, 11 (30), 12 (10), 13, 1A, 1B, 1C; 4Fxx über das Video-BIOS | 04 (Lichtgriffel), 0B, 0C/0D (Punkte, nur Grafik), 1010/1012 im Text ohne Wirkung |
 | 11h, 12h | aus dem BDA | ein Diskettenlaufwerk, 640 KB bzw. RMSIZE |
 | 13h | Laufwerk 0 = Startabbild (nur lesen) | keine Festplatten, B: fehlt |
-| 14h | Status „Sendepuffer leer“, Senden läuft ab | keine serielle Übertragung (Maus über INT 33h) |
+| 14h | Status „Sendepuffer leer“, 01h sendet über COMn | kein Empfang (Maus über INT 33h) |
 | 15h | 4Fh, 86h, 88h (0), 90h/91h, 2400h–2403h, C0h | C1h (keine EBDA), C2xx (PS/2-Maus), E801h, E820h, 53xx (APM): Fehler wie ein BIOS ohne |
 | 16h | 00–02, 05, 09, 0A, 10–12, 0306h | 03 (Rate setzen) ohne Wirkung |
 | 17h | 00–02: Zeichen über LPTn des Kernels, Status 90h bzw. 30h ohne Port | Handle bleibt bis zum Ende der Box offen |
 | 18h/19h | Box beenden | |
-| 1Ah | 00–04, B1xx (PCI lesend) | 05 (Datum setzen) ohne Wirkung |
+| 1Ah | 00–04, 06/07 (Weckzeit, INT 4Ah), B1xx (PCI lesend) | 05 (Datum setzen) ohne Wirkung |
 | 1Eh | Diskettenparameter F000:0800 | |
 | 33h | Maus (Kernel) | |
 | 67h | EMS 4.0 (Kernel) | |

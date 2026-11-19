@@ -592,6 +592,12 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   (IOCTL 4408h/4409h/440Dh, Seriennummer 6900h wie MS-DOS); die FCB-Suche
   findet wie MS-DOS keine versteckten Dateien mehr (Korrektur im
   FreeDOS-Kern, `freedos/patches/`)
+- CheckIt Pro 1.11 läuft in der DOS-Box (19.11.2026): Prozessor-, Cache-
+  und Speichertests mit Privilegbefehlen (CR0 lesen, INVD) wie unter
+  EMM386, Schreiben auf ROM verpufft, virtuelle Register für Parallel-
+  und serielle Ports (Drucken auch direkt über die Ports), CMOS-Kopie je
+  Box, Weckzeit (INT 1Ah 06h), zweiter PIC; Disketten ohne 55AAh im
+  Bootsektor werden gelesen (wie MS-DOS). Details: `docs/BOX-BIOS.md`
 - Drucken aus der DOS-Box: INT 17h (also auch `PRN`, `COPY datei PRN`
   und das Drucken aus Programmen) geht über das LPT-Gerät von AT-DOS.
   In 86Box ohne Drucker: LPT1 auf „Generic Text Printer“, „Generic ESC/P
