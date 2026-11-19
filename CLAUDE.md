@@ -5806,7 +5806,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   CONFIG.SYS: Netzkarten in einer REM-Zeile (Grenze 4 KB, jetzt 4.054).
   Geprüft: QEMU `-device pcnet` und `-device e1000` (DHCP, IPv6, PING,
   je 1 MB über FTP hin/zurück und WGET bytegleich, ~3 MB/s, DEVLOAD /U
-  und neu laden); PCnet in 86Box (P3B-F, `pcnetpci` = Am79C970A, SLiRP).
+  und neu laden); PCnet in 86Box (P3B-F, `pcnetpci` = Am79C970A, SLiRP:
+  DHCP, IPv6, PING, WGET und FTP je 1 MB bytegleich, ~1 MB/s, entladen/
+  neu laden, fsck nach SHUTDOWN sauber – CHKDSK > Datei meldet die
+  eigene, noch offene Ausgabedatei als verlorene Kette).
   86Box hat kein e1000 (nur i8255x) – E1000 ungeprüft in 86Box, VMware,
   VirtualBox und auf echter Hardware.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
