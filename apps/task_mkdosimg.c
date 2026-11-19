@@ -6,25 +6,31 @@
  *
  *   MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]
  *
- *   Quelle:     Startdiskette bzw. Laufwerk des DOS (A:, auch ein Loop-
- *               Laufwerk) - von dort Startsektor, IO.SYS/MSDOS.SYS bzw.
- *               IBMBIO.COM/IBMDOS.COM, COMMAND.COM, COUNTRY.SYS
- *   Werkzeuge:  Verzeichnis mit den Programmen des DOS (C:\DOS der alten
- *               Installation) -> \DOS\MDOS\<NAME>\ (vorn im PATH der Box)
+ *   Quelle:     Laufwerk mit dem DOS: Startdiskette oder Festplatte mit
+ *               installiertem DOS (auch ein Loop-Laufwerk) - von dort
+ *               IO.SYS/MSDOS.SYS bzw. IBMBIO.COM/IBMDOS.COM, COMMAND.COM,
+ *               COUNTRY.SYS (Stamm, sonst \DOS)
+ *   Werkzeuge:  Verzeichnis mit den Programmen des DOS -> \DOS\MDOS\<NAME>\
+ *               (vorn im PATH der Box); ohne Angabe Quelle:\DOS, wenn es
+ *               dort ein DOS gibt (nicht auf einem Laufwerk mit AT-DOS)
  *   /N:         Name des Abbilds (Vorgabe MSDOS.IMG bzw. PCDOS.IMG)
  *
- * Ergebnis: X:\DOS\MDOS\NAME.IMG (1,44-MB-Abbild, FAT12): Startsektor der
- * Quelle mit neuem BPB, die Systemdateien zuerst (IO.SYS zusammenhaengend
+ * Ergebnis: X:\DOS\MDOS\NAME.IMG (1,44-MB-Abbild, FAT12): eigener
+ * Startsektor (boot/mdosboot.asm, Ladeprotokoll von DOS 4.0-6.22 - der
+ * Startsektor der Quelle wird nicht gebraucht), die Systemdateien zuerst (IO.SYS zusammenhaengend
  * ab Cluster 2, wie es der Startsektor verlangt), BOXSHELL.COM und
  * ATBOX.SYS aus \DOS\MDOS, eine CONFIG.SYS fuer die Box. Gewaehlt wird das
  * Abbild in \DOS\MDOS\DOSBOX.INI mit DOS_IMAGE=NAME.IMG unter [*] (alle
  * DOS-Programme) oder [PROG.EXE]. HIMEM, EMM386, DBLSPACE/DRVSPACE und
  * KEYB-Dateien kopiert MKDOSIMG nicht mit - das erledigt AT-DOS selbst.
- * MS-DOS 7 (Windows 95/98) und andere DOS lehnt es ab.
+ * MS-DOS 7 (Windows 95/98) und andere DOS lehnt es ab; DOS vor 4.0 hat
+ * ein anderes Ladeprotokoll und startet mit diesem Startsektor nicht.
  * ERRORLEVEL: 0 ok, 1 Fehler, 4 Aufruf.
  */
 #include "fapi.h"
 #include "util.h"
+#define BOOTMD
+#include "../build/bootcode.h"
 
 static char args[FAPI_ARGLEN], src[FAPI_PATHLEN], tools[FAPI_PATHLEN];
 static char mdos[FAPI_PATHLEN], img[FAPI_PATHLEN], from[FAPI_PATHLEN];
@@ -82,7 +88,7 @@ static void put1(const char *dir, const char *name, unsigned attr)
     DosSetFInfo(to, &ff);
 }
 
-/* 1,44 MB: BPB der Quelle ersetzen, Startcode (3Eh-1FDh) bleibt */
+/* 1,44 MB mit eigenem Startsektor (boot_md), BPB fuer 1,44 MB */
 static void make_image(void)
 {
     static const unsigned char bpb[] = {
@@ -93,6 +99,8 @@ static void make_image(void)
     unsigned h, i, s;
     unsigned long sz = 1474560UL, pos;
 
+    for (i = 0; i < 512; i++)
+        bs[i] = boot_md[i];
     for (i = 0; i < sizeof(bpb); i++)       /* 0Bh-26h               */
         bs[0x0B + i] = bpb[i];
     bs[0x27] = 0x41; bs[0x28] = 0x54;       /* Seriennummer          */
@@ -208,13 +216,13 @@ void main(void)
     if (!have(src, "COMMAND.COM"))
         die("COMMAND.COM fehlt auf der Quelle");
 
-    /* Startsektor der Quelle */
-    h = DosOpenDrive(sdrv, DRV_OPEN_READ);
-    if (FAPI_FAILED(h) || DosRead(h, bs, 512) != 512)
-        die("Startsektor der Quelle nicht lesbar");
-    DosClose(h);
-    if ((bs[0] != 0xEB && bs[0] != 0xE9) || bs[510] != 0x55 || bs[511] != 0xAA)
-        die("Quelle hat keinen DOS-Startsektor");
+    /* Werkzeuge ohne Angabe: Quelle:\DOS, wenn dort ein DOS liegt - nicht
+       auf einem Laufwerk mit AT-DOS (dessen \DOS sind AT-DOS-Werkzeuge) */
+    if (!tools[0] && !have(src, "ATDOS.SYS")) {
+        mk(from, sdrv, "DOS");
+        if (have(from, "COMMAND.COM") || have(from, "MEM.EXE"))
+            scopy(tools, from, sizeof(tools));
+    }
 
     /* Ziel: \DOS\MDOS des Startlaufwerks (aus %DOSBOX%) */
     if (FAPI_FAILED(DosGetEnv("DOSBOX", mdos, sizeof(mdos))) || slen(mdos) < 3)
@@ -276,6 +284,11 @@ void main(void)
     DosLoop(LOOP_DETACH, ldrv, 0);
     ldrv = 0;
 
+    DosMkDir(tdir);                         /* COMMAND.COM fuer COMSPEC: */
+    join(from, src, "COMMAND.COM", FAPI_PATHLEN);   /* A: ist nach dem Start */
+    join(to, tdir, "COMMAND.COM", FAPI_PATHLEN);    /* nicht mehr das Abbild */
+    if (copy_file(from, to))
+        die("COMMAND.COM nach \\DOS\\MDOS\\Name nicht kopiert");
     if (tools[0])
         copy_tools();
     puts("Fertig. In ");

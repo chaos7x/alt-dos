@@ -821,6 +821,24 @@ other_dos:
 .nn:    inc     di
         cmp     byte [di], 0
         jne     .nn
+        push    di                      ; COMMAND.COM aus X:\DOS\MDOS\Name
+        mov     si, t_path2 + 5         ; (A: ist nach dem Start die
+        mov     cx, di                  ; Diskette von AT-DOS, nicht mehr
+        sub     cx, si                  ; das Abbild)
+        push    cx
+        mov     di, t_comspec
+        rep     movsb
+        mov     si, t_bscom
+        call    copyz
+        pop     cx
+        mov     si, t_path2 + 5
+        mov     di, t_cmd
+        mov     al, ' '
+        stosb
+        rep     movsb
+        mov     si, t_acmd + 3          ; "\ /E:1024 /C "
+        call    copyz
+        pop     di
         mov     al, ';'
         stosb
 .noname:
@@ -1489,7 +1507,10 @@ ibuf      dw 0
 pname     times 13 db 0
 t_cspec   db "COMSPEC=", 0
 t_comspec db "X:\DOS\MDOS\COMMAND.COM", 0
+          times 12 db 0                 ; Platz fuer \Name (anderes DOS)
 t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
+          times 12 db 0
+t_bscom   db "\COMMAND.COM", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.1 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"

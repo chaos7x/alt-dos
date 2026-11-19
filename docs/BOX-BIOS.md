@@ -174,7 +174,15 @@ ab – die Box nicht (Stapel des Monitors).
 
 Wunsch des Nutzers (wie „OS/2 für Windows“): die eigene MS-DOS-Kopie statt
 FreeDOS in der Box. `MKDOSIMG` (apps/task_mkdosimg.c) baut das Startabbild,
-`DOS_IMAGE=` in DOSBOX.INI wählt es (kernel.c `ini_noframe` liest es mit,
+`DOS_IMAGE=` in DOSBOX.INI wählt es. Quelle ist ein Laufwerk (Diskette
+oder Festplatte mit installiertem DOS, auch über LOOP); der Startsektor
+ist ein eigener (`boot/mdosboot.asm`, Ladeprotokoll von DOS 4.0–6.22 wie
+MSBOOT.ASM/MSLOAD.ASM von MS-DOS 4.0: 3 Sektoren IO.SYS nach 0070:0000,
+CH Media, DL Laufwerk, AX:BX erster Datensektor, DS:SI INT-1Eh-Tabelle).
+COMSPEC zeigt auf `\DOS\MDOS\NAME\COMMAND.COM` – A: ist nach dem Start
+das Diskettenlaufwerk von AT-DOS, nicht das Abbild (mit einer MS-DOS-
+Diskette im Laufwerk fiel das zuerst nicht auf). PC DOS (BH = 00h bei
+INT 21h 30h, IBMBIO.COM/IBMDOS.COM) gilt wie MS-DOS, ungeprüft (kernel.c `ini_noframe` liest es mit,
 `load_mdos`; eine geparkte Box wird nur wiederverwendet, wenn sie dasselbe
 Abbild hat – `box_same`). BOXSHELL fragt das DOS (INT 21h 30h, BH = FDh
 FreeDOS) und meldet es mit der SDA (INT E0h 11h, BL); INT E0h 22h liefert
