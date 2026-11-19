@@ -97,7 +97,9 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         dec     di                      ; "/C " wieder weg
         dec     di
         dec     di
-        mov     dx, t_autoexec
+        cmp     byte [nok], 0           ; COMMAND.COM vor DOS 6.0 kennt
+        jne     .c1                     ; kein /K (der Pfad gaelte als
+        mov     dx, t_autoexec          ; Suchpfad - Umgebung weg)
         mov     ax, 4300h
         int     21h
         jc      .c1
@@ -803,6 +805,10 @@ other_dos:
         cmp     bh, 0FDh                ; FreeDOS: alles wie bisher
         je      .r
         mov     byte [notfd], 1
+        cmp     al, 6
+        jae     .k6
+        mov     byte [nok], 1
+.k6:
         push    cs
         pop     es
         mov     si, t_acom
@@ -1524,6 +1530,7 @@ t_hello2  db "DOS-Box von AT-DOS 6.1 - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
+nok       db 0                          ; 1: COMMAND.COM ohne /K
 a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
 t_prompt  db "PROMPT=$P$G", 0
 t_path2   db "PATH="
