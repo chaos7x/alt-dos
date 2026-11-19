@@ -107,7 +107,7 @@ Maschine (QEMU, 86Box 386DX/40). Behoben:
 | COM-Register (8250) | FFh („1 Baud“) | Teiler/LCR/MCR/IER/SCR behalten den Wert, Loopback, Senden über COMn; INT 14h 01h sendet |
 | CMOS schreiben (Weckregister 01h/03h/05h, Status B, ab 0Eh) | verworfen („Clock: None“, „DIP Switches“, „XT“) | Kopie je Box, Uhr läuft weiter |
 | INT 1Ah 06h/07h (Weckzeit) | fehlte („Alarm Function FAILED“) | Weckzeit je Box, INT 4Ah zur Zeit |
-| zweiter PIC (A0h/A1h) | FFh („IRQ controller #2 failed“) | Maske A1h, ICW-Folgen an 20h/A0h verstellen keine Masken |
+| zweiter PIC (A0h/A1h) | FFh („IRQ controller #2 failed“) | Maske A1h (Anfang FFh), ICW-Folgen an 20h/A0h verstellen keine Masken, OCW3 0Bh: 20h liefert den virtuellen ISR (DOS/4GW trennt so IRQ und Ausnahme – ohne fehlten die DOOM-Effekte) |
 | 0417h/0418h bei jeder Zustellung neu geschrieben | Speichertest: „Bad Bits“ dort | nur noch bei Änderung des Tastaturzustands |
 | geparkte Box zählt ihren Takt nicht | DOS-Zeit 17 s hinter der Uhr | nach langer Pause 46Ch aus der Echtzeituhr neu |
 

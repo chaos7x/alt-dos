@@ -106,6 +106,7 @@ static unsigned char cmos_idx[NTASK];
 static unsigned shf_last[NTASK];         /* zuletzt nach 0417h gelegt    */
 static unsigned char vimr2[NTASK];       /* Maske des zweiten PIC (A1h)   */
 static unsigned char picw[NTASK][2];     /* noch erwartete ICW2-4 je PIC  */
+static unsigned char pic_isr[NTASK][2];  /* OCW3: Lesen liefert ISR statt IRR */
 static unsigned alrm[NTASK];            /* INT 1Ah 06h: Weckzeit (DOS-Zeit) */
 static unsigned char alrm_on[NTASK];     /* 1 gesetzt, 2 erst nach Mitternacht */
 static unsigned alrm_tk[NTASK];          /* zuletzt geprueft (Kerneltakt)  */
@@ -805,8 +806,9 @@ unsigned long __far v86_create(int t, unsigned kb)
         cmos_om[t][i] = 0;
     alrm_on[t] = 0;
     shf_last[t] = 0xFFFF;
-    vimr2[t] = 0;
+    vimr2[t] = 0xFF;                    /* wie nach dem BIOS: alle gesperrt */
     picw[t][0] = picw[t][1] = 0;
+    pic_isr[t][0] = pic_isr[t][1] = 0;
     for (i = 0; i < 4; i++) {           /* 2400 Baud, 8N1 wie nach dem BIOS */
         vu[t][i].dll = 0x30;
         vu[t][i].dlm = vu[t][i].ier = vu[t][i].mcr = vu[t][i].scr = 0;
@@ -4125,11 +4127,11 @@ static unsigned char port_in(int t, unsigned p)
         return (unsigned char)inb(p);           /* Bitmap war noch zu)   */
     }
     switch (p) {
-    case 0x20:
-        return 0;
-    case 0x21:
-        return vimr[t];
-    case 0xA0:
+    case 0x20:                                  /* ISR nach OCW3 0Bh (DOS/4GW */
+        return pic_isr[t][0] ? visr[t] : 0;     /* trennt so IRQ und Ausnahme */
+    case 0x21:                                  /* bei Vektor 08h-0Fh), sonst */
+        return vimr[t];                         /* IRR - Wartendes ist hier  */
+    case 0xA0:                                  /* nicht nachgebildet         */
         return 0;
     case 0xA1:
         return vimr2[t];
@@ -4221,8 +4223,11 @@ static void port_out(int t, unsigned p, unsigned char v)
     }
     switch (p) {
     case 0xA0:                                  /* zweiter PIC: ICW1     */
-        if (v & 0x10)                           /* (Masken behalten ihren */
+        if (v & 0x10) {                         /* (Masken behalten ihren */
             picw[t][1] = (unsigned char)(v & 1 ? 3 : 2);    /* Wert)      */
+            pic_isr[t][1] = 0;
+        } else if ((v & 0x1A) == 0x0A)          /* OCW3 mit RR: IRR/ISR  */
+            pic_isr[t][1] = (unsigned char)(v & 1);
         break;
     case 0xA1:
         if (picw[t][1])
@@ -4233,6 +4238,11 @@ static void port_out(int t, unsigned p, unsigned char v)
     case 0x20:
         if (v & 0x10) {                         /* ICW1: Folge ICW2-4    */
             picw[t][0] = (unsigned char)(v & 1 ? 3 : 2);
+            pic_isr[t][0] = 0;
+            break;
+        }
+        if ((v & 0x1A) == 0x0A) {               /* OCW3 mit RR: IRR/ISR  */
+            pic_isr[t][0] = (unsigned char)(v & 1);
             break;
         }
         if (v == 0x20)                          /* EOI: niedrigstes Bit  */

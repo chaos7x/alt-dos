@@ -4907,6 +4907,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Videotest), BIOSCMP unverändert, DOOM 1.9 Timedemo. Lehre: SYSINFO.EXE
   ist gepackt – Befehle nur zur Laufzeit lesbar (Spur über Port E9h mit
   Codebytes).
+  Danach DOOM-Effekte kaputt (vom Nutzer gemeldet: „hängt im Echo, dann
+  nichts“, Musik heil): DOS/4GW unterscheidet bei Vektor 08h–0Fh Hard-
+  ware-IRQ und Ausnahme über OCW3 0Bh + ISR lesen an 20h/A0h. Port 20h
+  lieferte immer 00h; vorher rettete es das FFh von A0h (Port gab es
+  nicht), mit 00h dort hielt DOS/4GW den SB-IRQ nicht mehr für einen.
+  Jetzt OCW3 nachgebildet (`pic_isr`: 20h liest danach `visr`, IRR = 0;
+  A0h 00h, kein zweiter PIC), Maske A1h beginnt mit FFh. Gefunden per
+  Halbierung des Commits mit `-timedemo demo1` und WAV-Mitschnitt (gute
+  Läufe haben leise Abschnitte, kaputte einen Dauerbrei; Lehre: zwei
+  QEMU gleichzeitig verfälschten einzelne Läufe – nur Ergebnisse aus
+  wiederholten Läufen zählen). Geprüft: QEMU (2 Läufe), 86Box DX4-100.
   Zweiter Durchgang mit allen Menüs und MS-DOS 6.22 des Nutzers als
   Bezug (86Box 386, Ketten-MBR, Abbild als 1,2-MB-Kopie – CMOS sagt 5¼"):
   BOXSHELL setzt COMSPEC (fehlte bei direkt gestarteten Programmen),
