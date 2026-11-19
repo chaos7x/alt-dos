@@ -773,6 +773,11 @@ build_env:
         stosb
         test    al, al
         jnz     .e4c
+        mov     si, t_prompt            ; MS-DOS 5 nimmt sonst $N$G
+.e4d:   lodsb
+        stosb
+        test    al, al
+        jnz     .e4d
         mov     si, t_nls
 .e5:    lodsb                           ; dazu NLSPATH/LANG (Meldungen
         stosb                           ; von FreeDOS-MEM, MEM.DE)
@@ -803,9 +808,9 @@ other_dos:
         mov     si, t_acom
         mov     di, t_comspec
         call    copyz
-        mov     si, t_acmd
-        mov     di, t_cmd
-        call    copyz
+        mov     si, t_acmd + 4          ; " /E:1024 /C " - ohne Verzeichnis:
+        mov     di, t_cmd               ; COMMAND.COM von MS-DOS erbt mit
+        call    copyz                   ; einem Suchpfad die Umgebung nicht
         mov     di, t_path2 + 5         ; "PATH=" + X:\DOS\MDOS + "\" + Name
         mov     si, t_path + 5
         mov     cx, 11
@@ -831,13 +836,6 @@ other_dos:
         mov     si, t_bscom
         call    copyz
         pop     cx
-        mov     si, t_path2 + 5
-        mov     di, t_cmd
-        mov     al, ' '
-        stosb
-        rep     movsb
-        mov     si, t_acmd + 3          ; "\ /E:1024 /C "
-        call    copyz
         pop     di
         mov     al, ';'
         stosb
@@ -1527,6 +1525,7 @@ t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
 a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
+t_prompt  db "PROMPT=$P$G", 0
 t_path2   db "PATH="
           times 60 db 0
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1

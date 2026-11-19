@@ -4945,7 +4945,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   [COMMAND.COM] für die Befehlszeile) -> kernel.c `load_mdos`, `box_same`
   (geparkte Box nur mit gleichem Abbild). BOXSHELL: DOS über INT 21h 30h
   BH an INT E0h 11h (BL), Umgebung selbst (MS-DOS gibt SHELL= keine),
-  INT E0h 22h = Name des Abbilds. redir.c `ms_dos[t]`: `\` am Pfadende,
+  INT E0h 22h = Name des Abbilds. COMMAND.COM bekommt kein Verzeichnis als erstes Argument (vom Nutzer gemeldet: PROMPT/PATH fehlten unter MS-DOS 5 – mit Suchpfad erbt COMMAND.COM die Umgebung nicht, MS-DOS 4.0 INIT.ASM `CHKSRCHSPEC`), dazu `PROMPT=$P$G` (MS-DOS 5 nimmt sonst `$N$G`); in QEMU geprüft. redir.c `ms_dos[t]`: `\` am Pfadende,
   REN mit Platzhaltern (`ren_wild`), FCB (sf_mode Bit 15 bleibt, sf_PID
   setzen), 6Ch-Aktion in CX des Aufrufers (SDA+264h/266h). v86.c
   `xms_snap`: CMOS, XMS 08h und 4309h-Tabelle gleich während eines
