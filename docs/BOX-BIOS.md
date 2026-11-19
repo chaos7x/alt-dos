@@ -213,11 +213,14 @@ der Box (Abbild per MKDOSIMG unter AT-DOS aus derselben Diskette). MS-DOS
 Revision 1; das PC DOS 7.0 von 1995 ist ungeprüft): DOS-Teil gleich, übrig nur
 die bekannten Abweichungen (Box-BIOS, XMS/EMS/SHARE/Maus der Box, Bezugs-
 platte ohne SHARE). PC DOS ab 6.30 meldet bei 4409h Bit 14 (48C2h statt
-08C2h) – BOXSHELL tut das bei OEM 00h ab 6.30 auch (`a4409`). Offen:
-PC DOS 6.3/2000 meldet bei 6Ch „angelegt“ (CX = 2) als „geöffnet“ (1); der
-Redirector bekommt dieselben Aufrufe und dieselbe SDA wie bei MS-DOS 6.22
-und setzt CX im Rahmen des Aufrufers wie dort („ersetzt“ = 3 kommt an) –
-PC DOS überschreibt den Wert danach selbst. Nicht geprüft: PC DOS 2000.
+08C2h) – BOXSHELL tut das bei OEM 00h ab 6.30 auch (`a4409`). PC DOS
+6.3/2000 meldeten bei 6Ch „angelegt“ (CX = 2) als „geöffnet“ (1): MS-DOS
+löscht nach dem Aufruf 112Eh den Merker EXTOPEN_ON (SDA+2D6h, Ablauf
+nachgelesen in OPEN.ASM/FILE.ASM von MS-DOS 4.0), PC DOS nicht – dann
+trägt es selbst `action_opened` in CX ein. Der Redirector löscht ihn jetzt
+selbst (`ext_act`); SDA vor dem Aufruf bei beiden gleich (dump über Port
+E9h). In QEMU geprüft: PC DOS 6.3 und 2000 melden 1/2/3 richtig, MS-DOS
+5.0/6.22 und PC DOS 5.0 unverändert.
 
 Offen: MEM von MS-DOS zeigt auf knappen Maschinen (86Box 386DX/40, 4 MB)
 bei „Erweiterung (XMS)“ eine Gesamtgröße unter der freien (Verwendet

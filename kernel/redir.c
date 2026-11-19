@@ -626,7 +626,11 @@ static void ext_act(struct v86_frame *f, int t, unsigned act)
     sp = r16(sda(t, 0x264));
     ss = r16(sda(t, 0x266));
     w16(bp(t, ss, sp + 4), act);
-}
+    *sda(t, 0x2D6) = 0;                         /* EXTOPEN_ON: MS-DOS     */
+}                                               /* loescht es nach dem    */
+                                                /* Redirector selbst, PC  */
+                                                /* DOS 6.3/2000 nicht und */
+                                                /* traegt sonst 1 ein     */
 
 static int op(struct v86_frame *f, int t, unsigned fn)
 {
