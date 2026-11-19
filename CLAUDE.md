@@ -4918,6 +4918,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Läufe haben leise Abschnitte, kaputte einen Dauerbrei; Lehre: zwei
   QEMU gleichzeitig verfälschten einzelne Läufe – nur Ergebnisse aus
   wiederholten Läufen zählen). Geprüft: QEMU (2 Läufe), 86Box DX4-100.
+  Vom Nutzer in 86Box bestätigt (19.11.2026): DOOM mit Effekten,
+  Kurztest mit ein paar Schüssen.
   Zweiter Durchgang mit allen Menüs und MS-DOS 6.22 des Nutzers als
   Bezug (86Box 386, Ketten-MBR, Abbild als 1,2-MB-Kopie – CMOS sagt 5¼"):
   BOXSHELL setzt COMSPEC (fehlte bei direkt gestarteten Programmen),
