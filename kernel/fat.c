@@ -385,6 +385,7 @@ static int __far fat_mount(int d)
     unsigned bps, reserved, nfats, spc, n, ext = 0, f32 = 0;
     unsigned long total, cl, spf, fats, rootc = 0;
 
+    fat_ksel();                         /* Kernelsegmente frueh holen    */
     if (blk_read(v->blk, v->start))
         return -1;
     if (rd16(510) != 0xAA55 && dma()[0] != 0xEB && dma()[0] != 0xE9)
@@ -1850,8 +1851,10 @@ static unsigned fat_ksel(void)
             uni_half = 4096U;           /* Namensgedaechtnis          */
         ea_csel = kseg_alloc(UNI_KSIZE);    /* + Namensgedaechtnis    */
     }
-    return ea_csel;
-}
+    if (!eac_sel)                       /* Selektor fuer den EA-Namens- */
+        eac_sel = kseg_alloc(16);       /* cache gleich mit (6.2): spaet */
+    return ea_csel;                     /* geholt fehlte er, wenn LOOPs  */
+}                                       /* alle Plaetze belegt hatten    */
 static clus_t ea_cdc;
 static int ea_cdrv = -1;
 static unsigned short __far *ea_ctab;    /* Codepage beim Laden        */

@@ -135,7 +135,7 @@ if g['DGROUP'][0] != (c4[0] + c4[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
-# (KCODE 08h, KCODE2 208h, KCODE3 258h, siehe kern.h); alles andere ist ein Fehler
+# (KCODE 08h, KCODE2 248h, KCODE3 298h, KCODE4 2C0h, siehe kern.h); alles andere ist ein Fehler
 img = hdr * 16
 for i in range(nrel):
     o, s = struct.unpack('<HH', d[relo + 4 * i:relo + 4 * i + 4])
@@ -144,11 +144,11 @@ for i in range(nrel):
     if v == 0:
         sel = 0x08
     elif v == c2[0] >> 4:
-        sel = 0x208
+        sel = 0x248
     elif v == c3[0] >> 4:
-        sel = 0x258
+        sel = 0x298
     elif v == c4[0] >> 4 and c4[1]:
-        sel = 0x280
+        sel = 0x2C0
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)

@@ -137,7 +137,7 @@ void main(void)
     puts(base_name(path));
     puts(rc == FAPI_ERR_INUSE ? ": wird gerade geschrieben\r\n" :
          rc == FAPI_ERR_EXIST ? ": der Laufwerksbuchstabe ist belegt\r\n" :
-         rc == FAPI_ERR_FULL ? ": kein Platz mehr frei (h\x94" "chstens 4 Abbilder)\r\n" :
+         rc == FAPI_ERR_FULL ? ": kein Platz mehr frei (h\x94" "chstens 8 Abbilder)\r\n" :
          rc == FAPI_ERR_FRAG ? ": Datei zu stark zerst\x81" "ckelt - DEFRAG oder kopieren\r\n" :
          rc == FAPI_ERR_DENIED ? ": geht nicht (Datei nicht auf FAT oder CD, dynamische VHD)\r\n" :
          rc == FAPI_ERR_NOTREADY ? ": kein Dateisystem im Abbild gefunden\r\n" :

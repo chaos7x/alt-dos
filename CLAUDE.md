@@ -1167,6 +1167,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   fat.c `name_for` lehnt `"*?/:<>|\` und Steuerzeichen in langen Namen ab
   (8.3 prüfte to83 schon). MD meldet wie MS-DOS „Verzeichnis kann nicht
   erstellt werden“. In QEMU geprüft.
+  `/I` (Wunsch des Nutzers, 19.11.2026, für Stapeldateien aus NT/Windows):
+  angenommen ohne eigene Wirkung – fehlt das Ziel, ist es bei /S oder
+  Platzhaltern hier ohnehin ein Verzeichnis; dazu wie NT: Ziel mit `\` am
+  Ende ist ein Verzeichnis (keine D/V-Frage). In QEMU geprüft.
 - MEM (Wunsch des Nutzers, Stil wie MEM von FreeDOS): Tabelle Speicher /
   Größe / Anteil (Kernel, Programme, AllocSeg, Platten-Cache, DOS-Boxen
   nur wenn belegt, BIOS/Boot/Puffer, Belegt, Frei, Gesamt, Verfügbar),
@@ -4297,7 +4301,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `PLAY ODE.MID`, `PLAY ODE.IMF` meldete „keine FM-Synthese“): SYNTHGS
   braucht zwei Zonen-Segmente, dazu Tastatur (KEYB) und Codepages –
   danach war kein Platz für das FM-Segment `fm_sel`, das erst beim
-  ersten FmOpen angelegt wird. `NKSEG` 20 (KCODE2 208h, VWIN 210h,
+  ersten FmOpen angelegt wird. `NKSEG` 20 (seit 6.2: 28, s. NLOOP 8; KCODE2 208h, VWIN 210h,
   KCODE3 258h); FmOpen meldet dann FAPI_ERR_FULL („kein Platz im Kernel
   für die FM-Register“), AWELOAD „zu viele Zonen oder kein Kernel-
   segment frei“. In 86Box (486, AWE32 ohne PnP) geprüft: AWELOAD, dann
@@ -5834,6 +5838,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   beim nächsten Auftrag neu ein). Lehre: in QEMU fiel die alte Sperre nicht
   auf (zwei gedrosselte CDs alt wie neu 61 s) – Gewinn ist Struktur, nicht
   Tempo. In QEMU geprüft (s. BIGLOCK.md), kein 86Box (keine Hardware).
+  NLOOP 4 -> 8 (Wunsch des Nutzers, 19.11.2026): NBLK 12 -> 16, NKSEG
+  20 -> 28 (jedes Abbild braucht ein Kernelsegment; mit 20 waren nach dem
+  Start nur 6 frei), Selektoren KCODE2 248h, VWIN 250h, KCODE3 298h,
+  KCODE4 2C0h (kern.h, start.asm, build.sh, Prüfung in kernel.c), LOOP=
+  in CONFIG.SYS bis LOOP8. Dabei gefunden (alter Fehler): fat.c holte den
+  Selektor des EA-Namenscaches (`eac_sel`) erst bei Bedarf – waren die
+  Plätze schon von Abbildern belegt, fand fat.c lange Namen nicht mehr
+  (XCOPY legte `Ordner 5` zweimal an: ORDNER~1, ~2, dann „Ziel nicht
+  anlegbar“). Jetzt holt fat_ksel beide Segmente beim ersten Einhängen.
+  In QEMU geprüft: acht ISO-Abbilder + CD, alle Dateien bytegleich, XCOPY
+  mit langen Namen, Box auf L:, DOOM 1.9 mit SB (Timedemo läuft), Start
+  von Diskette, DriveSpace schreibend (PACKDISK /CHECK sauber), fsck
+  sauber; 86Box 386DX/40 4 MB (NE2000, AHA-154x).
   Bemerkt, alt wie neu: in AUTOEXEC.CMD erscheint nach `COMMAND /C DIR F:\
   > X` die Ausgabe eines zweiten `COMMAND /C TYPE … >> X` nicht.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten

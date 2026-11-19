@@ -17,7 +17,7 @@ REM CACHE=512,5,4096
 REM SWAPPATH=X:\Verz kb  Auslagerungsdatei SWAPPER.DAT fuer DOS-Boxen;
 REM   ohne Angabe bis 16 MB RAM X:\SWAP, 2x RAM (2-8 MB); OFF = keine
 REM SWAPPATH=C:\SWAP 4096
-REM LOOP=[X:,]Datei[,/RO]  Abbild (ISO, IMG, VHD) als Laufwerk, bis 4 Zeilen
+REM LOOP=[X:,]Datei[,/RO]  Abbild (ISO, IMG, VHD) als Laufwerk, bis 8 Zeilen
 REM LOOP=E:,C:\ISO\SPIEL.ISO
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---

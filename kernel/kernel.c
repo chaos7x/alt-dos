@@ -70,7 +70,7 @@ struct desc     gdt[NGDT];
 typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
 typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
 typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
-typedef char gdt_chk3[VWIN == 0x210 ? 1 : -1];   /* VWIN in start.asm */
+typedef char gdt_chk3[VWIN == 0x250 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
 
@@ -6933,7 +6933,7 @@ static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
     return loop_att(a3);
 }
 
-/* LOOP=[X:,]Datei[,/RO] aus CONFIG.SYS (LOOP1..LOOP4 in der System-
+/* LOOP=[X:,]Datei[,/RO] aus CONFIG.SYS (LOOP1..LOOP8 in der System-
    umgebung) beim Start einhaengen */
 static void loop_boot(void)
 {
@@ -6942,7 +6942,7 @@ static void loop_boot(void)
     int i;
     unsigned a3, r;
 
-    for (nm[4] = '1'; nm[4] <= '4'; nm[4]++) {
+    for (nm[4] = '1'; nm[4] <= '0' + NLOOP; nm[4]++) {
         if ((i = env_find(-1, nm, 5)) < 0)
             continue;
         fscopy((char __far *)fi_buf, MK_FP(env_sel, env_off(-1) + i + 6), FAPI_PATHLEN);
@@ -7294,12 +7294,12 @@ static void config_sys(void)
                     i++;
             }
         } else if (kw(line, "LOOP")) {         /* LOOP=[X:,]Datei[,/RO]   */
-            static unsigned char loop_cn;      /* -> LOOP1..LOOP4 in der  */
+            static unsigned char loop_cn;      /* -> LOOP1..LOOP8 in der  */
             char *d = line + 6;                /*    Systemumgebung       */
             unsigned k = 1;
             while (v[k - 1])
                 k++;
-            if (loop_cn < 4 && k < sizeof(line) - 6) {
+            if (loop_cn < NLOOP && k < sizeof(line) - 6) {
                 if (d > v)
                     while (k--)
                         d[k] = v[k];
