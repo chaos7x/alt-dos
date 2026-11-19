@@ -209,11 +209,12 @@ vollständiges C:\DOS; nur zum Testen, nicht im Repository):
 Versionen (19.11.2026, deutsche Startdisketten des Nutzers, nur zum
 Testen): `tools/doscmp.sh` vergleicht BIOSCMP unter dem DOS direkt mit
 der Box (Abbild per MKDOSIMG unter AT-DOS aus derselben Diskette). MS-DOS
-5.0, 6.0, 6.20, 6.22 und PC DOS 5.0, 6.3, 7.0: DOS-Teil gleich, übrig nur
+5.0, 6.0, 6.20, 6.22 und PC DOS 5.0, 6.3, 2000 (meldet sich als 7.00
+Revision 1; das PC DOS 7.0 von 1995 ist ungeprüft): DOS-Teil gleich, übrig nur
 die bekannten Abweichungen (Box-BIOS, XMS/EMS/SHARE/Maus der Box, Bezugs-
 platte ohne SHARE). PC DOS ab 6.30 meldet bei 4409h Bit 14 (48C2h statt
 08C2h) – BOXSHELL tut das bei OEM 00h ab 6.30 auch (`a4409`). Offen:
-PC DOS 6.3/7 meldet bei 6Ch „angelegt“ (CX = 2) als „geöffnet“ (1); der
+PC DOS 6.3/2000 meldet bei 6Ch „angelegt“ (CX = 2) als „geöffnet“ (1); der
 Redirector bekommt dieselben Aufrufe und dieselbe SDA wie bei MS-DOS 6.22
 und setzt CX im Rahmen des Aufrufers wie dort („ersetzt“ = 3 kommt an) –
 PC DOS überschreibt den Wert danach selbst. Nicht geprüft: PC DOS 2000.
