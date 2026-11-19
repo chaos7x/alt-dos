@@ -1232,6 +1232,8 @@ unsigned char box_sec[512];             /* Sektorpuffer fuer v86.c       */
    oder unter [NAME.EXT] des gestarteten Programms (geht vor). */
 extern unsigned char ems_nf[];
 static char box_prog[13];               /* load_dos: "NAME.EXT", sonst "" */
+static char ini_img[13];                /* DOS_IMAGE= (in \DOS\MDOS), sonst "" */
+char box_iname[NTASK][13];              /* Abbild je Box (box_reuse, v86.c) */
 
 static int ini_key(const char __far *l, const char *k)
 {
@@ -1264,6 +1266,8 @@ static int ini_noframe(void)
     const char __far *l;
     const char __far *w;
 
+    int iown = 0;
+    ini_img[0] = 0;
     if (ifs_open(sys_drive, "\\DOS\\MDOS\\DOSBOX.INI", &f) || !(sel = kseg_alloc(4096)))
         return 0;
     n = f.size > 4095 ? 4095 : (unsigned)f.size;
@@ -1293,6 +1297,16 @@ static int ini_noframe(void)
         }
         if (!sec)
             continue;
+        if (ini_key(l, "DOS_IMAGE")) {      /* anderes DOS (MKDOSIMG)    */
+            if (sec == 2 || !iown) {
+                w = ini_val(l);
+                for (k = 0; k < 12 && w[k] > ' ' && w[k] != ';'; k++)
+                    ini_img[k] = (char)up(w[k]);
+                ini_img[k] = 0;
+                iown = sec == 2;
+            }
+            continue;
+        }
         if (ini_key(l, "EMS_MEMORY_LIMIT")) {
             w = ini_val(l);
             v = w[0] == '0' && (w[1] < '0' || w[1] > '9');
@@ -1405,6 +1419,31 @@ static void dos_line(int drive, const char *path, const char *ua, char *a)
 }
 #undef sp
 
+/* Startabbild der Box nach DOSBOX.INI (DOS_IMAGE= unter [*] oder
+   [NAME.EXT], box_prog), sonst FREEDOS.IMG - beides in \DOS\MDOS des
+   Startlaufwerks. Fehlt das gewaehlte, nimmt sie FREEDOS.IMG. */
+static int scmp_k(const char *a, const char *b);
+static char lm_p[32];                               /* Kontext */
+static int load_mdos(int t)
+{
+    char keep[13];
+    int err;
+    scopy(keep, box_prog, sizeof(keep));
+    ini_noframe();                      /* -> ini_img                    */
+    scopy(box_prog, keep, sizeof(box_prog));
+    scopy(lm_p, "\\DOS\\MDOS\\", sizeof(lm_p));
+    scopy(lm_p + 10, ini_img[0] ? ini_img : "FREEDOS.IMG", sizeof(lm_p) - 10);
+    err = load_img(t, sys_drive, lm_p);
+    if (err && ini_img[0]) {
+        scopy(box_prog, keep, sizeof(box_prog));
+        scopy(lm_p + 10, "FREEDOS.IMG", sizeof(lm_p) - 10);
+        err = load_img(t, sys_drive, lm_p);
+    }
+    if (!err)
+        scopy(box_iname[t], lm_p + 10, sizeof(box_iname[t]));
+    return err;
+}
+
 static char ld_a[FAPI_ARGLEN], ld_keep[FAPI_ARGLEN];  /* Kontext */
 #define a ld_a
 #define keep ld_keep
@@ -1421,7 +1460,7 @@ static int load_dos(int t, int drive, const char *path)
     scopy(box_prog, path + i, sizeof(box_prog));
     scopy(keep, task[t].args, FAPI_ARGLEN);
     scopy(task[t].args, a, FAPI_ARGLEN);
-    err = load_img(t, sys_drive, "\\DOS\\MDOS\\FREEDOS.IMG");
+    err = load_mdos(t);
     for (i = 0; path[i]; i++)
         ;
     if (err == EXEC_ERR_NOTFOUND && path[i - 1] == 'M') {
@@ -1449,8 +1488,14 @@ static int load_program(int t, int drive, const char *path)
     if (dos_kind(drive, path))
         return load_dos(t, drive, path);
     if (n > 4 && path[n - 4] == '.' && path[n - 3] == 'I' && path[n - 2] == 'M' &&
-        path[n - 1] == 'G')
+        path[n - 1] == 'G') {
+        if (drive == sys_drive && !scmp_k(path, "\\DOS\\MDOS\\FREEDOS.IMG")) {
+            scopy(box_prog, "COMMAND.COM", sizeof(box_prog));  /* %DOSBOX% */
+            return load_mdos(t);
+        }
+        box_iname[t][0] = 0;
         return load_img(t, drive, path);
+    }
     err = load_image(drive, path, &h, &u, &n, &seg);
     if (err)
         return err;
@@ -1647,20 +1692,36 @@ static void dcwd_copy(int t, int from);
 static void std_set(int t, int from);
 static void nocon_std(int t);
 static int of_alloc(void);
+/* passt das Abbild der geparkten Box y zu DOS_IMAGE= fuer name? */
+static int box_same(int y, const char *name)
+{
+    unsigned i;
+    for (i = 0; name[i]; i++)               /* Name aus dem Pfad         */
+        ;
+    while (i && name[i - 1] != '\\' && name[i - 1] != ':')
+        i--;
+    scopy(box_prog, name + i, sizeof(box_prog));
+    ini_noframe();
+    box_prog[0] = 0;
+    return !scmp_k(ini_img[0] ? ini_img : "FREEDOS.IMG", box_iname[y]);
+}
 static int box_reuse(const char *cmd, int s)
 {
-    int y;
+    int y, d;
     for (y = 0; y < NTASK; y++)
         if (park_owner[y] == current + 1 && task[y].state == T_WAIT)
             break;
     if (y == NTASK)
         return -1;
-    if (dos_cmd(cmd))
-        dos_line(dc_d, dc_cn, dc_ar, task[y].args);
-    else if (dc_d == sys_drive && !scmp_k(dc_cn, "\\DOS\\MDOS\\FREEDOS.IMG"))
-        scopy(task[y].args, dc_ar, FAPI_ARGLEN);    /* COMMAND: interaktiv */
-    else
+    d = dos_cmd(cmd);
+    if (!d && !(dc_d == sys_drive && !scmp_k(dc_cn, "\\DOS\\MDOS\\FREEDOS.IMG")))
         return -1;
+    if (!box_same(y, d ? dc_cn : "COMMAND.COM"))
+        return -1;                      /* anderes DOS: neue Box         */
+    if (d)
+        dos_line(dc_d, dc_cn, dc_ar, task[y].args);
+    else
+        scopy(task[y].args, dc_ar, FAPI_ARGLEN);    /* COMMAND: interaktiv */
     scopy(task[y].name, dc_nm, sizeof(task[y].name));
     task[y].drive = task[current].drive;
     scopy(task[y].cwd, task[current].cwd, IFS_PATHLEN);

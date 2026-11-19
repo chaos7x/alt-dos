@@ -4927,6 +4927,25 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nennt das CD auch unter MS-DOS „Network“. Testfalle: mtools verweigert
   ein Abbild, dessen FAT16-Sauber-Bit gelöscht ist („Error reading FAT“)
   – `MTOOLS_SKIP_CHECK=1`.
+- **MS-DOS in der DOS-Box** (Wunsch des Nutzers, 19.11.2026, wie „OS/2
+  für Windows“; Vorschlag des Nutzers: ein Werkzeug, mit dem man sich sein
+  Abbild selbst „backt“): `MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]`
+  (apps/task_mkdosimg.c, nur Platte) -> `\DOS\MDOS\NAME.IMG` + Werkzeuge
+  in `\DOS\MDOS\NAME\`; DOSBOX.INI `DOS_IMAGE=` ([*], [PROG.EXE],
+  [COMMAND.COM] für die Befehlszeile) -> kernel.c `load_mdos`, `box_same`
+  (geparkte Box nur mit gleichem Abbild). BOXSHELL: DOS über INT 21h 30h
+  BH an INT E0h 11h (BL), Umgebung selbst (MS-DOS gibt SHELL= keine),
+  INT E0h 22h = Name des Abbilds. redir.c `ms_dos[t]`: `\` am Pfadende,
+  REN mit Platzhaltern (`ren_wild`), FCB (sf_mode Bit 15 bleibt, sf_PID
+  setzen), 6Ch-Aktion in CX des Aufrufers (SDA+264h/266h). v86.c
+  `xms_snap`: CMOS, XMS 08h und 4309h-Tabelle gleich während eines
+  Programms. Geprüft: QEMU (MKDOSIMG aus den Disketten des Nutzers, XCOPY/
+  REN/FCB/BIOSCMP), 86Box 386DX/40 4 MB (Start, DIR, MEM); FreeDOS-Box
+  per bioscmp.sh unverändert. Offen: MEM von MS-DOS auf 4 MB in 86Box –
+  XMS „Verwendet“ negativ (Gesamtgröße von MEM hängt am UMB, nicht an
+  CMOS; Einzelheiten docs/BOX-BIOS.md). MS-DOS-Dateien des Nutzers nur
+  zum Testen, nie ins Repository. Testfalle: NASM nimmt `\` am Ende eines
+  Kommentars als Zeilenfortsetzung.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

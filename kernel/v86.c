@@ -292,6 +292,7 @@ static signed char cli_dt = -1;         /* fuer diese Box                */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
 static void xms_table(int t);
+static unsigned xms_snap[NTASK];        /* CMOS 30h/31h zuletzt: Seiten + 1 */
 static int mon2f(struct v86_frame *f);
 static unsigned emb_free_pg(int t);
 
@@ -3359,6 +3360,12 @@ static void svc(int n, struct v86_frame *f, int t)
         }
         else if (AH == 0x1E)                    /* Handle AL lesen/schreiben */
             AX = redir_std(t, AL < 3 ? AL : 1, (unsigned)f->r.es, DI, CX);
+        else if (AH == 0x22) {                  /* Name des Abbilds ohne */
+            extern char box_iname[][13];        /* .IMG nach ES:DI (Werk- */
+            for (i = 0; box_iname[t][i] && box_iname[t][i] != '.'; i++)  /* zeuge */
+                wr8((unsigned)f->r.es, DI + i, box_iname[t][i]);  /* des DOS) */
+            wr8((unsigned)f->r.es, DI + i, 0);
+        }
         else if (AH == 0x13)                    /* Startlaufwerk (0 = A:) */
             AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
         else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
@@ -3371,6 +3378,7 @@ static void svc(int n, struct v86_frame *f, int t)
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 2;
             xms_lim[t] = (pg > 0x4000 - 0x110 ? 0x4000 - 0x110 : pg) + 1;  /* bis 63.424 KB */
+            xms_snap[t] = 0;                    /* BOXSHELL liest gleich CMOS */
         } else if (AH == 0x15) {                /* Programm fertig (AL):  */
             for (i = 0; i < sizeof(hwvec); i++) {   /* Haken zuruecknehmen */
                 wr16(0, hwvec[i] * 4, (unsigned)ivt_save[t][i]);
@@ -3389,8 +3397,8 @@ static void svc(int n, struct v86_frame *f, int t)
                 wr8((unsigned)f->r.es, DI + i, cd[i]);
             wr8((unsigned)f->r.es, DI + i, 0);
         }
-        else if (AH == 0x11)                    /* SDA bei DS:SI         */
-            redir_sda(t, (unsigned)f->r.ds, (unsigned)f->esi);
+        else if (AH == 0x11)                    /* SDA bei DS:SI, BL OEM */
+            redir_sda(t, (unsigned)f->r.ds, (unsigned)f->esi, (unsigned)f->ebx & 0xFF);
         else if (AH == 0x12) {                  /* AT-DOS-Laufwerke      */
             AX = (unsigned)kf_box_ctl(BOX_DRIVES, 0);
             DX = (unsigned)kf_box_ctl(BOX_DRIVES, 1);
@@ -4139,6 +4147,11 @@ static unsigned char port_in(int t, unsigned p)
         unsigned char v;
         if (n > fr)                             /* nur, was die Box bekommen */
             lim -= n - (unsigned)fr;            /* kann (XMS_MEMORY_LIMIT=-1) */
+        if (!xms_snap[t])                       /* erstes Lesen nach dem   */
+            xms_snap[t] = lim + 1;              /* Programmstart: BOXSHELL */
+        else                                    /* -> LoL+45h; danach fest, */
+            lim = xms_snap[t] - 1;              /* sonst sieht MEM (liest  */
+                                                /* CMOS selbst) frei > gesamt */
         kb = 64 + (lim << 2);
         if (cmos_idx[t] == 0x17 || cmos_idx[t] == 0x30)
             return (unsigned char)kb;
@@ -4403,6 +4416,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
         xh[t][i].used = 0;
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
     xms_lim[t] = 0;
+    xms_snap[t] = 0;
     box_hk[t] = 0;
     opl_trk[t] = 0;                             /* Kopie gilt nicht mehr */
     idle_sens[t] = 0;
@@ -4549,8 +4563,17 @@ static void xms_ent(unsigned *e, unsigned fl, unsigned lk, unsigned long ad, uns
 
 static void xms_table(int t)
 {
-    unsigned i, e = XMS_TAB + 16, s = XMS_PG0, nx, n = 0;
+    unsigned i, e = XMS_TAB + 16, s = XMS_PG0, nx, n = 0, u = 0;
     unsigned long bud = kf_mem_avail_kb() >> 2, g;  /* Seiten, die das System hat */
+    for (i = 0; i < NXH; i++)
+        if (xh[t][i].used)
+            u += xh[t][i].npg;
+    if (xms_snap[t])                            /* fest wie die Gesamt- */
+        bud = xms_snap[t] - 1 > u ? xms_snap[t] - 1 - u : 0;  /* groesse,
+                                           die MEM aus LoL+45h (CMOS beim
+                                           Programmstart) nimmt - sonst frei
+                                           > gesamt, wenn der Cache seither
+                                           Speicher abgab */
     wr8(VBIOS, XMS_TAB, 1);
     wr8(VBIOS, XMS_TAB + 1, 10);
     wr16(VBIOS, XMS_TAB + 4, XMS_TAB + 16);
@@ -4668,6 +4691,10 @@ static void xms(struct v86_frame *f, int t)
         emb_gap(t, 0xFFFF, &lg);
         n = emb_free_pg(t);
         kb = kf_mem_avail_kb() >> 2;                /* auch das System zaehlt */
+        if (xms_snap[t]) {                          /* wie xms_table: fest  */
+            i = XMS_PGN - n;                        /* aus der Gesamtgroesse */
+            kb = xms_snap[t] - 1 > i ? xms_snap[t] - 1 - i : 0;  /* (LoL+45h) */
+        }                                           /* - MEM rechnet beides */
         if (lg > kb) lg = (unsigned)kb;
         if (n > kb) n = (unsigned)kb;
         if (AH == 0x88) {

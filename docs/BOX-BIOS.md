@@ -170,6 +170,42 @@ FAILED“ nur in 86Box (387-Nachbildung; der Test hängt dort unter FreeDOS
 direkt sogar), FreeDOS direkt bricht ohne `STACKS=` mit „Stack overflow“
 ab – die Box nicht (Stapel des Monitors).
 
+## MS-DOS als DOS der Box (19.11.2026)
+
+Wunsch des Nutzers (wie „OS/2 für Windows“): die eigene MS-DOS-Kopie statt
+FreeDOS in der Box. `MKDOSIMG` (apps/task_mkdosimg.c) baut das Startabbild,
+`DOS_IMAGE=` in DOSBOX.INI wählt es (kernel.c `ini_noframe` liest es mit,
+`load_mdos`; eine geparkte Box wird nur wiederverwendet, wenn sie dasselbe
+Abbild hat – `box_same`). BOXSHELL fragt das DOS (INT 21h 30h, BH = FDh
+FreeDOS) und meldet es mit der SDA (INT E0h 11h, BL); INT E0h 22h liefert
+den Namen des Abbilds (Unterverzeichnis der Werkzeuge im PATH).
+Abweichungen von FreeDOS, die der Redirector (redir.c, `ms_dos[t]`) jetzt
+beachtet – gefunden mit MS-DOS 6.22 des Nutzers (Disketten und ein
+vollständiges C:\DOS; nur zum Testen, nicht im Repository):
+
+- 1105h (CHDIR) und andere bekommen Pfade mit `\` am Ende (XCOPY: „Pfad
+  nicht gefunden“) – `get_fn` schneidet ihn ab.
+- REN mit Platzhaltern geht an den Redirector (FreeDOS löst sie selbst
+  auf) – `ren_wild` nach den Regeln von MS-DOS.
+- FCB-Dateien: DOS setzt sf_mode Bit 15 vor dem Öffnen (bleibt stehen),
+  prüft danach sf_PID (SFT+31h), das es für Netzdateien nicht selbst
+  einträgt.
+- 6Ch: der Aktionscode gehört in CX des Aufrufers (MS-DOS liest ihn vom
+  Stapel: user_SP SDA+264h, user_SS SDA+266h, CX bei +4).
+- Die Shell (SHELL=BOXSHELL) bekommt unter MS-DOS keine Umgebung (PSP:2Ch
+  = 0); BOXSHELL baut sie selbst und setzt COMSPEC/PATH.
+- XMS: CMOS 30h/31h, XMS 08h und die 4309h-Tabelle melden während eines
+  Programms dieselbe Größe (Merker `xms_snap` beim ersten CMOS-Lesen), auch
+  wenn der Platten-Cache derweil Speicher abgibt.
+
+Offen: MEM von MS-DOS zeigt auf knappen Maschinen (86Box 386DX/40, 4 MB)
+bei „Erweiterung (XMS)“ eine Gesamtgröße unter der freien (Verwendet
+„4.194.2“). Kernelseitig stimmen CMOS, LoL+45h, XMS 08h und die Tabelle
+überein; die Gesamtgröße von MEM ändert sich mit dem oberen Speicher (mit
+EMS-Rahmen 1.904 K bei 76 K UMB, ohne 1.776 K bei 140 K UMB), nicht mit
+CMOS. Mit 16 MB und in QEMU mit 4 MB stimmt die Anzeige. Nur Anzeige –
+Programme bekommen ihren XMS-Speicher.
+
 ## Bestand: BIOS der DOS-Box (6.x)
 
 Im Textmodus beantwortet die Box die Video-Aufrufe selbst; schaltet ein

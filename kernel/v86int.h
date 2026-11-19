@@ -18,7 +18,7 @@ struct v86_frame {
 /* redir.c: INT 2Fh 11xxh (Redirector) der Box -> AT-DOS-Dateien.
    -> 0 erledigt, > 0 DOS-Fehlercode (CF), -1 nicht zustaendig */
 int __far redir(struct v86_frame *f, int t);
-void __far redir_sda(int t, unsigned seg, unsigned off);
+void __far redir_sda(int t, unsigned seg, unsigned off, unsigned oem);
 unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned n);
 int __far mscdex(struct v86_frame *f, int t);   /* INT 2Fh 15xxh */
 int __far redir_dinfo(struct v86_frame *f, int t);  /* INT E0h 21h */

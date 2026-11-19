@@ -106,11 +106,16 @@ struct rbx {
 static unsigned rb_sel;
 #define RBX(t)  ((struct rbx __far *)MK_FP(rb_sel, (unsigned)(t) * sizeof(struct rbx)))
 
-void __far redir_sda(int t, unsigned seg, unsigned off)
+/* oem: Kennung aus INT 21h 30h (BH) - FFh MS-DOS/PC-DOS, FDh FreeDOS.
+   MS-DOS laesst bei einem Redirector einiges dem Redirector (Aktions-
+   code von 6Ch); FreeDOS erledigt es selbst. */
+static unsigned char ms_dos[NTASK];
+void __far redir_sda(int t, unsigned seg, unsigned off, unsigned oem)
 {
     unsigned i;
     sda_seg[t] = seg;
     sda_off[t] = off;
+    ms_dos[t] = oem != 0xFD;
     if (!rb_sel)
         rb_sel = kseg_alloc((unsigned long)NTASK * sizeof(struct rbx));
     if (!rb_sel)
@@ -173,6 +178,8 @@ static void get_fn(int t, unsigned x, char *d)
         }
         d[o++] = s[i];
     }
+    if (o > 3 && d[o - 1] == '\\')      /* MS-DOS fragt "C:\T3\" (1105h,  */
+        o--;                            /* XCOPY) - wie "C:\T3"           */
     d[o] = 0;
     if (d[0] == '\\' && d[1] == '\\' && d[3] == '.' && d[4] == '\\' &&
         d[6] == '.') {                  /* CD-Laufwerk wie MSCDEX: Stamm   */
@@ -364,7 +371,8 @@ static void sft_fill(int t, unsigned es, unsigned di, unsigned h, unsigned mode,
     unsigned char __far *s = bp(t, es, di);
     const char *n;
     unsigned k;
-    w16(s + 0x02, mode);
+    w16(s + 0x02, (r16(s + 0x02) & 0x8000) | mode);  /* sf_isFCB (MS-DOS
+                                           setzt es vor dem Oeffnen) bleibt */
     s[0x04] = de.attr;
     w16(s + 0x05, 0x8040 | (up(path[0]) - 'A'));
     w32(s + 0x07, 0);
@@ -373,6 +381,9 @@ static void sft_fill(int t, unsigned es, unsigned di, unsigned h, unsigned mode,
     w16(s + 0x0F, de.date);
     w32(s + 0x11, de.size);
     w32(s + 0x15, 0);
+    k = redir_psp(t);                   /* sf_PID = aktueller PSP: MS-DOS */
+    s = bp(t, es, di);                  /* setzt es bei Netzdateien nicht, */
+    w16(s + 0x31, k);                   /* prueft es aber bei FCBs        */
     n = split(path, dir);
     to_fcb(n, tmpl);
     s = bp(t, es, di + 0x20);
@@ -549,6 +560,74 @@ static char op_dir[80], op_fcb[11], op_one[96];  /* Kontext */
 #define dir op_dir
 #define fcb op_fcb
 #define one op_one
+
+/* REN mit Platzhaltern (p1, p2 aus der SDA). FreeDOS loest sie selbst
+   auf, MS-DOS reicht sie an den Redirector durch: je Treffer von p1 den
+   neuen Namen nach der FCB-Regel bilden (? = Zeichen der Quelle an
+   dieser Stelle, sonst Zeichen des Musters), im Zielverzeichnis von p2. */
+static void fcb_name(const char *f, char *o)    /* "NAME    EXT" -> o */
+{
+    unsigned k, l = 0;
+    for (k = 0; k < 8 && f[k] != ' '; k++)
+        o[l++] = f[k];
+    if (f[8] != ' ') {
+        o[l++] = '.';
+        for (k = 8; k < 11 && f[k] != ' '; k++)
+            o[l++] = f[k];
+    }
+    o[l] = 0;
+}
+static int ren_wild(void)
+{
+    char t2[11], nn[11];
+    const char *n;
+    unsigned i = 0, hit = 0, k, l, r, err = 0;
+    to_fcb(split(p2, ff_dir), t2);              /* Ziel: ff_dir + Muster  */
+    n = split(p1, dir);
+    to_fcb(n, tmpl);
+    while (!FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, i++, (unsigned)dir))) {
+        to_fcb(de.name, fcb);
+        if ((de.attr & 0x1E) || !fcb_match(tmpl, fcb))
+            continue;
+        for (k = 0; k < 11; k++)
+            nn[k] = t2[k] == '?' ? fcb[k] : t2[k];
+        for (l = 0; dir[l] && l < 80; l++)
+            one[l] = dir[l];
+        if (one[l - 1] != '\\')
+            one[l++] = '\\';
+        for (k = 0; de.name[k] && l < 95; k++)
+            one[l++] = de.name[k];
+        one[l] = 0;
+        for (l = 0; ff_dir[l] && l < 80; l++)
+            p2[l] = ff_dir[l];
+        if (p2[l - 1] != '\\')
+            p2[l++] = '\\';
+        fcb_name(nn, p2 + l);
+        r = FAPI(FAPI_MOVE, KDATA, (unsigned)one, (unsigned)p2, 0);
+        if (FAILED(r))
+            err = r == FAPI_ERR_EXIST ? E_DENIED : errmap(r, E_DENIED);
+        else
+            hit++;
+    }
+    if (!hit)
+        return err ? err : nf(p1);
+    return 0;                                   /* wie MS-DOS: Teilerfolg */
+}
+/* Aktionscode von 6Ch (1 geoeffnet, 2 angelegt, 3 ersetzt): FreeDOS
+   nimmt ihn aus CX, MS-DOS gibt dem Aufrufer bei einem Redirector nur AX
+   zurueck - dort steht er in dessen Registerrahmen (user_SS:user_SP aus
+   der SDA, +264h bei MS-DOS 6.22, CX bei +4) */
+static void ext_act(struct v86_frame *f, int t, unsigned act)
+{
+    unsigned sp, ss;
+    CX = act;
+    if (!ms_dos[t])
+        return;
+    sp = r16(sda(t, 0x264));
+    ss = r16(sda(t, 0x266));
+    w16(bp(t, ss, sp + 4), act);
+}
+
 static int op(struct v86_frame *f, int t, unsigned fn)
 {
     unsigned char __far *s;
@@ -743,6 +822,8 @@ static int op(struct v86_frame *f, int t, unsigned fn)
     case 0x11:                                  /* RENAME                */
         get_fn(t, 0x9E, p1);
         get_fn(t, 0x11E, p2);
+        if (has_wild(p1) || has_wild(p2))
+            return ren_wild();
         r = FAPI(FAPI_MOVE, KDATA, (unsigned)p1, (unsigned)p2, 0);
         if (r == FAPI_ERR_EXIST)
             return E_DENIED;                    /* Ziel gibt es: 05h     */
@@ -828,7 +909,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
                 de.size = e->size;
             sft_fill(t, es, di, (SH_MARK | slot) - 1, mode, p1);
             if (fn == 0x2E)
-                CX = act;
+                ext_act(f, t, act);
             return 0;
         }
         if (act == 1)                           /* vorhanden: lesen oder  */
@@ -860,7 +941,7 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         }
         sft_fill(t, es, di, h, mode, p1);
         if (fn == 0x2E)
-            CX = act;
+            ext_act(f, t, act);
         return 0;
     }
     case 0x1B:                                  /* FINDFIRST             */

@@ -618,6 +618,22 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   lesen, Gerätaufträge wie Status, Größe, READ LONG) – für CD-Spiele und
   Installationsprogramme, die nach MSCDEX fragen; keine CD-Audio-
   Wiedergabe.
+- MS-DOS statt FreeDOS in der DOS-Box (wie „OS/2 für Windows“ mit der
+  vorhandenen Windows-Kopie; AT-DOS liefert kein Microsoft-DOS mit):
+  **MKDOSIMG** `Quelle: [Werkzeuge] [/N:NAME.IMG]` baut aus der eigenen
+  Startdiskette (MS-DOS bis 6.22 oder PC DOS, auch über LOOP) ein
+  Startabbild `\DOS\MDOS\NAME.IMG` – Startsektor der Quelle, IO.SYS/
+  MSDOS.SYS, COMMAND.COM, COUNTRY.SYS, BOXSHELL und ATBOX.SYS, eigene
+  CONFIG.SYS; die Programme aus dem alten `C:\DOS` (Werkzeuge) landen in
+  `\DOS\MDOS\NAME\` vorn im PATH der Box. `DOS_IMAGE=NAME.IMG` in
+  `DOSBOX.INI` wählt es für alle Programme (`[*]`), eines (`[PROG.EXE]`)
+  oder die Befehlszeile (`[COMMAND.COM]`). Der Redirector kennt die
+  Eigenheiten von MS-DOS (Platzhalter bei REN, FCB-Dateien, Rückgabe von
+  6Ch); mit MS-DOS 6.22 in QEMU (Abbild mit MKDOSIMG gebaut, DIR, COPY/
+  XCOPY/REN/DEL auf den AT-DOS-Laufwerken, FCB-Programme, BIOSCMP wie
+  unter echtem MS-DOS 6.22) und in 86Box (386DX/40, 4 MB: Start, DIR,
+  MEM) geprüft. Offen: MEM von MS-DOS zeigt auf knappen Maschinen bei
+  XMS „Verwendet“ falsch (`docs/BOX-BIOS.md`)
 - DOS-Programme direkt aus CMD.EXE wie bei NT: `.COM`, `.BAT` und `.EXE`
   ohne FX-Kopf startet der Kernel in einer FreeDOS-Box in derselben
   Sitzung (Vollbild, im aktuellen Laufwerk und Verzeichnis), CMD wartet,

@@ -47,11 +47,16 @@ org 100h
         inc     si
         inc     si
         jmp     .dl
-.dd:    call    setver_load             ; liest in envbuf, daher zuerst
+.dd:    call    other_dos               ; MS-DOS u. a. statt FreeDOS?
+        call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
-        mov     es, [2Ch]               ; eigene Umgebung wird nicht mehr
-        mov     ah, 49h                 ; gebraucht (Kinder bekommen envbuf)
+        mov     ax, [2Ch]               ; eigene Umgebung wird nicht mehr
+        test    ax, ax                  ; gebraucht (Kinder bekommen envbuf)
+        jz      .noenv
+        mov     es, ax
+        mov     ah, 49h
         int     21h
+.noenv:
         mov     ax, cs
         mov     bx, envbuf
         mov     cl, 4
@@ -83,6 +88,10 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         jcxz    .inter
         jmp     .c2
 .inter: mov     dx, t_hello             ; interaktiv: Meldung, dazu
+        cmp     byte [notfd], 0
+        je      .ih
+        mov     dx, t_hello2
+.ih:
         mov     ah, 9                   ; X:\AUTOEXEC.BAT, wenn es sie gibt
         int     21h                     ; (gehoert der DOS-Box)
         dec     di                      ; "/C " wieder weg
@@ -695,11 +704,14 @@ goto_cwd:
 ; das Startlaufwerk)
 build_env:
         push    ds
-        mov     ds, [2Ch]               ; eigene Umgebung
-        xor     si, si
         mov     di, envbuf
         push    cs
         pop     es
+        mov     ax, [2Ch]               ; eigene Umgebung (MS-DOS gibt der
+        test    ax, ax                  ; SHELL= keine: 0)
+        jz      .e3
+        mov     ds, ax
+        xor     si, si
 .e1:    cmp     byte [si], 0            ; Ende der Liste?
         je      .e3
         cmp     word [si], 'BL'         ; BLASTER= schon gesetzt?
@@ -754,6 +766,14 @@ build_env:
         test    al, al
         jnz     .e4b
         mov     si, t_path              ; PATH wie \OS2\MDOS bei OS/2,
+        cmp     byte [notfd], 0         ; (anderes DOS: dessen Werkzeuge
+        je      .e5                     ; vorn, siehe other_dos)
+        mov     si, t_path2
+.e4c:   lodsb
+        stosb
+        test    al, al
+        jnz     .e4c
+        mov     si, t_nls
 .e5:    lodsb                           ; dazu NLSPATH/LANG (Meldungen
         stosb                           ; von FreeDOS-MEM, MEM.DE)
         cmp     si, t_envend
@@ -766,6 +786,53 @@ build_env:
         test    al, al
         jnz     .e6
 .e7:    stosb                           ; zweite Null: Ende
+        ret
+
+; ---- anderes DOS als FreeDOS (MKDOSIMG, DOSBOX.INI DOS_IMAGE=) --------
+; Dann ist COMMAND.COM das des Abbilds (A:\), nicht FreeCOM aus \DOS\MDOS,
+; und dessen Werkzeuge liegen in \DOS\MDOS\<Abbild ohne .IMG> - vorn im
+; PATH (MEM, MSD ... des DOS vor denen von FreeDOS).
+other_dos:
+        mov     ah, 30h
+        int     21h
+        cmp     bh, 0FDh                ; FreeDOS: alles wie bisher
+        je      .r
+        mov     byte [notfd], 1
+        push    cs
+        pop     es
+        mov     si, t_acom
+        mov     di, t_comspec
+        call    copyz
+        mov     si, t_acmd
+        mov     di, t_cmd
+        call    copyz
+        mov     di, t_path2 + 5         ; "PATH=" + X:\DOS\MDOS + "\" + Name
+        mov     si, t_path + 5
+        mov     cx, 11
+        rep     movsb
+        mov     al, '\'
+        stosb
+        mov     ah, 22h                 ; Name des Abbilds (ohne .IMG)
+        int     0E0h
+        cmp     byte [di], 0
+        jne     .nn
+        mov     di, t_path2 + 5         ; kein Name: nur der alte PATH
+        jmp     .noname
+.nn:    inc     di
+        cmp     byte [di], 0
+        jne     .nn
+        mov     al, ';'
+        stosb
+.noname:
+        mov     si, t_path + 5          ; X:\DOS\MDOS;X:\DOS
+        call    copyz
+.r:     ret
+
+copyz:                                  ; DS:SI -> ES:DI mit der Null
+        lodsb
+        stosb
+        test    al, al
+        jnz     copyz
         ret
 
 ; ---- SETVER: X:\DOS\MDOS\SETVER.LST -> Versionstabelle (LoL+37h) --------
@@ -903,6 +970,9 @@ redir_install:
         int     21h
         mov     [cs:sda], si            ; fuer den Lesepuffer
         mov     [cs:sda + 2], ds
+        mov     ah, 30h                 ; welches DOS? (BH: FDh FreeDOS,
+        int     21h                     ; FFh MS-DOS) - DS:SI bleibt
+        mov     bl, bh
         mov     ah, 11h                 ; dem Kernel melden
         int     0E0h
         pop     ds
@@ -1423,6 +1493,12 @@ t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.1 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+t_hello2  db "DOS-Box von AT-DOS 6.1 - EXIT beendet die Box.", 13, 10, "$"
+t_acom    db "A:\COMMAND.COM", 0
+t_acmd    db " A:\ /E:1024 /C ", 0
+notfd     db 0
+t_path2   db "PATH="
+          times 60 db 0
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
           dw t_autoexec, t_ini, t_nls+8, 0
 pblock    dw 0                          ; Umgebung erben
