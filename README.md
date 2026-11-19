@@ -1021,6 +1021,15 @@ Dateisystem-Module (`IFS=`) sind gleich aufgebaut, melden bei der
 Initialisierung ihre Medienklassen und werden danach mit `struct ifs_req`
 aufgerufen (`include/ifsmod.h`); Blöcke lesen sie über DevHlp `DH_BLKREAD`.
 
+Module der DOS-Box (6.3, Entwurf `docs/VDD.md`, wie die VDDs von OS/2
+2.0): ein Treiber `.VDD` meldet sich mit `DH_VDDREG` (`include/vdd.h`)
+für Ports und Interrupts der Box an, die der Kernel nicht selbst
+nachbildet, und bekommt Ereignisse (Box angelegt, beendet, geparkt);
+Dienste über `DH_VDDSVC` (Speicher der Box lesen, FAPI im Namen der
+Box). PIC, Zeitgeber, CMOS, Tastatur und BIOS-Grundlage bleiben im
+Kernel. Erstes Modul: `VCOM.VDD` – COM1–4 und LPT1–3 der Box (Register,
+INT 14h/17h), Ausgabe über COMn/LPTn; `DEVICE=VCOM.VDD`, entladbar.
+
 Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Block über den
 DMA-Puffer) und `DRV_FLUSH` (Schreib-Cache der Platten leeren: IDE
 `FLUSH CACHE`, SCSI `SYNCHRONIZE CACHE`).

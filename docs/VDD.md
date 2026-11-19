@@ -1,6 +1,6 @@
 # Module für die DOS-Box (6.3) – Vorlage OS/2 2.0
 
-Stand: 19.11.2026, nur Bestandsaufnahme, noch kein Entwurf. Umfang 6.3
+Stand: 19.11.2026, Bestandsaufnahme, Abwägung und Entwurf (unten). Umfang 6.3
 (Entscheidung des Nutzers, 19.11.2026): die Nachbildung der Geräte in der
 DOS-Box wird nach dem Vorbild der VDDs von OS/2 2.0 in Module zerlegt.
 Anlass: `kernel/v86.c` füllt KTEXT3 mit 61.980 Byte fast ganz.
@@ -56,20 +56,114 @@ Nur Dateinamen und Zweck – kein Code von OS/2 (nicht freigegeben).
 | –             | Sound Blaster, AdLib, AWE, MPU-401 | v86.c: vsb, opl_*, emu_*, mpu_* (OS/2 2.0 hatte keinen Ton-VDD; MMPM/2 kam später) |
 | COMDD/LPTDD.SYS | DOS-Treiber in der Box für COM/LPT | ATBOX.SYS (ATIN$/ATOUT$/ATERR$, EMMXXXX0) |
 
-Auffällig: OS/2 hat auch PIC, Zeitgeber und CMOS als eigene Module
-gebaut. Bei uns liegen gerade diese Teile im heißen Pfad jeder Falle
-(inject, t8_ok, dp_hwint) – sie bleiben im Kernel, ausgelagert wird,
-was selten oder groß ist.
+## PIC, Zeitgeber und CMOS als Module? (Abwägung, 19.11.2026)
 
-## Erste Überlegung zur Aufteilung (noch nicht abgestimmt)
+Frage des Nutzers: „Zu PIC, Zeitgeber und CMOS in Modulen – da sollte
+man schauen, was an Vorteilen überwiegt.“ Gemessen am Stand von 6.2
+(wdis von `build/v86.o`, Größe je Funktion, KTEXT3 zusammen 61.980 Byte):
 
-- Fest im Kernel (KTEXT3): Monitor, PIC, PIT, Tastatur, BIOS-Grundlage,
-  Fensterumlegen – alles, was je Falle läuft.
-- Als Module (`.VDD`, Ring 0 wie Treiber, Einhängen über Port- und
-  Interrupt-Tabellen): Ton (SB/OPL/AWE/MPU), EMS, DPMI, VGA/SVGA-
-  Hintergrund, COM/LPT, Maus, MSCDEX/Redirector.
-- Laden über CONFIG.SYS (`DEVICE=` wie OS/2) oder DOSBOX.INI je Box –
-  zu klären.
-- Offen: Schnittstelle (Port-Haken, INT-Haken, Seitenfehler-Haken,
-  Takt-Haken, Zustand je Box), Kosten eines Fernaufrufs je Falle,
-  Reihenfolge der Auslagerung.
+| Teil von v86.c                    | Code     |
+|-----------------------------------|----------|
+| DPMI (dp_*, ctx_*, rm_go)         | 9.133    |
+| VGA/SVGA (vga_*, vbe_*, rom_*)    | 6.100    |
+| XMS/UMB/HMA                       | 5.304    |
+| EMS (ems_*, x57)                  | 5.076    |
+| Ton (sb_*, opl_*, emu_*, mpu_*)   | 4.707    |
+| Maus (mou*)                       | 2.165    |
+| **Zeitgeber (pit_*, t8_ok, account, kpit_*, alrm)** | **1.758** |
+| Tastatur                          | 805      |
+| **PIC (inject, pic_*)**           | **776**  |
+| COM/LPT                           | 764      |
+| PCI-Dienste für Video-BIOSe       | 414      |
+| **CMOS (cmos_*)**                 | **96** (dazu ~200 in port_in/port_out) |
+
+Dafür (Module):
+- Einheitlich wie OS/2; Ersatz denkbar (APIC/HPET in 7.0).
+- Abschaltbar – aber eine Box ohne PIC oder Zeitgeber läuft nicht. Auch
+  OS/2 lädt VPIC, VTIMER, VCMOS, VBIOS, VDMA, VKBD und VNPX nicht über
+  die CONFIG.SYS, sondern immer („Basis-VDDs“).
+
+Dagegen:
+- Gewinn klein: zusammen unter 3 KB von 62 KB. Der Platz kommt von den
+  großen Teilen (DPMI, VGA, XMS, EMS, Ton – zusammen über 30 KB).
+- Heißer Pfad: `inject` läuft bei jedem Rücksprung in die Box, `t8_ok`/
+  `account` bei jedem Takt, EOI an Port 20h kommt in DOOM ~700-mal je
+  Sekunde. Ein Fernaufruf in ein Modul (CALL FAR mit DS-Wechsel, RETF)
+  kostet auf dem 386 grob 40–60 Takte; eine Falle selbst einige hundert.
+  Das wären 5–10 % mehr auf genau den Wegen, die wir für DOOM mühsam
+  verkürzt haben (dp_more, sbc_*, pm_hk).
+- Eng verzahnt: der Zeitgeber stellt den echten PIT des Kernels um
+  (`kpit_set`, Zählung in start.asm `irq0`), die Takte der Box hängen an
+  `irq0_n`; den PIC fragen Ton, Tastatur, Maus und Zeitgeber ab. Als
+  Modul bräuchten sie eine breite Schnittstelle in beide Richtungen.
+- CMOS ist mit ~0,3 KB zu klein, um einen eigenen Modulkopf (Treiber-
+  rahmen, Registrierung, GDT-Plätze) zu rechtfertigen.
+
+Ergebnis (Vorschlag): PIC, Zeitgeber und CMOS bleiben als Basis im
+Kernel – wie die Basis-VDDs von OS/2 –, bekommen aber dieselbe
+Schnittstelle, die Module benutzen (virtuellen IRQ melden, EOI-Rückruf,
+Takt-Rückruf). Ausgelagert wird, was selten läuft und groß ist.
+
+## Entwurf 6.3 (Stand 19.11.2026)
+
+Ein Modul ist ein gewöhnlicher Ring-0-Treiber (`.VDD`, gebaut wie die
+Treiber, Kopf „DRV1“), geladen mit `DEVICE=` in der CONFIG.SYS oder mit
+DEVLOAD – kein eigener Lader. In INIT meldet es sich mit dem DevHlp
+`DH_VDDREG` an (`include/vdd.h`): Name, welche Ports es will (Bereiche
+oder „alle, die der Kernel nicht selbst behandelt“), welche Interrupts
+(Vektoren, die sonst `svc` erledigt), welche Ereignisse (Box angelegt,
+beendet, geparkt, vorn/hinten, Takt), dazu ferne Einsprünge (fent0–4
+aus dcrt0.asm wie beim Netz). Der Monitor (v86.c) fragt bei einer Falle
+erst seine eigenen Fälle, dann die Tabelle der Module; Aufruf fern mit
+DS = Moduldaten, ES:BX = `struct vdd_call` (Task, Port/Vektor, Wert,
+Breite, bei Interrupts die Register der Box zum Lesen und Schreiben).
+
+Dienste für Module über DevHlp `DH_VDDSVC` (Unterfunktion in BX):
+Speicher der Box lesen/schreiben (lineare Adresse, über das Fenster der
+Box), FAPI im Namen der Box (wie `box_fapi`, Datei-/Gerätezugriff),
+virtuellen IRQ melden, BDA lesen. Zustand je Box hält das Modul selbst
+(Tabellen je Task, NTASK).
+
+Reihenfolge:
+1. Rahmen (`vdd.h`, DH_VDDREG/DH_VDDSVC, Tabelle im Kernel, Aufrufe aus
+   port_in/port_out/svc/v86_destroy) mit COM/LPT als erstem Modul
+   `VCOM.VDD` (Ports der BDA-Basen, INT 14h/17h, Schließen beim Ende) –
+   klein, aber benutzt Ports, Interrupts, FAPI und Ereignisse.
+2. Ton (`VSB.VDD`: SB/OPL/AWE/MPU, DMA-Kanäle 1/5, Takt-Rückruf zum
+   Pumpen, IRQ melden, vorn/hinten) – braucht IRQ- und Takt-Dienste.
+3. EMS und XMS (`VEMS.VDD`, `VXMS.VDD`) – brauchen Seitentabellen-
+   Dienste (Seite einblenden/entfernen), Kosten genau messen.
+4. VGA-Hintergrund und Maus. DPMI zuletzt (eng mit der Falle verwoben;
+   evtl. besser ein eigenes Codesegment statt eines Moduls).
+
+## Stand: Stufe 1 erledigt (19.11.2026)
+
+- `include/vdd.h`: `struct vdd_reg` (Anmeldung), `struct vdd_call`
+  (Aufruf: Port/Wert, Register bei Interrupts), `struct vdd_svc`
+  (Dienste), DH_VDDREG 32, DH_VDDSVC 33, Ereignisse CREATE/DESTROY/PARK.
+- `kernel/vdd.c` (KTEXT4): Tabelle `vt[NVDD]` (4 Module), `vdd_io` (nur
+  wenn ein Modul VDDF_ANYPORT will, sonst kein Fernaufruf), `vdd_int`,
+  `vdd_event`, `vdd_drop` (DEVLOAD /U, gescheitertes INIT), Dienste
+  VS_RD (Box-Speicher lesen über `v86_xfer`, neu: Richtung wählbar –
+  `v86_copy` schreibt) und VS_FAPI (FAPI im Namen der Box mit Kernel-
+  sperre, Puffer auf dem Kernelstapel – die FAPI kann schlafen, andere
+  Boxen rufen das Modul derweil auch).
+- v86.c: unbekannte Ports -> `vdd_io`, INT 14h/17h -> `vdd_svc_int`
+  (Register hin und zurück, ohne Modul „kein Port“), Ereignisse in
+  v86_create/v86_destroy/v86_park.
+- `VCOM.VDD` (drivers/vcom.c): COM1–4/LPT1–3 der Box wie vorher in
+  v86.c (8250 ohne FIFO, Loopback, LPT-Latch mit STROBE, INT 14h/17h),
+  Ausgabe über COMn/LPTn des Kernels. Mitgeliefert und in der
+  CONFIG.SYS geladen (`DEVICE=VCOM.VDD`), entladbar mit `DEVLOAD /U
+  VCOM`.
+- KTEXT3 (v86.c) 61.980 -> 61.102 Byte; KTEXT4 32.682 Byte.
+- Geprüft in QEMU: BIOSCMP (Box gegen FreeDOS) mit denselben 62
+  Abweichungszeilen wie vorher (INT 14h/17h-Status gleich dem Bezug),
+  Testprogramm PT.COM (INT 17h, INT 14h, LPT über Ports 378h/37Ah) mit
+  `-parallel file:`/`-serial file:` – alles kommt an; nach `DEVLOAD /U
+  VCOM` geht nichts mehr hinaus, die Box läuft weiter; erneut geladen.
+  86Box 386DX/40 (4 MB, Textdrucker an LPT1): VCOM.VDD geladen, PT.COM in
+  der Box druckt über INT 17h und über die Ports.
+- Unbekannte Ports kosten jetzt einen Fernaufruf ins Modul; VCOM lehnt
+  alles außerhalb 278h–3FFh sofort ab, ohne den BDA zu lesen (Joystick
+  201h fragen Spiele in Schleifen ab).

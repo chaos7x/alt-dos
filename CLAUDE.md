@@ -31,6 +31,20 @@ Fehler, werden sie auf `6.2` behoben und danach freigegeben): Titel/VER
 nach der Freigabe kommt ein Schritt für das Release `v6.2` dazu (wie
 bei 6.1, als neuestes). Fehlerbehebungen dann auf `6.2` und `main`.
 
+AT-DOS 5.5 zur Prüfung (Wunsch des Nutzers, 19.11.2026, gleiche Regel):
+Zweig `5.5` (= `5.x` 48263ce) mit dem Netz aus 6.2 für den 286, CI baut
+`test-5.5`. Einzelheiten in der CLAUDE.md von `5.x`.
+
+6.3 begonnen (Auftrag des Nutzers, 19.11.2026: „Dann kannst du mit dem
+großen Umbau in 6.3 beginnen“; zu PIC/Zeitgeber/CMOS: „schauen, was an
+Vorteilen überwiegt“ – Abwägung in `docs/VDD.md`: bleiben als Basis im
+Kernel, Gewinn < 3 KB, heißer Pfad). Stufe 1 (Modulrahmen + VCOM.VDD)
+erledigt, Stand und Prüfung in `docs/VDD.md` „Stand: Stufe 1“. Neue
+Module: Treiber mit `DH_VDDREG`, Kernelseite `kernel/vdd.c` (KTEXT4),
+Box-Speicher lesen über `v86_xfer(..., 1)` (`v86_copy` SCHREIBT in die
+Box – beim ersten Versuch überschrieb VS_RD so den BDA der Box). Nächste
+Stufe: Ton (`VSB.VDD`).
+
 AT-DOS 6.1 ist fertig (Entscheidung des Nutzers, 17.11.2026: „dann
 spricht eigentlich nichts gegen die 6.1“): Zweig `6.1` = Stand der
 Freigabe, ein Push dorthin baut per CI das Release `v6.1` (als neuestes

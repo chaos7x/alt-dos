@@ -18,6 +18,7 @@
 #include "ifs.h"
 #include "../include/drv.h"
 #include "../include/net.h"
+#include "../include/vdd.h"
 
 /* LDT je Task: Eintrag 0 Code, 1 Daten/Stack, ab 2 per DosAllocSeg */
 #define NLDT_MAX    512             /* LDT-Eintraege je Task (bis 32 MB)   */
@@ -6276,6 +6277,10 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
         klog(dsel, bx, cx);
         return 0;
     }
+    if (fn == DH_VDDREG)                        /* Box-Modul (vdd.c)    */
+        return vdd_reg(drv_of(dsel), dsel, bx);
+    if (fn == DH_VDDSVC)
+        return vdd_svc(drv_of(dsel), dsel, bx);
     if (fn >= DH_NETREG && fn <= DH_NETKICK)    /* Netzwerk (net.c)     */
         return net_devhlp(fn, drv_of(dsel), dsel, bx, cx);
     return 0xFFFF;
@@ -6379,6 +6384,7 @@ static int load_driver(const char *line, int is_ifs)
         drv[d].used = 0;
         res_free(d, 0, 0);              /* Belegungsliste                */
         net_drop(d);
+        vdd_drop(d);
         vio_kputs(boot_session, "  ");
         vio_kputs(boot_session, path);
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
@@ -6815,6 +6821,7 @@ static unsigned drv_unload(int d)
     if (aud_drv == d)
         aud_drv = aud_cur = fm_cur = md_cur = -1;
     net_drop(d);
+    vdd_drop(d);
     if (mou_drv == d) {
         vio_mou_unreg();
         mou_drv = -1;

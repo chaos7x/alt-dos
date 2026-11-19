@@ -45,8 +45,8 @@ REM Netz: Karte RTL8139/PCNET/E1000/NE2000 (/P:300 /I:3), dann
 REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
 REM DEVICE=TCPIP.SYS
-REM DEVICEHIGH lassen andere DOS auch zu; AT-DOS laedt beides gleich:
-REM DEVICEHIGH /L:1 =IDE.SYS
+REM Module der DOS-Box (wie OS/2-VDDs): COM1-4/LPT1-3 der Box
+DEVICE=VCOM.VDD
 
 REM --- Dateisysteme ---
 REM CD-ROM: ISO 9660, Joliet, ISO 9660:1999, Rock Ridge (nur lesend)

@@ -221,7 +221,15 @@ void __far net_drop(int d);
 unsigned __far net_srw(unsigned id, int wr, unsigned usel, unsigned off, unsigned n);
 void __far net_sclose(unsigned id);
 unsigned __far kf_sock_new(unsigned id);       /* kernel.c: Socket -> Handle */
-unsigned __far kf_sock_id(unsigned h);           /* loop_attach/loop_info: ifs.h */
+unsigned __far kf_sock_id(unsigned h);
+/* vdd.c (KTEXT4): Module fuer die DOS-Box (6.3, include/vdd.h) */
+struct vdd_call;
+unsigned __far vdd_reg(int d, unsigned dsel, unsigned bx);
+unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx);
+void __far vdd_drop(int d);
+unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val);
+unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
+void __far vdd_event(int t, unsigned ev);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL
@@ -314,6 +322,7 @@ extern unsigned win_csel;                       /* Cache-Fenster fuer pg_win */
 struct v86_frame;
 unsigned long __far v86_create(int t, unsigned kb);    /* -> CR3, 0 = kein Speicher */
 void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n);
+void __far v86_xfer(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n, int rd);
 void __far v86_destroy(int t);
 unsigned __far v86_exc(struct v86_frame *f);           /* 0 = erledigt  */
 void __far v86_start(int t, int s);     /* Sitzung fest: Vollbild, B800  */

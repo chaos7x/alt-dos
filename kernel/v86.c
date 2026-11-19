@@ -75,6 +75,7 @@
 
 #include "v86int.h"
 #include "../include/fapi_abi.h"
+#include "../include/vdd.h"
 
 /* Je Falle gebraucht - direkt statt ueber Fern-Thunks (gleiches DS):
    auf dem 486 trappt jedes CLI/STI einer Box, tausende Male je Sekunde */
@@ -459,6 +460,7 @@ void __far v86_destroy(int t)
 
     if (!pd_box[t])
         return;
+    vdd_event(t, VDD_EV_DESTROY);       /* Module (VCOM.VDD)             */
     dpmi_end(t);
     if (box_ses[t] >= 0 && box_fg(t))
         kf_kbd_flush();                 /* wie v86_park                  */
@@ -647,11 +649,6 @@ static unsigned long rtc_ticks(void)
 }
 
 /* -> CR3 der neuen Box, 0 = kein Speicher. Speicher genullt. */
-static unsigned char lpt_d[NTASK][3], lpt_cr[NTASK][3];  /* Portregister */
-static struct vuart {
-    unsigned char dll, dlm, ier, lcr, mcr, scr, rbr, dr;
-} vu[NTASK][4];
-static unsigned lpt_h[NTASK];           /* INT 17h: Handle + 1 (lpt_out) */
 
 unsigned long __far v86_create(int t, unsigned kb)
 {
@@ -800,8 +797,6 @@ unsigned long __far v86_create(int t, unsigned kb)
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
     b2f[t] = 0;
-    lpt_h[t] = 0;                       /* (task_end schloss ihn)        */
-    lpt_cr[t][0] = lpt_cr[t][1] = lpt_cr[t][2] = 0;
     for (i = 0; i < 16; i++)
         cmos_om[t][i] = 0;
     alrm_on[t] = 0;
@@ -809,12 +804,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     vimr2[t] = 0xFF;                    /* wie nach dem BIOS: alle gesperrt */
     picw[t][0] = picw[t][1] = 0;
     pic_isr[t][0] = pic_isr[t][1] = 0;
-    for (i = 0; i < 4; i++) {           /* 2400 Baud, 8N1 wie nach dem BIOS */
-        vu[t][i].dll = 0x30;
-        vu[t][i].dlm = vu[t][i].ier = vu[t][i].mcr = vu[t][i].scr = 0;
-        vu[t][i].lcr = 3;
-        vu[t][i].dr = 0;
-    }
+    vdd_event(t, VDD_EV_CREATE);        /* Module (COM/LPT: VCOM.VDD)    */
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -846,6 +836,7 @@ void __far v86_start(int t, int s)
 void __far v86_park(int t)
 {
     int s = box_ses[t];
+    vdd_event(t, VDD_EV_PARK);          /* Module                        */
     if (s < 0)
         return;
     if (box_fg(t))                      /* Tasten des DOS-Programms (Spiele
@@ -906,7 +897,9 @@ int __far v86_fgbox(void)
 
 /* n Bytes aus dem Kernel (sel:off) an linear lin der Box, Seite fuer Seite
    ueber die physischen Seiten (die Box laeuft dabei nicht) */
-void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n)
+/* rd = 0: sel:off -> Box (v86_copy), rd = 1: Box -> sel:off (Module,
+   VS_RD). Laeuft auch fuer eine fremde Box (pt_box[t]). */
+void __far v86_xfer(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n, int rd)
 {
     unsigned k, o;
     unsigned long e;
@@ -924,11 +917,19 @@ void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsign
             return;
         }
         scratch2_map(e & ~0xFFFUL, 4095);
-        far_copy(SCRATCH2, o, sel, off, k);
+        if (rd)
+            far_copy(sel, off, SCRATCH2, o, k);
+        else
+            far_copy(SCRATCH2, o, sel, off, k);
         lin += k;
         off += k;
         n -= k;
     }
+}
+
+void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n)
+{
+    v86_xfer(t, lin, sel, off, n, 0);
 }
 
 /* Scheduler: hat eine Box in ihren Bildschirm geschrieben (Dirty-Bit der
@@ -2927,119 +2928,23 @@ static void int13(struct v86_frame *f, int t)
 static int a20_set(int t, int on);
 static unsigned char a20_on[NTASK];
 
-/* INT 17h 00h: Zeichen an LPT1-3 ueber die Geraete des Kernels (wie
-   PRINT/COPY nach PRN in AT-DOS) - der Handle bleibt bis zum Ende der
-   Box offen, task_end schliesst ihn. Vorher gingen Ausdrucke aus der
-   Box verloren (BIOSCMP, docs/BOX-BIOS.md). -> 0 gesendet */
-static unsigned char lpt_n[NTASK];      /* fuer welchen Port             */
-static char lpt_name[] = "LPT1";
-static unsigned char lpt_c;
-static int lpt_out(int t, unsigned port, unsigned char c)
+/* Interrupt n an die Module (vdd.c): Register der Box hin und zurueck
+   -> 0 erledigt */
+static int vdd_svc_int(int n, struct v86_frame *f, int t)
 {
-    unsigned r;
-    int e = 0;
-    kf_box_ctl(BOX_LOCK, 1);
-    if (lpt_h[t] && lpt_n[t] != port) {
-        kf_box_fapi(FAPI_CLOSE, KDATA, lpt_h[t] - 1, 0, 0);
-        lpt_h[t] = 0;
-    }
-    if (!lpt_h[t]) {                    /* 0-2 LPT1-3, 4-7 COM1-4        */
-        lpt_name[0] = port >= 4 ? 'C' : 'L';
-        lpt_name[1] = port >= 4 ? 'O' : 'P';
-        lpt_name[2] = port >= 4 ? 'M' : 'T';
-        lpt_name[3] = (char)('1' + (port & 3));
-        r = kf_box_fapi(FAPI_OPEN, KDATA, (unsigned)lpt_name, OPEN_RW, 0);
-        if (r < FAPI_ERR_FIRST) {
-            lpt_h[t] = r + 1;
-            lpt_n[t] = (unsigned char)port;
-        }
-    }
-    lpt_c = c;
-    if (!lpt_h[t] ||
-        kf_box_fapi(FAPI_WRITE, KDATA, lpt_h[t] - 1, (unsigned)&lpt_c, 1) != 1)
-        e = 1;
-    kf_box_ctl(BOX_LOCK, 0);
-    return e;
-}
-
-/* Serielle Ports (Basis aus dem BDA der Box) als einfacher 8250 ohne
-   FIFO und ohne Interrupt: Teiler, LCR, MCR, IER, SCR behalten ihren
-   Wert, Loopback (MCR Bit 4) spiegelt THR nach RBR und MCR nach MSR,
-   sonst gehen gesendete Bytes ueber das FAPI-Geraet COMn (wie lpt_out).
-   Vorher las die Box dort FFh (CheckIt: "1 Baud"). */
-static int com_reg(unsigned p)
-{
-    unsigned i, b;
-    for (i = 0; i < 4; i++) {
-        b = rd16(BDA, 2 * i);
-        if (b && p >= b && p <= b + 7)
-            return (int)(i * 8 + p - b);
-    }
-    return -1;
-}
-static unsigned char com_in(int t, int k)
-{
-    struct vuart *u = &vu[t][k >> 3];
-    unsigned char m;
-    switch (k & 7) {
-    case 0:
-        if (u->lcr & 0x80)
-            return u->dll;
-        u->dr = 0;
-        return u->rbr;
-    case 1:
-        return u->lcr & 0x80 ? u->dlm : (unsigned char)(u->ier & 0x0F);
-    case 2:
-        return 0x01;                            /* kein Interrupt        */
-    case 3:
-        return u->lcr;
-    case 4:
-        return (unsigned char)(u->mcr & 0x1F);
-    case 5:
-        return (unsigned char)(0x60 | u->dr);   /* Sender leer           */
-    case 6:
-        if (!(u->mcr & 0x10))
-            return 0xB0;                        /* DCD, DSR, CTS         */
-        m = u->mcr;
-        return (unsigned char)(((m & 1) << 5) | ((m & 2) << 3) |
-                               ((m & 4) << 4) | ((m & 8) << 4));
-    }
-    return u->scr;
-}
-static void com_out(int t, int k, unsigned char v)
-{
-    struct vuart *u = &vu[t][k >> 3];
-    switch (k & 7) {
-    case 0:
-        if (u->lcr & 0x80)
-            u->dll = v;
-        else if (u->mcr & 0x10) {
-            u->rbr = v;
-            u->dr = 1;
-        } else
-            lpt_out(t, 4 + (k >> 3), v);
-        break;
-    case 1:
-        if (u->lcr & 0x80) u->dlm = v; else u->ier = v;
-        break;
-    case 3: u->lcr = v; break;
-    case 4: u->mcr = v; break;
-    case 7: u->scr = v; break;
-    }
-}
-
-/* Register der Parallelports (Basis aus dem BDA der Box): Datenlatch,
-   Status "bereit", Steuerregister; fallende Flanke von STROBE (Bit 0)
-   druckt das Datenbyte wie INT 17h.  -> Port 0-2 * 4 + Register, sonst -1 */
-static int lpt_reg(unsigned p)
-{
-    unsigned i, b;
-    for (i = 0; i < 3; i++) {
-        b = rd16(BDA, 8 + 2 * i);
-        if (b && p >= b && p <= b + 2)
-            return (int)(i * 4 + p - b);
-    }
-    return -1;
+    struct vdd_call c;
+    c.ax = AX; c.bx = BX; c.cx = CX; c.dx = DX;
+    c.si = (unsigned short)f->esi; c.di = DI;
+    c.ds = (unsigned short)f->r.ds; c.es = (unsigned short)f->r.es;
+    c.flags = (unsigned short)f->r.eflags;
+    if (vdd_int(t, n, &c) == VDD_NOTMINE)
+        return 1;
+    AX = c.ax; BX = c.bx; CX = c.cx; DX = c.dx;
+    *(unsigned short *)&f->esi = c.si; DI = c.di;
+    f->r.ds = c.ds; f->r.es = c.es;
+    *(unsigned short *)&f->r.eflags = (unsigned short)
+        (((unsigned short)f->r.eflags & ~0x8D5u) | (c.flags & 0x8D5u));
+    return 0;
 }
 
 static void svc(int n, struct v86_frame *f, int t)
@@ -3152,27 +3057,9 @@ static void svc(int n, struct v86_frame *f, int t)
             }
         }
         break;
-    case 0x14:                                  /* seriell: keine Daten,  */
-        if (DX > 3 || !rd16(BDA, DX * 2))       /* Senden laeuft ab       */
-            AX = 0x8000;
-        else if (AH == 0x01)                    /* senden ueber COMn      */
-            AH = lpt_out(t, 4 + DX, AL) ? 0x80 : 0x60;
-        else if (AH == 0x00 || AH == 0x03)
-            AX = 0x6000;                        /* Sendepuffer leer      */
-        else if (AH <= 0x02)
-            AH = 0x80;
-        break;
-    case 0x17:                                  /* Drucker                */
-        if (AH > 0x02 || DX > 2)
-            break;
-        if (!rd16(BDA, 8 + DX * 2)) {
-            AH = 0x30;                          /* kein Port              */
-            break;
-        }
-        if (AH == 0x00 && lpt_out(t, DX, AL))   /* Zeichen ueber den      */
-            AH = 0x09;                          /* Kernel (LPTn), Fehler: */
-        else                                    /* Zeitueberschreitung    */
-            AH = 0x90;
+    case 0x14: case 0x17:                       /* COM/LPT: Modul VCOM.VDD */
+        if (vdd_svc_int(n, f, t))
+            AH = n == 0x17 ? 0x30 : 0x80;       /* ohne Modul: kein Port  */
         break;
     case 0x18: case 0x19:                       /* kein BASIC, kein Neustart */
     case 0x20:
@@ -4114,6 +4001,7 @@ static int vbe_io(int t, unsigned p)
 static unsigned char port_in(int t, unsigned p)
 {
     unsigned char sv;
+    unsigned o;
     int k;
     if (sb_in(t, p, &sv))                       /* virtuelle Sound Blaster */
         return sv;
@@ -4190,15 +4078,8 @@ static unsigned char port_in(int t, unsigned p)
         }
         return 0xFF;
     }
-    if ((k = com_reg(p)) >= 0)                  /* serieller Port        */
-        return com_in(t, k);
-    if ((k = lpt_reg(p)) >= 0) {                /* Parallelport          */
-        if ((k & 3) == 0)                       /* Eingaberichtung (PS/2, */
-            return lpt_cr[t][k >> 2] & 0x20 ? 0xFF : lpt_d[t][k >> 2];  /* Bit 5) */
-        if ((k & 3) == 1)
-            return 0xDF;                        /* bereit, gewaehlt      */
-        return (unsigned char)(lpt_cr[t][k >> 2] | 0xE0);
-    }
+    if ((o = vdd_io(t, VDD_IN, p, 0)) != VDD_NOTMINE)  /* Module (VCOM) */
+        return (unsigned char)o;
     return 0xFF;
 }
 
@@ -4272,17 +4153,7 @@ static void port_out(int t, unsigned p, unsigned char v)
         }
         break;
     default:
-        if ((o = (unsigned)com_reg(p)) < 32)    /* serieller Port        */
-            com_out(t, (int)o, v);
-        else if ((o = (unsigned)lpt_reg(p)) < 12) {  /* Parallelport     */
-            if ((o & 3) == 0)
-                lpt_d[t][o >> 2] = v;
-            else if ((o & 3) == 2) {
-                if ((lpt_cr[t][o >> 2] & 1) && !(v & 1))
-                    lpt_out(t, o >> 2, lpt_d[t][o >> 2]);
-                lpt_cr[t][o >> 2] = (unsigned char)(v & 0x3F);
-            }
-        }
+        vdd_io(t, VDD_OUT, p, v);               /* Module (VCOM)         */
         break;
     case 0x388: case 0x389: case 0x38A: case 0x38B:
         if (box_fg(t)) {                        /* OPL: vorn direkt      */
