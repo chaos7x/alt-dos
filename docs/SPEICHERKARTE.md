@@ -108,7 +108,7 @@ Programme laufen in Segmenten, die Kompatibilitätsbox (5.1) belegt
 
 ## Teil 2: Planung 7.0 (32 Bit)
 
-Noch kein Code; Entscheidungen trifft Marc. Was sich aus 6.x bewährt hat,
+Noch kein Code; Was sich aus 6.x bewährt hat,
 bleibt, damit es sich zurückportieren lässt.
 
 - **Speicherkarte nur aus E820h** (davor E801h/88h), nichts hart kodieren.
