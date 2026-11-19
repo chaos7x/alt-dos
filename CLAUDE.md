@@ -37,7 +37,9 @@ Rückport von main): `MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]`
 (apps/task_mkdosimg.c, nur Platte – HDDOS) baut aus der eigenen DOS-Kopie
 (Startdiskette oder Platte mit installiertem DOS 4.0–6.22 bzw. PC DOS)
 `\DOS\MDOS\NAME.IMG` mit eigenem Startsektor (`boot/mdosboot.asm`, wie
-main), RBSHELL.COM/RBHMA.SYS und eigener CONFIG.SYS; COMMAND.COM und die
+main), RBSHELL.COM/RBHMA.SYS und eigener CONFIG.SYS (mit LTEMM.EXE/.TXT
+aus `\DOS\MDOS`, jetzt in BOXFILES, und der Zeile `REM DEVICE=A:\LTEMM.EXE
+/p:D000 /i:260` wie im FreeDOS-Abbild – Wunsch des Nutzers); COMMAND.COM und die
 Werkzeuge nach `\DOS\MDOS\NAME\`. `DOS_IMAGE=NAME.IMG` unter `[*]` in
 `\DOS\MDOS\DOSBOX.INI` (jetzt mitgeliefert, BOXFILES) wählt es für RBOX
 ohne Angabe (task_rbox.c `ini_image`, `rb_iname`); `RBOX NAME.IMG` geht

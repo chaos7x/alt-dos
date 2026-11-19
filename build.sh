@@ -266,7 +266,7 @@ mcopy -i $B/freedos.img $B/rbshell.com ::RBSHELL.COM
 mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
 mcopy -i $B/freedos.img $B/ltemm.exe ::LTEMM.EXE
 mcopy -i $B/freedos.img ltemm/LICENSE.txt ::LTEMM.TXT
-BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  $B/rbshell.com RBSHELL.COM  $B/rbhma.sys RBHMA.SYS  freedos/DOSBOX.INI DOSBOX.INI  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  $B/rbshell.com RBSHELL.COM  $B/rbhma.sys RBHMA.SYS  $B/ltemm.exe LTEMM.EXE  ltemm/LICENSE.txt LTEMM.TXT  freedos/DOSBOX.INI DOSBOX.INI  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DEMO"

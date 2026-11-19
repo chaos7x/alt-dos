@@ -178,7 +178,7 @@ static void cfg_line(unsigned h, const char *s)
 void main(void)
 {
     char *p, w[FAPI_PATHLEN];
-    unsigned h, i;
+    unsigned h, i, lt;
 
     DosGetArgs(args);
     p = skip(args);
@@ -262,12 +262,20 @@ void main(void)
         put1(tools, "COUNTRY.SYS", 0);
     put1(mdos, "RBSHELL.COM", 0);
     put1(mdos, "RBHMA.SYS", 0);
+    lt = have(mdos, "LTEMM.EXE");           /* EMS der Lo-tech-Karte     */
+    if (lt) {
+        put1(mdos, "LTEMM.EXE", 0);
+        if (have(mdos, "LTEMM.TXT"))
+            put1(mdos, "LTEMM.TXT", 0);
+    }
 
     mk(to, ldrv, "CONFIG.SYS");
     h = DosCreate(to);
     if (FAPI_FAILED(h))
         die("CONFIG.SYS im Abbild");
     cfg_line(h, "DEVICE=A:\\RBHMA.SYS");     /* wie FREEDOS.IMG der Box */
+    if (lt)                                 /* nur mit Lo-tech-Karte     */
+        cfg_line(h, "REM DEVICE=A:\\LTEMM.EXE /p:D000 /i:260");
     cfg_line(h, "DOS=HIGH");
     cfg_line(h, "FILES=30");
     cfg_line(h, "FCBS=16,8");

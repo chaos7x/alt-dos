@@ -301,7 +301,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `Quelle: [Werkzeuge] [/N:NAME.IMG]` baut aus der eigenen DOS-Kopie
   (Startdiskette oder Festplatte mit installiertem MS-DOS 4.0–6.22 bzw.
   PC DOS) `\DOS\MDOS\NAME.IMG`, COMMAND.COM und Werkzeuge kommen nach
-  `\DOS\MDOS\NAME\`; `DOS_IMAGE=NAME.IMG` unter `[*]` in
+  `\DOS\MDOS\NAME\`; LTEMM.EXE kommt mit, in der CONFIG.SYS des Abbilds
+  steht `REM DEVICE=A:\LTEMM.EXE /p:D000 /i:260` (REM weg mit Lo-tech-Karte);
+  `DOS_IMAGE=NAME.IMG` unter `[*]` in
   `\DOS\MDOS\DOSBOX.INI` wählt es für RBOX (oder `RBOX NAME.IMG`). In
   QEMU mit MS-DOS 5.0/6.0/6.20/6.22 und PC DOS 5.0/6.3/2000 geprüft
   (BIOSCMP), in 86Box auf dem SCAT (286) mit MS-DOS 5.00.
