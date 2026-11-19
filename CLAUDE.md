@@ -4839,6 +4839,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `lpt_h[t]` bis zum Ende der Box), Status 90h/30h; in QEMU
   (`-parallel file:`) und 86Box 386DX/40 (`lpt1_device = text_prt` in
   `[Ports (COM & LPT)]`, Ausgabe in `printer\` des VM-Ordners) geprüft.
+  VBE-Abfrage 4F00h in der Box (vom Nutzer gemeldet, 19.11.2026: MSD 2.11
+  brach bei „MSD is examining your system“ ab, #UD bei 0000:0043, auch
+  mit FreeDOS; per git bisect auf 791fe04 zurückgeführt): `vbe_box`
+  schrieb immer 512 Byte zurück – nur mit „VBE2“ vorn im Puffer sind es
+  512, sonst 256 (MSD legt 256 an, der Rest traf seine Daten). In QEMU
+  und 86Box (P3B-F, ET4000/W32p: Video-Seite zeigt VESA 1.02) geprüft.
   Platz: `redir.c` nach KTEXT4 (K4MODS, nur ferne Aufrufe – dmpobj),
   KTEXT3 danach 58.741 Byte. BIOSCMP liegt auch auf Diskette 2
   (\DEMO, DEMOFILES) zum Testen unter MS-DOS.

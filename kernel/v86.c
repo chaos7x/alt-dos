@@ -3840,15 +3840,18 @@ static unsigned char vbe_buf[512];
 static void vbe_box(struct v86_frame *f)
 {
     static const unsigned char po[5] = { 6, 14, 22, 26, 30 };
-    unsigned es = (unsigned)f->r.es, di = DI, n = AL ? 256 : 512, i, o;
+    unsigned es = (unsigned)f->r.es, di = DI, n = 256, i, o, q = AL;
     unsigned long sig = rd16(es, di) | ((unsigned long)rd16(es, di + 2) << 16);
-    AX = vesa_boxq(AX, CX, sig, (unsigned char __far *)vbe_buf);
+    if (q == 0 && sig == 0x32454256UL)         /* "VBE2": 512 Byte, sonst */
+        n = 512;                                /* nur 256 (MSD 2.11 legt */
+    AX = vesa_boxq(AX, CX, sig, (unsigned char __far *)vbe_buf); /* 256 an) */
     if (AX != 0x004F)
         return;
-    if (n == 512)
+    if (q == 0)
         for (i = 0; i < 5; i++) {
             o = po[i];
-            if (*(unsigned *)(vbe_buf + o + 2) == 0x0700) {
+            if (*(unsigned *)(vbe_buf + o + 2) == 0x0700 &&
+                *(unsigned *)(vbe_buf + o) < n) {
                 *(unsigned *)(vbe_buf + o) += di;
                 *(unsigned *)(vbe_buf + o + 2) = es;
             }
