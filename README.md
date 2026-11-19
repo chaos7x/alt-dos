@@ -639,7 +639,9 @@ Zweige: `main` = Weiterarbeit nach 6.1, `6.1`/`6.0` = freigegebene
   und in 86Box (386DX/40, 4 MB, ohne Diskette: Abbild aus einem Platten-
   abbild über LOOP gebaut, Start, DIR, MEM, `COMMAND /C`) geprüft. PC DOS
   hat denselben Kern (IBM-Lizenz des MS-DOS-Quelltexts) und wird gleich
-  behandelt, ist aber noch nicht geprüft. Offen: MEM von MS-DOS zeigt auf knappen Maschinen bei
+  behandelt. `tools/doscmp.sh` vergleicht jede Version direkt und in der
+  Box: MS-DOS 5.0, 6.0, 6.20, 6.22 und PC DOS 5.0, 6.3, 7.0 geprüft
+  (QEMU), gleich bis auf den Aktionscode von 6Ch bei PC DOS 6.3/7. Offen: MEM von MS-DOS zeigt auf knappen Maschinen bei
   XMS „Verwendet“ falsch (`docs/BOX-BIOS.md`)
 - DOS-Programme direkt aus CMD.EXE wie bei NT: `.COM`, `.BAT` und `.EXE`
   ohne FX-Kopf startet der Kernel in einer FreeDOS-Box in derselben

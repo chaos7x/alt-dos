@@ -991,7 +991,15 @@ redir_install:
         mov     ah, 30h                 ; welches DOS? (BH: FDh FreeDOS,
         int     21h                     ; FFh MS-DOS) - DS:SI bleibt
         mov     bl, bh
-        mov     ah, 11h                 ; dem Kernel melden
+        test    bh, bh                  ; PC DOS (OEM 00h IBM) ab 6.30
+        jnz     .nibm                   ; meldet bei 4409h Bit 14 mit
+        cmp     al, 6                   ; (PC DOS 5.0 nicht)
+        jb      .nibm
+        ja      .ibm
+        cmp     ah, 30
+        jb      .nibm
+.ibm:   mov     word [cs:a4409], 48C2h
+.nibm:  mov     ah, 11h                 ; dem Kernel melden
         int     0E0h
         pop     ds
         call    cds_sync
@@ -1133,7 +1141,7 @@ int21:  cmp     ah, 44h
         jmp     .ok
 .n9:    cmp     al, 09h
         jne     .ne
-        mov     dx, 08C2h               ; Geraeteattribute wie MS-DOS,
+        mov     dx, [cs:a4409]          ; Geraeteattribute wie MS-DOS,
         jmp     .ok                     ; Bit 12 (fern) aus
 .ne:    cmp     al, 0Dh
         je      .gd
@@ -1518,6 +1526,7 @@ t_hello2  db "DOS-Box von AT-DOS 6.1 - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
+a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
 t_path2   db "PATH="
           times 60 db 0
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1

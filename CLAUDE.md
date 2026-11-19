@@ -4937,7 +4937,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Quelle:\DOS (nicht auf einem Laufwerk mit ATDOS.SYS); eigener
   Startsektor `boot/mdosboot.asm` (bootcode.h `boot_md` mit BOOTMD,
   Protokoll DOS 4.0–6.22 nach MSBOOT/MSLOAD von MS-DOS 4.0); PC DOS
-  gleich behandelt, ungeprüft; DOSBOX.INI `DOS_IMAGE=` ([*], [PROG.EXE],
+  gleich behandelt. `tools/doscmp.sh Diskette Name` (BIOSCMP direkt gegen
+  Box, je Version) – geprüft MS-DOS 5.0/6.0/6.20/6.22, PC DOS 5.0/6.3/7.0
+  (Startdisketten des Nutzers, nur zum Testen): DOS-Teil gleich; PC DOS ab
+  6.30 4409h mit Bit 14 (BOXSHELL `a4409`); offen: PC DOS 6.3/7 meldet bei
+  6Ch „angelegt“ als 1 (DOS überschreibt CX selbst); DOSBOX.INI `DOS_IMAGE=` ([*], [PROG.EXE],
   [COMMAND.COM] für die Befehlszeile) -> kernel.c `load_mdos`, `box_same`
   (geparkte Box nur mit gleichem Abbild). BOXSHELL: DOS über INT 21h 30h
   BH an INT E0h 11h (BL), Umgebung selbst (MS-DOS gibt SHELL= keine),
