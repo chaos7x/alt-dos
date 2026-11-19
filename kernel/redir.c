@@ -1094,13 +1094,30 @@ int __far mscdex(struct v86_frame *f, int t)
         CX = d < 0 ? 0 : (unsigned)d;
         break;
     case 0x01:                          /* Treiberliste: Untereinheit +   */
-        for (d = 0, k = 0; d < 26; d++)  /* (kein) Kopf                   */
+        for (d = 0, k = 0, i = 0xFF; d < 26; d++)    /* Geraetekopf      */
             if (kf_cd_blocks(d)) {
+                if (i == 0xFF)
+                    i = d;
                 p = bp(t, seg, BX + k * 5);
                 p[0] = (unsigned char)k;
-                w32(p + 1, 0);
+                w32(p + 1, 0xF0000AE0UL);
                 k++;
             }
+        /* Kopf eines CD-Treibers bei F000:0AE0 (Stummelseite, hinter der
+           XMS-Tabelle): Zeichengeraet C800h, "MSCD001", Laufwerk und
+           Einheiten wie MSCDEX sie eintragen; Strategie/Interrupt = RETF.
+           Vorher Nullzeiger - CheckIt las dort die Interrupttabelle und
+           hielt die CD fuer ein Netzlaufwerk. */
+        p = bp(t, 0xF000, 0x0AE0);
+        w32(p, 0xFFFFFFFFUL);
+        p[4] = 0x00; p[5] = 0xC8;
+        p[6] = 0x02; p[7] = 0x05;       /* XMS-Stummel +2: CB (RETF)      */
+        p[8] = 0x02; p[9] = 0x05;
+        for (n = 0; n < 8; n++)
+            p[10 + n] = (unsigned char)"MSCD001 "[n];
+        p[18] = p[19] = 0;
+        p[20] = (unsigned char)(i == 0xFF ? 0 : i + 1);
+        p[21] = (unsigned char)k;
         break;
     case 0x02: case 0x03: case 0x04:    /* Dateinamen aus dem PVD         */
         if (kf_cd_read(CX, 16, 0, 0)) {

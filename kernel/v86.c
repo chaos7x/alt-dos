@@ -806,8 +806,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     shf_last[t] = 0xFFFF;
     vimr2[t] = 0;
     picw[t][0] = picw[t][1] = 0;
-    for (i = 0; i < 4; i++) {           /* 9600 Baud, 8N1                */
-        vu[t][i].dll = 0x0C;
+    for (i = 0; i < 4; i++) {           /* 2400 Baud, 8N1 wie nach dem BIOS */
+        vu[t][i].dll = 0x30;
         vu[t][i].dlm = vu[t][i].ier = vu[t][i].mcr = vu[t][i].scr = 0;
         vu[t][i].lcr = 3;
         vu[t][i].dr = 0;
@@ -3080,6 +3080,14 @@ static void svc(int n, struct v86_frame *f, int t)
             AX = 0;
             svc_cf = 0;
         } else if (AH == 0xC0) {                /* Konfigurationstabelle */
+            i = rd16(VBIOS, 0xE6F5);            /* die des echten BIOS (feste */
+            if (i >= 8 && i <= 16 &&            /* Stelle E6F5h, Seite FE = */
+                rd8(VBIOS, 0xE6F7) == rd8(VBIOS, 0xFFFE)) {  /* ROM 1:1):  */
+                for (k = 2; k < 10; k++)        /* Modell, Untermodell, Re-  */
+                    wr8(VBIOS, CFG_OFF + k, rd8(VBIOS, 0xE6F5 + k));  /* vision */
+                wr8(VBIOS, CFG_OFF + 5,         /* ohne EBDA und INT 15h 4Fh */
+                    (unsigned char)(rd8(VBIOS, CFG_OFF + 5) & ~0x14)); /* aus INT 9 */
+            }
             f->r.es = VBIOS;
             BX = CFG_OFF;
             AH = 0;
@@ -4166,8 +4174,8 @@ static unsigned char port_in(int t, unsigned p)
     if ((k = com_reg(p)) >= 0)                  /* serieller Port        */
         return com_in(t, k);
     if ((k = lpt_reg(p)) >= 0) {                /* Parallelport          */
-        if ((k & 3) == 0)
-            return lpt_d[t][k >> 2];
+        if ((k & 3) == 0)                       /* Eingaberichtung (PS/2, */
+            return lpt_cr[t][k >> 2] & 0x20 ? 0xFF : lpt_d[t][k >> 2];  /* Bit 5) */
         if ((k & 3) == 1)
             return 0xDF;                        /* bereit, gewaehlt      */
         return (unsigned char)(lpt_cr[t][k >> 2] | 0xE0);
@@ -4245,7 +4253,7 @@ static void port_out(int t, unsigned p, unsigned char v)
             else if ((o & 3) == 2) {
                 if ((lpt_cr[t][o >> 2] & 1) && !(v & 1))
                     lpt_out(t, o >> 2, lpt_d[t][o >> 2]);
-                lpt_cr[t][o >> 2] = (unsigned char)(v & 0x1F);
+                lpt_cr[t][o >> 2] = (unsigned char)(v & 0x3F);
             }
         }
         break;

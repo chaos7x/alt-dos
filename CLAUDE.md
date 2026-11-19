@@ -4901,6 +4901,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Videotest), BIOSCMP unverändert, DOOM 1.9 Timedemo. Lehre: SYSINFO.EXE
   ist gepackt – Befehle nur zur Laufzeit lesbar (Spur über Port E9h mit
   Codebytes).
+  Zweiter Durchgang mit allen Menüs und MS-DOS 6.22 des Nutzers als
+  Bezug (86Box 386, Ketten-MBR, Abbild als 1,2-MB-Kopie – CMOS sagt 5¼"):
+  BOXSHELL setzt COMSPEC (fehlte bei direkt gestarteten Programmen),
+  INT 15h C0h übernimmt Modell/Untermodell/Revision von F000:E6F5,
+  LPT bidirektional, COM 2400 Baud, BREAK=OFF in freedos/CONFIG.SYS,
+  MSCDEX 1501h mit Treiberkopf bei F000:0AE0. Der Koprozessorfehler
+  tritt unter MS-DOS auf derselben VM genauso auf (86Box). Lehre: in
+  SYSINFO öffnet Esc wieder das zuletzt benutzte Menü – Tastenfolgen
+  dort enden sonst auf „Exit to DOS“.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;
   Abbild nur zum Testen, nicht im Repository): SETUP meldete auf der
   Thesaurus-Diskette „MACROCNV.TXT nicht richtig einlesen“. SETUP sucht

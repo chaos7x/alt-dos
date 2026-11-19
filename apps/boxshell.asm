@@ -711,7 +711,15 @@ build_env:
         cmp     word [si+6], 'R='
         jne     .e1p
         mov     byte [cs:has_bl], 1
-.e1p:   cmp     word [si], 'PA'         ; eigenes PATH= weglassen
+.e1p:   cmp     word [si], 'CO'         ; eigenes COMSPEC= weglassen
+        jne     .e1q                    ; (zeigt auf BOXSHELL bzw. A:)
+        cmp     word [si+2], 'MS'
+        jne     .e1q
+        cmp     word [si+4], 'PE'
+        jne     .e1q
+        cmp     word [si+6], 'C='
+        je      .skip
+.e1q:   cmp     word [si], 'PA'         ; eigenes PATH= weglassen
         jne     .e2
         cmp     word [si+2], 'TH'
         jne     .e2
@@ -734,6 +742,17 @@ build_env:
         stosb
         test    al, al
         jnz     .e4
+        mov     si, t_cspec             ; COMSPEC: Programme, die eine
+.e4a:   lodsb                           ; DOS-Shell starten (CheckIt
+        stosb                           ; meldete "-1 bytes")
+        test    al, al
+        jnz     .e4a
+        dec     di
+        mov     si, t_comspec
+.e4b:   lodsb
+        stosb
+        test    al, al
+        jnz     .e4b
         mov     si, t_path              ; PATH wie \OS2\MDOS bei OS/2,
 .e5:    lodsb                           ; dazu NLSPATH/LANG (Meldungen
         stosb                           ; von FreeDOS-MEM, MEM.DE)
@@ -1377,6 +1396,7 @@ emskb     dw 2048
 dosver    dw 0
 ibuf      dw 0
 pname     times 13 db 0
+t_cspec   db "COMSPEC=", 0
 t_comspec db "X:\DOS\MDOS\COMMAND.COM", 0
 t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_kauto   db "/K ", 0

@@ -111,6 +111,29 @@ Maschine (QEMU, 86Box 386DX/40). Behoben:
 | 0417h/0418h bei jeder Zustellung neu geschrieben | Speichertest: „Bad Bits“ dort | nur noch bei Änderung des Tastaturzustands |
 | geparkte Box zählt ihren Takt nicht | DOS-Zeit 17 s hinter der Uhr | nach langer Pause 46Ch aus der Echtzeituhr neu |
 
+Zweiter Durchgang (19.11.2026, Nachfrage des Nutzers: auch die Menüs
+Memory, DOS, Windows, Performance; dazu sein MS-DOS-6.22-Startabbild als
+Bezug auf derselben 86Box-386 – als 1,2-MB-Kopie, weil das CMOS der VM
+A: als 5¼" führt und IO.SYS sonst hängt):
+
+| Fund | MS-DOS 6.22 | Box vorher | jetzt |
+|---|---|---|---|
+| COMSPEC (DOS Details, Umgebung) | A:\COMMAND.COM | fehlte (BOXSHELL startet Programme direkt) | X:\DOS\MDOS\COMMAND.COM |
+| INT 15h C0h, ID-Bytes | FC, 01 (IBM AT 339) | FC, 00 (feste Tabelle) | Modell/Untermodell/Revision aus der Tabelle des BIOS (F000:E6F5), ohne EBDA- und 4Fh-Merkmal |
+| LPT bidirektional | Yes | No | Steuerbit 5 = Eingabe: Daten lesen FFh |
+| COM nach dem Start | 2400 Baud | 9600 | 2400, 8N1 |
+| Ctrl-Break | Off | On | BREAK=OFF in der CONFIG.SYS der Box |
+| MSCDEX 1501h | – | Nullzeiger als Treiberkopf | Kopf „MSCD001“ (C800h) bei F000:0AE0 |
+
+Unverändert und gleich wie unter MS-DOS: Koprozessor FAILED in 86Box
+(also 86Box), Uhrabstand ~2 s, doppelte Listeneinträge nach Bild↓ (Eigenheit
+von CheckIt). Offen/kosmetisch: die Laufwerksliste nennt das CD-ROM
+„Network“ (die Multimedia-Seite erkennt MSCDEX 2.21 an D:; CheckIt fragt
+150Bh nur für C:), NumLock aus statt an. Performance: CPU-Benchmark in
+86Box 11.467 Einheiten (32,5 × XT); in QEMU läuft er nie durch (FreeDOS
+direkt hängt dort, die Box beendet SYSINFO) – QEMU-Eigenheit. Platten-
+Benchmark: „nicht vorhanden“ (keine BIOS-Platten), Video läuft.
+
 Ergebnis danach: SYSINFO (alle Seiten), Systemplatine (CPU, PIC, Uhr,
 Weckzeit, DMA), serieller und Parallelport, Drucker (Ausgabe kommt an),
 Speicher (konventionell, EMS, Video), Video bestehen in QEMU und 86Box.
