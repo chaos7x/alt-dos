@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.5 im Test (Zweig 5.x, Stand zur Prüfung in `5.5`): 5.4 plus Netzwerk aus 6.2 (TCP/IP mit IPv6 und Firewall auf dem 286)
+# alt-dos – AT-DOS 5.5 fertig (Zweig `5.5`, Release `v5.5`), Weiterarbeit in 5.x: 5.4 plus Netzwerk aus 6.2 (TCP/IP mit IPv6 und Firewall auf dem 286)
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -29,8 +29,8 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
 Dieser Zweig (`5.x`) ist die Weiterarbeit an der 286-Linie (5.1 plus
-Rückportierungen aus 6.0/6.1/6.2). AT-DOS 5.5 (Zweig `5.5`, zur Prüfung,
-Testfassung `test-5.5`) = 5.4 plus das Netzwerk aus 6.2: `NE2000.SYS`,
+Rückportierungen aus 6.0/6.1/6.2). AT-DOS 5.5 (Zweig `5.5`, Release
+`v5.5`, freigegeben 20.11.2026) = 5.4 plus das Netzwerk aus 6.2: `NE2000.SYS`,
 `TCPIP.SYS` (IPv4/IPv6, TCP, UDP, DHCP, DNS, Firewall), PING, IPCONFIG,
 NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP – nur auf der
 Festplatte –, dazu DETACH ohne Konsole und XCOPY /I. AT-DOS 5.4 steht im Zweig `5.4` (Release

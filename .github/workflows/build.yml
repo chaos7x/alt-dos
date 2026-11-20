@@ -61,8 +61,8 @@ jobs:
           gh release delete v5.x --yes --cleanup-tag 2>/dev/null || true
           gh release create v5.x build/dos5.img build/atdos-hd.zip \
             --target "$GITHUB_SHA" --prerelease \
-            --title "AT-DOS 5.x nach 5.4 (in Arbeit), Build $BNO" \
-            --notes "Weiterarbeit nach 5.4 (Zweig 5.x). Das fertige 5.4 steht im Release v5.4 (Zweig 5.4), 5.3.2 in v5.3.2, 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
+            --title "AT-DOS 5.x nach 5.5 (in Arbeit), Build $BNO" \
+            --notes "Weiterarbeit nach 5.5 (Zweig 5.x). Das fertige 5.5 steht im Release v5.5 (Zweig 5.5), 5.4 in v5.4, 5.3.2 in v5.3.2, 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
 
       - name: Release "v5.2" veroeffentlichen (Zweig 5.2)
         if: github.ref == 'refs/heads/5.2' && github.event_name != 'pull_request'
@@ -129,7 +129,7 @@ jobs:
             --title "AT-DOS 5.4, Build $BNO" \
             --notes "AT-DOS 5.4 (Zweig 5.4) fuer den 286: 5.3.2 plus Rueckportierungen aus 6.1 - Speicher wie OS/2 1.x (Programmcode bei Speichermangel verwerfen und aus der EXE nachladen, Datensegmente verschieben, mit SWAPPATH= in SWAPPER.DAT auslagern; MEMMAN=NOSWAP), LOOP (ISO, Disketten-/Plattenabbilder, VHD, DoubleSpace/DriveSpace lesen und schreiben, LOOP=), PACKDISK, DEVLOAD (Treiber laden und entladen), DMESG, STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD, schnellere Maussuche. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User). Fuer den 386: AT-DOS 6.x."
 
-      - name: Testfassung "test-5.5" veroeffentlichen (Zweig 5.5)
+      - name: Release "v5.5" veroeffentlichen (Zweig 5.5)
         if: github.ref == 'refs/heads/5.5' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -137,7 +137,8 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
           gh release delete test-5.5 --yes --cleanup-tag 2>/dev/null || true
-          gh release create test-5.5 build/dos5.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "AT-DOS 5.5 zur Pruefung, Build $BNO" \
-            --notes "AT-DOS 5.5 vor der Freigabe (Zweig 5.5) fuer den 286 = 5.4 plus Netzwerk aus 6.2: NE2000.SYS, TCPIP.SYS (IPv4/IPv6, TCP, UDP, DHCP, DNS, Firewall), PING, IPCONFIG, NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP (nur auf der Festplatte), DETACH ohne Konsole, XCOPY /I. Nach der Pruefung wird daraus das Release v5.5. dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User)."
+          gh release delete v5.5 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v5.5 build/dos5.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --latest=false \
+            --title "AT-DOS 5.5, Build $BNO" \
+            --notes "AT-DOS 5.5 (Zweig 5.5) fuer den 286 = 5.4 plus Netzwerk aus 6.2: NE2000.SYS, TCPIP.SYS (IPv4/IPv6, TCP, UDP, DHCP, DNS, Firewall), PING, IPCONFIG, NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP (nur auf der Festplatte), DETACH ohne Konsole, XCOPY /I, F8 beim Start, CONFIG.SYS bis 8 KB; Kompatibilitaetsbox: PATH/SET/PROMPT aus AUTOEXEC.BAT, BLASTER, MSCDEX, A20 wie HIMEM (EXEPACK), Redirector auch in EMS-Rahmen/UMB/HMA (Lotus Works mit LTEMM). dos5.img: Diskette A:, 286 mit VGA. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, Typ User). Fuer den 386: AT-DOS 6.x."

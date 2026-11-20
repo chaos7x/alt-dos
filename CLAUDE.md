@@ -396,7 +396,15 @@ Systemdateien. `5.x` = Weiterarbeit, die CI
 veröffentlicht die Vorabversion `v5.x`; `main` = 6.0.
 Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
-## Aktueller Stand: AT-DOS 5.5 in der Prüfung (Zweig 5.5), 5.4 fertig (Zweig 5.4), Weiterarbeit in 5.x
+## Aktueller Stand: AT-DOS 5.5 fertig (Zweig 5.5, Release v5.5), Weiterarbeit in 5.x
+
+AT-DOS 5.5 ist fertig (Entscheidung des Nutzers, 20.11.2026: „freigeben
+bitte“, nach seinen Tests auf SCAT und mr286 – Lotus Works mit und ohne
+LTEMM, MSCDEX in MSD, CONFIG.SYS über 4 KB): Zweig `5.5` = Stand der
+Freigabe, ein Push dorthin baut per CI das Release `v5.5`
+(`--latest=false`, neueste bleibt `v6.2`) und löscht `test-5.5`.
+Fehlerbehebungen für 5.5 auf `5.5` und `5.x`; `5.x` baut weiter die
+Vorabversion `v5.x`.
 
 F8 beim Start und CONFIG.SYS bis 8 KB (wie 6.2/main, Wunsch des Nutzers
 „überall“, 20.11.2026; Anlass auf 6.2: in EDIT gespeichert – CR LF statt
