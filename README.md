@@ -202,7 +202,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   VirtIO-Platte über das INT 13h von SeaBIOS) und `VIONET.SYS` für
   virtio-net (16 Empfangs-, 8 Sendepuffer, MAC und Verbindung aus der
   Gerätekonfiguration). Reine VirtIO-1.0-Geräte ohne Legacy-Teil (q35 mit
-  PCIe-Ports) melden sich beim Start mit einem Hinweis; entladbar
+  PCIe-Ports) melden sich beim Start mit einem Hinweis; beide entladbar
+  mit `DEVLOAD /U`
 - Netzwerk (6.2, erste Stufe; Entwurf `docs/NETZWERK.md`):
   `RTL8139.SYS` für Realtek RTL8139/8139C/8139C+ (PCI; QEMU
   `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster,
