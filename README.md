@@ -705,9 +705,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   zwischen C8000 und EFFFF als UMBs (`LH`, `DEVICEHIGH`); `RMSIZE=` setzt
   den konventionellen Speicher je Box (256–640 KB). Eine Box kostet damit
   ≈ 820 KB
-- EMS 4.0 in jeder DOS-Box vom Kernel (wie VEMM bei OS/2, kein EMM386):
+- EMS 4.0 in jeder DOS-Box (wie VEMM bei OS/2, kein EMM386; seit 6.3 im
+  Modul `VEMS.SYS`, ohne das Modul meldet INT 67h „kein EMS“):
   Seitenrahmen in der ersten freien 64-KB-Lücke ab C8000 (vor den UMBs),
-  Vorgabe 2 MB je Box, bis 4 MB; Erkennung über `EMMXXXX0` am INT-67h-
+  Vorgabe 2 MB je Box, bis 32 MB (`EMS_MEMORY_LIMIT`), zusammen 32 MB; Erkennung über `EMMXXXX0` am INT-67h-
   Vektor und als Gerät. Speicher wird erst beim Anlegen belegt. Auch
   55h/56h (Seiten einblenden und springen bzw. aufrufen).
   `EMS_FRAME_LOCATION=NONE` in der CONFIG.SYS (wie OS/2): kein EMS, der
@@ -1035,6 +1036,9 @@ Ausgabe über SB16.SYS; `DEVICE=VSB.SYS`, ohne das Modul hat die Box keine
 Sound Blaster. Dafür meldet ein Modul virtuelle IRQ-Leitungen, einen
 Takt-Rückruf, Ports in der I/O-Bitmap und Hardware, die es der Box vorn
 gibt (`VS_IRQ`, `VS_TICK`, `VS_IOPERM`, `VS_FGRES`, `VS_AUD`).
+Drittes: `VEMS.SYS` – EMS 4.0 der Box (INT 67h, Verwaltung im Modul,
+Seiten über `VS_PGALLOC`/`VS_MAP`/`VS_COPY` wie VDHAllocPages/
+VDHMapPages bei OS/2); den Seitenrahmen wählt weiter der Kernel.
 
 Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Block über den
 DMA-Puffer) und `DRV_FLUSH` (Schreib-Cache der Platten leeren: IDE

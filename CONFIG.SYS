@@ -45,9 +45,10 @@ REM Netz: Karte RTL8139/PCNET/E1000/NE2000 (/P:300 /I:3), dann
 REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
 REM DEVICE=TCPIP.SYS
-REM Module der DOS-Box (wie OS/2-VDDs): COM/LPT, Ton (SB16/AWE)
+REM Module der DOS-Box (wie OS/2-VDDs): COM/LPT, Ton, EMS
 DEVICE=VCOM.SYS
 DEVICE=VSB.SYS
+DEVICE=VEMS.SYS
 
 REM --- Dateisysteme ---
 REM CD-ROM: ISO 9660, Joliet, ISO 9660:1999, Rock Ridge (nur lesend)

@@ -246,13 +246,12 @@ static unsigned char spk_open[NTASK];
 static void vga_leave(int t);
 static void vga_svmap(int t, int bg);
 static void tlb(int t);
+static unsigned long pte_get(int t, unsigned i);
+static void pte_set(int t, unsigned i, unsigned long e);
+static unsigned char umb_ok;
+static void umb_scan(void);
 static unsigned char vga_raw[NTASK];
 static unsigned char vga_bgk[NTASK];            /* hinten auf Schatten (Art) */
-static void ems_end(int t);
-static void ems_box(int t);
-#define NEMSC    3                              /* Aufrufe ineinander    */
-static unsigned char ems_cn[NTASK];
-static struct { unsigned seg, off; unsigned char n, mode, h; } ems_cs[NTASK][NEMSC];
 static void dpmi_end(int t);
 static unsigned char dp_inirq[NTASK];
 static unsigned long dp_cli_t[NTASK];   /* Kerneltakt des letzten CLI im PM */
@@ -301,7 +300,6 @@ static void k2_cr4(unsigned on);
 static unsigned dp_switch(struct v86_frame *f, int t);
 static unsigned dp_back(struct v86_frame *f, int t);
 unsigned __far redir_psp(int t);
-static void ems(struct v86_frame *f, int t);
 static void ems_pick_frame(void);
 static unsigned char ems_frame;         /* erste EMS-Rahmenseite, 0 = keiner */
 unsigned char ems_nf[NTASK];            /* diese Box ohne Rahmen (DOSBOX.INI,
@@ -483,7 +481,6 @@ void __far v86_destroy(int t)
     vp_free(pd_box[t]);
     pd_box[t] = 0;
     xms_end(t);
-    ems_end(t);
 }
 
 /* nach dem Ende einer Box in der Sitzung ihres Aufrufers: ihren Text dort
@@ -768,7 +765,13 @@ unsigned long __far v86_create(int t, unsigned kb)
     picw[t][0] = picw[t][1] = 0;
     pic_isr[t][0] = pic_isr[t][1] = 0;
     vdd_event(t, VDD_EV_CREATE, 0);        /* Module (COM/LPT: VCOM.SYS)    */
-    ems_box(t);
+    if (!umb_ok)                        /* EMS: VEMS.SYS; Rahmen erst leer */
+        umb_scan();
+    if (EFR(t)) {
+        unsigned long sp = pte_get(t, 0xA0) & ~0xFFFUL;
+        for (i = 0; i < 16; i++)
+            pte_set(t, EFR(t) + i, sp | PTE_BOX);
+    }
     return PG_LIN(pd_box[t]);
 }
 
@@ -1296,12 +1299,52 @@ static void vdd_tk(int t)
     irq_off();
 }
 
-unsigned __far v86_vsvc(int t, unsigned fn, unsigned a1, unsigned a2, unsigned a3)
+/* VS_COPY: Fenster sel auf Adresse a der Art ty -> Bytes bis zur Grenze
+   (0 = nicht da), *o = Offset. Jede Seite ueber ihren eigenen Selektor
+   nachgeschlagen (die Seitentabelle der Box ueber sel selbst). */
+static unsigned vs_win(int t, unsigned ty, unsigned long a, unsigned sel,
+                       unsigned dsel, unsigned *ps, unsigned *o)
 {
-    unsigned m, i, r;
+    unsigned long e;
+    unsigned k;
+    if (ty == VA_MOD) {
+        *ps = dsel;
+        *o = (unsigned)a;
+        return a > 0xF000UL ? (unsigned)(0x10000UL - a) : 0x1000;
+    }
+    *ps = sel;
+    *o = 0;
+    k = 4096 - ((unsigned)a & 0xFFF);
+    if (ty == VA_BOX) {
+        if (a >= 0x400000UL)
+            return 0;
+        for (;;) {
+            if (sel == SCRATCH)
+                scratch_map(PG_LIN(pt_box[t]), 4095);
+            else
+                scratch2_map(PG_LIN(pt_box[t]), 4095);
+            e = get32(sel, (unsigned)(a >> 12));
+            if (e & PTE_P)
+                break;
+            if (!(e & PTE_SWP) || !swap_need(t, a >> 12))
+                return 0;
+        }
+        a = (e & ~0xFFFUL) | ((unsigned)a & 0xFFF);
+    } else if (ty != VA_PHYS)
+        return 0;
+    if (sel == SCRATCH)
+        scratch_map(a, k - 1);
+    else
+        scratch2_map(a, k - 1);
+    return k;
+}
+
+unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel)
+{
+    unsigned m, i, r, a1 = k->a1, a2 = k->a2;
     if (t < 0 || t >= NTASK || !pd_box[t])
         return 0xFFFF;
-    switch (fn) {
+    switch (k->fn) {
     case VS_IRQ:                        /* Leitung a1 der Box            */
         if (a1 < 2 || a1 > 7 || t != current)
             return 0xFFFF;
@@ -1329,7 +1372,7 @@ unsigned __far v86_vsvc(int t, unsigned fn, unsigned a1, unsigned a2, unsigned a
     case VS_IOPERM:
         for (i = 0; i < a2 && a1 + i < 0x3E0; i++) {
             m = a1 + i;
-            if (a3)
+            if (k->a3)
                 tss[t].iob[m >> 3] &= (unsigned char)~(1 << (m & 7));
             else
                 tss[t].iob[m >> 3] |= (unsigned char)(1 << (m & 7));
@@ -1340,6 +1383,60 @@ unsigned __far v86_vsvc(int t, unsigned fn, unsigned a1, unsigned a2, unsigned a
         return 0;
     case VS_HK:
         return box_hk[t];
+    case VS_PGALLOC:
+        if (!a1 || !(k->lin = mem_alloc_hi(a1)))
+            return 0xFFFF;
+        v86_pages += a1;
+        return 0;
+    case VS_PGFREE:
+        if (k->lin && a1) {
+            mem_free((pg_t)k->lin, a1);
+            v86_pages -= a1;
+        }
+        return 0;
+    case VS_MAP: {                      /* Seiten in den Oberen Speicher  */
+        unsigned long e, spare = pte_get(t, 0xA0) & ~0xFFFUL;
+        if (a1 < 0xC0 || a2 > 0x30 || a1 + a2 > 0xF0)
+            return 0xFFFF;
+        for (i = 0; i < a2; i++)        /* nie eine eigene Seite der Box  */
+            if (pte_get(t, a1 + i) & PTE_OWN)   /* ueberdecken (UMB)      */
+                return 0xFFFF;
+        for (i = 0; i < a2; i++) {
+            e = k->lin ? PG_LIN((pg_t)k->lin + i) : spare;
+            pte_set(t, a1 + i, e | PTE_BOX);
+        }
+        tlb(t);
+        return 0;
+    }
+    case VS_COPY: {                     /* EMS 57h: Box/Seiten/Modul      */
+        unsigned long s = k->lin, d = k->lin2;
+        unsigned n = k->len, ss, so, ds, dof, x, y;
+        while (n) {
+            x = vs_win(t, k->ty1, s, SCRATCH, dsel, &ss, &so);
+            y = vs_win(t, k->ty2, d, SCRATCH2, dsel, &ds, &dof);
+            if (!x || !y)
+                return 0xFFFF;
+            if (x > y)
+                x = y;
+            if (x > n)
+                x = n;
+            far_copy(ds, dof, ss, so, x);
+            s += x;
+            d += x;
+            n -= x;
+        }
+        return 0;
+    }
+    case VS_INFO:
+        if (a1 == VI_EMSFRAME)
+            return EFR(t);
+        if (a1 == VI_EMSLIM)
+            return ems_lim[t];
+        if (a1 == VI_FREE16) {
+            unsigned long f = kf_mem_avail_kb() >> 4;
+            return f > 0xFFFEUL ? 0xFFFE : (unsigned)f;
+        }
+        return 0;
     }
     return 0xFFFF;
 }
@@ -2245,8 +2342,12 @@ static int vdd_svc_int(int n, struct v86_frame *f, int t)
     c.si = (unsigned short)f->esi; c.di = DI;
     c.ds = (unsigned short)f->r.ds; c.es = (unsigned short)f->r.es;
     c.flags = (unsigned short)f->r.eflags;
+    c.cs = (unsigned short)f->r.cs; c.ip = (unsigned short)f->r.eip;
+    c.ss = (unsigned short)f->r.ss; c.sp = (unsigned short)f->r.esp;
     if (vdd_int(t, n, &c) == VDD_NOTMINE)
         return 1;
+    f->r.cs = c.cs; f->r.eip = c.ip;            /* (EMS 55h/56h)         */
+    f->r.ss = c.ss; f->r.esp = (f->r.esp & 0xFFFF0000UL) | c.sp;
     AX = c.ax; BX = c.bx; CX = c.cx; DX = c.dx;
     *(unsigned short *)&f->esi = c.si; DI = c.di;
     f->r.ds = c.ds; f->r.es = c.es;
@@ -2506,8 +2607,9 @@ static void svc(int n, struct v86_frame *f, int t)
     case 0x28:                                  /* DOS wartet: abgeben   */
         kf_box_ctl(BOX_SLEEP, 1);
         break;
-    case 0x67:                                  /* EMS                   */
-        ems(f, t);
+    case 0x67:                                  /* EMS: VEMS.SYS         */
+        if (vdd_svc_int(0x67, f, t))
+            AH = 0x80;                          /* kein EMS              */
         break;
     case 0x29:                                  /* schnelle Ausgabe      */
         out_ch(t, AL);
@@ -3489,6 +3591,25 @@ static unsigned char umb_used[NTASK][6], umb_head[NTASK][6];
 #define BSET(m, p)  ((m)[((p) - 0xC8) >> 3] |= (unsigned char)(1 << (((p) - 0xC8) & 7)))
 #define BCLR(m, p)  ((m)[((p) - 0xC8) >> 3] &= (unsigned char)~(1 << (((p) - 0xC8) & 7)))
 
+/* EMS-Seitenrahmen (die Verwaltung steht in VEMS.SYS): die erste freie
+   64-KB-Luecke ab C8000, auf 16 KB ausgerichtet, einmal fuer alle Boxen
+   vor den UMBs; EMS_FRAME_LOCATION=NONE -> keiner, 64 KB mehr UMB */
+extern unsigned char ems_none;
+static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
+{
+    unsigned p, i;
+    if (ems_none)
+        return;
+    for (p = 0xC8; p + 16 <= 0xF0; p += 4) {
+        for (i = 0; i < 16 && BIT(umb_free, p + i); i++)
+            ;
+        if (i == 16) {
+            ems_frame = (unsigned char)p;
+            return;
+        }
+    }
+}
+
 static unsigned long pte_get(int t, unsigned i)
 {
     scratch2_map(PG_LIN(pt_box[t]), 4095);
@@ -4022,552 +4143,6 @@ static void xms(struct v86_frame *f, int t)
     }
     }
     XFAIL(0x80);                                /* nicht vorhanden       */
-}
-
-/* ---- EMS 4.0 fuer die Box (wie VEMM bei OS/2, EMM386 im Kernel) -----------
-   INT 67h zeigt auf F060:0020 ("ARPL 67h; IRET"), bei F060:000A steht
-   "EMMXXXX0" (so pruefen Programme, ob EMS da ist; ATBOX.SYS heisst
-   ebenso). Seitenrahmen: die erste freie 64-KB-Luecke ab C8000 (auf 16 KB
-   ausgerichtet), einmal fuer alle Boxen gewaehlt, vor den UMBs. Eine
-   logische Seite = 4 zusammenhaengende Kernelseiten, eingeblendet wird
-   ueber die Seitentabelle der Box; ein leerer Rahmenplatz zeigt auf die
-   Ersatzseite. Verwaltung je Box in 4 eigenen Seiten (ems_tab, 16 KB):
-   ET_BASE Erstseite je Platz (2048 x pg_t), ET_OWN Besitzer (FFh frei),
-   ET_IDX logische Seitennummer im Handle, ET_NAME Namen (32 x 8),
-   ET_SAVE gesicherte Zuordnung je Handle (32 x 4 x (Handle, -, Seite)). */
-#define EMS_SEG   0xF060
-#define EMS_OFF   0x0020
-#define NEH       32
-#define EMS_MAXP  2048                  /* 32 MB je Box (wie EMS 4.0/OS/2) */
-#define ET_BASE   0
-#define ET_OWN    8192
-#define ET_IDX    10240
-#define ET_NAME   14336
-#define ET_SAVE   14592
-#define ET_PAGES  4
-#define EMS_KB    2048                  /* Vorgabe (DOSBOX.INI: EMS_MEMORY_LIMIT) */
-static pg_t ems_tab[NTASK];
-static unsigned char ems_on[NTASK][NEH];
-static unsigned ems_np[NTASK][NEH], ems_fs[NTASK][NEH];    /* Seiten, Platz von Seite 0 */
-static unsigned char ems_mh[NTASK][4];
-static unsigned ems_ml[NTASK][4];       /* Rahmen: Handle + 1 / Seite     */
-#define EMS_PGN   (ems_lim[t] ? ems_lim[t] - 1 : EMS_KB / 16)
-#define ET(o)     (*(unsigned char __far *)MK_FP(SCRATCH, (o)))
-#define ETW(o)    (*(unsigned __far *)MK_FP(SCRATCH, (o)))
-
-static void ems_tabmap(int t)
-{
-    scratch_map(PG_LIN(ems_tab[t]), ET_PAGES * 4096U - 1);
-}
-
-extern unsigned char ems_none;          /* EMS_FRAME_LOCATION=NONE (CONFIG.SYS) */
-static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
-{
-    unsigned p, i;
-    if (ems_none)                       /* kein EMS, 64 KB mehr UMB      */
-        return;
-    for (p = 0xC8; p + 16 <= 0xF0; p += 4) {
-        for (i = 0; i < 16 && BIT(umb_free, p + i); i++)
-            ;
-        if (i == 16) {
-            ems_frame = (unsigned char)p;
-            return;
-        }
-    }
-}
-
-/* Platz s (Kernelseiten base..base+3) in Rahmenplatz pp, s < 0: leer */
-static void ems_show(int t, unsigned pp, int s)
-{
-    unsigned i;
-    unsigned long e, spare = pte_get(t, 0xA0) & ~0xFFFUL;
-    pg_t base = 0;
-    if (s >= 0) {
-        ems_tabmap(t);
-        base = *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4);
-    }
-    for (i = 0; i < 4; i++) {
-        e = s >= 0 ? PG_LIN(base + i) : spare;
-        pte_set(t, EFR(t) + pp * 4 + i, e | PTE_BOX);
-    }
-}
-
-static int ems_slot(int t, unsigned h, unsigned k)   /* k-te Seite von h  */
-{
-    unsigned s = ems_fs[t][h] + k;
-    ems_tabmap(t);
-    if (s < EMS_MAXP && ET(ET_OWN + s) == h && ETW(ET_IDX + s * 2) == k)
-        return (int)s;                  /* meist am Stueck angelegt       */
-    for (s = 0; s < EMS_MAXP; s++)
-        if (ET(ET_OWN + s) == h && ETW(ET_IDX + s * 2) == k)
-            return (int)s;
-    return -1;
-}
-
-static unsigned ems_used(int t)
-{
-    unsigned h, u = 0;
-    for (h = 0; h < NEH; h++)
-        u += ems_np[t][h];
-    return u;
-}
-
-static unsigned ems_free(int t)
-{
-    unsigned u = ems_used(t), n = EMS_PGN;
-    unsigned long sys = kf_mem_avail_kb() >> 4;
-    n = u >= n ? 0 : n - u;
-    return sys < n ? (unsigned)sys : n;
-}
-
-static int ems_grow(int t, unsigned h, unsigned n)   /* n Seiten anhaengen */
-{
-    unsigned s;
-    pg_t p;
-    while (n) {
-        ems_tabmap(t);
-        for (s = 0; s < EMS_MAXP && ET(ET_OWN + s) != 0xFF; s++)
-            ;
-        if (s == EMS_MAXP || !(p = mem_alloc_hi(4)))
-            return 0;
-        v86_pages += 4;
-        ems_tabmap(t);
-        *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4) = p;
-        ET(ET_OWN + s) = (unsigned char)h;
-        ETW(ET_IDX + s * 2) = ems_np[t][h];
-        if (!ems_np[t][h])
-            ems_fs[t][h] = s;
-        ems_np[t][h]++;
-        n--;
-    }
-    return 1;
-}
-
-static void ems_shrink(int t, unsigned h, unsigned n) /* auf n Seiten     */
-{
-    unsigned i;
-    int s;
-    pg_t p;
-    for (i = 0; i < 4; i++)
-        if (ems_mh[t][i] == h + 1 && ems_ml[t][i] >= n) {
-            ems_show(t, i, -1);
-            ems_mh[t][i] = 0;
-        }
-    while (ems_np[t][h] > n) {
-        s = ems_slot(t, h, ems_np[t][h] - 1);
-        ems_tabmap(t);
-        p = *(pg_t __far *)MK_FP(SCRATCH, ET_BASE + s * 4);
-        ET(ET_OWN + s) = 0xFF;
-        mem_free(p, 4);
-        v86_pages -= 4;
-        ems_np[t][h]--;
-    }
-}
-
-static void ems_box(int t)              /* aus v86_create                 */
-{
-    unsigned i;
-    ems_cn[t] = 0;
-    if (!umb_ok)
-        umb_scan();
-    for (i = 0; i < NEH; i++)
-        ems_on[t][i] = ems_np[t][i] = 0;
-    ems_on[t][0] = 1;                   /* Handle 0 gehoert dem System    */
-    ems_lim[t] = 0;
-    ems_tab[t] = 0;
-    for (i = 0; i < 4; i++) {
-        ems_mh[t][i] = 0;
-        if (EFR(t))
-            ems_show(t, i, -1);
-    }
-}
-
-static void ems_end(int t)              /* aus v86_destroy                */
-{
-    unsigned h;
-    if (ems_tab[t]) {
-        for (h = 0; h < NEH; h++)
-            if (ems_np[t][h])
-                ems_shrink(t, h, 0);
-        mem_free(ems_tab[t], ET_PAGES);
-        v86_pages -= ET_PAGES;
-        ems_tab[t] = 0;
-    }
-}
-
-static int ems_newh(int t)
-{
-    unsigned h, i;
-    if (!ems_tab[t]) {                  /* Tabelle erst bei Bedarf        */
-        if (!(ems_tab[t] = mem_alloc(ET_PAGES)))
-            return -1;
-        v86_pages += ET_PAGES;
-        ems_tabmap(t);
-        for (i = 0; i < ET_PAGES * 4096U; i++)
-            ET(i) = 0;
-        for (i = ET_OWN; i < ET_IDX; i++)
-            ET(i) = 0xFF;
-    }
-    for (h = 1; h < NEH && ems_on[t][h]; h++)
-        ;
-    if (h == NEH)
-        return -1;
-    ems_tabmap(t);
-    for (i = 0; i < 8; i++)
-        ET(ET_NAME + h * 8 + i) = 0;
-    return (int)h;
-}
-
-/* 57h: eine Seite des Bereichs -> Fenster. typ 0 = konventionell
-   (seg:off, lineare Adresse der Box), 1 = EMS (Handle, logische Seite +
-   Versatz, ueber die physischen Seiten). -> Bytes bis zur Grenze, 0 = Fehler */
-static unsigned x57_win(int t, unsigned char typ, unsigned h, unsigned off, unsigned sp,
-                        unsigned long pos, unsigned widx, unsigned sel)
-{
-    unsigned long a;
-    unsigned lp, o, n;
-    int sl;
-    if (typ == 0) {
-        a = ((unsigned long)sp << 4) + off + pos;
-        if (a >= 0x110000UL)
-            return 0;
-        lwin(widx, a);
-        return 0x8000;
-    }
-    a = (unsigned long)off + pos;               /* ab Anfang der Seite sp */
-    lp = sp + (unsigned)(a >> 14);
-    o = (unsigned)a & 0x3FFF;
-    if (h >= NEH || !ems_on[t][h] || lp >= ems_np[t][h] || (sl = ems_slot(t, h, lp)) < 0)
-        return 0;
-    ems_tabmap(t);
-    a = PG_LIN(*(pg_t __far *)MK_FP(SCRATCH, ET_BASE + sl * 4)) + o;
-    n = 0x4000 - o;
-    if (sel == SCRATCH)
-        scratch_map(a, n - 1);
-    else
-        scratch2_map(a, n - 1);
-    return n;
-}
-
-#define ERET(c)  do { AH = (c); return; } while (0)
-
-/* n Paare (logische Seite, Rahmenplatz bzw. Segment bei mode 1) ab
-   seg:off einblenden -> 0 oder Fehlercode */
-static unsigned ems_maplist(int t, unsigned h, unsigned mode, unsigned seg,
-                            unsigned off, unsigned n)
-{
-    unsigned i, r = 0;
-    for (i = 0; i < n && !r; i++) {
-        unsigned lg = rd16(seg, off + i * 4), pp = rd16(seg, off + i * 4 + 2);
-        if (mode == 1)                          /* Segment statt Nummer  */
-            pp = (pp - ((unsigned)EFR(t) << 8)) >> 10;
-        if (pp > 3)
-            r = 0x8B;
-        else if (lg == 0xFFFF) {
-            ems_show(t, pp, -1);
-            ems_mh[t][pp] = 0;
-        } else if (lg >= ems_np[t][h])
-            r = 0x8A;
-        else {
-            ems_show(t, pp, ems_slot(t, h, lg));
-            ems_mh[t][pp] = (unsigned char)(h + 1);
-            ems_ml[t][pp] = lg;
-        }
-    }
-    tlb(t);
-    return r;
-}
-
-/* 55h/56h (EMS 4.0): Seiten nach der Liste einblenden, dann springen bzw.
-   fern aufrufen; 56h blendet nach dem RETF des Ziels die alte Liste ein
-   (Ruecksprung ueber F000:EMS_RET "ARPL E6h; RETF" -> ems_ret). INT 67h
-   kommt auf zwei Wegen: direkt aus do_int (Rahmen nicht auf dem Stapel,
-   CS:IP = Ruecksprung) oder ueber den Stummel F060:0020 (IRET-Rahmen
-   oben auf dem Stapel, FLAGS schreibt der Aufrufer danach bei SP+4). */
-
-static void ems_jmpcall(struct v86_frame *f, int t, unsigned h)
-{
-    unsigned fn = AH, ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
-    unsigned ss = (unsigned)f->r.ss, sp, cip, ccs, fl, r, k;
-    unsigned tip = rd16(ds, si), tcs = rd16(ds, si + 2);
-    if (fn == 0x56 && AL == 2) {                /* Stapelbedarf          */
-        BX = 8;
-        ERET(0);
-    }
-    if (AL > 1)
-        ERET(0x8F);
-    if (fn == 0x56 && ems_cn[t] >= NEMSC)
-        ERET(0x80);
-    r = ems_maplist(t, h, AL, rd16(ds, si + 7), rd16(ds, si + 5), rd8(ds, si + 4));
-    if (r)
-        ERET(r);
-    if (fn == 0x56) {                           /* alte Liste merken     */
-        k = ems_cn[t]++;
-        ems_cs[t][k].off = rd16(ds, si + 10);
-        ems_cs[t][k].seg = rd16(ds, si + 12);
-        ems_cs[t][k].n = rd8(ds, si + 9);
-        ems_cs[t][k].mode = AL;
-        ems_cs[t][k].h = (unsigned char)h;
-    }
-    AH = 0;
-    if (f->r.cs == EMS_SEG) {                   /* Rahmen IP CS FL bei SP */
-        sp = (unsigned)f->r.esp;
-        cip = rd16(ss, sp);
-        ccs = rd16(ss, sp + 2);
-        fl = rd16(ss, sp + 4);
-        if (fn == 0x55) {                       /* IRET springt hin      */
-            wr16(ss, sp, tip);
-            wr16(ss, sp + 2, tcs);
-            return;
-        }
-        sp -= 8;                                /* Ziel, FL, Ruecksprung */
-        wr16(ss, sp, tip);                      /* zu EMS_RET, dann zum  */
-        wr16(ss, sp + 2, tcs);                  /* Aufrufer              */
-        wr16(ss, sp + 4, fl);
-        wr16(ss, sp + 6, EMS_RET);
-        wr16(ss, sp + 8, VBIOS);
-        wr16(ss, sp + 10, cip);
-        wr16(ss, sp + 12, ccs);
-        f->r.esp = (f->r.esp & 0xFFFF0000UL) | sp;
-        return;
-    }
-    if (fn == 0x56) {                           /* direkt aus do_int     */
-        push16(&f->r, (unsigned)f->r.cs);
-        push16(&f->r, (unsigned)f->r.eip);
-        push16(&f->r, VBIOS);
-        push16(&f->r, EMS_RET);
-    }
-    f->r.cs = tcs;
-    f->r.eip = tip;
-}
-
-/* RETF des Ziels von 56h kam an: alte Liste einblenden, RETF zum Aufrufer */
-static void ems_ret(struct v86_frame *f, int t)
-{
-    unsigned k;
-    if (!ems_cn[t])
-        return;
-    k = --ems_cn[t];
-    AH = (unsigned char)ems_maplist(t, ems_cs[t][k].h, ems_cs[t][k].mode,
-                                    ems_cs[t][k].seg, ems_cs[t][k].off, ems_cs[t][k].n);
-}
-
-static void ems(struct v86_frame *f, int t)
-{
-    unsigned h = DX, n, i, k, es = (unsigned)f->r.es, di = DI;
-    unsigned ds = (unsigned)f->r.ds, si = (unsigned)f->esi;
-    int s;
-
-    if (!EFR(t))
-        ERET(0x80);
-    switch (AH) {                               /* mit Handle in DX      */
-    case 0x44: case 0x45: case 0x47: case 0x48: case 0x4C:
-    case 0x50: case 0x51: case 0x53: case 0x55:
-        if (h >= NEH || !ems_on[t][h])
-            ERET(0x83);
-    }
-    switch (AH) {
-    case 0x40:                                  /* Zustand               */
-        ERET(0);
-    case 0x41:                                  /* Seitenrahmen          */
-        BX = (unsigned)EFR(t) << 8;
-        ERET(0);
-    case 0x42:                                  /* freie/alle Seiten     */
-        BX = ems_free(t);
-        DX = EMS_PGN;
-        ERET(0);
-    case 0x43: case 0x5A:                       /* anlegen (5A: auch 0)  */
-        n = BX;
-        if (AH == 0x43 && n == 0)
-            ERET(0x89);
-        if (n > EMS_PGN)
-            ERET(0x87);
-        if (n > ems_free(t))
-            ERET(0x88);
-        if ((s = ems_newh(t)) < 0)
-            ERET(0x85);
-        ems_on[t][s] = 1;
-        if (!ems_grow(t, (unsigned)s, n)) {
-            ems_shrink(t, (unsigned)s, 0);
-            ems_on[t][s] = 0;
-            ERET(0x88);
-        }
-        DX = (unsigned)s;
-        ERET(0);
-    case 0x44:                                  /* einblenden            */
-        if (AL > 3)
-            ERET(0x8B);
-        if (BX == 0xFFFF) {
-            ems_show(t, AL, -1);
-            ems_mh[t][AL] = 0;
-        } else {
-            if (BX >= ems_np[t][h])
-                ERET(0x8A);
-            ems_show(t, AL, ems_slot(t, h, BX));
-            ems_mh[t][AL] = (unsigned char)(h + 1);
-            ems_ml[t][AL] = BX;
-        }
-        tlb(t);
-        ERET(0);
-    case 0x45:                                  /* freigeben             */
-        ems_shrink(t, h, 0);
-        tlb(t);
-        if (h)
-            ems_on[t][h] = 0;
-        ERET(0);
-    case 0x46:                                  /* Version 4.0           */
-        AL = 0x40;
-        ERET(0);
-    case 0x47: case 0x48:                       /* Zuordnung sichern/zurueck */
-        ems_tabmap(t);
-        for (i = 0; i < 4; i++)
-            if (AH == 0x47) {
-                ET(ET_SAVE + h * 16 + i * 4) = ems_mh[t][i];
-                ETW(ET_SAVE + h * 16 + i * 4 + 2) = ems_ml[t][i];
-            } else {
-                ems_mh[t][i] = ET(ET_SAVE + h * 16 + i * 4);
-                ems_ml[t][i] = ETW(ET_SAVE + h * 16 + i * 4 + 2);
-            }
-        if (AH == 0x48) {
-            for (i = 0; i < 4; i++)
-                ems_show(t, i, ems_mh[t][i] ? ems_slot(t, ems_mh[t][i] - 1, ems_ml[t][i]) : -1);
-            tlb(t);
-        }
-        ERET(0);
-    case 0x4B:                                  /* aktive Handles        */
-        for (i = 0, n = 0; i < NEH; i++)
-            n += ems_on[t][i];
-        BX = n;
-        ERET(0);
-    case 0x4C:                                  /* Seiten eines Handles  */
-        BX = ems_np[t][h];
-        ERET(0);
-    case 0x4D:                                  /* alle Handles -> ES:DI */
-        for (i = 0, n = 0; i < NEH; i++)
-            if (ems_on[t][i]) {
-                wr16(es, di + n * 4, i);
-                wr16(es, di + n * 4 + 2, ems_np[t][i]);
-                n++;
-            }
-        BX = n;
-        ERET(0);
-    case 0x4E:                                  /* ganze Zuordnung (12 Byte) */
-        if (AL == 3) {
-            AL = 12;
-            ERET(0);
-        }
-        if (AL > 3)
-            ERET(0x8F);
-        if (AL == 0 || AL == 2)
-            for (i = 0; i < 4; i++) {
-                wr8(es, di + i * 3, ems_mh[t][i]);
-                wr16(es, di + i * 3 + 1, ems_ml[t][i]);
-            }
-        if (AL == 1 || AL == 2) {
-            for (i = 0; i < 4; i++) {
-                ems_mh[t][i] = rd8(ds, si + i * 3);
-                ems_ml[t][i] = rd16(ds, si + i * 3 + 1);
-                k = ems_mh[t][i];
-                ems_show(t, i, k && k <= NEH && ems_on[t][k - 1] && ems_ml[t][i] < ems_np[t][k - 1]
-                               ? ems_slot(t, k - 1, ems_ml[t][i]) : -1);
-            }
-            tlb(t);
-        }
-        ERET(0);
-    case 0x50:                                  /* mehrere einblenden    */
-        if (AL > 1)
-            ERET(0x8F);
-        ERET(ems_maplist(t, h, AL, ds, si, CX));
-    case 0x55: case 0x56:                       /* einblenden + Sprung/Aufruf */
-        ems_jmpcall(f, t, h);
-        return;
-    case 0x51:                                  /* Groesse aendern       */
-        n = BX;
-        if (n > ems_np[t][h]) {
-            if (n - ems_np[t][h] > ems_free(t))
-                ERET(0x88);
-            if (!ems_grow(t, h, n - ems_np[t][h]))
-                ERET(0x88);
-        } else
-            ems_shrink(t, h, n);
-        tlb(t);
-        BX = ems_np[t][h];
-        ERET(0);
-    case 0x53:                                  /* Name holen/setzen     */
-        if (!ems_tab[t] && ems_newh(t) < 0)
-            ERET(0x80);
-        if (AL > 1)
-            ERET(0x8F);
-        for (i = 0; i < 8; i++) {
-            ems_tabmap(t);
-            if (AL == 0)
-                wr8(es, di + i, ET(ET_NAME + h * 8 + i));
-            else {
-                k = rd8(ds, si + i);
-                ems_tabmap(t);
-                ET(ET_NAME + h * 8 + i) = (unsigned char)k;
-            }
-        }
-        ERET(0);
-    case 0x54:                                  /* Handle-Verzeichnis    */
-        if (AL == 2) {
-            BX = NEH;
-            ERET(0);
-        }
-        ERET(AL > 2 ? 0x8F : 0xA0);
-    case 0x57: {                                /* Bereich kopieren/tauschen */
-        static unsigned char xb[512];
-        unsigned long len, pos = 0;
-        unsigned char st = rd8(ds, si + 4), dt = rd8(ds, si + 11);
-        unsigned sh = rd16(ds, si + 5), so = rd16(ds, si + 7), ssp = rd16(ds, si + 9);
-        unsigned dh = rd16(ds, si + 12), dof = rd16(ds, si + 14), dsp = rd16(ds, si + 16);
-        unsigned a, b, ss, dsel;
-        len = ((unsigned long)rd16(ds, si + 2) << 16) | rd16(ds, si);
-        if (AL > 1 || st > 1 || dt > 1)
-            ERET(0x8F);
-        if (len > 0x100000UL)
-            ERET(0x96);
-        while (pos < len) {
-            ss = st ? SCRATCH : VWIN;
-            dsel = dt ? SCRATCH2 : RWIN_SEL(t);
-            b = x57_win(t, dt, dh, dof, dsp, pos, RWIN_IDX(t), dsel);  /* Ziel zuerst: */
-            a = x57_win(t, st, sh, so, ssp, pos, VWIN_IDX, ss);  /* SCRATCH zuletzt */
-            if (!a || !b)
-                ERET(0x8A);
-            n = a < b ? a : b;
-            if (AL == 1 && n > sizeof(xb))
-                n = sizeof(xb);
-            if (len - pos < n)
-                n = (unsigned)(len - pos);
-            if (AL == 0)
-                far_copy(dsel, 0, ss, 0, n);
-            else {                              /* tauschen ueber xb     */
-                far_copy(KDATA, (unsigned)xb, dsel, 0, n);
-                far_copy(dsel, 0, ss, 0, n);
-                far_copy(ss, 0, KDATA, (unsigned)xb, n);
-            }
-            pos += n;
-        }
-        ERET(0);
-    }
-    case 0x58:                                  /* Rahmenadressen        */
-        if (AL == 0)
-            for (i = 0; i < 4; i++) {
-                wr16(es, di + i * 4, ((unsigned)EFR(t) << 8) + (i << 10));
-                wr16(es, di + i * 4 + 2, i);
-            }
-        else if (AL != 1)
-            ERET(0x8F);
-        CX = 4;
-        ERET(0);
-    case 0x59:                                  /* Hardware: nur Seiten  */
-        if (AL != 1)
-            ERET(AL ? 0x8F : 0xA4);
-        BX = ems_free(t);
-        DX = EMS_PGN;
-        ERET(0);
-    }
-    ERET(0x84);                                 /* unbekannt             */
 }
 
 /* ---- DPMI 0.9 fuer die Box, Stufe 1 (wie VDPMI bei OS/2) ------------------
@@ -6334,7 +5909,7 @@ static unsigned monitor(struct v86_frame *f, int t)
             return 0;
         }
         if (cs == VBIOS && ip == EMS_RET) {      /* EMS 56h: Ziel fertig  */
-            ems_ret(f, t);
+            vdd_svc_int(0xE6, f, t);            /* (VEMS.SYS)            */
             return 0;
         }
         if (v == 0x10) {                        /* umgebogenes INT 10h kam an */

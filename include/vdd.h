@@ -48,6 +48,8 @@ struct vdd_call {
     unsigned short si, di, ds, es;
     unsigned short flags;           /* INT: FLAGS der Box (CF = Bit 0);
                                        IN/OUT: Bit 0 = Box vorn          */
+    unsigned short cs, ip, ss, sp;  /* INT: Ruecksprung bzw. Stapel der
+                                       Box (ein/aus; EMS 55h/56h)        */
 };
 #define VDD_IN          1           /* -> AX = Wert, VDD_NOTMINE        */
 #define VDD_OUT         2           /* -> 0, VDD_NOTMINE                */
@@ -80,7 +82,12 @@ struct vdd_svc {
                                     /* VDD_FBUF)                         */
     unsigned short pa;              /* VS_FAPI: welches Argument (1-3)
                                        auf den Puffer zeigt, 0 = keins  */
+    unsigned long  lin2;            /* VS_COPY: Ziel                     */
+    unsigned short ty1, ty2;        /* VS_COPY: Art von lin/lin2 (VA_*)  */
 };
+#define VA_BOX          0           /* lineare Adresse der Box (< 4 MB)  */
+#define VA_PHYS         1           /* physische Adresse (Seiten aus VS_PGALLOC) */
+#define VA_MOD          2           /* Offset im DS des Moduls           */
 #define VS_RD           1           /* len Byte Box-Speicher -> buf      */
 #define VS_WR           2           /* buf -> Box-Speicher               */
 #define VS_FAPI         3           /* FAPI ffn(a1..a3) im Namen der Box, mit
@@ -106,6 +113,19 @@ struct vdd_svc {
                                        FAPI-Programme mit FM (auch ohne
                                        current) */
 #define VS_HK           10          /* -> Schalter aus DOSBOX.INI (HK_*)  */
+/* Speicher (wie VDHAllocPages/VDHMapPages bei OS/2):                  */
+#define VS_PGALLOC      11          /* a1 Seiten am Stueck (4 KB) -> lin =
+                                       erste Seitennummer, AX 0/FFFFh;
+                                       zaehlt als Speicher der Boxen     */
+#define VS_PGFREE       12          /* lin = erste Seite, a1 Seiten       */
+#define VS_MAP          13          /* Box-Seiten a1..a1+a2-1 (nur C0h-EFh,
+                                       nie eigene Seiten der Box) -> Seiten
+                                       ab lin, lin = 0: Ersatzseite       */
+#define VS_COPY         14          /* len Byte lin (ty1) -> lin2 (ty2)   */
+#define VS_INFO         15          /* a1 = VI_*                          */
+#define VI_EMSFRAME     0           /* -> erste Seite des EMS-Rahmens, 0 */
+#define VI_EMSLIM       1           /* -> EMS_MEMORY_LIMIT (16 KB) + 1, 0 */
+#define VI_FREE16       2           /* -> verfuegbarer Speicher in 16 KB  */
 #define VDD_HK_ADLIB    16          /* ADLIB_COPY=ON                     */
 
 #endif

@@ -201,7 +201,13 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx)
             fcopy(MK_FP(dsel, k.buf), vs_buf, n);
         return r;
     }
-    if (k.fn >= VS_IRQ && k.fn <= VS_HK)        /* Zustand der Box       */
-        return v86_vsvc(k.task, k.fn, k.a1, k.a2, k.a3);
+    if (k.fn >= VS_IRQ && k.fn <= VS_INFO) {    /* Zustand der Box       */
+        win_save(w);                    /* VS_MAP/VS_COPY legen Fenster um */
+        r = v86_vsvc(k.task, &k, dsel);
+        win_restore(w);
+        if (k.fn == VS_PGALLOC)         /* Seitennummer zurueck          */
+            fcopy(&((struct vdd_svc __far *)MK_FP(dsel, bx))->lin, &k.lin, 4);
+        return r;
+    }
     return 0xFFFF;
 }

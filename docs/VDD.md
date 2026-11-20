@@ -209,3 +209,37 @@ Reihenfolge:
   Bezugslauf vor der Umstellung, Spiel läuft.
 - Nächste Stufe: EMS/XMS (`VEMS.SYS`, `VXMS.SYS`) – braucht Dienste für
   Seitentabellen der Box.
+
+## Stand: Stufe 3a erledigt – EMS als `VEMS.SYS` (20.11.2026)
+
+- Endung der Module jetzt `.SYS` wie bei OS/2 2.x (`VCOM.SYS`,
+  `VSB.SYS`, `VEMS.SYS`), Ablage `\DOS\SYSTEM` (das Vorladen sucht nur
+  Stamm, `\DOS\SYSTEM`, `\DOS`).
+- Neue Dienste nach dem Vorbild VDHAllocPages/VDHMapPages: `VS_PGALLOC`
+  (n Kernelseiten am Stück, oberhalb 2 GB möglich, zählen unter „DOS-
+  Boxen“ in MEM; Ergebnis in `lin`), `VS_PGFREE`, `VS_MAP` (Box-Seiten
+  nur im Bereich C0h–EFh und nie über eine eigene Seite der Box mit
+  PTE_OWN – sonst ginge sie verloren; lin 0 = Ersatzseite), `VS_COPY`
+  (Box linear < 4 MB, physisch, DS des Moduls – je Seite ein Fenster,
+  ausgelagerte Box-Seiten werden geholt), `VS_INFO` (Rahmen, EMS-Grenze,
+  verfügbarer Speicher in 16 KB). `struct vdd_call` trägt bei Interrupts
+  auch CS:IP und SS:SP der Box (ein/aus) – für 55h/56h.
+- Kernel behält: Wahl des Seitenrahmens (`ems_pick_frame`, vor den UMBs,
+  `EMS_FRAME_LOCATION=NONE`, `ems_nf` aus DOSBOX.INI), den INT-67h-
+  Stummel F060:0020, den Rücksprung F000:0560 (geht als Vektor E6h an
+  das Modul), INT E0h 17h (EMS_MEMORY_LIMIT). Rahmen beim Anlegen der Box
+  auf die Ersatzseite. Ohne Modul: INT 67h AH = 80h.
+- `VEMS.SYS` (drivers/vems.c): Code aus v86.c, Verwaltung im DS statt in
+  vier Kernelseiten je Box: Vorrat von 2048 logischen Seiten für alle
+  Boxen (32 MB zusammen; je Box weiter bis 32 MB), Namen, 47h/48h-Sicher-
+  ungen; ~30 KB im Speicher. 57h tauschen über einen 512-Byte-Puffer im
+  Modul. `DEVLOAD /U VEMS` gibt alle Seiten zurück.
+- KTEXT3 56.350 -> 52.382 Byte, DGROUP 61.370 -> 59.274 Byte.
+- Geprüft: eigenes Prüfprogramm EMT.COM (40h–5Ah: Anlegen, Muster in
+  8 Seiten, 50h, 57h konventionell <-> EMS über eine Seitengrenze, EMS ->
+  EMS 16 KB, 57h tauschen, 4Eh, 47h/48h, 51h, 53h, 4Bh/4Dh, 58h,
+  Fehlerfälle, Freigabe), dazu E56.COM (55h/56h direkt und über einen
+  eigenen INT-67h-Haken) und ET.COM: in QEMU byte-gleich mit dem alten
+  Kernel; `EMS_MEMORY_LIMIT=-1` -> 16 MB angelegt und benutzt, MEM davor
+  und danach gleich; `DEVLOAD /U VEMS` -> 80h, neu geladen -> wie vorher.
+  86Box DX4-100: dieselben Ergebnisse, Rahmen dort bei CC00h.
