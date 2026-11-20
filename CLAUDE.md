@@ -73,7 +73,7 @@ Stufe 4b Maus als `VMOUSE.SYS` erledigt (INT 33h im Modul, Kernel nur
 Rückruf-Zustellung `VS_CBARM`/`VDD_CBQ` wie VDHPushFarCall, `VS_MOUSE`,
 `VDD_EV_PROG`, NVDD 8; geprüft QEMU + 86Box `v386` mit serieller Maus,
 Bewegung/Klick per xdotool mousedown/mouseup, Testprogramme MT/MCB im
-Scratch). Stufe 5 DPMI: bleibt im Kernel (Abwägung in `docs/VDD.md`, ~15 KB, hängt an jeder PM-Falle) – Modulplan damit abgeschlossen. Testfalle: von
+Scratch). Stufe 5 DPMI: bleibt im Kernel (Abwägung in `docs/VDD.md`, ~15 KB, hängt an jeder PM-Falle) – Modulplan damit abgeschlossen. Vorgemerkt (Nutzer, 20.11.2026): DOS-Kern wie `DOSKRNL` von OS/2 (INT 21h großteils im Kernel statt FreeDOS in der Box) – Idee, kein Plan, Abwägung in `docs/VDD.md`. Testfalle: von
 Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –
 DOS-Programme melden dann „Befehl oder Dateiname nicht gefunden“.
 

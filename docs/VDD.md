@@ -382,3 +382,33 @@ KTEXT3 knapp, wandert zuerst Seltenes (int13x, rom_skip, vga_bgint) in ein
 anderes Segment. Damit sind die Stufen des Modulplans abgeschlossen:
 Module VCOM, VSB, VEMS, VEGA/VCGA, VMOUSE; Basis im Kernel PIC, Zeitgeber,
 CMOS, Tastatur, BIOS-Grundlage, XMS/HMA/UMB, VGA, DPMI.
+
+## Vorgemerkt: DOS-Kern wie `DOSKRNL` von OS/2 (Idee, 20.11.2026)
+
+Vom Nutzer vorgemerkt, noch nicht geplant und kein Code. Bei OS/2 2.0 ist
+`\OS2\MDOS\DOSKRNL` kein eigenständiges DOS: nur ein kleiner Teil läuft
+in der Box (V86), der größere im Protected Mode und nutzt die Dienste des
+Systems direkt. Bei uns läuft FreeDOS ganz in der Box und erreicht die
+AT-DOS-Laufwerke über den Redirector (INT 2Fh 11xxh -> redir.c).
+
+Bei uns hieße das: INT 21h beantwortet größtenteils der Kernel (Dateien
+direkt über die FAPI), in der Box bleibt ein kleiner Rest (MCB, PSP,
+EXEC, TSR, Strg+C).
+
+- Gewinn: mehr konventioneller Speicher (kein FreeDOS-Kern und keine
+  Puffer in der Box; heute ~600 KB frei), Dateizugriffe ohne den Umweg
+  FreeDOS -> Redirector, eigene Versionsnummer wie OS/2.
+- Aufwand und Risiko: rund 100 Funktionen von INT 21h plus FCB; viele
+  Programme lesen SFT, CDS, Liste der Listen und SDA direkt – die müssen
+  echt aussehen; EXEC, TSRs, Strg+C, INT 24h. FreeDOS bringt das heute
+  richtig mit – die Fehler, die BIOSCMP, Word 5.5 und Lotus Works zeigten,
+  lagen fast alle im Redirector und im BIOS-Nachbau, kaum in FreeDOS.
+- Bleibt in jedem Fall: „bestimmte DOS-Version“ (MKDOSIMG, `DOS_IMAGE=`)
+  wie VMB bei OS/2.
+
+Einschätzung: großes eigenes Vorhaben (größer als LDAP/DOMJOIN). Vorher
+messen, was es bringt (freier Speicher, Zeit je Dateizugriff in der Box
+gegen FreeDOS direkt). Eine Zwischenstufe wäre ein schneller Weg für die
+häufigsten Dateiaufrufe (INT 21h 3Fh/40h/42h auf Redirector-Handles)
+direkt im Monitor, an FreeDOS vorbei – dabei muss der SFT-Stand für
+FreeDOS stimmig bleiben.
