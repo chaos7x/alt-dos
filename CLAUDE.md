@@ -58,6 +58,19 @@ der Stummel in start.asm merkt beim Verlassen der Box den Zustand
 QEMU (LW installiert und läuft, BIOSCMP rbox gleich) und 86Box mr286
 (LW bis ins Hauptmenü, serielle Maus bewegt den Zeiger).
 
+MSCDEX in der Kompatibilitätsbox (Wunsch des Nutzers, 20.11.2026, „ein
+Stub“): RBSHELL reicht INT 2Fh 1500h–1510h über INT E0h 1Bh an RBOX
+(rbox_redir.c `mscdex`, wie main redir.c), ZF = erledigt, CF = Fehler;
+für 1501h übergibt RBSHELL in DX:SI seinen Treiberkopf `cdhdr`
+(„MSCD001“, RBOX trägt Laufwerk/Einheiten ein). CD-Laufwerke = AT-DOS-
+Laufwerke mit 2048-Byte-Blöcken, gelesen über DosOpenDrive (ohne Sperre)
++ DosSeek/DosRead. Unterfunktionen 00–05, 08, 09, 0B–0D, 10 (IOCTL 0/1/
+4/6–12/15, READ LONG gekocht); kein CD-Audio. Die CDS bleibt wie bei den
+anderen Laufwerken (C000h, nicht `\\X.\A.` wie in 6.x). Geprüft mit
+einem Testprogramm und einer genisoimage-CD: QEMU und 86Box mr286 (CD am
+AHA-154x): 1500h 1 CD ab D:, 150Bh 5AD8h/ADADh, 150Ch 2.21, 1501h Kopf,
+1505h/1508h „CD001“, 1502h Copyright-Datei, 1510h Größe und READ LONG.
+
 Speicher der Kompatibilitätsbox (20.11.2026, beim Test des Nutzers auf
 der 4-MB-VM mit PROTECTONLY=NO: „BIOS, Boot, Puffer“ 2.784K, verfügbar nur
 386K): die Box hält ihr Startabbild ganz im erweiterten Speicher (rbox.c

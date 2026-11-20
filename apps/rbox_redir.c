@@ -999,6 +999,197 @@ static int dinfo(unsigned d)
     return 0;
 }
 
+/* ---- MSCDEX (INT 2Fh 15xxh, INT E0h 1Bh) -----------------------------------
+   Wie main kernel/redir.c mscdex: RBSHELL reicht AH = 15h mit INT E0h 1Bh
+   hierher (AL = Unterfunktion, DX:SI bei 01h = Kopf eines CD-Treibers in
+   RBSHELL). CD-Laufwerke sind AT-DOS-Laufwerke mit 2048-Byte-Bloecken,
+   gelesen ueber DosOpenDrive (ohne Sperre). Version 2.21, kein CD-Audio. */
+static int is_cd(unsigned d)
+{
+    return d < 26 && !FAILED(DosQFSInfo(d, &fsi)) && fsi.bsize == 2048;
+}
+
+/* n Bloecke ab lba nach lin (Box); 0 ok, 1 nicht bereit, 2 Lesefehler */
+static int cd_rd(unsigned d, unsigned long lba, unsigned n, unsigned long l)
+{
+    unsigned h = DosOpenDrive(d, DRV_OPEN_READ);
+    int r = 0;
+    if (FAILED(h))
+        return 1;
+    while (n--) {
+        l32 = lba++ << 11;
+        if (DosSeek(h, &l32) || DosRead(h, xbuf, 2048) != 2048) {
+            r = 2;
+            break;
+        }
+        if (l && poke(l, xbuf, 2048)) {
+            r = 2;
+            break;
+        }
+        l += 2048;
+    }
+    DosClose(h);
+    return r;
+}
+
+static unsigned long cd_size(unsigned d)
+{
+    unsigned long n = is_cd(d) ? fsi.sectors : 0;
+    if (!cd_rd(d, 16, 1, 0) && xbuf[1] == 'C' && xbuf[2] == 'D' && xbuf[3] == '0')
+        n = r32((unsigned char *)xbuf + 80);
+    return n;
+}
+
+/* Geraeteauftrag (1510h) bei ES:BX fuer Laufwerk d */
+static void cd_req(unsigned d)
+{
+    static unsigned char q[0x1A], c[12];
+    unsigned long ql = lin(rg.es, rg.bx), cl, lba, v;
+    unsigned st = 0x0100, n;
+    peek(ql, q, sizeof(q));
+    cl = lin(r16(q + 0x10), r16(q + 0x0E));
+    if (q[2] == 3) {                    /* IOCTL Eingabe                  */
+        peek(cl, c, 1);
+        for (n = 1; n < 12; n++)
+            c[n] = 0;
+        switch (c[0]) {
+        case 0: case 1: case 12: case 15: break;
+        case 4: for (n = 1; n < 9; n++) c[n] = (unsigned char)(n & 1 ? n / 2 : 0xFF); break;
+        case 6: c[1] = 2; c[2] = 2; break;          /* entriegelt, Red Book */
+        case 7: w16(c + 2, 2048); break;
+        case 8: w32(c + 1, cd_size(d)); break;
+        case 9: c[1] = 1; break;                    /* nicht gewechselt   */
+        case 10: c[1] = 1; c[2] = 1;                /* eine Datenspur     */
+            v = cd_size(d) + 150;
+            for (n = 0; v >= 4500 && n < 99; n++)
+                v -= 4500;
+            c[5] = (unsigned char)n;
+            c[4] = (unsigned char)((unsigned)v / 75);
+            c[3] = (unsigned char)((unsigned)v % 75);
+            break;
+        case 11: c[2] = 2; c[6] = 0x40; break;      /* Spur 1: 00:02:00   */
+        default: st = 0x8103;
+        }
+        if (st == 0x0100)
+            poke(cl, c, sizeof(c));
+    } else if (q[2] == 128) {           /* READ LONG                      */
+        lba = r32(q + 0x14);
+        if (q[0x0D] == 1) {             /* Red Book (MSF) -> Block        */
+            unsigned m = (unsigned)(lba >> 16) & 0xFF;
+            v = (unsigned)((lba >> 8) & 0xFF) * 75u + ((unsigned)lba & 0xFF);
+            while (m--)
+                v += 4500;
+            lba = v - 150;
+        }
+        if (q[0x18])
+            st = 0x8103;                /* roh gibt es nicht              */
+        else if ((n = cd_rd(d, lba, r16(q + 0x12), cl)) != 0)
+            st = n == 1 ? 0x8102 : 0x810F;
+    } else if (q[2] != 13 && q[2] != 14 && q[2] != 7 && q[2] != 12 &&
+               q[2] != 131 && q[2] != 132 && q[2] != 133 && q[2] != 136)
+        st = 0x8103;
+    w16(q + 3, st);
+    poke(ql + 3, q + 3, 2);
+}
+
+static void mscdex(void)
+{
+    static unsigned char hd[22];
+    unsigned sub = rg.ax & 0xFF, d, n, first;
+    unsigned long l = lin(rg.es, rg.bx);
+    int r = 0;
+
+    rg.flags = (rg.flags & ~1) | 0x40;  /* ZF = 1: erledigt               */
+    if (sub > 0x10) {
+        rg.flags &= ~0x40;              /* nicht unser: RBSHELL kettet    */
+        return;
+    }
+    if (sub != 0 && sub != 1 && sub != 0x0B && sub != 0x0C && sub != 0x0D &&
+        !is_cd(rg.cx)) {
+        rg.ax = 15;                     /* ungueltiges Laufwerk           */
+        rg.flags |= 1;
+        return;
+    }
+    switch (sub) {
+    case 0x00:                          /* Zahl, erstes Laufwerk          */
+        for (d = 0, n = 0, first = 0; d < 26; d++)
+            if (is_cd(d)) {
+                if (!n++)
+                    first = d;
+            }
+        rg.bx = n;
+        rg.cx = first;
+        break;
+    case 0x01:                          /* Untereinheit + Treiberkopf     */
+        for (d = 0, n = 0, first = 0xFF; d < 26; d++)
+            if (is_cd(d)) {
+                if (first == 0xFF)
+                    first = d;
+                hd[0] = (unsigned char)n;
+                w16(hd + 1, rg.dx);
+                w16(hd + 3, rg.si);
+                poke(l + n * 5, hd, 5);
+                n++;
+            }
+        peek(lin(rg.si, rg.dx), hd, 22);    /* Kopf in RBSHELL: Laufwerk */
+        hd[20] = (unsigned char)(first == 0xFF ? 0 : first + 1);
+        hd[21] = (unsigned char)n;
+        poke(lin(rg.si, rg.dx), hd, 22);
+        break;
+    case 0x02: case 0x03: case 0x04:    /* Dateinamen aus dem PVD         */
+        if (cd_rd(rg.cx, 16, 1, 0)) {
+            rg.ax = E_NOTREADY;
+            r = 1;
+            break;
+        }
+        for (n = 0; n < 37 && xbuf[702 + (sub - 2) * 37 + n] != ' ' &&
+                    xbuf[702 + (sub - 2) * 37 + n]; n++)
+            p1[n] = xbuf[702 + (sub - 2) * 37 + n];
+        p1[n] = 0;
+        poke(l, p1, n + 1);
+        break;
+    case 0x05:                          /* VTOC lesen (DX = Index)        */
+        if ((n = cd_rd(rg.cx, 16UL + rg.dx, 1, l)) != 0) {
+            rg.ax = n == 1 ? E_NOTREADY : 0x1F;
+            r = 1;
+        } else
+            rg.ax = (unsigned char)xbuf[0] == 1 ? 1 : (unsigned char)xbuf[0] == 0xFF ? 0xFF : 0;
+        break;
+    case 0x08:                          /* absolut lesen: SI:DI, DX Stueck */
+        if ((n = cd_rd(rg.cx, ((unsigned long)rg.si << 16) | rg.di, rg.dx, l)) != 0) {
+            rg.ax = n == 1 ? E_NOTREADY : 0x1F;
+            r = 1;
+        }
+        break;
+    case 0x09:
+        rg.ax = E_WP;
+        r = 1;
+        break;
+    case 0x0B:                          /* Laufwerk CX ein CD?            */
+        rg.ax = is_cd(rg.cx) ? 0x5AD8 : 0;
+        rg.bx = 0xADAD;
+        break;
+    case 0x0C:
+        rg.bx = 0x0215;                 /* Version 2.21                   */
+        break;
+    case 0x0D:                          /* Buchstaben (0 = A:) nach ES:BX */
+        for (d = 0, n = 0; d < 26; d++)
+            if (is_cd(d)) {
+                hd[0] = (unsigned char)d;
+                poke(l + n++, hd, 1);
+            }
+        break;
+    case 0x10:
+        cd_req(rg.cx);
+        break;
+    default:                            /* 06/07/0A/0E/0F                 */
+        rg.ax = 1;
+        r = 1;
+    }
+    if (r)
+        rg.flags |= 1;
+}
+
 static void box_call(void)
 {
     int r;
@@ -1076,6 +1267,9 @@ static void box_call(void)
         rg.ax = 0;
         break;
     }
+    case 0x1B:                                  /* MSCDEX, AL = Funktion  */
+        mscdex();
+        break;
     case 0x19:                                  /* Name des Abbilds       */
         poke(lin(rg.es, rg.di), rb_iname, slen(rb_iname) + 1);
         break;

@@ -558,7 +558,9 @@ dmine:  push    ax
         ret
 
 
-int2f:  cmp     ah, 0x10                ; SHARE: Freigabe pruefen
+int2f:  cmp     ah, 0x15                ; MSCDEX: RBOX (INT E0h 1Bh)
+        je      .cd
+        cmp     ah, 0x10                ; SHARE: Freigabe pruefen
         je      .share                  ; RBOX (Redirector) und Kernel
         cmp     ah, 0x11
         jne     .chain
@@ -590,6 +592,42 @@ int2f:  cmp     ah, 0x10                ; SHARE: Freigabe pruefen
         retf    2                       ; CF von RBOX zurueckgeben
 .not:   pop     ax
 .chain: jmp     far [cs:old2f]
+.cd:    cmp     al, 0x10                ; nur 1500h-1510h
+        ja      .chain
+        push    ax
+        push    dx
+        push    si
+        cmp     al, 0x01                ; 1501h: DX:SI = Treiberkopf
+        jne     .cd1
+        mov     dx, cdhdr
+        mov     si, cs
+.cd1:   mov     ah, 0x1B
+        int     0xE0                    ; ZF=1 erledigt, CF Fehler
+        jnz     .cdn
+        pop     si
+        pop     dx
+        inc     sp                      ; AX ist das Ergebnis; INC
+        inc     sp                      ; laesst CF stehen
+        pushf
+        cmp     ah, 0x1B                ; AX nicht gesetzt: wie vorher
+        jne     .cdr
+        mov     ah, 0x15
+.cdr:   popf
+        sti
+        retf    2
+.cdn:   pop     si
+        pop     dx
+        pop     ax
+        jmp     far [cs:old2f]
+
+; Kopf eines CD-Treibers fuer 1501h (Zeichengeraet C800h, "MSCD001",
+; Strategie/Interrupt = RETF; Laufwerk +20, Einheiten +21 traegt RBOX ein)
+cdhdr:  dd      0FFFFFFFFh
+        dw      0C800h, cdretf, cdretf
+        db      "MSCD001 "
+        dw      0
+        db      0, 0
+cdretf: retf
 
 ; ---- Lesepuffer fuer kleine READs ----------------------------------------
 ; Jeder Redirector-Aufruf ist ein Ausflug zu AT-DOS (beim 286 mit CPU-

@@ -292,6 +292,10 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Pfad ein. `BLASTER` kommt aus den Einstellungen, die SB16.SYS gefunden
   hat (z. B. `A220 I5 D1 H5 P330 T6`); eine eigene `SET BLASTER`-Zeile
   geht vor.
+- MSCDEX in der Kompatibilitätsbox (5.5): CD-Laufwerke von AT-DOS
+  melden sich in der Box über INT 2Fh 15xxh wie unter MSCDEX 2.21
+  (Laufwerke, Treiberkopf, VTOC, absolut lesen, Geräteaufträge) – für
+  Spiele und Installationsprogramme, die MSCDEX abfragen. Kein CD-Audio.
 - A20 in der Kompatibilitätsbox (5.5): RBHMA schaltet A20 wie HIMEM
   wirklich um – mit Programmen, die mit EXEPACK gepackt sind (z. B.
   Lotus Works 3.0), kam sonst „Packed file is corrupt“ oder ein Hänger.
