@@ -2516,6 +2516,7 @@ static int run_chain(char *l);
 static int run_program(char *cmd, int sync, int call);
 static int confirm(const char *q);
 static void endlocal(void);
+static unsigned char step;              /* /STEP: AUTOEXEC.CMD zeilenweise (F8) */
 static int nlocal, local_lvl[4];
 
 static void on_break(unsigned sig)
@@ -2761,10 +2762,24 @@ static int run_batch(const char *path, const char *args)
         if (!*p || *p == ':')
             continue;                   /* Leerzeile, Sprungmarke       */
         expand(b, p);
-        if (echo_on && !quiet) {
+        if (echo_on && !quiet && !(step && bdepth == 1 && !same(ebuf, "REM"))) {
             show_prompt();
             puts(ebuf);
             puts("\n");
+        }
+        if (step && bdepth == 1 && !same(ebuf, "REM")) {    /* F8: jede Zeile */
+            unsigned c;
+            puts(ebuf);
+            puts(" [J,N]? ");
+            do
+                c = KbdCharIn() & 0xFF;
+            while (c != 'j' && c != 'J' && c != 'y' && c != 'Y' && c != 'n' &&
+                   c != 'N' && c != '\r' && c != 27);
+            if (c == 27)                /* Esc: Rest ohne Fragen        */
+                step = 0;
+            puts(c == 'n' || c == 'N' ? "N\n" : "J\n");
+            if (c == 'n' || c == 'N')
+                continue;
         }
         for (i = 0; ebuf[i]; i++)
             l[i] = ebuf[i];
@@ -3688,6 +3703,8 @@ void main(void)
     for (p = args; *p; p = next_word(p)) {
         if (same(p, "/P"))
             permanent = 1;
+        else if (same(p, "/STEP"))      /* vom Kernel nach F8 beim Start */
+            step = 1;
         else if (up(p[0]) == '/' || p[0] == '/') {
             if (up(p[1]) == 'C' && (p[2] == ' ' || !p[2])) {
                 run_chain(next_word(p));    /* COMMAND /C befehl: ausfuehren, Ende */
@@ -3705,7 +3722,8 @@ void main(void)
     }
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */
-    if (permanent && exists("\\AUTOEXEC.CMD")) {
+    if (permanent && exists("\\AUTOEXEC.CMD") &&
+        (!step || confirm("AUTOEXEC.CMD ausf\x81hren [J,N]? "))) {
         if (!run_batch("\\AUTOEXEC.CMD", ""))
             return;
         echo_on = 1;

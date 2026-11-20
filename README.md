@@ -111,6 +111,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - Die mitgelieferte `CONFIG.SYS` nennt alle Einstellungen mit Erklärung
   (Treiberschalter, Cache, lange Namen, Land/Codepage, Boxen); was nicht
   gebraucht wird, steht als `REM`-Beispiel darin.
+- F8 beim Start wie bei MS-DOS 6 (auch schon während der BIOS-Meldungen
+  getippt; danach wartet der Kernel eine Sekunde): jede Zeile der
+  `CONFIG.SYS` wird mit `[J,N]?` gefragt, dann „AUTOEXEC.CMD ausführen“
+  und jede ihrer Zeilen (`REM` nicht); Esc führt den Rest ohne Fragen
+  aus. `CONFIG.SYS` bis 8 KB (vorher 4 KB – eine größere wurde still
+  übergangen, jetzt mit Meldung).
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie

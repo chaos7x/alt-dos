@@ -29,7 +29,7 @@
 
 static char args[FAPI_ARGLEN], path[FAPI_PATHLEN], to[FAPI_PATHLEN], cs[FAPI_PATHLEN];
 static char ln[81], nb[12], idb[64];
-static unsigned char buf[4608];
+static unsigned char buf[8704];
 static struct fapi_fsinfo fi;
 static struct fapi_finfo ff;
 static struct fapi_drvinfo dv;
@@ -311,7 +311,7 @@ static int write_cfg(const char *name, const char *neu, int cfg)
     hi = DosOpen(path);
     if (FAPI_FAILED(hi))
         return -1;
-    n = DosRead(hi, buf, sizeof(buf) - 1);  /* CONFIG.SYS bis 4 KB      */
+    n = DosRead(hi, buf, sizeof(buf) - 1);  /* CONFIG.SYS bis 8 KB      */
     DosClose(hi);
     if (FAPI_FAILED(n))
         return -1;
