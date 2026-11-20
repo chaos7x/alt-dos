@@ -239,3 +239,40 @@ TLS als eigene Stufe. Zuletzt Kerberos/LDAP/SMB (siehe CLAUDE.md).
   32 Sockets unter 1 KB, dafür kein zweiter Code für IPv6 in TCP/UDP.
 - IPv6-Datenschutzadressen (RFC 4941), DHCPv6 mit Adressvergabe,
   Mobile IPv6: später nach Bedarf.
+
+## TLS (6.3, Stufe 1: Verschlüsselung)
+
+Eigener TLS-1.2-Client für FAPI-Programme (Ring 3, 286-Code wie alle
+Programme): `apps/crypto.c` und `apps/tls.c`, benutzt von WGET.
+
+- Kryptografie (`crypto.h`): SHA-256, HMAC-SHA256, TLS-PRF, AES-128 (nur
+  Verschlüsseln), GCM (GHASH bitweise), X25519 (16 Worte zu 16 Bit,
+  2^256 = 38 mod p, Multiplikation nur 16 × 16 -> 32 Bit über `mul16`,
+  keine Watcom-Hilfen). Auf dem Rechner mit gcc übersetzbar
+  (`CRYPTO_HOST`): `tools/cryptotest.c` + `tools/cryptotest.py` rechnen
+  je Lauf 300 Fälle (Zufallslängen bis 2.900 Byte, Zufallsschlüssel)
+  gegen Python `hashlib`/`cryptography` nach – alle gleich.
+- Ablauf (`tls.c`): ClientHello mit ECDHE_ECDSA/ECDHE_RSA_WITH_AES_128_
+  GCM_SHA256, SNI (nicht bei Zahlenadressen), supported_groups X25519 und
+  secp256r1 (ohne die Kurve des Zertifikats nimmt OpenSSL sein ECDSA-
+  Zertifikat nicht – RFC 8422 5.1; ECDHE nur mit X25519), signature_
+  algorithms, Extended Master Secret (RFC 7627), renegotiation_info.
+  Handshake-Strom über Datensätze hinweg, Nachrichten bis 2 KB im Puffer,
+  größere (Certificate) nur in den Verlauf gerechnet. Datensätze bis 2^14
+  + 2048 Byte, AES-GCM mit expliziter Nonce = Folgenummer. Meldungen:
+  close_notify = Ende, Warnungen übergangen, HelloRequest mit
+  no_renegotiation beantwortet. Alles statisch (~22 KB DGROUP).
+- Zufall: FAPI 5Ch `DosRandom` – Pool im Kernel, den jeder Hardware-
+  Interrupt außer dem Takt mit dem laufenden PIT-Zähler mischt (start.asm
+  `ENTMIX` in irq1 und irq_common; alle anderen Leser von Kanal 0 latchen
+  bei gesperrten Interrupts). `tls_random` hasht ihn mit Datum/Zeit und
+  dem Zittern einer Zählschleife je Takt, danach Zähler + Pool je Block.
+- Stufe 1 prüft den Server NICHT (Zertifikatskette, Signatur des
+  ServerKeyExchange, Name, Datum): ohne `TLS_NOVERIFY` liefert tls_open
+  TLSE_NOVERIFY, WGET verlangt `--no-check-certificate` (ERRORLEVEL 5).
+  Stufe 2: X.509 lesen, RSA (PKCS#1 v1.5, PSS) und ECDSA P-256/P-384,
+  SHA-384, CA-Liste, Name (SAN) und Gültigkeit.
+- Geprüft in QEMU gegen `openssl s_server -WWW -tls1_2` mit RSA-2048- und
+  ECDSA-P-256-Zertifikat: je 1 MB byte-gleich, ohne Schalter ERRORLEVEL 5;
+  86Box 386DX/40 mit NE2000 (Entropie im Interruptpfad): beide 1 MB
+  byte-gleich.

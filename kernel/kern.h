@@ -146,6 +146,8 @@ int  rm_read(unsigned long lba);    /* ein Sektor nach 0000:8000, 0 = ok   */
 extern volatile unsigned char  fdc_irq;
 extern volatile unsigned short uptime_s;
 extern volatile unsigned short uptime_m;   /* Minuten seit dem Start */
+extern unsigned long ent_pool[8];      /* start.asm ENTMIX, FAPI_RANDOM */
+extern unsigned ent_i;
 extern volatile unsigned char up60;
 
 /* ---- Hilfen (kernel.c) ------------------------------------------------- */

@@ -10,15 +10,19 @@
  *   -T s       Frist fuer Verbinden und je Empfang (Vorgabe 30 s)
  *   -4 / -6    nur IPv4 bzw. IPv6
  * HTTP/1.1 mit Connection: close, Content-Length oder chunked, bis zu
- * 5 Weiterleitungen (301/302/303/307/308). https:// kommt mit TLS (6.3).
+ * 5 Weiterleitungen (301/302/303/307/308). https:// ueber apps/tls.c
+ * (6.3: TLS 1.2, ECDHE X25519, AES-128-GCM); den Server prueft es noch
+ * nicht, deshalb nur mit --no-check-certificate (wie bei GNU wget fuer
+ * ungepruefte Server).
  * Vorhandene Dateien werden nur mit -O oder -c ueberschrieben bzw.
- * fortgesetzt. ERRORLEVEL wie GNU wget: 0 ok, 1 Fehler, 2 Aufruf,
+ * fortgesetzt. ERRORLEVEL wie GNU wget: 0 ok, 1 Fehler, 2 Aufruf, 5 TLS,
  * 3 Datei, 4 Netz, 8 Fehlerantwort des Servers.
  */
 #include "fapi.h"
 #include "util.h"
 #define NET_RESOLVE_FN
 #include "net.h"
+#include "tls.h"
 
 static char args[FAPI_ARGLEN], url[FAPI_ARGLEN], host[128], path[FAPI_ARGLEN];
 static char out[FAPI_PATHLEN], odir[FAPI_PATHLEN], tmp[FAPI_PATHLEN], ts[48];
@@ -27,7 +31,7 @@ static struct fapi_socket so;
 static struct fapi_sockio io;
 static struct fapi_dirent de;
 static unsigned char ad[16];
-static unsigned quiet, show, cont, tmo = 30, port, tostd, given;
+static unsigned quiet, show, cont, tmo = 30, port, tostd, given, https, nocheck, tlson;
 
 static void say(const char *m)
 {
@@ -101,15 +105,17 @@ static int parse_url(const char *u)
 {
     unsigned k = 0, n;
     const char *p = u;
-    if (!lcmp(p, "https://", 8))
-        die("https:// folgt mit TLS in AT-DOS 6.3.", 1);
-    if (!lcmp(p, "http://", 7))
+    https = 0;
+    if (!lcmp(p, "https://", 8)) {
+        p += 8;
+        https = 1;
+    } else if (!lcmp(p, "http://", 7))
         p += 7;
     else if (!lcmp(p, "ftp://", 6))
         die("ftp:// bitte mit FTP holen.", 1);
     else if (p[0] && p[1] == ':' && p[2] == '/')
         return 1;
-    port = 80;
+    port = https ? 443 : 80;
     if (*p == '[') {                    /* [IPv6]                         */
         p++;
         while (*p && *p != ']' && k < sizeof(host) - 1)
@@ -241,7 +247,14 @@ static unsigned bpos, blen, sock;
 static int rd(void)                    /* -> Byte oder -1               */
 {
     if (bpos >= blen) {
-        unsigned r = sio(NET_RECV, sock, buf, sizeof(buf));
+        unsigned r;
+        if (tlson) {
+            int k = tls_read(buf, sizeof(buf));
+            if (k <= 0)
+                return -1;
+            r = (unsigned)k;
+        } else
+            r = sio(NET_RECV, sock, buf, sizeof(buf));
         if (r == 0 || r >= 0xFFF0)
             return -1;
         blen = r;
@@ -435,8 +448,11 @@ void main(void)
         else if (*a == '-' && a[1] == 'S' && a[2] <= ' ') show = 1;
         else if (*a == '-' && a[1] == '4' && a[2] <= ' ') net_fam = AF_INET;
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ') net_fam = AF_INET6;
+        else if (*a == '-' && a[1] == '-' && !lcmp(a + 2, "no-check-certificate", 20) && a[22] <= ' ')
+            nocheck = 1;
         else if (*a == '-' || *a == '/' && a[1] == '?') {
-            VioWrtTTY("WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] http://Rechner[:Port]/Pfad\r\n", 85);
+            VioWrtTTY("WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] [--no-check-certificate]\r\n"
+                      "     http[s]://Rechner[:Port]/Pfad\r\n", 92);
             DosExit(2);
         } else
             word(a, url, sizeof(url));
@@ -482,6 +498,25 @@ again:
     say("verbunden.\r\n");
     sock = h;
     bpos = blen = 0;
+    tlson = 0;
+    if (https) {
+        int e;
+        if (!nocheck) {
+            if (tlson) tls_close();
+        DosClose(h);
+            die(tls_msg(TLSE_NOVERIFY), 5);
+        }
+        say("TLS ... ");
+        e = tls_open(h, host, tmo, TLS_NOVERIFY);
+        if (e) {
+            say("\r\n");
+            if (tlson) tls_close();
+        DosClose(h);
+            die(tls_msg(e), e == TLSE_NET ? 4 : 5);
+        }
+        tlson = 1;
+        say("verschl\x81sselt (Server ungepr\x81" "ft).\r\n");
+    }
 
     p = req;
     add(&p, "GET ");
@@ -493,7 +528,7 @@ again:
     if (host[k]) add(&p, "[");
     add(&p, host);
     if (host[k]) add(&p, "]");
-    if (port != 80) {
+    if (port != (https ? 443 : 80)) {
         char pn[8];
         add(&p, ":");
         ldec(port, pn);
@@ -508,7 +543,8 @@ again:
         add(&p, "-\r\n");
     }
     add(&p, "\r\n");
-    if (sio(NET_SEND, h, req, (unsigned)(p - req)) != (unsigned)(p - req))
+    if (tlson ? tls_write(req, (unsigned)(p - req)) != (int)(p - req) :
+        sio(NET_SEND, h, req, (unsigned)(p - req)) != (unsigned)(p - req))
         die("Senden fehlgeschlagen.", 4);
     say("HTTP-Anfrage gesendet, warte auf Antwort ... ");
     code = read_head();
@@ -538,6 +574,7 @@ again:
     }
     if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
         p = hval("Location");
+        if (tlson) tls_close();
         DosClose(h);
         if (!p || ++hops > 5)
             die("Zu viele oder ung\x81ltige Weiterleitungen.", 8);
@@ -560,10 +597,12 @@ again:
     }
     if (code == 416 && have != 0xFFFFFFFFUL) {
         say("Datei ist schon vollst\x84ndig.\r\n");
+        if (tlson) tls_close();
         DosClose(h);
         DosExit(0);
     }
     if (code != 200 && code != 206) {
+        if (tlson) tls_close();
         DosClose(h);
         die("Fehlerantwort des Servers.", 8);
     }
@@ -606,6 +645,7 @@ again:
     }
     t0 = tl = (unsigned)DosQTicks();
     r = body(chunked, len);
+    if (tlson) tls_close();
     DosClose(h);
     progress(1);
     if (!tostd)

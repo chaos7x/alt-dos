@@ -236,6 +236,13 @@ struct fapi_drvinfo {
 #define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
                                        CX = Parameterblock, DX = Groesse;
                                        ohne Netz FAPI_ERR_NONET */
+#define FAPI_RANDOM         0x5C    /* Entropie (6.3): BX = Puffer, CX = Laenge
+                                       (bis 34) -> Pool des Kernels (8
+                                       Doppelworte, gemischt aus dem
+                                       Zeitpunkt jedes Hardware-Interrupts
+                                       ausser dem Takt, dahinter die Zahl
+                                       der Ereignisse) -> AX = Bytes. Roh:
+                                       vor Gebrauch hashen (apps/tls.c) */
 #define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
 #define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
 #define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->

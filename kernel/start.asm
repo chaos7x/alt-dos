@@ -779,6 +779,36 @@ irq6:
         popad
         iretd
 
+;; Entropie (FAPI_RANDOM): Zeitpunkt jedes Hardware-Interrupts ausser dem
+;; Takt (Tastatur, Platten, Netz, Maus) mit dem laufenden PIT-Zaehler in einen
+;; Pool von 8 Doppelworten. Alle anderen Leser von Kanal 0 latchen bei
+;; gesperrten Interrupts, Boxen kommen nur ueber Fallen an 40h/43h.
+;; Erwartet DS = KDATA; aendert EBX, ECX, EDX (nach PUSHAD).
+%macro ENTMIX 0
+        push    ax
+        xor     al, al
+        out     0x43, al                ; Kanal 0 latchen
+        in      al, 0x40
+        mov     cl, al
+        in      al, 0x40
+        mov     ch, al
+        pop     ax
+        movzx   ecx, cx
+        movzx   edx, ax
+        shl     edx, 16
+        xor     ecx, edx                ; Zaehler | Quelle << 16
+        mov     bx, [_ent_i]
+        inc     word [_ent_i]
+        and     bx, 7
+        shl     bx, 2
+        mov     edx, [_ent_pool+bx]
+        rol     edx, 7
+        xor     edx, ecx
+        add     edx, [_ticks]
+        add     edx, 0x9E3779B9
+        mov     [_ent_pool+bx], edx
+%endmacro
+
 ; IRQ 1: Tastatur
 irq1:
         pushad
@@ -794,6 +824,9 @@ irq1:
         jnz     .aux
 .key:   in      al, 0x60
         xor     ah, ah
+        push    ax
+        ENTMIX                          ; (Scancode und Zeitpunkt)
+        pop     ax
         call    kbd_irq_
 .aux:   mov     al, 0x20
         out     0x20, al
@@ -855,6 +888,7 @@ irq_common:                             ; PUSHAD liegt schon (irqN)
         mov     bx, KDATA
         mov     ds, bx
         mov     es, bx
+        ENTMIX
         mov     bx, ax
         add     bx, bx
         cmp     word [_irq_hcs+bx], 0
@@ -1572,6 +1606,9 @@ subtick:     resb 1
 kpend:       resb 1                     ; irq0: noch zu zaehlende Kerneltakte
 swap_rc:     resb 1                     ; Ring-0-Seitenfehler: eingelagert?
 _ticks:      resw 2
+global _ent_pool, _ent_i
+_ent_pool:   resd 8                     ; Entropie (ENTMIX, FAPI_RANDOM)
+_ent_i:      resw 1
 _uptime_s:   resw 1
 _uptime_m:   resw 1                ; Minuten seit dem Start (45 Tage)
 _up60:       resb 1                ; Sekunden in der Minute

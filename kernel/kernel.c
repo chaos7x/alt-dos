@@ -3235,6 +3235,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
     case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
+    case FAPI_RANDOM:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -4445,6 +4446,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_QTICKS:
         return (unsigned)get_ticks();
+
+    case FAPI_RANDOM:                           /* Pool aus start.asm     */
+        if (a2 > 34)
+            a2 = 34;
+        if (!user_ok(usel, a1, a2, 1))
+            return FAPI_ERROR;
+        far_copy(usel, a1, KDATA, (unsigned)ent_pool, a2);
+        return a2;
 
     case FAPI_VIOSETPAL:
         if (a2 == 0 || a2 > 256 || !user_ok(usel, a3, a2 * 3, 0))

@@ -5955,6 +5955,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sauber), virtio-net mit dem WGET-Testlauf aus 6.2 (DHCP, IPv6, 1 MB
   mehrfach byte-gleich, chunked, Fortsetzen, Weiterleitungen). Offen:
   virtio-scsi, -balloon, -serial/Gastagent, -rng, VirtIO 1.0 ohne Legacy.
+- TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
+  `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
+  X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`
+  gegen Python geprüft), `apps/tls.c` (TLS 1.2 ECDHE-X25519 + AES-128-GCM,
+  EMS, SNI), WGET https mit `--no-check-certificate`; FAPI 5Ch
+  `DosRandom` (Entropie-Pool, start.asm `ENTMIX` in irq1/irq_common).
+  Testfalle: für ECDSA-Zertifikate muss secp256r1 in supported_groups
+  stehen. Stufe 2 (Serverprüfung) offen.
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
   I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –
