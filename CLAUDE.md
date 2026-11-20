@@ -50,8 +50,10 @@ Box – beim ersten Versuch überschrieb VS_RD so den BDA der Box). Stufe 2
 VS_FGRES/VS_AUD, KTEXT3 56.350 Byte) erledigt, geprüft QEMU + 86Box DX4
 (DOOM-Timedemo mit Mitschnitt). Stufe 3a EMS als `VEMS.SYS` erledigt
 (VS_PGALLOC/PGFREE/MAP/COPY/INFO, vdd_call mit CS:IP/SS:SP, KTEXT3
-52.382 Byte, DGROUP 59.274). Nächste Stufe: XMS (HMA/A20/UMB bleiben
-vermutlich im Kernel – DOS=HIGH,UMB beim Start der Box). Module heißen
+52.382 Byte, DGROUP 59.274). XMS bleibt Basis im Kernel (Abwägung in
+`docs/VDD.md`: HMA/A20/UMB braucht der Start des DOS, EMBs hängen an
+CMOS/4309h/DPMI-Aufteilung, Gewinn ~4–5 KB). Nächste Stufe: 4 (VGA-
+Hintergrund, Maus). Module heißen
 `.SYS` wie bei OS/2 und liegen in `\DOS\SYSTEM`. Testfalle: von
 Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –
 DOS-Programme melden dann „Befehl oder Dateiname nicht gefunden“.

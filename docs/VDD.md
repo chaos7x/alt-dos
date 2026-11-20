@@ -243,3 +243,28 @@ Reihenfolge:
   Kernel; `EMS_MEMORY_LIMIT=-1` -> 16 MB angelegt und benutzt, MEM davor
   und danach gleich; `DEVLOAD /U VEMS` -> 80h, neu geladen -> wie vorher.
   86Box DX4-100: dieselben Ergebnisse, Rahmen dort bei CC00h.
+
+## XMS: bleibt vorerst im Kernel (Abwägung, 20.11.2026)
+
+Anders als EMS ist XMS mit der Grundlage der Box verwoben:
+
+- HMA/A20 braucht schon der Start des DOS (`DOS=HIGH` in der Box-
+  CONFIG.SYS), dazu INT 15h 2400h–2403h (BIOS-Teil des Monitors).
+- UMBs (XMS 10h/11h, `DOS=UMB`) hängen an `umb_scan`, am EMS-Rahmen
+  (`umb_run` spart ihn aus) und an `rom_uncow`.
+- Die EMBs sind die Grundlage für CMOS 30h/31h (`xms_snap`,
+  `emb_free_pg` – MS-DOS-MEM liest daraus die Gesamtgröße), für die
+  HIMEM-Tabelle bei 4309h (`xms_table`) und für die Aufteilung des
+  Adressraums der Box (EMB bis 64 MB, DPMI dahinter – `dmem_gap`).
+- Ein Modul bräuchte dafür Dienste in beide Richtungen: Seitentabellen
+  über 4 MB (`lpte_set`), eigene Seiten mit PTE_OWN, HMA-Spiegel, und
+  der Kernel müsste das Modul für CMOS und 4309h fragen.
+
+Gewinn wären ~4–5 KB in KTEXT3, das nach Ton und EMS ohnehin 13 KB frei
+hat. Ohne Modul fehlten HMA und UMB, das DOS der Box käme mit weniger
+konventionellem Speicher hoch. Daher: XMS (HMA, A20, UMB, EMB) bleibt
+Basis im Kernel, wie PIC, Zeitgeber und CMOS. Neu prüfen, wenn KTEXT3
+wieder knapp wird – dann zuerst nur die EMB-Verwaltung (08h/09h/0Bh–0Fh,
+88h/89h/8Eh/8Fh) mit einem Abfrage-Ereignis für CMOS/4309h.
+
+Nächste Stufe damit: 4 (VGA-Hintergrund, Maus), DPMI zuletzt.
