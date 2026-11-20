@@ -758,7 +758,7 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   gehen im Vordergrund an die echte Hardware, ebenso der AdLib-Chip
   (388h, FM-Musik; FM-Programme wie PLAY pausieren solange und spielen
   danach weiter). Virtuelle Sound Blaster 16 (220h, DMA 1/5, IRQ 5/7, DSP 4.05,
-  16 Bit/Stereo, Mixer; seit 6.3 im Modul `VSB.VDD`, mit AdLib, MPU-401 und AWE):
+  16 Bit/Stereo, Mixer; seit 6.3 im Modul `VSB.SYS`, mit AdLib, MPU-401 und AWE):
   digitaler Ton der Box geht über SB16.SYS an die echte Karte (DOOM-
   Effekte, Sprache in Day of the Tentacle; OPL auch an 220h/228h, DSP
   E2h), `BLASTER=A220 I5 D1 H5 T6` steht in der Umgebung. Dazu SB-Pro-
@@ -1022,16 +1022,16 @@ Initialisierung ihre Medienklassen und werden danach mit `struct ifs_req`
 aufgerufen (`include/ifsmod.h`); Blöcke lesen sie über DevHlp `DH_BLKREAD`.
 
 Module der DOS-Box (6.3, Entwurf `docs/VDD.md`, wie die VDDs von OS/2
-2.0): ein Treiber `.VDD` meldet sich mit `DH_VDDREG` (`include/vdd.h`)
+2.0): ein Treiber (`.SYS` wie bei OS/2: `VCOM.SYS`, `VSB.SYS`) meldet sich mit `DH_VDDREG` (`include/vdd.h`)
 für Ports und Interrupts der Box an, die der Kernel nicht selbst
 nachbildet, und bekommt Ereignisse (Box angelegt, beendet, geparkt);
 Dienste über `DH_VDDSVC` (Speicher der Box lesen, FAPI im Namen der
 Box). PIC, Zeitgeber, CMOS, Tastatur und BIOS-Grundlage bleiben im
-Kernel. Erstes Modul: `VCOM.VDD` – COM1–4 und LPT1–3 der Box (Register,
-INT 14h/17h), Ausgabe über COMn/LPTn; `DEVICE=VCOM.VDD`, entladbar.
-Zweites: `VSB.VDD` – der Ton der Box (Sound Blaster bis SB16 an 220h mit
+Kernel. Erstes Modul: `VCOM.SYS` – COM1–4 und LPT1–3 der Box (Register,
+INT 14h/17h), Ausgabe über COMn/LPTn; `DEVICE=VCOM.SYS`, entladbar.
+Zweites: `VSB.SYS` – der Ton der Box (Sound Blaster bis SB16 an 220h mit
 DMA 1/5 und IRQ 5/7, Mixer, AdLib/OPL, MPU-401, EMU8000 der AWE),
-Ausgabe über SB16.SYS; `DEVICE=VSB.VDD`, ohne das Modul hat die Box keine
+Ausgabe über SB16.SYS; `DEVICE=VSB.SYS`, ohne das Modul hat die Box keine
 Sound Blaster. Dafür meldet ein Modul virtuelle IRQ-Leitungen, einen
 Takt-Rückruf, Ports in der I/O-Bitmap und Hardware, die es der Box vorn
 gibt (`VS_IRQ`, `VS_TICK`, `VS_IOPERM`, `VS_FGRES`, `VS_AUD`).

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * VCOM.VDD - serielle und parallele Ports in der DOS-Box (6.3, erstes
+ * VCOM.SYS - serielle und parallele Ports in der DOS-Box (6.3, erstes
  * Modul nach docs/VDD.md; vorher in kernel/v86.c)
  *
  * Ports der Box (Basen aus ihrem BIOS-Datenbereich 0400h): COM1-4 als
@@ -272,7 +272,7 @@ static void init(void)
     reg.ints[0] = 0x14;
     reg.ints[1] = 0x17;
     if (devhlp(DH_VDDREG, 0, (unsigned)&reg, 0)) {
-        dputs("VCOM.VDD: Anmeldung beim Kernel gescheitert\n");
+        dputs("VCOM.SYS: Anmeldung beim Kernel gescheitert\n");
         r->status = DRV_ERR_NODEV;
         return;
     }

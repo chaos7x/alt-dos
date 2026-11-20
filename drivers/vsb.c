@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * VSB.VDD - Ton in der DOS-Box (6.3, Stufe 2 nach docs/VDD.md; vorher in
+ * VSB.SYS - Ton in der DOS-Box (6.3, Stufe 2 nach docs/VDD.md; vorher in
  * kernel/v86.c): virtuelle Sound Blaster bis SB16 (DSP 4.05, 220h, DMA 1
  * und 5, IRQ 5 oder 7, Mixer 224h/225h), OPL (AdLib) an 388h-38Bh und
  * 220h-223h/228h/229h, MPU-401 an 330h/331h, EMU8000 der AWE32/64.
@@ -962,7 +962,7 @@ static void init(void)
     reg.ev_off = fent(1, event);
     reg.tick_off = fent(2, tick);
     if (devhlp(DH_VDDREG, 0, (unsigned)&reg, 0)) {
-        dputs("VSB.VDD: Anmeldung beim Kernel gescheitert\n");
+        dputs("VSB.SYS: Anmeldung beim Kernel gescheitert\n");
         r->status = DRV_ERR_NODEV;
         return;
     }

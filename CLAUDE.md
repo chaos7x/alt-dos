@@ -7,6 +7,9 @@ https://claude.ai/code/artifact/43b28dce-1011-46c8-ad1a-e3a2255adff8
 
 Sprache im Projekt: Deutsch (Kommentare, Commits, Doku).
 
+Keinen Klarnamen des Nutzers in Doku, Code oder Commits (Wunsch des
+Nutzers, 19.11.2026) – „der Nutzer“ bzw. GitHub-Name `chaos7x`.
+
 Lizenz (Entscheidung des Nutzers): **GPL-2.0-or-later** für das ganze
 Projekt, wie der FreeDOS-Kernel (`LICENSE`, SPDX-Zeile in jeder Quelldatei
 – neue Dateien bekommen sie auch). Grund: Ableger sollen offen bleiben,
@@ -38,12 +41,12 @@ Zweig `5.5` (= `5.x` 48263ce) mit dem Netz aus 6.2 für den 286, CI baut
 6.3 begonnen (Auftrag des Nutzers, 19.11.2026: „Dann kannst du mit dem
 großen Umbau in 6.3 beginnen“; zu PIC/Zeitgeber/CMOS: „schauen, was an
 Vorteilen überwiegt“ – Abwägung in `docs/VDD.md`: bleiben als Basis im
-Kernel, Gewinn < 3 KB, heißer Pfad). Stufe 1 (Modulrahmen + VCOM.VDD)
+Kernel, Gewinn < 3 KB, heißer Pfad). Stufe 1 (Modulrahmen + VCOM.SYS)
 erledigt, Stand und Prüfung in `docs/VDD.md` „Stand: Stufe 1“. Neue
 Module: Treiber mit `DH_VDDREG`, Kernelseite `kernel/vdd.c` (KTEXT4),
 Box-Speicher lesen über `v86_xfer(..., 1)` (`v86_copy` SCHREIBT in die
 Box – beim ersten Versuch überschrieb VS_RD so den BDA der Box). Stufe 2
-(Ton als `VSB.VDD`: SB16/OPL/MPU/AWE, Dienste VS_IRQ/VS_TICK/VS_IOPERM/
+(Ton als `VSB.SYS`: SB16/OPL/MPU/AWE, Dienste VS_IRQ/VS_TICK/VS_IOPERM/
 VS_FGRES/VS_AUD, KTEXT3 56.350 Byte) erledigt, geprüft QEMU + 86Box DX4
 (DOOM-Timedemo mit Mitschnitt). Nächste Stufe: EMS/XMS. Testfalle: von
 Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –

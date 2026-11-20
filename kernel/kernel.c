@@ -4594,7 +4594,7 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
     return r;
 }
 
-/* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (VSB.VDD ueber
+/* Ton fuer die virtuelle Sound Blaster der DOS-Boxen (VSB.SYS ueber
    vdd.c), Puffer im DS des Moduls, ohne Kernelsperre wie FAPI_AUDIO */
 static void fm_box(int on);
 static unsigned fm_count(void);

@@ -178,7 +178,7 @@ static void pte_drop(unsigned long e)   /* Seite aus einem Eintrag frei,   */
 
 static void xms_end(int t);
 static void vga_freeze(int t);
-/* Module (VSB.VDD u. a.): virtuelle IRQ-Leitungen, Takt, Hardware vorn */
+/* Module (VSB.SYS u. a.): virtuelle IRQ-Leitungen, Takt, Hardware vorn */
 static unsigned char virq[NTASK];       /* Leitungen 2-7 warten (Bit n)  */
 static unsigned char vidle[NTASK];      /* Leitung ruht: kein Handler     */
 static unsigned char vtk[NTASK];        /* Bit 0 Takt, 1 auch gleich      */
@@ -431,14 +431,14 @@ void __far v86_destroy(int t)
 
     if (!pd_box[t])
         return;
-    vdd_event(t, VDD_EV_DESTROY, 0);       /* Module (VCOM.VDD)             */
+    vdd_event(t, VDD_EV_DESTROY, 0);       /* Module (VCOM.SYS)             */
     dpmi_end(t);
     if (box_ses[t] >= 0 && box_fg(t))
         kf_kbd_flush();                 /* wie v86_park                  */
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
-    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.VDD (Ereignis oben)  */
+    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.SYS (Ereignis oben)  */
     spk[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -767,7 +767,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     vimr2[t] = 0xFF;                    /* wie nach dem BIOS: alle gesperrt */
     picw[t][0] = picw[t][1] = 0;
     pic_isr[t][0] = pic_isr[t][1] = 0;
-    vdd_event(t, VDD_EV_CREATE, 0);        /* Module (COM/LPT: VCOM.VDD)    */
+    vdd_event(t, VDD_EV_CREATE, 0);        /* Module (COM/LPT: VCOM.SYS)    */
     ems_box(t);
     return PG_LIN(pd_box[t]);
 }
@@ -811,7 +811,7 @@ void __far v86_park(int t)
     if (spk[t] && box_fg(t))
         spk_hw(t, 0);
     spk_ports(t, 0);
-    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.VDD (Ereignis oben)  */
+    vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.SYS (Ereignis oben)  */
     spk[t] = 0;
     if (pit_rl[t] && box_fg(t))
         kpit_set(0);
@@ -1264,7 +1264,7 @@ static int box_fg(int t)
     return box_ses[t] >= 0 && fg == box_ses[t];
 }
 
-/* ---- Dienste fuer die Module (VSB.VDD: Ton) -------------------------------
+/* ---- Dienste fuer die Module (VSB.SYS: Ton) -------------------------------
    Die Nachbildung der Karte steht im Modul; hier bleibt, was den Monitor
    selbst betrifft: virtuelle IRQ-Leitungen (zugestellt in inject und
    dp_hwint wie die eigenen), der Takt-Rueckruf, Ports in der I/O-Bitmap
@@ -2365,7 +2365,7 @@ static void svc(int n, struct v86_frame *f, int t)
             }
         }
         break;
-    case 0x14: case 0x17:                       /* COM/LPT: Modul VCOM.VDD */
+    case 0x14: case 0x17:                       /* COM/LPT: Modul VCOM.SYS */
         if (vdd_svc_int(n, f, t))
             AH = n == 0x17 ? 0x30 : 0x80;       /* ohne Modul: kein Port  */
         break;
