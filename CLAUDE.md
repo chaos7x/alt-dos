@@ -4926,7 +4926,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die echten EFLAGS (der 386 hält AC bei 0, CR0.AM ist aus). Geprüft QEMU
   486/Pentium/Pentium II, 86Box P3B-F und 386DX/40; Einzelheiten in
   `docs/BOX-BIOS.md`. CheckIt bringt 86Box auf dem Mac (ARM64-Dynarec,
-  „alloc_reg … version“) zum Absturz – Fehler in 86Box, Dynarec aus.
+  „alloc_reg … version“) zum Absturz – Fehler in 86Box, in einem neueren
+  Build behoben (vom Nutzer bestätigt).
 - **CheckIt Pro 1.11 in der DOS-Box** (Upload des Nutzers, 19.11.2026,
   „zum Ausreizen der DOS-Emulation“; nur zum Testen, nicht im
   Repository): Funde und Ergebnis in `docs/BOX-BIOS.md`. Behoben: fat.c
