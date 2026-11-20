@@ -7303,8 +7303,10 @@ static unsigned monitor(struct v86_frame *f, int t)
         break;
     case 0x9D:                                  /* POPF(D)               */
         v = pop16(&f->r);
-        if (o32)
-            pop16(&f->r);
+        if (o32)                        /* AC (Bit 18), ID (21): echt -
+                                           486/CPUID-Erkennung (MSD) */
+            f->r.eflags = (f->r.eflags & ~0x240000UL) |
+                          ((unsigned long)(pop16(&f->r) & 0x24) << 16);
         set_flags(&f->r, t, v);
         break;
     case 0xCD:                                  /* INT n                 */

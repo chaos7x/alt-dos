@@ -319,3 +319,23 @@ mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 
 Platz: `redir.c` liegt seitdem in KTEXT4 (ruft nur ferne Funktionen),
 KTEXT3 (v86.c) hat wieder rund 6,8 KB frei.
+
+## Prozessor in der Box (20.11.2026)
+
+Vom Nutzer gemeldet: MSD 2.11 nennt in der Box auf dem P3B-F (Pentium II)
+„80386“. Der Monitor bildete POPFD (66 9D) nach, warf aber das obere Wort
+der Flags weg – AC (Bit 18, Kennung 486) und ID (Bit 21, Kennung CPUID)
+ließen sich nie umschalten. Jetzt übernimmt er beide Bits in die echten
+EFLAGS der Box; auf dem 386 hält die CPU AC fest bei 0, also bleibt die
+Erkennung dort richtig (CR0.AM ist aus, AC löst keine Ausrichtungsfehler
+aus). Geprüft mit einem Testprogramm (AC/ID umschalten) und MSD: QEMU
+`-cpu 486`/`pentium`/`pentium2` (MSD: „Pentium(TM)“ bzw. „Unknown“ –
+MSD 2.11 kennt Familie 6 nicht), 86Box P3B-F (CPUID, MSD „Unknown“) und
+386DX/40 (386, MSD „80386“).
+
+CheckIt Pro brachte beim Nutzer 86Box 7.0 auf dem Mac (Apple M1) zum
+Absturz – nur unter AT-DOS: `fatal()` im Dynarec („alloc_reg -
+host_regs[c].version != ir_reg.version“), danach stürzt Qt beim Beenden
+ab. Das ist eine interne Prüfung des ARM64-Codegenerators von 86Box; in
+der Box laufen andere Befehlsfolgen durch den Recompiler (Fallen, VME).
+Ausweg: Dynarec der VM ausschalten (genauer Interpreter).

@@ -4920,6 +4920,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   aus), Pfade für FAPI über `fn_dir` (Kontext). DGROUP 64.872 -> 60.502
   Byte. Weitere Kandidaten in v86.c: `dp_mem` 1,5 KB, `sb_buf` 1 KB,
   `xh`/`dp_patch` je 768 Byte.
+- **Prozessor in der Box** (vom Nutzer gemeldet, 20.11.2026: MSD nannte
+  auf dem P3B-F „80386“): v86.c POPFD warf das obere Flag-Wort weg – AC/ID
+  ließen sich nie umschalten. Jetzt gehen AC (Bit 18) und ID (Bit 21) in
+  die echten EFLAGS (der 386 hält AC bei 0, CR0.AM ist aus). Geprüft QEMU
+  486/Pentium/Pentium II, 86Box P3B-F und 386DX/40; Einzelheiten in
+  `docs/BOX-BIOS.md`. CheckIt bringt 86Box auf dem Mac (ARM64-Dynarec,
+  „alloc_reg … version“) zum Absturz – Fehler in 86Box, Dynarec aus.
 - **CheckIt Pro 1.11 in der DOS-Box** (Upload des Nutzers, 19.11.2026,
   „zum Ausreizen der DOS-Emulation“; nur zum Testen, nicht im
   Repository): Funde und Ergebnis in `docs/BOX-BIOS.md`. Behoben: fat.c
