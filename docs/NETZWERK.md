@@ -392,6 +392,23 @@ Laufwerk, `COMMAND /C DIR` in der DOS-Box (8.3-Namen), Trennen, danach
 „Ungültiges Laufwerk“. Ebenso in 86Box (386DX/40, 4 MB, NE2000, SLiRP zum
 Samba des Rechners): alle Schritte gleich, Kopien byte-gleich, Datum der
 Quelle bleibt erhalten.
+Wiederverbinden (20.11.2026): bricht die Verbindung ab (Netz weg, Server
+neu gestartet – Sende-/Empfangsfehler oder NT-Status SESSION_EXPIRED,
+USER_SESSION_DELETED, NETWORK_NAME_DELETED), baut der Dienst beim
+nächsten Auftrag Sitzung und Freigabe neu auf (`sconnect`, aus `main`
+herausgelöst; das Kennwort bleibt dafür im Speicher des Dienstes), öffnet
+alle offenen Dateien wieder (Pfad und Zugriff je Handle in einem eigenen
+Segment, neue FileIds) und wiederholt den Auftrag einmal – WRITE-Daten
+werden vorher gerettet, weil der Aufbau den Sendepuffer braucht.
+Scheitert das Neuverbinden, bekommt nur dieser Auftrag einen Fehler, der
+nächste versucht es wieder. Ein CLOSE ohne Server gibt den Handle trotzdem
+frei. Eine Datei, die nach dem Neuverbinden nicht mehr zu öffnen ist, gibt
+für jeden weiteren Zugriff einen Fehler. Geprüft in QEMU (Samba auf dem
+Rechner ganz beendet, 4 s später neu gestartet): DIR, COPY hin und zurück
+(1 MB byte-gleich) danach; NC mit Ausgabe auf das Netzlaufwerk, Samba-
+Neustart, dann 2.100 Byte Daten – kommen vollständig in der wieder
+geöffneten Datei an. Lehre beim Testen: `pkill -x smbd` beendet nur den
+Elternprozess, die Verbindung bedient ein Kind („smbd: client …“).
+
 Weiter (offen): Stufe 3 Domäne (Kerberos, LDAP, DOMJOIN), SMB 3 (AES-CMAC,
-Verschlüsselung), Sperren (SHARE) über das Netz, Neuverbinden nach einem
-Abbruch.
+Verschlüsselung), Sperren (SHARE) über das Netz.

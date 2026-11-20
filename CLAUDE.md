@@ -5967,6 +5967,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Dienst `SMBCLI --serve X:` (Verzeichnisliste mit 8.3-Ersatznamen im
   Segment, Handles 0–2 zu), `NET.EXE` (Kennwort über eine Datei in
   %TEMP%, EXEC_DETACH). Testskript QEMU `/tmp/claude-0/smb/run2.sh`.
+  Wiederverbinden erledigt (Wunsch des Nutzers, Reihenfolge danach:
+  Domäne, Sperren, SMB 3): `sconnect`/`reconnect` in SMBCLI, offene Dateien
+  neu geöffnet, Auftrag einmal wiederholt; Tests run3.sh/run4.sh (Samba
+  mit `pkill smbd` ganz beenden – `-x` trifft das Kind nicht).
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

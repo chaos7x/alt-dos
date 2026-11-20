@@ -37,6 +37,9 @@ static unsigned signing, dialect;
 static u32 msgid;
 static u8 sess[8], tree[4];
 static u16 ub[300];                     /* UTF-16                        */
+static char pwf[FAPI_PATHLEN];          /* -P: Kennwortdatei (NET USE)    */
+static unsigned srv;                    /* --serve: Laufwerk + 1          */
+static unsigned lost;                   /* Dienst: Verbindung verloren    */
 #define FAR8 /* nah */
 #define MK_FP(s, o) ((void __far *)(((unsigned long)(s) << 16) | (unsigned)(o)))
 
@@ -253,29 +256,39 @@ static u32 smb(unsigned cmd, unsigned blen)
     tx[1] = 0;
     tx[2] = (u8)(n >> 8);
     tx[3] = (u8)n;
-    if (sput(tx, n + 4))
+    if (sput(tx, n + 4)) {
+        lost = 1;
         return 0xFFFFFFFFUL;
+    }
     for (;;) {                          /* Antwort (Zwischenantwort PENDING uebergehen) */
         u8 nb[4];
         unsigned long l;
-        if (sget(nb, 4))
+        if (sget(nb, 4)) {
+            lost = 1;
             return 0xFFFFFFFFUL;
+        }
         l = (unsigned long)nb[1] << 16 | (unsigned)nb[2] << 8 | nb[3];
         if (l < 64 || l > sizeof(rx)) {
             while (l) {                 /* zu gross: verwerfen            */
                 unsigned k = l > sizeof(rx) ? sizeof(rx) : (unsigned)l;
-                if (sget(rx, k))
+                if (sget(rx, k)) {
+                    lost = 1;
                     return 0xFFFFFFFFUL;
+                }
                 l -= k;
             }
             return 0xFFFFFFFEUL;
         }
-        if (sget(rx, (unsigned)l))
+        if (sget(rx, (unsigned)l)) {
+            lost = 1;
             return 0xFFFFFFFFUL;
+        }
         rxn = (unsigned)l;
         st = get32(rx + 8);
         if (st == S_PENDING && (rx[16] & 2))
             continue;
+        if (st == 0xC000035CUL || st == 0xC0000203UL || st == 0xC00000C9UL)
+            lost = 1;                   /* Sitzung/Freigabe weg (Server neu) */
         return st;
     }
 }
@@ -1011,6 +1024,11 @@ static unsigned lcnt, lend;
 static char ldir[FAPI_PATHLEN];         /* Liste gilt fuer dieses Verz.   */
 static unsigned char hu[32];            /* Handles: belegt                */
 static u8 hf[32][16];                   /* FileId je Handle               */
+static u8 hacc[32];                     /* 1 = lesend+schreibend geoeffnet */
+static unsigned hseg;                   /* Pfade je Handle, Schreibdaten  */
+#define HREC 264                        /* Pfad je Handle in hseg         */
+#define WOFF (32 * HREC)                /* geretteter WRITE (16 KB)       */
+static const char *sconnect(void);
 /* Satz: attr(1) size(4) date(2) time(2) nlen(1) alias(13) name(nlen) */
 #define LREC(o) ((u8 __far *)MK_FP(lseg, o))
 
@@ -1222,21 +1240,27 @@ static void with_orig(char *o, const char *orig)
         scopy(o + b, orig, FAPI_PATHLEN - b);
 }
 
-static unsigned hnew(void)
+static unsigned hnew(const char *path, unsigned rw)
 {
-    unsigned i;
+    unsigned i, k;
+    char __far *q;
     for (i = 0; i < 32 && hu[i]; i++)
         ;
     if (i == 32)
         return 0;
     hu[i] = 1;
+    hacc[i] = (u8)rw;
     cr_cpy(hf[i], fid, 16);
+    q = (char __far *)MK_FP(hseg, i * HREC);
+    for (k = 0; k < HREC - 1 && path[k]; k++)
+        q[k] = path[k];
+    q[k] = 0;
     return i + 1;
 }
 
 static int hget(unsigned long h)
 {
-    if (!h || h > 32 || !hu[(unsigned)h - 1])
+    if (!h || h > 32 || hu[(unsigned)h - 1] != 1)
         return 0;
     cr_cpy(fid, hf[(unsigned)h - 1], 16);
     return 1;
@@ -1307,252 +1331,318 @@ static void fat2ft(unsigned d, unsigned t, u8 *o)
         put16(o + 2 * i, w[i]);
 }
 
-static void serve(void)
+static char sp[FAPI_PATHLEN], sp2[FAPI_PATHLEN];
+static unsigned h;                      /* READ: Daten ab rx + h          */
+
+/* einen Auftrag (rq) erledigen */
+static void op(void)
 {
-    static char sp[FAPI_PATHLEN], sp2[FAPI_PATHLEN];
     u32 st, sz;
-    unsigned at, n, h;
-    for (;;) {
-        if (fapi_call(FAPI_UFS, UFS_GET, (unsigned)&rq, (unsigned)(BODY + 48)))
+    unsigned at, n;
+    rq.status = 0;
+    h = 0;
+    switch (rq.op) {
+    case UFSOP_OPEN:
+        kpath(rq.path, sp, 0);
+        rdir[0] = 0;
+        n = 1;
+        st = c_open(sp, 0x0012019FUL, 1, 0x40, &sz, &at);
+        if (st == 0xC0000022UL) {
+            n = 0;
+            st = c_open(sp, 0x00120089UL, 1, 0x40, &sz, &at);
+        }
+        if (st) {
+            rq.status = ierr(st);
             break;
-        if (rq.op == UFSOP_QUIT)
+        }
+        if (!(rq.h = hnew(sp, n))) {
+            c_close();
+            rq.status = IFS_FULL;
             break;
-        rq.status = 0;
-        h = 0;
-        switch (rq.op) {
-        case UFSOP_OPEN:
-            kpath(rq.path, sp, 0);
-            rdir[0] = 0;
-            st = c_open(sp, 0x0012019FUL, 1, 0x40, &sz, &at);
-            if (st == 0xC0000022UL)
-                st = c_open(sp, 0x00120089UL, 1, 0x40, &sz, &at);
-            if (st) {
-                rq.status = ierr(st);
-                break;
-            }
-            if (!(rq.h = hnew())) {
-                c_close();
-                rq.status = IFS_FULL;
-                break;
-            }
-            rq.size = sz;
-            rq.attr = at & 0x37;
+        }
+        rq.size = sz;
+        rq.attr = at & 0x37;
+        break;
+    case UFSOP_CREATE:
+        kpath(rq.path, sp, 0);
+        with_orig(sp, rq.path2);
+        rdir[0] = 0;
+        st = c_open(sp, 0x0012019FUL, 5, 0x40, 0, 0);
+        if (st) {
+            rq.status = ierr(st);
             break;
-        case UFSOP_CREATE:
-            kpath(rq.path, sp, 0);
-            with_orig(sp, rq.path2);
-            rdir[0] = 0;
-            st = c_open(sp, 0x0012019FUL, 5, 0x40, 0, 0);
-            if (st) {
-                rq.status = ierr(st);
-                break;
-            }
-            lcnt = 0xFFFF;
-            if (!(rq.h = hnew())) {
-                c_close();
-                rq.status = IFS_FULL;
-            }
+        }
+        lcnt = 0xFFFF;
+        if (!(rq.h = hnew(sp, 1))) {
+            c_close();
+            rq.status = IFS_FULL;
+        }
+        break;
+    case UFSOP_READ:
+        if (!hget(rq.h)) {
+            rq.status = IFS_ERR;
             break;
-        case UFSOP_READ:
-            if (!hget(rq.h)) {
-                rq.status = IFS_ERR;
-                break;
-            }
-            n = rq.len > CHUNK ? CHUNK : rq.len;
-            cr_zero(BODY, 48);
-            BODY[0] = 49;
-            BODY[2] = 0x50;
-            put32(BODY + 4, n);
-            put32(BODY + 8, rq.pos);
-            cr_cpy(BODY + 16, fid, 16);
-            st = smb(C_READ, 49);
-            if (st == S_EOF)
-                break;
-            if (st) {
-                rq.status = IFS_ERR;
-                break;
-            }
+        }
+        n = rq.len > CHUNK ? CHUNK : rq.len;
+        cr_zero(BODY, 48);
+        BODY[0] = 49;
+        BODY[2] = 0x50;
+        put32(BODY + 4, n);
+        put32(BODY + 8, rq.pos);
+        cr_cpy(BODY + 16, fid, 16);
+        st = smb(C_READ, 49);
+        if (st == S_EOF)
+            break;
+        if (st) {
+            rq.status = IFS_ERR;
+            break;
+        }
+        rq.len = (unsigned)get32(RB + 4);
+        h = RB[2];                  /* Daten ab rx + h                */
+        break;
+    case UFSOP_WRITE:
+        if (!hget(rq.h)) {
+            rq.status = IFS_ERR;
+            break;
+        }
+        n = rq.len;                 /* Daten stehen schon ab BODY+48  */
+        cr_zero(BODY, 48);
+        BODY[0] = 49;
+        put16(BODY + 2, 64 + 48);
+        put32(BODY + 4, n);
+        put32(BODY + 8, rq.pos);
+        cr_cpy(BODY + 16, fid, 16);
+        st = smb(C_WRITE, 48 + n);
+        if (st) {
+            rq.status = ierr(st);
+            rq.len = 0;
+        } else
             rq.len = (unsigned)get32(RB + 4);
-            h = RB[2];                  /* Daten ab rx + h                */
+        h = 0xFFFF;                 /* keine Daten zurueck            */
+        break;
+    case UFSOP_CLOSE:
+        if (rq.h && rq.h <= 32 && hu[(unsigned)rq.h - 1] == 2)
+            hu[(unsigned)rq.h - 1] = 0;     /* nach Wiederverbinden verloren */
+        if (!hget(rq.h))
             break;
-        case UFSOP_WRITE:
-            if (!hget(rq.h)) {
-                rq.status = IFS_ERR;
-                break;
-            }
-            n = rq.len;                 /* Daten stehen schon ab BODY+48  */
-            cr_zero(BODY, 48);
-            BODY[0] = 49;
-            put16(BODY + 2, 64 + 48);
-            put32(BODY + 4, n);
-            put32(BODY + 8, rq.pos);
-            cr_cpy(BODY + 16, fid, 16);
-            st = smb(C_WRITE, 48 + n);
-            if (st) {
-                rq.status = ierr(st);
-                rq.len = 0;
-            } else
-                rq.len = (unsigned)get32(RB + 4);
-            h = 0xFFFF;                 /* keine Daten zurueck            */
-            break;
-        case UFSOP_CLOSE:
-            if (!hget(rq.h))
-                break;
-            if (rq.mask) {
-                cr_zero(BODY, 32 + 40);
-                if (rq.mask & 2)
-                    fat2ft(rq.date, rq.time, BODY + 32 + 16);
-                if (rq.mask & 1)
-                    put32(BODY + 32 + 32, rq.attr ? (u32)(rq.attr & 0x27) : 0x80);
-                setinfo(4, 40);
-            }
-            c_close();
-            hu[(unsigned)rq.h - 1] = 0;
-            lcnt = 0xFFFF;
-            break;
-        case UFSOP_READDIR:
-            kpath(rq.path, sp, 0);
-            if (lst_load(sp) || rq.n >= lcnt || (at = lst_at(rq.n)) == 0xFFFF) {
-                rq.status = -1;
-                break;
-            }
-            {
-                u8 __far *r = LREC(at);
-                unsigned k;
-                cr_zero(&ide, sizeof(ide));
-                for (k = 0; k < r[9] && k < IFS_NAMELEN - 1; k++)
-                    ide.name[k] = r[23 + k];
-                ide.attr = r[0] & 0x37;
-                ide.size = r[1] | (u32)r[2] << 8 | (u32)r[3] << 16 | (u32)r[4] << 24;
-                ide.date = r[5] | r[6] << 8;
-                ide.time = r[7] | r[8] << 8;
-                for (k = 0; k < 13; k++)
-                    ide.sname[k] = r[10 + k];
-            }
-            rq.len = sizeof(ide);
-            break;
-        case UFSOP_STAT:
-            kpath(rq.path, sp, 0);
-            rdir[0] = 0;
-            st = c_open(sp, 0x00100080UL, 1, 0, 0, &at);
-            if (st) {
-                rq.status = -1;
-                break;
-            }
-            c_close();
-            rq.attr = at & 0x37;
-            break;
-        case UFSOP_REMOVE:
-        case UFSOP_RMDIR:
-            kpath(rq.path, sp, 0);
-            rdir[0] = 0;
-            st = c_open(sp, 0x00110080UL, 1, rq.op == UFSOP_RMDIR ? 0x1001UL : 0x1040UL, 0, 0);
-            if (st)
-                rq.status = ierr(st);
-            else
-                c_close();
-            lcnt = 0xFFFF;
-            break;
-        case UFSOP_MKDIR:
-            kpath(rq.path, sp, 0);
-            with_orig(sp, rq.path2);
-            rdir[0] = 0;
-            st = c_open(sp, 0x00100081UL, 2, 1, 0, 0);
-            if (st)
-                rq.status = ierr(st);
-            else
-                c_close();
-            lcnt = 0xFFFF;
-            break;
-        case UFSOP_MOVE:
-            kpath(rq.path, sp, 0);
-            kpath(rq.path2, sp2, 0);
-            with_orig(sp2, rq.path2 + slen(rq.path2) + 1);
-            rdir[0] = 0;
-            st = c_open(sp, 0x00110080UL, 1, 0, 0, 0);
-            if (st) {
-                rq.status = ierr(st);
-                break;
-            }
-            n = to16(sp2, ub, 280);
-            cr_zero(BODY, 32 + 20);
-            for (h = 0; h < n; h++)
-                put16(BODY + 32 + 20 + 2 * h, ub[h]);
-            put32(BODY + 32 + 16, 2 * n);
-            st = setinfo(10, 20 + 2 * n);
-            c_close();
-            if (st)
-                rq.status = ierr(st);
-            h = 0;
-            lcnt = 0xFFFF;
-            break;
-        case UFSOP_SPACE:
-            rdir[0] = 0;
-            rq.pos = 0x7FFFFFFFUL;
-            if (c_open(0, 0x00100081UL, 1, 1, 0, 0) == 0) {
-                cr_zero(BODY, 40);
-                BODY[0] = 41;
-                BODY[2] = 2;            /* Dateisystem                    */
-                BODY[3] = 3;            /* FileFsSizeInformation          */
-                put32(BODY + 4, 24);
-                cr_cpy(BODY + 24, fid, 16);
-                if (smb(0x10, 41) == S_OK) {
-                    u8 *b = rx + get16(RB + 2);
-                    unsigned long au = get32(b + 8), sc = get32(b + 16),
-                                  bs = get32(b + 20);
-                    unsigned long fb = au;
-                    while (sc > 1 && fb < 0x40000000UL) { fb <<= 1; sc >>= 1; }
-                    while (bs > 1 && fb < 0x40000000UL) { fb <<= 1; bs >>= 1; }
-                    if (get32(b + 12) || sc > 1 || bs > 1)
-                        fb = 0x7FFFFFFFUL;
-                    rq.pos = fb;
-                }
-                c_close();
-            }
-            break;
-        case UFSOP_SETINFO:
-            kpath(rq.path, sp, 0);
-            rdir[0] = 0;
-            st = c_open(sp, 0x00100180UL, 1, 0, 0, 0);
-            if (st) {
-                rq.status = ierr(st);
-                break;
-            }
+        if (rq.mask) {
             cr_zero(BODY, 32 + 40);
             if (rq.mask & 2)
                 fat2ft(rq.date, rq.time, BODY + 32 + 16);
             if (rq.mask & 1)
                 put32(BODY + 32 + 32, rq.attr ? (u32)(rq.attr & 0x27) : 0x80);
-            st = setinfo(4, 40);
+            setinfo(4, 40);
+        }
+        c_close();
+        hu[(unsigned)rq.h - 1] = 0;
+        lcnt = 0xFFFF;
+        break;
+    case UFSOP_READDIR:
+        kpath(rq.path, sp, 0);
+        if (lst_load(sp) || rq.n >= lcnt || (at = lst_at(rq.n)) == 0xFFFF) {
+            rq.status = -1;
+            break;
+        }
+        {
+            u8 __far *r = LREC(at);
+            unsigned k;
+            cr_zero(&ide, sizeof(ide));
+            for (k = 0; k < r[9] && k < IFS_NAMELEN - 1; k++)
+                ide.name[k] = r[23 + k];
+            ide.attr = r[0] & 0x37;
+            ide.size = r[1] | (u32)r[2] << 8 | (u32)r[3] << 16 | (u32)r[4] << 24;
+            ide.date = r[5] | r[6] << 8;
+            ide.time = r[7] | r[8] << 8;
+            for (k = 0; k < 13; k++)
+                ide.sname[k] = r[10 + k];
+        }
+        rq.len = sizeof(ide);
+        break;
+    case UFSOP_STAT:
+        kpath(rq.path, sp, 0);
+        rdir[0] = 0;
+        st = c_open(sp, 0x00100080UL, 1, 0, 0, &at);
+        if (st) {
+            rq.status = -1;
+            break;
+        }
+        c_close();
+        rq.attr = at & 0x37;
+        break;
+    case UFSOP_REMOVE:
+    case UFSOP_RMDIR:
+        kpath(rq.path, sp, 0);
+        rdir[0] = 0;
+        st = c_open(sp, 0x00110080UL, 1, rq.op == UFSOP_RMDIR ? 0x1001UL : 0x1040UL, 0, 0);
+        if (st)
+            rq.status = ierr(st);
+        else
             c_close();
-            if (st)
-                rq.status = ierr(st);
-            lcnt = 0xFFFF;
+        lcnt = 0xFFFF;
+        break;
+    case UFSOP_MKDIR:
+        kpath(rq.path, sp, 0);
+        with_orig(sp, rq.path2);
+        rdir[0] = 0;
+        st = c_open(sp, 0x00100081UL, 2, 1, 0, 0);
+        if (st)
+            rq.status = ierr(st);
+        else
+            c_close();
+        lcnt = 0xFFFF;
+        break;
+    case UFSOP_MOVE:
+        kpath(rq.path, sp, 0);
+        kpath(rq.path2, sp2, 0);
+        with_orig(sp2, rq.path2 + slen(rq.path2) + 1);
+        rdir[0] = 0;
+        st = c_open(sp, 0x00110080UL, 1, 0, 0, 0);
+        if (st) {
+            rq.status = ierr(st);
             break;
-        case UFSOP_LABEL:
-            for (n = 0; n < 11 && share[n]; n++)
-                sp[n] = up(share[n]);
-            sp[n] = 0;
-            rq.len = 12;
-            break;
-        case UFSOP_NAMEPATH:
-            kpath(rq.path, sp + 1, rq.shortn ? 1 : 2);
-            sp[0] = '\\';
-            rq.len = FAPI_PATHLEN > IFS_PATHLEN ? IFS_PATHLEN : FAPI_PATHLEN;
-            break;
-        case UFSOP_TRUNC:
-            if (!hget(rq.h)) {
-                rq.status = IFS_ERR;
-                break;
-            }
+        }
+        n = to16(sp2, ub, 280);
+        cr_zero(BODY, 32 + 20);
+        for (h = 0; h < n; h++)
+            put16(BODY + 32 + 20 + 2 * h, ub[h]);
+        put32(BODY + 32 + 16, 2 * n);
+        st = setinfo(10, 20 + 2 * n);
+        c_close();
+        if (st)
+            rq.status = ierr(st);
+        h = 0;
+        lcnt = 0xFFFF;
+        break;
+    case UFSOP_SPACE:
+        rdir[0] = 0;
+        rq.pos = 0x7FFFFFFFUL;
+        if (c_open(0, 0x00100081UL, 1, 1, 0, 0) == 0) {
             cr_zero(BODY, 40);
-            put32(BODY + 32, rq.size);
-            st = setinfo(20, 8);
-            if (st)
-                rq.status = ierr(st);
+            BODY[0] = 41;
+            BODY[2] = 2;            /* Dateisystem                    */
+            BODY[3] = 3;            /* FileFsSizeInformation          */
+            put32(BODY + 4, 24);
+            cr_cpy(BODY + 24, fid, 16);
+            if (smb(0x10, 41) == S_OK) {
+                u8 *b = rx + get16(RB + 2);
+                unsigned long au = get32(b + 8), sc = get32(b + 16),
+                              bs = get32(b + 20);
+                unsigned long fb = au;
+                while (sc > 1 && fb < 0x40000000UL) { fb <<= 1; sc >>= 1; }
+                while (bs > 1 && fb < 0x40000000UL) { fb <<= 1; bs >>= 1; }
+                if (get32(b + 12) || sc > 1 || bs > 1)
+                    fb = 0x7FFFFFFFUL;
+                rq.pos = fb;
+            }
+            c_close();
+        }
+        break;
+    case UFSOP_SETINFO:
+        kpath(rq.path, sp, 0);
+        rdir[0] = 0;
+        st = c_open(sp, 0x00100180UL, 1, 0, 0, 0);
+        if (st) {
+            rq.status = ierr(st);
             break;
-        default:
+        }
+        cr_zero(BODY, 32 + 40);
+        if (rq.mask & 2)
+            fat2ft(rq.date, rq.time, BODY + 32 + 16);
+        if (rq.mask & 1)
+            put32(BODY + 32 + 32, rq.attr ? (u32)(rq.attr & 0x27) : 0x80);
+        st = setinfo(4, 40);
+        c_close();
+        if (st)
+            rq.status = ierr(st);
+        lcnt = 0xFFFF;
+        break;
+    case UFSOP_LABEL:
+        for (n = 0; n < 11 && share[n]; n++)
+            sp[n] = up(share[n]);
+        sp[n] = 0;
+        rq.len = 12;
+        break;
+    case UFSOP_NAMEPATH:
+        kpath(rq.path, sp + 1, rq.shortn ? 1 : 2);
+        sp[0] = '\\';
+        rq.len = FAPI_PATHLEN > IFS_PATHLEN ? IFS_PATHLEN : FAPI_PATHLEN;
+        break;
+    case UFSOP_TRUNC:
+        if (!hget(rq.h)) {
             rq.status = IFS_ERR;
+            break;
+        }
+        cr_zero(BODY, 40);
+        put32(BODY + 32, rq.size);
+        st = setinfo(20, 8);
+        if (st)
+            rq.status = ierr(st);
+        break;
+    default:
+        rq.status = IFS_ERR;
+    }
+}
+
+/* Wiederverbinden: Sitzung und Freigabe neu, offene Dateien wieder
+   oeffnen (Pfad und Zugriff je Handle im Segment hseg) -> 0 ok */
+static int reconnect(void)
+{
+    static char pp[FAPI_PATHLEN];
+    unsigned i, k;
+    char __far *q;
+    lcnt = 0xFFFF;
+    if (sconnect())
+        return 1;
+    rdir[0] = 0;
+    for (i = 0; i < 32; i++) {
+        if (!hu[i])
+            continue;
+        q = (char __far *)MK_FP(hseg, i * HREC);
+        for (k = 0; k < FAPI_PATHLEN - 1 && q[k]; k++)
+            pp[k] = q[k];
+        pp[k] = 0;
+        if (c_open(pp, hacc[i] ? 0x0012019FUL : 0x00120089UL, 1, 0x40, 0, 0)) {
+            hu[i] = 2;                  /* nicht wieder da: Fehler je Zugriff */
+            continue;
+        }
+        cr_cpy(hf[i], fid, 16);
+    }
+    lost = 0;
+    return 0;
+}
+
+static void serve(void)
+{
+    static struct fapi_ufsreq rq0;
+    unsigned k;
+    for (;;) {
+        if (fapi_call(FAPI_UFS, UFS_GET, (unsigned)&rq, (unsigned)(BODY + 48)))
+            break;
+        if (rq.op == UFSOP_QUIT)
+            break;
+        cr_cpy(&rq0, &rq, sizeof(rq));
+        lost = 0;
+        op();
+        if (lost) {                     /* Verbindung weg: neu und einmal wiederholen */
+            u8 __far *w = (u8 __far *)MK_FP(hseg, WOFF);
+            if (rq0.op == UFSOP_WRITE)  /* Daten retten (sconnect braucht tx) */
+                for (k = 0; k < rq0.len; k++)
+                    w[k] = BODY[48 + k];
+            if (reconnect() == 0) {
+                cr_cpy(&rq, &rq0, sizeof(rq));
+                if (rq0.op == UFSOP_WRITE)
+                    for (k = 0; k < rq0.len; k++)
+                        BODY[48 + k] = w[k];
+                op();
+            } else {
+                cr_cpy(&rq, &rq0, sizeof(rq));
+                rq.status = IFS_ERR;
+                rq.len = 0;
+                if (rq.op == UFSOP_CLOSE && rq.h && rq.h <= 32) {
+                    hu[(unsigned)rq.h - 1] = 0; /* Server weg: Handle ist ohnehin zu */
+                    rq.status = 0;
+                }
+            }
         }
         if (rq.op == UFSOP_READDIR && !rq.status)
             fapi_call(FAPI_UFS, UFS_PUT, (unsigned)&rq, (unsigned)&ide);
@@ -1568,8 +1658,97 @@ static void serve(void)
     }
 }
 
-static char pwf[FAPI_PATHLEN];          /* -P: Kennwortdatei (NET USE)    */
-static unsigned srv;                    /* --serve: Laufwerk + 1          */
+/* Verbindung aufbauen: Socket, NEGOTIATE, Anmeldung, TREE_CONNECT -> 0
+   oder Meldung. Auch zum Wiederverbinden (alter Socket wird geschlossen). */
+static const char *sconnect(void)
+{
+    unsigned k, n;
+    u32 st;
+    if (sock != 0xFFFF)
+        DosClose(sock);
+    sock = 0xFFFF;
+    msgid = 0;
+    signing = 0;
+    cr_zero(sess, 8);
+    cr_zero(tree, 4);
+    so.family = AF_INET6;
+    so.type = SOCK_STREAM;
+    sock = DosNet(NET_SOCKET, &so, sizeof(so));
+    if (FAPI_FAILED(sock)) {
+        sock = 0xFFFF;
+        return "Kein Netz (TCPIP.SYS fehlt) oder kein Socket frei.";
+    }
+    io.addr.len = 28;
+    io.addr.family = AF_INET6;
+    io.addr.port = htons(port);
+    for (k = 0; k < 16; k++)
+        io.addr.a6[k] = ad[k];
+    io.h = sock;
+    io.timeout = srv ? 10000u : TMO;
+    if (DosNet(NET_CONNECT, &io, sizeof(io)))
+        return "Verbinden fehlgeschlagen (Port 445).";
+
+    /* NEGOTIATE: 2.0.2 und 2.1 */
+    cr_zero(BODY, 36);
+    BODY[0] = 36;
+    BODY[2] = 2;
+    BODY[4] = 1;                        /* signieren moeglich            */
+    tls_random(BODY + 12, 16);          /* ClientGuid                    */
+    put16(BODY + 36, 0x0202);
+    put16(BODY + 38, 0x0210);
+    st = smb(C_NEG, 40);
+    if (st != S_OK)
+        return "Server spricht kein SMB2 (2.0.2/2.1).";
+    dialect = get16(RB + 4);
+    signing = (get16(RB + 2) & 2) != 0;
+    if (!srv)
+        out("Verbunden mit ");
+    if (!srv)
+        out(host);
+    net_ntop(ad, line);
+    if (!srv && !same(host, line)) {
+        out(" (");
+        out(line);
+        out(")");
+    }
+    if (!srv)
+        out(", SMB ");
+    ts[0] = (char)('0' + (dialect >> 8));
+    ts[1] = '.';
+    ts[2] = (char)('0' + ((dialect >> 4) & 15));
+    ts[3] = dialect == 0x0202 ? '.' : 0;
+    ts[4] = '2';
+    ts[5] = 0;
+    if (!srv) {
+        out(ts);
+        out(signing ? ", signiert" : "");
+        out(".\r\n");
+    }
+    if (login())
+        return "Anmeldung abgelehnt (Benutzer/Kennwort?).";
+
+    /* TREE_CONNECT \\Rechner\Freigabe */
+    scopy(line, "\\\\", sizeof(line));
+    scopy(line + 2, host, sizeof(line) - 2);
+    n = slen(line);
+    line[n++] = '\\';
+    scopy(line + n, share, sizeof(line) - n);
+    n = to16(line, ub, 200);
+    cr_zero(BODY, 8);
+    BODY[0] = 9;
+    put16(BODY + 4, 64 + 8);
+    put16(BODY + 6, 2 * n);
+    for (k = 0; k < n; k++)
+        put16(BODY + 8 + 2 * k, ub[k]);
+    st = smb(C_TREE, 8 + 2 * n);
+    if (st != S_OK)
+        return st == 0xC00000CCUL ? "Freigabe gibt es nicht." :
+               st == 0xC0000022UL ? "Zugriff auf die Freigabe verweigert." :
+                                    "Freigabe nicht verbunden.";
+    cr_cpy(tree, rx + 36, 4);
+    return 0;
+}
+
 
 static void die(const char *m, unsigned rc)
 {
@@ -1595,7 +1774,6 @@ void main(void)
 {
     char *a, *p;
     unsigned k, n;
-    u32 st;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -1678,85 +1856,13 @@ void main(void)
 
     if (net_lookup(host, ad))
         die("Rechner nicht gefunden.", 4);
-    so.family = AF_INET6;
-    so.type = SOCK_STREAM;
-    sock = DosNet(NET_SOCKET, &so, sizeof(so));
-    if (FAPI_FAILED(sock)) {
-        sock = 0xFFFF;
-        die("Kein Netz (TCPIP.SYS fehlt) oder kein Socket frei.", 4);
-    }
-    io.addr.len = 28;
-    io.addr.family = AF_INET6;
-    io.addr.port = htons(port);
-    for (k = 0; k < 16; k++)
-        io.addr.a6[k] = ad[k];
-    io.h = sock;
-    io.timeout = TMO;
-    if (DosNet(NET_CONNECT, &io, sizeof(io)))
-        die("Verbinden fehlgeschlagen (Port 445).", 4);
-
-    /* NEGOTIATE: 2.0.2 und 2.1 */
-    cr_zero(BODY, 36);
-    BODY[0] = 36;
-    BODY[2] = 2;
-    BODY[4] = 1;                        /* signieren moeglich            */
-    tls_random(BODY + 12, 16);          /* ClientGuid                    */
-    put16(BODY + 36, 0x0202);
-    put16(BODY + 38, 0x0210);
-    st = smb(C_NEG, 40);
-    if (st != S_OK)
-        die("Server spricht kein SMB2 (2.0.2/2.1).", 4);
-    dialect = get16(RB + 4);
-    signing = (get16(RB + 2) & 2) != 0;
-    if (!srv)
-        out("Verbunden mit ");
-    if (!srv)
-        out(host);
-    net_ntop(ad, line);
-    if (!srv && !same(host, line)) {
-        out(" (");
-        out(line);
-        out(")");
-    }
-    if (!srv)
-        out(", SMB ");
-    ts[0] = (char)('0' + (dialect >> 8));
-    ts[1] = '.';
-    ts[2] = (char)('0' + ((dialect >> 4) & 15));
-    ts[3] = dialect == 0x0202 ? '.' : 0;
-    ts[4] = '2';
-    ts[5] = 0;
-    if (!srv) {
-        out(ts);
-        out(signing ? ", signiert" : "");
-        out(".\r\n");
-    }
-    if (login())
-        die("Anmeldung abgelehnt (Benutzer/Kennwort?).", 4);
-
-    /* TREE_CONNECT \\Rechner\Freigabe */
-    scopy(line, "\\\\", sizeof(line));
-    scopy(line + 2, host, sizeof(line) - 2);
-    n = slen(line);
-    line[n++] = '\\';
-    scopy(line + n, share, sizeof(line) - n);
-    n = to16(line, ub, 200);
-    cr_zero(BODY, 8);
-    BODY[0] = 9;
-    put16(BODY + 4, 64 + 8);
-    put16(BODY + 6, 2 * n);
-    for (k = 0; k < n; k++)
-        put16(BODY + 8 + 2 * k, ub[k]);
-    st = smb(C_TREE, 8 + 2 * n);
-    if (st != S_OK)
-        die(st == 0xC00000CCUL ? "Freigabe gibt es nicht." :
-            st == 0xC0000022UL ? "Zugriff auf die Freigabe verweigert." :
-                                 "Freigabe nicht verbunden.", 4);
-    cr_cpy(tree, rx + 36, 4);
+    if ((p = (char *)sconnect()) != 0)
+        die(p, 4);
 
     if (srv) {                          /* NET USE: Laufwerk anmelden     */
         lseg = DosAllocSeg(0);
-        if (FAPI_FAILED(lseg))
+        hseg = DosAllocSeg(WOFF + UFS_DATA);
+        if (FAPI_FAILED(lseg) || FAPI_FAILED(hseg))
             die("Zu wenig Speicher.", 4);
         lcnt = 0xFFFF;
         rg.drive = srv - 1;
@@ -1805,3 +1911,4 @@ void main(void)
     DosClose(sock);
     DosExit(failed ? 1 : 0);
 }
+

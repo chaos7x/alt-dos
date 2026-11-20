@@ -289,7 +289,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Verbindungen, `NET USE X: /DELETE` trennt. Bedient wird das Laufwerk
   von einem losgelösten SMBCLI im Ring 3 (FAPI 93 DosUfs, wie FUSE); alle
   Programme und die DOS-Boxen sehen es wie eine Platte (lange Namen,
-  8.3-Ersatznamen für alte Programme)
+  8.3-Ersatznamen für alte Programme); bricht die Verbindung ab, verbindet
+  der Dienst beim nächsten Zugriff selbst neu, offene Dateien bleiben offen)
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,
