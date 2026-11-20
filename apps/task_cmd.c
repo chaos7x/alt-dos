@@ -3708,6 +3708,7 @@ void main(void)
         echo_on = 1;
         puts("\n");
     }
+    step = 0;                           /* F8 gilt nur fuer den Start    */
     mac_inherit();                      /* Makros der Elternsitzung     */
     for (;;) {
         static char mx[CMDLEN];

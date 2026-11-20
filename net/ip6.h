@@ -18,6 +18,8 @@
  * Fragmente, Datenschutzadressen.
  */
 
+#define IS_ULA(a)   (((a)[0] & 0xFE) == 0xFC)  /* fc00::/7, nur lokal */
+
 static const unsigned char allnodes[16] = { 0xFF, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
 static const unsigned char allrtrs[16]  = { 0xFF, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2 };
 
@@ -56,14 +58,21 @@ static void v6_log(const char *t, const unsigned char __far *a)
     devhlp(DH_KLOG, 0, (unsigned)l, p - l);
 }
 
-/* Absender fuer Ziel d an Karte i (RFC 6724 vereinfacht): global, wenn das
-   Ziel nicht link-lokal/Multicast ist und es eine gibt, sonst link-lokal */
+/* Absender fuer Ziel d an Karte i (RFC 6724 vereinfacht): ULA-Ziel ->
+   eigene ULA, sonst global, wenn das Ziel nicht link-lokal/Multicast ist,
+   ohne globale die ULA, sonst link-lokal */
 static int v6_src(int i, const unsigned char __far *d, unsigned char __far *src)
 {
     struct nif *n = &nif[i];
-    if (!IS_LL(d) && !IS_MC(d) && n->gast == 2) {
-        cpy(src, n->ga, 16);
-        return 0;
+    if (!IS_LL(d) && !IS_MC(d)) {
+        if (n->uast == 2 && (IS_ULA(d) || n->gast != 2)) {
+            cpy(src, n->ua, 16);
+            return 0;
+        }
+        if (n->gast == 2) {
+            cpy(src, n->ga, 16);
+            return 0;
+        }
     }
     if (n->llst == 2) {
         cpy(src, n->ll, 16);
@@ -223,6 +232,8 @@ static void nd_tick(int i)
     }
     if (n->gast == 1 && now >= n->gadad)
         n->gast = 2;
+    if (n->uast == 1 && now >= n->uadad)
+        n->uast = 2;
     if (n->llst == 2 && is_zero16(n->rtr) && n->rsn < 3 &&
         (!n->rsn || now - n->rst >= 400)) {
         rs_send(i);
@@ -231,6 +242,8 @@ static void nd_tick(int i)
     }
     if (n->gast == 2 && secs >= n->gaexp)
         n->gast = 0;                    /* Praefix abgelaufen             */
+    if (n->uast == 2 && secs >= n->uaexp)
+        n->uast = 0;
     if (!is_zero16(n->rtr) && secs >= n->rtrexp)
         zero(n->rtr, 16);
 }
@@ -255,6 +268,8 @@ static unsigned char *nd_mine(struct nif *n, const unsigned char __far *t)
         return &n->llst;
     if (n->gast && eq(t, n->ga, 16))
         return &n->gast;
+    if (n->uast && eq(t, n->ua, 16))
+        return &n->uast;
     return 0;
 }
 
@@ -331,9 +346,23 @@ static void icmp6_in(int i, fp m, unsigned ml)
         if ((o = nd_opt(m, ml, 16, 1)) != 0 && o[1] == 1)
             arp_put(i, rx_s, o + 2);
         for (o = m + 16; o + 2 <= m + ml && o[1] && o + o[1] * 8 <= m + ml; o += o[1] * 8) {
+            /* Praefix mit A-Bit: je Karte eine globale und eine lokale
+               Adresse (ULA fc00::/7) - viele Router (Fritz!Box) kuendigen
+               beide an; Ziele mit ULA bekommen die ULA als Absender und
+               gehen direkt ins LAN. Gleiche Adresse: nur Lebensdauer. */
             if (o[0] == 3 && o[1] == 4 && o[2] == 64 && (o[3] & 0x40) && G32x(o + 4)) {
                 cpy(a, o + 16, 8);      /* Praefix + eigene Kennung       */
                 cpy(a + 8, n->ll + 8, 8);
+                if (IS_ULA(a)) {
+                    if (!n->uast || !eq(a, n->ua, 16)) {
+                        cpy(n->ua, a, 16);
+                        n->uast = 1;
+                        n->uadad = now + 100;
+                        ns_send(i, n->ua, 1);
+                    }
+                    n->uaexp = G32x(o + 4) == 0xFFFFFFFFUL ? 0xFFFFFFFFUL : secs + G32x(o + 4);
+                    continue;
+                }
                 if (!n->gast || !eq(a, n->ga, 16)) {
                     cpy(n->ga, a, 16);
                     n->gplen = 64;

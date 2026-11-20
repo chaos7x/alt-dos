@@ -334,9 +334,17 @@ LF – wurde die CONFIG.SYS über 4 KB und still übergangen): `startup[8192]`
 im Real Mode F8 aus dem BIOS-Tastenpuffer (`boot_f8`), kernel.c
 `f8_wait` (1 s), `cfg_ask` je Zeile (J/Eingabe, N, Esc = Rest ohne
 Fragen), `step_arg` -> CMD `/STEP` (`step_ask`: AUTOEXEC.CMD und jede
+(F8 gilt nur für die AUTOEXEC.CMD beim Start – CMD setzt `step` danach
+zurück; vom Nutzer gemeldet: ein späterer Aufruf fragte weiter.)
 Zeile außer REM). Erstes Codesegment 65.035 Byte (485 frei!). Geprüft:
 QEMU (Platte, MOUSE/IDE übersprungen, AUTOEXEC.CMD) und 86Box SCAT von
 Diskette (F8 ab dem Einschalten, MOUSE.SYS übersprungen).
+
+IPv6 wie 6.2/main (20.11.2026, vom Nutzer am echten LAN gemeldet):
+net/ip6.h, tcpip.c, sock.h von main – je Karte globale und ULA-Adresse
+(fd00::), ULA-Ziele bekommen die ULA als Absender, sonst die globale;
+vorher nahm TCPIP.SYS nur das zuletzt angekündigte Präfix. Geprüft auf
+main in QEMU (gleicher Quelltext, auch dort mit -2 übersetzt).
 
 5.5 (Wunsch des Nutzers, 19.11.2026: „Falls da noch was aus 6.2 fehlen
 sollte, noch backporten. Branch erstellen.“ – er testet; Fehler werden
