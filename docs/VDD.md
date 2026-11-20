@@ -352,7 +352,10 @@ Rückrufe); DOOM 1.9 Timedemo mit SB wie vorher. 86Box 386DX/40 mit
 serieller Microsoft-Maus (Bewegung und Klicks per xdotool): MT 26
 Rückrufe mit Maske 7, ein Klick gezählt, MCB 67 Rückrufe im PM; ohne
 Maus (PS/2 am ASUS-386 ohne Hilfsport) meldet INT 33h richtig „kein
-Treiber“.
+Treiber“. 86Box P3B-F (`p3n`, Pentium II) mit PS/2-Maus am Board: 24h
+meldet 0400h (PS/2, IRQ 0 wie Microsoft), 3 Tasten, Rückrufe mit Maske 7
+in V86 und PM (56–61 je Lauf), Klick gezählt (xdotool muss die Taste
+~0,5 s halten, kürzer kommt in 86Box oft nicht an).
 
 ## DPMI: bleibt Basis im Kernel (Abwägung, 20.11.2026)
 
