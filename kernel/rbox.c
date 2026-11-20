@@ -803,14 +803,24 @@ unsigned __far rb_regs(unsigned sel, unsigned off, unsigned set)
     return 0;
 }
 
-/* Speicher der Box (0 .. rb_lin) lesen oder schreiben */
+/* Speicher der Box lesen oder schreiben: 0 .. rb_lin und A0000h bis zum
+   Ende der HMA (10FFF0h). Oben liegen EMS-Seitenrahmen, UMBs und Bild-
+   speicher der Box - Lotus Works 3.0 liest seine Overlays per DOS direkt
+   in den Seitenrahmen von LTEMM (vorher verlangte RB_MEM < rb_lin, der
+   Redirector meldete Erfolg, die Daten kamen nie an: "Invalid Opcode"
+   im Rahmen). Die Box laeuft im echten Real Mode, linear = physisch. */
+#define RB_HI0  0xA0000UL
+#define RB_HI1  0x10FFF0UL
 unsigned __far rb_mem(unsigned sel, unsigned long lin, unsigned buf,
                       unsigned len, unsigned wr)
 {
     unsigned char __far *u = MK_FP(sel, buf);
     unsigned i;
 
-    if (rb_task != current || !len || lin >= rb_lin || len > rb_lin - lin)
+    if (rb_task != current || !len)
+        return FAPI_ERROR;
+    if (lin < rb_lin ? len > rb_lin - lin
+                     : lin < RB_HI0 || lin >= RB_HI1 || len > RB_HI1 - lin)
         return FAPI_ERROR;
     scratch_map(lin, len - 1);
     if (wr)

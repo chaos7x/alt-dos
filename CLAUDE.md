@@ -58,6 +58,19 @@ der Stummel in start.asm merkt beim Verlassen der Box den Zustand
 QEMU (LW installiert und läuft, BIOSCMP rbox gleich) und 86Box mr286
 (LW bis ins Hauptmenü, serielle Maus bewegt den Zeiger).
 
+Lotus Works mit EMS in der Kompatibilitätsbox (vom Nutzer gemeldet,
+20.11.2026: läuft auf dem SCAT nur ohne EMS-Treiber; in 86Box SCAT mit
+Lo-tech-Karte + LTEMM nachgestellt: „Invalid Opcode at B871 D479“, CS im
+Seitenrahmen D000h; FreeDOS direkt mit LTEMM lief, die Box auch ohne
+RBHMA nicht): Lotus Works liest seine Overlays per DOS direkt in den
+EMS-Rahmen. RBOX schreibt Redirector-Daten über RB_MEM, und rb_mem nahm
+nur 0 .. rb_lin an – der Fehler von poke wurde in xfer übergangen, DOS
+meldete Erfolg, im Rahmen stand Altes. Jetzt nimmt rb_mem auch
+A0000h–10FFEFh (Rahmen, UMB, Bildspeicher, HMA; Box im Real Mode, linear
+= physisch), und xfer meldet einen nicht erreichbaren Puffer als Fehler
+statt still weiterzumachen. Geprüft: 86Box SCAT mit LTEMM (Hauptmenü,
+Tabellenkalkulation), BIOSCMP rbox in QEMU.
+
 MSCDEX in der Kompatibilitätsbox (Wunsch des Nutzers, 20.11.2026, „ein
 Stub“): RBSHELL reicht INT 2Fh 1500h–1510h über INT E0h 1Bh an RBOX
 (rbox_redir.c `mscdex`, wie main redir.c), ZF = erledigt, CF = Fehler;

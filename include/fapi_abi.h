@@ -177,7 +177,8 @@ struct fapi_rbregs {                /* Zustand der Box bei RB_CALL      */
     unsigned short ax, bx, cx, dx, si, di, bp, ds, es, sp, ss, ip, cs, flags;
 };
 struct fapi_rbmem {
-    unsigned long  lin;             /* linear in der Box (< 640 KB)     */
+    unsigned long  lin;             /* linear in der Box (< 640 KB, oder
+                                       A0000h-10FFEFh: Rahmen, UMB, HMA) */
     unsigned short buf, len;        /* Puffer im eigenen DS             */
     unsigned short write;
 };

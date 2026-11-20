@@ -340,7 +340,10 @@ static unsigned xfer(int wr, unsigned h, unsigned long l, unsigned n, unsigned *
     while (done < n) {
         k = n - done > sizeof(xbuf) ? sizeof(xbuf) : n - done;
         if (wr) {
-            peek(l, xbuf, k);
+            if (peek(l, xbuf, k)) {     /* Puffer ausserhalb der Box     */
+                *err = E_DENIED;        /* (nie still Falsches schreiben) */
+                break;
+            }
             r = DosWrite(h, xbuf, k);
         } else
             r = DosRead(h, xbuf, k);
@@ -348,8 +351,10 @@ static unsigned xfer(int wr, unsigned h, unsigned long l, unsigned n, unsigned *
             *err = errmap(r, E_DENIED);
             break;
         }
-        if (!wr && r)
-            poke(l, xbuf, r);
+        if (!wr && r && poke(l, xbuf, r)) {
+            *err = E_DENIED;
+            break;
+        }
         done += r;
         l += r;
         if (r < k)

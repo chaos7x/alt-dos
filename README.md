@@ -296,6 +296,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   melden sich in der Box über INT 2Fh 15xxh wie unter MSCDEX 2.21
   (Laufwerke, Treiberkopf, VTOC, absolut lesen, Geräteaufträge) – für
   Spiele und Installationsprogramme, die MSCDEX abfragen. Kein CD-Audio.
+- Dateien über den Redirector der Kompatibilitätsbox lassen sich jetzt
+  auch in den EMS-Seitenrahmen, UMBs und die HMA lesen (5.5) – Lotus
+  Works 3.0 lädt seine Overlays so und lief vorher nur ohne EMS-Treiber.
 - A20 in der Kompatibilitätsbox (5.5): RBHMA schaltet A20 wie HIMEM
   wirklich um – mit Programmen, die mit EXEPACK gepackt sind (z. B.
   Lotus Works 3.0), kam sonst „Packed file is corrupt“ oder ein Hänger.
