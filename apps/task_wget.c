@@ -455,8 +455,10 @@ void main(void)
             tls_ca(tmp);
         }
         else if (*a == '-' || *a == '/' && a[1] == '?') {
-            VioWrtTTY("WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] [--no-check-certificate]\r\n"
-                      "     [--ca-certificate=Datei] http[s]://Rechner[:Port]/Pfad\r\n", 116);
+            static const char use[] =
+                "WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] [--no-check-certificate]\r\n"
+                "     [--ca-certificate=Datei] http[s]://Rechner[:Port]/Pfad\r\n";
+            VioWrtTTY(use, sizeof(use) - 1);
             DosExit(2);
         } else
             word(a, url, sizeof(url));

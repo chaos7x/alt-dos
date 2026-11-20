@@ -145,12 +145,15 @@ im Modul und wachen über `net_kick` bzw. Fristen auf.
   DHCPv6 (DNS nur aus RDNSS), keine Datenschutzadressen; Kennung EUI-64
   statt RFC 7217. Ein Nachbarcache für ARP und ND (16-Byte-Schlüssel),
   eigene gespiegelte Rahmen (gleiche Absender-MAC) werden verworfen.
-  Nur eine Adresse je Karte (außer link-lokal): kündigt der Router
-  mehrere Präfixe an (Fritz!Box: öffentlich + ULA fd00::/64), gewinnt
-  das öffentliche – vorher das zuletzt genannte, oft die ULA, und damit
-  kein IPv6 ins Internet (vom Nutzer an seinem LAN gemeldet, 20.11.2026).
-  Hosts mit ULA erreicht man dann über den Router. Eine ULA zählt beim
-  Auflösen von Namen nicht als globale Adresse (AAAA nicht zuerst).
+  Je Karte eine globale und eine lokale Adresse (ULA fc00::/7) neben
+  der link-lokalen: kündigt der Router beide Präfixe an (Fritz!Box:
+  öffentlich + fd00::/64), bekommt jedes Ziel den passenden Absender –
+  ULA-Ziele die ULA (direkt im LAN), alles andere die globale, ohne
+  globale die ULA. Vorher nahm TCPIP.SYS nur das zuletzt genannte Präfix
+  (oft die ULA, kein IPv6 ins Internet); der erste Fix (nur die
+  öffentliche) machte ULA-Rechner im LAN unerreichbar (beides vom Nutzer
+  an seinem LAN gemeldet, 20.11.2026). Eine ULA zählt beim Auflösen von
+  Namen nicht als globale Adresse (AAAA nicht zuerst).
 - IPv6 (eigene Stufe): Kopf + Erweiterungsköpfe überspringen (Hop-by-
   Hop, Routing Typ 0 verwerfen, Fragment – Zusammensetzen wie IPv4),
   ICMPv6 (Echo, Fehler, Packet Too Big -> Pfad-MTU je Ziel), Neighbor
