@@ -45,6 +45,19 @@ Redirector gilt ES in RBSHELL nicht mehr (rd_cache). In QEMU geprüft
 (FreeDOS und IBM DOS 5 als Box-DOS, mit/ohne AUTOEXEC.BAT, mit/ohne SB16)
 und in 86Box SCAT. Auf 6.x (BOXSHELL) noch nicht.
 
+A20 in der Kompatibilitätsbox (vom Nutzer gemeldet, 20.11.2026: Lotus
+Works 3.0 hing auf der mr286 nach dem Startbild, ein anderes Mal „Packed
+file is corrupt“): RBHMA antwortete auf XMS 03h–06h nur mit Erfolg, A20
+blieb immer an. FreeDOS schaltet A20 beim EXEC über XMS 06h ab (wie
+MS-DOS mit HIMEM) – EXEPACK-Programme, die unter 64 KB geladen werden
+(die Box belegt nur ~27 KB), rechnen mit dem Umlauf bei 1 MB. Jetzt
+schaltet RBHMA wie HIMEM über den 8042 (D1h, DFh/DDh; global 03h/04h,
+lokal 05h/06h mit Zähler, 07h über den Umlauftest 0:500/FFFF:510), und
+der Stummel in start.asm merkt beim Verlassen der Box den Zustand
+(Stummeldaten +88) und stellt ihn beim Zurückkehren wieder her. Geprüft:
+QEMU (LW installiert und läuft, BIOSCMP rbox gleich) und 86Box mr286
+(LW bis ins Hauptmenü, serielle Maus bewegt den Zeiger).
+
 Speicher der Kompatibilitätsbox (20.11.2026, beim Test des Nutzers auf
 der 4-MB-VM mit PROTECTONLY=NO: „BIOS, Boot, Puffer“ 2.784K, verfügbar nur
 386K): die Box hält ihr Startabbild ganz im erweiterten Speicher (rbox.c

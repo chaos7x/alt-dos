@@ -14,10 +14,12 @@
 ; die Bloecke nicht einblenden, Programme kopieren nur (0Bh) - genau so
 ; lagert sich FreeCOM aus (XMS_Swap: ~70 KB mehr in der Box).
 ;
-; A20 an/aus (03h-06h) melden Erfolg, ohne den 8042 anzufassen: die
-; Leitung bleibt offen (wie bisher ohne Treiber). Alte Programme, die den
-; Umlauf bei 1 MB brauchen (EXEPACK, PKLITE 1990), gehen damit so gut oder
-; schlecht wie vorher; FreeDOS prueft vor Zugriffen auf die HMA selbst.
+; A20 an/aus (03h-07h) wie HIMEM ueber den 8042 (global + Zaehler fuer
+; lokal). FreeDOS schaltet A20 bei jedem EXEC per 06h ab (gepackte
+; Programme: EXEPACK meldet sonst unter 64 KB "Packed file is corrupt"
+; oder haengt) und beim naechsten DOS-Aufruf per 05h wieder an. Der
+; Stummel (start.asm) merkt beim Ausflug, ob A20 aus war, und stellt das
+; beim Eintritt wieder her.
 cpu 8086
 org 0
         dd      -1                      ; letzter Treiber der Datei
@@ -27,6 +29,8 @@ org 0
 rh      dd      0
 old2f   dd      0
 hma     db      0                       ; HMA vergeben?
+glob    db      0                       ; 03h: global an
+loc     dw      0                       ; 05h/06h: Zaehler
 
 ; ---- INT 2Fh: 4300h da?, 4310h Einsprung --------------------------------
 int2f:  cmp     ax, 4300h
@@ -68,10 +72,12 @@ xms:    jmp     short .go               ; Kopf wie in der Spezifikation:
         jmp     short .ok
 .notal: mov     bl, 93h                 ; nicht vergeben
         jmp     short .fail
-.f3:    cmp     ah, 7                   ; 03h-07h: A20 bleibt offen
+.f3:    cmp     ah, 7                   ; 03h-07h: A20
         ja      .f8
         cmp     ah, 3
         jb      .no
+        call    a20fn
+        retf
 .ok:    mov     ax, 1
         xor     bl, bl
         retf
@@ -100,6 +106,102 @@ xms:    jmp     short .go               ; Kopf wie in der Spezifikation:
 .no:    mov     bl, 80h                 ; nicht vorhanden
 .fail:  xor     ax, ax
         retf
+
+; 03h global an, 04h global aus, 05h lokal an, 06h lokal aus, 07h abfragen
+a20fn:  cmp     ah, 7
+        jne     .s
+        call    a20q
+        xor     ah, ah
+        xor     bl, bl
+        ret
+.s:     cmp     ah, 3
+        jne     .s4
+        mov     byte [cs:glob], 1
+        jmp     short .on
+.s4:    cmp     ah, 4
+        jne     .s5
+        mov     byte [cs:glob], 0
+        jmp     short .chk
+.s5:    cmp     ah, 5
+        jne     .s6
+        inc     word [cs:loc]
+.on:    mov     al, 0xDF
+        call    kbc
+        jmp     short .ok
+.s6:    cmp     word [cs:loc], 0
+        je      .chk
+        dec     word [cs:loc]
+.chk:   cmp     word [cs:loc], 0        ; aus nur ohne Zaehler und global
+        jne     .ok
+        cmp     byte [cs:glob], 0
+        jne     .ok
+        mov     al, 0xDD
+        call    kbc
+.ok:    mov     ax, 1
+        xor     bl, bl
+        ret
+
+; AL = Ausgangsport des 8042 (DFh A20 an, DDh aus), nur wenn noetig
+kbc:    push    ax
+        call    a20q
+        mov     ah, al                  ; AH = 1: an
+        pop     bx                      ; BL = gewuenscht
+        push    bx
+        cmp     bl, 0xDF
+        jne     .off
+        test    ah, ah
+        jnz     .r
+        jmp     short .w
+.off:   test    ah, ah
+        jz      .r
+.w:     pushf
+        cli
+        call    .ibf
+        mov     al, 0xD1
+        out     0x64, al
+        call    .ibf
+        mov     al, bl
+        out     0x60, al
+        call    .ibf
+        popf
+.r:     pop     ax
+        ret
+.ibf:   push    cx
+        xor     cx, cx
+.ib1:   in      al, 0x64
+        test    al, 2
+        loopnz  .ib1
+        pop     cx
+        ret
+
+; AX = 1, wenn A20 an ist (0000:0500 und FFFF:0510 verschiedene Zellen)
+a20q:   push    ds
+        push    es
+        push    bx
+        push    cx
+        pushf
+        cli
+        xor     bx, bx
+        mov     ds, bx
+        dec     bx
+        mov     es, bx
+        mov     bl, [0x500]
+        mov     bh, [es:0x510]
+        mov     byte [0x500], 0
+        mov     byte [es:0x510], 0xFF
+        mov     cl, [0x500]
+        mov     [es:0x510], bh
+        mov     [0x500], bl
+        popf
+        xor     ax, ax
+        cmp     cl, 0xFF
+        je      .x
+        inc     ax
+.x:     pop     cx
+        pop     bx
+        pop     es
+        pop     ds
+        ret
 
 ende:                                   ; Ende des residenten Teils
 

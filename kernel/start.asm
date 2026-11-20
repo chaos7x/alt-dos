@@ -1266,6 +1266,10 @@ rbs_entry:                              ; Real Mode, CS = rb_seg
         mov     sp, 0x2000                  ; Stapel hinter der GDT
         call    rbs_ivrest              ; IVT 300h-3FFh: BIOS-Stapel beim Reset
         call    rbs_a20                 ; DOS=HIGH: die HMA muss sichtbar sein
+        cmp     byte [88], 0xFF         ; hatte die Box A20 aus (RBHMA 06h,
+        jne     .a20on                  ; FreeDOS beim EXEC: EXEPACK), wieder
+        call    rbs_a20off              ; aus
+.a20on:
         cmp     byte [76], 0            ; 287: Reset ueber Port F1h holt ihn
         je      .nofpu                  ; aus dem Protected Mode (FSETPM von
         xor     al, al                  ; AT-DOS), dann Zustand der Box
@@ -1613,6 +1617,7 @@ rbs_saved:                              ; Zustand der Box steht im Block
         mov     byte [77], 1
 .nofpu: call    rbs_ivsave
         call    rbs_a20                 ; Kernel und GDT liegen ueber 1 MB
+        mov     [88], al                ; FFh: in der Box war A20 aus
         lgdt    [32]
         mov     ax, 1
         lmsw    ax
@@ -1685,19 +1690,37 @@ rbs_a20:
         pop     bx
         pop     es
         pop     ds
-        cmp     al, 0xFF
+        cmp     al, 0xFF                ; AL bleibt: FFh = war aus
         jne     .ret
+        push    cx
         call    .w
         mov     al, 0xD1
         out     0x64, al
         call    .w
         mov     al, 0xDF
         out     0x60, al
-.w:     xor     cx, cx
+        call    .w
+        pop     cx
+        mov     al, 0xFF
+.ret:   ret
+.w:     push    ax
+        xor     cx, cx
 .w1:    in      al, 0x64
         test    al, 2
         loopnz  .w1
-.ret:   ret
+        pop     ax
+        ret
+rbs_a20off:                             ; A20 aus (8042 DDh)
+        push    cx
+        call    rbs_a20.w
+        mov     al, 0xD1
+        out     0x64, al
+        call    rbs_a20.w
+        mov     al, 0xDD
+        out     0x60, al
+        call    rbs_a20.w
+        pop     cx
+        ret
 
 cpu 386
 rbs_386:                                ; PM, CS-Basis rb_lin: PE loeschen
