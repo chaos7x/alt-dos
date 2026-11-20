@@ -47,19 +47,33 @@ start:  mov     sp, stk_end
         mov     ah, 47h
         int     21h
         call    t_bios
+        call    flush
         call    t_bda
+        call    flush
         call    t_video
+        call    flush
         call    t_kbd
+        call    flush
         call    t_clock
+        call    flush
         call    t_misc15
+        call    flush
         call    t_disk
+        call    flush
         call    t_ports
+        call    flush
         call    t_dos
+        call    flush
         call    t_files
+        call    flush
         call    t_find
+        call    flush
         call    t_fcb
+        call    flush
         call    t_ioctl
+        call    flush
         call    t_mux
+        call    flush
         call    cleanup
         call    flush
         mov     dl, [cdrv]              ; Laufwerk/Verzeichnis zurueck
@@ -179,7 +193,9 @@ txtbuf: push    ax
         pop     ax
         ret
 
-flush:  mov     dx, oname               ; Puffer in die Datei
+flush:  mov     dx, oname               ; Puffer in die Datei (nach jeder
+                                        ; Gruppe: bleibt ein Test haengen,
+                                        ; steht das Bisherige schon drin)
         xor     cx, cx
         mov     ah, 3Ch
         int     21h
