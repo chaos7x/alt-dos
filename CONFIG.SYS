@@ -41,7 +41,7 @@ REM Sound Blaster 1.0-AWE64, OPL, MPU. /A:220 /I:5 /D:1 /H:5 /M:330
 REM von Hand, /NOFM /NOMPU /NOAWE abschalten, /MPU = MIDI an den MPU-401
 REM statt an den AWE-Synthesizer, /AWETEST Probeton der AWE
 DEVICE=SB16.SYS
-REM Netz: Karte RTL8139/PCNET/E1000/NE2000 (/P:300 /I:3), dann
+REM Netz: Karte RTL8139/PCNET/E1000/VIONET/NE2000 (/P:300 /I:3), dann
 REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
 REM DEVICE=TCPIP.SYS

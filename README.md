@@ -195,6 +195,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Interrupt (`/NOIRQ` = Abfragebetrieb), jeder Port mit eigener Sperre
   (zwei Platten arbeiten gleichzeitig). Start von einer SATA-Platte geht
   über das BIOS (SeaBIOS kann es); entladbar mit `DEVLOAD /U AHCI`
+- VirtIO (6.3, QEMU/Proxmox mit i440fx; Legacy-Schnittstelle der
+  Spezifikation 1.0, `drivers/virtio.h`): `VIOBLK.SYS` für virtio-blk-
+  Platten (je Platte eigene Sperre, Lesen bis 16 Sektoren am Stück, FLUSH,
+  schreibgeschützte Platten, PCI-Interrupt oder `/NOIRQ`; Start von der
+  VirtIO-Platte über das INT 13h von SeaBIOS) und `VIONET.SYS` für
+  virtio-net (16 Empfangs-, 8 Sendepuffer, MAC und Verbindung aus der
+  Gerätekonfiguration). Reine VirtIO-1.0-Geräte ohne Legacy-Teil (q35 mit
+  PCIe-Ports) melden sich beim Start mit einem Hinweis; entladbar
 - Netzwerk (6.2, erste Stufe; Entwurf `docs/NETZWERK.md`):
   `RTL8139.SYS` für Realtek RTL8139/8139C/8139C+ (PCI; QEMU
   `-device rtl8139`, 86Box, Proxmox) mit IRQ und Busmaster,

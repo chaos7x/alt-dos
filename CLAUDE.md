@@ -5944,6 +5944,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KVM; in QEMU ohne KVM ging es) – siehe ACPI-Ausschalten unter APM.
   Ungeprüft:
   echte Hardware, VirtualBox/VMware, Port-Multiplier, NCQ (nicht benutzt).
+- VirtIO Stufe 1 erledigt (20.11.2026; in QEMU geprüft, 86Box hat kein
+  VirtIO): `drivers/virtio.h` (Legacy-Register im I/O-BAR 0, `vq_setup`
+  per DH_DMABUF, `vq_desc`/`vq_put`/`vq_get`, `vio_begin`), `VIOBLK.SYS`
+  (1AF4:1001, je Gerät Einheit + Sperrgruppe, Kette Kopf/Daten/Status,
+  16 Sektoren je Lesen, F_RO -> WP, F_FLUSH) und `VIONET.SYS` (1AF4:1000,
+  Schlange 0 Empfang/1 Senden, Kopf 10 Byte als eigener Deskriptor, F_MAC/
+  F_STATUS). Geprüft: zweite VirtIO-Platte (XCOPY \DOS, CHKDSK, fsck,
+  Inhalte gleich), Start von VirtIO mit zwei VirtIO-Platten (fsck beider
+  sauber), virtio-net mit dem WGET-Testlauf aus 6.2 (DHCP, IPv6, 1 MB
+  mehrfach byte-gleich, chunked, Fortsetzen, Weiterleitungen). Offen:
+  virtio-scsi, -balloon, -serial/Gastagent, -rng, VirtIO 1.0 ohne Legacy.
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
   I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –
