@@ -18,7 +18,7 @@ typedef unsigned long pg_t;
 #define MEM_LOW_PG      0x7FC00UL   /* 2 GB - 4 MB (PDE 1023 = Fenster)    */
 #define MEMMAP_LIN      0x9000UL    /* Bitmap bis 256 MB (8 KB) hier       */
 #define MEMMAP_FIX      8192U
-#define MEMMAP_SEL      0x168       /* = KSEG_IDX(0) * 8, siehe kern.h     */
+#define MEMMAP_SEL      0x1C8       /* = KSEG_IDX(0) * 8, siehe kern.h     */
 
 /* Speicherkarte des BIOS (start.asm, INT 15h E820h) */
 struct e820 { unsigned long base_lo, base_hi, len_lo, len_hi, type; };

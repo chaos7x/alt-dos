@@ -31,6 +31,9 @@ typedef char vdd_chk[VDD_NTASK == NTASK ? 1 : -1];
 static struct vdd_reg vt[NVDD];         /* Kopie der Anmeldung           */
 static unsigned char vt_drv[NVDD];      /* Treiber + 1, 0 = frei         */
 static unsigned char vd_any;            /* ein Modul will "alle Ports"   */
+unsigned char vid_class;                /* Grafikmodul da: 1 CGA, 2 EGA  */
+static unsigned char vid_drv;           /* dessen Treiber + 1            */
+unsigned char vid_regs[64];             /* VS_VREGS (vgagfx.c raw_out)   */
 #define CS(i)   DRVC_SEL(vt_drv[i] - 1)
 #define DS(i)   DRVD_SEL(vt_drv[i] - 1)
 
@@ -56,6 +59,13 @@ unsigned __far vdd_reg(int d, unsigned dsel, unsigned bx)
         ;
     if (i == NVDD)
         return 1;
+    if (r->flags & (VDDF_VCGA | VDDF_VEGA)) {  /* Grafikmodul: passt es? */
+        k = r->flags & VDDF_VEGA ? 2 : 1;
+        if (vid_class || vid_hwclass() != k)
+            return 1;
+        vid_class = (unsigned char)k;
+        vid_drv = (unsigned char)(d + 1);
+    }
     fcopy(&vt[i], r, sizeof(struct vdd_reg));
     vt_drv[i] = (unsigned char)(d + 1);
     for (vd_any = 0, k = 0; k < NVDD; k++)
@@ -71,6 +81,8 @@ void __far vdd_drop(int d)
     for (i = 0; i < NVDD; i++)
         if (vt_drv[i] == d + 1)
             vt_drv[i] = 0;
+    if (vid_drv == d + 1)
+        vid_class = vid_drv = 0;
     for (vd_any = 0, i = 0; i < NVDD; i++)
         if (vt_drv[i] && (vt[i].flags & VDDF_ANYPORT) && vt[i].io_off)
             vd_any = 1;
@@ -169,6 +181,14 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx)
     if (d < 0)
         return 0xFFFF;
     fcopy(&k, MK_FP(dsel, bx), sizeof(k));
+    if (k.fn == VS_INFO && k.a1 == VI_VIDEO)    /* auch ohne Box (INIT)  */
+        return vid_hwclass();
+    if (k.fn == VS_VREGS) {
+        if (vid_drv != d + 1)
+            return 0xFFFF;
+        fcopy(vid_regs, MK_FP(dsel, k.buf), k.len > 64 ? 64 : k.len);
+        return 0;
+    }
     if (k.task >= NTASK)
         return 0xFFFF;
     switch (k.fn) {

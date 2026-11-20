@@ -9,6 +9,7 @@
 #include "mem.h"
 #include "vioint.h"
 #include "../include/fapi_abi.h"
+#include "../include/vdd.h"
 #include "k2.h"                         /* zuletzt: lenkt Kernelhilfen um */
 
 static void crtc(unsigned i, unsigned v) { outb(0x3D4, i); outb(0x3D5, v); }
@@ -343,6 +344,15 @@ static void gfx_alias(int s)
 static void hw_text(void)
 {
     gp_drawn = 0;
+    if (!vga_ok) {                      /* EGA/CGA (Box-Grafik ueber ein
+                                           Grafikmodul): die VGA-Tabelle hat
+                                           400 Zeilen - Modus 3 ueber das BIOS */
+        vesa_bios(3);
+        hw_lines = 25;                  /* (ohne VGA nur 25 Zeilen;
+                                           set_hw_lines tut dort nichts) */
+        hw_gfx = 0;
+        return;
+    }
     vga_regs(vga_mode03);
     if (text_dac_ok)
         dac_io(1, 0, 64, (unsigned char __far *)text_dac);
@@ -440,6 +450,15 @@ static unsigned raw_kind(unsigned allow)
 static void raw_lin(int s, unsigned kind, int out)
 {
     unsigned n = kind == 1 ? 0x8000 : 0x4000;   /* zwei Haelften (2*n */
+    if (!vga_ok && vid_class == 1) {            /* CGA: nur 16 KB, bei BC000 */
+        scratch_map(PG_LIN(ses[s].gfx_save) + RAW_LIN, 0xFFFF);   /* gespiegelt - */
+        scratch2_map(0xB8000UL, 0x3FFF);        /* sonst ueberschriebe die  */
+        if (out)                                /* zweite Haelfte die erste */
+            far_copy(SCRATCH, 0, SCRATCH2, 0, 0x4000);
+        else
+            far_copy(SCRATCH2, 0, SCRATCH, 0, 0x4000);
+        return;
+    }
     scratch_map(PG_LIN(ses[s].gfx_save) + RAW_LIN, 0xFFFF);   /* waere 0) */
     scratch2_map(kind == 1 ? 0xA0000UL : 0xB8000UL, 0xFFFF);
     if (out) {
@@ -614,10 +633,80 @@ void __far vio_raw_mode(int s, unsigned m)
         ses[s].vmode = m;
 }
 
+/* Grafikklasse der Karte: 3 VGA, 2 EGA (BDA 0487h: EGA da und aktiv),
+   1 CGA, 0 MDA (Ausstattungswort Bits 4-5) */
+unsigned __far vid_hwclass(void)
+{
+    unsigned short w[8];
+    unsigned char e, q;
+    if (vga_ok)
+        return 3;
+    win_save(w);
+    scratch_map(0x400UL, 0xFF);
+    e = *(unsigned char __far *)MK_FP(SCRATCH, 0x87);
+    q = *(unsigned char __far *)MK_FP(SCRATCH, 0x10);
+    win_restore(w);
+    if (e && !(e & 0x08))
+        return 2;
+    return (q & 0x30) == 0x30 ? 0 : 1;
+}
+
+/* EGA/CGA: Register schreibt das Grafikmodul mit (die Karte kann man nicht
+   lesen); Bild: EGA vier Ebenen wie die VGA, CGA 16 KB bei B8000 */
+static void raw_out_mod(int s)
+{
+    unsigned i, k;
+    unsigned char __far *q;
+    for (i = 0; i < 61; i++)
+        vid_regs[i] = 0;
+    vdd_event(ses[s].gfx_task, VDD_EV_VSAVE, 0);
+    for (i = 0; i < 61; i++)
+        raw_t[i] = vid_regs[i];
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+    q = MK_FP(SCRATCH, 0);
+    for (i = 0; i < 61; i++)
+        q[i] = raw_t[i];
+    k = raw_kind(q[RAW_ALLOW]);
+    q[RAW_KIND] = (unsigned char)k;
+    for (i = 0; i < 8; i++)
+        q[RAW_ST + i] = 0;
+    if (k & 1)
+        raw_lin(s, k, 1);
+    if (vid_class == 2)
+        raw_copy(s, 1);
+    else if (!(k & 1))
+        raw_lin(s, 3, 1);
+}
+
+static void raw_in_mod(int s)
+{
+    unsigned k;
+    unsigned char __far *q;
+    scratch_map(PG_LIN(ses[s].gfx_save) + RAW_REGS, 1023);
+    q = MK_FP(SCRATCH, 0);
+    k = q[RAW_KIND];
+    raw_t[3] = q[3];
+    if (vid_class == 2)
+        raw_copy(s, 0);
+    vdd_event(ses[s].gfx_task, VDD_EV_VREST, 0);
+    if (k & 1) {                            /* was die Box hinten schrieb */
+        if (vid_class == 2)
+            seqr(0x02, k == 1 ? 0x0F : 0x03);
+        raw_lin(s, k, 0);
+        if (vid_class == 2)
+            seqr(0x02, raw_t[3]);
+    } else if (vid_class == 1)
+        raw_lin(s, 3, 0);
+}
+
 static void raw_out(int s)
 {
     unsigned i, k;
     unsigned char __far *q;
+    if (!vga_ok) {
+        raw_out_mod(s);
+        return;
+    }
     if (raw_svout(s))                       /* VESA-Modus: Zustand + Bild */
         return;
     raw_regs_in();
@@ -639,6 +728,10 @@ static void raw_in(int s)
 {
     unsigned i, k;
     unsigned char __far *q;
+    if (!vga_ok) {
+        raw_in_mod(s);
+        return;
+    }
     if (raw_svin(s))
         return;
     raw_copy(s, 0);
@@ -687,7 +780,7 @@ int __far gfx_in(void)
         return 0;
     }
     win_save(w);
-    if (!text_dac_ok) {                     /* Textpalette einmal merken */
+    if (!text_dac_ok && vga_ok) {           /* Textpalette einmal merken */
         dac_io(0, 0, 64, (unsigned char __far *)text_dac);
         text_dac_ok = 1;
     }
@@ -824,8 +917,10 @@ int __far vio_setgfx(int s, int t, unsigned mode)
             redraw();                       /* Karte auf Text, Bild neu */
         return 0;
     }
-    if ((mode != 0x13 && !PLANAR(mode) && mode != RAWGFX) || !vga_ok)
-        return -1;
+    if ((mode != 0x13 && !PLANAR(mode) && mode != RAWGFX) ||
+        (!vga_ok && (mode != RAWGFX || !vid_class)))
+        return -1;                          /* EGA/CGA: nur Box-Grafik mit
+                                               Grafikmodul (VEGA/VCGA)  */
     if (ses[s].gfx && ses[s].gfx != mode)   /* anderer Modus: neu       */
         vio_setgfx(s, t, 0);
     if (!ses[s].gfx) {

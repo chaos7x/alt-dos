@@ -26,20 +26,21 @@
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
 #define SCR_SEL(i)  (SCR_IDX(i) * 8)
-#define NDRV        6               /* Geraetetreiber und IFS-Module      */
+#define NDRV        12              /* Geraetetreiber und IFS-Module; 6.3:
+                                       6 -> 12 (Box-Module VCOM/VSB/VEMS/VEGA) */
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
 #define NKSEG       28              /* eigene Kernelsegmente (kseg_alloc); 6.2: 20 -> 28 (acht Loops) */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x248           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x2A8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define VWIN_IDX    (KCODE2_IDX + 1) /* Fenster in den Speicher einer DOS-Box */
 #define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
 #define RWIN_IDX(t) (KCODE2_IDX + 2 + (t))   /* Fenster je Box (redir.c) */
 #define RWIN_SEL(t) (RWIN_IDX(t) * 8)
 #define KCODE3_IDX  (KCODE2_IDX + 2 + NTASK)  /* drittes Codesegment (v86.c, redir.c) */
-#define KCODE3      0x298           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
+#define KCODE3      0x2F8           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
 #define FCACHE_IDX  (KCODE3_IDX + 1) /* FAT-Cache (fat.c), fest bei FCACHE_LIN */
 #define FCACHE_SEL  (FCACHE_IDX * 8)
 #define CTXWIN_IDX  (KCODE3_IDX + 2) /* Ablage des Kontexts je Task (Phase 6) */
@@ -49,7 +50,7 @@
 #define LDTD_IDX    (KCODE3_IDX + 4) /* Datenfenster auf die LDTs aller Tasks */
 #define LDTD        (LDTD_IDX * 8)
 #define KCODE4_IDX  (KCODE3_IDX + 5) /* viertes Codesegment (loop.c u. a.) */
-#define KCODE4      0x2C0           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
+#define KCODE4      0x320           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
 #define NGDT        (KCODE3_IDX + 6)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
@@ -231,6 +232,8 @@ unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val, int fgb);
 unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
 void __far vdd_event(int t, unsigned ev, unsigned val);
 void __far vdd_tick(int t, int fgb);
+unsigned __far vid_hwclass(void);
+extern unsigned char vid_class, vid_regs[64];
 struct vdd_svc;
 unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =

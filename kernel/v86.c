@@ -2733,9 +2733,14 @@ int __far vio_setgfx(int s, int t, unsigned mode);  /* vgagfx.c (KTEXT2) */
 extern unsigned char hw_gfx;
 static unsigned long vga_spare[NTASK];  /* Ersatzseite A0000-BFFFF       */
 
+extern unsigned char vga_ok;            /* start.asm                     */
 static void vga_ports(int t, int on)
 {
     unsigned i;
+    if (on && !vga_ok)                  /* EGA/CGA: Register nicht lesbar -
+                                           gesperrt lassen, das Grafikmodul
+                                           schreibt jeden Zugriff mit    */
+        return;
     for (i = 0x3B0 >> 3; i <= 0x3DF >> 3; i++)
         tss[t].iob[i] = on ? 0 : 0xFF;
     if (on) {                           /* VBE der Bochs-/QEMU-/Proxmox- */
@@ -3166,7 +3171,7 @@ static int vga_want(struct v86_frame *f, int t)
               (AX == 0x4F02 && (BX & 0x1FF) < 0x100 && ((BX & 0x7F) <= 3 || (BX & 0x7F) == 7));
     if (vga_raw[t]) {
         if (!txt) {
-            if (vga_bgk[t] && vga_bgint(f, t))
+            if (vga_bgk[t] && vga_ok && vga_bgint(f, t))
                 return 2;                       /* hinten nachgebildet   */
             vga_wait(t);                        /* BIOS: nur auf der Karte */
             if (AH == 0x00 || AX == 0x4F02)
@@ -3399,9 +3404,15 @@ static unsigned char port_in(int t, unsigned p)
     unsigned o;
     int k;
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
-        if (vga_bgk[t] && (vga_bgk[t] != 4 || p == 0x3DA))
-            return vga_pin(t, p);               /* SVGA hinten: nur 3DAh */
+        if (vga_bgk[t] && (vga_bgk[t] != 4 || p == 0x3DA)) {
+            o = vga_pin(t, p);                  /* SVGA hinten: nur 3DAh */
+            if (!vga_ok)                        /* Grafikmodul: Flipflop */
+                vdd_io(t, VDD_IN, p, 0, 2);     /* des ATC mitfuehren    */
+            return (unsigned char)o;
+        }
         vga_wait(t);                            /* (Index 3D4 o. ae. vorn: */
+        if (!vga_ok && (o = vdd_io(t, VDD_IN, p, 0, 3)) != VDD_NOTMINE)
+            return (unsigned char)o;            /* EGA/CGA: ueber das Modul */
         return (unsigned char)inb(p);           /* Bitmap war noch zu)   */
     }
     switch (p) {
@@ -3471,11 +3482,14 @@ static void port_out(int t, unsigned p, unsigned char v)
 {
     unsigned o, cur;
     if (p >= 0x3B0 && p <= 0x3DF && vga_raw[t]) {
-        if (vga_bgk[t] && vga_bgk[t] != 4)
+        if (vga_bgk[t] && vga_bgk[t] != 4) {
             vga_pout(t, p, v);
-        else {
+            if (!vga_ok)                        /* Grafikmodul schreibt mit */
+                vdd_io(t, VDD_OUT, p, v, 2);
+        } else {
             vga_wait(t);
-            outb(p, v);
+            if (vga_ok || vdd_io(t, VDD_OUT, p, v, 3) == VDD_NOTMINE)
+                outb(p, v);
         }
         return;
     }

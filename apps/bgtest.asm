@@ -10,6 +10,8 @@
 ;   BGTEST      Modus 13h (320x200x256)
 ;   BGTEST 4    CGA-Modus 4 (320x200x4)
 ;   BGTEST 12   Modus 12h (640x480x16, planar - schreibt ueber Map Mask)
+;   BGTEST 10   EGA-Modus 10h (640x350x16, planar; Farbe 1 ueber INT 10h
+;               1000h auf Rot - die EGA hat keinen DAC)
 ; Eine Taste beendet.
         org     100h
         mov     si, 81h
@@ -27,7 +29,11 @@
         jne     .m13
         mov     byte [cga], 2
         mov     ax, 12h
-        int     10h
+        cmp     byte [si], '0'          ; "10": EGA 640x350
+        jne     .m12b
+        mov     byte [cga], 3
+        mov     al, 10h
+.m12b:  int     10h
         mov     dx, 3C4h
         mov     ax, 0102h               ; SEQ 2 = 1
         out     dx, ax
@@ -52,7 +58,7 @@
         je      .w
         cmp     byte [cga], 1
         je      .c4
-        jb      .z13
+        jb      .z13                    ; 12h und 10h: planar
         mov     ax, 80                  ; 12h: Zeile bx, 80 Byte in Ebene 0
         mul     bx
         mov     di, ax
@@ -79,7 +85,14 @@
         rep     stosb
 .pal:   cmp     bx, 100
         jne     .n
-        mov     ah, 1                   ; 13h: DAC-Eintrag 1
+        cmp     byte [cga], 3           ; EGA: Attributregister 1 = rot
+        jne     .p2
+        mov     ax, 1000h
+        mov     bx, 0401h
+        int     10h
+        mov     bx, 100
+        jmp     .n
+.p2:    mov     ah, 1                   ; 13h: DAC-Eintrag 1
         cmp     byte [cga], 0
         je      .dac                    ; (CGA und 12h: ueber Attribut 1)
         mov     dx, 3DAh                ; CGA: Farbe 1 zeigt ueber das

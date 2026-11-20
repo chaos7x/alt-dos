@@ -71,7 +71,7 @@ struct desc     gdt[NGDT];
 typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
 typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
 typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
-typedef char gdt_chk3[VWIN == 0x250 ? 1 : -1];   /* VWIN in start.asm */
+typedef char gdt_chk3[VWIN == 0x2B0 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
 
@@ -6442,10 +6442,11 @@ static int find_boot_vol(void)
 }
 
 /* ---- Start ------------------------------------------------------------- */
-/* CONFIG.SYS bis 4 KB (vorher 512 Byte in DGROUP - eine laengere Datei
-   wurde ganz uebergangen) in einem Kernelsegment, das nach dem Lesen der
-   letzten Zeile wieder frei wird (DGROUP ist knapp, GDT-Plaetze auch) */
-#define CFG_MAX 4096
+/* CONFIG.SYS bis 8 KB (vorher 512 Byte in DGROUP, dann 4 KB - eine
+   laengere Datei wurde ganz uebergangen) in einem Kernelsegment, das nach
+   dem Lesen der letzten Zeile wieder frei wird (DGROUP ist knapp, GDT-
+   Plaetze auch) */
+#define CFG_MAX 8192
 static unsigned cfg_sel;
 static void cfg_release(void);
 

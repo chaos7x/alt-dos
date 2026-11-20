@@ -135,7 +135,7 @@ if g['DGROUP'][0] != (c4[0] + c4[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
-# (KCODE 08h, KCODE2 248h, KCODE3 298h, KCODE4 2C0h, siehe kern.h); alles andere ist ein Fehler
+# (KCODE 08h, KCODE2 2A8h, KCODE3 2F8h, KCODE4 320h, siehe kern.h); alles andere ist ein Fehler
 img = hdr * 16
 for i in range(nrel):
     o, s = struct.unpack('<HH', d[relo + 4 * i:relo + 4 * i + 4])
@@ -144,11 +144,11 @@ for i in range(nrel):
     if v == 0:
         sel = 0x08
     elif v == c2[0] >> 4:
-        sel = 0x248
+        sel = 0x2A8
     elif v == c3[0] >> 4:
-        sel = 0x298
+        sel = 0x2F8
     elif v == c4[0] >> 4 and c4[1]:
-        sel = 0x2C0
+        sel = 0x320
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
@@ -228,12 +228,17 @@ done
 
 echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
-for t in aha154x ahci aic7xxx ide mouse ncr5380 ncr8xx rtl8139 pcnet e1000 sb16 vcom vsb vems; do
+for t in aha154x ahci aic7xxx ide mouse ncr5380 ncr8xx rtl8139 pcnet e1000 sb16 vcom vsb vems vega; do
     wcc $KCFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
 done
+# VCGA.SYS = VEGA.SYS mit -DCGA (Grafikmodul der DOS-Box fuer die CGA)
+wcc $KCFLAGS -zu -DCGA -fo=$B/drv_vcga.o drivers/vega.c
+wlink $LINK name $B/drv_vcga.bin option map=$B/drv_vcga.map \
+      file $B/dcrt0.o file $B/drv_vcga.o 2>&1 | grep -v W1014 || true
+python3 tools/mkfx.py --driver $B/stub.bin $B/drv_vcga.bin $B/drv_vcga.map $B/drv_vcga.sys
 
 echo "Netzwerk"
 # 286-Befehle ($CFLAGS): NE2000.SYS und TCPIP.SYS sollen auch auf 5.x laufen
@@ -284,7 +289,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
-SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/drv_pcnet.sys PCNET.SYS  $B/drv_e1000.sys E1000.SYS  $B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  $B/drv_vcom.sys VCOM.SYS  $B/drv_vsb.sys VSB.SYS  $B/drv_vems.sys VEMS.SYS  FIREWALL.INI FIREWALL.INI
+SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/drv_pcnet.sys PCNET.SYS  $B/drv_e1000.sys E1000.SYS  $B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  $B/drv_vcom.sys VCOM.SYS  $B/drv_vsb.sys VSB.SYS  $B/drv_vems.sys VEMS.SYS  $B/drv_vega.sys VEGA.SYS  $B/drv_vcga.sys VCGA.SYS  FIREWALL.INI FIREWALL.INI
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE  $B/task_ufat32.exe UFAT32.EXE
        $B/US.KBL US.KBL  $B/GB.KBL GB.KBL  $B/FR.KBL FR.KBL  $B/SP.KBL SP.KBL  $B/IT.KBL IT.KBL
        $B/DK.KBL DK.KBL  $B/NO.KBL NO.KBL  $B/SV.KBL SV.KBL  $B/PL.KBL PL.KBL"

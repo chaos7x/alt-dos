@@ -54,7 +54,13 @@ VS_FGRES/VS_AUD, KTEXT3 56.350 Byte) erledigt, geprüft QEMU + 86Box DX4
 `docs/VDD.md`: HMA/A20/UMB braucht der Start des DOS, EMBs hängen an
 CMOS/4309h/DPMI-Aufteilung, Gewinn ~4–5 KB). Nächste Stufe: 4 (VGA-
 Hintergrund, Maus). Module heißen
-`.SYS` wie bei OS/2 und liegen in `\DOS\SYSTEM`. Testfalle: von
+`.SYS` wie bei OS/2 und liegen in `\DOS\SYSTEM`. Stufe 4 (Grafikmodule
+`VEGA.SYS`/`VCGA.SYS` für EGA/CGA, Abwägung und Stand in `docs/VDD.md`)
+erledigt, geprüft 86Box 386 mit IBM-EGA und CGA (VMs `e386`/`c386`,
+CMOS-Anzeige dort einstellen) und VGA-Gegenprobe. Dabei: `NDRV` 6 -> 12
+(mit den Box-Modulen fiel ISO9660.IFS heraus!), Selektoren seitdem
+MEMMAP 1C8h, KCODE2 2A8h, VWIN 2B0h, KCODE3 2F8h, KCODE4 320h;
+CONFIG.SYS bis 8 KB (CFG_MAX, SETUP-Puffer). KTEXT2 63.649 Byte – voll. Testfalle: von
 Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –
 DOS-Programme melden dann „Befehl oder Dateiname nicht gefunden“.
 

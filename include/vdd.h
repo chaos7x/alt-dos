@@ -37,6 +37,15 @@ struct vdd_reg {
 #define VDDF_ANYPORT    0x01        /* io_off fuer jeden Port, den der
                                        Kernel nicht selbst behandelt (das
                                        Modul prueft und meldet VDD_NOTMINE) */
+#define VDDF_VCGA       0x02        /* Grafikmodul fuer CGA (VCGA.SYS)    */
+#define VDDF_VEGA       0x04        /* Grafikmodul fuer EGA (VEGA.SYS)    */
+/* Grafikmodul: die Register von CGA und EGA kann man nicht lesen. Hat
+   eine Box Rohgrafik (eigener BIOS-Modus), bleiben die Ports 3B0h-3DFh
+   gesperrt; jeder Zugriff kommt an io_off (flags Bit 0 = vorn: an die
+   Karte durchreichen, sonst nur mitschreiben). Beim Wegschalten fragt
+   der Kernel den Stand ab (VDD_EV_VSAVE -> VS_VREGS), beim Zurueckholen
+   schreibt das Modul ihn in die Karte (VDD_EV_VREST). Die VGA bleibt
+   Sache des Kernels. */
 
 /* Aufruf des Kernels an das Modul */
 struct vdd_call {
@@ -47,7 +56,8 @@ struct vdd_call {
     unsigned short ax, bx, cx, dx;  /* INT: Register der Box (ein/aus)   */
     unsigned short si, di, ds, es;
     unsigned short flags;           /* INT: FLAGS der Box (CF = Bit 0);
-                                       IN/OUT: Bit 0 = Box vorn          */
+                                       IN/OUT: Bit 0 = Box vorn, Bit 1 =
+                                       Grafikport einer Box mit Rohgrafik */
     unsigned short cs, ip, ss, sp;  /* INT: Ruecksprung bzw. Stapel der
                                        Box (ein/aus; EMS 55h/56h)        */
 };
@@ -68,6 +78,8 @@ struct vdd_call {
                                        weiter (Pause nicht nachholen)    */
 #define VDD_EV_PMHOOK   0x15        /* DPMI 0205h: val = Vektor          */
 #define VDD_EV_PMEND    0x16        /* DPMI-Programm zu Ende             */
+#define VDD_EV_VSAVE    0x17        /* Grafikmodul: Stand per VS_VREGS    */
+#define VDD_EV_VREST    0x18        /* Grafikmodul: Stand in die Karte    */
 #define VDD_NOTMINE     0xFFFF
 
 /* Dienste des Kernels fuer das Modul (DH_VDDSVC) */
@@ -126,6 +138,11 @@ struct vdd_svc {
 #define VI_EMSFRAME     0           /* -> erste Seite des EMS-Rahmens, 0 */
 #define VI_EMSLIM       1           /* -> EMS_MEMORY_LIMIT (16 KB) + 1, 0 */
 #define VI_FREE16       2           /* -> verfuegbarer Speicher in 16 KB  */
+#define VI_VIDEO        3           /* -> Grafikklasse: 0 MDA, 1 CGA, 2 EGA,
+                                          3 VGA (task beliebig)          */
+#define VS_VREGS        16          /* VDD_EV_VSAVE: len (bis 64) Byte buf
+                                       = Register wie die VGA-Tabellen (Misc,
+                                       SEQ 0-4, CRTC 0-24, GC 0-8, ATC 0-20) */
 #define VDD_HK_ADLIB    16          /* ADLIB_COPY=ON                     */
 
 #endif

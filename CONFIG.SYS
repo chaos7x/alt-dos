@@ -1,7 +1,7 @@
 REM ========================================
 REM AT-DOS 6.2 - CONFIG.SYS
-REM Zeilen mit REM am Anfang sind Erklaerungen bzw. Beispiele; zum
-REM Einschalten REM weglassen. Hoechstens 4 KB, eine Zeile bis 127 Zeichen.
+REM Zeilen mit REM sind Erklaerungen bzw. Beispiele; zum
+REM Einschalten REM weglassen. Hoechstens 8 KB, eine Zeile bis 127 Zeichen.
 REM ========================================
 
 REM --- Speicher und Dateien ---
@@ -37,7 +37,7 @@ REM SATA-Platten und -CD am AHCI-Controller (VMs, ICH6+). /NOIRQ
 DEVICE=AHCI.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
-REM Sound Blaster 1.0-AWE64, AdLib, MPU-401. /A:220 /I:5 /D:1 /H:5 /M:330
+REM Sound Blaster 1.0-AWE64, OPL, MPU. /A:220 /I:5 /D:1 /H:5 /M:330
 REM von Hand, /NOFM /NOMPU /NOAWE abschalten, /MPU = MIDI an den MPU-401
 REM statt an den AWE-Synthesizer, /AWETEST Probeton der AWE
 DEVICE=SB16.SYS
@@ -45,13 +45,14 @@ REM Netz: Karte RTL8139/PCNET/E1000/NE2000 (/P:300 /I:3), dann
 REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
 REM DEVICE=TCPIP.SYS
-REM Module der DOS-Box (wie OS/2-VDDs): COM/LPT, Ton, EMS
+REM Box-Module (wie OS/2-VDDs): COM/LPT, Ton, EMS; Grafik auf
+REM EGA/CGA: DEVICE=VEGA.SYS bzw. VCGA.SYS
 DEVICE=VCOM.SYS
 DEVICE=VSB.SYS
 DEVICE=VEMS.SYS
 
 REM --- Dateisysteme ---
-REM CD-ROM: ISO 9660, Joliet, ISO 9660:1999, Rock Ridge (nur lesend)
+REM CD-ROM: ISO 9660(:1999), Joliet, Rock Ridge (nur lesend)
 IFS=ISO9660.IFS
 REM Lange Namen auf FAT12/16: AUTO (was auf dem Laufwerk ist, sonst EA),
 REM VFAT (wie Windows 95) oder EA (wie OS/2, EA DATA. SF). FAT32 = VFAT.

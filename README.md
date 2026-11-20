@@ -744,9 +744,13 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Palette und Register im SVGA-Modus und die meisten Aufrufe des Video-
   BIOS halten die Box an, bis sie wieder vorn ist – Modus abfragen und
   Palette/Attribute über INT 10h (0Fh, 1000h–1017h) bildet der Kernel
-  hinten nach. Test: `START \DEMO\BGTEST [4|12]` (eine Zeile je Takt,
-  bei Zeile 100 Farbe per Port auf Rot), wegschalten, nach ein paar
-  Sekunden zurück. AWE32/64: Spiele mit eigenem AWE-Treiber sprechen den
+  hinten nach. Test: `START \DEMO\BGTEST [4|10|12]` (eine Zeile je Takt,
+  bei Zeile 100 Farbe auf Rot), wegschalten, nach ein paar
+  Sekunden zurück. EGA und CGA (6.3): deren Register kann man nicht
+  lesen – mit `DEVICE=VEGA.SYS` bzw. `DEVICE=VCGA.SYS` (wie bei OS/2)
+  schreibt ein Grafikmodul jeden Zugriff der Box mit; dann gibt es Box-
+  Grafik mit Sitzungswechsel und Hintergrund (EGA planar 0Dh/0Eh/10h,
+  CGA-Modi 4–6). Ohne Modul bleibt die Box auf diesen Karten im Text. AWE32/64: Spiele mit eigenem AWE-Treiber sprechen den
 Wavetable-Chip (EMU8000, 620h/A20h/E20h) im Vordergrund direkt an,
 hinten ist er stumm. Ein virtueller MPU-401 (330h, UART-Betrieb) gibt
 die MIDI-Daten der Box an den MPU-401 der Karte weiter; die Box im
@@ -1039,6 +1043,10 @@ gibt (`VS_IRQ`, `VS_TICK`, `VS_IOPERM`, `VS_FGRES`, `VS_AUD`).
 Drittes: `VEMS.SYS` – EMS 4.0 der Box (INT 67h, Verwaltung im Modul,
 Seiten über `VS_PGALLOC`/`VS_MAP`/`VS_COPY` wie VDHAllocPages/
 VDHMapPages bei OS/2); den Seitenrahmen wählt weiter der Kernel.
+Grafikmodule `VEGA.SYS`/`VCGA.SYS` (nur auf EGA- bzw. CGA-Karten): Ports
+der Box mit Rohgrafik bleiben gesperrt und gehen ans Modul, das die
+Register mitschreibt (`VDDF_VEGA`/`VDDF_VCGA`, Ereignisse VSAVE/VREST,
+`VS_VREGS`). Treiberplätze (`NDRV`) seit 6.3: 12, CONFIG.SYS bis 8 KB.
 
 Befehle: `DRV_INIT`, `DRV_READ`, `DRV_WRITE` (je ein Block über den
 DMA-Puffer) und `DRV_FLUSH` (Schreib-Cache der Platten leeren: IDE

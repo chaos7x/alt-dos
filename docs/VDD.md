@@ -268,3 +268,50 @@ wieder knapp wird – dann zuerst nur die EMB-Verwaltung (08h/09h/0Bh–0Fh,
 88h/89h/8Eh/8Fh) mit einem Abfrage-Ereignis für CMOS/4309h.
 
 Nächste Stufe damit: 4 (VGA-Hintergrund, Maus), DPMI zuletzt.
+
+## Stand: Stufe 4 – Grafikmodule für EGA und CGA (20.11.2026)
+
+Abwägung: Die Box-Grafik in `v86.c` (rund 4,7 KB) ist nicht karten-
+abhängig – Standard-VGA-Register, VBE über das Video-BIOS, Seiten-
+tabellen, Einfrieren; die kartenabhängigen Teile (Fensterwechsel ET4000/
+Cirrus, VBE 4F04h) brauchen auch FAPI-Programme. Ein Verschieben brächte
+nichts. Was fehlte, war die Grafik auf Karten, deren Register man nicht
+lesen kann: in 86Box geprüft (386DX/40 mit IBM-EGA und CGA) zeigte die
+Box dort gar keine Grafik – `vio_setgfx` lehnte ohne VGA jede Grafik ab,
+der Moduswechsel wurde nur nachgebildet. Lösung wie OS/2 2.x (VCGA.SYS,
+VEGA.SYS neben VVGA): je Grafikklasse ein Modul.
+
+- Kernel: `vid_hwclass` (vgagfx.c: 3 VGA, sonst BDA 0487h -> EGA, sonst
+  Ausstattungswort -> CGA/MDA). Ein Modul mit `VDDF_VEGA`/`VDDF_VCGA` wird
+  nur angenommen, wenn die Klasse passt (`vid_class`). Dann erlaubt
+  `vio_setgfx` Rohgrafik der Box auch ohne VGA. `vga_ports` gibt die
+  Ports ohne VGA nie frei; Zugriffe der Box mit Rohgrafik gehen über
+  `vdd_io` ans Modul (flags Bit 0 vorn, Bit 1 Grafikport), hinten
+  zusätzlich an die Nachbildung des Kernels. `raw_out_mod`/`raw_in_mod`:
+  Register vom Modul (Ereignis VSAVE -> `VS_VREGS`, Aufbau der VGA-
+  Tabellen, damit `raw_kind` wie bisher die Art des Hintergrunds
+  bestimmt), Bild EGA wie VGA über die vier Ebenen, CGA 16 KB bei
+  B8000; zurück über VREST. Text danach über das BIOS (Modus 3, 25
+  Zeilen – die VGA-Tabelle hat 400 Zeilen). INT 10h hinten wartet ohne
+  VGA (keine Nachbildung der Palette).
+- `VEGA.SYS` (drivers/vega.c): schreibt Misc, Sequenzer, CRTC, Grafik,
+  Attribut (mit Flipflop über 3DAh) mit; VREST: Sequenzer anhalten, alles
+  schreiben, Indizes wie in der Box. `VCGA.SYS` (dieselbe Quelle mit
+  -DCGA): 6845 an 3D0h–3D7h, Modus 3D8h, Farbe 3D9h; meldet dem Kernel
+  „einfach, B8000“, damit CGA-Modi hinten weiterlaufen. Nicht entladbar
+  (eine Box mit Rohgrafik bräuchte den Stand).
+- Dabei behoben: (1) `NDRV` 6 -> 12 – mit VCOM/VSB/VEMS waren die
+  Treiberplätze voll, ISO9660.IFS fiel heraus (auch ohne VEGA auf
+  Maschinen mit Netz- oder Mauskarte); Selektoren rücken um 60h.
+  (2) CONFIG.SYS bis 8 KB (vorher 4 KB: eine Zeile mehr, und die ganze
+  Datei wurde übergangen – „Startpartition nicht gefunden“). (3) CGA:
+  16 KB bei B8000 sind bei BC000 gespiegelt – 32 KB zurückzuschreiben
+  überschrieb das hinten Gezeichnete mit der alten Hälfte.
+- Geprüft in 86Box (386DX/40, 4 MB): EGA – `START BGTEST 10` (640×350×16)
+  vorn, Wechsel zu CMD (Text sauber, ISO9660 geladen), zurück, Bild
+  vollständig; früh weggeschaltet bei ~106 von 200 Zeilen, nach 15 s
+  zurück alle 200 (hinten weitergezeichnet); `BGTEST 4` (CGA-Modus auf
+  der EGA) ebenso. CGA mit VCGA.SYS – `BGTEST 4` wie oben. VGA-Gegenprobe
+  (Cirrus, `BGTEST 12` hinten). QEMU: DOOM 1.9 mit SB, EMT/E56/ET
+  byte-gleich, BIOSCMP unverändert.
+- KTEXT2 63.649 Byte – nahezu voll; DGROUP 59.748.
