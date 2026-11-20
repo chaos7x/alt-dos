@@ -123,6 +123,146 @@ void sha256_end(struct sha256 *c, u8 out[32])
         out[i] = (u8)(c->h[i >> 2] >> (24 - 8 * (i & 3)));
 }
 
+/* ---- MD4 / MD5 ---------------------------------------------------------- */
+#define ROL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
+
+static const u32 KM5[64] = {
+    0xd76aa478UL, 0xe8c7b756UL, 0x242070dbUL, 0xc1bdceeeUL, 0xf57c0fafUL, 0x4787c62aUL,
+    0xa8304613UL, 0xfd469501UL, 0x698098d8UL, 0x8b44f7afUL, 0xffff5bb1UL, 0x895cd7beUL,
+    0x6b901122UL, 0xfd987193UL, 0xa679438eUL, 0x49b40821UL, 0xf61e2562UL, 0xc040b340UL,
+    0x265e5a51UL, 0xe9b6c7aaUL, 0xd62f105dUL, 0x02441453UL, 0xd8a1e681UL, 0xe7d3fbc8UL,
+    0x21e1cde6UL, 0xc33707d6UL, 0xf4d50d87UL, 0x455a14edUL, 0xa9e3e905UL, 0xfcefa3f8UL,
+    0x676f02d9UL, 0x8d2a4c8aUL, 0xfffa3942UL, 0x8771f681UL, 0x6d9d6122UL, 0xfde5380cUL,
+    0xa4beea44UL, 0x4bdecfa9UL, 0xf6bb4b60UL, 0xbebfbc70UL, 0x289b7ec6UL, 0xeaa127faUL,
+    0xd4ef3085UL, 0x04881d05UL, 0xd9d4d039UL, 0xe6db99e5UL, 0x1fa27cf8UL, 0xc4ac5665UL,
+    0xf4292244UL, 0x432aff97UL, 0xab9423a7UL, 0xfc93a039UL, 0x655b59c3UL, 0x8f0ccc92UL,
+    0xffeff47dUL, 0x85845dd1UL, 0x6fa87e4fUL, 0xfe2ce6e0UL, 0xa3014314UL, 0x4e0811a1UL,
+    0xf7537e82UL, 0xbd3af235UL, 0x2ad7d2bbUL, 0xeb86d391UL
+};
+static const u8 SM5[16] = { 7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21 };
+static const u8 SM4[12] = { 3, 7, 11, 19, 3, 5, 9, 13, 3, 9, 11, 15 };
+static const u8 IX4[32] = { 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15,
+                            0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15 };
+
+static void md5_blk(struct md5 *c)
+{
+    static u32 x[16];
+    u32 a = c->h[0], b = c->h[1], cc = c->h[2], d = c->h[3], f, t;
+    unsigned i, g;
+    for (i = 0; i < 16; i++)
+        x[i] = c->b[4 * i] | (u32)c->b[4 * i + 1] << 8 | (u32)c->b[4 * i + 2] << 16 |
+               (u32)c->b[4 * i + 3] << 24;
+    if (c->md4) {
+        for (i = 0; i < 48; i++) {
+            if (i < 16) {
+                f = (b & cc) | (~b & d);
+                g = i;
+            } else if (i < 32) {
+                f = ((b & cc) | (b & d) | (cc & d)) + 0x5A827999UL;
+                g = IX4[i - 16];
+            } else {
+                f = (b ^ cc ^ d) + 0x6ED9EBA1UL;
+                g = IX4[i - 32 + 16];
+                if (i >= 32)            /* Runde 3: 0 8 4 12 2 10 6 14 1 9 5 13 3 11 7 15 */
+                    g = IX4[16 + (i - 32)];
+            }
+            t = a + f + x[g];
+            t = ROL(t, SM4[(i >> 4) * 4 + (i & 3)]);
+            a = d; d = cc; cc = b; b = t;
+        }
+    } else {
+        for (i = 0; i < 64; i++) {
+            if (i < 16) {
+                f = (b & cc) | (~b & d);
+                g = i;
+            } else if (i < 32) {
+                f = (d & b) | (~d & cc);
+                g = (5 * i + 1) & 15;
+            } else if (i < 48) {
+                f = b ^ cc ^ d;
+                g = (3 * i + 5) & 15;
+            } else {
+                f = cc ^ (b | ~d);
+                g = (7 * i) & 15;
+            }
+            t = a + f + KM5[i] + x[g];
+            t = ROL(t, SM5[(i >> 4) * 4 + (i & 3)]);
+            a = d; d = cc; cc = b; b += t;
+        }
+    }
+    c->h[0] += a; c->h[1] += b; c->h[2] += cc; c->h[3] += d;
+}
+
+void md5_init(struct md5 *c, int md4)
+{
+    c->h[0] = 0x67452301UL; c->h[1] = 0xefcdab89UL;
+    c->h[2] = 0x98badcfeUL; c->h[3] = 0x10325476UL;
+    c->n = 0;
+    c->k = 0;
+    c->md4 = (u16)md4;
+}
+
+void md5_add(struct md5 *c, const void *d, unsigned n)
+{
+    const u8 *p = d;
+    while (n--) {
+        c->b[c->k++] = *p++;
+        c->n++;
+        if (c->k == 64) {
+            md5_blk(c);
+            c->k = 0;
+        }
+    }
+}
+
+void md5_end(struct md5 *c, u8 out[16])
+{
+    u32 lo = c->n << 3, hi = c->n >> 29;
+    unsigned i;
+    c->b[c->k++] = 0x80;
+    if (c->k > 56) {
+        while (c->k < 64)
+            c->b[c->k++] = 0;
+        md5_blk(c);
+        c->k = 0;
+    }
+    while (c->k < 56)
+        c->b[c->k++] = 0;
+    for (i = 0; i < 4; i++) {
+        c->b[56 + i] = (u8)(lo >> (8 * i));
+        c->b[60 + i] = (u8)(hi >> (8 * i));
+    }
+    md5_blk(c);
+    for (i = 0; i < 16; i++)
+        out[i] = (u8)(c->h[i >> 2] >> (8 * (i & 3)));
+}
+
+void hmac_md5(const u8 *key, unsigned klen, const u8 *d, unsigned n, u8 out[16])
+{
+    static struct md5 c;
+    static u8 k[64], t[16];
+    unsigned i;
+    cr_zero(k, 64);
+    if (klen > 64) {
+        md5_init(&c, 0);
+        md5_add(&c, key, klen);
+        md5_end(&c, k);
+    } else
+        cr_cpy(k, key, klen);
+    for (i = 0; i < 64; i++)
+        k[i] ^= 0x36;
+    md5_init(&c, 0);
+    md5_add(&c, k, 64);
+    md5_add(&c, d, n);
+    md5_end(&c, t);
+    for (i = 0; i < 64; i++)
+        k[i] ^= 0x36 ^ 0x5C;
+    md5_init(&c, 0);
+    md5_add(&c, k, 64);
+    md5_add(&c, t, 16);
+    md5_end(&c, out);
+}
+
 /* ---- HMAC-SHA256, PRF --------------------------------------------------- */
 void hmac_init(struct hmac *h, const void *key, unsigned klen)
 {

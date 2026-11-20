@@ -315,3 +315,31 @@ Programme): `apps/crypto.c` und `apps/tls.c`, benutzt von WGET.
   angenommen. 86Box 386DX/40 mit NE2000: beide Ketten angenommen.
 - Offen: SHA-1-Signaturen (alte Zwischenzertifikate), Sperrlisten/OCSP,
   ECDHE über P-256 (nur X25519), TLS 1.3.
+
+## SMB Stufe 1: SMBCLI (20.11.2026)
+
+`apps/task_smbcli.c` nach [MS-SMB2], [MS-NLMP] und RFC 4178 (nur gelesen):
+NEGOTIATE mit 2.0.2 und 2.1 (CreditCharge ab 2.1), SESSION_SETUP zweimal
+(NTLMSSP NEGOTIATE in SPNEGO NegTokenInit, CHALLENGE aus der Antwort
+gesucht, AUTHENTICATE in NegTokenResp), NTLMv2: NTOWFv2 = HMAC-MD5(MD4
+(UTF-16 Kennwort), UTF-16(GROSS(Benutzer) + Domäne)), Blob mit
+MsvAvTimestamp des Servers, Client-Challenge aus `tls_random` (jetzt in
+`apps/rnd.c`), NTProofStr, Sitzungsschlüssel = HMAC-MD5(NTOWFv2,
+NTProofStr) ohne KEY_EXCH; Signatur HMAC-SHA256 der Nachricht (16 Byte),
+wenn der Server sie verlangt (Gast: nie). TREE_CONNECT, CREATE/CLOSE,
+QUERY_DIRECTORY (FileDirectoryInformation, Datum über FILETIME -> FAT wie
+7ZDEC), READ/WRITE in 16 KB, Löschen über DELETE_ON_CLOSE, Verzeichnis über
+FILE_CREATE + FILE_DIRECTORY_FILE; Zwischenantworten STATUS_PENDING
+werden übergangen. `crypto.c` hat dafür MD4, MD5 und HMAC-MD5 (auf dem
+Rechner gegen Python geprüft, `tools/cryptotest.*`).
+
+Geprüft in QEMU gegen Samba 4.19 (standalone, `server signing =
+mandatory`, Freigabe mit Benutzer): dir, get 1 MB byte-gleich (0,4 s),
+put byte-gleich, md/cd/put/dir/del/rd, Ordner „Ordner Ä“ (Umlaut,
+Leerzeichen), Befehle aus umgeleiteter Eingabe, falsches Kennwort ->
+ERRORLEVEL 4. Reine Programmlogik (kein Kernelteil) – kein 86Box-Lauf.
+
+Weiter (offen): Stufe 2 Laufwerk über `NET USE X: \\Rechner\Freigabe`
+(Redirector als IFS – braucht einen Weg vom Ring-0-Modul zu den Sockets
+von TCPIP.SYS), Stufe 3 Domäne (Kerberos, LDAP, DOMJOIN), SMB 3 (AES-CMAC,
+Verschlüsselung).

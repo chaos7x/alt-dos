@@ -36,6 +36,12 @@ int main(int argc, char **argv)
         rnd(k, 32); rnd(o, 32);
         printf("x25519|"); hx(k, 32); printf("|"); hx(o, 32); printf("|");
         x25519(b, k, o); hx(b, 32); printf("\n");
+        { struct md5 m; md5_init(&m, 0); md5_add(&m, a, n); md5_end(&m, o);
+          printf("md5|"); hx(a, n); printf("|"); hx(o, 16); printf("\n");
+          md5_init(&m, 1); md5_add(&m, a, n); md5_end(&m, o);
+          printf("md4|"); hx(a, n); printf("|"); hx(o, 16); printf("\n");
+          i = rb() % 80; rnd(b, i > 64 ? 64 : i); hmac_md5(b, i > 64 ? 64 : i, a, n, o);
+          printf("hmd5|"); hx(b, i > 64 ? 64 : i); printf("|"); hx(a, n); printf("|"); hx(o, 16); printf("\n"); }
         rnd(b, 48); rnd(a, 64);
         tls_prf(b, 48, "key expansion", a, 64, o, 40);
         printf("prf|"); hx(b, 48); printf("|"); hx(a, 64); printf("|"); hx(o, 40); printf("\n");

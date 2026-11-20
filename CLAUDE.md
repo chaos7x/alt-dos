@@ -5955,6 +5955,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   sauber), virtio-net mit dem WGET-Testlauf aus 6.2 (DHCP, IPv6, 1 MB
   mehrfach byte-gleich, chunked, Fortsetzen, Weiterleitungen). Offen:
   virtio-scsi, -balloon, -serial/Gastagent, -rng, VirtIO 1.0 ohne Legacy.
+- SMB Stufe 1 erledigt (20.11.2026, `docs/NETZWERK.md` „SMB Stufe 1“):
+  `SMBCLI.EXE` (SMB 2.0.2/2.1, NTLMv2 in SPNEGO, Signatur HMAC-SHA256,
+  dir/cd/get/put/del/md/rd), `crypto.c` + MD4/MD5/HMAC-MD5, Zufall in
+  `apps/rnd.c`; in QEMU gegen Samba 4.19 (signing mandatory) geprüft –
+  Testserver: `smbd -D -s /tmp/claude-0/smb/smb.conf` (ncalrpc dir und
+  /run/samba anlegen). Offen: NET USE (IFS), Domäne, SMB 3.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

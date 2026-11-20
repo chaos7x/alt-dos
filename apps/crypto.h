@@ -39,6 +39,18 @@ void sha256_init(struct sha256 *c);
 void sha256_add(struct sha256 *c, const void *d, unsigned n);
 void sha256_end(struct sha256 *c, u8 out[32]);  /* c danach unbrauchbar  */
 
+/* MD4 (RFC 1320, fuer den NT-Hash von NTLM) und MD5 (RFC 1321) */
+struct md5 {
+    u32 h[4];
+    u32 n;                              /* Laenge in Byte                */
+    u8  b[64];
+    u16 k, md4;
+};
+void md5_init(struct md5 *c, int md4);
+void md5_add(struct md5 *c, const void *d, unsigned n);
+void md5_end(struct md5 *c, u8 out[16]);
+void hmac_md5(const u8 *key, unsigned klen, const u8 *d, unsigned n, u8 out[16]);
+
 /* HMAC-SHA256 */
 struct hmac {
     struct sha256 in;
