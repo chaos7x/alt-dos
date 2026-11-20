@@ -341,5 +341,5 @@ der Box laufen andere Befehlsfolgen durch den Recompiler (Fallen, VME).
 Ausweg: Dynarec der VM ausschalten (genauer Interpreter). Nachtrag
 (20.11.2026): Unter MS-DOS mit EMM386 (auch V86) kein Absturz, unter AT-DOS
 auch mit `PVI=OFF`; auf einem x86-64-Rechner lief CKINFO hier ohne
-Absturz. In einem neueren 86Box-Build ist der Fehler weg (vom Nutzer
+Absturz. In 86Box-Build 11050 ist der Fehler weg (vom Nutzer
 bestätigt) – Fehler in 86Box, behoben.
