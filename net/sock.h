@@ -495,8 +495,9 @@ static unsigned net_resolve(struct net_call __far *c)
         }
     }
     /* Familie 0: AAAA zuerst, wenn es eine globale IPv6-Adresse gibt
-       (RFC 6724 vereinfacht), dann A; sonst nur A */
-    for (k = 0; k < NNETIF && nif[k].gast != 2; k++)
+       (RFC 6724 vereinfacht; eine ULA fd00:: zaehlt nicht - mit ihr kommt
+       man nicht ins Internet), dann A; sonst nur A */
+    for (k = 0; k < NNETIF && (nif[k].gast != 2 || IS_ULA(nif[k].ga)); k++)
         ;
     want6 = u->family == AF_INET6 || (u->family == 0 && k < NNETIF);
     n = 0;

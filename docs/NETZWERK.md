@@ -145,6 +145,12 @@ im Modul und wachen über `net_kick` bzw. Fristen auf.
   DHCPv6 (DNS nur aus RDNSS), keine Datenschutzadressen; Kennung EUI-64
   statt RFC 7217. Ein Nachbarcache für ARP und ND (16-Byte-Schlüssel),
   eigene gespiegelte Rahmen (gleiche Absender-MAC) werden verworfen.
+  Nur eine Adresse je Karte (außer link-lokal): kündigt der Router
+  mehrere Präfixe an (Fritz!Box: öffentlich + ULA fd00::/64), gewinnt
+  das öffentliche – vorher das zuletzt genannte, oft die ULA, und damit
+  kein IPv6 ins Internet (vom Nutzer an seinem LAN gemeldet, 20.11.2026).
+  Hosts mit ULA erreicht man dann über den Router. Eine ULA zählt beim
+  Auflösen von Namen nicht als globale Adresse (AAAA nicht zuerst).
 - IPv6 (eigene Stufe): Kopf + Erweiterungsköpfe überspringen (Hop-by-
   Hop, Routing Typ 0 verwerfen, Fragment – Zusammensetzen wie IPv4),
   ICMPv6 (Echo, Fehler, Packet Too Big -> Pfad-MTU je Ziel), Neighbor
