@@ -318,6 +318,20 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (NAWS); ohne ECHO des Servers Zeilenbetrieb mit eigenem Echo (SMTP,
   POP3 …). Pfeil-, Bild-, Pos1/Ende- und F1–F4-Tasten als VT100-Folgen,
   `-b` sendet ^H statt DEL. Strg+] beendet
+- `SSH [-p Port] [-l Benutzer] [-4|-6] [-v] [-t] [Benutzer@]Rechner
+  [Befehl]` (6.3): Anmeldung über SSH-2 – curve25519-sha256 (strenger
+  Schlüsseltausch gegen „Terrapin“), Hostschlüssel ssh-ed25519,
+  ecdsa-sha2-nistp256/384, rsa-sha2-512/256, Verschlüsselung aes128/256-gcm
+  oder aes128/256-ctr mit hmac-sha2-256(-etm), Anmeldung mit Kennwort oder
+  keyboard-interactive. Ohne Befehl ein Terminal wie xterm im Vollbild
+  (Farben, Rollbereiche, Liniengrafik, UTF-8 -> CP437), mit Befehl geht
+  die Ausgabe auf STDOUT (umleitbar) und der Rückgabewert wird ERRORLEVEL.
+  `~.` am Zeilenanfang trennt. Bekannte Rechner in
+  `\DOS\SYSTEM\SSHHOSTS.TXT` (oder `%SSH_HOSTS%`, Fingerabdruck SHA256
+  wie OpenSSH), beim ersten Mal wird nachgefragt
+- `SFTP [-P Port] [-l Benutzer] [-b Datei] [Benutzer@]Rechner` (6.3):
+  Dateien über SSH (SFTP 3): ls/dir, cd, pwd, lcd, lpwd, get, put, mget,
+  mput, rm, mkdir, rmdir, rename, chmod, `!Befehl`, bye
 - `SNTP [Server] [/N] [/Q] [/W:s] [-4|-6]` stellt die Uhr aus dem Netz
   (SNTP, Server aus `%NTPSERVER%`, sonst pool.ntp.org; `/N` nur
   anzeigen). Zeitzone über `TZ` im POSIX-Format wie Unix/DJGPP, z. B.

@@ -4962,6 +4962,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   aus), Pfade für FAPI über `fn_dir` (Kontext). DGROUP 64.872 -> 60.502
   Byte. Weitere Kandidaten in v86.c: `dp_mem` 1,5 KB, `sb_buf` 1 KB,
   `xh`/`dp_patch` je 768 Byte.
+- **SSH und SFTP** (Wunsch des Nutzers, 20.11.2026, 6.3 auf `main`):
+  `apps/ssh.c` (Transport/Anmeldung/Kanal, eine Verbindung), `apps/vt.h`
+  (xterm-Teilmenge in den LVB), `apps/ed25519.c` (Prüfung nach RFC 8032,
+  fe_* aus crypto.c exportiert; auf dem Rechner gegen Python geprüft),
+  `gcm_keyl` (AES-256-GCM). Puffer je 8 KB (`SSH_MAXDATA`, DGROUP: SSH
+  60 KB, SFTP knapp 64 KB). Testserver: paramiko im Scratchpad
+  (`/tmp/claude-0/sshd/srv.py`, Benutzer test/Geheim123!, Optionen hk=/ci=/
+  mac=/kbd) – ein Systembenutzer + sshd war hier nicht erlaubt. In QEMU
+  geprüft: ed25519+aes128-gcm (Shell, Farben, exec), ecdsa+aes256-gcm,
+  rsa-sha2-512+aes128-ctr+etm, rsa-sha2-256+aes256-ctr+hmac; Fingerabdruck
+  gleich `ssh-keygen -lf`. Offen: SFTP-Lauf, Ed25519-Zeit auf 286/386,
+  echtes OpenSSH, Umlaute über die Tastatur.
 - **Prozessor in der Box** (vom Nutzer gemeldet, 20.11.2026: MSD nannte
   auf dem P3B-F „80386“): v86.c POPFD warf das obere Flag-Wort weg – AC/ID
   ließen sich nie umschalten. Jetzt gehen AC (Bit 18) und ID (Bit 21) in

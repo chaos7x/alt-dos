@@ -75,6 +75,7 @@ void aes_dec(const struct aes *a, const u8 in[16], u8 out[16]);
    gcm_open -> 0 = Tag stimmt (Daten entschluesselt) */
 struct gcm { struct aes k; u8 h[16]; };
 void gcm_key(struct gcm *g, const u8 key[16]);
+void gcm_keyl(struct gcm *g, const u8 *key, unsigned klen);   /* 16 oder 32 */
 void gcm_seal(const struct gcm *g, const u8 iv[12], const u8 *aad, unsigned alen,
               u8 *d, unsigned n, u8 tag[16]);
 int  gcm_open(const struct gcm *g, const u8 iv[12], const u8 *aad, unsigned alen,
@@ -83,5 +84,17 @@ int  gcm_open(const struct gcm *g, const u8 iv[12], const u8 *aad, unsigned alen
 /* X25519: out = k * u (32 Byte, Little Endian) */
 void x25519(u8 out[32], const u8 k[32], const u8 u[32]);
 void x25519_base(u8 out[32], const u8 k[32]);   /* u = 9             */
+
+/* Feldelemente mod 2^255-19 (16 Worte, Little Endian, < 2^256) fuer
+   Ed25519 (apps/ed25519.c) */
+void fe_add(u16 *o, const u16 *a, const u16 *b);
+void fe_sub(u16 *o, const u16 *a, const u16 *b);
+void fe_mul(u16 *o, const u16 *a, const u16 *b);
+void fe_freeze(u16 *o);                         /* -> voll reduziert */
+void fe_inv(u16 *o, const u16 *z);
+
+/* Ed25519 (RFC 8032): Signatur sig (64 Byte) ueber m mit dem oeffentlichen
+   Schluessel pk pruefen -> 0 = gueltig. Braucht SHA-512 (apps/pki.c). */
+int ed25519_verify(const u8 pk[32], const u8 *m, unsigned n, const u8 sig[64]);
 
 #endif

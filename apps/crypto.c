@@ -478,8 +478,13 @@ static void ghash(const u8 h[16], u8 y[16], const u8 *d, unsigned n)
 
 void gcm_key(struct gcm *g, const u8 key[16])
 {
+    gcm_keyl(g, key, 16);
+}
+
+void gcm_keyl(struct gcm *g, const u8 *key, unsigned klen)
+{
     u8 z[16];
-    aes_key(&g->k, key);
+    aes_keyl(&g->k, key, klen);
     cr_zero(z, 16);
     aes_enc(&g->k, z, g->h);
 }
@@ -572,7 +577,7 @@ static void fe_fold(u16 *o, u16 c)      /* o += c * 38                    */
     }
 }
 
-static void fe_add(u16 *o, const u16 *a, const u16 *b)
+void fe_add(u16 *o, const u16 *a, const u16 *b)
 {
     unsigned i;
     u32 t = 0;
@@ -584,7 +589,7 @@ static void fe_add(u16 *o, const u16 *a, const u16 *b)
     fe_fold(o, (u16)t);
 }
 
-static void fe_sub(u16 *o, const u16 *a, const u16 *b)
+void fe_sub(u16 *o, const u16 *a, const u16 *b)
 {
     unsigned i, br = 0;
     u32 t;
@@ -605,7 +610,7 @@ static void fe_sub(u16 *o, const u16 *a, const u16 *b)
     }
 }
 
-static void fe_mul(u16 *o, const u16 *a, const u16 *b)
+void fe_mul(u16 *o, const u16 *a, const u16 *b)
 {
     static u16 r[32];
     unsigned i, j;
@@ -642,7 +647,7 @@ static void fe_cswap(u16 *a, u16 *b, unsigned s)
     }
 }
 
-static void fe_freeze(u16 *o)
+void fe_freeze(u16 *o)
 {
     static const u16 p[16] = { 0xFFED, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
         0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0x7FFF };
@@ -660,7 +665,7 @@ static void fe_freeze(u16 *o)
     }
 }
 
-static void fe_inv(u16 *o, const u16 *z)    /* z^(p-2)                    */
+void fe_inv(u16 *o, const u16 *z)    /* z^(p-2)                    */
 {
     static fe c;
     int a;

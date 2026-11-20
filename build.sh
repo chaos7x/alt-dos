@@ -174,7 +174,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -182,6 +182,8 @@ wcc $CFLAGS -fo=$B/crypto.o apps/crypto.c      # SHA-256, AES-GCM, X25519 (TLS)
 wcc $CFLAGS -fo=$B/tls.o apps/tls.c            # TLS-1.2-Client (WGET)
 wcc $CFLAGS -fo=$B/pki.o apps/pki.c            # X.509, RSA, ECDSA, SHA-384/512
 wcc $CFLAGS -fo=$B/rnd.o apps/rnd.c            # Zufall (FAPI_RANDOM gehasht)
+wcc $CFLAGS -fo=$B/ed25519.o apps/ed25519.c    # Ed25519-Pruefung (SSH)
+wcc $CFLAGS -fo=$B/ssh.o apps/ssh.c            # SSH-2-Client (SSH, SFTP)
 wcc $CFLAGS -fo=$B/krbcrypt.o apps/krbcrypt.c  # SHA-1, PBKDF2, AES-CTS (Kerberos)
 wcc $CFLAGS -fo=$B/krb5.o apps/krb5.c          # Kerberos v5 (KINIT, SMBCLI)
 wcc $CFLAGS -fo=$B/lzh.o apps/lzh.c          # LH5-Familie, lh1, ARJ, ZOO-LZW
@@ -198,6 +200,7 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
     [ $t = sntp ] && U="$U file $B/arcutil.o"
     [ $t = wget ] && U="$U file $B/tls.o file $B/pki.o file $B/rnd.o file $B/crypto.o"
+    case " ssh sftp " in *" $t "*) U="$U file $B/ssh.o file $B/ed25519.o file $B/pki.o file $B/rnd.o file $B/crypto.o" ;; esac
     [ $t = smbcli ] && U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
     case " kinit klist kdestroy " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
@@ -227,7 +230,7 @@ nasm -f bin apps/opltest.asm -o $B/opltest.com
 BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za setver more find grep less sort fc comp cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget ftp smbcli"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget ftp smbcli sftp"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -307,7 +310,7 @@ DEMOFILES="$B/bioscmp.com BIOSCMP.COM  $B/task_a.exe TASKA.EXE  $B/task_b.exe TA
        $B/task_grafik.exe GRAFIK.EXE  $B/hallo.com HALLO.COM  $B/boxtest.com BOXTEST.COM
        $B/ODE.MID ODE.MID  $B/ODE.IMF ODE.IMF"
 # Werkzeuge der Setup-Diskette 2 (Packprogramme, GNU-Textwerkzeuge, ...)
-HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_aweload.exe AWELOAD.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_compress.exe COMPRESS.EXE"
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_aweload.exe AWELOAD.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_ssh.exe SSH.EXE  $B/task_sftp.exe SFTP.EXE"
 # Testprogramme (Setup-Diskette 2)
 HDDEMO="$B/task_fragtest.exe FRAGTEST.EXE  $B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
