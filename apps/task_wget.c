@@ -10,7 +10,7 @@
  *   -T s       Frist fuer Verbinden und je Empfang (Vorgabe 30 s)
  *   -4 / -6    nur IPv4 bzw. IPv6
  * HTTP/1.1 mit Connection: close, Content-Length oder chunked, bis zu
- * 5 Weiterleitungen (301/302/303/307/308). https:// kommt mit TLS (6.3).
+ * 5 Weiterleitungen (301/302/303/307/308). https:// (TLS) gibt es erst ab 6.3 (386).
  * Vorhandene Dateien werden nur mit -O oder -c ueberschrieben bzw.
  * fortgesetzt. ERRORLEVEL wie GNU wget: 0 ok, 1 Fehler, 2 Aufruf,
  * 3 Datei, 4 Netz, 8 Fehlerantwort des Servers.
@@ -102,7 +102,7 @@ static int parse_url(const char *u)
     unsigned k = 0, n;
     const char *p = u;
     if (!lcmp(p, "https://", 8))
-        die("https:// folgt mit TLS in AT-DOS 6.3.", 1);
+        die("https:// (TLS) gibt es erst ab AT-DOS 6.3 f\x81r den 386.", 1);
     if (!lcmp(p, "http://", 7))
         p += 7;
     else if (!lcmp(p, "ftp://", 6))
