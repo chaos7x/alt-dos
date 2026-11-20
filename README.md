@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.2 im Test (Zweig `6.2`; freigegeben: 6.1 auf `6.1`, 6.0 auf `6.0`, 286-Linie 5.4 auf `5.4`, 5.5 im Test auf `5.5`): Netzwerk mit TCP/IP und IPv6, Firewall, WGET, FTP, TELNET, SNTP, Karten NE2000/RTL8139/PCnet/e1000, Sperren je Laufwerk auch für CD-Dateisysteme, acht Loop-Laufwerke
+# alt-dos – AT-DOS 6.2 (Zweig `6.2`, Release `v6.2`; freigegeben: 6.1 auf `6.1`, 6.0 auf `6.0`, 286-Linie 5.4 auf `5.4`, 5.5 im Test auf `5.5`): Netzwerk mit TCP/IP und IPv6, Firewall, WGET, FTP, TELNET, SNTP, Karten NE2000/RTL8139/PCnet/e1000, Sperren je Laufwerk auch für CD-Dateisysteme, acht Loop-Laufwerke
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu

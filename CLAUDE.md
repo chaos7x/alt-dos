@@ -20,7 +20,13 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.2 in der Prüfung (Zweig `6.2`), 6.1 fertig, Weiterarbeit (6.3) auf `main`
+## Aktueller Stand: AT-DOS 6.2 fertig (Zweig `6.2`, Release `v6.2`), Weiterarbeit (6.3) auf `main`
+
+AT-DOS 6.2 ist fertig (Entscheidung des Nutzers, 20.11.2026: „kannst die
+6.2 freigeben“): Zweig `6.2` = Stand der Freigabe, ein Push dorthin baut
+per CI das Release `v6.2` (als neuestes markiert, löscht `test-6.2`);
+`v6.1` baut seitdem mit `--latest=false`. Fehlerbehebungen für 6.2 auf
+`6.2` und `main`.
 
 AT-DOS 6.2 zur Prüfung (Wunsch des Nutzers, 19.11.2026: „Setz schon mal
 die Version hoch und mach einen branch dazu“ – er testet, findet er

@@ -56,9 +56,9 @@ jobs:
           gh release create latest build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
             --prerelease \
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
-            --notes "Weiterarbeit nach AT-DOS 6.2 (Zweig main, 6.3), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). 6.2 zur Pruefung steht in test-6.2, das fertige 6.1 im Release v6.1, 6.0 in v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Setup-Diskette 1 (startfähig, Notfalldiskette, SETUP richtet AT-DOS auf der Festplatte ein), atdos-fd2.img: Setup-Diskette 2 (DOS-Box, Packprogramme, Zeichensätze, Demos). atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+            --notes "Weiterarbeit nach AT-DOS 6.2 (Zweig main, 6.3), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). das fertige 6.2 im Release v6.2, 6.1 in v6.1, 6.0 in v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Setup-Diskette 1 (startfähig, Notfalldiskette, SETUP richtet AT-DOS auf der Festplatte ein), atdos-fd2.img: Setup-Diskette 2 (DOS-Box, Packprogramme, Zeichensätze, Demos). atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
-      - name: Testfassung "test-6.2" veroeffentlichen (Zweig 6.2)
+      - name: Release "v6.2" veroeffentlichen (Zweig 6.2)
         if: github.ref == 'refs/heads/6.2' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,10 +66,11 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
           gh release delete test-6.2 --yes --cleanup-tag 2>/dev/null || true
-          gh release create test-6.2 build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" --prerelease --latest=false \
-            --title "AT-DOS 6.2 zur Pruefung, Build $BNO" \
-            --notes "AT-DOS 6.2 vor der Freigabe (Zweig 6.2) = 6.1 plus Netzwerk: TCP/IP mit IPv6 und Firewall (TCPIP.SYS), Karten NE2000, RTL8139, PCnet, e1000, Werkzeuge PING, IPCONFIG, NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP; Sperren je Laufwerk auch fuer CD-Dateisysteme, acht Loop-Laufwerke, DETACH ohne Konsole, XCOPY /I. Nach der Pruefung wird daraus das Release v6.2. atdos-fd.img/atdos-fd2.img: Setup-Disketten 1 und 2. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+          gh release delete v6.2 --yes --cleanup-tag 2>/dev/null || true
+          gh release create v6.2 build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --latest \
+            --title "AT-DOS 6.2, Build $BNO" \
+            --notes "AT-DOS 6.2 (Zweig 6.2) fuer den 386 und neuer = 6.1 plus Netzwerk: TCP/IP mit IPv6 (SLAAC, globale und lokale Adresse) und Firewall (TCPIP.SYS), Karten NE2000, RTL8139, PCnet, e1000, Werkzeuge PING, IPCONFIG, NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP; Sperren je Laufwerk auch fuer CD-Dateisysteme, acht Loop-Laufwerke, DETACH ohne Konsole, XCOPY /I, CONFIG.SYS bis 8 KB, F8 beim Start (CONFIG.SYS und AUTOEXEC.CMD schrittweise). Mindestens 386 mit 4 MB. atdos-fd.img/atdos-fd2.img: Setup-Disketten 1 und 2. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
       - name: Release "v6.1" veroeffentlichen (Zweig 6.1)
         if: github.ref == 'refs/heads/6.1' && github.event_name != 'pull_request'
@@ -80,7 +81,7 @@ jobs:
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
           gh release delete v6.1 --yes --cleanup-tag 2>/dev/null || true
           gh release create v6.1 build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" --latest \
+            --target "$GITHUB_SHA" --latest=false \
             --title "AT-DOS 6.1, Build $BNO" \
             --notes "AT-DOS 6.1 (Zweig 6.1) fuer den 386 und neuer = 6.0 plus: Installation von zwei Setup-Disketten (SETUP, FDISK/FORMAT wie MS-DOS), Speicher wie OS/2 1.x (Code verwerfen und nachladen, Segmente verschieben, Auslagerungsdatei SWAPPER.DAT fuer Programme und DOS-Boxen), Loop-Laufwerke (ISO, IMG, VHD; LOOP=), DoubleSpace/DriveSpace 6 und DriveSpace 3 lesen und schreiben mit PACKDISK (/CREATE, /COMPRESS, /CHECK), FAT32 -> FAT16 mit CONVERT (auch beim Neustart), MSCDEX in der DOS-Box, AHCI (SATA) und Ausschalten ueber ACPI fuer VMs, DMESG, Werkzeuge (STRINGS, MD5SUM/SHA1SUM, HEXDUMP/XXD). Mindestens 386 mit 4 MB (2 MB nur zum Ausprobieren). atdos-fd.img/atdos-fd2.img: Setup-Disketten 1 und 2. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
