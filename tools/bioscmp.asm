@@ -37,7 +37,16 @@ start:  mov     sp, stk_end
         int     21h
         mov     ax, 4C01h
         int     21h
-.ok:    call    t_bios
+.ok:    mov     ah, 19h                 ; Laufwerk und Verzeichnis merken
+        int     21h                     ; (die DOS-Tests wechseln es)
+        mov     [cdrv], al
+        add     al, 'A'
+        mov     [cdir], al
+        mov     si, cdir + 3
+        xor     dl, dl
+        mov     ah, 47h
+        int     21h
+        call    t_bios
         call    t_bda
         call    t_video
         call    t_kbd
@@ -53,8 +62,24 @@ start:  mov     sp, stk_end
         call    t_mux
         call    cleanup
         call    flush
+        mov     dl, [cdrv]              ; Laufwerk/Verzeichnis zurueck
+        mov     ah, 0Eh
+        int     21h
+        mov     dx, cdir
+        mov     ah, 3Bh
+        int     21h
+        mov     ax, 3                   ; Bildschirm sauber (die INT-10h-
+        int     10h                     ; Tests lassen Cursor/Reste stehen)
+        mov     dx, m_done
+        mov     ah, 9
+        int     21h
         mov     ax, 4C00h
         int     21h
+
+m_done  db      'BIOSCMP fertig.', 13, 10, '$'
+cdrv    db      0
+cdir    db      'C:\'
+        times   65 db 0
 
 m_use   db      'BIOSCMP Ausgabedatei [Laufwerk:]', 13, 10, '$'
 
