@@ -325,7 +325,8 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
 - MS-DOS statt FreeDOS in der Kompatibilitätsbox (wie auf 6.x): **MKDOSIMG**
   `Quelle: [Werkzeuge] [/N:NAME.IMG]` baut aus der eigenen DOS-Kopie
   (Startdiskette oder Festplatte mit installiertem MS-DOS 4.0–6.22 bzw.
-  PC DOS) `\DOS\MDOS\NAME.IMG`, COMMAND.COM und Werkzeuge kommen nach
+  PC DOS) `\DOS\MDOS\NAME.IMG` (so klein wie möglich, meist 360 KB – die
+  Box hält es im Speicher), COMMAND.COM und Werkzeuge kommen nach
   `\DOS\MDOS\NAME\`; LTEMM.EXE kommt mit, in der CONFIG.SYS des Abbilds
   steht `REM DEVICE=A:\LTEMM.EXE /p:D000 /i:260` (REM weg mit Lo-tech-Karte);
   `DOS_IMAGE=NAME.IMG` unter `[*]` in

@@ -403,13 +403,60 @@ static unsigned kbd_get(void)
     return kbd_norm(r.ax);
 }
 
+/* Alt allein gedrueckt und losgelassen -> KEY_ALT wie der Tastatur-
+   treiber von AT-DOS (EDIT oeffnet damit das Menue); das BIOS meldet
+   das nicht. Nur die linke Alt-Taste (rechts ist AltGr); ohne
+   erweiterte Tastatur Bit 3 von 0417h. alt_st: 1 = Alt allein unten,
+   2 = mit anderer Taste benutzt, 3 = losgelassen, wartet noch. Das
+   Zeichen von Alt+Buchstabe kann erst nach dem Loslassen im Puffer
+   stehen (in der DOS-Box von AT-DOS gesehen) - KEY_ALT gilt daher erst
+   zwei BIOS-Takte nach dem Loslassen, kommt bis dahin eine Taste,
+   verfaellt es. */
+static unsigned char alt_st;
+static unsigned alt_t;
+static unsigned char alt_dn(void)
+{
+    return (BIOS(0x96) & 0x10) ? (BIOS(0x18) & 2) : (BIOS(0x17) & 8);
+}
+
+static void alt_poll(void)
+{
+    unsigned char dn = alt_dn();
+    if (dn) {
+        if (BIOS(0x17) & 7)             /* Umschalt/Strg dazu            */
+            alt_st = 2;
+        else if (!alt_st || alt_st == 3)
+            alt_st = 1;
+    } else if (alt_st == 1) {
+        alt_st = 3;
+        alt_t = BIOSW(0x6C);
+    } else if (alt_st == 2)
+        alt_st = 0;
+}
+
+static unsigned kbd_peek_a(void)        /* wie kbd_peek, mit KEY_ALT     */
+{
+    unsigned k = kbd_peek();
+    if (k != 0xFFFF) {
+        alt_st = alt_dn() ? 2 : 0;      /* Alt+Taste: kein Menue (auch
+                                           wenn Alt noch unten ist)      */
+        return k;
+    }
+    alt_poll();
+    return alt_st == 3 && (unsigned)(BIOSW(0x6C) - alt_t) >= 2 ? KEY_ALT : 0xFFFF;
+}
+
 static unsigned kbd_charin(void)
 {
     unsigned k;
     for (;;) {
         if (brk_flag && brk())
             return 0;
-        if (kbd_peek() != 0xFFFF) {
+        if ((k = kbd_peek_a()) == KEY_ALT && alt_st == 3) {
+            alt_st = 0;
+            return KEY_ALT;
+        }
+        if (k != 0xFFFF) {
             k = kbd_get();
             if (is_break(k)) {
                 brk();
@@ -1338,7 +1385,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
     /* Tastatur, Maus */
     case FAPI_KBDCHARIN:    rc = kbd_charin(); break;
     case FAPI_KBDPEEK:
-        rc = kbd_peek();
+        rc = kbd_peek_a();
         if (rc == 0xFFFF)
             rc = 0;
         else if (is_break(rc)) {

@@ -223,6 +223,7 @@ void main(void)
     if (a[0] == '/' && a[1] == '?') {
         puts("Startet DOS in der Kompatibilit\x84tsbox (Real Mode).\r\n\r\n"
              "RBOX [/P] [Abbild.IMG | Datei.COM]\r\n\r\n"
+             "Ein Abbild ohne Pfad wird auch in \\DOS\\MDOS gesucht.\r\n"
              "Ohne Angabe startet FreeDOS aus \\DOS\\MDOS\\FREEDOS.IMG des\r\n"
              "Startlaufwerks. Alt+Esc wechselt zu den anderen Sitzungen,\r\n"
              "Strg+Alt+Entf beendet die Box.\r\n\r\n"
@@ -257,6 +258,20 @@ void main(void)
         else
             DosClose(h);
         l += 4;
+    }
+    if (base_name(a) == a) {            /* blosser Name nicht hier: wie   */
+        static char t[FAPI_PATHLEN];    /* MKDOSIMG es meldet, in       */
+        unsigned h = DosOpen(a);        /* \DOS\MDOS des Startlaufwerks */
+        if (FAPI_FAILED(h)) {
+            if (FAPI_FAILED(DosGetEnv("COMSPEC", t, sizeof(t))) || t[1] != ':')
+                scopy(t, "C:", sizeof(t));
+            t[2] = 0;
+            scat(t, "\\DOS\\MDOS\\", sizeof(t));
+            scat(t, a, sizeof(t));
+            scopy(path, t, sizeof(path));
+            l = slen(a);
+        } else
+            DosClose(h);
     }
     e = l >= 4 ? a + l - 4 : a;
     if (same(e, ".IMG")) {              /* Name fuer RBSHELL (INT E0h 19h) */

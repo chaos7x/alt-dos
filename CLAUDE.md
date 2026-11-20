@@ -32,6 +32,25 @@ Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
 nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
 Laufwerke als „fern“, Drucken.
 
+Speicher der Kompatibilitätsbox (20.11.2026, beim Test des Nutzers auf
+der 4-MB-VM mit PROTECTONLY=NO: „BIOS, Boot, Puffer“ 2.784K, verfügbar nur
+386K): die Box hält ihr Startabbild ganz im erweiterten Speicher (rbox.c
+`rb_boot`), MKDOSIMG legte immer 1,44 MB an, dazu blieb der 257-KB-Puffer
+für die Grafik nach dem ersten Alt+Esc belegt, auch bei einer Textbox.
+Jetzt: MKDOSIMG summiert die Dateien (+ 32 KB Rand, Idee des Nutzers) und
+nimmt das kleinste Format 360/720/1.200/1.440 KB (`fmts`, BPB danach) –
+MS-DOS 5.0 bis PC DOS 2000 passen in 360 KB; rbox.c holt den Grafikpuffer
+nur, wenn die Karte im Grafikbetrieb ist (`rb_is_gfx`, GC 6 Bit 0), und
+gibt ihn nach dem Zurückladen frei (`rb_gfx_drop`). Gemessen auf dem SCAT
+(4 MB, MS-DOS 5 in der Box, Textbox hinten): 1.306K statt 2.784K.
+`RBOX NAME` sucht ein Abbild ohne Pfad auch in `\DOS\MDOS` (MKDOSIMG
+meldet es so). Dabei (vom Nutzer gemeldet): Alt allein öffnete das Menü
+von gebundenem EDIT in der Box nicht – `alt_poll` im Stub (stub/fapidos.c)
+gab es nur auf main; übernommen. Geprüft: QEMU (doscmp für MS-DOS 5.0,
+6.22, PC DOS 2000 aus 360-KB-Abbildern; RBGFX hin und zurück, MEM) und
+86Box SCAT 286/4 MB über den Adaptec (MKDOSIMG, RBGFX „OK“, MEM, EDIT
+mit Alt und Alt+D).
+
 MS-DOS in der Kompatibilitätsbox (Wunsch des Nutzers, 19.11.2026,
 Rückport von main): `MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]`
 (apps/task_mkdosimg.c, nur Platte – HDDOS) baut aus der eigenen DOS-Kopie

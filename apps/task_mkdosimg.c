@@ -15,7 +15,9 @@
  *               dort ein DOS gibt (nicht auf einem Laufwerk mit AT-DOS)
  *   /N:         Name des Abbilds (Vorgabe MSDOS.IMG bzw. PCDOS.IMG)
  *
- * Ergebnis (5.x, Kompatibilitaetsbox): X:\DOS\MDOS\NAME.IMG (1,44-MB-Abbild, FAT12): eigener
+ * Ergebnis (5.x, Kompatibilitaetsbox): X:\DOS\MDOS\NAME.IMG (FAT12, das
+ * kleinste Diskettenformat 360 KB - 1,44 MB, in das die Dateien mit
+ * 32 KB Rand passen - die Box haelt es im Speicher): eigener
  * Startsektor (boot/mdosboot.asm, Ladeprotokoll von DOS 4.0-6.22 - der
  * Startsektor der Quelle wird nicht gebraucht), die Systemdateien zuerst (IO.SYS zusammenhaengend
  * ab Cluster 2, wie es der Startsektor verlangt), RBSHELL.COM und
@@ -88,21 +90,49 @@ static void put1(const char *dir, const char *name, unsigned attr)
     DosSetFInfo(to, &ff);
 }
 
-/* 1,44 MB mit eigenem Startsektor (boot_md), BPB fuer 1,44 MB */
-static void make_image(void)
+/* Diskettenformate fuer das Abbild: kleinstes, in das die Dateien passen
+   (5.x haelt das ganze Abbild im erweiterten Speicher - auf 2-4-MB-
+   Rechnern zaehlt jedes KB). Sektoren, Sektoren je Cluster, Stamm-
+   eintraege, Medienbyte, Sektoren je FAT, je Spur, nutzbare KB */
+static const struct fmt {
+    unsigned secs, spc, root, media, spf, spt, kb;
+} fmts[] = {
+    {  720, 2, 112, 0xFD, 2,  9,  354 },
+    { 1440, 2, 112, 0xF9, 3,  9,  713 },
+    { 2400, 1, 224, 0xF9, 7, 15, 1185 },
+    { 2880, 1, 224, 0xF0, 9, 18, 1423 }
+};
+#define IMG_RESERVE 32                  /* KB Rand: CONFIG.SYS, Cluster   */
+
+/* KB, die dir\name im Abbild braucht (0, wenn es sie nicht gibt) */
+static unsigned need_kb(const char *dir, const char *name)
 {
-    static const unsigned char bpb[] = {
-        0x00, 0x02, 0x01, 0x01, 0x00, 0x02, 0xE0, 0x00, 0x40, 0x0B, 0xF0,
-        0x09, 0x00, 0x12, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x29
-    };
-    unsigned h, i, s;
-    unsigned long sz = 1474560UL, pos;
+    if (!have(dir, name))
+        return 0;
+    return (unsigned)((e.size + 1023) >> 10);
+}
+
+/* Abbild mit eigenem Startsektor (boot_md), BPB nach dem Format f */
+static void make_image(const struct fmt *f)
+{
+    unsigned h, i, s, rs = f->root / 16;
+    unsigned long sz = (unsigned long)f->secs << 9, pos;
 
     for (i = 0; i < 512; i++)
         bs[i] = boot_md[i];
-    for (i = 0; i < sizeof(bpb); i++)       /* 0Bh-26h               */
-        bs[0x0B + i] = bpb[i];
+    bs[0x0B] = 0x00; bs[0x0C] = 0x02;       /* 512 Byte je Sektor    */
+    bs[0x0D] = (unsigned char)f->spc;
+    bs[0x0E] = 1; bs[0x0F] = 0;             /* reservierte Sektoren  */
+    bs[0x10] = 2;                           /* FATs                  */
+    bs[0x11] = (unsigned char)f->root; bs[0x12] = (unsigned char)(f->root >> 8);
+    bs[0x13] = (unsigned char)f->secs; bs[0x14] = (unsigned char)(f->secs >> 8);
+    bs[0x15] = (unsigned char)f->media;
+    bs[0x16] = (unsigned char)f->spf; bs[0x17] = 0;
+    bs[0x18] = (unsigned char)f->spt; bs[0x19] = 0;
+    bs[0x1A] = 2; bs[0x1B] = 0;             /* Koepfe                */
+    for (i = 0x1C; i < 0x26; i++)           /* versteckt, gross, Lw. */
+        bs[i] = 0;
+    bs[0x26] = 0x29;
     bs[0x27] = 0x41; bs[0x28] = 0x54;       /* Seriennummer          */
     bs[0x29] = 0x44; bs[0x2A] = 0x4F;
     for (i = 0; i < 11; i++)
@@ -113,15 +143,15 @@ static void make_image(void)
     if (FAPI_FAILED(h))
         die("Abbild laesst sich nicht anlegen");
     if (FAPI_FAILED(DosNewSize(h, &sz)))
-        die("kein Platz fuer das Abbild (1,4 MB)");
+        die("kein Platz fuer das Abbild");
     pos = 0;
     DosSeek(h, &pos);
     DosWrite(h, bs, 512);
-    for (s = 1; s < 1 + 18 + 14; s++) {     /* FATs und Stamm        */
+    for (s = 1; s < 1 + 2 * f->spf + rs; s++) {     /* FATs und Stamm */
         for (i = 0; i < 512; i++)
             sec[i] = 0;
-        if (s == 1 || s == 10) {
-            sec[0] = 0xF0;
+        if (s == 1 || s == 1 + f->spf) {
+            sec[0] = (unsigned char)f->media;
             sec[1] = sec[2] = 0xFF;
         }
         if (DosWrite(h, sec, 512) != 512)
@@ -178,7 +208,7 @@ static void cfg_line(unsigned h, const char *s)
 void main(void)
 {
     char *p, w[FAPI_PATHLEN];
-    unsigned h, i, lt;
+    unsigned h, i, lt, need;
 
     DosGetArgs(args);
     p = skip(args);
@@ -243,10 +273,25 @@ void main(void)
     if (!have(mdos, "RBSHELL.COM") || !have(mdos, "RBHMA.SYS"))
         die("RBSHELL.COM/RBHMA.SYS fehlen in \\DOS\\MDOS");
 
+    /* Groesse: Summe der Dateien + Rand -> kleinstes Format */
+    need = need_kb(src, pcdos ? "IBMBIO.COM" : "IO.SYS")
+         + need_kb(src, pcdos ? "IBMDOS.COM" : "MSDOS.SYS")
+         + need_kb(src, "COMMAND.COM")
+         + (have(src, "COUNTRY.SYS") ? need_kb(src, "COUNTRY.SYS")
+            : tools[0] ? need_kb(tools, "COUNTRY.SYS") : 0)
+         + need_kb(mdos, "RBSHELL.COM") + need_kb(mdos, "RBHMA.SYS")
+         + need_kb(mdos, "LTEMM.EXE") + need_kb(mdos, "LTEMM.TXT")
+         + IMG_RESERVE;
+    for (i = 0; i < 3 && fmts[i].kb < need; i++)
+        ;
+    if (fmts[i].kb < need)
+        die("Systemdateien passen nicht in 1,44 MB");
     puts("Abbild ");
     puts(img);
-    puts(" wird angelegt\r\n");
-    make_image();
+    puts(" (");
+    put_num(fmts[i].secs >> 1, 0, 0);
+    puts(" KB) wird angelegt\r\n");
+    make_image(&fmts[i]);
     h = DosLoop(LOOP_ATTACH, img, 0);
     if (FAPI_FAILED(h))
         die("Abbild l\x84\xDFt sich nicht einh\x84ngen (LOOP)");

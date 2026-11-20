@@ -71,6 +71,7 @@ static unsigned rb_gfx_u;               /* Grafik der Box (257 KB)       */
 static unsigned char rb_gfx;            /* ... ist gesichert             */
 #define RB_GFX_UNITS ((0x40000UL + 1024) / MEM_UNIT)
 int __far rb_gfx_save(unsigned long buf);       /* vgagfx.c */
+static void rb_gfx_drop(void);
 void __far rb_gfx_load(unsigned long buf);
 void __far gfx_textdac(void);
 
@@ -285,10 +286,7 @@ void __far rb_free(void)
         mem_free(rb_img_u, rb_img_n);
         rb_img_u = 0;
     }
-    if (rb_gfx_u) {
-        mem_free(rb_gfx_u, (unsigned)RB_GFX_UNITS);
-        rb_gfx_u = 0;
-    }
+    rb_gfx_drop();
     for (i = 0; i < RB_NEMB; i++)           /* XMS-Bloecke der Box      */
         if (emb_on[i]) {
             if (emb_n[i])
@@ -316,9 +314,26 @@ void __far rb_free(void)
 /* Bild der Box sichern, wenn sie nach einem Dienst (Stummel sichert dann
    nicht) weggeschaltet wird: Grafik wie bei Alt+Esc, Text nach rb_lin +
    600h wie der Stummel */
+/* Karte im Grafikbetrieb (GC 6 Bit 0)? Nur dann braucht es den Puffer */
+static int rb_is_gfx(void)
+{
+    outb(0x3CE, 0x06);
+    return inb(0x3CF) & 1;
+}
+
+/* Puffer nach dem Zurueckladen wieder frei (257 KB - auf 2-4-MB-Rechnern
+   zu viel, um ihn fuer eine Textbox zu halten) */
+static void rb_gfx_drop(void)
+{
+    if (rb_gfx_u) {
+        mem_free(rb_gfx_u, (unsigned)RB_GFX_UNITS);
+        rb_gfx_u = 0;
+    }
+}
+
 static void rb_save_screen(void)
 {
-    if (!rb_gfx_u)
+    if (!rb_gfx_u && rb_is_gfx())
         rb_gfx_u = mem_alloc((unsigned)RB_GFX_UNITS);
     if (rb_gfx_u && rb_gfx_save((unsigned long)rb_gfx_u * MEM_UNIT)) {
         rb_gfx = 1;
@@ -679,6 +694,7 @@ unsigned __far rb_run(void)
         if (rb_gfx) {                       /* Grafik der Box zurueck    */
             rb_gfx_load((unsigned long)rb_gfx_u * MEM_UNIT);
             rb_gfx = 0;
+            rb_gfx_drop();
             rb_quiet = 1;                   /* Stummel: Modus nicht neu  */
         }
         scratch_map(rb_lin, 0xFFFF);
@@ -747,7 +763,7 @@ unsigned __far rb_run(void)
     }
     rb_quiet = r == RB_CALL;                /* Dienst: Bild bleibt der Box */
     if (r == RB_SWITCH) {                   /* Grafik sichern, bevor AT-DOS */
-        if (!rb_gfx_u)                      /* die Karte auf Text stellt  */
+        if (!rb_gfx_u && rb_is_gfx())       /* die Karte auf Text stellt  */
             rb_gfx_u = mem_alloc((unsigned)RB_GFX_UNITS);
         if (rb_gfx_u)
             rb_gfx = (unsigned char)rb_gfx_save((unsigned long)rb_gfx_u * MEM_UNIT);
