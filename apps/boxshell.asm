@@ -25,7 +25,7 @@ cpu 8086
 org 100h
 
         mov     sp, stack_top
-        mov     bx, ((stack_top - $$) + 100h + 15) / 16
+        mov     bx, PARAS
         mov     ah, 4Ah                 ; Speicher auf das Noetige kuerzen
         int     21h
         call    go_high                 ; wenn moeglich in eine UMB
@@ -50,6 +50,7 @@ org 100h
 .dd:    call    other_dos               ; MS-DOS u. a. statt FreeDOS?
         call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
+        call    ab_merge                ; PATH/SET/PROMPT aus AUTOEXEC.BAT
         mov     ax, [2Ch]               ; eigene Umgebung wird nicht mehr
         test    ax, ax                  ; gebraucht (Kinder bekommen envbuf)
         jz      .noenv
@@ -65,6 +66,7 @@ org 100h
         mov     [2Ch], ax
 
 next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
+        mov     byte [kauto], 0
         push    cs
         pop     es
         mov     di, cmd
@@ -105,6 +107,7 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         jc      .c1
         mov     si, t_kauto
         call    copystr
+        mov     byte [kauto], 1
         mov     si, t_autoexec
         call    copystr
 .c1:    xor     cx, cx
@@ -122,7 +125,12 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         mov     cl, 4
         shr     bx, cl
         add     ax, bx
-        mov     [pblock], ax
+        cmp     byte [kauto], 0         ; ohne /K: mit PATH/SET/PROMPT
+        jne     .pb                     ; aus der AUTOEXEC.BAT
+        cmp     word [abseg], 0
+        je      .pb
+        mov     ax, [abseg]
+.pb:    mov     [pblock], ax
         mov     [pb_tail+2], cs
         mov     [pb_fcb1+2], cs
         mov     [pb_fcb2+2], cs
@@ -237,7 +245,7 @@ n_err:  db      "ATERR$", 0
 ; Segment, Besitzer von Block und Umgebung umtragen, dort weiter (SS:SP
 ; gleich, die Ruecksprungadresse liegt mit im kopierten Stapel), 50h, alten
 ; Block frei. Kein Platz oben: alles bleibt, wie es war.
-PARAS   equ     ((stack_top - $$) + 100h + 15) / 16
+PARAS   equ     ((trans_end - $$) + 100h + 15) / 16   ; mit ab_merge
 go_high:
         mov     ax, 5800h               ; Strategie und UMB-Verbindung merken
         int     21h
@@ -794,6 +802,110 @@ build_env:
         jnz     .e6
 .e7:    stosb                           ; zweite Null: Ende
         ret
+
+; ---- PATH, SET und PROMPT aus X:\AUTOEXEC.BAT ---------------------------
+; Die AUTOEXEC.BAT laeuft nur interaktiv mit FreeDOS (/K); fuer direkt
+; gestartete Programme und COMMAND.COM vor DOS 6.0 (kein /K) uebernimmt
+; BOXSHELL die Zeilen PATH, SET und PROMPT selbst in envbuf (@ vorn,
+; %NAME% ersetzt, SET COMSPEC nicht) - Setup-Programme wie das von Word
+; tragen dort ihren Pfad ein. Doppelte PATH-Teile fallen weg. Arbeitsblock per 48h: Umgebung vorn
+; (Kopie von envbuf), dahinter Datei (bis 4 KB) und Puffer; danach auf
+; menv kopiert (abseg) - dort lagen die Hilfsroutinen, sie werden danach
+; mit dem Rest hinter stack_top freigegeben. Mit /K X:\AUTOEXEC.BAT bekommt FreeCOM
+; envbuf wie bisher (sonst stuende alles doppelt).
+AB_ENV  equ     ENVSZ
+AB_FILE equ     ENVSZ
+AB_FSZ  equ     0x1000
+AB_LINE equ     0x1410
+AB_VAL  equ     0x1500
+AB_VSZ  equ     0x1F0
+AB_NAME equ     0x1700
+AB_TNAM equ     0x1780
+AB_OUT  equ     0x1800
+AB_PARA equ     0x1A0
+
+ab_merge:
+        push    cs
+        pop     ds
+        mov     dx, t_autoexec
+        mov     ax, 3D00h
+        int     21h
+        jc      .r0
+        mov     [abh], ax
+        mov     ah, 48h
+        mov     bx, AB_PARA
+        int     21h
+        jc      .cl0
+        mov     es, ax
+        mov     si, envbuf              ; envbuf -> Block
+        xor     di, di
+        mov     cx, ENVSZ
+        rep     movsb
+        mov     bx, [abh]
+        push    es
+        pop     ds
+        mov     dx, AB_FILE
+        mov     cx, AB_FSZ - 1
+        mov     ah, 3Fh
+        int     21h
+        jnc     .rd
+        xor     ax, ax
+.rd:    mov     si, ax
+        mov     byte [si + AB_FILE], 0
+        mov     ah, 3Eh
+        int     21h
+        push    ds                      ; ES gilt nach dem Redirector nicht
+        pop     es                      ; mehr (Lesepuffer rd_cache)
+        mov     si, AB_FILE
+.ln:    cmp     byte [si], 0
+        je      .done
+        call    ab_getline
+        push    si
+        call    ab_doline
+        pop     si
+        jmp     .ln
+.done:  call    env_end                 ; Umgebung nach menv (dort lag
+        inc     di                      ; der Code zum Auswerten)
+        mov     cx, di
+        push    cs
+        pop     es
+        xor     si, si
+        mov     di, menv
+        rep     movsb
+        push    ds
+        pop     es
+        mov     ah, 49h                 ; Arbeitsblock frei
+        int     21h
+        push    cs
+        pop     ds
+        mov     ax, cs
+        mov     bx, menv
+        mov     cl, 4
+        shr     bx, cl
+        add     ax, bx
+        mov     [abseg], ax
+        mov     bx, di                  ; behalten bis zum Ende von menv
+        jmp     .sh
+.cl0:   push    cs
+        pop     ds
+.cl:    mov     bx, [abh]
+        mov     ah, 3Eh
+        int     21h
+.r0:    push    cs
+        pop     ds
+        mov     bx, stack_top           ; keine Umgebung: nur bis stack_top
+.sh:    add     bx, 15                  ; (Code dahinter wird frei)
+        mov     cl, 4
+        shr     bx, cl
+        push    cs
+        pop     es
+        mov     ah, 4Ah
+        int     21h
+        ret
+abh:    dw      0
+abseg:  dw      0                       ; Umgebung mit AUTOEXEC.BAT
+kauto:  db      0                       ; 1: dieser Start mit /K
+
 
 ; ---- anderes DOS als FreeDOS (MKDOSIMG, DOSBOX.INI DOS_IMAGE=) --------
 ; Dann ist COMMAND.COM das des Abbilds (A:\), nicht FreeCOM aus \DOS\MDOS,
@@ -1550,3 +1662,391 @@ envbuf    times ENVSZ db 0
           times 256 db 0
 stack_top:
 rdbuf     equ envbuf                    ; Lesepuffer, vor dem Aufbau der Umgebung
+; ---- nur beim Start (ab_merge), danach frei bis auf die Umgebung ---------
+          align 16
+menv:
+ab_dedup:                               ; doppelte Teile in AB_VAL weg
+        mov     si, AB_VAL
+        mov     bp, AB_OUT
+.next:  mov     bx, si
+.f:     mov     al, [bx]
+        test    al, al
+        jz      .fe
+        cmp     al, ';'
+        je      .fe
+        inc     bx
+        jmp     .f
+.fe:    mov     cx, bx
+        sub     cx, si
+        jcxz    .adv
+        mov     di, AB_OUT
+.s:     cmp     di, bp
+        jae     .add
+        push    si
+        push    di
+        push    cx
+        repe    cmpsb
+        jne     .ne
+        cmp     di, bp
+        je      .dup
+        cmp     byte [di], ';'
+        je      .dup
+.ne:    pop     cx
+        pop     di
+        pop     si
+.sk:    cmp     di, bp
+        jae     .add
+        mov     al, [di]
+        inc     di
+        cmp     al, ';'
+        jne     .sk
+        jmp     .s
+.dup:   pop     cx
+        pop     di
+        pop     si
+        jmp     .adv
+.add:   mov     di, bp
+        cmp     di, AB_OUT
+        je      .a1
+        mov     al, ';'
+        stosb
+.a1:    rep     movsb
+        mov     bp, di
+.adv:   mov     si, bx
+        cmp     byte [si], 0
+        je      .done
+        inc     si
+        jmp     .next
+.done:  mov     di, bp
+        mov     byte [di], 0
+        mov     si, AB_OUT
+        mov     di, AB_VAL
+.c:     lodsb
+        stosb
+        test    al, al
+        jnz     .c
+        ret
+
+ab_getline:                             ; DS:SI -> Zeile nach AB_LINE
+        mov     di, AB_LINE
+        mov     cx, 127
+.g:     lodsb
+        test    al, al
+        jz      .e0
+        cmp     al, 0x1A
+        je      .e0
+        cmp     al, 13
+        je      .eol
+        cmp     al, 10
+        je      .z
+        jcxz    .g                      ; zu lang: Rest uebergehen
+        stosb
+        dec     cx
+        jmp     .g
+.eol:   cmp     byte [si], 10
+        jne     .z
+        inc     si
+        jmp     .z
+.e0:    dec     si
+.z:     mov     byte [di], 0
+        ret
+
+ab_skipws:
+        cmp     byte [si], ' '
+        je      .s
+        cmp     byte [si], 9
+        jne     .r
+.s:     inc     si
+        jmp     ab_skipws
+.r:     ret
+
+ab_up:  cmp     al, 'a'                 ; AL gross
+        jb      .r
+        cmp     al, 'z'
+        ja      .r
+        sub     al, 0x20
+.r:     ret
+
+ab_kw:                                  ; CS:BX Schluesselwort an DS:SI?
+        push    si                      ; CF = 0: ja, SI dahinter
+.m:     mov     al, [cs:bx]
+        test    al, al
+        jz      .ok
+        mov     ah, al
+        lodsb
+        call    ab_up
+        cmp     al, ah
+        jne     .no
+        inc     bx
+        jmp     .m
+.ok:    mov     al, [si]                ; dahinter Trenner
+        cmp     al, ' '
+        je      .y
+        cmp     al, 9
+        je      .y
+        cmp     al, '='
+        je      .y
+        cmp     al, ';'
+        je      .y
+.no:    pop     si
+        stc
+        ret
+.y:     add     sp, 2
+        clc
+        ret
+
+ab_doline:
+        mov     si, AB_LINE
+        call    ab_skipws
+        cmp     byte [si], '@'
+        jne     .k
+        inc     si
+        call    ab_skipws
+.k:     mov     bx, k_path
+        call    ab_kw
+        jnc     .path
+        mov     bx, k_prompt
+        call    ab_kw
+        jnc     .prompt
+        mov     bx, k_set
+        call    ab_kw
+        jnc     .set
+        ret
+.path:  mov     bx, k_path
+        call    ab_eq
+        cmp     byte [si], 0            ; PATH allein zeigt nur an
+        je      .r
+        call    ab_kname
+        cmp     word [si], ';'          ; "PATH ;" loescht
+        je      .del
+        call    ab_expand
+        mov     si, AB_VAL              ; Pfade gross wie COMMAND.COM
+.pu:    lodsb
+        call    ab_up
+        mov     [si - 1], al
+        test    al, al
+        jnz     .pu
+        call    ab_dedup
+        jmp     .add
+.prompt: mov    bx, k_prompt
+        call    ab_eq
+        call    ab_kname
+        cmp     byte [si], 0
+        je      .del
+        call    ab_expand
+        jmp     .add
+.set:   call    ab_skipws
+        mov     di, AB_NAME
+.sn:    lodsb
+        test    al, al
+        jz      .r
+        cmp     al, '='
+        je      .se
+        call    ab_up
+        stosb
+        cmp     di, AB_NAME + 120
+        jb      .sn
+        ret
+.se:    mov     byte [di], 0
+        cmp     di, AB_NAME
+        je      .r
+        push    si
+        mov     si, AB_NAME
+        mov     bx, k_cspec
+        call    ab_kw0
+        pop     si
+        jnc     .r                      ; COMSPEC gehoert der Box
+        cmp     byte [si], 0
+        je      .del
+        call    ab_expand
+.add:   call    env_add
+.r:     ret
+.del:   mov     si, AB_NAME
+        jmp     env_del
+
+ab_eq:  call    ab_skipws               ; Leerraum und ein "=" ueberspringen
+        cmp     byte [si], '='
+        jne     .r
+        inc     si
+        call    ab_skipws
+.r:     ret
+
+ab_kname:                               ; CS:BX -> AB_NAME, SI bleibt
+        push    si
+        mov     di, AB_NAME
+.c:     mov     al, [cs:bx]
+        stosb
+        inc     bx
+        test    al, al
+        jnz     .c
+        pop     si
+        ret
+
+ab_kw0:                                 ; DS:SI genau gleich CS:BX? CF = 0
+.m:     mov     al, [cs:bx]
+        cmp     al, [si]
+        jne     .no
+        test    al, al
+        jz      .y
+        inc     si
+        inc     bx
+        jmp     .m
+.no:    stc
+        ret
+.y:     clc
+        ret
+
+ab_expand:                              ; DS:SI -> AB_VAL, %NAME% ersetzt
+        mov     di, AB_VAL
+.e:     lodsb
+        test    al, al
+        jz      .end
+        cmp     al, '%'
+        je      .pct
+.put:   cmp     di, AB_VAL + AB_VSZ - 1
+        jae     .e
+        stosb
+        jmp     .e
+.pct:   cmp     byte [si], '%'          ; %% = %
+        jne     .var
+        inc     si
+        jmp     .put
+.var:   mov     bx, si
+.f:     mov     al, [bx]
+        test    al, al
+        jz      .lit
+        cmp     al, '%'
+        je      .got
+        inc     bx
+        jmp     .f
+.lit:   mov     al, '%'
+        jmp     .put
+.got:   push    di
+        mov     di, AB_TNAM
+.n:     cmp     si, bx
+        je      .nd
+        lodsb
+        call    ab_up
+        stosb
+        jmp     .n
+.nd:    mov     byte [di], 0
+        pop     di
+        inc     si
+        push    si
+        mov     si, AB_TNAM
+        push    di
+        call    env_find                ; aendert DI
+        pop     di
+        jc      .nv
+        mov     si, bx
+.cv:    lodsb
+        test    al, al
+        jz      .nv
+        cmp     di, AB_VAL + AB_VSZ - 1
+        jae     .nv
+        stosb
+        jmp     .cv
+.nv:    pop     si
+        jmp     .e
+.end:   mov     byte [di], 0
+        ret
+
+env_find:                               ; DS:SI Name -> DI Eintrag, BX Wert
+        xor     di, di                  ; CF = 1: fehlt
+.l:     cmp     byte [di], 0
+        je      .nf
+        push    si
+        push    di
+.c:     mov     al, [si]
+        test    al, al
+        jz      .eq
+        cmp     al, [di]
+        jne     .ne
+        inc     si
+        inc     di
+        jmp     .c
+.eq:    cmp     byte [di], '='
+        jne     .ne
+        lea     bx, [di + 1]
+        pop     di
+        pop     si
+        clc
+        ret
+.ne:    pop     di
+        pop     si
+.s:     cmp     byte [di], 0
+        je      .s2
+        inc     di
+        jmp     .s
+.s2:    inc     di
+        jmp     .l
+.nf:    stc
+        ret
+
+env_end:                                ; DI -> abschliessende Null
+        xor     di, di
+.l:     cmp     byte [di], 0
+        je      .r
+.s:     inc     di
+        cmp     byte [di - 1], 0
+        jne     .s
+        jmp     .l
+.r:     ret
+
+env_del:                                ; Eintrag DS:SI entfernen
+        call    env_find
+        jc      .r
+        mov     si, di
+.s:     lodsb
+        test    al, al
+        jnz     .s
+.m:     cmp     byte [si], 0
+        je      .fin
+.c:     lodsb
+        stosb
+        test    al, al
+        jnz     .c
+        jmp     .m
+.fin:   mov     byte [di], 0
+.r:     ret
+
+env_add:                                ; AB_NAME=AB_VAL setzen
+        mov     si, AB_NAME
+        call    env_del
+        call    env_end
+        mov     ax, di
+        mov     si, AB_NAME
+        call    .len
+        mov     si, AB_VAL
+        call    .len
+        add     ax, 2
+        cmp     ax, AB_ENV - 1
+        ja      .r                      ; kein Platz: auslassen
+        mov     si, AB_NAME
+.n:     lodsb
+        test    al, al
+        jz      .q
+        stosb
+        jmp     .n
+.q:     mov     al, '='
+        stosb
+        mov     si, AB_VAL
+.v:     lodsb
+        stosb
+        test    al, al
+        jnz     .v
+        mov     byte [di], 0
+.r:     ret
+.len:   cmp     byte [si], 0
+        je      .lr
+        inc     si
+        inc     ax
+        jmp     .len
+.lr:    ret
+
+k_path: db      "PATH", 0
+k_prompt: db    "PROMPT", 0
+k_set:  db      "SET", 0
+k_cspec: db     "COMSPEC", 0
+          times (ENVSZ - ($ - menv)) * ((ENVSZ - ($ - menv)) > 0) db 0
+trans_end:

@@ -4822,6 +4822,21 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   abgeschaltetem Weg über v86_exc (nur Takt): Klick auf „Windows…“
   öffnet das Fenster; seriell und PS/2.
   Vom Nutzer auf dem P3B-F bestätigt: Klicks und Alt in MSD 2.11 gehen.
+- **AUTOEXEC.BAT in der DOS-Box** (Wunsch des Nutzers, 20.11.2026, wie
+  auf 5.x für die Kompatibilitätsbox: Word legt seinen PATH in der
+  AUTOEXEC.BAT an): BOXSHELL `ab_merge` nach build_env (einmal beim Start
+  der Box) liest X:\AUTOEXEC.BAT (bis 4 KB, Arbeitsblock per 48h) und
+  übernimmt PATH/SET/PROMPT in eine eigene Umgebung (`abseg`, @ vorn,
+  %NAME% und %%, PATH groß und ohne doppelte Teile, SET COMSPEC nicht).
+  Die bekommen direkt gestartete Programme und COMMAND.COM ohne /K (DOS 5);
+  mit `/K X:\AUTOEXEC.BAT` (FreeDOS interaktiv) wie bisher envbuf, sonst
+  stünde alles doppelt. Die Hilfsroutinen liegen hinter stack_top (`menv`,
+  go_high kopiert bis `trans_end`), danach steht dort die Umgebung und
+  BOXSHELL kürzt sich darauf – Kosten 192 Byte Code + Größe der Umgebung.
+  BLASTER bleibt die virtuelle Karte. Lehre (wie RBSHELL): nach Dateizugriff
+  über den Redirector gilt ES nicht mehr (rd_cache). In QEMU (FreeDOS
+  direkt und interaktiv, IBM DOS 5 per MKDOSIMG) und 86Box 386DX/40
+  geprüft.
 - **Lotus Works 3.0 in der DOS-Box** (vom Nutzer gemeldet, 18.11.2026:
   INSTALL von Diskette meldete „Error loading LW.LLD file“; Abbild
   von winworldpc, nur zum Testen, nicht im Repository). Fünf Abweichungen
