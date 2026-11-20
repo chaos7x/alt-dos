@@ -339,7 +339,59 @@ put byte-gleich, md/cd/put/dir/del/rd, Ordner „Ordner Ä“ (Umlaut,
 Leerzeichen), Befehle aus umgeleiteter Eingabe, falsches Kennwort ->
 ERRORLEVEL 4. Reine Programmlogik (kein Kernelteil) – kein 86Box-Lauf.
 
-Weiter (offen): Stufe 2 Laufwerk über `NET USE X: \\Rechner\Freigabe`
-(Redirector als IFS – braucht einen Weg vom Ring-0-Modul zu den Sockets
-von TCPIP.SYS), Stufe 3 Domäne (Kerberos, LDAP, DOMJOIN), SMB 3 (AES-CMAC,
-Verschlüsselung).
+## SMB Stufe 2: NET USE über einen Dienst in Ring 3 (20.11.2026)
+
+Entscheidung des Nutzers („Ring 3“): kein Redirector als Ring-0-IFS,
+sondern ein Dateisystem, das ein Programm bedient – wie FUSE bei Linux.
+Der Kernel kennt nur den Weg dorthin (`kernel/ufs.c`, KTEXT4, FAPI 5Dh
+`FAPI_UFS`); SMB, Anmeldung, Signatur bleiben in SMBCLI im Ring 3 und
+laufen so unter 7.0 unverändert.
+
+- Kernel: bis 4 Dienste (`NUFS`), je Dienst ein Laufwerk (`vol[]` mit
+  `ufs_driver`, Name „SMB“), ein Blockgerät ohne Blöcke (`DRV_UFS` -3,
+  nur damit Laufwerkssperre und Liste passen) und ein Kernelsegment:
+  Auftrag (`struct fapi_ufsreq`, 584 Byte) bei 0, Daten (bis 16 KB) bei
+  1024. Ein IFS-Aufruf (open/read/readdir/create/write/close/remove/
+  mkdir/rmdir/move/space/setinfo/label/namepath/truncate) füllt den
+  Auftrag, weckt den Dienst und schläft (`kf_ufs_block`, gibt die
+  Kernelsperre ab wie ein Treiberauftrag; Frist 30 s). Der Dienst holt
+  mit `UFS_GET` (wartet ohne Kernelsperre, WRITE-Daten gleich in seinen
+  Puffer) und antwortet mit `UFS_PUT` (Folgenummer gegen veraltete
+  Antworten). `UFS_REG` meldet ein Laufwerk an, `UFS_DEL` lässt den
+  Dienst enden (abgelehnt, solange Dateien offen oder ein Task dort
+  steht), `UFS_INFO` nennt Dienst und `\\Rechner\Freigabe`. Endet der
+  Dienst (auch abgeschossen), gibt `ufs_task_end` Laufwerk, Segment und
+  Gerät frei und weckt Wartende mit Fehler.
+- `SMBCLI … --serve X:` (losgelöst gestartet): nach TREE_CONNECT
+  `UFS_REG`, dann Schleife GET/PUT. Bis 32 offene Dateien (FileId je
+  Handle), Öffnen erst lesend+schreibend, bei „Zugriff verweigert“ nur
+  lesend; Datum/Attribut beim Schließen und SETINFO über SET_INFO
+  FileBasicInformation (FAT -> FILETIME über 16-Bit-Multiplikationen),
+  Umbenennen FileRenameInformation, Kürzen FileEndOfFileInformation,
+  freier Platz QUERY_INFO FileFsSizeInformation (gekappt auf 2 GB).
+  Verzeichnislisten bleiben je Verzeichnis in einem 64-KB-Segment
+  zwischengespeichert (verworfen bei jeder Änderung), mit 8.3-Ersatz-
+  namen wie Windows 95 (`BASIS~k.EXT`) für Programme ohne LFN-Merker
+  und die DOS-Boxen; Pfade des Kernels mit `~` werden darüber in die
+  echten Namen zurückübersetzt, der Originalname beim Anlegen kommt aus
+  `ifs_orig`. Der Stamm hat kein `.`/`..`. Die Handles 0–2 schließt der
+  Dienst (sonst hielte er eine Umleitung von NET belegt).
+- `NET.EXE`: `NET USE` listet, `NET USE X: \\Rechner\Freigabe
+  [Kennwort|*] [/USER:[Domäne\]Name]` legt das Kennwort in eine Datei in
+  %TEMP% (nicht in die Befehlszeile – TASKMAN zeigt sie), startet
+  `X:\DOS\SMBCLI.EXE … -P Datei --serve X:` mit EXEC_DETACH und wartet,
+  bis das Laufwerk da ist oder SMBCLI „!Meldung“ in die Datei schreibt
+  (SMBCLI löscht das Kennwort gleich nach dem Lesen). `NET USE X:
+  /DELETE` (/D) trennt.
+
+Geprüft in QEMU gegen Samba 4.19 (signing mandatory): falsches Kennwort
+-> Meldung, NET USE + Liste, DIR (Umlaute, Leerzeichen, Unterordner), COPY
+1 MB vom Laufwerk byte-gleich, MD, XCOPY C:\DOS\*.EXE hinüber (87
+Dateien byte-gleich), COPY auf einen langen Namen, REN, TYPE, CD auf das
+Laufwerk, `COMMAND /C DIR` in der DOS-Box (8.3-Namen), Trennen, danach
+„Ungültiges Laufwerk“. Ebenso in 86Box (386DX/40, 4 MB, NE2000, SLiRP zum
+Samba des Rechners): alle Schritte gleich, Kopien byte-gleich, Datum der
+Quelle bleibt erhalten.
+Weiter (offen): Stufe 3 Domäne (Kerberos, LDAP, DOMJOIN), SMB 3 (AES-CMAC,
+Verschlüsselung), Sperren (SHARE) über das Netz, Neuverbinden nach einem
+Abbruch.

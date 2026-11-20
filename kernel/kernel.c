@@ -1954,6 +1954,7 @@ static void task_end(int t)
     std_set(t, -1);                         /* Standard-Handles freigeben */
     dmab_free(t);                           /* eigener DMABUF             */
     locks_task_end(t);
+    ufs_task_end(t);                        /* Dienst eines Netzlaufwerks */
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -3235,7 +3236,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
     case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
-    case FAPI_RANDOM:
+    case FAPI_RANDOM: case FAPI_UFS:            /* UFS: eigenes Warten   */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -4447,6 +4448,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_QTICKS:
         return (unsigned)get_ticks();
 
+    case FAPI_UFS:                              /* NET USE (ufs.c)        */
+        return ufs_fapi(usel, a1, a2, a3);
+
     case FAPI_RANDOM:                           /* Pool aus start.asm     */
         if (a2 > 34)
             a2 = 34;
@@ -4891,6 +4895,30 @@ static unsigned char xg_slot(int d, unsigned g)  /* -> blk[].grp */
 static void drv_request(int d, struct drv_req *r)  /* Sperre wird gehalten */
 {
     drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)r);
+}
+
+/* ufs.c (Netzlaufwerk): auf die Antwort des Dienstes warten - wie im
+   Treiber darf ein anderer Task die Kernelsperre haben (mit CLI rufen) */
+static int ctx_room(int t);
+unsigned __far kf_ufs_block(unsigned long id, unsigned t)
+{
+    unsigned r;
+    if (current < 0)
+        return proc_block(id, t);
+    task[current].may_rel = (unsigned char)ctx_room(current);
+    r = proc_block(id, t);
+    task[current].may_rel = 0;
+    return r;
+}
+unsigned __far kf_proc_run(unsigned long id) { return proc_run(id); }
+unsigned __far kf_user_ok(unsigned sel, unsigned off, unsigned n, int wr)
+{
+    return user_ok(sel, off, n, wr);
+}
+void __far kf_kseg_free(unsigned sel)
+{
+    mem_free(desc_base(&gdt[sel >> 3]) >> 12, PAGES(sel_limit(sel) + 1UL));
+    gdt[sel >> 3].access = 0;
 }
 
 /* Auftrag in den eigenen DMABUF: waehrend der Treiber wartet, duerfen
@@ -6751,6 +6779,11 @@ static unsigned drives_busy(unsigned long m, int d)
             (join_drv[x] >= 0 && (((m >> join_drv[x]) & 1) || ((m >> x) & 1))))
             return FAPI_ERR_INUSE;
     return 0;
+}
+
+unsigned __far kf_drv_busy(int d)       /* NET USE /DELETE: Laufwerk frei? */
+{
+    return drives_busy(1UL << d, -1);
 }
 
 static unsigned drv_unload(int d)

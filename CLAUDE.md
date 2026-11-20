@@ -5960,7 +5960,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dir/cd/get/put/del/md/rd), `crypto.c` + MD4/MD5/HMAC-MD5, Zufall in
   `apps/rnd.c`; in QEMU gegen Samba 4.19 (signing mandatory) geprüft –
   Testserver: `smbd -D -s /tmp/claude-0/smb/smb.conf` (ncalrpc dir und
-  /run/samba anlegen). Offen: NET USE (IFS), Domäne, SMB 3.
+  /run/samba anlegen). Offen: Domäne, SMB 3.
+- NET USE erledigt (20.11.2026, Entscheidung des Nutzers „Ring 3“ wie
+  FUSE; `docs/NETZWERK.md` „SMB Stufe 2“): Kernel `kernel/ufs.c` (KTEXT4,
+  FAPI 5Dh `FAPI_UFS`, Laufwerk mit `ufs_driver`, Blockgerät `DRV_UFS`),
+  Dienst `SMBCLI --serve X:` (Verzeichnisliste mit 8.3-Ersatznamen im
+  Segment, Handles 0–2 zu), `NET.EXE` (Kennwort über eine Datei in
+  %TEMP%, EXEC_DETACH). Testskript QEMU `/tmp/claude-0/smb/run2.sh`.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

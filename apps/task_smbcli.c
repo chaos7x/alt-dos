@@ -37,6 +37,8 @@ static unsigned signing, dialect;
 static u32 msgid;
 static u8 sess[8], tree[4];
 static u16 ub[300];                     /* UTF-16                        */
+#define FAR8 /* nah */
+#define MK_FP(s, o) ((void __far *)(((unsigned long)(s) << 16) | (unsigned)(o)))
 
 static const unsigned short cp437u[128] = {
     0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7,
@@ -588,13 +590,13 @@ static int gmatch(const char *n, const char *p)
     return !*n;
 }
 
-/* FILETIME -> TT.MM.JJJJ HH:MM nach d */
+/* FILETIME -> FAT-Datum/-Zeit, -> 0 ok (vor 1980: 1) */
 unsigned long dv16(unsigned hi, unsigned lo, unsigned d);
 #pragma aux dv16 = "div bx" __parm [__dx] [__ax] [__bx] __value [__dx __ax];
-static void ftime(const u8 *f, char *d)
+static int ft2fat(const u8 FAR8 *f, unsigned *fd, unsigned *ft)
 {
     static const unsigned div[2] = { 10000, 1000 };
-    unsigned w[4], i, r, k, fd, ft;
+    unsigned w[4], i, r, k;
     unsigned long q, lo, hi;
     lo = get32(f);
     hi = get32(f + 4);
@@ -612,11 +614,23 @@ static void ftime(const u8 *f, char *d)
         hi--;
     lo -= 0xB6109100UL;
     hi -= 2;
-    if ((long)hi < 0) {
+    if ((long)hi < 0 || lo < 315532800UL) {
+        *fd = 0x21;
+        *ft = 0;
+        return 1;
+    }
+    unix2fat(lo, fd, ft);
+    return 0;
+}
+
+/* FILETIME -> TT.MM.JJJJ HH:MM nach d */
+static void ftime(const u8 *f, char *d)
+{
+    unsigned k, fd, ft;
+    if (ft2fat(f, &fd, &ft)) {
         scopy(d, "                ", 17);
         return;
     }
-    unix2fat(lo, &fd, &ft);
     d[0] = (char)('0' + (fd & 31) / 10); d[1] = (char)('0' + (fd & 31) % 10); d[2] = '.';
     d[3] = (char)('0' + ((fd >> 5) & 15) / 10); d[4] = (char)('0' + ((fd >> 5) & 15) % 10); d[5] = '.';
     k = (fd >> 9) + 1980;
@@ -985,11 +999,593 @@ static int run(char *l)
     return 0;
 }
 
+/* ---- Dienst fuer NET USE (--serve X:, kernel/ufs.c) ----------------- */
+#include "../include/ifsmod.h"
+unsigned long mul16x(unsigned a, unsigned b);
+#pragma aux mul16x = "mul dx" __parm [__ax] [__dx] __value [__dx __ax];
+static struct fapi_ufsreq rq;
+static struct fapi_ufsreg rg;
+static struct ifs_dirent ide;
+static unsigned lseg;                   /* Verzeichnisliste (64 KB, fern) */
+static unsigned lcnt, lend;
+static char ldir[FAPI_PATHLEN];         /* Liste gilt fuer dieses Verz.   */
+static unsigned char hu[32];            /* Handles: belegt                */
+static u8 hf[32][16];                   /* FileId je Handle               */
+/* Satz: attr(1) size(4) date(2) time(2) nlen(1) alias(13) name(nlen) */
+#define LREC(o) ((u8 __far *)MK_FP(lseg, o))
+
+static int is83(const char *n)
+{
+    unsigned b = 0, e = 0, dot = 0;
+    if (n[0] == '.' && (!n[1] || (n[1] == '.' && !n[2])))
+        return 1;
+    for (; *n; n++) {
+        if (*n == '.') {
+            if (dot++)
+                return 0;
+            continue;
+        }
+        if (*n == ' ' || *n == '+' || *n == ',' || *n == ';' || *n == '=' ||
+            *n == '[' || *n == ']' || (u8)*n < 32)
+            return 0;
+        if (dot)
+            e++;
+        else
+            b++;
+    }
+    return b && b <= 8 && e <= 3;
+}
+
+/* 8.3-Ersatzname wie Windows 95 (BASIS~k.EXT) */
+static void alias(const char *n, char *a, unsigned k)
+{
+    const char *d = 0, *p;
+    unsigned i = 0, j;
+    for (p = n; *p; p++)
+        if (*p == '.')
+            d = p;
+    for (p = n; *p && p != d && i < 6; p++)
+        if (*p != ' ' && *p != '.' && (u8)*p > 32)
+            a[i++] = (char)(*p == '+' || *p == ',' || *p == ';' || *p == '=' ||
+                            *p == '[' || *p == ']' ? '_' : up(*p));
+    a[i++] = '~';
+    a[i++] = (char)('0' + (k > 9 ? 9 : k));
+    if (d && d[1]) {
+        a[i++] = '.';
+        for (j = 0, p = d + 1; *p && j < 3; p++, j++)
+            a[i++] = (char)(*p == ' ' ? '_' : up(*p));
+    }
+    a[i] = 0;
+}
+
+/* Name (n Byte, fern) gegen b ohne Gross/klein -> 0 gleich */
+static int cmpn(const u8 __far *a, unsigned n, const char *b)
+{
+    for (; n && *b; a++, b++, n--)
+        if (up((char)*a) != up(*b))
+            return 1;
+    return n || *b;
+}
+
+static int cmpi(const char __far *a, const char *b)  /* ohne Gross/klein */
+{
+    for (; *a && *b; a++, b++)
+        if (up(*a) != up(*b))
+            return 1;
+    return *a || *b;
+}
+
+/* Verzeichnis (SMB-Pfad ohne fuehrenden \) in die Liste lesen -> 0 */
+static u32 lst_load(const char *dir)
+{
+    static char nm[260], al[13];
+    unsigned first = 1, i, n, fd, ft, k, j;
+    u32 st, next;
+    u8 *e;
+    u8 __far *r;
+    static char sv[FAPI_PATHLEN];
+    if (lcnt != 0xFFFF && same(ldir, dir))
+        return 0;
+    lcnt = 0xFFFF;
+    scopy(sv, rdir, sizeof(sv));
+    scopy(rdir, dir, sizeof(rdir));
+    st = c_open(0, 0x00100081UL, 1, 1, 0, 0);
+    scopy(rdir, sv, sizeof(rdir));
+    if (st)
+        return st;
+    lcnt = lend = 0;
+    for (;;) {
+        n = to16("*", ub, 2);
+        cr_zero(BODY, 32);
+        BODY[0] = 33;
+        BODY[2] = 1;
+        BODY[3] = first ? 1 : 0;
+        cr_cpy(BODY + 8, fid, 16);
+        put16(BODY + 24, 64 + 32);
+        put16(BODY + 26, 2 * n);
+        put32(BODY + 28, CHUNK);
+        put16(BODY + 32, ub[0]);
+        st = smb(C_QDIR, 34);
+        first = 0;
+        if (st != S_OK)
+            break;
+        e = rx + get16(RB + 2);
+        for (;;) {
+            next = get32(e);
+            n = (unsigned)get32(e + 60) / 2;
+            for (i = 0; i < n && i < sizeof(nm) - 1; i++)
+                nm[i] = from16(get16(e + 64 + 2 * i));
+            nm[i] = 0;
+            if (!(dir[0] == 0 && (same(nm, ".") || same(nm, ".."))) &&
+                lend + 23 + i < 0xFF00U) {
+                r = LREC(lend);
+                r[0] = (u8)get32(e + 56);
+                r[1] = e[40]; r[2] = e[41]; r[3] = e[42]; r[4] = e[43];
+                if (get32(e + 44))      /* ueber 4 GB                     */
+                    r[1] = r[2] = r[3] = r[4] = 0xFF;
+                ft2fat(e + 24, &fd, &ft);
+                r[5] = (u8)fd; r[6] = (u8)(fd >> 8);
+                r[7] = (u8)ft; r[8] = (u8)(ft >> 8);
+                r[9] = (u8)i;
+                al[0] = 0;
+                if (!is83(nm)) {        /* Nummer: gleiche Grundform davor */
+                    alias(nm, al, 1);
+                    for (k = 1, j = 0; j < lend && k < 9; ) {
+                        u8 __far *q = LREC(j);
+                        if (q[10] && !cmpi((char __far *)q + 10, al))
+                            alias(nm, al, ++k), j = 0;
+                        else
+                            j += 23 + q[9];
+                    }
+                }
+                for (k = 0; k < 13; k++)
+                    r[10 + k] = al[k];
+                for (k = 0; k < i; k++)
+                    r[23 + k] = nm[k];
+                lend += 23 + i;
+                lcnt++;
+            }
+            if (!next || e + next >= rx + rxn)
+                break;
+            e += (unsigned)next;
+        }
+    }
+    c_close();
+    scopy(ldir, dir, sizeof(ldir));
+    return 0;
+}
+
+/* Satz Nummer n der Liste -> Offset, 0xFFFF */
+static unsigned lst_at(unsigned n)
+{
+    unsigned o = 0;
+    while (n-- && o < lend)
+        o += 23 + LREC(o)[9];
+    return o < lend ? o : 0xFFFF;
+}
+
+/* Pfad des Kernels (\GROSS\NAME~1) -> SMB-Pfad (ohne \, echte Namen);
+   mode 0: Teile mit ~ ueber die Liste aufloesen, sonst wie sie sind,
+   mode 1: jeder Teil als 8.3-Ersatzname, wenn er lang ist (NAMEPATH fuer
+   alte Programme), mode 2: jeder Teil in der Schreibung des Servers */
+static void kpath(const char *k, char *o, int mode)
+{
+    static char comp[260], par[FAPI_PATHLEN];
+    unsigned n = 0, c, i, x, need;
+    u8 __far *r;
+    if (*k == '\\')
+        k++;
+    o[0] = 0;
+    while (*k) {
+        for (c = 0; *k && *k != '\\' && c < sizeof(comp) - 1; )
+            comp[c++] = *k++;
+        comp[c] = 0;
+        if (*k)
+            k++;
+        for (need = mode != 0, i = 0; comp[i]; i++)
+            if (comp[i] == '~')
+                need = 1;
+        if (need) {
+            scopy(par, o, sizeof(par));
+            if (lst_load(par) == 0)
+                for (i = 0; i < lcnt; i++) {
+                    x = lst_at(i);
+                    r = LREC(x);
+                    if (!(r[10] && !cmpi((char __far *)r + 10, comp)) &&
+                        cmpn(r + 23, r[9], comp))
+                        continue;
+                    if (mode == 1 && r[10])
+                        for (c = 0; r[10 + c] && c < 12; c++)
+                            comp[c] = r[10 + c];
+                    else
+                        for (c = 0; c < r[9] && c < sizeof(comp) - 1; c++)
+                            comp[c] = r[23 + c];
+                    comp[c] = 0;
+                    break;
+                }
+        }
+        if (n && n < FAPI_PATHLEN - 2)
+            o[n++] = '\\';
+        for (i = 0; comp[i] && n < FAPI_PATHLEN - 1; i++)
+            o[n++] = comp[i];
+        o[n] = 0;
+    }
+}
+
+/* letzter Teil von o durch die Originalschreibung orig ersetzen */
+static void with_orig(char *o, const char *orig)
+{
+    unsigned n = slen(o), b = n;
+    while (b && o[b - 1] != '\\')
+        b--;
+    if (orig && orig[0] && slen(orig) == n - b)
+        scopy(o + b, orig, FAPI_PATHLEN - b);
+}
+
+static unsigned hnew(void)
+{
+    unsigned i;
+    for (i = 0; i < 32 && hu[i]; i++)
+        ;
+    if (i == 32)
+        return 0;
+    hu[i] = 1;
+    cr_cpy(hf[i], fid, 16);
+    return i + 1;
+}
+
+static int hget(unsigned long h)
+{
+    if (!h || h > 32 || !hu[(unsigned)h - 1])
+        return 0;
+    cr_cpy(fid, hf[(unsigned)h - 1], 16);
+    return 1;
+}
+
+static short ierr(u32 st)
+{
+    if (st == 0xC0000022UL || st == 0xC00000A2UL)
+        return IFS_DENIED;
+    if (st == 0xC0000035UL)
+        return IFS_EXIST;
+    if (st == 0xC000007FUL)
+        return IFS_FULL;
+    if (st == 0xC0000101UL)
+        return IFS_DENIED;
+    return IFS_ERR;
+}
+
+/* SET_INFO (Datei, Klasse) mit len Byte ab BODY+32 */
+static u32 setinfo(unsigned cls, unsigned len)
+{
+    BODY[0] = 33;
+    BODY[2] = 1;
+    BODY[3] = (u8)cls;
+    put32(BODY + 4, len);
+    put16(BODY + 8, 64 + 32);
+    BODY[10] = BODY[11] = 0;
+    put32(BODY + 12, 0);
+    cr_cpy(BODY + 16, fid, 16);
+    return smb(0x11, 32 + len);
+}
+
+/* FAT -> FILETIME (8 Byte) */
+static void fat2ft(unsigned d, unsigned t, u8 *o)
+{
+    unsigned long u = fat2unix(d, t);
+    unsigned w[4], c, i;
+    unsigned long p;
+    static const unsigned m[2] = { 0x9680, 0x0098 };        /* 10^7      */
+    unsigned uw[2];
+    uw[0] = (unsigned)u;
+    uw[1] = (unsigned)(u >> 16);
+    w[0] = w[1] = w[2] = w[3] = 0;
+    for (i = 0; i < 2; i++) {           /* u * 10^7                       */
+        unsigned j;
+        c = 0;
+        for (j = 0; j < 2; j++) {
+            p = mul16x(uw[i], m[j]) + w[i + j] + c;
+            w[i + j] = (unsigned)p;
+            c = (unsigned)(p >> 16);
+        }
+        for (j = i + 2; j < 4 && c; j++) {
+            p = (unsigned long)w[j] + c;
+            w[j] = (unsigned)p;
+            c = (unsigned)(p >> 16);
+        }
+    }
+    {                                   /* + 116444736000000000           */
+        static const unsigned a[4] = { 0x8000, 0xD53E, 0xB1DE, 0x019D };
+        c = 0;
+        for (i = 0; i < 4; i++) {
+            p = (unsigned long)w[i] + a[i] + c;
+            w[i] = (unsigned)p;
+            c = (unsigned)(p >> 16);
+        }
+    }
+    for (i = 0; i < 4; i++)
+        put16(o + 2 * i, w[i]);
+}
+
+static void serve(void)
+{
+    static char sp[FAPI_PATHLEN], sp2[FAPI_PATHLEN];
+    u32 st, sz;
+    unsigned at, n, h;
+    for (;;) {
+        if (fapi_call(FAPI_UFS, UFS_GET, (unsigned)&rq, (unsigned)(BODY + 48)))
+            break;
+        if (rq.op == UFSOP_QUIT)
+            break;
+        rq.status = 0;
+        h = 0;
+        switch (rq.op) {
+        case UFSOP_OPEN:
+            kpath(rq.path, sp, 0);
+            rdir[0] = 0;
+            st = c_open(sp, 0x0012019FUL, 1, 0x40, &sz, &at);
+            if (st == 0xC0000022UL)
+                st = c_open(sp, 0x00120089UL, 1, 0x40, &sz, &at);
+            if (st) {
+                rq.status = ierr(st);
+                break;
+            }
+            if (!(rq.h = hnew())) {
+                c_close();
+                rq.status = IFS_FULL;
+                break;
+            }
+            rq.size = sz;
+            rq.attr = at & 0x37;
+            break;
+        case UFSOP_CREATE:
+            kpath(rq.path, sp, 0);
+            with_orig(sp, rq.path2);
+            rdir[0] = 0;
+            st = c_open(sp, 0x0012019FUL, 5, 0x40, 0, 0);
+            if (st) {
+                rq.status = ierr(st);
+                break;
+            }
+            lcnt = 0xFFFF;
+            if (!(rq.h = hnew())) {
+                c_close();
+                rq.status = IFS_FULL;
+            }
+            break;
+        case UFSOP_READ:
+            if (!hget(rq.h)) {
+                rq.status = IFS_ERR;
+                break;
+            }
+            n = rq.len > CHUNK ? CHUNK : rq.len;
+            cr_zero(BODY, 48);
+            BODY[0] = 49;
+            BODY[2] = 0x50;
+            put32(BODY + 4, n);
+            put32(BODY + 8, rq.pos);
+            cr_cpy(BODY + 16, fid, 16);
+            st = smb(C_READ, 49);
+            if (st == S_EOF)
+                break;
+            if (st) {
+                rq.status = IFS_ERR;
+                break;
+            }
+            rq.len = (unsigned)get32(RB + 4);
+            h = RB[2];                  /* Daten ab rx + h                */
+            break;
+        case UFSOP_WRITE:
+            if (!hget(rq.h)) {
+                rq.status = IFS_ERR;
+                break;
+            }
+            n = rq.len;                 /* Daten stehen schon ab BODY+48  */
+            cr_zero(BODY, 48);
+            BODY[0] = 49;
+            put16(BODY + 2, 64 + 48);
+            put32(BODY + 4, n);
+            put32(BODY + 8, rq.pos);
+            cr_cpy(BODY + 16, fid, 16);
+            st = smb(C_WRITE, 48 + n);
+            if (st) {
+                rq.status = ierr(st);
+                rq.len = 0;
+            } else
+                rq.len = (unsigned)get32(RB + 4);
+            h = 0xFFFF;                 /* keine Daten zurueck            */
+            break;
+        case UFSOP_CLOSE:
+            if (!hget(rq.h))
+                break;
+            if (rq.mask) {
+                cr_zero(BODY, 32 + 40);
+                if (rq.mask & 2)
+                    fat2ft(rq.date, rq.time, BODY + 32 + 16);
+                if (rq.mask & 1)
+                    put32(BODY + 32 + 32, rq.attr ? (u32)(rq.attr & 0x27) : 0x80);
+                setinfo(4, 40);
+            }
+            c_close();
+            hu[(unsigned)rq.h - 1] = 0;
+            lcnt = 0xFFFF;
+            break;
+        case UFSOP_READDIR:
+            kpath(rq.path, sp, 0);
+            if (lst_load(sp) || rq.n >= lcnt || (at = lst_at(rq.n)) == 0xFFFF) {
+                rq.status = -1;
+                break;
+            }
+            {
+                u8 __far *r = LREC(at);
+                unsigned k;
+                cr_zero(&ide, sizeof(ide));
+                for (k = 0; k < r[9] && k < IFS_NAMELEN - 1; k++)
+                    ide.name[k] = r[23 + k];
+                ide.attr = r[0] & 0x37;
+                ide.size = r[1] | (u32)r[2] << 8 | (u32)r[3] << 16 | (u32)r[4] << 24;
+                ide.date = r[5] | r[6] << 8;
+                ide.time = r[7] | r[8] << 8;
+                for (k = 0; k < 13; k++)
+                    ide.sname[k] = r[10 + k];
+            }
+            rq.len = sizeof(ide);
+            break;
+        case UFSOP_STAT:
+            kpath(rq.path, sp, 0);
+            rdir[0] = 0;
+            st = c_open(sp, 0x00100080UL, 1, 0, 0, &at);
+            if (st) {
+                rq.status = -1;
+                break;
+            }
+            c_close();
+            rq.attr = at & 0x37;
+            break;
+        case UFSOP_REMOVE:
+        case UFSOP_RMDIR:
+            kpath(rq.path, sp, 0);
+            rdir[0] = 0;
+            st = c_open(sp, 0x00110080UL, 1, rq.op == UFSOP_RMDIR ? 0x1001UL : 0x1040UL, 0, 0);
+            if (st)
+                rq.status = ierr(st);
+            else
+                c_close();
+            lcnt = 0xFFFF;
+            break;
+        case UFSOP_MKDIR:
+            kpath(rq.path, sp, 0);
+            with_orig(sp, rq.path2);
+            rdir[0] = 0;
+            st = c_open(sp, 0x00100081UL, 2, 1, 0, 0);
+            if (st)
+                rq.status = ierr(st);
+            else
+                c_close();
+            lcnt = 0xFFFF;
+            break;
+        case UFSOP_MOVE:
+            kpath(rq.path, sp, 0);
+            kpath(rq.path2, sp2, 0);
+            with_orig(sp2, rq.path2 + slen(rq.path2) + 1);
+            rdir[0] = 0;
+            st = c_open(sp, 0x00110080UL, 1, 0, 0, 0);
+            if (st) {
+                rq.status = ierr(st);
+                break;
+            }
+            n = to16(sp2, ub, 280);
+            cr_zero(BODY, 32 + 20);
+            for (h = 0; h < n; h++)
+                put16(BODY + 32 + 20 + 2 * h, ub[h]);
+            put32(BODY + 32 + 16, 2 * n);
+            st = setinfo(10, 20 + 2 * n);
+            c_close();
+            if (st)
+                rq.status = ierr(st);
+            h = 0;
+            lcnt = 0xFFFF;
+            break;
+        case UFSOP_SPACE:
+            rdir[0] = 0;
+            rq.pos = 0x7FFFFFFFUL;
+            if (c_open(0, 0x00100081UL, 1, 1, 0, 0) == 0) {
+                cr_zero(BODY, 40);
+                BODY[0] = 41;
+                BODY[2] = 2;            /* Dateisystem                    */
+                BODY[3] = 3;            /* FileFsSizeInformation          */
+                put32(BODY + 4, 24);
+                cr_cpy(BODY + 24, fid, 16);
+                if (smb(0x10, 41) == S_OK) {
+                    u8 *b = rx + get16(RB + 2);
+                    unsigned long au = get32(b + 8), sc = get32(b + 16),
+                                  bs = get32(b + 20);
+                    unsigned long fb = au;
+                    while (sc > 1 && fb < 0x40000000UL) { fb <<= 1; sc >>= 1; }
+                    while (bs > 1 && fb < 0x40000000UL) { fb <<= 1; bs >>= 1; }
+                    if (get32(b + 12) || sc > 1 || bs > 1)
+                        fb = 0x7FFFFFFFUL;
+                    rq.pos = fb;
+                }
+                c_close();
+            }
+            break;
+        case UFSOP_SETINFO:
+            kpath(rq.path, sp, 0);
+            rdir[0] = 0;
+            st = c_open(sp, 0x00100180UL, 1, 0, 0, 0);
+            if (st) {
+                rq.status = ierr(st);
+                break;
+            }
+            cr_zero(BODY, 32 + 40);
+            if (rq.mask & 2)
+                fat2ft(rq.date, rq.time, BODY + 32 + 16);
+            if (rq.mask & 1)
+                put32(BODY + 32 + 32, rq.attr ? (u32)(rq.attr & 0x27) : 0x80);
+            st = setinfo(4, 40);
+            c_close();
+            if (st)
+                rq.status = ierr(st);
+            lcnt = 0xFFFF;
+            break;
+        case UFSOP_LABEL:
+            for (n = 0; n < 11 && share[n]; n++)
+                sp[n] = up(share[n]);
+            sp[n] = 0;
+            rq.len = 12;
+            break;
+        case UFSOP_NAMEPATH:
+            kpath(rq.path, sp + 1, rq.shortn ? 1 : 2);
+            sp[0] = '\\';
+            rq.len = FAPI_PATHLEN > IFS_PATHLEN ? IFS_PATHLEN : FAPI_PATHLEN;
+            break;
+        case UFSOP_TRUNC:
+            if (!hget(rq.h)) {
+                rq.status = IFS_ERR;
+                break;
+            }
+            cr_zero(BODY, 40);
+            put32(BODY + 32, rq.size);
+            st = setinfo(20, 8);
+            if (st)
+                rq.status = ierr(st);
+            break;
+        default:
+            rq.status = IFS_ERR;
+        }
+        if (rq.op == UFSOP_READDIR && !rq.status)
+            fapi_call(FAPI_UFS, UFS_PUT, (unsigned)&rq, (unsigned)&ide);
+        else if ((rq.op == UFSOP_LABEL || rq.op == UFSOP_NAMEPATH) && !rq.status)
+            fapi_call(FAPI_UFS, UFS_PUT, (unsigned)&rq, (unsigned)sp);
+        else if (rq.op == UFSOP_READ && !rq.status && h)
+            fapi_call(FAPI_UFS, UFS_PUT, (unsigned)&rq, (unsigned)(rx + h));
+        else {
+            if (rq.op != UFSOP_WRITE)
+                rq.len = 0;
+            fapi_call(FAPI_UFS, UFS_PUT, (unsigned)&rq, 0);
+        }
+    }
+}
+
+static char pwf[FAPI_PATHLEN];          /* -P: Kennwortdatei (NET USE)    */
+static unsigned srv;                    /* --serve: Laufwerk + 1          */
+
 static void die(const char *m, unsigned rc)
 {
-    out("smbcli: ");
-    out(m);
-    out("\r\n");
+    if (pwf[0]) {                       /* NET liest die Meldung hier     */
+        unsigned h = DosCreate(pwf);
+        if (!FAPI_FAILED(h)) {
+            DosWrite(h, "!", 1);
+            DosWrite(h, m, slen(m));
+            DosClose(h);
+        }
+    }
+    if (!srv) {                         /* als Dienst still (NET meldet)  */
+        out("smbcli: ");
+        out(m);
+        out("\r\n");
+    }
     if (sock != 0xFFFF)
         DosClose(sock);
     DosExit(rc);
@@ -1032,6 +1628,14 @@ void main(void)
                 while (*a > ' ' && p < cmds + sizeof(cmds) - 1)
                     *p++ = *a++;
             *p = 0;
+        } else if (*a == '-' && a[1] == 'P' && a[2] <= ' ') {
+            a = next_word(a);
+            word(a, pwf, sizeof(pwf));
+        } else if (*a == '-' && a[1] == '-' && a[2] == 's') {   /* --serve X: */
+            a = next_word(a);
+            srv = (unsigned)(up(*a) - 'A' + 1);
+            if (srv < 3 || srv > 26 || a[1] != ':')
+                srv = 0xFFFF;
         } else if (*a == '-' && a[1] == '4' && a[2] <= ' ')
             net_fam = AF_INET;
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ')
@@ -1050,6 +1654,23 @@ void main(void)
             DosExit(2);
         }
     }
+    if (pwf[0]) {                       /* Kennwort aus der Datei, dann weg */
+        unsigned h = DosOpen(pwf);
+        if (!FAPI_FAILED(h)) {
+            n = DosRead(h, pass, sizeof(pass) - 1);
+            DosClose(h);
+            pass[FAPI_FAILED(n) ? 0 : n] = 0;
+            havepass = 1;
+        }
+        DosDelete(pwf);
+    }
+    if (srv) {                          /* losgeloest: keine Handles der  */
+        DosClose(STDIN);                /* Sitzung offen halten (sonst    */
+        DosClose(STDOUT);               /* bliebe eine Umleitung von NET  */
+        DosClose(STDERR);               /* belegt)                        */
+    }
+    if (srv == 0xFFFF)
+        die("--serve braucht ein Laufwerk C: bis Z:.", 2);
     if (!host[0] || !share[0])
         die("\\\\Rechner\\Freigabe fehlt (SMBCLI /? zeigt die Schalter).", 2);
     if (user[0] && !havepass && get_line("Kennwort: ", pass, sizeof(pass), 0))
@@ -1087,24 +1708,29 @@ void main(void)
         die("Server spricht kein SMB2 (2.0.2/2.1).", 4);
     dialect = get16(RB + 4);
     signing = (get16(RB + 2) & 2) != 0;
-    out("Verbunden mit ");
-    out(host);
+    if (!srv)
+        out("Verbunden mit ");
+    if (!srv)
+        out(host);
     net_ntop(ad, line);
-    if (!same(host, line)) {
+    if (!srv && !same(host, line)) {
         out(" (");
         out(line);
         out(")");
     }
-    out(", SMB ");
+    if (!srv)
+        out(", SMB ");
     ts[0] = (char)('0' + (dialect >> 8));
     ts[1] = '.';
     ts[2] = (char)('0' + ((dialect >> 4) & 15));
     ts[3] = dialect == 0x0202 ? '.' : 0;
     ts[4] = '2';
     ts[5] = 0;
-    out(ts);
-    out(signing ? ", signiert" : "");
-    out(".\r\n");
+    if (!srv) {
+        out(ts);
+        out(signing ? ", signiert" : "");
+        out(".\r\n");
+    }
     if (login())
         die("Anmeldung abgelehnt (Benutzer/Kennwort?).", 4);
 
@@ -1128,7 +1754,25 @@ void main(void)
                                  "Freigabe nicht verbunden.", 4);
     cr_cpy(tree, rx + 36, 4);
 
-    if (cmds[0]) {                      /* -c "a; b"                     */
+    if (srv) {                          /* NET USE: Laufwerk anmelden     */
+        lseg = DosAllocSeg(0);
+        if (FAPI_FAILED(lseg))
+            die("Zu wenig Speicher.", 4);
+        lcnt = 0xFFFF;
+        rg.drive = srv - 1;
+        scopy(rg.name, line, sizeof(rg.name));
+        k = fapi_call(FAPI_UFS, UFS_REG, (unsigned)&rg, 0);
+        if (k)
+            die(k == FAPI_ERR_EXIST ? "Laufwerk ist schon belegt." :
+                                      "Kein Platz f\x81r ein weiteres Netzlaufwerk.", 4);
+        if (pwf[0]) {                   /* leere Datei = verbunden        */
+            unsigned h = DosCreate(pwf);
+            if (!FAPI_FAILED(h))
+                DosClose(h);
+        }
+        pwf[0] = 0;
+        serve();
+    } else if (cmds[0]) {                      /* -c "a; b"                     */
         for (p = cmds; *p; ) {
             char *e = p;
             while (*e && *e != ';')

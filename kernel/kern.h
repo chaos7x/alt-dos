@@ -195,6 +195,7 @@ unsigned proc_run(unsigned long id);
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
 #define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
 #define DRV_LOOP    (-2)            /* Loop-Laufwerk (loop.c), unit = Platz */
+#define DRV_UFS     (-3)            /* Netzlaufwerk (ufs.c), keine Bloecke */
 #define NLOOP       8               /* 6.2: 4 -> 8                       */
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */
@@ -233,6 +234,8 @@ void __far vdd_drop(int d);
 unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val, int fgb);
 unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
 unsigned __far vdd_cbq(int t, struct vdd_call *c);
+unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
+void __far ufs_task_end(int t);
 void __far vdd_event(int t, unsigned ev, unsigned val);
 void __far vdd_tick(int t, int fgb);
 unsigned __far vid_hwclass(void);

@@ -243,6 +243,55 @@ struct fapi_drvinfo {
                                        ausser dem Takt, dahinter die Zahl
                                        der Ereignisse) -> AX = Bytes. Roh:
                                        vor Gebrauch hashen (apps/tls.c) */
+#define FAPI_UFS            0x5D    /* Dateisystem in Ring 3 (6.3, NET USE,
+                                       kernel/ufs.c): BX = UFS_*, CX/DX
+                                       siehe dort */
+#define UFS_REG             1       /* CX = struct fapi_ufsreg (Laufwerk,
+                                       Name) -> 0, FAPI_ERR_EXIST, FULL  */
+#define UFS_GET             2       /* CX = struct fapi_ufsreq, DX = Puffer
+                                       (UFS_DATA): wartet auf den naechsten
+                                       Auftrag -> 0; op UFSOP_QUIT = Ende */
+#define UFS_PUT             3       /* CX = Antwort (status, Felder), DX =
+                                       Daten (len Byte) -> 0             */
+#define UFS_DEL             4       /* CX = Laufwerk: Dienst beenden lassen
+                                       -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
+#define UFS_INFO            5       /* CX = Laufwerk, DX = struct
+                                       fapi_ufsreg -> 0, FAPI_ERROR     */
+#define UFS_DATA            16384u  /* Daten je Auftrag hoechstens        */
+#define UFSOP_QUIT          0
+#define UFSOP_OPEN          1       /* path -> h, size, attr             */
+#define UFSOP_READ          2       /* h, pos, len -> Daten              */
+#define UFSOP_READDIR       3       /* path (Verzeichnis), n -> Daten =
+                                       struct ifs_dirent                 */
+#define UFSOP_STAT          4       /* path -> attr (status -1: fehlt)   */
+#define UFSOP_CREATE        5       /* path, path2 = Originalname -> h   */
+#define UFSOP_WRITE         6       /* h, pos, len, Daten -> len         */
+#define UFSOP_CLOSE         7       /* h, mask: 1 attr, 2 date/time      */
+#define UFSOP_REMOVE        8
+#define UFSOP_MKDIR         9       /* path, path2 = Originalname        */
+#define UFSOP_RMDIR         10
+#define UFSOP_MOVE          11      /* path -> path2 (Ziel; Originalname
+                                       des letzten Teils in path2 hinter
+                                       der Null)                         */
+#define UFSOP_SPACE         12      /* -> pos = freie Bytes (gekappt)    */
+#define UFSOP_SETINFO       13      /* path, mask, attr, date, time      */
+#define UFSOP_LABEL         14      /* -> Daten = Bezeichnung (11)       */
+#define UFSOP_NAMEPATH      15      /* path, shortn -> Daten = Pfad      */
+#define UFSOP_TRUNC         16      /* h, size                           */
+struct fapi_ufsreg {
+    unsigned short drive;           /* 2 = C:                            */
+    unsigned short task;            /* UFS_INFO: Dienst                  */
+    char           name[80];        /* z. B. \\server\freigabe        */
+};
+struct fapi_ufsreq {
+    unsigned short op, seq;
+    short          status;          /* Antwort: 0 oder IFS_* (negativ)   */
+    unsigned short len;             /* Daten                             */
+    unsigned long  h, pos, size;
+    unsigned short n, attr, date, time, mask, shortn;
+    char           path[261];
+    char           path2[261];
+};
 #define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
 #define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
 #define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->
