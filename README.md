@@ -277,10 +277,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `--no-check-certificate` lässt die Prüfung weg
 - `SMBCLI` (6.3) holt und legt Dateien auf Windows-/Samba-Freigaben ab
   (Bedienung angelehnt an smbclient): `SMBCLI \\Rechner\Freigabe
-  [-U Benutzer[%Kennwort]] [-W Domäne] [-c "Befehl; Befehl"] [-p Port]
-  [-4|-6]`, Befehle dir/ls, cd, pwd, get, put, del, md, rd, lcd, help,
+  [-U Benutzer[%Kennwort]] [-W Domäne] [-k] [-c "Befehl; Befehl"]
+  [-p Port] [-4|-6]`, Befehle dir/ls, cd, pwd, get, put, del, md, rd, lcd, help,
   quit (auch aus einer umgeleiteten Eingabe). SMB 2.0.2/2.1, Anmeldung
-  NTLMv2 in SPNEGO (ohne `-U` als Gast), signiert mit HMAC-SHA256, wenn
+  NTLMv2 in SPNEGO (ohne `-U` als Gast) oder mit `-k` per Kerberos
+  (Ticket von KINIT), signiert mit HMAC-SHA256, wenn
   der Server es verlangt; Namen CP437 <-> UTF-16, Dateien bis 4 GB in
   Stücken zu 16 KB. ERRORLEVEL 0 ok, 1 Befehl gescheitert, 2 Aufruf,
   4 Netz/Anmeldung
@@ -290,7 +291,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   von einem losgelösten SMBCLI im Ring 3 (FAPI 93 DosUfs, wie FUSE); alle
   Programme und die DOS-Boxen sehen es wie eine Platte (lange Namen,
   8.3-Ersatznamen für alte Programme); bricht die Verbindung ab, verbindet
-  der Dienst beim nächsten Zugriff selbst neu, offene Dateien bleiben offen)
+  der Dienst beim nächsten Zugriff selbst neu, offene Dateien bleiben offen;
+  ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat)
+- `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KLIST`, `KDESTROY` (6.3):
+  Anmeldung an einer Domäne (Active Directory, Samba-AD, MIT) mit
+  Kerberos v5, aes256-cts-hmac-sha1-96, KDC über TCP 88; Tickets in
+  `%TEMP%\KRB5CC.DAT` (oder `%KRB5CCNAME%`), die Uhr kommt vom KDC
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,

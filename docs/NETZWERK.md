@@ -410,5 +410,66 @@ Neustart, dann 2.100 Byte Daten – kommen vollständig in der wieder
 geöffneten Datei an. Lehre beim Testen: `pkill -x smbd` beendet nur den
 Elternprozess, die Verbindung bedient ein Kind („smbd: client …“).
 
-Weiter (offen): Stufe 3 Domäne (Kerberos, LDAP, DOMJOIN), SMB 3 (AES-CMAC,
-Verschlüsselung), Sperren (SHARE) über das Netz.
+## Domäne Stufe 1: Kerberos (20.11.2026)
+
+Reihenfolge (Entscheidung des Nutzers): Wiederverbinden, Domäne, Sperren,
+SMB 3. Alles in Ring 3 (Programme), damit es unter 7.0 unverändert läuft.
+
+- `apps/krbcrypt.c` (eigene Umsetzung nach den Normen, nur gelesen):
+  SHA-1, HMAC-SHA1 (vorbereiteter Schlüsselzustand – PBKDF2 braucht so
+  zwei statt vier Blöcke je Runde), PBKDF2-HMAC-SHA1, n-fold, DK,
+  Schlüssel aus Kennwort und der Rahmen aes256-cts-hmac-sha1-96 (RFC
+  3961/3962: Konfusor, AES-CBC mit Ciphertext Stealing, HMAC-SHA1-96 mit
+  Ki/Ke/Kc). `crypto.c` kennt dafür AES-256 und Entschlüsseln (`aes_keyl`,
+  `aes_dec`, umgekehrte S-Box einmal aus der S-Box). Auf dem Rechner
+  geprüft: `tools/krbtest.c` | `tools/krbtest.py` (Testwerte RFC 3962
+  Anhang B, n-fold, 404 Zufallsfälle gegen hashlib/cryptography),
+  `tools/cryptotest` danach unverändert.
+- `apps/krb5.c` (RFC 4120, RFC 4121): DER schreiben (Kennung + 3 Byte
+  Platz für die Länge, beim Schließen kürzeste Form und Inhalt nach
+  vorn; Zustand wird für verschachtelte Teile gesichert) und lesen. KDC
+  über TCP 88 (4 Byte Länge vorn; UDP lohnt nicht – Tickets mit PAC sind
+  größer als ein Datagramm). AS-REQ zuerst ohne Vorauthentisierung: die
+  KRB-ERROR-Antwort PREAUTH_REQUIRED liefert Salz und Iterationen
+  (PA-ETYPE-INFO2) und die Uhr des KDC (`stime` -> `krb_off`, UTC =
+  Ortszeit + krb_off – so stört weder die Zeitzone noch eine falsche Uhr
+  von AT-DOS); dann mit PA-ENC-TIMESTAMP. TGS-REQ mit PA-TGS-REQ (AP-REQ
+  mit Authenticator, Prüfsumme hmac-sha1-96-aes256 über den Request-Body,
+  Verwendung 6/7, Antwort 8). Nur Etype 18 (AES-256). GSS-Hülle RFC 4121
+  ohne gegenseitige Anmeldung (Merker Integrität + Vertraulichkeit) –
+  kein AP-REP, Sitzungsschlüssel = der des Dienst-Tickets. Arbeitspuffer
+  (je 4 KB) stellt der Aufrufer (`krb_bufs`): SMBCLI nimmt seine Sende-/
+  Empfangspuffer, sonst passte DGROUP nicht (SMBCLI jetzt 60.618 Byte +
+  4 KB Stapel). Ablage `%KRB5CCNAME%`, sonst `%TEMP%\KRB5CC.DAT`: Kopf
+  (Uhrversatz, KDC) + bis 4 Einträge (TGT zuerst, dann Diensttickets),
+  eintragsweise gelesen/geschrieben.
+- `KINIT [Name[@REALM]] [/KDC:Adresse]` (Name/Realm sonst aus %USERNAME%/
+  %USERDNSDOMAIN%; KDC sonst der Name der Domäne – im AD hat er die
+  Adressen der DCs; Kennwort von der Tastatur ohne Echo, bei umgeleiteter
+  Eingabe aus deren erster Zeile), `KLIST`, `KDESTROY` (überschreibt die
+  Ablage vor dem Löschen). Meldungen nach KRB-ERROR-Code (Kennwort
+  falsch, Benutzer unbekannt, Uhr, gesperrt …).
+- `SMBCLI -k`: TGT aus der Ablage, `cifs/rechner` aus der Ablage oder vom
+  KDC (und abgelegt), AP-REQ in SPNEGO (Mechanismus krb5), signiert wie
+  bisher mit den ersten 16 Byte des Sitzungsschlüssels. `NET USE X:
+  \\Rechner\Freigabe` ohne Kennwort und `/USER:` nimmt Kerberos von
+  selbst, wenn die Ablage da ist und der Rechner mit Namen angegeben ist
+  (wie Windows); sonst NTLMv2 wie bisher.
+
+Test-DC (nur im Scratchpad, nicht im Repository): Samba 4.19 als AD-DC
+„ATDOS.TEST“ (`samba-tool domain provision`, Python 3.12 – Ubuntu startet
+3.13 –, Samba nur an 127.0.0.1, Container ohne IPv6, winbind
+nachinstalliert, Freigabe außerhalb eines 700-Verzeichnisses), DNS-Einträge
+der Domäne und von `dc1` auf 10.0.2.2 (aus QEMU über SLiRP), Gast mit
+`TCPIP.SYS /DNS:10.0.2.2`. Geprüft in QEMU: KINIT mit falschem Kennwort
+(„Kennwort falsch“), unbekanntem Benutzer, richtig (AES-256-Ticket bis 10
+Std.), KLIST, KDESTROY; SMBCLI -k dir/get/put signiert, beim zweiten Mal
+mit dem abgelegten Dienstticket; NET USE mit Kerberos, DIR, COPY + FC /B
+gleich, Trennen; ohne Tickets „Anmeldung abgelehnt“, mit `/USER:` NTLMv2;
+Verbindung auf dem Server abgeschossen (`smbd: client`), danach DIR und
+COPY über das Wiederverbinden mit Kerberos. Reine Programmlogik – kein
+86Box.
+
+Weiter (offen): Domäne Stufe 2 (LDAP mit SASL/GSSAPI, DOMJOIN für das
+Rechnerkonto, Anmeldung beim Start, SRV-Einträge im Auflöser), Ticket
+erneuern, SMB 3 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.

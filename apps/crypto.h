@@ -64,10 +64,12 @@ void hmac_end(struct hmac *h, u8 out[32]);
 void tls_prf(const u8 *sec, unsigned slen, const char *label,
              const u8 *seed, unsigned seedlen, u8 *out, unsigned n);
 
-/* AES-128 (nur Verschluesseln, GCM braucht nur das) */
-struct aes { u8 rk[176]; };
+/* AES-128 und AES-256 (FIPS 197); aes_key = 128 Bit, aes_keyl klen 16/32 */
+struct aes { u8 rk[240]; u8 nr; };
 void aes_key(struct aes *a, const u8 key[16]);
+void aes_keyl(struct aes *a, const u8 *key, unsigned klen);
 void aes_enc(const struct aes *a, const u8 in[16], u8 out[16]);
+void aes_dec(const struct aes *a, const u8 in[16], u8 out[16]);
 
 /* GCM mit 12-Byte-IV: Daten an Ort und Stelle (n Byte), tag 16 Byte.
    gcm_open -> 0 = Tag stimmt (Daten entschluesselt) */

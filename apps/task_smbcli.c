@@ -4,11 +4,11 @@
  * angelehnt an smbclient, eigener Code nach [MS-SMB2], [MS-NLMP] und
  * RFC 4178 (SPNEGO), nur gelesen:
  *   SMBCLI \\Rechner\Freigabe [-U Benutzer[%Kennwort]] [-W Domaene]
- *          [-c "Befehl; Befehl"] [-p Port] [-4|-6]
+ *          [-k] [-c "Befehl; Befehl"] [-p Port] [-4|-6]
  * Befehle: dir/ls [Muster], cd [Verz|..|\], pwd, get Datei [lokal],
  * put lokal [Datei], del Datei, md Verz, rd Verz, lcd [Verz], help, quit.
  * Dialekte SMB 2.0.2 und 2.1, Anmeldung NTLMv2 in SPNEGO (ohne Kennwort:
- * Gast), signiert mit HMAC-SHA256, wenn der Server es verlangt. Namen in
+ * Gast) oder mit -k Kerberos (Ticket von KINIT, krb5.c), signiert mit HMAC-SHA256, wenn der Server es verlangt. Namen in
  * CP437 <-> UTF-16. Dateien bis 4 GB, Stuecke zu 16 KB.
  * ERRORLEVEL: 0 ok, 1 ein Befehl scheiterte, 2 Aufruf, 4 Netz/Anmeldung.
  */
@@ -19,6 +19,7 @@
 #include "crypto.h"
 #include "tls.h"                        /* tls_random (rnd.c)            */
 #include "arcutil.h"
+#include "krb5.h"
 
 #define TMO     30000u
 #define CHUNK   16384u
@@ -29,7 +30,8 @@ static char cmds[FAPI_ARGLEN];
 static struct fapi_socket so;
 static struct fapi_sockio io;
 static unsigned char ad[16];
-static unsigned sock = 0xFFFF, port = 445, failed, havepass;
+static unsigned sock = 0xFFFF, port = 445, failed, havepass, kerb;
+static const char *kmsg;                 /* Meldung der Kerberos-Anmeldung */
 static u8 tx[64 + 128 + CHUNK + 4], rx[64 + 64 + CHUNK + 8];
 static unsigned rxn;                    /* Laenge der Antwort (ohne NetBIOS) */
 static u8 skey[16];
@@ -320,12 +322,14 @@ static unsigned dl(unsigned n) { return n < 128 ? 2 : n < 256 ? 3 : 4; }
 static const u8 oid_spnego[] = { 0x06, 0x06, 0x2B, 0x06, 0x01, 0x05, 0x05, 0x02 };
 static const u8 oid_ntlm[] = { 0x06, 0x0A, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0A };
 
-/* NTLM-Nachricht t (tl Byte) in SPNEGO nach d -> Laenge */
-static unsigned spnego(u8 *d, const u8 *t, unsigned tl, int first)
+static const u8 oid_krb5[] = { 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x12, 0x01, 0x02, 0x02 };
+
+/* Token t (tl Byte, NTLM oder Kerberos) in SPNEGO nach d -> Laenge */
+static unsigned spnego2(u8 *d, const u8 *t, unsigned tl, int first, const u8 *mo, unsigned lm)
 {
     unsigned l4 = dl(tl) + tl, la2 = dl(l4) + l4, p = 0;
     if (first) {                        /* NegTokenInit                  */
-        unsigned lm = sizeof(oid_ntlm), l30a = dl(lm) + lm, la0 = dl(l30a) + l30a;
+        unsigned l30a = dl(lm) + lm, la0 = dl(l30a) + l30a;
         unsigned l30 = la0 + la2, la0o = dl(dl(l30) + l30) + dl(l30) + l30;
         unsigned tot = sizeof(oid_spnego) + la0o;
         p += dh(d + p, 0x60, tot);
@@ -334,7 +338,7 @@ static unsigned spnego(u8 *d, const u8 *t, unsigned tl, int first)
         p += dh(d + p, 0x30, l30);
         p += dh(d + p, 0xA0, l30a);
         p += dh(d + p, 0x30, lm);
-        cr_cpy(d + p, oid_ntlm, lm); p += lm;
+        cr_cpy(d + p, mo, lm); p += lm;
     } else {                            /* NegTokenResp                  */
         unsigned l30 = la2;
         p += dh(d + p, 0xA1, dl(l30) + l30);
@@ -344,6 +348,59 @@ static unsigned spnego(u8 *d, const u8 *t, unsigned tl, int first)
     p += dh(d + p, 0x04, tl);
     cr_cpy(d + p, t, tl);
     return p + tl;
+}
+
+static unsigned spnego(u8 *d, const u8 *t, unsigned tl, int first)
+{
+    return spnego2(d, t, tl, first, oid_ntlm, sizeof(oid_ntlm));
+}
+
+/* Anmeldung mit Kerberos (-k): TGT aus der Ablage (KINIT), Dienstticket
+   cifs/Rechner aus der Ablage oder vom KDC; Puffer: Anfrage/TGT in tx,
+   Antwort/Dienstticket in rx (DGROUP ist knapp) -> 0 ok */
+static int klogin(void)
+{
+    struct kcred *tgt = (struct kcred *)(tx + KBUF), *sc = (struct kcred *)(rx + KBUF);
+    static char sn[100];
+    unsigned n, i;
+    u32 st;
+    if (krb_cc_open() <= 0 || krb_cc_get(0, tgt)) {
+        kmsg = "Kein Kerberos-Ticket (erst KINIT).";
+        return 1;
+    }
+    if (krb_now() >= tgt->end) {
+        kmsg = "Kerberos-Ticket abgelaufen (KINIT).";
+        return 1;
+    }
+    scopy(sn, "cifs/", sizeof(sn));
+    for (i = 0; host[i] && i + 6 < sizeof(sn); i++)
+        sn[5 + i] = (char)(host[i] >= 'A' && host[i] <= 'Z' ? host[i] + 32 : host[i]);
+    sn[5 + i] = 0;
+    if (krb_cc_find(sn, sc) < 0 || krb_now() + 60 >= sc->end) {
+        krb_bufs(tx, rx);
+        if ((kmsg = krb_tgs(tgt, "cifs", host, sc)) != 0)
+            return 1;
+        krb_cc_put(sc);
+    }
+    cr_cpy(skey, sc->key, 16);          /* SMB2: erste 16 Byte            */
+    n = krb_gss(sc, rx, KBUF);
+    if (!n) {
+        kmsg = "Ticket zu gross.";
+        return 1;
+    }
+    cr_zero(BODY, 24);
+    n = spnego2(BODY + 24, rx, n, 1, oid_krb5, sizeof(oid_krb5));
+    BODY[0] = 25;
+    BODY[3] = 1;
+    put16(BODY + 12, 64 + 24);
+    put16(BODY + 14, n);
+    st = smb(C_SESS, 24 + n);
+    if (st != S_OK) {
+        kmsg = "Server lehnt das Kerberos-Ticket ab.";
+        return 1;
+    }
+    cr_cpy(sess, rx + 40, 8);
+    return 0;
 }
 
 static void field(u8 *m, unsigned at, unsigned len, unsigned off)
@@ -1724,8 +1781,8 @@ static const char *sconnect(void)
         out(signing ? ", signiert" : "");
         out(".\r\n");
     }
-    if (login())
-        return "Anmeldung abgelehnt (Benutzer/Kennwort?).";
+    if (kerb ? klogin() : login())
+        return kerb ? kmsg : "Anmeldung abgelehnt (Benutzer/Kennwort?).";
 
     /* TREE_CONNECT \\Rechner\Freigabe */
     scopy(line, "\\\\", sizeof(line));
@@ -1814,7 +1871,9 @@ void main(void)
             srv = (unsigned)(up(*a) - 'A' + 1);
             if (srv < 3 || srv > 26 || a[1] != ':')
                 srv = 0xFFFF;
-        } else if (*a == '-' && a[1] == '4' && a[2] <= ' ')
+        } else if (*a == '-' && a[1] == 'k' && a[2] <= ' ')
+            kerb = 1;
+        else if (*a == '-' && a[1] == '4' && a[2] <= ' ')
             net_fam = AF_INET;
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ')
             net_fam = AF_INET6;
@@ -1828,7 +1887,7 @@ void main(void)
             scopy(share, p, sizeof(share));
         } else {
             out("SMBCLI \\\\Rechner\\Freigabe [-U Benutzer[%Kennwort]] [-W Dom\x84ne]\r\n"
-                "       [-c \"Befehl; Befehl\"] [-p Port] [-4|-6]\r\n");
+                "       [-k] [-c \"Befehl; Befehl\"] [-p Port] [-4|-6]\r\n");
             DosExit(2);
         }
     }
@@ -1851,7 +1910,7 @@ void main(void)
         die("--serve braucht ein Laufwerk C: bis Z:.", 2);
     if (!host[0] || !share[0])
         die("\\\\Rechner\\Freigabe fehlt (SMBCLI /? zeigt die Schalter).", 2);
-    if (user[0] && !havepass && get_line("Kennwort: ", pass, sizeof(pass), 0))
+    if (!kerb && user[0] && !havepass && get_line("Kennwort: ", pass, sizeof(pass), 0))
         die("Kennwort fehlt.", 2);
 
     if (net_lookup(host, ad))

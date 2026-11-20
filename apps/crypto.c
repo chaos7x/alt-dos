@@ -326,7 +326,7 @@ void tls_prf(const u8 *sec, unsigned slen, const char *label,
     }
 }
 
-/* ---- AES-128 ------------------------------------------------------------ */
+/* ---- AES-128/256 ------------------------------------------------------------ */
 static const u8 SB[256] = {
     0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
     0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
@@ -348,40 +348,49 @@ static const u8 SB[256] = {
 
 #define XT(x) ((u8)(((x) << 1) ^ (((x) & 0x80) ? 0x1B : 0)))
 
-void aes_key(struct aes *a, const u8 key[16])
+void aes_keyl(struct aes *a, const u8 *key, unsigned klen)
 {
-    unsigned i;
+    unsigned i, nk = klen, tot;
     u8 rc = 1, t0, t1, t2, t3, *r = a->rk;
-    cr_cpy(r, key, 16);
-    for (i = 16; i < 176; i += 4) {
+    a->nr = (u8)(klen == 32 ? 14 : 10);
+    tot = 16 * (a->nr + 1);
+    cr_cpy(r, key, nk);
+    for (i = nk; i < tot; i += 4) {
         t0 = r[i - 4]; t1 = r[i - 3]; t2 = r[i - 2]; t3 = r[i - 1];
-        if ((i & 15) == 0) {
+        if (i % nk == 0) {
             u8 k = t0;
             t0 = SB[t1] ^ rc;
             t1 = SB[t2];
             t2 = SB[t3];
             t3 = SB[k];
             rc = XT(rc);
+        } else if (nk == 32 && i % 32 == 16) {
+            t0 = SB[t0]; t1 = SB[t1]; t2 = SB[t2]; t3 = SB[t3];
         }
-        r[i] = r[i - 16] ^ t0;
-        r[i + 1] = r[i - 15] ^ t1;
-        r[i + 2] = r[i - 14] ^ t2;
-        r[i + 3] = r[i - 13] ^ t3;
+        r[i] = r[i - nk] ^ t0;
+        r[i + 1] = r[i - nk + 1] ^ t1;
+        r[i + 2] = r[i - nk + 2] ^ t2;
+        r[i + 3] = r[i - nk + 3] ^ t3;
     }
+}
+
+void aes_key(struct aes *a, const u8 key[16])
+{
+    aes_keyl(a, key, 16);
 }
 
 void aes_enc(const struct aes *a, const u8 in[16], u8 out[16])
 {
     u8 s[16], t[16];
-    unsigned i, r, c;
+    unsigned i, r, c, nr = a->nr;
     const u8 *k = a->rk;
     for (i = 0; i < 16; i++)
         s[i] = in[i] ^ k[i];
-    for (r = 1; r <= 10; r++) {
+    for (r = 1; r <= nr; r++) {
         k += 16;
         for (i = 0; i < 16; i++)        /* SubBytes + ShiftRows          */
             t[i] = SB[s[(i + 4 * (i & 3)) & 15]];
-        if (r < 10)
+        if (r < nr)
             for (c = 0; c < 16; c += 4) {   /* MixColumns                 */
                 u8 a0 = t[c], a1 = t[c + 1], a2 = t[c + 2], a3 = t[c + 3];
                 u8 x = a0 ^ a1 ^ a2 ^ a3;
@@ -392,6 +401,43 @@ void aes_enc(const struct aes *a, const u8 in[16], u8 out[16])
             }
         for (i = 0; i < 16; i++)
             s[i] = t[i] ^ k[i];
+    }
+    cr_cpy(out, s, 16);
+}
+
+/* Entschluesseln (Kerberos AES-CTS): umgekehrte S-Box einmal aus SB */
+static u8 ISB[256], isb_ok;
+
+void aes_dec(const struct aes *a, const u8 in[16], u8 out[16])
+{
+    u8 s[16], t[16];
+    unsigned i, r, c, nr = a->nr;
+    const u8 *k = a->rk + 16 * nr;
+    if (!isb_ok) {
+        for (i = 0; i < 256; i++)
+            ISB[SB[i]] = (u8)i;
+        isb_ok = 1;
+    }
+    for (i = 0; i < 16; i++)
+        s[i] = in[i] ^ k[i];
+    for (r = nr; r >= 1; r--) {
+        k -= 16;
+        for (i = 0; i < 16; i++)        /* InvShiftRows + InvSubBytes    */
+            t[(i + 4 * (i & 3)) & 15] = ISB[s[i]];
+        for (i = 0; i < 16; i++)
+            t[i] ^= k[i];
+        if (r > 1)
+            for (c = 0; c < 16; c += 4) {   /* InvMixColumns              */
+                u8 a0 = t[c], a1 = t[c + 1], a2 = t[c + 2], a3 = t[c + 3];
+                u8 u = XT(XT(a0 ^ a2)), v = XT(XT(a1 ^ a3));
+                u8 x = a0 ^ a1 ^ a2 ^ a3;
+                a0 ^= u; a1 ^= v; a2 ^= u; a3 ^= v;
+                t[c] = a0 ^ x ^ XT(a0 ^ a1);
+                t[c + 1] = a1 ^ x ^ XT(a1 ^ a2);
+                t[c + 2] = a2 ^ x ^ XT(a2 ^ a3);
+                t[c + 3] = a3 ^ x ^ XT(a3 ^ a0);
+            }
+        cr_cpy(s, t, 16);
     }
     cr_cpy(out, s, 16);
 }

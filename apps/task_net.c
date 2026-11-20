@@ -10,6 +10,8 @@
  * ueber eine kurzlebige Datei in %TEMP% (nicht in der Befehlszeile, die
  * TASKMAN zeigen wuerde); SMBCLI liest und loescht sie, legt sie leer neu
  * an, wenn das Laufwerk steht, oder schreibt "!Meldung", wenn nicht.
+ * Ohne Kennwort und /USER: mit Kerberos (SMBCLI -k), wenn KINIT Tickets
+ * abgelegt hat und der Rechner mit Namen angegeben ist (wie Windows).
  * ERRORLEVEL: 0 ok, 1 Fehler, 2 Aufruf.
  */
 #include "fapi.h"
@@ -83,10 +85,42 @@ static void cat(char *d, const char *s, unsigned max)
     scopy(d + n, s, max - n);
 }
 
+/* Kerberos-Ablage vorhanden (Pfad wie krb5.c krb_cc_path)? */
+static int have_tickets(void)
+{
+    unsigned n, h;
+    if (FAPI_FAILED(DosGetEnv("KRB5CCNAME", w, sizeof(w))) || !w[0]) {
+        if (FAPI_FAILED(DosGetEnv("TEMP", w, sizeof(w) - 14)) || !w[0])
+            scopy(w, "C:", sizeof(w));
+        n = slen(w);
+        if (w[n - 1] != '\\')
+            w[n++] = '\\';
+        scopy(w + n, "KRB5CC.DAT", sizeof(w) - n);
+    }
+    h = DosOpen(w);
+    if (FAPI_FAILED(h))
+        return 0;
+    DosClose(h);
+    return 1;
+}
+
+/* Rechner im UNC als Zahl (IPv4/IPv6)? Dann geht Kerberos nicht */
+static int unc_numeric(void)
+{
+    const char *p = unc + 2;
+    unsigned dig = 1;
+    for (; *p && *p != '\\'; p++)
+        if (*p == ':')
+            return 1;
+        else if (!(*p >= '0' && *p <= '9') && *p != '.')
+            dig = 0;
+    return dig;
+}
+
 void main(void)
 {
     char *a, *p;
-    unsigned drive = 0xFFFF, del = 0, star = 0, havepw = 0, h, n, t;
+    unsigned drive = 0xFFFF, del = 0, star = 0, havepw = 0, kerb, h, n, t;
 
     DosGetArgs(args);
     a = skip(args);
@@ -145,6 +179,7 @@ void main(void)
         usage();
     if (!fapi_call(FAPI_UFS, UFS_INFO, drive, (unsigned)&rg))
         fail("Das Laufwerk ist schon verbunden.");
+    kerb = !user[0] && !havepw && !star && !unc_numeric() && have_tickets();
     if (star || (user[0] && !havepw))
         ask_pass();
 
@@ -186,6 +221,8 @@ void main(void)
         cat(cl, " -W ", sizeof(cl));
         cat(cl, dom, sizeof(cl));
     }
+    if (kerb)
+        cat(cl, " -k", sizeof(cl));
     cat(cl, " -P ", sizeof(cl));
     cat(cl, pwf, sizeof(cl));
     cat(cl, " --serve ", sizeof(cl));

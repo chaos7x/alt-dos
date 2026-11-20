@@ -5971,6 +5971,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Domäne, Sperren, SMB 3): `sconnect`/`reconnect` in SMBCLI, offene Dateien
   neu geöffnet, Auftrag einmal wiederholt; Tests run3.sh/run4.sh (Samba
   mit `pkill smbd` ganz beenden – `-x` trifft das Kind nicht).
+  Domäne Stufe 1 Kerberos erledigt (20.11.2026, `docs/NETZWERK.md`
+  „Domäne Stufe 1“): `apps/krbcrypt.c` (SHA-1, PBKDF2, AES-256-CTS, RFC
+  3961/3962; Rechner-Test `tools/krbtest.*`), `apps/krb5.c` (AS/TGS,
+  GSS, Ablage %TEMP%\KRB5CC.DAT, Uhr vom KDC), KINIT/KLIST/KDESTROY,
+  SMBCLI `-k`, NET USE von selbst mit Kerberos. Test-DC im Scratchpad
+  (Samba-AD ATDOS.TEST, `samba-tool` nur mit `python3.12`, Start
+  `/tmp/claude-0/ad/start.sh`, QEMU-Tests `/tmp/claude-0/ad/q/k*.sh`,
+  Benutzer test/administrator, Kennwort Geheim123!). SMBCLI-DGROUP danach
+  60.618 Byte + 4 KB Stapel – voll. Nächster Schritt: LDAP/DOMJOIN.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`
