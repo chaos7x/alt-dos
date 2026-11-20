@@ -55,9 +55,10 @@ struct nif {
     char           domain[32];
     /* IPv6 (ip6.h): Zustaende 0 keine, 1 DAD laeuft, 2 gilt, 3 doppelt */
     unsigned char  ll[16], ga[16];      /* link-lokal, global (SLAAC)    */
-    unsigned char  llst, gast, gplen;
-    unsigned long  lldad, gadad;        /* Takt: DAD fertig              */
-    unsigned long  gaexp, rtrexp;       /* Sekunden: gueltig bis         */
+    unsigned char  ua[16];              /* lokal (ULA fc00::/7, SLAAC)   */
+    unsigned char  llst, gast, gplen, uast;
+    unsigned long  lldad, gadad, uadad; /* Takt: DAD fertig              */
+    unsigned long  gaexp, rtrexp, uaexp;/* Sekunden: gueltig bis         */
     unsigned char  rtr[16];             /* Standard-Router (link-lokal)  */
     unsigned char  dns6[16];            /* RDNSS aus dem RA              */
     unsigned char  rsn;                 /* Router Solicitations gesendet */
@@ -394,7 +395,8 @@ static int same_net(struct nif *n, const unsigned char __far *a)
 /* IPv6-Ziel a direkt an Karte i (link-lokal oder eigenes Praefix)? */
 static int v6_onlink(int i, const unsigned char __far *a)
 {
-    return IS_LL(a) || (nif[i].gast == 2 && eq(a, nif[i].ga, 8));
+    return IS_LL(a) || (nif[i].gast == 2 && eq(a, nif[i].ga, 8)) ||
+           (nif[i].uast == 2 && eq(a, nif[i].ua, 8));
 }
 
 #include "fw.h"                         /* Firewall-Regeln               */
@@ -716,6 +718,7 @@ static void ip6_in(int i, fp f, unsigned len)
                                            ::ffff:a.b.c.d (taeuschte IPv4
                                            vor) oder gleich dem Ziel      */
     if (!((n->llst == 2 && eq(d, n->ll, 16)) || (n->gast == 2 && eq(d, n->ga, 16)) ||
+          (n->uast == 2 && eq(d, n->ua, 16)) ||
           eq(d, allnodes, 16) ||
           (eq(d, allnodes, 11) && d[11] == 1 && d[12] == 0xFF && eq(d + 13, n->ll + 13, 3))))
         return;
@@ -906,6 +909,11 @@ static unsigned net_ifinfo(struct net_call __far *c)
     if (n->gast == 2) {
         cpy(u->addr[u->naddr].a, n->ga, 16);
         u->addr[u->naddr].plen = n->gplen;
+        u->addr[u->naddr++].kind = NA_SLAAC;
+    }
+    if (n->uast == 2 && u->naddr < NET_MAXADDR - 1) {
+        cpy(u->addr[u->naddr].a, n->ua, 16);
+        u->addr[u->naddr].plen = 64;
         u->addr[u->naddr++].kind = NA_SLAAC;
     }
     if (n->llst == 2) {

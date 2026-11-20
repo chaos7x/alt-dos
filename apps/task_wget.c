@@ -436,7 +436,9 @@ void main(void)
         else if (*a == '-' && a[1] == '4' && a[2] <= ' ') net_fam = AF_INET;
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ') net_fam = AF_INET6;
         else if (*a == '-' || *a == '/' && a[1] == '?') {
-            VioWrtTTY("WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] http://Rechner[:Port]/Pfad\r\n", 85);
+            static const char use[] =
+                "WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] http://Rechner[:Port]/Pfad\r\n";
+            VioWrtTTY(use, sizeof(use) - 1);
             DosExit(2);
         } else
             word(a, url, sizeof(url));

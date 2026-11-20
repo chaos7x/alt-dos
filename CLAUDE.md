@@ -1233,6 +1233,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Real Mode den BIOS-Tastenpuffer (F8 -> `boot_f8`), `f8_wait` (eine
   Sekunde), `cfg_ask` je Zeile (J/Eingabe, N, Esc = Rest ohne Fragen),
   CMD bekommt `/STEP` (fragt AUTOEXEC.CMD und jede Zeile außer REM).
+  (F8 gilt nur für die AUTOEXEC.CMD beim Start – CMD setzt `step` danach
+  zurück; vom Nutzer gemeldet: ein späterer Aufruf fragte weiter.)
   Geprüft: QEMU (6.2 mit 4.140-Byte-CONFIG.SYS + RTL8139/TCPIP), 86Box
   P3B-F (mit main, gleicher Code).
 - CONFIG.SYS bis 4 KB (Fehler, beim 5.1-Test gefunden: `startup[512]` in
@@ -5685,11 +5687,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geprüft: `bg mem`, `jobs`).
   IPv6 mit zwei Präfixen (vom Nutzer gemeldet, 20.11.2026: PING -6
   ins Internet ging am echten LAN nicht, IPCONFIG zeigte nur fd00::):
-  ip6.h nahm je RA das zuletzt genannte Präfix – jetzt geht ein
-  öffentliches einer ULA (`IS_ULA`, fc00::/7) vor; sock.h fragt bei
-  Familie 0 AAAA nur zuerst, wenn die Adresse keine ULA ist. In QEMU
-  mit v6peer2.py (RA mit fd00::/64 und 2001:db8:1::/64, beide
-  Reihenfolgen) geprüft: Adresse 2001:db8:1::…, PING an fd00::99 geht.
+  ip6.h nahm je RA das zuletzt genannte Präfix. Erster Fix (öffentlich
+  geht vor) machte ULA-Rechner im LAN unerreichbar (vom Nutzer gemeldet:
+  WGET zu seinem Webserver mit fd00:: hing) – jetzt zwei Adressen je
+  Karte: `ga` (global) und `ua` (ULA, `IS_ULA` fc00::/7, eigene DAD/
+  Lebensdauer), v6_src wählt ULA für ULA-Ziele, sonst global, ohne
+  globale die ULA; v6_onlink, Annahme in ip6_in, nd_mine und IFINFO
+  kennen beide. sock.h fragt bei Familie 0 AAAA nur zuerst, wenn es
+  eine globale gibt. In QEMU mit v6peer2.py (RA mit fd00::/64 und
+  2001:db8:1::/64) geprüft: IPCONFIG zeigt beide, PING an fd00::99 geht
+  mit fd00-Absender. WGET `/?` brach die Hilfe ab (feste Länge 116).
   IPv6 erledigt (18.11.2026, „weiter mit IPv6“; ohne DHCPv6, MLD,
   Fragmente, Pfad-MTU, Datenschutzadressen): `net/ip6.h` (in tcpip.c
   vor sock.h) – link-lokal fe80::EUI-64 beim Anmelden der Karte, DAD
