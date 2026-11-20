@@ -5962,7 +5962,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   EMS, SNI), WGET https mit `--no-check-certificate`; FAPI 5Ch
   `DosRandom` (Entropie-Pool, start.asm `ENTMIX` in irq1/irq_common).
   Testfalle: für ECDSA-Zertifikate muss secp256r1 in supported_groups
-  stehen. Stufe 2 (Serverprüfung) offen.
+  stehen. Stufe 2 erledigt (`apps/pki.c`: SHA-384/512, Montgomery-RSA
+  bis 4096 PKCS#1/PSS, ECDSA P-256/P-384, X.509; Kette gegen
+  `\DOS\SYSTEM\CACERT.PEM` aus `certs/cacert.pem` – Mozilla über curl,
+  MPL-2.0 –, Name, Gültigkeit ±1 Tag; WGET prüft jetzt standardmäßig,
+  `--ca-certificate=`; geprüft Rechner `tools/pkitest.*` 469 Fälle, QEMU
+  mit Test-CA, 86Box 386). Testfalle: in Watcom gilt `__far` in
+  `const u8 FAR *a, *b;` nur für `a` – jeden Zeiger einzeln vereinbaren.
 - VirtIO für Proxmox/QEMU (Wunsch des Nutzers, „letzter Schmankerl“ von
   6.x, nach dem Netzwerk): legacy/transitional-Geräte (1AF4h:1000h–103Fh,
   I/O-BAR, Warteschlange am Stück im Speicher, Seitennummer 32 Bit) –

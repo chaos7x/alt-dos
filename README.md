@@ -269,8 +269,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   GNU wget (3 Datei, 4 Netz, 5 TLS, 8 Fehlerantwort). https:// (6.3)
   über den eigenen TLS-1.2-Client `apps/tls.c` (ECDHE mit X25519,
   AES-128-GCM, Extended Master Secret, SNI; Zertifikate mit RSA oder
-  ECDSA P-256): den Server prüft er noch nicht, deshalb nur mit
-  `--no-check-certificate` wie bei GNU wget für ungeprüfte Server
+  ECDSA P-256/P-384), der den Server prüft wie GNU wget: Signatur des
+  Schlüsselaustauschs (RSA PKCS#1 v1.5 und PSS, ECDSA), Kette bis zu einer
+  Wurzel aus `\DOS\SYSTEM\CACERT.PEM` (Liste von Mozilla über curl,
+  MPL-2.0, `certs/`), Name (subjectAltName, sonst CN, auch `*.`) und
+  Gültigkeit; `--ca-certificate=Datei` nimmt eine andere Liste,
+  `--no-check-certificate` lässt die Prüfung weg
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,

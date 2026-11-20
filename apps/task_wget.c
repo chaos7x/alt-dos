@@ -11,9 +11,9 @@
  *   -4 / -6    nur IPv4 bzw. IPv6
  * HTTP/1.1 mit Connection: close, Content-Length oder chunked, bis zu
  * 5 Weiterleitungen (301/302/303/307/308). https:// ueber apps/tls.c
- * (6.3: TLS 1.2, ECDHE X25519, AES-128-GCM); den Server prueft es noch
- * nicht, deshalb nur mit --no-check-certificate (wie bei GNU wget fuer
- * ungepruefte Server).
+ * (6.3: TLS 1.2, ECDHE X25519, AES-128-GCM) mit Pruefung des Servers
+ * gegen \DOS\SYSTEM\CACERT.PEM (--ca-certificate=Datei, wie GNU wget;
+ * --no-check-certificate laesst die Pruefung weg).
  * Vorhandene Dateien werden nur mit -O oder -c ueberschrieben bzw.
  * fortgesetzt. ERRORLEVEL wie GNU wget: 0 ok, 1 Fehler, 2 Aufruf, 5 TLS,
  * 3 Datei, 4 Netz, 8 Fehlerantwort des Servers.
@@ -450,9 +450,13 @@ void main(void)
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ') net_fam = AF_INET6;
         else if (*a == '-' && a[1] == '-' && !lcmp(a + 2, "no-check-certificate", 20) && a[22] <= ' ')
             nocheck = 1;
+        else if (*a == '-' && a[1] == '-' && !lcmp(a + 2, "ca-certificate=", 15)) {
+            word(a + 17, tmp, sizeof(tmp));
+            tls_ca(tmp);
+        }
         else if (*a == '-' || *a == '/' && a[1] == '?') {
             VioWrtTTY("WGET [-O Datei|-] [-P Verz] [-c] [-q] [-S] [-T s] [-4|-6] [--no-check-certificate]\r\n"
-                      "     http[s]://Rechner[:Port]/Pfad\r\n", 92);
+                      "     [--ca-certificate=Datei] http[s]://Rechner[:Port]/Pfad\r\n", 116);
             DosExit(2);
         } else
             word(a, url, sizeof(url));
@@ -501,21 +505,21 @@ again:
     tlson = 0;
     if (https) {
         int e;
-        if (!nocheck) {
-            if (tlson) tls_close();
-        DosClose(h);
-            die(tls_msg(TLSE_NOVERIFY), 5);
-        }
         say("TLS ... ");
-        e = tls_open(h, host, tmo, TLS_NOVERIFY);
+        e = tls_open(h, host, tmo, nocheck ? TLS_NOVERIFY : 0);
         if (e) {
             say("\r\n");
-            if (tlson) tls_close();
-        DosClose(h);
+            DosClose(h);
+            if (tls_why[0]) {
+                VioWrtTTY("  ", 2);
+                VioWrtTTY(tls_why, slen(tls_why));
+                VioWrtTTY("\r\n", 2);
+            }
             die(tls_msg(e), e == TLSE_NET ? 4 : 5);
         }
         tlson = 1;
-        say("verschl\x81sselt (Server ungepr\x81" "ft).\r\n");
+        say(nocheck ? "verschl\x81sselt (Server ungepr\x81" "ft).\r\n" :
+                      "verschl\x81sselt, Server gepr\x81" "ft.\r\n");
     }
 
     p = req;

@@ -276,3 +276,42 @@ Programme): `apps/crypto.c` und `apps/tls.c`, benutzt von WGET.
   ECDSA-P-256-Zertifikat: je 1 MB byte-gleich, ohne Schalter ERRORLEVEL 5;
   86Box 386DX/40 mit NE2000 (Entropie im Interruptpfad): beide 1 MB
   byte-gleich.
+
+## TLS Stufe 2: Prüfung des Servers (20.11.2026)
+
+- `apps/pki.c` (Schnittstelle `pki.h`): SHA-384/512 (64-Bit-Worte als
+  Paare, Konstanten aus Python nachgerechnet), Großzahlen in 16-Bit-Worten
+  mit Montgomery-Multiplikation (CIOS, `mul16`, R² mod m durch Verdoppeln,
+  Inverses von m[0] nach Newton) bis 4096 Bit; RSA PKCS#1 v1.5 (DigestInfo
+  SHA-256/384/512) und PSS (MGF1, Salz beliebiger Länge); ECDSA P-256 und
+  P-384 (Jacobi-Koordinaten mit a = -3, dbl-2001-b/add-2007-bl, Shamir für
+  u1·G + u2·Q, Inverse nach Fermat); DER-Leser und X.509 (tbs, Aussteller/
+  Subjekt roh für den Vergleich, Gültigkeit, Schlüssel RSA/EC, Signatur-
+  verfahren, subjectAltName, basicConstraints, CN). RSA und EC teilen sich
+  die Montgomery-Arbeitsbereiche (DGROUP von WGET 60,7 KB).
+- `tls.c`: Certificate-Nachricht (bis 40 KB) in einem DosAllocSeg-Segment,
+  bis 8 Zertifikate; Signatur des ServerKeyExchange über client_random +
+  server_random + Parameter mit dem Schlüssel des ersten Zertifikats
+  (0401/0501/0601, 0804/0805/0806, 0403/0503); Name des ersten
+  Zertifikats (dNSName, `*.` für genau ein Etikett, IP-Adresse, ohne
+  dNSName der CN); Gültigkeit jedes Glieds auf den Tag mit einem Tag
+  Spielraum (AT-DOS-Uhr ist Ortszeit); Kette: Aussteller zuerst in der CA-
+  Liste suchen (PEM Zeile für Zeile, Base64 in das Segment, Subjekt
+  vergleichen, Signatur prüfen – gleichnamige Querzertifikate werden der
+  Reihe nach versucht), sonst in der gesendeten Kette (muss CA sein).
+  Meldungen mit Einzelheit (`tls_why`): Name, unbekannter Aussteller von
+  CN, Gültig bis. Fehler beantwortet der Client mit dem passenden Alert.
+- CA-Liste `certs/cacert.pem` -> `\DOS\SYSTEM\CACERT.PEM` (Diskette 1 und
+  Platte; Herkunft und Lizenz in `certs/README.txt`).
+- Geprüft: auf dem Rechner `tools/pkitest.*` (469 Fälle: SHA-384/512, RSA
+  2048/3072/4096 PKCS#1/PSS mit SHA-256/384/512 echt und verfälscht, ECDSA
+  P-256/P-384 mit SHA-256/384 echt und verfälscht, alle selbstsignierten
+  Wurzeln der Mozilla-Liste mit dem eigenen Schlüssel, Namensregeln). QEMU
+  gegen `openssl s_server` mit einer Test-CA (Wurzel RSA-3072 an die Liste
+  angehängt): RSA-Blatt (PSS im ServerKeyExchange) und Kette RSA-Wurzel ->
+  P-384-Zwischenzertifikat -> P-256-Blatt (ecdsa-with-SHA384) je 1 MB
+  byte-gleich; falscher Name, selbstsigniert und abgelaufen jeweils mit dem
+  richtigen Grund abgelehnt (ERRORLEVEL 5), mit --no-check-certificate
+  angenommen. 86Box 386DX/40 mit NE2000: beide Ketten angenommen.
+- Offen: SHA-1-Signaturen (alte Zwischenzertifikate), Sperrlisten/OCSP,
+  ECDHE über P-256 (nur X25519), TLS 1.3.

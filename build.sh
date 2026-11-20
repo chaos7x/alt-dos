@@ -180,6 +180,7 @@ wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
 wcc $CFLAGS -fo=$B/crypto.o apps/crypto.c      # SHA-256, AES-GCM, X25519 (TLS)
 wcc $CFLAGS -fo=$B/tls.o apps/tls.c            # TLS-1.2-Client (WGET)
+wcc $CFLAGS -fo=$B/pki.o apps/pki.c            # X.509, RSA, ECDSA, SHA-384/512
 wcc $CFLAGS -fo=$B/lzh.o apps/lzh.c          # LH5-Familie, lh1, ARJ, ZOO-LZW
 wcc $CFLAGS -fo=$B/lzhenc.o apps/lzhenc.c    # Packer LH5-Familie (LHA, ARJ)
 wcc $CFLAGS -fo=$B/lzma.o apps/lzma.c        # LZMA/LZMA2, Delta (7ZDEC)
@@ -193,7 +194,7 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
     [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
     [ $t = sntp ] && U="$U file $B/arcutil.o"
-    [ $t = wget ] && U="$U file $B/tls.o file $B/crypto.o"
+    [ $t = wget ] && U="$U file $B/tls.o file $B/pki.o file $B/crypto.o"
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
@@ -327,6 +328,7 @@ copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i atdos-fd.img ::"
     mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
+    copy_list "certs/cacert.pem CACERT.PEM" "DOS/SYSTEM/"     # TLS (MPL-2.0)
 }
 copy_extra() {
     mmd $TARGET "${TO}DOS/MDOS" "${TO}DEMO"
