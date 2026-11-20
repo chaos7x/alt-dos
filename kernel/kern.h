@@ -235,6 +235,7 @@ unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 /* ---- Tastatur (kbd.c) -------------------------------------------------- */
 void kbd_init(void);
 extern unsigned char bios_kbf;       /* 0040:0017 beim Start (start.asm) */
+extern unsigned char boot_f8;        /* 1 = F8: CONFIG.SYS schrittweise   */
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 void kbd_irq(unsigned sc);          /* Scancode verarbeiten (IRQ 1)       */

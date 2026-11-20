@@ -327,6 +327,17 @@ Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
 ## Aktueller Stand: AT-DOS 5.5 in der Prüfung (Zweig 5.5), 5.4 fertig (Zweig 5.4), Weiterarbeit in 5.x
 
+F8 beim Start und CONFIG.SYS bis 8 KB (wie 6.2/main, Wunsch des Nutzers
+„überall“, 20.11.2026; Anlass auf 6.2: in EDIT gespeichert – CR LF statt
+LF – wurde die CONFIG.SYS über 4 KB und still übergangen): `startup[8192]`
+(DGROUP 51.898), read_cfg meldet eine zu große Datei; start.asm sammelt
+im Real Mode F8 aus dem BIOS-Tastenpuffer (`boot_f8`), kernel.c
+`f8_wait` (1 s), `cfg_ask` je Zeile (J/Eingabe, N, Esc = Rest ohne
+Fragen), `step_arg` -> CMD `/STEP` (`step_ask`: AUTOEXEC.CMD und jede
+Zeile außer REM). Erstes Codesegment 65.035 Byte (485 frei!). Geprüft:
+QEMU (Platte, MOUSE/IDE übersprungen, AUTOEXEC.CMD) und 86Box SCAT von
+Diskette (F8 ab dem Einschalten, MOUSE.SYS übersprungen).
+
 5.5 (Wunsch des Nutzers, 19.11.2026: „Falls da noch was aus 6.2 fehlen
 sollte, noch backporten. Branch erstellen.“ – er testet; Fehler werden
 auf `5.5` und `5.x` behoben, danach Release `v5.5`): 5.4 plus das Netz

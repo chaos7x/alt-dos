@@ -5931,14 +5931,18 @@ static int find_boot_vol(void)
 }
 
 /* ---- Start ------------------------------------------------------------- */
-static char startup[4096];             /* CONFIG.SYS bis 4 KB (vorher 512) */
+static char startup[8192];             /* CONFIG.SYS bis 8 KB (vorher 4 KB) */
 
 /* Datei vom Laufwerk A: nach startup[] lesen; -> Laenge oder -1 */
 static int read_cfg(const char *name)
 {
     struct ifs_file f;
-    if (ifs_open(sys_drive, name, &f) || f.size > sizeof(startup))
+    if (ifs_open(sys_drive, name, &f))
         return -1;
+    if (f.size > sizeof(startup)) {     /* sonst still ohne Treiber      */
+        vio_kputs(boot_session, "\xFE CONFIG.SYS gr\x94\xE1" "er als 8 KB - \x81" "bergangen\n");
+        return -1;
+    }
     if (ifs_read(&f, 0, KDATA, (unsigned)startup, (unsigned)f.size) != (int)f.size)
         return -1;
     return (int)f.size;
@@ -6502,6 +6506,63 @@ static unsigned num_arg(const char *v)
     return n;
 }
 
+void k_hlt(void);
+#pragma aux k_hlt = "sti" "hlt";
+
+/* F8 beim Start (wie MS-DOS 6): jede Zeile von CONFIG.SYS bestaetigen.
+   J/Eingabe = ausfuehren, N = uebergehen, Esc = Rest ohne Fragen.
+   boot_f8: 0 aus, 1 fragen, 2 fragen vorbei (Esc), CMD bekommt /STEP */
+static int cfg_ask(const char *l)
+{
+    int k;
+    vio_kputs(boot_session, l);
+    vio_kputs(boot_session, " [J,N]? ");
+    do {
+        while ((k = kbd_get()) < 0)
+            k_hlt();
+        k &= 0xFF;
+    } while (k != 'j' && k != 'J' && k != 'y' && k != 'Y' && k != 'n' &&
+             k != 'N' && k != '\r' && k != 27);
+    if (k == 27)
+        boot_f8 = 2;
+    k = k == 'n' || k == 'N';
+    vio_kputs(boot_session, k ? "N\n" : "J\n");
+    return !k;
+}
+
+/* F8 noch an: CMD fragt auch AUTOEXEC.CMD zeilenweise (nur CMD kennt
+   /STEP - eine andere PROTSHELL= bekommt es nicht) */
+static void step_arg(void)
+{
+    unsigned i = 0;
+    while (protshell[i] && protshell[i] != ' ')
+        i++;
+    if (i >= 4 && up(protshell[i - 1]) == 'E' && protshell[i - 4] == '.')
+        i -= 4;
+    if (boot_f8 != 1 || i < 3 || up(protshell[i - 3]) != 'C' ||
+        up(protshell[i - 2]) != 'M' || up(protshell[i - 1]) != 'D' ||
+        (i > 3 && protshell[i - 4] != '\\' && protshell[i - 4] != ':'))
+        return;
+    while (protshell[i])
+        i++;
+    if (i + 6 < sizeof(protshell))
+        scopy(protshell + i, " /STEP", sizeof(protshell) - i);
+}
+
+/* Eine Sekunde Zeit fuer F8 (wie "MS-DOS wird gestartet ..."); vor dem
+   Kernel getippt hat start.asm schon gemerkt */
+static void f8_wait(void)
+{
+    unsigned long t = get_ticks() + 100;
+    vio_kputs(boot_session, "\xFE F8: Startdateien schrittweise");
+    while (!boot_f8 && get_ticks() < t)
+        if (kbd_get() == 0x4200)
+            boot_f8 = 1;
+        else
+            k_hlt();
+    vio_kputs(boot_session, boot_f8 ? " - an\n" : "\n");
+}
+
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
@@ -6514,11 +6575,14 @@ static void config_sys(void)
     int size, dev0, i;
     char *v;
 
+    f8_wait();
     size = read_cfg("\\CONFIG.SYS");
     if (size < 0)
         return;
     while (next_line(&p, (unsigned)size, line)) {
         if (line[0] == ';')
+            continue;
+        if (boot_f8 == 1 && !cfg_ask(line))
             continue;
         for (v = line; *v && *v != '='; v++)
             ;
@@ -6923,6 +6987,7 @@ void kmain(void)
         swap_boot(swappath);
     loop_boot();                                /* LOOP= aus CONFIG.SYS   */
     cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
+    step_arg();
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
         vio_kputs(s0, "\xFE PROTSHELL=");
@@ -6931,6 +6996,7 @@ void kmain(void)
         vio_kputs(s0, exec_err(-t));
         vio_kputs(s0, ", nehme CMD.EXE /P\n");
         scopy(protshell, "CMD.EXE /P", sizeof(protshell));
+        step_arg();
         t = task_create(protshell, s0, -1, -1);
         if (t < 0)
             panic("Kein Befehlsinterpreter.");
