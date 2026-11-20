@@ -5884,6 +5884,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit langen Namen, Box auf L:, DOOM 1.9 mit SB (Timedemo läuft), Start
   von Diskette, DriveSpace schreibend (PACKDISK /CHECK sauber), fsck
   sauber; 86Box 386DX/40 4 MB (NE2000, AHA-154x).
+  Vom Nutzer in 86Box bestätigt (20.11.2026, P3B-F mit RTL8139 per pcap
+  am echten LAN, test-6.2): DHCP, SLAAC, PING -6 www.google.com, TELNET
+  zu seinem Postfix über fd00::, FTP passiv gegen test.rebex.net mit
+  Binärdownload (MD5 gleich), WGET http über IPv6, SNTP gegen
+  de.pool.ntp.org, Kopieren von zwei CD-Laufwerken gleichzeitig (Sperren
+  je Gerät), F8, Setup-Disketten (FORMAT C:, SETUP). Dabei: RTL8139 „IRQ
+  5 belegt“ – das BIOS gab der PCI-Karte den IRQ der ISA-SB16; mit IRQ 5
+  als „Legacy ISA“ im BIOS bekam sie IRQ 9.
   Bemerkt, alt wie neu: in AUTOEXEC.CMD erscheint nach `COMMAND /C DIR F:\
   > X` die Ausgabe eines zweiten `COMMAND /C TYPE … >> X` nicht.
 - **AHCI** erledigt (Anregung des Nutzers, 17.11.2026: „für einen guten
