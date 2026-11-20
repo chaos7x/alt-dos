@@ -148,6 +148,16 @@ zurück, BIOSCMP hing –, 4Fh
 für Alt+Esc und die Tastaturbelegung von RBSHELL – ein direkter Aufruf
 mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 
+MSD 2.11 zeigt in der Kompatibilitätsbox auf dem SCAT (86Box, Platten
+am AHA-154x, CMOS-Plattentyp 0) „CMOS Fixed Disk Parameters 21328
+Cylinders, 30 Heads, 235 Sectors/Track“ – unter MS-DOS 6.22 direkt auf
+derselben VM genauso: MSD liest die Tabelle hinter INT 41h, die das
+SCAT-BIOS ohne IDE-Platte nicht gefüllt hat. Kein Fehler der Box.
+Abweichend ist nur die Geometrie der Laufwerke selbst: MS-DOS meldet
+die Übersetzung des Adaptec (64 Zylinder, 64 Köpfe, 32 Sektoren), die
+Box über ihre IOCTL-Antwort (RBOX `dinfo`) feste 1024/16/63. MSCDEX
+meldet MSD dort als „Version 2.21 Installed“ mit dem CD-Laufwerk.
+
 ## Bestand: Redirector (INT 2Fh 11xxh)
 
 | Unterfunktion | 6.x/5.x |
