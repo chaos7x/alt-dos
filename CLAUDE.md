@@ -5054,7 +5054,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - **MS-DOS in der DOS-Box** (Wunsch des Nutzers, 19.11.2026, wie „OS/2
   für Windows“; Vorschlag des Nutzers: ein Werkzeug, mit dem man sich sein
   Abbild selbst „backt“): `MKDOSIMG Quelle: [Werkzeuge] [/N:NAME.IMG]`
-  (apps/task_mkdosimg.c, nur Platte) -> `\DOS\MDOS\NAME.IMG` + Werkzeuge
+  (apps/task_mkdosimg.c, nur Platte) -> `\DOS\MDOS\NAME.IMG` (seit
+  20.11.2026 das kleinste Format 360/720/1.200/1.440 KB, in das die Dateien
+  mit 32 KB Rand passen – Idee des Nutzers; auf 5.x hält die Box das Abbild
+  im Speicher, hier spart es Platz und beide Linien legen gleiche Abbilder
+  an; doscmp MS-DOS 5.0/6.22/PC DOS 2000: nur A: meldet 360 KB) + Werkzeuge
   und COMMAND.COM (COMSPEC – A: ist nach dem Start die AT-DOS-Diskette)
   in `\DOS\MDOS\NAME\`; Quelle Diskette oder Festplatte mit
   installiertem DOS (Wunsch des Nutzers), Werkzeuge ohne Angabe aus

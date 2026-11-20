@@ -715,7 +715,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - MS-DOS statt FreeDOS in der DOS-Box (wie „OS/2 für Windows“ mit der
   vorhandenen Windows-Kopie; AT-DOS liefert kein Microsoft-DOS mit):
   **MKDOSIMG** `Quelle: [Werkzeuge] [/N:NAME.IMG]` baut unter AT-DOS aus
-  der eigenen Kopie ein Startabbild `\DOS\MDOS\NAME.IMG`. Quelle ist ein
+  der eigenen Kopie ein Startabbild `\DOS\MDOS\NAME.IMG` (so klein wie
+  möglich, meist 360 KB). Quelle ist ein
   Laufwerk mit dem DOS: Startdiskette oder Festplatte mit installiertem
   MS-DOS 4.0–6.22 bzw. PC DOS (auch ein Plattenabbild über LOOP). Kopiert
   werden IO.SYS/MSDOS.SYS bzw. IBMBIO.COM/IBMDOS.COM, COMMAND.COM,
