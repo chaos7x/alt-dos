@@ -40,9 +40,10 @@ Fehler, werden sie auf `6.2` behoben und danach freigegeben): Titel/VER
 nach der Freigabe kommt ein Schritt für das Release `v6.2` dazu (wie
 bei 6.1, als neuestes). Fehlerbehebungen dann auf `6.2` und `main`.
 
-AT-DOS 5.5 zur Prüfung (Wunsch des Nutzers, 19.11.2026, gleiche Regel):
-Zweig `5.5` (= `5.x` 48263ce) mit dem Netz aus 6.2 für den 286, CI baut
-`test-5.5`. Einzelheiten in der CLAUDE.md von `5.x`.
+AT-DOS 5.5 ist fertig (Entscheidung des Nutzers, 20.11.2026): Zweig
+`5.5` mit dem Netz aus 6.2 für den 286, ein Push dorthin baut per CI das
+Release `v5.5` (`--latest=false`). Einzelheiten in der CLAUDE.md von
+`5.x`.
 
 6.3 begonnen (Auftrag des Nutzers, 19.11.2026: „Dann kannst du mit dem
 großen Umbau in 6.3 beginnen“; zu PIC/Zeitgeber/CMOS: „schauen, was an
