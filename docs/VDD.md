@@ -397,7 +397,11 @@ EXEC, TSR, Strg+C).
 
 - Gewinn: mehr konventioneller Speicher (kein FreeDOS-Kern und keine
   Puffer in der Box; heute ~600 KB frei), Dateizugriffe ohne den Umweg
-  FreeDOS -> Redirector, eigene Versionsnummer wie OS/2.
+  FreeDOS -> Redirector, eigene Versionsnummer wie OS/2. Dazu (Hinweis
+  des Nutzers): AT-DOS würde vom FreeDOS-Kern unabhängig – kein fremder
+  Kern mehr im Lieferumfang, eigene Fehler statt fremder; COMMAND.COM
+  (FreeCOM) bräuchte dann ebenfalls einen Ersatz oder bliebe als einziges
+  fremdes Teil.
 - Aufwand und Risiko: rund 100 Funktionen von INT 21h plus FCB; viele
   Programme lesen SFT, CDS, Liste der Listen und SDA direkt – die müssen
   echt aussehen; EXEC, TSRs, Strg+C, INT 24h. FreeDOS bringt das heute
