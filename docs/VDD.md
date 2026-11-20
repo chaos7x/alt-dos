@@ -312,6 +312,9 @@ VEGA.SYS neben VVGA): je Grafikklasse ein Modul.
   vollständig; früh weggeschaltet bei ~106 von 200 Zeilen, nach 15 s
   zurück alle 200 (hinten weitergezeichnet); `BGTEST 4` (CGA-Modus auf
   der EGA) ebenso. CGA mit VCGA.SYS – `BGTEST 4` wie oben. VGA-Gegenprobe
-  (Cirrus, `BGTEST 12` hinten). QEMU: DOOM 1.9 mit SB, EMT/E56/ET
+  (Cirrus, `BGTEST 12` hinten) und auf der IBM-VGA (Grundlage ohne VBE
+  und SVGA-Erweiterungen; `gfxcard = vga`): `BGTEST 12`, `13` und `4` je
+  früh weggeschaltet (~100 Zeilen), zurück alle 200, Text dazwischen
+  sauber. QEMU: DOOM 1.9 mit SB, EMT/E56/ET
   byte-gleich, BIOSCMP unverändert.
 - KTEXT2 63.649 Byte – nahezu voll; DGROUP 59.748.
