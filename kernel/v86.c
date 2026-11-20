@@ -328,18 +328,18 @@ void __far kf_vio_mou_show(int s, int on);
 unsigned __far kf_vio_mou_delta(int s, int *dx, int *dy);
 void __far kf_vio_mou_pos(int s, int row, int col);
 void __far kf_vio_mou_close(int s, int t);
-static void mou33(struct v86_frame *f, int t);
-static void mou_off(int t);
-static void mou_cb(struct v86_frame *f, int t, int force);
-static void mou_tick(struct v86_iret *r, int t);
-static int mou_ret(struct v86_frame *f, int t);
-static void mou_pmtick(struct v86_iret *r, int t);
-static unsigned mou_pmcb(struct v86_frame *f, int t);
-static void mou_cbdone(void);
+static unsigned cb_seg[NTASK], cb_ofs[NTASK];
+static unsigned char cb_in[NTASK];      /* Rueckruf laeuft gerade        */
+static void cb_prog(int t);
+static int pm_esbad(int t, unsigned es);
+static void cb_v86(struct v86_frame *f, int t, int force);
+static void cb_tick(struct v86_iret *r, int t);
+static int cb_ret(struct v86_frame *f, int t);
+static void cb_pmtick(struct v86_iret *r, int t);
+static unsigned cb_pmcb(struct v86_frame *f, int t);
 #define MOU_RET  0x0570         /* Maus-Rueckruf zurueck: ARPL E7h        */
 #define MOU_TICK 0x0574         /* Maus-Rueckruf aus dem Takt: ARPL E8h; IRET */
 #define MOU_PM   0x0578         /* Maus-Rueckruf aus dem PM: HLT; IRET(D)  */
-#define MOU_ST   0x0B00         /* Zustand des Maustreibers (F000:0B00)   */
 
 static void k2_cr3(unsigned lo, unsigned hi);
 #pragma aux k2_cr3 = "shl edx,16" "mov dx,ax" "mov cr3,edx" \
@@ -764,6 +764,8 @@ unsigned long __far v86_create(int t, unsigned kb)
     vimr2[t] = 0xFF;                    /* wie nach dem BIOS: alle gesperrt */
     picw[t][0] = picw[t][1] = 0;
     pic_isr[t][0] = pic_isr[t][1] = 0;
+    cb_seg[t] = cb_ofs[t] = 0;
+    cb_in[t] = 0;
     vdd_event(t, VDD_EV_CREATE, 0);        /* Module (COM/LPT: VCOM.SYS)    */
     if (!umb_ok)                        /* EMS: VEMS.SYS; Rahmen erst leer */
         umb_scan();
@@ -1427,6 +1429,46 @@ unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel)
         }
         return 0;
     }
+    case VS_CBARM:                      /* Rueckruf (vdd.c merkt das Modul) */
+        cb_seg[t] = a1;
+        cb_ofs[t] = a2;
+        if (!a1 && !a2)
+            cb_in[t] = 0;
+        return 0;
+    case VS_MOUSE: {                    /* Maus der Sitzung (VMOUSE.SYS)  */
+        int s = box_ses[t], dx, dy;
+        unsigned char ev[8];
+        unsigned __far *w = MK_FP(dsel, k->buf);
+        if (a1 == VM_INFO)
+            return mou_kind ? (unsigned)mou_kind << 8 | (mou_kind == 4 ? 0 : mou_irqn) : 0;
+        if (s < 0)
+            return 0;
+        switch (a1) {
+        case VM_OPEN:
+            return kf_vio_mou_open(s, t);
+        case VM_CLOSE:
+            kf_vio_mou_close(s, t);
+            return 0;
+        case VM_DELTA:
+            kf_vio_mou_delta(s, &dx, &dy);
+            w[0] = (unsigned)dx;
+            w[1] = (unsigned)dy;
+            return 0;
+        case VM_READ:
+            if (!kf_vio_mou_read(s, ev))
+                return 0;
+            for (i = 0; i < 4; i++)
+                w[i] = ((unsigned *)ev)[i];
+            return 1;
+        case VM_SHOW:
+            kf_vio_mou_show(s, a2);
+            return 0;
+        case VM_POS:
+            kf_vio_mou_pos(s, a2, k->a3);
+            return 0;
+        }
+        return 0xFFFF;
+    }
     case VS_INFO:
         if (a1 == VI_EMSFRAME)
             return EFR(t);
@@ -1697,7 +1739,7 @@ void __far v86_tick(struct v86_iret *r)
         vme_in(r, t);                           /* nachgeholte Takte, DOS/4GW: */
         inject(r, t);
         if (r->cs == ocs && r->eip == oip)      /* nichts zugestellt:     */
-            mou_tick(r, t);                     /* Maus-Rueckruf faellig? */
+            cb_tick(r, t);                      /* Rueckruf faellig (Maus)? */
         vme_out(r, t);
     } else {                                      /* "transfer stack overflow") */
         pvi_in(r, t);                           /* DPMI-Programm (Ring 3) */
@@ -2344,6 +2386,7 @@ static int vdd_svc_int(int n, struct v86_frame *f, int t)
     c.flags = (unsigned short)f->r.eflags;
     c.cs = (unsigned short)f->r.cs; c.ip = (unsigned short)f->r.eip;
     c.ss = (unsigned short)f->r.ss; c.sp = (unsigned short)f->r.esp;
+    c.val = (unsigned short)pm_esbad(t, (unsigned)f->r.es);
     if (vdd_int(t, n, &c) == VDD_NOTMINE)
         return 1;
     f->r.cs = c.cs; f->r.eip = c.ip;            /* (EMS 55h/56h)         */
@@ -2601,8 +2644,8 @@ static void svc(int n, struct v86_frame *f, int t)
             break;
         }
         break;
-    case 0x33:                                  /* Maus                  */
-        mou33(f, t);
+    case 0x33:                                  /* Maus: VMOUSE.SYS      */
+        vdd_svc_int(0x33, f, t);
         break;
     case 0x28:                                  /* DOS wartet: abgeben   */
         kf_box_ctl(BOX_SLEEP, 1);
@@ -2626,7 +2669,7 @@ static void svc(int n, struct v86_frame *f, int t)
             for (i = 0; i < sizeof(hwvec); i++)  /* Vektoren merken    */
                 ivt_save[t][i] = ((unsigned long)rd16(0, hwvec[i] * 4 + 2) << 16) |
                                  rd16(0, hwvec[i] * 4);
-            mou_off(t);                         /* Maus: neues Programm  */
+            cb_prog(t);                         /* Rueckrufe, Maus (Module) */
             a = (const char *)kf_box_ctl(BOX_ARGS, 0);
             for (i = 0; a[i] && i < 120; i++)
                 wr8((unsigned)f->r.es, DI + i, a[i]);
@@ -4659,7 +4702,7 @@ static unsigned dp_back(struct v86_frame *f, int t)
         for (i = 0; i < 8; i++)
             (&f->edi)[i] = c->r[i];
         rfl = c->eflags;
-        mou_cbdone();
+        cb_in[t] = 0;
     } else if (type == CT_DOSAL || type == CT_DOSFR) {
         unsigned seg = (unsigned)f->eax, cf = (unsigned)(rfl & 1), bx = (unsigned)f->ebx;
         unsigned paras = (unsigned)c->r[4];     /* BX vorher             */
@@ -5292,7 +5335,7 @@ static void dp_hwint(struct v86_iret *r, int t)
         dp_push(r, t, 9);
         return;
     }
-    mou_pmtick(r, t);                           /* Maus-Rueckruf (0Ch)   */
+    cb_pmtick(r, t);                            /* Rueckruf (Maus 0Ch)   */
 }
 
 /* gesperrter Stapel des Hosts (eine Seite): oben Ausnahmen, ab 800h
@@ -5541,7 +5584,7 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_CBRET)
         return dp_cbret(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == MOU_PM)
-        return mou_pmcb(f, t);
+        return cb_pmcb(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip >= DP_EXC &&
         (unsigned)f->r.eip < DP_EXC + 128)
         return 1;                               /* Standard: Ende        */
@@ -5916,10 +5959,10 @@ static unsigned monitor(struct v86_frame *f, int t)
             xms(f, t);
             return 0;
         }
-        if (cs == VBIOS && ip == MOU_RET)       /* Maus-Rueckruf fertig  */
-            return mou_ret(f, t);
+        if (cs == VBIOS && ip == MOU_RET)       /* Rueckruf fertig       */
+            return cb_ret(f, t);
         if (cs == VBIOS && ip == MOU_TICK) {    /* Rueckruf aus dem Takt */
-            mou_cb(f, t, 1);                    /* (danach IRET des Stummels) */
+            cb_v86(f, t, 1);                    /* (danach IRET des Stummels) */
             return 0;
         }
         if (cs == VBIOS && ip == EMS_RET) {      /* EMS 56h: Ziel fertig  */
@@ -6111,318 +6154,37 @@ static unsigned monitor(struct v86_frame *f, int t)
     return 0;
 }
 
-/* ---- Maus (INT 33h) --------------------------------------------------------
-   Maustreiber der Box wie MOUSE.COM von Microsoft: die Maus der Sitzung
-   (MOUSE.SYS) gehoert nach dem Reset der Box (vio_mou_open). Bewegung
-   kommt als ungekuerzte Mickeys (vio_mou_delta), Tasten als Ereignisse
-   (vio_mou_read), die Box rechnet Position, Grenzen und Zaehler selbst.
-   Im Textmodus zeichnet der Kernel den Zeiger an der Stelle der Box
-   (vio_mou_pos); in Grafikmodi gibt es noch keinen Zeiger (Position und
-   Tasten stimmen). Zustand je Box in ihrer Stummelseite bei F000:0B00
-   (DGROUP ist voll), hier eine Arbeitskopie. Rueckruf (0Ch/14h) nur, wenn
-   die Box im V86-Modus mit IF an trappt: Register auf ihren Stapel,
-   Ruecksprung ueber F000:0570 "ARPL E7h". */
-struct vmou {
-    unsigned char on, nbtn, btn, incb;
-    signed char show;
-    unsigned char rx, ry, cw;           /* Mickeys je 8 Punkte, Zellbreite */
-    int x, y, xmin, xmax, ymin, ymax;
-    int mcx, mcy, fx, fy;
-    unsigned mask, cbofs, cbseg, evp;
-    unsigned npr[3], nrl[3];
-    int prx[3], pry[3], rlx[3], rly[3];
-};
-static struct vmou mo;
+/* ---- Rueckruf eines Moduls in die Box (VS_CBARM) -----------------------
+   Wie VDHPushFarCall bei OS/2: ein Modul (VMOUSE.SYS fuer INT 33h 0Ch/14h)
+   setzt einen Rueckruf seg:ofs; der Kernel ruft ihn, wenn die Box ihn
+   annehmen kann, und fragt vorher das Modul (VDD_CBQ), ob etwas ansteht und
+   mit welchen Registern. Zustellung im V86-Modus, wenn die Box mit IF an
+   trappt (Register auf ihren Stapel, Ruecksprung ueber F000:0570 "ARPL
+   E7h"), aus dem Takt ueber den Stummel F000:0574 (mit VME faellt sonst
+   nichts mehr: MSD 2.11 wartet ohne INT) und waehrend eines DPMI-Programms
+   im PM ueber F000:0578 (CT_MOU, Aufruf im Real Mode). */
+#define CB_ON(t)  ((cb_seg[t] || cb_ofs[t]) && !cb_in[t])
 
-static void mo_load(void)
+/* INT aus dem PM ohne Uebersetzung (dp_reflect setzt ES auf den Host-
+   Bereich): ES ist dann keine Real-Mode-Adresse */
+static int pm_esbad(int t, unsigned es)
 {
-    unsigned i;
-    for (i = 0; i < sizeof(mo); i++)
-        ((unsigned char *)&mo)[i] = rd8(VBIOS, MOU_ST + i);
+    return dp_on[t] && dp_dep[t] && es == dp_rmseg[t];
 }
 
-static void mo_save(void)
+static int cb_q(int t, int take, struct vdd_call *c)
 {
-    unsigned i;
-    for (i = 0; i < sizeof(mo); i++)
-        wr8(VBIOS, MOU_ST + i, ((unsigned char *)&mo)[i]);
+    c->val = (unsigned short)take;
+    return vdd_cbq(t, c) == 0;
 }
 
-/* Vorgaben nach dem Videomodus der Box (wie der Microsoft-Treiber) */
-static void mo_mode(void)
-{
-    unsigned m = rd8(BDA, 0x49) & 0x7F, rows = rd8(BDA, 0x84) + 1;
-    if (rows < 25 || rows > 50)
-        rows = 25;
-    mo.xmin = mo.ymin = 0;
-    mo.xmax = 639;
-    mo.cw = m <= 1 ? 16 : 8;
-    if (m <= 3 || m == 7)
-        mo.ymax = rows * 8 - 1;
-    else if (m == 0x0F || m == 0x10)
-        mo.ymax = 349;
-    else if (m == 0x11 || m == 0x12 || m > 0x13)
-        mo.ymax = 479;
-    else
-        mo.ymax = 199;
-    mo.x = 320;
-    mo.y = (mo.ymax + 1) / 2 & ~7;
-}
-
-static int mo_text(void)
-{
-    unsigned m = rd8(BDA, 0x49) & 0x7F;
-    return m <= 3 || m == 7;
-}
-
-static void mo_clip(void)
-{
-    if (mo.x < mo.xmin) mo.x = mo.xmin;
-    if (mo.x > mo.xmax) mo.x = mo.xmax;
-    if (mo.y < mo.ymin) mo.y = mo.ymin;
-    if (mo.y > mo.ymax) mo.y = mo.ymax;
-}
-
-/* Zeiger des Kernels (Textmodus) an die Stelle der Box */
-static void mo_ptr(int t)
-{
-    if (box_ses[t] >= 0 && mo_text())
-        kf_vio_mou_pos(box_ses[t], mo.y >> 3, mo.x / mo.cw * (mo.cw >> 3));
-}
-
-static int mo_rx(int x) { return mo_text() ? x & ~(mo.cw - 1) : x; }
-static int mo_ry(int y) { return mo_text() ? y & ~7 : y; }
-
-/* Neues von der Maus holen: Bewegung, dann Tastenereignisse */
-static void mo_poll(int t)
-{
-    static unsigned char ev[8];
-    int dx, dy, s = box_ses[t];
-    unsigned b, i, ch;
-    if (!mo.on || s < 0)
-        return;
-    kf_vio_mou_delta(s, &dx, &dy);
-    if (dx || dy) {
-        mo.mcx += dx;
-        mo.mcy += dy;
-        mo.fx += dx * 8;
-        mo.fy += dy * 8;
-        mo.x += mo.fx / (int)mo.rx;
-        mo.fx %= (int)mo.rx;
-        mo.y += mo.fy / (int)mo.ry;
-        mo.fy %= (int)mo.ry;
-        mo_clip();
-        mo.evp |= 1;
-        mo_ptr(t);
-    }
-    while (kf_vio_mou_read(s, ev)) {
-        b = ev[0] & 7;
-        ch = b ^ mo.btn;
-        for (i = 0; i < 3; i++) {
-            if (!(ch & (1 << i)))
-                continue;
-            if (b & (1 << i)) {
-                mo.npr[i]++;
-                mo.prx[i] = mo_rx(mo.x);
-                mo.pry[i] = mo_ry(mo.y);
-                mo.evp |= 2 << (i * 2);
-            } else {
-                mo.nrl[i]++;
-                mo.rlx[i] = mo_rx(mo.x);
-                mo.rly[i] = mo_ry(mo.y);
-                mo.evp |= 4 << (i * 2);
-            }
-        }
-        mo.btn = (unsigned char)b;
-    }
-}
-
-/* Programmstart (INT E0h 00h): Treiber aus, Maus der Sitzung frei */
-static void mou_off(int t)
-{
-    /* FreeDOS legt INT 33h auf ein blosses IRET (Programme ohne Treiber
-       sollen nicht abstuerzen) - zurueck auf den Stummel des Kernels */
-    if (rd8(rd16(0, 0xCE), rd16(0, 0xCC)) == 0xCF) {
-        wr16(0, 0xCC, 0x33 * 4);
-        wr16(0, 0xCE, VBIOS);
-    }
-    mo_load();
-    mo.on = 0;
-    mo.incb = 0;
-    mo.mask = 0;
-    mo_save();
-    if (box_ses[t] >= 0)
-        kf_vio_mou_close(box_ses[t], t);
-}
-
-static void mo_reset(int t)
-{
-    unsigned i;
-    for (i = 0; i < sizeof(mo); i++)
-        ((unsigned char *)&mo)[i] = 0;
-    mo.nbtn = (unsigned char)(box_ses[t] >= 0 ? kf_vio_mou_open(box_ses[t], t) : 0);
-    if (!mo.nbtn)
-        return;
-    mo.on = 1;
-    mo.show = -1;
-    mo.rx = 8;
-    mo.ry = 16;
-    mo_mode();
-    kf_vio_mou_delta(box_ses[t], &mo.mcx, &mo.mcy);  /* Altes verwerfen */
-    mo.mcx = mo.mcy = 0;
-    kf_vio_mou_show(box_ses[t], 0);
-    mo_ptr(t);
-}
-
-/* INT 33h aus dem PM ohne Uebersetzung (dp_reflect setzt ES auf den Host-
-   Bereich): ES:DX ist dann keine Real-Mode-Adresse - Rueckruf nicht setzen,
-   statt spaeter ins Leere zu springen */
-static int mou_pmseg(struct v86_frame *f, int t)
-{
-    return dp_on[t] && dp_dep[t] && (unsigned)f->r.es == dp_rmseg[t];
-}
-
-static void mou33(struct v86_frame *f, int t)
-{
-    unsigned i, a = AX;
-    int s = box_ses[t];
-
-    mo_load();
-    if (a == 0x0000 || a == 0x0021) {
-        mo_reset(t);
-        AX = mo.on ? 0xFFFF : 0;
-        BX = mo.nbtn == 3 ? 3 : 2;
-        mo_save();
-        return;
-    }
-    if (!mo.on) {                               /* kein Treiber          */
-        mo_save();
-        return;
-    }
-    mo_poll(t);
-    switch (a) {
-    case 0x01:                                  /* Zeiger zeigen         */
-        if (mo.show < 0 && ++mo.show == 0)
-            kf_vio_mou_show(s, 1);
-        break;
-    case 0x02:                                  /* Zeiger verbergen      */
-        if (mo.show-- == 0)
-            kf_vio_mou_show(s, 0);
-        break;
-    case 0x03:
-        BX = mo.btn;
-        CX = (unsigned)mo_rx(mo.x);
-        DX = (unsigned)mo_ry(mo.y);
-        break;
-    case 0x04:                                  /* Position setzen       */
-        mo.x = (int)CX;
-        mo.y = (int)DX;
-        mo_clip();
-        mo_ptr(t);
-        break;
-    case 0x05: case 0x06:                       /* Druecken/Loslassen    */
-        i = BX < 3 ? BX : 0;
-        AX = mo.btn;
-        if (a == 5) {
-            BX = mo.npr[i];
-            CX = (unsigned)mo.prx[i];
-            DX = (unsigned)mo.pry[i];
-            mo.npr[i] = 0;
-        } else {
-            BX = mo.nrl[i];
-            CX = (unsigned)mo.rlx[i];
-            DX = (unsigned)mo.rly[i];
-            mo.nrl[i] = 0;
-        }
-        break;
-    case 0x07: case 0x08:                       /* Grenzen               */
-        {
-            int lo = (int)CX, hi = (int)DX;
-            if (lo > hi) { int k = lo; lo = hi; hi = k; }
-            if (a == 7) { mo.xmin = lo; mo.xmax = hi; }
-            else { mo.ymin = lo; mo.ymax = hi; }
-            mo_clip();
-            mo_ptr(t);
-        }
-        break;
-    case 0x0B:                                  /* Mickeys seit dem letzten Mal */
-        CX = (unsigned)mo.mcx;
-        DX = (unsigned)mo.mcy;
-        mo.mcx = mo.mcy = 0;
-        break;
-    case 0x0C:                                  /* Rueckruf setzen       */
-        mo.mask = mou_pmseg(f, t) ? 0 : CX;
-        mo.cbofs = DX;
-        mo.cbseg = (unsigned)f->r.es;
-        mo.evp = 0;
-        break;
-    case 0x14:                                  /* Rueckruf tauschen     */
-        i = mo.mask;
-        mo.mask = mou_pmseg(f, t) ? 0 : CX;
-        CX = i;
-        i = mo.cbofs;
-        mo.cbofs = DX;
-        DX = i;
-        i = mo.cbseg;
-        mo.cbseg = (unsigned)f->r.es;
-        f->r.es = i;
-        mo.evp = 0;
-        break;
-    case 0x0F:                                  /* Mickeys je 8 Punkte   */
-        if (CX) mo.rx = (unsigned char)(CX > 255 ? 255 : CX);
-        if (DX) mo.ry = (unsigned char)(DX > 255 ? 255 : DX);
-        break;
-    case 0x15:                                  /* Zustand: Puffergroesse */
-        BX = 0;
-        break;
-    case 0x1B:                                  /* Empfindlichkeit       */
-        BX = CX = 50;
-        DX = 0;
-        break;
-    case 0x1D: case 0x1E:                       /* Bildschirmseite       */
-        BX = 0;
-        break;
-    case 0x1F:                                  /* Treiber aus           */
-        AX = 0xFFFF;
-        break;
-    case 0x24:                                  /* Version, Typ, IRQ     */
-        BX = 0x0805;                            /* Art und IRQ der echten */
-        CX = mou_kind ? (unsigned)mou_kind << 8 | (mou_kind == 4 ? 0 : mou_irqn) :
-             0x0400;                            /* Maus (PS/2: IRQ 0 wie  */
-        break;                                  /* bei Microsoft)         */
-    case 0x26:                                  /* groesste Koordinaten  */
-        BX = 0;
-        CX = (unsigned)mo.xmax;
-        DX = (unsigned)mo.ymax;
-        break;
-    case 0x2A:                                  /* Zaehler, Heisser Punkt */
-        AX = (unsigned)mo.show;
-        BX = CX = 0;
-        DX = 4;
-        break;
-    }
-    mo_save();
-}
-
-/* Rueckruf (0Ch) zustellen, wenn etwas ansteht, das er haben will */
-static void mou_cb(struct v86_frame *f, int t, int force)
+static void cb_v86(struct v86_frame *f, int t, int force)
 {
     struct v86_iret *r = &f->r;
-    unsigned e;
-    if (box_ses[t] < 0 || (!force && (!(vfl[t] & FL_IF) || sti_sh)) ||
-        rd8(VBIOS, MOU_ST) == 0)
+    struct vdd_call c;
+    if (!CB_ON(t) || (!force && (!(vfl[t] & FL_IF) || sti_sh)) || !cb_q(t, 1, &c))
         return;
-    mo_load();
-    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
-        return;
-    mo_poll(t);
-    e = mo.evp & mo.mask;
-    if (!e) {
-        mo_save();
-        return;
-    }
-    mo.evp = 0;
-    mo.incb = 1;
+    cb_in[t] = 1;
     push16(r, vflags(r, t));                    /* wie ein Interrupt     */
     push16(r, (unsigned)r->cs);
     push16(r, (unsigned)r->eip);
@@ -6431,36 +6193,21 @@ static void mou_cb(struct v86_frame *f, int t, int force)
     push16(r, (unsigned)r->ds); push16(r, (unsigned)r->es);
     push16(r, VBIOS);                           /* RETF -> ARPL E7h       */
     push16(r, MOU_RET);
-    AX = e;
-    BX = mo.btn;
-    CX = (unsigned)mo_rx(mo.x);
-    DX = (unsigned)mo_ry(mo.y);
-    *(unsigned short *)&f->esi = (unsigned)mo.mcx;
-    DI = (unsigned)mo.mcy;
+    AX = c.ax; BX = c.bx; CX = c.cx; DX = c.dx;
+    *(unsigned short *)&f->esi = c.si;
+    DI = c.di;
     vfl[t] &= ~FL_IF;
     r->eflags &= ~(unsigned long)FL_TF;
-    r->cs = mo.cbseg;
-    r->eip = mo.cbofs;
-    mo_save();
+    r->cs = cb_seg[t];
+    r->eip = cb_ofs[t];
 }
 
-/* Aus dem Takt (v86_tick): dort fehlen die Register der Box. Steht ein
-   Ereignis fuer den Rueckruf an, wird die Box wie bei einem Interrupt
-   auf den Stummel F000:0574 "ARPL E8h; IRET" umgelenkt - dessen Falle hat
-   den vollen Rahmen und ruft mou_cb. Noetig mit VME: die Oberflaeche von
-   MSD 2.11 wartet in einer Schleife ohne INT, CLI/STI fallen nicht mehr,
-   also kam die Box ausser ueber den Takt nie in den Monitor (Tasten
-   kamen ueber INT 9 an, Klicks nie). */
-static void mou_tick(struct v86_iret *r, int t)
+/* Aus dem Takt (v86_tick): dort fehlen die Register der Box - steht etwas
+   an, auf den Stummel F000:0574 umlenken, dessen Falle ruft cb_v86 */
+static void cb_tick(struct v86_iret *r, int t)
 {
-    if (box_ses[t] < 0 || !(vfl[t] & FL_IF) || sti_sh || rd8(VBIOS, MOU_ST) == 0)
-        return;
-    mo_load();
-    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
-        return;
-    mo_poll(t);
-    mo_save();
-    if (!(mo.evp & mo.mask))
+    struct vdd_call c;
+    if (!CB_ON(t) || !(vfl[t] & FL_IF) || sti_sh || !cb_q(t, 0, &c))
         return;
     push16(r, vflags(r, t));                    /* wie ein Interrupt     */
     push16(r, (unsigned)r->cs);
@@ -6472,7 +6219,7 @@ static void mou_tick(struct v86_iret *r, int t)
 }
 
 /* Rueckruf ist fertig (RETF nach F000:0570): Register und IRET */
-static int mou_ret(struct v86_frame *f, int t)
+static int cb_ret(struct v86_frame *f, int t)
 {
     struct v86_iret *r = &f->r;
     r->es = pop16(r);
@@ -6484,36 +6231,22 @@ static int mou_ret(struct v86_frame *f, int t)
     r->eip = pop16(r);
     r->cs = pop16(r);
     set_flags(r, t, pop16(r));
-    mo_load();
-    mo.incb = 0;
-    mo_save();
+    cb_in[t] = 0;
     return 0;
 }
 
-/* ---- Rueckruf, waehrend ein DPMI-Programm im PM laeuft -----------------
-   DOS-Extender (DOS/4GW u. a.) melden ihren Rueckruf mit einer Real-Mode-
-   Adresse an (0303h-Callback, INT 33h 0Ch ueber 0300h). Steht die Box im
-   PM, kaeme der Rueckruf sonst nie an (mou_cb nur aus V86). Wie beim Takt:
-   dp_hwint lenkt das Programm per IRET-Rahmen auf den Stummel F000:0578
-   "HLT; IRET(D)", dessen Falle den vollen Rahmen hat; mou_pmcb sichert den
-   PM-Stand (CT_MOU) und ruft den Rueckruf im Real Mode, sein RETF fuehrt
-   ueber DP_BACK zurueck, dp_back stellt die Register her, das IRET des
-   Stummels kehrt ins Programm zurueck. */
-static void mou_pmtick(struct v86_iret *r, int t)
+/* Waehrend ein DPMI-Programm im PM laeuft (DOS-Extender melden ihren
+   Rueckruf mit einer Real-Mode-Adresse an): dp_hwint lenkt das Programm
+   per IRET-Rahmen auf den Stummel F000:0578 "HLT; IRET(D)", cb_pmcb sichert
+   den PM-Stand (CT_MOU) und ruft den Rueckruf im Real Mode, sein RETF
+   fuehrt ueber DP_BACK zurueck, dp_back stellt die Register her. */
+static void cb_pmtick(struct v86_iret *r, int t)
 {
     unsigned long sp, b, fl;
-    if (box_ses[t] < 0 || rd8(VBIOS, MOU_ST) == 0 || dp_dep[t] >= DPCT)
+    struct vdd_call c;
+    if (!CB_ON(t) || dp_dep[t] >= DPCT || !cb_q(t, 0, &c))
         return;
-    mo_load();
-    if (!mo.mask || mo.incb || (!mo.cbseg && !mo.cbofs))
-        return;
-    mo_poll(t);
-    if (!(mo.evp & mo.mask)) {
-        mo_save();
-        return;
-    }
-    mo.incb = 1;                                /* bis der Rueckruf fertig */
-    mo_save();
+    cb_in[t] = 1;                               /* bis der Rueckruf fertig */
     fl = (r->eflags & ~(unsigned long)FL_IF) | (vfl[t] & FL_IF);
     b = sel_base(t, (unsigned)r->ss);
     if (dp_32[t]) {
@@ -6534,34 +6267,38 @@ static void mou_pmtick(struct v86_iret *r, int t)
     r->eflags &= ~(unsigned long)FL_TF;
 }
 
-static unsigned mou_pmcb(struct v86_frame *f, int t)
+static unsigned cb_pmcb(struct v86_frame *f, int t)
 {
-    unsigned e;
+    struct vdd_call c;
     f->r.eip++;                                 /* weiter beim IRET(D)   */
-    mo_load();
-    e = mo.evp & mo.mask;
-    mo.evp = 0;
-    if (!e || (!mo.cbseg && !mo.cbofs) || !ctx_push(f, t, CT_MOU)) {
-        mo.incb = 0;
-        mo_save();
+    if ((!cb_seg[t] && !cb_ofs[t]) || !cb_q(t, 1, &c) || !ctx_push(f, t, CT_MOU)) {
+        cb_in[t] = 0;
         return 0;
     }
-    f->eax = e;
-    f->ebx = mo.btn;
-    f->ecx = (unsigned)mo_rx(mo.x);
-    f->edx = (unsigned)mo_ry(mo.y);
-    f->esi = (unsigned)mo.mcx;
-    f->edi = (unsigned)mo.mcy;
+    f->eax = c.ax;
+    f->ebx = c.bx;
+    f->ecx = c.cx;
+    f->edx = c.dx;
+    f->esi = c.si;
+    f->edi = c.di;
     f->r.ds = f->r.es = f->r.fs = f->r.gs = dp_rmseg[t];
-    mo_save();
-    return rm_go(f, t, mo.cbseg, mo.cbofs, 0, 0, 0);
+    return rm_go(f, t, cb_seg[t], cb_ofs[t], 0, 0, 0);
 }
 
-static void mou_cbdone(void)
+/* Programmstart (INT E0h 00h): Rueckruf weg, Module setzen ihren Treiber
+   zurueck (VDD_EV_PROG) */
+static void cb_prog(int t)
 {
-    mo_load();
-    mo.incb = 0;
-    mo_save();
+    /* FreeDOS legt INT 33h auf ein blosses IRET (Programme ohne Treiber
+       sollen nicht abstuerzen) - zurueck auf den Stummel des Kernels, damit
+       ein Modul (VMOUSE.SYS) den Vektor bekommt */
+    if (rd8(rd16(0, 0xCE), rd16(0, 0xCC)) == 0xCF) {
+        wr16(0, 0xCC, 0x33 * 4);
+        wr16(0, 0xCE, VBIOS);
+    }
+    cb_seg[t] = cb_ofs[t] = 0;
+    cb_in[t] = 0;
+    vdd_event(t, VDD_EV_PROG, 0);
 }
 
 unsigned __far v86_exc(struct v86_frame *f)
@@ -6597,7 +6334,7 @@ unsigned __far v86_exc(struct v86_frame *f)
         irq_off();                      /* bis zum IRETD                 */
         inject(&f->r, t);
         if (f->r.cs == ocs && f->r.eip == oip)
-            mou_cb(f, t, 0);            /* Maus-Ereignis an den Rueckruf */
+            cb_v86(f, t, 0);            /* Rueckruf eines Moduls (Maus) */
         if (sti_sh && (vt_pend[t] || virq[t] || kq_h[t] != kq_t[t])) {
             sti_step[t] = 1;            /* nach dem naechsten Befehl     */
             f->r.eflags |= FL_TF;

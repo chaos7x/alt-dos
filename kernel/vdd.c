@@ -34,6 +34,7 @@ static unsigned char vd_any;            /* ein Modul will "alle Ports"   */
 unsigned char vid_class;                /* Grafikmodul da: 1 CGA, 2 EGA  */
 static unsigned char vid_drv;           /* dessen Treiber + 1            */
 unsigned char vid_regs[64];             /* VS_VREGS (vgagfx.c raw_out)   */
+static unsigned char cb_mod[NTASK];     /* Modul + 1 mit Rueckruf (VS_CBARM) */
 #define CS(i)   DRVC_SEL(vt_drv[i] - 1)
 #define DS(i)   DRVD_SEL(vt_drv[i] - 1)
 
@@ -83,6 +84,9 @@ void __far vdd_drop(int d)
             vt_drv[i] = 0;
     if (vid_drv == d + 1)
         vid_class = vid_drv = 0;
+    for (i = 0; i < NTASK; i++)         /* Rueckrufe: v86.c fragt, findet   */
+        if (cb_mod[i] && !vt_drv[cb_mod[i] - 1])    /* niemanden          */
+            cb_mod[i] = 0;
     for (vd_any = 0, i = 0; i < NVDD; i++)
         if (vt_drv[i] && (vt[i].flags & VDDF_ANYPORT) && vt[i].io_off)
             vd_any = 1;
@@ -132,6 +136,18 @@ unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c)
             return 0;
     }
     return VDD_NOTMINE;
+}
+
+/* Rueckruf der Box faellig? (v86.c, Box hat VS_CBARM) c->val 0 nachsehen,
+   1 nehmen -> 0 mit Registern, VDD_NOTMINE */
+unsigned __far vdd_cbq(int t, struct vdd_call *c)
+{
+    unsigned i = cb_mod[t];
+    if (!i || !vt_drv[--i] || !vt[i].int_off)
+        return VDD_NOTMINE;
+    c->fn = VDD_CBQ;
+    c->task = (unsigned)t;
+    return vd_call(CS(i), vt[i].int_off, DS(i), KDATA, (unsigned)c);
 }
 
 /* Ereignis der Box an alle Module (val: VDD_EV_PMHOOK Vektor) */
@@ -221,7 +237,14 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx)
             fcopy(MK_FP(dsel, k.buf), vs_buf, n);
         return r;
     }
-    if (k.fn >= VS_IRQ && k.fn <= VS_INFO) {    /* Zustand der Box       */
+    if (k.fn == VS_CBARM) {             /* wer den Rueckruf gesetzt hat  */
+        for (n = 0; n < NVDD && vt_drv[n] != d + 1; n++)
+            ;
+        if (n == NVDD)
+            return 0xFFFF;
+        cb_mod[k.task] = (unsigned char)(k.a1 || k.a2 ? n + 1 : 0);
+    }
+    if ((k.fn >= VS_IRQ && k.fn <= VS_INFO) || k.fn == VS_MOUSE || k.fn == VS_CBARM) {
         win_save(w);                    /* VS_MAP/VS_COPY legen Fenster um */
         r = v86_vsvc(k.task, &k, dsel);
         win_restore(w);

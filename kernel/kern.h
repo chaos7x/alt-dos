@@ -230,6 +230,7 @@ unsigned __far vdd_svc(int d, unsigned dsel, unsigned bx);
 void __far vdd_drop(int d);
 unsigned __far vdd_io(int t, unsigned fn, unsigned port, unsigned val, int fgb);
 unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
+unsigned __far vdd_cbq(int t, struct vdd_call *c);
 void __far vdd_event(int t, unsigned ev, unsigned val);
 void __far vdd_tick(int t, int fgb);
 unsigned __far vid_hwclass(void);

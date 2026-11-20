@@ -1,0 +1,405 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * VMOUSE.SYS - Maustreiber der DOS-Box (INT 33h wie MOUSE.COM von
+ * Microsoft, 6.3 Stufe 4 nach docs/VDD.md; wie VMOUSE.SYS bei OS/2 2.x;
+ * vorher in kernel/v86.c)
+ *
+ * Die Maus der Sitzung (MOUSE.SYS) gehoert nach dem Reset der Box
+ * (VS_MOUSE VM_OPEN). Bewegung kommt als ungekuerzte Mickeys (VM_DELTA),
+ * Tasten als Ereignisse (VM_READ); Position, Grenzen und Zaehler rechnet
+ * das Modul je Box. Im Textmodus zeichnet der Kernel den Zeiger an der
+ * Stelle der Box (VM_POS); in Grafikmodi gibt es keinen Zeiger (Position
+ * und Tasten stimmen). Den Rueckruf (0Ch/14h) stellt der Kernel zu
+ * (VS_CBARM): er fragt hier nach (VDD_CBQ), ob ein gewuenschtes Ereignis
+ * ansteht, und uebernimmt die Register. Ohne dieses Modul meldet INT 33h
+ * "kein Treiber" (AX = 0).
+ */
+#include "drvlib.h"
+#include "netlib.h"                     /* fent()                        */
+#include "../include/vdd.h"
+
+#define NT VDD_NTASK
+
+static struct vmou {
+    unsigned char on, nbtn, btn;
+    signed char show;
+    unsigned char rx, ry, cw;           /* Mickeys je 8 Punkte, Zellbreite */
+    int x, y, xmin, xmax, ymin, ymax;
+    int mcx, mcy, fx, fy;
+    unsigned mask, cbofs, cbseg, evp;
+    unsigned npr[3], nrl[3];
+    int prx[3], pry[3], rlx[3], rly[3];
+} mo[NT];
+
+static struct vdd_svc sv;
+static struct vdd_reg reg;
+static unsigned short ev[4];            /* VM_READ, VM_DELTA             */
+static unsigned char bm[2];             /* BDA 0449h (Modus), 0484h (Zeilen-1) */
+static unsigned bm_t = 0xFFFF, bm_tk;
+
+static unsigned vs(unsigned fn, unsigned t, unsigned a1, unsigned a2, unsigned a3)
+{
+    sv.fn = fn;
+    sv.task = t;
+    sv.a1 = a1;
+    sv.a2 = a2;
+    sv.a3 = a3;
+    sv.buf = (unsigned)ev;
+    sv.len = sizeof(ev);
+    return devhlp(DH_VDDSVC, 0, (unsigned)&sv, 0);
+}
+
+static void rdb(unsigned t, unsigned lin, unsigned char *b)
+{
+    sv.fn = VS_RD;
+    sv.task = t;
+    sv.lin = lin;
+    sv.buf = (unsigned)b;
+    sv.len = 1;
+    devhlp(DH_VDDSVC, 0, (unsigned)&sv, 0);
+}
+
+/* Videomodus der Box: hoechstens einmal je Takt lesen */
+static void bmode(unsigned t)
+{
+    unsigned now = ticks();
+    if (t == bm_t && now == bm_tk)
+        return;
+    bm_t = t;
+    bm_tk = now;
+    rdb(t, 0x449, &bm[0]);
+    rdb(t, 0x484, &bm[1]);
+}
+
+static int m_text(unsigned t)
+{
+    unsigned m;
+    bmode(t);
+    m = bm[0] & 0x7F;
+    return m <= 3 || m == 7;
+}
+
+/* Vorgaben nach dem Videomodus der Box (wie der Microsoft-Treiber) */
+static void m_mode(unsigned t, struct vmou *o)
+{
+    unsigned m, rows;
+    bm_t = 0xFFFF;                      /* frisch lesen                  */
+    bmode(t);
+    m = bm[0] & 0x7F;
+    rows = bm[1] + 1;
+    if (rows < 25 || rows > 50)
+        rows = 25;
+    o->xmin = o->ymin = 0;
+    o->xmax = 639;
+    o->cw = m <= 1 ? 16 : 8;
+    if (m <= 3 || m == 7)
+        o->ymax = rows * 8 - 1;
+    else if (m == 0x0F || m == 0x10)
+        o->ymax = 349;
+    else if (m == 0x11 || m == 0x12 || m > 0x13)
+        o->ymax = 479;
+    else
+        o->ymax = 199;
+    o->x = 320;
+    o->y = (o->ymax + 1) / 2 & ~7;
+}
+
+static void m_clip(struct vmou *o)
+{
+    if (o->x < o->xmin) o->x = o->xmin;
+    if (o->x > o->xmax) o->x = o->xmax;
+    if (o->y < o->ymin) o->y = o->ymin;
+    if (o->y > o->ymax) o->y = o->ymax;
+}
+
+static void m_ptr(unsigned t, struct vmou *o)
+{
+    if (m_text(t))
+        vs(VS_MOUSE, t, VM_POS, o->y >> 3, o->x / o->cw * (o->cw >> 3));
+}
+
+static int m_rx(unsigned t, struct vmou *o, int x) { return m_text(t) ? x & ~(o->cw - 1) : x; }
+static int m_ry(unsigned t, int y) { return m_text(t) ? y & ~7 : y; }
+
+/* Neues von der Maus holen: Bewegung, dann Tastenereignisse */
+static void m_poll(unsigned t, struct vmou *o)
+{
+    int dx, dy;
+    unsigned b, i, ch;
+    vs(VS_MOUSE, t, VM_DELTA, 0, 0);
+    dx = (int)ev[0];
+    dy = (int)ev[1];
+    if (dx || dy) {
+        o->mcx += dx;
+        o->mcy += dy;
+        o->fx += dx * 8;
+        o->fy += dy * 8;
+        o->x += o->fx / (int)o->rx;
+        o->fx %= (int)o->rx;
+        o->y += o->fy / (int)o->ry;
+        o->fy %= (int)o->ry;
+        m_clip(o);
+        o->evp |= 1;
+        m_ptr(t, o);
+    }
+    while (vs(VS_MOUSE, t, VM_READ, 0, 0) == 1) {
+        b = ev[0] & 7;
+        ch = b ^ o->btn;
+        for (i = 0; i < 3; i++) {
+            if (!(ch & (1 << i)))
+                continue;
+            if (b & (1 << i)) {
+                o->npr[i]++;
+                o->prx[i] = m_rx(t, o, o->x);
+                o->pry[i] = m_ry(t, o->y);
+                o->evp |= 2 << (i * 2);
+            } else {
+                o->nrl[i]++;
+                o->rlx[i] = m_rx(t, o, o->x);
+                o->rly[i] = m_ry(t, o->y);
+                o->evp |= 4 << (i * 2);
+            }
+        }
+        o->btn = (unsigned char)b;
+    }
+}
+
+static void m_clear(struct vmou *o)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(*o); i++)
+        ((unsigned char *)o)[i] = 0;
+}
+
+static void m_arm(unsigned t, struct vmou *o)
+{
+    if (o->mask && (o->cbseg || o->cbofs))
+        vs(VS_CBARM, t, o->cbseg, o->cbofs, 0);
+    else
+        vs(VS_CBARM, t, 0, 0, 0);
+}
+
+static void m_reset(unsigned t, struct vmou *o)
+{
+    m_clear(o);
+    vs(VS_CBARM, t, 0, 0, 0);
+    o->nbtn = (unsigned char)vs(VS_MOUSE, t, VM_OPEN, 0, 0);
+    if (!o->nbtn || o->nbtn == 0xFF)
+        return;
+    o->on = 1;
+    o->show = -1;
+    o->rx = 8;
+    o->ry = 16;
+    m_mode(t, o);
+    vs(VS_MOUSE, t, VM_DELTA, 0, 0);    /* Altes verwerfen               */
+    vs(VS_MOUSE, t, VM_SHOW, 0, 0);
+    m_ptr(t, o);
+}
+
+static void mou33(struct vdd_call __far *c, unsigned t, struct vmou *o)
+{
+    unsigned i, a = c->ax;
+    if (a == 0x0000 || a == 0x0021) {
+        m_reset(t, o);
+        c->ax = o->on ? 0xFFFF : 0;
+        c->bx = o->nbtn == 3 ? 3 : 2;
+        return;
+    }
+    if (!o->on)                         /* kein Treiber                  */
+        return;
+    m_poll(t, o);
+    switch (a) {
+    case 0x01:                          /* Zeiger zeigen                 */
+        if (o->show < 0 && ++o->show == 0)
+            vs(VS_MOUSE, t, VM_SHOW, 1, 0);
+        break;
+    case 0x02:                          /* Zeiger verbergen              */
+        if (o->show-- == 0)
+            vs(VS_MOUSE, t, VM_SHOW, 0, 0);
+        break;
+    case 0x03:
+        c->bx = o->btn;
+        c->cx = (unsigned)m_rx(t, o, o->x);
+        c->dx = (unsigned)m_ry(t, o->y);
+        break;
+    case 0x04:                          /* Position setzen               */
+        o->x = (int)c->cx;
+        o->y = (int)c->dx;
+        m_clip(o);
+        m_ptr(t, o);
+        break;
+    case 0x05: case 0x06:               /* Druecken/Loslassen            */
+        i = c->bx < 3 ? c->bx : 0;
+        c->ax = o->btn;
+        if (a == 5) {
+            c->bx = o->npr[i];
+            c->cx = (unsigned)o->prx[i];
+            c->dx = (unsigned)o->pry[i];
+            o->npr[i] = 0;
+        } else {
+            c->bx = o->nrl[i];
+            c->cx = (unsigned)o->rlx[i];
+            c->dx = (unsigned)o->rly[i];
+            o->nrl[i] = 0;
+        }
+        break;
+    case 0x07: case 0x08: {             /* Grenzen                       */
+        int lo = (int)c->cx, hi = (int)c->dx;
+        if (lo > hi) { int k = lo; lo = hi; hi = k; }
+        if (a == 7) { o->xmin = lo; o->xmax = hi; }
+        else { o->ymin = lo; o->ymax = hi; }
+        m_clip(o);
+        m_ptr(t, o);
+        break;
+    }
+    case 0x0B:                          /* Mickeys seit dem letzten Mal  */
+        c->cx = (unsigned)o->mcx;
+        c->dx = (unsigned)o->mcy;
+        o->mcx = o->mcy = 0;
+        break;
+    case 0x0C:                          /* Rueckruf setzen (aus dem PM   */
+        o->mask = (c->val & 1) ? 0 : c->cx;     /* ohne Uebersetzung ist  */
+        o->cbofs = c->dx;               /* ES:DX keine Real-Mode-Adresse) */
+        o->cbseg = c->es;
+        o->evp = 0;
+        m_arm(t, o);
+        break;
+    case 0x14:                          /* Rueckruf tauschen             */
+        i = o->mask;
+        o->mask = (c->val & 1) ? 0 : c->cx;
+        c->cx = i;
+        i = o->cbofs;
+        o->cbofs = c->dx;
+        c->dx = i;
+        i = o->cbseg;
+        o->cbseg = c->es;
+        c->es = i;
+        o->evp = 0;
+        m_arm(t, o);
+        break;
+    case 0x0F:                          /* Mickeys je 8 Punkte           */
+        if (c->cx) o->rx = (unsigned char)(c->cx > 255 ? 255 : c->cx);
+        if (c->dx) o->ry = (unsigned char)(c->dx > 255 ? 255 : c->dx);
+        break;
+    case 0x15:                          /* Zustand: Puffergroesse        */
+        c->bx = 0;
+        break;
+    case 0x1B:                          /* Empfindlichkeit               */
+        c->bx = c->cx = 50;
+        c->dx = 0;
+        break;
+    case 0x1D: case 0x1E:               /* Bildschirmseite               */
+        c->bx = 0;
+        break;
+    case 0x1F:                          /* Treiber aus                   */
+        c->ax = 0xFFFF;
+        break;
+    case 0x24:                          /* Version, Typ, IRQ der echten  */
+        c->bx = 0x0805;                 /* Maus (PS/2: IRQ 0 wie bei     */
+        i = vs(VS_MOUSE, t, VM_INFO, 0, 0);     /* Microsoft)            */
+        c->cx = i && i != 0xFFFF ? i : 0x0400;
+        break;
+    case 0x26:                          /* groesste Koordinaten          */
+        c->bx = 0;
+        c->cx = (unsigned)o->xmax;
+        c->dx = (unsigned)o->ymax;
+        break;
+    case 0x2A:                          /* Zaehler, heisser Punkt        */
+        c->ax = (unsigned)o->show;
+        c->bx = c->cx = 0;
+        c->dx = 4;
+        break;
+    }
+}
+
+/* INT 33h und die Frage nach dem Rueckruf */
+static unsigned int_fn(void __far *a)
+{
+    struct vdd_call __far *c = a;
+    unsigned t = c->task, e;
+    struct vmou *o;
+    if (t >= NT)
+        return VDD_NOTMINE;
+    o = &mo[t];
+    if (c->fn == VDD_INT) {
+        mou33(c, t, o);
+        return 0;
+    }
+    if (c->fn != VDD_CBQ || !o->on || !o->mask)
+        return VDD_NOTMINE;
+    m_poll(t, o);
+    e = o->evp & o->mask;
+    if (!e)
+        return VDD_NOTMINE;
+    if (c->val) {                       /* nehmen                        */
+        o->evp = 0;
+        c->ax = e;
+        c->bx = o->btn;
+        c->cx = (unsigned)m_rx(t, o, o->x);
+        c->dx = (unsigned)m_ry(t, o->y);
+        c->si = (unsigned)o->mcx;
+        c->di = (unsigned)o->mcy;
+    }
+    return 0;
+}
+
+static unsigned event(void __far *a)
+{
+    struct vdd_call __far *c = a;
+    unsigned t = c->task;
+    if (t >= NT)
+        return 0;
+    switch (c->fn) {
+    case VDD_EV_PROG:                   /* neues Programm: Treiber aus,  */
+        vs(VS_MOUSE, t, VM_CLOSE, 0, 0);    /* Maus der Sitzung frei     */
+        /* fallthrough */
+    case VDD_EV_CREATE:
+    case VDD_EV_PARK:
+    case VDD_EV_DESTROY:                /* (Kernel gibt die Maus frei)   */
+        m_clear(&mo[t]);
+        break;
+    }
+    return 0;
+}
+
+static void init(void)
+{
+    struct drv_req __far *r = REQ;
+    reg.version = VDD_VERSION;
+    reg.size = sizeof(reg);
+    scat(reg.name, "VMOUSE");
+    reg.int_off = fent(0, int_fn);
+    reg.ev_off = fent(1, event);
+    reg.ints[0] = 0x33;
+    if (devhlp(DH_VDDREG, 0, (unsigned)&reg, 0)) {
+        dputs("VMOUSE.SYS: Anmeldung gescheitert\n");
+        r->status = DRV_ERR_NODEV;
+        return;
+    }
+    dputs("  Maus der DOS-Boxen (INT 33h)\n");
+    r->units = 0;
+    r->status = DRV_OK;
+}
+
+void strategy(void)
+{
+    struct drv_req __far *r = REQ;
+    unsigned t;
+    switch (r->cmd) {
+    case DRV_INIT:
+        devhlp_ptr = MK_FP(r->devhlp_sel, r->devhlp_off);
+        init();
+        break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: Maus der Boxen frei */
+        for (t = 0; t < NT; t++)
+            if (mo[t].on) {
+                vs(VS_MOUSE, t, VM_CLOSE, 0, 0);
+                vs(VS_CBARM, t, 0, 0, 0);
+                m_clear(&mo[t]);
+            }
+        r->status = DRV_OK;
+        break;
+    default:
+        r->status = DRV_ERR_CMD;
+    }
+}

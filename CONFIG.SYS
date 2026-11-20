@@ -45,11 +45,12 @@ REM Netz: Karte RTL8139/PCNET/E1000/NE2000 (/P:300 /I:3), dann
 REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
 REM DEVICE=RTL8139.SYS
 REM DEVICE=TCPIP.SYS
-REM Box-Module (wie OS/2-VDDs): COM/LPT, Ton, EMS; Grafik auf
+REM Box-Module (wie OS/2-VDDs): COM/LPT, Ton, EMS, Maus; Grafik auf
 REM EGA/CGA: DEVICE=VEGA.SYS bzw. VCGA.SYS
 DEVICE=VCOM.SYS
 DEVICE=VSB.SYS
 DEVICE=VEMS.SYS
+DEVICE=VMOUSE.SYS
 
 REM --- Dateisysteme ---
 REM CD-ROM: ISO 9660(:1999), Joliet, Rock Ridge (nur lesend)

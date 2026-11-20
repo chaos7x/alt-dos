@@ -781,7 +781,8 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   FINDFIRST ohne Treffer 12h, Suchzustand im DTA wie DOS (verschachtelte
   Suchen) – Lotus Works 3.0 und Word 5.5 installieren sich damit von
   Diskette (Lotus in QEMU und 86Box, Word in QEMU geprüft). Maus in der Box
-  über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
+  (seit 6.3 im Modul `VMOUSE.SYS`, ohne das Modul meldet INT 33h „kein
+  Treiber“) über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h – auch für DPMI-Programme
   im Protected Mode (DOS-Extender), Version 24h mit Art und IRQ der echten Maus – MSD
   erkennt sie); im Textmodus zeichnet AT-DOS den Zeiger, in Grafikmodi
@@ -1043,6 +1044,12 @@ gibt (`VS_IRQ`, `VS_TICK`, `VS_IOPERM`, `VS_FGRES`, `VS_AUD`).
 Drittes: `VEMS.SYS` – EMS 4.0 der Box (INT 67h, Verwaltung im Modul,
 Seiten über `VS_PGALLOC`/`VS_MAP`/`VS_COPY` wie VDHAllocPages/
 VDHMapPages bei OS/2); den Seitenrahmen wählt weiter der Kernel.
+Viertes: `VMOUSE.SYS` – der Maustreiber der Box (INT 33h, Position,
+Grenzen und Zähler im Modul, Maus der Sitzung über `VS_MOUSE`); den
+Ereignis-Rückruf stellt der Kernel zu (`VS_CBARM` wie VDHPushFarCall bei
+OS/2: das Modul setzt Segment:Offset, der Kernel fragt mit `VDD_CBQ` nach,
+ob etwas ansteht – im V86-Modus, aus dem Takt und für DPMI-Programme im
+PM). Module gleichzeitig (`NVDD`): 8.
 Grafikmodule `VEGA.SYS`/`VCGA.SYS` (nur auf EGA- bzw. CGA-Karten): Ports
 der Box mit Rohgrafik bleiben gesperrt und gehen ans Modul, das die
 Register mitschreibt (`VDDF_VEGA`/`VDDF_VCGA`, Ereignisse VSAVE/VREST,

@@ -318,3 +318,38 @@ VEGA.SYS neben VVGA): je Grafikklasse ein Modul.
   sauber. QEMU: DOOM 1.9 mit SB, EMT/E56/ET
   byte-gleich, BIOSCMP unverändert.
 - KTEXT2 63.649 Byte – nahezu voll; DGROUP 59.748.
+
+## Stand: Stufe 4b – Maus als `VMOUSE.SYS` (20.11.2026)
+
+Der Maustreiber der Box (INT 33h wie MOUSE.COM von Microsoft) ist aus
+`v86.c` ins Modul `drivers/vmouse.c` gewandert (wie VMOUSE.SYS bei OS/2):
+Reset, Zeiger zeigen/verbergen, Position, Tasten und Zähler, Grenzen,
+Mickeys, Empfindlichkeit, Version 24h, 26h, 2Ah. Zustand je Box im Modul
+(vorher in der Stummelseite F000:0B00 mit einer Arbeitskopie, die bei
+jeder Falle ganz kopiert wurde). Die Maus der Sitzung erreicht das Modul
+über `VS_MOUSE` (VM_OPEN/CLOSE/DELTA/READ/SHOW/POS/INFO), den Videomodus
+liest es höchstens einmal je Takt aus dem BDA. Neues Ereignis
+`VDD_EV_PROG` (Programmstart, INT E0h 00h): Treiber aus, Maus der Sitzung
+frei.
+
+Im Kernel bleibt nur die Zustellung des Ereignis-Rückrufs, allgemein für
+jedes Modul (wie VDHPushFarCall/VDHArmReturnHook bei OS/2): `VS_CBARM`
+setzt Segment:Offset je Box (vdd.c merkt sich das Modul), der Kernel fragt
+an seinen Zustellpunkten mit `VDD_CBQ` nach (val 0 nachsehen, 1 nehmen ->
+Register AX–DI), im V86-Modus nach einer Falle mit IF an, aus dem Takt
+über den Stummel F000:0574 und für DPMI-Programme im PM über F000:0578
+(Aufruf im Real Mode, CT_MOU). INT 33h aus dem PM ohne Übersetzung meldet
+der Kernel dem Modul (`val` Bit 0 bei VDD_INT) – ES:DX ist dann keine
+Real-Mode-Adresse, der Rückruf wird nicht gesetzt. `NVDD` 4 -> 8 (mit
+VCOM, VSB, VEMS, VMOUSE und einem Grafikmodul waren es fünf). KTEXT3
+51.093 Byte (1,3 KB weniger), VMOUSE.SYS 3,6 KB.
+
+Geprüft: QEMU mit serieller Maus (`-serial msmouse`, Bewegung und Klicks
+über den Monitor): MT.COM (Reset FFFFh/3 Tasten, 24h 0805h/0204h, 44
+Rückrufe mit Maske 7, Position, Klickzähler) und MCB.COM (16-Bit-DPMI-
+Programm, 0303h-Callback, INT 33h 0Ch über 0300h, 20 s nur im PM: 46
+Rückrufe); DOOM 1.9 Timedemo mit SB wie vorher. 86Box 386DX/40 mit
+serieller Microsoft-Maus (Bewegung und Klicks per xdotool): MT 26
+Rückrufe mit Maske 7, ein Klick gezählt, MCB 67 Rückrufe im PM; ohne
+Maus (PS/2 am ASUS-386 ohne Hilfsport) meldet INT 33h richtig „kein
+Treiber“.

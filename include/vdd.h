@@ -18,7 +18,7 @@
 #define DH_VDDSVC       33          /* BX = struct vdd_svc (DS) -> AX     */
 
 #define VDD_VERSION     1
-#define NVDD            4           /* Module gleichzeitig               */
+#define NVDD            8           /* Module gleichzeitig               */
 #define VDD_NTASK       8           /* Boxen hoechstens (= NTASK, vdd.c prueft) */
 #define VDD_NINT        4           /* Interrupts je Modul               */
 
@@ -69,6 +69,9 @@ struct vdd_call {
 #define VDD_OUTW        5
 #define VDD_TICK        6           /* Takt: mit IF an, im Zusammenhang
                                        der Box (current), vor der Rueckkehr */
+#define VDD_CBQ         7           /* Rueckruf (VS_CBARM) an int_off: val 0
+                                       nachsehen, 1 nehmen -> 0 mit den
+                                       Registern ax..di, VDD_NOTMINE nichts */
 #define VDD_EV_DESTROY  0x10        /* Box endet (Handles schliessen)    */
 #define VDD_EV_PARK     0x11        /* Box wird geparkt (Programmende)   */
 #define VDD_EV_CREATE   0x12        /* Box angelegt (Zustand zuruecksetzen) */
@@ -80,6 +83,10 @@ struct vdd_call {
 #define VDD_EV_PMEND    0x16        /* DPMI-Programm zu Ende             */
 #define VDD_EV_VSAVE    0x17        /* Grafikmodul: Stand per VS_VREGS    */
 #define VDD_EV_VREST    0x18        /* Grafikmodul: Stand in die Karte    */
+#define VDD_EV_PROG     0x19        /* neues Programm in der Box (BOXSHELL
+                                       INT E0h 00h): Treiber zuruecksetzen */
+/* VDD_INT: val Bit 0 = Aufruf kam aus dem PM ohne Uebersetzung (ES ist
+   der Host-Bereich des DPMI-Programms, keine Real-Mode-Adresse) */
 #define VDD_NOTMINE     0xFFFF
 
 /* Dienste des Kernels fuer das Modul (DH_VDDSVC) */
@@ -143,6 +150,21 @@ struct vdd_svc {
 #define VS_VREGS        16          /* VDD_EV_VSAVE: len (bis 64) Byte buf
                                        = Register wie die VGA-Tabellen (Misc,
                                        SEQ 0-4, CRTC 0-24, GC 0-8, ATC 0-20) */
+#define VS_MOUSE        17          /* Maus der Sitzung der Box, a1 = VM_*: */
+#define VM_OPEN         0           /* -> Tasten (0 = keine Maus)        */
+#define VM_CLOSE        1
+#define VM_DELTA        2           /* -> buf: int dx, dy (Mickeys)      */
+#define VM_READ         3           /* -> buf: Ereignis (8 Byte), AX 1/0  */
+#define VM_SHOW         4           /* a2 = 1 Zeiger an, 0 aus           */
+#define VM_POS          5           /* Zeiger im Text: a2 Zeile, a3 Spalte */
+#define VM_INFO         6           /* -> Art << 8 | IRQ (INT 33h 24h), 0 */
+#define VS_CBARM        18          /* Rueckruf a1:a2 (Segment:Offset) setzen,
+                                       0:0 aus. Der Kernel ruft ihn, wenn die
+                                       Box ihn annehmen kann (V86 mit IF an,
+                                       aus dem Takt, auch waehrend eines
+                                       DPMI-Programms im PM), fragt vorher
+                                       das Modul (VDD_CBQ) und kehrt mit RETF
+                                       zurueck (wie VDHPushFarCall bei OS/2) */
 #define VDD_HK_ADLIB    16          /* ADLIB_COPY=ON                     */
 
 #endif

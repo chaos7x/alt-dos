@@ -61,7 +61,12 @@ CMOS-Anzeige dort einstellen) und VGA-Gegenprobe (Cirrus `v386`, IBM-VGA
 `i386` – Grundlage ohne VBE; Skripte `ega_bg.sh`/`ibm_bg.sh`). Dabei: `NDRV` 6 -> 12
 (mit den Box-Modulen fiel ISO9660.IFS heraus!), Selektoren seitdem
 MEMMAP 1C8h, KCODE2 2A8h, VWIN 2B0h, KCODE3 2F8h, KCODE4 320h;
-CONFIG.SYS bis 8 KB (CFG_MAX, SETUP-Puffer). KTEXT2 63.649 Byte – voll. Testfalle: von
+CONFIG.SYS bis 8 KB (CFG_MAX, SETUP-Puffer). KTEXT2 63.649 Byte – voll.
+Stufe 4b Maus als `VMOUSE.SYS` erledigt (INT 33h im Modul, Kernel nur
+Rückruf-Zustellung `VS_CBARM`/`VDD_CBQ` wie VDHPushFarCall, `VS_MOUSE`,
+`VDD_EV_PROG`, NVDD 8; geprüft QEMU + 86Box `v386` mit serieller Maus,
+Bewegung/Klick per xdotool mousedown/mouseup, Testprogramme MT/MCB im
+Scratch). Nächste Stufe: 5 DPMI. Testfalle: von
 Diskette 1 gestartet fehlt `\DOS\MDOS` (seit 6.1 auf Diskette 2) –
 DOS-Programme melden dann „Befehl oder Dateiname nicht gefunden“.
 
