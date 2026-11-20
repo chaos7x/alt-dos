@@ -1273,6 +1273,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   schrittweise“), `cfg_ask` fragt jede Zeile (J/Eingabe, N, Esc =
   Rest ohne Fragen -> boot_f8 2), `step_arg` hängt an eine PROTSHELL
   mit CMD `/STEP` an; CMD fragt „AUTOEXEC.CMD ausführen“ und jede Zeile
+  (F8 gilt nur für die AUTOEXEC.CMD beim Start – CMD setzt `step` danach
+  zurück; vom Nutzer gemeldet: ein späterer Aufruf fragte weiter.)
   außer REM (`step`, nur oberste Stapelebene). read_cfg meldet eine zu
   große Datei. Geprüft: QEMU, 86Box P3B-F (F8 ab dem Einschalten
   gedrückt, NVRAM ohne CMOS-Halt – der Start ist nach ~30 s durch).
