@@ -436,6 +436,8 @@ static int get(unsigned ms)
         case M_CH_WINADJ:
             if (rn >= 9)
                 rwin += ssh_get32(rp + 5);
+            if (ms != 0xFFFF)
+                return 0;
             continue;
         case M_CH_DATA:
         case M_CH_EXTDATA:
@@ -456,6 +458,8 @@ static int get(unsigned ms)
                         return -1;
                 }
             }
+            if (ms != 0xFFFF)           /* Aufrufer sieht nach den Daten  */
+                return 0;
             continue;
         default:
             return rp[0];

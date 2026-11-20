@@ -37,6 +37,7 @@
 #define FX_ATTRS    105
 
 #define CHUNK       4096u
+#define WCHUNK      3072u               /* put: Paket passt in den Sendepuffer */
 
 static char args[FAPI_ARGLEN], host[128], user[64], line[300];
 static char rcwd[512], path[600], path2[600], lname[FAPI_PATHLEN + 2];
@@ -362,6 +363,42 @@ static int list(const char *dir, int lng, const char *pat, void (*fn)(const char
 }
 
 /* ---- Uebertragen -------------------------------------------------------- */
+/* "n Byte in s,z s (r KB/s)" - ohne 32-Bit-Division */
+static unsigned long t0;
+static unsigned long udv(unsigned long n, unsigned long d)
+{
+    unsigned long q = 0, r = 0;
+    int b;
+    if (!d)
+        return 0;
+    for (b = 31; b >= 0; b--) {
+        r = r << 1 | (n >> b & 1);
+        if (r >= d) {
+            r -= d;
+            q |= 1UL << b;
+        }
+    }
+    return q;
+}
+
+static void done(unsigned long n)
+{
+    unsigned long t = (unsigned long)DosQTicks() - t0;     /* 10 ms      */
+    outn(n);
+    out(" Byte in ");
+    outn(udv(t, 100));
+    out(",");
+    outn(udv(t, 10) - (udv(t, 100) << 3) - (udv(t, 100) << 1));
+    out(" s");
+    if (t >= 10) {
+        n = udv(n, t);                  /* Byte je 10 ms              */
+        out(" (");
+        outn(((n << 6) + (n << 5) + (n << 2)) >> 10);
+        out(" KB/s)");
+    }
+    out("\r\n");
+}
+
 static void do_get(const char *rem, const char *loc)
 {
     unsigned char *q, t;
@@ -389,6 +426,7 @@ static void do_get(const char *rem, const char *loc)
     out(" -> ");
     out(loc);
     out("\r\n");
+    t0 = DosQTicks();
     for (;;) {
         q = head(FX_READ);
         q = ssh_putstr(q, hnd, hlen);
@@ -417,8 +455,7 @@ static void do_get(const char *rem, const char *loc)
     }
     DosClose(h);
     fclose_r();
-    outn(off);
-    out(" Byte.\r\n");
+    done(off);
 }
 
 static void do_put(const char *loc, const char *rem)
@@ -448,8 +485,9 @@ static void do_put(const char *loc, const char *rem)
     out(path);
     out("\r\n");
     hd = 4 + 1 + 4 + 4 + hlen + 8 + 4;
+    t0 = DosQTicks();
     for (;;) {
-        n = DosRead(h, ob + hd, CHUNK);
+        n = DosRead(h, ob + hd, WCHUNK);
         if (FAPI_FAILED(n)) {
             out("Lesefehler.\r\n");
             failed = 1;
@@ -468,8 +506,7 @@ static void do_put(const char *loc, const char *rem)
     }
     DosClose(h);
     fclose_r();
-    outn(off);
-    out(" Byte.\r\n");
+    done(off);
 }
 
 static void mget_one(const char *n)

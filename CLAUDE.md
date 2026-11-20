@@ -4972,8 +4972,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mac=/kbd) – ein Systembenutzer + sshd war hier nicht erlaubt. In QEMU
   geprüft: ed25519+aes128-gcm (Shell, Farben, exec), ecdsa+aes256-gcm,
   rsa-sha2-512+aes128-ctr+etm, rsa-sha2-256+aes256-ctr+hmac; Fingerabdruck
-  gleich `ssh-keygen -lf`. Offen: SFTP-Lauf, Ed25519-Zeit auf 286/386,
-  echtes OpenSSH, Umlaute über die Tastatur.
+  gleich `ssh-keygen -lf`. SFTP (Befehlsdatei mit ls, get, put, mkdir,
+  mget, rename, chmod, rm, !dir) in QEMU, Dateien MD5-gleich. 86Box P3B-F
+  (RTL8139, SLiRP): Anmeldung, `top` im Terminal, SFTP 300 KB in 2,6 s
+  (~107 KB/s je Richtung). Dabei gefunden (Mitschnitt per QEMU
+  filter-dump + dpkt): `get()` wartete nach Kanaldaten bis zur Frist
+  (500 ms je SFTP-Anfrage, 7 KB/s) – kehrt jetzt nach Daten/Fenster
+  zurück. Offen: Ed25519-Zeit auf 286/386, echtes OpenSSH, Umlaute über
+  die Tastatur, mehrere SFTP-Anfragen gleichzeitig.
 - **Prozessor in der Box** (vom Nutzer gemeldet, 20.11.2026: MSD nannte
   auf dem P3B-F „80386“): v86.c POPFD warf das obere Flag-Wort weg – AC/ID
   ließen sich nie umschalten. Jetzt gehen AC (Bit 18) und ID (Bit 21) in
