@@ -262,8 +262,7 @@ static void aenc(u8 ctx, u16 etype, const u8 *c, unsigned n)
     zu();
 }
 
-/* ---- DER lesen ---------------------------------------------------------- */
-struct tlv { const u8 *p; unsigned n; u8 tag; };
+/* ---- DER lesen (struct tlv in krb5.h) ----------------------------------- */
 
 /* naechstes Element ab *pp (bis e) -> 0 ok */
 static int tget(const u8 **pp, const u8 *e, struct tlv *t)
@@ -925,4 +924,105 @@ int krb_cc_put(const struct kcred *c)
     if (i >= hd.n)
         hd.n = i + 1;
     return cc_write(i, c, 0);
+}
+
+/* ---- DER fuer andere Protokolle (LDAP, DOMJOIN) ------------------------- */
+void der_beg(u8 *b, unsigned max) { abeg(b, max); }
+void der_open(u8 tag) { auf(tag); }
+void der_close(void) { zu(); }
+void der_raw(const void *d, unsigned n) { araw(d, n); }
+void der_prim(u8 tag, const void *d, unsigned n) { aprim(tag, d, n); }
+unsigned der_len(void) { return aerr ? 0 : ap; }
+int der_get(const u8 **pp, const u8 *e, struct tlv *t) { return tget(pp, e, t); }
+u32 der_uint(const struct tlv *t) { return tint(t); }
+
+/* Zahl mit beliebiger Kennung (02 INTEGER, 0A ENUMERATED) */
+void der_num(u8 tag, u32 v)
+{
+    u8 b[5];
+    unsigned i;
+    b[0] = 0;
+    for (i = 0; i < 4; i++)
+        b[1 + i] = (u8)(v >> (24 - 8 * i));
+    i = 0;
+    while (i < 4 && b[i] == 0 && !(b[i + 1] & 0x80))
+        i++;
+    aprim(tag, b + i, 5 - i);
+}
+
+/* ---- GSS Wrap/Unwrap (RFC 4121 4.2.6.2) ---------------------------------
+   Nur ohne Unterschluessel (wie krb_gss: ohne gegenseitige Anmeldung),
+   Schluessel = Sitzungsschluessel des Dienst-Tickets. Senden immer mit
+   Vertraulichkeit (Verwendung 24, Initiator), Empfangen mit oder ohne
+   (22 = Acceptor). RRC (Rotation) wird beim Empfang zurueckgedreht. */
+static u32 gss_seq;
+
+void krb_gss_reset(void) { gss_seq = 0; }
+
+unsigned krb_wrap(const u8 *key, u8 *d, unsigned n, u8 *out)
+{
+    u8 conf[16];
+    u8 *h = out;
+    h[0] = 5; h[1] = 4; h[2] = 2; h[3] = 0xFF;    /* Sealed               */
+    h[4] = h[5] = h[6] = h[7] = 0;                /* EC 0, RRC 0          */
+    h[8] = h[9] = h[10] = h[11] = 0;
+    h[12] = (u8)(gss_seq >> 24); h[13] = (u8)(gss_seq >> 16);
+    h[14] = (u8)(gss_seq >> 8);  h[15] = (u8)gss_seq;
+    gss_seq++;
+    cr_cpy(d + n, h, 16);                         /* Kopf hinter die Daten */
+    tls_random(conf, 16);
+    krb_enc(key, 24, conf, d, n + 16, out + 16);
+    return n + 16 + 16 + 28;
+}
+
+static void rev(u8 *b, unsigned i, unsigned j)    /* b[i..j) umdrehen      */
+{
+    u8 c;
+    while (i + 1 < j) {
+        c = b[i]; b[i] = b[--j]; b[j] = c;
+        i++;
+    }
+}
+
+int krb_unwrap(const u8 *key, u8 *t, unsigned n, u8 **pt, unsigned *pl)
+{
+    u8 ck[12], c2[12], f, *b = t + 16, *p;
+    unsigned ec, rrc, bn, l, i;
+    u32 us;
+    if (n < 16 + 12 || t[0] != 5 || t[1] != 4 || t[3] != 0xFF)
+        return 1;
+    f = t[2];
+    if (f & 4)                                    /* Acceptor-Unterschluessel */
+        return 2;
+    ec = (unsigned)t[4] << 8 | t[5];
+    rrc = (unsigned)t[6] << 8 | t[7];
+    bn = n - 16;
+    if (rrc) {                                    /* rechts um rrc gedreht */
+        rrc %= bn;
+        rev(b, 0, rrc);
+        rev(b, rrc, bn);
+        rev(b, 0, bn);
+    }
+    us = (f & 1) ? 22 : 24;
+    if (f & 2) {
+        if (krb_dec(key, us, b, bn, &p, &l) || l < 16 + ec ||
+            p[l - 16] != 5 || p[l - 15] != 4)
+            return 1;
+        *pt = p;
+        *pl = l - 16 - ec;
+        return 0;
+    }
+    if (ec != 12 || bn < 12)
+        return 1;
+    l = bn - 12;
+    cr_cpy(ck, b + l, 12);
+    cr_cpy(b + l, t, 16);                         /* Kopf mit EC = RRC = 0 */
+    b[l + 4] = b[l + 5] = b[l + 6] = b[l + 7] = 0;
+    krb_cksum(key, us, b, l + 16, c2);
+    for (i = 0; i < 12; i++)
+        if (ck[i] != c2[i])
+            return 1;
+    *pt = b;
+    *pl = l;
+    return 0;
 }

@@ -69,4 +69,25 @@ int  krb_cc_find(const char *sname, struct kcred *c);
 int  krb_cc_init(const struct kcred *tgt);
 int  krb_cc_put(const struct kcred *c);
 
+/* DER/BER fuer andere Protokolle (LDAP): Schreiben vorwaerts mit
+   Platzhalter fuer die Laenge (der_open/der_close, bis 16 tief, Inhalt
+   bis 64 KB), Lesen ueber struct tlv */
+struct tlv { const u8 *p; unsigned n; u8 tag; };
+void der_beg(u8 *b, unsigned max);
+void der_open(u8 tag);
+void der_close(void);
+void der_raw(const void *d, unsigned n);
+void der_prim(u8 tag, const void *d, unsigned n);
+void der_num(u8 tag, u32 v);            /* 02 INTEGER, 0A ENUMERATED     */
+unsigned der_len(void);                 /* 0 = zu lang                   */
+int  der_get(const u8 **pp, const u8 *e, struct tlv *t);
+u32  der_uint(const struct tlv *t);
+
+/* GSS Wrap/Unwrap (RFC 4121) fuer einen Kontext aus krb_gss: Senden mit
+   Vertraulichkeit; d braucht 16 Byte Platz hinter n, out n + 60 Byte.
+   Unwrap an Ort und Stelle (t braucht 4 Byte Platz hinter n): 0 = ok */
+void krb_gss_reset(void);
+unsigned krb_wrap(const u8 *key, u8 *d, unsigned n, u8 *out);
+int  krb_unwrap(const u8 *key, u8 *t, unsigned n, u8 **pt, unsigned *pl);
+
 #endif

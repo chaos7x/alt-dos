@@ -6066,7 +6066,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Samba-AD ATDOS.TEST, `samba-tool` nur mit `python3.12`, Start
   `/tmp/claude-0/ad/start.sh`, QEMU-Tests `/tmp/claude-0/ad/q/k*.sh`,
   Benutzer test/administrator, Kennwort Geheim123!). SMBCLI-DGROUP danach
-  60.618 Byte + 4 KB Stapel – voll. Nächster Schritt: LDAP/DOMJOIN.
+  60.618 Byte + 4 KB Stapel – voll. Stufe 2 DOMJOIN erledigt
+  (`apps/task_domjoin.c`, LDAP + SASL GSSAPI mit Vertraulichkeit,
+  `krb_wrap`/`krb_unwrap`, Ablage `\DOS\SYSTEM\DOMAIN.KEY`; TCPIP gibt
+  Puffer im TIME_WAIT ohne Handle sofort frei; Test-DC braucht die SPN
+  `ldap/dc1.atdos.test` – `samba-tool spn add` mit python3.12; Test
+  `/tmp/claude-0/ad/q/j1.sh`). Nächster Schritt: Anmeldung beim Start,
+  Maschinenkennwort wechseln.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

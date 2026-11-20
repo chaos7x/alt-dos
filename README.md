@@ -303,6 +303,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Anmeldung an einer Domäne (Active Directory, Samba-AD, MIT) mit
   Kerberos v5, aes256-cts-hmac-sha1-96, KDC über TCP 88; Tickets in
   `%TEMP%\KRB5CC.DAT` (oder `%KRB5CCNAME%`), die Uhr kommt vom KDC
+- `DOMJOIN Name [/OU:DN]`, `DOMJOIN /LEAVE` (6.3): Rechner einer
+  Active-Directory-Domäne beitreten (Rechnerkonto per LDAP mit SASL/GSSAPI
+  und verschlüsselter Verbindung, Probe-Anmeldung als `Name$`), Daten in
+  `\DOS\SYSTEM\DOMAIN.KEY`; vorher `KINIT` mit einem Konto, das Rechner
+  anlegen darf
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,

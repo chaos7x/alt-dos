@@ -479,6 +479,46 @@ Verbindung auf dem Server abgeschossen (`smbd: client`), danach DIR und
 COPY über das Wiederverbinden mit Kerberos. Reine Programmlogik – kein
 86Box.
 
-Weiter (offen): Domäne Stufe 2 (LDAP mit SASL/GSSAPI, DOMJOIN für das
-Rechnerkonto, Anmeldung beim Start, SRV-Einträge im Auflöser), Ticket
-erneuern, SMB 3 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.
+## Domäne Stufe 2: DOMJOIN (20.11.2026)
+
+`DOMJOIN Name [/OU:DN]`, `DOMJOIN /LEAVE`, `DOMJOIN` (Stand) – Ring 3 wie
+Stufe 1, vorher `KINIT` mit einem Konto, das Rechner anlegen darf.
+
+- LDAP (RFC 4511) über TCP 389 zum KDC aus der Ticket-Ablage; BER mit den
+  DER-Hilfen aus krb5.c (`der_*`, jetzt öffentlich). rootDSE anonym:
+  `defaultNamingContext`, `dnsHostName`.
+- Anmeldung SASL GSSAPI (RFC 4752): AP-REQ für `ldap/<dnsHostName>` (aus
+  der Ablage oder vom KDC), dann das Angebot der Sicherheitsstufen
+  (Wrap-Token, 4 Byte) prüfen und Stufe 4 (Vertraulichkeit) wählen – AD
+  setzt `unicodePwd` nur über eine verschlüsselte Verbindung. Danach
+  jede LDAP-Nachricht als 4 Byte Länge + Wrap-Token (RFC 4121, versiegelt,
+  Verwendung 24 senden/22 empfangen; `krb_wrap`/`krb_unwrap` in krb5.c,
+  auch ungesiegelte Token mit Prüfsumme und RRC werden gelesen).
+- addRequest `CN=Name,CN=Computers,<Basis>` (oder `/OU:`): objectClass
+  computer, sAMAccountName `Name$`, userAccountControl 4096,
+  dNSHostName, SPN `HOST/Name` und `HOST/name.domäne`, unicodePwd
+  (`"Kennwort"` als UTF-16LE, 28 Zufallszeichen aus `tls_random`). Gibt es
+  das Konto schon (68), wird nur das Kennwort ersetzt (modify replace).
+  50 = keine Berechtigung, 32 = Konto an anderer Stelle.
+- Probe: `krb_kinit("Name$")` mit dem neuen Kennwort. Ablage
+  `X:\DOS\SYSTEM\DOMAIN.KEY` (Startlaufwerk, versteckt+System): Realm,
+  Domäne, Name, DC, DN, Kennwort, AES-256-Schlüssel (Salz REALM + "host" +
+  name.domäne, 4096 Runden) – Grundlage für die Anmeldung beim Start und
+  den Wechsel des Maschinenkennworts. `/LEAVE` löscht das Konto per LDAP
+  delRequest und überschreibt die Datei vor dem Löschen.
+
+TCPIP.SYS dabei: eine Verbindung im TIME_WAIT ohne Handle gibt ihre zwei
+Pufferblöcke sofort ab (`tw_release`) – KINIT + zwei DOMJOIN hintereinander
+hielten sonst 2 s lang alle 16 Blöcke („kein Socket frei“).
+
+Test-DC: Samba hatte die SPN `ldap/dc1…` des DC nicht angelegt
+(`samba_spnupdate` scheiterte an einem fehlenden Python-Modul); ein echtes
+AD hat sie – im Test von Hand mit `samba-tool spn add` nachgetragen.
+Geprüft in QEMU: Beitritt (Konto neu und vorhanden), Stand, zweimal
+hintereinander erneut beitreten, Benutzer ohne Recht („Keine
+Berechtigung“), `/LEAVE` (Konto auf dem DC weg, DOMAIN.KEY weg),
+Probe-Anmeldung als `ATPC1$`. Reine Programmlogik – kein 86Box.
+
+Weiter (offen): Anmeldung beim Start mit dem Rechnerkonto, Wechsel des
+Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
+(AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.

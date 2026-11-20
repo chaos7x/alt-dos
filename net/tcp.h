@@ -204,6 +204,20 @@ static void tcp_free_tx(struct sock *s)
     s->tb = -1;
 }
 
+/* TIME_WAIT ohne Handle braucht keine Puffer mehr (nur noch ACK auf ein
+   wiederholtes FIN) - sonst halten kurz hintereinander geoeffnete
+   Verbindungen (KINIT, DOMJOIN) 2 s lang alle 16 Bloecke fest */
+static void tw_release(struct sock *s)
+{
+    if (!s->orphan || s->st != TS_TIMEWT)
+        return;
+    s->tmr = 0;
+    blk_put(s->rb);
+    s->rb = -1;
+    blk_put(s->tb);
+    s->tb = -1;
+}
+
 /* Verbindung zu Ende: Wartende wecken; ohne Handle ganz frei */
 static void tcp_closed(int k, unsigned char err)
 {
@@ -506,7 +520,7 @@ static void tcp_in(int i, fp t, unsigned tl)
         if (s->st == TS_FINW1)
             s->st = TS_FINW2, s->tw = s->orphan ? now + 6000 : 0;
         else if (s->st == TS_CLOSING)
-            s->st = TS_TIMEWT, s->tw = now + 200;
+            s->st = TS_TIMEWT, s->tw = now + 200, tw_release(s);
         else if (s->st == TS_LASTACK) {
             tcp_closed(si, 0);
             return;
@@ -547,6 +561,7 @@ static void tcp_in(int i, fp t, unsigned tl)
                 else {
                     s->st = TS_TIMEWT;
                     s->tw = now + 200;
+                    tw_release(s);
                 }
             }
             if (n < dlen)
@@ -816,4 +831,5 @@ static void tcp_close(int k)
         tcp_fin(s);
     if (s->st == TS_FINW2 || s->st == TS_FINW1)
         s->tw = now + 6000;
+    tw_release(s);
 }
