@@ -5725,6 +5725,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   KbdCharIn lesen, nicht bei schon gelesenem Dateiende der Eingabe.
   Bis dahin in LINUX.MAC `bg=DETACH $*`, `jobs=TASKMAN /L` (in QEMU
   geprüft: `bg mem`, `jobs`).
+  IPv6 mit zwei Präfixen (vom Nutzer gemeldet, 20.11.2026: PING -6
+  ins Internet ging am echten LAN nicht, IPCONFIG zeigte nur fd00::):
+  ip6.h nahm je RA das zuletzt genannte Präfix – jetzt geht ein
+  öffentliches einer ULA (`IS_ULA`, fc00::/7) vor; sock.h fragt bei
+  Familie 0 AAAA nur zuerst, wenn die Adresse keine ULA ist. In QEMU
+  mit v6peer2.py (RA mit fd00::/64 und 2001:db8:1::/64, beide
+  Reihenfolgen) geprüft: Adresse 2001:db8:1::…, PING an fd00::99 geht.
   IPv6 erledigt (18.11.2026, „weiter mit IPv6“; ohne DHCPv6, MLD,
   Fragmente, Pfad-MTU, Datenschutzadressen): `net/ip6.h` (in tcpip.c
   vor sock.h) – link-lokal fe80::EUI-64 beim Anmelden der Karte, DAD

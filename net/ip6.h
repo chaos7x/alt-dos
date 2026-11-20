@@ -18,6 +18,8 @@
  * Fragmente, Datenschutzadressen.
  */
 
+#define IS_ULA(a)   (((a)[0] & 0xFE) == 0xFC)  /* fc00::/7, nur lokal */
+
 static const unsigned char allnodes[16] = { 0xFF, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
 static const unsigned char allrtrs[16]  = { 0xFF, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2 };
 
@@ -331,9 +333,15 @@ static void icmp6_in(int i, fp m, unsigned ml)
         if ((o = nd_opt(m, ml, 16, 1)) != 0 && o[1] == 1)
             arp_put(i, rx_s, o + 2);
         for (o = m + 16; o + 2 <= m + ml && o[1] && o + o[1] * 8 <= m + ml; o += o[1] * 8) {
+            /* Praefix mit A-Bit: nur eine Adresse je Karte - ein oeffent-
+               liches Praefix geht einem lokalen (ULA fc00::/7) vor; viele
+               Router (Fritz!Box) kuendigen beide an, mit dem ULA kaeme
+               man nicht ins Internet. Gleiche Adresse: nur Lebensdauer. */
             if (o[0] == 3 && o[1] == 4 && o[2] == 64 && (o[3] & 0x40) && G32x(o + 4)) {
                 cpy(a, o + 16, 8);      /* Praefix + eigene Kennung       */
                 cpy(a + 8, n->ll + 8, 8);
+                if (n->gast && !eq(a, n->ga, 16) && IS_ULA(a) && !IS_ULA(n->ga))
+                    continue;           /* oeffentliche Adresse bleibt    */
                 if (!n->gast || !eq(a, n->ga, 16)) {
                     cpy(n->ga, a, 16);
                     n->gplen = 64;
