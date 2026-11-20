@@ -1264,6 +1264,19 @@ Win32s), nicht vorziehen, sondern nachfragen.
   IFS beginnen); AHA154X mit DEVICE (DEVICEHIGH nur als Beispiel, es
   wirkt wie DEVICE). Grenze 4 KB im Blick behalten (6.0: 3,7 KB). Neue
   Schlüsselwörter oder Schalter dort mit eintragen.
+- F8 beim Start (Wunsch des Nutzers, 20.11.2026, „überall“, auch für
+  AUTOEXEC.CMD; Anlass: eine in EDIT gespeicherte CONFIG.SYS von 6.2 –
+  ausgeliefert mit LF, EDIT schreibt CR LF – wurde über 4 KB und still
+  übergangen, Start ohne Treiber): start.asm sammelt im Real Mode die
+  BIOS-Tasten ab (F8 = Scancode 42h -> `boot_f8`), kernel.c `f8_wait`
+  gibt vor config_sys eine Sekunde (Zeile „F8: Startdateien
+  schrittweise“), `cfg_ask` fragt jede Zeile (J/Eingabe, N, Esc =
+  Rest ohne Fragen -> boot_f8 2), `step_arg` hängt an eine PROTSHELL
+  mit CMD `/STEP` an; CMD fragt „AUTOEXEC.CMD ausführen“ und jede Zeile
+  außer REM (`step`, nur oberste Stapelebene). read_cfg meldet eine zu
+  große Datei. Geprüft: QEMU, 86Box P3B-F (F8 ab dem Einschalten
+  gedrückt, NVRAM ohne CMOS-Halt – der Start ist nach ~30 s durch).
+  Auf `6.2` dazu CONFIG.SYS bis 8 KB (wie main seit 6d6a088).
 - CONFIG.SYS bis 4 KB (Fehler, beim 5.1-Test gefunden: `startup[512]` in
   DGROUP – eine längere Datei wurde ganz übergangen, Start dann ohne
   Treiber: „Startpartition nicht gefunden“): `read_cfg` liest in ein
