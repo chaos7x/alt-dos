@@ -1496,6 +1496,8 @@ rbs_int15:
         je      .deny
         cmp     ax, 0xE820
         je      .deny
+        cmp     ah, 0x53                ; APM gehoert AT-DOS (das MR BIOS
+        je      .deny                   ; kehrt aus 5300h nicht zurueck)
 .chain: jmp     far [cs:66]
 .none:  xor     ax, ax
         push    bp

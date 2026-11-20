@@ -142,7 +142,9 @@ INT 15h 88h = 0 (XMS statt erweitertem Speicher wie unter HIMEM), Maus,
 EMS und XMS sind da, INT 2Fh 1100h meldet den Redirector.
 
 Kompatibilitätsbox (5.x): echtes BIOS im Real Mode. Eigen sind nur
-INT 13h (Startabbild), INT 15h (88h/87h/89h/E801h/E820h abgelehnt, 4Fh
+INT 13h (Startabbild), INT 15h (88h/87h/89h/E801h/E820h und 53xxh (APM)
+abgelehnt – das MR BIOS 1.65 (86Box `mr286`) kehrte aus 5300h nie
+zurück, BIOSCMP hing –, 4Fh
 für Alt+Esc und die Tastaturbelegung von RBSHELL – ein direkter Aufruf
 mit einem Tastencode legt wie KEYB das Zeichen in den Puffer) und INT 8.
 
