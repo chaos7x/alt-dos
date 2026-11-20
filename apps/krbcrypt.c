@@ -334,3 +334,99 @@ void krb_cksum(const u8 key[32], u32 usage, const u8 *d, unsigned n, u8 out[12])
     cr_cpy(out, h, 12);
     cr_zero(k, 32);
 }
+
+/* ---- rc4-hmac (Etype 23, RFC 4757) ---------------------------------------
+   Rueckfall fuer Konten ohne AES-Schluessel (Kennwort aus der Zeit vor
+   Windows 2008/Samba 4). Schluessel = MD4 des Kennworts in UTF-16LE
+   (der NT-Hash), Verwendung 3 gilt als 8. */
+static u8 rc_s[256];
+
+static void rc4(const u8 *key, unsigned kl, u8 *d, unsigned n)
+{
+    unsigned i, j = 0, k;
+    u8 t;
+    for (i = 0; i < 256; i++)
+        rc_s[i] = (u8)i;
+    for (i = 0; i < 256; i++) {
+        j = (j + rc_s[i] + key[i % kl]) & 255;
+        t = rc_s[i]; rc_s[i] = rc_s[j]; rc_s[j] = t;
+    }
+    i = j = 0;
+    for (k = 0; k < n; k++) {
+        i = (i + 1) & 255;
+        j = (j + rc_s[i]) & 255;
+        t = rc_s[i]; rc_s[i] = rc_s[j]; rc_s[j] = t;
+        d[k] ^= rc_s[(rc_s[i] + rc_s[j]) & 255];
+    }
+}
+
+void krb_key23(const char *pw, unsigned plen, u8 key[16])
+{
+    static struct md5 c;
+    u8 u[2];
+    unsigned i;
+    md5_init(&c, 1);
+    u[1] = 0;
+    for (i = 0; i < plen; i++) {
+        u[0] = (u8)pw[i];
+        md5_add(&c, u, 2);
+    }
+    md5_end(&c, key);
+}
+
+static void ms_us(u32 usage, u8 t[4])
+{
+    if (usage == 3)
+        usage = 8;
+    t[0] = (u8)usage; t[1] = (u8)(usage >> 8);
+    t[2] = (u8)(usage >> 16); t[3] = (u8)(usage >> 24);
+}
+
+void krb_enc23(const u8 key[16], u32 usage, const u8 conf[8],
+               const u8 *d, unsigned n, u8 *out)
+{
+    u8 t[4], k1[16], k3[16];
+    ms_us(usage, t);
+    hmac_md5(key, 16, t, 4, k1);
+    cr_cpy(out + 16, conf, 8);
+    cr_cpy(out + 24, d, n);
+    hmac_md5(k1, 16, out + 16, n + 8, out);         /* Pruefsumme vorn  */
+    hmac_md5(k1, 16, out, 16, k3);
+    rc4(k3, 16, out + 16, n + 8);
+    cr_zero(k1, 16);
+    cr_zero(k3, 16);
+}
+
+int krb_dec23(const u8 key[16], u32 usage, u8 *d, unsigned n,
+              u8 **pt, unsigned *plen)
+{
+    u8 t[4], k1[16], k3[16], h[16];
+    if (n < 24)
+        return -1;
+    ms_us(usage, t);
+    hmac_md5(key, 16, t, 4, k1);
+    hmac_md5(k1, 16, d, 16, k3);
+    rc4(k3, 16, d + 16, n - 16);
+    hmac_md5(k1, 16, d + 16, n - 16, h);
+    cr_zero(k1, 16);
+    cr_zero(k3, 16);
+    if (!cr_eq(h, d, 16))
+        return -1;
+    *pt = d + 24;
+    *plen = n - 24;
+    return 0;
+}
+
+void krb_cksum23(const u8 key[16], u32 usage, const u8 *d, unsigned n, u8 out[16])
+{
+    static struct md5 c;
+    u8 ks[16], t[4], h[16];
+    hmac_md5(key, 16, (const u8 *)"signaturekey", 13, ks);
+    ms_us(usage, t);
+    md5_init(&c, 0);
+    md5_add(&c, t, 4);
+    md5_add(&c, d, n);
+    md5_end(&c, h);
+    hmac_md5(ks, 16, h, 16, out);
+    cr_zero(ks, 16);
+}

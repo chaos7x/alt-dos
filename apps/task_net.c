@@ -142,6 +142,10 @@ void main(void)
             if (!*p)
                 usage();
             p++;
+            while (*p == '\\')                 /* \\DOM\Name wie DOM\Name     */
+                p++;
+            if (!*p)
+                usage();
             for (n = 0; p[n] && p[n] != '\\'; n++)
                 ;
             if (p[n]) {

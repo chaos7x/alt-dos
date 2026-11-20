@@ -6071,7 +6071,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `krb_wrap`/`krb_unwrap`, Ablage `\DOS\SYSTEM\DOMAIN.KEY`; TCPIP gibt
   Puffer im TIME_WAIT ohne Handle sofort frei; Test-DC braucht die SPN
   `ldap/dc1.atdos.test` – `samba-tool spn add` mit python3.12; Test
-  `/tmp/claude-0/ad/q/j1.sh`). Nächster Schritt: Anmeldung beim Start,
+  `/tmp/claude-0/ad/q/j1.sh`). RC4-HMAC als Rückfall (Konto des Nutzers
+  hatte nur RC4: KRB-Fehler 14; geprüft per Testbau nur mit Etype 23).
+  Nächster Schritt: Anmeldung beim Start,
   Maschinenkennwort wechseln.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,

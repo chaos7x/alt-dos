@@ -49,4 +49,14 @@ int  krb_dec(const u8 key[32], u32 usage, u8 *d, unsigned n,
 /* Pruefsumme hmac-sha1-96-aes256 mit Kc */
 void krb_cksum(const u8 key[32], u32 usage, const u8 *d, unsigned n, u8 out[12]);
 
+/* rc4-hmac (Etype 23, RFC 4757): Schluessel 16 Byte = MD4(UTF-16LE(pw));
+   Verschluesseln: out = HMAC-MD5 (16) || RC4(conf 8 || d), Laenge n + 24;
+   Pruefsumme hmac-md5 (Typ -138) 16 Byte */
+void krb_key23(const char *pw, unsigned plen, u8 key[16]);
+void krb_enc23(const u8 key[16], u32 usage, const u8 conf[8],
+               const u8 *d, unsigned n, u8 *out);
+int  krb_dec23(const u8 key[16], u32 usage, u8 *d, unsigned n,
+               u8 **pt, unsigned *plen);
+void krb_cksum23(const u8 key[16], u32 usage, const u8 *d, unsigned n, u8 out[16]);
+
 #endif

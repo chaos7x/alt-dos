@@ -301,7 +301,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat)
 - `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KLIST`, `KDESTROY` (6.3):
   Anmeldung an einer Domäne (Active Directory, Samba-AD, MIT) mit
-  Kerberos v5, aes256-cts-hmac-sha1-96, KDC über TCP 88; Tickets in
+  Kerberos v5, aes256-cts-hmac-sha1-96 (rc4-hmac als Rückfall für
+  Konten ohne AES-Schlüssel), KDC über TCP 88; Tickets in
   `%TEMP%\KRB5CC.DAT` (oder `%KRB5CCNAME%`), die Uhr kommt vom KDC
 - `DOMJOIN Name [/OU:DN]`, `DOMJOIN /LEAVE` (6.3): Rechner einer
   Active-Directory-Domäne beitreten (Rechnerkonto per LDAP mit SASL/GSSAPI

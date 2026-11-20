@@ -447,7 +447,7 @@ static const char *kerr_text(void)
     case 6:  return "Benutzer in der Dom\x84ne unbekannt.";
     case 7:  return "Dienst in der Dom\x84ne unbekannt (Rechnername?).";
     case 12: return "Anmeldung gesperrt (Richtlinie).";
-    case 14: return "Der KDC kennt kein AES-256 f\x81r dieses Konto.";
+    case 14: return "Der KDC kennt weder AES-256 noch RC4 f\x81r dieses Konto.";
     case 18: return "Konto gesperrt oder abgelaufen.";
     case 23: return "Kennwort abgelaufen.";
     case 24: return "Kennwort falsch.";
@@ -457,9 +457,27 @@ static const char *kerr_text(void)
     return "Der KDC hat abgelehnt.";
 }
 
+/* Verschluesseln/Entschluesseln je Etype (18 aes256, 23 rc4-hmac) */
+static unsigned kenc(u16 et, const u8 *key, u32 us, const u8 *d, unsigned n, u8 *out)
+{
+    u8 conf[16];
+    tls_random(conf, 16);
+    if (et == 23) {
+        krb_enc23(key, us, conf, d, n, out);
+        return n + 24;
+    }
+    krb_enc(key, us, conf, d, n, out);
+    return n + 28;
+}
+
+static int kdec(u16 et, const u8 *key, u32 us, u8 *d, unsigned n, u8 **pt, unsigned *pl)
+{
+    return et == 23 ? krb_dec23(key, us, d, n, pt, pl) : krb_dec(key, us, d, n, pt, pl);
+}
+
 /* Antwort AS-REP/TGS-REP (Kennung rtag) -> Ticket und entschluesselten
    Teil; kusage = Schluesselverwendung, key = Schluessel dafuer */
-static const char *kdc_rep(u8 rtag, const u8 *key, u32 kusage, u32 nonce,
+static const char *kdc_rep(u8 rtag, u16 ket, const u8 *key, u32 kusage, u32 nonce,
                            struct kcred *c)
 {
     struct tlv top, s, t, e, ek, kv;
@@ -486,10 +504,10 @@ static const char *kdc_rep(u8 rtag, const u8 *key, u32 kusage, u32 nonce,
         return "Ticket fehlt oder ist zu gross.";
     cr_cpy(c->tkt, t.p, t.n);
     c->tlen = t.n;
-    if (tin(&s, 0xA6, &e) || e.tag != 0x30 || tctx_int(&e, 0xA0, &v) || v != 18 ||
+    if (tin(&s, 0xA6, &e) || e.tag != 0x30 || tctx_int(&e, 0xA0, &v) || v != ket ||
         tin(&e, 0xA2, &t) || t.tag != 0x04)
-        return "Antwort nicht mit AES-256 verschl\x81sselt.";
-    if (krb_dec(key, kusage, (u8 *)t.p, t.n, &pt, &pl))
+        return "Antwort mit unerwartetem Verfahren verschl\x81sselt.";
+    if (kdec(ket, key, kusage, (u8 *)t.p, t.n, &pt, &pl))
         return "Antwort l\x84sst sich nicht entschl\x81sseln (Kennwort falsch?).";
     /* EncKDCRepPart [APPLICATION 25/26] */
     p = pt;
@@ -498,11 +516,12 @@ static const char *kdc_rep(u8 rtag, const u8 *key, u32 kusage, u32 nonce,
     p = t.p;
     if (tget(&p, t.p + t.n, &s) || s.tag != 0x30)
         return "Antwort unverst\x84ndlich (entschl\x81sselt).";
-    if (tin(&s, 0xA0, &ek) || tctx_int(&ek, 0xA0, &v) || v != 18 ||
-        tin(&ek, 0xA1, &kv) || kv.tag != 0x04 || kv.n != 32)
-        return "Sitzungsschl\x81ssel ist nicht AES-256.";
-    cr_cpy(c->key, kv.p, 32);
-    c->etype = 18;
+    if (tin(&s, 0xA0, &ek) || tctx_int(&ek, 0xA0, &v) || (v != 18 && v != 23) ||
+        tin(&ek, 0xA1, &kv) || kv.tag != 0x04 || kv.n != (v == 18 ? 32 : 16))
+        return "Sitzungsschl\x81ssel weder AES-256 noch RC4.";
+    cr_zero(c->key, 32);
+    cr_cpy(c->key, kv.p, kv.n);
+    c->etype = (u16)v;
     if (tctx_int(&s, 0xA2, &v) || v != nonce)
         return "Antwort passt nicht zur Anfrage (Nonce).";
     c->auth = c->end = c->renew = 0;
@@ -555,6 +574,7 @@ static void req_body(const char *cname, const char *realm, unsigned stype,
     auf(0xA8);
     auf(0x30);
     aint(18);
+    aint(23);                           /* rc4-hmac als Rueckfall        */
     zu();
     zu();
     zu();
@@ -594,6 +614,7 @@ const char *krb_kinit(const char *user, const char *realm, const char *pw,
     struct tlv top, md, pa, v, ent, t;
     const u8 *p;
     u32 nonce = rnd31(), iter = 4096, et;
+    u16 ket = 0;
     unsigned tl, i;
     const char *e;
 
@@ -636,8 +657,13 @@ const char *krb_kinit(const char *user, const char *realm, const char *pw,
                         break;
                     r = lst.p;
                     while (!tget(&r, lst.p + lst.n, &ent)) {
-                        if (tctx_int(&ent, 0xA0, &et) || et != 18)
+                        if (tctx_int(&ent, 0xA0, &et))
                             continue;
+                        if (et == 23 && !ket)
+                            ket = 23;
+                        if (et != 18)
+                            continue;
+                        ket = 18;
                         if (!tin(&ent, 0xA1, &t))
                             tstr(&t, salt, sizeof(salt));
                         if (!tin(&ent, 0xA2, &t) && t.n == 4)
@@ -647,26 +673,29 @@ const char *krb_kinit(const char *user, const char *realm, const char *pw,
                 }
             }
         }
-        if (iter > 100000UL)
+        if (!ket)
+            ket = 18;                   /* ohne ETYPE-INFO2: AES          */
+        if (ket == 23)
+            krb_key23(pw, slen(pw), key);
+        else if (iter > 100000UL)
             return "Zu viele Iterationen verlangt.";
-        krb_s2k(pw, slen(pw), salt, slen(salt), iter, key);
+        else
+            krb_s2k(pw, slen(pw), salt, slen(salt), iter, key);
 
         /* 2. mit PA-ENC-TIMESTAMP (Verwendung 1) */
         {
             static u8 ed[128];
-            u8 conf[16];
             abeg(ts, sizeof(ts));
             auf(0x30);
             atime(0xA0, krb_now());
             actx_int(0xA1, rnd31() >> 12);
             zu();
             tl = ap;
-            tls_random(conf, 16);
-            krb_enc(key, 1, conf, ts, tl, enc);
+            tl = kenc(ket, key, 1, ts, tl, enc);
             abeg(ed, sizeof(ed));
             auf(0x30);
-            actx_int(0xA0, 18);
-            aoct(0xA2, enc, tl + 28);
+            actx_int(0xA0, ket);
+            aoct(0xA2, enc, tl);
             zu();
             i = ap;
             nonce = rnd31();
@@ -679,7 +708,7 @@ const char *krb_kinit(const char *user, const char *realm, const char *pw,
             return e;
     } else
         return "Der KDC verlangt keine Vorauthentisierung (nicht unterst\x81tzt).";
-    e = kdc_rep(0x6B, key, 3, nonce, tgt);
+    e = kdc_rep(0x6B, ket, key, 3, nonce, tgt);
     cr_zero(key, 32);
     if (!e && !tgt->sname[0])
         scopy(tgt->sname, sn, sizeof(tgt->sname));
@@ -693,7 +722,6 @@ static void ap_req(const struct kcred *c, u32 us, u32 ckt, const u8 *ck, unsigne
 {
     static u8 au[512], en[560];
     static struct asave sv;
-    u8 conf[16];
     unsigned al;
     apush(&sv);
     abeg(au, sizeof(au));
@@ -705,7 +733,12 @@ static void ap_req(const struct kcred *c, u32 us, u32 ckt, const u8 *ck, unsigne
     if (ck) {
         auf(0xA3);
         auf(0x30);
-        actx_int(0xA0, ckt);
+        if (ckt == 0xFFFFFF76UL) {      /* hmac-md5 (-138)               */
+            auf(0xA0);
+            aprim(0x02, "\xFF\x76", 2);
+            zu();
+        } else
+            actx_int(0xA0, ckt);
         aoct(0xA1, ck, ckn);
         zu();
         zu();
@@ -716,8 +749,7 @@ static void ap_req(const struct kcred *c, u32 us, u32 ckt, const u8 *ck, unsigne
     zu();
     al = ap;
     apop(&sv);
-    tls_random(conf, 16);
-    krb_enc(c->key, us, conf, au, al, en);
+    al = kenc(c->etype, c->key, us, au, al, en);
     auf(0x6E);
     auf(0x30);
     actx_int(0xA0, 5);
@@ -726,7 +758,7 @@ static void ap_req(const struct kcred *c, u32 us, u32 ckt, const u8 *ck, unsigne
     auf(0xA3);
     araw(c->tkt, c->tlen);
     zu();
-    aenc(0xA4, 18, en, al + 28);
+    aenc(0xA4, c->etype, en, al);
     zu();
     zu();
 }
@@ -735,7 +767,7 @@ const char *krb_tgs(const struct kcred *tgt, const char *svc, const char *host,
                     struct kcred *out)
 {
     static char sn[96];
-    u8 ck[12], *pa = rp;                /* AP-REQ vorlaeufig im Antwortpuffer */
+    u8 ck[16], *pa = rp;                /* AP-REQ vorlaeufig im Antwortpuffer */
     u32 nonce = rnd31();
     unsigned pl, n;
     const char *e;
@@ -746,9 +778,14 @@ const char *krb_tgs(const struct kcred *tgt, const char *svc, const char *host,
         sn[n++] = (char)(*host >= 'A' && *host <= 'Z' ? *host + 32 : *host);
     sn[n] = 0;
     req_body(0, tgt->realm, 2, sn, nonce);
-    krb_cksum(tgt->key, 6, bb, bbl, ck);
     abeg(pa, KBUF);
-    ap_req(tgt, 7, 16, ck, 12);         /* hmac-sha1-96-aes256           */
+    if (tgt->etype == 23) {
+        krb_cksum23(tgt->key, 6, bb, bbl, ck);
+        ap_req(tgt, 7, 0xFFFFFF76UL, ck, 16);   /* hmac-md5               */
+    } else {
+        krb_cksum(tgt->key, 6, bb, bbl, ck);
+        ap_req(tgt, 7, 16, ck, 12);     /* hmac-sha1-96-aes256           */
+    }
     pl = ap;
     if (aerr)
         return "Ticket zu gross.";
@@ -777,7 +814,7 @@ const char *krb_tgs(const struct kcred *tgt, const char *svc, const char *host,
     cr_zero(out, sizeof(*out));
     scopy(out->realm, tgt->realm, sizeof(out->realm));
     scopy(out->cname, tgt->cname, sizeof(out->cname));
-    e = kdc_rep(0x6D, tgt->key, 8, nonce, out);
+    e = kdc_rep(0x6D, tgt->etype, tgt->key, 8, nonce, out);
     if (!e && !out->sname[0])
         scopy(out->sname, sn, sizeof(out->sname));
     return e;

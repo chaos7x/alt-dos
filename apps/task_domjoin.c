@@ -342,6 +342,9 @@ static void sasl_bind(void)
             fail(e, 1);
         krb_cc_put(&svc);
     }
+    if (svc.etype != 18)
+        fail("Der DC gibt f\x81r LDAP nur einen RC4-Schl\x81ssel aus - "
+             "DOMJOIN braucht AES-256.", 1);
     n = krb_gss(&svc, tb, LBUF);
     if (!n)
         fail("Ticket zu gro\xE1.", 1);

@@ -519,6 +519,21 @@ hintereinander erneut beitreten, Benutzer ohne Recht („Keine
 Berechtigung“), `/LEAVE` (Konto auf dem DC weg, DOMAIN.KEY weg),
 Probe-Anmeldung als `ATPC1$`. Reine Programmlogik – kein 86Box.
 
+RC4-HMAC als Rückfall (20.11.2026; Anlass: beim Nutzer meldete KINIT
+gegen sein Samba 4.22.11 Fehler 14 – das Konto hatte nur einen RC4-
+Schlüssel, Kennwort aus der Zeit vor AES): `krbcrypt.c` `krb_key23`
+(MD4 des Kennworts in UTF-16LE), `krb_enc23`/`krb_dec23` (RFC 4757:
+K1 = HMAC-MD5(Schlüssel, Verwendung), Prüfsumme HMAC-MD5(K1, Konfusor 8 ||
+Daten), RC4 mit HMAC-MD5(K1, Prüfsumme); Verwendung 3 gilt als 8),
+`krb_cksum23` (hmac-md5, Typ −138). krb5.c bietet 18 und 23 an, nimmt aus
+PA-ETYPE-INFO2 AES, wenn da, sonst RC4; Sitzungsschlüssel je Ticket 18
+oder 23 (`kcred.etype`), Authenticator und TGS-Prüfsumme danach. DOMJOIN
+verlangt für LDAP weiter einen AES-Sitzungsschlüssel (Wrap-Token nach
+RFC 4121). Geprüft in QEMU: k2.sh wie bisher (AES) und mit einem Testbau,
+der nur 23 anbietet – KINIT, Dienstticket, SMBCLI -k signiert, get/put.
+Dazu NET `/USER:\\DOM\Name` (Backslashes vorn wurden Teil des Namens –
+Anmeldung als Gast, Freigabe verweigert).
+
 Weiter (offen): Anmeldung beim Start mit dem Rechnerkonto, Wechsel des
 Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.
