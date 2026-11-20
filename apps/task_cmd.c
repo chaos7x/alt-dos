@@ -2517,6 +2517,23 @@ static int run_program(char *cmd, int sync, int call);
 static int confirm(const char *q);
 static void endlocal(void);
 static unsigned char step;              /* /STEP: AUTOEXEC.CMD zeilenweise (F8) */
+
+/* F8: "Text [J,N]?" - J/Eingabe ja, N nein, Esc ja und keine Fragen mehr */
+static int step_ask(const char *t)
+{
+    unsigned c;
+    puts(t);
+    puts(" [J,N]? ");
+    do
+        c = KbdCharIn() & 0xFF;
+    while (c != 'j' && c != 'J' && c != 'y' && c != 'Y' && c != 'n' &&
+           c != 'N' && c != '\r' && c != 27);
+    if (c == 27)
+        step = 0;
+    c = c == 'n' || c == 'N';
+    puts(c ? "N\n" : "J\n");
+    return !c;
+}
 static int nlocal, local_lvl[4];
 
 static void on_break(unsigned sig)
@@ -2767,20 +2784,8 @@ static int run_batch(const char *path, const char *args)
             puts(ebuf);
             puts("\n");
         }
-        if (step && bdepth == 1 && !same(ebuf, "REM")) {    /* F8: jede Zeile */
-            unsigned c;
-            puts(ebuf);
-            puts(" [J,N]? ");
-            do
-                c = KbdCharIn() & 0xFF;
-            while (c != 'j' && c != 'J' && c != 'y' && c != 'Y' && c != 'n' &&
-                   c != 'N' && c != '\r' && c != 27);
-            if (c == 27)                /* Esc: Rest ohne Fragen        */
-                step = 0;
-            puts(c == 'n' || c == 'N' ? "N\n" : "J\n");
-            if (c == 'n' || c == 'N')
-                continue;
-        }
+        if (step && bdepth == 1 && !same(ebuf, "REM") && !step_ask(ebuf))
+            continue;                   /* F8: jede Zeile fragen        */
         for (i = 0; ebuf[i]; i++)
             l[i] = ebuf[i];
         l[i] = 0;
@@ -3723,7 +3728,7 @@ void main(void)
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */
     if (permanent && exists("\\AUTOEXEC.CMD") &&
-        (!step || confirm("AUTOEXEC.CMD ausf\x81hren [J,N]? "))) {
+        (!step || step_ask("AUTOEXEC.CMD ausf\x81hren"))) {
         if (!run_batch("\\AUTOEXEC.CMD", ""))
             return;
         echo_on = 1;
