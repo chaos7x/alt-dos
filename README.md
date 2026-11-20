@@ -755,7 +755,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `\DOS\MDOS` ist wie `\OS2\MDOS` bei OS/2 das Verzeichnis der DOS-Seite,
   dort liegen auch COMMAND.COM und das MEM von FreeDOS, das XMS, EMS und
   UMB der Box zeigt), die interaktive Box führt `X:\AUTOEXEC.BAT`
-  aus, wenn es sie gibt. Eine hängende Box beendet **Strg+Alt+Ende**
+  aus, wenn es sie gibt (FreeDOS, DOS ab 6.0); direkt gestartete Programme
+  und COMMAND.COM von DOS 5 bekommen deren Zeilen `PATH`, `SET` und
+  `PROMPT` (mit `%NAME%`, ohne `SET COMSPEC`) von BOXSHELL – Setup-
+  Programme wie das von Word tragen dort ihren Pfad ein. Eine hängende Box beendet **Strg+Alt+Ende**
   (Strg+C gehört dem DOS darin)
 - XMS 3.0 in jeder DOS-Box vom Kernel (wie VXMS bei OS/2, kein HIMEM in
   der Box): bis 2 MB Speicherblöcke je Box (Anlegen, Kopieren, Sperren,
