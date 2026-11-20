@@ -353,3 +353,29 @@ serieller Microsoft-Maus (Bewegung und Klicks per xdotool): MT 26
 Rückrufe mit Maske 7, ein Klick gezählt, MCB 67 Rückrufe im PM; ohne
 Maus (PS/2 am ASUS-386 ohne Hilfsport) meldet INT 33h richtig „kein
 Treiber“.
+
+## DPMI: bleibt Basis im Kernel (Abwägung, 20.11.2026)
+
+Gemessen (wdis von `v86.o`): DPMI belegt in KTEXT3 rund 15,4 KB von
+51,1 KB – `dp31` (INT 31h) 4,3 KB, `dp_trap` 1,5 KB, `dp_switch` 1,3 KB,
+`dp_back` 0,9 KB, `dp_cbcall` 0,8 KB, dazu Ausnahmen, Rückrufe, Raw
+Switch, POPF-Patch, PVI, Speicher (dmem/dphys) und die Hilfen ctx/rm_go/
+sel_base/lrd/lwr.
+
+Als Modul taugt es nicht: jede Falle eines DPMI-Programms im PM (DOOM:
+mehrere tausend je Sekunde – CLI/STI ohne PVI, Ports, INT, Takt) liefe
+über einen Fernaufruf mit DS-Wechsel, und das Modul bräuchte als Dienste
+fast den ganzen Monitor: LDT und GDT-Eintrag je Box, Seitentabellen ab
+4 MB, Rahmen von Ring 3 (FS/GS, 32-Bit-Stapel), virtuelles IF/PVI/CR4,
+Zustandsseite und Rückweg in den Real Mode (`ctx_push`, `rm_go`,
+`dp_back`), die IRQ-Zustellung (`dp_hwint`) und die Rückrufe der Module
+(CT_MOU). Bei OS/2 2.x liegt DPMI ebenfalls im Kern der MVDM-Schicht,
+nicht in einem austauschbaren VDD.
+
+Ein eigenes Codesegment (KTEXT5) brächte nur Platz – KTEXT3 hat 14 KB
+frei – und kostete jeden Aufruf zwischen DPMI und Monitor als Fernaufruf
+über Thunks (heute nah). Entscheidung: DPMI bleibt in `v86.c`; wird
+KTEXT3 knapp, wandert zuerst Seltenes (int13x, rom_skip, vga_bgint) in ein
+anderes Segment. Damit sind die Stufen des Modulplans abgeschlossen:
+Module VCOM, VSB, VEMS, VEGA/VCGA, VMOUSE; Basis im Kernel PIC, Zeitgeber,
+CMOS, Tastatur, BIOS-Grundlage, XMS/HMA/UMB, VGA, DPMI.
