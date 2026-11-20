@@ -569,6 +569,10 @@ struct fapi_sysinfo {
    Bank geladen, spielt der Treiber MIDI auf dem EMU8000 (AUDCAP_MPU401
    wird dann mit gemeldet) - ohne Bank wie bisher an den MPU-401. */
 #define AUD_AWE             13
+#define AUD_BLASTER         14      /* CX = Puffer (64 Byte) <- Einstellungen
+                                       der Karte als BLASTER-Text, z. B.
+                                       "A220 I5 D1 H5 P330 T6" (fuer die
+                                       Kompatibilitaetsbox) -> 0 / FAPI_ERROR */
 struct fapi_awecmd {
     unsigned short op;              /* AWE_*                             */
     unsigned short n;               /* Anzahl (Zonen, Presets, Worte)    */

@@ -1065,6 +1065,17 @@ static void box_call(void)
         poke(lin(rg.es, rg.di), cd, slen(cd) + 1);
         break;
     }
+    case 0x1A: {                                /* BLASTER von SB16.SYS   */
+        static char bl[64];                     /* nach ES:DI, AX = 0     */
+        if (FAILED(fapi_call(FAPI_AUDIO, AUD_BLASTER, (unsigned)bl, 0)) ||
+            !bl[0]) {
+            rg.ax = 0xFFFF;
+            break;
+        }
+        poke(lin(rg.es, rg.di), bl, slen(bl) + 1);
+        rg.ax = 0;
+        break;
+    }
     case 0x19:                                  /* Name des Abbilds       */
         poke(lin(rg.es, rg.di), rb_iname, slen(rb_iname) + 1);
         break;

@@ -285,6 +285,13 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   vergleicht FreeDOS direkt mit der Kompatibilitätsbox
   (`docs/BOX-BIOS.md`). Behoben dabei im Redirector: Dateidatum (5701h)
   und Attribut beim Anlegen, 5Bh, Fehlercodes 03h/05h/10h wie DOS
+- Umgebung der Kompatibilitätsbox (5.5): RBSHELL übernimmt aus
+  `X:\AUTOEXEC.BAT` des Startlaufwerks die Zeilen `PATH`, `SET` und
+  `PROMPT` (mit `%NAME%`, ohne `SET COMSPEC`) – COMMAND.COM führt sie
+  in der Box nicht aus, Setup-Programme wie das von Word tragen dort ihren
+  Pfad ein. `BLASTER` kommt aus den Einstellungen, die SB16.SYS gefunden
+  hat (z. B. `A220 I5 D1 H5 P330 T6`); eine eigene `SET BLASTER`-Zeile
+  geht vor.
 - `RBOX [Abbild.IMG | Datei.COM]` (5.1): Kompatibilitätsbox im
   echten Real Mode mit FreeDOS (8086-Bau, startet von `\DOS\MDOS\FREEDOS.IMG`;
   COMMAND.COM kommt aus `X:\DOS\MDOS` des Startlaufwerks, dann sind A:/B:
@@ -639,7 +646,7 @@ selbst nur 8.3 kennt.
 | 75 | DosJoin         | BX = Laufwerk, CX = leeres Verzeichnis (wird angelegt, wenn es fehlt) oder 0 (aufheben) → 0, FAPI_ERROR, FAPI_ERR_INUSE, FAPI_ERR_DENIED (nicht leer) |
 | 76 | DosQJoin        | BX = Laufwerk, CX = Puffer → "C:\CDROM" oder FAPI_ERROR |
 | 77 | DosCacheInfo    | BX = struct fapi_cacheinfo, CX = Größe (0 = alte Form ohne min/max) → Größe des Platten-Caches (KB), Frist für verzögertes Schreiben (s), Treffer/Fehltreffer, ungeschriebene Blöcke |
-| 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose. Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
+| 79 | Aud*            | Ton (FAPI_AUDIO), BX = Unterfunktion: AudOpen (CX = struct fapi_audfmt: Rate, Kanäle, Bits), AudWrite (CX = Puffer, DX = Länge, wartet auf Platz), AudDrain, AudClose, AudMixer (CX = Regler, DX = 0–100 oder FFFFh), AudInfo (Name der Karte), AudCaps, FmOpen/FmWrite (OPL-Register direkt)/FmClose, MidiOpen/MidiWrite (rohe MIDI-Bytes)/MidiClose, AUD_BLASTER (14, 5.5: Einstellungen der Karte als BLASTER-Text für die Kompatibilitätsbox). Zu hören ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geöffnete; die anderen laufen stumm im Echtzeittempo weiter |
 | 84 | DosProc         | Taskmanager (wie 6.0): BX = PROC_INFO (CX = Platz, DX = struct fapi_proc: Zustand, Sitzung, Aufrufer, Größe, Name, Befehlszeile) oder PROC_KILL (beenden wie Strg+C; nicht der Aufrufer, seine Aufrufer und die Shell der ersten Sitzung) |
 | 85 | DosRBox         | 5.1-Kompatibilitätsbox: BX = RB_LOAD (CX = Selektor, DX = Länge eines .COM), RB_BOOT (CX = Größe eines Diskettenabbilds in KB), RB_IMG (CX = Puffer, DX = Länge: nächstes Stück des Abbilds), RB_RUN (CX = Registerpuffer oder 0, DX = 1 vorher setzen; Box im Real Mode laufen lassen → RB_SWITCH Alt+Esc, RB_EXIT Ende, Rückgabewert in AH, RB_CALL INT E0h mit gefülltem Puffer), RB_REGS (CX = struct fapi_rbregs, DX = 0 holen/1 setzen), RB_MEM (CX = struct fapi_rbmem: Speicher der Box lesen/schreiben), RB_FREE |
 | 86 | DosGetCp / DosSetCp / DosCpList | BX = 0: aktive Codepage → AX; BX = FFFFh, CX = Platz: vorbereitete Codepage aus `CODEPAGE=` (0 = Ende); sonst BX = Codepage einschalten (437 immer, sonst nur vorbereitete; lädt den Zeichensatz, Dateinamen folgen) → 0 / FAPI_ERROR (5.2) |

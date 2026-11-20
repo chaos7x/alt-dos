@@ -14,13 +14,14 @@
 ; Laufwerk:Verzeichnis, aus dem RBOX gestartet wurde, nach ES:DI - FreeCOM
 ; beginnt dort; AH=13h -> AL = Startlaufwerk (FreeCOM aus X:\DOS\MDOS, A:/B:
 ; sind dann die Disketten von AT-DOS) oder 0 (vom Abbild A:); AH=15h Tastaturbelegung von AT-DOS
-; (3 x 90 Zeichen) nach ES:DI -> AX = 0.
+; (3 x 90 Zeichen) nach ES:DI -> AX = 0; AH=1Ah BLASTER-Text von SB16.SYS
+; nach ES:DI -> AX = 0 (FFFFh: keine Karte).
 cpu 8086
 org 0x100
 
 start:
         mov     sp, stack_top
-        mov     bx, (stack_top - start + 0x100 + 15) / 16  ; Rest frei
+        mov     bx, (trans_end - start + 0x100 + 15) / 16  ; Rest frei
         mov     ah, 0x4A
         int     0x21
         call    redir_install
@@ -66,9 +67,13 @@ start:
         mov     [pblock], ax
         mov     word [pb_tail], tailx
         call    other_dos               ; MS-DOS/PC DOS: dessen COMMAND.COM
+        call    ab_load                 ; PATH/SET/PROMPT aus X:\AUTOEXEC.BAT
         mov     dx, shellx
 .abbild:
         push    dx
+        mov     bx, (stack_top - start + 0x100 + 15) / 16  ; ab_load frei
+        mov     ah, 0x4A
+        int     0x21
         call    mouse_load                      ; CuteMouse, wenn AT-DOS
         pop     dx                              ; eine Maus hat
         cmp     byte [perm], 1                  ; Box beim Start (OS/2 1.x):
@@ -897,3 +902,432 @@ pb_fcb2: dw     fcb, 0
         align   2
         times   256 db 0
 stack_top:
+
+; ---- PATH, SET und PROMPT aus X:\AUTOEXEC.BAT ---------------------------
+; COMMAND.COM fuehrt die AUTOEXEC.BAT in der Box nicht aus (DOS 5 kennt
+; kein /K, die Box startet COMMAND.COM mit eigener Umgebung). Was Setup-
+; Programme dort eintragen (Word: PATH C:\WORD;%PATH%), uebernimmt
+; RBSHELL selbst: nur die Zeilen PATH, SET und PROMPT (auch mit @ vorn),
+; %NAME% wird ersetzt, alles andere bleibt unbeachtet; SET COMSPEC nicht.
+; Vorher BLASTER aus den Einstellungen von SB16.SYS (INT E0h 1Ah), wenn
+; der Treiber eine Sound Blaster gefunden hat.
+; Arbeitsblock per 48h: Umgebung vorn (bis AB_ENV Byte), dahinter Datei
+; (bis 4 KB) und Puffer; zuletzt per 4Ah auf die Umgebung gekuerzt - sie
+; bleibt fuer jeden Neustart von COMMAND.COM. Der Code liegt hinter
+; stack_top und wird danach freigegeben (RBSHELL bleibt resident).
+AB_ENV  equ     0x200
+AB_FILE equ     0x200
+AB_FSZ  equ     0x1000
+AB_LINE equ     0x1210
+AB_VAL  equ     0x1300
+AB_VSZ  equ     0x1F0
+AB_NAME equ     0x1500
+AB_TNAM equ     0x1580
+AB_PARA equ     0x160
+
+ab_load:
+        mov     ah, 0x48
+        mov     bx, AB_PARA
+        int     0x21
+        jc      .r
+        mov     [abseg], ax
+        mov     es, ax
+        mov     si, [pblock]            ; bisherige Umgebung kopieren
+        mov     ax, cs
+        sub     si, ax
+        mov     cl, 4
+        shl     si, cl
+        xor     di, di
+.cp:    lodsb
+        stosb
+        test    al, al
+        jnz     .cp
+        cmp     di, AB_ENV - 2
+        jae     .cpe
+        cmp     byte [si], 0
+        jne     .cp
+.cpe:   xor     al, al
+        stosb
+        push    es                      ; BLASTER aus SB16.SYS (INT E0h
+        pop     ds                      ; 1Ah), AUTOEXEC.BAT geht vor
+        mov     di, AB_VAL
+        mov     ah, 0x1A
+        int     0xE0
+        test    ax, ax
+        jnz     .nobl
+        mov     bx, k_blaster
+        call    ab_kname
+        call    env_add
+.nobl:  push    cs
+        pop     ds
+        mov     al, [shellx]            ; Startlaufwerk
+        mov     [abname], al
+        mov     dx, abname
+        mov     ax, 0x3D00
+        int     0x21
+        push    es
+        pop     ds
+        jc      .done                   ; keine AUTOEXEC.BAT
+        push    ds
+        pop     es
+        mov     bx, ax
+        mov     dx, AB_FILE
+        mov     cx, AB_FSZ - 1
+        mov     ah, 0x3F
+        int     0x21
+        jnc     .rd
+        xor     ax, ax
+.rd:    mov     si, ax
+        mov     byte [si + AB_FILE], 0
+        mov     ah, 0x3E
+        int     0x21
+        push    ds                      ; ES gilt nach dem Redirector nicht
+        pop     es                      ; mehr (Lesepuffer von RBSHELL)
+        mov     si, AB_FILE
+.ln:    cmp     byte [si], 0
+        je      .done
+        call    ab_getline
+        push    si
+        call    ab_doline
+        pop     si
+        jmp     .ln
+.done:  call    env_end                 ; auf die Umgebung kuerzen
+        inc     di
+        add     di, 15
+        mov     cl, 4
+        shr     di, cl
+        mov     bx, di
+        mov     ah, 0x4A
+        int     0x21
+        mov     ax, es
+        mov     [cs:pblock], ax
+.r:     push    cs
+        pop     ds
+        push    cs
+        pop     es
+        ret
+
+ab_getline:                             ; DS:SI -> Zeile nach AB_LINE
+        mov     di, AB_LINE
+        mov     cx, 127
+.g:     lodsb
+        test    al, al
+        jz      .e0
+        cmp     al, 0x1A
+        je      .e0
+        cmp     al, 13
+        je      .eol
+        cmp     al, 10
+        je      .z
+        jcxz    .g                      ; zu lang: Rest uebergehen
+        stosb
+        dec     cx
+        jmp     .g
+.eol:   cmp     byte [si], 10
+        jne     .z
+        inc     si
+        jmp     .z
+.e0:    dec     si
+.z:     mov     byte [di], 0
+        ret
+
+ab_skipws:
+        cmp     byte [si], ' '
+        je      .s
+        cmp     byte [si], 9
+        jne     .r
+.s:     inc     si
+        jmp     ab_skipws
+.r:     ret
+
+ab_up:  cmp     al, 'a'                 ; AL gross
+        jb      .r
+        cmp     al, 'z'
+        ja      .r
+        sub     al, 0x20
+.r:     ret
+
+ab_kw:                                  ; CS:BX Schluesselwort an DS:SI?
+        push    si                      ; CF = 0: ja, SI dahinter
+.m:     mov     al, [cs:bx]
+        test    al, al
+        jz      .ok
+        mov     ah, al
+        lodsb
+        call    ab_up
+        cmp     al, ah
+        jne     .no
+        inc     bx
+        jmp     .m
+.ok:    mov     al, [si]                ; dahinter Trenner
+        cmp     al, ' '
+        je      .y
+        cmp     al, 9
+        je      .y
+        cmp     al, '='
+        je      .y
+        cmp     al, ';'
+        je      .y
+.no:    pop     si
+        stc
+        ret
+.y:     add     sp, 2
+        clc
+        ret
+
+ab_doline:
+        mov     si, AB_LINE
+        call    ab_skipws
+        cmp     byte [si], '@'
+        jne     .k
+        inc     si
+        call    ab_skipws
+.k:     mov     bx, k_path
+        call    ab_kw
+        jnc     .path
+        mov     bx, k_prompt
+        call    ab_kw
+        jnc     .prompt
+        mov     bx, k_set
+        call    ab_kw
+        jnc     .set
+        ret
+.path:  mov     bx, k_path
+        call    ab_eq
+        cmp     byte [si], 0            ; PATH allein zeigt nur an
+        je      .r
+        call    ab_kname
+        cmp     word [si], ';'          ; "PATH ;" loescht
+        je      .del
+        call    ab_expand
+        mov     si, AB_VAL              ; Pfade gross wie COMMAND.COM
+.pu:    lodsb
+        call    ab_up
+        mov     [si - 1], al
+        test    al, al
+        jnz     .pu
+        jmp     .add
+.prompt: mov    bx, k_prompt
+        call    ab_eq
+        call    ab_kname
+        cmp     byte [si], 0
+        je      .del
+        call    ab_expand
+        jmp     .add
+.set:   call    ab_skipws
+        mov     di, AB_NAME
+.sn:    lodsb
+        test    al, al
+        jz      .r
+        cmp     al, '='
+        je      .se
+        call    ab_up
+        stosb
+        cmp     di, AB_NAME + 120
+        jb      .sn
+        ret
+.se:    mov     byte [di], 0
+        cmp     di, AB_NAME
+        je      .r
+        push    si
+        mov     si, AB_NAME
+        mov     bx, k_cspec
+        call    ab_kw0
+        pop     si
+        jnc     .r                      ; COMSPEC gehoert der Box
+        cmp     byte [si], 0
+        je      .del
+        call    ab_expand
+.add:   call    env_add
+.r:     ret
+.del:   mov     si, AB_NAME
+        jmp     env_del
+
+ab_eq:  call    ab_skipws               ; Leerraum und ein "=" ueberspringen
+        cmp     byte [si], '='
+        jne     .r
+        inc     si
+        call    ab_skipws
+.r:     ret
+
+ab_kname:                               ; CS:BX -> AB_NAME, SI bleibt
+        push    si
+        mov     di, AB_NAME
+.c:     mov     al, [cs:bx]
+        stosb
+        inc     bx
+        test    al, al
+        jnz     .c
+        pop     si
+        ret
+
+ab_kw0:                                 ; DS:SI genau gleich CS:BX? CF = 0
+.m:     mov     al, [cs:bx]
+        cmp     al, [si]
+        jne     .no
+        test    al, al
+        jz      .y
+        inc     si
+        inc     bx
+        jmp     .m
+.no:    stc
+        ret
+.y:     clc
+        ret
+
+ab_expand:                              ; DS:SI -> AB_VAL, %NAME% ersetzt
+        mov     di, AB_VAL
+.e:     lodsb
+        test    al, al
+        jz      .end
+        cmp     al, '%'
+        je      .pct
+.put:   cmp     di, AB_VAL + AB_VSZ - 1
+        jae     .e
+        stosb
+        jmp     .e
+.pct:   cmp     byte [si], '%'          ; %% = %
+        jne     .var
+        inc     si
+        jmp     .put
+.var:   mov     bx, si
+.f:     mov     al, [bx]
+        test    al, al
+        jz      .lit
+        cmp     al, '%'
+        je      .got
+        inc     bx
+        jmp     .f
+.lit:   mov     al, '%'
+        jmp     .put
+.got:   push    di
+        mov     di, AB_TNAM
+.n:     cmp     si, bx
+        je      .nd
+        lodsb
+        call    ab_up
+        stosb
+        jmp     .n
+.nd:    mov     byte [di], 0
+        pop     di
+        inc     si
+        push    si
+        mov     si, AB_TNAM
+        push    di
+        call    env_find                ; aendert DI
+        pop     di
+        jc      .nv
+        mov     si, bx
+.cv:    lodsb
+        test    al, al
+        jz      .nv
+        cmp     di, AB_VAL + AB_VSZ - 1
+        jae     .nv
+        stosb
+        jmp     .cv
+.nv:    pop     si
+        jmp     .e
+.end:   mov     byte [di], 0
+        ret
+
+env_find:                               ; DS:SI Name -> DI Eintrag, BX Wert
+        xor     di, di                  ; CF = 1: fehlt
+.l:     cmp     byte [di], 0
+        je      .nf
+        push    si
+        push    di
+.c:     mov     al, [si]
+        test    al, al
+        jz      .eq
+        cmp     al, [di]
+        jne     .ne
+        inc     si
+        inc     di
+        jmp     .c
+.eq:    cmp     byte [di], '='
+        jne     .ne
+        lea     bx, [di + 1]
+        pop     di
+        pop     si
+        clc
+        ret
+.ne:    pop     di
+        pop     si
+.s:     cmp     byte [di], 0
+        je      .s2
+        inc     di
+        jmp     .s
+.s2:    inc     di
+        jmp     .l
+.nf:    stc
+        ret
+
+env_end:                                ; DI -> abschliessende Null
+        xor     di, di
+.l:     cmp     byte [di], 0
+        je      .r
+.s:     inc     di
+        cmp     byte [di - 1], 0
+        jne     .s
+        jmp     .l
+.r:     ret
+
+env_del:                                ; Eintrag DS:SI entfernen
+        call    env_find
+        jc      .r
+        mov     si, di
+.s:     lodsb
+        test    al, al
+        jnz     .s
+.m:     cmp     byte [si], 0
+        je      .fin
+.c:     lodsb
+        stosb
+        test    al, al
+        jnz     .c
+        jmp     .m
+.fin:   mov     byte [di], 0
+.r:     ret
+
+env_add:                                ; AB_NAME=AB_VAL setzen
+        mov     si, AB_NAME
+        call    env_del
+        call    env_end
+        mov     ax, di
+        mov     si, AB_NAME
+        call    .len
+        mov     si, AB_VAL
+        call    .len
+        add     ax, 2
+        cmp     ax, AB_ENV - 1
+        ja      .r                      ; kein Platz: auslassen
+        mov     si, AB_NAME
+.n:     lodsb
+        test    al, al
+        jz      .q
+        stosb
+        jmp     .n
+.q:     mov     al, '='
+        stosb
+        mov     si, AB_VAL
+.v:     lodsb
+        stosb
+        test    al, al
+        jnz     .v
+        mov     byte [di], 0
+.r:     ret
+.len:   cmp     byte [si], 0
+        je      .lr
+        inc     si
+        inc     ax
+        jmp     .len
+.lr:    ret
+
+abseg:  dw      0
+abname: db      "C:\AUTOEXEC.BAT", 0
+k_path: db      "PATH", 0
+k_prompt: db    "PROMPT", 0
+k_set:  db      "SET", 0
+k_cspec: db     "COMSPEC", 0
+k_blaster: db   "BLASTER", 0
+trans_end:

@@ -32,6 +32,19 @@ Geprüft: QEMU und 86Box SCAT (286, beide Läufe auf B:); Unterschiede
 nur noch erwartete (s. Liste), offen: zweimal schreibend öffnen,
 Laufwerke als „fern“, Drucken.
 
+Umgebung der Kompatibilitätsbox (Wunsch des Nutzers, 20.11.2026: Word
+legt seinen PATH in einer AUTOEXEC.BAT an, die die Box nicht ausführt;
+dazu fehlte BLASTER): RBSHELL `ab_load` (Code hinter stack_top, danach
+frei) holt einen Block, kopiert die Umgebung hinein, setzt BLASTER über
+INT E0h 1Ah (RBOX -> FAPI `AUD_BLASTER` 14 -> SB16.SYS `AR_BLASTER`
+13, Text aus base/irq/dma8/dma16/mpu/ebase/DSP-Version) und wertet aus
+X:\AUTOEXEC.BAT (bis 4 KB) die Zeilen PATH/SET/PROMPT aus (@ vorn,
+%NAME% und %%, PATH groß, `PATH ;` löscht, SET COMSPEC nicht), dann 4Ah
+auf die Umgebung (bis 512 Byte). Lehre: nach Dateizugriffen über den
+Redirector gilt ES in RBSHELL nicht mehr (rd_cache). In QEMU geprüft
+(FreeDOS und IBM DOS 5 als Box-DOS, mit/ohne AUTOEXEC.BAT, mit/ohne SB16)
+und in 86Box SCAT. Auf 6.x (BOXSHELL) noch nicht.
+
 Speicher der Kompatibilitätsbox (20.11.2026, beim Test des Nutzers auf
 der 4-MB-VM mit PROTECTONLY=NO: „BIOS, Boot, Puffer“ 2.784K, verfügbar nur
 386K): die Box hält ihr Startabbild ganz im erweiterten Speicher (rbox.c

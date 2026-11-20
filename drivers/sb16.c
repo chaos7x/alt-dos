@@ -44,6 +44,7 @@ unsigned div32(unsigned long a, unsigned b);
 #pragma aux div32 = "div bx" __parm [__dx __ax] [__bx] __value [__ax] __modify [__dx];
 
 static unsigned base, irq = 5, dma8 = 1, dma16 = 5, dspv;
+static unsigned mpu = 0x330;
 static unsigned caps;                   /* AUDCAP_*                      */
 static void opl_w(unsigned reg, unsigned char v);
 static void single_block(void);
@@ -535,6 +536,38 @@ static void audio(void)
                 midi_w(0);
             }
         break;
+    case AR_BLASTER: {                  /* BLASTER fuer die Kompatibilitaetsbox */
+        char __far *d = MK_FP(q->sel, q->off);
+        char *p;
+        if (!(caps & AUDCAP_PCM)) {
+            q->status = DRV_ERR_CMD;
+            break;
+        }
+        p = scat(line, "A");
+        p = hex(p, base, 3);
+        p = scat(p, " I");
+        p = udec(p, irq);
+        p = scat(p, " D");
+        p = udec(p, dma8);
+        if (dspv >= 0x400 && dma16) {
+            p = scat(p, " H");
+            p = udec(p, dma16);
+        }
+        if (caps & AUDCAP_MPU401) {
+            p = scat(p, " P");
+            p = hex(p, mpu, 3);
+        }
+        if (ebase) {
+            p = scat(p, " E");
+            p = hex(p, ebase, 3);
+        }
+        p = scat(p, " T");
+        udec(p, dspv >= 0x400 ? 6 : dspv >= 0x300 ? 4 : dspv >= 0x201 ? 3 : 1);
+        for (k = 0; line[k] && k < 63; k++)
+            d[k] = line[k];
+        d[k] = 0;
+        break;
+    }
     case AR_INFO: {
         char __far *d = MK_FP(q->sel, q->off);
         for (k = 0; name[k] && k < 63; k++)
@@ -747,7 +780,6 @@ static void opl_reset(void)
 }
 
 /* ---- MIDI (MPU-401 im UART-Betrieb) ---------------------------------- */
-static unsigned mpu = 0x330;
 
 static int mpu_cmd(unsigned char c)
 {

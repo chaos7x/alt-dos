@@ -5560,6 +5560,13 @@ static unsigned aud_fapi(unsigned usel, unsigned fn, unsigned a, unsigned b)
         q->sel = usel;
         q->off = a;
         return aud_call(NAUD, AR_INFO, 0, 0, 0) == DRV_OK ? 0 : FAPI_ERROR;
+    case AUD_BLASTER:
+        if (!user_ok(usel, a, 64, 1))
+            return FAPI_ERROR;
+        q = &areq[NAUD];
+        q->sel = usel;
+        q->off = a;
+        return aud_call(NAUD, AR_BLASTER, 0, 0, 0) == DRV_OK ? 0 : FAPI_ERROR;
     }
     return FAPI_ERROR;
 }
