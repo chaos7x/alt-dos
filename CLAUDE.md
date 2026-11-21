@@ -1263,6 +1263,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   NLSPATH/LANG=DE), DOSBOX.INI, SETVER.LST; `%DOSBOX%` zeigt dorthin, BOXSHELL
   `drvpos` (zweiter Buchstabe im PATH jetzt bei t_path+17). Alte Platten:
   Inhalt von `\DOS\BOX` nach `\DOS\MDOS` verschieben.
+  `CON` als Gerät beim Öffnen (vom Nutzer beim Sperrtest gemeldet,
+  21.11.2026: `COPY CON Datei` -> „Datei oder Pfad nicht gefunden“ –
+  dev_name kannte CON nicht): eigener Eintrag mit OF_CON (con_read,
+  Strg+Z = Ende). In QEMU geprüft: COPY CON, COPY x CON, TYPE CON.
   Gerätenamen (Liste vom Nutzer, wie MS-DOS/Windows): CON, PRN, AUX, NUL,
   COM1–9, LPT1–9, auch mit Endung, sind als Datei- und Verzeichnisname
   verboten – kernel.c `res_name` in CREATE (nach `dev_name`: echte

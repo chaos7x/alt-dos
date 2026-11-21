@@ -2971,6 +2971,8 @@ static int dev_name(const char *canon)
     if (b[0] == 'C' && b[1] == 'O' && b[2] == 'M' && b[3] >= '1' && b[3] <= '4' &&
         (!b[4] || b[4] == '.'))
         return 10 + (b[3] - '0');           /* COM1-4 -> 11-14           */
+    if (b[0] == 'C' && b[1] == 'O' && b[2] == 'N' && (!b[3] || b[3] == '.'))
+        return 15;                          /* CON (COPY CON, TYPE CON)  */
     return 0;
 }
 
@@ -3038,6 +3040,15 @@ static int com_io(int k, unsigned sel, unsigned off, unsigned len, int write)
 static unsigned dev_open(int dn)
 {
     int k;
+    if (dn == 15) {                         /* CON: eigener Eintrag      */
+        k = of_alloc();
+        if (k < 0)
+            return FAPI_ERROR;
+        files[k].kind = OF_CON;
+        files[k].pos = 0;
+        files[k].path[0] = 0;
+        return k + HBASE;
+    }
     if (dn > 10) {                          /* COM1-4                    */
         if (!bios_ports[dn - 11])
             return FAPI_ERROR;
