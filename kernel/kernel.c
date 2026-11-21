@@ -4120,7 +4120,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->bsize = blk[dv].bsize;
         fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0) |
-                    (IS_REM(dv) ? FSI_REMDISK : 0);
+                    (IS_REM(dv) ? FSI_REMDISK : 0) | (blk[dv].drv == DRV_UFS ? FSI_REMOTE : 0);
         return 0;
     }
 

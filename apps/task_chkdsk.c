@@ -167,6 +167,10 @@ void main(void)
                         : "Laufwerk nicht bereit - keine Diskette eingelegt.\n");
         DosExit(3);
     }
+    if (fi.flags & FSI_REMOTE) {        /* prueft der Server           */
+        puts("CHKDSK kann Netzlaufwerke nicht pr\x81" "fen.\n");
+        DosExit(3);
+    }
     prog[0] = 'U';
     prog[1] = 0;
     cat(prog, fi.fsname);

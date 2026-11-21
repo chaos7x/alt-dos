@@ -298,7 +298,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Programme und die DOS-Boxen sehen es wie eine Platte (lange Namen,
   8.3-Ersatznamen für alte Programme); bricht die Verbindung ab, verbindet
   der Dienst beim nächsten Zugriff selbst neu, offene Dateien bleiben offen;
-  ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat)
+  ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat;
+  CHKDSK meldet „kann Netzlaufwerke nicht prüfen“, DosQFSInfo setzt dafür
+  `FSI_REMOTE`)
+- CMD: Strg+C an der Eingabezeile verwirft sie wie bei COMMAND.COM (`^C`,
+  neue Eingabeaufforderung) – vorher geschah nichts (6.3)
 - `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KLIST`, `KDESTROY` (6.3):
   Anmeldung an einer Domäne (Active Directory, Samba-AD, MIT) mit
   Kerberos v5, aes256-cts-hmac-sha1-96 (rc4-hmac als Rückfall für

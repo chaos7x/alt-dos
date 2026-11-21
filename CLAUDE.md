@@ -1186,6 +1186,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   datei`) liest die Tastatur über das BIOS, nicht die Datei; was ein
   Programm über INT 10h/B800 schreibt, lässt sich nicht umleiten (wie
   bei MS-DOS).
+- Strg+C an der Eingabezeile (Wunsch des Nutzers, 21.11.2026, wie
+  COMMAND.COM): `read_line` setzt außerhalb von Stapeldateien den
+  SIG_BREAK-Handler (`on_break`), KbdCharIn kehrt beim Signal mit 0 zurück,
+  die Zeile wird mit `^C` verworfen; beim Verlassen Handler wieder weg (ein
+  laufendes Kind bekommt Strg+C weiter vom Kernel). Vorher war CMD in
+  Sitzung 1 taub (do_break übergeht die erste Shell), in START-Sitzungen
+  hätte der Kernel CMD beendet. In QEMU geprüft (Zeile, danach VER; BUSY
+  per Strg+C beendet). CHKDSK auf NET-USE-Laufwerken: „kann Netzlaufwerke
+  nicht prüfen“ über `FSI_REMOTE` (20h) aus DosQFSInfo (blk drv DRV_UFS).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
