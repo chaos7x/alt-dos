@@ -24,8 +24,8 @@ typedef unsigned long  u32;
 #define D(s, o)     (*(u32 __far *)MK_FP((s), (o)))
 
 /* Rahmen des INT-21h-Aufrufs (entry.asm, Stapel des Aufrufers) */
-struct frame {
-    u16 es, ds, bp, di, si, dx, cx, bx, ax, ip, cs, fl;
+struct frame {                          /* wie SAVE_WORLD von MS-DOS     */
+    u16 ax, bx, cx, dx, si, di, bp, ds, es, ip, cs, fl;
 };
 #define AL(f)   (*(u8 __far *)&(f)->ax)
 #define AH(f)   (*((u8 __far *)&(f)->ax + 1))
@@ -153,6 +153,11 @@ void con_fn(struct frame __far *f);
 unsigned dev_read(int d, struct sft *s, u16 seg, u16 off, unsigned n);
 unsigned dev_write(int d, struct sft *s, u16 seg, u16 off, unsigned n);
 void con_line(u8 __far *buf);
+
+/* dosint.c */
+extern struct frame __far *user_frame;
+void net_fn(struct frame __far *f);
+struct frame __far *int2f12_c(struct frame __far *f);
 
 /* exec.c */
 struct frame __far *exec_fn(struct frame __far *f);

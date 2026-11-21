@@ -4,15 +4,15 @@
 ;
 ; Aufbau wie der AT-DOS-Kernel: Code (CGROUP) und Daten (DGROUP) getrennt,
 ; als DOS-EXE gelinkt, build.sh nimmt den Kopf ab. Der AT-DOS-Kernel legt
-; die Datei an 0060:0000 der Box und startet sie dort (kernel.c load_cm);
+; die Datei an 0070:0000 der Box und startet sie dort (kernel.c load_cm);
 ; die ersten 16 Byte des Codes springen nach boot.
 ;
 ; DOS=HIGH wie MS-DOS 5: gibt der XMS-Treiber der Box die HMA her, kommt
 ; der Code nach FFFF:0010 (Code-Offsets beginnen deshalb bei 10h) und die
-; Daten ruecken nach 0060:0000 - unten bleiben nur Daten und die kleinen
+; Daten ruecken nach 0070:0000 - unten bleiben nur Daten und die kleinen
 ; Eingaenge (Segment LTEXT in DGROUP: alle Interruptvektoren, Geraete-
 ; koepfe, Laendertabelle zeigen dorthin). Sonst bleibt alles, wie es
-; geladen wurde (Code ab 0060:0000, Daten dahinter).
+; geladen wurde (Code ab 0070:0000, Daten dahinter).
 ;
 ; A20: beim Start eines Programms schaltet der Kern A20 aus (EXEPACK-
 ; Entpacker rechnen mit dem Umlauf an 1 MB, wie FreeDOS), der Eingang von
@@ -29,6 +29,7 @@ cpu 8086
 
 segment _TEXT    public class=CODE align=16 use16
 segment _TEXTEND public class=CODE align=16 use16
+segment DOSHDR   public class=DATA align=16 use16
 segment LTEXT    public class=DATA align=16 use16
 segment CONST    public class=DATA align=2 use16
 segment CONST2   public class=DATA align=2 use16
@@ -36,10 +37,11 @@ segment _DATA    public class=DATA align=2 use16
 segment _BSS     public class=BSS  align=2 use16
 segment ZZEND    public class=BSS  align=16 use16
 group CGROUP _TEXT _TEXTEND
-group DGROUP LTEXT CONST CONST2 _DATA _BSS ZZEND
+group DGROUP DOSHDR LTEXT CONST CONST2 _DATA _BSS ZZEND
 
 extern cm_main_
 extern int21_c_
+extern int2f12_c_
 extern _sda
 extern _old2f
 extern _setver_dx
@@ -54,7 +56,7 @@ _start:                                 ; Offset 0: wird nur unten ausgefuehrt
 
 boot:   cli
         cld
-        mov     bp, cs                  ; Ladesegment (0060h)
+        mov     bp, cs                  ; Ladesegment (0070h)
         mov     ax, text_end            ; Daten: Absatz hinter dem Code
         mov     cl, 4
         shr     ax, cl
@@ -69,6 +71,7 @@ boot:   cli
         xor     al, al
         rep     stosb
         mov     [hent + 2], cs
+        mov     [hent12 + 2], cs
         sti
         mov     ax, 4300h               ; XMS da?
         int     2Fh
@@ -99,6 +102,7 @@ boot:   cli
         pop     ds
         mov     byte [_in_hma], 1
         mov     word [hent + 2], 0FFFFh
+        mov     word [hent12 + 2], 0FFFFh
         mov     ax, 0FFFFh
         push    ax
         mov     ax, .hi
@@ -124,13 +128,23 @@ boot:   cli
 .hang:  hlt
         jmp     .hang
 
-; Einsprung aus dem Eingang von INT 21h (fern)
+; Einspruenge aus den Eingaengen von INT 21h und INT 2Fh 12xxh (fern)
 h21:    call    int21_c_
         retf
+h12:    call    int2f12_c_
+        retf
+
+; ---- Kopf des Datensegments wie MS-DOS: Liste der Listen bei DS:0026h ----
+; (Programme wie MEM holen DS ueber INT 2Fh 1203h und lesen dort direkt)
+segment DOSHDR
+        times   24h db 0
+global _lol_area
+_lol_area: times 82h db 0               ; LoL-2 (erster MCB) .. LoL+7Fh
 
 ; ---- Eingaenge im ersten MB (LTEXT, Teil von DGROUP: CS = DS) -----------
 segment LTEXT
 hent:   dw      h21, 0                  ; Code: CGROUP-Offset, Segment
+hent12: dw      h12, 0
 global _in_hma
 _in_hma: db     0                       ; Code liegt in der HMA
 global _a20_drop
@@ -138,21 +152,24 @@ _a20_drop: db   0                       ; nach dem Aufruf A20 aus (EXEC)
         align   2
 
 ; ---- INT 21h ---------------------------------------------------------------
+; Rahmen wie SAVE_WORLD von MS-DOS (AX zuunterst, dann BX CX DX SI DI BP
+; DS ES, darueber IP CS FLAGS) - INT 2Fh 1218h gibt ihn so heraus.
 global int21_entry, int21_entry_, _int21_entry
 _int21_entry:
 int21_entry:
 int21_entry_:
         sti
-i21go:  push    ax
-        push    bx
-        push    cx
-        push    dx
-        push    si
-        push    di
-        push    bp
+i21go:  push    es
         push    ds
-        push    es
-        mov     ax, sp                  ; DX:AX = Rahmen
+        push    bp
+        push    di
+        push    si
+        push    dx
+        push    cx
+        push    bx
+        push    ax
+        mov     di, hent                ; Ziel im Code: int21_c
+dosgo:  mov     ax, sp                  ; DX:AX = Rahmen
         mov     dx, ss
         mov     bx, cs
         mov     ds, bx
@@ -169,7 +186,7 @@ i21go:  push    ax
         cmp     byte [_in_hma], 0
         je      .call
         call    a20chk
-.call:  call    far [hent]              ; int21_c -> DX:AX Rahmen zurueck
+.call:  call    far [di]                ; -> DX:AX Rahmen zurueck
         cmp     byte [_a20_drop], 0
         je      .ret
         mov     byte [_a20_drop], 0
@@ -183,16 +200,29 @@ i21go:  push    ax
         dec     byte [_sda + 1]
         mov     ss, dx
         mov     sp, ax
-        pop     es
-        pop     ds
-        pop     bp
-        pop     di
-        pop     si
-        pop     dx
-        pop     cx
-        pop     bx
         pop     ax
+        pop     bx
+        pop     cx
+        pop     dx
+        pop     si
+        pop     di
+        pop     bp
+        pop     ds
+        pop     es
         iret
+
+; INT 2Fh 12xxh (DOS-intern, fuer Redirectoren und TSRs): gleicher Weg
+i2f12:  push    es
+        push    ds
+        push    bp
+        push    di
+        push    si
+        push    dx
+        push    cx
+        push    bx
+        push    ax
+        mov     di, hent12
+        jmp     dosgo
 
 ; A20 an? FFFF:0090 (Code) gegen 0000:0080 (Vektor 20h) - gleich heisst
 ; Umlauf, dann ueber XMS lokal einschalten. Veraendert nur Flags.
@@ -310,6 +340,11 @@ int2f_entry:
 int2f_entry_:
         cmp     ax, 1000h
         je      .share
+        cmp     ah, 12h                 ; DOS-intern (122Fh: Version)
+        jne     .n12
+        cmp     al, 2Fh
+        jne     i2f12
+.n12:
         cmp     ax, 122Fh
         je      .ver
         cmp     ax, 4A01h               ; freie HMA (DOS=HIGH wie MS-DOS 5)
@@ -433,15 +468,15 @@ start_frame_:
         cli
         mov     ss, ax
         mov     sp, dx
-        pop     es
-        pop     ds
-        pop     bp
-        pop     di
-        pop     si
-        pop     dx
-        pop     cx
-        pop     bx
         pop     ax
+        pop     bx
+        pop     cx
+        pop     dx
+        pop     si
+        pop     di
+        pop     bp
+        pop     ds
+        pop     es
         iret
 
 ; u16 xmscall(u16 ax, u16 dx, u16 *bx, u16 *dxo) - XMS-Treiber (_xms_ent)

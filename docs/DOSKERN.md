@@ -464,8 +464,36 @@ die Programme direkt lesen.
    86Box 386DX/40: UMBs bei CD00h und E000h um den Rahmen D000h, 604 KB
    frei (vorher 598/601). Geprüft: BIOSCMP (QEMU), FreeDOS-MEM und
    `MEM /D`, DOOM 1.9 Timedemo (2944 Takte), Digger in QEMU und 86Box.
-   Offen in Stufe 3: 5Eh/5Fh, INT 2Fh 12xxh; Stufe 4: DOS=HIGH (Kern in
-   die HMA), LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box.
+   **Rest von Stufe 3 erledigt (21.11.2026, nach dem Wechsel der Vorgabe):**
+   21h 5Eh/5Fh wie MS-DOS ohne Redirector (5E00h/01h Rechnername, 5Eh
+   02h–05h und 5Fh 00h–06h Fehler 01h, 5F07h/08h CDS in Gebrauch, Vorlage
+   MACRO.ASM); INT 2Fh 12xxh (`atdoscm/dosint.c`, eigener Eingang `i2f12`
+   über denselben Weg wie INT 21h): 00 03 04 05 08 09 0D 0E 0F 11 12 13
+   14 16 17 18 1A 1E 20 21 25 26 27 28 29 2B 2C 2D; 1212h/1225h zählen die
+   Null mit (MISC2.ASM StrLen). Der Registerrahmen liegt jetzt wie
+   SAVE_WORLD (AX zuunterst) – 1218h gibt ihn so heraus. BIOSCMP hat dafür
+   einen Abschnitt (nur Dienste, die auch von außen gültig sind – 1216h,
+   1220h, 1226h ff. setzen SS = DOS voraus, unter MS-DOS brach der Test
+   dort ab); unter MS-DOS 6.22 direkt (`tools/doscmp.sh`, Bezugsteil) und
+   in der Box gleich, FreeDOS weicht bei 121Eh ab (Groß/klein).
+   Dabei mit MS-DOS-MEM gefunden und behoben (Maßstab: dasselbe MEM unter
+   MS-DOS 6.22 als Abbild in derselben Box): (1) Kern lag bei 0060h, MEM
+   rechnet „IO“ ab 0070h – jetzt lädt `load_cm` nach 0070h wie IO.SYS;
+   (2) LoL+63h ist der Verbindungsmerker, +66h das erste UMB-Segment
+   (9FFFh), +68h die letzte Suchstelle (wie FreeDOS kernel.asm) – vorher
+   verschoben; (3) bei getrennten UMBs ist wie bei MS-DOS der Block *vor*
+   9FFFh das „Z“, der SC-Block bleibt „M“; (4) `mcb_set` las nach „SC“
+   weiter im Speicher (Name „SC.:\DOS“); (5) entscheidend: MEM holt das
+   DOS-Datensegment über INT 2Fh 1203h und liest dort an festen Stellen –
+   die Liste der Listen liegt jetzt wie bei MS-DOS bei DS:0026h (Segment
+   DOSHDR vorn in DGROUP). MS-DOS-MEM zeigt danach „MSDOS 14K“ und die UMBs
+   als „hohen Speicherbereich“ (vorher 1,2 MB bzw. 202 KB „MSDOS“).
+   Geprüft QEMU (BIOSCMP, DOOM 1.9 Timedemo, FreeDOS-MEM, MS-DOS-MEM/FIND
+   mit Pipe und Umleitung) und 86Box 386DX/40 (MS-DOS-MEM: 626 KB frei,
+   Digger). Bemerkt, nicht vom Kern: MS-DOS-MEM lässt die EMS-Zeilen weg,
+   wenn die Ausgabe in eine Datei geht (INT 67h liefert dabei dasselbe).
+   Offen in Stufe 4: LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box, INT
+   24h/25h/26h.
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der

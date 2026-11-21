@@ -23,7 +23,7 @@ u8  sda[0x80];                  /* Swappable Data Area wie MS-DOS 4.0    */
 #define SDA_DRIVE   0x16
 #define SDA_BREAK   0x17
 
-static u8 lol_area[2 + 0x80];   /* LoL-2: erster MCB; LoL wie SYSVAR.INC */
+extern u8 lol_area[];           /* entry.asm DS:0024h: LoL-2 = erster MCB */
 #define LOL (lol_area + 2)
 u16 kseg;
 struct cds cdstab[NDRV];
@@ -118,10 +118,21 @@ void set_err(struct frame __far *f, unsigned e)
 #define MS(m)   W(m, 3)
 static u16 nextm(u16 m) { return m + MS(m) + 1; }
 u16 umb_sc;                             /* Systemblock vor den UMBs (9FFFh) */
-/* letzter Block der ganzen Kette (auch bei getrennten UMBs weiter) */
+/* letzter Block der ganzen Kette. Wie MS-DOS: bei getrennten UMBs ist
+   der Block vor dem Systemblock 9FFFh ein 'Z', der Systemblock selbst
+   bleibt 'M' (sonst zaehlt MS-DOS-MEM ihn als konventionellen Speicher) */
 static int lastm(u16 m)
 {
-    return MT(m) == 'Z' && !(m == umb_sc && umb_sc);
+    return MT(m) == 'Z' && !(umb_sc && nextm(m) == umb_sc);
+}
+
+/* Block direkt vor dem Systemblock */
+static u16 before_sc(void)
+{
+    u16 m = first_mcb;
+    while (nextm(m) != umb_sc && !lastm(m))
+        m = nextm(m);
+    return m;
 }
 
 static void coalesce(void)
@@ -195,9 +206,9 @@ static u16 mem_alloc_from(u16 start, u16 paras, u16 owner, u16 *largest)
                     best = m;
             }
         }
-        if (MT(m) == 'Z' && !(m == umb_sc && umb_sc && start == umb_sc))
+        if (lastm(m))
             break;
-        if (m == umb_sc && !umb_link && start != umb_sc)
+        if (umb_sc && !umb_link && start != umb_sc && nextm(m) == umb_sc)
             break;                      /* getrennt: nur unten          */
     }
     if (largest)
@@ -302,8 +313,8 @@ static void mem_fn(struct frame __far *f)
             }
             umb_link = (u8)(f->bx & 1);
             if (umb_sc)
-                MT(umb_sc) = umb_link ? 'M' : 'Z';
-            LOL[0x66] = umb_link;
+                MT(before_sc()) = umb_link ? 'M' : 'Z';
+            LOL[0x63] = umb_link;       /* wie MS-DOS 5+/FreeDOS         */
             break;
         default: set_err(f, E_FUNC);
         }
@@ -315,7 +326,7 @@ static void mem_fn(struct frame __far *f)
 static unsigned bcd(unsigned v) { return (v >> 4) * 10 + (v & 15); }
 static unsigned tobcd(unsigned v) { return ((v / 10) << 4) | (v % 10); }
 
-static void datetime_fn(struct frame __far *f)
+void datetime_fn(struct frame __far *f)
 {
     struct rregs r;
     unsigned y, mo, d, a, yy, mm;
@@ -394,6 +405,8 @@ struct frame __far *int21_c(struct frame __far *f)
 {
     u8 ah = AH(f);
     in_ax = f->ax;
+    if (sda[SDA_INDOS] == 1)            /* fuer INT 2Fh 1218h            */
+        user_frame = f;
     f->fl &= ~FL_CF;
     switch (ah) {
     case 0x00:
@@ -512,6 +525,9 @@ struct frame __far *int21_c(struct frame __far *f)
         } else
             set_err(f, E_FUNC);
         break;
+    case 0x5E: case 0x5F:               /* Netz (dosint.c)               */
+        net_fn(f);
+        break;
     case 0x63:                          /* DBCS: keine                   */
         f->ds = kseg;
         f->si = (u16)(lol_area + 0x7E);
@@ -574,8 +590,11 @@ static void mcb_set(u16 m, u8 t, u16 owner, u16 size, const char *nm)
     MT(m) = t;
     MO(m) = owner;
     MS(m) = size;
-    for (i = 0; i < 8; i++)
-        B(m, 8 + i) = nm && nm[i] ? (u8)nm[i] : 0;
+    for (i = 0; i < 8; i++) {           /* nach der Null nicht weiterlesen */
+        B(m, 8 + i) = nm && *nm ? (u8)*nm : 0;
+        if (nm && *nm)
+            nm++;
+    }
 }
 
 static void umb_init(u16 top)
@@ -606,10 +625,10 @@ static void umb_init(u16 top)
     if (!n)
         return;
     /* unten: freier Block bis 9FFEh, dann Systemblock "SC" bis zur UMB */
-    MT(first_mcb) = 'M';
+    MT(first_mcb) = 'Z';                /* getrennt wie beim Start       */
     MS(first_mcb) = top - 1 - first_mcb - 1;
     umb_sc = top - 1;
-    mcb_set(umb_sc, 'Z', 8, seg[0] - umb_sc - 1, "SC");
+    mcb_set(umb_sc, 'M', 8, seg[0] - umb_sc - 1, "SC");
     for (i = 0; i < n; i++) {
         end = seg[i] + sz[i];
         if (i + 1 < n && seg[i + 1] > end) {    /* Luecke: Systemblock */
@@ -618,7 +637,7 @@ static void umb_init(u16 top)
         } else
             mcb_set(seg[i], i + 1 < n ? 'M' : 'Z', 0, sz[i] - 1, 0);
     }
-    *(u16 *)(LOL + 0x68) = umb_sc;
+    *(u16 *)(LOL + 0x66) = umb_sc;     /* erster UMB-Block (9FFFh)      */
 }
 
 /* ---- Start -------------------------------------------------------------- */
@@ -639,6 +658,7 @@ void cm_main(void)
     /* LoL: erster MCB (LoL-2), SFT (04h), CDS (16h), Laufwerke (21h),
        NUL-Geraet (22h) */
     first_mcb = kseg + (((u16)cm_end + 15) >> 4);
+    *(u16 *)(LOL + 0x68) = first_mcb;   /* letzte Suchstelle (MS-DOS)    */
     *(u16 *)(lol_area) = first_mcb;
     file_init();
     *(u16 *)(LOL + 0x04) = sft_head();      /* Kopf (next, count) davor */
@@ -651,8 +671,8 @@ void cm_main(void)
     *(u16 *)(LOL + 0x16) = (u16)cdstab;
     *(u16 *)(LOL + 0x18) = kseg;
     LOL[0x20] = 0;
-    *(u16 *)(LOL + 0x68) = 0xFFFF;      /* keine UMB-Kette (Stufe 4)    */
-    *(u16 *)(LOL + 0x6A) = 0;
+    LOL[0x63] = 0;                      /* UMBs getrennt                 */
+    *(u16 *)(LOL + 0x66) = 0xFFFF;      /* keine UMB-Kette              */
     LOL[0x21] = NDRV;
     {
         unsigned i;

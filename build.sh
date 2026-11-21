@@ -219,7 +219,7 @@ wlink $LINK name $B/dstub.bin option map=$B/dstub.map \
 
 echo "Eigener Box-Kern (atdoscm/)"
 nasm -f obj atdoscm/entry.asm -o $B/cmentry.o
-for f in kern file fcb con exec; do
+for f in kern file fcb con exec dosint; do
     wcc -q -ms -0 -s -zl -zls -zp1 -d0 -os -wx -we -fo=$B/cm_$f.o atdoscm/$f.c
 done
 # Code und Daten getrennt (DOS=HIGH: Code in die HMA), als DOS-EXE gelinkt
@@ -228,7 +228,7 @@ done
 wlink option quiet format dos option nodefaultlibs \
       option map order clname CODE clname DATA clname BSS \
       name $B/atdoscm.exe option map=$B/atdoscm.map file $B/cmentry.o \
-      file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o \
+      file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o file $B/cm_dosint.o \
       2>&1 | grep -v W1014 || true
 python3 - $B/atdoscm.exe $B/atdoscm.sys $B/atdoscm.map <<'PYEOF'
 import struct, sys

@@ -74,6 +74,8 @@ start:  mov     sp, stk_end
         call    flush
         call    t_mux
         call    flush
+        call    t_dosint
+        call    flush
         call    cleanup
         call    flush
         mov     dl, [cdrv]              ; Laufwerk/Verzeichnis zurueck
@@ -2169,6 +2171,111 @@ t_mux:  mov     si, mux_tab
 .n:     pop     si
         jmp     .l
 .e:     ret
+
+; ------------------------------- DOS-intern: INT 2Fh 12xxh, 21h 5Eh/5Fh
+
+t_dosint:
+        T       'DOS 5E00 Rechnername'
+        mov     ax, 5E00h
+        mov     dx, buf
+        xor     cx, cx
+        int     21h
+        call    snap
+        CF
+        RH      cx
+        T       'DOS 5F02 Umleitung 0'
+        mov     ax, 5F02h
+        xor     bx, bx
+        mov     si, buf
+        mov     di, buf + 40
+        int     21h
+        call    snap
+        call    dosres
+        T       'DOS 5F07 C: an'
+        mov     ax, 5F07h
+        mov     dl, 2
+        int     21h
+        call    snap
+        call    dosres
+        T       'DOS 5F08 Z: aus'
+        mov     ax, 5F08h
+        mov     dl, 25
+        int     21h
+        call    snap
+        call    dosres
+        T       'INT2F 1200 da'
+        mov     ax, 1200h
+        int     2Fh
+        call    snap
+        RL      ax
+        T       'INT2F 1204 /'
+        mov     ax, '/'
+        push    ax
+        mov     ax, 1204h
+        int     2Fh
+        call    snap
+        pop     ax
+        RL      ax
+        ZF
+        T       'INT2F 1213 q'
+        mov     ax, 'q'
+        push    ax
+        mov     ax, 1213h
+        int     2Fh
+        call    snap
+        pop     ax
+        RL      ax
+        T       'INT2F 1211 normieren'
+        mov     si, n_norm
+        mov     di, buf
+        mov     ax, 1211h
+        int     2Fh
+        call    snap
+        S       ' '
+        mov     si, buf
+        call    puts
+        T       'INT2F 1212/1225 Laenge'
+        mov     di, n_norm
+        mov     ax, 1212h
+        int     2Fh
+        call    snap
+        R       cx
+        mov     si, n_norm
+        mov     ax, 1225h
+        int     2Fh
+        call    snap
+        R       cx
+        T       'INT2F 1214 gleich'
+        mov     si, buf
+        mov     di, buf
+        mov     ax, 1214h
+        int     2Fh
+        call    snap
+        ZF
+        T       'INT2F 121A Laufwerk'
+        mov     si, n_drvn
+        mov     ax, 121Ah
+        int     2Fh
+        call    snap
+        RL      ax
+        mov     ax, [r_si]
+        sub     ax, n_drvn
+        mov     [r_si], ax
+        R       si
+        T       'INT2F 121E vergleichen'
+        mov     si, n_cmp1
+        mov     di, n_cmp2
+        mov     ax, 121Eh
+        int     2Fh
+        call    snap
+        ZF
+        ret
+        ; 1216h/1218h/1220h/1226h ff. nur von innen (SS = DOS) - nicht hier
+
+n_norm  db      'c:/dos/abc.Txt', 0
+n_drvn  db      'd:\x', 0
+n_cmp1  db      'A/B.C', 0
+n_cmp2  db      'a\b.c', 0
 
 ; ---------------------------------------------------------- Aufraeumen
 

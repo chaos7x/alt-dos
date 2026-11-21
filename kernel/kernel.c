@@ -1367,9 +1367,9 @@ static int load_img(int t, int drive, const char *path)
 }
 
 /* Eigener Box-Kern ATDOSCM.SYS (docs/DOSKERN.md Stufe 2): ohne Abbild und
-   Bootsektor direkt nach 0060:0000 der Box, Start dort mit CS = DS = ES =
-   SS = 0060h. Er startet BOXSHELL wie ein DOS seine SHELL=. */
-#define CM_SEG  0x60
+   Bootsektor direkt nach 0070:0000 der Box, Start dort mit CS = DS = ES =
+   SS = 0070h. Er startet BOXSHELL wie ein DOS seine SHELL=. */
+#define CM_SEG  0x70                    /* wie IO.SYS (MS-DOS-MEM rechnet ab 0070h) */
 static int load_cm(int t, int drive, const char *path)
 {
     struct tss386 *ts;
