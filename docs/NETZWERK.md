@@ -672,6 +672,38 @@ Domänenname bekam die Adresse von DC2 nicht von selbst, und DC2 fehlten
 die `ldap/`-SPNs (sonst „Dienst in der Domäne unbekannt“ beim LDAP-
 Ticket). Reine Programmlogik – kein 86Box.
 
+## Domäne: SRV-Sätze, Ticket erneuern, SMBCLI -k (21.11.2026)
+
+- TCPIP.SYS: `NET_RESOLVE` mit `family = NET_FAM_SRV` (33) fragt den
+  SRV-Satz (RFC 2782) und liefert die Adressen der Ziele nach Priorität
+  (je Ziel A, sonst AAAA; bis 4). `dns_ask` ist dafür in `dns_query`
+  (Server, Senden, Warten, RCODE) und das Auswerten geteilt, `dns_name`
+  liest Namen mit Verweisen, `dns_srv` sortiert. Der Cache gilt auch
+  für SRV (Familie im Eintrag).
+- krb5.c: `krb_kdc_list(a, b)` hängt zuerst die DCs aus
+  `_kerberos._tcp.b` an, dann wie bisher die Adressen von a und b.
+  KINIT gibt jetzt den Domänennamen als b mit (auch bei /KDC:), SMBCLI -k
+  baut die Liste aus dem Realm der Ablage – damit weicht auch NET USE
+  beim cifs-Ticket auf einen anderen DC aus.
+- Erneuern: das TGT wird schon immer „erneuerbar“ (7 Tage) geholt.
+  `krb_renew` schickt einen TGS-REQ für krbtgt/REALM mit der Option
+  RENEW (RFC 4120 3.3.3, ohne Kennwort), `krb_tgt_fresh` erneuert, wenn
+  weniger als eine Stunde bleibt, und ersetzt Eintrag 0 der Ablage
+  (`krb_cc_put` ersetzt jetzt auch das TGT, vorher hing es ein zweites
+  an). SMBCLI ruft es vor jeder Anmeldung mit Kerberos – also auch beim
+  Wiederverbinden, wenn der Server die Sitzung nach Ablauf des Tickets
+  beendet (STATUS_NETWORK_SESSION_EXPIRED). `KINIT /R` erneuert von Hand
+  (wie `kinit -R`).
+
+Geprüft in QEMU gegen die beiden Samba-DCs und FS1 (`/tmp/claude-0/lk/
+srv/srv.sh`), Ticketdauer am KDC auf 1 Std. gesetzt (`kdc:user ticket
+lifetime = 1`): KINIT, `KINIT /R`, NET USE erneuert das TGT selbst (ein
+Eintrag, neue Endzeit) und holt cifs/fs1; ohne A-Satz der Domäne und mit
+`/KDC:192.168.77.99` (gibt es nicht) findet KINIT den DC über SRV; DC1
+angehalten: NET USE mit dem Ticket von DC1 holt sein cifs-Ticket bei DC2
+(KLIST: KDC 192.168.77.3). Testfalle: DC2 stand im Testaufbau nicht im
+SRV-Satz (von Hand nachgetragen). Reine Programmlogik – kein 86Box.
+
 ## SMB Stufe 3: Bereichssperren über das Netz (21.11.2026)
 
 Reihenfolge des Nutzers: Domäne, dann Sperren, dann SMB 3. Bisher galten
@@ -757,5 +789,4 @@ geht COPY. Sperrtest (LK.COM, beide 3D42h) wie vorher; BIOSCMP lokal vor
 und nach der Änderung zeilengleich (31 bekannte Abweichungen). Reine
 Programmlogik – kein 86Box.
 
-Weiter (offen): SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
-(AES-CMAC, Verschlüsselung).
+Weiter (offen): SMB 3 (AES-CMAC, Verschlüsselung).

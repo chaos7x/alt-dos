@@ -317,7 +317,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `DosFreeSpaceKB`, SMBCLI meldet die KB des Servers
 - CMD: Strg+C an der Eingabezeile verwirft sie wie bei COMMAND.COM (`^C`,
   neue Eingabeaufforderung) – vorher geschah nichts (6.3)
-- `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KLIST`, `KDESTROY` (6.3):
+- `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KINIT /R`, `KLIST`, `KDESTROY` (6.3):
   Anmeldung an einer Domäne (Active Directory, Samba-AD, MIT) mit
   Kerberos v5, aes256-cts-hmac-sha1-96 (rc4-hmac als Rückfall für
   Konten ohne AES-Schlüssel), KDC über TCP 88; Tickets in
@@ -347,7 +347,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - Mehrere Domänencontroller (6.3): KINIT, LOGON, DOMJOIN und NET USE
   kennen alle DCs der Domäne (Adressen des Domänennamens im DNS);
   antwortet der beim Beitritt gemerkte nicht, nehmen sie nach 4 s den
-  nächsten
+  nächsten. Die DCs kommen auch aus dem SRV-Satz `_kerberos._tcp`
+  (TCPIP.SYS fragt SRV, `NET_FAM_SRV`), NET USE weicht beim Ticket für
+  den Server ebenfalls aus
+- Tickets erneuern (6.3): `KINIT /R` erneuert das Ticket ohne Kennwort
+  (bis 7 Tage), NET USE erneuert es selbst, wenn weniger als eine Stunde
+  bleibt
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,

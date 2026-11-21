@@ -3,6 +3,8 @@
  * KINIT.EXE / KLIST.EXE / KDESTROY.EXE - Kerberos-Tickets (AT-DOS 6.3),
  * Bedienung wie bei MIT Kerberos:
  *   KINIT [Name[@REALM]] [/KDC:Adresse]   anmelden, Ticket ablegen
+ *   KINIT /R                              Ticket erneuern (ohne Kennwort,
+ *                                         bis renew-till, wie kinit -R)
  *   KLIST                                 Tickets der Ablage zeigen
  *   KDESTROY                              Ablage loeschen
  * Das Kennwort kommt von der Tastatur, bei umgeleiteter Eingabe aus
@@ -92,7 +94,8 @@ void main(void)
 
 #else
 static char args[FAPI_ARGLEN], user[64], realm[64], kdc[128], pass[128];
-static struct kcred tgt;
+static struct kcred tgt, nt;
+static char dom[64];
 static u8 kb1[KBUF], kb2[KBUF];
 
 static void ask_pass(void)
@@ -162,14 +165,32 @@ void main(void)
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
         word(a, w, sizeof(w));
+        if (w[0] == '/' && up(w[1]) == 'R' && !w[2]) {   /* erneuern       */
+            if (krb_cc_open() <= 0 || krb_cc_get(0, &tgt))
+                fail("Kein Kerberos-Ticket (erst KINIT).", 1);
+            for (i = 0; tgt.realm[i] && i < sizeof(dom) - 1; i++)
+                dom[i] = (char)(tgt.realm[i] >= 'A' && tgt.realm[i] <= 'Z' ? tgt.realm[i] + 32 : tgt.realm[i]);
+            dom[i] = 0;
+            krb_kdc_list(0, dom);
+            krb_bufs(kb1, kb2);
+            if ((e = krb_renew(&tgt, &nt)) != 0)
+                fail(e, 1);
+            if (krb_cc_put(&nt))
+                fail("Kann die Ablage nicht schreiben (%TEMP%).", 1);
+            krb_tstr(nt.end, ts);
+            out("Ticket erneuert, g\x81ltig bis ");
+            out(ts);
+            out(".\r\n");
+            DosExit(0);
+        }
         if (w[0] == '/' && up(w[1]) == 'K' && (p = w + 2, 1)) {
             while (*p && *p != ':')
                 p++;
             if (!*p)
-                fail("KINIT [Name[@REALM]] [/KDC:Adresse]", 2);
+                fail("KINIT [Name[@REALM]] [/KDC:Adresse] | KINIT /R", 2);
             scopy(kdc, p + 1, sizeof(kdc));
         } else if (w[0] == '/' || w[0] == '-')
-            fail("KINIT [Name[@REALM]] [/KDC:Adresse]", 2);
+            fail("KINIT [Name[@REALM]] [/KDC:Adresse] | KINIT /R", 2);
         else {
             for (i = 0; w[i] && w[i] != '@'; i++)
                 ;
@@ -195,7 +216,10 @@ void main(void)
     }
     if (net_lookup(kdc, krb_kdc))
         fail("KDC nicht gefunden (Name der Dom\x84ne oder /KDC:).", 1);
-    krb_kdc_list(kdc, 0);               /* alle DCs der Domaene          */
+    for (i = 0; realm[i] && i < sizeof(dom) - 1; i++)
+        dom[i] = (char)(realm[i] >= 'A' && realm[i] <= 'Z' ? realm[i] + 32 : realm[i]);
+    dom[i] = 0;
+    krb_kdc_list(kdc, dom);             /* alle DCs der Domaene (SRV)    */
     ask_pass();
     krb_bufs(kb1, kb2);
     e = krb_kinit(user, realm, pass, &tgt);

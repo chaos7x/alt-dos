@@ -382,6 +382,7 @@ struct fapi_netcmd {
     unsigned short ifc;
     unsigned short arg;
 };
+#define NET_FAM_SRV         33      /* fapi_resolve.family: SRV-Satz    */
 #define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
                                        (DNS, Zahlenadressen direkt) -> 0,
                                        FAPI_ERROR (unbekannt), TIMEOUT    */
@@ -505,7 +506,10 @@ struct fapi_sockio {
 };
 struct fapi_resolve {
     char           name[128];
-    unsigned short family;          /* 0 = beliebig, AF_INET, AF_INET6  */
+    unsigned short family;          /* 0 = beliebig, AF_INET, AF_INET6,
+                                       NET_FAM_SRV: name = _dienst._proto.
+                                       domaene, Adressen der Ziele nach
+                                       Prioritaet (RFC 2782, 6.3)       */
     unsigned short count;           /* Rueckgabe: Adressen              */
     unsigned long  ttl;             /* Rueckgabe: Sekunden              */
     unsigned char  addr[4][16];

@@ -30,13 +30,19 @@ static void kdc_put(const u8 *a)
         cr_cpy(krb_kdcs[krb_nkdc++], a, 16);
 }
 
-static void kdc_name(const char *n)
+static void kdc_name(const char *n, unsigned fam)
 {
     unsigned i;
     if (!n || !n[0])
         return;
-    scopy(krs.name, n, sizeof(krs.name));
-    krs.family = 0;
+    if (fam == NET_FAM_SRV) {           /* _kerberos._tcp.domaene         */
+        scopy(krs.name, "_kerberos._tcp.", sizeof(krs.name));
+        for (i = 15; *n && i < sizeof(krs.name) - 1; n++)
+            krs.name[i++] = *n;
+        krs.name[i] = 0;
+    } else
+        scopy(krs.name, n, sizeof(krs.name));
+    krs.family = fam;
     krs.count = 0;
     if (DosNet(NET_RESOLVE, &krs, sizeof(krs)))
         return;
@@ -48,8 +54,9 @@ void krb_kdc_list(const char *a, const char *b)
 {
     krb_nkdc = 0;
     kdc_put(krb_kdc);
-    kdc_name(a);
-    kdc_name(b);
+    kdc_name(b, NET_FAM_SRV);           /* alle DCs der Domaene (SRV)     */
+    kdc_name(a, 0);
+    kdc_name(b, 0);
 }
 
 int krb_kdc_next(void)
@@ -623,6 +630,8 @@ static void upcase(char *d, const char *s, unsigned max)
 static u8 bb[512];
 static unsigned bbl;
 
+static u32 kopt = 0x40810010UL;        /* forwardable renewable canonicalize renewable-ok */
+
 static void req_body(const char *cname, const char *realm, unsigned stype,
                      const char *sname, u32 nonce)
 {
@@ -630,7 +639,7 @@ static void req_body(const char *cname, const char *realm, unsigned stype,
     apush(&sv);
     abeg(bb, sizeof(bb));
     auf(0x30);
-    abits(0xA0, 0x40810010UL);          /* forwardable renewable canonicalize renewable-ok */
+    abits(0xA0, kopt);
     if (cname)
         aname(0xA1, 1, cname);
     astr(0xA2, realm);
@@ -830,20 +839,59 @@ static void ap_req(const struct kcred *c, u32 us, u32 ckt, const u8 *ck, unsigne
     zu();
 }
 
+static char sn[96];
+static const char *tgs_sn(const struct kcred *tgt, struct kcred *out);
+
 const char *krb_tgs(const struct kcred *tgt, const char *svc, const char *host,
                     struct kcred *out)
 {
-    static char sn[96];
-    u8 ck[16], *pa = rp;                /* AP-REQ vorlaeufig im Antwortpuffer */
-    u32 nonce = rnd31();
-    unsigned pl, n;
-    const char *e;
+    unsigned n;
     scopy(sn, svc, sizeof(sn));
     n = slen(sn);
     sn[n++] = '/';
     for (; *host && n < sizeof(sn) - 1; host++)
         sn[n++] = (char)(*host >= 'A' && *host <= 'Z' ? *host + 32 : *host);
     sn[n] = 0;
+    return tgs_sn(tgt, out);
+}
+
+/* TGT erneuern (RFC 4120 3.3.3: TGS-REQ fuer krbtgt/REALM mit der Option
+   RENEW, das TGT selbst im PA-TGS-REQ) - geht bis renew-till (7 Tage,
+   req_body) ohne Kennwort */
+const char *krb_renew(const struct kcred *tgt, struct kcred *out)
+{
+    const char *e;
+    if (!tgt->renew || krb_now() + 60 >= tgt->renew)
+        return "Ticket nicht mehr erneuerbar (KINIT).";
+    scopy(sn, "krbtgt/", sizeof(sn));
+    scopy(sn + 7, tgt->realm, sizeof(sn) - 7);
+    kopt = 0x40810002UL;                /* ... | renew                    */
+    e = tgs_sn(tgt, out);
+    kopt = 0x40810010UL;
+    return e;
+}
+
+/* TGT mit weniger als einer Stunde Rest: erneuern und in die Ablage (der
+   Aufrufer stellt tmp) -> 0 = gilt (ggf. neu in tgt), sonst Meldung */
+const char *krb_tgt_fresh(struct kcred *tgt, struct kcred *tmp)
+{
+    const char *e;
+    u32 now = krb_now();
+    if (now + 3600 < tgt->end)
+        return 0;
+    if ((e = krb_renew(tgt, tmp)) != 0)
+        return now < tgt->end ? 0 : e;  /* gilt noch: weiter wie bisher   */
+    cr_cpy(tgt, tmp, sizeof(*tgt));
+    krb_cc_put(tgt);
+    return 0;
+}
+
+static const char *tgs_sn(const struct kcred *tgt, struct kcred *out)
+{
+    u8 ck[16], *pa = rp;                /* AP-REQ vorlaeufig im Antwortpuffer */
+    u32 nonce = rnd31();
+    unsigned pl;
+    const char *e;
     req_body(0, tgt->realm, 2, sn, nonce);
     abeg(pa, KBUF);
     if (tgt->etype == 23) {
@@ -1020,7 +1068,7 @@ int krb_cc_put(const struct kcred *c)
 {
     static char sn[96];
     unsigned i;
-    for (i = 1; i < hd.n; i++)          /* Eintrag 0 = TGT bleibt          */
+    for (i = 0; i < hd.n; i++)          /* Eintrag 0 = TGT (erneuert: ersetzt) */
         if (!cc_sname(i, sn) && same(sn, c->sname))
             break;
     if (i >= KNCRED)

@@ -369,10 +369,10 @@ static int klogin(void)
         kmsg = "Kein Kerberos-Ticket (erst KINIT).";
         return 1;
     }
-    if (krb_now() >= tgt->end) {
-        kmsg = "Kerberos-Ticket abgelaufen (KINIT).";
+    krb_bufs(tx, rx);
+    krb_kdc_list(0, tgt->realm);        /* weitere DCs (SRV, Domaene)     */
+    if ((kmsg = krb_tgt_fresh(tgt, sc)) != 0)   /* bald ab: erneuern      */
         return 1;
-    }
     scopy(sn, "cifs/", sizeof(sn));
     for (i = 0; host[i] && i + 6 < sizeof(sn); i++)
         sn[5 + i] = (char)(host[i] >= 'A' && host[i] <= 'Z' ? host[i] + 32 : host[i]);

@@ -42,7 +42,8 @@ extern long krb_off;                    /* UTC - Ortszeit (Sekunden)      */
 extern u8   krb_kdc[16];
 
 /* Ausweichen auf andere DCs (21.11.2026): krb_kdc_list nimmt krb_kdc als
-   ersten Eintrag und haengt alle Adressen der Namen a und b aus dem DNS an
+   ersten Eintrag und haengt die DCs aus _kerberos._tcp.b (SRV) und alle
+   Adressen der Namen a und b aus dem DNS an
    (doppelte nicht, bis KNKDC; Domaenenname = A-/AAAA-Satz jedes DCs).
    Antwortet ein KDC nicht, versucht kdc_call den naechsten und laesst ihn
    in krb_kdc stehen (Ablage, LDAP nehmen ihn). krb_kdc_next -> 0 = keiner
@@ -67,6 +68,11 @@ const char *krb_kinit(const char *user, const char *realm, const char *pw,
 /* Dienstticket svc/host (z. B. "cifs", "dc1.atdos.test") */
 const char *krb_tgs(const struct kcred *tgt, const char *svc, const char *host,
                     struct kcred *out);
+/* TGT erneuern (Option RENEW, bis renew-till) ohne Kennwort; krb_tgt_fresh
+   erneuert, wenn weniger als 1 Std. bleibt, und legt es ab (tmp: Puffer
+   des Aufrufers) -> 0 = gilt */
+const char *krb_renew(const struct kcred *tgt, struct kcred *out);
+const char *krb_tgt_fresh(struct kcred *tgt, struct kcred *tmp);
 /* GSS-Token (RFC 4121: OID + 01 00 + AP-REQ) fuer den Dienst -> Laenge */
 unsigned krb_gss(const struct kcred *c, u8 *out, unsigned max);
 
