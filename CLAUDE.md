@@ -6097,8 +6097,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   per LDAP + NET USE), LDAP-Teil von DOMJOIN in `apps/ldapc.c`, DOMJOIN
   setzt msDS-SupportedEncryptionTypes 24, KINIT-Realm aus DOMAIN.KEY/DHCP.
   Test `/tmp/claude-0/ad/q/l1.sh` (homeDirectory des Benutzers test per
-  ldbmodify, Freigabe `daten`). Nächster Schritt: Maschinenkennwort
-  wechseln.
+  ldbmodify, Freigabe `daten`). HOSTS/HOSTNAME (Anregung des Nutzers,
+  21.11.2026): `\DOS\SYSTEM\HOSTS` bzw. `%ETC%\HOSTS` in net_lookup
+  (Ring 3, vor dem DNS), `HOSTNAME.EXE` + Datei `HOSTNAME`, FAPI_NET
+  `NET_HOSTNAME` (7), COMPUTERNAME; LOGON/HOSTNAME nur auf Diskette 2
+  (Diskette 1 voll). Nächster Schritt: Maschinenkennwort wechseln.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

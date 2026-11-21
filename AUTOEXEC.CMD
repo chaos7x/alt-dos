@@ -11,6 +11,8 @@ REM DOSKEY ll=DIR /W /O $*
 REM DOSKEY /MACROFILE=C:\DOS\MAKROS.TXT
 REM Gewohnte Namen von Linux (ll, ls, cat, cp, mv, rm, ...):
 REM DOSKEY /MACROFILE=C:\DOS\LINUX.MAC
+REM Rechnername aus \DOS\SYSTEM\HOSTNAME (HOSTNAME Name legt ihn an):
+HOSTNAME /LOAD /Q
 REM Regeln der Firewall (nur wenn TCPIP.SYS geladen ist):
 FIREWALL /LOAD /Q
 REM Uhr aus dem Netz stellen (Zeitzone: SET TZ=CET-1CEST,M3.5.0,M10.5.0/3):

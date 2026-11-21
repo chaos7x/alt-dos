@@ -360,6 +360,12 @@ struct fapi_netcmd {
                                        (FIREWALL.EXE) -> 0 / Regelnummer  */
 #define NET_SOCKLIST        6       /* struct fapi_sockinfo, idx vorgeben
                                        (NETSTAT) -> 0, FAPI_ERROR dahinter */
+#define NET_HOSTNAME        7       /* struct fapi_hostname: Rechnername
+                                       setzen (A-Z, 0-9, -, bis 31 Zeichen),
+                                       gebundenes DHCP erneuert gleich   */
+struct fapi_hostname {
+    char           name[32];
+};
 /* Firewall: eingehend gesperrt ausser Antworten und Regeln (nur
    Erlaubnisse); ausgehend frei. Regel: Programm ("*" = jedes), Protokoll,
    Ports, Herkunft (Netz/Praefix, FWR_LOCAL = eigenes Netz der Karte). */

@@ -154,13 +154,105 @@ static int net_pton(const char *s, unsigned char *a)
 #ifdef NET_RESOLVE_FN
 static struct fapi_resolve net_rs;
 static unsigned net_fam;                /* 0 beliebig, AF_INET, AF_INET6   */
+
+#ifndef NET_NO_PTON
+/* HOSTS wie /etc/hosts: "Adresse Name [Name ...]", '#' Kommentar. Ort
+   %ETC%\HOSTS (wie OS/2 TCP/IP), sonst X:\DOS\SYSTEM\HOSTS (X = Laufwerk
+   von COMSPEC). Groß/klein egal. 0 = gefunden */
+static char nh_l[160];
+
+static int nh_line(const char *name, unsigned char *a)
+{
+    unsigned i = 0, k, n;
+    char *w;
+    while (nh_l[i] == ' ' || nh_l[i] == '\t')
+        i++;
+    w = nh_l + i;
+    while (nh_l[i] && nh_l[i] != ' ' && nh_l[i] != '\t')
+        i++;
+    if (!nh_l[i])
+        return 1;
+    nh_l[i++] = 0;
+    if (net_pton(w, a) || (net_fam == AF_INET && !net_is4(a)) || (net_fam == AF_INET6 && net_is4(a)))
+        return 1;
+    for (;;) {
+        while (nh_l[i] == ' ' || nh_l[i] == '\t')
+            i++;
+        if (!nh_l[i])
+            return 1;
+        for (n = 0; nh_l[i + n] && nh_l[i + n] != ' ' && nh_l[i + n] != '\t'; n++)
+            ;
+        for (k = 0; k < n && name[k]; k++) {
+            char x = nh_l[i + k], y = name[k];
+            if (x >= 'a' && x <= 'z') x -= 32;
+            if (y >= 'a' && y <= 'z') y -= 32;
+            if (x != y)
+                break;
+        }
+        if (k == n && !name[k])
+            return 0;
+        i += n;
+    }
+}
+
+static int net_hosts(const char *name, unsigned char *a)
+{
+    static char buf[64];        /* klein: SFTP ist knapp an 64 KB */
+    unsigned h, r, i, ln = 0, skip = 0;
+    if (FAPI_FAILED(DosGetEnv("ETC", nh_l, 128)) || !nh_l[0]) {
+        if (FAPI_FAILED(DosGetEnv("COMSPEC", nh_l, 128)) || nh_l[1] != ':')
+            return 1;
+        nh_l[2] = 0;
+        r = 2;
+        for (i = 0; "\\DOS\\SYSTEM"[i]; i++)
+            nh_l[r++] = "\\DOS\\SYSTEM"[i];
+        nh_l[r] = 0;
+    }
+    for (r = 0; nh_l[r]; r++)
+        ;
+    if (r && nh_l[r - 1] != '\\')
+        nh_l[r++] = '\\';
+    for (i = 0; "HOSTS"[i]; i++)
+        nh_l[r++] = "HOSTS"[i];
+    nh_l[r] = 0;
+    h = DosOpen(nh_l);
+    if (FAPI_FAILED(h))
+        return 1;
+    for (;;) {
+        r = DosRead(h, buf, sizeof(buf));
+        if (FAPI_FAILED(r) || r == 0) {
+            buf[0] = '\n';             /* letzte Zeile ohne Zeilenende   */
+            r = 1;
+            h |= 0x8000;
+        }
+        for (i = 0; i < r; i++) {
+            char ch = buf[i];
+            if (ch == '\r' || ch == '\n') {
+                nh_l[ln] = 0;
+                if (ln && !nh_line(name, a)) {
+                    DosClose(h & 0x7FFF);
+                    return 0;
+                }
+                ln = skip = 0;
+            } else if (ch == '#')
+                skip = 1;
+            else if (!skip && ln < sizeof(nh_l) - 1)
+                nh_l[ln++] = ch;
+        }
+        if (h & 0x8000)
+            break;
+    }
+    DosClose(h & 0x7FFF);
+    return 1;
+}
+#endif
 /* Name oder Zahlenadresse (auch IPv6) -> erste Adresse; 0 = ok, sonst
    FAPI-Fehler. net_fam waehlt die Familie (-4/-6 der Programme). */
 static unsigned net_lookup(const char *name, unsigned char *a)
 {
     unsigned k, r;
 #ifndef NET_NO_PTON
-    if (!net_pton(name, a))
+    if (!net_pton(name, a) || !net_hosts(name, a))
         return 0;
 #endif
     for (k = 0; name[k] && k < sizeof(net_rs.name) - 1; k++)

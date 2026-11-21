@@ -581,5 +581,32 @@ verfälschtem Kennwort (RC4-Ticket) und verfälschtem AES-Schlüssel
 Realm mit und ohne DOMAIN.KEY (QEMU `domainname=`). Reine Programmlogik
 und eine FAPI-Erweiterung ohne Hardware – kein 86Box.
 
+## HOSTS und HOSTNAME (21.11.2026, Anregung des Nutzers)
+
+- `HOSTS` wie `/etc/hosts`: `X:\DOS\SYSTEM\HOSTS` (X = Laufwerk von
+  COMSPEC) oder `%ETC%\HOSTS` (Variable wie bei OS/2 TCP/IP). Gelesen in
+  Ring 3 von `net_lookup` (apps/net.h) vor dem DNS: jede Zeile `Adresse
+  Name [Namen]`, `#` bis Zeilenende Kommentar, Namen ohne Groß/klein,
+  Familie wie `-4`/`-6`. Kein Laden, kein Cache – Änderungen gelten sofort,
+  TCPIP.SYS bleibt unberührt. NSLOOKUP fragt weiter nur den DNS (wie
+  nslookup unter Windows/Linux). Mitgeliefert nur mit Kommentaren (der
+  Stapel hat kein Loopback, also kein `localhost`). Puffer klein
+  (64 + 160 Byte) – SFTP steht knapp an 64 KB.
+- `HOSTNAME.EXE` wie `/etc/hostname`: Datei `HOSTNAME` am selben Ort, eine
+  Zeile. `HOSTNAME Name` schreibt sie und setzt den Namen,
+  `HOSTNAME /LOAD [/Q]` (AUTOEXEC.CMD, vor `IPCONFIG /WAIT`) setzt ihn aus
+  der Datei, `HOSTNAME` zeigt ihn. Gesetzt über FAPI_NET `NET_HOSTNAME`
+  (7) in TCPIP.SYS (`host`, DHCP-Option 12; eine gebundene Adresse wird
+  gleich erneuert, damit der DHCP-Server den neuen Namen sieht) und als
+  `COMPUTERNAME` in der Umgebung von CMD (`ENV_CALLER`). Ohne Datei
+  bleibt es bei `/HOST:` bzw. „ATDOS“.
+
+Geprüft in QEMU: PING über drei HOSTS-Namen (Kommentar am Zeilenende,
+Tabulator, letzte Zeile ohne Zeilenende, Groß/klein), `PING -4` auf einen
+reinen IPv6-Eintrag -> nicht gefunden; HOSTNAME setzen, falsche Namen
+abgelehnt, IPCONFIG /ALL zeigt ihn, PING nach dem Erneuern; nach Neustart
+`HOSTNAME /LOAD /Q` -> Name und COMPUTERNAME wieder da. LOGON und
+HOSTNAME liegen auf Diskette 2 (Diskette 1 war voll).
+
 Weiter (offen): Wechsel des Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.

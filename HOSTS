@@ -1,0 +1,8 @@
+# AT-DOS - Rechnernamen ohne DNS, wie /etc/hosts (Linux) oder
+# drivers\etc\hosts (Windows). Je Zeile: Adresse Name [weitere Namen]
+# Gilt vor dem DNS fuer alle Netzprogramme (PING, NC, WGET, SSH, NET USE,
+# KINIT ...); Aenderungen wirken sofort. NSLOOKUP fragt nur den DNS.
+# Anderer Ort: SET ETC=C:\ETC (wie OS/2 TCP/IP, dort auch HOSTNAME).
+#
+# 192.168.1.10   fs fs.example.net
+# fd00::10       fs6

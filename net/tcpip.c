@@ -1038,6 +1038,33 @@ static unsigned net_dhcp(struct net_call __far *c)
     return 0;
 }
 
+/* Rechnername setzen (HOSTNAME.EXE); DHCP meldet ihn beim naechsten
+   Erneuern (Option 12) - gebunden: gleich erneuern */
+static unsigned net_hostname(struct net_call __far *c)
+{
+    struct fapi_hostname __far *u = uptr(c->usel, c->p, sizeof(struct fapi_hostname));
+    unsigned k;
+    char ch;
+    if (!u)
+        return FAPI_ERROR;
+    for (k = 0; k < 32 && u->name[k]; k++) {
+        ch = u->name[k];
+        if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
+              (ch == '-' && k)))
+            return FAPI_ERROR;
+    }
+    if (k == 0 || k > 31)
+        return FAPI_ERROR;
+    for (k = 0; u->name[k]; k++)
+        host[k] = u->name[k];
+    host[k] = 0;
+    for (k = 0; k < NNETIF; k++)
+        if (nif[k].up && nif[k].dstate == D_BOUND)
+            nif[k].dnext = secs;
+    devhlp(DH_NETKICK, 0, 0, 0);
+    return 0;
+}
+
 static unsigned e_call(void __far *v)   /* FAPI_NET                      */
 {
     struct net_call __far *c = v;
@@ -1054,6 +1081,8 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
         return fw_ctl(c);
     case NET_SOCKLIST:
         return sk_list(c);
+    case NET_HOSTNAME:
+        return net_hostname(c);
     case NET_SELECT:
         return sk_select(c);
     }
