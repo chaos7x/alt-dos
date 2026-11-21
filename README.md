@@ -316,6 +316,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   und verschlüsselter Verbindung, Probe-Anmeldung als `Name$`), Daten in
   `\DOS\SYSTEM\DOMAIN.KEY`; vorher `KINIT` mit einem Konto, das Rechner
   anlegen darf
+- `LOGON [Name] [/NOHOME] [/Q]` (6.3): Anmeldung an der Domäne beim Start
+  (Zeile in AUTOEXEC.CMD) – Kennwort abfragen, Ticket holen, den DC über
+  den Rechnerschlüssel aus `DOMAIN.KEY` prüfen (ein falscher KDC fällt
+  auf), `USERNAME`, `USERDOMAIN`, `USERDNSDOMAIN`, `LOGONSERVER` in der
+  Umgebung des aufrufenden CMD setzen und das Heimlaufwerk des Kontos
+  (homeDrive/homeDirectory aus dem AD) mit `NET USE` verbinden
+  (`HOMEDRIVE`, `HOMESHARE`, `HOMEPATH`). KINIT ohne `@REALM` nimmt die
+  Domäne aus `DOMAIN.KEY`, sonst den DNS-Suffix von DHCP
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,
@@ -1017,7 +1025,7 @@ selbst nur 8.3 kennt.
 | 32 | DosSetSigHandler | BX = Weiche (0 = abmelden), CX = `SIG_BREAK` \| `SIG_SHUTDOWN` – in C: `DosSetSigHandler(fn, maske)` |
 | 33 | DosSigReturn    | Handler fertig (macht die Weiche in `fapi.h`) |
 | 34 | DosGetEnv       | BX = Name, CX = Puffer, DX = Länge → Länge des Werts |
-| 35 | DosSetEnv       | BX = `NAME=WERT` (leerer Wert löscht) |
+| 35 | DosSetEnv       | BX = `NAME=WERT` (leerer Wert löscht), CX = 1 (`ENV_CALLER`): in der Umgebung des Aufrufers |
 | 36 | DosEnvEntry     | BX = Nummer, CX = Puffer, DX = Länge → n-ter Eintrag |
 | 37 | DosGetDateTime  | BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format |
 | 38 | DosDup2         | BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0–2 |

@@ -4336,7 +4336,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_SETENV:
         if (user_str(usel, a1, buf, sizeof(buf)))
             return FAPI_ERROR;
-        k = env_set(current, buf);
+        k = current;                    /* ENV_CALLER: beim Aufrufer     */
+        if (a2 == ENV_CALLER && task[k].parent >= 0 && task[task[k].parent].state != T_FREE)
+            k = task[k].parent;
+        k = env_set(k, buf);
         return k == 0 ? 0 : k == -2 ? FAPI_ERR_FULL : FAPI_ERROR;
 
     case FAPI_ENVENTRY: {

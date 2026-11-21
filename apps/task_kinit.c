@@ -6,7 +6,9 @@
  *   KLIST                                 Tickets der Ablage zeigen
  *   KDESTROY                              Ablage loeschen
  * Das Kennwort kommt von der Tastatur, bei umgeleiteter Eingabe aus
- * deren erster Zeile (wie kinit von MIT). Realm ohne Angabe aus %USERDNSDOMAIN%, Name aus %USERNAME%. Der KDC ist
+ * deren erster Zeile (wie kinit von MIT). Realm ohne Angabe aus
+ * %USERDNSDOMAIN%, sonst aus DOMAIN.KEY (DOMJOIN), sonst dem DNS-Suffix
+ * der Netzkarte (DHCP); Name aus %USERNAME%. Der KDC ist
  * ohne /KDC: der Rechner mit dem Namen der Domaene (im AD hat der Name
  * der Domaene die Adressen der DCs). Bibliothek: apps/krb5.c.
  * task_klist.c / task_kdestroy.c binden diese Datei mit KLIST / KDESTROY
@@ -122,6 +124,35 @@ static void ask_pass(void)
     out("\r\n");
 }
 
+/* Realm ohne Angabe: DOMAIN.KEY (DOMJOIN), sonst DNS-Suffix der Karte */
+static void def_realm(void)
+{
+    static struct fapi_netif ni;
+    char k[FAPI_PATHLEN], b[8 + 64];
+    unsigned h, i;
+    if (!FAPI_FAILED(DosGetEnv("COMSPEC", k, sizeof(k))) && k[1] == ':') {
+        k[2] = 0;
+        scat(k, "\\DOS\\SYSTEM\\DOMAIN.KEY", sizeof(k));
+        h = DosOpen(k);
+        if (!FAPI_FAILED(h)) {
+            if (DosRead(h, b, sizeof(b)) == sizeof(b) && cr_eq(b, "ATDOMJ1", 8)) {
+                b[sizeof(b) - 1] = 0;
+                scopy(realm, b + 8, sizeof(realm));
+            }
+            DosClose(h);
+            if (realm[0])
+                return;
+        }
+    }
+    for (i = 0; i < 4; i++) {
+        ni.ifc = i;
+        if (DosNet(NET_IFINFO, &ni, sizeof(ni)) == 0 && ni.domain[0]) {
+            scopy(realm, ni.domain, sizeof(realm));
+            return;
+        }
+    }
+}
+
 void main(void)
 {
     char *a, *p;
@@ -152,6 +183,8 @@ void main(void)
     if (!user[0] && (FAPI_FAILED(DosGetEnv("USERNAME", user, sizeof(user))) || !user[0]))
         fail("Kein Name angegeben (KINIT Name@REALM).", 2);
     if (!realm[0] && (FAPI_FAILED(DosGetEnv("USERDNSDOMAIN", realm, sizeof(realm))) || !realm[0]))
+        def_realm();
+    if (!realm[0])
         fail("Keine Dom\x84ne angegeben (KINIT Name@REALM).", 2);
     for (i = 0; realm[i]; i++)
         realm[i] = (char)up(realm[i]);

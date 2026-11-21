@@ -74,7 +74,10 @@
 #define SIG_BREAK           0x01    /* Strg+C                           */
 #define SIG_SHUTDOWN        0x02    /* SHUTDOWN / Strg+Alt+Entf: aufraeumen, dann DosExit */
 #define FAPI_GETENV         0x22    /* BX = Name, CX = Puffer, DX = Laenge -> Laenge des Werts */
-#define FAPI_SETENV         0x23    /* BX = "NAME=WERT" (leerer Wert loescht) */
+#define FAPI_SETENV         0x23    /* BX = "NAME=WERT" (leerer Wert loescht),
+                                       CX = ENV_CALLER: in der Umgebung des
+                                       Aufrufers (LOGON fuer CMD)        */
+#define ENV_CALLER          1
 #define FAPI_ENVENTRY       0x24    /* BX = Nummer, CX = Puffer, DX = Laenge -> n-ter Eintrag */
 #define FAPI_GETDATETIME    0x25    /* BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format */
 #define FAPI_DUP2           0x26    /* BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0-2 */

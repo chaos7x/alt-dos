@@ -534,6 +534,52 @@ der nur 23 anbietet – KINIT, Dienstticket, SMBCLI -k signiert, get/put.
 Dazu NET `/USER:\\DOM\Name` (Backslashes vorn wurden Teil des Namens –
 Anmeldung als Gast, Freigabe verweigert).
 
-Weiter (offen): Anmeldung beim Start mit dem Rechnerkonto, Wechsel des
-Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
+## Domäne Stufe 3: Anmeldung beim Start (21.11.2026)
+
+`LOGON [Name] [/NOHOME] [/Q]` (apps/task_logon.c) – Zeile in
+AUTOEXEC.CMD eines beigetretenen Rechners, Ablauf wie die Anmeldung von
+Windows NT:
+
+1. `DOMAIN.KEY` lesen (Realm, Domäne, DC, Rechnerschlüssel), KDC = DC aus
+   der Datei (sonst der Name der Domäne). Name aus dem Aufruf, sonst
+   `%USERNAME%`, sonst Frage; Kennwort ohne Echo. Drei Versuche an der
+   Tastatur, bei umgeleiteter Eingabe einer (Name und Kennwort je eine
+   Zeile).
+2. KDC prüfen wie pam_krb5/sssd („validate“): Dienstticket für den eigenen
+   Rechner `host/name.domäne` holen und mit dem Rechnerschlüssel öffnen
+   (Etype 18: AES-Schlüssel aus DOMAIN.KEY; 23: MD4 des Rechnerkennworts),
+   Verwendung 2; der Sitzungsschlüssel im EncTicketPart muss der sein, den
+   der KDC in der TGS-Antwort nannte. Nur der echte DC kennt den
+   Rechnerschlüssel – ein falscher KDC, der jedes Kennwort annimmt, wird
+   abgewiesen und es wird nichts abgelegt.
+3. Tickets ablegen (TGT + host-Ticket), Umgebung setzen: `USERNAME`,
+   `USERDOMAIN` (erster Teil der Domäne, groß), `USERDNSDOMAIN`,
+   `LOGONSERVER` (`\\DC`). Damit die Werte in CMD ankommen, kennt
+   FAPI_SETENV jetzt CX = `ENV_CALLER` (1): Eintrag in der Umgebung des
+   Aufrufers (task.parent) – drei Zeilen im Kernel; spätere Programme und
+   START-Sitzungen erben sie von CMD.
+4. Heimlaufwerk (außer `/NOHOME`): LDAP über `apps/ldapc.c` (aus DOMJOIN
+   herausgelöst: Verbindung, rootDSE, SASL GSSAPI mit Vertraulichkeit),
+   Suche `(sAMAccountName=Name)` im Baum nach `homeDirectory` und
+   `homeDrive`; `\\Rechner\Freigabe` aus homeDirectory wird mit `NET USE`
+   verbunden (Kerberos, Vorgabe H:), `HOMEDRIVE`/`HOMESHARE`/`HOMEPATH`
+   (Rest des Pfads, Windows bindet das Laufwerk an den tieferen Pfad –
+   hier nur die Freigabe).
+
+ERRORLEVEL 0 angemeldet, 1 gescheitert, 2 Aufruf, 3 angemeldet, aber
+Heimlaufwerk nicht verbunden. DOMJOIN setzt jetzt
+`msDS-SupportedEncryptionTypes` = 24 (AES) wie Windows – sonst gab Samba
+das host-Ticket mit RC4 aus (beides wird geprüft). KINIT ohne `@REALM`:
+`%USERDNSDOMAIN%`, dann DOMAIN.KEY, dann der DNS-Suffix der Karte (DHCP).
+
+Geprüft in QEMU gegen den Samba-Test-DC: Beitritt, KDESTROY, `LOGON test`
+mit homeDirectory `\\dc1.atdos.test\daten\test` – Umgebung in CMD,
+KLIST mit host-, ldap- und cifs-Ticket, `DIR H:\`, TYPE der Datei im
+Heimverzeichnis; falsches Kennwort -> abgewiesen; DOMAIN.KEY mit
+verfälschtem Kennwort (RC4-Ticket) und verfälschtem AES-Schlüssel
+(Konto mit Typ 24) -> „Der DC konnte sich nicht ausweisen“; KINIT ohne
+Realm mit und ohne DOMAIN.KEY (QEMU `domainname=`). Reine Programmlogik
+und eine FAPI-Erweiterung ohne Hardware – kein 86Box.
+
+Weiter (offen): Wechsel des Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.

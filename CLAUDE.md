@@ -6091,8 +6091,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `ldap/dc1.atdos.test` – `samba-tool spn add` mit python3.12; Test
   `/tmp/claude-0/ad/q/j1.sh`). RC4-HMAC als Rückfall (Konto des Nutzers
   hatte nur RC4: KRB-Fehler 14; geprüft per Testbau nur mit Etype 23).
-  Nächster Schritt: Anmeldung beim Start,
-  Maschinenkennwort wechseln.
+  Stufe 3 Anmeldung erledigt (21.11.2026, `docs/NETZWERK.md` „Domäne
+  Stufe 3“): `LOGON.EXE` (Ticket, KDC-Prüfung über das host-Ticket mit dem
+  Rechnerschlüssel, Umgebung über FAPI_SETENV `ENV_CALLER`, Heimlaufwerk
+  per LDAP + NET USE), LDAP-Teil von DOMJOIN in `apps/ldapc.c`, DOMJOIN
+  setzt msDS-SupportedEncryptionTypes 24, KINIT-Realm aus DOMAIN.KEY/DHCP.
+  Test `/tmp/claude-0/ad/q/l1.sh` (homeDirectory des Benutzers test per
+  ldbmodify, Freigabe `daten`). Nächster Schritt: Maschinenkennwort
+  wechseln.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

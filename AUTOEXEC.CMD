@@ -16,4 +16,7 @@ FIREWALL /LOAD /Q
 REM Uhr aus dem Netz stellen (Zeitzone: SET TZ=CET-1CEST,M3.5.0,M10.5.0/3):
 REM IPCONFIG /WAIT:10 > NUL
 REM SNTP /Q
+REM Anmeldung an der Domaene (nach DOMJOIN), verbindet das Heimlaufwerk:
+REM IPCONFIG /WAIT:10 > NUL
+REM LOGON
 PROMPT $P$G
