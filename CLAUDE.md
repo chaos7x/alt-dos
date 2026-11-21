@@ -1703,6 +1703,11 @@ libsndfile1-dev libevdev-dev libxkbcommon-dev libzstd-dev, dann `cmake
 -G Ninja -DQT=OFF -DSDL2=ON -DRTMIDI=OFF -DFLUIDSYNTH=OFF`, ninja (~10
 min). ROMs aus github.com/86Box/roms als sparse checkout (nur
 machines/<Board>, sound/creative, video/…, floppy, hdd, scsi; 13 MB).
+Testfalle (vom Nutzer, 21.11.2026): eine im 86Box-Manager geklonte VM
+behält die MAC der RTL8139 – sie steht im EEPROM `nvr/nmc93cxx_eeprom_
+rtl8139c_plus_1.nvr`, nicht in der cfg; der Klon bekam per DHCP dieselbe
+IP. Nach dem Klonen (86Box zu) diese Datei löschen, 86Box legt sie mit
+der MAC aus der cfg neu an.
 Lauf unter `Xvfb :99` mit `86Box -P <vm-Ordner> -R <roms>`, 86box.cfg
 im vm-Ordner (`vid_renderer = sdl_software`), Monitor-Befehle über
 stdin (fifo: fddload, screenshot, hardreset, exit), Tasten mit
