@@ -5132,9 +5132,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Programms. Geprüft: QEMU (MKDOSIMG aus den Disketten und aus der ZIP-
   Platte des Nutzers, XCOPY/REN/FCB/BIOSCMP), 86Box 386DX/40 4 MB ohne
   Diskette (Abbild aus Plattenabbild über LOOP, Start, DIR, MEM); FreeDOS-Box
-  per bioscmp.sh unverändert. Offen: MEM von MS-DOS auf 4 MB in 86Box –
-  XMS „Verwendet“ negativ (Gesamtgröße von MEM hängt am UMB, nicht an
-  CMOS; Einzelheiten docs/BOX-BIOS.md). MS-DOS-Dateien des Nutzers nur
+  per bioscmp.sh unverändert. MEM von MS-DOS zeigte XMS „Verwendet“
+  negativ – erledigt (21.11.2026): MEM rechnet XMS gesamt aus der
+  4309h-Tabelle minus oberem Speicher (wie bei EMM386), `xms_table` trägt
+  die UMBs als belegten Block ein; geprüft QEMU, 86Box DX4-100
+  (docs/BOX-BIOS.md). MS-DOS-Dateien des Nutzers nur
   zum Testen, nie ins Repository. Testfalle: NASM nimmt `\` am Ende eines
   Kommentars als Zeilenfortsetzung.
 - **Word 5.5 (deutsch) in der DOS-Box** (Hinweis des Nutzers, 18.11.2026;

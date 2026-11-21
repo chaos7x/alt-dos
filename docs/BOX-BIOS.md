@@ -222,13 +222,19 @@ selbst (`ext_act`); SDA vor dem Aufruf bei beiden gleich (dump über Port
 E9h). In QEMU geprüft: PC DOS 6.3 und 2000 melden 1/2/3 richtig, MS-DOS
 5.0/6.22 und PC DOS 5.0 unverändert.
 
-Offen: MEM von MS-DOS zeigt auf knappen Maschinen (86Box 386DX/40, 4 MB)
-bei „Erweiterung (XMS)“ eine Gesamtgröße unter der freien (Verwendet
-„4.194.2“). Kernelseitig stimmen CMOS, LoL+45h, XMS 08h und die Tabelle
-überein; die Gesamtgröße von MEM ändert sich mit dem oberen Speicher (mit
-EMS-Rahmen 1.904 K bei 76 K UMB, ohne 1.776 K bei 140 K UMB), nicht mit
-CMOS. Mit 16 MB und in QEMU mit 4 MB stimmt die Anzeige. Nur Anzeige –
-Programme bekommen ihren XMS-Speicher.
+Erledigt (21.11.2026): MEM von MS-DOS zeigte bei „Erweiterung (XMS)“ eine
+Gesamtgröße unter der freien („Verwendet“ negativ), je größer der obere
+Speicher, desto deutlicher (86Box DX4-100 mit 92 K UMB: 2.020 K gesamt,
+2.048 K frei; in QEMU ohne EMS-Rahmen, 68 K UMB, nachgestellt). MEM nimmt
+die Gesamtgröße nicht aus dem CMOS, sondern rechnet 1 MB + Summe der
+HIMEM-Tabelle (4309h) − konventionell − oberer Speicher − reserviert:
+wie bei EMM386 nimmt es an, die UMBs kämen aus dem erweiterten Speicher.
+`xms_table` (v86.c) trägt den oberen Speicher der Box (UMB-Seiten ohne
+EMS-Rahmen) deshalb als gesperrten, belegten Block ein, wie ihn EMM386
+unter HIMEM hält. Danach: XMS gesamt = frei + 64 K (die HMA, wie unter
+echtem MS-DOS), „Insg. Speicher“ unverändert, die UMBs gehen bei
+„Reserviert“ ab. FreeDOS-MEM zeigt dasselbe. Geprüft: QEMU mit und ohne
+EMS-Rahmen, 86Box DX4-100; BIOSCMP unverändert.
 
 ## Bestand: BIOS der DOS-Box (6.x)
 

@@ -537,8 +537,8 @@ die Programme direkt lesen.
    Geprüft QEMU (ANSI.SYS von MS-DOS 6.22 mit DEVICEHIGH: Farbe, MEM) und
    86Box 386DX/40 (ANSI oben, FreeCOM `LH DOSKEY` oben, MS-DOS-MEM) und
    DX4-100 mit 16 MB (DOOM 1.9 als erstes Programm, danach MEM: ANSI oben,
-   626 KB frei). Die XMS-Zeile „Verwendet“ von MS-DOS-MEM ist je nach
-   Speicher weiter negativ (offener Punkt aus `docs/BOX-BIOS.md`).
+   626 KB frei). Die damals noch negative XMS-Zeile „Verwendet“ von
+   MS-DOS-MEM ist inzwischen behoben (`docs/BOX-BIOS.md`).
    Dabei gefunden (seit dem ersten Teil): DOOM blieb als **erstes**
    Programm einer frischen Box mit leerem Bildschirm stehen. DOS/4GW sucht
    in der IVT (ab Vektor BDh abwärts) zwei gleiche benachbarte Vektoren
