@@ -338,6 +338,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (homeDrive/homeDirectory aus dem AD) mit `NET USE` verbinden
   (`HOMEDRIVE`, `HOMESHARE`, `HOMEPATH`). KINIT ohne `@REALM` nimmt die
   Domäne aus `DOMAIN.KEY`, sonst den DNS-Suffix von DHCP
+- Mehrere Domänencontroller (6.3): KINIT, LOGON, DOMJOIN und NET USE
+  kennen alle DCs der Domäne (Adressen des Domänennamens im DNS);
+  antwortet der beim Beitritt gemerkte nicht, nehmen sie nach 4 s den
+  nächsten
 - `FTP` wie das ftp von MS-DOS/Windows: `FTP [-n] [-v] [-i] [-d] [-A]
   [-4|-6] [-s:Datei] [Rechner [Port]]`, Befehle open, close, user, ls,
   dir, cd, cdup, lcd, pwd, get/recv, put/send, mget, mput, delete,

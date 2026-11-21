@@ -6104,7 +6104,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Diskette 1 voll). Stufe 4 erledigt: `DOMJOIN /RENEW` (Kennwortänderung
   delete+add als Rechner selbst, `pwnew` in DOMAIN.KEY gegen Abbruch,
   LOGON nach 30 Tagen und bei unterbrochenem Wechsel; DOMAIN.KEY 576 Byte,
-  524 weiter lesbar). Sperren über das Netz Stufe 1 erledigt
+  524 weiter lesbar). Ausweichen auf andere DCs (krb5.c `krb_kdc_list`/
+  `krb_kdc_next`, Adressen des Domänennamens, je 4 s; `docs/NETZWERK.md`
+  „Domäne: Ausweichen“; Test mit DC2 + FS1 an der Brücke: `/tmp/claude-0/
+  fs/start.sh` (nach Neustart des Containers `net.sh`), `/tmp/claude-0/lk/
+  fo/fo.sh`). Sperren über das Netz Stufe 1 erledigt
   (`docs/NETZWERK.md` „SMB Stufe 3“): FAPI 5Eh `FAPI_FILELOCK` -> ufs.c
   `ufs_lock` -> `UFSOP_LOCK` -> SMB2 LOCK, `IFS_LOCKED`/`FAPI_ERR_LOCKED`
   (FFF2h), Box 110Ah reicht an den Kernel weiter (21h). Test zwei QEMU

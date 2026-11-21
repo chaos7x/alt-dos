@@ -41,6 +41,18 @@ struct kchdr {
 extern long krb_off;                    /* UTC - Ortszeit (Sekunden)      */
 extern u8   krb_kdc[16];
 
+/* Ausweichen auf andere DCs (21.11.2026): krb_kdc_list nimmt krb_kdc als
+   ersten Eintrag und haengt alle Adressen der Namen a und b aus dem DNS an
+   (doppelte nicht, bis KNKDC; Domaenenname = A-/AAAA-Satz jedes DCs).
+   Antwortet ein KDC nicht, versucht kdc_call den naechsten und laesst ihn
+   in krb_kdc stehen (Ablage, LDAP nehmen ihn). krb_kdc_next -> 0 = keiner
+   mehr. */
+#define KNKDC   4
+extern u8   krb_kdcs[KNKDC][16];
+extern unsigned krb_nkdc;
+void krb_kdc_list(const char *a, const char *b);
+int  krb_kdc_next(void);
+
 /* Arbeitspuffer (je KBUF Byte) stellt der Aufrufer: SMBCLI nimmt dafuer
    seine Sendepuffer, damit DGROUP reicht */
 #define KBUF    4096

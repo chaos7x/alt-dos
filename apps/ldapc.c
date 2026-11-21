@@ -63,23 +63,32 @@ char *utoa(unsigned v, char *z)
 
 void lconnect(void)
 {
-    unsigned k;
-    so.family = AF_INET6;
-    so.type = SOCK_STREAM;
-    sh = DosNet(NET_SOCKET, &so, sizeof(so));
-    if (FAPI_FAILED(sh)) {
+    unsigned k, i = 0;
+    for (;;) {
+        so.family = AF_INET6;
+        so.type = SOCK_STREAM;
+        sh = DosNet(NET_SOCKET, &so, sizeof(so));
+        if (FAPI_FAILED(sh)) {
+            sh = 0;
+            fail("Kein Netz (TCPIP.SYS fehlt) oder kein Socket frei.", 1);
+        }
+        io.addr.len = 28;
+        io.addr.family = AF_INET6;
+        io.addr.port = (unsigned short)(389 << 8 | 389 >> 8);
+        for (k = 0; k < 16; k++)
+            io.addr.a6[k] = krb_kdc[k];
+        io.h = sh;
+        io.timeout = krb_nkdc > 1 ? 4000 : 10000;
+        if (!DosNet(NET_CONNECT, &io, sizeof(io)))
+            return;
+        DosClose(sh);
         sh = 0;
-        fail("Kein Netz (TCPIP.SYS fehlt) oder kein Socket frei.", 1);
+        /* naechster DC der Liste (krb5.c), vom letzten wieder von vorn */
+        if (++i >= krb_nkdc)
+            fail("Dom\x84nencontroller nicht erreichbar (LDAP, TCP-Port 389).", 1);
+        if (!krb_kdc_next())
+            cr_cpy(krb_kdc, krb_kdcs[0], 16);
     }
-    io.addr.len = 28;
-    io.addr.family = AF_INET6;
-    io.addr.port = (unsigned short)(389 << 8 | 389 >> 8);
-    for (k = 0; k < 16; k++)
-        io.addr.a6[k] = krb_kdc[k];
-    io.h = sh;
-    io.timeout = 10000;
-    if (DosNet(NET_CONNECT, &io, sizeof(io)))
-        fail("Dom\x84nencontroller nicht erreichbar (LDAP, TCP-Port 389).", 1);
 }
 
 /* Nachricht sb[0..n) senden, nach der Anmeldung in einer GSS-Huelle */

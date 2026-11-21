@@ -339,6 +339,7 @@ static void renew(void)
         fail("Dieser Rechner ist keiner Dom\x84ne beigetreten.", 1);
     if (net_lookup(df.dc, krb_kdc) && net_lookup(df.domain, krb_kdc))
         fail("Dom\x84nencontroller nicht gefunden (Netz, DNS).", 1);
+    krb_kdc_list(df.dc, df.domain);     /* weitere DCs zum Ausweichen    */
     scopy(san, df.name, sizeof(san));
     scat(san, "$", sizeof(san));
     lower(fq, df.name, sizeof(fq));

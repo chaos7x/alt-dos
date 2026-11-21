@@ -635,6 +635,43 @@ beim DC gültigen als `pwnew` -> LOGON schließt ab und meldet an; Datei im
 alten Format mit 40 Tage altem Beitritt -> LOGON wechselt, Datei danach
 576 Byte; j1.sh (Beitritt, erneut, ohne Recht, /LEAVE) wie vorher.
 
+## Domäne: Ausweichen auf andere DCs (21.11.2026)
+
+Anlass (Aufbau des Nutzers: zwei DCs, Dateiserver und Mailserver mit
+winbind): bisher fragten KINIT, LOGON und DOMJOIN genau einen DC – den
+Namen aus DOMAIN.KEY, nur wenn der sich gar nicht auflösen ließ den
+Domänennamen, und davon die erste Adresse. War dieser DC aus, scheiterte
+die Anmeldung, obwohl der zweite lief.
+
+Jetzt (krb5.c): `krb_kdc_list(a, b)` legt die Liste an – erst die schon
+gewählte Adresse (net_lookup, also auch HOSTS und Zahlenadressen), dann
+alle Adressen der Namen a und b aus dem DNS (NET_RESOLVE, bis 4, ohne
+doppelte). Im AD trägt jeder DC seine Adresse beim Domänennamen ein, die
+Liste enthält also alle DCs; SRV-Sätze (`_kerberos._tcp`) braucht es dafür
+nicht. `kdc_call` versucht bei mehreren Einträgen je 4 s (sonst wie
+bisher 10 s) und geht bei „nicht erreichbar“ oder „keine Antwort“ zum
+nächsten; AS- und TGS-Anfragen lassen sich wiederholen. Der DC, der
+geantwortet hat, bleibt in `krb_kdc` – die Ablage merkt ihn, LDAP
+(`lconnect`, ebenso mit Ausweichen) nimmt denselben, der Dienstname für
+LDAP kommt aus dem rootDSE des erreichten DCs (`dnsHostName`). LOGON und
+DOMJOIN: Liste aus DC-Name und Domäne, KINIT: aus dem Domänennamen bzw.
+/KDC:. Programme, die nur die Ablage lesen (SMBCLI -k), nehmen den dort
+gemerkten DC ohne Ausweichen – NET USE braucht den KDC nur für das
+cifs-Ticket, das meist schon in der Ablage liegt. Der DNS-Auflöser in
+TCPIP.SYS wechselte schon vorher zwischen den DNS-Servern aus DHCP.
+
+Geprüft in QEMU mit zwei Samba-DCs (DC2 per `samba-tool domain join`,
+192.168.77.3, eigener Mount-Namensraum) und FS1 an der Brücke: Beitritt
+und LOGON über DC1; dann DC1 angehalten (Ports zu, Adresse antwortet mit
+RST) und ganz weg (Adresse vom Netz, Fristen): KINIT, LOGON mit KDC-
+Prüfung, `DOMJOIN /RENEW` und NET USE mit Kerberos laufen über DC2, ohne
+DC1 dauert jeder Schritt etwa 4 s länger. Testfallen des Testaufbaus (bei
+echten DCs von selbst richtig): die DNS-Zone und neue Konten musste ich
+von Hand nach DC2 replizieren (`samba-tool drs replicate --local`), der
+Domänenname bekam die Adresse von DC2 nicht von selbst, und DC2 fehlten
+die `ldap/`-SPNs (sonst „Dienst in der Domäne unbekannt“ beim LDAP-
+Ticket). Reine Programmlogik – kein 86Box.
+
 ## SMB Stufe 3: Bereichssperren über das Netz (21.11.2026)
 
 Reihenfolge des Nutzers: Domäne, dann Sperren, dann SMB 3. Bisher galten

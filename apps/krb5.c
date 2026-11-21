@@ -16,6 +16,54 @@ unsigned long au_mul16k(unsigned a, unsigned b);
 
 long krb_off;
 u8   krb_kdc[16];
+u8   krb_kdcs[KNKDC][16];
+unsigned krb_nkdc;
+static struct fapi_resolve krs;
+
+static void kdc_put(const u8 *a)
+{
+    unsigned i;
+    for (i = 0; i < krb_nkdc; i++)
+        if (cr_eq(krb_kdcs[i], a, 16))
+            return;
+    if (krb_nkdc < KNKDC)
+        cr_cpy(krb_kdcs[krb_nkdc++], a, 16);
+}
+
+static void kdc_name(const char *n)
+{
+    unsigned i;
+    if (!n || !n[0])
+        return;
+    scopy(krs.name, n, sizeof(krs.name));
+    krs.family = 0;
+    krs.count = 0;
+    if (DosNet(NET_RESOLVE, &krs, sizeof(krs)))
+        return;
+    for (i = 0; i < krs.count && i < 4; i++)
+        kdc_put(krs.addr[i]);
+}
+
+void krb_kdc_list(const char *a, const char *b)
+{
+    krb_nkdc = 0;
+    kdc_put(krb_kdc);
+    kdc_name(a);
+    kdc_name(b);
+}
+
+int krb_kdc_next(void)
+{
+    unsigned i;
+    if (krb_nkdc < 2)
+        return 0;
+    for (i = 0; i < krb_nkdc && !cr_eq(krb_kdcs[i], krb_kdc, 16); i++)
+        ;
+    if (i + 1 >= krb_nkdc)              /* letzter (oder unbekannt) */
+        return 0;
+    cr_cpy(krb_kdc, krb_kdcs[i + 1], 16);
+    return 1;
+}
 
 /* ---- Zeit --------------------------------------------------------------- */
 static const unsigned short mdy[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
@@ -383,7 +431,9 @@ static int xfer(unsigned h, unsigned fn, u8 *d, unsigned n)
 }
 
 /* rq[0..n) an den KDC, Antwort nach rp/rpl -> 0 oder Meldung */
-static const char *kdc_call(unsigned n)
+static const char kdc_big[] = "Antwort des KDC zu gross oder abgebrochen.";
+
+static const char *kdc_try(unsigned n, unsigned to)
 {
     unsigned h, k;
     u8 l[4];
@@ -398,7 +448,7 @@ static const char *kdc_call(unsigned n)
     for (k = 0; k < 16; k++)
         io.addr.a6[k] = krb_kdc[k];
     io.h = h;
-    io.timeout = 10000;
+    io.timeout = to;
     if (DosNet(NET_CONNECT, &io, sizeof(io))) {
         DosClose(h);
         return "KDC nicht erreichbar (TCP-Port 88).";
@@ -414,10 +464,27 @@ static const char *kdc_call(unsigned n)
     rpl = (unsigned)l[2] << 8 | l[3];
     if (l[0] || l[1] || rpl > KBUF || xfer(h, NET_RECV, rp, rpl)) {
         DosClose(h);
-        return "Antwort des KDC zu gross oder abgebrochen.";
+        return kdc_big;
     }
     DosClose(h);
     return 0;
+}
+
+/* wie kdc_try, bei mehreren DCs je 4 s und weiter zum naechsten, bis
+   einer antwortet; der zuletzt gefragte bleibt in krb_kdc. Der Auftrag
+   (AS/TGS) ist wiederholbar. */
+static const char *kdc_call(unsigned n)
+{
+    const char *e;
+    unsigned i = 0;
+    for (;;) {
+        e = kdc_try(n, krb_nkdc > 1 ? 4000 : 10000);
+        if (!e || e == kdc_big || ++i >= krb_nkdc)
+            return e;
+        if (!krb_kdc_next()) {          /* vom letzten wieder von vorn */
+            cr_cpy(krb_kdc, krb_kdcs[0], 16);
+        }
+    }
 }
 
 /* KRB-ERROR (Kennung 7Eh) auswerten: Code, stime -> Uhr stellen */

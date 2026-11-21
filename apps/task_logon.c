@@ -324,6 +324,7 @@ void main(void)
         fail("Dieser Rechner ist keiner Dom\x84ne beigetreten (DOMJOIN).", 1);
     if (net_lookup(df.dc, krb_kdc) && net_lookup(df.domain, krb_kdc))
         fail("Dom\x84nencontroller nicht gefunden (Netz, DNS).", 1);
+    krb_kdc_list(df.dc, df.domain);     /* weitere DCs zum Ausweichen    */
     if (!user[0] && FAPI_FAILED(DosGetEnv("USERNAME", user, sizeof(user))))
         user[0] = 0;
     krb_bufs(kb1, kb2);

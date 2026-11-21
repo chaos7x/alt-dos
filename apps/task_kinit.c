@@ -195,6 +195,7 @@ void main(void)
     }
     if (net_lookup(kdc, krb_kdc))
         fail("KDC nicht gefunden (Name der Dom\x84ne oder /KDC:).", 1);
+    krb_kdc_list(kdc, 0);               /* alle DCs der Domaene          */
     ask_pass();
     krb_bufs(kb1, kb2);
     e = krb_kinit(user, realm, pass, &tgt);
