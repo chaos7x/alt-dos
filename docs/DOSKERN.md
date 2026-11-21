@@ -374,6 +374,49 @@ die Programme direkt lesen.
 Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
 (Box = Hardware-Bezug: 386DX/40 4 MB, P3B-F), Proxmox bei Bedarf.
 
+## Undokumentiertes: wie wir es treffen
+
+Hinweis des Nutzers (21.11.2026): das eigentliche Problem waren immer
+die undokumentierten Teile des MS-DOS-Kerns. Programme der Zeit lesen
+sie direkt, und jede Abweichung fällt erst bei einem bestimmten Programm
+auf (wie bei Word 5.5, Lotus Works und CheckIt in der Box).
+
+Wer was liest (Auswahl, zum Abhaken in Stufe 3/4):
+
+| Nutzer | Was | Wo |
+|---|---|---|
+| Windows 3.x erweitert, Task-Umschalter (DOSSHELL) | SDA tauschen (5D06h/5D0Bh, Liste der Bereiche), INT 2Fh 1605h/1606h, 4B05h | SDA, LoL |
+| TSRs (Popups, Druckspooler) | InDOS- und Fehler-Merker (34h, SDA), INT 28h, aktueller PSP (SDA, 50h/51h/62h) | SDA |
+| Speicherverwalter, MEM, MSD | MCB-Kette ab LoL-2, UMB-Verkettung, LoL-Felder (erster MCB, DPB, SFT, CDS, Puffer, LASTDRIVE, Geräteköpfe) | LoL, MCB |
+| Netz-Redirector, SHARE, MSCDEX | INT 2Fh 11xxh/12xxh, CDS-Flags, SFT-Felder, SDA-Pfade (`FN1`/`FN2`) | CDS, SFT, SDA |
+| Plattenwerkzeuge (CHKDSK, Norton, PC Tools) | DPB (32h/1Fh), INT 25h/26h, 440Dh | DPB |
+| Programme mit eigener Dateiverwaltung | SFT direkt (Größe, Position, Modus), JFT im PSP (+18h, +32h/+34h) | SFT, PSP |
+| DOSKEY, APPEND, installierbare Befehle | INT 2Fh 4800h/AE00h/AE01h, B7xxh | Multiplex |
+
+Drei Quellen, in dieser Reihenfolge:
+
+1. **MS-DOS 4.0-Quelltext** – für 4.0 nicht mehr undokumentiert, sondern
+   die Wahrheit: Layout aus `INC/*.INC` (SYSVAR, SF, CURDIR, DPB, DOSSYM,
+   SDA in `DOSDATA`/`MS_DATA`), Verhalten aus `DOS/*.ASM`.
+2. **Echtes MS-DOS 6.22 in der Box messen** – was sich von 4.0 bis 6.22
+   geändert hat (SDA-Felder, LoL-Erweiterungen, UMB, HMA), wird nicht
+   geraten, sondern abgelesen: MKDOSIMG-Box mit der 6.22 des Nutzers,
+   ein eigenes Werkzeug (Teil von BIOSCMP oder eigenes `DOSSTRUC.COM`)
+   gibt LoL, SFT-Kopf und -Einträge, CDS, DPB, SDA-Länge und Lage der
+   bekannten SDA-Felder, MCB-Kette und PSP-Felder als Text aus. Diese
+   Ausgabe (nur Werte, kein Microsoft-Code) kommt wie `docs/bioscmp/
+   msdos622.txt` ins Repository und ist der Maßstab für den eigenen
+   Kern. Dieselbe Ausgabe unter FreeDOS zeigt gleich, wo FreeDOS als
+   Vorlage abweicht.
+3. **Öffentliche Beschreibungen** (Ralf Browns Interrupt-Liste,
+   „Undocumented DOS“) – nur zum Nachschlagen, welche Programme welches
+   Feld nutzen und welche Versionen es wie belegen.
+
+Regel: ein Feld, das in der 6.22-Messung steht, hat im eigenen Kern
+denselben Ort und dieselbe Bedeutung – auch wenn der Kern es selbst nicht
+braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
+6.22-Messung abweichen, gilt die Messung.
+
 ## Regeln für den Schnitt nach 7.0
 
 - `struct dem_req` und die SFT-Erweiterung mit festen Breiten, als
@@ -436,8 +479,9 @@ Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
 
 1. ~~Grundlage des Box-Kerns~~ – entschieden: beide (FreeDOS-Rumpf,
    MS-DOS-4.0-Strukturen und -Verhalten); FreeDOS als Vorlage, nicht
-   1:1. Passt die Aufteilung in der
-   Tabelle „Was aus welcher Quelle kommt“?
+   1:1; Aufteilung der Tabelle „Was aus welcher Quelle kommt“ vom
+   Nutzer bestätigt (21.11.2026), Undokumentiertes siehe eigener
+   Abschnitt.
 2. ~~Name der Datei~~ – entschieden: `ATDOSCM.SYS` in `\DOS\MDOS`,
    direkt geladen (kein Abbild). Offen bleibt der INI-Schlüssel.
 3. ~~Gemeldete Version~~ – entschieden: 6.22; die 4.0-Shell im eigenen
