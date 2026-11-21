@@ -23,7 +23,15 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.2 fertig (Zweig `6.2`, Release `v6.2`), 6.3 zur Prüfung (Zweig `6.3`), Weiterarbeit auf `main`
+## Aktueller Stand: AT-DOS 6.3 fertig (Zweig `6.3`, Release `v6.3`), Weiterarbeit auf `main`
+
+AT-DOS 6.3 ist fertig (Entscheidung des Nutzers, 21.11.2026: keine
+Fehler gefunden, Anmeldung am Samba-AD geht – „so wie immer“): Zweig
+`6.3` = Stand der Freigabe (mit FreeDOS in der Box; der eigene Box-Kern
+ATDOSCM.SYS, COMMAND.COM 4.0 und Diskette 3 kommen erst mit der nächsten
+Version), ein Push dorthin baut per CI das Release `v6.3` (als neuestes
+markiert, löscht `test-6.3`); `v6.2` baut seitdem mit `--latest=false`.
+Fehlerbehebungen für 6.3 auf `6.3` und `main`.
 
 AT-DOS 6.3 zur Prüfung (Wunsch des Nutzers, 21.11.2026: „Mach eine
 Version noch zum testen fertig“, vor dem eigenen Box-Kern): Titel/VER
