@@ -708,6 +708,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   COMMAND, bleibt ihr Text stehen. Alt+Esc und Strg+C bleiben beim
   Kernel. Tests: `\DEMO\HALLO [Text] [/W]`, `\DEMO\BOXTEST` (wie ein
   Spiel: B800, INT 1Ch, INT 9, 3DAh; Esc beendet), auch mit `START`
+- Messung für den eigenen Box-Kern (Stufe 0 von `docs/DOSKERN.md`,
+  21.11.2026): `\DEMO\DOSBENCH Pfad\ [n]` misst Zeiten je Dateizugriff
+  über reine INT-21h-Aufrufe (groß/klein lesen und schreiben, Seek,
+  viele Dateien, Attribute, Suche), `\DEMO\DOSSTRUC` gibt die inneren
+  Strukturen des laufenden DOS aus (Liste der Listen, SDA, SFT, CDS, DPB,
+  MCB, PSP; Bezug MS-DOS 6.22 in `docs/dosstruc/`). `tools/dosbench.sh`
+  lässt beides unter FreeDOS und MS-DOS direkt und in beiden Boxen laufen
+  (dazu DOOM `-timedemo`); Ergebnis in `docs/DOSKERN.md`.
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

@@ -407,6 +407,97 @@ die Programme direkt lesen.
 Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
 (Box = Hardware-Bezug: 386DX/40 4 MB, P3B-F), Proxmox bei Bedarf.
 
+## Stufe 0: Messung (21.11.2026)
+
+Werkzeuge: `tools/dosbench.asm` (`\DEMO\DOSBENCH`, reine INT-21h-Aufrufe,
+Zeit über den BIOS-Takt 46Ch), `tools/dosstruc.asm` (`\DEMO\DOSSTRUC`,
+Strukturen), `tools/dosbench.sh` (QEMU: legt eine 128-MB-FAT16-Testplatte
+mit 800 Dateien in `MANY\` und DOOM 1.9 Shareware an, misst FreeDOS
+direkt, MS-DOS 6.22 direkt – Startdiskette des Nutzers –, FreeDOS-Box und
+MS-DOS-Box (MKDOSIMG) auf derselben Platte). 86Box: dieselben Abbilder,
+in der Box ist die Testplatte D: (IDE, zweite Platte). Direkt ohne
+HIMEM/SMARTDRV (wie die Startdisketten), die Box mit dem Kernel-Cache.
+
+**86Box, Am486DX4-100 (ohne VME, Interpreter), 16 MB, IDE 5400 U/min**
+– Werte in BIOS-Takten (55 ms), je ein Durchgang:
+
+| | FreeDOS direkt | MS-DOS direkt | FreeDOS-Box | MS-DOS-Box |
+|---|---|---|---|---|
+| größtes Programm | 496 KB¹ | 571 KB¹ | 626 KB | 620 KB |
+| 4 MB schreiben (32 KB) | 19 | 18 | 84–134 | 133 |
+| 4 MB lesen (32 KB) | 14 | 14 | 99–125 | 99 |
+| 1 MB lesen (2.048 × 512 Byte) | 6 | 6 | 38 | 37 |
+| 2.000 × Seek + 64 Byte | 628 | 371 | 281–351 | 349 |
+| 200 Dateien anlegen (4 KB) | 129 | 117 | 346–374 | 348 |
+| 200 × öffnen/lesen/schließen | 9 | 4 | 168–183 | 169 |
+| 1.000 × Attribut (4300h) | 4 | 2 | 32–34 | 34 |
+| 3 × Suche über 800 Einträge | 8 | 4 | 51–52 | 49 |
+| 200 Dateien löschen | 95 | 92 | 15 | 15 |
+| DOOM `-timedemo demo1` (realtics) | 1.136 | 1.133 | 1.145–1.147 | 1.147 |
+| DOOM laden (Takte, geschätzt²) | ~75 | ~42 | ~164 | ~156 |
+
+¹ direkt ohne HIMEM, DOS unten; mit DOS=HIGH wären es ~615–620 KB.
+² Gesamtzeit um DOOM minus realtics · 18,2/35.
+
+**86Box, P3B-F mit Pentium II 233 (VME/PVI, Dynarec), 64 MB**:
+
+| | FreeDOS direkt | MS-DOS direkt | FreeDOS-Box | MS-DOS-Box |
+|---|---|---|---|---|
+| 1 MB lesen (2.048 × 512 Byte) | 3 | 2 | 5 | 3 |
+| 200 × öffnen/lesen/schließen | 3 | 2 | 28 | 32 |
+| 1.000 × Attribut | 1 | 0 | 6 | 5 |
+| 3 × Suche über 800 Einträge | 2 | 1 | 7 | 8 |
+| 200 Dateien anlegen | 120 | 112 | 60 | 65 |
+| 200 Dateien löschen | 91 | 90 | 3 | 2 |
+| DOOM-Timedemo (realtics) | 508 | 505 | 500 | 502 |
+| DOOM laden (Takte, geschätzt) | ~45 | ~30 | ~54 | ~67 |
+
+Große Übertragungen und Seek schwanken in der Box stark (Kernel-Cache,
+verzögertes Schreiben: zweiter FreeDOS-Lauf 84 statt 134 Takte) – dort
+nur die Richtung werten.
+
+**Fallen je Aufruf** (Zählbau, nicht im Repository: Zähler in
+`v86_exc`/`dpmi_trap`/`redir`, Ausgabe über Port E9h beim Parken; QEMU,
+ohne VME): ein DOSBENCH-Lauf in der FreeDOS-Box = 171.184 Fallen bei
+rund 9.800 Redirector-Aufrufen, also **~17 Fallen je DOS-Dateiaufruf** –
+INT 46.734 (INT 2Fh 11xxh aus dem DOS in BOXSHELL, INT E0h in den
+Kernel, INT 2Ah/28h), CLI 36.502, STI 35.592, IRET 24.812, PUSHF 13.832,
+POPF 13.690. MS-DOS-Box 154.870. Redirector-Aufrufe nach Art: READ 3.364,
+FINDNEXT 2.400, „Namen prüfen“ (23h) 1.626, GETATTR 1.003, CLOSE 412,
+WRITE 328, OPEN/CREATE/DELETE je ~200. DOOM-Timedemo mit Laden: 62.000
+V86- und 76.000 PM-Fallen, davon nur 972 Lese-Aufrufe über den
+Redirector – DOOM kostet die Box fast nur im PM-Monitor (Takt, PIC,
+CLI/STI), nicht in der Dateiverwaltung.
+
+**Ergebnis**
+
+1. **Speicher ist kein Grund**: die Box hat schon 620–626 KB, mehr als
+   jedes der beiden DOS direkt ohne HIMEM. Ein Kern in der HMA gewinnt
+   nur noch wenige KB.
+2. **Spiele nicht**: DOOM läuft in der Box gleich schnell (±1 %), nur das
+   Laden dauert 1,5–4-mal so lange (WAD über den Redirector, DOS/4GW-Start).
+3. **Kleine Dateiaufrufe sind der Kostenpunkt**: öffnen/lesen/schließen
+   20–40-mal so teuer wie direkt (DX4), mit VME noch ~10-mal; Attribut,
+   Suche, 512-Byte-Lesen 5–10-mal. Genau das, was Compiler, Make,
+   Datenbanken (dBase, Clipper), Word mit vielen kleinen Dateien tun. Die
+   Ursache ist gezählt: ~17 Fallen je Aufruf über DOS -> INT 2Fh ->
+   BOXSHELL -> INT E0h -> redir.c. Der eigene Kern bringt das auf eine
+   Falle je Aufruf (Auftragsblock) – auf 386/486 ohne VME der größte
+   Hebel, auch mit VME noch deutlich.
+4. **Große Übertragungen** sind in der Box ~7-mal langsamer (DX4), obwohl
+   es nur 128 Aufrufe sind und `xfer` direkt in den Speicher der Box
+   schreibt – das liegt im Kernel (FAT, Cache, Fenster), nicht im Weg
+   über das DOS, und betrifft vermutlich auch FAPI-Programme. Eigener
+   Punkt, unabhängig vom Box-Kern (mit nativem Lesen gegenprüfen).
+5. **Wo die Box gewinnt**: Anlegen, Löschen, verstreutes Lesen –
+   dort hilft der Kernel-Cache (direkt ohne SMARTDRV).
+
+Empfehlung: weiter mit **Stufe 1** (DEM herauslösen). Sie verbessert
+für alle Abbilder nichts an der Zahl der Fallen, schafft aber die
+Schnittstelle, über die Stufe 2 den Aufruf auf eine Falle bringt. Punkt 4
+als eigene Aufgabe im Kernel. Strukturen von MS-DOS 6.22, FreeDOS und
+beiden Boxen: `docs/dosstruc/` (Maßstab für Stufe 3).
+
 ## Undokumentiertes: wie wir es treffen
 
 Hinweis des Nutzers (21.11.2026): das eigentliche Problem waren immer
@@ -522,4 +613,5 @@ braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
    Bau ohne Versionsprüfung.
 4. ~~INT 25h/26h~~ – entschieden: wie MS-DOS 7 (Lesen frei, Schreiben
    nur mit Laufwerkssperre 440Dh 4Ah, FAT32 über 7305h).
-5. Stufe 0 zuerst messen und danach entscheiden – einverstanden?
+5. ~~Stufe 0~~ – gemessen (Abschnitt „Stufe 0: Messung“); Entscheidung
+   über Stufe 1 beim Nutzer.
