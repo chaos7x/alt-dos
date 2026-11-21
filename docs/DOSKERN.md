@@ -405,6 +405,40 @@ die Programme direkt lesen.
    über das DEM; direkt vom Kernel geladen (`load_cm`, neben load_img); FreeCOM als Shell. Ziel: DIR,
    COPY, HALLO, MEM, Digger – und **DOOM 1.9** (erste Hälfte der Abnahme,
    s. „Abnahme“).
+   **Erledigt (21.11.2026):** `atdoscm/` -> `\DOS\MDOS\ATDOSCM.SYS`
+   (16 KB Datei, 25 KB im Speicher mit Stapeln und 40 SFT-Einträgen; Real
+   Mode, Modell tiny, eigene Umsetzung): `entry.asm` (Start an 0060:0000,
+   INT 20h–2Fh, Rahmen des Aufrufers als `struct frame`, zwei Kernstapel
+   nach InDOS, Strg+C über `ctrlc_stub` = INT 23h und Wiederholung wie
+   DOS), `kern.c` (Verteiler, MCB-Kette mit Strategien 0/1/2, LoL/SDA nach
+   MS-DOS 4.0, Datum/Zeit über INT 1Ah, 30h/33h/34h/38h/59h/5Dh/63h/65h/
+   66h), `file.c` (SFT/JFT/CDS, Geräte NUL/CON/AUX/PRN/CLOCK$/EMMXXXX0/
+   ATIN$/ATOUT$/ATERR$/LPT1/COM1, kanonische Pfade 8.3, 36h/39h–47h/4Eh/
+   4Fh/56h/57h/5Ah–5Ch/60h/67h/6Ch/29h, IOCTL 00/01/06/07/08/09/0A/0E),
+   `con.c` (CON über INT 16h/10h, Zeileneingabe mit F1/F3/Esc, 01h–0Ch),
+   `exec.c` (4B00/01/03 für .COM und .EXE mit Verschiebungen, PSP wie
+   PDB.INC, Umgebung mit Programmpfad, Ende 00h/4Ch/31h, INT 22h–24h
+   zurück, SETVER-Tabelle LoL+37h und 122Fh). Dateiarbeit nur über das
+   DEM: INT E0h 30h (ES:DI = `struct dem_req`, redir.c `redir_cm` kopiert
+   herein und zurück), INT E0h 31h meldet bzw. erfragt den eigenen Kern
+   (AX = 4D43h „CM“). Kernel: `load_cm` (kernel.c) lädt die Datei ohne
+   Abbild nach 0060:0000 (CS = DS = ES = SS = 60h), gewählt über
+   DOSBOX.INI `DOS_KERNEL=ATDOSCM.SYS` (wie DOS_IMAGE, auch je Programm);
+   Vorgabe bleibt FREEDOS.IMG. `v86_fgbox` zählt eine Box mit eigenem
+   Kern als „Box mit DOS“ (Strg+C geht an die Box). BOXSHELL erkennt den
+   Kern (E0h 31h) und lässt Redirector, CDS-Abgleich und „anderes DOS“
+   weg. Noch nicht: FCB-Dateiarbeit (AL = FFh), UMB/HMA (MEM: 601 KB frei
+   statt 627 mit FreeDOS), INT 25h/26h, INT 24h, CONFIG.SYS der Box,
+   DOSKEY – Stufen 3/4.
+   Geprüft: QEMU (16 MB) – FreeCOM interaktiv, DIR, COPY mit FC /B,
+   TYPE | FIND, HALLO (Befehlszeile, ERRORLEVEL 5), FreeDOS-MEM (dabei
+   behoben: 5803h BX = 1 muss ohne UMBs mit Fehler 1 scheitern, sonst
+   „UMB Kette beschädigt“), COPY CON mit Strg+C, EXIT, Digger spielen,
+   **DOOM 1.9 `-timedemo demo1` mit SB16: 2926 Takte** (FreeDOS-Box
+   gleiche Maschine 2853 – in QEMU gleichauf). 86Box 386DX/40 4 MB
+   (AHA-154x): HALLO, FreeCOM, MEM, Digger. Lehre: die Umgebung des
+   ersten Prozesses bekam Besitzer 0 (= frei), der Programmblock legte
+   sich darüber und BOXSHELL gab mit seiner Umgebung sich selbst frei.
 3. **Strukturen vollständig**: LoL, SFT, CDS, SDA, DPB-Attrappe, FCB-
    Funktionen, 59h, 5Dh/5Eh/5Fh, IOCTL, NLS (38h, 65h, 66h), INT 2Fh
    12xxh, SHARE-Codes. Maßstab: BIOSCMP gleich `docs/bioscmp/msdos622*.txt`.

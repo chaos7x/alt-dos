@@ -735,6 +735,16 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   MCB, PSP; Bezug MS-DOS 6.22 in `docs/dosstruc/`). `tools/dosbench.sh`
   lässt beides unter FreeDOS und MS-DOS direkt und in beiden Boxen laufen
   (dazu DOOM `-timedemo`); Ergebnis in `docs/DOSKERN.md`.
+- Eigener Box-Kern, Stufe 2 (21.11.2026, `docs/DOSKERN.md`):
+  `\DOS\MDOS\ATDOSCM.SYS` (Quelltext `atdoscm/`) ist ein eigener DOS-Kern
+  für die Box nach dem Vorbild NTVDM – Strukturen wie MS-DOS 4.0 (PSP,
+  MCB, SFT, CDS, SDA, LoL), die Dateiarbeit macht das DEM im Kernel über
+  eine Falle (INT E0h 30h). Der Kernel lädt ihn ohne Abbild direkt
+  (`load_cm`); einschalten in `\DOS\MDOS\DOSBOX.INI` mit
+  `DOS_KERNEL=ATDOSCM.SYS` unter `[*]` oder je Programm. Vorgabe bleibt
+  FreeDOS. Läuft: FreeCOM, DIR, COPY, TYPE, Pipes, MEM, HALLO, Digger,
+  DOOM 1.9 mit Sound Blaster; noch nicht: FCB-Dateiarbeit, UMB/HMA,
+  INT 25h/26h, CONFIG.SYS der Box.
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

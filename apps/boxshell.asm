@@ -30,8 +30,14 @@ org 100h
         int     21h
         call    go_high                 ; wenn moeglich in eine UMB
 
-        call    redir_install
-        mov     ah, 13h                 ; Startlaufwerk der AT-DOS
+        mov     ax, 3100h               ; eigener Kern ATDOSCM.SYS? Der
+        int     0E0h                    ; kennt die AT-DOS-Laufwerke selbst
+        cmp     ax, 4D43h               ; (DEM), kein Redirector noetig
+        jne     .fd
+        mov     byte [owncm], 1
+        jmp     .ri
+.fd:    call    redir_install
+.ri:    mov     ah, 13h                 ; Startlaufwerk der AT-DOS
         int     0E0h
         mov     dl, al                  ; Vorgabe-Laufwerk der Box: das
         push    ax                      ; Startlaufwerk (A: kann jetzt die
@@ -47,7 +53,10 @@ org 100h
         inc     si
         inc     si
         jmp     .dl
-.dd:    call    other_dos               ; MS-DOS u. a. statt FreeDOS?
+.dd:    cmp     byte [owncm], 0
+        jne     .dd2
+        call    other_dos               ; MS-DOS u. a. statt FreeDOS?
+.dd2:
         call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
         call    ab_merge                ; PATH/SET/PROMPT aus AUTOEXEC.BAT
@@ -65,7 +74,10 @@ org 100h
         add     ax, bx
         mov     [2Ch], ax
 
-next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
+next:   cmp     byte [owncm], 0
+        jne     .ns
+        call    cds_sync                ; (nach dem Parken: naechstes Programm)
+.ns:
         mov     byte [kauto], 0
         push    cs
         pop     es
@@ -91,8 +103,11 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         jmp     .c2
 .inter: mov     dx, t_hello             ; interaktiv: Meldung, dazu
         cmp     byte [notfd], 0
-        je      .ih
+        je      .ih0
         mov     dx, t_hello2
+.ih0:   cmp     byte [owncm], 0
+        je      .ih
+        mov     dx, t_hello3
 .ih:
         mov     ah, 9                   ; X:\AUTOEXEC.BAT, wenn es sie gibt
         int     21h                     ; (gehoert der DOS-Box)
@@ -1639,10 +1654,12 @@ t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_hello   db "DOS-Box von AT-DOS 6.3 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 t_hello2  db "DOS-Box von AT-DOS 6.3 - EXIT beendet die Box.", 13, 10, "$"
+t_hello3  db "DOS-Box von AT-DOS 6.3 (eigener Kern ATDOSCM, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
 nok       db 0                          ; 1: COMMAND.COM ohne /K
+owncm     db 0                          ; 1: eigener Kern ATDOSCM.SYS
 a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
 t_prompt  db "PROMPT=$P$G", 0
 t_path2   db "PATH="

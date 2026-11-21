@@ -22,4 +22,5 @@ void __far redir_sda(int t, unsigned seg, unsigned off, unsigned oem);
 unsigned __far redir_std(int t, unsigned h, unsigned seg, unsigned off, unsigned n);
 int __far mscdex(struct v86_frame *f, int t);   /* INT 2Fh 15xxh */
 int __far redir_dinfo(struct v86_frame *f, int t);  /* INT E0h 21h */
+void __far redir_cm(struct v86_frame *f, int t);    /* INT E0h 30h */
 #endif

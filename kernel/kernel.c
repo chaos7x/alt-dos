@@ -1297,7 +1297,8 @@ static int ini_noframe(void)
         }
         if (!sec)
             continue;
-        if (ini_key(l, "DOS_IMAGE")) {      /* anderes DOS (MKDOSIMG)    */
+        if (ini_key(l, "DOS_IMAGE") ||      /* anderes DOS (MKDOSIMG)    */
+            ini_key(l, "DOS_KERNEL")) {     /* bzw. eigener Kern (.SYS)  */
             if (sec == 2 || !iown) {
                 w = ini_val(l);
                 for (k = 0; k < 12 && w[k] > ' ' && w[k] != ';'; k++)
@@ -1361,6 +1362,53 @@ static int load_img(int t, int drive, const char *path)
     ts->esp0 -= 16;                     /* DPMI: Platz fuer den V86-Rahmen */
     ts->eip = 0x7C00;
     ts->esp = 0x7C00;
+    ts->eflags = 0x00020202UL;
+    return 0;
+}
+
+/* Eigener Box-Kern ATDOSCM.SYS (docs/DOSKERN.md Stufe 2): ohne Abbild und
+   Bootsektor direkt nach 0060:0000 der Box, Start dort mit CS = DS = ES =
+   SS = 0060h. Er startet BOXSHELL wie ein DOS seine SHELL=. */
+#define CM_SEG  0x60
+static int load_cm(int t, int drive, const char *path)
+{
+    struct tss386 *ts;
+    unsigned long cr3, o;
+    unsigned k;
+    int i;
+
+    if (ifs_open(drive, path, &box_img[t]))
+        return EXEC_ERR_NOTFOUND;
+    if (box_img[t].size < 512 || box_img[t].size > 0xFE00UL)
+        return EXEC_ERR_FORMAT;
+    for (i = 0; i < NTASK; i++)         /* Speicher knapp: geparkte Boxen */
+        if (park_owner[i] && mem_avail_kb() < box_kb * 4UL) {   /* zuerst */
+            park_owner[i] = 0;
+            task_end(i);
+        }
+    cr3 = v86_create(t, box_kb);
+    if (!cr3)
+        return EXEC_ERR_NOMEM;
+    ems_nf[t] = (unsigned char)ini_noframe();
+    box_prog[0] = 0;
+    for (o = 0; o < box_img[t].size; o += k) {
+        k = box_img[t].size - o > 512 ? 512 : (unsigned)(box_img[t].size - o);
+        if (ifs_read(&box_img[t], o, KDATA, (unsigned)box_sec, k) != (int)k) {
+            v86_destroy(t);
+            return EXEC_ERR_NOTFOUND;
+        }
+        v86_copy(t, ((unsigned long)CM_SEG << 4) + o, KDATA, (unsigned)box_sec, k);
+    }
+    v86_disk(t, 9, 2, 0);               /* kein Startabbild: INT 13h leer */
+    task[t].v86 = 1;
+    task[t].lfn = 0;
+    task[t].img_unit = task[t].code_unit = 0;
+    ts = &tss[t];
+    tss_init(t, cr3);
+    ts->esp0 -= 16;                     /* DPMI: Platz fuer den V86-Rahmen */
+    ts->cs = ts->ds = ts->es = ts->ss = CM_SEG;
+    ts->eip = 0;
+    ts->esp = 0xFFFE;
     ts->eflags = 0x00020202UL;
     return 0;
 }
@@ -1433,7 +1481,15 @@ static int load_mdos(int t)
     scopy(box_prog, keep, sizeof(box_prog));
     scopy(lm_p, "\\DOS\\MDOS\\", sizeof(lm_p));
     scopy(lm_p + 10, ini_img[0] ? ini_img : "FREEDOS.IMG", sizeof(lm_p) - 10);
-    err = load_img(t, sys_drive, lm_p);
+    {
+        unsigned n;
+        for (n = 0; lm_p[n]; n++)
+            ;
+        if (n > 4 && lm_p[n - 3] == 'S' && lm_p[n - 2] == 'Y' && lm_p[n - 1] == 'S')
+            err = load_cm(t, sys_drive, lm_p);      /* eigener Kern      */
+        else
+            err = load_img(t, sys_drive, lm_p);
+    }
     if (err && ini_img[0]) {
         scopy(box_prog, keep, sizeof(box_prog));
         scopy(lm_p + 10, "FREEDOS.IMG", sizeof(lm_p) - 10);

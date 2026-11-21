@@ -232,6 +232,7 @@ static void dp_hwint(struct v86_iret *r, int t);
 static void pvi_in(struct v86_iret *r, int t);
 static void vme_in(struct v86_iret *r, int t);
 static unsigned char b2f[NTASK];         /* BOXSHELL hat INT 2Fh eingehaengt */
+static unsigned char box_cm[NTASK];      /* eigener Kern ATDOSCM.SYS laeuft */
 static unsigned char vme_on[NTASK];     /* VIF gilt (letzter Ruecksprung mit VME) */
 static void vme_out(struct v86_iret *r, int t);
 static void pvi_out(struct v86_iret *r, int t);
@@ -619,6 +620,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     if (!kcr3 || pd_box[t] || n == 0 || n > 0xA0)
         return 0;
     box_ses[t] = -1;
+    box_cm[t] = 0;
     pd_box[t] = vp_alloc();
     pt_box[t] = vp_alloc();
     if (!pd_box[t] || !pt_box[t]) {
@@ -849,13 +851,13 @@ void __far v86_disk(int t, unsigned spt, unsigned heads, unsigned secs)
 int __far v86_fgbox(void)
 {
     int t, s;
-    for (t = 0; t < NTASK && (box_ses[t] < 0 || !img_secs[t]); t++)
+    for (t = 0; t < NTASK && (box_ses[t] < 0 || !(img_secs[t] || box_cm[t])); t++)
         ;
     if (t == NTASK)
         return 0;
     s = fg;
     for (t = 0; t < NTASK; t++)
-        if (box_ses[t] == s && img_secs[t])
+        if (box_ses[t] == s && (img_secs[t] || box_cm[t]))
             return 1;
     return 0;
 }
@@ -2681,6 +2683,14 @@ static void svc(int n, struct v86_frame *f, int t)
             svc_zf = mon2f(f);
         } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
             b2f[t] = 1;
+        else if (AH == 0x30)                    /* DEM-Auftrag (ATDOSCM)  */
+            redir_cm(f, t);
+        else if (AH == 0x31) {                  /* eigener Kern: AL 1 =   */
+            if (AL == 1)                        /* melden, 0 = fragen     */
+                box_cm[t] = 1;
+            if (box_cm[t])
+                AX = 0x4D43;                    /* 'CM'                   */
+        }
         else if (AH == 0x21)                    /* Laufwerk AL wie lokal  */
             svc_cf = redir_dinfo(f, t) != 0;    /* (IOCTL, BOXSHELL)      */
         else if (AH == 0x20) {                  /* MSCDEX (INT 2Fh 15xxh) */

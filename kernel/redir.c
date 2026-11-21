@@ -402,6 +402,29 @@ int __far redir(struct v86_frame *f, int t)
     return r;
 }
 
+/* Auftrag des eigenen Box-Kerns ATDOSCM.SYS (INT E0h 30h, ES:DI = struct
+   dem_req in der Box, docs/DOSKERN.md Stufe 2): herein, DEM, zurueck */
+void __far redir_cm(struct v86_frame *f, int t)
+{
+    unsigned char __far *p;
+    unsigned char *d = (unsigned char *)&rq;
+    unsigned k;
+    if (!sda_seg[t] || !dem_ready()) {
+        p = bp(t, (unsigned)f->r.es, DI);
+        w16(p + 2, E_DENIED);
+        return;
+    }
+    kf_box_ctl(BOX_LOCK, 1);
+    p = bp(t, (unsigned)f->r.es, DI);
+    for (k = 0; k < sizeof(rq); k++)
+        d[k] = p[k];
+    dem_call(t, &rq);
+    p = bp(t, (unsigned)f->r.es, DI);   /* (DEM kann das Fenster umlegen) */
+    for (k = 0; k < sizeof(rq) - sizeof(rq.path) - sizeof(rq.path2); k++)
+        p[k] = d[k];
+    kf_box_ctl(BOX_LOCK, 0);
+}
+
 /* Laufwerksinfo fuer die Laufwerks-IOCTL von BOXSHELL (INT E0h 21h, AL =
    Laufwerk, 32 Byte nach ES:DI, Aufbau bei DEM_DINFO in dem.c) -> 0,
    sonst kein solches Laufwerk */
