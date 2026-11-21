@@ -13,10 +13,6 @@
 /* ---- Daten -------------------------------------------------------------- */
 u8  sda[0x80];                  /* Swappable Data Area wie MS-DOS 4.0    */
 #define SDA_INDOS   1
-#define SDA_LOCUS   3
-#define SDA_EXTERR  4
-#define SDA_ACTION  6
-#define SDA_CLASS   7
 #define SDA_DTA     0x0C
 #define SDA_PSP     0x10
 #define SDA_RET     0x14
@@ -68,7 +64,11 @@ int drive_ok(unsigned d)
         return 0;
     m = d < 16 ? drives_lo : drives_hi;
     if (m & (1u << (d & 15)))
-        return 1;
+        goto cds;                       /* CDS auch hier anlegen: sonst
+                                           hatte A: ohne Medium beim Start
+                                           keinen Pfad, FCB-Suchen liefen
+                                           als "\..." auf dem aktuellen
+                                           Laufwerk (DIR A: zeigte C:) */
     if (d == 1 && (drives_lo & 1))      /* B: = Phantom von A: wie DOS   */
         goto cds;
     r.ax = 0x1200;                      /* neu nachsehen (NET USE, LOOP) */
@@ -572,6 +572,11 @@ struct frame __far *int21_c(struct frame __far *f)
             for (i = 0; AL(f) == 0x21 ? i < f->cx : B(f->ds, f->dx + i); i++)
                 if (B(f->ds, f->dx + i) >= 'a' && B(f->ds, f->dx + i) <= 'z')
                     B(f->ds, f->dx + i) -= 32;
+        } else if (AL(f) == 0x23) {     /* Ja/Nein: AX 1 ja, 0 nein,     */
+            u8 c = DL(f);               /* 2 weder noch (Land 049: J;    */
+            if (c >= 'a' && c <= 'z')   /* Y nimmt die Box auch an)      */
+                c -= 32;
+            f->ax = c == 'J' || c == 'Y' ? 1 : c == 'N' ? 0 : 2;
         } else
             set_err(f, E_FUNC);
         break;

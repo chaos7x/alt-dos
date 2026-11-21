@@ -55,6 +55,10 @@ static int crit(unsigned fn, unsigned e)
         ah |= 1;                        /* Schreiben                     */
     ah |= fn == DEM_READ || fn == DEM_WRITE ? 6 : 4;   /* Daten/Verzeichnis */
     di = e == 0x13 ? 0 : e == 0x15 ? 2 : 0x0C;
+    *(u16 *)(sda + SDA_EXTERR) = e;     /* wie MS-DOS vor INT 24h: der   */
+    sda[SDA_CLASS] = e == 0x15 ? 2 : 11; /* Handler von COMMAND.COM 4.0  */
+    sda[SDA_ACTION] = 5;                /* holt den Text ueber 59h (sonst */
+    sda[SDA_LOCUS] = 2;                 /* Endlosschleife in SYSGETMSG)   */
     sda[0] = 1;                         /* ErrorMode                     */
     sda[2] = (u8)q.drive;
     a = crit24((ah << 8) | (q.drive & 0xFF), di, kseg, (u16)&devs[DV_BLK]) & 0xFF;
@@ -827,11 +831,15 @@ void file_fn(struct frame __far *f)
     case 0x36:                          /* freier Platz                  */
         d = DL(f) ? DL(f) - 1 : cur_drv;
         if (!drive_ok(d)) {
+            set_err(f, E_DRIVE);        /* 59h meldet 0Fh wie MS-DOS     */
+            f->fl &= ~FL_CF;
             f->ax = 0xFFFF;
             return;
         }
         q.drive = d;
         if (dem(DEM_SPACE)) {
+            set_err(f, q.err ? q.err : E_DRIVE);
+            f->fl &= ~FL_CF;
             f->ax = 0xFFFF;
             return;
         }

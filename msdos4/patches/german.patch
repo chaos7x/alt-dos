@@ -1,0 +1,376 @@
+diff -ru a/v4.0/src/CMD/COMMAND/RDATA.ASM b/v4.0/src/CMD/COMMAND/RDATA.ASM
+--- a/v4.0/src/CMD/COMMAND/RDATA.ASM	2026-11-21 20:48:04.734412232 +0000
++++ b/v4.0/src/CMD/COMMAND/RDATA.ASM	2026-11-21 20:48:04.738902458 +0000
+@@ -420,10 +420,10 @@
+ ; These characters MUST remain in order
+ ;
+ abort_char	db	"A"
+-retry_char	db	"R"
++retry_char	db	"W"			; AT-DOS: deutsch (Wiederholen)
+ ignore_char	db	"I"
+ fail_char	db	"F"
+-yes_char	db	"Y"
++yes_char	db	"J"			; AT-DOS: deutsch (Ja)
+ no_char 	db	"N"
+ ;
+ ; End of characters that MUST remain in order
+diff -ru a/v4.0/src/MESSAGES/USA-MS.MSG b/v4.0/src/MESSAGES/USA-MS.MSG
+--- a/v4.0/src/MESSAGES/USA-MS.MSG	2026-11-21 20:48:04.732672507 +0000
++++ b/v4.0/src/MESSAGES/USA-MS.MSG	2026-11-21 20:48:04.737054379 +0000
+@@ -1,9 +1,9 @@
+ 0085
+ COMMON   0006 0038
+-0001 U 0000 "Incorrect DOS version",CR,LF
++0001 U 0000 "Falsche DOS-Version",CR,LF
+ 0002 U 0000 "%1 already installed",CR,LF
+ 0003 U 0000 "%1 bytes available on disk",CR,LF
+-0004 U 0000 "%1 bytes free",CR,LF
++0004 U 0000 "%1 Bytes frei",CR,LF
+ 0005 U 0000 "%1 bytes in bad sectors",CR,LF
+ 0006 U 0000 "%1 bytes total disk space",CR,LF
+ 0007 U 0000 "%1 bytes total memory",CR,LF
+@@ -16,68 +16,68 @@
+ 0014 U 0000 "Cannot %1 a SUBSTed or ASSIGNed drive",CR,LF
+ 0015 U 0000 "Cannot execute %1",CR,LF
+ 0016 U 0000 "Expanded Memory not available",CR,LF
+-0017 U 0000 "File allocation table bad, drive %1",CR,LF
+-0018 U 0000 "File cannot be copied onto itself",CR,LF
++0017 U 0000 "Dateizuordnungstabelle fehlerhaft, Laufwerk %1",CR,LF
++0018 U 0000 "Datei kann nicht auf sich selbst kopiert werden",CR,LF
+ 0019 U 0000 "Insert target disk in drive %1",CR,LF
+-0020 U 0000 "Insufficient disk space",CR,LF
++0020 U 0000 "Zu wenig Speicherplatz auf dem DatentrÑger",CR,LF
+ 0021 U 0000 "Invalid characters in volume label",CR,LF
+-0022 U 0000 "Invalid code page",CR,LF
+-0023 U 0000 "Invalid date",CR,LF
+-0024 U 0000 "Invalid time",CR,LF
+-0025 U 0000 "Invalid path",CR,LF
++0022 U 0000 "UngÅltige Codeseite",CR,LF
++0023 U 0000 "UngÅltiges Datum",CR,LF
++0024 U 0000 "UngÅltige Uhrzeit",CR,LF
++0025 U 0000 "UngÅltiger Pfad",CR,LF
+ 0026 U 0000 "No source drive specified",CR,LF
+ 0027 U 0000 "No target drive specified",CR,LF
+-0028 U 0000 "Press any key to continue . . .",CR,LF
++0028 U 0000 "Eine beliebige Taste drÅcken . . .",CR,LF
+ 0029 U 0000 "Source path required",CR,LF
+ 0030 U 0000 "System transferred",CR,LF
+ 0031 U 0000 "",
+-0032 U 0000 "Unable to create directory",CR,LF
+-0033 U 0000 "Volume in drive %1 has no label",CR,LF
+-0034 U 0000 "Volume in drive %1 is %2",CR,LF
++0032 U 0000 "Verzeichnis kann nicht erstellt werden",CR,LF
++0033 U 0000 "DatentrÑger in Laufwerk %1 hat keine Bezeichnung",CR,LF
++0034 U 0000 "DatentrÑger in Laufwerk %1 ist %2",CR,LF
+ 0035 U 0001 "Volume label (11 characters, ENTER for none)? "
+-0036 U 0000 "Volume Serial Number is %1-%2",CR,LF
++0036 U 0000 "Seriennummer des DatentrÑgers: %1-%2",CR,LF
+ 0037 U 0000 "Incorrect file type",CR,LF
+ 0038 U 0001 CR,LF
+ EXTEND   0685 0090
+-0001 U 0003 "Invalid function"
+-0002 U 0000 "File not found"
+-0003 U 0000 "Path not found"
+-0004 U 0000 "Too many open files"
+-0005 U 0000 "Access denied "
+-0006 U 0000 "Invalid handle"
+-0007 U 0000 "Memory control blocks destroyed"
+-0008 U 0000 "Insufficient memory"
+-0009 U 0000 "Invalid memory block address"
+-0010 U 0000 "Invalid Environment"
+-0011 U 0000 "Invalid format"
+-0012 U 0000 "Invalid function parameter"
+-0013 U 0000 "Invalid data"
++0001 U 0003 "UngÅltige Funktion"
++0002 U 0000 "Datei nicht gefunden"
++0003 U 0000 "Pfad nicht gefunden"
++0004 U 0000 "Zu viele offene Dateien"
++0005 U 0000 "Zugriff verweigert "
++0006 U 0000 "UngÅltige Kennung"
++0007 U 0000 "Speichersteuerblîcke zerstîrt"
++0008 U 0000 "Zu wenig Arbeitsspeicher"
++0009 U 0000 "UngÅltige Adresse eines Speicherblocks"
++0010 U 0000 "UngÅltige Umgebung"
++0011 U 0000 "UngÅltiges Format"
++0012 U 0000 "UngÅltiger Funktionsparameter"
++0013 U 0000 "UngÅltige Daten"
+ 0014 U 0000 "",
+-0015 U 0000 "Invalid drive specification"
+-0016 U 0000 "Attempt to remove current directory"
+-0017 U 0000 "Not same device"
+-0018 U 0000 "No more files"
+-0019 U 0000 "Write protect error"
+-0020 U 0000 "Invalid unit"
+-0021 U 0000 "Not ready"
+-0022 U 0000 "Invalid device request"
+-0023 U 0000 "Data error"
+-0024 U 0000 "Invalid device request parameters"
+-0025 U 0000 "Seek error"
+-0026 U 0000 "Invalid media type"
+-0027 U 0000 "Sector not found"
+-0028 U 0000 "Printer out of paper error"
+-0029 U 0000 "Write fault error"
+-0030 U 0000 "Read fault error"
+-0031 U 0000 "General failure"
+-0032 U 0000 "Sharing violation"
+-0033 U 0000 "Lock violation"
+-0034 U 0000 "Invalid disk change"
+-0035 U 0000 "FCB unavailable"
+-0036 U 0000 "System resource exhausted"
+-0037 U 0000 "Code page mismatch"
+-0038 U 0000 "Out of input"
+-0039 U 0000 "Insufficient disk space"
++0015 U 0000 "UngÅltige Laufwerksangabe"
++0016 U 0000 "Aktuelles Verzeichnis kann nicht entfernt werden"
++0017 U 0000 "Nicht dasselbe GerÑt"
++0018 U 0000 "Keine weiteren Dateien"
++0019 U 0000 "Schreibschutzfehler"
++0020 U 0000 "UngÅltige Einheit"
++0021 U 0000 "Nicht bereit"
++0022 U 0000 "UngÅltige GerÑteanforderung"
++0023 U 0000 "Datenfehler"
++0024 U 0000 "UngÅltige Parameter der GerÑteanforderung"
++0025 U 0000 "Suchfehler"
++0026 U 0000 "UngÅltiger DatentrÑgertyp"
++0027 U 0000 "Sektor nicht gefunden"
++0028 U 0000 "Kein Papier im Drucker"
++0029 U 0000 "Schreibfehler"
++0030 U 0000 "Lesefehler"
++0031 U 0000 "Allgemeiner Fehler"
++0032 U 0000 "Freigabeverletzung"
++0033 U 0000 "Sperrverletzung"
++0034 U 0000 "UnzulÑssiger DatentrÑgerwechsel"
++0035 U 0000 "FCB nicht verfÅgbar"
++0036 U 0000 "Systemmittel erschîpft"
++0037 U 0000 "Codeseiten passen nicht zusammen"
++0038 U 0000 "Eingabe zu Ende"
++0039 U 0000 "Zu wenig Speicherplatz auf dem DatentrÑger"
+ 0040 U 0000 "",
+ 0041 U 0000 "",
+ 0042 U 0000 "",
+@@ -103,7 +103,7 @@
+ 0062 U 0000 "NET813: Not enough space for print file"
+ 0063 U 0000 "NET814: Print file was cancelled"
+ 0064 U 0000 "NET815: Network name was deleted"
+-0065 U 0000 "Access denied"
++0065 U 0000 "Zugriff verweigert"
+ 0066 U 0000 "NET817: Network device type incorrect"
+ 0067 U 0000 "NET818: Network name not found"
+ 0068 U 0000 "NET819: Network name limit exceeded"
+@@ -118,123 +118,123 @@
+ 0077 U 0004 "",
+ 0078 U 0004 "",
+ 0079 U 0004 "",
+-0080 U 0004 "File exists"
++0080 U 0004 "Datei ist bereits vorhanden"
+ 0081 U 0004 "",
+-0082 U 0004 "Cannot make directory entry"
+-0083 U 0004 "Fail on INT 24"
+-0084 U 0004 "Too many redirections"
+-0085 U 0004 "Duplicate redirection"
+-0086 U 0004 "Invalid password"
+-0087 U 0004 "Invalid parameter"
+-0088 U 0004 "Network data fault"
+-0089 U 0004 "Function not supported by network"
+-0090 U 0002 "Required system component not installed"
++0082 U 0004 "Verzeichniseintrag kann nicht erstellt werden"
++0083 U 0004 "Fehler bei INT 24"
++0084 U 0004 "Zu viele Umleitungen"
++0085 U 0004 "Doppelte Umleitung"
++0086 U 0004 "UngÅltiges Kennwort"
++0087 U 0004 "UngÅltiger Parameter"
++0088 U 0004 "Datenfehler im Netzwerk"
++0089 U 0004 "Funktion vom Netzwerk nicht unterstÅtzt"
++0090 U 0002 "Erforderlicher Systemteil nicht installiert"
+ PARSE    1315 0011
+-0001 U 0000 "Too many parameters"
+-0002 U 0000 "Required parameter missing"
+-0003 U 0000 "Invalid switch"
+-0004 U 0000 "Invalid keyword"
++0001 U 0000 "Zu viele Parameter"
++0002 U 0000 "Erforderlicher Parameter fehlt"
++0003 U 0000 "UngÅltiger Schalter"
++0004 U 0000 "UngÅltiges SchlÅsselwort"
+ 0005 U 0000 "",
+-0006 U 0000 "Parameter value not in allowed range"
+-0007 U 0000 "Parameter value not allowed"
+-0008 U 0000 "Parameter value not allowed"
+-0009 U 0000 "Parameter format not correct"
+-0010 U 0000 "Invalid parameter"
+-0011 U 0000 "Invalid parameter combination"
++0006 U 0000 "Parameterwert au·erhalb des zulÑssigen Bereichs"
++0007 U 0000 "Parameterwert nicht zulÑssig"
++0008 U 0000 "Parameterwert nicht zulÑssig"
++0009 U 0000 "Parameterformat nicht korrekt"
++0010 U 0000 "UngÅltiger Parameter"
++0011 U 0000 "UngÅltige Parameterkombination"
+ COMMAND  14c8 0091
+ 0201 U 0000 "A"
+-0202 U 0000 "R"
++0202 U 0000 "W"
+ 0203 U 0000 "I"
+ 0204 U 0000 "F"
+-0205 U 0000 "Y"
++0205 U 0000 "J"
+ 0206 U 0000 "N"
+-0210 U 0000 "Abort"
+-0211 U 0000 ", Retry"
+-0212 U 0000 ", Ignore"
+-0213 U 0000 ", Fail"
++0210 U 0000 "(A)bbrechen"
++0211 U 0000 ", (W)iederholen"
++0212 U 0000 ", (I)gnorieren"
++0213 U 0000 ", (F)ehler"
+ 0214 U 0000 "?"
+-0215 U 0000 "reading",0
+-0216 U 0000 "writing",0
+-0217 U 0000 " %1 drive %2",CR,LF
+-0218 U 0000 " %1 device %2",CR,LF
+-0219 U 0000 "Please insert volume %1 serial %2-%3",CR,LF
+-0221 U 0000 "Invalid COMMAND.COM",CR,LF
+-0222 U 0000 "Insert disk with %1 in drive %2",CR,LF
+-0224 U 0000 CR,LF,"Terminate batch job (Y/N)?"
+-0225 U 0000 "Cannot execute %1",CR,LF
+-0226 U 0000 "Error in EXE file",CR,LF
+-0227 U 0000 "Program too big to fit in memory",CR,LF
+-0228 U 0000 CR,LF,"No free file handles"
+-0229 U 0000 "Bad Command or file name",CR,LF
+-0231 U 0000 CR,LF,"Memory allocation error"
+-0232 U 0000 CR,LF,"Cannot load COMMAND, system halted",CR,LF
+-0233 U 0000 CR,LF,"Cannot start COMMAND, exiting",CR,LF
+-0234 U 0000 CR,LF,"Top level process aborted, cannot continue",CR,LF
++0215 U 0000 "beim Lesen von",0
++0216 U 0000 "beim Schreiben auf",0
++0217 U 0000 " %1 Laufwerk %2",CR,LF
++0218 U 0000 " %1 GerÑt %2",CR,LF
++0219 U 0000 "Bitte DatentrÑger %1 mit Seriennummer %2-%3 einlegen",CR,LF
++0221 U 0000 "UngÅltiger COMMAND.COM",CR,LF
++0222 U 0000 "DatentrÑger mit %1 in Laufwerk %2 einlegen",CR,LF
++0224 U 0000 CR,LF,"Stapelverarbeitung abbrechen (J/N)?"
++0225 U 0000 "%1 kann nicht ausgefÅhrt werden",CR,LF
++0226 U 0000 "Fehler in der EXE-Datei",CR,LF
++0227 U 0000 "Programm zu gro· fÅr den Arbeitsspeicher",CR,LF
++0228 U 0000 CR,LF,"Keine freien Dateikennungen"
++0229 U 0000 "Befehl oder Dateiname nicht gefunden",CR,LF
++0231 U 0000 CR,LF,"Fehler bei der Speicherzuweisung"
++0232 U 0000 CR,LF,"COMMAND kann nicht geladen werden, System angehalten",CR,LF
++0233 U 0000 CR,LF,"COMMAND kann nicht gestartet werden, Ende",CR,LF
++0234 U 0000 CR,LF,"Oberster Proze· abgebrochen, Fortsetzung nicht mîglich",CR,LF
+ 0235 U 0000 CR,LF
+-0463 U 0000 "Out of environment space",CR,LF
++0463 U 0000 "Kein Platz mehr in der Umgebung",CR,LF
+ 0464 U 0001 CR,LF,CR,LF,"Microsoft(R) MS-DOS(R) Version 4.00",CR,LF
+ 	"             (C)Copyright Microsoft Corp 1981-1988",CR,LF
+-0465 U 0000 "Specified COMMAND search directory bad",CR,LF
+-0466 U 0000 "Specified COMMAND search directory bad access denied",CR,LF
+-1002 U 0000 "Duplicate file name or file not found",CR,LF
+-1003 U 0000 "Invalid path or file name",CR,LF
+-1007 U 0000 "Out of environment space",CR,LF
+-1008 U 0000 "File creation error",CR,LF
+-1009 U 0000 "Batch file missing",CR,LF
+-1010 U 0000 CR,LF,"Insert disk with batch file",CR,LF
+-1011 U 0000 "Bad command or file name",CR,LF
+-1016 U 0000 "Content of destination lost before copy",CR,LF
+-1017 U 0000 "Invalid filename or file not found",CR,LF
+-1018 U 0000 "%1 File(s) copied",CR,LF
+-1019 U 0000 "%1 File(s) "
+-1022 U 0000 "Code page %1 not prepared for system",CR,LF
+-1023 U 0000  "Code page %1 not prepared for all devices",CR,LF
+-1024 U 0000 "Active code page: %1",CR,LF
+-1025 U 0000 "NLSFUNC not installed",CR,LF
+-1027 U 0000 "Current drive is no longer valid"
+-1029 U 0000 "Label not found",CR,LF
+-1030 U 0000 "Syntax error",CR,LF
+-1032 U 0000 "Current date is %1 %2",CR,LF
+-1033 U 0000 "SunMonTueWedThuFriSat"
+-1034 U 0000 "Enter new date (%1): "
+-1036 U 0000 "Current time is %1",CR,LF
+-1037 U 0000 "Enter new time: "
+-1038 U 0000 ",    Delete (Y/N)?"
+-1039 U 0000 "All files in directory will be deleted!",CR,LF
+-	"Are you sure (Y/N)?"
++0465 U 0000 "Angegebenes Suchverzeichnis fÅr COMMAND ungÅltig",CR,LF
++0466 U 0000 "Angegebenes Suchverzeichnis fÅr COMMAND ungÅltig, Zugriff verweigert",CR,LF
++1002 U 0000 "Doppelter Dateiname oder Datei nicht gefunden",CR,LF
++1003 U 0000 "UngÅltiger Pfad oder Dateiname",CR,LF
++1007 U 0000 "Kein Platz mehr in der Umgebung",CR,LF
++1008 U 0000 "Fehler beim Erstellen der Datei",CR,LF
++1009 U 0000 "Stapeldatei fehlt",CR,LF
++1010 U 0000 CR,LF,"DatentrÑger mit der Stapeldatei einlegen",CR,LF
++1011 U 0000 "Befehl oder Dateiname nicht gefunden",CR,LF
++1016 U 0000 "Inhalt des Ziels vor dem Kopieren verloren",CR,LF
++1017 U 0000 "UngÅltiger Dateiname oder Datei nicht gefunden",CR,LF
++1018 U 0000 "%1 Datei(en) kopiert",CR,LF
++1019 U 0000 "%1 Datei(en) "
++1022 U 0000 "Codeseite %1 nicht fÅr das System vorbereitet",CR,LF
++1023 U 0000 "Codeseite %1 nicht fÅr alle GerÑte vorbereitet",CR,LF
++1024 U 0000 "Aktive Codeseite: %1",CR,LF
++1025 U 0000 "NLSFUNC nicht installiert",CR,LF
++1027 U 0000 "Aktuelles Laufwerk ist nicht mehr gÅltig"
++1029 U 0000 "Sprungmarke nicht gefunden",CR,LF
++1030 U 0000 "Syntaxfehler",CR,LF
++1032 U 0000 "Aktuelles Datum: %1 %2",CR,LF
++1033 U 0000 "So.Mo.Di.Mi.Do.Fr.Sa."
++1034 U 0000 "Neues Datum eingeben (%1): "
++1036 U 0000 "Aktuelle Uhrzeit: %1",CR,LF
++1037 U 0000 "Neue Uhrzeit eingeben: "
++1038 U 0000 ",    Lîschen (J/N)?"
++1039 U 0000 "Alle Dateien im Verzeichnis werden gelîscht!",CR,LF
++	"Sind Sie sicher (J/N)?"
+ 1040 U 0000 "MS-DOS Version %1.%2"
+-1044 U 0000 "Invalid directory",CR,LF
+-1046 U 0000 "Invalid path, not directory,",CR,LF,"or directory not empty",CR,LF
+-1047 U 0000 "Must specify ON or OFF",CR,LF
+-1048 U 0000 "Directory of  %1",CR,LF
+-1049 U 0000 "No Path",CR,LF
+-1050 U 0000 "Invalid drive in search path",CR,LF
+-1051 U 0000 "Invalid device",CR,LF
+-1052 U 0000 "FOR cannot be nested",CR,LF
+-1053 U 0000 "Intermediate file error during pipe",CR,LF
+-1054 U 0000 "Cannot do binary reads from a device",CR,LF
+-1055 U 0000 "BREAK is %1",CR,LF
+-1056 U 0000 "VERIFY is %1",CR,LF
+-1057 U 0000 "ECHO is %1",CR,LF
+-1059 U 0000 "off",0
+-1060 U 0000 "on",0
+-1061 U 0000 "Error writing to device",CR,LF
++1044 U 0000 "UngÅltiges Verzeichnis",CR,LF
++1046 U 0000 "UngÅltiger Pfad, kein Verzeichnis",CR,LF,"oder Verzeichnis nicht leer",CR,LF
++1047 U 0000 "ON oder OFF angeben",CR,LF
++1048 U 0000 "Verzeichnis von  %1",CR,LF
++1049 U 0000 "Kein Pfad",CR,LF
++1050 U 0000 "UngÅltiges Laufwerk im Suchpfad",CR,LF
++1051 U 0000 "UngÅltiges GerÑt",CR,LF
++1052 U 0000 "FOR kann nicht geschachtelt werden",CR,LF
++1053 U 0000 "Fehler mit der Zwischendatei der Pipe",CR,LF
++1054 U 0000 "Von einem GerÑt kann nicht binÑr gelesen werden",CR,LF
++1055 U 0000 "BREAK ist %1",CR,LF
++1056 U 0000 "VERIFY ist %1",CR,LF
++1057 U 0000 "ECHO ist %1",CR,LF
++1059 U 0000 "aus",0
++1060 U 0000 "ein",0
++1061 U 0000 "Fehler beim Schreiben auf das GerÑt",CR,LF
+ 1063 U 0000 "%1"
+ 1064 U 0000 "%1"
+ 1065 U 0000 "%1"
+ 1066 U 0000 "%1"
+ 1067 U 0000 9
+-1068 U 0000 " <DIR>    "
++1068 U 0000 " <VERZ>   "
+ 1069 U 0000 8," ",8
+ 1070 U 0000 CR,LF
+ 1071 U 0000 "%1"
+-1072 U 0000 "mm-dd-yy"
+-1073 U 0000 "dd-mm-yy"
+-1074 U 0000 "yy-mm-dd"
++1072 U 0000 "MM-TT-JJ"
++1073 U 0000 "TT.MM.JJ"
++1074 U 0000 "JJ-MM-TT"
+ 1075 U 0000 "%1 %2"
+ 1076 U 0000 "%1"
+ 1077 U 0000 " %1  %2"
+-1078 U 0000 "Directory already exists",CR,LF
++1078 U 0000 "Verzeichnis ist bereits vorhanden",CR,LF
+ ATTRIB   2290 0016
+ 0004 U 0000 "Invalid number of parameters",CR,LF
+ 0005 U 0000 "Invalid path or file not found",CR,LF

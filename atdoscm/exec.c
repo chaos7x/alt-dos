@@ -118,6 +118,8 @@ static void mcb_name(u16 seg, const char *path)
         B(seg - 1, 8 + i) = 0;
 }
 
+static u16 root_psp;                    /* erster Prozess (BOXSHELL)     */
+
 /* PSP anlegen */
 static void psp_make(u16 psp, u16 top, u16 parent, u16 env, u16 rip, u16 rcs)
 {
@@ -132,6 +134,8 @@ static void psp_make(u16 psp, u16 top, u16 parent, u16 env, u16 rip, u16 rcs)
     D(psp, 0x0E) = D(0, 0x23 * 4);
     D(psp, 0x12) = D(0, 0x24 * 4);
     W(psp, 0x16) = parent ? parent : psp;
+    if (!parent && !root_psp)
+        root_psp = psp;
     W(psp, 0x2C) = env;
     D(psp, 0x38) = 0xFFFFFFFFUL;
     W(psp, 0x50) = 0x21CD;
@@ -366,7 +370,7 @@ struct frame __far *term(struct frame __far *f, unsigned type, unsigned rc, u16 
     struct frame __far *r;
     struct rregs rr;
     ret_code = (u16)((type << 8) | (rc & 0xFF));
-    if (par == psp || !par) {           /* erster Prozess: Box zu Ende  */
+    if (psp == root_psp || !par) {      /* erster Prozess: Box zu Ende  */
         rr.ax = 0x0100 | (rc & 0xFF);
         bint(0xE0, &rr);
         return f;
@@ -374,6 +378,12 @@ struct frame __far *term(struct frame __far *f, unsigned type, unsigned rc, u16 
     D(0, 0x22 * 4) = D(psp, 0x0A);
     D(0, 0x23 * 4) = D(psp, 0x0E);
     D(0, 0x24 * 4) = D(psp, 0x12);
+    if (par == psp) {                   /* sein eigener Elternprozess   */
+        f->ip = W(psp, 0x0A);           /* (COMMAND.COM waehrend der    */
+        f->cs = W(psp, 0x0C);           /* Arbeit): wie MS-DOS nichts   */
+        f->fl &= ~FL_CF;                /* freigeben, weiter an INT 22h */
+        return f;                       /* - "Abbrechen" bei DIR A:     */
+    }
     if (type == 3) {
         if (keep < 6)
             keep = 6;

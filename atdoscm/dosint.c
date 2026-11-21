@@ -245,6 +245,19 @@ struct frame __far *int2f12_c(struct frame __far *f)
     case 0x29:
         sub21(f, 0x3F00);
         break;
+    case 0x2E: {                        /* Meldungstabellen (DOS 4.0):   */
+        static u32 msgtab[5];           /* DL gerade holen, ungerade     */
+        unsigned k = DL(f) >> 1;        /* setzen: 0 erweitert, 1 Parse, */
+        if (k >= 5)                     /* 2 kritisch, 3 Dateisystem,    */
+            break;                      /* 4 READ_DISK_PROC - COMMAND.COM */
+        if (DL(f) & 1)                  /* 4.0 meldet sie an und holt    */
+            msgtab[k] = ((u32)f->es << 16) | f->di;  /* sie im INT-24h- */
+        else {                          /* Handler wieder (sonst kreiste */
+            f->es = (u16)(msgtab[k] >> 16);          /* SYSGETMSG)      */
+            f->di = (u16)msgtab[k];
+        }
+        break;
+    }
     case 0x2C:                          /* Geraetekette hinter NUL       */
         f->bx = (u16)(devs[DV_NUL].next >> 16);
         f->ax = (u16)devs[DV_NUL].next;

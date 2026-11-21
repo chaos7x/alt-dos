@@ -125,6 +125,12 @@ void mem_free_owner(u16 psp);
 int  mem_free(u16 seg);
 int  mem_resize(u16 seg, u16 paras, u16 *maxp);
 
+/* erweiterter Fehler in der SDA (59h) */
+#define SDA_LOCUS   3
+#define SDA_EXTERR  4
+#define SDA_ACTION  6
+#define SDA_CLASS   7
+
 /* file.c */
 extern struct dem_req q;
 unsigned dem(unsigned fn);

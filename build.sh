@@ -363,7 +363,7 @@ done
 mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
-BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 # nur auf der Platte (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT)
 HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;

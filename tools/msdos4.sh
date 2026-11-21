@@ -12,7 +12,8 @@ mkdir -p "$D"
 [ -d "$D/ms-dos" ] || git clone --depth 1 https://github.com/microsoft/ms-dos "$D/ms-dos"
 rm -rf "$D/b"; mkdir -p "$D/b"
 cp -r "$D/ms-dos/v4.0/src" "$D/b/src"
-(cd "$D/b" && patch -p2 < "$R/msdos4/patches/version.patch")
+(cd "$D/b" && patch -p2 < "$R/msdos4/patches/version.patch" &&
+    patch -p2 < "$R/msdos4/patches/german.patch")
 cat > "$D/b/B.BAT" <<'B'
 set COUNTRY=usa-ms
 set LIB=d:\src\tools\lib

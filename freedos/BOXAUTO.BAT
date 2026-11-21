@@ -1,0 +1,2 @@
+@CALL %1
+@PATH %PATH%;%2

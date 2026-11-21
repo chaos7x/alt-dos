@@ -566,6 +566,27 @@ die Programme direkt lesen.
    Geprüft in QEMU: DIR, DIR /W, TYPE, COPY, ECHO >, MEM, DOOM 1.9 Timedemo
    unter COMMAND 4.0 (transienter Teil danach heil), EXIT; BIOSCMP
    unverändert 39.
+   **Deutsch und Fehlerwege (21.11.2026):** COMMAND.COM 4.0 mit eigener
+   deutscher Übersetzung (`msdos4/patches/german.patch`: Meldungsdatei
+   `USA-MS.MSG` – COMMON/EXTEND/PARSE/COMMAND – und die Antwortbuchstaben
+   A/W/I/F, J/N in `RDATA.ASM`; „Aktuelles Datum: Sa. 21.11.2026“,
+   „<VERZ>“, „1 Datei(en) kopiert“). Im Kern dafür: 6523h (Ja/Nein, J
+   und Y gelten als Ja – DEL /P); INT 2Fh 122Eh (COMMAND meldet dort seine
+   Meldungstabellen an und holt sie im INT-24h-Handler wieder – ohne das
+   kreiste `SYSGETMSG`); der erweiterte Fehler steht schon vor INT 24h in
+   der SDA, 36h setzt ihn bei ungültigem Laufwerk; ein Prozess, der sein
+   eigener Elternprozess ist (COMMAND.COM während der Arbeit), wird bei
+   „Abbrechen“ nicht beendet, sondern läuft wie bei MS-DOS an seiner
+   INT-22h-Adresse weiter (vorher endete die ganze Box). Dabei gefunden:
+   `drive_ok` legte die CDS eines beim Start bekannten Laufwerks nie an –
+   A: ohne Diskette hatte keinen Pfad, FCB-Suchen liefen als `\…` auf C:
+   (DIR A: zeigte den Inhalt von C:). Geprüft in QEMU: DIR A: ohne
+   Diskette mit (A)bbrechen/(F)ehler in COMMAND 4.0 und FreeCOM, DEL /P
+   mit J, DATE, COPY, DOOM als erstes Programm; BIOSCMP unverändert 39.
+   PATH aus der AUTOEXEC.BAT (vom Nutzer gemeldet: COMMAND/COMMAND4 in der
+   Box nicht gefunden): ersetzt ihr PATH den der Box ohne `\DOS\MDOS`,
+   hängt BOXSHELL `X:\DOS\MDOS` an (direkt gestartete Programme:
+   `ab_mdos`; interaktiv mit /K über `\DOS\MDOS\BOXAUTO.BAT`).
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der
