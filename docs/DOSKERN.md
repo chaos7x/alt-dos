@@ -155,11 +155,15 @@ Fremdkern als Vorgabe. Heute bleibt aber vollständig erhalten.
 - Datei `ATDOSCM.SYS` (Entscheidung des Nutzers, 21.11.2026; CM =
   Compatibility Mode – der Name zeigt, dass es nicht der Hauptkernel
   `ATDOS.SYS` ist; keine Microsoft-/IBM-Produktnamen, `DOSKRNL` ist ein
-  Dateiname von OS/2). Sie liegt im Startabbild der Box
-  `\DOS\MDOS\ATDOSCM.IMG`. Erste Stufen:
-  geladen wie heute über das Abbild (`ATDOSCM.IMG`, eigener Bootsektor wie
-  `boot/mdosboot.asm`), damit der Lader unverändert bleibt; später direkt
-  vom Kernel geladen (wie `load_com`, ohne Bootsektor und INT 13h).
+  Dateiname von OS/2). Liegt als einfache Datei in `\DOS\MDOS` und
+  wird vom Kernel direkt in die Box geladen, wie NTVDM `NTDOS.SYS` lädt
+  (Weg wie `load_com`: Datei lesen, an feste Stelle legen, anspringen –
+  ohne Bootsektor, INT 13h und Abbild). Entscheidung des Nutzers,
+  21.11.2026: „Die Images sind ja eher gedacht, um FreeDOS, MS-DOS usw.
+  zu laden.“ Ein technischer Grund für ein Abbild besteht nicht – es
+  hätte nur den heutigen Lader wiederverwendet; die Einstellungen der Box
+  (heute Box-CONFIG.SYS im Abbild) kommen aus CONFIG.SYS/DOSBOX.INI des
+  Wirts, Shells und Werkzeuge liegen ohnehin in `\DOS\MDOS`.
 - Bleibt in der Box: INT 21h-Verteiler, Speicher (48h/49h/4Ah/58h, UMB-
   Kette 5803h), PSP/EXEC/4Ch/31h (MZ-Relocation im Box-Speicher), FCB-
   Logik (29h, Umsetzung FCB <-> Handle wie MS-DOS intern), Strg+C,
@@ -349,7 +353,7 @@ die Programme direkt lesen.
 2. **Kern minimal**: eigener Rumpf nach FreeDOS-Vorbild ohne Dateisystem
    (Dispatcher, Speicher, PSP/EXEC), Strukturen auf das Layout von MS-DOS 4.0 geprüft,
    Handle-Funktionen 3Ch–46h, 4Eh/4Fh, 47h, 39h–3Bh, 41h, 43h, 56h, 57h
-   über das DEM; geladen über `ATDOSCM.IMG`; FreeCOM als Shell. Ziel: DIR,
+   über das DEM; direkt vom Kernel geladen (`load_cm`, neben load_img); FreeCOM als Shell. Ziel: DIR,
    COPY, HALLO, MEM, Digger.
 3. **Strukturen vollständig**: LoL, SFT, CDS, SDA, DPB-Attrappe, FCB-
    Funktionen, 59h, 5Dh/5Eh/5Fh, IOCTL, NLS (38h, 65h, 66h), INT 2Fh
@@ -361,8 +365,8 @@ die Programme direkt lesen.
    Word 5.5, Lotus Works, NC, MSD, CheckIt, 7za/FreeDOS-Werkzeuge;
    Shells FreeCOM, COMMAND.COM 4.0 (eigener Bau) und 6.22 (Kopie des
    Nutzers) mit LH und DOSKEY.
-5. **Vorgabe wechseln** (Entscheidung des Nutzers), Kern direkt laden
-   statt über ein Abbild, BOXSHELL verschlanken; COMMAND.COM aus MS-DOS
+5. **Vorgabe wechseln** (Entscheidung des Nutzers), BOXSHELL
+   verschlanken; COMMAND.COM aus MS-DOS
    4.0 (gebaut, ohne Versionsprüfung) neben FreeCOM mitliefern.
 6. **7.0**: DEM als 32-Bit-C neu übersetzt (gleiche `struct dem_req`),
    DOS-Kern in der Box unverändert – wie bei NT x86/RISC.
@@ -434,8 +438,8 @@ Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
    MS-DOS-4.0-Strukturen und -Verhalten); FreeDOS als Vorlage, nicht
    1:1. Passt die Aufteilung in der
    Tabelle „Was aus welcher Quelle kommt“?
-2. ~~Name der Datei~~ – entschieden: `ATDOSCM.SYS` im Abbild
-   `ATDOSCM.IMG`. Offen bleibt der INI-Schlüssel.
+2. ~~Name der Datei~~ – entschieden: `ATDOSCM.SYS` in `\DOS\MDOS`,
+   direkt geladen (kein Abbild). Offen bleibt der INI-Schlüssel.
 3. ~~Gemeldete Version~~ – entschieden: 6.22; die 4.0-Shell im eigenen
    Bau ohne Versionsprüfung.
 4. INT 25h/26h auf AT-DOS-Laufwerke: erlauben (mit Sperre wie CHKDSK) oder
