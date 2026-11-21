@@ -330,12 +330,28 @@ die Programme direkt lesen.
 
 ### Abbilder bleiben (Vorgabe des Nutzers)
 
-- Drei Arten Box, je Programm wählbar in DOSBOX.INI (Schlüssel zum
-  Abstimmen, z. B. `DOS_KERNEL=ATDOS|FREEDOS|IMAGE` neben dem heutigen
-  `DOS_IMAGE=`):
+- Drei Arten Box, je Programm wählbar in DOSBOX.INI:
   1. **eigener Kern** (`ATDOSCM.SYS`),
   2. **FreeDOS-Abbild** (`FREEDOS.IMG`, heutige Vorgabe),
-  3. **MKDOSIMG-Abbild** (MS-DOS/PC DOS des Nutzers, `DOS_IMAGE=`).
+  3. **MKDOSIMG-Abbild** (MS-DOS/PC DOS des Nutzers, z. B. `MSDOS622.IMG`).
+- Schlüssel (Entscheidung des Nutzers, 21.11.2026): **ein Schlüssel,
+  Wert = Datei in `\DOS\MDOS`** – `DOS_KERNEL=ATDOSCM.SYS`,
+  `DOS_KERNEL=FREEDOS.IMG`, `DOS_KERNEL=MSDOS622.IMG`. Die Endung
+  entscheidet, wie geladen wird: `.SYS` direkt (`load_cm`), `.IMG` als
+  Abbild über Bootsektor/INT 13h (`load_img`). Vorbild OS/2
+  `DOS_STARTUP_DRIVE` (ein Schlüssel für eingebauten Kern oder Abbild),
+  aber ausdrücklich statt „leer = eingebaut“.
+  - `DOS_IMAGE=` bleibt als gleichwertiger alter Name gültig (vorhandene
+    INI-Dateien, Hinweis von MKDOSIMG); stehen beide im selben
+    Abschnitt, gilt der zuletzt gelesene – wie bei jedem Schlüssel.
+  - Gelesen wie heute: erst `[*]`, dann `[NAME.EXT]`, `[COMMAND.COM]`
+    für die interaktive Box. Die Vorgabe des Systems ist `[*]` – kein
+    Eintrag in der CONFIG.SYS.
+  - Ohne Angabe: `FREEDOS.IMG` bis Stufe 5, danach `ATDOSCM.SYS`
+    (eine Zeile im Kernel). Fehlt die gewählte Datei, Rückfall auf
+    `FREEDOS.IMG` wie heute (`load_mdos`).
+  - Geparkte Box nur bei gleichem Wert wiederverwenden (`box_same`
+    vergleicht den Dateinamen wie heute).
 - Alle drei teilen Monitor, Module (VDDs), BIOS-Nachbau, XMS/EMS/DPMI,
   BOXSHELL-Dienste und das DEM; 2 und 3 nur über den Redirector-Eingang.
   `load_img`, `load_mdos`, `box_same`, MKDOSIMG, `doscmp.sh` bleiben.
@@ -500,7 +516,8 @@ braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
    Nutzer bestätigt (21.11.2026), Undokumentiertes siehe eigener
    Abschnitt.
 2. ~~Name der Datei~~ – entschieden: `ATDOSCM.SYS` in `\DOS\MDOS`,
-   direkt geladen (kein Abbild). Offen bleibt der INI-Schlüssel.
+   direkt geladen (kein Abbild); INI-Schlüssel `DOS_KERNEL=Datei`
+   (`.SYS` direkt, `.IMG` Abbild), `DOS_IMAGE=` als alter Name.
 3. ~~Gemeldete Version~~ – entschieden: 6.22; die 4.0-Shell im eigenen
    Bau ohne Versionsprüfung.
 4. ~~INT 25h/26h~~ – entschieden: wie MS-DOS 7 (Lesen frei, Schreiben
