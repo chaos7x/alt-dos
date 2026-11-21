@@ -827,3 +827,7 @@ keine, Kerberos meldet jede Freigabe ohne Kennwort an.
   P: gemerkt, Q: mit /PERSISTENT:NO nicht, R: nach /DELETE weg, H: nicht;
   zweiter Start: `NET USE` zeigt P: „Getrennt“, LOGON verbindet H: und P:,
   DIR P: richtig, P: /DELETE leert die Liste. Reine Programmlogik.
+- Vom Nutzer in 86Box bestätigt (21.11.2026, P3B-F, Samba-AD, test-6.3):
+  `NET USE O: \\fs\av` gemerkt, nach Neustart verbindet `LOGON` erst N:
+  (Heimlaufwerk aus dem AD), dann O: aus der Liste – Anmeldung beim DC
+  über IPv6 (fd00::4).
