@@ -2329,7 +2329,7 @@ static int __far fat_move(int d, const char *from, const char *to)
 /* freie Cluster: einmal zaehlen, danach fuehrt fat_set() den Zaehler mit.
    FAT16 sektorweise direkt im Cache - 65536 Einzelaufrufe kosten auf dem
    286 spuerbar Zeit. */
-static int __far fat_space(int d, unsigned long *bytes)
+static int __far fat_space(int d, unsigned long *r)
 {
     struct volume *v = &vol[d];
     unsigned c, end = (unsigned)v->clusters + 2, k, last;
@@ -2372,7 +2372,12 @@ static int __far fat_space(int d, unsigned long *bytes)
         v->nfree = n;
         v->nfree_ok = 1;
     }
-    *bytes = shl((unsigned long)v->nfree, v->spc_shift + 9);
+    {                                   /* Bytes bei 4 GB gekappt, KB   */
+        unsigned sh = v->spc_shift + 9;  /* (vorher lief es ueber)        */
+        unsigned long nf = v->nfree;
+        r[0] = nf > (0xFFFFFFFFUL >> sh) ? 0xFFFFFFFFUL : shl(nf, sh);
+        r[1] = sh >= 10 ? shl(nf, sh - 10) : (nf >> 1);
+    }
     return 0;
 }
 
@@ -2795,16 +2800,15 @@ int __far ifs_label(int d, char *lbl, unsigned long *serial, const char *newlbl)
     return vol[d].drv->label(d, lbl, serial, newlbl);
 }
 
-int __far ifs_space(int drive, unsigned long *free_bytes)
+int __far ifs_space(int drive, unsigned long *r)
 {
     VLOCK(drive);
     if (!VOL_OK(drive))
         return IFS_ERR;
-    if (!vol[drive].drv->space) {
-        *free_bytes = 0;                /* nur lesbar (CD): nichts frei */
-        return 0;
-    }
-    return vol[drive].drv->space(drive, free_bytes);
+    r[0] = r[1] = 0;
+    if (!vol[drive].drv->space)
+        return 0;                       /* nur lesbar (CD): nichts frei */
+    return vol[drive].drv->space(drive, r);
 }
 
 /* Loop-Laufwerke (loop.c): Plattenbereiche einer offenen Datei als Folge

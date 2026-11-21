@@ -1241,13 +1241,15 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         rc = (r.ax & 0xFF) == a1 ? 0 : FAPI_ERROR;
         break;
     case FAPI_FREESPACE:
-        if (!disk_free(a1)) {
+        if (!disk_free(a1 & 0xFF)) {
             rc = crit_hit ? err() : FAPI_ERROR;
             break;
         }
         {
-            unsigned long b = times(ulmul(r.ax, r.cx), r.bx);
-            to_app(a2, &b, 4);
+            unsigned long b[2];
+            b[0] = times(ulmul(r.ax, r.cx), r.bx);
+            b[1] = b[0] >> 10;          /* DOS: hoechstens 2 GB          */
+            to_app(a2, b, (a1 & FREESPACE_KB) ? 8 : 4);
         }
         rc = 0;
         break;

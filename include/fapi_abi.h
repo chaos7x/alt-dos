@@ -273,7 +273,8 @@ struct fapi_drvinfo {
 #define UFSOP_MOVE          11      /* path -> path2 (Ziel; Originalname
                                        des letzten Teils in path2 hinter
                                        der Null)                         */
-#define UFSOP_SPACE         12      /* -> pos = freie Bytes (gekappt)    */
+#define UFSOP_SPACE         12      /* -> pos = freie Bytes (gekappt),
+                                       size = freie KB (0: aus pos)     */
 #define UFSOP_SETINFO       13      /* path, mask, attr, date, time      */
 #define UFSOP_LABEL         14      /* -> Daten = Bezeichnung (11)       */
 #define UFSOP_NAMEPATH      15      /* path, shortn -> Daten = Pfad      */
@@ -780,7 +781,10 @@ struct fapi_fsinfo {
 #define STDERR              2
 #define FAPI_ENVSIZE        1024    /* Umgebung je Programm (wie COMMAND /E:1024) */
 #define FAPI_SHUTDOWN       0x1F    /* BX = 0 anhalten (ausschalten), 1 Neustart; kehrt nicht zurueck */
-#define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
+#define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes
+                                       (bei 4 GB gekappt); BX | FREESPACE_KB:
+                                       8 Bytes = Bytes, dann KB (bis 4 TB) */
+#define FREESPACE_KB        0x8000
 
 /* Fehler: alle Werte ab FAPI_ERR_FIRST. FAPI_ERROR heisst "nicht gefunden
    oder unzulaessig", die uebrigen sagen genauer, was schiefging. */

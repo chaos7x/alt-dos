@@ -270,16 +270,16 @@ static int __far u_move(int d, const char *from, const char *to)
     return r;
 }
 
-static int __far u_space(int d, unsigned long *fb)
+static int __far u_space(int d, unsigned long *r)
 {
     int i = slot_of(d);
-    *fb = 0;
     if (i < 0)
         return IFS_ERR;
     rq_new(i, UFSOP_SPACE, 0);
     if (rq_go(i))
         return IFS_ERR;
-    *fb = RQ(i)->pos;
+    r[0] = RQ(i)->pos;
+    r[1] = RQ(i)->size ? RQ(i)->size : r[0] >> 10;  /* alter Dienst: aus Bytes */
     return 0;
 }
 

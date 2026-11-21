@@ -1584,12 +1584,26 @@ static void op(void)
                 u8 *b = rx + get16(RB + 2);
                 unsigned long au = get32(b + 8), sc = get32(b + 16),
                               bs = get32(b + 20);
-                unsigned long fb = au;
+                unsigned long fb = au, hi = get32(b + 12), lo = au;
+                int e = -10;            /* KB = frei * sc * bs / 1024     */
                 while (sc > 1 && fb < 0x40000000UL) { fb <<= 1; sc >>= 1; }
                 while (bs > 1 && fb < 0x40000000UL) { fb <<= 1; bs >>= 1; }
-                if (get32(b + 12) || sc > 1 || bs > 1)
+                if (hi || sc > 1 || bs > 1)
                     fb = 0x7FFFFFFFUL;
                 rq.pos = fb;
+                for (sc = get32(b + 16); sc > 1; sc >>= 1)
+                    e++;
+                for (bs = get32(b + 20); bs > 1; bs >>= 1)
+                    e++;
+                for (; e < 0; e++) {    /* 64 Bit hi:lo schieben          */
+                    lo = (lo >> 1) | (hi << 31);
+                    hi >>= 1;
+                }
+                for (; e > 0 && !(hi & 0x80000000UL); e--) {
+                    hi = (hi << 1) | (lo >> 31);
+                    lo <<= 1;
+                }
+                rq.size = (hi || e) ? 0xFFFFFFFFUL : lo;
             }
             c_close();
         }

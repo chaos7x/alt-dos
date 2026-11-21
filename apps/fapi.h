@@ -55,6 +55,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosEnvEntry(i, buf, n)   fapi_call(FAPI_ENVENTRY, (i), (unsigned short)(buf), (n))
 #define DosGetDateTime(p)        F2(FAPI_GETDATETIME, (p), 0)
 #define DosFreeSpace(d, p)  F2(FAPI_FREESPACE, (d), (p))   /* freie Bytes */
+#define DosFreeSpaceKB(d, p) F2(FAPI_FREESPACE, (d) | FREESPACE_KB, (p)) /* p[0] Bytes, p[1] KB */
 #define DosOpenDrive(d, mode)  F2(FAPI_OPENDRIVE, (d), (mode))  /* DRV_OPEN_* */
 #define DosComCtl(n, c, set) fapi_call(FAPI_COMCTL, (n), (unsigned short)(c), (set))
 #define DosSysInfo(p)       F2(FAPI_SYSINFO, (p), 0)

@@ -3286,7 +3286,7 @@ static struct ifs_dirent fi_de;
 static union {
     char canon2[IFS_PATHLEN];
     struct { char real[IFS_PATHLEN]; struct ifs_dirent jde; } r;
-    unsigned long kb;
+    unsigned long kb[2];
     struct { char lb[12], nl[12]; unsigned long ser; } l;
     unsigned long ns;
     unsigned short hh[2];
@@ -3809,9 +3809,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_FREESPACE: {
-        if (a1 >= NDRIVE || join_hidden(a1) || !user_ok(usel, a2, 4, 1) || ifs_space(subst_real(a1), &fi_u.kb))
+        k = (a1 & FREESPACE_KB) ? 8 : 4;   /* mit KB: Bytes + KB          */
+        a1 &= 0xFF;
+        if (a1 >= NDRIVE || join_hidden(a1) || !user_ok(usel, a2, k, 1) || ifs_space(subst_real(a1), fi_u.kb))
             return FAPI_ERROR;
-        far_copy(usel, a2, KDATA, (unsigned)&fi_u.kb, 4);
+        far_copy(usel, a2, KDATA, (unsigned)fi_u.kb, k);
         return 0;
     }
 

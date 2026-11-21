@@ -301,6 +301,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat;
   CHKDSK meldet „kann Netzlaufwerke nicht prüfen“, DosQFSInfo setzt dafür
   `FSI_REMOTE`)
+- Freier Platz über 2 GB (6.3): DIR zeigt ihn ab 2 GB in MB (FAT32 über
+  4 GB lief vorher über, Netzlaufwerke standen bei 2 GB), FAPI
+  `DosFreeSpaceKB`, SMBCLI meldet die KB des Servers
 - CMD: Strg+C an der Eingabezeile verwirft sie wie bei COMMAND.COM (`^C`,
   neue Eingabeaufforderung) – vorher geschah nichts (6.3)
 - `KINIT [Name[@REALM]] [/KDC:Adresse]`, `KLIST`, `KDESTROY` (6.3):
@@ -1009,7 +1012,7 @@ selbst nur 8.3 kennt.
 | 27 | DosMkDir        | BX = Pfad                       |
 | 28 | DosRmDir        | BX = Pfad (muss leer sein)      |
 | 29 | DosMove         | BX = alter, CX = neuer Pfad (gleiches Laufwerk) |
-| 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes |
+| 30 | DosFreeSpace    | BX = Laufwerk, CX = Puffer (4 Bytes) → freie Bytes (bei 4 GB gekappt); BX \| `FREESPACE_KB` (8000h, 6.3): 8 Bytes = Bytes, dann KB (bis 4 TB) |
 | 31 | DosShutdown     | BX = 0 anhalten, 1 Neustart (kehrt nicht zurück) |
 | 32 | DosSetSigHandler | BX = Weiche (0 = abmelden), CX = `SIG_BREAK` \| `SIG_SHUTDOWN` – in C: `DosSetSigHandler(fn, maske)` |
 | 33 | DosSigReturn    | Handler fertig (macht die Weiche in `fapi.h`) |

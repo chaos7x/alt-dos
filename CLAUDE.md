@@ -1195,6 +1195,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   hätte der Kernel CMD beendet. In QEMU geprüft (Zeile, danach VER; BUSY
   per Strg+C beendet). CHKDSK auf NET-USE-Laufwerken: „kann Netzlaufwerke
   nicht prüfen“ über `FSI_REMOTE` (20h) aus DosQFSInfo (blk drv DRV_UFS).
+  Freier Platz über 4 GB (vom Nutzer bemerkt: 1 TB frei auf dem Netz-
+  laufwerk, DIR zeigte 2 GB; 21.11.2026): `struct ifs_driver.space` füllt
+  r[0] Bytes (gekappt) und r[1] KB; fat_space lief bei FAT32 über 4 GB
+  vorher über (shl). FAPI 1Eh mit BX | `FREESPACE_KB` (8000h) liefert
+  8 Byte (alter Kernel: Fehler -> Rückfall auf Bytes), UFSOP_SPACE `size`
+  = KB (SMBCLI aus 64-Bit-Einheiten × Sektoren × Bytes), Stub rechnet KB
+  aus den DOS-Bytes. DIR ab 2 GB in MB (SMBCLI kappt die Bytes für alte
+  Programme bei 2 GB). DOS-Box bleibt bei 36h (2 GB). In QEMU geprüft:
+  6-GB-FAT32 „6.131 MB frei“, Samba-Freigabe 3.814 MB (Server 3.815).
 - Stapelsprache (Wunsch des Nutzers: komplett, MS-DOS 6.22 + OS/2 CMD;
   in QEMU geprüft): `cmd_for` (FOR %v/%%v IN (...) DO, Platzhalter über
   DosFindEntry, nur sichtbare Dateien, nicht schachtelbar), `run_chain`
