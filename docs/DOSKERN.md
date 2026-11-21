@@ -302,10 +302,27 @@ die Programme direkt lesen.
   SHARE (`RBX(t)`), MSCDEX, Datum/Attribut beim Schließen (`kf_hmeta`),
   NET USE-Laufwerke (sind AT-DOS-Laufwerke über `kernel/ufs.c`), lange
   Namen nur als 8.3 (Box ohne LFN-Merker).
-- Neu für den eigenen Kern: INT 25h/26h (absolut lesen/schreiben) über
-  DosOpenDrive mit Sperre wie CHKDSK – oder abgelehnt wie bei NT (zum
-  Abstimmen); Laufwerksinfo 36h/1Ch/32h aus `fat_geom`; Datenträger-
-  bezeichnung; IOCTL 4400h–440Fh.
+- Neu für den eigenen Kern: INT 25h/26h (siehe unten), Laufwerksinfo
+  36h/1Ch/32h aus `fat_geom`; Datenträgerbezeichnung; IOCTL 4400h–440Fh.
+- **INT 25h/26h wie MS-DOS 7** (Entscheidung des Nutzers, 21.11.2026,
+  „evolutionär“: der Weg, mit dem Microsoft das DOS in die Multitasking-
+  Welt von Windows 95 fortgeführt hat – passt zu AT-DOS als fortgeführtem
+  DOS; weder frei wie MS-DOS 6 noch abgelehnt wie NT):
+  - Lesen (INT 25h, auch CX = FFFFh mit Paket) immer, über `blk_read`
+    durch den Platten-Cache – stimmig auch bei verzögert Geschriebenem.
+  - Schreiben (INT 26h) nur nach **Laufwerkssperre** 440Dh 4Ah (logisch,
+    Stufen 0–3 wie MS-DOS 7; 4Bh entsperren, 6Ah/6Bh physisch, 6Ch/70h/71h
+    Abfragen), sonst Fehler „schreibgeschützt“ wie dort. Die Sperre
+    entspricht der von DosOpenDrive (CHKDSK): abgelehnt, solange ein
+    anderer Task Dateien auf dem Laufwerk offen hat; beim Entsperren oder
+    Ende des Programms `vol_reset` (FAT-/Verzeichnis-Cache weg, neu
+    einhängen).
+  - FAT32: 7305h (erweitertes absolutes Lesen/Schreiben, wie Windows 95
+    OSR2); INT 25h/26h auf FAT32 abgelehnt wie dort.
+  - Nur lokale FAT-Laufwerke; NET USE, CD, Loop/DriveSpace-Container ->
+    Fehler wie bei Netzlaufwerken unter DOS.
+  - Abbilder (FreeDOS, MKDOSIMG) sehen unsere Laufwerke weiter als
+    Netzlaufwerke – dort scheitert INT 25h wie heute.
 - Ablage: zuerst in KTEXT4 neben `redir.c` (gleiche Stelle). Später
   prüfen, ob das DEM ein Modul wie die VDDs wird (`VDOS.SYS` über
   `DH_VDDREG`, Dienste `VS_FAPI`/`VS_RD`/`VS_WR`) – das hielte den Kernel
@@ -486,6 +503,6 @@ braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
    direkt geladen (kein Abbild). Offen bleibt der INI-Schlüssel.
 3. ~~Gemeldete Version~~ – entschieden: 6.22; die 4.0-Shell im eigenen
    Bau ohne Versionsprüfung.
-4. INT 25h/26h auf AT-DOS-Laufwerke: erlauben (mit Sperre wie CHKDSK) oder
-   wie NT ablehnen?
+4. ~~INT 25h/26h~~ – entschieden: wie MS-DOS 7 (Lesen frei, Schreiben
+   nur mit Laufwerkssperre 440Dh 4Ah, FAT32 über 7305h).
 5. Stufe 0 zuerst messen und danach entscheiden – einverstanden?
