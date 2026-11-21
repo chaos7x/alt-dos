@@ -160,7 +160,7 @@ puts:   lodsb
         jmp     puts
 .done:  ret
 
-msg_load  db "AT-DOS 6.2 wird geladen", 13, 10, 0
+msg_load  db "AT-DOS 6.3 wird geladen", 13, 10, 0
 msg_err   db "Lesefehler", 0
 
         times 510-($-$$) db 0

@@ -23,7 +23,15 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.2 fertig (Zweig `6.2`, Release `v6.2`), Weiterarbeit (6.3) auf `main`
+## Aktueller Stand: AT-DOS 6.2 fertig (Zweig `6.2`, Release `v6.2`), 6.3 zur Prüfung (Zweig `6.3`), Weiterarbeit auf `main`
+
+AT-DOS 6.3 zur Prüfung (Wunsch des Nutzers, 21.11.2026: „Mach eine
+Version noch zum testen fertig“, vor dem eigenen Box-Kern): Titel/VER
+„AT-DOS 6.3“, `FAPI_VERSION` 061Eh (VER zeigt „6.30“), Bootsektoren
+„6.3“. Ein Push auf `6.3` baut per CI die Testfassung `test-6.3`
+(Vorabversion, nicht neueste); erst nach der Freigabe kommt der Schritt
+für `v6.3` dazu. Fehlerbehebungen dann auf `6.3` und `main`. In QEMU
+geprüft: Start von Platte, VER.
 
 AT-DOS 6.2 ist fertig (Entscheidung des Nutzers, 20.11.2026: „kannst die
 6.2 freigeben“): Zweig `6.2` = Stand der Freigabe, ein Push dorthin baut
