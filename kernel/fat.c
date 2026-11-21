@@ -27,6 +27,9 @@
 
 struct volume vol[NDRIVE];
 char ifs_orig[IFS_NAMELEN];             /* siehe ifs.h                    */
+unsigned char ifs_share = 0x80;         /* Zugriff + Freigabe fuer das IFS beim
+                                           naechsten open/create (FAPI_OPEN/
+                                           CREATE), 80h = alte Art          */
 unsigned char lfn_cfg;                  /* LONGNAMES=                     */
 
 static unsigned char __far *dma(void)
@@ -2947,6 +2950,7 @@ const struct ctxblk fat_ctx[] = {
     { ea_rec, sizeof(ea_rec) }, { &sp_comp, sizeof(sp_comp) }, { &sp_len, sizeof(sp_len) },
     { &nt_case, sizeof(nt_case) }, { &ferr, sizeof(ferr) }, { &de_lba, sizeof(de_lba) },
     { ifs_orig, sizeof(ifs_orig) }, { &ifs_notready, sizeof(ifs_notready) },
+    { &ifs_share, sizeof(ifs_share) },
     { sp_pbuf, sizeof(sp_pbuf) }, { rm_on, sizeof(rm_on) }, { rd_on, sizeof(rd_on) },
     { mv_ent, sizeof(mv_ent) }
 };

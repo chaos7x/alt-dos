@@ -35,6 +35,14 @@
 #define OPEN_READ           0       /* nur lesen (alle alten Programme) */
 #define OPEN_RW             2       /* lesen und schreiben, Datei muss da sein,
                                        allein offen; Position 0, nicht gekuerzt */
+#define OPEN_SHARE_MASK     0x70    /* | Freigabe wie INT 21h 3Dh Bits 4-6
+                                       (6.3): gilt beim Server von NET-USE-
+                                       Laufwerken (lokal bleibt die Regel
+                                       oben); auch fuer FAPI_CREATE CX     */
+#define OPEN_DENYALL        0x10    /* andere duerfen nichts              */
+#define OPEN_DENYWRITE      0x20    /* andere duerfen lesen               */
+#define OPEN_DENYREAD       0x30    /* andere duerfen schreiben           */
+#define OPEN_DENYNONE       0x40    /* andere duerfen alles               */
 #define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
@@ -56,7 +64,8 @@
                                        (DosChDir "A:\X" von C: aus) */
 #define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
 #define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
-#define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen -> Handle */
+#define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen
+                                       (| OPEN_DENY*) -> Handle */
 #define FAPI_WRITE          0x19    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
 #define FAPI_DELETE         0x1A    /* BX = Dateiname                   */
 #define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
@@ -275,7 +284,12 @@ struct fapi_lock {
 #define LOCK_SHARED         2       /* andere duerfen lesen               */
 #define UFS_DATA            16384u  /* Daten je Auftrag hoechstens        */
 #define UFSOP_QUIT          0
-#define UFSOP_OPEN          1       /* path -> h, size, attr             */
+#define UFSOP_OPEN          1       /* path, mask -> h, size, attr; mask
+                                       Bits 0-1 Zugriff (0 lesen, 2 lesen+
+                                       schreiben), Bits 4-6 OPEN_DENY*,
+                                       Bit 7 alte Art (Zugriff/Freigabe
+                                       wie bisher: RW versuchen, alles
+                                       teilen) - auch UFSOP_CREATE       */
 #define UFSOP_READ          2       /* h, pos, len -> Daten              */
 #define UFSOP_READDIR       3       /* path (Verzeichnis), n -> Daten =
                                        struct ifs_dirent                 */

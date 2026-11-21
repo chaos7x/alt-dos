@@ -47,6 +47,7 @@ struct volume {
 /* Original-Schreibung des letzten Pfadteils beim Anlegen/Umbenennen
    (Pfade kommen kanonisch gross); "" = keine. Setzt der Kernel. */
 extern char ifs_orig[];
+extern unsigned char ifs_share;         /* UFSOP_OPEN mask (fat.c)        */
 extern unsigned char lfn_cfg;           /* LONGNAMES= 0 AUTO, 1 VFAT, 2 EA  */
 
 struct ifs_driver {

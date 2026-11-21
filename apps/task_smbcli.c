@@ -569,6 +569,7 @@ static unsigned rpath(const char *name)
 }
 
 static u8 fid[16];
+static u32 c_share = 7;                 /* ShareAccess beim naechsten CREATE */
 
 /* CREATE -> 0 ok (fid gesetzt) */
 static u32 c_open(const char *name, u32 access, u32 disp, u32 opt, u32 *size, unsigned *attr)
@@ -580,7 +581,7 @@ static u32 c_open(const char *name, u32 access, u32 disp, u32 opt, u32 *size, un
     put32(BODY + 4, 2);                 /* Impersonation                 */
     put32(BODY + 24, access);
     put32(BODY + 28, 0x80);             /* FILE_ATTRIBUTE_NORMAL         */
-    put32(BODY + 32, 7);                /* lesen, schreiben, loeschen    */
+    put32(BODY + 32, c_share);          /* 7: lesen, schreiben, loeschen */
     put32(BODY + 36, disp);
     put32(BODY + 40, opt);
     put16(BODY + 44, 64 + 56);
@@ -1083,6 +1084,7 @@ static char ldir[FAPI_PATHLEN];         /* Liste gilt fuer dieses Verz.   */
 static unsigned char hu[32];            /* Handles: belegt                */
 static u8 hf[32][16];                   /* FileId je Handle               */
 static u8 hacc[32];                     /* 1 = lesend+schreibend geoeffnet */
+static u8 hsh[32];                      /* ShareAccess beim Oeffnen      */
 static unsigned hseg;                   /* Pfade je Handle, Schreibdaten  */
 #define HREC 264                        /* Pfad je Handle in hseg         */
 #define WOFF (32 * HREC)                /* geretteter WRITE (16 KB)       */
@@ -1308,6 +1310,7 @@ static unsigned hnew(const char *path, unsigned rw)
         return 0;
     hu[i] = 1;
     hacc[i] = (u8)rw;
+    hsh[i] = (u8)c_share;
     cr_cpy(hf[i], fid, 16);
     q = (char __far *)MK_FP(hseg, i * HREC);
     for (k = 0; k < HREC - 1 && path[k]; k++)
@@ -1324,6 +1327,23 @@ static int hget(unsigned long h)
     return 1;
 }
 
+/* UFSOP_OPEN/CREATE mask -> ShareAccess (1 lesen, 2 schreiben, 4 loeschen).
+   Ohne Angabe wie die Regel im Kernel: lesend darf jeder alles (wie TYPE
+   unter NT), schreibend duerfen andere nur lesen - zwei Schreiber auf
+   verschiedenen Rechnern gibt es dann nicht, wie lokal. */
+static u32 share_of(unsigned m)
+{
+    if (m & 0x80)
+        return 7;                       /* alte Art                      */
+    switch ((m >> 4) & 7) {
+    case 1: return 0;                   /* DENYALL                       */
+    case 2: return 1;                   /* DENYWRITE                     */
+    case 3: return 2;                   /* DENYREAD                      */
+    case 4: return 7;                   /* DENYNONE                      */
+    }
+    return (m & 3) ? 1 : 7;             /* Vorgabe / Kompatibilitaet     */
+}
+
 static short ierr(u32 st)
 {
     if (st == 0xC0000022UL || st == 0xC00000A2UL)
@@ -1336,6 +1356,8 @@ static short ierr(u32 st)
         return IFS_DENIED;
     if (st == 0xC0000054UL || st == 0xC0000055UL)   /* LOCK_CONFLICT/NOT_GRANTED */
         return IFS_LOCKED;
+    if (st == 0xC0000043UL)             /* SHARING_VIOLATION             */
+        return IFS_INUSE;
     return IFS_ERR;
 }
 
@@ -1405,13 +1427,15 @@ static void op(void)
     case UFSOP_OPEN:
         kpath(rq.path, sp, 0);
         rdir[0] = 0;
-        n = 1;
-        st = c_open(sp, 0x0012019FUL, 1, 0x40, &sz, &at);
-        if (st == 0xC0000022UL) {
+        c_share = share_of(rq.mask);
+        n = rq.mask & 0x80 || (rq.mask & 3);    /* alte Art: RW versuchen */
+        st = n ? c_open(sp, 0x0012019FUL, 1, 0x40, &sz, &at) : 0xC0000022UL;
+        if (st == 0xC0000022UL && (rq.mask & 0x80 || !(rq.mask & 3))) {
             n = 0;
             st = c_open(sp, 0x00120089UL, 1, 0x40, &sz, &at);
         }
         if (st) {
+            c_share = 7;
             rq.status = ierr(st);
             break;
         }
@@ -1420,6 +1444,7 @@ static void op(void)
             rq.status = IFS_FULL;
             break;
         }
+        c_share = 7;
         rq.size = sz;
         rq.attr = at & 0x37;
         break;
@@ -1427,8 +1452,10 @@ static void op(void)
         kpath(rq.path, sp, 0);
         with_orig(sp, rq.path2);
         rdir[0] = 0;
+        c_share = share_of(rq.mask | 2);
         st = c_open(sp, 0x0012019FUL, 5, 0x40, 0, 0);
         if (st) {
+            c_share = 7;
             rq.status = ierr(st);
             break;
         }
@@ -1437,6 +1464,7 @@ static void op(void)
             c_close();
             rq.status = IFS_FULL;
         }
+        c_share = 7;
         break;
     case UFSOP_READ:
         if (!hget(rq.h)) {
@@ -1682,6 +1710,7 @@ static int reconnect(void)
 {
     static char pp[FAPI_PATHLEN];
     unsigned i, k;
+    u32 st;
     char __far *q;
     lcnt = 0xFFFF;
     if (sconnect())
@@ -1694,7 +1723,10 @@ static int reconnect(void)
         for (k = 0; k < FAPI_PATHLEN - 1 && q[k]; k++)
             pp[k] = q[k];
         pp[k] = 0;
-        if (c_open(pp, hacc[i] ? 0x0012019FUL : 0x00120089UL, 1, 0x40, 0, 0)) {
+        c_share = hsh[i];
+        st = c_open(pp, hacc[i] ? 0x0012019FUL : 0x00120089UL, 1, 0x40, 0, 0);
+        c_share = 7;
+        if (st) {
             hu[i] = 2;                  /* nicht wieder da: Fehler je Zugriff */
             continue;
         }

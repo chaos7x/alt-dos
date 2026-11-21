@@ -2700,6 +2700,7 @@ static unsigned ifs_err(int rc)
     case IFS_EXIST:  return FAPI_ERR_EXIST;
     case IFS_DENIED: return FAPI_ERR_DENIED;
     case IFS_LOCKED: return FAPI_ERR_LOCKED;
+    case IFS_INUSE:  return FAPI_ERR_INUSE;
     }
     return FAPI_ERROR;
 }
@@ -3457,17 +3458,20 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if ((t = dev_name(canon)) != 0)
             return dev_open(t);
-        if (a2 ? in_use(d, canon, 0) : open_for_write(d, canon))
+        if ((a2 & 3) ? in_use(d, canon, 0) : open_for_write(d, canon))
             return FAPI_ERR_INUSE;
         k = of_alloc();
         if (k < 0)
             return FAPI_ERROR;
-        if (ifs_open(d, canon, &files[k].f)) {
+        ifs_share = (unsigned char)((a2 & 3 ? 2 : 0) | (a2 & OPEN_SHARE_MASK));
+        t = ifs_open(d, canon, &files[k].f);
+        ifs_share = 0x80;
+        if (t) {
             files[k].refs = 0;
             files[k].owner = -1;
-            return FAPI_ERROR;
+            return t == IFS_INUSE ? FAPI_ERR_INUSE : FAPI_ERROR;
         }
-        if (a2) {                               /* OPEN_RW               */
+        if (a2 & 3) {                           /* OPEN_RW               */
             if (files[k].f.attr & (ATTR_RO | ATTR_DIR)) {
                 files[k].refs = 0;
                 files[k].owner = -1;
@@ -3491,7 +3495,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         k = of_alloc();
         if (k < 0)
             return FAPI_ERROR;
-        if (a2 == 1 && ifs_open(d, canon, &files[k].f) == 0) {
+        ifs_share = (unsigned char)(2 | (a2 & OPEN_SHARE_MASK));
+        if ((a2 & 1) && (t = ifs_open(d, canon, &files[k].f)) == 0) {
+            ifs_share = 0x80;
             if (files[k].f.attr & (ATTR_RO | ATTR_DIR)) {   /* anhaengen (>>) */
                 files[k].refs = 0;
                 files[k].owner = -1;
@@ -3499,7 +3505,13 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             }
             files[k].f.flags |= IFS_F_WRITE;
             files[k].pos = files[k].f.size;
-        } else if (set_orig(buf), t = ifs_create(d, canon, &files[k].f), ifs_orig[0] = 0, t != 0) {
+        } else if ((a2 & 1) && t == IFS_INUSE) {        /* Netz: anderer   */
+            ifs_share = 0x80;                           /* Rechner hat sie */
+            files[k].refs = 0;
+            files[k].owner = -1;
+            return FAPI_ERR_INUSE;
+        } else if (set_orig(buf), t = ifs_create(d, canon, &files[k].f), ifs_orig[0] = 0,
+                   ifs_share = 0x80, t != 0) {
             files[k].refs = 0;
             files[k].owner = -1;
             return ifs_err(t);

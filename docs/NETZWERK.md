@@ -720,9 +720,42 @@ verwaist ab – mit einem Python-Client (smbprotocol) genauso, mit `force
 user = root` nicht; der eigenständige smbd mit lokalem Benutzer zeigt es
 nicht. Der Sperrtest lief deshalb mit `force user = root`.
 
-Offen: Freigabemodi (deny read/write) an den Server (ShareAccess je
-Öffnen), Sperren über das Netz zwischen zwei FAPI-Programmen auf demselben
+Offen: Sperren über das Netz zwischen zwei FAPI-Programmen auf demselben
 Rechner (lokal schließt der Kernel zweite Schreiber aus).
 
+## SMB Stufe 4: Freigabemodi beim Server (21.11.2026)
+
+Bisher öffnete SMBCLI jede Datei mit ShareAccess 7 (alles teilen) und
+immer lesend+schreibend (lesend nur als Rückfall) – ein zweiter Rechner
+konnte eine Datei überschreiben, die AT-DOS gerade schrieb.
+
+- FAPI_OPEN/FAPI_CREATE: CX Bits 4–6 = Freigabe wie INT 21h 3Dh
+  (`OPEN_DENYALL` 10h, `OPEN_DENYWRITE` 20h, `OPEN_DENYREAD` 30h,
+  `OPEN_DENYNONE` 40h, 0 = Vorgabe). Lokal ändert sich nichts (die Regel
+  „Leser und Schreiber schließen sich aus“ bleibt). FAPI_OPEN wertet
+  den Zugriff jetzt nach Bits 0–1 aus (vorher galt jedes CX ungleich 0
+  als lesen+schreiben).
+- Kernel -> IFS: `ifs_share` (fat.c, im Kontext je Task wie `ifs_orig`)
+  vor ifs_open/ifs_create, 80h = alte Art für alle anderen Aufrufer
+  (Auslagerungsdatei, LOOP, Kernel-Dateien). ufs.c legt es in
+  `fapi_ufsreq.mask` von UFSOP_OPEN/CREATE.
+- SMBCLI: Zugriff nach dem Modus (lesend nur noch 120089h), ShareAccess
+  nach `share_of`: DENYALL 0, DENYWRITE 1, DENYREAD 2, DENYNONE 7; ohne
+  Angabe lesend 7 (wie TYPE unter NT), schreibend/anlegen 1 (andere dürfen
+  lesen). Beim Wiederverbinden mit derselben Freigabe (`hsh[]`).
+  STATUS_SHARING_VIOLATION -> `IFS_INUSE` (neu, -7) -> FAPI_ERR_INUSE;
+  der Kernel gibt es bei FAPI_OPEN jetzt weiter (vorher FAPI_ERROR), beim
+  Anhängen (>>) wird dann nicht neu angelegt.
+- Box: redir.c reicht die Bits 4–6 aus dem Modus von 3Dh/6Ch an FAPI_OPEN/
+  CREATE (auch beim Wiederöffnen lesend+schreibend innerhalb der Box).
+
+Geprüft in QEMU mit zwei Rechnern gegen smbd (Testprogramm SH.COM im
+Scratchpad): A hält die Datei mit 3D22h (lesen+schreiben, Schreiben
+verweigern); B: 3D40h ok, 3D42h 20h, 3D10h 05h, 3D00h ok, 3D02h 20h, TYPE
+ok, COPY auf die Datei „wird gerade benutzt“, nach dem Schließen von A
+geht COPY. Sperrtest (LK.COM, beide 3D42h) wie vorher; BIOSCMP lokal vor
+und nach der Änderung zeilengleich (31 bekannte Abweichungen). Reine
+Programmlogik – kein 86Box.
+
 Weiter (offen): SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
-(AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.
+(AES-CMAC, Verschlüsselung).

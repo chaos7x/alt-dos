@@ -46,6 +46,7 @@ struct ifs_file {
 #define IFS_EXIST    (-4)               /* Ziel gibt es schon               */
 #define IFS_DENIED   (-5)               /* Schreibschutzattribut, nicht leer */
 #define IFS_LOCKED   (-6)               /* Bereich gesperrt (Netz)          */
+#define IFS_INUSE    (-7)               /* Freigabekonflikt (Netz)          */
 
 struct ifs_dirent {
     char           name[IFS_NAMELEN];   /* langer Name oder "NAME.EXT"      */

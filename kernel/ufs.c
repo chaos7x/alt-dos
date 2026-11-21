@@ -118,7 +118,7 @@ static int __far u_open(int d, const char *path, struct ifs_file __far *f)
     int i = slot_of(d), r;
     if (i < 0)
         return -1;
-    rq_new(i, UFSOP_OPEN, path);
+    rq_new(i, UFSOP_OPEN, path)->mask = ifs_share;
     if ((r = rq_go(i)) != 0)
         return r < 0 ? r : -1;
     f->drive = (unsigned char)d;
@@ -134,7 +134,7 @@ static int __far u_create(int d, const char *path, struct ifs_file __far *f)
     int i = slot_of(d), r;
     if (i < 0)
         return IFS_ERR;
-    rq_new(i, UFSOP_CREATE, path);
+    rq_new(i, UFSOP_CREATE, path)->mask = ifs_share;
     fstr(RQ(i)->path2, ifs_orig, sizeof(RQ(i)->path2));
     if ((r = rq_go(i)) != 0)
         return r;

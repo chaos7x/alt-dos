@@ -914,9 +914,9 @@ static int op(struct v86_frame *f, int t, unsigned fn)
                                                 /* 05h (BIOSCMP)          */
             if (M_WR(mode) && !e->kw) {         /* Handle nur lesend:     */
                 FAPI(FAPI_CLOSE, KDATA, e->h1 - 1, 0, 0);   /* neu RW     */
-                h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_RW, 0);
+                h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_RW | (mode & OPEN_SHARE_MASK), 0);
                 if (FAILED(h)) {
-                    r = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_READ, 0);
+                    r = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, OPEN_READ | (mode & OPEN_SHARE_MASK), 0);
                     e->h1 = FAILED(r) ? 0 : r + 1;
                     return errmap(h, E_DENIED);
                 }
@@ -933,9 +933,10 @@ static int op(struct v86_frame *f, int t, unsigned fn)
             return 0;
         }
         if (act == 1)                           /* vorhanden: lesen oder  */
-            h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1, (mode & 3) ? OPEN_RW : OPEN_READ, 0);
+            h = FAPI(FAPI_OPEN, KDATA, (unsigned)p1,     /* Freigabe an  */
+                     ((mode & 3) ? OPEN_RW : OPEN_READ) | (mode & OPEN_SHARE_MASK), 0);
         else                                    /* lesen+schreiben        */
-            h = FAPI(FAPI_CREATE, KDATA, (unsigned)p1, 0, 0);
+            h = FAPI(FAPI_CREATE, KDATA, (unsigned)p1, mode & OPEN_SHARE_MASK, 0);
         if (FAILED(h))
             return errmap(h, act == 1 ? E_NOFILE : no_dir(p1) ? E_NOPATH : E_DENIED);
         if (act != 1) {

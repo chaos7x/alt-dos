@@ -306,6 +306,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Laufwerken gehen an den SMB-Server – ein zweiter Rechner sieht sie
   (Fehler 21h beim Sperren und beim Lesen/Schreiben im gesperrten Bereich),
   wie bei dBase/Clipper/Paradox im Netz
+- Freigabemodi über das Netz (6.3): „Schreiben/Lesen/alles verweigern“
+  beim Öffnen (INT 21h 3Dh/6Ch Bits 4–6 in der Box, `OPEN_DENY*` bei
+  DosOpen/DosCreate) gehen als ShareAccess an den SMB-Server; ohne Angabe
+  darf beim Lesen jeder alles, beim Schreiben dürfen andere nur lesen –
+  zwei Schreiber auf verschiedenen Rechnern gibt es dann nicht, wie lokal.
+  Konflikt: „wird gerade benutzt“ (Box 20h)
 - Freier Platz über 2 GB (6.3): DIR zeigt ihn ab 2 GB in MB (FAT32 über
   4 GB lief vorher über, Netzlaufwerke standen bei 2 GB), FAPI
   `DosFreeSpaceKB`, SMBCLI meldet die KB des Servers
@@ -1030,7 +1036,7 @@ selbst nur 8.3 kennt.
 | 11 | VioCls          | –                               |
 | 12 | DosExecPgm      | BX = Befehlszeile, CX = 0 warten / 1 eigene Sitzung / 2 nebenher in dieser Sitzung (Teil einer Pipe, behält die Konsole) / 3 `EXEC_DETACH` losgelöst: ohne Konsole – Eingabe von der Konsole wird NUL (Dateiende), KbdCharIn/MouOpen melden `FAPI_ERR_NOCON` (FFF3h), KbdPeek nichts; Kinder in derselben Sitzung erben es |
 | 13 | DosGetArgs      | BX = Puffer (81 Bytes)          |
-| 14 | DosOpen         | BX = Pfad, CX = 0 lesen / 2 lesen+schreiben (`DosOpenRW`, Datei muss da sein) → Handle |
+| 14 | DosOpen         | BX = Pfad, CX = 0 lesen / 2 lesen+schreiben (`DosOpenRW`, Datei muss da sein), dazu `OPEN_DENY*` (Bits 4–6 wie INT 21h 3Dh, wirkt beim SMB-Server) → Handle |
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
 | 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
@@ -1040,7 +1046,7 @@ selbst nur 8.3 kennt.
 | 21 | DosQCurDir      | BX = Puffer (130 Bytes) → z. B. `C:\DOS` |
 | 22 | DosSelectDisk   | BX = Laufwerk (0 = A:)          |
 | 23 | DosQCurDisk     | → AX = Laufwerk                 |
-| 24 | DosCreate       | BX = Pfad → Handle (legt an oder kürzt auf 0) |
+| 24 | DosCreate       | BX = Pfad, CX = 0 / 1 anhängen, dazu `OPEN_DENY*` → Handle (legt an oder kürzt auf 0) |
 | 25 | DosWrite        | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 26 | DosDelete       | BX = Pfad                       |
 | 27 | DosMkDir        | BX = Pfad                       |

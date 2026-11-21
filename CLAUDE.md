@@ -6114,7 +6114,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (FFF2h), Box 110Ah reicht an den Kernel weiter (21h). Test zwei QEMU
   gleichzeitig mit `/tmp/claude-0/lk` (LK.COM A/B, go2.sh gegen den
   eigenständigen smbd – der Test-DC verliert Freigabeeinträge, AD-Samba
-  dafür anhalten). Weiter: Freigabemodi an den Server, dann SMB 3.
+  dafür anhalten). Freigabemodi beim Server erledigt (21.11.2026, `docs/NETZWERK.md` „SMB Stufe 4“: `OPEN_DENY*` in CX von FAPI_OPEN/CREATE, `ifs_share` -> `fapi_ufsreq.mask`, SMBCLI `share_of`, `IFS_INUSE`; Test `/tmp/claude-0/sh/go.sh`). Danach (Nutzer): SRV/Ticket/SMBCLI -k, dann DEM herauslösen; SMB 3 später.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`
