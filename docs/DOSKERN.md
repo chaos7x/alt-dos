@@ -110,6 +110,13 @@ DOS einfach fortentwickelt hätte – statt auf OS/2 oder NT zu setzen,
 übernimmt es deren Technik (Boxen wie MVDM, Dateiarbeit wie NTVDM) in
 die eigene DOS-Linie.
 
+Rolle (Nutzer, 21.11.2026: „Ist das nicht eher ein Compatibility
+Mode?“): der Box-Kern ist der **Kompatibilitätsmodus** neben dem
+Kernel, vergleichbar mit NTVDM bei NT – kein zweites Betriebssystem und
+nicht der Hauptkernel. AT-DOS selbst ist `ATDOS.SYS` mit FAPI und CMD;
+`ATDOSCM.SYS` gibt alten DOS-Programmen ihre gewohnte Umgebung und
+reicht die eigentliche Arbeit an den Kernel weiter.
+
 1. **DOS-Kern in der Box (V86, Real-Mode-Code)** aus **zwei Quellen**
    (Entscheidung des Nutzers, 21.11.2026: „beides nehmen – MS-DOS 4 hat
    die ganzen, auch undokumentierten Strukturen, FreeDOS ist technisch
@@ -145,9 +152,12 @@ Fremdkern als Vorgabe. Heute bleibt aber vollständig erhalten.
 
 ### Box-Seite: der DOS-Kern
 
-- Datei `\DOS\MDOS\ATDOSK.SYS` (Name zum Abstimmen – keine Microsoft-/IBM-
-  Produktnamen; `DOSKRNL` ist ein Dateiname von OS/2). Erste Stufen:
-  geladen wie heute über ein Abbild (`ATDOS.IMG`, eigener Bootsektor wie
+- Datei `ATDOSCM.SYS` (Entscheidung des Nutzers, 21.11.2026; CM =
+  Compatibility Mode – der Name zeigt, dass es nicht der Hauptkernel
+  `ATDOS.SYS` ist; keine Microsoft-/IBM-Produktnamen, `DOSKRNL` ist ein
+  Dateiname von OS/2). Sie liegt im Startabbild der Box
+  `\DOS\MDOS\ATDOSCM.IMG`. Erste Stufen:
+  geladen wie heute über das Abbild (`ATDOSCM.IMG`, eigener Bootsektor wie
   `boot/mdosboot.asm`), damit der Lader unverändert bleibt; später direkt
   vom Kernel geladen (wie `load_com`, ohne Bootsektor und INT 13h).
 - Bleibt in der Box: INT 21h-Verteiler, Speicher (48h/49h/4Ah/58h, UMB-
@@ -302,7 +312,7 @@ die Programme direkt lesen.
 - Drei Arten Box, je Programm wählbar in DOSBOX.INI (Schlüssel zum
   Abstimmen, z. B. `DOS_KERNEL=ATDOS|FREEDOS|IMAGE` neben dem heutigen
   `DOS_IMAGE=`):
-  1. **eigener Kern** (`ATDOSK.SYS`),
+  1. **eigener Kern** (`ATDOSCM.SYS`),
   2. **FreeDOS-Abbild** (`FREEDOS.IMG`, heutige Vorgabe),
   3. **MKDOSIMG-Abbild** (MS-DOS/PC DOS des Nutzers, `DOS_IMAGE=`).
 - Alle drei teilen Monitor, Module (VDDs), BIOS-Nachbau, XMS/EMS/DPMI,
@@ -339,7 +349,7 @@ die Programme direkt lesen.
 2. **Kern minimal**: eigener Rumpf nach FreeDOS-Vorbild ohne Dateisystem
    (Dispatcher, Speicher, PSP/EXEC), Strukturen auf das Layout von MS-DOS 4.0 geprüft,
    Handle-Funktionen 3Ch–46h, 4Eh/4Fh, 47h, 39h–3Bh, 41h, 43h, 56h, 57h
-   über das DEM; geladen über `ATDOS.IMG`; FreeCOM als Shell. Ziel: DIR,
+   über das DEM; geladen über `ATDOSCM.IMG`; FreeCOM als Shell. Ziel: DIR,
    COPY, HALLO, MEM, Digger.
 3. **Strukturen vollständig**: LoL, SFT, CDS, SDA, DPB-Attrappe, FCB-
    Funktionen, 59h, 5Dh/5Eh/5Fh, IOCTL, NLS (38h, 65h, 66h), INT 2Fh
@@ -424,7 +434,8 @@ Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
    MS-DOS-4.0-Strukturen und -Verhalten); FreeDOS als Vorlage, nicht
    1:1. Passt die Aufteilung in der
    Tabelle „Was aus welcher Quelle kommt“?
-2. Name der Datei (`ATDOSK.SYS`?) und des INI-Schlüssels.
+2. ~~Name der Datei~~ – entschieden: `ATDOSCM.SYS` im Abbild
+   `ATDOSCM.IMG`. Offen bleibt der INI-Schlüssel.
 3. ~~Gemeldete Version~~ – entschieden: 6.22; die 4.0-Shell im eigenen
    Bau ohne Versionsprüfung.
 4. INT 25h/26h auf AT-DOS-Laufwerke: erlauben (mit Sperre wie CHKDSK) oder
