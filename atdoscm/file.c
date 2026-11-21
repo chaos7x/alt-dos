@@ -33,7 +33,7 @@ static const struct { u16 attr; char name[9]; } devdef[NDEV] = {
     { 0x0842, "\032ATDOS  " },         /* Blockgeraet: 26 Einheiten     */
 };
 
-void retf_entry(void);
+extern char retf_entry[];
 static const u8 media = 0xF8;
 
 /* ---- DEM ---------------------------------------------------------------- */
@@ -566,8 +566,10 @@ static void params_out(u16 seg, u16 off)
     W(seg, off + 15) = 0;
     B(seg, off + 17) = dbuf[31];
     W(seg, off + 18) = (u16)(cl >> 8) + 1;
-    W(seg, off + 20) = 63;
-    W(seg, off + 22) = 16;
+    W(seg, off + 20) = dbuf[0] == 2 ? 18 : 63;     /* Diskette: 1,44 MB */
+    W(seg, off + 22) = dbuf[0] == 2 ? 2 : 16;
+    if (dbuf[0] == 2)
+        W(seg, off + 4) = 80;
     D(seg, off + 24) = 0;
     for (sec = cl, m = spc; m > 1; m >>= 1)
         sec <<= 1;
@@ -690,14 +692,34 @@ static void ioctl_fn(struct frame __far *f)
             return;
         }
         if (AL(f) == 0x0E || AL(f) == 0x0F) {
-            AL(f) = 0;                  /* nur ein Buchstabe             */
+            /* nur ein Buchstabe; B: ohne eigenes Laufwerk ist das
+               Phantom von A: (440Eh meldet dann den aktuellen: A:) */
+            AL(f) = d == 1 && !(drives_lo & 2) ? 1 : 0;
             break;
         }
-        if (AL(f) == 0x09) {
-            f->dx = 0x08C2;             /* lokal, Attribute wie MS-DOS   */
+        if (AL(f) == 0x09) {            /* lokal, Attribute wie MS-DOS;  */
+            struct rregs r;             /* CD fern wie unter MSCDEX      */
+            r.ax = 0x200B;
+            r.cx = d;
+            bint(0xE0, &r);
+            f->dx = r.ax == 0x5AD8 ? 0x1000 : 0x08C2;
             break;
         }
         if (dinfo(d)) {                 /* CD, kein Medium               */
+            if (d < 2) {                /* leere Diskette: Laufwerk wie  */
+                dbuf[0] = 2;            /* MS-DOS ohne Medium (1,44 MB)  */
+                dbuf[1] = 1;
+                *(u16 *)(dbuf + 2) = 512;
+                *(u32 *)(dbuf + 4) = 2847;
+                dbuf[31] = 0xF0;
+                if (AL(f) == 0x08)
+                    f->ax = 0;
+                else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x60)
+                    params_out(f->ds, f->dx);
+                else
+                    set_err(f, 0x15);
+                break;
+            }
             if (AL(f) == 0x08)
                 f->ax = 1;
             else

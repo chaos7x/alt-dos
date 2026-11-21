@@ -15,8 +15,8 @@ u16 ret_code;
 extern u16 setver_dx;
 extern unsigned char cc_hit;
 extern u16 in_ax;
-void int22_entry(void);
-void ctrlc_stub(void);
+extern char int22_entry[];
+extern char ctrlc_stub[];
 
 static u32 lin(u16 seg, u16 off)
 {
@@ -360,6 +360,7 @@ struct frame __far *exec_fn(struct frame __far *f)
         W(f->es, f->bx + 0x14) = o.cs;
         return f;
     }
+    a20_drop = in_hma;                  /* EXEPACK: Programm ohne A20    */
     return mkframe(&o);
 }
 

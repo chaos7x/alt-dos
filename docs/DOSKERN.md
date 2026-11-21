@@ -347,8 +347,8 @@ die Programme direkt lesen.
   - Gelesen wie heute: erst `[*]`, dann `[NAME.EXT]`, `[COMMAND.COM]`
     für die interaktive Box. Die Vorgabe des Systems ist `[*]` – kein
     Eintrag in der CONFIG.SYS.
-  - Ohne Angabe: `FREEDOS.IMG` bis Stufe 5, danach `ATDOSCM.SYS`
-    (eine Zeile im Kernel). Fehlt die gewählte Datei, Rückfall auf
+  - Ohne Angabe: `ATDOSCM.SYS` (seit Stufe 5, vorher `FREEDOS.IMG`;
+    eine Zeile im Kernel, `BOX_DOS`). Fehlt die gewählte Datei, Rückfall auf
     `FREEDOS.IMG` wie heute (`load_mdos`).
   - Geparkte Box nur bei gleichem Wert wiederverwenden (`box_same`
     vergleicht den Dateinamen wie heute).
@@ -477,6 +477,42 @@ die Programme direkt lesen.
 5. **Vorgabe wechseln** (Entscheidung des Nutzers), BOXSHELL
    verschlanken; COMMAND.COM aus MS-DOS
    4.0 (gebaut, ohne Versionsprüfung) neben FreeCOM mitliefern.
+   **Vorgabe gewechselt (21.11.2026, Entscheidung des Nutzers):** ohne
+   `DOS_KERNEL=` startet jede Box mit ATDOSCM.SYS (kernel.c `BOX_DOS`),
+   `DOS_KERNEL=FREEDOS.IMG` holt FreeDOS zurück; fehlt die gewählte
+   Datei, nimmt die Box FREEDOS.IMG. Dafür aus Stufe 4 vorgezogen, weil
+   der eigene Kern sonst 21 KB weniger frei ließ als die FreeDOS-Box
+   (599 statt 620 KB): **DOS=HIGH** wie MS-DOS 5 – ATDOSCM wird wie der
+   Kernel als DOS-EXE gelinkt (CGROUP/DGROUP getrennt, build.sh nimmt den
+   Kopf ab und prüft Relokationen); beim Start holt `boot` (entry.asm)
+   per XMS 01h die HMA, kopiert den Code nach FFFF:0010 (Code-Offsets
+   beginnen bei 10h, die ersten 16 Byte sind der Sprung für den Start
+   unten) und rückt die Daten nach 0060:0000. Unten bleiben Daten und
+   die Eingänge (Segment LTEXT: alle Interruptvektoren, Geräteköpfe,
+   Länder-RETF, Strg+C); INT 21h ruft den Code fern über `hent`. A20 wie
+   FreeDOS: beim Programmstart (4B00h) aus – EXEPACK-Entpacker rechnen mit
+   dem Umlauf –, der Eingang von INT 21h prüft FFFF:0090 gegen 0000:0080
+   und schaltet bei Umlauf per XMS 05h wieder ein. 3306h DH 10h, INT 2Fh
+   4A01h (freie HMA). Ohne HMA (CONFIG.SYS ohne `DOS=HIGH`) bleibt der
+   Code unten wie vorher. Gemessen: QEMU 619 KB frei (mit EMS-Rahmen,
+   4 KB UMB; FreeDOS-Box 620), 86Box 386DX/40 627 KB (BOXSHELL in der
+   UMB). Mit dem Wechsel aufgefallen und behoben: MSCDEX fehlte in der
+   Box mit eigenem Kern (BOXSHELL hängt seinen INT-2Fh-Haken dort nicht
+   ein) – jetzt beantwortet der INT-2Fh-Eingang von ATDOSCM AH = 15h über
+   INT E0h 20h; CD-Laufwerke melden 4409h 1000h (fern wie unter MSCDEX,
+   CheckIt nennt sie „Network“), B: ohne eigenes Laufwerk ist bei 440Eh
+   das Phantom von A:, leere Disketten liefern 4408h/440Dh 0860h wie
+   MS-DOS (1,44 MB), LoL+3Fh BUFFERS = 15. Geprüft in QEMU: BIOSCMP
+   (gleich wie mit `cm`, mit `fd` gleich wie vorher), DOOM 1.9 Timedemo
+   mit SB (1667 Gametics), Digger, MS-DOS-MEM und -FIND (EXEPACK),
+   FreeDOS-MEM („MS-DOS verwendet die HMA“), CD mit MSCDEX (150Bh, DIR,
+   TYPE), CheckIt SysInfo (DOS-Details, Laufwerke), Lotus Works startet.
+   In 86Box 386DX/40 4 MB: MS-DOS-MEM, Digger, CheckIt SysInfo mit
+   Laufwerksliste. DOOM bleibt dort mit 4 MB nach „DPMI memory“ stehen –
+   mit FreeDOS genauso (Speicher der Maschine, nicht der Kern). Offen:
+   MS-DOS-MEM zeigt bei XMS „Verwendet“ weiter einen falschen Wert (wie
+   mit dem MS-DOS-Abbild, `docs/BOX-BIOS.md`); CMD nimmt bei `LW` die
+   .EXE vor der .COM (MS-DOS umgekehrt).
 6. **7.0**: DEM als 32-Bit-C neu übersetzt (gleiche `struct dem_req`),
    DOS-Kern in der Box unverändert – wie bei NT x86/RISC.
 

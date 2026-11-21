@@ -222,9 +222,34 @@ nasm -f obj atdoscm/entry.asm -o $B/cmentry.o
 for f in kern file fcb con exec; do
     wcc -q -ms -0 -s -zl -zls -zp1 -d0 -os -wx -we -fo=$B/cm_$f.o atdoscm/$f.c
 done
-wlink $LINK name $B/atdoscm.sys option map=$B/atdoscm.map file $B/cmentry.o \
+# Code und Daten getrennt (DOS=HIGH: Code in die HMA), als DOS-EXE gelinkt
+# wie der Kernel; Kopf ab, keine Segment-Relokationen, DGROUP direkt hinter
+# dem Code (entry.asm rechnet so)
+wlink option quiet format dos option nodefaultlibs \
+      option map order clname CODE clname DATA clname BSS \
+      name $B/atdoscm.exe option map=$B/atdoscm.map file $B/cmentry.o \
       file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o \
       2>&1 | grep -v W1014 || true
+python3 - $B/atdoscm.exe $B/atdoscm.sys $B/atdoscm.map <<'PYEOF'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+nrel, hdr = struct.unpack('<HH', d[6:10])
+if nrel:
+    sys.exit('FEHLER: ATDOSCM.SYS hat %d Segment-Relokationen' % nrel)
+g = {}
+for l in open(sys.argv[3]):
+    f = l.split()
+    if len(f) == 3 and f[0] in ('CGROUP', 'DGROUP') and ':' in f[1]:
+        s, o = f[1].split(':')
+        g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
+code, data = g['CGROUP'][1], g['DGROUP'][1]
+if g['CGROUP'][0] != 0 or g['DGROUP'][0] != (code + 15) & ~15:
+    sys.exit('FEHLER: ATDOSCM.SYS: DGROUP nicht direkt hinter dem Code')
+if code > 65520 - 16 or data > 65520:
+    sys.exit('FEHLER: ATDOSCM.SYS: Code %d oder Daten %d zu gross' % (code, data))
+open(sys.argv[2], 'wb').write(d[hdr * 16:])
+print('  atdoscm: Code %d Bytes (HMA), Daten %d Bytes mit BSS' % (code, data))
+PYEOF
 
 echo "Programme (FX mit DOS-Stub)"
 nasm -f bin tools/stub.asm -o $B/stub.bin

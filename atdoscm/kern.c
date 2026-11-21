@@ -37,17 +37,17 @@ static u8  alloc_strat, umb_link, verify, brk;
 static u8  sys_drv;
 extern char cm_end[];
 
-void int21_entry(void);
-void int20_entry(void);
-void int22_entry(void);
-void int23_entry(void);
-void int24_entry(void);
-void int25_entry(void);
-void int27_entry(void);
-void iret_entry(void);
-void retf_entry(void);
-void int29_entry(void);
-void int2f_entry(void);
+extern char int21_entry[];
+extern char int20_entry[];
+extern char int22_entry[];
+extern char int23_entry[];
+extern char int24_entry[];
+extern char int25_entry[];
+extern char int27_entry[];
+extern char iret_entry[];
+extern char retf_entry[];
+extern char int29_entry[];
+extern char int2f_entry[];
 
 u8 *lol_ptr(void) { return LOL; }
 u16 in_ax;
@@ -466,7 +466,7 @@ struct frame __far *int21_c(struct frame __far *f)
         case 1: brk = DL(f) & 1; break;
         case 2: { u8 o = brk; brk = DL(f) & 1; DL(f) = o; break; }
         case 5: DL(f) = (u8)(sys_drv + 1); break;
-        case 6: f->bx = 0x1606; f->dx = 0; break;   /* wahre Version   */
+        case 6: f->bx = 0x1606; f->dx = in_hma ? 0x1000 : 0; break; /* DH 10h: HMA */
         default: AL(f) = 0xFF;
         }
         break;
@@ -622,7 +622,7 @@ static void umb_init(u16 top)
 }
 
 /* ---- Start -------------------------------------------------------------- */
-static void setvec(unsigned n, void (*h)(void))
+static void setvec(unsigned n, char *h)  /* Eingang in LTEXT */
 {
     W(0, n * 4) = (u16)h;
     W(0, n * 4 + 2) = kseg;
@@ -635,7 +635,7 @@ void cm_main(void)
     unsigned d;
     static char shell[32];
 
-    kseg = getcs();
+    kseg = getds();
     /* LoL: erster MCB (LoL-2), SFT (04h), CDS (16h), Laufwerke (21h),
        NUL-Geraet (22h) */
     first_mcb = kseg + (((u16)cm_end + 15) >> 4);
@@ -699,6 +699,8 @@ void cm_main(void)
     *(u16 *)(LOL + 0x00) = dpb_first();
     *(u16 *)(LOL + 0x02) = dpb_first() == 0xFFFF ? 0xFFFF : kseg;
     LOL[0x20] = NDRV;                   /* Blockgeraete                  */
+    *(u16 *)(LOL + 0x3F) = 15;          /* BUFFERS wie MS-DOS (Puffer hat
+                                           der Kernel; Installer pruefen) */
     LOL[0x43] = (u8)(sys_drv + 1);
 
     /* Speicher: ein freier Block bis zum Ende des konventionellen */

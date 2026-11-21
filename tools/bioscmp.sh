@@ -7,10 +7,11 @@
 # Redirector), auf derselben QEMU-Maschine.  Danach diff der beiden
 # Ergebnisdateien.
 #
-#   tools/bioscmp.sh [Arbeitsverzeichnis] [rbox|cm]
+#   tools/bioscmp.sh [Arbeitsverzeichnis] [rbox|fd|cm]
 #
-# Mit "cm": die Box laeuft mit dem eigenen Kern ATDOSCM.SYS
-# (DOSBOX.INI DOS_KERNEL=, docs/DOSKERN.md).
+# Die Box laeuft mit der Vorgabe (seit DOSKERN Stufe 5 der eigene Kern
+# ATDOSCM.SYS; "cm" setzt ihn ausdruecklich), mit "fd" mit dem
+# FreeDOS-Abbild (DOSBOX.INI DOS_KERNEL=FREEDOS.IMG, docs/DOSKERN.md).
 #
 # Mit "rbox" (Zweig 5.x): Box ist die Kompatibilitaetsbox (RBOX, echter
 # Real Mode); BIOSCMP wird dort ueber den QEMU-Monitor eingetippt
@@ -62,8 +63,9 @@ mcopy -o -i "$REFP" ::REF.TXT "$W/ref.txt"
 cp $B/atdos-hd.img "$W/box-hd.img"
 P="$W/box-hd.img@@32256"
 mcopy -o -i "$P" "$W/bioscmp.com" ::BIOSCMP.COM
-if [ "$MODE" = cm ]; then                 # eigener Box-Kern (DOSKERN Stufe 2+)
-    mtype -i "$P" ::DOS/MDOS/DOSBOX.INI | sed 's/^\[\*\]\r\?$/[*]\r\nDOS_KERNEL=ATDOSCM.SYS\r/' > "$W/ini"
+if [ "$MODE" = cm -o "$MODE" = fd ]; then   # DOS der Box ausdruecklich
+    K=ATDOSCM.SYS; [ "$MODE" = fd ] && K=FREEDOS.IMG
+    mtype -i "$P" ::DOS/MDOS/DOSBOX.INI | sed "s/^\[\*\]\r\?\$/[*]\r\nDOS_KERNEL=$K\r/" > "$W/ini"
     mcopy -o -i "$P" "$W/ini" ::DOS/MDOS/DOSBOX.INI
 fi
 if [ "$MODE" = rbox ]; then

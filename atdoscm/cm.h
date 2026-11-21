@@ -43,7 +43,8 @@ struct rregs {
     u16 ax, bx, cx, dx, si, di, bp, ds, es, fl;
 };
 void bint(unsigned n, struct rregs *r);
-unsigned getcs(void);
+unsigned getds(void);
+extern u8 in_hma, a20_drop;    /* entry.asm: Code in der HMA, A20 aus nach EXEC */
 
 /* SFT-Eintrag wie MS-DOS 4.0 (SF.INC, 3Bh Byte) */
 struct sft {

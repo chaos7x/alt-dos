@@ -1467,9 +1467,11 @@ static void dos_line(int drive, const char *path, const char *ua, char *a)
 }
 #undef sp
 
-/* Startabbild der Box nach DOSBOX.INI (DOS_IMAGE= unter [*] oder
-   [NAME.EXT], box_prog), sonst FREEDOS.IMG - beides in \DOS\MDOS des
-   Startlaufwerks. Fehlt das gewaehlte, nimmt sie FREEDOS.IMG. */
+/* DOS der Box nach DOSBOX.INI (DOS_KERNEL=/DOS_IMAGE= unter [*] oder
+   [NAME.EXT], box_prog), sonst BOX_DOS - beides in \DOS\MDOS des
+   Startlaufwerks. Fehlt das gewaehlte, nimmt sie FREEDOS.IMG. Vorgabe
+   seit DOSKERN Stufe 5 der eigene Kern (Entscheidung des Nutzers). */
+#define BOX_DOS "ATDOSCM.SYS"
 static int scmp_k(const char *a, const char *b);
 static char lm_p[32];                               /* Kontext */
 static int load_mdos(int t)
@@ -1480,7 +1482,7 @@ static int load_mdos(int t)
     ini_noframe();                      /* -> ini_img                    */
     scopy(box_prog, keep, sizeof(box_prog));
     scopy(lm_p, "\\DOS\\MDOS\\", sizeof(lm_p));
-    scopy(lm_p + 10, ini_img[0] ? ini_img : "FREEDOS.IMG", sizeof(lm_p) - 10);
+    scopy(lm_p + 10, ini_img[0] ? ini_img : BOX_DOS, sizeof(lm_p) - 10);
     {
         unsigned n;
         for (n = 0; lm_p[n]; n++)
@@ -1490,7 +1492,7 @@ static int load_mdos(int t)
         else
             err = load_img(t, sys_drive, lm_p);
     }
-    if (err && ini_img[0]) {
+    if (err && scmp_k(lm_p + 10, "FREEDOS.IMG")) {
         scopy(box_prog, keep, sizeof(box_prog));
         scopy(lm_p + 10, "FREEDOS.IMG", sizeof(lm_p) - 10);
         err = load_img(t, sys_drive, lm_p);
@@ -1759,7 +1761,7 @@ static int box_same(int y, const char *name)
     scopy(box_prog, name + i, sizeof(box_prog));
     ini_noframe();
     box_prog[0] = 0;
-    return !scmp_k(ini_img[0] ? ini_img : "FREEDOS.IMG", box_iname[y]);
+    return !scmp_k(ini_img[0] ? ini_img : BOX_DOS, box_iname[y]);
 }
 static int box_reuse(const char *cmd, int s)
 {
