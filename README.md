@@ -315,7 +315,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Active-Directory-Domäne beitreten (Rechnerkonto per LDAP mit SASL/GSSAPI
   und verschlüsselter Verbindung, Probe-Anmeldung als `Name$`), Daten in
   `\DOS\SYSTEM\DOMAIN.KEY`; vorher `KINIT` mit einem Konto, das Rechner
-  anlegen darf
+  anlegen darf. `DOMJOIN /RENEW [/Q]` wechselt das Maschinenkennwort
+  (der Rechner meldet sich selbst an, kein Administrator nötig); LOGON tut
+  das nach 30 Tagen von selbst, ein unterbrochener Wechsel wird beim
+  nächsten Lauf abgeschlossen
 - `HOSTS` und `HOSTNAME` wie `/etc/hosts` und `/etc/hostname` (6.3):
   `\DOS\SYSTEM\HOSTS` (oder `%ETC%\HOSTS` wie OS/2 TCP/IP) mit Zeilen
   `Adresse Name [Namen]` gilt vor dem DNS für alle Netzprogramme, sofort

@@ -4,6 +4,7 @@
  *
  *   DOMJOIN Name [/OU:DN]   Rechnerkonto anlegen (oder Kennwort neu setzen)
  *   DOMJOIN /LEAVE          Rechnerkonto loeschen, Daten entfernen
+ *   DOMJOIN /RENEW [/Q]     Maschinenkennwort wechseln (LOGON nach 30 Tagen)
  *   DOMJOIN                 Stand zeigen
  *
  * Vorher KINIT mit einem Konto, das Rechner anlegen darf (z. B.
@@ -30,7 +31,7 @@
  */
 #include "fapi.h"
 #include "util.h"
-#define NET_NO_PTON
+#define NET_RESOLVE_FN
 #include "net.h"
 #include "tls.h"
 #include "krb5.h"
@@ -58,6 +59,7 @@ static void usage(void)
 {
     fail("DOMJOIN Name [/OU:DN]   Rechner der Dom\x84ne beitreten\r\n"
          "DOMJOIN /LEAVE          Dom\x84ne verlassen\r\n"
+         "DOMJOIN /RENEW [/Q]     Maschinenkennwort wechseln\r\n"
          "DOMJOIN                 Stand zeigen\r\n"
          "Vorher KINIT mit einem Konto, das Rechner anlegen darf.", 2);
 }
@@ -192,7 +194,7 @@ static void do_join(void)
     scat(salt, "host", sizeof(salt));
     scat(salt, fq, sizeof(salt));
     krb_s2k(df.pw, slen(df.pw), salt, slen(salt), 4096, df.key);
-    df.joined = krb_now();
+    df.joined = df.pwset = krb_now();
 
     /* Probe: als Rechner anmelden */
     if ((e = krb_kinit(san, df.realm, df.pw, &mc)) != 0) {
@@ -207,25 +209,12 @@ static void do_join(void)
 /* ---- Ablage DOMAIN.KEY ---------------------------------------------------- */
 static int keypath(void)
 {
-    if (FAPI_FAILED(DosGetEnv("COMSPEC", kpath, sizeof(kpath))) || kpath[1] != ':')
-        return 1;
-    kpath[2] = 0;
-    scat(kpath, "\\DOS\\SYSTEM\\DOMAIN.KEY", sizeof(kpath));
-    return 0;
+    return dj_path(kpath, sizeof(kpath));
 }
 
 static int kread(void)
 {
-    unsigned h;
-    int r;
-    if (keypath())
-        return 1;
-    h = DosOpen(kpath);
-    if (FAPI_FAILED(h))
-        return 1;
-    r = DosRead(h, &df, sizeof(df)) != sizeof(df) || cr_cmp(df.magic, "ATDOMJ1", 8);
-    DosClose(h);
-    return r;
+    return keypath() || dj_read(&df, kpath);
 }
 
 static int kwrite(void)
@@ -285,6 +274,11 @@ static void status(void)
     out(df.dc);
     out("\r\nSeit:   ");
     out(ts);
+    krb_tstr(df.pwset, ts);
+    out("\r\nKennwort gesetzt: ");
+    out(ts);
+    if (df.pwnew[0])
+        out(" (Wechsel unterbrochen - DOMJOIN /RENEW)");
     out("\r\n");
     cr_zero(&df, sizeof(df));
     DosExit(0);
@@ -316,10 +310,118 @@ static void leave(void)
     DosExit(0);
 }
 
+
+/* Maschinenkennwort wechseln (/RENEW): als Rechner anmelden, per LDAP
+   altes Kennwort loeschen + neues hinzufuegen (Kennwortaenderung, darf
+   jedes Konto selbst - anders als replace = Zuruecksetzen). Das neue
+   Kennwort steht vorher als pwnew in DOMAIN.KEY: bricht etwas ab, nimmt
+   der naechste Lauf das Kennwort, mit dem der KDC anmeldet. */
+static char san[20], salt[200], fq[96];
+static unsigned quiet;
+
+static void say(const char *s) { if (!quiet) out(s); }
+
+static void mkey(const char *pw)
+{
+    scopy(salt, df.realm, sizeof(salt));
+    scat(salt, "host", sizeof(salt));
+    scat(salt, fq, sizeof(salt));
+    krb_s2k(pw, slen(pw), salt, slen(salt), 4096, df.key);
+}
+
+static void renew(void)
+{
+    static u8 pwo[120], pwn[120];
+    unsigned no, nn;
+    u32 code;
+    const char *e;
+    if (kread())
+        fail("Dieser Rechner ist keiner Dom\x84ne beigetreten.", 1);
+    if (net_lookup(df.dc, krb_kdc) && net_lookup(df.domain, krb_kdc))
+        fail("Dom\x84nencontroller nicht gefunden (Netz, DNS).", 1);
+    scopy(san, df.name, sizeof(san));
+    scat(san, "$", sizeof(san));
+    lower(fq, df.name, sizeof(fq));
+    scat(fq, ".", sizeof(fq));
+    scat(fq, df.domain, sizeof(fq));
+    ld_nocache = 1;                     /* Ablage gehoert dem Benutzer    */
+    e = krb_kinit(san, df.realm, df.pw, &tgt);
+    if (e && df.pwnew[0] && !krb_kinit(san, df.realm, df.pwnew, &tgt)) {
+        /* voriger Wechsel kam beim DC an, DOMAIN.KEY nicht mehr */
+        scopy(df.pw, df.pwnew, sizeof(df.pw));
+        e = 0;
+    }
+    if (e) {
+        out("Anmeldung als ");
+        out(san);
+        out(" gescheitert: ");
+        fail(e, 1);
+    }
+    cr_zero(df.pwnew, sizeof(df.pwnew));
+    {                                   /* neues Kennwort vormerken       */
+        char keep[48];
+        scopy(keep, df.pw, sizeof(keep));
+        mkpass();                       /* -> df.pw                       */
+        scopy(df.pwnew, df.pw, sizeof(df.pwnew));
+        scopy(df.pw, keep, sizeof(df.pw));
+        cr_zero(keep, sizeof(keep));
+    }
+    if (kwrite())
+        fail("DOMAIN.KEY nicht schreibbar.", 1);
+    no = upw(pwo);                      /* altes Kennwort                 */
+    scopy(df.pw, df.pwnew, sizeof(df.pw));
+    nn = upw(pwn);
+    lconnect();
+    rootdse();
+    sasl_bind();
+    msg_beg();
+    der_open(0x66);
+    oct(df.dn);
+    der_open(0x30);
+    der_open(0x30);
+    der_num(0x0A, 1);                   /* delete altes                   */
+    attr1("unicodePwd", pwo, no);
+    der_close();
+    der_open(0x30);
+    der_num(0x0A, 0);                   /* add neues                      */
+    attr1("unicodePwd", pwn, nn);
+    der_close();
+    der_close();
+    der_close();
+    lsend(msg_end());
+    code = result(0x67);
+    cr_zero(pwo, sizeof(pwo));
+    cr_zero(pwn, sizeof(pwn));
+    ldap_close();
+    if (code) {
+        cr_zero(df.pwnew, sizeof(df.pwnew));
+        kread();                        /* altes Kennwort bleibt          */
+        cr_zero(df.pwnew, sizeof(df.pwnew));
+        kwrite();
+        ldap_fail("Kennwort nicht ge\x84ndert", code);
+    }
+    mkey(df.pw);
+    cr_zero(df.pwnew, sizeof(df.pwnew));
+    df.pwset = krb_now();
+    if (kwrite())
+        fail("Kennwort ge\x84ndert, aber DOMAIN.KEY nicht schreibbar - das neue "
+             "Kennwort steht dort als vorgemerkt.", 1);
+    if ((e = krb_kinit(san, df.realm, df.pw, &tgt)) != 0) {
+        out("Probe-Anmeldung mit dem neuen Kennwort gescheitert: ");
+        fail(e, 1);
+    }
+    cr_zero(&tgt, sizeof(tgt));
+    say("Maschinenkennwort von ");
+    say(san);
+    say(" gewechselt.\r\n");
+    cr_zero(&df, sizeof(df));
+    DosExit(0);
+}
+
 void main(void)
 {
     char *a;
-    unsigned i, lv = 0;
+    unsigned i, lv = 0, rn = 0;
     df.name[0] = 0;
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -328,6 +430,10 @@ void main(void)
             scopy(ou, w + 4, sizeof(ou));
         else if (w[0] == '/' && up(w[1]) == 'L')
             lv = 1;
+        else if (w[0] == '/' && up(w[1]) == 'R')
+            rn = 1;
+        else if (w[0] == '/' && up(w[1]) == 'Q')
+            quiet = 1;
         else if (w[0] == '/' || w[0] == '-')
             usage();
         else {
@@ -343,6 +449,8 @@ void main(void)
         }
     }
     krb_bufs(kb1, kb2);
+    if (rn)
+        renew();
     if (lv)
         leave();
     if (!df.name[0])

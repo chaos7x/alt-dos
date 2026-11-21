@@ -12,13 +12,20 @@ struct djfile {
     char realm[64], domain[64], name[16], dc[96], dn[192], pw[48];
     u8   key[32];                       /* aes256 des Rechners           */
     u32  joined;                        /* Unix-Zeit                     */
+    /* ab 21.11.2026 (aeltere Dateien enden vor pwnew) */
+    char pwnew[48];                     /* neues Kennwort, Wechsel laeuft */
+    u32  pwset;                         /* Kennwort zuletzt gesetzt      */
 };
+#define DJ_OLDSIZE  524
+int  dj_path(char *p, unsigned max);    /* X:\DOS\SYSTEM\DOMAIN.KEY     */
+int  dj_read(struct djfile *d, const char *p);  /* 0 = ok              */
 
 extern char base[160], dchost[96], diag[160];   /* aus rootdse/result  */
 extern struct kcred tgt, svc;           /* TGT (vom Programm), ldap/<dc>  */
 extern u8 sb[], tb[], rb[];             /* je LBUF + 64                   */
 extern unsigned sh, msgid, sealed;
 extern struct tlv creds;
+extern unsigned ld_nocache;             /* ldap-Ticket nicht in die Ablage */
 
 void fail(const char *m, unsigned rc);  /* stellt das Programm            */
 int  cr_cmp(const void *a, const void *b, unsigned n);
@@ -35,4 +42,5 @@ u32  result(u8 op);
 void ldap_fail(const char *was, u32 code);
 void rootdse(void);                     /* -> base, dchost                */
 void sasl_bind(void);                   /* GSSAPI, danach sealed          */
+void ldap_close(void);                  /* unbind, Socket zu              */
 #endif

@@ -18,6 +18,7 @@ struct kcred tgt, svc;
 u8 sb[LBUF + 64], tb[LBUF + 64], rb[LBUF + 64];
 unsigned sh, msgid, sealed;
 struct tlv creds;
+unsigned ld_nocache;
 static struct fapi_socket so;
 static struct fapi_sockio io;
 static u8 *rp_;                         /* noch nicht gelesene Nachrichten */
@@ -277,10 +278,11 @@ void sasl_bind(void)
     static char sn[112];
     scopy(sn, "ldap/", sizeof(sn));
     lower(sn + 5, dchost, sizeof(sn) - 5);
-    if (krb_cc_find(sn, &svc) < 0 || krb_now() + 60 >= svc.end) {
+    if (ld_nocache || krb_cc_find(sn, &svc) < 0 || krb_now() + 60 >= svc.end) {
         if ((e = krb_tgs(&tgt, "ldap", dchost, &svc)) != 0)
             fail(e, 1);
-        krb_cc_put(&svc);
+        if (!ld_nocache)
+            krb_cc_put(&svc);
     }
     if (svc.etype != 18)
         fail("Der DC gibt f\x81r LDAP nur einen RC4-Schl\x81ssel aus - "
@@ -325,3 +327,43 @@ void lower(char *d, const char *s, unsigned max)
     d[i] = 0;
 }
 
+
+void ldap_close(void)
+{
+    msgid++;
+    der_beg(sb, LBUF);                  /* unbind                         */
+    der_open(0x30);
+    der_num(0x02, msgid);
+    der_prim(0x42, "", 0);
+    der_close();
+    lsend(der_len());
+    DosClose(sh);
+    sh = 0;
+    sealed = 0;
+}
+
+/* ---- DOMAIN.KEY ----------------------------------------------------------- */
+int dj_path(char *p, unsigned max)
+{
+    if (FAPI_FAILED(DosGetEnv("COMSPEC", p, max)) || p[1] != ':')
+        return 1;
+    p[2] = 0;
+    scat(p, "\\DOS\\SYSTEM\\DOMAIN.KEY", max);
+    return 0;
+}
+
+int dj_read(struct djfile *d, const char *p)
+{
+    unsigned h, n;
+    h = DosOpen(p);
+    if (FAPI_FAILED(h))
+        return 1;
+    cr_zero(d, sizeof(*d));
+    n = DosRead(h, d, sizeof(*d));
+    DosClose(h);
+    if ((n != sizeof(*d) && n != DJ_OLDSIZE) || cr_cmp(d->magic, "ATDOMJ1", 8))
+        return 1;
+    if (n == DJ_OLDSIZE)
+        d->pwset = d->joined;
+    return 0;
+}

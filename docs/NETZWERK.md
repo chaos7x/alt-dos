@@ -608,5 +608,32 @@ abgelehnt, IPCONFIG /ALL zeigt ihn, PING nach dem Erneuern; nach Neustart
 `HOSTNAME /LOAD /Q` -> Name und COMPUTERNAME wieder da. LOGON und
 HOSTNAME liegen auf Diskette 2 (Diskette 1 war voll).
 
-Weiter (offen): Wechsel des Maschinenkennworts, SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
+## Domäne Stufe 4: Maschinenkennwort wechseln (21.11.2026)
+
+`DOMJOIN /RENEW [/Q]` – wie Windows (alle 30 Tage) und `net ads
+changetrustpw`: als `Name$` mit dem Kennwort aus DOMAIN.KEY anmelden
+(eigenes TGT, die Ablage des Benutzers bleibt unberührt – `ld_nocache` in
+ldapc.c legt auch das ldap-Ticket nicht ab), SASL GSSAPI, dann modify auf
+das eigene Konto mit `delete unicodePwd "alt"` + `add unicodePwd "neu"`
+in einer Anfrage – das ist eine Kennwortänderung, die jedes Konto selbst
+darf (replace wäre Zurücksetzen und braucht ein Recht). Danach neuer
+AES-Schlüssel (Salz REALM + host + name.domäne) und Probe-Anmeldung.
+
+Sicher gegen Abbruch: das neue Kennwort steht vor der LDAP-Anfrage als
+`pwnew` in DOMAIN.KEY. Der nächste Lauf meldet sich erst mit `pw`, sonst
+mit `pwnew` an und übernimmt, was der DC kennt. LOGON schließt einen
+unterbrochenen Wechsel vor der DC-Prüfung ab (sonst passte der Schlüssel
+nicht) und ruft `/RENEW /Q`, wenn `pwset` älter als 30 Tage ist. DOMAIN.KEY
+hat dafür 52 Byte mehr (`pwnew`, `pwset`, 576 Byte); alte Dateien (524)
+gelten weiter, `pwset` = Beitritt (`dj_read` in ldapc.c). DOMJOIN zeigt
+„Kennwort gesetzt“ und einen unterbrochenen Wechsel.
+
+Geprüft in QEMU gegen den Samba-Test-DC: Beitritt, /RENEW (Kennwort am DC
+neu, KLIST zeigt weiter nur die Tickets von Administrator), LOGON prüft
+danach mit dem neuen Schlüssel; DOMAIN.KEY mit altem Kennwort und dem
+beim DC gültigen als `pwnew` -> LOGON schließt ab und meldet an; Datei im
+alten Format mit 40 Tage altem Beitritt -> LOGON wechselt, Datei danach
+576 Byte; j1.sh (Beitritt, erneut, ohne Recht, /LEAVE) wie vorher.
+
+Weiter (offen): SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.

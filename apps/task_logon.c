@@ -18,6 +18,8 @@
  *   4. Heimlaufwerk: per LDAP (SASL GSSAPI, ldapc.c) homeDrive und
  *      homeDirectory des Kontos lesen, \\Rechner\Freigabe mit NET USE
  *      verbinden (Kerberos), HOMEDRIVE/HOMESHARE/HOMEPATH setzen.
+ *   Ist das Maschinenkennwort aelter als 30 Tage, ruft LOGON vorher
+ *   DOMJOIN /RENEW /Q.
  * ERRORLEVEL: 0 ok, 1 Anmeldung gescheitert, 2 Aufruf, 3 angemeldet, aber
  * Heimlaufwerk nicht verbunden.
  */
@@ -55,18 +57,7 @@ void fail(const char *m, unsigned rc)
 
 static int kread(void)
 {
-    unsigned h;
-    int r;
-    if (FAPI_FAILED(DosGetEnv("COMSPEC", kpath, sizeof(kpath))) || kpath[1] != ':')
-        return 1;
-    kpath[2] = 0;
-    scat(kpath, "\\DOS\\SYSTEM\\DOMAIN.KEY", sizeof(kpath));
-    h = DosOpen(kpath);
-    if (FAPI_FAILED(h))
-        return 1;
-    r = DosRead(h, &df, sizeof(df)) != sizeof(df) || cr_cmp(df.magic, "ATDOMJ1", 8);
-    DosClose(h);
-    return r;
+    return dj_path(kpath, sizeof(kpath)) || dj_read(&df, kpath);
 }
 
 /* Eingabe einer Zeile; hide: Kennwort (nicht zeigen) */
@@ -180,6 +171,19 @@ static int verify_kdc(void)
             return 1;
         }
     return 1;
+}
+
+/* DOMJOIN /RENEW /Q als Kind (eigene Puffer, eigenes TGT des Rechners) */
+static void renew_pw(void)
+{
+    static char cl[64];
+    if (FAPI_FAILED(DosGetEnv("COMSPEC", cl, sizeof(cl))) || !cl[0])
+        scopy(cl, "C:", sizeof(cl));
+    cl[2] = 0;
+    scat(cl, "\\DOS\\DOMJOIN.EXE /RENEW /Q", sizeof(cl));
+    if (DosExecPgm(cl, EXEC_SYNC) || DosQChildRC())
+        out("Maschinenkennwort nicht gewechselt (DOMJOIN /RENEW).\r\n");
+    kread();
 }
 
 static void setenv2(const char *name, const char *val)
@@ -345,6 +349,11 @@ void main(void)
             fail("Anmeldung gescheitert.", 1);
     }
 
+    /* unterbrochener Kennwortwechsel: erst abschliessen, sonst passt
+       der Rechnerschluessel nicht */
+    if (df.pwnew[0])
+        renew_pw();
+
     /* KDC pruefen */
     lower(fq, df.name, sizeof(fq));
     scat(fq, ".", sizeof(fq));
@@ -387,6 +396,9 @@ void main(void)
     say("), Ticket g\x81ltig bis ");
     say(ts);
     say(".\r\n");
+    /* Maschinenkennwort nach 30 Tagen wechseln (wie Windows) */
+    if (krb_now() - df.pwset > 30UL * 86400UL)
+        renew_pw();
     if (!nohome)
         home();
     cr_zero(&df, sizeof(df));

@@ -6101,7 +6101,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   21.11.2026): `\DOS\SYSTEM\HOSTS` bzw. `%ETC%\HOSTS` in net_lookup
   (Ring 3, vor dem DNS), `HOSTNAME.EXE` + Datei `HOSTNAME`, FAPI_NET
   `NET_HOSTNAME` (7), COMPUTERNAME; LOGON/HOSTNAME nur auf Diskette 2
-  (Diskette 1 voll). Nächster Schritt: Maschinenkennwort wechseln.
+  (Diskette 1 voll). Stufe 4 erledigt: `DOMJOIN /RENEW` (Kennwortänderung
+  delete+add als Rechner selbst, `pwnew` in DOMAIN.KEY gegen Abbruch,
+  LOGON nach 30 Tagen und bei unterbrochenem Wechsel; DOMAIN.KEY 576 Byte,
+  524 weiter lesbar). Nächster Schritt (Reihenfolge des Nutzers): SHARE-
+  Sperren über das Netz, dann SMB 3.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`
