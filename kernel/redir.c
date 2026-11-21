@@ -104,6 +104,7 @@ struct rbx {
     struct shl     lk[NLK];
 };
 static unsigned rb_sel;
+static struct fapi_lock rlk;            /* Auftrag an FAPI_FILELOCK       */
 #define RBX(t)  ((struct rbx __far *)MK_FP(rb_sel, (unsigned)(t) * sizeof(struct rbx)))
 
 /* oem: Kennung aus INT 21h 30h (BH) - FFh MS-DOS/PC-DOS, FDh FreeDOS.
@@ -265,6 +266,7 @@ static unsigned errmap(unsigned r, unsigned def)
     case FAPI_ERR_EXIST:    return E_EXISTS;
     case FAPI_ERR_NOTREADY: return E_NOTREADY;
     case FAPI_ERR_INUSE:    return E_SHARE;
+    case FAPI_ERR_LOCKED:   return 0x21;        /* Sperrverletzung       */
     case FAPI_ERR_FULL:     return E_DENIED;
     }
     return def;
@@ -695,41 +697,55 @@ static int op(struct v86_frame *f, int t, unsigned fn)
         return 0;
     }
     case 0x0A: {                                /* LOCK/UNLOCK: BL = 1    */
-        struct shf __far *e;                          /* entsperren, DS:DX ->   */
+        struct shf __far *e;                    /* entsperren, DS:DX ->   */
         unsigned long o, n;                     /* Stelle, Laenge (DWORD) */
         unsigned char __far *pb;
+        unsigned un = *(unsigned char *)&f->ebx, kh;
         k = r16(bp(t, es, di + 0x0B));
-        if (sft_h(t, k, &e) == 0xFFFF)
+        if ((kh = sft_h(t, k, &e)) == 0xFFFF)
             return E_HANDLE;
-        if (!e)                                 /* ohne Tabellenplatz     */
-            return 0;
         pb = bp(t, (unsigned)f->r.ds, DX);
         o = r32(pb);
         n = r32(pb + 4);
         k &= 0xFF;
-        for (r = 0; r < NLK; r++) {
-            struct shl __far *l = &RBX(t)->lk[r];
-            if (!l->used || l->slot != k)
-                continue;
-            if (*(unsigned char *)&f->ebx) {    /* entsperren: genau der  */
-                if (l->ofs == o && l->len == n) {   /* Bereich           */
-                    l->used = 0;
-                    return 0;
-                }
-            } else if (o < l->ofs + l->len && l->ofs < o + n)
-                return 0x21;                    /* ueberschneidet sich    */
+        if (e) {                                /* Sperren der Box selbst */
+            for (r = 0; r < NLK; r++) {
+                struct shl __far *l = &RBX(t)->lk[r];
+                if (!l->used || l->slot != k)
+                    continue;
+                if (un) {                       /* entsperren: genau der  */
+                    if (l->ofs == o && l->len == n)     /* Bereich       */
+                        break;
+                } else if (o < l->ofs + l->len && l->ofs < o + n)
+                    return 0x21;                /* ueberschneidet sich    */
+            }
+            if (un && r == NLK)
+                return 0x21;                    /* nicht gesperrt         */
+            if (!un) {
+                for (r = 0; r < NLK && RBX(t)->lk[r].used; r++)
+                    ;
+                if (r == NLK)
+                    return 0x24;                /* Sperrtabelle voll      */
+            }
         }
-        if (*(unsigned char *)&f->ebx)
-            return 0x21;                        /* nicht gesperrt         */
-        for (r = 0; r < NLK; r++)
-            if (!RBX(t)->lk[r].used) {
+        /* dann beim Kernel: auf NET-USE-Laufwerken sperrt der Server
+           (andere Rechner sehen die Sperre), lokal immer 0 */
+        rlk.ofs = o;
+        rlk.len = n;
+        rlk.flags = un ? LOCK_UNLOCK : 0;
+        if (FAILED(err = FAPI(FAPI_FILELOCK, KDATA, kh, (unsigned)&rlk, 0)))
+            return err == FAPI_ERR_LOCKED ? 0x21 : E_DENIED;
+        if (e) {
+            if (un)
+                RBX(t)->lk[r].used = 0;
+            else {
                 RBX(t)->lk[r].used = 1;
                 RBX(t)->lk[r].slot = (unsigned char)k;
                 RBX(t)->lk[r].ofs = o;
                 RBX(t)->lk[r].len = n;
-                return 0;
             }
-        return 0x24;                            /* Sperrtabelle voll      */
+        }
+        return 0;
     }
     case 0x07:                                  /* COMMIT                */
     case 0x0B:                                  /* (FreeDOS: 0Ah + BL)   */

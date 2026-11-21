@@ -2699,6 +2699,7 @@ static unsigned ifs_err(int rc)
     case IFS_FULL:   return FAPI_ERR_FULL;
     case IFS_EXIST:  return FAPI_ERR_EXIST;
     case IFS_DENIED: return FAPI_ERR_DENIED;
+    case IFS_LOCKED: return FAPI_ERR_LOCKED;
     }
     return FAPI_ERROR;
 }
@@ -3844,7 +3845,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         }
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
-            return FAPI_ERROR;
+            return t == IFS_LOCKED ? FAPI_ERR_LOCKED : FAPI_ERROR;
         files[k].pos += t;
         return t;
 
@@ -4455,6 +4456,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_QTICKS:
         return (unsigned)get_ticks();
 
+    case FAPI_FILELOCK:                         /* Bereichssperre (ufs.c) */
+        if ((k = h2e(a1)) < 0 || files[k].kind != OF_FILE ||
+            !user_ok(usel, a2, sizeof(struct fapi_lock), 0))
+            return FAPI_ERROR;
+        t = ufs_lock(&files[k].f, MK_FP(usel, a2));
+        return t ? ifs_err(t) : 0;
     case FAPI_UFS:                              /* NET USE (ufs.c)        */
         return ufs_fapi(usel, a1, a2, a3);
 

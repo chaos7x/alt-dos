@@ -6104,8 +6104,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (Diskette 1 voll). Stufe 4 erledigt: `DOMJOIN /RENEW` (Kennwortänderung
   delete+add als Rechner selbst, `pwnew` in DOMAIN.KEY gegen Abbruch,
   LOGON nach 30 Tagen und bei unterbrochenem Wechsel; DOMAIN.KEY 576 Byte,
-  524 weiter lesbar). Nächster Schritt (Reihenfolge des Nutzers): SHARE-
-  Sperren über das Netz, dann SMB 3.
+  524 weiter lesbar). Sperren über das Netz Stufe 1 erledigt
+  (`docs/NETZWERK.md` „SMB Stufe 3“): FAPI 5Eh `FAPI_FILELOCK` -> ufs.c
+  `ufs_lock` -> `UFSOP_LOCK` -> SMB2 LOCK, `IFS_LOCKED`/`FAPI_ERR_LOCKED`
+  (FFF2h), Box 110Ah reicht an den Kernel weiter (21h). Test zwei QEMU
+  gleichzeitig mit `/tmp/claude-0/lk` (LK.COM A/B, go2.sh gegen den
+  eigenständigen smbd – der Test-DC verliert Freigabeeinträge, AD-Samba
+  dafür anhalten). Weiter: Freigabemodi an den Server, dann SMB 3.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

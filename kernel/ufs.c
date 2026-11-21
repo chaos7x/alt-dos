@@ -159,7 +159,7 @@ static int __far u_read(struct ifs_file __far *f, unsigned long pos,
         RQ(i)->pos = pos + done;
         RQ(i)->len = n;
         if ((r = rq_go(i)) != 0)
-            return done ? (int)done : -1;
+            return done ? (int)done : (r == IFS_LOCKED ? r : -1);
         got = RQ(i)->len > n ? n : RQ(i)->len;
         if (got)
             far_copy(sel, off + done, us[i].sel, DOFF, got);
@@ -342,6 +342,20 @@ static int __far u_trunc(struct ifs_file __far *f, unsigned long size)
         return IFS_ERR;
     f->size = size;
     return 0;
+}
+
+/* Bereichssperre beim Server (FAPI_FILELOCK); lokale Laufwerke: 0 */
+int __far ufs_lock(struct ifs_file __far *f, struct fapi_lock __far *l)
+{
+    int i = slot_of(f->drive);
+    if (i < 0)
+        return 0;
+    rq_new(i, UFSOP_LOCK, 0);
+    RQ(i)->h = f->first;
+    RQ(i)->pos = l->ofs;
+    RQ(i)->size = l->len;
+    RQ(i)->mask = l->flags;
+    return rq_go(i);
 }
 
 struct ifs_driver ufs_driver = {

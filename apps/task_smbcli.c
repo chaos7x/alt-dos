@@ -222,6 +222,7 @@ static int sput(const u8 *d, unsigned n)
 #define C_CREATE 5
 #define C_CLOSE 6
 #define C_READ  8
+#define C_LOCK  0x0A
 #define C_WRITE 9
 #define C_QDIR  0x0E
 
@@ -1333,6 +1334,8 @@ static short ierr(u32 st)
         return IFS_FULL;
     if (st == 0xC0000101UL)
         return IFS_DENIED;
+    if (st == 0xC0000054UL || st == 0xC0000055UL)   /* LOCK_CONFLICT/NOT_GRANTED */
+        return IFS_LOCKED;
     return IFS_ERR;
 }
 
@@ -1451,7 +1454,7 @@ static void op(void)
         if (st == S_EOF)
             break;
         if (st) {
-            rq.status = IFS_ERR;
+            rq.status = ierr(st);
             break;
         }
         rq.len = (unsigned)get32(RB + 4);
@@ -1637,6 +1640,25 @@ static void op(void)
         kpath(rq.path, sp + 1, rq.shortn ? 1 : 2);
         sp[0] = '\\';
         rq.len = FAPI_PATHLEN > IFS_PATHLEN ? IFS_PATHLEN : FAPI_PATHLEN;
+        break;
+    case UFSOP_LOCK:                    /* Bereichssperre (SMB2 LOCK)     */
+        if (!hget(rq.h)) {
+            rq.status = IFS_ERR;
+            break;
+        }
+        cr_zero(BODY, 48);
+        BODY[0] = 48;
+        BODY[2] = 1;                    /* eine Sperre                    */
+        cr_cpy(BODY + 8, fid, 16);
+        put32(BODY + 24, rq.pos);
+        put32(BODY + 32, rq.size);
+        put32(BODY + 40, rq.mask & LOCK_UNLOCK ? 4UL :          /* UNLOCK */
+              (rq.mask & LOCK_SHARED ? 1UL : 2UL) | 0x10UL);    /* sofort */
+        st = smb(C_LOCK, 48);
+        if (st == 0xC000007EUL)         /* RANGE_NOT_LOCKED               */
+            rq.status = IFS_LOCKED;
+        else if (st)
+            rq.status = ierr(st);
         break;
     case UFSOP_TRUNC:
         if (!hget(rq.h)) {

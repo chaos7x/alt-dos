@@ -260,6 +260,19 @@ struct fapi_drvinfo {
                                        -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
 #define UFS_INFO            5       /* CX = Laufwerk, DX = struct
                                        fapi_ufsreg -> 0, FAPI_ERROR     */
+#define FAPI_FILELOCK       0x5E    /* Bereichssperre (6.3, wie OS/2
+                                       DosSetFileLocks): BX = Handle, CX =
+                                       struct fapi_lock -> 0, FAPI_ERR_
+                                       LOCKED (fremd gesperrt / nicht
+                                       gesperrt). Wirkt auf NET-USE-
+                                       Laufwerken beim Server; lokal immer
+                                       0 (zwei Schreiber gibt es lokal nie) */
+struct fapi_lock {
+    unsigned long  ofs, len;
+    unsigned short flags;           /* LOCK_*                            */
+};
+#define LOCK_UNLOCK         1       /* Bereich freigeben (genau so gesperrt) */
+#define LOCK_SHARED         2       /* andere duerfen lesen               */
 #define UFS_DATA            16384u  /* Daten je Auftrag hoechstens        */
 #define UFSOP_QUIT          0
 #define UFSOP_OPEN          1       /* path -> h, size, attr             */
@@ -282,6 +295,8 @@ struct fapi_drvinfo {
 #define UFSOP_LABEL         14      /* -> Daten = Bezeichnung (11)       */
 #define UFSOP_NAMEPATH      15      /* path, shortn -> Daten = Pfad      */
 #define UFSOP_TRUNC         16      /* h, size                           */
+#define UFSOP_LOCK          17      /* h, pos = Stelle, size = Laenge,
+                                       mask = LOCK_* (FAPI_FILELOCK)     */
 struct fapi_ufsreg {
     unsigned short drive;           /* 2 = C:                            */
     unsigned short task;            /* UFS_INFO: Dienst                  */
@@ -805,6 +820,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
+#define FAPI_ERR_LOCKED     0xFFF2  /* Bereich von anderem gesperrt (6.3) */
 #define FAPI_ERR_FIRST      0xFFF0
 
 #define FAPI_VERSION        0x0614

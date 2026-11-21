@@ -635,5 +635,41 @@ beim DC gültigen als `pwnew` -> LOGON schließt ab und meldet an; Datei im
 alten Format mit 40 Tage altem Beitritt -> LOGON wechselt, Datei danach
 576 Byte; j1.sh (Beitritt, erneut, ohne Recht, /LEAVE) wie vorher.
 
+## SMB Stufe 3: Bereichssperren über das Netz (21.11.2026)
+
+Reihenfolge des Nutzers: Domäne, dann Sperren, dann SMB 3. Bisher galten
+Sperren aus der Box (INT 2Fh 110Ah) nur innerhalb der Box; SMBCLI öffnet
+mit ShareAccess 7 (alles teilen), der Server erzwang also nichts.
+
+- FAPI 5Eh `FAPI_FILELOCK` (`DosFileLock`, wie OS/2 DosSetFileLocks):
+  Handle + `struct fapi_lock` (Stelle, Länge, LOCK_UNLOCK, LOCK_SHARED).
+  Kernel ruft `ufs_lock` (ufs.c): auf NET-USE-Laufwerken neuer Auftrag
+  `UFSOP_LOCK` an den Dienst, lokal 0 – zwei Schreiber auf eine Datei
+  lässt der Kernel lokal ohnehin nicht zu.
+- SMBCLI: SMB2 LOCK (0Ah) mit einer Sperre, exklusiv bzw. geteilt mit
+  FAIL_IMMEDIATELY, Freigeben mit UNLOCK; LOCK_NOT_GRANTED,
+  FILE_LOCK_CONFLICT (auch bei READ/WRITE) und RANGE_NOT_LOCKED ->
+  `IFS_LOCKED` -> `FAPI_ERR_LOCKED` (FFF2h). ufs.c reicht IFS_LOCKED beim
+  Lesen durch, kernel.c meldet es bei READ/WRITE.
+- Box: 110Ah prüft wie bisher die eigenen Sperren der Box, dann
+  `FAPI_FILELOCK` auf den Kernel-Handle; Ablehnung -> 21h. Der Redirector
+  bildet FAPI_ERR_LOCKED überall auf 21h ab (Lesen, Schreiben).
+- Beim Wiederverbinden (SMBCLI öffnet Dateien neu) gehen Sperren verloren
+  – wie bei einem echten Verbindungsabbruch unter DOS.
+
+Geprüft in QEMU mit zwei Rechnern gleichzeitig gegen smbd (Test-
+programm LK.COM im Scratchpad, Mitschnitt per filter-dump): A sperrt
+0–100, B scheitert an 50–60 mit 21h, Lesen bei 60 ebenfalls 21h, A gibt
+frei, B sperrt danach; NET-USE-Test run2.sh wie vorher. Testfalle: der
+Samba-AD-DC des Testaufbaus verliert zwischen zwei Verbindungen Einträge
+der Freigabedatenbank („Could not delete share entry“, B sieht
+num_share_modes=0) und damit Sperren – mit dem eigenständigen smbd
+(`/tmp/claude-0/smb`) nicht; Ursache im Container, nicht in AT-DOS. Reine
+Programmlogik – kein 86Box.
+
+Offen: Freigabemodi (deny read/write) an den Server (ShareAccess je
+Öffnen), Sperren über das Netz zwischen zwei FAPI-Programmen auf demselben
+Rechner (lokal schließt der Kernel zweite Schreiber aus).
+
 Weiter (offen): SRV-Einträge im Auflöser, Ticket erneuern, SMB 3
 (AES-CMAC, Verschlüsselung), Sperren (SHARE) über das Netz.
