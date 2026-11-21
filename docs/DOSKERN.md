@@ -387,7 +387,8 @@ die Programme direkt lesen.
    (Dispatcher, Speicher, PSP/EXEC), Strukturen auf das Layout von MS-DOS 4.0 geprüft,
    Handle-Funktionen 3Ch–46h, 4Eh/4Fh, 47h, 39h–3Bh, 41h, 43h, 56h, 57h
    über das DEM; direkt vom Kernel geladen (`load_cm`, neben load_img); FreeCOM als Shell. Ziel: DIR,
-   COPY, HALLO, MEM, Digger.
+   COPY, HALLO, MEM, Digger – und **DOOM 1.9** (erste Hälfte der Abnahme,
+   s. „Abnahme“).
 3. **Strukturen vollständig**: LoL, SFT, CDS, SDA, DPB-Attrappe, FCB-
    Funktionen, 59h, 5Dh/5Eh/5Fh, IOCTL, NLS (38h, 65h, 66h), INT 2Fh
    12xxh, SHARE-Codes. Maßstab: BIOSCMP gleich `docs/bioscmp/msdos622*.txt`.
@@ -397,7 +398,8 @@ die Programme direkt lesen.
    Box. Spieleliste: DOOM 1.9, DOTT, Digger, Stunts, Elvira; Anwendungen:
    Word 5.5, Lotus Works, NC, MSD, CheckIt, 7za/FreeDOS-Werkzeuge;
    Shells FreeCOM, COMMAND.COM 4.0 (eigener Bau) und 6.22 (Kopie des
-   Nutzers) mit LH und DOSKEY.
+   Nutzers) mit LH und DOSKEY. Am Ende **CheckIt Pro** (zweite Hälfte der
+   Abnahme).
 5. **Vorgabe wechseln** (Entscheidung des Nutzers), BOXSHELL
    verschlanken; COMMAND.COM aus MS-DOS
    4.0 (gebaut, ohne Versionsprüfung) neben FreeCOM mitliefern.
@@ -497,6 +499,51 @@ für alle Abbilder nichts an der Zahl der Fallen, schafft aber die
 Schnittstelle, über die Stufe 2 den Aufruf auf eine Falle bringt. Punkt 4
 als eigene Aufgabe im Kernel. Strukturen von MS-DOS 6.22, FreeDOS und
 beiden Boxen: `docs/dosstruc/` (Maßstab für Stufe 3).
+
+### Abnahme: DOOM und CheckIt Pro
+
+Vorgabe des Nutzers (21.11.2026): die neue Schicht muss **DOOM** und
+**CheckIt Pro** zum Laufen bringen – die beiden ziehen an entgegengesetzten
+Enden. Maßstab ist jeweils dasselbe Programm unter MS-DOS 6.22 direkt und
+in der MS-DOS-Box auf derselben 86Box-Maschine (DX4-100 und 386DX/40 mit
+4 MB; P3B-F für VME).
+
+**DOOM 1.9 (DOS/4GW)** prüft, ob der Kern als Unterlage für ein
+DPMI-Programm trägt – wenig DOS, aber das Wenige muss genau stimmen:
+- EXEC eines großen MZ mit angebundenem Extender: DOS/4GW findet seine
+  eigene EXE über den Namen hinter der Umgebung im PSP und liest sie per
+  Seek – Umgebung, Programmname und Speicherblöcke (48h/4Ah) wie DOS.
+- INT 21h aus dem PM kommt über die Spiegelung des Monitors im Real Mode
+  an (DPMI 0300h, Raw Switch) – der Kern muss wiedereintrittsfest genug
+  sein, wie DOS es ist (InDOS, kritische Abschnitte, INT 28h).
+- WAD laden: große READ mit Seek dazwischen über das DEM – heute ~9 s
+  statt 2–4 s Ladezeit (DX4, Stufe 0); Ziel: höchstens wie direkt.
+- Bleibt unverändert im Monitor/in den Modulen: DPMI, Takt/PIC, SB/AdLib/
+  MPU (VSB.SYS), VGA – DOOM ist damit der Beleg, dass der Wechsel des
+  DOS diese Schicht nicht stört.
+- Messung: `-timedemo demo1` (realtics wie heute ±1 %) und Ladezeit
+  (DOSBENCH /T davor und danach), mit Ton (SB16) und ohne.
+
+**CheckIt Pro 1.11** prüft das Gegenteil – das DOS von innen. Es liest,
+was heute das echte DOS im Abbild liefert und der Kern dann selbst
+führen muss (Funde der Box-Tests: `docs/BOX-BIOS.md`):
+- DOS-Details: Version/wahre Version, COMSPEC, Umgebung, BREAK/VERIFY,
+  FILES/BUFFERS/LASTDRIVE aus der Liste der Listen, Gerätekette (NUL,
+  CON, CLOCK$, EMMXXXX0, ATIN$/ATOUT$), Länderdaten.
+- Speicherkarte: MCB-Kette mit Besitzern und Namen, UMB-Verkettung, HMA
+  (3306h, 4A01h), XMS/EMS über den Monitor.
+- Laufwerke: DPB (32h/1Fh), 36h, IOCTL 4408h/4409h/440Dh, Bezeichnung,
+  CD über MSCDEX 15xxh (als „Network“ wie unter MS-DOS) – mit dem eigenen
+  Kern erscheinen die AT-DOS-Laufwerke **lokal** wie unter MS-DOS.
+- Plattentests über INT 25h (lesend, Regel wie MS-DOS 7) – heute meldet
+  CheckIt in der Box „nicht vorhanden“, mit dem eigenen Kern wird der
+  Lesetest möglich; Schreibtests nur mit Laufwerkssperre.
+- Bildschirmseiten von CheckIt (DOS Details, Memory, Drives) werden je
+  Seite gegen MS-DOS 6.22 auf derselben Maschine verglichen; erlaubte
+  Unterschiede wie heute in `docs/BOX-BIOS.md` (86Box-Koprozessor, Uhr).
+
+Beide zusammen sind die Bedingung für Stufe 5 (Vorgabe wechseln),
+zusätzlich zu BIOSCMP/doscmp und `docs/dosstruc/`.
 
 ## Undokumentiertes: wie wir es treffen
 
