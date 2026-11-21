@@ -790,3 +790,10 @@ und nach der Änderung zeilengleich (31 bekannte Abweichungen). Reine
 Programmlogik – kein 86Box.
 
 Weiter (offen): SMB 3 (AES-CMAC, Verschlüsselung).
+
+Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
+test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`
+offen -> der Mac liest, Anhängen per `echo >>` scheitert („Resource
+temporarily unavailable“), nach Strg+Z geht es; der Mac öffnet mit
+`O_EXLOCK` -> `TYPE` in AT-DOS meldet „wird gerade benutzt“. Dabei
+gefunden: `COPY CON` ging gar nicht (CON war beim Öffnen kein Gerät).

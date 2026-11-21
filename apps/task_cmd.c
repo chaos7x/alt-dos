@@ -1644,7 +1644,7 @@ static void cmd_type(char *arg)
         if (h == FAPI_ERR_NOTREADY)
             not_ready(name);
         else
-            puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm geschrieben.\n"
+            puts(h == FAPI_ERR_INUSE ? "Datei wird gerade von einem anderen Programm benutzt.\n"
                                      : "Datei nicht gefunden.\n");
         return;
     }
