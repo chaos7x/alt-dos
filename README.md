@@ -302,6 +302,13 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   ohne Kennwort und `/USER:` mit Kerberos, wenn KINIT Tickets abgelegt hat;
   CHKDSK meldet „kann Netzlaufwerke nicht prüfen“, DosQFSInfo setzt dafür
   `FSI_REMOTE`)
+- `NET USE … /PERSISTENT:YES|NO` (6.3) merkt Verbindungen wie Windows für
+  Workgroups/NT (Vorgabe ja, allein gesetzt nur die Vorgabe) in
+  `\DOS\SYSTEM\NETUSE.LST` – ohne Kennwort; `NET USE` zeigt gemerkte,
+  nicht verbundene als „Getrennt“, `NET USE X: /DELETE` vergisst sie,
+  `NET USE /RESTORE` stellt sie her (mit Kerberos ohne Rückfrage, mit
+  `/USER:` fragt es nach dem Kennwort). LOGON ruft es nach dem
+  Heimlaufwerk; das Heimlaufwerk selbst wird nicht gemerkt.
 - Bereichssperren über das Netz (6.3): Sperren von DOS-Programmen in der
   Box (INT 21h 5Ch) und von FAPI-Programmen (DosFileLock) auf NET-USE-
   Laufwerken gehen an den SMB-Server – ein zweiter Rechner sieht sie

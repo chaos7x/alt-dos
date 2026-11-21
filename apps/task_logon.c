@@ -18,6 +18,7 @@
  *   4. Heimlaufwerk: per LDAP (SASL GSSAPI, ldapc.c) homeDrive und
  *      homeDirectory des Kontos lesen, \\Rechner\Freigabe mit NET USE
  *      verbinden (Kerberos), HOMEDRIVE/HOMESHARE/HOMEPATH setzen.
+ *   5. gemerkte Netzlaufwerke: NET USE /RESTORE (NET USE /PERSISTENT).
  *   Ist das Maschinenkennwort aelter als 30 Tage, ruft LOGON vorher
  *   DOMJOIN /RENEW /Q.
  * ERRORLEVEL: 0 ok, 1 Anmeldung gescheitert, 2 Aufruf, 3 angemeldet, aber
@@ -295,11 +296,22 @@ static void home(void)
     scat(cl, hdrv, sizeof(cl));
     scat(cl, " \"", sizeof(cl));
     scat(cl, unc, sizeof(cl));
-    scat(cl, "\"", sizeof(cl));
+    scat(cl, "\" /NOSAVE", sizeof(cl));
     if (DosExecPgm(cl, EXEC_SYNC))
         fail("NET.EXE nicht gefunden (\\DOS).", 1);
     if (DosQChildRC())
         fail("NET USE gescheitert.", 1);
+}
+
+/* gemerkte Netzlaufwerke (NET USE /PERSISTENT) herstellen */
+static void restore(void)
+{
+    static char cl[64];
+    if (FAPI_FAILED(DosGetEnv("COMSPEC", cl, sizeof(cl))) || !cl[0])
+        scopy(cl, "C:", sizeof(cl));
+    cl[2] = 0;
+    scat(cl, "\\DOS\\NET.EXE USE /RESTORE", sizeof(cl));
+    DosExecPgm(cl, EXEC_SYNC);
 }
 
 void main(void)
@@ -402,6 +414,7 @@ void main(void)
         renew_pw();
     if (!nohome)
         home();
+    restore();
     cr_zero(&df, sizeof(df));
     DosExit(0);
 }

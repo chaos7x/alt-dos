@@ -806,3 +806,24 @@ N: aus homeDrive/homeDirectory (`\\fs\…`, Kurzname über das DNS-Suffix
 aus DHCP), weitere Freigaben per NET USE ohne Kennwort (Kerberos).
 Testfalle: DOMAIN.KEY gehört zum Plattenabbild – ein frisches
 atdos-hd.img braucht wieder DOMJOIN (vorhandenes Konto wird übernommen).
+
+## Dauerhafte Verbindungen: NET USE /PERSISTENT (21.11.2026)
+
+Wunsch des Nutzers („persistent wäre nicht schlecht“). Wie Windows für
+Workgroups/NT, aber ohne Kennwortliste (.PWL): mit der Domäne braucht es
+keine, Kerberos meldet jede Freigabe ohne Kennwort an.
+
+- `X:\DOS\SYSTEM\NETUSE.LST` (Startlaufwerk aus COMSPEC): Kopfzeile
+  `PERSISTENT=YES|NO` (Vorgabe für neue Verbindungen), dann je Laufwerk
+  `X: \\Rechner\Freigabe [/USER:Dom\Name]`.
+- `/PERSISTENT:x` mit einer Verbindung setzt die Vorgabe und gilt für sie,
+  allein nur die Vorgabe. `/DELETE` nimmt den Eintrag mit heraus (auch
+  einen nur gemerkten). Ein schon gleich verbundenes Laufwerk ist kein
+  Fehler mehr (LOGON zweimal).
+- `/RESTORE`: gemerkte, nicht verbundene Laufwerke verbinden; mit `/USER:`
+  fragt `ask_pass`. LOGON ruft es nach dem Heimlaufwerk, das selbst mit
+  `/NOSAVE` verbunden wird (wie Windows: Heimlaufwerk kommt aus dem AD).
+- Geprüft in QEMU gegen den Test-DC (ATDOS.TEST, zwei Starts):
+  P: gemerkt, Q: mit /PERSISTENT:NO nicht, R: nach /DELETE weg, H: nicht;
+  zweiter Start: `NET USE` zeigt P: „Getrennt“, LOGON verbindet H: und P:,
+  DIR P: richtig, P: /DELETE leert die Liste. Reine Programmlogik.
