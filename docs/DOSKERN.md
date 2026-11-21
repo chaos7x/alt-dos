@@ -103,6 +103,13 @@ AT-DOS), und die Vorgabe hängt am FreeDOS-Kern.
 **NT-Technik mit der Kompatibilität von heute (MS-DOS 6.22 als Maßstab,
 BIOSCMP/doscmp), dazu die Bequemlichkeiten von OS/2.**
 
+Einordnung in die Zeitlinie (Gedanke des Nutzers, 21.11.2026): AT-DOS
+steht in der Linie des Multitasking-DOS 4.0 (MT-DOS, 1986). Der eigene
+Kern in der Box zeigt, wie es hätte weitergehen können, wenn man dieses
+DOS einfach fortentwickelt hätte – statt auf OS/2 oder NT zu setzen,
+übernimmt es deren Technik (Boxen wie MVDM, Dateiarbeit wie NTVDM) in
+die eigene DOS-Linie.
+
 1. **DOS-Kern in der Box (V86, Real-Mode-Code)** aus **zwei Quellen**
    (Entscheidung des Nutzers, 21.11.2026: „beides nehmen – MS-DOS 4 hat
    die ganzen, auch undokumentierten Strukturen, FreeDOS ist technisch
