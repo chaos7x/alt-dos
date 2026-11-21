@@ -1660,7 +1660,7 @@ t_bscom   db "\COMMAND.COM", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_kbox    db "/K X:\DOS\MDOS\BOXAUTO.BAT ", 0   ; ruft die AUTOEXEC.BAT
-t_bpath   db " X:\DOS\MDOS", 0                   ; und haengt das an PATH
+t_bpath   db " X:\DOS\MDOS", 0                   ; und stellt das vor PATH
 t_hello   db "DOS-Box von AT-DOS 6.3 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 t_hello2  db "DOS-Box von AT-DOS 6.3 - EXIT beendet die Box.", 13, 10, "$"
 t_hello3  db "DOS-Box von AT-DOS 6.3 (eigener Kern ATDOSCM, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
@@ -1692,30 +1692,38 @@ rdbuf     equ envbuf                    ; Lesepuffer, vor dem Aufbau der Umgebun
 ; ---- nur beim Start (ab_merge), danach frei bis auf die Umgebung ---------
           align 16
 menv:
-; X:\DOS\MDOS an AB_VAL anhaengen: ein PATH aus der AUTOEXEC.BAT ersetzt
+; X:\DOS\MDOS vor AB_VAL stellen: ein PATH aus der AUTOEXEC.BAT ersetzt
 ; den der Box ganz, dann fanden COMMAND, COMMAND4, MEM usw. nichts mehr
-; (vom Nutzer gemeldet). Steht es schon drin, nimmt ab_dedup die zweite
+; (vom Nutzer gemeldet); vorn, weil in X:\DOS das MEM von AT-DOS liegt,
+; das in der Box nicht laeuft. Steht es schon drin, nimmt ab_dedup die zweite
 ; Nennung wieder heraus.
-ab_mdos:
+ab_mdos:                                ; X:\DOS\MDOS; vor AB_VAL
         push    es
         push    ds
         pop     es
-        mov     di, AB_VAL
-.e:     cmp     byte [di], 0
+        mov     si, AB_VAL
+.e:     cmp     byte [si], 0
         je      .f
-        inc     di
+        inc     si
         jmp     .e
-.f:     cmp     di, AB_VAL + AB_VSZ - 13
+.f:     cmp     si, AB_VAL + AB_VSZ - 13
         jae     .r
-        mov     al, ';'
-        stosb
+        mov     cx, si
+        sub     cx, AB_VAL
+        inc     cx                      ; mit der Null
+        lea     di, [si + 12]
+        std                             ; 12 Byte nach hinten schieben
+        rep     movsb
+        cld
+        mov     di, AB_VAL
         mov     bx, t_path + 5          ; "X:\DOS\MDOS" (Laufwerk gesetzt)
         mov     cx, 11
 .c:     mov     al, [cs:bx]
         stosb
         inc     bx
         loop    .c
-        mov     byte [di], 0
+        mov     al, ';'
+        stosb
 .r:     pop     es
         ret
 

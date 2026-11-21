@@ -585,7 +585,8 @@ die Programme direkt lesen.
    mit J, DATE, COPY, DOOM als erstes Programm; BIOSCMP unverändert 39.
    PATH aus der AUTOEXEC.BAT (vom Nutzer gemeldet: COMMAND/COMMAND4 in der
    Box nicht gefunden): ersetzt ihr PATH den der Box ohne `\DOS\MDOS`,
-   hängt BOXSHELL `X:\DOS\MDOS` an (direkt gestartete Programme:
+   stellt BOXSHELL `X:\DOS\MDOS` voran (in `\DOS` liegt das MEM von
+   AT-DOS, das in der Box nicht läuft; direkt gestartete Programme:
    `ab_mdos`; interaktiv mit /K über `\DOS\MDOS\BOXAUTO.BAT`).
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
