@@ -68,7 +68,7 @@ jobs:
           gh release delete test-6.2 --yes --cleanup-tag 2>/dev/null || true
           gh release delete v6.2 --yes --cleanup-tag 2>/dev/null || true
           gh release create v6.2 build/atdos-fd.img build/atdos-fd2.img build/atdos-hd.zip \
-            --target "$GITHUB_SHA" --latest \
+            --target "$GITHUB_SHA" --latest=false \
             --title "AT-DOS 6.2, Build $BNO" \
             --notes "AT-DOS 6.2 (Zweig 6.2) fuer den 386 und neuer = 6.1 plus Netzwerk: TCP/IP mit IPv6 (SLAAC, globale und lokale Adresse) und Firewall (TCPIP.SYS), Karten NE2000, RTL8139, PCnet, e1000, Werkzeuge PING, IPCONFIG, NSLOOKUP, NC, NETSTAT, FIREWALL, WGET, FTP, TELNET, SNTP; Sperren je Laufwerk auch fuer CD-Dateisysteme, acht Loop-Laufwerke, DETACH ohne Konsole, XCOPY /I, CONFIG.SYS bis 8 KB, F8 beim Start (CONFIG.SYS und AUTOEXEC.CMD schrittweise). Mindestens 386 mit 4 MB. atdos-fd.img/atdos-fd2.img: Setup-Disketten 1 und 2. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
