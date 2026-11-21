@@ -126,18 +126,22 @@ int ccm_open(const struct aes *a, const u8 nonce[11], const u8 *aad, unsigned al
     return 1;
 }
 
-void smb_kdf(const u8 ki[16], const char *label, unsigned ll,
-             const u8 *ctx, unsigned cl, u8 ko[16])
+void smb_kdf(const u8 *ki, unsigned kl, const char *label, unsigned ll,
+             const u8 *ctx, unsigned cl, u8 *ko, unsigned ol)
 {
-    static const u8 one[4] = { 0, 0, 0, 1 }, z = 0, bits[4] = { 0, 0, 0, 0x80 };
+    static const u8 one[4] = { 0, 0, 0, 1 }, z = 0;
     struct hmac h;
-    u8 o[32];
-    hmac_init(&h, ki, 16);
+    u8 o[32], bits[4];
+    bits[0] = 0;
+    bits[1] = 0;
+    bits[2] = (u8)(ol >> 5);            /* L = 8 * ol in Bit, Big Endian  */
+    bits[3] = (u8)(ol << 3);
+    hmac_init(&h, ki, kl);
     hmac_add(&h, one, 4);
     hmac_add(&h, label, ll);
     hmac_add(&h, &z, 1);
     hmac_add(&h, ctx, cl);
     hmac_add(&h, bits, 4);
     hmac_end(&h, o);
-    cr_cpy(ko, o, 16);
+    cr_cpy(ko, o, ol);
 }

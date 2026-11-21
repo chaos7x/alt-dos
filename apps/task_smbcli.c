@@ -44,9 +44,13 @@ static unsigned rxn;                    /* Laenge der Antwort (ohne NetBIOS) */
 static u8 skey[16];
 static unsigned signing, dialect;
 /* SMB 3: Schluessel aus skey (Signatur, an den Server, vom Server),
-   Verfahren 0 keins, 1 AES-128-CCM, 2 AES-128-GCM; encr = verschluesseln */
-static u8 sgk[16], enk[16], dek[16], pih[64], npre[8];
-static unsigned cipher, encr;
+   cipher wie [MS-SMB2]: 0 keins, 1/2 AES-128-CCM/-GCM, 3/4 AES-256-CCM/
+   -GCM; salg Signatur 1 AES-CMAC, 2 AES-GMAC; encr = verschluesseln;
+   fsk = ganzer Sitzungsschluessel (Kerberos AES256: 32 Byte, fuer AES-256) */
+static u8 sgk[16], enk[32], dek[32], pih[64], npre[8], fsk[32];
+static unsigned cipher, encr, salg, fskl;
+#define C_GCM   (cipher == 2 || cipher == 4)
+#define C_KL    (cipher >= 3 ? 32 : 16)
 static u32 nctr;
 static struct gcm gc;
 static u32 msgid;
@@ -254,7 +258,7 @@ static void nonce(u8 *t)
 {
     cr_zero(t, 16);
     put32(t, nctr++);
-    cr_cpy(t + 4, npre, cipher == 2 ? 8 : 7);
+    cr_cpy(t + 4, npre, C_GCM ? 8 : 7);
 }
 
 /* Anfrage: Kopf in tx+4 bauen, Rumpf liegt schon ab tx+4+64 (blen Byte),
@@ -290,18 +294,25 @@ static u32 smb(unsigned cmd, unsigned blen)
         t[41] = 0;
         put16(t + 42, 1);               /* verschluesselt                 */
         cr_cpy(t + 44, sess, 8);
-        if (cipher == 2) {
-            gcm_key(&gc, enk);
+        if (C_GCM) {
+            gcm_keyl(&gc, enk, C_KL);
             gcm_seal(&gc, t + 20, t + 20, 32, h, n, t + 4);
         } else {
-            aes_key(&gc.k, enk);
+            aes_keyl(&gc.k, enk, C_KL);
             ccm_seal(&gc.k, t + 20, t + 20, 32, h, n, t + 4);
         }
         o = t - 4;
         sn = n + 52;
     } else if (signing && cmd != C_NEG && cmd != C_SESS) {
         h[16] |= 8;                     /* SMB2_FLAGS_SIGNED             */
-        if (dialect >= 0x0300) {        /* AES-CMAC                      */
+        if (dialect >= 0x0300 && salg == 2) {   /* AES-GMAC: Nachricht als
+                                           AAD, Nonce = MessageId + 0  */
+            u8 iv[12];
+            cr_cpy(iv, h + 24, 8);
+            cr_zero(iv + 8, 4);
+            gcm_key(&gc, sgk);
+            gcm_seal(&gc, iv, h, n, h, 0, mac);
+        } else if (dialect >= 0x0300) { /* AES-CMAC                      */
             aes_key(&gc.k, sgk);
             aes_cmac(&gc.k, h, n, mac);
         } else {
@@ -353,11 +364,11 @@ static u32 smb(unsigned cmd, unsigned blen)
             l -= 52;
             if (get32(t + 36) != l)
                 bad = 1;
-            else if (cipher == 2) {
-                gcm_key(&gc, dek);
+            else if (C_GCM) {
+                gcm_keyl(&gc, dek, C_KL);
                 bad = gcm_open(&gc, t + 20, t + 20, 32, rx, (unsigned)l, t + 4);
             } else {
-                aes_key(&gc.k, dek);
+                aes_keyl(&gc.k, dek, C_KL);
                 bad = ccm_open(&gc.k, t + 20, t + 20, 32, rx, (unsigned)l, t + 4);
             }
             if (bad) {
@@ -468,6 +479,8 @@ static int klogin(void)
         krb_cc_put(sc);
     }
     cr_cpy(skey, sc->key, 16);          /* SMB2: erste 16 Byte            */
+    fskl = sc->etype == 18 ? 32 : 16;   /* AES256-CTS: ganzer Schluessel  */
+    cr_cpy(fsk, sc->key, fskl);
     n = krb_gss(sc, rx, KBUF);
     if (!n) {
         kmsg = "Ticket zu gross.";
@@ -593,6 +606,8 @@ static int login(void)
     cr_cpy(nt, pr, 16);
     cr_cpy(nt + 16, blob, bl);          /* NtChallengeResponse           */
     hmac_md5(ntv, 16, pr, 16, skey);    /* SessionBaseKey                */
+    cr_cpy(fsk, skey, 16);
+    fskl = 16;
     (void)ts_found;
 
     /* 3: AUTHENTICATE */
@@ -1885,6 +1900,7 @@ static const char *sconnect(void)
     signing = 0;
     dialect = 0;
     cipher = 0;
+    salg = 1;
     encr = 0;
     nctr = 0;
     cr_zero(pih, 64);
@@ -1910,15 +1926,16 @@ static const char *sconnect(void)
 
     /* NEGOTIATE: 2.0.2, 2.1, 3.0, 3.0.2, 3.1.1; Kontexte fuer 3.1.1 ab
        Offset 112: Vorab-Pruefsumme SHA-512 mit Salz, Verschluesselung
-       AES-128-GCM vor AES-128-CCM */
-    cr_zero(BODY, 112);
+       AES-128-GCM/-CCM vor AES-256-GCM/-CCM (128 ist auf dem 386 schneller),
+       Signatur AES-GMAC vor AES-CMAC */
+    cr_zero(BODY, 136);
     BODY[0] = 36;
     BODY[2] = 5;
     BODY[4] = 1;                        /* signieren moeglich            */
     BODY[8] = 0x40;                     /* Capabilities: ENCRYPTION      */
     tls_random(BODY + 12, 16);          /* ClientGuid                    */
     put32(BODY + 28, 64 + 48);          /* NegotiateContextOffset        */
-    BODY[32] = 2;
+    BODY[32] = 3;
     put16(BODY + 36, 0x0202);
     put16(BODY + 38, 0x0210);
     put16(BODY + 40, 0x0300);
@@ -1931,11 +1948,18 @@ static const char *sconnect(void)
     BODY[60] = 1;                       /* SHA-512                       */
     tls_random(BODY + 62, 32);
     BODY[96] = 2;                       /* ENCRYPTION_CAPABILITIES       */
-    BODY[98] = 6;
-    BODY[104] = 2;
+    BODY[98] = 10;
+    BODY[104] = 4;
     BODY[106] = 2;                      /* AES-128-GCM                   */
     BODY[108] = 1;                      /* AES-128-CCM                   */
-    st = smb(C_NEG, 110);
+    BODY[110] = 4;                      /* AES-256-GCM                   */
+    BODY[112] = 3;                      /* AES-256-CCM                   */
+    BODY[120] = 8;                      /* SIGNING_CAPABILITIES          */
+    BODY[122] = 6;
+    BODY[128] = 2;
+    BODY[130] = 2;                      /* AES-GMAC                      */
+    BODY[132] = 1;                      /* AES-CMAC                      */
+    st = smb(C_NEG, 134);
     if (st != S_OK)
         return "Server spricht kein SMB2/SMB3.";
     dialect = get16(RB + 4);
@@ -1953,8 +1977,10 @@ static const char *sconnect(void)
                 hs = 1;                 /* SHA-512 bestaetigt            */
             if (ty == 2 && dl >= 4 && get16(rx + o + 8) == 1) {
                 k = get16(rx + o + 10);
-                cipher = k == 2 ? 2 : k == 1 ? 1 : 0;
+                cipher = k >= 1 && k <= 4 ? k : 0;
             }
+            if (ty == 8 && dl >= 4 && get16(rx + o + 8) == 1 && get16(rx + o + 10) == 2)
+                salg = 2;
             o = (o + 8 + dl + 7) & ~7u;
         }
         if (!hs)
@@ -1980,7 +2006,7 @@ static const char *sconnect(void)
     ts[5] = 0;
     if (!srv) {
         out(ts);
-        out(signing ? ", signiert" : "");
+        out(!signing ? "" : salg == 2 && dialect == 0x0311 ? ", signiert (GMAC)" : ", signiert");
         out(".\r\n");
     }
     if (kerb ? klogin() : login())
@@ -1989,14 +2015,16 @@ static const char *sconnect(void)
     if (dialect >= 0x0300 && !(k & 3)) {
         /* Schluessel ableiten ([MS-SMB2] 3.2.5.3.1); als angemeldeter
            Benutzer immer signieren */
-        if (dialect == 0x0311) {
-            smb_kdf(skey, "SMBSigningKey", 14, pih, 64, sgk);
-            smb_kdf(skey, "SMBC2SCipherKey", 16, pih, 64, enk);
-            smb_kdf(skey, "SMBS2CCipherKey", 16, pih, 64, dek);
+        if (dialect == 0x0311) {        /* AES-256: ganzer Schluessel, L 256 */
+            const u8 *ck = cipher >= 3 ? fsk : skey;
+            unsigned ckl = cipher >= 3 ? fskl : 16;
+            smb_kdf(skey, 16, "SMBSigningKey", 14, pih, 64, sgk, 16);
+            smb_kdf(ck, ckl, "SMBC2SCipherKey", 16, pih, 64, enk, C_KL);
+            smb_kdf(ck, ckl, "SMBS2CCipherKey", 16, pih, 64, dek, C_KL);
         } else {
-            smb_kdf(skey, "SMB2AESCMAC", 12, (const u8 *)"SmbSign", 8, sgk);
-            smb_kdf(skey, "SMB2AESCCM", 11, (const u8 *)"ServerIn ", 10, enk);
-            smb_kdf(skey, "SMB2AESCCM", 11, (const u8 *)"ServerOut", 10, dek);
+            smb_kdf(skey, 16, "SMB2AESCMAC", 12, (const u8 *)"SmbSign", 8, sgk, 16);
+            smb_kdf(skey, 16, "SMB2AESCCM", 11, (const u8 *)"ServerIn ", 10, enk, 16);
+            smb_kdf(skey, 16, "SMB2AESCCM", 11, (const u8 *)"ServerOut", 10, dek, 16);
         }
         signing = 1;
         if (k & 4) {
@@ -2031,9 +2059,10 @@ static const char *sconnect(void)
             return "Freigabe verlangt Verschluesselung, nicht moeglich.";
         encr = 1;
     }
-    if (encr && !srv)
-        out(cipher == 2 ? "Verschluesselt mit AES-128-GCM.\r\n" :
-                          "Verschluesselt mit AES-128-CCM.\r\n");
+    if (encr && !srv) {
+        out(cipher >= 3 ? "Verschluesselt mit AES-256-" : "Verschluesselt mit AES-128-");
+        out(C_GCM ? "GCM.\r\n" : "CCM.\r\n");
+    }
     return 0;
 }
 

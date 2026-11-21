@@ -836,8 +836,22 @@ Freigabe) – `smbstatus` zeigt SMB3_11, Signatur AES-128-CMAC, Freigabe
 verschlüsselt mit AES-128-GCM; eine 4-MB-SoundFont über das Laufwerk
 kopiert, `FC /B` gegen das Original ohne Unterschied. Der Stand von 6.3
 (nur SMB 2) bekommt dort „Zugriff verweigert“.
-Offen: Signatur über AES-GMAC (3.1.1 SIGNING_CAPABILITIES), AES-256,
-Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
+AES-GMAC und AES-256 (21.11.2026, Wunsch des Nutzers): 3.1.1 bietet
+zusätzlich den Kontext SIGNING_CAPABILITIES (8) mit AES-GMAC vor AES-CMAC
+an; GMAC = AES-128-GCM über die ganze Nachricht als AAD ohne Daten, Nonce
+= MessageId (8 Byte) + 4 Nullbytes (Anfrage). Verschlüsselung bietet
+AES-128-GCM, AES-128-CCM, AES-256-GCM, AES-256-CCM an (128 zuerst – auf
+dem 386 schneller; der Server wählt). Bei AES-256 werden die beiden
+Verschlüsselungsschlüssel aus dem ganzen Sitzungsschlüssel (`fsk`:
+Kerberos AES256-CTS 32 Byte, sonst 16) mit L = 256 abgeleitet, der
+Signaturschlüssel bleibt 128 Bit (`smb_kdf` mit Schlüssel-/Ausgabelänge;
+256 Bit auf dem Rechner gegen Python geprüft). In QEMU gegen Samba 4.19:
+Vorgabe -> „signiert (GMAC)“, mit `server smb3 signing algorithms =
+AES-128-CMAC` wieder CMAC, `server smb3 encryption algorithms` AES-256-GCM
+bzw. AES-256-CCM (NTLM), 3.0 mit CCM unverändert – je dir/get/put und
+NET USE bytegleich; Kerberos gegen den Test-DC mit AES-256-GCM (32-Byte-
+Schlüssel). SMBCLI danach 63.552 von 65.536 Byte.
+Offen: Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
 test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`

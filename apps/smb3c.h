@@ -18,9 +18,9 @@ void ccm_seal(const struct aes *a, const u8 nonce[11], const u8 *aad, unsigned a
 int  ccm_open(const struct aes *a, const u8 nonce[11], const u8 *aad, unsigned alen,
               u8 *d, unsigned n, const u8 tag[16]);
 
-/* Ko = HMAC-SHA256(Ki, 1 || Label || 0 || Kontext || 128)[0..15];
+/* Ko = HMAC-SHA256(Ki, 1 || Label || 0 || Kontext || L)[0..ol-1], L = 8*ol;
    ll/cl sind die Laengen samt der abschliessenden Null, wie MS-SMB2 sie
    nennt (z. B. "SMB2AESCMAC" 12) */
-void smb_kdf(const u8 ki[16], const char *label, unsigned ll,
-             const u8 *ctx, unsigned cl, u8 ko[16]);
+void smb_kdf(const u8 *ki, unsigned kl, const char *label, unsigned ll,
+             const u8 *ctx, unsigned cl, u8 *ko, unsigned ol);   /* ol 16/32 */
 #endif
