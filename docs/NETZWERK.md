@@ -667,6 +667,22 @@ num_share_modes=0) und damit Sperren – mit dem eigenständigen smbd
 (`/tmp/claude-0/smb`) nicht; Ursache im Container, nicht in AT-DOS. Reine
 Programmlogik – kein 86Box.
 
+Nachgestellt wie beim Nutzer (Mitgliedsserver mit winbind, 21.11.2026):
+FS1 (`net ads join`, idmap rid, 192.168.77.2) neben dem DC (192.168.77.1)
+an einer Brücke im Container, beide AT-DOS-Rechner per Tap, feste
+Adressen. NET USE mit Kennwort (NTLM über winbind) und nach `KINIT
+test@ATDOS.TEST` ohne Kennwort (Kerberos, cifs/fs1 aus der Keytab) gehen,
+der Sperrtest wie oben. Testfallen des Containers (nicht bei getrennten
+Rechnern): DC und FS1 teilen sonst NSS und den festen winbind-Socket
+/run/samba/winbindd (smbd des DC fragt den winbind von FS1 und umgekehrt –
+Schleife, Zeitüberschreitung); FS1 läuft deshalb in eigenem Mount-
+Namensraum, NSS nur `files`. Und smbd hält dort, sobald er unter der
+Kennung des Domänenbenutzers läuft, den Prozess der anderen Verbindung für
+beendet („PID … does not exist anymore“) und räumt dessen Sperren als
+verwaist ab – mit einem Python-Client (smbprotocol) genauso, mit `force
+user = root` nicht; der eigenständige smbd mit lokalem Benutzer zeigt es
+nicht. Der Sperrtest lief deshalb mit `force user = root`.
+
 Offen: Freigabemodi (deny read/write) an den Server (ShareAccess je
 Öffnen), Sperren über das Netz zwischen zwei FAPI-Programmen auf demselben
 Rechner (lokal schließt der Kernel zweite Schreiber aus).
