@@ -106,9 +106,16 @@ next:   call    cds_sync                ; (nach dem Parken: naechstes Programm)
         int     21h
         jc      .c1
         mov     si, t_kauto
-        call    copystr
+        cmp     byte [mdos_miss], 0     ; setzt die AUTOEXEC.BAT den PATH
+        je      .kk                     ; ohne \DOS\MDOS: ueber BOXAUTO.BAT,
+        mov     si, t_kbox              ; die es danach wieder anhaengt
+.kk:    call    copystr
         mov     byte [kauto], 1
         mov     si, t_autoexec
+        call    copystr
+        cmp     byte [mdos_miss], 0
+        je      .c1
+        mov     si, t_bpath
         call    copystr
 .c1:    xor     cx, cx
 .c2:    mov     si, cmd                 ; Befehl anhaengen (cx Zeichen)
@@ -1637,18 +1644,21 @@ t_cmd     db " X:\DOS\MDOS\ /E:1024 /C ", 0
 t_bscom   db "\COMMAND.COM", 0
 t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
+t_kbox    db "/K X:\DOS\MDOS\BOXAUTO.BAT ", 0   ; ruft die AUTOEXEC.BAT
+t_bpath   db " X:\DOS\MDOS", 0                   ; und stellt das vor PATH
 t_hello   db "DOS-Box von AT-DOS 6.3 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 t_hello2  db "DOS-Box von AT-DOS 6.3 - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
 nok       db 0                          ; 1: COMMAND.COM ohne /K
+mdos_miss db 0                          ; 1: PATH der AUTOEXEC.BAT ohne \DOS\MDOS
 a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h
 t_prompt  db "PROMPT=$P$G", 0
 t_path2   db "PATH="
           times 60 db 0
 drvpos    dw t_dosbox+7, t_setver, t_path+5, t_path+17, t_comspec, t_cmd+1
-          dw t_autoexec, t_ini, t_nls+8, 0
+          dw t_autoexec, t_ini, t_nls+8, t_kbox+3, t_bpath+1, 0
 pblock    dw 0                          ; Umgebung erben
 pb_tail   dw tail, 0
 pb_fcb1   dw fcb, 0
@@ -1665,6 +1675,41 @@ rdbuf     equ envbuf                    ; Lesepuffer, vor dem Aufbau der Umgebun
 ; ---- nur beim Start (ab_merge), danach frei bis auf die Umgebung ---------
           align 16
 menv:
+; X:\DOS\MDOS vor AB_VAL stellen: ein PATH aus der AUTOEXEC.BAT ersetzt
+; den der Box ganz, dann fanden COMMAND, COMMAND4, MEM usw. nichts mehr
+; (vom Nutzer gemeldet); vorn, weil in X:\DOS das MEM von AT-DOS liegt,
+; das in der Box nicht laeuft. Steht es schon drin, nimmt ab_dedup die zweite
+; Nennung wieder heraus.
+ab_mdos:                                ; X:\DOS\MDOS; vor AB_VAL
+        push    es
+        push    ds
+        pop     es
+        mov     si, AB_VAL
+.e:     cmp     byte [si], 0
+        je      .f
+        inc     si
+        jmp     .e
+.f:     cmp     si, AB_VAL + AB_VSZ - 13
+        jae     .r
+        mov     cx, si
+        sub     cx, AB_VAL
+        inc     cx                      ; mit der Null
+        lea     di, [si + 12]
+        std                             ; 12 Byte nach hinten schieben
+        rep     movsb
+        cld
+        mov     di, AB_VAL
+        mov     bx, t_path + 5          ; "X:\DOS\MDOS" (Laufwerk gesetzt)
+        mov     cx, 11
+.c:     mov     al, [cs:bx]
+        stosb
+        inc     bx
+        loop    .c
+        mov     al, ';'
+        stosb
+.r:     pop     es
+        ret
+
 ab_dedup:                               ; doppelte Teile in AB_VAL weg
         mov     si, AB_VAL
         mov     bp, AB_OUT
@@ -1760,6 +1805,52 @@ ab_skipws:
         jmp     ab_skipws
 .r:     ret
 
+; Neuer PATH an DS:SI (roh): ohne %PATH% bestimmt er allein, ob X:\DOS\MDOS
+; nach der AUTOEXEC.BAT noch im PATH steht (mdos_miss); SI bleibt
+ab_pchk:
+        mov     dx, k_ppath
+        call    ab_find
+        jnc     .r                      ; %PATH% darin: erbt den Stand
+        mov     byte [cs:mdos_miss], 0
+        mov     dx, k_mdos
+        call    ab_find
+        jnc     .r
+        mov     byte [cs:mdos_miss], 1
+.r:     ret
+
+ab_find:                                ; CS:DX (gross) in DS:SI? CF = 0: ja
+        push    si
+        push    di
+        push    bx
+.o:     mov     di, si
+        mov     bx, dx
+.i:     mov     ah, [cs:bx]
+        test    ah, ah
+        jz      .yes
+        mov     al, [di]
+        test    al, al
+        jz      .no
+        call    ab_up
+        cmp     al, ah
+        jne     .nx
+        inc     di
+        inc     bx
+        jmp     .i
+.nx:    cmp     byte [si], 0
+        je      .no
+        inc     si
+        jmp     .o
+.yes:   clc
+        jmp     .e
+.no:    stc
+.e:     pop     bx
+        pop     di
+        pop     si
+        ret
+
+k_ppath db "%PATH%", 0
+k_mdos  db "\DOS\MDOS", 0
+
 ab_up:  cmp     al, 'a'                 ; AL gross
         jb      .r
         cmp     al, 'z'
@@ -1817,6 +1908,7 @@ ab_doline:
         cmp     byte [si], 0            ; PATH allein zeigt nur an
         je      .r
         call    ab_kname
+        call    ab_pchk                 ; \DOS\MDOS noch im PATH?
         cmp     word [si], ';'          ; "PATH ;" loescht
         je      .del
         call    ab_expand
@@ -1826,6 +1918,7 @@ ab_doline:
         mov     [si - 1], al
         test    al, al
         jnz     .pu
+        call    ab_mdos                 ; X:\DOS\MDOS muss bleiben
         call    ab_dedup
         jmp     .add
 .prompt: mov    bx, k_prompt

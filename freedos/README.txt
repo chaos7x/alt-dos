@@ -43,3 +43,9 @@ cp/CPnnn.FNT  Zeichensaetze fuer CODEPAGE=/CHCP von AT-DOS (850, 852, 857,
               UPX-gepackt), dazu die Unicode-Tabelle 80h-FFh aus den
               Python-Codecs. Neu erzeugen: CPX mit `upx -d` entpacken, dann
               tools/mkcp.py <Ordner mit *.cpi> freedos/cp
+
+BOXAUTO.BAT (AT-DOS, 21.11.2026, eigene Datei): setzt die AUTOEXEC.BAT
+den PATH ohne X:\DOS\MDOS, startet BOXSHELL die interaktive Shell mit
+/K X:\DOS\MDOS\BOXAUTO.BAT X:\AUTOEXEC.BAT X:\DOS\MDOS - sie ruft die
+AUTOEXEC.BAT und stellt X:\DOS\MDOS danach vor den PATH (in X:\DOS liegt
+das MEM von AT-DOS, das in der Box nicht laeuft).
