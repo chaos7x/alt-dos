@@ -789,7 +789,8 @@ geht COPY. Sperrtest (LK.COM, beide 3D42h) wie vorher; BIOSCMP lokal vor
 und nach der Änderung zeilengleich (31 bekannte Abweichungen). Reine
 Programmlogik – kein 86Box.
 
-Weiter (offen): SMB 3 (AES-CMAC, Verschlüsselung).
+Weiter (offen): SMB 3 (AES-CMAC, Verschlüsselung) – gehört in 6.4
+(Entscheidung des Nutzers, 21.11.2026).
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
 test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`
