@@ -4544,8 +4544,9 @@ static const struct ctxblk kern_ctx[] = {
     { dc_cn, sizeof(dc_cn) }, { &dc_d, sizeof(dc_d) },
     { scr_b, sizeof(scr_b) }, { scr_l, sizeof(scr_l) }, { box_sec, sizeof(box_sec) }
 };
-static const struct ctxblk *const ctx_tab[3] = { kern_ctx, fat_ctx, redir_ctx };
-static unsigned ctx_cnt[3] = { sizeof(kern_ctx) / sizeof(kern_ctx[0]) };
+#define NCTXT 4
+static const struct ctxblk *const ctx_tab[NCTXT] = { kern_ctx, fat_ctx, redir_ctx, dem_ctx };
+static unsigned ctx_cnt[NCTXT] = { sizeof(kern_ctx) / sizeof(kern_ctx[0]) };
 static unsigned ctx_len;                /* Summe aller Bloecke           */
 #define CTX_OFF 4096                    /* DMABUF 2 KB, FAT-Cache, WBUF, Kontext */
 static int ctx_owner = -1;              /* wessen Stand in den Variablen steht */
@@ -4557,7 +4558,8 @@ static unsigned ctx_pages(void)
     if (!ctx_len) {
         ctx_cnt[1] = fat_nctx;
         ctx_cnt[2] = redir_nctx;
-        for (m = 0; m < 3; m++)
+        ctx_cnt[3] = dem_nctx;
+        for (m = 0; m < NCTXT; m++)
             for (i = 0; i < ctx_cnt[m]; i++)
                 ctx_len += ctx_tab[m][i].n;
     }
@@ -4569,7 +4571,7 @@ static void ctx_copy(int t, int save)
 {
     unsigned m, i, off = 0;
     set_desc(CTXWIN_IDX, PG_LIN(dmab_pg[t]) + CTX_OFF, ctx_len - 1, ACC_KDATA);
-    for (m = 0; m < 3; m++)
+    for (m = 0; m < NCTXT; m++)
         for (i = 0; i < ctx_cnt[m]; i++) {
             const struct ctxblk *b = &ctx_tab[m][i];
             if (save)

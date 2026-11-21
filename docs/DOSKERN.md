@@ -383,6 +383,22 @@ die Programme direkt lesen.
 1. **DEM herauslösen**: `struct dem_req`, Funktionen je Auftrag, Redirector
    als Eingang. Keine Änderung im Verhalten – prüfbar mit den Abbildern
    (BIOSCMP, doscmp MS-DOS 5.0/6.22/PC DOS 2000, Word 5.5, Lotus Works).
+   **Erledigt (21.11.2026):** `include/dem.h` (Vertrag: `struct dem_req`
+   mit festen Breiten, lineare Box-Adressen, DOS-Fehlercode; DEM_OPEN mit
+   Aktionswunsch wie 6Ch, CLOSE, READ/WRITE, SIZE, LOCK, MKDIR/RMDIR/
+   CHDIR, GET/SETATTR, RENAME/DELETE auch mit Platzhaltern, FINDFIRST/
+   FINDNEXT mit 21 Byte Suchzustand, SPACE, DINFO), `kernel/dem.c`
+   (KTEXT4, `dem_call`; SHARE-Tabellen, Suchplätze, Sperren der Box,
+   `dem_xfer` direkt in den Box-Speicher, Kontext `dem_ctx` als vierter
+   Block in kernel.c ctx_tab), `kernel/redir.c` nur noch Eingang (SDA/SFT
+   <-> dem_req, Aktionscode für MS-DOS, CDS-Prüfung bei RMDIR) plus MSCDEX
+   und die umgeleiteten Standard-Handles; `kernel/dembox.h` Zugriff auf den
+   Box-Speicher für beide. KTEXT4 +1,3 KB, DGROUP kleiner. Geprüft in QEMU
+   alt gegen neu: BIOSCMP (FreeDOS-Box) und doscmp MS-DOS 6.22, PC DOS
+   7.0, MS-DOS 5.0 zeilengleich (Suche, SHARE, Sperren, 6Ch, FCB, IOCTL),
+   Word 5.5 installiert über alle 10 Disketten (Thesaurus-Diskette mit der
+   verschachtelten Suche) und meldet „erfolgreich installiert“. Reine
+   Programmlogik – kein 86Box.
 2. **Kern minimal**: eigener Rumpf nach FreeDOS-Vorbild ohne Dateisystem
    (Dispatcher, Speicher, PSP/EXEC), Strukturen auf das Layout von MS-DOS 4.0 geprüft,
    Handle-Funktionen 3Ch–46h, 4Eh/4Fh, 47h, 39h–3Bh, 41h, 43h, 56h, 57h

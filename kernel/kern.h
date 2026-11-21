@@ -67,8 +67,8 @@ extern unsigned long dmab_phys;
 /* Kontext je Task (Phase 6): Variablen, die eine Operation mit Kernel-
    sperre ueber einen Schlafpunkt hinweg haelt (kernel.c ctx_take) */
 struct ctxblk { void *p; unsigned n; };
-extern const struct ctxblk fat_ctx[], redir_ctx[];
-extern const unsigned fat_nctx, redir_nctx;
+extern const struct ctxblk fat_ctx[], redir_ctx[], dem_ctx[];
+extern const unsigned fat_nctx, redir_nctx, dem_nctx;
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL
