@@ -798,3 +798,11 @@ temporarily unavailable“), nach Strg+Z geht es; der Mac öffnet mit
 `O_EXLOCK` -> `TYPE` in AT-DOS meldet „wird gerade benutzt“. Mit
 `O_SHLOCK` (Schreiben verweigern): `TYPE` geht, `ECHO x >>` scheitert. Dabei
 gefunden: `COPY CON` ging gar nicht (CON war beim Öffnen kein Gerät).
+
+Domänenanmeldung beim Start vom Nutzer in 86Box bestätigt (21.11.2026,
+test-6.3, P3B-F mit RTL8139 an seinem Samba-AD): AUTOEXEC.CMD mit
+`IPCONFIG /WAIT`, `LOGON Name` – Kennwort, Ticket vom DC, Heimlaufwerk
+N: aus homeDrive/homeDirectory (`\\fs\…`, Kurzname über das DNS-Suffix
+aus DHCP), weitere Freigaben per NET USE ohne Kennwort (Kerberos).
+Testfalle: DOMAIN.KEY gehört zum Plattenabbild – ein frisches
+atdos-hd.img braucht wieder DOMJOIN (vorhandenes Konto wird übernommen).
