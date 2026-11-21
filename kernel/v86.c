@@ -3904,6 +3904,20 @@ static void xms_table(int t)
                     (unsigned long)xh[t][i].npg << 2);
             n++;
         }
+    /* oberer Speicher als belegter, gesperrter Block wie EMM386 unter
+       HIMEM: MEM von MS-DOS rechnet XMS gesamt als 1 MB + Summe der Tabelle
+       - konventionell - UMB - reserviert, nimmt also an, die UMBs kaemen
+       aus dem erweiterten Speicher. Ohne den Block war XMS gesamt um die
+       UMBs kleiner als frei („Verwendet“ negativ) */
+    if (umb_ok) {
+        for (g = 0, i = 0xC8; i < 0xF0; i++)
+            if (BIT(umb_free, i) && (!EFR(t) || i < EFR(t) || i >= EFR(t) + 16u))
+                g += 4;
+        if (g) {
+            xms_ent(&e, 2, 1, (unsigned long)(XMS_PG0 + XMS_PGN) << 2, g);
+            n++;
+        }
+    }
     for (;;) {                                  /* freie Luecken einzeln, */
         for (i = 0; i < NXH; i++)               /* damit die Summe die    */
             if (xh[t][i].used && xh[t][i].npg && s >= xh[t][i].base &&  /* Grenze trifft */
