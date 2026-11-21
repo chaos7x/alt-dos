@@ -829,6 +829,13 @@ wie bisher. Je SMBCLI dir/get/put (1 MB herunter, 300 KB Zufall hinauf)
 und NET USE + COPY, alles bytegleich; Wiederverbinden nach Neustart des
 Servers bei verschlüsselter Sitzung; Kerberos gegen den Test-DC
 (ATDOS.TEST) mit 3.1.1 signiert. Reine Programmlogik – kein 86Box.
+Vom Nutzer in 86Box bestätigt (21.11.2026, P3B-F mit RTL8139 am echten
+LAN): LOGON mit Kerberos gegen sein Samba-AD, Heimlaufwerk auf dem
+Dateiserver (Samba 4.22, `server smb encrypt = required` an der
+Freigabe) – `smbstatus` zeigt SMB3_11, Signatur AES-128-CMAC, Freigabe
+verschlüsselt mit AES-128-GCM; eine 4-MB-SoundFont über das Laufwerk
+kopiert, `FC /B` gegen das Original ohne Unterschied. Der Stand von 6.3
+(nur SMB 2) bekommt dort „Zugriff verweigert“.
 Offen: Signatur über AES-GMAC (3.1.1 SIGNING_CAPABILITIES), AES-256,
 Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
 
