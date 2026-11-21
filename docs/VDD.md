@@ -385,6 +385,9 @@ CMOS, Tastatur, BIOS-Grundlage, XMS/HMA/UMB, VGA, DPMI.
 
 ## Vorgemerkt: DOS-Kern wie `DOSKRNL` von OS/2 (Idee, 20.11.2026)
 
+Ausgearbeitet als Konzept in `docs/DOSKERN.md` (21.11.2026, vom Nutzer
+freigegeben).
+
 Vom Nutzer vorgemerkt, noch nicht geplant und kein Code. Bei OS/2 2.0 ist
 `\OS2\MDOS\DOSKRNL` kein eigenständiges DOS: nur ein kleiner Teil läuft
 in der Box (V86), der größere im Protected Mode und nutzt die Dienste des
