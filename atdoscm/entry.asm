@@ -42,6 +42,8 @@ group DGROUP DOSHDR LTEXT CONST CONST2 _DATA _BSS ZZEND
 extern cm_main_
 extern int21_c_
 extern int2f12_c_
+extern int25_c_
+extern int26_c_
 extern _sda
 extern _old2f
 extern _setver_dx
@@ -72,6 +74,8 @@ boot:   cli
         rep     stosb
         mov     [hent + 2], cs
         mov     [hent12 + 2], cs
+        mov     [hent25 + 2], cs
+        mov     [hent26 + 2], cs
         sti
         mov     ax, 4300h               ; XMS da?
         int     2Fh
@@ -103,6 +107,8 @@ boot:   cli
         mov     byte [_in_hma], 1
         mov     word [hent + 2], 0FFFFh
         mov     word [hent12 + 2], 0FFFFh
+        mov     word [hent25 + 2], 0FFFFh
+        mov     word [hent26 + 2], 0FFFFh
         mov     ax, 0FFFFh
         push    ax
         mov     ax, .hi
@@ -133,6 +139,10 @@ h21:    call    int21_c_
         retf
 h12:    call    int2f12_c_
         retf
+h25:    call    int25_c_
+        retf
+h26:    call    int26_c_
+        retf
 
 ; ---- Kopf des Datensegments wie MS-DOS: Liste der Listen bei DS:0026h ----
 ; (Programme wie MEM holen DS ueber INT 2Fh 1203h und lesen dort direkt)
@@ -145,6 +155,8 @@ _lol_area: times 82h db 0               ; LoL-2 (erster MCB) .. LoL+7Fh
 segment LTEXT
 hent:   dw      h21, 0                  ; Code: CGROUP-Offset, Segment
 hent12: dw      h12, 0
+hent25: dw      h25, 0
+hent26: dw      h26, 0
 global _in_hma
 _in_hma: db     0                       ; Code liegt in der HMA
 global _a20_drop
@@ -295,14 +307,60 @@ int24_entry_:
         mov     al, 3
         iret
 
-; INT 25h/26h: kommen in Stufe 4 (wie MS-DOS 7) - bis dahin Fehler
+; INT 25h/26h (absolut lesen/schreiben): wie INT 21h, aber Ruecksprung mit
+; RETF - die Flags des Aufrufers bleiben auf dem Stapel. Dafuer den
+; IRET-Rahmen um ein Wort nach unten kopieren (IP CS FL FL).
 global int25_entry, int25_entry_, _int25_entry
 _int25_entry:
 int25_entry:
 int25_entry_:
-        mov     ax, 8002h
-        stc
-        retf
+        call    abs_frame
+        push    es
+        push    ds
+        push    bp
+        push    di
+        push    si
+        push    dx
+        push    cx
+        push    bx
+        push    ax
+        mov     di, hent25
+        jmp     dosgo
+global int26_entry, int26_entry_, _int26_entry
+_int26_entry:
+int26_entry:
+int26_entry_:
+        call    abs_frame
+        push    es
+        push    ds
+        push    bp
+        push    di
+        push    si
+        push    dx
+        push    cx
+        push    bx
+        push    ax
+        mov     di, hent26
+        jmp     dosgo
+
+; Stapel beim Aufruf: [Rueck] IP CS FL -> [Rueck] IP CS FL FL
+abs_frame:
+        sti
+        push    ax                      ; Platz
+        push    bp
+        mov     bp, sp                  ; [bp+2] Platz [bp+4] Rueck
+        push    ax                      ; [bp+6] IP [bp+8] CS [bp+10] FL
+        mov     ax, [bp + 4]
+        mov     [bp + 2], ax            ; Ruecksprung nach unten
+        mov     ax, [bp + 6]
+        mov     [bp + 4], ax            ; IP
+        mov     ax, [bp + 8]
+        mov     [bp + 6], ax            ; CS
+        mov     ax, [bp + 10]
+        mov     [bp + 8], ax            ; FL (fuer IRET), [bp+10] bleibt
+        pop     ax
+        pop     bp
+        ret
 
 ; Fernaufruf der Laendertabelle (Zeichen umsetzen): nichts
 global retf_entry, retf_entry_, _retf_entry
@@ -501,6 +559,48 @@ xmscall_:
         pop     cx
         pop     bx
         ret
+
+; unsigned crit24(ax, di, bp, si) - AX, DX, BX, CX: INT 24h auf dem
+; Stapel des Programms (SS:SP = _user_frame, Rahmen wie SAVE_WORLD) -> AX
+extern _user_frame
+global crit24_
+crit24_:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     [cs:c_ss], ss
+        mov     [cs:c_sp], sp
+        mov     di, dx
+        mov     si, cx
+        mov     bp, bx
+        les     bx, [_user_frame]
+        cli
+        mov     dx, es
+        mov     ss, dx
+        mov     sp, bx
+        sti
+        int     24h
+        cli
+        mov     ss, [cs:c_ss]
+        mov     sp, [cs:c_sp]
+        sti
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        xor     ah, ah
+        ret
+c_ss:   dw      0
+c_sp:   dw      0
 
 ; unsigned getds(void) - Segment der Daten (und der Eingaenge)
 global getds_

@@ -749,8 +749,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   BIOSCMP im DOS-Teil gleich MS-DOS 6.22 (`tools/bioscmp.sh`). Geprüft:
   FreeCOM, MEM (FreeDOS und MS-DOS), FIND, Digger, DOOM 1.9 mit Sound
   Blaster, CheckIt SysInfo, MS-DOS-MEM (zeigt wie unter MS-DOS „MSDOS 14K“
-  und die UMBs), INT 2Fh 12xxh und 21h 5Eh/5Fh wie MS-DOS. Noch nicht:
-  INT 25h/26h, CONFIG.SYS der Box.
+  und die UMBs), INT 2Fh 12xxh und 21h 5Eh/5Fh wie MS-DOS, INT 24h (kritischer Fehler
+  mit Abfrage), INT 25h lesend wie MS-DOS 7. Noch nicht: CONFIG.SYS der Box.
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

@@ -258,3 +258,50 @@ struct frame __far *int2f12_c(struct frame __far *f)
     }
     return f;
 }
+
+/* ---- INT 25h/26h (absolut lesen/schreiben) ------------------------------ */
+static u32 lin(u16 seg, u16 off)
+{
+    return ((u32)seg << 4) + off;
+}
+
+/* Wie MS-DOS 7: AL Laufwerk (0 = A:), CX Sektoren, DX erster Sektor,
+   DS:BX Puffer; CX = FFFFh: DS:BX -> Paket (DWORD Sektor, WORD Anzahl,
+   DWORD Puffer). Fehler in AX (AH BIOS, AL Treiber), CF. */
+static void abs_args(struct frame __far *f)
+{
+    q.drive = AL(f);
+    if (f->cx == 0xFFFF) {
+        q.pos = D(f->ds, f->bx);
+        q.count = W(f->ds, f->bx + 4);
+        q.buf = lin(W(f->ds, f->bx + 8), W(f->ds, f->bx + 6));
+        q.flags = 1;
+    } else {
+        q.pos = f->dx;
+        q.count = f->cx;
+        q.buf = lin(f->ds, f->bx);
+        q.flags = 0;
+    }
+}
+
+struct frame __far *int25_c(struct frame __far *f)
+{
+    unsigned e;
+    abs_args(f);
+    e = drive_ok(q.drive) ? dem(DEM_ABSREAD) : 0x8002;
+    if (e) {
+        f->ax = e;
+        cf(f, 1);
+    } else
+        cf(f, 0);
+    return f;
+}
+
+/* Schreiben braucht wie unter MS-DOS 7 eine Laufwerkssperre (440Dh 4Ah) -
+   die gibt es in der Box nicht: Schreibschutz */
+struct frame __far *int26_c(struct frame __far *f)
+{
+    f->ax = drive_ok(AL(f)) ? 0x0300 : 0x8002;
+    cf(f, 1);
+    return f;
+}

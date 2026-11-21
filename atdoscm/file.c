@@ -37,16 +37,53 @@ extern char retf_entry[];
 static const u8 media = 0xF8;
 
 /* ---- DEM ---------------------------------------------------------------- */
+u8 crit_abort;                          /* INT 24h: Abbrechen gewaehlt   */
+extern char int24_entry[];
+
+/* kritischer Fehler wie MS-DOS: INT 24h auf dem Stapel des Programms
+   (ueber dessen INT-21h-Rahmen), AL = Antwort. Ohne eigenen Handler
+   (Vektor zeigt noch auf int24_entry) gibt es keinen Aufruf: -1. */
+static int crit(unsigned fn, unsigned e)
+{
+    unsigned ah, di, a;
+    if (!user_frame || sda[0] || (W(0, 0x24 * 4) == (u16)int24_entry &&
+                                  W(0, 0x24 * 4 + 2) == kseg))
+        return -1;
+    ah = 0x38;                          /* Fehler/Wiederholen/Ignorieren */
+    if (fn == DEM_WRITE || fn == DEM_MKDIR || fn == DEM_RMDIR || fn == DEM_DELETE ||
+        fn == DEM_RENAME || fn == DEM_SETATTR || fn == DEM_CLOSE)
+        ah |= 1;                        /* Schreiben                     */
+    ah |= fn == DEM_READ || fn == DEM_WRITE ? 6 : 4;   /* Daten/Verzeichnis */
+    di = e == 0x13 ? 0 : e == 0x15 ? 2 : 0x0C;
+    sda[0] = 1;                         /* ErrorMode                     */
+    sda[2] = (u8)q.drive;
+    a = crit24((ah << 8) | (q.drive & 0xFF), di, kseg, (u16)&devs[DV_BLK]) & 0xFF;
+    sda[0] = 0;
+    return (int)a;
+}
+
 unsigned dem(unsigned fn)
 {
     struct rregs r;
-    q.fn = fn;
-    q.err = 0;
-    r.ax = 0x3000;
-    r.es = kseg;
-    r.di = (u16)&q;
-    bint(0xE0, &r);
-    return q.err;
+    int a;
+    for (;;) {
+        q.fn = fn;
+        q.err = 0;
+        r.ax = 0x3000;
+        r.es = kseg;
+        r.di = (u16)&q;
+        bint(0xE0, &r);
+        if ((q.err != 0x13 && q.err != 0x15 && q.err != 0x1F) ||
+            fn == DEM_DINFO || fn == DEM_ABSREAD || (a = crit(fn, q.err)) < 0)
+            return q.err;
+        if (a == 1)                     /* Wiederholen                   */
+            continue;
+        if (a == 0)                     /* Ignorieren                    */
+            return 0;
+        if (a == 2)                     /* Abbrechen: nach dem Aufruf    */
+            crit_abort = 1;
+        return 0x53;                    /* Fehler auf INT 24h (MS-DOS)   */
+    }
 }
 
 static u32 lin(u16 seg, u16 off)

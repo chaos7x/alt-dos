@@ -2563,6 +2563,23 @@ int __far fat_geom(int d, unsigned *spc, unsigned long *clusters)
 
 
 
+/* INT 25h der DOS-Box (dem.c): Sektor lba des FAT-Laufwerks d (ab seinem
+   Bootsektor) nach DMABUF:0. *total = Sektoren des Laufwerks. 0 = ok,
+   -1 kein FAT-Laufwerk/gesperrt, -2 hinter dem Ende, -3 Lesefehler */
+int __far fat_abssec(int d, unsigned long lba, unsigned long *total)
+{
+    struct volume *v;
+    if (d < 0 || d >= NDRIVE || !vol_present(d))
+        return -1;
+    v = &vol[d];
+    if (!v->used || v->drv != &fat_driver || v->locked)
+        return -1;
+    *total = v->sectors;
+    if (lba >= v->sectors)
+        return -2;
+    return blk_read(v->blk, v->start + lba) ? -3 : 0;
+}
+
 /* ---- IFS-Verteiler ----------------------------------------------------- */
 int __far ifs_mount(int drive, int blk, unsigned long start, struct ifs_driver *drv)
 {

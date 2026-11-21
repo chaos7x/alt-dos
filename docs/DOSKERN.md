@@ -492,8 +492,28 @@ die Programme direkt lesen.
    mit Pipe und Umleitung) und 86Box 386DX/40 (MS-DOS-MEM: 626 KB frei,
    Digger). Bemerkt, nicht vom Kern: MS-DOS-MEM lässt die EMS-Zeilen weg,
    wenn die Ausgabe in eine Datei geht (INT 67h liefert dabei dasselbe).
-   Offen in Stufe 4: LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box, INT
-   24h/25h/26h.
+   **Stufe 4, erster Teil (21.11.2026): INT 24h/25h/26h.** INT 25h wie
+   MS-DOS 7: Lesen frei über das DEM (`DEM_ABSREAD`, fat.c `fat_abssec`
+   liest Sektor für Sektor relativ zum Bootsektor des Laufwerks nach
+   DMABUF), alte Form CX/DX nur bis 32 MB (sonst 0207h), Paketform
+   CX = FFFFh; INT 26h meldet Schreibschutz (0300h) – Schreiben bräuchte
+   wie unter MS-DOS 7 eine Laufwerkssperre. Beide kehren mit RETF zurück,
+   die Flags bleiben auf dem Stapel (`abs_frame` kopiert den IRET-Rahmen
+   ein Wort nach unten). INT 24h: meldet das DEM „nicht bereit“,
+   Schreibschutz oder allgemeinen Fehler, ruft der Kern wie MS-DOS den
+   Handler des Programms – auf dessen Stapel über dem SAVE_WORLD-Rahmen
+   (`crit24`, so wie Borlands `hardretn` es erwartet), ErrorMode in der
+   SDA gesetzt, AH mit Bereich/Schreiben/erlaubten Antworten, DI
+   Fehlercode, BP:SI Gerätekopf. Wiederholen, Ignorieren, Abbrechen
+   (Programmende Typ 2) und Fehler (53h) wie MS-DOS; steht INT 24h noch
+   auf dem eigenen Eingang, bleibt es beim Fehlercode wie bisher. Im DEM
+   dabei: FINDFIRST auf einem leeren Laufwerk meldete „keine Dateien“
+   statt „nicht bereit“ (gilt auch für die FreeDOS-Box). Geprüft QEMU:
+   FreeCOM `dir a:` ohne Diskette fragt „(A)bbrechen, (I)gnorieren,
+   (W)iederholen, (F)ehler?“, Wiederholen/Fehler; ABS.COM liest den
+   Bootsektor von C: (Paketform), 0207h/0300h/8002h; ebenso in 86Box
+   386DX/40 (AHA-154x).
+   Offen in Stufe 4: LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box.
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der

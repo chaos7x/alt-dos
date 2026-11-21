@@ -46,6 +46,9 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
 #define DEM_SPACE       16  /* drive -> count = Sektoren je Cluster,
                                attr = Bytes je Sektor, size = Cluster,
                                pos = freie Cluster (je hoechstens FFF0h) */
+#define DEM_ABSREAD     18  /* drive, pos = Sektor, count = Sektoren, buf;
+                               flags 1 = Paketform (INT 25h CX=FFFFh) ->
+                               err = INT-25h-Fehler (AH BIOS, AL Treiber) */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 

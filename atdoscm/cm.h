@@ -128,6 +128,8 @@ int  mem_resize(u16 seg, u16 paras, u16 *maxp);
 /* file.c */
 extern struct dem_req q;
 unsigned dem(unsigned fn);
+extern u8 crit_abort;
+unsigned crit24(unsigned ax, unsigned di, unsigned bp, unsigned si);
 int  canon(const char __far *in, char *out, unsigned *drv);
 int  dev_of(const char *path);
 void file_init(void);
@@ -158,6 +160,8 @@ void con_line(u8 __far *buf);
 extern struct frame __far *user_frame;
 void net_fn(struct frame __far *f);
 struct frame __far *int2f12_c(struct frame __far *f);
+struct frame __far *int25_c(struct frame __far *f);
+struct frame __far *int26_c(struct frame __far *f);
 
 /* exec.c */
 struct frame __far *exec_fn(struct frame __far *f);

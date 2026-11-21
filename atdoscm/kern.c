@@ -43,6 +43,7 @@ extern char int22_entry[];
 extern char int23_entry[];
 extern char int24_entry[];
 extern char int25_entry[];
+extern char int26_entry[];
 extern char int27_entry[];
 extern char iret_entry[];
 extern char retf_entry[];
@@ -573,6 +574,11 @@ struct frame __far *int21_c(struct frame __far *f)
         file_fn(f);
         break;
     }
+    if (crit_abort) {                   /* INT 24h: Abbrechen            */
+        crit_abort = 0;
+        cc_hit = 0;
+        return term(f, 2, 0, 0);
+    }
     if (cc_hit) {
         cc_hit = 0;
         return cc_frame(f);
@@ -690,7 +696,7 @@ void cm_main(void)
     setvec(0x23, int23_entry);
     setvec(0x24, int24_entry);
     setvec(0x25, int25_entry);
-    setvec(0x26, int25_entry);
+    setvec(0x26, int26_entry);
     setvec(0x27, int27_entry);
     setvec(0x28, iret_entry);
     setvec(0x29, int29_entry);

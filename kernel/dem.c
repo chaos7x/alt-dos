@@ -25,6 +25,7 @@
 
 int  __far kf_box_ctl(unsigned op, unsigned a);
 int __far fat_geom(int d, unsigned *spc, unsigned long *clusters);
+int __far fat_abssec(int d, unsigned long lba, unsigned long *total);
 int __far kf_hmeta(unsigned h, unsigned what, unsigned attr, unsigned date, unsigned time);
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 unsigned long __far kf_cd_blocks(int d);
@@ -335,8 +336,9 @@ static unsigned find_next(int t, struct dem_req *q)
             n--;
     }
     for (;; n++) {
-        if (FAILED(FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n, (unsigned)fn_dir)))
-            return E_NOMORE;
+        k = FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, n, (unsigned)fn_dir);
+        if (FAILED(k))                      /* leeres Laufwerk: INT 24h  */
+            return k == FAPI_ERR_NOTREADY ? E_NOTREADY : E_NOMORE;
         a = de.attr;
         if ((a & 0x08) && mask != 0x08)
             continue;                       /* Datentraegerbezeichnung   */
@@ -763,6 +765,35 @@ static unsigned d_dinfo(int t, struct dem_req *q)
     return 0;
 }
 
+/* INT 25h wie MS-DOS 7: lesen frei (Schreiben braucht eine Sperre - INT 26h
+   meldet Schreibschutz). Laufwerke ueber 32 MB nur mit Paketform (0207h).
+   Fehler sind INT-25h-Codes: 8002h nicht bereit, 0408h nicht gefunden,
+   080Ch Lesefehler. */
+static unsigned d_absrd(int t, struct dem_req *q)
+{
+    unsigned long lba = q->pos, n = q->count, buf = q->buf, tot;
+    unsigned char __far *s = MK_FP(DMABUF, 0), __far *o;
+    unsigned k;
+    int r;
+    if (!n)
+        return 0;
+    for (; n; n--, lba++, buf += 512) {
+        r = fat_abssec(q->drive, lba, &tot);
+        if (r == -1)
+            return 0x8002;
+        if (!(q->flags & 1) && tot > 0xFFFFUL)
+            return 0x0207;
+        if (r == -2)
+            return 0x0408;
+        if (r)
+            return 0x080C;
+        o = bl(t, buf);
+        for (k = 0; k < 512; k++)
+            o[k] = s[k];
+    }
+    return 0;
+}
+
 /* ---- Verteiler ----------------------------------------------------------- */
 
 /* Auftrag q (im Kernel) fuer die Box t erledigen -> q->err (DOS-Fehler,
@@ -842,6 +873,7 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_FINDNEXT:  r = find_next(t, q); break;
     case DEM_SPACE:     r = d_space(q); break;
     case DEM_DINFO:     r = d_dinfo(t, q); break;
+    case DEM_ABSREAD:   r = d_absrd(t, q); break;
     default:            r = 1;              /* unbekannt (01h)       */
     }
     return q->err = r;
