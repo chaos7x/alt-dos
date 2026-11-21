@@ -364,7 +364,7 @@ mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
-# nur auf der Platte (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT)
+# Diskette 3 (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT)
 HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
@@ -407,17 +407,29 @@ rm -f $IMG2
 mformat -i $IMG2 -C -f 1440 -v 'AT-DOS 2' ::
 mmd -i $IMG2 ::DOS ::DOS/SYSTEM
 TARGET="-i $IMG2" TO="::" copy_extra
-# SETUP.ID: Nummer, belegte KB beider Disketten (Fortschritt, Platz)
+# Diskette 3 (nicht startfaehig, Erlaubnis des Nutzers: weitere Disketten,
+# wenn 2 nicht reichen)
+IMG3=$B/atdos-fd3.img
+rm -f $IMG3
+mformat -i $IMG3 -C -f 1440 -v 'AT-DOS 3' ::
+mmd -i $IMG3 ::DOS ::DOS/MDOS
+TARGET="-i $IMG3" TO="::" copy_list "$HDMDOS" "DOS/MDOS/"
+# SETUP.ID: Nummer, belegte KB aller Disketten (Fortschritt, Platz; SETUP
+# fordert so viele Disketten an, wie Groessen dastehen)
 used_kb() { mdu -s -i "$1" :: | awk '{print int($2 / 2)}'; }
-KB1=$(used_kb $IMG); KB2=$(used_kb $IMG2)
-printf 'ATDOS 1 %s %s\r\n' $KB1 $KB2 > $B/setup1.id
-printf 'ATDOS 2 %s %s\r\n' $KB1 $KB2 > $B/setup2.id
+KB1=$(used_kb $IMG); KB2=$(used_kb $IMG2); KB3=$(used_kb $IMG3)
+for n in 1 2 3; do
+    printf 'ATDOS %s %s %s %s\r\n' $n $KB1 $KB2 $KB3 > $B/setup$n.id
+done
 mcopy -i $IMG $B/setup1.id ::SETUP.ID
 mcopy -i $IMG2 $B/setup2.id ::SETUP.ID
+mcopy -i $IMG3 $B/setup3.id ::SETUP.ID
 mdir -a -i $IMG :: | sed 's/^/  /'
 mdir -i $IMG ::DOS | sed 's/^/  /'
 echo "Setup-Diskette 2 (atdos-fd2.img)"
 mdir -i $IMG2 :: | tail -2 | sed 's/^/  /'
+echo "Setup-Diskette 3 (atdos-fd3.img)"
+mdir -i $IMG3 :: | tail -2 | sed 's/^/  /'
 
 echo "Festplatte (atdos-hd.img, 130/16/63 = 63 MB, FAT16)"
 HD=$B/atdos-hd.img

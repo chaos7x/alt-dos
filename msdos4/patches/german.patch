@@ -16,7 +16,7 @@ diff -ru a/v4.0/src/CMD/COMMAND/RDATA.ASM b/v4.0/src/CMD/COMMAND/RDATA.ASM
  ; End of characters that MUST remain in order
 diff -ru a/v4.0/src/MESSAGES/USA-MS.MSG b/v4.0/src/MESSAGES/USA-MS.MSG
 --- a/v4.0/src/MESSAGES/USA-MS.MSG	2026-11-21 20:48:04.732672507 +0000
-+++ b/v4.0/src/MESSAGES/USA-MS.MSG	2026-11-21 20:48:04.737054379 +0000
++++ b/v4.0/src/MESSAGES/USA-MS.MSG	2026-11-21 21:28:10.699199018 +0000
 @@ -1,9 +1,9 @@
  0085
  COMMON   0006 0038
@@ -157,7 +157,7 @@ diff -ru a/v4.0/src/MESSAGES/USA-MS.MSG b/v4.0/src/MESSAGES/USA-MS.MSG
  0066 U 0000 "NET817: Network device type incorrect"
  0067 U 0000 "NET818: Network name not found"
  0068 U 0000 "NET819: Network name limit exceeded"
-@@ -118,123 +118,123 @@
+@@ -118,107 +118,107 @@
  0077 U 0004 "",
  0078 U 0004 "",
  0079 U 0004 "",
@@ -353,10 +353,7 @@ diff -ru a/v4.0/src/MESSAGES/USA-MS.MSG b/v4.0/src/MESSAGES/USA-MS.MSG
  1063 U 0000 "%1"
  1064 U 0000 "%1"
  1065 U 0000 "%1"
- 1066 U 0000 "%1"
- 1067 U 0000 9
--1068 U 0000 " <DIR>    "
-+1068 U 0000 " <VERZ>   "
+@@ -228,13 +228,13 @@
  1069 U 0000 8," ",8
  1070 U 0000 CR,LF
  1071 U 0000 "%1"

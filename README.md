@@ -754,7 +754,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (`\DOS\MDOS\CONFIG.SYS`: DEVICE=/DEVICEHIGH= für Zeichentreiber wie
   ANSI.SYS), LOADHIGH in den oberen Speicher, DOSKEY von MS-DOS, als
   zweite Shell COMMAND.COM 4.0 aus den MIT-Quellen von Microsoft
-  (`COMMAND4`, deutsch, nur auf der Platte; `msdos4/`).
+  (`COMMAND4`, deutsch, auf Setup-Diskette 3 und der Platte; `msdos4/`).
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box
@@ -1433,14 +1433,15 @@ etwas weniger ein. Bei Platten ohne LBA und ohne gültige aktuelle Geometrie
 Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
-    ./build.sh      # -> build/atdos-fd.img, build/atdos-fd2.img (je 1,44 MB) und build/atdos-hd.img
+    ./build.sh      # -> build/atdos-fd.img, build/atdos-fd2.img, build/atdos-fd3.img (je 1,44 MB) und build/atdos-hd.img
 
-Verteilt wird AT-DOS wie MS-DOS 6 auf **zwei Setup-Disketten**:
+Verteilt wird AT-DOS wie MS-DOS 6 auf **drei Setup-Disketten**:
 `atdos-fd.img` (Diskette 1, startfähig: System, alle Werkzeuge in `\DOS`,
 Treiber – zugleich Notfalldiskette) und `atdos-fd2.img` (Diskette 2: DOS-Box
 `\DOS\MDOS`, Zeichensätze, Packprogramme und GNU-Textwerkzeuge, LOOP,
-AWELOAD, `\DEMO`). Beide tragen im Stamm `SETUP.ID` (Nummer, belegte KB
-beider Disketten). Startet man von Diskette 1, ruft `AUTOEXEC.CMD`
+AWELOAD, `\DEMO`) und `atdos-fd3.img` (Diskette 3: COMMAND.COM 4.0 für die
+Box). Alle tragen im Stamm `SETUP.ID` (Nummer, belegte KB je Diskette –
+so viele Zahlen, wie es Disketten gibt; SETUP fragt sie der Reihe nach ab). Startet man von Diskette 1, ruft `AUTOEXEC.CMD`
 **SETUP** auf (F3 = Eingabeaufforderung):
 
 1. Ziellaufwerk suchen (bei mehreren wählen); fehlt eine Partition, startet
@@ -1495,7 +1496,7 @@ erst beim ersten Zugriff eingehängt.
 
 Zwei Wege auf die Platte:
 
-- **SETUP** von den zwei Setup-Disketten (siehe „Bauen“).
+- **SETUP** von den drei Setup-Disketten (siehe „Bauen“).
 - **Fertige Platte:** `build/atdos-hd.img` (im Release als
   `atdos-hd.zip`), 63 MB, Geometrie 130 Zylinder / 16 Köpfe / 63 Sektoren.
   In 86Box als IDE-Platte einhängen und im BIOS-Setup als Typ „User“ mit

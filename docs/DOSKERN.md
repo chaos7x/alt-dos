@@ -554,8 +554,8 @@ die Programme direkt lesen.
    (gebaut mit `tools/msdos4.sh` in dosbox-x mit NMAKE/MASM/LINK/BUILDMSG
    aus dem Quellbaum, bytegleich wiederholbar), einzige Änderung
    `msdos4/patches/version.patch` (Versionsprüfung DOS 4.0 oder neuer statt
-   genau 4.00). Nur auf der Platte (`HDMDOS` in build.sh – Diskette 2 hat
-   noch 10 KB frei), in der Box `COMMAND4`. Dafür im Kern: 5702h/5703h
+   genau 4.00). Auf der Platte und auf Setup-Diskette 3 (`HDMDOS` in build.sh –
+   Diskette 2 ist voll), in der Box `COMMAND4`. Dafür im Kern: 5702h/5703h
    (erweiterte Attribute) wie die Attrappe in DOS 4.0 `EXTATTR.ASM` – leere
    Liste, CX = 2; 5704h ohne Wirkung (TYPE fragt so die Codepage der Datei
    und brach mit „Extended Error 1“ ab). FCB-Fehler setzen den erweiterten
@@ -570,7 +570,7 @@ die Programme direkt lesen.
    deutscher Übersetzung (`msdos4/patches/german.patch`: Meldungsdatei
    `USA-MS.MSG` – COMMON/EXTEND/PARSE/COMMAND – und die Antwortbuchstaben
    A/W/I/F, J/N in `RDATA.ASM`; „Aktuelles Datum: Sa. 21.11.2026“,
-   „<VERZ>“, „1 Datei(en) kopiert“). Im Kern dafür: 6523h (Ja/Nein, J
+   „<DIR>“ (wie im deutschen MS-DOS, Wunsch des Nutzers), „1 Datei(en) kopiert“). Im Kern dafür: 6523h (Ja/Nein, J
    und Y gelten als Ja – DEL /P); INT 2Fh 122Eh (COMMAND meldet dort seine
    Meldungstabellen an und holt sie im INT-24h-Handler wieder – ohne das
    kreiste `SYSGETMSG`); der erweiterte Fehler steht schon vor INT 24h in

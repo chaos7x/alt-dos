@@ -1,21 +1,22 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * SETUP.EXE - AT-DOS von den zwei Setup-Disketten auf die Festplatte
+ * SETUP.EXE - AT-DOS von den Setup-Disketten auf die Festplatte
  * einrichten (Ablauf wie das Setup von MS-DOS 6, eigener Entwurf):
  *
  *   SETUP [Quelle:] [/START]
  *
  * Diskette 1 ist startfaehig (System, Werkzeuge, Treiber - zugleich
- * Notfalldiskette), Diskette 2 haelt den Rest (DOS-Box, Packprogramme,
- * Zeichensaetze, Demos). Beide tragen im Stamm SETUP.ID: "ATDOS n kb1 kb2"
- * (Nummer der Diskette, belegte KB beider Disketten - build.sh).
+ * Notfalldiskette), Diskette 2 und folgende halten den Rest (DOS-Box,
+ * Packprogramme, Zeichensaetze, Demos, COMMAND.COM 4.0). Alle tragen im
+ * Stamm SETUP.ID: "ATDOS n kb1 kb2 ..." (Nummer der Diskette, belegte KB
+ * aller Disketten - build.sh; so viele Groessen, so viele Disketten).
  *
  * Ablauf: Ziellaufwerk suchen; fehlt eine Partition -> FDISK (startet
  * selbst neu, die AUTOEXEC.CMD der Diskette ruft SETUP /START wieder auf);
  * nicht formatiert -> FORMAT /Q; dann CONFIG.SYS (DEVICE=-Zeilen von
  * Treibern, die beim Start kein Geraet fanden, als REM) und AUTOEXEC.CMD
- * (ohne den SETUP-Aufruf) schreiben, SYS, Diskette 1 kopieren, Diskette 2
- * anfordern und kopieren, Neustart. Ist AT-DOS schon da, bleiben
+ * (ohne den SETUP-Aufruf) schreiben, SYS, Diskette 1 kopieren, die
+ * weiteren anfordern und kopieren, Neustart. Ist AT-DOS schon da, bleiben
  * CONFIG.SYS und AUTOEXEC.CMD; die neuen Fassungen heissen .NEW.
  * ERRORLEVEL: 0 fertig (Neustart), 1 Fehler, 3 abgebrochen.
  */
@@ -34,7 +35,9 @@ static struct fapi_fsinfo fi;
 static struct fapi_finfo ff;
 static struct fapi_drvinfo dv;
 static unsigned rows = 25, src = 0xFFFF, dst, update, start_mode;
-static unsigned long kb1, kb2, done_b, total_b;
+#define NDISK 8
+static unsigned long kbs[NDISK], kb_all, done_b, total_b;
+static unsigned ndisk;                  /* Disketten laut SETUP.ID       */
 static int quit_rc = 3;
 
 /* ---- Bildschirm ---- */
@@ -186,8 +189,14 @@ static unsigned disk_id(void)
         return 0;
     p = idb + 6;
     n = (unsigned)num(&p);
-    kb1 = num(&p);
-    kb2 = num(&p);
+    ndisk = 0;
+    kb_all = 0;
+    while (ndisk < NDISK) {
+        kbs[ndisk] = num(&p);
+        if (!kbs[ndisk])
+            break;
+        kb_all += kbs[ndisk++];
+    }
     return n;
 }
 
@@ -419,14 +428,17 @@ static int visit(char *p, struct fapi_dirent *e, int what, int depth)
     return 0;
 }
 
-static void copy_disk(unsigned root, unsigned sys)
-{
-    skip_root = root;
-    skip_sys = sys;
+static void copy_disk(unsigned n)       /* Diskette n (1: Stamm und      */
+{                                       /* \DOS\SYSTEM hat SYS schon)    */
+    static char t[3];
+    skip_root = skip_sys = n == 1;
     mk(path, src, "");
     screen("F3=Setup beenden");
     at(5, 4, "Setup kopiert die Dateien von Diskette");
-    at(5, 43, root ? "1." : "2.");
+    t[0] = (char)('0' + n);
+    t[1] = '.';
+    t[2] = 0;
+    at(5, 43, t);
     walk_tree(path, visit);
 }
 
@@ -455,7 +467,7 @@ static void insert_disk(unsigned n)
 void main(void)
 {
     char *a;
-    unsigned k;
+    unsigned k, nd;
     unsigned long fr;
     static unsigned long fb;
 
@@ -491,7 +503,12 @@ void main(void)
     at(6, 4, "Setup richtet AT-DOS 6 auf der Festplatte Ihres Computers ein. Ist");
     at(7, 4, "schon ein AT-DOS darauf, wird es aktualisiert; CONFIG.SYS und");
     at(8, 4, "AUTOEXEC.CMD bleiben dann erhalten.");
-    at(10, 4, "Sie brauchen die zwei Setup-Disketten. Diskette 1 ist zugleich eine");
+    at(10, 4, "Sie brauchen alle   Setup-Disketten. Diskette 1 ist zugleich eine");
+    {
+        static char nd[2];
+        nd[0] = (char)('0' + ndisk);    /* Zahl aus SETUP.ID              */
+        at(10, 22, nd);
+    }
     at(11, 4, "Notfalldiskette: mit F3 kommen Sie zur Eingabeaufforderung (FDISK,");
     at(12, 4, "FORMAT, CHKDSK, EDIT, ...).");
     at(14, 4, "Weiter mit der EINGABETASTE.");
@@ -503,11 +520,11 @@ void main(void)
     fb = 0;
     DosFreeSpace(dst, &fb);
     fr = fb >> 10;
-    if (!update && fr < kb1 + kb2 + 64) {
+    if (!update && fr < kb_all + 64) {
         screen("F3=Setup beenden");
         at(5, 4, "Auf dem Ziellaufwerk ist nicht genug Platz frei.");
         at(7, 4, "Ben\x94tigt (KB):");
-        at(7, 20, ns(kb1 + kb2 + 64));
+        at(7, 20, ns(kb_all + 64));
         at(8, 4, "Frei (KB):");
         at(8, 20, ns(fr));
         while (key() != K_F3)
@@ -553,11 +570,13 @@ void main(void)
             leave();
         }
     }
-    total_b = (kb1 + kb2) << 10;
+    total_b = kb_all << 10;
     done_b = 0;
-    copy_disk(1, 1);
-    insert_disk(2);
-    copy_disk(0, 0);
+    copy_disk(1);
+    for (k = 2, nd = ndisk; k <= nd; k++) {   /* disk_id setzt ndisk neu */
+        insert_disk(k);
+        copy_disk(k);
+    }
 
     quit_rc = 0;
     screen("EINGABE=Neu starten  F3=Zur Eingabeaufforderung");
