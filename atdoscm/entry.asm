@@ -279,6 +279,29 @@ start_frame_:
         pop     ax
         iret
 
+; u16 xmscall(u16 ax, u16 dx, u16 *bx, u16 *dxo) - XMS-Treiber (_xms_ent)
+global xmscall_
+extern _xms_ent
+xmscall_:
+        push    bx
+        push    cx
+        push    si
+        push    di
+        push    bp
+        push    es
+        mov     si, bx
+        mov     di, cx
+        call    far [cs:_xms_ent]
+        mov     [si], bx
+        mov     [di], dx
+        pop     es
+        pop     bp
+        pop     di
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+
 ; unsigned getcs(void)
 global getcs_
 getcs_: mov     ax, cs

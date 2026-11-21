@@ -219,11 +219,11 @@ wlink $LINK name $B/dstub.bin option map=$B/dstub.map \
 
 echo "Eigener Box-Kern (atdoscm/)"
 nasm -f obj atdoscm/entry.asm -o $B/cmentry.o
-for f in kern file con exec; do
+for f in kern file fcb con exec; do
     wcc -q -ms -0 -s -zl -zls -zp1 -d0 -os -wx -we -fo=$B/cm_$f.o atdoscm/$f.c
 done
 wlink $LINK name $B/atdoscm.sys option map=$B/atdoscm.map file $B/cmentry.o \
-      file $B/cm_kern.o file $B/cm_file.o file $B/cm_con.o file $B/cm_exec.o \
+      file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o \
       2>&1 | grep -v W1014 || true
 
 echo "Programme (FX mit DOS-Stub)"

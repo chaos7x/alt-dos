@@ -442,6 +442,30 @@ die Programme direkt lesen.
 3. **Strukturen vollständig**: LoL, SFT, CDS, SDA, DPB-Attrappe, FCB-
    Funktionen, 59h, 5Dh/5Eh/5Fh, IOCTL, NLS (38h, 65h, 66h), INT 2Fh
    12xxh, SHARE-Codes. Maßstab: BIOSCMP gleich `docs/bioscmp/msdos622*.txt`.
+   **Erster Teil erledigt (21.11.2026):** `tools/bioscmp.sh … cm` lässt
+   BIOSCMP in der Box mit ATDOSCM laufen. Der DOS-Teil ist jetzt gleich
+   der FreeDOS-Box bzw. MS-DOS 6.22 (`msdos622-share.txt`); übrig sind
+   nur Unterschiede der Umgebung (INT 13h A: ohne Startabbild, Version
+   6.22, INT 2Fh 1100h/1400h wie MS-DOS ohne Redirector). Dazu:
+   FCB-Dateiarbeit (`atdoscm/fcb.c`: 0Fh–17h, 21h–24h, 27h/28h, Suche mit
+   dem DEM-Zustand ab FCB+0Ch, 32-Bit-Mul/Div per Inline-Assembler),
+   Pfade mit ungültigem Laufwerk -> 03h, Leerzeichen im Namen fallen weg
+   („A   .TXT“ = A.TXT), Phantom-B:, 3Ah auf das aktuelle Verzeichnis ->
+   10h, 41h mit Platzhaltern -> 03h, 440Ah mit SFT-Flags, 4409h 08C2h,
+   440Dh 0860h/0866h und 6900h aus DEM_DINFO (wie BOXSHELL), DPB-Liste ab
+   LoL+0 und 1Fh/32h (MS-DOS-4.0-Layout, Werte bei 32h aus DEM_DINFO;
+   ohne sie hing FreeDOS-`MEM /D` in einer Endlosschleife über 0:0),
+   Blockgerät „ATDOS“ in der Gerätekette. Aus Stufe 4 vorgezogen (Frage
+   des Nutzers zu „Free XMS UMBs“ in MSD): **UMBs** – beim Start holt
+   ATDOSCM alle UMBs per XMS 10h und hängt sie wie MS-DOS mit DOS=UMB an
+   (Systemblock „SC“ bei 9FFFh, Lücken wie der EMS-Rahmen als SC-Blöcke,
+   LoL+68h), 5802h/5803h verbinden/trennen, Strategien 40h/80h; BOXSHELL
+   zieht sich hoch. QEMU ohne EMS-Rahmen: 68 KB oben, 606 KB unten frei;
+   86Box 386DX/40: UMBs bei CD00h und E000h um den Rahmen D000h, 604 KB
+   frei (vorher 598/601). Geprüft: BIOSCMP (QEMU), FreeDOS-MEM und
+   `MEM /D`, DOOM 1.9 Timedemo (2944 Takte), Digger in QEMU und 86Box.
+   Offen in Stufe 3: 5Eh/5Fh, INT 2Fh 12xxh; Stufe 4: DOS=HIGH (Kern in
+   die HMA), LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box.
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der

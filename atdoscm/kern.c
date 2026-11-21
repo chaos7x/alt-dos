@@ -67,13 +67,16 @@ int drive_ok(unsigned d)
     m = d < 16 ? drives_lo : drives_hi;
     if (m & (1u << (d & 15)))
         return 1;
+    if (d == 1 && (drives_lo & 1))      /* B: = Phantom von A: wie DOS   */
+        goto cds;
     r.ax = 0x1200;                      /* neu nachsehen (NET USE, LOOP) */
     e0(&r);
     drives_lo = r.ax;
     drives_hi = r.dx;
     m = d < 16 ? drives_lo : drives_hi;
     if (!(m & (1u << (d & 15))))
-        return 0;
+        return d == 1 && (drives_lo & 1);
+cds:
     if (!cdstab[d].flags) {
         cdstab[d].path[0] = (char)('A' + d);
         cdstab[d].path[1] = ':';
@@ -114,12 +117,18 @@ void set_err(struct frame __far *f, unsigned e)
 #define MO(m)   W(m, 1)
 #define MS(m)   W(m, 3)
 static u16 nextm(u16 m) { return m + MS(m) + 1; }
+u16 umb_sc;                             /* Systemblock vor den UMBs (9FFFh) */
+/* letzter Block der ganzen Kette (auch bei getrennten UMBs weiter) */
+static int lastm(u16 m)
+{
+    return MT(m) == 'Z' && !(m == umb_sc && umb_sc);
+}
 
 static void coalesce(void)
 {
     u16 m = first_mcb, n;
     for (;;) {
-        if (MT(m) == 'Z')
+        if (lastm(m))
             return;
         n = nextm(m);
         if (MT(n) != 'M' && MT(n) != 'Z')
@@ -146,17 +155,33 @@ static void split(u16 m, u16 paras)     /* m auf paras kuerzen, Rest frei */
     MS(m) = paras;
 }
 
+static u16 mem_alloc_from(u16 start, u16 paras, u16 owner, u16 *largest);
 u16 mem_alloc(u16 paras, u16 owner, u16 *largest)
 {
-    u16 m, best = 0, bsz = 0xFFFF, big = 0;
-    unsigned i;
     coalesce();
-    if (alloc_strat & 0x40) {           /* nur UMB: gibt es (noch) nicht */
+    /* 40h nur oben, 80h oben zuerst - nur bei verbundenen UMBs (5803h) */
+    if ((alloc_strat & 0xC0) && umb_sc && umb_link) {
+        u8 s = alloc_strat;
+        u16 r;
+        alloc_strat &= 3;
+        r = mem_alloc_from(umb_sc, paras, owner, largest);
+        alloc_strat = s;
+        if (r || (s & 0x40))
+            return r;
+    } else if (alloc_strat & 0x40) {
         if (largest)
             *largest = 0;
         return 0;
     }
-    for (m = first_mcb; ; m = nextm(m)) {
+    return mem_alloc_from(first_mcb, paras, owner, largest);
+}
+
+/* erster passender Block ab start; bei getrennten UMBs nur unten */
+static u16 mem_alloc_from(u16 start, u16 paras, u16 owner, u16 *largest)
+{
+    u16 m, best = 0, bsz = 0xFFFF, big = 0;
+    unsigned i;
+    for (m = start; ; m = nextm(m)) {
         if (MO(m) == 0) {
             if (MS(m) > big)
                 big = MS(m);
@@ -170,8 +195,10 @@ u16 mem_alloc(u16 paras, u16 owner, u16 *largest)
                     best = m;
             }
         }
-        if (MT(m) == 'Z')
+        if (MT(m) == 'Z' && !(m == umb_sc && umb_sc && start == umb_sc))
             break;
+        if (m == umb_sc && !umb_link && start != umb_sc)
+            break;                      /* getrennt: nur unten          */
     }
     if (largest)
         *largest = big;
@@ -232,7 +259,7 @@ void mem_free_owner(u16 psp)
     for (m = first_mcb; ; m = nextm(m)) {
         if (MO(m) == psp)
             MO(m) = 0;
-        if (MT(m) != 'M')
+        if (lastm(m) || (MT(m) != 'M' && MT(m) != 'Z'))
             break;
     }
     coalesce();
@@ -268,9 +295,15 @@ static void mem_fn(struct frame __far *f)
         case 0: f->ax = alloc_strat; break;
         case 1: alloc_strat = (u8)f->bx; break;
         case 2: AL(f) = umb_link; break;
-        case 3:                         /* UMBs gibt es erst in Stufe 4 */
-            if (f->bx & 1)
-                set_err(f, E_FUNC);
+        case 3:                         /* UMBs verbinden/trennen       */
+            if ((f->bx & 1) && !umb_sc) {
+                set_err(f, E_FUNC);     /* keine UMBs (wie MS-DOS)       */
+                break;
+            }
+            umb_link = (u8)(f->bx & 1);
+            if (umb_sc)
+                MT(umb_sc) = umb_link ? 'M' : 'Z';
+            LOL[0x66] = umb_link;
             break;
         default: set_err(f, E_FUNC);
         }
@@ -531,6 +564,63 @@ struct frame __far *int21_c(struct frame __far *f)
     return f;
 }
 
+/* ---- UMBs (DOS=UMB): beim XMS-Treiber holen, hinter 9FFFh anhaengen ---- */
+u16 xms_ent[2];
+u16 xmscall(u16 ax, u16 dx, u16 *bx, u16 *dxo);
+
+static void mcb_set(u16 m, u8 t, u16 owner, u16 size, const char *nm)
+{
+    unsigned i;
+    MT(m) = t;
+    MO(m) = owner;
+    MS(m) = size;
+    for (i = 0; i < 8; i++)
+        B(m, 8 + i) = nm && nm[i] ? (u8)nm[i] : 0;
+}
+
+static void umb_init(u16 top)
+{
+    struct rregs r;
+    u16 seg[8], sz[8], n = 0, bx, dx, i, end;
+    r.ax = 0x4300;
+    bint(0x2F, &r);
+    if ((r.ax & 0xFF) != 0x80 || top != 0xA000)
+        return;
+    r.ax = 0x4310;
+    bint(0x2F, &r);
+    xms_ent[0] = r.bx;
+    xms_ent[1] = r.es;
+    while (n < 8) {
+        if (xmscall(0x1000, 0xFFFF, &bx, &dx) || dx < 2)
+            break;                      /* (Erfolg mit FFFFh: unmoeglich) */
+        if (!xmscall(0x1000, dx, &bx, &dx) || bx <= top)
+            break;
+        for (i = n; i && seg[i - 1] > bx; i--) {    /* nach Lage sortiert */
+            seg[i] = seg[i - 1];
+            sz[i] = sz[i - 1];
+        }
+        seg[i] = bx;
+        sz[i] = dx;
+        n++;
+    }
+    if (!n)
+        return;
+    /* unten: freier Block bis 9FFEh, dann Systemblock "SC" bis zur UMB */
+    MT(first_mcb) = 'M';
+    MS(first_mcb) = top - 1 - first_mcb - 1;
+    umb_sc = top - 1;
+    mcb_set(umb_sc, 'Z', 8, seg[0] - umb_sc - 1, "SC");
+    for (i = 0; i < n; i++) {
+        end = seg[i] + sz[i];
+        if (i + 1 < n && seg[i + 1] > end) {    /* Luecke: Systemblock */
+            mcb_set(seg[i], 'M', 0, sz[i] - 2, 0);
+            mcb_set(end - 1, 'M', 8, seg[i + 1] - end, "SC");
+        } else
+            mcb_set(seg[i], i + 1 < n ? 'M' : 'Z', 0, sz[i] - 1, 0);
+    }
+    *(u16 *)(LOL + 0x68) = umb_sc;
+}
+
 /* ---- Start -------------------------------------------------------------- */
 static void setvec(unsigned n, void (*h)(void))
 {
@@ -605,6 +695,10 @@ void cm_main(void)
         drive_ok(d);
     cur_drv = sys_drv;
     sda[SDA_DRIVE] = cur_drv;
+    dpb_init();                         /* DPB-Liste (LoL+0, MEM /D)    */
+    *(u16 *)(LOL + 0x00) = dpb_first();
+    *(u16 *)(LOL + 0x02) = dpb_first() == 0xFFFF ? 0xFFFF : kseg;
+    LOL[0x20] = NDRV;                   /* Blockgeraete                  */
     LOL[0x43] = (u8)(sys_drv + 1);
 
     /* Speicher: ein freier Block bis zum Ende des konventionellen */
@@ -613,6 +707,7 @@ void cm_main(void)
     MT(m) = 'Z';
     MO(m) = 0;
     MS(m) = top - m - 1;
+    umb_init(top);
 
     shell[0] = (char)('A' + sys_drv);
     {

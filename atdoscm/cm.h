@@ -86,7 +86,7 @@ struct devh {
     char name[8];
 };
 enum { DV_NUL, DV_CON, DV_AUX, DV_PRN, DV_CLOCK, DV_EMM, DV_IN, DV_OUT, DV_ERR,
-       DV_LPT1, DV_COM1, NDEV };
+       DV_LPT1, DV_COM1, DV_BLK, NDEV };
 
 /* Fehler (DOS) */
 #define E_FUNC      1
@@ -130,6 +130,8 @@ unsigned dem(unsigned fn);
 int  canon(const char __far *in, char *out, unsigned *drv);
 int  dev_of(const char *path);
 void file_init(void);
+void dpb_init(void);
+u16  dpb_first(void);
 void psp_handles(u16 psp, u16 parent);
 void close_all(u16 psp);
 int  hnd_sft(unsigned h);
@@ -138,6 +140,9 @@ unsigned h_write(unsigned h, u16 seg, u16 off, unsigned n, unsigned *err);
 void file_fn(struct frame __far *f);
 int  open_path(const char *path, unsigned mode, unsigned act, unsigned attr, unsigned *res);
 void sft_close(int s);
+
+/* fcb.c */
+void fcb_fn(struct frame __far *f);
 
 /* con.c */
 void con_out(unsigned c);

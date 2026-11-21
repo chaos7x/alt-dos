@@ -7,7 +7,10 @@
 # Redirector), auf derselben QEMU-Maschine.  Danach diff der beiden
 # Ergebnisdateien.
 #
-#   tools/bioscmp.sh [Arbeitsverzeichnis] [rbox]
+#   tools/bioscmp.sh [Arbeitsverzeichnis] [rbox|cm]
+#
+# Mit "cm": die Box laeuft mit dem eigenen Kern ATDOSCM.SYS
+# (DOSBOX.INI DOS_KERNEL=, docs/DOSKERN.md).
 #
 # Mit "rbox" (Zweig 5.x): Box ist die Kompatibilitaetsbox (RBOX, echter
 # Real Mode); BIOSCMP wird dort ueber den QEMU-Monitor eingetippt
@@ -59,6 +62,10 @@ mcopy -o -i "$REFP" ::REF.TXT "$W/ref.txt"
 cp $B/atdos-hd.img "$W/box-hd.img"
 P="$W/box-hd.img@@32256"
 mcopy -o -i "$P" "$W/bioscmp.com" ::BIOSCMP.COM
+if [ "$MODE" = cm ]; then                 # eigener Box-Kern (DOSKERN Stufe 2+)
+    mtype -i "$P" ::DOS/MDOS/DOSBOX.INI | sed 's/^\[\*\]\r\?$/[*]\r\nDOS_KERNEL=ATDOSCM.SYS\r/' > "$W/ini"
+    mcopy -o -i "$P" "$W/ini" ::DOS/MDOS/DOSBOX.INI
+fi
 if [ "$MODE" = rbox ]; then
     rm -f "$W/m.s"
     timeout 400 qemu-system-i386 -m 16 -display none -no-reboot \

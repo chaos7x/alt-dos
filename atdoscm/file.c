@@ -30,6 +30,7 @@ static const struct { u16 attr; char name[9]; } devdef[NDEV] = {
     { 0x8000, "ATERR$  " },
     { 0xA0C0, "LPT1    " },
     { 0x8000, "COM1    " },
+    { 0x0842, "\032ATDOS  " },         /* Blockgeraet: 26 Einheiten     */
 };
 
 void retf_entry(void);
@@ -69,7 +70,7 @@ int canon(const char __far *in, char *out, unsigned *drv)
         in += 2;
     }
     if (d >= NDRV || !drive_ok(d))
-        return E_DRIVE;
+        return E_NOPATH;                /* wie MS-DOS bei Dateiaufrufen  */
     if (drv)
         *drv = d;
     if (*in == '\\' || *in == '/') {
@@ -115,6 +116,8 @@ int canon(const char __far *in, char *out, unsigned *drv)
                 out[o++] = '.';
                 continue;
             }
+            if (c == ' ')
+                continue;               /* "A   .TXT" = A.TXT (DOS)      */
             if ((u8)c < ' ' || c == '"' || c == '|' || c == '<' || c == '>' ||
                 c == '+' || c == '=' || c == ';' || c == ',' || c == '[' || c == ']')
                 return E_NOFILE;
@@ -527,6 +530,113 @@ static void parse_fn(struct frame __far *f)
     f->si = FP_OFF(s);
 }
 
+/* ---- Laufwerksinfo vom DEM (32 Byte, Aufbau in dem.c d_dinfo) ----------- */
+static u8 dbuf[32];
+
+static int dinfo(unsigned d)
+{
+    q.drive = d;
+    q.buf = lin(kseg, (u16)dbuf);
+    return dem(DEM_DINFO);
+}
+
+/* Info-Stufe, Seriennummer, Bezeichnung, Dateisystem (0866h, 6900h) */
+static void serial_out(u16 seg, u16 off)
+{
+    unsigned i;
+    W(seg, off) = 0;
+    for (i = 0; i < 23; i++)
+        B(seg, off + 2 + i) = dbuf[8 + i];
+}
+
+/* Geraeteparameter mit BPB (0860h), wie BOXSHELL */
+static void params_out(u16 seg, u16 off)
+{
+    u32 cl = *(u32 *)(dbuf + 4), sec;
+    u8 spc = dbuf[1], m;
+    B(seg, off + 1) = dbuf[0] == 2 ? 7 : 5;
+    W(seg, off + 2) = dbuf[0] == 2 ? 0 : 1;
+    W(seg, off + 4) = 1024;
+    B(seg, off + 6) = 0;
+    W(seg, off + 7) = *(u16 *)(dbuf + 2);
+    B(seg, off + 9) = spc;
+    W(seg, off + 10) = 1;
+    B(seg, off + 12) = 2;
+    W(seg, off + 13) = 512;
+    W(seg, off + 15) = 0;
+    B(seg, off + 17) = dbuf[31];
+    W(seg, off + 18) = (u16)(cl >> 8) + 1;
+    W(seg, off + 20) = 63;
+    W(seg, off + 22) = 16;
+    D(seg, off + 24) = 0;
+    for (sec = cl, m = spc; m > 1; m >>= 1)
+        sec <<= 1;
+    D(seg, off + 28) = sec;
+}
+
+/* ---- DPB (Liste ab LoL+0, 1Fh/32h) wie MS-DOS 4.0 (DPB.INC, 21h Byte) -- */
+#define DPBSZ 0x21
+static u8 dpbs[NDRV][DPBSZ];
+static u16 first_dpb = 0xFFFF;
+
+void dpb_init(void)
+{
+    unsigned d, prev = 0xFFFF;
+    for (d = NDRV; d-- > 0; ) {
+        u8 *p = dpbs[d];
+        if (!drive_ok(d))
+            continue;
+        p[0] = (u8)d;
+        p[1] = (u8)d;
+        *(u16 *)(p + 2) = 512;
+        p[4] = 0;                       /* Sektoren je Cluster - 1      */
+        p[5] = 0;
+        *(u16 *)(p + 6) = 1;
+        p[8] = 2;
+        *(u16 *)(p + 9) = 512;
+        *(u16 *)(p + 0x0B) = 64;
+        *(u16 *)(p + 0x0D) = 0xFFF0;
+        *(u16 *)(p + 0x0F) = 256;
+        *(u16 *)(p + 0x11) = 32;
+        *(u16 *)(p + 0x13) = (u16)&devs[DV_BLK];
+        *(u16 *)(p + 0x15) = kseg;
+        p[0x17] = d < 2 ? 0xF0 : 0xF8;
+        p[0x18] = 0xFF;                 /* noch nicht benutzt            */
+        *(u16 *)(p + 0x19) = prev;
+        *(u16 *)(p + 0x1B) = prev == 0xFFFF ? 0xFFFF : kseg;
+        *(u16 *)(p + 0x1D) = 0;
+        *(u16 *)(p + 0x1F) = 0xFFFF;    /* freie Cluster unbekannt       */
+        prev = (u16)p;
+    }
+    first_dpb = prev;
+}
+
+u16 dpb_first(void) { return first_dpb; }
+
+/* DPB des Laufwerks d mit Werten vom DEM */
+static u8 *dpb_of(unsigned d)
+{
+    u8 *p = dpbs[d];
+    u8 s, sh;
+    if (!drive_ok(d) || p[2] == 0 && p[3] == 0)
+        return 0;
+    q.drive = d;
+    q.buf = lin(kseg, (u16)dbuf);
+    if (!dem(DEM_DINFO)) {
+        s = dbuf[1] ? dbuf[1] : 1;
+        for (sh = 0; (1 << sh) < s; sh++)
+            ;
+        *(u16 *)(p + 2) = *(u16 *)(dbuf + 2);
+        p[4] = (u8)(s - 1);
+        p[5] = sh;
+        *(u16 *)(p + 0x0D) = (u16)(*(u32 *)(dbuf + 4) > 0xFFEEUL ? 0xFFEF :
+                                    *(u32 *)(dbuf + 4) + 1);
+        p[0x17] = dbuf[31];
+    }
+    p[0x18] = 0;
+    return p;
+}
+
 /* ---- 44h IOCTL ---------------------------------------------------------- */
 static void ioctl_fn(struct frame __far *f)
 {
@@ -558,8 +668,8 @@ static void ioctl_fn(struct frame __far *f)
         case 0x07:
             AL(f) = 0xFF;
             break;
-        case 0x0A:
-            f->dx = IS_DEV(s) ? 0 : 0;
+        case 0x0A:                      /* Handle fern? lokal: Flags     */
+            f->dx = IS_DEV(s) ? devs[sftab[s].hnd].attr : sftab[s].flags;
             break;
         case 0x02:                      /* EMMXXXX0 u. a.: nichts        */
         case 0x03:
@@ -579,13 +689,30 @@ static void ioctl_fn(struct frame __far *f)
             set_err(f, E_DRIVE);
             return;
         }
-        if (AL(f) == 0x08) {
-            f->ax = d < 2 ? 0 : 1;      /* Diskette wechselbar          */
-        } else if (AL(f) == 0x09) {
-            f->dx = 0;                  /* lokal (wie BOXSHELL, 4409h)   */
-        } else if (AL(f) == 0x0E || AL(f) == 0x0F) {
+        if (AL(f) == 0x0E || AL(f) == 0x0F) {
             AL(f) = 0;                  /* nur ein Buchstabe             */
-        } else
+            break;
+        }
+        if (AL(f) == 0x09) {
+            f->dx = 0x08C2;             /* lokal, Attribute wie MS-DOS   */
+            break;
+        }
+        if (dinfo(d)) {                 /* CD, kein Medium               */
+            if (AL(f) == 0x08)
+                f->ax = 1;
+            else
+                set_err(f, AL(f) == 0x0D ? E_FUNC : 0x15);
+            break;
+        }
+        if (AL(f) == 0x08)
+            f->ax = dbuf[0] == 2 ? 0 : 1;
+        else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x66)
+            serial_out(f->ds, f->dx);
+        else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x60)
+            params_out(f->ds, f->dx);
+        else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x46)
+            set_err(f, E_DENIED);
+        else
             set_err(f, E_FUNC);
         break;
     case 0x0B:
@@ -681,6 +808,15 @@ void file_fn(struct frame __far *f)
             cdstab[d].path[n] = 0;
             return;
         }
+        if (AH(f) == 0x3A) {            /* aktuelles Verzeichnis: 10h   */
+            d = (unsigned)(p1[0] - 'A');
+            for (n = 0; p1[n] && p1[n] == cdstab[d].path[n]; n++)
+                ;
+            if (!p1[n] && !cdstab[d].path[n]) {
+                set_err(f, E_CURDIR);
+                return;
+            }
+        }
         if (dem(AH(f) == 0x39 ? DEM_MKDIR : DEM_RMDIR))
             set_err(f, q.err);
         return;
@@ -760,6 +896,12 @@ void file_fn(struct frame __far *f)
     case 0x41:
         if (!path_arg(f, f->ds, f->dx, p1))
             return;
+        for (n = 0; p1[n] && p1[n] != '*' && p1[n] != '?'; n++)
+            ;
+        if (p1[n]) {                    /* Platzhalter nur ueber 5D00h  */
+            set_err(f, E_NOPATH);
+            return;
+        }
         cpy(q.path, p1);
         if (dem(DEM_DELETE))
             set_err(f, q.err);
@@ -938,14 +1080,35 @@ void file_fn(struct frame __far *f)
     case 0x29:
         parse_fn(f);
         return;
+    case 0x69:                          /* Seriennummer 00 lesen, 01 setzen */
+        d = BL(f) ? BL(f) - 1 : cur_drv;
+        if (!drive_ok(d) || dinfo(d)) {
+            set_err(f, E_DRIVE);
+            return;
+        }
+        if (AL(f) == 0) {
+            serial_out(f->ds, f->dx);
+            f->ax = 0;
+        } else
+            set_err(f, E_DENIED);
+        return;
     case 0x0F: case 0x10: case 0x11: case 0x12: case 0x13: case 0x14:
     case 0x15: case 0x16: case 0x17: case 0x21: case 0x22: case 0x23:
     case 0x24: case 0x27: case 0x28:
-        AL(f) = 0xFF;                   /* FCB-Dateiarbeit: Stufe 3      */
+        fcb_fn(f);
         return;
-    case 0x32: case 0x1F:
-        AL(f) = 0xFF;
+    case 0x32: case 0x1F: {
+        u8 *p;
+        d = AH(f) == 0x32 && DL(f) ? DL(f) - 1 : cur_drv;
+        if (d >= NDRV || (p = dpb_of(d)) == 0) {
+            AL(f) = 0xFF;
+            return;
+        }
+        f->ds = kseg;
+        f->bx = (u16)p;
+        AL(f) = 0;
         return;
+    }
     default:
         set_err(f, E_FUNC);
         AL(f) = 0;
