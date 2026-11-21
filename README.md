@@ -750,7 +750,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   FreeCOM, MEM (FreeDOS und MS-DOS), FIND, Digger, DOOM 1.9 mit Sound
   Blaster, CheckIt SysInfo, MS-DOS-MEM (zeigt wie unter MS-DOS „MSDOS 14K“
   und die UMBs), INT 2Fh 12xxh und 21h 5Eh/5Fh wie MS-DOS, INT 24h (kritischer Fehler
-  mit Abfrage), INT 25h lesend wie MS-DOS 7. Noch nicht: CONFIG.SYS der Box.
+  mit Abfrage), INT 25h lesend wie MS-DOS 7, eigene CONFIG.SYS der Box
+  (`\DOS\MDOS\CONFIG.SYS`: DEVICE=/DEVICEHIGH= für Zeichentreiber wie
+  ANSI.SYS), LOADHIGH in den oberen Speicher.
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

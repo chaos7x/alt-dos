@@ -513,7 +513,40 @@ die Programme direkt lesen.
    (W)iederholen, (F)ehler?“, Wiederholen/Fehler; ABS.COM liest den
    Bootsektor von C: (Paketform), 0207h/0300h/8002h; ebenso in 86Box
    386DX/40 (AHA-154x).
-   Offen in Stufe 4: LOADHIGH/DEVICEHIGH, CONFIG.SYS der Box.
+   **Stufe 4, zweiter Teil (21.11.2026): CONFIG.SYS der Box, DEVICEHIGH,
+   LOADHIGH.** Datei `\DOS\MDOS\CONFIG.SYS` (eigene Datei der Box neben
+   DOSBOX.INI, ausgeliefert nur mit Kommentaren; was beim Start der ganzen
+   Box gilt, bleibt in der CONFIG.SYS von AT-DOS), gelesen vor BOXSHELL
+   (`atdoscm/config.c`, Lesepuffer vorübergehend oben im Speicher):
+   DEVICE=, DEVICEHIGH=, BUFFERS=, BREAK=; andere Schlüssel still, Zeilen
+   ohne `=` -> „Fehler in CONFIG.SYS der Box, Zeile n“. Treiber wie
+   SYSINIT von MS-DOS 4.0: Datei als Overlay (4B03h-Weg) an den Anfang
+   des größten Blocks, INIT mit höchster Endadresse und Zeiger auf die
+   Befehlszeile (InDOS gezählt, damit INT 21h im INIT den zweiten Stapel
+   nimmt), Block auf die gemeldete Endadresse kürzen, eigener Besitzer
+   und Name (MEM zeigt „ANSI 4.208“ wie MS-DOS), Köpfe hinter NUL in die
+   Kette (LoL+22h). DEVICEHIGH nimmt einen UMB, wenn die Datei hineinpasst,
+   sonst unten. Ein Treiber mit STDIN/STDOUT ersetzt CON: Ausgaben auf CON
+   gehen als WRITE-Anforderung an ihn (ANSI.SYS-Farben gehen). Blocktreiber
+   werden abgelehnt (Laufwerke kommen vom DEM). Dabei behoben: INT 21h 30h
+   ohne aktuellen PSP las die Version aus dem Interruptvektor 10h (MS-DOS-
+   ANSI.SYS lehnte im INIT ab); INIT-Auftrag 20h Byte (DOS 5 schreibt das
+   Wort bei 17h). LOADHIGH: EXEC nimmt bei Strategie „oben zuerst“ wie
+   MS-DOS den größten oberen Block, wenn das Programm hineinpasst
+   (`mem_alloc_prog`) – vorher landete `LH DOSKEY` immer unten.
+   Geprüft QEMU (ANSI.SYS von MS-DOS 6.22 mit DEVICEHIGH: Farbe, MEM) und
+   86Box 386DX/40 (ANSI oben, FreeCOM `LH DOSKEY` oben, MS-DOS-MEM) und
+   DX4-100 mit 16 MB (DOOM 1.9 als erstes Programm, danach MEM: ANSI oben,
+   626 KB frei). Die XMS-Zeile „Verwendet“ von MS-DOS-MEM ist je nach
+   Speicher weiter negativ (offener Punkt aus `docs/BOX-BIOS.md`).
+   Dabei gefunden (seit dem ersten Teil): DOOM blieb als **erstes**
+   Programm einer frischen Box mit leerem Bildschirm stehen. DOS/4GW sucht
+   in der IVT (ab Vektor BDh abwärts) zwei gleiche benachbarte Vektoren
+   als freie Plätze und kreist, bis es welche findet. In der Box zeigt
+   jeder Vektor auf einen eigenen Stummel; das einzige gleiche Paar waren
+   zufällig INT 25h/26h, die mit dem ersten Teil eigene Eingänge bekamen.
+   Jetzt stehen 60h–66h wie beim BIOS auf 0000:0000 (`cm_main`). Gefunden
+   über `info registers` im QEMU-Monitor (Schleife bei 0750:62F3, DS = 0).
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der

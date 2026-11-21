@@ -71,9 +71,34 @@ static unsigned col(void)
     return B(0x40, 0x50 + 2 * B(0x40, 0x62));
 }
 
+/* geladener CON-Treiber (Box-CONFIG.SYS, z. B. ANSI.SYS): Ausgabe als
+   WRITE-Anforderung (Befehl 8) wie DOS */
+u32 con_dev;
+static u8 cw_rq[0x16];
+static u8 cw_ch;
+
+static void con_dev_write(u16 seg, u16 off, unsigned n)
+{
+    u16 ds = (u16)(con_dev >> 16), dof = (u16)con_dev;
+    unsigned i;
+    for (i = 0; i < sizeof(cw_rq); i++)
+        cw_rq[i] = 0;
+    cw_rq[0] = 0x16;
+    cw_rq[2] = 8;
+    W(kseg, (u16)cw_rq + 0x0E) = off;
+    W(kseg, (u16)cw_rq + 0x10) = seg;
+    W(kseg, (u16)cw_rq + 0x12) = n;
+    devcall(ds, W(ds, dof + 6), W(ds, dof + 8), (u16)cw_rq);
+}
+
 void con_out(unsigned c)
 {
     struct rregs r;
+    if (con_dev && c != 9) {
+        cw_ch = (u8)c;
+        con_dev_write(kseg, (u16)&cw_ch, 1);
+        return;
+    }
     if (c == 9) {
         do
             con_out(' ');
@@ -377,6 +402,10 @@ unsigned dev_write(int d, struct sft *s, u16 seg, u16 off, unsigned n)
     case DV_CON:
         if (n > 1)
             cc_peek();
+        if (con_dev) {                  /* ganzer Block an den Treiber   */
+            con_dev_write(seg, off, n);
+            return n;
+        }
         for (i = 0; i < n; i++)
             con_out(B(seg, off + i));
         return n;

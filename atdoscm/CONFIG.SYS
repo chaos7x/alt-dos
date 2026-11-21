@@ -1,0 +1,14 @@
+REM CONFIG.SYS der DOS-Boxen von AT-DOS (eigener Kern ATDOSCM.SYS)
+REM
+REM Wird beim Start jeder Box gelesen, bevor BOXSHELL startet. Was fuer
+REM die ganze Box beim Start gilt (DOS=HIGH,UMB, RMSIZE=), steht in der
+REM CONFIG.SYS von AT-DOS, Einstellungen je Programm in DOSBOX.INI.
+REM
+REM DEVICE=Datei [Argumente]      Zeichentreiber laden (z. B. ANSI.SYS)
+REM DEVICEHIGH=Datei [Argumente]  ebenso, in den oberen Speicher (UMB)
+REM BUFFERS=n                     nur fuer Programme, die es abfragen
+REM BREAK=ON|OFF                  Strg+C auch bei Dateiaufrufen pruefen
+REM
+REM Blockgeraete-Treiber gehen nicht (die Laufwerke kommen von AT-DOS).
+REM Beispiel:
+REM DEVICEHIGH=C:\DOS\ANSI.SYS

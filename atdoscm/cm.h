@@ -156,6 +156,20 @@ unsigned dev_read(int d, struct sft *s, u16 seg, u16 off, unsigned n);
 unsigned dev_write(int d, struct sft *s, u16 seg, u16 off, unsigned n);
 void con_line(u8 __far *buf);
 
+/* config.c */
+void config_box(unsigned drv);
+extern u32 con_dev;                     /* con.c: CON-Treiber (ANSI.SYS) */
+void devcall(u16 seg, u16 strat, u16 intr, u16 rq);
+u16  dev_alloc(int high, u16 need, u16 *size);   /* kern.c              */
+u32  file_size(const char *path);
+void dev_name(u16 seg, const char *path);
+void dev_link(u32 first, u16 seg, u16 last_off);
+void buffers_set(unsigned n);
+u16  mem_alloc_top(u16 paras);
+u16  mem_alloc_prog(u16 need, u16 want, u16 owner, u16 *big);
+unsigned read_file(const char *path, u16 seg, unsigned max);  /* exec.c */
+unsigned load_ovl(const char *path, u16 seg);
+
 /* dosint.c */
 extern struct frame __far *user_frame;
 void net_fn(struct frame __far *f);

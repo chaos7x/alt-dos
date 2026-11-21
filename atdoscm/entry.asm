@@ -560,6 +560,47 @@ xmscall_:
         pop     bx
         ret
 
+; void devcall(u16 seg, u16 strat, u16 intr, u16 rq) - AX, DX, BX, CX:
+; Treiber aufrufen wie DOS (ES:BX = Anforderung im Datensegment)
+global devcall_
+devcall_:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     [cs:dv_seg], ax
+        mov     [cs:dv_seg2], ax
+        mov     [cs:dv_st], dx
+        mov     [cs:dv_in], bx
+        push    ds
+        pop     es
+        mov     bx, cx
+        push    es
+        push    bx
+        call    far [cs:dv_st]
+        pop     bx
+        pop     es
+        call    far [cs:dv_in]
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+dv_st:  dw      0
+dv_seg: dw      0
+dv_in:  dw      0
+dv_seg2: dw     0
+
 ; unsigned crit24(ax, di, bp, si) - AX, DX, BX, CX: INT 24h auf dem
 ; Stapel des Programms (SS:SP = _user_frame, Rahmen wie SAVE_WORLD) -> AX
 extern _user_frame

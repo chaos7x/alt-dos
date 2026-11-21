@@ -466,7 +466,7 @@ struct frame __far *int21_c(struct frame __far *f)
         AL(f) = verify;
         break;
     case 0x30: {
-        u16 v = W(cur_psp(), 0x40);
+        u16 v = cur_psp() ? W(cur_psp(), 0x40) : 0;     /* INIT: kein PSP */
         if (!v)
             v = 0x1606;
         f->ax = v;
@@ -646,6 +646,106 @@ static void umb_init(u16 top)
     *(u16 *)(LOL + 0x66) = umb_sc;     /* erster UMB-Block (9FFFh)      */
 }
 
+/* Programmblock fuer EXEC: mindestens need, gern want Absaetze. Bei
+   Strategie "oben zuerst" (LOADHIGH) wie MS-DOS der groesste obere Block,
+   wenn das Programm hineinpasst. *big = groesster Block (Fehlermeldung) */
+u16 mem_alloc_prog(u16 need, u16 want, u16 owner, u16 *big)
+{
+    u16 b = 0, r;
+    u8 s = alloc_strat;
+    coalesce();
+    if ((alloc_strat & 0xC0) && umb_sc && umb_link) {
+        alloc_strat &= 3;
+        mem_alloc_from(umb_sc, 0xFFFF, 0, &b);
+        r = b >= need ? mem_alloc_from(umb_sc, want < b ? want : b, owner, 0) : 0;
+        alloc_strat = s;
+        if (r || (s & 0x40)) {
+            *big = b;
+            return r;
+        }
+    }
+    alloc_strat &= 3;
+    mem_alloc_from(first_mcb, 0xFFFF, 0, &b);
+    r = b >= need ? mem_alloc_from(first_mcb, want < b ? want : b, owner, 0) : 0;
+    alloc_strat = s;
+    *big = b;
+    return r;
+}
+
+/* ---- fuer config.c (Treiber der Box-CONFIG.SYS) ------------------------ */
+/* groesster Block fuer einen Treiber, mindestens need Absaetze, Besitzer
+   8; high: erst oben (nur UMBs, Strategie 40h), passt es dort nicht,
+   unten wie DEVICEHIGH bei MS-DOS */
+u16 dev_alloc(int high, u16 need, u16 *size)
+{
+    u8 s = alloc_strat, l = umb_link;
+    u16 big = 0, r = 0;
+    if (high && umb_sc) {
+        alloc_strat = 0x40;
+        umb_link = 1;
+        MT(before_sc()) = 'M';
+        mem_alloc(0xFFFF, 0, &big);
+        if (big >= need)
+            r = mem_alloc(big, 8, 0);
+        umb_link = l;
+        MT(before_sc()) = l ? 'M' : 'Z';
+        alloc_strat = s;
+    }
+    if (!r) {
+        mem_alloc(0xFFFF, 0, &big);
+        if (big >= need)
+            r = mem_alloc(big, 8, 0);
+    }
+    *size = big;
+    return r;
+}
+
+void dev_name(u16 seg, const char *path)
+{
+    const char *b = path;
+    unsigned i;
+    MO(seg - 1) = seg;                  /* eigener Besitzer: MEM zeigt ihn */
+    for (; *path; path++)
+        if (*path == '\\' || *path == ':')
+            b = path + 1;
+    for (i = 0; i < 8; i++) {
+        B(seg - 1, 8 + i) = *b && *b != '.' ? (u8)*b : 0;
+        if (*b && *b != '.')
+            b++;
+    }
+}
+
+/* Treiberkoepfe first .. seg:last hinter NUL (LoL+22h und devs) */
+void dev_link(u32 first, u16 seg, u16 last_off)
+{
+    W(seg, last_off) = W(kseg, (u16)(LOL + 0x22));
+    W(seg, last_off + 2) = W(kseg, (u16)(LOL + 0x24));
+    *(u32 *)(LOL + 0x22) = first;
+    devs[DV_NUL].next = first;
+}
+
+/* Block vom oberen Ende (unten, Strategie 2) - fuer Vorruebergehendes */
+u16 mem_alloc_top(u16 paras)
+{
+    u8 s = alloc_strat;
+    u16 r;
+    alloc_strat = 2;
+    r = mem_alloc(paras, 8, 0);
+    alloc_strat = s;
+    return r;
+}
+
+void buffers_set(unsigned n)
+{
+    *(u16 *)(LOL + 0x3F) = n;
+}
+
+u16 brk_set(unsigned on)
+{
+    brk = (u8)on;
+    return 0;
+}
+
 /* ---- Start -------------------------------------------------------------- */
 static void setvec(unsigned n, char *h)  /* Eingang in LTEXT */
 {
@@ -657,7 +757,7 @@ void cm_main(void)
 {
     struct rregs r;
     u16 top, m;
-    unsigned d;
+    unsigned d, i;
     static char shell[32];
 
     kseg = getds();
@@ -701,6 +801,12 @@ void cm_main(void)
     setvec(0x28, iret_entry);
     setvec(0x29, int29_entry);
     setvec(0x2F, int2f_entry);
+    /* Nutzervektoren 60h-66h wie beim BIOS auf 0000:0000 (die Box legt
+       jeden Vektor auf einen eigenen Stummel). DOS/4GW sucht in der IVT
+       zwei gleiche benachbarte Vektoren als freie Plaetze und kreist
+       sonst ewig (DOOM blieb als erstes Programm der Box stehen). */
+    for (i = 0x60 * 4; i < 0x67 * 4; i++)
+        B(0, i) = 0;
 
     /* beim AT-DOS-Kernel melden: SDA (PSP fuer DPMI, DEM bereit), eigener Kern */
     r.ax = 0x1100;
@@ -736,6 +842,7 @@ void cm_main(void)
     MO(m) = 0;
     MS(m) = top - m - 1;
     umb_init(top);
+    config_box(sys_drv);                /* \DOS\MDOS\CONFIG.SYS (config.c) */
 
     shell[0] = (char)('A' + sys_drv);
     {

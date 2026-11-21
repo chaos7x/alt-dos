@@ -224,7 +224,6 @@ static unsigned load(const char *path, unsigned mode, u16 pseg, u16 poff,
         }
     }
     /* Speicher */
-    mem_alloc(0xFFFF, 0, &big);
     if (exe) {
         u32 n = ((isz + 15) >> 4) + 0x10 + *(u16 *)(h + 0x0A);
         u32 w = ((isz + 15) >> 4) + 0x10 + (u32)*(u16 *)(h + 0x0C);
@@ -238,11 +237,7 @@ static unsigned load(const char *path, unsigned mode, u16 pseg, u16 poff,
         need = (u16)(((isz + 15) >> 4) + 0x10 + 0x10);  /* + Stapel     */
         want = 0xFFFF;
     }
-    if (big < need) {
-        e = E_NOMEM;
-        goto out;
-    }
-    psp = mem_alloc(want < big ? want : big, 1, 0);
+    psp = mem_alloc_prog(need, want, 1, &big);
     if (!psp) {
         e = E_NOMEM;
         goto out;
@@ -423,4 +418,42 @@ u16 load_shell(const char *path)
         start_frame(FP_SEG(n), FP_OFF(n));
     }
     return o.psp;
+}
+
+/* ---- fuer config.c ------------------------------------------------------ */
+/* Datei ganz nach buf (hoechstens max - 1 Byte, Null dahinter) -> Laenge,
+   0 = nicht da */
+unsigned read_file(const char *path, u16 seg, unsigned max)
+{
+    unsigned res, n;
+    int s = open_path(path, 0x20, DEM_ACT_OPEN, 0, &res);
+    if (s < 0)
+        return 0;
+    n = (sftab[s].flags & 0x80) ? 0 : sread(s, 0, seg, 0, max - 1);
+    B(seg, n) = 0;
+    sft_close(s);
+    return n;
+}
+
+/* Groesse einer Datei, 0 = nicht da */
+u32 file_size(const char *path)
+{
+    unsigned res;
+    u32 n;
+    int s = open_path(path, 0x20, DEM_ACT_OPEN, 0, &res);
+    if (s < 0)
+        return 0;
+    n = (sftab[s].flags & 0x80) ? 0 : sftab[s].size;
+    sft_close(s);
+    return n;
+}
+
+/* Treiberdatei (.SYS roh oder MZ) an seg:0 laden (wie 4B03h) */
+unsigned load_ovl(const char *path, u16 seg)
+{
+    static u16 pb[2];
+    struct ld o;
+    pb[0] = seg;
+    pb[1] = seg;
+    return load(path, 3, kseg, (u16)pb, 0, 0, 0, &o);
 }
