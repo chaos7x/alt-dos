@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /* Pruefprogramm fuer apps/pki.c auf dem Entwicklungsrechner (mit
    tools/pkitest.py):
-     gcc -DCRYPTO_HOST -I apps -o pt tools/pkitest.c apps/pki.c apps/crypto.c
+     gcc -DCRYPTO_HOST -I apps -o pt tools/pkitest.c apps/pki.c apps/sha512.c apps/crypto.c
      python3 tools/pkitest.py | ./pt
    Zeilen von stdin: "sha alg hexdaten hexhash" | "sig typ sc halg hexhash
    hexsig hexA hexE erwartet" | "crt hexder" (selbstsigniert: mit eigenem

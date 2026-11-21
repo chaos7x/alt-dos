@@ -17,6 +17,8 @@
 #define NET_RESOLVE_FN
 #include "net.h"
 #include "crypto.h"
+#include "smb3c.h"
+#include "pki.h"                        /* SHA-512 (SMB 3.1.1)           */
 #include "tls.h"                        /* tls_random (rnd.c)            */
 #include "arcutil.h"
 #include "krb5.h"
@@ -32,10 +34,21 @@ static struct fapi_sockio io;
 static unsigned char ad[16];
 static unsigned sock = 0xFFFF, port = 445, failed, havepass, kerb;
 static const char *kmsg;                 /* Meldung der Kerberos-Anmeldung */
-static u8 tx[64 + 128 + CHUNK + 4], rx[64 + 64 + CHUNK + 8];
+/* Vor tx/rx je 52 Byte Platz fuer den TRANSFORM_HEADER (SMB 3) */
+#define TXSZ    (64 + 128 + CHUNK + 4)
+#define RXSZ    (64 + 64 + CHUNK + 8)
+static u8 txb[48 + TXSZ], rxb[52 + RXSZ];
+#define tx      (txb + 48)
+#define rx      (rxb + 52)
 static unsigned rxn;                    /* Laenge der Antwort (ohne NetBIOS) */
 static u8 skey[16];
 static unsigned signing, dialect;
+/* SMB 3: Schluessel aus skey (Signatur, an den Server, vom Server),
+   Verfahren 0 keins, 1 AES-128-CCM, 2 AES-128-GCM; encr = verschluesseln */
+static u8 sgk[16], enk[16], dek[16], pih[64], npre[8];
+static unsigned cipher, encr;
+static u32 nctr;
+static struct gcm gc;
 static u32 msgid;
 static u8 sess[8], tree[4];
 static u16 ub[300];                     /* UTF-16                        */
@@ -226,14 +239,32 @@ static int sput(const u8 *d, unsigned n)
 #define C_WRITE 9
 #define C_QDIR  0x0E
 
+/* SMB 3.1.1: Vorab-Pruefsumme pih = SHA-512(pih || Nachricht) */
+static void pi_add(const u8 *m, unsigned n)
+{
+    static struct sha512 c;
+    sha512_init(&c, 0);
+    sha512_add(&c, pih, 64);
+    sha512_add(&c, m, n);
+    sha512_end(&c, pih);
+}
+
+/* Nonce: 4 Byte Zaehler + 8 Byte Zufall je Verbindung (CCM nimmt 11) */
+static void nonce(u8 *t)
+{
+    cr_zero(t, 16);
+    put32(t, nctr++);
+    cr_cpy(t + 4, npre, cipher == 2 ? 8 : 7);
+}
+
 /* Anfrage: Kopf in tx+4 bauen, Rumpf liegt schon ab tx+4+64 (blen Byte),
    senden, Antwort nach rx -> NT-Status */
 static u32 smb(unsigned cmd, unsigned blen)
 {
     static u8 mac[32];
     static struct hmac hm;
-    u8 *h = tx + 4;
-    unsigned n = 64 + blen, i;
+    u8 *h = tx + 4, *o = tx;
+    unsigned n = 64 + blen, i, sn = n;
     u32 st;
     for (i = 0; i < 64; i++)
         h[i] = 0;
@@ -248,18 +279,43 @@ static u32 smb(unsigned cmd, unsigned blen)
     put32(h + 32, 0xFEFFUL);            /* ProcessId                     */
     cr_cpy(h + 36, tree, 4);
     cr_cpy(h + 40, sess, 8);
-    if (signing && cmd != C_NEG && cmd != C_SESS) {
+    if (cmd == C_NEG || cmd == C_SESS)
+        pi_add(h, n);
+    if (encr && cmd != C_NEG && cmd != C_SESS) {
+        u8 *t = h - 52;                 /* TRANSFORM_HEADER               */
+        t[0] = 0xFD; t[1] = 'S'; t[2] = 'M'; t[3] = 'B';
+        nonce(t + 20);
+        put32(t + 36, n);
+        t[40] = 0;
+        t[41] = 0;
+        put16(t + 42, 1);               /* verschluesselt                 */
+        cr_cpy(t + 44, sess, 8);
+        if (cipher == 2) {
+            gcm_key(&gc, enk);
+            gcm_seal(&gc, t + 20, t + 20, 32, h, n, t + 4);
+        } else {
+            aes_key(&gc.k, enk);
+            ccm_seal(&gc.k, t + 20, t + 20, 32, h, n, t + 4);
+        }
+        o = t - 4;
+        sn = n + 52;
+    } else if (signing && cmd != C_NEG && cmd != C_SESS) {
         h[16] |= 8;                     /* SMB2_FLAGS_SIGNED             */
-        hmac_init(&hm, skey, 16);
-        hmac_add(&hm, h, n);
-        hmac_end(&hm, mac);
+        if (dialect >= 0x0300) {        /* AES-CMAC                      */
+            aes_key(&gc.k, sgk);
+            aes_cmac(&gc.k, h, n, mac);
+        } else {
+            hmac_init(&hm, skey, 16);
+            hmac_add(&hm, h, n);
+            hmac_end(&hm, mac);
+        }
         cr_cpy(h + 48, mac, 16);
     }
-    tx[0] = 0;
-    tx[1] = 0;
-    tx[2] = (u8)(n >> 8);
-    tx[3] = (u8)n;
-    if (sput(tx, n + 4)) {
+    o[0] = 0;
+    o[1] = 0;
+    o[2] = (u8)(sn >> 8);
+    o[3] = (u8)sn;
+    if (sput(o, sn + 4)) {
         lost = 1;
         return 0xFFFFFFFFUL;
     }
@@ -271,9 +327,9 @@ static u32 smb(unsigned cmd, unsigned blen)
             return 0xFFFFFFFFUL;
         }
         l = (unsigned long)nb[1] << 16 | (unsigned)nb[2] << 8 | nb[3];
-        if (l < 64 || l > sizeof(rx)) {
+        if (l < 64 || l > RXSZ + 52UL || (l > RXSZ && !encr)) {
             while (l) {                 /* zu gross: verwerfen            */
-                unsigned k = l > sizeof(rx) ? sizeof(rx) : (unsigned)l;
+                unsigned k = l > RXSZ ? RXSZ : (unsigned)l;
                 if (sget(rx, k)) {
                     lost = 1;
                     return 0xFFFFFFFFUL;
@@ -282,7 +338,33 @@ static u32 smb(unsigned cmd, unsigned blen)
             }
             return 0xFFFFFFFEUL;
         }
-        if (sget(rx, (unsigned)l)) {
+        if (sget(rx, 4)) {
+            lost = 1;
+            return 0xFFFFFFFFUL;
+        }
+        if (rx[0] == 0xFD && cipher && l > 52 + 64) {   /* verschluesselt */
+            u8 *t = rx - 52;
+            int bad;
+            cr_cpy(t, rx, 4);
+            if (sget(t + 4, 48) || sget(rx, (unsigned)l - 52)) {
+                lost = 1;
+                return 0xFFFFFFFFUL;
+            }
+            l -= 52;
+            if (get32(t + 36) != l)
+                bad = 1;
+            else if (cipher == 2) {
+                gcm_key(&gc, dek);
+                bad = gcm_open(&gc, t + 20, t + 20, 32, rx, (unsigned)l, t + 4);
+            } else {
+                aes_key(&gc.k, dek);
+                bad = ccm_open(&gc.k, t + 20, t + 20, 32, rx, (unsigned)l, t + 4);
+            }
+            if (bad) {
+                lost = 1;               /* Verbindung ist nicht mehr zu trauen */
+                return 0xFFFFFFFDUL;
+            }
+        } else if (l > RXSZ || sget(rx + 4, (unsigned)l - 4)) {
             lost = 1;
             return 0xFFFFFFFFUL;
         }
@@ -290,6 +372,8 @@ static u32 smb(unsigned cmd, unsigned blen)
         st = get32(rx + 8);
         if (st == S_PENDING && (rx[16] & 2))
             continue;
+        if (cmd == C_NEG || (cmd == C_SESS && st != S_OK))
+            pi_add(rx, rxn);
         if (st == 0xC000035CUL || st == 0xC0000203UL || st == 0xC00000C9UL)
             lost = 1;                   /* Sitzung/Freigabe weg (Server neu) */
         return st;
@@ -414,8 +498,13 @@ static void field(u8 *m, unsigned at, unsigned len, unsigned off)
 /* Anmeldung (NTLMv2) -> 0 ok */
 static int login(void)
 {
-    static u8 m1[40], m3[700], tok[800], ntv[16], h[16], cch[8], tinfo[400];
-    static u8 blob[16 + 8 + 400 + 8], pr[16], nt[16 + sizeof(blob)];
+    /* grosse Puffer hinten in tx (die Anmeldung schickt nur ~1 KB) */
+#define M3N     700
+#define TIN     400
+#define BLN     (16 + 8 + TIN + 8)
+    u8 *m3 = tx + 8192, *tok = m3 + M3N, *tinfo = tok + 800, *blob = tinfo + TIN;
+    u8 *nt = blob + BLN;
+    static u8 m1[40], ntv[16], h[16], cch[8], pr[16];
     static struct md5 md;
     static u16 w[160];
     const u8 *sb, *t2 = 0;
@@ -450,7 +539,7 @@ static int login(void)
         return 1;
     fl = get32(t2 + 20);
     til = get16(t2 + 40);
-    if (get32(t2 + 44) + til > tl || til > sizeof(tinfo))
+    if (get32(t2 + 44) + til > tl || til > TIN)
         return 1;
     cr_cpy(tinfo, t2 + (unsigned)get32(t2 + 44), til);
     if (!dom[0]) {                      /* Domaene des Servers nehmen    */
@@ -483,7 +572,7 @@ static int login(void)
 
     /* Blob: 0101 0000 0000 0000, Zeit, Client-Challenge, 0, TargetInfo, 0 */
     tls_random(cch, 8);
-    cr_zero(blob, sizeof(blob));
+    cr_zero(blob, BLN);
     blob[0] = 1;
     blob[1] = 1;
     for (i = 0; i + 4 <= til; i += 4 + get16(tinfo + i + 2)) {
@@ -528,7 +617,7 @@ static int login(void)
     for (i = 0; i < k; i++) { m3[p++] = (u8)w[i]; m3[p++] = (u8)(w[i] >> 8); }
     field(m3, 52, 0, p);
     put32(m3 + 60, (fl & 0xA0088205UL) | 1);
-    if (p > sizeof(m3))
+    if (p > M3N)
         return 1;
     n = spnego(tok, m3, p, 0);
     cr_zero(BODY, 24);
@@ -1794,6 +1883,12 @@ static const char *sconnect(void)
     sock = 0xFFFF;
     msgid = 0;
     signing = 0;
+    dialect = 0;
+    cipher = 0;
+    encr = 0;
+    nctr = 0;
+    cr_zero(pih, 64);
+    tls_random(npre, 8);
     cr_zero(sess, 8);
     cr_zero(tree, 4);
     so.family = AF_INET6;
@@ -1813,19 +1908,58 @@ static const char *sconnect(void)
     if (DosNet(NET_CONNECT, &io, sizeof(io)))
         return "Verbinden fehlgeschlagen (Port 445).";
 
-    /* NEGOTIATE: 2.0.2 und 2.1 */
-    cr_zero(BODY, 36);
+    /* NEGOTIATE: 2.0.2, 2.1, 3.0, 3.0.2, 3.1.1; Kontexte fuer 3.1.1 ab
+       Offset 112: Vorab-Pruefsumme SHA-512 mit Salz, Verschluesselung
+       AES-128-GCM vor AES-128-CCM */
+    cr_zero(BODY, 112);
     BODY[0] = 36;
-    BODY[2] = 2;
+    BODY[2] = 5;
     BODY[4] = 1;                        /* signieren moeglich            */
+    BODY[8] = 0x40;                     /* Capabilities: ENCRYPTION      */
     tls_random(BODY + 12, 16);          /* ClientGuid                    */
+    put32(BODY + 28, 64 + 48);          /* NegotiateContextOffset        */
+    BODY[32] = 2;
     put16(BODY + 36, 0x0202);
     put16(BODY + 38, 0x0210);
-    st = smb(C_NEG, 40);
+    put16(BODY + 40, 0x0300);
+    put16(BODY + 42, 0x0302);
+    put16(BODY + 44, 0x0311);
+    BODY[48] = 1;                       /* PREAUTH_INTEGRITY_CAPABILITIES */
+    BODY[50] = 38;
+    BODY[56] = 1;                       /* ein Verfahren                 */
+    BODY[58] = 32;                      /* Salz                          */
+    BODY[60] = 1;                       /* SHA-512                       */
+    tls_random(BODY + 62, 32);
+    BODY[96] = 2;                       /* ENCRYPTION_CAPABILITIES       */
+    BODY[98] = 6;
+    BODY[104] = 2;
+    BODY[106] = 2;                      /* AES-128-GCM                   */
+    BODY[108] = 1;                      /* AES-128-CCM                   */
+    st = smb(C_NEG, 110);
     if (st != S_OK)
-        return "Server spricht kein SMB2 (2.0.2/2.1).";
+        return "Server spricht kein SMB2/SMB3.";
     dialect = get16(RB + 4);
     signing = (get16(RB + 2) & 2) != 0;
+    if (dialect == 0x0300 || dialect == 0x0302) {
+        if (get32(RB + 24) & 0x40)      /* Server kann verschluesseln    */
+            cipher = 1;
+    } else if (dialect == 0x0311) {     /* Kontexte der Antwort          */
+        unsigned nc = get16(RB + 6), o = (unsigned)get32(RB + 60), hs = 0;
+        while (nc-- && o + 8 <= rxn) {
+            unsigned ty = get16(rx + o), dl = get16(rx + o + 2);
+            if (o + 8 + dl > rxn)
+                break;
+            if (ty == 1 && dl >= 6 && get16(rx + o + 8) == 1 && get16(rx + o + 12) == 1)
+                hs = 1;                 /* SHA-512 bestaetigt            */
+            if (ty == 2 && dl >= 4 && get16(rx + o + 8) == 1) {
+                k = get16(rx + o + 10);
+                cipher = k == 2 ? 2 : k == 1 ? 1 : 0;
+            }
+            o = (o + 8 + dl + 7) & ~7u;
+        }
+        if (!hs)
+            return "SMB 3.1.1 ohne SHA-512-Vorabpruefung.";
+    }
     if (!srv)
         out("Verbunden mit ");
     if (!srv)
@@ -1841,8 +1975,8 @@ static const char *sconnect(void)
     ts[0] = (char)('0' + (dialect >> 8));
     ts[1] = '.';
     ts[2] = (char)('0' + ((dialect >> 4) & 15));
-    ts[3] = dialect == 0x0202 ? '.' : 0;
-    ts[4] = '2';
+    ts[3] = (dialect & 15) ? '.' : 0;
+    ts[4] = (char)('0' + (dialect & 15));
     ts[5] = 0;
     if (!srv) {
         out(ts);
@@ -1851,6 +1985,27 @@ static const char *sconnect(void)
     }
     if (kerb ? klogin() : login())
         return kerb ? kmsg : "Anmeldung abgelehnt (Benutzer/Kennwort?).";
+    k = get16(RB + 2);                  /* SessionFlags (Gast, ENCRYPT_DATA) */
+    if (dialect >= 0x0300 && !(k & 3)) {
+        /* Schluessel ableiten ([MS-SMB2] 3.2.5.3.1); als angemeldeter
+           Benutzer immer signieren */
+        if (dialect == 0x0311) {
+            smb_kdf(skey, "SMBSigningKey", 14, pih, 64, sgk);
+            smb_kdf(skey, "SMBC2SCipherKey", 16, pih, 64, enk);
+            smb_kdf(skey, "SMBS2CCipherKey", 16, pih, 64, dek);
+        } else {
+            smb_kdf(skey, "SMB2AESCMAC", 12, (const u8 *)"SmbSign", 8, sgk);
+            smb_kdf(skey, "SMB2AESCCM", 11, (const u8 *)"ServerIn ", 10, enk);
+            smb_kdf(skey, "SMB2AESCCM", 11, (const u8 *)"ServerOut", 10, dek);
+        }
+        signing = 1;
+        if (k & 4) {
+            if (!cipher)
+                return "Server verlangt Verschluesselung, gemeinsames Verfahren fehlt.";
+            encr = 1;
+        }
+    } else if (k & 4)
+        return "Server verlangt Verschluesselung (erst ab SMB 3).";
 
     /* TREE_CONNECT \\Rechner\Freigabe */
     scopy(line, "\\\\", sizeof(line));
@@ -1871,6 +2026,14 @@ static const char *sconnect(void)
                st == 0xC0000022UL ? "Zugriff auf die Freigabe verweigert." :
                                     "Freigabe nicht verbunden.";
     cr_cpy(tree, rx + 36, 4);
+    if (get32(RB + 4) & 0x8000UL) {     /* Freigabe: ENCRYPT_DATA        */
+        if (!cipher || dialect < 0x0300)
+            return "Freigabe verlangt Verschluesselung, nicht moeglich.";
+        encr = 1;
+    }
+    if (encr && !srv)
+        out(cipher == 2 ? "Verschluesselt mit AES-128-GCM.\r\n" :
+                          "Verschluesselt mit AES-128-CCM.\r\n");
     return 0;
 }
 

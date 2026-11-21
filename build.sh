@@ -180,7 +180,9 @@ wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
 wcc $CFLAGS -fo=$B/crypto.o apps/crypto.c      # SHA-256, AES-GCM, X25519 (TLS)
 wcc $CFLAGS -fo=$B/tls.o apps/tls.c            # TLS-1.2-Client (WGET)
-wcc $CFLAGS -fo=$B/pki.o apps/pki.c            # X.509, RSA, ECDSA, SHA-384/512
+wcc $CFLAGS -fo=$B/pki.o apps/pki.c            # X.509, RSA, ECDSA
+wcc $CFLAGS -fo=$B/sha512.o apps/sha512.c      # SHA-384/512 (pki, ed25519, SMB 3.1.1)
+wcc $CFLAGS -fo=$B/smb3c.o apps/smb3c.c        # AES-CMAC/CCM, KDF (SMB 3)
 wcc $CFLAGS -fo=$B/rnd.o apps/rnd.c            # Zufall (FAPI_RANDOM gehasht)
 wcc $CFLAGS -fo=$B/ed25519.o apps/ed25519.c    # Ed25519-Pruefung (SSH)
 wcc $CFLAGS -fo=$B/ssh.o apps/ssh.c            # SSH-2-Client (SSH, SFTP)
@@ -200,9 +202,9 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
     [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
     [ $t = sntp ] && U="$U file $B/arcutil.o"
-    [ $t = wget ] && U="$U file $B/tls.o file $B/pki.o file $B/rnd.o file $B/crypto.o"
-    case " ssh sftp " in *" $t "*) U="$U file $B/ssh.o file $B/ed25519.o file $B/pki.o file $B/rnd.o file $B/crypto.o" ;; esac
-    [ $t = smbcli ] && U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
+    [ $t = wget ] && U="$U file $B/tls.o file $B/pki.o file $B/sha512.o file $B/rnd.o file $B/crypto.o"
+    case " ssh sftp " in *" $t "*) U="$U file $B/ssh.o file $B/ed25519.o file $B/pki.o file $B/sha512.o file $B/rnd.o file $B/crypto.o" ;; esac
+    [ $t = smbcli ] && U="$U file $B/smb3c.o file $B/sha512.o file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
     case " domjoin logon " in *" $t "*) U="$U file $B/ldapc.o" ;; esac
     case " kinit klist kdestroy domjoin logon " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer

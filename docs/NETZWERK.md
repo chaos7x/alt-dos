@@ -789,8 +789,48 @@ geht COPY. Sperrtest (LK.COM, beide 3D42h) wie vorher; BIOSCMP lokal vor
 und nach der Änderung zeilengleich (31 bekannte Abweichungen). Reine
 Programmlogik – kein 86Box.
 
-Weiter (offen): SMB 3 (AES-CMAC, Verschlüsselung) – gehört in 6.4
-(Entscheidung des Nutzers, 21.11.2026).
+## SMB 3 (6.4, 21.11.2026)
+
+Wunsch des Nutzers („in 6.4 sollte noch SMB 3 mit rein“). SMBCLI (und
+damit NET USE) handelt jetzt 2.0.2, 2.1, 3.0, 3.0.2 und 3.1.1 aus, eigene
+Umsetzung nach [MS-SMB2] (nur gelesen):
+
+- NEGOTIATE mit fünf Dialekten, Capabilities ENCRYPTION, für 3.1.1 zwei
+  Kontexte: Vorab-Prüfsumme SHA-512 mit 32 Byte Salz, Verschlüsselung
+  AES-128-GCM vor AES-128-CCM. 3.0/3.0.2 verschlüsseln immer mit CCM
+  (wenn der Server ENCRYPTION meldet).
+- 3.1.1: `pih` = SHA-512 über NEGOTIATE-Anfrage/-Antwort und jede
+  SESSION_SETUP-Anfrage und -Antwort außer der letzten (Erfolg);
+  SHA-512 dafür aus `apps/pki.c` nach `apps/sha512.c` herausgelöst.
+- Schlüssel nach SP 800-108 (Zählerbetrieb, HMAC-SHA256) aus dem
+  Sitzungsschlüssel (NTLMv2 SessionBaseKey bzw. die ersten 16 Byte des
+  Kerberos-Schlüssels): 3.0.x „SMB2AESCMAC“/„SmbSign“,
+  „SMB2AESCCM“/„ServerIn “/„ServerOut“, 3.1.1 „SMBSigningKey“,
+  „SMBC2SCipherKey“, „SMBS2CCipherKey“ mit `pih` als Kontext
+  (`apps/smb3c.c`: AES-CMAC nach RFC 4493, CCM mit 11-Byte-Nonce,
+  `smb_kdf`; auf dem Rechner gegen Python `cryptography` geprüft).
+- Als angemeldeter Benutzer (nicht Gast) signiert SMB 3 immer, mit
+  AES-CMAC über die ganze Nachricht.
+- Verschlüsseln, wenn die Sitzung (SessionFlags 4) oder die Freigabe
+  (ShareFlags 8000h) es verlangt: TRANSFORM_HEADER (52 Byte) vor dem
+  Kopf, Nonce = 4 Byte Zähler + 8 (GCM) bzw. 7 (CCM) Byte Zufall je
+  Verbindung, AAD = Kopf ab Nonce (32 Byte). `tx`/`rx` haben dafür 48
+  bzw. 52 Byte Vorlauf; eine Antwort mit FDh vorn wird an Ort und Stelle
+  entschlüsselt, ein falscher Tag trennt die Verbindung.
+- Platz in DGROUP: die großen Puffer der NTLM-Anmeldung liegen jetzt
+  hinten in `tx` (die Anmeldung schickt nur ~1 KB) – Daten + BSS +
+  Stapel danach 63.468 von 65.536 Byte.
+
+Geprüft in QEMU gegen Samba 4.19 (`server signing = mandatory`): 3.1.1
+signiert; `server smb encrypt = required` -> 3.1.1 mit GCM, mit
+`server smb3 encryption algorithms = AES-128-CCM` -> CCM; `server max
+protocol = SMB3_00` + Verschlüsselung -> 3.0 mit CCM; SMB3_02; SMB2_10
+wie bisher. Je SMBCLI dir/get/put (1 MB herunter, 300 KB Zufall hinauf)
+und NET USE + COPY, alles bytegleich; Wiederverbinden nach Neustart des
+Servers bei verschlüsselter Sitzung; Kerberos gegen den Test-DC
+(ATDOS.TEST) mit 3.1.1 signiert. Reine Programmlogik – kein 86Box.
+Offen: Signatur über AES-GMAC (3.1.1 SIGNING_CAPABILITIES), AES-256,
+Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
 test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`

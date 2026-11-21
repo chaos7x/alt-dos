@@ -285,10 +285,13 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (Bedienung angelehnt an smbclient): `SMBCLI \\Rechner\Freigabe
   [-U Benutzer[%Kennwort]] [-W Domäne] [-k] [-c "Befehl; Befehl"]
   [-p Port] [-4|-6]`, Befehle dir/ls, cd, pwd, get, put, del, md, rd, lcd, help,
-  quit (auch aus einer umgeleiteten Eingabe). SMB 2.0.2/2.1, Anmeldung
+  quit (auch aus einer umgeleiteten Eingabe). SMB 2.0.2/2.1 und (6.4)
+  SMB 3.0/3.0.2/3.1.1, Anmeldung
   NTLMv2 in SPNEGO (ohne `-U` als Gast) oder mit `-k` per Kerberos
-  (Ticket von KINIT), signiert mit HMAC-SHA256, wenn
-  der Server es verlangt; Namen CP437 <-> UTF-16, Dateien bis 4 GB in
+  (Ticket von KINIT), signiert mit HMAC-SHA256 (SMB 2, wenn der Server es
+  verlangt) bzw. AES-CMAC (SMB 3, als Benutzer immer); verlangt der Server
+  oder die Freigabe Verschlüsselung, AES-128-GCM oder -CCM (gilt auch für
+  `NET USE`); Namen CP437 <-> UTF-16, Dateien bis 4 GB in
   Stücken zu 16 KB. ERRORLEVEL 0 ok, 1 Befehl gescheitert, 2 Aufruf,
   4 Netz/Anmeldung
 - `NET USE X: \\Rechner\Freigabe [Kennwort|*] [/USER:[Domäne\]Name]`
