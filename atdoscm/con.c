@@ -402,8 +402,16 @@ unsigned dev_write(int d, struct sft *s, u16 seg, u16 off, unsigned n)
     case DV_CON:
         if (n > 1)
             cc_peek();
-        if (con_dev) {                  /* ganzer Block an den Treiber   */
-            con_dev_write(seg, off, n);
+        if (con_dev) {                  /* Bloecke an den Treiber, TAB   */
+            unsigned a = 0;             /* wie DOS selbst zu Leerzeichen */
+            for (i = 0; i <= n; i++)
+                if (i == n || B(seg, off + i) == 9) {
+                    if (i > a)
+                        con_dev_write(seg, off + a, i - a);
+                    if (i < n)
+                        con_out(9);
+                    a = i + 1;
+                }
             return n;
         }
         for (i = 0; i < n; i++)

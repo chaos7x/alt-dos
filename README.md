@@ -752,7 +752,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   und die UMBs), INT 2Fh 12xxh und 21h 5Eh/5Fh wie MS-DOS, INT 24h (kritischer Fehler
   mit Abfrage), INT 25h lesend wie MS-DOS 7, eigene CONFIG.SYS der Box
   (`\DOS\MDOS\CONFIG.SYS`: DEVICE=/DEVICEHIGH= für Zeichentreiber wie
-  ANSI.SYS), LOADHIGH in den oberen Speicher.
+  ANSI.SYS), LOADHIGH in den oberen Speicher, DOSKEY von MS-DOS, als
+  zweite Shell COMMAND.COM 4.0 aus den MIT-Quellen von Microsoft
+  (`COMMAND4`, nur auf der Platte; `msdos4/`).
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

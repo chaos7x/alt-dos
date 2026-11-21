@@ -547,6 +547,25 @@ die Programme direkt lesen.
    zufällig INT 25h/26h, die mit dem ersten Teil eigene Eingänge bekamen.
    Jetzt stehen 60h–66h wie beim BIOS auf 0000:0000 (`cm_main`). Gefunden
    über `info registers` im QEMU-Monitor (Schleife bei 0750:62F3, DS = 0).
+   **Stufe 4, Abschluss (21.11.2026): DOSKEY und COMMAND.COM 4.0.**
+   DOSKEY von MS-DOS 6.22 läuft mit deren COMMAND.COM in der Box ohne
+   Zutun (INT 2Fh 48xxh hängt DOSKEY selbst ein; Pfeil hoch holt Befehle).
+   COMMAND.COM 4.0 aus den MIT-Quellen von Microsoft: `msdos4/COMMAND4.COM`
+   (gebaut mit `tools/msdos4.sh` in dosbox-x mit NMAKE/MASM/LINK/BUILDMSG
+   aus dem Quellbaum, bytegleich wiederholbar), einzige Änderung
+   `msdos4/patches/version.patch` (Versionsprüfung DOS 4.0 oder neuer statt
+   genau 4.00). Nur auf der Platte (`HDMDOS` in build.sh – Diskette 2 hat
+   noch 10 KB frei), in der Box `COMMAND4`. Dafür im Kern: 5702h/5703h
+   (erweiterte Attribute) wie die Attrappe in DOS 4.0 `EXTATTR.ASM` – leere
+   Liste, CX = 2; 5704h ohne Wirkung (TYPE fragt so die Codepage der Datei
+   und brach mit „Extended Error 1“ ab). FCB-Fehler setzen den erweiterten
+   Fehler wie MS-DOS (DIR von 4.0 sucht per FCB 11h/12h und erwartet am Ende
+   12h, sonst „Path not found“). 5D07h–5D09h (Druckumleitung, ruft COMMAND
+   nach jedem Befehl) wie MS-DOS ohne Netz. TAB vor einem CON-Treiber
+   (ANSI.SYS) zu Leerzeichen wie DOS selbst (DIR /W zeigte `○`).
+   Geprüft in QEMU: DIR, DIR /W, TYPE, COPY, ECHO >, MEM, DOOM 1.9 Timedemo
+   unter COMMAND 4.0 (transienter Teil danach heil), EXIT; BIOSCMP
+   unverändert 39.
 4. **DOS 5/6-Teil**: DOS=HIGH (Kern in die HMA, 4A01h/4A02h), UMB-Kette
    (58h 02h/03h, LOADHIGH, DEVICEHIGH), 3306h, 2Fh 48xxh für DOSKEY, 6Ch,
    7303h nicht (FAT32 bleibt außen), INT 24h-Weg, Strg+C, CONFIG.SYS der

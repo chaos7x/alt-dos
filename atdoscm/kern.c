@@ -52,6 +52,7 @@ extern char int2f_entry[];
 
 u8 *lol_ptr(void) { return LOL; }
 u16 in_ax;
+static u8 prn_mode;                     /* 5D07h/5D08h                   */
 extern unsigned char cc_hit;
 
 u16 cur_psp(void) { return *(u16 *)(sda + SDA_PSP); }
@@ -523,7 +524,11 @@ struct frame __far *int21_c(struct frame __far *f)
             f->dx = 0x18;
         } else if (AL(f) == 0x0A) {     /* erweiterten Fehler setzen     */
             *(u16 *)(sda + SDA_EXTERR) = W(f->ds, f->dx);
-        } else
+        } else if (AL(f) == 7) {        /* Druckumleitung: Modus (MS-DOS */
+            DL(f) = prn_mode;           /* auch ohne Netz; COMMAND.COM   */
+        } else if (AL(f) == 8) {        /* setzt ihn nach jedem Befehl)  */
+            prn_mode = DL(f);
+        } else if (AL(f) != 9)          /* 09h Ausgabe abschliessen      */
             set_err(f, E_FUNC);
         break;
     case 0x5E: case 0x5F:               /* Netz (dosint.c)               */

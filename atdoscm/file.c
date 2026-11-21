@@ -1076,7 +1076,18 @@ void file_fn(struct frame __far *f)
             sftab[s].time = f->cx;
             sftab[s].date = f->dx;
             sftab[s].flags |= 0x4000;
-        } else
+        } else if (AL(f) == 2 || AL(f) == 3) {
+            /* erweiterte Attribute (DOS 4.0): wie dessen EXTATTR.ASM eine
+               leere Liste - COMMAND.COM 4.0 fragt so die Codepage einer
+               Datei (TYPE, COPY) */
+            if (f->cx == 1) {
+                set_err(f, E_NOMEM);
+                return;
+            }
+            if (f->cx)
+                W(f->es, f->di) = 0;
+            f->cx = 2;
+        } else if (AL(f) != 4)          /* setzen: ohne Wirkung          */
             set_err(f, E_FUNC);
         return;
     case 0x5C:

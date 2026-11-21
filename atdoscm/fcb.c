@@ -197,6 +197,18 @@ static void find_dta(u8 __far *p, u8 __far *b, u8 xattr)
     D(dta_seg, o + 29) = q.size;
 }
 
+/* Fehler wie MS-DOS: AL = FFh, erweiterter Fehler (59h) gesetzt - DIR von
+   COMMAND.COM 4.0 sucht per FCB und erwartet am Ende 12h */
+static void fcb_fail(struct frame __far *f, unsigned e)
+{
+    u8 ah = AH(f);
+    if (e == E_NOFILE)
+        e = E_NOMORE;
+    set_err(f, e ? e : E_NOMORE);
+    f->fl &= ~FL_CF;
+    f->ax = ((u16)ah << 8) | 0xFF;
+}
+
 void fcb_fn(struct frame __far *f)
 {
     u8 attr;
@@ -216,7 +228,10 @@ void fcb_fn(struct frame __far *f)
         if (s < 0 && AH(f) == 0x0F)
             s = open_path(fp, 0, DEM_ACT_OPEN, 0, &res);
         if (s < 0) {
-            AL(f) = 0xFF;
+            u8 ah = AH(f);
+            set_err(f, (unsigned)-s);
+            f->fl &= ~FL_CF;
+            f->ax = ((u16)ah << 8) | 0xFF;
             return;
         }
         sftab[s].mode |= 0x8000;        /* FCB                           */
@@ -241,7 +256,7 @@ void fcb_fn(struct frame __far *f)
             cpyq(q.path, fp);
             q.attr = p[0] == 0xFF ? attr : 0;
             if (dem(DEM_FINDFIRST)) {
-                AL(f) = 0xFF;
+                fcb_fail(f, q.err);
                 return;
             }
         } else {
@@ -249,7 +264,7 @@ void fcb_fn(struct frame __far *f)
             for (i = 1; i < 21; i++)
                 q.find[i] = b[0x0B + i];
             if (dem(DEM_FINDNEXT)) {
-                AL(f) = 0xFF;
+                fcb_fail(f, E_NOMORE);
                 return;
             }
         }

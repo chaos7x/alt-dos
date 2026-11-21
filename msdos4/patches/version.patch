@@ -1,0 +1,14 @@
+--- a/v4.0/src/INC/MSGSERV.ASM
++++ b/v4.0/src/INC/MSGSERV.ASM
+@@ -744,9 +744,9 @@
+ 	  MOV	  AH,DOS_GET_VERSION			     ;;AN000;; Check that version matches VERSIONA.INC
+ 	  INT	  21H					     ;;AN000;;
+ 							     ;;
+-	  CMP	  AX,EXPECTED_VERSION			     ;;AN000;; IF DOS_MAJOR is correct
++	  CMP	  AL,4			     ;;AN000;; IF DOS_MAJOR is correct
+ ;	  $IF	  E					     ;;AN000;;
+-	  JNE $MIF25
++	  JB $MIF25
+ 	    CLC 					     ;;AN000;;	 Clear the carry flag
+ ;	  $ELSE 					     ;;AN000;; ELSE
+ 	  JMP SHORT $MEN25
