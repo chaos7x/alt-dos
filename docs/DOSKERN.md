@@ -347,6 +347,44 @@ die Programme direkt lesen.
     DIR/COPY danach, fsck sauber). Nicht geprüft: WINNT.EXE selbst
     (INT 13h auf Festplatten gibt es in der Box nicht).
 
+### DEFRAG von MS-DOS 6.22 (Werkzeuge mit Plattenzugriff), 22.11.2026
+
+Frage des Nutzers: laufen DEFRAG & Co. mit `LOCK` unter AT-DOS? Mit
+DEFRAG.EXE von den 6.22-Disketten des Nutzers (nur zum Testen) in QEMU
+Schritt für Schritt nachgezogen, Spur der INT-21h/2Fh/25h-Aufrufe über
+Port E9h:
+
+- „arbeitet nicht in Multitasking-Umgebungen“: DEFRAG fragt DESQview mit
+  21h 2B01h (Datum setzen, CX:DX = "DESQ") – der Box-Kern meldete jedes
+  Datum als gültig. Jetzt 2Bh/2Dh mit Prüfung wie MS-DOS (AL = FFh).
+- DPB (32h/1Fh) war nur grob vorgetäuscht (1 reservierter Sektor, FAT
+  256 Sektoren …) – DEFRAG liest FAT und Verzeichnisse per INT 25h an den
+  Stellen aus dem DPB. Jetzt für FAT12/16 aus dem echten Bootsektor
+  (`read_bs`), ebenso der BPB von 440Dh 0860h.
+- 440Dh 0867h/0847h (Zugriffsmerker) fehlten.
+- 21h 55h (Kind-PSP anlegen, `$Dup_PDB`) fehlte ganz – DEFRAG lädt sein
+  Hauptprogramm so; ohne stand Müll als Speicherende im PSP („Nicht
+  genügend Speicher“).
+- Das Blockgerät im DPB (DPB+13h) hatte nur `RETF` als Strategie/
+  Interrupt; jetzt ein Treiber (entry.asm `blk_strat`/`blk_intr`: Lesen/
+  Schreiben über INT 25h/26h der Box, Schreiben also nur mit Sperre,
+  Medium unverändert), für Werkzeuge, die den Treiber direkt rufen.
+- FASTOPEN-Tabelle wie MS-DOS 6.22 bei DOS-DS:0D30h (aus MSDOS.SYS
+  ermittelt; SFT und Bootsektor-Puffer liegen davor im Kopf DOSHDR, damit
+  kaum Speicher verloren geht).
+
+Stand: DEFRAG liest FAT und Verzeichnisse und zeigt die Belegungskarte,
+bricht dann aber mit „MS-DOS-FASTOPEN-Programm entdeckt“ ab – woran es
+das erkennt, ist offen (keine DOS-Aufrufe dazwischen, also ein direkter
+Blick in DOS-Strukturen; DEFRAG.EXE ist gepackt). Eine 60-MB-Platte
+(über 32 MB) scheiterte vor dem 55h-Fund schon beim FAT-Lesen – erneut zu
+prüfen. Achtung für später (EA-Format): DEFRAG verschiebt bei voller
+Optimierung Verzeichnisse – die Sätze in `EA DATA. SF` verweisen auf den
+Startcluster des Verzeichnisses und würden verwaisen; AT-DOS-DEFRAG
+(UFAT) lässt Verzeichnisse stehen. Geprüft (QEMU, 86Box 386DX/40):
+BIOSCMP und DOOM-Timedemo unverändert, Sperr-/INT-25h-26h-Test und
+LFN-Test wie vorher, DPB gleich dem Bootsektor.
+
 ### Lange Dateinamen (INT 21h 71xxh), 22.11.2026
 
 Wunsch des Nutzers (zusammen mit 440Dh 0871h). Der Box-Kern bleibt

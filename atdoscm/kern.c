@@ -347,13 +347,23 @@ void datetime_fn(struct frame __far *f)
         mm = mo + 12 * a - 2;
         AL(f) = (u8)((d + yy + yy / 4 - yy / 100 + yy / 400 + (31 * mm) / 12) % 7);
         break;
-    case 0x2B:
+    case 0x2B: {
+        /* wie MS-DOS: ungueltiges Datum -> AL = FFh, nichts gestellt.
+           Programme fragen so nach DESQview (CX:DX = "DESQ") - MS-DOS
+           DEFRAG lief sonst nicht ("Multitasking-Umgebung") */
+        static const u8 md[12] = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        if (f->cx < 1980 || f->cx > 2099 || DH(f) < 1 || DH(f) > 12 || DL(f) < 1 ||
+            DL(f) > md[DH(f) - 1] || (DH(f) == 2 && DL(f) == 29 && (f->cx & 3))) {
+            AL(f) = 0xFF;
+            break;
+        }
         r.ax = 0x0500;
         r.cx = (tobcd(f->cx / 100) << 8) | tobcd(f->cx % 100);
         r.dx = (tobcd(DH(f)) << 8) | tobcd(DL(f));
         bint(0x1A, &r);
         AL(f) = 0;
         break;
+    }
     case 0x2C:
         r.ax = 0x0200;
         bint(0x1A, &r);
@@ -365,6 +375,10 @@ void datetime_fn(struct frame __far *f)
         DL(f) = (u8)(((r.dx % 18) * 100) / 18);
         break;
     case 0x2D:
+        if (CH(f) > 23 || CL(f) > 59 || DH(f) > 59 || DL(f) > 99) {
+            AL(f) = 0xFF;               /* ungueltige Zeit wie MS-DOS    */
+            break;
+        }
         r.ax = 0x0300;
         r.cx = (tobcd(CH(f)) << 8) | tobcd(CL(f));
         r.dx = tobcd(DH(f)) << 8;
@@ -503,6 +517,22 @@ struct frame __far *int21_c(struct frame __far *f)
     case 0x50:
         *(u16 *)(sda + SDA_PSP) = f->bx;
         break;
+    case 0x55: {                        /* Kind-PSP bei DX anlegen (wie
+                                           MS-DOS $Dup_PDB): DEFRAG laedt
+                                           so sein Hauptprogramm */
+        u16 n = f->dx, c = cur_psp();
+        unsigned i;
+        for (i = 0; i < 0x100; i++)
+            B(n, i) = B(c, i);
+        W(n, 0x02) = f->si;             /* Speicherende                  */
+        D(n, 0x0A) = D(0, 0x22 * 4);
+        D(n, 0x0E) = D(0, 0x23 * 4);
+        D(n, 0x12) = D(0, 0x24 * 4);
+        W(n, 0x16) = c;
+        psp_handles(n, c);              /* Handles erben (geteilt)       */
+        *(u16 *)(sda + SDA_PSP) = n;
+        break;
+    }
     case 0x51: case 0x62:
         f->bx = cur_psp();
         break;

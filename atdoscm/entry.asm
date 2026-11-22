@@ -150,6 +150,19 @@ segment DOSHDR
         times   24h db 0
 global _lol_area
 _lol_area: times 82h db 0               ; LoL-2 (erster MCB) .. LoL+7Fh
+; SFT (file.c, 6 + 40 * 3Bh) und Bootsektor-Puffer (dpb_of) liegen hier,
+; damit die FASTOPEN-Tabelle ohne Verlust an derselben Stelle wie bei
+; MS-DOS 6.22 steht (DS:0D30h): DEFRAG liest sie dort und bricht sonst mit
+; "FASTOPEN entdeckt" ab
+global _sft_area, _bsec, _fast_table
+_sft_area: times 6 + 40 * 3Bh db 0
+_bsec:  times 512 db 0
+        times 0D30h - ($ - $$) db 0
+_fast_table:
+        dw      2                       ; zwei Eintraege (FASTOPEN, FASTSEEK)
+        dw      fast_ret wrt DGROUP, 0  ; Segment setzt file_init (= DS)
+        dw      fast_ret wrt DGROUP, 0
+        db      0, 0                    ; FastOpenFlg, FastSeekFlg
 
 ; ---- Eingaenge im ersten MB (LTEXT, Teil von DGROUP: CS = DS) -----------
 segment LTEXT
@@ -360,6 +373,103 @@ abs_frame:
         pop     ax
         pop     bp
         ret
+
+;
+; Blockgeraet der Box (Kopf devs[DV_BLK], DPB+13h): Programme wie DEFRAG
+; (Norton) rufen den Treiber direkt auf. Lesen/Schreiben gehen ueber INT
+; 25h/26h der Box (Paketform), also Schreiben nur mit Laufwerkssperre
+; (LOCK, 440Dh 084Ah). Einheit = Laufwerk (DPB+1).
+global blk_strat, blk_strat_, _blk_strat, blk_intr, blk_intr_, _blk_intr
+_blk_strat:
+blk_strat:
+blk_strat_:
+        mov     [cs:blk_req], bx
+        mov     [cs:blk_req + 2], es
+        retf
+_blk_intr:
+blk_intr:
+blk_intr_:
+        pushf
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        lds     bx, [cs:blk_req]
+        mov     al, [bx + 2]
+        cmp     al, 4
+        je      .rw
+        cmp     al, 8
+        je      .rw
+        cmp     al, 9
+        je      .rw
+        cmp     al, 1                   ; Medium gewechselt? nein
+        jne     .unk
+        mov     byte [bx + 0Eh], 1
+        mov     word [bx + 3], 0100h
+        jmp     .out
+.unk:   mov     word [bx + 3], 8103h    ; unbekannter Befehl
+        jmp     .out
+.rw:    mov     [cs:blk_cmd], al
+        mov     ax, [bx + 14h]
+        xor     dx, dx
+        cmp     ax, 0FFFFh              ; 32-Bit-Sektor bei 1Ah
+        jne     .s16
+        mov     ax, [bx + 1Ah]
+        mov     dx, [bx + 1Ch]
+.s16:   mov     [cs:blk_pk], ax
+        mov     [cs:blk_pk + 2], dx
+        mov     ax, [bx + 12h]
+        mov     [cs:blk_pk + 4], ax
+        mov     ax, [bx + 0Eh]
+        mov     [cs:blk_pk + 6], ax
+        mov     ax, [bx + 10h]
+        mov     [cs:blk_pk + 8], ax
+        mov     al, [bx + 1]
+        push    ds
+        push    bx
+        push    cs
+        pop     ds
+        mov     bx, blk_pk
+        mov     cx, 0FFFFh
+        cmp     byte [cs:blk_cmd], 4
+        je      .rd
+        int     26h
+        jmp     .done
+.rd:    int     25h
+.done:  pop     si                      ; Flags, die INT 25h/26h liegen
+        pop     bx                      ; lassen (CF bleibt)
+        pop     ds
+        jc      .err
+        mov     word [bx + 3], 0100h
+        jmp     .out
+.err:   mov     ah, 81h                 ; Fehler + fertig, AL = Code
+        mov     [bx + 3], ax
+        mov     word [bx + 12h], 0
+.out:   pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        popf
+        retf
+blk_req dd      0
+blk_pk  dw      0, 0, 0, 0, 0
+blk_cmd db      0
+
+; FASTOPEN/FASTSEEK nicht geladen (wie FastRet von MS-DOS)
+fast_ret:
+        mov     ax, 0FFFFh
+        stc
+        retf
 
 ; Fernaufruf der Laendertabelle (Zeichen umsetzen): nichts
 global retf_entry, retf_entry_, _retf_entry

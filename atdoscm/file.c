@@ -12,7 +12,8 @@
 struct dem_req q;
 
 /* SFT: Kopf (Fernzeiger auf die naechste Tabelle, Zahl) + Eintraege */
-static u8 sft_area[6 + NSFT * sizeof(struct sft)];
+extern u8 sft_area[];                   /* entry.asm (DOSHDR)            */
+extern u16 fast_table[];
 struct sft *sftab;
 u16 sft_head(void) { return (u16)sft_area; }
 
@@ -33,7 +34,7 @@ static const struct { u16 attr; char name[9]; } devdef[NDEV] = {
     { 0x0842, "\032ATDOS  " },         /* Blockgeraet: 26 Einheiten     */
 };
 
-extern char retf_entry[];
+extern char retf_entry[], blk_strat[], blk_intr[];
 static const u8 media = 0xF8;
 
 /* ---- DEM ---------------------------------------------------------------- */
@@ -268,6 +269,7 @@ void file_init(void)
     *(u16 *)(sft_area + 0) = 0xFFFF;
     *(u16 *)(sft_area + 2) = 0xFFFF;
     *(u16 *)(sft_area + 4) = NSFT;
+    fast_table[2] = fast_table[4] = kseg;   /* FASTOPEN: nicht geladen  */
     for (k = 0; k < NDEV; k++) {
         devs[k].next = k + 1 < NDEV ? ((u32)kseg << 16) | (u16)&devs[k + 1]
                                     : 0xFFFFFFFFUL;
@@ -276,6 +278,8 @@ void file_init(void)
         for (i = 0; i < 8; i++)
             devs[k].name[i] = devdef[k].name[i];
     }
+    devs[DV_BLK].strat = (u16)blk_strat;    /* direkte Treiberaufrufe   */
+    devs[DV_BLK].intr = (u16)blk_intr;      /* (DEFRAG): entry.asm      */
 }
 
 static int sft_new(void)
@@ -680,9 +684,29 @@ static void serial_out(u16 seg, u16 off)
         B(seg, off + 2 + i) = dbuf[8 + i];
 }
 
-/* Geraeteparameter mit BPB (0860h), wie BOXSHELL */
-static void params_out(u16 seg, u16 off)
+/* echter Bootsektor des Laufwerks d nach bsec -> 1, wenn er einen BPB mit
+   512-Byte-Sektoren hat (DPB, Geraeteparameter: DEFRAG u. a. lesen FAT
+   und Verzeichnisse per INT 25h an den Stellen, die dort stehen) */
+extern u8 bsec[];                       /* entry.asm (DOSHDR), 512 Byte  */
+
+static int read_bs(unsigned d)
 {
+    int ok;
+    q.drive = d;
+    q.pos = 0;
+    q.count = 1;
+    q.flags = 3;
+    q.buf = lin(kseg, (u16)bsec);
+    ok = !dem(DEM_ABSREAD) && bsec[510] == 0x55 && bsec[511] == 0xAA &&
+         *(u16 *)(bsec + 11) == 512 && bsec[13] && bsec[16];
+    q.flags = 0;
+    return ok;
+}
+
+/* Geraeteparameter mit BPB (0860h), wie BOXSHELL */
+static void params_out(u16 seg, u16 off, unsigned d)
+{
+    unsigned i;
     u32 cl = *(u32 *)(dbuf + 4), sec;
     u8 spc = dbuf[1], m;
     B(seg, off + 1) = dbuf[0] == 2 ? 7 : 5;
@@ -705,6 +729,9 @@ static void params_out(u16 seg, u16 off)
     for (sec = cl, m = spc; m > 1; m >>= 1)
         sec <<= 1;
     D(seg, off + 28) = sec;
+    if (dbuf[0] != 2 && read_bs(d))     /* Platte: BPB vom Datentraeger  */
+        for (i = 0; i < 25; i++)
+            B(seg, off + 7 + i) = bsec[11 + i];
 }
 
 /* ---- DPB (Liste ab LoL+0, 1Fh/32h) wie MS-DOS 4.0 (DPB.INC, 21h Byte) -- */
@@ -765,6 +792,26 @@ static u8 *dpb_of(unsigned d)
         *(u16 *)(p + 0x0D) = (u16)(*(u32 *)(dbuf + 4) > 0xFFEEUL ? 0xFFEF :
                                     *(u32 *)(dbuf + 4) + 1);
         p[0x17] = dbuf[31];
+        /* FAT12/16: Aufbau aus dem echten Bootsektor */
+        if (read_bs(d) && *(u16 *)(bsec + 22)) {
+            u16 res = *(u16 *)(bsec + 14), spf = *(u16 *)(bsec + 22);
+            u16 root = *(u16 *)(bsec + 17), dir, first;
+            u32 tot = *(u16 *)(bsec + 19) ? *(u16 *)(bsec + 19) : *(u32 *)(bsec + 32);
+            u8 nf = bsec[16];
+            dir = res + nf * spf;
+            first = dir + ((root * 32 + 511) >> 9);
+            tot = tot > first ? tot - first : 0;
+            for (s = bsec[13]; s > 1; s >>= 1)
+                tot >>= 1;
+            *(u16 *)(p + 6) = res;
+            p[8] = nf;
+            *(u16 *)(p + 9) = root;
+            *(u16 *)(p + 0x0B) = first;
+            *(u16 *)(p + 0x0D) = (u16)(tot > 0xFFEEUL ? 0xFFEF : tot + 1);
+            *(u16 *)(p + 0x0F) = spf;
+            *(u16 *)(p + 0x11) = dir;
+            p[0x17] = bsec[21];
+        }
     }
     p[0x18] = 0;
     return p;
@@ -860,7 +907,7 @@ static void ioctl_fn(struct frame __far *f)
                 if (AL(f) == 0x08)
                     f->ax = 0;
                 else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x60)
-                    params_out(f->ds, f->dx);
+                    params_out(f->ds, f->dx, d);
                 else
                     set_err(f, 0x15);
                 break;
@@ -876,9 +923,14 @@ static void ioctl_fn(struct frame __far *f)
         else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x66)
             serial_out(f->ds, f->dx);
         else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x60)
-            params_out(f->ds, f->dx);
+            params_out(f->ds, f->dx, d);
         else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x46)
             set_err(f, E_DENIED);
+        else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x67) {
+            B(f->ds, f->dx + 1) = 1;    /* Zugriff erlaubt (DEFRAG)      */
+            f->ax = 0;
+        } else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x47)
+            f->ax = 0;                  /* Zugriff setzen: immer erlaubt */
         else
             set_err(f, E_FUNC);
         break;
