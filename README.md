@@ -291,7 +291,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (Ticket von KINIT), signiert mit HMAC-SHA256 (SMB 2, wenn der Server es
   verlangt) bzw. AES-GMAC/-CMAC (SMB 3, als Benutzer immer); verlangt der
   Server oder die Freigabe Verschlüsselung, AES-128/-256 mit GCM oder CCM
-  (gilt auch für `NET USE`); Namen CP437 <-> UTF-16, Dateien bis 4 GB in
+  (gilt auch für `NET USE`); die Signaturen des Servers werden geprüft,
+  bei SMB 3.0/3.0.2 dazu VALIDATE_NEGOTIATE; Namen CP437 <-> UTF-16, Dateien bis 4 GB in
   Stücken zu 16 KB. ERRORLEVEL 0 ok, 1 Befehl gescheitert, 2 Aufruf,
   4 Netz/Anmeldung
 - `NET USE X: \\Rechner\Freigabe [Kennwort|*] [/USER:[Domäne\]Name]`

@@ -856,7 +856,26 @@ Vom Nutzer in 86Box bestätigt (22.11.2026, P3B-F, Samba 4.22 mit
 Heimlaufwerk N: verbunden; `smbstatus` zeigt SMB3_11, Signatur
 AES-128-GMAC, Freigabe AES-256-GCM. Das Abbild davor (nur AES-128)
 bekommt dort „Zugriff auf die Freigabe verweigert“.
-Offen: Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
+Signaturen des Servers und VALIDATE_NEGOTIATE (22.11.2026, Wunsch des
+Nutzers): `mkmac` rechnet die Signatur für Anfrage und Antwort (GMAC-
+Nonce: Byte 8 Bit 0 = Rolle, 1 für den Server), `sig_ok` prüft rx. In
+`smb()` wird jede nicht verschlüsselte Antwort geprüft, solange signiert
+wird: signiert und falsch -> Verbindung getrennt (0xFFFFFFFD, „Signatur/
+Verschlüsselung des Servers falsch“), unsigniert mit Erfolg ebenso
+(gegen Abstreifen der Signatur); unsignierte Fehler sind erlaubt (z. B.
+abgelaufene Sitzung). Die letzte SESSION_SETUP-Antwort prüft `sconnect`
+nach dem Ableiten der Schlüssel – bei 3.1.1 muss sie signiert sein.
+Bei 3.0/3.0.2 schickt SMBCLI nach TREE_CONNECT FSCTL_VALIDATE_NEGOTIATE_
+INFO (IOCTL 0Bh, 00140204h, Fähigkeiten 40h, ClientGuid, SecurityMode 1,
+die fünf Dialekte) und vergleicht die signierte Antwort mit Fähigkeiten,
+ServerGuid, SecurityMode und Dialekt aus NEGOTIATE (`vneg`); 3.1.1
+schützt die Vorab-Prüfsumme. In QEMU gegen Samba 4.19 geprüft (3.1.1
+GMAC/CMAC, 3.0, 3.0.2, 2.1, AES-256-GCM, 3.0 mit CCM, Wiederverbinden
+verschlüsselt, Kerberos gegen den Test-DC), alles bytegleich; Gegen-
+proben per Testbau mit verfälschtem Prüfwert: Anmeldung scheitert bei
+GMAC, CMAC und HMAC, normale Antworten (dir/get/put) werden bei 3.1.1
+und 2.1 abgewiesen, verfälschtes `vneg` bei 3.0 -> „Aushandlung
+verfälscht“. SMBCLI danach 63.744 von 65.536 Byte.
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
 test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`

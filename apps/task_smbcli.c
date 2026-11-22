@@ -52,6 +52,9 @@ static unsigned cipher, encr, salg, fskl;
 #define C_GCM   (cipher == 2 || cipher == 4)
 #define C_KL    (cipher >= 3 ? 32 : 16)
 static u32 nctr;
+static u8 cgd[16], vneg[24];            /* ClientGuid; Antwort NEGOTIATE:
+                                           Faehigkeiten, ServerGuid,
+                                           SecurityMode, Dialekt       */
 static struct gcm gc;
 static u32 msgid;
 static u8 sess[8], tree[4];
@@ -240,6 +243,7 @@ static int sput(const u8 *d, unsigned n)
 #define C_CLOSE 6
 #define C_READ  8
 #define C_LOCK  0x0A
+#define C_IOCTL 0x0B
 #define C_WRITE 9
 #define C_QDIR  0x0E
 
@@ -261,14 +265,51 @@ static void nonce(u8 *t)
     cr_cpy(t + 4, npre, C_GCM ? 8 : 7);
 }
 
+/* Signatur einer Nachricht (Kopf h, n Byte, Feld 48..63 muss 0 sein) ->
+   mac (16 Byte). srv = 1: Antwort des Servers (GMAC-Nonce Bit 0) */
+static void mkmac(const u8 *h, unsigned n, int srv, u8 *mac)
+{
+    static u8 m[32];
+    static struct hmac hm;
+    if (dialect >= 0x0300 && salg == 2) {   /* AES-GMAC: Nachricht als AAD,
+                                           Nonce = MessageId + Rolle  */
+        u8 iv[12];
+        cr_cpy(iv, h + 24, 8);
+        cr_zero(iv + 8, 4);
+        iv[8] = (u8)srv;
+        gcm_key(&gc, sgk);
+        gcm_seal(&gc, iv, h, n, (u8 *)h, 0, m);
+    } else if (dialect >= 0x0300) {     /* AES-CMAC                      */
+        aes_key(&gc.k, sgk);
+        aes_cmac(&gc.k, h, n, m);
+    } else {                            /* SMB 2.x: HMAC-SHA256          */
+        hmac_init(&hm, skey, 16);
+        hmac_add(&hm, h, n);
+        hmac_end(&hm, m);
+    }
+    cr_cpy(mac, m, 16);
+}
+
+/* Signatur der Antwort in rx pruefen -> 1 = stimmt */
+static int sig_ok(void)
+{
+    u8 s[16], c[16];
+    unsigned i, d = 0;
+    cr_cpy(s, rx + 48, 16);
+    cr_zero(rx + 48, 16);
+    mkmac(rx, rxn, 1, c);
+    cr_cpy(rx + 48, s, 16);
+    for (i = 0; i < 16; i++)
+        d |= s[i] ^ c[i];
+    return d == 0;
+}
+
 /* Anfrage: Kopf in tx+4 bauen, Rumpf liegt schon ab tx+4+64 (blen Byte),
    senden, Antwort nach rx -> NT-Status */
 static u32 smb(unsigned cmd, unsigned blen)
 {
-    static u8 mac[32];
-    static struct hmac hm;
     u8 *h = tx + 4, *o = tx;
-    unsigned n = 64 + blen, i, sn = n;
+    unsigned n = 64 + blen, i, sn = n, wasenc;
     u32 st;
     for (i = 0; i < 64; i++)
         h[i] = 0;
@@ -305,22 +346,7 @@ static u32 smb(unsigned cmd, unsigned blen)
         sn = n + 52;
     } else if (signing && cmd != C_NEG && cmd != C_SESS) {
         h[16] |= 8;                     /* SMB2_FLAGS_SIGNED             */
-        if (dialect >= 0x0300 && salg == 2) {   /* AES-GMAC: Nachricht als
-                                           AAD, Nonce = MessageId + 0  */
-            u8 iv[12];
-            cr_cpy(iv, h + 24, 8);
-            cr_zero(iv + 8, 4);
-            gcm_key(&gc, sgk);
-            gcm_seal(&gc, iv, h, n, h, 0, mac);
-        } else if (dialect >= 0x0300) { /* AES-CMAC                      */
-            aes_key(&gc.k, sgk);
-            aes_cmac(&gc.k, h, n, mac);
-        } else {
-            hmac_init(&hm, skey, 16);
-            hmac_add(&hm, h, n);
-            hmac_end(&hm, mac);
-        }
-        cr_cpy(h + 48, mac, 16);
+        mkmac(h, n, 0, h + 48);
     }
     o[0] = 0;
     o[1] = 0;
@@ -353,9 +379,11 @@ static u32 smb(unsigned cmd, unsigned blen)
             lost = 1;
             return 0xFFFFFFFFUL;
         }
+        wasenc = 0;
         if (rx[0] == 0xFD && cipher && l > 52 + 64) {   /* verschluesselt */
             u8 *t = rx - 52;
             int bad;
+            wasenc = 1;
             cr_cpy(t, rx, 4);
             if (sget(t + 4, 48) || sget(rx, (unsigned)l - 52)) {
                 lost = 1;
@@ -385,6 +413,14 @@ static u32 smb(unsigned cmd, unsigned blen)
             continue;
         if (cmd == C_NEG || (cmd == C_SESS && st != S_OK))
             pi_add(rx, rxn);
+        /* Signatur des Servers: signierte Antworten pruefen, eine
+           unsignierte Erfolgsmeldung gilt als gefaelscht (Fehler darf der
+           Server unsigniert schicken, z. B. abgelaufene Sitzung) */
+        if (signing && !wasenc && cmd != C_NEG && cmd != C_SESS &&
+            ((rx[16] & 8) ? !sig_ok() : st == S_OK)) {
+            lost = 1;
+            return 0xFFFFFFFDUL;
+        }
         if (st == 0xC000035CUL || st == 0xC0000203UL || st == 0xC00000C9UL)
             lost = 1;                   /* Sitzung/Freigabe weg (Server neu) */
         return st;
@@ -733,6 +769,8 @@ static void status(const char *what, u32 st)
         out("wird benutzt");
     else if (st >= 0xFFFFFFFEUL)
         out("Verbindung unterbrochen");
+    else if (st == 0xFFFFFFFDUL)
+        out("Signatur/Verschluesselung des Servers falsch, Verbindung getrennt");
     else {
         unsigned i, d;
         out("Fehler ");
@@ -1933,7 +1971,8 @@ static const char *sconnect(void)
     BODY[2] = 5;
     BODY[4] = 1;                        /* signieren moeglich            */
     BODY[8] = 0x40;                     /* Capabilities: ENCRYPTION      */
-    tls_random(BODY + 12, 16);          /* ClientGuid                    */
+    tls_random(cgd, 16);                /* ClientGuid                    */
+    cr_cpy(BODY + 12, cgd, 16);
     put32(BODY + 28, 64 + 48);          /* NegotiateContextOffset        */
     BODY[32] = 3;
     put16(BODY + 36, 0x0202);
@@ -1964,6 +2003,10 @@ static const char *sconnect(void)
         return "Server spricht kein SMB2/SMB3.";
     dialect = get16(RB + 4);
     signing = (get16(RB + 2) & 2) != 0;
+    cr_cpy(vneg, RB + 24, 4);           /* fuer VALIDATE_NEGOTIATE       */
+    cr_cpy(vneg + 4, RB + 8, 16);
+    cr_cpy(vneg + 20, RB + 2, 2);
+    cr_cpy(vneg + 22, RB + 4, 2);
     if (dialect == 0x0300 || dialect == 0x0302) {
         if (get32(RB + 24) & 0x40)      /* Server kann verschluesseln    */
             cipher = 1;
@@ -2027,6 +2070,9 @@ static const char *sconnect(void)
             smb_kdf(skey, 16, "SMB2AESCCM", 11, (const u8 *)"ServerOut", 10, dek, 16);
         }
         signing = 1;
+        /* letzte SESSION_SETUP-Antwort: bei 3.1.1 muss sie signiert sein */
+        if (rx[16] & 8 ? !sig_ok() : dialect == 0x0311)
+            return "Signatur des Servers falsch (Anmeldung).";
         if (k & 4) {
             if (!cipher)
                 return "Server verlangt Verschluesselung, gemeinsames Verfahren fehlt.";
@@ -2034,6 +2080,8 @@ static const char *sconnect(void)
         }
     } else if (k & 4)
         return "Server verlangt Verschluesselung (erst ab SMB 3).";
+    else if (signing && (rx[16] & 8) && !sig_ok())
+        return "Signatur des Servers falsch (Anmeldung).";
 
     /* TREE_CONNECT \\Rechner\Freigabe */
     scopy(line, "\\\\", sizeof(line));
@@ -2058,6 +2106,37 @@ static const char *sconnect(void)
         if (!cipher || dialect < 0x0300)
             return "Freigabe verlangt Verschluesselung, nicht moeglich.";
         encr = 1;
+    }
+    if (signing && (dialect == 0x0300 || dialect == 0x0302)) {
+        /* FSCTL_VALIDATE_NEGOTIATE_INFO: signierte Antwort muss zur
+           NEGOTIATE-Antwort passen (gegen Herabstufen) */
+        cr_zero(BODY, 56 + 34);
+        BODY[0] = 57;
+        put32(BODY + 4, 0x00140204UL);
+        for (k = 8; k < 24; k++)
+            BODY[k] = 0xFF;             /* FileId: keine                 */
+        BODY[24] = 64 + 56;             /* InputOffset                   */
+        BODY[28] = 34;                  /* InputCount                    */
+        BODY[44] = 24;                  /* MaxOutputResponse             */
+        BODY[48] = 1;                   /* SMB2_0_IOCTL_IS_FSCTL         */
+        BODY[56] = 0x40;                /* Capabilities wie NEGOTIATE    */
+        cr_cpy(BODY + 60, cgd, 16);
+        BODY[76] = 1;                   /* SecurityMode                  */
+        BODY[78] = 5;
+        put16(BODY + 80, 0x0202);
+        put16(BODY + 82, 0x0210);
+        put16(BODY + 84, 0x0300);
+        put16(BODY + 86, 0x0302);
+        put16(BODY + 88, 0x0311);
+        st = smb(C_IOCTL, 56 + 34);
+        k = (unsigned)get32(RB + 32);
+        n = 1;
+        if (st == S_OK && get32(RB + 36) >= 24 && k + 24 <= rxn)
+            for (n = 0; n < 24; n++)
+                if (rx[k + n] != vneg[n])
+                    break;
+        if (n < 24)
+            return "Aushandlung verfaelscht (VALIDATE_NEGOTIATE).";
     }
     if (encr && !srv) {
         out(cipher >= 3 ? "Verschluesselt mit AES-256-" : "Verschluesselt mit AES-128-");
