@@ -3202,6 +3202,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         p[2] = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
         p[3] = image_units / 4;
         p[4] = alloc_units / 4;
+        if (a2 >= MEMINFO_V61 && user_ok(usel, a1, MEMINFO_V61, 1)) {
+            ((unsigned long __far *)(p + 11))[0] = sw_sel ? (unsigned long)sw_slots << 2 : 0;
+            ((unsigned long __far *)(p + 11))[1] = (unsigned long)sw_used << 2;
+        }                               /* SWAPPATH= (Lage wie 6.1)      */
         return 0;
     }
 

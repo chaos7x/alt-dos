@@ -124,7 +124,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   und lädt ihn bei Bedarf aus der EXE nach (wie OS/2 1.x, Windows 3.x),
   und schiebt Datensegmente zusammen, wenn kein Stück am Stück frei ist;
   mit `SWAPPATH=C:\SWAP 2048` lagert er Datensegmente ruhender Programme in
-  `SWAPPER.DAT` aus (wie OS/2 1.x, `MEMMAN=SWAP,MOVE`);
+  `SWAPPER.DAT` aus (wie OS/2 1.x, `MEMMAN=SWAP,MOVE`; MEM zeigt Größe und Belegung);
   `LOOP Datei [X:] [/RO]` (5.4) hängt eine Datei als Laufwerk ein – ISO,
   Disketten- und Plattenabbilder, feste VHD, DoubleSpace/DriveSpace-
   Container (lesen und schreiben, DriveSpace 3 eingeschlossen) –, `LOOP X: /D`

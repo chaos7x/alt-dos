@@ -904,8 +904,11 @@ struct fapi_meminfo {               /* alle Angaben in KB               */
     /* nur 6.0 fuellt sie (CX = Groesse); 5.x laesst sie stehen */
     unsigned long  total_kb32, free_kb32;
     unsigned long  box_kb;
+    unsigned long  swap_kb;         /* 5.x/6.1 (CX >= 30): Auslagerungs- */
+    unsigned long  swapped_kb;      /* datei und davon belegt           */
 };
 #define MEMINFO_V60  18
+#define MEMINFO_V61  30             /* dazu swap_kb, swapped_kb (wie 6.1) */
 
 struct fapi_dirent {                /* DosFindEntry                     */
     char           name[256];       /* Dateiname, auch fuer lange Namen */

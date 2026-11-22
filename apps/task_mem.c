@@ -153,6 +153,15 @@ void main(void)
         puts("K   (frei + Cache, den er abgibt)\n");
     }
     puts("\nSystembereich 640 KB - 1 MB (Video, ROMs) ist ausgespart.\n");
+#ifdef MEMINFO_V61
+    if (mi.swap_kb) {                   /* SWAPPATH=: Auslagerungsdatei  */
+        puts("Auslagerungsdatei      ");
+        put_num(mi.swap_kb, 10);
+        puts("K, davon belegt ");
+        put_num(mi.swapped_kb, 0);
+        puts("K\n");
+    }
+#endif
 
     if (!brief && ci.kb) {
         unsigned long h = ci.hits, t = ci.hits + ci.misses;

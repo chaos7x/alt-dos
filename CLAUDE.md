@@ -445,6 +445,11 @@ Takte, 86Box SCAT ebenso 5.000; am Box-Prompt bekommt der Hintergrund
 weiter Zeit (QEMU). Testfalle: mit `PROTECTONLY=NO` lädt CMD /P die Box
 schon beim Start – ein zweites RBOX aus AUTOEXEC.CMD fand dann keine
 Shell („Bad or missing Command Interpreter“).
+MEM zeigt die Auslagerungsdatei (Wunsch des Nutzers, 22.11.2026, wie
+6.1): FAPI_MEMINFO füllt mit CX >= `MEMINFO_V61` (30) `swap_kb`/
+`swapped_kb` an derselben Stelle wie main (SWAPPATH=, sw_slots/sw_used),
+MEM gibt „Auslagerungsdatei n K, davon belegt m K“ aus. In QEMU (isapc
+4 MB, SWAPPATH=C:\SWAP 2048) geprüft.
 Danach beim Nutzer auf dem SCAT weiter Ton -> kein Ton -> Ton und eine
 um 3–4 s verspätete Todesmelodie, auch ohne Hintergrundlast. Ursache:
 Digger fragt die Tastatur über INT 21h 0Bh ab, und RBSHELL glich dabei
