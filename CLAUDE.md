@@ -422,6 +422,15 @@ Strg+C an der Eingabezeile verwirft sie wie COMMAND.COM (aus main
 e9c14a2, `on_break` in read_line). Geprüft QEMU (isapc 4 MB, zwei
 Disketten, zwei IDE-Platten, CD, SB16, NE2000, CODEPAGE: vorher der
 Fehler, danach Z:/N:, DIR, Strg+C) und 86Box SCAT (Z:, N:, COPY, MEM).
+Freier Platz über 2 GB (Wunsch des Nutzers, 22.11.2026, wie main
+a812964): FAPI 1Eh mit BX | `FREESPACE_KB` liefert Bytes + KB
+(`ifs_driver.space` füllt r[0]/r[1]; fat.c rechnet KB, ufs.c nimmt
+`size` von SMBCLI), DIR in CMD zeigt ab 2 GB MB, Stub rechnet KB aus den
+DOS-Bytes. Dabei behoben: ufs.c schrieb r[1] schon, der Kernel gab aber
+nur ein Langwort – überschrieb die Variable dahinter. Platz: `rom_str`
+(MSD) nach `kernel/k2misc.c` (KTEXT2), erstes Codesegment 65.020 Byte.
+Geprüft QEMU (Z: „2.474 MB frei“, C: in Bytes) und 86Box SCAT (DIR Z:,
+COPY, MSD /S mit BIOS-Namen).
 
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht

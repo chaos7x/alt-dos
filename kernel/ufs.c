@@ -280,6 +280,7 @@ static int __far u_space(int d, unsigned long *r)
     if (rq_go(i))
         return IFS_ERR;
     r[0] = RQ(i)->pos;                  /* Bytes, bei 4 GB gekappt        */
+    r[1] = RQ(i)->size ? RQ(i)->size : r[0] >> 10;  /* KB; alter Dienst: aus Bytes */
     return 0;
 }
 

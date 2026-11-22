@@ -69,7 +69,8 @@ struct ifs_driver {
     int  (__far *mkdir)(int drive, const char *path);
     int  (__far *rmdir)(int drive, const char *path);
     int  (__far *move)(int drive, const char *from, const char *to);
-    int  (__far *space)(int drive, unsigned long *free_bytes);
+    /* freier Platz: r[0] Bytes (bei 4 GB gekappt), r[1] KB (bis 4 TB) */
+    int  (__far *space)(int drive, unsigned long *r);
     /* mask 1: Attribute (RO/H/S/A), 2: Datum/Uhrzeit (FAT-Format) */
     int  (__far *setinfo)(int drive, const char *path, unsigned mask,
                     unsigned attr, unsigned date, unsigned time);
@@ -121,6 +122,6 @@ int __far ifs_remove(int drive, const char *path);
 int __far ifs_mkdir(int drive, const char *path);
 int __far ifs_rmdir(int drive, const char *path);
 int __far ifs_move(int drive, const char *from, const char *to);
-int __far ifs_space(int drive, unsigned long *free_bytes);
+int __far ifs_space(int drive, unsigned long *r);
 
 #endif

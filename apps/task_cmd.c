@@ -1586,10 +1586,15 @@ static void cmd_dir(char *arg)
     put_num(dl_dirs, 16);
     puts(" Verzeichnis(se),");
     {
-        static unsigned long fb;
+        static unsigned long fb[2];     /* Bytes, KB (ab 2 GB in MB)     */
         unsigned drv = (dir[0] && dir[1] == ':') ? (unsigned)(up(dir[0]) - 'A') : DosQCurDisk();
-        if (DosFreeSpace(drv, &fb) == 0)
-            put_num(fb, 15);
+        if (DosFreeSpaceKB(drv, fb) == 0 && fb[1] >= 0x200000UL) {
+            put_num(fb[1] >> 10, 15);
+            puts(" MB frei\n\n");
+            return;
+        }
+        if (fb[1] < 0x200000UL && DosFreeSpace(drv, fb) == 0)
+            put_num(fb[0], 15);         /* (alter Kernel: ohne KB)       */
         else
             puts("               ?");
     }

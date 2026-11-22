@@ -228,6 +228,7 @@ unsigned long __far vio_gfx_base(int s);
 unsigned __far vio_gfx_limit(int s);
 int __far vio_setplane(int s, unsigned p);
 int __far vio_setpage(int s, unsigned p);
+void __far rom_str(unsigned long lin, unsigned len, char __far *out, unsigned max); /* k2misc.c */
 void __far vio_idle(void);
 int __far vio_gfx_reg(int s, int t, unsigned sel);
 int __far vio_is_gfx(int s);
