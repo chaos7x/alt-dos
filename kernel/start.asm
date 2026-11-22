@@ -621,6 +621,33 @@ irq6:
         popa
         iret
 
+;; Entropie (FAPI_RANDOM): Zeitpunkt jedes Hardware-Interrupts ausser dem
+;; Takt (Tastatur, Platten, Netz, Maus) mit dem laufenden PIT-Zaehler in einen
+;; Pool von 16 Worten (286-Fassung des Makros aus 6.3). Andere Leser von
+;; Kanal 0 latchen bei gesperrten Interrupts.
+;; Erwartet DS = KDATA, AX = Quelle; aendert BX, CX, DX.
+%macro ENTMIX 0
+        push    ax
+        xor     al, al
+        out     0x43, al                ; Kanal 0 latchen
+        in      al, 0x40
+        mov     cl, al
+        in      al, 0x40
+        mov     ch, al
+        pop     ax
+        mov     bx, [_ent_i]
+        inc     word [_ent_i]
+        and     bx, 15
+        shl     bx, 1
+        mov     dx, [_ent_pool+bx]
+        rol     dx, 5
+        xor     dx, cx
+        xor     dx, ax
+        add     dx, [_ticks]
+        add     dx, 0x9E37
+        mov     [_ent_pool+bx], dx
+%endmacro
+
 ; IRQ 1: Tastatur
 irq1:
         pusha
@@ -636,6 +663,7 @@ irq1:
         jnz     .aux
 .key:   in      al, 0x60
         xor     ah, ah
+        ENTMIX                          ; Scancode und Zeitpunkt
         call    kbd_irq_
 .aux:   mov     al, 0x20
         out     0x20, al
@@ -698,6 +726,7 @@ irq_common:
         mov     bx, KDATA
         mov     ds, bx
         mov     es, bx
+        ENTMIX                          ; AX = IRQ
         mov     bx, ax
         add     bx, bx
         cmp     word [_irq_hcs+bx], 0
@@ -1787,6 +1816,9 @@ geo_heads: dw 16
 segment _BSS
 
 bss_start:
+global _ent_pool, _ent_i
+_ent_pool:   resw 16                    ; Entropie (ENTMIX, FAPI_RANDOM)
+_ent_i:      resw 1
 global _boot_drive, _ticks, _uptime_s, _uptime_m, _up60
 global _fapi_dx, _devhlp_dx
 _fapi_dx:    resw 1

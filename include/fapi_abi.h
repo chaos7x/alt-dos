@@ -223,6 +223,79 @@ struct fapi_drvinfo {
 };
 #define FAPI_LOOP           0x59    /* BX = LOOP_*, CX/DX siehe dort: Datei als
                                        Laufwerk (6.1, LOOP) */
+#define FAPI_RANDOM         0x5C    /* Entropie (5.6, aus 6.3): BX = Puffer,
+                                       CX = Laenge (bis 34) -> Laenge; Pool
+                                       aus den Zeitpunkten der Interrupts */
+#define FAPI_UFS            0x5D    /* Dateisystem in Ring 3 (5.6, aus 6.3, NET USE,
+                                       kernel/ufs.c): BX = UFS_*, CX/DX
+                                       siehe dort */
+#define UFS_REG             1       /* CX = struct fapi_ufsreg (Laufwerk,
+                                       Name) -> 0, FAPI_ERR_EXIST, FULL  */
+#define UFS_GET             2       /* CX = struct fapi_ufsreq, DX = Puffer
+                                       (UFS_DATA): wartet auf den naechsten
+                                       Auftrag -> 0; op UFSOP_QUIT = Ende */
+#define UFS_PUT             3       /* CX = Antwort (status, Felder), DX =
+                                       Daten (len Byte) -> 0             */
+#define UFS_DEL             4       /* CX = Laufwerk: Dienst beenden lassen
+                                       -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
+#define UFS_INFO            5       /* CX = Laufwerk, DX = struct
+                                       fapi_ufsreg -> 0, FAPI_ERROR     */
+#define FAPI_FILELOCK       0x5E    /* Bereichssperre (5.6, aus 6.3, wie OS/2
+                                       DosSetFileLocks): BX = Handle, CX =
+                                       struct fapi_lock -> 0, FAPI_ERR_
+                                       LOCKED (fremd gesperrt / nicht
+                                       gesperrt). Wirkt auf NET-USE-
+                                       Laufwerken beim Server; lokal immer
+                                       0 (zwei Schreiber gibt es lokal nie) */
+struct fapi_lock {
+    unsigned long  ofs, len;
+    unsigned short flags;           /* LOCK_*                            */
+};
+#define LOCK_UNLOCK         1       /* Bereich freigeben (genau so gesperrt) */
+#define LOCK_SHARED         2       /* andere duerfen lesen               */
+#define UFS_DATA            16384u  /* Daten je Auftrag hoechstens        */
+#define UFSOP_QUIT          0
+#define UFSOP_OPEN          1       /* path, mask -> h, size, attr; mask
+                                       Bits 0-1 Zugriff (0 lesen, 2 lesen+
+                                       schreiben), Bits 4-6 OPEN_DENY*,
+                                       Bit 7 alte Art (Zugriff/Freigabe
+                                       wie bisher: RW versuchen, alles
+                                       teilen) - auch UFSOP_CREATE       */
+#define UFSOP_READ          2       /* h, pos, len -> Daten              */
+#define UFSOP_READDIR       3       /* path (Verzeichnis), n -> Daten =
+                                       struct ifs_dirent                 */
+#define UFSOP_STAT          4       /* path -> attr (status -1: fehlt)   */
+#define UFSOP_CREATE        5       /* path, path2 = Originalname -> h   */
+#define UFSOP_WRITE         6       /* h, pos, len, Daten -> len         */
+#define UFSOP_CLOSE         7       /* h, mask: 1 attr, 2 date/time      */
+#define UFSOP_REMOVE        8
+#define UFSOP_MKDIR         9       /* path, path2 = Originalname        */
+#define UFSOP_RMDIR         10
+#define UFSOP_MOVE          11      /* path -> path2 (Ziel; Originalname
+                                       des letzten Teils in path2 hinter
+                                       der Null)                         */
+#define UFSOP_SPACE         12      /* -> pos = freie Bytes (gekappt),
+                                       size = freie KB (0: aus pos)     */
+#define UFSOP_SETINFO       13      /* path, mask, attr, date, time      */
+#define UFSOP_LABEL         14      /* -> Daten = Bezeichnung (11)       */
+#define UFSOP_NAMEPATH      15      /* path, shortn -> Daten = Pfad      */
+#define UFSOP_TRUNC         16      /* h, size                           */
+#define UFSOP_LOCK          17      /* h, pos = Stelle, size = Laenge,
+                                       mask = LOCK_* (FAPI_FILELOCK)     */
+struct fapi_ufsreg {
+    unsigned short drive;           /* 2 = C:                            */
+    unsigned short task;            /* UFS_INFO: Dienst                  */
+    char           name[80];        /* z. B. \\server\freigabe        */
+};
+struct fapi_ufsreq {
+    unsigned short op, seq;
+    short          status;          /* Antwort: 0 oder IFS_* (negativ)   */
+    unsigned short len;             /* Daten                             */
+    unsigned long  h, pos, size;
+    unsigned short n, attr, date, time, mask, shortn;
+    char           path[261];
+    char           path2[261];
+};
 #define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
                                        CX = Parameterblock, DX = Groesse;
                                        ohne Netz FAPI_ERR_NONET */
@@ -283,6 +356,7 @@ struct fapi_netcmd {
     unsigned short ifc;
     unsigned short arg;
 };
+#define NET_FAM_SRV         33      /* fapi_resolve.family: SRV-Satz    */
 #define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
                                        (DNS, Zahlenadressen direkt) -> 0,
                                        FAPI_ERROR (unbekannt), TIMEOUT    */
@@ -293,6 +367,12 @@ struct fapi_netcmd {
 /* Firewall: eingehend gesperrt ausser Antworten und Regeln (nur
    Erlaubnisse); ausgehend frei. Regel: Programm ("*" = jedes), Protokoll,
    Ports, Herkunft (Netz/Praefix, FWR_LOCAL = eigenes Netz der Karte). */
+#define NET_HOSTNAME        7       /* struct fapi_hostname: Rechnername
+                                       setzen (A-Z, 0-9, -, bis 31 Zeichen),
+                                       gebundenes DHCP erneuert gleich   */
+struct fapi_hostname {
+    char           name[32];
+};
 #define FW_GET              0       /* Zustand, Zaehler; idx < nrules: Regel */
 #define FW_SET              1       /* on = 0 aus, 1 an                     */
 #define FW_ADD              2       /* r -> AX = Nummer                     */
@@ -834,4 +914,12 @@ struct fapi_dirent {                /* DosFindEntry                     */
     unsigned short date, time;      /* FAT-Format                       */
 };
 
+#define ENV_CALLER          1
+#define FREESPACE_KB        0x8000
+#define FSI_REMOTE          0x20    /* Netzlaufwerk (NET USE)           */
+#define FAPI_ERR_LOCKED     0xFFF2  /* Bereich von anderem gesperrt (6.3) */
+#define OPEN_DENYALL        0x10    /* andere duerfen nichts              */
+#define OPEN_DENYWRITE      0x20    /* andere duerfen lesen               */
+#define OPEN_DENYREAD       0x30    /* andere duerfen schreiben           */
+#define OPEN_DENYNONE       0x40    /* andere duerfen alles               */
 #endif

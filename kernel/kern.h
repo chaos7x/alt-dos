@@ -73,6 +73,8 @@ void win_restore(const unsigned short *b);
 void          outb(unsigned port, unsigned val);
 unsigned      inb(unsigned port);
 unsigned long get_ticks(void);
+extern unsigned ent_pool[16];          /* start.asm ENTMIX, FAPI_RANDOM */
+extern unsigned ent_i;
 void          idle_wait(void);
 void          enable_ints(void);
 void          zero_seg(unsigned sel, unsigned words);
@@ -139,6 +141,7 @@ unsigned proc_run(unsigned long id);
 #define NBLK        8
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
 #define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
+#define DRV_UFS     (-3)            /* NET USE (ufs.c)                    */
 #define DRV_LOOP    (-2)            /* Loop-Laufwerk (loop.c), unit = Platz */
 #define NLOOP       4
 /* Loop-Laufwerke (loop.c, KTEXT2; aus 6.1) */
@@ -251,3 +254,6 @@ unsigned __far cp437_uni(unsigned c);   /* fat.c: CP437 -> Unicode          */
 extern volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 
 #endif
+
+unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
+void __far ufs_task_end(int t);

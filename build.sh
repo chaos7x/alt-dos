@@ -81,8 +81,8 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx rbox fat loop net"
-for m in kernel mem floppy fat vio kbd preload vgagfx rbox loop net k2thunk; do
+K2MODS="floppy vgagfx rbox fat loop net ufs"
+for m in kernel mem floppy fat vio kbd preload vgagfx rbox loop net ufs k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2 -os" ;; esac   # selten: klein statt schnell
     wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
@@ -143,10 +143,18 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk mkdosimg ping ipconfig nslookup nc netstat firewall wget ftp telnet sntp"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk mkdosimg ping ipconfig nslookup nc netstat firewall wget ftp telnet sntp smbcli net net1 kinit klist kdestroy domjoin logon hostname"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
+wcc $CFLAGS -fo=$B/tz.o apps/tz.c              # Zeitzone (SNTP, NET TIME)
+wcc $CFLAGS -fo=$B/crypto.o apps/crypto.c      # SHA-256, HMAC, AES-GCM (SMB)
+wcc $CFLAGS -fo=$B/sha512.o apps/sha512.c      # SHA-512 (SMB 3.1.1)
+wcc $CFLAGS -fo=$B/smb3c.o apps/smb3c.c        # AES-CMAC/CCM, KDF (SMB 3)
+wcc $CFLAGS -fo=$B/rnd.o apps/rnd.c            # Zufall (FAPI_RANDOM gehasht)
+wcc $CFLAGS -fo=$B/krbcrypt.o apps/krbcrypt.c  # SHA-1, PBKDF2, AES-CTS (Kerberos)
+wcc $CFLAGS -fo=$B/krb5.o apps/krb5.c          # Kerberos v5 (KINIT, SMBCLI)
+wcc $CFLAGS -fo=$B/ldapc.o apps/ldapc.c        # LDAP-Client (DOMJOIN, LOGON, NET1)
 wcc $CFLAGS -fo=$B/lzh.o apps/lzh.c          # LH5-Familie, lh1, ARJ, ZOO-LZW
 wcc $CFLAGS -fo=$B/lzhenc.o apps/lzhenc.c    # Packer LH5-Familie (LHA, ARJ)
 wcc $CFLAGS -fo=$B/lzma.o apps/lzma.c        # LZMA/LZMA2, Delta (7ZDEC)
@@ -157,7 +165,12 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     case " $UTILAPPS " in *" $t "*) U="file $B/util.o" ;; esac
     case " $ARCAPPS " in *" $t "*) U="$U file $B/flate.o file $B/arcutil.o" ;; esac
     case " $LZHAPPS " in *" $t "*) U="$U file $B/lzh.o file $B/arcutil.o" ;; esac
-    [ $t = sntp ] && U="$U file $B/arcutil.o"
+    [ $t = sntp ] && U="$U file $B/tz.o file $B/arcutil.o"
+    [ $t = net ] && U="$U file $B/tz.o file $B/arcutil.o"
+    [ $t = net1 ] && U="$U file $B/tz.o"
+    [ $t = smbcli ] && U="$U file $B/smb3c.o file $B/sha512.o file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
+    case " domjoin logon net1 " in *" $t "*) U="$U file $B/ldapc.o" ;; esac
+    case " kinit klist kdestroy domjoin logon net1 " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
     case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
     [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
@@ -179,7 +192,7 @@ nasm -f bin tools/stub.asm -o $B/stub.bin
 BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat more find grep less sort fc comp cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd expand compress edit fm tree attrib grafik mtest fputest xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd packdisk wget ftp"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat cmd attrib tree deltree grep print xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd packdisk wget ftp smbcli"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -318,7 +331,7 @@ CPFILES=""
 for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
 TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
 # Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
-HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE"
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_domjoin.exe DOMJOIN.EXE  $B/task_logon.exe LOGON.EXE  $B/task_hostname.exe HOSTNAME.EXE"
 TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
 # Netz nur auf der Platte (Diskette voll): Treiber, Stapel, Regeln
 HDSYS="$B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  FIREWALL.INI FIREWALL.INI"

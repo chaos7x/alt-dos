@@ -355,16 +355,15 @@ static unsigned dns_skip(unsigned p)    /* Name ueberspringen              */
     return dns_rlen;
 }
 
-/* eine Anfrage (qt = 1 A, 28 AAAA); -> Zahl der Adressen (in out, je 16
-   Byte, hoechstens max), 0 = Name unbekannt, -1 = keine Antwort/kein Server.
-   Server: die IPv4-Server der Karte, dann der aus dem RA (RDNSS). */
-static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out, int max,
-                   unsigned long __far *ttl)
+/* eine Anfrage (qt = 1 A, 28 AAAA, 33 SRV) -> 1 Antwort in dns_r,
+   0 = Name unbekannt, -1 = keine Antwort/kein Server. Server: die IPv4-
+   Server der Karte, dann der aus dem RA (RDNSS). */
+static int dns_query(const char __far *name, unsigned qt)
 {
     static unsigned char q[300];        /* Stapel ist knapp; dns_busy     */
     static unsigned char srv[3][16];
-    unsigned ql, try, w, an, p, k, rl, t0, ns = 0;
-    int i, cnt;
+    unsigned ql, try, w, k, t0, ns = 0;
+    int i;
 
     for (i = 0; i < NNETIF; i++)
         if (nif[i].up) {
@@ -401,31 +400,115 @@ static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out
             return 0;                   /* NXDOMAIN                        */
         if (dns_r[3] & 15)
             continue;
-        an = G16(dns_r + 6);
-        p = dns_skip(12) + 4;           /* Frage ueberspringen             */
-        cnt = 0;
-        *ttl = 3600;
-        for (k = 0; k < an && p + 10 <= dns_rlen; k++) {
-            p = dns_skip(p);
-            if (p + 10 > dns_rlen)
-                break;
-            rl = G16(dns_r + p + 8);
-            if (rl > dns_rlen)
-                break;
-            if (G16(dns_r + p) == qt && G16(dns_r + p + 2) == 1 &&
-                rl == (qt == 1 ? 4 : 16) && p + 10 + rl <= dns_rlen && cnt < max) {
-                if (qt == 1)
-                    map4(out + 16 * cnt, dns_r + p + 10);
-                else
-                    cpy(out + 16 * cnt, dns_r + p + 10, 16);
-                cnt++;
-                *ttl = (unsigned long)G16(dns_r + p + 4) << 16 | G16(dns_r + p + 6);
-            }
-            p += 10 + rl;
-        }
-        return cnt;
+        return 1;
     }
     return -1;
+}
+
+/* A/AAAA; -> Zahl der Adressen (in out, je 16 Byte, hoechstens max),
+   0 = Name unbekannt, -1 = keine Antwort/kein Server */
+static int dns_ask(const char __far *name, unsigned qt, unsigned char __far *out, int max,
+                   unsigned long __far *ttl)
+{
+    unsigned an, p, k, rl;
+    int cnt;
+    if ((cnt = dns_query(name, qt)) <= 0)
+        return cnt;
+    an = G16(dns_r + 6);
+    p = dns_skip(12) + 4;               /* Frage ueberspringen             */
+    cnt = 0;
+    *ttl = 3600;
+    for (k = 0; k < an && p + 10 <= dns_rlen; k++) {
+        p = dns_skip(p);
+        if (p + 10 > dns_rlen)
+            break;
+        rl = G16(dns_r + p + 8);
+        if (rl > dns_rlen)
+            break;
+        if (G16(dns_r + p) == qt && G16(dns_r + p + 2) == 1 &&
+            rl == (qt == 1 ? 4 : 16) && p + 10 + rl <= dns_rlen && cnt < max) {
+            if (qt == 1)
+                map4(out + 16 * cnt, dns_r + p + 10);
+            else
+                cpy(out + 16 * cnt, dns_r + p + 10, 16);
+            cnt++;
+            *ttl = (unsigned long)G16(dns_r + p + 4) << 16 | G16(dns_r + p + 6);
+        }
+        p += 10 + rl;
+    }
+    return cnt;
+}
+
+/* Name ab dns_r[p] (mit Verweisen) als "a.b.c" -> 0 = ok */
+static int dns_name(unsigned p, char *o, unsigned max)
+{
+    unsigned n = 0, l, hops = 0, k;
+    while (p < dns_rlen) {
+        l = dns_r[p];
+        if ((l & 0xC0) == 0xC0) {
+            if (p + 1 >= dns_rlen || ++hops > 16)
+                return -1;
+            p = (l & 0x3F) << 8 | dns_r[p + 1];
+            continue;
+        }
+        if (!l) {
+            o[n ? n - 1 : 0] = 0;
+            return n ? 0 : -1;
+        }
+        if (p + 1 + l > dns_rlen || n + l + 1 >= max)
+            return -1;
+        for (k = 0; k < l; k++)
+            o[n++] = (char)dns_r[p + 1 + k];
+        o[n++] = '.';
+        p += l + 1;
+    }
+    return -1;
+}
+
+/* SRV (RFC 2782): Ziele nach Prioritaet (kleinste zuerst), je Ziel die
+   A-, sonst AAAA-Adressen -> Zahl der Adressen wie dns_ask */
+static int dns_srv(const char __far *name, unsigned char __far *out, int max,
+                   unsigned long __far *ttl)
+{
+    static char tg[4][64];
+    static unsigned pr[4];
+    unsigned an, p, k, rl, nt = 0, j, b;
+    int cnt, r;
+    if ((r = dns_query(name, 33)) <= 0)
+        return r;
+    an = G16(dns_r + 6);
+    p = dns_skip(12) + 4;
+    *ttl = 3600;
+    for (k = 0; k < an && p + 10 <= dns_rlen && nt < 4; k++) {
+        p = dns_skip(p);
+        if (p + 10 > dns_rlen)
+            break;
+        rl = G16(dns_r + p + 8);
+        if (rl > dns_rlen || p + 10 + rl > dns_rlen)
+            break;
+        if (G16(dns_r + p) == 33 && G16(dns_r + p + 2) == 1 && rl > 6 &&
+            dns_name(p + 16, tg[nt], sizeof(tg[0])) == 0 && tg[nt][0]) {
+            pr[nt] = G16(dns_r + p + 10);
+            *ttl = (unsigned long)G16(dns_r + p + 4) << 16 | G16(dns_r + p + 6);
+            nt++;
+        }
+        p += 10 + rl;
+    }
+    cnt = 0;
+    while (nt && cnt < max) {           /* kleinste Prioritaet zuerst      */
+        for (b = 0, j = 1; j < nt; j++)
+            if (pr[j] < pr[b])
+                b = j;
+        r = dns_ask(tg[b], 1, out + 16 * cnt, 1, ttl);
+        if (r <= 0)
+            r = dns_ask(tg[b], 28, out + 16 * cnt, 1, ttl);
+        if (r > 0)
+            cnt++;
+        nt--;
+        cpy(tg[b], tg[nt], sizeof(tg[0]));
+        pr[b] = pr[nt];
+    }
+    return cnt;
 }
 
 static int name_eq(const char __far *a, const char __far *b)
@@ -494,6 +577,13 @@ static unsigned net_resolve(struct net_call __far *c)
             full[l + 1 + k] = 0;
         }
     }
+    if (u->family == NET_FAM_SRV) {     /* _dienst._proto.domaene      */
+        n = dns_srv(u->name, out, 4, &ttl);
+        got = n >= 0;
+        if (n < 0)
+            n = 0;
+        goto fertig;
+    }
     /* Familie 0: AAAA zuerst, wenn es eine globale IPv6-Adresse gibt
        (RFC 6724 vereinfacht; eine ULA fd00:: zaehlt nicht - mit ihr kommt
        man nicht ins Internet), dann A; sonst nur A */
@@ -513,6 +603,7 @@ static unsigned net_resolve(struct net_call __far *c)
         if (r >= 0)
             got = 1;
     }
+fertig:
     dns_busy = 0;
     proc_run(DNS_EV + 1);
     if (!n)

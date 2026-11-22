@@ -13,6 +13,7 @@ void redraw(void);
 
 unsigned long __far kf_get_ticks(void) { return get_ticks(); }
 unsigned __far kf_proc_block(unsigned long id, unsigned t) { return proc_block(id, t); }
+unsigned __far kf_proc_run(unsigned long id) { return proc_run(id); }
 void __far kf_far_copy(unsigned ds, unsigned dof, unsigned ss, unsigned sof, unsigned n)
 {
     far_copy(ds, dof, ss, sof, n);

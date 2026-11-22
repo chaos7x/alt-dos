@@ -398,6 +398,30 @@ Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
 ## Aktueller Stand: AT-DOS 5.5 fertig (Zweig 5.5, Release v5.5), Weiterarbeit in 5.x
 
+Samba/SMB aus 6.3 auf 5.x (Wunsch des Nutzers, 22.11.2026: „Dann noch
+rein damit in die 5.x“ – **bewusst außerhalb der Zeitlinie**: der Nutzer
+will auch auf der 286-Linie Daten übers Netz tauschen). Programme
+wörtlich von main (SMBCLI, NET, NET1, KINIT/KLIST/KDESTROY, DOMJOIN,
+LOGON, HOSTNAME; crypto/smb3c/sha512/krb5/krbcrypt/ldapc/tz/rnd), nur auf
+der Platte (`HDDOS`). TCPIP.SYS/sock.h/tcp.h von main (NET_HOSTNAME, SRV,
+TIME_WAIT). Kernel: `ENTMIX` (286-Fassung, start.asm irq1/irq_common,
+`ent_pool`) + FAPI 5Ch DosRandom, FAPI_SETENV `ENV_CALLER`,
+`kernel/ufs.c` in KTEXT2 (aus main, Thunks kf_proc_run/kf_kseg_free/
+kf_drv_busy/kf_net_who, `irq_restore` inline; Auftrag wartet mit
+proc_block **unter der einen Kernelsperre** – der Dienst SMBCLI --serve
+braucht nur sperrfreie FAPI (UFS, NET); ohne Freigabemodi und
+FAPI_FILELOCK), `DRV_UFS` (-3), FSI_REMOTE in QFSInfo, ufs_task_end.
+Dabei behoben (alter Fehler): `disk_blk` zählte Loop-Geräte (drv -2)
+mit – jetzt nur drv >= 0. Kernel danach Code 65.427 + 51.049 (erstes
+Segment: 93 Byte frei!), Daten 53.014. Geprüft: QEMU isapc 4 MB ne2k_isa
+gegen Samba 4.19 (SMBCLI 3.1.1 GMAC, NET USE, COPY 1 MB hin/300 KB zurück
+bytegleich, MD, DIR, NET USE /DELETE, NET TIME) und 86Box SCAT (286/25
+MHz, NE2000 300h/IRQ 10, SLiRP, Start von Diskette mit C: über IDE.SYS:
+NET USE, COPY 1 MB in ~9 min – die Signatur kostet auf dem 286 –, 300 KB
+hin, beide bytegleich). Testfalle: NET sucht SMBCLI in \DOS des
+COMSPEC-Laufwerks – Start von Diskette braucht `SET COMSPEC=C:\CMD.EXE`.
+Ungeprüft auf 5.x: Kerberos/DOMJOIN/LOGON (gleicher Code wie main).
+
 AT-DOS 5.5 ist fertig (Entscheidung des Nutzers, 20.11.2026: „freigeben
 bitte“, nach seinen Tests auf SCAT und mr286 – Lotus Works mit und ohne
 LTEMM, MSCDEX in MSD, CONFIG.SYS über 4 KB): Zweig `5.5` = Stand der

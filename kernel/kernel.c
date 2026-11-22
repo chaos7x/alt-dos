@@ -2078,6 +2078,7 @@ static void task_end(int t)
     if (t == rb_task)
         rb_free();
     aud_task_end(t);
+    ufs_task_end(t);
     for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
         if (ldt[t][idx].access != 0)
             seg_free(t, USEL(idx));
@@ -2690,7 +2691,7 @@ static int disk_blk(unsigned n)
 {
     int dev;
     for (dev = 1; dev < nblk; dev++)
-        if (blk[dev].bsize == 512 && !IS_FLOPPY(dev) && n-- == 0)   /* B: nicht */
+        if (blk[dev].bsize == 512 && blk[dev].drv >= 0 && n-- == 0)   /* B: nicht */
             return dev;
     return -1;
 }
@@ -3069,7 +3070,8 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOGETBUF: case FAPI_VIOSHOWBUF: case FAPI_VIOSETGFX:
     case FAPI_VIOGETPHYSBUF: case FAPI_VIOSETPAL: case FAPI_VIOSETPLANE:
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
-    case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
+    case FAPI_QTICKS: case FAPI_NET: case FAPI_UFS:          /* Netz: eigene Sperren  */
+    case FAPI_RANDOM:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -3747,6 +3749,17 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_NET:                              /* Netzwerk (TCPIP.SYS)  */
         return net_fapi(usel, a1, a2, a3);
 
+    case FAPI_UFS:                              /* NET USE (ufs.c)       */
+        return ufs_fapi(usel, a1, a2, a3);
+
+    case FAPI_RANDOM:                           /* Pool aus start.asm     */
+        if (a2 > 34)
+            a2 = 34;
+        if (!user_ok(usel, a1, a2, 1))
+            return FAPI_ERROR;
+        far_copy(usel, a1, KDATA, (unsigned)ent_pool, a2);
+        return a2;
+
     case FAPI_KLOG:                             /* DMESG                 */
         if (a2 && !user_ok(usel, a1, a2, 1))
             return FAPI_ERROR;
@@ -3880,7 +3893,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->bsize = blk[dv].bsize;
         fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0) |
-                    (IS_REM(dv) ? FSI_REMDISK : 0);
+                    (IS_REM(dv) ? FSI_REMDISK : 0) |
+                    (blk[dv].drv == DRV_UFS ? FSI_REMOTE : 0);
         if (a3 == 1) {                      /* Aufteilung (Redirector)  */
             struct fapi_fsinfo2 __far *f2 = (struct fapi_fsinfo2 __far *)fi;
             int fat = vol[a1].used && vol[a1].drv == &fat_driver;
@@ -4107,7 +4121,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_SETENV:
         if (user_str(usel, a1, buf, sizeof(buf)))
             return FAPI_ERROR;
-        k = env_set(current, buf);
+        k = current;                    /* ENV_CALLER: beim Aufrufer     */
+        if (a2 == ENV_CALLER && task[k].parent >= 0 && task[task[k].parent].state != T_FREE)
+            k = task[k].parent;
+        k = env_set(k, buf);
         return k == 0 ? 0 : k == -2 ? FAPI_ERR_FULL : FAPI_ERROR;
 
     case FAPI_ENVENTRY: {
@@ -6247,6 +6264,17 @@ static unsigned drives_busy(unsigned long m, int d)
             (join_drv[x] >= 0 && (((m >> join_drv[x]) & 1) || ((m >> x) & 1))))
             return FAPI_ERR_INUSE;
     return 0;
+}
+
+/* ufs.c (KTEXT2): Laufwerk in Benutzung, Kernelsegment freigeben */
+unsigned __far kf_drv_busy(int d) { return drives_busy(1UL << d, -1); }
+
+void __far kf_kseg_free(unsigned sel)
+{
+    struct desc *g = &gdt[sel >> 3];
+    unsigned long b = (unsigned long)g->base_lo | ((unsigned long)g->base_hi << 16);
+    mem_free((unsigned)(b >> 8), (unsigned)(((unsigned long)g->limit + MEM_UNIT) >> 8));
+    g->access = 0;
 }
 
 /* ---- Loop-Laufwerke (5.4, aus 6.1): Datei als Blockgeraet ------------ */

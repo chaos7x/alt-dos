@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 5.5 fertig (Zweig `5.5`, Release `v5.5`), Weiterarbeit in 5.x: 5.4 plus Netzwerk aus 6.2 (TCP/IP mit IPv6 und Firewall auf dem 286)
+# alt-dos – AT-DOS 5.5 fertig (Zweig `5.5`, Release `v5.5`), Weiterarbeit in 5.x: Samba/SMB aus 6.3 (SMBCLI, NET USE, Domäne) auf dem 286
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -44,6 +44,20 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
 5.0 in `5.0`; AT-DOS 6.0 (386) ist fertig: Zweig `6.0`, Release `v6.0`.
 
 ## Was läuft
+
+- Windows-Freigaben (nach 5.5, aus 6.3; bewusst außerhalb der Zeitlinie,
+  Wunsch des Nutzers – Datenaustausch übers Netz; nur auf der Festplatte):
+  `SMBCLI \\Rechner\Freigabe -U Name%Kennwort` (SMB 2.0.2 bis 3.1.1,
+  NTLMv2 oder Kerberos, Signatur und Verschlüsselung wie unter 6.3) und
+  `NET USE E: \\Rechner\Freigabe Kennwort /USER:Name` – das Laufwerk
+  bedient ein losgelöstes SMBCLI im Ring 3 (FAPI 93, `DosUfs`), Programme
+  und die Kompatibilitätsbox sehen ein normales Laufwerk. Dazu `NET`
+  (USE, VIEW, TIME, CONFIG, STATISTICS, HELP), `NET1` (USER/GROUP/ACCOUNTS
+  /DOMAIN), `KINIT`/`KLIST`/`KDESTROY`, `DOMJOIN`, `LOGON`, `HOSTNAME`.
+  Auf dem 286 ist es langsam: die Signatur je Nachricht rechnet der
+  Prozessor in 16 Bit (SCAT mit 25 MHz: ~2 KB/s). Unterschiede zu 6.3:
+  keine Freigabemodi beim Server und keine Bereichssperren (DosFileLock);
+  der wartende Auftrag hält die eine Kernelsperre (kooperativ).
 
 - Netzwerk (5.5, aus 6.2; nur auf der Festplatte, die Diskette ist voll):
   `NE2000.SYS` für NE1000/NE2000 und Nachbauten (ISA; sucht 300h, 280h,
@@ -664,6 +678,8 @@ selbst nur 8.3 kennt.
 | 88 | DosLoadDriver / DosUnloadDriver / DosDrvInfo | BX = 0 (`DRVL_LOAD`): CX = „voller Pfad [Argumente]“, DX = 1 (`DRVL_IFS`) für ein IFS-Modul → Treiberplatz; neue Blockgeräte bekommen die nächsten freien Buchstaben, CDs nach einem IFS-Modul; FAPI_ERR_EXIST (schon geladen), FAPI_ERR_FULL (kein Platz), FAPI_ERR_NOTREADY (kein Gerät gefunden), FAPI_ERROR (Datei fehlt/kein Treiber). BX = 1 (`DRVL_INFO`): CX = Platz → `struct fapi_drvinfo` bei DX (Name, Art, Geräte, Laufwerke als Bitmaske), Fehler hinter dem letzten Platz. BX = 2 (`DRVL_UNLOAD`): CX = Name (mit oder ohne Endung) → 0, FAPI_ERR_INUSE (Dateien offen, aktuelles Laufwerk eines Programms, SUBST/JOIN, Ton offen), FAPI_ERR_DENIED (Startlaufwerk), FAPI_ERR_NOTREADY (Treiber kennt `DRV_DEINIT` nicht), FAPI_ERROR (nicht geladen) | (5.4)
 | 90 | DosKlog         | Kernelmeldungen (`DMESG`): BX = Puffer, CX = Länge, DX = Stelle ab der ältesten → kopierte Bytes; CX = 0 → Länge des Protokolls (bis 8 KB, `KLOG_SIZE`); CX = 0, DX = FFFFh → löschen | (5.4)
 | 91 | DosNet          | Netzwerk (5.5/6.2, `TCPIP.SYS`): BX = `NET_*`, CX = Parameterblock, DX = dessen Größe; ohne Stapel FAPI_ERR_NONET (FFF7h). `NET_IFINFO` (1): `struct fapi_netif` mit vorgegebener Karte → Name, MAC, Verbindung, Adressen (immer 16 Byte, IPv4 als ::ffff:a.b.c.d, mit Präfixlänge und Herkunft), Gateways, DNS, DHCP-Server und Lease, Zähler, Rechnername; FAPI_ERROR hinter der letzten Karte. `NET_PING` (2): `struct fapi_ping` (Ziel, Größe, Frist in ms, Folgenummer, TTL) → Laufzeit, TTL, Absender, ICMP-Typ/-Code; FAPI_ERR_TIMEOUT (FFF6h). `NET_DHCP` (3): `struct fapi_netcmd` (Karte, 0 erneuern, 1 freigeben) `NET_RESOLVE` (4): `struct fapi_resolve` (Name → bis 4 Adressen, TTL; Zahlenadressen direkt; Familie 0 = A, mit globaler IPv6-Adresse erst AAAA, `AF_INET`/`AF_INET6` nur A bzw. AAAA) → 0, FAPI_ERROR (unbekannt), FAPI_ERR_TIMEOUT. `NET_FWCTL` (5): `struct fapi_fwctl` – `FW_GET` (Zustand, Zähler, Regel idx), `FW_SET`, `FW_ADD` (`struct fapi_fwrule`: Programm, Protokoll, Ports, Netz/Präfix oder FWR_LOCAL → Nummer), `FW_DEL`, `FW_CLEAR`, `FW_LOG`. `NET_SOCKLIST` (6): `struct fapi_sockinfo` für Platz idx (Art, TCP-Zustand, Adressen, Ports, Programm, Pufferfüllung) → 0, FAPI_ERROR dahinter. `NET_SELECT` (1Eh): `struct fapi_select` (Anzahl bis 8, Frist in ms – 0 nur nachsehen, FFFFh ohne Frist –, je Eintrag Handle und gewünscht SEL_READ/SEL_WRITE) → Zahl der bereiten Einträge (0 = Frist um), in `ready` SEL_READ/SEL_WRITE/SEL_ERR; lauschende Sockets sind lesebereit, wenn eine Verbindung zum Annehmen wartet. Sockets wie BSD, Handles wie Dateien: `NET_SOCKET` (10h, `struct fapi_socket`: Familie AF_INET/AF_INET6, Art SOCK_DGRAM oder SOCK_STREAM) → Handle; `NET_BIND`/`CONNECT`/`LISTEN`/`ACCEPT` (ACCEPT → neues Handle)/`SEND`/`RECV`/`SENDTO`/`RECVFROM`/`SHUTDOWN`/`GETNAME`/`GETPEER`/`SETOPT`/`GETOPT` (11h–1Dh) mit `struct fapi_sockio` (Handle, Puffer, Länge, Merker, Frist in ms, `struct fapi_sockaddr` mit Länge/Familie wie sockaddr_in6, Port in Netzbytefolge); FAPI_ERR_AGAIN (FFF5h) nicht blockierend, FAPI_ERR_RESET (FFF4h). | (5.5)
+| 92 | DosRandom       | Entropie (nach 5.5, aus 6.3): BX = Puffer, CX = Länge (bis 34) → Pool des Kernels (16 Worte, gemischt aus PIT-Zähler und Takt bei Tastatur- und Geräte-Interrupts), dahinter die Zahl der Ereignisse; roh, vor Gebrauch hashen |
+| 93 | DosUfs          | Dateisystem in Ring 3 (nach 5.5, aus 6.3, NET USE): BX = UFS_REG (CX = Laufwerk + `\\Rechner\Freigabe`), UFS_GET (CX = Auftrag, DX = Datenpuffer 16 KB, wartet), UFS_PUT (Antwort), UFS_DEL (CX = Laufwerk, Dienst beenden), UFS_INFO (CX = Laufwerk, DX = Ziel). Das Laufwerk meldet in DosQFSInfo `FSI_REMOTE` |
 | 82 | DosNewSize      | BX = Handle (schreibend), CX = Zeiger auf neue Größe (4 Byte): kürzen oder mit Nullen verlängern; DosOpen mit CX = OPEN_RW öffnet zum Lesen und Schreiben |
 | 80 | DosQTicks       | → Systemtakt (100 Hz), untere 16 Bit – Zeitmessung für Spieler und Spiele |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
