@@ -569,6 +569,8 @@ void __far swap_boot(const char __far *spec, int sys, char *msg, char *sw_path)
         do { *--q = (char)('0' + v % 10); v /= 10; } while (v);
         mcat(msg, q);
         mcat(msg, " KB\n");
+        if (!spec)                      /* ohne SWAPPATH= von selbst      */
+            mcat(msg, "  (wenig RAM; SWAPPATH=OFF in CONFIG.SYS schaltet sie ab)\n");
     }
 }
 
