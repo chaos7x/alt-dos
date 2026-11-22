@@ -1465,7 +1465,11 @@ so viele Zahlen, wie es Disketten gibt; SETUP fragt sie der Reihe nach ab). Star
    nicht formatiert, `FORMAT /Q`.
 2. `CONFIG.SYS` schreiben – `DEVICE=`/`IFS=`-Zeilen von Treibern, die beim
    Start der Diskette kein Gerät fanden, stehen dort als `REM` – und
-   `AUTOEXEC.CMD` (ohne den SETUP-Aufruf); danach `SYS`.
+   `AUTOEXEC.CMD` (ohne den SETUP-Aufruf); danach `SYS`. Vorher sucht
+   SETUP Netzkarten und VirtIO-Platten: es lädt RTL8139, PCNET, E1000,
+   VIONET und NE2000 (die erste gefundene Karte) sowie VIOBLK probeweise
+   wie DEVLOAD und schaltet die passenden `REM DEVICE=`-Zeilen frei, bei
+   einer Karte auch `TCPIP.SYS`.
 3. Diskette 1 kopieren, Diskette 2 anfordern und kopieren (Fortschritts-
    balken, Fehler: Wiederholen/Überspringen), Diskette 1 zurück, Neustart.
 

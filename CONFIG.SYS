@@ -35,15 +35,21 @@ REM /NOIRQ, /NODISC (Geraete trennen sich nicht vom Bus)
 DEVICE=AIC7XXX.SYS
 REM SATA-Platten und -CD am AHCI-Controller (VMs, ICH6+). /NOIRQ
 DEVICE=AHCI.SYS
+REM VirtIO-Platten (QEMU/Proxmox), von SETUP freigeschaltet
+REM DEVICE=VIOBLK.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
 REM Sound Blaster 1.0-AWE64, OPL, MPU. /A:220 /I:5 /D:1 /H:5 /M:330
 REM von Hand, /NOFM /NOMPU /NOAWE abschalten, /MPU = MIDI an den MPU-401
 REM statt an den AWE-Synthesizer, /AWETEST Probeton der AWE
 DEVICE=SB16.SYS
-REM Netz: Karte RTL8139/PCNET/E1000/VIONET/NE2000 (/P:300 /I:3), dann
-REM TCPIP /IP:a.b.c.d/n /GW:x /DNS:x /HOST:x
+REM Netz: Karte (NE2000 /P:300 /I:3), dann TCPIP /IP:a.b.c.d/n /GW:x
+REM /DNS:x /HOST:x. SETUP schaltet die gefundene Karte frei.
 REM DEVICE=RTL8139.SYS
+REM DEVICE=PCNET.SYS
+REM DEVICE=E1000.SYS
+REM DEVICE=VIONET.SYS
+REM DEVICE=NE2000.SYS
 REM DEVICE=TCPIP.SYS
 REM Box-Module (wie OS/2-VDDs): COM/LPT, Ton, EMS, Maus; Grafik auf
 REM EGA/CGA: DEVICE=VEGA.SYS bzw. VCGA.SYS

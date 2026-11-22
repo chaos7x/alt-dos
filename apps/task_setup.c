@@ -14,7 +14,8 @@
  * Ablauf: Ziellaufwerk suchen; fehlt eine Partition -> FDISK (startet
  * selbst neu, die AUTOEXEC.CMD der Diskette ruft SETUP /START wieder auf);
  * nicht formatiert -> FORMAT /Q; dann CONFIG.SYS (DEVICE=-Zeilen von
- * Treibern, die beim Start kein Geraet fanden, als REM) und AUTOEXEC.CMD
+ * Treibern, die beim Start kein Geraet fanden, als REM; Netzkarten und
+ * VirtIO-Platten vorher probeweise geladen, siehe detect) und AUTOEXEC.CMD
  * (ohne den SETUP-Aufruf) schreiben, SYS, Diskette 1 kopieren, die
  * weiteren anfordern und kopieren, Neustart. Ist AT-DOS schon da, bleiben
  * CONFIG.SYS und AUTOEXEC.CMD; die neuen Fassungen heissen .NEW.
@@ -305,6 +306,78 @@ static int drv_loaded(const char *name)
     return 0;
 }
 
+/* ---- Hardware-Erkennung ----
+   Treiber, die in der CONFIG.SYS der Diskette nur als REM stehen (Netz-
+   karten, VirtIO-Platten), laedt Setup probeweise wie DEVLOAD: der Treiber
+   sucht selbst und bleibt nur, wenn er ein Geraet findet. Gefundene Zeilen
+   "REM DEVICE=x" schreibt write_cfg ohne REM; TCPIP.SYS, wenn eine Karte
+   gefunden wurde. Netzkarten: nur die erste gefundene (NE2000 zuletzt,
+   sucht auch ISA-Ports - liest erst, wie jeder Treiber). */
+static const char *const probe_blk[] = { "VIOBLK.SYS", 0 };
+static const char *const probe_net[] = { "RTL8139.SYS", "PCNET.SYS", "E1000.SYS",
+                                         "VIONET.SYS", "NE2000.SYS", 0 };
+static unsigned found_net;              /* Karte geladen -> TCPIP frei  */
+static char hw_list[80];                /* gefundene Treiber, Anzeige   */
+
+static int try_load(const char *name)
+{
+    unsigned r;
+    if (drv_loaded(name))
+        return 1;
+    mk(path, src, "DOS\\SYSTEM\\");
+    scat(path, name, sizeof(path));
+    if (!exists(path))
+        return 0;
+    r = DosLoadDriver(path, 0);
+    return !FAPI_FAILED(r) || r == FAPI_ERR_EXIST;
+}
+
+static void hw_note(const char *name)
+{
+    if (hw_list[0])
+        scat(hw_list, ", ", sizeof(hw_list));
+    scat(hw_list, name, sizeof(hw_list));
+}
+
+static void detect(void)
+{
+    unsigned i;
+    screen("");
+    at(5, 4, "Setup sucht Netzkarten und VirtIO-Platten ...");
+    for (i = 0; probe_blk[i]; i++)
+        if (try_load(probe_blk[i]))
+            hw_note(probe_blk[i]);
+    for (i = 0; probe_net[i]; i++)
+        if (try_load(probe_net[i])) {
+            hw_note(probe_net[i]);
+            found_net = 1;
+            break;
+        }
+    if (found_net)
+        hw_note("TCPIP.SYS");
+}
+
+static int probed(const char *name)     /* Kandidat der Erkennung?      */
+{
+    unsigned i;
+    for (i = 0; probe_blk[i]; i++)
+        if (same(name, probe_blk[i]))
+            return 1;
+    for (i = 0; probe_net[i]; i++)
+        if (same(name, probe_net[i]))
+            return 1;
+    return same(name, "TCPIP.SYS");
+}
+
+static int rem_on(const char *name)     /* REM-Zeile freischalten?      */
+{
+    if (!probed(name))
+        return 0;
+    if (same(name, "TCPIP.SYS"))
+        return found_net;
+    return drv_loaded(name);
+}
+
 /* Datei name der Diskette nach X:\name (bei Aktualisierung X:\neu),
    Zeilen gefiltert: cfg -> DEVICE=/IFS=-Zeilen nicht geladener Treiber
    als REM; sonst faellt die Zeile "SETUP /START" weg. 0 = ok */
@@ -337,7 +410,18 @@ static int write_cfg(const char *name, const char *neu, int cfg)
         while (p < (char *)buf + i && *p == ' ')
             p++;
         k = 0;
-        if (cfg && (pre(p, "DEVICE=") || pre(p, "IFS="))) {
+        if (cfg && pre(p, "REM DEVICE=")) {
+            char *q = p + 11;
+            while (*q == ' ')
+                q++;
+            for (j = 0; j < sizeof(nm) - 1 && (unsigned char)q[j] > ' '; j++)
+                nm[j] = q[j];
+            nm[j] = 0;
+            if (rem_on(base_name(nm))) {
+                s0 = (unsigned)(p + 4 - (char *)buf);   /* ohne "REM "  */
+                p += 4;
+            }
+        } else if (cfg && (pre(p, "DEVICE=") || pre(p, "IFS="))) {
             while (*p != '=')
                 p++;
             for (p++; *p == ' '; p++)
@@ -514,6 +598,7 @@ void main(void)
     at(14, 4, "Weiter mit der EINGABETASTE.");
     wait_enter();
 
+    detect();                           /* vor find_target: VirtIO-Platte */
     find_target();
     mk(path, dst, "ATDOS.SYS");
     update = exists(path);
@@ -546,8 +631,9 @@ void main(void)
                     : "AT-DOS wird neu eingerichtet.");
     if (update)
         at(9, 6, "bleiben, neue Fassungen als CONFIG.NEW und AUTOEXEC.NEW).");
-    at(11, 4, "In CONFIG.SYS stehen nur die Treiber aktiv, die beim Start dieser");
-    at(12, 4, "Diskette ein Ger\x84t gefunden haben; die \x81" "brigen als REM-Zeile.");
+    at(11, 4, "In CONFIG.SYS stehen nur die Treiber aktiv, die ein Ger\x84t gefunden");
+    at(12, 4, "haben; die \x81" "brigen als REM-Zeile. Dazu erkannt:");
+    at(13, 6, hw_list[0] ? hw_list : "(keine Netzkarte, keine VirtIO-Platte)");
     wait_enter();
 
     quit_rc = 1;

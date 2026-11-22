@@ -201,7 +201,7 @@ Stamm „ATDOS n kb1 kb2“ (mdu, belegte KB). `apps/task_setup.c`: Quelle
 = COMSPEC-Laufwerk, Ziel = erste feste Platte mit 512er-Sektoren (mehrere:
 wählen), keine -> FDISK, RAW -> `FORMAT X: /Q /V:AT-DOS` (fragt J/N im
 Textbetrieb), CONFIG.SYS gefiltert (DEVICE=/IFS= nicht geladener Treiber
--> `REM `, DosDrvInfo), AUTOEXEC.CMD ohne `SETUP /START`, dann `SYS A:
+-> `REM `, DosDrvInfo), AUTOEXEC.CMD ohne `SETUP /START`; Hardware-Erkennung (Wunsch des Nutzers, 22.11.2026): `detect` vor find_target lädt VIOBLK und die erste gefundene Netzkarte (RTL8139, PCNET, E1000, VIONET, NE2000) per DosLoadDriver von \DOS\SYSTEM der Diskette, write_cfg schaltet `REM DEVICE=x` frei (TCPIP bei Karte; nur Namen aus den Listen), in QEMU mit rtl8139 geprüft; dann `SYS A:
 X:` (kopiert ATDOS.SYS, CMD, \DOS\SYSTEM), danach walk_tree über beide
 Disketten (Stamm und \DOS\SYSTEM von Disk 1 übersprungen, Attribute und
 Datum übernommen). Code von Wechselmedien (Diskette, CD, ZIP, Loop)
