@@ -6132,6 +6132,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gleichzeitig mit `/tmp/claude-0/lk` (LK.COM A/B, go2.sh gegen den
   eigenständigen smbd – der Test-DC verliert Freigabeeinträge, AD-Samba
   dafür anhalten). NET USE /PERSISTENT + /RESTORE (LOGON stellt wieder her, `NETUSE.LST`, ohne Kennwortliste) erledigt (21.11.2026, `docs/NETZWERK.md`, Test `/tmp/claude-0/ad/q/p1.sh 1|2`). Freigabemodi beim Server erledigt (21.11.2026, `docs/NETZWERK.md` „SMB Stufe 4“: `OPEN_DENY*` in CX von FAPI_OPEN/CREATE, `ifs_share` -> `fapi_ufsreq.mask`, SMBCLI `share_of`, `IFS_INUSE`; Test `/tmp/claude-0/sh/go.sh`). SRV (`NET_FAM_SRV`), Ticket erneuern (`krb_renew`/`krb_tgt_fresh`, `KINIT /R`) und SMBCLI -k ausweichen erledigt (21.11.2026, `docs/NETZWERK.md`, Test `/tmp/claude-0/lk/srv/srv.sh`). DOSKERN Stufe 1 (DEM herauslösen) erledigt (21.11.2026): `include/dem.h`, `kernel/dem.c` (KTEXT4), `kernel/redir.c` nur noch Eingang, `kernel/dembox.h`; Kontext `dem_ctx` (4. Block in ctx_tab). SMB 3 später.
+  ISA-DMA über 16 MB (Frage des Nutzers, 22.11.2026: 386/486 mit mehr als
+  16 MB und ISA-Karten): alles, was ein ISA-Gerät per DMA anfasst, kommt
+  aus mem_alloc_low/kseg_dma (DMABUF je Task, Schreibpuffer, Spurpuffer,
+  SB-Puffer, Auslagerungspuffer). Zwei Lücken für ISA-Busmaster (AHA-154x/
+  BusLogic, 24 Bit) behoben: Treiber kommen jetzt unter 16 MB (load_image
+  nimmt für FX_FLAG_DRIVER mem_alloc_low, sonst Rückfall) – AHA154X.SYS legt
+  Mailboxen/CCBs in sein DS; bc_wb ohne Task-Kontext schreibt Blöcke über
+  16 MB über einen eigenen 512-Byte-Puffer unter 16 MB (`bc_bsel`, nur bei
+  mehr als 16 MB RAM angelegt). Geprüft in 86Box (486SP3C, 32 MB, AHA-1542C,
+  Start von der Adaptec-Platte) mit einem Testbau, der alles ab 20 MB
+  vergibt und bc_wb immer ohne Kontext schreibt: vorher „Startpartition
+  nicht gefunden“, jetzt XCOPY \DOS (158 Dateien) gleich, fsck sauber.
+  Testfalle: das Board 486SP3 hat einen NCR 53C810 eingebaut – eine Platte
+  an „SCSI-Bus 0“ hängt dort am NCR, nicht am Adaptec.
 - TLS Stufe 1 erledigt (20.11.2026, Stand und Prüfung in
   `docs/NETZWERK.md` „TLS“): `apps/crypto.c` (SHA-256, HMAC, PRF, AES-GCM,
   X25519 – 286-Code, `mul16`, auf dem Rechner per `tools/cryptotest.*`

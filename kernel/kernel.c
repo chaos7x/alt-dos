@@ -1110,7 +1110,11 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         }
     }
     n = UNITS(seg);
-    u = mem_get(n);
+    u = 0;                              /* Treiber unter 16 MB: ISA-     */
+    if (h->flags & FX_FLAG_DRIVER)      /* Busmaster (AHA-154x) holen    */
+        u = mem_alloc_low(n);           /* Mailboxen/CCBs aus ihrem DS   */
+    if (!u)
+        u = mem_get(n);
     if (u == 0) {
         if (csz && !ld_shared)
             mem_free(ld_cu, ld_cn);
@@ -5041,6 +5045,8 @@ static int bc_chunk_get(unsigned c)
     return 0;
 }
 
+static unsigned bc_bsel;                /* 512 Byte unter 16 MB (bc_wb)  */
+static unsigned long bc_bphys;
 void blk_cache_init(unsigned kb)
 {
     unsigned i, w, max = cache_max;
@@ -5068,6 +5074,8 @@ void blk_cache_init(unsigned kb)
     if (!w || !bc_msel)
         return;
     bc_wsel = win_csel = w;
+    if (mem_top_pg() > 0x1000)          /* ueber 16 MB: Umweg fuer ISA-  */
+        bc_bsel = kseg_dma(512, &bc_bphys); /* Busmaster (bc_wb)        */
     bc_n = max >> 1;
     bc_nch = bc_n / BC_CHB;
     bc_minch = kb >> 4;
@@ -5230,6 +5238,12 @@ static void bc_wb(unsigned i)
                 r->buf_sel = WBUF;
                 r->buf_off = 0;
                 drv_request_rel(b->drv, r);
+            } else if (bc_bsel && BC_LIN(i) + (s << 9) >= 0xFFFE00UL) {
+                far_copy(bc_bsel, 0, bc_wsel, s << 9, 512); /* ISA-DMA  */
+                r->buf_phys = bc_bphys;     /* (AHA-154x) erreicht nur   */
+                r->buf_sel = bc_bsel;       /* 16 MB - drv_request haelt */
+                r->buf_off = 0;             /* die Kernelsperre, niemand */
+                drv_request(b->drv, r);     /* sonst nimmt den Puffer    */
             } else {
                 r->buf_phys = BC_LIN(i) + (s << 9);
                 r->buf_sel = bc_wsel;
