@@ -45,7 +45,7 @@
 static char args[FAPI_ARGLEN], cl[FAPI_ARGLEN + FAPI_PATHLEN], pwf[FAPI_PATHLEN];
 static char unc[128], user[64], dom[64], pass[64], msg[100], w[128];
 static char lst[FAPI_PATHLEN], lb[2048], ub[80];
-static unsigned lbn, persist = 1, nosave, havepw, star;
+static unsigned lbn, persist = 1, nosave, havepw, star, nosign;
 static struct fapi_ufsreg rg;
 
 static void out(const char *s) { DosWrite(STDOUT, s, slen(s)); }
@@ -53,7 +53,7 @@ static void out(const char *s) { DosWrite(STDOUT, s, slen(s)); }
 static void usage(void)
 {
     out("NET USE [X: [\\\\Rechner\\Freigabe [Kennwort|*] [/USER:[Dom\x84ne\\]Name]] | X: /DELETE]\r\n"
-        "        [/PERSISTENT:YES|NO]\r\n"
+        "        [/PERSISTENT:YES|NO] [/NOSIGN]\r\n"
         "NET USE /RESTORE   gemerkte Verbindungen herstellen\r\n");
     DosExit(2);
 }
@@ -316,6 +316,8 @@ static void remember(unsigned drive)
         }
         cat(ub, user, sizeof(ub));
     }
+    if (nosign)
+        cat(ub, " /NOSIGN", sizeof(ub));
     lst_save(drive, ub);
 }
 
@@ -379,6 +381,8 @@ static const char *connect(unsigned drive)
     }
     if (kerb)
         cat(cl, " -k", sizeof(cl));
+    if (nosign)                         /* nur SMB 2.x: Signatur nur auf */
+        cat(cl, " -m SMB2", sizeof(cl));/* Verlangen des Servers (286)   */
     cat(cl, " -P ", sizeof(cl));
     cat(cl, pwf, sizeof(cl));
     cat(cl, " --serve ", sizeof(cl));
@@ -435,12 +439,16 @@ static unsigned restore(void)
         d = (unsigned)(up(l[0]) - 'A');
         ub[n] = 0;
         user[0] = dom[0] = pass[0] = 0;
-        havepw = star = 0;
+        havepw = star = nosign = 0;
         q = next_word(ub);
         q = word(q, unc, sizeof(unc));
-        q = skip(q);
-        if (q[0] == '/' && up(q[1]) == 'U')
-            take_user(q + 2);
+        for (q = skip(q); *q; q = next_word(q)) {
+            word(q, w, sizeof(w));
+            if (w[0] == '/' && up(w[1]) == 'U')
+                take_user(w + 2);
+            else if (w[0] == '/' && same(w, "/NOSIGN"))
+                nosign = 1;
+        }
         e = connect(d);
         if (e) {
             drv_out(d);
@@ -482,6 +490,8 @@ static void net_use(char *a)
             rest = 1;
         else if (w[0] == '/' && same(w, "/NOSAVE"))   /* LOGON: Heimlaufwerk */
             nosave = 1;
+        else if (w[0] == '/' && same(w, "/NOSIGN"))   /* SMB 2.x, 286    */
+            nosign = 1;
         else if (w[0] == '/' && up(w[1]) == 'U') {
             if (take_user(w + 2))
                 usage();
@@ -626,7 +636,7 @@ static const char *const hlp[] = {
     "HELPMSG", "NET HELPMSG Nummer\r\n\r\nErkl\x84rt eine Windows- bzw. LAN-Manager-Fehlernummer (z. B. 53, 86, 2250).\r\n",
     "STATISTICS", "NET STATISTICS [WORKSTATION]\r\n\r\nZeigt die Z\x84hler der Netzkarten und die verbundenen Netzlaufwerke.\r\n",
     "TIME", "NET TIME [\\\\Rechner | /DOMAIN[:Name]] [/SET [/Y]]\r\n\r\nZeigt die Uhrzeit eines SMB-Servers (ohne Anmeldung) und stellt mit\r\n/SET die eigene Uhr danach. Ohne Rechner: der Anmeldeserver (LOGON).\r\nZeitzone aus TZ wie bei SNTP.\r\n",
-    "USE", "NET USE [X: [\\\\Rechner\\Freigabe [Kennwort|*] [/USER:[Dom\x84ne\\]Name]] | X: /DELETE]\r\n        [/PERSISTENT:YES|NO]\r\nNET USE /RESTORE\r\n\r\nVerbindet Netzlaufwerke (SMB 2/3) und zeigt sie an.\r\n",
+    "USE", "NET USE [X: [\\\\Rechner\\Freigabe [Kennwort|*] [/USER:[Dom\x84ne\\]Name]] | X: /DELETE]\r\n        [/PERSISTENT:YES|NO] [/NOSIGN]\r\nNET USE /RESTORE\r\n\r\nVerbindet Netzlaufwerke (SMB 2/3) und zeigt sie an. /NOSIGN: nur SMB 2.x,\r\nsigniert nur, wenn der Server es verlangt (schneller auf dem 286).\r\n",
     "USER", "NET USER [Name] /DOMAIN\r\n\r\nListet die Benutzer der Dom\x84ne bzw. zeigt ein Konto (LDAP).\r\nAT-DOS hat keine lokalen Konten.\r\n",
     "VIEW", "NET VIEW \\\\Rechner [/ALL] [/USER:[Dom\x84ne\\]Name]\r\n\r\nListet die Freigaben eines Servers (mit /ALL auch die versteckten).\r\nAngemeldet wird mit Kerberos (LOGON/KINIT), mit /USER: per Kennwort,\r\nsonst als Gast.\r\n",
     0

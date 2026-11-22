@@ -4,7 +4,11 @@
  * angelehnt an smbclient, eigener Code nach [MS-SMB2], [MS-NLMP] und
  * RFC 4178 (SPNEGO), nur gelesen:
  *   SMBCLI \\Rechner\Freigabe [-U Benutzer[%Kennwort]] [-W Domaene]
- *          [-k] [-c "Befehl; Befehl"] [-p Port] [-4|-6]
+ *          [-k] [-c "Befehl; Befehl"] [-p Port] [-4|-6] [-m SMB2]
+ *
+ * -m SMB2 bietet nur SMB 2.0.2/2.1 an: dann wird nur signiert, wenn der
+ * Server es verlangt (SMB 3 signiert immer) - fuer den 286, wo die
+ * Signatur je Nachricht den Durchsatz bestimmt.
  * Befehle: dir/ls [Muster], cd [Verz|..|\], pwd, get Datei [lokal],
  * put lokal [Datei], del Datei, md Verz, rd Verz, lcd [Verz], help, quit.
  * Dialekte SMB 2.0.2 und 2.1, Anmeldung NTLMv2 in SPNEGO (ohne Kennwort:
@@ -33,6 +37,7 @@ static struct fapi_socket so;
 static struct fapi_sockio io;
 static unsigned char ad[16];
 static unsigned sock = 0xFFFF, port = 445, failed, havepass, kerb;
+static unsigned smb2only;               /* -m SMB2: nur 2.0.2/2.1 (286)  */
 static const char *kmsg;                 /* Meldung der Kerberos-Anmeldung */
 /* Vor tx/rx je 52 Byte Platz fuer den TRANSFORM_HEADER (SMB 3) */
 #define TXSZ    (64 + 128 + CHUNK + 4)
@@ -2196,7 +2201,13 @@ static const char *sconnect(void)
     BODY[128] = 2;
     BODY[130] = 2;                      /* AES-GMAC                      */
     BODY[132] = 1;                      /* AES-CMAC                      */
-    st = smb(C_NEG, 134);
+    if (smb2only) {                     /* nur 2.0.2/2.1, keine Kontexte */
+        BODY[2] = 2;
+        put32(BODY + 28, 0);
+        BODY[32] = 0;
+        st = smb(C_NEG, 40);
+    } else
+        st = smb(C_NEG, 134);
     if (st != S_OK)
         return "Server spricht kein SMB2/SMB3.";
     dialect = get16(RB + 4);
@@ -2414,7 +2425,10 @@ void main(void)
                 srv = 0xFFFF;
         } else if (*a == '-' && a[1] == 'k' && a[2] <= ' ')
             kerb = 1;
-        else if (*a == '-' && a[1] == '4' && a[2] <= ' ')
+        else if (*a == '-' && a[1] == 'm' && a[2] <= ' ') {   /* -m SMB2   */
+            a = next_word(a);
+            smb2only = up(a[0]) == 'S' && up(a[1]) == 'M' && up(a[2]) == 'B' && a[3] == '2';
+        } else if (*a == '-' && a[1] == '4' && a[2] <= ' ')
             net_fam = AF_INET;
         else if (*a == '-' && a[1] == '6' && a[2] <= ' ')
             net_fam = AF_INET6;
@@ -2428,7 +2442,7 @@ void main(void)
             scopy(share, p, sizeof(share));
         } else {
             out("SMBCLI \\\\Rechner\\Freigabe [-U Benutzer[%Kennwort]] [-W Dom\x84ne]\r\n"
-                "       [-k] [-c \"Befehl; Befehl\"] [-p Port] [-4|-6]\r\n");
+                "       [-k] [-c \"Befehl; Befehl\"] [-p Port] [-4|-6] [-m SMB2]\r\n");
             DosExit(2);
         }
     }
