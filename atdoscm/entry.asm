@@ -169,8 +169,8 @@ _a20_drop: db   0                       ; nach dem Aufruf A20 aus (EXEC)
 global int21_entry, int21_entry_, _int21_entry
 _int21_entry:
 int21_entry:
-int21_entry_:
-        sti
+int21_entry_:                           ; ohne STI (Falle ohne VME); wer
+                                        ; wartet, schaltet IF selbst ein
 i21go:  push    es
         push    ds
         push    bp
@@ -207,10 +207,10 @@ dosgo:  mov     ax, sp                  ; DX:AX = Rahmen
         call    far [_xms_ent]
         pop     dx
         pop     ax
-.ret:   cli
-        dec     byte [_sda + 1]
-        mov     ss, dx
-        mov     sp, ax
+.ret:   mov     ss, dx                  ; erst zurueck auf den Stapel des
+        mov     sp, ax                  ; Aufrufers (MOV SS sperrt bis nach
+        dec     byte [_sda + 1]         ; MOV SP), dann InDOS (ein INT 21h
+                                        ; dazwischen nimmt den 2. Stapel)
         pop     ax
         pop     bx
         pop     cx
@@ -493,13 +493,16 @@ bint_:
         mov     bx, [bx + 2]
         pop     ds
 .n:     int     0                       ; (Nummer wird eingetragen)
-        pushf
-        push    ds
-        push    bx
+        push    ds                      ; Flags ueber LAHF statt PUSHF -
+        push    bx                      ; PUSHF ist in der Box ohne VME
+        push    ax                      ; eine Falle; gebraucht werden
+        lahf                            ; nur CF und ZF (Bits 0-7)
         mov     bx, ss
         mov     ds, bx
         mov     bx, [rptr]
-        mov     [bx + 0], ax
+        mov     [bx + 18], ah
+        mov     byte [bx + 19], 0
+        pop     word [bx + 0]
         pop     word [bx + 2]
         mov     [bx + 4], cx
         mov     [bx + 6], dx
@@ -508,7 +511,6 @@ bint_:
         mov     [bx + 12], bp
         pop     word [bx + 14]
         mov     [bx + 16], es
-        pop     word [bx + 18]
         pop     es
         pop     ds
         pop     bp

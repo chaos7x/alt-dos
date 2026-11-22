@@ -443,32 +443,36 @@ unsigned h_read(unsigned h, u16 seg, u16 off, unsigned n, unsigned *err)
     if (!n)
         return 0;
     if (n < RC_SIZE / 2) {              /* klein: ueber den Lesepuffer    */
-        unsigned i, k;
-        if (rc_s != s || f->pos < rc_pos || f->pos - rc_pos >= rc_len) {
-            rc_s = -1;
-            q.handle = f->hnd;
-            q.pos = f->pos;
-            q.size = f->size;
-            q.buf = lin(kseg, (u16)rc_buf);
-            q.count = RC_SIZE;
-            if (dem(DEM_READ)) {
-                *err = q.err;
-                return 0;
+        unsigned i, k, c, done = 0;     /* (ganz liefern - weniger heisst */
+        while (done < n) {              /* fuer Programme Dateiende)      */
+            if (rc_s != s || f->pos < rc_pos || f->pos - rc_pos >= rc_len) {
+                rc_s = -1;
+                q.handle = f->hnd;
+                q.pos = f->pos;
+                q.size = f->size;
+                q.buf = lin(kseg, (u16)rc_buf);
+                q.count = RC_SIZE;
+                if (dem(DEM_READ)) {
+                    *err = q.err;
+                    return done;
+                }
+                f->size = q.size;
+                if (!q.count)
+                    break;              /* Dateiende                     */
+                rc_s = s;
+                rc_pos = f->pos;
+                rc_len = (unsigned)q.count;
             }
-            f->size = q.size;
-            if (!q.count)
-                return 0;               /* Dateiende                     */
-            rc_s = s;
-            rc_pos = f->pos;
-            rc_len = (unsigned)q.count;
+            k = (unsigned)(f->pos - rc_pos);
+            c = rc_len - k;
+            if (c > n - done)
+                c = n - done;
+            for (i = 0; i < c; i++)
+                B(seg, off + done + i) = rc_buf[k + i];
+            f->pos += c;
+            done += c;
         }
-        k = (unsigned)(f->pos - rc_pos);
-        if (n > rc_len - k)
-            n = rc_len - k;             /* Rest beim naechsten Aufruf    */
-        for (i = 0; i < n; i++)
-            B(seg, off + i) = rc_buf[k + i];
-        f->pos += n;
-        return n;
+        return done;
     }
     q.handle = f->hnd;
     q.pos = f->pos;

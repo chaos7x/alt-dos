@@ -17,6 +17,9 @@ static u8  cl_buf[130];                 /* gekochte Zeile (Handle-Lesen) */
 static u8  cl_n, cl_p;
 
 /* ---- Tastatur ----------------------------------------------------------- */
+void vsti(void);
+#pragma aux vsti = "sti";
+
 int con_key(int wait)
 {
     struct rregs r;
@@ -32,8 +35,9 @@ int con_key(int wait)
         if (r.fl & FL_ZF)
             return -1;
     }
-    r.ax = 0x0000;
-    bint(0x16, &r);
+    vsti();                             /* Warten: Takt und Tasten-INT   */
+    r.ax = 0x0000;                      /* sollen laufen (Eingang ohne   */
+    bint(0x16, &r);                     /* STI, entry.asm)               */
     c = r.ax & 0xFF;
     if (c == 0 || c == 0xE0 && (r.ax >> 8) >= 0x47 && (r.ax >> 8) <= 0x53) {
         pend = r.ax >> 8;

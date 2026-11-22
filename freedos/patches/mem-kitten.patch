@@ -1,0 +1,43 @@
+diff --git a/source/kitten.c b/source/kitten.c
+index 7efa9ae..1d8ba35 100644
+--- a/source/kitten.c
++++ b/source/kitten.c
+@@ -44,6 +44,8 @@ db_t *db_fetch (char *key);
+ /* External functions */
+ 
+ int get_line (int file, char *buffer, int size);
++static char gl_buf[512];		/* AT-DOS: Lesepuffer fuer get_line */
++static int gl_pos, gl_len;
+ 
+ 
+ /* Local prototypes */
+@@ -326,6 +328,7 @@ catread (char *catfile)
+   /*printf("catread %s\n",catfile); */
+ 
+   file = open (catfile, O_RDONLY | O_TEXT);
++  gl_pos = gl_len = 0;			/* AT-DOS: neue Datei, Puffer leer */
+   if (file < 0)
+     {
+       /* Cannot open the file.	Return failure */
+@@ -512,8 +515,19 @@ get_line (int file, char *str, int size)
+ 
+   for ( ; size > 0; )
+     {
+-      if (read(file,str,1) <= 0)
+-	break;
++      /* AT-DOS: in Bloecken lesen statt Byte fuer Byte - in einer
++	 DOS-Box kostet jeder DOS-Aufruf eine Falle des V86-Monitors */
++      if (gl_pos >= gl_len)
++	{
++	  gl_len = read(file, gl_buf, sizeof(gl_buf));
++	  gl_pos = 0;
++	  if (gl_len <= 0)
++	    {
++	      gl_len = 0;
++	      break;
++	    }
++	}
++      *str = gl_buf[gl_pos++];
+ 
+       success = 1;
+ 
