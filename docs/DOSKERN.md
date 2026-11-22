@@ -370,12 +370,14 @@ löst lange Pfade über das DEM auf:
   Programmende), 7156h, 7160h (CL 0/1/2), 716Ch/71A9h, 71A0h („FAT“,
   BX 4006h, 255/260), 71A6h, 71A7h (FILETIME ohne Zeitzone, 64-Bit-
   Rechnung in 16-Bit-Stücken), 71A8h; Rest AX = 7100h wie DOS ohne LFN.
-  Neue Namen legt der Kernel an wie für FAPI-Programme (FAT32 VFAT,
-  FAT12/16 je nach LONGNAMES=).
+  Neue Namen legt der Kernel an wie für FAPI-Programme: VFAT oder EA je
+  nach Laufwerk (LONGNAMES=, bei AUTO EA, wenn `EA DATA. SF` im Stamm
+  liegt – auch auf FAT32 nach `CONVERT X: /LFN:EA`).
 - Alte Aufrufe (3Dh, 4Eh, 4Bh …) mit langen Pfadteilen lösen wie bei
   Windows 95 ebenfalls über `DEM_LPATH` auf (`is_long` in file.c) –
   FreeCOM gibt DIR den per 7160h langen Pfad.
-- Geprüft: QEMU (FAT16 C: mit EA-Namen, FAT32 D: mit VFAT; Testprogramm
+- Geprüft: QEMU (FAT16 C: mit EA-Namen, FAT32 D: mit VFAT und nach
+  `CONVERT D: /LFN:EA` mit EA – CHKDSK sauber; Testprogramm
   LT.COM im Scratchpad: Anlegen, Öffnen, Suche, 7160h kurz/lang, CD,
   7147h, Umbenennen, Attribute, erster Cluster, FILETIME gegen Python,
   Löschen mit Platzhaltern, RD), FreeCOM `DIR /LFN`, COPY/REN/TYPE/DEL
