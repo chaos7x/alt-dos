@@ -877,6 +877,8 @@ static void fscopy(char __far *d, const char __far *s, unsigned max)
     d[i] = 0;
 }
 
+unsigned char pre_on;               /* Z: = Vorlade-Laufwerk (CONFIG.SYS) */
+
 static int join_hidden(unsigned d)
 {
     return d < NDRIVE && join_drv[d] >= 0;
@@ -3462,7 +3464,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_SUBST: {                          /* SUBST X: Pfad / X: /D */
         static char real[IFS_PATHLEN];
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || vol_present(a1))
+        if (a1 >= NDRIVE || IS_PRE(a1) || vol_present(a1))
             return FAPI_ERROR;                  /* echtes Laufwerk       */
         if (!a2) {                              /* aufheben              */
             if (subst_drv[a1] < 0)
@@ -3487,7 +3489,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     case FAPI_JOIN: {                           /* JOIN X: Pfad / X: /D  */
         static char real[IFS_PATHLEN];
         static struct ifs_dirent jde;
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE)
+        if (a1 >= NDRIVE || IS_PRE(a1))
             return FAPI_ERROR;
         if (!a2) {                              /* aufheben              */
             if (join_drv[a1] < 0)
@@ -3663,7 +3665,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         struct fapi_label __far *fl;
         if (!a3)                                /* lesen: SUBST-Ziel     */
             a1 = subst_real(a1);
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
+        if (a1 >= NDRIVE || IS_PRE(a1) || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fl), 1))
             return FAPI_ERROR;
         if (a3 && user_str(usel, a3, nl, sizeof(nl)))
@@ -3683,7 +3685,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return task[current].child_rc;
 
     case FAPI_OPENDRIVE:
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
+        if (a1 >= NDRIVE || IS_PRE(a1) || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
             return a1 < NDRIVE && vol[a1].locked ? FAPI_ERR_INUSE : FAPI_ERROR;
         if (a2 == DRV_OPEN_LOCK) {
             if (blk[vol[a1].blk].bsize != 512)
@@ -3767,7 +3769,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_EJECT: {                          /* Medium auswerfen      */
         int dev, st;
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
+        if (a1 >= NDRIVE || IS_PRE(a1) || !vol_present(a1) || join_hidden(a1) ||
             subst_real(a1) != a1)
             return FAPI_ERROR;
         dev = vol[a1].blk;
@@ -3866,7 +3868,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         struct fapi_fsinfo __far *fi;
         const char *nm;
         int dv;
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || join_hidden(a1) ||
+        if (a1 >= NDRIVE || IS_PRE(a1) || !vol_present(a1) || join_hidden(a1) ||
             !user_ok(usel, a2, sizeof(*fi), 1))
             return FAPI_ERROR;
         if (a3 == 1 && !user_ok(usel, a2, sizeof(struct fapi_fsinfo2), 1))
@@ -4036,7 +4038,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     }
 
     case FAPI_SELECTDISK:                       /* A: ggf. erst einhaengen */
-        if (a1 >= NDRIVE || a1 == PRE_DRIVE || join_hidden(a1) || (!vol_present(a1) && subst_drv[a1] < 0))
+        if (a1 >= NDRIVE || IS_PRE(a1) || join_hidden(a1) || (!vol_present(a1) && subst_drv[a1] < 0))
             return FAPI_ERROR;
         if (vol_present(a1) && IS_FLOPPY(vol[a1].blk) && !vol[a1].locked) {
             blk_media(vol[a1].blk);
@@ -6147,7 +6149,7 @@ static unsigned long drv_mask(int d)
     unsigned long m = 0;
     int x, ifs = drv_ifs(d) >= 0;
     for (x = 2; x < NDRIVE; x++)
-        if ((vol[x].used || vol[x].present) && x != PRE_DRIVE &&
+        if ((vol[x].used || vol[x].present) && !IS_PRE(x) &&
             (ifs ? vol[x].drv == &mod_driver && vol[x].mod == d
                  : blk[vol[x].blk].drv == d))
             m |= 1UL << x;
@@ -6779,7 +6781,7 @@ static void list_drives(void)
         }
 
     for (d = 2; d < NDRIVE; d++) {
-        if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
+        if (!(vol[d].used || vol[d].present) || IS_PRE(d))
             continue;
         b = &blk[vol[d].blk];
         msg[0] = (char)('A' + d);
@@ -6951,9 +6953,10 @@ void kmain(void)
                           pre_err == PRE_ERR_FULL ? "  Vorladebereich voll\n" :
                                                     "  BIOS-Lesefehler beim Vorladen\n");
         ifs_mount(PRE_DRIVE, -1, 0, &pre_driver);
+        pre_on = 1;
         sys_drive = PRE_DRIVE;
         config_sys();
-        vol[PRE_DRIVE].used = 0;                /* Z: wieder weg        */
+        vol[PRE_DRIVE].used = pre_on = 0;       /* Z: frei (NET USE)    */
         if (npre && pre_seg == 0x8000 && mem_conv_kb > 512)
             mem_free(0x800, mem_conv_kb * 4 - 0x800);   /* 80000h frei */
         sys_drive = find_boot_vol();

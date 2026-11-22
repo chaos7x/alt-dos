@@ -409,6 +409,20 @@ die Schalter jetzt wortweise). Auch auf main (gleiche Dateien). Gemessen
 68 s / 252 s; vorher SMB 3.1.1 GMAC ~9 min für 1 MB. QEMU: beide Fälle,
 Inhalte gleich. SMBCLI danach 64.428 Byte (Grenze 64 KB!).
 
+NET USE „Kein Platz für ein weiteres Netzlaufwerk“ (vom Nutzer in 86Box
+gemeldet, 22.11.2026, Z: und N:): je NET-USE-Laufwerk braucht ufs.c ein
+Kernelsegment (kseg_alloc) und einen Blockgeräteplatz – mit SB16,
+TCPIP, Codepages, KEYB usw. waren die 16 KSEG-Plätze belegt. Jetzt
+`NKSEG` 24 (KCODE2 228h statt 1E8h, kern.h/build.sh) und `NBLK` 12. Dazu
+war Z: (PRE_DRIVE, Vorlade-Laufwerk der CONFIG.SYS) für immer gesperrt
+(DIR Z: „Ungültiges Laufwerk“): die Prüfungen gelten nur noch, solange
+`pre_on` steht (`IS_PRE`, auch auf main). Erstes Codesegment danach
+65.514 Byte – 6 Byte frei! Vor weiterem Kernelcode Seltenes nach KTEXT2.
+Strg+C an der Eingabezeile verwirft sie wie COMMAND.COM (aus main
+e9c14a2, `on_break` in read_line). Geprüft QEMU (isapc 4 MB, zwei
+Disketten, zwei IDE-Platten, CD, SB16, NE2000, CODEPAGE: vorher der
+Fehler, danach Z:/N:, DIR, Strg+C) und 86Box SCAT (Z:, N:, COPY, MEM).
+
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht
 vergessen. Auch hier, einfach mehrere Disketten erstellen, auch mit

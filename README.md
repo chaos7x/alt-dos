@@ -59,7 +59,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   und signiert nur, wenn der Server es verlangt (`server signing` nicht
   `mandatory`; ein Samba-AD-DC verlangt es immer). Gemessen auf dem SCAT
   (286/25 MHz, NE2000): 1 MB herunter ohne Signatur 38 s, SMB 2.1 mit
-  Signatur 252 s, SMB 3.1.1 mit GMAC ~9 min; 300 KB hinauf 8 s bzw. 68 s. Unterschiede zu 6.3:
+  Signatur 252 s, SMB 3.1.1 mit GMAC ~9 min; 300 KB hinauf 8 s bzw. 68 s.
+  Bis zu vier Netzlaufwerke, auch Z:. CMD: Strg+C verwirft die
+  Eingabezeile wie bei COMMAND.COM. Unterschiede zu 6.3:
   keine Freigabemodi beim Server und keine Bereichssperren (DosFileLock);
   der wartende Auftrag hält die eine Kernelsperre (kooperativ). Die
   Kompatibilitätsbox sieht Netzlaufwerke wie alle AT-DOS-Laufwerke, auch

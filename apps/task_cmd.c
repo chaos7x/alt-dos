@@ -23,7 +23,6 @@ static char buf[256];
 static int  permanent;
 static unsigned errorlevel;             /* Rueckgabewert des letzten Programms */
 static int  break_on, verify_on, keys_on = 1, ctty; /* BREAK, VERIFY, KEYS, CTTY */
-static volatile int break_req;          /* Strg+C in einer Stapeldatei   */
 static int  ran_prog;                   /* letzte Zeile startete ein Programm */
 
 /* ---- Hilfen ------------------------------------------------------------ */
@@ -441,20 +440,43 @@ static void read_line_tty(void)
     puts("\r\n");
 }
 
+static int bdepth, echo_on;
+static volatile int break_req;
+static void on_break(unsigned sig);
+
 static void read_line(void)
 {
     unsigned n = 0, pos = 0, k, key, browse = 0;
     unsigned char c, sc;
-    int tabbed = 0;
+    int tabbed = 0, top = !bdepth;
 
     if (ctty) {
         read_line_tty();
         return;
     }
     overwrite = 0;
+    if (top) {                          /* Strg+C bricht die Zeile ab    */
+        break_req = 0;                  /* (wie COMMAND.COM), statt dass */
+        DosSetSigHandler(on_break, SIG_BREAK);  /* der Kernel CMD beendet */
+    }
     for (;;) {
         oflush();
         key = KbdCharIn();
+        if (break_req) {                /* ^C: Zeile verwerfen, neu      */
+            break_req = 0;
+            while (pos < n)
+                oc(line[pos++]);
+            oc('^');
+            oc('C');
+            oc('\n');
+            oflush();
+            n = pos = browse = 0;
+            tabbed = 0;
+            overwrite = 0;
+            if (echo_on)
+                show_prompt();
+            continue;
+        }
         c = (unsigned char)key;
         sc = (unsigned char)(key >> 8);
         if (c != 9)
@@ -564,6 +586,8 @@ static void read_line(void)
     }
     oc('\n');
     oflush();
+    if (top)
+        F2(FAPI_SETSIGHANDLER, 0, 0);
     line[n] = 0;
     hist_add(line, n);
 }
@@ -2509,7 +2533,7 @@ static struct batch {
     char    *argv[10];
     int      argc, shift;
 } bat[BMAX];
-static int bdepth, batch_stop, batch_abort;
+static int batch_stop, batch_abort;
 static int run_chain(char *l);
 static int run_program(char *cmd, int sync, int call);
 static int confirm(const char *q);

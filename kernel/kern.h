@@ -30,10 +30,10 @@
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
-#define NKSEG       16              /* eigene Kernelsegmente (kseg_alloc)  */
+#define NKSEG       24              /* eigene Kernelsegmente (kseg_alloc)  */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x1E8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x228           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define NGDT        (KCODE2_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
@@ -88,6 +88,8 @@ void          cpu_reset(void);
 #define PRE_ERR_READ    2           /* BIOS-Lesefehler                     */
 #define PRE_ERR_FULL    3           /* Vorladebereich voll                 */
 #define PRE_DRIVE       25          /* Z:, nur waehrend CONFIG.SYS         */
+extern unsigned char pre_on;        /* Z: gehoert noch dem Vorladen (CONFIG.SYS) */
+#define IS_PRE(d)       ((d) == PRE_DRIVE && pre_on)
 extern unsigned char boot_drive;    /* BIOS-Nummer, ab 80h Festplatte      */
 extern unsigned char pre_err;
 extern unsigned long boot_hidden, boot_serial;
@@ -138,7 +140,7 @@ unsigned proc_run(unsigned long id);
 #define SLEEP_EVENT 0xFF0000UL          /* niemand weckt: nur Frist      */
 
 /* ---- Blockgeraete (kernel.c): Diskette und Einheiten der Treiber ------- */
-#define NBLK        8
+#define NBLK        12
 #define BLK_FLOPPY  0               /* Geraet 0 ist immer Diskette A:      */
 #define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
 #define DRV_UFS     (-3)            /* NET USE (ufs.c)                    */
