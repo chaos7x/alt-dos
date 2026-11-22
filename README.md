@@ -54,8 +54,12 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   und die Kompatibilitätsbox sehen ein normales Laufwerk. Dazu `NET`
   (USE, VIEW, TIME, CONFIG, STATISTICS, HELP), `NET1` (USER/GROUP/ACCOUNTS
   /DOMAIN), `KINIT`/`KLIST`/`KDESTROY`, `DOMJOIN`, `LOGON`, `HOSTNAME`.
-  Auf dem 286 ist es langsam: die Signatur je Nachricht rechnet der
-  Prozessor in 16 Bit (SCAT mit 25 MHz: ~2 KB/s). Unterschiede zu 6.3:
+  Auf dem 286 bestimmt die Signatur je Nachricht das Tempo; mit
+  `NET USE … /NOSIGN` bzw. `SMBCLI … -m SMB2` bietet AT-DOS nur SMB 2.x an
+  und signiert nur, wenn der Server es verlangt (`server signing` nicht
+  `mandatory`; ein Samba-AD-DC verlangt es immer). Gemessen auf dem SCAT
+  (286/25 MHz, NE2000): 1 MB herunter ohne Signatur 38 s, SMB 2.1 mit
+  Signatur 252 s, SMB 3.1.1 mit GMAC ~9 min; 300 KB hinauf 8 s bzw. 68 s. Unterschiede zu 6.3:
   keine Freigabemodi beim Server und keine Bereichssperren (DosFileLock);
   der wartende Auftrag hält die eine Kernelsperre (kooperativ). Die
   Kompatibilitätsbox sieht Netzlaufwerke wie alle AT-DOS-Laufwerke, auch

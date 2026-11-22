@@ -398,6 +398,17 @@ Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
 ## Aktueller Stand: AT-DOS 5.5 fertig (Zweig 5.5, Release v5.5), Weiterarbeit in 5.x
 
+SMB ohne Signatur für den 286 (Frage/Wunsch des Nutzers, 22.11.2026):
+SMBCLI `-m SMB2` bietet nur 2.0.2/2.1 an (NEGOTIATE ohne Kontexte, 40
+Byte) – dann signiert es nur, wenn der Server es verlangt; bei SMB 3
+signiert SMBCLI immer, Abschalten am Server allein hilft dort nicht. NET
+USE `/NOSIGN` reicht es weiter und merkt es in NETUSE.LST (/RESTORE liest
+die Schalter jetzt wortweise). Auch auf main (gleiche Dateien). Gemessen
+86Box SCAT (NE2000, SLiRP, Test-Samba): `server signing = auto` + /NOSIGN
+300 KB hoch 8 s, 1 MB herunter 38 s; `mandatory` (SMB 2.1, HMAC-SHA256)
+68 s / 252 s; vorher SMB 3.1.1 GMAC ~9 min für 1 MB. QEMU: beide Fälle,
+Inhalte gleich. SMBCLI danach 64.428 Byte (Grenze 64 KB!).
+
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht
 vergessen. Auch hier, einfach mehrere Disketten erstellen, auch mit
