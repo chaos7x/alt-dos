@@ -851,6 +851,11 @@ AES-128-CMAC` wieder CMAC, `server smb3 encryption algorithms` AES-256-GCM
 bzw. AES-256-CCM (NTLM), 3.0 mit CCM unverändert – je dir/get/put und
 NET USE bytegleich; Kerberos gegen den Test-DC mit AES-256-GCM (32-Byte-
 Schlüssel). SMBCLI danach 63.552 von 65.536 Byte.
+Vom Nutzer in 86Box bestätigt (22.11.2026, P3B-F, Samba 4.22 mit
+`server smb3 encryption algorithms = AES-256-GCM`): LOGON mit Kerberos,
+Heimlaufwerk N: verbunden; `smbstatus` zeigt SMB3_11, Signatur
+AES-128-GMAC, Freigabe AES-256-GCM. Das Abbild davor (nur AES-128)
+bekommt dort „Zugriff auf die Freigabe verweigert“.
 Offen: Prüfen der Signaturen des Servers, VALIDATE_NEGOTIATE für 3.0.x.
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
