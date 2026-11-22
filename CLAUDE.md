@@ -441,8 +441,10 @@ Kanal 0: unter 8000h (schneller als 18,2 Hz) kein Ausflug. Den Vektor
 zu prüfen ging nicht – FreeDOS hängt INT 8 selbst um (0070h). Geprüft
 mit TT.COM (1000 Hz, 5 s nach der Echtzeituhr): QEMU und 86Box 386DX/40
 mit `DETACH CMD /C L.CMD` (Endlosschleife) vorher 58–91, jetzt 5.000
-Takte; am Box-Prompt bekommt der Hintergrund weiter Zeit (QEMU). SCAT:
-der Box-Start von Diskette scheitert dort (alt wie neu) – eigener Punkt.
+Takte, 86Box SCAT ebenso 5.000; am Box-Prompt bekommt der Hintergrund
+weiter Zeit (QEMU). Testfalle: mit `PROTECTONLY=NO` lädt CMD /P die Box
+schon beim Start – ein zweites RBOX aus AUTOEXEC.CMD fand dann keine
+Shell („Bad or missing Command Interpreter“).
 
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht
