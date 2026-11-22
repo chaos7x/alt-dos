@@ -36,7 +36,7 @@ jobs:
         with:
           name: alt-dos-image
           path: |
-            build/dos5.img
+            build/dos5*.img
             build/atdos-hd.img
 
       - name: Als Release "latest" veroeffentlichen
@@ -59,10 +59,10 @@ jobs:
           (cd build && zip -q atdos-hd.zip atdos-hd.img)
           BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
           gh release delete v5.x --yes --cleanup-tag 2>/dev/null || true
-          gh release create v5.x build/dos5.img build/atdos-hd.zip \
+          gh release create v5.x build/dos5*.img build/atdos-hd.zip \
             --target "$GITHUB_SHA" --prerelease \
             --title "AT-DOS 5.x nach 5.5 (in Arbeit), Build $BNO" \
-            --notes "Weiterarbeit nach 5.5 (Zweig 5.x). Das fertige 5.5 steht im Release v5.5 (Zweig 5.5), 5.4 in v5.4, 5.3.2 in v5.3.2, 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
+            --notes "Weiterarbeit nach 5.5 (Zweig 5.x). Setup-Disketten: dos5.img (startfaehig, SETUP), dos5-2.img ff. Das fertige 5.5 steht im Release v5.5 (Zweig 5.5), 5.4 in v5.4, 5.3.2 in v5.3.2, 5.3.1 in v5.3.1, 5.3 in v5.3, 5.2 in v5.2, 5.1 in v5.1, 5.0 in v5.0."
 
       - name: Release "v5.2" veroeffentlichen (Zweig 5.2)
         if: github.ref == 'refs/heads/5.2' && github.event_name != 'pull_request'

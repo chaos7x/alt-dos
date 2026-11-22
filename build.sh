@@ -143,7 +143,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk mkdosimg ping ipconfig nslookup nc netstat firewall wget ftp telnet sntp smbcli net net1 kinit klist kdestroy domjoin logon hostname"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cat attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag taskman rbox convert eject aweload devload loop packdisk mkdosimg ping ipconfig nslookup nc netstat firewall wget ftp telnet sntp smbcli net net1 kinit klist kdestroy domjoin logon hostname setup"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -255,7 +255,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
        $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_aweload.exe AWELOAD.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
-       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_rbox.exe RBOX.EXE"
+       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_rbox.exe RBOX.EXE  $B/task_setup.exe SETUP.EXE"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_sb16.sys SB16.SYS
        $B/ifs_iso9660.ifs ISO9660.IFS  $B/task_ufat.exe UFAT.EXE
@@ -290,14 +290,25 @@ mcopy -i $B/freedos.img $B/rbhma.sys ::RBHMA.SYS
 mcopy -i $B/freedos.img $B/ltemm.exe ::LTEMM.EXE
 mcopy -i $B/freedos.img ltemm/LICENSE.txt ::LTEMM.TXT
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/rbready.com RBREADY.COM  $B/rbshell.com RBSHELL.COM  $B/rbhma.sys RBHMA.SYS  $B/ltemm.exe LTEMM.EXE  ltemm/LICENSE.txt LTEMM.TXT  freedos/DOSBOX.INI DOSBOX.INI  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/CTMOUSE.COM CTMOUSE.COM  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+# Netz und Werkzeuge, die nicht auf Diskette 1 passen (Packprogramme, Netz-
+# werkzeuge); Zeichensaetze fuer CODEPAGE=/CHCP (freedos/cp, tools/mkcp.py)
+HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_domjoin.exe DOMJOIN.EXE  $B/task_logon.exe LOGON.EXE  $B/task_hostname.exe HOSTNAME.EXE"
+CPFILES=""
+for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
+# Diskette 1 (startfaehig, Notfall, wie 6.x): System, \DOS, \DOS\SYSTEM mit
+# Netztreibern (SETUP erkennt die Karte damit) und der Kompatibilitaetsbox
+# (\DOS\MDOS - anders als 6.x, die Box muss auch von Diskette gehen);
+# Disketten 2, 3, ...: Rest (Zeichensaetze, Packprogramme, Netzwerkzeuge, Demos),
+# der Reihe nach aufgefuellt. Die Platte bekommt alles, SETUP.EXE kopiert
+# dasselbe von den Disketten.
 copy_files() {   # Ziel-Laufwerk fuer mcopy, z. B. "-i dos5.img ::"
     copy_list "$FILES" ""
-    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK" "${TO}DEMO"
+    mmd $TARGET "${TO}DOS" "${TO}DOS/SYSTEM" "${TO}DOS/SYSTEM/SFBANK"
     copy_list "$DOSFILES" "DOS/"
     copy_list "$SYSFILES" "DOS/SYSTEM/"
-    mmd $TARGET "${TO}DOS/MDOS"
-    copy_list "$BOXFILES" "DOS/MDOS/"
-    copy_list "$DEMOFILES" "DEMO/"
+    copy_list "$B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  FIREWALL.INI FIREWALL.INI" "DOS/SYSTEM/"
+    mmd $TARGET "${TO}DOS/MDOS"         # Kompatibilitaetsbox auch von
+    copy_list "$BOXFILES" "DOS/MDOS/"   # Diskette 1 (SCAT startet von A:)
 }
 copy_list() {
     sub=$2
@@ -307,10 +318,54 @@ copy_list() {
         shift 2
     done
 }
+# Rest als Liste "Quelle Ziel" mit Verzeichnis
+EXTRA=""
+add_extra() { sub=$2; set -- $1; while [ $# -gt 0 ]; do EXTRA="$EXTRA $1 $sub$2"; shift 2; done; }
+add_extra "$DEMOFILES" "DEMO/"
+add_extra "$CPFILES" "DOS/SYSTEM/"
+add_extra "$HDDOS" "DOS/"
 TARGET="-i $IMG" TO="::" copy_files
 mcopy -i $IMG $B/atsys.com ::ATSYS.COM
+# Startdatei der Diskette 1 ruft SETUP auf (SETUP laesst die Zeile weg)
+{ cat AUTOEXEC.CMD; printf 'SETUP /START\r\n'; } > $B/autoexec.fd
+mcopy -o -i $IMG $B/autoexec.fd ::AUTOEXEC.CMD
+mlabel -i $IMG '::AT-DOS 1'
+# Disketten 2 .. n: Dateien der Reihe nach, bei "voll" die naechste (1 KB
+# Rand fuer SETUP.ID); Verzeichnisse je Diskette bei Bedarf
+NFD=1
+rm -f $B/dos5-[0-9]*.img
+new_fd() {
+    NFD=$((NFD + 1))
+    FD=$B/dos5-$NFD.img
+    rm -f $FD
+    mformat -i $FD -C -f 1440 -v "AT-DOS $NFD" ::
+    mmd -i $FD ::DOS ::DOS/SYSTEM ::DEMO
+}
+new_fd
+set -- $EXTRA
+while [ $# -gt 0 ]; do
+    need=$(( ($(stat -c %s "$1") + 511) / 512 * 512 + 1024 ))
+    free=$(mdir -i $FD :: 2>/dev/null | grep "bytes free" | sed 's/bytes free.*//' | tr -dc '0-9')
+    [ "$free" -lt "$need" ] && new_fd
+    mcopy -o -i $FD "$1" "::$2" || { echo "FEHLER: $2 passt auf keine Diskette"; exit 1; }
+    shift 2
+done
+# SETUP.ID: Nummer, belegte KB aller Disketten (Fortschritt, Platz; SETUP
+# fordert so viele Disketten an, wie Groessen dastehen)
+used_kb() { mdu -s -i "$1" :: | awk '{print int($2 / 2)}'; }
+KBS=$(used_kb $IMG)
+for n in $(seq 2 $NFD); do KBS="$KBS $(used_kb $B/dos5-$n.img)"; done
+for n in $(seq 1 $NFD); do
+    printf 'ATDOS %s %s\r\n' $n "$KBS" > $B/setup$n.id
+    if [ $n = 1 ]; then mcopy -o -i $IMG $B/setup1.id ::SETUP.ID
+    else mcopy -o -i $B/dos5-$n.img $B/setup$n.id ::SETUP.ID; fi
+done
 mdir -a -i $IMG :: | sed 's/^/  /'
-mdir -i $IMG ::DOS | sed 's/^/  /'
+mdir -i $IMG ::DOS | tail -2 | sed 's/^/  /'
+for n in $(seq 2 $NFD); do
+    echo "Setup-Diskette $n (dos5-$n.img)"
+    mdir -i $B/dos5-$n.img :: | tail -1 | sed 's/^/  /'
+done
 
 echo "Festplatte (atdos-hd.img, 130/16/63 = 63 MB, FAT16)"
 HD=$B/atdos-hd.img
@@ -325,17 +380,9 @@ python3 tools/sysboot.py $HD $((63 * 512)) $B/hdboot.bin
 mcopy $B/ATDOS.SYS c:ATDOS.SYS
 mattrib +r +s +h c:ATDOS.SYS
 TARGET="" TO="c:" copy_files
-# Zeichensaetze fuer CODEPAGE=/CHCP (freedos/cp, tools/mkcp.py) - nur auf der
-# Platte, auf der Diskette ist kein Platz (je 6,25 KB)
-CPFILES=""
-for f in freedos/cp/CP*.FNT; do CPFILES="$CPFILES $f $(basename $f)"; done
-TARGET="" TO="c:" copy_list "$CPFILES" "DOS/SYSTEM/"
-# Werkzeuge nur auf der Platte (Packprogramme; auf der Diskette fehlt der Platz)
-HDDOS="$B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_domjoin.exe DOMJOIN.EXE  $B/task_logon.exe LOGON.EXE  $B/task_hostname.exe HOSTNAME.EXE"
-TARGET="" TO="c:" copy_list "$HDDOS" "DOS/"
-# Netz nur auf der Platte (Diskette voll): Treiber, Stapel, Regeln
-HDSYS="$B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  FIREWALL.INI FIREWALL.INI"
-TARGET="" TO="c:" copy_list "$HDSYS" "DOS/SYSTEM/"
+mmd c:DEMO
+set -- $EXTRA
+while [ $# -gt 0 ]; do mcopy -o "$1" "c:$2"; shift 2; done
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC

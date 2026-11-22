@@ -379,7 +379,28 @@ redir_install:
 ; Seriennummer lesen/setzen), 440Eh/440Fh (logische Laufwerke), 6900h/
 ; 6901h. Die Werte kommen vom Kernel (INT E0h 18h -> dbuf, RBOX). CD-ROMs und
 ; Laufwerke ohne Medium bleiben, was sie waren.
-int21:  cmp     ah, 44h
+int21:  cmp     ah, 4Bh                 ; EXEC/Laufwerkswechsel: CDS mit
+        je      .sy                     ; den AT-DOS-Laufwerken abgleichen
+        cmp     ah, 0Eh                 ; (NET USE, LOOP, DEVLOAD, waehrend
+        je      .sy                     ; die Box hinten war)
+        cmp     ah, 0Ch                 ; Tastatur (Eingabezeile von
+        ja      .n4b                    ; COMMAND.COM): hoechstens einmal
+        cmp     ah, 6                   ; je Sekunde
+        je      .n4b
+        cmp     ah, 1
+        jb      .n4b
+        push    ax
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     ax, [046Ch]
+        pop     ds
+        sub     ax, [cs:sy_t]
+        cmp     ax, 18
+        pop     ax
+        jb      .n4b
+.sy:    call    cds_sync
+.n4b:   cmp     ah, 44h
         je      .io
         cmp     ah, 69h
         jne     .ch
@@ -518,6 +539,79 @@ int21:  cmp     ah, 44h
 
 ; Laufwerk BL (0 = aktuelles, 1 = A:) ein AT-DOS-Laufwerk? -> CF = 0 und
 ; dbuf gefuellt, sonst CF = 1; Register bleiben
+;
+; AT-DOS-Laufwerke in die CDS eintragen (wie BOXSHELL von 6.x): schon
+; eingetragene behalten ihr Verzeichnis, nicht mehr vorhandene (Flags
+; C000h) werden ungueltig. Alle Register bleiben.
+cds_sync:
+        pushf
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        push    ds
+        xor     ax, ax
+        mov     ds, ax
+        mov     ax, [046Ch]
+        pop     ds
+        mov     [cs:sy_t], ax
+        mov     ah, 12h                 ; welche Laufwerke hat AT-DOS?
+        int     0E0h
+        mov     [cs:dmask], ax
+        mov     [cs:dmask+2], dx
+        mov     ah, 52h                 ; Liste der Listen
+        pushf
+        call    far [cs:old21]
+        mov     cl, [es:bx+21h]         ; LASTDRIVE
+        les     di, [es:bx+16h]         ; CDS
+        xor     ch, ch
+        xor     si, si
+.d:     cmp     si, cx
+        jae     .done
+        mov     bx, si
+        mov     ax, [cs:dmask]
+        mov     dx, [cs:dmask+2]
+.sh:    test    bx, bx
+        jz      .tst
+        shr     dx, 1
+        rcr     ax, 1
+        dec     bx
+        jmp     .sh
+.tst:   test    al, 1
+        jz      .gone
+        mov     ax, [es:di+43h]
+        and     ax, 0FF7Fh
+        cmp     ax, 0C000h
+        je      .next                   ; schon da
+        mov     ax, si
+        add     al, 'A'
+        mov     [es:di], al             ; "X:\"
+        mov     word [es:di+1], 5C3Ah
+        mov     byte [es:di+3], 0
+        mov     word [es:di+43h], 0C000h
+        mov     word [es:di+4Fh], 2
+        jmp     .next
+.gone:  mov     ax, [es:di+43h]
+        and     ax, 0FF7Fh
+        cmp     ax, 0C000h
+        jne     .next
+        mov     word [es:di+43h], 0     ; ausgehaengt
+.next:  add     di, 58h
+        inc     si
+        jmp     .d
+.done:  pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        popf
+        ret
+
 dmine:  push    ax
         push    bx
         push    cx
@@ -909,6 +1003,7 @@ kb_altg: times  90 db 0
 
 cdbuf:  times   130 db 0
 dmask:  dd      0
+sy_t:   dw      0
 old21:  dd      0
 dbuf:   times   32 db 0
 old2f:  dd      0

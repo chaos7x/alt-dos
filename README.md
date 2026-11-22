@@ -46,7 +46,7 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
 ## Was läuft
 
 - Windows-Freigaben (nach 5.5, aus 6.3; bewusst außerhalb der Zeitlinie,
-  Wunsch des Nutzers – Datenaustausch übers Netz; nur auf der Festplatte):
+  Wunsch des Nutzers – Datenaustausch übers Netz; Setup-Diskette 2 und Festplatte):
   `SMBCLI \\Rechner\Freigabe -U Name%Kennwort` (SMB 2.0.2 bis 3.1.1,
   NTLMv2 oder Kerberos, Signatur und Verschlüsselung wie unter 6.3) und
   `NET USE E: \\Rechner\Freigabe Kennwort /USER:Name` – das Laufwerk
@@ -57,9 +57,21 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   Auf dem 286 ist es langsam: die Signatur je Nachricht rechnet der
   Prozessor in 16 Bit (SCAT mit 25 MHz: ~2 KB/s). Unterschiede zu 6.3:
   keine Freigabemodi beim Server und keine Bereichssperren (DosFileLock);
-  der wartende Auftrag hält die eine Kernelsperre (kooperativ).
+  der wartende Auftrag hält die eine Kernelsperre (kooperativ). Die
+  Kompatibilitätsbox sieht Netzlaufwerke wie alle AT-DOS-Laufwerke, auch
+  solche, die erst nach ihrem Start verbunden oder getrennt werden
+  (RBSHELL gleicht die Laufwerke vor jedem Programm, bei Laufwerkswechsel
+  und höchstens einmal je Sekunde an der Eingabezeile ab).
+- Setup-Disketten wie 6.x (nach 5.5): `dos5.img` ist startfähig und
+  zugleich Notfalldiskette (System, Werkzeuge, Treiber, Kompatibilitäts-
+  box) und startet `SETUP`; `dos5-2.img` (ff.) trägt den Rest (Zeichen-
+  sätze, Packprogramme, Netzwerkzeuge, Demos). SETUP sucht die Platte
+  (FDISK, FORMAT bei Bedarf), erkennt eine NE2000 und schaltet sie samt
+  TCPIP.SYS in der CONFIG.SYS frei, Treiber ohne Gerät werden REM, dann
+  SYS und Kopieren aller Disketten; ein vorhandenes AT-DOS wird
+  aktualisiert (CONFIG.NEW/AUTOEXEC.NEW).
 
-- Netzwerk (5.5, aus 6.2; nur auf der Festplatte, die Diskette ist voll):
+- Netzwerk (5.5, aus 6.2; Treiber auf Setup-Diskette 1, Werkzeuge auf Diskette 2):
   `NE2000.SYS` für NE1000/NE2000 und Nachbauten (ISA; sucht 300h, 280h,
   320h, 340h, 360h, 240h und den IRQ selbst, `/P:300 /I:3` legt fest,
   `/NOIRQ` = Abfragebetrieb), darüber `TCPIP.SYS` mit ARP, IPv4, IPv6
@@ -802,7 +814,7 @@ etwas weniger ein. Bei Platten ohne LBA und ohne gültige aktuelle Geometrie
 Benötigt NASM, mtools und Open Watcom 2.0 (`WATCOM` gesetzt, `wcc`/`wlink`
 im PATH):
 
-    ./build.sh      # -> build/dos5.img (1,44 MB, FAT12) und build/atdos-hd.img
+    ./build.sh      # -> build/dos5.img, dos5-2.img (Setup-Disketten, 1,44 MB) und build/atdos-hd.img
 
 `CONFIG.SYS` auf der Diskette lädt beide Plattentreiber; was keine Hardware
 findet, wird wieder entladen.

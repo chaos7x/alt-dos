@@ -398,6 +398,29 @@ Zweige anlegen und löschen geht aus der Umgebung (seit 13.11.2026).
 
 ## Aktueller Stand: AT-DOS 5.5 fertig (Zweig 5.5, Release v5.5), Weiterarbeit in 5.x
 
+Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
+Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht
+vergessen. Auch hier, einfach mehrere Disketten erstellen, auch mit
+setup Programm. Wie in Version 6.x“): build.sh – Diskette 1 `dos5.img`
+(Stamm, \DOS mit SETUP.EXE, \DOS\SYSTEM mit NE2000/TCPIP/FIREWALL.INI,
+**\DOS\MDOS** – anders als 6.x, weil der SCAT von Diskette startet und die
+Box sonst fehlt; 51 KB frei), `autoexec.fd` mit `SETUP /START`, Rest
+(`EXTRA`: Zeichensätze, HDDOS, Demos) der Reihe nach auf `dos5-2.img`
+ff. (je Datei geprüft, ob sie passt; heute zwei Disketten), SETUP.ID wie
+6.x. `apps/task_setup.c` von main (Titel „AT-DOS 5“, Erkennung nur
+NE2000, kein FAT32). CI veröffentlicht `dos5*.img`. RBSHELL `cds_sync`
+(wie BOXSHELL von 6.x): Abgleich der CDS mit INT E0h 12h bei INT 21h
+4Bh/0Eh und bei Tastaturfunktionen 01h–0Ch höchstens einmal je Sekunde
+(BIOS-Takt) – die dauerhafte Box (PROTECTONLY=NO) läuft schon, wenn NET
+USE kommt. NET (task_net.c, auch main) sucht SMBCLI/NET1 auch im PATH.
+Geprüft: QEMU isapc 4 MB (SETUP auf leere Partition: FORMAT, beide
+Disketten, Start von C: mit freigeschalteter NE2000/TCPIP, Inhalt gleich
+atdos-hd.img bis CONFIG.SYS/TEMP, fsck sauber; dauerhafte Box: NET USE
+danach, in der Box DIR/COPY/MD/TYPE auf E:, nach NET USE /DELETE weg),
+86Box SCAT (SETUP auf leere IDE-Platte mit Diskettenwechsel, NE2000
+erkannt, Inhalt gleich; Start von Diskette 1, NET USE, in der Box DIR und
+MD auf E:).
+
 Samba/SMB aus 6.3 auf 5.x (Wunsch des Nutzers, 22.11.2026: „Dann noch
 rein damit in die 5.x“ – **bewusst außerhalb der Zeitlinie**: der Nutzer
 will auch auf der 286-Linie Daten übers Netz tauschen). Programme
