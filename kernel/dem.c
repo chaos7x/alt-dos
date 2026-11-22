@@ -26,6 +26,7 @@
 int  __far kf_box_ctl(unsigned op, unsigned a);
 int __far fat_geom(int d, unsigned *spc, unsigned long *clusters);
 int __far fat_abssec(int d, unsigned long lba, unsigned long *total);
+void __far vol_reset(int d);
 int __far kf_hmeta(unsigned h, unsigned what, unsigned attr, unsigned date, unsigned time);
 unsigned __far kf_box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 unsigned long __far kf_cd_blocks(int d);
@@ -770,7 +771,8 @@ static unsigned d_dinfo(int t, struct dem_req *q)
 }
 
 /* Laufwerkssperre wie MS-DOS 7 (440Dh 4Ah): die Box oeffnet das Laufwerk
-   wie CHKDSK mit DRV_OPEN_LOCK (nur ohne offene Dateien dort, sonst 05h);
+   wie CHKDSK mit DRV_OPEN_LOCK (nur ohne fremde offene Dateien dort, sonst
+   05h), mit DRV_OPEN_OWNER darf sie selbst weiter Dateien benutzen;
    beim Entsperren oder Ende der Box schliesst der Kernel es, verwirft die
    Caches und haengt neu ein (of_release). */
 static unsigned d_dlock(int t, struct dem_req *q)
@@ -790,7 +792,7 @@ static unsigned d_dlock(int t, struct dem_req *q)
         return E_NOTREADY;
     if (fsi.bsize != 512 || (fsi.flags & FSI_REMOTE))
         return E_DENIED;
-    r = FAPI(FAPI_OPENDRIVE, KDATA, d, DRV_OPEN_LOCK | DRV_OPEN_LBA, 0);
+    r = FAPI(FAPI_OPENDRIVE, KDATA, d, DRV_OPEN_LOCK | DRV_OPEN_LBA | DRV_OPEN_OWNER, 0);
     if (FAILED(r))
         return r == FAPI_ERR_NOTREADY ? E_NOTREADY : E_DENIED;
     RBX(t)->dlk[d] = r + 1;
@@ -829,6 +831,8 @@ static unsigned d_abs(int t, struct dem_req *q, int wr)
             if (k != c << 9)
                 return k || !err ? 0x0408 : (wr ? 0x040A : 0x080C);
         }
+        if (wr)                             /* Dateisystem-Caches weg:   */
+            vol_reset(q->drive);            /* Box liest danach Dateien  */
         return 0;
     }
     if (wr)

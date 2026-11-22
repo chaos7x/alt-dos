@@ -108,6 +108,11 @@
 #define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
 #define DRV_OPEN_LBA        2       /* | : DosSeek-Stelle in Sektoren statt
                                        Byte (Laufwerke ueber 4 GB, 6.0)  */
+#define DRV_OPEN_OWNER      4       /* | mit LOCK: der Sperrende darf das
+                                       Laufwerk weiter ueber Dateien
+                                       benutzen, eigene offene Dateien
+                                       stoeren nicht (Laufwerkssperre der
+                                       DOS-Box wie MS-DOS 7, 22.11.2026)  */
 /* Ganze Festplatten (FDISK): Nummer 0, 1, ... zaehlt nur Platten mit
    512-Byte-Sektoren (keine Diskette, keine CD) */
 #define FAPI_DISKINFO       0x43    /* BX = Platte, CX = struct fapi_diskinfo

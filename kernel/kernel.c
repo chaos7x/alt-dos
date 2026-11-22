@@ -4014,7 +4014,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                 return FAPI_ERR_WP;
             for (k = 1; k < NFILE; k++)         /* offene Dateien dort?  */
                 if (files[k].refs && (files[k].kind == OF_FILE || files[k].kind == OF_DASD) &&
-                    files[k].f.drive == a1)
+                    files[k].f.drive == a1 &&
+                    !((a2 & DRV_OPEN_OWNER) && files[k].owner == current))
                     return FAPI_ERR_INUSE;
         }
         k = of_alloc();
@@ -4025,8 +4026,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         files[k].f.attr = 0;
         files[k].f.flags = (unsigned char)(a2 & DRV_OPEN_LBA ? DASD_LBA : 0);
         files[k].pipe = (unsigned char)(a2 & DRV_OPEN_LOCK);
-        if (a2 & DRV_OPEN_LOCK)
-            vol[a1].locked = 1;
+        if (a2 & DRV_OPEN_LOCK)                 /* 1 = niemand, sonst der */
+            vol[a1].locked = (unsigned char)(a2 & DRV_OPEN_OWNER ? current + 2 : 1);
         if (IS_FLOPPY(vol[a1].blk) || IS_REM(vol[a1].blk))
             blk_media(vol[a1].blk);             /* gewechselt? neu lesen */
         return k + HBASE;

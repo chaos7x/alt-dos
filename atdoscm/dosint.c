@@ -350,7 +350,9 @@ void abs7305(struct frame __far *f)
    4Ah logisch sperren (BH Stufe 0-3), 6Ah freigeben, 6Ch Zugriffsmerker,
    70h Stand; geschachtelt gezaehlt, der Kernel sperrt beim ersten und
    gibt beim letzten frei (DEM_DLOCK). Endet das Programm, gibt term()
-   seine Sperren frei. 4Bh/6Bh (physisch) nur bestaetigt. */
+   seine Sperren frei - mit DX = 'LK' (LOCK.COM wie LOCK von MS-DOS 7)
+   gehoert die Sperre der Shell, UNLOCK.COM hebt alle Stufen auf. 4Bh/6Bh (physisch) nur bestaetigt. */
+#define LK_SHELL 0x4C4B                 /* DX = 'LK' von LOCK/UNLOCK.COM */
 static u8  lk_cnt[NDRV], lk_lvl[NDRV];
 static u16 lk_psp[NDRV];
 
@@ -369,6 +371,8 @@ void dlock_fn(struct frame __far *f, unsigned d)
             lk_psp[d] = cur_psp();
             lk_lvl[d] = 0;
         }
+        if (f->dx == LK_SHELL)          /* LOCK.COM: gehoert der Shell   */
+            lk_psp[d] = W(cur_psp(), 0x16);
         if (BH(f) > lk_lvl[d])
             lk_lvl[d] = BH(f);
         lk_cnt[d]++;
@@ -376,9 +380,11 @@ void dlock_fn(struct frame __far *f, unsigned d)
         break;
     case 0x6A:
         if (!lk_cnt[d]) {
-            set_err(f, 0x01);
+            set_err(f, 0x05);
             return;
         }
+        if (f->dx == LK_SHELL)          /* UNLOCK.COM: alle Stufen       */
+            lk_cnt[d] = 1;
         if (!--lk_cnt[d]) {
             q.drive = d;
             q.flags = 1;

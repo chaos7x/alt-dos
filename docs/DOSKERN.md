@@ -331,6 +331,20 @@ die Programme direkt lesen.
     zurücklesen, INT 25h auf FAT32 0207h, 7305h lesen/schreiben, Sperre
     beim Programmende frei; fsck sauber) und 86Box 386DX/40 mit
     AHA-154xC (zweite SCSI-Platte; danach COPY dorthin, fsck sauber).
+  - LOCK/UNLOCK wie MS-DOS 7 (22.11.2026, Hinweis des Nutzers: nötig z. B.
+    für die Installation von NT über eine Startdiskette von Windows 98):
+    `apps/lock.asm` -> `\DOS\MDOS\LOCK.COM`/`UNLOCK.COM` (Platte und
+    Setup-Diskette 3, `HDMDOS`). `LOCK X:` fragt J/N und ruft 440Dh 084Ah
+    mit DX = 4C4Bh – die Sperre gehört dann dem Elternprozess (der Shell)
+    und bleibt über Programmenden hinweg, `UNLOCK [X:]` gibt sie frei
+    (ohne Laufwerk alle; nicht gesperrt -> 05h). Damit Programme auf einem
+    gesperrten Laufwerk weiter Dateien öffnen können, sperrt das DEM mit
+    `DRV_OPEN_OWNER` (4): offene Dateien des eigenen Tasks stören nicht,
+    `vol[].locked` = Task + 2, `vol_ok` lässt dann den Besitzer durch,
+    nach jedem Schreiben über INT 26h/7305h `vol_reset` (Caches weg). In
+    QEMU und 86Box 386DX/40 geprüft (Sperre bei eigener offener Datei,
+    DIR/COPY danach, fsck sauber). Nicht geprüft: WINNT.EXE selbst
+    (INT 13h auf Festplatten gibt es in der Box nicht).
   - FAT32: 7305h (erweitertes absolutes Lesen/Schreiben, wie Windows 95
     OSR2); INT 25h/26h auf FAT32 abgelehnt wie dort.
   - Nur lokale FAT-Laufwerke; NET USE, CD, Loop/DriveSpace-Container ->

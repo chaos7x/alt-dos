@@ -38,7 +38,8 @@ struct volume {
     unsigned char  ptype;               /* Partitionstyp (MBR), 0 = keiner  */
     unsigned long  psize;               /* Sektoren der Partition/des Geraets */
     unsigned char  nfree_ok;            /* nfree gezaehlt und gueltig       */
-    unsigned char  locked;              /* DosOpenDrive exklusiv: kein IFS  */
+    unsigned char  locked;              /* DosOpenDrive exklusiv: 1 kein IFS,
+                                           Task + 2: nur dieser (DRV_OPEN_OWNER) */
     unsigned char  was_dirty;           /* beim Einhaengen nicht sauber abgemeldet */
     unsigned char  in_use;              /* Sauber-Bit auf der Platte geloescht */
     unsigned long  nfree;               /* freie Cluster (FAT)              */

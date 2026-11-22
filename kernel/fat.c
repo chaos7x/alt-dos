@@ -2626,7 +2626,8 @@ int __far vol_check(int d)
 /* Dateisystem eingehaengt; gesperrte Laufwerke (CHKDSK /F, FORMAT) sind zu */
 static int vol_ok(int d)
 {
-    return vol_present(d) && vol[d].used && !vol[d].locked;
+    return vol_present(d) && vol[d].used &&
+           (!vol[d].locked || vol[d].locked == current + 2);   /* Besitzer */
 }
 #define VOL_OK(d) vol_ok(d)
 
@@ -2672,7 +2673,7 @@ static void mark_in_use(int d)
     clus_t val;
 
     if (v->in_use || v->drv != &fat_driver || !v->fat16 || IS_FLOPPY(v->blk) ||
-        v->locked)
+        v->locked == 1)
         return;
     v->in_use = 1;
     val = fat_raw(d, 1);

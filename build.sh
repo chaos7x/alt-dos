@@ -367,10 +367,12 @@ for f in KERNEL.SYS COMMAND.COM CONFIG.SYS COUNTRY.SYS; do
 done
 mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
+nasm -f bin apps/lock.asm -o $B/lock.com       # LOCK/UNLOCK wie MS-DOS 7
+nasm -f bin -DUNLOCK apps/lock.asm -o $B/unlock.com
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
-# Diskette 3 (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT)
-HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC"
+# Diskette 3 (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
+HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
 HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
