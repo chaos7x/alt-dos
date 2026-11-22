@@ -3794,7 +3794,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   E6h; RETF“ -> `ems_ret` blendet sie ein. 5602h: BX = 8.
   `EMS_FRAME_LOCATION=NONE` (CONFIG.SYS, `ems_none` in kernel.c):
   `ems_pick_frame` wählt keinen Rahmen, INT 67h meldet 80h, die 64 KB
-  bleiben UMB (in QEMU: größter freier UMB 68 statt 4 KB). DPMI 0600h–
+  bleiben UMB (in QEMU: größter freier UMB 68 statt 4 KB). Behoben
+  (vom Nutzer gemeldet, 22.11.2026: nach DOOM fehlte in MSD/MEM der
+  Seitenrahmen, erst ein Neustart half): die DPMI-Ausnahme-Stummel
+  (`DP_EXC`) lagen bei F000:0600–067F und überschrieben beim ersten
+  DPMI-Programm „EMMXXXX0“ bei F060:000A und den INT-67h-Stummel
+  F060:0020 – INT 67h ging weiter (Abkürzung im Monitor), die Kennung
+  nicht. Jetzt DP_EXC 0580h (frei bis 05FFh). Dazu: eine geparkte Box
+  wird nur wiederverwendet, wenn der Rahmenwunsch (ini_noframe) gleich
+  ist (`box_same`), ems_nf vor v86_create; DMESG „EMS-Rahmen D000h“
+  bzw. die freien Bereiche. DPMI 0600h–
   0603h/0702h/0703h (Sperren, Auslagern) gab es schon ohne Wirkung.
   DPMI Stufe 1 erledigt (in QEMU mit eigenem Testprogramm DP/DP32
   geprüft: Moduswechsel 16/32 Bit, INT 10h an den Real Mode, 0300h mit

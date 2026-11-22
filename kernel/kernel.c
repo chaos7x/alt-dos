@@ -1346,10 +1346,10 @@ static int load_img(int t, int drive, const char *path)
             park_owner[i] = 0;
             task_end(i);
         }
+    ems_nf[t] = (unsigned char)ini_noframe();   /* vor v86_create (EFR) */
     cr3 = v86_create(t, box_kb);
     if (!cr3)
         return EXEC_ERR_NOMEM;
-    ems_nf[t] = (unsigned char)ini_noframe();
     box_prog[0] = 0;
     v86_copy(t, 0x7C00, KDATA, (unsigned)box_sec, 512);
     v86_disk(t, *(unsigned *)(box_sec + 0x18), *(unsigned *)(box_sec + 0x1A),
@@ -1386,10 +1386,10 @@ static int load_cm(int t, int drive, const char *path)
             park_owner[i] = 0;
             task_end(i);
         }
+    ems_nf[t] = (unsigned char)ini_noframe();   /* vor v86_create (EFR) */
     cr3 = v86_create(t, box_kb);
     if (!cr3)
         return EXEC_ERR_NOMEM;
-    ems_nf[t] = (unsigned char)ini_noframe();
     box_prog[0] = 0;
     for (o = 0; o < box_img[t].size; o += k) {
         k = box_img[t].size - o > 512 ? 512 : (unsigned)(box_img[t].size - o);
@@ -1759,9 +1759,10 @@ static int box_same(int y, const char *name)
     while (i && name[i - 1] != '\\' && name[i - 1] != ':')
         i--;
     scopy(box_prog, name + i, sizeof(box_prog));
-    ini_noframe();
-    box_prog[0] = 0;
-    return !scmp_k(ini_img[0] ? ini_img : BOX_DOS, box_iname[y]);
+    i = (unsigned)ini_noframe();        /* EMS-Rahmen steht beim Anlegen */
+    box_prog[0] = 0;                    /* fest: anderer Wunsch -> neue  */
+    return i == ems_nf[y] &&            /* Box (sonst erbte ein Programm */
+           !scmp_k(ini_img[0] ? ini_img : BOX_DOS, box_iname[y]);  /* die Box ohne Rahmen) */
 }
 static int box_reuse(const char *cmd, int s)
 {

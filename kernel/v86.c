@@ -3662,8 +3662,16 @@ static unsigned char umb_used[NTASK][6], umb_head[NTASK][6];
    64-KB-Luecke ab C8000, auf 16 KB ausgerichtet, einmal fuer alle Boxen
    vor den UMBs; EMS_FRAME_LOCATION=NONE -> keiner, 64 KB mehr UMB */
 extern unsigned char ems_none;
+static char *hx2(char *o, unsigned v)  /* zwei Hexziffern                */
+{
+    o[0] = "0123456789ABCDEF"[(v >> 4) & 15];
+    o[1] = "0123456789ABCDEF"[v & 15];
+    return o + 2;
+}
+
 static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
 {
+    char m[120], *o;
     unsigned p, i;
     if (ems_none)
         return;
@@ -3672,9 +3680,41 @@ static void ems_pick_frame(void)        /* einmal, nach umb_scan          */
             ;
         if (i == 16) {
             ems_frame = (unsigned char)p;
-            return;
+            break;
         }
     }
+    /* DMESG: Lage des Rahmens bzw. warum keiner passt (freie 4-KB-Seiten
+       C8-EF des oberen Speichers, als Bereiche) */
+    o = m;
+    {
+        static const char t1[] = "EMS-Rahmen ";
+        static const char t2[] = "EMS: kein 64-KB-Rahmen frei, oberer Speicher frei:";
+        const char *t = ems_frame ? t1 : t2;
+        while (*t)
+            *o++ = *t++;
+    }
+    if (ems_frame) {
+        o = hx2(o, ems_frame);
+        *o++ = '0';
+        *o++ = '0';
+        *o++ = 'h';
+    } else
+        for (p = 0xC8; p < 0xF0 && o < m + sizeof(m) - 10; p++) {
+            if (!BIT(umb_free, p) || (p > 0xC8 && BIT(umb_free, p - 1)))
+                continue;
+            for (i = p; i + 1 < 0xF0 && BIT(umb_free, i + 1); i++)
+                ;
+            *o++ = ' ';
+            o = hx2(o, p);
+            *o++ = '0';
+            *o++ = '0';
+            *o++ = '-';
+            o = hx2(o, i);
+            *o++ = 'F';
+            *o++ = 'F';
+        }
+    *o++ = '\n';
+    klog(KDATA, (unsigned)m, (unsigned)(o - m));
 }
 
 static unsigned long pte_get(int t, unsigned i)
@@ -4269,7 +4309,9 @@ struct dpcb { unsigned short psel, ssel; unsigned long poff, soff; };
 #define DP_CB     0x0700                /* Callback-Einspruenge (4 Byte) */
 #define DP_CBRET  0x0548                /* Ruecksprung aus einem Callback */
 #define CB(t, k)  ((struct dpcb __far *)MK_FP(SCRATCH, 1728 + (k) * 12))
-#define DP_EXC    0x0600                /* Standard-Ausnahme-Handler (4 Byte) */
+#define DP_EXC    0x0580                /* Standard-Ausnahme-Handler (32 x 4 Byte;
+                                           nicht 0600: dort liegt F060:000A EMMXXXX0
+                                           und F060:0020 INT 67h) */
 #define DP_EXRET  0x0540                /* Ruecksprung aus einem Handler  */
 #define EXV(t, n) ((unsigned long __far *)MK_FP(SCRATCH, 1536 + (n) * 6))
 static unsigned dp_rmseg[NTASK], dp_stub[NTASK], dp_psp[NTASK];

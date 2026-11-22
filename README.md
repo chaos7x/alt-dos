@@ -877,7 +877,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Vektor und als Gerät. Speicher wird erst beim Anlegen belegt. Auch
   55h/56h (Seiten einblenden und springen bzw. aufrufen).
   `EMS_FRAME_LOCATION=NONE` in der CONFIG.SYS (wie OS/2): kein EMS, der
-  Rahmen bleibt als UMB frei (64 KB mehr)
+  Rahmen bleibt als UMB frei (64 KB mehr). DMESG nennt die Lage des
+  Rahmens („EMS-Rahmen D000h“) bzw. die freien Bereiche, wenn keine
+  64-KB-Lücke passt
 - DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2), erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
