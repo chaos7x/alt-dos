@@ -66,10 +66,22 @@ static int crit(unsigned fn, unsigned e)
     return (int)a;
 }
 
+/* Lesepuffer (wie rd_cache von BOXSHELL): kleine Lesezugriffe holen 1 KB
+   auf einmal - MEM von FreeDOS liest MEM.DE Byte fuer Byte, jedes Byte
+   waere sonst ein Weg durch den Kernel (auf dem 386 ohne VME spuerbar).
+   Jeder andere Aufruf ans DEM verwirft ihn (Schreiben, Schliessen ...). */
+#define RC_SIZE 1024
+static u8  rc_buf[RC_SIZE];
+static int rc_s = -1;                   /* SFT-Platz, -1 = leer          */
+static u32 rc_pos;                      /* Dateistelle von rc_buf[0]     */
+static unsigned rc_len;
+
 unsigned dem(unsigned fn)
 {
     struct rregs r;
     int a;
+    if (fn != DEM_READ)
+        rc_s = -1;
     for (;;) {
         q.fn = fn;
         q.err = 0;
@@ -430,6 +442,34 @@ unsigned h_read(unsigned h, u16 seg, u16 off, unsigned n, unsigned *err)
         return dev_read(f->hnd, f, seg, off, n);
     if (!n)
         return 0;
+    if (n < RC_SIZE / 2) {              /* klein: ueber den Lesepuffer    */
+        unsigned i, k;
+        if (rc_s != s || f->pos < rc_pos || f->pos - rc_pos >= rc_len) {
+            rc_s = -1;
+            q.handle = f->hnd;
+            q.pos = f->pos;
+            q.size = f->size;
+            q.buf = lin(kseg, (u16)rc_buf);
+            q.count = RC_SIZE;
+            if (dem(DEM_READ)) {
+                *err = q.err;
+                return 0;
+            }
+            f->size = q.size;
+            if (!q.count)
+                return 0;               /* Dateiende                     */
+            rc_s = s;
+            rc_pos = f->pos;
+            rc_len = (unsigned)q.count;
+        }
+        k = (unsigned)(f->pos - rc_pos);
+        if (n > rc_len - k)
+            n = rc_len - k;             /* Rest beim naechsten Aufruf    */
+        for (i = 0; i < n; i++)
+            B(seg, off + i) = rc_buf[k + i];
+        f->pos += n;
+        return n;
+    }
     q.handle = f->hnd;
     q.pos = f->pos;
     q.size = f->size;

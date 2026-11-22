@@ -185,14 +185,13 @@ dosgo:  mov     ax, sp                  ; DX:AX = Rahmen
         mov     dx, ss
         mov     bx, cs
         mov     ds, bx
-        cli
-        inc     byte [_sda + 1]         ; InDOS
-        cmp     byte [_sda + 1], 1
-        mov     ss, bx
-        mov     sp, kstack_top
-        je      .one
-        mov     sp, kstack2_top
-.one:   sti
+        mov     cx, kstack_top          ; ohne CLI/STI: in der Box ist jedes
+        inc     byte [_sda + 1]         ; davon eine Falle (386 ohne VME);
+        cmp     byte [_sda + 1], 1      ; nach MOV SS sperrt die CPU selbst
+        je      .one                    ; Interrupts bis nach dem MOV SP
+        mov     cx, kstack2_top
+.one:   mov     ss, bx
+        mov     sp, cx
         cld
         mov     es, bx
         cmp     byte [_in_hma], 0
