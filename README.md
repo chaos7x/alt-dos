@@ -767,7 +767,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Blaster, CheckIt SysInfo, MS-DOS-MEM (zeigt wie unter MS-DOS „MSDOS 14K“
   und die UMBs), INT 2Fh 12xxh und 21h 5Eh/5Fh wie MS-DOS, INT 24h (kritischer Fehler
   mit Abfrage), INT 25h/26h und 7305h wie MS-DOS 7 (Schreiben nur nach
-  Laufwerkssperre 440Dh 4Ah, FAT32 nur über 7305h; `LOCK`/`UNLOCK` wie MS-DOS 7), eigene CONFIG.SYS der Box
+  Laufwerkssperre 440Dh 4Ah, FAT32 nur über 7305h; `LOCK`/`UNLOCK` wie MS-DOS 7), lange Dateinamen wie Windows 95 (INT 21h 71xxh, auch in den alten
+  Aufrufen; FreeCOM `DIR /LFN`), 440Dh 0871h, eigene CONFIG.SYS der Box
   (`\DOS\MDOS\CONFIG.SYS`: DEVICE=/DEVICEHIGH= für Zeichentreiber wie
   ANSI.SYS), LOADHIGH in den oberen Speicher, DOSKEY von MS-DOS, als
   zweite Shell COMMAND.COM 4.0 aus den MIT-Quellen von Microsoft

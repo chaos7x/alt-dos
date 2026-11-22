@@ -21,7 +21,12 @@
 #include "../include/fapi_abi.h"
 #include "../include/dem.h"
 #include "v86int.h"
+#include "ifs.h"
 #include "dembox.h"
+#include "task.h"
+
+extern int current;
+unsigned long __far kf_hfirst(unsigned h);
 
 int  __far kf_box_ctl(unsigned op, unsigned a);
 int __far fat_geom(int d, unsigned *spc, unsigned long *clusters);
@@ -498,7 +503,13 @@ static unsigned d_open(int t, struct dem_req *q)
     unsigned long hv;
     unsigned h;
     int slot;
-    exists = stat_path(q->path) == 0;
+    if (q->rsv & DEM_R_LONG) {              /* langer Name, die Box hat */
+        exists = 0;                         /* per DEM_LPATH geprueft   */
+        de.attr = 0x20;                     /* (8.3-Vergleich fuehrte   */
+        de.size = 0;                        /* sonst auf eine andere    */
+        de.time = de.date = 0;              /* Datei)                   */
+    } else
+        exists = stat_path(q->path) == 0;
     if (exists && (de.attr & 0x18))
         return E_DENIED;                    /* Verzeichnis/Bezeichnung */
     if (exists && (a & 0x0F) == 0)
@@ -543,7 +554,8 @@ static unsigned d_open(int t, struct dem_req *q)
             kf_hmeta(h, 2, (q->attr & 0x27) | 0x20, 0, 0);  /* beim Schliessen */
         de.attr = 0x20 | (q->attr & 0x07);
         de.size = 0;
-        stat_path(q->path);                 /* Datum/Uhrzeit         */
+        if (!(q->rsv & DEM_R_LONG))
+            stat_path(q->path);             /* Datum/Uhrzeit         */
         de.size = 0;
     }
     q->handle = h;
@@ -860,6 +872,196 @@ static unsigned d_abs(int t, struct dem_req *q, int wr)
     return 0;
 }
 
+/* ---- Lange Namen (INT 21h 71xxh des Box-Kerns, 22.11.2026) -------------
+   Die Box arbeitet weiter mit kurzen Pfaden; DEM_LPATH loest einen Pfad
+   mit langen Teilen in die kurze und die lange Form auf, DEM_LFIND sucht
+   mit langem Muster. Der Kernel gibt der Box sonst nur 8.3 (task.lfn 0) -
+   fuer jeden Verzeichniseintrag hier beide Namen ueber FINDENTRY mit
+   umgeschaltetem Merker. */
+static char lp_in[DEM_PATHLEN], lp_c[256], lp_sn[13];
+
+static unsigned fe(unsigned i, const char *dir, int lng)
+{
+    unsigned char o = task[current].lfn;
+    unsigned r;
+    task[current].lfn = (unsigned char)lng;
+    r = FAPI(FAPI_FINDENTRY, KDATA, (unsigned)&de, i, (unsigned)dir);
+    task[current].lfn = o;
+    return r;
+}
+
+static int ieq(const char *a, const char *b)
+{
+    while (*a && *b && up((unsigned char)*a) == up((unsigned char)*b))
+        a++, b++;
+    return !*a && !*b;
+}
+
+/* Muster (* ?) gegen Namen ohne Gross/klein; "*.*" wie "*" (Windows) */
+static int wm(const char *p, const char *n)
+{
+    const char *sp = 0, *sn = 0;
+    if (p[0] == '*' && p[1] == '.' && p[2] == '*' && !p[3])
+        p += 2;
+    while (*n) {
+        if (*p == '*') {
+            sp = ++p;
+            sn = n;
+        } else if (*p == '?' || (*p && up((unsigned char)*p) == up((unsigned char)*n))) {
+            p++;
+            n++;
+        } else if (sp) {
+            p = sp;
+            n = ++sn;
+        } else
+            return 0;
+    }
+    while (*p == '*' || (*p == '.' && p[1] == '*'))
+        p++;
+    return !*p;
+}
+
+/* kurzer Name zu Eintrag i -> lp_sn (gross), danach steht in de der lange */
+static unsigned both(unsigned i, const char *dir)
+{
+    unsigned r = fe(i, dir, 0), k;
+    if (FAILED(r))
+        return r;
+    for (k = 0; k < 12 && de.name[k]; k++)
+        lp_sn[k] = (char)up((unsigned char)de.name[k]);
+    lp_sn[k] = 0;
+    return fe(i, dir, 1);
+}
+
+static unsigned app(char *p, const char *n)
+{
+    unsigned l = 0, k;
+    while (p[l])
+        l++;
+    if (p[l - 1] != '\\')
+        p[l++] = '\\';
+    for (k = 0; n[k]; k++) {
+        if (l >= DEM_PATHLEN - 1)
+            return 1;
+        p[l++] = n[k];
+    }
+    p[l] = 0;
+    return 0;
+}
+
+static unsigned d_lpath(struct dem_req *q)
+{
+    unsigned i, k, r, last;
+    const char *p;
+    for (k = 0; k < DEM_PATHLEN - 1 && (lp_in[k] = q->path[k]) != 0; k++)
+        ;
+    lp_in[k] = 0;
+    if (lp_in[1] != ':' || lp_in[2] != '\\')
+        return E_NOPATH;
+    q->path[3] = q->path2[3] = 0;
+    q->path2[0] = q->path[0];
+    q->path2[1] = ':';
+    q->path2[2] = '\\';
+    q->attr = 0x10;
+    q->size = 0;
+    q->time = q->date = 0;
+    for (p = lp_in + 3; *p; ) {
+        for (k = 0; *p && *p != '\\'; p++)
+            if (k < 255)
+                lp_c[k++] = *p;
+        lp_c[k] = 0;
+        while (*p == '\\')
+            p++;
+        last = !*p;
+        if (!k)
+            continue;
+        if (has_wild(lp_c)) {
+            if (!last)
+                return E_NOPATH;
+            goto miss;
+        }
+        for (i = 0; ; i++) {
+            r = both(i, q->path);
+            if (FAILED(r)) {
+                if (r == FAPI_ERR_NOTREADY)
+                    return E_NOTREADY;
+                if (!last)
+                    return E_NOPATH;
+                goto miss;
+            }
+            if (ieq(lp_c, de.name) || ieq(lp_c, lp_sn))
+                break;
+        }
+        if (!last && !(de.attr & 0x10))
+            return E_NOPATH;
+        if (app(q->path, lp_sn) || app(q->path2, de.name))
+            return E_NOPATH;
+        q->attr = de.attr;
+        q->size = de.size;
+        q->time = de.time;
+        q->date = de.date;
+    }
+    if (!*p)
+        return 0;
+miss:                                       /* letzter Teil fehlt        */
+    if (app(q->path, lp_c) || app(q->path2, lp_c))
+        return E_NOPATH;
+    return E_NOFILE;
+}
+
+static unsigned d_lfind(struct dem_req *q)
+{
+    unsigned i, k, last = 2, r;
+    unsigned char al = (unsigned char)q->attr, rq2 = (unsigned char)(q->attr >> 8), a;
+    for (k = 0; k < DEM_PATHLEN - 1 && (lp_in[k] = q->path[k]) != 0; k++)
+        if (lp_in[k] == '\\')
+            last = k;
+    lp_in[k] = 0;
+    for (k = 0; (lp_c[k] = lp_in[last + 1 + k]) != 0 && k < 254; k++)
+        ;
+    lp_c[k] = 0;
+    lp_in[last == 2 ? 3 : last] = 0;
+    if (!lp_c[0]) {
+        lp_c[0] = '*';
+        lp_c[1] = 0;
+    }
+    for (i = g16(q->find); ; i++) {
+        r = fe(i, lp_in, 1);
+        if (FAILED(r))
+            return r == FAPI_ERR_NOTREADY ? E_NOTREADY : E_NOMORE;
+        a = de.attr;
+        if ((a & 0x08) || (a & ~al & 0x16) || (a & rq2) != rq2)
+            continue;
+        for (k = 0; k < DEM_PATHLEN - 1 && (q->path2[k] = de.name[k]) != 0; k++)
+            ;
+        q->path2[k] = 0;
+        if (FAILED(both(i, lp_in)))
+            return E_NOMORE;
+        if (lp_sn[0] == '.')                /* "." und "..": lfn 1 nennt  */
+            for (k = 0; (q->path2[k] = lp_sn[k]) != 0; k++)  /* sonst den */
+                ;                           /* Namen des Verzeichnisses  */
+        if (!wm(lp_c, q->path2) && !wm(lp_c, lp_sn))
+            continue;
+        to_fcb(lp_sn, (char *)q->name);
+        p16(q->find, i + 1);
+        q->attr = a;
+        q->time = de.time;
+        q->date = de.date;
+        q->size = de.size;
+        return 0;
+    }
+}
+
+static unsigned d_fclus(struct dem_req *q)
+{
+    unsigned h = FAPI(FAPI_OPEN, KDATA, (unsigned)q->path, OPEN_READ, 0);
+    if (FAILED(h))
+        return errmap(h, nf(q->path));
+    q->pos = kf_hfirst(h);
+    FAPI(FAPI_CLOSE, KDATA, h, 0, 0);
+    return 0;
+}
+
 /* ---- Verteiler ----------------------------------------------------------- */
 
 /* Auftrag q (im Kernel) fuer die Box t erledigen -> q->err (DOS-Fehler,
@@ -942,6 +1144,9 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_ABSREAD:   r = d_abs(t, q, 0); break;
     case DEM_ABSWRITE:  r = d_abs(t, q, 1); break;
     case DEM_DLOCK:     r = d_dlock(t, q); break;
+    case DEM_LPATH:     r = d_lpath(q); break;
+    case DEM_LFIND:     r = d_lfind(q); break;
+    case DEM_FCLUS:     r = d_fclus(q); break;
     default:            r = 1;              /* unbekannt (01h)       */
     }
     return q->err = r;
@@ -955,6 +1160,7 @@ const struct ctxblk dem_ctx[] = {
     { fn_fcb, sizeof(fn_fcb) }, { fn_tp, sizeof(fn_tp) }, { fn_dir, sizeof(fn_dir) },
     { &fn_lb, sizeof(fn_lb) }, { ff_dir, sizeof(ff_dir) },
     { op_dir, sizeof(op_dir) }, { op_fcb, sizeof(op_fcb) }, { op_one, sizeof(op_one) },
-    { &di_lb, sizeof(di_lb) }, { &rlk, sizeof(rlk) }
+    { &di_lb, sizeof(di_lb) }, { &rlk, sizeof(rlk) },
+    { lp_in, sizeof(lp_in) }, { lp_c, sizeof(lp_c) }, { lp_sn, sizeof(lp_sn) }
 };
 const unsigned dem_nctx = sizeof(dem_ctx) / sizeof(dem_ctx[0]);

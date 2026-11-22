@@ -114,7 +114,7 @@ static char upc(char c)
 }
 
 /* in (Box) -> out "X:\A\B" (gross, 8.3, . und .. aufgeloest); 0 oder Fehler */
-int canon(const char __far *in, char *out, unsigned *drv)
+static int canon8(const char __far *in, char *out, unsigned *drv)
 {
     unsigned d = cur_drv, o, n, e, dot;
     char c;
@@ -186,6 +186,52 @@ int canon(const char __far *in, char *out, unsigned *drv)
         out[3] = 0;
     }
     return 0;
+}
+
+/* Teil laenger als 8.3 (oder mit Leerzeichen, zwei Punkten ...)? Dann
+   wie Windows 95 auch in den alten Aufrufen ueber den langen Namen
+   aufloesen (FreeCOM gibt DIR den per 7160h langen Pfad) */
+static int is_long(const char __far *p)
+{
+    unsigned n = 0, e = 0, dot = 0;
+    char c;
+    for (;; p++) {
+        c = *p;
+        if (!c || c == '\\' || c == '/') {
+            if (n > 8 || e > 3 || dot > 1)
+                return 1;
+            if (!c)
+                return 0;
+            n = e = dot = 0;
+            continue;
+        }
+        if (c == '.') {
+            if (n || dot)               /* "." und ".." nicht            */
+                dot++;
+            else if (p[1] != '.' && p[1] != '\\' && p[1] != '/' && p[1])
+                return 1;               /* ".profil"                     */
+            continue;
+        }
+        if (c == ' ' || c == '+' || c == ',' || c == ';' || c == '=' || c == '[' || c == ']')
+            return 1;
+        if (dot)
+            e++;
+        else
+            n++;
+    }
+}
+
+int canon(const char __far *in, char *out, unsigned *drv)
+{
+    static char tmp[DEM_PATHLEN];
+    int e;
+    if (is_long(in)) {
+        e = lfn_canon(in, tmp);
+        if (e)
+            return e;
+        return canon8(tmp, out, drv);
+    }
+    return canon8(in, out, drv);
 }
 
 /* letzter Teil des Pfads ein Geraetename? -> DV_xx oder -1 */
@@ -334,7 +380,7 @@ int open_path(const char *path, unsigned mode, unsigned act, unsigned attr, unsi
     }
     if ((s = sft_new()) < 0)
         return -E_NOHANDLES;
-    for (i = 0; path[i] && i < 127; i++)
+    for (i = 0; path[i] && i < DEM_PATHLEN - 1; i++)
         q.path[i] = path[i];
     q.path[i] = 0;
     q.mode = mode;
@@ -771,6 +817,10 @@ static void ioctl_fn(struct frame __far *f)
         }
         break;
     case 0x08: case 0x09: case 0x0D: case 0x0E: case 0x0F: case 0x11:
+        if (AL(f) == 0x0D && (CH(f) == 0x08 || CH(f) == 0x48) && CL(f) == 0x71) {
+            lfn_fclus(f);               /* erster Cluster (MS-DOS 7)     */
+            break;
+        }
         if (AL(f) == 0x0D && (CH(f) == 0x08 || CH(f) == 0x48) &&
             (CL(f) == 0x4B || CL(f) == 0x6B)) {
             f->ax = 0;                  /* physisch sperren: bestaetigt  */
@@ -858,7 +908,7 @@ static int path_arg(struct frame __far *f, u16 seg, u16 off, char *out)
     return 1;
 }
 
-static void do_open(struct frame __far *f, const char *path, unsigned mode,
+void do_open(struct frame __far *f, const char *path, unsigned mode,
                     unsigned act, unsigned attr, int ext)
 {
     unsigned res;
@@ -1243,6 +1293,9 @@ void file_fn(struct frame __far *f)
     }
     case 0x73:
         abs7305(f);
+        return;
+    case 0x71:                          /* lange Namen (lfn.c)           */
+        lfn_fn(f);
         return;
     default:
         set_err(f, E_FUNC);

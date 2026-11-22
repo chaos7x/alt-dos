@@ -186,6 +186,12 @@ void abs7305(struct frame __far *f);
 void dlock_fn(struct frame __far *f, unsigned d);
 void dlock_end(u16 psp);
 
+/* lfn.c */
+void lfn_fn(struct frame __far *f);
+void lfn_fclus(struct frame __far *f);
+void lfn_end(u16 psp);
+int  lfn_canon(const char __far *in, char *out);
+
 /* exec.c */
 struct frame __far *exec_fn(struct frame __far *f);
 struct frame __far *term(struct frame __far *f, unsigned type, unsigned rc, u16 keep);

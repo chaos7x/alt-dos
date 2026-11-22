@@ -2991,6 +2991,13 @@ int __far kf_hmeta(unsigned h, unsigned what, unsigned attr, unsigned date, unsi
     return 0;
 }
 
+/* erster Cluster der Datei hinter Handle h (DEM, Box 440Dh 0871h) */
+unsigned long __far kf_hfirst(unsigned h)
+{
+    int k = h2e(h);
+    return k < 0 || files[k].kind != OF_FILE ? 0 : files[k].f.first;
+}
+
 /* Sockets (net.c): Eintrag fuer Socket id anlegen -> Handle, Handle ->
    id (FFFFh = kein Socket des laufenden Programms). Ohne Kernelsperre:
    of_alloc schlaeft nicht und belegt den Eintrag sofort. */

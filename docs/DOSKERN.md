@@ -324,7 +324,8 @@ die Programme direkt lesen.
     `dlock_fn` (geschachtelt gezählt, der Kernel sperrt beim ersten und
     gibt beim letzten frei), `dlock_end` in term() gibt Sperren eines
     endenden Programms frei, `abs7305`. 4Bh/6Bh nur bestätigt (ohne
-    Wirkung), 6Ch meldet 0, 71h fehlt. Grenze: ein Laufwerk mit
+    Wirkung), 6Ch meldet 0, 71h (erster Cluster) seit 22.11.2026 über
+    `DEM_FCLUS`. Grenze: ein Laufwerk mit
     Auslagerungsdatei oder LOOP-Abbild (vom Kernel offen) lässt sich nicht
     sperren – bei der Vorgabe also C:. Geprüft: QEMU (FAT16 D:, FAT32 E::
     ohne Sperre 0300h, Sperre bei offener Datei 05h, Muster schreiben/
@@ -345,6 +346,44 @@ die Programme direkt lesen.
     QEMU und 86Box 386DX/40 geprüft (Sperre bei eigener offener Datei,
     DIR/COPY danach, fsck sauber). Nicht geprüft: WINNT.EXE selbst
     (INT 13h auf Festplatten gibt es in der Box nicht).
+
+### Lange Dateinamen (INT 21h 71xxh), 22.11.2026
+
+Wunsch des Nutzers (zusammen mit 440Dh 0871h). Der Box-Kern bleibt
+innen bei kurzen Pfaden (CDS, SFT, alle alten Aufrufe); `atdoscm/lfn.c`
+löst lange Pfade über das DEM auf:
+
+- `DEM_LPATH` (21): Pfad mit langen oder kurzen Teilen -> kurze Form
+  (`path`) und lange Form (`path2`); fehlt nur der letzte Teil: 02h und
+  dieser Teil unverändert angehängt. `DEM_LFIND` (22): Suche mit langem
+  Muster (`*`/`?` ohne Groß/klein, `*.*` = alles, trifft langen oder
+  kurzen Namen), Zustand = Eintragsnummer. `DEM_FCLUS` (23): erster
+  Cluster (Kernel `kf_hfirst` über ein geöffnetes Handle).
+  `DEM_R_LONG` in `rsv`: DEM_OPEN vergleicht den letzten Teil nicht als
+  8.3 (sonst träfe „sehrlangername.txt“ eine Datei SEHRLANG.TXT).
+  `path`/`path2` jetzt 261 Byte; redir.c gibt sie nur bei LPATH/LFIND
+  zurück. Der Kernel gibt der Box sonst nur 8.3 (`task.lfn` 0) – das DEM
+  schaltet den Merker je FINDENTRY um und holt so beide Namen.
+- Box-Kern: 710Dh, 7139h/713Ah/713Bh, 7141h (SI = 1 mit Platzhaltern),
+  7143h (BL 0–8; Zugriff/Anlegen = Änderung, Setzen ohne Wirkung außer
+  BL 1/3), 7147h, 714Eh/714Fh/71A1h (8 Suchen gleichzeitig, frei beim
+  Programmende), 7156h, 7160h (CL 0/1/2), 716Ch/71A9h, 71A0h („FAT“,
+  BX 4006h, 255/260), 71A6h, 71A7h (FILETIME ohne Zeitzone, 64-Bit-
+  Rechnung in 16-Bit-Stücken), 71A8h; Rest AX = 7100h wie DOS ohne LFN.
+  Neue Namen legt der Kernel an wie für FAPI-Programme (FAT32 VFAT,
+  FAT12/16 je nach LONGNAMES=).
+- Alte Aufrufe (3Dh, 4Eh, 4Bh …) mit langen Pfadteilen lösen wie bei
+  Windows 95 ebenfalls über `DEM_LPATH` auf (`is_long` in file.c) –
+  FreeCOM gibt DIR den per 7160h langen Pfad.
+- Geprüft: QEMU (FAT16 C: mit EA-Namen, FAT32 D: mit VFAT; Testprogramm
+  LT.COM im Scratchpad: Anlegen, Öffnen, Suche, 7160h kurz/lang, CD,
+  7147h, Umbenennen, Attribute, erster Cluster, FILETIME gegen Python,
+  Löschen mit Platzhaltern, RD), FreeCOM `DIR /LFN`, COPY/REN/TYPE/DEL
+  mit langen Namen; mtools sieht die VFAT-Namen, fsck sauber; BIOSCMP
+  und DOOM-Timedemo unverändert; 86Box 386DX/40 mit FAT32-Platte am
+  AHA-154xC. Grenzen: Befehlszeile der Box bis 127 Zeichen samt Pfad
+  von COMMAND.COM (FreeCOM meldet sonst „interner Fehler“); Namen in
+  der Codepage, kein Unicode; FreeDOS-/MKDOSIMG-Boxen ohne LFN.
   - FAT32: 7305h (erweitertes absolutes Lesen/Schreiben, wie Windows 95
     OSR2); INT 25h/26h auf FAT32 abgelehnt wie dort.
   - Nur lokale FAT-Laufwerke; NET USE, CD, Loop/DriveSpace-Container ->

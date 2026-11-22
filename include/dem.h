@@ -54,6 +54,18 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
 #define DEM_ABSWRITE    20  /* wie ABSREAD, nur mit Sperre (sonst 0300h)
                                - ABSREAD/ABSWRITE flags 2 = 7305h (auch
                                FAT32; INT 25h/26h dort 0207h)             */
+#define DEM_LPATH       21  /* path (lang oder kurz, ohne . und ..) ->
+                               path = kurze Form, path2 = lange Form, attr,
+                               time, date, size; fehlt nur der letzte Teil:
+                               E_NOFILE (2), letzter Teil unveraendert
+                               angehaengt; fehlt ein Verzeichnis: 03h     */
+#define DEM_LFIND       22  /* path = "X:\KURZ\Muster" (Muster lang), attr
+                               = erlaubte (unten) | verlangte (oben)
+                               Attribute, find[0/1] = Eintrag -> naechster;
+                               path2 = langer, name = kurzer Name (FCB-Form),
+                               attr, time, date, size; 12h = keine mehr  */
+#define DEM_FCLUS       23  /* path (kurz) -> pos = erster Cluster (440Dh
+                               0871h)                                    */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 
@@ -68,6 +80,10 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
 #define DEM_F_UNLOCK    1               /* LOCK: freigeben               */
 
 #define DEM_NOHANDLE    0xFFFFUL
+#define DEM_PATHLEN     261             /* Pfade bis 260 Zeichen (LFN)   */
+#define DEM_R_LONG      1               /* rsv bei DEM_OPEN/MKDIR/RENAME:
+                                           letzter Teil ist ein langer
+                                           Name, nicht als 8.3 vergleichen */
 
 struct dem_req {
     dem_u16 fn, err;                    /* Auftrag; DOS-Fehler (0 ok)     */
@@ -77,14 +93,14 @@ struct dem_req {
     dem_u16 attr, time, date;
     dem_u16 flags;
     dem_u16 drive;                      /* 0 = A:                        */
-    dem_u16 rsv;
+    dem_u16 rsv;                        /* DEM_R_LONG                    */
     dem_u32 handle;                     /* DEM-Handle                    */
     dem_u32 pos, size, count;
     dem_u32 buf;                        /* linear im Speicher der Box     */
     dem_u8  name[11];                   /* gefunden: Name in FCB-Form     */
     dem_u8  find[21];                   /* Suchzustand (DOS legt ihn ab)  */
-    char    path[128];                  /* "X:\DIR\NAME"                  */
-    char    path2[128];
+    char    path[DEM_PATHLEN];          /* "X:\DIR\NAME"                  */
+    char    path2[DEM_PATHLEN];
 };
 
 #endif

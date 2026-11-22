@@ -224,7 +224,7 @@ wlink $LINK name $B/dstub.bin option map=$B/dstub.map \
 
 echo "Eigener Box-Kern (atdoscm/)"
 nasm -f obj atdoscm/entry.asm -o $B/cmentry.o
-for f in kern file fcb con exec dosint config; do
+for f in kern file fcb con exec dosint config lfn; do
     wcc -q -ms -0 -s -zl -zls -zp1 -d0 -os -wx -we -fo=$B/cm_$f.o atdoscm/$f.c
 done
 # Code und Daten getrennt (DOS=HIGH: Code in die HMA), als DOS-EXE gelinkt
@@ -233,7 +233,7 @@ done
 wlink option quiet format dos option nodefaultlibs \
       option map order clname CODE clname DATA clname BSS \
       name $B/atdoscm.exe option map=$B/atdoscm.map file $B/cmentry.o \
-      file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o file $B/cm_dosint.o file $B/cm_config.o \
+      file $B/cm_kern.o file $B/cm_file.o file $B/cm_fcb.o file $B/cm_con.o file $B/cm_exec.o file $B/cm_dosint.o file $B/cm_config.o file $B/cm_lfn.o \
       2>&1 | grep -v W1014 || true
 python3 - $B/atdoscm.exe $B/atdoscm.sys $B/atdoscm.map <<'PYEOF'
 import struct, sys
@@ -370,9 +370,10 @@ nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 nasm -f bin apps/lock.asm -o $B/lock.com       # LOCK/UNLOCK wie MS-DOS 7
 nasm -f bin -DUNLOCK apps/lock.asm -o $B/unlock.com
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
-BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
-# Diskette 3 (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
-HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
+BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+# Diskette 3 (Diskette 2 ist voll): FreeDOS-Abbild (Rueckfall, DOS_KERNEL=
+# FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
+HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
 HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
