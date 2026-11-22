@@ -876,6 +876,9 @@ proben per Testbau mit verfälschtem Prüfwert: Anmeldung scheitert bei
 GMAC, CMAC und HMAC, normale Antworten (dir/get/put) werden bei 3.1.1
 und 2.1 abgewiesen, verfälschtes `vneg` bei 3.0 -> „Aushandlung
 verfälscht“. SMBCLI danach 63.744 von 65.536 Byte.
+Vom Nutzer in 86Box bestätigt (22.11.2026, Samba 4.22, AES-256-GCM
+verlangt): LOGON mit Heimlaufwerk geht auch mit der Prüfung der
+Server-Signaturen (GMAC).
 
 Vom Nutzer in 86Box gegen sein Samba-Heimlaufwerk bestätigt (21.11.2026,
 test-6.3, gleichzeitig vom Mac eingehängt): `COPY CON N:\SPERRE.TXT`
