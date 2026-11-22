@@ -920,3 +920,54 @@ keine, Kerberos meldet jede Freigabe ohne Kennwort an.
   `NET USE O: \\fs\av` gemerkt, nach Neustart verbindet `LOGON` erst N:
   (Heimlaufwerk aus dem AD), dann O: aus der Liste – Anmeldung beim DC
   über IPv6 (fd00::4).
+
+## NET wie unter Windows (6.4, 22.11.2026, Wunsch des Nutzers)
+
+Anlass: der Nutzer hat die Unterbefehle von `net` unter Windows 11
+gezeigt. Abgestimmt: alles, was zu einem Arbeitsplatz passt; Server-
+befehle (SHARE, SESSION, FILE, START/STOP/PAUSE/CONTINUE, COMPUTER) und
+lokale Konten/Gruppen gibt es unter AT-DOS nicht (Meldung).
+
+- `NET.EXE` ist der Verteiler (`apps/task_net.c`): ohne Argument die
+  Syntax, `HELP`/`/?`, `HELPMSG` (Tabelle häufiger Nummern: 2, 3, 5, 53,
+  67, 86, 1326, 2221, 2250 …), `CONFIG WORKSTATION` (COMPUTERNAME bzw.
+  Name aus DHCP, DNS-Suffix, USERNAME, Karten mit MAC und Adressen aus
+  NET_IFINFO, Version aus DosGetVersion, Domäne aus DOMAIN.KEY,
+  USERDOMAIN/LOGONSERVER von LOGON), `STATISTICS WORKSTATION` (seit =
+  jetzt − DosQTicks, Rahmen/Fehler je Karte, Zahl der UFS-Laufwerke).
+- `NET TIME`: NET schickt selbst ein SMB2-NEGOTIATE (Dialekte 2.0.2–
+  3.0.2, ohne Anmeldung) an Port 445 und nimmt SystemTime (FILETIME) aus
+  der Antwort – 64 Bit über 16-Bit-Teilungen (`dv64`), minus 11644473600 s.
+  Zeitzone über `apps/tz.c` (aus SNTP herausgelöst, POSIX-TZ, Vorgabe
+  Mitteleuropa). Ohne `\\Rechner`: `/DOMAIN[:Name]` (USERDNSDOMAIN oder
+  DOMAIN.KEY), sonst LOGONSERVER. `/SET` fragt wie Windows (J/N, `/Y`
+  ohne Frage), rechnet die Wartezeit dazu und stellt auf die nächste
+  gerade Sekunde (FAT-Uhr).
+- `NET VIEW \\Rechner [/ALL]`: `SMBCLI \\Rechner --view` – IPC$, Pipe
+  `srvsvc` öffnen, DCE/RPC BIND (srvsvc 3.0, NDR) und NetrShareEnum
+  (Opnum 15, Ebene 1) per FSCTL_PIPE_TRANSCEIVE, weitere Bruchstücke per
+  READ; Freigaben mit `$` bzw. Typ-Bit 31 nur mit /ALL; „Verwendet als“
+  über UFS_INFO. Anmeldung mit Kerberos (Tickets da, Name statt Zahl),
+  `/USER:[Dom\]Name` (Kennwort fragt SMBCLI), sonst Gast. Lehre: Felder
+  einer RPC-PDU vorher nullen – eine Assoc-Group aus Pufferresten ergab
+  BIND_NAK (Grund 0).
+- `NET USER/GROUP/ACCOUNTS … /DOMAIN` startet `NET1.EXE`
+  (`apps/task_net1.c`, wie net1.exe bei Windows): Ticket aus der Ablage,
+  LDAP über ldapc.c (SASL GSSAPI, versiegelt), Suche mit sAMAccountType
+  805306368 (Benutzer) bzw. objectClass=group, Namen in einem Segment
+  sortiert. Konto: displayName, description, userAccountControl (aktiv,
+  Kennwort nötig/läuft nie ab), accountExpires, pwdLastSet (+ min/maxPwdAge
+  der Domäne), lastLogon/lastLogonTimestamp, Pfade, memberOf und die
+  primäre Gruppe über die Domänen-SID + primaryGroupID (objectSid-Suche).
+  ACCOUNTS: minPwdLength, Kennwortalter, Chronik, Sperrschwelle/-dauer/
+  -fenster, forceLogoff (Zeitspannen als negative 100-ns-Werte). Nur
+  lesend – Änderungen lehnt NET1 ab.
+
+Geprüft in QEMU: gegen den Test-DC (Samba 4.19 AD) NET USER/GROUP/
+ACCOUNTS mit Kerberos, NET VIEW mit Kerberos und Kennwort (mit NET USE
+E: „Verwendet als E:“), NET TIME (auch /DOMAIN:, /SET /Y – Uhr danach
+auf Ortszeit), CONFIG, STATISTICS, HELP, HELPMSG, Serverbefehle
+abgelehnt. Der eigenständige Test-smbd startet seinen RPC-Dienst
+(samba-dcerpcd) in dieser Umgebung nicht – NET VIEW dort nicht prüfbar.
+NET.EXE und NET1.EXE liegen auf Setup-Diskette 3 (`HDDOS3` in build.sh),
+Disketten 1 und 2 sind voll.

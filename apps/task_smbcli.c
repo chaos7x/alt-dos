@@ -1231,6 +1231,7 @@ static unsigned hseg;                   /* Pfade je Handle, Schreibdaten  */
 #define HREC 264                        /* Pfad je Handle in hseg         */
 #define WOFF (32 * HREC)                /* geretteter WRITE (16 KB)       */
 static const char *sconnect(void);
+static void die(const char *m, unsigned rc);
 /* Satz: attr(1) size(4) date(2) time(2) nlen(1) alias(13) name(nlen) */
 #define LREC(o) ((u8 __far *)MK_FP(lseg, o))
 
@@ -1553,6 +1554,203 @@ static void fat2ft(unsigned d, unsigned t, u8 *o)
     }
     for (i = 0; i < 4; i++)
         put16(o + 2 * i, w[i]);
+}
+
+/* ---- NET VIEW: Freigaben ueber DCE/RPC (srvsvc NetrShareEnum, Ebene 1) ----
+   IPC$, Pipe "srvsvc" oeffnen, BIND und Anfrage per FSCTL_PIPE_TRANSCEIVE,
+   weitere Bruchstuecke per READ. Stubdaten der Antwort ab tx + 1024. */
+static unsigned vall, view;             /* NET VIEW [/ALL]              */
+
+static void rpc_hdr(u8 *p, unsigned type, unsigned len, unsigned id)
+{
+    cr_zero(p, 16);
+    p[0] = 5;
+    p[2] = (u8)type;
+    p[3] = 3;                           /* erstes und letztes Stueck      */
+    p[4] = 0x10;                        /* Little Endian, ASCII, IEEE    */
+    put16(p + 8, len);
+    put32(p + 12, id);
+}
+
+/* PDU ab BODY+56 (n Byte) senden -> Antwort-PDU in rx, Zeiger/Laenge */
+static u8 *rpc_tx(unsigned n, unsigned *len, u32 *st)
+{
+    unsigned k;
+    cr_zero(BODY, 56);
+    BODY[0] = 57;
+    put32(BODY + 4, 0x0011C017UL);      /* FSCTL_PIPE_TRANSCEIVE         */
+    cr_cpy(BODY + 8, fid, 16);
+    BODY[24] = 64 + 56;
+    put32(BODY + 28, n);
+    put32(BODY + 44, 8192);             /* MaxOutputResponse             */
+    BODY[48] = 1;
+    *st = smb(C_IOCTL, 56 + n);
+    if (*st != S_OK && *st != 0x80000005UL)
+        return 0;
+    k = (unsigned)get32(RB + 32);
+    *len = (unsigned)get32(RB + 36);
+    if (k + *len > rxn || *len < 24)
+        return 0;
+    return rx + k;
+}
+
+static void v_str(const u8 *b, unsigned *o, unsigned end, char *d, unsigned max)
+{
+    unsigned n, i, k = 0;
+    if (*o + 12 > end) {
+        *d = 0;
+        return;
+    }
+    n = (unsigned)get32(b + *o + 8);
+    *o += 12;
+    for (i = 0; i < n && *o + 2 <= end; i++, *o += 2) {
+        unsigned u = get16(b + *o);
+        if (u && k < max - 1)
+            d[k++] = from16(u);
+    }
+    d[k] = 0;
+    *o = (*o + 3) & ~3u;
+}
+
+static void pad(const char *s, unsigned w)
+{
+    unsigned n = slen(s);
+    out(s);
+    while (n++ < w)
+        out(" ");
+}
+
+static void c_view(void)
+{
+    u8 *q, *sb = tx + 1024, *b;
+    unsigned n, len, sn = 0, o, cnt, i, e, k;
+    u32 st, ty;
+    static const u8 srvsvc[20] = { 0xC8, 0x4F, 0x32, 0x4B, 0x70, 0x16, 0xD3, 0x01,
+        0x12, 0x78, 0x5A, 0x47, 0xBF, 0x6E, 0xE1, 0x88, 3, 0, 0, 0 };
+    static const u8 ndr[20] = { 0x04, 0x5D, 0x88, 0x8A, 0xEB, 0x1C, 0xC9, 0x11,
+        0x9F, 0xE8, 0x08, 0x00, 0x2B, 0x10, 0x48, 0x60, 2, 0, 0, 0 };
+    static char nm[80], rm[80];
+
+    st = c_open("srvsvc", 0x0012019FUL, 1, 0, 0, 0);
+    if (st != S_OK)
+        die("Freigabeliste nicht lesbar (Pipe srvsvc).", 1);
+    q = BODY + 56;                      /* BIND                          */
+    cr_zero(q, 72);
+    rpc_hdr(q, 11, 72, 1);
+    put16(q + 16, 4280);
+    put16(q + 18, 4280);
+    q[24] = 1;                          /* ein Kontext                   */
+    put16(q + 28, 0);
+    q[30] = 1;
+    cr_cpy(q + 32, srvsvc, 20);
+    cr_cpy(q + 52, ndr, 20);
+    b = rpc_tx(72, &len, &st);
+    if (b) {                            /* BIND_ACK: Ergebnis 0          */
+        o = (26 + get16(b + 24) + 3) & ~3u;
+        if (b[2] != 12 || o + 6 > len || !b[o] || get16(b + o + 4))
+            b = 0;
+    }
+    if (!b)
+        die("Server nimmt den RPC-Dienst srvsvc nicht an.", 1);
+
+    q = BODY + 56;                      /* NetrShareEnum (Opnum 15)      */
+    n = slen(host);
+    cr_zero(q, 80 + 2 * n);
+    o = 24;
+    put32(q + o, 0x00020000UL);         /* ServerName [unique]           */
+    put32(q + o + 4, n + 3);
+    put32(q + o + 8, 0);
+    put32(q + o + 12, n + 3);
+    o += 16;
+    put16(q + o, '\\'); put16(q + o + 2, '\\');
+    o += 4;
+    for (i = 0; i < n; i++, o += 2)
+        put16(q + o, (u8)host[i]);
+    put16(q + o, 0);
+    o = (o + 2 + 3) & ~3u;
+    put32(q + o, 1);                    /* Level                         */
+    put32(q + o + 4, 1);                /* Union                         */
+    put32(q + o + 8, 0x00020004UL);     /* SHARE_INFO_1_CONTAINER        */
+    put32(q + o + 12, 0);
+    put32(q + o + 16, 0);
+    put32(q + o + 20, 0xFFFFFFFFUL);    /* PreferedMaximumLength         */
+    put32(q + o + 24, 0x00020008UL);    /* ResumeHandle                  */
+    put32(q + o + 28, 0);
+    o += 32;
+    rpc_hdr(q, 0, o, 2);
+    put32(q + 16, o - 24);              /* alloc_hint                    */
+    put16(q + 22, 15);
+    b = rpc_tx(o, &len, &st);
+    for (;;) {
+        if (!b || b[2] != 2 || get16(b + 8) > len)
+            die("Keine g\x81ltige Antwort von srvsvc.", 1);
+        k = get16(b + 8) - 24;
+        if (sn + k > 15000)
+            die("Freigabeliste zu lang.", 1);
+        cr_cpy(sb + sn, b + 24, k);
+        sn += k;
+        if (b[3] & 2)
+            break;
+        cr_zero(BODY, 48);              /* weiteres Bruchstueck          */
+        BODY[0] = 49;
+        put32(BODY + 4, 8192);
+        cr_cpy(BODY + 16, fid, 16);
+        st = smb(C_READ, 49);
+        if (st != S_OK && st != 0x80000005UL)
+            die("Lesefehler an der Pipe srvsvc.", 1);
+        len = (unsigned)get32(RB + 4);
+        b = rx + RB[2];
+        if (RB[2] + len > rxn)
+            b = 0;
+    }
+    c_close();
+    if (sn < 24 || get32(sb + sn - 4))
+        die("Der Server verweigert die Freigabeliste.", 1);
+    cnt = (unsigned)get32(sb + 12);
+    if (cnt > 400)
+        die("Keine g\x81ltige Antwort von srvsvc.", 1);
+    e = 24;                             /* Eintraege (nach max. count)   */
+    o = e + 12 * cnt;
+    out("Freigegebene Ressourcen auf \\\\");
+    out(host);
+    out("\r\n\r\n\r\n\r\nFreigabename  Typ     Verwendet als  Kommentar\r\n\r\n"
+        "-------------------------------------------------------------------------------\r\n");
+    for (i = 0; i < cnt; i++, e += 12) {
+        nm[0] = rm[0] = 0;
+        if (get32(sb + e))
+            v_str(sb, &o, sn, nm, sizeof(nm));
+        ty = get32(sb + e + 4);
+        if (get32(sb + e + 8))
+            v_str(sb, &o, sn, rm, sizeof(rm));
+        if ((ty & 0x80000000UL) && !vall)
+            continue;
+        k = slen(nm);
+        if (!vall && k && nm[k - 1] == '$')
+            continue;
+        pad(nm, 13);
+        out(" ");
+        ty &= 0xFF;
+        pad(ty == 0 ? "Platte" : ty == 1 ? "Drucker" : ty == 3 ? "IPC" : "Ger\x84t", 8);
+        line[0] = 0;
+        for (k = 2; k < 26; k++)        /* mit NET USE verbunden?         */
+            if (!fapi_call(FAPI_UFS, UFS_INFO, k, (unsigned)&rg)) {
+                scopy(a1, "\\\\", sizeof(a1));
+                scopy(a1 + 2, host, sizeof(a1) - 2);
+                n = slen(a1);
+                a1[n++] = '\\';
+                scopy(a1 + n, nm, sizeof(a1) - n);
+                if (same(rg.name, a1)) {
+                    line[0] = (char)('A' + k);
+                    line[1] = ':';
+                    line[2] = 0;
+                    break;
+                }
+            }
+        pad(line, 15);
+        out(rm);
+        out("\r\n");
+    }
+    out("Der Befehl wurde erfolgreich ausgef\x81hrt.\r\n");
 }
 
 static char sp[FAPI_PATHLEN], sp2[FAPI_PATHLEN];
@@ -2029,17 +2227,17 @@ static const char *sconnect(void)
         if (!hs)
             return "SMB 3.1.1 ohne SHA-512-Vorabpruefung.";
     }
-    if (!srv)
+    if (!srv && !view)
         out("Verbunden mit ");
-    if (!srv)
+    if (!srv && !view)
         out(host);
     net_ntop(ad, line);
-    if (!srv && !same(host, line)) {
+    if (!srv && !view && !same(host, line)) {
         out(" (");
         out(line);
         out(")");
     }
-    if (!srv)
+    if (!srv && !view)
         out(", SMB ");
     ts[0] = (char)('0' + (dialect >> 8));
     ts[1] = '.';
@@ -2047,7 +2245,7 @@ static const char *sconnect(void)
     ts[3] = (dialect & 15) ? '.' : 0;
     ts[4] = (char)('0' + (dialect & 15));
     ts[5] = 0;
-    if (!srv) {
+    if (!srv && !view) {
         out(ts);
         out(!signing ? "" : salg == 2 && dialect == 0x0311 ? ", signiert (GMAC)" : ", signiert");
         out(".\r\n");
@@ -2138,7 +2336,7 @@ static const char *sconnect(void)
         if (n < 24)
             return "Aushandlung verfaelscht (VALIDATE_NEGOTIATE).";
     }
-    if (encr && !srv) {
+    if (encr && !srv && !view) {
         out(cipher >= 3 ? "Verschluesselt mit AES-256-" : "Verschluesselt mit AES-128-");
         out(C_GCM ? "GCM.\r\n" : "CCM.\r\n");
     }
@@ -2205,7 +2403,11 @@ void main(void)
         } else if (*a == '-' && a[1] == 'P' && a[2] <= ' ') {
             a = next_word(a);
             word(a, pwf, sizeof(pwf));
-        } else if (*a == '-' && a[1] == '-' && a[2] == 's') {   /* --serve X: */
+        } else if (*a == '-' && a[1] == '-' && a[2] == 'v')    /* --view (NET VIEW) */
+            view = 1;
+        else if ((*a == '/' || *a == '-') && up(a[1]) == 'A' && up(a[2]) == 'L')
+            vall = 1;
+        else if (*a == '-' && a[1] == '-' && a[2] == 's') {   /* --serve X: */
             a = next_word(a);
             srv = (unsigned)(up(*a) - 'A' + 1);
             if (srv < 3 || srv > 26 || a[1] != ':')
@@ -2247,6 +2449,8 @@ void main(void)
     }
     if (srv == 0xFFFF)
         die("--serve braucht ein Laufwerk C: bis Z:.", 2);
+    if (view)
+        scopy(share, "IPC$", sizeof(share));
     if (!host[0] || !share[0])
         die("\\\\Rechner\\Freigabe fehlt (SMBCLI /? zeigt die Schalter).", 2);
     if (!kerb && user[0] && !havepass && get_line("Kennwort: ", pass, sizeof(pass), 0))
@@ -2257,7 +2461,9 @@ void main(void)
     if ((p = (char *)sconnect()) != 0)
         die(p, 4);
 
-    if (srv) {                          /* NET USE: Laufwerk anmelden     */
+    if (view)
+        c_view();
+    else if (srv) {                     /* NET USE: Laufwerk anmelden     */
         lseg = DosAllocSeg(0);
         hseg = DosAllocSeg(WOFF + UFS_DATA);
         if (FAPI_FAILED(lseg) || FAPI_FAILED(hseg))

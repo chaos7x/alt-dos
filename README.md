@@ -312,6 +312,19 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `NET USE /RESTORE` stellt sie her (mit Kerberos ohne Rückfrage, mit
   `/USER:` fragt es nach dem Kennwort). LOGON ruft es nach dem
   Heimlaufwerk; das Heimlaufwerk selbst wird nicht gemerkt.
+- Weitere NET-Befehle wie unter Windows (6.4, nur Arbeitsplatz – Server-
+  befehle wie SHARE/SESSION/START gibt es nicht): `NET` zeigt die Syntax,
+  `NET HELP [Befehl]` bzw. `NET Befehl /?`, `NET HELPMSG Nummer` (häufige
+  Windows-/LAN-Manager-Fehlernummern), `NET CONFIG [WORKSTATION]`
+  (Rechner, Benutzer, Domäne, Karten mit MAC/Adresse, Version), `NET
+  STATISTICS [WORKSTATION]` (Zähler der Karten, Netzlaufwerke), `NET TIME
+  [\\Rechner | /DOMAIN[:Name]] [/SET [/Y]]` (Uhrzeit aus der SMB2-
+  Aushandlung ohne Anmeldung, Zeitzone aus TZ wie SNTP, ohne Rechner der
+  Anmeldeserver), `NET VIEW \\Rechner [/ALL] [/USER:…]` (Freigaben über
+  DCE/RPC srvsvc, mit Laufwerksbuchstaben verbundener Freigaben),
+  `NET USER [Name] /DOMAIN`, `NET GROUP [Gruppe] /DOMAIN`, `NET ACCOUNTS
+  /DOMAIN` (nur lesend per LDAP mit dem Kerberos-Ticket, in `NET1.EXE`
+  wie bei Windows). NET.EXE und NET1.EXE liegen auf Setup-Diskette 3.
 - Bereichssperren über das Netz (6.3): Sperren von DOS-Programmen in der
   Box (INT 21h 5Ch) und von FAPI-Programmen (DosFileLock) auf NET-USE-
   Laufwerken gehen an den SMB-Server – ein zweiter Rechner sieht sie

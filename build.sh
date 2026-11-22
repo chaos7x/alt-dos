@@ -174,10 +174,11 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
+wcc $CFLAGS -fo=$B/tz.o apps/tz.c
 wcc $CFLAGS -fo=$B/crypto.o apps/crypto.c      # SHA-256, AES-GCM, X25519 (TLS)
 wcc $CFLAGS -fo=$B/tls.o apps/tls.c            # TLS-1.2-Client (WGET)
 wcc $CFLAGS -fo=$B/pki.o apps/pki.c            # X.509, RSA, ECDSA
@@ -201,12 +202,14 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     case " $LZHAPPS " in *" $t "*) U="$U file $B/lzh.o file $B/arcutil.o" ;; esac
     case " lha arj zoo " in *" $t "*) U="$U file $B/lzhenc.o" ;; esac
     [ $t = 7zdec ] && U="$U file $B/lzma.o file $B/bcj.o file $B/arcutil.o"   # 7z (lzma.c)
-    [ $t = sntp ] && U="$U file $B/arcutil.o"
+    [ $t = sntp ] && U="$U file $B/tz.o file $B/arcutil.o"
+    [ $t = net ] && U="$U file $B/tz.o file $B/arcutil.o"
+    [ $t = net1 ] && U="$U file $B/tz.o"
     [ $t = wget ] && U="$U file $B/tls.o file $B/pki.o file $B/sha512.o file $B/rnd.o file $B/crypto.o"
     case " ssh sftp " in *" $t "*) U="$U file $B/ssh.o file $B/ed25519.o file $B/pki.o file $B/sha512.o file $B/rnd.o file $B/crypto.o" ;; esac
     [ $t = smbcli ] && U="$U file $B/smb3c.o file $B/sha512.o file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
-    case " domjoin logon " in *" $t "*) U="$U file $B/ldapc.o" ;; esac
-    case " kinit klist kdestroy domjoin logon " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
+    case " domjoin logon net1 " in *" $t "*) U="$U file $B/ldapc.o" ;; esac
+    case " kinit klist kdestroy domjoin logon net1 " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
@@ -338,7 +341,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
        $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_eject.exe EJECT.EXE  $B/task_devload.exe DEVLOAD.EXE  $B/task_setup.exe SETUP.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
-       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_net.exe NET.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_domjoin.exe DOMJOIN.EXE $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE
+       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_domjoin.exe DOMJOIN.EXE $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/drv_pcnet.sys PCNET.SYS  $B/drv_e1000.sys E1000.SYS  $B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  $B/drv_vcom.sys VCOM.SYS  $B/drv_vsb.sys VSB.SYS  $B/drv_vems.sys VEMS.SYS  $B/drv_vega.sys VEGA.SYS  $B/drv_vcga.sys VCGA.SYS  $B/drv_vmouse.sys VMOUSE.SYS  $B/drv_vioblk.sys VIOBLK.SYS  $B/drv_vionet.sys VIONET.SYS  FIREWALL.INI FIREWALL.INI  HOSTS HOSTS
@@ -368,6 +371,8 @@ mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
 BOXFILES="$B/freedos.img FREEDOS.IMG  $B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 # Diskette 3 (Diskette 2 ist voll): COMMAND.COM 4.0 (msdos4/, MIT)
 HDMDOS="msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC"
+# Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
+HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.
@@ -416,6 +421,7 @@ rm -f $IMG3
 mformat -i $IMG3 -C -f 1440 -v 'AT-DOS 3' ::
 mmd -i $IMG3 ::DOS ::DOS/MDOS
 TARGET="-i $IMG3" TO="::" copy_list "$HDMDOS" "DOS/MDOS/"
+TARGET="-i $IMG3" TO="::" copy_list "$HDDOS3" "DOS/"
 # SETUP.ID: Nummer, belegte KB aller Disketten (Fortschritt, Platz; SETUP
 # fordert so viele Disketten an, wie Groessen dastehen)
 used_kb() { mdu -s -i "$1" :: | awk '{print int($2 / 2)}'; }
@@ -448,6 +454,7 @@ mattrib +r +s +h c:ATDOS.SYS
 TARGET="" TO="c:" copy_files
 TARGET="" TO="c:" copy_extra
 TARGET="" TO="c:" copy_list "$HDMDOS" "DOS/MDOS/"
+TARGET="" TO="c:" copy_list "$HDDOS3" "DOS/"
 mdir -a c: | sed 's/^/  /'
 mdir c:DOS | sed 's/^/  /'
 unset MTOOLSRC
