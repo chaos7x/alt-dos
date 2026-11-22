@@ -198,7 +198,7 @@ void __far list_drives(int fd_ok, int boot_session)
         }
 
     for (d = 2; d < NDRIVE; d++) {
-        if (!(vol[d].used || vol[d].present) || d == PRE_DRIVE)
+        if (!(vol[d].used || vol[d].present) || IS_PRE(d))
             continue;
         b = &blk[vol[d].blk];
         msg[0] = (char)('A' + d);

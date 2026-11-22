@@ -134,6 +134,8 @@ void          cpu_reset(void);
 #define PRE_ERR_READ    2           /* BIOS-Lesefehler                     */
 #define PRE_ERR_FULL    3           /* Vorladebereich voll                 */
 #define PRE_DRIVE       25          /* Z:, nur waehrend CONFIG.SYS         */
+extern unsigned char pre_on;        /* Z: gehoert noch dem Vorladen (CONFIG.SYS) */
+#define IS_PRE(d)       ((d) == PRE_DRIVE && pre_on)
 extern unsigned char boot_drive;    /* BIOS-Nummer, ab 80h Festplatte      */
 extern unsigned char pre_err;
 extern unsigned long boot_hidden, boot_serial;
