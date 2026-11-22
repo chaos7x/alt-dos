@@ -93,6 +93,48 @@ static void cat(char *d, const char *s, unsigned max)
 }
 
 /* Kerberos-Ablage vorhanden (Pfad wie krb5.c krb_cc_path)? */
+/* Programm prog von AT-DOS: \DOS des COMSPEC-Laufwerks, sonst im PATH
+   (Start von der Setup-Diskette 1: SMBCLI/NET1 liegen dann auf C:) */
+static void prog_path(char *d, const char *prog, unsigned max)
+{
+    static char pv[FAPI_PATHLEN];
+    unsigned h, i, k;
+    if (FAPI_FAILED(DosGetEnv("COMSPEC", d, max)) || !d[0])
+        scopy(d, "C:", max);
+    d[2] = 0;
+    cat(d, "\\DOS\\", max);
+    cat(d, prog, max);
+    h = DosOpen(d);
+    if (!FAPI_FAILED(h)) {
+        DosClose(h);
+        return;
+    }
+    if (FAPI_FAILED(DosGetEnv("PATH", pv, sizeof(pv))))
+        return;
+    for (i = 0; pv[i]; ) {
+        for (k = 0; pv[i] && pv[i] != ';' && k < max - 14; k++)
+            d[k] = pv[i++];
+        if (pv[i] == ';')
+            i++;
+        if (!k)
+            continue;
+        d[k] = 0;
+        if (d[k - 1] != '\\')
+            cat(d, "\\", max);
+        cat(d, prog, max);
+        h = DosOpen(d);
+        if (!FAPI_FAILED(h)) {
+            DosClose(h);
+            return;
+        }
+    }
+    if (FAPI_FAILED(DosGetEnv("COMSPEC", d, max)) || !d[0])
+        scopy(d, "C:", max);
+    d[2] = 0;
+    cat(d, "\\DOS\\", max);
+    cat(d, prog, max);
+}
+
 static int have_tickets(void)
 {
     unsigned n, h;
@@ -324,10 +366,8 @@ static const char *connect(unsigned drive)
         pass[n] = 0;
 
     /* SMBCLI losgeloest starten: Laufwerk von COMSPEC, \DOS\SMBCLI.EXE */
-    if (FAPI_FAILED(DosGetEnv("COMSPEC", cl, sizeof(cl))) || !cl[0])
-        scopy(cl, "C:", sizeof(cl));
-    cl[2] = 0;
-    cat(cl, "\\DOS\\SMBCLI.EXE ", sizeof(cl));
+    prog_path(cl, "SMBCLI.EXE", sizeof(cl));
+    cat(cl, " ", sizeof(cl));
     cat(cl, unc, sizeof(cl));
     if (user[0]) {
         cat(cl, " -U ", sizeof(cl));
@@ -348,7 +388,7 @@ static const char *connect(unsigned drive)
     cl[n + 2] = 0;
     if (DosExecPgm(cl, EXEC_DETACH)) {
         DosDelete(pwf);
-        return "SMBCLI.EXE nicht gefunden (\\DOS).";
+        return "SMBCLI.EXE nicht gefunden (\\DOS, PATH).";
     }
 
     /* warten: Laufwerk da (Datei leer) oder Meldung "!..." */
@@ -536,13 +576,12 @@ static void sys_path(char *d, const char *name, unsigned max)
 /* Programm aus \DOS starten und auf das Ende warten -> ERRORLEVEL */
 static unsigned run_sub(const char *prog, const char *tail)
 {
-    sys_path(cl, "\\DOS\\", sizeof(cl));
-    cat(cl, prog, sizeof(cl));
+    prog_path(cl, prog, sizeof(cl));
     cat(cl, " ", sizeof(cl));
     cat(cl, tail, sizeof(cl));
     if (DosExecPgm(cl, EXEC_SYNC)) {
         out(prog);
-        fail(" nicht gefunden (\\DOS).");
+        fail(" nicht gefunden (\\DOS, PATH).");
     }
     return (unsigned)DosQChildRC();
 }
