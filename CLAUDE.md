@@ -431,6 +431,18 @@ nur ein Langwort – überschrieb die Variable dahinter. Platz: `rom_str`
 (MSD) nach `kernel/k2misc.c` (KTEXT2), erstes Codesegment 65.020 Byte.
 Geprüft QEMU (Z: „2.474 MB frei“, C: in Bytes) und 86Box SCAT (DIR Z:,
 COPY, MSD /S mit BIOS-Namen).
+Spiele mit eigenem Takt in der Kompatibilitätsbox (vom Nutzer gemeldet,
+22.11.2026: Digger mit schwankendem Tempo bei Bild und Ton): läuft im
+Hintergrund ein Programm, macht die Box je 2/4 BIOS-Takte einen Ausflug
+zu AT-DOS (RBSLICE) – und jeder Eintritt stellt den Zeitgeber auf
+18,2 Hz zurück, das Spiel verliert seinen Takt, bis es ihn neu setzt.
+Jetzt prüft der INT-8-Stummel (start.asm `rbs_int8`) den Zähler von
+Kanal 0: unter 8000h (schneller als 18,2 Hz) kein Ausflug. Den Vektor
+zu prüfen ging nicht – FreeDOS hängt INT 8 selbst um (0070h). Geprüft
+mit TT.COM (1000 Hz, 5 s nach der Echtzeituhr): QEMU und 86Box 386DX/40
+mit `DETACH CMD /C L.CMD` (Endlosschleife) vorher 58–91, jetzt 5.000
+Takte; am Box-Prompt bekommt der Hintergrund weiter Zeit (QEMU). SCAT:
+der Box-Start von Diskette scheitert dort (alt wie neu) – eigener Punkt.
 
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht

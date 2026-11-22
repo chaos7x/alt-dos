@@ -1559,6 +1559,14 @@ rbs_int8:                               ; Takt: BIOS zaehlt, dann je
         jmp     rbs_topm
 .nosw:  cmp     byte [cs:80], 0
         je      .ret
+        push    ax                      ; Zeitgeber schneller als 18,2 Hz
+        xor     al, al                  ; (Spiel mit eigenem Takt, z. B.
+        out     0x43, al                ; Digger): kein Ausflug - der
+        in      al, 0x40                ; stellte ihn auf 18,2 Hz zurueck,
+        in      al, 0x40                ; Bild und Ton liefen ungleich-
+        test    al, 0x80                ; maessig. Kurz nach dem Takt ist
+        pop     ax                      ; der Zaehler bei 18,2 Hz noch
+        jz      .ret                    ; ueber 8000h, schneller darunter
         dec     byte [cs:81]
         jnz     .ret
         push    ax
