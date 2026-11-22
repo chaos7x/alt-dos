@@ -445,6 +445,20 @@ Takte, 86Box SCAT ebenso 5.000; am Box-Prompt bekommt der Hintergrund
 weiter Zeit (QEMU). Testfalle: mit `PROTECTONLY=NO` lädt CMD /P die Box
 schon beim Start – ein zweites RBOX aus AUTOEXEC.CMD fand dann keine
 Shell („Bad or missing Command Interpreter“).
+Danach beim Nutzer auf dem SCAT weiter Ton -> kein Ton -> Ton und eine
+um 3–4 s verspätete Todesmelodie, auch ohne Hintergrundlast. Ursache:
+Digger fragt die Tastatur über INT 21h 0Bh ab, und RBSHELL glich dabei
+einmal je Sekunde die Laufwerke ab (`cds_sync`, INT E0h 12h über RBOX) –
+ein Ausflug je Sekunde, auf dem 286 ein CPU-Reset, Zeitgeber danach auf
+18,2 Hz. Jetzt legt `rb_entry_prep` bei jedem Eintritt die belegten
+Laufwerke (vol[].used/present) in den Stummelblock (Byte 90–93, 94 = A5h),
+RBSHELL vergleicht nur diese Maske und ruft cds_sync nur bei einer
+Änderung (ohne A5h wie früher je Sekunde). Gezählt über Port E9h in QEMU:
+während Digger 0 statt einem Ausflug je Sekunde, IRQ 0 im Spiel 233 statt
+49 je Sekunde; NET USE per DETACH bei vorn laufender (dauerhafter) Box,
+danach DIR Z: in der Box geht. 86Box SCAT mit TK.COM (wie TT.COM, fragt
+dazu die Tastatur über INT 21h 0Bh ab, ohne Hintergrundlast): vorher
+186–217, jetzt 5.000 von 5.000 Takten in 5 s.
 
 Setup-Disketten und Netzlaufwerke in der Kompatibilitätsbox (Wunsch des
 Nutzers, 22.11.2026: „Das weiterreichen an die Penalty-Box nicht

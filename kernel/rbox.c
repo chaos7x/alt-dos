@@ -17,6 +17,7 @@
 #include "kern.h"
 #include "mem.h"
 #include "../include/fapi_abi.h"
+#include "ifs.h"
 #include "k2.h"
 
 extern unsigned short rbs_code, rbs_len, rbs_entry_off, rbs_int9_off, rbs_int20_off,
@@ -481,6 +482,19 @@ static void rb_entry_prep(void)
     RBB(80) = (unsigned char)n;             /* Zaehler bei jedem Eintritt */
     RBB(81) = (unsigned char)(n + 1);       /* neu: der erste Takt kommt  */
                                             /* sofort (IRQ 0 wartet)      */
+    {                                       /* Laufwerke fuer RBSHELL    */
+        unsigned d, lo = 0, hi = 0;         /* (cds_sync nur bei Aende-  */
+        for (d = 0; d < NDRIVE; d++)        /* rung: jeder Ausflug kostet */
+            if (vol[d].used || vol[d].present) { /* auf dem 286 einen    */
+                if (d < 16)                 /* CPU-Reset und den Takt    */
+                    lo |= 1u << d;          /* eines Spiels)             */
+                else
+                    hi |= 1u << (d - 16);
+            }
+        RBW(90) = lo;
+        RBW(92) = hi;
+        RBB(94) = 0xA5;
+    }
 }
 
 static unsigned char rb_way;

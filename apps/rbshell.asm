@@ -393,6 +393,27 @@ int21:  cmp     ah, 4Bh                 ; EXEC/Laufwerkswechsel: CDS mit
         push    ds
         xor     ax, ax
         mov     ds, ax
+        mov     ds, [0E0h*4+2]          ; Stummel des Kernels: Laufwerke
+        cmp     byte [94], 0A5h         ; bei jedem Eintritt in [90]
+        jne     .old                    ; (sonst je Sekunde wie frueher -
+        mov     ax, [90]                ; jeder Ausflug kostet auf dem 286
+        cmp     ax, [cs:km]             ; einen CPU-Reset, Spiele wie
+        jne     .chg                    ; Digger verlieren ihren Takt)
+        mov     ax, [92]
+        cmp     ax, [cs:km+2]
+        je      .same
+.chg:   mov     ax, [90]
+        mov     [cs:km], ax
+        mov     ax, [92]
+        mov     [cs:km+2], ax
+        pop     ds
+        pop     ax
+        jmp     short .sy
+.same:  pop     ds
+        pop     ax
+        jmp     short .n4b
+.old:   xor     ax, ax
+        mov     ds, ax
         mov     ax, [046Ch]
         pop     ds
         sub     ax, [cs:sy_t]
@@ -1004,6 +1025,7 @@ kb_altg: times  90 db 0
 cdbuf:  times   130 db 0
 dmask:  dd      0
 sy_t:   dw      0
+km:     dw      0FFFFh, 0FFFFh          ; zuletzt gesehene Laufwerke
 old21:  dd      0
 dbuf:   times   32 db 0
 old2f:  dd      0
