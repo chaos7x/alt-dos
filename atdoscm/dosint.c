@@ -310,11 +310,100 @@ struct frame __far *int25_c(struct frame __far *f)
     return f;
 }
 
-/* Schreiben braucht wie unter MS-DOS 7 eine Laufwerkssperre (440Dh 4Ah) -
-   die gibt es in der Box nicht: Schreibschutz */
+/* Schreiben braucht wie unter MS-DOS 7 eine Laufwerkssperre (440Dh 4Ah),
+   sonst meldet der Kernel Schreibschutz (0300h) */
 struct frame __far *int26_c(struct frame __far *f)
 {
-    f->ax = drive_ok(AL(f)) ? 0x0300 : 0x8002;
-    cf(f, 1);
+    unsigned e;
+    abs_args(f);
+    e = drive_ok(q.drive) ? dem(DEM_ABSWRITE) : 0x8002;
+    if (e) {
+        f->ax = e;
+        cf(f, 1);
+    } else
+        cf(f, 0);
     return f;
+}
+
+/* INT 21h 7305h (Windows 95 OSR2): absolut lesen/schreiben, auch FAT32.
+   DL Laufwerk (0 = aktuelles), CX = FFFFh, DS:BX Paket wie INT 25h,
+   SI Bit 0 = schreiben (Bits 13-15 Art der Daten: ohne Bedeutung) */
+void abs7305(struct frame __far *f)
+{
+    unsigned e;
+    if (AL(f) != 0x05 || f->cx != 0xFFFF) {
+        set_err(f, AL(f) != 0x05 ? 1 : 0x57);
+        return;
+    }
+    AL(f) = DL(f) ? DL(f) - 1 : cur_drv;
+    abs_args(f);
+    q.flags = 3;                        /* Paketform, ueber 7305h        */
+    e = !drive_ok(q.drive) ? 0x8002 : dem(f->si & 1 ? DEM_ABSWRITE : DEM_ABSREAD);
+    if (e) {
+        f->ax = e;
+        cf(f, 1);
+    } else
+        cf(f, 0);
+}
+
+/* ---- Laufwerkssperre wie MS-DOS 7 (440Dh, CH 08h oder 48h) -------------
+   4Ah logisch sperren (BH Stufe 0-3), 6Ah freigeben, 6Ch Zugriffsmerker,
+   70h Stand; geschachtelt gezaehlt, der Kernel sperrt beim ersten und
+   gibt beim letzten frei (DEM_DLOCK). Endet das Programm, gibt term()
+   seine Sperren frei. 4Bh/6Bh (physisch) nur bestaetigt. */
+static u8  lk_cnt[NDRV], lk_lvl[NDRV];
+static u16 lk_psp[NDRV];
+
+void dlock_fn(struct frame __far *f, unsigned d)
+{
+    unsigned e;
+    switch (CL(f)) {
+    case 0x4A:
+        if (!lk_cnt[d]) {
+            q.drive = d;
+            q.flags = 0;
+            if ((e = dem(DEM_DLOCK)) != 0) {
+                set_err(f, e);
+                return;
+            }
+            lk_psp[d] = cur_psp();
+            lk_lvl[d] = 0;
+        }
+        if (BH(f) > lk_lvl[d])
+            lk_lvl[d] = BH(f);
+        lk_cnt[d]++;
+        f->ax = 0;
+        break;
+    case 0x6A:
+        if (!lk_cnt[d]) {
+            set_err(f, 0x01);
+            return;
+        }
+        if (!--lk_cnt[d]) {
+            q.drive = d;
+            q.flags = 1;
+            dem(DEM_DLOCK);
+        }
+        f->ax = 0;
+        break;
+    case 0x6C:                          /* Zugriffsmerker: unveraendert  */
+        f->ax = 0;
+        break;
+    default:                            /* 70h: Stufe und Rechte         */
+        f->ax = lk_cnt[d] ? lk_lvl[d] : 0xFFFF;
+        f->cx = 0;
+        break;
+    }
+}
+
+void dlock_end(u16 psp)
+{
+    unsigned d;
+    for (d = 0; d < NDRV; d++)
+        if (lk_cnt[d] && lk_psp[d] == psp) {
+            lk_cnt[d] = 0;
+            q.drive = d;
+            q.flags = 1;
+            dem(DEM_DLOCK);
+        }
 }

@@ -389,6 +389,7 @@ struct frame __far *term(struct frame __far *f, unsigned type, unsigned rc, u16 
             keep = 6;
         mem_resize(psp, keep, &dummy);
     } else {
+        dlock_end(psp);                 /* Laufwerkssperren (440Dh 4Ah)  */
         close_all(psp);
         mem_free_owner(psp);
     }

@@ -49,6 +49,11 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
 #define DEM_ABSREAD     18  /* drive, pos = Sektor, count = Sektoren, buf;
                                flags 1 = Paketform (INT 25h CX=FFFFh) ->
                                err = INT-25h-Fehler (AH BIOS, AL Treiber) */
+#define DEM_DLOCK       19  /* drive, flags 1 = entsperren: Laufwerks-
+                               sperre wie MS-DOS 7 (440Dh 4Ah/6Ah)        */
+#define DEM_ABSWRITE    20  /* wie ABSREAD, nur mit Sperre (sonst 0300h)
+                               - ABSREAD/ABSWRITE flags 2 = 7305h (auch
+                               FAT32; INT 25h/26h dort 0207h)             */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 

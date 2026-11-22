@@ -182,6 +182,9 @@ void net_fn(struct frame __far *f);
 struct frame __far *int2f12_c(struct frame __far *f);
 struct frame __far *int25_c(struct frame __far *f);
 struct frame __far *int26_c(struct frame __far *f);
+void abs7305(struct frame __far *f);
+void dlock_fn(struct frame __far *f, unsigned d);
+void dlock_end(u16 psp);
 
 /* exec.c */
 struct frame __far *exec_fn(struct frame __far *f);

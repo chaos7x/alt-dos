@@ -310,13 +310,27 @@ die Programme direkt lesen.
   DOS; weder frei wie MS-DOS 6 noch abgelehnt wie NT):
   - Lesen (INT 25h, auch CX = FFFFh mit Paket) immer, über `blk_read`
     durch den Platten-Cache – stimmig auch bei verzögert Geschriebenem.
-  - Schreiben (INT 26h) nur nach **Laufwerkssperre** 440Dh 4Ah (logisch,
-    Stufen 0–3 wie MS-DOS 7; 4Bh entsperren, 6Ah/6Bh physisch, 6Ch/70h/71h
-    Abfragen), sonst Fehler „schreibgeschützt“ wie dort. Die Sperre
-    entspricht der von DosOpenDrive (CHKDSK): abgelehnt, solange ein
-    anderer Task Dateien auf dem Laufwerk offen hat; beim Entsperren oder
-    Ende des Programms `vol_reset` (FAT-/Verzeichnis-Cache weg, neu
-    einhängen).
+  - Schreiben (INT 26h) nur nach **Laufwerkssperre** 440Dh 4Ah (logisch
+    sperren, Stufen 0–3 wie MS-DOS 7; 6Ah logisch freigeben, 4Bh/6Bh
+    physisch sperren/freigeben, 6Ch/70h Abfragen; CH 08h oder 48h), sonst
+    Fehler „schreibgeschützt“ (0300h) wie dort. Die Sperre entspricht der
+    von DosOpenDrive (CHKDSK): abgelehnt (05h), solange Dateien auf dem
+    Laufwerk offen sind; beim Entsperren oder Ende des Programms
+    `vol_reset` (FAT-/Verzeichnis-Cache weg, neu einhängen).
+  - Umgesetzt 22.11.2026: DEM `DEM_DLOCK` (FAPI_OPENDRIVE mit
+    DRV_OPEN_LOCK|DRV_OPEN_LBA, Handle je Box und Laufwerk in `struct
+    rbx`), `DEM_ABSWRITE`; mit Sperre lesen und schreiben INT 25h/26h und
+    7305h über dieses Handle (Platten-Cache, `dasd_rw`). Im Box-Kern
+    `dlock_fn` (geschachtelt gezählt, der Kernel sperrt beim ersten und
+    gibt beim letzten frei), `dlock_end` in term() gibt Sperren eines
+    endenden Programms frei, `abs7305`. 4Bh/6Bh nur bestätigt (ohne
+    Wirkung), 6Ch meldet 0, 71h fehlt. Grenze: ein Laufwerk mit
+    Auslagerungsdatei oder LOOP-Abbild (vom Kernel offen) lässt sich nicht
+    sperren – bei der Vorgabe also C:. Geprüft: QEMU (FAT16 D:, FAT32 E::
+    ohne Sperre 0300h, Sperre bei offener Datei 05h, Muster schreiben/
+    zurücklesen, INT 25h auf FAT32 0207h, 7305h lesen/schreiben, Sperre
+    beim Programmende frei; fsck sauber) und 86Box 386DX/40 mit
+    AHA-154xC (zweite SCSI-Platte; danach COPY dorthin, fsck sauber).
   - FAT32: 7305h (erweitertes absolutes Lesen/Schreiben, wie Windows 95
     OSR2); INT 25h/26h auf FAT32 abgelehnt wie dort.
   - Nur lokale FAT-Laufwerke; NET USE, CD, Loop/DriveSpace-Container ->

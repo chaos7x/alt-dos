@@ -90,7 +90,7 @@ unsigned dem(unsigned fn)
         r.di = (u16)&q;
         bint(0xE0, &r);
         if ((q.err != 0x13 && q.err != 0x15 && q.err != 0x1F) ||
-            fn == DEM_DINFO || fn == DEM_ABSREAD || (a = crit(fn, q.err)) < 0)
+            fn == DEM_DINFO || fn == DEM_ABSREAD || fn == DEM_ABSWRITE || fn == DEM_DLOCK || (a = crit(fn, q.err)) < 0)
             return q.err;
         if (a == 1)                     /* Wiederholen                   */
             continue;
@@ -771,10 +771,20 @@ static void ioctl_fn(struct frame __far *f)
         }
         break;
     case 0x08: case 0x09: case 0x0D: case 0x0E: case 0x0F: case 0x11:
+        if (AL(f) == 0x0D && (CH(f) == 0x08 || CH(f) == 0x48) &&
+            (CL(f) == 0x4B || CL(f) == 0x6B)) {
+            f->ax = 0;                  /* physisch sperren: bestaetigt  */
+            break;
+        }
         d = BL(f) ? BL(f) - 1 : cur_drv;
         if (!drive_ok(d)) {
             set_err(f, E_DRIVE);
             return;
+        }
+        if (AL(f) == 0x0D && (CH(f) == 0x08 || CH(f) == 0x48) &&
+            (CL(f) == 0x4A || CL(f) == 0x6A || CL(f) == 0x6C || CL(f) == 0x70)) {
+            dlock_fn(f, d);             /* Laufwerkssperre (MS-DOS 7)    */
+            break;
         }
         if (AL(f) == 0x0E || AL(f) == 0x0F) {
             /* nur ein Buchstabe; B: ohne eigenes Laufwerk ist das
@@ -1231,6 +1241,9 @@ void file_fn(struct frame __far *f)
         AL(f) = 0;
         return;
     }
+    case 0x73:
+        abs7305(f);
+        return;
     default:
         set_err(f, E_FUNC);
         AL(f) = 0;

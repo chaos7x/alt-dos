@@ -203,6 +203,8 @@ struct rbx {
     unsigned char  sgen[4], snext;      /* Generation je Platz, naechster */
     struct shf     sh[NSH];
     struct shl     lk[NLK];
+    unsigned       dlk[26];             /* Laufwerkssperre: Handle + 1    */
+    unsigned char  dfl[26];             /* dazu Bit 0 FAT32, 1 ueber 32 MB */
 };
 static unsigned rb_sel;
 static struct fapi_lock rlk;            /* Auftrag an FAPI_FILELOCK       */
@@ -220,6 +222,8 @@ int __far dem_box_init(int t)
         RBX(t)->sh[i].h1 = 0;
     for (i = 0; i < NLK; i++)
         RBX(t)->lk[i].used = 0;
+    for (i = 0; i < 26; i++)
+        RBX(t)->dlk[i] = 0;
     return 0;
 }
 
@@ -765,23 +769,81 @@ static unsigned d_dinfo(int t, struct dem_req *q)
     return 0;
 }
 
-/* INT 25h wie MS-DOS 7: lesen frei (Schreiben braucht eine Sperre - INT 26h
-   meldet Schreibschutz). Laufwerke ueber 32 MB nur mit Paketform (0207h).
-   Fehler sind INT-25h-Codes: 8002h nicht bereit, 0408h nicht gefunden,
-   080Ch Lesefehler. */
-static unsigned d_absrd(int t, struct dem_req *q)
+/* Laufwerkssperre wie MS-DOS 7 (440Dh 4Ah): die Box oeffnet das Laufwerk
+   wie CHKDSK mit DRV_OPEN_LOCK (nur ohne offene Dateien dort, sonst 05h);
+   beim Entsperren oder Ende der Box schliesst der Kernel es, verwirft die
+   Caches und haengt neu ein (of_release). */
+static unsigned d_dlock(int t, struct dem_req *q)
+{
+    unsigned d = q->drive, r;
+    if (d >= 26)
+        return 0x0F;
+    if (q->flags & 1) {
+        if (RBX(t)->dlk[d])
+            FAPI(FAPI_CLOSE, KDATA, RBX(t)->dlk[d] - 1, 0, 0);
+        RBX(t)->dlk[d] = 0;
+        return 0;
+    }
+    if (RBX(t)->dlk[d])
+        return 0;
+    if (FAILED(FAPI(FAPI_QFSINFO, KDATA, d, (unsigned)&fsi, 0)))
+        return E_NOTREADY;
+    if (fsi.bsize != 512 || (fsi.flags & FSI_REMOTE))
+        return E_DENIED;
+    r = FAPI(FAPI_OPENDRIVE, KDATA, d, DRV_OPEN_LOCK | DRV_OPEN_LBA, 0);
+    if (FAILED(r))
+        return r == FAPI_ERR_NOTREADY ? E_NOTREADY : E_DENIED;
+    RBX(t)->dlk[d] = r + 1;
+    RBX(t)->dfl[d] = (unsigned char)((fsi.fsname[3] == '3' ? 1 : 0) |
+                                     (fsi.sectors > 0xFFFFUL ? 2 : 0));
+    return 0;
+}
+
+/* INT 25h/26h und 7305h wie MS-DOS 7: lesen frei, schreiben nur mit
+   Sperre (sonst 0300h Schreibschutz); FAT32 nur ueber 7305h (flags 2),
+   alte Form CX/DX nur bis 32 MB (0207h). Fehler sind INT-25h-Codes:
+   8002h nicht bereit, 0408h nicht gefunden, 080Ch Lese-, 040Ah
+   Schreibfehler. Mit Sperre ueber das Laufwerks-Handle (Platten-Cache),
+   ohne Sektor fuer Sektor ueber fat_abssec. */
+static unsigned d_abs(int t, struct dem_req *q, int wr)
 {
     unsigned long lba = q->pos, n = q->count, buf = q->buf, tot;
     unsigned char __far *s = MK_FP(DMABUF, 0), __far *o;
-    unsigned k;
+    unsigned k, h, c, err, fl;
     int r;
     if (!n)
         return 0;
+    if (q->drive < 26 && (h = RBX(t)->dlk[q->drive]) != 0) {
+        fl = RBX(t)->dfl[q->drive];
+        if ((fl & 1) && !(q->flags & 2))
+            return 0x0207;
+        if ((fl & 2) && !(q->flags & 3))
+            return 0x0207;
+        h--;
+        l32 = lba;
+        if (FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
+            return 0x8002;
+        for (; n; n -= c, buf += (unsigned long)c << 9) {
+            c = n > 64 ? 64 : (unsigned)n;
+            k = dem_xfer(t, wr ? FAPI_WRITE : FAPI_READ, h, buf, c << 9, &err);
+            if (k != c << 9)
+                return k || !err ? 0x0408 : (wr ? 0x040A : 0x080C);
+        }
+        return 0;
+    }
+    if (wr)
+        return 0x0300;
+    if (!(q->flags & 2)) {                  /* FAT32: nur 7305h (Win 95)  */
+        if (FAILED(FAPI(FAPI_QFSINFO, KDATA, q->drive, (unsigned)&fsi, 0)))
+            return 0x8002;
+        if (fsi.fsname[3] == '3')
+            return 0x0207;
+    }
     for (; n; n--, lba++, buf += 512) {
         r = fat_abssec(q->drive, lba, &tot);
         if (r == -1)
             return 0x8002;
-        if (!(q->flags & 1) && tot > 0xFFFFUL)
+        if (!(q->flags & 3) && tot > 0xFFFFUL)
             return 0x0207;
         if (r == -2)
             return 0x0408;
@@ -873,7 +935,9 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_FINDNEXT:  r = find_next(t, q); break;
     case DEM_SPACE:     r = d_space(q); break;
     case DEM_DINFO:     r = d_dinfo(t, q); break;
-    case DEM_ABSREAD:   r = d_absrd(t, q); break;
+    case DEM_ABSREAD:   r = d_abs(t, q, 0); break;
+    case DEM_ABSWRITE:  r = d_abs(t, q, 1); break;
+    case DEM_DLOCK:     r = d_dlock(t, q); break;
     default:            r = 1;              /* unbekannt (01h)       */
     }
     return q->err = r;
