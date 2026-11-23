@@ -1242,6 +1242,28 @@ Win32s), nicht vorziehen, sondern nachfragen.
   386DX/40 (RATE=1 DELAY=4 -> 2,0/s 1000 ms, NumLock und Tippen danach,
   INT 16h 0305h aus der Box). Platz: KLIST/KDESTROY von Diskette 1 auf
   Diskette 2 (Diskette 1 hatte 3 KB frei, jetzt 49 KB).
+- Netzdrucker (beauftragt vom Nutzer, 23.11.2026, Punkt 7): `NET USE
+  LPT1: \\server\drucker` -> NET startet `SMBCLI --serve LPT1:`, das per
+  UFS_REG einen Platz mit drive = `UFS_LPT` (80h) + n anmeldet (ufs.c:
+  kein Laufwerk/Blockgerät). kernel.c: dev_open nimmt LPTn auch ohne
+  Anschluss, wenn `ufs_lpt(n)`; lpt_write -> `ufs_lpt_write(n, k + 1, …)`
+  (UFSOP_WRITE, h = Eintrag der Dateitabelle + 1, mehrere Handles warten
+  über `lpt_slot`), of_release -> `ufs_lpt_close` (UFSOP_CLOSE). SMBCLI:
+  je Handle ein Auftrag (CREATE „AT-DOS“ auf der Druckfreigabe, schreiben,
+  CLOSE = drucken), anderes Handle beendet den laufenden; neu `UFS_GETT`
+  (wartet höchstens rq.n s -> `UFSOP_IDLE`), damit endet ein Auftrag nach
+  15 s ohne Daten (`PTMO`; DOS-Boxen halten LPTn offen, wie NT). Lehre:
+  c_open benutzt BODY – die Daten des ersten WRITE vorher retten (hseg
+  WOFF), sonst stand „A T - D O S“ am Anfang jedes Auftrags. NET: `ldrv`
+  versteht LPT1–3/PRN, NETUSE.LST merkt „LPT1: …“. Test-Samba mit
+  Druckfreigabe: /etc/samba/smb.conf = Kopie von /tmp/sbprn/smb.conf
+  (Spool/Zustand unter /tmp/sbprn – /tmp/claude-0 ist 700, der Benutzer
+  test kommt dort nicht hin; samba-dcerpcd liest nur /etc/samba), ohne
+  valid users/force user in [drucker], Ausgabe /tmp/sbprn/out; Test
+  /tmp/claude-0/prn/run.sh. Geprüft: QEMU und 86Box 386DX/40 (NE2000):
+  COPY CONFIG.SYS LPT1 byte-gleich, ECHO > PRN, zwei INT-17h-Läufe aus der
+  Box in einem Auftrag (Ende nach 15 s), DIR > PRN, NET USE /D. Erstes
+  Codesegment danach 65.471 Byte (49 frei!).
 - `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
   `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
   LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in
@@ -1920,7 +1942,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
   Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
   Ebenfalls beauftragt (Reihenfolge: 5, 7, 6, 8): MODE CON RATE=/DELAY=
-  (erledigt, s. Konventionen), AT-Zeitplaner als Ring-3-Dienst
+  (erledigt, s. Konventionen), Netzdrucker (erledigt, ebd.), AT-Zeitplaner als Ring-3-Dienst
   (`\DOS\SYSTEM\AT.LST`, Bedienung wie NT), Netzdrucker per
   `NET USE LPT1: \\server\drucker` (Ende eines Auftrags bei DOS-
   Programmen per Frist wie NT).

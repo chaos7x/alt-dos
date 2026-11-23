@@ -2853,6 +2853,8 @@ static void of_release(int k)
         }
     } else if (o->kind == OF_SOCK)
         net_sclose((unsigned)o->f.first);   /* Socket im Stapel schliessen */
+    else if (o->kind == OF_LPT && ufs_lpt(o->f.drive))
+        ufs_lpt_close(o->f.drive, k + 1);   /* Netzdrucker: Auftrag zu   */
     else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
@@ -3150,7 +3152,7 @@ static unsigned dev_open(int dn)
             return FAPI_ERROR;
         if (com_busy(dn - 11))
             return FAPI_ERR_INUSE;          /* z. B. serielle Maus       */
-    } else if (dn != 9 && !bios_ports[3 + dn])
+    } else if (dn != 9 && !bios_ports[3 + dn] && !ufs_lpt(dn - 1))
         return FAPI_ERROR;                  /* kein solcher Anschluss    */
     k = of_alloc();
     if (k < 0)
@@ -3172,6 +3174,8 @@ static int lpt_write(int k, unsigned sel, unsigned off, unsigned len)
     unsigned char __far *p;
     unsigned long t0;
 
+    if (ufs_lpt(files[k].f.drive))          /* NET USE LPTn: an den Dienst */
+        return ufs_lpt_write(files[k].f.drive, k + 1, sel, off, len);
     for (i = 0; i < len; i++) {
         t0 = get_ticks();
         for (n = 0; !((st = inb(base + 1)) & 0x80); n++)

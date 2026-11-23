@@ -274,6 +274,17 @@ struct fapi_drvinfo {
                                        -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
 #define UFS_INFO            5       /* CX = Laufwerk, DX = struct
                                        fapi_ufsreg -> 0, FAPI_ERROR     */
+#define UFS_GETT            6       /* wie UFS_GET, wartet aber hoechstens
+                                       rq.n Sekunden (vom Dienst vorher
+                                       gesetzt) -> op UFSOP_IDLE, wenn
+                                       nichts kam (Netzdrucker: Ende eines
+                                       Auftrags nach einer Frist wie NT) */
+#define UFS_LPT             0x80    /* Laufwerk = UFS_LPT + n: Drucker LPTn+1
+                                       statt eines Laufwerks (NET USE
+                                       LPT1: \\server\drucker). Auftraege:
+                                       UFSOP_WRITE (h = Handle-Kennung,
+                                       pos unbenutzt), UFSOP_CLOSE (h) beim
+                                       Schliessen des Handles */
 #define FAPI_FILELOCK       0x5E    /* Bereichssperre (6.3, wie OS/2
                                        DosSetFileLocks): BX = Handle, CX =
                                        struct fapi_lock -> 0, FAPI_ERR_
@@ -332,6 +343,8 @@ struct fapi_lock {
 #define UFSOP_TRUNC         16      /* h, size                           */
 #define UFSOP_LOCK          17      /* h, pos = Stelle, size = Laenge,
                                        mask = LOCK_* (FAPI_FILELOCK)     */
+#define UFSOP_IDLE          18      /* nur UFS_GETT: Frist um, nichts kam
+                                       (keine Antwort mit UFS_PUT)       */
 struct fapi_ufsreg {
     unsigned short drive;           /* 2 = C:                            */
     unsigned short task;            /* UFS_INFO: Dienst                  */

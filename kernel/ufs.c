@@ -14,6 +14,13 @@
  * also hat jedes Laufwerk hoechstens einen Auftrag. Der Dienst braucht die
  * Kernelsperre nie (FAPI_UFS und FAPI_NET laufen ohne). Endet der Dienst,
  * scheitert ein wartender Auftrag, das Laufwerk verschwindet (vol_drop).
+ *
+ * Netzdrucker (NET USE LPT1: \\server\drucker): ein Platz mit drive =
+ * UFS_LPT + n hat kein Laufwerk; kernel.c leitet Schreiben auf LPTn/PRN
+ * hierher (ufs_lpt_write) und meldet das Schliessen eines Handles
+ * (ufs_lpt_close). Den Auftrag beim Server legt der Dienst an, beendet
+ * ihn beim Schliessen oder - fuer DOS-Programme, deren Handle offen
+ * bleibt - nach einer Frist ohne Daten (UFS_GETT).
  */
 #include "kern.h"
 #include "ifs.h"
@@ -364,6 +371,55 @@ struct ifs_driver ufs_driver = {
     u_namepath, u_trunc
 };
 
+/* ---- Netzdrucker (LPTn umgeleitet) -------------------------------------- */
+/* LPTn (0-2) an einen Dienst umgeleitet? -> 1 */
+int __far ufs_lpt(int n)
+{
+    return slot_of(UFS_LPT + n) >= 0;
+}
+
+/* Platz fuer einen Auftrag: andere Handles auf demselben Drucker warten,
+   bis der laufende Auftrag beantwortet ist -> Platz oder -1 */
+static int lpt_slot(int n)
+{
+    int i;
+    while ((i = slot_of(UFS_LPT + n)) >= 0 && us[i].state != US_IDLE)
+        kf_ufs_block(EV_CL(i), 5);
+    return i;
+}
+
+/* Daten des Handles key (Dateitabelle + 1) an den Drucker -> Bytes, -1 */
+int __far ufs_lpt_write(int n, unsigned key, unsigned sel, unsigned off, unsigned len)
+{
+    unsigned done = 0, k;
+    int i;
+    while (done < len) {
+        if ((i = lpt_slot(n)) < 0)
+            return done ? (int)done : -1;
+        k = len - done > UFS_DATA ? UFS_DATA : len - done;
+        rq_new(i, UFSOP_WRITE, 0);
+        RQ(i)->h = key;
+        RQ(i)->len = k;
+        far_copy(us[i].sel, DOFF, sel, off + done, k);
+        if (rq_go(i) != 0)
+            return done ? (int)done : -1;
+        done += RQ(i)->len > k ? k : RQ(i)->len;
+        if (RQ(i)->len < k)
+            break;
+    }
+    return (int)done;
+}
+
+/* Handle key geschlossen: Auftrag beim Server beenden */
+void __far ufs_lpt_close(int n, unsigned key)
+{
+    int i = lpt_slot(n);
+    if (i < 0)
+        return;
+    rq_new(i, UFSOP_CLOSE, 0)->h = key;
+    rq_go(i);
+}
+
 /* ---- FAPI_UFS (Dienst und NET USE) -------------------------------------- */
 static int free_blk(void)
 {
@@ -387,10 +443,12 @@ static void slot_free(int i)
     unsigned f;
     if (u->task < 0)
         return;
-    if (vol[u->drive].drv == &ufs_driver)
-        vol_drop(u->drive);
-    blk[u->blk].bsize = 0;
-    blk[u->blk].drv = NDRV;
+    if (!(u->drive & UFS_LPT)) {
+        if (vol[u->drive].drv == &ufs_driver)
+            vol_drop(u->drive);
+        blk[u->blk].bsize = 0;
+        blk[u->blk].drv = NDRV;
+    }
     if (u->sel)
         kf_kseg_free(u->sel);
     f = irq_off();
@@ -414,7 +472,8 @@ unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
     static struct fapi_ufsreg rg;
     struct uslot *u;
     int i, d, b;
-    unsigned f, n;
+    unsigned f, n, tmo;
+    unsigned long t0 = 0;
 
     switch (a1) {
     case UFS_REG:
@@ -422,13 +481,28 @@ unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
             return FAPI_ERROR;
         far_copy(KDATA, (unsigned)&rg, usel, a2, sizeof(rg));
         d = rg.drive;
-        if (d < 2 || d >= NDRIVE || vol[d].used || vol[d].present || slot_of(d) >= 0)
+        if (d >= UFS_LPT ? d > UFS_LPT + 2 || slot_of(d) >= 0 :
+            d < 2 || d >= NDRIVE || vol[d].used || vol[d].present || slot_of(d) >= 0)
             return FAPI_ERR_EXIST;
         for (i = 0; i < NUFS && us[i].task >= 0; i++)
             ;
         if (i == NUFS)
             return FAPI_ERR_FULL;
         u = &us[i];
+        if (d >= UFS_LPT) {                 /* Drucker: kein Laufwerk     */
+            if (!(u->sel = kseg_alloc(DOFF + UFS_DATA)))
+                return FAPI_ERR_FULL;
+            u->blk = 0;
+            u->drive = (unsigned char)d;
+            u->state = US_IDLE;
+            u->quit = 0;
+            u->seq = 0;
+            for (n = 0; n < sizeof(u->name) - 1 && rg.name[n]; n++)
+                u->name[n] = rg.name[n];
+            u->name[n] = 0;
+            u->task = (signed char)current;
+            return 0;
+        }
         if ((b = free_blk()) < 0)
             return FAPI_ERR_FULL;
         if (!(u->sel = kseg_alloc(DOFF + UFS_DATA))) {
@@ -455,12 +529,20 @@ unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
         return 0;
 
     case UFS_GET:                       /* Dienst holt den naechsten Auftrag */
+    case UFS_GETT:                      /* ... hoechstens rq.n Sekunden   */
         for (i = 0; i < NUFS && us[i].task != current; i++)
             ;
         if (i == NUFS || !kf_user_ok(usel, a2, sizeof(struct fapi_ufsreq), 1) ||
             !kf_user_ok(usel, a3, UFS_DATA, 1))
             return FAPI_ERROR;
         u = &us[i];
+        tmo = 0;
+        if (a1 == UFS_GETT) {
+            far_copy(KDATA, (unsigned)&n, usel,
+                     a2 + (unsigned)&((struct fapi_ufsreq *)0)->n, 2);
+            tmo = (n ? (n > 600 ? 600 : n) : 1) * 100U;
+            t0 = get_ticks();
+        }
         for (;;) {
             f = irq_off();
             if (u->quit) {
@@ -474,7 +556,20 @@ unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
                 irq_restore(f);
                 break;
             }
-            proc_block(EV_SV(i), 0);    /* kehrt mit STI zurueck          */
+            if (!tmo)
+                proc_block(EV_SV(i), 0);    /* kehrt mit STI zurueck      */
+            else if (get_ticks() - t0 >= tmo ||
+                     proc_block(EV_SV(i), tmo - (unsigned)(get_ticks() - t0))) {
+                f = irq_off();
+                if (u->state == US_POSTED || u->quit) {
+                    irq_restore(f);
+                    continue;               /* doch noch etwas gekommen   */
+                }
+                irq_restore(f);
+                rq_new(i, UFSOP_IDLE, 0);
+                far_copy(usel, a2, u->sel, 0, sizeof(struct fapi_ufsreq));
+                return 0;
+            }
         }
         far_copy(usel, a2, u->sel, 0, sizeof(struct fapi_ufsreq));
         if (RQ(i)->op == UFSOP_WRITE)
@@ -514,7 +609,7 @@ unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
     case UFS_DEL:
         if ((i = slot_of(a2)) < 0)
             return FAPI_ERROR;
-        if (kf_drv_busy(a2))
+        if (a2 < UFS_LPT && kf_drv_busy(a2))
             return FAPI_ERR_INUSE;
         us[i].quit = 1;
         kf_proc_run(EV_SV(i));

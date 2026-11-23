@@ -1761,6 +1761,50 @@ static void c_view(void)
 static char sp[FAPI_PATHLEN], sp2[FAPI_PATHLEN];
 static unsigned h;                      /* READ: Daten ab rx + h          */
 
+/* Netzdrucker (--serve LPTn:): ein Auftrag beim Server = eine Datei auf
+   der Druckfreigabe (Samba/Windows drucken sie beim Schliessen). Je
+   Handle des Kernels ein Auftrag (pk = Kennung), Ende beim Schliessen
+   des Handles, beim Wechsel auf ein anderes Handle oder nach PTMO
+   Sekunden ohne Daten (DOS-Programme halten LPTn offen, wie NT). */
+#define PTMO 15
+static unsigned pj;                     /* Handle des Auftrags, 0 = keiner */
+static unsigned long pk, pp;            /* Kennung, Stelle                */
+
+static void prn_end(void)
+{
+    if (pj && hget(pj))
+        c_close();
+    if (pj)
+        hu[pj - 1] = 0;
+    pj = 0;
+}
+
+static int prn_begin(void)
+{
+    u8 __far *w = (u8 __far *)MK_FP(hseg, WOFF);
+    unsigned k;
+    u32 st;
+    if (pj && pk == rq.h)
+        return 0;
+    for (k = 0; k < rq.len; k++)        /* Daten retten: CREATE und CLOSE */
+        w[k] = BODY[48 + k];            /* benutzen denselben Puffer      */
+    prn_end();
+    rdir[0] = 0;
+    c_share = 7;
+    st = c_open("AT-DOS", 0x0012019FUL, 5, 0x40, 0, 0);
+    for (k = 0; k < rq.len; k++)
+        BODY[48 + k] = w[k];
+    if (st)
+        return ierr(st);
+    if (!(pj = hnew("AT-DOS", 1))) {
+        c_close();
+        return IFS_FULL;
+    }
+    pk = rq.h;
+    pp = 0;
+    return 0;
+}
+
 /* einen Auftrag (rq) erledigen */
 static void op(void)
 {
@@ -1834,6 +1878,14 @@ static void op(void)
         h = RB[2];                  /* Daten ab rx + h                */
         break;
     case UFSOP_WRITE:
+        if (srv & 0x80) {           /* Drucker: in den Auftrag        */
+            if ((rq.status = prn_begin()) != 0) {
+                rq.len = 0;
+                break;
+            }
+            rq.h = pj;
+            rq.pos = pp;
+        }
         if (!hget(rq.h)) {
             rq.status = IFS_ERR;
             break;
@@ -1851,9 +1903,15 @@ static void op(void)
             rq.len = 0;
         } else
             rq.len = (unsigned)get32(RB + 4);
+        pp += rq.len;
         h = 0xFFFF;                 /* keine Daten zurueck            */
         break;
     case UFSOP_CLOSE:
+        if (srv & 0x80) {           /* Drucker: Auftrag dieses Handles */
+            if (pj && pk == rq.h)
+                prn_end();
+            break;
+        }
         if (rq.h && rq.h <= 32 && hu[(unsigned)rq.h - 1] == 2)
             hu[(unsigned)rq.h - 1] = 0;     /* nach Wiederverbinden verloren */
         if (!hget(rq.h))
@@ -2086,10 +2144,18 @@ static void serve(void)
     static struct fapi_ufsreq rq0;
     unsigned k;
     for (;;) {
-        if (fapi_call(FAPI_UFS, UFS_GET, (unsigned)&rq, (unsigned)(BODY + 48)))
+        rq.n = PTMO;                    /* Drucker: Frist fuer den Auftrag */
+        if (fapi_call(FAPI_UFS, pj ? UFS_GETT : UFS_GET, (unsigned)&rq,
+                      (unsigned)(BODY + 48)))
             break;
-        if (rq.op == UFSOP_QUIT)
+        if (rq.op == UFSOP_IDLE) {      /* lange nichts: Auftrag drucken  */
+            prn_end();
+            continue;
+        }
+        if (rq.op == UFSOP_QUIT) {
+            prn_end();
             break;
+        }
         cr_cpy(&rq0, &rq, sizeof(rq));
         lost = 0;
         op();
@@ -2421,7 +2487,10 @@ void main(void)
         else if (*a == '-' && a[1] == '-' && a[2] == 's') {   /* --serve X: */
             a = next_word(a);
             srv = (unsigned)(up(*a) - 'A' + 1);
-            if (srv < 3 || srv > 26 || a[1] != ':')
+            if (up(a[0]) == 'L' && up(a[1]) == 'P' && up(a[2]) == 'T' &&
+                a[3] >= '1' && a[3] <= '3')
+                srv = 0x80 + (unsigned)(a[3] - '1') + 1;    /* Drucker   */
+            else if (srv < 3 || srv > 26 || a[1] != ':')
                 srv = 0xFFFF;
         } else if (*a == '-' && a[1] == 'k' && a[2] <= ' ')
             kerb = 1;
@@ -2462,7 +2531,7 @@ void main(void)
         DosClose(STDERR);               /* belegt)                        */
     }
     if (srv == 0xFFFF)
-        die("--serve braucht ein Laufwerk C: bis Z:.", 2);
+        die("--serve braucht ein Laufwerk C: bis Z: oder LPT1: bis LPT3:.", 2);
     if (view)
         scopy(share, "IPC$", sizeof(share));
     if (!host[0] || !share[0])
@@ -2487,7 +2556,8 @@ void main(void)
         scopy(rg.name, line, sizeof(rg.name));
         k = fapi_call(FAPI_UFS, UFS_REG, (unsigned)&rg, 0);
         if (k)
-            die(k == FAPI_ERR_EXIST ? "Laufwerk ist schon belegt." :
+            die(k == FAPI_ERR_EXIST ? (srv & 0x80 ? "Drucker ist schon umgeleitet." :
+                                       "Laufwerk ist schon belegt.") :
                                       "Kein Platz f\x81r ein weiteres Netzlaufwerk.", 4);
         if (pwf[0]) {                   /* leere Datei = verbunden        */
             unsigned h = DosCreate(pwf);
