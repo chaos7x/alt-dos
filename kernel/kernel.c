@@ -1967,6 +1967,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].session = session;
     task[t].parent  = parent;
     task[t].wake    = 0;
+    task[t].cpu     = 0;
+    task[t].born    = get_ticks();
     task[t].sig_tramp = task[t].sig_mask = 0;
     task[t].sig_pending = task[t].in_sig = 0;
     task[t].bg = 0;
@@ -2202,6 +2204,8 @@ static void do_break(void)
    an (praeemptiv erst ab DOS 6.0). */
 #define SLICE 5                         /* 50 ms                         */
 static unsigned long slice_start;
+void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
+                     unsigned hdr, unsigned long now, unsigned long run);
 
 /* ---- Kernelsperre -------------------------------------------------------
    Seit Treiber per ProcBlock schlafen, kann mitten in einer Dateisystem-
@@ -2550,6 +2554,8 @@ static void sched_in(int keep)
     struct task *tk;
 
     resched_req = 0;
+    if (current >= 0 && task[current].state != T_FREE && slice_start)
+        task[current].cpu += get_ticks() - slice_start;     /* PS/TOP */
     if (keep != 1 && current >= 0 && klock == current) {
         task[current].want_lock = 1;    /* abgeben, spaeter zurueck      */
         task[current].lock_depth = (unsigned char)klock_depth;
@@ -3800,23 +3806,16 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a2 >= NTASK)
             return FAPI_ERROR;
         t = (int)a2;
-        if (a1 == PROC_INFO) {
-            if (!user_ok(usel, a3, sizeof(struct fapi_proc), 1))
+        if (a1 == PROC_INFO || a1 == PROC_INFO2) {
+            unsigned long nw = get_ticks();
+            if (!user_ok(usel, a3, a1 == PROC_INFO2 ? sizeof(struct fapi_proc2) :
+                                   sizeof(struct fapi_proc), 1))
                 return FAPI_ERROR;
-            pi->state = task[t].state;
-            pi->kind = (unsigned char)(!task[t].v86 ? 0 : park_owner[t] ? 2 : 1);
-            pi->session = (unsigned char)task[t].session;
-            pi->parent = (unsigned char)task[t].parent;
-            pi->flags = (unsigned char)((t == current ? PROC_SELF : 0) |
-                                        (proc_prot(t) ? PROC_PROT : 0));
-            pi->rsv = 0;
-            pi->kb = (task[t].img_cnt + task[t].code_cnt) << 2;
-            for (k = 0; k < 12 && task[t].name[k]; k++)
-                pi->name[k] = task[t].name[k];
-            pi->name[k] = 0;
-            for (k = 0; k < 40 && task[t].args[k]; k++)
-                pi->args[k] = task[t].args[k];
-            pi->args[k] = 0;
+            proc_fill(t, pi, a1 == PROC_INFO2,
+                      (!task[t].v86 ? 0 : park_owner[t] ? 2 : 1) |
+                      ((t == current ? PROC_SELF : 0) |
+                       (proc_prot(t) ? PROC_PROT : 0)) << 8,
+                      nw, t == current ? nw - slice_start : 0);
             return 0;
         }
         if (a1 != PROC_KILL || task[t].state == T_FREE)

@@ -48,6 +48,8 @@ struct task {
     unsigned char lk_quiet;                     /* Sperre freiwillig abgegeben (EXEC,
                                                    Schlafen): kein Plattenzustand offen */
     unsigned char code_gone;                    /* Code verworfen (codeswap.c) */
+    unsigned long cpu;                          /* Rechenzeit in Takten (PS/TOP) */
+    unsigned long born;                         /* Startzeit in Takten      */
 };
 
 extern struct task task[NTASK];

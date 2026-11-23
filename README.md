@@ -366,6 +366,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   nach dem Ändern; `HOSTNAME [Name | /LOAD [/Q]]` zeigt bzw. setzt den
   Rechnernamen (Datei `HOSTNAME`, TCPIP.SYS meldet ihn per DHCP,
   `COMPUTERNAME` in der Umgebung), AUTOEXEC.CMD lädt ihn beim Start
+- `PS`, `KILL`, `PSTREE`, `TOP` (23.11.2026, Bedienung wie procps):
+  `PS [-e] [-f] [-l] [-p PID]` bzw. `PS aux` (PID = Platz im Kernel,
+  TTY = Sitzung, TIME = Rechenzeit, ELAPSED, Zustand R/S/D, DOS-Boxen
+  markiert), `KILL PID|Name ...` (beendet mit allem, was das Programm
+  gestartet hat; `-9`/`-s` angenommen), `PSTREE [-p] [-a]`, `TOP [-d s]
+  [-b] [-n Runden]` (Vollbild nach %CPU, Last, Speicher, Auslagerung;
+  `k` beendet). Der Kernel zählt dafür die Rechenzeit je Task im
+  Scheduler (FAPI_PROC `PROC_INFO2`). Auf Setup-Diskette 3 und der Platte.
 - `DIG` und `NSLOOKUP` (23.11.2026), DNS-Abfragen mit eigenem Auflöser
   (`apps/dnsq.h`: UDP mit EDNS0, bei abgeschnittener Antwort TCP;
   A, AAAA, CNAME, MX, NS, SOA, PTR, TXT, SRV, CAA, ANY …):

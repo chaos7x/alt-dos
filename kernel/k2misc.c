@@ -6,6 +6,7 @@
 #include "../include/fapi_abi.h"
 #include "k2.h"
 #include "ifs.h"
+#include "task.h"
 
 void __far kf_vio_kputs(int s, const char *str);
 const char * __far kf_drv_name(int d);
@@ -258,3 +259,31 @@ void __far list_drives(int fd_ok, int boot_session)
     }
 }
 
+
+/* FAPI_PROC PROC_INFO/PROC_INFO2: Platz t beschreiben (aus kernel.c, das
+   erste Codesegment war voll). hdr = Art | Merker << 8, run = Rechenzeit
+   der laufenden Scheibe (nur beim aufrufenden Task) */
+void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
+                     unsigned hdr, unsigned long now, unsigned long run)
+{
+    int k;
+    pi->state = task[t].state;
+    pi->kind = (unsigned char)hdr;
+    pi->session = (unsigned char)task[t].session;
+    pi->parent = (unsigned char)task[t].parent;
+    pi->flags = (unsigned char)(hdr >> 8);
+    pi->rsv = 0;
+    pi->kb = (task[t].img_cnt + task[t].code_cnt) << 2;
+    for (k = 0; k < 12 && task[t].name[k]; k++)
+        pi->name[k] = task[t].name[k];
+    pi->name[k] = 0;
+    for (k = 0; k < 40 && task[t].args[k]; k++)
+        pi->args[k] = task[t].args[k];
+    pi->args[k] = 0;
+    if (info2) {
+        struct fapi_proc2 __far *p2 = (struct fapi_proc2 __far *)pi;
+        p2->now = now;
+        p2->cpu = task[t].cpu + run;
+        p2->age = task[t].state == T_FREE ? 0 : now - task[t].born;
+    }
+}

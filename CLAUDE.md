@@ -1326,6 +1326,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (Handle -> Eintrag je DosWrite/DosDup2). In QEMU geprüft (Uhr per
   `-rtc base`, Test /tmp/claude-0/at/run.sh; Gegenprobe Pipe, XCOPY +
   COMP, Box, fsck sauber).
+- PS/KILL/PSTREE/TOP (Wunsch des Nutzers, 23.11.2026; gemeinsamer Teil
+  `apps/proc.h`, Teile per PR_*-Makros wegen W202): Kernel zählt in
+  `sched_in` die Scheibe des abgebenden Tasks (`task.cpu`, ab dem ersten
+  gesetzten `slice_start`), `task.born` in task_create; FAPI_PROC
+  `PROC_INFO2` (struct fapi_proc2: cpu, age, now) füllt `proc_fill`
+  (k2misc.c – das erste Codesegment war 155 Byte zu voll, danach 65.447).
+  LINUX.MAC ohne ps/kill-Makros (sie verdeckten die Programme). Setup-
+  Diskette 3 (HDDOS3). Geprüft in QEMU.
 - DIG/NSLOOKUP (Wunsch des Nutzers, 23.11.2026; `apps/dnsq.h` gemeinsamer
   DNS-Teil, task_dig.c wie BIND-dig, task_nslookup.c wie Windows) und
   HOSTNAME gebunden mit Netz in der Box: Stub (stub/fapidos.c `net_box`)
