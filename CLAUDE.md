@@ -6379,9 +6379,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
   erst viel später, wenn überhaupt.
-- Ganz am Ende (Entscheidung des Nutzers, er hat das Programm selbst
-  nicht): ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ (nur von mir zum
-  Testen besorgt) hängt in der Box bei I_Init – auch mit dem Stand vor
-  der virtuellen SB16, also nicht deren Fehler.
+- DOOM-Nachbau „v2.02, Built Oct 9 1999“ (Boom 2.02, DJGPP/Allegro)
+  erledigt, aus main übernommen (Wunsch des Nutzers, 23.11.2026, ohne
+  ATDOSCM-Teile): Tastaturcontroller der Box nachgebildet (Allegro setzt
+  die LEDs direkt über 60h/64h), DPMI 0001h räumt Segmentregister mit
+  freigegebenem Selektor (sonst #GP im Kernel), ERRORLEVEL 255 fragt in
+  Stapeldateien nur nach echtem Abbruch (`task.ab`, FAPI_QCHILDRC BX=1).
 
 - Aus main (23.11.2026): FM-Dialoge mit hervorgehobenem Knopf, Box-BIOS mit B: und INT 41h/46h (MSD).

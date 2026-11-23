@@ -703,7 +703,8 @@ struct fapi_fmttrack {
 };
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
-                                       (ERRORLEVEL; 255 = abgebrochen) */
+                                       (ERRORLEVEL); BX = 1: dazu Bit 8 = vom
+                                       System abgebrochen (Strg+C, Ausnahme) */
 #define FAPI_SETFINFO       0x2F    /* BX = Pfad, CX = struct fapi_finfo */
 struct fapi_finfo {
     unsigned short mask;            /* 1: Attribut, 2: Datum/Uhrzeit    */

@@ -103,6 +103,10 @@ static unsigned vt_pend[NTASK];         /* fehlende BIOS-Takte           */
 static unsigned char visr[NTASK], vimr[NTASK];  /* virtueller PIC: Bit 0 Takt, 1 Tastatur */
 static unsigned char kq[NTASK][16], kq_h[NTASK], kq_t[NTASK];   /* Scancodes */
 static unsigned char vcur[NTASK];       /* zuletzt an Port 60h           */
+/* Tastaturcontroller der Box (Antworten auf Befehle an 60h/64h, wie sie
+   Allegro/Boom und andere Programme abfragen: LEDs EDh -> FAh) */
+static unsigned char kbr[NTASK][4];     /* [0] Anzahl, [1..3] Antworten   */
+static unsigned char kbc[NTASK];        /* 64h-Befehl wartet auf Daten 60h */
 static unsigned char vhide[NTASK];      /* Cursor aus (INT 10h 01h)      */
 static unsigned char crt_idx[NTASK], pit_ff[NTASK], tgl[NTASK];
 static unsigned char cmos_idx[NTASK];
@@ -666,6 +670,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pvi_t[t] &= ~CR4_VME;
     visr[t] = vimr[t] = 0;
     kq_h[t] = kq_t[t] = 0;
+    kbr[t][0] = kbc[t] = 0;
     pit_rl[t] = 0;
     pit_acc[t] = pit_t0[t] = 0;
     pit_acc_m[t] = 3;
@@ -3508,11 +3513,18 @@ static unsigned char port_in(int t, unsigned p)
     case 0xA1:
         return vimr2[t];
     case 0x60:
+        if (kbr[t][0]) {                        /* Antwort des Controllers */
+            o = kbr[t][1];
+            kbr[t][1] = kbr[t][2];
+            kbr[t][2] = kbr[t][3];
+            kbr[t][0]--;
+            return (unsigned char)o;
+        }
         if (vec_def(9) && !pm_hooked(t, 9) && (k = kq_get(t)) >= 0)
             vcur[t] = (unsigned char)k;         /* ohne INT 9: abfragen  */
         return vcur[t];
     case 0x64:
-        return (unsigned char)(0x14 | (kq_h[t] != kq_t[t]));
+        return (unsigned char)(0x14 | (kq_h[t] != kq_t[t] || kbr[t][0]));
     case 0x61:
         tgl[t] ^= 0x10;                         /* Refresh-Bit kippt     */
         return (unsigned char)(0x20 | (tgl[t] & 0x10) | spk[t]);
@@ -3559,6 +3571,48 @@ static unsigned char port_in(int t, unsigned p)
     if ((o = vdd_io(t, VDD_IN, p, 0, box_fg(t))) != VDD_NOTMINE)  /* Module */
         return (unsigned char)o;
     return 0xFF;
+}
+
+/* Antwort des nachgebildeten Tastaturcontrollers merken (bis 3 Byte) */
+static void kb_reply(int t, unsigned char a, unsigned char b, unsigned n)
+{
+    kbr[t][0] = (unsigned char)n;
+    kbr[t][1] = a;
+    kbr[t][2] = b;
+    kbr[t][3] = 0x83;
+}
+
+/* Befehle an Tastatur (60h) und Controller (64h): nur Antworten, die
+   echte Tastatur bekommt nichts (LEDs/Rate stellt der Kernel). Ohne das
+   wartete Allegro (Boom) nach EDh an 60h endlos auf FAh. */
+static void kb_out(int t, unsigned p, unsigned char v)
+{
+    if (p == 0x64) {
+        kbc[t] = 0;
+        switch (v) {
+        case 0x20: kb_reply(t, 0x45, 0, 1); break;  /* Befehlsbyte     */
+        case 0xAA: kb_reply(t, 0x55, 0, 1); break;  /* Selbsttest      */
+        case 0xAB: kb_reply(t, 0x00, 0, 1); break;  /* Schnittstelle   */
+        case 0xC0: kb_reply(t, 0x00, 0, 1); break;  /* Eingangsport    */
+        case 0xD0: kb_reply(t, 0xDF, 0, 1); break;  /* Ausgangsport    */
+        case 0x60: case 0xD1: case 0xD2: case 0xD3: case 0xD4:
+            kbc[t] = v;                         /* Datenbyte folgt an 60h */
+            break;
+        }
+        return;
+    }
+    if (kbc[t]) {                               /* Daten zu einem 64h-Befehl */
+        if (kbc[t] == 0xD2)                     /* als Taste zurueckgeben */
+            kb_reply(t, v, 0, 1);
+        kbc[t] = 0;
+        return;
+    }
+    switch (v) {                                /* Befehl an die Tastatur */
+    case 0xEE: kb_reply(t, 0xEE, 0, 1); break;  /* Echo                  */
+    case 0xF2: kb_reply(t, 0xFA, 0xAB, 3); break;   /* Kennung AB 83     */
+    case 0xFF: kb_reply(t, 0xFA, 0xAA, 2); break;   /* Reset + Selbsttest */
+    default:   kb_reply(t, 0xFA, 0, 1); break;  /* ED/F3-Daten, F4, F5 ... */
+    }
 }
 
 static void port_out(int t, unsigned p, unsigned char v)
@@ -3613,6 +3667,9 @@ static void port_out(int t, unsigned p, unsigned char v)
         break;
     case 0x40: case 0x41: case 0x42: case 0x43:
         pit_out(t, p, v);
+        break;
+    case 0x60: case 0x64:
+        kb_out(t, p, v);
         break;
     case 0x70:
         cmos_idx[t] = (unsigned char)(v & 0x7F);
@@ -4819,7 +4876,7 @@ static unsigned dp31(struct v86_frame *f, int t)
     case 0x0001:                                /* freigeben             */
         if (!sel_ok(t, BX) || !BX)
             DERR(0x8022);
-        ldt_free(t, IDX(BX));
+        ldt_free(t, IDX(BX));                   /* Register darauf: dp_int */
         return 0;
     case 0x0002:                                /* Segment -> Selektor   */
         if ((k = (unsigned)ldt_alloc(t, 1)) == 0xFFFF)
@@ -5184,8 +5241,16 @@ static unsigned dp_int(struct v86_frame *f, int t, unsigned n)
 {
     unsigned long __far *v, off, sp, b;
     unsigned sel;
-    if (n == 0x31)
-        return dp31(f, t);
+    if (n == 0x31) {
+        unsigned short *sg = (unsigned short *)f;   /* [0] ES [1] DS, darunter */
+        unsigned i, r = dp31(f, t);                 /* FS, GS                 */
+        for (i = 0; i < 4; i++) {               /* Register mit freigegebenem */
+            unsigned short *q = i < 2 ? &sg[i] : &sg[1 - (int)i];  /* LDT-  */
+            if ((*q & 4) && !sel_ok(t, *q))     /* Selektor auf 0 wie CWSDPMI */
+                *q = 0;                         /* (Boom gab den in DS frei; */
+        }                                       /* sonst #GP im Kernel)      */
+        return r;
+    }
     if (n == 0x2F && AX == 0x1686) {            /* bin ich im PM?        */
         AX = 0;
         return 0;

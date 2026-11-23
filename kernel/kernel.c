@@ -1888,8 +1888,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].nocon = exec_nocon ||               /* DETACH, auch die Kinder */
         (from >= 0 && task[from].nocon && task[from].session == session);
     exec_nocon = 0;
-    task[t].rc = 0;
-    task[t].child_rc = 0;
+    RCAB(t) = 0;
+    CRCAB(t) = 0;
     task[t].hold = 0;
     task[t].want_lock = 0;
     std_set(t, from);                           /* Standard-Handles erben */
@@ -1970,7 +1970,7 @@ static void task_end(int t)
     }
 
     if (p >= 0)
-        task[p].child_rc = task[t].rc;      /* fuer ERRORLEVEL          */
+        CRCAB(p) = RCAB(t);                 /* fuer ERRORLEVEL          */
     if (task[t].bg)
         ;                                   /* Hintergrund (Pipe): niemand wartet */
     else if (p >= 0 && task[p].state == T_WAIT)
@@ -2094,7 +2094,7 @@ static void do_break(void)
     if (task[t].parent < 0 && s == 0)
         return;
     vio_kputs(s, "^C\n");
-    task[t].rc = 255;
+    RCAB(t) = 0x1FF;
     if (current >= 0) {                         /* Dateien schliessen: Sperre */
         klock = current;
         klock_depth = 1;
@@ -2431,7 +2431,7 @@ static void kill_pending(void)
             klock_depth = 1;
             ctx_take(-2);
             bkl_hold++;
-            task[t].rc = 255;
+            RCAB(t) = 0x1FF;
             task_end(t);
             bkl_hold--;
             klock = -1;
@@ -3726,7 +3726,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             task[t].kill_req = 1;               /* operation: danach       */
             return 0;
         }
-        task[t].rc = 255;                       /* wie Strg+C            */
+        RCAB(t) = 0x1FF;                       /* wie Strg+C            */
         task_end(t);                            /* Kernelsperre haben wir */
         return 0;
     }
@@ -3953,8 +3953,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_QCHILDRC:
-        return task[current].child_rc;
+    case FAPI_QCHILDRC:                 /* BX = 1: Bit 8 = abgebrochen */
+        return a1 == 1 ? CRCAB(current) : task[current].child_rc;
 
     case FAPI_OPENDRIVE:
         if (a1 >= NDRIVE || a1 == PRE_DRIVE || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
@@ -4747,7 +4747,7 @@ int box_ctl(unsigned op, unsigned a)
         if (p >= 0 && task[p].session == task[current].session && !task[current].bg) {
             v86_park(current);
             std_set(current, -1);       /* Umleitung zu (Datei frei)     */
-            task[p].child_rc = (unsigned char)a;
+            CRCAB(p) = (unsigned char)a;
             if (task[p].state == T_WAIT)
                 task[p].state = T_READY;
             task[current].parent = -1;
@@ -4835,7 +4835,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         /* Fehler in einer Anwendung oder DOS-Box: nur sie beenden */
         tmsg(current, "\n", task[current].name, ": ");
         tmsg(current, exc_name(vec), m, "\nProgramm abgebrochen.\n");
-        task[current].rc = 255;
+        RCAB(current) = 0x1FF;
         klock_enter();                  /* task_end schliesst Dateien    */
         task_end(current);
         schedule_next();
@@ -5757,7 +5757,7 @@ void __far kf_seg_acct(int img, int pages)  /* codeswap.c: ein/aus       */
 void __far kf_abort_current(void)
 {
     int t = current;
-    task[t].rc = 255;
+    RCAB(t) = 0x1FF;
     klock_enter();
     task_end(t);
     schedule_next();
