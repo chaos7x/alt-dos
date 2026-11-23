@@ -370,8 +370,9 @@ mcopy -i $B/freedos.img $B/boxshell.com ::BOXSHELL.COM
 nasm -f bin apps/atbox.asm -o $B/atbox.sys     # damit FreeDOS die UMBs nimmt
 nasm -f bin apps/lock.asm -o $B/lock.com       # LOCK/UNLOCK wie MS-DOS 7
 nasm -f bin -DUNLOCK apps/lock.asm -o $B/unlock.com
+nasm -f bin apps/winldr.asm -o $B/winldr.com     # Windows 3.1 statt DOSX
 mcopy -i $B/freedos.img $B/atbox.sys ::ATBOX.SYS
-BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
+BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell.com BOXSHELL.COM  $B/atbox.sys ATBOX.SYS  $B/winldr.com WINLDR.COM  freedos/COMMAND.COM COMMAND.COM  freedos/MEM.EXE MEM.EXE  freedos/MEM.DE MEM.DE  freedos/DOSBOX.INI DOSBOX.INI  freedos/BOXAUTO.BAT BOXAUTO.BAT  freedos/README.txt README.TXT  freedos/COPYING COPYING"
 # Diskette 3 (Diskette 2 ist voll): FreeDOS-Abbild (Rueckfall, DOS_KERNEL=
 # FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"

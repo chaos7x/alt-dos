@@ -239,6 +239,8 @@ static void dp_hwint(struct v86_iret *r, int t);
 static void pvi_in(struct v86_iret *r, int t);
 static void vme_in(struct v86_iret *r, int t);
 static unsigned char b2f[NTASK];         /* BOXSHELL hat INT 2Fh eingehaengt */
+static unsigned long v2f0[NTASK];        /* INT 2Fh beim Programmstart    */
+#define rd32v(s, o) (((unsigned long)rd16(s, (o) + 2) << 16) | rd16(s, o))
 static unsigned char box_cm[NTASK];      /* eigener Kern ATDOSCM.SYS laeuft */
 static unsigned char vme_on[NTASK];     /* VIF gilt (letzter Ruecksprung mit VME) */
 static void vme_out(struct v86_iret *r, int t);
@@ -2849,11 +2851,16 @@ static void svc(int n, struct v86_frame *f, int t)
         if (AX == 0x1680) {                     /* Zeitscheibe abgeben   */
             kf_box_ctl(BOX_SLEEP, 1);
             AL = 0;
-        }
+        } else
+            mon2f(f);                           /* 1687h am Ende der Kette */
         break;
     case 0xE0:                                  /* Box-Schnittstelle     */
         if (AH == 0x00) {                       /* Befehlszeile -> ES:DI */
             const char *a;
+            v2f0[t] = rd32v(0, 0x2F * 4);       /* INT 2Fh beim Start: hat ein
+                                                   Programm 1687h eingehaengt
+                                                   (WINLDR), geht die Abfrage
+                                                   durch die Kette */
             for (i = 0; i < sizeof(hwvec); i++)  /* Vektoren merken    */
                 ivt_save[t][i] = ((unsigned long)rd16(0, hwvec[i] * 4 + 2) << 16) |
                                  rd16(0, hwvec[i] * 4);
@@ -3499,7 +3506,7 @@ static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
     int w = (n == 0x2F || n == 0x67) && wtr_want(n, f);
     if (w)
         wtrace(f, t, n, '>', (unsigned)f->r.cs, ip);
-    if (n == 0x2F && mon2f(f)) {
+    if (n == 0x2F && (AX != 0x1687 || rd32v(0, 0x2F * 4) == v2f0[t]) && mon2f(f)) {
         if (w)
             wtrace(f, t, n, '<', 0, 0);
         f->r.eip = ip;
@@ -4583,6 +4590,33 @@ static unsigned dp_rmseg[NTASK], dp_stub[NTASK], dp_psp[NTASK];
 static pg_t dp_ldt[NTASK], dp_st[NTASK];        /* LDT-Seite, Zustandsseite */
 static struct desc dp_oldldt[NTASK];
 static unsigned char dp_lmap[NTASK][LDT_N / 8];
+/* Windows (Erweiterung "MS-DOS") braucht wie unter DOSX bis zu 8192
+   Selektoren: dann 16 Seiten LDT am Stueck, Belegung in eigener Seite */
+#define LDT_BIG   8192
+static unsigned ldt_n[NTASK];           /* Eintraege (0 = LDT_N)          */
+static pg_t dp_lbm[NTASK];              /* Belegung bei grosser LDT        */
+#define LDTN(t)   (ldt_n[t] ? ldt_n[t] : LDT_N)
+static int lm_get(int t, unsigned i)
+{
+    if (!dp_lbm[t])
+        return dp_lmap[t][i >> 3] & (1 << (i & 7));
+    scratch2_map(PG_LIN(dp_lbm[t]), 4095);
+    return *(unsigned char __far *)MK_FP(SCRATCH2, i >> 3) & (1 << (i & 7));
+}
+static void lm_set(int t, unsigned i, int on)
+{
+    unsigned char __far *b;
+    if (!dp_lbm[t])
+        b = &dp_lmap[t][i >> 3];
+    else {
+        scratch2_map(PG_LIN(dp_lbm[t]), 4095);
+        b = (unsigned char __far *)MK_FP(SCRATCH2, i >> 3);
+    }
+    if (on)
+        *b |= (unsigned char)(1 << (i & 7));
+    else
+        *b &= (unsigned char)~(1 << (i & 7));
+}
 static struct { unsigned long lpg, npg; } dp_mem[NTASK][NDPM];
 /* DPMI 0800h: eingeblendeter Geraetespeicher (z. B. linearer Bild-
    speicher einer VBE-2.0-Karte); Seiten ohne PTE_OWN, nie freigegeben */
@@ -4628,7 +4662,7 @@ static unsigned long sbc_base[NSBC];
 
 static unsigned char __far *ldt_e(int t, unsigned i)      /* 8 Byte  */
 {
-    scratch_map(PG_LIN(dp_ldt[t]), 4095);
+    scratch_map(PG_LIN(dp_ldt[t]), LDTN(t) * 8 - 1);
     return (unsigned char __far *)MK_FP(SCRATCH, i * 8);
 }
 
@@ -4655,7 +4689,7 @@ static unsigned long sel_base(int t, unsigned s)
 {
     unsigned char __far *d;
     unsigned k;
-    if (!(s & 4) || IDX(s) >= LDT_N)
+    if (!(s & 4) || IDX(s) >= LDTN(t))
         return 0;
     k = (s >> 3) & (NSBC - 1);
     if (sbc_t == t && sbc_sel[k] == s)
@@ -4675,19 +4709,18 @@ static unsigned long sel_base(int t, unsigned s)
 
 static int sel_ok(int t, unsigned s)            /* gueltiger Datenselektor */
 {
-    return s == 0 || ((s & 7) == 7 && IDX(s) < LDT_N &&
-           (dp_lmap[t][IDX(s) >> 3] & (1 << (IDX(s) & 7))));
+    return s == 0 || ((s & 7) == 7 && IDX(s) < LDTN(t) && lm_get(t, IDX(s)));
 }
 
 static int ldt_alloc(int t, unsigned n)         /* n am Stueck -> Index */
 {
     unsigned i, k;
-    for (i = 1; i + n <= LDT_N; i++) {
-        for (k = 0; k < n && !(dp_lmap[t][(i + k) >> 3] & (1 << ((i + k) & 7))); k++)
+    for (i = 1; i + n <= LDTN(t); i++) {
+        for (k = 0; k < n && !lm_get(t, i + k); k++)
             ;
         if (k == n) {
             for (k = 0; k < n; k++) {
-                dp_lmap[t][(i + k) >> 3] |= (unsigned char)(1 << ((i + k) & 7));
+                lm_set(t, i + k, 1);
                 ldesc(t, i + k, 0, 0, 0xF2, 0);  /* Daten, Basis 0, Laenge 1 */
             }
             return (int)i;
@@ -4701,9 +4734,253 @@ static void ldt_free(int t, unsigned i)
 {
     unsigned char __far *d;
     sbc_t = -1;
-    dp_lmap[t][i >> 3] &= (unsigned char)~(1 << (i & 7));
+    lm_set(t, i, 0);
     d = ldt_e(t, i);
     d[5] = 0;
+}
+
+/* LDT-Alias fuer die Erweiterung "MS-DOS" (INT 2Fh 168Ah, AX = 0100h),
+   wie DOSX von Windows 3.x: KRNL286/KRNL386 lesen und schreiben ihre
+   Deskriptoren direkt. Die LDT-Seite ist bei AL_LP nur lesbar
+   eingeblendet; jedes Schreiben ist ein Seitenfehler, den al_write
+   nachbildet: Code/Daten bekommen DPL 3, Systemdeskriptoren (Tore)
+   werden nicht vorhanden - so kommt kein Programm an Ring 0. */
+#define AL_LP     0x7FFF0UL             /* lineare Seite (unter 2 GB)    */
+#define DP_MSDOS  0x054C                /* Einsprung: HLT; RETF          */
+static unsigned dp_alias[NTASK];        /* Selektor (0 = keiner)         */
+
+static int ldt_grow(int t);
+static unsigned al_get(int t)
+{
+    int i;
+    unsigned k;
+    if (dp_alias[t])
+        return dp_alias[t];
+    if (!ldt_grow(t) || (i = ldt_alloc(t, 1)) < 0)
+        return 0;
+    for (k = 0; k < LDT_BIG / 512; k++)
+        if (!lpte_set(t, AL_LP + k, PG_LIN(dp_ldt[t] + k) | PTE_P | PTE_U)) {
+            while (k--)
+                lpte_set(t, AL_LP + k, 0);
+            ldt_free(t, (unsigned)i);
+            return 0;
+        }
+    tlb(t);
+    ldesc(t, (unsigned)i, AL_LP << 12, LDTN(t) * 8 - 1, 0xF2, 0);
+    return dp_alias[t] = SEL(i);
+}
+
+static void al_drop(int t)
+{
+    if (dp_alias[t]) {
+        unsigned k;
+        for (k = 0; k < LDT_BIG / 512; k++)
+            lpte_set(t, AL_LP + k, 0);
+        tlb(t);
+        dp_alias[t] = 0;
+    }
+}
+
+/* LDT auf LDT_BIG Eintraege (16 Seiten am Stueck, der GDT-Eintrag
+   zeigt ueber den Kernel-Alias darauf) -> 0 kein Speicher */
+static int ldt_grow(int t)
+{
+    pg_t p, bm;
+    unsigned i;
+    struct desc *g;
+    unsigned long b;
+    if (ldt_n[t])
+        return 1;
+    if (!(p = mem_alloc(LDT_BIG / 512)))
+        return 0;
+    if (!(bm = own_page())) {
+        mem_free(p, LDT_BIG / 512);
+        return 0;
+    }
+    v86_pages += LDT_BIG / 512;
+    scratch_map(PG_LIN(p), 0xFFFF);
+    for (i = 0; i < 16384; i++)
+        put32(SCRATCH, i, 0);
+    scratch2_map(PG_LIN(dp_ldt[t]), 4095);
+    far_copy(SCRATCH, 0, SCRATCH2, 0, 4096);
+    scratch2_map(PG_LIN(bm), 4095);
+    for (i = 0; i < LDT_N / 8; i++)
+        *(unsigned char __far *)MK_FP(SCRATCH2, i) = dp_lmap[t][i];
+    vp_free(dp_ldt[t]);
+    dp_ldt[t] = p;
+    dp_lbm[t] = bm;
+    ldt_n[t] = LDT_BIG;
+    g = &gdt[LDT_IDX(t)];
+    b = KALIAS + PG_LIN(p);
+    g->limit = 0xFFFF;
+    g->base_lo = (unsigned short)b;
+    g->base_hi = (unsigned char)(b >> 16);
+    g->rsv = (unsigned short)((b >> 24) << 8);
+    if (current == t)
+        k2_lldt(LDT_SEL(t));
+    sbc_t = -1;
+    return 1;
+}
+
+/* n Byte (1/2/4) bei Stelle o der LDT schreiben, Eintraege pruefen */
+static void al_put(int t, unsigned o, unsigned long v, unsigned n)
+{
+    unsigned char __far *d;
+    unsigned i, e, e1 = (o + n - 1) >> 3;
+    if ((unsigned long)o + n > (unsigned long)LDTN(t) * 8)
+        return;
+    d = ldt_e(t, 0);
+    for (i = 0; i < n; i++, v >>= 8)
+        d[o + i] = (unsigned char)v;
+    for (e = o >> 3; e <= e1; e++) {
+        unsigned char __far *x = d + e * 8;
+        if (!e)
+            continue;
+        if (x[5] & 0x10)
+            x[5] |= 0x60;                       /* Code/Daten: DPL 3     */
+        else
+            x[5] &= 0x7F;                       /* Tor/System: nicht da  */
+        if (x[5] & 0x80)                        /* belegt (sonst gaebe     */
+            lm_set(t, e, 1);                    /* ldt_alloc ihn aus) */
+    }
+    sbc_t = -1;
+}
+
+static unsigned long __far *al_reg(struct v86_frame *f, unsigned r)
+{
+    return (unsigned long __far *)&(&f->edi)[7 - r];
+}
+
+/* Seitenfehler beim Schreiben in den Alias -> 1 nachgebildet */
+static int al_write(struct v86_frame *f, int t)
+{
+    unsigned long a = k2_cr2(), lin, v, old, src = 0;
+    unsigned char op, o32 = dp_32[t], a32 = dp_32[t], rep = 0, m, md, rm, reg;
+    unsigned i, w, ip0 = 0, alu = 0, sego = 1;
+    unsigned short *sg = (unsigned short *)f;
+    if (!dp_alias[t] || (a >> 12) < AL_LP || (a >> 12) >= AL_LP + LDT_BIG / 512 ||
+        !(f->err & 2))
+        return 0;
+    lin = sel_base(t, (unsigned)f->r.cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
+    for (i = 0; i < 15; i++) {
+        op = (unsigned char)lrd(lin + i, 1);
+        if (op == 0x66) o32 ^= 1;
+        else if (op == 0x67) a32 ^= 1;
+        else if (op == 0xF2 || op == 0xF3) rep = 1;
+        else if (op == 0x26) sego = 0;
+        else if (op == 0x2E || op == 0x36 || op == 0x3E || op == 0x64 || op == 0x65)
+            sego = op == 0x2E ? 2 : op == 0x36 ? 3 : op == 0x3E ? 1 : op == 0x64 ? 4 : 5;
+        else if (op != 0xF0)
+            break;
+    }
+    ip0 = i;
+    i++;
+    w = (op & 1) ? (o32 ? 4 : 2) : 1;
+    if (op == 0xAA || op == 0xAB || op == 0xA4 || op == 0xA5) {    /* STOS/MOVS */
+        unsigned long cnt = a32 ? f->ecx : (f->ecx & 0xFFFF), d;
+        if (rep && !cnt) {
+            f->r.eip += i;
+            return 1;
+        }
+        if (op >= 0xAA)
+            v = *al_reg(f, 0);
+        else {
+            unsigned s = sego == 0 ? sg[0] : sego == 1 ? sg[1] : sego == 2 ? (unsigned)f->r.cs :
+                         sego == 3 ? (unsigned)f->r.ss : sego == 4 ? sg[-1] : sg[-2];
+            v = lrd(sel_base(t, s) + (a32 ? f->esi : (unsigned)f->esi), w);
+        }
+        al_put(t, (unsigned)(a - (AL_LP << 12)), v, w);
+        d = (f->r.eflags & 0x400) ? 0 - (unsigned long)w : w;
+        if (a32) {
+            f->edi += d;
+            if (op < 0xAA) f->esi += d;
+        } else {
+            f->edi = (f->edi & 0xFFFF0000UL) | ((unsigned)f->edi + (unsigned)d);
+            if (op < 0xAA)
+                f->esi = (f->esi & 0xFFFF0000UL) | ((unsigned)f->esi + (unsigned)d);
+        }
+        if (rep) {                              /* naechster Durchgang:  */
+            cnt--;                              /* Befehl noch einmal    */
+            f->ecx = a32 ? cnt : (f->ecx & 0xFFFF0000UL) | (unsigned)cnt;
+            if (cnt)
+                return 1;
+        }
+        f->r.eip += i;
+        return 1;
+    }
+    if (op == 0xA2 || op == 0xA3) {             /* MOV moffs, AL/AX      */
+        al_put(t, (unsigned)(a - (AL_LP << 12)), *al_reg(f, 0), w);
+        f->r.eip += i + (a32 ? 4 : 2);
+        return 1;
+    }
+    if (!(op == 0x88 || op == 0x89 || op == 0xC6 || op == 0xC7 || op == 0x80 ||
+          op == 0x81 || op == 0x83 || op == 0x08 || op == 0x09 || op == 0x20 ||
+          op == 0x21 || op == 0x30 || op == 0x31 || op == 0x86 || op == 0x87))
+        return 0;
+    m = (unsigned char)lrd(lin + i++, 1);
+    md = m >> 6;
+    rm = m & 7;
+    reg = (m >> 3) & 7;
+    if (md == 3)
+        return 0;
+    if (a32) {
+        if (rm == 4 && (lrd(lin + i++, 1) & 7) == 5 && md == 0)
+            i += 4;
+        if (md == 0 && rm == 5) i += 4;
+        else if (md == 1) i++;
+        else if (md == 2) i += 4;
+    } else {
+        if (md == 0 && rm == 6) i += 2;
+        else if (md == 1) i++;
+        else if (md == 2) i += 2;
+    }
+    old = lrd(a, w);
+    if (op == 0xC6 || op == 0xC7) {
+        v = lrd(lin + i, w);
+        i += w;
+    } else if (op >= 0x80 && op <= 0x83) {
+        if (op == 0x83) {
+            v = lrd(lin + i++, 1);
+            if (v & 0x80)
+                v |= 0xFFFFFF00UL;
+        } else {
+            v = lrd(lin + i, w);
+            i += w;
+        }
+        alu = reg == 1 ? 1 : reg == 4 ? 2 : reg == 6 ? 3 : 9;
+    } else {
+        src = *al_reg(f, w == 1 ? reg & 3 : reg);
+        if (w == 1 && reg >= 4)
+            src >>= 8;
+        v = src;
+        alu = op == 0x08 || op == 0x09 ? 1 : op == 0x20 || op == 0x21 ? 2 :
+              op == 0x30 || op == 0x31 ? 3 : 0;
+    }
+    if (alu == 9)                               /* ADD, SUB ... nicht    */
+        return 0;
+    if (alu == 1) v |= old;
+    else if (alu == 2) v &= old;
+    else if (alu == 3) v ^= old;
+    if (op == 0x86 || op == 0x87) {             /* XCHG: alter Wert ins Reg. */
+        unsigned long __far *r = al_reg(f, w == 1 ? reg & 3 : reg);
+        if (w == 1)
+            *r = (*r & (reg >= 4 ? 0xFFFF00FFUL : 0xFFFFFF00UL)) |
+                 ((old & 0xFF) << (reg >= 4 ? 8 : 0));
+        else if (w == 2)
+            *r = (*r & 0xFFFF0000UL) | (old & 0xFFFF);
+        else
+            *r = old;
+    }
+    if (alu) {                                  /* ZF/SF wie die CPU      */
+        unsigned long mk = w == 1 ? 0xFF : w == 2 ? 0xFFFF : 0xFFFFFFFFUL;
+        f->r.eflags &= ~0x8C5UL;                /* CF PF ZF SF OF         */
+        if (!(v & mk)) f->r.eflags |= 0x40;
+        if (v & (mk ^ (mk >> 1))) f->r.eflags |= 0x80;
+    }
+    al_put(t, (unsigned)(a - (AL_LP << 12)), v, w);
+    f->r.eip += i;
+    (void)ip0;
+    return 1;
 }
 
 static struct dpctx __far *ctx(int t, unsigned k)
@@ -4824,11 +5101,19 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
         if (dp_phys[t][i].npg) {
             dphys_unmap(t, i);
         }
+    al_drop(t);
     gdt[LDT_IDX(t)] = dp_oldldt[t];     /* wieder die Task-LDT          */
     tss[t].ldt = 0;
     if (current == t)
         k2_lldt(LDT_SEL(t));
-    vp_free(dp_ldt[t]);
+    if (ldt_n[t]) {                     /* grosse LDT (Windows)          */
+        mem_free(dp_ldt[t], LDT_BIG / 512);
+        v86_pages -= LDT_BIG / 512;
+        vp_free(dp_lbm[t]);
+        dp_lbm[t] = 0;
+        ldt_n[t] = 0;
+    } else
+        vp_free(dp_ldt[t]);
     vp_free(dp_st[t]);
     dp_ldt[t] = dp_st[t] = 0;
     sbc_t = -1;
@@ -4908,6 +5193,7 @@ static unsigned dp_switch(struct v86_frame *f, int t)
     for (i = 0; i < 32; i++)                    /* Standard: HLT -> Ende  */
         put32(SCRATCH, (DP_EXC >> 2) + i, 0x909090F4UL);
     put32(SCRATCH, DP_EXRET >> 2, 0x909090F4UL);
+    put32(SCRATCH, DP_MSDOS >> 2, 0x909090F4UL);    /* "MS-DOS" (168Ah) */
     put32(SCRATCH, MOU_PM >> 2, dp_32[t] ? 0x90CF66F4UL : 0x9090CFF4UL);
     scratch_map(PG_LIN(dp_st[t]), 4095);
     for (i = 0; i < 32; i++) {
@@ -5098,6 +5384,18 @@ static unsigned dp31(struct v86_frame *f, int t)
         ldt_free(t, IDX(BX));                   /* Register darauf: dp_int */
         return 0;
     case 0x0002:                                /* Segment -> Selektor   */
+        for (k = 1; k < LDTN(t); k++) {         /* gleiches Segment: wie */
+            unsigned char __far *d;             /* die Spezifikation der- */
+            if (!lm_get(t, k))                  /* selbe Selektor        */
+                continue;
+            d = ldt_e(t, k);
+            if (d[5] == 0xF2 && d[6] == 0 && d[7] == 0 && d[0] == 0xFF &&
+                d[1] == 0xFF && *(unsigned short __far *)(d + 2) == (unsigned)(BX << 4) &&
+                d[4] == (unsigned char)(BX >> 12)) {
+                AX = SEL(k);
+                return 0;
+            }
+        }
         if ((k = (unsigned)ldt_alloc(t, 1)) == 0xFFFF)
             DERR(0x8011);
         ldesc(t, k, (unsigned long)BX << 4, 0xFFFF, 0xF2, 0);
@@ -5106,6 +5404,8 @@ static unsigned dp31(struct v86_frame *f, int t)
     case 0x0003:
         AX = 8;
         return 0;
+    case 0x0004: case 0x0005:                   /* Selektor sperren (Windows, */
+        return 0;                               /* DPMI 0.9 reserviert): nichts */
     case 0x0006:                                /* Basis holen           */
         if (!sel_ok(t, BX) || !BX)
             DERR(0x8022);
@@ -5456,6 +5756,38 @@ done800:
 }
 
 /* INT n aus dem PM: 31h, sonst Handler des Programms oder Real Mode */
+/* Vektoren, die im Real Mode auf Daten zeigen (Tabellen) oder zum
+   Debugger gehoeren: im PM ohne Handler nur IRET. INT 41h AX=004Fh
+   fragt KRNL286/386 nach einem Debugger (WDEB386) - weitergereicht
+   sprang die Box in die Plattentabelle bei F000:08C0. */
+static int dp_novec(unsigned n)
+{
+    return n == 0x1D || n == 0x1E || n == 0x1F || n == 0x41 || n == 0x43 ||
+           n == 0x44 || n == 0x46;
+}
+
+/* INT 2Fh im PM, die der Host selbst beantwortet -> 1 erledigt (auch
+   ueber den Standard-Stummel, wenn ein Programm den Vektor kettet) */
+static int dp_2f(struct v86_frame *f, int t)
+{
+    if (AX == 0x1686) {                         /* bin ich im PM?        */
+        AX = 0;
+        return 1;
+    }
+    if (AX == 0x168A) {                         /* Erweiterung des Hosts */
+        unsigned short *sg = (unsigned short *)f;
+        unsigned long q = sel_base(t, sg[1]) + (dp_32[t] ? f->esi : (unsigned)f->esi);
+        if (lrd(q, 4) == 0x442D534DUL && lrd(q + 4, 2) == 0x534FU &&
+            !lrd(q + 6, 1)) {                   /* "MS-DOS" (wie DOSX)   */
+            *(unsigned char *)&f->eax = 0;
+            sg[0] = dp_stub[t];
+            f->edi = dp_32[t] ? DP_MSDOS : (f->edi & 0xFFFF0000UL) | DP_MSDOS;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static unsigned dp_int(struct v86_frame *f, int t, unsigned n)
 {
     unsigned long __far *v, off, sp, b;
@@ -5470,15 +5802,13 @@ static unsigned dp_int(struct v86_frame *f, int t, unsigned n)
         }                                       /* sonst #GP im Kernel)      */
         return r;
     }
-    if (n == 0x2F && AX == 0x1686) {            /* bin ich im PM?        */
-        AX = 0;
+    if (n == 0x2F && dp_2f(f, t))
         return 0;
-    }
     v = pmvec(t, n);
     off = v[0];
     sel = *(unsigned short __far *)((char __far *)v + 4);
     if (sel == dp_stub[t] && off == DP_STUB + n * 4)
-        return dp_reflect(f, t, n);             /* kein eigener Handler  */
+        return dp_novec(n) ? 0 : dp_reflect(f, t, n);   /* kein Handler */
     /* Unterbrechung im PM nachbilden: FLAGS, CS, IP auf den Stapel */
     b = sel_base(t, (unsigned)f->r.ss);
     sp = dp_32[t] ? f->r.esp : (unsigned)f->r.esp;
@@ -5905,6 +6235,111 @@ static int dp_patched(int t, unsigned long lin)
     return 0;
 }
 
+/* Selektor 40h aus dem Speicher: LES/LDS/LSS/LFS/LGS r,m und MOV
+   Sreg,m16 (KRNL286 von Windows 3.1 holt Zeiger 0040:xxxx). lin zeigt
+   auf den Befehl, pl Praefixbytes davor schon ueberlesen -> 1 erledigt */
+static int sel40m(struct v86_frame *f, int t, unsigned long lin, unsigned pl)
+{
+    unsigned short *sg = (unsigned short *)f;
+    unsigned o32 = (ldt_e(t, IDX((unsigned)f->r.cs))[6] & 0x40) ? 1 : 0;
+    unsigned a32 = o32, i = 0, sego = 9, md, rm, reg, sr, k;
+    unsigned char op, m;
+    unsigned long ea = 0, off, sel;
+    for (;; i++) {                              /* Praefixe              */
+        op = (unsigned char)lrd(lin + i, 1);
+        if (op == 0x66) o32 ^= 1;
+        else if (op == 0x67) a32 ^= 1;
+        else if (op == 0x26) sego = 0;
+        else if (op == 0x2E) sego = 1;
+        else if (op == 0x36) sego = 2;
+        else if (op == 0x3E) sego = 3;
+        else if (op == 0x64) sego = 4;
+        else if (op == 0x65) sego = 5;
+        else break;
+        if (i > 6)
+            return 0;
+    }
+    (void)pl;
+    i++;
+    if (op == 0x0F) {
+        op = (unsigned char)lrd(lin + i++, 1);
+        sr = op == 0xB2 ? 2 : op == 0xB4 ? 4 : op == 0xB5 ? 5 : 9;
+    } else
+        sr = op == 0xC4 ? 0 : op == 0xC5 ? 3 : op == 0x8E ? 8 : 9;
+    if (sr == 9)
+        return 0;
+    m = (unsigned char)lrd(lin + i++, 1);
+    md = m >> 6;
+    rm = m & 7;
+    reg = (m >> 3) & 7;
+    if (md == 3)
+        return 0;
+    if (sr == 8) {                              /* MOV Sreg,m16          */
+        sr = reg;
+        if (sr == 1 || sr > 5)
+            return 0;
+    }
+    if (a32) {                                  /* 32 Bit: ohne SIB      */
+        if (rm == 4)
+            return 0;
+        if (md == 0 && rm == 5) {
+            ea = lrd(lin + i, 4);
+            i += 4;
+        } else {
+            ea = *(&f->edi + (7 - rm));
+            if (rm == 5 && sego == 9) sego = 2;
+            if (md == 1) { k = (unsigned)lrd(lin + i++, 1); ea += (unsigned long)(long)(signed char)k; }
+            else if (md == 2) { ea += lrd(lin + i, 4); i += 4; }
+        }
+    } else {
+        static const unsigned char r1[8] = { 3, 3, 5, 5, 6, 7, 5, 3 };  /* BX BX BP BP SI DI BP BX */
+        unsigned v;
+        if (md == 0 && rm == 6) {
+            v = (unsigned)lrd(lin + i, 2);
+            i += 2;
+        } else {
+            v = (unsigned)*(&f->edi + (7 - r1[rm]));
+            if (rm < 4)
+                v += (unsigned)*(&f->edi + (7 - (rm & 1 ? 7 : 6)));
+            if ((rm == 2 || rm == 3 || rm == 6) && sego == 9)
+                sego = 2;
+            if (md == 1) v += (unsigned)(int)(signed char)lrd(lin + i++, 1);
+            else if (md == 2) { v += (unsigned)lrd(lin + i, 2); i += 2; }
+        }
+        ea = v;
+    }
+    if (sego == 9) sego = 3;
+    k = sego == 0 ? sg[0] : sego == 1 ? (unsigned)f->r.cs : sego == 2 ? (unsigned)f->r.ss :
+        sego == 3 ? sg[1] : sego == 4 ? sg[-1] : sg[-2];
+    ea += sel_base(t, k);
+    if (op == 0x8E) {
+        sel = lrd(ea, 2);
+        off = 0;
+    } else {
+        off = lrd(ea, o32 ? 4 : 2);
+        sel = lrd(ea + (o32 ? 4 : 2), 2);
+    }
+    if ((sel & 0xFFFC) != 0x40)
+        return 0;
+    if (!s40[t]) {
+        if ((int)(k = (unsigned)ldt_alloc(t, 1)) < 0)
+            return 0;
+        ldesc(t, k, 0x400, 0xFFFF, 0xF2, 0);
+        s40[t] = SEL(k);
+    }
+    if (op != 0x8E) {                           /* Offset ins Register   */
+        unsigned long *r = &f->edi + (7 - reg);
+        *r = o32 ? off : (*r & 0xFFFF0000UL) | (unsigned)off;
+    }
+    if (sr == 0) sg[0] = s40[t];
+    else if (sr == 3) sg[1] = s40[t];
+    else if (sr == 2) f->r.ss = s40[t];
+    else if (sr == 4) sg[-1] = s40[t];
+    else sg[-2] = s40[t];
+    f->r.eip += i;
+    return 1;
+}
+
 /* Selektor 40h (BIOS-Datenbereich) wie Windows/DOSEMU: DOS/4GW laedt ihn
    in seinem 16-Bit-Teil (push 40h; pop es; mov al,[es:6Ch] - Sam & Max
    CD beim Start). Bei uns ist GDT 40h ein Kernelfenster -> #GP mit
@@ -5928,16 +6363,20 @@ static int sel40(struct v86_frame *f, int t, unsigned long lin, unsigned char op
         len++;
         if (op == 0xA1) r = 4;
         else if (op == 0xA9) r = 5;
+        else if (op == 0xB2 || op == 0xB4 || op == 0xB5)
+            return sel40m(f, t, lin, 0);
         else return 0;
     } else if (op == 0x8E) {
         op = (unsigned char)lrd(lin + len, 1);
         len++;
-        if ((op & 0xC0) != 0xC0)
-            return 0;                           /* nur aus Registern     */
+        if ((op & 0xC0) != 0xC0)                /* aus dem Speicher       */
+            return sel40m(f, t, lin, 0);
         r = (op >> 3) & 7;
         if (r != 0 && r != 3 && r != 4 && r != 5)
             return 0;
         o32 = 2;                                /* kein POP              */
+    } else if (op == 0xC4 || op == 0xC5) {      /* LES/LDS r,m (Windows: */
+        return sel40m(f, t, lin, 0);            /* Zeiger 0040:xxxx)     */
     } else
         return 0;
     if (!s40[t]) {
@@ -5966,9 +6405,9 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     unsigned char op;
     unsigned n, cs = (unsigned)f->r.cs;
 
-    if (f->vec == 14 && (swap_pf() || vga_pf(t)))   /* ausgelagert, Bild hinten */
-        return 0;
-    if (f->vec != 13)
+    if (f->vec == 14 && (swap_pf() || vga_pf(t) || al_write(f, t)))
+        return 0;                               /* ausgelagert, Bild hinten, */
+    if (f->vec != 13)                           /* LDT-Alias                 */
         return dp_exc(f, t);
     lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);
     op = (unsigned char)lrd(lin, 1);
@@ -5985,6 +6424,19 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         return dp_exret(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_CBRET)
         return dp_cbret(f, t);
+    if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_MSDOS) {
+        unsigned long b = sel_base(t, (unsigned)f->r.ss);
+        unsigned long sp = dp_32[t] ? f->r.esp : (unsigned)f->r.esp;
+        f->r.eip = lrd(b + sp, dp_32[t] ? 4 : 2);    /* RETF nachbilden    */
+        f->r.cs = lrd(b + sp + (dp_32[t] ? 4 : 2), 2);
+        sp += dp_32[t] ? 8 : 4;
+        f->r.esp = dp_32[t] ? sp : (f->r.esp & 0xFFFF0000UL) | (unsigned)sp;
+        if (AX == 0x0100 && (AX = al_get(t)) != 0)  /* LDT-Alias      */
+            f->r.eflags &= ~1UL;
+        else
+            f->r.eflags |= 1;
+        return 0;
+    }
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == MOU_PM)
         return cb_pmcb(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip >= DP_EXC &&
@@ -6006,6 +6458,10 @@ static unsigned dp_trap(struct v86_frame *f, int t)
     if (cs == dp_stub[t] && op == 0xF4) {       /* Standard-Vektor: an RM */
         n = (unsigned)lrd(lin + 1, 1);
         f->r.eip += 2;                          /* weiter bei IRET(D)    */
+        if (n == 0x2F && dp_2f(f, t))
+            return 0;
+        if (dp_novec(n))
+            return 0;
         if (n >= 0x0B && n <= 0x0F && vec_def(n)) {
             /* IRQ 3-7 ohne Handler auch im Real Mode: gleich quittieren
                statt PM -> RM -> PM (der Stummel tut dort nichts) */

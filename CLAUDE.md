@@ -2060,10 +2060,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 ## Geplant (noch nicht umgesetzt)
 
 - **Windows 3.1 in der Box, Weg B** (vorgemerkt vom Nutzer, 23.11.2026;
-  noch kein Code): eigener Lader statt DOSX.EXE in `\DOS\MDOS`, der
-  Box-Kern ersetzt ihn beim 4B00h, KRNL286/386 auf unserem DPMI, DOS-
-  Übersetzung im Lader, nur Standardmodus, EMS 5900h; Stand und Messung
-  in `docs/DOSKERN.md` „Windows 3.1 in der Box“.
+  „mach einfach weiter“): Lader `WINLDR.COM` (apps/winldr.asm,
+  \DOS\MDOS) statt DOSX.EXE, KRNL286 auf unserem DPMI (Erweiterung
+  „MS-DOS“ mit LDT-Alias, LDT bis 8192), DOS-/BIOS-Übersetzung im Lader.
+  Stand: Windows 3.11 deutsch startet bis zum ersten SETUP-Fenster,
+  geprüft QEMU und 86Box P3B-F; Einzelheiten und Offenes in
+  `docs/DOSKERN.md` „Stand Weg B“. Testumgebung /tmp/claude-0/w31 (ISO
+  des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
+  zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.
 
 - **CHKDSK vor der Auslagerungsdatei** (vorgemerkt vom Nutzer,
   23.11.2026; noch kein Code): ist das Sauber-Bit des Startlaufwerks

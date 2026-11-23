@@ -180,7 +180,7 @@ static unsigned load(const char *path, unsigned mode, u16 pseg, u16 poff,
     unsigned res, e = 0, k;
     int s, exe;
     u32 isz;
-    u16 hdr = 0, env = 0, psp = 0, big, need, want, i;
+    u16 hdr = 0, env = 0, psp = 0, big, need, want, i, ld;
     s = open_path(path, 0x20, DEM_ACT_OPEN, 0, &res);
     if (s < 0)
         return (unsigned)-s;
@@ -252,16 +252,20 @@ static unsigned load(const char *path, unsigned mode, u16 pseg, u16 poff,
     psp_make(psp, psp + W(psp - 1, 3), parent, env, rip, rcs);
     W(psp, 0x40) = prog_ver(path);
 
-    if (!sread_big(s, (u32)hdr << 4, psp + 0x10, isz)) {
+    ld = psp + 0x10;                    /* minalloc = maxalloc = 0: oben  */
+    if (exe && !*(u16 *)(h + 0x0A) && !*(u16 *)(h + 0x0C))  /* im Block wie */
+        ld = psp + W(psp - 1, 3) - (u16)((isz + 15) >> 4);  /* MS-DOS (EXEC */
+                                        /* .ASM; KRNL286 von Windows 3.1) */
+    if (!sread_big(s, (u32)hdr << 4, ld, isz)) {
         e = E_FORMAT;
         goto freeit;
     }
     if (exe) {
-        if ((e = relocs(s, psp + 0x10, psp + 0x10)) != 0)
+        if ((e = relocs(s, ld, ld)) != 0)
             goto freeit;
-        o->cs = psp + 0x10 + *(u16 *)(h + 0x16);
+        o->cs = ld + *(u16 *)(h + 0x16);
         o->ip = *(u16 *)(h + 0x14);
-        o->ss = psp + 0x10 + *(u16 *)(h + 0x0E);
+        o->ss = ld + *(u16 *)(h + 0x0E);
         o->sp = *(u16 *)(h + 0x10);
     } else {
         u16 sz = W(psp - 1, 3);

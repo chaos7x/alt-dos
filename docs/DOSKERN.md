@@ -1153,6 +1153,52 @@ im Grafikteil, nach dem DOS-Teil fehlt es.
 Weg A, ein VCPI-Dienst, scheidet aus: der Client übernimmt mit eigener
 GDT/IDT/CR3 die Maschine im Ring 0, die Box wäre nicht mehr geschützt.
 
+### Stand Weg B (23.11.2026): Windows 3.11 startet im Standardmodus
+
+`C:\DOS\MDOS\WINLDR.COM SYSTEM\KRNL286.EXE` (aus `C:\WINDOWS`)
+startet Windows 3.11 deutsch in der Box: KRNL286, SYSTEM/KEYBOARD/
+VGA.DRV, GDI, USER, Schriften und SETUP.EXE laden, der Grafikteil
+zeigt sein erstes Fenster (SETUP meldet „nicht vollständig
+eingerichtet“, weil es ohne den DOS-Teil gestartet wurde). Geprüft in
+QEMU (16 und 64 MB) und 86Box P3B-F (Pentium II, ET4000/W32p, 64 MB);
+DOOM 1.9 Timedemo mit Ton danach unverändert.
+
+- **WINLDR.COM** (`apps/winldr.asm`, `\DOS\MDOS`): fängt 2Fh 1687h
+  ab, ruft den Moduswechsel des Wirts selbst und hängt sich im PM in
+  INT 21h, 10h und 15h ein; der Codeselektor des Wirts zeigt danach auf
+  den Kern (KRNL rechnet mit ihm), WINLDR selbst nimmt einen eigenen.
+  Übersetzt wie DOSX: Namen über DS:DX/DS:SI (39h–3Dh, 41h, 43h, 4Eh,
+  5Ah, 5Bh, 56h, 60h, 6Ch), 3Fh/40h in 4-KB-Stücken über einen eigenen
+  Selektor auf die lineare Adresse (KRNL liest über die Grenze seines
+  Segments hinaus – fiel nur in 86Box auf), DTA (1Ah/2Fh/4Eh/4Fh), 47h,
+  38h, 25h/35h über DPMI 0204h/0205h, PSP-Selektor ↔ Segment (50h, 51h,
+  62h, 26h, 55h), 34h/52h ES -> Selektor, 48h/49h/4Ah über 0100h–0102h,
+  09h; INT 10h 1002h/1009h/1012h/1017h/1Bh/13h/1100h/1110h (Palette –
+  ohne sie blieb das Bild schwarz), INT 15h C0h (ES:BX der Konfigura-
+  tionstabelle, COMM.DRV). Alles andere geht unverändert an den Wirt.
+- **DPMI-Wirt** (`kernel/v86.c`): Erweiterung „MS-DOS“ (2Fh 168Ah im
+  PM, Einsprung `DP_MSDOS`, AX = 0100h LDT-Alias): die LDT ist bei
+  7FFF0000h nur lesbar eingeblendet, `al_write` bildet jeden Schreib-
+  zugriff nach (MOV, MOV imm, OR/AND/XOR, XCHG, STOS/MOVS auch mit REP)
+  und prüft den Eintrag – Code/Daten bekommen DPL 3, Systemdeskriptoren
+  (Tore) werden „nicht vorhanden“, so kommt kein Programm an Ring 0.
+  Mit dem Alias wächst die LDT auf 8192 Einträge (16 Seiten am Stück,
+  Belegung in eigener Seite, `ldt_grow`), KRNL braucht über 512.
+  0002h liefert für dasselbe Segment denselben Selektor, 0004h/0005h
+  (Selektor sperren) ohne Wirkung. Selektor 40h auch aus dem Speicher
+  (LES/LDS/LSS/LFS/LGS/MOV Sreg, `sel40m`). INT 1Dh–1Fh/41h/43h/44h/46h
+  im PM ohne Handler nur IRET (INT 41h AX=004Fh fragt nach einem
+  Debugger – weitergereicht sprang die Box in die Plattentabelle).
+  2Fh 1687h geht durch die Kette, wenn ein Programm INT 2Fh seit dem
+  Start umgebogen hat (`v2f0`), sonst wie bisher der Monitor direkt.
+- **Box-Kern** (`atdoscm/exec.c`): minalloc = maxalloc = 0 lädt oben in
+  den Block wie MS-DOS (KRNL286.EXE rechnet damit).
+
+Offen: der Box-Kern ersetzt `DOSX.EXE` beim 4B00h durch WINLDR (dann
+läuft SETUP über seinen normalen Weg und legt WIN.COM an), Maus/Tastatur
+im Windows-Betrieb prüfen, KRNL386, EMS 5900h, DOS-Programme aus Windows
+(Standardmodus: DSWAP), Netz.
+
 Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
 in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h
 4B00h) den Aufruf von `DOSX.EXE` durch den Lader – CD und Windows-

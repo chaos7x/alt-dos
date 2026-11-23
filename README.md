@@ -989,7 +989,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   64-KB-Lücke passt
 - DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2) – DOS/4GW
   (1.95, 2.01a), DJGPP (Boom 2.02 mit Allegro) und andere Extender laufen
-  darauf; erste Stufe:
+  darauf; dazu die Erweiterung „MS-DOS“ (LDT-Alias) für den Windows-Kern:
+  Windows 3.x im Standardmodus startet über `WINLDR.COM` statt DOSX.EXE
+  (erste Stufe, siehe docs/DOSKERN.md); erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
   (0300h–0302h), Speicher bis 1 GB Adressraum (0501h–0503h),
