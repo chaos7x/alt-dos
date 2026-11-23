@@ -1239,6 +1239,26 @@ Win32s), nicht vorziehen, sondern nachfragen.
   weiter und steht in TASKMAN /L, CMD bleibt bedienbar). Platz: pn_save
   nach panic.c (klog_head/len/mid, subst_sel, KLOG_OFF jetzt in kern.h);
   erstes Codesegment danach 65.129 Byte.
+- Joystick (Wunsch des Nutzers, 23.11.2026): v86.c `joy_ports` gibt 201h
+  in der I/O-Bitmap frei, sobald die Box vorn darauf zugreift (wie
+  spk_ports; spk_ports(t, 0) schließt ihn mit), hinten liest die Box FFh
+  („kein Joystick“). `joy_read`: anstoßen, 201h lesen, Zeit über PIT
+  Kanal 0 (Latch, Teiler kpit_div), bis alle Achsenbits fallen, höchstens
+  3580 Schritte (3 ms) mit CLI; µs = Schritte · 0,838 ohne Division.
+  INT 15h AH=84h (DX 0 Tasten, 1 Achsen in µs), FAPI 5Fh `FAPI_JOYSTICK`
+  (`struct fapi_joy`, 5Fh in beiden Linien frei) -> `joy_fapi` (v86.c,
+  KTEXT3), `\DEMO\JOYTEST [/1]`. Geprüft in 86Box 386DX/40 (AWE32 mit
+  Gameport): JOYTEST und INT 15h zeigen Taste 1 und X/Y 314/854 µs, die
+  direkte Schleife in der Box endet nach 174 Durchläufen. 86Box bildet
+  den Joystick nur mit einem Joystick am Rechner nach – die lokale Kopie
+  hat dafür `JOYFAKE="x y Tasten"` (qt/sdl_joystick.c, nicht im
+  Repository) und `joystick_type`/`joystick_0_nr = 1` in [Input devices].
+  Dabei gefunden (älter): mit Joystick meldet 86Box zusätzlich einen
+  PnP-Gameport (BOX0002), dessen Ressourcendaten als FFh kamen – pnp.c
+  `card()` las daraus endlos „lange Einträge 7Fh“ der Länge FFFFh, der
+  Start hing nach „F8“. Jetzt Ende bei Tag FFh, Länge über 1 KB oder
+  4 KB Ressourcendaten. Testfalle: in 86Box liefen alte Instanzen nach
+  `pkill` weiter (mehrere auf demselben Abbild!) – run86.sh nimmt -9.
 - Strg+C an der Eingabezeile (Wunsch des Nutzers, 21.11.2026, wie
   COMMAND.COM): `read_line` setzt außerhalb von Stapeldateien den
   SIG_BREAK-Handler (`on_break`), KbdCharIn kehrt beim Signal mit 0 zurück,

@@ -353,6 +353,7 @@ void __far v86_copy(int t, unsigned long lin, unsigned sel, unsigned off, unsign
 void __far v86_xfer(int t, unsigned long lin, unsigned sel, unsigned off, unsigned n, int rd);
 void __far v86_destroy(int t);
 unsigned __far v86_exc(struct v86_frame *f);           /* 0 = erledigt  */
+unsigned __far joy_fapi(unsigned usel, unsigned off);  /* v86.c, Gameport */
 void __far v86_start(int t, int s);     /* Sitzung fest: Vollbild, B800  */
 void __far v86_replay(int s);           /* Text der beendeten Box zeigen */
 void __far v86_park(int t);             /* Box offen halten: Vollbild weg */

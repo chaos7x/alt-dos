@@ -101,6 +101,7 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define MidiClose()         F2(FAPI_AUDIO, AUD_MIDICLOSE, 0)
 #define AweCmd(b, n)        fapi_call(FAPI_AUDIO, AUD_AWE, (unsigned short)(b), (n))
 #define DosQTicks()         F2(FAPI_QTICKS, 0, 0)
+#define DosJoystick(j)      F2(FAPI_JOYSTICK, (unsigned short)(j), 0)
 #define FAPI_FAILED(r)      ((unsigned short)(r) >= FAPI_ERR_FIRST)
 #define KbdCharIn()         F2(FAPI_KBDCHARIN, 0, 0)
 /* Sondertaste (Zeichen 0 oder E0h = graue Taste wie beim AT-BIOS)? E0h ist

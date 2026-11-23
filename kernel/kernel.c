@@ -4582,6 +4582,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         t = ufs_lock(&files[k].f, MK_FP(usel, a2));
         return t ? ifs_err(t) : 0;
+    case FAPI_JOYSTICK:                         /* Gameport (v86.c)       */
+        return user_ok(usel, a1, sizeof(struct fapi_joy), 1) ? joy_fapi(usel, a1) : FAPI_ERROR;
     case FAPI_UFS:                              /* NET USE (ufs.c)        */
         return ufs_fapi(usel, a1, a2, a3);
 

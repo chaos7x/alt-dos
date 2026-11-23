@@ -281,6 +281,16 @@ struct fapi_drvinfo {
                                        gesperrt). Wirkt auf NET-USE-
                                        Laufwerken beim Server; lokal immer
                                        0 (zwei Schreiber gibt es lokal nie) */
+#define FAPI_JOYSTICK       0x5F    /* Gameport (6.3): BX = struct
+                                       fapi_joy -> 0, FAPI_ERROR (kein
+                                       Gameport). Misst die vier Achsen
+                                       ueber den PIT, hoechstens 3 ms mit
+                                       gesperrten Interrupts */
+struct fapi_joy {
+    unsigned       buttons;             /* Bit 0-3: Taste 1-4 gedrueckt   */
+    unsigned       axis[4];             /* us bis Ende der Messung (X1, Y1,
+                                           X2, Y2), FFFFh = nicht da     */
+};
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

@@ -329,8 +329,8 @@ static void cfg_reset(void)
 static void card(unsigned csn)
 {
     unsigned char vid[9], lid[4], t[8];
-    int c, i, len, tag, ldn = -1;
-    unsigned k;
+    int c, i, len = 0, tag, ldn = -1;
+    unsigned k, tot;
     wr(0x03, csn);                      /* Wake[CSN]                     */
     udelay(100);
     for (i = 0; i < 9; i++) {           /* Kennung kommt noch einmal     */
@@ -341,14 +341,16 @@ static void card(unsigned csn)
     for (k = 0; k < 4; k++)
         lid[k] = 0;
     cfg_reset();
-    for (;;) {
-        if ((c = rbyte()) < 0)
-            break;
+    for (tot = 0; tot < 4096; tot += len + 1) { /* hoechstens 4 KB: eine Karte, */
+        if ((c = rbyte()) < 0)          /* die nur FFh liefert, hielt   */
+            break;                      /* den Start sonst endlos auf   */
         if (c & 0x80) {                 /* langer Eintrag: Laenge 16 Bit */
             int l1 = rbyte(), l2 = rbyte();
-            if (l1 < 0 || l2 < 0)
-                break;
+            if (l1 < 0 || l2 < 0 || c == 0xFF)
+                break;                  /* 7Fh gibt es nicht            */
             len = l1 | l2 << 8;
+            if (len > 1024)
+                break;
             tag = 0x100 | (c & 0x7F);
         } else {
             len = c & 7;

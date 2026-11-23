@@ -734,6 +734,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   gewechselt wird beim Rücksprung ins Programm (wie OS/2 1.x). Test:
   `\DEMO\BUSY [Runden] [/W]` rechnet ohne FAPI-Aufrufe – andere Sitzungen
   bleiben bedienbar, Strg+C bricht ab
+- Joystick (Gameport 201h): in der DOS-Box vorn direkt durchgereicht
+  (Spiele messen die Achsen selbst mit echter Zeit), hinten „kein
+  Joystick“; INT 15h AH=84h liefert Tasten und Achsen (in µs). Eigene
+  Programme lesen ihn über `DosJoystick`, `\DEMO\JOYTEST` zeigt ihn an
 - DOS-Boxen (6.0, Phase 3 Stufen 1–2): ein `.COM`-Programm läuft im
   V86-Modus des 386 in einer eigenen virtuellen Maschine – mit eigenem
   erstem MB (640 KB, eigenes Seitenverzeichnis), präemptiv wie jedes
@@ -1174,6 +1178,7 @@ selbst nur 8.3 kennt.
 | 92 | DosRandom       | Entropie (6.3): BX = Puffer, CX = Länge (bis 34) → Pool des Kernels (8 Doppelworte, gemischt aus dem PIT-Zähler und Takt bei jedem Hardware-Interrupt außer dem Takt – Tastatur, Platten, Netz, Maus –, dahinter die Zahl der Ereignisse) → Bytes; roh, vor Gebrauch hashen (`tls_random` in apps/tls.c) |
 | 93 | DosUfs          | Dateisystem in Ring 3 (6.3, NET USE): BX = UFS_REG (CX = Laufwerk + `\\Rechner\Freigabe`), UFS_GET (CX = Auftrag, DX = Datenpuffer 16 KB, wartet), UFS_PUT (Antwort), UFS_DEL (CX = Laufwerk, Dienst beenden), UFS_INFO (CX = Laufwerk, DX = Ziel) |
 | 94 | DosFileLock     | Bereichssperre (6.3, wie OS/2 DosSetFileLocks): BX = Handle, CX = `struct fapi_lock` (Stelle, Länge, `LOCK_UNLOCK`/`LOCK_SHARED`) → 0, FAPI_ERR_LOCKED (FFF2h: von anderem gesperrt bzw. nicht gesperrt). Auf NET-USE-Laufwerken sperrt der Server (SMB2 LOCK), lokal immer 0. Lesen/Schreiben in einen fremd gesperrten Bereich meldet ebenfalls FAPI_ERR_LOCKED |
+| 95 | DosJoystick     | Gameport (6.3): BX = `struct fapi_joy` → 0 (Tasten Bit 0–3 = gedrückt, vier Achsen in µs bis zum Ende der Messung, FFFFh = nicht angeschlossen), FAPI_ERROR ohne Gameport. Misst über den PIT, höchstens 3 ms mit gesperrten Interrupts (`\DEMO\JOYTEST [/1]`) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

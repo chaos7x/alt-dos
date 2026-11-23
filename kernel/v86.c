@@ -244,6 +244,7 @@ static void vdd_bg(int t);
 static void vdd_tk(int t);
 static pg_t own_page(void);
 static unsigned char spk_open[NTASK];
+static unsigned char joy_open[NTASK];   /* Gameport 201h direkt          */
 static void vga_leave(int t);
 static void vga_svmap(int t, int bg);
 static void tlb(int t);
@@ -1109,6 +1110,60 @@ static void bda_ticks(unsigned n)
 /* ---- virtueller Zeitgeber ------------------------------------------------ */
 #define KPIT 11932U                     /* Teiler des Kernels (100 Hz)   */
 
+/* Gameport messen: Monoflops anstossen, 201h lesen, bis die vier Achsen-
+   bits fallen; Zeit ueber Kanal 0 des PIT (zaehlt abwaerts, Teiler kpit_
+   div). Hoechstens 3 ms mit gesperrten Interrupts (3580 PIT-Schritte).
+   ax[i] in us, FFFFh = Achse nicht da. -> 201h (Tasten Bit 4-7, 0 =
+   gedrueckt) */
+static unsigned pit_now0(void)
+{
+    unsigned c;
+    outb(0x43, 0x00);
+    c = inb(0x40);
+    return c | inb(0x40) << 8;
+}
+
+static unsigned joy_read(unsigned *ax)
+{
+    unsigned f, b, prev, now, d, tot = 0, done = 0, i;
+    unsigned rl = kpit_div ? kpit_div : KPIT;
+    f = irq_off();
+    outb(0x201, 0xFF);
+    prev = pit_now0();
+    do {
+        b = inb(0x201);
+        now = pit_now0();
+        d = prev >= now ? prev - now : prev + rl - now;
+        prev = now;
+        tot += d;
+        for (i = 0; i < 4; i++)
+            if (!(done & (1 << i)) && !(b & (1 << i))) {
+                done |= 1 << i;         /* us = Schritte * 0,838         */
+                ax[i] = tot - (tot >> 3) - (tot >> 5) - (tot >> 7);
+            }
+    } while (done != 15 && tot < 3580);
+    irq_restore(f);
+    for (i = 0; i < 4; i++)
+        if (!(done & (1 << i)))
+            ax[i] = 0xFFFF;
+    return b;
+}
+
+/* FAPI_JOYSTICK (kernel.c) */
+unsigned __far joy_fapi(unsigned usel, unsigned off)
+{
+    struct fapi_joy __far *j = MK_FP(usel, off);
+    unsigned ax[4], b, i;
+    b = joy_read(ax);
+    if (ax[0] == 0xFFFF && ax[1] == 0xFFFF && ax[2] == 0xFFFF &&
+        ax[3] == 0xFFFF && (b & 0xF0) == 0xF0)
+        return FAPI_ERROR;              /* kein Gameport (alles 1)       */
+    j->buttons = ~b >> 4 & 15;
+    for (i = 0; i < 4; i++)
+        j->axis[i] = ax[i];
+    return 0;
+}
+
 /* vergangene PIT-Schritte seit der letzten Messung der Box (echte Zeit:
    Kerneltakt + echter Zaehler von Kanal 0) */
 static unsigned long pit_elapsed(int t)
@@ -1488,8 +1543,24 @@ unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel)
 /* Lautsprecher-Ports 42h/61h direkt freigeben (I/O-Bitmap), solange die
    Box vorn ist: Spiele (Digger) schreiben bei viel Action staendig
    dorthin, jeder Trap kostet - das Spiel wurde langsamer */
+/* Gameport 201h direkt (I/O-Bitmap), solange die Box vorn ist: Spiele
+   messen die Achsen, indem sie 201h in einer Schleife lesen - durch den
+   Monitor waeren die Zeiten falsch (und jede Abfrage eine Falle) */
+static void joy_ports(int t, int on)
+{
+    if (on == joy_open[t])
+        return;
+    joy_open[t] = (unsigned char)on;
+    if (on)
+        tss[t].iob[0x201 >> 3] &= (unsigned char)~(1 << (0x201 & 7));
+    else
+        tss[t].iob[0x201 >> 3] |= (unsigned char)(1 << (0x201 & 7));
+}
+
 static void spk_ports(int t, int on)
 {
+    if (!on)
+        joy_ports(t, 0);                /* hinten/Ende: Gameport auch zu  */
     if (on == spk_open[t])
         return;
     spk_open[t] = (unsigned char)on;
@@ -2439,6 +2510,17 @@ static void svc(int n, struct v86_frame *f, int t)
     case 0x15:
         if (AH == 0x86) {                       /* warten CX:DX us       */
             kf_box_ctl(BOX_SLEEP, CX * 7 + DX / 10000 + 1);
+            svc_cf = 0;
+        } else if (AH == 0x84 && DX <= 1) {     /* Joystick: Tasten bzw.  */
+            unsigned ja[4], jb;                 /* Achsen (in us statt    */
+            jb = box_fg(t) ? joy_read(ja) : 0xFF;   /* BIOS-Schleifen)    */
+            if (!box_fg(t))
+                ja[0] = ja[1] = ja[2] = ja[3] = 0;
+            if (DX == 0)
+                AL = (unsigned char)(jb & 0xF0);
+            else {
+                AX = ja[0]; BX = ja[1]; CX = ja[2]; DX = ja[3];
+            }
             svc_cf = 0;
         } else if (AH == 0x88) {                /* erweiterter Speicher  */
             AX = 0;
@@ -3526,6 +3608,11 @@ static unsigned char port_in(int t, unsigned p)
         return 0;
     case 0x3CC:
         return 0x67;
+    case 0x201:                                 /* Gameport: vorn direkt, */
+        if (!box_fg(t))                         /* hinten "keiner"        */
+            return 0xFF;
+        joy_ports(t, 1);
+        return (unsigned char)inb(0x201);
     }
     if ((o = vdd_io(t, VDD_IN, p, 0, box_fg(t))) != VDD_NOTMINE)  /* Module */
         return (unsigned char)o;
@@ -3548,6 +3635,12 @@ static void port_out(int t, unsigned p, unsigned char v)
         return;
     }
     switch (p) {
+    case 0x201:                                 /* Gameport anstossen     */
+        if (box_fg(t)) {
+            joy_ports(t, 1);
+            outb(0x201, v);
+        }
+        return;
     case 0xA0:                                  /* zweiter PIC: ICW1     */
         if (v & 0x10) {                         /* (Masken behalten ihren */
             picw[t][1] = (unsigned char)(v & 1 ? 3 : 2);    /* Wert)      */
