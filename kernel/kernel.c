@@ -7001,7 +7001,9 @@ static int conv_pending(void)
         if (n > 255)
             n = 0;
         for (i = 0; i + 3 < n; i++)
-            if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
+            if (fi_buf[i + 1] == ':' && !r)
+                r = 2;                  /* Pruefung vorgemerkt          */
+            else if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
                 r = 1;
     }
     files[k].refs = 0;
@@ -7694,9 +7696,10 @@ void kmain(void)
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
-    if (conv_pending()) {                       /* CONVERT beim Start: */
-        vio_kputs(boot_session, "\xFE Umwandlung vorgemerkt - ohne "
-                  "Auslagerungsdatei und LOOP=\n");
+    if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
+        vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
+                  "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "
+                  "diesmal ohne Auslagerungsdatei und LOOP=\n");
     } else {                                    /* nichts darf offen sein */
         i = env_find(-1, "SWAPPATH", 8);        /* Auslagerungsdatei      */
         swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
