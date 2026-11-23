@@ -23,6 +23,10 @@ unveraendert:
   MEM.EXE       FreeDOS MEM 1.11, https://github.com/FDOS/mem, Stand 2b2c833,
                 Open Watcom, 8086, ohne UPX:
                   wcl -bt=dos -ms -0 -oahls -s -j mem.c prf.c kitten.c
+                mit patches/mem-kitten.patch (AT-DOS, 22.11.2026: die
+                Meldungsdatei wird in 512-Byte-Bloecken statt Byte fuer
+                Byte gelesen - in der DOS-Box kostete jedes Byte einen
+                DOS-Aufruf, auf dem 386 eine Sekunde vor der Ausgabe)
   CTMOUSE.COM   CuteMouse 2.1b4 (Maustreiber), https://github.com/FDOS/mouse,
                 Stand dd26852, deutsche Meldungen (ctm-de.msg), assembliert
                 mit JWasm (github.com/Baron-von-Riedesel/JWasm 77ccfcd) und

@@ -336,6 +336,10 @@ ein Redirector-READ = Ausflug (286: CPU-Reset). `rd_cache`: READ mit CX
 Ausflug, sonst 1 KB über INT E0h 10h in `cbuf` (DTA in der SDA kurz
 umgebogen, Lage in der SFT danach zurück); jeder andere Redirector-
 Aufruf verwirft ihn. In Bochs (286-Weg) MEM in unter 5 s.
+Dazu (23.11.2026, aus main fb21291): `freedos/patches/mem-kitten.patch`
+– MEM liest MEM.DE in 512-Byte-Blöcken, also auch keine Byte-für-Byte-
+Aufrufe an FreeDOS/RBSHELL mehr; MEM.EXE gleich dem von main (vorher
+schon bytegleich). In QEMU (isapc 4 MB, RBOX, MEM deutsch) geprüft.
 Abbild bei Bedarf (Nutzer: auf dem 286 dauerte es ~5 s bis zur ersten
 FreeDOS-Meldung): RBOX las FREEDOS.IMG zweimal ganz (Größe zählen, dann
 laden = 720 KB). Jetzt Größe aus dem BPB (Sektoren, +13h), anfangs nur
