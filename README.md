@@ -678,7 +678,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   **Strg+Alt+Entf** schließt alle Dateien, leert die Platten-Caches und
   startet neu; hängt ein Programm, nach spätestens 5 s trotzdem (zweimal
   drücken: sofort)
-- Tastaturtreiber (IRQ 1), deutsche Belegung mit Umlauten und AltGr fest
+- Tastaturtreiber (IRQ 1) mit LEDs für Num, Feststell und Rollen, deutsche Belegung mit Umlauten und AltGr fest
   eingebaut; `KEYB US`, `GB`, `FR`, `SP`, `IT`, `DK`, `NO`, `SV`, `PL`
   (Polnisch für Programmierer, AltGr + Buchstabe) lädt andere Belegungen aus
   `.KBL`-Dateien. Die Belegungen sind Unicode (vier Ebenen: normal,

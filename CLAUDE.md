@@ -5112,9 +5112,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Real Mode, start.asm `bios_kbf`), 45h schaltet, Ziffern bei NumLock
   ungleich Umschalt, Dezimalzeichen `,` bei GR/SP/DK/NO/SV/PL (`kp_dec`),
   E1-Folge übersprungen; KbdShift meldet `KBDSHIFT_NUM`/`_CAPS` (20h/
-  40h wie BIOS), bios_shift schreibt sie in 0417h der Box. LEDs schaltet
-  der Kernel weiter nicht. In QEMU (SeaBIOS: aus) und 86Box 386 (AMI: an,
+  40h wie BIOS), bios_shift schreibt sie in 0417h der Box. In QEMU (SeaBIOS: aus) und 86Box 386 (AMI: an,
   Box `20`, nach Num `00`) geprüft.
+  Tastatur-LEDs (Wunsch des Nutzers, 23.11.2026): kbd.c `led_go` schickt
+  bei Num/Feststell/Rollen ED + Wert (Bit 0 Rollen, 1 Num, 2 Feststell);
+  die Antworten FA/FE fängt `led_ack` am Anfang von kbd_irq ab (gehen nicht
+  an die Box), FE = nochmal (bis 3), ohne Antwort gilt der Auftrag nach
+  0,5 s als erledigt; Tasten während des Auftrags -> danach nochmal
+  (`led_more`). Feststell/Rollen beim Start aus 0040:0017 (die LEDs stehen
+  schon so), `KBDSHIFT_SCROLL` 10h, bios_shift trägt Bit 4 in die Box.
+  Geprüft: QEMU (`-trace ps2_set_ledstate`: 2, 6, 7, 3) und 86Box 386
+  (Tasten danach normal).
   Dritter Durchgang mit MSCDEX 2.23 des Nutzers (ASPI4DOS /P334, ASPICD):
   CD-Laufwerke der Box haben jetzt eine CDS wie MSCDEX (`\\X.\A.`,
   C080h, Offset 7; BOXSHELL `cds_sync` fragt INT E0h 200Bh), redir.c

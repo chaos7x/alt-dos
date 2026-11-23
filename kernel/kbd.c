@@ -24,6 +24,66 @@ static unsigned short buf[NBUF];
 static unsigned char  head, tail;
 static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
 static unsigned char  num, e1;          /* NumLock, Rest einer E1-Folge (Pause) */
+static unsigned char  scroll;           /* Rollen (nur LED und Abfrage)  */
+
+/* LEDs: ED, Antwort FA, Wert (Bit 0 Rollen, 1 Num, 2 Feststell), FA.
+   Die Antworten kommen ueber IRQ 1 und werden hier abgefangen; FE heisst
+   nochmal senden. Bleibt die Antwort aus (Tastatur ohne LEDs), gilt der
+   Auftrag nach einer halben Sekunde als erledigt. */
+extern volatile unsigned long ticks;
+static unsigned char  led_st, led_more, led_try;
+static unsigned long  led_t;
+
+static void kwr(unsigned char b)
+{
+    unsigned i;
+    for (i = 0; i < 0x8000u && (inb(0x64) & 2); i++)
+        ;
+    outb(0x60, b);
+}
+
+static unsigned char led_val(void)
+{
+    return (unsigned char)((scroll ? 1 : 0) | (num ? 2 : 0) | (caps ? 4 : 0));
+}
+
+static void led_go(void)
+{
+    if (led_st && ticks - led_t < 50) {
+        led_more = 1;               /* laeuft noch: danach nochmal      */
+        return;
+    }
+    led_st = 1;
+    led_more = 0;
+    led_try = 0;
+    led_t = ticks;
+    kwr(0xED);
+}
+
+/* Antwort der Tastatur auf einen LED-Auftrag? -> 1 = verbraucht */
+static int led_ack(unsigned sc)
+{
+    if (!led_st || (sc != 0xFA && sc != 0xFE))
+        return 0;
+    led_t = ticks;
+    if (sc == 0xFE) {               /* nochmal senden                   */
+        if (++led_try > 3)
+            led_st = 0;
+        else
+            kwr(led_st == 1 ? 0xED : led_val());
+        return 1;
+    }
+    if (led_st == 1) {
+        led_st = 2;
+        led_try = 0;
+        kwr(led_val());
+    } else {
+        led_st = 0;
+        if (led_more)
+            led_go();
+    }
+    return 1;
+}
 
 /* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
    mit Umschalt und mit AltGr (Format siehe tools/mkkbl.py) */
@@ -129,6 +189,8 @@ void kbd_irq(unsigned sc)
     unsigned char rel = (unsigned char)(sc & 0x80), c, base;
     unsigned code = sc & 0x7F;
 
+    if (led_ack(sc))                /* Antwort auf ED: nicht an die Box */
+        return;
     if (!(alt && code == 0x01) &&   /* Alt+Esc (Sitzungswechsel) und     */
         !(ctrl && shift && code == 0x01))   /* Strg+Umschalt+Esc (Task- */
         v86_key(sc);                /* manager) gehoeren dem Kernel, sonst
@@ -175,8 +237,9 @@ void kbd_irq(unsigned sc)
         }
         alt = !rel;
         return;
-    case 0x3A: if (!rel) caps = !caps; return;
-    case 0x45: if (!rel) num = !num; return;
+    case 0x3A: if (!rel) { caps = !caps; led_go(); } return;
+    case 0x45: if (!rel) { num = !num; led_go(); } return;
+    case 0x46: if (!rel && !ctrl) { scroll = !scroll; led_go(); } return;
     }
     if (rel)
         return;
@@ -252,7 +315,8 @@ unsigned kbd_shift(void)
 {
     return (shift ? KBDSHIFT_SHIFT : 0) | (ctrl ? KBDSHIFT_CTRL : 0) |
            (alt ? KBDSHIFT_ALT : 0) | (altgr ? KBDSHIFT_ALTGR : 0) |
-           (num ? KBDSHIFT_NUM : 0) | (caps ? KBDSHIFT_CAPS : 0);
+           (num ? KBDSHIFT_NUM : 0) | (caps ? KBDSHIFT_CAPS : 0) |
+           (scroll ? KBDSHIFT_SCROLL : 0);
 }
 
 int kbd_peek(void)
@@ -280,7 +344,9 @@ void kbd_init(void)
     /* Reste im Ausgabepuffer des Controllers abholen (nur lesen) */
     for (i = 0; i < 16 && (inb(0x64) & 1); i++)
         inb(0x60);
-    num = (bios_kbf >> 5) & 1;      /* NumLock wie beim Start (BIOS)    */
+    num = (bios_kbf >> 5) & 1;      /* Sperrtasten wie beim Start (BIOS, */
+    caps = (bios_kbf >> 6) & 1;     /* die LEDs stehen schon so)         */
+    scroll = (bios_kbf >> 4) & 1;
     kbd_set_layout(0, 0);           /* eingebaut: deutsch               */
     kbd_flush();
 }
