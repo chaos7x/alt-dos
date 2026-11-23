@@ -4292,6 +4292,7 @@ static void k2_lldt(unsigned sel);
 #define CT_MOU    5                     /* Maus-Rueckruf aus dem PM      */
 
 static unsigned char dp_on[NTASK], dp_32[NTASK], dp_dep[NTASK];
+static unsigned s40[NTASK];              /* Selektor fuer 40h (sel40)    */
 static unsigned dp_exss[NTASK];         /* Selektor des Ausnahme-Stapels  */
 static unsigned dp_cbss[NTASK];         /* Selektor fuer den RM-Stapel (Callback) */
 struct dpcb { unsigned short psel, ssel; unsigned long poff, soff; };
@@ -4641,6 +4642,7 @@ static unsigned dp_switch(struct v86_frame *f, int t)
     for (i = 0; i < NCB; i++)
         CB(t, i)->psel = 0;
     dp_on[t] = 1;
+    s40[t] = 0;                                 /* neue LDT              */
     /* Rahmen: weiter im PM hinter dem Fernaufruf */
     f->r.eip = rip;
     f->r.cs = SEL(ci);
@@ -4859,9 +4861,13 @@ static unsigned dp31(struct v86_frame *f, int t)
             d[1] = (unsigned char)(lim >> 8);
             d[6] |= (unsigned char)((lim >> 16) & 0x0F);
         } else {
-            if ((CL & 0x60) != 0x60 || !(CL & 0x10))    /* DPL 3, Code/Daten */
+            if (!(CL & 0x10))                   /* nur Code/Daten        */
                 DERR(0x8021);
-            d[5] = CL | 0x80;
+            d[5] = CL | 0xE0;                   /* DPL immer 3 wie andere
+                                                   Hosts: der Soundtreiber
+                                                   von Sam & Max (iMUSE)
+                                                   setzt 93h und nimmt den
+                                                   Alias sonst nicht        */
             d[6] = (unsigned char)((d[6] & 0x0F) | (*((unsigned char *)&f->ecx + 1) & 0xD0));
         }
         return 0;
@@ -4896,8 +4902,9 @@ static unsigned dp31(struct v86_frame *f, int t)
         } else {
             for (i = 0; i < 8; i++)
                 b[i] = (unsigned char)lrd(lin + i, 1);
-            if ((b[5] & 0x70) != 0x70)
+            if (!(b[5] & 0x10))                 /* nur Code/Daten        */
                 DERR(0x8021);
+            b[5] |= 0x60;                       /* DPL 3 (wie 0009h)     */
             d = ldt_e(t, IDX(BX));
             for (i = 0; i < 8; i++)
                 d[i] = b[i];
@@ -5614,6 +5621,61 @@ static int dp_patched(int t, unsigned long lin)
     return 0;
 }
 
+/* Selektor 40h (BIOS-Datenbereich) wie Windows/DOSEMU: DOS/4GW laedt ihn
+   in seinem 16-Bit-Teil (push 40h; pop es; mov al,[es:6Ch] - Sam & Max
+   CD beim Start). Bei uns ist GDT 40h ein Kernelfenster -> #GP mit
+   Fehlercode 40h. POP ES/DS/FS/GS und MOV Sreg,r16 laden statt dessen
+   einen LDT-Eintrag mit Basis 400h, Grenze FFFFh. -> 1 erledigt */
+static int sel40(struct v86_frame *f, int t, unsigned long lin, unsigned char op)
+{
+    unsigned short *sg = (unsigned short *)f;  /* [0] ES [1] DS, darunter FS, GS */
+    unsigned o32 = (ldt_e(t, IDX((unsigned)f->r.cs))[6] & 0x40) ? 1 : 0, len = 1, r;
+    unsigned s32 = (ldt_e(t, IDX((unsigned)f->r.ss))[6] & 0x40) ? 1 : 0;
+    int k;
+    if (op == 0x66) {
+        o32 ^= 1;
+        op = (unsigned char)lrd(lin + 1, 1);
+        len = 2;
+    }
+    if (op == 0x07) r = 0;
+    else if (op == 0x1F) r = 3;
+    else if (op == 0x0F) {
+        op = (unsigned char)lrd(lin + len, 1);
+        len++;
+        if (op == 0xA1) r = 4;
+        else if (op == 0xA9) r = 5;
+        else return 0;
+    } else if (op == 0x8E) {
+        op = (unsigned char)lrd(lin + len, 1);
+        len++;
+        if ((op & 0xC0) != 0xC0)
+            return 0;                           /* nur aus Registern     */
+        r = (op >> 3) & 7;
+        if (r != 0 && r != 3 && r != 4 && r != 5)
+            return 0;
+        o32 = 2;                                /* kein POP              */
+    } else
+        return 0;
+    if (!s40[t]) {
+        if ((k = ldt_alloc(t, 1)) < 0)
+            return 0;
+        ldesc(t, (unsigned)k, 0x400, 0xFFFF, 0xF2, 0);
+        s40[t] = SEL(k);
+    }
+    if (o32 != 2) {                             /* POP: Stapel weiter    */
+        if (s32)
+            f->r.esp += o32 ? 4 : 2;
+        else
+            f->r.esp = (f->r.esp & 0xFFFF0000UL) | (unsigned)((unsigned)f->r.esp + (o32 ? 4 : 2));
+    }
+    if (r == 0) sg[0] = s40[t];
+    else if (r == 3) sg[1] = s40[t];
+    else if (r == 4) sg[-1] = s40[t];
+    else sg[-2] = s40[t];
+    f->r.eip += len;
+    return 1;
+}
+
 static unsigned dp_trap(struct v86_frame *f, int t)
 {
     unsigned long lin;
@@ -5631,6 +5693,8 @@ static unsigned dp_trap(struct v86_frame *f, int t)
         f->r.eip += op == 0xCD ? 2 : 1;
         return dp_int(f, t, n);
     }
+    if ((f->err & 0xFFFC) == 0x40 && sel40(f, t, lin, op))
+        return 0;
     if (f->err)
         return dp_exc(f, t);
     if (cs == dp_stub[t] && op == 0xF4 && (unsigned)f->r.eip == DP_EXRET)
