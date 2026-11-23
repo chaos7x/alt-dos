@@ -47,6 +47,8 @@
 #define FAPI_CLOSE          0x10    /* BX = Handle                      */
 #define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
                                        DX = Verzeichnis (0 = aktuelles)  */
+#define FIND_SNAME          0x8000  /* in CX: Puffer ist struct fapi_dirent_s,
+                                       dazu der 8.3-Name (BACKUP)          */
 #define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 oder 728 Bytes), 0 = eingebaut */
 #define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung */
 #define KBL_SIZE_BYTES      278     /* Version 1: CP437, 3 Ebenen       */
@@ -938,6 +940,15 @@ struct fapi_dirent {                /* DosFindEntry                     */
     unsigned char  attr;            /* FAT-Attribute (10h = Verzeichnis) */
     unsigned long  size;
     unsigned short date, time;      /* FAT-Format                       */
+};
+
+struct fapi_dirent_s {              /* DosFindEntry mit FIND_SNAME      */
+    char           name[256];
+    unsigned char  attr;
+    unsigned long  size;
+    unsigned short date, time;
+    char           sname[13];       /* 8.3-Name, "" = name ist schon 8.3
+                                       (CD-Module kennen ihn nicht: "")  */
 };
 
 #endif

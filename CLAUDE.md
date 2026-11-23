@@ -1264,6 +1264,40 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COPY CONFIG.SYS LPT1 byte-gleich, ECHO > PRN, zwei INT-17h-Läufe aus der
   Box in einem Auftrag (Ende nach 15 s), DIR > PRN, NET USE /D. Erstes
   Codesegment danach 65.471 Byte (49 frei!).
+- BACKUP/RESTORE (beauftragt vom Nutzer, 23.11.2026, Punkt 8;
+  `apps/task_backup.c`, `apps/task_restore.c`, Format `apps/bkfmt.h`,
+  Diskette 2/Platte): Format von MS-DOS 3.3–5.0, nachgelesen in MS-DOS 4.0
+  CMD/BACKUP/BACKUP.H (MIT, Code eigen) – je Datenträger `BACKUP.nnn`
+  (Daten hintereinander) und `CONTROL.nnn` (Kopf 139 Byte, je Verzeichnis
+  ein Block 70 Byte, je Dateiteil ein Kopf 34 Byte; Dateien über Disketten
+  geteilt, Teil 1/2/…, Bit 0 = letzter Teil); Disketten/Wechselplatten im
+  Stamm (Bezeichnung „BACKUP  nnn“, Dateien danach R), Festplatten in
+  `\BACKUP`. BACKUP: /S /M /A /F /D /T /L wie MS-DOS 5, Systemdateien im
+  Stamm und `EA DATA. SF` übergangen, Archivbit gelöscht, Rückfragen auf
+  Standardfehler (Umleitung `> DATEI` fängt sie nicht). Lange Namen:
+  `NAMES.nnn` je Datenträger („8.3-Pfad<Tab>langer Pfad“, Kopf
+  `ATDOS-NAMES 1 CP=nnn`), RESTORE von MS-DOS übergeht die Datei und
+  stellt 8.3 her. Den 8.3-Namen zu einem langen liefert FAPI FINDENTRY mit
+  `FIND_SNAME` (Bit 15 in CX, Puffer `struct fapi_dirent_s`; CD-Module
+  kennen ihn nicht – BACKUP bildet dann NAME~k). RESTORE: /S /P /B /A /E
+  /L /M /N /D, Pfad ist Filter wie bei MS-DOS (ohne Platzhalter gilt er
+  auch als Verzeichnis: `RESTORE A: C:\SPIELE` nach dem Löschen). Dabei
+  gefunden (Box): bei voller Platte schrieb der DEM den Teil, der noch
+  passte – MS-DOS legt erst alle Cluster an und schreibt sonst nichts
+  (DISK3.ASM ALLOCATE/WRTERR, CX = 0), BACKUP von MS-DOS zählt einen
+  Teil-Schreibvorgang nicht mit (CONTROL.nnn um den Rest zu kurz). Jetzt
+  setzt `d_rw` (dem.c) die Datei bei kurzem Schreiben auf die alte Größe
+  zurück und meldet 0. Geprüft: QEMU (Platte ↔ Platte mit langen Namen,
+  VFAT und EA als Ziel; zwei Disketten mit geteilter Datei; unser BACKUP
+  -> RESTORE von MS-DOS 5/6 in der Box und BACKUP von MS-DOS 5.00 in der
+  Box -> unser RESTORE, je Platte und zwei Disketten; /M /A /D /N, zwei
+  Fassungen: die spätere gewinnt; fsck sauber, alle Inhalte gleich),
+  86Box 386DX/40 mit AHA-154x (zwei Disketten mit geteilter Datei hin und
+  zurück, langer Name, fsck sauber). Testfalle: der 86Box-Monitor nimmt
+  `fddload` nur mit `run86t.sh` (Terminal) an – sonst schreibt man
+  Diskette 2 auf Diskette 1. QEMU-Tests mit Diskettenwechsel: QMP statt
+  Text-Monitor (dessen Echo hakt), Bildschirm per `pmemsave 0xb8000`
+  (/tmp/claude-0/bk/drv.py).
 - AT-Zeitplaner (beauftragt vom Nutzer, 23.11.2026, Punkt 6;
   `apps/task_at.c`, Diskette 1): Bedienung wie AT von NT (`AT`, `AT n`,
   `AT n /DELETE`, `AT /DELETE [/YES]`, `AT Zeit [/INTERACTIVE]
@@ -1954,28 +1988,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (swap_boot + loop_boot nachholen), oder der Kernel startet die Prüfung
   selbst vor PROTSHELL wie autochk.exe bei NT.
 
-- **BACKUP/RESTORE** (beauftragt vom Nutzer, 23.11.2026; noch kein
-  Code): Format von MS-DOS 3.3–5.0 (je Diskette `BACKUP.nnn` mit den
-  Dateien hintereinander + `CONTROL.nnn` mit Kopfsätzen, Dateien über
-  Diskettengrenzen geteilt), damit RESTORE von MS-DOS 5.0 unsere
-  Sicherungen liest und umgekehrt; /S /M /A /D: wie dort. Vorlage für die
-  Strukturen: `v4.0/src/CMD/BACKUP` und `RESTORE` (MIT, nur Aufbau lesen,
-  Code selbst schreiben); Gegenprobe mit BACKUP/RESTORE des deutschen
-  MS-DOS 5.00 (Disketten des Nutzers, nur zum Testen, im Scratchpad unter
-  /tmp/claude-0/msdl). Lange Namen: CONTROL kennt nur 8.3 – zusätzlich
-  `NAMES.nnn` auf der letzten Diskette (8.3-Pfad der Sicherung -> langer
-  Name, auch für Verzeichnisse). BACKUP holt die Namen über die
-  Dateisuche des Kernels, gilt also gleich für EA, VFAT, FAT32 und CD
-  (kein Umweg über CONVERT /LFN:EA – die Quelle bleibt unverändert);
-  unser RESTORE legt gleich mit langem Namen an, das Ziel schreibt EA
-  oder VFAT nach seiner Einstellung; MS-DOS-RESTORE stellt 8.3 her
-  (prüfen, dass es die fremde Datei übergeht). `EA DATA. SF` wird nicht
-  gesichert (verweist auf Cluster). Damit Namen außerhalb der aktiven
-  Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
-  Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
-  Ebenfalls beauftragt (Reihenfolge: 5, 7, 6, 8): MODE CON RATE=/DELAY=
-  (erledigt, s. Konventionen), Netzdrucker (erledigt, ebd.), AT-Zeitplaner
-  (erledigt, ebd.); offen nur noch BACKUP/RESTORE.
+- **BACKUP/RESTORE**: erledigt (s. Konventionen). Offen daraus: lange
+  Namen außerhalb der aktiven Codepage (NAMES.nnn ist Text in der
+  Codepage, `CP=` steht im Kopf – UTF-16 bräuchte einen FAPI-Aufruf für
+  den UTF-16-Namen), Bezeichnung „BACKUP nnn“ der Diskette, wenn MS-DOS-
+  BACKUP in der Box sichert (bleibt leer), BACKUP `/F` ruft FORMAT nur bei
+  unformatierten Disketten. Die beauftragten Punkte 5, 7, 6, 8 (MODE CON
+  RATE/DELAY, Netzdrucker, AT, BACKUP/RESTORE) sind damit alle erledigt.
 
 - **Startcode nach dem Booten freigeben** (Wunsch des Nutzers,
   17.11.2026, für eine der nächsten Versionen; noch kein Code): Init-Code

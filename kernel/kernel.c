@@ -4322,8 +4322,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_FINDENTRY:
-        if (!user_ok(usel, a1, sizeof(de), 1))
+    case FAPI_FINDENTRY: {                      /* CX Bit 15: mit 8.3-Namen */
+        unsigned dl = a2 & FIND_SNAME ? sizeof(de) : sizeof(struct fapi_dirent);
+        a2 &= ~FIND_SNAME;
+        if (!user_ok(usel, a1, dl, 1))
             return FAPI_ERROR;
         if (a3 == 0)
             buf[0] = 0;                         /* aktuelles Verzeichnis */
@@ -4334,8 +4336,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (!task[current].lfn && de.sname[0])  /* altes Programm: 8.3   */
             scopy(de.name, de.sname, sizeof(de.sname));
-        far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(struct fapi_dirent));
+        far_copy(usel, a1, KDATA, (unsigned)&de, dl);
         return 0;
+    }
 
     case FAPI_CHDIR: {
         int rd;

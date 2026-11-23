@@ -534,6 +534,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - `PRINT [/D:Gerät] [/T] [Datei [/C] [/P] ...]` wie MS-DOS: Warteschlange
   `\DOS\SYSTEM\PRINT.QUE`, gedruckt wird von einem Hintergrund-Task
   (`PRINT /WORK`), `/T` und `/C` brechen auch den laufenden Druck ab
+- `BACKUP Quelle Ziel: [/S] [/M] [/A] [/F] [/D:Datum [/T:Zeit]] [/L]` und
+  `RESTORE Lw1: Lw2:[Pfad[Datei]] [/S] [/P] [/B] [/A] [/E] [/L] [/M] [/N] [/D]`
+  im Format von MS-DOS 3.3–5.0 (`BACKUP.nnn`/`CONTROL.nnn`, Dateien über
+  Disketten geteilt): RESTORE von MS-DOS liest unsere Sicherungen, unser
+  RESTORE die von MS-DOS. Lange Namen (EA, VFAT, FAT32, CD) stehen in
+  `NAMES.nnn` und kommen mit unserem RESTORE zurück
 - `AT [Kennung] [/DELETE [/YES]]`, `AT Zeit [/INTERACTIVE] [/EVERY:Tag,… |
   /NEXT:Tag,…] "Befehl"` wie NT: Wochentage (Mo–So, auch M T W Th F S Su)
   und Monatstage, ohne Angabe einmal (heute, sonst morgen); Aufträge in
@@ -1130,7 +1136,7 @@ selbst nur 8.3 kennt.
 | 14 | DosOpen         | BX = Pfad, CX = 0 lesen / 2 lesen+schreiben (`DosOpenRW`, Datei muss da sein), dazu `OPEN_DENY*` (Bits 4–6 wie INT 21h 3Dh, wirkt beim SMB-Server) → Handle |
 | 15 | DosRead         | BX = Handle, CX = Puffer, DX = Länge → Bytes |
 | 16 | DosClose        | BX = Handle                     |
-| 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles) |
+| 17 | DosFindEntry    | BX = `struct fapi_dirent`, CX = Nummer, DX = Verzeichnis (0 = aktuelles); CX Bit 15 (`FIND_SNAME`): Puffer `struct fapi_dirent_s` mit 8.3-Namen |
 | 18 | KbdSetLayout    | BX = `.KBL`-Daten (Version 1: 278 Bytes CP437, Version 2: 728 Bytes Unicode), 0 = eingebaute → Anzahl Zeichen, die die aktive Codepage nicht hat / FAPI_ERROR |
 | 19 | KbdGetLayout    | BX = Puffer (4 Bytes) für die Kennung |
 | 20 | DosChDir        | BX = Pfad                       |

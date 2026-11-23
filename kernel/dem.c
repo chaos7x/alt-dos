@@ -624,6 +624,17 @@ static unsigned d_rw(int t, struct dem_req *q)
     }
     k = q->count ? dem_xfer(t, q->fn == DEM_READ ? FAPI_READ : FAPI_WRITE, h,
                             q->buf, (unsigned)q->count, &err) : 0;
+    if (q->fn == DEM_WRITE && k < q->count && q->pos + k > q->size) {
+        /* Datentraeger voll: MS-DOS legt erst alle Cluster an und
+           schreibt sonst gar nichts (DISK3.ASM ALLOCATE/WRTERR, CX = 0).
+           BACKUP von MS-DOS fuellt den Rest danach selbst auf und
+           zaehlt einen Teil-Schreibvorgang nicht mit (sonst fehlen in
+           CONTROL.nnn Bytes). Also auf die alte Groesse zurueck. */
+        l32 = q->size > q->pos ? q->size : q->pos;
+        FAPI(FAPI_NEWSIZE, KDATA, h, (unsigned)&l32, 0);
+        k = 0;
+        err = 0;
+    }
     if (k == 0 && q->count && err)
         return err;
     q->count = k;
