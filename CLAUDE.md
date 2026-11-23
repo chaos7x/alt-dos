@@ -1206,6 +1206,29 @@ Win32s), nicht vorziehen, sondern nachfragen.
   datei`) liest die Tastatur über das BIOS, nicht die Datei; was ein
   Programm über INT 10h/B800 schreibt, lässt sich nicht umleiten (wie
   bei MS-DOS).
+- Absturzprotokoll (Wunsch des Nutzers, 23.11.2026): `panic()` legt
+  Meldung, Version, Task und das Ende des DMESG-Rings bei physisch
+  `PN_LIN` 120000h ab („ATPN“, Länge, Summe; hinter der Bitmap, die bei
+  über 256 MB ab 1 MB liegt), schreibt es mit `pn_disk` (kernel/panic.c,
+  KTEXT4) direkt über den Treiber nach `\DOS\SYSTEM\PANIC.DAT` und
+  wartet auf eine Taste -> Warmstart. `PANIC.DAT` (4 KB, SH) legt
+  `pd_prepare` bei jedem Start an: Kennung „ATPNDAT1“ + Zeit in Sektor 0,
+  Sektoren über ifs_bmap (bis 4 Bereiche), Datei bleibt zu (CHKDSK/DEFRAG
+  frei); in der Panik nur, wenn die Kennung noch dort steht und niemand
+  im Treiber steckt (`kf_pn_io`, current = -1, EOI, Interrupts an – der
+  Treiber wartet in der HLT-Schleife). Beim Start: `pn_check` gleich nach
+  mem_init (Seite per mem_take bis pn_boot), sonst PANIC.DAT; `pn_boot`
+  hängt an `PANIC.LOG` an (ab 32 KB neu), erste Zeile unter den
+  Startmeldungen. Gemessen: SeaBIOS löscht 7000h–FFFFh, lässt den
+  erweiterten Speicher stehen; das AMI-BIOS des 386 in 86Box löscht beim
+  Warmstart (trotz 1234h) allen Speicher – daher der Plattenweg. Geprüft:
+  QEMU (RAM und Platte allein), 86Box 386DX/40 mit AHA-154x (Platte),
+  fsck sauber. Dabei behoben (älter): nach einem unsauberen Ende konnte
+  AUTOCHECK C: nicht sperren (Auslagerungsdatei offen), merkte die
+  Prüfung für den nächsten Start vor – und dort war die Datei wieder
+  offen. Jetzt bleiben Auslagerungsdatei und LOOP= zu, wenn das Start-
+  laufwerk nicht sauber war oder AUTOCHK.LST eine Prüfung nennt
+  (`conv_pending` 2).
 - Strg+C an der Eingabezeile (Wunsch des Nutzers, 21.11.2026, wie
   COMMAND.COM): `read_line` setzt außerhalb von Stapeldateien den
   SIG_BREAK-Handler (`on_break`), KbdCharIn kehrt beim Signal mit 0 zurück,

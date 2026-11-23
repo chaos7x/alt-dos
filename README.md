@@ -620,7 +620,12 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `DMESG [-c] [-C] [-n Zeilen]` zeigt die letzten 8 KB der Kernelmeldungen
   mit der Zeit seit dem Start (`[0:00:32]`): Startzeilen, Treiber,
   abgebrochene Programme und DOS-Boxen – `DMESG > LOG.TXT` nach einem
-  Fehler
+  Fehler. Nach einer Kernel-Panik genügt eine Taste: Meldung, Task und
+  das Ende des DMESG-Rings landen beim nächsten Start in
+  `\DOS\SYSTEM\PANIC.LOG` (über den Speicher oder, wenn das BIOS ihn
+  beim Neustart löscht, über die vorbereitete Datei `PANIC.DAT`, die
+  direkt über den Plattentreiber beschrieben wird – wie das Absturzabbild
+  von NT)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

@@ -156,6 +156,12 @@ extern volatile unsigned char up60;
 void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n);
 void delay_ticks(unsigned n);
 void panic(const char *msg);
+#define PN_LIN 0x120000UL               /* Absturzprotokoll (kernel.c, panic.c):
+                                           hinter der Bitmap (bis 128 KB ab 1 MB),
+                                           SeaBIOS und Warmstart lassen sie stehen */
+unsigned __far pn_check(void);
+void __far pn_boot(int d, int ses, unsigned n);
+int __far pn_disk(void);
 void reboot(void);
 /* Kernelsegment ausserhalb von DGROUP (Tabellen, Puffer), genullt;
    -> Selektor oder 0. Fuer alles, was mit der Konfiguration waechst. */

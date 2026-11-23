@@ -77,6 +77,7 @@ unsigned short  gdtr[3], idtr[3];
 
 
 #include "task.h"                       /* struct task (auch codeswap.c) */
+#include "../build/version.h"
 
 struct task           task[NTASK];      /* auch codeswap.c */
 static struct tss386  tss_k;
@@ -276,15 +277,41 @@ void delay_ticks(unsigned n)
         idle_wait();
 }
 
+static void pn_save(const char *msg);
+
+/* Kernel-Panik: Meldung in der untersten Zeile, Protokoll bei physisch
+   PN_LIN ablegen (pn_save), auf eine Taste warten und warm neu starten -
+   der naechste Start schreibt es nach \DOS\SYSTEM\PANIC.LOG */
 void panic(const char *msg)
 {
+    static unsigned char in_panic;
+    static const char hint[] = "Taste dr\x81" "cken: Neustart - das Protokoll "
+        "kommt dann nach \\DOS\\SYSTEM\\PANIC.LOG";
     unsigned short __far *v = MK_FP(VIDEO, 0);
     int c;
+    unsigned st;
+    irq_off();
     for (c = 0; c < 80; c++)
         v[24 * 80 + c] = 0x4F20;
     for (c = 0; msg[c] && c < 78; c++)
         v[24 * 80 + 1 + c] = 0x4F00 | (unsigned char)msg[c];
-    halt_forever();
+    if (in_panic++)                     /* Fehler waehrend der Panik     */
+        halt_forever();
+    if (a20_ok && mem_ext_kb >= 256) {
+        pn_save(msg);                   /* bei PN_LIN, dann PANIC.DAT    */
+        pn_disk();
+    }
+    for (c = 0; c < 80; c++)
+        v[23 * 80 + c] = 0x4F20;
+    for (c = 0; hint[c]; c++)
+        v[23 * 80 + 1 + c] = 0x4F00 | (unsigned char)hint[c];
+    for (c = 0; c < 64 && (inb(0x64) & 1); c++)   /* Reste abholen    */
+        inb(0x60);
+    for (;;) {                          /* Taste (nicht Maus, nicht los) */
+        st = inb(0x64);
+        if ((st & 1) && !(st & 0x20) && inb(0x60) < 0x80)
+            reboot();
+    }
 }
 
 /* Strg+Alt+Entf: Der Neustart folgt beim naechsten Taskwechsel, wenn
@@ -770,6 +797,50 @@ void klog(unsigned sel, unsigned off, unsigned n)
             continue;
         kl_put(c);
     }
+}
+
+/* Absturzprotokoll: physisch PN_LIN (erweiterter Speicher; Warmstart und
+   SeaBIOS lassen ihn stehen, 7000h-FFFFh loescht SeaBIOS) - "ATPN", Laenge, Summe, Text: Meldung,
+   Version, Task, dann das Ende des DMESG-Rings */
+#define PN_TXT 8u
+#define PN_MAX (0x1000u - PN_TXT)
+
+static unsigned pn_put(unsigned n, const char __far *t, unsigned max)
+{
+    char __far *p = MK_FP(SCRATCH, PN_TXT);
+    while (*t && n < max)
+        p[n++] = *t++;
+    return n;
+}
+
+static void pn_save(const char *msg)
+{
+    char __far *p = MK_FP(SCRATCH, 0);
+    unsigned n, k, st, sum, i;
+    scratch_map(PN_LIN, 0xFFF);
+    n = pn_put(0, msg, PN_MAX);
+    n = pn_put(n, "\r\nAT-DOS 6.3 Build " ATDOS_BUILD " (" ATDOS_REV ")\r\n", PN_MAX);
+    if (current >= 0) {
+        n = pn_put(n, "Laufender Task: ", PN_MAX);
+        n = pn_put(n, task[current].name, PN_MAX);
+        n = pn_put(n, "\r\n", PN_MAX);
+    }
+    if (subst_sel && klog_len) {
+        n = pn_put(n, "Letzte Kernelmeldungen:\r\n", PN_MAX);
+        k = klog_len < PN_MAX - n ? klog_len : PN_MAX - n;
+        st = (klog_head - k) & (KLOG_SIZE - 1);
+        for (i = 0; i < k; i++)
+            p[PN_TXT + n++] = ((char __far *)MK_FP(subst_sel, KLOG_OFF))[(st + i) & (KLOG_SIZE - 1)];
+        if (klog_mid && n + 2 <= PN_MAX) {
+            p[PN_TXT + n++] = '\r';
+            p[PN_TXT + n++] = '\n';
+        }
+    }
+    for (sum = 0, i = 0; i < n; i++)
+        sum += (unsigned char)p[PN_TXT + i];
+    p[0] = 'A'; p[1] = 'T'; p[2] = 'P'; p[3] = 'N';
+    *(unsigned __far *)(p + 4) = n;
+    *(unsigned __far *)(p + 6) = sum;
 }
 
 /* FAPI_KLOG: ab Stelle pos (von der aeltesten) bis len Bytes kopieren */
@@ -5858,6 +5929,29 @@ int __far kf_swap_rw(int dev, unsigned long lba, unsigned n, unsigned off, int w
     return n ? -1 : 0;
 }
 
+/* Absturzprotokoll (panic.c): Sektoren direkt ueber den Treiber, ohne
+   Sperre und Cache - nur wenn gerade niemand in diesem Treiber steckt.
+   Aufrufer: panic (current = -1, Interrupts an). -> 0 gut */
+int __far kf_pn_io(int dev, unsigned long lba, unsigned n, unsigned long phys,
+                   unsigned sel, int wr)
+{
+    struct drv_req *r;
+    int d = blk[dev].drv;
+    if (d < 0 || d >= NDRV || dl_owner[DLB(dev)] || dl_owner[d])
+        return -1;
+    r = DRQB(dev);
+    r->cmd = wr ? DRV_WRITE : DRV_READ;
+    r->unit = blk[dev].unit;
+    r->count = (unsigned char)n;
+    r->status = DRV_ERR_IO;
+    r->lba = lba;
+    r->buf_phys = phys;
+    r->buf_sel = sel;
+    r->buf_off = 0;
+    drv_request(d, r);
+    return r->status == DRV_OK ? 0 : -1;
+}
+
 /* ---- Ton (FAPI_AUDIO) --------------------------------------------------
    Mehrere Programme duerfen das Audiogeraet oeffnen (bis NAUD). Zu hoeren
    ist das Programm der Vordergrund-Sitzung, sonst das zuletzt geoeffnete
@@ -7020,6 +7114,16 @@ struct ifs_file __far * __far kf_kopen(int d, const char *canon, int create)
     return &files[k].f;
 }
 
+/* Gegenstueck zu kf_kopen: schliessen und Eintrag freigeben */
+void __far kf_kclose(struct ifs_file __far *f)
+{
+    unsigned k;
+    ifs_close(f);
+    for (k = 0; k < nfiles; k++)
+        if (&files[k].f == f)
+            files[k].refs = 0;
+}
+
 static unsigned long loop_mask(int dev)
 {
     unsigned long m = 0;
@@ -7055,7 +7159,9 @@ static void loop_boot(void);
 
 /* \AUTOCHK.LST des Startlaufwerks nennt eine Umwandlung (CONVERT hat
    das Laufwerk nicht sperren koennen): dann bleiben Auslagerungsdatei
-   und LOOP= zu, CMD.EXE /P wandelt um und startet neu (wie NT) */
+   und LOOP= zu, CMD.EXE /P wandelt um und startet neu (wie NT). -> 1;
+   2 = nur eine Pruefung vorgemerkt (CHKDSK /F konnte nicht sperren):
+   ebenso zu, sonst haelt die Auslagerungsdatei C: wieder offen */
 static int conv_pending(void)
 {
     int k = of_alloc(), r = 0;
@@ -7070,7 +7176,9 @@ static int conv_pending(void)
         if (n > 255)
             n = 0;
         for (i = 0; i + 3 < n; i++)
-            if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
+            if (fi_buf[i + 1] == ':' && !r)
+                r = 2;                  /* Pruefung vorgemerkt          */
+            else if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
                 r = 1;
     }
     files[k].refs = 0;
@@ -7577,6 +7685,8 @@ static const char *fd_name(unsigned blocks)
 void __far list_drives(int fdok, int bs);    /* k2misc.c */
 const char * __far kf_drv_name(int d) { return drv_name(d); }
 
+static unsigned pn_n;                    /* Laenge des Absturzprotokolls */
+
 void kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
@@ -7601,6 +7711,8 @@ void kmain(void)
        freigeben: bis dahin endet der konventionelle Speicher dort */
     mem_init((KDATA_LIN + kdata_size + MEM_PAGE - 1) >> 12,
              (npre && pre_seg == 0x8000) ? 512 : mem_conv_kb);
+    if (a20_ok && mem_ext_kb >= 256 && (pn_n = pn_check()) != 0)
+        mem_take(PN_LIN >> 12);         /* Absturzprotokoll: bis pn_boot */
     ldt_init();                         /* LDTs der Tasks (vor paging:   */
                                         /* alias_on rechnet sie um)      */
     paging_init();                      /* 1:1, Seitentabellen aus mem   */
@@ -7764,9 +7876,13 @@ void kmain(void)
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
-    if (conv_pending()) {                       /* CONVERT beim Start: */
-        vio_kputs(boot_session, "\xFE Umwandlung vorgemerkt - ohne "
-                  "Auslagerungsdatei und LOOP=\n");
+    pn_boot(sys_drive, boot_session, pn_n);     /* letzter Absturz ->    */
+                                                /* \DOS\SYSTEM\PANIC.LOG,  */
+                                                /* PANIC.DAT vorbereiten  */
+    if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
+        vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
+                  "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "
+                  "diesmal ohne Auslagerungsdatei und LOOP=\n");
     } else {                                    /* nichts darf offen sein */
         i = env_find(-1, "SWAPPATH", 8);        /* Auslagerungsdatei      */
         swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),

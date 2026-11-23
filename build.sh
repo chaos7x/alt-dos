@@ -96,8 +96,8 @@ K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat swap blkmnt codeswap"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86"
 # KTEXT4: viertes Codesegment (KCODE4), Erreichbarkeit wie KTEXT2 (k2.h)
-K4MODS="loop vio net redir dem vdd ufs"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs k2thunk; do
+K4MODS="loop vio net redir dem vdd ufs panic"
+for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
