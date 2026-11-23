@@ -1028,6 +1028,12 @@ Karte um). 43 und 50 Zeilen nur mit VGA: 350 bzw. 400 Rasterzeilen mit dem
 `MODE CO80` geht zurück auf 25. EDIT, LESS, MORE und `DIR /P` nutzen alle
 Zeilen.
 
+**MODE CON RATE=r DELAY=d** stellt die Tastaturwiederholung ein wie bei
+MS-DOS (RATE 1–32 = 2 bis 30 Zeichen/s, DELAY 1–4 = ¼ bis 1 s; eines von
+beiden darf allein stehen). Gilt für die ganze Tastatur (Befehl F3h);
+`MODE CON` zeigt Rate und Verzögerung. DOS-Programme in der Box stellen
+sie über INT 16h AX=0305h (nur im Vordergrund) und fragen sie mit 0306h ab.
+
 Programme auf der Diskette: **EDIT** ist ein Bildschirm-Editor wie MS-DOS
 EDIT (Vollbild, Menüs mit Alt oder F10, Markieren mit Umschalt,
 Umschalt+Entf/Strg+Einfg/Umschalt+Einfg, Strg+Y, Suchen/Weitersuchen (F3)/
@@ -1179,6 +1185,7 @@ selbst nur 8.3 kennt.
 | 93 | DosUfs          | Dateisystem in Ring 3 (6.3, NET USE): BX = UFS_REG (CX = Laufwerk + `\\Rechner\Freigabe`), UFS_GET (CX = Auftrag, DX = Datenpuffer 16 KB, wartet), UFS_PUT (Antwort), UFS_DEL (CX = Laufwerk, Dienst beenden), UFS_INFO (CX = Laufwerk, DX = Ziel) |
 | 94 | DosFileLock     | Bereichssperre (6.3, wie OS/2 DosSetFileLocks): BX = Handle, CX = `struct fapi_lock` (Stelle, Länge, `LOCK_UNLOCK`/`LOCK_SHARED`) → 0, FAPI_ERR_LOCKED (FFF2h: von anderem gesperrt bzw. nicht gesperrt). Auf NET-USE-Laufwerken sperrt der Server (SMB2 LOCK), lokal immer 0. Lesen/Schreiben in einen fremd gesperrten Bereich meldet ebenfalls FAPI_ERR_LOCKED |
 | 95 | DosJoystick     | Gameport (6.3): BX = `struct fapi_joy` → 0 (Tasten Bit 0–3 = gedrückt, vier Achsen in µs bis zum Ende der Messung, FFFFh = nicht angeschlossen), FAPI_ERROR ohne Gameport. Misst über den PIT, höchstens 3 ms mit gesperrten Interrupts (`\DEMO\JOYTEST [/1]`) |
+| 96 | KbdRate         | Wiederholrate (6.3): BX = Byte für Tastaturbefehl F3h (Bit 0–4 Rate 0 = 30/s … 31 = 2/s, Bit 5–6 Verzögerung 250–1000 ms), FFFFh = nur abfragen → AX = bisheriger Wert (`MODE CON RATE=/DELAY=`) |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

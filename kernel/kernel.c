@@ -3336,7 +3336,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOWRTTTY: case FAPI_VIOCLS: case FAPI_VIOSETMODE: case FAPI_VIOSETANSI:
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
-    case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
+    case FAPI_KBDRATE: case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
     case FAPI_QCHILDRC: case FAPI_QCURDISK:
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
@@ -3467,6 +3467,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_KBDSHIFT:
         return kbd_shift();
+
+    case FAPI_KBDRATE:
+        return kbd_rate(a1);
 
     case FAPI_KBDCHARIN:
         if (task[current].nocon)

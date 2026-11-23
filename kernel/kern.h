@@ -434,6 +434,7 @@ extern unsigned char bios_kbf;       /* 0040:0017 beim Start (start.asm) */
 extern unsigned char boot_f8;        /* 1 = F8: CONFIG.SYS schrittweise   */
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
+unsigned kbd_rate(unsigned v);      /* Tastatur F3h, FFFFh = abfragen      */
 unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
 void kbd_flush(void);
 int  kbd_set_layout(unsigned sel, unsigned off);   /* fehlende Zeichen, -1 */

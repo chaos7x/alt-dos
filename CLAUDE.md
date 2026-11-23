@@ -1230,6 +1230,18 @@ Win32s), nicht vorziehen, sondern nachfragen.
   laufwerk nicht sauber war oder AUTOCHK.LST eine Prüfung nennt
   (`conv_pending` 2). Auch auf `6.3` und `5.x` (dort `chk_pending`,
   23.11.2026, in QEMU geprüft).
+- MODE CON RATE=/DELAY= (beauftragt vom Nutzer, 23.11.2026, Punkt 5):
+  kbd.c schickt Befehle mit Datenbyte über eine Folge (`k_send`, wartend
+  in `k_pend` Bit 0 LEDs/ED, Bit 1 Rate/F3, Antworten in `led_ack`),
+  `kbd_rate(v)` (FFFFh = abfragen, Vorgabe 2Bh = 10,9/s, 500 ms), FAPI 60h
+  `FAPI_KBDRATE` (ohne Sperre, `KbdRate`), Stub über INT 16h 0305h/
+  0306h, Box: INT 16h 0305h nur im Vordergrund (Thunk `kf_kbd_rate`),
+  0306h liefert den Stand, 09h meldet beides. MODE: RATE 1–32 (Code
+  32 - r), DELAY 1–4, eines allein geht (anders als MS-DOS), Anzeige mit
+  Zeichen/s. Geprüft: QEMU (`-trace ps2_write_keyboard`: F3 00), 86Box
+  386DX/40 (RATE=1 DELAY=4 -> 2,0/s 1000 ms, NumLock und Tippen danach,
+  INT 16h 0305h aus der Box). Platz: KLIST/KDESTROY von Diskette 1 auf
+  Diskette 2 (Diskette 1 hatte 3 KB frei, jetzt 49 KB).
 - `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
   `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
   LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in
@@ -1917,7 +1929,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
   Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
   Ebenfalls beauftragt (Reihenfolge: 5, 7, 6, 8): MODE CON RATE=/DELAY=
-  (Tastaturbefehl F3h über `kwr`), AT-Zeitplaner als Ring-3-Dienst
+  (erledigt, s. Konventionen), AT-Zeitplaner als Ring-3-Dienst
   (`\DOS\SYSTEM\AT.LST`, Bedienung wie NT), Netzdrucker per
   `NET USE LPT1: \\server\drucker` (Ende eines Auftrags bei DOS-
   Programmen per Frist wie NT).

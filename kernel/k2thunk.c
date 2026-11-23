@@ -38,6 +38,7 @@ int __far kf_kbd_get(void) { return kbd_get(); }
 int __far kf_kbd_peek(void) { return kbd_peek(); }
 unsigned __far kf_kbd_shift(void) { return kbd_shift(); }
 void __far kf_kbd_flush(void) { kbd_flush(); }
+unsigned __far kf_kbd_rate(unsigned v) { return kbd_rate(v); }
 void __far kf_klog(unsigned s, unsigned o, unsigned n) { klog(s, o, n); }
 int __far kf_vio_ansi(int s, unsigned on) { return vio_ansi(s, on); }
 unsigned box_aud(unsigned usel, unsigned fn, unsigned a, unsigned b);

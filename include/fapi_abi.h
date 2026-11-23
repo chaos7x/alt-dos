@@ -291,6 +291,12 @@ struct fapi_joy {
     unsigned       axis[4];             /* us bis Ende der Messung (X1, Y1,
                                            X2, Y2), FFFFh = nicht da     */
 };
+#define FAPI_KBDRATE        0x60    /* Wiederholrate (6.3): BX = Byte fuer
+                                       den Tastaturbefehl F3h (Bit 0-4 Rate,
+                                       0 = 30/s .. 31 = 2/s; Bit 5-6
+                                       Verzoegerung 250/500/750/1000 ms),
+                                       FFFFh = nur abfragen -> AX = bisher.
+                                       Gilt fuer die ganze Tastatur */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

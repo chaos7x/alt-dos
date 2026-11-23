@@ -318,6 +318,7 @@ int  __far kf_kbd_get(void);
 int  __far kf_kbd_peek(void);
 unsigned __far kf_kbd_shift(void);
 void __far kf_kbd_flush(void);
+unsigned __far kf_kbd_rate(unsigned v);
 void __far kf_vio_tty(int s, unsigned sel, unsigned off, unsigned len);
 void __far kf_vio_setmode(int s, int full, int owner);
 void __far kf_vio_setcur(int s, int row, int col);
@@ -2575,12 +2576,16 @@ static void svc(int n, struct v86_frame *f, int t)
             if (AH == 0x12)
                 AH = (unsigned char)(k >> 8);
         }
-        else if (AH == 0x09)                    /* Faehigkeiten: 0Ah und */
-            AL = 0x30;                          /* 0306h                 */
+        else if (AH == 0x09)                    /* Faehigkeiten: 0305h,  */
+            AL = 0x3C;                          /* 0306h, 0Ah, 1xh       */
         else if (AH == 0x0A)                    /* Tastaturkennung MF2   */
             BX = 0x41AB;
-        else if (AX == 0x0306)                  /* Wiederholrate: 500 ms, */
-            BX = 0x010C;                        /* 10 Zeichen/s          */
+        else if (AX == 0x0305 && box_fg(t))     /* Wiederholrate setzen  */
+            kf_kbd_rate(((BH & 3) << 5) | (BL & 0x1F));   /* (MODE)    */
+        else if (AX == 0x0306) {                /* Wiederholrate abfragen */
+            k = kf_kbd_rate(0xFFFFu);
+            BX = ((k & 0x60) << 3) | (k & 0x1F);
+        }
         else if (AH == 0x05) {                  /* Taste CX ablegen      */
             i = rd16(BDA, 0x1C);
             if (i < kb_lo() || i >= kb_hi())

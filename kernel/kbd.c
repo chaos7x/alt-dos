@@ -26,12 +26,16 @@ static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
 static unsigned char  num, e1;          /* NumLock, Rest einer E1-Folge (Pause) */
 static unsigned char  scroll;           /* Rollen (nur LED und Abfrage)  */
 
-/* LEDs: ED, Antwort FA, Wert (Bit 0 Rollen, 1 Num, 2 Feststell), FA.
-   Die Antworten kommen ueber IRQ 1 und werden hier abgefangen; FE heisst
+/* Befehle an die Tastatur mit einem Datenbyte: ED (LEDs, Bit 0 Rollen,
+   1 Num, 2 Feststell) und F3 (Wiederholrate und Verzoegerung, MODE CON
+   RATE=/DELAY=). Ablauf je Befehl: Befehl, Antwort FA, Wert, FA. Die
+   Antworten kommen ueber IRQ 1 und werden hier abgefangen; FE heisst
    nochmal senden. Bleibt die Antwort aus (Tastatur ohne LEDs), gilt der
-   Auftrag nach einer halben Sekunde als erledigt. */
+   Auftrag nach einer halben Sekunde als erledigt. Wartende Auftraege
+   stehen in k_pend (1 LEDs, 2 Rate) und gehen danach der Reihe nach. */
 extern volatile unsigned long ticks;
-static unsigned char  led_st, led_more, led_try;
+static unsigned char  led_st, led_try, k_cmd, k_pend;
+static unsigned char  k_rate = 0x2B;    /* nach Reset: 10,9/s, 500 ms  */
 static unsigned long  led_t;
 
 static void kwr(unsigned char b)
@@ -47,42 +51,71 @@ static unsigned char led_val(void)
     return (unsigned char)((scroll ? 1 : 0) | (num ? 2 : 0) | (caps ? 4 : 0));
 }
 
-static void led_go(void)
+static unsigned char k_val(void)
 {
-    if (led_st && ticks - led_t < 50) {
-        led_more = 1;               /* laeuft noch: danach nochmal      */
-        return;
-    }
-    led_st = 1;
-    led_more = 0;
-    led_try = 0;
-    led_t = ticks;
-    kwr(0xED);
+    return k_cmd == 0xF3 ? k_rate : led_val();
 }
 
-/* Antwort der Tastatur auf einen LED-Auftrag? -> 1 = verbraucht */
+/* naechsten wartenden Auftrag schicken (Bit 0 von what = LEDs, 1 = Rate) */
+static void k_send(unsigned char what)
+{
+    k_pend |= what;
+    if (led_st && ticks - led_t < 50)
+        return;                     /* laeuft noch: danach              */
+    led_st = 0;
+    if (!k_pend)
+        return;
+    k_cmd = (k_pend & 1) ? 0xED : 0xF3;
+    k_pend &= (unsigned char)(k_cmd == 0xED ? ~1 : ~2);
+    led_st = 1;
+    led_try = 0;
+    led_t = ticks;
+    kwr(k_cmd);
+}
+
+static void led_go(void)
+{
+    k_send(1);
+}
+
+/* Antwort der Tastatur auf einen Auftrag? -> 1 = verbraucht */
 static int led_ack(unsigned sc)
 {
     if (!led_st || (sc != 0xFA && sc != 0xFE))
         return 0;
     led_t = ticks;
     if (sc == 0xFE) {               /* nochmal senden                   */
-        if (++led_try > 3)
+        if (++led_try > 3) {
             led_st = 0;
-        else
-            kwr(led_st == 1 ? 0xED : led_val());
+            k_send(0);
+        } else
+            kwr(led_st == 1 ? k_cmd : k_val());
         return 1;
     }
     if (led_st == 1) {
         led_st = 2;
         led_try = 0;
-        kwr(led_val());
+        kwr(k_val());
     } else {
         led_st = 0;
-        if (led_more)
-            led_go();
+        k_send(0);
     }
     return 1;
+}
+
+/* Wiederholrate/Verzoegerung (Byte fuer F3: Bit 0-4 Rate, 31 = 2/s,
+   0 = 30/s; Bit 5-6 Verzoegerung 250/500/750/1000 ms); v = FFFFh nur
+   abfragen -> bisheriger Wert */
+unsigned kbd_rate(unsigned v)
+{
+    unsigned f, old = k_rate;
+    if (v != 0xFFFFu) {
+        f = irq_off();
+        k_rate = (unsigned char)(v & 0x7F);
+        k_send(2);
+        irq_restore(f);
+    }
+    return old;
 }
 
 /* Belegung: Kopf "KBL" 01h, Kennung, dann je 90 Zeichen ohne Umschalt,
