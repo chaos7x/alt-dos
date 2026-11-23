@@ -2742,8 +2742,14 @@ static void of_release(int k)
     struct ofile __far *o = &files[k];
     if (k == CONS || !o->refs)
         return;
-    if (--o->refs)
+    if (o->refs > 1) {
+        o->refs--;
         return;
+    }
+    /* letzter Verweis: refs bleibt 1, bis alles zu ist - ifs_close
+       wartet auf die Laufwerkssperre; mit refs = 0 vergab of_alloc den
+       Eintrag in der Zeit an einen anderen Task, und das Schliessen traf
+       dessen Datei (die eigene behielt Groesse 0) */
     o->owner = -1;
     if (o->kind == OF_FILE)
         ifs_close(&o->f);
@@ -2771,6 +2777,7 @@ static void of_release(int k)
     else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
+    o->refs = 0;
 }
 
 static void of_ref(int k)
