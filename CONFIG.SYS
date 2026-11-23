@@ -61,9 +61,6 @@ LONGNAMES=AUTO
 REM Nicht sauber abgemeldete Platten beim Start pruefen: ohne Zeile alle,
 REM nur bestimmte mit AUTOCHECK=CD, keine mit AUTOCHECK= (leer)
 REM AUTOCHECK=CD
-REM Zustand des Kernels als Textdateien (wie /proc), ab Werk aus;
-REM SET PROCFS=X: legt es auf Laufwerk X:
-REM SET PROCFS=P:
 
 REM --- Land, Zeichensatz, Tastatur ---
 REM COUNTRY=nnn  Datum, Uhrzeit, Zahlen wie MS-DOS: 001 USA, 002 Kanada,
