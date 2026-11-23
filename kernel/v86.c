@@ -67,6 +67,8 @@
 #define EMS_RET  0x0560         /* EMS 56h zurueck: ARPL E6h; RETF        */
 #define XMS_TAB 0x0900          /* Handle-Tabelle wie HIMEM (INT 2Fh 4309h) */
 #define CFG_OFF 0x0890          /* Konfigurationstabelle INT 15h C0h     */
+#define HDPT_OFF 0x08C0         /* Festplattenparameter INT 41h/46h (32)  */
+extern unsigned char bios_fdpt[32];
 #define PTE_OWN 0x200           /* eigene Seite (EMB/UMB): bei Ende frei  */
 #define BDA     0x0040
 #define VSEG    0xB800
@@ -685,6 +687,8 @@ unsigned long __far v86_create(int t, unsigned kb)
        Diskettenparameter, Videoparameter und Zeichensaetze des echten
        BIOS (liegen im ROM, 1:1 eingeblendet) */
     put32(SCRATCH, 0x1E, ((unsigned long)VBIOS << 16) | DPT_OFF);
+    put32(SCRATCH, 0x41, ((unsigned long)VBIOS << 16) | HDPT_OFF);
+    put32(SCRATCH, 0x46, ((unsigned long)VBIOS << 16) | (HDPT_OFF + 16));
     scratch2_map(0, 0x3FF);
     put32(SCRATCH, 0x1D, get32(SCRATCH2, 0x1D));
     put32(SCRATCH, 0x1F, get32(SCRATCH2, 0x1F));
@@ -712,10 +716,13 @@ unsigned long __far v86_create(int t, unsigned kb)
     *(unsigned __far *)MK_FP(SCRATCH, 0x41C) = 0x1E;    /* leer (INT 16h 05h) */
     *(unsigned __far *)MK_FP(SCRATCH, 0x480) = 0x1E;
     *(unsigned __far *)MK_FP(SCRATCH, 0x482) = 0x3E;
-    /* Laufwerke: ein Diskettenlaufwerk (das Startabbild), keine Platten -
-       die AT-DOS-Laufwerke kommen ueber den Redirector */
+    /* Laufwerke: Disketten wie AT-DOS (A:/B:, mindestens eines - das
+       Startabbild), keine Platten - die AT-DOS-Laufwerke kommen ueber den
+       Redirector bzw. das DEM. MSD zaehlt B: nur mit zwei Laufwerken im
+       Ausstattungswort (sonst gilt es als Spiegel von A:). */
     *(unsigned __far *)MK_FP(SCRATCH, 0x410) =
-        (*(unsigned __far *)MK_FP(SCRATCH, 0x410) & ~0xC1u) | 1;
+        (*(unsigned __far *)MK_FP(SCRATCH, 0x410) & ~0xC1u) |
+        ((kf_box_ctl(BOX_DRIVES, 0) & 2) ? 0x41 : 1);
     *(unsigned char __far *)MK_FP(SCRATCH, 0x475) = 0;
     *(unsigned __far *)MK_FP(SCRATCH, 0x485) = 16;
     /* Stummel bei F000:0000: je Vektor "ARPL n; IRET; NOP", bei 0400
@@ -754,6 +761,11 @@ unsigned long __far v86_create(int t, unsigned kb)
        Untermodell 0, Stand 1, zweiter PIC + Echtzeituhr, INT 16h 09h */
     put32(SCRATCH, CFG_OFF >> 2, 0x00FC0008UL);
     put32(SCRATCH, (CFG_OFF >> 2) + 1, 0x00406001UL);
+    /* Festplattenparameter (INT 41h/46h) wie beim Start gelesen, bei
+       F000:08C0/08D0 - vorher zeigten die Vektoren auf Stummel, MSD las
+       daraus "16739 Zylinder, 207 Koepfe" */
+    for (i = 0; i < 32; i++)
+        *(unsigned char __far *)MK_FP(SCRATCH, HDPT_OFF + i) = bios_fdpt[i];
     img_spt[t] = img_heads[t] = img_secs[t] = 0;
     idle_n[t] = 0;
     b2f[t] = 0;
@@ -2277,6 +2289,35 @@ static void out_ch(int t, unsigned char ch)
 }
 
 /* INT 13h: Laufwerk 0 ist das Startabbild (nur lesen), sonst nichts */
+/* INT 13h 08h fuer A:/B: von AT-DOS (ohne Startabbild bzw. B:): Art aus
+   CMOS 10h, Geometrie nach Art, DL = Zahl der Laufwerke (MSD) */
+static void flop_geo(struct v86_frame *f)
+{
+    static const unsigned char cyl[6] = { 39, 79, 79, 79, 79, 79 };
+    static const unsigned char spt[6] = { 9, 15, 9, 18, 36, 36 };
+    unsigned m = kf_box_ctl(BOX_DRIVES, 0), ty, fl;
+    unsigned d = DL;
+    fl = irq_off();
+    outb(0x70, 0x10);
+    ty = inb(0x71);
+    irq_restore(fl);
+    ty = d ? ty & 15 : ty >> 4;
+    if (!(m & (1u << d)) || ty == 0 || ty > 6) {
+        AH = 1;
+        svc_cf = 1;
+        return;
+    }
+    BL = (unsigned char)ty;
+    CH = cyl[ty - 1];
+    CL = spt[ty - 1];
+    DH = 1;
+    DL = (m & 2) ? 2 : 1;
+    f->r.es = VBIOS;
+    DI = DPT_OFF;
+    AX = 0;
+    svc_cf = 0;
+}
+
 static void int13x(struct v86_frame *f, int t)
 {
     unsigned i, n, c, h, sct, lba, cyl;
@@ -2286,6 +2327,10 @@ static void int13x(struct v86_frame *f, int t)
         AH = rd8(BDA, 0x41);
         AL = 0;
         svc_cf = AH != 0;
+        return;
+    }
+    if (AH == 0x08 && DL < 2 && (DL != 0 || !img_secs[t])) {
+        flop_geo(f);                            /* Laufwerke von AT-DOS  */
         return;
     }
     if (!img_secs[t] || (DL != 0 && AH != 0x08)) {
@@ -2330,18 +2375,13 @@ static void int13x(struct v86_frame *f, int t)
         svc_cf = 1;
         return;
     case 0x08:                                  /* Geometrie             */
-        if (DL != 0) {
-            AH = 1;
-            svc_cf = 1;
-            return;
-        }
         c = img_secs[t] / (img_spt[t] * img_heads[t]) - 1;
         BL = img_secs[t] <= 720 ? 1 : img_secs[t] <= 1440 ? 3 :
              img_secs[t] <= 2400 ? 2 : 4;
         CH = (unsigned char)c;
         CL = (unsigned char)(img_spt[t] | ((c >> 2) & 0xC0));
         DH = (unsigned char)(img_heads[t] - 1);
-        DL = 1;
+        DL = (kf_box_ctl(BOX_DRIVES, 0) & 2) ? 2 : 1;
         f->r.es = VBIOS;
         DI = DPT_OFF;
         AX = 0;

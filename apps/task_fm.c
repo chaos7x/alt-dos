@@ -514,8 +514,23 @@ static void box(int r, int h, const char *title)
     put(r, 40 - i / 2 + i, " ", A_DLG, 1);
 }
 
-/* Knoepfe in einer Dialogzeile, mittig; per Maus anklickbar */
-static int btn_row, btn_n, btn_x[4], btn_w[4];
+/* Knoepfe in einer Dialogzeile, mittig; per Maus anklickbar. Der aktive
+   Knopf (btn_sel) ist hervorgehoben: Tab/Pfeile wechseln, Enter drueckt */
+#define A_BSEL      0x1F            /* aktiver Knopf weiss auf blau    */
+static int btn_row, btn_n, btn_x[4], btn_w[4], btn_sel;
+static const char *const *btn_lab;
+
+static void btn_draw(void)
+{
+    int i;
+    unsigned char a;
+    for (i = 0; i < btn_n; i++) {
+        a = i == btn_sel ? A_BSEL : A_DLG;
+        put(btn_row, btn_x[i], "< ", a, 2);
+        put(btn_row, btn_x[i] + 2, btn_lab[i], a, btn_w[i] - 4);
+        put(btn_row, btn_x[i] + btn_w[i] - 2, " >", a, 2);
+    }
+}
 
 static void buttons(int r, const char *const *lab, int n)
 {
@@ -525,14 +540,34 @@ static void buttons(int r, const char *const *lab, int n)
     x = 40 - w / 2;
     btn_row = r;
     btn_n = n;
+    btn_lab = lab;
+    btn_sel = 0;
     for (i = 0; i < n; i++) {
         btn_x[i] = x;
         btn_w[i] = (int)slen(lab[i]) + 4;
-        put(r, x, "< ", A_DLG, 2);
-        put(r, x + 2, lab[i], A_DLG, btn_w[i] - 4);
-        put(r, x + btn_w[i] - 2, " >", A_DLG, 2);
         x += btn_w[i] + 3;
     }
+    btn_draw();
+}
+
+/* Taste fuer die Knoepfe: Tab/Pfeil rechts weiter, Umschalt+Tab/Pfeil
+   links zurueck (-> -2, neu gezeichnet), Enter -> aktiver Knopf, sonst -1 */
+static int btn_key(unsigned k)
+{
+    unsigned char c = (unsigned char)k, sc = (unsigned char)(k >> 8);
+    if (k == K_MOUSE)
+        return -1;
+    if (c == 13)
+        return btn_sel;
+    if (c == 9 || (KEY_EXT(c, sc) && sc == K_RIGHT)) {
+        btn_sel = (btn_sel + 1) % btn_n;
+    } else if ((c == 0 && sc == 0x0F) || (KEY_EXT(c, sc) && sc == K_LEFT)) {
+        btn_sel = (btn_sel + btn_n - 1) % btn_n;
+    } else
+        return -1;
+    btn_draw();
+    show();
+    return -2;
 }
 
 /* Mausereignis: welcher Knopf? -1 = keiner (Ereignis ist verbraucht) */
@@ -567,10 +602,14 @@ static int ask(const char *title, const char *l1, const char *l2, int ok_only)
                 return ok_only ? 1 : b == 0;
             continue;
         }
+        if ((b = btn_key(k)) == -2)
+            continue;
+        if (b >= 0)
+            return ok_only ? 1 : b == 0;
         if (ok_only)
             return 1;
         k = up((char)k);
-        if (k == 'J' || k == 'Y' || k == 13)
+        if (k == 'J' || k == 'Y')
             return 1;
         if (k == 'N' || k == 27)
             return 0;
@@ -606,8 +645,12 @@ static int input(const char *title, const char *prompt, char *b, unsigned max)
         }
         c = (unsigned char)k;
         sc = (unsigned char)(k >> 8);
+        if (c == 9 || (c == 0 && sc == 0x0F)) {
+            btn_key(k);                 /* OK <-> Abbrechen (Pfeile      */
+            continue;                   /* bleiben im Feld)              */
+        }
         if (c == 13)
-            return 1;
+            return btn_sel == 0;
         if (c == 27)
             return 0;
         if KEY_EXT(c, sc) {
@@ -771,13 +814,16 @@ static int confirm_over(const char *dst)
         put(r + 2, 12, dst, A_DLG, 56);
         put(r + 3, 12, "\x9A" "berschreiben?", A_DLG, 56);
         buttons(r + 5, ja, 4);
+        VioSetCurPos(0xFF, 0);
         for (;;) {
             k = getkey();
             if (k == K_MOUSE) {
                 if ((b = button_hit()) < 0)
                     continue;
+            } else if ((b = btn_key(k)) == -2)
+                continue;
+            if (b >= 0)
                 k = b == 0 ? 'J' : b == 1 ? 'N' : b == 2 ? 'A' : 27;
-            }
             k = up((char)k);
             if (k == 'J' || k == 'Y')
                 return 1;

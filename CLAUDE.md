@@ -6383,3 +6383,5 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   nicht): ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ (nur von mir zum
   Testen besorgt) hängt in der Box bei I_Init – auch mit dem Stand vor
   der virtuellen SB16, also nicht deren Fehler.
+
+- Aus main (23.11.2026): FM-Dialoge mit hervorgehobenem Knopf, Box-BIOS mit B: und INT 41h/46h (MSD).
