@@ -6676,7 +6676,24 @@ Startmeldung der Auslagerungsdatei (Wunsch des Nutzers, 22.11.2026: auf den 386 
   ext2/3/4 inkl. Extents; GPLv3+). Voraussetzung: Adaptec, Partitionstabelle,
   32-/64-Bit-Blocknummern im 16-Bit-Kernel. Schreiben (Journal, Prüfsummen)
   erst viel später, wenn überhaupt.
-- Ganz am Ende (Entscheidung des Nutzers, er hat das Programm selbst
-  nicht): ein DOOM-Nachbau „v2.02, Built Oct 9 1999“ (nur von mir zum
-  Testen besorgt) hängt in der Box bei I_Init – auch mit dem Stand vor
-  der virtuellen SB16, also nicht deren Fehler.
+- DOOM-Nachbau „v2.02, Built Oct 9 1999“ erledigt (23.11.2026, Nutzer:
+  „wenn die Hänger die Box kompatibler machen“): es ist Boom 2.02 (DJGPP,
+  go32-Stub, Allegro; aus archive.org „doom-source-ports-dosbox“, nur zum
+  Testen, nicht im Repository – Test /tmp/claude-0/boom/q/run.sh). Drei
+  Funde: (1) Hänger in I_Init: Allegro setzt die Tastatur-LEDs direkt
+  (EDh an 60h) und wartet per 64h Bit 0 auf FAh – v86.c `kb_out`
+  bildet den Controller nach (Antworten FAh/EEh/AA/AB 83, 64h-Befehle
+  20h/AAh/ABh/C0h/D0h, Datenbyte zu 60h/D1h–D4h; `kbr`/`kbc` je Box,
+  64h Bit 0 solange eine Antwort aussteht), an die echte Tastatur geht
+  nichts. (2) Danach Kernel-Panik #GP beim Rücksprung aus einer DPMI-
+  Falle: Boom gab per 0001h den Selektor in DS frei – dp_int setzt nach
+  jedem INT 31h ES/DS/FS/GS mit nicht mehr belegtem LDT-Selektor auf 0
+  wie CWSDPMI. (3) Boom endet nach -timedemo mit exit(-1) = 255, CMD
+  fragte „Stapelverarbeitung abbrechen“: task.ab/child_ab (Wort mit
+  rc/child_rc, `RCAB`/`CRCAB` – erstes Codesegment war 8 Byte zu voll),
+  FAPI_QCHILDRC mit BX = 1 liefert Bit 8 = vom System abgebrochen, CMD
+  fragt nur dann (Stub: INT 21h 4Dh AH 1/2). Geprüft: QEMU (Boom
+  Timedemo und Spiel, Strg+C bei SLEEP fragt weiter, DOOM 1.9 Timedemo,
+  Sam & Max mit DOS/4GW 2.01a) und 86Box P3B-F (Boom 192 fps, DOOM 1.9).
+  DOS/4GW 2.01a (Upload des Nutzers, nur zum Testen) lädt DOOM nur aus
+  der LE-Datei ohne gebundenen 1.95 (Teil ab dem MZ-Stub bei 25214h).

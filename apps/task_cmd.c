@@ -2793,7 +2793,7 @@ static int run_batch(const char *path, const char *args)
     bdepth++;
     ran_prog = 0;                       /* Rest eines frueheren Aufrufs */
     while (!batch_stop && batch_line(b, l)) {
-        if (break_req || (ran_prog && errorlevel == 255)) {
+        if (break_req || ran_prog) {
             break_req = 0;
             ran_prog = 0;
             if (confirm("Stapelverarbeitung abbrechen (J/N)? ")) {
@@ -3322,8 +3322,10 @@ static int run_program(char *cmd, int sync, int call)
         exec_error(r);
         errorlevel = 1;
     } else if (sync == 1) {
-        errorlevel = DosQChildRC();     /* fuer IF ERRORLEVEL          */
-        ran_prog = 1;
+        r = F2(FAPI_QCHILDRC, 1, 0);    /* Bit 8: abgebrochen          */
+        errorlevel = r & 0xFF;          /* fuer IF ERRORLEVEL          */
+        ran_prog = r >> 8;              /* nur dann die Rueckfrage (ein */
+        r = 0;                          /* exit(-1) ist kein Strg+C)    */
     } else if (sync == 2) {             /* Meldung nicht in die Umleitung */
         static const char m[] = "Das Programm l\x84uft im Hintergrund (DETACH).\n";
         DosWrite(con_out, m, sizeof(m) - 1);    /* (gehoert dem Programm) */

@@ -30,7 +30,12 @@ struct task {
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
     unsigned char rc;                           /* Rueckgabewert (DosExit)  */
+    unsigned char ab;                           /* abgebrochen (Strg+C, Ausnahme) */
     unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
+    unsigned char child_ab;                     /* ... und ob abgebrochen   */
+/* rc/ab und child_rc/child_ab als ein Wort (spart Code im ersten Segment) */
+#define RCAB(t)     (*(unsigned short *)&task[t].rc)
+#define CRCAB(t)    (*(unsigned short *)&task[t].child_rc)
     unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
     unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
     unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */

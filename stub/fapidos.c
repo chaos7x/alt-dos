@@ -1219,6 +1219,8 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         r.ax = 0x4D00;
         dos();
         rc = (r.ax >> 8) ? 255 : (r.ax & 0xFF);
+        if (a1 == 1 && (r.ax >> 8) && (r.ax >> 8) < 3)  /* Strg+C, Fehler */
+            rc |= 0x100;
         break;
     case FAPI_GETARGS: {
         char __far *t = MK_FP(psp_seg, 0x81);

@@ -987,7 +987,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Rahmen bleibt als UMB frei (64 KB mehr). DMESG nennt die Lage des
   Rahmens („EMS-Rahmen D000h“) bzw. die freien Bereiche, wenn keine
   64-KB-Lücke passt
-- DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2), erste Stufe:
+- DPMI 0.9 in jeder DOS-Box vom Kernel (wie VDPMI bei OS/2) – DOS/4GW
+  (1.95, 2.01a), DJGPP (Boom 2.02 mit Allegro) und andere Extender laufen
+  darauf; erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
   (0300h–0302h), Speicher bis 1 GB Adressraum (0501h–0503h),
@@ -1234,7 +1236,7 @@ selbst nur 8.3 kennt.
 | 47 | DosSetFInfo     | BX = Pfad, CX = struct fapi_finfo: Attribute und/oder Datum/Uhrzeit setzen |
 | 48 | DosSetDateTime  | BX = Datum, Uhrzeit (FAT-Format) → Echtzeituhr stellen |
 | 49 | DosLabel        | BX = Laufwerk, CX = Ausgabe (Bezeichnung, Seriennummer), DX = neue Bezeichnung oder 0 |
-| 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C) |
+| 46 | DosQChildRC     | → Rückgabewert des zuletzt beendeten Kindes (255 = Ausnahme oder Strg+C); BX = 1: dazu Bit 8 = vom System abgebrochen |
 | 45 | DosQFSInfo      | BX = Laufwerk, CX = Puffer: Dateisystem-Name, Sektoren, Sektorgröße, Flags |
 | 50 | VioSetMode      | BX = 1 Vollbild (alle Zeilen ohne Titel- und Statusleiste), 0 normal → Zeilenzahl; der normale Inhalt wird gesichert und am Ende wiederhergestellt |
 | 51 | VioSetCurPos    | BX = Zeile << 8 \| Spalte (Zeile FFh = Cursor aus) |
