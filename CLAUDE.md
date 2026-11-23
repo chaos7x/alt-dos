@@ -1334,6 +1334,23 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (k2misc.c – das erste Codesegment war 155 Byte zu voll, danach 65.447).
   LINUX.MAC ohne ps/kill-Makros (sie verdeckten die Programme). Setup-
   Diskette 3 (HDDOS3). Geprüft in QEMU.
+- Sam & Max CD (DOS/4GW 1.95) stürzte beim Start ab (vom Nutzer
+  gemeldet, 23.11.2026; mit der CD-Demo von archive.org nachgestellt –
+  nur zum Testen, nicht im Repository; in QEMU nur ohne VME-Unterschied
+  unsichtbar, in 86Box P3B-F sichtbar). Zwei Ursachen: (1) der
+  iMUSE-Soundtreiber holt per DPMI 000Ah einen Alias seines Codes, setzt
+  mit 0009h CL=93h (DPL 0) und speichert darüber DS; unsere 0009h lehnte
+  DPL ≠ 3 ab (8021h), der Interrupt-Handler lief dann mit DS=0 – jetzt
+  setzen 0009h/000Ch DPL wie andere Hosts selbst auf 3. (2) DOS/4GW lädt
+  in seinem 16-Bit-Teil Selektor 40h (BIOS-Daten, wie unter Windows/
+  DOSEMU); GDT 40h ist bei uns ein Kernelfenster -> #GP mit Fehlercode
+  40h. `sel40` (v86.c) ersetzt POP ES/DS/FS/GS und MOV Sreg,r16 mit 40h
+  durch einen LDT-Eintrag Basis 400h/Grenze FFFFh (`s40[t]`, neu je
+  DPMI-Start). Gefunden mit QEMU-Monitor (`x/…xb` im Speicher der Box,
+  ndisasm) und Spur über Port E9h. Testfalle: die Demo sucht
+  `\SAMDEMO.CD\SETMUSE.INI` (Verzeichnis der CD). Geprüft: 86Box P3B-F
+  (Vorspann mit Ton), QEMU (Demo, DOOM 1.9 Timedemo). Diskette 1 war
+  danach voll – NSLOOKUP auf Diskette 3.
 - PROCFS (Vorschlag von mir als Hilfe bei der Fehlersuche, vom Nutzer
   gewünscht, 23.11.2026): `kernel/procfs.c` (KTEXT4) – `struct
   ifs_driver pfs_driver`, Laufwerk P: (Blockgerät DRV_UFS ohne Blöcke,
