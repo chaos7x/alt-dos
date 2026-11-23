@@ -5993,6 +5993,22 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `DETACH MEM > X`, `DETACH COMMAND /C DIR > X`, PRINT. Stub (MS-DOS):
   EXEC_DETACH wie EXEC_BG abgelehnt. Testfalle: qkde3.py setzt die
   deutsche Belegung voraus – nach `keyb us` tippt es `-` als `/`.
+  DETACH mit Umleitung (vom Nutzer gemeldet, 23.11.2026: `DETACH CMD /C
+  DIR C:\ > D.TXT` – auf `main` stand in D.TXT nur „ Datenträger in
+  Laufwerk “ + „ergrund (DETACH).“): die Umleitung gilt für die ganze
+  Zeile, also auch für die Meldung „Das Programm läuft im Hintergrund
+  (DETACH).“ von CMD selbst – sie landete in der Datei (in QEMU auch auf
+  `6.3`, dort davor statt mitten hinein; ein Bisect hat so keine Grenze).
+  CMD schreibt sie jetzt auf `con_out` = Standardausgabe vor der
+  Umleitung der Zeile (execute_line). Dazu im Kernel: FAPI READ/WRITE
+  lasen `files[k].pos`, bevor ifs_read/ifs_write in VLOCK auf die
+  Laufwerkssperre warten konnten – teilen sich zwei Tasks einen Eintrag
+  (CMD und das losgelöste Kind), schrieb der Wartende an der alten Stelle
+  über den anderen (passt zum Bild beim Nutzer). Jetzt erst `vol_lock`,
+  dann die Stelle. Den Wettlauf selbst hat QEMU nicht gezeigt (auch nicht
+  mit gedrosselter Platte, 150 ECHO-Zeilen neben DETACH DIR /S in einen
+  Eintrag). In QEMU geprüft: D.TXT nur mit der DIR-Ausgabe, Meldung auf
+  dem Bildschirm, `TYPE | FIND`, fsck sauber.
   bg/fg wie bei Linux (Frage des Nutzers, 18.11.2026; Entscheidung:
   jetzt nicht bauen, vormerken): volle Jobsteuerung (Strg+Z anhalten –
   kollidiert mit Strg+Z = Dateiende –, Zustand „angehalten“, SIGTSTP/

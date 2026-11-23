@@ -2379,6 +2379,8 @@ static char pbuf[FAPI_PATHLEN], ebuf[CMDLEN];
 
 static int execute(char *l);
 static int execute_line(char *l);
+/* Standardausgabe vor der Umleitung der laufenden Zeile (DETACH-Meldung) */
+static unsigned con_out = STDOUT;
 
 static int exists(const char *p)
 {
@@ -3322,8 +3324,10 @@ static int run_program(char *cmd, int sync, int call)
     } else if (sync == 1) {
         errorlevel = DosQChildRC();     /* fuer IF ERRORLEVEL          */
         ran_prog = 1;
-    } else if (sync == 2)
-        puts("Das Programm l\x84uft im Hintergrund (DETACH).\n");
+    } else if (sync == 2) {             /* Meldung nicht in die Umleitung */
+        static const char m[] = "Das Programm l\x84uft im Hintergrund (DETACH).\n";
+        DosWrite(con_out, m, sizeof(m) - 1);    /* (gehoert dem Programm) */
+    }
     return 1;
 }
 
@@ -3656,7 +3660,7 @@ static void run_bg(char *cmd)
 static int execute_line(char *l)
 {
     static unsigned hh[2];
-    unsigned save_in, save_out, h, prev = 0;
+    unsigned save_in, save_out, h, prev = 0, old_con;
     int n, i, rc = 1, simple = 1;
     char *p;
 
@@ -3676,6 +3680,8 @@ static int execute_line(char *l)
         puts("Zu viele offene Dateien (FILES=).\n");
         return 1;
     }
+    old_con = con_out;                  /* Ausgabe vor der Umleitung     */
+    con_out = save_out;
     for (i = 0; i < n; i++) {
         if (prev) {                             /* Eingabe aus der Pipe */
             DosDup2(prev, STDIN);
@@ -3722,6 +3728,7 @@ static int execute_line(char *l)
         DosClose(prev);
     DosDup2(save_in, STDIN);
     DosDup2(save_out, STDOUT);
+    con_out = old_con;
     DosClose(save_in);
     DosClose(save_out);
     return rc;

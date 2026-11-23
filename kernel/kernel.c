@@ -3672,6 +3672,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_SOCK:
             return net_srw((unsigned)files[k].f.first, 1, usel, a2, a3);
         }
+        /* erst die Laufwerkssperre, dann die Stelle lesen: teilen sich zwei
+           Tasks einen Eintrag (DETACH mit Umleitung), schrieb der, der in
+           VLOCK gewartet hatte, sonst an der alten Stelle ueber den anderen */
+        vol_lock(files[k].f.drive);
         t = ifs_write(&files[k].f, files[k].pos, usel, a2, a3);
         if (t < 0)
             return ifs_err(t);
@@ -3978,7 +3982,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         case OF_SOCK:
             return net_srw((unsigned)files[k].f.first, 0, usel, a2, a3);
         }
-        t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);
+        vol_lock(files[k].f.drive);     /* erst sperren, dann pos lesen:  */
+        t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);  /* s. WRITE */
         if (t < 0)
             return t == IFS_LOCKED ? FAPI_ERR_LOCKED : FAPI_ERROR;
         files[k].pos += t;

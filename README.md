@@ -490,7 +490,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   bleiben ein Wort; Strg+C fragt „Stapelverarbeitung abbrechen (J/N)?“.
   Außerdem `TRUENAME` (echter Pfad hinter SUBST/JOIN), `BREAK`, `VERIFY`,
   `CHCP`, `CTTY COM1` (Bedienung über die serielle Leitung), `KEYS
-  ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund, ohne Konsole: es nimmt keine Tasten weg, liest von der Tastatur Dateiende wie `< NUL`), `CD A:\X` von C:
+  ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund, ohne Konsole: es nimmt keine Tasten weg, liest von der Tastatur Dateiende wie `< NUL`; bei `DETACH Prog > Datei` gehört die Umleitung dem Programm, die Meldung von CMD kommt auf den Bildschirm), `CD A:\X` von C:
   aus (jedes Programm merkt sich das Verzeichnis weiterer Laufwerke),
   `PROMPT $E` für ANSI-Farben; `DIR` zeigt JOIN-Verzeichnisse als
   `<JUNCTION>`
