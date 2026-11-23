@@ -698,6 +698,17 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   beim Neustart löscht, über die vorbereitete Datei `PANIC.DAT`, die
   direkt über den Plattentreiber beschrieben wird – wie das Absturzabbild
   von NT)
+- Laufwerk `P:` (PROCFS, 23.11.2026, Vorbild `/proc` von Linux): der
+  Zustand des Kernels als Textdateien, nur lesend, jede Datei beim
+  Öffnen frisch erzeugt – `VERSION`, `UPTIME`, `MEMINFO`, `CACHE`,
+  `TASKS` (Zustand, gehaltene Sperren, Warten, ungenutzter Kernelstapel,
+  Rechenzeit), `LOCKS` (Kernel-, Laufwerks- und Treibersperren mit
+  Inhaber, Wartende), `KSEG` (Kernelsegmente mit Besitzer), `DRIVERS`,
+  `BLKDEV`, `DRIVES`, `FILES` (Dateitabelle), `BOXES` (virtueller PIC,
+  Takt, DPMI, XMS je DOS-Box), `DMESG`. Gedacht für Fehlersuche und
+  Stapeldateien (`TYPE P:LOCKS` aus einer zweiten Sitzung, wenn etwas
+  hängt; `COPY P:*.* A:\` für eine Fehlermeldung). Anderer Buchstabe mit
+  `SET PROCFS=X:` in der CONFIG.SYS, `SET PROCFS=OFF` schaltet es ab
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

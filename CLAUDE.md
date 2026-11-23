@@ -1334,6 +1334,25 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (k2misc.c – das erste Codesegment war 155 Byte zu voll, danach 65.447).
   LINUX.MAC ohne ps/kill-Makros (sie verdeckten die Programme). Setup-
   Diskette 3 (HDDOS3). Geprüft in QEMU.
+- PROCFS (Vorschlag von mir als Hilfe bei der Fehlersuche, vom Nutzer
+  gewünscht, 23.11.2026): `kernel/procfs.c` (KTEXT4) – `struct
+  ifs_driver pfs_driver`, Laufwerk P: (Blockgerät DRV_UFS ohne Blöcke,
+  wie NET USE), `procfs_boot` nach pn_boot in kmain (5 Byte im ersten
+  Segment), Buchstabe aus `SET PROCFS=X:|OFF` der Systemumgebung. Jede
+  Datei entsteht beim Öffnen in einem 24-KB-Kernelsegment (erst beim
+  ersten Öffnen), Lesen eines anderen Handles erzeugt sie neu. Mini-
+  printf `pf` (Teilen über DIV 32/16, kein __U4D). Texte im Codesegment
+  über `__based(__segname("_CODE"))` (CS-relativ, KCODE4 lesbar) – mit
+  `__segname("KTEXT4")` legte Watcom ein FAR_DATA-Segment hinter DGROUP
+  an (build.sh brach ab); Fernzeiger auf solche Texte: `MK_FP(KCODE4,
+  (unsigned)p)`. Tabellen direkt (kernel.c: static weg bei klock,
+  dl_owner, xg_*, kseg_own, env_sel, kstack, bc_*, files; struct ofile
+  und struct drvslot jetzt in task.h, NXG/KSTACK in kern.h), Box-Werte
+  über `v86_pfs` (v86.c, Zahlen). Lehre: ein IFS-Treiber setzt
+  `f->drive` in open selbst (sonst liest ifs_read ein anderes
+  Laufwerk). Erstes Codesegment 65.452, DGROUP 63.152. Geprüft QEMU
+  (alle Dateien, DIR/TYPE/COPY/FIND, aus der Box, Schreiben abgewiesen)
+  und 86Box 386DX/40.
 - DIFF/PATCH (Wunsch des Nutzers, 23.11.2026): `apps/lines.h` (Datei in
   bis zu 4 DosAllocSeg-Segmenten, Zeilenanfänge u32 in einem Segment,
   16.000 Zeilen), DIFF mit Zeilenklassen (Hash + Vergleich) und Myers mit
