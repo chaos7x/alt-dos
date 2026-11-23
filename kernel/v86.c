@@ -2476,18 +2476,18 @@ static int vdd_svc_int(int n, struct v86_frame *f, int t)
     return 0;
 }
 
-/* Messung Windows 3.1 in der Box (vorlaeufig): INT 2Fh AH=16h/43h und
-   INT 67h (EMS-Abfrage, VCPI DEh) ins DMESG, hoechstens WTR_MAX Zeilen je
+/* Messung Windows 3.1 in der Box (vorlaeufig): INT 2Fh AH=16h und jedes
+   INT 67h (EMS, VCPI DEh) ins DMESG, hoechstens WTR_MAX Zeilen je
    Box. '>' = Aufruf, '<' = Ergebnis. */
-#define WTR_MAX 48
+#define WTR_MAX 64
 static char *hx2(char *o, unsigned v);
 
 static int wtr_want(unsigned n, struct v86_frame *f)
 {
     if (n == 0x2F)
-        return (AH == 0x16 && AX != 0x1680) || AH == 0x43;
+        return AH == 0x16 && AX != 0x1680;
     if (n == 0x67)
-        return AH == 0xDE || AH == 0x40 || AH == 0x41 || AH == 0x46;
+        return 1;
     return 0;
 }
 
@@ -3443,10 +3443,12 @@ static int mon2f(struct v86_frame *f)
 
 static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
 {
-    if ((n == 0x2F || n == 0x67) && wtr_want(n, f))
+    int w = (n == 0x2F || n == 0x67) && wtr_want(n, f);
+    if (w)
         wtrace(f, t, n, '>', (unsigned)f->r.cs, ip);
     if (n == 0x2F && mon2f(f)) {
-        wtrace(f, t, n, '<', 0, 0);
+        if (w)
+            wtrace(f, t, n, '<', 0, 0);
         f->r.eip = ip;
         return;
     }
