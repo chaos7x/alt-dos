@@ -383,6 +383,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Zeilenenden wie in der Datei. Je Datei bis 256 KB / 16.000 Zeilen.
   Geprüft: Ausgabe gleich GNU diff, ein dort erzeugter Patch über 3.000
   Zeilen hin und mit `-R` zurück bytegleich.
+- Netzwerkzeuge (23.11.2026): `TRACERT [-d] [-h Hops] [-w ms] Ziel` wie
+  Windows (ICMP mit wachsender TTL, Namen per PTR), `ARP -a [-6]`
+  (Nachbar-Cache aus TCPIP.SYS, neu `NET_NEIGH`), `ROUTE PRINT` (Schnitt-
+  stellen, IPv4- und IPv6-Routen aus den Adressen der Karten), `WHOIS
+  [-h Server] Abfrage` (folgt „refer:“ von whois.iana.org), `CURL` wie
+  curl: `-o/-O`, `-X`, `-H`, `-d` (auch `@Datei`), `-I`, `-i`, `-L`,
+  `-u`, `-A`, `-e`, `-f`, `-s/-S`, `-v`, `-w "%{http_code}"`, `-k`,
+  `-m`, http und https (TLS wie WGET). Geprüft in QEMU gegen Testserver.
 - `DIG` und `NSLOOKUP` (23.11.2026), DNS-Abfragen mit eigenem Auflöser
   (`apps/dnsq.h`: UDP mit EDNS0, bei abgeschnittener Antwort TCP;
   A, AAAA, CNAME, MX, NS, SOA, PTR, TXT, SRV, CAA, ANY …):

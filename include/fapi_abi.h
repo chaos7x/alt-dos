@@ -480,6 +480,18 @@ struct fapi_sockinfo {
 };
 /* Sockets (wie BSD). Sie sind Handles: DosRead/DosWrite/DosClose gehen,
    beim Programmende schliesst der Kernel sie. SOCKET/ACCEPT -> Handle. */
+#define NET_NEIGH           8       /* struct fapi_neigh, idx vorgeben ->
+                                       Eintrag des Nachbar-Caches (ARP und
+                                       IPv6-ND), state 0 = Platz frei;
+                                       FAPI_ERROR hinter dem letzten (ARP) */
+struct fapi_neigh {
+    unsigned short idx;
+    unsigned char  ip[16];          /* IPv4 als ::ffff:a.b.c.d          */
+    unsigned char  mac[6];
+    unsigned char  ifc;             /* Karte                            */
+    unsigned char  state;           /* 0 frei, 1 wird gefragt, 2 bekannt */
+    unsigned short age;             /* Sekunden seit dem Eintrag        */
+};
 #define NET_SOCKET          0x10    /* struct fapi_socket -> Handle         */
 #define NET_BIND            0x11    /* struct fapi_sockio: h, addr          */
 #define NET_CONNECT         0x12    /* h, addr, timeout                     */

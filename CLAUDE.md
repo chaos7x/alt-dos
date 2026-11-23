@@ -1344,6 +1344,14 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Unschärfe. Lehren: `(unsigned)(0x10000UL - 0)` ist 0 (Endlosschleife
   beim Laden); die zurückgelegte Patchzeile darf nicht im selben Puffer
   wie die Dateizeilen stehen. Geprüft in QEMU gegen GNU diff/patch.
+- TRACERT/ARP/ROUTE/WHOIS/CURL (Wunsch des Nutzers, 23.11.2026; Setup-
+  Diskette 3): TRACERT über NET_PING mit ttl_out (Typ 11 = Router),
+  PTR über dnsq.h (`DQ_MIN` lässt die Teile für DIG weg), ARP über neues
+  `NET_NEIGH` (8, `struct fapi_neigh`, tcpip.c `net_neigh` aus `arpc[]`),
+  ROUTE nur Anzeige aus NET_IFINFO (eigene Routen kennt TCPIP.SYS nicht),
+  CURL eigenes Programm mit dem HTTP-Teil von WGET (DGROUP 65 KB – voll),
+  `-w` auf die Standardausgabe. Testserver `/tmp/claude-0/cu/srv.py`
+  (HTTP-Echo 8081, Whois 4343). Ungeprüft: HTTPS bei CURL, mehrere Hops.
 - DIG/NSLOOKUP (Wunsch des Nutzers, 23.11.2026; `apps/dnsq.h` gemeinsamer
   DNS-Teil, task_dig.c wie BIND-dig, task_nslookup.c wie Windows) und
   HOSTNAME gebunden mit Netz in der Box: Stub (stub/fapidos.c `net_box`)

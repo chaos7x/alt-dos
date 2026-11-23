@@ -21,16 +21,20 @@ static int      dq_tcp;             /* Antwort kam ueber TCP            */
 static unsigned dq_tmo = 3;         /* Sekunden je Versuch              */
 static unsigned dq_tries = 2;
 
+#ifndef DQ_MIN
 static const struct { const char *n; unsigned t; } dq_types[] = {
     { "A", 1 }, { "NS", 2 }, { "CNAME", 5 }, { "SOA", 6 }, { "PTR", 12 },
     { "HINFO", 13 }, { "MX", 15 }, { "TXT", 16 }, { "AAAA", 28 },
     { "SRV", 33 }, { "NAPTR", 35 }, { "DS", 43 }, { "DNSKEY", 48 },
     { "CAA", 257 }, { "ANY", 255 }, { "AXFR", 252 }, { 0, 0 }
 };
+#endif
 
+#ifndef DQ_MIN
 static const char *dq_rcodes[] = {
     "NOERROR", "FORMERR", "SERVFAIL", "NXDOMAIN", "NOTIMP", "REFUSED"
 };
+#endif
 
 static unsigned dq_g16(unsigned o)
 {
@@ -42,14 +46,17 @@ static unsigned long dq_g32(unsigned o)
     return (unsigned long)dq_g16(o) << 16 | dq_g16(o + 2);
 }
 
+#ifndef DQ_MIN
 static int dq_ieq(const char *a, const char *b)
 {
     while (*a && up(*a) == up(*b))
         a++, b++;
     return !*a && !*b;
 }
+#endif
 
 /* Typname -> Nummer (auch TYPEnnn), 0 = unbekannt */
+#ifndef DQ_MIN
 static unsigned dq_type(const char *s)
 {
     unsigned i, v = 0;
@@ -63,6 +70,7 @@ static unsigned dq_type(const char *s)
     }
     return 0;
 }
+#endif
 
 static char *dq_num(char *o, unsigned long v)
 {
@@ -84,6 +92,7 @@ static char *dq_num(char *o, unsigned long v)
     return o;
 }
 
+#ifndef DQ_MIN
 static void dq_tname(char *o, unsigned t)
 {
     unsigned i;
@@ -95,6 +104,7 @@ static void dq_tname(char *o, unsigned t)
     scopy(o, "TYPE", 12);
     dq_num(o + 4, t);
 }
+#endif
 
 /* Anfrage bauen: Name (ohne/mit Punkt am Ende) -> Laenge, 0 = Fehler */
 static unsigned dq_build(unsigned char *b, unsigned id, const char *name,
@@ -201,6 +211,7 @@ static unsigned dq_name(unsigned o, char *out, unsigned max)
 }
 
 /* Inhalt eines Satzes (Typ t, Daten ab o, Laenge rl) als Text */
+#ifndef DQ_MIN
 static void dq_rdata(char *out, unsigned max, unsigned t, unsigned o, unsigned rl)
 {
     static unsigned char a[16];
@@ -290,6 +301,7 @@ static void dq_rdata(char *out, unsigned max, unsigned t, unsigned o, unsigned r
     }
     *p = 0;
 }
+#endif
 
 /* Satz ab o: Name, Typ, Klasse, TTL, Daten -> Stelle dahinter, 0 = kaputt */
 struct dq_rr {
