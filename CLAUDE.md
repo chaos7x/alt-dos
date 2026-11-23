@@ -1253,6 +1253,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   den Joystick nur mit einem Joystick am Rechner nach – die lokale Kopie
   hat dafür `JOYFAKE="x y Tasten"` (qt/sdl_joystick.c, nicht im
   Repository) und `joystick_type`/`joystick_0_nr = 1` in [Input devices].
+  Offen (Nutzer, 23.11.2026: hat keinen Joystick): ein Test mit echtem
+  Joystick und einem Spiel in der Box fehlt – geprüft sind nur die
+  festen JOYFAKE-Werte (Kalibrierung, Bewegung, mehrere Tasten nicht).
   Dabei gefunden (älter): mit Joystick meldet 86Box zusätzlich einen
   PnP-Gameport (BOX0002), dessen Ressourcendaten als FFh kamen – pnp.c
   `card()` las daraus endlos „lange Einträge 7Fh“ der Länge FFFFh, der
