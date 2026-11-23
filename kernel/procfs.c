@@ -582,7 +582,7 @@ void __far procfs_boot(void)
 {
     const char __far *e = MK_FP(env_sel, NTASK * FAPI_ENVSIZE);
     unsigned i = 0;
-    int d = 'P' - 'A', b;
+    int d = -1, b;                      /* ab Werk aus                     */
     static const char KS key[] = "PROCFS=";
 
     if (env_sel)
@@ -594,8 +594,6 @@ void __far procfs_boot(void)
                 char c = e[i + k];
                 if (c >= 'a' && c <= 'z')
                     c -= 32;
-                if (c == 'O')           /* OFF                             */
-                    return;
                 if (c >= 'C' && c <= 'Z')
                     d = c - 'A';
                 break;
@@ -603,6 +601,8 @@ void __far procfs_boot(void)
             while (e[i++])
                 ;
         }
+    if (d < 0 || (e[i + 7 + 1] && e[i + 7 + 1] != ':'))
+        return;
     if (vol[d].used || vol[d].present)
         return;
     for (b = 2; b < nblk && blk[b].bsize; b++)

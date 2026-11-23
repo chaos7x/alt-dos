@@ -1353,9 +1353,10 @@ Win32s), nicht vorziehen, sondern nachfragen.
   danach voll – NSLOOKUP auf Diskette 3.
 - PROCFS (Vorschlag von mir als Hilfe bei der Fehlersuche, vom Nutzer
   gewünscht, 23.11.2026): `kernel/procfs.c` (KTEXT4) – `struct
-  ifs_driver pfs_driver`, Laufwerk P: (Blockgerät DRV_UFS ohne Blöcke,
+  ifs_driver pfs_driver`, Laufwerk nach Wahl (Blockgerät DRV_UFS ohne Blöcke,
   wie NET USE), `procfs_boot` nach pn_boot in kmain (5 Byte im ersten
-  Segment), Buchstabe aus `SET PROCFS=X:|OFF` der Systemumgebung. Jede
+  Segment), ab Werk aus (Wunsch des Nutzers), nur mit `SET PROCFS=X:` in der
+  CONFIG.SYS (Systemumgebung). Jede
   Datei entsteht beim Öffnen in einem 24-KB-Kernelsegment (erst beim
   ersten Öffnen), Lesen eines anderen Handles erzeugt sie neu. Mini-
   printf `pf` (Teilen über DIV 32/16, kein __U4D). Texte im Codesegment
