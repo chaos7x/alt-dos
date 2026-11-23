@@ -366,6 +366,17 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   nach dem Ändern; `HOSTNAME [Name | /LOAD [/Q]]` zeigt bzw. setzt den
   Rechnernamen (Datei `HOSTNAME`, TCPIP.SYS meldet ihn per DHCP,
   `COMPUTERNAME` in der Umgebung), AUTOEXEC.CMD lädt ihn beim Start
+- `DIG` und `NSLOOKUP` (23.11.2026), DNS-Abfragen mit eigenem Auflöser
+  (`apps/dnsq.h`: UDP mit EDNS0, bei abgeschnittener Antwort TCP;
+  A, AAAA, CNAME, MX, NS, SOA, PTR, TXT, SRV, CAA, ANY …):
+  `DIG [@Server] [-p Port] [-x Adresse] Name [Typ] [+short] [+tcp]
+  [+noall +answer] …` mit der Ausgabe von BIND-dig, `NSLOOKUP
+  [-type=Typ] [-port=n] Name|Adresse [Server]` mit der Ausgabe des
+  nslookup von Windows (Server, „Nicht autorisierende Antwort“, Aliases).
+  HOSTNAME, DIG und NSLOOKUP sind gebunden und laufen auch in der DOS-
+  Box mit Netz: der Stub reicht FAPI_NET über INT E0h 23h an den Kernel
+  (Sockets dort mit eigener Kennung). Geprüft: QEMU und 86Box 386DX/40
+  (NE2000) gegen einen DNS-Testserver, nativ und in der Box
 - `LOGON [Name] [/NOHOME] [/Q]` (6.3): Anmeldung an der Domäne beim Start
   (Zeile in AUTOEXEC.CMD) – Kennwort abfragen, Ticket holen, den DC über
   den Rechnerschlüssel aus `DOMAIN.KEY` prüfen (ein falscher KDC fällt
@@ -811,6 +822,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   (INT 2Fh 1100h/B800h, 21h 5E00h Rechnername, 5F02h listet die NET-USE-
   Laufwerke und -Drucker mit UNC, 4409h meldet sie fern); ohne Netz
   bleibt alles wie vorher. Geprüft: QEMU und 86Box 386DX/40 (NE2000).
+  MSD 2.11 von MS-DOS (23.11.2026, gemessen über eine Spur der INT-
+  Aufrufe): zeigt jetzt „MS-NET Compatible“ mit Rechnername – dafür
+  beantwortet der Box-Kern INT 2Ah AH=00h (Netz installiert) –, NET-USE-
+  Laufwerke als „Remote Drive“ (4408h/440Dh scheitern für sie wie unter
+  einem Redirector), B: (das BIOS-Ausstattungswort der Box meldet jetzt
+  zwei Diskettenlaufwerke, wenn AT-DOS B: hat; INT 13h 08h für A:/B:
+  aus CMOS 10h) und die Festplattenparameter (INT 41h/46h zeigten auf
+  Code-Stummel).
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

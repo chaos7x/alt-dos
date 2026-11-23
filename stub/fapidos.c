@@ -1134,6 +1134,64 @@ static unsigned setfinfo(unsigned poff, unsigned ioff)
     return rc;
 }
 
+/* ---- Netz (nur in einer DOS-Box von AT-DOS) ---------------------------- */
+/* Der Monitor der Box nimmt FAPI_NET ueber INT E0h 23h entgegen (v86.c):
+   CX Unterfunktion, ES:DI Block, DX Groesse, Puffer darin relativ zu ES;
+   CX = FFFFh schliesst den Socket DX. Erkannt wird die Box am Vektor E0h
+   (Stummel "ARPL E0h" im F000-Segment der Box). Sockets bekommen hier
+   Bit 14, damit DosClose sie von DOS-Handles unterscheidet. Unter MS-DOS
+   kein Netz (FAPI_ERR_NONET). */
+#define SOCKTAG 0x4000
+static signed char atbox = -1;
+
+static int in_atbox(void)
+{
+    if (atbox < 0) {
+        unsigned __far *v = (unsigned __far *)MK_FP(0, 0xE0 * 4);
+        atbox = v[1] == 0xF000 && *(unsigned char __far *)MK_FP(v[1], v[0]) == 0x63;
+    }
+    return atbox;
+}
+
+static unsigned net_e0(unsigned fn, unsigned p, unsigned n)
+{
+    rclr();
+    r.ax = 0x2300;
+    r.cx = fn;
+    r.dx = n;
+    r.es = app_ds;
+    r.di = p;
+    do_int(0xE0, &r);
+    return r.ax;
+}
+
+static unsigned net_box(unsigned fn, unsigned p, unsigned n)
+{
+    unsigned __far *h = (unsigned __far *)AP(p);
+    unsigned save = 0, k, rc;
+    if (!in_atbox())
+        return FAPI_ERR_NONET;
+    if (fn == NET_SELECT) {
+        struct fapi_select __far *sl = (struct fapi_select __far *)AP(p);
+        for (k = 0; k < sl->n && k < NSEL_MAX; k++)
+            sl->e[k].h &= ~SOCKTAG;
+        rc = net_e0(fn, p, n);
+        for (k = 0; k < sl->n && k < NSEL_MAX; k++)
+            sl->e[k].h |= SOCKTAG;
+        return rc;
+    }
+    if (fn > NET_SOCKET) {
+        save = *h;
+        *h &= ~SOCKTAG;
+    }
+    rc = net_e0(fn, p, n);
+    if (fn > NET_SOCKET)
+        *h = save;
+    if ((fn == NET_SOCKET || fn == NET_ACCEPT) && rc < FAPI_ERR_FIRST)
+        rc |= SOCKTAG;
+    return rc;
+}
+
 /* ---- Verteiler ---------------------------------------------------------- */
 unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
 {
@@ -1192,6 +1250,10 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         break;
     case FAPI_WRITE:        rc = do_write(a1, a2, a3); break;
     case FAPI_CLOSE:
+        if ((a1 & SOCKTAG) && in_atbox()) {
+            rc = net_e0(0xFFFF, 0, a1 & ~SOCKTAG);
+            break;
+        }
         rclr();
         r.ax = 0x3E00;
         r.bx = a1;
@@ -1402,6 +1464,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         break;
     }
     case FAPI_VIOSETANSI:   rc = 0; break;
+    case FAPI_NET:          rc = net_box(a1, a2, a3); break;
     case FAPI_QTICKS:       rc = (unsigned)(ulmul(ticks(), 11) >> 1); break;  /* 55 ms -> 10 ms */
 
     /* Tastatur, Maus */

@@ -900,7 +900,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   CR LF nach genau 80 Zeichen ist kein Umbruch) oder waagerecht blättern,
   Hex (16 Byte je Zeile), Suchen (Text ohne Groß/klein, Hex-Bytes) mit
   Hervorhebung, Gehe zu Zeile/0x-Offset, Prozent ohne 32-Bit-Division.
-  Dialoge mit Mausknöpfen (`buttons`/`button_hit`); `box()` hat einen
+  Dialoge mit Mausknöpfen (`buttons`/`button_hit`; aktiver Knopf hervor-
+  gehoben, Tab/Pfeile wechseln, Enter drückt – `btn_key`, vom Nutzer
+  vermisst, 23.11.2026); `box()` hat einen
   eigenen Puffer, weil der Text des Dialogs oft in `line` steht (Fehler
   vom Nutzer gemeldet). Vom Nutzer in 86Box bestätigt: Kopieren und
   Verschieben, CHKDSK danach ohne Fehler.
@@ -1324,6 +1326,21 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (Handle -> Eintrag je DosWrite/DosDup2). In QEMU geprüft (Uhr per
   `-rtc base`, Test /tmp/claude-0/at/run.sh; Gegenprobe Pipe, XCOPY +
   COMP, Box, fsck sauber).
+- DIG/NSLOOKUP (Wunsch des Nutzers, 23.11.2026; `apps/dnsq.h` gemeinsamer
+  DNS-Teil, task_dig.c wie BIND-dig, task_nslookup.c wie Windows) und
+  HOSTNAME gebunden mit Netz in der Box: Stub (stub/fapidos.c `net_box`)
+  ruft in einer AT-DOS-Box (IVT E0h -> F000, ARPL-Stummel) INT E0h 23h
+  (CX = NET_*, ES:DI Block, DX Größe; CX = FFFFh schließt Socket DX),
+  v86.c ruft net_fapi über RWIN; Socket-Handles tragen im Stub Bit 4000h
+  (DosClose). Testserver `/tmp/claude-0/dig/dnssrv.py` (dnspython,
+  127.0.0.1:5353, im Gast @10.0.2.2 -p 5353). Geprüft QEMU + 86Box 386.
+  MSD 2.11 in der Box (vom Nutzer gemeldet): „No Network“ -> INT 2Ah
+  AH=00h im Box-Kern (`int2a_entry`, `net_st`); NET-USE-Laufwerk als
+  Festplatte -> 4408h/440Dh scheitern für NET-USE-Laufwerke (E_FUNC);
+  B: fehlte -> BDA 0410h mit zwei Disketten, INT 13h 08h für A:/B: aus
+  CMOS 10h (`flop_geo`); INT 41h/46h zeigen auf `bios_fdpt` bei
+  F000:08C0. Gemessen mit einer Spur über `wtr_want`/`wtrace` (v86.c,
+  vorübergehend auf Port E9h), MSD /P schreibt den Bericht in eine Datei.
 - `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
   `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
   LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in

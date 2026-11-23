@@ -44,6 +44,7 @@ extern char int27_entry[];
 extern char iret_entry[];
 extern char retf_entry[];
 extern char int29_entry[];
+extern char int2a_entry[];
 extern char int2f_entry[];
 
 u8 *lol_ptr(void) { return LOL; }
@@ -840,6 +841,7 @@ void cm_main(void)
     setvec(0x27, int27_entry);
     setvec(0x28, iret_entry);
     setvec(0x29, int29_entry);
+    setvec(0x2A, int2a_entry);
     setvec(0x2F, int2f_entry);
     /* Nutzervektoren 60h-66h wie beim BIOS auf 0000:0000 (die Box legt
        jeden Vektor auf einen eigenen Stummel). DOS/4GW sucht in der IVT

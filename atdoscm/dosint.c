@@ -26,7 +26,7 @@ static u16   mynum;
 static u8    myset;                     /* 5E01h hat den Namen gesetzt   */
 
 /* Netz: Stand vom Kernel (DEM_NETINFO), erneuert in net_sync */
-static u8    net_st;                    /* 1 = Netz da                   */
+u8           net_st;                    /* 1 = Netz da (auch INT 2Ah)    */
 static u16   net_dlo, net_dhi;          /* NET-USE-Laufwerke, Bit 0 = A: */
 static u16   net_lpt;                   /* Drucker, Bit 0 = LPT1         */
 

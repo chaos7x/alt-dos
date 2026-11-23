@@ -897,6 +897,10 @@ static void ioctl_fn(struct frame __far *f)
             f->dx = r.ax == 0x5AD8 || net_drive(d) ? 0x1000 : 0x08C2;
             break;
         }
+        if (net_drive(d)) {             /* NET USE: wie MS-DOS mit Redirector */
+            set_err(f, E_FUNC);         /* (MSD: 4408h scheitert -> fern) */
+            break;
+        }
         if (dinfo(d)) {                 /* CD, kein Medium               */
             if (d < 2) {                /* leere Diskette: Laufwerk wie  */
                 dbuf[0] = 2;            /* MS-DOS ohne Medium (1,44 MB)  */

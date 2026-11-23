@@ -485,6 +485,20 @@ iret_entry:
 iret_entry_:
         iret
 
+; INT 2Ah AH=00h: Netz installiert? (MSD, Installationsprogramme) - mit
+; Netz AH = FFh wie ein geladener Redirector (dosint.c net_st)
+extern _net_st
+global int2a_entry, int2a_entry_, _int2a_entry
+_int2a_entry:
+int2a_entry:
+int2a_entry_:
+        or      ah, ah
+        jnz     .r
+        cmp     byte [cs:_net_st], 0
+        je      .r
+        mov     ah, 0FFh
+.r:     iret
+
 ; INT 29h: Zeichen AL schnell ausgeben
 global int29_entry, int29_entry_, _int29_entry
 _int29_entry:
