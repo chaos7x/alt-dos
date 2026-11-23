@@ -1497,6 +1497,31 @@ static int seg_drop_sw(int t, unsigned idx)
 }
 
 /* Start: SWAPPATH=[X:]\Verzeichnis [KB] (Vorgabe 2 x RAM, 1-8 MB) */
+/* \AUTOCHK.LST des Startlaufwerks nennt eine Pruefung (CHKDSK /F konnte
+   nicht sperren): dann bleiben Auslagerungsdatei und LOOP= in diesem Start
+   zu, sonst halten sie das Laufwerk wieder offen (aus main) */
+static int chk_pending(void)
+{
+    static char p[16], b[256];
+    int k = of_alloc(), r = 0;
+    unsigned n, i;
+    if (k < 0)
+        return 0;
+    files[k].owner = -1;
+    scopy(p, "\\AUTOCHK.LST", sizeof(p));
+    if (ifs_open(sys_drive, p, &files[k].f) == 0) {
+        n = (unsigned)ifs_read(&files[k].f, 0, KDATA, (unsigned)b, 255);
+        ifs_close(&files[k].f);
+        if (n > 255)
+            n = 0;
+        for (i = 0; i + 1 < n; i++)
+            if (b[i + 1] == ':')
+                r = 1;
+    }
+    files[k].refs = 0;
+    return r;
+}
+
 static void swap_boot(const char *spec)
 {
     static char p[IFS_PATHLEN], msg[80];
@@ -6979,9 +7004,14 @@ void kmain(void)
        OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
-    if (swappath[0])                            /* SWAPPATH= (5.4)       */
-        swap_boot(swappath);
-    loop_boot();                                /* LOOP= aus CONFIG.SYS   */
+    if (chk_pending() || vol[sys_drive].was_dirty) {
+        vio_kputs(s0, "\xFE Pr\x81" "fung beim Start - "
+                  "diesmal ohne Auslagerungsdatei und LOOP=\n");
+    } else {                                    /* nichts darf offen sein */
+        if (swappath[0])                        /* SWAPPATH= (5.4)       */
+            swap_boot(swappath);
+        loop_boot();                            /* LOOP= aus CONFIG.SYS   */
+    }
     cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
     step_arg();
     t = task_create(protshell, s0, -1, -1);
