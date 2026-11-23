@@ -1936,6 +1936,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **Windows 3.1 in der Box, Weg B** (vorgemerkt vom Nutzer, 23.11.2026;
+  noch kein Code): eigener Lader statt DOSX.EXE in `\DOS\MDOS`, der
+  Box-Kern ersetzt ihn beim 4B00h, KRNL286/386 auf unserem DPMI, DOS-
+  Übersetzung im Lader, nur Standardmodus, EMS 5900h; Stand und Messung
+  in `docs/DOSKERN.md` „Windows 3.1 in der Box“.
+
 - **CHKDSK vor der Auslagerungsdatei** (vorgemerkt vom Nutzer,
   23.11.2026; noch kein Code): ist das Sauber-Bit des Startlaufwerks
   gelöscht (`vol[].was_dirty`) oder nennt AUTOCHK.LST eine Prüfung, soll

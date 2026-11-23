@@ -1128,6 +1128,33 @@ braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
 - OS/2- und NT-Quellen: nicht freigegeben, Lecks nicht verwenden; nur
   öffentlich beschriebenes Verhalten.
 
+## Windows 3.1 in der Box (vorgemerkt, 23.11.2026)
+
+Vorgemerkt vom Nutzer, noch kein Code (Grund: Windows dient nur als
+Prüffall für die Netzerkennung, die eigene Oberfläche kommt später als
+Win16-Schicht). Ausgangslage, gemessen mit der Aufzeichnung in `v86.c`
+(`wtrace`, DMESG-Zeilen „WIN >nn …“, ba1bb7f/0630bf1 – bleibt vorerst
+drin): Windows 3.11 (ohne WfW) meldet in SETUP „andere Protected-Mode-
+Software“. DOSX (Standardmodus) findet über 1687h unser DPMI 0.90,
+fragt dann aber VCPI (INT 67h DE00h) ab, bekommt 84h und bricht ab.
+WIN386 (erweiterter Modus) schickt 2Fh 1605h, fragt ebenfalls DE00h und
+meldet sich mit 1606h wieder ab. EMS 5900h fehlt (A4h).
+
+Weg A, ein VCPI-Dienst, scheidet aus: der Client übernimmt mit eigener
+GDT/IDT/CR3 die Maschine im Ring 0, die Box wäre nicht mehr geschützt.
+
+Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
+in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h
+4B00h) den Aufruf von `DOSX.EXE` durch den Lader – CD und Windows-
+Installation bleiben unverändert (grafisches SETUP, `WIN`, `WIN /S`).
+Der Lader startet KRNL286/KRNL386 als Programm auf unserem DPMI-Wirt
+und übernimmt, was DOSX dem Windows-Kern bietet: Übersetzung der DOS-
+Aufrufe aus dem Protected Mode (Puffer über DS:DX u. a. unter 1 MB
+umkopieren) und die übrigen DOSX-Dienste; fehlende DPMI-Funktionen im
+Wirt ergänzen, EMS 5900h nachziehen. Nur Standardmodus – WIN386 bleibt
+außen vor. Geschätzt 3–6 Tage, Risiko: welche Dienste KRNL zusätzlich
+erwartet.
+
 ## Offene Fragen an den Nutzer
 
 1. ~~Grundlage des Box-Kerns~~ – entschieden: beide (FreeDOS-Rumpf,
