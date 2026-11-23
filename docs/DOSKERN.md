@@ -850,9 +850,10 @@ Programm der Zeit (z. B. NET VIEW des MS Network Client) gegen die DCs.
 
 Entschieden (Nutzer, 23.11.2026): Plan freigegeben; NET-USE-Laufwerke
 gelten in der Box als „fern“ (MS-DOS-getreu, DEFRAG/CHKDSK lehnen sie
-dann wie unter MS-DOS ab), alle anderen Laufwerke bleiben lokal. MSD,
-Win 3.1 und MS Network Client/WfW 3.11 hat der Nutzer zum Testen (nur
-zum Testen, nicht ins Repository).
+dann wie unter MS-DOS ab), alle anderen Laufwerke bleiben lokal.
+Windows 3.1 (mit MSD) hat der Nutzer zum Testen (nur zum Testen, nicht
+ins Repository); für Teil 2 fehlt noch ein NetBIOS-Programm der Zeit
+(MS Network Client 3.0 oder WfW 3.11).
 
 ## Stufe 0: Messung (21.11.2026)
 
