@@ -162,6 +162,11 @@ void panic(const char *msg);
 unsigned __far pn_check(void);
 void __far pn_boot(int d, int ses, unsigned n);
 int __far pn_disk(void);
+void __far pn_save(const char *msg);
+extern unsigned subst_sel;              /* SUBST/JOIN-Pfade + DMESG-Ring  */
+extern unsigned klog_head, klog_len;
+extern unsigned char klog_mid;
+#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
 void reboot(void);
 /* Kernelsegment ausserhalb von DGROUP (Tabellen, Puffer), genullt;
    -> Selektor oder 0. Fuer alles, was mit der Konfiguration waechst. */

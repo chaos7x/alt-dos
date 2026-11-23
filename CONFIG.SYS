@@ -19,6 +19,9 @@ REM   ohne Angabe bis 16 MB RAM X:\SWAP, 2x RAM (2-8 MB); OFF = keine
 REM SWAPPATH=C:\SWAP 4096
 REM LOOP=[X:,]Datei[,/RO]  Abbild (ISO, IMG, VHD) als Laufwerk, bis 8 Zeilen
 REM LOOP=E:,C:\ISO\SPIEL.ISO
+REM RUN=Programm [Argumente]  losgeloest starten wie OS/2 (ohne Tastatur,
+REM   Ausgaben nach NUL), bis 8 Zeilen; ohne Pfad: Stamm, \DOS, \DOS\SYSTEM
+REM RUN=PRINT.EXE /WORK
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb

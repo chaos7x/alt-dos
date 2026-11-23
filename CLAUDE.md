@@ -1229,6 +1229,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   offen. Jetzt bleiben Auslagerungsdatei und LOOP= zu, wenn das Start-
   laufwerk nicht sauber war oder AUTOCHK.LST eine Prüfung nennt
   (`conv_pending` 2).
+- `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
+  `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
+  LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in
+  Sitzung 1: `exec_nocon` (keine Tastatur, Eingabe NUL), Ausgabe und
+  Fehler nach NUL, bg, kein Elternteil; ohne Pfad Stamm, \DOS,
+  \DOS\SYSTEM. Meldung „■ RUN=…“ bzw. „- nicht gefunden“. In QEMU
+  geprüft (CMD /C DIR > Datei, MEM, fehlendes Programm, TAIL -f läuft
+  weiter und steht in TASKMAN /L, CMD bleibt bedienbar). Platz: pn_save
+  nach panic.c (klog_head/len/mid, subst_sel, KLOG_OFF jetzt in kern.h);
+  erstes Codesegment danach 65.129 Byte.
 - Strg+C an der Eingabezeile (Wunsch des Nutzers, 21.11.2026, wie
   COMMAND.COM): `read_line` setzt außerhalb von Stapeldateien den
   SIG_BREAK-Handler (`on_break`), KbdCharIn kehrt beim Signal mit 0 zurück,

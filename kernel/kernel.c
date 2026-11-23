@@ -77,7 +77,6 @@ unsigned short  gdtr[3], idtr[3];
 
 
 #include "task.h"                       /* struct task (auch codeswap.c) */
-#include "../build/version.h"
 
 struct task           task[NTASK];      /* auch codeswap.c */
 static struct tss386  tss_k;
@@ -277,7 +276,6 @@ void delay_ticks(unsigned n)
         idle_wait();
 }
 
-static void pn_save(const char *msg);
 
 /* Kernel-Panik: Meldung in der untersten Zeile, Protokoll bei physisch
    PN_LIN ablegen (pn_save), auf eine Taste warten und warm neu starten -
@@ -698,7 +696,7 @@ static int sys_drive = 0;
    X:-Pfade (aktuelles Verzeichnis, QCurDir); die IFS-Treiber bekommen
    den umgesetzten Pfad auf dem Ziellaufwerk. */
 signed char subst_drv[NDRIVE];          /* auch blkmnt.c */
-static unsigned subst_sel;
+unsigned subst_sel;                     /* auch panic.c (DMESG-Ring) */
 
 /* Laufwerk + kanonischer Pfad auf das Ziel umsetzen; -1 = zu lang */
 static int subst_map(int *d, char *path)
@@ -741,9 +739,8 @@ static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
 #define JOIN_OFF (NDRIVE * IFS_PATHLEN)
 /* Protokoll der Kernelmeldungen (DMESG): Ring im selben Segment hinter
    den Pfaden (kein eigener GDT-Platz), jede Zeile mit [h:mm:ss] */
-#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
-static unsigned klog_head, klog_len;    /* naechste Stelle, belegt       */
-static unsigned char klog_mid;          /* mitten in einer Zeile          */
+unsigned klog_head, klog_len;           /* naechste Stelle, belegt       */
+unsigned char klog_mid;                 /* mitten in einer Zeile          */
 
 static void kl_put(char c)
 {
@@ -797,50 +794,6 @@ void klog(unsigned sel, unsigned off, unsigned n)
             continue;
         kl_put(c);
     }
-}
-
-/* Absturzprotokoll: physisch PN_LIN (erweiterter Speicher; Warmstart und
-   SeaBIOS lassen ihn stehen, 7000h-FFFFh loescht SeaBIOS) - "ATPN", Laenge, Summe, Text: Meldung,
-   Version, Task, dann das Ende des DMESG-Rings */
-#define PN_TXT 8u
-#define PN_MAX (0x1000u - PN_TXT)
-
-static unsigned pn_put(unsigned n, const char __far *t, unsigned max)
-{
-    char __far *p = MK_FP(SCRATCH, PN_TXT);
-    while (*t && n < max)
-        p[n++] = *t++;
-    return n;
-}
-
-static void pn_save(const char *msg)
-{
-    char __far *p = MK_FP(SCRATCH, 0);
-    unsigned n, k, st, sum, i;
-    scratch_map(PN_LIN, 0xFFF);
-    n = pn_put(0, msg, PN_MAX);
-    n = pn_put(n, "\r\nAT-DOS 6.3 Build " ATDOS_BUILD " (" ATDOS_REV ")\r\n", PN_MAX);
-    if (current >= 0) {
-        n = pn_put(n, "Laufender Task: ", PN_MAX);
-        n = pn_put(n, task[current].name, PN_MAX);
-        n = pn_put(n, "\r\n", PN_MAX);
-    }
-    if (subst_sel && klog_len) {
-        n = pn_put(n, "Letzte Kernelmeldungen:\r\n", PN_MAX);
-        k = klog_len < PN_MAX - n ? klog_len : PN_MAX - n;
-        st = (klog_head - k) & (KLOG_SIZE - 1);
-        for (i = 0; i < k; i++)
-            p[PN_TXT + n++] = ((char __far *)MK_FP(subst_sel, KLOG_OFF))[(st + i) & (KLOG_SIZE - 1)];
-        if (klog_mid && n + 2 <= PN_MAX) {
-            p[PN_TXT + n++] = '\r';
-            p[PN_TXT + n++] = '\n';
-        }
-    }
-    for (sum = 0, i = 0; i < n; i++)
-        sum += (unsigned char)p[PN_TXT + i];
-    p[0] = 'A'; p[1] = 'T'; p[2] = 'P'; p[3] = 'N';
-    *(unsigned __far *)(p + 4) = n;
-    *(unsigned __far *)(p + 6) = sum;
 }
 
 /* FAPI_KLOG: ab Stelle pos (von der aeltesten) bis len Bytes kopieren */
@@ -7496,6 +7449,74 @@ static void f8_wait(void)
     vio_kputs(boot_session, boot_f8 ? " - an\n" : "\n");
 }
 
+/* NAME=Wert mehrfach (LOOP=, RUN=): als NAMEn=Wert (n = 1, 2, ...) in
+   die Systemumgebung; v zeigt hinter das '=' in line, pl = Laenge von NAME */
+#define NRUN 8
+static void cfg_nth(char *line, const char *v, unsigned pl, unsigned char *cn,
+                    unsigned max)
+{
+    char *d = line + pl + 2;
+    unsigned k = 1, i;
+    while (v[k - 1])
+        k++;
+    if (*cn < max && k < FAPI_ARGLEN - pl - 2) {
+        if (d > v)
+            while (k--)
+                d[k] = v[k];
+        else
+            for (i = 0; i < k; i++)
+                d[i] = v[i];
+        line[pl] = (char)('1' + (*cn)++);
+        line[pl + 1] = '=';
+        env_set(-1, line);
+    }
+}
+
+/* RUN= aus CONFIG.SYS: Programme losgeloest starten wie bei OS/2 - ohne
+   Tastatur, Ein- und Ausgabe NUL, kein Elternteil; Name ohne Pfad wird
+   im Stamm, in \DOS und \DOS\SYSTEM des Startlaufwerks gesucht */
+static void run_boot(int s0)
+{
+    static char nm[] = "RUN1";
+    static const char *const dirs[] = { "", "\\DOS\\", "\\DOS\\SYSTEM\\" };
+    char *c = fi_buf + FAPI_PATHLEN - FAPI_ARGLEN;  /* Befehl hinten,   */
+    int i, t, k, j;                                 /* Pfad davor       */
+
+    for (nm[3] = '1'; nm[3] <= '0' + NRUN; nm[3]++) {
+        if ((i = env_find(-1, nm, 4)) < 0)
+            continue;
+        fscopy((char __far *)c, MK_FP(env_sel, env_off(-1) + i + 5), FAPI_ARGLEN);
+        vio_kputs(s0, "\xFE RUN=");
+        vio_kputs(s0, c);
+        for (j = 0; c[j] && c[j] != ' ' && c[j] != '\\' && c[j] != ':'; j++)
+            ;
+        t = -EXEC_ERR_NOTFOUND;         /* ohne Pfad: Stamm, \DOS, ...   */
+        for (k = 0; k < 3 && t == -EXEC_ERR_NOTFOUND && (!k || (c[j] != '\\' && c[j] != ':')); k++) {
+            scopy(fi_buf, dirs[k], 14);
+            scat(fi_buf, scat(fi_buf, 0, fi_buf, FAPI_ARGLEN), c, FAPI_PATHLEN);
+            exec_nocon = 1;
+            t = task_create(fi_buf, s0, -1, -1);
+            fscopy((char __far *)c, MK_FP(env_sel, env_off(-1) + i + 5), FAPI_ARGLEN);
+        }
+        exec_nocon = 0;
+        if (t < 0) {
+            vio_kputs(s0, " - ");
+            vio_kputs(s0, exec_err(-t));
+            vio_kputs(s0, "\n");
+            continue;
+        }
+        vio_kputs(s0, "\n");
+        task[t].bg = 1;
+        for (k = 1; k < 3; k++)         /* Ausgaben nach NUL            */
+            if ((j = of_alloc()) >= 0) {
+                files[j].kind = OF_NUL;
+                files[j].owner = -1;
+                of_release(task[t].std[k]);
+                task[t].std[k] = (unsigned char)j;
+            }
+    }
+}
+
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
@@ -7636,21 +7657,10 @@ static void config_sys(void)
             }
         } else if (kw(line, "LOOP")) {         /* LOOP=[X:,]Datei[,/RO]   */
             static unsigned char loop_cn;      /* -> LOOP1..LOOP8 in der  */
-            char *d = line + 6;                /*    Systemumgebung       */
-            unsigned k = 1;
-            while (v[k - 1])
-                k++;
-            if (loop_cn < NLOOP && k < sizeof(line) - 6) {
-                if (d > v)
-                    while (k--)
-                        d[k] = v[k];
-                else
-                    for (i = 0; i < (int)k; i++)
-                        d[i] = v[i];
-                line[4] = (char)('1' + loop_cn++);
-                line[5] = '=';
-                env_set(-1, line);
-            }
+            cfg_nth(line, v, 4, &loop_cn, NLOOP);   /* Systemumgebung     */
+        } else if (kw(line, "RUN")) {          /* RUN=Programm [Arg.] wie */
+            static unsigned char run_cn;       /* OS/2 -> RUN1..RUN8      */
+            cfg_nth(line, v, 3, &run_cn, NRUN);
         } else if (kw(line, "SWAPPATH")) {     /* wie OS/2: Ort, KB       */
             line[8] = '=';
             env_set(-1, line);
@@ -7917,6 +7927,7 @@ void kmain(void)
             panic("Kein Befehlsinterpreter.");
     }
     vio_title(s0, task[t].name);
+    run_boot(s0);                               /* RUN= aus CONFIG.SYS   */
     fd_motor_off();
     vio_kputs(s0, "\n");
     vio_focus(s0);

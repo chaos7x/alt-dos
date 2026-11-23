@@ -24,7 +24,11 @@
  * begonnen); die erste Zeile erscheint unter den Startmeldungen.
  */
 #include "kern.h"
+#include "../include/fapi_abi.h"
+#include "mem.h"
 #include "ifs.h"
+#include "task.h"
+#include "../build/version.h"
 #include "k2.h"
 
 struct ifs_file __far * __far kf_kopen(int d, const char *canon, int create);
@@ -68,6 +72,47 @@ static unsigned pn_cat(char *b, unsigned j, const char *s)
     while (*s)
         b[j++] = *s++;
     return j;
+}
+
+static unsigned pn_put(unsigned n, const char __far *t)
+{
+    char __far *p = MK_FP(SCRATCH, PN_TXT);
+    while (*t && n < PN_MAX)
+        p[n++] = *t++;
+    return n;
+}
+
+/* in der Panik: Meldung, Version, Task, Ende des DMESG-Rings nach PN_LIN */
+void __far pn_save(const char *msg)
+{
+    char __far *p = MK_FP(SCRATCH, 0);
+    const char __far *r;
+    unsigned n, k, st, sum, i;
+    scratch_map(PN_LIN, 0xFFF);
+    n = pn_put(0, msg);
+    n = pn_put(n, "\r\nAT-DOS 6.3 Build " ATDOS_BUILD " (" ATDOS_REV ")\r\n");
+    if (current >= 0) {
+        n = pn_put(n, "Laufender Task: ");
+        n = pn_put(n, task[current].name);
+        n = pn_put(n, "\r\n");
+    }
+    if (subst_sel && klog_len) {
+        n = pn_put(n, "Letzte Kernelmeldungen:\r\n");
+        k = klog_len < PN_MAX - n ? klog_len : PN_MAX - n;
+        st = (klog_head - k) & (KLOG_SIZE - 1);
+        r = MK_FP(subst_sel, KLOG_OFF);
+        for (i = 0; i < k; i++)
+            p[PN_TXT + n++] = r[(st + i) & (KLOG_SIZE - 1)];
+        if (klog_mid && n + 2 <= PN_MAX) {
+            p[PN_TXT + n++] = '\r';
+            p[PN_TXT + n++] = '\n';
+        }
+    }
+    for (sum = 0, i = 0; i < n; i++)
+        sum += (unsigned char)p[PN_TXT + i];
+    p[0] = 'A'; p[1] = 'T'; p[2] = 'P'; p[3] = 'N';
+    *(unsigned __far *)(p + 4) = n;
+    *(unsigned __far *)(p + 6) = sum;
 }
 
 /* beim Start (gleich nach mem_init): Protokoll im Speicher? -> Laenge */

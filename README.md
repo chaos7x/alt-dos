@@ -435,7 +435,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - Programmlader für das eigene FX-Format. Beim Start läuft der
   Befehlsinterpreter aus `PROTSHELL=` (Vorgabe `CMD.EXE /P`), der
   `AUTOEXEC.CMD` abarbeitet. Wie bei OS/2 gehören `.CMD`-Dateien der nativen
-  Seite, `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören der DOS-Box
+  Seite, `AUTOEXEC.BAT`, `.BAT` und `SHELL=` gehören der DOS-Box.
+  `RUN=Programm [Argumente]` (bis acht Zeilen) startet wie bei OS/2
+  Dienste losgelöst beim Start – ohne Tastatur, Ein- und Ausgaben nach
+  NUL, ohne Pfad im Stamm, in `\DOS` und `\DOS\SYSTEM` gesucht; sie
+  erscheinen in `TASKMAN /L` (z. B. `RUN=PRINT.EXE /WORK`)
 - Der Befehlsinterpreter heißt `CMD.EXE` (bis 6.0 `COMMAND.EXE`), wie bei
   OS/2 und NT – `COMMAND.COM` gehört der DOS-Box. Eine alte CONFIG.SYS mit
   `PROTSHELL=COMMAND.EXE` startet trotzdem (der Kernel nimmt dann `CMD.EXE /P`)
