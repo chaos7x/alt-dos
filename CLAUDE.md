@@ -1875,6 +1875,31 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **BACKUP/RESTORE** (abgestimmt mit dem Nutzer, 23.11.2026; noch kein
+  Code): Format von MS-DOS 3.3–5.0 (je Diskette `BACKUP.nnn` mit den
+  Dateien hintereinander + `CONTROL.nnn` mit Kopfsätzen, Dateien über
+  Diskettengrenzen geteilt), damit RESTORE von MS-DOS 5.0 unsere
+  Sicherungen liest und umgekehrt; /S /M /A /D: wie dort. Vorlage für die
+  Strukturen: `v4.0/src/CMD/BACKUP` und `RESTORE` (MIT, nur Aufbau lesen,
+  Code selbst schreiben); Gegenprobe mit BACKUP/RESTORE des deutschen
+  MS-DOS 5.00 (Disketten des Nutzers, nur zum Testen, im Scratchpad unter
+  /tmp/claude-0/msdl). Lange Namen: CONTROL kennt nur 8.3 – zusätzlich
+  `NAMES.nnn` auf der letzten Diskette (8.3-Pfad der Sicherung -> langer
+  Name, auch für Verzeichnisse). BACKUP holt die Namen über die
+  Dateisuche des Kernels, gilt also gleich für EA, VFAT, FAT32 und CD
+  (kein Umweg über CONVERT /LFN:EA – die Quelle bleibt unverändert);
+  unser RESTORE legt gleich mit langem Namen an, das Ziel schreibt EA
+  oder VFAT nach seiner Einstellung; MS-DOS-RESTORE stellt 8.3 her
+  (prüfen, dass es die fremde Datei übergeht). `EA DATA. SF` wird nicht
+  gesichert (verweist auf Cluster). Damit Namen außerhalb der aktiven
+  Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
+  Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
+  Ebenfalls vorgeschlagen (noch nicht beauftragt): MODE CON RATE=/DELAY=
+  (Tastaturbefehl F3h über `kwr`), AT-Zeitplaner als Ring-3-Dienst
+  (`\DOS\SYSTEM\AT.LST`, Bedienung wie NT), Netzdrucker per
+  `NET USE LPT1: \\server\drucker` (Ende eines Auftrags bei DOS-
+  Programmen per Frist wie NT).
+
 - **Startcode nach dem Booten freigeben** (Wunsch des Nutzers,
   17.11.2026, für eine der nächsten Versionen; noch kein Code): Init-Code
   und Tabellen, die nur beim Start gebraucht werden, in einen eigenen
