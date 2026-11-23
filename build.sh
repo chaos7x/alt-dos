@@ -174,7 +174,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top diff patch tracert arp route whois curl"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top diff patch tracert arp route whois curl where du df touch tee xargs seq sleep timeout uptime free uname base64 sha256sum sed hexedit"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -210,6 +210,7 @@ for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     [ $t = smbcli ] && U="$U file $B/smb3c.o file $B/sha512.o file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o"
     case " domjoin logon net1 " in *" $t "*) U="$U file $B/ldapc.o" ;; esac
     case " kinit klist kdestroy domjoin logon net1 " in *" $t "*) U="$U file $B/krb5.o file $B/krbcrypt.o file $B/rnd.o file $B/crypto.o file $B/arcutil.o" ;; esac
+    [ $t = sha256sum ] && U="$U file $B/crypto.o"
     [ $t = 7za ] && U="$U file $B/lzmaenc.o file $B/bcj.o file $B/arcutil.o"  # 7z-Packer
     wcc $CFLAGS -fo=$B/task_$t.o apps/task_$t.c
     wlink $ALINK name $B/task_$t.bin option map=$B/task_$t.map \
@@ -273,7 +274,7 @@ nasm -f bin apps/opltest.asm -o $B/opltest.com
 BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za setver hostname dig nslookup more find grep less sort fc comp cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za diff patch cmd attrib tree deltree grep print backup restore xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget curl ftp smbcli sftp"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za diff patch cmd attrib tree deltree grep print backup restore xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget curl ftp smbcli sftp where du touch tee sed hexedit base64 sha256sum"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -375,7 +376,7 @@ BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell
 # FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
-HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE"
+HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.

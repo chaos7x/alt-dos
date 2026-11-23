@@ -1344,6 +1344,15 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Unschärfe. Lehren: `(unsigned)(0x10000UL - 0)` ist 0 (Endlosschleife
   beim Laden); die zurückgelegte Patchzeile darf nicht im selben Puffer
   wie die Dateizeilen stehen. Geprüft in QEMU gegen GNU diff/patch.
+- Kleinwerkzeuge (Wunsch des Nutzers, 23.11.2026; Setup-Diskette 3):
+  WHERE, DU, DF, TOUCH, TEE, XARGS (über COMSPEC /C), SEQ, SLEEP, TIMEOUT,
+  UPTIME (Last über PROC_INFO2), FREE, UNAME (build/version.h), BASE64,
+  SHA256SUM (task_md5sum.c mit `SHA256`, sha256 aus crypto.o), SED (Regex
+  als Backtracking über eigenen Code: R_CHAR/ANY/CLASS/SPLIT/SAVE/BREF,
+  `insert` verschiebt Sprungziele; BTMAX 2200), HEXEDIT. LINUX.MAC ohne
+  free/uname-Makros, neu `which=WHERE $*`. Nicht gebaut: LOGGER (kein
+  FAPI zum Schreiben ins DMESG – erstes Codesegment hat 77 Byte frei),
+  LOCATE (WHERE /R deckt es ab). Geprüft in QEMU (Test /tmp/claude-0/kw).
 - TRACERT/ARP/ROUTE/WHOIS/CURL (Wunsch des Nutzers, 23.11.2026; Setup-
   Diskette 3): TRACERT über NET_PING mit ttl_out (Typ 11 = Router),
   PTR über dnsq.h (`DQ_MIN` lässt die Teile für DIG weg), ARP über neues

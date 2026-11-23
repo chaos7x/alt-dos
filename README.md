@@ -383,6 +383,18 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Zeilenenden wie in der Datei. Je Datei bis 256 KB / 16.000 Zeilen.
   Geprüft: Ausgabe gleich GNU diff, ein dort erzeugter Patch über 3.000
   Zeilen hin und mit `-R` zurück bytegleich.
+- Kleinwerkzeuge (23.11.2026, Setup-Diskette 3): `WHERE [/R Verz] [/Q]
+  [/F] [/T] Muster` wie Windows (PATH, .COM/.EXE/.CMD/.BAT; `which` in
+  LINUX.MAC), `DU [-s] [-a] [-h] [-c]`, `DF [-h] [-T]`, `TOUCH [-c] [-d
+  Datum Zeit] [-r Bezug]`, `TEE [-a]`, `XARGS [-n] [-I {}] [-t] [-r]`,
+  `SEQ [-w] [-s]`, `SLEEP 1.5`/`2m`, `TIMEOUT /T s [/NOBREAK]` wie
+  Windows, `UPTIME [-p] [-s]` (Last aus der Rechenzeit), `FREE [-m|-h]`,
+  `UNAME [-a]`, `BASE64 [-d] [-w]`, `SHA256SUM` (wie MD5SUM/SHA1SUM, mit
+  `-c`), `SED` (Teilmenge von GNU sed: s mit g/p/I/n, y, d, p, q, =, a,
+  i, c, Adressen und Bereiche, `!`, BRE und `-E`, Rückverweise, `-n`,
+  `-i`; eigene Regex-Maschine), `HEXEDIT Datei` (Vollbild, Hex und Text,
+  Suchen, Gehe zu, bis 256 KB). Geprüft in QEMU, SED/BASE64/SHA256SUM
+  gleich den GNU-Werkzeugen.
 - Netzwerkzeuge (23.11.2026): `TRACERT [-d] [-h Hops] [-w ms] Ziel` wie
   Windows (ICMP mit wachsender TTL, Namen per PTR), `ARP -a [-6]`
   (Nachbar-Cache aus TCPIP.SYS, neu `NET_NEIGH`), `ROUTE PRINT` (Schnitt-

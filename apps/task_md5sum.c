@@ -19,7 +19,12 @@
 #define TI_FILE
 #include "textin.h"
 
-#ifdef SHA1
+#if defined(SHA256)
+#define PROG "sha256sum"
+#define TAG "SHA256"
+#define HLEN 32
+#include "crypto.h"
+#elif defined(SHA1)
 #define PROG "sha1sum"
 #define TAG "SHA1"
 #define HLEN 20
@@ -29,16 +34,22 @@
 #define HLEN 16
 #endif
 
+#ifndef SHA256
 typedef unsigned long u32;
+#endif
 
 static char args[FAPI_ARGLEN], name[FAPI_PATHLEN], dirp[FAPI_PATHLEN];
 static char full[FAPI_PATHLEN], pat[FAPI_PATHLEN], line[FAPI_PATHLEN + 80];
-static unsigned char dbuf[4096], blk[64], dig[HLEN];
+static unsigned char dbuf[4096], dig[HLEN];
+#ifndef SHA256
+static unsigned char blk[64];
 static u32 st[5], cnt_lo, cnt_hi;       /* Zustand, Laenge in Bytes      */
 static unsigned bn;                     /* Bytes in blk                  */
+#endif
 static int o_b, o_c, o_q, o_s, o_w, o_im, o_tag, nfiles, rc;
 static unsigned n_bad, n_miss, n_fmt, n_ok;
 
+#ifndef SHA256
 #define ROL(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
 #ifdef SHA1
@@ -203,6 +214,12 @@ static void h_end(void)
         dig[i] = (unsigned char)(st[i >> 2] >> (8 * (i & 3)));
 #endif
 }
+#else
+static struct sha256 hc;                /* crypto.c                      */
+static void h_start(void) { sha256_init(&hc); }
+static void h_feed(const unsigned char *p, unsigned n) { sha256_add(&hc, p, n); }
+static void h_end(void) { sha256_end(&hc, dig); }
+#endif
 
 /* Datei/Handle ganz lesen -> dig; 0 = ok */
 static int hash_handle(unsigned h)
