@@ -476,7 +476,8 @@ löst lange Pfade über das DEM auf:
   des Kerns muss es tragen), und `VDD_EV_PROG` (Programmstart, heute aus
   INT E0h 00h von BOXSHELL) kommt beim eigenen Kern direkt aus EXEC.
 - SHARE, Sperren, NET USE: im DEM, für alle drei Arten gleich. „Fern“ oder
-  „lokal“ (4409h) entscheidet das DEM je Laufwerk.
+  „lokal“ (4409h) entscheidet das DEM je Laufwerk. Netzabfragen (2Fh
+  1100h/B800h, 5E00h, 5F02h) und NetBIOS: Abschnitt „Netz in der Box“.
 - Programme aus der Box heraus: EXEC im eigenen Kern kann ein FX-Programm
   (FAPI, nicht gebunden) erkennen und es als nativen Task starten lassen
   (wie NT Win32-Programme aus COMMAND.COM) – Option, eigene Stufe.
@@ -748,6 +749,111 @@ löst lange Pfade über das DEM auf:
 Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
 (Box = Hardware-Bezug: 386DX/40 4 MB, P3B-F), Proxmox bei Bedarf.
 
+## Netz in der Box (Plan, 23.11.2026)
+
+Anlass (Nutzer): MSD von MS-DOS zeigt in der Box „Network: No Network“,
+obwohl NET USE, Domäne und Home-Laufwerk laufen. Die Box soll sich wie
+ein DOS mit geladenem Microsoft-Network-Redirector zeigen – AT-DOS ist
+eine Fortentwicklung von DOS, Programme der Zeit (MSD, Installations-
+programme, Windows 3.1 in der Box) sollen das Netz sehen. Zwei Teile
+(Reihenfolge des Nutzers): erst die Abfragen, dann NetBIOS. Nur der
+eigene Kern (ATDOSCM.SYS); FreeDOS- und MS-DOS-Abbilder bleiben, wie
+sie sind. Noch kein Code.
+
+Heute: `atdoscm/dosint.c` `net_fn` beantwortet 5E00h/5E01h nur aus einem
+eigenen, leeren Feld, 5Eh 02h–05h und 5Fh 00h–06h mit Fehler 01h („kein
+Redirector“); 4409h meldet jedes AT-DOS-Laufwerk lokal (08C2h), nur CDs
+fern (1000h wie MSCDEX); INT 2Fh 1100h und B8xxh gehen an den Stummel
+des Monitors (keine Antwort).
+
+### Teil 1: Redirector-Antworten (Stufe N1)
+
+Box-Seite (ATDOSCM.SYS, Daten über eine neue DEM-Abfrage):
+
+| Aufruf | Antwort |
+|---|---|
+| INT 2Fh 1100h | AL = FFh (Redirector da) – nur wenn es mindestens ein NET-USE-Laufwerk oder einen Rechnernamen gibt |
+| INT 2Fh B800h | Microsoft Network/LAN Manager da, BX = Redirector/Workstation (Bits nach RBIL, beim Bau gegen MSD prüfen) |
+| INT 2Fh B809h | Version (wie LAN Manager 2.x bzw. MS Network 3.0 – nach dem, was MSD/Windows erwarten) |
+| INT 21h 5E00h | Rechnername (15 Zeichen, mit Leerzeichen aufgefüllt), CH ≠ 0 = gültig, CL = NetBIOS-Nummer |
+| INT 21h 5F02h | n-ter Eintrag: DS:SI „X:“, ES:DI UNC (`\\server\freigabe`), BL 04h Laufwerk (später 03h Drucker bei `NET USE LPT1:`), BH Zustand 0 = gültig, CX 0 |
+| INT 21h 5F03h/5F04h | Stufe N1b: Verbinden/Trennen über NET USE (siehe unten) |
+| INT 21h 4409h, 440Ah | NET-USE-Laufwerke **fern** (Bit 12), alle anderen wie bisher lokal |
+| CDS | NET-USE-Laufwerke mit Flag 8000h (Netz) und UNC-Pfad wie unter MS-DOS (`\\server\freigabe\…`, Backslash-Offset hinter der Freigabe) |
+
+Die Dateiarbeit bleibt, wie sie ist (DEM, kein INT 2Fh 11xxh nötig) –
+die CDS-Flags sind nur Anzeige; get_fn/Pfadauflösung im Kern muss den
+UNC-Pfad der CDS wieder auf den Buchstaben abbilden (wie heute bei den
+MSCDEX-CDS `\\X.\A.`).
+
+Wirt-Seite: neue DEM-Abfrage `DEM_NETINFO` (dem.c, keine neuen FAPI-
+Aufrufe): Rechnername (TCPIP.SYS, wie HOSTNAME/COMPUTERNAME; ohne
+TCPIP leer), Arbeitsgruppe/Domäne (aus `DOMAIN.KEY`, sonst leer) und je
+Laufwerk „NET USE ja/nein + UNC“ aus `ufs.c` (`UFS_INFO` liefert
+`fapi_ufsreg.name`). Abfrage beim Start des Kerns und vor jedem
+Programmstart (wie `cds_sync` bei BOXSHELL – NET USE kann sich während
+einer offenen Box ändern).
+
+Stufe N1b, Verbinden aus der Box: 5F03h (Laufwerk + UNC + Kennwort)
+startet über das DEM einen NET USE (`SMBCLI --serve` als losgelöster
+Task wie NET.EXE, Kerberos-Ticket aus LOGON, sonst Kennwort aus dem
+Aufruf), 5F04h trennt. Damit kann der Datei-Manager von Windows 3.1
+Laufwerke verbinden. Erst nach N1, eigener Schritt (startet Tasks aus
+der Box – Rechte und Fehlerwege klären).
+
+Vorgehen:
+1. **Messen, was gefragt wird**: Spur der INT-2Fh/21h/2Ah/5Ch-Aufrufe
+   über Port E9h (wie bei CheckIt), während MSD 2.11 (Kopie des Nutzers)
+   die Netz-Seite zeigt und Windows 3.1 startet – unter MS-DOS 6.22 mit
+   und ohne Netzclient (MS Network Client 3.0) als Bezug. Erst danach
+   die Bits/Versionen der Tabelle festlegen.
+2. DEM_NETINFO, Box-Antworten, 4409h/CDS für NET-USE-Laufwerke.
+3. BIOSCMP um die Netzaufrufe erweitern (Bezug: MS-DOS 6.22 mit MS
+   Network Client 3.0, falls der Nutzer ihn hat).
+
+Testziele Teil 1: MSD 2.11 „Network“ zeigt Microsoft Network/LAN
+Manager, Rechnername; Windows 3.1 in der Box mit `network.drv=msnet.drv`
+(„Microsoft Network oder 100 % kompatibel“): Datei-Manager zeigt die
+NET-USE-Laufwerke mit Netzsymbol und UNC, Systemsteuerung „Netzwerk“;
+Gegenprobe ohne NET USE: „No network“ wie bisher; BIOSCMP sonst
+unverändert. Prüfstufen: QEMU (Testserver wie bei SMB), dann 86Box
+P3B-F am LAN des Nutzers (Samba-AD).
+
+### Teil 2: NetBIOS (Stufe N2)
+
+INT 5Ch (NCB, Netzwerkkontrollblock) wie der NetBIOS-Teil des MS
+Network Client, darunter NetBIOS über TCP/IP nach RFC 1001/1002 –
+Gegenstellen sind die Samba-AD-DCs des Nutzers (dort prüfen, ob
+`nmbd`/NBT an ist; Samba-AD bedient Port 137/138 selbst, WINS nur
+eingeschränkt).
+
+- Wirt: NBT-Teil im Kernel neben TCPIP.SYS (eigenes Modul `NETBIOS.SYS`
+  über die Sockets des Stapels, oder Ring-3-Dienst wie SMBCLI – beim Bau
+  abwägen, `docs/NETZWERK.md`): Namensdienst UDP 137 (Namen eintragen/
+  prüfen/löschen per Rundruf, Abfrage per Rundruf oder WINS = DC),
+  Datagramme UDP 138, Sitzungen TCP 139 (Session Request/Positive
+  Response, Keepalive). Namen je Box (bis 16), Sitzungen je Box (bis 8).
+- Box: INT 5Ch in ATDOSCM -> Falle -> DEM-Auftrag mit dem NCB. Befehle
+  RESET, ADAPTER STATUS, ADD (GROUP) NAME, DELETE NAME, FIND NAME, CALL,
+  LISTEN, SEND/RECEIVE (auch CHAIN SEND, RECEIVE ANY), HANG UP, SESSION
+  STATUS, SEND/RECEIVE (BROADCAST) DATAGRAM, CANCEL; Warten (Bit 7 aus)
+  und ohne Warten (Bit 7, POST-Routine). POST wie der Maus-Rückruf
+  (VMOUSE `VS_CBARM`/`VDD_CBQ`): der Kernel stellt die Routine zu, wenn
+  der Auftrag fertig ist, auch aus dem Takt.
+- Installationsprüfung wie üblich: ungültiger Befehl 7Fh -> Rückgabe
+  03h; INT 2Ah 0000h (Netz da) – erst mit N2.
+
+Testziele Teil 2: MSD „NetBIOS present“; NBTSTAT-artiger Test (ADAPTER
+STATUS an den DC, FIND NAME); WfW 3.11 in der Box mit NetBIOS (Arbeits-
+gruppe/Netzwerk durchsuchen, Freigaben der DCs sehen); ein NetBIOS-
+Programm der Zeit (z. B. NET VIEW des MS Network Client) gegen die DCs.
+
+Entschieden (Nutzer, 23.11.2026): Plan freigegeben; NET-USE-Laufwerke
+gelten in der Box als „fern“ (MS-DOS-getreu, DEFRAG/CHKDSK lehnen sie
+dann wie unter MS-DOS ab), alle anderen Laufwerke bleiben lokal. MSD,
+Win 3.1 und MS Network Client/WfW 3.11 hat der Nutzer zum Testen (nur
+zum Testen, nicht ins Repository).
+
 ## Stufe 0: Messung (21.11.2026)
 
 Werkzeuge: `tools/dosbench.asm` (`\DEMO\DOSBENCH`, reine INT-21h-Aufrufe,
@@ -1001,3 +1107,6 @@ braucht (dann mit dem Wert, den 6.22 dort hat). Wo 4.0-Quelle und
    nur mit Laufwerkssperre 440Dh 4Ah, FAT32 über 7305h).
 5. ~~Stufe 0~~ – gemessen (Abschnitt „Stufe 0: Messung“); Entscheidung
    über Stufe 1 beim Nutzer.
+6. ~~Netz in der Box: NET-USE-Laufwerke „fern“ melden?~~ – entschieden
+   (Nutzer, 23.11.2026): ja, nur die NET-USE-Laufwerke (4409h Bit 12,
+   CDS 8000h); alle anderen AT-DOS-Laufwerke bleiben lokal.
