@@ -66,6 +66,13 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
                                attr, time, date, size; 12h = keine mehr  */
 #define DEM_FCLUS       23  /* path (kurz) -> pos = erster Cluster (440Dh
                                0871h)                                    */
+#define DEM_NETINFO     24  /* Netz in der Box: drive FFFFh -> pos =
+                               NET-USE-Laufwerke (Bit 0 = A:), flags =
+                               Drucker (Bit 0 = LPT1), act 1 = Netz da
+                               (Karte oder NET USE), path = Rechnername
+                               (COMPUTERNAME, sonst DHCP/HOSTNAME), path2
+                               = Domaene; drive d bzw. 80h + n (LPTn+1)
+                               -> path = \\server\freigabe, sonst 0Fh  */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 

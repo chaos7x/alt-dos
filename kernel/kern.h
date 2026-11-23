@@ -255,6 +255,7 @@ int  __far ufs_lock(struct ifs_file __far *f, struct fapi_lock __far *l);
 int  __far ufs_lpt(int n);              /* LPTn umgeleitet (NET USE LPT1:) */
 int  __far ufs_lpt_write(int n, unsigned key, unsigned sel, unsigned off, unsigned len);
 void __far ufs_lpt_close(int n, unsigned key);
+int  __far ufs_unc(int d, char *out, unsigned max);  /* NET-USE-Ziel */
 void __far vdd_event(int t, unsigned ev, unsigned val);
 void __far vdd_tick(int t, int fgb);
 unsigned __far vid_hwclass(void);

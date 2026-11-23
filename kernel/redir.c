@@ -420,7 +420,8 @@ void __far redir_cm(struct v86_frame *f, int t)
         d[k] = p[k];
     dem_call(t, &rq);
     p = bp(t, (unsigned)f->r.es, DI);   /* (DEM kann das Fenster umlegen) */
-    for (k = 0; k < (rq.fn == DEM_LPATH || rq.fn == DEM_LFIND ? sizeof(rq) :
+    for (k = 0; k < (rq.fn == DEM_LPATH || rq.fn == DEM_LFIND ||
+                     rq.fn == DEM_NETINFO ? sizeof(rq) :
                      sizeof(rq) - sizeof(rq.path) - sizeof(rq.path2)); k++)
         p[k] = d[k];                    /* LFN: Pfade gehen mit zurueck */
     kf_box_ctl(BOX_LOCK, 0);

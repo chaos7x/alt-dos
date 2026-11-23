@@ -792,6 +792,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   ANSI.SYS), LOADHIGH in den oberen Speicher, DOSKEY von MS-DOS, als
   zweite Shell COMMAND.COM 4.0 aus den MIT-Quellen von Microsoft
   (`COMMAND4`, deutsch, auf Setup-Diskette 3 und der Platte; `msdos4/`).
+  Netz in der Box (23.11.2026, Teil 1): mit NET USE oder Rechnernamen
+  meldet sich der Box-Kern wie ein DOS mit Microsoft-Network-Redirector
+  (INT 2Fh 1100h/B800h, 21h 5E00h Rechnername, 5F02h listet die NET-USE-
+  Laufwerke und -Drucker mit UNC, 4409h meldet sie fern); ohne Netz
+  bleibt alles wie vorher. Geprüft: QEMU und 86Box 386DX/40 (NE2000).
 - Vergleichstest der Box (18.11.2026): `\DEMO\BIOSCMP Datei [X:]` (auch auf Diskette 2) ruft
   rund 180 BIOS- und DOS-Dienste auf und schreibt die Ergebnisse in eine
   Datei; `tools/bioscmp.sh` lässt es unter FreeDOS direkt und in der Box

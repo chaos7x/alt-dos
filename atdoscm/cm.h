@@ -179,6 +179,8 @@ unsigned load_ovl(const char *path, u16 seg);
 /* dosint.c */
 extern struct frame __far *user_frame;
 void net_fn(struct frame __far *f);
+void net_sync(void);
+int  net_drive(unsigned d);
 struct frame __far *int2f12_c(struct frame __far *f);
 struct frame __far *int25_c(struct frame __far *f);
 struct frame __far *int26_c(struct frame __far *f);

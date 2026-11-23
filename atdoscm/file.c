@@ -894,7 +894,7 @@ static void ioctl_fn(struct frame __far *f)
             r.ax = 0x200B;
             r.cx = d;
             bint(0xE0, &r);
-            f->dx = r.ax == 0x5AD8 ? 0x1000 : 0x08C2;
+            f->dx = r.ax == 0x5AD8 || net_drive(d) ? 0x1000 : 0x08C2;
             break;
         }
         if (dinfo(d)) {                 /* CD, kein Medium               */

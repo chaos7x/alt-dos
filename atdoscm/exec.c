@@ -347,6 +347,7 @@ struct frame __far *exec_fn(struct frame __far *f)
     setver_dx = 0;
     if (al == 3)
         return f;
+    net_sync();                         /* Netz, CDS Bit 15 (dosint.c)   */
     W(par, 0x2E) = FP_OFF(f);           /* Rahmen des Elternteils        */
     W(par, 0x30) = FP_SEG(f);
     set_cur(o.psp);

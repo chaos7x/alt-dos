@@ -4,10 +4,15 @@
  * (INT 2Fh 12xxh) und die Netzaufrufe 21h 5Eh/5Fh.
  *
  * Vorlage fuer Verhalten und Register: MS-DOS 4.0 (MIT), MACRO.ASM
- * ($UserOper, $AssignOper) und die Liste der 12xxh-Dienste. Ein Netz im
- * Sinne von MS-DOS gibt es in der Box nicht - die AT-DOS-Laufwerke
- * (auch NET USE) erscheinen lokal, also verhalten sich 5Eh 02h-05h und
- * 5Fh 00h-06h wie MS-DOS ohne geladenen Redirector (Fehler 01h).
+ * ($UserOper, $AssignOper) und die Liste der 12xxh-Dienste.
+ *
+ * Netz (docs/DOSKERN.md "Netz in der Box"): hat AT-DOS eine Netzkarte
+ * oder ein NET-USE-Ziel, antwortet der Box-Kern wie MS-DOS mit geladenem
+ * Redirector - 2Fh 1100h/B800h, 5E00h mit dem Rechnernamen, 5F02h/05h
+ * mit den NET-USE-Laufwerken und -Druckern (\\server\freigabe), 4409h
+ * und CDS (Bit 15) melden genau diese Laufwerke als fern. Den Stand holt
+ * net_sync beim Programmstart ueber DEM_NETINFO. Ohne Netz bleibt alles
+ * wie MS-DOS ohne Redirector (5Eh 02h-05h, 5Fh 00h-06h: Fehler 01h).
  *
  * INT 2Fh 12xxh kommt ueber denselben Eingang wie INT 21h (entry.asm
  * i2f12): Rahmen wie SAVE_WORLD auf dem Stapel des Aufrufers.
@@ -18,10 +23,88 @@ struct frame __far *user_frame;         /* Rahmen des aeussersten 21h   */
 
 static char  myname[16];                /* 5E00h/5E01h                   */
 static u16   mynum;
+static u8    myset;                     /* 5E01h hat den Namen gesetzt   */
+
+/* Netz: Stand vom Kernel (DEM_NETINFO), erneuert in net_sync */
+static u8    net_st;                    /* 1 = Netz da                   */
+static u16   net_dlo, net_dhi;          /* NET-USE-Laufwerke, Bit 0 = A: */
+static u16   net_lpt;                   /* Drucker, Bit 0 = LPT1         */
 
 static u8 up(u8 c)
 {
     return c >= 'a' && c <= 'z' ? (u8)(c - 32) : c;
+}
+
+/* ---- Netz --------------------------------------------------------------- */
+static int net_q(void)                  /* Stand holen, path = Name      */
+{
+    q.drive = 0xFFFF;
+    q.path[0] = 0;
+    if (dem(DEM_NETINFO)) {
+        net_st = 0;
+        net_dlo = net_dhi = net_lpt = 0;
+        return 0;
+    }
+    net_st = q.act ? 1 : 0;
+    net_dlo = (u16)q.pos;
+    net_dhi = (u16)(q.pos >> 16);
+    net_lpt = (u16)q.flags;
+    return 1;
+}
+
+int net_drive(unsigned d)               /* NET-USE-Laufwerk?             */
+{
+    if (d >= NDRV)
+        return 0;
+    return ((d < 16 ? net_dlo : net_dhi) & (1u << (d & 15))) != 0;
+}
+
+void net_sync(void)                     /* Programmstart                 */
+{
+    unsigned d;
+    net_q();
+    for (d = 0; d < NDRV; d++)
+        if (net_drive(d)) {
+            if (drive_ok(d))
+                cdstab[d].flags |= 0x8000;
+        } else
+            cdstab[d].flags &= ~0x8000;
+}
+
+/* 5F02h/05h: Eintrag BX - erst die Laufwerke, dann die Drucker */
+static void net_list(struct frame __far *f)
+{
+    unsigned i, k = f->bx, d, n = 0;
+    net_q();
+    for (d = 0; d < NDRV + 3; d++) {
+        if (d < NDRV ? !net_drive(d) : !(net_lpt & (1u << (d - NDRV))))
+            continue;
+        if (n++ != k)
+            continue;
+        q.drive = d < NDRV ? d : 0x80 + (d - NDRV);
+        if (dem(DEM_NETINFO))
+            break;                      /* inzwischen weg                */
+        if (d < NDRV) {
+            B(f->ds, f->si) = (u8)('A' + d);
+            B(f->ds, f->si + 1) = ':';
+            B(f->ds, f->si + 2) = 0;
+        } else {
+            B(f->ds, f->si) = 'L';
+            B(f->ds, f->si + 1) = 'P';
+            B(f->ds, f->si + 2) = 'T';
+            B(f->ds, f->si + 3) = (u8)('1' + d - NDRV);
+            B(f->ds, f->si + 4) = 0;
+        }
+        for (i = 0; i < 127 && q.path[i]; i++)
+            B(f->es, f->di + i) = (u8)q.path[i];
+        B(f->es, f->di + i) = 0;
+        f->bx = d < NDRV ? 4 : 3;       /* BH 0 = gueltig, BL Art        */
+        f->cx = 0;                      /* Wert des Benutzers            */
+        if (AL(f) == 0x05)
+            f->bp = 0;                  /* NetBIOS-Sitzung               */
+        return;
+    }
+    set_err(f, E_NOMORE);
 }
 
 /* ---- 21h 5Eh/5Fh -------------------------------------------------------- */
@@ -31,6 +114,15 @@ void net_fn(struct frame __far *f)
     if (AH(f) == 0x5E) {
         switch (AL(f)) {
         case 0x00:                      /* Rechnername: CH = 0 ungesetzt */
+            if (!myset && net_q() && q.path[0]) {
+                for (i = 0; i < 15 && q.path[i]; i++)
+                    B(f->ds, f->dx + i) = up((u8)q.path[i]);
+                for (; i < 15; i++)
+                    B(f->ds, f->dx + i) = ' ';
+                B(f->ds, f->dx + 15) = 0;
+                f->cx = 0x0101;         /* gueltig, NetBIOS-Nummer 1     */
+                return;
+            }
             for (i = 0; i < 15; i++)
                 B(f->ds, f->dx + i) = (u8)myname[i];
             B(f->ds, f->dx + 15) = 0;
@@ -38,9 +130,20 @@ void net_fn(struct frame __far *f)
             return;
         case 0x01:
             mynum = f->cx;
+            myset = 1;
             for (i = 0; i < 15; i++)
                 myname[i] = (char)B(f->ds, f->dx + i);
             return;
+        case 0x02: case 0x04: case 0x05:    /* Druckereinstellung        */
+            if (net_st)
+                return;
+            break;
+        case 0x03:
+            if (net_st) {
+                f->cx = 0;              /* keine Einstellung             */
+                return;
+            }
+            break;
         }
         set_err(f, E_FUNC);             /* Drucker: kein Redirector      */
         return;
@@ -57,7 +160,33 @@ void net_fn(struct frame __far *f)
             cdstab[d].flags &= ~0x4000;
         return;
     }
-    set_err(f, E_FUNC);                 /* 00h-06h: kein Redirector      */
+    if (net_st) {
+        switch (AL(f)) {
+        case 0x00:                      /* Umleitung an                  */
+            BH(f) = 1;
+            return;
+        case 0x01:
+            return;
+        case 0x02: case 0x05:
+            net_list(f);
+            return;
+        }
+    }
+    set_err(f, E_FUNC);                 /* kein Redirector bzw. 03h/04h  */
+}
+
+/* INT 2Fh 1100h/B800h/B809h (entry.asm leitet nur diese hierher) */
+static void net2f(struct frame __far *f)
+{
+    if (!net_st)
+        return;                         /* AL bleibt 0: nicht da         */
+    if (f->ax == 0x1100)
+        AL(f) = 0xFF;
+    else if (f->ax == 0xB800) {
+        AL(f) = 1;
+        f->bx = 0x0008;                 /* Redirector                    */
+    } else if (f->ax == 0xB809)
+        f->ax = 0x0300;                 /* Version 3.00                  */
 }
 
 /* ---- INT 2Fh 12xxh ------------------------------------------------------ */
@@ -119,6 +248,10 @@ struct frame __far *int2f12_c(struct frame __far *f)
     unsigned i;
     u16 s, o;
     f->fl &= ~FL_CF;
+    if (AH(f) != 0x12) {
+        net2f(f);
+        return f;
+    }
     switch (AL(f)) {
     case 0x00:                          /* da                            */
         AL(f) = 0xFF;

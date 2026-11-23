@@ -1062,6 +1062,55 @@ static unsigned d_fclus(struct dem_req *q)
     return 0;
 }
 
+/* ---- Netz in der Box (Redirector-Antworten, docs/DOSKERN.md) ------------- */
+
+int __far ufs_unc(int d, char *out, unsigned max);
+
+/* Rechnername, Domaene, NET-USE-Laufwerke und -Drucker (DEM_NETINFO).
+   Name aus COMPUTERNAME der Box (geerbt von CMD/LOGON), sonst aus der
+   ersten Karte (DHCP/HOSTNAME); NET_IFINFO legt seine Antwort in
+   path/path2 ab (zusammen 522 Byte, die Struktur ist kleiner). */
+static unsigned d_netinfo(struct dem_req *q)
+{
+    struct fapi_netif *ni = (struct fapi_netif *)q->path;
+    unsigned k, r;
+    char hn[32], dn[32];
+    if (q->drive != 0xFFFF) {
+        if (q->drive >= 26 && (q->drive < UFS_LPT || q->drive > UFS_LPT + 2))
+            return 0x0F;
+        return ufs_unc(q->drive, q->path, sizeof(q->path)) ? 0x0F : 0;
+    }
+    q->pos = 0;
+    q->flags = 0;
+    for (k = 0; k < 26; k++)
+        if (!ufs_unc(k, hn, sizeof(hn)))
+            q->pos |= 1UL << k;
+    for (k = 0; k < 3; k++)
+        if (!ufs_unc(UFS_LPT + k, hn, sizeof(hn)))
+            q->flags |= 1 << k;
+    hn[0] = dn[0] = 0;
+    q->act = q->pos || q->flags;
+    ni->ifc = 0;
+    if (!FAILED(FAPI(FAPI_NET, KDATA, NET_IFINFO, (unsigned)ni, sizeof(*ni)))) {
+        q->act = 1;
+        for (k = 0; k < 31 && ni->host[k]; k++)
+            hn[k] = ni->host[k];
+        hn[k] = 0;
+        for (k = 0; k < 31 && ni->domain[k]; k++)
+            dn[k] = ni->domain[k];
+        dn[k] = 0;
+    }
+    r = FAPI(FAPI_GETENV, KDATA, (unsigned)"COMPUTERNAME", (unsigned)q->path, 32);
+    if (FAILED(r) || !q->path[0])
+        for (k = 0; (q->path[k] = hn[k]) != 0; k++)
+            ;
+    r = FAPI(FAPI_GETENV, KDATA, (unsigned)"USERDOMAIN", (unsigned)q->path2, 32);
+    if (FAILED(r) || !q->path2[0])
+        for (k = 0; (q->path2[k] = dn[k]) != 0; k++)
+            ;
+    return 0;
+}
+
 /* ---- Verteiler ----------------------------------------------------------- */
 
 /* Auftrag q (im Kernel) fuer die Box t erledigen -> q->err (DOS-Fehler,
@@ -1147,6 +1196,7 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_LPATH:     r = d_lpath(q); break;
     case DEM_LFIND:     r = d_lfind(q); break;
     case DEM_FCLUS:     r = d_fclus(q); break;
+    case DEM_NETINFO:   r = d_netinfo(q); break;
     default:            r = 1;              /* unbekannt (01h)       */
     }
     return q->err = r;

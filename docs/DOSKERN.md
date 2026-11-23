@@ -749,7 +749,7 @@ löst lange Pfade über das DEM auf:
 Prüfstufen wie üblich: QEMU während der Arbeit, 86Box vor dem Commit
 (Box = Hardware-Bezug: 386DX/40 4 MB, P3B-F), Proxmox bei Bedarf.
 
-## Netz in der Box (Plan, 23.11.2026)
+## Netz in der Box (Plan 23.11.2026, Teil 1 umgesetzt)
 
 Anlass (Nutzer): MSD von MS-DOS zeigt in der Box „Network: No Network“,
 obwohl NET USE, Domäne und Home-Laufwerk laufen. Die Box soll sich wie
@@ -758,7 +758,7 @@ eine Fortentwicklung von DOS, Programme der Zeit (MSD, Installations-
 programme, Windows 3.1 in der Box) sollen das Netz sehen. Zwei Teile
 (Reihenfolge des Nutzers): erst die Abfragen, dann NetBIOS. Nur der
 eigene Kern (ATDOSCM.SYS); FreeDOS- und MS-DOS-Abbilder bleiben, wie
-sie sind. Noch kein Code.
+sie sind. Stand Teil 1 unten unter „Stand N1“.
 
 Heute: `atdoscm/dosint.c` `net_fn` beantwortet 5E00h/5E01h nur aus einem
 eigenen, leeren Feld, 5Eh 02h–05h und 5Fh 00h–06h mit Fehler 01h („kein
@@ -818,6 +818,42 @@ NET-USE-Laufwerke mit Netzsymbol und UNC, Systemsteuerung „Netzwerk“;
 Gegenprobe ohne NET USE: „No network“ wie bisher; BIOSCMP sonst
 unverändert. Prüfstufen: QEMU (Testserver wie bei SMB), dann 86Box
 P3B-F am LAN des Nutzers (Samba-AD).
+
+#### Stand N1 (23.11.2026)
+
+Umgesetzt, Abweichungen vom Plan in Klammern:
+
+- Wirt: `DEM_NETINFO` (24, `include/dem.h`, `kernel/dem.c` `d_netinfo`).
+  Laufwerk FFFFh: `pos` = Maske der NET-USE-Laufwerke, `flags` = Maske
+  LPT1–3, `act` 1 = Netz da (NET USE oder Rechnername), `path` =
+  Rechnername (`COMPUTERNAME`, sonst Name aus NET_IFINFO), `path2` =
+  Domäne (`USERDOMAIN`, sonst NET_IFINFO). Laufwerk d bzw. 80h + n:
+  UNC in `path` (`ufs_unc`, kernel/ufs.c), sonst Fehler 0Fh. redir.c
+  gibt dafür den ganzen Auftrag zurück.
+- Box (`atdoscm/dosint.c`): `net_sync` fragt bei jedem Programmstart
+  (EXEC) einmal ab und merkt Zustand/Masken – die Antworten auf INT 2Fh
+  rufen das DEM nicht (wiedereintrittsfest). 2Fh 1100h -> AL = FFh,
+  B800h -> AL = 01h, BX = 0008h (Redirector), B809h -> AX = 0300h; ohne
+  Netz alles wie vorher (keine Antwort). entry.asm leitet diese drei an
+  den C-Teil von INT 2Fh 12xxh.
+- 21h 5E00h: Rechnername groß, mit Leerzeichen auf 15 Zeichen, CX =
+  0101h; ein per 5E01h gesetzter Name geht vor. 5E02h–05h mit Netz
+  „erledigt“ (5E03h CX = 0). 5F00h BH = 1, 5F01h ok, 5F02h/5F05h zählen
+  erst die NET-USE-Laufwerke, dann LPT1–3 (BL 04h bzw. 03h, BH 0, CX 0,
+  5F05h BP 0), danach Fehler 12h. Ohne Netz 5Eh/5Fh wie vorher.
+- 4409h: NET-USE-Laufwerke 1000h (fern), CDS-Flag 8000h zusätzlich
+  (C000h), andere lokal (`net_drive`). (Der CDS-Pfad bleibt `X:\` statt
+  UNC – der Kern löst über den Buchstaben auf; MSD und Windows nehmen
+  die UNC aus 5F02h. 440Ah meldet weiter lokal – offen.)
+
+Geprüft mit einem eigenen Testprogramm (alle obigen Aufrufe, 4409h
+für C:–Z:, CDS-Flags) gegen einen Samba-Testserver (Freigabe und
+Drucker per NET USE): QEMU (RTL8139) und 86Box 386DX/40 mit NE2000
+(SLiRP) – Antworten wie erwartet; COPY/DIR/TYPE auf das NET-USE-
+Laufwerk aus der Box. Ohne Netz gibt das Testprogramm dasselbe aus wie
+der Stand davor, BIOSCMP unverändert. Offen: MSD 2.11 und Windows 3.1
+(msnet.drv, Datei-Manager) mit den Disketten des Nutzers, N1b
+(5F03h/5F04h), 440Ah, Teil 2.
 
 ### Teil 2: NetBIOS (Stufe N2)
 

@@ -371,6 +371,21 @@ struct ifs_driver ufs_driver = {
     u_namepath, u_trunc
 };
 
+/* Ziel eines NET-USE-Platzes (Laufwerk d oder UFS_LPT + n) nach out
+   (\\server\freigabe, bis max - 1 Zeichen) -> 0, kein solcher Platz -1.
+   Fuer die Redirector-Antworten der DOS-Box (5F02h, dem.c) */
+int __far ufs_unc(int d, char *out, unsigned max)
+{
+    int i = slot_of(d);
+    unsigned n;
+    if (i < 0 || !max)
+        return -1;
+    for (n = 0; n < max - 1 && us[i].name[n]; n++)
+        out[n] = us[i].name[n];
+    out[n] = 0;
+    return 0;
+}
+
 /* ---- Netzdrucker (LPTn umgeleitet) -------------------------------------- */
 /* LPTn (0-2) an einen Dienst umgeleitet? -> 1 */
 int __far ufs_lpt(int n)

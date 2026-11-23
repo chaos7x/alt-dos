@@ -516,6 +516,12 @@ int2f_entry_:
         je      .ver
         cmp     ax, 4A01h               ; freie HMA (DOS=HIGH wie MS-DOS 5)
         je      .hma
+        cmp     ax, 1100h               ; Netz: Redirector, LAN-Software
+        je      i2f12                   ; (dosint.c net2f)
+        cmp     ax, 0B800h
+        je      i2f12
+        cmp     ax, 0B809h
+        je      i2f12
         cmp     ah, 15h                 ; MSCDEX: Kernel (INT E0h 20h,
         je      .cd                     ; AL = Unterfunktion), wie BOXSHELL
         jmp     far [cs:_old2f]
