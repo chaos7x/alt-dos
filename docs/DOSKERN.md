@@ -1140,6 +1140,16 @@ fragt dann aber VCPI (INT 67h DE00h) ab, bekommt 84h und bricht ab.
 WIN386 (erweiterter Modus) schickt 2Fh 1605h, fragt ebenfalls DE00h und
 meldet sich mit 1606h wieder ab. EMS 5900h fehlt (A4h).
 
+Nachmessung (23.11.2026, Windows 3.11 deutsch von der ISO des Nutzers,
+nur zum Testen; QEMU 16 MB, eigener Box-Kern): SETUP-DOS-Teil läuft
+(Express, kopiert nach C:\WINDOWS), der Wechsel in den Grafikteil
+startet DOSX und bricht ab wie in 86Box. `C:\WINDOWS\SYSTEM\DOSX`
+direkt: 2Fh 1605h (kein Widerspruch), 67h 4600h -> 0040h (EMS 4.0, also
+V86 unter einem Speichermanager), 67h DE00h -> 84h (kein VCPI), 2Fh
+1606h, Meldung. **DPMI (1687h) fragt DOSX gar nicht ab** – der
+Standardmodus kennt nur VCPI oder den Real Mode. WIN.COM baut SETUP erst
+im Grafikteil, nach dem DOS-Teil fehlt es.
+
 Weg A, ein VCPI-Dienst, scheidet aus: der Client übernimmt mit eigener
 GDT/IDT/CR3 die Maschine im Ring 0, die Box wäre nicht mehr geschützt.
 
