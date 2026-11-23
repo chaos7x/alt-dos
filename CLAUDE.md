@@ -1876,6 +1876,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **MEM von FreeDOS auf 5.x** (vorgemerkt vom Nutzer, 23.11.2026;
+  noch kein Code): die Fallen/Trägheit von MEM in der Box, auf `main`
+  mit fb21291 behoben (`freedos/patches/mem-kitten.patch` – kitten.c
+  liest MEM.DE in 512-Byte-Blöcken statt byteweise), gibt es auf `5.x`
+  vermutlich weiter: dort nur `fcb-search.patch`, `freedos/MEM.EXE` von
+  ecf0d17 (11.11.2026). Prüfen (Fallen zählen in der Kompatibilitätsbox,
+  SCAT/386 in 86Box), dann Patch übernehmen und MEM.EXE neu bauen; ob
+  RBSHELL/rd_cache dort mehr braucht, erst nach der Messung.
+
 - **CHKDSK vor der Auslagerungsdatei** (vorgemerkt vom Nutzer,
   23.11.2026; noch kein Code): ist das Sauber-Bit des Startlaufwerks
   gelöscht (`vol[].was_dirty`) oder nennt AUTOCHK.LST eine Prüfung, soll
