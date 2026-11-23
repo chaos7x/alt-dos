@@ -93,6 +93,7 @@ static unsigned long k3_ticks(void)
 #define get_ticks()     k3_ticks()
 
 pg_t pd_box[NTASK], pt_box[NTASK];   /* auch swap.c */
+static unsigned char wtr_n[NTASK];     /* Messung Windows: Zeilen je Box */
 static unsigned short vfl[NTASK];       /* IF/IOPL/NT der Box            */
 static signed char box_ses[NTASK] = { -1, -1, -1, -1, -1, -1, -1, -1 };
 static unsigned long vt_last[NTASK];    /* Kerneltakt der letzten Abrechnung */
@@ -623,6 +624,7 @@ unsigned long __far v86_create(int t, unsigned kb)
         return 0;
     box_ses[t] = -1;
     box_cm[t] = 0;
+    wtr_n[t] = 0;
     pd_box[t] = vp_alloc();
     pt_box[t] = vp_alloc();
     if (!pd_box[t] || !pt_box[t]) {
@@ -2474,6 +2476,48 @@ static int vdd_svc_int(int n, struct v86_frame *f, int t)
     return 0;
 }
 
+/* Messung Windows 3.1 in der Box (vorlaeufig): INT 2Fh AH=16h/43h und
+   INT 67h (EMS-Abfrage, VCPI DEh) ins DMESG, hoechstens WTR_MAX Zeilen je
+   Box. '>' = Aufruf, '<' = Ergebnis. */
+#define WTR_MAX 48
+static char *hx2(char *o, unsigned v);
+
+static int wtr_want(unsigned n, struct v86_frame *f)
+{
+    if (n == 0x2F)
+        return (AH == 0x16 && AX != 0x1680) || AH == 0x43;
+    if (n == 0x67)
+        return AH == 0xDE || AH == 0x40 || AH == 0x41 || AH == 0x46;
+    return 0;
+}
+
+static void wtrace(struct v86_frame *f, int t, unsigned n, char tag,
+                   unsigned cs, unsigned ip)
+{
+    char m[64], *o = m;
+    if (wtr_n[t] >= WTR_MAX)
+        return;
+    wtr_n[t]++;
+    *o++ = 'W'; *o++ = 'I'; *o++ = 'N'; *o++ = ' '; *o++ = tag;
+    o = hx2(o, n); *o++ = ' ';
+    o = hx2(hx2(o, AH), AL); *o++ = ' ';
+    o = hx2(hx2(o, BH), BL); *o++ = ' ';
+    o = hx2(hx2(o, CH), CL); *o++ = ' ';
+    o = hx2(hx2(o, DH), DL);
+    if (tag == '>') {
+        *o++ = ' ';
+        o = hx2(hx2(o, cs >> 8), cs); *o++ = ':';
+        o = hx2(hx2(o, ip >> 8), ip);
+    } else {
+        *o++ = ' '; *o++ = 'E'; *o++ = 'S'; *o++ = ':'; *o++ = 'D'; *o++ = 'I';
+        *o++ = ' ';
+        o = hx2(hx2(o, (unsigned)f->r.es >> 8), (unsigned)f->r.es); *o++ = ':';
+        o = hx2(hx2(o, DI >> 8), DI);
+    }
+    *o++ = '\n';
+    klog(KDATA, (unsigned)m, (unsigned)(o - m));
+}
+
 static void svc(int n, struct v86_frame *f, int t)
 {
     unsigned i, off;
@@ -2741,13 +2785,22 @@ static void svc(int n, struct v86_frame *f, int t)
         kf_box_ctl(BOX_SLEEP, 1);
         break;
     case 0x67:                                  /* EMS: VEMS.SYS         */
+        k = wtr_want(0x67, f);
+        if (k)
+            wtrace(f, t, 0x67, '>', rd16(f->r.ss, (unsigned)f->r.esp + 2),
+                   rd16(f->r.ss, (unsigned)f->r.esp));
         if (vdd_svc_int(0x67, f, t))
             AH = 0x80;                          /* kein EMS              */
+        if (k)
+            wtrace(f, t, 0x67, '<', 0, 0);
         break;
     case 0x29:                                  /* schnelle Ausgabe      */
         out_ch(t, AL);
         break;
     case 0x2F:
+        if (wtr_want(0x2F, f))
+            wtrace(f, t, 0x2F, '>', rd16(f->r.ss, (unsigned)f->r.esp + 2),
+                   rd16(f->r.ss, (unsigned)f->r.esp));
         if (AX == 0x1680) {                     /* Zeitscheibe abgeben   */
             kf_box_ctl(BOX_SLEEP, 1);
             AL = 0;
@@ -2768,6 +2821,8 @@ static void svc(int n, struct v86_frame *f, int t)
             kf_box_ctl(BOX_EXIT, AL);
         else if (AH == 0x1B) {                  /* INT 2Fh DX nachbilden */
             AX = DX;                            /* (BOXSHELL, VME)       */
+            if (wtr_want(0x2F, f))
+                wtrace(f, t, 0x2F, 'B', 0, 0);
             svc_zf = mon2f(f);
         } else if (AH == 0x1C)                  /* BOXSHELL haengt in 2Fh */
             b2f[t] = 1;
@@ -3388,7 +3443,10 @@ static int mon2f(struct v86_frame *f)
 
 static void do_int(struct v86_frame *f, int t, unsigned n, unsigned ip)
 {
+    if ((n == 0x2F || n == 0x67) && wtr_want(n, f))
+        wtrace(f, t, n, '>', (unsigned)f->r.cs, ip);
     if (n == 0x2F && mon2f(f)) {
+        wtrace(f, t, n, '<', 0, 0);
         f->r.eip = ip;
         return;
     }
