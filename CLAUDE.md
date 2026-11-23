@@ -1228,7 +1228,8 @@ Win32s), nicht vorziehen, sondern nachfragen.
   Prüfung für den nächsten Start vor – und dort war die Datei wieder
   offen. Jetzt bleiben Auslagerungsdatei und LOOP= zu, wenn das Start-
   laufwerk nicht sauber war oder AUTOCHK.LST eine Prüfung nennt
-  (`conv_pending` 2).
+  (`conv_pending` 2). Auch auf `6.3` und `5.x` (dort `chk_pending`,
+  23.11.2026, in QEMU geprüft).
 - `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
   `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
   LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in
