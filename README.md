@@ -374,6 +374,15 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   [-b] [-n Runden]` (Vollbild nach %CPU, Last, Speicher, Auslagerung;
   `k` beendet). Der Kernel zählt dafür die Rechenzeit je Task im
   Scheduler (FAPI_PROC `PROC_INFO2`). Auf Setup-Diskette 3 und der Platte.
+- `DIFF` und `PATCH` (23.11.2026, Bedienung wie GNU): `DIFF [-u|-U n]
+  [-q] [-s] [-i] [-b] [-w] [-r] [-N] [-a] A B` vergleicht zeilenweise
+  (Myers-Verfahren, eigene Umsetzung; normale und vereinheitlichte Form,
+  Verzeichnisse mit „Nur in …“, Binärdateien), `PATCH [-p n] [-R] [-b]
+  [--dry-run] [-i Patch] [Datei]` wendet vereinheitlichte Diffs an (auch
+  aus git), sucht verschobene Abschnitte, Abgelehntes in `Datei.rej`,
+  Zeilenenden wie in der Datei. Je Datei bis 256 KB / 16.000 Zeilen.
+  Geprüft: Ausgabe gleich GNU diff, ein dort erzeugter Patch über 3.000
+  Zeilen hin und mit `-R` zurück bytegleich.
 - `DIG` und `NSLOOKUP` (23.11.2026), DNS-Abfragen mit eigenem Auflöser
   (`apps/dnsq.h`: UDP mit EDNS0, bei abgeschnittener Antwort TCP;
   A, AAAA, CNAME, MX, NS, SOA, PTR, TXT, SRV, CAA, ANY …):

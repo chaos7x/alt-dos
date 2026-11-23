@@ -16,7 +16,6 @@ cp=COPY $*
 mv=MOVE $*
 rm=DEL $*
 clear=CLS
-diff=FC $*
 man=HELP $*
 free=MEM $*
 bg=DETACH $*

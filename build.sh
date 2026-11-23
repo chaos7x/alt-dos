@@ -174,7 +174,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top diff patch"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -273,7 +273,7 @@ nasm -f bin apps/opltest.asm -o $B/opltest.com
 BINDAPPS="$ARCAPPS $LZHAPPS 7zdec 7za setver hostname dig nslookup more find grep less sort fc comp cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd expand compress edit fm tree attrib grafik xcopy move deltree choice replace label msd"
 # Programme, die lange Namen sauber verarbeiten (FX_FLAG_LONGNAMES); alle
 # anderen bekommen bei der Dateisuche nur 8.3-Namen (wie OS/2 1.2)
-LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za cmd attrib tree deltree grep print backup restore xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget ftp smbcli sftp"
+LFNAPPS="$ARCAPPS $LZHAPPS 7zdec 7za diff patch cmd attrib tree deltree grep print backup restore xcopy move join edit fm comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd packdisk wget ftp smbcli sftp"
 for t in cmd keyb a b c mem more find grep less chkdsk ufat ufat32 $UTILAPPS; do
     L=""
     case " $LFNAPPS " in *" $t "*) L="--lfn" ;; esac
@@ -375,7 +375,7 @@ BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell
 # FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
-HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE"
+HDDOS3="$B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.

@@ -1334,6 +1334,16 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (k2misc.c – das erste Codesegment war 155 Byte zu voll, danach 65.447).
   LINUX.MAC ohne ps/kill-Makros (sie verdeckten die Programme). Setup-
   Diskette 3 (HDDOS3). Geprüft in QEMU.
+- DIFF/PATCH (Wunsch des Nutzers, 23.11.2026): `apps/lines.h` (Datei in
+  bis zu 4 DosAllocSeg-Segmenten, Zeilenanfänge u32 in einem Segment,
+  16.000 Zeilen), DIFF mit Zeilenklassen (Hash + Vergleich) und Myers mit
+  mittlerer Schlange (`diag`/`compareseq` wie GNU diff, eigene Umsetzung,
+  auf dem Rechner gegen eine C-Kopie geprüft), Änderungsmerker je Zeile,
+  daraus normale und vereinheitlichte Ausgabe. PATCH Abschnitt für
+  Abschnitt in eine Zwischendatei (PATCH$$$.TMP), Versatzsuche ohne
+  Unschärfe. Lehren: `(unsigned)(0x10000UL - 0)` ist 0 (Endlosschleife
+  beim Laden); die zurückgelegte Patchzeile darf nicht im selben Puffer
+  wie die Dateizeilen stehen. Geprüft in QEMU gegen GNU diff/patch.
 - DIG/NSLOOKUP (Wunsch des Nutzers, 23.11.2026; `apps/dnsq.h` gemeinsamer
   DNS-Teil, task_dig.c wie BIND-dig, task_nslookup.c wie Windows) und
   HOSTNAME gebunden mit Netz in der Box: Stub (stub/fapidos.c `net_box`)
