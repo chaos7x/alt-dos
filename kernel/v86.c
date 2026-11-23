@@ -6468,3 +6468,34 @@ unsigned __far v86_exc(struct v86_frame *f)
     from_tick = 0;
     return rc;
 }
+
+/* ---- PROCFS (procfs.c): Zustand einer Box als Zahlen ---------------------- */
+void __far v86_pfs(int t, unsigned *v)
+{
+    unsigned i, xk = 0, dk = 0;
+    for (i = 0; i < NXH; i++)
+        if (xh[t][i].used)
+            xk += xh[t][i].npg;
+    for (i = 0; i < NDPM; i++)
+        dk += (unsigned)dp_mem[t][i].npg;
+    v[0] = (unsigned)box_ses[t];
+    v[1] = box_ses[t] >= 0 && box_fg(t);
+    v[2] = 0;                           /* 6.3: kein eigener Box-Kern */
+    v[3] = vme_on[t];
+    v[4] = (vfl[t] & 0x200) ? 1 : 0;
+    v[5] = vimr[t];
+    v[6] = visr[t];
+    v[7] = virq[t];
+    v[8] = vt_pend[t];
+    v[9] = pit_rl[t];
+    v[10] = dp_on[t];
+    v[11] = dp_32[t] ? 32 : 16;
+    v[12] = dk << 2;
+    v[13] = xk << 2;
+    v[14] = a20_on[t];
+    v[15] = box_hk[t];
+    v[16] = b2f[t];
+    v[17] = vga_raw[t];
+    v[18] = spk_open[t];
+    v[19] = 0;                          /* 6.3: kein Joystick */
+}

@@ -84,40 +84,15 @@ struct tss386  tss[NTASK];
 /* LDTs aller Tasks: ein Block NTASK * 4 KB im erweiterten Speicher (ldt_init),
    Zugriff ueber LDTD. Fruehere 16 Eintraege in DGROUP reichten nur fuer
    rund 900 KB je Programm. */
-#define KSTACK 768                                 /* Worte; IFS-Module schachteln tief */
-static unsigned short kstack[NTASK][KSTACK];      /* Ring-0-Stack je Task  */
-static unsigned       alloc_units;                /* Seiten per DosAllocSeg */
+unsigned short kstack[NTASK][KSTACK];      /* procfs.c liest mit */      /* Ring-0-Stack je Task  */
+unsigned              alloc_units;                /* Seiten per DosAllocSeg */
 unsigned              image_units;      /* auch codeswap.c */                /* Seiten Programmabbilder */
 int                   current = -1;   /* auch v86.c */
 
 /* Tabelle der offenen Dateien: eigenes Kernelsegment, Groesse aus FILES=
    (wie MS-DOS: fuer alle Programme zusammen) */
-struct ofile {
-    signed char     owner;  /* Task, die das Handle hat, oder -1         */
-    unsigned char   refs;   /* Verweise (Handle + Standard-Handles), 0 = frei */
-    unsigned char   kind;   /* OF_*                                      */
-    unsigned char   pipe;   /* OF_PRD/OF_PWR: Nummer der Pipe            */
-    struct ifs_file f;
-    unsigned long   pos;
-    char            path[IFS_PATHLEN];  /* kanonisch, fuer "in Benutzung" */
-};
-#define OF_FILE 0
-#define OF_PRD  1           /* Leseende einer Pipe                      */
-#define OF_PWR  2           /* Schreibende einer Pipe                   */
-#define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
-#define DASD_LBA  0x80      /* OF_DASD: f.flags, pos in Sektoren (DRV_OPEN_LBA) */
-#define DASD_DISK 1         /* OF_DASD mit f.attr = DASD_DISK: ganze Platte,
-                               f.drive = Blockgeraet (DosOpenDisk)      */
-#define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
-                               4 markiert eine schon geschlossene Datei      */
-#define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
-#define OF_NUL  7           /* NUL                                      */
-#define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
-#define OF_SOCK 9           /* Socket (TCPIP.SYS), f.first = Nummer im Stapel */
-#define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
-#define CONS    0           /* Eintrag 0 ist die Konsole                */
-static struct ofile __far *files;
-static unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
+struct ofile __far *files;
+unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
 #define NFILE nfiles
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
@@ -318,9 +293,8 @@ static void vol_unlock_cur(void);
 #define VK_EA   NDRIVE                  /* Namenscache von EA DATA. SF   */
 #define NVK     (NDRIVE + 1)
 unsigned char vk_owner[NVK];            /* loop.c liest mit              */     /* Task + 1, 0 = frei            */
-#define NXG 12                          /* Sperrgruppen ueber 0 (alle Treiber) */
-static unsigned char dl_owner[NDRV + 1 + NXG], dl_depth[NDRV + 1 + NXG];   /* [NDRV+1+x]: Gruppe x */
-static unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
+unsigned char dl_owner[NDRV + 1 + NXG], dl_depth[NDRV + 1 + NXG];   /* [NDRV+1+x]: Gruppe x */
+unsigned char bkl_hold;          /* Kernelsperre nie abgeben      */
 void vol_lock(int d);
 static void drv_lock(int n);
 static void drv_unlock(int n);
@@ -671,7 +645,7 @@ static int sys_drive = 0;
    X:-Pfade (aktuelles Verzeichnis, QCurDir); die IFS-Treiber bekommen
    den umgesetzten Pfad auf dem Ziellaufwerk. */
 signed char subst_drv[NDRIVE];          /* auch blkmnt.c */
-static unsigned subst_sel;
+unsigned subst_sel;
 
 /* Laufwerk + kanonischer Pfad auf das Ziel umsetzen; -1 = zu lang */
 static int subst_map(int *d, char *path)
@@ -714,8 +688,7 @@ static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
 #define JOIN_OFF (NDRIVE * IFS_PATHLEN)
 /* Protokoll der Kernelmeldungen (DMESG): Ring im selben Segment hinter
    den Pfaden (kein eigener GDT-Platz), jede Zeile mit [h:mm:ss] */
-#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
-static unsigned klog_head, klog_len;    /* naechste Stelle, belegt       */
+unsigned klog_head, klog_len;    /* naechste Stelle, belegt       */
 static unsigned char klog_mid;          /* mitten in einer Zeile          */
 
 static void kl_put(char c)
@@ -1746,7 +1719,7 @@ static int box_reuse(const char *cmd, int s)
    Je Task FAPI_ENVSIZE Bytes "NAME=WERT\0...\0\0" in einem gemeinsamen
    Kernelsegment, dahinter die Systemumgebung (t < 0): COMSPEC und SET= aus
    CONFIG.SYS. Ein neues Programm erbt die Umgebung seines Aufrufers. */
-static unsigned env_sel;
+unsigned env_sel;
 
 static unsigned env_off(int t)
 {
@@ -2070,8 +2043,8 @@ static void switch_to(int t)
 
 /* Strg+C: aktives Programm der Vordergrund-Sitzung beenden. Der Inhaber
    der ersten Sitzung (die Shell aus PROTSHELL=) ist geschuetzt. */
-static int klock;
-static unsigned klock_depth;
+int klock;
+unsigned klock_depth;
 
 static void do_break(void)
 {
@@ -2130,8 +2103,8 @@ static unsigned long slice_start;
    die Geraete. Andere Tasks rechnen weiter und duerfen Bildschirm,
    Tastatur, Umgebung usw. benutzen. Vor dem Start der Tasks (current < 0)
    gibt es keine Sperre. */
-static int klock = -1;                  /* Inhaber, -1 = frei            */
-static unsigned klock_depth;
+int klock = -1;                         /* Inhaber, -1 = frei            */
+unsigned klock_depth;
 static volatile unsigned char run_flag; /* ProcRun hat jemanden geweckt  */
 static volatile unsigned char resched_req;  /* ... beim naechsten FAPI-Ende wechseln */
 
@@ -4883,13 +4856,7 @@ extern void drv_call(unsigned code_sel, unsigned data_sel, unsigned entry,
 extern void devhlp_entry(void);
 extern unsigned short devhlp_dx;
 
-static struct {
-    unsigned char used;
-    unsigned      entry;
-    unsigned      unit, cnt;
-    unsigned      maxcnt;               /* Bloecke je READ (INIT, >= 1) */
-    char          name[13];
-} drv[NDRV];
+struct drvslot drv[NDRV];
 static struct drv_req req;
 
 static int boot_session;
@@ -4924,8 +4891,8 @@ static unsigned char drq[NDRV + NXG][DRQ_SIZE];   /* [NDRV+x]: Gruppe x+1 */
    mit eigener Sperre und eigenem Auftrag - die Gruppen arbeiten dann
    gleichzeitig im Treiber. Sind alle NXG Plaetze vergeben, bleibt es bei
    der Sperre des Treibers (richtig, nur nacheinander). */
-static signed char xg_drv[NXG];         /* Treiber des Platzes          */
-static unsigned char xg_grp[NXG];       /* Gruppe 1-7, 0 = Platz frei   */
+signed char xg_drv[NXG];         /* Treiber des Platzes          */
+unsigned char xg_grp[NXG];       /* Gruppe 1-7, 0 = Platz frei   */
 #define DLB(dev)  (blk[dev].grp ? NDRV + blk[dev].grp : blk[dev].drv)
 #define DRQB(dev) ((struct drv_req *)drq[blk[dev].grp ? NDRV + blk[dev].grp - 1 : blk[dev].drv])
 
@@ -5016,7 +4983,8 @@ struct bce {
     unsigned char valid, dirty, ref;    /* Bit s: Sektor lba + s         */
     unsigned      next;                 /* Hash-Kette                    */
 };
-static unsigned       bc_msel, bc_wsel, bc_n, bc_hand, bc_ndirty, bc_delay;
+unsigned              bc_n, bc_ndirty;
+static unsigned       bc_msel, bc_wsel, bc_hand, bc_delay;
 static unsigned long  bc_since, bc_grow_t;
 /* Daten in Stuecken zu 16 KB (8 Bloecke, 64 Einheiten), einzeln belegt:
    bei Speichermangel gibt mem_alloc saubere Stuecke zurueck (bc_reclaim),
@@ -5027,13 +4995,15 @@ static unsigned long  bc_since, bc_grow_t;
 #define BC_CHU      4                   /* Seiten je Stueck (16 KB)      */
 #define BC_MAXCH    512                 /* 8 MB                          */
 static pg_t           bc_unit[BC_MAXCH];  /* erste Seite je Stueck, 0 = fehlt */
-static unsigned       bc_nch, bc_present, bc_growing;
+unsigned              bc_nch, bc_present;
+static unsigned       bc_growing;
 #define BC_LIN(i)   (PG_LIN(bc_unit[(i) >> 3]) + ((unsigned)((i) & 7) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
 static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s,max */
 static unsigned       cache_max = 0xFFFF;               /* 0xFFFF = nach Speicher */
-static unsigned       bc_minch, bc_rsv;                 /* Mindeststuecke, Reserve KB */
+unsigned              bc_minch;
+static unsigned       bc_rsv;                 /* Mindeststuecke, Reserve KB */
 #define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
 #define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
 
@@ -6242,7 +6212,7 @@ static int drv_of(unsigned dsel)
     return -1;
 }
 
-static unsigned char kseg_own[NKSEG];  /* Treiber + 1, der es holte (DevHlp) */
+unsigned char kseg_own[NKSEG];  /* Treiber + 1, der es holte (DevHlp) */
 static signed char mou_drv = -1;        /* Maustreiber (DH_MOUREG)        */
 
 /* DevHlp: Dienste des Kernels fuer Treiber */
@@ -7708,6 +7678,7 @@ void kmain(void)
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
     files[CONS].kind = OF_CON;                  /* Eintrag 0: Konsole    */
+    procfs_boot();                              /* P: (procfs.c)          */
     if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
         vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
                   "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "

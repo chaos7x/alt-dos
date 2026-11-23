@@ -605,6 +605,17 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   mit der Zeit seit dem Start (`[0:00:32]`): Startzeilen, Treiber,
   abgebrochene Programme und DOS-Boxen – `DMESG > LOG.TXT` nach einem
   Fehler
+- PROCFS-Laufwerk (23.11.2026, Vorbild `/proc` von Linux): der
+  Zustand des Kernels als Textdateien, nur lesend, jede Datei beim
+  Öffnen frisch erzeugt – `VERSION`, `UPTIME`, `MEMINFO`, `CACHE`,
+  `TASKS` (Zustand, gehaltene Sperren, Warten, ungenutzter
+  Kernelstapel), `LOCKS` (Kernel-, Laufwerks- und Treibersperren mit
+  Inhaber, Wartende), `KSEG` (Kernelsegmente mit Besitzer), `DRIVERS`,
+  `BLKDEV`, `DRIVES`, `FILES` (Dateitabelle), `BOXES` (virtueller PIC,
+  Takt, DPMI, XMS je DOS-Box), `DMESG`. Gedacht für Fehlersuche und
+  Stapeldateien (`TYPE P:LOCKS` aus einer zweiten Sitzung, wenn etwas
+  hängt; `COPY P:*.* A:\` für eine Fehlermeldung). Ab Werk aus,
+  eingeschaltet mit `SET PROCFS=P:` (beliebiger Buchstabe) in der CONFIG.SYS
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

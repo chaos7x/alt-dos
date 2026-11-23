@@ -1194,6 +1194,12 @@ Win32s), nicht vorziehen, sondern nachfragen.
   datei`) liest die Tastatur über das BIOS, nicht die Datei; was ein
   Programm über INT 10h/B800 schreibt, lässt sich nicht umleiten (wie
   bei MS-DOS).
+- PROCFS (aus main, 23.11.2026, Wunsch des Nutzers): `kernel/procfs.c`
+  (KTEXT4), Kernelzustand als Textdateien auf einem Laufwerk nach Wahl,
+  ab Werk aus, nur mit `SET PROCFS=X:` in der CONFIG.SYS. Auf 6.3 ohne
+  Rechenzeit je Task, Box-Kern und Joystick (gibt es hier nicht);
+  `subst_sel`/`klog_head`/`klog_len`/`KLOG_OFF` dafür in kern.h. In
+  QEMU geprüft (alle Dateien, aus der Box, mit und ohne SET-Zeile).
 - Strg+C an der Eingabezeile (Wunsch des Nutzers, 21.11.2026, wie
   COMMAND.COM): `read_line` setzt außerhalb von Stapeldateien den
   SIG_BREAK-Handler (`on_break`), KbdCharIn kehrt beim Signal mit 0 zurück,

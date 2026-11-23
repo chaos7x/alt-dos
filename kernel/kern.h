@@ -31,6 +31,8 @@
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
+#define NXG         12              /* Sperrgruppen ueber 0 (alle Treiber) */
+#define KSTACK      768             /* Kernelstapel je Task in Worten   */
 #define NKSEG       28              /* eigene Kernelsegmente (kseg_alloc); 6.2: 20 -> 28 (acht Loops) */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
@@ -161,6 +163,10 @@ unsigned kseg_alloc(unsigned long bytes);
 void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
 extern volatile unsigned reboot_count;
 /* k2misc.c (KTEXT2) */
+extern unsigned subst_sel;              /* SUBST/JOIN-Pfade + DMESG-Ring  */
+extern unsigned klog_head, klog_len;
+#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
+void __far procfs_boot(void);          /* procfs.c: Laufwerk P:   */
 unsigned long __far rtc_stamp(void);    /* Datum << 16 | Uhrzeit im FAT-Format */
 int __far rtc_set(unsigned date, unsigned time);    /* 0 = ok              */
 void __far rom_str(unsigned long lin, unsigned len, char __far *out, unsigned max);

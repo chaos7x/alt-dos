@@ -50,6 +50,44 @@ struct task {
     unsigned char code_gone;                    /* Code verworfen (codeswap.c) */
 };
 
+/* Tabelle der offenen Dateien (kernel.c; procfs.c liest mit) */
+struct ofile {
+    signed char     owner;  /* Task, die das Handle hat, oder -1         */
+    unsigned char   refs;   /* Verweise (Handle + Standard-Handles), 0 = frei */
+    unsigned char   kind;   /* OF_*                                      */
+    unsigned char   pipe;   /* OF_PRD/OF_PWR: Nummer der Pipe            */
+    struct ifs_file f;
+    unsigned long   pos;
+    char            path[IFS_PATHLEN];  /* kanonisch, fuer "in Benutzung" */
+};
+#define OF_FILE 0
+#define OF_PRD  1           /* Leseende einer Pipe                      */
+#define OF_PWR  2           /* Schreibende einer Pipe                   */
+#define OF_CON  3           /* Konsole (Tastatur/Bildschirm der Sitzung) */
+#define DASD_LBA  0x80      /* OF_DASD: f.flags, pos in Sektoren (DRV_OPEN_LBA) */
+#define DASD_DISK 1         /* OF_DASD mit f.attr = DASD_DISK: ganze Platte,
+                               f.drive = Blockgeraet (DosOpenDisk)      */
+#define OF_DASD 5           /* Laufwerk als Ganzes (f.drive), pipe = gesperrt;
+                               4 markiert eine schon geschlossene Datei      */
+#define OF_LPT  6           /* Drucker PRN/LPT1-3 (f.drive = 0-2)        */
+#define OF_NUL  7           /* NUL                                      */
+#define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
+#define OF_SOCK 9           /* Socket (TCPIP.SYS), f.first = Nummer im Stapel */
+#define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
+#define CONS    0           /* Eintrag 0 ist die Konsole                */
+extern struct ofile __far *files;
+extern unsigned nfiles;
+
+/* geladene Treiber (kernel.c) */
+struct drvslot {
+    unsigned char used;
+    unsigned      entry;
+    unsigned      unit, cnt;
+    unsigned      maxcnt;               /* Bloecke je READ (INIT, >= 1) */
+    char          name[13];
+};
+extern struct drvslot drv[NDRV];
+
 extern struct task task[NTASK];
 extern unsigned nldt;
 extern unsigned image_units;            /* Seiten der Programmabbilder (MEM) */
