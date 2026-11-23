@@ -1875,6 +1875,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **CHKDSK vor der Auslagerungsdatei** (vorgemerkt vom Nutzer,
+  23.11.2026; noch kein Code): ist das Sauber-Bit des Startlaufwerks
+  gelöscht (`vol[].was_dirty`) oder nennt AUTOCHK.LST eine Prüfung, soll
+  CHKDSK laufen, bevor SWAPPER.DAT angelegt/geöffnet und LOOP= eingehängt
+  wird – und beides danach im selben Start doch noch geschehen. Heute
+  (kernel.c kmain nach pn_boot, `conv_pending`) bleiben Auslagerungsdatei
+  und LOOP= in diesem Start ganz zu („Prüfung beim Start – diesmal ohne
+  Auslagerungsdatei und LOOP=“), CMD /P prüft erst danach (`autochk`).
+  Weg zu klären: CMD /P ruft nach AUTOCHECK einen neuen Kernelaufruf
+  (swap_boot + loop_boot nachholen), oder der Kernel startet die Prüfung
+  selbst vor PROTSHELL wie autochk.exe bei NT.
+
 - **BACKUP/RESTORE** (beauftragt vom Nutzer, 23.11.2026; noch kein
   Code): Format von MS-DOS 3.3–5.0 (je Diskette `BACKUP.nnn` mit den
   Dateien hintereinander + `CONTROL.nnn` mit Kopfsätzen, Dateien über
