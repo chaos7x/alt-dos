@@ -1264,6 +1264,32 @@ Win32s), nicht vorziehen, sondern nachfragen.
   COPY CONFIG.SYS LPT1 byte-gleich, ECHO > PRN, zwei INT-17h-Läufe aus der
   Box in einem Auftrag (Ende nach 15 s), DIR > PRN, NET USE /D. Erstes
   Codesegment danach 65.471 Byte (49 frei!).
+- AT-Zeitplaner (beauftragt vom Nutzer, 23.11.2026, Punkt 6;
+  `apps/task_at.c`, Diskette 1): Bedienung wie AT von NT (`AT`, `AT n`,
+  `AT n /DELETE`, `AT /DELETE [/YES]`, `AT Zeit [/INTERACTIVE]
+  [/EVERY:Tage | /NEXT:Tage] "Befehl"`; Wochentage deutsch und englisch,
+  Monatstage 1–31, Zeit auch mit AM/PM, Ausgabe im Format von COUNTRY=).
+  Liste `\DOS\SYSTEM\AT.LST` (Textzeilen: Kennung, Art, Merker, Masken,
+  Minute, nächster Tag als Tage seit 1.1.1980, Befehl), Dienst `AT
+  /SERVICE` ohne Konsole (`RUN=AT.EXE /SERVICE` in der mitgelieferten
+  CONFIG.SYS, endet ohne Aufträge sofort; AT startet ihn beim Anlegen per
+  EXEC_DETACH, läuft-Merker AT.LCK wie PRINT), schläft bis zur nächsten
+  Minute, startet `COMSPEC /C Befehl` losgelöst bzw. /INTERACTIVE per
+  EXEC_ASYNC in eigener Sitzung, im Stamm des Startlaufwerks; verpasste
+  Zeiten bis 60 min nachgeholt; /NEXT streicht den getroffenen Tag;
+  Protokoll AT.LOG (ab 16 KB neu). Lehre: der per EXEC_DETACH gestartete
+  Dienst erbt die Standard-Handles – `AT … > DATEI` hielt die Datei offen,
+  das nächste `AT … >> DATEI` scheiterte (Umleitung „wird benutzt“), daher
+  legt AT vor dem Start seine Handles auf NUL. Dabei gefunden (alter
+  Kernelfehler): starteten drei Aufträge in derselben Minute, verlor der
+  erste seinen ersten Schreibvorgang (Datei mit Größe 0). `of_release`
+  setzte `refs` auf 0, bevor `ifs_close` fertig war – das wartet auf die
+  Laufwerkssperre, in der Zeit vergab `of_alloc` denselben Eintrag an den
+  nächsten Task, und das Schließen traf dessen Datei. Jetzt bleibt refs 1
+  bis zum Ende des Schließens. Gefunden mit einer Spur über Port E9h
+  (Handle -> Eintrag je DosWrite/DosDup2). In QEMU geprüft (Uhr per
+  `-rtc base`, Test /tmp/claude-0/at/run.sh; Gegenprobe Pipe, XCOPY +
+  COMP, Box, fsck sauber).
 - `RUN=` in der CONFIG.SYS (Wunsch des Nutzers, 23.11.2026, wie OS/2):
   `cfg_nth` legt die Zeilen als RUN1..RUN8 in die Systemumgebung (auch
   LOOP= nimmt jetzt cfg_nth), `run_boot` startet sie nach PROTSHELL in
@@ -1942,10 +1968,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
   Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
   Ebenfalls beauftragt (Reihenfolge: 5, 7, 6, 8): MODE CON RATE=/DELAY=
-  (erledigt, s. Konventionen), Netzdrucker (erledigt, ebd.), AT-Zeitplaner als Ring-3-Dienst
-  (`\DOS\SYSTEM\AT.LST`, Bedienung wie NT), Netzdrucker per
-  `NET USE LPT1: \\server\drucker` (Ende eines Auftrags bei DOS-
-  Programmen per Frist wie NT).
+  (erledigt, s. Konventionen), Netzdrucker (erledigt, ebd.), AT-Zeitplaner
+  (erledigt, ebd.); offen nur noch BACKUP/RESTORE.
 
 - **Startcode nach dem Booten freigeben** (Wunsch des Nutzers,
   17.11.2026, für eine der nächsten Versionen; noch kein Code): Init-Code

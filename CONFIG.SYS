@@ -22,6 +22,8 @@ REM LOOP=E:,C:\ISO\SPIEL.ISO
 REM RUN=Programm [Argumente]  losgeloest starten wie OS/2 (ohne Tastatur,
 REM   Ausgaben nach NUL), bis 8 Zeilen; ohne Pfad: Stamm, \DOS, \DOS\SYSTEM
 REM RUN=PRINT.EXE /WORK
+REM Zeitplandienst fuer AT (endet gleich, wenn nichts geplant ist)
+RUN=AT.EXE /SERVICE
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb

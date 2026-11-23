@@ -534,6 +534,14 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - `PRINT [/D:Gerät] [/T] [Datei [/C] [/P] ...]` wie MS-DOS: Warteschlange
   `\DOS\SYSTEM\PRINT.QUE`, gedruckt wird von einem Hintergrund-Task
   (`PRINT /WORK`), `/T` und `/C` brechen auch den laufenden Druck ab
+- `AT [Kennung] [/DELETE [/YES]]`, `AT Zeit [/INTERACTIVE] [/EVERY:Tag,… |
+  /NEXT:Tag,…] "Befehl"` wie NT: Wochentage (Mo–So, auch M T W Th F S Su)
+  und Monatstage, ohne Angabe einmal (heute, sonst morgen); Aufträge in
+  `\DOS\SYSTEM\AT.LST`, abgearbeitet vom Dienst `AT /SERVICE` (Ring 3, ohne
+  Konsole; `RUN=AT.EXE /SERVICE` in der CONFIG.SYS, AT startet ihn auch
+  selbst), Befehl über `COMSPEC /C` losgelöst bzw. mit `/INTERACTIVE` in
+  eigener Sitzung, verpasste Zeiten bis 60 min nachgeholt, Protokoll
+  `\DOS\SYSTEM\AT.LOG`
 - `DEFRAG [X:] [/F | /U] [/V]` wie MS-DOS 6: Verteiler, die Arbeit macht
   `UFAT /DEFRAG` – fragmentierte Dateien zusammenlegen, mit `/F` (Vorgabe)
   Dateien in Lücken weiter vorn schieben; je Datei erst kopieren, dann neue
