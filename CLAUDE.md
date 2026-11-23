@@ -1875,7 +1875,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- **BACKUP/RESTORE** (abgestimmt mit dem Nutzer, 23.11.2026; noch kein
+- **BACKUP/RESTORE** (beauftragt vom Nutzer, 23.11.2026; noch kein
   Code): Format von MS-DOS 3.3–5.0 (je Diskette `BACKUP.nnn` mit den
   Dateien hintereinander + `CONTROL.nnn` mit Kopfsätzen, Dateien über
   Diskettengrenzen geteilt), damit RESTORE von MS-DOS 5.0 unsere
@@ -1894,7 +1894,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gesichert (verweist auf Cluster). Damit Namen außerhalb der aktiven
   Codepage nicht zu `_` werden: kleiner FAPI-Aufruf, der den langen
   Namen in UTF-16 liefert, Liste dann in UTF-16. Geschätzt 1,5–2 Tage.
-  Ebenfalls vorgeschlagen (noch nicht beauftragt): MODE CON RATE=/DELAY=
+  Ebenfalls beauftragt (Reihenfolge: 5, 7, 6, 8): MODE CON RATE=/DELAY=
   (Tastaturbefehl F3h über `kwr`), AT-Zeitplaner als Ring-3-Dienst
   (`\DOS\SYSTEM\AT.LST`, Bedienung wie NT), Netzdrucker per
   `NET USE LPT1: \\server\drucker` (Ende eines Auftrags bei DOS-
