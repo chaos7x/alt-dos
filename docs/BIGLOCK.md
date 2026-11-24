@@ -86,6 +86,18 @@ Kopien bytegleich, DOS-Box auf ein Loop-Laufwerk, 16 und 4 MB, fsck sauber.
 Für 6.3 bleibt (Tabelle): Dateitabelle/Handles, Pipes, Taskverwaltung,
 Speicher, Diskette mit eigener Sperre, dann `klock` weg.
 
+## Start des Taskwechsels (vorgemerkt 24.11.2026)
+
+Der Startpfad in `kmain` läuft ohne Tasks (`current = -1`): `klock_enter`
+kehrt sofort zurück, `irq0` ruft `preempt` nur aus Ring 3/V86, Treiber,
+Tastatur, CONFIG.SYS, Laufwerke, Auslagerungsdatei und Codepage laufen
+also allein. Der Taskwechsel beginnt erst mit `load_tr(TSS_K)` und dem
+ersten `schedule_next()` am Ende von `kmain`. Geplant: diese Zeilen in
+eine kernelinterne Funktion `sched_start()` (6.x und 7.0, kein
+Systemaufruf, Verhalten gleich). Sie ist der eine Punkt, ab dem Sperren
+gelten; in 7.0 startet sie zusätzlich die weiteren CPU-Kerne (vorher
+läuft nur der Startkern).
+
 ## Offene Punkte (Durchsicht 15.11.2026)
 
 - Tiefe 2 geht nicht mit dem heutigen Kontexttausch (`ctx_take` tauscht

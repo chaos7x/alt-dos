@@ -2059,6 +2059,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **`sched_start()`** (vorgemerkt vom Nutzer, 24.11.2026; noch kein
+  Code – die andere Sitzung arbeitet an Windows 3.1): der Start läuft
+  heute schon ohne Tasks (`current = -1`, keine Kernelsperre,
+  irq0 wechselt nicht), der Taskwechsel beginnt erst mit den letzten
+  Zeilen von `kmain` (kernel.c `load_tr(TSS_K)` + erstes
+  `schedule_next()`). Diese kommen in eine kernelinterne Funktion
+  `sched_start()` – für 6.x und 7.0 gleich, kein Systemaufruf (anders
+  als sysemt bei TRDOS 386), Verhalten unverändert. In 7.0 startet
+  sie später die weiteren CPU-Kerne. Siehe `docs/BIGLOCK.md`.
+
 - **Windows 3.1 in der Box, Weg B** (vorgemerkt vom Nutzer, 23.11.2026;
   „mach einfach weiter“): Lader `WINLDR.COM` (apps/winldr.asm,
   \DOS\MDOS) statt DOSX.EXE, KRNL286 auf unserem DPMI (Erweiterung
