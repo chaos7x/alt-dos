@@ -226,13 +226,18 @@ Was der Ausflug anders machen muss als `rm_int10`:
   Karten-BIOS an), SCAT erst nach Rückport.
 - Uhr nach vielen Ausflügen (Uptime gegen Wanduhr).
 
+## 5.x
+
+Entschieden (Nutzer, 24.11.2026): F5 und `BASEDEV=` kommen auch nach
+5.x, der INT-13h-Rückfall nicht. Grund: der 286 kommt aus dem
+Protected Mode nur über den CPU-Reset zurück in den Real Mode (wie die
+Kompatibilitätsbox) – je Sektor zu langsam. Fehlt auf 5.x das
+Startlaufwerk nach den BASEDEV=-Treibern, bleibt es bei der Meldung
+„Startpartition nicht gefunden“ wie heute.
+
 ## Offene Punkte
 
 - Name des CMD-Schalters (`/SAFE` oder `/N`).
 - Rückfall auch im normalen Start ohne Rückfrage, oder nur mit Meldung
   und Taste? (Vorschlag: ohne Rückfrage, mit Meldung.)
-- Rückport nach 5.x: der 286 hat kein Paging; der Weg zurück in den Real
-  Mode geht dort über den CPU-Reset (wie die Kompatibilitätsbox) – je
-  Sektor zu teuer. Auf 5.x vermutlich nur BASEDEV= und F5 ohne
-  BIOS-Rückfall, oder der Rückfall über den 386-Weg, wenn ein 386 da ist.
 - Soll `NOTSTART=1` auch in der DOS-Box stehen?

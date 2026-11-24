@@ -2066,7 +2066,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Startlaufwerks stehen in neuen `BASEDEV=`-Zeilen (wie OS/2), die auch
   F5 lädt; fehlt das Startlaufwerk danach, Rückfall auf INT 13h über
   einen Real-Mode-Ausflug (`DRV_BIOS`). Heute gibt es weder F5 noch einen
-  INT-13h-Rückfall zur Laufzeit. Entwurf in `docs/NOTSTART.md`.
+  INT-13h-Rückfall zur Laufzeit. Auf 5.x nur F5 und BASEDEV=, ohne
+  INT-13h-Rückfall (Entscheidung des Nutzers, 24.11.2026: Rückweg nur
+  über CPU-Reset). Entwurf in `docs/NOTSTART.md`.
 
 - **`sched_start()`** (vorgemerkt vom Nutzer, 24.11.2026; noch kein
   Code – die andere Sitzung arbeitet an Windows 3.1): der Start läuft
