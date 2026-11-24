@@ -2059,6 +2059,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **Grafiktreiber der Karte für Windows 3.1 in der Box** (vorgemerkt vom
+  Nutzer, 24.11.2026: „VGA 17 Farben sind langweilig“; noch kein Code):
+  I/O-Bitmap der Box auf alle 64K Ports verlängern (heute 0–3DFh – die
+  S3-Einheit bei x2E8h liest FFh), freigegeben nach einer Tabelle je
+  Chip (Ports, zusätzlich zu sichernde Register, Leerlauf der 2D-
+  Einheit), zuerst S3 Trio3D/2X, später Cirrus, Tseng, ATI, Matrox;
+  Karten nur mit VBE/LFB brauchen nichts davon. Vorlage und Testweg je
+  Chip: 86Box (`src/video/vid_*.c`, GPL-2.0-or-later laut README).
+  VBESVGA.DRV nur als Rückfall, den der Nutzer selbst installiert (ohne
+  Lizenz, nicht mitgeliefert). Entwurf in `docs/WIN31-GRAFIK.md`.
+
 - **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
   noch kein Code): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
   Auslagerungsdatei und AUTOEXEC.CMD weg, startet CMD statt PROTSHELL und
