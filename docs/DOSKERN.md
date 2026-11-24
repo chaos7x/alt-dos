@@ -1506,16 +1506,28 @@ erwartet.
 
 ### Offen (24.11.2026): leeres Laufwerk unter Windows
 
-Vom Nutzer gemeldet: der Datei-Manager zeigt bei leerem Diskettenlaufwerk
-„Keine Dateien gefunden“ statt der Meldung von Windows („Laufwerk A: kann
-nicht gelesen werden“). Behoben ist der Teil im DEM: FINDFIRST nach der
-Datenträgerbezeichnung (Attribut 08h) und 21h/36h melden jetzt 15h (vorher
-12h bzw. „0 KB von 0 KB frei“). Offen: WINLDR beantwortet INT 24h im Real
-Mode selbst mit „Fehler“ (`rm24`). Ein Versuch, ihn wie DOSX über einen
-DPMI-Rückruf (0303h) an den PM-Vektor 24h von Windows weiterzureichen,
-endete im Datei-Manager mit einer Schutzverletzung (WINFILE 0006:051D):
-der Handler von KERNEL erwartet vermutlich den Stapelaufbau, den DOSX
-nachbildet (INT-24h-Rahmen, Register und Rahmen des INT-21h-Aufrufers),
-und springt bei „Fehler“ selbst zum Aufrufer zurück – dafür müsste der
-Wirt die offene 0300h-Ebene verwerfen können. Geprüft in 86Box P3B-F mit
-einer Spur der DEM-Aufrufe über Port E9h.
+Vom Nutzer gemeldet: der Datei-Manager zeigt bei leerem Laufwerk (A:, B:,
+ZIP) „Keine Dateien gefunden“ statt der Meldung von Windows („Laufwerk A:
+kann nicht gelesen werden“).
+
+Erledigt: (1) DEM: FINDFIRST nach der Datenträgerbezeichnung (Attribut
+08h) und 21h/36h melden 15h (vorher 12h bzw. „0 KB von 0 KB frei“).
+(2) Box-Kern: „Ignorieren“ nur bei Daten (READ/WRITE) wie MS-DOS 4.0
+(BUF.ASM: allowed_IGNORE nur bei buf_isDATA, CTRLC.ASM: sonst Fail) – bei
+FAT/Verzeichnis gilt 0 als Fehler; vorher kam „Erfolg“ mit leeren Daten
+zurück (FreeCOM zeigte danach eine Unsinnszahl freier Bytes). (3) WINLDR
+reicht INT 24h im Real Mode wie DOSX über einen DPMI-Rückruf (0303h,
+`i24_cb`) an den PM-Vektor 24h von Windows weiter (Geräteselektor über
+0002h). Der Handler von KRNL286 (Segment 1, 0A2Eh) kehrt mit IRET zurück,
+fragt aber 59h ab – das lief verschachtelt durch pm21/callrm mit
+demselben Registerblock `R` und überschrieb das Ergebnis des
+unterbrochenen Aufrufs (Datei-Manager: Schutzverletzung WINFILE
+0006:051D beim Formatieren der Zahlen). `i24_cb` sichert deshalb rmint
+bis R_ss auf dem Stapel.
+
+Offen: der Handler von Windows antwortet sofort mit „Fehler“ (AL = 3),
+ohne Fenster – welcher Zweig, ist noch unklar (Kandidaten: SysErrorBox
+von USER über [0x2D0] nicht eingetragen, verschachtelt [0x247], Fehler-
+klasse aus 59h). Geprüft in 86Box P3B-F (Spur der DEM-Aufrufe und der
+Antwort über Port E9h, danach entfernt) und QEMU (FreeCOM: A:, B:, leere
+ZIP-Wechselplatte am lsi53c895a).

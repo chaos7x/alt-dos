@@ -38,6 +38,10 @@ old33   dd      0                       ; alter PM-Vektor 33h
 ps2h    dd      0                       ; PS/2-Rueckruf von MOUSE.DRV (PM)
 ps2cb   dd      0                       ; dessen Real-Mode-Adresse (DPMI 0303h)
 cbregs  times 32h db 0                  ; Register des Rueckrufs
+i24cb   dd      0                       ; INT 24h: Rueckruf (DPMI 0303h)
+def24   dd      0                       ; PM-Vektor 24h des Wirts
+h24     dd      0                       ; PM-Vektor 24h von Windows
+cb24r   times 32h db 0                  ; Register dieses Rueckrufs
 xmsent  dd      0                       ; XMS-Treiber (Real Mode), 0 = keiner
 rmint   dw      21h                     ; INT fuer callrm
 pdta    dd      0                       ; DTA des Programms (Sel:Off)
@@ -67,11 +71,15 @@ R_sp    dw      0
 R_ss    dw      0
 
 ; ---- Real Mode: INT 2Fh ------------------------------------------------
-; Real Mode, INT 24h unter Windows: DOSX reicht kritische Fehler an den
-; Handler von Windows weiter. Hier antwortet WINLDR mit "Fehler" (AL = 3):
-; der Aufruf bekommt den DOS-Fehler, Windows meldet ihn selbst. Sonst
-; fragte der Box-Kern im Textmodus (A/I/W/F) und Windows stand.
-rm24:   mov     al, 3
+; Real Mode, INT 24h unter Windows: wie DOSX an den PM-Handler von Windows
+; (KERNEL haengt sich per 2524h -> DPMI 0205h ein und zeigt das Fenster
+; "Laufwerk A: kann nicht gelesen werden"), ueber einen Rueckruf (i24_cb).
+; Ohne Handler von Windows "Fehler" (AL = 3) - sonst fragte der Box-Kern im
+; Textmodus (A/I/W/F) und Windows stand.
+rm24:   cmp     word [cs:i24cb + 2], 0
+        je      .f
+        jmp     far [cs:i24cb]
+.f:     mov     al, 3
         iret
 
 rm2f:   cmp     ax, 1687h
@@ -177,6 +185,24 @@ rm_entry:
         mov     bl, 26h
         mov     dx, pm26
         int     31h
+        mov     ax, 0204h               ; INT 24h: Vorgabe des Wirts
+        mov     bl, 24h                 ; merken, Rueckruf anlegen
+        int     31h
+        mov     [def24], dx
+        mov     [def24 + 2], cx
+        push    ds
+        pop     es
+        mov     di, cb24r
+        mov     si, i24_cb
+        push    ds
+        mov     ds, [csel]
+        mov     ax, 0303h
+        int     31h
+        pop     ds
+        jc      .no24
+        mov     [i24cb], dx
+        mov     [i24cb + 2], cx
+.no24:
         mov     ax, [rmseg]
         mov     [pkt + 8], ax
         cmp     dword [xmsent], 0       ; XMS: 4310h im PM liefert einen
@@ -1077,6 +1103,60 @@ ps2set: push    ds
         mov     es, [c_es]
         push    word [c_ds]
         pop     ds
+        iret
+
+; Rueckruf INT 24h: DS:SI = Stapel (IP, CS, FLAGS des INT 24h), ES:DI =
+; Register. Ruft den PM-Vektor 24h (Windows) mit AH/AL, DI und BP:SI =
+; Geraetekopf (BP als Selektor) wie DOSX; AL = Antwort. Der Handler von
+; KRNL286 fragt dabei 59h ab und kehrt mit IRET zurueck.
+i24_cb: cld
+        mov     ax, [si]                ; IRET nachbilden
+        mov     [es:di + 2Ah], ax
+        mov     ax, [si + 2]
+        mov     [es:di + 2Ch], ax
+        mov     ax, [si + 4]
+        mov     [es:di + 20h], ax
+        add     word [es:di + 2Eh], 6
+        mov     ds, [cs:dsel]
+        push    es
+        push    di
+        mov     ax, 0204h
+        mov     bl, 24h
+        int     31h
+        mov     al, 3
+        cmp     dx, [def24]
+        jne     .h
+        cmp     cx, [def24 + 2]
+        je      .r                      ; Windows hat keinen: "Fehler"
+.h:     mov     [h24], dx
+        mov     [h24 + 2], cx
+        mov     si, rmint               ; Zustand von pm21 sichern: der
+        mov     cx, (R_ss + 2 - rmint) / 2  ; Handler fragt 59h ab, das
+.sv:    push    word [si]               ; laeuft verschachtelt durch pm21
+        add     si, 2                   ; und callrm (gleiches R) - sonst
+        loop    .sv                     ; bekam der unterbrochene Aufruf
+                                        ; (36h ...) die Werte von 59h
+        mov     bx, [es:di + 8]         ; BP (Segment des Geraetekopfs)
+        mov     ax, 0002h
+        int     31h
+        mov     bx, ax
+        mov     al, 3
+        jc      .rs
+        mov     bp, bx
+        mov     si, [es:di + 4]
+        mov     ax, [es:di + 1Ch]
+        mov     di, [es:di]
+        pushf
+        call    far [h24]
+.rs:    mov     ds, [cs:dsel]
+        mov     si, R_ss
+        mov     cx, (R_ss + 2 - rmint) / 2
+.rl:    pop     word [si]
+        sub     si, 2
+        loop    .rl
+.r:     pop     di
+        pop     es
+        mov     [es:di + 1Ch], al
         iret
 
 ; Rueckruf aus dem Real Mode: DS:SI = Stapel (IP, CS, Z, Y, X, Status),

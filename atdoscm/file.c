@@ -60,7 +60,9 @@ static int crit(unsigned fn, unsigned e)
     else if (fn != DEM_READ && fn != DEM_WRITE && fn != DEM_CLOSE &&
              fn != DEM_SIZE && fn != DEM_LOCK && q.path[0] && q.path[1] == ':')
         d = (unsigned)((q.path[0] | 0x20) - 'a');
-    ah = 0x38;                          /* Fehler/Wiederholen/Ignorieren */
+    ah = 0x18;                          /* Fehler/Wiederholen; Ignorieren */
+    if (fn == DEM_READ || fn == DEM_WRITE)  /* nur bei Daten (MS-DOS 4.0   */
+        ah |= 0x20;                     /* BUF.ASM), sonst gilt es als F */
     if (fn == DEM_WRITE || fn == DEM_MKDIR || fn == DEM_RMDIR || fn == DEM_DELETE ||
         fn == DEM_RENAME || fn == DEM_SETATTR || fn == DEM_CLOSE)
         ah |= 1;                        /* Schreiben                     */
@@ -105,8 +107,13 @@ unsigned dem(unsigned fn)
             return q.err;
         if (a == 1)                     /* Wiederholen                   */
             continue;
-        if (a == 0)                     /* Ignorieren                    */
-            return 0;
+        if (a == 0 && (fn == DEM_READ || fn == DEM_WRITE))
+            return 0;                   /* Ignorieren (nur bei Daten)    */
+        if (a == 0)
+            a = 3;                      /* sonst Fehler wie MS-DOS: der  */
+                                        /* INT-24h-Handler von Windows   */
+                                        /* antwortet mit 0, wenn das     */
+                                        /* Programm SetErrorMode(1) hat  */
         if (a == 2)                     /* Abbrechen: nach dem Aufruf    */
             crit_abort = 1;
         return 0x53;                    /* Fehler auf INT 24h (MS-DOS)   */
