@@ -34,6 +34,10 @@ old21   dd      0                       ; alter PM-Vektor 21h (Wirt)
 old10   dd      0                       ; alter PM-Vektor 10h
 old15   dd      0                       ; alter PM-Vektor 15h
 old2fp  dd      0                       ; alter PM-Vektor 2Fh
+old33   dd      0                       ; alter PM-Vektor 33h
+ps2h    dd      0                       ; PS/2-Rueckruf von MOUSE.DRV (PM)
+ps2cb   dd      0                       ; dessen Real-Mode-Adresse (DPMI 0303h)
+cbregs  times 32h db 0                  ; Register des Rueckrufs
 xmsent  dd      0                       ; XMS-Treiber (Real Mode), 0 = keiner
 rmint   dw      21h                     ; INT fuer callrm
 pdta    dd      0                       ; DTA des Programms (Sel:Off)
@@ -147,6 +151,16 @@ rm_entry:
         mov     cx, [csel]
         mov     dx, pm15
         int     31h
+        mov     ax, 0204h               ; INT 33h 24h: PS/2 melden
+        mov     bl, 33h
+        int     31h
+        mov     [old33], dx
+        mov     [old33 + 2], cx
+        mov     ax, 0205h
+        mov     bl, 33h
+        mov     cx, [csel]
+        mov     dx, pm33
+        int     31h
         mov     ax, 0205h               ; INT 25h/26h (absolut lesen/
         mov     bl, 25h                 ; schreiben, Puffer DS:BX)
         mov     cx, [csel]
@@ -253,10 +267,9 @@ ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      66h, T_PASS, 67h, T_PASS, 68h, T_PASS, 6Ch, T_XOPN
         db      0
 
-pm21:   test    ah, ah                  ; 00h (Ende ueber CS = PSP) gibt
-        jnz     .f                      ; es im PM nicht: wie 4C00h
-        mov     ax, 4C00h
-.f:     push    ds
+pm21:   test    ah, ah                  ; 00h: KRNL beendet den DOS-Teil
+        jz      pmterm                  ; einer Task (und kehrt zurueck)
+        push    ds
         mov     ds, [cs:dsel]
         pop     word [c_ds]
         mov     [c_es], es
@@ -877,7 +890,9 @@ pm10:   cmp     ah, 10h
         iret
 
 ; ---- Protected Mode: INT 15h C0h (Konfigurationstabelle, ES:BX) --------
-pm15:   cmp     ah, 0C0h
+pm15:   cmp     ax, 0C207h              ; PS/2-Rueckruf ES:BX (PM)
+        je      ps2set
+        cmp     ah, 0C0h
         je      .go
         jmp     far [cs:old15]
 .go:    push    ds
@@ -914,6 +929,165 @@ pm15:   cmp     ah, 0C0h
         mov     es, [c_es]
         push    word [c_ds]
         pop     ds
+        iret
+
+; ---- Protected Mode: INT 21h 00h - Task beenden (wie DOSX) -----------
+; KRNL setzt den PSP einer endenden Task (50h) und ruft 00h: DOS soll ihre
+; Dateien schliessen und zurueckkehren. 00h nimmt im Real Mode CS als PSP
+; - deshalb 4Ch ueber eine eigene Routine (DPMI 0301h), die vorher den
+; Ruecksprung des PSP (0Ah) auf sich setzt und danach ihren Stapel
+; zurueckholt. DOS setzt dabei den Elternprozess als aktuellen PSP.
+pmterm: push    ds
+        mov     ds, [cs:dsel]
+        pop     word [c_ds]
+        mov     [c_es], es
+        pushad
+        xor     ax, ax
+        mov     [R_fl], ax
+        mov     [R_ss], ax              ; Stapel vom Wirt
+        mov     [R_sp], ax
+        mov     [R_fs], ax
+        mov     [R_gs], ax
+        mov     ax, [rmseg]
+        mov     [R_ds], ax
+        mov     [R_es], ax
+        mov     [R_cs], ax
+        mov     word [R_ip], rm_term
+        push    ds
+        pop     es
+        mov     di, R
+        mov     ax, 0301h
+        xor     bx, bx
+        xor     cx, cx
+        int     31h
+        popad
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        iret
+
+; Real Mode, Fernaufruf aus pmterm
+rm_term: mov    [cs:t_ss], ss
+        mov     [cs:t_sp], sp
+        mov     ah, 62h
+        int     21h
+        mov     es, bx
+        mov     word [es:0Ah], .back
+        mov     [es:0Ch], cs
+        mov     ax, 4C00h
+        int     21h
+.back:  cli
+        mov     ss, [cs:t_ss]
+        mov     sp, [cs:t_sp]
+        sti
+        retf
+t_ss    dw      0
+t_sp    dw      0
+
+; ---- Protected Mode: Maus fuer MOUSE.DRV von Windows -----------------
+; MOUSE.DRV nimmt mit einem DOS-Maustreiber dessen Art aus INT 33h 24h und
+; spricht dann die Hardware selbst an (seriell, Bus, InPort) - in der Box
+; gehoert sie dem Kernel. Deshalb melden wir PS/2 (CH = 4, IRQ 0): dann
+; nimmt MOUSE.DRV die Schnittstelle des PS/2-BIOS (INT 15h C2xxh), die
+; VMOUSE.SYS nachbildet. Nur der Rueckruf (C207h, ES:BX im PM) braucht
+; eine Uebersetzung: ein Real-Mode-Rueckruf (DPMI 0303h) ruft ihn mit den
+; vier Worten (Status, X, Y, Z) wie das BIOS.
+pm33:   cmp     ax, 0024h
+        je      .t
+        jmp     far [cs:old33]
+.t:     pushf
+        call    far [cs:old33]
+        test    bh, bh                  ; kein Treiber: so lassen
+        jz      .x
+        mov     cx, 0400h
+.x:     iret
+
+ps2set: push    ds
+        mov     ds, [cs:dsel]
+        pop     word [c_ds]
+        mov     [c_es], es
+        pushad
+        mov     [ps2h], bx
+        mov     [ps2h + 2], es
+        xor     ebx, ebx                ; 0:0 bleibt 0:0
+        xor     dx, dx
+        mov     ax, es
+        or      ax, [ps2h]
+        jz      .rm
+        cmp     word [ps2cb + 2], 0
+        jne     .have
+        push    ds                      ; Rueckruf einmal anlegen
+        pop     es
+        mov     di, cbregs
+        mov     si, ps2_cb
+        push    ds
+        mov     ds, [csel]
+        mov     ax, 0303h
+        int     31h
+        pop     ds
+        jc      .err
+        mov     [ps2cb], dx
+        mov     [ps2cb + 2], cx
+.have:  mov     bx, [ps2cb]
+        mov     dx, [ps2cb + 2]
+.rm:    mov     [R_ebx], ebx
+        mov     [R_es], dx
+        mov     dword [R_eax], 0C207h
+        mov     word [rmint], 15h
+        xor     ax, ax
+        mov     [R_ss], ax
+        mov     [R_sp], ax
+        mov     [R_fs], ax
+        mov     [R_gs], ax
+        mov     [R_fl], ax
+        mov     ax, [rmseg]
+        mov     [R_ds], ax
+        call    callrm
+        jmp     .out
+.err:   mov     word [R_eax], 0300h     ; Schnittstellenfehler
+        mov     byte [R_fl], 1
+.out:   popad
+        mov     ax, [R_eax]
+        push    bp                      ; CF in die Flags auf dem Stapel
+        mov     bp, sp
+        and     word [bp + 6], 0FFFEh
+        test    byte [R_fl], 1
+        jz      .ok
+        or      word [bp + 6], 1
+.ok:    pop     bp
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        iret
+
+; Rueckruf aus dem Real Mode: DS:SI = Stapel (IP, CS, Z, Y, X, Status),
+; ES:DI = Register; wie RETF zurueck, die Worte nimmt der Aufrufer. Auf
+; echter Hardware ruft das BIOS den Rueckruf aus seiner IRQ-12-Routine,
+; vor die sich MOUSE.DRV haengt - hier umgekehrt: erst ablegen lassen,
+; dann INT 74h.
+ps2_cb: cld
+        mov     ax, [si]
+        mov     [es:di + 2Ah], ax
+        mov     ax, [si + 2]
+        mov     [es:di + 2Ch], ax
+        add     word [es:di + 2Eh], 4
+        push    es
+        push    di
+        push    word [si + 10]          ; Status
+        push    word [si + 8]           ; X
+        push    word [si + 6]           ; Y
+        push    word [si + 4]           ; Z
+        mov     ds, [cs:dsel]
+        mov     ax, [ps2h]
+        or      ax, [ps2h + 2]
+        jz      .no
+        call    far [ps2h]
+        add     sp, 8
+        int     74h                     ; IRQ 12 wie auf echter Hardware:
+        jmp     .x                      ; MOUSE.DRV wertet das abgelegte
+.no:    add     sp, 8                   ; Paket erst in seiner Routine aus
+.x:     pop     di                      ; (sein alter Vektor fuehrt in
+        pop     es                      ; den Stummel der Box)
         iret
 
 ; ---- Protected Mode: INT 25h/26h (absolut lesen/schreiben, wie DOSX) ---
@@ -1143,6 +1317,7 @@ buf2:   times   264 db 0
 res_end:
 
 ; ---- nicht resident: Start --------------------------------------------
+dotexe  db      '.EXE'
 init:   mov     [rmseg], cs
         mov     sp, stk_top
         mov     bx, (stk_top - start + 100h + 15) / 16
@@ -1161,7 +1336,22 @@ init:   mov     [rmseg], cs
         je      .ne
         cmp     al, 13
         jne     .nm
-.ne:    mov     byte [di], 0
+.ne:    push    si                      ; ohne Endung (WIN.COM gibt
+        mov     bx, di                  ; "krnl286"): .EXE wie DOSX
+.ex:    dec     bx
+        cmp     bx, prog
+        jb      .ad
+        cmp     byte [bx], '.'
+        je      .hx
+        cmp     byte [bx], '\'
+        je      .ad
+        cmp     byte [bx], ':'
+        jne     .ex
+.ad:    mov     si, dotexe
+        movsw
+        movsw
+.hx:    pop     si
+        mov     byte [di], 0
         dec     si                      ; Rest als Befehlszeile
         mov     di, tail + 1
         xor     cx, cx

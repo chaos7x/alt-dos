@@ -342,6 +342,7 @@ void __far kf_vio_mou_pos(int s, int row, int col);
 void __far kf_vio_mou_close(int s, int t);
 static unsigned cb_seg[NTASK], cb_ofs[NTASK];
 static unsigned char cb_in[NTASK];      /* Rueckruf laeuft gerade        */
+static unsigned char cb_ps2[NTASK];     /* Art PS/2-BIOS: 4 Worte auf dem Stapel */
 static void cb_prog(int t);
 static int pm_esbad(int t, unsigned es);
 static void cb_v86(struct v86_frame *f, int t, int force);
@@ -1511,6 +1512,7 @@ unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel)
     case VS_CBARM:                      /* Rueckruf (vdd.c merkt das Modul) */
         cb_seg[t] = a1;
         cb_ofs[t] = a2;
+        cb_ps2[t] = (unsigned char)(k->a3 == 1);
         if (!a1 && !a2)
             cb_in[t] = 0;
         return 0;
@@ -2630,6 +2632,12 @@ static void svc(int n, struct v86_frame *f, int t)
             BX = CFG_OFF;
             AH = 0;
             svc_cf = 0;
+        } else if (AH == 0xC2) {                /* PS/2-Zeigegeraet: Modul */
+            if (vdd_svc_int(0x15, f, t)) {      /* (VMOUSE.SYS)          */
+                AH = 0x86;
+                svc_cf = 1;
+            } else
+                svc_cf = (unsigned char)(f->r.eflags & 1);
         } else if (AH == 0x90 || AH == 0x91) {  /* Geraet beschaeftigt/  */
             AH = 0;                             /* fertig: nichts zu tun */
             svc_cf = 0;
@@ -7051,6 +7059,10 @@ static void cb_v86(struct v86_frame *f, int t, int force)
     push16(r, AX); push16(r, BX); push16(r, CX); push16(r, DX);
     push16(r, (unsigned)f->esi); push16(r, DI); push16(r, BP);
     push16(r, (unsigned)r->ds); push16(r, (unsigned)r->es);
+    if (cb_ps2[t]) {                            /* PS/2-BIOS: Status, X,  */
+        push16(r, c.ax); push16(r, c.bx);       /* Y, Z wie das BIOS      */
+        push16(r, c.cx); push16(r, c.dx);
+    }
     push16(r, VBIOS);                           /* RETF -> ARPL E7h       */
     push16(r, MOU_RET);
     AX = c.ax; BX = c.bx; CX = c.cx; DX = c.dx;
@@ -7082,6 +7094,8 @@ static void cb_tick(struct v86_iret *r, int t)
 static int cb_ret(struct v86_frame *f, int t)
 {
     struct v86_iret *r = &f->r;
+    if (cb_ps2[t])                              /* Worte des PS/2-BIOS    */
+        r->esp = (r->esp & 0xFFFF0000UL) | ((unsigned)r->esp + 8);
     r->es = pop16(r);
     r->ds = pop16(r);
     BP = pop16(r);
@@ -7142,6 +7156,14 @@ static unsigned cb_pmcb(struct v86_frame *f, int t)
     f->esi = c.si;
     f->edi = c.di;
     f->r.ds = f->r.es = f->r.fs = f->r.gs = dp_rmseg[t];
+    if (cb_ps2[t]) {                            /* PS/2-BIOS: Status, X, Y, */
+        unsigned sp = DP_RMSTK - (dp_dep[t] - 1) * 128 - 8;    /* Z      */
+        wr16(dp_rmseg[t], sp + 6, c.ax);
+        wr16(dp_rmseg[t], sp + 4, c.bx);
+        wr16(dp_rmseg[t], sp + 2, c.cx);
+        wr16(dp_rmseg[t], sp, c.dx);
+        return rm_go(f, t, cb_seg[t], cb_ofs[t], dp_rmseg[t], sp, 0);
+    }
     return rm_go(f, t, cb_seg[t], cb_ofs[t], 0, 0, 0);
 }
 
@@ -7157,7 +7179,7 @@ static void cb_prog(int t)
         wr16(0, 0xCE, VBIOS);
     }
     cb_seg[t] = cb_ofs[t] = 0;
-    cb_in[t] = 0;
+    cb_in[t] = cb_ps2[t] = 0;
     vdd_event(t, VDD_EV_PROG, 0);
 }
 

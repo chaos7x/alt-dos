@@ -992,7 +992,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   darauf; dazu die Erweiterung „MS-DOS“ (LDT-Alias) für den Windows-Kern:
   Windows 3.x im Standardmodus startet über `WINLDR.COM` statt DOSX.EXE
   (der Box-Kern ersetzt den Aufruf von DOSX.EXE selbst; das SETUP von
-  der CD läuft bis nach dem Kopieren durch, siehe docs/DOSKERN.md);
+  der CD läuft bis nach dem Kopieren durch, Programme lassen sich unter
+  Windows starten und beenden, die Maus geht über MOUSE.DRV – siehe
+  docs/DOSKERN.md);
   erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
@@ -1065,7 +1067,9 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   Treiber“) über INT 33h wie MOUSE.COM von Microsoft (Reset, Zeiger, Position,
   Tasten, Grenzen, Mickeys, Ereignis-Rückruf 0Ch/14h – auch für DPMI-Programme
   im Protected Mode (DOS-Extender), Version 24h mit Art und IRQ der echten Maus – MSD
-  erkennt sie); im Textmodus zeichnet AT-DOS den Zeiger, in Grafikmodi
+  erkennt sie) und über die Zeigegeräte-Schnittstelle des PS/2-BIOS
+  (INT 15h C2xxh, Pakete an den Rückruf aus C207h wie das BIOS; die nimmt
+  MOUSE.DRV von Windows); im Textmodus zeichnet AT-DOS den Zeiger, in Grafikmodi
   fehlt er noch (Position und Tasten stimmen). CMOS (Port 70h/71h) meldet
   der Box ihren eigenen erweiterten Speicher (MEM/MSD von MS-DOS), INT 10h
   1003h (Blinken/helle Hintergründe) wirkt. Ein Textmodus gibt die Karte zurück. Schreibt ein
@@ -1335,12 +1339,14 @@ gibt (`VS_IRQ`, `VS_TICK`, `VS_IOPERM`, `VS_FGRES`, `VS_AUD`).
 Drittes: `VEMS.SYS` – EMS 4.0 der Box (INT 67h, Verwaltung im Modul,
 Seiten über `VS_PGALLOC`/`VS_MAP`/`VS_COPY` wie VDHAllocPages/
 VDHMapPages bei OS/2); den Seitenrahmen wählt weiter der Kernel.
-Viertes: `VMOUSE.SYS` – der Maustreiber der Box (INT 33h, Position,
+Viertes: `VMOUSE.SYS` – der Maustreiber der Box (INT 33h und INT 15h
+C2xxh, Position,
 Grenzen und Zähler im Modul, Maus der Sitzung über `VS_MOUSE`); den
 Ereignis-Rückruf stellt der Kernel zu (`VS_CBARM` wie VDHPushFarCall bei
 OS/2: das Modul setzt Segment:Offset, der Kernel fragt mit `VDD_CBQ` nach,
 ob etwas ansteht – im V86-Modus, aus dem Takt und für DPMI-Programme im
-PM). Module gleichzeitig (`NVDD`): 8.
+PM; mit `a3` = 1 als Rückruf des PS/2-BIOS mit vier Worten auf dem
+Stapel). Module gleichzeitig (`NVDD`): 8.
 Grafikmodule `VEGA.SYS`/`VCGA.SYS` (nur auf EGA- bzw. CGA-Karten): Ports
 der Box mit Rohgrafik bleiben gesperrt und gehen ans Modul, das die
 Register mitschreibt (`VDDF_VEGA`/`VDDF_VCGA`, Ereignisse VSAVE/VREST,

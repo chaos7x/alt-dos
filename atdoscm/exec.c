@@ -336,8 +336,9 @@ static char ep[128];
 
 /* Windows 3.1 im Standardmodus: DOSX.EXE kennt nur VCPI oder den Real
    Mode - statt seiner startet X:\DOS\MDOS\WINLDR.COM den Kern auf dem
-   DPMI des Wirts (Weg B, docs/DOSKERN.md). Befehlszeile: KRNL286.EXE aus
-   dem Verzeichnis von DOSX, dahinter die alte Befehlszeile. */
+   DPMI des Wirts (Weg B, docs/DOSKERN.md). WIN.COM gibt DOSX als erstes
+   Wort den Kern ("krnl286.exe /b ..."): davor kommt das Verzeichnis von
+   DOSX (ohne Befehlszeile KRNL286.EXE). */
 extern u8 sys_drv;
 static char wl_tail[130];
 static u16 wl_pb[7];
@@ -345,8 +346,9 @@ static u16 wl_pb[7];
 static void dosx_redirect(u16 *pseg, u16 *poff)
 {
     static const char kr[] = "KRNL286.EXE", wl[] = ":\\DOS\\MDOS\\WINLDR.COM";
-    unsigned n, i, d, k;
+    unsigned n, i, d, k, j;
     u16 ts, to;
+    char c;
     for (n = 0; ep[n]; n++)
         ;
     if (n < 9)
@@ -354,16 +356,23 @@ static void dosx_redirect(u16 *pseg, u16 *poff)
     for (i = 0; i < 9; i++)
         if (ep[n - 9 + i] != "\\DOSX.EXE"[i])
             return;
-    d = 1;
-    wl_tail[d++] = ' ';
-    for (i = 0; i < n - 8; i++)         /* Verzeichnis mit '\'          */
-        wl_tail[d++] = ep[i];
-    for (i = 0; kr[i]; i++)
-        wl_tail[d++] = kr[i];
     to = W(*pseg, *poff + 2);           /* alte Befehlszeile             */
     ts = W(*pseg, *poff + 4);
     k = B(ts, to);
-    for (i = 0; i < k && d < 127; i++)
+    for (j = 0; j < k && B(ts, to + 1 + j) == ' '; j++)
+        ;
+    d = 1;
+    wl_tail[d++] = ' ';
+    for (i = j; i < k && (c = (char)B(ts, to + 1 + i)) != ' '; i++)
+        if (c == '\\' || c == ':')    /* Kern mit Pfad: so lassen      */
+            break;
+    if (i == k || B(ts, to + 1 + i) == ' ')
+        for (i = 0; i < n - 8; i++)     /* Verzeichnis mit '\'          */
+            wl_tail[d++] = ep[i];
+    if (j == k)                         /* ohne Befehlszeile             */
+        for (i = 0; kr[i]; i++)
+            wl_tail[d++] = kr[i];
+    for (i = j; i < k && d < 127; i++)
         wl_tail[d++] = B(ts, to + 1 + i);
     wl_tail[0] = (char)(d - 1);
     wl_tail[d] = 13;

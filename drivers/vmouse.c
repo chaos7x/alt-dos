@@ -13,6 +13,12 @@
  * (VS_CBARM): er fragt hier nach (VDD_CBQ), ob ein gewuenschtes Ereignis
  * ansteht, und uebernimmt die Register. Ohne dieses Modul meldet INT 33h
  * "kein Treiber" (AX = 0).
+ *
+ * Dazu die Zeigegeraete-Schnittstelle des PS/2-BIOS (INT 15h C2xxh), die
+ * MOUSE.DRV von Windows 3.1 nimmt (Ausstattungswort 0410h Bit 2): Pakete
+ * wie die PS/2-Maus (Status, X, Y, Z), Zustellung an den Rueckruf aus
+ * C207h ueber denselben Weg (VS_CBARM a3 = 1: vier Worte auf dem Stapel
+ * wie beim BIOS, RETF).
  */
 #include "drvlib.h"
 #include "netlib.h"                     /* fent()                        */
@@ -30,6 +36,14 @@ static struct vmou {
     unsigned npr[3], nrl[3];
     int prx[3], pry[3], rlx[3], rly[3];
 } mo[NT];
+
+/* PS/2-BIOS (INT 15h C2xxh) je Box */
+static struct vps2 {
+    unsigned char en, init, rate, res, scal, btn, nq;
+    unsigned char q[4];                 /* Tastenstaende, noch nicht gemeldet */
+    int dx, dy;                         /* Bewegung, noch nicht gemeldet  */
+    unsigned hofs, hseg;                /* Rueckruf (C207h)              */
+} ps[NT];
 
 static struct vdd_svc sv;
 static struct vdd_reg reg;
@@ -196,6 +210,158 @@ static void m_reset(unsigned t, struct vmou *o)
     m_ptr(t, o);
 }
 
+/* ---- PS/2-BIOS ---- */
+static void p_clear(struct vps2 *p)
+{
+    unsigned i;
+    for (i = 0; i < sizeof(*p); i++)
+        ((unsigned char *)p)[i] = 0;
+}
+
+static void p_defaults(struct vps2 *p)
+{
+    p->en = 0;
+    p->rate = 100;
+    p->res = 2;
+    p->scal = 0;
+    p->dx = p->dy = 0;
+    p->nq = 0;
+}
+
+static void p_arm(unsigned t, struct vps2 *p)
+{
+    if (p->en && (p->hseg || p->hofs))
+        vs(VS_CBARM, t, p->hseg, p->hofs, 1);
+    else
+        vs(VS_CBARM, t, 0, 0, 0);
+}
+
+/* Neues von der Maus: Bewegung aufsummieren, Tastenstaende merken */
+static void p_poll(unsigned t, struct vps2 *p)
+{
+    vs(VS_MOUSE, t, VM_DELTA, 0, 0);
+    p->dx += (int)ev[0];
+    p->dy += (int)ev[1];
+    while (p->nq < sizeof(p->q) && vs(VS_MOUSE, t, VM_READ, 0, 0) == 1)
+        p->q[p->nq++] = (unsigned char)(ev[0] & 7);
+}
+
+/* Ein Paket: c->ax Status, bx X, cx Y (nach oben positiv), dx Z */
+static void p_packet(struct vdd_call __far *c, struct vps2 *p)
+{
+    int x = p->dx, y = -p->dy;
+    unsigned st, i;
+    if (x > 255) x = 255;
+    if (x < -255) x = -255;
+    if (y > 255) y = 255;
+    if (y < -255) y = -255;
+    p->dx -= x;
+    p->dy += y;
+    if (p->nq) {
+        p->btn = p->q[0];
+        for (i = 1; i < p->nq; i++)
+            p->q[i - 1] = p->q[i];
+        p->nq--;
+    }
+    st = 0x08 | (p->btn & 1) | ((p->btn & 2) ? 2 : 0) | ((p->btn & 4) ? 4 : 0);
+    if (x < 0) st |= 0x10;
+    if (y < 0) st |= 0x20;
+    c->ax = st;
+    c->bx = (unsigned)x & 0xFF;
+    c->cx = (unsigned)y & 0xFF;
+    c->dx = 0;
+}
+
+/* INT 15h C2xxh -> CF (flags Bit 0) und AH */
+static void ps2(struct vdd_call __far *c, unsigned t, struct vps2 *p)
+{
+    unsigned char al = (unsigned char)c->ax, bh = (unsigned char)(c->bx >> 8);
+    unsigned err = 0;
+    switch (al) {
+    case 0x00:                          /* ein/aus                       */
+        if (bh > 1)
+            err = 1;
+        else if (bh && !p->hseg && !p->hofs)
+            err = 5;                    /* kein Rueckruf                 */
+        else if (bh && !p->en) {
+            unsigned char nb = (unsigned char)vs(VS_MOUSE, t, VM_OPEN, 0, 0);
+            if (!nb || nb == 0xFF) {
+                err = 3;                /* keine Maus in der Sitzung      */
+                break;
+            }
+            vs(VS_MOUSE, t, VM_SHOW, 0, 0);
+            vs(VS_MOUSE, t, VM_DELTA, 0, 0);    /* Altes verwerfen       */
+            while (vs(VS_MOUSE, t, VM_READ, 0, 0) == 1)
+                ;
+            p->dx = p->dy = 0;
+            p->nq = 0;
+            p->en = 1;
+            p_arm(t, p);
+        } else if (!bh && p->en) {
+            p->en = 0;
+            p_arm(t, p);
+        }
+        break;
+    case 0x01:                          /* zuruecksetzen                 */
+        p_defaults(p);
+        p_arm(t, p);
+        c->bx = 0x00AA;                 /* BH Kennung 0, BL AAh          */
+        break;
+    case 0x02:                          /* Abtastrate                    */
+        if (bh > 6)
+            err = 2;
+        else
+            p->rate = bh;
+        break;
+    case 0x03:                          /* Aufloesung                    */
+        if (bh > 3)
+            err = 2;
+        else
+            p->res = bh;
+        break;
+    case 0x04:                          /* Geraetekennung                */
+        c->bx &= 0x00FF;
+        break;
+    case 0x05:                          /* einrichten (Paketgroesse BH)  */
+        if (bh < 1 || bh > 8)
+            err = 2;
+        else {
+            p_defaults(p);
+            p->init = 1;
+            p_arm(t, p);
+        }
+        break;
+    case 0x06:                          /* erweitert                     */
+        if (bh == 0) {                  /* Status                        */
+            c->bx = (c->bx & 0xFF00) | (p->en ? 0x20 : 0) |
+                    (p->scal ? 0x10 : 0) | (p->btn & 1 ? 4 : 0) |
+                    (p->btn & 2 ? 1 : 0) | (p->btn & 4 ? 2 : 0);
+            c->cx = (c->cx & 0xFF00) | p->res;
+            c->dx = (c->dx & 0xFF00) | 100;
+        } else if (bh <= 2)
+            p->scal = (unsigned char)(bh - 1);
+        else
+            err = 1;
+        break;
+    case 0x07:                          /* Rueckruf ES:BX                */
+        if (c->val & 1) {               /* aus dem PM ohne Uebersetzung  */
+            err = 3;
+            break;
+        }
+        p->hseg = c->es;
+        p->hofs = c->bx;
+        p_arm(t, p);
+        break;
+    default:
+        err = 1;
+    }
+    c->ax = (c->ax & 0x00FF) | (err << 8);
+    if (err)
+        c->flags |= 1;
+    else
+        c->flags &= ~1u;
+}
+
 static void mou33(struct vdd_call __far *c, unsigned t, struct vmou *o)
 {
     unsigned i, a = c->ax;
@@ -322,7 +488,21 @@ static unsigned int_fn(void __far *a)
         return VDD_NOTMINE;
     o = &mo[t];
     if (c->fn == VDD_INT) {
-        mou33(c, t, o);
+        if (c->port == 0x15) {
+            if ((c->ax >> 8) != 0xC2)
+                return VDD_NOTMINE;
+            ps2(c, t, &ps[t]);
+        } else
+            mou33(c, t, o);
+        return 0;
+    }
+    if (c->fn == VDD_CBQ && ps[t].en) { /* PS/2-Rueckruf                 */
+        struct vps2 *p = &ps[t];
+        p_poll(t, p);
+        if (!p->dx && !p->dy && !p->nq)
+            return VDD_NOTMINE;
+        if (c->val)
+            p_packet(c, p);
         return 0;
     }
     if (c->fn != VDD_CBQ || !o->on || !o->mask)
@@ -350,13 +530,34 @@ static unsigned event(void __far *a)
     if (t >= NT)
         return 0;
     switch (c->fn) {
+    case VDD_EV_PMEND:                  /* DPMI zu Ende: ein PS/2-Rueck- */
+        if (ps[t].hseg == 0xF000 &&     /* ruf ueber DPMI 0303h (Windows, */
+            ps[t].hofs >= 0x700 && ps[t].hofs < 0x800) {  /* F000:07xx) */
+            ps[t].en = 0;               /* gilt nicht mehr               */
+            ps[t].hseg = ps[t].hofs = 0;
+            vs(VS_CBARM, t, 0, 0, 0);
+        }
+        break;
     case VDD_EV_PROG:                   /* neues Programm: Treiber aus,  */
         vs(VS_MOUSE, t, VM_CLOSE, 0, 0);    /* Maus der Sitzung frei     */
+        {   static unsigned char e;     /* Zeigegeraet im Ausstattungs-  */
+            rdb(t, 0x410, &e);          /* wort (INT 11h): PS/2-BIOS     */
+            if (!(e & 4)) {             /* (INT 15h C2xxh) gibt es hier  */
+                e |= 4;
+                sv.fn = VS_WR;
+                sv.task = t;
+                sv.lin = 0x410;
+                sv.buf = (unsigned)&e;
+                sv.len = 1;
+                devhlp(DH_VDDSVC, 0, (unsigned)&sv, 0);
+            }
+        }
         /* fallthrough */
     case VDD_EV_CREATE:
     case VDD_EV_PARK:
     case VDD_EV_DESTROY:                /* (Kernel gibt die Maus frei)   */
         m_clear(&mo[t]);
+        p_clear(&ps[t]);
         break;
     }
     return 0;
@@ -371,12 +572,13 @@ static void init(void)
     reg.int_off = fent(0, int_fn);
     reg.ev_off = fent(1, event);
     reg.ints[0] = 0x33;
+    reg.ints[1] = 0x15;                 /* nur C2xxh (Kernel fragt)      */
     if (devhlp(DH_VDDREG, 0, (unsigned)&reg, 0)) {
         dputs("VMOUSE.SYS: Anmeldung gescheitert\n");
         r->status = DRV_ERR_NODEV;
         return;
     }
-    dputs("  Maus der DOS-Boxen (INT 33h)\n");
+    dputs("  Maus der DOS-Boxen (INT 33h, PS/2-BIOS)\n");
     r->units = 0;
     r->status = DRV_OK;
 }
@@ -396,6 +598,12 @@ void strategy(void)
                 vs(VS_MOUSE, t, VM_CLOSE, 0, 0);
                 vs(VS_CBARM, t, 0, 0, 0);
                 m_clear(&mo[t]);
+            }
+        for (t = 0; t < NT; t++)
+            if (ps[t].en) {
+                vs(VS_MOUSE, t, VM_CLOSE, 0, 0);
+                vs(VS_CBARM, t, 0, 0, 0);
+                p_clear(&ps[t]);
             }
         r->status = DRV_OK;
         break;

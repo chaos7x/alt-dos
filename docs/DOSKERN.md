@@ -1224,10 +1224,9 @@ frische Platte, `D:` + `SETUP`, Express) und 86Box P3B-F (Start über
   die Box stürzte danach in WINLDR ab).
 - **Kernel**: `FILES=` höchstens 219 (ein Kernelsegment; 255 lief über).
 
-Offen: Nach REGEDIT beendet sich Windows mit Code 0, statt Drucker,
-Gruppen und den Abschlussdialog zu zeigen – die schon angelegte
-WIN.COM bleibt unter ihrem Zwischennamen liegen (Ursache noch unklar,
-der Windows-Teil macht danach keinen Dateiaufruf mehr). SETUP schrieb
+Offen (behoben, s. u. „Task-Ende“): Nach REGEDIT beendete sich Windows
+mit Code 0, statt Drucker, Gruppen und den Abschlussdialog zu zeigen –
+die schon angelegte WIN.COM blieb unter ihrem Zwischennamen liegen. SETUP schrieb
 in die CONFIG.SYS des Startlaufwerks (HIMEM, SMARTDRV, `DOS=HIGH,UMB`) –
 in der Box ist das die CONFIG.SYS von AT-DOS. Seit 24.11.2026 (Ent-
 scheidung des Nutzers) lenkt der Box-Kern `X:\CONFIG.SYS` des Start-
@@ -1238,8 +1237,54 @@ Geprüft in QEMU: COPY/TYPE/DEL aus der Box treffen CONFIG.WIN, die
 CONFIG.SYS von AT-DOS bleibt bytegleich. Nur der eigene Box-Kern; mit
 `DOS_KERNEL=FREEDOS.IMG` gilt es nicht. AUTOEXEC.BAT bleibt die der Box
 (BOXSHELL übernimmt daraus nur PATH/SET/PROMPT).
-Weiter: Maus/Tastatur im Windows-Betrieb, KRNL386, EMS 5900h,
+Weiter: KRNL386, EMS 5900h,
 DOS-Programme aus Windows (Standardmodus: DSWAP), Netz.
+
+### Stand Weg B (24.11.2026, später): Task-Ende und Maus
+
+**Task-Ende.** Endet unter Windows ein Programm, setzt KRNL286 dessen
+PSP (50h) und ruft INT 21h **00h** (KRNL286 1:1722h): DOS soll die
+Dateien der Task schließen und zurückkehren. WINLDR machte daraus 4C00h
+und stellte vorher den PSP des Kerns ein (gedacht für das Ende von
+Windows) – damit beendete das Ende jedes Programms ganz Windows. Das war
+der Grund, weshalb SETUP nach REGEDIT ohne Abschlussdialog endete
+(gefunden über eine Stapelspur beim Reflektieren von 4Ch: Rücksprung
+in KRNL 1:1727h). Jetzt behandelt WINLDR 00h wie DOSX: über DPMI 0301h
+eine eigene Real-Mode-Routine (`rm_term`), die PSP:0Ah auf sich setzt,
+4C00h ruft und nach der Rückkehr ihren Stapel zurückholt; DOS schließt
+die Dateien und setzt den Elternprozess als aktuellen PSP. 4Ch bleibt
+das Ende von Windows (nur ExitKernel, KRNL286 1:955Ch). Geprüft in
+QEMU: Editor und Rechner im Programm-Manager gestartet und geschlossen,
+Windows läuft weiter, „Windows beenden“ führt sauber zu CMD zurück.
+
+Dabei: WIN.COM gibt DOSX als erstes Wort den Kern („krnl286.exe /b …“,
+von Hand auch ohne Endung) – der Box-Kern setzte davor fest
+`…\KRNL286.EXE`, heraus kam „KRNL286.EXEkrnl286.exe“ (lief nur, weil
+DOS die Endung auf drei Zeichen kürzt). Jetzt kommt nur das Verzeichnis
+von DOSX davor, WINLDR hängt bei Bedarf `.EXE` an.
+
+**Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
+selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
+Art und den IRQ (den INT-33h-Weg nur unter OS/2, DOS-Version ab 10).
+Seriell/Bus/InPort gehören in der Box dem Kernel – deshalb meldet WINLDR
+im PM auf 24h immer PS/2 (CH = 4, IRQ 0), dann nimmt MOUSE.DRV die
+Zeigegeräte-Schnittstelle des PS/2-BIOS (INT 15h C2xxh; dazu Modellbyte
+aus C0h und Bit 2 im Ausstattungswort). Die bildet jetzt `VMOUSE.SYS`
+nach (C200h–C207h, Pakete Status/X/Y/Z aus der Maus der Sitzung, Y nach
+oben positiv), der Kernel stellt den Rückruf zu wie den von INT 33h
+(`VS_CBARM` mit a3 = 1: vier Worte auf dem Stapel, nach dem RETF wieder
+herunter – im V86-Modus und für DPMI-Programme). WINLDR übersetzt C207h
+(ES:BX im PM) über einen Real-Mode-Rückruf (DPMI 0303h). Auf echter
+Hardware ruft das BIOS den Rückruf aus seiner IRQ-12-Routine, vor die
+sich MOUSE.DRV hängt; der Rückruf legt nur ab, ausgewertet wird in der
+IRQ-Routine. WINLDR löst deshalb nach dem Rückruf INT 74h aus (deren
+alter Vektor führt in den Stummel der Box). Ein PS/2-Rückruf über DPMI
+gilt nach dem Ende des DPMI-Programms nicht mehr (VDD_EV_PMEND). Geprüft
+in QEMU (serielle Maus `-serial msmouse` mit `MOUSE.SYS /COM1`, also
+nicht einmal PS/2 darunter): Zeiger folgt, Klicks öffnen Menüs und
+drücken Knöpfe; PS2T.COM (Testprogramm, nur im Scratchpad) in der Box:
+Kennung AAh, Pakete mit Bewegung und Tasten; INT 33h (MT.COM) wie
+vorher.
 
 Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
 in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h

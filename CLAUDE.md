@@ -2067,8 +2067,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geprüft QEMU und 86Box P3B-F; seit 24.11.2026 ersetzt der Box-Kern
   DOSX.EXE selbst durch WINLDR, das SETUP von CD läuft durch Kopieren
   und REGEDIT (Fehler dabei: Bit 7 „nicht vererben“ im SFT, INT 25h/26h
-  und XMS aus dem PM, 56h/60h in WINLDR, PSP vor 4Ch); offen: Windows
-  endet danach ohne Abschlussdialog (WIN.COM bleibt unter Zwischenname),
+  und XMS aus dem PM, 56h/60h in WINLDR, PSP vor 4Ch); Windows endete
+  nach jedem Programm (auch REGEDIT im SETUP): KRNL beendet den DOS-Teil
+  einer Task mit INT 21h 00h, WINLDR machte daraus das Ende von Windows –
+  jetzt `pmterm`/`rm_term` wie DOSX (4Ch mit PSP:0Ah auf sich, DPMI 0301h).
+  Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
+  VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
+  übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);
   `X:\CONFIG.SYS` des Startlaufwerks lenkt der Box-Kern auf
   `\DOS\MDOS\CONFIG.WIN` um (Entscheidung des Nutzers, 24.11.2026, wie
   CONFIG.NT; SETUP trug dort HIMEM/SMARTDRV ein). Einzelheiten in

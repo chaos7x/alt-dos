@@ -164,7 +164,12 @@ struct vdd_svc {
                                        aus dem Takt, auch waehrend eines
                                        DPMI-Programms im PM), fragt vorher
                                        das Modul (VDD_CBQ) und kehrt mit RETF
-                                       zurueck (wie VDHPushFarCall bei OS/2) */
+                                       zurueck (wie VDHPushFarCall bei OS/2);
+                                       a3 = 1: Art PS/2-BIOS (INT 15h C207h)
+                                       - statt der Register ax, bx, cx, dx
+                                       als vier Worte auf dem Stapel (ax
+                                       zuerst), der Kernel nimmt sie nach
+                                       dem RETF wieder herunter         */
 #define VDD_HK_ADLIB    16          /* ADLIB_COPY=ON                     */
 
 #endif
