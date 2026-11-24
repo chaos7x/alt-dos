@@ -4581,7 +4581,10 @@ static void k2_lldt(unsigned sel);
 #define DP_BACK   0x0520                /* Ruecksprung aus dem Real Mode */
 #define DP_STUB   0x0C00                /* Standard-PM-Vektoren (4 Byte) */
 #define DP_RMSTK  0x0400                /* Real-Mode-Stapel (Bytes, vom Programm) */
-#define NDPM      24                    /* Speicherbloecke               */
+#define NDPM      256                   /* Speicherbloecke je Box (KRNL286
+                                           holt seinen Speicher in 1-MB-
+                                           Bloecken - mit 24 bekam Windows
+                                           hoechstens 24 MB)               */
 #define DPCT      6                     /* Schachtelung Real Mode        */
 #define LDT_N     512
 #define SEL(i)    (((i) << 3) | 7)      /* LDT, RPL 3                    */
@@ -4641,7 +4644,11 @@ static void lm_set(int t, unsigned i, int on)
     else
         *b &= (unsigned char)~(1 << (i & 7));
 }
-static struct { unsigned long lpg, npg; } dp_mem[NTASK][NDPM];
+struct dpm { unsigned long lpg, npg; };
+static struct dpm __far *dpm_tab;       /* NTASK x NDPM, eigenes Kernel-
+                                           segment (DGROUP ist voll), beim
+                                           ersten DPMI-Programm angelegt */
+#define DPM(t, k) dpm_tab[(unsigned)(t) * NDPM + (k)]
 /* DPMI 0800h: eingeblendeter Geraetespeicher (z. B. linearer Bild-
    speicher einer VBE-2.0-Karte); Seiten ohne PTE_OWN, nie freigegeben */
 
@@ -5173,9 +5180,9 @@ static unsigned long dmem_gap(int t, unsigned long n)
     unsigned i;
 again:
     for (i = 0; i < NDPM; i++)
-        if (dp_mem[t][i].npg && s < dp_mem[t][i].lpg + dp_mem[t][i].npg &&
-            s + n > dp_mem[t][i].lpg) {
-            s = dp_mem[t][i].lpg + dp_mem[t][i].npg;
+        if (DPM(t, i).npg && s < DPM(t, i).lpg + DPM(t, i).npg &&
+            s + n > DPM(t, i).lpg) {
+            s = DPM(t, i).lpg + DPM(t, i).npg;
             goto again;
         }
     for (i = 0; i < NDPP; i++)
@@ -5206,10 +5213,10 @@ static void dpmi_end(int t)             /* Programm fertig / Box zu      */
     vdd_event(t, VDD_EV_PMEND, 0);
     if (!dp_on[t])
         return;
-    for (i = 0; i < NDPM; i++)
-        if (dp_mem[t][i].npg) {
-            dmem_unmap(t, dp_mem[t][i].lpg, dp_mem[t][i].npg);
-            dp_mem[t][i].npg = 0;
+    for (i = 0; dpm_tab && i < NDPM; i++)
+        if (DPM(t, i).npg) {
+            dmem_unmap(t, DPM(t, i).lpg, DPM(t, i).npg);
+            DPM(t, i).npg = 0;
         }
     for (i = 0; i < NDPP; i++)
         if (dp_phys[t][i].npg) {
@@ -5245,7 +5252,16 @@ static unsigned dp_switch(struct v86_frame *f, int t)
 
     rip = rd16(ss, (unsigned)sp);               /* Ruecksprung (RETF)    */
     rcs = rd16(ss, (unsigned)sp + 2);
-    if (dp_on[t] || !(dp_ldt[t] = own_page()) || !(dp_st[t] = own_page())) {
+    if (!dpm_tab) {                             /* Blocktabelle (genullt) */
+        unsigned sel = kseg_alloc((unsigned long)NTASK * NDPM * sizeof(struct dpm));
+        if (sel) {
+            unsigned long __far *z = MK_FP(sel, 0);
+            for (i = 0; i < NTASK * NDPM * sizeof(struct dpm) / 4; i++)
+                z[i] = 0;
+            dpm_tab = MK_FP(sel, 0);
+        }
+    }
+    if (dp_on[t] || !dpm_tab || !(dp_ldt[t] = own_page()) || !(dp_st[t] = own_page())) {
         if (!dp_on[t] && dp_ldt[t]) {
             vp_free(dp_ldt[t]);
             dp_ldt[t] = 0;
@@ -5747,41 +5763,41 @@ static unsigned dp31(struct v86_frame *f, int t)
             DERR(0x8021);
         if (AX == 0x0503) {                     /* neu anlegen, kopieren */
             k = SI;                             /* Handle = Index + 1    */
-            if (!k || k > NDPM || !dp_mem[t][k - 1].npg)
+            if (!k || k > NDPM || !DPM(t, k - 1).npg)
                 DERR(0x8023);
             k--;
-            if (n <= dp_mem[t][k].npg) {
-                dmem_unmap(t, dp_mem[t][k].lpg + n, dp_mem[t][k].npg - n);
-                dp_mem[t][k].npg = n;
-                lin = dp_mem[t][k].lpg << 12;
+            if (n <= DPM(t, k).npg) {
+                dmem_unmap(t, DPM(t, k).lpg + n, DPM(t, k).npg - n);
+                DPM(t, k).npg = n;
+                lin = DPM(t, k).lpg << 12;
                 goto done501;
             }
-            if (n - dp_mem[t][k].npg > dmem_free_pg() || !(lin = dmem_gap(t, n)) ||
+            if (n - DPM(t, k).npg > dmem_free_pg() || !(lin = dmem_gap(t, n)) ||
                 !dmem_res(t, lin, n))
                 DERR(0x8013);
             {                                   /* Seiten umhaengen      */
                 unsigned long j;
-                for (j = 0; j < dp_mem[t][k].npg; j++) {
-                    unsigned long e = lpte_get(t, lin + j), o = lpte_get(t, dp_mem[t][k].lpg + j);
+                for (j = 0; j < DPM(t, k).npg; j++) {
+                    unsigned long e = lpte_get(t, lin + j), o = lpte_get(t, DPM(t, k).lpg + j);
                     pte_drop(e);
                     lpte_set(t, lin + j, o);
-                    lpte_set(t, dp_mem[t][k].lpg + j, 0);
+                    lpte_set(t, DPM(t, k).lpg + j, 0);
                 }
             }
-            dp_mem[t][k].lpg = lin;
-            dp_mem[t][k].npg = n;
+            DPM(t, k).lpg = lin;
+            DPM(t, k).npg = n;
             lin <<= 12;
             tlb(t);
             goto done501;
         }
-        for (k = 0; k < NDPM && dp_mem[t][k].npg; k++)
+        for (k = 0; k < NDPM && DPM(t, k).npg; k++)
             ;
         if (k == NDPM)
             DERR(0x8016);
         if (n > dmem_free_pg() || !(lin = dmem_gap(t, n)) || !dmem_res(t, lin, n))
             DERR(0x8013);
-        dp_mem[t][k].lpg = lin;
-        dp_mem[t][k].npg = n;
+        DPM(t, k).lpg = lin;
+        DPM(t, k).npg = n;
         lin <<= 12;
         tlb(t);
 done501:
@@ -5793,10 +5809,10 @@ done501:
     }
     case 0x0502:                                /* Speicher freigeben    */
         k = SI;
-        if (!k || k > NDPM || !dp_mem[t][k - 1].npg)
+        if (!k || k > NDPM || !DPM(t, k - 1).npg)
             DERR(0x8023);
-        dmem_unmap(t, dp_mem[t][k - 1].lpg, dp_mem[t][k - 1].npg);
-        dp_mem[t][k - 1].npg = 0;
+        dmem_unmap(t, DPM(t, k - 1).lpg, DPM(t, k - 1).npg);
+        DPM(t, k - 1).npg = 0;
         tlb(t);
         return 0;
     case 0x0800: {                              /* Geraetespeicher einblenden */
@@ -6167,11 +6183,11 @@ static int dp_exstack(int t)
         return 0;
     ldesc(t, (unsigned)k2, lp << 12, 0xFFF, 0xF2, dp_32[t] ? 0x40 : 0);
     dp_exss[t] = SEL(k2);
-    for (k = 0; k < NDPM && dp_mem[t][k].npg; k++)
+    for (k = 0; k < NDPM && DPM(t, k).npg; k++)
         ;
     if (k < NDPM) {                             /* beim Ende freigeben   */
-        dp_mem[t][k].lpg = lp;
-        dp_mem[t][k].npg = 1;
+        DPM(t, k).lpg = lp;
+        DPM(t, k).npg = 1;
     }
     tlb(t);
     return 1;
@@ -7485,8 +7501,8 @@ void __far v86_pfs(int t, unsigned *v)
     for (i = 0; i < NXH; i++)
         if (xh[t][i].used)
             xk += xh[t][i].npg;
-    for (i = 0; i < NDPM; i++)
-        dk += (unsigned)dp_mem[t][i].npg;
+    for (i = 0; dpm_tab && i < NDPM; i++)
+        dk += (unsigned)DPM(t, i).npg;
     v[0] = (unsigned)box_ses[t];
     v[1] = box_ses[t] >= 0 && box_fg(t);
     v[2] = box_cm[t];

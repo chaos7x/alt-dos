@@ -1531,3 +1531,15 @@ von USER über [0x2D0] nicht eingetragen, verschachtelt [0x247], Fehler-
 klasse aus 59h). Geprüft in 86Box P3B-F (Spur der DEM-Aufrufe und der
 Antwort über Port E9h, danach entfernt) und QEMU (FreeCOM: A:, B:, leere
 ZIP-Wechselplatte am lsi53c895a).
+
+### Erledigt (24.11.2026): Windows bekam höchstens 24 MB
+
+Vom Nutzer gemeldet (P3B-F, 256 MB). Ursache: die Box führte je
+DPMI-Programm höchstens 24 Speicherblöcke (`NDPM` in v86.c), KRNL286 holt
+seinen Speicher in 1-MB-Blöcken über 0501h. Jetzt 256 Blöcke; die Tabelle
+(`dpm_tab`, NTASK × NDPM × 8 Byte = 16 KB) liegt in einem Kernelsegment,
+das beim ersten DPMI-Programm angelegt wird (vorher 1,5 KB in DGROUP).
+Testprogramm (Scratchpad, nicht im Repository): holt 1-MB-Blöcke, bis
+keiner mehr kommt – vorher 23, jetzt 250 (Grenze des Tests). Geprüft:
+QEMU (Testprogramm, DOOM 1.9 Timedemo), 86Box P3B-F (Windows 3.11 bis
+zum Programm-Manager).
