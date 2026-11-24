@@ -26,12 +26,15 @@ host    dd      0                       ; Moduswechsel des Wirts
 cli_ip  dw      0                       ; Aufrufer des Moduswechsels
 cli_cs  dw      0, 0
 rmseg   dw      0                       ; unser Segment
+kpsp    dw      0                       ; PSP des Kerns (beim Moduswechsel)
 dsel    dw      0                       ; Datenselektor auf unser Segment
 csel    dw      0                       ; Codeselektor fuer pm21
 xsel    dw      0                       ; Daten, Basis je Kopie
 old21   dd      0                       ; alter PM-Vektor 21h (Wirt)
 old10   dd      0                       ; alter PM-Vektor 10h
 old15   dd      0                       ; alter PM-Vektor 15h
+old2fp  dd      0                       ; alter PM-Vektor 2Fh
+xmsent  dd      0                       ; XMS-Treiber (Real Mode), 0 = keiner
 rmint   dw      21h                     ; INT fuer callrm
 pdta    dd      0                       ; DTA des Programms (Sel:Off)
 c_ds    dw      0                       ; DS/ES des Aufrufers im PM
@@ -78,6 +81,13 @@ rm2f:   cmp     ax, 1687h
 rm_entry:
         pop     word [cs:cli_ip]
         pop     word [cs:cli_cs]
+        push    ax
+        push    bx
+        mov     ah, 62h                 ; PSP des Kerns merken (4Ch)
+        int     21h
+        mov     [cs:kpsp], bx
+        pop     bx
+        pop     ax
         call    far [cs:host]           ; zurueck im PM (CS = Selektor)
         jc      .fail
         pusha
@@ -137,6 +147,30 @@ rm_entry:
         mov     cx, [csel]
         mov     dx, pm15
         int     31h
+        mov     ax, 0205h               ; INT 25h/26h (absolut lesen/
+        mov     bl, 25h                 ; schreiben, Puffer DS:BX)
+        mov     cx, [csel]
+        mov     dx, pm25
+        int     31h
+        mov     ax, 0205h
+        mov     bl, 26h
+        mov     dx, pm26
+        int     31h
+        mov     ax, [rmseg]
+        mov     [pkt + 8], ax
+        cmp     dword [xmsent], 0       ; XMS: 4310h im PM liefert einen
+        je      .noxms                  ; eigenen Einsprung (wie DOSX)
+        mov     ax, 0204h
+        mov     bl, 2Fh
+        int     31h
+        mov     [old2fp], dx
+        mov     [old2fp + 2], cx
+        mov     ax, 0205h
+        mov     bl, 2Fh
+        mov     cx, [csel]
+        mov     dx, pm2f
+        int     31h
+.noxms:
         mov     word [pdta], 0          ; DTA erst mit 1Ah
         mov     word [pdta + 2], 0
         mov     [cli_cs + 2], cs        ; (Ablage: Selektor des Wirts)
@@ -219,7 +253,10 @@ ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      66h, T_PASS, 67h, T_PASS, 68h, T_PASS, 6Ch, T_XOPN
         db      0
 
-pm21:   push    ds
+pm21:   test    ah, ah                  ; 00h (Ende ueber CS = PSP) gibt
+        jnz     .f                      ; es im PM nicht: wie 4C00h
+        mov     ax, 4C00h
+.f:     push    ds
         mov     ds, [cs:dsel]
         pop     word [c_ds]
         mov     [c_es], es
@@ -577,7 +614,7 @@ f_ren:  call    cpsz_dx                 ; 56h: alt DS:DX, neu ES:DI
         push    es
         push    ds
         pop     es
-        mov     si, di
+        mov     si, [R_edi]             ; (cpsz hat DI verbraucht)
         mov     di, buf2
         mov     ds, [c_es]
         mov     cx, 260
@@ -600,7 +637,9 @@ f_xopn: movzx   esi, si                 ; 6Ch: DS:SI
         jmp     done
 
 f_true: movzx   esi, si                 ; 60h: DS:SI -> ES:DI (128)
+        push    di                      ; (cpsz verbraucht DI)
         call    cpsz
+        pop     di
         mov     word [R_esi], buf
         mov     word [R_edi], buf2
         call    callrm
@@ -697,7 +736,13 @@ f_npsp: mov     bx, dx                  ; 26h/55h: neuer PSP bei DX
         mov     word [fl_out], 0
         jmp     done
 
-f_ffff: popad                           ; 4Ch u. a.: an den Wirt
+f_ffff: cmp     byte [R_eax + 1], 4Ch   ; Windows laesst den PSP einer Task
+        jne     .x                      ; stehen - DOS beendete sonst sie
+        mov     word [R_eax], 5000h     ; statt des Kerns (DOSX stellt ihn
+        mov     ax, [kpsp]              ; ebenso zurueck)
+        mov     [R_ebx], ax
+        call    callrm
+.x:     popad                           ; 4Ch u. a.: an den Wirt
         mov     es, [c_es]
         push    word [c_ds]
         pop     ds
@@ -871,6 +916,227 @@ pm15:   cmp     ah, 0C0h
         pop     ds
         iret
 
+; ---- Protected Mode: INT 25h/26h (absolut lesen/schreiben, wie DOSX) ---
+; AL Laufwerk, CX Sektoren, DX erster, DS:BX Puffer - oder CX = FFFFh und
+; DS:BX Paket (Sektor 32 Bit, Anzahl, Puffer Off:Sel). Weiter an DOS immer
+; als Paket in Stuecken zu BUFSZ. Rueckkehr wie DOS mit RETF: die Flags
+; des Aufrufs bleiben auf dem Stapel, CF und AX melden das Ergebnis.
+pm25:   push    ds
+        mov     ds, [cs:dsel]
+        mov     byte [awr], 0
+        jmp     absrw
+pm26:   push    ds
+        mov     ds, [cs:dsel]
+        mov     byte [awr], 1
+absrw:  pop     word [c_ds]
+        mov     [c_es], es
+        pushad
+        mov     [a_drv], al
+        cmp     cx, 0FFFFh
+        jne     .n
+        mov     es, [c_ds]
+        mov     eax, [es:bx]
+        mov     [a_sec], eax
+        mov     ax, [es:bx + 4]
+        mov     [a_cnt], ax
+        mov     ax, [es:bx + 6]
+        mov     [a_off], ax
+        mov     ax, [es:bx + 8]
+        mov     [a_sel], ax
+        jmp     .go
+.n:     movzx   edx, dx
+        mov     [a_sec], edx
+        mov     [a_cnt], cx
+        mov     [a_off], bx
+        mov     ax, [c_ds]
+        mov     [a_sel], ax
+.go:    mov     al, [awr]
+        add     al, 25h
+        mov     [rmint], al
+        mov     byte [rmint + 1], 0
+        xor     di, di                  ; Sektoren erledigt
+.l:     mov     cx, [a_cnt]
+        sub     cx, di
+        jz      .ok
+        cmp     cx, BUFSZ / 512
+        jbe     .c
+        mov     cx, BUFSZ / 512
+.c:     mov     [pkt + 4], cx
+        movzx   eax, di
+        add     eax, [a_sec]
+        mov     [pkt], eax
+        movzx   eax, di                 ; Stelle im Puffer des Programms
+        shl     eax, 9
+        movzx   edx, word [a_off]
+        add     eax, edx
+        mov     bx, [a_sel]
+        call    xmapl                   ; ES = xsel
+        cmp     byte [awr], 0
+        je      .call
+        push    cx                      ; schreiben: erst holen
+        push    di
+        shl     cx, 9
+        push    ds
+        push    es
+        pop     ds
+        pop     es
+        xor     si, si
+        mov     di, buf
+        rep     movsb
+        push    es
+        pop     ds
+        mov     es, [xsel]
+        pop     di
+        pop     cx
+.call:  movzx   eax, byte [a_drv]
+        mov     [R_eax], eax
+        mov     dword [R_ecx], 0FFFFh
+        mov     word [R_ebx], pkt
+        mov     ax, [rmseg]
+        mov     [R_ds], ax
+        mov     [R_es], ax
+        xor     ax, ax
+        mov     [R_ss], ax
+        mov     [R_sp], ax
+        mov     [R_fs], ax
+        mov     [R_gs], ax
+        mov     [R_fl], ax
+        call    callrm
+        test    byte [R_fl], 1
+        jnz     .err
+        cmp     byte [awr], 0
+        jne     .nx
+        push    cx                      ; lesen: zum Programm
+        push    di
+        shl     cx, 9
+        mov     si, buf
+        xor     di, di
+        rep     movsb
+        pop     di
+        pop     cx
+.nx:    add     di, cx
+        jmp     .l
+.ok:    popad
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        clc
+        retf
+.err:   popad
+        mov     ax, [R_eax]
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        stc
+        retf
+
+; ---- Protected Mode: XMS (INT 2Fh 4310h, Fernaufruf wie DOSX) ---------
+pm2f:   cmp     ax, 4310h
+        je      .x
+        jmp     far [cs:old2fp]
+.x:     mov     es, [cs:csel]
+        mov     bx, pm_xms
+        iret
+
+; Fernaufruf aus dem PM: an den XMS-Treiber per DPMI 0301h. 0Bh (Block
+; verschieben, DS:SI): Struktur in den Puffer, Adressen mit Handle 0
+; (Sel:Off) -> Seg:Off unter 1 MB. Zurueck EAX, EBX, ECX, EDX.
+pm_xms: push    ds
+        mov     ds, [cs:dsel]
+        pop     word [c_ds]
+        mov     [c_es], es
+        pushad
+        mov     [R_eax], eax
+        mov     [R_ebx], ebx
+        mov     [R_ecx], ecx
+        mov     [R_edx], edx
+        mov     [R_esi], esi
+        mov     [R_edi], edi
+        mov     [R_ebp], ebp
+        mov     ax, [rmseg]
+        mov     [R_ds], ax
+        mov     [R_es], ax
+        xor     ax, ax
+        mov     [R_ss], ax
+        mov     [R_sp], ax
+        mov     [R_fs], ax
+        mov     [R_gs], ax
+        mov     [R_fl], ax
+        mov     eax, [xmsent]
+        mov     [R_ip], eax             ; IP und CS
+        cmp     byte [R_eax + 1], 0Bh
+        jne     .call
+        push    ds                      ; 16 Byte DS:SI -> buf
+        pop     es
+        mov     di, buf
+        mov     ds, [c_ds]
+        mov     cx, 16
+        rep     movsb
+        push    es
+        pop     ds
+        mov     word [R_esi], buf
+        mov     si, buf + 4             ; Quelle
+        call    .rmp
+        mov     si, buf + 10            ; Ziel
+        call    .rmp
+.call:  push    ds
+        pop     es
+        mov     di, R
+        mov     ax, 0301h
+        xor     bx, bx
+        xor     cx, cx
+        int     31h
+        popad
+        mov     eax, [R_eax]
+        mov     ebx, [R_ebx]
+        mov     ecx, [R_ecx]
+        mov     edx, [R_edx]
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        retf
+; [SI] Handle, [SI+2] Off:Sel -> bei Handle 0 Seg:Off (Basis + Off)
+.rmp:   cmp     word [si], 0
+        jne     .r
+        mov     bx, [si + 4]
+        mov     ax, 0006h
+        int     31h
+        add     dx, [si + 2]
+        adc     cx, 0
+        mov     ax, dx
+        and     ax, 0Fh
+        mov     [si + 2], ax
+        shrd    dx, cx, 4
+        mov     [si + 4], dx
+.r:     ret
+
+; EAX = Abstand, BX = Selektor -> ES = xsel mit Basis(BX) + EAX
+xmapl:  pushad
+        push    eax
+        mov     ax, 0006h
+        int     31h
+        pop     eax
+        shl     ecx, 16
+        mov     cx, dx
+        add     ecx, eax
+        mov     dx, cx
+        shr     ecx, 16
+        mov     bx, [xsel]
+        mov     ax, 0007h
+        int     31h
+        popad
+        mov     es, [xsel]
+        ret
+
+a_sec   dd      0
+a_cnt   dw      0
+a_off   dw      0
+a_sel   dw      0
+a_drv   db      0
+awr     db      0
+pkt     dd      0                       ; Paket fuer DOS: Sektor, Anzahl,
+        dw      0, buf, 0               ; Puffer (Segment beim Start)
+
 dta:    times   128 db 0
 buf:    times   BUFSZ db 0
 buf2:   times   264 db 0
@@ -906,7 +1172,15 @@ init:   mov     [rmseg], cs
         inc     cx
         jmp     .t
 .te:    mov     [tail], cl
-        mov     ax, 352Fh
+        mov     ax, 4300h               ; XMS-Treiber merken
+        int     2Fh
+        cmp     al, 80h
+        jne     .nx
+        mov     ax, 4310h
+        int     2Fh
+        mov     [xmsent], bx
+        mov     [xmsent + 2], es
+.nx:    mov     ax, 352Fh
         int     21h
         mov     [old2f], bx
         mov     [old2f + 2], es
@@ -936,8 +1210,30 @@ init:   mov     [rmseg], cs
         int     21h
         mov     ah, 4Ch
         int     21h
-.err:   mov     dx, m_err
+.err:   push    ax                      ; DOS-Fehlercode zweistellig
+        aam     16
+        add     ax, 3030h
+        cmp     al, '9'
+        jbe     .e1
+        add     al, 7
+.e1:    cmp     ah, '9'
+        jbe     .e2
+        add     ah, 7
+.e2:    mov     [m_code], ah
+        mov     [m_code + 1], al
+        pop     ax
+        mov     dx, m_err
         mov     ah, 9
+        int     21h
+        mov     dx, prog                ; Name des Programms
+        mov     si, prog
+.pl:    lodsb
+        test    al, al
+        jnz     .pl
+        mov     byte [si - 1], '$'
+        mov     ah, 9
+        int     21h
+        mov     dx, m_crlf
         int     21h
         mov     ax, 4C01h
         int     21h
@@ -950,7 +1246,9 @@ usage:  mov     dx, m_use
 pb:     dw      0, tail, 0, 5Ch, 0, 6Ch, 0
 m_use:  db      'WINLDR Programm [Argumente] - Windows-Kern auf dem DPMI', 13, 10
         db      'der DOS-Box starten (statt DOSX.EXE)', 13, 10, '$'
-m_err:  db      'WINLDR: Programm nicht gefunden', 13, 10, '$'
+m_err:  db      'WINLDR: Fehler '
+m_code: db      '00h beim Start von $'
+m_crlf: db      13, 10, '$'
 prog:   times   128 db 0
 tail:   times   130 db 0
         times   256 db 0

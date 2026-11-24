@@ -93,6 +93,7 @@ int                   current = -1;   /* auch v86.c */
    (wie MS-DOS: fuer alle Programme zusammen) */
 struct ofile __far *files;
 unsigned nfiles = 20;            /* FILES=, Vorgabe 20            */
+#define NFMAX (0xFFFFu / sizeof(struct ofile))   /* 219 Eintraege */
 #define NFILE nfiles
 
 /* ---- Tabellen aufbauen (wird noch im Real Mode aufgerufen) ------------- */
@@ -7584,7 +7585,7 @@ static void config_sys(void)
             load_driver(v, 1);
         } else if (kw(line, "FILES")) {
             n = num_arg(v);
-            nfiles = n < 8 ? 8 : n > 255 ? 255 : n;
+            nfiles = n < 8 ? 8 : n > NFMAX ? NFMAX : n;   /* ein Segment */
         } else if (kw(line, "AUTOCHECK")) {     /* wie OS/2 /AUTOCHECK:  */
             static char ac[40];
             scopy(ac, "AUTOCHECK=", sizeof(ac));

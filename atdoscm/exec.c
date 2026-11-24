@@ -334,17 +334,64 @@ static void set_cur(u16 psp)
 
 static char ep[128];
 
+/* Windows 3.1 im Standardmodus: DOSX.EXE kennt nur VCPI oder den Real
+   Mode - statt seiner startet X:\DOS\MDOS\WINLDR.COM den Kern auf dem
+   DPMI des Wirts (Weg B, docs/DOSKERN.md). Befehlszeile: KRNL286.EXE aus
+   dem Verzeichnis von DOSX, dahinter die alte Befehlszeile. */
+extern u8 sys_drv;
+static char wl_tail[130];
+static u16 wl_pb[7];
+
+static void dosx_redirect(u16 *pseg, u16 *poff)
+{
+    static const char kr[] = "KRNL286.EXE", wl[] = ":\\DOS\\MDOS\\WINLDR.COM";
+    unsigned n, i, d, k;
+    u16 ts, to;
+    for (n = 0; ep[n]; n++)
+        ;
+    if (n < 9)
+        return;
+    for (i = 0; i < 9; i++)
+        if (ep[n - 9 + i] != "\\DOSX.EXE"[i])
+            return;
+    d = 1;
+    wl_tail[d++] = ' ';
+    for (i = 0; i < n - 8; i++)         /* Verzeichnis mit '\'          */
+        wl_tail[d++] = ep[i];
+    for (i = 0; kr[i]; i++)
+        wl_tail[d++] = kr[i];
+    to = W(*pseg, *poff + 2);           /* alte Befehlszeile             */
+    ts = W(*pseg, *poff + 4);
+    k = B(ts, to);
+    for (i = 0; i < k && d < 127; i++)
+        wl_tail[d++] = B(ts, to + 1 + i);
+    wl_tail[0] = (char)(d - 1);
+    wl_tail[d] = 13;
+    for (i = 0; i < 7; i++)
+        wl_pb[i] = W(*pseg, *poff + 2 * i);
+    wl_pb[1] = (u16)wl_tail;
+    wl_pb[2] = kseg;
+    ep[0] = (char)('A' + sys_drv);
+    for (i = 0; wl[i]; i++)
+        ep[1 + i] = wl[i];
+    ep[1 + i] = 0;
+    *pseg = kseg;
+    *poff = (u16)wl_pb;
+}
+
 struct frame __far *exec_fn(struct frame __far *f)
 {
     struct ld o;
     unsigned e, al = AL(f);
-    u16 par = cur_psp();
+    u16 par = cur_psp(), pseg = f->es, poff = f->bx;
     if (al != 0 && al != 1 && al != 3) {
         set_err(f, E_FUNC);
         return f;
     }
-    if ((e = canon(FP(f->ds, f->dx), ep, 0)) != 0 ||
-        (e = load(ep, al, f->es, f->bx, par, f->ip, f->cs, &o)) != 0) {
+    if ((e = canon(FP(f->ds, f->dx), ep, 0)) == 0 && al == 0)
+        dosx_redirect(&pseg, &poff);
+    if (e != 0 ||
+        (e = load(ep, al, pseg, poff, par, f->ip, f->cs, &o)) != 0) {
         set_err(f, e);
         return f;
     }

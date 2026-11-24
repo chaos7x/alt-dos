@@ -30,7 +30,7 @@ u16 first_mcb;
 u16 old2f[2];
 u16 setver_dx;
 static u8  alloc_strat, umb_link, verify, brk;
-static u8  sys_drv;
+u8  sys_drv;                            /* Startlaufwerk (exec.c: WINLDR) */
 extern char cm_end[];
 
 extern char int21_entry[];

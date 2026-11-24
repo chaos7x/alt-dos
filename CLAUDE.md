@@ -2064,7 +2064,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   \DOS\MDOS) statt DOSX.EXE, KRNL286 auf unserem DPMI (Erweiterung
   „MS-DOS“ mit LDT-Alias, LDT bis 8192), DOS-/BIOS-Übersetzung im Lader.
   Stand: Windows 3.11 deutsch startet bis zum ersten SETUP-Fenster,
-  geprüft QEMU und 86Box P3B-F; Einzelheiten und Offenes in
+  geprüft QEMU und 86Box P3B-F; seit 24.11.2026 ersetzt der Box-Kern
+  DOSX.EXE selbst durch WINLDR, das SETUP von CD läuft durch Kopieren
+  und REGEDIT (Fehler dabei: Bit 7 „nicht vererben“ im SFT, INT 25h/26h
+  und XMS aus dem PM, 56h/60h in WINLDR, PSP vor 4Ch); offen: Windows
+  endet danach ohne Abschlussdialog (WIN.COM bleibt unter Zwischenname),
+  SETUP schreibt in die CONFIG.SYS von AT-DOS. Einzelheiten in
   `docs/DOSKERN.md` „Stand Weg B“. Testumgebung /tmp/claude-0/w31 (ISO
   des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
   zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.

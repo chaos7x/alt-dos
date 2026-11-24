@@ -1194,10 +1194,45 @@ DOOM 1.9 Timedemo mit Ton danach unverändert.
 - **Box-Kern** (`atdoscm/exec.c`): minalloc = maxalloc = 0 lädt oben in
   den Block wie MS-DOS (KRNL286.EXE rechnet damit).
 
-Offen: der Box-Kern ersetzt `DOSX.EXE` beim 4B00h durch WINLDR (dann
-läuft SETUP über seinen normalen Weg und legt WIN.COM an), Maus/Tastatur
-im Windows-Betrieb prüfen, KRNL386, EMS 5900h, DOS-Programme aus Windows
-(Standardmodus: DSWAP), Netz.
+### Stand Weg B (24.11.2026): SETUP von CD läuft über DOSX → WINLDR
+
+Das normale SETUP von der CD läuft jetzt durch DOS-Teil, Namens-
+abfrage, Kopieren aller Dateien und REGEDIT; Windows beendet sich
+danach sauber und die Box kehrt zu CMD zurück. Geprüft in QEMU (32 MB,
+frische Platte, `D:` + `SETUP`, Express) und 86Box P3B-F (Start über
+`C:\WINDOWS\SYSTEM\DOSX.EXE`); DOOM 1.9 Timedemo unverändert.
+
+- **Box-Kern** (`atdoscm/exec.c`): 4B00h auf `…\DOSX.EXE` startet statt
+  dessen `X:\DOS\MDOS\WINLDR.COM` (Startlaufwerk) mit `KRNL286.EXE` aus
+  dem Verzeichnis von DOSX und der alten Befehlszeile dahinter.
+- **Box-Kern** (`atdoscm/file.c`): Bit 7 des Öffnungsmodus („nicht
+  vererben“) blieb nicht im SFT-Eintrag stehen (`mode & 7Fh`). Windows
+  öffnet seine Module und Schriften so; jeder neue Task-PSP (55h) erbte
+  sie alle, die JFT (20) war voll und das Öffnen von REG.DAT scheiterte
+  mit 04h. Jetzt bleibt das Bit im Modus und steht wie bei MS-DOS als
+  `sf_no_inherit` (1000h) in den Flags.
+- **WINLDR**: INT 25h/26h aus dem PM wie DOSX (Paketform über den
+  Puffer unter 1 MB, Rückkehr mit RETF, die Flags bleiben auf dem
+  Stapel – CPWIN386.CPL stürzte sonst mit #GP ab); 2Fh 4310h im PM
+  liefert einen eigenen XMS-Einsprung, der über DPMI 0301h an den
+  XMS-Treiber geht (0Bh mit umgerechneten Adressen bei Handle 0) – SETUP
+  ruft den XMS-Treiber direkt aus dem PM; 56h und 60h nahmen nach dem
+  Umkopieren des ersten Namens ein verbrauchtes DI (das Umbenennen
+  TEMP.000 → Ziel scheiterte mit 05h); INT 21h 00h im PM wird 4C00h;
+  vor einem 4Ch aus dem PM stellt WINLDR den PSP des Kerns wieder ein
+  (Windows lässt den einer Task stehen, DOS beendete sonst diese und
+  die Box stürzte danach in WINLDR ab).
+- **Kernel**: `FILES=` höchstens 219 (ein Kernelsegment; 255 lief über).
+
+Offen: Nach REGEDIT beendet sich Windows mit Code 0, statt Drucker,
+Gruppen und den Abschlussdialog zu zeigen – die schon angelegte
+WIN.COM bleibt unter ihrem Zwischennamen liegen (Ursache noch unklar,
+der Windows-Teil macht danach keinen Dateiaufruf mehr). SETUP schreibt
+in die CONFIG.SYS und AUTOEXEC.BAT des Startlaufwerks (HIMEM, SMARTDRV,
+`DOS=HIGH,UMB`) – in der Box ist das die CONFIG.SYS von AT-DOS; das
+gehört in eine eigene Datei der Box umgelenkt (wie CONFIG.NT bei NT).
+Weiter: Maus/Tastatur im Windows-Betrieb, KRNL386, EMS 5900h,
+DOS-Programme aus Windows (Standardmodus: DSWAP), Netz.
 
 Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
 in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h

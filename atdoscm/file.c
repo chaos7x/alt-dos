@@ -376,7 +376,7 @@ int open_path(const char *path, unsigned mode, unsigned act, unsigned attr, unsi
     int d = dev_of(path), s;
     unsigned i;
     if (d >= 0) {
-        if ((s = sft_dev(d, mode & 0x7F)) < 0)
+        if ((s = sft_dev(d, mode & 0xFF)) < 0)
             return -E_NOHANDLES;
         if (res)
             *res = 1;
@@ -394,9 +394,10 @@ int open_path(const char *path, unsigned mode, unsigned act, unsigned attr, unsi
         sftab[s].refs = 0;
         return -(int)q.err;
     }
-    sftab[s].mode = mode & 0x7F;
-    sftab[s].attr = (u8)q.attr;
-    sftab[s].flags = (u16)(path[0] - 'A') | (q.act == 1 ? 0x40 : 0);
+    sftab[s].mode = mode & 0xFF;        /* Bit 7: nicht vererben (55h,   */
+    sftab[s].attr = (u8)q.attr;         /* EXEC) - Windows oeffnet seine */
+    sftab[s].flags = (u16)(path[0] - 'A') | (q.act == 1 ? 0x40 : 0) |  /* Module so */
+                     (mode & 0x80 ? 0x1000 : 0);   /* sf_no_inherit wie MS-DOS */
     sftab[s].hnd = (u16)q.handle;
     sftab[s].time = q.time;
     sftab[s].date = q.date;
