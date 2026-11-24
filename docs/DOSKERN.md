@@ -1280,7 +1280,11 @@ Ausnahme-Stapels, Befehlsbytes, Modulname über das Limit des nicht
 vorhandenen Selektors, Fehler im Box-Kern). Geprüft in QEMU: SETUP-Lauf
 über das installierte Windows kommt nach REGEDIT zur Druckerinstallation
 und zur Programmsuche; 86Box 386DX/40: DOS-Programme in der Box
-(COMMAND /C, MEM), SHUTDOWN. Offen: beim Anlegen der Programmgruppen
+(COMMAND /C, MEM), SHUTDOWN. Danach Write (QEMU, `DOSX KRNL286 WRITE.EXE`,
+Shell PROGMAN): Text tippen, über den Dialog von COMMDLG als TEST.WRI
+speichern, Write beenden (Task-Ende, Windows läuft weiter), über
+„Ausführen“ wieder öffnen – Inhalt gleich –, Windows beenden, zurück
+zu CMD. Offen: beim Anlegen der Programmgruppen
 Seitenfehler in PROGMAN bei 004F:0672; SCRIPT.FON/MODERN.FON lassen sich
 im zweiten Lauf nicht überschreiben (die Box sperrt offene Dateien wie
 SHARE); 2Fh 1605h/1606h und Task-Switcher 4Bxxh sendet WINLDR noch nicht.
