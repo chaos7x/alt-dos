@@ -4715,9 +4715,12 @@ static unsigned long sel_base(int t, unsigned s)
     return sbc_base[k];
 }
 
-static int sel_ok(int t, unsigned s)            /* gueltiger Datenselektor */
+/* gueltiger Selektor der LDT; RPL zaehlt nicht (wirksam ist max(CPL, RPL),
+   im Ring 3 also immer 3) - PROGMAN uebergibt Puffer mit RPL 2 (1CFEh),
+   0006h lehnte sie ab, WINLDR rechnete mit CX:DX ins Leere weiter */
+static int sel_ok(int t, unsigned s)
 {
-    return s == 0 || ((s & 7) == 7 && IDX(s) < LDTN(t) && lm_get(t, IDX(s)));
+    return s == 0 || ((s & 4) && IDX(s) < LDTN(t) && lm_get(t, IDX(s)));
 }
 
 static int ldt_alloc(int t, unsigned n)         /* n am Stueck -> Index */

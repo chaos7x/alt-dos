@@ -2108,8 +2108,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Rücksprung alter Art, nichts freigegeben – MS-DOS 4.0 CTRLC.ASM); der
   Box-Kern legt wie DISP.ASM bei jedem INT 21h den Rahmen in PSP:2Eh ab;
   verschachtelte DPMI-Ausnahmen auf dem Ausnahme-Stapel unter die
-  laufende Stelle. SETUP kommt damit nach REGEDIT weiter (Drucker,
-  Programme); offen: PROGMAN-Seitenfehler beim Anlegen der Gruppen.
+  laufende Stelle. SETUP kommt damit nach REGEDIT weiter; `sel_ok` nimmt jede RPL
+  (PROGMAN übergibt Puffer mit RPL 2) – SETUP läuft ganz durch, WIN.COM
+  und die Gruppen entstehen. WINLDR meldet 2Fh 1605h/1606h. Offen: `WIN`
+  über WIN.COM landet in einer DOS-Eingabeaufforderung (hält Windows für
+  laufend).
   Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
   VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);

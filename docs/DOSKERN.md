@@ -1289,6 +1289,30 @@ Seitenfehler in PROGMAN bei 004F:0672; SCRIPT.FON/MODERN.FON lassen sich
 im zweiten Lauf nicht überschreiben (die Box sperrt offene Dateien wie
 SHARE); 2Fh 1605h/1606h und Task-Switcher 4Bxxh sendet WINLDR noch nicht.
 
+**SETUP vollständig (24.11.2026, nachts).** Der Seitenfehler in
+„PROGMAN“ beim Anlegen der Gruppen (004F:0672) lag in WINLDR: beim
+Schreiben (40h) blendet `xmap` den Puffer des Aufrufers über DPMI
+0006h/0007h ein. PROGMAN übergibt ihn mit einem Selektor mit RPL 2
+(1CFEh) – unser `sel_ok` verlangte RPL 3, 0006h scheiterte, WINLDR
+rechnete mit CX:DX ins Leere (linear 290000h). Die CPU erlaubt RPL 2 im
+Ring 3 (wirksam ist max(CPL, RPL)), andere Hosts prüfen nur TI und
+Index – jetzt auch `sel_ok`. Nachgestellt in Sekunden: im
+Programm-Manager Datei → Neu → Programmgruppe. Danach läuft SETUP über
+das installierte Windows ganz durch (Drucker, Anwendungen, Gruppen
+Hauptgruppe/Zubehör/Spiele/Autostart/Anwendungen, „Windows 3.1 ist
+jetzt eingerichtet“), WIN.COM wird angelegt, `shell=progman.exe`.
+WINLDR meldet Start und Ende von Windows wie DOSX über INT 2Fh 1605h/
+1606h (DX Bit 0 = Standard-Modus, DI = 030Ah; lehnt ein Treiber mit
+CX ≠ 0 ab, Meldung und Ende). Den Task-Switcher (2Fh 4Bxxh) braucht DOSX
+nur für fremde Umschalter wie die DOS-Shell – nicht gebaut. Geprüft
+QEMU (SETUP, Programmgruppe), 86Box 386DX/40 (DOS-Programme in der Box).
+Offen: `WIN` über WIN.COM landet sofort in einer DOS-Eingabeaufforderung
+mit dem Hinweis von WSWAP („EXIT … zu Windows zurückzukehren“), nach
+EXIT „Windows kann nicht eingelagert werden“ – WIN.COM hält Windows für
+schon laufend (Untersuchung folgt); SCRIPT.FON/MODERN.FON beim zweiten
+SETUP: die Box sperrt offene Dateien wie MS-DOS mit SHARE – mit SHARE
+zeigt auch echtes Windows diesen Dialog.
+
 Dabei: WIN.COM gibt DOSX als erstes Wort den Kern („krnl286.exe /b …“,
 von Hand auch ohne Endung) – der Box-Kern setzte davor fest
 `…\KRNL286.EXE`, heraus kam „KRNL286.EXEkrnl286.exe“ (lief nur, weil

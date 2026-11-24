@@ -1334,6 +1334,19 @@ init:   mov     [rmseg], cs
         mov     dx, rm2f
         mov     ax, 252Fh
         int     21h
+        push    ds                      ; Start melden wie DOSX: 1605h,
+        xor     bx, bx                  ; DX Bit 0 = Standard-Modus,
+        mov     es, bx                  ; DI = Version; CX <> 0 heisst:
+        mov     ds, bx                  ; ein Treiber/TSR lehnt ab
+        xor     si, si
+        xor     cx, cx
+        mov     dx, 1
+        mov     di, 030Ah
+        mov     ax, 1605h
+        int     2Fh
+        pop     ds
+        test    cx, cx
+        jnz     refused
         mov     [pb + 4], cs
         mov     [pb + 8], cs
         mov     [pb + 12], cs
@@ -1345,6 +1358,9 @@ init:   mov     [rmseg], cs
         int     21h
         pushf
         push    ax
+        mov     ax, 1606h               ; Ende melden
+        mov     dx, 1
+        int     2Fh
         push    ds
         lds     dx, [old2f]
         mov     ax, 252Fh
@@ -1384,6 +1400,16 @@ init:   mov     [rmseg], cs
         int     21h
         mov     ax, 4C01h
         int     21h
+refused: lds    dx, [cs:old2f]          ; INT 2Fh zurueck
+        mov     ax, 252Fh
+        int     21h
+        push    cs
+        pop     ds
+        mov     dx, m_ref
+        mov     ah, 9
+        int     21h
+        mov     ax, 4C01h
+        int     21h
 usage:  mov     dx, m_use
         mov     ah, 9
         int     21h
@@ -1393,6 +1419,8 @@ usage:  mov     dx, m_use
 pb:     dw      0, tail, 0, 5Ch, 0, 6Ch, 0
 m_use:  db      'WINLDR Programm [Argumente] - Windows-Kern auf dem DPMI', 13, 10
         db      'der DOS-Box starten (statt DOSX.EXE)', 13, 10, '$'
+m_ref:  db      'WINLDR: Ein Treiber oder residentes Programm verhindert den', 13, 10
+        db      'Start von Windows (INT 2Fh 1605h).', 13, 10, '$'
 m_err:  db      'WINLDR: Fehler '
 m_code: db      '00h beim Start von $'
 m_crlf: db      13, 10, '$'
