@@ -264,6 +264,7 @@ void __far vdd_tick(int t, int fgb);
 unsigned __far vid_hwclass(void);
 extern unsigned char vid_class, vid_regs[64];
 struct vdd_svc;
+unsigned __far v86_noshare(int t);                    /* SHARE=OFF   */
 unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel);           /* loop_attach/loop_info: ifs.h */
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */

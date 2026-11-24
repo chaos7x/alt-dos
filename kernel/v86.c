@@ -294,6 +294,7 @@ static unsigned emb_free_pg(int t);
 #define HK_PVI  8
 #define HK_ADLIB 16                     /* ADLIB_COPY=ON (Bit = an!)     */
 #define HK_HWT   32                     /* HW_TIMER=ON (Bit = an!)       */
+#define HK_NOSHR 64                     /* SHARE=OFF: Box ohne SHARE     */
 #define CR4_VME 1
 #define CR4_PVI 2
 unsigned char pvi_t[NTASK], pvi_cur;    /* je Task / gerade in CR4       */
@@ -1420,6 +1421,12 @@ static unsigned vs_win(int t, unsigned ty, unsigned long a, unsigned sel,
     else
         scratch2_map(a, k - 1);
     return k;
+}
+
+/* DOSBOX.INI SHARE=OFF: der DEM prueft keine Freigabemodi in der Box */
+unsigned __far v86_noshare(int t)
+{
+    return (box_hk[t] & HK_NOSHR) != 0;
 }
 
 unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel)
@@ -2936,7 +2943,8 @@ static void svc(int n, struct v86_frame *f, int t)
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 2048 ? 2048 : pg) + 1;   /* bis 32 MB */
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
-            box_hk[t] = (unsigned char)((~BX & 15) | (BX & (HK_ADLIB | HK_HWT)));
+            box_hk[t] = (unsigned char)((~BX & 15) | (BX & (HK_ADLIB | HK_HWT)) |
+                                        (BX & 64 ? 0 : HK_NOSHR));
         else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
             idle_sens[t] = (unsigned char)(BX > 101 ? 101 : BX);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */

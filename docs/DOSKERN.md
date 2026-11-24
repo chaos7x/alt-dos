@@ -1358,6 +1358,21 @@ antwortet – der Aufruf bekommt den DOS-Fehler (leeres Diskettenlaufwerk:
 Windows selbst („Laufwerk nicht bereit“) über den PM-Handler. Geprüft
 QEMU und 86Box P3B-F: „C: [AT-DOS]“, Strg+A ohne Diskette.
 
+**SHARE=OFF (24.11.2026, Vorschlag des Nutzers).** Beim zweiten
+SETUP-Lauf über ein installiertes Windows ließen sich SCRIPT.FON/
+MODERN.FON nicht überschreiben: Windows hat die Schriften geladen, die
+Box hält sich wie MS-DOS mit SHARE (Anlegen einer offenen Datei: 05h).
+DOSBOX.INI `SHARE=OFF` schaltet die Freigabeprüfung in der Box ab, wie
+MS-DOS ohne SHARE: der DEM prüft keine Freigabemodi zwischen den
+Öffnungen der Box, Anlegen kürzt die offene Datei über den gemeinsamen
+Handle des Kernels (alle Öffnungen sehen den neuen Inhalt). Zwischen
+Boxen, FAPI-Programmen und Servern gelten weiter die Regeln des Kernels.
+BOXSHELL schickt es als Bit 6 von INT E0h 18h (Vorgabe an), v86.c
+`HK_NOSHR`, `v86_noshare`. Die mitgelieferte DOSBOX.INI setzt es für
+`[SETUP.EXE]`. Geprüft QEMU: zweiter SETUP-Lauf von CD über das
+installierte Windows läuft ohne Rückfrage durch; BIOSCMP in der Box mit
+der Vorgabe unverändert (05h, Sperren 21h).
+
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
 Art und den IRQ (den INT-33h-Weg nur unter OS/2, DOS-Version ab 10).

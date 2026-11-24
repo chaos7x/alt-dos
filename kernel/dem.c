@@ -521,9 +521,12 @@ static unsigned d_open(int t, struct dem_req *q)
     slot = sh_find(t, hv);
     if (slot >= 0) {                        /* Box hat sie schon offen */
         struct shf __far *e = &RBX(t)->sh[slot];
-        if (act != 1 || !sh_ok(e, mode))
-            return E_DENIED;                /* MS-DOS 6.22 mit SHARE: 05h */
-        if (M_WR(mode) && !e->kw) {         /* Handle nur lesend: neu RW  */
+        unsigned ns = v86_noshare(t);       /* SHARE=OFF: wie MS-DOS ohne */
+        if (!ns && (act != 1 || !sh_ok(e, mode)))   /* SHARE - Anlegen    */
+            return E_DENIED;                /* kuerzt die offene Datei    */
+        if ((M_WR(mode) || act != 1) && !e->kw) {   /* (Windows-SETUP und */
+                                            /* geladene Schriften)        */
+                                            /* Handle nur lesend: neu RW  */
             FAPI(FAPI_CLOSE, KDATA, e->h1 - 1, 0, 0);
             h = FAPI(FAPI_OPEN, KDATA, (unsigned)q->path, OPEN_RW | (mode & OPEN_SHARE_MASK), 0);
             if (FAILED(h)) {
@@ -534,6 +537,12 @@ static unsigned d_open(int t, struct dem_req *q)
             }
             e->h1 = h + 1;
             e->kw = 1;
+        }
+        if (act != 1) {                     /* nur bei SHARE=OFF: kuerzen */
+            l32 = 0;
+            FAPI(FAPI_NEWSIZE, KDATA, e->h1 - 1, (unsigned)&l32, 0);
+            e->size = 0;
+            de.size = 0;
         }
         e->refs++;
         sh_add(e, mode, 1);

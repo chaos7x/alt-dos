@@ -440,7 +440,7 @@ ini_apply:
         mov     word [xmskb], 2048
         mov     word [emskb], 2048
         mov     word [dosver], 0
-        mov     byte [hk], 15
+        mov     byte [hk], 79           ; Bits 0-3 und 6 (SHARE) an
         mov     word [idles], 0
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
@@ -591,7 +591,7 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
         jnc     .k6
         add     di, 12
         shl     dl, 1
-        cmp     dl, 64
+        cmp     dl, 128
         jb      .k5
         jmp     .skip
 .k6:    mov     al, [es:si]
@@ -1643,7 +1643,8 @@ k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
           db "PVI", 0, 0, 0, 0, 0, 0, 0, 0, 0
           db "ADLIB_COPY", 0, 0         ; Bit 4: Vorgabe aus (hk = 15)
           db "HW_TIMER", 0, 0, 0, 0     ; Bit 5: Vorgabe aus
-hk        db 15
+          db "SHARE", 0, 0, 0, 0, 0, 0, 0   ; Bit 6: Vorgabe an
+hk        db 79
 idles     dw 0
 k_idle    db "IDLE_SENSITIVITY", 0
 xmskb     dw 2048
