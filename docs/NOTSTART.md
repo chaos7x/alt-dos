@@ -119,10 +119,11 @@ CONFIG.SYS (normaler Start), wenn `find_boot_vol` nichts findet und von
 Festplatte gestartet wurde. Statt der Panik legt der Kernel ein
 Blockgerät `DRV_BIOS` (-4, unit = BIOS-Laufwerk, Vorgabe `boot_drive`)
 an, ruft `mount_disk` und sucht die Startpartition erneut. Erst wenn auch
-das scheitert, Panik wie heute. Meldung: „Startlaufwerk über das BIOS
-(INT 13h) – langsam, Treiber in BASEDEV= prüfen“. Gilt in beiden
-Startarten – auch ein normaler Start mit kaputter Treiberzeile kommt so
-noch hoch.
+das scheitert, Panik wie heute. Keine Rückfrage, nur eine Meldung
+(Entscheidung des Nutzers, 24.11.2026; Wortlaut mit „Geräte“): „Geräte
+über INT 13h laufen langsamer – Treiber in BASEDEV= prüfen“. Gilt in
+beiden Startarten – auch ein normaler Start mit kaputter Treiberzeile
+kommt so noch hoch.
 
 Ablauf eines Auftrags (`bios_rw`, neues Modul `kernel/biosdisk.c` in
 KTEXT4, Ausflug in start.asm KTEXT2 neben `rm_int10`):
@@ -238,6 +239,4 @@ Startlaufwerk nach den BASEDEV=-Treibern, bleibt es bei der Meldung
 ## Offene Punkte
 
 - Name des CMD-Schalters (`/SAFE` oder `/N`).
-- Rückfall auch im normalen Start ohne Rückfrage, oder nur mit Meldung
-  und Taste? (Vorschlag: ohne Rückfrage, mit Meldung.)
 - Soll `NOTSTART=1` auch in der DOS-Box stehen?
