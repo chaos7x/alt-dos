@@ -184,8 +184,9 @@ Was der Ausflug anders machen muss als `rm_int10`:
 
 ## CMD im Notstart
 
-- Der Kernel startet `X:\CMD.EXE /P /SAFE` (Name offen: `/SAFE` oder
-  `/N`). CMD führt dann AUTOEXEC.CMD nicht aus, macht TEMP an, meldet den
+- Der Kernel startet `X:\CMD.EXE /P` wie sonst, ohne eigenen Schalter
+  (Entscheidung des Nutzers, 24.11.2026): CMD erkennt den Notstart an
+  `NOTSTART=1` in der Systemumgebung. Es führt dann AUTOEXEC.CMD nicht aus, macht TEMP an, meldet den
   Notstart und nennt die Wege: `EDIT C:\CONFIG.SYS`, Neustart ohne F5.
 - `autochk`/AUTOCHK.LST: im Notstart nicht ausführen, nur melden (eine
   Umwandlung oder Prüfung soll nicht ausgerechnet im Notstart laufen);
@@ -238,5 +239,4 @@ Startlaufwerk nach den BASEDEV=-Treibern, bleibt es bei der Meldung
 
 ## Offene Punkte
 
-- Name des CMD-Schalters (`/SAFE` oder `/N`).
 - Soll `NOTSTART=1` auch in der DOS-Box stehen?
