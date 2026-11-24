@@ -1373,6 +1373,34 @@ BOXSHELL schickt es als Bit 6 von INT E0h 18h (Vorgabe an), v86.c
 installierte Windows läuft ohne Rückfrage durch; BIOSCMP in der Box mit
 der Vorgabe unverändert (05h, Sperren 21h).
 
+**Startzeit von Windows (24.11.2026, Analyse einer anderen Sitzung,
+hier gemessen).** Gemessen mit einer Spur über Port E9h (Fallen nach
+Art, DEM-Aufrufe, Wechsel in den Real Mode; in 86Box mit Zeitstempeln
+aus einer lokalen Änderung von 86Box). `WIN` bis zum Programm-Manager:
+86Box P3B-F (64 MB) 4,5 s. Bis zum ersten Leerlauf ~40.000 Ereignisse:
+~12.000 Schreibzugriffe auf den LDT-Alias, ~4.000 DPMI-Aufrufe, ~1.000
+Ausflüge in den Real Mode, nur 273 Lesezugriffe über den DEM – die
+Dateiarbeit war nicht der Engpass. Die Zeitleiste zeigte dagegen 1,3 s
+ohne einen einzigen DOS-Aufruf: KRNL holt sich den freien DPMI-Speicher
+in einer Schleife aus 0500h/0501h, und 0501h holte und nullte jede
+Seite sofort (über umgelegte Fenster) – je Aufruf 50–80 ms. Jetzt
+reserviert 0501h/0503h nur (`dmem_res`, Eintrag ohne P mit `PTE_LAZY`,
+kern.h), die Seite holt `swap_pf` beim ersten Zugriff (`lazy_in` in
+swap.c, auch ohne Auslagerungsdatei; Ring 3 und Ring 0 kommen dort
+vorbei), 0500h meldet den freien Speicher abzüglich des Reservierten
+(`lazy_pg`). Dazu `al_more`: nach einer Falle auf den LDT-Alias bildet
+der Wirt die direkt folgenden einfachen Befehle mit nach (MOV r16,m16 /
+m16,r16 / m8,r8 und LEA mit 16-Bit-Adressen, geschrieben nur in den
+Alias, gelesen nur innerhalb der Grenze auf vorhandenen Seiten) – KRNL
+kopiert Deskriptoren mit vier MOV-Paaren, die Alias-Fallen sanken von
+~11.000 auf ~3.400. INT 2Fh 1680h aus dem PM schläft jetzt einen Takt
+wie im V86-Weg (über den Real Mode schlief es nie). Ergebnis in 86Box:
+3,2–3,9 s statt 4,5 s. Nicht übernommen: Schlafen bei 1689h („Kernel
+untätig“, der eigentliche Leerlauf von Windows: ~550 Ausflüge in den
+Real Mode je Sekunde) – damit gingen bei schnellem Alt+F4 Tasten
+verloren (7 von 10 statt 10 von 10). Geprüft: QEMU (WIN mit 32 und
+8 MB, DOOM 1.9 Timedemo, MEM danach), 86Box P3B-F (WIN, Alt+F4 6 von 6).
+
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
 Art und den IRQ (den INT-33h-Weg nur unter OS/2, DOS-Version ab 10).

@@ -363,6 +363,30 @@ unsigned __far swap_make_run(unsigned n)
     return ok;
 }
 
+/* reservierte DPMI-Seite beim ersten Zugriff holen und nullen -> 1 */
+static int lazy_in(int t, unsigned long lp)
+{
+    unsigned long pt, e;
+    pg_t p;
+
+    e = pte_at(t, lp, &pt);
+    if (!pt || (e & (PTE_P | PTE_SWP)) || !(e & PTE_LAZY))
+        return pt != 0 && (e & PTE_P);
+    if (!(p = mem_alloc_hi(1)) && (!sw_sel || !swap_out(8) || !(p = mem_alloc_hi(1))))
+        return 0;
+    e = pte_at(t, lp, &pt);             /* swap_out kann schlafen        */
+    if ((e & PTE_P) || !(e & PTE_LAZY)) {
+        mem_free(p, 1);
+        return (e & PTE_P) != 0;
+    }
+    scratch_map(PG_LIN(p), 4095);
+    zero_seg(SCRATCH, 2048);
+    pte_put(pt, lp, PG_LIN(p) | PTE_P | PTE_A | (e & (PTE_W | PTE_U | PTE_OWN)));
+    v86_pages++;
+    lazy_pg--;
+    return 1;
+}
+
 /* Seite lp der Box t zurueck; -> 1 da (oder war nie draussen), 0 Fehler */
 static int page_in(int t, unsigned long lp)
 {
@@ -372,7 +396,7 @@ static int page_in(int t, unsigned long lp)
 
     e = pte_at(t, lp, &pt);
     if (!(e & PTE_SWP))
-        return pt != 0 && (e & PTE_P);
+        return (e & PTE_LAZY) ? lazy_in(t, lp) : pt != 0 && (e & PTE_P);
     if (!(p = mem_alloc_hi(1)) && (!swap_out(8) || !(p = mem_alloc_hi(1))))
         return 0;
     s = (unsigned)(e >> 12);
@@ -399,8 +423,6 @@ int __far swap_need(int t, unsigned long lp)
 {
     unsigned short w[8];
     int r;
-    if (!sw_sel)
-        return 0;
     kf_klock_enter();
     win_save(w);
     r = page_in(t, lp);
@@ -419,12 +441,22 @@ int __far swap_pf(void)
 
     struct desc vw;
 
-    if (!sw_sel || t < 0 || !pd_box[t] || a >= 0x80000000UL)
+    if (t < 0 || !pd_box[t] || a >= 0x80000000UL)
         return 0;
     win_save(w);
     e = pte_at(t, a >> 12, &pt);
     win_restore(w);
-    if (!(e & PTE_SWP))
+    if (!(e & (PTE_P | PTE_SWP)) && (e & PTE_LAZY)) {
+        vw = gdt[VWIN_IDX];
+        kf_klock_enter();
+        win_save(w);
+        r = lazy_in(t, a >> 12);
+        win_restore(w);
+        kf_klock_leave();
+        gdt[VWIN_IDX] = vw;
+        return r;
+    }
+    if (!sw_sel || !(e & PTE_SWP))
         return 0;
     vw = gdt[VWIN_IDX];                 /* VWIN teilen sich alle Boxen:  */
     r = swap_need(t, a >> 12);          /* beim Schlafen legt eine andere */

@@ -175,12 +175,15 @@ static void vp_free(pg_t p)
     mem_free(p, 1);
     v86_pages--;
 }
+unsigned long lazy_pg;                  /* reservierte DPMI-Seiten        */
 static void pte_drop(unsigned long e)   /* Seite aus einem Eintrag frei,   */
-{                                       /* auch ausgelagert               */
+{                                       /* auch ausgelagert/reserviert    */
     if (e & PTE_P)
         vp_free(e >> 12);
     else if (e & PTE_SWP)
         swap_slot_free(e);
+    else if (e & PTE_LAZY)
+        lazy_pg--;
 }
 
 static void xms_end(int t);
@@ -5098,7 +5101,7 @@ static void dmem_unmap(int t, unsigned long lp, unsigned long n)
     unsigned long e;
     while (n--) {
         e = lpte_get(t, lp + n);
-        if (e & (PTE_P | PTE_SWP)) {
+        if (e & (PTE_P | PTE_SWP | PTE_LAZY)) {
             pte_drop(e);
             lpte_set(t, lp + n, 0);
         }
@@ -5117,6 +5120,29 @@ static int dmem_map(int t, unsigned long lp, unsigned long n)
             return 0;
         }
     return 1;
+}
+
+/* DPMI-Speicher (0501h/0503h) nur reservieren: Eintraege ohne P mit
+   PTE_LAZY, die Seiten holt swap_pf beim ersten Zugriff. KRNL von Windows
+   nimmt sich mit 0500h/0501h allen freien Speicher - jede Seite sofort zu
+   holen und zu nullen kostete in 86Box (P3B-F, 64 MB) gut 1 s beim Start */
+static int dmem_res(int t, unsigned long lp, unsigned long n)
+{
+    unsigned long i;
+    for (i = 0; i < n; i++)
+        if (!lpte_set(t, lp + i, PTE_LAZY | PTE_W | PTE_U | PTE_OWN)) {
+            lazy_pg += i;
+            dmem_unmap(t, lp, i);
+            return 0;
+        }
+    lazy_pg += n;
+    return 1;
+}
+
+static unsigned long dmem_free_pg(void) /* frei fuer DPMI, ohne Reserviertes */
+{
+    unsigned long fr = kf_mem_avail_kb() >> 2;
+    return fr > lazy_pg ? fr - lazy_pg : 0;
 }
 
 /* Luecke fuer n Seiten ab 64 MB (Seite 4000h, darunter XMS), bis 1 GB */
@@ -5670,7 +5696,7 @@ static unsigned dp31(struct v86_frame *f, int t)
         DX = 0x0870;
         return 0;
     case 0x0500: {                              /* freier Speicher       */
-        unsigned long fr = kf_mem_avail_kb() >> 2;
+        unsigned long fr = dmem_free_pg();
         if (fr > 0x3C000UL)             /* mehr als der DPMI-Bereich der Box */
             fr = 0x3C000UL;             /* (64 MB - 1 GB) geht nicht; ueber */
                                         /* 2 GB in Byte hielt DOS/4GW den Wert */
@@ -5696,13 +5722,14 @@ static unsigned dp31(struct v86_frame *f, int t)
                 lin = dp_mem[t][k].lpg << 12;
                 goto done501;
             }
-            if (!(lin = dmem_gap(t, n)) || !dmem_map(t, lin, n))
+            if (n - dp_mem[t][k].npg > dmem_free_pg() || !(lin = dmem_gap(t, n)) ||
+                !dmem_res(t, lin, n))
                 DERR(0x8013);
             {                                   /* Seiten umhaengen      */
                 unsigned long j;
                 for (j = 0; j < dp_mem[t][k].npg; j++) {
                     unsigned long e = lpte_get(t, lin + j), o = lpte_get(t, dp_mem[t][k].lpg + j);
-                    vp_free(e >> 12);
+                    pte_drop(e);
                     lpte_set(t, lin + j, o);
                     lpte_set(t, dp_mem[t][k].lpg + j, 0);
                 }
@@ -5717,7 +5744,7 @@ static unsigned dp31(struct v86_frame *f, int t)
             ;
         if (k == NDPM)
             DERR(0x8016);
-        if (n > kf_mem_avail_kb() >> 2 || !(lin = dmem_gap(t, n)) || !dmem_map(t, lin, n))
+        if (n > dmem_free_pg() || !(lin = dmem_gap(t, n)) || !dmem_res(t, lin, n))
             DERR(0x8013);
         dp_mem[t][k].lpg = lin;
         dp_mem[t][k].npg = n;
@@ -5843,6 +5870,12 @@ static int dp_novec(unsigned n)
    ueber den Standard-Stummel, wenn ein Programm den Vektor kettet) */
 static int dp_2f(struct v86_frame *f, int t)
 {
+    if (AX == 0x1680) {                         /* Zeitscheibe abgeben:  */
+        kf_box_ctl(BOX_SLEEP, 1);               /* schlafen wie im V86-  */
+        *(unsigned char *)&f->eax = 0;          /* Weg - ueber den Real  */
+        return 1;                               /* Mode schlief es nie.  */
+    }   /* 1689h (Kernel untaetig) nicht: ein Takt Schlaf dort verlor bei
+           schnellen Tastenfolgen (Alt+F4) Tasten unter Windows */
     if (AX == 0x1686) {                         /* bin ich im PM?        */
         AX = 0;
         return 1;
@@ -6484,14 +6517,117 @@ static int sel40(struct v86_frame *f, int t, unsigned long lin, unsigned char op
     return 1;
 }
 
+/* Nach einer Alias-Falle die naechsten einfachen Befehle gleich mit:
+   KRNL kopiert Deskriptoren mit vier Paaren "mov ax,es:[di+n]" /
+   "mov [bx+n],ax" in den Alias - jedes Schreiben war eine eigene Falle
+   (beim Start von Windows ~12.000). Nur 16-Bit-Code, MOV r16,m16 (8Bh),
+   MOV m16,r16 (89h), MOV m8,r8 (88h) und LEA mit 16-Bit-Adressen; geschrieben wird nur in den
+   Alias, gelesen nur aus einem Datensegment der LDT innerhalb der Grenze
+   auf einer vorhandenen Seite. Alles andere: zurueck ins Programm. */
+static int al_one(struct v86_frame *f, int t)
+{
+    unsigned short *sg = (unsigned short *)f;
+    unsigned long lin = sel_base(t, (unsigned)f->r.cs) + (unsigned)f->r.eip, a, lim, v;
+    unsigned i = 0, sego = 9, md, rm, reg, ea = 0, s;
+    unsigned char op, m, __far *d;
+    for (;; i++) {
+        op = (unsigned char)lrd(lin + i, 1);
+        if (op == 0x26) sego = 0;
+        else if (op == 0x3E) sego = 1;
+        else if (op == 0x36) sego = 3;
+        else if (op == 0x2E || op == 0x64 || op == 0x65 || i > 2)
+            return 0;
+        else
+            break;
+    }
+    if (op != 0x88 && op != 0x89 && op != 0x8B && op != 0x8D)
+        return 0;
+    m = (unsigned char)lrd(lin + ++i, 1);
+    i++;
+    md = m >> 6;
+    rm = m & 7;
+    reg = (m >> 3) & 7;
+    if (md == 3 || (reg == 4 && op != 0x88))   /* kein SP (Rahmen: ESP_k) */
+        return 0;
+    switch (rm) {
+    case 0: ea = (unsigned)f->ebx + (unsigned)f->esi; break;
+    case 1: ea = (unsigned)f->ebx + (unsigned)f->edi; break;
+    case 2: ea = (unsigned)f->ebp + (unsigned)f->esi; break;
+    case 3: ea = (unsigned)f->ebp + (unsigned)f->edi; break;
+    case 4: ea = (unsigned)f->esi; break;
+    case 5: ea = (unsigned)f->edi; break;
+    case 6: ea = md ? (unsigned)f->ebp : 0; break;
+    case 7: ea = (unsigned)f->ebx; break;
+    }
+    if (md == 0 && rm == 6) {
+        ea = (unsigned)lrd(lin + i, 2);
+        i += 2;
+    } else if (md == 1) {
+        ea += (unsigned)(int)(signed char)lrd(lin + i, 1);
+        i++;
+    } else if (md == 2) {
+        ea += (unsigned)lrd(lin + i, 2);
+        i += 2;
+    }
+    if (op == 0x8D) {                           /* LEA: nur das Register */
+        (&f->edi)[7 - reg] = ((&f->edi)[7 - reg] & 0xFFFF0000UL) | ea;
+        goto next;
+    }
+    if (sego == 9)
+        sego = (rm == 2 || rm == 3 || (rm == 6 && md)) ? 3 : 1;
+    s = sego == 0 ? sg[0] : sego == 1 ? sg[1] : (unsigned)f->r.ss;
+    if (!(s & 4) || IDX(s) >= LDTN(t) || !lm_get(t, IDX(s)))
+        return 0;
+    d = ldt_e(t, IDX(s));
+    if ((d[5] & 0x9C) != 0x90)                  /* da, Daten, nicht abwaerts */
+        return 0;
+    lim = d[0] | ((unsigned)d[1] << 8) | ((unsigned long)(d[6] & 15) << 16);
+    if (d[6] & 0x80)
+        lim = (lim << 12) | 0xFFF;
+    if ((unsigned long)ea + 1 > lim || (ea & 0xFFF) == 0xFFF)
+        return 0;
+    a = sel_base(t, s) + ea;
+    if (op == 0x89 || op == 0x88) {             /* schreiben: nur Alias  */
+        if ((a >> 12) < AL_LP || (a >> 12) >= AL_LP + LDT_BIG / 512 || !(d[5] & 2))
+            return 0;
+        if (op == 0x88)                         /* AL..BL, AH..BH        */
+            al_put(t, (unsigned)(a - (AL_LP << 12)),
+                   (unsigned)((&f->edi)[7 - (reg & 3)] >> (reg & 4 ? 8 : 0)) & 0xFF, 1);
+        else
+            al_put(t, (unsigned)(a - (AL_LP << 12)), (unsigned)(&f->edi)[7 - reg], 2);
+    } else {
+        if (((a >> 12) < AL_LP || (a >> 12) >= AL_LP + LDT_BIG / 512) &&
+            !(lpte_get(t, a >> 12) & PTE_P))
+            return 0;
+        v = lrd(a, 2);
+        (&f->edi)[7 - reg] = ((&f->edi)[7 - reg] & 0xFFFF0000UL) | (unsigned)v;
+    }
+next:
+    f->r.eip = (f->r.eip & 0xFFFF0000UL) | (unsigned)((unsigned)f->r.eip + i);
+    return 1;
+}
+
+static void al_more(struct v86_frame *f, int t)
+{
+    unsigned k;
+    if (dp_32[t] || (f->r.eflags & FL_TF))
+        return;
+    for (k = 0; k < 8 && al_one(f, t); k++)
+        ;
+}
+
 static unsigned dp_trap(struct v86_frame *f, int t)
 {
     unsigned long lin;
     unsigned char op;
     unsigned n, cs = (unsigned)f->r.cs;
 
-    if (f->vec == 14 && (swap_pf() || vga_pf(t) || al_write(f, t)))
+    if (f->vec == 14 && (swap_pf() || vga_pf(t)))
         return 0;                               /* ausgelagert, Bild hinten, */
+    if (f->vec == 14 && al_write(f, t)) {
+        al_more(f, t);
+        return 0;
+    }
     if (f->vec != 13)                           /* LDT-Alias                 */
         return dp_exc(f, t);
     lin = sel_base(t, cs) + (dp_32[t] ? f->r.eip : (unsigned)f->r.eip);

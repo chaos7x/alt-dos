@@ -269,6 +269,11 @@ unsigned __far v86_vsvc(int t, struct vdd_svc *k, unsigned dsel);           /* l
 /* Auslagerungsdatei (swap.c, KTEXT2): ausgelagerte Seite einer Box =
    Eintrag ohne P, mit PTE_SWP und der Platznummer in Bit 12-31 */
 #define PTE_SWP     0x400UL
+/* reservierte DPMI-Seite (0501h): Eintrag ohne P mit PTE_LAZY, die Seite
+   holt swap_pf erst beim ersten Zugriff (Windows nimmt sich allen freien
+   Speicher, benutzt aber nur einen Teil) */
+#define PTE_LAZY    0x800UL
+extern unsigned long lazy_pg;           /* so reservierte Seiten          */
 unsigned __far swap_out(unsigned n);    /* n Seiten hinaus -> geschafft */
 unsigned __far swap_make_run(unsigned n);   /* n Seiten am Stueck freiraeumen */
 int __far swap_pf(void);                /* Seitenfehler: 1 = eingelagert */
