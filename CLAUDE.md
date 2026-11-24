@@ -2062,7 +2062,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 - **Grafiktreiber der Karte für Windows 3.1 in der Box** (vorgemerkt vom
   Nutzer, 24.11.2026: „VGA 17 Farben sind langweilig“; noch kein Code):
   I/O-Bitmap der Box auf alle 64K Ports verlängern (heute 0–3DFh – die
-  S3-Einheit bei x2E8h liest FFh), freigegeben nach einer Tabelle je
+  Port-Einheit älterer S3 bei x2E8h liest FFh; die Trio3D/2X ist ViRGE
+  und hat ihre 2D-Einheit nur als MMIO bei A0000h bzw. LFB + 16 MB,
+  dazu Ports 3A0h–3AFh und E8h), freigegeben nach einer Tabelle je
   Chip (Ports, zusätzlich zu sichernde Register, Leerlauf der 2D-
   Einheit), zuerst S3 Trio3D/2X, später Cirrus, Tseng, ATI, Matrox;
   Karten nur mit VBE/LFB brauchen nichts davon. Vorlage und Testweg je

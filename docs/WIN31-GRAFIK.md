@@ -30,9 +30,16 @@ Chip kommt nur ein Eintrag in eine kleine Tabelle dazu.
 - Hinten wartet eine Box, die auf die Karte zugreift, bis sie wieder vorn
   ist (`vga_wait`).
 
-Ein Chiptreiber scheitert heute an den Ports. Die 2D-Einheit der S3 liegt
-zum Beispiel bei x2E8h (42E8h, 4AE8h, 82E8h–BEE8h, 9AE8h, E2E8h …), also
-weit über 3DFh. Der Treiber liest dort nur FFh.
+Ein Chiptreiber scheitert heute an den Ports. Die 2D-Einheit der älteren
+S3 (Trio64, Vision 864/964, 86C80x/928) liegt zum Beispiel bei x2E8h
+(42E8h, 4AE8h, 82E8h–BEE8h, 9AE8h, E2E8h …), also weit über 3DFh. Der
+Treiber liest dort nur FFh.
+
+Die Trio3D/2X im P3B-F gehört dagegen zur ViRGE-Familie (86Box:
+`vid_s3_virge.c`, nicht `vid_s3.c`). Sie hat keine Port-Einheit. Ihre
+2D-Einheit erreicht man nur über MMIO, siehe die Tabelle. Für sie zählt
+also vor allem, wie MMIO vorn durchgeht und hinten abgefangen wird. Die
+lange Bitmap ist dort zweitrangig.
 
 ## Verlängerte I/O-Bitmap (Weg a, gilt für alle Karten)
 
@@ -65,7 +72,8 @@ Ein Eintrag je Chip:
 
 | Chip | Ports | zusätzlich sichern |
 |---|---|---|
-| S3 (Trio64/Trio3D/ViRGE, 86C3xx) | x2E8h-Gruppe der 2D-Einheit (42E8h–E2E8h, jeweils 2 Byte), 3B0h–3DFh wie heute | CR30h–CR6Fh, SR08h–SR1Fh, Hardware-Mauszeiger (Bild + Lage), Einheit leer (9AE8h Bit 9) |
+| S3 alt (Trio64/Vision 864/964, 86C80x/928) | x2E8h-Gruppe der 2D-Einheit (42E8h–E2E8h, jeweils 2 Byte), dazu die x148h-Gruppe (8148h–A548h, 4148h, 4948h) und 46E8h, 3B0h–3DFh wie heute | CR30h–CR6Fh, SR08h–SR1Fh, Hardware-Mauszeiger (Bild + Lage), Einheit leer (9AE8h Bit 9) |
+| S3 ViRGE/Trio3D/2X (86C325/375/362/368) | 3B0h–3DFh wie heute, dazu 3A0h–3AFh (nur bei Misc-Ausgang Bit 0 = 0) und E8h/E9h (E2h/E3h bei CR6F Bit 1, aus bei CR6F Bit 2). 2D-Einheit nur MMIO: alt bei A0000h (64 KB, B8000h mit CR53 Bit 5), an über CR53 Bit 4; neu bei LFB + 16 MB (64 KB), an über CR53 Bit 3 – kommt über DPMI 0800h | CR30h–CR6Fh (darin CR53, CR6F), SR08h–SR1Fh, Streams-Einheit, Mauszeiger, FIFO leer vor dem Sichern |
 | Cirrus 54xx (später) | meist nur 3C4h/3CEh/3D4h (schon frei), BitBLT über GRxx | SR06h–SR1Fh, GR09h–GR3Fh, CR19h–CR1Fh |
 | Tseng ET4000/W32 (später) | 3BFh, 3CBh, 3CDh, 3D8h, 217Ah/217Bh (W32) | Segmentregister, ATC 16h, CRTC 32h–3Fh, W32-Beschleuniger über MMIO |
 | ATI Mach (später) | x2EEh-Gruppe, 1CEh/1CFh | erweiterte Register über 1CEh |
@@ -106,6 +114,32 @@ Eintrag gilt daher:
   tragen.
 - **Testweg:** 86Box mit genau dieser Karte und dem Windows-Treiber des
   Herstellers.
+
+Hinweise aus dem Git-Log von 86Box (24.11.2026 durchgesehen). Sie
+zeigen, wo die Windows-3.1-Treiber der Hersteller empfindlich sind:
+
+- **S3:** c4038f48f (FIFO neu, damit sie nicht hängt; behebt Bildfehler
+  mit den Win-3.1-Treibern für 86x/96x), e37f477eb (Doppelwortbetrieb
+  über CR14 Bit 6 statt CR31 Bit 3, Win 3.1 und Duke3D), c0891644f
+  (SVGA/MMIO unter Win 3.1/NT), 68a5dbd65 (BT485-Farbtiefe für die
+  Vision964-Treiber), 52317cd23 (CR39 entsperrt auch das ID-Register,
+  NT-3.1-Treiber).
+- **Trio3D/2X und ViRGE:** aa0e21c41 (2X-Modi), 22ba8b32c (8-Bit-DAC),
+  9bcf3c0c9 (Gammakorrektur), 47ee1c4ea (Streams-Einheit), c9c903f6b
+  (Interrupt beim senkrechten Rücklauf). Einen Test mit dem
+  Win-3.1-Treiber der Trio3D nennt das Log nicht – das bleibt unser
+  Test.
+- **Cirrus:** 80a0c4878 (Speicherfenster, die Adressbits übergehen;
+  behebt Hänger des Win-3.1x-Treibers), 0a8c142c3 und 7701174b3
+  (Fenster mit Bytetausch, Schrift-Cache des Win-3.1-Treibers).
+- **ATI:** 4cf8f629a (Mach64: kleines Fenster nur bei CONFIG_CNTL
+  Bit 2, behebt den VGA-Treiber von Win 3.1), 524fd30c0 und d17d13e3b
+  (Mach8/32: Ports 4AE8h, 5AEEh, 46EEh, 22E8h, 4AEEh; Win-3.1-Treiber
+  der ATI Ultra).
+- **Matrox:** 48718eb16 (harte Hänger mit DynaView 3D unter Win 3.x
+  außer bei 16 Bit), 46840b239 (Wechsel der Auflösung unter Win 3.1).
+- **Tseng:** 7b4a6a338 (ET4000AX, Prüfung des 8-Bit-Modus behebt den
+  Treiber von Windows 3.0).
 
 Lizenz, geprüft am 24.11.2026 an `master`: das README von 86Box nennt
 „GNU General Public License, version 2 or later“, und `COPYING` enthält
@@ -169,5 +203,9 @@ Code nur als Vorlage, und nur mit passender Lizenz:
   386 mit 4 MB. Möglich wäre auch, die lange Bitmap nur für Boxen mit
   Chip-Eintrag anzulegen.
 - Hardware-Mauszeiger der S3, solange CMD vorn ist: muss aus sein.
+- Trio3D hinten: das alte MMIO-Fenster bei A0000h ist im Rohbetrieb
+  heute schon die Karte (`vga_map`). Hinten muss es mit CR53 Bit 4 als
+  MMIO gelten, nicht als Bild – sonst schreibt die Box in die Sicherung
+  statt zu warten. Dasselbe gilt für das neue Fenster hinter dem LFB.
 - Ob der S3-Treiber im Standardmodus etwas von VxDs erwartet (VDD für
   Enhanced Mode). Das zeigt erst der Test.
