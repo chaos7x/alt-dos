@@ -1306,10 +1306,13 @@ WINLDR meldet Start und Ende von Windows wie DOSX über INT 2Fh 1605h/
 CX ≠ 0 ab, Meldung und Ende). Den Task-Switcher (2Fh 4Bxxh) braucht DOSX
 nur für fremde Umschalter wie die DOS-Shell – nicht gebaut. Geprüft
 QEMU (SETUP, Programmgruppe), 86Box 386DX/40 (DOS-Programme in der Box).
-Offen: `WIN` über WIN.COM landet sofort in einer DOS-Eingabeaufforderung
-mit dem Hinweis von WSWAP („EXIT … zu Windows zurückzukehren“), nach
-EXIT „Windows kann nicht eingelagert werden“ – WIN.COM hält Windows für
-schon laufend (Untersuchung folgt); SCRIPT.FON/MODERN.FON beim zweiten
+`WIN` über WIN.COM startet normal: WIN.COM → WSWAP.EXE → DOSX.EXE
+„krnl286“ (→ WINLDR) → KRNL286, Programm-Manager mit allen Gruppen
+(QEMU, 7 von 7 Starts). Zweimal direkt nach dem SETUP landete `WIN`
+stattdessen in einer DOS-Eingabeaufforderung mit dem Hinweis von WSWAP
+(„EXIT … zu Windows zurückzukehren“, nach EXIT „Windows kann nicht
+eingelagert werden“) – danach nicht mehr nachstellbar; Verdacht: WIN.COM
+fragt den Task-Switcher ab (INT 2Fh 4680h, 4B02h). SCRIPT.FON/MODERN.FON beim zweiten
 SETUP: die Box sperrt offene Dateien wie MS-DOS mit SHARE – mit SHARE
 zeigt auch echtes Windows diesen Dialog.
 

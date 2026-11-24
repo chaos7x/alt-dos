@@ -2110,9 +2110,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   verschachtelte DPMI-Ausnahmen auf dem Ausnahme-Stapel unter die
   laufende Stelle. SETUP kommt damit nach REGEDIT weiter; `sel_ok` nimmt jede RPL
   (PROGMAN übergibt Puffer mit RPL 2) – SETUP läuft ganz durch, WIN.COM
-  und die Gruppen entstehen. WINLDR meldet 2Fh 1605h/1606h. Offen: `WIN`
-  über WIN.COM landet in einer DOS-Eingabeaufforderung (hält Windows für
-  laufend).
+  und die Gruppen entstehen. WINLDR meldet 2Fh 1605h/1606h. `WIN` über
+  WIN.COM startet normal (zweimal sporadisch in einer DOS-Eingabe-
+  aufforderung von WSWAP gelandet, nicht nachstellbar).
   Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
   VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);
