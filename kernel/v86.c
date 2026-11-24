@@ -6130,7 +6130,13 @@ static unsigned dp_cbret(struct v86_frame *f, int t)
 }
 
 /* Ausnahme an den Handler des Programms (0203h): Rahmen nach DPMI 0.9
-   auf dem Ausnahme-Stapel, Ruecksprung per RETF nach Stummel:0540 */
+   auf dem Ausnahme-Stapel, Ruecksprung per RETF nach Stummel:0540.
+   Faellt eine Ausnahme, waehrend ein Handler noch auf diesem Stapel
+   laeuft (KRNL286 schaltet beim Task-Ende per UD0 auf ihn um und laedt
+   dort Segmente nach - #NP), kommt der neue Rahmen 256 Byte unter die
+   laufende Stelle; oben angelegt ueberschrieb der zweite Handler den
+   Stapel des ersten. Den Abstand braucht KRNL: sein #NP-Handler legt
+   den Ruecksprung 24h Byte unter die Unterbrechungsstelle. */
 static unsigned dp_exc(struct v86_frame *f, int t)
 {
     unsigned long __far *v, off, sp, b;
@@ -6156,6 +6162,12 @@ static unsigned dp_exc(struct v86_frame *f, int t)
     fr[7] = f->r.ss;
     b = sel_base(t, dp_exss[t]);
     sp = 0x1000 - 8 * w;
+    if ((unsigned)f->r.ss == dp_exss[t]) {      /* schon auf dem Stapel  */
+        sp = (dp_32[t] ? f->r.esp : (unsigned)f->r.esp) & ~(unsigned long)(w - 1);
+        if (sp < 0x400)
+            return 1;
+        sp -= 0x100 + 8 * w;
+    }
     for (k = 0; k < 8; k++)
         lwr(b + sp + k * w, fr[k], w);
     f->r.ss = dp_exss[t];

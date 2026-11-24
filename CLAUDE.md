@@ -2091,7 +2091,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und XMS aus dem PM, 56h/60h in WINLDR, PSP vor 4Ch); Windows endete
   nach jedem Programm (auch REGEDIT im SETUP): KRNL beendet den DOS-Teil
   einer Task mit INT 21h 00h, WINLDR machte daraus das Ende von Windows –
-  jetzt `pmterm`/`rm_term` wie DOSX (4Ch mit PSP:0Ah auf sich, DPMI 0301h).
+  00h beantwortet WINLDR jetzt wie MS-DOS unter DOSX (CS ≠ aktueller PSP:
+  Rücksprung alter Art, nichts freigegeben – MS-DOS 4.0 CTRLC.ASM); der
+  Box-Kern legt wie DISP.ASM bei jedem INT 21h den Rahmen in PSP:2Eh ab;
+  verschachtelte DPMI-Ausnahmen auf dem Ausnahme-Stapel unter die
+  laufende Stelle. SETUP kommt damit nach REGEDIT weiter (Drucker,
+  Programme); offen: PROGMAN-Seitenfehler beim Anlegen der Gruppen.
   Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
   VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);

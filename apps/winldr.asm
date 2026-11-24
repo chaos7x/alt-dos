@@ -932,57 +932,14 @@ pm15:   cmp     ax, 0C207h              ; PS/2-Rueckruf ES:BX (PM)
         iret
 
 ; ---- Protected Mode: INT 21h 00h - Task beenden (wie DOSX) -----------
-; KRNL setzt den PSP einer endenden Task (50h) und ruft 00h: DOS soll ihre
-; Dateien schliessen und zurueckkehren. 00h nimmt im Real Mode CS als PSP
-; - deshalb 4Ch ueber eine eigene Routine (DPMI 0301h), die vorher den
-; Ruecksprung des PSP (0Ah) auf sich setzt und danach ihren Stapel
-; zurueckholt. DOS setzt dabei den Elternprozess als aktuellen PSP.
-pmterm: push    ds
-        mov     ds, [cs:dsel]
-        pop     word [c_ds]
-        mov     [c_es], es
-        pushad
-        xor     ax, ax
-        mov     [R_fl], ax
-        mov     [R_ss], ax              ; Stapel vom Wirt
-        mov     [R_sp], ax
-        mov     [R_fs], ax
-        mov     [R_gs], ax
-        mov     ax, [rmseg]
-        mov     [R_ds], ax
-        mov     [R_es], ax
-        mov     [R_cs], ax
-        mov     word [R_ip], rm_term
-        push    ds
-        pop     es
-        mov     di, R
-        mov     ax, 0301h
-        xor     bx, bx
-        xor     cx, cx
-        int     31h
-        popad
-        mov     es, [c_es]
-        push    word [c_ds]
-        pop     ds
-        iret
-
-; Real Mode, Fernaufruf aus pmterm
-rm_term: mov    [cs:t_ss], ss
-        mov     [cs:t_sp], sp
-        mov     ah, 62h
-        int     21h
-        mov     es, bx
-        mov     word [es:0Ah], .back
-        mov     [es:0Ch], cs
-        mov     ax, 4C00h
-        int     21h
-.back:  cli
-        mov     ss, [cs:t_ss]
-        mov     sp, [cs:t_sp]
-        sti
-        retf
-t_ss    dw      0
-t_sp    dw      0
+; KRNL setzt den PSP einer endenden Task (50h) und ruft 00h. DOSX reicht
+; das mit seinem eigenen CS weiter - CS ist dann nicht der aktuelle PSP,
+; und MS-DOS kehrt nach alter Art zurueck, ohne etwas freizugeben
+; (MS-DOS 4.0 CTRLC.ASM reset_environment, ThisPDB = CS). Handles und PSP
+; der Task bleiben: KRNL laedt danach noch Segmente ueber diese Handles
+; (COMMDLG beim Ende von REGEDIT im SETUP - mit 4Ch waren sie zu,
+; FatalExit). Also nichts tun.
+pmterm: iret
 
 ; ---- Protected Mode: Maus fuer MOUSE.DRV von Windows -----------------
 ; MOUSE.DRV nimmt mit einem DOS-Maustreiber dessen Art aus INT 33h 24h und

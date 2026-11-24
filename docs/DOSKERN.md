@@ -1257,6 +1257,34 @@ das Ende von Windows (nur ExitKernel, KRNL286 1:955Ch). Geprüft in
 QEMU: Editor und Rechner im Programm-Manager gestartet und geschlossen,
 Windows läuft weiter, „Windows beenden“ führt sauber zu CMD zurück.
 
+**Korrektur (24.11.2026, abends).** Das 4C00h über `rm_term` war falsch:
+SETUP brach danach im zweiten Lauf mit FatalExit ab – beim Ende von
+REGEDIT lud KRNL noch ein Segment von COMMDLG über dessen Handle (0Ah),
+und das hatte 4Ch geschlossen (Box-Kern: Fehler 6). MS-DOS 4.0 klärt es
+(PROC.ASM `$ABORT`, CTRLC.ASM `reset_environment`): bei 00h gilt CS des
+Aufrufers als beendeter PSP; ist er nicht der aktuelle, kehrt DOS nach
+alter Art zurück (INT 22h–24h aus CS:0Ah) und gibt nichts frei – Handles,
+Speicher und aktueller PSP bleiben. DOSX ruft 00h mit eigenem CS, also
+tut DOS dort nichts. WINLDR beantwortet 00h jetzt mit IRET; der Box-Kern
+macht bei 00h mit CS ≠ aktuellem PSP denselben Rücksprung alter Art
+(`old_exit`). Dazu wie MS-DOS (DISP.ASM): jeder INT 21h legt den Rahmen
+des Aufrufers in PSP:2Eh ab (vorher nur bei EXEC – das Ende eines Kindes
+sprang sonst in einen veralteten Rahmen des Elternprozesses). Und im
+DPMI-Host (v86.c `dp_exc`): KRNL schaltet beim Task-Ende per UD0 auf den
+Ausnahme-Stapel und lädt dort Segmente nach (#NP); der Rahmen dieser
+zweiten Ausnahme landete oben auf demselben Stapel und überschrieb den
+laufenden Handler. Jetzt kommt er 256 Byte unter die Unterbrechungs-
+stelle (KRNLs #NP-Handler legt seinen Rücksprung 24h Byte darunter).
+Gefunden mit Spuren über Port E9h (Ausnahmerahmen, Speicherabzug des
+Ausnahme-Stapels, Befehlsbytes, Modulname über das Limit des nicht
+vorhandenen Selektors, Fehler im Box-Kern). Geprüft in QEMU: SETUP-Lauf
+über das installierte Windows kommt nach REGEDIT zur Druckerinstallation
+und zur Programmsuche; 86Box 386DX/40: DOS-Programme in der Box
+(COMMAND /C, MEM), SHUTDOWN. Offen: beim Anlegen der Programmgruppen
+Seitenfehler in PROGMAN bei 004F:0672; SCRIPT.FON/MODERN.FON lassen sich
+im zweiten Lauf nicht überschreiben (die Box sperrt offene Dateien wie
+SHARE); 2Fh 1605h/1606h und Task-Switcher 4Bxxh sendet WINLDR noch nicht.
+
 Dabei: WIN.COM gibt DOSX als erstes Wort den Kern („krnl286.exe /b …“,
 von Hand auch ohne Endung) – der Box-Kern setzte davor fest
 `…\KRNL286.EXE`, heraus kam „KRNL286.EXEkrnl286.exe“ (lief nur, weil

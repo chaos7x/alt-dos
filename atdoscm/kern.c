@@ -418,15 +418,39 @@ static void country_fn(struct frame __far *f)
 }
 
 /* ---- Verteiler ---------------------------------------------------------- */
+/* INT 21h 00h aus Code, dessen CS nicht der aktuelle PSP ist: MS-DOS
+   (CTRLC.ASM reset_environment, ThisPDB = CS) macht dann einen Ruecksprung
+   alter Art - INT 22h-24h aus CS:0Ah, weiter bei INT 22h, nichts
+   freigegeben, Handles offen, PSP bleibt. DOSX (Windows 3.x Standard-
+   Modus) beendet so den DOS-Teil einer Task; KRNL laedt danach weiter
+   Segmente ueber deren Handles. */
+static struct frame __far *old_exit(struct frame __far *f)
+{
+    u16 c = f->cs;
+    D(0, 0x22 * 4) = D(c, 0x0A);
+    D(0, 0x23 * 4) = D(c, 0x0E);
+    D(0, 0x24 * 4) = D(c, 0x12);
+    ret_code = 0;
+    f->ip = W(c, 0x0A);
+    f->cs = W(c, 0x0C);
+    return f;
+}
+
 struct frame __far *int21_c(struct frame __far *f)
 {
     u8 ah = AH(f);
     in_ax = f->ax;
-    if (sda[SDA_INDOS] == 1)            /* fuer INT 2Fh 1218h            */
+    if (sda[SDA_INDOS] == 1) {          /* fuer INT 2Fh 1218h            */
+        u16 p = cur_psp();
         user_frame = f;
+        W(p, 0x2E) = FP_OFF(f);         /* Stapel des Aufrufers im PSP   */
+        W(p, 0x30) = FP_SEG(f);         /* wie MS-DOS (DISP.ASM): dorthin */
+    }                                   /* kehrt das Ende eines Kindes   */
     f->fl &= ~FL_CF;
     switch (ah) {
     case 0x00:
+        if (f->cs != cur_psp())         /* MS-DOS $ABORT: CS ist nicht   */
+            return old_exit(f);         /* der aktuelle PSP              */
         return term(f, 0, 0, 0);
     case 0x4C:
         return term(f, 0, AL(f), 0);
