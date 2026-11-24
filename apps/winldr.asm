@@ -67,6 +67,13 @@ R_sp    dw      0
 R_ss    dw      0
 
 ; ---- Real Mode: INT 2Fh ------------------------------------------------
+; Real Mode, INT 24h unter Windows: DOSX reicht kritische Fehler an den
+; Handler von Windows weiter. Hier antwortet WINLDR mit "Fehler" (AL = 3):
+; der Aufruf bekommt den DOS-Fehler, Windows meldet ihn selbst. Sonst
+; fragte der Box-Kern im Textmodus (A/I/W/F) und Windows stand.
+rm24:   mov     al, 3
+        iret
+
 rm2f:   cmp     ax, 1687h
         jne     .chain
         pushf
@@ -249,9 +256,12 @@ T_TMP   equ     19                      ; 5Ah DS:DX hin und zurueck
 T_FFFF  equ     20                      ; 4Ch: an den Wirt
 T_PSET  equ     21                      ; 50h: BX Selektor -> Segment
 T_NPSP  equ     22                      ; 26h/55h: DX Selektor -> Segment
+T_FCB   equ     23                      ; 11h/12h/13h: FCB DS:DX hin und
+                                        ; zurueck, Ergebnis ins DTA
 
 ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      09h, T_STR,  0Bh, T_PASS, 0Ch, T_PASS, 0Eh, T_PASS
+        db      11h, T_FCB,  12h, T_FCB,  13h, T_FCB
         db      19h, T_PASS, 1Ah, T_DSET, 25h, T_VSET, 2Ah, T_PASS
         db      2Bh, T_PASS, 2Ch, T_PASS, 2Dh, T_PASS, 2Eh, T_PASS
         db      2Fh, T_DGET, 30h, T_PASS, 33h, T_PASS, 34h, T_ESBX
@@ -317,7 +327,7 @@ pm21:   test    ah, ah                  ; 00h: KRNL beendet den DOS-Teil
 
 jtab:   dw      f_pass, f_sz, f_rd, f_wr, f_vget, f_vset, f_dset, f_dget
         dw      f_find, f_cdir, f_ren, f_xopn, f_true, f_ctry, f_esbx, f_psp
-        dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp
+        dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp, f_fcb
 
 ; Real Mode aufrufen (INT 21h mit R), Ergebnis in die Register
 callrm: push    es
@@ -606,6 +616,58 @@ f_find: cmp     ah, 4Eh
         rep     movsb
         pop     es
         jmp     done
+
+; FCB-Suche/-Loeschen (11h/12h/13h): der Datei-Manager holt die
+; Datentraegerbezeichnung mit 11h und erweitertem FCB (Attribut 08h).
+; FCB (37 Byte, erweitert 44) in den Puffer, DTA im Real Mode auf
+; unseren, danach FCB (Suchzustand) und Ergebnis zurueck zum Programm.
+f_fcb:  push    ds
+        push    es
+        push    ds
+        pop     es
+        mov     si, [R_edx]
+        mov     di, buf
+        mov     ds, [c_ds]
+        mov     cx, 37
+        cmp     byte [si], 0FFh
+        jne     .c1
+        add     cx, 7
+.c1:    mov     [es:fcbn], cx
+        rep     movsb
+        pop     es
+        pop     ds
+        mov     word [R_edx], buf
+        push    word [R_eax]            ; RM-DTA auf unseren Puffer
+        mov     word [R_eax], 1A00h
+        mov     word [R_edx], dta
+        call    callrm
+        pop     word [R_eax]
+        mov     word [R_edx], buf
+        call    callrm
+        mov     word [fl_out], 0
+        push    es
+        mov     es, [c_ds]              ; FCB zurueck (Suchzustand)
+        mov     di, dx                  ; DX des Programms
+        mov     si, buf
+        mov     cx, [fcbn]
+        rep     movsb
+        pop     es
+        cmp     byte [R_eax], 0         ; gefunden: Ergebnis ins DTA
+        jne     done
+        cmp     byte [R_eax + 1], 13h
+        je      done
+        cmp     word [pdta + 2], 0
+        je      done
+        push    es
+        mov     di, [pdta]
+        mov     es, [pdta + 2]
+        mov     si, dta
+        mov     cx, [fcbn]
+        rep     movsb
+        pop     es
+        jmp     done
+
+fcbn    dw      0
 
 f_cdir: mov     word [R_esi], buf       ; 47h: DS:SI 64 Byte
         call    callrm
@@ -1334,6 +1396,9 @@ init:   mov     [rmseg], cs
         mov     dx, rm2f
         mov     ax, 252Fh
         int     21h
+        mov     dx, rm24                ; kritische Fehler: "Fehler"
+        mov     ax, 2524h               ; (DOS stellt den alten Vektor
+        int     21h                     ; beim Ende aus dem PSP her)
         push    ds                      ; Start melden wie DOSX: 1605h,
         xor     bx, bx                  ; DX Bit 0 = Standard-Modus,
         mov     es, bx                  ; DI = Version; CX <> 0 heisst:

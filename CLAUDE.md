@@ -2118,10 +2118,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   freien LDT-Einträge selbst), al_write kann BTS/BTR/BTC; in QEMU bis zum
   Programm-Manager, in 86Box Kollision beim 0002h-Selektor – zurückgestellt
   (docs/DOSKERN.md „KRNL386“). Vom Nutzer gemeldet (24.11.2026, offen):
-  Datenträgerbezeichnung im Datei-Manager „[????1“, WIN langsamer als
-  unter DOS, nach WIN öffnen sich Programme von selbst, „Fehler beim
-  Lesen von Laufwerk D:“ als Textmeldung und Windows steht danach,
-  „Windows kann nicht eingelagert werden“ (WSWAP).
+  WIN langsamer als unter DOS, nach WIN öffnen sich Programme von selbst
+  (in QEMU mit getipptem WIN nicht nachgestellt; Verdacht Maus/Tasten),
+  „Windows kann nicht eingelagert werden“ (WSWAP). Behoben: Bezeichnung
+  im Datei-Manager „[????1“ (WINLDR übersetzt FCB 11h/12h/13h) und
+  „Fehler beim Lesen von Laufwerk D:“ als Textabfrage mit stehendem
+  Windows (WINLDR antwortet im Real Mode auf INT 24h mit „Fehler“).
   Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
   VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);

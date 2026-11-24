@@ -1342,6 +1342,22 @@ der Wirt nach 168Ah keine LDT-Einträge mehr selbst vergeben. Geprüft:
 QEMU und 86Box P3B-F – `WIN` (KRNL286) startet wie vorher, DOOM 1.9
 Timedemo (QEMU).
 
+**Datei-Manager (vom Nutzer gemeldet, 24.11.2026).** Die Bezeichnung
+eines Laufwerks erschien als „[????1“, ein Lesefehler auf D: kam als
+Textabfrage des Box-Kerns (A/I/W/F) und Windows stand danach. WINFILE
+holt die Bezeichnung über DOS3Call mit der FCB-Suche 11h (erweiterter
+FCB, Attribut 08h, Muster „???????????“). WINLDR hatte 11h/12h/13h nicht
+in seiner Tabelle und reichte sie roh weiter – im Real Mode zeigte DS:DX
+ins Leere, das Ergebnis kam nie im DTA des Programms an. Jetzt kopiert
+WINLDR den FCB (37 bzw. 44 Byte) in seinen Puffer, setzt das DTA im Real
+Mode auf seins und gibt FCB (Suchzustand) und Ergebnis zurück. Kritische
+Fehler: DOSX reicht INT 24h an den Handler von Windows weiter; WINLDR
+setzt bis dahin im Real Mode einen eigenen INT 24h, der „Fehler“ (AL = 3)
+antwortet – der Aufruf bekommt den DOS-Fehler (leeres Diskettenlaufwerk:
+„Keine Dateien gefunden“), Windows läuft weiter. Offen: die Meldung von
+Windows selbst („Laufwerk nicht bereit“) über den PM-Handler. Geprüft
+QEMU und 86Box P3B-F: „C: [AT-DOS]“, Strg+A ohne Diskette.
+
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
 Art und den IRQ (den INT-33h-Weg nur unter OS/2, DOS-Version ab 10).
