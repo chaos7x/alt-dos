@@ -1322,6 +1322,26 @@ von Hand auch ohne Endung) – der Box-Kern setzte davor fest
 DOS die Endung auf drei Zeichen kürzt). Jetzt kommt nur das Verzeichnis
 von DOSX davor, WINLDR hängt bei Bedarf `.EXE` an.
 
+**KRNL386 (24.11.2026).** `DOSX.EXE KRNL386.EXE` von Hand: erst eine
+Kernel-Panik (#GP beim IRETD in den Ausnahme-Handler, Fehlercode 008Ch).
+KRNL386 übernimmt nach dem LDT-Alias (168Ah) alle zu dem Zeitpunkt
+freien LDT-Einträge in eine eigene Freiliste (Wort 0 = nächster Eintrag,
+Byte 6 = 0Fh) und schreibt dort selbst Deskriptoren hinein. Der Ausnahme-
+Stapel des Wirts wurde erst bei der ersten Ausnahme angelegt – in einem
+Eintrag dieser Liste, KRNL überschrieb ihn. Jetzt legt `dp_switch` ihn
+gleich mit an. Außerdem schreibt KRNL386 Deskriptoren mit `BTR WORD
+[BX+5],7` (Present löschen) – `al_write` bildet BTS/BTR/BTC m,imm8 nach.
+Damit startet KRNL386 in QEMU bis zum Programm-Manager. In 86Box endet
+es mit Rückgabewert 1: derselbe Zusammenstoß beim Selektor aus 0002h
+(F000h), den KRNL danach für etwas anderes beschreibt (Grenze 13Fh, das
+Lesen des Modellbytes F000:FFFE wird #GP – QEMU prüft Grenzen nicht).
+Zurückgestellt: DOSX.EXE kennt nur `krnl286.exe`, im Standard-Modus
+nimmt Windows 3.1 immer KRNL286, KRNL386 gehört zum erweiterten Modus
+(WIN386, dessen eigene Selektoren in der GDT liegen). Für KRNL386 müsste
+der Wirt nach 168Ah keine LDT-Einträge mehr selbst vergeben. Geprüft:
+QEMU und 86Box P3B-F – `WIN` (KRNL286) startet wie vorher, DOOM 1.9
+Timedemo (QEMU).
+
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
 Art und den IRQ (den INT-33h-Weg nur unter OS/2, DOS-Version ab 10).

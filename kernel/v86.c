@@ -274,6 +274,7 @@ static unsigned char cli_nd;
 static signed char cli_dt = -1;         /* fuer diese Box                */
 static unsigned char dp_npatch[NTASK], dp_popf_if[NTASK];
 static int dp_patched(int t, unsigned long lin);
+static int dp_exstack(int t);
 static void xms_table(int t);
 static unsigned xms_snap[NTASK];        /* CMOS 30h/31h zuletzt: Seiten + 1 */
 static int mon2f(struct v86_frame *f);
@@ -4862,7 +4863,9 @@ static unsigned long __far *al_reg(struct v86_frame *f, unsigned r)
     return (unsigned long __far *)&(&f->edi)[7 - r];
 }
 
-/* Seitenfehler beim Schreiben in den Alias -> 1 nachgebildet */
+/* Seitenfehler beim Schreiben in den Alias -> 1 nachgebildet (MOV, STOS,
+   MOVS, OR/AND/XOR, XCHG, POP r/m, BTS/BTR/BTC m,imm8 - KRNL386 schreibt
+   Deskriptoren auch mit POP WORD [BX+5] und BTR WORD [BX+5],7) */
 static int al_write(struct v86_frame *f, int t)
 {
     unsigned long a = k2_cr2(), lin, v, old, src = 0;
@@ -4924,9 +4927,41 @@ static int al_write(struct v86_frame *f, int t)
         f->r.eip += i + (a32 ? 4 : 2);
         return 1;
     }
+    if (op == 0x0F && lrd(lin + i, 1) == 0xBA) {   /* BTS/BTR/BTC m, imm8 */
+        unsigned b;
+        i++;
+        m = (unsigned char)lrd(lin + i++, 1);
+        md = m >> 6;
+        reg = (m >> 3) & 7;
+        rm = m & 7;
+        if (md == 3 || reg < 5)
+            return 0;
+        if (a32) {
+            if (rm == 4 && (lrd(lin + i++, 1) & 7) == 5 && md == 0)
+                i += 4;
+            if (md == 0 && rm == 5) i += 4;
+            else if (md == 1) i++;
+            else if (md == 2) i += 4;
+        } else {
+            if (md == 0 && rm == 6) i += 2;
+            else if (md == 1) i++;
+            else if (md == 2) i += 2;
+        }
+        w = o32 ? 4 : 2;
+        b = (unsigned)lrd(lin + i++, 1) & (w * 8 - 1);
+        old = lrd(a, w);
+        f->r.eflags &= ~1UL;
+        if (old & (1UL << b))
+            f->r.eflags |= 1;
+        v = reg == 5 ? old | (1UL << b) : reg == 6 ? old & ~(1UL << b) : old ^ (1UL << b);
+        al_put(t, (unsigned)(a - (AL_LP << 12)), v, w);
+        f->r.eip += i;
+        return 1;
+    }
     if (!(op == 0x88 || op == 0x89 || op == 0xC6 || op == 0xC7 || op == 0x80 ||
           op == 0x81 || op == 0x83 || op == 0x08 || op == 0x09 || op == 0x20 ||
-          op == 0x21 || op == 0x30 || op == 0x31 || op == 0x86 || op == 0x87))
+          op == 0x21 || op == 0x30 || op == 0x31 || op == 0x86 || op == 0x87 ||
+          op == 0x8F))                          /* POP r/m (KRNL386)     */
         return 0;
     m = (unsigned char)lrd(lin + i++, 1);
     md = m >> 6;
@@ -4944,6 +4979,19 @@ static int al_write(struct v86_frame *f, int t)
         if (md == 0 && rm == 6) i += 2;
         else if (md == 1) i++;
         else if (md == 2) i += 2;
+    }
+    if (op == 0x8F) {                           /* POP r/m: vom Stapel    */
+        unsigned long sp = dp_32[t] ? f->r.esp : (unsigned)f->r.esp;
+        if (reg)
+            return 0;
+        v = lrd(sel_base(t, (unsigned)f->r.ss) + sp, w);
+        al_put(t, (unsigned)(a - (AL_LP << 12)), v, w);
+        if (dp_32[t])
+            f->r.esp += w;
+        else
+            f->r.esp = (f->r.esp & 0xFFFF0000UL) | ((unsigned)f->r.esp + w);
+        f->r.eip += i;
+        return 1;
     }
     old = lrd(a, w);
     if (op == 0xC6 || op == 0xC7) {
@@ -5211,10 +5259,16 @@ static unsigned dp_switch(struct v86_frame *f, int t)
         EXV(t, i)[0] = DP_EXC + i * 4;
         *(unsigned short __far *)((char __far *)EXV(t, i) + 4) = dp_stub[t];
     }
-    dp_exss[t] = dp_cbss[t] = 0;                /* Stapel bei Bedarf     */
+    dp_exss[t] = dp_cbss[t] = 0;
     for (i = 0; i < NCB; i++)
         CB(t, i)->psel = 0;
     dp_on[t] = 1;
+    /* Ausnahme-Stapel gleich anlegen, nicht erst bei der ersten
+       Ausnahme: KRNL386 schreibt Deskriptoren selbst ueber den LDT-Alias
+       und hielt den spaeter belegten Eintrag fuer frei - der Stapel
+       wurde ueberschrieben, das IRETD in den Handler endete in einer
+       Kernel-Panik (#GP 008Ch) */
+    dp_exstack(t);
     s40[t] = 0;                                 /* neue LDT              */
     /* Rahmen: weiter im PM hinter dem Fernaufruf */
     f->r.eip = rip;
