@@ -1066,6 +1066,35 @@ load_tr_:
         ltr     ax
         ret
 
+; void far_copy(dsel, doff, ssel, soff, n) - Watcom: AX, DX, BX, CX, n auf
+; dem Stapel (ret 2). In Doppelworten (vorher C-Schleife Byte für Byte –
+; beim Lesen über den Platten-Cache 10 % der Wirtszeit beim Windows-
+; Start). Nach vorn überlappend nur mit Abstand >= 4.
+global far_copy_
+far_copy_:
+        push    si
+        push    di
+        push    cx
+        push    ds
+        mov     si, sp
+        mov     es, ax
+        mov     di, dx
+        mov     ds, bx
+        mov     dx, [ss:si+10]
+        mov     si, cx
+        mov     cx, dx
+        shr     cx, 2
+        cld
+        rep     movsd
+        mov     cx, dx
+        and     cx, 3
+        rep     movsb
+        pop     ds
+        pop     cx
+        pop     di
+        pop     si
+        ret     2
+
 ; unsigned sel_readable(unsigned sel)  - 1, wenn Ring 3 lesen darf
 global sel_readable_
 sel_readable_:

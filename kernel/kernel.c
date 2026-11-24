@@ -237,13 +237,7 @@ void scratch2_map(unsigned long base, unsigned limit)
     swin(SCRATCH2, base, limit);
 }
 
-void far_copy(unsigned dsel, unsigned doff, unsigned ssel, unsigned soff, unsigned n)
-{
-    char __far *d = MK_FP(dsel, doff);
-    const char __far *s = MK_FP(ssel, soff);
-    while (n--)
-        *d++ = *s++;
-}
+/* far_copy steht in start.asm */
 
 void delay_ticks(unsigned n)
 {

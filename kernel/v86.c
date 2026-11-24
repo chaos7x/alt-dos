@@ -5505,16 +5505,28 @@ static unsigned dp31(struct v86_frame *f, int t)
         ldt_free(t, IDX(BX));                   /* Register darauf: dp_int */
         return 0;
     case 0x0002:                                /* Segment -> Selektor   */
-        for (k = 1; k < LDTN(t); k++) {         /* gleiches Segment: wie */
-            unsigned char __far *d;             /* die Spezifikation der- */
-            if (!lm_get(t, k))                  /* selbe Selektor        */
-                continue;
-            d = ldt_e(t, k);
-            if (d[5] == 0xF2 && d[6] == 0 && d[7] == 0 && d[0] == 0xFF &&
-                d[1] == 0xFF && *(unsigned short __far *)(d + 2) == (unsigned)(BX << 4) &&
-                d[4] == (unsigned char)(BX >> 12)) {
-                AX = SEL(k);
-                return 0;
+        {                                       /* gleiches Segment: wie */
+            unsigned char __far *bm, __far *d;  /* die Spezifikation der- */
+            if (dp_lbm[t]) {                    /* selbe Selektor. Beide */
+                scratch2_map(PG_LIN(dp_lbm[t]), 4095); /* Fenster einmal */
+                bm = MK_FP(SCRATCH2, 0);        /* (vorher je Eintrag    */
+            } else                              /* umgelegt)             */
+                bm = (unsigned char __far *)dp_lmap[t];
+            ldt_e(t, 0);
+            for (k = 1; k < LDTN(t); k++) {
+                if (!(k & 7) && !bm[k >> 3]) {
+                    k += 7;
+                    continue;
+                }
+                if (!(bm[k >> 3] & (1 << (k & 7))))
+                    continue;
+                d = MK_FP(SCRATCH, k * 8);
+                if (d[5] == 0xF2 && d[6] == 0 && d[7] == 0 && d[0] == 0xFF &&
+                    d[1] == 0xFF && *(unsigned short __far *)(d + 2) == (unsigned)(BX << 4) &&
+                    d[4] == (unsigned char)(BX >> 12)) {
+                    AX = SEL(k);
+                    return 0;
+                }
             }
         }
         if ((k = (unsigned)ldt_alloc(t, 1)) == 0xFFFF)

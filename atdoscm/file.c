@@ -926,6 +926,10 @@ static void ioctl_fn(struct frame __far *f)
             set_err(f, E_FUNC);         /* (MSD: 4408h scheitert -> fern) */
             break;
         }
+        if (AL(f) == 0x08 && d < 2) {   /* Diskette: wechselbar, ohne    */
+            f->ax = 0;                  /* sie anzufassen (wie MS-DOS;   */
+            break;                      /* Windows fragt beim Start alle */
+        }                               /* Laufwerke, je ~0,3 s)         */
         if (dinfo(d)) {                 /* CD, kein Medium               */
             if (d < 2) {                /* leere Diskette: Laufwerk wie  */
                 dbuf[0] = 2;            /* MS-DOS ohne Medium (1,44 MB)  */

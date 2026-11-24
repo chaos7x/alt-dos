@@ -1410,6 +1410,17 @@ mit HIMEM auf derselben VM: `WIN /S` 1,9 s, `WIN` 2,0–2,6 s. Übrig im
 Profil: `far_copy` 10 %, KTEXT2 8 %, Leerlauf (HLT) ~39 % während des
 Starts. Geprüft: 86Box P3B-F (WIN dreimal, Alt+F4 5 von 5), QEMU (DOOM
 1.9 Timedemo).
+Zweite Runde (Profil mit Stapelworten, Rücksprünge über den Code
+geprüft): `far_copy` war eine C-Schleife Byte für Byte, aufgerufen vor
+allem aus `blk_read_n` (Sektoren aus dem Platten-Cache) – jetzt in
+start.asm mit `rep movsd` (10 % -> 2,6 %; nach vorn überlappend nur mit
+Abstand >= 4, das nutzt kein Aufrufer). DPMI 0002h (Segment -> Selektor)
+lief über alle LDT-Einträge und legte für jeden das Fenster der
+Belegung neu – jetzt beide Fenster einmal, freie Bytes übersprungen. Der
+Box-Kern beantwortet 4408h („wechselbar?“) für A:/B: wie MS-DOS ohne
+das Laufwerk anzufassen – Windows fragt beim Start alle Laufwerke, das
+kostete je ~0,3 s Diskettenzugriff. Übrig: zweimal `fd_check` aus dem
+EXECPGM von CMD (je ~0,3 s), Leerlauf sonst nicht mehr.
 
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
