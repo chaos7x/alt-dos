@@ -2059,6 +2059,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
+  noch kein Code): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
+  Auslagerungsdatei und AUTOEXEC.CMD weg, startet CMD statt PROTSHELL und
+  Boxen mit den Vorgaben (ATDOSCM.SYS, ohne DOSBOX.INI). Treiber des
+  Startlaufwerks stehen in neuen `BASEDEV=`-Zeilen (wie OS/2), die auch
+  F5 lädt; fehlt das Startlaufwerk danach, Rückfall auf INT 13h über
+  einen Real-Mode-Ausflug (`DRV_BIOS`). Heute gibt es weder F5 noch einen
+  INT-13h-Rückfall zur Laufzeit. Entwurf in `docs/NOTSTART.md`.
+
 - **`sched_start()`** (vorgemerkt vom Nutzer, 24.11.2026; noch kein
   Code – die andere Sitzung arbeitet an Windows 3.1): der Start läuft
   heute schon ohne Tasks (`current = -1`, keine Kernelsperre,
