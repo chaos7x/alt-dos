@@ -47,10 +47,19 @@ extern char int24_entry[];
    (Vektor zeigt noch auf int24_entry) gibt es keinen Aufruf: -1. */
 static int crit(unsigned fn, unsigned e)
 {
-    unsigned ah, di, a;
+    unsigned ah, di, a, d;
     if (!user_frame || sda[0] || (W(0, 0x24 * 4) == (u16)int24_entry &&
                                   W(0, 0x24 * 4 + 2) == kseg))
         return -1;
+    /* Laufwerk: Pfadaufrufe tragen es nur im Pfad, FINDNEXT im Such-
+       zustand (Byte 0) - q.drive stammt dort vom letzten Laufwerksaufruf
+       (COMMAND.COM 4.0 meldete "Laufwerk @") */
+    d = q.drive & 0xFF;
+    if (fn == DEM_FINDNEXT)
+        d = q.find[0] & 0x1F;
+    else if (fn != DEM_READ && fn != DEM_WRITE && fn != DEM_CLOSE &&
+             fn != DEM_SIZE && fn != DEM_LOCK && q.path[0] && q.path[1] == ':')
+        d = (unsigned)((q.path[0] | 0x20) - 'a');
     ah = 0x38;                          /* Fehler/Wiederholen/Ignorieren */
     if (fn == DEM_WRITE || fn == DEM_MKDIR || fn == DEM_RMDIR || fn == DEM_DELETE ||
         fn == DEM_RENAME || fn == DEM_SETATTR || fn == DEM_CLOSE)
@@ -62,8 +71,8 @@ static int crit(unsigned fn, unsigned e)
     sda[SDA_ACTION] = 5;                /* holt den Text ueber 59h (sonst */
     sda[SDA_LOCUS] = 2;                 /* Endlosschleife in SYSGETMSG)   */
     sda[0] = 1;                         /* ErrorMode                     */
-    sda[2] = (u8)q.drive;
-    a = crit24((ah << 8) | (q.drive & 0xFF), di, kseg, (u16)&devs[DV_BLK]) & 0xFF;
+    sda[2] = (u8)d;
+    a = crit24((ah << 8) | d, di, kseg, (u16)&devs[DV_BLK]) & 0xFF;
     sda[0] = 0;
     return (int)a;
 }
