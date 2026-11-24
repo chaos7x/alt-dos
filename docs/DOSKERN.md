@@ -1503,3 +1503,19 @@ erwartet.
 6. ~~Netz in der Box: NET-USE-Laufwerke „fern“ melden?~~ – entschieden
    (Nutzer, 23.11.2026): ja, nur die NET-USE-Laufwerke (4409h Bit 12,
    CDS 8000h); alle anderen AT-DOS-Laufwerke bleiben lokal.
+
+### Offen (24.11.2026): leeres Laufwerk unter Windows
+
+Vom Nutzer gemeldet: der Datei-Manager zeigt bei leerem Diskettenlaufwerk
+„Keine Dateien gefunden“ statt der Meldung von Windows („Laufwerk A: kann
+nicht gelesen werden“). Behoben ist der Teil im DEM: FINDFIRST nach der
+Datenträgerbezeichnung (Attribut 08h) und 21h/36h melden jetzt 15h (vorher
+12h bzw. „0 KB von 0 KB frei“). Offen: WINLDR beantwortet INT 24h im Real
+Mode selbst mit „Fehler“ (`rm24`). Ein Versuch, ihn wie DOSX über einen
+DPMI-Rückruf (0303h) an den PM-Vektor 24h von Windows weiterzureichen,
+endete im Datei-Manager mit einer Schutzverletzung (WINFILE 0006:051D):
+der Handler von KERNEL erwartet vermutlich den Stapelaufbau, den DOSX
+nachbildet (INT-24h-Rahmen, Register und Rahmen des INT-21h-Aufrufers),
+und springt bei „Fehler“ selbst zum Aufrufer zurück – dafür müsste der
+Wirt die offene 0300h-Ebene verwerfen können. Geprüft in 86Box P3B-F mit
+einer Spur der DEM-Aufrufe über Port E9h.
