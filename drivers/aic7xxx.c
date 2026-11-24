@@ -746,7 +746,7 @@ static void init(void)
        Wiederauswahl einen Takt Schlaf */
     discon = irq_on && !has_opt(r->args, "/NODISC");
     r->units = (unsigned char)n;
-    r->count = 16;                      /* Bloecke je READ(10)             */
+    r->count = 0x90;                    /* 16 Bloecke je READ(10), 80h: auch CD */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
 
@@ -766,8 +766,8 @@ static void xfer(int write)
         r->status = DRV_ERR_WP;
         return;
     }
-    if (bsz[r->unit] != 512 || n > 16)
-        n = bsz[r->unit] != 512 ? 1 : 16;
+    if (n > 16)                         /* CD: 16 x 2048 = 32 KB         */
+        n = 16;
     for (tries = 0; tries < 3; tries++) {
         unsigned i;
         for (i = 0; i < 12; i++)

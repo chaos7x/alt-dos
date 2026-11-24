@@ -739,7 +739,7 @@ static void init(void)
         dputs(line);
     }
     r->units = (unsigned char)nunit;
-    r->count = 16;                          /* READ SECTORS mit Sektorzahl */
+    r->count = 0x90;                        /* 16 je Befehl, 80h: auch CD-Bloecke */
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
 
@@ -792,16 +792,16 @@ static void pkt_clear(struct unit *u, unsigned char op)
     pkt[0] = op;
 }
 
-/* einen 2048-Byte-Block mit READ(10) lesen; 0 = ok */
-static int atapi_read(struct unit *u, unsigned long l, unsigned sel, unsigned off)
+/* n (1-16) 2048-Byte-Bloecke mit READ(10) lesen; 0 = ok */
+static int atapi_read(struct unit *u, unsigned long l, unsigned n, unsigned sel, unsigned off)
 {
     pkt_clear(u, 0x28);                     /* READ(10)                 */
     pkt[2] = (unsigned char)(l >> 24);
     pkt[3] = (unsigned char)(l >> 16);
     pkt[4] = (unsigned char)(l >> 8);
     pkt[5] = (unsigned char)l;
-    pkt[8] = 1;                             /* ein Block                */
-    return atapi_pkt(u, 2048, sel, off);
+    pkt[8] = (unsigned char)n;
+    return atapi_pkt(u, n << 11, sel, off);
 }
 
 /* REQUEST SENSE nach einem Fehler: Sense Key << 8 | ASC, -1 = keine Antwort */
@@ -869,7 +869,7 @@ static void xfer(struct drv_req __far *r, int write)
            laeuft an, je halbe Sekunde nochmal (bis 10 s) */
         for (tries = 0; tries < 24; tries++) {
             int sk;
-            if (atapi_read(u, l, r->buf_sel, r->buf_off) == 0) {
+            if (atapi_read(u, l, n, r->buf_sel, r->buf_off) == 0) {
                 r->status = DRV_OK;
                 return;
             }

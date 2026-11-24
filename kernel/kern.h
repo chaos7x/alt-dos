@@ -223,6 +223,7 @@ struct blkdev {
 };
 #define IS_REM(dev) (blk[dev].rem)
 extern struct blkdev blk[NBLK];
+int __far cd_ra(int dev, unsigned long lba);   /* cdra.c (KTEXT4)  */
 extern int nblk;
 /* Loop-Laufwerke (loop.c, KTEXT2) */
 extern unsigned loop_sel[NLOOP], loop_fr[2];

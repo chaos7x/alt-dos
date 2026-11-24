@@ -4949,7 +4949,7 @@ static void pic_pit_init(void)
 /* ---- Blockgeraete ----------------------------------------------------- */
 struct blkdev blk[NBLK];
 int nblk;
-static unsigned char blk_nm[NBLK];    /* letztes Lesen: kein Medium (CD) */
+unsigned char blk_nm[NBLK];    /* letztes Lesen: kein Medium (CD) */
 static unsigned char blk_chg[NBLK];   /* Wechselplatte: Unit Attention   */
 static unsigned blk_rt[NBLK];         /* Wechselplatte: letzte Frage (Takt) */
 
@@ -5587,11 +5587,16 @@ void blk_invalidate(void)
 }
 
 /* Treiberaufruf: n Bloecke ab lba nach DMABUF; 0 = ok */
+static unsigned long dr_phys;           /* cdra.c: anderer Puffer (sonst  */
+static unsigned dr_sel;                 /* DMABUF), gilt fuer einen Aufruf */
 static int dev_read(int dev, unsigned long lba, unsigned n)
 {
     struct blkdev *b = &blk[dev];
     struct drv_req *r;
     int rc;
+    unsigned ds = dr_sel;
+    unsigned long dp = dr_phys;
+    dr_sel = 0;                         /* vor dem ersten Schlafpunkt     */
 
     if (b->drv < 0)
         return fd_read(b->unit, (unsigned)lba) ? -1 : 0;   /* immer einer */
@@ -5602,8 +5607,8 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     r->count = (unsigned char)n;
     r->status = DRV_ERR_IO;
     r->lba = lba;
-    r->buf_phys = dmab_phys;            /* nach drv_lock: unser DMABUF   */
-    r->buf_sel = DMABUF;
+    r->buf_phys = ds ? dp : dmab_phys;  /* nach drv_lock: unser DMABUF   */
+    r->buf_sel = ds ? ds : DMABUF;
     r->buf_off = 0;
     drv_request_rel(b->drv, r);
     blk_nm[dev] = r->status == DRV_ERR_NOTREADY;    /* CD: keine drin */
@@ -5649,6 +5654,8 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
         return 0;
     }
     bc_miss++;
+    if (b->bsize == 2048 && (drv[b->drv].used & 2))
+        return cd_ra(dev, lba);         /* CD: 32 KB am Stueck (cdra.c)  */
     max = b->drv < 0 ? 1 : drv[b->drv].maxcnt;
     if (b->bsize != 512 || !bc_n)
         max = 1;                        /* ohne Cache haette es keinen Sinn */
@@ -5676,6 +5683,12 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
     lc_dev = dev;
     lc_lba = lba;
     return 0;
+}
+int __far kf_dev_read(int dev, unsigned long lba, unsigned n, unsigned long phys, unsigned sel)
+{
+    dr_phys = phys;
+    dr_sel = sel;
+    return dev_read(dev, lba, n);
 }
 
 int blk_read(int dev, unsigned long lba)
@@ -5802,30 +5815,8 @@ unsigned long __far kf_cd_blocks(int d)
     return blk[dev].blocks ? blk[dev].blocks : 1;
 }
 
-/* Block lba von CD-Laufwerk d nach sel:off (2048 Byte); 0 = ok, 1 kein
-   Medium, -1 Fehler */
-int __far kf_cd_read(int d, unsigned long lba, unsigned sel, unsigned off)
-{
-    int dev, r;
-    if (!kf_cd_blocks(d))
-        return -1;
-    dev = vol[d].blk;
-    klock_enter();
-    r = blk_read(dev, lba);
-    if (!r && sel)                      /* sel 0: im DMABUF lassen        */
-        far_copy(sel, off, DMABUF, 0, 2048);
-    else if (blk_nm[dev])
-        r = 1;
-    klock_leave();
-    return r;
-}
-void __far kf_seg_acct(int img, int pages)  /* codeswap.c: ein/aus       */
-{
-    if (img)
-        image_units += pages;
-    else
-        alloc_units += pages;
-}
+/* kf_cd_read steht in cdra.c */
+/* kf_seg_acct steht in cdra.c (Platz im ersten Segment) */
 
 /* laufendes Programm beenden (Segment/Code nicht zurueckzuholen) - wie
    eine Ausnahme in Ring 3, auch wenn es im Kernel passiert */
@@ -6591,7 +6582,8 @@ static int load_driver(const char *line, int is_ifs)
                                        : ": kein Ger\x84t gefunden\n");
         return 0;
     }
-    drv[d].maxcnt = req.count ? req.count : 1;
+    drv[d].maxcnt = req.count & 0x7F ? req.count & 0x7F : 1;
+    drv[d].used |= (unsigned char)((req.count >> 6) & 2);  /* 80h: CD-Bloecke am Stueck */
     if (is_ifs) {
         if (nifsmod < NIFSMOD) {
             ifsmod[nifsmod].drv = d;

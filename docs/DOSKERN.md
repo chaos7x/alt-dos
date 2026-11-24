@@ -1430,6 +1430,24 @@ eine CD ist; `kf_cd_blocks` (kernel.c) rief zuerst `vol_present`, und das
 fragt bei Disketten das Laufwerk (Wechselleitung). Jetzt erst die Art
 (Blockgröße 2048), dann vol_present – derselbe Weg war auch der doppelte
 `fd_check` beim Start der Box. Danach kein Leerlauf mehr beim Wechsel.
+Windows-SETUP von CD (vom Nutzer gemeldet, mit Video: Kopieren deutlich
+langsamer als unter MS-DOS): ein CD-Block (2048 Byte) war je Zugriff ein
+eigener Befehl an das Laufwerk – der Platten-Cache kennt nur 512er-
+Sektoren. SETUP liest in 32-KB-Stücken, das waren 16 Befehle mit je
+eigener Wartezeit; in 86Box ~120 KB/s, 70 % Leerlauf. Jetzt
+`kernel/cdra.c` (KTEXT4): `cd_ra` liest bis zu 16 Blöcke mit einem
+Befehl in einen eigenen Puffer (kseg_dma, 32 KB) und bedient die
+folgenden Blöcke daraus (gültig 1 s; während des Füllens liest ein
+anderer Task wie bisher einzeln). Nur für Treiber, die beim INIT in
+`count` Bit 80h melden (IDE.SYS ATAPI READ(10) mit Blockzahl,
+AIC7XXX.SYS); `dev_read` nimmt dafür einmalig einen anderen Puffer
+(`kf_dev_read`). Platz im ersten Segment: `kf_cd_read` und
+`kf_seg_acct` nach cdra.c. In 86Box P3B-F: DOS-Teil des SETUP 33 % nach
+25 s -> 90 % nach 12 s, grafischer Teil 5 -> 92 % in 30 s (vorher im
+Video des Nutzers 2 -> 15 % in 16 s). Geprüft: QEMU (XCOPY der Windows-
+CD über IDE, 494 Dateien bytegleich, DOOM 1.9 Timedemo), 86Box P3B-F
+mit CD an IDE (SETUP) und an AHA-2940U/AIC7XXX (XCOPY 17 MB in ~30 s,
+494 Dateien bytegleich).
 
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
