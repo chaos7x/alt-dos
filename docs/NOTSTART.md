@@ -35,7 +35,9 @@ Ein Hinweis zeigt, dass es ein Notstart ist:
 - Startmeldung „F5: Notstart – ohne CONFIG.SYS und AUTOEXEC.CMD“
 - in der Statuszeile „Notstart“ (statt der Laufzeit oder davor)
 - Variable `NOTSTART=1` in der Systemumgebung (Stapeldateien und Werkzeuge
-  können darauf reagieren)
+  können darauf reagieren), nicht in der Umgebung der DOS-Boxen
+  (Entscheidung des Nutzers, 24.11.2026: die Box ist im Notstart
+  nebensächlich, an die Konfigurationen kommt man mit EDIT unter AT-DOS)
 
 ## Das Henne-Ei-Problem
 
@@ -239,4 +241,4 @@ Startlaufwerk nach den BASEDEV=-Treibern, bleibt es bei der Meldung
 
 ## Offene Punkte
 
-- Soll `NOTSTART=1` auch in der DOS-Box stehen?
+Keine – alle Fragen des Entwurfs sind entschieden (24.11.2026).
