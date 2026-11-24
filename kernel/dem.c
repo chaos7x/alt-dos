@@ -321,8 +321,12 @@ static unsigned find_next(int t, struct dem_req *q)
         ;                                   /* Pfad nach DGROUP (FAPI)   */
     fn_dir[k] = 0;
     if (mask == 0x08) {                     /* nur Datentraegerbezeichnung */
-        if (FAILED(FAPI(FAPI_LABEL, KDATA, s[0] & 0x1F, (unsigned)&fn_lb, 0)) ||
-            !fn_lb.label[0])
+        k = FAPI(FAPI_LABEL, KDATA, s[0] & 0x1F, (unsigned)&fn_lb, 0);
+        if (k == FAPI_ERR_NOTREADY ||       /* leer: INT 24h wie MS-DOS -  */
+            (!FAILED(FAPI(FAPI_QFSINFO, KDATA, s[0] & 0x1F, (unsigned)&fsi, 0)) &&
+             (fsi.flags & FSI_NOMEDIA)))    /* der Datei-Manager von       */
+            return E_NOTREADY;              /* Windows sah sonst eine leere */
+        if (FAILED(k) || !fn_lb.label[0])   /* Diskette ohne Bezeichnung   */
             return E_NOMORE;
         for (k = 0; k < 11; k++)
             fn_fcb[k] = ' ';
@@ -724,6 +728,10 @@ static unsigned d_space(struct dem_req *q)
     unsigned long tot, fr, cl;
     l32 = 0;                                /* CD: nichts frei (MSCDEX) */
     if (FAILED(FAPI(FAPI_QFSINFO, KDATA, k, (unsigned)&fsi, 0)) ||
+        (fsi.flags & FSI_NOMEDIA) ||        /* leer: "nicht bereit" (sonst
+                                               "0 KB von 0 KB frei", der
+                                               Datei-Manager von Windows
+                                               zeigte ein leeres Laufwerk) */
         (fsi.bsize != 2048 &&
          FAILED(FAPI(FAPI_FREESPACE, KDATA, k, (unsigned)&l32, 0))))
         return E_NOTREADY;
