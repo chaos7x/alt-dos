@@ -5791,10 +5791,13 @@ int __far kf_in_op(int t) { return in_op(t); }
 unsigned long __far kf_cd_blocks(int d)
 {
     int dev;
-    if (d < 0 || d >= NDRIVE || !vol_present(d) || join_hidden(d) || subst_real(d) != (unsigned)d)
+    if (d < 0 || d >= NDRIVE)
         return 0;
-    dev = vol[d].blk;
-    if (dev < 0 || dev >= nblk || blk[dev].bsize != 2048)
+    dev = vol[d].blk;                   /* erst die Art: vol_present fragt
+                                           bei Disketten das Laufwerk (MSCDEX-
+                                           Abfrage je Laufwerk, ~0,4 s)     */
+    if (dev < 0 || dev >= nblk || blk[dev].bsize != 2048 ||
+        !vol_present(d) || join_hidden(d) || subst_real(d) != (unsigned)d)
         return 0;
     return blk[dev].blocks ? blk[dev].blocks : 1;
 }

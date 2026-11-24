@@ -1421,6 +1421,15 @@ Box-Kern beantwortet 4408h („wechselbar?“) für A:/B: wie MS-DOS ohne
 das Laufwerk anzufassen – Windows fragt beim Start alle Laufwerke, das
 kostete je ~0,3 s Diskettenzugriff. Übrig: zweimal `fd_check` aus dem
 EXECPGM von CMD (je ~0,3 s), Leerlauf sonst nicht mehr.
+Laufwerkswechsel im Datei-Manager (vom Nutzer gemeldet, mit Video:
+je ~1–1,5 s; in 86Box P3B-F mit 2-GB-FAT16 D: und leerem CD E:
+nachgestellt): die Dateiaufrufe selbst brauchten ~100 ms, davor stand das
+System ~380 ms im Leerlauf und weckte alle 20 ms den Diskettentreiber.
+WINFILE fragt beim Wechsel über MSCDEX (2Fh 150Bh) jedes Laufwerk, ob es
+eine CD ist; `kf_cd_blocks` (kernel.c) rief zuerst `vol_present`, und das
+fragt bei Disketten das Laufwerk (Wechselleitung). Jetzt erst die Art
+(Blockgröße 2048), dann vol_present – derselbe Weg war auch der doppelte
+`fd_check` beim Start der Box. Danach kein Leerlauf mehr beim Wechsel.
 
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die
