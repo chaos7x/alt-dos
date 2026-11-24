@@ -2121,7 +2121,7 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   WIN langsamer als unter DOS (24.11.2026 verbessert: DPMI 0501h holt
   Seiten erst beim ersten Zugriff – `PTE_LAZY`, swap.c `lazy_in` –,
   `al_more` erledigt Folge-MOVs auf den LDT-Alias mit, PM-1680h schläft;
-  86Box P3B-F 4,5 -> 3,2–3,9 s; Leerlauf 1689h offen, docs/DOSKERN.md
+  86Box P3B-F 4,5 -> 2,6–3,2 s (MS-DOS 6.22: 1,9–2,6 s), `ldt_alloc` mit Merker `lm_hint`; Leerlauf 1689h offen, docs/DOSKERN.md
   „Startzeit von Windows“), nach WIN öffnen sich Programme von selbst
   (in QEMU mit getipptem WIN nicht nachgestellt; Verdacht Maus/Tasten),
   „Windows kann nicht eingelagert werden“ (WSWAP). Behoben: Bezeichnung

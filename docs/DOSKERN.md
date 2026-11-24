@@ -1400,6 +1400,16 @@ untätig“, der eigentliche Leerlauf von Windows: ~550 Ausflüge in den
 Real Mode je Sekunde) – damit gingen bei schnellem Alt+F4 Tasten
 verloren (7 von 10 statt 10 von 10). Geprüft: QEMU (WIN mit 32 und
 8 MB, DOOM 1.9 Timedemo, MEM danach), 86Box P3B-F (WIN, Alt+F4 6 von 6).
+Danach (Stichproben-Profil aus 86Box): 9 % der Wirtszeit lagen in
+`lm_get` – `ldt_alloc` suchte für jeden 0000h/000Dh die Belegung der LDT
+ab Eintrag 1 Bit für Bit ab (bei 8192 Einträgen und Tausenden
+Selektoren). Jetzt Merker `lm_hint[t]` (erste Stelle, an der noch etwas
+frei sein kann; Freigeben setzt ihn zurück) und ganze belegte Bytes in
+einem Schritt; `lm_get` ~2 %. 86Box P3B-F: 2,6–3,2 s. Bezug MS-DOS 6.22
+mit HIMEM auf derselben VM: `WIN /S` 1,9 s, `WIN` 2,0–2,6 s. Übrig im
+Profil: `far_copy` 10 %, KTEXT2 8 %, Leerlauf (HLT) ~39 % während des
+Starts. Geprüft: 86Box P3B-F (WIN dreimal, Alt+F4 5 von 5), QEMU (DOOM
+1.9 Timedemo).
 
 **Maus.** MOUSE.DRV von Windows 3.11 (Version 8.20) spricht die Hardware
 selbst an: mit einem DOS-Maustreiber nimmt es aus INT 33h 24h nur die

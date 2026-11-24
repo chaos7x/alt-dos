@@ -4623,9 +4623,13 @@ static int lm_get(int t, unsigned i)
     scratch2_map(PG_LIN(dp_lbm[t]), 4095);
     return *(unsigned char __far *)MK_FP(SCRATCH2, i >> 3) & (1 << (i & 7));
 }
+/* ab hier kann ein Eintrag frei sein (ldt_alloc sucht nicht von vorn) */
+static unsigned lm_hint[NTASK];
 static void lm_set(int t, unsigned i, int on)
 {
     unsigned char __far *b;
+    if (!on && i < lm_hint[t])
+        lm_hint[t] = i;
     if (!dp_lbm[t])
         b = &dp_lmap[t][i >> 3];
     else {
@@ -4735,20 +4739,37 @@ static int sel_ok(int t, unsigned s)
     return s == 0 || ((s & 4) && IDX(s) < LDTN(t) && lm_get(t, IDX(s)));
 }
 
-static int ldt_alloc(int t, unsigned n)         /* n am Stueck -> Index */
+/* n am Stueck -> Index. Die Belegung einmal einblenden, volle Bytes
+   ueberspringen, ab lm_hint suchen: KRNL von Windows holt Tausende
+   Selektoren einzeln - vorher lief jede Suche von Eintrag 1 an mit einem
+   Fensterwechsel je Bit (beim Start von Windows ~11 % der Zeit) */
+static int ldt_alloc(int t, unsigned n)
 {
-    unsigned i, k;
-    for (i = 1; i + n <= LDTN(t); i++) {
-        for (k = 0; k < n && !lm_get(t, i + k); k++)
+    unsigned i, k, lim = LDTN(t), first = 0xFFFF;
+    unsigned char __far *bm;
+    if (dp_lbm[t]) {
+        scratch2_map(PG_LIN(dp_lbm[t]), 4095);
+        bm = (unsigned char __far *)MK_FP(SCRATCH2, 0);
+    } else
+        bm = (unsigned char __far *)dp_lmap[t];
+    for (i = lm_hint[t] ? lm_hint[t] : 1; i + n <= lim; ) {
+        if (!(i & 7) && bm[i >> 3] == 0xFF) {
+            i += 8;
+            continue;
+        }
+        for (k = 0; k < n && !(bm[(i + k) >> 3] & (1 << ((i + k) & 7))); k++)
             ;
+        if (k && first == 0xFFFF)
+            first = i;
         if (k == n) {
+            lm_hint[t] = first == i ? i + n : first;
             for (k = 0; k < n; k++) {
                 lm_set(t, i + k, 1);
                 ldesc(t, i + k, 0, 0, 0xF2, 0);  /* Daten, Basis 0, Laenge 1 */
             }
             return (int)i;
         }
-        i += k;
+        i += k + 1;
     }
     return -1;
 }
@@ -5234,6 +5255,7 @@ static unsigned dp_switch(struct v86_frame *f, int t)
     }
     for (i = 0; i < LDT_N / 8; i++)
         dp_lmap[t][i] = 0;
+    lm_hint[t] = 1;
     dp_32[t] = (unsigned char)(AX & 1);
     dp_rmseg[t] = (unsigned)f->r.es;
     dp_dep[t] = 0;
