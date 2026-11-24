@@ -10,6 +10,7 @@
 #include "cm.h"
 
 struct dem_req q;
+extern u8 sys_drv;                       /* kern.c: Startlaufwerk         */
 
 /* SFT: Kopf (Fernzeiger auf die naechste Tabelle, Zahl) + Eintraege */
 extern u8 sft_area[];                   /* entry.asm (DOSHDR)            */
@@ -222,6 +223,26 @@ static int is_long(const char __far *p)
     }
 }
 
+/* X:\CONFIG.SYS des Startlaufwerks gehoert dem AT-DOS-Kernel: DOS-
+   Programme in der Box (Windows-SETUP traegt HIMEM, SMARTDRV usw. ein)
+   bekommen statt dessen X:\DOS\MDOS\CONFIG.WIN, die niemand auswertet
+   (wie CONFIG.NT bei NT; Entscheidung des Nutzers, 24.11.2026) */
+void cfg_redirect(char *p)               /* auch lfn.c (716Ch u. a.)     */
+{
+    static const char c[] = ":\\CONFIG.SYS", w[] = ":\\DOS\\MDOS\\CONFIG.WIN";
+    unsigned i;
+    if (upc(p[0]) != (char)('A' + sys_drv))
+        return;
+    for (i = 0; c[i]; i++)
+        if (upc(p[1 + i]) != c[i])
+            return;
+    if (p[1 + i])
+        return;
+    for (i = 0; w[i]; i++)
+        p[1 + i] = w[i];
+    p[1 + i] = 0;
+}
+
 int canon(const char __far *in, char *out, unsigned *drv)
 {
     static char tmp[DEM_PATHLEN];
@@ -230,9 +251,12 @@ int canon(const char __far *in, char *out, unsigned *drv)
         e = lfn_canon(in, tmp);
         if (e)
             return e;
-        return canon8(tmp, out, drv);
-    }
-    return canon8(in, out, drv);
+        e = canon8(tmp, out, drv);
+    } else
+        e = canon8(in, out, drv);
+    if (!e)
+        cfg_redirect(out);
+    return e;
 }
 
 /* letzter Teil des Pfads ein Geraetename? -> DV_xx oder -1 */

@@ -109,6 +109,7 @@ static unsigned lcanon(const char __far *in, char *out, int wild)
         out[2] = '\\';
         out[3] = 0;
     }
+    cfg_redirect(out);                  /* X:\CONFIG.SYS -> CONFIG.WIN */
     return 0;
 }
 

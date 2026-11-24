@@ -2069,7 +2069,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   und REGEDIT (Fehler dabei: Bit 7 „nicht vererben“ im SFT, INT 25h/26h
   und XMS aus dem PM, 56h/60h in WINLDR, PSP vor 4Ch); offen: Windows
   endet danach ohne Abschlussdialog (WIN.COM bleibt unter Zwischenname),
-  SETUP schreibt in die CONFIG.SYS von AT-DOS. Einzelheiten in
+  `X:\CONFIG.SYS` des Startlaufwerks lenkt der Box-Kern auf
+  `\DOS\MDOS\CONFIG.WIN` um (Entscheidung des Nutzers, 24.11.2026, wie
+  CONFIG.NT; SETUP trug dort HIMEM/SMARTDRV ein). Einzelheiten in
   `docs/DOSKERN.md` „Stand Weg B“. Testumgebung /tmp/claude-0/w31 (ISO
   des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
   zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.

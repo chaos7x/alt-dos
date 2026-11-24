@@ -115,6 +115,7 @@ extern u8  cur_drv;
 extern u16 drives_lo, drives_hi;
 extern struct cds cdstab[NDRV];
 extern struct sft *sftab;
+void cfg_redirect(char *p);             /* file.c: X:\CONFIG.SYS der Box */
 u16  sft_head(void);
 extern struct devh devs[NDEV];
 extern char setver_dx_dummy;

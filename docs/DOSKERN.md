@@ -1227,10 +1227,17 @@ frische Platte, `D:` + `SETUP`, Express) und 86Box P3B-F (Start über
 Offen: Nach REGEDIT beendet sich Windows mit Code 0, statt Drucker,
 Gruppen und den Abschlussdialog zu zeigen – die schon angelegte
 WIN.COM bleibt unter ihrem Zwischennamen liegen (Ursache noch unklar,
-der Windows-Teil macht danach keinen Dateiaufruf mehr). SETUP schreibt
-in die CONFIG.SYS und AUTOEXEC.BAT des Startlaufwerks (HIMEM, SMARTDRV,
-`DOS=HIGH,UMB`) – in der Box ist das die CONFIG.SYS von AT-DOS; das
-gehört in eine eigene Datei der Box umgelenkt (wie CONFIG.NT bei NT).
+der Windows-Teil macht danach keinen Dateiaufruf mehr). SETUP schrieb
+in die CONFIG.SYS des Startlaufwerks (HIMEM, SMARTDRV, `DOS=HIGH,UMB`) –
+in der Box ist das die CONFIG.SYS von AT-DOS. Seit 24.11.2026 (Ent-
+scheidung des Nutzers) lenkt der Box-Kern `X:\CONFIG.SYS` des Start-
+laufwerks auf `X:\DOS\MDOS\CONFIG.WIN` um, die niemand auswertet (wie
+CONFIG.NT bei NT; `cfg_redirect` in atdoscm/file.c, auch für die LFN-
+Aufrufe – FreeCOM-COPY nimmt 716Ch, das leerte vorher die echte Datei).
+Geprüft in QEMU: COPY/TYPE/DEL aus der Box treffen CONFIG.WIN, die
+CONFIG.SYS von AT-DOS bleibt bytegleich. Nur der eigene Box-Kern; mit
+`DOS_KERNEL=FREEDOS.IMG` gilt es nicht. AUTOEXEC.BAT bleibt die der Box
+(BOXSHELL übernimmt daraus nur PATH/SET/PROMPT).
 Weiter: Maus/Tastatur im Windows-Betrieb, KRNL386, EMS 5900h,
 DOS-Programme aus Windows (Standardmodus: DSWAP), Netz.
 
