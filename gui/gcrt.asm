@@ -294,3 +294,19 @@ __I4D:
         sbb     cx, 0
 .d:     pop     si
         retf
+
+; Aufrufspur (SET GUITRACE=1): jeder Import geht ueber einen Vorschaltcode
+; (w16ldr.c tr_thunk), der mit DS = GUI und AX = Kennung hierher ruft;
+; die Kennung (Modul << 12 | Nummer) kommt in einen Ring von 128 Worten.
+extern _tr_ring, _tr_pos
+segment GCRT_TEXT
+global _tr_common
+_tr_common:
+        push    bx
+        mov     bx, [_tr_pos]
+        and     bx, 127
+        shl     bx, 1
+        mov     [_tr_ring+bx], ax
+        inc     word [_tr_pos]
+        pop     bx
+        retf

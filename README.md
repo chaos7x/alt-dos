@@ -69,7 +69,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Symbolen und INI-Dateien auch der osFree-Programm-Manager (startet
   Programme per WinExec; `GUI` ohne Angabe nimmt wie Windows die Shell
   aus `[boot] shell=` der SYSTEM.INI; Fenster minimieren/maximieren,
-  Systemmenü; Standarddialoge auf den Vorlagen von Wine mit COMBOBOX).
+  Systemmenü; Standarddialoge auf den Vorlagen von Wine mit COMBOBOX;
+  OLECLI ohne Server, Atome, Aufrufspur mit `SET GUITRACE=1` – Write aus
+  Windows 3.1 lädt, kommt aber noch nicht über den Start hinaus).
   Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit

@@ -2369,6 +2369,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Öffnen/Speichern/Suchen/Ersetzen, Farbe, Schriftart darauf (Drucken:
   „kein Drucker“), Hooks/eigene Vorlagen. Stand
   in `docs/GUI-WIN16.md` „Standarddialoge“.
+  Write (25.11.2026, „Stand: Write“, noch nicht lauffähig): lädt (84
+  Segmente – Segmenttabelle je Modul jetzt eigenes Segment), OLECLI
+  (`gui/ole.c`), Atome, LocalHandleDelta, Halde auf 4 Byte, TEXTMETRIC
+  korrigiert (lag ab Byte 19 verschoben), Schriftliste wie Windows 3.1;
+  meldet nach WM_CREATE weiter „Nicht genügend Arbeitsspeicher“. Werkzeug:
+  `SET GUITRACE=1` schreibt vor jeder MessageBox die letzten 128 Importe
+  (Modul<<12|Nummer, INT 21h als F000h|AH) ins GUI.LOG. Lehre: WRITE.EXE
+  nicht zerlegen – Ursachen nur über Spur und eigene Rückgabewerte.
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians

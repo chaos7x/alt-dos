@@ -845,8 +845,18 @@ short API GetDeviceCaps(HDC h, short i)
     case 14: return 4;                  /* PLANES */
     case 24: return 16;                 /* NUMCOLORS */
     case 88: case 90: return 96;        /* LOGPIXELSX/Y */
+    case 0: return 0x030A;              /* DRIVERVERSION */
     case 2: return 1;                   /* TECHNOLOGY: Rasterbild */
-    case 38: return 0x0001 | 0x0008;    /* RASTERCAPS: BITBLT */
+    case 16: return -1;                 /* NUMBRUSHES */
+    case 18: return 16;                 /* NUMPENS */
+    case 26: return 0x23;               /* PDEVICESIZE */
+    case 30: return 0x0022;             /* LINECAPS: Polylinie, breit */
+    case 32: return 0x0008;             /* POLYGONALCAPS: Rechteck */
+    case 34: return 0x0004;             /* TEXTCAPS: Strich-genau */
+    case 36: return 1;                  /* CLIPCAPS: Rechteck */
+    case 38: return 0x0001 | 0x0008 | 0x0080 | 0x0400;  /* RASTERCAPS */
+    case 40: case 42: return 36;        /* ASPECTX/Y (quadratische Punkte) */
+    case 44: return 51;                 /* ASPECTXY */
     default: return 0;
     }
 }
@@ -916,10 +926,11 @@ short API GetTextFace(HDC h, short n, LPSTR buf)
     fstrncpy(buf, "System", n);
     return fstrlen(buf);
 }
-BOOL API GetTextMetrics(HDC h, void FAR *tm)
+/* TEXTMETRIC (Win16, 31 Byte): 7 Worte Masse, tmWeight(14), Bytes
+   tmItalic(16) .. tmCharSet(24), tmOverhang(25), tmDigitizedAspectX/Y(27/29) */
+void tm_fill(BYTE FAR *tm)
 {
-    short FAR *t = tm;
-    (void)h;
+    short FAR *t = (short FAR *)tm;
     fmemset(tm, 0, 31);
     t[0] = FONT_H;      /* tmHeight */
     t[1] = 12;          /* tmAscent */
@@ -929,12 +940,19 @@ BOOL API GetTextMetrics(HDC h, void FAR *tm)
     t[5] = FONT_W;      /* tmAveCharWidth */
     t[6] = FONT_W;      /* tmMaxCharWidth */
     t[7] = 400;         /* tmWeight */
-    ((BYTE FAR *)tm)[20] = 0x20;    /* tmFirstChar */
-    ((BYTE FAR *)tm)[21] = 0xFF;
-    ((BYTE FAR *)tm)[22] = '?';
-    ((BYTE FAR *)tm)[23] = ' ';
-    ((BYTE FAR *)tm)[24] = 0x30;    /* tmPitchAndFamily: fest */
-    t[13] = 96; t[14] = 96;         /* tmDigitizedAspect */
+    tm[19] = 0x20;      /* tmFirstChar */
+    tm[20] = 0xFF;      /* tmLastChar */
+    tm[21] = 0x80;      /* tmDefaultChar */
+    tm[22] = 0x20;      /* tmBreakChar */
+    tm[23] = 0x30;      /* tmPitchAndFamily: FF_MODERN, feste Breite */
+    tm[24] = 0;         /* tmCharSet: ANSI */
+    *(short FAR *)(tm + 27) = 96;   /* tmDigitizedAspectX */
+    *(short FAR *)(tm + 29) = 96;
+}
+BOOL API GetTextMetrics(HDC h, void FAR *tm)
+{
+    (void)h;
+    tm_fill(tm);
     return 1;
 }
 
@@ -1550,4 +1568,52 @@ HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
     o = gdi_dib(w, h, bpp, map, bits, (BYTE)(bpp == 1 ? 1 : 4));
     seg_del(sel);
     return o;
+}
+
+/* ---- fuer Write & Co.: Kleinkram ohne eigene Wirkung ---- */
+short API SetStretchBltMode(HDC h, short m) { (void)h; (void)m; return 1; }
+short API SetTextJustification(HDC h, short extra, short n)
+{
+    (void)h; (void)extra; (void)n;
+    return 1;
+}
+/* NULL = Beschneidung zuruecksetzen (Regionen gibt es nicht) */
+short API SelectClipRgn(HDC h, WORD rgn)
+{
+    struct dcs *d = dptr(h);
+    struct wnd *w;
+    if (!d)
+        return 0;
+    if (!rgn && !d->mem) {
+        w = wptr(d->hwnd);
+        clip_window(d->hwnd, w && d->ox == w->cr.left && d->oy == w->cr.top, &d->c);
+    }
+    return d->c.n ? 2 : 1;
+}
+BOOL API PlayMetaFile(HDC h, WORD mf) { (void)h; (void)mf; return 1; }
+short API MulDiv(short a, short b, short c)
+{
+    long p;
+    if (!c)
+        return -32768;
+    p = (long)a * b;
+    p = p >= 0 ? (p + (c > 0 ? c : -c) / 2) / c : (p - (c > 0 ? c : -c) / 2) / c;
+    if (p > 32767 || p < -32767)
+        return -32768;
+    return (short)p;
+}
+DWORD API SetBitmapDimension(HBITMAP b, short x, short y)
+{
+    (void)b; (void)x; (void)y;
+    return 0;
+}
+BOOL API GetCharWidth(HDC h, WORD first, WORD last, short FAR *buf)
+{
+    (void)h;
+    while (first <= last) {
+        *buf++ = FONT_W;
+        if (first++ == 0xFFFF)
+            break;
+    }
+    return 1;
 }

@@ -242,3 +242,68 @@ short API GetKBCodePage(void)
 /* Drucken gibt es noch nicht: Seiten melden Fehler (SP_ERROR) */
 short API StartPage(HDC h) { (void)h; return -1; }
 short API EndPage(HDC h) { (void)h; return -1; }
+
+/* ---- fuer Write & Co. ---- */
+WORD atom_add(LPCSTR s);
+WORD API RegisterClipboardFormat(LPCSTR name) { return atom_add(name); }
+HDC API CreateIC(LPCSTR drv, LPCSTR dev, LPCSTR port, LPVOID init)
+{
+    return CreateDC(drv, dev, port, init);
+}
+/* Taste zu einem Zeichen (deutsche Belegung grob): Hochbyte 1 = Umschalt */
+WORD API VkKeyScan(WORD ch)
+{
+    BYTE c = (BYTE)ch;
+    if (c >= 'a' && c <= 'z')
+        return c - 32;
+    if (c >= 'A' && c <= 'Z')
+        return 0x100 | c;
+    if (c >= '0' && c <= '9' || c == ' ' || c == 8 || c == 9 || c == 13 || c == 27)
+        return c;
+    return 0xFFFF;
+}
+
+/* Schriften wie die Rasterschriften von Windows 3.1 (gezeichnet wird mit
+   der Systemschrift; Write & Co. brauchen proportionale Familien):
+   Name, Familie|Abstand (lfPitchAndFamily), Zeichensatz */
+static const struct { const char *n; BYTE pf, cs; } fonts[] = {
+    { "System",        0x22, 0 },               /* FF_SWISS, variabel   */
+    { "MS Sans Serif", 0x22, 0 },
+    { "MS Serif",      0x12, 0 },               /* FF_ROMAN             */
+    { "Courier",       0x31, 0 },               /* FF_MODERN, fest      */
+    { "Small Fonts",   0x22, 0 },
+    { "Symbol",        0x52, 2 },               /* FF_DECORATIVE        */
+    { "Terminal",      0x31, 0xFF },            /* OEM                  */
+};
+static BYTE ef_lf[50], ef_tm[31];
+static WORD ef_w[7];
+void tm_fill(BYTE FAR *tm);
+short API EnumFonts(HDC h, LPCSTR face, DWORD proc, DWORD data)
+{
+    short r = 1;
+    WORD i;
+    (void)h;
+    if (!proc)
+        return 0;
+    for (i = 0; i < sizeof(fonts) / sizeof(fonts[0]) && r; i++) {
+        if (face && fstricmp(face, fonts[i].n))
+            continue;
+        fmemset((void FAR *)ef_lf, 0, sizeof(ef_lf));
+        ((short *)ef_lf)[0] = FONT_H;           /* lfHeight             */
+        ((short *)ef_lf)[1] = FONT_W;           /* lfWidth              */
+        ((short *)ef_lf)[4] = 400;              /* lfWeight             */
+        ef_lf[13] = fonts[i].cs;                /* lfCharSet            */
+        ef_lf[17] = fonts[i].pf;                /* lfPitchAndFamily     */
+        fstrncpy((LPSTR)(ef_lf + 18), fonts[i].n, 32);
+        tm_fill(ef_tm);
+        ef_tm[23] = (BYTE)((fonts[i].pf & 0xF0) | ((fonts[i].pf & 3) == 2));  /* Bit 0 = variabel */
+        ef_tm[24] = fonts[i].cs;
+        ef_w[0] = SELOF((void FAR *)ef_lf); ef_w[1] = OFFOF((void FAR *)ef_lf);
+        ef_w[2] = SELOF((void FAR *)ef_tm); ef_w[3] = OFFOF((void FAR *)ef_tm);
+        ef_w[4] = 1;                            /* RASTER_FONTTYPE      */
+        ef_w[5] = HIWORD(data); ef_w[6] = LOWORD(data);
+        r = (short)call16((void FAR *)proc,
+                          cur_task >= 0 ? wt[cur_task].hinst : 0, 7, ef_w);
+    }
+    return r;
+}

@@ -909,3 +909,18 @@ short API TranslateAccelerator(HWND h, WORD acc, MSG FAR *msg)
     }
     return 0;
 }
+
+/* Windows 2.x: ein Aufruf fuer Einfuegen/Aendern/Anhaengen/Loeschen */
+BOOL API ChangeMenu(HMENU h, WORD pos, LPCSTR s, WORD id, WORD fl)
+{
+    WORD f = fl & ~(0x0080 | 0x0100 | 0x0200 | 0x1000);
+    if (fl & 0x0100)                            /* MF_APPEND            */
+        return AppendMenu(h, f, id, s);
+    if (fl & 0x0200)                            /* MF_DELETE            */
+        return mremove(h, pos, f, 1);
+    if (fl & 0x1000)                            /* MF_REMOVE            */
+        return mremove(h, pos, f, 0);
+    if (fl & 0x0080)                            /* MF_CHANGE            */
+        return ModifyMenu(h, pos, f, id, s);
+    return InsertMenu(h, pos, f, id, s);        /* MF_INSERT            */
+}

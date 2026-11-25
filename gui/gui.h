@@ -117,7 +117,8 @@ struct w16mod {
     char  name[9];
     char  path[80];
     WORD  nseg, autodata, entcs, entip, ss, sp, heap, stack, flags;
-    struct w16seg seg[24];
+    struct w16seg FAR *seg;     /* Segmenttabelle (eigenes Segment)     */
+    WORD  seg_sel;
     WORD  ent_sel;              /* Kopie der Eintragstabelle (Segment)  */
     WORD  ent_len;
     WORD  res_sel, res_len;     /* Ressourcentabelle (Segment)          */
@@ -133,6 +134,9 @@ void  w16_missing(void);
 
 /* ---- Exporte (exports.c) ---- */
 void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst);
+extern BYTE w16_trace;
+extern WORD tr_ring[128], tr_pos;
+void  tr_dump(const char *why);                   /* Aufrufspur ins GUI.LOG */
 int   exp_builtin(LPCSTR mod);                    /* 1.. oder 0 */
 void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst);
 /* lokale Halde eines Autodata (krnl.c), Handle = Stelle */
@@ -183,6 +187,7 @@ struct wnd {
     RECT   cr;                   /* Client, Bildschirmkoordinaten      */
     RECT   upd;                  /* ungueltiger Bereich (Client-Koord.) */
     BYTE   need_paint, need_ncpaint, erase;
+    BYTE   sized;                /* WM_SIZE schon geschickt             */
     int    task;                 /* Besitzer                           */
     WORD   hinst;
     WORD   id;                   /* Kind-Kennung / Menue                */

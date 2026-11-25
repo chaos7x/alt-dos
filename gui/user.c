@@ -1243,8 +1243,10 @@ WORD API RegisterClass(void FAR *wcp)
             return 0;
     for (i = 0; i < NCLS && cl[i].used; i++)
         ;
-    if (i == NCLS)
+    if (i == NCLS) {
+        glogs("Klassentabelle voll: ", nm);
         return 0;
+    }
     cl[i].used = 1;
     cl[i].internal = 0;
     cl[i].style = *(WORD FAR *)p;
@@ -1350,17 +1352,30 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
         w->task = p->task;
     rset(&w->wr, x, y, x + cx, y + cy);
     calc_client(w);
-    cs.param = (DWORD)param; cs.hinst = hinst; cs.hmenu = menu; cs.parent = parent;
+    cs.param = (DWORD)param; cs.hinst = hinst; cs.parent = parent;
+    cs.hmenu = (style & WS_CHILD) ? menu : w->menu;   /* wie Windows: das geladene Klassenmenue */
     cs.cy = cy; cs.cx = cx; cs.y = y; cs.x = x; cs.style = style;
     cs.name = title; cs.cls = cname; cs.exstyle = ex;
     if (!send_msg(h, WM_NCCREATE, 0, (DWORD)(void FAR *)&cs) && !w->internal) {
         /* DefWindowProc liefert 1 - 0 heisst abbrechen */
     }
     if (send_msg(h, WM_CREATE, 0, (DWORD)(void FAR *)&cs) == -1) {
+        glogs("WM_CREATE meldet Fehler: ", w->title);
         w->used = 0;
         return 0;
     }
+    /* wie Windows (und Wine): nach WM_CREATE gleich WM_SIZE und WM_MOVE,
+       auch fuer unsichtbare Fenster */
+    w->sized = 1;
     send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+    w = wptr(h);
+    if (!w)
+        return 0;
+    {
+        struct wnd *pw = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
+        send_msg(h, WM_MOVE, 0, MAKELONG(w->cr.left - (pw ? pw->cr.left : 0),
+                                         w->cr.top - (pw ? pw->cr.top : 0)));
+    }
     if (style & WS_VISIBLE)
         ShowWindow(h, 1);
     return h;
@@ -1401,6 +1416,18 @@ BOOL API ShowWindow(HWND h, short cmd)
         if (!(w->style & WS_CHILD) && cmd != 4 && cmd != 8)
             activate(h);
         send_msg(h, WM_SHOWWINDOW, 1, 0);
+        if (!w->sized) {
+            w = wptr(h);
+            if (!w)
+                return 0;
+            w->sized = 1;
+            send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+            {
+                struct wnd *pw = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
+                send_msg(h, WM_MOVE, 0, MAKELONG(w->cr.left - (pw ? pw->cr.left : 0),
+                                                 w->cr.top - (pw ? pw->cr.top : 0)));
+            }
+        }
     }
     return was;
 }
@@ -1638,9 +1665,19 @@ short API GetSystemMetrics(short i)
     case 7: case 8: return 3;           /* DLGFRAME */
     case 11: case 12: return 32;        /* Symbol */
     case 13: case 14: return 32;        /* Zeiger */
+    case 9: case 10: return 16;         /* SM_CYVTHUMB, SM_CXHTHUMB */
     case 15: return CAPH;               /* SM_CYMENU */
+    case 16: return SCR_W;              /* SM_CXFULLSCREEN: Arbeitsflaeche */
+    case 17: return SCR_H - CAPH;       /* SM_CYFULLSCREEN */
+    case 19: return 1;                  /* SM_MOUSEPRESENT */
+    case 20: case 21: return 16;        /* SM_CYVSCROLL, SM_CXHSCROLL */
+    case 28: return 100; case 29: return CAPH + 8;  /* SM_CXMIN, SM_CYMIN */
+    case 30: case 31: return CAPH;      /* SM_CXSIZE, SM_CYSIZE (Knoepfe) */
     case 32: case 33: return 4;         /* SM_CXFRAME */
     case 34: return 100; case 35: return 60;
+    case 36: case 37: return 4;         /* SM_CXDOUBLECLK */
+    case 38: case 39: return 64;        /* SM_CXICONSPACING */
+    case 43: return 3;                  /* SM_CMOUSEBUTTONS */
     default: return 0;
     }
 }
@@ -2201,6 +2238,34 @@ static LONG FAR PASCAL mb_proc(HWND h, WORD m, WORD wp, DWORD lp)
 
 static const char *mbt[] = { "OK", "Abbrechen", "Abbruch", "Wiederholen", "Ignorieren", "Ja", "Nein" };
 
+/* Zeilen wie Windows an Wortgrenzen umbrechen, damit das Fenster auf
+   den Bildschirm passt (Write meldet einen Satz ueber 90 Zeichen) */
+static char mb_txt[1024];
+static LPCSTR mb_wrap(LPCSTR t)
+{
+    WORD i = 0, col = 0, sp = 0xFFFF, lim = (SCR_W - 60) / FONT_W;
+    if (!t)
+        return "";
+    for (; *t && i < sizeof(mb_txt) - 1; t++) {
+        char c = *t;
+        mb_txt[i] = c;
+        if (c == '\n') {
+            col = 0;
+            sp = 0xFFFF;
+        } else if (c != '\r') {
+            if (c == ' ')
+                sp = i;
+            if (++col > lim && sp != 0xFFFF) {
+                mb_txt[sp] = '\n';
+                col = i - sp;
+                sp = 0xFFFF;
+            }
+        }
+        i++;
+    }
+    mb_txt[i] = 0;
+    return mb_txt;
+}
 short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type)
 {
     short lines = 1, wmax = 0, n = 0, bw, cx, cy, x, y, i, nb;
@@ -2209,6 +2274,7 @@ short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type)
     HWND h, b;
     struct wnd *w, *ow = wptr(owner);
     static MSG msg;
+    tr_dump("Aufrufspur vor MessageBox:");
     switch (type & 15) {
     case 1: ids[0] = 1; ids[1] = 2; nb = 2; break;       /* OKCANCEL    */
     case 2: ids[0] = 3; ids[1] = 4; ids[2] = 5; nb = 3; break;
@@ -2217,6 +2283,7 @@ short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type)
     case 5: ids[0] = 4; ids[1] = 2; nb = 2; break;
     default: ids[0] = 1; nb = 1; break;
     }
+    text = mb_wrap(text);
     for (p = text; ; p++) {
         if (!*p || *p == '\n') {
             if (n > wmax) wmax = n;
@@ -2434,4 +2501,48 @@ BOOL API SystemParametersInfo(WORD act, WORD p, void FAR *pv, WORD ini)
         return 1;
     }
     return 0;
+}
+
+/* ---- fuer Write & Co. ---- */
+BOOL API FlashWindow(HWND h, BOOL inv) { (void)h; (void)inv; return 0; }
+HWND API GetClipboardOwner(void) { return 0; }
+WORD API GetCaretBlinkTime(void) { return 530; }
+BOOL API InSendMessage(void) { return 0; }
+BOOL API GetUpdateRect(HWND h, LPRECT r, BOOL erase)
+{
+    struct wnd *w = wptr(h);
+    if (!w || !w->need_paint) {
+        if (r)
+            rset(r, 0, 0, 0, 0);
+        return 0;
+    }
+    if (r)
+        *r = w->upd;
+    if (erase && w->erase) {
+        HDC dc = GetDC(h);
+        w->erase = 0;
+        send_msg(h, WM_ERASEBKGND, dc, 0);
+        ReleaseDC(h, dc);
+    }
+    return 1;
+}
+/* Bits werden nicht verschoben: der ganze Bereich gilt als neu zu
+   zeichnen (das Programm malt ihn nach ScrollDC selbst) */
+BOOL API ScrollDC(HDC dc, short dx, short dy, const RECT FAR *scr,
+                  const RECT FAR *clip, WORD rgn, LPRECT upd)
+{
+    (void)dc; (void)dx; (void)dy; (void)rgn;
+    if (upd) {
+        if (scr)
+            *upd = *scr;
+        else
+            rset(upd, -32000, -32000, 32000, 32000);
+        if (clip) {
+            if (clip->left > upd->left) upd->left = clip->left;
+            if (clip->top > upd->top) upd->top = clip->top;
+            if (clip->right < upd->right) upd->right = clip->right;
+            if (clip->bottom < upd->bottom) upd->bottom = clip->bottom;
+        }
+    }
+    return 1;
 }

@@ -197,10 +197,13 @@ BOOL lh_init(WORD ds, WORD start, WORD end)
 {
     struct lheap FAR *h;
     WORD FAR *b;
-    start = (start + 1) & ~1u;
-    end &= ~1u;
-    if (end < start + 16)
+    /* wie Windows: Bloecke auf 4 Byte (Kopf 2 Byte vor den Daten, Daten
+       durch 4 teilbar), Griffe verschiebbarer Bloecke haben Bit 1 gesetzt -
+       Write benutzt Griffe direkt ohne LocalLock */
+    start = (start + 3) & ~3u;
+    if (end < start + 22)
         return 0;
+    end = start + 6 + ((end - start - 6) & ~3u);
     h = MKFP(ds, start);
     h->start = start + 6;
     h->end = end;
@@ -219,7 +222,7 @@ static BOOL lh_grow(WORD ds, WORD need)
     DWORD nsz;
     struct lheap FAR *h = MKFP(ds, hs);
     if (h->end < lim - 1) {                     /* Segment hat noch Platz  */
-        add = (lim + 1 - h->end) & ~1u;
+        add = (lim + 1 - h->end) & ~3u;
     } else {
         nsz = (DWORD)lim + 1 + need + 1024;
         if (nsz > 0xFFF0UL)
@@ -229,11 +232,11 @@ static BOOL lh_grow(WORD ds, WORD need)
         if (FAPI_FAILED(fapi_call(FAPI_SEGCTL, SEG_REALLOC, ds, (WORD)nsz)))
             return 0;
         lim = lsl_(ds);
-        add = (lim + 1 - h->end) & ~1u;
+        add = (lim + 1 - h->end) & ~3u;
         if (lim == 0xFFFF)
-            add = (0xFFF0u - h->end) & ~1u;
+            add = (0xFFF0u - h->end) & ~3u;
     }
-    if (add < 6)
+    if (add < 8)
         return 0;
     *(WORD FAR *)MKFP(ds, h->end) = add;        /* neuer freier Block     */
     h->end += add;
@@ -247,7 +250,7 @@ WORD lh_alloc(WORD ds, WORD n, WORD zero)
     if (!hs)
         return 0;
     h = MKFP(ds, hs);
-    need = (n + 2 + 1) & ~1u;
+    need = (n + 2 + 3) & ~3u;
     if (need < 4)
         need = 4;
 again:
@@ -266,7 +269,7 @@ again:
         }
         *(WORD FAR *)MKFP(ds, p) = sz;
         if (sz >= need) {
-            if (sz - need >= 6) {
+            if (sz - need >= 8) {
                 *(WORD FAR *)MKFP(ds, p + need) = sz - need;
                 sz = need;
             }
@@ -441,6 +444,8 @@ DWORD API GetProcAddress(WORD hmod, LPCSTR name)
     WORD isc;
     if (hmod >= 0x100 && hmod < 0x110 && !SELOF(name)) {
         fp = exp_ord(hmod - 0x100, OFFOF(name), &isc);
+        if (!fp)
+            glogn("GetProcAddress fehlt: Modul/Nummer ", ((hmod - 0x100) << 12) | OFFOF(name));
         return fp && !isc ? (DWORD)fp : 0;
     }
     if (SELOF(name))
@@ -471,20 +476,33 @@ void API FatalAppExit(WORD f, LPCSTR msg)
 
 WORD API GlobalAlloc(WORD flags, DWORD size)
 {
+    WORD s;
     (void)flags;
-    if (size > 0x10000UL)
+    if (size > 0x10000UL) {
+        glogn("GlobalAlloc ueber 64 KB, KB: ", (WORD)(size >> 10));
         return 0;
+    }
     if (!size)
         size = 1;
-    return seg_new((WORD)size);                 /* Kernel nullt immer */
+    s = seg_new((WORD)size);                    /* Kernel nullt immer */
+    if (!s)
+        glogn("GlobalAlloc gescheitert: ", (WORD)size);
+    return s;
 }
 WORD API GlobalReAlloc(WORD h, DWORD size, WORD flags)
 {
-    (void)flags;
-    if (size > 0x10000UL || !h)
+    if (flags & 0x80)                           /* GMEM_MODIFY: nur Merker */
+        return h;
+    if (size > 0x10000UL || !h) {
+        glogn("GlobalReAlloc gescheitert, KB: ", (WORD)(size >> 10));
         return 0;
-    if (FAPI_FAILED(fapi_call(FAPI_SEGCTL, SEG_REALLOC, h, (WORD)size)))
+    }
+    if (!size)
+        size = 1;
+    if (FAPI_FAILED(fapi_call(FAPI_SEGCTL, SEG_REALLOC, h, (WORD)size))) {
+        glogn("GlobalReAlloc gescheitert: ", (WORD)size);
         return 0;
+    }
     return h;
 }
 WORD API GlobalFree(WORD h) { seg_del(h & ~3u | 7); return 0; }
@@ -504,9 +522,11 @@ WORD API FreeSelector(WORD s) { (void)s; return 0; }
 WORD API LocalAlloc(WORD flags, WORD n)
 {
     WORD ds = get_bp2();
-    if (flags & 0x02)                           /* LMEM_MOVEABLE: Griff */
-        return lh_hnew(ds, n, flags & LMEM_ZEROINIT);
-    return lh_alloc(ds, n, flags & LMEM_ZEROINIT);
+    WORD r = (flags & 0x02) ? lh_hnew(ds, n, flags & LMEM_ZEROINIT)   /* Griff */
+                            : lh_alloc(ds, n, flags & LMEM_ZEROINIT);
+    if (!r)
+        glogn("LocalAlloc gescheitert: ", n);
+    return r;
 }
 WORD API LocalFree(WORD h)
 {
@@ -590,7 +610,41 @@ BOOL API LocalUnlock(WORD h)  { WORD ds = get_bp2(); return lh_api(ds, h, 1); }
 WORD API LocalSize(WORD h)    { WORD ds = get_bp2(); return lh_size(ds, h); }
 WORD API LocalHandle(WORD p)  { WORD ds = get_bp2(); return lh_api(ds, p, 2); }
 WORD API LocalFlags(WORD h)   { WORD ds = get_bp2(); return lh_api(ds, h, 3); }
-WORD API LocalCompact(WORD n) { (void)n; return 0x1000; }
+/* groesster freie Block (nach Zusammenlegen) samt dem, was die Halde
+   bis 64 KB noch wachsen kann - Write prueft damit beim Start */
+static WORD lh_largest(WORD ds)
+{
+    WORD hs = lh_of(ds), p, sz, best = 0, last = 0;
+    struct lheap FAR *h;
+    if (!hs)
+        return 0;
+    h = MKFP(ds, hs);
+    for (p = h->start; p < h->end; p += sz) {
+        sz = *(WORD FAR *)MKFP(ds, p) & ~1u;
+        if (!sz)
+            break;
+        if (*(WORD FAR *)MKFP(ds, p) & 1) {
+            last = 0;
+            continue;
+        }
+        last += sz;
+        if (last > best)
+            best = last;
+    }
+    if (h->end < 0xFFF0u && 0xFFF0u - h->end + last > best)
+        best = 0xFFF0u - h->end + last;
+    return best > 2 ? best - 2 : 0;
+}
+WORD API LocalCompact(WORD n) { WORD ds = get_bp2(); (void)n; return lh_largest(ds); }
+/* Griffe je Erweiterung der Grifftabelle: wir legen sie in festen
+   Bloecken an (LH_NHE), der Wert wird nur gemerkt */
+static WORD lh_delta = 32;
+WORD API LocalHandleDelta(WORD d)
+{
+    if (d)
+        lh_delta = d;
+    return lh_delta;
+}
 BOOL API LocalInit(WORD seg, WORD start, WORD end)
 {
     if (!seg)
@@ -911,6 +965,8 @@ void dos_int(void FAR *rv)
         glogn("INT ", r->n);
         return;                                 /* unbekannt: nichts   */
     }
+    if (w16_trace)                              /* Aufrufspur: F000h|AH  */
+        tr_ring[tr_pos++ & 127] = 0xF000u | ah;
     switch (ah) {
     case 0x4C:
     case 0x00:
@@ -1106,4 +1162,203 @@ WORD API WinExec(LPCSTR cmd, WORD show)
         return 33;
     glogs("WinExec gescheitert: ", we_path);
     return 2;
+}
+
+/* ---- Atome: eine Tabelle fuer lokale und globale (wie USER.EXE es fuer
+   globale tut); Eintrag [Zaehler][Laenge][Name], Atom = C000h + Platz.
+   Zahlen (MAKEINTATOM, "#123") sind ihr eigenes Atom. ---- */
+#define NATOM   128
+#define ATOMLEN 40
+static WORD atom_sel;
+#define ATOMP(i) ((BYTE FAR *)MKFP(atom_sel, (i) * (ATOMLEN + 2)))
+static int atom_num(LPCSTR s, WORD FAR *v)
+{
+    WORD i, n = 0;
+    if (SELOF(s) == 0) {
+        *v = OFFOF(s);
+        return 1;
+    }
+    if (s[0] != '#')
+        return 0;
+    for (i = 1; s[i] >= '0' && s[i] <= '9'; i++)
+        n = n * 10 + (s[i] - '0');
+    *v = n;
+    return 1;
+}
+static short atom_look(LPCSTR s)
+{
+    WORD i, k, l = fstrlen(s);
+    if (!atom_sel || l > ATOMLEN)
+        return -1;
+    for (i = 0; i < NATOM; i++) {
+        BYTE FAR *p = ATOMP(i);
+        if (!p[0] || p[1] != l)
+            continue;
+        for (k = 0; k < l; k++) {
+            BYTE a = p[2 + k], b = s[k];
+            if (a >= 'a' && a <= 'z') a -= 32;
+            if (b >= 'a' && b <= 'z') b -= 32;
+            if (a != b)
+                break;
+        }
+        if (k == l)
+            return (short)i;
+    }
+    return -1;
+}
+WORD atom_add(LPCSTR s)
+{
+    WORD v, i, l;
+    short f;
+    if (atom_num(s, &v))
+        return v;
+    if (!atom_sel) {
+        atom_sel = seg_new(NATOM * (ATOMLEN + 2));
+        if (!atom_sel)
+            return 0;
+        fmemset(MKFP(atom_sel, 0), 0, NATOM * (ATOMLEN + 2));
+    }
+    f = atom_look(s);
+    if (f >= 0) {
+        if (ATOMP(f)[0] < 255)
+            ATOMP(f)[0]++;
+        return 0xC000u + f;
+    }
+    l = fstrlen(s);
+    if (l > ATOMLEN)
+        l = ATOMLEN;
+    for (i = 0; i < NATOM; i++)
+        if (!ATOMP(i)[0]) {
+            BYTE FAR *p = ATOMP(i);
+            p[0] = 1;
+            p[1] = (BYTE)l;
+            fmemcpy(p + 2, s, l);
+            return 0xC000u + i;
+        }
+    glog("Atomtabelle voll");
+    return 0;
+}
+static WORD atom_find(LPCSTR s)
+{
+    WORD v;
+    short f;
+    if (atom_num(s, &v))
+        return v;
+    f = atom_look(s);
+    return f < 0 ? 0 : 0xC000u + f;
+}
+static WORD atom_del(WORD a)
+{
+    if (a >= 0xC000u && a - 0xC000u < NATOM && atom_sel) {
+        BYTE FAR *p = ATOMP(a - 0xC000u);
+        if (p[0] && p[0] < 255)
+            p[0]--;
+    }
+    return 0;
+}
+static WORD atom_name(WORD a, LPSTR buf, short n)
+{
+    WORD l;
+    if (!buf || n <= 0)
+        return 0;
+    if (a < 0xC000u) {                          /* Zahl -> "#123"        */
+        static char t[8];
+        WORD i = sizeof(t) - 1;
+        t[i] = 0;
+        do t[--i] = (char)('0' + a % 10); while ((a /= 10) && i > 1);
+        t[--i] = '#';
+        fstrncpy(buf, t + i, n);
+        return fstrlen(buf);
+    }
+    if (!atom_sel || a - 0xC000u >= NATOM || !ATOMP(a - 0xC000u)[0]) {
+        buf[0] = 0;
+        return 0;
+    }
+    l = ATOMP(a - 0xC000u)[1];
+    if (l >= (WORD)n)
+        l = n - 1;
+    fmemcpy(buf, ATOMP(a - 0xC000u) + 2, l);
+    buf[l] = 0;
+    return l;
+}
+BOOL API InitAtomTable(short n) { (void)n; return 1; }
+WORD API AddAtom(LPCSTR s) { return atom_add(s); }
+WORD API FindAtom(LPCSTR s) { return atom_find(s); }
+WORD API DeleteAtom(WORD a) { return atom_del(a); }
+WORD API GetAtomName(WORD a, LPSTR buf, short n) { return atom_name(a, buf, n); }
+WORD API GlobalAddAtom(LPCSTR s) { return atom_add(s); }
+WORD API GlobalFindAtom(LPCSTR s) { return atom_find(s); }
+WORD API GlobalDeleteAtom(WORD a) { return atom_del(a); }
+WORD API GlobalGetAtomName(WORD a, LPSTR buf, short n) { return atom_name(a, buf, n); }
+
+/* ---- temporaere Dateien: %TEMP% (sonst Stamm des Startlaufwerks) ---- */
+DWORD API GetTickCount(void);
+static char tmpdir[FAPI_PATHLEN];
+static void tmp_dir(void)
+{
+    WORD l;
+    if (FAPI_FAILED(DosGetEnv("TEMP", tmpdir, sizeof(tmpdir))) || !tmpdir[0])
+        if (FAPI_FAILED(DosGetEnv("TMP", tmpdir, sizeof(tmpdir))) || !tmpdir[0])
+            fstrncpy(tmpdir, "C:\\", sizeof(tmpdir));
+    l = fstrlen(tmpdir);
+    if (l && tmpdir[l - 1] != '\\' && l + 1 < sizeof(tmpdir)) {
+        tmpdir[l] = '\\';
+        tmpdir[l + 1] = 0;
+    }
+}
+BYTE API GetTempDrive(BYTE d)
+{
+    (void)d;
+    tmp_dir();
+    return (BYTE)(tmpdir[1] == ':' ? (tmpdir[0] & ~0x20) : 'C');
+}
+WORD API GetTempFileName(BYTE drv, LPCSTR pre, WORD uniq, LPSTR buf)
+{
+    WORD u = uniq, k, l, tries;
+    static const char hx[] = "0123456789ABCDEF";
+    tmp_dir();
+    if (drv & 0x80) {                           /* TF_FORCEDRIVE        */
+        buf[0] = (char)(drv & 0x7F);
+        buf[1] = ':';
+        buf[2] = '\\';
+        buf[3] = 0;
+    } else
+        fstrncpy(buf, tmpdir, 128);
+    l = fstrlen(buf);
+    if (!u)
+        u = (WORD)GetTickCount();
+    for (tries = 0; tries < 100; tries++, u++) {
+        WORD i = l, h;
+        if (!u)
+            u = 1;
+        buf[i++] = '~';
+        for (k = 0; k < 3 && pre && pre[k]; k++)
+            buf[i++] = pre[k];
+        for (k = 0; k < 4; k++)
+            buf[i++] = hx[(u >> (12 - 4 * k)) & 15];
+        fstrncpy(buf + i, ".TMP", 5);
+        if (uniq)
+            return u;                           /* nicht anlegen         */
+        h = _lopen(buf, 0);
+        if (h != 0xFFFF) {
+            _lclose(h);
+            continue;                           /* gibt es schon         */
+        }
+        h = _lcreat(buf, 0);
+        if (h != 0xFFFF)
+            _lclose(h);
+        return u;
+    }
+    return 0;
+}
+
+/* Daten aus der Instanz hinst an dieselbe Stelle im eigenen DS kopieren
+   (eine zweite Instanz holt so Einstellungen der ersten) */
+short API GetInstanceData(WORD hinst, WORD off, short n)
+{
+    WORD ds = get_bp2();
+    if (!hinst || n <= 0)
+        return 0;
+    fmemcpy(MKFP(ds, off), MKFP(hinst, off), n);
+    return n;
 }

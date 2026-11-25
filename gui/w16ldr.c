@@ -99,6 +99,52 @@ static void modname(WORD k, char *d)
     d[i] = 0;
 }
 
+/* ---- Aufrufspur (SET GUITRACE=1) ----
+   Jeder Import bekommt einen Vorschaltcode (24 Byte):
+     push ds; push ax; mov ax,GUI-DS; mov ds,ax; mov ax,Kennung;
+     call far tr_common; pop ax; pop ds; jmp far Ziel
+   tr_common (gcrt.asm) legt die Kennung in einen Ring; tr_dump schreibt
+   die letzten Aufrufe ins GUI.LOG (bei MessageBox und Abbruch). Die
+   Stummel liegen je Modul in einem eigenen Segment, das nach dem Laden
+   zu Code wird. */
+BYTE  w16_trace;
+WORD  tr_ring[128], tr_pos;
+void __far __cdecl tr_common(void);
+static WORD tr_sel, tr_off;
+static void FAR *tr_thunk(void FAR *fp, WORD id)
+{
+    BYTE FAR *t;
+    void FAR *tc = (void FAR *)tr_common;
+    if (!tr_sel) {
+        tr_sel = seg_new(0xFFF0u);
+        tr_off = 0;
+        if (!tr_sel)
+            return fp;
+    }
+    if (tr_off > 0xFFF0u - 24)
+        return fp;
+    t = MKFP(tr_sel, tr_off);
+    t[0] = 0x1E; t[1] = 0x50;
+    t[2] = 0xB8; *(WORD FAR *)(t + 3) = gui_ds;
+    t[5] = 0x8E; t[6] = 0xD8;
+    t[7] = 0xB8; *(WORD FAR *)(t + 8) = id;
+    t[10] = 0x9A; *(WORD FAR *)(t + 11) = OFFOF(tc); *(WORD FAR *)(t + 13) = SELOF(tc);
+    t[15] = 0x58; t[16] = 0x1F;
+    t[17] = 0xEA; *(WORD FAR *)(t + 18) = OFFOF(fp); *(WORD FAR *)(t + 20) = SELOF(fp);
+    t[22] = t[23] = 0x90;
+    tr_off += 24;
+    return MKFP(tr_sel | 3, tr_off - 24);
+}
+void tr_dump(const char *why)
+{
+    WORD i, n = tr_pos > 128 ? 128 : tr_pos;
+    if (!w16_trace)
+        return;
+    glog(why);
+    for (i = tr_pos - n; i != tr_pos; i++)
+        glogn("  Aufruf (Modul<<12|Nummer) ", tr_ring[i & 127]);
+}
+
 static int reloc_seg(struct w16mod *w, int s)
 {
     static WORD cnt;
@@ -141,6 +187,8 @@ static int reloc_seg(struct w16mod *w, int s)
                     nmiss++;
                     fp = (void FAR *)w16_stub;
                 }
+                else if (w16_trace && !isc && !(!fstricmp(mn, "KERNEL") && (b == 91 || b == 102)))
+                    fp = tr_thunk(fp, (exp_builtin(mn) << 12) | (b & 0xFFF));
                 tsg = SELOF(fp);
                 toff = OFFOF(fp);
                 if (isc)
@@ -247,8 +295,13 @@ int w16_load(LPCSTR path)
     w->sp = W(nh + 0x18);
     w->ss = W(nh + 0x1A);
     w->nseg = W(nh + 0x1C);
-    if (w->nseg > 24)
+    if (!w->nseg || w->nseg > 255)
         goto out;
+    w->seg_sel = seg_new(w->nseg * sizeof(struct w16seg));
+    if (!w->seg_sel)
+        goto out;
+    w->seg = MKFP(w->seg_sel, 0);
+    fmemset((void FAR *)w->seg, 0, w->nseg * sizeof(struct w16seg));
     sh = W(nh + 0x32);
     if (!sh)
         sh = 9;
@@ -322,6 +375,10 @@ int w16_load(LPCSTR path)
     for (s = 0; s < w->nseg; s++)
         if (!(w->seg[s].flags & 1))
             fapi_call(FAPI_SEGCTL, SEG_TOCODE, w->seg[s].sel, 0);
+    if (tr_sel) {                               /* Spur: Stummel zu Code */
+        fapi_call(FAPI_SEGCTL, SEG_TOCODE, tr_sel, 0);
+        tr_sel = 0;
+    }
     w->rsh = w->res_sel ? *(WORD FAR *)MKFP(w->res_sel, 0) : 0;
     if (nmiss)
         glogn("fehlende Importe: ", nmiss);
@@ -343,11 +400,12 @@ void w16_free(int m)
     int s;
     if (!w->used || --w->refs)
         return;
-    for (s = 0; s < w->nseg; s++)
+    for (s = 0; w->seg_sel && s < w->nseg; s++)
         if (w->seg[s].sel) {
             fapi_call(FAPI_SEGCTL, SEG_TODATA, w->seg[s].sel, 0);
             seg_del(w->seg[s].sel);
         }
+    seg_del(w->seg_sel);
     seg_del(w->ent_sel);
     seg_del(w->res_sel);
     w->used = 0;

@@ -371,6 +371,59 @@ Oberfläche gibt es noch nicht. Geprüft in QEMU mit einem Testprogramm
 (Scratchpad): Blau gewählt -> 0xFF0000, 11 pt fett unterstrichen -> 110/700,
 Drucken -> 1008h.
 
+### Stand: Write (25.11.2026, noch nicht lauffähig)
+
+WRITE.EXE aus Windows 3.1 (deutsch, aus der Kopie des Nutzers, nur im
+Scratchpad) lädt und läuft bis in WM_CREATE seines Hauptfensters, meldet
+dann aber „Nicht genügend Arbeitsspeicher verfügbar“. Write wird nicht
+zerlegt (Microsoft-Code); gesucht wird nur von unserer Seite aus.
+
+Dafür neu bzw. behoben:
+- **Lader**: Segmenttabelle je Modul in einem eigenen Segment statt fest
+  24 Einträgen (Write hat 84 Segmente).
+- **OLECLI** (`gui/ole.c`, OLE 1.0 ohne Server): Dokumente an-/abmelden
+  geht, Objekte anlegen/laden meldet OLE_ERROR_GENERIC, die
+  Zwischenablage hat nie ein Objekt. Registrierungsdatenbank in SHELL
+  (RegOpenKey & Co.) leer (ERROR_BADKEY).
+- KERNEL: Atome (eine Tabelle für lokale und globale, C000h + Platz),
+  GetTempFileName/GetTempDrive (%TEMP%), GetInstanceData,
+  **LocalHandleDelta** (KERNEL.310 – Write holt sie per GetProcAddress
+  und ruft sie ungeprüft: vorher #GP bei Aufruf nach 0000:0000),
+  LocalCompact liefert den größten freien Block samt Wachstum bis 64 KB,
+  GlobalReAlloc mit GMEM_MODIFY ändert die Größe nicht mehr.
+- Lokale Halde wie Windows auf 4 Byte ausgerichtet, Griffe verschiebbarer
+  Blöcke haben Bit 1 gesetzt (Write benutzt Griffe direkt, ohne
+  LocalLock).
+- GDI: **TEXTMETRIC lag ab Byte 19 um eins verschoben** (tmLastChar war
+  20h, Zeichensatz 30h – betraf jedes Programm mit GetTextMetrics),
+  EnumFonts meldet die Rasterschriften von Windows 3.1 (System, MS Sans
+  Serif, MS Serif, Courier, Small Fonts, Symbol, Terminal; gezeichnet
+  wird weiter mit der Systemschrift), GetDeviceCaps vollständig (ASPECTX/
+  Y, Fähigkeiten), MulDiv, SelectClipRgn(NULL), CreateIC, GetCharWidth,
+  SetStretchBltMode, SetTextJustification, PlayMetaFile (ohne Wirkung).
+- USER: GetSystemMetrics vollständig (vorher 0 u. a. für
+  SM_CXFULLSCREEN, SM_MOUSEPRESENT), CREATESTRUCT.hMenu = geladenes
+  Klassenmenü, nach WM_CREATE auch WM_MOVE, GetUpdateRect, ScrollDC (meldet
+  den ganzen Bereich als neu zu zeichnen), ChangeMenu (Windows 2.x),
+  RegisterClipboardFormat, FlashWindow, InSendMessage, GetCaretBlinkTime;
+  MessageBox bricht lange Zeilen an Wortgrenzen um. KEYBOARD: VkKeyScan.
+
+**Aufrufspur** (Werkzeug für alle weiteren Programme): `SET GUITRACE=1`
+vor `GUI` – jeder Import läuft dann über einen Vorschaltcode (24 Byte je
+Import, eigenes Segment je Modul, danach Code), der Modul und Nummer in
+einen Ring von 128 Einträgen schreibt; INT-21h-Aufrufe der Programme
+kommen als `F000h|AH` dazu. Vor jeder MessageBox steht der Ring im
+GUI.LOG („Aufruf (Modul<<12|Nummer)“, Modul 1 KERNEL, 2 USER, 3 GDI,
+4 KEYBOARD, 5 COMMDLG, 6 SHELL, 7 OLECLI; Namen in `gui/ordinals.txt`).
+
+Befund mit der Spur: WM_CREATE läuft vollständig durch (Zeichenketten,
+Klassen, Profil, Schriften, temporäre Datei, INT 21h/47h) und meldet
+keinen Fehler; Write legt danach keine Kindfenster an, räumt auf und
+meldet den Speichermangel. Hinweis aus Wine-Bug 19494: dort verschwand
+dieselbe Meldung von Write je nach Arbeitsverzeichnis – nächster
+Ansatz ist also, was Write aus Laufwerk/Verzeichnis ableitet (temporäre
+Datei, aktuelles Verzeichnis, freier Platz).
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht
