@@ -18,9 +18,19 @@
  * Relokationen: intern (fest und ueber die Eintragstabelle), Import ueber
  * Ordinalzahl und Namen (residente, dann nicht residente Namen), additiv
  * und verkettet; LOBYTE, SEGMENT, FAR_ADDR, OFFSET. OSFIXUP (287-Ersatz)
- * wird uebergangen. Noch nicht: Start-Routine der DLLs (LibEntry/
- * INITINSTANCE), Ressourcen, Instanzdaten je Task (MULTIPLEDATA bei DLLs),
- * Win16-Besonderheiten (Selektor-Kacheln, __AHINCR).
+ * wird uebergangen.
+ *
+ * Stufe 2: Start-Routinen der DLLs laufen im Ring 3 vor dem Programm
+ * (Stummel `ne_stubc`, Liste auf dem Stapel der EXE, Abhaengigkeiten
+ * zuerst): einmal beim ersten Laden, mit INITINSTANCE (Kopf-Bit 4) oder
+ * Instanzdaten je Task. Register wie OS/2 1.x und Windows: AX = Modul-
+ * kennung, CX = Heap, DS = ES = DI = Autodata; AX = 0 zurueck beendet das
+ * Programm (255). MULTIPLEDATA-DLLs: Datensegmente (Autodata und nicht
+ * geteilte) bekommt jeder Task als eigene Kopie unter demselben Selektor
+ * (task_end gibt sie wie DosAllocSeg frei). Ressourcen: FAPI_GETRES/
+ * FAPI_GETMOD wie DosGetResource/DosGetModHandle von OS/2 1.x (Typ und
+ * Kennung als Zahl). Noch nicht: Namen als Ressourcenkennung,
+ * DosLoadModule, Win16-Besonderheiten (Selektor-Kacheln, __AHINCR).
  *
  * DLLs werden gesucht: Verzeichnis des ladenden Moduls, dann \DOS\SYSTEM
  * und \DOS des Startlaufwerks, Name = Modulname + ".DLL".
@@ -36,6 +46,8 @@
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
 
 pg_t __far kf_mem_get(unsigned n);
+unsigned __far kf_seg_alloc(int t, unsigned size);
+unsigned __far kf_seg_free(int t, unsigned sel);
 extern unsigned alloc_units;
 extern unsigned char k_alias;
 extern unsigned char bkl_hold;
@@ -47,6 +59,7 @@ extern int sys_drive;
 #define NEDEP   8                       /* importierte Module je DLL      */
 #define NEDEPTH 3                       /* DLL laedt DLL laedt DLL        */
 #define NEMODS  16                      /* Modulverweise je Modul         */
+#define NE_EXE  0x8000u                 /* task.nemods: NE-Programm       */
 
 struct neseg {
     unsigned short idx;                 /* LDT-Eintrag (DLL: gemeinsam)   */
@@ -54,6 +67,7 @@ struct neseg {
     pg_t           pg;                  /* erste Seite                    */
     unsigned short size;                /* Bytes - 1 (Grenze)            */
     unsigned char  acc;
+    unsigned char  inst;                /* Instanzdaten: Kopie je Task    */
 };
 struct nemod {
     char           name[9];
@@ -64,6 +78,11 @@ struct nemod {
     char           path[96];
     unsigned char  dep[NEDEP];
     struct neseg   seg[NESEG];
+    unsigned       flags;               /* Kopf: NEF_*                    */
+    unsigned       ics, iip, heap, ads; /* Start-Routine, Heap, Autodata  */
+    unsigned char  inited, ninst;       /* Start lief, Instanzsegmente    */
+    unsigned long  rpos;                /* Ressourcentabelle (Datei)      */
+    unsigned       rlen;
     unsigned       entlen, reslen;      /* Eintragstabelle, residente Namen */
     unsigned char  tab[1];              /* ... bis NEMSZ                  */
 };
@@ -73,6 +92,32 @@ struct nemod {
 unsigned char ne_sh[64];                /* LDT-Eintraege der DLLs (512)   */
 static unsigned ne_sel;                 /* Kernelsegment der Modultabelle */
 #define M(m) ((struct nemod __far *)MK_FP(ne_sel, (m) * NEMSZ))
+
+/* Datei und Ressourcen der EXE je Task (hinter den Modulen) */
+struct neexe {
+    unsigned char  drive;
+    char           path[96];
+    unsigned long  rpos;
+    unsigned       rlen;
+};
+#define NEX(t) ((struct neexe __far *)MK_FP(ne_sel, NEMOD * NEMSZ + \
+                                            (t) * sizeof(struct neexe)))
+
+/* Ring-3-Stummel fuer die Start-Routinen der DLLs (gemeinsamer Eintrag).
+   Stapel: je DLL Kennung, DS, Heap, IP, CS; dann 0, DS, IP, CS der EXE.
+     next: pop ax / test ax,ax / jz done / pop ds / pop cx / mov di,ds
+           push ds / pop es / mov bp,sp / call far [bp] / add sp,4
+           test ax,ax / jnz next / mov ax,FAPI_EXIT / mov bx,255
+           call 0023:0000 / jmp $
+     done: pop ds / push ds / pop es / retf                              */
+static const unsigned char ne_stubc[] = {
+    0x58, 0x85, 0xC0, 0x74, 0x1F, 0x1F, 0x59, 0x8C, 0xDF, 0x1E, 0x07, 0x89,
+    0xE5, 0xFF, 0x5E, 0x00, 0x83, 0xC4, 0x04, 0x85, 0xC0, 0x75, 0xE9, 0xB8,
+    FAPI_EXIT, 0x00, 0xBB, 0xFF, 0x00, 0x9A, 0x00, 0x00, 0x23, 0x00, 0xEB, 0xFE,
+    0x1F, 0x1E, 0x07, 0xCB
+};
+static unsigned ne_stub;                /* LDT-Eintrag des Stummels       */
+static pg_t ne_stubpg;
 
 /* Zustand je Ladestufe (EXE -> DLL -> DLL), nicht auf dem Kernelstapel */
 struct nectx {
@@ -112,7 +157,11 @@ static char np[IFS_PATHLEN];
 #define NE_NRESTAB 0x2C
 #define NE_ALIGN   0x32
 #define NE_OTHER   0x37
+#define NE_RSRCTAB 0x24
 #define NEF_LIB    0x8000
+#define NEF_MULTI  0x0002               /* Daten je Instanz               */
+#define NEF_INITI  0x0004               /* Start-Routine je Task          */
+#define NESF_SHARE 0x0020               /* Segment: geteilt (Daten)       */
 
 #define ACC_UCODE  0xFA
 #define ACC_UDATA  0xF2
@@ -142,6 +191,13 @@ static void desc_put(int t, unsigned idx, unsigned long base, unsigned lim,
     d->base_hi = (unsigned char)(base >> 16);
     d->access  = acc;
     d->rsv     = (unsigned short)(((base >> 16) & 0xFF00) | (alias ? D_ALIAS : 0));
+}
+
+static unsigned long dbase(const struct desc __far *d)
+{
+    unsigned long b = d->base_lo | ((unsigned long)d->base_hi << 16) |
+                      ((unsigned long)(d->rsv & 0xFF00) << 16);
+    return k_alias ? b - KALIAS : b;
 }
 
 /* Tabellen der aktuellen Stufe (SCRATCH, nach jeder DLL neu legen) */
@@ -254,26 +310,72 @@ static void mod_free(int m)
     p->used = 0;
 }
 
-/* Task t bekommt DLL m (und was sie importiert) */
-static void attach(int t, int m)
+/* Instanzkopie eines Segments fuer Task t (Vorlage = Segment der DLL) */
+static int inst_copy(int t, struct neseg __far *g)
+{
+    pg_t u = kf_mem_get(g->pages);
+    unsigned long n = (unsigned long)g->size + 1;
+    if (!u)
+        return -1;
+    scratch_map(PG_LIN(g->pg), g->pages * MEM_PAGE - 1);
+    scratch2_map(PG_LIN(u), g->pages * MEM_PAGE - 1);
+    if (n > 0x8000UL) {
+        far_copy(SCRATCH2, 0, SCRATCH, 0, 0x8000U);
+        far_copy(SCRATCH2, 0x8000U, SCRATCH, 0x8000U, (unsigned)(n - 0x8000UL));
+    } else
+        far_copy(SCRATCH2, 0, SCRATCH, 0, (unsigned)n);
+    desc_put(t, g->idx, PG_LIN(u), g->size, g->acc, 0);
+    alloc_units += g->pages;
+    return 0;
+}
+
+/* Task t bekommt DLL m (und was sie importiert); -1 = kein Speicher */
+static int attach(int t, int m)
 {
     struct nemod __far *p = M(m);
     unsigned k;
     if (task[t].nemods & (1u << m))
-        return;
+        return 0;
     task[t].nemods |= 1u << m;
     p->refs++;
     for (k = 0; k < p->nseg; k++)
-        desc_put(t, p->seg[k].idx, PG_LIN(p->seg[k].pg), p->seg[k].size,
-                 p->seg[k].acc, 1);
+        if (p->seg[k].inst) {
+            if (inst_copy(t, &p->seg[k]))
+                return -1;
+        } else
+            desc_put(t, p->seg[k].idx, PG_LIN(p->seg[k].pg), p->seg[k].size,
+                     p->seg[k].acc, 1);
     for (k = 0; k < p->ndep; k++)
-        attach(t, p->dep[k]);
+        if (attach(t, p->dep[k]))
+            return -1;
+    return 0;
+}
+
+/* Start-Routinen fuer Task t sammeln (Abhaengigkeiten zuerst) */
+static unsigned char ilist[NEMOD];
+static unsigned nil, iseen;
+static void init_collect(int m)
+{
+    struct nemod __far *p = M(m);
+    unsigned k;
+    if (iseen & (1u << m))
+        return;
+    iseen |= 1u << m;
+    for (k = 0; k < p->ndep; k++)
+        init_collect(p->dep[k]);
+    if (p->ics && (!p->inited || (p->flags & NEF_INITI) || p->ninst)) {
+        p->inited = 1;
+        ilist[nil++] = (unsigned char)m;
+    }
 }
 
 /* Task t gibt seine DLLs ab (task_end; Eintraege sind schon leer) */
 void __far ne_task_end(int t)
 {
     int m;
+    if (!ne_sel)
+        return;
+    NEX(t)->drive = 0xFF;
     for (m = 0; m < NEMOD; m++)
         if (task[t].nemods & (1u << m)) {
             if (--M(m)->refs == 0)
@@ -580,6 +682,8 @@ static int ne_do(int t, int drive, const char *path, int m, struct ne_start *st)
         len = t16(o + 2);
         mn = t16(o + 6);
         g.acc = (t16(o + 4) & 1) ? ACC_UDATA : ACC_UCODE;
+        g.inst = (unsigned char)(m >= 0 && (fl & NEF_MULTI) && (t16(o + 4) & 1) &&
+                                 (k + 1 == auto_s || !(t16(o + 4) & NESF_SHARE)));
         sz = mn ? mn : 0x10000UL;
         if (fo && len && len > sz)
             sz = len;
@@ -653,6 +757,17 @@ static int ne_do(int t, int drive, const char *path, int m, struct ne_start *st)
                       ((unsigned long)c->h[NE_NRESTAB + 2] << 16) |
                       ((unsigned long)c->h[NE_NRESTAB + 3] << 24);
         M(m)->nrlen = H16(c, NE_CBNRES);
+        M(m)->flags = fl;
+        M(m)->ics = H16(c, NE_CS) <= ns ? H16(c, NE_CS) : 0;
+        M(m)->iip = H16(c, NE_IP);
+        M(m)->heap = H16(c, NE_HEAP);
+        M(m)->ads = auto_s <= ns ? auto_s : 0;
+        M(m)->inited = 0;
+        M(m)->ninst = 0;
+        for (k = 0; k < ns; k++)
+            M(m)->ninst += M(m)->seg[k].inst;
+        M(m)->rpos = c->neoff + H16(c, NE_RSRCTAB);
+        M(m)->rlen = ro - H16(c, NE_RSRCTAB);
         M(m)->drive = (unsigned char)drive;
         for (i = 0; path[i] && i < sizeof(M(m)->path) - 1; i++)
             M(m)->path[i] = path[i];
@@ -668,14 +783,54 @@ static int ne_do(int t, int drive, const char *path, int m, struct ne_start *st)
         for (k = 0; k < ns; k++)
             desc_put(t, xseg[k].idx, PG_LIN(xseg[k].pg), xseg[k].size,
                      xseg[k].acc, 0);
+        nil = 0;
+        iseen = 0;
         for (i = 0; i < nmod; i++)
-            attach(t, c->mod[i]);
+            init_collect(c->mod[i]);
+        for (i = 0; i < nmod; i++)
+            if (attach(t, c->mod[i])) {
+                err = EXEC_ERR_NOMEM;
+                goto out;
+            }
         st->cs = USEL(cs + 1);
         st->ip = H16(c, NE_IP);
         st->ss = USEL(ss + 1);
         st->sp = sp ? sp : (unsigned)(xseg[ss - 1].size + 1);    /* 64 KB -> 0 */
         st->ds = auto_s ? USEL(auto_s + 1) : st->ss;
         st->lfn = (unsigned char)(c->h[NE_OTHER] & 1);
+        NEX(t)->drive = (unsigned char)drive;
+        for (i = 0; path[i] && i < sizeof(NEX(t)->path) - 1; i++)
+            NEX(t)->path[i] = path[i];
+        NEX(t)->path[i] = 0;
+        NEX(t)->rpos = c->neoff + H16(c, NE_RSRCTAB);
+        NEX(t)->rlen = H16(c, NE_RESTAB) - H16(c, NE_RSRCTAB);
+        task[t].nemods |= NE_EXE;
+        if (nil) {                              /* Start-Routinen zuerst  */
+            unsigned w = nil * 5 + 4, sp2 = st->sp - w * 2, q;
+            unsigned short __far *s;
+            if (!ne_stub || (unsigned long)xseg[ss - 1].size + 1 < w * 2 + 64U) {
+                ne_log("NE: kein Platz fuer DLL-Start ", 0);
+                goto out;
+            }
+            desc_put(t, ne_stub, PG_LIN(ne_stubpg), sizeof(ne_stubc) - 1, ACC_UCODE, 1);
+            scratch2_map(PG_LIN(xseg[ss - 1].pg), xseg[ss - 1].pages * MEM_PAGE - 1);
+            s = MK_FP(SCRATCH2, sp2);
+            for (i = 0, q = 0; i < nil; i++) {
+                struct nemod __far *p = M(ilist[i]);
+                s[q++] = ilist[i] + 1;          /* Modulkennung           */
+                s[q++] = p->ads ? USEL(p->seg[p->ads - 1].idx) : 0;
+                s[q++] = p->heap;
+                s[q++] = p->iip;
+                s[q++] = USEL(p->seg[p->ics - 1].idx);
+            }
+            s[q++] = 0;
+            s[q++] = st->ds;
+            s[q++] = st->ip;
+            s[q++] = st->cs;
+            st->cs = USEL(ne_stub);
+            st->ip = 0;
+            st->sp = sp2;
+        }
     }
     err = 0;
 out:
@@ -703,13 +858,29 @@ int __far ne_load(int t, int drive, const char *path, struct ne_start *st)
     int r, m;
     unsigned i;
     if (!ne_sel) {
-        ne_sel = kseg_alloc((unsigned long)NEMOD * NEMSZ);
+        ne_sel = kseg_alloc((unsigned long)NEMOD * NEMSZ +
+                            NTASK * sizeof(struct neexe));
         if (!ne_sel)
             return EXEC_ERR_NOMEM;
         for (m = 0; m < NEMOD; m++)
             M(m)->used = 0;
+        for (m = 0; m < NTASK; m++)
+            NEX(m)->drive = 0xFF;
     }
     bkl_hold++;
+    if (!ne_stub && (ne_stubpg = kf_mem_get(1)) != 0) {
+        ne_floor = 2;
+        ne_stub = sh_alloc();                   /* bleibt fuer immer       */
+        if (!ne_stub) {
+            mem_free(ne_stubpg, 1);
+            ne_stubpg = 0;
+        } else {
+            scratch_map(PG_LIN(ne_stubpg), MEM_PAGE - 1);
+            for (i = 0; i < sizeof(ne_stubc); i++)
+                *(unsigned char __far *)MK_FP(SCRATCH, i) = ne_stubc[i];
+            image_units++;
+        }
+    }
     task[t].nemods = 0;
     for (i = 0; i < nldt; i++) {
         LDT(t, i)->access = 0;
@@ -718,6 +889,13 @@ int __far ne_load(int t, int drive, const char *path, struct ne_start *st)
     ne_floor = 2;
     r = ne_do(t, drive, path, -1, st);
     if (r) {
+        for (i = ne_floor; i < nldt; i++)       /* Instanzkopien der DLLs */
+            if (LDT(t, i)->access && !(LDT(t, i)->rsv & D_ALIAS)) {
+                unsigned n = PAGES((unsigned long)LDT(t, i)->limit + 1);
+                mem_free(dbase(LDT(t, i)) >> 12, n);
+                alloc_units -= n;
+                LDT(t, i)->access = 0;
+            }
         ne_task_end(t);                         /* schon angehaengte DLLs */
         for (i = 2; i < nldt; i++)              /* Aliase wieder weg      */
             if (LDT(t, i)->rsv & D_ALIAS)
@@ -729,4 +907,110 @@ int __far ne_load(int t, int drive, const char *path, struct ne_start *st)
     ne_floor = 2;
     bkl_hold--;
     return r;
+}
+
+/* FAPI_GETMOD: Kennung der DLL `nm` (Grossbuchstaben, ohne .DLL), die
+   Task t benutzt; 0 = nicht da */
+unsigned __far ne_getmod(int t, const char *nm)
+{
+    int m;
+    unsigned i;
+    if (!ne_sel)
+        return 0;
+    for (m = 0; m < NEMOD; m++) {
+        struct nemod __far *p = M(m);
+        if (!p->used || !(task[t].nemods & (1u << m)))
+            continue;
+        for (i = 0; i < 9; i++) {
+            char a = nm[i];
+            if (a >= 'a' && a <= 'z')
+                a -= 32;
+            if (a == '.')
+                a = 0;
+            if (a != p->name[i])
+                break;
+            if (!a)
+                return m + 1;
+        }
+    }
+    return 0;
+}
+
+/* FAPI_GETRES (wie DosGetResource): Ressource Typ/Kennung (Zahlen) des
+   Moduls h (0 = eigenes Programm) in ein neues Segment des Tasks lesen
+   -> Selektor, FAPI_ERROR. */
+static struct ifs_file rs_f;
+static unsigned char rs_b[12];
+unsigned __far ne_getres(int t, unsigned h, unsigned type, unsigned id)
+{
+    unsigned long p, e, pos = 0, len = 0;
+    unsigned sh, tid, cnt, k, sel = FAPI_ERROR, drive;
+    const char __far *path;
+    unsigned i;
+    if (!ne_sel || !(task[t].nemods & NE_EXE))
+        return FAPI_ERROR;
+    if (h == 0) {
+        p = NEX(t)->rpos; e = p + NEX(t)->rlen;
+        drive = NEX(t)->drive; path = NEX(t)->path;
+    } else if (h <= NEMOD && (task[t].nemods & (1u << (h - 1)))) {
+        p = M(h - 1)->rpos; e = p + M(h - 1)->rlen;
+        drive = M(h - 1)->drive; path = M(h - 1)->path;
+    } else
+        return FAPI_ERROR;
+    if (e < p + 4)
+        return FAPI_ERROR;                      /* keine Ressourcen       */
+    bkl_hold++;
+    for (i = 0; path[i] && i < IFS_PATHLEN - 1; i++)
+        np[i] = path[i];
+    np[i] = 0;
+    if (ifs_open(drive, np, &rs_f) || nread(&rs_f, p, KDATA, (unsigned)rs_b, 2))
+        goto out;
+    sh = rs_b[0] | (rs_b[1] << 8);
+    if (sh > 15)
+        goto out;
+    for (p += 2; p + 8 <= e && !len; ) {
+        if (nread(&rs_f, p, KDATA, (unsigned)rs_b, 8))
+            goto out;
+        tid = rs_b[0] | (rs_b[1] << 8);
+        cnt = rs_b[2] | (rs_b[3] << 8);
+        if (!tid)
+            break;
+        p += 8;
+        if (tid != (type | 0x8000u)) {
+            p += ((unsigned long)cnt << 3) + ((unsigned long)cnt << 2);
+            continue;
+        }
+        for (k = 0; k < cnt && p + 12 <= e; k++, p += 12) {
+            if (nread(&rs_f, p, KDATA, (unsigned)rs_b, 12))
+                goto out;
+            if ((rs_b[6] | (rs_b[7] << 8)) == (id | 0x8000u)) {
+                pos = (unsigned long)(rs_b[0] | (rs_b[1] << 8)) << sh;
+                len = (unsigned long)(rs_b[2] | (rs_b[3] << 8)) << sh;
+                break;
+            }
+        }
+        break;
+    }
+    if (!len || len > 0x10000UL)
+        goto out;
+    if (pos + len > rs_f.size)                  /* Rest hinter dem Ende   */
+        len = rs_f.size > pos ? rs_f.size - pos : 0;
+    if (!len)
+        goto out;
+    sel = kf_seg_alloc(t, (unsigned)len);       /* 64 KB -> 0             */
+    if (sel == FAPI_ERROR)
+        goto out;
+    if (len > 0x8000UL) {
+        if (nread(&rs_f, pos, sel, 0, 0x8000U) ||
+            nread(&rs_f, pos + 0x8000UL, sel, 0x8000U, (unsigned)(len - 0x8000UL)))
+            goto bad;
+    } else if (nread(&rs_f, pos, sel, 0, (unsigned)len))
+        goto bad;
+    goto out;
+bad:
+    kf_seg_free(t, sel);
+    sel = FAPI_ERROR;
+out:
+    bkl_hold--;
+    return sel;
 }

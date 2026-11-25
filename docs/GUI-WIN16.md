@@ -91,10 +91,38 @@ Win16 (Frage 1 unten) kommt später darauf.
   gleichzeitig teilen die DLL und ihre Daten (6 -> 7 -> 8), nach dem
   Ende freigegeben (MEM nach 40 Läufen gleich), fehlende DLL gemeldet;
   CMD, Box, DOS-Programme unverändert. Reine Programmlogik, kein 86Box.
-- Noch nicht: DLL-Start (LibEntry/INITINSTANCE), Ressourcen,
-  MULTIPLEDATA-DLLs (Daten je Instanz), Win16-Module (KERNEL/USER/GDI
-  als eigene DLLs), Auslagern/Verwerfen von NE-Code (Code wird wie
-  Daten behandelt), 5.x.
+
+### Stand: NE-Lader Stufe 2 (25.11.2026)
+
+- **DLL-Start**: die Startroutinen (CS:IP im Kopf der DLL) laufen im
+  Ring 3 vor dem Programm, Abhängigkeiten zuerst. Ein Stummel (40 Byte,
+  gemeinsamer LDT-Eintrag `ne_stub`, für immer) arbeitet eine Liste ab,
+  die der Lader unter SS:SP der EXE legt (je DLL Kennung, DS, Heap, IP,
+  CS; dann 0 und DS:IP:CS der EXE). Register wie OS/2 1.x und Windows:
+  AX = Modulkennung, CX = Heap, DS = ES = DI = Autodata. Gibt eine
+  Routine AX = 0 zurück, endet das Programm mit 255 vor `main`. Global
+  nur beim ersten Laden; je Task mit INITINSTANCE (Kopfbit 4) oder bei
+  Instanzdaten.
+- **Instanzdaten** (MULTIPLEDATA, Kopfbit 2): Autodata und nicht geteilte
+  Datensegmente (ohne Segmentbit 20h) bekommt jeder Task als Kopie der
+  geladenen Vorlage unter demselben Selektor (kein Alias – task_end gibt
+  sie wie DosAllocSeg frei).
+- **Ressourcen**: FAPI 64h `DosGetResource(h, Typ, Kennung)` liest aus
+  der Ressourcentabelle des Programms (h = 0) oder einer DLL in ein neues
+  Segment; FAPI 65h `DosGetModHandle(Name)` liefert die Kennung (Platz in
+  der Modultabelle + 1, dieselbe wie AX beim DLL-Start). Nur Zahlen als
+  Typ und Kennung (OS/2); Namen als Kennung (Win16) fehlen noch.
+- Geprüft in QEMU (Watcom `format os2`, `initglobal`/`initinstance`,
+  `manyautodata`, Ressourcen mit `wrc -bt=os2` und `op resource=`): eine
+  globale DLL und eine MULTIPLEDATA-DLL in zwei Tasks gleichzeitig –
+  globaler Start einmal, Instanzstart je Task, Zähler je Task getrennt;
+  Ressourcen aus EXE und DLL, fehlende Kennung FFFFh; Start mit AX = 0
+  -> ERRORLEVEL 255; MEM nach 10 Läufen gleich. KTEXT4 danach 53.123
+  Byte.
+- Noch nicht: Namen als Ressourcenkennung, DosLoadModule (DLL zur
+  Laufzeit), Win16-Module (KERNEL/USER/GDI als eigene DLLs),
+  Startregister der EXE wie OS/2 (AX = Umgebung, BX = Befehlszeile),
+  Auslagern/Verwerfen von NE-Code (Code wird wie Daten behandelt), 5.x.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

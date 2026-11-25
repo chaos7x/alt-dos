@@ -580,6 +580,8 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
     alloc_units += units;
     return USEL(idx);
 }
+unsigned __far kf_seg_alloc(int t, unsigned size);
+unsigned __far kf_seg_alloc(int t, unsigned size) { return seg_alloc(t, size); }
 
 /* LDT-Eintraege, die nur auf fremden Speicher zeigen (VioGetBuf: der
    Sitzungspuffer gehoert dem Kernel) - beim Freigeben kein mem_free.
@@ -630,6 +632,8 @@ static unsigned seg_free(int t, unsigned sel)
     d->access = 0;
     return 0;
 }
+unsigned __far kf_seg_free(int t, unsigned sel);
+unsigned __far kf_seg_free(int t, unsigned sel) { return seg_free(t, sel); }
 
 /* ---- Programmlader ----------------------------------------------------- */
 static unsigned rd16(unsigned sel, unsigned off)
@@ -4595,6 +4599,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         vio_title(task[current].session, a1 && buf[0] ? buf : task[current].name);
         return 0;
+    case FAPI_GETRES:                           /* Ressource (neload.c)   */
+        return ne_getres(current, a1, a2, a3);
+    case FAPI_GETMOD:                           /* DLL-Kennung (neload.c) */
+        if (user_str(usel, a1, buf, 16))
+            return 0;
+        return ne_getmod(current, buf);
     case FAPI_UNINAME:                          /* BACKUP/RESTORE (fat.c) */
         if (a1 > 1 || user_str(usel, a2, buf, 256) || !user_ok(usel, a3, 512, !a1))
             return FAPI_ERROR;

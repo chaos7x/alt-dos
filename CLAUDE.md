@@ -2319,6 +2319,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   /tmp/claude-0/ne/q/go.sh): Importe Ordinal/Name, DLL-Daten, zwei Tasks
   teilen eine DLL, Freigabe ohne Leck. Stand und Offenes in
   `docs/GUI-WIN16.md` „Stand: NE-Lader Stufe 1“.
+  Stufe 2 erledigt (25.11.2026): DLL-Start über einen Ring-3-Stummel
+  (`ne_stub`, Liste auf dem Stapel der EXE), MULTIPLEDATA-Kopien je Task,
+  FAPI 64h DosGetResource / 65h DosGetModHandle (Zahlen als Kennung).
+  In QEMU geprüft, Stand in `docs/GUI-WIN16.md` „Stufe 2“.
 
 - **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
   15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen

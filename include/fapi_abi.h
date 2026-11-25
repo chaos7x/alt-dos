@@ -327,6 +327,18 @@ struct fapi_joy {
                                        Zeichen, 0 = keins; Merken: legt der
                                        Task den Namen danach an, schreibt
                                        FAT das Original */
+#define FAPI_GETRES         0x64    /* Ressource eines NE-Moduls (6.3, wie
+                                       DosGetResource von OS/2 1.x): BX =
+                                       Modulkennung (0 = eigenes Programm,
+                                       sonst FAPI_GETMOD bzw. AX beim DLL-
+                                       Start), CX = Typ, DX = Kennung (je als
+                                       Zahl) -> AX = Selektor eines neuen
+                                       Segments mit den Daten (DosFreeSeg
+                                       gibt es frei), FAPI_ERROR = nicht da */
+#define FAPI_GETMOD         0x65    /* Kennung einer DLL des eigenen Tasks
+                                       (6.3, wie DosGetModHandle): BX = Name
+                                       (ohne .DLL) -> AX = Kennung, 0 = nicht
+                                       geladen */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

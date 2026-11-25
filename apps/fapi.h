@@ -125,6 +125,8 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosBeep(hz, ms)     F2(FAPI_BEEP, (hz), (ms))
 #define VioSetTitle(t)      F2(FAPI_SETTITLE, (t), 0)
 #define DosUniName(op, n, u) fapi_call(FAPI_UNINAME, (op), (unsigned short)(n), (unsigned short)(u))
+#define DosGetResource(h, ty, id) fapi_call(FAPI_GETRES, (h), (ty), (id))
+#define DosGetModHandle(nm)  F2(FAPI_GETMOD, (unsigned short)(nm), 0)
 #define MouOpen()           F2(FAPI_MOUOPEN, 0, 0)
 #define MouReadEvent(e, w)  F2(FAPI_MOUREADEVENT, (unsigned short)(e), (w))
 #define MouShowPtr(on)      F2(FAPI_MOUSHOWPTR, (on), 0)

@@ -78,6 +78,8 @@ struct ctxblk { void *p; unsigned n; };
 struct ne_start { unsigned cs, ip, ss, sp, ds; unsigned char lfn; };
 int  __far ne_load(int t, int drive, const char *path, struct ne_start *st);
 void __far ne_task_end(int t);
+unsigned __far ne_getres(int t, unsigned h, unsigned type, unsigned id);
+unsigned __far ne_getmod(int t, const char *nm);
 extern unsigned char ne_sh[64];         /* LDT-Eintraege der DLLs (alle Tasks) */
 #define NE_SH(i) (ne_sh[(i) >> 3] & (1 << ((i) & 7)))
 extern const struct ctxblk fat_ctx[], redir_ctx[], dem_ctx[];

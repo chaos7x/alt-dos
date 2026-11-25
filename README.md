@@ -49,7 +49,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Format von OS/2 1.x (z. B. Open Watcom `format os2`) laufen neben den
   FX-Programmen, DLLs werden einmal geladen und von allen Programmen
   geteilt (Selektoren wie bei OS/2 1.x in allen Tasks gleich), Importe
-  über Ordinalzahl und Namen; fehlt eine DLL, nennt DMESG sie
+  über Ordinalzahl und Namen; fehlt eine DLL, nennt DMESG sie. DLLs
+  bekommen ihre Startroutine (einmal oder je Programm), DLLs mit
+  Instanzdaten eigene Datensegmente je Programm, Ressourcen über
+  DosGetResource
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
 - Schreiben auf FAT12/16 (Diskette, IDE, SCSI): anlegen, schreiben,
@@ -1324,6 +1327,8 @@ selbst nur 8.3 kennt.
 | 97 | DosBeep         | Ton am PC-Lautsprecher (6.3, wie OS/2): BX = Hz (37–32767), CX = Dauer in ms (auf 10 ms gerundet), wartet so lange (CMD `BEEP`) |
 | 98 | VioSetTitle     | Titel der eigenen Sitzung in der Titelzeile (6.3, CMD `TITLE`): BX = Text (bis 40 Zeichen), 0 oder leer = wieder der Programmname |
 | 99 | DosUniName      | Unicode-Original eines Namens (6.3, BACKUP/RESTORE): BX = 0 lesen / 1 merken, CX = Pfadteil wie das Programm ihn sieht (Fremdes als `_`), DX = UTF-16 (bis 255 Zeichen + 0); Lesen liefert, was der Kernel diesem Task zuletzt zu dem Namen gab -> Zeichenzahl (0 = keins), Merken: legt der Task den Namen danach an, schreibt FAT das Original |
+| 100 | DosGetResource | Ressource eines NE-Moduls (6.3, wie OS/2 1.x): BX = Modulkennung (0 = eigenes Programm, sonst von DosGetModHandle bzw. AX beim DLL-Start), CX = Typ, DX = Kennung (je als Zahl) -> neues Segment mit den Daten (DosFreeSeg gibt es frei), FFFFh = nicht da |
+| 101 | DosGetModHandle | Kennung einer DLL des eigenen Programms (6.3): BX = Name ohne `.DLL` -> Kennung, 0 = nicht geladen |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |
