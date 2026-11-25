@@ -1403,6 +1403,13 @@ Win32s), nicht vorziehen, sondern nachfragen.
   CURL eigenes Programm mit dem HTTP-Teil von WGET (DGROUP 65 KB – voll),
   `-w` auf die Standardausgabe. Testserver `/tmp/claude-0/cu/srv.py`
   (HTTP-Echo 8081, Whois 4343). Ungeprüft: HTTPS bei CURL, mehrere Hops.
+  ARP zeigt wie Windows nur IPv4 (`-6` IPv6) – vom Nutzer gemeldet (25.11.
+  2026: „nur ein Rechner“): PING mit Namen nimmt bei globaler IPv6-Adresse
+  AAAA zuerst, die Nachbarn stehen dann unter `ARP -a -6`; ARP nennt jetzt
+  die Zahl der Nachbarn der anderen Familie. `IPCONFIG /WAIT` nahm schon
+  eine IPv6-Adresse (fe80:: steht sofort) – jetzt IPv4, erst nach der
+  halben Zeit reicht IPv6 außer link-lokal. In QEMU geprüft (Testfalle:
+  `-netdev user,ipv6=on` ohne `ipv4=on` hat kein DHCP).
 - DIG/NSLOOKUP (Wunsch des Nutzers, 23.11.2026; `apps/dnsq.h` gemeinsamer
   DNS-Teil, task_dig.c wie BIND-dig, task_nslookup.c wie Windows) und
   HOSTNAME gebunden mit Netz in der Box: Stub (stub/fapidos.c `net_box`)

@@ -2,7 +2,9 @@
 /*
  * IPCONFIG.EXE - Netzwerkeinstellungen anzeigen (wie IPCONFIG von Windows):
  *   IPCONFIG [/ALL] [/RELEASE [n]] [/RENEW [n]] [/WAIT[:s]]
- * /WAIT wartet (Vorgabe 30 s), bis eine Karte eine Adresse hat - fuer
+ * /WAIT wartet (Vorgabe 30 s), bis eine Karte eine IPv4-Adresse hat (nach
+ * der halben Zeit reicht auch IPv6 ausser link-lokal - fe80:: steht
+ * sofort, DHCP wiederholt nach 2, 4, 8 s) - fuer
  * Stapeldateien direkt nach dem Laden von TCPIP.SYS (DHCP dauert).
  * Ueber FAPI_NET NET_IFINFO/NET_DHCP (TCPIP.SYS); zeigt beide Familien.
  * ERRORLEVEL: 0 ok, 1 Fehler (auch: /WAIT ohne Adresse), 2 kein Netz.
@@ -198,7 +200,7 @@ void main(void)
                      "  /ALL      alle Angaben\r\n"
                      "  /RELEASE  DHCP-Adresse zur\x81" "ckgeben\r\n"
                      "  /RENEW    DHCP-Adresse neu anfordern\r\n"
-                     "  /WAIT:s   warten, bis eine Adresse da ist (Vorgabe 30 s)\r\n");
+                     "  /WAIT:s   warten, bis eine IPv4-Adresse da ist (Vorgabe 30 s)\r\n");
                 return;
             }
             if (up(a[1]) == 'A') all = 1;
@@ -228,8 +230,14 @@ void main(void)
                 puts("Kein Netz: TCPIP.SYS ist nicht geladen.\r\n");
                 DosExit(2);
             }
-            if (rc == 0 && ni.naddr)
-                got = 1;
+            if (rc == 0) {                      /* fe80:: entsteht sofort, */
+                unsigned k;                     /* zaehlt nicht            */
+                for (k = 0; k < ni.naddr; k++)  /* IPv4 sofort; nur IPv6 */
+                    if (net_is4(ni.addr[k].a) ||    /* nach 5 s (DHCP ist  */
+                        (w >= wait * 5 && (ni.addr[k].a[0] != 0xFE || /* langsamer) */
+                                     (ni.addr[k].a[1] & 0xC0) != 0x80)))
+                        got = 1;
+            }
         }
         if (got)
             break;

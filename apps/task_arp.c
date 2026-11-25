@@ -52,7 +52,7 @@ static int same16(const unsigned char *a, const unsigned char *b)
 void main(void)
 {
     char *a, w[64];
-    unsigned i, ifc, any = 0;
+    unsigned i, ifc, any = 0, other = 0;
     int shown;
 
     DosGetArgs(args);
@@ -91,8 +91,13 @@ void main(void)
             nb.idx = i;
             if (DosNet(NET_NEIGH, &nb, sizeof(nb)))
                 break;
-            if (!nb.state || nb.ifc != ifc || net_is4(nb.ip) == want6)
+            if (!nb.state || nb.ifc != ifc)
                 continue;
+            if (net_is4(nb.ip) == want6) {      /* andere Familie: nur zaehlen */
+                if (!have_only)
+                    other++;
+                continue;
+            }
             if (have_only && !same16(nb.ip, only))
                 continue;
             if (!shown) {
@@ -123,5 +128,15 @@ void main(void)
         }
     }
     if (!any)
-        puts(have_only ? "Keine ARP-Eintr\x84ge gefunden.\r\n" : "Keine ARP-Eintr\x84ge gefunden.\r\n");
+        puts("Keine ARP-Eintr\x84ge gefunden.\r\n");
+    if (other) {                        /* PING mit Namen nimmt oft IPv6 */
+        char d[6];
+        int k = 0;
+        puts("\r\nDazu ");
+        do d[k++] = (char)('0' + other % 10); while ((other /= 10) != 0);
+        while (k)
+            putc(d[--k]);
+        puts(want6 ? " IPv4-Nachbar(n) - anzeigen mit ARP -a\r\n"
+                   : " IPv6-Nachbar(n) - anzeigen mit ARP -a -6\r\n");
+    }
 }

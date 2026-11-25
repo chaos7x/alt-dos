@@ -262,7 +262,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   `\DOS\SYSTEM\FIREWALL.INI` (AUTOEXEC.CMD lädt sie mit `FIREWALL /LOAD
   /Q`), Abgewiesenes gedrosselt im DMESG. `NETSTAT [-a]` zeigt
   Verbindungen und offene Ports mit Programm, `IPCONFIG /WAIT[:s]` wartet
-  in Stapeldateien auf die DHCP-Adresse. Härtung: Anfangsfolgenummern
+  in Stapeldateien auf die DHCP-Adresse (IPv4). Härtung: Anfangsfolgenummern
   und Absenderports zufällig (Zufall aus Takt und Netzverkehr), höchstens
   4 halboffene Verbindungen (gegen SYN-Fluten), RST nur mit genau
   passender Folgenummer (sonst ACK zur Prüfung, RFC 5961), keine IP-
