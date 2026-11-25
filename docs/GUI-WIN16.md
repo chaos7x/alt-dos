@@ -1,7 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 # Plan: Grafische Oberfläche und Win16 für AT-DOS
 
-Stand: 15.11.2026, abgestimmt mit dem Nutzer. Nur Plan – noch kein Code.
+Stand: 15.11.2026, abgestimmt mit dem Nutzer; Stil/Shell austauschbar
+nachgetragen 25.11.2026. Nur Plan – noch kein Code.
 
 ## Entscheidungen
 
@@ -96,6 +97,38 @@ Bitmaps, die Systemschrift und die Namen („Programme“, „Dateien“,
 
 ![Programme und Dateien](gui/entwurf-cua.png)
 ![Fensterliste](gui/entwurf-fensterliste.png)
+
+### Austauschbarer Stil und Shell (Wunsch des Nutzers, 25.11.2026)
+
+Der Look hängt nicht an der Bauweise: Schnittstelle bleibt Win16 mit
+eigenem GDI/USER und eigenen Treibern. Wie Rahmen, Titelleiste und
+Bedienelemente aussehen, entscheidet nur der Code, der sie zeichnet –
+Win95 hat es selbst so gemacht (3.1-Programme bekamen dort den 3D-
+Rahmen). Deshalb:
+
+- **Stil als eigenes Modul** (wie ein Theme): zeichnet Nicht-Client-
+  Bereich (Rahmen, Titel, Knöpfe) und Steuerelemente; USER ruft es über
+  eine feste Schnittstelle. Gewählt per INI, z. B. `STYLE=CUA|MINI|95`.
+  - **CUA** wie oben (Vorgabe, wie PM 1.x/Windows 3.x).
+  - **MINI** schlicht wie twm/fvwm unter Linux: dünner Rahmen, wenige
+    Knöpfe, Menü per Klick auf den Desktop, kein Desktop mit Dateien –
+    am wenigsten Speicher, für den 386 mit 4 MB.
+  - **95**: eigener Nachbau des Bedienkonzepts von Windows 95 – 3D-
+    Rahmen, drei Knöpfe rechts, passt zeitlich zu AT-DOS 7.0 (1995).
+- **Shell als eigenes, austauschbares Programm**: Programm-Manager-Art
+  (Gruppen, Fensterliste auf Strg+Esc) oder Taskleiste mit Startknopf
+  und Explorer-artigem Dateimanager. Die Taskleiste braucht
+  Benachrichtigungen über Fenster (anlegen, aktivieren, schließen –
+  wie Shell-Hooks) und Steuerelemente, die CUA nicht hat (Baumansicht,
+  Liste mit Spalten, Registerkarten).
+- **Eigen bleibt alles Sichtbare**: Symbole, Bitmaps, Schriften, Klänge
+  und Namen – kein Code und keine Grafik von Microsoft, keine Namen wie
+  „Start“ oder „Arbeitsplatz“, kein Logo.
+- **Microwindows/Nano-X** (lief auf ELKS, 16-Bit-Linux, Win32-ähnliche
+  API) als mögliche Vorlage für den schlichten Stil und GDI-Teile –
+  Lizenz vor jeder Übernahme prüfen (in Erinnerung MPL/GPL, nicht
+  nachgesehen). Win16-Programme laufen damit nicht von selbst, die
+  Win16-Schicht bleibt nötig.
 
 ### Desktop und Eigene Dateien
 

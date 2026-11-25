@@ -2304,7 +2304,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - **GUI und Win16** (abgestimmt 15.11.2026): `docs/GUI-WIN16.md` –
   Win16 nativ auch unter 5.x, GUI als eigener Prozess, CUA-Look (eigene
-  Symbole), Desktop/Eigene Dateien, Treiber VGA/ET4000-W32/GD5434/Trio3D,
+  Symbole; Stil als austauschbares Modul CUA/MINI/95 und Shell
+  austauschbar, Wunsch des Nutzers 25.11.2026), Desktop/Eigene Dateien, Treiber VGA/ET4000-W32/GD5434/Trio3D,
   frühes Wine als Vorlage (Lizenzstände!), Win32 später. **System und
   Daten trennen**: `docs/SYSTEM-DATEN.md` (Variablen, MOUNT wie /home,
   Netzlaufwerk). Noch kein Code.
