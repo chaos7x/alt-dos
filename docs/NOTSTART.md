@@ -292,6 +292,12 @@ Kompatibilitätsbox) – je Sektor zu langsam. Fehlt auf 5.x das
 Startlaufwerk nach den BASEDEV=-Treibern, bleibt es bei der Meldung
 „Startpartition nicht gefunden“ wie heute.
 
+Gebaut (25.11.2026, Zweig `5.x`, 4578c4e): F5, BASEDEV=, NOTSTART=1,
+CMD ohne AUTOEXEC.CMD, RBOX ohne DOSBOX.INI, RBSHELL ohne AUTOEXEC.BAT
+(INT E0h 13h AH Bit 1). Der CONFIG.SYS-Start steht dort in k2misc.c
+(KTEXT2). Geprüft: QEMU isapc und 86Box SCAT (Start von der
+Adaptec-Platte über BASEDEV=AHA154X.SYS).
+
 ## Offene Punkte
 
 Keine – alle Fragen des Entwurfs sind entschieden (24.11.2026).
