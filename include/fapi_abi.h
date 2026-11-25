@@ -310,6 +310,12 @@ struct fapi_joy {
                                        Verzoegerung 250/500/750/1000 ms),
                                        FFFFh = nur abfragen -> AX = bisher.
                                        Gilt fuer die ganze Tastatur */
+#define FAPI_BEEP           0x61    /* Ton am PC-Lautsprecher (6.3, wie OS/2
+                                       DosBeep): BX = Hz (37-32767), CX = ms
+                                       (auf 10 ms gerundet); wartet so lange */
+#define FAPI_SETTITLE       0x62    /* Titel der eigenen Sitzung (6.3, CMD
+                                       TITLE): BX = Text (bis 40 Zeichen),
+                                       0 bzw. "" = wieder der Programmname */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */
@@ -871,7 +877,8 @@ struct fapi_fsinfo {
     unsigned short flags;           /* FSI_*                            */
     unsigned long  hidden;          /* erster Sektor der Partition (BPB) */
     unsigned char  ptype;           /* Partitionstyp im MBR, 0 = keiner  */
-    unsigned char  rsv;
+    unsigned char  disk;            /* Platte + 1 fuer DosDiskInfo (6.3,
+                                       FORMAT: BIOS-Geometrie), 0 = keine */
 };
 #define FSI_REMOVABLE       0x01
 #define FSI_READONLY        0x02

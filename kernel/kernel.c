@@ -73,7 +73,7 @@ typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
 typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
 typedef char gdt_chk5[KCODEI == KCODEI_IDX * 8 ? 1 : -1];
 typedef char gdt_chk6[KIDATA == KIDATA_IDX * 8 ? 1 : -1];
-typedef char gdt_chk3[VWIN == 0x2B0 ? 1 : -1];   /* VWIN in start.asm */
+typedef char gdt_chk3[VWIN == 0x2F0 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
 
@@ -980,6 +980,10 @@ static int resolve_v(int t, const char *in, int *drive, char *out)
 }
 
 /* Zeichenkette aus Ring 3 holen, hoechstens max - 1 Zeichen; -1 = Fehler */
+/* PIT-Teiler fuer hz (37..32767): 1193182 / hz (DIV 32/16, ohne __U4D) */
+unsigned pit_div(unsigned hz);
+#pragma aux pit_div = "mov dx, 12h" "mov ax, 34DEh" "div bx" parm [bx] value [ax] modify [dx];
+
 static int user_str(unsigned sel, unsigned off, char *buf, int max)
 {
     unsigned lim;
@@ -3297,6 +3301,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
     case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
     case FAPI_RANDOM: case FAPI_UFS:            /* UFS: eigenes Warten   */
+    case FAPI_BEEP:                             /* wartet die Tondauer   */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -4192,6 +4197,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fi->hidden = vol[a1].start;
         fi->ptype = vol[a1].ptype;
         fi->bsize = blk[dv].bsize;
+        fi->disk = 0;                       /* Platte n + 1 (DosDiskInfo) */
+        if (blk[dv].bsize == 512 && blk[dv].drv >= 0 && dv > 0) {
+            int dk, m = 0;
+            for (dk = 1; dk < dv; dk++)
+                if (blk[dk].bsize == 512 && blk[dk].drv >= 0)
+                    m++;
+            fi->disk = (unsigned char)(m + 1);
+        }
         fi->flags = (IS_FLOPPY(dv) ? FSI_REMOVABLE : 0) | (blk[dv].bsize != 512 ? FSI_READONLY : 0) |
                     (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0) |
                     (IS_REM(dv) ? FSI_REMDISK : 0) | (blk[dv].drv == DRV_UFS ? FSI_REMOTE : 0);
@@ -4536,6 +4549,22 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         t = ufs_lock(&files[k].f, MK_FP(usel, a2));
         return t ? ifs_err(t) : 0;
+    case FAPI_BEEP:                             /* wie OS/2 DosBeep       */
+        if (a1 < 37 || a1 > 32767)
+            return FAPI_ERROR;
+        k = pit_div(a1);
+        outb(0x43, 0xB6);                       /* Kanal 2, Rechteck      */
+        outb(0x42, k & 0xFF);
+        outb(0x42, k >> 8);
+        outb(0x61, inb(0x61) | 3);
+        sleep_ticks((a2 + 9) / 10);
+        outb(0x61, inb(0x61) & ~3);
+        return 0;
+    case FAPI_SETTITLE:                         /* CMD TITLE              */
+        if (a1 && user_str(usel, a1, buf, 41))
+            return FAPI_ERROR;
+        vio_title(task[current].session, a1 && buf[0] ? buf : task[current].name);
+        return 0;
     case FAPI_JOYSTICK:                         /* Gameport (v86.c)       */
         return user_ok(usel, a1, sizeof(struct fapi_joy), 1) ? joy_fapi(usel, a1) : FAPI_ERROR;
     case FAPI_UFS:                              /* NET USE (ufs.c)        */
@@ -6386,7 +6415,7 @@ unsigned devhlp_dispatch(unsigned fn, unsigned dsel, unsigned bx, unsigned cx)
 }
 
 /* nachgeladene Dateisysteme (IFS=): Treiberplatz und Medienklassen */
-#define NIFSMOD 2
+#define NIFSMOD 4
 static struct { int drv; unsigned classes; } ifsmod[NIFSMOD];
 static int nifsmod;
 

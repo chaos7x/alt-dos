@@ -29,4 +29,3 @@ nano=EDIT $*
 vi=EDIT $*
 mc=FM $*
 ntpdate=SNTP $*
-which=WHERE $*

@@ -26,8 +26,9 @@
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
 #define SCR_SEL(i)  (SCR_IDX(i) * 8)
-#define NDRV        12              /* Geraetetreiber und IFS-Module; 6.3:
-                                       6 -> 12 (Box-Module VCOM/VSB/VEMS/VEGA) */
+#define NDRV        16              /* Geraetetreiber und IFS-Module; 6.3:
+                                       6 -> 12 (Box-Module VCOM/VSB/VEMS/VEGA),
+                                       12 -> 16 (Netz + Box-Module + SCSI) */
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
@@ -36,13 +37,13 @@
 #define NKSEG       28              /* eigene Kernelsegmente (kseg_alloc); 6.2: 20 -> 28 (acht Loops) */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x2A8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x2E8           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define VWIN_IDX    (KCODE2_IDX + 1) /* Fenster in den Speicher einer DOS-Box */
 #define VWIN        (VWIN_IDX * 8)  /* (Basis roh, ohne KALIAS; v86.c)     */
 #define RWIN_IDX(t) (KCODE2_IDX + 2 + (t))   /* Fenster je Box (redir.c) */
 #define RWIN_SEL(t) (RWIN_IDX(t) * 8)
 #define KCODE3_IDX  (KCODE2_IDX + 2 + NTASK)  /* drittes Codesegment (v86.c, redir.c) */
-#define KCODE3      0x2F8           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
+#define KCODE3      0x338           /* = KCODE3_IDX * 8; build.sh traegt ihn ein */
 #define FCACHE_IDX  (KCODE3_IDX + 1) /* FAT-Cache (fat.c), fest bei FCACHE_LIN */
 #define FCACHE_SEL  (FCACHE_IDX * 8)
 #define CTXWIN_IDX  (KCODE3_IDX + 2) /* Ablage des Kontexts je Task (Phase 6) */
@@ -52,11 +53,11 @@
 #define LDTD_IDX    (KCODE3_IDX + 4) /* Datenfenster auf die LDTs aller Tasks */
 #define LDTD        (LDTD_IDX * 8)
 #define KCODE4_IDX  (KCODE3_IDX + 5) /* viertes Codesegment (loop.c u. a.) */
-#define KCODE4      0x320           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
+#define KCODE4      0x360           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
 #define KCODEI_IDX  (KCODE3_IDX + 6) /* Startcode (ITEXT), nach dem Start frei */
-#define KCODEI      0x328           /* = KCODEI_IDX * 8; build.sh traegt ihn ein */
+#define KCODEI      0x368           /* = KCODEI_IDX * 8; build.sh traegt ihn ein */
 #define KIDATA_IDX  (KCODE3_IDX + 7) /* Texte des Startcodes (IDATA), ebenso */
-#define KIDATA      0x330           /* = KIDATA_IDX * 8; build.sh traegt ihn ein */
+#define KIDATA      0x370           /* = KIDATA_IDX * 8; build.sh traegt ihn ein */
 #define NGDT        (KCODE3_IDX + 8)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 

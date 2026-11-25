@@ -136,8 +136,13 @@ static int do_format32(int quick)
     wr16(b + 14, res);
     b[16] = 2;
     b[21] = 0xF8;
-    wr16(b + 24, 63);
-    wr16(b + 26, 255);
+    {                                           /* Geometrie des BIOS      */
+        static struct fapi_diskinfo di;
+        int ok = ffi.disk && DosDiskInfo(ffi.disk - 1, &di) == 0 && di.heads &&
+                 di.spt && di.spt <= 63 && di.heads <= 255;
+        wr16(b + 24, ok ? di.spt : 63);
+        wr16(b + 26, ok ? di.heads : 255);
+    }
     wr32(b + 28, ffi.hidden);
     wr32(b + 32, n);
     wr32(b + 36, spf32);

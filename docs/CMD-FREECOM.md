@@ -1,7 +1,9 @@
 # Befehle aus FreeCOM für CMD
 
-Stand: Plan (Wunsch des Nutzers, 25.11.2026: „die fehlenden Befehle aus
-FreeCOM nach CMD portieren … in den Plan damit“). Noch kein Code.
+Stand: gebaut (Wunsch des Nutzers, 25.11.2026: „die fehlenden Befehle aus
+FreeCOM nach CMD portieren“; Auftrag „1, 9 und 7 machen“). Stufen 1–5
+erledigt, DESCRIPT.ION nicht (nach Absprache). Einzelheiten unter „Stand“
+am Ende.
 
 Grundlage ist ein Vergleich der internen Befehle von CMD.EXE
 (`apps/task_cmd.c`, Tabelle `builtin[]` und Verteiler `execute()`) mit
@@ -77,3 +79,31 @@ geholt (wie die DOSKEY-Makros).
 
 Jede Stufe: README („Was läuft“) und `HELP`-Texte (`/?`) im selben
 Commit nachtragen; Diskette 1 auf Platz prüfen (CMD.EXE liegt dort).
+
+## Stand (25.11.2026)
+
+Gebaut in `apps/task_cmd.c`, alles eigener Code:
+
+- Stufe 1: PUSHD/POPD/DIRS (8 Plätze, Segment beim ersten PUSHD; START
+  erbt den Stapel nicht), `CD /D`, CDD, HISTORY [n] (n = nur die letzten n
+  – die Größe bleibt 16), ALIAS, WHICH. Das Makro `which=WHERE $*` in
+  LINUX.MAC ist weg (es verdeckte den Befehl).
+- Stufe 2/3: SET /P, SET /E (erste nicht leere Zeile), SET /A (32 Bit
+  über eigene Mul/Div, `umul32`/`udiv32`), IF /I/DEFINED/EQU…, COPY
+  /Y /-Y /V /A /B + COPYCMD (Rückfrage nur an der Eingabe, wie MS-DOS
+  6.2), DEL /P /Q /S (Baumgang `tree_walk`, eigener Stapel je Aufruf),
+  DATE/TIME /T, DIR /L, FOR /D /R /L und Schachteln (3 Ebenen, Puffer je
+  Ebene in `flv[]`), CALL /Y (`step_lvl`).
+- Stufe 4: FOR /F mit Dateien (bis 64 KB je Datei), "Text" und 'Befehl'
+  (Ausgabe über eine Datei in %TEMP%, `capture`), `usebackq`.
+- Stufe 5: BEEP über FAPI 61h `FAPI_BEEP` (Kernel stellt PIT-Kanal 2,
+  wie OS/2 DosBeep), TITLE über FAPI 62h `FAPI_SETTITLE`.
+- Nebenbei: `ECHO x> datei` schrieb Leerzeichen an das Zeilenende (der
+  Platz der Umleitung) – parse_line kürzt sie.
+
+Nicht gebaut: `CALL :Marke` (NT), `%~`-Modifizierer, DESCRIPT.ION.
+Geprüft: QEMU (Stapeldatei mit allen Befehlen, Rückfragen von COPY/DEL,
+SET /P, CALL /Y, TITLE), 86Box 386DX/40 bzw. 486 (BEEP läuft – hörbar
+nicht geprüft, 86Box hier ohne Ton).
+Platz: CMD.EXE Code 36 KB, Daten 61 KB; Diskette 1 wurde dafür voll –
+DOMJOIN.EXE liegt jetzt auf Diskette 3.

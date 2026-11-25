@@ -650,6 +650,11 @@ void strategy(void)
     case DRV_EJECT:
         eject();
         break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: ohne IRQ - nur den  */
+        OUT(R_MR, 0);                   /* Bus loslassen                   */
+        OUT(R_ICR, 0);
+        r->status = DRV_OK;
+        break;
     default:
         r->status = DRV_ERR_CMD;
     }

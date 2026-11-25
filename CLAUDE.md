@@ -82,8 +82,11 @@ Hintergrund, Maus). Module heißen
 erledigt, geprüft 86Box 386 mit IBM-EGA und CGA (VMs `e386`/`c386`,
 CMOS-Anzeige dort einstellen) und VGA-Gegenprobe (Cirrus `v386`, IBM-VGA
 `i386` – Grundlage ohne VBE; Skripte `ega_bg.sh`/`ibm_bg.sh`). Dabei: `NDRV` 6 -> 12
-(mit den Box-Modulen fiel ISO9660.IFS heraus!), Selektoren seitdem
-MEMMAP 1C8h, KCODE2 2A8h, VWIN 2B0h, KCODE3 2F8h, KCODE4 320h;
+(mit den Box-Modulen fiel ISO9660.IFS heraus!), am 25.11.2026 12 -> 16 und
+NIFSMOD 2 -> 4 (mit Netz, Box-Modulen und SCSI waren 11 von 12 belegt);
+Selektoren seitdem MEMMAP 208h, KCODE2 2E8h, VWIN 2F0h, KCODE3 338h,
+KCODE4 360h, KCODEI 368h, KIDATA 370h (kern.h, mem.h, start.asm,
+build.sh; kernel.c prüft beim Übersetzen);
 CONFIG.SYS bis 8 KB (CFG_MAX, SETUP-Puffer). KTEXT2 63.649 Byte – voll.
 Stufe 4b Maus als `VMOUSE.SYS` erledigt (INT 33h im Modul, Kernel nur
 Rückruf-Zustellung `VS_CBARM`/`VDD_CBQ` wie VDHPushFarCall, `VS_MOUSE`,
@@ -2059,12 +2062,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
-- **Befehle aus FreeCOM für CMD** (Wunsch des Nutzers, 25.11.2026; noch
-  kein Code): fehlende interne Befehle (PUSHD/POPD/DIRS, HISTORY, ALIAS,
-  WHICH, CDD, BEEP, TITLE) und Schalter (COPY /Y /V /A /B + COPYCMD,
-  DEL /P, SET /P /E /A, IF /I, FOR /D /R /L /F, CALL /Y, DATE/TIME /T,
-  DIR /L) neu schreiben, kein FreeCOM-Code. Vergleich, Abwägung und
-  Reihenfolge in `docs/CMD-FREECOM.md`.
+- **Befehle aus FreeCOM für CMD** – erledigt (25.11.2026, Auftrag „1, 9
+  und 7 machen“): PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD/`CD /D`,
+  BEEP (FAPI 61h `FAPI_BEEP`), TITLE (FAPI 62h `FAPI_SETTITLE`), COPY
+  /Y /-Y /V /A /B + COPYCMD, DEL /P /Q /S, SET /P /E /A, IF /I/DEFINED/
+  EQU…, FOR /D /R /L /F geschachtelt, CALL /Y, DATE/TIME /T, DIR /L; eigener
+  Code. Stand und Grenzen in `docs/CMD-FREECOM.md` „Stand“. Lehre: ein
+  Python-Skript, das beim Schreiben an einem Zeichen außerhalb Latin-1
+  scheitert, hinterlässt die Datei leer – erst kodieren, dann schreiben.
+  Diskette 1 war danach voll: DOMJOIN.EXE auf Diskette 3.
 
 - **Grafiktreiber der Karte für Windows 3.1 in der Box** (vorgemerkt vom
   Nutzer, 24.11.2026: „VGA 17 Farben sind langweilig“; noch kein Code):
@@ -2825,9 +2831,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Nutzers hatte 111.150 Sektoren bei 64 × 32 (54,27 Zylinder), FDISK legte
   die Partition bis Sektor 111.149 an, ScanDisk markierte Cluster 27.652–
   27.717 als defekt (Abbilder vorher/nachher verglichen: sonst nichts
-  geändert). Offen: FORMAT schreibt in den BPB fest 16 Köpfe/63 Sektoren
-  statt der BIOS-Geometrie (MS-DOS-Bootsektoren lesen damit per CHS –
-  nur für SYS von MS-DOS auf eine AT-DOS-Partition wichtig).
+  geändert). FORMAT schreibt seit 25.11.2026 die BIOS-Geometrie in den BPB
+  (DosQFSInfo meldet in `fapi_fsinfo.disk` die Platte, FORMAT holt Köpfe/
+  Sektoren per DosDiskInfo; vorher fest 16/63 bzw. bei FAT32 255/63 –
+  MS-DOS-Bootsektoren lesen per CHS damit). Geprüft QEMU (8/32) und 86Box
+  386DX/40 am AHA-154x (64/32), fsck sauber.
   Vorhandene Partitionen bleiben, wie sie sind (neu anlegen).
   Alle drei Änderungen (F0h, rsv, ganze Zylinder) auf `5.x` zurückportiert
   (Wunsch des Nutzers; in QEMU fdisk /status geprüft).
@@ -6024,8 +6032,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Neuladen). Zur Laufzeit meldet cd_drives „CD-ROM ohne Dateisystem“
   nicht mehr. Erstes Codesegment danach 64.448 Byte (~1 KB frei – vor
   weiterem Code im ersten Segment Seltenes nach KTEXT2), DGROUP 65.128.
-  Offen: `NDRV` (6) und NIFSMOD (2) anheben, DEINIT für die übrigen
-  Treiber (IDE, AHA154X, NCR5380). Vom Nutzer auf dem P3B-F bestätigt:
+  DEINIT für IDE (nIEN, Busmaster aus), AHA154X (IRST) und NCR5380
+  (Bus los) seit 25.11.2026, NDRV 16, NIFSMOD 4; geprüft 86Box 486 (AHA-
+  154x mit CD neben IDE-Start: entladen, neu laden, DIR D:) und 486 mit
+  T130B (NCR5380 entladen und neu laden). Vom Nutzer auf dem P3B-F bestätigt:
   SB16 und MOUSE entladen/neu laden, AIC7XXX mit Startplatte abgelehnt.
   Danach: `DEVLOAD mouse` hängt .SYS an, wenn der Name ohne Endung
   nicht gefunden wird; Startlaufwerk (FAPI_ERR_DENIED) und „Treiber

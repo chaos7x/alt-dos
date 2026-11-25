@@ -551,7 +551,16 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   ON|OFF|LIST`, `LH`, `DETACH` (Programm im Hintergrund, ohne Konsole: es nimmt keine Tasten weg, liest von der Tastatur Dateiende wie `< NUL`; bei `DETACH Prog > Datei` gehört die Umleitung dem Programm, die Meldung von CMD kommt auf den Bildschirm), `CD A:\X` von C:
   aus (jedes Programm merkt sich das Verzeichnis weiterer Laufwerke),
   `PROMPT $E` für ANSI-Farben; `DIR` zeigt JOIN-Verzeichnisse als
-  `<JUNCTION>`
+  `<JUNCTION>`. Aus FreeCOM/NT (eigener Code): `PUSHD`/`POPD`/`DIRS`,
+  `CD /D` und `CDD`, `HISTORY [n]`, `ALIAS` (= DOSKEY-Makros), `WHICH`
+  (Makro, interner Befehl oder Programm mit Pfad), `BEEP [Hz [ms]]`,
+  `TITLE`, `SET /A` (Rechnen wie NT, 32 Bit), `SET /P` (Eingabe),
+  `SET /E` (erste Zeile einer Befehlsausgabe), `IF /I`, `IF DEFINED`,
+  `EQU NEQ LSS LEQ GTR GEQ`, `FOR /D /R /L /F` (`tokens= delims= skip=
+  eol= usebackq`, Dateien, Text, Befehle) und geschachteltes FOR (3
+  Ebenen), `CALL /Y` (Stapeldatei schrittweise), `COPY /Y /-Y /V /A /B`
+  mit `COPYCMD` (an der Eingabe Rückfrage vor dem Überschreiben),
+  `DEL /P /Q /S`, `DATE /T`, `TIME /T`, `DIR /L`
 - Werkzeuge wie MS-DOS 5/6 (Schalter und Meldungen wie dort): `ATTRIB`
   (`+R -A … /S`), `XCOPY` (`/S /E /A /M /P /I /K /Y` – `/I` wie NT: fehlendes Ziel ist ein Verzeichnis, ebenso ein Ziel mit `\` am Ende –, Datum bleibt erhalten, Schreibschutz wird wie bei NT nur mit `/K` übernommen – Kopien von CD sind sonst schreibgeschützt),
   `MOVE`, `DELTREE`, `TREE` (`/F /A`), `LABEL`, `CHOICE` (`/C /N /S /T`,
@@ -1300,6 +1309,8 @@ selbst nur 8.3 kennt.
 | 94 | DosFileLock     | Bereichssperre (6.3, wie OS/2 DosSetFileLocks): BX = Handle, CX = `struct fapi_lock` (Stelle, Länge, `LOCK_UNLOCK`/`LOCK_SHARED`) → 0, FAPI_ERR_LOCKED (FFF2h: von anderem gesperrt bzw. nicht gesperrt). Auf NET-USE-Laufwerken sperrt der Server (SMB2 LOCK), lokal immer 0. Lesen/Schreiben in einen fremd gesperrten Bereich meldet ebenfalls FAPI_ERR_LOCKED |
 | 95 | DosJoystick     | Gameport (6.3): BX = `struct fapi_joy` → 0 (Tasten Bit 0–3 = gedrückt, vier Achsen in µs bis zum Ende der Messung, FFFFh = nicht angeschlossen), FAPI_ERROR ohne Gameport. Misst über den PIT, höchstens 3 ms mit gesperrten Interrupts (`\DEMO\JOYTEST [/1]`) |
 | 96 | KbdRate         | Wiederholrate (6.3): BX = Byte für Tastaturbefehl F3h (Bit 0–4 Rate 0 = 30/s … 31 = 2/s, Bit 5–6 Verzögerung 250–1000 ms), FFFFh = nur abfragen → AX = bisheriger Wert (`MODE CON RATE=/DELAY=`) |
+| 97 | DosBeep         | Ton am PC-Lautsprecher (6.3, wie OS/2): BX = Hz (37–32767), CX = Dauer in ms (auf 10 ms gerundet), wartet so lange (CMD `BEEP`) |
+| 98 | VioSetTitle     | Titel der eigenen Sitzung in der Titelzeile (6.3, CMD `TITLE`): BX = Text (bis 40 Zeichen), 0 oder leer = wieder der Programmname |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

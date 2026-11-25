@@ -144,7 +144,7 @@ if g['DGROUP'][0] != (cd[0] + cd[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
-# (KCODE 08h, KCODE2 2A8h, KCODE3 2F8h, KCODE4 320h, siehe kern.h); alles andere ist ein Fehler
+# (KCODE 08h, KCODE2 2E8h, KCODE3 338h, KCODE4 360h, KCODEI 368h, KIDATA 370h, siehe kern.h); alles andere ist ein Fehler
 img = hdr * 16
 for i in range(nrel):
     o, s = struct.unpack('<HH', d[relo + 4 * i:relo + 4 * i + 4])
@@ -153,15 +153,15 @@ for i in range(nrel):
     if v == 0:
         sel = 0x08
     elif v == c2[0] >> 4:
-        sel = 0x2A8
+        sel = 0x2E8
     elif v == c3[0] >> 4:
-        sel = 0x2F8
+        sel = 0x338
     elif v == c4[0] >> 4 and c4[1]:
-        sel = 0x320
+        sel = 0x360
     elif v == ci[0] >> 4 and ci[1]:
-        sel = 0x328
+        sel = 0x368
     elif v == cd[0] >> 4 and cd[1]:
-        sel = 0x330
+        sel = 0x370
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
@@ -361,7 +361,7 @@ DOSFILES="LINUX.MAC LINUX.MAC  $B/task_dmesg.exe DMESG.EXE  $B/task_keyb.exe KEY
        $B/task_edit.exe EDIT.EXE  $B/task_mode.exe MODE.EXE  $B/task_fdisk.exe FDISK.EXE
        $B/task_diskcopy.exe DISKCOPY.EXE  $B/task_subst.exe SUBST.EXE  $B/task_join.exe JOIN.EXE  $B/task_ansi.exe ANSI.EXE  $B/task_fm.exe FM.EXE  $B/task_diskcomp.exe DISKCOMP.EXE  $B/task_comp.exe COMP.EXE  $B/task_replace.exe REPLACE.EXE  $B/task_expand.exe EXPAND.EXE  $B/task_play.exe PLAY.EXE  $B/task_mixer.exe MIXER.EXE  $B/task_eject.exe EJECT.EXE  $B/task_devload.exe DEVLOAD.EXE  $B/task_setup.exe SETUP.EXE
        $B/task_undel.exe UNDELETE.EXE  $B/task_scandisk.exe SCANDISK.EXE
-       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_at.exe AT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_kinit.exe KINIT.EXE  $B/task_domjoin.exe DOMJOIN.EXE $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE
+       $B/task_msd.exe MSD.EXE  $B/task_print.exe PRINT.EXE  $B/task_at.exe AT.EXE  $B/task_defrag.exe DEFRAG.EXE $B/task_setver.exe SETVER.EXE  $B/task_vesa.exe VESA.EXE  $B/task_taskman.exe TASKMAN.EXE  $B/task_ping.exe PING.EXE  $B/task_ipconfig.exe IPCONFIG.EXE  $B/task_nc.exe NC.EXE  $B/task_wget.exe WGET.EXE  $B/task_ftp.exe FTP.EXE  $B/task_telnet.exe TELNET.EXE  $B/task_sntp.exe SNTP.EXE  $B/task_smbcli.exe SMBCLI.EXE  $B/task_kinit.exe KINIT.EXE   $B/task_netstat.exe NETSTAT.EXE  $B/task_firewall.exe FIREWALL.EXE
        apps/dosbox.cmd DOSBOX.CMD"
 # \DOS\SYSTEM: was das System nachlaedt (Treiber, IFS, Pruefprogramme, Belegungen)
 SYSFILES="$B/drv_aha154x.sys AHA154X.SYS  $B/drv_ide.sys IDE.SYS  $B/drv_mouse.sys MOUSE.SYS  $B/drv_ncr5380.sys NCR5380.SYS  $B/drv_ncr8xx.sys NCR8XX.SYS  $B/drv_aic7xxx.sys AIC7XXX.SYS  $B/drv_ahci.sys AHCI.SYS  $B/drv_sb16.sys SB16.SYS  $B/drv_rtl8139.sys RTL8139.SYS  $B/drv_pcnet.sys PCNET.SYS  $B/drv_e1000.sys E1000.SYS  $B/net_tcpip.sys TCPIP.SYS  $B/net_ne2000.sys NE2000.SYS  $B/drv_vcom.sys VCOM.SYS  $B/drv_vsb.sys VSB.SYS  $B/drv_vems.sys VEMS.SYS  $B/drv_vega.sys VEGA.SYS  $B/drv_vcga.sys VCGA.SYS  $B/drv_vmouse.sys VMOUSE.SYS  $B/drv_vioblk.sys VIOBLK.SYS  $B/drv_vionet.sys VIONET.SYS  FIREWALL.INI FIREWALL.INI  HOSTS HOSTS
@@ -396,7 +396,7 @@ BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell
 # FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
-HDDOS3="$B/task_nslookup.exe NSLOOKUP.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE"
+HDDOS3="$B/task_domjoin.exe DOMJOIN.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.

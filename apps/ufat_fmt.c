@@ -136,8 +136,14 @@ static int do_format(int quick, unsigned fkb)
             return 3;
         }
     } else {
+        static struct fapi_diskinfo di;
         rootents = 512;
-        if (rd_secs(0, sec, 1) == 0 && rd16(sec + 11) == 512 &&
+        if (ffi.disk && DosDiskInfo(ffi.disk - 1, &di) == 0 && di.heads &&
+            di.spt && di.spt <= 63 && di.heads <= 255) {
+            spt = di.spt;                       /* Geometrie des BIOS wie  */
+            heads = di.heads;                   /* MS-DOS (dessen Startsektor
+                                                   liest per CHS damit)    */
+        } else if (rd_secs(0, sec, 1) == 0 && rd16(sec + 11) == 512 &&
             rd16(sec + 24) >= 1 && rd16(sec + 24) <= 63 &&
             rd16(sec + 26) >= 1 && rd16(sec + 26) <= 255) {
             spt = rd16(sec + 24);               /* Geometrie behalten     */

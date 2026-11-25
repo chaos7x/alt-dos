@@ -18,6 +18,7 @@
 #include "country.h"
 
 #define LINE 126                        /* wie MS-DOS 127 mit Nullbyte */
+#define CMDLEN 256
 
 static char line[LINE + 1];
 static char buf[256];
@@ -200,12 +201,13 @@ static char     cand[NCAND][CANDLEN];
 static unsigned ncand;
 static unsigned char cand_dir[NCAND];
 static const char *const builtin[] = {
-    "BREAK", "CALL", "CD", "CHCP", "CHDIR", "CLS", "COPY", "CTTY", "DATE", "DEL",
-    "DETACH", "DIR", "DOSKEY", "ECHO", "ENDLOCAL", "ERASE", "EXIT", "FOR", "GOTO",
-    "HILFE", "IF", "KEYS", "LH", "LOADHIGH", "MD", "MKDIR", "PATH", "PAUSE",
-    "POWEROFF", "PROMPT", "RD", "REBOOT", "REM", "REN", "RENAME", "RMDIR", "SET",
-    "SETLOCAL", "SHIFT", "SHUTDOWN", "START", "TIME", "TRUENAME", "TYPE", "VER",
-    "VERIFY", "VOL", 0
+    "ALIAS", "BEEP", "BREAK", "CALL", "CD", "CDD", "CHCP", "CHDIR", "CLS", "COPY",
+    "CTTY", "DATE", "DEL", "DETACH", "DIR", "DIRS", "DOSKEY", "ECHO", "ENDLOCAL",
+    "ERASE", "EXIT", "FOR", "GOTO", "HILFE", "HISTORY", "IF", "KEYS", "LH",
+    "LOADHIGH", "MD", "MKDIR", "PATH", "PAUSE", "POPD", "POWEROFF", "PROMPT",
+    "PUSHD", "RD", "REBOOT", "REM", "REN", "RENAME", "RMDIR", "SET", "SETLOCAL",
+    "SHIFT", "SHUTDOWN", "START", "TIME", "TITLE", "TRUENAME", "TYPE", "VER",
+    "VERIFY", "VOL", "WHICH", 0
 };
 
 static void show_prompt(void);
@@ -1176,7 +1178,7 @@ static struct fapi_dirent e;
 static char pat[FAPI_PATHLEN], adir[FAPI_PATHLEN];
 static unsigned want, nowant, wcol, dl_files, dl_dirs;
 static unsigned long dl_total;
-static int all, page, lines, bare, wide, dl_sub;
+static int all, page, lines, bare, wide, dl_sub, lower;
 
 static void dir_one(const char *d)
 {
@@ -1235,6 +1237,12 @@ static void dir_one(const char *d)
             continue;
         if (dl_sub && e.name[0] == '.' && (!e.name[1] || (e.name[1] == '.' && !e.name[2])))
             continue;                           /* /S: . und .. nicht    */
+        if (lower) {                            /* DIR /L                */
+            unsigned li;
+            for (li = 0; e.name[li]; li++)
+                if (e.name[li] >= 'A' && e.name[li] <= 'Z')
+                    e.name[li] += 'a' - 'A';
+        }
         if (e.attr & 0x10)
             dl_dirs++;
         else {
@@ -1334,7 +1342,7 @@ static void cmd_dir(char *arg)
     static char dcmd[64], *src;
     int pass2, subs = 0;
     want = nowant = wcol = 0;
-    all = page = bare = wide = 0;
+    all = page = bare = wide = lower = 0;
     lines = 4;
     ctry_init();
     dir[0] = 0;
@@ -1388,14 +1396,17 @@ static void cmd_dir(char *arg)
             wide = 1;                   /* breit, Verzeichnisse in [ ]   */
         else if (same(arg, "/S"))
             subs = 1;                   /* mit Unterverzeichnissen       */
+        else if (same(arg, "/L"))
+            lower = 1;                  /* Namen klein (wie MS-DOS 5)    */
         else if (arg[0] == '/' && arg[1] == '?') {
             puts("Zeigt Dateien und Unterverzeichnisse eines Verzeichnisses an.\n\n"
-                 "DIR [Laufwerk:][Pfad][Dateiname] [/P] [/W] [/B] [/S] [/A[[:]Attribute]]\n"
+                 "DIR [Laufwerk:][Pfad][Dateiname] [/P] [/W] [/B] [/S] [/L] [/A[[:]Attribute]]\n"
                  "    [/O[[:]Sortierfolge]]\n\n"
                  "  /P  h\x84lt nach jeder Bildschirmseite an\n"
                  "  /W  breites Format (Verzeichnisse in [ ])\n"
                  "  /B  nur Namen (mit /S: volle Pfade)\n"
                  "  /S  auch alle Unterverzeichnisse\n"
+                 "  /L  Namen in Kleinbuchstaben\n"
                  "  /A  auch versteckte und Systemdateien; Attribute: H versteckt,\n"
                  "      S System, D Verzeichnis, R schreibgesch\x81tzt, A Archiv,\n"
                  "      - davor = nicht\n"
@@ -1602,18 +1613,26 @@ static void cmd_dir(char *arg)
     puts(" Bytes frei\n\n");
 }
 
-static void cmd_cd(char *arg)
+static int cd_drive;                    /* CD /D, CDD: Laufwerk mitwechseln */
+
+/* 1 = gewechselt */
+static int cmd_cd(char *arg)
 {
     static char p[FAPI_PATHLEN], cur[FAPI_CURDIRLEN];
+
+    if (arg[0] == '/' && up(arg[1]) == 'D' && (arg[2] == ' ' || !arg[2])) {
+        cd_drive = 1;                   /* wie NT: CD /D C:\X           */
+        arg = skip(arg + 2);
+    }
 
     if (!*arg || (arg[1] == ':' && !*skip(arg + 2))) {    /* CD, CD A:   */
         if (*arg ? DosQCurDirD(up(arg[0]) - 'A', cur) != 0 : DosQCurDir(cur) != 0) {
             puts("Ung\x81ltiges Laufwerk.\n");
-            return;
+            return 0;
         }
         puts(cur);
         puts("\n");
-        return;
+        return 0;
     }
     if (*arg == '"')
         word(arg, p, sizeof(p));
@@ -1625,8 +1644,13 @@ static void cmd_cd(char *arg)
             n--;
         p[n] = 0;
     }
-    if (DosChDir(p) == FAPI_ERROR)
+    if (DosChDir(p) == FAPI_ERROR) {
         puts("Ung\x81ltiges Verzeichnis.\n");
+        return 0;
+    }
+    if (cd_drive && p[0] && p[1] == ':')
+        DosSelectDisk(up(p[0]) - 'A');
+    return 1;
 }
 
 static void cmd_type(char *arg)
@@ -1816,16 +1840,34 @@ static int file_stamp(const char *path, unsigned short *date, unsigned short *ti
 }
 
 static int copy_data(unsigned hs, unsigned hd);
+static int exists(const char *p);
+static unsigned char cp_ask, cp_all, cp_verify, cp_asrc, cp_adst;
 
-/* eine Datei kopieren, Datum/Uhrzeit wie die Quelle (MS-DOS); 0 = ok */
+/* eine Datei kopieren, Datum/Uhrzeit wie die Quelle (MS-DOS);
+   0 = ok, 1 = uebersprungen (Rueckfrage), -1 = Fehler */
 static int copy_one(const char *src, const char *dst)
 {
     static struct fapi_finfo fi;
-    unsigned hs, hd, n, w;
+    unsigned hs, hd, n, w, k;
 
     if (same_path(src, dst)) {
         puts("Datei kann nicht auf sich selbst kopiert werden.\n");
         return -1;
+    }
+    if (cp_ask && !cp_all && exists(dst)) {    /* wie MS-DOS 6.2         */
+        char c;
+        puts("\x9A" "berschreiben von ");
+        puts(dst);
+        puts(" (Ja/Nein/Alle)? ");
+        do
+            c = up((char)KbdCharIn());
+        while (c != 'J' && c != 'Y' && c != 'N' && c != 'A' && c != 27);
+        putc(c == 27 ? 'N' : c);
+        puts("\n");
+        if (c == 'A')
+            cp_all = 1;
+        else if (c != 'J' && c != 'Y')
+            return 1;
     }
     hs = DosOpen(src);
     if (FAPI_FAILED(hs)) {
@@ -1839,16 +1881,32 @@ static int copy_one(const char *src, const char *dst)
         return -1;
     }
     while ((n = DosRead(hs, cbuf, sizeof(cbuf))) != 0) {
+        int eof = 0;
         if (n == FAPI_ERROR) {
             puts("Lesefehler.\n");
             break;
         }
-        w = DosWrite(hd, cbuf, n);
+        if (cp_asrc)                            /* /A: Text bis ^Z       */
+            for (k = 0; k < n; k++)
+                if (cbuf[k] == 0x1A) {
+                    n = k;
+                    eof = 1;
+                    break;
+                }
+        w = n ? DosWrite(hd, cbuf, n) : 0;
         if (FAPI_FAILED(w) || w != n) {
             file_error(FAPI_FAILED(w) ? w : FAPI_ERR_FULL);
             n = FAPI_ERROR;
             break;
         }
+        if (eof) {
+            n = 0;
+            break;
+        }
+    }
+    if (n != FAPI_ERROR && cp_adst) {           /* Ziel /A: ^Z anhaengen  */
+        cbuf[0] = 0x1A;
+        DosWrite(hd, cbuf, 1);
     }
     DosClose(hs);
     w = DosClose(hd);
@@ -1859,6 +1917,37 @@ static int copy_one(const char *src, const char *dst)
     if (file_stamp(src, &fi.date, &fi.time) == 0) {
         fi.mask = 2;
         DosSetFInfo((char *)dst, &fi);
+    }
+    if (cp_verify && !cp_asrc && !cp_adst) {    /* /V: zuruecklesen       */
+        unsigned m, bad = 0;
+        hs = DosOpen(src);
+        hd = DosOpen(dst);
+        if (FAPI_FAILED(hs) || FAPI_FAILED(hd))
+            bad = 1;
+        while (!bad) {
+            n = DosRead(hs, cbuf, 2048);
+            m = DosRead(hd, cbuf + 2048, 2048);
+            if (n != m || FAPI_FAILED(n)) {
+                bad = 1;
+                break;
+            }
+            if (!n)
+                break;
+            for (k = 0; k < n; k++)
+                if (cbuf[k] != cbuf[2048 + k]) {
+                    bad = 1;
+                    break;
+                }
+        }
+        if (!FAPI_FAILED(hs))
+            DosClose(hs);
+        if (!FAPI_FAILED(hd))
+            DosClose(hd);
+        if (bad) {
+            puts(dst);
+            puts(": \x9A" "berpr\x81" "fung fehlgeschlagen.\n");
+            return -1;
+        }
     }
     return 0;
 }
@@ -1943,6 +2032,185 @@ static unsigned slen(const char *s)
     return n;
 }
 
+
+/* ---- Hilfen fuer FOR /R, DEL /S, FOR /F, SET /A, SET /E --------------- */
+static int execute_line(char *l);
+
+/* alle Verzeichnisse ab root (root zuerst, dann Tiefe zuerst in der
+   Reihenfolge des Verzeichnisses); cb(dir) == 0 bricht ab. Eigener
+   Stapel je Aufruf (cb darf selbst wieder einen Baum ablaufen). */
+#define TW_SLOT FAPI_PATHLEN
+#define TW_MAX  (65535U / TW_SLOT - 1)          /* letzter Platz: aktuell */
+static int tree_walk(const char *root, int (*cb)(const char *dir))
+{
+    static struct fapi_dirent e;
+    static char cur[FAPI_PATHLEN];
+    unsigned sel, n = 1, i, k, a, b, rc = 1;
+    char __far *s, __far *c;
+
+    sel = DosAllocSeg(0);
+    if (FAPI_FAILED(sel) || !sel) {
+        puts("Nicht gen\x81gend Arbeitsspeicher.\n");
+        return 0;
+    }
+    s = MK_FP(sel, 0);
+    c = MK_FP(sel, TW_MAX * TW_SLOT);
+    for (k = 0; root[k] && k < TW_SLOT - 1; k++)
+        s[k] = root[k];
+    s[k] = 0;
+    while (n) {
+        n--;
+        for (k = 0; (c[k] = s[n * TW_SLOT + k]) != 0; k++)
+            ;
+        for (k = 0; (cur[k] = c[k]) != 0; k++)
+            ;
+        if (!cb(cur)) {
+            rc = 0;
+            break;
+        }
+        for (k = 0; (cur[k] = c[k]) != 0; k++)    /* cb kann cur aendern */
+            ;
+        a = n;
+        for (i = 0; DosFindEntry(&e, i, cur[0] ? cur : 0) != FAPI_ERROR; i++) {
+            char __far *d;
+            if (!(e.attr & 0x10) || (e.attr & 0x06) || (e.name[0] == '.' &&
+                (!e.name[1] || (e.name[1] == '.' && !e.name[2]))))
+                continue;
+            if (n >= TW_MAX)
+                break;
+            d = s + n * TW_SLOT;
+            for (k = 0; cur[k] && k < TW_SLOT - 2; k++)
+                d[k] = cur[k];
+            if (k && cur[k - 1] != '\\' && cur[k - 1] != ':')
+                d[k++] = '\\';
+            for (b = 0; e.name[b] && k < TW_SLOT - 1; b++)
+                d[k++] = e.name[b];
+            d[k] = 0;
+            n++;
+        }
+        for (b = n ? n - 1 : 0; a < b; a++, b--)  /* umdrehen: erstes zuerst */
+            for (k = 0; k < TW_SLOT; k++) {
+                char x = s[a * TW_SLOT + k];
+                s[a * TW_SLOT + k] = s[b * TW_SLOT + k];
+                s[b * TW_SLOT + k] = x;
+            }
+    }
+    DosFreeSeg(sel);
+    return rc;
+}
+
+/* Befehl ausfuehren, Ausgabe in eine Datei in %TEMP% (name: FAPI_PATHLEN,
+   l: Zeilenpuffer CMDLEN); 0 = keine Ausgabedatei */
+static int capture(const char *cmd, char *name, char *l)
+{
+    static unsigned cap_n;
+    unsigned k, i;
+    if (FAPI_FAILED(DosGetEnv("TEMP", name, FAPI_PATHLEN - 16)) || !name[0])
+        scopy(name, "C:\\", FAPI_PATHLEN);
+    k = slen(name);
+    if (k && name[k - 1] != '\\')
+        name[k++] = '\\';
+    scopy(name + k, "CMDCAP0.TMP", FAPI_PATHLEN - k);
+    name[k + 6] = (char)('0' + cap_n++ % 10);
+    for (i = 0; cmd[i] && i < CMDLEN - FAPI_PATHLEN - 8; i++)
+        l[i] = cmd[i];
+    l[i++] = ' ';
+    l[i++] = '>';
+    l[i++] = ' ';
+    for (k = 0; name[k]; k++)
+        l[i++] = name[k];
+    l[i] = 0;
+    execute_line(l);
+    return exists(name);
+}
+
+/* 32 Bit ohne Hilfsroutinen der Laufzeit (__I4M/__U4D) */
+static unsigned long umul32(unsigned long a, unsigned long b)
+{
+    unsigned long r = 0;
+    while (b) {
+        if (b & 1)
+            r += a;
+        a <<= 1;
+        b >>= 1;
+    }
+    return r;
+}
+
+static unsigned long udiv32(unsigned long a, unsigned long b, unsigned long *rem)
+{
+    unsigned long q = 0, r = 0, bit = 0x80000000UL;
+    while (bit) {
+        r = (r << 1) | ((a & bit) ? 1 : 0);
+        if (r >= b) {
+            r -= b;
+            q |= bit;
+        }
+        bit >>= 1;
+    }
+    if (rem)
+        *rem = r;
+    return q;
+}
+
+static void ltostr(long v, char *o)
+{
+    static const unsigned long pw[] = { 1000000000UL, 100000000UL, 10000000UL,
+        1000000UL, 100000UL, 10000UL, 1000UL, 100UL, 10UL, 1UL };
+    unsigned long u = (unsigned long)v;
+    unsigned i, d, started = 0;
+    if (v < 0) {
+        *o++ = '-';
+        u = 0UL - u;
+    }
+    for (i = 0; i < 10; i++) {
+        for (d = 0; u >= pw[i]; d++)
+            u -= pw[i];
+        if (d || started || i == 9) {
+            *o++ = (char)('0' + d);
+            started = 1;
+        }
+    }
+    *o = 0;
+}
+
+/* Zahl wie NT: 0x.. hex, 0.. oktal, sonst dezimal; *pp hinter die Zahl */
+static long strtol_(const char **pp)
+{
+    const char *p = *pp;
+    unsigned long v = 0;
+    int neg = 0;
+    if (*p == '-' || *p == '+')
+        neg = *p++ == '-';
+    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        for (p += 2; ; p++) {
+            unsigned d = *p >= '0' && *p <= '9' ? *p - '0' :
+                         up(*p) >= 'A' && up(*p) <= 'F' ? up(*p) - 'A' + 10 : 99;
+            if (d > 15)
+                break;
+            v = (v << 4) | d;
+        }
+    } else if (p[0] == '0')
+        for (; *p >= '0' && *p <= '7'; p++)
+            v = (v << 3) | (unsigned)(*p - '0');
+    else
+        for (; *p >= '0' && *p <= '9'; p++)
+            v = (v << 3) + (v << 1) + (unsigned)(*p - '0');
+    *pp = p;
+    return neg ? -(long)v : (long)v;
+}
+
+static int is_num(const char *s)
+{
+    const char *p = s;
+    if (*p == '-' || *p == '+')
+        p++;
+    if (*p < '0' || *p > '9')
+        return 0;
+    strtol_(&s);
+    return *s == 0;
+}
+
 static void cmd_copy(char *arg)
 {
     static struct fapi_dirent e;
@@ -1950,6 +2218,7 @@ static void cmd_copy(char *arg)
                 to[FAPI_PATHLEN], sdir[FAPI_PATHLEN];
     char *pat;
     unsigned n, count = 0, dl;
+    int r;
 
     {                                           /* "A + B" -> "A+B"     */
         char *r = arg, *w = arg;
@@ -1960,10 +2229,58 @@ static void cmd_copy(char *arg)
         }
         *w = 0;
     }
-    word(arg, src, sizeof(src));
-    word(next_word(arg), dst, sizeof(dst));
+    {                                           /* Schalter, zwei Namen  */
+        static char cc[64];
+        char *w;
+        int nf = 0, asc = 0, pass;
+        cp_ask = bdepth == 0;                   /* MS-DOS 6.2: in Stapel-
+                                                   dateien ohne Rueckfrage */
+        cp_all = cp_verify = cp_asrc = cp_adst = 0;
+        src[0] = dst[0] = 0;
+        if (FAPI_FAILED(DosGetEnv("COPYCMD", cc, sizeof(cc))))
+            cc[0] = 0;
+        for (pass = 0; pass < 2; pass++)
+        for (w = pass ? arg : cc; *w; w = next_word(w)) {
+            if (*w == '/') {
+                if (same(w, "/Y"))
+                    cp_ask = 0;
+                else if (same(w, "/-Y"))
+                    cp_ask = 1;
+                else if (same(w, "/V"))
+                    cp_verify = 1;
+                else if (same(w, "/A"))
+                    asc = 1;
+                else if (same(w, "/B"))
+                    asc = 0;
+                else if (pass) {
+                    static char sw[16];
+                    word(w, sw, sizeof(sw));
+                    puts("Ung\x81ltiger Schalter - ");
+                    puts(sw);
+                    puts("\n");
+                    return;
+                }
+                if (nf == 1)
+                    cp_asrc = (unsigned char)asc;
+                else if (nf == 2)
+                    cp_adst = (unsigned char)asc;
+                continue;
+            }
+            if (!pass)
+                continue;
+            if (nf == 0) {
+                word(w, src, sizeof(src));
+                cp_asrc = (unsigned char)asc;
+            } else if (nf == 1) {
+                word(w, dst, sizeof(dst));
+                cp_adst = (unsigned char)asc;
+            }
+            nf++;
+        }
+    }
     if (!src[0]) {
-        puts("Syntax: COPY Quelle [Ziel], COPY A+B [Ziel]\n");
+        puts("Syntax: COPY [/Y|/-Y] [/V] [/A|/B] Quelle [/A|/B] [Ziel [/A|/B]]\n"
+             "        COPY A+B [Ziel]\n");
         return;
     }
     for (n = 0; src[n] && src[n] != '+'; n++)
@@ -1994,9 +2311,11 @@ static void cmd_copy(char *arg)
             join(to, dst, slen(dst), e.name);
             puts(e.name);
             puts("\n");
-            if (copy_one(from, to))
+            r = copy_one(from, to);
+            if (r < 0)
                 break;
-            count++;
+            if (r == 0)
+                count++;
         }
     } else {
         if (is_dir(dst))
@@ -2020,16 +2339,77 @@ static int confirm(const char *q)
     return c == 'J' || c == 'Y';
 }
 
-static void cmd_del(char *arg)
+static unsigned char del_p, dir_s_show; /* DEL /P: je Datei fragen; /S: melden */
+static char del_pat[FAPI_PATHLEN];
+static unsigned del_count;
+
+/* alle zum Muster passenden Dateien in dir loeschen (Baumgang: immer 1) */
+static int del_in(const char *dir)
 {
     static struct fapi_dirent e;
-    static char p[FAPI_PATHLEN], dir[FAPI_PATHLEN], f[FAPI_PATHLEN];
-    char *pat;
-    unsigned n, dl, r, count = 0;
+    static char f[FAPI_PATHLEN];
+    unsigned n, r, dl = slen(dir);
+    for (n = 0; DosFindEntry(&e, n, dl ? dir : 0) != FAPI_ERROR; ) {
+        if ((e.attr & 0x16) || !match(e.name, del_pat)) {
+            n++;
+            continue;
+        }
+        join(f, dir, dl, e.name);
+        if (del_p) {
+            puts(f);
+            if (!confirm(", L\x94schen (J/N)? ")) {
+                n++;
+                continue;
+            }
+        }
+        r = DosDelete(f);
+        if (r) {
+            puts(f);
+            puts(": ");
+            file_error(r);
+            n++;
+        } else {
+            del_count++;                        /* Eintrag ist weg: n bleibt */
+            if (dir_s_show) {
+                puts("Gel\x94scht: ");
+                puts(f);
+                puts("\n");
+            }
+        }
+    }
+    return 1;
+}
 
-    word(arg, p, sizeof(p));
+/* DEL/ERASE [/P] [/Q] [/S] Datei - /P fragt je Datei, /Q ohne Rueckfrage
+   bei *.*, /S auch in allen Unterverzeichnissen (wie NT) */
+static void cmd_del(char *arg)
+{
+    static char p[FAPI_PATHLEN], dir[FAPI_PATHLEN], f[FAPI_PATHLEN];
+    char *pat, *w;
+    unsigned n, dl, r;
+    int q = 0, s = 0;
+
+    p[0] = 0;
+    del_p = 0;
+    for (w = arg; *w; w = next_word(w)) {
+        if (same(w, "/P"))
+            del_p = 1;
+        else if (same(w, "/Q"))
+            q = 1;
+        else if (same(w, "/S"))
+            s = 1;
+        else if (*w == '/') {
+            static char sw[16];
+            word(w, sw, sizeof(sw));
+            puts("Ung\x81ltiger Schalter - ");
+            puts(sw);
+            puts("\n");
+            return;
+        } else if (!p[0])
+            word(w, p, sizeof(p));
+    }
     if (!p[0]) {
-        puts("Syntax: DEL Datei (auch * und ?)\n");
+        puts("Syntax: DEL [/P] [/Q] [/S] Datei (auch * und ?)\n");
         return;
     }
     if (!has_wild(p) && is_dir(p)) {            /* DEL VERZ = VERZ\*.*  */
@@ -2041,31 +2421,26 @@ static void cmd_del(char *arg)
     for (n = 0; n < dl; n++)
         dir[n] = p[n];
     dir[dl] = 0;
-    if (!has_wild(pat)) {
+    if (dl > 1 && dir[dl - 1] == '\\' && dir[dl - 2] != ':')
+        dir[dl - 1] = 0;                        /* "X\" -> "X" (Baumgang)   */
+    if (!has_wild(pat) && !s && !del_p) {
         r = DosDelete(p);
         if (r)
             file_error(r);
         return;
     }
-    if (match("A.B", pat) && match("XYZ.Q", pat) && match("Z", pat) &&
+    if (!q && !del_p && match("A.B", pat) && match("XYZ.Q", pat) && match("Z", pat) &&
         !confirm("Alle Dateien im Verzeichnis werden gel\x94scht! Sind Sie sicher (J/N)? "))
         return;
-    for (n = 0; DosFindEntry(&e, n, dl ? dir : 0) != FAPI_ERROR; ) {
-        if ((e.attr & 0x16) || !match(e.name, pat)) {
-            n++;
-            continue;
-        }
-        join(f, dir, dl, e.name);
-        r = DosDelete(f);
-        if (r) {
-            puts(e.name);
-            puts(": ");
-            file_error(r);
-            n++;
-        } else
-            count++;                            /* Eintrag ist weg: n bleibt */
-    }
-    if (!count)
+    scopy(del_pat, pat, sizeof(del_pat));
+    del_count = 0;
+    dir_s_show = (unsigned char)s;
+    if (s)
+        tree_walk(dir, del_in);
+    else
+        del_in(dir);
+    dir_s_show = 0;
+    if (!del_count && !del_p)
         puts("Keine Datei gefunden.\n");
 }
 
@@ -2180,11 +2555,13 @@ static void cmd_help(void)
     puts("Interne Befehle:\n"
          "  DIR [Pfad] [/A[:HSDRA]] [/P] [/W] [/B] [/O[:NESDG]]  Dateien anzeigen\n"
          "                  (DIR /? zeigt die Schalter, DIRCMD voreinstellen)\n"
-         "  CD [Pfad]       Verzeichnis wechseln oder anzeigen\n"
+         "  CD [/D] [Pfad]  Verzeichnis wechseln oder anzeigen (/D und CDD: mit Laufwerk)\n"
+         "  PUSHD Pfad / POPD / DIRS  Verzeichnis merken, zur\x81" "ck, Stapel zeigen\n"
          "  C:              Laufwerk wechseln\n"
          "  TYPE Datei      Textdatei ausgeben\n"
-         "  COPY Quelle [Ziel]  Dateien kopieren (auch * und ?)\n"
-         "  DEL Datei       Dateien l\x94schen (auch * und ?)\n"
+         "  COPY [/Y|/-Y] [/V] [/A|/B] Quelle [Ziel]  Dateien kopieren (* und ?,\n"
+         "                  COPYCMD voreinstellen)\n"
+         "  DEL [/P] [/Q] [/S] Datei  Dateien l\x94schen (auch * und ?)\n"
          "  MD / RD Verz.   Verzeichnis anlegen / entfernen\n"
          "  REN Datei Name  Datei oder Verzeichnis umbenennen\n"
          "  SHUTDOWN [/H|/R] [/NOW] [/T:n]  herunterfahren (/R neu starten, /NOW ohne\n"
@@ -2192,15 +2569,18 @@ static void cmd_help(void)
          "  REBOOT          neu starten (wie SHUTDOWN /R)\n"
          "  CLS             Bildschirm l\x94schen\n"
          "  VER / VOL       Version / Datentr\x84gerbezeichnung anzeigen\n"
-         "  DATE / TIME     Datum / Uhrzeit anzeigen und stellen\n"
+         "  DATE / TIME [/T] Datum / Uhrzeit anzeigen und stellen\n"
          "  DOSKEY /HISTORY letzte Befehle; Pfeil auf/ab holt sie zur\x81" "ck, F3, Einfg\n"
          "  DOSKEY n=text   Makro anlegen ($1-$9, $*, $T); /MACROS zeigt alle\n"
          "  ECHO Text       Text ausgeben\n"
          "  START Programm  Programm in eigener Sitzung starten, DETACH: im Hintergrund\n"
          "  SET [Name=Wert] Umgebung anzeigen/setzen, PATH [Pfade], PROMPT [Text]\n"
+         "  SET /A Ausdruck rechnen, SET /P Name=Frage einlesen, SET /E Name=Befehl\n"
+         "  HISTORY [n], ALIAS [n=text], WHICH Name, BEEP [Hz [ms]], TITLE [Text]\n"
          "  Stapeldateien:  ECHO [ON|OFF], ECHO., @, REM, PAUSE, GOTO [:EOF], CALL,\n"
-         "                  SHIFT, %0-%9, %NAME%, IF [NOT] ERRORLEVEL|EXIST|a==b,\n"
-         "                  FOR %%v IN (Satz) DO, SETLOCAL/ENDLOCAL, EXTPROC\n"
+         "                  SHIFT, %0-%9, %NAME%, IF [/I] [NOT] ERRORLEVEL|EXIST|\n"
+         "                  DEFINED|a==b|a EQU/NEQ/LSS/LEQ/GTR/GEQ b, CALL [/Y],\n"
+         "                  FOR [/D] [/R] [/L] [/F] %%v IN (Satz) DO, SETLOCAL/ENDLOCAL\n"
          "  a & b, a && b, a || b  nacheinander / nur bei Erfolg / nur bei Fehler\n"
          "  TRUENAME, BREAK, VERIFY, CHCP, CTTY, KEYS [ON|OFF|LIST], LH\n"
          "  EXIT            Befehlsinterpreter beenden\n"
@@ -2292,6 +2672,19 @@ static void cmd_date(char *arg)
 
     ctry_init();
     DosGetDateTime(dt);
+    if (p[0] == '/' && up(p[1]) == 'T') {       /* DATE /T: nur ausgeben */
+        static char ds_[24];
+        d = dt[0] & 31; m = (dt[0] >> 5) & 15; y = 1980 + (dt[0] >> 9);
+        k = m < 3 ? y - 1 : y;
+        j = m < 3 ? m + 12 : m;
+        w = (int)((d + (13 * (j + 1)) / 5 + k % 100 + (k % 100) / 4 + (k / 100) / 4 + 5 * (k / 100)) % 7);
+        puts(wd[(w + 6) % 7]);
+        putc(' ');
+        ctry_date(ds_, dt[0]);
+        puts(ds_);
+        puts("\n");
+        return;
+    }
     if (!*p) {
         static char ds_[24];
         d = dt[0] & 31; m = (dt[0] >> 5) & 15; y = 1980 + (dt[0] >> 9);
@@ -2340,6 +2733,13 @@ static void cmd_time(char *arg)
 
     ctry_init();
     DosGetDateTime(dt);
+    if (p[0] == '/' && up(p[1]) == 'T') {       /* TIME /T: nur ausgeben */
+        static char ts_[12];
+        ctry_time(ts_, dt[1], 0);
+        puts(ts_);
+        puts("\n");
+        return;
+    }
     if (!*p) {
         static char ts_[12];
         puts("Aktuelle Uhrzeit: ");
@@ -2373,7 +2773,6 @@ static void cmd_ver(void)
 }
 
 /* ---- Umgebung, Prompt, Programmsuche, Stapeldateien -------------------- */
-#define CMDLEN 256
 static int echo_on = 1;
 static char pbuf[FAPI_PATHLEN], ebuf[CMDLEN];
 
@@ -2391,6 +2790,281 @@ static int exists(const char *p)
     return 1;
 }
 
+/* ---- SET /A: Rechnen wie NT (32 Bit mit Vorzeichen) -------------------
+   Vorrang: () ; ! ~ - ; * / % ; + - ; << >> ; & ; ^ ; | ; = *= /= %= += -=
+   &= ^= |= <<= >>= ; Komma. Namen sind Umgebungsvariablen (fehlt: 0). */
+static const char *sa_p;
+static int sa_err;
+static long sa_assign(void);
+
+static void sa_sp(void)
+{
+    while (*sa_p == ' ' || *sa_p == '\t')
+        sa_p++;
+}
+
+static int sa_isid(char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' ||
+           (c >= '0' && c <= '9') || (unsigned char)c >= 0x80;
+}
+
+static long sa_getvar(const char *n, unsigned nl)
+{
+    static char nm[64], v[32];
+    const char *q = v;
+    unsigned i;
+    for (i = 0; i < nl && i < sizeof(nm) - 1; i++)
+        nm[i] = up(n[i]);
+    nm[i] = 0;
+    if (FAPI_FAILED(DosGetEnv(nm, v, sizeof(v))))
+        return 0;
+    while (*q == ' ')
+        q++;
+    return strtol_(&q);
+}
+
+static void sa_setvar(const char *n, unsigned nl, long val)
+{
+    static char e[96];
+    unsigned i;
+    for (i = 0; i < nl && i < 60; i++)
+        e[i] = up(n[i]);
+    e[i++] = '=';
+    ltostr(val, e + i);
+    if (DosSetEnv(e) == FAPI_ERR_FULL)
+        puts("Kein Platz mehr in der Umgebung.\n");
+}
+
+static long sa_mul(long a, long b)
+{
+    int neg = (a < 0) != (b < 0);
+    unsigned long r = umul32(a < 0 ? 0UL - (unsigned long)a : (unsigned long)a,
+                             b < 0 ? 0UL - (unsigned long)b : (unsigned long)b);
+    return neg ? -(long)r : (long)r;
+}
+
+static long sa_div(long a, long b, int mod)
+{
+    unsigned long q, r;
+    if (!b) {
+        sa_err = 2;
+        return 0;
+    }
+    q = udiv32(a < 0 ? 0UL - (unsigned long)a : (unsigned long)a,
+               b < 0 ? 0UL - (unsigned long)b : (unsigned long)b, &r);
+    if (mod)                                    /* Rest: Vorzeichen von a */
+        return a < 0 ? -(long)r : (long)r;
+    return (a < 0) != (b < 0) ? -(long)q : (long)q;
+}
+
+static long sa_unary(void)
+{
+    long v;
+    sa_sp();
+    if (*sa_p == '-') {
+        sa_p++;
+        return -sa_unary();
+    }
+    if (*sa_p == '+') {
+        sa_p++;
+        return sa_unary();
+    }
+    if (*sa_p == '!') {
+        sa_p++;
+        return !sa_unary();
+    }
+    if (*sa_p == '~') {
+        sa_p++;
+        return ~sa_unary();
+    }
+    if (*sa_p == '(') {
+        sa_p++;
+        v = sa_assign();
+        sa_sp();
+        while (*sa_p == ',') {
+            sa_p++;
+            v = sa_assign();
+            sa_sp();
+        }
+        if (*sa_p != ')')
+            sa_err = 1;
+        else
+            sa_p++;
+        return v;
+    }
+    if (*sa_p >= '0' && *sa_p <= '9')
+        return strtol_(&sa_p);
+    if (sa_isid(*sa_p)) {
+        const char *n = sa_p;
+        while (sa_isid(*sa_p))
+            sa_p++;
+        return sa_getvar(n, (unsigned)(sa_p - n));
+    }
+    sa_err = 1;
+    return 0;
+}
+
+static long sa_term(void)
+{
+    long v = sa_unary(), w;
+    for (;;) {
+        sa_sp();
+        if ((*sa_p == '*' || *sa_p == '/' || *sa_p == '%') && sa_p[1] != '=') {
+            char op = *sa_p++;
+            w = sa_unary();
+            v = op == '*' ? sa_mul(v, w) : sa_div(v, w, op == '%');
+        } else
+            return v;
+    }
+}
+
+static long sa_sum(void)
+{
+    long v = sa_term();
+    for (;;) {
+        sa_sp();
+        if ((*sa_p == '+' || *sa_p == '-') && sa_p[1] != '=') {
+            char op = *sa_p++;
+            long w = sa_term();
+            v = op == '+' ? v + w : v - w;
+        } else
+            return v;
+    }
+}
+
+static long sa_shl(long v, long w)
+{
+    if (w < 0 || w > 31)
+        return 0;
+    return (long)((unsigned long)v << (unsigned)w);
+}
+
+static long sa_shr(long v, long w)
+{
+    if (w < 0 || w > 31)
+        return v < 0 ? -1 : 0;
+    return v >> (unsigned)w;
+}
+
+static long sa_shift(void)
+{
+    long v = sa_sum();
+    for (;;) {
+        sa_sp();
+        if ((sa_p[0] == '<' || sa_p[0] == '>') && sa_p[1] == sa_p[0] && sa_p[2] != '=') {
+            char op = *sa_p;
+            long w;
+            sa_p += 2;
+            w = sa_sum();
+            v = op == '<' ? sa_shl(v, w) : sa_shr(v, w);
+        } else
+            return v;
+    }
+}
+
+static long sa_bits(int lvl)                    /* 0 |, 1 ^, 2 & */
+{
+    static const char ops[3] = { '|', '^', '&' };
+    long v = lvl < 2 ? sa_bits(lvl + 1) : sa_shift(), w;
+    for (;;) {
+        sa_sp();
+        if (*sa_p == ops[lvl] && sa_p[1] != '=') {
+            sa_p++;
+            w = lvl < 2 ? sa_bits(lvl + 1) : sa_shift();
+            v = lvl == 0 ? (v | w) : lvl == 1 ? (v ^ w) : (v & w);
+        } else
+            return v;
+    }
+}
+
+static long sa_assign(void)
+{
+    const char *s, *n;
+    unsigned nl;
+    char op = 0;
+    long v, w;
+    sa_sp();
+    s = sa_p;
+    if (sa_isid(*sa_p) && !(*sa_p >= '0' && *sa_p <= '9')) {
+        n = sa_p;
+        while (sa_isid(*sa_p))
+            sa_p++;
+        nl = (unsigned)(sa_p - n);
+        sa_sp();
+        if (sa_p[0] == '=' && sa_p[1] != '=') {
+            op = '=';
+            sa_p++;
+        } else if (sa_p[1] == '=' && (sa_p[0] == '*' || sa_p[0] == '/' ||
+                   sa_p[0] == '%' || sa_p[0] == '+' || sa_p[0] == '-' ||
+                   sa_p[0] == '&' || sa_p[0] == '^' || sa_p[0] == '|')) {
+            op = sa_p[0];
+            sa_p += 2;
+        } else if ((sa_p[0] == '<' || sa_p[0] == '>') && sa_p[1] == sa_p[0] &&
+                   sa_p[2] == '=') {
+            op = sa_p[0];
+            sa_p += 3;
+        }
+        if (op) {
+            w = sa_assign();
+            v = sa_getvar(n, nl);
+            switch (op) {
+            case '=': v = w; break;
+            case '*': v = sa_mul(v, w); break;
+            case '/': v = sa_div(v, w, 0); break;
+            case '%': v = sa_div(v, w, 1); break;
+            case '+': v += w; break;
+            case '-': v -= w; break;
+            case '&': v &= w; break;
+            case '^': v ^= w; break;
+            case '|': v |= w; break;
+            case '<': v = sa_shl(v, w); break;
+            case '>': v = sa_shr(v, w); break;
+            }
+            if (!sa_err)
+                sa_setvar(n, nl, v);
+            return v;
+        }
+        sa_p = s;
+    }
+    return sa_bits(0);
+}
+
+/* SET /A Ausdruck - Ergebnis des letzten Teils (nur an der Eingabe) */
+static void set_a(char *x)
+{
+    static char e[CMDLEN], o[16];
+    unsigned i, k;
+    long v = 0;
+    for (i = k = 0; x[i] && k < sizeof(e) - 1; i++)
+        if (x[i] != '"')
+            e[k++] = x[i];
+    e[k] = 0;
+    sa_p = e;
+    sa_err = 0;
+    for (;;) {
+        v = sa_assign();
+        sa_sp();
+        if (sa_err || *sa_p != ',')
+            break;
+        sa_p++;
+    }
+    sa_sp();
+    if (!sa_err && *sa_p)
+        sa_err = 1;
+    if (sa_err) {
+        puts(sa_err == 2 ? "Division durch null.\n" : "Ung\x81ltiger Ausdruck.\n");
+        errorlevel = 1;
+        return;
+    }
+    errorlevel = 0;
+    if (!bdepth) {
+        ltostr(v, o);
+        puts(o);
+        puts("\n");
+    }
+}
+
 static void cmd_set(char *arg)
 {
     static char e[FAPI_ENVSIZE];
@@ -2402,6 +3076,55 @@ static void cmd_set(char *arg)
             puts(e);
             puts("\n");
         }
+        return;
+    }
+    if (same(arg, "/A")) {                      /* SET /A Ausdruck (NT)   */
+        set_a(next_word(arg));
+        return;
+    }
+    if (same(arg, "/P") || same(arg, "/E")) {   /* /P Name=Frage, /E Name=Befehl */
+        int pe = up(arg[1]) == 'P';
+        char *a = next_word(arg), *v;
+        for (q = a; *q && *q != '='; q++)
+            ;
+        if (!*q || q == a) {
+            puts(pe ? "Syntax: SET /P Name=[Frage]\n" : "Syntax: SET /E Name=Befehl\n");
+            return;
+        }
+        for (i = 0; a + i <= q && i < sizeof(e) - 2; i++)
+            e[i] = a[i];                        /* "NAME="              */
+        if (pe) {
+            v = ask_line(q + 1);
+            if (!*v)
+                return;                         /* leer: wie NT unveraendert */
+        } else {
+            static char tmp[FAPI_PATHLEN], cl[CMDLEN];
+            unsigned h, n;
+            v = buf;
+            buf[0] = 0;
+            if (capture(q + 1, tmp, cl)) {
+                h = DosOpen(tmp);
+                if (!FAPI_FAILED(h)) {
+                    n = DosRead(h, buf, sizeof(buf) - 1);
+                    DosClose(h);
+                    if (FAPI_FAILED(n))
+                        n = 0;
+                    buf[n] = 0;
+                    while (*v == '\r' || *v == '\n')
+                        v++;                    /* erste nicht leere Zeile */
+                    for (n = 0; v[n] && v[n] != '\r' && v[n] != '\n'; n++)
+                        ;
+                    v[n] = 0;
+                }
+                DosDelete(tmp);
+            }
+        }
+        for (r = 0; v[r] && i < sizeof(e) - 1; r++)
+            e[i++] = v[r];
+        e[i] = 0;
+        r = DosSetEnv(e);
+        if (r == FAPI_ERR_FULL)
+            puts("Kein Platz mehr in der Umgebung.\n");
         return;
     }
     for (q = arg; *q && *q != '='; q++)
@@ -2548,6 +3271,7 @@ static int run_program(char *cmd, int sync, int call);
 static int confirm(const char *q);
 static void endlocal(void);
 static unsigned char step;              /* /STEP: AUTOEXEC.CMD zeilenweise (F8) */
+static int step_lvl = 1;                /* Stapelebene dafuer (CALL /Y: tiefer) */
 
 /* F8: "Text [J,N]?" - J/Eingabe ja, N nein, Esc ja und keine Fragen mehr */
 static int step_ask(const char *t)
@@ -2665,14 +3389,61 @@ static void cmd_goto(struct batch *b, char *label)
     batch_stop = 1;
 }
 
-/* IF [NOT] ERRORLEVEL n | EXIST datei | a==b  befehl  -> 0 = EXIT */
+/* Vergleichswert von IF: "..." samt Anfuehrungszeichen oder bis zum
+   Leerzeichen bzw. "==" */
+static char *if_operand(char *p, char *o, unsigned max)
+{
+    unsigned n = 0;
+    if (*p == '"') {
+        o[n++] = *p++;
+        while (*p && *p != '"' && n < max - 2)
+            o[n++] = *p++;
+        if (*p == '"')
+            o[n++] = *p++;
+    } else
+        while (*p && *p != ' ' && *p != '\t' && !(p[0] == '=' && p[1] == '=') &&
+               n < max - 1)
+            o[n++] = *p++;
+    o[n] = 0;
+    return p;
+}
+
+static int if_text(const char *a, const char *b, int ic)
+{
+    for (;; a++, b++) {
+        char c = ic ? up(*a) : *a, d = ic ? up(*b) : *b;
+        if (c != d)
+            return (unsigned char)c < (unsigned char)d ? -1 : 1;
+        if (!c)
+            return 0;
+    }
+}
+
+/* EQU & Co.: Zahlen als Zahl, sonst Text (/I ohne Gross/klein) */
+static int if_cmp(const char *a, const char *b, int ic)
+{
+    if (is_num(a) && is_num(b)) {
+        const char *x = a, *y = b;
+        long u = strtol_(&x), v = strtol_(&y);
+        return u < v ? -1 : u > v;
+    }
+    return if_text(a, b, ic);
+}
+
+/* IF [/I] [NOT] ERRORLEVEL n | EXIST datei | DEFINED name | a==b |
+   a EQU|NEQ|LSS|LEQ|GTR|GEQ b  befehl  -> 0 = EXIT (wie NT) */
 static int cmd_if(char *arg)
 {
-    static char w[FAPI_PATHLEN];
-    int neg = 0, cond;
-    char *p = arg, *q;
-    unsigned n, i;
+    static char w[FAPI_PATHLEN], a[CMDLEN], b[CMDLEN];
+    static const char *const ops[6] = { "EQU", "NEQ", "LSS", "LEQ", "GTR", "GEQ" };
+    int neg = 0, cond, ic = 0, k, c;
+    char *p = arg;
+    unsigned n;
 
+    if (same(p, "/I")) {
+        ic = 1;
+        p = next_word(p);
+    }
     if (same(p, "NOT")) {
         neg = 1;
         p = next_word(p);
@@ -2686,23 +3457,39 @@ static int cmd_if(char *arg)
     } else if (same(p, "EXIST")) {
         p = next_word(p);
         word(p, w, sizeof(w));
-        cond = exists(w);
+        cond = exists(w) || is_dir(w);
+        p = next_word(p);
+    } else if (same(p, "DEFINED")) {
+        p = next_word(p);
+        word(p, w, sizeof(w));
+        for (n = 0; w[n]; n++)
+            w[n] = up(w[n]);
+        cond = !FAPI_FAILED(DosGetEnv(w, b, sizeof(b)));
         p = next_word(p);
     } else {
-        for (q = p; *q && !(q[0] == '=' && q[1] == '='); q++)
-            ;
-        if (!*q) {
-            puts("Syntaxfehler.\n");
-            return 1;
+        p = if_operand(p, a, sizeof(a));
+        while (*p == ' ' || *p == '\t')
+            p++;
+        if (p[0] == '=' && p[1] == '=') {       /* a==b: immer als Text  */
+            p += 2;
+            while (*p == ' ' || *p == '\t')
+                p++;
+            p = if_operand(p, b, sizeof(b));
+            cond = if_text(a, b, ic) == 0;
+        } else {
+            for (k = 0; k < 6 && !same(p, ops[k]); k++)
+                ;
+            if (k == 6) {
+                puts("Syntaxfehler.\n");
+                return 1;
+            }
+            p = skip(next_word(p));
+            p = if_operand(p, b, sizeof(b));
+            c = if_cmp(a, b, ic);
+            cond = k == 0 ? c == 0 : k == 1 ? c != 0 : k == 2 ? c < 0 :
+                   k == 3 ? c <= 0 : k == 4 ? c > 0 : c >= 0;
         }
-        n = (unsigned)(q - p);
-        q += 2;
-        for (i = 0; q[i] && q[i] != ' '; i++)
-            ;
-        cond = i == n;
-        for (i = 0; cond && i < n; i++)
-            cond = p[i] == q[i];
-        p = next_word(q);
+        p = skip(p);
     }
     if (cond != neg && *p)
         return execute(p);
@@ -2810,12 +3597,12 @@ static int run_batch(const char *path, const char *args)
         if (!*p || *p == ':')
             continue;                   /* Leerzeile, Sprungmarke       */
         expand(b, p);
-        if (echo_on && !quiet && !(step && bdepth == 1 && !same(ebuf, "REM"))) {
+        if (echo_on && !quiet && !(step && bdepth == step_lvl && !same(ebuf, "REM"))) {
             show_prompt();
             puts(ebuf);
             puts("\n");
         }
-        if (step && bdepth == 1 && !same(ebuf, "REM") && !step_ask(ebuf))
+        if (step && bdepth == step_lvl && !same(ebuf, "REM") && !step_ask(ebuf))
             continue;                   /* F8: jede Zeile fragen        */
         for (i = 0; ebuf[i]; i++)
             l[i] = ebuf[i];
@@ -2896,46 +3683,404 @@ static int run_chain(char *l)
     return rc;
 }
 
-/* ---- FOR %v IN (satz) DO befehl (in Stapeldateien %%v) ----------------- */
-static int for_active;
+/* ---- FOR wie NT: FOR [/D] [/R [Pfad]] [/L] [/F "Optionen"] %v IN (Satz)
+   DO Befehl (in Stapeldateien %%v). Bis drei Ebenen geschachtelt, jede
+   Ebene mit eigenen Puffern. */
+#define FMAX 3
+#define FTOK 31
+static struct forlv {
+    char set[CMDLEN], body[CMDLEN], run[CMDLEN], ln[CMDLEN], tk[CMDLEN];
+    char item[FAPI_PATHLEN], full[FAPI_PATHLEN], dir[FAPI_PATHLEN];
+    char opts[80], delims[24];
+    struct fapi_dirent e;
+    const char *val[FTOK + 1];
+    char v, eol;
+    unsigned char d, nv, star, maxtok, backq;
+    unsigned skip;
+    unsigned long tmask;
+} flv[FMAX];
+static int for_depth;
+static struct forlv *fr_lv;             /* FOR /R: Ebene im Baumgang     */
 
-static int for_one(const char *body, char v, const char *val)
+/* Rumpf mit den Werten der Variablen v .. v+nv-1 ausfuehren */
+static int for_run(struct forlv *L)
 {
-    static char run[CMDLEN];
+    const char *b = L->body, *val;
     unsigned o = 0, k;
-    for (; *body && o < CMDLEN - 1; body++) {
-        if (body[0] == '%' && body[1] == v) {
-            for (k = 0; val[k] && o < CMDLEN - 1; k++)
-                run[o++] = val[k];
-            body++;
+    for (; *b && o < CMDLEN - 1; b++) {
+        if (b[0] == '%' && b[1] >= L->v && b[1] < L->v + L->nv) {
+            val = L->val[b[1] - L->v];
+            for (k = 0; val && val[k] && o < CMDLEN - 1; k++)
+                L->run[o++] = val[k];
+            b++;
         } else
-            run[o++] = *body;
+            L->run[o++] = *b;
     }
-    run[o] = 0;
-    return run_chain(run);
+    L->run[o] = 0;
+    return run_chain(L->run);
+}
+
+static int for_val(struct forlv *L, const char *s)
+{
+    L->val[0] = s;
+    L->nv = 1;
+    return for_run(L);
+}
+
+/* Satz abarbeiten; dir != 0: FOR /R in diesem Verzeichnis */
+static int for_items(struct forlv *L, const char *dir)
+{
+    char *p, *b;
+    unsigned i, n, k, dl;
+    int rc = 1;
+
+    if (dir)
+        scopy(L->dir, dir, sizeof(L->dir));
+    for (p = L->set; rc; ) {
+        while (*p == ' ' || *p == ',' || *p == ';' || *p == '=' || *p == '\t')
+            p++;
+        if (!*p)
+            break;
+        if (*p == '"') {                        /* "Name mit Leerzeichen" */
+            for (i = 0, p++; *p && *p != '"' && i < sizeof(L->item) - 1; )
+                L->item[i++] = *p++;
+            if (*p)
+                p++;
+        } else
+            for (i = 0; *p && *p != ' ' && *p != ',' && *p != ';' && *p != '=' &&
+                 *p != '\t' && i < sizeof(L->item) - 1; )
+                L->item[i++] = *p++;
+        L->item[i] = 0;
+        if (!has_wild(L->item)) {
+            if (dir) {
+                join(L->full, L->dir, slen(L->dir), L->item);
+                rc = for_val(L, L->full);
+            } else
+                rc = for_val(L, L->item);
+            continue;
+        }
+        if (dir) {
+            b = L->item;                        /* Muster gilt in dir      */
+            dl = slen(L->dir);
+            for (k = 0; k < dl; k++)
+                L->full[k] = L->dir[k];
+        } else {
+            b = base_name(L->item);
+            dl = (unsigned)(b - L->item);
+            for (k = 0; k < dl; k++)
+                L->full[k] = L->item[k];
+        }
+        L->full[dl] = 0;
+        if (dl > 1 && L->full[dl - 1] == '\\' && L->full[dl - 2] != ':')
+            L->full[--dl] = 0;
+        scopy(L->ln, L->full, sizeof(L->ln));   /* Suchverzeichnis        */
+        for (n = 0; rc && DosFindEntry(&L->e, n, L->ln[0] ? L->ln : 0) != FAPI_ERROR; n++) {
+            if (L->d ? (!(L->e.attr & 0x10) || (L->e.attr & 0x06) ||
+                        L->e.name[0] == '.')
+                     : (L->e.attr & 0x16))
+                continue;               /* wie MS-DOS: nur sichtbare Dateien */
+            if (!match(L->e.name, b))
+                continue;
+            join(L->full, L->ln, slen(L->ln), L->e.name);
+            rc = for_val(L, L->full);
+        }
+    }
+    return rc;
+}
+
+static int for_rcb(const char *dir)
+{
+    return for_items(fr_lv, dir);
+}
+
+/* ---- FOR /F ------------------------------------------------------------ */
+static int f_key(const char *o, const char *k)
+{
+    while (*k && up(*o) == *k)
+        o++, k++;
+    return *k == 0;
+}
+
+/* "tokens=1,2* delims=, skip=1 eol=; usebackq"; 0 = Fehler */
+static int forf_opts(struct forlv *L)
+{
+    const char *o = L->opts;
+    unsigned k, a, b;
+    L->eol = ';';
+    L->skip = 0;
+    L->delims[0] = ' ';
+    L->delims[1] = '\t';
+    L->delims[2] = 0;
+    L->tmask = 2;                               /* tokens=1               */
+    L->star = 0;
+    L->maxtok = 1;
+    L->backq = 0;
+    while (*o) {
+        while (*o == ' ')
+            o++;
+        if (!*o)
+            break;
+        if (f_key(o, "TOKENS=")) {
+            L->tmask = 0;
+            L->maxtok = 0;
+            for (o += 7; *o && *o != ' '; ) {
+                if (*o == '*') {
+                    L->star = 1;
+                    o++;
+                    continue;
+                }
+                if (*o < '0' || *o > '9')
+                    return 0;
+                for (a = 0; *o >= '0' && *o <= '9'; o++)
+                    a = a * 10 + (unsigned)(*o - '0');
+                b = a;
+                if (*o == '-')
+                    for (b = 0, o++; *o >= '0' && *o <= '9'; o++)
+                        b = b * 10 + (unsigned)(*o - '0');
+                if (!a || b < a || b > FTOK)
+                    return 0;
+                for (k = a; k <= b; k++)
+                    L->tmask |= 1UL << k;
+                if (b > L->maxtok)
+                    L->maxtok = (unsigned char)b;
+                if (*o == ',')
+                    o++;
+            }
+        } else if (f_key(o, "DELIMS=")) {       /* bis zum naechsten Wort */
+            for (o += 7, k = 0; *o && k < sizeof(L->delims) - 1; o++) {
+                if (*o == ' ' && (f_key(o + 1, "TOKENS=") || f_key(o + 1, "EOL=") ||
+                    f_key(o + 1, "SKIP=") || f_key(o + 1, "USEBACKQ")))
+                    break;
+                L->delims[k++] = *o;
+            }
+            L->delims[k] = 0;
+        } else if (f_key(o, "EOL=")) {
+            L->eol = o[4];
+            o += o[4] ? 5 : 4;
+        } else if (f_key(o, "SKIP=")) {
+            for (o += 5, L->skip = 0; *o >= '0' && *o <= '9'; o++)
+                L->skip = L->skip * 10 + (unsigned)(*o - '0');
+        } else if (f_key(o, "USEBACKQ")) {
+            L->backq = 1;
+            o += 8;
+        } else
+            return 0;
+    }
+    return 1;
+}
+
+static int f_delim(struct forlv *L, char c)
+{
+    const char *d;
+    for (d = L->delims; *d; d++)
+        if (*d == c)
+            return 1;
+    return 0;
+}
+
+/* eine Zeile (in L->ln) zerlegen und den Rumpf ausfuehren */
+static int forf_line(struct forlv *L)
+{
+    static unsigned st[FTOK + 2];
+    unsigned nt = 0, i, k = 0, last = 0;
+    char *t = L->tk;
+
+    if (!L->ln[0] || L->ln[0] == L->eol)
+        return 1;
+    scopy(L->tk, L->ln, sizeof(L->tk));
+    for (i = 0; t[i] && nt <= FTOK; ) {         /* Woerter, Trenner -> 0  */
+        while (t[i] && f_delim(L, t[i]))
+            i++;
+        if (!t[i])
+            break;
+        st[++nt] = i;
+        while (t[i] && !f_delim(L, t[i]))
+            i++;
+        if (t[i])
+            t[i++] = 0;
+    }
+    if (!nt && !(L->star && !L->tmask))
+        return 1;
+    for (i = 1; i <= FTOK; i++)
+        if (L->tmask & (1UL << i)) {
+            L->val[k++] = i <= nt ? t + st[i] : 0;
+            last = i;
+        }
+    if (L->star) {                              /* Rest der Zeile         */
+        const char *r = 0;
+        if (last + 1 <= nt)
+            r = L->ln + st[last + 1];
+        else if (!last) {
+            for (r = L->ln; *r && f_delim(L, *r); r++)
+                ;
+        }
+        L->val[k++] = r;
+    }
+    if (!k || !L->val[0])
+        return 1;
+    L->nv = (unsigned char)k;
+    return for_run(L);
+}
+
+/* Zeilen einer Datei (bis 64 KB) */
+static int forf_file(struct forlv *L, const char *name)
+{
+    unsigned h, sel, len = 0, n, pos, k, sk = L->skip;
+    char __far *s;
+    int rc = 1;
+
+    h = DosOpen(name);
+    if (FAPI_FAILED(h)) {
+        puts("Datei nicht gefunden - ");
+        puts(name);
+        puts("\n");
+        return 1;
+    }
+    sel = DosAllocSeg(0);
+    if (FAPI_FAILED(sel) || !sel) {
+        DosClose(h);
+        puts("Nicht gen\x81gend Arbeitsspeicher.\n");
+        return 1;
+    }
+    s = MK_FP(sel, 0);
+    while (len < 0xFF00U && (n = DosRead(h, L->tk, sizeof(L->tk))) != 0 && !FAPI_FAILED(n))
+        for (k = 0; k < n; k++)
+            s[len++] = L->tk[k];
+    DosClose(h);
+    for (pos = 0; pos < len && rc; ) {
+        for (k = 0; pos < len && s[pos] != '\n' && s[pos] != 0x1A; pos++)
+            if (s[pos] != '\r' && k < sizeof(L->ln) - 1)
+                L->ln[k++] = s[pos];
+        L->ln[k] = 0;
+        if (pos < len && s[pos] == 0x1A)
+            pos = len;
+        pos++;
+        if (sk) {
+            sk--;
+            continue;
+        }
+        rc = forf_line(L);
+    }
+    DosFreeSeg(sel);
+    return rc;
+}
+
+static int for_f(struct forlv *L)
+{
+    char *p = L->set, q;
+    unsigned i;
+    int rc = 1;
+    char cq = L->backq ? '`' : '\'', sq = L->backq ? '\'' : '"';
+
+    while (*p == ' ')
+        p++;
+    q = *p;
+    if (q == cq || q == sq) {                   /* 'Befehl' / "Text"      */
+        for (i = slen(p); i > 1 && p[i - 1] != q; i--)
+            ;
+        if (i < 2)
+            goto syntax;
+        p[i - 1] = 0;
+        p++;
+        if (q == sq) {
+            scopy(L->ln, p, sizeof(L->ln));
+            return forf_line(L);
+        }
+        if (!capture(p, L->item, L->run))
+            return 1;
+        rc = forf_file(L, L->item);
+        DosDelete(L->item);
+        return rc;
+    }
+    while (rc && *p) {                          /* Dateien                */
+        while (*p == ' ' || *p == ',')
+            p++;
+        if (!*p)
+            break;
+        if (*p == '"') {
+            for (i = 0, p++; *p && *p != '"' && i < sizeof(L->full) - 1; )
+                L->full[i++] = *p++;
+            if (*p)
+                p++;
+        } else
+            for (i = 0; *p && *p != ' ' && *p != ',' && i < sizeof(L->full) - 1; )
+                L->full[i++] = *p++;
+        L->full[i] = 0;
+        rc = forf_file(L, L->full);
+    }
+    return rc;
+syntax:
+    puts("Syntaxfehler.\n");
+    return 1;
 }
 
 static int cmd_for(char *arg)
 {
-    static char set[CMDLEN], body[CMDLEN], item[FAPI_PATHLEN], dir[FAPI_PATHLEN],
-                full[FAPI_PATHLEN];
-    static struct fapi_dirent e;
-    char v, *p, *b;
-    unsigned i, n, k, dl;
-    int rc = 1;
+    static char root[FAPI_PATHLEN];
+    struct forlv *L;
+    char *p = arg;
+    unsigned i;
+    int rc = 1, r = 0, l = 0, f = 0, dep;
 
-    if (arg[0] != '%' || !arg[1] || (arg[2] && arg[2] != ' '))
+    if (for_depth == FMAX) {
+        puts("FOR zu tief geschachtelt (3).\n");
+        return 1;
+    }
+    L = &flv[for_depth];
+    L->d = 0;
+    L->opts[0] = 0;
+    root[0] = 0;
+    while (*p == '/') {
+        if (same(p, "/D"))
+            L->d = 1;
+        else if (same(p, "/L"))
+            l = 1;
+        else if (same(p, "/R")) {
+            r = 1;
+            p = next_word(p);
+            if (*p && *p != '%' && *p != '/') {
+                word(p, root, sizeof(root));
+                p = next_word(p);
+            }
+            continue;
+        } else if (same(p, "/F")) {
+            f = 1;
+            p = skip(next_word(p));
+            if (*p == '"') {
+                for (i = 0, p++; *p && *p != '"' && i < sizeof(L->opts) - 1; )
+                    L->opts[i++] = *p++;
+                L->opts[i] = 0;
+                if (*p)
+                    p++;
+                p = skip(p);
+            }
+            continue;
+        } else
+            goto syntax;
+        p = next_word(p);
+    }
+    if (p[0] != '%' || !p[1] || (p[2] && p[2] != ' '))
         goto syntax;
-    v = arg[1];
-    p = next_word(arg);
+    L->v = p[1];
+    p = next_word(p);
     if (!same(p, "IN"))
         goto syntax;
     p = skip(p + 2);
     if (*p != '(')
         goto syntax;
-    for (i = 0, p++; *p && *p != ')' && i < CMDLEN - 1; )
-        set[i++] = *p++;
-    set[i] = 0;
+    {                                           /* bis zur passenden ")"  */
+        int depth = 1, q = 0;
+        for (i = 0, p++; *p && i < CMDLEN - 1; p++) {
+            if (*p == '"' || *p == '\'' || *p == '`')
+                q = q == *p ? 0 : q ? q : *p;
+            else if (!q && *p == '(')
+                depth++;
+            else if (!q && *p == ')' && --depth == 0)
+                break;
+            L->set[i++] = *p;
+        }
+        L->set[i] = 0;
+    }
     if (*p != ')')
         goto syntax;
     p = skip(p + 1);
@@ -2944,49 +4089,45 @@ static int cmd_for(char *arg)
     p = next_word(p);
     if (!*p)
         goto syntax;
-    if (for_active) {
-        puts("FOR kann nicht geschachtelt werden.\n");
+    for (i = 0; p[i] && i < CMDLEN - 1; i++)
+        L->body[i] = p[i];
+    L->body[i] = 0;
+    if (f && !forf_opts(L)) {
+        puts("Ung\x81ltige FOR /F-Optionen.\n");
         return 1;
     }
-    for (i = 0; p[i] && i < CMDLEN - 1; i++)
-        body[i] = p[i];
-    body[i] = 0;
-    for_active = 1;
-    for (p = set; rc; ) {
-        while (*p == ' ' || *p == ',' || *p == ';' || *p == '=' || *p == '\t')
-            p++;
-        if (!*p)
-            break;
-        for (i = 0; *p && *p != ' ' && *p != ',' && *p != ';' && *p != '=' &&
-             *p != '\t' && i < sizeof(item) - 1; )
-            item[i++] = *p++;
-        item[i] = 0;
-        if (!has_wild(item)) {
-            rc = for_one(body, v, item);
-            continue;
+    dep = for_depth++;
+    if (l) {                                    /* /L (Start,Schritt,Ende) */
+        const char *s = L->set;
+        long a, st, e;
+        while (*s == ' ')
+            s++;
+        a = strtol_(&s);
+        while (*s == ' ' || *s == ',')
+            s++;
+        st = strtol_(&s);
+        while (*s == ' ' || *s == ',')
+            s++;
+        e = strtol_(&s);
+        for (; rc && st && (st > 0 ? a <= e : a >= e); a += st) {
+            ltostr(a, L->item);
+            rc = for_val(L, L->item);
         }
-        b = base_name(item);                    /* Dateien zum Muster     */
-        dl = (unsigned)(b - item);
-        for (k = 0; k < dl; k++)
-            dir[k] = item[k];
-        dir[dl] = 0;
-        if (dl > 1 && dir[dl - 1] == '\\' && dir[dl - 2] != ':')
-            dir[dl - 1] = 0;
-        for (n = 0; rc && DosFindEntry(&e, n, dir[0] ? dir : 0) != FAPI_ERROR; n++) {
-            if ((e.attr & 0x16) || !match(e.name, b))
-                continue;               /* wie MS-DOS: nur sichtbare Dateien */
-            for (k = 0; k < dl && k < sizeof(full) - 1; k++)
-                full[k] = item[k];
-            for (i = 0; e.name[i] && k < sizeof(full) - 1; i++)
-                full[k++] = e.name[i];
-            full[k] = 0;
-            rc = for_one(body, v, full);
-        }
-    }
-    for_active = 0;
+    } else if (f)
+        rc = for_f(L);
+    else if (r) {                               /* /R: alle Verzeichnisse */
+        struct forlv *old = fr_lv;
+        if (!root[0])
+            DosQCurDir(root);
+        fr_lv = L;
+        rc = tree_walk(root, for_rcb);
+        fr_lv = old;
+    } else
+        rc = for_items(L, 0);
+    for_depth = dep;
     return rc;
 syntax:
-    puts("Syntaxfehler (FOR %v IN (Satz) DO Befehl).\n");
+    puts("Syntaxfehler (FOR [/D] [/R [Pfad]] [/L] [/F \"Optionen\"] %v IN (Satz) DO Befehl).\n");
     return 1;
 }
 
@@ -3406,6 +4547,140 @@ static void cmd_shutdown(int r, char *arg)
     DosShutdown(r);
 }
 
+/* ---- PUSHD/POPD/DIRS, HISTORY, WHICH (wie FreeCOM/NT) -----------------
+   Verzeichnisstapel je Sitzung, Segment erst beim ersten PUSHD. */
+#define NPUSH 8
+#define PUSHSZ FAPI_CURDIRLEN
+static unsigned push_sel, push_n;
+
+static void cmd_dirs(void)
+{
+    char __far *d;
+    unsigned i, k;
+    char c[2];
+
+    c[1] = 0;
+    for (i = push_n; i > 0; i--) {      /* oben zuerst                  */
+        d = MK_FP(push_sel, (i - 1) * PUSHSZ);
+        for (k = 0; d[k]; k++) {
+            c[0] = d[k];
+            puts(c);
+        }
+        puts("\n");
+    }
+}
+
+static void cmd_pushd(char *arg)
+{
+    static char cur[FAPI_CURDIRLEN];
+    char __far *d;
+    unsigned k;
+
+    if (!*arg) {                        /* wie NT: ohne Ziel = DIRS     */
+        cmd_dirs();
+        return;
+    }
+    if (push_n == NPUSH) {
+        puts("Verzeichnisstapel voll (8).\n");
+        return;
+    }
+    if (!push_sel) {
+        push_sel = DosAllocSeg(NPUSH * PUSHSZ);
+        if (FAPI_FAILED(push_sel) || !push_sel) {
+            push_sel = 0;
+            puts("Nicht gen\x81gend Arbeitsspeicher.\n");
+            return;
+        }
+    }
+    if (DosQCurDir(cur) != 0)
+        return;
+    d = MK_FP(push_sel, push_n * PUSHSZ);
+    for (k = 0; cur[k]; k++)
+        d[k] = cur[k];
+    d[k] = 0;
+    cd_drive = 1;
+    if (arg[1] == ':' && !*skip(arg + 2)) {         /* PUSHD A:          */
+        if (DosSelectDisk(up(arg[0]) - 'A') == 0)
+            push_n++;
+        else
+            puts("Ung\x81ltiges Laufwerk.\n");
+    } else if (cmd_cd(arg))             /* nur merken, wenn gewechselt   */
+        push_n++;
+}
+
+static void cmd_popd(void)
+{
+    static char p[FAPI_CURDIRLEN];
+    char __far *d;
+    unsigned k;
+
+    if (!push_n) {
+        puts("Verzeichnisstapel leer.\n");
+        return;
+    }
+    d = MK_FP(push_sel, --push_n * PUSHSZ);
+    for (k = 0; d[k] && k < sizeof(p) - 1; k++)
+        p[k] = d[k];
+    p[k] = 0;
+    if (DosChDir(p) == FAPI_ERROR)
+        puts("Ung\x81ltiges Verzeichnis.\n");
+    else if (p[1] == ':')
+        DosSelectDisk(up(p[0]) - 'A');
+}
+
+/* HISTORY [n]: letzte Befehle (ohne diesen Aufruf), n = nur die letzten n */
+static void cmd_history(char *arg)
+{
+    unsigned i, n = 0;
+    while (*arg >= '0' && *arg <= '9')
+        n = n * 10 + (unsigned)(*arg++ - '0');
+    i = hist_n;
+    if (n && n + 1 < i)
+        i = n + 1;
+    for (; i > 1; i--) {
+        puts(hist_get(i - 1));
+        puts("\n");
+    }
+}
+
+/* WHICH Name...: Makro, interner Befehl oder Programm (wie es CMD startet) */
+static int cmd_which(char *arg)
+{
+    static char w[80], out[FAPI_PATHLEN];
+    unsigned i, wl;
+    int r = 0, ty;
+
+    if (!*arg) {
+        puts("Syntax: WHICH Name [...]\n");
+        return 1;
+    }
+    while (*arg) {
+        word(arg, w, sizeof(w));
+        arg = next_word(arg);
+        wl = slen(w);
+        puts(w);
+        if (mac_sel && mac_find(w, wl) != 0xFFFF)
+            puts(": Makro (DOSKEY/ALIAS)\n");
+        else {
+            for (i = 0; builtin[i] && !same(w, builtin[i]); i++)
+                ;
+            if (builtin[i])
+                puts(": interner Befehl\n");
+            else if ((ty = find_program(w, wl, out)) != 0) {
+                puts(": ");
+                puts(out);
+                puts(ty == 2 ? " (Stapeldatei)\n" : ty == 4 ? " (DOS-Stapeldatei, DOS-Box)\n" :
+                     ty == 3 ? " (DOS-Programm, DOS-Box)\n" : "\n");
+            } else {
+                puts(": nicht gefunden\n");
+                r = 1;
+            }
+        }
+    }
+    errorlevel = r;
+    return 1;
+}
+
 static int execute(char *l)
 {
     char *cmd = skip(l), *arg;
@@ -3438,8 +4713,40 @@ static int execute(char *l)
         cmd_ren(arg);
     else if (same(cmd, "SHUTDOWN") || same(cmd, "POWEROFF") || same(cmd, "REBOOT"))
         cmd_shutdown(same(cmd, "REBOOT"), arg);
-    else if (same(cmd, "CD") || same(cmd, "CHDIR"))
+    else if (same(cmd, "CD") || same(cmd, "CHDIR") || same(cmd, "CDD")) {
+        cd_drive = same(cmd, "CDD");
         cmd_cd(arg);
+    } else if (same(cmd, "PUSHD"))
+        cmd_pushd(arg);
+    else if (same(cmd, "POPD"))
+        cmd_popd();
+    else if (same(cmd, "DIRS"))
+        cmd_dirs();
+    else if (same(cmd, "HISTORY"))
+        cmd_history(arg);
+    else if (same(cmd, "WHICH"))
+        return cmd_which(arg);
+    else if (same(cmd, "BEEP")) {               /* BEEP [Hz [ms]]          */
+        const char *q = arg;
+        long hz = 880, ms = 150;
+        if (*q) {
+            hz = strtol_(&q);
+            q = skip((char *)q);
+            if (*q)
+                ms = strtol_(&q);
+        }
+        if (hz < 37 || hz > 32767 || ms < 0 || ms > 10000 ||
+            DosBeep((unsigned)hz, (unsigned)ms))
+            puts("Syntax: BEEP [Hz (37-32767) [ms]]\n");
+    } else if (same(cmd, "TITLE"))              /* wie NT                  */
+        VioSetTitle(*arg ? (unsigned)arg : 0);
+    else if (same(cmd, "ALIAS")) {              /* FreeCOM: = DOSKEY-Makros */
+        if (!*arg) {
+            if (mac_len)
+                mac_write(STDOUT);
+        } else
+            cmd_doskey(arg);
+    }
     else if (same(cmd, "VER"))
         cmd_ver();
     else if (same(cmd, "VOL"))
@@ -3542,6 +4849,17 @@ static int execute(char *l)
     else if (same(cmd, "ENDLOCAL"))
         endlocal();
     else if (same(cmd, "CALL")) {
+        if (same(arg, "/Y")) {                  /* Stapeldatei schrittweise */
+            unsigned char os = step;
+            int ol = step_lvl, r;
+            arg = next_word(arg);
+            step = 1;
+            step_lvl = bdepth + 1;
+            r = *arg ? run_program(arg, 1, 1) : 1;
+            step = os;
+            step_lvl = ol;
+            return r;
+        }
         if (*arg)
             return run_program(arg, 1, 1);
     } else if (same(cmd, "HILFE") || same(cmd, "HELP") || same(cmd, "?")) {
@@ -3647,6 +4965,13 @@ static int parse_line(char *l)
         } else
             p++;
     }
+    for (q = 0; q <= n; q++)                    /* "ECHO x> D": Platz der  */
+        if (sg[q].in || sg[q].out) {            /* Umleitung nicht mit     */
+            for (p = sg[q].cmd; *p; p++)        /* ausgeben                */
+                ;
+            while (p > sg[q].cmd && p[-1] == ' ')
+                *--p = 0;
+        }
     return n + 1;
 }
 

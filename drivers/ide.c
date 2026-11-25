@@ -1022,6 +1022,17 @@ void strategy(void)
         else
             eject(r);
         break;
+    case DRV_DEINIT: {                  /* DEVLOAD /U: Kanaele still      */
+        int ch;
+        for (ch = 0; ch < 2; ch++)
+            if (chan[ch].units) {
+                outp(ports[ch][1], 0x02);       /* nIEN: kein INTRQ mehr  */
+                if (bm_base[ch])
+                    outp(bm_base[ch], 0);       /* Busmaster anhalten     */
+            }
+        r->status = DRV_OK;
+        break;
+    }
     default:
         r->status = DRV_ERR_CMD;
     }

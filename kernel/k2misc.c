@@ -248,7 +248,7 @@ void __far kinit_done(void)
     }
     gdt[KIDATA_IDX].access = 0;
     gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
-                                       noch hierher zurueck (Selektor 0328h
+                                       noch hierher zurueck (Selektor 0368h
                                        neu geladen), der CS-Cache haelt das
                                        eigene RETF nach KCODE aus          */
 }

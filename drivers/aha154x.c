@@ -725,6 +725,11 @@ void strategy(void)
     case DRV_EJECT:
         eject();
         break;
+    case DRV_DEINIT:                    /* DEVLOAD /U: nichts laeuft mehr */
+        outp(CTRL(base), C_IRST);       /* (ein Auftrag zur Zeit), Leitung
+                                           frei machen                    */
+        r->status = DRV_OK;
+        break;
     default:
         r->status = DRV_ERR_CMD;
     }
