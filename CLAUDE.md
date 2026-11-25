@@ -2100,6 +2100,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Chip: 86Box (`src/video/vid_*.c`, GPL-2.0-or-later laut README).
   VBESVGA.DRV nur als Rückfall, den der Nutzer selbst installiert (ohne
   Lizenz, nicht mitgeliefert). Entwurf in `docs/WIN31-GRAFIK.md`.
+  Erster Test (25.11.2026, 86Box P3B-F mit Trio3D/2X, S3T3D2X.DRV 2.00.02
+  nur im Scratchpad): der Treiber läuft nur im erweiterten Modus – unter
+  echtem MS-DOS 6.22 mit `WIN /S` meldet er das selbst; mit vorgetäuschtem
+  erweitertem Modus verlangt er die private Schnittstelle seines VxD
+  (1684h BX=000Ah), nachbaubar nur durch Zerlegen (ausgeschlossen). Für
+  die Trio3D/2X also kein Weg im Standardmodus; jede weitere Karte zuerst
+  unter MS-DOS mit `WIN /S` prüfen, bevor Code entsteht („Befund“ im
+  Dokument). Die Spur (Ports, DPMI, INT 10h/2Fh ins DMESG) war nur
+  vorübergehend.
 
 - **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
   Stufe 1 gebaut 25.11.2026 – F5, BASEDEV=, Notstart in Kernel/CMD/Box,

@@ -1,7 +1,10 @@
 # Grafiktreiber der Karte für Windows 3.1 in der Box (Plan)
 
-Stand: 24.11.2026. Vorgemerkt vom Nutzer („Festhalten. VGA 17 Farben sind
-langweilig“). Das ist nur ein Plan, es gibt noch keinen Code. Am Lader
+Stand: 25.11.2026. Vorgemerkt vom Nutzer („Festhalten. VGA 17 Farben sind
+langweilig“). Es gibt noch keinen Code. Der erste Test (siehe „Befund
+25.11.2026“) zeigt: der Treiber der Trio3D/2X läuft nur im erweiterten
+Modus – der Plan unten gilt so nur für Treiber, die den Standardmodus
+können. Am Lader
 (WINLDR, `docs/DOSKERN.md` „Stand Weg B“) arbeitet eine andere Sitzung.
 
 ## Ziel
@@ -40,6 +43,53 @@ Die Trio3D/2X im P3B-F gehört dagegen zur ViRGE-Familie (86Box:
 2D-Einheit erreicht man nur über MMIO, siehe die Tabelle. Für sie zählt
 also vor allem, wie MMIO vorn durchgeht und hinten abgefangen wird. Die
 lange Bitmap ist dort zweitrangig.
+
+## Befund 25.11.2026: Trio3D/2X verlangt den erweiterten Modus
+
+Getestet in 86Box P3B-F mit `trio3d2x_agp` und dem Treiber S3T3D2X.DRV
+2.00.02 (dosdays.co.uk, nur im Scratchpad, nicht im Repository), SYSTEM.INI
+wie OEMSETUP.INF für 800×600×256 (`screen-size=800`, `color-format=8`,
+`fastmmio=on`). Gegenprobe VGA.DRV auf derselben Karte: Programm-Manager
+kommt.
+
+- **In der Box:** WIN kehrt nach etwa 30 s ohne Meldung zu CMD zurück.
+  Mitgeschnitten (vorläufige Spur über DMESG): INT 10h 0F00h, 4F14h BL=03h
+  und 02h (S3-OEM-Erweiterung, über das Video-BIOS), dann INT 2Fh 1600h,
+  INT 10h 0003h und nach 29 s 0012h. Kein Zugriff auf Ports ab 3E0h, kein
+  DPMI 0800h, keine VGA-Ports.
+- **Unter echtem MS-DOS 6.22 + Windows 3.11 (`WIN /S`, DOSX.EXE) auf
+  derselben VM** meldet der Treiber selbst: „To run Windows in Standard
+  mode, run the Setup program and select the VGA display driver. The high
+  resolution/high color modes will only operate in Windows Enhanced
+  mode.“ Der Abbruch in der Box ist also dieselbe Prüfung (INT 2Fh 1600h
+  meldet keinen erweiterten Modus) – kein Fehler der Box.
+- **Versuch mit vorgetäuschtem erweitertem Modus** (1600h = 0A03h ab dem
+  zweiten Aufruf, nur zum Messen, wieder entfernt): der Treiber prüft die
+  Modi per 4F14h, fragt INT 2Fh 4010h/4000h, holt mit 1684h BX=000Ah den
+  Einsprung des VDD (VDDT3D2X.386) und 1683h, stellt 4F02h BX=8103h ein,
+  4F06h, INT 10h 7F00h – und beendet Windows. Er braucht die private
+  Schnittstelle seines VxD. Die ließe sich nur nachbauen, wenn man den VxD
+  zerlegt; das schließt dieser Plan aus (Lizenz).
+
+Folgen:
+
+- Für die Trio3D/2X führt dieser Weg nicht zum Ziel, solange Windows in
+  der Box im Standardmodus läuft. Den erweiterten Modus (WIN386 als
+  eigener VMM unter unserem Kernel) gibt es nicht.
+- Der Grundbau (lange Bitmap, Tabelle je Chip) lohnt nur für Karten, deren
+  Win-3.1-Treiber den Standardmodus kann. Das wird je Karte zuerst unter
+  echtem MS-DOS mit `WIN /S` geprüft (billig, eine VM), bevor Code
+  entsteht. Kandidaten aus 86Box: ältere S3 (Trio64/Vision 864), Cirrus
+  54xx, ET4000/W32, ATI Mach.
+- VBESVGA.DRV läuft laut seiner Beschreibung auch im Standardmodus (es
+  bessert dafür einen Fehler in DOSX.EXE aus – in der Box ersetzt WINLDR
+  DOSX, das ist zu prüfen). Das Binary war hier nicht erreichbar (GitHub-
+  Releases über den Proxy gesperrt, Bauen braucht das Win16-DDK); den Test
+  macht der Nutzer.
+
+Testweg für die nächste Karte: VM `p3m` im Scratchpad (P3B-F, MS-DOS 6.22
+von Diskette, Windows-Verzeichnis aus der AT-DOS-Installation, `WIN /S`
+mit HIMEM.SYS aus C:\WINDOWS), dann dieselbe Platte unter AT-DOS (`p3s`).
 
 ## Verlängerte I/O-Bitmap (Weg a, gilt für alle Karten)
 
