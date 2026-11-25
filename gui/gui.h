@@ -272,4 +272,6 @@ short API SetBkMode(HDC h, short m);
 short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type);
 BYTE  ansi2oem(BYTE c);
 
+short API GetPrivateProfileString(LPCSTR sec, LPCSTR key, LPCSTR def,
+                                  LPSTR buf, short n, LPCSTR f);
 #endif

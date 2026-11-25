@@ -2355,7 +2355,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `gui/mdi.c`, Symbole `gui/icon.c`, INI `gui/ini.c`): osFree-PROGMAN
   (mit -ml) legt Gruppen/Einträge an und startet Minesweeper. Lehre:
   `task_run` nur aus der Hauptschleife – aus einer Task (WinExec) per tsw
-  direkt in die neue springen, sonst ist mainsave überschrieben.
+  direkt in die neue springen, sonst ist mainsave überschrieben. `GUI`
+  ohne Programm: Shell aus SYSTEM.INI `[boot] shell=` (Wunsch des Nutzers).
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians

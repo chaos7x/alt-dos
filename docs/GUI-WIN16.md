@@ -299,6 +299,9 @@ Minesweeper (spielbar), Clock (analog). Dafür neu:
   osFree-PROGMAN (mit `-ml` gebaut – er übergibt `&cs` als nahen Zeiger
   an CreateWindow, im kleinen Modell falsch): Gruppe anlegen, Programm
   eintragen, Minesweeper per Enter starten – in QEMU geprüft.
+  `GUI` ohne Programm startet wie Windows die Shell aus `[boot] shell=`
+  der SYSTEM.INI im Windows-Verzeichnis (Vorgabe PROGMAN.EXE; Anregung
+  des Nutzers).
   Offen: Symbol der Einträge (osFree ruft ExtractIcon dafür nicht),
   DLLs von Programmen, WIN87EM.
 

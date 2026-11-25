@@ -138,10 +138,22 @@ void gui_main(void)
     p = args;
     while (*p == ' ')
         p++;
-    if (!*p) {
-        puts("GUI Programm.EXE [Argumente]\r\n"
-             "Startet ein Windows-3.x-Programm in der Oberflaeche.\r\n");
+    if (*p == '/' && p[1] == '?') {
+        puts("GUI [Programm.EXE [Argumente]]\r\n"
+             "Startet ein Windows-3.x-Programm in der Oberflaeche. Ohne Angabe\r\n"
+             "die Shell aus SYSTEM.INI im Windows-Verzeichnis ([boot] shell=,\r\n"
+             "Vorgabe PROGMAN.EXE) - wie Windows.\r\n");
         DosExit(1);
+    }
+    if (!*p) {                                  /* Shell wie Windows   */
+        GetPrivateProfileString("boot", "shell", "PROGMAN.EXE", args,
+                                sizeof(args), "SYSTEM.INI");
+        p = args;
+        while (*p == ' ')
+            p++;
+        if (!*p)
+            p = "PROGMAN.EXE";
+        glogs("Shell aus SYSTEM.INI: ", p);
     }
     q = prog;
     while (*p && *p != ' ' && q < prog + sizeof(prog) - 5)
