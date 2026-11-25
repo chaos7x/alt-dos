@@ -2059,6 +2059,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 ## Geplant (noch nicht umgesetzt)
 
+- **Befehle aus FreeCOM für CMD** (Wunsch des Nutzers, 25.11.2026; noch
+  kein Code): fehlende interne Befehle (PUSHD/POPD/DIRS, HISTORY, ALIAS,
+  WHICH, CDD, BEEP, TITLE) und Schalter (COPY /Y /V /A /B + COPYCMD,
+  DEL /P, SET /P /E /A, IF /I, FOR /D /R /L /F, CALL /Y, DATE/TIME /T,
+  DIR /L) neu schreiben, kein FreeCOM-Code. Vergleich, Abwägung und
+  Reihenfolge in `docs/CMD-FREECOM.md`.
+
 - **Grafiktreiber der Karte für Windows 3.1 in der Box** (vorgemerkt vom
   Nutzer, 24.11.2026: „VGA 17 Farben sind langweilig“; noch kein Code):
   I/O-Bitmap der Box auf alle 64K Ports verlängern (heute 0–3DFh – die
