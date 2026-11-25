@@ -2148,8 +2148,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
   zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.
 
-- **CHKDSK vor der Auslagerungsdatei** (vorgemerkt vom Nutzer,
-  23.11.2026; noch kein Code): ist das Sauber-Bit des Startlaufwerks
+- **CHKDSK vor der Auslagerungsdatei** – erledigt (25.11.2026, Auftrag
+  des Nutzers): kmain merkt `boot_late`, wenn Auslagerungsdatei und LOOP=
+  wegen einer Prüfung ausgelassen wurden (nicht bei einer Umwandlung –
+  dort folgt ohnehin der Neustart); CMD /P ruft nach `autochk` FAPI_LOOP
+  `LOOP_BOOTLATE` (3) -> `swap_loop` (swap_boot + loop_boot, aus kmain
+  herausgelöst) im selben Start. Geprüft: QEMU 4 MB (Sauber-Bit gelöscht:
+  CHKDSK, dann SWAPPER.DAT 7 MB und LOOP -> E:, MEM zeigt die Datei;
+  danach normaler Start unverändert, fsck sauber) und 86Box 386DX/40
+  4 MB mit AHA-154x (Datei zur Laufzeit über den Treiber angelegt, fsck
+  sauber). Ursprünglicher Plan: ist das Sauber-Bit des Startlaufwerks
   gelöscht (`vol[].was_dirty`) oder nennt AUTOCHK.LST eine Prüfung, soll
   CHKDSK laufen, bevor SWAPPER.DAT angelegt/geöffnet und LOOP= eingehängt
   wird – und beides danach im selben Start doch noch geschehen. Heute

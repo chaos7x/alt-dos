@@ -7098,6 +7098,20 @@ static void loop_undo(int dev, unsigned long m)
 
 static unsigned loop_att(unsigned a3);
 static void loop_boot(void);
+static unsigned char boot_late;     /* 1: Auslagerungsdatei/LOOP= wegen
+                                       einer Pruefung ausgelassen       */
+
+/* Auslagerungsdatei (SWAPPATH=) und LOOP= aus CONFIG.SYS: beim Start,
+   oder nach der Pruefung beim Start (LOOP_BOOTLATE, CMD /P) */
+static void swap_loop(char *msg)
+{
+    int i = env_find(-1, "SWAPPATH", 8);
+    swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
+              sys_drive, msg, fi_canon);
+    if (msg[0])
+        vio_kputs(boot_session, msg);
+    loop_boot();
+}
 
 /* \AUTOCHK.LST des Startlaufwerks nennt eine Umwandlung (CONVERT hat
    das Laufwerk nicht sperren koennen): dann bleiben Auslagerungsdatei
@@ -7143,6 +7157,13 @@ static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
             far_copy(usel, FP_OFF(li->path), FP_SEG(files), FP_OFF(files[k].path),
                      IFS_PATHLEN);
         }
+        return 0;
+    }
+    if (a1 == LOOP_BOOTLATE) {          /* nach AUTOCHECK (CMD /P)       */
+        if (!boot_late)
+            return FAPI_ERROR;
+        boot_late = 0;
+        swap_loop(fi_u.q.qb);
         return 0;
     }
     if (a1 == LOOP_DETACH) {
@@ -7813,15 +7834,10 @@ void kmain(void)
     else if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
         vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
                   "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "
-                  "diesmal ohne Auslagerungsdatei und LOOP=\n");
-    } else {                                    /* nichts darf offen sein */
-        i = env_find(-1, "SWAPPATH", 8);        /* Auslagerungsdatei      */
-        swap_boot(i < 0 ? 0 : (const char __far *)MK_FP(env_sel, env_off(-1) + i + 9),
-                  sys_drive, line, fi_canon);
-        if (line[0])
-            vio_kputs(boot_session, line);
-        loop_boot();                            /* LOOP= aus CONFIG.SYS   */
-    }
+                  "Auslagerungsdatei und LOOP= erst danach\n");
+        boot_late = i != 1;                     /* CMD /P holt sie nach    */
+    } else                                      /* nichts darf offen sein */
+        swap_loop(line);
     files[CONS].refs = 255;
     pipe_sel = kseg_alloc(NPIPE * PIPESZ);
     if (!pipe_sel)

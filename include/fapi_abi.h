@@ -581,6 +581,11 @@ struct fapi_resolve {
 #define LOOP_INFO           2       /* CX = Platz 0..3, DX = struct
                                        fapi_loopinfo -> 0 (drives 0 = Platz
                                        frei), FAPI_ERROR hinter dem letzten */
+#define LOOP_BOOTLATE       3       /* Auslagerungsdatei und LOOP= nach-
+                                       holen, die der Kernel wegen einer
+                                       Pruefung beim Start ausgelassen hat
+                                       (CMD /P nach AUTOCHECK) -> 0,
+                                       FAPI_ERROR (nichts ausgelassen) */
 #define FAPI_ERR_FRAG       0xFFF8  /* LOOP: Datei zu stark zerstueckelt  */
 struct fapi_loopinfo {
     unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */

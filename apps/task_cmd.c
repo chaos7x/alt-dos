@@ -3279,6 +3279,9 @@ static void autochk(void)
         run_program(cl, 1, 0);
         puts("\n");
     }
+    /* Auslagerungsdatei und LOOP= hat der Kernel wegen der Pruefung
+       ausgelassen - jetzt nachholen (FAPI_ERROR: nichts ausgelassen) */
+    DosLoop(LOOP_BOOTLATE, 0, 0);
 }
 
 static int run_program(char *cmd, int sync, int call)
