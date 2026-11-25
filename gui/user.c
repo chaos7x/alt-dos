@@ -1879,6 +1879,14 @@ BOOL API IsChild(HWND p, HWND h)
 }
 HWND API GetDesktopWindow(void) { return desktop; }
 HWND API WindowFromPoint(POINT p) { return win_at(p.x, p.y); }
+/* nach oben ohne zu aktivieren (Klappliste) */
+void wnd_raise(HWND h)
+{
+    struct wnd *w = wptr(h);
+    if (w && w->z != zmax)
+        w->z = ++zmax;
+}
+
 BOOL API BringWindowToTop(HWND h)
 {
     struct wnd *w = wptr(h);
@@ -2291,6 +2299,8 @@ void user_init(void)
     cl[6].proc = listbox_proc;
     cl[7].used = 1; cl[7].internal = 1; fstrncpy(cl[7].name, "MDICLIENT", 24);
     cl[7].proc = mdi_client_proc;
+    cl[8].used = 1; cl[8].internal = 1; fstrncpy(cl[8].name, "COMBOBOX", 24);
+    cl[8].proc = combo_proc;
     rset(&r, 0, 0, SCR_W, SCR_H);
     expose(&r);
     user_paint_pending();

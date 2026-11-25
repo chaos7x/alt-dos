@@ -179,18 +179,27 @@ static BYTE mnem_of(LPCSTR s)
     return 0;
 }
 
+/* Kind von d, in dem h steckt (Feld einer COMBOBOX -> die COMBOBOX) */
+static HWND dlg_kid(HWND d, HWND h)
+{
+    struct wnd *w = wptr(h);
+    while (w && (w->style & WS_CHILD) && w->parent != d)
+        w = wptr(w->parent);
+    return w && (w->style & WS_CHILD) && w->parent == d ? HW(w - ww) : 0;
+}
+
 BOOL API IsDialogMessage(HWND d, MSG FAR *m)
 {
     struct wnd *dw = wptr(d), *t = wptr(m->hwnd);
-    if (!dw || !t || (m->hwnd != d && !(t->style & WS_CHILD && t->parent == d)))
+    if (!dw || !t || (m->hwnd != d && !dlg_kid(d, m->hwnd)))
         return 0;
     if (m->message == WM_KEYDOWN || m->message == WM_CHAR) {
-        HWND f = GetFocus();
+        HWND f = GetFocus(), fk = dlg_kid(d, f);
         WORD code = f ? (WORD)send_msg(f, WM_GETDLGCODE, 0, 0) : 0;
         BYTE k = (BYTE)m->wParam;
         if (k == 0x09 && !(code & (DLGC_WANTTAB | DLGC_WANTALLKEYS))) {
             if (m->message == WM_KEYDOWN) {
-                HWND n = GetNextDlgTabItem(d, f, GetKeyState(0x10) < 0);
+                HWND n = GetNextDlgTabItem(d, fk ? fk : f, GetKeyState(0x10) < 0);
                 if (n) {
                     SetFocus(n);
                     if (wptr(n) && (WORD)send_msg(n, WM_GETDLGCODE, 0, 0) & DLGC_HASSETSEL)
@@ -324,7 +333,7 @@ static LPCSTR tstr(BYTE FAR * FAR *pp)
 
 static const char *pcls[] = { "BUTTON", "EDIT", "STATIC", "LISTBOX", "SCROLLBAR", "COMBOBOX" };
 
-static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD param)
+static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD param, BYTE intl)
 {
     DWORD st = *(DWORD FAR *)p;
     BYTE n = p[4], i;
@@ -356,7 +365,7 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
     if (!w)
         return 0;
     w->hinst = hinst;
-    d = dnew(h, proc, hinst, 0);
+    d = dnew(h, proc, hinst, intl);
     if (!d) {
         DestroyWindow(h);
         return 0;
@@ -376,8 +385,6 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
             cls = tstr(&p);
         txt = tstr(&p);
         p += 1 + *p;                            /* Zusatzdaten           */
-        if (!fstricmp(cls, "COMBOBOX"))         /* noch nicht: Liste     */
-            cls = "LISTBOX";
         c = CreateWindowEx(0, cls, SELOF(txt) ? txt : "", ist | WS_CHILD,
                            ix, iy, icx, icy, h, id, hinst, 0);
         if (c && !(ist & WS_VISIBLE))
@@ -391,7 +398,7 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
     return h;
 }
 
-static WORD load_tpl(WORD hinst, LPCSTR name)
+WORD load_tpl(WORD hinst, LPCSTR name)
 {
     int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
     DWORD r;
@@ -399,6 +406,12 @@ static WORD load_tpl(WORD hinst, LPCSTR name)
         m = hinst - 1;
     r = w16_res_find(m, MKFP(0, 5), name);
     return r ? w16_res_load(m, r) : 0;
+}
+
+/* interner Dialog aus einer Vorlage (COMMDLG): proc ist eine GUI-Funktion */
+HWND dlg_tpl(const BYTE FAR *tpl, WORD hinst, HWND owner, IDLGPROC proc, DWORD param)
+{
+    return dlg_from(hinst, (BYTE FAR *)tpl, owner, (DWORD)proc, param, 1);
 }
 
 short dlg_run(HWND h, HWND owner)
@@ -446,7 +459,7 @@ short API DialogBoxParam(WORD hinst, LPCSTR name, HWND owner, DWORD proc, DWORD 
         glogs("Dialog fehlt: ", SELOF(name) ? name : "(Zahl)");
         return -1;
     }
-    h = dlg_from(hinst, MKFP(sel, 0), owner, proc, param);
+    h = dlg_from(hinst, MKFP(sel, 0), owner, proc, param, 0);
     seg_del(sel);
     return h ? dlg_run(h, owner) : -1;
 }
@@ -456,7 +469,7 @@ short API DialogBox(WORD hinst, LPCSTR name, HWND owner, DWORD proc)
 }
 short API DialogBoxIndirectParam(WORD hinst, WORD tpl, HWND owner, DWORD proc, DWORD param)
 {
-    HWND h = dlg_from(hinst, MKFP(tpl, 0), owner, proc, param);
+    HWND h = dlg_from(hinst, MKFP(tpl, 0), owner, proc, param, 0);
     return h ? dlg_run(h, owner) : -1;
 }
 short API DialogBoxIndirect(WORD hinst, WORD tpl, HWND owner, DWORD proc)
@@ -469,7 +482,7 @@ HWND API CreateDialogParam(WORD hinst, LPCSTR name, HWND owner, DWORD proc, DWOR
     HWND h;
     if (!sel)
         return 0;
-    h = dlg_from(hinst, MKFP(sel, 0), owner, proc, param);
+    h = dlg_from(hinst, MKFP(sel, 0), owner, proc, param, 0);
     seg_del(sel);
     if (h && (wptr(h)->style & WS_VISIBLE))
         ShowWindow(h, 1);
@@ -481,7 +494,7 @@ HWND API CreateDialog(WORD hinst, LPCSTR name, HWND owner, DWORD proc)
 }
 HWND API CreateDialogIndirect(WORD hinst, LPCSTR tpl, HWND owner, DWORD proc)
 {
-    return dlg_from(hinst, (BYTE FAR *)tpl, owner, proc, 0);
+    return dlg_from(hinst, (BYTE FAR *)tpl, owner, proc, 0, 0);
 }
 
 BOOL API EndDialog(HWND h, short r)
@@ -828,7 +841,7 @@ LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
 /* ---- LISTBOX: Eintraege in einem eigenen Segment ----
    Segment: 512 Worte Stellen der Texte, ab 1024 die Texte; Bit 15 des
    Wortes frei, Daten (LB_SETITEMDATA) in einem zweiten Feld */
-#define NLB     8
+#define NLB     16
 #define LBMAX   500
 static struct lb {
     HWND h;
@@ -837,6 +850,8 @@ static struct lb {
 } lbt[NLB];
 #define LBO(l)  ((WORD FAR *)MKFP((l)->seg, 0))
 #define LBS(l, i) ((char FAR *)MKFP((l)->seg, LBO(l)[i]))
+#define LBD(l)  ((DWORD FAR *)MKFP((l)->seg, 1024))      /* Elementdaten  */
+#define LB_TXT  3072                            /* Texte dahinter        */
 
 static struct lb *lbp(HWND h)
 {
@@ -882,9 +897,12 @@ static short lb_insert(struct lb *l, struct wnd *w, short at, LPCSTR s)
             for (at = 0; at < (short)l->n && lb_cmp(LBS(l, at), s) <= 0; at++)
                 ;
     }
-    for (i = l->n; i > (WORD)at; i--)
+    for (i = l->n; i > (WORD)at; i--) {
         LBO(l)[i] = LBO(l)[i - 1];
+        LBD(l)[i] = LBD(l)[i - 1];
+    }
     LBO(l)[at] = l->used;
+    LBD(l)[at] = 0;
     fmemcpy(MKFP(l->seg, l->used), s, n);
     l->used += n;
     l->n++;
@@ -896,8 +914,10 @@ static void lb_delete(struct lb *l, WORD at)
     WORD i;
     if (at >= l->n)
         return;
-    for (i = at; i + 1 < l->n; i++)
+    for (i = at; i + 1 < l->n; i++) {
         LBO(l)[i] = LBO(l)[i + 1];
+        LBD(l)[i] = LBD(l)[i + 1];
+    }
     l->n--;
     if (l->cur != 0xFFFF && l->cur >= l->n)
         l->cur = l->n ? l->n - 1 : 0xFFFF;
@@ -920,7 +940,7 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         if (!l->seg)
             return -1;
         l->h = h;
-        l->n = 0; l->used = 1024; l->cur = 0xFFFF; l->top = 0; l->last = 0;
+        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->last = 0;
         if (!(w->style & WS_BORDER))
             w->style |= WS_BORDER;
         return 0;
@@ -1048,7 +1068,7 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         lb_show(l, w);
         return l->n;
     case 0x0405:                                /* LB_RESETCONTENT       */
-        l->n = 0; l->used = 1024; l->cur = 0xFFFF; l->top = 0;
+        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0;
         lb_show(l, w);
         return 0;
     case 0x0407:                                /* LB_SETCURSEL          */
@@ -1083,6 +1103,21 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
                     return i;
                 }
             }
+        }
+        return -1;
+    }
+    case 0x041A:                                /* LB_GETITEMDATA        */
+        return wp < l->n ? (LONG)LBD(l)[wp] : -1L;
+    case 0x041B:                                /* LB_SETITEMDATA        */
+        if (wp >= l->n) return -1;
+        LBD(l)[wp] = lp;
+        return 0;
+    case 0x0423: {                              /* LB_FINDSTRINGEXACT    */
+        WORD i, k;
+        for (k = 0; k < l->n; k++) {
+            i = (WORD)((short)wp + 1 + k) % l->n;
+            if (!fstricmp(LBS(l, i), (LPCSTR)lp))
+                return i;
         }
         return -1;
     }

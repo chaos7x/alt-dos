@@ -319,6 +319,40 @@ Minesweeper (spielbar), Clock (analog). Dafür neu:
   Offen: Symbol der Einträge (osFree ruft ExtractIcon dafür nicht),
   DLLs von Programmen, WIN87EM.
 
+### Stand: Standarddialoge auf den Vorlagen von Wine (25.11.2026)
+
+Vorschlag nach der Frage des Nutzers, ob ReactOS für die Dialoge taugt:
+der Code von ReactOS/Wine ist 32-Bit-Win32 und passt nicht, wohl aber
+die **Vorlagen** der alten Dialoge im Stil von Windows 3.1 aus Wine
+`dlls/comdlg32/comdlg32.rc` (OPEN_FILE, SAVE_FILE, PRINT, PRINT_SETUP,
+CHOOSE_FONT, CHOOSE_COLOR, FINDDLGORD, REPLACEDLGORD; LGPL-2.1-or-later,
+unter GPL-2.0-or-later weitergegeben). `gui/res/commdlg.rc` = diese
+Dialoge mit den deutschen Texten aus Wine `po/de.po` (vier geändert, weil
+unsere Schrift 8 Punkte breit ist), Herkunft im Kopf der Datei.
+`tools/rc2dlg.py` macht beim Bauen 16-Bit-DLGTEMPLATEs daraus
+(`build/cdlgtpl.h`, `__far` – eigenes Datensegment, DGROUP von GUI.EXE
+hat nur noch ~2 KB frei); OWNERDRAW-Listen werden gewöhnliche.
+Größe und Steuerelement-Nummern sind die von Windows, also funktionieren
+auch eigene Vorlagen (`ENABLETEMPLATE[HANDLE]`) und Hooks (`ENABLEHOOK`:
+der Hook bekommt jede Nachricht zuerst, WM_INITDIALOG mit der Struktur).
+
+Dafür neu: **COMBOBOX** (`gui/combo.c`) – SIMPLE, DROPDOWN, DROPDOWNLIST;
+die Einträge hält immer ein LISTBOX-Fenster (Kind bzw. verborgenes Popup),
+aufgeklappt wird es wie ein Menü verfolgt (`track_on`/`track_off` in
+menu.c, Maus/Tasten als MT_*); CB_* wie Win16 (WM_USER + n), CBN_* an den
+Elternteil. LISTBOX kann jetzt LB_GET/SETITEMDATA und LB_FINDSTRINGEXACT,
+`NLB` 16. `IsDialogMessage` nimmt Enkel (das Feld in einer COMBOBOX).
+Lehren: ein Popup bekommt in CreateWindowEx im Menü-Feld 0, sonst rechnet
+calc_client eine Menüzeile ab; Popups, die beim Anlegen eines Dialogs
+entstehen, liegen nach dem Aktivieren des Dialogs unter ihm
+(`wnd_raise` vor dem Zeigen).
+
+Umgestellt: Öffnen/Speichern (Dateityp- und Laufwerksliste, Schreibschutz,
+Hilfe nur mit OFN_SHOWHELP), Suchen, Ersetzen (neu). In QEMU geprüft:
+Notepad öffnet über den Dialog, Laufwerk per Klappliste (leeres CD:
+„Laufwerk nicht bereit“), Suchen findet; osFree-PROGMAN Durchsuchen mit
+seinem Typfilter. Nächstes: Farbe, Schriftart, Drucken.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

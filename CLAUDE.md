@@ -2363,6 +2363,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `STK_EXTRA` – PROGMAN lief beim Durchsuchen-Dialog über); Shell auch im
   Windows-Verzeichnis/PATH. Lehre: Rahmen mit negativen Bildschirm-
   koordinaten zeichnet GDI nicht – oberste Fenster maximiert ohne Versatz.
+  Standarddialoge (25.11.2026, Frage des Nutzers nach ReactOS): Vorlagen
+  aus Wine comdlg32.rc deutsch in `gui/res/commdlg.rc` (LGPL-2.1+),
+  `tools/rc2dlg.py` -> `build/cdlgtpl.h`; COMBOBOX `gui/combo.c`;
+  Öffnen/Speichern/Suchen/Ersetzen darauf, Hooks/eigene Vorlagen. Stand
+  in `docs/GUI-WIN16.md` „Standarddialoge“.
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians

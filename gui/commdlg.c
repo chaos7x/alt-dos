@@ -33,6 +33,9 @@
 BOOL API ShowWindow(HWND h, short cmd);
 WORD API RegisterWindowMessage(LPCSTR name);
 void API PostQuitMessage(short code);
+short API GetWindowTextLength(HWND h);
+BOOL API IsWindowVisible(HWND h);
+BOOL API EnableWindow(HWND h, BOOL on);
 
 static DWORD cderr;
 DWORD API CommDlgExtendedError(void) { return cderr; }
@@ -49,16 +52,70 @@ short API GetFileTitle(LPCSTR path, LPSTR buf, WORD n)
     return 0;
 }
 
+/* ---- Vorlagen (Wine, gui/res/commdlg.rc), Hooks ---- */
+#include "cdlgtpl.h"
+
+#define WM_INITDIALOG 0x0110
+#define SW_HIDE  0
+
+/* Vorlage waehlen: eigene des Programms (ENABLETEMPLATE[HANDLE]) oder unsere */
+static const BYTE FAR *cd_tpl(DWORD fl, DWORD f_tpl, DWORD f_hnd, WORD hinst,
+                              LPCSTR name, const BYTE FAR *ours, WORD FAR *sel)
+{
+    *sel = 0;
+    if ((fl & f_hnd) && hinst)
+        return (const BYTE FAR *)MKFP(hinst, 0);
+    if ((fl & f_tpl) && hinst && name) {
+        *sel = load_tpl(hinst, name);
+        if (*sel)
+            return (const BYTE FAR *)MKFP(*sel, 0);
+    }
+    return ours;
+}
+
+/* Hook des Programms (ENABLEHOOK): bekommt jede Nachricht zuerst */
+static WORD hq[5];
+static BOOL cd_hook(DWORD hook, WORD hinst, HWND d, WORD m, WORD wp, DWORD lp)
+{
+    if (!hook)
+        return 0;
+    hq[0] = d; hq[1] = m; hq[2] = wp; hq[3] = HIWORD(lp); hq[4] = LOWORD(lp);
+    return (short)call16((void FAR *)hook, hinst, 5, hq) != 0;
+}
+
+static void hide(HWND d, short id)
+{
+    HWND c = GetDlgItem(d, id);
+    if (c) ShowWindow(c, SW_HIDE);
+}
+
 /* ---- Datei oeffnen / speichern ---- */
-#define ID_NAME  1152           /* edt1 */
-#define ID_FILES 1120           /* lst1 */
-#define ID_DIRS  1121           /* lst2 */
-#define ID_PATH  1088           /* stc1 */
-#define ID_TYPE  1089           /* stc2 */
+#define ID_NAME  0x480          /* edt1 */
+#define ID_FILES 0x460          /* lst1 */
+#define ID_DIRS  0x461          /* lst2 */
+#define ID_PATH  0x440          /* stc1 */
+#define ID_TYPES 0x470          /* cmb1 */
+#define ID_DRIVES 0x471         /* cmb2 */
+#define ID_RO    0x410          /* chx1 */
+#define ID_HELP  0x40E          /* pshHelp */
+#define CB_ADDSTRING  0x0403
+#define CB_GETCURSEL  0x0407
+#define CB_GETLBTEXT  0x0408
+#define CB_RESETCONTENT 0x040B
+#define CB_SETCURSEL  0x040E
+#define OFN_READONLY  0x0001UL
+#define OFN_HIDEREADONLY 0x0004UL
+#define OFN_NOCHANGEDIR 0x0008UL
+#define OFN_SHOWHELP  0x0010UL
+#define OFN_ENABLEHOOK 0x0020UL
+#define OFN_ENABLETEMPLATE 0x0040UL
+#define OFN_ENABLETEMPLATEHANDLE 0x0080UL
 
 static struct {
     BYTE FAR *ofn;
     BYTE  save;
+    DWORD hook;
+    WORD  hinst;
     char  pat[80];
     char  cur[FAPI_PATHLEN];
     char  buf[FAPI_PATHLEN];
@@ -68,7 +125,7 @@ static struct fapi_dirent fd_e;
 static void fd_fill(HWND d)
 {
     WORD i, x;
-    HWND lf = GetDlgItem(d, ID_FILES), ld = GetDlgItem(d, ID_DIRS);
+    HWND lf = GetDlgItem(d, ID_FILES), ld = GetDlgItem(d, ID_DIRS), cd = GetDlgItem(d, ID_DRIVES);
     static char line[24];
     send_msg(lf, LB_RESETCONTENT, 0, 0);
     send_msg(ld, LB_RESETCONTENT, 0, 0);
@@ -86,6 +143,8 @@ static void fd_fill(HWND d)
             x = fstrlen(line);
             line[x] = ']';
             line[x + 1] = 0;
+            for (x = 0; line[x]; x++)
+                if (line[x] >= 'A' && line[x] <= 'Z') line[x] += 32;
             send_msg(ld, LB_ADDSTRING, 0, (DWORD)(void FAR *)line);
         } else if (fd.pat[0]) {
             char *p = fd.pat, *q;
@@ -96,20 +155,24 @@ static void fd_fill(HWND d)
                 *q = 0;
                 if (*p) p++;
                 if (wmatch(one, fd_e.name)) {
-                    send_msg(lf, LB_ADDSTRING, 0, (DWORD)(void FAR *)fd_e.name);
+                    fstrncpy(line, fd_e.name, sizeof(line));
+                    for (x = 0; line[x]; x++)
+                        if (line[x] >= 'A' && line[x] <= 'Z') line[x] += 32;
+                    send_msg(lf, LB_ADDSTRING, 0, (DWORD)(void FAR *)line);
                     break;
                 }
             }
         }
     }
+    send_msg(cd, CB_RESETCONTENT, 0, 0);
     for (i = 0; i < 26; i++) {
         static char dummy[FAPI_PATHLEN];
         if (FAPI_FAILED(DosQCurDirD(i, dummy)))
             continue;
-        line[0] = '['; line[1] = '-'; line[2] = (char)('a' + i); line[3] = '-';
-        line[4] = ']'; line[5] = 0;
-        send_msg(ld, LB_INSERTSTRING, (WORD)send_msg(ld, LB_GETCOUNT, 0, 0),
-                 (DWORD)(void FAR *)line);
+        line[0] = (char)('a' + i); line[1] = ':'; line[2] = 0;
+        x = (WORD)send_msg(cd, CB_ADDSTRING, 0, (DWORD)(void FAR *)line);
+        if (i == DosQCurDisk())
+            send_msg(cd, CB_SETCURSEL, x, 0);
     }
     DosQCurDir(fd.cur);
     for (x = 0; fd.cur[x]; x++)
@@ -118,13 +181,14 @@ static void fd_fill(HWND d)
     SetDlgItemText(d, ID_PATH, fd.cur);
 }
 
-static void fd_filter(HWND d)                   /* Filter nFilterIndex   */
+/* Filter nFilterIndex: Liste der Typen fuellen, Muster setzen */
+static void fd_types(HWND d)
 {
     LPCSTR f = *(LPCSTR FAR *)(fd.ofn + 8);
-    WORD idx = *(WORD FAR *)(fd.ofn + 20), k = 1;
-    static char t[80];
+    WORD idx = *(WORD FAR *)(fd.ofn + 20), k = 0;
+    HWND c = GetDlgItem(d, ID_TYPES);
+    send_msg(c, CB_RESETCONTENT, 0, 0);
     fstrncpy(fd.pat, "*.*", sizeof(fd.pat));
-    fstrncpy(t, "Dateityp: alle Dateien", sizeof(t));
     if (!idx) idx = 1;
     while (f && *f) {
         LPCSTR desc = f, pat;
@@ -133,16 +197,36 @@ static void fd_filter(HWND d)                   /* Filter nFilterIndex   */
         if (!*pat)
             break;
         f += fstrlen(f) + 1;
-        if (k++ == idx) {
+        send_msg(c, CB_ADDSTRING, 0, (DWORD)desc);
+        if (++k == idx)
             fstrncpy(fd.pat, pat, sizeof(fd.pat));
-            fstrncpy(t, "Dateityp: ", sizeof(t));
-            fstrncpy(t + 10, desc, sizeof(t) - 10);
+    }
+    if (!k) {
+        send_msg(c, CB_ADDSTRING, 0, (DWORD)(void FAR *)"Alle Dateien (*.*)");
+        k = idx = 1;
+    }
+    send_msg(c, CB_SETCURSEL, (idx <= k ? idx : 1) - 1, 0);
+}
+
+static void fd_type_sel(HWND d)                 /* anderer Typ gewaehlt  */
+{
+    LPCSTR f = *(LPCSTR FAR *)(fd.ofn + 8);
+    short s = (short)SendDlgItemMessage(d, ID_TYPES, CB_GETCURSEL, 0, 0), k = 0;
+    while (f && *f && s >= 0) {
+        LPCSTR pat;
+        f += fstrlen(f) + 1;
+        pat = f;
+        if (!*pat)
+            break;
+        f += fstrlen(f) + 1;
+        if (k++ == s) {
+            fstrncpy(fd.pat, pat, sizeof(fd.pat));
+            *(DWORD FAR *)(fd.ofn + 20) = (DWORD)(s + 1);
             break;
         }
     }
-    SetDlgItemText(d, ID_TYPE, t);
+    fd_fill(d);
 }
-
 static int has_wild(LPCSTR s)
 {
     for (; *s; s++)
@@ -223,6 +307,34 @@ static int fd_ok(HWND d)
 
 static BOOL fd_proc(HWND d, WORD m, WORD wp, DWORD lp)
 {
+    if (cd_hook(fd.hook, fd.hinst, d, m, wp, m == WM_INITDIALOG ? (DWORD)fd.ofn : lp))
+        return 1;
+    if (m == WM_INITDIALOG) {
+        DWORD fl = *(DWORD FAR *)(fd.ofn + 48);
+        LPSTR file = *(LPSTR FAR *)(fd.ofn + 24);
+        LPCSTR tt = *(LPCSTR FAR *)(fd.ofn + 44);
+        if (tt && *tt)
+            SetWindowText(d, tt);
+        if (fl & OFN_HIDEREADONLY)
+            hide(d, ID_RO);
+        else
+            SendDlgItemMessage(d, ID_RO, BM_SETCHECK, (fl & OFN_READONLY) ? 1 : 0, 0);
+        if (!(fl & OFN_SHOWHELP))
+            hide(d, ID_HELP);
+        fd_types(d);
+        if (file && *file) {
+            if (has_wild(file))
+                fstrncpy(fd.pat, file, sizeof(fd.pat));
+            else
+                SetDlgItemText(d, ID_NAME, file);
+        }
+        if (!GetWindowTextLength(GetDlgItem(d, ID_NAME)))
+            SetDlgItemText(d, ID_NAME, fd.pat);
+        fd_fill(d);
+        SetFocus(GetDlgItem(d, ID_NAME));
+        SendDlgItemMessage(d, ID_NAME, 0x0401, 0, MAKELONG(0, 0x7FFF));
+        return 0;
+    }
     if (m != WM_COMMAND)
         return 0;
     switch (wp) {
@@ -241,21 +353,39 @@ static BOOL fd_proc(HWND d, WORD m, WORD wp, DWORD lp)
         if (HIWORD(lp) == 2) {
             short s = (short)SendDlgItemMessage(d, ID_DIRS, LB_GETCURSEL, 0, 0);
             if (s >= 0) {
+                WORD n;
                 SendDlgItemMessage(d, ID_DIRS, LB_GETTEXT, s, (DWORD)(void FAR *)fd.buf);
-                if (fd.buf[1] == '-') {
-                    DosSelectDisk(fd.buf[2] - 'a');
-                } else {
-                    WORD n = fstrlen(fd.buf);
-                    fd.buf[n - 1] = 0;
-                    DosChDir(fd.buf + 1);
-                }
+                n = fstrlen(fd.buf);
+                fd.buf[n - 1] = 0;
+                DosChDir(fd.buf + 1);
                 fd_fill(d);
             }
         }
         return 1;
+    case ID_DRIVES:
+        if (HIWORD(lp) == 1) {                  /* CBN_SELCHANGE         */
+            short s = (short)SendDlgItemMessage(d, ID_DRIVES, CB_GETCURSEL, 0, 0);
+            if (s >= 0) {
+                SendDlgItemMessage(d, ID_DRIVES, CB_GETLBTEXT, s, (DWORD)(void FAR *)fd.buf);
+                if (FAPI_FAILED(DosSelectDisk(fd.buf[0] - 'a')))
+                    MessageBox(d, "Laufwerk nicht bereit.", "Laufwerke", 0x30);
+            }
+            fd_fill(d);
+        }
+        return 1;
+    case ID_TYPES:
+        if (HIWORD(lp) == 1)
+            fd_type_sel(d);
+        return 1;
     case IDOK:
-        if (fd_ok(d))
+        if (fd_ok(d)) {
+            DWORD FAR *fl = (DWORD FAR *)(fd.ofn + 48);
+            if (IsWindowVisible(GetDlgItem(d, ID_RO))) {
+                if (SendDlgItemMessage(d, ID_RO, BM_GETCHECK, 0, 0)) *fl |= OFN_READONLY;
+                else *fl &= ~OFN_READONLY;
+            }
             EndDialog(d, 1);
+        }
         return 1;
     case IDCANCEL:
         EndDialog(d, 0);
@@ -267,15 +397,18 @@ static BOOL fd_proc(HWND d, WORD m, WORD wp, DWORD lp)
 static BOOL file_dlg(BYTE FAR *o, int save)
 {
     HWND owner = *(WORD FAR *)(o + 4), d;
-    LPCSTR tt = *(LPCSTR FAR *)(o + 44), idir = *(LPCSTR FAR *)(o + 40);
-    LPSTR file = *(LPSTR FAR *)(o + 24);
+    LPCSTR idir = *(LPCSTR FAR *)(o + 40);
     DWORD fl = *(DWORD FAR *)(o + 48);
     static char home[FAPI_PATHLEN];
+    const BYTE FAR *tpl;
     WORD hd = DosQCurDisk();
+    static WORD sel;               /* static: SS != DS */
     short r;
     cderr = 0;
     fd.ofn = o;
     fd.save = (BYTE)save;
+    fd.hinst = *(WORD FAR *)(o + 6);
+    fd.hook = (fl & OFN_ENABLEHOOK) ? *(DWORD FAR *)(o + 64) : 0;
     DosQCurDir(home);
     if (idir && *idir) {
         if (idir[1] == ':')
@@ -283,34 +416,18 @@ static BOOL file_dlg(BYTE FAR *o, int save)
         fstrncpy(fd.buf, idir, sizeof(fd.buf));
         DosChDir(fd.buf);
     }
-    d = dlg_new(owner, tt ? tt : (save ? "Speichern unter" : "Datei \xF6" "ffnen"),
-                -1, -1, 440, 270, (IDLGPROC)fd_proc, 0);
+    tpl = cd_tpl(fl, OFN_ENABLETEMPLATE, OFN_ENABLETEMPLATEHANDLE, fd.hinst,
+                 *(LPCSTR FAR *)(o + 68), save ? dlg_SAVE_FILE : dlg_OPEN_FILE, &sel);
+    d = dlg_tpl(tpl, tpl == dlg_OPEN_FILE || tpl == dlg_SAVE_FILE ? 0 : fd.hinst,
+                owner, (IDLGPROC)fd_proc, 0);
+    if (sel)
+        seg_del(sel);
     if (!d) {
         cderr = 2;                              /* CDERR_INITIALIZATION  */
         return 0;
     }
-    dlg_item(d, "STATIC", "Datei&name:", 0, 10, 6, 180, 16, 0xFFFF);
-    dlg_item(d, "EDIT", "", WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 10, 24, 180, 22, ID_NAME);
-    dlg_item(d, "LISTBOX", "", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOTIFY | LBS_SORT,
-             10, 52, 180, 180, ID_FILES);
-    dlg_item(d, "STATIC", "&Verzeichnisse:", 0, 200, 6, 140, 16, 0xFFFF);
-    dlg_item(d, "STATIC", "", 0x80, 200, 26, 230, 16, ID_PATH);
-    dlg_item(d, "LISTBOX", "", WS_BORDER | WS_VSCROLL | WS_TABSTOP | LBS_NOTIFY | LBS_SORT,
-             200, 52, 140, 180, ID_DIRS);
-    dlg_item(d, "STATIC", "", 0x80, 10, 240, 330, 16, ID_TYPE);
-    dlg_item(d, "BUTTON", "OK", WS_TABSTOP | BS_DEFPUSH, 352, 52, 80, 26, IDOK);
-    dlg_item(d, "BUTTON", "Abbrechen", WS_TABSTOP, 352, 86, 80, 26, IDCANCEL);
-    fd_filter(d);
-    if (file && *file) {
-        if (has_wild(file))
-            fstrncpy(fd.pat, file, sizeof(fd.pat));
-        else
-            SetDlgItemText(d, ID_NAME, file);
-    }
-    fd_fill(d);
-    SetFocus(GetDlgItem(d, ID_NAME));
     r = dlg_run(d, owner);
-    if (fl & 8) {                               /* OFN_NOCHANGEDIR       */
+    if (fl & OFN_NOCHANGEDIR) {
         DosSelectDisk(hd);
         DosChDir(home);
     }
@@ -320,19 +437,52 @@ static BOOL file_dlg(BYTE FAR *o, int save)
 BOOL API GetOpenFileName(BYTE FAR *o) { return file_dlg(o, 0); }
 BOOL API GetSaveFileName(BYTE FAR *o) { return file_dlg(o, 1); }
 
-/* ---- Suchen (nicht modal) ---- */
-#define ID_WHAT  1152
-#define ID_CASE  1041
-#define ID_UP    1056
-#define ID_DOWN  1057
+/* ---- Suchen und Ersetzen (nicht modal) ---- */
+#define ID_WHAT  0x480          /* edt1 */
+#define ID_WITH  0x481          /* edt2 */
+#define ID_WORD  0x410          /* chx1 */
+#define ID_CASE  0x411          /* chx2 */
+#define ID_UP    0x420          /* rad1 */
+#define ID_DOWN  0x421          /* rad2 */
+#define ID_REPL  0x400          /* psh1 */
+#define ID_REPLALL 0x401        /* psh2 */
+#define FR_DOWN       0x00000001UL
+#define FR_WHOLEWORD  0x00000002UL
+#define FR_MATCHCASE  0x00000004UL
+#define FR_SHOWHELP   0x00000080UL
+#define FR_ENABLEHOOK 0x00000100UL
+#define FR_ENABLETEMPLATE 0x00000200UL
+#define FR_NOUPDOWN   0x00000400UL
+#define FR_NOMATCHCASE 0x00000800UL
+#define FR_NOWHOLEWORD 0x00001000UL
+#define FR_ENABLETEMPLATEHANDLE 0x00002000UL
+#define FR_HIDEUPDOWN 0x00004000UL
+#define FR_HIDEMATCHCASE 0x00008000UL
+#define FR_HIDEWHOLEWORD 0x00010000UL
+
 static BYTE FAR *fr;
 static HWND fr_dlg;
 static WORD fr_msg;
+static BYTE fr_rep;
+static DWORD fr_hook;
 
-static void fr_send(WORD flags)
+static void fr_send(HWND d, WORD flags)
 {
     HWND owner = *(WORD FAR *)(fr + 4);
     DWORD fl = *(DWORD FAR *)(fr + 8) & ~0x007FUL;
+    if (flags & 0x78) {                         /* Felder zurueckschreiben */
+        GetDlgItemText(d, ID_WHAT, *(LPSTR FAR *)(fr + 12), *(WORD FAR *)(fr + 20));
+        if (fr_rep)
+            GetDlgItemText(d, ID_WITH, *(LPSTR FAR *)(fr + 16), *(WORD FAR *)(fr + 22));
+        if (SendDlgItemMessage(d, ID_CASE, BM_GETCHECK, 0, 0)) fl |= FR_MATCHCASE;
+        else fl &= ~FR_MATCHCASE;
+        if (SendDlgItemMessage(d, ID_WORD, BM_GETCHECK, 0, 0)) fl |= FR_WHOLEWORD;
+        else fl &= ~FR_WHOLEWORD;
+        if (!fr_rep) {
+            if (SendDlgItemMessage(d, ID_DOWN, BM_GETCHECK, 0, 0)) fl |= FR_DOWN;
+            else fl &= ~FR_DOWN;
+        }
+    }
     fl |= flags;
     *(DWORD FAR *)(fr + 8) = fl;
     send_msg(owner, fr_msg, 0, (DWORD)(void FAR *)fr);
@@ -340,21 +490,43 @@ static void fr_send(WORD flags)
 
 static BOOL fr_proc(HWND d, WORD m, WORD wp, DWORD lp)
 {
-    (void)lp;
+    if (cd_hook(fr_hook, *(WORD FAR *)(fr + 6), d, m, wp, m == WM_INITDIALOG ? (DWORD)fr : lp))
+        return 1;
+    if (m == WM_INITDIALOG) {
+        DWORD fl = *(DWORD FAR *)(fr + 8);
+        SetDlgItemText(d, ID_WHAT, *(LPSTR FAR *)(fr + 12));
+        if (fr_rep)
+            SetDlgItemText(d, ID_WITH, *(LPSTR FAR *)(fr + 16));
+        SendDlgItemMessage(d, ID_CASE, BM_SETCHECK, (fl & FR_MATCHCASE) ? 1 : 0, 0);
+        SendDlgItemMessage(d, ID_WORD, BM_SETCHECK, (fl & FR_WHOLEWORD) ? 1 : 0, 0);
+        if (!fr_rep)
+            SendDlgItemMessage(d, (fl & FR_DOWN) ? ID_DOWN : ID_UP, BM_SETCHECK, 1, 0);
+        if (fl & FR_HIDEMATCHCASE) hide(d, ID_CASE);
+        else if (fl & FR_NOMATCHCASE) EnableWindow(GetDlgItem(d, ID_CASE), 0);
+        if (fl & FR_HIDEWHOLEWORD) hide(d, ID_WORD);
+        else if (fl & FR_NOWHOLEWORD) EnableWindow(GetDlgItem(d, ID_WORD), 0);
+        if (!fr_rep) {
+            if (fl & FR_HIDEUPDOWN) {
+                hide(d, ID_UP); hide(d, ID_DOWN); hide(d, 0x430);
+            } else if (fl & FR_NOUPDOWN) {
+                EnableWindow(GetDlgItem(d, ID_UP), 0);
+                EnableWindow(GetDlgItem(d, ID_DOWN), 0);
+            }
+        }
+        if (!(fl & FR_SHOWHELP))
+            hide(d, ID_HELP);
+        SetFocus(GetDlgItem(d, ID_WHAT));
+        SendDlgItemMessage(d, ID_WHAT, 0x0401, 0, MAKELONG(0, 0x7FFF));
+        return 0;
+    }
     if (m != WM_COMMAND)
         return 0;
-    if (wp == IDOK) {
-        LPSTR what = *(LPSTR FAR *)(fr + 12);
-        WORD n = *(WORD FAR *)(fr + 20);
-        WORD f = 8;                             /* FR_FINDNEXT           */
-        GetDlgItemText(d, ID_WHAT, what, n);
-        if (SendDlgItemMessage(d, ID_CASE, BM_GETCHECK, 0, 0)) f |= 4;
-        if (SendDlgItemMessage(d, ID_DOWN, BM_GETCHECK, 0, 0)) f |= 1;
-        fr_send(f);
-        return 1;
-    }
-    if (wp == IDCANCEL) {
-        fr_send(0x40);                          /* FR_DIALOGTERM         */
+    switch (wp) {
+    case IDOK:       fr_send(d, 0x08); return 1;           /* FR_FINDNEXT   */
+    case ID_REPL:    fr_send(d, 0x10); return 1;           /* FR_REPLACE    */
+    case ID_REPLALL: fr_send(d, 0x20); return 1;           /* FR_REPLACEALL */
+    case IDCANCEL:
+        fr_send(d, 0x40);                       /* FR_DIALOGTERM         */
         fr_dlg = 0;
         DestroyWindow(d);
         return 1;
@@ -362,38 +534,35 @@ static BOOL fr_proc(HWND d, WORD m, WORD wp, DWORD lp)
     return 0;
 }
 
-HWND API FindText(BYTE FAR *f)
+static HWND find_dlg(BYTE FAR *f, int rep)
 {
     HWND owner = *(WORD FAR *)(f + 4), d;
     DWORD fl = *(DWORD FAR *)(f + 8);
+    WORD hinst = *(WORD FAR *)(f + 6);
+    static WORD sel;
+    const BYTE FAR *ours = rep ? dlg_REPLACEDLGORD : dlg_FINDDLGORD, FAR *tpl;
     cderr = 0;
     if (fr_dlg && wptr(fr_dlg))
         return fr_dlg;
     fr = f;
+    fr_rep = (BYTE)rep;
+    fr_hook = (fl & FR_ENABLEHOOK) ? *(DWORD FAR *)(f + 28) : 0;
     fr_msg = RegisterWindowMessage("commdlg_FindReplace");
-    d = dlg_new(owner, "Suchen", -1, 60, 440, 110, (IDLGPROC)fr_proc, 0);
+    tpl = cd_tpl(fl, FR_ENABLETEMPLATE, FR_ENABLETEMPLATEHANDLE, hinst,
+                 *(LPCSTR FAR *)(f + 32), ours, &sel);
+    d = dlg_tpl(tpl, tpl == ours ? 0 : hinst, owner, (IDLGPROC)fr_proc, 0);
+    if (sel)
+        seg_del(sel);
     if (!d) {
         cderr = 2;
         return 0;
     }
-    dlg_item(d, "STATIC", "Suchen &nach:", 0, 10, 12, 110, 16, 0xFFFF);
-    dlg_item(d, "EDIT", "", WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 120, 8, 200, 22, ID_WHAT);
-    dlg_item(d, "BUTTON", "Gro\xDF-/&Kleinschreibung", WS_TABSTOP | BS_AUTOCHECK | WS_GROUP,
-             10, 76, 200, 20, ID_CASE);
-    dlg_item(d, "BUTTON", "Richtung", BS_GROUPBOX, 216, 40, 110, 62, 0xFFFF);
-    dlg_item(d, "BUTTON", "Auf&w\xE4rts", WS_TABSTOP | BS_AUTORADIO | WS_GROUP, 222, 58, 100, 18, ID_UP);
-    dlg_item(d, "BUTTON", "&Abw\xE4rts", BS_AUTORADIO, 222, 78, 100, 18, ID_DOWN);
-    dlg_item(d, "BUTTON", "&Weitersuchen", WS_TABSTOP | BS_DEFPUSH | WS_GROUP, 330, 8, 104, 26, IDOK);
-    dlg_item(d, "BUTTON", "Abbrechen", WS_TABSTOP, 330, 40, 104, 26, IDCANCEL);
-    SetDlgItemText(d, ID_WHAT, *(LPSTR FAR *)(f + 12));
-    SendDlgItemMessage(d, ID_CASE, BM_SETCHECK, (fl & 4) ? 1 : 0, 0);
-    SendDlgItemMessage(d, (fl & 1) ? ID_DOWN : ID_UP, BM_SETCHECK, 1, 0);
     ShowWindow(d, 1);
-    SetFocus(GetDlgItem(d, ID_WHAT));
     fr_dlg = d;
     return d;
 }
-HWND API ReplaceText(BYTE FAR *f) { (void)f; cderr = 2; return 0; }
+HWND API FindText(BYTE FAR *f) { return find_dlg(f, 0); }
+HWND API ReplaceText(BYTE FAR *f) { return find_dlg(f, 1); }
 
 /* ---- Drucken, Farben, Schriften: noch nicht ---- */
 BOOL API PrintDlg(BYTE FAR *p)

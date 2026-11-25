@@ -720,6 +720,19 @@ void menu_track(HWND h, short bar, int bykey)
    -> Kennung, 0 = abgebrochen, FFFFh = Klick in box (Systemfeld).
    mouse: Maustaste ist beim Oeffnen gedrueckt (Loslassen ueber einem
    Eintrag waehlt ihn) */
+/* fuer andere Verfolger (Klappliste der COMBOBOX): gleicher Weg */
+int track_on(HWND h)
+{
+    if (mt_on || !wptr(h))
+        return 0;
+    mt_on = 1;
+    mt_h = h;
+    mt_cur = -1;
+    return 1;
+}
+int track_busy(void) { return mt_on; }
+void track_off(void) { mt_on = 0; mt_cur = -1; }
+
 WORD menu_popup(HWND h, HMENU hm, short x, short y, const RECT FAR *box, int mouse)
 {
     static MSG msg;

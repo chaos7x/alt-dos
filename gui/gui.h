@@ -235,6 +235,10 @@ BOOL  API AppendMenu(HMENU h, WORD fl, WORD id, LPCSTR s);
 BOOL  API DestroyMenu(HMENU h);
 BOOL  API DrawIcon(HDC hdc, short x, short y, WORD h);
 WORD  API LoadIcon(WORD hinst, LPCSTR name);
+void  wnd_raise(HWND h);                       /* oben, ohne Aktivieren */
+int   track_on(HWND h);                       /* Maus/Tasten als MT_* an h */
+int   track_busy(void);
+void  track_off(void);
 WORD  menu_popup(HWND h, HMENU hm, short x, short y, const RECT FAR *box, int mouse);
 int   menu_input_mouse(short x, short y, BYTE btn);
 int   menu_input_key(WORD k);
@@ -246,13 +250,16 @@ LONG FAR PASCAL button_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 LONG FAR PASCAL static_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 LONG FAR PASCAL dlg_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 LONG FAR PASCAL listbox_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+LONG FAR PASCAL combo_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 void  ui_bevel(HDC dc, short l, short t, short r, short b, int down);
 typedef BOOL (*IDLGPROC)(HWND h, WORD m, WORD wp, DWORD lp);
 HWND  dlg_new(HWND owner, LPCSTR title, short x, short y, short cx, short cy,
               IDLGPROC proc, WORD hinst);           /* interner Dialog     */
 HWND  dlg_item(HWND d, LPCSTR cls, LPCSTR text, DWORD style, short x, short y,
                short cx, short cy, WORD id);
-short dlg_run(HWND d, HWND owner);                   /* modal, -> EndDialog */
+short dlg_run(HWND d, HWND owner);
+HWND  dlg_tpl(const BYTE FAR *tpl, WORD hinst, HWND owner, IDLGPROC proc, DWORD param);
+WORD  load_tpl(WORD hinst, LPCSTR name);                  /* DIALOG-Ressource -> Selektor */                   /* modal, -> EndDialog */
 BOOL API IsDialogMessage(HWND d, MSG FAR *m);
 BOOL API EndDialog(HWND d, short r);
 HWND API GetDlgItem(HWND p, short id);

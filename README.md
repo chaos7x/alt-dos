@@ -69,7 +69,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Symbolen und INI-Dateien auch der osFree-Programm-Manager (startet
   Programme per WinExec; `GUI` ohne Angabe nimmt wie Windows die Shell
   aus `[boot] shell=` der SYSTEM.INI; Fenster minimieren/maximieren,
-  Systemmenü). Beispiel
+  Systemmenü; Standarddialoge auf den Vorlagen von Wine mit COMBOBOX).
+  Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
