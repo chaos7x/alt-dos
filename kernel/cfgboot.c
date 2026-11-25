@@ -23,6 +23,12 @@
 #include "task.h"
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
 #pragma code_seg("ITEXT", "CODE")   /* ganze Datei nur beim Start (INIT-SEGMENT.md) */
+static const char __based(__segname("IDATA")) kc_7[] = "\n\xFE F5: Notstart - ohne CONFIG.SYS und "
+              "AUTOEXEC.CMD (nur BASEDEV=)\n";
+static const char __based(__segname("IDATA")) kc_8[] = " - F8\n";
+static const char __based(__segname("IDATA")) kc_9[] = "\n";
+static const char __based(__segname("IDATA")) kc_11[] = "N\n";
+static const char __based(__segname("IDATA")) kc_12[] = "J\n";
 /* Texte des Startcodes liegen in IDATA (nach dem Start frei): in
    kleinen Stuecken ueber den Stapel ausgeben (Startstapel knapp) */
 static const char __based(__segname("IDATA")) kc_1[] = "\xFE F5: Notstart, F8: Startdateien schrittweise";
@@ -69,8 +75,7 @@ void __far cfg_wait(void)
             boot_f5 = 1;
         else
             k4_hlt();
-    vio_kputs(boot_session, boot_f5 ? "\n\xFE F5: Notstart - ohne CONFIG.SYS und "
-              "AUTOEXEC.CMD (nur BASEDEV=)\n" : boot_f8 ? " - F8\n" : "\n");
+    kc_i(boot_session, boot_f5 ? (const char __far *)kc_7 : boot_f8 ? (const char __far *)kc_8 : (const char __far *)kc_9);
     if (boot_f5)
         kf_env_set("NOTSTART=1");
 }
@@ -92,7 +97,7 @@ static int cfg_ask(const char *l)
     if (k == 27)
         boot_f8 = 2;
     k = k == 'n' || k == 'N';
-    vio_kputs(boot_session, k ? "N\n" : "J\n");
+    kc_i(boot_session, k ? (const char __far *)kc_11 : (const char __far *)kc_12);
     return !k;
 }
 

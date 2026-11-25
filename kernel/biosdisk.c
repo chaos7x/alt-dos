@@ -161,6 +161,8 @@ int __far bios_rw(unsigned drive, unsigned long lba, unsigned n, int wr)
 static unsigned __far kt_i13(struct rmregs *r, int *cf) { return i13(r, cf); }
 #define i13 kt_i13
 #pragma code_seg("ITEXT", "CODE")
+static const char __based(__segname("IDATA")) kb_1[] = "\xFE Startlaufwerk \x81" "ber INT 13h - Ger\x84te \x81"
+              "ber INT 13h laufen langsamer, Treiber in BASEDEV= pr\x81" "fen\n";
 
 int __far bios_attach(void)
 {
@@ -209,8 +211,18 @@ int __far bios_attach(void)
     blk[dev].bsize = 512;
     blk[dev].rem = 0;
     blk[dev].grp = 0;
-    vio_kputs(boot_session, "\xFE Startlaufwerk \x81" "ber INT 13h - Ger\x84te \x81"
-              "ber INT 13h laufen langsamer, Treiber in BASEDEV= pr\x81" "fen\n");
+    {
+        const char __far *m = kb_1;           /* Text in IDATA: stueckweise */
+        char b[33];
+        unsigned i;
+        while (*m) {
+            for (i = 0; i < 32 && m[i]; i++)
+                b[i] = m[i];
+            b[i] = 0;
+            vio_kputs(boot_session, b);
+            m += i;
+        }
+    }
     mount_disk(dev);
     return dev;
 }

@@ -53,6 +53,11 @@ static unsigned char pd_n[NPX];         /* Sektoren je Bereich            */
 static unsigned long pd_id[2];          /* Kennung dieses Starts          */
 
 #pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
+static const char __based(__segname("IDATA")) kp_2[] = "----- Absturz, gemeldet beim Start am ";
+static const char __based(__segname("IDATA")) kp_3[] = " -----\r\n";
+static const char __based(__segname("IDATA")) kp_4[] = "\xFE Letzter Lauf endete mit: ";
+static const char __based(__segname("IDATA")) kp_5[] = "  Protokoll: ";
+static const char __based(__segname("IDATA")) kp_6[] = "  Protokoll konnte nicht geschrieben werden.\n";
 static unsigned pn_dec(char *b, unsigned j, unsigned v, int w)
 {
     char t[6];
@@ -70,7 +75,7 @@ static unsigned pn_dec(char *b, unsigned j, unsigned v, int w)
 #pragma code_seg("KTEXT4", "CODE")
 
 #pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
-static unsigned pn_cat(char *b, unsigned j, const char *s)
+static unsigned pn_cat(char *b, unsigned j, const char __far *s)
 {
     while (*s)
         b[j++] = *s++;
@@ -288,7 +293,7 @@ void __far pn_boot(int d, int ses, unsigned n)
                 f = kf_kopen(d, name2, 1);
         }
         st = rtc_stamp();               /* Kopfzeile: Zeitpunkt des Starts */
-        j = pn_cat(pn_buf, 0, "----- Absturz, gemeldet beim Start am ");
+        j = pn_cat(pn_buf, 0, (const char __far *)kp_2);
         j = pn_dec(pn_buf, j, (unsigned)(st >> 16) & 31, 2);
         pn_buf[j++] = '.';
         j = pn_dec(pn_buf, j, (unsigned)(st >> 21) & 15, 2);
@@ -298,7 +303,7 @@ void __far pn_boot(int d, int ses, unsigned n)
         j = pn_dec(pn_buf, j, (unsigned)(st >> 11) & 31, 2);
         pn_buf[j++] = ':';
         j = pn_dec(pn_buf, j, (unsigned)(st >> 5) & 63, 2);
-        j = pn_cat(pn_buf, j, " -----\r\n");
+        j = pn_cat(pn_buf, j, (const char __far *)kp_3);
         if (f) {
             pos = f->size;
             if (pos > PN_KEEP) {
@@ -311,7 +316,7 @@ void __far pn_boot(int d, int ses, unsigned n)
             kf_kclose(f);
         }
         /* erste Zeile (Meldung) unter den Startmeldungen */
-        j = pn_cat(pn_buf, 0, "\xFE Letzter Lauf endete mit: ");
+        j = pn_cat(pn_buf, 0, (const char __far *)kp_4);
         if (src)
             ifs_read(src, PN_TXT, KDATA, (unsigned)(pn_buf + j), 100);
         else {
@@ -325,7 +330,7 @@ void __far pn_boot(int d, int ses, unsigned n)
         pn_buf[i++] = '\n';
         pn_buf[i] = 0;
         vio_kputs(ses, pn_buf);
-        j = pn_cat(pn_buf, 0, f ? "  Protokoll: " : "  Protokoll konnte nicht geschrieben werden.\n");
+        j = pn_cat(pn_buf, 0, f ? (const char __far *)kp_5 : (const char __far *)kp_6);
         if (f) {
             pn_buf[j++] = (char)('A' + d);
             pn_buf[j++] = ':';

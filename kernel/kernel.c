@@ -7323,6 +7323,63 @@ static const char __based(__segname("IDATA")) ks_33[] = "\xFE Umwandlung vorgeme
                   "Auslagerungsdatei und LOOP=\n";
 static const char __based(__segname("IDATA")) ks_34[] = "\xFE Pr\x81" "fung beim Start - "
                   "Auslagerungsdatei und LOOP= erst danach\n";
+static const char __based(__segname("IDATA")) ks_35[] = "SET";
+static const char __based(__segname("IDATA")) ks_36[] = "DEVICE";
+static const char __based(__segname("IDATA")) ks_37[] = "DEVICEHIGH";
+static const char __based(__segname("IDATA")) ks_38[] = "IFS";
+static const char __based(__segname("IDATA")) ks_39[] = "FILES";
+static const char __based(__segname("IDATA")) ks_40[] = "AUTOCHECK";
+static const char __based(__segname("IDATA")) ks_41[] = "PROTSHELL";
+static const char __based(__segname("IDATA")) ks_42[] = "BUFFERS";
+static const char __based(__segname("IDATA")) ks_43[] = "CACHE";
+static const char __based(__segname("IDATA")) ks_44[] = "DOS";
+static const char __based(__segname("IDATA")) ks_45[] = "RMSIZE";
+static const char __based(__segname("IDATA")) ks_46[] = "EMS_FRAME_LOCATION";
+static const char __based(__segname("IDATA")) ks_47[] = "APM";
+static const char __based(__segname("IDATA")) ks_48[] = "ACPI";
+static const char __based(__segname("IDATA")) ks_49[] = "DOSSTART";
+static const char __based(__segname("IDATA")) ks_50[] = "COUNTRY";
+static const char __based(__segname("IDATA")) ks_51[] = "CODEPAGE";
+static const char __based(__segname("IDATA")) ks_52[] = "LOOP";
+static const char __based(__segname("IDATA")) ks_53[] = "RUN";
+static const char __based(__segname("IDATA")) ks_54[] = "SWAPPATH";
+static const char __based(__segname("IDATA")) ks_55[] = "LONGNAMES";
+static const char __based(__segname("IDATA")) ks_56[] = "\\AUTOCHK.LST";
+static const char __based(__segname("IDATA")) ks_57[] = "AUTOCHECK=";
+static const char __based(__segname("IDATA")) ks_58[] = "COMSPEC=A:\\CMD.EXE";
+static const char __based(__segname("IDATA")) ks_59[] = "DOSBOX=A:\\DOS\\MDOS\\FREEDOS.IMG";
+static const char __based(__segname("IDATA")) ks_60[] = "TEMP=A:\\TEMP";
+static const char __based(__segname("IDATA")) ks_61[] = "TMP=A:\\TEMP";
+static const char __based(__segname("IDATA")) ks_62[] = "PATH=A:\\DOS;A:\\";
+static const char __based(__segname("IDATA")) ks_63[] = "CMD.EXE /P";
+static const char __based(__segname("IDATA")) ks_64[] = "kein Speicher fuer die LDTs";
+static const char __based(__segname("IDATA")) ks_65[] = "Kein Speicher fuer die erste Sitzung.";
+static const char __based(__segname("IDATA")) ks_66[] = "Kein Speicher f\x81r die Umgebung.";
+static const char __based(__segname("IDATA")) ks_67[] = "Diskettencontroller antwortet nicht.";
+static const char __based(__segname("IDATA")) ks_68[] = "Diskette A: hat kein lesbares FAT-Dateisystem.";
+static const char __based(__segname("IDATA")) ks_69[] = "Startpartition nicht gefunden - Treiber in CONFIG.SYS?";
+static const char __based(__segname("IDATA")) ks_70[] = "Kein Speicher f\x81r die Dateitabelle (FILES=).";
+static const char __based(__segname("IDATA")) ks_71[] = "Kein Speicher f\x81r Pipes.";
+static const char __based(__segname("IDATA")) ks_72[] = "Kein Befehlsinterpreter.";
+static const char __based(__segname("IDATA")) ks_73[] = "nicht gefunden";
+static const char __based(__segname("IDATA")) ks_74[] = "kein Speicher";
+static const char __based(__segname("IDATA")) ks_75[] = "kein FAPI-Programm";
+static const char __based(__segname("IDATA")) ks_76[] = "keine Task frei";
+static const char __based(__segname("IDATA")) ks_77[] = "360 KB";
+static const char __based(__segname("IDATA")) ks_78[] = "720 KB";
+static const char __based(__segname("IDATA")) ks_79[] = "1,2 MB";
+static const char __based(__segname("IDATA")) ks_80[] = "2,88 MB";
+static const char __based(__segname("IDATA")) ks_81[] = "1,44 MB";
+static const char __based(__segname("IDATA")) ks_82[] = "  Startpartition ist nicht FAT16/FAT32\n";
+static const char __based(__segname("IDATA")) ks_83[] = "  Vorladebereich voll\n";
+static const char __based(__segname("IDATA")) ks_84[] = "  BIOS-Lesefehler beim Vorladen\n";
+static const char __based(__segname("IDATA")) ks_quiet[] =
+    "STACKS\0FCBS\0BREAK\0LASTDRIVE\0DOS\0SHELL\0COUNTRY\0INSTALL\0"
+    "INSTALLHIGH\0NUMLOCK\0SWITCHES\0SET\0MENUITEM\0MENUDEFAULT\0"
+    "MENUCOLOR\0SUBMENU\0INCLUDE\0DRIVPARM\0PNP\0";
+/* LONGNAMES= (0), dann VFAT (14), EA (19), AUTO (22), "-" (27) */
+static const char __based(__segname("IDATA")) ks_lfn[] =
+    "LONGNAMES=\0\0\0\0VFAT\0EA\0AUTO\0-";
 static void ks_i(int s, const char __far *t)
 {
     char b[33];
@@ -7334,6 +7391,11 @@ static void ks_i(int s, const char __far *t)
         vio_kputs(s, b);
         t += i;
     }
+}
+static void pn_i(const char __far *t)  /* Panik mit Text aus IDATA      */
+{
+    fscopy(fi_buf, t, 80);
+    panic(fi_buf);
 }
 
 
@@ -7347,7 +7409,7 @@ static void ldt_init(void)
         nldt = NLDT_MIN;
     u = mem_alloc(PAGES((unsigned long)(NTASK * NLDT * 8)));     /* <= 32 KB */
     if (!u)
-        panic("kein Speicher fuer die LDTs");
+        pn_i(ks_64);
     set_desc(LDTD_IDX, PG_LIN(u), NTASK * NLDT * 8 - 1, ACC_KDATA);
     zero_seg(LDTD, NTASK * NLDT * 4);
     for (i = 0; i < NTASK; i++)
@@ -7513,14 +7575,14 @@ static int next_line(unsigned *p, unsigned len, char *out)
     return 0;                           /* config_sys gibt cfg_sel frei  */
 }
 
-static const char *exec_err(int e)
+static const char __far *exec_err(int e)
 {
     switch (e) {
-    case EXEC_ERR_NOTFOUND: return "nicht gefunden";
-    case EXEC_ERR_NOMEM:    return "kein Speicher";
-    case EXEC_ERR_FORMAT:   return "kein FAPI-Programm";
+    case EXEC_ERR_NOTFOUND: return (const char __far *)ks_73;
+    case EXEC_ERR_NOMEM:    return (const char __far *)ks_74;
+    case EXEC_ERR_FORMAT:   return (const char __far *)ks_75;
     }
-    return "keine Task frei";
+    return (const char __far *)ks_76;
 }
 
 static int conv_pending(void)
@@ -7530,7 +7592,7 @@ static int conv_pending(void)
     if (k < 0)
         return 0;
     files[k].owner = -1;
-    scopy(fi_buf, "\\AUTOCHK.LST", sizeof(fi_buf));
+    fscopy(fi_buf, ks_56, sizeof(fi_buf));
     if (ifs_open(sys_drive, fi_buf, &files[k].f) == 0) {
         n = (unsigned)ifs_read(&files[k].f, 0, KDATA, (unsigned)fi_buf, 255);
         ifs_close(&files[k].f);
@@ -7546,7 +7608,7 @@ static int conv_pending(void)
     return r;
 }
 
-static int kw(const char *l, const char *k)
+static int kw(const char *l, const char __far *k)
 {
     while (*k && *l == *k)
         l++, k++;
@@ -7607,7 +7669,7 @@ static void run_boot(int s0)
         exec_nocon = 0;
         if (t < 0) {
             ks_i(s0, ks_5);
-            vio_kputs(s0, exec_err(-t));
+            ks_i(s0, exec_err(-t));
             ks_i(s0, ks_6);
             continue;
         }
@@ -7626,11 +7688,6 @@ static void run_boot(int s0)
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
-    static const char *const quiet[] = {
-        "STACKS", "FCBS", "BREAK", "LASTDRIVE", "DOS", "SHELL", "COUNTRY",
-        "INSTALL", "INSTALLHIGH", "NUMLOCK", "SWITCHES", "SET", "MENUITEM",
-        "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", "PNP", 0
-    };
     unsigned p, n;
     int size, dev0, i, pass;
     char *v;
@@ -7658,7 +7715,7 @@ static void config_sys(void)
             char *nm = line + i;
             unsigned k2 = 0;
             line[i] = 0;
-            if (kw(line, "SET")) {
+            if (kw(line, ks_35)) {
                 while (*++nm == ' ' || *nm == '\t')
                     ;
                 while (*nm && k2 < sizeof(ent) - 2)
@@ -7671,7 +7728,7 @@ static void config_sys(void)
             }
         }
         line[i] = 0;                    /* "DEVICEHIGH /L:1 " -> Wort   */
-        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH") || !pass) {
+        if (kw(line, ks_36) || kw(line, ks_37) || !pass) {
             while (*v == '/' || (up(v[0]) == 'S' && up(v[1]) == 'I' && up(v[2]) == 'Z' &&
                                  up(v[3]) == 'E' && v[4] == '=')) {
                 while (*v && *v != ' ')             /* /L:1,1234 SIZE=... */
@@ -7686,25 +7743,26 @@ static void config_sys(void)
             if (load_driver(v, 0) > 0)
                 for (i = dev0; i < nblk; i++)
                     mount_disk(i);
-        } else if (kw(line, "IFS")) {
+        } else if (kw(line, ks_38)) {
             ks_i(boot_session, ks_10);
             vio_kputs(boot_session, v);
             ks_i(boot_session, ks_11);
             load_driver(v, 1);
-        } else if (kw(line, "FILES")) {
+        } else if (kw(line, ks_39)) {
             n = num_arg(v);
             nfiles = n < 8 ? 8 : n > NFMAX ? NFMAX : n;   /* ein Segment */
-        } else if (kw(line, "AUTOCHECK")) {     /* wie OS/2 /AUTOCHECK:  */
+        } else if (kw(line, ks_40)) {     /* wie OS/2 /AUTOCHECK:  */
             static char ac[40];
-            scopy(ac, "AUTOCHECK=", sizeof(ac));
-            scopy(ac + 10, *v ? v : "-", sizeof(ac) - 10);
+            fscopy(ac, ks_57, sizeof(ac));
+            fscopy(ac + 10, *v ? (const char __far *)v : (const char __far *)ks_lfn + 27,
+                   sizeof(ac) - 10);
             env_set(-1, ac);
-        } else if (kw(line, "PROTSHELL")) {
+        } else if (kw(line, ks_41)) {
             scopy(protshell, v, sizeof(protshell));
-        } else if (kw(line, "BUFFERS")) {
+        } else if (kw(line, ks_42)) {
             n = num_arg(v);
             nbuffers = n < 1 ? 1 : n > 99 ? 99 : n;
-        } else if (kw(line, "CACHE")) {        /* CACHE=1024[,5]         */
+        } else if (kw(line, ks_43)) {        /* CACHE=1024[,5]         */
             const char *q = v;
             cache_kb = num_arg(v);
             while (*q && *q != ',')
@@ -7716,7 +7774,7 @@ static void config_sys(void)
                 if (*q == ',')              /* dritter Wert: Hoechstgroesse */
                     cache_max = num_arg(q + 1);
             }
-        } else if (kw(line, "DOS")) {          /* wie OS/2: fuer alle DOS-Boxen */
+        } else if (kw(line, ks_44)) {          /* wie OS/2: fuer alle DOS-Boxen */
             const char *q;
             for (q = v; *q; q++) {
                 if (up(q[0]) == 'H' && up(q[1]) == 'I')
@@ -7724,20 +7782,20 @@ static void config_sys(void)
                 if (up(q[0]) == 'U' && up(q[1]) == 'M' && (q == v || up(q[-1]) != 'O'))
                     dos_umb = 1;
             }
-        } else if (kw(line, "RMSIZE")) {       /* KB je Box, wie OS/2   */
+        } else if (kw(line, ks_45)) {       /* KB je Box, wie OS/2   */
             box_kb = num_arg(v);
             if (box_kb < 256 || box_kb > BOX_KB)
                 box_kb = BOX_KB;
-        } else if (kw(line, "EMS_FRAME_LOCATION")) {  /* NONE wie OS/2 */
+        } else if (kw(line, ks_46)) {  /* NONE wie OS/2 */
             ems_none = up(v[0]) == 'N';
-        } else if (kw(line, "APM")) {          /* OFF: nicht ausschalten */
+        } else if (kw(line, ks_47)) {          /* OFF: nicht ausschalten */
             apm_none = up(v[0]) == 'O' && up(v[1]) == 'F';
-        } else if (kw(line, "ACPI")) {         /* OFF: nur ueber APM aus  */
+        } else if (kw(line, ks_48)) {         /* OFF: nur ueber APM aus  */
             if (up(v[0]) == 'O' && up(v[1]) == 'F')
                 apm_none |= 2;
-        } else if (kw(line, "DOSSTART")) {     /* SESSION wie OS/2, sonst NT */
+        } else if (kw(line, ks_49)) {     /* SESSION wie OS/2, sonst NT */
             dos_session = up(v[0]) == 'S';
-        } else if (kw(line, "COUNTRY")) {      /* nnn[,cp[,datei]]        */
+        } else if (kw(line, ks_50)) {      /* nnn[,cp[,datei]]        */
             static char cv[12] = "COUNTRY=";
             unsigned n = 0;
             for (i = 0; v[i] >= '0' && v[i] <= '9' && i < 3; i++)
@@ -7749,7 +7807,7 @@ static void config_sys(void)
                 env_set(-1, cv);
                 box_ctry = n;                   /* und fuer die DOS-Box   */
             }
-        } else if (kw(line, "CODEPAGE")) {     /* 850,437 wie OS/2        */
+        } else if (kw(line, ks_51)) {     /* 850,437 wie OS/2        */
             unsigned n;
             cp_n = 0;
             for (i = 0; v[i] && cp_n < NCP; ) {
@@ -7760,25 +7818,29 @@ static void config_sys(void)
                 while (v[i] && (v[i] < '0' || v[i] > '9'))
                     i++;
             }
-        } else if (kw(line, "LOOP")) {         /* LOOP=[X:,]Datei[,/RO]   */
+        } else if (kw(line, ks_52)) {         /* LOOP=[X:,]Datei[,/RO]   */
             static unsigned char loop_cn;      /* -> LOOP1..LOOP8 in der  */
             cfg_nth(line, v, 4, &loop_cn, NLOOP);   /* Systemumgebung     */
-        } else if (kw(line, "RUN")) {          /* RUN=Programm [Arg.] wie */
+        } else if (kw(line, ks_53)) {          /* RUN=Programm [Arg.] wie */
             static unsigned char run_cn;       /* OS/2 -> RUN1..RUN8      */
             cfg_nth(line, v, 3, &run_cn, NRUN);
-        } else if (kw(line, "SWAPPATH")) {     /* wie OS/2: Ort, KB       */
+        } else if (kw(line, ks_54)) {     /* wie OS/2: Ort, KB       */
             line[8] = '=';
             env_set(-1, line);
-        } else if (kw(line, "LONGNAMES")) {    /* AUTO, VFAT, EA          */
+        } else if (kw(line, ks_55)) {    /* AUTO, VFAT, EA          */
             static char lv[16];
             lfn_cfg = (up(v[0]) == 'V') ? 1 : (up(v[0]) == 'E') ? 2 : 0;
-            scopy(lv, lfn_cfg == 1 ? "LONGNAMES=VFAT" : lfn_cfg == 2 ? "LONGNAMES=EA"
-                                   : "LONGNAMES=AUTO", sizeof(lv));
+            fscopy(lv, ks_lfn, sizeof(lv));
+            fscopy(lv + 10, lfn_cfg == 1 ? (const char __far *)ks_lfn + 14 :
+                   lfn_cfg == 2 ? (const char __far *)ks_lfn + 19 : (const char __far *)ks_lfn + 22,
+                   sizeof(lv) - 10);
             env_set(-1, lv);                    /* fuer CONVERT           */
         } else {
-            for (i = 0; quiet[i] && !kw(line, quiet[i]); i++)
-                ;
-            if (!quiet[i]) {
+            const char __far *q = ks_quiet;   /* Woerter mit 0 getrennt */
+            while (*q && !kw(line, q))
+                while (*q++)
+                    ;
+            if (!*q) {
                 ks_i(boot_session, ks_12);
                 vio_kputs(boot_session, line);
                 ks_i(boot_session, ks_13);
@@ -7789,10 +7851,10 @@ static void config_sys(void)
     cd_drives();
 }
 
-static const char *fd_name(unsigned blocks)
+static const char __far *fd_name(unsigned blocks)
 {
-    return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
-           blocks == 5760 ? "2,88 MB" : "1,44 MB";
+    return blocks == 720 ? (const char __far *)ks_77: blocks == 1440 ? (const char __far *)ks_78: blocks == 2400 ? (const char __far *)ks_79:
+           blocks == 5760 ? (const char __far *)ks_80: (const char __far *)ks_81;
 }
 
 void __far kmain(void)
@@ -7837,7 +7899,7 @@ void __far kmain(void)
 
     s0 = vio_open("SYSTEM");
     if (s0 < 0)
-        panic("Kein Speicher fuer die erste Sitzung.");
+        pn_i(ks_65);
     boot_session = s0;
     vio_focus(s0);
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
@@ -7863,7 +7925,7 @@ void __far kmain(void)
     kbd_init();
     env_sel = kseg_alloc((NTASK + 1) * FAPI_ENVSIZE);  /* < 64 KB          */
     if (!env_sel)
-        panic("Kein Speicher f\x81r die Umgebung.");
+        pn_i(ks_66);
     /* Disketten: Typen aus dem CMOS (10h); A: ist Geraet 0, B: Geraet 1 */
     outb(0x70, 0x10);                   /* CMOS: Diskettentypen */
     k = inb(0x71);
@@ -7890,13 +7952,13 @@ void __far kmain(void)
     if (!(boot_drive & 0x80)) {
         /* Start von Diskette: A: ist Pflicht */
         if (!fd_ok)
-            panic("Diskettencontroller antwortet nicht.");
+            pn_i(ks_67);
         vol[0].present = 1;
         blk_media(BLK_FLOPPY);
         if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
-            panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
+            pn_i(ks_68);
         ks_i(s0, ks_17);
-        vio_kputs(s0, fd_name(fd_size(0)));
+        ks_i(s0, fd_name(fd_size(0)));
         ks_i(s0, vol[0].fat16 ? (const char __far *)ks_31 : (const char __far *)ks_32);
         config_sys();
     } else {
@@ -7912,9 +7974,9 @@ void __far kmain(void)
         vio_kputs(s0, num);
         ks_i(s0, ks_19);
         if (pre_err)
-            vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16/FAT32\n" :
-                          pre_err == PRE_ERR_FULL ? "  Vorladebereich voll\n" :
-                                                    "  BIOS-Lesefehler beim Vorladen\n");
+            ks_i(s0, pre_err == PRE_ERR_FS ? (const char __far *)ks_82:
+                          pre_err == PRE_ERR_FULL ? (const char __far *)ks_83:
+                                                    (const char __far *)ks_84);
         ifs_mount(PRE_DRIVE, -1, 0, &pre_driver);
         pre_on = 1;
         sys_drive = PRE_DRIVE;
@@ -7926,7 +7988,7 @@ void __far kmain(void)
         if (sys_drive < 0 && bios_attach() >= 0)   /* Rueckfall: INT 13h */
             sys_drive = find_boot_vol();
         if (sys_drive < 0)
-            panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
+            pn_i(ks_69);
         ks_i(s0, ks_20);
         if (sys_drive != 2) {                   /* immer C:, Rest rueckt nach */
             vol_move(sys_drive, 2);
@@ -7951,10 +8013,10 @@ void __far kmain(void)
     blk_cache_init(cache_kb);           /* nach CONFIG.SYS: CACHE=       */
 
     /* Systemumgebung: COMSPEC wie bei MS-DOS */
-    scopy(line, "COMSPEC=A:\\CMD.EXE", sizeof(line));
+    fscopy(line, ks_58, sizeof(line));
     line[8] = (char)('A' + sys_drive);
     env_set(-1, line);
-    scopy(line, "DOSBOX=A:\\DOS\\MDOS\\FREEDOS.IMG", sizeof(line));
+    fscopy(line, ks_59, sizeof(line));
     line[7] = (char)('A' + sys_drive);  /* Startabbild der DOS-Box       */
     env_set(-1, line);
     {                                           /* TEMP/TMP wie Windows:  */
@@ -7962,18 +8024,18 @@ void __far kmain(void)
         if (sys_drive < 2 && vol_present(2) && vol[2].used)
             td = 'C';                           /* Diskette lieber C:     */
         if (env_find(-1, "TEMP", 4) < 0) {
-            scopy(line, "TEMP=A:\\TEMP", sizeof(line));
+            fscopy(line, ks_60, sizeof(line));
             line[5] = td;
             env_set(-1, line);
         }
         if (env_find(-1, "TMP", 3) < 0) {
-            scopy(line, "TMP=A:\\TEMP", sizeof(line));
+            fscopy(line, ks_61, sizeof(line));
             line[4] = td;
             env_set(-1, line);
         }
     }
     if (env_find(-1, "PATH", 4) < 0) {          /* Vorgabe: X:\DOS;X:\ */
-        scopy(line, "PATH=A:\\DOS;A:\\", sizeof(line));
+        fscopy(line, ks_62, sizeof(line));
         line[5] = line[12] = (char)('A' + sys_drive);
         env_set(-1, line);
     }
@@ -7981,7 +8043,7 @@ void __far kmain(void)
     /* Dateitabelle nach FILES= */
     k = kseg_alloc(nfiles * sizeof(struct ofile));   /* < 64 KB, ohne __U4M */
     if (!k)
-        panic("Kein Speicher f\x81r die Dateitabelle (FILES=).");
+        pn_i(ks_70);
     files = MK_FP(k, 0);
     for (i = 0; i < (int)nfiles; i++)
         files[i].owner = -1;                    /* refs = 0: frei        */
@@ -8000,7 +8062,7 @@ void __far kmain(void)
     files[CONS].refs = 255;
     pipe_sel = kseg_alloc(NPIPE * PIPESZ);
     if (!pipe_sel)
-        panic("Kein Speicher f\x81r Pipes.");
+        pn_i(ks_71);
 
     /* Befehlsinterpreter aus PROTSHELL= (Vorgabe CMD.EXE /P) in der
        ersten Sitzung; er fuehrt AUTOEXEC.CMD aus. SHELL= bleibt wie bei
@@ -8014,13 +8076,13 @@ void __far kmain(void)
         ks_i(s0, ks_21);
         vio_kputs(s0, protshell);
         ks_i(s0, ks_22);
-        vio_kputs(s0, exec_err(-t));
+        ks_i(s0, exec_err(-t));
         ks_i(s0, ks_23);
-        scopy(protshell, "CMD.EXE /P", sizeof(protshell));
+        fscopy(protshell, ks_63, sizeof(protshell));
         cfg_step();
         t = task_create(protshell, s0, -1, -1);
         if (t < 0)
-            panic("Kein Befehlsinterpreter.");
+            pn_i(ks_72);
     }
     vio_title(s0, task[t].name);
     run_boot(s0);                               /* RUN= aus CONFIG.SYS   */

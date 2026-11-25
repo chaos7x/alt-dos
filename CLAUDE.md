@@ -2232,7 +2232,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   draußen); MEM/MSD zählen das freigegebene Start-Segment nicht mehr zum
   Kernel (`kinit_pg`); Texte der `vio_kputs`-Aufrufe im Startcode in
   IDATA (Gruppe CGROUPD hinter CGROUPI, Selektor KIDATA 330h, NGDT + 1),
-  DGROUP −650 Byte. Falle: `c ? ks_1 : ks_2` mit `__based`-Feldern liest
+  danach auch der Rest der Starttexte (scopy -> fscopy, panic -> pn_i,
+  kw fern, stille Wörter als `ks_quiet`, k2misc/cfgboot/biosdisk/panic),
+  DGROUP zusammen 62.118 -> 59.926 Byte. Falle: `c ? ks_1 : ks_2` mit `__based`-Feldern liest
   aus DS – beide Zweige auf `const char __far *` casten.
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die

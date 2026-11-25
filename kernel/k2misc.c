@@ -200,6 +200,27 @@ void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
    Seiten vergibt, ist der Ruecksprung nach KCODE laengst geschehen. */
 unsigned kinit_pg;                      /* Seiten von ITEXT, frei      */
 #pragma code_seg("ITEXT", "CODE")
+static const char __based(__segname("IDATA")) km_3[] = "360 KB";
+static const char __based(__segname("IDATA")) km_4[] = "720 KB";
+static const char __based(__segname("IDATA")) km_5[] = "1,2 MB";
+static const char __based(__segname("IDATA")) km_6[] = "2,88 MB";
+static const char __based(__segname("IDATA")) km_7[] = "1,44 MB";
+static const char __based(__segname("IDATA")) km_8[] = "\xFE Laufwerk B: Diskette ";
+static const char __based(__segname("IDATA")) km_9[] = "\xFE Laufwerk A: Diskette ";
+static const char __based(__segname("IDATA")) km_10[] = ": ";
+static const char __based(__segname("IDATA")) km_11[] = "CD-ROM";
+static const char __based(__segname("IDATA")) km_12[] = "Wechselplatte, ";
+static const char __based(__segname("IDATA")) km_13[] = "Wechselplatte, kein Medium";
+static const char __based(__segname("IDATA")) km_14[] = " MB";
+static const char __based(__segname("IDATA")) km_15[] = "logisch ";
+static const char __based(__segname("IDATA")) km_16[] = "Partition ";
+static const char __based(__segname("IDATA")) km_17[] = ", nicht formatiert, ";
+static const char __based(__segname("IDATA")) km_18[] = ", FAT32, ";
+static const char __based(__segname("IDATA")) km_19[] = ", FAT16, ";
+static const char __based(__segname("IDATA")) km_20[] = ", FAT12, ";
+static const char __based(__segname("IDATA")) km_21[] = " MB";
+static const char __based(__segname("IDATA")) km_22[] = "  (";
+static const char __based(__segname("IDATA")) km_23[] = ", Einheit ";
 /* Texte des Startcodes liegen in IDATA (nach dem Start frei): in
    kleinen Stuecken ueber den Stapel ausgeben (Startstapel knapp) */
 static const char __based(__segname("IDATA")) km_1[] = "\n";
@@ -248,7 +269,7 @@ static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
     b[j] = 0;
 }
 
-static void scopy(char *d, const char *s, int max)
+static void scopy(char *d, const char __far *s, int max)
 {
     int i;
     for (i = 0; i < max - 1 && s[i]; i++)
@@ -256,10 +277,10 @@ static void scopy(char *d, const char *s, int max)
     d[i] = 0;
 }
 
-static const char *fd_name(unsigned blocks)
+static const char __far *fd_name(unsigned blocks)
 {
-    return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
-           blocks == 5760 ? "2,88 MB" : "1,44 MB";
+    return blocks == 720 ? (const char __far *)km_3 : blocks == 1440 ? (const char __far *)km_4 : blocks == 2400 ? (const char __far *)km_5 :
+           blocks == 5760 ? (const char __far *)km_6 : (const char __far *)km_7;
 }
 
 void __far list_drives(int fd_ok, int boot_session)
@@ -271,8 +292,8 @@ void __far list_drives(int fd_ok, int boot_session)
 
     for (d = (boot_drive & 0x80) ? 0 : 1; d < 2; d++)
         if (fd_ok && fd_type(d)) {          /* Diskettenlaufwerke         */
-            kf_vio_kputs(boot_session, d ? "\xFE Laufwerk B: Diskette " : "\xFE Laufwerk A: Diskette ");
-            kf_vio_kputs(boot_session, fd_name(tsize[fd_type(d)]));
+            km_i(boot_session, d ? (const char __far *)km_8 : (const char __far *)km_9);
+            km_i(boot_session, fd_name(tsize[fd_type(d)]));
             km_i(boot_session, km_1);
         }
 
@@ -281,12 +302,12 @@ void __far list_drives(int fd_ok, int boot_session)
             continue;
         b = &blk[vol[d].blk];
         msg[0] = (char)('A' + d);
-        scopy(msg + 1, ": ", sizeof(msg) - 1);
+        scopy(msg + 1, (const char __far *)km_10, sizeof(msg) - 1);
         n = 3;
         if (vol[d].drv == &mod_driver) {
-            scopy(msg + n, "CD-ROM", sizeof(msg) - n);
+            scopy(msg + n, (const char __far *)km_11, sizeof(msg) - n);
         } else if (b->rem && !vol[d].used) {    /* eingehaengt bei Bedarf */
-            scopy(msg + n, b->blocks ? "Wechselplatte, " : "Wechselplatte, kein Medium",
+            scopy(msg + n, b->blocks ? (const char __far *)km_12 : (const char __far *)km_13,
                   sizeof(msg) - n);
             if (b->blocks) {
                 while (msg[n])
@@ -294,38 +315,38 @@ void __far list_drives(int fd_ok, int boot_session)
                 udec((unsigned)(b->blocks >> 11), msg + n);
                 while (msg[n])
                     n++;
-                scopy(msg + n, " MB", sizeof(msg) - n);
+                scopy(msg + n, (const char __far *)km_14, sizeof(msg) - n);
             }
         } else {
             if (vol[d].part >= 5) {     /* in der erweiterten Partition */
-                scopy(msg + n, "logisch ", sizeof(msg) - n);
+                scopy(msg + n, (const char __far *)km_15, sizeof(msg) - n);
                 n += 8;
                 udec(vol[d].part - 4, msg + n);
                 while (msg[n])
                     n++;
             } else {
-                scopy(msg + n, "Partition ", sizeof(msg) - n);
+                scopy(msg + n, (const char __far *)km_16, sizeof(msg) - n);
                 n += 10;
                 msg[n++] = (char)('0' + vol[d].part);
             }
-            scopy(msg + n, !vol[d].used ? ", nicht formatiert, " :
-                           vol[d].fat16 == 2 ? ", FAT32, " : vol[d].fat16 ? ", FAT16, " : ", FAT12, ", sizeof(msg) - n);
+            scopy(msg + n, !vol[d].used ? (const char __far *)km_17 :
+                           vol[d].fat16 == 2 ? (const char __far *)km_18 : vol[d].fat16 ? (const char __far *)km_19 : (const char __far *)km_20, sizeof(msg) - n);
             while (msg[n])
                 n++;
             udec((unsigned)(vol[d].psize >> 11), msg + n);
             while (msg[n])
                 n++;
-            scopy(msg + n, " MB", sizeof(msg) - n);
+            scopy(msg + n, (const char __far *)km_21, sizeof(msg) - n);
         }
         while (msg[n])
             n++;
         if (b->drv >= 0) {
-            scopy(msg + n, "  (", sizeof(msg) - n);
+            scopy(msg + n, (const char __far *)km_22, sizeof(msg) - n);
             n += 3;
             scopy(msg + n, kf_drv_name(b->drv), sizeof(msg) - n);
             while (msg[n])
                 n++;
-            scopy(msg + n, ", Einheit ", sizeof(msg) - n);
+            scopy(msg + n, (const char __far *)km_23, sizeof(msg) - n);
             n += 10;
             msg[n++] = (char)('0' + b->unit);
             msg[n++] = ')';

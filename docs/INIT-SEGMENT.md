@@ -425,15 +425,27 @@ MSD, DEVLOAD, XCOPY auf NCR8XX, Box, MEM, fsck sauber) und 86Box
   61.468 Byte, IDATA 683 Byte. Lehre: `cond ? ks_1 : ks_2` ergibt bei
   Watcom einen `__based`-Zeiger, der beim Übergang zu `__far` das
   Segment aus DS nimmt (gelesen wurde DGROUP – „tet neu.)“ statt
-  „■ DEVICE=“); beide Zweige auf `const char __far *` casten. Texte in
-  `scopy`, `panic` und mehrzeiligen Bedingungen bleiben in DGROUP (~1,3 KB).
+  „■ DEVICE=“); beide Zweige auf `const char __far *` casten.
+- Rest der Texte ebenfalls in IDATA (25.11.2026): `scopy(x, "…", n)` ->
+  `fscopy`, `panic("…")` -> `pn_i` (kopiert nach `fi_buf`), `kw()` nimmt
+  das Schlüsselwort fern, die Liste stiller CONFIG.SYS-Wörter ist eine
+  Zeichenfolge mit 0 als Trenner (`ks_quiet`), LONGNAMES=/AUTOCHECK= aus
+  `ks_lfn`, `exec_err`/`fd_name` liefern Fernzeiger; dazu die Texte im
+  Startcode von k2misc.c (`list_drives`, scopy fern), cfgboot.c,
+  biosdisk.c und panic.c (`pn_cat` fern). DGROUP 61.468 -> 59.926 Byte,
+  IDATA 2.221 Byte. In DGROUP bleiben nur Kleinigkeiten: veränderbare
+  `static char`-Felder (Dateinamen, die der Code beschreibt), Namen für
+  env_find/read_cfg/vio_open, die drei Suchverzeichnisse von RUN= und
+  `"NOTSTART=1"` – zusammen unter 100 Byte.
 
 Geprüft: QEMU (Start von Platte und Diskette, Startmeldungen über DMESG,
 F5, MEM „Kernel 290K“, XCOPY \DOS, `command /c ver`, CHKDSK, DIR A:
-ohne Diskette) und 86Box 386DX/40 mit AHA-154x und NE2000.
+ohne Diskette; nach dem Rest der Texte: unbekanntes und stilles Wort in
+der CONFIG.SYS, AUTOCHECK=, LONGNAMES=VFAT, Systemumgebung, Panik „Kein
+Befehlsinterpreter.“ und PANIC.LOG beim nächsten Start) und 86Box
+386DX/40 mit AHA-154x und NE2000.
 
 ## Offene Punkte
 
-- Restliche Texte (scopy, panic, mehrzeilige Bedingungen) nach IDATA.
 - KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
 - Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.
