@@ -2180,6 +2180,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   DOSBOX.INI `SHARE=OFF` (Vorschlag des Nutzers): Box wie MS-DOS ohne
   SHARE, ab Werk für `[SETUP.EXE]` – Windows-SETUP überschreibt geladene
   Schriften (SCRIPT.FON) ohne Rückfrage.
+  Ton unter Windows (25.11.2026): SNDBLST2.DRV auf der virtuellen SB –
+  Test-IRQ (DSP F2h) kam beim zweiten Mal nicht an: `vidle` nur ohne
+  PM-Handler, Modul-IRQs in `dp_hwint` vor dem Takt; geprüft 86Box P3B-F
+  (Startklang), DOOM-Gegenprobe DX4-100 (docs/DOSKERN.md).
   Maus unter Windows: MOUSE.DRV über das PS/2-BIOS (INT 15h C2xxh in
   VMOUSE.SYS, Rückruf `VS_CBARM` a3 = 1, WINLDR meldet auf 24h PS/2,
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);

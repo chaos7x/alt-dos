@@ -1505,6 +1505,31 @@ erwartet.
    (Nutzer, 23.11.2026): ja, nur die NET-USE-Laufwerke (4409h Bit 12,
    CDS 8000h); alle anderen AT-DOS-Laufwerke bleiben lokal.
 
+### Erledigt (25.11.2026): Ton unter Windows (SNDBLST2.DRV)
+
+Windows 3.11 im Standardmodus mit dem mitgelieferten Sound-Blaster-
+Treiber (SNDBLST2.DRV, `[sndblst.drv] port=220 int=5`) meldete „Ein
+Problem mit der Einrichtung oder der Hardware“. Mitgeschnitten (Spur über
+DMESG, vorübergehend): Reset und DSP 4.05 gingen, der Treiber hängt sich
+per DPMI 0205h in Vektor 0Dh (IRQ 5) und löst zweimal mit DSP F2h einen
+Test-IRQ aus. Der erste kam an, der zweite nie. Zwei Ursachen in v86.c:
+
+1. Der Test-Handler kettet an den alten Vektor, also den PM-Stummel. Der
+   Stummel merkte sich IRQ 5 daraufhin als „ruht“ (`vidle`, SB_IRQ_IDLE
+   für DOOM 1.9) – den zweiten IRQ verwarf `VS_IRQ`. Jetzt nur, wenn kein
+   PM-Handler eingehängt ist (`!pm_hooked`).
+2. Stand beim zweiten F2h gerade ein Takt an, stellte `dp_hwint` zuerst
+   IRQ 0 zu; das IRET im PM trappt nicht, und der Treiber wartet in einer
+   Schleife ohne Falle – IRQ 5 kam erst nach seiner Frist. Jetzt gehen
+   die Modul-IRQs (SB) vor dem Takt, wie schon in `inject` (V86).
+
+Geprüft in 86Box P3B-F (Trio3D/2X, SB16, VBESVGA 1024×768×16): kein
+Fehler mehr, der Startklang XYLOPHON.WAV kommt im Mitschnitt (0,70 s bei
+0,72 s Dateilänge, fallende Töne). Gegenprobe DOOM 1.9 `-timedemo demo1`
+mit SB auf dem DX4-100: Ton wie vorher. MIDI über MSADLIB.DRV
+(Medien-Wiedergabe, CANYON.MID) nicht geprüft – die Wiedergabe ließ sich
+ohne Maus nicht starten.
+
 ### Erledigt (25.11.2026): leeres Laufwerk unter Windows
 
 Vom Nutzer gemeldet: der Datei-Manager zeigt bei leerem Laufwerk (A:, B:,

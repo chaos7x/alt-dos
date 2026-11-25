@@ -6141,12 +6141,10 @@ static void dp_hwint(struct v86_iret *r, int t)
             pvi_back[t] = get_ticks();          /* damit das CLI trappt  */
         }
     }
-    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
-        vt_pend[t]--;
-        visr[t] |= 1;
-        dp_push(r, t, 8);
-        return;
-    }
+    /* Module (SB) vor dem Takt: ein IRET im PM trappt nicht, nach dem
+       Takt-Handler kaeme die naechste Gelegenheit erst mit der naechsten
+       Falle - Windows' SNDBLST2.DRV wartet nach DSP F2h in einer Schleife
+       ohne Falle auf IRQ 5 */
     if (virq[t]) {                              /* Modul (DMX: SB)       */
         unsigned q;
         for (q = 2; q <= 7; q++) {
@@ -6159,6 +6157,12 @@ static void dp_hwint(struct v86_iret *r, int t)
                 return;
             }
         }
+    }
+    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && pm_hooked(t, 8) && t8_ok(t)) {
+        vt_pend[t]--;
+        visr[t] |= 1;
+        dp_push(r, t, 8);
+        return;
     }
     if (key_ready(t) && pm_hooked(t, 9)) {
         key_t0[t] = get_ticks();
@@ -6738,9 +6742,12 @@ static unsigned dp_trap(struct v86_frame *f, int t)
             /* IRQ 3-7 ohne Handler auch im Real Mode: gleich quittieren
                statt PM -> RM -> PM (der Stummel tut dort nichts) */
             visr[t] &= (unsigned char)~(1 << (n - 8));
-            if (!(box_hk[t] & HK_IDLE))         /* Leitung ruht: ein Modul */
-                vidle[t] |= (unsigned char)(1 << (n - 8));  /* (SB) loest  */
-                                                /* sie nicht mehr aus     */
+            if (!(box_hk[t] & HK_IDLE) && !pm_hooked(t, n)) /* Leitung ruht: */
+                vidle[t] |= (unsigned char)(1 << (n - 8));  /* ein Modul (SB) */
+            /* loest sie nicht mehr aus. Nicht, wenn ein PM-Handler da ist und
+               nur weiterreicht (Windows' SNDBLST2.DRV kettet beim Test mit
+               DSP F2h an den alten Vektor - der zweite Test-IRQ ging sonst
+               verloren) */
             return 0;
         }
         return dp_reflect(f, t, n);

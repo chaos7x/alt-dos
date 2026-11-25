@@ -1021,7 +1021,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Windows starten und beenden, die Maus geht über MOUSE.DRV – siehe
   docs/DOSKERN.md; mehr Farben über VBESVGA.DRV, das man selbst
   installiert – geprüft bis 1024×768 mit 16 Bit samt Sitzungswechsel,
-  siehe docs/WIN31-GRAFIK.md);
+  siehe docs/WIN31-GRAFIK.md; Ton über den Sound-Blaster-Treiber von
+  Windows auf der virtuellen SB);
   erste Stufe:
   16- und 32-Bit-Programme, Moduswechsel, Deskriptoren (0000h–000Ch),
   DOS-Speicher (0100h/0101h), Vektoren (0200h–0205h), Real Mode aufrufen
