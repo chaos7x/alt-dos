@@ -248,7 +248,10 @@ _start:
         jz      .f8e
         xor     ah, ah
         int     0x16
-        cmp     ah, 0x42
+        cmp     ah, 0x3F                ; F5 = Notstart
+        jne     .f8k
+        mov     byte [es:_boot_f5], 1
+.f8k:   cmp     ah, 0x42
         jne     .f8
         mov     byte [es:_boot_f8], 1
         jmp     .f8
@@ -1854,7 +1857,7 @@ _bios_fdpt:   resb 32
 _bios_geo_h:  resb 4                    ; Koepfe - 1 (INT 13h/08h)
 _bios_geo_s:  resb 4                    ; Sektoren je Spur, 0 = keine
 _bios_geo_c:  resw 4                    ; Zylinder
-global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model, _bios_kbf, _boot_f8
+global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model, _bios_kbf, _boot_f8, _boot_f5
 _cpu_386:     resb 1
 _fpu_ok:      resw 1
 _fpu_sw:      resw 1
@@ -1864,6 +1867,7 @@ _bios_date:   resb 9
 _bios_model:  resb 1
 _bios_kbf:    resb 1                    ; 0040:0017 beim Start
 _boot_f8:     resb 1                    ; F8 vor dem Kernel getippt
+_boot_f5:     resb 1                    ; F5 (Notstart) vor dem Kernel
 global _bios_pic1, _bios_pic2
 _bios_pic1:   resb 1
 _bios_pic2:   resb 1

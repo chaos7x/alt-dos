@@ -409,8 +409,8 @@ static int write_cfg(const char *name, const char *neu, int cfg)
         while (p < (char *)buf + i && *p == ' ')
             p++;
         k = 0;
-        if (cfg && pre(p, "REM DEVICE=")) {
-            char *q = p + 11;
+        if (cfg && (pre(p, "REM DEVICE=") || pre(p, "REM BASEDEV="))) {
+            char *q = p + (pre(p, "REM BASEDEV=") ? 12 : 11);
             while (*q == ' ')
                 q++;
             for (j = 0; j < sizeof(nm) - 1 && (unsigned char)q[j] > ' '; j++)
@@ -420,7 +420,7 @@ static int write_cfg(const char *name, const char *neu, int cfg)
                 s0 = (unsigned)(p + 4 - (char *)buf);   /* ohne "REM "  */
                 p += 4;
             }
-        } else if (cfg && (pre(p, "DEVICE=") || pre(p, "IFS="))) {
+        } else if (cfg && (pre(p, "DEVICE=") || pre(p, "BASEDEV=") || pre(p, "IFS="))) {
             while (*p != '=')
                 p++;
             for (p++; *p == ' '; p++)

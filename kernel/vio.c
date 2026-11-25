@@ -258,14 +258,19 @@ void vio_status(void)
     unsigned m = uptime_m, d = m / 1440, h = (m / 60) % 24, mi = m % 60;
     int sr = hw_lines - 1;                  /* Statuszeile: unterste    */
 
-    if (m == shown_uptime || vio_frozen ||  /* Bild gehoert der Box (5.1) */
+    static unsigned char shown_f5;
+    if ((m == shown_uptime && shown_f5 == boot_f5) ||
+        vio_frozen ||                       /* Bild gehoert der Box (5.1) */
         (fg >= 0 && (!ses[fg].top || ses[fg].gfx)))
         return;                             /* Vollbild: keine Statuszeile */
+    shown_f5 = boot_f5;
     if (shown_uptime == 0xFFFF) {
         vfill(sr, STATUS_ATTR);
         vputs(sr, 1, "Alt+Esc: Sitzung wechseln \xB3 Strg+C: Abbruch \xB3", STATUS_ATTR);
     }
     shown_uptime = m;
+    if (boot_f5)                            /* F5 (docs/NOTSTART.md)    */
+        p = up_str(p, "Notstart, ");
     p = up_str(p, "seit ");
     if (d) {
         p = up_num(p, d);

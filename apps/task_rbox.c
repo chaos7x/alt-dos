@@ -181,6 +181,8 @@ static void ini_image(char *d)
     scopy(ip, d, sizeof(ip));
     scat(ip, "DOSBOX.INI", sizeof(ip));
     scat(d, "FREEDOS.IMG", FAPI_PATHLEN);
+    if (notstart())                     /* F5: ohne DOSBOX.INI           */
+        return;
     h = DosOpen(ip);
     if (FAPI_FAILED(h))
         return;

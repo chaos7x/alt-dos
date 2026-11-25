@@ -1981,6 +1981,8 @@ static int env_find(int t, const char *name, unsigned nl)
 }
 
 /* "NAME=WERT" setzen; leerer Wert loescht. 0 = ok, -1 Format, -2 voll */
+static int env_set(int t, const char *entry);
+int __far kf_env_set(const char *e) { return env_set(-1, e); }   /* k2misc.c */
 static int env_set(int t, const char *entry)
 {
     static char name[64];
@@ -6529,60 +6531,6 @@ static unsigned num_arg(const char *v)
 void k_hlt(void);
 #pragma aux k_hlt = "sti" "hlt";
 
-/* F8 beim Start (wie MS-DOS 6): jede Zeile von CONFIG.SYS bestaetigen.
-   J/Eingabe = ausfuehren, N = uebergehen, Esc = Rest ohne Fragen.
-   boot_f8: 0 aus, 1 fragen, 2 fragen vorbei (Esc), CMD bekommt /STEP */
-static int cfg_ask(const char *l)
-{
-    int k;
-    vio_kputs(boot_session, l);
-    vio_kputs(boot_session, " [J,N]? ");
-    do {
-        while ((k = kbd_get()) < 0)
-            k_hlt();
-        k &= 0xFF;
-    } while (k != 'j' && k != 'J' && k != 'y' && k != 'Y' && k != 'n' &&
-             k != 'N' && k != '\r' && k != 27);
-    if (k == 27)
-        boot_f8 = 2;
-    k = k == 'n' || k == 'N';
-    vio_kputs(boot_session, k ? "N\n" : "J\n");
-    return !k;
-}
-
-/* F8 noch an: CMD fragt auch AUTOEXEC.CMD zeilenweise (nur CMD kennt
-   /STEP - eine andere PROTSHELL= bekommt es nicht) */
-static void step_arg(void)
-{
-    unsigned i = 0;
-    while (protshell[i] && protshell[i] != ' ')
-        i++;
-    if (i >= 4 && up(protshell[i - 1]) == 'E' && protshell[i - 4] == '.')
-        i -= 4;
-    if (boot_f8 != 1 || i < 3 || up(protshell[i - 3]) != 'C' ||
-        up(protshell[i - 2]) != 'M' || up(protshell[i - 1]) != 'D' ||
-        (i > 3 && protshell[i - 4] != '\\' && protshell[i - 4] != ':'))
-        return;
-    while (protshell[i])
-        i++;
-    if (i + 6 < sizeof(protshell))
-        scopy(protshell + i, " /STEP", sizeof(protshell) - i);
-}
-
-/* Eine Sekunde Zeit fuer F8 (wie "MS-DOS wird gestartet ..."); vor dem
-   Kernel getippt hat start.asm schon gemerkt */
-static void f8_wait(void)
-{
-    unsigned long t = get_ticks() + 100;
-    vio_kputs(boot_session, "\xFE F8: Startdateien schrittweise");
-    while (!boot_f8 && get_ticks() < t)
-        if (kbd_get() == 0x4200)
-            boot_f8 = 1;
-        else
-            k_hlt();
-    vio_kputs(boot_session, boot_f8 ? " - an\n" : "\n");
-}
-
 static void config_sys(void)
 {
     static char line[FAPI_ARGLEN];
@@ -6591,18 +6539,17 @@ static void config_sys(void)
         "INSTALL", "INSTALLHIGH", "NUMLOCK", "SWITCHES", "SET", "MENUITEM",
         "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", 0
     };
-    unsigned p = 0, n;
-    int size, dev0, i;
+    unsigned p, n;
+    int size, dev0, i, pass;
     char *v;
 
-    f8_wait();
+    cfg_wait(boot_session);             /* F5/F8 (k2misc.c)              */
     size = read_cfg("\\CONFIG.SYS");
     if (size < 0)
         return;
-    while (next_line(&p, (unsigned)size, line)) {
-        if (line[0] == ';')
-            continue;
-        if (boot_f8 == 1 && !cfg_ask(line))
+    for (pass = 0; pass < 2; pass++)    /* erst BASEDEV=, dann der Rest  */
+    for (p = 0; next_line(&p, (unsigned)size, line); ) {
+        if (line[0] == ';' || cfg_skip(line, pass, boot_session))
             continue;
         for (v = line; *v && *v != '='; v++)
             ;
@@ -6631,7 +6578,7 @@ static void config_sys(void)
             }
         }
         line[i] = 0;                    /* "DEVICEHIGH /L:1 " -> Wort   */
-        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH")) {
+        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH") || !pass) {
             while (*v == '/' || (up(v[0]) == 'S' && up(v[1]) == 'I' && up(v[2]) == 'Z' &&
                                  up(v[3]) == 'E' && v[4] == '=')) {
                 while (*v && *v != ' ')             /* /L:1,1234 SIZE=... */
@@ -6639,7 +6586,7 @@ static void config_sys(void)
                 while (*v == ' ')
                     v++;
             }
-            vio_kputs(boot_session, "\xFE DEVICE=");
+            vio_kputs(boot_session, pass ? "\xFE DEVICE=" : "\xFE BASEDEV=");
             vio_kputs(boot_session, v);
             vio_kputs(boot_session, "\n");
             dev0 = nblk;
@@ -7004,7 +6951,9 @@ void kmain(void)
        OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
-    if (chk_pending() || vol[sys_drive].was_dirty) {
+    if (boot_f5)
+        ;                                       /* Notstart: nichts davon */
+    else if (chk_pending() || vol[sys_drive].was_dirty) {
         vio_kputs(s0, "\xFE Pr\x81" "fung beim Start - "
                   "diesmal ohne Auslagerungsdatei und LOOP=\n");
     } else {                                    /* nichts darf offen sein */
@@ -7013,7 +6962,7 @@ void kmain(void)
         loop_boot();                            /* LOOP= aus CONFIG.SYS   */
     }
     cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
-    step_arg();
+    cfg_step(protshell);
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
         vio_kputs(s0, "\xFE PROTSHELL=");
@@ -7022,7 +6971,7 @@ void kmain(void)
         vio_kputs(s0, exec_err(-t));
         vio_kputs(s0, ", nehme CMD.EXE /P\n");
         scopy(protshell, "CMD.EXE /P", sizeof(protshell));
-        step_arg();
+        cfg_step(protshell);
         t = task_create(protshell, s0, -1, -1);
         if (t < 0)
             panic("Kein Befehlsinterpreter.");

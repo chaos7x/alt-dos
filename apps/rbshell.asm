@@ -49,7 +49,9 @@ start:
         mov     dx, shell
         mov     ah, 0x13                        ; Startlaufwerk: FreeCOM aus
         int     0xE0                            ; X:\DOS\MDOS (A:/B: sind dann
-        mov     [perm], ah                      ; AH = 1: PROTECTONLY=NO
+        mov     [nstart], ah                    ; AH Bit 1: Notstart (F5)
+        and     ah, 1
+        mov     [perm], ah                      ; AH Bit 0: PROTECTONLY=NO
         test    al, al                          ; die Disketten von AT-DOS),
         jz      .abbild                         ; sonst vom Abbild (A:)
         mov     [shellx], al
@@ -67,7 +69,10 @@ start:
         mov     [pblock], ax
         mov     word [pb_tail], tailx
         call    other_dos               ; MS-DOS/PC DOS: dessen COMMAND.COM
+        test    byte [nstart], 2        ; Notstart: ohne AUTOEXEC.BAT
+        jnz     .noab
         call    ab_load                 ; PATH/SET/PROMPT aus X:\AUTOEXEC.BAT
+.noab:
         mov     dx, shellx
 .abbild:
         push    dx
@@ -1048,6 +1053,7 @@ tailk:  db      48, " C:\DOS\MDOS\ /E:1024 /K C:\DOS\MDOS\RBREADY.COM", 13
         align   16
 envo:   times   160 db 0                ; Umgebung fuer ein anderes DOS
 perm:   db      0
+nstart: db      0                       ; Bit 1: Notstart (F5)
 fcb:    db      0, "           ", 0, 0, 0, 0
 pblock: dw      0                               ; Umgebung des Aufrufers
 pb_tail: dw     tail, 0

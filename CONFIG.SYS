@@ -22,12 +22,14 @@ REM   schrumpft er mit dem freien Speicher. Beispiel:
 REM CACHE=512,5,4096
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---------------
+REM BASEDEV= wie DEVICE=, fuer Plattentreiber: zuerst geladen, beim
+REM Notstart (F5 beim Start) als einzige Zeilen
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb
-DEVICE=AHA154X.SYS
+BASEDEV=AHA154X.SYS
 REM IDE/ATAPI, MFM/RLL/ESDI. /NOIRQ = Abfragebetrieb
-DEVICE=IDE.SYS
+BASEDEV=IDE.SYS
 REM Trantor T130B (NCR 53C400). /P:350|340|250|240 Port, /PIO ohne Block
-DEVICE=NCR5380.SYS
+BASEDEV=NCR5380.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
 REM Sound Blaster 1.0-AWE64, AdLib, MPU-401. /A:220 /I:5 /D:1 /H:5 /M:330

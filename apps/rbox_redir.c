@@ -1195,6 +1195,14 @@ static void mscdex(void)
         rg.flags |= 1;
 }
 
+/* F5 beim Start (NOTSTART=1 in der Systemumgebung): ohne DOSBOX.INI und
+   AUTOEXEC.BAT (docs/NOTSTART.md) */
+static int notstart(void)
+{
+    static char ns[4];
+    return !FAILED(DosGetEnv("NOTSTART", ns, sizeof(ns))) && ns[0] == '1';
+}
+
 static void box_call(void)
 {
     int r;
@@ -1250,7 +1258,8 @@ static void box_call(void)
         break;
     }
     case 0x13:                                  /* Startlaufwerk, AL       */
-        rg.ax = (unsigned char)boot_drv() | (unsigned)rb_perm << 8;  /* AH = 1: Box */
+        rg.ax = (unsigned char)boot_drv() | (unsigned)rb_perm << 8 |  /* AH 1: Box */
+                (notstart() ? 0x200 : 0);       /* AH 2: Notstart (F5)    */
                                                 /* bleibt (RBREADY, EXIT) */
         break;
     case 0x14: {                                /* aktuelles Verzeichnis  */

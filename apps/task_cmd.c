@@ -3172,6 +3172,28 @@ static int run_program(char *cmd, int sync, int call);
    legt AUTOCHECK= in der CONFIG.SYS fest (Vorgabe: alle; "AUTOCHECK=" ohne
    Buchstaben: keine). Die Liste wird vorher geloescht, damit ein Absturz
    beim Pruefen nicht bei jedem Start wiederkommt. */
+/* Notstart (F5): nur melden - eine vorgemerkte Pruefung soll nicht
+   ausgerechnet im Notstart laufen (docs/NOTSTART.md) */
+static void notstart(void)
+{
+    static struct fapi_fsinfo fi;
+    unsigned d;
+    puts("Notstart (F5): ohne CONFIG.SYS (nur BASEDEV=) und ohne AUTOEXEC.CMD.\n"
+         "Startdateien bearbeiten, z. B. EDIT C:\\CONFIG.SYS, dann neu starten.\n");
+    if (exists("\\AUTOCHK.LST"))
+        puts("Vorgemerkte Pr\x81" "fung (AUTOCHK.LST) l\x84uft erst beim "
+             "n\x84" "chsten normalen Start.\n");
+    for (d = 2; d < 26; d++)
+        if (!FAPI_FAILED(DosQFSInfo(d, &fi)) && (fi.flags & FSI_DIRTY)) {
+            puts("Laufwerk ");
+            putc((char)('A' + d));
+            puts(": wurde nicht ordnungsgem\x84\xE1 abgemeldet - CHKDSK ");
+            putc((char)('A' + d));
+            puts(": /F\n");
+        }
+    puts("\n");
+}
+
 static void autochk(void)
 {
     static char lst[256], cl[40], ac[32], todo[26];
@@ -3716,8 +3738,13 @@ void main(void)
 
     puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 5.5\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
-    if (permanent) {
+    if (permanent && !FAPI_FAILED(DosGetEnv("NOTSTART", pbuf, sizeof(pbuf))) &&
+        pbuf[0] == '1') {               /* F5 beim Start (docs/NOTSTART.md) */
+        notstart();
+        permanent = 2;                  /* AUTOEXEC.CMD auslassen        */
+    } else if (permanent)
         autochk();
+    if (permanent) {
         if (DosGetEnv("TEMP", pbuf, sizeof(pbuf)) != FAPI_ERROR && pbuf[0])
             DosMkDir(pbuf);             /* fehlt %TEMP%: anlegen        */
         if (DosRBox(RB_PERM, 0, 0) == 1) {  /* PROTECTONLY=NO: Box gleich */
@@ -3730,7 +3757,7 @@ void main(void)
     }
     /* AUTOEXEC.CMD ist die native Startdatei; AUTOEXEC.BAT gehoert (wie bei
        OS/2) der DOS-Box und bleibt unangetastet */
-    if (permanent && exists("\\AUTOEXEC.CMD") &&
+    if (permanent == 1 && exists("\\AUTOEXEC.CMD") &&
         (!step || step_ask("AUTOEXEC.CMD ausf\x81hren"))) {
         if (!run_batch("\\AUTOEXEC.CMD", ""))
             return;

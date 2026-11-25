@@ -537,6 +537,25 @@ Zeile außer REM). Erstes Codesegment 65.035 Byte (485 frei!). Geprüft:
 QEMU (Platte, MOUSE/IDE übersprungen, AUTOEXEC.CMD) und 86Box SCAT von
 Diskette (F8 ab dem Einschalten, MOUSE.SYS übersprungen).
 
+F5-Notstart und `BASEDEV=` wie main (Entscheidung des Nutzers, 24./
+25.11.2026; Entwurf `docs/NOTSTART.md` auf main, Abschnitt „5.x“): ohne
+INT-13h-Rückfall – fehlt das Startlaufwerk, bleibt es bei „Startpartition
+nicht gefunden“. start.asm merkt F5 (3Fh) in `boot_f5`; kernel.c
+`config_sys` liest in zwei Durchgängen (erst `BASEDEV=` wie DEVICE=, dann
+der Rest – im Notstart nicht), keine Auslagerungsdatei/LOOP=, NOTSTART=1
+in der Systemumgebung, „Notstart“ in der Statuszeile; preload.c lädt
+BASEDEV= vor (im Notstart nur das). CMD /P meldet den Notstart und
+vorgemerkte Prüfungen und lässt AUTOEXEC.CMD aus; RBOX liest DOSBOX.INI
+nicht, RBSHELL die AUTOEXEC.BAT nicht (INT E0h 13h AH Bit 1). SETUP
+behandelt BASEDEV= wie DEVICE=; die mitgelieferte CONFIG.SYS lädt AHA154X,
+IDE und NCR5380 über BASEDEV=. Platz: der CONFIG.SYS-Start (F5/F8-Fenster
+`cfg_wait`, `cfg_ask`, `cfg_skip`, `cfg_step`) liegt jetzt in k2misc.c
+(KTEXT2, Thunks kf_vio_kputs/kf_env_set) – erstes Codesegment 65.129
+Byte (391 frei). Geprüft: QEMU isapc (Notstart, F8 mit BASEDEV= zuerst,
+Box mit und ohne AUTOEXEC.BAT, normaler Start) und 86Box SCAT
+(Start von der Adaptec-Platte über BASEDEV=AHA154X.SYS, Notstart, Box
+mit und ohne Notstart).
+
 IPv6 wie 6.2/main (20.11.2026, vom Nutzer am echten LAN gemeldet):
 net/ip6.h, tcpip.c, sock.h von main – je Karte globale und ULA-Adresse
 (fd00::), ULA-Ziele bekommen die ULA als Absender, sonst die globale;

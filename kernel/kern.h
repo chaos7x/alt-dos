@@ -242,6 +242,10 @@ unsigned vio_clip_get(unsigned sel, unsigned off, unsigned max);
 void kbd_init(void);
 extern unsigned char bios_kbf;       /* 0040:0017 beim Start (start.asm) */
 extern unsigned char boot_f8;        /* 1 = F8: CONFIG.SYS schrittweise   */
+extern unsigned char boot_f5;        /* 1 = F5: Notstart (docs/NOTSTART.md) */
+void __far cfg_wait(int s);          /* k2misc.c (KTEXT2): CONFIG.SYS-Start */
+int  __far cfg_skip(const char *l, int pass, int s);
+void __far cfg_step(char *p);
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 void kbd_irq(unsigned sc);          /* Scancode verarbeiten (IRQ 1)       */

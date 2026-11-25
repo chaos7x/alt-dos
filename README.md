@@ -144,6 +144,11 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   und jede ihrer Zeilen (`REM` nicht); Esc führt den Rest ohne Fragen
   aus. `CONFIG.SYS` bis 8 KB (vorher 4 KB – eine größere wurde still
   übergangen, jetzt mit Meldung).
+- F5 beim Start (Notstart wie MS-DOS 6): nur die `BASEDEV=`-Zeilen der
+  `CONFIG.SYS` gelten (Treiber für das Startlaufwerk, wie OS/2 – sie
+  werden auch sonst vor allen anderen Zeilen geladen), keine
+  Auslagerungsdatei, CMD.EXE ohne AUTOEXEC.CMD, die Kompatibilitätsbox
+  ohne DOSBOX.INI und AUTOEXEC.BAT; „Notstart“ in der Statuszeile.
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie bei OS/2:
