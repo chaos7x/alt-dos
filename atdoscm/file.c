@@ -1012,8 +1012,20 @@ static int path_arg(struct frame __far *f, u16 seg, u16 off, char *out)
 void do_open(struct frame __far *f, const char *path, unsigned mode,
                     unsigned act, unsigned attr, int ext)
 {
-    unsigned res;
-    int s = open_path(path, mode, act, attr, &res), h;
+    unsigned res, i;
+    int s, h;
+    if (attr & 0x08) {                  /* Datentraegerbezeichnung (MS-  */
+        for (i = 0; path[i] && i < DEM_PATHLEN - 1; i++)   /* DOS-BACKUP:  */
+            q.path[i] = path[i];        /* DosSetFsInfo = 13h + 3Ch 08h) */
+        q.path[i] = 0;
+        if (dem(DEM_LABEL)) {
+            set_err(f, E_DENIED);
+            return;
+        }
+        s = sft_dev(DV_NUL, mode & 0xFF);   /* Handle zum Schliessen     */
+        res = 2;
+    } else
+        s = open_path(path, mode, act, attr, &res);
     if (s < 0) {
         set_err(f, (unsigned)-s);
         return;

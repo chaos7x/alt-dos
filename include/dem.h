@@ -77,6 +77,10 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
                                MS-DOS ValidateCDS das Medium - WINFILE
                                von Windows 3.1 erkennt daran ein leeres
                                Laufwerk) -> 0 oder 15h                  */
+#define DEM_LABEL       26  /* path = "X:NAME" bzw. "X:" (loeschen): Daten-
+                               traegerbezeichnung setzen (3Ch/5Bh mit
+                               Attribut 08h, FCB-Loeschen 13h mit 08h -
+                               so setzt MS-DOS-BACKUP "BACKUP  nnn")      */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 

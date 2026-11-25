@@ -2183,12 +2183,23 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (swap_boot + loop_boot nachholen), oder der Kernel startet die Prüfung
   selbst vor PROTSHELL wie autochk.exe bei NT.
 
-- **BACKUP/RESTORE**: erledigt (s. Konventionen). Offen daraus: lange
-  Namen außerhalb der aktiven Codepage (NAMES.nnn ist Text in der
-  Codepage, `CP=` steht im Kopf – UTF-16 bräuchte einen FAPI-Aufruf für
-  den UTF-16-Namen), Bezeichnung „BACKUP nnn“ der Diskette, wenn MS-DOS-
-  BACKUP in der Box sichert (bleibt leer), BACKUP `/F` ruft FORMAT nur bei
-  unformatierten Disketten. Die beauftragten Punkte 5, 7, 6, 8 (MODE CON
+- **BACKUP/RESTORE**: erledigt (s. Konventionen), die Reste am 25.11.2026
+  (Auftrag des Nutzers): (1) Namen außerhalb der Codepage – FAPI 63h
+  `FAPI_UNINAME` (fat.c `uni_fapi`, auf das Namensgedächtnis von Unicode
+  Stufe 1): BACKUP holt zu einem Pfadteil mit `_` das UTF-16-Original und
+  schreibt es als dritte Spalte (UTF-8, nur letzter Pfadteil, jede Stufe
+  hat ihre Zeile) in NAMES.nnn; RESTORE meldet es vor dem Anlegen an
+  (BX = 1), FAT schreibt dann VFAT bzw. Satz `W`. (2) Bezeichnung aus der
+  Box: MS-DOS-BACKUP setzt sie wie DosSetFsInfo (FCB 13h mit erweitertem
+  FCB Attribut 08h löschen, dann 3Ch mit CX = 08h „A:BACKUP.001“) – neu
+  `DEM_LABEL` (26), Box-Kern fcb.c/file.c (3Ch mit 08h gibt ein NUL-Handle
+  zurück). (3) `/F:Größe` formatiert auch eine anders formatierte Diskette
+  (`wrong_size`: Sektoren aus DosQFSInfo gegen die Größe), FORMAT neu mit
+  `/BACKUP` (wie MS-DOS 5: keine Rückfrage). Geprüft: QEMU (Griechisch/
+  Kyrillisch auf VFAT- und EA-Ziel zurück; BACKUP ruft FORMAT – das
+  Umformatieren selbst geht in QEMU nicht, die Abbildgröße bestimmt das
+  Format) und 86Box 386DX/40 (MS-DOS-5-BACKUP in der Box -> Bezeichnung
+  „BACKUP  001“). Die beauftragten Punkte 5, 7, 6, 8 (MODE CON
   RATE/DELAY, Netzdrucker, AT, BACKUP/RESTORE) sind damit alle erledigt.
 
 - **Startcode nach dem Booten freigeben** (Wunsch des Nutzers,

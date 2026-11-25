@@ -606,7 +606,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   im Format von MS-DOS 3.3–5.0 (`BACKUP.nnn`/`CONTROL.nnn`, Dateien über
   Disketten geteilt): RESTORE von MS-DOS liest unsere Sicherungen, unser
   RESTORE die von MS-DOS. Lange Namen (EA, VFAT, FAT32, CD) stehen in
-  `NAMES.nnn` und kommen mit unserem RESTORE zurück
+  `NAMES.nnn` und kommen mit unserem RESTORE zurück, auch Zeichen außerhalb
+  der Codepage (Griechisch, Kyrillisch …: dritte Spalte in UTF-8); `/F:Größe`
+  formatiert auch eine Diskette mit anderem Format neu (`FORMAT /BACKUP`
+  ohne Rückfrage). Sichert BACKUP von MS-DOS in der Box, bekommt die
+  Diskette ihre Bezeichnung „BACKUP  nnn“
 - `AT [Kennung] [/DELETE [/YES]]`, `AT Zeit [/INTERACTIVE] [/EVERY:Tag,… |
   /NEXT:Tag,…] "Befehl"` wie NT: Wochentage (Mo–So, auch M T W Th F S Su)
   und Monatstage, ohne Angabe einmal (heute, sonst morgen); Aufträge in
@@ -1311,6 +1315,7 @@ selbst nur 8.3 kennt.
 | 96 | KbdRate         | Wiederholrate (6.3): BX = Byte für Tastaturbefehl F3h (Bit 0–4 Rate 0 = 30/s … 31 = 2/s, Bit 5–6 Verzögerung 250–1000 ms), FFFFh = nur abfragen → AX = bisheriger Wert (`MODE CON RATE=/DELAY=`) |
 | 97 | DosBeep         | Ton am PC-Lautsprecher (6.3, wie OS/2): BX = Hz (37–32767), CX = Dauer in ms (auf 10 ms gerundet), wartet so lange (CMD `BEEP`) |
 | 98 | VioSetTitle     | Titel der eigenen Sitzung in der Titelzeile (6.3, CMD `TITLE`): BX = Text (bis 40 Zeichen), 0 oder leer = wieder der Programmname |
+| 99 | DosUniName      | Unicode-Original eines Namens (6.3, BACKUP/RESTORE): BX = 0 lesen / 1 merken, CX = Pfadteil wie das Programm ihn sieht (Fremdes als `_`), DX = UTF-16 (bis 255 Zeichen + 0); Lesen liefert, was der Kernel diesem Task zuletzt zu dem Namen gab -> Zeichenzahl (0 = keins), Merken: legt der Task den Namen danach an, schreibt FAT das Original |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

@@ -274,6 +274,18 @@ void fcb_fn(struct frame __far *f)
         AL(f) = 0;
         return;
     case 0x13:
+        if (p[0] == 0xFF && (attr & 0x08)) {   /* Bezeichnung loeschen  */
+            unsigned d = b[0] ? b[0] - 1 : cur_drv;
+            if (!drive_ok(d)) {
+                AL(f) = 0xFF;
+                return;
+            }
+            q.path[0] = (char)('A' + d);
+            q.path[1] = ':';
+            q.path[2] = 0;
+            AL(f) = dem(DEM_LABEL) ? 0xFF : 0;
+            return;
+        }
         if (fcb_path(b, b + 1, fp)) {
             AL(f) = 0xFF;
             return;

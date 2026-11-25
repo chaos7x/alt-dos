@@ -1225,6 +1225,25 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_LFIND:     r = d_lfind(q); break;
     case DEM_FCLUS:     r = d_fclus(q); break;
     case DEM_NETINFO:   r = d_netinfo(q); break;
+    case DEM_LABEL: {                           /* Bezeichnung setzen    */
+        static char lb_n[12];
+        unsigned k = 2, j = 0;
+        if (q->path[k] == '\\')
+            k++;
+        for (; q->path[k] && j < 11; k++)       /* "BACKUP.001" -> 11    */
+            if (q->path[k] != '.')               /* Zeichen ohne Punkt    */
+                lb_n[j++] = q->path[k];
+            else
+                while (j < 8)
+                    lb_n[j++] = ' ';
+        while (j && lb_n[j - 1] == ' ')
+            j--;
+        lb_n[j] = 0;
+        r = FAPI(FAPI_LABEL, KDATA, (q->path[0] & 0x1F) - 1, (unsigned)&fn_lb,
+                 (unsigned)lb_n);
+        r = FAILED(r) ? E_DENIED : 0;
+        break;
+    }
     case DEM_MEDIA:                             /* 47h: Medium da?       */
         r = FAILED(FAPI(FAPI_QFSINFO, KDATA, q->drive, (unsigned)&fsi, 0)) ||
             (fsi.flags & FSI_NOMEDIA) ? E_NOTREADY : 0;

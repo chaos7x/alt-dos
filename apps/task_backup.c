@@ -169,12 +169,46 @@ static void names_add(const char *k, const char *v)
     nbuf[nlen++] = '\n';
 }
 
+/* Zeichen ausserhalb der Codepage (als '_' gesehen): das Original des
+   letzten Pfadteils c (in v) holt FAPI_UNINAME; dann haengt "\t" + UTF-8
+   an v an (dritte Spalte von NAMES.nnn, RESTORE meldet es vor dem Anlegen
+   an) -> 1. Ersatzpaare bleiben einzelne Einheiten (je 3 Byte) */
+static int uni_col(const char *c, char *v)
+{
+    static unsigned short u[257];
+    unsigned n, k, l, x;
+    for (k = 0; c[k] && c[k] != '_'; k++)
+        ;
+    if (!c[k])
+        return 0;
+    n = DosUniName(0, c, u);
+    if (FAPI_FAILED(n) || !n)
+        return 0;
+    l = slen(v);
+    v[l++] = '\t';
+    for (k = 0; k < n; k++) {
+        x = u[k];
+        if (x < 0x80)
+            v[l++] = (char)x;
+        else if (x < 0x800) {
+            v[l++] = (char)(0xC0 | (x >> 6));
+            v[l++] = (char)(0x80 | (x & 0x3F));
+        } else {
+            v[l++] = (char)(0xE0 | (x >> 12));
+            v[l++] = (char)(0x80 | ((x >> 6) & 0x3F));
+            v[l++] = (char)(0x80 | (x & 0x3F));
+        }
+    }
+    v[l] = 0;
+    return 1;
+}
+
 /* langen Namen fuer s8 (relativ) und ln (absolut) merken, wenn er anders
    ist; Verzeichnisse dabei mit (jede Stufe) */
 static void note_names(const char *rs, const char *rl)
 {
-    static char k[DB_PATHMAX + 14 + 1], v[FAPI_PATHLEN];
-    unsigned i = 0, j = 0;
+    static char k[DB_PATHMAX + 14 + 1], v[FAPI_PATHLEN + 3 * 256 + 2];
+    unsigned i = 0, j = 0, j0 = 0;
     for (;;) {
         while (rs[i] && rs[i] != '\\')
             i++;
@@ -183,12 +217,13 @@ static void note_names(const char *rs, const char *rl)
         scopy(k, rs, i + 1 < sizeof(k) ? i + 1 : sizeof(k));
         scopy(v, rl, j + 1 < sizeof(v) ? j + 1 : sizeof(v));
         {
-            unsigned x;
+            unsigned x, u = uni_col(v + j0, v);
             for (x = 0; k[x] && k[x] == v[x]; x++)
                 ;
-            if (k[x] || v[x])       /* nicht gleich geschrieben */
+            if (k[x] || v[x] || u)  /* nicht gleich geschrieben */
                 names_add(k, v);
         }
+        j0 = j + 1;
         if (!rs[i] || !rl[j])
             break;
         i++, j++;
@@ -327,6 +362,37 @@ static int is_raw(void)
     return fi.fsname[0] == 'R' && fi.fsname[1] == 'A' && fi.fsname[2] == 'W';
 }
 
+/* /F:Groesse und die Diskette hat ein anderes Format (wie MS-DOS: dann wird
+   sie neu formatiert, nicht nur eine unformatierte) */
+static int wrong_size(void)
+{
+    static struct fapi_fsinfo fi;
+    unsigned kb = 0, frac = 0, nf = 0, i;
+    int dot = 0;
+    if (!o_f || !fsize[0] || DosQFSInfo(tgt - 'A', &fi) || fi.bsize != 512)
+        return 0;
+    for (i = 0; fsize[i]; i++) {
+        char c = fsize[i];
+        if (c == '.' || c == ',')
+            dot = 1;
+        else if (c >= '0' && c <= '9') {
+            if (dot) {
+                if (nf < 3)
+                    frac = frac * 10 + (unsigned)(c - '0'), nf++;
+            } else
+                if (kb < 6000)
+                    kb = kb * 10 + (unsigned)(c - '0');
+        } else
+            break;
+    }
+    if (dot || kb < 10) {               /* 1.2, 1.44, 2.88 (MB)          */
+        while (nf < 3)
+            frac *= 10, nf++;
+        kb = kb * 1000 + frac;
+    }
+    return kb && (fi.sectors >> 1) != (unsigned long)kb;
+}
+
 static void format_disk(void)
 {
     static char cmd[FAPI_PATHLEN + 40];
@@ -340,7 +406,7 @@ static void format_disk(void)
         scat(cmd, " /F:", sizeof(cmd));
         scat(cmd, fsize, sizeof(cmd));
     }
-    scat(cmd, " /V:BACKUP", sizeof(cmd));
+    scat(cmd, " /V:BACKUP /BACKUP", sizeof(cmd));
     DosExecPgm(cmd, EXEC_SYNC);
 }
 
@@ -364,7 +430,7 @@ static void ask_disk(int last)
             con(":\\ des Ziellaufwerks werden gel\x94scht\r\n");
         }
         wait_key();
-        if (!last && is_raw())
+        if (!last && (is_raw() || wrong_size()))
             format_disk();
         if (!is_raw())
             return;

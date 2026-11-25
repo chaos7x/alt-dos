@@ -316,6 +316,17 @@ struct fapi_joy {
 #define FAPI_SETTITLE       0x62    /* Titel der eigenen Sitzung (6.3, CMD
                                        TITLE): BX = Text (bis 40 Zeichen),
                                        0 bzw. "" = wieder der Programmname */
+#define FAPI_UNINAME        0x63    /* Unicode-Original eines Namens (6.3,
+                                       BACKUP/RESTORE): BX = 0 lesen, 1
+                                       merken; CX = Name (ein Pfadteil, wie
+                                       das Programm ihn sieht, Fremdes als
+                                       '_'), DX = UTF-16 (bis 255 Zeichen +
+                                       0). Lesen liefert das Original, das
+                                       der Kernel diesem Task zuletzt zu dem
+                                       Namen gab (DosFindEntry, Pfad) -> AX =
+                                       Zeichen, 0 = keins; Merken: legt der
+                                       Task den Namen danach an, schreibt
+                                       FAT das Original */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

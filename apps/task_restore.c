@@ -115,6 +115,32 @@ static void names_load(void)
     nbuf[nlen] = 0;
 }
 
+/* Original (UTF-8 ab nbuf[i] bis Zeilenende) des letzten Pfadteils von v
+   beim Kernel anmelden: legt RESTORE ihn danach an, schreibt FAT das
+   Original statt der '_' (FAPI_UNINAME) */
+static void uni_reg(const char *v, unsigned i)
+{
+    static unsigned short u[257];
+    unsigned n = 0, c;
+    const char *b = v, *x;
+    for (x = v; *x; x++)
+        if (*x == '\\')
+            b = x + 1;
+    while (i < nlen && nbuf[i] != '\r' && nbuf[i] != '\n' && n < 256) {
+        c = (unsigned char)nbuf[i++];
+        if (c >= 0xE0 && i + 1 < nlen) {
+            c = ((c & 0x0F) << 12) | (((unsigned char)nbuf[i] & 0x3F) << 6) |
+                ((unsigned char)nbuf[i + 1] & 0x3F);
+            i += 2;
+        } else if (c >= 0xC0 && i < nlen)
+            c = ((c & 0x1F) << 6) | ((unsigned char)nbuf[i++] & 0x3F);
+        u[n++] = (unsigned short)c;
+    }
+    u[n] = 0;
+    if (n == slen(b))                   /* sonst passt es nicht zum Namen */
+        DosUniName(1, b, u);
+}
+
 /* langen Pfad zum 8.3-Pfad k (relativ), 0 = keiner */
 static const char *names_get(const char *k)
 {
@@ -126,9 +152,11 @@ static const char *names_get(const char *k)
         if (j == n && nbuf[i + j] == '\t') {
             i += j + 1;
             for (j = 0; i + j < nlen && nbuf[i + j] != '\r' && nbuf[i + j] != '\n' &&
-                        j < sizeof(v) - 1; j++)
+                        nbuf[i + j] != '\t' && j < sizeof(v) - 1; j++)
                 v[j] = nbuf[i + j];
             v[j] = 0;
+            if (nbuf[i + j] == '\t')   /* dritte Spalte: UTF-8-Original   */
+                uni_reg(v, i + j + 1);
             return v;
         }
         while (i < nlen && nbuf[i] != '\n')

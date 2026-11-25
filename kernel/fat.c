@@ -767,6 +767,32 @@ static unsigned slen_f(const char __far *s)
     return n;
 }
 
+/* FAPI_UNINAME (kernel.c): op 0 = Original zu name (laufender Task) nach
+   usel:uoff -> Zeichen, 0 = keins; op 1 = usel:uoff als Original merken */
+int __far uni_fapi(int op, const char *name, unsigned usel, unsigned uoff)
+{
+    unsigned len = slen_f(name), o, k;
+    unsigned char __far *u = (unsigned char __far *)MK_FP(usel, uoff);
+    unsigned char __far *p;
+    if (!len || len > 255)
+        return op ? -1 : 0;
+    if (op == 0) {
+        if ((o = uni_find(name, len)) == 0)
+            return 0;
+        p = ufp(o);
+        for (k = 0; k < 2 * len; k++)
+            u[k] = p[k];
+        u[2 * len] = u[2 * len + 1] = 0;
+        return (int)len;
+    }
+    for (k = 0; k < len && (u[2 * k] || u[2 * k + 1]); k++)
+        ;
+    if (k != len)                       /* gleich viele Zeichen          */
+        return -1;
+    uni_note(name, len, usel, uoff);
+    return (int)len;
+}
+
 static unsigned char sum83(const unsigned char __far *e)
 {
     unsigned char s = 0;

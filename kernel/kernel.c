@@ -4565,6 +4565,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         vio_title(task[current].session, a1 && buf[0] ? buf : task[current].name);
         return 0;
+    case FAPI_UNINAME:                          /* BACKUP/RESTORE (fat.c) */
+        if (a1 > 1 || user_str(usel, a2, buf, 256) || !user_ok(usel, a3, 512, !a1))
+            return FAPI_ERROR;
+        t = uni_fapi(a1, buf, usel, a3);
+        return t < 0 ? FAPI_ERROR : t;
     case FAPI_JOYSTICK:                         /* Gameport (v86.c)       */
         return user_ok(usel, a1, sizeof(struct fapi_joy), 1) ? joy_fapi(usel, a1) : FAPI_ERROR;
     case FAPI_UFS:                              /* NET USE (ufs.c)        */
