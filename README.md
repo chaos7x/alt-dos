@@ -65,7 +65,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Ressourcen, Listen sowie Öffnen-/Speichern-/Suchen-Dialoge (COMMDLG).
   Notepad aus Windows 3.1 läuft damit vollständig; dazu Bitmaps
   (Speicher-DCs, BitBlt, LoadBitmap) und Abbildungsmodi – die freien
-  osFree-Programme Minesweeper, Clock, Reversi und Taskman laufen. Beispiel
+  osFree-Programme Minesweeper, Clock, Reversi und Taskman laufen, mit MDI,
+  Symbolen und INI-Dateien auch der osFree-Programm-Manager (startet
+  Programme per WinExec). Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern

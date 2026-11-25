@@ -298,7 +298,7 @@ WORD gfx_textw(LPCSTR s, WORD n) { (void)s; return n * FONT_W; }
 #define OB_BRUSH 2
 #define OB_FONT  3
 #define OB_BITMAP 4                     /* color = Platz in bm[]         */
-#define NOBJ     96
+#define NOBJ     192
 static struct gobj { BYTE type, stock, style, width; DWORD color; } ob[NOBJ];
 #define HO(i)   ((HGDIOBJ)(0x6000u + ((i) << 2)))
 #define OI(h)   ((((WORD)(h)) - 0x6000u) >> 2)
@@ -324,7 +324,7 @@ static HGDIOBJ onew(BYTE type, BYTE style, BYTE width, DWORD color)
 /* ---- Bitmaps -------------------------------------------------------- */
 /* Ebenen hintereinander in einem Segment (Ebene p ab p * pitch * h),
    Zeilen oben zuerst, Zeile = pitch Byte (gerade wie bei Windows) */
-#define NBM 32
+#define NBM 128
 static HGDIOBJ bm_stock;
 static struct bmp { BYTE used, np; WORD w, h, pitch, sel; } bm[NBM];
 static struct bmp *bptr(HGDIOBJ o)
@@ -1477,18 +1477,66 @@ BOOL API StretchBlt(HDC hd, short x, short y, short w, short h, HDC hs,
     return blt(hd, x, y, w, h, hs, sx, sy, sw, sh, rop);
 }
 
+/* DIB-Bits (Zeilen unten zuerst, je 4 Byte ausgerichtet) -> Bitmap mit
+   np Ebenen; map: Nummer im DIB -> Grundfarbe (bei 24 Bit nicht benutzt) */
+HBITMAP gdi_dib(WORD w, WORD h, WORD bpp, const BYTE FAR *map,
+                const BYTE FAR *bits, BYTE np)
+{
+    WORD lp = (WORD)((((DWORD)w * bpp + 31) >> 5) << 2), x, y, p;
+    HBITMAP o = bm_new(w, h, np);
+    struct bmp *b = bptr(o);
+    if (!b)
+        return 0;
+    for (y = 0; y < h; y++) {
+        const BYTE FAR *row = bits + (DWORD)(h - 1 - y) * lp;
+        for (x = 0; x < w; x++) {
+            BYTE c;
+            if (bpp == 1) c = map[(row[x >> 3] >> (7 - (x & 7))) & 1];
+            else if (bpp == 4) c = map[(x & 1) ? row[x >> 1] & 15 : row[x >> 1] >> 4];
+            else if (bpp == 8) c = map[row[x]];
+            else if (bpp == 24) {
+                const BYTE FAR *e = row + x * 3;
+                c = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
+            } else c = 0;
+            for (p = 0; p < b->np; p++) {
+                BYTE FAR *q = MKFP(b->sel, p * b->pitch * b->h + y * b->pitch + (x >> 3));
+                BYTE on = b->np == 1 ? monob[c & 15] : (c >> p) & 1;
+                if (on) *q |= 0x80 >> (x & 7); else *q &= ~(0x80 >> (x & 7));
+            }
+        }
+    }
+    return o;
+}
+
+/* Kopf eines DIB lesen (BITMAPINFOHEADER oder -COREHEADER): Masse, Bits
+   je Punkt, Farbtabelle -> map, -> Stelle der Bits */
+const BYTE FAR *gdi_dibhdr(const BYTE FAR *bi, WORD FAR *w, WORD FAR *h, WORD FAR *bpp, BYTE FAR *map)
+{
+    WORD hs = *(const WORD FAR *)bi, ncol, i;
+    BYTE core = hs == 12;
+    *w = *(const WORD FAR *)(bi + 4);
+    *h = core ? *(const WORD FAR *)(bi + 6) : *(const WORD FAR *)(bi + 8);
+    *bpp = core ? *(const WORD FAR *)(bi + 10) : *(const WORD FAR *)(bi + 14);
+    ncol = *bpp <= 8 ? (WORD)(1 << *bpp) : 0;
+    if (!core && *(const WORD FAR *)(bi + 32) && *bpp <= 8)
+        ncol = *(const WORD FAR *)(bi + 32);
+    for (i = 0; i < ncol && i < 256; i++) {
+        const BYTE FAR *e = bi + hs + i * (core ? 3 : 4);
+        map[i] = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
+    }
+    return bi + hs + ncol * (core ? 3 : 4);
+}
+
 /* LoadBitmap: DIB-Ressource (RT_BITMAP) 1/4/8/24 Bit -> Bitmap; 1 Bit
    bleibt einfarbig, sonst 16 Farben (naechste Grundfarbe) */
 HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
 {
     int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
     DWORD r;
-    WORD sel, hs, w, h, bpp, ncol, lp, x, y, p, i;
-    const BYTE FAR *bi;
+    WORD sel, w, h, bpp;
+    static BYTE map[256];
     const BYTE FAR *bits;
-    BYTE map[256], core;
     HBITMAP o;
-    struct bmp *b;
     if (hinst > 0 && hinst <= NMOD)
         m = hinst - 1;
     if (m < 0) {
@@ -1498,42 +1546,8 @@ HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
     r = w16_res_find(m, MKFP(0, 2), name);
     if (!r || !(sel = w16_res_load(m, r)))
         return 0;
-    bi = MKFP(sel, 0);
-    hs = *(const WORD FAR *)bi;
-    core = hs == 12;
-    w = core ? *(const WORD FAR *)(bi + 4) : *(const WORD FAR *)(bi + 4);
-    h = core ? *(const WORD FAR *)(bi + 6) : *(const WORD FAR *)(bi + 8);
-    bpp = core ? *(const WORD FAR *)(bi + 10) : *(const WORD FAR *)(bi + 14);
-    ncol = bpp <= 8 ? (WORD)(1 << bpp) : 0;
-    if (!core && *(const WORD FAR *)(bi + 32) && bpp <= 8)
-        ncol = *(const WORD FAR *)(bi + 32);
-    for (i = 0; i < ncol && i < 256; i++) {
-        const BYTE FAR *e = bi + hs + i * (core ? 3 : 4);
-        map[i] = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
-    }
-    bits = bi + hs + ncol * (core ? 3 : 4);
-    lp = (WORD)((((DWORD)w * bpp + 31) >> 5) << 2);
-    o = bm_new(w, h, (BYTE)(bpp == 1 ? 1 : 4));
-    b = bptr(o);
-    if (b)
-        for (y = 0; y < h; y++) {
-            const BYTE FAR *row = bits + (DWORD)(h - 1 - y) * lp;
-            for (x = 0; x < w; x++) {
-                BYTE c;
-                if (bpp == 1) c = map[(row[x >> 3] >> (7 - (x & 7))) & 1];
-                else if (bpp == 4) c = map[(x & 1) ? row[x >> 1] & 15 : row[x >> 1] >> 4];
-                else if (bpp == 8) c = map[row[x]];
-                else if (bpp == 24) {
-                    const BYTE FAR *e = row + x * 3;
-                    c = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
-                } else c = 0;
-                for (p = 0; p < b->np; p++) {
-                    BYTE FAR *q = MKFP(b->sel, p * b->pitch * b->h + y * b->pitch + (x >> 3));
-                    BYTE on = b->np == 1 ? monob[c] : (c >> p) & 1;
-                    if (on) *q |= 0x80 >> (x & 7); else *q &= ~(0x80 >> (x & 7));
-                }
-            }
-        }
+    bits = gdi_dibhdr(MKFP(sel, 0), &w, &h, &bpp, map);
+    o = gdi_dib(w, h, bpp, map, bits, (BYTE)(bpp == 1 ? 1 : 4));
     seg_del(sel);
     return o;
 }

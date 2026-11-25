@@ -206,7 +206,18 @@ void clip_window(HWND h, int client, struct clip FAR *c)
         return;
     }
     c->r[0] = client ? w->cr : w->wr;
-    for (p = w; (p->style & WS_CHILD) && p->parent && (p = wptr(p->parent)) != 0; ) {
+    for (p = w; (p->style & WS_CHILD) && p->parent; ) {
+        struct wnd *q = wptr(p->parent);
+        if (!q)
+            break;
+        /* Geschwister mit hoeherem Rang liegen darueber */
+        for (i = 0; i < NWND; i++) {
+            struct wnd *o = &ww[i];
+            if (o->used && o->visible && (o->style & WS_CHILD) && o != p &&
+                o->parent == p->parent && o->z > p->z && rover(&o->wr, &p->wr))
+                clip_sub(c, &o->wr);
+        }
+        p = q;
         if (!p->visible) {
             c->n = 0;
             return;
@@ -292,6 +303,8 @@ static void nc_paint(struct wnd *w)
     HDC dc;
     short b = wnd_border(w), l = w->wr.left, t = w->wr.top, r = w->wr.right, bt = w->wr.bottom;
     int act = top_of(w) && HW(top_of(w) - ww) == active;
+    if ((w->style & WS_CHILD) && mdi_is_kid(HW(w - ww)))
+        act = act && mdi_kid_active(HW(w - ww));
     if (!w->visible || !b && (w->style & WS_CAPTION) != WS_CAPTION &&
         !(w->style & (WS_VSCROLL | WS_HSCROLL)))
         return;
@@ -709,18 +722,15 @@ static BYTE keystate[256];
 static HWND child_at(HWND h, short x, short y)
 {
     short i;
-    HWND best = h;
-    WORD bz = 0;
+    struct wnd *b = 0;
     for (i = 0; i < NWND; i++) {
         struct wnd *c = &ww[i];
         if (!c->used || !c->visible || !(c->style & WS_CHILD) || c->parent != h)
             continue;
-        if (rhit(&c->wr, x, y) && i >= bz) {
-            bz = i;
-            best = child_at(HW(i), x, y);
-        }
+        if (rhit(&c->wr, x, y) && (!b || c->z > b->z))
+            b = c;
     }
-    return best;
+    return b ? child_at(HW(b - ww), x, y) : h;
 }
 
 static HWND win_at(short x, short y)
@@ -890,8 +900,11 @@ static void mouse_event(short x, short y, BYTE btn)
         if (up & 1) {
             if (dg_shown) drag_xor();
             dg_shown = 0;
-            if (w && (x != dgx || y != dgy))
-                win_move(w, dgr.left, dgr.top, dgr.right - dgr.left, dgr.bottom - dgr.top);
+            if (w && (x != dgx || y != dgy)) {
+                struct wnd *pp = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
+                short ox = pp ? pp->cr.left : 0, oy = pp ? pp->cr.top : 0;
+                win_move(w, dgr.left - ox, dgr.top - oy, dgr.right - dgr.left, dgr.bottom - dgr.top);
+            }
             drag = 0;
         }
         return;
@@ -911,6 +924,16 @@ static void mouse_event(short x, short y, BYTE btn)
             return;
         }
         activate(h);
+        {                                       /* MDI-Kind darunter aktivieren */
+            struct wnd *q = w;
+            while (q && (q->style & WS_CHILD)) {
+                if (mdi_is_kid(HW(q - ww))) {
+                    send_msg(q->parent, 0x0222, HW(q - ww), 0);   /* WM_MDIACTIVATE */
+                    break;
+                }
+                q = wptr(q->parent);
+            }
+        }
         if (w->style & WS_CHILD && w->enabled && focus != h) {
             if (focus)
                 post_msg(focus, WM_KILLFOCUS, h, 0);
@@ -919,7 +942,7 @@ static void mouse_event(short x, short y, BYTE btn)
         }
     }
     if (ht == HTCAPTION && (down & 1)) {
-        drag = HW(top_of(w) - ww);
+        drag = (w->style & WS_CHILD) ? h : HW(top_of(w) - ww);
         dgx = x; dgy = y;
         dg_shown = 0;
         return;
@@ -1156,6 +1179,8 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     HWND h;
     if (c < 0) {
         glogs("Klasse fehlt: ", SELOF(cname) ? cname : "(Atom)");
+        if (!SELOF(cname))
+            glogn("  Atom ", OFFOF(cname));
         return 0;
     }
     for (i = 0; i < NWND && ww[i].used; i++)
@@ -1187,6 +1212,7 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     p = parent ? wptr(parent) : 0;
     if (style & WS_CHILD) {
         w->parent = parent;
+        w->z = ++zmax;                          /* Rang unter Geschwistern */
         if (p) {
             x += p->cr.left;
             y += p->cr.top;
@@ -1415,6 +1441,20 @@ HDC API BeginPaint(HWND h, void FAR *pv)
         if (!send_msg(h, WM_ERASEBKGND, dc, 0))
             ps->erase = 1;
     }
+    /* das Elternfenster zeichnet ueber seine Kinder (kein Ausschneiden
+       wie ohne WS_CLIPCHILDREN): betroffene Kinder danach neu */
+    if (u.left < u.right) {
+        short i;
+        RECT s = u;
+        s.left += w->cr.left; s.right += w->cr.left;
+        s.top += w->cr.top; s.bottom += w->cr.top;
+        for (i = 0; i < NWND; i++)
+            if (ww[i].used && ww[i].visible && (ww[i].style & WS_CHILD) &&
+                ww[i].parent == h && rover(&ww[i].wr, &s)) {
+                ww[i].need_ncpaint = 1;
+                invalidate(&ww[i], 0, 1);
+            }
+    }
     return dc;
 }
 BOOL API EndPaint(HWND h, void FAR *pv)
@@ -1604,7 +1644,6 @@ void API PostQuitMessage(short code)
 }
 
 WORD API LoadCursor(WORD hinst, LPCSTR id) { (void)hinst; (void)id; return 0x5001; }
-WORD API LoadIcon(WORD hinst, LPCSTR id) { (void)hinst; (void)id; return 0x5002; }
 WORD API SetCursor(WORD c) { (void)c; return 0x5001; }
 void MessageBeep_c(void) { fapi_call(FAPI_BEEP, 880, 80, 0); }
 void API MessageBeep(WORD t) { (void)t; MessageBeep_c(); }
@@ -1661,7 +1700,20 @@ BOOL API IsChild(HWND p, HWND h)
 }
 HWND API GetDesktopWindow(void) { return desktop; }
 HWND API WindowFromPoint(POINT p) { return win_at(p.x, p.y); }
-BOOL API BringWindowToTop(HWND h) { activate(h); return 1; }
+BOOL API BringWindowToTop(HWND h)
+{
+    struct wnd *w = wptr(h);
+    if (w && (w->style & WS_CHILD)) {           /* nur unter Geschwistern */
+        if (w->z != zmax) {
+            w->z = ++zmax;
+            if (w->visible)
+                expose(&w->wr);
+        }
+        return 1;
+    }
+    activate(h);
+    return 1;
+}
 BOOL API IsIconic(HWND h) { (void)h; return 0; }
 BOOL API IsZoomed(HWND h) { (void)h; return 0; }
 HMENU API GetMenu(HWND h) { struct wnd *w = wptr(h); return w ? w->menu : 0; }
@@ -2058,6 +2110,8 @@ void user_init(void)
     cl[5].proc = dlg_proc;
     cl[6].used = 1; cl[6].internal = 1; fstrncpy(cl[6].name, "LISTBOX", 24);
     cl[6].proc = listbox_proc;
+    cl[7].used = 1; cl[7].internal = 1; fstrncpy(cl[7].name, "MDICLIENT", 24);
+    cl[7].proc = mdi_client_proc;
     rset(&r, 0, 0, SCR_W, SCR_H);
     expose(&r);
     user_paint_pending();

@@ -160,7 +160,17 @@ int task_start(LPCSTR path, LPCSTR args, WORD show)
     ts_di = ds; ts_si = 0; ts_es = wt[t].psp; ts_ds = ds;
     ts_cs = w->seg[w->entcs - 1].sel; ts_ip = w->entip;
     glogs("Start ", path);
-    task_run(t);                                /* bis zum ersten Warten */
+    if (cur_task < 0) {
+        task_run(t);                            /* bis zum ersten Warten */
+    } else {
+        /* aus einer Task (WinExec): direkt in die neue springen, der
+           Aufrufer bleibt in seinem Platz bereit - die Hauptschleife setzt
+           ihn fort. task_run hier ueberschriebe mainsave. */
+        int me = cur_task;
+        cur_task = t;
+        tsw((WORD FAR *)&wt[me].ss, wt[t].ss, wt[t].sp);
+        cur_task = me;
+    }
     return 0;
 }
 
@@ -620,22 +630,6 @@ LPSTR API lstrcat(LPSTR d, LPCSTR s)
     return r;
 }
 
-/* Profile: noch keine INI-Dateien - Vorgabe zurueck */
-short API GetProfileString(LPCSTR a, LPCSTR k, LPCSTR def, LPSTR buf, short n)
-{
-    (void)a; (void)k;
-    fstrncpy(buf, def ? def : "", n);
-    return fstrlen(buf);
-}
-WORD API GetProfileInt(LPCSTR a, LPCSTR k, short def) { (void)a; (void)k; return def; }
-short API GetPrivateProfileString(LPCSTR a, LPCSTR k, LPCSTR def, LPSTR buf, short n, LPCSTR f)
-{
-    (void)f;
-    return GetProfileString(a, k, def, buf, n);
-}
-WORD API GetPrivateProfileInt(LPCSTR a, LPCSTR k, short def, LPCSTR f) { (void)a; (void)k; (void)f; return def; }
-BOOL API WriteProfileString(LPCSTR a, LPCSTR k, LPCSTR v) { (void)a; (void)k; (void)v; return 1; }
-BOOL API WritePrivateProfileString(LPCSTR a, LPCSTR k, LPCSTR v, LPCSTR f) { (void)a; (void)k; (void)v; (void)f; return 1; }
 
 /* ---- Dateien (KERNEL _lopen & Co., auch fuer INT 21h) ----------------
    FAPI_SEEK kennt nur die Stelle vom Anfang: Stelle und Groesse fuehrt

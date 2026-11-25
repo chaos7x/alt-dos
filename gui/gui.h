@@ -59,6 +59,7 @@ extern WORD ts_ax, ts_bx, ts_cx, ts_dx, ts_si, ts_di, ts_es, ts_ds, ts_ip, ts_cs
 
 /* ---- Hilfen (main.c) ---- */
 void  fmemcpy(void FAR *d, const void FAR *s, WORD n);
+void  fmemmove(void FAR *d, const void FAR *s, WORD n);
 void  fmemset(void FAR *d, BYTE v, WORD n);
 WORD  fstrlen(LPCSTR s);
 void  fstrncpy(char FAR *d, LPCSTR s, WORD n);  /* mit 0, hoechstens n-1 */
@@ -165,6 +166,11 @@ struct clip { short n; RECT r[NCLIP]; };
 void clip_window(HWND h, int client, struct clip FAR *c);
 HDC  dc_get(HWND h, int client, int paint);
 void dc_release(HDC dc);
+
+/* ---- MDI (mdi.c) ---- */
+LONG FAR PASCAL mdi_client_proc(HWND h, WORD m, WORD wp, DWORD lp);
+int  mdi_is_kid(HWND h);
+int  mdi_kid_active(HWND h);
 
 /* ---- USER (user.c) ---- */
 #define NWND    64

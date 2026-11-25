@@ -22,6 +22,20 @@ void fmemcpy(void FAR *d, const void FAR *s, WORD n)
     while (n--)
         *a++ = *b++;
 }
+/* Bereiche duerfen sich ueberlappen */
+void fmemmove(void FAR *d, const void FAR *s, WORD n)
+{
+    char FAR *a = d;
+    const char FAR *b = s;
+    if (OFFOF(a) <= OFFOF(b) || SELOF(a) != SELOF(b)) {
+        while (n--)
+            *a++ = *b++;
+    } else {
+        a += n; b += n;
+        while (n--)
+            *--a = *--b;
+    }
+}
 void fmemset(void FAR *d, BYTE v, WORD n)
 {
     char FAR *a = d;

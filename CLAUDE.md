@@ -2351,8 +2351,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   osFree-Programme als Prüfstand (25.11.2026, docs/GUI-WIN16.md „Stand:
   osFree-Programme“): Stufe 1 (Kleinkram) und 2 (Bitmaps, Zielfläche,
   BitBlt mit allen ROPs, Abbildungsmodi) gebaut; Minesweeper, Clock,
-  Reversi, Taskman, Winver, osFree-Notepad laufen in QEMU. Nächstes: MDI
-  und Symbole für PROGMAN.
+  Reversi, Taskman, Winver, osFree-Notepad laufen in QEMU. Stufe 3 (MDI
+  `gui/mdi.c`, Symbole `gui/icon.c`, INI `gui/ini.c`): osFree-PROGMAN
+  (mit -ml) legt Gruppen/Einträge an und startet Minesweeper. Lehre:
+  `task_run` nur aus der Hauptschleife – aus einer Task (WinExec) per tsw
+  direkt in die neue springen, sonst ist mainsave überschrieben.
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians

@@ -283,8 +283,24 @@ Minesweeper (spielbar), Clock (analog). Dafür neu:
 - OSFIXUP-Einträge (Gleitkomma-Emulator) überspringt der Lader wie Wine:
   benutzt wird die echte FPU. WIN87EM (`__fpmath`) fehlt noch.
 
-Nächste Stufe für PROGMAN: MDI (DefFrameProc/DefMDIChildProc, MDICLIENT)
-und Symbole (ExtractIcon, CreateIcon, DrawIcon).
+- **Stufe 3, PROGMAN:** MDI in `gui/mdi.c` – interne Klasse MDICLIENT
+  (Hintergrund in der Farbe APPWORKSPACE, WM_MDICREATE/DESTROY/ACTIVATE/
+  GETACTIVE/NEXT/MAXIMIZE/RESTORE/TILE/CASCADE/SETMENU, Fensterliste im
+  Fenstermenü), DefFrameProc, DefMDIChildProc; Geschwister haben eine
+  Reihenfolge (z), überdeckte werden ausgespart und nach dem Malen des
+  Elternfensters neu gezeichnet; Kinder lassen sich an ihrer Titelleiste
+  ziehen. Symbole in `gui/icon.c`: LoadIcon (RT_GROUP_ICON -> passendes
+  RT_ICON), CreateIcon, DestroyIcon, DrawIcon (UND-, dann XOR-Maske),
+  ExtractIcon aus NE-Programmen und `.ICO`. INI-Dateien in `gui/ini.c`:
+  Get/WritePrivateProfileString/Int, WIN.INI, Windows-Verzeichnis =
+  `%WINDIR%` oder `X:\DOS\GUI`. WinExec aus einer laufenden Task springt
+  jetzt direkt in die neue Task (vorher überschrieb `task_run` den
+  gesicherten Stapel der Hauptschleife – #GP beim nächsten `pop ds`).
+  osFree-PROGMAN (mit `-ml` gebaut – er übergibt `&cs` als nahen Zeiger
+  an CreateWindow, im kleinen Modell falsch): Gruppe anlegen, Programm
+  eintragen, Minesweeper per Enter starten – in QEMU geprüft.
+  Offen: Symbol der Einträge (osFree ruft ExtractIcon dafür nicht),
+  DLLs von Programmen, WIN87EM.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
