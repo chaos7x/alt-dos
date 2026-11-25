@@ -1505,6 +1505,20 @@ erwartet.
    (Nutzer, 23.11.2026): ja, nur die NET-USE-Laufwerke (4409h Bit 12,
    CDS 8000h); alle anderen AT-DOS-Laufwerke bleiben lokal.
 
+### Offen (25.11.2026): Programm-Manager öffnet nach dem Start eine Gruppe
+
+Vom Nutzer per Video gemeldet (86Box, VBESVGA 1024×768×16, `win` in einer
+Box mit COMMAND getippt): gleich nach dem Start geht die markierte Gruppe
+(„Spiele“, beim nächsten Start „Zubehör“) von selbst auf – so, als käme
+noch ein Enter an. Vermutung: der Scancode-Ring der Box hält Enter (Druck
+oder Wiederholung) vom Tippen; biegt ein Programm INT 9 im Real Mode um,
+leert `inject` den Ring schon, hängt sich Windows' KEYBOARD.DRV aber nur
+im PM ein, blieb er stehen. Jetzt leert `dp_hwint` den Ring, sobald INT 9
+im PM eingehängt wird (`pm9`). In 86Box P3B-F nicht nachstellbar (auch
+nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
+xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
+könnte dieselbe Ursache haben.
+
 ### Erledigt (25.11.2026): Ton unter Windows (SNDBLST2.DRV)
 
 Windows 3.11 im Standardmodus mit dem mitgelieferten Sound-Blaster-

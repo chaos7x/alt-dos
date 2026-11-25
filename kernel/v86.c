@@ -228,6 +228,7 @@ static unsigned char sti_sh;
    kamen die Takte unregelmaessig, der Ton klang verzerrt. */
 static unsigned char sti_step[NTASK];
 static unsigned char k9_def[NTASK];     /* INT 9 stand zuletzt auf dem Stummel */
+static unsigned char pm9[NTASK];        /* INT 9 im PM eingehaengt (Ring geleert) */
 static unsigned t8_last[NTASK];         /* irq0_n bei der letzten Zustellung */
 extern volatile unsigned irq0_n;        /* start.asm: zaehlt jeden irq0  */
 /* Hardware-Vektoren beim Programmstart (INT E0h 00h): bricht ein Spiel
@@ -684,6 +685,7 @@ unsigned long __far v86_create(int t, unsigned kb)
     pvi_t[t] &= ~CR4_VME;
     visr[t] = vimr[t] = 0;
     kq_h[t] = kq_t[t] = 0;
+    pm9[t] = 0;
     kbr[t][0] = kbc[t] = 0;
     pit_rl[t] = 0;
     pit_acc[t] = pit_t0[t] = 0;
@@ -6164,6 +6166,17 @@ static void dp_hwint(struct v86_iret *r, int t)
         dp_push(r, t, 8);
         return;
     }
+    if (pm_hooked(t, 9)) {
+        /* INT 9 gerade im PM eingehaengt (KEYBOARD.DRV von Windows): was
+           noch im Ring liegt, hat auf echter Hardware das BIOS verarbeitet
+           (bei uns kam es per INT 16h aus dem Kernel) - sonst oeffnete das
+           Enter von "win" im Programm-Manager die markierte Gruppe */
+        if (!pm9[t]) {
+            pm9[t] = 1;
+            kq_t[t] = kq_h[t];
+        }
+    } else
+        pm9[t] = 0;
     if (key_ready(t) && pm_hooked(t, 9)) {
         key_t0[t] = get_ticks();
         vcur[t] = (unsigned char)kq_get(t);
