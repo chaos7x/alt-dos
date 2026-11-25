@@ -1473,6 +1473,22 @@ drücken Knöpfe; PS2T.COM (Testprogramm, nur im Scratchpad) in der Box:
 Kennung AAh, Pakete mit Bewegung und Tasten; INT 33h (MT.COM) wie
 vorher.
 
+Offen (25.11.2026, vom Nutzer gemeldet, Build 1119): mit VBESVGA.DRV
+(1024×768×16) ruckelt der Zeiger in der Box, mit dem VGA-Treiber nicht.
+Gegenprobe des Nutzers auf einer 86Box-VM mit S3 Trio3D/2X unter echtem
+MS-DOS 6.22 (`WIN /S`, VBESVGA): dort flüssig, nur etwas zäher als mit
+dem Treiber der Karte (VBESVGA zeichnet den Zeiger in Software). Ein Teil
+des Ruckelns liegt also bei uns. Befund aus QEMU mit Zählern über Port
+E9h (Instrumentierung nicht eingecheckt): Rückrufe aus dem V86-Modus
+kommen alle 1–2 Takte an; ein Rückruf, den `cb_pmtick` aus dem PM über
+den Stummel `MOU_PM` umlenkt, endet manchmal nicht (umgelenkt, aber kein
+HLT am Stummel, oder HLT ohne Abschluss in `dp_back`) – `cb_in` bleibt
+dann gesetzt und die Bewegungen dazwischen gehen verloren. Mit VBESVGA
+ist Windows länger im PM (Zeiger zeichnen), daher trifft es dort öfter.
+Nächster Schritt: den PM-Weg bis zum Abschluss verfolgen (Stummel-HLT
+in dp_trap, CT_MOU in dp_back); Zähler nicht aus irq0 heraus mit
+Modulaufrufen sammeln – das brachte Kernel-Paniken.
+
 Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
 in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h
 4B00h) den Aufruf von `DOSX.EXE` durch den Lader – CD und Windows-
