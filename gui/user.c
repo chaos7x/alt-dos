@@ -27,6 +27,7 @@ struct wcls {
     WNDPROC proc;
     WORD style, hinst, cbwnd;
     HBRUSH bg;
+    LPCSTR menu;                /* Menuename aus WNDCLASS           */
 };
 static struct wcls cl[NCLS];
 
@@ -48,7 +49,6 @@ static DWORD syscol[21] = {
 DWORD GetSysColor_c(WORD i) { return i < 21 ? syscol[i] : 0; }
 static BYTE sc(WORD i) { return rgb2c(GetSysColor_c(i)); }
 
-#define CAPH    20
 #define WS_CHILD        0x40000000UL
 #define WS_POPUP        0x80000000UL
 #define WS_VISIBLE      0x10000000UL
@@ -60,6 +60,8 @@ static BYTE sc(WORD i) { return rgb2c(GetSysColor_c(i)); }
 #define WS_THICKFRAME   0x00040000UL
 #define WS_MINIMIZEBOX  0x00020000UL
 #define WS_MAXIMIZEBOX  0x00010000UL
+#define WS_VSCROLL      0x00200000UL
+#define WS_HSCROLL      0x00100000UL
 
 #define WM_CREATE       0x0001
 #define WM_DESTROY      0x0002
@@ -91,7 +93,12 @@ static BYTE sc(WORD i) { return rgb2c(GetSysColor_c(i)); }
 #define WM_LBUTTONDBLCLK 0x0203
 #define WM_RBUTTONDOWN  0x0204
 #define WM_RBUTTONUP    0x0205
+#define WM_SYSCHAR      0x0106
+#define WM_HSCROLL      0x0114
+#define WM_VSCROLL      0x0115
 #define SC_CLOSE        0xF060
+#define SC_MOUSEMENU    0xF090
+#define SC_KEYMENU      0xF100
 
 struct wnd *wptr(HWND h)
 {
@@ -115,7 +122,7 @@ static int rover(const RECT FAR *a, const RECT FAR *b)
            a->top < b->bottom && b->top < a->bottom;
 }
 
-static short border(struct wnd *w)
+short wnd_border(struct wnd *w)
 {
     if (w->style & WS_THICKFRAME) return 4;
     if (w->style & WS_DLGFRAME) return 3;
@@ -125,12 +132,18 @@ static short border(struct wnd *w)
 
 static void calc_client(struct wnd *w)
 {
-    short b = border(w);
+    short b = wnd_border(w);
     w->cr = w->wr;
     w->cr.left += b; w->cr.right -= b;
     w->cr.top += b; w->cr.bottom -= b;
     if ((w->style & WS_CAPTION) == WS_CAPTION)
         w->cr.top += CAPH;
+    if (w->menu && !(w->style & WS_CHILD))
+        w->cr.top += MENUH;
+    if (w->style & WS_VSCROLL)
+        w->cr.right -= SBW;
+    if (w->style & WS_HSCROLL)
+        w->cr.bottom -= SBW;
     if (w->cr.right < w->cr.left) w->cr.right = w->cr.left;
     if (w->cr.bottom < w->cr.top) w->cr.bottom = w->cr.top;
 }
@@ -215,7 +228,7 @@ void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg);
 void dc_fillrect(HDC h, const RECT FAR *r, HBRUSH b);
 void dc_invert(HDC h, const RECT FAR *r);
 
-static void bevel(HDC dc, short l, short t, short r, short b, int down)
+void ui_bevel(HDC dc, short l, short t, short r, short b, int down)
 {
     BYTE hi = sc(C_HILITE), sh = sc(C_SHADOW), bk = 0;
     dc_rawfill(dc, l, t, r, b, sc(C_BTN));
@@ -229,12 +242,58 @@ static void bevel(HDC dc, short l, short t, short r, short b, int down)
     }
 }
 
+/* Bildlaufleisten im Rahmen: Lage des Schiebers */
+static short sb_thumb(struct wnd *w, int v, short len)
+{
+    short *s = w->sb[v];
+    long r = (long)s[1] - s[0];
+    if (len <= 0 || r <= 0)
+        return 0;
+    return (short)((long)(s[2] - s[0]) * len / r);
+}
+static void arrow(HDC dc, short x, short y, int dir)   /* 0 hoch 1 runter 2 links 3 rechts */
+{
+    short k;
+    for (k = 0; k < 4; k++)
+        switch (dir) {
+        case 0: dc_rawfill(dc, x + 7 - k, y + 6 + k, x + 8 + k + 1, y + 7 + k, 0); break;
+        case 1: dc_rawfill(dc, x + 4 + k, y + 6 + k, x + 12 - k, y + 7 + k, 0); break;
+        case 2: dc_rawfill(dc, x + 6 + k, y + 7 - k, x + 7 + k, y + 9 + k, 0); break;
+        default: dc_rawfill(dc, x + 6 + k, y + 4 + k, x + 7 + k, y + 12 - k, 0); break;
+        }
+}
+static void sb_paint(HDC dc, struct wnd *w)
+{
+    short l = w->cr.left, t = w->cr.top, r = w->cr.right, b = w->cr.bottom, p;
+    if (w->style & WS_VSCROLL) {
+        ui_bevel(dc, r, t, r + SBW, t + SBW, 0); arrow(dc, r, t, 0);
+        ui_bevel(dc, r, b - SBW, r + SBW, b, 0); arrow(dc, r, b - SBW, 1);
+        dc_rawfill(dc, r, t + SBW, r + SBW, b - SBW, 7);
+        if (b - t > 3 * SBW && w->sb[1][1] > w->sb[1][0]) {
+            p = t + SBW + sb_thumb(w, 1, b - t - 3 * SBW);
+            ui_bevel(dc, r, p, r + SBW, p + SBW, 0);
+        }
+    }
+    if (w->style & WS_HSCROLL) {
+        ui_bevel(dc, l, b, l + SBW, b + SBW, 0); arrow(dc, l, b, 2);
+        ui_bevel(dc, r - SBW, b, r, b + SBW, 0); arrow(dc, r - SBW, b, 3);
+        dc_rawfill(dc, l + SBW, b, r - SBW, b + SBW, 7);
+        if (r - l > 3 * SBW && w->sb[0][1] > w->sb[0][0]) {
+            p = l + SBW + sb_thumb(w, 0, r - l - 3 * SBW);
+            ui_bevel(dc, p, b, p + SBW, b + SBW, 0);
+        }
+    }
+    if ((w->style & WS_VSCROLL) && (w->style & WS_HSCROLL))
+        dc_rawfill(dc, r, b, r + SBW, b + SBW, sc(C_BTN));
+}
+
 static void nc_paint(struct wnd *w)
 {
     HDC dc;
-    short b = border(w), l = w->wr.left, t = w->wr.top, r = w->wr.right, bt = w->wr.bottom;
+    short b = wnd_border(w), l = w->wr.left, t = w->wr.top, r = w->wr.right, bt = w->wr.bottom;
     int act = top_of(w) && HW(top_of(w) - ww) == active;
-    if (!w->visible || !b && (w->style & WS_CAPTION) != WS_CAPTION)
+    if (!w->visible || !b && (w->style & WS_CAPTION) != WS_CAPTION &&
+        !(w->style & (WS_VSCROLL | WS_HSCROLL)))
         return;
     dc = dc_get(HW(w - ww), 0, 0);
     if (!dc)
@@ -269,7 +328,7 @@ static void nc_paint(struct wnd *w)
         dc_rawfill(dc, cl, ct, cr, cb - 1, bg);
         dc_rawfill(dc, cl, cb - 1, cr, cb, sc(C_FRAME));
         if (w->style & WS_SYSMENU) {           /* Systemfeld: Balken   */
-            bevel(dc, cl, ct, cl + CAPH - 1, cb - 1, 0);
+            ui_bevel(dc, cl, ct, cl + CAPH - 1, cb - 1, 0);
             dc_rawfill(dc, cl + 4, ct + 8, cl + CAPH - 5, ct + 11, sc(C_SHADOW));
             dc_rawfill(dc, cl + 3, ct + 7, cl + CAPH - 6, ct + 10, 15);
             dc_rawfill(dc, cl + CAPH - 1, ct, cl + CAPH, cb - 1, sc(C_FRAME));
@@ -277,7 +336,7 @@ static void nc_paint(struct wnd *w)
         }
         if (w->style & WS_MAXIMIZEBOX) {        /* Pfeil nach oben      */
             short x = cr - CAPH + 1, k;
-            bevel(dc, x, ct, cr, cb - 1, 0);
+            ui_bevel(dc, x, ct, cr, cb - 1, 0);
             for (k = 0; k < 4; k++)
                 dc_rawfill(dc, x + 9 - k, ct + 7 + k, x + 10 + k, ct + 8 + k, 0);
             dc_rawfill(dc, x - 1, ct, x, cb - 1, sc(C_FRAME));
@@ -285,7 +344,7 @@ static void nc_paint(struct wnd *w)
         }
         if (w->style & WS_MINIMIZEBOX) {        /* Pfeil nach unten     */
             short x = cr - CAPH + 1, k;
-            bevel(dc, x, ct, cr, cb - 1, 0);
+            ui_bevel(dc, x, ct, cr, cb - 1, 0);
             for (k = 0; k < 4; k++)
                 dc_rawfill(dc, x + 6 + k, ct + 7 + k, x + 13 - k, ct + 8 + k, 0);
             dc_rawfill(dc, x - 1, ct, x, cb - 1, sc(C_FRAME));
@@ -300,6 +359,9 @@ static void nc_paint(struct wnd *w)
         if (n > 0)
             dc_rawtext(dc, cl + (cr - cl - tw) / 2, ct + 2, w->title, n, fg);
     }
+    if (w->menu && !(w->style & WS_CHILD))
+        menu_bar_paint(dc, w);
+    sb_paint(dc, w);
     dc_release(dc);
 }
 
@@ -329,8 +391,17 @@ static void invalidate(struct wnd *w, const RECT FAR *r, int erase)
         if (c.bottom > w->upd.bottom) w->upd.bottom = c.bottom;
     }
     w->need_paint = 1;
-    if (erase)
+    if (erase) {
+        short i;
         w->erase = 1;
+        /* der Hintergrund loescht auch die Kinder: neu zeichnen */
+        for (i = 0; i < NWND; i++)
+            if (ww[i].used && ww[i].visible && (ww[i].style & WS_CHILD) &&
+                ww[i].parent == HW(w - ww) && rover(&ww[i].wr, &w->cr)) {
+                ww[i].need_ncpaint = 1;
+                invalidate(&ww[i], 0, 1);
+            }
+    }
 }
 
 /* Bildschirmbereich neu: Desktop und alle Fenster darin */
@@ -437,6 +508,7 @@ void user_task_end(int t)
     for (i = 0; i < NCLS; i++)
         if (cl[i].used && !cl[i].internal && task_of_inst(cl[i].hinst) == t)
             cl[i].used = 0;
+    menu_task_end(t);
     if (!wptr(active)) active = 0;
     if (!wptr(focus)) focus = 0;
     if (!wptr(capture)) capture = 0;
@@ -518,7 +590,7 @@ BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp)
         return 1;
     }
     k = &wt[t];
-    if ((WORD)(k->qt + 1) % 24 == k->qh)
+    if ((WORD)(k->qt + 1) % NQ == k->qh)
         return 0;                       /* voll                          */
     k->q[k->qt].hwnd = h;
     k->q[k->qt].message = m;
@@ -526,7 +598,7 @@ BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp)
     k->q[k->qt].lParam = lp;
     k->q[k->qt].time = ticks() * 10;
     k->q[k->qt].pt = mpos;
-    k->qt = (k->qt + 1) % 24;
+    k->qt = (k->qt + 1) % NQ;
     return 1;
 }
 
@@ -580,7 +652,8 @@ int timer_due_peek(int t)
     return 0;
 }
 
-static BOOL get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait)
+static DWORD kmsg_lp;                   /* Umschalttasten der letzten Taste */
+BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait)
 {
     int t = cur_task;
     struct wtask *k;
@@ -595,7 +668,9 @@ static BOOL get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wai
         if (k->qh != k->qt) {
             *m = k->q[k->qh];
             if (remove)
-                k->qh = (k->qh + 1) % 24;
+                k->qh = (k->qh + 1) % NQ;
+            if (m->message >= 0x0100 && m->message <= 0x0108)
+                kmsg_lp = m->lParam;
             return m->message != WM_QUIT;
         }
         if (k->quit) {
@@ -665,13 +740,24 @@ static HWND win_at(short x, short y)
 #define HTCLIENT 1
 #define HTCAPTION 2
 #define HTSYSMENU 3
+#define HTMENU 5
+#define HTHSCROLL 6
+#define HTVSCROLL 7
 #define HTMIN 8
 #define HTMAX 9
 static short hittest(struct wnd *w, short x, short y)
 {
-    short b = border(w);
+    short b = wnd_border(w);
     if (rhit(&w->cr, x, y))
         return HTCLIENT;
+    if ((w->style & WS_VSCROLL) && x >= w->cr.right && x < w->cr.right + SBW &&
+        y >= w->cr.top && y < w->cr.bottom)
+        return HTVSCROLL;
+    if ((w->style & WS_HSCROLL) && y >= w->cr.bottom && y < w->cr.bottom + SBW &&
+        x >= w->cr.left && x < w->cr.right)
+        return HTHSCROLL;
+    if (w->menu && !(w->style & WS_CHILD) && menu_bar_hit(w, x, y) != -1)
+        return HTMENU;
     if ((w->style & WS_CAPTION) == WS_CAPTION && y >= w->wr.top + b && y < w->wr.top + b + CAPH) {
         if ((w->style & WS_SYSMENU) && x < w->wr.left + b + CAPH)
             return HTSYSMENU;
@@ -694,6 +780,84 @@ static void drag_xor(void)
     dc_release(dc);
 }
 
+/* Bildlaufleiste: Klick, Wiederholen beim Halten, Schieber ziehen */
+static struct { HWND h; BYTE v, code, drag; short off; DWORD next; } sbm;
+static void sb_post(void)
+{
+    struct wnd *w = wptr(sbm.h);
+    if (w)
+        post_msg(sbm.h, sbm.v ? WM_VSCROLL : WM_HSCROLL, sbm.code,
+                 sbm.code == 4 || sbm.code == 5 ? MAKELONG(w->sb[sbm.v][2], 0) : 0);
+}
+static void sb_down(struct wnd *w, int v, short x, short y)
+{
+    short a = v ? y - w->cr.top : x - w->cr.left;
+    short len = v ? w->cr.bottom - w->cr.top : w->cr.right - w->cr.left;
+    short th = SBW + sb_thumb(w, v, len - 3 * SBW);
+    sbm.h = HW(w - ww);
+    sbm.v = (BYTE)v;
+    sbm.drag = 0;
+    if (a < SBW) sbm.code = 0;                          /* SB_LINEUP     */
+    else if (a >= len - SBW) sbm.code = 1;              /* SB_LINEDOWN   */
+    else if (w->sb[v][1] <= w->sb[v][0]) { sbm.h = 0; return; }
+    else if (a < th) sbm.code = 2;                      /* SB_PAGEUP     */
+    else if (a >= th + SBW) sbm.code = 3;               /* SB_PAGEDOWN   */
+    else { sbm.code = 5; sbm.drag = 1; sbm.off = a - th; return; }
+    sb_post();
+    sbm.next = 0;
+}
+static DWORD ticks(void);
+static int sb_mouse(short x, short y, BYTE btn, int moved)
+{
+    struct wnd *w = wptr(sbm.h);
+    if (!sbm.h)
+        return 0;
+    if (!w) {
+        sbm.h = 0;
+        return 0;
+    }
+    if (sbm.drag && moved) {
+        short v = sbm.v, len = (v ? w->cr.bottom - w->cr.top : w->cr.right - w->cr.left) - 3 * SBW;
+        short a = (v ? y - w->cr.top : x - w->cr.left) - SBW - sbm.off;
+        short *s = w->sb[v];
+        if (a < 0) a = 0;
+        if (a > len) a = len;
+        if (len > 0) {
+            short np = s[0] + (short)((long)a * (s[1] - s[0]) / len);
+            if (np != s[2]) {
+                s[2] = np;
+                w->need_ncpaint = 1;
+                sbm.code = 5;
+                sb_post();
+            }
+        }
+    }
+    if (!(btn & 1)) {
+        if (sbm.drag) {
+            sbm.code = 4;                               /* THUMBPOSITION */
+            sb_post();
+        }
+        sbm.code = 8;                                   /* SB_ENDSCROLL  */
+        sb_post();
+        sbm.h = 0;
+    }
+    return 1;
+}
+static void sb_repeat(void)
+{
+    DWORD now = ticks();
+    if (!sbm.h || sbm.drag || !(mbtn & 1))
+        return;
+    if (!sbm.next) {
+        sbm.next = now + 35;
+        return;
+    }
+    if ((long)(now - sbm.next) >= 0) {
+        sbm.next = now + 6;
+        sb_post();
+    }
+}
+
 static void mouse_event(short x, short y, BYTE btn)
 {
     HWND h;
@@ -704,6 +868,14 @@ static void mouse_event(short x, short y, BYTE btn)
     mpos.x = x; mpos.y = y;
     if (moved)
         gdi_cursor(x, y);
+    if (menu_input_mouse(x, y, btn)) {
+        mbtn = btn;
+        return;
+    }
+    if (sb_mouse(x, y, btn, moved)) {
+        mbtn = btn;
+        return;
+    }
     mbtn = btn;
     if (drag) {
         w = wptr(drag);
@@ -739,13 +911,25 @@ static void mouse_event(short x, short y, BYTE btn)
             return;
         }
         activate(h);
-        if (w->style & WS_CHILD && w->enabled)
+        if (w->style & WS_CHILD && w->enabled && focus != h) {
+            if (focus)
+                post_msg(focus, WM_KILLFOCUS, h, 0);
+            post_msg(h, WM_SETFOCUS, focus, 0);
             focus = h;
+        }
     }
     if (ht == HTCAPTION && (down & 1)) {
         drag = HW(top_of(w) - ww);
         dgx = x; dgy = y;
         dg_shown = 0;
+        return;
+    }
+    if (ht == HTMENU && (down & 1)) {
+        post_msg(HW(top_of(w) - ww), WM_SYSCOMMAND, SC_MOUSEMENU, MAKELONG(x, y));
+        return;
+    }
+    if ((ht == HTVSCROLL || ht == HTHSCROLL) && (down & 1)) {
+        sb_down(w, ht == HTVSCROLL, x, y);
         return;
     }
     if (ht == HTSYSMENU && (down & 1)) {
@@ -783,9 +967,13 @@ static const BYTE scvk[0x59] = {
     0x28, 0x22, 0x2D, 0x2E, 0,0,0, 0x7A, 0x7B
 };
 
+/* Alt+Buchstabe liefert die Tastatur nur als Scancode (deutsche Lage) */
+static const char altkey[0x23] = "qwertzuiop\0\0\0\0asdfghjkl\0\0\0\0\0yxcvbnm";
+
 static void key_event(WORD k)
 {
     BYTE ch = (BYTE)k, scn = k >> 8, vk = 0;
+    DWORD lp;
     WORD sh = fapi_call(FAPI_KBDSHIFT, 1, 0, 0);   /* beim Druecken */
     HWND h = focus ? focus : active;
     int ext = KEY_EXT(ch, scn);
@@ -799,12 +987,23 @@ static void key_event(WORD k)
         vk = ch;
     if (!h)
         return;
+    if (menu_input_key(k))
+        return;
     if ((sh & KBDSHIFT_ALT) && scn == 0x3E) {   /* Alt+F4               */
         post_msg(active, WM_SYSCOMMAND, SC_CLOSE, 0);
         return;
     }
+    lp = 1 | ((DWORD)scn << 16);
+    if (sh & KBDSHIFT_SHIFT) lp |= 0x02000000UL;    /* eigene Bits 25/26 */
+    if (sh & KBDSHIFT_CTRL) lp |= 0x04000000UL;
+    if (sh & KBDSHIFT_ALT) lp |= 0x20000000UL;      /* wie Windows       */
+    if (ext) lp |= 0x01000000UL;
     keystate[vk] = 0x80;
-    post_msg(h, (sh & KBDSHIFT_ALT) ? WM_SYSKEYDOWN : WM_KEYDOWN, vk, 1);
+    post_msg(h, (sh & KBDSHIFT_ALT) || vk == 0x79 ? WM_SYSKEYDOWN : WM_KEYDOWN, vk, lp);
+    if ((sh & KBDSHIFT_ALT) && ch <= ' ' && scn >= 0x10 && scn <= 0x32)
+        ch = altkey[scn - 0x10];                /* Alt+Buchstabe: nur Scancode */
+    if ((sh & KBDSHIFT_ALT) && ch > ' ')
+        post_msg(h, WM_SYSCHAR, ch, lp);
     if (!ext && ch && !(sh & KBDSHIFT_ALT)) {
         BYTE a = ch;
         /* CP850-Eingabe -> ANSI fuer Win16 (nur Umlaute/ss) */
@@ -814,10 +1013,28 @@ static void key_event(WORD k)
         case 0x99: a = 0xD6; break; case 0x9A: a = 0xDC; break;
         case 0xE1: a = 0xDF; break;
         }
-        post_msg(h, WM_CHAR, a, 1);
+        post_msg(h, WM_CHAR, a, lp);
     }
-    post_msg(h, WM_KEYUP, vk, 0xC0000001UL);
+    post_msg(h, (sh & KBDSHIFT_ALT) || vk == 0x79 ? 0x0105 : WM_KEYUP, vk, lp | 0xC0000000UL);
     keystate[vk] = 0;
+}
+
+/* Platz fuer eine Taste (KEYDOWN, CHAR, KEYUP + Reserve) in der
+   Schlange der Task, deren Fenster den Fokus hat - sonst warten, statt
+   Tasten zu verwerfen (auf dem 386 tippt man schneller, als Notepad
+   zeichnet) */
+static int key_room(void)
+{
+    struct wnd *w = wptr(focus ? focus : active);
+    struct wtask *k;
+    int t;
+    if (!w)
+        return 1;
+    t = task_win(w);
+    if (t < 0 || !wt[t].used)
+        return 1;
+    k = &wt[t];
+    return (WORD)((k->qt + NQ - k->qh) % NQ) < NQ - 5;
 }
 
 void user_input(void)
@@ -828,7 +1045,10 @@ void user_input(void)
     while (n++ < 32 && MouReadEvent(&ev, MOU_XY) == 0) {
         mouse_event(ev.x, ev.y, ev.buttons);
     }
+    sb_repeat();
     for (n = 0; n < 16; n++) {
+        if (!key_room())                /* Taste bleibt im Kernelpuffer   */
+            break;
         k = KbdPeek();
         if (!k)
             break;
@@ -894,6 +1114,7 @@ WORD API RegisterClass(void FAR *wcp)
     cl[i].cbwnd = *(WORD FAR *)(p + 8);
     cl[i].hinst = *(WORD FAR *)(p + 10);
     cl[i].bg = *(WORD FAR *)(p + 16);
+    cl[i].menu = *(LPCSTR FAR *)(p + 18);
     fstrncpy(cl[i].name, nm, sizeof(cl[i].name));
     return 0xC000 + i;
 }
@@ -954,6 +1175,13 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     w->task = cur_task;
     w->enabled = !(style & WS_DISABLED);
     w->id = menu;
+    if (!(style & WS_CHILD)) {
+        w->id = 0;
+        w->menu = menu;
+        if (!menu && cl[c].menu && !cl[c].internal)
+            w->menu = LoadMenu(hinst, cl[c].menu);
+    }
+    w->sb[0][1] = w->sb[1][1] = 100;
     if (title)
         fstrncpy(w->title, title, sizeof(w->title));
     p = parent ? wptr(parent) : 0;
@@ -1048,6 +1276,9 @@ BOOL API DestroyWindow(HWND h)
         if (ww[i].used && (ww[i].parent == h || ww[i].owner == h))
             DestroyWindow(HW(i));
     send_msg(h, WM_NCDESTROY, 0, 0);
+    if (w->menu && !(w->style & WS_CHILD))
+        menu_free(w->menu);
+    w->menu = 0;
     if (w->visible)
         expose(&w->wr);
     w->used = 0;
@@ -1156,8 +1387,9 @@ void API ValidateRect(HWND h, const RECT FAR *r)
 }
 
 struct paintst { HDC hdc; BOOL erase; RECT rc; BOOL res, inc; BYTE rgb[16]; };
-HDC API BeginPaint(HWND h, struct paintst FAR *ps)
+HDC API BeginPaint(HWND h, void FAR *pv)
 {
+    struct paintst FAR *ps = pv;
     struct wnd *w = wptr(h);
     HDC dc;
     RECT u;
@@ -1185,8 +1417,9 @@ HDC API BeginPaint(HWND h, struct paintst FAR *ps)
     }
     return dc;
 }
-BOOL API EndPaint(HWND h, struct paintst FAR *ps)
+BOOL API EndPaint(HWND h, void FAR *pv)
 {
+    struct paintst FAR *ps = pv;
     (void)h;
     dc_release(ps->hdc);
     return 1;
@@ -1264,6 +1497,21 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_SYSCOMMAND:
         if ((wp & 0xFFF0) == SC_CLOSE)
             send_msg(h, WM_CLOSE, 0, 0);
+        else if ((wp & 0xFFF0) == SC_MOUSEMENU)
+            menu_track(h, menu_bar_hit(w, LOWORD(lp), HIWORD(lp)), 0);
+        else if ((wp & 0xFFF0) == SC_KEYMENU) {
+            short k = LOWORD(lp) ? menu_mnemonic(w->menu, (BYTE)lp) : -1;
+            if (LOWORD(lp) && k < 0)
+                MessageBeep_c();
+            else
+                menu_track(h, k, 1);
+        }
+        return 0;
+    case WM_SYSCHAR:
+        if (w->style & WS_CHILD)
+            return send_msg(GetParent(h), m, wp, lp);
+        if (w->menu)
+            send_msg(h, WM_SYSCOMMAND, SC_KEYMENU, wp);
         return 0;
     case WM_ERASEBKGND: {
         struct wcls *c = w->cls ? &cl[w->cls - 1] : 0;
@@ -1290,6 +1538,11 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_GETTEXTLENGTH:
         return fstrlen(w->title);
     case WM_SYSKEYDOWN:
+        if (wp == 0x79) {                       /* F10                  */
+            struct wnd *t = top_of(w);
+            if (t && t->menu)
+                send_msg(HW(t - ww), WM_SYSCOMMAND, SC_KEYMENU, 0);
+        }
         return 0;
     }
     return 0;
@@ -1303,10 +1556,10 @@ LONG API CallWindowProc(WNDPROC p, HWND h, WORD m, WORD wp, DWORD lp)
     return call_proc(w, p, h, m, wp, lp);
 }
 
-BOOL API GetMessage(MSG FAR *m, HWND h, WORD lo, WORD hi) { return get_msg(m, h, lo, hi, 1, 1); }
+BOOL API GetMessage(MSG FAR *m, HWND h, WORD lo, WORD hi) { return user_get_msg(m, h, lo, hi, 1, 1); }
 BOOL API PeekMessage(MSG FAR *m, HWND h, WORD lo, WORD hi, WORD rem)
 {
-    BOOL r = get_msg(m, h, lo, hi, rem & 1, 0);
+    BOOL r = user_get_msg(m, h, lo, hi, rem & 1, 0);
     if (!r && cur_task >= 0 && m->message != WM_QUIT) {
         wt[cur_task].waiting = 0;               /* andere Tasks laufen */
         task_yield_to_main();
@@ -1411,8 +1664,56 @@ HWND API WindowFromPoint(POINT p) { return win_at(p.x, p.y); }
 BOOL API BringWindowToTop(HWND h) { activate(h); return 1; }
 BOOL API IsIconic(HWND h) { (void)h; return 0; }
 BOOL API IsZoomed(HWND h) { (void)h; return 0; }
-HMENU API GetMenu(HWND h) { (void)h; return 0; }
-void API DrawMenuBar(HWND h) { (void)h; }
+HMENU API GetMenu(HWND h) { struct wnd *w = wptr(h); return w ? w->menu : 0; }
+BOOL API SetMenu(HWND h, HMENU m)
+{
+    struct wnd *w = wptr(h);
+    if (!w || (w->style & WS_CHILD))
+        return 0;
+    w->menu = m;
+    calc_client(w);
+    w->need_ncpaint = 1;
+    invalidate(w, 0, 1);
+    return 1;
+}
+void API DrawMenuBar(HWND h) { struct wnd *w = wptr(h); if (w) w->need_ncpaint = 1; }
+
+/* Bildlaufleisten */
+static short *sbp(HWND h, short bar)
+{
+    struct wnd *w = wptr(h);
+    if (!w || bar < 0 || bar > 1)
+        return 0;
+    return w->sb[bar];
+}
+short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw)
+{
+    short *s = sbp(h, bar), o;
+    if (!s) return 0;
+    o = s[2];
+    if (pos < s[0]) pos = s[0];
+    if (pos > s[1]) pos = s[1];
+    s[2] = pos;
+    if (redraw && o != pos) wptr(h)->need_ncpaint = 1;
+    return o;
+}
+short API GetScrollPos(HWND h, short bar) { short *s = sbp(h, bar); return s ? s[2] : 0; }
+void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw)
+{
+    short *s = sbp(h, bar);
+    if (!s) return;
+    s[0] = lo; s[1] = hi;
+    if (s[2] < lo) s[2] = lo;
+    if (s[2] > hi) s[2] = hi;
+    if (redraw) wptr(h)->need_ncpaint = 1;
+}
+void API GetScrollRange(HWND h, short bar, short FAR *lo, short FAR *hi)
+{
+    short *s = sbp(h, bar);
+    *lo = s ? s[0] : 0;
+    *hi = s ? s[1] : 0;
+}
+void API ShowScrollBar(HWND h, WORD bar, BOOL show) { (void)h; (void)bar; (void)show; }
 HMENU API GetSystemMenu(HWND h, BOOL r) { (void)h; (void)r; return 0; }
 HWND API GetDlgItem(HWND p, short id)
 {
@@ -1432,9 +1733,9 @@ HWND API GetCapture(void) { return capture; }
 short API GetKeyState(short vk)
 {
     WORD sh = fapi_call(FAPI_KBDSHIFT, 0, 0, 0);
-    if (vk == 0x10) return (sh & KBDSHIFT_SHIFT) ? 0x8000 : 0;
-    if (vk == 0x11) return (sh & KBDSHIFT_CTRL) ? 0x8000 : 0;
-    if (vk == 0x12) return (sh & KBDSHIFT_ALT) ? 0x8000 : 0;
+    if (vk == 0x10) return (kmsg_lp & 0x02000000UL) ? 0x8000 : 0;
+    if (vk == 0x11) return (kmsg_lp & 0x04000000UL) ? 0x8000 : 0;
+    if (vk == 0x12) return (kmsg_lp & 0x20000000UL) ? 0x8000 : 0;
     if (vk == 0x14) return (sh & KBDSHIFT_CAPS) ? 1 : 0;
     if (vk == 1) return (mbtn & 1) ? 0x8000 : 0;
     if (vk == 2) return (mbtn & 2) ? 0x8000 : 0;
@@ -1614,78 +1915,6 @@ short API LoadString(WORD hinst, WORD id, LPSTR buf, short n)
     return k;
 }
 
-/* ---- eingebaute Klasse BUTTON ------------------------------------- */
-#define BM_SETSTATE 0x0403
-static LONG FAR PASCAL btn_proc(HWND h, WORD m, WORD wp, DWORD lp)
-{
-    struct wnd *w = wptr(h);
-    if (!w)
-        return 0;
-    switch (m) {
-    case WM_PAINT: {
-        static struct paintst ps;
-        HDC dc = BeginPaint(h, &ps);
-        short n = fstrlen(w->title), tw = n * FONT_W;
-        int dn = w->extra[0];
-        bevel(dc, w->wr.left, w->wr.top, w->wr.right, w->wr.bottom, dn);
-        if ((w->style & 0x0F) == 1)             /* BS_DEFPUSHBUTTON     */
-            dc_rawfill(dc, w->wr.left - 1, w->wr.top - 1, w->wr.right + 1, w->wr.top, 0),
-            dc_rawfill(dc, w->wr.left - 1, w->wr.bottom, w->wr.right + 1, w->wr.bottom + 1, 0);
-        dc_rawtext(dc, (w->wr.left + w->wr.right - tw) / 2 + dn,
-                   (w->wr.top + w->wr.bottom - FONT_H) / 2 + dn, w->title, n,
-                   w->enabled ? sc(C_BTNTXT) : sc(17));
-        EndPaint(h, &ps);
-        return 0;
-    }
-    case WM_LBUTTONDOWN:
-        w->extra[0] = 1;
-        capture = h;
-        invalidate(w, 0, 0);
-        return 0;
-    case WM_LBUTTONUP: {
-        short x = LOWORD(lp), y = HIWORD(lp);
-        int in = x >= 0 && y >= 0 && x < w->cr.right - w->cr.left && y < w->cr.bottom - w->cr.top;
-        if (capture == h)
-            capture = 0;
-        if (w->extra[0]) {
-            w->extra[0] = 0;
-            invalidate(w, 0, 0);
-            if (in)
-                post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 0));
-        }
-        return 0;
-    }
-    case WM_KEYDOWN:
-        if (wp == 0x20 || wp == 0x0D)
-            post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 0));
-        return 0;
-    case BM_SETSTATE:
-        w->extra[0] = wp ? 1 : 0;
-        invalidate(w, 0, 0);
-        return 0;
-    }
-    return DefWindowProc(h, m, wp, lp);
-}
-
-static LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
-{
-    struct wnd *w = wptr(h);
-    if (!w)
-        return 0;
-    if (m == WM_PAINT) {
-        static struct paintst ps;
-        HDC dc = BeginPaint(h, &ps);
-        RECT r;
-        GetClientRect(h, &r);
-        dc_rawfill(dc, w->cr.left, w->cr.top, w->cr.right, w->cr.bottom, sc(C_BTN));
-        SetBkMode(dc, 1);
-        DrawText(dc, w->title, -1, &r, (w->style & 3) == 1 ? 1 : 0);
-        EndPaint(h, &ps);
-        return 0;
-    }
-    return DefWindowProc(h, m, wp, lp);
-}
-
 /* ---- MessageBox ----------------------------------------------------- */
 static short mb_result;
 static LONG FAR PASCAL mb_proc(HWND h, WORD m, WORD wp, DWORD lp)
@@ -1792,7 +2021,7 @@ short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type)
     mb_result = 0;
     while (!mb_result && wptr(h)) {
         if (cur_task >= 0) {
-            if (!get_msg(&msg, 0, 0, 0, 1, 1)) {
+            if (!user_get_msg(&msg, 0, 0, 0, 1, 1)) {
                 PostQuitMessage(msg.wParam);
                 break;
             }
@@ -1816,11 +2045,19 @@ void user_init(void)
 {
     RECT r;
     cl[0].used = 1; cl[0].internal = 1; fstrncpy(cl[0].name, "BUTTON", 24);
-    cl[0].proc = btn_proc; cl[0].bg = 0;
+    cl[0].proc = button_proc; cl[0].bg = 0;
     cl[1].used = 1; cl[1].internal = 1; fstrncpy(cl[1].name, "STATIC", 24);
     cl[1].proc = static_proc;
     cl[2].used = 1; cl[2].internal = 1; fstrncpy(cl[2].name, "#MSGBOX", 24);
     cl[2].proc = mb_proc;
+    cl[3].used = 1; cl[3].internal = 1; fstrncpy(cl[3].name, "#MENU", 24);
+    cl[3].proc = menu_pop_proc;
+    cl[4].used = 1; cl[4].internal = 1; fstrncpy(cl[4].name, "EDIT", 24);
+    cl[4].proc = edit_proc;
+    cl[5].used = 1; cl[5].internal = 1; fstrncpy(cl[5].name, "#32770", 24);
+    cl[5].proc = dlg_proc;
+    cl[6].used = 1; cl[6].internal = 1; fstrncpy(cl[6].name, "LISTBOX", 24);
+    cl[6].proc = listbox_proc;
     rset(&r, 0, 0, SCR_W, SCR_H);
     expose(&r);
     user_paint_pending();

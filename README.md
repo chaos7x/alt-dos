@@ -60,8 +60,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   KERNEL, USER und GDI sind eigener Code (Fenster mit CUA-Rahmen,
   Nachrichten, Maus und Tastatur, Zeichnen in ein Schattenbild, Text,
   Linien, Rechtecke, Ellipsen, Knöpfe, MessageBox, Zeitgeber, lokale
-  Halde, Dateien und INT 21h der Programme). Beispiel `\DEMO\HALLOW.EXE`;
-  Stand und Grenzen in `docs/GUI-WIN16.md`
+  Halde, Dateien und INT 21h der Programme), dazu Menüs mit Tasten-
+  kürzeln, Bildlaufleisten, EDIT-Feld mit Zwischenablage, Dialoge aus
+  Ressourcen, Listen sowie Öffnen-/Speichern-/Suchen-Dialoge (COMMDLG).
+  Notepad aus Windows 3.1 läuft damit vollständig. Beispiel
+  `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
 - Schreiben auf FAT12/16 (Diskette, IDE, SCSI): anlegen, schreiben,

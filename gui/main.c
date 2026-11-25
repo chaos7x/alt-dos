@@ -143,9 +143,10 @@ void gui_main(void)
     krnl_init();
     gdi_init();
     user_init();
-    if (task_start(prog, p, 1)) {
+    if ((t = task_start(prog, p, 1)) != 0) {
         gdi_done();
         puts("GUI: Programm nicht geladen (siehe GUI.LOG)\r\n");
+        glogn("task_start ", t);
         DosExit(2);
     }
     for (;;) {

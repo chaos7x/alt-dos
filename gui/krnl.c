@@ -24,7 +24,7 @@ static char up(char c) { return (char)(c >= 'a' && c <= 'z' ? c - 32 : c); }
 
 #pragma aux get_bp2 = 0x8B 0x46 0x02 __value [__ax];    /* mov ax,[bp+2] */
 unsigned get_bp2(void);         /* in __loadds-Exporten: DS des Aufrufers */
-#pragma aux lsl_ = 0x0F 0x03 0xC3 0x75 0x02 0x31 0xC0 __parm [__bx] __value [__ax];
+#pragma aux lsl_ = 0x0F 0x03 0xC3 0x74 0x02 0x31 0xC0 __parm [__bx] __value [__ax];
 unsigned lsl_(unsigned sel);    /* LSL ax,bx; bei Fehler 0             */
 
 void task_yield_to_main(void)
@@ -63,6 +63,8 @@ void task_reap(int t)
     user_task_end(t);
     if (wt[t].psp)
         seg_del(wt[t].psp);
+    if (wt[t].env)
+        seg_del(wt[t].env);
     if (wt[t].hmod)
         w16_free(wt[t].hmod - 1);
     wt[t].used = 0;
@@ -115,11 +117,29 @@ int task_start(LPCSTR path, LPCSTR args, WORD show)
     n = fstrlen(args);
     if (n > 120)
         n = 120;
-    psp[0x80] = (char)(n + 1);
-    psp[0x81] = ' ';
-    fmemcpy(psp + 0x82, args, n);
-    psp[0x82 + n] = 13;
-    psp[0x83 + n] = 0;
+    /* wie InitTask von Windows: das CR am Ende wird zur 0 (lpCmdLine
+       ist eine C-Zeichenkette, ohne Argumente leer) */
+    if (n) {
+        psp[0x80] = (char)(n + 1);
+        psp[0x81] = ' ';
+        fmemcpy(psp + 0x82, args, n);
+        psp[0x82 + n] = 0;
+    } else {
+        psp[0x80] = 0;
+        psp[0x81] = 0;
+    }
+    /* Umgebung wie DOS: leer (0 0), Zaehler 1, Programmpfad. Die
+       Startroutinen der C-Laufzeit durchsuchen PSP:2Ch - ein Selektor 0
+       gibt dort #GP (QEMU laesst es durch, 86Box und echte CPUs nicht). */
+    n = fstrlen(w->path);
+    wt[t].env = seg_new(n + 16);
+    if (wt[t].env) {
+        char FAR *e = MKFP(wt[t].env, 0);
+        e[0] = 0; e[1] = 0; e[2] = 1; e[3] = 0;
+        fmemcpy(e + 4, w->path, n);
+        e[4 + n] = 0;
+        *(WORD FAR *)(psp + 0x2C) = wt[t].env;
+    }
     wt[t].dta_s = wt[t].psp;
     wt[t].dta_o = 0x80;
     /* Stapel: Rahmen fuer tsw (ds, di, si, bp, IP, CS) -> tstart */
@@ -147,14 +167,23 @@ int task_start(LPCSTR path, LPCSTR args, WORD show)
 /* ---- lokale Halde ----------------------------------------------------
    Im Segment ds: Kopf bei hs (Wort Anfang, Wort Ende), Bloecke mit einem
    Wort Laenge (gerade, Bit 0 = belegt), Daten dahinter. Zeiger = Handle. */
-struct lheap { WORD start, end; };
+/* Kopf der Halde: Bloecke ab start, Ende, erste Grifftabelle (0 = keine) */
+struct lheap { WORD start, end, ht; };
+
+/* Verschiebbare Griffe wie LMEM_MOVEABLE von Windows: ein Griff ist die
+   Stelle eines Eintrags {Stelle des Blocks, Sperrzaehler} in einer
+   Grifftabelle (Block der Halde: naechste Tabelle, LH_NHE Eintraege).
+   LocalReAlloc verschiebt den Block, der Griff bleibt - Programme wie
+   Notepad halten sich den Griff aus EM_GETHANDLE. */
+#define LH_NHE   32
+#define LH_FREE  0xFFFFu
 
 static WORD lh_of(WORD ds)
 {
     return *(WORD FAR *)MKFP(ds, 6);
 }
 
-static BOOL lh_init(WORD ds, WORD start, WORD end)
+BOOL lh_init(WORD ds, WORD start, WORD end)
 {
     struct lheap FAR *h;
     WORD FAR *b;
@@ -163,15 +192,45 @@ static BOOL lh_init(WORD ds, WORD start, WORD end)
     if (end < start + 16)
         return 0;
     h = MKFP(ds, start);
-    h->start = start + 4;
+    h->start = start + 6;
     h->end = end;
-    b = MKFP(ds, start + 4);
-    *b = end - (start + 4);
+    h->ht = 0;
+    b = MKFP(ds, start + 6);
+    *b = end - (start + 6);
     *(WORD FAR *)MKFP(ds, 6) = start;
     return 1;
 }
 
-static WORD lh_alloc(WORD ds, WORD n, WORD zero)
+/* Halde am Ende des Segments vergroessern wie Windows (LocalAlloc waechst
+   das Autodata bis 64 KB); Handles sind Stellen, sie bleiben gueltig */
+static BOOL lh_grow(WORD ds, WORD need)
+{
+    WORD hs = lh_of(ds), lim = lsl_(ds), add;
+    DWORD nsz;
+    struct lheap FAR *h = MKFP(ds, hs);
+    if (h->end < lim - 1) {                     /* Segment hat noch Platz  */
+        add = (lim + 1 - h->end) & ~1u;
+    } else {
+        nsz = (DWORD)lim + 1 + need + 1024;
+        if (nsz > 0xFFF0UL)
+            nsz = 0xFFF0UL;
+        if (nsz <= (DWORD)lim + 1)
+            return 0;
+        if (FAPI_FAILED(fapi_call(FAPI_SEGCTL, SEG_REALLOC, ds, (WORD)nsz)))
+            return 0;
+        lim = lsl_(ds);
+        add = (lim + 1 - h->end) & ~1u;
+        if (lim == 0xFFFF)
+            add = (0xFFF0u - h->end) & ~1u;
+    }
+    if (add < 6)
+        return 0;
+    *(WORD FAR *)MKFP(ds, h->end) = add;        /* neuer freier Block     */
+    h->end += add;
+    return 1;
+}
+
+WORD lh_alloc(WORD ds, WORD n, WORD zero)
 {
     WORD hs = lh_of(ds), p, sz, need, nx;
     struct lheap FAR *h;
@@ -181,6 +240,7 @@ static WORD lh_alloc(WORD ds, WORD n, WORD zero)
     need = (n + 2 + 1) & ~1u;
     if (need < 4)
         need = 4;
+again:
     for (p = h->start; p < h->end; p += sz) {
         sz = *(WORD FAR *)MKFP(ds, p) & ~1u;
         if (!sz)
@@ -206,18 +266,93 @@ static WORD lh_alloc(WORD ds, WORD n, WORD zero)
             return p + 2;
         }
     }
+    if (need < 0xFF00u && lh_grow(ds, need))
+        goto again;
     return 0;
 }
 
-static WORD lh_size(WORD ds, WORD a)
+static WORD raw_size(WORD ds, WORD a)
 {
     return a ? (*(WORD FAR *)MKFP(ds, a - 2) & ~1u) - 2 : 0;
 }
 
-static void lh_free(WORD ds, WORD a)
+static void raw_free(WORD ds, WORD a)
 {
     if (a)
         *(WORD FAR *)MKFP(ds, a - 2) &= ~1u;
+}
+
+/* Eintrag zu einem Griff, sonst NULL (dann ist es eine feste Stelle) */
+static WORD FAR *lh_hent(WORD ds, WORD x)
+{
+    WORD hs = lh_of(ds), t;
+    if (!hs || !x)
+        return 0;
+    for (t = ((struct lheap FAR *)MKFP(ds, hs))->ht; t;
+         t = *(WORD FAR *)MKFP(ds, t)) {
+        if (x >= t + 2 && x < t + 2 + 4 * LH_NHE && !((x - t - 2) & 3)) {
+            WORD FAR *e = MKFP(ds, x);
+            return e[1] == LH_FREE ? 0 : e;
+        }
+    }
+    return 0;
+}
+
+WORD lh_ptr(WORD ds, WORD x)
+{
+    WORD FAR *e = lh_hent(ds, x);
+    return e ? e[0] : x;
+}
+
+/* neuer verschiebbarer Block -> Griff */
+WORD lh_hnew(WORD ds, WORD n, WORD zero)
+{
+    WORD hs = lh_of(ds), t, i, p;
+    struct lheap FAR *h;
+    WORD FAR *tb;
+    if (!hs)
+        return 0;
+    h = MKFP(ds, hs);
+    for (t = h->ht; t; t = *(WORD FAR *)MKFP(ds, t)) {
+        tb = MKFP(ds, t + 2);
+        for (i = 0; i < LH_NHE; i++)
+            if (tb[2 * i + 1] == LH_FREE)
+                goto found;
+    }
+    t = lh_alloc(ds, 2 + 4 * LH_NHE, 0);
+    if (!t)
+        return 0;
+    h = MKFP(ds, lh_of(ds));                    /* Segment kann gewachsen sein */
+    *(WORD FAR *)MKFP(ds, t) = h->ht;
+    h->ht = t;
+    tb = MKFP(ds, t + 2);
+    for (i = 0; i < LH_NHE; i++)
+        tb[2 * i] = 0, tb[2 * i + 1] = LH_FREE;
+    i = 0;
+found:
+    p = n ? lh_alloc(ds, n, zero) : 0;
+    if (n && !p)
+        return 0;
+    tb = MKFP(ds, t + 2);
+    tb[2 * i] = p;
+    tb[2 * i + 1] = 0;
+    return t + 2 + 4 * i;
+}
+
+WORD lh_size(WORD ds, WORD a)
+{
+    return raw_size(ds, lh_ptr(ds, a));
+}
+
+void lh_free(WORD ds, WORD a)
+{
+    WORD FAR *e = lh_hent(ds, a);
+    if (e) {
+        raw_free(ds, e[0]);
+        e[0] = 0;
+        e[1] = LH_FREE;
+    } else
+        raw_free(ds, a);
 }
 
 /* ---- Exporte KERNEL ---------------------------------------------- */
@@ -240,7 +375,15 @@ void init_task_c(void)
         he = hs + 512;
     lh_init(ds, hs, he);
     ts_ax = 1;
-    ts_bx = 0x81;
+    /* wie InitTask von Windows: ES:BX auf die Befehlszeile ohne
+       fuehrende Leerzeichen (Notepad nimmt lpCmdLine als Dateinamen) */
+    {
+        char FAR *c = MKFP(wt[t].psp, 0x81);
+        WORD o = 0x81;
+        while (o < 0xFF && (*c == ' ' || *c == '\t'))
+            c++, o++;
+        ts_bx = o;
+    }
     ts_cx = w->sp - w->stack + 128;
     ts_dx = wt[t].s_wp;
     ts_si = 0;
@@ -275,6 +418,23 @@ WORD API GetModuleHandle(LPCSTR name)
     for (m = 0; m < NMOD; m++)
         if (wm[m].used && !fstricmp(wm[m].name, name))
             return m + 1;
+    m = exp_builtin(name);
+    return m ? 0x100 + m - 1 : 0;
+}
+
+void API OutputDebugString(LPCSTR s) { glogs("Debug: ", s); }
+BOOL API IsDBCSLeadByte(WORD c) { (void)c; return 0; }
+
+DWORD API GetProcAddress(WORD hmod, LPCSTR name)
+{
+    void FAR *fp;
+    WORD isc;
+    if (hmod >= 0x100 && hmod < 0x110 && !SELOF(name)) {
+        fp = exp_ord(hmod - 0x100, OFFOF(name), &isc);
+        return fp && !isc ? (DWORD)fp : 0;
+    }
+    if (SELOF(name))
+        glogs("GetProcAddress: ", name);
     return 0;
 }
 
@@ -334,6 +494,8 @@ WORD API FreeSelector(WORD s) { (void)s; return 0; }
 WORD API LocalAlloc(WORD flags, WORD n)
 {
     WORD ds = get_bp2();
+    if (flags & 0x02)                           /* LMEM_MOVEABLE: Griff */
+        return lh_hnew(ds, n, flags & LMEM_ZEROINIT);
     return lh_alloc(ds, n, flags & LMEM_ZEROINIT);
 }
 WORD API LocalFree(WORD h)
@@ -342,31 +504,82 @@ WORD API LocalFree(WORD h)
     lh_free(ds, h);
     return 0;
 }
-WORD API LocalReAlloc(WORD h, WORD n, WORD flags)
+static WORD raw_realloc(WORD ds, WORD h, WORD n)
 {
-    WORD ds = get_bp2(), nh, old;
-    (void)flags;
+    WORD nh, old;
     if (!h)
         return lh_alloc(ds, n, 1);
-    old = lh_size(ds, h);
+    old = raw_size(ds, h);
     if (n <= old)
         return h;
     nh = lh_alloc(ds, n, 1);
     if (!nh)
         return 0;
     fmemcpy(MKFP(ds, nh), MKFP(ds, h), old);
-    lh_free(ds, h);
+    raw_free(ds, h);
     return nh;
 }
-WORD API LocalLock(WORD h) { return h; }
-BOOL API LocalUnlock(WORD h) { (void)h; return 0; }
-WORD API LocalSize(WORD h)
+/* Griff: Block verschieben, Griff bleibt; feste Stelle: neue Stelle */
+WORD lh_realloc(WORD ds, WORD h, WORD n)
 {
-    WORD ds = get_bp2();
-    return lh_size(ds, h);
+    WORD FAR *e = lh_hent(ds, h);
+    WORD p;
+    if (!e)
+        return raw_realloc(ds, h, n);
+    p = raw_realloc(ds, e[0], n);
+    if (!p)
+        return 0;
+    e = lh_hent(ds, h);                         /* Segment kann gewachsen sein */
+    e[0] = p;
+    return h;
 }
-WORD API LocalHandle(WORD p) { return p; }
-WORD API LocalFlags(WORD h) { (void)h; return 0; }
+#define LMEM_MOVEABLE 0x02
+#define LMEM_MODIFY   0x80
+WORD API LocalReAlloc(WORD h, WORD n, WORD flags)
+{
+    if (flags & LMEM_MODIFY)
+        return h;
+    return lh_realloc(get_bp2(), h, n);
+}
+/* Griff-Aufrufe: op 0 Lock, 1 Unlock, 2 Handle, 3 Flags. Die Exporte
+   holen nur DS (get_bp2 gilt nur ohne gesicherte SI/DI vor BP) und
+   rufen dann diese Hilfe. */
+static WORD lh_api(WORD ds, WORD h, int op)
+{
+    WORD FAR *e;
+    WORD hs, t, i;
+    if (op == 2) {
+        hs = lh_of(ds);
+        if (hs)
+            for (t = ((struct lheap FAR *)MKFP(ds, hs))->ht; t;
+                 t = *(WORD FAR *)MKFP(ds, t))
+                for (i = 0; i < LH_NHE; i++) {
+                    e = MKFP(ds, t + 2 + 4 * i);
+                    if (e[1] != LH_FREE && e[0] == h && h)
+                        return t + 2 + 4 * i;
+                }
+        return h;
+    }
+    e = lh_hent(ds, h);
+    if (!e)
+        return op == 0 ? h : 0;
+    if (op == 0) {
+        if ((e[1] & 0xFF) < 0xFF)
+            e[1]++;
+        return e[0];
+    }
+    if (op == 1) {
+        if (e[1] & 0xFF)
+            e[1]--;
+        return (e[1] & 0xFF) != 0;
+    }
+    return e[1] & 0xFF;
+}
+WORD API LocalLock(WORD h)    { WORD ds = get_bp2(); return lh_api(ds, h, 0); }
+BOOL API LocalUnlock(WORD h)  { WORD ds = get_bp2(); return lh_api(ds, h, 1); }
+WORD API LocalSize(WORD h)    { WORD ds = get_bp2(); return lh_size(ds, h); }
+WORD API LocalHandle(WORD p)  { WORD ds = get_bp2(); return lh_api(ds, p, 2); }
+WORD API LocalFlags(WORD h)   { WORD ds = get_bp2(); return lh_api(ds, h, 3); }
 WORD API LocalCompact(WORD n) { (void)n; return 0x1000; }
 BOOL API LocalInit(WORD seg, WORD start, WORD end)
 {
@@ -432,7 +645,7 @@ static char fbuf[260];
 static struct { DWORD pos, size; } fh[NFH];
 static struct fapi_dirent fd_e;
 
-static int wmatch(const char *p, const char FAR *n)
+int wmatch(const char *p, const char FAR *n)
 {
     for (;;) {
         if (*p == '*') {
@@ -562,6 +775,71 @@ WORD API _lclose(WORD h) { DosClose(h); return 0; }
 WORD API _lread(WORD h, LPVOID p, WORD n) { return f_rw(FAPI_READ, h, p, n); }
 WORD API _lwrite(WORD h, LPCSTR p, WORD n) { return f_rw(FAPI_WRITE, h, (void FAR *)p, n); }
 DWORD API _llseek(WORD h, DWORD pos, short how) { return f_seek(h, pos, how); }
+
+/* voller Pfad wie Windows (OFSTRUCT.szPathName) */
+static WORD derr(WORD f);
+static char of_cur[FAPI_PATHLEN];
+void full_path(LPCSTR n, LPSTR out, WORD max)
+{
+    WORD k = 0;
+    if (n[0] && n[1] == ':' && n[2] == '\\') {
+        fstrncpy(out, n, max);
+    } else {
+        if (n[0] && n[1] == ':') {
+            if (FAPI_FAILED(DosQCurDirD(up(n[0]) - 'A', of_cur))) {
+                of_cur[0] = up(n[0]); of_cur[1] = ':'; of_cur[2] = '\\'; of_cur[3] = 0;
+            }
+            n += 2;
+        } else
+            DosQCurDir(of_cur);
+        if (n[0] == '\\')
+            of_cur[2] = 0;
+        fstrncpy(out, of_cur, max);
+        k = fstrlen(out);
+        if (n[0] && n[0] != '\\' && k > 3 && k < max - 1) {
+            out[k++] = '\\';
+            out[k] = 0;
+        }
+        fstrncpy(out + k, n, max - k);
+    }
+    for (k = 0; out[k]; k++)
+        out[k] = up(out[k]);
+}
+
+/* OpenFile (KERNEL.74): OFSTRUCT = Laenge, fest, Fehler, 4 frei, Pfad[128] */
+WORD API OpenFile(LPCSTR name, BYTE FAR *of, WORD st)
+{
+    WORD h;
+    LPSTR p = (LPSTR)(of + 8);
+    if (!(st & 0x8000))                         /* OF_REOPEN: Pfad gilt     */
+        full_path(name, p, 128);
+    of[0] = 136;
+    of[1] = 1;
+    *(WORD FAR *)(of + 2) = 0;
+    if (st & 0x100)                             /* OF_PARSE                 */
+        return 0;
+    if (st & 0x200) {                           /* OF_DELETE                */
+        fstrncpy(fbuf, p, sizeof(fbuf));
+        if (FAPI_FAILED(DosDelete(fbuf))) {
+            *(WORD FAR *)(of + 2) = 2;
+            return 0xFFFF;
+        }
+        return 1;
+    }
+    if (st & 0x1000)                            /* OF_CREATE                */
+        h = f_create(p);
+    else
+        h = f_open(p, st & 3);
+    if (FAPI_FAILED(h)) {
+        *(WORD FAR *)(of + 2) = derr(h) == 5 ? 5 : 2;
+        return 0xFFFF;
+    }
+    if (st & 0x4000) {                          /* OF_EXIST: wieder zu      */
+        DosClose(h);
+        return 1;
+    }
+    return h;
+}
 
 /* ---- INT 21h ---------------------------------------------------------- */
 struct iregs { WORD di, si, dx, cx, bx, ax, es, ds, bp, n, ip, cs, fl; };

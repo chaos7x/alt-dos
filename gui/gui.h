@@ -23,6 +23,7 @@
 #define FAR     __far
 #define PASCAL  __pascal
 #define API     __far __pascal __loadds            /* von Win16 gerufen */
+#define APIC    __far __cdecl __loadds             /* ... mit cdecl (wsprintf) */
 typedef unsigned char  BYTE;
 typedef unsigned short WORD;
 typedef unsigned long  DWORD;
@@ -40,7 +41,7 @@ typedef struct { HWND hwnd; WORD message, wParam; DWORD lParam; DWORD time; POIN
 typedef MSG FAR       *LPMSG;
 typedef long (FAR PASCAL *WNDPROC)(HWND, WORD, WORD, DWORD);
 
-#define MKFP(s, o)      ((void FAR *)(((unsigned long)(s) << 16) | (unsigned)(o)))
+#define MKFP(s, o)      ((void FAR *)(((WORD)(s)) :> ((void __near *)(WORD)(o))))  /* wie MK_FP; (long)-Weg wurde bei s = 0 zu DS:o */
 #define SELOF(p)        ((WORD)((unsigned long)(void FAR *)(p) >> 16))
 #define OFFOF(p)        ((WORD)(unsigned long)(void FAR *)(p))
 #define LOWORD(l)       ((WORD)(l))
@@ -72,15 +73,17 @@ extern WORD gui_ds;
 
 /* ---- Win16-Tasks (krnl.c) ---- */
 #define NWT     12
+#define NQ      48              /* Nachrichtenschlange je Task (Ring) */
 struct wtask {
     BYTE  used, state;          /* WT_* */
     WORD  ss, sp;               /* gesichert, solange er nicht laeuft */
     WORD  hinst;                /* = Autodata-Selektor (DGROUP)       */
     WORD  hmod;                 /* Modul (w16ldr.c), 1..             */
     WORD  psp;                  /* Selektor des PSP                  */
+    WORD  env;                  /* Umgebung (PSP:2Ch)                */
     WORD  dta_s, dta_o;         /* INT 21h 1Ah                        */
     WORD  qh, qt;               /* Nachrichtenschlange (Ring)         */
-    MSG   q[24];
+    MSG   q[NQ];
     BYTE  quit;                 /* WM_QUIT steht an                   */
     WORD  quitcode;
     BYTE  waiting;              /* wartet auf Nachrichten             */
@@ -129,6 +132,17 @@ void  w16_missing(void);
 
 /* ---- Exporte (exports.c) ---- */
 void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst);
+int   exp_builtin(LPCSTR mod);                    /* 1.. oder 0 */
+void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst);
+/* lokale Halde eines Autodata (krnl.c), Handle = Stelle */
+BOOL  lh_init(WORD ds, WORD start, WORD end);
+WORD  lh_alloc(WORD ds, WORD n, WORD zero);
+WORD  lh_ptr(WORD ds, WORD x);
+WORD  lh_hnew(WORD ds, WORD n, WORD zero);
+WORD  lh_realloc(WORD ds, WORD h, WORD n);
+WORD  lh_size(WORD ds, WORD a);
+void  lh_free(WORD ds, WORD a);
+void  full_path(LPCSTR n, LPSTR out, WORD max);
 
 /* ---- GDI (gdi.c) ---- */
 #define SCR_W   640
@@ -170,7 +184,14 @@ struct wnd {
     char   title[64];
     BYTE   extra[16];            /* GetWindowWord/Long ab 0            */
     WORD   z;                    /* Rang (groesser = oben)             */
+    HMENU  menu;                 /* Menueleiste (oberste Fenster)      */
+    short  sb[2][3];             /* Bildlauf waagerecht/senkrecht: min, max, Stelle */
 };
+#define CAPH     20              /* Titelleiste                        */
+#define MENUH    20              /* Menueleiste                        */
+#define SBW      16              /* Bildlaufleiste                     */
+#define MT_MOUSE 0x7F00          /* interne Nachrichten beim Menue     */
+#define MT_KEY   0x7F01
 extern struct wnd ww[NWND];
 #define HW(i)    ((HWND)(0x4000u + ((i) << 2)))
 #define WI(h)    ((((WORD)(h)) - 0x4000u) >> 2)
@@ -179,6 +200,58 @@ void user_init(void);
 void user_input(void);           /* Maus/Tastatur abholen, zustellen   */
 void user_paint_pending(void);   /* NC zeichnen, WM_PAINT anstossen     */
 int  user_task_has_work(int t);
+short wnd_border(struct wnd *w);
+BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait);
+void dc_rawfill(HDC h, short x0, short y0, short x1, short y1, BYTE c);
+void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg);
+HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
+                        short x, short y, short cx, short cy, HWND parent,
+                        HMENU menu, WORD hinst, LPVOID param);
+BOOL API DestroyWindow(HWND h);
+void API InvalidateRect(HWND h, const RECT FAR *r, BOOL erase);
+LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp);
+LONG API DispatchMessage(const MSG FAR *m);
+void API PostQuitMessage(short code);
+HWND API GetParent(HWND h);
+HDC  API BeginPaint(HWND h, void FAR *ps);
+BOOL API EndPaint(HWND h, void FAR *ps);
+/* ---- Menues (menu.c) ---- */
+void  menu_free(HMENU h);
+void  menu_task_end(int t);
+void  menu_bar_paint(HDC dc, struct wnd *w);
+void  menu_bar_rect(struct wnd *w, RECT FAR *r);
+short menu_bar_hit(struct wnd *w, short x, short y);
+short menu_mnemonic(HMENU h, BYTE ch);
+void  menu_track(HWND h, short bar, int bykey);
+int   menu_input_mouse(short x, short y, BYTE btn);
+int   menu_input_key(WORD k);
+HMENU API LoadMenu(WORD hinst, LPCSTR name);
+LONG FAR PASCAL menu_pop_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+LONG FAR PASCAL edit_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+/* ---- Dialoge, Knoepfe, Listen (dlg.c) ---- */
+LONG FAR PASCAL button_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+LONG FAR PASCAL static_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+LONG FAR PASCAL dlg_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+LONG FAR PASCAL listbox_proc(HWND h, WORD msg, WORD wp, DWORD lp);
+void  ui_bevel(HDC dc, short l, short t, short r, short b, int down);
+typedef BOOL (*IDLGPROC)(HWND h, WORD m, WORD wp, DWORD lp);
+HWND  dlg_new(HWND owner, LPCSTR title, short x, short y, short cx, short cy,
+              IDLGPROC proc, WORD hinst);           /* interner Dialog     */
+HWND  dlg_item(HWND d, LPCSTR cls, LPCSTR text, DWORD style, short x, short y,
+               short cx, short cy, WORD id);
+short dlg_run(HWND d, HWND owner);                   /* modal, -> EndDialog */
+BOOL API IsDialogMessage(HWND d, MSG FAR *m);
+BOOL API EndDialog(HWND d, short r);
+HWND API GetDlgItem(HWND p, short id);
+BOOL API SetDlgItemText(HWND d, short id, LPCSTR s);
+short API GetDlgItemText(HWND d, short id, LPSTR s, short n);
+LONG API SendDlgItemMessage(HWND p, short id, WORD m, WORD wp, DWORD lp);
+BOOL API EnableWindow(HWND h, BOOL on);
+BOOL API SetWindowText(HWND h, LPCSTR s);
+short API GetWindowText(HWND h, LPSTR s, short n);
+HWND API SetFocus(HWND h);
+HWND API GetFocus(void);
+int   wmatch(const char *p, const char FAR *n);
 void user_task_end(int t);
 long send_msg(HWND h, WORD m, WORD wp, DWORD lp);
 BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp);
@@ -190,5 +263,7 @@ BOOL  API ShowWindow(HWND h, short cmd);
 BOOL  API ExtTextOut(HDC h, short x, short y, WORD opt, LPRECT r, LPCSTR s, WORD n, short FAR *dx);
 short API SetROP2(HDC h, short r);
 short API SetBkMode(HDC h, short m);
+short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type);
+BYTE  ansi2oem(BYTE c);
 
 #endif

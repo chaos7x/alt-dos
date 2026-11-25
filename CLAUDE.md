@@ -2339,7 +2339,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Mauszeiger, INT 21h der Programme über FAPI 66h `FAPI_SEGCTL`
   (SEG_INTHND -> `ne_r3int`, auch SEG_TOCODE/TODATA/REALLOC). Beispiel
   `\DEMO\HALLOW.EXE` ohne Watcom-Bibliothek. Stand, Lehren und Offenes
-  in `docs/GUI-WIN16.md` „Stand: GUI-Prozess“; nächstes Ziel Notepad.
+  in `docs/GUI-WIN16.md` „Stand: GUI-Prozess“.
+  Notepad 3.1 läuft (25.11.2026, „Stand: Notepad“): Menüs, Bildlauf-
+  leisten, EDIT, Dialoge, LISTBOX, COMMDLG; verschiebbare Griffe der
+  lokalen Halde (LMEM_MOVEABLE), Umgebung je Task (PSP:2Ch – Selektor 0
+  fiel nur in 86Box auf), Tasten bleiben im Kernelpuffer bei voller
+  Schlange; Kernel SEG_REALLOC kopiert Bytes. Geprüft QEMU + 86Box
+  386DX/40. Lehre: `get_bp2()` nur als `WORD ds = get_bp2();` vorn in
+  einer Exportfunktion, die vor BP nichts sichert. Nächstes: Write, dann
+  PROGMAN (Wunsch des Nutzers).
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians

@@ -195,11 +195,62 @@ bei Debian, eigener LZX-Entpacker, Ziel `\DOS\FONTS`. Sie kommen nie ins
 Repository und nicht auf die Disketten (Lizenz: nur unverändert weiter-
 geben). Benutzt werden sie, sobald der TrueType-Rasterer steht.
 
-Noch nicht: Menüs, EDIT/LISTBOX/SCROLLBAR, Dialoge aus Ressourcen,
-Bitmaps/BitBlt, eigene Schriften, COMMDLG, DLLs von Programmen
-(LoadLibrary), Profile (INI), Größe ändern/Minimieren, Shell, weitere
-Grafiktreiber. Nächstes Ziel: Notepad (Menü, EDIT, Tastenkürzel,
-COMMDLG).
+### Stand: Notepad (25.11.2026)
+
+Ziel 1 erreicht: **Notepad aus Windows 3.1 (deutsch)** läuft – Datei
+öffnen über die Befehlszeile und den Öffnen-Dialog, Tippen, Markieren,
+Ausschneiden/Kopieren/Einfügen, Rückgängig, Zeilenumbruch, F5 (Uhrzeit),
+Suchen, Speichern und Speichern unter (CR LF), Rückfrage beim Beenden.
+Neu dafür (Module jetzt KERNEL, USER, GDI, KEYBOARD, COMMDLG, SHELL;
+`tools/mkexp.py` kennt `APIC` für cdecl wie wsprintf):
+
+- `menu.c` – Menüs aus Ressourcen und per Create/Append/Insert/Modify,
+  Menüleiste, Aufklappmenüs, Alt/F10/Alt+Buchstabe/Pfeile/Maus,
+  WM_INITMENU(POPUP), Häkchen, gesperrte Einträge, Tastenkürzel
+  (LoadAccelerators/TranslateAccelerator).
+- Bildlaufleisten im Fensterrahmen (WS_VSCROLL/WS_HSCROLL, Pfeile,
+  Seitenweise, Ziehen, Wiederholung).
+- `edit.c` – EDIT-Steuerelement (ein- und mehrzeilig, Text in der lokalen
+  Halde des Programms, EM_GETHANDLE/EM_SETHANDLE, Umbruch, Markierung,
+  eine Stufe Rückgängig, alle EM_*-Nachrichten, die Notepad braucht);
+  Zwischenablage CF_TEXT über DosClipPut/Get (ANSI <-> OEM).
+- `dlg.c` – Dialoge aus Ressourcen (modal und nicht modal),
+  IsDialogMessage (Tab, Enter, Esc, Alt+Buchstabe), BUTTON (Druck-,
+  Kontroll-, Optionsknopf, Gruppe), STATIC, LISTBOX.
+- `commdlg.c` – GetOpenFileName/GetSaveFileName (eigener Dialog mit
+  Dateiliste, Verzeichnissen und Laufwerken), FindText; PrintDlg & Co.
+  melden „nicht vorhanden“.
+- `misc.c` – AnsiToOem/OemToAnsi, wsprintf/wvsprintf,
+  RegisterWindowMessage, ShellAbout, WinHelp (nur Hinweis), TabbedTextOut.
+- Lokale Halde mit **verschiebbaren Griffen** wie LMEM_MOVEABLE:
+  Grifftabelle in der Halde (Eintrag = Stelle des Blocks + Sperrzähler),
+  LocalLock liefert die Stelle, LocalReAlloc verschiebt den Block und
+  lässt den Griff gleich. Notepad hält sich den Griff aus EM_GETHANDLE –
+  mit festen Griffen stand nach dem Vergrößern Haldenmüll in der Datei.
+- Je Task ein Umgebungsblock (PSP:2Ch: leere Umgebung, Zähler,
+  Programmpfad); InitTask liefert die Befehlszeile ohne führende
+  Leerzeichen wie Windows.
+- Tasten bleiben im Kernelpuffer, solange die Schlange der Ziel-Task
+  keinen Platz für KEYDOWN/CHAR/KEYUP hat (Schlange 48 Nachrichten) –
+  auf dem 386 gingen bei schnellem Tippen Zeichen verloren.
+- Kernel: FAPI_SEGCTL `SEG_REALLOC` kopierte Worte statt Bytes (die
+  Halde verlor beim Wachsen die obere Hälfte).
+
+Geprüft: QEMU (16 und 4 MB) und 86Box 386DX/40 mit 4 MB, Cirrus GD5434,
+AHA-154x, serielle Maus: Start mit Datei, Tippen mit 30 ms je Taste ohne
+Verlust, Menü, Speichern, Beenden, Inhalt byte-genau, fsck sauber.
+Notepad nur aus der Windows-Kopie des Nutzers zum Testen, nie im
+Repository. Lehren: QEMU lässt Zugriffe über den Nullselektor durch (ES =
+0 aus PSP:2Ch fiel erst in 86Box auf); `get_bp2()` liest `[bp+2]` als DS
+des Aufrufers und gilt nur, wenn die Exportfunktion vor BP nichts weiter
+sichert – in den Exporten erst `WORD ds = get_bp2();`, die Arbeit in eine
+Hilfsfunktion; `MKFP(s, o)` braucht den `:>`-Operator.
+
+Noch nicht: Bitmaps/BitBlt, eigene Schriften (TrueType), DLLs von
+Programmen (LoadLibrary), Profile (INI), Größe ändern/Minimieren, Drucken,
+Shell, weitere Grafiktreiber. Nächste Ziele: Write, danach (Wunsch des
+Nutzers, 25.11.2026) **PROGMAN** aus Windows 3.1 als Spaß-Ziel – braucht
+Profile/INI, Gruppen-Dateien, Symbole (Icons), MDI und WinExec.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

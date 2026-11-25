@@ -202,8 +202,10 @@ int w16_load(LPCSTR path)
     static BYTE mz[64];
     for (m = 0; m < NMOD && wm[m].used; m++)
         ;
-    if (m == NMOD)
+    if (m == NMOD) {
+        glog("keine freie Modultabelle");
         return -1;
+    }
     w = &wm[m];
     fmemset((void FAR *)w, 0, sizeof(*w));
     fstrncpy(lpath, path, sizeof(lpath));
@@ -313,6 +315,8 @@ int w16_load(LPCSTR path)
         glogn("fehlende Importe: ", nmiss);
     rc = m;
 out:
+    if (rc < 0)
+        glogs("Laden abgebrochen: ", path);
     if (tsel)
         seg_del(tsel);
     DosClose(lh);

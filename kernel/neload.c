@@ -1036,7 +1036,7 @@ unsigned __far ne_segctl(int t, unsigned op, unsigned a, unsigned b)
 {
     struct desc __far *d;
     unsigned long base;
-    unsigned oldn, newn, n;
+    unsigned oldn, newn;
     pg_t u;
     if (op == SEG_INTHND) {
         ne_ihnd[t] = ((unsigned long)a << 16) | b;
@@ -1068,10 +1068,16 @@ unsigned __far ne_segctl(int t, unsigned op, unsigned a, unsigned b)
             }
             scratch_map(PG_LIN(u), newn * MEM_PAGE - 1);
             zero_seg(SCRATCH, newn * (MEM_PAGE / 2));
-            n = (newn < oldn ? newn : oldn) * (MEM_PAGE / 2);   /* Worte */
-            far_copy(SCRATCH, 0, a, 0, n);                      /* erste */
-            if (n > 0x4000)                                     /* Haelfte */
-                far_copy(SCRATCH, 0x8000U, a, 0x8000U, n - 0x4000);
+            {                           /* far_copy zaehlt Bytes  */
+                unsigned long nb = (unsigned long)d->limit + 1, mx = (unsigned long)newn * MEM_PAGE;
+                if (nb > mx)
+                    nb = mx;
+                if (nb > 0x8000UL) {
+                    far_copy(SCRATCH, 0, a, 0, 0x8000U);
+                    far_copy(SCRATCH, 0x8000U, a, 0x8000U, (unsigned)(nb - 0x8000UL));
+                } else
+                    far_copy(SCRATCH, 0, a, 0, (unsigned)nb);
+            }
             base = dbase(d);
             mem_free(base >> 12, oldn);
             alloc_units += newn;
