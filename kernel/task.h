@@ -55,6 +55,7 @@ struct task {
     unsigned char code_gone;                    /* Code verworfen (codeswap.c) */
     unsigned long cpu;                          /* Rechenzeit in Takten (PS/TOP) */
     unsigned long born;                         /* Startzeit in Takten      */
+    unsigned short nemods;                      /* benutzte DLLs (neload.c) */
 };
 
 /* Tabelle der offenen Dateien (kernel.c; procfs.c liest mit) */

@@ -937,6 +937,8 @@ struct fapi_fsinfo {
 #define EXEC_ERR_NOMEM      2
 #define EXEC_ERR_FORMAT     3
 #define EXEC_ERR_NOSLOT     4
+#define EXEC_ERR_DLL        5       /* NE: Bibliothek fehlt oder passt nicht
+                                       (Name im DMESG)                      */
 
 /*
  * Speicher aus Sicht der FAPI: ein einziger Arbeitsspeicher. Die Trennung

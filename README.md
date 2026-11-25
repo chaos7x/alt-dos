@@ -45,6 +45,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Treiber beim Einlegen über die Datenrate, den Wechsel über die
   Wechselleitung. Spurpuffer: gelesen wird spurweise, geschrieben am Ende
   jedes Aufrufs in zusammenhängenden Stücken. Spuren formatieren (FAPI 70)
+- NE-Programme und DLLs (6.x, Grundlage für die GUI): Programme im
+  Format von OS/2 1.x (z. B. Open Watcom `format os2`) laufen neben den
+  FX-Programmen, DLLs werden einmal geladen und von allen Programmen
+  geteilt (Selektoren wie bei OS/2 1.x in allen Tasks gleich), Importe
+  über Ordinalzahl und Namen; fehlt eine DLL, nennt DMESG sie
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit
   Unterverzeichnissen, Partitionstabelle und 32-Bit-Sektornummern
 - Schreiben auf FAT12/16 (Diskette, IDE, SCSI): anlegen, schreiben,

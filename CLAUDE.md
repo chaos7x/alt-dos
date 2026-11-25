@@ -2308,8 +2308,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   austauschbar, Wunsch des Nutzers 25.11.2026), Desktop/Eigene Dateien, Treiber VGA/ET4000-W32/GD5434/Trio3D,
   frühes Wine als Vorlage (Lizenzstände!), Win32 später. **System und
   Daten trennen**: `docs/SYSTEM-DATEN.md` (Variablen, MOUNT wie /home,
-  Netzlaufwerk). Noch kein Code. Verzeichnis `gui/` (kernel, user, gdi,
+  Netzlaufwerk). Verzeichnis `gui/` (kernel, user, gdi,
   style, shell, drv, res, include), NE-Lader nach `kernel/`.
+  NE-Lader Stufe 1 erledigt (25.11.2026, Variante A des Nutzers: DLL-
+  Selektoren wie OS/2 1.x von oben in der LDT, in allen Tasks gleich;
+  gemeinsame Win16-LDT später): `kernel/neload.c` (KTEXT4), `ne_sh`/
+  `ldt_free` (DosAllocSeg überspringt DLL-Plätze), `task.nemods`,
+  `EXEC_ERR_DLL` (5); `dos_kind` nimmt NE nicht mehr als DOS-Programm.
+  Geprüft QEMU (Watcom `format os2`, DLL mit `__loadds`; Test
+  /tmp/claude-0/ne/q/go.sh): Importe Ordinal/Name, DLL-Daten, zwei Tasks
+  teilen eine DLL, Freigabe ohne Leck. Stand und Offenes in
+  `docs/GUI-WIN16.md` „Stand: NE-Lader Stufe 1“.
 
 - **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
   15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen

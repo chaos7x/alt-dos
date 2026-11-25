@@ -1690,6 +1690,7 @@ static void exec_error(unsigned r)
     case EXEC_ERR_NOMEM:    puts("Nicht gen\x81gend Arbeitsspeicher.\n"); break;
     case EXEC_ERR_FORMAT:   puts("Kein FAPI-Programm.\n"); break;
     case EXEC_ERR_NOSLOT:   puts("Zu viele Programme gleichzeitig.\n"); break;
+    case EXEC_ERR_DLL:      puts("Bibliothek (DLL) fehlt oder passt nicht - siehe DMESG.\n"); break;
     default:                puts("Programm konnte nicht gestartet werden.\n");
     }
 }

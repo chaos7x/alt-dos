@@ -542,6 +542,20 @@ static pg_t mem_get(unsigned n)
     return u;
 }
 
+/* freier LDT-Eintrag (nicht einer der DLLs, neload.c) oder NLDT */
+static unsigned ldt_free(int t)
+{
+    unsigned idx;
+    for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
+        if (LDT(t, idx)->access == 0 && !NE_SH(idx))
+            break;
+    return idx;
+}
+
+pg_t __far kf_mem_get(unsigned n);
+
+pg_t __far kf_mem_get(unsigned n) { return mem_get(n); }
+
 static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
 {
     unsigned idx, units;
@@ -549,9 +563,7 @@ static unsigned seg_alloc(int t, unsigned size)          /* size 0 = 64 KB */
     unsigned long base;
 
     units = size ? PAGES(size) : 16;
-    for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-        if (LDT(t, idx)->access == 0)
-            break;
+    idx = ldt_free(t);
     if (idx == NLDT)
         return FAPI_ERROR;                      /* LDT voll             */
     seg_cur = 1;
@@ -636,7 +648,7 @@ static char up(char c)
    kanonischer Pfad "\A\B" bzw. "\". Laenge der Eingabe bis 260 Zeichen. */
 /* Laufwerk fuer Kernel-Pfade ohne Task (CONFIG.SYS, PROTSHELL=) und
    erstes Laufwerk der Programme: A: oder die Startpartition */
-static int sys_drive = 0;
+int sys_drive = 0;
 
 /* SUBST: Laufwerk X: zeigt auf ein Verzeichnis eines anderen Laufwerks.
    subst_drv[X] = Ziellaufwerk (-1 = keins), Pfad (kanonisch, "\\DOS")
@@ -1426,6 +1438,8 @@ static int dos_kind(int drive, const char *path)
     fx = hb[0x3C] | (hb[0x3D] << 8);
     if ((unsigned long)fx + 2 > f.size || ifs_read(&f, fx, KDATA, (unsigned)hb, 2) != 2)
         return 1;
+    if (hb[0] == 'N' && hb[1] == 'E')               /* NE (OS/2 1.x, Win16) */
+        return 0;
     return hb[0] != FX_SIG0 || hb[1] != FX_SIG1;
 }
 #undef f
@@ -1542,6 +1556,25 @@ static int load_program(int t, int drive, const char *path)
         return load_img(t, drive, path);
     }
     err = load_image(drive, path, &h, &u, &n, &seg);
+    if (err == EXEC_ERR_FORMAT) {               /* NE (Windows/OS/2)?    */
+        struct ne_start st;
+        err = ne_load(t, drive, path, &st);
+        if (err)
+            return err;
+        task[t].lfn = st.lfn;
+        task[t].img_unit = task[t].code_unit = 0;
+        task[t].code_gone = 0;
+        ts = &tss[t];
+        tss_init(t, paging_cr3());
+        ts->cs = st.cs;
+        ts->eip = st.ip;
+        ts->ss = st.ss;
+        ts->esp = st.sp;
+        ts->ds = ts->es = st.ds;
+        ts->ldt = LDT_SEL(t);
+        ts->eflags = 0x0202;
+        return 0;
+    }
     if (err)
         return err;
     if (h.flags & FX_FLAG_DRIVER) {
@@ -1955,6 +1988,8 @@ static void task_end(int t)
             seg_free(t, USEL(idx));
     if (!task[t].v86)
         seg_drop_sw(t, 1);                  /* Daten ausgelagert         */
+    if (task[t].nemods)
+        ne_task_end(t);                     /* DLLs (NE-Lader)           */
     if (task[t].img_unit) {
         mem_free(task[t].img_unit, task[t].img_cnt);
         image_units -= task[t].img_cnt;
@@ -4498,10 +4533,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_VIOGETBUF: {                      /* LVB wie bei OS/2 1.x  */
-        unsigned idx;
-        for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-            if (LDT(current, idx)->access == 0)
-                break;
+        unsigned idx = ldt_free(current);
         if (idx == NLDT)
             return FAPI_ERROR;
         put_desc(LDT(current, idx), vio_buf_lin(s), SBYTES - 1, ACC_UDATA);
@@ -4520,9 +4552,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         unsigned idx;
         if (!vio_is_gfx(s))
             return FAPI_ERROR;
-        for (idx = LDT_FIRST_FREE; idx < NLDT; idx++)
-            if (LDT(current, idx)->access == 0)
-                break;
+        idx = ldt_free(current);
         if (idx == NLDT)
             return FAPI_ERROR;
         put_desc(LDT(current, idx), vio_gfx_base(s), vio_gfx_limit(s), ACC_UDATA);

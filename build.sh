@@ -96,8 +96,8 @@ K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat swap blkmnt codeswap"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86"
 # KTEXT4: viertes Codesegment (KCODE4), Erreichbarkeit wie KTEXT2 (k2.h)
-K4MODS="loop vio net redir dem vdd ufs panic cdra cfgboot biosdisk"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk k2thunk; do
+K4MODS="loop vio net redir dem vdd ufs panic cdra cfgboot biosdisk neload"
+for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk neload k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
@@ -203,7 +203,7 @@ fi
 # 80000h (darueber Real-Mode-Reste, ab 9FC00h das EBDA)
 # Startcode (ITEXT): nur aus Startcode gerufen, fern ueber Segmentgrenzen
 python3 tools/initcheck.py -q --roots kmain_,gdt_build_,preload_ --seg ITEXT $B/start.o \
-    $(for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk k2thunk; do echo $B/$m.o; done) || exit 1
+    $(for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk neload k2thunk; do echo $B/$m.o; done) || exit 1
 [ $(stat -c %s $B/kernel.bin) -le 458752 ] || { echo "FEHLER: ATDOS.SYS groesser als 448 KB"; exit 1; }
 
 echo "Anwendungen"

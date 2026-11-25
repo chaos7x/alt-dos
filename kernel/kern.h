@@ -74,6 +74,12 @@ extern unsigned long dmab_phys;
 /* Kontext je Task (Phase 6): Variablen, die eine Operation mit Kernel-
    sperre ueber einen Schlafpunkt hinweg haelt (kernel.c ctx_take) */
 struct ctxblk { void *p; unsigned n; };
+/* NE-Lader (neload.c, KTEXT4): Startwerte einer NE-EXE */
+struct ne_start { unsigned cs, ip, ss, sp, ds; unsigned char lfn; };
+int  __far ne_load(int t, int drive, const char *path, struct ne_start *st);
+void __far ne_task_end(int t);
+extern unsigned char ne_sh[64];         /* LDT-Eintraege der DLLs (alle Tasks) */
+#define NE_SH(i) (ne_sh[(i) >> 3] & (1 << ((i) & 7)))
 extern const struct ctxblk fat_ctx[], redir_ctx[], dem_ctx[];
 extern const unsigned fat_nctx, redir_nctx, dem_nctx;
 

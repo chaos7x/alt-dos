@@ -59,6 +59,43 @@ für die GUI (wie beim Netzwerk). Entwürfe und Bilder bleiben unter
    (`format windows`, `format os2`) – auch für die eigenen GUI-Programme.
 2. IPC: Semaphoren, gemeinsamer Speicher; Threads später.
 
+### Stand: NE-Lader Stufe 1 (25.11.2026, nur `main`)
+
+Variante A (Entscheidung des Nutzers): DLL-Selektoren wie OS/2 1.x –
+von oben in der LDT, in allen Tasks gleich; die gemeinsame LDT für
+Win16 (Frage 1 unten) kommt später darauf.
+
+- `kernel/neload.c` (KTEXT4, ~6 KB Code): `load_program` nimmt NE, wenn
+  `load_image` „kein FX“ meldet; `dos_kind` hält NE nicht mehr für ein
+  DOS-Programm (vorher lief der MZ-Stub „This is an OS/2 executable“ in
+  der Box).
+- EXE: Segment k -> LDT-Eintrag k + 1 (ab 2), Autodata mit Heap und
+  Stapel (SS:SP 0 -> Stapel am Ende des Autodata wie OS/2), Start
+  CS:IP/SS:SP/DS aus dem Kopf, Merker „lange Namen“ aus Byte 37h.
+- DLL: einmal geladen in einer Modultabelle (Kernelsegment `ne_sel`, bis
+  15 Module zu je 32 Segmenten, 8 Abhängigkeiten, Einsprung- und
+  Namenstabelle). Selektoren aus `ne_sh` (Bitmap) von oben, frei in allen
+  laufenden Tasks; jeder Task bekommt Alias-Einträge (`D_ALIAS`, gibt
+  seg_free nicht frei), `ldt_free` in DosAllocSeg/VioGetBuf überspringt
+  sie. Gesucht wird im Verzeichnis des Programms, dann `\DOS\SYSTEM`
+  und `\DOS` des Startlaufwerks (`NAME.DLL`). Zähler je Modul
+  (`task.nemods`); mit dem letzten Benutzer wird die DLL freigegeben.
+- Relokationen: intern, Import über Ordinalzahl und Namen (resident und
+  nicht resident), Typen LOBYTE/SEGMENT/FAR_ADDR/OFFSET, Ketten und
+  ADDITIVE; Einsprungtabelle fest und beweglich.
+- Fehlt eine DLL: `EXEC_ERR_DLL` (5), CMD meldet „Bibliothek (DLL)
+  fehlt oder passt nicht“, Name im DMESG („NE: DLL nicht geladen“).
+- Geprüft in QEMU mit Watcom-Programmen (`format os2`, DLL mit
+  `__loadds` – ohne lädt Watcom DS nicht): Aufrufe über Ordinalzahl und
+  Namen, Daten der DLL (Segmentrelokation auf DGROUP), zwei Tasks
+  gleichzeitig teilen die DLL und ihre Daten (6 -> 7 -> 8), nach dem
+  Ende freigegeben (MEM nach 40 Läufen gleich), fehlende DLL gemeldet;
+  CMD, Box, DOS-Programme unverändert. Reine Programmlogik, kein 86Box.
+- Noch nicht: DLL-Start (LibEntry/INITINSTANCE), Ressourcen,
+  MULTIPLEDATA-DLLs (Daten je Instanz), Win16-Module (KERNEL/USER/GDI
+  als eigene DLLs), Auslagern/Verwerfen von NE-Code (Code wird wie
+  Daten behandelt), 5.x.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht
@@ -230,8 +267,7 @@ Vor Stufe 0 klären, noch nicht entschieden:
    sind überwiegend Win32 mit 16-Bit-Thunks. Übernehmbar vor allem die
    Logik von Steuerelementen und Dialogen (umgebaut auf Watcom 16 Bit)
    und die `.spec`-Exporttabellen; sonst mit eigenem Code rechnen.
-5. **Platz im Kernel**: NE-Lader nach KTEXT2 (erstes Codesegment ~1 KB
-   frei), Tabellen nicht in DGROUP; die GDT-Plätze für Kernelsegmente
+5. **Platz im Kernel**: NE-Lader in KTEXT4 (erledigt, Stufe 1), Tabellen nicht in DGROUP; die GDT-Plätze für Kernelsegmente
    (NKSEG 20) sind fast vergeben – mit Punkt 1 gehören die Segmente der
    DLLs in die gemeinsame LDT.
 6. **Sperren**: auch ohne `klock` (BIGLOCK.md, 6.3) bleibt der Win16Mutex
