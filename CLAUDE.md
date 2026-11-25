@@ -2351,6 +2351,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   jetzt 512 (`URLLEN`). Testfalle: der TLS-Proxy dieser Umgebung stellt
   eigene Zertifikate aus – für QEMU-Tests dessen CA
   (/root/.ccr/ca-bundle.crt) an die CACERT.PEM des Testabbilds hängen.
+  Vom Nutzer in 86Box (echtes Netz) gemeldet: SourceForge (Cloudflare)
+  lehnt den TLS-Handshake von WGET ab, und die Spiegelnamen aus Debians
+  Liste (jaist/netcologne/… .dl.sourceforge.net) gibt es nicht mehr.
+  COREFONT lädt jetzt über HTTP (SHA-256 prüft), HTTPS nur als Rückfall;
+  offen: warum Cloudflare unseren TLS-1.2-Handshake ablehnt.
 
 - **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
   15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen

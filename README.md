@@ -312,7 +312,7 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 - `COREFONT [/Y] [/S:Verz] [/K] [/Z:Ziel]` installiert die „Core fonts for
   the Web“ von Microsoft wie `ttf-mscorefonts-installer` von Debian: lädt
   die elf unveränderten Pakete (`arial32.exe` …) per WGET von SourceForge
-  (Spiegel als Rückfall), prüft SHA-256 gegen die Liste von Debian,
+  (über HTTP, HTTPS als Rückfall – die Prüfsumme sichert jedes Paket), prüft SHA-256 gegen die Liste von Debian,
   entpackt den CAB im Paket mit einem eigenen LZX-Entpacker
   (`apps/lzx.c`) und legt die 30 TrueType-Dateien nach `\DOS\FONTS`.
   Vorher zeigt es den Lizenzhinweis und fragt (`/Y` nimmt an); `/S:` nimmt

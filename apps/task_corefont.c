@@ -40,12 +40,13 @@ static const struct pk { const char *name; const char *sha; } pkg[] = {
 };
 #define NPKG (sizeof(pkg) / sizeof(pkg[0]))
 
-static const char *mirror[] = {     /* wie Debian (update-ms-fonts)      */
-    "https://downloads.sourceforge.net/corefonts/",
-    "https://jaist.dl.sourceforge.net/sourceforge/corefonts/",
-    "https://netcologne.dl.sourceforge.net/sourceforge/corefonts/",
-    "https://nchc.dl.sourceforge.net/sourceforge/corefonts/",
-    "https://ufpr.dl.sourceforge.net/sourceforge/corefonts/",
+static const char *mirror[] = {     /* SourceForge leitet auf Spiegel um;
+                                       HTTP reicht, SHA-256 prueft jedes
+                                       Paket (die alten Spiegelnamen von
+                                       Debian gibt es nicht mehr)          */
+    "http://downloads.sourceforge.net/project/corefonts/the%20fonts/final/",
+    "https://downloads.sourceforge.net/project/corefonts/the%20fonts/final/",
+    "http://downloads.sourceforge.net/corefonts/",
 };
 #define NMIR (sizeof(mirror) / sizeof(mirror[0]))
 
@@ -407,7 +408,7 @@ void main(void)
             join(path, tmp, pkg[i].name, sizeof(path));
             if (!sha_ok(path, pkg[i].sha)) {
                 for (m = 0; m < NMIR; m++) {
-                    out(m ? "neuer Versuch ueber einen Spiegel ... " : "laden ... ");
+                    out(m ? "neuer Versuch ... " : "laden ... ");
                     scopy(cl, wget, sizeof(cl));
                     scat(cl, " -q -O ", sizeof(cl));
                     scat(cl, path, sizeof(cl));
