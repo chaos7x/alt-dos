@@ -371,10 +371,40 @@ Geprüft: QEMU (Start, F5, F8, MSD mit PnP-Liste, DEVLOAD, Box, MEM) und
 86Box 486SP3C mit AWE32 PnP (ISA-PnP findet alle vier logischen Geräte,
 SB16, MSD, fsck sauber).
 
+## Stand Kernel, Stufe 2 (25.11.2026)
+
+Der Startcode des ersten Segments liegt jetzt ebenfalls in ITEXT: `kmain`,
+`config_sys`, `run_boot`, `cp_load`, `conv_pending`, `read_cfg`/
+`next_line`/`cfg_release`, `find_boot_vol`, `cfg_nth`, `kw`, `num_arg`,
+`fd_name`, `exec_err`, `ldt_init`, `pic_pit_init`, `udec`,
+`blk_cache_init` – erstes Codesegment **65.423 → 59.164 Byte** (6,2 KB
+frei), ITEXT 12,6 KB. Statt eigener Datei (2.1) stehen sie am Ende von
+kernel.c hinter `#pragma code_seg("ITEXT", "CODE")` – so bleiben alle
+statischen Variablen sichtbar. Davor: Thunks `kt_*` (fern, im ersten
+Segment) für die 31 Laufzeitfunktionen, die der Startcode nah ruft, und
+`#define name kt_name`, die die Aufrufe darauf umlenken.
+
+- kernel.c wird mit `-oe=0` übersetzt (build.sh): sonst setzt `-ox` die
+  Thunks ein und es entstehen wieder nahe Direktaufrufe über die Grenze
+  (`#pragma inline_depth(0)` half nicht – Watcom erzeugt den Code erst
+  am Dateiende). Das erste Segment wurde dadurch sogar etwas kleiner.
+- `kmain` ist `__far`, start.asm ruft `call KCODEI:kmain_`.
+- Ende des Starts über `kt_boot_end` im ersten Segment: erst
+  `kinit_done`, dann `sched_start` – kinit_done darf nicht nach kmain
+  zurückkehren, das liegt selbst in ITEXT.
+- Beim Real-Mode-Teil (preload, gdt_build) bleibt es: er läuft mit
+  CS = 1000h vor dem Umschalten.
+
+Geprüft: QEMU (Start von Platte und Diskette/SETUP, F5, F8, PING,
+MSD, DEVLOAD, XCOPY auf NCR8XX, Box, MEM, fsck sauber) und 86Box
+386DX/40 mit AHA-154x und NE2000 (Start, XCOPY gleich, fsck sauber).
+
 ## Offene Punkte
 
-- Kernel Stufe 2: kmain/config_sys & Co. aus dem ersten Segment (Thunks),
-  mem_init/paging_init/fd_init mit fernen Hilfen.
+- mem_init/paging_init/fd_init/pci_init/list_drives aus KTEXT2 (brauchen
+  ferne Hilfen oder Thunks wie in kernel.c).
+- MEM zählt das freigegebene ITEXT weiter unter „Kernel“ (und als frei).
+- Texte des Startcodes (DGROUP, ~2 KB) nach IDATA.
 - Lohnt sich Stufe 2 (Texte nach IDATA) schon jetzt wegen DGROUP?
 - KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
 - Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.

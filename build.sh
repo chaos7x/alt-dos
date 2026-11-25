@@ -102,6 +102,9 @@ for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir d
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
     case " $K4MODS " in *" $m "*) S="-nt=KTEXT4" ;; esac
+    # kernel.c ohne Einsetzen eigener Funktionen: sonst setzt -ox die Thunks
+    # kt_* des Startcodes ein (naher Aufruf ueber die Grenze von ITEXT)
+    [ $m = kernel ] && S="-oe=0"
     wcc $KCFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done

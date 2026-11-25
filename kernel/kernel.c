@@ -125,22 +125,6 @@ void set_desc(int i, unsigned long base, unsigned limit, unsigned char acc)
 }
 
 /* LDTs aller Tasks am Stueck (NTASK * NLDT * 8 = 32 bzw. 4 KB), geleert */
-static void ldt_init(void)
-{
-    pg_t u;
-    unsigned i;
-    /* mit wenig Speicher bekaeme ein Programm ohnehin nicht 512 Segmente
-       zu 64 KB: dann 64 Eintraege (4 KB fuer alle LDTs statt 32 KB) */
-    if (mem_ram_kb() < 3584)
-        nldt = NLDT_MIN;
-    u = mem_alloc(PAGES((unsigned long)(NTASK * NLDT * 8)));     /* <= 32 KB */
-    if (!u)
-        panic("kein Speicher fuer die LDTs");
-    set_desc(LDTD_IDX, PG_LIN(u), NTASK * NLDT * 8 - 1, ACC_KDATA);
-    zero_seg(LDTD, NTASK * NLDT * 4);
-    for (i = 0; i < NTASK; i++)
-        set_desc(LDT_IDX(i), PG_LIN(u) + (unsigned)(i * NLDT * 8), NLDT * 8 - 1, ACC_LDT);
-}
 
 void gdt_build(void)
 {
@@ -507,15 +491,6 @@ static void hex4(unsigned v, char *b)
     b[3] = h[v & 15];
 }
 
-static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
-{
-    char t[6];
-    int i = 0, j = 0;
-    do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v);
-    while (i)
-        b[j++] = t[--i];
-    b[j] = 0;
-}
 
 static void scopy(char *d, const char *s, int max)
 {
@@ -1706,30 +1681,6 @@ static int cp_set(unsigned cp)
 }
 
 /* nach CONFIG.SYS (Startlaufwerk eingehaengt): Zeichensaetze laden */
-static void cp_load(int s)
-{
-    static char nm[] = "\\DOS\\SYSTEM\\CP000.FNT";
-    struct ifs_file f;
-    unsigned i, c;
-    if (!cp_n || !(cp_sel = kseg_alloc((unsigned)(cp_n * CP_SZ))))
-        return;
-    for (i = 0; i < cp_n; i++) {
-        if ((c = cp_list[i]) == 437)
-            continue;
-        nm[14] = (char)('0' + c / 100 % 10);
-        nm[15] = (char)('0' + c / 10 % 10);
-        nm[16] = (char)('0' + c % 10);
-        if (c > 999 || ifs_open(sys_drive, nm, &f) ||
-            ifs_read(&f, 0, cp_sel, i * CP_SZ, CP_SZ) != CP_SZ) {
-            vio_kputs(s, "\xFE fehlt: ");     /* (DGROUP ist knapp)   */
-            vio_kputs(s, nm);
-            vio_kputs(s, "\n");
-            cp_list[i] = 0;
-        }
-    }
-    if (cp_list[0])
-        cp_set(cp_list[0]);
-}
 unsigned char dos_high, dos_umb;        /* DOS=HIGH,UMB: HMA/UMBs der Boxen */
 unsigned char ems_none;                 /* EMS_FRAME_LOCATION=NONE: kein Rahmen */
 static char dc_p[IFS_PATHLEN], dc_nm[13], dc_ar[FAPI_ARGLEN], dc_cn[IFS_PATHLEN];
@@ -4938,21 +4889,6 @@ static void pic_update(void)
     irq_restore(f);
 }
 
-static void pic_pit_init(void)
-{
-    /* PICs auf Vektor 20h/28h legen, sonst kollidiert IRQ0 mit #DF */
-    outb(0x20, 0x11); outb(0xA0, 0x11);
-    outb(0x21, 0x20); outb(0xA1, 0x28);
-    outb(0x21, 0x04); outb(0xA1, 0x02);
-    outb(0x21, 0x01); outb(0xA1, 0x01);
-    outb(0x21, pic_mask & 0xFF);            /* IRQ 0 Takt, 1 Tastatur, 6 Diskette */
-    outb(0xA1, pic_mask >> 8);
-
-    /* PIT Kanal 0: 100 Hz */
-    outb(0x43, 0x34);                   /* Modus 2: Zaehler linear (v86.c misst damit) */
-    outb(0x40, 11932 & 0xFF);
-    outb(0x40, 11932 >> 8);
-}
 
 /* ---- Blockgeraete ----------------------------------------------------- */
 struct blkdev blk[NBLK];
@@ -5139,48 +5075,6 @@ static int bc_chunk_get(unsigned c)
 
 static unsigned bc_bsel;                /* 512 Byte unter 16 MB (bc_wb)  */
 static unsigned long bc_bphys;
-void blk_cache_init(unsigned kb)
-{
-    unsigned i, w, max = cache_max;
-    unsigned long ram = mem_ram_kb();
-    /* Dynamisch (wie NT): kb ist die Mindestgroesse; darueber waechst der
-       Cache in freien Speicher bis max (ohne Angabe: halber Speicher,
-       hoechstens 8 MB) und gibt bei Bedarf saubere Stuecke wieder ab
-       (bc_reclaim). Frei bleiben immer bc_rsv KB fuer Programme. */
-    if (max == 0xFFFF)
-        max = ram / 2 > 8192 ? 8192 : (unsigned)(ram / 2);
-    if (kb > 8192)
-        kb = 8192;
-    if (max > 8192)
-        max = 8192;
-    if (max < kb)
-        max = kb;
-    kb &= ~15u;                         /* ganze Stuecke                 */
-    max &= ~15u;
-    bc_rsv = ram / 8 < 512 ? 512 : ram / 8 > 4096 ? 4096 : (unsigned)(ram / 8);
-    bc_n = 0;
-    if (max < 16)
-        return;
-    w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
-    bc_msel = kseg_alloc((unsigned long)((max >> 1) * sizeof(struct bce) + BC_HASH * 2));
-    if (!w || !bc_msel)
-        return;
-    bc_wsel = win_csel = w;
-    if (mem_top_pg() > 0x1000)          /* ueber 16 MB: Umweg fuer ISA-  */
-        bc_bsel = kseg_dma(512, &bc_bphys); /* Busmaster (bc_wb)        */
-    bc_n = max >> 1;
-    bc_nch = bc_n / BC_CHB;
-    bc_minch = kb >> 4;
-    for (i = 0; i < bc_n; i++)
-        BCE(i)->dev = -2;
-    for (i = 0; i < BC_HASH; i++)
-        BCH(i) = BC_END;
-    for (i = 0; i < bc_minch; i++)      /* so viel, wie der Speicher hergibt */
-        if (bc_chunk_get(i))
-            break;
-    bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
-    mem_reclaim = bc_reclaim;
-}
 
 /* Speicher, den der Cache ueber seiner Mindestgroesse haelt (geht bei
    Bedarf zurueck) - zaehlt fuer DPMI/XMS der Boxen als frei */
@@ -6639,17 +6533,6 @@ void __far mount_disk(int dev);
 
 /* Startpartition unter den eingehaengten Laufwerken: gleicher Startsektor
    und gleiche Seriennummer wie der Bootsektor, den das BIOS geladen hat */
-static int find_boot_vol(void)
-{
-    int d;
-    for (d = 2; d < NDRIVE; d++)
-        if (vol[d].used && vol[d].drv == &fat_driver &&
-            vol[d].start == boot_hidden && blk_read(vol[d].blk, vol[d].start) == 0 &&
-            rd16(DMABUF, vol[d].fat16 == 2 ? 67 : 39) == (unsigned)boot_serial &&
-            rd16(DMABUF, vol[d].fat16 == 2 ? 69 : 41) == (unsigned)(boot_serial >> 16))
-            return d;
-    return -1;
-}
 
 /* ---- Start ------------------------------------------------------------- */
 /* CONFIG.SYS bis 8 KB (vorher 512 Byte in DGROUP, dann 4 KB - eine
@@ -6660,70 +6543,11 @@ static int find_boot_vol(void)
 unsigned cfg_sel;
 static void cfg_release(void);
 
-static int read_cfg(const char *name)
-{
-    struct ifs_file f;
-    if (ifs_open(sys_drive, name, &f))
-        return -1;
-    if (f.size > CFG_MAX) {             /* sonst still ohne Treiber      */
-        vio_kputs(boot_session, "\xFE CONFIG.SYS gr\x94\xE1" "er als 8 KB - \x81" "bergangen\n");
-        return -1;
-    }
-    if (!cfg_sel && (cfg_sel = kseg_alloc(CFG_MAX)) == 0)
-        return -1;
-    if (ifs_read(&f, 0, cfg_sel, 0, (unsigned)f.size) != (int)f.size) {
-        cfg_release();
-        return -1;
-    }
-    return (int)f.size;
-}
 
 /* Kernelsegment zurueck: Seiten frei, GDT-Platz leer */
-static void cfg_release(void)
-{
-    if (!cfg_sel)
-        return;
-    mem_free(desc_base(&gdt[cfg_sel >> 3]) >> 12, PAGES(CFG_MAX));
-    gdt[cfg_sel >> 3].access = 0;
-    cfg_sel = 0;
-}
 
 /* naechste Zeile aus CONFIG.SYS: REM und Leerzeilen zaehlen nicht */
-static int next_line(unsigned *p, unsigned len, char *out)
-{
-    const char __far *startup = MK_FP(cfg_sel, 0);
-    unsigned k;
-    while (*p < len) {
-        k = 0;
-        while (*p < len && (startup[*p] == ' ' || startup[*p] == '\t'))
-            (*p)++;
-        while (*p < len && startup[*p] != '\r' && startup[*p] != '\n') {
-            if (k < FAPI_ARGLEN - 1)
-                out[k++] = startup[*p];
-            (*p)++;
-        }
-        while (*p < len && (startup[*p] == '\r' || startup[*p] == '\n'))
-            (*p)++;
-        out[k] = 0;
-        if (k == 0)
-            continue;
-        if (k >= 3 && (out[0] | 32) == 'r' && (out[1] | 32) == 'e' &&
-            (out[2] | 32) == 'm' && (k == 3 || out[3] == ' '))
-            continue;
-        return 1;
-    }
-    return 0;                           /* config_sys gibt cfg_sel frei  */
-}
 
-static const char *exec_err(int e)
-{
-    switch (e) {
-    case EXEC_ERR_NOTFOUND: return "nicht gefunden";
-    case EXEC_ERR_NOMEM:    return "kein Speicher";
-    case EXEC_ERR_FORMAT:   return "kein FAPI-Programm";
-    }
-    return "keine Task frei";
-}
 
 /* ---- Bruecke zu nachgeladenen Dateisystemen --------------------------- */
 /* ireq liegt im Kontext je Task (kern_ctx), das Modul haelt seinen Zustand
@@ -7132,28 +6956,6 @@ static void swap_loop(char *msg)
    und LOOP= zu, CMD.EXE /P wandelt um und startet neu (wie NT). -> 1;
    2 = nur eine Pruefung vorgemerkt (CHKDSK /F konnte nicht sperren):
    ebenso zu, sonst haelt die Auslagerungsdatei C: wieder offen */
-static int conv_pending(void)
-{
-    int k = of_alloc(), r = 0;
-    unsigned n, i;
-    if (k < 0)
-        return 0;
-    files[k].owner = -1;
-    scopy(fi_buf, "\\AUTOCHK.LST", sizeof(fi_buf));
-    if (ifs_open(sys_drive, fi_buf, &files[k].f) == 0) {
-        n = (unsigned)ifs_read(&files[k].f, 0, KDATA, (unsigned)fi_buf, 255);
-        ifs_close(&files[k].f);
-        if (n > 255)
-            n = 0;
-        for (i = 0; i + 3 < n; i++)
-            if (fi_buf[i + 1] == ':' && !r)
-                r = 2;                  /* Pruefung vorgemerkt          */
-            else if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
-                r = 1;
-    }
-    files[k].refs = 0;
-    return r;
-}
 static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3)
 {
     struct fapi_loopinfo __far *li;
@@ -7374,6 +7176,322 @@ static void set_orig(const char *p)
 }
 char protshell[FAPI_ARGLEN] = "CMD.EXE /P";   /* PROTSHELL=   */
 
+
+
+/* NAME=Wert mehrfach (LOOP=, RUN=): als NAMEn=Wert (n = 1, 2, ...) in
+   die Systemumgebung; v zeigt hinter das '=' in line, pl = Laenge von NAME */
+#define NRUN 8
+
+/* RUN= aus CONFIG.SYS: Programme losgeloest starten wie bei OS/2 - ohne
+   Tastatur, Ein- und Ausgabe NUL, kein Elternteil; Name ohne Pfad wird
+   im Stamm, in \DOS und \DOS\SYSTEM des Startlaufwerks gesucht */
+
+
+/* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move) */
+static int fd_ok;
+
+
+void __far list_drives(int fdok, int bs);    /* k2misc.c */
+const char * __far kf_drv_name(int d) { return drv_name(d); }
+
+static unsigned pn_n;                    /* Laenge des Absturzprotokolls */
+
+/* Ab hier Taskwechsel (docs/BIGLOCK.md, "Start des Taskwechsels"): bis
+   dahin laeuft der Start ohne Tasks (current = -1, keine Kernelsperre,
+   irq0 wechselt nicht) - Treiber, CONFIG.SYS mit BASEDEV=, Laufwerke,
+   Auslagerungsdatei. Der eine Punkt, ab dem Sperren gelten; in 7.0
+   startet er auch die weiteren CPU-Kerne. Kein Systemaufruf. */
+static void sched_start(void)
+{
+    load_tr(TSS_K);
+    schedule_next();                /* kehrt nie zurueck                 */
+}
+
+
+
+/* ==== Startcode (ITEXT, docs/INIT-SEGMENT.md Stufe 2) ====================
+   Was nur beim Start laeuft, steht hier am Ende von kernel.c im Segment
+   ITEXT; kinit_done gibt es danach frei. Nahe Aufrufe ins erste Code-
+   segment gehen ueber die Thunks kt_* (fern, im ersten Segment) - die
+   #define unten lenken sie um. initcheck.py prueft beim Bau, dass kein
+   Aufruf nah ueber die Grenze geht und niemand sonst ITEXT ruft. */
+static int __far kt_bc_chunk_get(unsigned c) { return bc_chunk_get(c); }
+static int __far kt_blk_media(int d) { return blk_media(d); }
+static void __far kt_cd_drives(void) { cd_drives(); }
+static int __far kt_cp_set(unsigned cp) { return cp_set(cp); }
+static void __far kt_dcwd_clear(int t) { dcwd_clear(t); }
+static unsigned long __far kt_desc_base(const struct desc __far *d) { return desc_base(d); }
+static void __far kt_enable_ints(void) { enable_ints(); }
+static int __far kt_env_find(int t, const char *n, unsigned l) { return env_find(t, n, l); }
+static int __far kt_env_set(int t, const char *e) { return env_set(t, e); }
+static void __far kt_fscopy(char __far *d, const char __far *x, unsigned m) { fscopy(d, x, m); }
+static unsigned __far kt_inb(unsigned p) { return inb(p); }
+static unsigned __far kt_kseg_alloc(unsigned long b) { return kseg_alloc(b); }
+static unsigned __far kt_kseg_dma(unsigned b, unsigned long *l) { return kseg_dma(b, l); }
+static int __far kt_load_driver(const char *l, int i) { return load_driver(l, i); }
+static int __far kt_of_alloc(void) { return of_alloc(); }
+static void __far kt_of_release(int k) { of_release(k); }
+static void __far kt_outb(unsigned p, unsigned v) { outb(p, v); }
+static void __far kt_panic(const char *m) { panic(m); }
+static void __far kt_pic_update(void) { pic_update(); }
+static int __far kt_scat(char *d, int j, const char *x, int m) { return scat(d, j, x, m); }
+static void __far kt_swap_loop(char *m) { swap_loop(m); }
+static int __far kt_task_create(const char *c, int s, int p, int f) { return task_create(c, s, p, f); }
+static char __far kt_up(char c) { return up(c); }
+static void __far kt_zero_seg(unsigned s, unsigned w) { zero_seg(s, w); }
+static void __far kt_kbd_init(void) { kbd_init(); }
+static void __far kt_fpu_pm_init(void) { fpu_pm_init(); }
+#define bc_chunk_get kt_bc_chunk_get
+#define blk_media kt_blk_media
+#define cd_drives kt_cd_drives
+#define cp_set kt_cp_set
+#define dcwd_clear kt_dcwd_clear
+#define desc_base kt_desc_base
+#define enable_ints kt_enable_ints
+#define env_find kt_env_find
+#define env_set kt_env_set
+#define fscopy kt_fscopy
+#define inb kt_inb
+#define kseg_alloc kt_kseg_alloc
+#define kseg_dma kt_kseg_dma
+#define load_driver kt_load_driver
+#define of_alloc kt_of_alloc
+#define of_release kt_of_release
+#define outb kt_outb
+#define panic kt_panic
+#define pic_update kt_pic_update
+#define scat kt_scat
+#define swap_loop kt_swap_loop
+#define task_create kt_task_create
+#define up kt_up
+#define zero_seg kt_zero_seg
+static void __far kt_set_desc(int i, unsigned long b, unsigned l, unsigned char a) { set_desc(i, b, l, a); }
+static unsigned __far kt_rd16(unsigned s, unsigned o) { return rd16(s, o); }
+static int __far kt_blk_read(int d, unsigned long l) { return blk_read(d, l); }
+static void __far kt_scopy(char *d, const char *s, int m) { scopy(d, s, m); }
+static unsigned __far kt_env_off(int t) { return env_off(t); }
+/* Ende des Starts: kmain liegt in ITEXT - erst hier im ersten Segment den
+   Startcode freigeben (kinit_done kehrt hierher zurueck), dann der
+   Scheduler; zurueck nach kmain geht es nie */
+static void __far kt_boot_end(void) { kinit_done(); sched_start(); }
+#define set_desc kt_set_desc
+#define rd16 kt_rd16
+#define blk_read kt_blk_read
+#define scopy kt_scopy
+#define env_off kt_env_off
+#define kbd_init kt_kbd_init
+#define fpu_pm_init kt_fpu_pm_init
+#pragma code_seg("ITEXT", "CODE")
+
+static void ldt_init(void)
+{
+    pg_t u;
+    unsigned i;
+    /* mit wenig Speicher bekaeme ein Programm ohnehin nicht 512 Segmente
+       zu 64 KB: dann 64 Eintraege (4 KB fuer alle LDTs statt 32 KB) */
+    if (mem_ram_kb() < 3584)
+        nldt = NLDT_MIN;
+    u = mem_alloc(PAGES((unsigned long)(NTASK * NLDT * 8)));     /* <= 32 KB */
+    if (!u)
+        panic("kein Speicher fuer die LDTs");
+    set_desc(LDTD_IDX, PG_LIN(u), NTASK * NLDT * 8 - 1, ACC_KDATA);
+    zero_seg(LDTD, NTASK * NLDT * 4);
+    for (i = 0; i < NTASK; i++)
+        set_desc(LDT_IDX(i), PG_LIN(u) + (unsigned)(i * NLDT * 8), NLDT * 8 - 1, ACC_LDT);
+}
+
+static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
+{
+    char t[6];
+    int i = 0, j = 0;
+    do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (i)
+        b[j++] = t[--i];
+    b[j] = 0;
+}
+
+static void cp_load(int s)
+{
+    static char nm[] = "\\DOS\\SYSTEM\\CP000.FNT";
+    struct ifs_file f;
+    unsigned i, c;
+    if (!cp_n || !(cp_sel = kseg_alloc((unsigned)(cp_n * CP_SZ))))
+        return;
+    for (i = 0; i < cp_n; i++) {
+        if ((c = cp_list[i]) == 437)
+            continue;
+        nm[14] = (char)('0' + c / 100 % 10);
+        nm[15] = (char)('0' + c / 10 % 10);
+        nm[16] = (char)('0' + c % 10);
+        if (c > 999 || ifs_open(sys_drive, nm, &f) ||
+            ifs_read(&f, 0, cp_sel, i * CP_SZ, CP_SZ) != CP_SZ) {
+            vio_kputs(s, "\xFE fehlt: ");     /* (DGROUP ist knapp)   */
+            vio_kputs(s, nm);
+            vio_kputs(s, "\n");
+            cp_list[i] = 0;
+        }
+    }
+    if (cp_list[0])
+        cp_set(cp_list[0]);
+}
+
+static void pic_pit_init(void)
+{
+    /* PICs auf Vektor 20h/28h legen, sonst kollidiert IRQ0 mit #DF */
+    outb(0x20, 0x11); outb(0xA0, 0x11);
+    outb(0x21, 0x20); outb(0xA1, 0x28);
+    outb(0x21, 0x04); outb(0xA1, 0x02);
+    outb(0x21, 0x01); outb(0xA1, 0x01);
+    outb(0x21, pic_mask & 0xFF);            /* IRQ 0 Takt, 1 Tastatur, 6 Diskette */
+    outb(0xA1, pic_mask >> 8);
+
+    /* PIT Kanal 0: 100 Hz */
+    outb(0x43, 0x34);                   /* Modus 2: Zaehler linear (v86.c misst damit) */
+    outb(0x40, 11932 & 0xFF);
+    outb(0x40, 11932 >> 8);
+}
+
+void blk_cache_init(unsigned kb)
+{
+    unsigned i, w, max = cache_max;
+    unsigned long ram = mem_ram_kb();
+    /* Dynamisch (wie NT): kb ist die Mindestgroesse; darueber waechst der
+       Cache in freien Speicher bis max (ohne Angabe: halber Speicher,
+       hoechstens 8 MB) und gibt bei Bedarf saubere Stuecke wieder ab
+       (bc_reclaim). Frei bleiben immer bc_rsv KB fuer Programme. */
+    if (max == 0xFFFF)
+        max = ram / 2 > 8192 ? 8192 : (unsigned)(ram / 2);
+    if (kb > 8192)
+        kb = 8192;
+    if (max > 8192)
+        max = 8192;
+    if (max < kb)
+        max = kb;
+    kb &= ~15u;                         /* ganze Stuecke                 */
+    max &= ~15u;
+    bc_rsv = ram / 8 < 512 ? 512 : ram / 8 > 4096 ? 4096 : (unsigned)(ram / 8);
+    bc_n = 0;
+    if (max < 16)
+        return;
+    w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
+    bc_msel = kseg_alloc((unsigned long)((max >> 1) * sizeof(struct bce) + BC_HASH * 2));
+    if (!w || !bc_msel)
+        return;
+    bc_wsel = win_csel = w;
+    if (mem_top_pg() > 0x1000)          /* ueber 16 MB: Umweg fuer ISA-  */
+        bc_bsel = kseg_dma(512, &bc_bphys); /* Busmaster (bc_wb)        */
+    bc_n = max >> 1;
+    bc_nch = bc_n / BC_CHB;
+    bc_minch = kb >> 4;
+    for (i = 0; i < bc_n; i++)
+        BCE(i)->dev = -2;
+    for (i = 0; i < BC_HASH; i++)
+        BCH(i) = BC_END;
+    for (i = 0; i < bc_minch; i++)      /* so viel, wie der Speicher hergibt */
+        if (bc_chunk_get(i))
+            break;
+    bc_delay = cache_s > 60 ? 60 * 18 : cache_s * 18 + cache_s / 5;
+    mem_reclaim = bc_reclaim;
+}
+
+static int find_boot_vol(void)
+{
+    int d;
+    for (d = 2; d < NDRIVE; d++)
+        if (vol[d].used && vol[d].drv == &fat_driver &&
+            vol[d].start == boot_hidden && blk_read(vol[d].blk, vol[d].start) == 0 &&
+            rd16(DMABUF, vol[d].fat16 == 2 ? 67 : 39) == (unsigned)boot_serial &&
+            rd16(DMABUF, vol[d].fat16 == 2 ? 69 : 41) == (unsigned)(boot_serial >> 16))
+            return d;
+    return -1;
+}
+
+static int read_cfg(const char *name)
+{
+    struct ifs_file f;
+    if (ifs_open(sys_drive, name, &f))
+        return -1;
+    if (f.size > CFG_MAX) {             /* sonst still ohne Treiber      */
+        vio_kputs(boot_session, "\xFE CONFIG.SYS gr\x94\xE1" "er als 8 KB - \x81" "bergangen\n");
+        return -1;
+    }
+    if (!cfg_sel && (cfg_sel = kseg_alloc(CFG_MAX)) == 0)
+        return -1;
+    if (ifs_read(&f, 0, cfg_sel, 0, (unsigned)f.size) != (int)f.size) {
+        cfg_release();
+        return -1;
+    }
+    return (int)f.size;
+}
+
+static void cfg_release(void)
+{
+    if (!cfg_sel)
+        return;
+    mem_free(desc_base(&gdt[cfg_sel >> 3]) >> 12, PAGES(CFG_MAX));
+    gdt[cfg_sel >> 3].access = 0;
+    cfg_sel = 0;
+}
+
+static int next_line(unsigned *p, unsigned len, char *out)
+{
+    const char __far *startup = MK_FP(cfg_sel, 0);
+    unsigned k;
+    while (*p < len) {
+        k = 0;
+        while (*p < len && (startup[*p] == ' ' || startup[*p] == '\t'))
+            (*p)++;
+        while (*p < len && startup[*p] != '\r' && startup[*p] != '\n') {
+            if (k < FAPI_ARGLEN - 1)
+                out[k++] = startup[*p];
+            (*p)++;
+        }
+        while (*p < len && (startup[*p] == '\r' || startup[*p] == '\n'))
+            (*p)++;
+        out[k] = 0;
+        if (k == 0)
+            continue;
+        if (k >= 3 && (out[0] | 32) == 'r' && (out[1] | 32) == 'e' &&
+            (out[2] | 32) == 'm' && (k == 3 || out[3] == ' '))
+            continue;
+        return 1;
+    }
+    return 0;                           /* config_sys gibt cfg_sel frei  */
+}
+
+static const char *exec_err(int e)
+{
+    switch (e) {
+    case EXEC_ERR_NOTFOUND: return "nicht gefunden";
+    case EXEC_ERR_NOMEM:    return "kein Speicher";
+    case EXEC_ERR_FORMAT:   return "kein FAPI-Programm";
+    }
+    return "keine Task frei";
+}
+
+static int conv_pending(void)
+{
+    int k = of_alloc(), r = 0;
+    unsigned n, i;
+    if (k < 0)
+        return 0;
+    files[k].owner = -1;
+    scopy(fi_buf, "\\AUTOCHK.LST", sizeof(fi_buf));
+    if (ifs_open(sys_drive, fi_buf, &files[k].f) == 0) {
+        n = (unsigned)ifs_read(&files[k].f, 0, KDATA, (unsigned)fi_buf, 255);
+        ifs_close(&files[k].f);
+        if (n > 255)
+            n = 0;
+        for (i = 0; i + 3 < n; i++)
+            if (fi_buf[i + 1] == ':' && !r)
+                r = 2;                  /* Pruefung vorgemerkt          */
+            else if (fi_buf[i] == '/' && up(fi_buf[i + 1]) == 'C' && up(fi_buf[i + 2]) == 'O')
+                r = 1;
+    }
+    files[k].refs = 0;
+    return r;
+}
+
 static int kw(const char *l, const char *k)
 {
     while (*k && *l == *k)
@@ -7389,9 +7507,6 @@ static unsigned num_arg(const char *v)
     return n;
 }
 
-/* NAME=Wert mehrfach (LOOP=, RUN=): als NAMEn=Wert (n = 1, 2, ...) in
-   die Systemumgebung; v zeigt hinter das '=' in line, pl = Laenge von NAME */
-#define NRUN 8
 static void cfg_nth(char *line, const char *v, unsigned pl, unsigned char *cn,
                     unsigned max)
 {
@@ -7412,9 +7527,6 @@ static void cfg_nth(char *line, const char *v, unsigned pl, unsigned char *cn,
     }
 }
 
-/* RUN= aus CONFIG.SYS: Programme losgeloest starten wie bei OS/2 - ohne
-   Tastatur, Ein- und Ausgabe NUL, kein Elternteil; Name ohne Pfad wird
-   im Stamm, in \DOS und \DOS\SYSTEM des Startlaufwerks gesucht */
 static void run_boot(int s0)
 {
     static char nm[] = "RUN1";
@@ -7623,32 +7735,13 @@ static void config_sys(void)
     cd_drives();
 }
 
-/* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move) */
-static int fd_ok;
-
 static const char *fd_name(unsigned blocks)
 {
     return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
            blocks == 5760 ? "2,88 MB" : "1,44 MB";
 }
 
-void __far list_drives(int fdok, int bs);    /* k2misc.c */
-const char * __far kf_drv_name(int d) { return drv_name(d); }
-
-static unsigned pn_n;                    /* Laenge des Absturzprotokolls */
-
-/* Ab hier Taskwechsel (docs/BIGLOCK.md, "Start des Taskwechsels"): bis
-   dahin laeuft der Start ohne Tasks (current = -1, keine Kernelsperre,
-   irq0 wechselt nicht) - Treiber, CONFIG.SYS mit BASEDEV=, Laufwerke,
-   Auslagerungsdatei. Der eine Punkt, ab dem Sperren gelten; in 7.0
-   startet er auch die weiteren CPU-Kerne. Kein Systemaufruf. */
-static void sched_start(void)
-{
-    load_tr(TSS_K);
-    schedule_next();                /* kehrt nie zurueck                 */
-}
-
-void kmain(void)
+void __far kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
     unsigned k;
@@ -7883,6 +7976,7 @@ void kmain(void)
     vio_kputs(s0, "\n");
     vio_focus(s0);
 
-    kinit_done();                   /* Startcode frei (k2misc.c)         */
-    sched_start();                  /* kehrt nie zurueck                 */
+    kt_boot_end();                  /* Startcode frei, Scheduler; kein
+                                       Ruecksprung hierher (ITEXT weg)   */                  /* kehrt nie zurueck                 */
 }
+#pragma code_seg("_TEXT", "CODE")

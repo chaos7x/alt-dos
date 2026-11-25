@@ -2218,8 +2218,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   "ITEXT", "CODE")` (pnp.c, cfgboot.c, PANIC-Startprüfung, procfs_boot)
   – 6,5 KB. build.sh prüft mit initcheck, dass Aufrufe über die Grenze
   von ITEXT fern sind und nur Startcode ITEXT ruft. Neue Startfunktionen
-  dort hinein; was nah Laufzeit-Hilfen ruft, bleibt draußen. Offen:
-  Stufe 2 (erstes Segment).
+  dort hinein; was nah Laufzeit-Hilfen ruft, bleibt draußen.
+  Stufe 2 erledigt (25.11.2026): kmain, config_sys & Co. stehen am Ende
+  von kernel.c im ITEXT-Block (davor Thunks `kt_*` + `#define`), kernel.c
+  mit `-oe=0` (sonst setzt -ox die Thunks ein), start.asm `call
+  KCODEI:kmain_`, Ende über `kt_boot_end` (kinit_done, sched_start).
+  Erstes Codesegment 59.164 Byte (6,2 KB frei). Neue Startfunktionen in
+  kernel.c in diesen Block; ruft er eine neue Laufzeitfunktion des ersten
+  Segments, braucht sie einen Thunk (initcheck meldet es).
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
