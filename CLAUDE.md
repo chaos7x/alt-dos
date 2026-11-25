@@ -2196,7 +2196,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   übersetzt C207h per DPMI 0303h und löst danach INT 74h aus);
   `X:\CONFIG.SYS` des Startlaufwerks lenkt der Box-Kern auf
   `\DOS\MDOS\CONFIG.WIN` um (Entscheidung des Nutzers, 24.11.2026, wie
-  CONFIG.NT; SETUP trug dort HIMEM/SMARTDRV ein). Einzelheiten in
+  CONFIG.NT; SETUP trug dort HIMEM/SMARTDRV ein). CONFIG.WIN liegt seit 25.11.2026 bei
+  (BOXFILES) – vorher fand EDIT in der Box `C:\CONFIG.SYS` nicht. Einzelheiten in
   `docs/DOSKERN.md` „Stand Weg B“. Testumgebung /tmp/claude-0/w31 (ISO
   des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
   zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.

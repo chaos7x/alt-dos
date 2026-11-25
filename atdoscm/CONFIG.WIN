@@ -1,0 +1,8 @@
+REM CONFIG.WIN - CONFIG.SYS fuer DOS-Programme in der DOS-Box
+REM
+REM DOS-Programme in der Box sehen diese Datei, wenn sie X:\CONFIG.SYS
+REM des Startlaufwerks oeffnen (wie CONFIG.NT unter Windows NT). Die
+REM echte CONFIG.SYS gehoert AT-DOS und wird mit EDIT aus CMD bearbeitet.
+REM Was Installationsprogramme (z. B. Windows-SETUP) hier eintragen,
+REM wertet niemand aus - Speicher, Treiber und EMS/XMS der Box stellen
+REM \DOS\MDOS\CONFIG.SYS und \DOS\MDOS\DOSBOX.INI ein.

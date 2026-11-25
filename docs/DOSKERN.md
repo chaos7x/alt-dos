@@ -1238,6 +1238,13 @@ Geprüft in QEMU: COPY/TYPE/DEL aus der Box treffen CONFIG.WIN, die
 CONFIG.SYS von AT-DOS bleibt bytegleich. Nur der eigene Box-Kern; mit
 `DOS_KERNEL=FREEDOS.IMG` gilt es nicht. AUTOEXEC.BAT bleibt die der Box
 (BOXSHELL übernimmt daraus nur PATH/SET/PROMPT).
+CONFIG.WIN selbst wurde erst am 25.11.2026 mitgeliefert (vom Nutzer
+gemeldet: EDIT in der Box fand `C:\CONFIG.SYS` nicht – die Umlenkung
+traf eine fehlende Datei): `atdoscm/CONFIG.WIN` (nur erklärende REM-
+Zeilen) liegt jetzt in BOXFILES. Ältere Installationen: Datei von
+Diskette 2 nach `\DOS\MDOS` kopieren oder neu anlegen. In QEMU geprüft:
+TYPE und `ECHO … >> C:\CONFIG.SYS` aus einer Stapeldatei der Box treffen
+CONFIG.WIN, die CONFIG.SYS von AT-DOS bleibt unberührt.
 Weiter: KRNL386, EMS 5900h,
 DOS-Programme aus Windows (Standardmodus: DSWAP), Netz.
 
