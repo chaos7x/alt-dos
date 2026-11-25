@@ -88,11 +88,13 @@ static char line[96];
 #define RXD(i)  ((struct desc __far *)MK_FP(bsel, O_RX + (i) * 16))
 #define TXD(i)  ((struct desc __far *)MK_FP(bsel, O_TX + (i) * 16))
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned csr_rd(unsigned r)
 {
     outw(io + RAP, r);
     return inw(io + RDP);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void csr_wr(unsigned r, unsigned v)
 {
@@ -100,11 +102,13 @@ static void csr_wr(unsigned r, unsigned v)
     outw(io + RDP, v);
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void bcr_wr(unsigned r, unsigned v)
 {
     outw(io + RAP, r);
     outw(io + BDP, v);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void rx(void)
 {
@@ -230,6 +234,7 @@ static unsigned pc_ctl(void __far *v)
     return 1;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -374,6 +379,7 @@ static void init(void)
     dputs(line);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

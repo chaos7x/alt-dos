@@ -104,6 +104,7 @@ static int wait_bus(unsigned char m, unsigned char v, unsigned t)
 }
 
 /* Lesen: sieht base wie ein T130B aus? */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int looks_like_t130b(unsigned b)
 {
     unsigned r = b + 8;
@@ -123,6 +124,7 @@ static int looks_like_t130b(unsigned b)
     outp(r + R_TCR, 0x00);
     return 1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Status des 53C400: kurz warten, dann schlafen, bis (Status & m) == v */
 static int c4_wait(unsigned char m, unsigned char v, unsigned t)
@@ -365,6 +367,7 @@ static char *hex3(char *p, unsigned v)
 }
 
 /* ---- Initialisierung --------------------------------------------------- */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -458,6 +461,7 @@ static void init(void)
     r->count = 4;                       /* DMABUF: 4 Sektoren (16 Bloecke) */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void report(int write, unsigned u, unsigned long l, int rc, int t)
 {

@@ -298,6 +298,7 @@ static const struct { unsigned id; const char *name; } chips[] = {
 static unsigned ploc;                   /* gefundene Karte (PCI-Ort)       */
 
 /* Karte ueber den PCI-Dienst des Kernels suchen */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int find_card(void)
 {
     unsigned k;
@@ -308,7 +309,9 @@ static int find_card(void)
         }
     return -1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -428,6 +431,7 @@ static void init(void)
     r->count = 16;                      /* Bloecke je READ(10)             */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void xfer(int write)
 {

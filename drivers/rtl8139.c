@@ -243,6 +243,7 @@ static unsigned rtl_ctl(void __far *v)
     return 1;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -344,6 +345,7 @@ static void init(void)
     dputs(line);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

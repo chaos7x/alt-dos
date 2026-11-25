@@ -259,6 +259,7 @@ static unsigned event(void __far *a)
     return 0;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -280,6 +281,7 @@ static void init(void)
     r->units = 0;
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

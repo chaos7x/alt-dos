@@ -1073,7 +1073,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         (h->version != FX_VERSION && h->version != FX_VERSION2) ||
         (unsigned long)h->image_off + h->image_size > f.size ||
         seg > 0x10000UL || h->image_size == 0 || csz > h->image_size ||
-        (csz & 15) || h->entry >= (csz ? csz : h->image_size) ||
+        (csz & 15) || h->entry > (csz ? csz : h->image_size) ||
         (h->version == FX_VERSION2 && csz == 0))
         err = EXEC_ERR_FORMAT;
     if (err) {
@@ -1122,7 +1122,12 @@ static int load_image(int drive, const char *path, struct fx_header *h,
        schreibt ganze Seiten, die CPU prueft die Grenze */
     scratch2_map(base, n * MEM_PAGE - 1);
     zero_seg(SCRATCH2, n * (MEM_PAGE / 2));     /* BSS und Stack = 0    */
-    far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
+    if (h->flags & FX_FLAG_GAP) {       /* Treiber: BSS-Luecke bei entry */
+        far_copy(SCRATCH2, 0, SCRATCH, h->image_off, h->entry);
+        far_copy(SCRATCH2, h->entry + h->bss_size, SCRATCH, h->image_off + h->entry,
+                 h->image_size - h->entry);
+    } else
+        far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
     mem_free(tu, tn);
     *unit = u;
     *cnt = n;
@@ -6546,7 +6551,7 @@ static int load_driver(const char *line, int is_ifs)
         return -1;
     }
     base = PG_LIN(u);
-    set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
+    set_desc(DRVC_IDX(d), base, (unsigned)(seg - 1), ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
     for (k = 0, j = 0; path[k]; k++)                /* Name ohne Pfad    */
@@ -6585,6 +6590,13 @@ static int load_driver(const char *line, int is_ifs)
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
                                        : ": kein Ger\x84t gefunden\n");
         return 0;
+    }
+    if (req.buf_off && req.buf_off < seg) {    /* INIT-Code weg  */
+        unsigned keep = PAGES((unsigned long)req.buf_off);  /* (dcrt0,     */
+        set_desc(DRVC_IDX(d), base, req.buf_off - 1, ACC_KCODE);  /* ITEXT) */
+        set_desc(DRVC_IDX(d) + 1, base, req.buf_off - 1, ACC_KDATA);
+        if (keep < n)
+            mem_free(u + keep, n - keep);
     }
     drv[d].maxcnt = req.count & 0x7F ? req.count & 0x7F : 1;
     drv[d].used |= (unsigned char)((req.count >> 6) & 2);  /* 80h: CD-Bloecke am Stueck */

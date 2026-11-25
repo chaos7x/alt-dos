@@ -2190,6 +2190,20 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Gemessen und ausgearbeitet in `docs/INIT-SEGMENT.md` (~18 KB Code +
   ~2 KB Texte im Kernel, 27–59 % je Treiber; Vorschlag dort: Segment vorn
   bei 10000h statt hinter DGROUP, Treiber-INIT mit Antwort `keep`).
+  Treiber erledigt (25.11.2026, Auftrag des Nutzers; „Stand Treiber“ in
+  `docs/INIT-SEGMENT.md`): Startfunktionen zwischen `#pragma code_seg(
+  "ITEXT", "ICODE")` und `#pragma code_seg("_TEXT", "CODE")`, ITEXT
+  hinter dem BSS, dcrt0 meldet `_init_start` nach INIT in `buf_off`,
+  load_driver kürzt beide Deskriptoren und gibt die Seiten dahinter frei;
+  mkfx `FX_FLAG_GAP` (8) lässt die BSS-Nullen aus der Datei (sonst liefen
+  die Disketten voll), load_image setzt sie ein. `tools/initcheck.py`
+  (Aufrufgraph aus wdis) prüft in build.sh je Treiber, dass Laufzeitcode
+  nichts in ITEXT ruft. Neue Startfunktionen in Treibern gehören in
+  ITEXT – initcheck ohne `--seg` zeigt Kandidaten. Geprüft: QEMU (IDE,
+  NCR8XX, AHCI, SB16 mit Mitschnitt, MOUSE, RTL8139+TCPIP, Box, DEVLOAD
+  /U und neu laden ohne Leck) und 86Box 386DX/40 (AHA-154x mit ZIP/CD,
+  NE2000, AWE32, XCOPY, fsck sauber). Kernel (Option A) ist der nächste
+  Schritt.
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-

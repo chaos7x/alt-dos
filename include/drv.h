@@ -67,7 +67,10 @@ struct drv_req {
     unsigned short status;          /* DRV_OK oder DRV_ERR_*            */
     unsigned long  lba;             /* READ/WRITE: Sektornummer         */
     unsigned long  buf_phys;        /* physische Adresse des Puffers    */
-    unsigned short buf_off, buf_sel;    /* derselbe Puffer, Ring-0-Zeiger */
+    unsigned short buf_off, buf_sel;    /* derselbe Puffer, Ring-0-Zeiger;
+                                       INIT-Rueckgabe in buf_off (DRV_KEEP,
+                                       dcrt0): Ende des Laufzeitteils, der
+                                       Rest (ITEXT) wird freigegeben     */
     unsigned long  base;            /* INIT: lineare Basis des Treibers */
     unsigned short devhlp_off, devhlp_sel;  /* INIT: Einsprung DevHlp   */
     unsigned char  units;           /* INIT: Anzahl Einheiten (Rueckgabe) */

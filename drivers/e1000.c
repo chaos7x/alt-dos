@@ -230,6 +230,7 @@ static unsigned e_ctl(void __far *v)
 }
 
 /* MAC aus dem EEPROM (EERD), falls RAL/RAH nach dem Reset leer sind */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned ee_word(unsigned a)
 {
     unsigned k;
@@ -242,12 +243,14 @@ static unsigned ee_word(unsigned a)
     }
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static const unsigned ids[] = {
     0x100E, 0x100F, 0x1004, 0x1008, 0x1009, 0x100C, 0x100D, 0x1011,
     0x1015, 0x1016, 0x1017, 0x101E, 0x1026, 0x1027, 0x1028, 0x1076, 0x1079, 0
 };
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -402,6 +405,7 @@ static void init(void)
     dputs(line);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

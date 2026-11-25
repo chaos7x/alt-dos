@@ -1,7 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 # Startcode nach dem Booten freigeben (Init-Segment)
 
-Stand: 17.11.2026 (`main`, 6.1). Vorschlag, noch kein Code. Anlass: die
+Stand: 25.11.2026 (`main`, 6.3). Treiber (Abschnitt 2.6) und Messwerkzeug
+(2.5) gebaut, siehe „Stand Treiber“ am Ende; Kernel (2.1–2.4) noch offen.
+Ursprünglicher Entwurf 17.11.2026 (`main`, 6.1). Anlass: die
 Untergrenze 386SX mit 2 MB (CLAUDE.md „Testmaschinen 6.0“) und der Weg
 zu 7.0, das auf derselben Maschine laufen soll.
 
@@ -295,11 +297,45 @@ auf `objdump -d` umstellen. Die INIT-Antwort `keep` der Treiber ist in 7.0
 überflüssig (Abschnitt statt Grenze), schadet aber nicht, wenn 16-Bit-
 Treiber unter 7.0 weiterlaufen sollen.
 
+## Stand Treiber (25.11.2026)
+
+Gebaut wie 2.6, mit zwei Abweichungen:
+
+- **Rückgabe in `buf_off`** statt eines neuen Feldes: bei INIT ist es
+  ungenutzt, der Kernel setzt es vorher auf 0. `dcrt0.asm` (`drv_entry`)
+  trägt nach jedem INIT `_init_start` ein – den Anfang von ITEXT, das als
+  Klasse `ICODE` hinter dem BSS liegt (build.sh `order … clname BSS
+  clname ICODE`, ITEXT in DGROUP). Startfunktionen stehen in den Treibern
+  zwischen `#pragma code_seg("ITEXT", "ICODE")` und `#pragma
+  code_seg("_TEXT", "CODE")`. Nahe Aufrufe bleiben (ein Segment).
+- **BSS nicht in der Datei**: hinter dem BSS stehender Code zwingt wlink,
+  die BSS-Nullen mitzuschreiben (die Disketten liefen voll, VEMS.SYS 29
+  statt 6 KB). `mkfx.py --driver` schneidet sie heraus und setzt
+  `FX_FLAG_GAP` (8): bei `entry` (bei Version 1 ungenutzt) fehlen
+  `bss_size` Nullbytes, `load_image` setzt sie beim Laden wieder ein.
+
+Kernel `load_driver`: nach erfolgreichem INIT mit `buf_off` < Segment-
+größe beide Deskriptoren auf `buf_off − 1`, Seiten ab `PAGES(buf_off)`
+frei; `drv_unload` gibt über die Datengrenze genau den Rest frei.
+Code-Deskriptor jetzt über das ganze Segment (mit BSS) – vorher Abbild.
+
+`tools/initcheck.py` (wdis, Aufrufgraph, Größe aus dem Abstand der
+Marken): ohne `--seg` Vorschlag, mit `--seg ITEXT` bricht build.sh ab,
+wenn Laufzeitcode etwas in ITEXT ruft, dessen Adresse nimmt oder dort
+etwas liegt, das auch zur Laufzeit läuft. Eingerahmt wurden genau die
+Funktionen, die initcheck meldet und die in der `.c`-Datei des Treibers
+stehen (aus gemeinsamen Headern wie drvlib.h/awe.h nichts).
+
+Gewinn in ganzen Seiten (vorher → nachher): IDE 3 → 2, SB16 5 → 4,
+AHA154X 2 → 1, AIC7XXX 3 → 2, MOUSE 2 → 1, NCR5380 2 → 1, TCPIP 13 →
+12; bei AHCI, NCR8XX, NE2000, den Netzkarten und Box-Modulen reicht der
+Startcode für keine ganze Seite (schadet nicht). MEM (QEMU, 16 MB,
+fester Cache): „BIOS, Boot, Puffer“ 415 → 410 KB nur mit MOUSE.SYS
+umgestellt, `DEVLOAD /U` + neu laden ohne Leck.
+
 ## Offene Punkte
 
-- Option A oder B (Vorschlag A) – Entscheidung des Nutzers.
-- Reihenfolge: Treiber zuerst (klein, sofort messbar) oder Kernel zuerst
-  (Platz im ersten Segment)?
+- Kernel: Option A (Vorschlag) – als Nächstes.
 - Lohnt sich Stufe 2 (Texte nach IDATA) schon jetzt wegen DGROUP?
 - KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
 - Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.

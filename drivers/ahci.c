@@ -151,6 +151,7 @@ static void port_run(unsigned u)
     wr(P(p, PCMD), rd(P(p, PCMD)) | C_ST);
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void port_start(unsigned u)
 {
     unsigned p = uport[u];
@@ -162,6 +163,7 @@ static void port_start(unsigned u)
     wr(P(p, PCMD), rd(P(p, PCMD)) | C_SUD | C_POD);
     port_run(u);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- Befehl ausfuehren -------------------------------------------------- */
 /* c = ATA-Befehl (A0h = Paket aus cdbu[u]), Daten len Bytes ab buf.
@@ -275,6 +277,7 @@ static unsigned long capacity(unsigned u)
 }
 
 /* Unit Attention nach dem Start abholen */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void settle(unsigned u)
 {
     unsigned k;
@@ -285,8 +288,10 @@ static void settle(unsigned u)
         req_sense(u);
     }
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Modellname aus IDENTIFY (Worte 27-46, Bytes je Wort vertauscht) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static char *model(char *p, const unsigned char __far *id)
 {
     unsigned k;
@@ -299,7 +304,9 @@ static char *model(char *p, const unsigned char __far *id)
     *p = 0;
     return p;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -461,6 +468,7 @@ static void init(void)
     r->count = 16;                      /* Bloecke je Lesebefehl          */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void xfer(struct drv_req __far *r, int write)
 {

@@ -12,7 +12,7 @@ mkdir -p $B
 CFLAGS="-q -ms -2 -s -zl -zls -zp1 -d0 -ox -wx -we"
 KCFLAGS="-q -ms -3 -s -zl -zls -zp1 -d0 -ox -wx -we"
 LINK="option quiet format raw bin option offset=0 option nodefaultlibs \
-      option map order clname CODE clname DATA clname BSS"
+      option map order clname CODE clname DATA clname BSS clname ICODE"
 
 # Ende von DGROUP (inkl. BSS) aus der Map-Datei
 group_end() {
@@ -286,12 +286,14 @@ echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
 for t in aha154x ahci aic7xxx ide mouse ncr5380 ncr8xx rtl8139 pcnet e1000 sb16 vcom vsb vems vega vmouse vioblk vionet; do
     wcc $KCFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
+    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/drv_$t.o || exit 1
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
 done
 # VCGA.SYS = VEGA.SYS mit -DCGA (Grafikmodul der DOS-Box fuer die CGA)
 wcc $KCFLAGS -zu -DCGA -fo=$B/drv_vcga.o drivers/vega.c
+python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/drv_vcga.o || exit 1
 wlink $LINK name $B/drv_vcga.bin option map=$B/drv_vcga.map \
       file $B/dcrt0.o file $B/drv_vcga.o 2>&1 | grep -v W1014 || true
 python3 tools/mkfx.py --driver $B/stub.bin $B/drv_vcga.bin $B/drv_vcga.map $B/drv_vcga.sys
@@ -301,6 +303,7 @@ echo "Netzwerk"
 for t in tcpip ne2000; do
     S=net; [ $t = ne2000 ] && S=drivers
     wcc $CFLAGS -zu -fo=$B/net_$t.o $S/$t.c
+    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/net_$t.o || exit 1
     wlink $LINK name $B/net_$t.bin option map=$B/net_$t.map \
           file $B/dcrt0.o file $B/net_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/net_$t.bin $B/net_$t.map $B/net_$t.sys

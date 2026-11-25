@@ -97,6 +97,7 @@ static int cmd_out(unsigned char b)
     return 0;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int data_in(void)
 {
     unsigned start = ticks();
@@ -105,7 +106,9 @@ static int data_in(void)
             return -1;
     return inp(DATA(base));
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int cmd_done(void)
 {
     unsigned start = ticks();
@@ -115,8 +118,10 @@ static int cmd_done(void)
     outp(CTRL(base), C_IRST);
     return (inp(STAT(base)) & S_INVDCMD) ? -1 : 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Lesen: passt das Register-Muster zu einem Adaptec? */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int looks_like_aha(unsigned b)
 {
     unsigned char s = inp(STAT(b)), i = inp(INTR(b));
@@ -128,7 +133,9 @@ static int looks_like_aha(unsigned b)
         return 0;
     return 1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int reset(void)
 {
     unsigned start;
@@ -145,6 +152,7 @@ static int reset(void)
             return -1;
     }
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- Interrupt -------------------------------------------------------- */
 /* Quittieren (IRST), sonst bleibt die ISA-Leitung oben und kein weiterer
@@ -194,6 +202,7 @@ static int wait_mbox(unsigned t)
 static char model[40];
 
 /* ein Byte als Antwort auf Befehl c (ohne Parameter); -1 = keins */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int ask1(unsigned char c)
 {
     int v;
@@ -203,7 +212,9 @@ static int ask1(unsigned char c)
     cmd_done();
     return v;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void identify(void)
 {
     unsigned start, i;
@@ -263,6 +274,7 @@ static void identify(void)
                 id == 'E' ? "Adaptec AHA-1542CF" :
                 id == 'F' ? "Adaptec AHA-1542CP" : "Adaptec 154x");
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- SCSI-Befehl ausfuehren -------------------------------------------- */
 #define SCSI_OK     0
@@ -345,6 +357,7 @@ static unsigned long capacity(unsigned id, unsigned long phys,
 }
 
 /* ---- Initialisierung --------------------------------------------------- */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -513,6 +526,7 @@ static void init(void)
     r->count = 16;                          /* Blockzahl in READ(10)    */
     r->status = n ? DRV_OK : DRV_ERR_NODEV;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* gescheiterten Versuch in Sitzung 1 melden (Host- und Zielstatus aus
    dem CCB, Rueckgabe von scsi_dir) */

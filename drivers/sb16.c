@@ -75,6 +75,7 @@ static int dsp_w(unsigned char v)
     return -1;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int dsp_r(void)
 {
     unsigned n;
@@ -83,6 +84,7 @@ static int dsp_r(void)
             return inp(base + 0x0A);
     return -1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static int dsp_reset(unsigned b)
 {
@@ -158,13 +160,16 @@ static void dma_stop(void)
    Basis+0Eh oben. Gesucht wird wie bei der Busmaus ueber das IRR beider
    PICs (mit gesperrten Interrupts, sonst nimmt die CPU ihn weg); genau
    eine neue Leitung unter 2/9, 3, 5, 7, 10 -> die. Sonst Vorgabe. */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned irr_now(void)
 {
     outp(0x20, 0x0A);                   /* OCW3: IRR lesen              */
     outp(0xA0, 0x0A);
     return inp(0x20) | ((unsigned)inp(0xA0) << 8);
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned find_irq(unsigned def)
 {
     static const unsigned char cand[] = { 9, 3, 5, 7, 10 };
@@ -191,6 +196,7 @@ static unsigned find_irq(unsigned def)
         }
     return n == 1 ? found : def;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- Wiedergabe ----------------------------------------------------- */
 /* DSP 1.xx (Sound Blaster 1.0): ein Abschnitt als Einzelblock; der 8237
@@ -548,6 +554,7 @@ static void audio(void)
 }
 
 /* ---- Initialisierung ------------------------------------------------ */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned hexval(const char __far *p)
 {
     unsigned v = 0;
@@ -558,7 +565,9 @@ static unsigned hexval(const char __far *p)
         else return v;
     }
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned decval(const char __far *p)
 {
     unsigned v = 0;
@@ -566,8 +575,10 @@ static unsigned decval(const char __far *p)
         v = v * 10 + (*p++ - '0');
     return v;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Argument /X:wert oder (wie BLASTER) Xwert suchen -> Zeiger auf den Wert */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static const char __far *arg(const char __far *s, char key)
 {
     const char __far *a;
@@ -583,7 +594,9 @@ static const char __far *arg(const char __far *s, char key)
         }
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int init_pcm(struct drv_req __far *r)
 {
     static const unsigned ports[4] = { 0x220, 0x240, 0x260, 0x280 };
@@ -674,6 +687,7 @@ static int init_pcm(struct drv_req __far *r)
     dputs(line);
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- FM (OPL2/OPL3 an 388h) ------------------------------------------ */
 
@@ -690,6 +704,7 @@ static void opl_w(unsigned reg, unsigned char v)
 
 /* Erkennung wie im AdLib-Handbuch: Zeitgeber 1 laufen lassen, Status
    muss danach C0h zeigen. Erst lesen: FFh = nichts an 388h */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int opl_detect(void)
 {
     unsigned char s1, s2;
@@ -728,6 +743,7 @@ static int opl_detect(void)
     opl_w(4, 0x80);
     return s2 == 0xC0 ? AUDCAP_OPL2 : AUDCAP_OPL3;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void opl_reset(void)
 {
@@ -749,6 +765,7 @@ static void opl_reset(void)
 /* ---- MIDI (MPU-401 im UART-Betrieb) ---------------------------------- */
 static unsigned mpu = 0x330;
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int mpu_cmd(unsigned char c)
 {
     unsigned n;
@@ -760,6 +777,7 @@ static int mpu_cmd(unsigned char c)
             return 0;                   /* Bestaetigung                  */
     return -1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void midi_w(unsigned char v)
 {
@@ -770,6 +788,7 @@ static void midi_w(unsigned char v)
     outp(mpu, v);
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int mpu_detect(void)
 {
     if (inp(mpu + 1) == 0xFF)           /* erst lesen                    */
@@ -780,7 +799,9 @@ static int mpu_detect(void)
     mpu_cmd(0x3F);                      /* UART-Betrieb                  */
     return AUDCAP_MPU401;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -860,6 +881,7 @@ static void init(void)
     devhlp(DH_AUDREG, 0, 0, 0);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 
 

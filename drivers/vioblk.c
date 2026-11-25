@@ -85,6 +85,7 @@ static int req(unsigned u, unsigned t, unsigned long l, unsigned long buf, unsig
     return h[16] != 0;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -175,6 +176,7 @@ static void init(void)
     r->count = MAXN;
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void xfer(struct drv_req __far *r, int write)
 {

@@ -12,7 +12,16 @@ segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
 segment _DATA  public class=DATA align=2 use16
 segment _BSS   public class=BSS  align=2 use16
-group DGROUP _TEXT CONST CONST2 _DATA _BSS
+segment ITEXT  public class=ICODE align=1 use16
+group DGROUP _TEXT CONST CONST2 _DATA _BSS ITEXT
+
+; ITEXT (Klasse ICODE, hinter dem BSS): Code, der nur beim INIT laeuft
+; (#pragma code_seg("ITEXT", "ICODE") im Treiber). Nach dem INIT meldet
+; drv_entry seinen Anfang in buf_off (DRV_KEEP), der Kernel kuerzt den
+; Treiber dort und gibt die Seiten dahinter frei (docs/INIT-SEGMENT.md).
+segment ITEXT
+global _init_start
+_init_start:
 
 extern strategy_
 
@@ -25,8 +34,15 @@ header:
 drv_entry:
         mov     [_req_sel], es
         mov     [_req_off], bx
+        push    es
+        push    bx
         call    strategy_
-        retf
+        pop     bx
+        pop     es
+        cmp     byte [es:bx], 0         ; DRV_INIT: Grenze melden
+        jne     .r
+        mov     word [es:bx + 12], _init_start  ; drv_req.buf_off = keep
+.r:     retf
 
 ; unsigned devhlp(unsigned fn, unsigned dx, unsigned bx, unsigned cx)
 global devhlp_
