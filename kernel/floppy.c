@@ -180,13 +180,11 @@ static void done(void)
     busy = 0;
 }
 
-#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 void __far fd_motor_off(void)
 {
     motors = 0;
     dor();
 }
-#pragma code_seg("KTEXT2", "CODE")
 
 /* aus dem Scheduler: Motoren nach 3 s ohne Zugriff aus */
 void __far fd_tick(void)
@@ -560,6 +558,20 @@ int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
 }
 
 /* types = CMOS-Register 10h; -> 0 = Controller da */
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT2; Datei mit -oe=0, sonst eingesetzt) ---- */
+static int __far kt_ctl_reset(void) { return ctl_reset(); }
+static int __far kt_recalibrate(int d) { return recalibrate(d); }
+static void __far kt_select(int d) { select(d); }
+static void __far kt_done(void) { done(); }
+#define ctl_reset kt_ctl_reset
+#define recalibrate kt_recalibrate
+#define select kt_select
+#define done kt_done
+#pragma code_seg("ITEXT", "CODE")
+
 int __far fd_init(unsigned types)
 {
     int d;

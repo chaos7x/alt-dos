@@ -11,23 +11,7 @@
 void __far kf_vio_kputs(int s, const char *str);
 const char * __far kf_drv_name(int d);
 
-static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
-{
-    char t[6];
-    int i = 0, j = 0;
-    do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v);
-    while (i)
-        b[j++] = t[--i];
-    b[j] = 0;
-}
 
-static void scopy(char *d, const char *s, int max)
-{
-    int i;
-    for (i = 0; i < max - 1 && s[i]; i++)
-        d[i] = s[i];
-    d[i] = 0;
-}
 
 /* Laufwerke mit ihren endgueltigen Buchstaben anzeigen (nach vol_move;
    aus kernel.c, dort war das erste Codesegment voll) */
@@ -57,7 +41,7 @@ void __far sys_info2(struct fapi_sysinfo __far *si, unsigned irq_used)
         si->lpt[i] = bios_ports[4 + i];
     si->conv_kb = mem_conv_kb;
     si->ext_kb = mem_ext_kb;
-    si->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
+    si->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10) - (kinit_pg << 2);
     si->irq_used = irq_used;
     si->uptime_s = uptime_s;
     rom_str(0xF0000UL, 0xFFFF, si->bios_name, 64);
@@ -178,6 +162,100 @@ void __far rom_str(unsigned long lin, unsigned len, char __far *out, unsigned ma
 }
 
 
+
+
+
+/* FAPI_PROC PROC_INFO/PROC_INFO2: Platz t beschreiben (aus kernel.c, das
+   erste Codesegment war voll). hdr = Art | Merker << 8, run = Rechenzeit
+   der laufenden Scheibe (nur beim aufrufenden Task) */
+void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
+                     unsigned hdr, unsigned long now, unsigned long run)
+{
+    int k;
+    pi->state = task[t].state;
+    pi->kind = (unsigned char)hdr;
+    pi->session = (unsigned char)task[t].session;
+    pi->parent = (unsigned char)task[t].parent;
+    pi->flags = (unsigned char)(hdr >> 8);
+    pi->rsv = 0;
+    pi->kb = (task[t].img_cnt + task[t].code_cnt) << 2;
+    for (k = 0; k < 12 && task[t].name[k]; k++)
+        pi->name[k] = task[t].name[k];
+    pi->name[k] = 0;
+    for (k = 0; k < 40 && task[t].args[k]; k++)
+        pi->args[k] = task[t].args[k];
+    pi->args[k] = 0;
+    if (info2) {
+        struct fapi_proc2 __far *p2 = (struct fapi_proc2 __far *)pi;
+        p2->now = now;
+        p2->cpu = task[t].cpu + run;
+        p2->age = task[t].state == T_FREE ? 0 : now - task[t].born;
+    }
+}
+
+/* Startcode (ITEXT, docs/INIT-SEGMENT.md) weg - das letzte, was kmain vor
+   dem Scheduler ruft: Deskriptor ungueltig (ein vergessener Aufruf endet
+   mit #NP statt in fremdem Code), die ganzen Seiten zurueck an die
+   Speicherverwaltung. Liegt selbst in ITEXT: bis der Scheduler die
+   Seiten vergibt, ist der Ruecksprung nach KCODE laengst geschehen. */
+unsigned kinit_pg;                      /* Seiten von ITEXT, frei      */
+#pragma code_seg("ITEXT", "CODE")
+/* Texte des Startcodes liegen in IDATA (nach dem Start frei): in
+   kleinen Stuecken ueber den Stapel ausgeben (Startstapel knapp) */
+static const char __based(__segname("IDATA")) km_1[] = "\n";
+static const char __based(__segname("IDATA")) km_2[] = "\xFE Laufwerk ";
+static void km_i(int s, const char __far *t)
+{
+    char b[33];
+    unsigned i;
+    while (*t) {
+        for (i = 0; i < 32 && t[i]; i++)
+            b[i] = t[i];
+        b[i] = 0;
+        kf_vio_kputs(s, b);
+        t += i;
+    }
+}
+
+void __far kinit_done(void)
+{
+    unsigned long a = (KCODEI_LIN + 4095) >> 12,
+                  e = (KIDATA_LIN + kidata_size) >> 12;   /* ITEXT + IDATA */
+    if (e > a) {
+        mem_free((pg_t)a, (unsigned)(e - a));
+        kinit_pg = (unsigned)(e - a);   /* MEM: nicht mehr Kernel        */
+    }
+    gdt[KIDATA_IDX].access = 0;
+    gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
+                                       noch hierher zurueck (Selektor 0328h
+                                       neu geladen), der CS-Cache haelt das
+                                       eigene RETF nach KCODE aus          */
+}
+#pragma code_seg("KTEXT2", "CODE")
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT2; Datei mit -oe=0, sonst eingesetzt) ---- */
+#pragma code_seg("ITEXT", "CODE")
+
+static void udec(unsigned v, char *b)          /* ohne fuehrende Nullen */
+{
+    char t[6];
+    int i = 0, j = 0;
+    do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v);
+    while (i)
+        b[j++] = t[--i];
+    b[j] = 0;
+}
+
+static void scopy(char *d, const char *s, int max)
+{
+    int i;
+    for (i = 0; i < max - 1 && s[i]; i++)
+        d[i] = s[i];
+    d[i] = 0;
+}
+
 static const char *fd_name(unsigned blocks)
 {
     return blocks == 720 ? "360 KB" : blocks == 1440 ? "720 KB" : blocks == 2400 ? "1,2 MB" :
@@ -195,7 +273,7 @@ void __far list_drives(int fd_ok, int boot_session)
         if (fd_ok && fd_type(d)) {          /* Diskettenlaufwerke         */
             kf_vio_kputs(boot_session, d ? "\xFE Laufwerk B: Diskette " : "\xFE Laufwerk A: Diskette ");
             kf_vio_kputs(boot_session, fd_name(tsize[fd_type(d)]));
-            kf_vio_kputs(boot_session, "\n");
+            km_i(boot_session, km_1);
         }
 
     for (d = 2; d < NDRIVE; d++) {
@@ -254,54 +332,7 @@ void __far list_drives(int fd_ok, int boot_session)
         }
         msg[n++] = '\n';
         msg[n] = 0;
-        kf_vio_kputs(boot_session, "\xFE Laufwerk ");
+        km_i(boot_session, km_2);
         kf_vio_kputs(boot_session, msg);
     }
 }
-
-
-/* FAPI_PROC PROC_INFO/PROC_INFO2: Platz t beschreiben (aus kernel.c, das
-   erste Codesegment war voll). hdr = Art | Merker << 8, run = Rechenzeit
-   der laufenden Scheibe (nur beim aufrufenden Task) */
-void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
-                     unsigned hdr, unsigned long now, unsigned long run)
-{
-    int k;
-    pi->state = task[t].state;
-    pi->kind = (unsigned char)hdr;
-    pi->session = (unsigned char)task[t].session;
-    pi->parent = (unsigned char)task[t].parent;
-    pi->flags = (unsigned char)(hdr >> 8);
-    pi->rsv = 0;
-    pi->kb = (task[t].img_cnt + task[t].code_cnt) << 2;
-    for (k = 0; k < 12 && task[t].name[k]; k++)
-        pi->name[k] = task[t].name[k];
-    pi->name[k] = 0;
-    for (k = 0; k < 40 && task[t].args[k]; k++)
-        pi->args[k] = task[t].args[k];
-    pi->args[k] = 0;
-    if (info2) {
-        struct fapi_proc2 __far *p2 = (struct fapi_proc2 __far *)pi;
-        p2->now = now;
-        p2->cpu = task[t].cpu + run;
-        p2->age = task[t].state == T_FREE ? 0 : now - task[t].born;
-    }
-}
-
-/* Startcode (ITEXT, docs/INIT-SEGMENT.md) weg - das letzte, was kmain vor
-   dem Scheduler ruft: Deskriptor ungueltig (ein vergessener Aufruf endet
-   mit #NP statt in fremdem Code), die ganzen Seiten zurueck an die
-   Speicherverwaltung. Liegt selbst in ITEXT: bis der Scheduler die
-   Seiten vergibt, ist der Ruecksprung nach KCODE laengst geschehen. */
-#pragma code_seg("ITEXT", "CODE")
-void __far kinit_done(void)
-{
-    unsigned long a = (KCODEI_LIN + 4095) >> 12, e = (KCODEI_LIN + kcodei_size) >> 12;
-    if (e > a)
-        mem_free((pg_t)a, (unsigned)(e - a));
-    gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
-                                       noch hierher zurueck (Selektor 0328h
-                                       neu geladen), der CS-Cache haelt das
-                                       eigene RETF nach KCODE aus          */
-}
-#pragma code_seg("KTEXT2", "CODE")

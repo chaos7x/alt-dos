@@ -104,14 +104,14 @@ for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir d
     case " $K4MODS " in *" $m "*) S="-nt=KTEXT4" ;; esac
     # kernel.c ohne Einsetzen eigener Funktionen: sonst setzt -ox die Thunks
     # kt_* des Startcodes ein (naher Aufruf ueber die Grenze von ITEXT)
-    [ $m = kernel ] && S="-oe=0"
+    case " kernel mem paging floppy bus k2misc biosdisk " in *" $m "*) S="$S -oe=0" ;; esac
     wcc $KCFLAGS $S -fo=$B/$m.o kernel/$m.c
     KOBJ="$KOBJ file $B/$m.o"
 done
 # Code (CGROUP) und Daten (DGROUP) sind getrennte Segmente: als DOS-EXE
 # linken, damit Datenoffsets relativ zu DGROUP sind, dann den Kopf abtrennen
 wlink option quiet format dos option nodefaultlibs \
-      option map order clname CODE clname DATA clname BSS \
+      option map order clname CODE clname FAR_DATA clname DATA clname BSS \
       name $B/kernel.exe option map=$B/kernel.map file $KOBJ 2>&1 | grep -v W1014 || true
 python3 - $B/kernel.exe $B/kernel.bin $B/kernel.map <<'PYEOF'
 import struct, sys
@@ -121,7 +121,7 @@ nrel, hdr, relo = struct.unpack('<H', d[6:8])[0], struct.unpack('<H', d[8:10])[0
 g = {}
 for l in open(sys.argv[3]):
     f = l.split()
-    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'CGROUP4', 'CGROUPI', 'DGROUP') and ':' in f[1]:
+    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'CGROUP4', 'CGROUPI', 'CGROUPD', 'DGROUP') and ':' in f[1]:
         s, o = f[1].split(':')
         g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
 code, data = g['CGROUP'][1], g['DGROUP'][1]
@@ -137,7 +137,10 @@ if c4[0] != (c3[0] + c3[1] + 15) & ~15:
 ci = g.get('CGROUPI', ((c4[0] + c4[1] + 15) & ~15, 0))
 if ci[0] != (c4[0] + c4[1] + 15) & ~15:
     sys.exit('FEHLER: CGROUPI (Startcode) liegt nicht direkt hinter CGROUP4')
-if g['DGROUP'][0] != (ci[0] + ci[1] + 15) & ~15:
+cd = g.get('CGROUPD', ((ci[0] + ci[1] + 15) & ~15, 0))
+if cd[0] != (ci[0] + ci[1] + 15) & ~15:
+    sys.exit('FEHLER: CGROUPD (Texte des Startcodes) liegt nicht direkt hinter CGROUPI')
+if g['DGROUP'][0] != (cd[0] + cd[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
@@ -157,6 +160,8 @@ for i in range(nrel):
         sel = 0x320
     elif v == ci[0] >> 4 and ci[1]:
         sel = 0x328
+    elif v == cd[0] >> 4 and cd[1]:
+        sel = 0x330
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
@@ -165,8 +170,8 @@ if code > 65520:
     sys.exit('FEHLER: erstes Kernel-Codesegment %d Bytes ueber 65520 (start.asm rundet auf 16)' % code)
 if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or c4[1] > 65536 or ci[1] > 65536 or data > 65536:
     sys.exit('FEHLER: Kernel-Code %d/%d/%d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], c3[1], c4[1], data))
-print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Start %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
-      % (len(d) - img, code, c2[1], c3[1], c4[1], ci[1], data, nrel))
+print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Start %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
+      % (len(d) - img, code, c2[1], c3[1], c4[1], ci[1], cd[1], data, nrel))
 PYEOF
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
 # der Diskettenbootsektor laedt nach Dateigroesse ab 1000:0000; Platz bis

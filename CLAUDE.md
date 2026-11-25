@@ -2226,6 +2226,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Erstes Codesegment 59.164 Byte (6,2 KB frei). Neue Startfunktionen in
   kernel.c in diesen Block; ruft er eine neue Laufzeitfunktion des ersten
   Segments, braucht sie einen Thunk (initcheck meldet es).
+  Stufe 3 erledigt (25.11.2026): Startfunktionen aus KTEXT2 (mem_init,
+  paging_init, fd_init, pci_init, list_drives, bios_attach) am Ende ihrer
+  Dateien in ITEXT (Thunks + `-oe=0` je Datei in build.sh; fat.c bleibt
+  draußen); MEM/MSD zählen das freigegebene Start-Segment nicht mehr zum
+  Kernel (`kinit_pg`); Texte der `vio_kputs`-Aufrufe im Startcode in
+  IDATA (Gruppe CGROUPD hinter CGROUPI, Selektor KIDATA 330h, NGDT + 1),
+  DGROUP −650 Byte. Falle: `c ? ks_1 : ks_2` mit `__based`-Feldern liest
+  aus DS – beide Zweige auf `const char __far *` casten.
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-

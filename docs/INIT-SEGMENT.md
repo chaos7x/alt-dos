@@ -2,7 +2,7 @@
 # Startcode nach dem Booten freigeben (Init-Segment)
 
 Stand: 25.11.2026 (`main`, 6.3). Treiber (Abschnitt 2.6) und Messwerkzeug
-(2.5) gebaut, siehe „Stand Treiber“ am Ende; Kernel (2.1–2.4) noch offen.
+(2.5) und Kernel (Stufen 1–3) gebaut, siehe „Stand Treiber“/„Stand Kernel“ am Ende.
 Ursprünglicher Entwurf 17.11.2026 (`main`, 6.1). Anlass: die
 Untergrenze 386SX mit 2 MB (CLAUDE.md „Testmaschinen 6.0“) und der Weg
 zu 7.0, das auf derselben Maschine laufen soll.
@@ -399,12 +399,41 @@ Geprüft: QEMU (Start von Platte und Diskette/SETUP, F5, F8, PING,
 MSD, DEVLOAD, XCOPY auf NCR8XX, Box, MEM, fsck sauber) und 86Box
 386DX/40 mit AHA-154x und NE2000 (Start, XCOPY gleich, fsck sauber).
 
+## Stand Kernel, Stufe 3 (25.11.2026)
+
+- Startfunktionen aus KTEXT2 ebenfalls in ITEXT, je am Ende ihrer Datei
+  hinter `#pragma code_seg("ITEXT", "CODE")`, davor ferne Thunks wie in
+  kernel.c (Dateien mit Thunks mit `-oe=0`, build.sh): mem.c
+  (`reserve_range`, `next_range`, `mem_init`; Thunk `release_range`),
+  paging.c (`add_alias`, `alias_on`, `paging_init`, `paging_tables`;
+  `put32`), floppy.c (`fd_init`; `ctl_reset`, `recalibrate`, `select`,
+  `done`), bus.c (`scan_bus`, `pci_init`), k2misc.c (`list_drives` mit
+  `scopy`/`udec`/`fd_name`), biosdisk.c (`bios_attach`; `i13`).
+  `fd_motor_off` bleibt in KTEXT2 – `fd_tick` ruft es zur Laufzeit (in
+  Stufe 1 hatte -ox die Kopie eingesetzt und das verdeckt; initcheck fand
+  es). `vol_move` (fat.c) bleibt: Thunks und `-oe=0` kosteten im heißen
+  Pfad von fat.c mehr, als ITEXT gewinnt. ITEXT jetzt 17,1 KB.
+- MEM und MSD zählen das freigegebene Start-Segment nicht mehr zum Kernel
+  (`kinit_pg` = freigegebene Seiten, k2misc.c `kinit_done`).
+- Texte: sechste Gruppe CGROUPD (Segment IDATA, Klasse FAR_DATA) direkt
+  hinter CGROUPI, Selektor KIDATA 330h (KCODE3_IDX + 7, NGDT + 1),
+  `kidata_size` aus start.asm; kinit_done gibt ITEXT und IDATA zusammen
+  frei. Texte der `vio_kputs`-Aufrufe im Startcode stehen als
+  `static const char __based(__segname("IDATA")) ks_n[]` (kernel.c;
+  k2misc.c `km_n`, cfgboot.c `kc_n`), ausgegeben über `ks_i` & Co. in
+  32-Byte-Stücken über den Stapel (Startstapel knapp). DGROUP 62.118 ->
+  61.468 Byte, IDATA 683 Byte. Lehre: `cond ? ks_1 : ks_2` ergibt bei
+  Watcom einen `__based`-Zeiger, der beim Übergang zu `__far` das
+  Segment aus DS nimmt (gelesen wurde DGROUP – „tet neu.)“ statt
+  „■ DEVICE=“); beide Zweige auf `const char __far *` casten. Texte in
+  `scopy`, `panic` und mehrzeiligen Bedingungen bleiben in DGROUP (~1,3 KB).
+
+Geprüft: QEMU (Start von Platte und Diskette, Startmeldungen über DMESG,
+F5, MEM „Kernel 290K“, XCOPY \DOS, `command /c ver`, CHKDSK, DIR A:
+ohne Diskette) und 86Box 386DX/40 mit AHA-154x und NE2000.
+
 ## Offene Punkte
 
-- mem_init/paging_init/fd_init/pci_init/list_drives aus KTEXT2 (brauchen
-  ferne Hilfen oder Thunks wie in kernel.c).
-- MEM zählt das freigegebene ITEXT weiter unter „Kernel“ (und als frei).
-- Texte des Startcodes (DGROUP, ~2 KB) nach IDATA.
-- Lohnt sich Stufe 2 (Texte nach IDATA) schon jetzt wegen DGROUP?
+- Restliche Texte (scopy, panic, mehrzeilige Bedingungen) nach IDATA.
 - KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
 - Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.

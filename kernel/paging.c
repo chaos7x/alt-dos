@@ -72,44 +72,9 @@ static void k2_reload(void);
 
 extern unsigned short gdtr[3], idtr[3];
 
-static void add_alias(unsigned short *r)
-{
-    unsigned long b = (r[1] | ((unsigned long)r[2] << 16)) + KALIAS;
-    r[1] = (unsigned short)b;
-    r[2] = (unsigned short)(b >> 16);
-}
 
 /* alle Speicherdeskriptoren der GDT (Code, Daten, TSS, LDT; keine Gates)
    in den Alias verschieben */
-static void alias_on(void)
-{
-    struct desc *d;
-    unsigned i, f, a;
-    unsigned long b;
-
-    f = irq_off();
-    for (i = 1; i < NGDT; i++) {
-        d = &gdt[i];
-        a = d->access;
-        if (!(a & 0x80))
-            continue;
-        if (!(a & 0x10) && (a & 0x0F) != 1 && (a & 0x0F) != 2 &&
-            (a & 0x0F) != 3 && (a & 0x0F) != 9 && (a & 0x0F) != 11)
-            continue;                           /* Gate                  */
-        b = (d->base_lo | ((unsigned long)d->base_hi << 16) |
-             ((unsigned long)(d->rsv & 0xFF00) << 16)) + KALIAS;
-        d->base_lo = (unsigned short)b;
-        d->base_hi = (unsigned char)(b >> 16);
-        d->rsv = (d->rsv & 0x00FF) | (unsigned short)((b >> 16) & 0xFF00);
-    }
-    k_alias = 1;
-    add_alias(gdtr);
-    add_alias(idtr);
-    k2_lgdt(gdtr);
-    k2_lidt(idtr);
-    k2_reload();
-    irq_restore(f);
-}
 
 /* 32-Bit-Wert an Stelle i (Doppelworte) im Fenster sel */
 unsigned win_csel;                      /* Cache-Fenster (kernel.c bc_wsel) */
@@ -122,48 +87,6 @@ static void put32(unsigned sel, unsigned i, unsigned long v)
 }
 
 /* -> Anzahl Seitentabellen, 0 = kein Speicher (Paging bleibt aus) */
-unsigned __far paging_init(void)
-{
-    pg_t top = mem_top_pg(), pt, p;
-    unsigned i, j, n;
-
-    if (top > MEM_LOW_PG)               /* Alias nur bis 2 GB - 4 MB     */
-        top = MEM_LOW_PG;
-    n = (unsigned)((top + 1023) >> 10);
-    if (n == 0)
-        n = 1;
-    pd_pg = mem_alloc(1);
-    win_pt = mem_alloc(1);
-    if (!pd_pg || !win_pt)
-        return 0;
-    scratch_map(PG_LIN(win_pt), 4095);
-    for (i = 0; i < 1024; i++)
-        put32(SCRATCH, i, 0);
-    scratch_map(PG_LIN(pd_pg), 4095);
-    for (i = 0; i < 1024; i++)
-        put32(SCRATCH, i, 0);
-    for (i = 0; i < n; i++) {
-        pt = mem_alloc(1);
-        if (!pt)
-            return 0;                   /* (Seiten bleiben belegt)       */
-        scratch_map(PG_LIN(pd_pg), 4095);
-        put32(SCRATCH, i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);
-        put32(SCRATCH, 512 + i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);   /* Alias */
-        scratch2_map(PG_LIN(pt), 4095);
-        p = (pg_t)i << 10;
-        for (j = 0; j < 1024; j++, p++)
-            put32(SCRATCH2, j, p < top || p < 0x400 ?
-                  PG_LIN(p) | PTE_P | PTE_W | PTE_U : 0);
-    }
-    scratch_map(PG_LIN(pd_pg), 4095);
-    put32(SCRATCH, WIN_PDE, PG_LIN(win_pt) | PTE_P | PTE_W | PTE_U);  /* Ring 3 nur
-                                           ueber PTEs mit U: VESA-Bild */
-    n_pt = n;
-    pg_enable((unsigned)PG_LIN(pd_pg), (unsigned)(PG_LIN(pd_pg) >> 16));
-    alias_on();
-    mem_hi_ok = 1;
-    return n;
-}
 
 /* Linearen Bildspeicher (VESA) ab Platz WIN_SLOTS * WIN_PG der Fenster-
    Tabelle abbilden, mit U-Bit (das Programm schreibt ueber seinen Selektor
@@ -257,6 +180,93 @@ unsigned long __far pg_win(unsigned sel, unsigned long base, unsigned limit)
 unsigned long __far paging_cr3(void)
 {
     return n_pt ? PG_LIN(pd_pg) : 0;
+}
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT2; Datei mit -oe=0, sonst eingesetzt) ---- */
+static void __far kt_put32(unsigned s, unsigned i, unsigned long v) { put32(s, i, v); }
+#define put32 kt_put32
+#pragma code_seg("ITEXT", "CODE")
+
+static void add_alias(unsigned short *r)
+{
+    unsigned long b = (r[1] | ((unsigned long)r[2] << 16)) + KALIAS;
+    r[1] = (unsigned short)b;
+    r[2] = (unsigned short)(b >> 16);
+}
+
+static void alias_on(void)
+{
+    struct desc *d;
+    unsigned i, f, a;
+    unsigned long b;
+
+    f = irq_off();
+    for (i = 1; i < NGDT; i++) {
+        d = &gdt[i];
+        a = d->access;
+        if (!(a & 0x80))
+            continue;
+        if (!(a & 0x10) && (a & 0x0F) != 1 && (a & 0x0F) != 2 &&
+            (a & 0x0F) != 3 && (a & 0x0F) != 9 && (a & 0x0F) != 11)
+            continue;                           /* Gate                  */
+        b = (d->base_lo | ((unsigned long)d->base_hi << 16) |
+             ((unsigned long)(d->rsv & 0xFF00) << 16)) + KALIAS;
+        d->base_lo = (unsigned short)b;
+        d->base_hi = (unsigned char)(b >> 16);
+        d->rsv = (d->rsv & 0x00FF) | (unsigned short)((b >> 16) & 0xFF00);
+    }
+    k_alias = 1;
+    add_alias(gdtr);
+    add_alias(idtr);
+    k2_lgdt(gdtr);
+    k2_lidt(idtr);
+    k2_reload();
+    irq_restore(f);
+}
+
+unsigned __far paging_init(void)
+{
+    pg_t top = mem_top_pg(), pt, p;
+    unsigned i, j, n;
+
+    if (top > MEM_LOW_PG)               /* Alias nur bis 2 GB - 4 MB     */
+        top = MEM_LOW_PG;
+    n = (unsigned)((top + 1023) >> 10);
+    if (n == 0)
+        n = 1;
+    pd_pg = mem_alloc(1);
+    win_pt = mem_alloc(1);
+    if (!pd_pg || !win_pt)
+        return 0;
+    scratch_map(PG_LIN(win_pt), 4095);
+    for (i = 0; i < 1024; i++)
+        put32(SCRATCH, i, 0);
+    scratch_map(PG_LIN(pd_pg), 4095);
+    for (i = 0; i < 1024; i++)
+        put32(SCRATCH, i, 0);
+    for (i = 0; i < n; i++) {
+        pt = mem_alloc(1);
+        if (!pt)
+            return 0;                   /* (Seiten bleiben belegt)       */
+        scratch_map(PG_LIN(pd_pg), 4095);
+        put32(SCRATCH, i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);
+        put32(SCRATCH, 512 + i, PG_LIN(pt) | PTE_P | PTE_W | PTE_U);   /* Alias */
+        scratch2_map(PG_LIN(pt), 4095);
+        p = (pg_t)i << 10;
+        for (j = 0; j < 1024; j++, p++)
+            put32(SCRATCH2, j, p < top || p < 0x400 ?
+                  PG_LIN(p) | PTE_P | PTE_W | PTE_U : 0);
+    }
+    scratch_map(PG_LIN(pd_pg), 4095);
+    put32(SCRATCH, WIN_PDE, PG_LIN(win_pt) | PTE_P | PTE_W | PTE_U);  /* Ring 3 nur
+                                           ueber PTEs mit U: VESA-Bild */
+    n_pt = n;
+    pg_enable((unsigned)PG_LIN(pd_pg), (unsigned)(PG_LIN(pd_pg) >> 16));
+    alias_on();
+    mem_hi_ok = 1;
+    return n;
 }
 
 unsigned __far paging_tables(void)

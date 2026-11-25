@@ -154,6 +154,14 @@ int __far bios_rw(unsigned drive, unsigned long lba, unsigned n, int wr)
 
 /* Blockgeraet fuer das Startlaufwerk des BIOS anlegen und einhaengen;
    -> Geraet oder -1 */
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT4; Datei mit -oe=0, sonst eingesetzt) ---- */
+static unsigned __far kt_i13(struct rmregs *r, int *cf) { return i13(r, cf); }
+#define i13 kt_i13
+#pragma code_seg("ITEXT", "CODE")
+
 int __far bios_attach(void)
 {
     struct rmregs r;

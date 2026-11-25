@@ -105,79 +105,11 @@ void __far pci_write(unsigned loc, unsigned reg, unsigned long v, unsigned size)
     irq_restore(f);
 }
 
-static void scan_bus(unsigned bus, unsigned depth)
-{
-    unsigned dev, fn, nfn, loc;
-    unsigned long id, cl, hd;
-
-    for (dev = 0; dev < (pci_ok == 2 ? 16u : 32u); dev++) {
-        nfn = 1;
-        for (fn = 0; fn < nfn; fn++) {
-            loc = (bus << 8) | (dev << 3) | fn;
-            id = pci_read(loc, 0);
-            if ((unsigned)id == 0xFFFF || (unsigned)id == 0)
-                continue;
-            hd = pci_read(loc, 0x0C);
-            if (fn == 0 && (hd & 0x00800000UL))
-                nfn = 8;                /* Mehrfunktionsgeraet           */
-            cl = pci_read(loc, 0x08);
-            if (npci < NPCI) {
-                pci_tab[npci].loc = loc;
-                pci_tab[npci].vendor = (unsigned)id;
-                pci_tab[npci].device = (unsigned)(id >> 16);
-                pci_tab[npci].cls = (unsigned char)(cl >> 24);
-                pci_tab[npci].sub = (unsigned char)(cl >> 16);
-                pci_tab[npci].progif = (unsigned char)(cl >> 8);
-                pci_tab[npci].irq = (unsigned char)pci_read(loc, 0x3C);
-                npci++;
-            }
-            /* PCI-PCI-Bruecke: Bus dahinter (Register 19h) durchsuchen */
-            if (((hd >> 16) & 0x7F) == 1 && depth < 4) {
-                unsigned sec = (unsigned)(pci_read(loc, 0x18) >> 8) & 0xFF;
-                if (sec > bus)
-                    scan_bus(sec, depth + 1);
-            }
-        }
-    }
-}
 
 /* Mechanismus 1 da? Erst lesen, dann das Freigabebit probieren. Beim
    PCI-Host lesen sich die Bits 0-1 von CF8h immer als 0; ein ISA-Rechner
    liefert dort FFh (offener Bus) - dann nichts schreiben, denn ISA-Karten
    dekodieren nur 10 Adressbits: CF8h waere 0F8h, der Koprozessor. */
-unsigned __far pci_init(void)
-{
-    unsigned long old, v;
-    unsigned f = irq_off();
-    old = k2_inl(0xCF8);
-    if (!(old & 3)) {                   /* 32-Bit-Register da?           */
-        k2_outl(0xCF8, 0x0000, 0x8000);
-        v = k2_inl(0xCF8);
-        k2_outl(0xCF8, (unsigned)old, (unsigned)(old >> 16));
-        if (v == 0x80000000UL)
-            pci_ok = 1;
-    }
-    if (pci_ok)
-        ;
-    /* sonst Mechanismus 2 (erst danach, damit auf Mechanismus-1-Boards
-       nie bei C000h gelesen wird; ein 32-Bit-Lesen von CF8h liefert dort
-       oft FFFFFFFFh): CF8h (Schluessel/Funktion) und CFAh (Bus) lesen
-       sich byteweise als 00h (ISA: FFh) - erst dann den Raum
-       einschalten und die Kennung der Host-Bruecke (Geraet 0) pruefen */
-    else if (inb(0xCF8) == 0 && inb(0xCFA) == 0) {
-        outb(0xCF8, 0xF0);
-        outb(0xCFA, 0);
-        v = k2_inl(0xC000);
-        outb(0xCF8, 0);
-        if ((unsigned)v != 0xFFFF && (unsigned)v != 0 && (unsigned)(v >> 16) != 0xFFFF)
-            pci_ok = 2;
-    }
-    irq_restore(f);
-    if (!pci_ok)
-        return 0;
-    scan_bus(0, 0);
-    return npci;
-}
 
 /* n-tes Geraet mit Hersteller/Geraet (dev FFFFh = jedes) -> loc, FFFFh */
 unsigned __far pci_find(unsigned vendor, unsigned device, unsigned n)
@@ -291,4 +223,79 @@ int __far res_get(unsigned i, unsigned *type, unsigned *start, unsigned *len)
             return res[k].drv;
         }
     return -1;
+}
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT2; Datei mit -oe=0, sonst eingesetzt) ---- */
+#pragma code_seg("ITEXT", "CODE")
+
+static void scan_bus(unsigned bus, unsigned depth)
+{
+    unsigned dev, fn, nfn, loc;
+    unsigned long id, cl, hd;
+
+    for (dev = 0; dev < (pci_ok == 2 ? 16u : 32u); dev++) {
+        nfn = 1;
+        for (fn = 0; fn < nfn; fn++) {
+            loc = (bus << 8) | (dev << 3) | fn;
+            id = pci_read(loc, 0);
+            if ((unsigned)id == 0xFFFF || (unsigned)id == 0)
+                continue;
+            hd = pci_read(loc, 0x0C);
+            if (fn == 0 && (hd & 0x00800000UL))
+                nfn = 8;                /* Mehrfunktionsgeraet           */
+            cl = pci_read(loc, 0x08);
+            if (npci < NPCI) {
+                pci_tab[npci].loc = loc;
+                pci_tab[npci].vendor = (unsigned)id;
+                pci_tab[npci].device = (unsigned)(id >> 16);
+                pci_tab[npci].cls = (unsigned char)(cl >> 24);
+                pci_tab[npci].sub = (unsigned char)(cl >> 16);
+                pci_tab[npci].progif = (unsigned char)(cl >> 8);
+                pci_tab[npci].irq = (unsigned char)pci_read(loc, 0x3C);
+                npci++;
+            }
+            /* PCI-PCI-Bruecke: Bus dahinter (Register 19h) durchsuchen */
+            if (((hd >> 16) & 0x7F) == 1 && depth < 4) {
+                unsigned sec = (unsigned)(pci_read(loc, 0x18) >> 8) & 0xFF;
+                if (sec > bus)
+                    scan_bus(sec, depth + 1);
+            }
+        }
+    }
+}
+
+unsigned __far pci_init(void)
+{
+    unsigned long old, v;
+    unsigned f = irq_off();
+    old = k2_inl(0xCF8);
+    if (!(old & 3)) {                   /* 32-Bit-Register da?           */
+        k2_outl(0xCF8, 0x0000, 0x8000);
+        v = k2_inl(0xCF8);
+        k2_outl(0xCF8, (unsigned)old, (unsigned)(old >> 16));
+        if (v == 0x80000000UL)
+            pci_ok = 1;
+    }
+    if (pci_ok)
+        ;
+    /* sonst Mechanismus 2 (erst danach, damit auf Mechanismus-1-Boards
+       nie bei C000h gelesen wird; ein 32-Bit-Lesen von CF8h liefert dort
+       oft FFFFFFFFh): CF8h (Schluessel/Funktion) und CFAh (Bus) lesen
+       sich byteweise als 00h (ISA: FFh) - erst dann den Raum
+       einschalten und die Kennung der Host-Bruecke (Geraet 0) pruefen */
+    else if (inb(0xCF8) == 0 && inb(0xCFA) == 0) {
+        outb(0xCF8, 0xF0);
+        outb(0xCFA, 0);
+        v = k2_inl(0xC000);
+        outb(0xCF8, 0);
+        if ((unsigned)v != 0xFFFF && (unsigned)v != 0 && (unsigned)(v >> 16) != 0xFFFF)
+            pci_ok = 2;
+    }
+    irq_restore(f);
+    if (!pci_ok)
+        return 0;
+    scan_bus(0, 0);
+    return npci;
 }

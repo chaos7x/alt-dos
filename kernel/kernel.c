@@ -72,6 +72,7 @@ typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
 typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
 typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
 typedef char gdt_chk5[KCODEI == KCODEI_IDX * 8 ? 1 : -1];
+typedef char gdt_chk6[KIDATA == KIDATA_IDX * 8 ? 1 : -1];
 typedef char gdt_chk3[VWIN == 0x2B0 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
@@ -137,6 +138,7 @@ void gdt_build(void)
     set_desc(KCODE3_IDX, KCODE3_LIN, kcode3_size ? kcode3_size - 1 : 0, ACC_KCODE);
     set_desc(KCODE4_IDX, KCODE4_LIN, kcode4_size ? kcode4_size - 1 : 0, ACC_KCODE);
     set_desc(KCODEI_IDX, KCODEI_LIN, kcodei_size ? kcodei_size - 1 : 0, ACC_KCODE);
+    set_desc(KIDATA_IDX, KIDATA_LIN, kidata_size ? kidata_size - 1 : 0, ACC_KDATA);
     set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
     set_desc(3, 0xB8000UL, 80 * 50 * 2 - 1, ACC_KDATA);   /* bis 50 Zeilen */
 
@@ -3444,7 +3446,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         p = MK_FP(usel, a1);
         p->total_kb = tk > 0xFFFFUL ? 0xFFFF : (unsigned)tk;   /* alte Programme */
         p->free_kb = fk > 0xFFFFUL ? 0xFFFF : (unsigned)fk;
-        p->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10);
+        p->kernel_kb = (unsigned)((KDATA_LIN + kdata_size - KCODE_LIN + 1023) >> 10) -
+                       (kinit_pg << 2);         /* Startcode frei (ITEXT) */
         p->apps_kb = image_units * 4;
         p->alloc_kb = alloc_units * 4;
         if (a2 >= MEMINFO_V60) {        /* 6.0: CX = Groesse, 32 Bit    */
@@ -7282,6 +7285,57 @@ static void __far kt_boot_end(void) { kinit_done(); sched_start(); }
 #define kbd_init kt_kbd_init
 #define fpu_pm_init kt_fpu_pm_init
 #pragma code_seg("ITEXT", "CODE")
+/* Texte des Startcodes liegen in IDATA (nach dem Start frei): in
+   kleinen Stuecken ueber den Stapel ausgeben (Startstapel knapp) */
+static const char __based(__segname("IDATA")) ks_1[] = "\xFE fehlt: ";
+static const char __based(__segname("IDATA")) ks_2[] = "\n";
+static const char __based(__segname("IDATA")) ks_3[] = "\xFE CONFIG.SYS gr\x94\xE1" "er als 8 KB - \x81" "bergangen\n";
+static const char __based(__segname("IDATA")) ks_4[] = "\xFE RUN=";
+static const char __based(__segname("IDATA")) ks_5[] = " - ";
+static const char __based(__segname("IDATA")) ks_6[] = "\n";
+static const char __based(__segname("IDATA")) ks_7[] = "\n";
+static const char __based(__segname("IDATA")) ks_8[] = "\xFE CONFIG.SYS: Umgebung voll\n";
+static const char __based(__segname("IDATA")) ks_9[] = "\n";
+static const char __based(__segname("IDATA")) ks_10[] = "\xFE IFS=";
+static const char __based(__segname("IDATA")) ks_11[] = "\n";
+static const char __based(__segname("IDATA")) ks_12[] = "\xFE CONFIG.SYS: unbekannt: ";
+static const char __based(__segname("IDATA")) ks_13[] = "\n";
+static const char __based(__segname("IDATA")) ks_14[] = "AT-DOS 6.3 - 80386, 16-Bit Protected Mode\n";
+static const char __based(__segname("IDATA")) ks_15[] = ", Paging an (";
+static const char __based(__segname("IDATA")) ks_16[] = ", Paging aus\n";
+static const char __based(__segname("IDATA")) ks_17[] = "\xFE Laufwerk A: Diskette ";
+static const char __based(__segname("IDATA")) ks_18[] = "\xFE Start von Festplatte, ";
+static const char __based(__segname("IDATA")) ks_19[] = " Datei(en) vorgeladen\n";
+static const char __based(__segname("IDATA")) ks_20[] = "\xFE Startlaufwerk C:\n";
+static const char __based(__segname("IDATA")) ks_21[] = "\xFE PROTSHELL=";
+static const char __based(__segname("IDATA")) ks_22[] = " - ";
+static const char __based(__segname("IDATA")) ks_23[] = ", nehme CMD.EXE /P\n";
+static const char __based(__segname("IDATA")) ks_24[] = "\n";
+static const char __based(__segname("IDATA")) ks_25[] = "\xFE DEVICE=";
+static const char __based(__segname("IDATA")) ks_26[] = "\xFE BASEDEV=";
+static const char __based(__segname("IDATA")) ks_27[] = "\xFE A20 frei, ";
+static const char __based(__segname("IDATA")) ks_28[] = "\xFE A20 GESPERRT, nur unter 1 MB, ";
+static const char __based(__segname("IDATA")) ks_29[] = " MB Arbeitsspeicher frei";
+static const char __based(__segname("IDATA")) ks_30[] = " KB Arbeitsspeicher frei";
+static const char __based(__segname("IDATA")) ks_31[] = ", FAT16\n";
+static const char __based(__segname("IDATA")) ks_32[] = ", FAT12\n";
+static const char __based(__segname("IDATA")) ks_33[] = "\xFE Umwandlung vorgemerkt - ohne "
+                  "Auslagerungsdatei und LOOP=\n";
+static const char __based(__segname("IDATA")) ks_34[] = "\xFE Pr\x81" "fung beim Start - "
+                  "Auslagerungsdatei und LOOP= erst danach\n";
+static void ks_i(int s, const char __far *t)
+{
+    char b[33];
+    unsigned i;
+    while (*t) {
+        for (i = 0; i < 32 && t[i]; i++)
+            b[i] = t[i];
+        b[i] = 0;
+        vio_kputs(s, b);
+        t += i;
+    }
+}
+
 
 static void ldt_init(void)
 {
@@ -7325,9 +7379,9 @@ static void cp_load(int s)
         nm[16] = (char)('0' + c % 10);
         if (c > 999 || ifs_open(sys_drive, nm, &f) ||
             ifs_read(&f, 0, cp_sel, i * CP_SZ, CP_SZ) != CP_SZ) {
-            vio_kputs(s, "\xFE fehlt: ");     /* (DGROUP ist knapp)   */
+            ks_i(s, ks_1);     /* (DGROUP ist knapp)   */
             vio_kputs(s, nm);
-            vio_kputs(s, "\n");
+            ks_i(s, ks_2);
             cp_list[i] = 0;
         }
     }
@@ -7412,7 +7466,7 @@ static int read_cfg(const char *name)
     if (ifs_open(sys_drive, name, &f))
         return -1;
     if (f.size > CFG_MAX) {             /* sonst still ohne Treiber      */
-        vio_kputs(boot_session, "\xFE CONFIG.SYS gr\x94\xE1" "er als 8 KB - \x81" "bergangen\n");
+        ks_i(boot_session, ks_3);
         return -1;
     }
     if (!cfg_sel && (cfg_sel = kseg_alloc(CFG_MAX)) == 0)
@@ -7538,7 +7592,7 @@ static void run_boot(int s0)
         if ((i = env_find(-1, nm, 4)) < 0)
             continue;
         fscopy((char __far *)c, MK_FP(env_sel, env_off(-1) + i + 5), FAPI_ARGLEN);
-        vio_kputs(s0, "\xFE RUN=");
+        ks_i(s0, ks_4);
         vio_kputs(s0, c);
         for (j = 0; c[j] && c[j] != ' ' && c[j] != '\\' && c[j] != ':'; j++)
             ;
@@ -7552,12 +7606,12 @@ static void run_boot(int s0)
         }
         exec_nocon = 0;
         if (t < 0) {
-            vio_kputs(s0, " - ");
+            ks_i(s0, ks_5);
             vio_kputs(s0, exec_err(-t));
-            vio_kputs(s0, "\n");
+            ks_i(s0, ks_6);
             continue;
         }
-        vio_kputs(s0, "\n");
+        ks_i(s0, ks_7);
         task[t].bg = 1;
         for (k = 1; k < 3; k++)         /* Ausgaben nach NUL            */
             if ((j = of_alloc()) >= 0) {
@@ -7612,7 +7666,7 @@ static void config_sys(void)
                 ent[k2++] = '=';
                 scopy(ent + k2, v, sizeof(ent) - k2);
                 if (env_set(-1, ent))
-                    vio_kputs(boot_session, "\xFE CONFIG.SYS: Umgebung voll\n");
+                    ks_i(boot_session, ks_8);
                 continue;
             }
         }
@@ -7625,17 +7679,17 @@ static void config_sys(void)
                 while (*v == ' ')
                     v++;
             }
-            vio_kputs(boot_session, pass ? "\xFE DEVICE=" : "\xFE BASEDEV=");
+            ks_i(boot_session, pass ? (const char __far *)ks_25 : (const char __far *)ks_26);
             vio_kputs(boot_session, v);
-            vio_kputs(boot_session, "\n");
+            ks_i(boot_session, ks_9);
             dev0 = nblk;
             if (load_driver(v, 0) > 0)
                 for (i = dev0; i < nblk; i++)
                     mount_disk(i);
         } else if (kw(line, "IFS")) {
-            vio_kputs(boot_session, "\xFE IFS=");
+            ks_i(boot_session, ks_10);
             vio_kputs(boot_session, v);
-            vio_kputs(boot_session, "\n");
+            ks_i(boot_session, ks_11);
             load_driver(v, 1);
         } else if (kw(line, "FILES")) {
             n = num_arg(v);
@@ -7725,9 +7779,9 @@ static void config_sys(void)
             for (i = 0; quiet[i] && !kw(line, quiet[i]); i++)
                 ;
             if (!quiet[i]) {
-                vio_kputs(boot_session, "\xFE CONFIG.SYS: unbekannt: ");
+                ks_i(boot_session, ks_12);
                 vio_kputs(boot_session, line);
-                vio_kputs(boot_session, "\n");
+                ks_i(boot_session, ks_13);
             }
         }
     }
@@ -7789,21 +7843,21 @@ void __far kmain(void)
     outb(0x3D4, 0x0A); outb(0x3D5, 0x0D);       /* Cursor: Unterstrich   */
     outb(0x3D4, 0x0B); outb(0x3D5, 0x0E);
 
-    vio_kputs(s0, "AT-DOS 6.3 - 80386, 16-Bit Protected Mode\n");
-    vio_kputs(s0, a20_ok ? "\xFE A20 frei, " : "\xFE A20 GESPERRT, nur unter 1 MB, ");
+    ks_i(s0, ks_14);
+    ks_i(s0, a20_ok ? (const char __far *)ks_27 : (const char __far *)ks_28);
     {
         unsigned long fk = mem_free_kb();
         udec(fk > 0xFFFFUL ? (unsigned)(fk >> 10) : (unsigned)fk, num);
         vio_kputs(s0, num);
-        vio_kputs(s0, fk > 0xFFFFUL ? " MB Arbeitsspeicher frei" : " KB Arbeitsspeicher frei");
+        ks_i(s0, fk > 0xFFFFUL ? (const char __far *)ks_29 : (const char __far *)ks_30);
     }
     if (paging_tables()) {
         udec(paging_tables(), num);
-        vio_kputs(s0, ", Paging an (");
+        ks_i(s0, ks_15);
         vio_kputs(s0, num);
         vio_kputs(s0, paging_tables() == 1 ? " Seitentabelle)\n" : " Seitentabellen)\n");
     } else
-        vio_kputs(s0, ", Paging aus\n");
+        ks_i(s0, ks_16);
 
     enable_ints();                  /* Diskette und Tastatur per IRQ     */
     kbd_init();
@@ -7841,9 +7895,9 @@ void __far kmain(void)
         blk_media(BLK_FLOPPY);
         if (ifs_mount(0, BLK_FLOPPY, 0, &fat_driver))
             panic("Diskette A: hat kein lesbares FAT-Dateisystem.");
-        vio_kputs(s0, "\xFE Laufwerk A: Diskette ");
+        ks_i(s0, ks_17);
         vio_kputs(s0, fd_name(fd_size(0)));
-        vio_kputs(s0, vol[0].fat16 ? ", FAT16\n" : ", FAT12\n");
+        ks_i(s0, vol[0].fat16 ? (const char __far *)ks_31 : (const char __far *)ks_32);
         config_sys();
     } else {
         /* Start von Festplatte: A: erst beim ersten Zugriff einhaengen */
@@ -7853,10 +7907,10 @@ void __far kmain(void)
             vol[0].blk = BLK_FLOPPY;
             vol[0].drv = &fat_driver;
         }
-        vio_kputs(s0, "\xFE Start von Festplatte, ");
+        ks_i(s0, ks_18);
         udec(npre, num);
         vio_kputs(s0, num);
-        vio_kputs(s0, " Datei(en) vorgeladen\n");
+        ks_i(s0, ks_19);
         if (pre_err)
             vio_kputs(s0, pre_err == PRE_ERR_FS ? "  Startpartition ist nicht FAT16/FAT32\n" :
                           pre_err == PRE_ERR_FULL ? "  Vorladebereich voll\n" :
@@ -7873,7 +7927,7 @@ void __far kmain(void)
             sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
-        vio_kputs(s0, "\xFE Startlaufwerk C:\n");
+        ks_i(s0, ks_20);
         if (sys_drive != 2) {                   /* immer C:, Rest rueckt nach */
             vol_move(sys_drive, 2);
             sys_drive = 2;
@@ -7939,9 +7993,7 @@ void __far kmain(void)
     if (boot_f5)
         ;                                       /* Notstart: nichts davon */
     else if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
-        vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
-                  "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "
-                  "Auslagerungsdatei und LOOP= erst danach\n");
+        ks_i(boot_session, i == 1 ? (const char __far *)ks_33 : (const char __far *)ks_34);
         boot_late = i != 1;                     /* CMD /P holt sie nach    */
     } else                                      /* nichts darf offen sein */
         swap_loop(line);
@@ -7959,11 +8011,11 @@ void __far kmain(void)
     cfg_step();
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
-        vio_kputs(s0, "\xFE PROTSHELL=");
+        ks_i(s0, ks_21);
         vio_kputs(s0, protshell);
-        vio_kputs(s0, " - ");
+        ks_i(s0, ks_22);
         vio_kputs(s0, exec_err(-t));
-        vio_kputs(s0, ", nehme CMD.EXE /P\n");
+        ks_i(s0, ks_23);
         scopy(protshell, "CMD.EXE /P", sizeof(protshell));
         cfg_step();
         t = task_create(protshell, s0, -1, -1);
@@ -7973,7 +8025,7 @@ void __far kmain(void)
     vio_title(s0, task[t].name);
     run_boot(s0);                               /* RUN= aus CONFIG.SYS   */
     fd_motor_off();
-    vio_kputs(s0, "\n");
+    ks_i(s0, ks_24);
     vio_focus(s0);
 
     kt_boot_end();                  /* Startcode frei, Scheduler; kein

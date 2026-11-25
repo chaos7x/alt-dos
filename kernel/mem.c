@@ -43,129 +43,11 @@ static void release_range(pg_t from, pg_t to)          /* [from, to) */
         }
 }
 
-static void reserve_range(pg_t from, pg_t to)
-{
-    pg_t p;
-    for (p = from; p < to && p < max_pg; p++)
-        if (!USED(p)) {
-            BYTE(p) |= (unsigned char)BIT(p);
-            free_pg--;
-        }
-}
 
 /* RAM-Bereiche oberhalb 1 MB nacheinander liefern: -> 1, Anfang a und
    Ende e in Seiten */
 static unsigned rg_i;
-static int next_range(pg_t *a, pg_t *e)
-{
-    struct e820 *m;
-    unsigned long s, l;
 
-    if (e820_n) {
-        while (rg_i < e820_n) {
-            m = &e820_map[rg_i++];
-            if (m->type != 1 || m->base_hi || (m->len_lo == 0 && m->len_hi == 0))
-                continue;
-            s = m->base_lo;
-            l = m->len_hi ? 0xFFFFFFFFUL - s : m->len_lo;
-            if (s + l < s)
-                l = 0xFFFFFFFFUL - s;   /* ueber 4 GB: abschneiden       */
-            if (s + l <= 0x100000UL)
-                continue;               /* unter 1 MB: macht conv_kb     */
-            if (s < 0x100000UL) {
-                l -= 0x100000UL - s;
-                s = 0x100000UL;
-            }
-            *a = (s + 4095) >> 12;      /* nur ganze Seiten              */
-            *e = (s + l) >> 12;
-            if (*a >= MEM_MAX_PG)
-                continue;
-            if (*e > MEM_MAX_PG)
-                *e = MEM_MAX_PG;
-            if (*e > *a)
-                return 1;
-        }
-        return 0;
-    }
-    /* ohne Karte: E801h als zwei Bereiche (1-16 MB, ab 16 MB), sonst 88h */
-    if (rg_i == 0) {
-        rg_i = 1;
-        *a = 0x100;
-        *e = 0x100 + ((pg_t)(e801_lo || e801_hi ? e801_lo : mem_ext_kb) >> 2);
-        if (*e > *a)
-            return 1;
-    }
-    if (rg_i == 1) {
-        rg_i = 2;
-        *a = 0x1000;
-        *e = 0x1000 + ((pg_t)e801_hi << 4);
-        if (*e > MEM_MAX_PG)
-            *e = MEM_MAX_PG;
-        if (*e > *a)
-            return 1;
-    }
-    return 0;
-}
-
-void __far mem_init(pg_t low, unsigned conv_kb)
-{
-    pg_t a, e, bm_pg = 0, bm_n = 0;
-    unsigned long bytes, i;
-
-    /* 1. Groesse: hoechste RAM-Seite */
-    max_pg = 0x100;
-    rg_i = 0;
-    while (next_range(&a, &e))
-        if (e > max_pg)
-            max_pg = e;
-    max_pg = (max_pg + 7) & ~7UL;
-    bytes = max_pg >> 3;
-
-    /* 2. Platz fuer die Bitmap: bis 8 KB fest, sonst im ersten passenden
-          Bereich ab 1 MB */
-    if (bytes <= MEMMAP_FIX) {
-        set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, (unsigned)(bytes - 1), ACC_KDATA);
-    } else {
-        bm_n = (bytes + 4095) >> 12;
-        rg_i = 0;
-        while (next_range(&a, &e))
-            if (e - a > bm_n && a + bm_n <= MEM_LOW_PG) {
-                bm_pg = a;
-                break;
-            }
-        if (!bm_pg) {                   /* geht nicht: nur bis 256 MB    */
-            max_pg = (pg_t)MEMMAP_FIX << 3;
-            bytes = MEMMAP_FIX;
-            bm_n = 0;
-            set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, MEMMAP_FIX - 1, ACC_KDATA);
-        } else {
-            set_desc(MEMMAP_SEL >> 3, PG_LIN(bm_pg),
-                     bytes > 0x10000UL ? 0xFFFF : (unsigned)(bytes - 1), ACC_KDATA);
-            if (bytes > 0x10000UL)      /* zweite Haelfte (ueber 2 GB)   */
-                set_desc((MEMMAP_SEL >> 3) + 1, PG_LIN(bm_pg) + 0x10000UL,
-                         (unsigned)(bytes - 0x10001UL), ACC_KDATA);
-        }
-    }
-    for (i = 0; i < bytes; i++)
-        BMB(i) = 0xFF;
-    free_pg = 0;
-
-    /* 3. frei: konventionell ab low, RAM ab 1 MB */
-    if (conv_kb > 640)
-        conv_kb = 640;
-    release_range(low, (pg_t)conv_kb >> 2);
-    ram_pg = (pg_t)(mem_conv_kb > 640 ? 640 : mem_conv_kb) >> 2;
-    rg_i = 0;
-    while (next_range(&a, &e)) {
-        release_range(a, e);
-        ram_pg += e - a;
-    }
-    if (bm_n)
-        reserve_range(bm_pg, bm_pg + bm_n);
-    total_pg = free_pg;
-    hint = low;
-    hint_hi = MEM_LOW_PG;
-}
 
 /* Seite 0 ist nie frei: 0 heisst "kein Speicher" */
 pg_t (*mem_reclaim)(unsigned pages);
@@ -315,4 +197,132 @@ unsigned long __far mem_ram_kb(void)
 pg_t __far mem_top_pg(void)
 {
     return max_pg;
+}
+
+/* ---- Startcode (ITEXT, docs/INIT-SEGMENT.md): nach dem Start frei.
+   Hilfen dieser Datei, die auch zur Laufzeit laufen, ueber ferne Thunks
+   kt_* (Segment KTEXT2; Datei mit -oe=0, sonst eingesetzt) ---- */
+static void __far kt_release_range(pg_t f, pg_t t) { release_range(f, t); }
+#define release_range kt_release_range
+#pragma code_seg("ITEXT", "CODE")
+
+static void reserve_range(pg_t from, pg_t to)
+{
+    pg_t p;
+    for (p = from; p < to && p < max_pg; p++)
+        if (!USED(p)) {
+            BYTE(p) |= (unsigned char)BIT(p);
+            free_pg--;
+        }
+}
+
+static int next_range(pg_t *a, pg_t *e)
+{
+    struct e820 *m;
+    unsigned long s, l;
+
+    if (e820_n) {
+        while (rg_i < e820_n) {
+            m = &e820_map[rg_i++];
+            if (m->type != 1 || m->base_hi || (m->len_lo == 0 && m->len_hi == 0))
+                continue;
+            s = m->base_lo;
+            l = m->len_hi ? 0xFFFFFFFFUL - s : m->len_lo;
+            if (s + l < s)
+                l = 0xFFFFFFFFUL - s;   /* ueber 4 GB: abschneiden       */
+            if (s + l <= 0x100000UL)
+                continue;               /* unter 1 MB: macht conv_kb     */
+            if (s < 0x100000UL) {
+                l -= 0x100000UL - s;
+                s = 0x100000UL;
+            }
+            *a = (s + 4095) >> 12;      /* nur ganze Seiten              */
+            *e = (s + l) >> 12;
+            if (*a >= MEM_MAX_PG)
+                continue;
+            if (*e > MEM_MAX_PG)
+                *e = MEM_MAX_PG;
+            if (*e > *a)
+                return 1;
+        }
+        return 0;
+    }
+    /* ohne Karte: E801h als zwei Bereiche (1-16 MB, ab 16 MB), sonst 88h */
+    if (rg_i == 0) {
+        rg_i = 1;
+        *a = 0x100;
+        *e = 0x100 + ((pg_t)(e801_lo || e801_hi ? e801_lo : mem_ext_kb) >> 2);
+        if (*e > *a)
+            return 1;
+    }
+    if (rg_i == 1) {
+        rg_i = 2;
+        *a = 0x1000;
+        *e = 0x1000 + ((pg_t)e801_hi << 4);
+        if (*e > MEM_MAX_PG)
+            *e = MEM_MAX_PG;
+        if (*e > *a)
+            return 1;
+    }
+    return 0;
+}
+
+void __far mem_init(pg_t low, unsigned conv_kb)
+{
+    pg_t a, e, bm_pg = 0, bm_n = 0;
+    unsigned long bytes, i;
+
+    /* 1. Groesse: hoechste RAM-Seite */
+    max_pg = 0x100;
+    rg_i = 0;
+    while (next_range(&a, &e))
+        if (e > max_pg)
+            max_pg = e;
+    max_pg = (max_pg + 7) & ~7UL;
+    bytes = max_pg >> 3;
+
+    /* 2. Platz fuer die Bitmap: bis 8 KB fest, sonst im ersten passenden
+          Bereich ab 1 MB */
+    if (bytes <= MEMMAP_FIX) {
+        set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, (unsigned)(bytes - 1), ACC_KDATA);
+    } else {
+        bm_n = (bytes + 4095) >> 12;
+        rg_i = 0;
+        while (next_range(&a, &e))
+            if (e - a > bm_n && a + bm_n <= MEM_LOW_PG) {
+                bm_pg = a;
+                break;
+            }
+        if (!bm_pg) {                   /* geht nicht: nur bis 256 MB    */
+            max_pg = (pg_t)MEMMAP_FIX << 3;
+            bytes = MEMMAP_FIX;
+            bm_n = 0;
+            set_desc(MEMMAP_SEL >> 3, MEMMAP_LIN, MEMMAP_FIX - 1, ACC_KDATA);
+        } else {
+            set_desc(MEMMAP_SEL >> 3, PG_LIN(bm_pg),
+                     bytes > 0x10000UL ? 0xFFFF : (unsigned)(bytes - 1), ACC_KDATA);
+            if (bytes > 0x10000UL)      /* zweite Haelfte (ueber 2 GB)   */
+                set_desc((MEMMAP_SEL >> 3) + 1, PG_LIN(bm_pg) + 0x10000UL,
+                         (unsigned)(bytes - 0x10001UL), ACC_KDATA);
+        }
+    }
+    for (i = 0; i < bytes; i++)
+        BMB(i) = 0xFF;
+    free_pg = 0;
+
+    /* 3. frei: konventionell ab low, RAM ab 1 MB */
+    if (conv_kb > 640)
+        conv_kb = 640;
+    release_range(low, (pg_t)conv_kb >> 2);
+    ram_pg = (pg_t)(mem_conv_kb > 640 ? 640 : mem_conv_kb) >> 2;
+    rg_i = 0;
+    while (next_range(&a, &e)) {
+        release_range(a, e);
+        ram_pg += e - a;
+    }
+    if (bm_n)
+        reserve_range(bm_pg, bm_pg + bm_n);
+    total_pg = free_pg;
+    hint = low;
+    hint_hi = MEM_LOW_PG;
 }

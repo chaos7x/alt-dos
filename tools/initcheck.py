@@ -108,7 +108,7 @@ def main():
         for f in funcs:
             if f in init or f in taken:
                 continue
-            c = callers.get(f)
+            c = callers.get(f, set()) - {f}     # Rekursion zaehlt nicht
             if c and c <= init:
                 init.add(f)
                 changed = True

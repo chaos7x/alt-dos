@@ -55,7 +55,9 @@
 #define KCODE4      0x320           /* = KCODE4_IDX * 8; build.sh traegt ihn ein */
 #define KCODEI_IDX  (KCODE3_IDX + 6) /* Startcode (ITEXT), nach dem Start frei */
 #define KCODEI      0x328           /* = KCODEI_IDX * 8; build.sh traegt ihn ein */
-#define NGDT        (KCODE3_IDX + 7)
+#define KIDATA_IDX  (KCODE3_IDX + 7) /* Texte des Startcodes (IDATA), ebenso */
+#define KIDATA      0x330           /* = KIDATA_IDX * 8; build.sh traegt ihn ein */
+#define NGDT        (KCODE3_IDX + 8)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
 #define DMABUF_LIN  0x8000UL        /* unter 1 MB, keine 64-KB-Grenze      */
@@ -85,6 +87,8 @@ extern unsigned kcode4_size;        /* start.asm: Groesse von CGROUP4      */
 #define KCODE4_LIN  (KCODE3_LIN + ((kcode3_size + 15) & ~15u))
 extern unsigned kcodei_size;        /* start.asm: Groesse von CGROUPI      */
 #define KCODEI_LIN  (KCODE4_LIN + ((kcode4_size + 15) & ~15u))
+extern unsigned kidata_size;        /* start.asm: Groesse von CGROUPD      */
+#define KIDATA_LIN  (KCODEI_LIN + ((kcodei_size + 15) & ~15u))
 extern unsigned kdata_seg;          /* start.asm: Real-Mode-Segment DGROUP */
 extern unsigned kdata_size;         /* start.asm: Groesse von DGROUP       */
 #define KDATA_LIN   ((unsigned long)kdata_seg << 4)
@@ -456,6 +460,7 @@ extern unsigned char bios_kbf;       /* 0040:0017 beim Start (start.asm) */
 extern unsigned char boot_f8;        /* 1 = F8: CONFIG.SYS schrittweise   */
 extern unsigned char boot_f5;        /* 1 = F5: Notstart (docs/NOTSTART.md) */
 void __far kinit_done(void);        /* k2misc.c: ITEXT freigeben       */
+extern unsigned kinit_pg;           /* davon freigegebene Seiten (MEM)  */
 void __far cfg_wait(void);           /* cfgboot.c (KTEXT4): CONFIG.SYS-Start */
 int  __far cfg_skip(const char *l, int pass);
 void __far cfg_step(void);

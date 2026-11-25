@@ -23,6 +23,25 @@
 #include "task.h"
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
 #pragma code_seg("ITEXT", "CODE")   /* ganze Datei nur beim Start (INIT-SEGMENT.md) */
+/* Texte des Startcodes liegen in IDATA (nach dem Start frei): in
+   kleinen Stuecken ueber den Stapel ausgeben (Startstapel knapp) */
+static const char __based(__segname("IDATA")) kc_1[] = "\xFE F5: Notstart, F8: Startdateien schrittweise";
+static const char __based(__segname("IDATA")) kc_2[] = " [J,N]? ";
+static const char __based(__segname("IDATA")) kc_3[] = "\xFE ISA-PnP: ";
+static const char __based(__segname("IDATA")) kc_4[] = "\n";
+static void kc_i(int s, const char __far *t)
+{
+    char b[33];
+    unsigned i;
+    while (*t) {
+        for (i = 0; i < 32 && t[i]; i++)
+            b[i] = t[i];
+        b[i] = 0;
+        vio_kputs(s, b);
+        t += i;
+    }
+}
+
 
 int __far kf_kbd_get(void);
 int __far kf_env_set(const char *e);
@@ -42,7 +61,7 @@ void __far cfg_wait(void)
 {
     unsigned long t = get_ticks() + 100;
     int k;
-    vio_kputs(boot_session, "\xFE F5: Notstart, F8: Startdateien schrittweise");
+    kc_i(boot_session, kc_1);
     while (!boot_f5 && !boot_f8 && get_ticks() < t)
         if ((k = kf_kbd_get()) == 0x4200)
             boot_f8 = 1;
@@ -63,7 +82,7 @@ static int cfg_ask(const char *l)
 {
     int k;
     vio_kputs(boot_session, l);
-    vio_kputs(boot_session, " [J,N]? ");
+    kc_i(boot_session, kc_2);
     do {
         while ((k = kf_kbd_get()) < 0)
             k4_hlt();
@@ -142,8 +161,8 @@ void __far cfg_pnp(int size)
     n = pnp_init();
     for (i = 0; i < n; i++) {
         pnp_line(i, m);
-        vio_kputs(boot_session, "\xFE ISA-PnP: ");
+        kc_i(boot_session, kc_3);
         vio_kputs(boot_session, m);
-        vio_kputs(boot_session, "\n");
+        kc_i(boot_session, kc_4);
     }
 }
