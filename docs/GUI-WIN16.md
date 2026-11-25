@@ -110,9 +110,14 @@ Rahmen). Deshalb:
   Bereich (Rahmen, Titel, Knöpfe) und Steuerelemente; USER ruft es über
   eine feste Schnittstelle. Gewählt per INI, z. B. `STYLE=CUA|MINI|95`.
   - **CUA** wie oben (Vorgabe, wie PM 1.x/Windows 3.x).
-  - **MINI** schlicht wie twm/fvwm unter Linux: dünner Rahmen, wenige
-    Knöpfe, Menü per Klick auf den Desktop, kein Desktop mit Dateien –
-    am wenigsten Speicher, für den 386 mit 4 MB.
+  - **MINI** schlicht nach dem Vorbild von fvwm2 (Wunsch des Nutzers,
+    25.11.2026: „twm ist echt gruselig, fvwm2 hat mir damals gut
+    gefallen“): Rahmen mit 3D-Kante und Griffen an den Ecken, Titelleiste
+    mit Knöpfen links und rechts, Menüs per Klick auf den Desktop (links
+    Programme, rechts Fensterliste/Optionen), virtueller Desktop mit
+    Seiten-Übersicht (Pager), Knopfleiste (wie FvwmButtons) statt
+    Taskleiste, kein Desktop mit Dateien – wenig Speicher, für den 386
+    mit 4 MB. Bedienkonzept nachgebaut, Bilder und Symbole eigen.
   - **95**: eigener Nachbau des Bedienkonzepts von Windows 95 – 3D-
     Rahmen, drei Knöpfe rechts, passt zeitlich zu AT-DOS 7.0 (1995).
 - **Shell als eigenes, austauschbares Programm**: Programm-Manager-Art
