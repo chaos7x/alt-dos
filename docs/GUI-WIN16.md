@@ -188,6 +188,13 @@ in `tsw` ohne CLI – MOV SS sperrt den nächsten Befehl); ein Task darf sein
 Autodata nicht selbst freigeben, solange er darauf läuft (`task_reap` in
 der Hauptschleife); WinMain ist im Modell small ein naher Aufruf.
 
+Schriften: `COREFONT.EXE` installiert die „Core fonts for the Web“ von
+Microsoft (Arial, Times New Roman, Courier New, Verdana, Georgia …) wie
+Debians `ttf-mscorefonts-installer` – Pakete von SourceForge, SHA-256 wie
+bei Debian, eigener LZX-Entpacker, Ziel `\DOS\FONTS`. Sie kommen nie ins
+Repository und nicht auf die Disketten (Lizenz: nur unverändert weiter-
+geben). Benutzt werden sie, sobald der TrueType-Rasterer steht.
+
 Noch nicht: Menüs, EDIT/LISTBOX/SCROLLBAR, Dialoge aus Ressourcen,
 Bitmaps/BitBlt, eigene Schriften, COMMDLG, DLLs von Programmen
 (LoadLibrary), Profile (INI), Größe ändern/Minimieren, Shell, weitere

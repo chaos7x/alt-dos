@@ -307,7 +307,17 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Wurzel aus `\DOS\SYSTEM\CACERT.PEM` (Liste von Mozilla über curl,
   MPL-2.0, `certs/`), Name (subjectAltName, sonst CN, auch `*.`) und
   Gültigkeit; `--ca-certificate=Datei` nimmt eine andere Liste,
-  `--no-check-certificate` lässt die Prüfung weg
+  `--no-check-certificate` lässt die Prüfung weg. Weiterleitungsziele bis
+  511 Zeichen (SourceForge leitet auf lange Spiegel-URLs um)
+- `COREFONT [/Y] [/S:Verz] [/K] [/Z:Ziel]` installiert die „Core fonts for
+  the Web“ von Microsoft wie `ttf-mscorefonts-installer` von Debian: lädt
+  die elf unveränderten Pakete (`arial32.exe` …) per WGET von SourceForge
+  (Spiegel als Rückfall), prüft SHA-256 gegen die Liste von Debian,
+  entpackt den CAB im Paket mit einem eigenen LZX-Entpacker
+  (`apps/lzx.c`) und legt die 30 TrueType-Dateien nach `\DOS\FONTS`.
+  Vorher zeigt es den Lizenzhinweis und fragt (`/Y` nimmt an); `/S:` nimmt
+  schon geladene Pakete aus einem Verzeichnis. Die Schriften selbst liegen
+  AT-DOS nicht bei
 - `SMBCLI` (6.3) holt und legt Dateien auf Windows-/Samba-Freigaben ab
   (Bedienung angelehnt an smbclient): `SMBCLI \\Rechner\Freigabe
   [-U Benutzer[%Kennwort]] [-W Domäne] [-k] [-c "Befehl; Befehl"]

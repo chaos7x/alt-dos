@@ -2340,6 +2340,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (SEG_INTHND -> `ne_r3int`, auch SEG_TOCODE/TODATA/REALLOC). Beispiel
   `\DEMO\HALLOW.EXE` ohne Watcom-Bibliothek. Stand, Lehren und Offenes
   in `docs/GUI-WIN16.md` „Stand: GUI-Prozess“; nächstes Ziel Notepad.
+  Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
+  (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
+  per WGET von SourceForge, prüft SHA-256 (Liste aus Debians
+  msttcorefonts 3.8.1), entpackt mit `apps/lzx.c` (LZX, eigene Umsetzung,
+  auf dem Rechner byte-gleich mit cabextract) nach `\DOS\FONTS`. Die
+  Schriften nie ins Repository/auf Disketten. Dabei behoben: WGET hielt
+  Weiterleitungsziele in 128 Byte – SourceForge leitet auf ~170 Zeichen
+  um, gekürzt kam eine neue Weiterleitung („Zu viele Weiterleitungen“);
+  jetzt 512 (`URLLEN`). Testfalle: der TLS-Proxy dieser Umgebung stellt
+  eigene Zertifikate aus – für QEMU-Tests dessen CA
+  (/root/.ccr/ca-bundle.crt) an die CACERT.PEM des Testabbilds hängen.
 
 - **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
   15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen
