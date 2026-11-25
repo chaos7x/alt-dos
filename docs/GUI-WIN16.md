@@ -351,7 +351,25 @@ Umgestellt: Öffnen/Speichern (Dateityp- und Laufwerksliste, Schreibschutz,
 Hilfe nur mit OFN_SHOWHELP), Suchen, Ersetzen (neu). In QEMU geprüft:
 Notepad öffnet über den Dialog, Laufwerk per Klappliste (leeres CD:
 „Laufwerk nicht bereit“), Suchen findet; osFree-PROGMAN Durchsuchen mit
-seinem Typfilter. Nächstes: Farbe, Schriftart, Drucken.
+seinem Typfilter.
+
+Danach Farbe, Schriftart und Drucken: **ChooseColor** mit den 48
+Grundfarben wie Windows 3.1 (Werte aus Wine colordlg.c), 16 eigenen,
+„Farben definieren >>“ verbreitert den Dialog (Farbfeld Ton/Sättigung,
+Helligkeitsleiste, Rot/Grün/Blau und Ton/Sättigung/Helligkeit in der
+Windows-Skala 0–240, gegenseitig umgerechnet); gemalt wird in WM_PAINT des
+Dialogs, die STATIC-Platzhalter der Vorlage sind verborgen. Bei 16 VGA-
+Farben mischen Farbfelder zeilenweise die nächste Farbe mit einer
+Ausgleichsfarbe. **ChooseFont**: es gibt nur die Systemschrift – Liste
+„System“, Stile Standard/Kursiv/Fett/Fett Kursiv, Größen 8–72 (nach Zahl,
+CF_LIMITSIZE), Darstellung und Farbe (16 Namen) mit CF_EFFECTS, Muster;
+füllt LOGFONT (Höhe für 96 dpi), iPointSize, rgbColors, nFontType.
+Pfeiltasten im Feld einer COMBOBOX blättern deren Liste (edit.c reicht sie
+weiter). **PrintDlg** meldet „kein Drucker eingerichtet“ (PDERR_NODEFAULTPRN,
+ohne Meldung bei PD_NOWARNING/PD_RETURNDEFAULT) – Druckertreiber der
+Oberfläche gibt es noch nicht. Geprüft in QEMU mit einem Testprogramm
+(Scratchpad): Blau gewählt -> 0xFF0000, 11 pt fett unterstrichen -> 110/700,
+Drucken -> 1008h.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

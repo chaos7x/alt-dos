@@ -244,6 +244,7 @@ LONG FAR PASCAL combo_proc(HWND h, WORD m, WORD wp, DWORD lp)
         c->drop = 0;
         c->droph = cy - FLD_H > 2 * FONT_H ? cy - FLD_H : 6 * FONT_H + 4;
         w->style &= ~(WS_BORDER | WS_VSCROLL);
+        w->cr = w->wr;                          /* Rand/Leiste haben die Kinder */
         if (c->kind != 3) {
             c->ed = CreateWindowEx(0, "EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                                    0, 0, cx - (c->kind == 1 ? 0 : BTN_W), FLD_H, h, ID_ED, w->hinst, 0);
@@ -346,6 +347,8 @@ LONG FAR PASCAL combo_proc(HWND h, WORD m, WORD wp, DWORD lp)
         switch (wp) {
         case 0x26: case 0x25: s = s > 0 ? s - 1 : 0; break;
         case 0x28: case 0x27: s = s + 1 < n ? s + 1 : n - 1; break;
+        case 0x21: s = s > 7 ? s - 7 : 0; break;
+        case 0x22: s = s + 7 < n ? s + 7 : n - 1; break;
         case 0x24: s = 0; break;
         case 0x23: s = n - 1; break;
         default: return 0;
@@ -405,7 +408,10 @@ LONG FAR PASCAL combo_proc(HWND h, WORD m, WORD wp, DWORD lp)
     case 0x0400: return c->ed ? send_msg(c->ed, 0x0400, 0, 0) : -1;     /* GETEDITSEL   */
     case 0x0401: return c->ed ? send_msg(c->ed, 0x0415, wp, 0), 1 : -1; /* LIMITTEXT    */
     case 0x0402: return c->ed ? send_msg(c->ed, 0x0401, 0, lp), 1 : -1; /* SETEDITSEL   */
-    case 0x0403: return send_msg(c->lb, 0x0401, 0, lp);                  /* ADDSTRING    */
+    case 0x0403:                                                         /* ADDSTRING    */
+        if (!(w->style & CBS_SORT))             /* ans Ende, nicht sortiert */
+            return send_msg(c->lb, 0x0402, (WORD)send_msg(c->lb, 0x040C, 0, 0), lp);
+        return send_msg(c->lb, 0x0401, 0, lp);
     case 0x0404: return send_msg(c->lb, 0x0403, wp, 0);                  /* DELETESTRING */
     case 0x0405: return send_msg(c->lb, 0x040E, wp, lp);                 /* DIR          */
     case 0x0406: return send_msg(c->lb, 0x040C, 0, 0);                   /* GETCOUNT     */

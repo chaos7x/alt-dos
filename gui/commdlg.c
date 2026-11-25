@@ -56,6 +56,7 @@ short API GetFileTitle(LPCSTR path, LPSTR buf, WORD n)
 #include "cdlgtpl.h"
 
 #define WM_INITDIALOG 0x0110
+#define WM_PAINT 0x000F
 #define SW_HIDE  0
 
 /* Vorlage waehlen: eigene des Programms (ENABLETEMPLATE[HANDLE]) oder unsere */
@@ -564,12 +565,555 @@ static HWND find_dlg(BYTE FAR *f, int rep)
 HWND API FindText(BYTE FAR *f) { return find_dlg(f, 0); }
 HWND API ReplaceText(BYTE FAR *f) { return find_dlg(f, 1); }
 
-/* ---- Drucken, Farben, Schriften: noch nicht ---- */
-BOOL API PrintDlg(BYTE FAR *p)
+/* ---- Farbe (CHOOSE_COLOR) ---- */
+/* 48 Grundfarben wie Windows 3.1 (Werte aus Wine colordlg.c) */
+static const DWORD basic[48] = {
+    0x8080FFL, 0x80FFFFL, 0x80FF80L, 0x80FF00L, 0xFFFF80L, 0xFF8000L, 0xC080FFL, 0xFF80FFL,
+    0x0000FFL, 0x00FFFFL, 0x00FF80L, 0x40FF00L, 0xFFFF00L, 0xC08000L, 0xC08080L, 0xFF00FFL,
+    0x404080L, 0x4080FFL, 0x00FF00L, 0x808000L, 0x804000L, 0xFF8080L, 0x400080L, 0x8000FFL,
+    0x000080L, 0x0080FFL, 0x008000L, 0x408000L, 0xFF0000L, 0xA00000L, 0x800080L, 0xFF0080L,
+    0x000040L, 0x004080L, 0x004000L, 0x404000L, 0x800000L, 0x400000L, 0x400040L, 0x800040L,
+    0x000000L, 0x008080L, 0x408080L, 0x808080L, 0x808040L, 0xC0C0C0L, 0x400040L, 0xFFFFFFL };
+extern DWORD vga_rgb[16];
+BYTE rgb2c(DWORD rgb);
+struct paintst { HDC hdc; BOOL erase; RECT rc; BOOL res, inc; BYTE rgb[16]; };
+BOOL API MoveWindow(HWND h, short x, short y, short cx, short cy, BOOL rep);
+void API SetDlgItemInt(HWND d, short id, WORD v, BOOL sgn);
+WORD API GetDlgItemInt(HWND d, short id, BOOL FAR *ok, BOOL sgn);
+void API InvalidateRect(HWND h, const RECT FAR *r, BOOL e);
+
+#define CC_RGBINIT    0x01UL
+#define CC_FULLOPEN   0x02UL
+#define CC_PREVENTFULLOPEN 0x04UL
+#define CC_SHOWHELP   0x08UL
+#define CC_ENABLEHOOK 0x10UL
+#define CC_ENABLETEMPLATE 0x20UL
+#define CC_ENABLETEMPLATEHANDLE 0x40UL
+#define ID_C_HUE   703
+#define ID_C_SAT   704
+#define ID_C_LUM   705
+#define ID_C_RED   706
+#define ID_C_GREEN 707
+#define ID_C_BLUE  708
+#define ID_C_ADD   712
+#define ID_C_MIX   719
+
+/* Bereiche im Client des Dialogs (Vorlage in Dialogeinheiten x 2) */
+#define BX_L 8                  /* Grundfarben 8 x 6                    */
+#define BX_T 28
+#define CU_T 232                /* eigene 8 x 2                         */
+#define CW   35
+#define CH   28
+#define RB_L 304                /* Farbfeld (Farbton waagerecht, Saettigung senkrecht) */
+#define RB_T 8
+#define RB_W 236
+#define RB_H 232
+#define LB_L 556                /* Helligkeit                           */
+#define CUR_T 248               /* aktuelle Farbe                       */
+
+static struct {
+    BYTE FAR *cc;
+    DWORD hook, rgb, cust[16];
+    short h, s, l;
+    short sel;                  /* 0..47 Grund, 48..63 eigene, -1       */
+    BYTE full, busy;
+} cl;
+
+static void rgb2hsl(DWORD c, short *h, short *s, short *l)
 {
-    (void)p;
-    cderr = 0x1008;                             /* PDERR_NODEFAULTPRN    */
+    short r = (BYTE)c, g = (BYTE)(c >> 8), b = (BYTE)(c >> 16);
+    short mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    short mn = r < g ? (r < b ? r : b) : (g < b ? g : b), d = mx - mn;
+    long sum = (long)mx + mn, hh;
+    *l = (short)((sum * 240 + 255) / 510);
+    if (!d) {
+        *s = 0;
+        *h = 160;
+        return;
+    }
+    *s = (short)(*l <= 120 ? ((long)d * 240 + sum / 2) / sum
+                           : ((long)d * 240 + (510 - sum) / 2) / (510 - sum));
+    if (r == mx)
+        hh = (long)(g - b) * 40 / d;
+    else if (g == mx)
+        hh = 80 + (long)(b - r) * 40 / d;
+    else
+        hh = 160 + (long)(r - g) * 40 / d;
+    if (hh < 0) hh += 240;
+    *h = (short)hh;
+}
+static short hue2c(long m1, long m2, long h)    /* Teilwert 0..255        */
+{
+    long v;
+    if (h < 0) h += 240;
+    if (h > 240) h -= 240;
+    if (h < 40) v = m1 + ((m2 - m1) * h + 20) / 40;
+    else if (h < 120) v = m2;
+    else if (h < 160) v = m1 + ((m2 - m1) * (160 - h) + 20) / 40;
+    else v = m1;
+    return (short)((v * 255 + 120) / 240);
+}
+static DWORD hsl2rgb(short h, short s, short l)
+{
+    long m1, m2;
+    short r, g, b;
+    if (!s) {
+        r = g = b = (short)(((long)l * 255 + 120) / 240);
+    } else {
+        m2 = l <= 120 ? ((long)l * (240 + s) + 120) / 240 : l + s - ((long)l * s + 120) / 240;
+        m1 = 2L * l - m2;
+        r = hue2c(m1, m2, (long)h + 80);
+        g = hue2c(m1, m2, h);
+        b = hue2c(m1, m2, (long)h - 80);
+    }
+    return (DWORD)(BYTE)r | ((DWORD)(BYTE)g << 8) | ((DWORD)(BYTE)b << 16);
+}
+
+/* Farbe mit 16 VGA-Farben: Zeilen abwechselnd naechste und Ausgleich */
+static void swatch(HDC dc, short l, short t, short r, short b, DWORD rgb)
+{
+    BYTE c1 = rgb2c(rgb), c2;
+    DWORD v = vga_rgb[c1];
+    short k, cr = 2 * (short)(BYTE)rgb - (short)(BYTE)v;
+    short cg = 2 * (short)(BYTE)(rgb >> 8) - (short)(BYTE)(v >> 8);
+    short cb = 2 * (short)(BYTE)(rgb >> 16) - (short)(BYTE)(v >> 16);
+    if (cr < 0) cr = 0; if (cr > 255) cr = 255;
+    if (cg < 0) cg = 0; if (cg > 255) cg = 255;
+    if (cb < 0) cb = 0; if (cb > 255) cb = 255;
+    c2 = rgb2c((DWORD)cr | ((DWORD)cg << 8) | ((DWORD)cb << 16));
+    for (k = t; k < b; k++)
+        dc_rawfill(dc, l, k, r, k + 1, ((k ^ (k >> 1)) & 1) ? c2 : c1);
+}
+static void box(HDC dc, short l, short t, short r, short b, BYTE c)
+{
+    dc_rawfill(dc, l, t, r, t + 1, c);
+    dc_rawfill(dc, l, b - 1, r, b, c);
+    dc_rawfill(dc, l, t, l + 1, b, c);
+    dc_rawfill(dc, r - 1, t, r, b, c);
+}
+
+static void cc_paint(HWND d)
+{
+    static struct paintst ps;
+    struct wnd *w = wptr(d);
+    HDC dc = BeginPaint(d, (void FAR *)&ps);
+    short x0 = w->cr.left, y0 = w->cr.top, i;
+    for (i = 0; i < 64; i++) {
+        short cx = x0 + BX_L + (i & 7) * CW, cy = y0 + (i < 48 ? BX_T + (i >> 3) * CH : CU_T + ((i - 48) >> 3) * CH);
+        swatch(dc, cx + 4, cy + 4, cx + CW - 4, cy + CH - 4, i < 48 ? basic[i] : cl.cust[i - 48]);
+        box(dc, cx + 3, cy + 3, cx + CW - 3, cy + CH - 3, 0);
+        box(dc, cx + 1, cy + 1, cx + CW - 1, cy + CH - 1, i == cl.sel ? 0 : 15);
+    }
+    if (cl.full) {
+        short hx, sy, k;
+        for (sy = 0; sy < RB_H; sy += 8)        /* grob: 8 x 8 Bloecke   */
+            for (hx = 0; hx < RB_W; hx += 8) {
+                short e = hx + 8 > RB_W ? RB_W : hx + 8, f = sy + 8 > RB_H ? RB_H : sy + 8;
+                swatch(dc, x0 + RB_L + hx, y0 + RB_T + sy, x0 + RB_L + e, y0 + RB_T + f,
+                       hsl2rgb((short)((long)hx * 239 / RB_W), (short)(240 - (long)sy * 240 / RB_H), 120));
+            }
+        box(dc, x0 + RB_L - 1, y0 + RB_T - 1, x0 + RB_L + RB_W + 1, y0 + RB_T + RB_H + 1, 0);
+        hx = x0 + RB_L + (short)((long)cl.h * RB_W / 240);
+        sy = y0 + RB_T + (short)((long)(240 - cl.s) * (RB_H - 1) / 240);
+        dc_rawfill(dc, hx - 6, sy, hx - 1, sy + 1, 0);
+        dc_rawfill(dc, hx + 2, sy, hx + 7, sy + 1, 0);
+        dc_rawfill(dc, hx, sy - 6, hx + 1, sy - 1, 0);
+        dc_rawfill(dc, hx, sy + 2, hx + 1, sy + 7, 0);
+        for (k = 0; k < RB_H; k += 8)
+            swatch(dc, x0 + LB_L, y0 + RB_T + k, x0 + LB_L + 16, y0 + RB_T + (k + 8 > RB_H ? RB_H : k + 8),
+                   hsl2rgb(cl.h, cl.s, (short)(240 - (long)k * 240 / RB_H)));
+        box(dc, x0 + LB_L - 1, y0 + RB_T - 1, x0 + LB_L + 17, y0 + RB_T + RB_H + 1, 0);
+        dc_rawfill(dc, x0 + LB_L + 18, y0 + RB_T - 6, x0 + LB_L + 30, y0 + RB_T + RB_H + 6, 15);
+        k = y0 + RB_T + (short)((long)(240 - cl.l) * (RB_H - 1) / 240);
+        for (i = 0; i < 5; i++)
+            dc_rawfill(dc, x0 + LB_L + 19 + i, k - i, x0 + LB_L + 20 + i, k + i + 1, 0);
+        swatch(dc, x0 + RB_L, y0 + CUR_T, x0 + RB_L + 40, y0 + CUR_T + 52, cl.rgb);
+        dc_rawfill(dc, x0 + RB_L + 40, y0 + CUR_T, x0 + RB_L + 80, y0 + CUR_T + 52, rgb2c(cl.rgb));
+        box(dc, x0 + RB_L - 1, y0 + CUR_T - 1, x0 + RB_L + 81, y0 + CUR_T + 53, 0);
+    }
+    EndPaint(d, (void FAR *)&ps);
+}
+
+static void cc_fields(HWND d, int from_rgb)
+{
+    cl.busy = 1;
+    if (from_rgb)
+        rgb2hsl(cl.rgb, &cl.h, &cl.s, &cl.l);
+    SetDlgItemInt(d, ID_C_RED, (BYTE)cl.rgb, 0);
+    SetDlgItemInt(d, ID_C_GREEN, (BYTE)(cl.rgb >> 8), 0);
+    SetDlgItemInt(d, ID_C_BLUE, (BYTE)(cl.rgb >> 16), 0);
+    SetDlgItemInt(d, ID_C_HUE, cl.h, 0);
+    SetDlgItemInt(d, ID_C_SAT, cl.s, 0);
+    SetDlgItemInt(d, ID_C_LUM, cl.l, 0);
+    cl.busy = 0;
+    InvalidateRect(d, 0, 0);
+}
+
+static void cc_full(HWND d, int on)
+{
+    struct wnd *w = wptr(d);
+    static const short ids[] = { ID_C_HUE, ID_C_SAT, ID_C_LUM, ID_C_RED, ID_C_GREEN, ID_C_BLUE,
+                                 ID_C_ADD, 723, 724, 725, 726, 727, 728, 0 };
+    short i;
+    cl.full = (BYTE)on;
+    for (i = 0; ids[i]; i++)
+        ShowWindow(GetDlgItem(d, ids[i]), on ? 5 : 0);
+    if (!on) {                                  /* schmal wie Windows    */
+        struct wnd *o = wptr(w->owner);
+        MoveWindow(d, w->wr.left, w->wr.top, 2 * 152 + 6, w->wr.bottom - w->wr.top, 1);
+        (void)o;
+    } else {
+        MoveWindow(d, w->wr.left, w->wr.top, 2 * 300 + 6, w->wr.bottom - w->wr.top, 1);
+        EnableWindow(GetDlgItem(d, ID_C_MIX), 0);
+    }
+}
+
+static BOOL cc_proc(HWND d, WORD m, WORD wp, DWORD lp)
+{
+    if (cd_hook(cl.hook, *(WORD FAR *)(cl.cc + 6), d, m, wp, m == WM_INITDIALOG ? (DWORD)cl.cc : lp))
+        return 1;
+    switch (m) {
+    case WM_INITDIALOG: {
+        DWORD fl = *(DWORD FAR *)(cl.cc + 16);
+        short i;
+        static const short hidden[] = { 720, 721, 710, 702, 709, 713, 730, 731, 0 };
+        for (i = 0; hidden[i]; i++)
+            ShowWindow(GetDlgItem(d, hidden[i]), 0);
+        if (!(fl & CC_SHOWHELP))
+            hide(d, ID_HELP);
+        if (fl & CC_PREVENTFULLOPEN)
+            EnableWindow(GetDlgItem(d, ID_C_MIX), 0);
+        cc_full(d, (fl & CC_FULLOPEN) && !(fl & CC_PREVENTFULLOPEN));
+        cc_fields(d, 1);
+        return 1;
+    }
+    case WM_PAINT:
+        cc_paint(d);
+        return 1;
+    case 0x0201: case 0x0203: {                 /* WM_LBUTTONDOWN/DBLCLK */
+        short x = (short)LOWORD(lp), y = (short)HIWORD(lp);
+        if (x >= BX_L && x < BX_L + 8 * CW) {
+            short k = -1;
+            if (y >= BX_T && y < BX_T + 6 * CH)
+                k = (x - BX_L) / CW + ((y - BX_T) / CH) * 8;
+            else if (y >= CU_T && y < CU_T + 2 * CH)
+                k = 48 + (x - BX_L) / CW + ((y - CU_T) / CH) * 8;
+            if (k >= 0) {
+                cl.sel = k;
+                cl.rgb = k < 48 ? basic[k] : cl.cust[k - 48];
+                cc_fields(d, 1);
+                if (m == 0x0203)
+                    post_msg(d, WM_COMMAND, IDOK, 0);
+            }
+        } else if (cl.full && y >= RB_T && y < RB_T + RB_H) {
+            if (x >= RB_L && x < RB_L + RB_W) {
+                cl.h = (short)((long)(x - RB_L) * 239 / RB_W);
+                cl.s = (short)(240 - (long)(y - RB_T) * 240 / RB_H);
+            } else if (x >= LB_L && x < LB_L + 30)
+                cl.l = (short)(240 - (long)(y - RB_T) * 240 / RB_H);
+            else
+                return 1;
+            cl.rgb = hsl2rgb(cl.h, cl.s, cl.l);
+            cc_fields(d, 0);
+        }
+        return 1;
+    }
+    case WM_COMMAND:
+        switch (wp) {
+        case ID_C_RED: case ID_C_GREEN: case ID_C_BLUE:
+            if (HIWORD(lp) == 0x0300 && !cl.busy) {     /* EN_CHANGE     */
+                WORD r = GetDlgItemInt(d, ID_C_RED, 0, 0), g = GetDlgItemInt(d, ID_C_GREEN, 0, 0);
+                WORD b = GetDlgItemInt(d, ID_C_BLUE, 0, 0);
+                cl.rgb = (DWORD)(r > 255 ? 255 : r) | ((DWORD)(g > 255 ? 255 : g) << 8) |
+                         ((DWORD)(b > 255 ? 255 : b) << 16);
+                rgb2hsl(cl.rgb, &cl.h, &cl.s, &cl.l);
+                cl.busy = 1;
+                SetDlgItemInt(d, ID_C_HUE, cl.h, 0);
+                SetDlgItemInt(d, ID_C_SAT, cl.s, 0);
+                SetDlgItemInt(d, ID_C_LUM, cl.l, 0);
+                cl.busy = 0;
+                InvalidateRect(d, 0, 0);
+            }
+            return 1;
+        case ID_C_HUE: case ID_C_SAT: case ID_C_LUM:
+            if (HIWORD(lp) == 0x0300 && !cl.busy) {
+                WORD h = GetDlgItemInt(d, ID_C_HUE, 0, 0), sa = GetDlgItemInt(d, ID_C_SAT, 0, 0);
+                WORD l = GetDlgItemInt(d, ID_C_LUM, 0, 0);
+                cl.h = h > 239 ? 239 : h; cl.s = sa > 240 ? 240 : sa; cl.l = l > 240 ? 240 : l;
+                cl.rgb = hsl2rgb(cl.h, cl.s, cl.l);
+                cl.busy = 1;
+                SetDlgItemInt(d, ID_C_RED, (BYTE)cl.rgb, 0);
+                SetDlgItemInt(d, ID_C_GREEN, (BYTE)(cl.rgb >> 8), 0);
+                SetDlgItemInt(d, ID_C_BLUE, (BYTE)(cl.rgb >> 16), 0);
+                cl.busy = 0;
+                InvalidateRect(d, 0, 0);
+            }
+            return 1;
+        case ID_C_MIX:
+            cc_full(d, 1);
+            return 1;
+        case ID_C_ADD: {                        /* in das gewaehlte bzw. naechste Feld */
+            short k = cl.sel >= 48 ? cl.sel - 48 : 0;
+            cl.cust[k] = cl.rgb;
+            cl.sel = 48 + (k + 1) % 16;
+            InvalidateRect(d, 0, 0);
+            return 1;
+        }
+        case IDOK: {
+            DWORD FAR *cu = *(DWORD FAR * FAR *)(cl.cc + 12);
+            short i;
+            *(DWORD FAR *)(cl.cc + 8) = cl.rgb;
+            if (cu)
+                for (i = 0; i < 16; i++) cu[i] = cl.cust[i];
+            EndDialog(d, 1);
+            return 1;
+        }
+        case IDCANCEL:
+            EndDialog(d, 0);
+            return 1;
+        }
+    }
     return 0;
 }
-BOOL API ChooseColor(BYTE FAR *p) { (void)p; cderr = 0; return 0; }
-BOOL API ChooseFont(BYTE FAR *p) { (void)p; cderr = 0; return 0; }
+
+BOOL API ChooseColor(BYTE FAR *p)
+{
+    HWND owner = *(WORD FAR *)(p + 4), d;
+    DWORD fl = *(DWORD FAR *)(p + 16);
+    DWORD FAR *cu = *(DWORD FAR * FAR *)(p + 12);
+    WORD hinst = *(WORD FAR *)(p + 6);
+    static WORD sel;
+    const BYTE FAR *tpl;
+    short i;
+    cderr = 0;
+    cl.cc = p;
+    cl.hook = (fl & CC_ENABLEHOOK) ? *(DWORD FAR *)(p + 24) : 0;
+    cl.rgb = (fl & CC_RGBINIT) ? *(DWORD FAR *)(p + 8) & 0xFFFFFFL : 0;
+    cl.sel = -1;
+    for (i = 0; i < 16; i++)
+        cl.cust[i] = cu ? cu[i] : 0xFFFFFFL;
+    for (i = 0; i < 48; i++)
+        if (basic[i] == cl.rgb) { cl.sel = i; break; }
+    tpl = cd_tpl(fl, CC_ENABLETEMPLATE, CC_ENABLETEMPLATEHANDLE, hinst,
+                 *(LPCSTR FAR *)(p + 28), dlg_CHOOSE_COLOR, &sel);
+    d = dlg_tpl(tpl, tpl == dlg_CHOOSE_COLOR ? 0 : hinst, owner, (IDLGPROC)cc_proc, 0);
+    if (sel)
+        seg_del(sel);
+    if (!d) {
+        cderr = 2;
+        return 0;
+    }
+    return dlg_run(d, owner) == 1;
+}
+
+/* ---- Schriftart (CHOOSE_FONT) - es gibt nur die Systemschrift ---- */
+#define CF_SHOWHELP   0x00000004UL
+#define CF_ENABLEHOOK 0x00000008UL
+#define CF_ENABLETEMPLATE 0x00000010UL
+#define CF_ENABLETEMPLATEHANDLE 0x00000020UL
+#define CF_INITTOLOGFONTSTRUCT 0x00000040UL
+#define CF_EFFECTS    0x00000100UL
+#define CF_APPLY      0x00000200UL
+#define CF_LIMITSIZE  0x00002000UL
+#define ID_F_FACE  0x470        /* cmb1 */
+#define ID_F_STYLE 0x471        /* cmb2 */
+#define ID_F_SIZE  0x472        /* cmb3 */
+#define ID_F_COLOR 0x473        /* cmb4 */
+#define ID_F_SCRIPT 0x474       /* cmb5 */
+#define ID_F_STRIKE 0x410
+#define ID_F_UNDER 0x411
+#define ID_F_APPLY 0x402        /* psh3 */
+#define CB_FINDSTRINGEXACT 0x0418
+#define CB_SETITEMDATA 0x0411
+#define CB_GETITEMDATA 0x0410
+#define WM_CHOOSEFONT_GETLOGFONT 0x0401
+
+static const char *fstyle[] = { "Standard", "Kursiv", "Fett", "Fett Kursiv" };
+static const BYTE fsizes[] = { 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72, 0 };
+static const char *cname[16] = { "Schwarz", "Dunkelrot", "Dunkelgr\xFCn", "Oliv", "Dunkelblau",
+    "Violett", "Blaugr\xFCn", "Grau", "Silber", "Rot", "Hellgr\xFCn", "Gelb", "Blau",
+    "Magenta", "T\xFCrkis", "Wei\xDF" };
+static const DWORD crgb[16] = { 0x000000L, 0x000080L, 0x008000L, 0x008080L, 0x800000L,
+    0x800080L, 0x808000L, 0x808080L, 0xC0C0C0L, 0x0000FFL, 0x00FF00L, 0x00FFFFL, 0xFF0000L,
+    0xFF00FFL, 0xFFFF00L, 0xFFFFFFL };
+
+static struct {
+    BYTE FAR *cf;
+    DWORD hook;
+} cf;
+
+static short cf_get(HWND d, short id)
+{
+    return (short)SendDlgItemMessage(d, id, CB_GETCURSEL, 0, 0);
+}
+
+static void cf_store(HWND d)                    /* Auswahl -> LOGFONT usw. */
+{
+    BYTE FAR *p = cf.cf;
+    BYTE FAR *lf = *(BYTE FAR * FAR *)(p + 8);
+    short st = cf_get(d, ID_F_STYLE), pt;
+    static char t[8];
+    GetDlgItemText(d, ID_F_SIZE, t, sizeof(t));
+    for (pt = 0; *t && pt < 1000 && t[0]; ) {
+        short i;
+        for (i = 0; t[i] >= '0' && t[i] <= '9'; i++)
+            pt = pt * 10 + (t[i] - '0');
+        break;
+    }
+    if (!pt) pt = 10;
+    if (st < 0) st = 0;
+    *(short FAR *)(p + 12) = pt * 10;
+    if (lf) {
+        fmemset(lf, 0, 50);
+        *(short FAR *)lf = -(short)(((long)pt * 96 + 36) / 72);
+        *(short FAR *)(lf + 8) = (st & 2) ? 700 : 400;
+        lf[10] = (BYTE)(st & 1);
+        lf[11] = (BYTE)SendDlgItemMessage(d, ID_F_UNDER, BM_GETCHECK, 0, 0);
+        lf[12] = (BYTE)SendDlgItemMessage(d, ID_F_STRIKE, BM_GETCHECK, 0, 0);
+        lf[17] = 0x22;                          /* VARIABLE_PITCH|FF_SWISS */
+        fstrncpy((LPSTR)(lf + 18), "System", 32);
+    }
+    if (cf_get(d, ID_F_COLOR) >= 0)
+        *(DWORD FAR *)(p + 18) = crgb[cf_get(d, ID_F_COLOR)];
+    *(WORD FAR *)(p + 40) = 0x2000 | ((st & 2) ? 0x100 : 0x400) | ((st & 1) ? 0x200 : 0);
+}
+
+static void cf_paint(HWND d)
+{
+    static struct paintst ps;
+    struct wnd *w = wptr(d);
+    HDC dc = BeginPaint(d, (void FAR *)&ps);
+    short x = w->cr.left + 206, y = w->cr.top + 206, c = cf_get(d, ID_F_COLOR);
+    BYTE fg = c >= 0 ? rgb2c(crgb[c]) : 0;
+    dc_rawfill(dc, x, y, x + 218, y + 44, 15);
+    dc_rawtext(dc, x + 77, y + 14, "AaBbYyZz", 8, fg);
+    if (SendDlgItemMessage(d, ID_F_UNDER, BM_GETCHECK, 0, 0))
+        dc_rawfill(dc, x + 77, y + 14 + FONT_H - 2, x + 77 + 64, y + 14 + FONT_H - 1, fg);
+    if (SendDlgItemMessage(d, ID_F_STRIKE, BM_GETCHECK, 0, 0))
+        dc_rawfill(dc, x + 77, y + 14 + FONT_H / 2, x + 77 + 64, y + 14 + FONT_H / 2 + 1, fg);
+    EndPaint(d, (void FAR *)&ps);
+}
+
+static BOOL cf_proc(HWND d, WORD m, WORD wp, DWORD lp)
+{
+    BYTE FAR *p = cf.cf;
+    if (cd_hook(cf.hook, *(WORD FAR *)(p + 34), d, m, wp, m == WM_INITDIALOG ? (DWORD)p : lp))
+        return 1;
+    switch (m) {
+    case WM_INITDIALOG: {
+        DWORD fl = *(DWORD FAR *)(p + 14);
+        BYTE FAR *lf = *(BYTE FAR * FAR *)(p + 8);
+        short i, st = 0, pt = *(short FAR *)(p + 12) / 10, lo = 0, hi = 999;
+        static char t[8];
+        if (fl & CF_LIMITSIZE) {
+            lo = *(short FAR *)(p + 42);
+            hi = *(short FAR *)(p + 44);
+        }
+        SendDlgItemMessage(d, ID_F_FACE, CB_ADDSTRING, 0, (DWORD)(void FAR *)"System");
+        SendDlgItemMessage(d, ID_F_FACE, CB_SETCURSEL, 0, 0);
+        for (i = 0; i < 4; i++)
+            SendDlgItemMessage(d, ID_F_STYLE, CB_ADDSTRING, 0, (DWORD)(void FAR *)fstyle[i]);
+        {                                       /* Groessen nach Zahl, nicht als Text */
+            struct wnd *sw = wptr(GetDlgItem(d, ID_F_SIZE));
+            if (sw) sw->style &= ~0x0100UL;    /* CBS_SORT              */
+        }
+        for (i = 0; fsizes[i]; i++) {
+            short v = fsizes[i], k = 0;
+            if (v < lo || v > hi)
+                continue;
+            if (v >= 10) t[k++] = (char)('0' + v / 10);
+            t[k++] = (char)('0' + v % 10);
+            t[k] = 0;
+            SendDlgItemMessage(d, ID_F_SIZE, CB_ADDSTRING, 0, (DWORD)(void FAR *)t);
+        }
+        for (i = 0; i < 16; i++)
+            SendDlgItemMessage(d, ID_F_COLOR, CB_ADDSTRING, 0, (DWORD)(void FAR *)cname[i]);
+        SendDlgItemMessage(d, ID_F_SCRIPT, CB_ADDSTRING, 0, (DWORD)(void FAR *)"Westlich");
+        SendDlgItemMessage(d, ID_F_SCRIPT, CB_SETCURSEL, 0, 0);
+        if ((fl & CF_INITTOLOGFONTSTRUCT) && lf) {
+            short hgt = *(short FAR *)lf;
+            if (hgt < 0) pt = (short)(((long)-hgt * 72 + 48) / 96);
+            st = (*(short FAR *)(lf + 8) >= 600 ? 2 : 0) | (lf[10] ? 1 : 0);
+            SendDlgItemMessage(d, ID_F_UNDER, BM_SETCHECK, lf[11] != 0, 0);
+            SendDlgItemMessage(d, ID_F_STRIKE, BM_SETCHECK, lf[12] != 0, 0);
+        }
+        if (pt <= 0) pt = 10;
+        SendDlgItemMessage(d, ID_F_STYLE, CB_SETCURSEL, st, 0);
+        SetDlgItemInt(d, ID_F_SIZE, pt, 0);
+        GetDlgItemText(d, ID_F_SIZE, t, sizeof(t));
+        if (SendDlgItemMessage(d, ID_F_SIZE, CB_FINDSTRINGEXACT, (WORD)-1, (DWORD)(void FAR *)t) >= 0)
+            SendDlgItemMessage(d, ID_F_SIZE, CB_SETCURSEL,
+                (WORD)SendDlgItemMessage(d, ID_F_SIZE, CB_FINDSTRINGEXACT, (WORD)-1, (DWORD)(void FAR *)t), 0);
+        for (i = 0; i < 16; i++)
+            if (crgb[i] == (*(DWORD FAR *)(p + 18) & 0xFFFFFFL)) break;
+        SendDlgItemMessage(d, ID_F_COLOR, CB_SETCURSEL, i < 16 ? i : 0, 0);
+        if (!(fl & CF_EFFECTS)) {
+            static const short e[] = { 0x430, ID_F_STRIKE, ID_F_UNDER, 0x443, ID_F_COLOR, 0 };
+            for (i = 0; e[i]; i++) hide(d, e[i]);
+        }
+        if (!(fl & CF_APPLY)) hide(d, ID_F_APPLY);
+        if (!(fl & CF_SHOWHELP)) hide(d, ID_HELP);
+        return 1;
+    }
+    case WM_PAINT:
+        cf_paint(d);
+        return 1;
+    case WM_CHOOSEFONT_GETLOGFONT:
+        cf_store(d);
+        if (lp && *(DWORD FAR *)(p + 8))
+            fmemcpy((void FAR *)lp, *(void FAR * FAR *)(p + 8), 50);
+        return 1;
+    case WM_COMMAND:
+        switch (wp) {
+        case ID_F_COLOR: case ID_F_UNDER: case ID_F_STRIKE: case ID_F_STYLE: case ID_F_SIZE:
+            InvalidateRect(d, 0, 0);
+            return 1;
+        case ID_F_APPLY:
+            cf_store(d);
+            return 1;
+        case IDOK:
+            cf_store(d);
+            EndDialog(d, 1);
+            return 1;
+        case IDCANCEL:
+            EndDialog(d, 0);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+BOOL API ChooseFont(BYTE FAR *p)
+{
+    HWND owner = *(WORD FAR *)(p + 4), d;
+    DWORD fl = *(DWORD FAR *)(p + 14);
+    WORD hinst = *(WORD FAR *)(p + 34);
+    static WORD sel;
+    const BYTE FAR *tpl;
+    cderr = 0;
+    cf.cf = p;
+    cf.hook = (fl & CF_ENABLEHOOK) ? *(DWORD FAR *)(p + 26) : 0;
+    tpl = cd_tpl(fl, CF_ENABLETEMPLATE, CF_ENABLETEMPLATEHANDLE, hinst,
+                 *(LPCSTR FAR *)(p + 30), dlg_CHOOSE_FONT, &sel);
+    d = dlg_tpl(tpl, tpl == dlg_CHOOSE_FONT ? 0 : hinst, owner, (IDLGPROC)cf_proc, 0);
+    if (sel)
+        seg_del(sel);
+    if (!d) {
+        cderr = 2;
+        return 0;
+    }
+    return dlg_run(d, owner) == 1;
+}
+
+/* ---- Drucken: es gibt noch keine Druckertreiber der Oberflaeche ---- */
+BOOL API PrintDlg(BYTE FAR *p)
+{
+    DWORD fl = *(DWORD FAR *)(p + 12);
+    cderr = 0x1008;                             /* PDERR_NODEFAULTPRN    */
+    if (!(fl & 0x00000480UL))                   /* PD_NOWARNING, RETURNDEFAULT */
+        MessageBox(*(WORD FAR *)(p + 4),
+                   "Es ist kein Drucker eingerichtet.\n"
+                   "Drucken aus der grafischen Oberfl\xE4" "che geht noch nicht.",
+                   (fl & 0x40) ? "Druckereinrichtung" : "Drucken", 0x30);
+    return 0;
+}

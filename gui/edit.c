@@ -757,6 +757,14 @@ LONG FAR PASCAL edit_proc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_GETDLGCODE:
         return e->ml ? 0x0001 | 0x0080 | 0x0004 | 0x0008 : 0x0001 | 0x0080 | 0x0008;
     case WM_KEYDOWN:
+        {                                       /* Feld einer COMBOBOX:   */
+            struct wnd *pw = wptr(w->parent);   /* Liste blaettern        */
+            if (pw && (w->style & 0x40000000UL) && pw->cls == 9 &&
+                (wp == 0x26 || wp == 0x28 || wp == 0x21 || wp == 0x22 || wp == 0x73)) {
+                send_msg(w->parent, WM_KEYDOWN, wp, lp);
+                return 0;
+            }
+        }
         key(e, wp);
         return 0;
     case WM_CHAR:
