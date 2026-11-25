@@ -380,6 +380,27 @@ Rahmen). Deshalb:
   danach LGPL. Stände von 1996 nur lesen; übernommen wird aus
   wine-20000430 … wine-20020228, Herkunft je Datei vermerken.
 
+## Weitere Nachschlagewerke (vom Nutzer gefunden, 25.11.2026)
+
+- **osFree Janus** (github.com/osfree-project/WIN16, LGPL-2.1-or-later):
+  Nachbau von Windows 3.0 aus TWIN, Wine, ReactOS und HX-DOS; eigener
+  KRNL286/386 direkt unter DOS, GDI fehlt noch – Aufbau passt nicht zu
+  unserem, KERNEL/USER/GDI werden nicht übernommen. Brauchbar: die
+  Begleitprogramme als Win16-Quelltext für Open Watcom (Notepad, eigenes
+  Repository osfree-project/notepad; PROGMAN, Clock, Reversi, Taskman,
+  Calc, WinFile, Write, Solitaire …; fertig laut ihrer Liste nur Clock,
+  Reversi, Taskman), das .GRP-Format in `applications/progman/grpfile.c`,
+  Schriften aus Wine (`resources/fonts`). Entscheidung (25.11.2026):
+  unverändert als Prüfstand für unsere Schicht, nur im Scratchpad gebaut;
+  Shell und Dateimanager schreiben wir selbst; ob einzelne Programme
+  mitgeliefert werden, später. Erster Versuch: osFree-Notepad baut mit
+  `wcc -bt=windows -ms -zW` + `wlink system windows`, scheitert bei uns an
+  10 fehlenden Importen (SetErrorMode, LoadLibrary/FreeLibrary, lstrcpyn,
+  GetKBCodePage, StartDoc/EndDoc, Ordinalzahl 471).
+- **Program Manager II** (github.com/Vortesys/Program-Manager-II, MIT):
+  Programmverwalter für Win32 (Vista+), Gruppen in der Registry – nur
+  zum Nachlesen für MDI-Gruppenfenster, Symbole anordnen, Dialoge.
+
 ## Später: Win32
 
 1. Optional ein eigenes „Win32s“ über Win16 nativ (nur 6.x, nicht 5.x):
