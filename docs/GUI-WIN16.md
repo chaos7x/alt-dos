@@ -30,6 +30,28 @@ nachgetragen 25.11.2026. Nur Plan – noch kein Code.
 - Beim Sitzungswechsel wird das Bild nicht gesichert, die GUI zeichnet
   alle Fenster neu (480 KB bei 800×600×256 wären auf 2 MB zu viel).
 
+### Verzeichnisse im Repository (abgestimmt 25.11.2026)
+
+Eigenes Verzeichnis `gui/` auf oberster Ebene (neben `apps/`, `drivers/`,
+`atdoscm/`):
+
+```
+gui/
+  kernel/   KERNEL.EXE-Ersatz für Win16 (Exporte, Speicher, Module)
+  user/     USER: Fenster, Nachrichten, Steuerelemente, Dialoge
+  gdi/      GDI-Kern: Zeichnen, Clipping, Schriften
+  style/    cua/, mini/ (fvwm2), w95/ – austauschbare Stile
+  shell/    Programm-Manager-Art, Taskleiste, Dateimanager, Pager
+  drv/      Grafiktreiber: vga/, et4000/, gd5434/, trio3d/
+  res/      eigene Symbole, Bitmaps, Systemschrift
+  include/  gemeinsame Header (Win16-Typen, Treiberschnittstelle DDI)
+```
+
+Der NE-Lader mit DLLs ist eine Grundlage des Kernels und kommt nach
+`kernel/`, nicht nach `gui/`. build.sh bekommt einen eigenen Abschnitt
+für die GUI (wie beim Netzwerk). Entwürfe und Bilder bleiben unter
+`docs/gui/`.
+
 ### Kernel-Grundlagen (Stufe 0, für 5.x und 6.0)
 
 1. NE-Lader mit DLLs: gemeinsamer Code, gemeinsame Datensegmente,
