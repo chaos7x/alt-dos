@@ -1,7 +1,36 @@
 # F5-Notstart und BASEDEV= (Konzept)
 
-Stand: 24.11.2026, vom Nutzer gewünscht („ok. mach das“). Nur Plan,
-noch kein Code. Umsetzung erst nach Freigabe des Nutzers.
+Stand: 24.11.2026, vom Nutzer gewünscht („ok. mach das“).
+
+**Stufe 1 gebaut (25.11.2026, Auftrag des Nutzers):** F5, `BASEDEV=`,
+Notstart in Kernel, CMD und DOS-Box. Der INT-13h-Rückfall (Stufe 2)
+fehlt noch – im Notstart mit einer alten `CONFIG.SYS`, die den
+Plattentreiber unter `DEVICE=` lädt, bleibt es bei „Startpartition
+nicht gefunden“.
+
+Umsetzung Stufe 1:
+- `kernel/cfgboot.c` (KTEXT4, aus kernel.c herausgelöst – das erste
+  Codesegment hatte 7 Byte frei): `cfg_wait` (F5/F8-Fenster, setzt
+  `NOTSTART=1` über `kf_env_set`), `cfg_skip` (Durchgang 0 nur
+  BASEDEV=, 1 der Rest, im Notstart nichts; F8 fragt hier), `cfg_step`
+  (früher step_arg), `cfg_pnp` (früher pnp_start, im Notstart aus).
+- kernel.c `config_sys`: zwei Durchgänge über die Zeilen, BASEDEV=
+  geht durch den DEVICE-Zweig; `next_line` gibt cfg_sel nicht mehr
+  selbst frei (config_sys am Ende). Notstart: keine Auslagerungsdatei/
+  LOOP= (kmain), DOSBOX.INI nicht gelesen (`ini_noframe`).
+- start.asm: Scancode 3Fh -> `boot_f5`; preload.c lädt BASEDEV=-Dateien
+  vor, im Notstart nur diese.
+- vio.c: „Notstart, seit …“ in der Statuszeile.
+- CMD: `NOTSTART=1` -> Meldung, keine AUTOEXEC.CMD, statt autochk nur
+  Hinweise (AUTOCHK.LST, nicht sauber abgemeldete Laufwerke).
+- Box: INT E0h 13h liefert in AH den Notstart; BOXSHELL lässt
+  `ini_apply` und `ab_merge` aus und startet FreeCOM ohne `/K
+  AUTOEXEC.BAT`, ATDOSCM.SYS liest `\DOS\MDOS\CONFIG.SYS` nicht.
+- CONFIG.SYS (mitgeliefert): Plattentreiber als `BASEDEV=`; SETUP
+  (`write_cfg`) behandelt `BASEDEV=`/`REM BASEDEV=` wie `DEVICE=`.
+- Geprüft: QEMU (F5: nur BASEDEV, NOTSTART=1, Statuszeile, Box; normaler
+  Start: BASEDEV vor DEVICE/IFS, CD da), 86Box 386DX/40 mit AHA-154x
+  (normaler Start, F5-Notstart mit Hinweis „CHKDSK C: /F“, Box).
 
 ## Ziel
 

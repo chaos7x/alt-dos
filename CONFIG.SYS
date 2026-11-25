@@ -26,22 +26,24 @@ REM Zeitplandienst fuer AT (endet gleich, wenn nichts geplant ist)
 RUN=AT.EXE /SERVICE
 
 REM --- Geraetetreiber (Suche: Stamm, \DOS\SYSTEM, \DOS) ---
+REM BASEDEV= wie DEVICE=, fuer Plattentreiber: zuerst geladen, beim
+REM Notstart (F5 beim Start) als einzige Zeilen
 REM Adaptec AHA-154x/BusLogic (ISA-SCSI)          /NOIRQ = Abfragebetrieb
-DEVICE=AHA154X.SYS
+BASEDEV=AHA154X.SYS
 REM IDE/ATAPI, MFM/RLL/ESDI. /DMA stellt Busmaster-DMA selbst ein (PIIX4:
 REM UDMA 2), /NODMA schaltet DMA ab, /NOIRQ = Abfragebetrieb
-DEVICE=IDE.SYS
+BASEDEV=IDE.SYS
 REM Trantor T130B (NCR 53C400). /P:350|340|250|240 Port, /PIO ohne Block
-DEVICE=NCR5380.SYS
+BASEDEV=NCR5380.SYS
 REM PCI-SCSI NCR/LSI 53C8xx. /NOIRQ = Abfragebetrieb, /ID:n eigene ID
-DEVICE=NCR8XX.SYS
+BASEDEV=NCR8XX.SYS
 REM Adaptec AHA-2940/2940U(W)/2944UW (PCI). /ID:n eigene ID, /NOWIDE,
 REM /NOIRQ, /NODISC (Geraete trennen sich nicht vom Bus)
-DEVICE=AIC7XXX.SYS
+BASEDEV=AIC7XXX.SYS
 REM SATA-Platten und -CD am AHCI-Controller (VMs, ICH6+). /NOIRQ
-DEVICE=AHCI.SYS
+BASEDEV=AHCI.SYS
 REM VirtIO-Platten (QEMU/Proxmox), von SETUP freigeschaltet
-REM DEVICE=VIOBLK.SYS
+REM BASEDEV=VIOBLK.SYS
 REM Maus: sucht PS/2, seriell, Bus. /PS2 /COM1 /COM2 /BUS legt fest
 DEVICE=MOUSE.SYS
 REM Sound Blaster 1.0-AWE64, OPL, MPU. /A:220 /I:5 /D:1 /H:5 /M:330

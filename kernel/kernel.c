@@ -286,7 +286,7 @@ void panic(const char *msg)
    keine Plattenoperation laeuft (shutdown). Gibt kein Programm ab, startet
    IRQ 0 nach 5 s trotzdem neu; ein zweiter Druck startet sofort neu. */
 volatile unsigned reboot_count;
-static int boot_session;
+int boot_session;
 static unsigned char going_down;    /* system_down laeuft: Strg+Alt+Entf
                                        startet dann sofort neu */
 
@@ -1267,7 +1267,7 @@ static int ini_noframe(void)
 
     int iown = 0;
     ini_img[0] = 0;
-    if (ifs_open(sys_drive, "\\DOS\\MDOS\\DOSBOX.INI", &f) || !(sel = kseg_alloc(4096)))
+    if (boot_f5 || ifs_open(sys_drive, "\\DOS\\MDOS\\DOSBOX.INI", &f) || !(sel = kseg_alloc(4096)))
         return 0;
     n = f.size > 4095 ? 4095 : (unsigned)f.size;
     b = MK_FP(sel, 0);
@@ -1879,6 +1879,7 @@ static int env_set(int t, const char *entry)
     e[used] = 0;
     return 0;
 }
+int __far kf_env_set(const char *e) { return env_set(-1, e); }   /* cfgboot.c */
 
 /* neuen Task anlegen und laden. Laufwerk und Verzeichnis erbt er von
    'from' (oder A:\ bei from < 0). -> Tasknummer oder -(EXEC_ERR_*)    */
@@ -4961,7 +4962,7 @@ extern unsigned short devhlp_dx;
 struct drvslot drv[NDRV];
 static struct drv_req req;
 
-static int boot_session;
+int boot_session;
 
 static const char *drv_name(int d)
 {
@@ -6639,7 +6640,7 @@ static int find_boot_vol(void)
    dem Lesen der letzten Zeile wieder frei wird (DGROUP ist knapp, GDT-
    Plaetze auch) */
 #define CFG_MAX 8192
-static unsigned cfg_sel;
+unsigned cfg_sel;
 static void cfg_release(void);
 
 static int read_cfg(const char *name)
@@ -6694,8 +6695,7 @@ static int next_line(unsigned *p, unsigned len, char *out)
             continue;
         return 1;
     }
-    cfg_release();
-    return 0;
+    return 0;                           /* config_sys gibt cfg_sel frei  */
 }
 
 static const char *exec_err(int e)
@@ -7334,7 +7334,7 @@ static void set_orig(const char *p)
         ifs_orig[k] = b[k];
     ifs_orig[k] = 0;
 }
-static char protshell[FAPI_ARGLEN] = "CMD.EXE /P";   /* PROTSHELL=   */
+char protshell[FAPI_ARGLEN] = "CMD.EXE /P";   /* PROTSHELL=   */
 
 static int kw(const char *l, const char *k)
 {
@@ -7349,90 +7349,6 @@ static unsigned num_arg(const char *v)
     while (*v >= '0' && *v <= '9')
         n = n * 10 + (unsigned)(*v++ - '0');
     return n;
-}
-
-/* ISA-PnP vor den Treibern; PNP=OFF in CONFIG.SYS (vorab gesucht, die
-   Zeile darf irgendwo stehen) schaltet es ab */
-static void pnp_start(int size)
-{
-    char m[80];                         /* Stapel: DGROUP ist knapp      */
-    const char __far *c = MK_FP(cfg_sel, 0);
-    unsigned p = 0, n, i;
-    while (size > 0 && p + 7 <= (unsigned)size) {
-        if ((p == 0 || c[p - 1] == '\n') && (c[p] | 32) == 'p' &&
-            (c[p + 1] | 32) == 'n' && (c[p + 2] | 32) == 'p') {
-            for (i = p + 3; i < (unsigned)size && c[i] == ' '; i++)
-                ;
-            if (i + 2 < (unsigned)size && c[i] == '=') {
-                while (++i < (unsigned)size && c[i] == ' ')
-                    ;
-                if (i + 1 < (unsigned)size && (c[i] | 32) == 'o' && (c[i + 1] | 32) == 'f')
-                    return;
-            }
-        }
-        p++;
-    }
-    n = pnp_init();
-    for (i = 0; i < n; i++) {
-        pnp_line(i, m);
-        vio_kputs(boot_session, "\xFE ISA-PnP: ");
-        vio_kputs(boot_session, m);
-        vio_kputs(boot_session, "\n");
-    }
-}
-
-/* F8 beim Start (wie MS-DOS 6): jede Zeile von CONFIG.SYS bestaetigen.
-   J/Eingabe = ausfuehren, N = uebergehen, Esc = Rest ohne Fragen.
-   boot_f8: 0 aus, 1 fragen, 2 fragen vorbei (Esc), CMD bekommt /STEP */
-static int cfg_ask(const char *l)
-{
-    int k;
-    vio_kputs(boot_session, l);
-    vio_kputs(boot_session, " [J,N]? ");
-    do {
-        while ((k = kbd_get()) < 0)
-            k_hlt();
-        k &= 0xFF;
-    } while (k != 'j' && k != 'J' && k != 'y' && k != 'Y' && k != 'n' &&
-             k != 'N' && k != '\r' && k != 27);
-    if (k == 27)
-        boot_f8 = 2;
-    k = k == 'n' || k == 'N';
-    vio_kputs(boot_session, k ? "N\n" : "J\n");
-    return !k;
-}
-
-/* F8 noch an: CMD fragt auch AUTOEXEC.CMD zeilenweise (nur CMD kennt
-   /STEP - eine andere PROTSHELL= bekommt es nicht) */
-static void step_arg(void)
-{
-    unsigned i = 0;
-    while (protshell[i] && protshell[i] != ' ')
-        i++;
-    if (i >= 4 && up(protshell[i - 1]) == 'E' && protshell[i - 4] == '.')
-        i -= 4;
-    if (boot_f8 != 1 || i < 3 || up(protshell[i - 3]) != 'C' ||
-        up(protshell[i - 2]) != 'M' || up(protshell[i - 1]) != 'D' ||
-        (i > 3 && protshell[i - 4] != '\\' && protshell[i - 4] != ':'))
-        return;
-    while (protshell[i])
-        i++;
-    if (i + 6 < sizeof(protshell))
-        scopy(protshell + i, " /STEP", sizeof(protshell) - i);
-}
-
-/* Eine Sekunde Zeit fuer F8 (wie "MS-DOS wird gestartet ..."); vor dem
-   Kernel getippt hat start.asm schon gemerkt */
-static void f8_wait(void)
-{
-    unsigned long t = get_ticks() + 100;
-    vio_kputs(boot_session, "\xFE F8: Startdateien schrittweise");
-    while (!boot_f8 && get_ticks() < t)
-        if (kbd_get() == 0x4200)
-            boot_f8 = 1;
-        else
-            k_hlt();
-    vio_kputs(boot_session, boot_f8 ? " - an\n" : "\n");
 }
 
 /* NAME=Wert mehrfach (LOOP=, RUN=): als NAMEn=Wert (n = 1, 2, ...) in
@@ -7511,19 +7427,18 @@ static void config_sys(void)
         "INSTALL", "INSTALLHIGH", "NUMLOCK", "SWITCHES", "SET", "MENUITEM",
         "MENUDEFAULT", "MENUCOLOR", "SUBMENU", "INCLUDE", "DRIVPARM", "PNP", 0
     };
-    unsigned p = 0, n;
-    int size, dev0, i;
+    unsigned p, n;
+    int size, dev0, i, pass;
     char *v;
 
-    f8_wait();
+    cfg_wait();                         /* F5/F8 (cfgboot.c)             */
     size = read_cfg("\\CONFIG.SYS");
-    pnp_start(size);                    /* vor der ersten DEVICE=-Zeile  */
+    cfg_pnp(size);                      /* vor der ersten DEVICE=-Zeile  */
     if (size < 0)
         return;
-    while (next_line(&p, (unsigned)size, line)) {
-        if (line[0] == ';')
-            continue;
-        if (boot_f8 == 1 && !cfg_ask(line))
+    for (pass = 0; pass < 2; pass++)    /* erst BASEDEV=, dann der Rest  */
+    for (p = 0; next_line(&p, (unsigned)size, line); ) {
+        if (line[0] == ';' || cfg_skip(line, pass))
             continue;
         for (v = line; *v && *v != '='; v++)
             ;
@@ -7552,7 +7467,7 @@ static void config_sys(void)
             }
         }
         line[i] = 0;                    /* "DEVICEHIGH /L:1 " -> Wort   */
-        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH")) {
+        if (kw(line, "DEVICE") || kw(line, "DEVICEHIGH") || !pass) {
             while (*v == '/' || (up(v[0]) == 'S' && up(v[1]) == 'I' && up(v[2]) == 'Z' &&
                                  up(v[3]) == 'E' && v[4] == '=')) {
                 while (*v && *v != ' ')             /* /L:1,1234 SIZE=... */
@@ -7560,7 +7475,7 @@ static void config_sys(void)
                 while (*v == ' ')
                     v++;
             }
-            vio_kputs(boot_session, "\xFE DEVICE=");
+            vio_kputs(boot_session, pass ? "\xFE DEVICE=" : "\xFE BASEDEV=");
             vio_kputs(boot_session, v);
             vio_kputs(boot_session, "\n");
             dev0 = nblk;
@@ -7666,6 +7581,7 @@ static void config_sys(void)
             }
         }
     }
+    cfg_release();
     cd_drives();
 }
 
@@ -7876,7 +7792,9 @@ void kmain(void)
                                                 /* \DOS\SYSTEM\PANIC.LOG,  */
                                                 /* PANIC.DAT vorbereiten  */
     procfs_boot();                              /* P: (procfs.c)          */
-    if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
+    if (boot_f5)
+        ;                                       /* Notstart: nichts davon */
+    else if ((i = conv_pending()) != 0 || vol[sys_drive].was_dirty) {
         vio_kputs(boot_session, i == 1 ? "\xFE Umwandlung vorgemerkt - ohne "
                   "Auslagerungsdatei und LOOP=\n" : "\xFE Pr\x81" "fung beim Start - "
                   "diesmal ohne Auslagerungsdatei und LOOP=\n");
@@ -7899,7 +7817,7 @@ void kmain(void)
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
     cp_load(s0);                                /* CODEPAGE=: Zeichensaetze */
-    step_arg();
+    cfg_step();
     t = task_create(protshell, s0, -1, -1);
     if (t < 0) {
         vio_kputs(s0, "\xFE PROTSHELL=");
@@ -7908,7 +7826,7 @@ void kmain(void)
         vio_kputs(s0, exec_err(-t));
         vio_kputs(s0, ", nehme CMD.EXE /P\n");
         scopy(protshell, "CMD.EXE /P", sizeof(protshell));
-        step_arg();
+        cfg_step();
         t = task_create(protshell, s0, -1, -1);
         if (t < 0)
             panic("Kein Befehlsinterpreter.");

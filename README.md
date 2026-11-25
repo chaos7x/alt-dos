@@ -117,6 +117,13 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   und jede ihrer Zeilen (`REM` nicht); Esc führt den Rest ohne Fragen
   aus. CMD bekommt dafür vom Kernel `/STEP`. Eine `CONFIG.SYS` über
   8 KB wird mit Meldung übergangen (vorher still).
+- F5 beim Start wie bei MS-DOS 6 (Notstart, `docs/NOTSTART.md`): nur die
+  `BASEDEV=`-Zeilen der `CONFIG.SYS` gelten (Plattentreiber), kein
+  ISA-PnP, keine Auslagerungsdatei, `CMD.EXE /P` ohne `AUTOEXEC.CMD`,
+  Variable `NOTSTART=1`, „Notstart“ in der Statuszeile; die DOS-Box
+  liest `DOSBOX.INI`, ihre `CONFIG.SYS` und die `AUTOEXEC.BAT` nicht.
+  `BASEDEV=` wie bei OS/2: Treiber, die vor allen anderen Zeilen geladen
+  werden (die mitgelieferte `CONFIG.SYS` lädt die Plattentreiber so).
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie

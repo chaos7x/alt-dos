@@ -446,6 +446,11 @@ unsigned __far vio_clip_get(unsigned sel, unsigned off, unsigned max);
 void kbd_init(void);
 extern unsigned char bios_kbf;       /* 0040:0017 beim Start (start.asm) */
 extern unsigned char boot_f8;        /* 1 = F8: CONFIG.SYS schrittweise   */
+extern unsigned char boot_f5;        /* 1 = F5: Notstart (docs/NOTSTART.md) */
+void __far cfg_wait(void);           /* cfgboot.c (KTEXT4): CONFIG.SYS-Start */
+int  __far cfg_skip(const char *l, int pass);
+void __far cfg_step(void);
+void __far cfg_pnp(int size);
 int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 unsigned kbd_rate(unsigned v);      /* Tastatur F3h, FFFFh = abfragen      */

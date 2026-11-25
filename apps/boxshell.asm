@@ -37,8 +37,9 @@ org 100h
         mov     byte [owncm], 1
         jmp     .ri
 .fd:    call    redir_install
-.ri:    mov     ah, 13h                 ; Startlaufwerk der AT-DOS
-        int     0E0h
+.ri:    mov     ah, 13h                 ; Startlaufwerk der AT-DOS,
+        int     0E0h                    ; AH = 1: Notstart (F5)
+        mov     [nstart], ah
         mov     dl, al                  ; Vorgabe-Laufwerk der Box: das
         push    ax                      ; Startlaufwerk (A: kann jetzt die
         mov     ah, 0Eh                 ; AT-DOS-Diskette sein, ggf. leer)
@@ -59,7 +60,10 @@ org 100h
 .dd2:
         call    setver_load             ; liest in envbuf, daher zuerst
         call    build_env
+        cmp     byte [nstart], 0        ; Notstart: ohne AUTOEXEC.BAT
+        jne     .noab
         call    ab_merge                ; PATH/SET/PROMPT aus AUTOEXEC.BAT
+.noab:
         mov     ax, [2Ch]               ; eigene Umgebung wird nicht mehr
         test    ax, ax                  ; gebraucht (Kinder bekommen envbuf)
         jz      .noenv
@@ -116,6 +120,8 @@ next:   cmp     byte [owncm], 0
         dec     di
         cmp     byte [nok], 0           ; COMMAND.COM vor DOS 6.0 kennt
         jne     .c1                     ; kein /K (der Pfad gaelte als
+        cmp     byte [nstart], 0        ; Notstart: ohne AUTOEXEC.BAT
+        jne     .c1
         mov     dx, t_autoexec          ; Suchpfad - Umgebung weg)
         mov     ax, 4300h
         int     21h
@@ -442,6 +448,8 @@ ini_apply:
         mov     word [dosver], 0
         mov     byte [hk], 79           ; Bits 0-3 und 6 (SHARE) an
         mov     word [idles], 0
+        cmp     byte [nstart], 0        ; Notstart: DOSBOX.INI nicht lesen
+        jne     .set
         mov     ah, 48h                 ; 4 KB Lesepuffer
         mov     bx, 256
         int     21h
@@ -1669,6 +1677,7 @@ t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0
 nok       db 0                          ; 1: COMMAND.COM ohne /K
+nstart    db 0                          ; 1: Notstart (F5) - ohne INI/AUTOEXEC
 mdos_miss db 0                          ; 1: PATH der AUTOEXEC.BAT ohne \DOS\MDOS
 owncm     db 0                          ; 1: eigener Kern ATDOSCM.SYS
 a4409     dw 08C2h                      ; 4409h: MS-DOS 08C2h, PC DOS 48C2h

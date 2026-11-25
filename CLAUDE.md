@@ -2073,7 +2073,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Lizenz, nicht mitgeliefert). Entwurf in `docs/WIN31-GRAFIK.md`.
 
 - **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
-  noch kein Code): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
+  Stufe 1 gebaut 25.11.2026 – F5, BASEDEV=, Notstart in Kernel/CMD/Box,
+  `kernel/cfgboot.c`; geprüft QEMU + 86Box 386DX/40; offen: INT-13h-
+  Rückfall): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
   Auslagerungsdatei und AUTOEXEC.CMD weg, startet CMD statt PROTSHELL und
   Boxen mit den Vorgaben (ATDOSCM.SYS, ohne DOSBOX.INI). Treiber des
   Startlaufwerks stehen in neuen `BASEDEV=`-Zeilen (wie OS/2), die auch

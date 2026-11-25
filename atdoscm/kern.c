@@ -31,6 +31,7 @@ u16 old2f[2];
 u16 setver_dx;
 static u8  alloc_strat, umb_link, verify, brk;
 u8  sys_drv;                            /* Startlaufwerk (exec.c: WINLDR) */
+u8  nstart;                             /* 1: Notstart (F5), ohne CONFIG.SYS der Box */
 extern char cm_end[];
 
 extern char int21_entry[];
@@ -889,6 +890,7 @@ void cm_main(void)
     r.ax = 0x1300;
     e0(&r);
     sys_drv = (u8)r.ax;
+    nstart = (u8)(r.ax >> 8);           /* F5: Notstart (docs/NOTSTART.md) */
     for (d = 0; d < NDRV; d++)
         drive_ok(d);
     cur_drv = sys_drv;
@@ -908,7 +910,8 @@ void cm_main(void)
     MO(m) = 0;
     MS(m) = top - m - 1;
     umb_init(top);
-    config_box(sys_drv);                /* \DOS\MDOS\CONFIG.SYS (config.c) */
+    if (!nstart)                        /* Notstart: ohne CONFIG.SYS der Box */
+        config_box(sys_drv);            /* \DOS\MDOS\CONFIG.SYS (config.c) */
 
     shell[0] = (char)('A' + sys_drv);
     {

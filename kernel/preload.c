@@ -287,11 +287,19 @@ void preload(void)
         while (s < i && (c[s] == ' ' || c[s] == '\t'))
             s++;
         if (i - s > 4) {
-            static const char dev[] = "DEVICE", ifs[] = "IFS";
+            static const char dev[] = "DEVICE", ifs[] = "IFS", bd[] = "BASEDEV";
             char path[64];
+            unsigned b;
+            for (b = 0; b < 7 && (c[s + b] | 0x20) == (bd[b] | 0x20); b++)
+                ;
             for (k = 0; k < 6 && (c[s + k] | 0x20) == (dev[k] | 0x20); k++)
                 ;
-            if (k != 6) {               /* IFS= wird genauso vorgeladen */
+            if (b == 7) {               /* BASEDEV= wie DEVICE=          */
+                k = 6;
+                s++;
+            } else if (boot_f5)         /* F5: nur BASEDEV= vorladen     */
+                k = 0;
+            else if (k != 6) {          /* IFS= wird genauso vorgeladen */
                 for (k = 0; k < 3 && (c[s + k] | 0x20) == (ifs[k] | 0x20); k++)
                     ;
                 k = k == 3 ? 6 : 0;

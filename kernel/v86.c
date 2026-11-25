@@ -2940,8 +2940,9 @@ static void svc(int n, struct v86_frame *f, int t)
                 wr8((unsigned)f->r.es, DI + i, box_iname[t][i]);  /* des DOS) */
             wr8((unsigned)f->r.es, DI + i, 0);
         }
-        else if (AH == 0x13)                    /* Startlaufwerk (0 = A:) */
-            AL = (unsigned char)kf_box_ctl(BOX_SYSDRV, 0);
+        else if (AH == 0x13)                    /* Startlaufwerk (0 = A:), */
+            AX = (unsigned)kf_box_ctl(BOX_SYSDRV, 0) & 0xFF |   /* AH 1 = */
+                 (unsigned)boot_f5 << 8;                     /* Notstart */
         else if (AH == 0x17) {                  /* EMS-Grenze (BX KB, DOSBOX.INI) */
             unsigned pg = BX >> 4;
             ems_lim[t] = (pg > 2048 ? 2048 : pg) + 1;   /* bis 32 MB */
