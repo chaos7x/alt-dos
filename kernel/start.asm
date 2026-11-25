@@ -32,6 +32,11 @@ segment KTEXT3END public class=CODE align=1 use16
 ; viertes Codesegment (KCODE4): wcc -nt=KTEXT4 (build.sh K4MODS)
 segment KTEXT4 public class=CODE align=16 use16
 segment KTEXT4END public class=CODE align=1 use16
+; Startcode (KCODEI, docs/INIT-SEGMENT.md): Funktionen, die nur beim Start
+; laufen (#pragma code_seg("ITEXT", "CODE")); kinit_done gibt die ganzen
+; Seiten danach frei und macht den Deskriptor ungueltig
+segment ITEXT public class=CODE align=16 use16
+segment ITEXTEND public class=CODE align=1 use16
 segment _DSTART public class=DATA align=16 use16
 segment CONST  public class=DATA align=2 use16
 segment CONST2 public class=DATA align=2 use16
@@ -42,6 +47,7 @@ group CGROUP _TEXT _TEXTEND
 group CGROUP2 KTEXT2 KTEXT2END
 group CGROUP3 KTEXT3 KTEXT3END
 group CGROUP4 KTEXT4 KTEXT4END
+group CGROUPI ITEXT ITEXTEND
 group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
 extern preload_, reboot_
@@ -109,6 +115,10 @@ _start:
         shr     bx, 4
         add     ax, bx
         mov     bx, code4_end
+        add     bx, 15
+        shr     bx, 4
+        add     ax, bx
+        mov     bx, codei_end
         add     bx, 15
         shr     bx, 4
         add     ax, bx
@@ -1671,6 +1681,9 @@ code3_end:
 segment KTEXT4END
 code4_end:
 
+segment ITEXTEND
+codei_end:
+
 segment _DATA
 
 global _kcode_size
@@ -1681,6 +1694,8 @@ global _kcode3_size
 _kcode3_size: dw code3_end              ; drittes Codesegment (CGROUP3)
 global _kcode4_size
 _kcode4_size: dw code4_end              ; viertes Codesegment (CGROUP4)
+global _kcodei_size
+_kcodei_size: dw codei_end              ; Startcode (CGROUPI)
 global _kdata_size
 _kdata_size: dw bss_end                 ; Datengroesse samt BSS (DGROUP)
 

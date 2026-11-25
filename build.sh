@@ -118,7 +118,7 @@ nrel, hdr, relo = struct.unpack('<H', d[6:8])[0], struct.unpack('<H', d[8:10])[0
 g = {}
 for l in open(sys.argv[3]):
     f = l.split()
-    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'CGROUP4', 'DGROUP') and ':' in f[1]:
+    if len(f) == 3 and f[0] in ('CGROUP', 'CGROUP2', 'CGROUP3', 'CGROUP4', 'CGROUPI', 'DGROUP') and ':' in f[1]:
         s, o = f[1].split(':')
         g[f[0]] = (int(s, 16) * 16 + int(o, 16), int(f[2], 16))
 code, data = g['CGROUP'][1], g['DGROUP'][1]
@@ -131,7 +131,10 @@ if c3[0] != (c2[0] + c2[1] + 15) & ~15:
 c4 = g.get('CGROUP4', ((c3[0] + c3[1] + 15) & ~15, 0))
 if c4[0] != (c3[0] + c3[1] + 15) & ~15:
     sys.exit('FEHLER: CGROUP4 liegt nicht direkt hinter CGROUP3')
-if g['DGROUP'][0] != (c4[0] + c4[1] + 15) & ~15:
+ci = g.get('CGROUPI', ((c4[0] + c4[1] + 15) & ~15, 0))
+if ci[0] != (c4[0] + c4[1] + 15) & ~15:
+    sys.exit('FEHLER: CGROUPI (Startcode) liegt nicht direkt hinter CGROUP4')
+if g['DGROUP'][0] != (ci[0] + ci[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
@@ -149,20 +152,25 @@ for i in range(nrel):
         sel = 0x2F8
     elif v == c4[0] >> 4 and c4[1]:
         sel = 0x320
+    elif v == ci[0] >> 4 and ci[1]:
+        sel = 0x328
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2/KCODE3/KCODE4 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
 open(sys.argv[2], 'wb').write(d[img:])
 if code > 65520:
     sys.exit('FEHLER: erstes Kernel-Codesegment %d Bytes ueber 65520 (start.asm rundet auf 16)' % code)
-if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or c4[1] > 65536 or data > 65536:
+if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or c4[1] > 65536 or ci[1] > 65536 or data > 65536:
     sys.exit('FEHLER: Kernel-Code %d/%d/%d/%d oder -Daten %d Bytes ueber 64 KB' % (code, c2[1], c3[1], c4[1], data))
-print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
-      % (len(d) - img, code, c2[1], c3[1], c4[1], data, nrel))
+print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Start %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
+      % (len(d) - img, code, c2[1], c3[1], c4[1], ci[1], data, nrel))
 PYEOF
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
 # der Diskettenbootsektor laedt nach Dateigroesse ab 1000:0000; Platz bis
 # 80000h (darueber Real-Mode-Reste, ab 9FC00h das EBDA)
+# Startcode (ITEXT): nur aus Startcode gerufen, fern ueber Segmentgrenzen
+python3 tools/initcheck.py -q --roots kmain_,gdt_build_,preload_ --seg ITEXT $B/start.o \
+    $(for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk k2thunk; do echo $B/$m.o; done) || exit 1
 [ $(stat -c %s $B/kernel.bin) -le 458752 ] || { echo "FEHLER: ATDOS.SYS groesser als 448 KB"; exit 1; }
 
 echo "Anwendungen"
@@ -286,14 +294,14 @@ echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
 for t in aha154x ahci aic7xxx ide mouse ncr5380 ncr8xx rtl8139 pcnet e1000 sb16 vcom vsb vems vega vmouse vioblk vionet; do
     wcc $KCFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
-    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/drv_$t.o || exit 1
+    python3 tools/initcheck.py -q --near-ok --roots init_ --seg ITEXT $B/drv_$t.o || exit 1
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
 done
 # VCGA.SYS = VEGA.SYS mit -DCGA (Grafikmodul der DOS-Box fuer die CGA)
 wcc $KCFLAGS -zu -DCGA -fo=$B/drv_vcga.o drivers/vega.c
-python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/drv_vcga.o || exit 1
+python3 tools/initcheck.py -q --near-ok --roots init_ --seg ITEXT $B/drv_vcga.o || exit 1
 wlink $LINK name $B/drv_vcga.bin option map=$B/drv_vcga.map \
       file $B/dcrt0.o file $B/drv_vcga.o 2>&1 | grep -v W1014 || true
 python3 tools/mkfx.py --driver $B/stub.bin $B/drv_vcga.bin $B/drv_vcga.map $B/drv_vcga.sys
@@ -303,7 +311,7 @@ echo "Netzwerk"
 for t in tcpip ne2000; do
     S=net; [ $t = ne2000 ] && S=drivers
     wcc $CFLAGS -zu -fo=$B/net_$t.o $S/$t.c
-    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/net_$t.o || exit 1
+    python3 tools/initcheck.py -q --near-ok --roots init_ --seg ITEXT $B/net_$t.o || exit 1
     wlink $LINK name $B/net_$t.bin option map=$B/net_$t.map \
           file $B/dcrt0.o file $B/net_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/net_$t.bin $B/net_$t.map $B/net_$t.sys

@@ -32,6 +32,9 @@ extern unsigned short bios_ports[7];     /* start.asm: COM1-4, LPT1-3     */
 #else
 #include "pnp_host.h"
 #endif
+#ifndef PNP_HOST
+#pragma code_seg("ITEXT", "CODE")   /* ganze Datei nur beim Start (INIT-SEGMENT.md) */
+#endif
 
 #define PNP_ADDR    0x279
 #define PNP_WDATA   0xA79
@@ -483,6 +486,9 @@ unsigned FAR pnp_init(void)
 }
 
 /* fuer FAPI_BUSINFO / Startmeldung: Eintrag i -> 0, sonst 1 */
+#ifndef PNP_HOST
+#pragma code_seg("KTEXT2", "CODE")   /* zur Laufzeit (DosBusInfo) */
+#endif
 int FAR pnp_info(unsigned i, struct fapi_pnpdev FAR *p)
 {
     unsigned k;
@@ -503,6 +509,9 @@ int FAR pnp_info(unsigned i, struct fapi_pnpdev FAR *p)
     }
     return 0;
 }
+#ifndef PNP_HOST
+#pragma code_seg("ITEXT", "CODE")
+#endif
 
 /* Startmeldung fuer Eintrag i: "CTL0031 an 220h 330h, IRQ 5, DMA 1 5" */
 static char FAR *hx(char FAR *o, unsigned v, unsigned n)

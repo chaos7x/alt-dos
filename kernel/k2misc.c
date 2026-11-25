@@ -287,3 +287,21 @@ void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
         p2->age = task[t].state == T_FREE ? 0 : now - task[t].born;
     }
 }
+
+/* Startcode (ITEXT, docs/INIT-SEGMENT.md) weg - das letzte, was kmain vor
+   dem Scheduler ruft: Deskriptor ungueltig (ein vergessener Aufruf endet
+   mit #NP statt in fremdem Code), die ganzen Seiten zurueck an die
+   Speicherverwaltung. Liegt selbst in ITEXT: bis der Scheduler die
+   Seiten vergibt, ist der Ruecksprung nach KCODE laengst geschehen. */
+#pragma code_seg("ITEXT", "CODE")
+void __far kinit_done(void)
+{
+    unsigned long a = (KCODEI_LIN + 4095) >> 12, e = (KCODEI_LIN + kcodei_size) >> 12;
+    if (e > a)
+        mem_free((pg_t)a, (unsigned)(e - a));
+    gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
+                                       noch hierher zurueck (Selektor 0328h
+                                       neu geladen), der CS-Cache haelt das
+                                       eigene RETF nach KCODE aus          */
+}
+#pragma code_seg("KTEXT2", "CODE")

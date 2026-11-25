@@ -180,11 +180,13 @@ static void done(void)
     busy = 0;
 }
 
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 void __far fd_motor_off(void)
 {
     motors = 0;
     dor();
 }
+#pragma code_seg("KTEXT2", "CODE")
 
 /* aus dem Scheduler: Motoren nach 3 s ohne Zugriff aus */
 void __far fd_tick(void)

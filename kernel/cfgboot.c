@@ -22,6 +22,7 @@
 #include "../include/fapi_abi.h"
 #include "task.h"
 #include "k2.h"                         /* KTEXT4, k2.h zuletzt           */
+#pragma code_seg("ITEXT", "CODE")   /* ganze Datei nur beim Start (INIT-SEGMENT.md) */
 
 int __far kf_kbd_get(void);
 int __far kf_env_set(const char *e);

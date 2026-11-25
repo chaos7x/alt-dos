@@ -578,6 +578,7 @@ struct ifs_driver pfs_driver = {
 
 /* Beim Start (kmain): Laufwerk anlegen. SET PROCFS=X: oder OFF in der
    Systemumgebung (CONFIG.SYS) */
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 void __far procfs_boot(void)
 {
     const char __far *e = MK_FP(env_sel, NTASK * FAPI_ENVSIZE);
@@ -624,3 +625,4 @@ void __far procfs_boot(void)
     vol[d].used = 1;
     pfs_drive = (signed char)d;
 }
+#pragma code_seg("KTEXT4", "CODE")

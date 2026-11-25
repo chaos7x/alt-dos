@@ -2202,8 +2202,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   ITEXT – initcheck ohne `--seg` zeigt Kandidaten. Geprüft: QEMU (IDE,
   NCR8XX, AHCI, SB16 mit Mitschnitt, MOUSE, RTL8139+TCPIP, Box, DEVLOAD
   /U und neu laden ohne Leck) und 86Box 386DX/40 (AHA-154x mit ZIP/CD,
-  NE2000, AWE32, XCOPY, fsck sauber). Kernel (Option A) ist der nächste
-  Schritt.
+  NE2000, AWE32, XCOPY, fsck sauber).
+  Kernel Stufe 1 erledigt (25.11.2026; „Stand Kernel“ im Dokument):
+  fünfte Codegruppe CGROUPI (ITEXT) zwischen KTEXT4 und DGROUP, Selektor
+  KCODEI 328h (KCODE3_IDX + 6, NGDT + 1), `kinit_done` (k2misc.c) gibt
+  am Ende von kmain die ganzen Seiten frei und macht den Deskriptor
+  ungültig. Startfunktionen aus KTEXT2/KTEXT4 per `#pragma code_seg(
+  "ITEXT", "CODE")` (pnp.c, cfgboot.c, PANIC-Startprüfung, procfs_boot)
+  – 6,5 KB. build.sh prüft mit initcheck, dass Aufrufe über die Grenze
+  von ITEXT fern sind und nur Startcode ITEXT ruft. Neue Startfunktionen
+  dort hinein; was nah Laufzeit-Hilfen ruft, bleibt draußen. Offen:
+  Stufe 2 (erstes Segment).
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-

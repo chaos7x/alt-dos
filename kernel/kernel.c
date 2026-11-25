@@ -71,6 +71,7 @@ struct desc     gdt[NGDT];
 typedef char gdt_chk1[KCODE2 == KCODE2_IDX * 8 ? 1 : -1];
 typedef char gdt_chk2[KCODE3 == KCODE3_IDX * 8 ? 1 : -1];
 typedef char gdt_chk4[KCODE4 == KCODE4_IDX * 8 ? 1 : -1];
+typedef char gdt_chk5[KCODEI == KCODEI_IDX * 8 ? 1 : -1];
 typedef char gdt_chk3[VWIN == 0x2B0 ? 1 : -1];   /* VWIN in start.asm */
 struct gate     idt[48];
 unsigned short  gdtr[3], idtr[3];
@@ -151,6 +152,7 @@ void gdt_build(void)
     set_desc(KCODE2_IDX, KCODE2_LIN, kcode2_size ? kcode2_size - 1 : 0, ACC_KCODE);
     set_desc(KCODE3_IDX, KCODE3_LIN, kcode3_size ? kcode3_size - 1 : 0, ACC_KCODE);
     set_desc(KCODE4_IDX, KCODE4_LIN, kcode4_size ? kcode4_size - 1 : 0, ACC_KCODE);
+    set_desc(KCODEI_IDX, KCODEI_LIN, kcodei_size ? kcodei_size - 1 : 0, ACC_KCODE);
     set_desc(2, KDATA_LIN, 0xFFFF, ACC_KDATA);
     set_desc(3, 0xB8000UL, 80 * 50 * 2 - 1, ACC_KDATA);   /* bis 50 Zeilen */
 
@@ -7881,5 +7883,6 @@ void kmain(void)
     vio_kputs(s0, "\n");
     vio_focus(s0);
 
+    kinit_done();                   /* Startcode frei (k2misc.c)         */
     sched_start();                  /* kehrt nie zurueck                 */
 }

@@ -52,6 +52,7 @@ static unsigned long pd_lba[NPX];       /* Sektor je Bereich              */
 static unsigned char pd_n[NPX];         /* Sektoren je Bereich            */
 static unsigned long pd_id[2];          /* Kennung dieses Starts          */
 
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 static unsigned pn_dec(char *b, unsigned j, unsigned v, int w)
 {
     char t[6];
@@ -66,13 +67,16 @@ static unsigned pn_dec(char *b, unsigned j, unsigned v, int w)
         b[j++] = t[--n];
     return j;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 static unsigned pn_cat(char *b, unsigned j, const char *s)
 {
     while (*s)
         b[j++] = *s++;
     return j;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
 static unsigned pn_put(unsigned n, const char __far *t)
 {
@@ -116,6 +120,7 @@ void __far pn_save(const char *msg)
 }
 
 /* beim Start (gleich nach mem_init): Protokoll im Speicher? -> Laenge */
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 unsigned __far pn_check(void)
 {
     const unsigned char __far *p = MK_FP(SCRATCH, 0);
@@ -130,6 +135,7 @@ unsigned __far pn_check(void)
         sum += p[PN_TXT + i];
     return sum == *(const unsigned __far *)(p + 6) ? n : 0;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
 /* in der Panik: Protokoll (bei PN_LIN) nach PANIC.DAT. Interrupts gehen
    dafuer kurz an (die Treiber warten auf ihren IRQ), current = -1: der
@@ -167,6 +173,7 @@ int __far pn_disk(void)
 
 /* Text des Protokolls (n Byte) an f ab pos haengen: aus dem Speicher
    (src = 0) oder aus PANIC.DAT (src) */
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 static unsigned long pn_copy(struct ifs_file __far *f, unsigned long pos,
                              struct ifs_file __far *src, unsigned n)
 {
@@ -188,8 +195,10 @@ static unsigned long pn_copy(struct ifs_file __far *f, unsigned long pos,
     }
     return pos;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
 /* PANIC.DAT: gueltiges Protokoll darin? -> Laenge */
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 static unsigned pd_check(struct ifs_file __far *f)
 {
     unsigned n, sum, i, k, j;
@@ -209,9 +218,11 @@ static unsigned pd_check(struct ifs_file __far *f)
     }
     return sum ? 0 : n;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
 /* PANIC.DAT fuer den naechsten Absturz: 4 KB, Kennung in Sektor 0,
    Sektoren merken. Nur auf Platten mit eigenem Treiber (512 Byte). */
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 static void pd_prepare(int d)
 {
     static unsigned long ext[2 * NPX];
@@ -251,7 +262,9 @@ static void pd_prepare(int d)
         pd_n[n] = 0;
     pd_dev = dev;
 }
+#pragma code_seg("KTEXT4", "CODE")
 
+#pragma code_seg("ITEXT", "CODE")   /* nur beim Start (INIT-SEGMENT.md) */
 void __far pn_boot(int d, int ses, unsigned n)
 {
     static const char name1[] = "\\DOS\\SYSTEM\\PANIC.LOG";
@@ -331,3 +344,4 @@ void __far pn_boot(int d, int ses, unsigned n)
     }
     pd_prepare(d);                      /* neue Kennung, alter Kopf weg   */
 }
+#pragma code_seg("KTEXT4", "CODE")

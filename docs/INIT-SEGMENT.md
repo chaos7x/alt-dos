@@ -333,9 +333,48 @@ Startcode für keine ganze Seite (schadet nicht). MEM (QEMU, 16 MB,
 fester Cache): „BIOS, Boot, Puffer“ 415 → 410 KB nur mit MOUSE.SYS
 umgestellt, `DEVLOAD /U` + neu laden ohne Leck.
 
+## Stand Kernel, Stufe 1 (25.11.2026)
+
+Abweichend von 2.2 (Variante A, alles verschieben) liegt der Startcode in
+einer **fünften Codegruppe `CGROUPI` (Segment ITEXT) zwischen KTEXT4 und
+DGROUP**: keine Basis und kein fester Selektor ändert sich, DGROUP rückt
+nur nach (start.asm rechnet `codei_end` mit). Selektor `KCODEI` 328h
+(`KCODEI_IDX` = KCODE3_IDX + 6, NGDT eins mehr), build.sh setzt Fern-
+aufrufe dorthin ein und prüft die Lage. Freigegeben werden nur die
+ganzen Seiten im Segment (die Ränder teilen sich Seiten mit KTEXT4 und
+DGROUP) – `kinit_done` (k2misc.c, selbst in ITEXT) gibt sie frei und
+macht danach den Deskriptor ungültig; kmain ruft es direkt vor
+`sched_start`. Lehre: erst `mem_free`, dann den Deskriptor – das RETF
+von mem_free lud 0328h neu (#GP, Fehlercode 0328h).
+
+In ITEXT stehen Funktionen aus KTEXT2/KTEXT4, je Funktion per `#pragma
+code_seg("ITEXT", "CODE")` und zurück auf das Segment der Datei: pnp.c
+ganz außer `pnp_info` (DosBusInfo), cfgboot.c ganz, aus panic.c die
+Startprüfung (`pn_boot`, `pd_prepare` …), `procfs_boot`, `fd_motor_off`,
+`kinit_done` – 6,5 KB; KTEXT2 hat dadurch 3,2 KB, KTEXT4 2,6 KB mehr
+Platz. Nicht verschoben, weil sie nah Laufzeit-Hilfen ihrer Datei rufen:
+`mem_init` (`release_range`), `paging_init` (`put32`), `fd_init`
+(`select`, `recalibrate`), `pci_init` (`scan_bus`), `vol_move`,
+`list_drives` (`scopy`), `bios_attach` (`i13`) – dafür müssten die Hilfen
+fern werden. Das erste Codesegment (kmain, config_sys … ~8 KB) braucht
+Thunks für jeden nahen Aufruf: Stufe 2.
+
+`initcheck.py` prüft beim Bau den ganzen Kernel (Wurzeln kmain,
+gdt_build, preload): nur Startcode ruft ITEXT, niemand nimmt eine
+Adresse dorthin, und jeder Aufruf über die Grenze von ITEXT ist fern
+(Opcode 9Ah/EAh). Gleichnamige statische Funktionen verschiedener
+Dateien hält es auseinander (`name@datei`). Wichtig: was der Compiler
+einsetzt (inline), steht nicht in der Liste – ganze Dateien sind
+sicherer als einzelne Funktionen (pnp.c `wr`, `rd`, `key`, `hx`).
+
+Geprüft: QEMU (Start, F5, F8, MSD mit PnP-Liste, DEVLOAD, Box, MEM) und
+86Box 486SP3C mit AWE32 PnP (ISA-PnP findet alle vier logischen Geräte,
+SB16, MSD, fsck sauber).
+
 ## Offene Punkte
 
-- Kernel: Option A (Vorschlag) – als Nächstes.
+- Kernel Stufe 2: kmain/config_sys & Co. aus dem ersten Segment (Thunks),
+  mem_init/paging_init/fd_init mit fernen Hilfen.
 - Lohnt sich Stufe 2 (Texte nach IDATA) schon jetzt wegen DGROUP?
 - KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
 - Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.

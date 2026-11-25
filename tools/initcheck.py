@@ -7,15 +7,18 @@ Aufrufgraphen (call/jmp auf Symbole, "offset name" = Adresse genommen)
 und meldet, welche Funktionen nur von den Wurzeln aus erreichbar sind.
 
   initcheck.py --roots init_ obj.o [...]      Vorschlag (nur melden)
-  initcheck.py --roots init_ --seg ITEXT obj.o
-        prueft zusaetzlich: kein Code ausserhalb von ITEXT ruft etwas in
-        ITEXT oder nimmt dessen Adresse (ausser den Wurzeln) -> rc 1
+  initcheck.py --roots init_ --seg ITEXT [--near-ok] obj.o
+        prueft zusaetzlich: nur Startcode ruft etwas in ITEXT, niemand
+        nimmt dessen Adresse, was in ITEXT liegt, laeuft nur beim Start,
+        und Aufrufe ueber die Segmentgrenze von ITEXT sind fern (call far;
+        --near-ok fuer Treiber: ein Segment) -> rc 1
 """
 import re, subprocess, sys
 
 def parse(obj):
     out = subprocess.run(['wdis', obj], capture_output=True, text=True).stdout
     funcs, seg_of, edges, addr = {}, {}, {}, set()
+    far = set()                         # (Aufrufer, Ziel) mit call/jmp far
     seg = cur = None
     start, segsize = {}, {}
     for ln in out.splitlines():
@@ -38,6 +41,9 @@ def parse(obj):
         m = re.search(r'\b(call|jmp|j\w+)\s+(?:near ptr |far ptr )?(\w+_)\b', ln)
         if m:
             edges[cur].add(m.group(2))
+            op = re.match(r'^[0-9A-F]{4,8}\s+([0-9A-F]{2})', ln)
+            if op and op.group(1) in ('9A', 'EA'):
+                far.add((cur, m.group(2)))
         for m in re.finditer(r'offset (\w+_)\b', ln):
             addr.add((cur, m.group(1)))
     by = {}                             # Groesse = Abstand zur naechsten Marke
@@ -48,17 +54,20 @@ def parse(obj):
         for i, (a, f) in enumerate(l):
             e = l[i + 1][0] if i + 1 < len(l) else segsize.get(sg, a)
             funcs[f] = e - a
-    return funcs, seg_of, edges, addr
+    return funcs, seg_of, edges, addr, far
 
 def main():
     a = sys.argv[1:]
-    roots, segname, quiet = set(), None, False
+    roots, segname, quiet, nearok = set(), None, False, False
     objs = []
     i = 0
     while i < len(a):
         if a[i] == '--roots':
             roots |= set(a[i + 1].split(','))
             i += 2
+        elif a[i] == '--near-ok':        # Treiber: ein Segment, nah geht
+            nearok = True
+            i += 1
         elif a[i] == '-q':
             quiet = True
             i += 1
@@ -68,10 +77,23 @@ def main():
         else:
             objs.append(a[i])
             i += 1
-    funcs, seg_of, edges, addr = {}, {}, {}, set()
-    for o in objs:
-        f, s, e, d = parse(o)
-        funcs.update(f); seg_of.update(s); addr |= d
+    funcs, seg_of, edges, addr, far = {}, {}, {}, set(), set()
+    parsed = [(o,) + parse(o) for o in objs]
+    count = {}
+    for o, f, s, e, d, fr in parsed:
+        for n in f:
+            count[n] = count.get(n, 0) + 1
+    def q(o, n, local):                 # gleichnamige (statische) Funktionen
+        return n if count.get(n, 0) < 2 else (n + '@' + o if n in local else n)
+    for o, f, s, e, d, fr in parsed:    # mehrerer Dateien auseinanderhalten
+        L = set(f)
+        for n in f:
+            funcs[q(o, n, L)] = f[n]
+            seg_of[q(o, n, L)] = s[n]
+        for k, v in e.items():
+            edges.setdefault(q(o, k, L), set()).update(q(o, t, L) for t in v)
+        addr |= {(q(o, a, L), q(o, b, L)) for (a, b) in d}
+        far |= {(q(o, a, L), q(o, b, L)) for (a, b) in fr}
         for k, v in e.items():
             edges.setdefault(k, set()).update(v)
     callers = {}
@@ -101,11 +123,15 @@ def main():
         return 0
     bad = 0
     for f in funcs:                     # Laufzeitcode darf nichts in ITEXT
-        if seg_of.get(f) == segname:    # rufen
-            continue
+        sf = seg_of.get(f)              # rufen; ueber Segmentgrenzen nur fern
         for t in edges.get(f, ()):
-            if seg_of.get(t) == segname and t not in roots:
-                print('FEHLER: %s (%s) ruft %s in %s' % (f, seg_of.get(f), t, segname))
+            st = seg_of.get(t)
+            if st == segname and sf != segname and f not in init and t not in roots:
+                print('FEHLER: %s (%s) ruft %s in %s' % (f, sf, t, segname))
+                bad = 1
+            if not nearok and segname in (sf, st) and sf and st and sf != st \
+               and (f, t) not in far:
+                print('FEHLER: %s (%s) ruft %s (%s) nah ueber die Segmentgrenze' % (f, sf, t, st))
                 bad = 1
     for (f, t) in addr:
         if seg_of.get(t) == segname and seg_of.get(f) != segname:
