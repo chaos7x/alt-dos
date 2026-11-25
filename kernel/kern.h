@@ -80,6 +80,9 @@ int  __far ne_load(int t, int drive, const char *path, struct ne_start *st);
 void __far ne_task_end(int t);
 unsigned __far ne_getres(int t, unsigned h, unsigned type, unsigned id);
 unsigned __far ne_getmod(int t, const char *nm);
+unsigned __far ne_segctl(int t, unsigned op, unsigned a, unsigned b);
+unsigned __far ne_r3int(int t, void *f);       /* dpmi_trap: INT n -> Ring 3 */
+extern unsigned long ne_ihnd[];
 extern unsigned char ne_sh[64];         /* LDT-Eintraege der DLLs (alle Tasks) */
 #define NE_SH(i) (ne_sh[(i) >> 3] & (1 << ((i) & 7)))
 extern const struct ctxblk fat_ctx[], redir_ctx[], dem_ctx[];
@@ -478,6 +481,7 @@ int  kbd_get(void);                 /* Zeichen | Scancode << 8, -1 = leer  */
 int  kbd_peek(void);
 unsigned kbd_rate(unsigned v);      /* Tastatur F3h, FFFFh = abfragen      */
 unsigned kbd_shift(void);           /* KBDSHIFT_*                          */
+extern unsigned char kbd_lsh;       /* KBDSHIFT_* der zuletzt geholten Taste */
 void kbd_flush(void);
 int  kbd_set_layout(unsigned sel, unsigned off);   /* fehlende Zeichen, -1 */
 int  kbd_derive(void);                  /* nach CHCP                        */

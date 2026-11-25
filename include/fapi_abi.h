@@ -339,6 +339,20 @@ struct fapi_joy {
                                        (6.3, wie DosGetModHandle): BX = Name
                                        (ohne .DLL) -> AX = Kennung, 0 = nicht
                                        geladen */
+#define FAPI_SEGCTL         0x66    /* Segmente fuer einen Lader im Ring 3
+                                       (GUI, Win16-Programme im GUI-Prozess):
+                                       BX = SEG_*, CX/DX siehe dort -> 0,
+                                       FAPI_ERROR */
+#define SEG_TOCODE          0       /* CX = eigenes Datensegment -> Code
+                                       (lesbar), gleicher Selektor     */
+#define SEG_TODATA          1       /* CX = Codesegment -> wieder Daten */
+#define SEG_REALLOC         2       /* CX = Datensegment, DX = neue Groesse
+                                       (0 = 64 KB), Selektor bleibt, Inhalt
+                                       bleibt, Neues ist 0              */
+#define SEG_INTHND          3       /* CX:DX = Handler fuer INT n aus dem
+                                       Programm (CX = 0 aus). Stapel beim
+                                       Handler: n, IP hinter INT, CS, FLAGS
+                                       - n selbst herunternehmen, IRET  */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */
@@ -812,7 +826,10 @@ struct fapi_label {
                                        Statusleiste), 0 normal (2 weniger) -> Zeilenzahl;
                                        endet das Programm, gilt wieder normal */
 #define FAPI_VIOSETCURPOS   0x33    /* BX = Zeile << 8 | Spalte, Zeile FFh = Cursor aus */
-#define FAPI_KBDSHIFT       0x34    /* -> AX = KBDSHIFT_* (Zustand jetzt)  */
+#define FAPI_KBDSHIFT       0x34    /* -> AX = KBDSHIFT_* (Zustand jetzt);
+                                       BX = 1: Umschalt/Strg/Alt/AltGr beim
+                                       Druecken der zuletzt mit KbdCharIn
+                                       geholten Taste (6.3, GUI: Alt+F4)  */
 #define FAPI_VIOSETLINES    0x35    /* BX = Bildschirmzeilen 25/43/50 (nur VGA)
                                        der eigenen Sitzung, 0 = nur fragen;
                                        loescht den Bildschirm -> Zeilen */

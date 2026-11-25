@@ -1014,3 +1014,112 @@ out:
     bkl_hold--;
     return sel;
 }
+
+/* ---- FAPI_SEGCTL (GUI, docs/GUI-WIN16.md): Segmente fuer einen Lader im
+   Ring 3 (Win16-Programme im GUI-Prozess) ---------------------------- */
+#include "v86int.h"
+unsigned long ne_ihnd[NTASK];           /* SEG_INTHND: CS << 16 | IP, 0 aus */
+
+static struct desc __far *own_seg(int t, unsigned sel)
+{
+    unsigned idx = sel >> 3;
+    struct desc __far *d;
+    if (!(sel & 4) || idx < 2 || idx >= nldt || SH(idx))
+        return 0;
+    d = LDT(t, idx);
+    if (!(d->access & 0x80) || (d->rsv & D_ALIAS))
+        return 0;                       /* frei, ausgelagert, Alias       */
+    return d;
+}
+
+unsigned __far ne_segctl(int t, unsigned op, unsigned a, unsigned b)
+{
+    struct desc __far *d;
+    unsigned long base;
+    unsigned oldn, newn, n;
+    pg_t u;
+    if (op == SEG_INTHND) {
+        ne_ihnd[t] = ((unsigned long)a << 16) | b;
+        if (a && (a & 7) != 7)
+            ne_ihnd[t] = 0;
+        return a && !ne_ihnd[t] ? FAPI_ERROR : 0;
+    }
+    d = own_seg(t, a);
+    if (!d)
+        return FAPI_ERROR;
+    switch (op) {
+    case SEG_TOCODE:
+        d->access = ACC_UCODE;
+        return 0;
+    case SEG_TODATA:
+        d->access = ACC_UDATA;
+        return 0;
+    case SEG_REALLOC:
+        if ((d->access & 0x18) != 0x10)
+            return FAPI_ERROR;          /* nur Daten                       */
+        oldn = PAGES((unsigned long)d->limit + 1);
+        newn = b ? PAGES(b) : 16;
+        if (newn != oldn) {
+            bkl_hold++;
+            u = kf_mem_get(newn);
+            if (!u) {
+                bkl_hold--;
+                return FAPI_ERROR;
+            }
+            scratch_map(PG_LIN(u), newn * MEM_PAGE - 1);
+            zero_seg(SCRATCH, newn * (MEM_PAGE / 2));
+            n = (newn < oldn ? newn : oldn) * (MEM_PAGE / 2);   /* Worte */
+            far_copy(SCRATCH, 0, a, 0, n);                      /* erste */
+            if (n > 0x4000)                                     /* Haelfte */
+                far_copy(SCRATCH, 0x8000U, a, 0x8000U, n - 0x4000);
+            base = dbase(d);
+            mem_free(base >> 12, oldn);
+            alloc_units += newn;
+            alloc_units -= oldn;
+            desc_put(t, a >> 3, PG_LIN(u), b ? b - 1 : 0xFFFF, ACC_UDATA, 0);
+            bkl_hold--;
+        } else
+            d->limit = b ? b - 1 : 0xFFFF;
+        return 0;
+    }
+    return FAPI_ERROR;
+}
+
+/* dpmi_trap (v86.c) fuer FAPI-Programme: INT n aus Ring 3 (#GP mit
+   Fehlercode n * 8 + 2) an den Handler des Programms (SEG_INTHND).
+   Stapel des Programms danach: n, IP hinter dem INT, CS, FLAGS - der
+   Handler nimmt n herunter und endet mit IRET. -> 0 weiter, 1 Fehler */
+unsigned __far ne_r3int(int t, void *fv)
+{
+    struct v86_frame *f = fv;
+    unsigned cs, ip, sp, n;
+    unsigned char op;
+    unsigned __far *s;
+    if (t < 0 || t >= NTASK || !ne_ihnd[t] || f->vec != 13 ||
+        (f->err & 7) != 2 || (f->r.eflags & 0x20000UL))
+        return 1;
+    n = (unsigned)f->err >> 3;
+    cs = (unsigned)f->r.cs;
+    ip = (unsigned)f->r.eip;
+    op = *(unsigned char __far *)MK_FP(cs, ip);
+    if (op == 0xCD)
+        ip += 2;
+    else if (op == 0xCC || op == 0xCE)
+        ip += 1;
+    else
+        return 1;
+    sp = (unsigned)f->r.esp;
+    if (sp < 16)
+        return 1;
+    sp -= 8;
+    s = MK_FP((unsigned)f->r.ss, sp);
+    s[0] = n;
+    s[1] = ip;
+    s[2] = cs;
+    s[3] = (unsigned)f->r.eflags;
+    f->r.esp = (f->r.esp & 0xFFFF0000UL) | sp;
+    f->r.cs = ne_ihnd[t] >> 16;
+    f->r.eip = (unsigned)ne_ihnd[t];
+    f->r.eflags &= ~0x100UL;            /* TF                              */
+    return 0;
+}

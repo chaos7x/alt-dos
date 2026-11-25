@@ -358,6 +358,27 @@ for t in iso9660; do
     python3 tools/mkfx.py --driver $B/stub.bin $B/ifs_$t.bin $B/ifs_$t.map $B/ifs_$t.ifs
 done
 
+echo "GUI (Win16)"
+# GUI.EXE (NE, Modell medium, SS != DS) und das Win16-Beispiel HALLOW.EXE
+# (ohne Laufzeitbibliothek, Importe aus gui/ordinals.txt) - docs/GUI-WIN16.md
+python3 tools/mkexp.py gui $B >/dev/null
+GCFLAGS="-q -mm -zu -2 -s -zl -zls -zp1 -d0 -ox -wx -we -i=$B"
+for f in main krnl w16ldr gdi user exports; do
+    wcc $GCFLAGS -fo=$B/gui_$f.o gui/$f.c
+done
+nasm -f obj -o $B/gui_gcrt.o gui/gcrt.asm
+wlink option quiet format os2 name $B/gui.exe option stack=8192 \
+      option nodefaultlibs option map=$B/gui.map \
+      file $B/gui_gcrt.o,$B/gui_main.o,$B/gui_krnl.o,$B/gui_w16ldr.o \
+      file $B/gui_gdi.o,$B/gui_user.o,$B/gui_exports.o
+wcc -q -bt=windows -zW -ms -s -zl -zls -2 -ox -wx -we -i=$WATCOM/h/win \
+    -fo=$B/hallow.o gui/demo/hallow.c
+nasm -f obj -o $B/w16crt.o gui/demo/w16crt.asm
+python3 tools/w16imp.py $B/hallow.o $B/w16crt.o > $B/hallow.lnk
+wlink option quiet format windows name $B/hallow.exe \
+      option stack=8192, heapsize=1024 option nodefaultlibs \
+      file $B/w16crt.o,$B/hallow.o @$B/hallow.lnk
+
 echo "Diskette (FAT12)"
 IMG=$B/atdos-fd.img
 export MTOOLS_SKIP_CHECK=1
@@ -400,7 +421,7 @@ DEMOFILES="$B/bioscmp.com BIOSCMP.COM  $B/task_a.exe TASKA.EXE  $B/task_b.exe TA
 # Werkzeuge der Setup-Diskette 2 (Packprogramme, GNU-Textwerkzeuge, ...)
 HDDOS="$B/task_logon.exe LOGON.EXE  $B/task_dig.exe DIG.EXE  $B/task_hostname.exe HOSTNAME.EXE  $B/task_backup.exe BACKUP.EXE  $B/task_restore.exe RESTORE.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_aweload.exe AWELOAD.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_ssh.exe SSH.EXE  $B/task_sftp.exe SFTP.EXE"
 # Testprogramme (Setup-Diskette 2)
-HDDEMO="$B/dosbench.com DOSBENCH.COM  $B/dosstruc.com DOSSTRUC.COM  $B/task_fragtest.exe FRAGTEST.EXE  $B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/task_joytest.exe JOYTEST.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
+HDDEMO="$B/hallow.exe HALLOW.EXE  $B/dosbench.com DOSBENCH.COM  $B/dosstruc.com DOSSTRUC.COM  $B/task_fragtest.exe FRAGTEST.EXE  $B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/task_joytest.exe JOYTEST.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL
 echo "DOS-Box: Startabbild freedos.img"
@@ -421,7 +442,7 @@ BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  $B/boxshell
 # FREEDOS.IMG), COMMAND.COM 4.0 (msdos4/, MIT), LOCK/UNLOCK
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
-HDDOS3="$B/task_domjoin.exe DOMJOIN.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE"
+HDDOS3="$B/gui.exe GUI.EXE  $B/task_domjoin.exe DOMJOIN.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE"
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.

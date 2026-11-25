@@ -21,6 +21,8 @@ volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 
 #define NBUF 32
 static unsigned short buf[NBUF];
+static unsigned char  bufsh[NBUF];     /* Umschalttasten beim Druecken     */
+unsigned char kbd_lsh;                 /* ... der zuletzt geholten Taste   */
 static unsigned char  head, tail;
 static unsigned char  shift, ctrl, alt, altgr, caps, e0, alt_only;
 static unsigned char  num, e1;          /* NumLock, Rest einer E1-Folge (Pause) */
@@ -138,6 +140,9 @@ static void put(unsigned short k)
     unsigned char n = (unsigned char)((head + 1) % NBUF);
     if (n != tail) {                /* voll: Taste verwerfen            */
         buf[head] = k;
+        bufsh[head] = (unsigned char)((shift ? KBDSHIFT_SHIFT : 0) |
+                      (ctrl ? KBDSHIFT_CTRL : 0) | (alt ? KBDSHIFT_ALT : 0) |
+                      (altgr ? KBDSHIFT_ALTGR : 0));
         head = n;
     }
 }
@@ -338,6 +343,7 @@ int kbd_get(void)
     f = irq_off();
     if (head != tail) {
         k = buf[tail];
+        kbd_lsh = bufsh[tail];
         tail = (unsigned char)((tail + 1) % NBUF);
     }
     irq_restore(f);

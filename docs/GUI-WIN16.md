@@ -2,7 +2,8 @@
 # Plan: Grafische Oberfläche und Win16 für AT-DOS
 
 Stand: 15.11.2026, abgestimmt mit dem Nutzer; Stil/Shell austauschbar
-nachgetragen 25.11.2026. Nur Plan – noch kein Code.
+nachgetragen 25.11.2026. Erster Code (GUI-Prozess, KERNEL/USER/GDI für
+Win16) seit 25.11.2026, siehe „Stand: GUI-Prozess“.
 
 ## Entscheidungen
 
@@ -123,6 +124,75 @@ Win16 (Frage 1 unten) kommt später darauf.
   Laufzeit), Win16-Module (KERNEL/USER/GDI als eigene DLLs),
   Startregister der EXE wie OS/2 (AX = Umgebung, BX = Befehlszeile),
   Auslagern/Verwerfen von NE-Code (Code wird wie Daten behandelt), 5.x.
+
+### Stand: GUI-Prozess (25.11.2026, Auftrag „mach mit dem kompletten Plan weiter“)
+
+**Entscheidung zu Frage 1 (gemeinsamer Adressraum):** wie Windows 3.x im
+Standard-Modus – *ein* AT-DOS-Task `GUI.EXE` mit *einer* LDT, darin alle
+Win16-Programme als kooperative Tasks (Wechsel nur in GetMessage/
+PeekMessage/Yield, je Task eigener Stapel im eigenen Autodata). Grund:
+der Kernel hat nur 8 Tasks (NTASK, Kernelstapel in DGROUP), ein Task je
+Win16-Programm wäre zu eng; Win16 ist ohnehin kooperativ, und GMEM_SHARE,
+DDE und Zwischenablage brauchen den gemeinsamen Adressraum. Gegenüber CMD
+und den Boxen bleibt die GUI präemptiv. Wie bei Windows 3.x reißt ein
+abstürzendes Win16-Programm die GUI mit.
+
+Aufbau (`gui/`, gebaut in build.sh Abschnitt „GUI (Win16)“):
+
+- `GUI.EXE` – NE (`format os2`, Modell medium, `-zu`: SS ≠ DS, weil die
+  Exporte auf dem Stapel des Programms laufen). Kein Code aus der Watcom-
+  Bibliothek (32-Bit-Mul/Div in `gcrt.asm`).
+- `w16ldr.c` – NE-Lader im Ring 3: Segmente per DosAllocSeg, Code danach
+  per `FAPI_SEGCTL` (66h) `SEG_TOCODE`, Relokationen (intern, Ordinal,
+  additiv, Ketten), Importe aus KERNEL/USER/GDI über `exports.c`, die
+  Tabellen erzeugt `tools/mkexp.py` aus den mit `API` markierten
+  Funktionen und `gui/ordinals.txt` (Nummern von Windows 3.1 aus den
+  Importbibliotheken von Open Watcom). Fehlt ein Import: Eintrag in
+  `GUI.LOG`, Aufruf beendet das Programm. Ressourcen (FindResource-Art,
+  LoadString).
+- `krnl.c` – Tasks (`tsw`/`tstart` in gcrt.asm, InitTask mit Registern
+  wie Windows, PSP, Autodata: Daten, Stapel, lokale Halde), Global* (ein
+  Segment je Block, Handle = Selektor), Local* (Halde im Autodata des
+  Aufrufers – DS aus dem `__loadds`-Rahmen), `_lopen` & Co., INT 21h der
+  Programme: der Kernel leitet INT n aus Ring 3 an den Handler des
+  Programms (`SEG_INTHND`, `ne_r3int` in neload.c über dpmi_trap),
+  `dos_int` übersetzt in FAPI-Aufrufe (Dateien, Suche, Verzeichnisse,
+  Datum/Zeit, Laufwerke, 4Ch).
+- `gdi.c` – VGA 640×480×16 über VioSetGfx(12h): Schattenbild in vier
+  Ebenen, `gdi_flush` bringt den geänderten Bereich auf die Karte; der
+  Mauszeiger wird vom GUI-Prozess selbst gezeichnet (der Zeiger des
+  Kernels stellte beim Überzeichnen alte Punkte zurück). Palette = die 16
+  Grundfarben von Windows, RGB auf die nächste. Objekte (Stift, Pinsel,
+  Schrift), DCs mit Clipping-Rechtecken, TextOut/ExtTextOut, Linien,
+  Rechteck, Ellipse, PatBlt, Pixel. Schrift vorerst 8×16 aus
+  `\DOS\SYSTEM\CP850.FNT` (FreeDOS cpidos, GPL), ANSI auf 850 umgesetzt –
+  eine eigene Systemschrift fehlt noch.
+- `user.c` – Fenster (CUA-Rahmen eigen: Systemfeld, Titel, Pfeilknöpfe,
+  Eckmarken), Klassen, Nachrichten je Task, WM_PAINT/WM_TIMER beim
+  Abholen, SendMessage über Tasks hinweg durch die Hauptschleife,
+  Verschieben mit Umriss, Aktivieren, Alt+F4, Doppelklick aufs
+  Systemfeld, eingebaute Klassen BUTTON und STATIC, MessageBox (modal).
+- Beispiel `\DEMO\HALLOW.EXE` (`gui/demo/`, eigener Startcode
+  `w16crt.asm`, Importe per `tools/w16imp.py`, ohne Watcom-Bibliothek).
+
+Geprüft in QEMU (`GUI \DEMO\HALLOW`; ebenso ein mit der Watcom-Win16-
+Bibliothek gebautes Programm, nur im Scratchpad): Fenster mit Text und
+Rechteck, Klick -> MessageBox -> OK, Verschieben am Titel, Alt+F4 beendet,
+GUI endet, CMD macht weiter. In 86Box geprüft (386DX/40, 4 MB, Cirrus
+GD5434, AHA-154x, serielle Maus): dasselbe. Dabei behoben: Alt+F4 ging
+bei schnellem Tippen verloren – der Kernel liefert Alt+F-Taste als
+Scancode, Alt war beim Abholen schon los; jetzt merkt sich kbd.c die
+Umschalttasten je Taste im Puffer, `FAPI_KBDSHIFT` mit BX = 1 liefert sie
+für die zuletzt geholte. Lehren: CLI im Ring 3 ist #GP (Stapelwechsel
+in `tsw` ohne CLI – MOV SS sperrt den nächsten Befehl); ein Task darf sein
+Autodata nicht selbst freigeben, solange er darauf läuft (`task_reap` in
+der Hauptschleife); WinMain ist im Modell small ein naher Aufruf.
+
+Noch nicht: Menüs, EDIT/LISTBOX/SCROLLBAR, Dialoge aus Ressourcen,
+Bitmaps/BitBlt, eigene Schriften, COMMDLG, DLLs von Programmen
+(LoadLibrary), Profile (INI), Größe ändern/Minimieren, Shell, weitere
+Grafiktreiber. Nächstes Ziel: Notepad (Menü, EDIT, Tastenkürzel,
+COMMDLG).
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
@@ -273,7 +343,9 @@ zugesagt.
 
 Vor Stufe 0 klären, noch nicht entschieden:
 
-1. **Gemeinsamer Adressraum.** Win16 setzt eine LDT für alle Programme
+1. **Gemeinsamer Adressraum** – entschieden (25.11.2026), siehe „Stand:
+   GUI-Prozess“: ein Prozess, eine LDT, kooperativ. Ursprüngliche Frage:
+   Win16 setzt eine LDT für alle Programme
    voraus (GMEM_SHARE, DDE, Zwischenablage, OLE, Datensegmente von
    USER/GDI; Office 4.3 baut darauf). AT-DOS gibt jedem Task eine eigene
    LDT. Bewährter Weg wie WOW (NT) und WIN-OS/2: alle Win16-Programme im

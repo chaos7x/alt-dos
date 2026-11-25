@@ -2403,6 +2403,7 @@ static void locks_task_end(int t)       /* Sicherheitsnetz              */
         if (dl_owner[i] == t + 1)
             dl_owner[i] = 0;
     task[t].vkey = task[t].eakey = task[t].wait_k = task[t].may_rel = task[t].kill_req = 0;
+    ne_ihnd[t] = 0;                             /* SEG_INTHND (neload.c) */
     task[t].lock_depth = 0;
 }
 
@@ -3459,7 +3460,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_KBDSHIFT:
-        return kbd_shift();
+        return a1 ? kbd_lsh : kbd_shift();      /* 1: bei der letzten Taste */
 
     case FAPI_KBDRATE:
         return kbd_rate(a1);
@@ -4605,6 +4606,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (user_str(usel, a1, buf, 16))
             return 0;
         return ne_getmod(current, buf);
+    case FAPI_SEGCTL:                           /* GUI-Lader (neload.c)   */
+        return ne_segctl(current, a1, a2, a3);
     case FAPI_UNINAME:                          /* BACKUP/RESTORE (fat.c) */
         if (a1 > 1 || user_str(usel, a2, buf, 256) || !user_ok(usel, a3, 512, !a1))
             return FAPI_ERROR;

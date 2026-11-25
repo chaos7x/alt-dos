@@ -6905,7 +6905,8 @@ unsigned __far dpmi_trap(struct v86_frame *f)
     int t = current;
     unsigned rc, k;
     if (t < 0 || !dp_on[t])
-        return 1;
+        return ne_r3int(t, f);                  /* FAPI-Programm: INT n an
+                                                   seinen Handler (GUI)  */
     pvi_in(&f->r, t);
     enable_ints();
     rc = dp_trap(f, t);

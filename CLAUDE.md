@@ -2330,6 +2330,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   (`ne_stub`, Liste auf dem Stapel der EXE), MULTIPLEDATA-Kopien je Task,
   FAPI 64h DosGetResource / 65h DosGetModHandle (Zahlen als Kennung).
   In QEMU geprüft, Stand in `docs/GUI-WIN16.md` „Stufe 2“.
+  GUI-Prozess erledigt (25.11.2026, „mach mit dem kompletten Plan
+  weiter“): Entscheidung zu Frage 1 – wie Windows 3.x ein Task `GUI.EXE`
+  mit einer LDT, alle Win16-Programme kooperativ darin (NTASK ist 8).
+  `gui/` (NE, medium, `-zu`; build.sh „GUI (Win16)“): Lader im Ring 3,
+  KERNEL/USER/GDI als eigener Code mit Exporttabellen aus `gui/ordinals.txt`
+  (`tools/mkexp.py`), VGA 640×480×16 über ein Schattenbild, eigener
+  Mauszeiger, INT 21h der Programme über FAPI 66h `FAPI_SEGCTL`
+  (SEG_INTHND -> `ne_r3int`, auch SEG_TOCODE/TODATA/REALLOC). Beispiel
+  `\DEMO\HALLOW.EXE` ohne Watcom-Bibliothek. Stand, Lehren und Offenes
+  in `docs/GUI-WIN16.md` „Stand: GUI-Prozess“; nächstes Ziel Notepad.
 
 - **Auslagerungsdatei Teil 1 erledigt** (Entscheidung des Nutzers,
   15.11.2026: gehört in 6.1, vor DoubleSpace – „fällt auf bei den kleinen

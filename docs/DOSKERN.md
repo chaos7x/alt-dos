@@ -1478,7 +1478,8 @@ Offen (25.11.2026, vom Nutzer gemeldet, Build 1119): mit VBESVGA.DRV
 Gegenprobe des Nutzers auf einer 86Box-VM mit S3 Trio3D/2X unter echtem
 MS-DOS 6.22 (`WIN /S`, VBESVGA): dort flüssig, nur etwas zäher als mit
 dem Treiber der Karte (VBESVGA zeichnet den Zeiger in Software). Ein Teil
-des Ruckelns liegt also bei uns. Befund aus QEMU mit Zählern über Port
+des Ruckelns liegt also bei uns. Nachtrag des Nutzers: auch mit VBESVGA 640×480×256 –
+es hängt nicht an der Auflösung, sondern am Zeiger in Software. Befund aus QEMU mit Zählern über Port
 E9h (Instrumentierung nicht eingecheckt): Rückrufe aus dem V86-Modus
 kommen alle 1–2 Takte an; ein Rückruf, den `cb_pmtick` aus dem PM über
 den Stummel `MOU_PM` umlenkt, endet manchmal nicht (umgelenkt, aber kein
