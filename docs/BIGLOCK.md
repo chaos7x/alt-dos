@@ -92,11 +92,16 @@ Der Startpfad in `kmain` läuft ohne Tasks (`current = -1`): `klock_enter`
 kehrt sofort zurück, `irq0` ruft `preempt` nur aus Ring 3/V86, Treiber,
 Tastatur, CONFIG.SYS, Laufwerke, Auslagerungsdatei und Codepage laufen
 also allein. Der Taskwechsel beginnt erst mit `load_tr(TSS_K)` und dem
-ersten `schedule_next()` am Ende von `kmain`. Geplant: diese Zeilen in
-eine kernelinterne Funktion `sched_start()` (6.x und 7.0, kein
-Systemaufruf, Verhalten gleich). Sie ist der eine Punkt, ab dem Sperren
-gelten; in 7.0 startet sie zusätzlich die weiteren CPU-Kerne (vorher
-läuft nur der Startkern).
+ersten `schedule_next()` am Ende von `kmain`. Diese Zeilen stehen seit
+25.11.2026 in der kernelinternen Funktion `sched_start()` (kernel.c,
+kein Systemaufruf, Verhalten unverändert; in QEMU geprüft). Sie ist der
+eine Punkt, ab dem Sperren gelten; in 7.0 startet sie zusätzlich die
+weiteren CPU-Kerne (vorher läuft nur der Startkern).
+
+Für den F5-Notstart (docs/NOTSTART.md) heißt das: die BASEDEV=-Treiber
+und der INT-13h-Rückfall laufen vor `sched_start()`, also ohne
+Multitasking und ohne Sperren – der Rückfall (Real-Mode-Ausflug) muss
+erst danach auf Sperren achten (Kernelsperre + Gerätesperre).
 
 ## Offene Punkte (Durchsicht 15.11.2026)
 

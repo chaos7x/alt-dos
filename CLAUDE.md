@@ -2085,8 +2085,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   INT-13h-Rückfall (Entscheidung des Nutzers, 24.11.2026: Rückweg nur
   über CPU-Reset). Entwurf in `docs/NOTSTART.md`.
 
-- **`sched_start()`** (vorgemerkt vom Nutzer, 24.11.2026; noch kein
-  Code – die andere Sitzung arbeitet an Windows 3.1): der Start läuft
+- **`sched_start()`** (vorgemerkt vom Nutzer, 24.11.2026; gebaut
+  25.11.2026, in QEMU geprüft – vor ihm laufen BASEDEV=-Treiber und der
+  künftige INT-13h-Rückfall des Notstarts ohne Tasks): der Start läuft
   heute schon ohne Tasks (`current = -1`, keine Kernelsperre,
   irq0 wechselt nicht), der Taskwechsel beginnt erst mit den letzten
   Zeilen von `kmain` (kernel.c `load_tr(TSS_K)` + erstes

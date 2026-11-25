@@ -7599,6 +7599,17 @@ const char * __far kf_drv_name(int d) { return drv_name(d); }
 
 static unsigned pn_n;                    /* Laenge des Absturzprotokolls */
 
+/* Ab hier Taskwechsel (docs/BIGLOCK.md, "Start des Taskwechsels"): bis
+   dahin laeuft der Start ohne Tasks (current = -1, keine Kernelsperre,
+   irq0 wechselt nicht) - Treiber, CONFIG.SYS mit BASEDEV=, Laufwerke,
+   Auslagerungsdatei. Der eine Punkt, ab dem Sperren gelten; in 7.0
+   startet er auch die weiteren CPU-Kerne. Kein Systemaufruf. */
+static void sched_start(void)
+{
+    load_tr(TSS_K);
+    schedule_next();                /* kehrt nie zurueck                 */
+}
+
 void kmain(void)
 {
     char line[FAPI_ARGLEN], num[6];
@@ -7837,6 +7848,5 @@ void kmain(void)
     vio_kputs(s0, "\n");
     vio_focus(s0);
 
-    load_tr(TSS_K);
-    schedule_next();                /* kehrt nie zurueck                 */
+    sched_start();                  /* kehrt nie zurueck                 */
 }
