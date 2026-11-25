@@ -373,6 +373,7 @@ Port E9h:
   ermittelt; SFT und Bootsektor-Puffer liegen davor im Kopf DOSHDR, damit
   kaum Speicher verloren geht).
 
+Zurückgestellt (Entscheidung des Nutzers, 25.11.2026: „nicht wichtig“).
 Stand: DEFRAG liest FAT und Verzeichnisse und zeigt die Belegungskarte,
 bricht dann aber mit „MS-DOS-FASTOPEN-Programm entdeckt“ ab – woran es
 das erkennt, ist offen (keine DOS-Aufrufe dazwischen, also ein direkter
