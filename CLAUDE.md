@@ -2108,7 +2108,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   die Trio3D/2X also kein Weg im Standardmodus; jede weitere Karte zuerst
   unter MS-DOS mit `WIN /S` prüfen, bevor Code entsteht („Befund“ im
   Dokument). Die Spur (Ports, DPMI, INT 10h/2Fh ins DMESG) war nur
-  vorübergehend.
+  vorübergehend. VBESVGA.DRV (vom Nutzer als Abbild, nicht im Repository)
+  läuft dagegen in der Box ohne Kernel-Änderung: 800×600×8 und
+  1024×768×16, Alt+Esc hin und zurück, Beenden – geprüft 86Box P3B-F
+  mit Trio3D/2X (KRNL386 allein hilft dem S3-Treiber nicht: er will
+  WIN386 + seinen VxD).
 
 - **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
   Stufe 1 gebaut 25.11.2026 – F5, BASEDEV=, Notstart in Kernel/CMD/Box,

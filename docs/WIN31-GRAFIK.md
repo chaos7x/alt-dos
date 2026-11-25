@@ -81,11 +81,8 @@ Folgen:
   echtem MS-DOS mit `WIN /S` geprüft (billig, eine VM), bevor Code
   entsteht. Kandidaten aus 86Box: ältere S3 (Trio64/Vision 864), Cirrus
   54xx, ET4000/W32, ATI Mach.
-- VBESVGA.DRV läuft laut seiner Beschreibung auch im Standardmodus (es
-  bessert dafür einen Fehler in DOSX.EXE aus – in der Box ersetzt WINLDR
-  DOSX, das ist zu prüfen). Das Binary war hier nicht erreichbar (GitHub-
-  Releases über den Proxy gesperrt, Bauen braucht das Win16-DDK); den Test
-  macht der Nutzer.
+- VBESVGA.DRV läuft in der Box (Abbild `vbesvga.img` vom Nutzer, nur im
+  Scratchpad): siehe „VBESVGA.DRV in der Box“ unten.
 
 Testweg für die nächste Karte: VM `p3m` im Scratchpad (P3B-F, MS-DOS 6.22
 von Diskette, Windows-Verzeichnis aus der AT-DOS-Installation, `WIN /S`
@@ -218,6 +215,25 @@ Datenbücher bleiben die erste Quelle.
   - Wechsel mit Alt+Esc zu CMD und zurück, auch mitten im Zeichnen;
   - Ende von Windows, danach ein sauberer Textmodus.
 - Gegenprobe: VGA.DRV unverändert, DOOM, VBETEST/BANKT/SVBG.
+
+## VBESVGA.DRV in der Box (geprüft 25.11.2026)
+
+86Box P3B-F mit Trio3D/2X, Windows 3.11 deutsch im Standardmodus über
+WINLDR, ohne Änderung am Kernel. Eingerichtet von Hand: `VBESVGA.DRV` nach
+`C:\WINDOWS\SYSTEM`, in SYSTEM.INI `display.drv=vbesvga.drv` und
+
+    [vbesvga.drv]
+    Width=1024
+    Height=768
+    Depth=16
+
+(VDDVBE.386 und VBEVMDIB.3GR braucht nur der erweiterte Modus.) Geprüft:
+800×600×8 und 1024×768×16 mit Programm-Manager, Hilfe und Datei-Manager;
+`START WIN` in eigener Sitzung, Alt+Esc zu CMD (Text sauber, VER) und
+zurück – das Bild kommt über die vorhandene SVGA-Sicherung (VBE 4F04h und
+Bild, `raw_svout`) wieder; Windows beenden, danach sauberer Textmodus.
+Die von VBESVGA beschriebene Ausbesserung von DOSX.EXE stört nicht (in der
+Box läuft WINLDR). Hinten wartet Windows wie jede SVGA-Box (`vga_wait`).
 
 ## Rückfall: VBESVGA.DRV
 
