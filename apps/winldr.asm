@@ -282,6 +282,7 @@ T_TMP   equ     19                      ; 5Ah DS:DX hin und zurueck
 T_FFFF  equ     20                      ; 4Ch: an den Wirt
 T_PSET  equ     21                      ; 50h: BX Selektor -> Segment
 T_NPSP  equ     22                      ; 26h/55h: DX Selektor -> Segment
+T_5D    equ     24                      ; 5D0Ah: DS:DX 22 Byte hin
 T_FCB   equ     23                      ; 11h/12h/13h: FCB DS:DX hin und
                                         ; zurueck, Ergebnis ins DTA
 
@@ -298,7 +299,7 @@ ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      47h, T_CDIR, 48h, T_MEM,  49h, T_MEM,  4Ah, T_MEM
         db      4Ch, T_FFFF, 4Dh, T_PASS, 4Eh, T_FIND, 4Fh, T_FIND
         db      50h, T_PSET, 51h, T_PSP,  52h, T_ESBX, 55h, T_NPSP, 26h, T_NPSP, 54h, T_PASS, 56h, T_REN
-        db      57h, T_PASS, 58h, T_PASS, 59h, T_PASS, 5Ah, T_TMP
+        db      57h, T_PASS, 58h, T_PASS, 59h, T_PASS, 5Ah, T_TMP, 5Dh, T_5D
         db      5Bh, T_SZ,   5Ch, T_PASS, 60h, T_TRUE, 62h, T_PSP
         db      66h, T_PASS, 67h, T_PASS, 68h, T_PASS, 6Ch, T_XOPN
         db      0
@@ -353,7 +354,7 @@ pm21:   test    ah, ah                  ; 00h: KRNL beendet den DOS-Teil
 
 jtab:   dw      f_pass, f_sz, f_rd, f_wr, f_vget, f_vset, f_dset, f_dget
         dw      f_find, f_cdir, f_ren, f_xopn, f_true, f_ctry, f_esbx, f_psp
-        dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp, f_fcb
+        dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp, f_fcb, f_5d
 
 ; Real Mode aufrufen (INT 21h mit R), Ergebnis in die Register
 callrm: push    es
@@ -441,6 +442,33 @@ cpsz:   push    ds
         ret
 
 f_pass: call    callrm
+        jmp     done
+
+; 5D0Ah (erweiterten Fehler setzen, DS:DX -> 11 Worte): KRNL stellt damit
+; nach jedem INT 21h den Fehler wieder her, den es in seinem INT-24h-
+; Handler mit 59h geholt hat - WINFILE fragt danach 59h (15h = "kein
+; Datentraeger"). Andere 5Dh-Aufrufe wie bisher roh an den Wirt.
+f_5d:   cmp     byte [R_eax], 0Ah
+        je      .set
+        popad
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        jmp     far [cs:old21]
+.set:   push    ds
+        push    es
+        push    ds
+        pop     es
+        mov     di, buf
+        mov     si, [R_edx]
+        mov     ds, [c_ds]
+        mov     cx, 11
+        cld
+        rep     movsw
+        pop     es
+        pop     ds
+        mov     word [R_edx], buf
+        call    callrm
         jmp     done
 
 f_sz:   call    cpsz_dx

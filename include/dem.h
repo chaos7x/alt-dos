@@ -73,6 +73,10 @@ typedef unsigned long  dem_u32;         /* 32 Bit (Watcom 16 Bit)        */
                                (COMPUTERNAME, sonst DHCP/HOSTNAME), path2
                                = Domaene; drive d bzw. 80h + n (LPTn+1)
                                -> path = \\server\freigabe, sonst 0Fh  */
+#define DEM_MEDIA       25  /* drive: Medium da? (INT 21h 47h prueft wie
+                               MS-DOS ValidateCDS das Medium - WINFILE
+                               von Windows 3.1 erkennt daran ein leeres
+                               Laufwerk) -> 0 oder 15h                  */
 #define DEM_DINFO       17  /* drive, buf: 32 Byte Laufwerksinfo (Art,
                                Cluster, Seriennummer, Bezeichnung, FAT)  */
 

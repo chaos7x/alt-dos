@@ -1098,6 +1098,12 @@ void file_fn(struct frame __far *f)
             set_err(f, E_DRIVE);
             return;
         }
+        q.drive = d;                    /* Medium pruefen wie MS-DOS     */
+        q.path[0] = 0;
+        if (!net_drive(d) && dem(DEM_MEDIA)) {  /* (PATH.ASM: "utilities */
+            set_err(f, q.err);          /* using GetCurrentDir to do     */
+            return;                     /* media check", WINFILE)        */
+        }
         for (n = 0; cdstab[d].path[3 + n]; n++)
             B(f->ds, f->si + n) = (u8)cdstab[d].path[3 + n];
         B(f->ds, f->si + n) = 0;

@@ -1225,6 +1225,10 @@ unsigned __far dem_call(int t, struct dem_req *q)
     case DEM_LFIND:     r = d_lfind(q); break;
     case DEM_FCLUS:     r = d_fclus(q); break;
     case DEM_NETINFO:   r = d_netinfo(q); break;
+    case DEM_MEDIA:                             /* 47h: Medium da?       */
+        r = FAILED(FAPI(FAPI_QFSINFO, KDATA, q->drive, (unsigned)&fsi, 0)) ||
+            (fsi.flags & FSI_NOMEDIA) ? E_NOTREADY : 0;
+        break;
     default:            r = 1;              /* unbekannt (01h)       */
     }
     return q->err = r;

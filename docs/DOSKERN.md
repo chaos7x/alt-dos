@@ -1504,7 +1504,7 @@ erwartet.
    (Nutzer, 23.11.2026): ja, nur die NET-USE-Laufwerke (4409h Bit 12,
    CDS 8000h); alle anderen AT-DOS-Laufwerke bleiben lokal.
 
-### Offen (24.11.2026): leeres Laufwerk unter Windows
+### Erledigt (25.11.2026): leeres Laufwerk unter Windows
 
 Vom Nutzer gemeldet: der Datei-Manager zeigt bei leerem Laufwerk (A:, B:,
 ZIP) „Keine Dateien gefunden“ statt der Meldung von Windows („Laufwerk A:
@@ -1525,12 +1525,25 @@ unterbrochenen Aufrufs (Datei-Manager: Schutzverletzung WINFILE
 0006:051D beim Formatieren der Zahlen). `i24_cb` sichert deshalb rmint
 bis R_ss auf dem Stapel.
 
-Offen: der Handler von Windows antwortet sofort mit „Fehler“ (AL = 3),
-ohne Fenster – welcher Zweig, ist noch unklar (Kandidaten: SysErrorBox
-von USER über [0x2D0] nicht eingetragen, verschachtelt [0x247], Fehler-
-klasse aus 59h). Geprüft in 86Box P3B-F (Spur der DEM-Aufrufe und der
-Antwort über Port E9h, danach entfernt) und QEMU (FreeCOM: A:, B:, leere
-ZIP-Wechselplatte am lsi53c895a).
+Gelöst (25.11.2026): der Handler von Windows antwortet richtig mit
+„Fehler“ – der Datei-Manager hat für sich SetErrorMode(8001h) gesetzt
+(TDB+18h, SEM_FAILCRITICALERRORS), KRNL zeigt dann kein Fenster. Seine
+eigene Prüfung (`IsTheDiskReallyThere`, Segment 6 bei 023Bh) ist INT 21h
+**47h** (aktuelles Verzeichnis), danach 59h: 15h -> „In Laufwerk %c ist
+kein Datenträger eingelegt“, 1Fh -> „nicht formatiert“. Zwei Lücken:
+(1) der Box-Kern beantwortete 47h aus der CDS, ohne das Laufwerk
+anzufassen – MS-DOS prüft dort das Medium (PATH.ASM `$CURRENT_DIR`:
+„Random optimization nuked due to some utilities using GetCurrentDir to
+do media check“). Jetzt neues DEM `DEM_MEDIA` (25, QFSInfo, kein Medium
+-> 15h über INT 24h wie jeder andere Aufruf), außer bei NET-USE-
+Laufwerken. (2) KRNL stellt nach jedem INT 21h den in seinem INT-24h-
+Handler geholten Fehler mit 5D0Ah (DS:DX -> 11 Worte) wieder her; WINLDR
+gab 5Dh roh weiter, der Zeiger kam als Selektor im Real Mode an und
+setzte 0. Jetzt `f_5d` (Struktur in den Puffer, Rest von 5Dh roh wie
+bisher). Geprüft: QEMU (Windows 3.11, Datei-Manager Strg+A auf leeres A:
+-> Meldung mit Wiederholen/Abbrechen; BIOSCMP `cm` gleich wie vorher),
+86Box 386DX/40 (`cd a:` in der Box: Abbrechen/Wiederholen/Fehler wie
+MS-DOS, danach weiter).
 
 ### Erledigt (24.11.2026): Windows bekam höchstens 24 MB
 

@@ -2129,7 +2129,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   „Startzeit von Windows“), nach WIN öffnen sich Programme von selbst
   (in QEMU mit getipptem WIN nicht nachgestellt; Verdacht Maus/Tasten),
   „Windows kann nicht eingelagert werden“ (WSWAP). Behoben: Bezeichnung
-  im Datei-Manager „[????1“ (WINLDR übersetzt FCB 11h/12h/13h) und
+  im Datei-Manager „[????1“ (WINLDR übersetzt FCB 11h/12h/13h), leeres
+  Laufwerk im Datei-Manager ohne Meldung (25.11.2026: 47h prüft im
+  Box-Kern das Medium über `DEM_MEDIA` wie MS-DOS, WINLDR übersetzt
+  5D0Ah – KRNL stellt damit den Fehler 15h für WINFILE wieder her) und
   „Fehler beim Lesen von Laufwerk D:“ als Textabfrage mit stehendem
   Windows (WINLDR antwortet im Real Mode auf INT 24h mit „Fehler“).
   DOSBOX.INI `SHARE=OFF` (Vorschlag des Nutzers): Box wie MS-DOS ohne
