@@ -299,6 +299,20 @@ Minesweeper (spielbar), Clock (analog). Dafür neu:
   osFree-PROGMAN (mit `-ml` gebaut – er übergibt `&cs` als nahen Zeiger
   an CreateWindow, im kleinen Modell falsch): Gruppe anlegen, Programm
   eintragen, Minesweeper per Enter starten – in QEMU geprüft.
+  Nach dem ersten Test des Nutzers in 86Box (25.11.2026): Fenster lassen
+  sich minimieren (Symbol mit dem Klassensymbol unten auf dem Bildschirm
+  bzw. im MDI-Client, Doppelklick stellt wieder her), maximieren (Knopf
+  wird zu Wiederherstellen; MDI-Kinder über WM_MDIMAXIMIZE) und haben ein
+  Systemmenü (Klick aufs Feld, Alt+Leertaste; Wiederherstellen,
+  Minimieren, Maximieren, Schließen, bei MDI-Kindern Nächstes –
+  Verschieben/Größe per Tastatur noch grau). Dazu TrackPopupMenu,
+  IsIconic/IsZoomed. Programme bekommen 8 KB mehr Stapel als im NE-Kopf
+  (USER/COMMDLG laufen auf ihrem Stapel; PROGMAN meldete bei Neu →
+  Programm → Durchsuchen „Stack Overflow“). Die Shell (und jedes
+  Programm ohne Pfad) wird auch im Windows-Verzeichnis und im PATH
+  gesucht. Dass neue Gruppen nach dem Neustart fehlen, liegt am
+  osFree-PROGMAN: er schreibt die .GRP-Datei, trägt sie aber nie in
+  `[Groups]` der PROGMAN.INI ein.
   `GUI` ohne Programm startet wie Windows die Shell aus `[boot] shell=`
   der SYSTEM.INI im Windows-Verzeichnis (Vorgabe PROGMAN.EXE; Anregung
   des Nutzers).

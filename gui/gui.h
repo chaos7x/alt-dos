@@ -192,6 +192,7 @@ struct wnd {
     WORD   z;                    /* Rang (groesser = oben)             */
     HMENU  menu;                 /* Menueleiste (oberste Fenster)      */
     short  sb[2][3];             /* Bildlauf waagerecht/senkrecht: min, max, Stelle */
+    RECT   norm;                 /* Lage vor Minimieren/Maximieren (wie fuer MoveWindow) */
 };
 #define CAPH     20              /* Titelleiste                        */
 #define MENUH    20              /* Menueleiste                        */
@@ -229,6 +230,12 @@ void  menu_bar_rect(struct wnd *w, RECT FAR *r);
 short menu_bar_hit(struct wnd *w, short x, short y);
 short menu_mnemonic(HMENU h, BYTE ch);
 void  menu_track(HWND h, short bar, int bykey);
+HMENU API CreatePopupMenu(void);
+BOOL  API AppendMenu(HMENU h, WORD fl, WORD id, LPCSTR s);
+BOOL  API DestroyMenu(HMENU h);
+BOOL  API DrawIcon(HDC hdc, short x, short y, WORD h);
+WORD  API LoadIcon(WORD hinst, LPCSTR name);
+WORD  menu_popup(HWND h, HMENU hm, short x, short y, const RECT FAR *box, int mouse);
 int   menu_input_mouse(short x, short y, BYTE btn);
 int   menu_input_key(WORD k);
 HMENU API LoadMenu(WORD hinst, LPCSTR name);
@@ -272,6 +279,7 @@ short API SetBkMode(HDC h, short m);
 short API MessageBox(HWND owner, LPCSTR text, LPCSTR cap, WORD type);
 BYTE  ansi2oem(BYTE c);
 
+WORD API GetWindowsDirectory(LPSTR buf, WORD n);
 short API GetPrivateProfileString(LPCSTR sec, LPCSTR key, LPCSTR def,
                                   LPSTR buf, short n, LPCSTR f);
 #endif

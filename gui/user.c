@@ -28,6 +28,7 @@ struct wcls {
     WORD style, hinst, cbwnd;
     HBRUSH bg;
     LPCSTR menu;                /* Menuename aus WNDCLASS           */
+    WORD icon;                  /* hIcon aus WNDCLASS               */
 };
 static struct wcls cl[NCLS];
 
@@ -60,6 +61,8 @@ static BYTE sc(WORD i) { return rgb2c(GetSysColor_c(i)); }
 #define WS_THICKFRAME   0x00040000UL
 #define WS_MINIMIZEBOX  0x00020000UL
 #define WS_MAXIMIZEBOX  0x00010000UL
+#define WS_MINIMIZE     0x20000000UL
+#define WS_MAXIMIZE     0x01000000UL
 #define WS_VSCROLL      0x00200000UL
 #define WS_HSCROLL      0x00100000UL
 
@@ -97,6 +100,14 @@ static BYTE sc(WORD i) { return rgb2c(GetSysColor_c(i)); }
 #define WM_HSCROLL      0x0114
 #define WM_VSCROLL      0x0115
 #define SC_CLOSE        0xF060
+#define SC_SIZE         0xF000
+#define SC_MOVE         0xF010
+#define SC_MINIMIZE     0xF020
+#define SC_MAXIMIZE     0xF030
+#define SC_NEXTWINDOW   0xF040
+#define SC_RESTORE      0xF120
+#define ICW             72      /* Fenster als Symbol            */
+#define ICH             52
 #define SC_MOUSEMENU    0xF090
 #define SC_KEYMENU      0xF100
 
@@ -134,6 +145,11 @@ static void calc_client(struct wnd *w)
 {
     short b = wnd_border(w);
     w->cr = w->wr;
+    if (w->style & WS_MINIMIZE) {               /* Symbol: kein Client   */
+        w->cr.right = w->cr.left;
+        w->cr.bottom = w->cr.top;
+        return;
+    }
     w->cr.left += b; w->cr.right -= b;
     w->cr.top += b; w->cr.bottom -= b;
     if ((w->style & WS_CAPTION) == WS_CAPTION)
@@ -311,6 +327,23 @@ static void nc_paint(struct wnd *w)
     dc = dc_get(HW(w - ww), 0, 0);
     if (!dc)
         return;
+    if (w->style & WS_MINIMIZE) {               /* als Symbol            */
+        struct wcls *c = w->cls ? &cl[w->cls - 1] : 0;
+        WORD ic = c && c->icon ? c->icon : LoadIcon(0, MKFP(0, 32512));
+        short n = fstrlen(w->title), tw, ty = t + 36;
+        BYTE bg = (w->style & WS_CHILD) ? sc(12) : sc(1);
+        dc_rawfill(dc, l, t, r, bt, bg);
+        DrawIcon(dc, (ICW - 32) / 2, 2, ic);
+        if (n > ICW / FONT_W) n = ICW / FONT_W;
+        tw = n * FONT_W;
+        if (act)
+            dc_rawfill(dc, l + (ICW - tw) / 2 - 2, ty, l + (ICW + tw) / 2 + 2, ty + FONT_H, sc(C_ACAP));
+        if (n > 0)
+            dc_rawtext(dc, l + (ICW - tw) / 2, ty, w->title, n,
+                       act ? sc(C_CAPTXT) : ((w->style & WS_CHILD) ? 0 : 15));
+        dc_release(dc);
+        return;
+    }
     if (b) {
         dc_rawfill(dc, l, t, r, t + 1, sc(C_FRAME));
         dc_rawfill(dc, l, bt - 1, r, bt, sc(C_FRAME));
@@ -350,6 +383,12 @@ static void nc_paint(struct wnd *w)
         if (w->style & WS_MAXIMIZEBOX) {        /* Pfeil nach oben      */
             short x = cr - CAPH + 1, k;
             ui_bevel(dc, x, ct, cr, cb - 1, 0);
+            if (w->style & WS_MAXIMIZE)         /* Wiederherstellen: beide */
+                for (k = 0; k < 4; k++) {
+                    dc_rawfill(dc, x + 9 - k, ct + 2 + k, x + 10 + k, ct + 3 + k, 0);
+                    dc_rawfill(dc, x + 6 + k, ct + 10 + k, x + 13 - k, ct + 11 + k, 0);
+                }
+            else
             for (k = 0; k < 4; k++)
                 dc_rawfill(dc, x + 9 - k, ct + 7 + k, x + 10 + k, ct + 8 + k, 0);
             dc_rawfill(dc, x - 1, ct, x, cb - 1, sc(C_FRAME));
@@ -458,6 +497,8 @@ static void children_move(struct wnd *p, short dx, short dy)
     }
 }
 
+void API OffsetRect(LPRECT r, short x, short y);
+static WORD size_kind;                  /* wParam von WM_SIZE        */
 static void win_move(struct wnd *w, short x, short y, short cx, short cy)
 {
     RECT old = w->wr;
@@ -477,8 +518,57 @@ static void win_move(struct wnd *w, short x, short y, short cx, short cy)
         expose(&w->wr);
     }
     send_msg(HW(w - ww), WM_MOVE, 0, MAKELONG(w->cr.left, w->cr.top));
-    send_msg(HW(w - ww), WM_SIZE, 0,
+    send_msg(HW(w - ww), WM_SIZE, size_kind,
              MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+}
+
+/* Minimieren (st 1), Maximieren (2), Wiederherstellen (0). Oberste
+   Fenster auf dem Bildschirm, Kinder (MDI) im Client des Elternfensters;
+   Symbole unten in Reihen zu ICW x ICH. */
+static void wnd_state(struct wnd *w, int st)
+{
+    int cur = (w->style & WS_MINIMIZE) ? 1 : (w->style & WS_MAXIMIZE) ? 2 : 0;
+    struct wnd *p = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
+    short ox = p ? p->cr.left : 0, oy = p ? p->cr.top : 0;
+    short pw = p ? p->cr.right - p->cr.left : SCR_W;
+    short ph = p ? p->cr.bottom - p->cr.top : SCR_H;
+    RECT r;
+    if (st == cur)
+        return;
+    if (cur == 0) {
+        w->norm = w->wr;
+        OffsetRect(&w->norm, -ox, -oy);
+    }
+    w->style &= ~(WS_MINIMIZE | WS_MAXIMIZE);
+    if (st == 1) {
+        short k, i, x = 4, y = ph - ICH - 4;
+        for (k = 0; k < 40; k++) {              /* freien Platz suchen   */
+            x = 4 + (k % 8) * (ICW + 4);
+            y = ph - (k / 8 + 1) * (ICH + 4);
+            for (i = 0; i < NWND; i++) {
+                struct wnd *o = &ww[i];
+                if (!o->used || o == w || !(o->style & WS_MINIMIZE) || !o->visible ||
+                    o->parent != w->parent || ((o->style ^ w->style) & WS_CHILD))
+                    continue;
+                if (o->wr.left - ox == x && o->wr.top - oy == y)
+                    break;
+            }
+            if (i == NWND && x + ICW <= pw)
+                break;
+        }
+        w->style |= WS_MINIMIZE;
+        rset(&r, x, y, x + ICW, y + ICH);
+    } else if (st == 2) {
+        short b = p ? wnd_border(w) : 0;       /* oben: Rahmen sichtbar */
+        w->style |= WS_MAXIMIZE;
+        rset(&r, -b, -b, pw + b, ph + b);
+    } else
+        r = w->norm;
+    size_kind = st == 1 ? 1 : st == 2 ? 2 : 0;
+    win_move(w, r.left, r.top, r.right - r.left, r.bottom - r.top);
+    size_kind = 0;
+    w->need_ncpaint = 1;
+    invalidate(w, 0, 1);
 }
 
 static void activate(HWND h)
@@ -529,7 +619,6 @@ void user_task_end(int t)
 
 /* ---- Nachrichten ------------------------------------------------------ */
 static WORD pq_words[5];
-
 static long call_proc(struct wnd *w, WNDPROC p, HWND h, WORD m, WORD wp, DWORD lp)
 {
     if (w->internal)
@@ -758,6 +847,8 @@ static HWND win_at(short x, short y)
 static short hittest(struct wnd *w, short x, short y)
 {
     short b = wnd_border(w);
+    if (w->style & WS_MINIMIZE)
+        return rhit(&w->wr, x, y) ? HTCAPTION : 0;
     if (rhit(&w->cr, x, y))
         return HTCLIENT;
     if ((w->style & WS_VSCROLL) && x >= w->cr.right && x < w->cr.right + SBW &&
@@ -769,8 +860,16 @@ static short hittest(struct wnd *w, short x, short y)
     if (w->menu && !(w->style & WS_CHILD) && menu_bar_hit(w, x, y) != -1)
         return HTMENU;
     if ((w->style & WS_CAPTION) == WS_CAPTION && y >= w->wr.top + b && y < w->wr.top + b + CAPH) {
+        short xr = w->wr.right - b;
         if ((w->style & WS_SYSMENU) && x < w->wr.left + b + CAPH)
             return HTSYSMENU;
+        if (w->style & WS_MAXIMIZEBOX) {
+            if (x >= xr - CAPH)
+                return HTMAX;
+            xr -= CAPH;
+        }
+        if ((w->style & WS_MINIMIZEBOX) && x >= xr - CAPH)
+            return HTMIN;
         return HTCAPTION;
     }
     return 0;
@@ -941,7 +1040,25 @@ static void mouse_event(short x, short y, BYTE btn)
             focus = h;
         }
     }
+    if ((ht == HTMIN || ht == HTMAX) && (down & 1)) {
+        post_msg(h, WM_SYSCOMMAND, ht == HTMIN ? SC_MINIMIZE :
+                 (w->style & WS_MAXIMIZE) ? SC_RESTORE : SC_MAXIMIZE, 0);
+        return;
+    }
     if (ht == HTCAPTION && (down & 1)) {
+        DWORD now = ticks();
+        if (last_click_h == h && now - last_click < 50) {
+            last_click_h = 0;                   /* Doppelklick           */
+            if (w->style & WS_MINIMIZE)
+                post_msg(h, WM_SYSCOMMAND, SC_RESTORE, 0);
+            else if (w->style & WS_MAXIMIZEBOX)
+                post_msg(h, WM_SYSCOMMAND, (w->style & WS_MAXIMIZE) ? SC_RESTORE : SC_MAXIMIZE, 0);
+            return;
+        }
+        last_click = now;
+        last_click_h = h;
+        if (w->style & WS_MAXIMIZE)
+            return;                             /* nicht verschieben     */
         drag = (w->style & WS_CHILD) ? h : HW(top_of(w) - ww);
         dgx = x; dgy = y;
         dg_shown = 0;
@@ -956,11 +1073,9 @@ static void mouse_event(short x, short y, BYTE btn)
         return;
     }
     if (ht == HTSYSMENU && (down & 1)) {
-        DWORD now = ticks();
-        if (last_click_h == h && now - last_click < 50)
-            post_msg(h, WM_SYSCOMMAND, SC_CLOSE, 0);
-        last_click = now;
+        last_click = ticks();
         last_click_h = h;
+        post_msg(h, WM_SYSCOMMAND, SC_MOUSEMENU, MAKELONG(x, y));
         return;
     }
     if (ht != HTCLIENT || (w->style & WS_DISABLED))
@@ -1137,6 +1252,7 @@ WORD API RegisterClass(void FAR *wcp)
     cl[i].cbwnd = *(WORD FAR *)(p + 8);
     cl[i].hinst = *(WORD FAR *)(p + 10);
     cl[i].bg = *(WORD FAR *)(p + 16);
+    cl[i].icon = *(WORD FAR *)(p + 12);
     cl[i].menu = *(LPCSTR FAR *)(p + 18);
     fstrncpy(cl[i].name, nm, sizeof(cl[i].name));
     return 0xC000 + i;
@@ -1262,6 +1378,12 @@ BOOL API ShowWindow(HWND h, short cmd)
     if (!w)
         return 0;
     was = w->visible;
+    if (cmd == 2 || cmd == 6 || cmd == 7)       /* SW_*MINIMIZE*        */
+        wnd_state(w, 1);
+    else if (cmd == 3)                          /* SW_MAXIMIZE          */
+        wnd_state(w, 2);
+    else if (cmd == 9 || (cmd == 1 && (w->style & (WS_MINIMIZE | WS_MAXIMIZE)) && was))
+        wnd_state(w, 0);                        /* SW_RESTORE           */
     if (cmd == 0) {                             /* SW_HIDE              */
         if (was) {
             w->visible = 0;
@@ -1523,6 +1645,51 @@ short API GetSystemMetrics(short i)
     }
 }
 
+/* Systemmenue (Klick aufs Systemfeld, Alt+Leertaste): wie Windows 3.1,
+   Verschieben/Groesse per Tastatur fehlen noch (grau) */
+static void sys_menu(HWND h, int mouse)
+{
+    struct wnd *w = wptr(h);
+    HMENU m;
+    WORD c;
+    short b, x, y, mdi;
+    RECT box;
+    DWORD t0 = last_click;
+    if (!w || !(w->style & WS_SYSMENU))
+        return;
+    b = wnd_border(w);
+    mdi = (w->style & WS_CHILD) != 0;
+    m = CreatePopupMenu();
+    if (!m)
+        return;
+    AppendMenu(m, (w->style & (WS_MINIMIZE | WS_MAXIMIZE)) ? 0 : 1, SC_RESTORE, "&Wiederherstellen");
+    AppendMenu(m, 1, SC_MOVE, "&Verschieben");
+    AppendMenu(m, 1, SC_SIZE, "&Gr\xF6\xDF" "e \xE4" "ndern");
+    AppendMenu(m, (w->style & WS_MINIMIZEBOX) && !(w->style & WS_MINIMIZE) ? 0 : 1, SC_MINIMIZE, "Mi&nimieren");
+    AppendMenu(m, (w->style & WS_MAXIMIZEBOX) && !(w->style & WS_MAXIMIZE) ? 0 : 1, SC_MAXIMIZE, "Ma&ximieren");
+    AppendMenu(m, 0x800, 0, 0);
+    AppendMenu(m, 0, SC_CLOSE, mdi ? "S&chlie\xDF" "en\tStrg+F4" : "S&chlie\xDF" "en\tAlt+F4");
+    if (mdi) {
+        AppendMenu(m, 0x800, 0, 0);
+        AppendMenu(m, 0, SC_NEXTWINDOW, "&N\xE4" "chstes\tStrg+F6");
+    }
+    if (w->style & WS_MINIMIZE) {               /* ueber dem Symbol       */
+        box = w->wr;
+        x = w->wr.left;
+        y = w->wr.top - 8 * (FONT_H + 2) - 16;
+    } else {
+        rset(&box, w->wr.left + b, w->wr.top + b, w->wr.left + b + CAPH, w->wr.top + b + CAPH);
+        x = box.left;
+        y = box.bottom;
+    }
+    c = menu_popup(h, m, x, y, mouse ? &box : 0, mouse);
+    DestroyMenu(m);
+    if (c == 0xFFFF)                            /* zweiter Klick aufs Feld */
+        c = (ticks() - t0 < 50 && !(w->style & WS_MINIMIZE)) ? SC_CLOSE : 0;
+    if (c && wptr(h))
+        send_msg(h, WM_SYSCOMMAND, c, 0);
+}
+
 LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
 {
     struct wnd *w = wptr(h);
@@ -1537,8 +1704,20 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_SYSCOMMAND:
         if ((wp & 0xFFF0) == SC_CLOSE)
             send_msg(h, WM_CLOSE, 0, 0);
-        else if ((wp & 0xFFF0) == SC_MOUSEMENU)
-            menu_track(h, menu_bar_hit(w, LOWORD(lp), HIWORD(lp)), 0);
+        else if ((wp & 0xFFF0) == SC_MINIMIZE)
+            ShowWindow(h, 6);
+        else if ((wp & 0xFFF0) == SC_MAXIMIZE)
+            ShowWindow(h, 3);
+        else if ((wp & 0xFFF0) == SC_RESTORE)
+            ShowWindow(h, 9);
+        else if ((wp & 0xFFF0) == SC_MOUSEMENU) {
+            short ht = hittest(w, LOWORD(lp), HIWORD(lp));
+            if (ht == HTSYSMENU || (ht == HTCAPTION && (w->style & WS_MINIMIZE)))
+                sys_menu(h, 1);
+            else
+                menu_track(h, menu_bar_hit(w, LOWORD(lp), HIWORD(lp)), 0);
+        } else if ((wp & 0xFFF0) == SC_KEYMENU && LOWORD(lp) == ' ')
+            sys_menu(h, 0);
         else if ((wp & 0xFFF0) == SC_KEYMENU) {
             short k = LOWORD(lp) ? menu_mnemonic(w->menu, (BYTE)lp) : -1;
             if (LOWORD(lp) && k < 0)
@@ -1550,7 +1729,7 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_SYSCHAR:
         if (w->style & WS_CHILD)
             return send_msg(GetParent(h), m, wp, lp);
-        if (w->menu)
+        if (w->menu || wp == ' ')
             send_msg(h, WM_SYSCOMMAND, SC_KEYMENU, wp);
         return 0;
     case WM_ERASEBKGND: {
@@ -1714,8 +1893,8 @@ BOOL API BringWindowToTop(HWND h)
     activate(h);
     return 1;
 }
-BOOL API IsIconic(HWND h) { (void)h; return 0; }
-BOOL API IsZoomed(HWND h) { (void)h; return 0; }
+BOOL API IsIconic(HWND h) { struct wnd *w = wptr(h); return w && (w->style & WS_MINIMIZE) != 0; }
+BOOL API IsZoomed(HWND h) { struct wnd *w = wptr(h); return w && (w->style & WS_MAXIMIZE) != 0; }
 HMENU API GetMenu(HWND h) { struct wnd *w = wptr(h); return w ? w->menu : 0; }
 BOOL API SetMenu(HWND h, HMENU m)
 {

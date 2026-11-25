@@ -15,6 +15,8 @@
  */
 #include "gui.h"
 
+#define STK_EXTRA 8192u           /* zusaetzlicher Stapel je Programm */
+
 struct w16mod wm[NMOD];
 
 static char lpath[128];
@@ -275,6 +277,16 @@ int w16_load(LPCSTR path)
         if (len == 0 && o)
             len = 0;                            /* 64 KB Daten (selten)  */
         if (s + 1 == w->autodata) {
+            /* Programme bekommen mehr Stapel als im NE-Kopf: USER/GDI/
+               COMMDLG laufen hier auf dem Stapel des Programms und sind
+               tiefer als unter Windows (PROGMAN: vier verschachtelte
+               Dialoge brauchten mehr als seine 8 KB -> "Stack Overflow") */
+            if (!(w->flags & 0x8000u) && w->stack) {
+                unsigned long room = 0x10000UL - sz32 - w->stack
+                                     - (w->heap ? w->heap : 1024);
+                if ((long)room > 0)
+                    w->stack += (WORD)(room > STK_EXTRA ? STK_EXTRA : room);
+            }
             sz32 += w->stack;
             if (w->ss == w->autodata && w->sp == 0)
                 w->sp = (WORD)(sz32 > 0xFFFE ? 0xFFFE : sz32);

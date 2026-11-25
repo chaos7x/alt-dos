@@ -311,19 +311,14 @@ LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
         if (!m || !k || !w)
             return 0;
         mdi_act(m, wp);
-        if (!m->maxed) {
-            m->rest = k->wr;
-            OffsetRect(&m->rest, -w->cr.left, -w->cr.top);
-        }
         m->maxed = 1;
-        MoveWindow(wp, 0, 0, w->cr.right - w->cr.left, w->cr.bottom - w->cr.top, 1);
+        ShowWindow(wp, 3);                      /* WS_MAXIMIZE, Lage in norm */
         return 0;
     }
     case WM_MDIRESTORE:
-        if (m && m->maxed && wptr(wp)) {
+        if (m && wptr(wp)) {
             m->maxed = 0;
-            MoveWindow(wp, m->rest.left, m->rest.top, m->rest.right - m->rest.left,
-                       m->rest.bottom - m->rest.top, 1);
+            ShowWindow(wp, 9);
         }
         return 0;
     case WM_MDITILE:
@@ -399,6 +394,20 @@ LONG API DefMDIChildProc(HWND h, WORD msg, WORD wp, DWORD lp)
     case WM_SYSCOMMAND:
         if ((wp & 0xFFF0) == SC_CLOSE) {
             send_msg(h, WM_CLOSE, 0, 0);
+            return 0;
+        }
+        if (m && (wp & 0xFFF0) == 0xF030) {     /* SC_MAXIMIZE           */
+            send_msg(m->client, WM_MDIMAXIMIZE, h, 0);
+            return 0;
+        }
+        if (m && (wp & 0xFFF0) == 0xF120) {     /* SC_RESTORE            */
+            send_msg(m->client, WM_MDIRESTORE, h, 0);
+            return 0;
+        }
+        if (m && (wp & 0xFFF0) == 0xF020 && m->maxed && m->act == h)
+            m->maxed = 0;                       /* SC_MINIMIZE           */
+        if (m && (wp & 0xFFF0) == SC_NEXTWINDOW) {
+            send_msg(m->client, WM_MDINEXT, h, 0);
             return 0;
         }
         break;

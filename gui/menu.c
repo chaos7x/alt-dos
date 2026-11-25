@@ -716,6 +716,124 @@ void menu_track(HWND h, short bar, int bykey)
         post_msg(h, WM_COMMAND, cmd, 0);
 }
 
+/* Klappmenue frei auf dem Bildschirm (Systemmenue, TrackPopupMenu):
+   -> Kennung, 0 = abgebrochen, FFFFh = Klick in box (Systemfeld).
+   mouse: Maustaste ist beim Oeffnen gedrueckt (Loslassen ueber einem
+   Eintrag waehlt ihn) */
+WORD menu_popup(HWND h, HMENU hm, short x, short y, const RECT FAR *box, int mouse)
+{
+    static MSG msg;
+    struct menu FAR *m = mptr(hm);
+    short cx, cy;
+    WORD cmd = 0;
+    BYTE lbtn = mouse ? 1 : 0;
+    if (!m || !m->n || mt_on || !wptr(h))
+        return 0;
+    pop_close();
+    pop_m = hm;
+    pop_size(hm, &cx, &cy);
+    if (x + cx > SCR_W) x = SCR_W - cx;
+    if (y + cy > SCR_H) y = SCR_H - cy;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    pop = CreateWindowEx(0, MKFP(0, 0xC000 + 3), "", 0x80000000UL | 0x00800000UL,
+                         x, y, cx, cy, h, 0, 0, 0);
+    if (!pop) {
+        pop_m = 0;
+        return 0;
+    }
+    wptr(pop)->task = cur_task;
+    ShowWindow(pop, 4);
+    mt_on = 1;
+    mt_h = h;
+    mt_cur = -1;
+    if (!mouse)
+        pop_move(1);
+    while (mt_on && wptr(h)) {
+        if (!user_get_msg(&msg, 0, 0, 0, 1, 1)) {
+            PostQuitMessage(msg.wParam);
+            break;
+        }
+        if (msg.hwnd == h && msg.message == MT_MOUSE) {
+            short mx = LOWORD(msg.lParam), my = HIWORD(msg.lParam);
+            BYTE btn = (BYTE)msg.wParam, dn = btn & ~lbtn, up = lbtn & ~btn;
+            struct wnd *pw = wptr(pop);
+            lbtn = btn;
+            if (pw && mx >= pw->wr.left && mx < pw->wr.right && my >= pw->wr.top && my < pw->wr.bottom) {
+                short k = pop_at(my);
+                if (k != pop_sel) {
+                    pop_sel = k;
+                    InvalidateRect(pop, 0, 0);
+                }
+                if ((up & 1) && k >= 0) {
+                    struct mitem FAR *it = &mptr(pop_m)->it[k];
+                    if (!(it->flags & (MF_GRAYED | MF_DISABLED | MF_POPUP))) {
+                        cmd = it->id;
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (dn && box && mx >= box->left && mx < box->right && my >= box->top && my < box->bottom) {
+                cmd = 0xFFFF;
+                break;
+            }
+            if (dn)
+                break;
+            continue;
+        }
+        if (msg.hwnd == h && msg.message == MT_KEY) {
+            BYTE ch = (BYTE)msg.wParam, sc = msg.wParam >> 8;
+            struct menu FAR *pm = mptr(pop_m);
+            if (sc == 0x01)
+                break;
+            if (sc == 0x48 || sc == 0x50) {
+                pop_move(sc == 0x50 ? 1 : -1);
+                continue;
+            }
+            if (ch == 0x0D) {
+                if (pop_sel >= 0 && pm) {
+                    struct mitem FAR *it = &pm->it[pop_sel];
+                    if (!(it->flags & (MF_GRAYED | MF_DISABLED | MF_POPUP))) {
+                        cmd = it->id;
+                        break;
+                    }
+                }
+                continue;
+            }
+            if (ch > ' ' && pm) {
+                short k;
+                BYTE u = (BYTE)(ch >= 'a' && ch <= 'z' ? ch - 32 : ch);
+                if (u == 0x84) u = 0x8E; else if (u == 0x94) u = 0x99; else if (u == 0x81) u = 0x9A;
+                for (k = 0; k < pm->n; k++)
+                    if (ansi2oem(mnem(pm->it[k].text)) == u || mnem(pm->it[k].text) == u)
+                        break;
+                if (k < pm->n && !(pm->it[k].flags & (MF_GRAYED | MF_DISABLED | MF_POPUP))) {
+                    cmd = pm->it[k].id;
+                    break;
+                }
+                MessageBeep_c();
+            }
+            continue;
+        }
+        DispatchMessage(&msg);
+    }
+    pop_close();
+    mt_on = 0;
+    mt_cur = -1;
+    return cmd;
+}
+
+BOOL API TrackPopupMenu(HMENU hm, WORD fl, short x, short y, short r, HWND h, const RECT FAR *rc)
+{
+    WORD c;
+    (void)fl; (void)r; (void)rc;
+    c = menu_popup(h, hm, x, y, 0, 0);
+    if (c && c != 0xFFFF)
+        post_msg(h, WM_COMMAND, c, 0);
+    return 1;
+}
+
 /* Buchstabe nach Alt: Eintrag der Leiste */
 short menu_mnemonic(HMENU h, BYTE ch)
 {

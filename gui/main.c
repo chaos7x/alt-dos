@@ -123,6 +123,47 @@ void seg_del(WORD sel)
 static char args[FAPI_ARGLEN];
 static char prog[128];
 
+static int fstrchr_(const char *s, char c)
+{
+    for (; *s; s++)
+        if (*s == c)
+            return 1;
+    return 0;
+}
+
+/* Programm ohne Pfad: wie Windows erst im Windows-Verzeichnis, dann im
+   PATH suchen (GUI aus C:\ mit PROGMAN in C:\DOS\GUI) */
+static char sp_full[FAPI_PATHLEN], sp_path[512];
+static int sp_try(const char *dir, WORD n, const char *a)
+{
+    WORD k = 0, i;
+    for (i = 0; i < n && k < FAPI_PATHLEN - 2; i++)
+        sp_full[k++] = dir[i];
+    if (k && sp_full[k - 1] != '\\')
+        sp_full[k++] = '\\';
+    for (i = 0; prog[i] && k < FAPI_PATHLEN - 1; i++)
+        sp_full[k++] = prog[i];
+    sp_full[k] = 0;
+    return task_start(sp_full, a, 1);
+}
+static int start_in_path(const char *a)
+{
+    WORD n = GetWindowsDirectory(sp_path, sizeof(sp_path));
+    char *s, *e;
+    int t = sp_try(sp_path, n, a);
+    if (t != 2)
+        return t;
+    if (FAPI_FAILED(DosGetEnv("PATH", sp_path, sizeof(sp_path))))
+        return 2;
+    for (s = sp_path; *s; s = *e ? e + 1 : e) {
+        for (e = s; *e && *e != ';'; e++)
+            ;
+        if (e > s && (t = sp_try(s, (WORD)(e - s), a)) != 2)
+            return t;
+    }
+    return 2;
+}
+
 void gui_main(void)
 {
     char *p, *q;
@@ -169,7 +210,10 @@ void gui_main(void)
     krnl_init();
     gdi_init();
     user_init();
-    if ((t = task_start(prog, p, 1)) != 0) {
+    t = task_start(prog, p, 1);
+    if (t == 2 && !fstrchr_(prog, '\\') && !fstrchr_(prog, ':'))
+        t = start_in_path(p);                   /* Windows-Verz., PATH   */
+    if (t != 0) {
         gdi_done();
         puts("GUI: Programm nicht geladen (siehe GUI.LOG)\r\n");
         glogn("task_start ", t);
