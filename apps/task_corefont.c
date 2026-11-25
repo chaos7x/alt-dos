@@ -51,7 +51,7 @@ static const char *mirror[] = {     /* wie Debian (update-ms-fonts)      */
 
 static char args[FAPI_ARGLEN];
 static char src[FAPI_PATHLEN], dst[FAPI_PATHLEN], tmp[FAPI_PATHLEN];
-static char path[FAPI_PATHLEN], cl[400], wget[FAPI_PATHLEN];
+static char path[FAPI_PATHLEN], opath[FAPI_PATHLEN], cl[400], wget[FAPI_PATHLEN];
 static unsigned char buf[4096];
 static int keep, yes;
 
@@ -207,11 +207,11 @@ static void put_file(unsigned char *b, unsigned n)
             }
             cur++;
             if (cur < nf && f[cur].ttf) {
-                join(path, dst, f[cur].name, sizeof(path));
-                oh = DosCreate(path);
+                join(opath, dst, f[cur].name, sizeof(opath));
+                oh = DosCreate(opath);
                 if (FAPI_FAILED(oh)) {
                     out("  kann nicht anlegen: ");
-                    out(path);
+                    out(opath);
                     out("\r\n");
                     oh = 0xFFFF;
                 } else {
