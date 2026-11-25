@@ -36,6 +36,10 @@ segment KTEXT4END public class=CODE align=1 use16
 ; Startcode (KCODEI, docs/INIT-SEGMENT.md): Funktionen, die nur beim Start
 ; laufen (#pragma code_seg("ITEXT", "CODE")); kinit_done gibt die ganzen
 ; Seiten danach frei und macht den Deskriptor ungueltig
+; PROCFS (procfs.c, wcc -nt=PTEXT) vorn im Start-Segment: kinit_done gibt
+; es mit frei, wenn PROCFS= fehlt (ab Werk), sonst bleibt KCODEI dafuer
+segment PTEXT public class=CODE align=16 use16
+segment PTEXTEND public class=CODE align=1 use16
 segment ITEXT public class=CODE align=16 use16
 segment ITEXTEND public class=CODE align=1 use16
 ; Texte des Startcodes (KIDATA): __based(__segname("IDATA")) gibt Klasse
@@ -52,7 +56,7 @@ group CGROUP _TEXT _TEXTEND
 group CGROUP2 KTEXT2 KTEXT2END
 group CGROUP3 KTEXT3 KTEXT3END
 group CGROUP4 KTEXT4 KTEXT4END
-group CGROUPI ITEXT ITEXTEND
+group CGROUPI PTEXT PTEXTEND ITEXT ITEXTEND
 group CGROUPD IDATA IDATAEND
 group DGROUP _DSTART CONST CONST2 _DATA _BSS _BSSEND
 
@@ -1691,10 +1695,16 @@ code3_end:
 segment KTEXT4END
 code4_end:
 
+segment PTEXTEND
+ptext_end:
+
 segment ITEXTEND
 codei_end:
 
 segment IDATAEND
+%ifdef IDATA_PAD
+        times IDATA_PAD db 0            ; bis zur Seitengrenze (build.sh)
+%endif
 idata_end:
 
 segment _DATA
@@ -1707,6 +1717,8 @@ global _kcode3_size
 _kcode3_size: dw code3_end              ; drittes Codesegment (CGROUP3)
 global _kcode4_size
 _kcode4_size: dw code4_end              ; viertes Codesegment (CGROUP4)
+global _kptext_size
+_kptext_size: dw ptext_end              ; PROCFS vorn in CGROUPI
 global _kcodei_size
 _kcodei_size: dw codei_end              ; Startcode (CGROUPI)
 global _kidata_size

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * AT-DOS 6.3 - PROCFS (KTEXT4): Zustand des Kernels als Textdateien auf
+ * AT-DOS 6.3 - PROCFS (PTEXT vorn im Start-Segment KCODEI: ist PROCFS=
+ * nicht gesetzt - ab Werk -, gibt kinit_done den Code mit dem Startcode
+ * frei, sonst bleibt KCODEI dafuer gueltig): Zustand des Kernels als Textdateien auf
  * einem eigenen Laufwerk, Vorbild /proc von Linux. Vorgabe P:, anderer
  * Buchstabe mit SET PROCFS=X: in der CONFIG.SYS, SET PROCFS=OFF schaltet
  * es ab.
@@ -11,10 +13,10 @@
  * wird sie beim naechsten Lesen neu erzeugt. Alles laeuft unter der
  * Kernel- und Laufwerkssperre und schlaeft nie.
  *
- * Die Texte stehen im Codesegment (__based KTEXT4) - DGROUP ist fast voll.
+ * Die Texte stehen im Codesegment (__based PTEXT) - DGROUP ist fast voll.
  * Die Tabellen liest procfs.c direkt (Daten sind gemeinsam, DS); nur was
  * in v86.c steckt, liefert v86_pfs als Zahlen. Texte mit __segname("_CODE")
- * liest der Code ueber CS (KCODE4 ist lesbar) - ein __segname mit dem
+ * liest der Code ueber CS (KCODEI ist lesbar) - ein __segname mit dem
  * Namen des Segments ergaebe ein eigenes FAR_DATA-Segment hinter DGROUP.
  */
 #include "kern.h"
@@ -46,7 +48,7 @@ void __far v86_pfs(int t, unsigned *v); /* v86.c: Zustand einer Box     */
 
 static unsigned pb_sel, pb_len, pb_cur = 0xFFFF;
 static unsigned long pb_ser, ser;
-static signed char pfs_drive = -1;
+signed char pfs_drive = -1;             /* k2misc.c kinit_done            */
 
 #define NPF 13
 static const char KS pnames[NPF][9] = {
@@ -392,7 +394,7 @@ static void g_files(void)
             continue;
         n++;
         PF("%2u %8d %3u %-4S %10lu %10lu ", i, f->owner, f->refs,
-           (const char __far *)MK_FP(KCODE4, (unsigned)kinds[f->kind < 10 ? f->kind : 4]), f->pos, f->f.size);
+           (const char __far *)MK_FP(KCODEI, (unsigned)kinds[f->kind < 10 ? f->kind : 4]), f->pos, f->f.size);
         if (f->kind == OF_FILE)
             PF("%c:%S", 'A' + f->f.drive, (const char __far *)f->path);
         P0("\n");
@@ -625,4 +627,4 @@ void __far procfs_boot(void)
     vol[d].used = 1;
     pfs_drive = (signed char)d;
 }
-#pragma code_seg("KTEXT4", "CODE")
+#pragma code_seg("PTEXT", "CODE")

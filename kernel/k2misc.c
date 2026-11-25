@@ -198,6 +198,8 @@ void __far proc_fill(int t, struct fapi_proc __far *pi, int info2,
    mit #NP statt in fremdem Code), die ganzen Seiten zurueck an die
    Speicherverwaltung. Liegt selbst in ITEXT: bis der Scheduler die
    Seiten vergibt, ist der Ruecksprung nach KCODE laengst geschehen. */
+extern signed char pfs_drive;           /* procfs.c, -1 = aus          */
+extern unsigned kptext_size;            /* start.asm: PROCFS vorn in ITEXT */
 unsigned kinit_pg;                      /* Seiten von ITEXT, frei      */
 #pragma code_seg("ITEXT", "CODE")
 static const char __based(__segname("IDATA")) km_3[] = "360 KB";
@@ -240,14 +242,16 @@ static void km_i(int s, const char __far *t)
 
 void __far kinit_done(void)
 {
-    unsigned long a = (KCODEI_LIN + 4095) >> 12,
+    unsigned long a = (KCODEI_LIN + (pfs_drive >= 0 ? kptext_size : 0)
+                       + 4095) >> 12,
                   e = (KIDATA_LIN + kidata_size) >> 12;   /* ITEXT + IDATA */
     if (e > a) {
         mem_free((pg_t)a, (unsigned)(e - a));
         kinit_pg = (unsigned)(e - a);   /* MEM: nicht mehr Kernel        */
     }
     gdt[KIDATA_IDX].access = 0;
-    gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
+    if (pfs_drive < 0)                  /* PROCFS an: KCODEI bleibt dafuer */
+        gdt[KCODEI_IDX].access = 0;     /* zuletzt: das RETF von mem_free kam
                                        noch hierher zurueck (Selektor 0368h
                                        neu geladen), der CS-Cache haelt das
                                        eigene RETF nach KCODE aus          */

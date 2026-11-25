@@ -96,12 +96,14 @@ K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat swap blkmnt codeswap"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86"
 # KTEXT4: viertes Codesegment (KCODE4), Erreichbarkeit wie KTEXT2 (k2.h)
-K4MODS="loop vio net redir dem vdd ufs panic procfs cdra cfgboot biosdisk"
+K4MODS="loop vio net redir dem vdd ufs panic cdra cfgboot biosdisk"
 for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs panic procfs cdra cfgboot biosdisk k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
     case " $K4MODS " in *" $m "*) S="-nt=KTEXT4" ;; esac
+    # PROCFS vorn im Start-Segment (frei, wenn PROCFS= fehlt; k2misc.c)
+    [ $m = procfs ] && S="-nt=PTEXT"
     # kernel.c ohne Einsetzen eigener Funktionen: sonst setzt -ox die Thunks
     # kt_* des Startcodes ein (naher Aufruf ueber die Grenze von ITEXT)
     case " kernel mem paging floppy bus k2misc biosdisk " in *" $m "*) S="$S -oe=0" ;; esac
@@ -110,6 +112,7 @@ for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir d
 done
 # Code (CGROUP) und Daten (DGROUP) sind getrennte Segmente: als DOS-EXE
 # linken, damit Datenoffsets relativ zu DGROUP sind, dann den Kopf abtrennen
+klink() {
 wlink option quiet format dos option nodefaultlibs \
       option map order clname CODE clname FAR_DATA clname DATA clname BSS \
       name $B/kernel.exe option map=$B/kernel.map file $KOBJ 2>&1 | grep -v W1014 || true
@@ -173,6 +176,28 @@ if code > 65536 or c2[1] > 65536 or c3[1] > 65536 or c4[1] > 65536 or ci[1] > 65
 print('  kernel: %d Bytes Datei, Code %d + %d + %d + %d Bytes, Start %d + %d Bytes, Daten %d Bytes mit BSS (je max. 65536), %d Fernaufrufe'
       % (len(d) - img, code, c2[1], c3[1], c4[1], ci[1], cd[1], data, nrel))
 PYEOF
+}
+klink || exit 1
+# Seitengrenze hinter den Starttexten (docs/INIT-SEGMENT.md): kinit_done gibt
+# nur ganze Seiten frei, der Rest der letzten Seite teilt sie mit DGROUP.
+# Ist dieser Rest groesser als das Auffuellen bis zur Grenze, IDATA bis dorthin
+# auffuellen (DGROUP rueckt nach) - es wird mehr frei, als die Datei waechst
+IPAD=$(python3 - $B/kernel.map <<'PYEOF'
+import sys
+for l in open(sys.argv[1]):
+    f = l.split()
+    if len(f) == 3 and f[0] == 'CGROUPD' and ':' in f[1]:
+        s, o = f[1].split(':')
+        e = 0x10000 + int(s, 16) * 16 + int(o, 16) + int(f[2], 16)
+        r = e & 4095
+        print(4096 - r if r > 2048 else 0)
+PYEOF
+)
+if [ "${IPAD:-0}" -gt 0 ]; then
+    nasm -f obj -DIDATA_PAD=$IPAD kernel/start.asm -o $B/start.o
+    echo "  Starttexte bis zur Seitengrenze aufgefuellt: $IPAD Byte"
+    klink || exit 1
+fi
 # der Diskettenbootsektor laedt 160 Sektoren; BSS dahinter nullt der Kernel selbst
 # der Diskettenbootsektor laedt nach Dateigroesse ab 1000:0000; Platz bis
 # 80000h (darueber Real-Mode-Reste, ab 9FC00h das EBDA)

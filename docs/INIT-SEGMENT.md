@@ -445,7 +445,37 @@ der CONFIG.SYS, AUTOCHECK=, LONGNAMES=VFAT, Systemumgebung, Panik „Kein
 Befehlsinterpreter.“ und PANIC.LOG beim nächsten Start) und 86Box
 386DX/40 mit AHA-154x und NE2000.
 
+## Stand: Seitengrenzen und KTEXTP (25.11.2026)
+
+**Seitengrenze hinter den Starttexten.** kinit_done gibt nur ganze Seiten
+frei; vorn teilt sich ITEXT eine Seite mit KTEXT4, hinten IDATA eine mit
+DGROUP. Gemessen vorher: 19,3 KB Start-Segment, frei 12 KB (vorn 3.520,
+hinten 3.965 Byte verschenkt). Statt `align=4096` (gilt für den Fall
+„vorn bei 10000h“, der nicht gebaut wurde) füllt build.sh nach dem ersten
+Binden das Ende von IDATA bis zur Seitengrenze auf (`IDATA_PAD`, start.asm
+neu übersetzt, zweites Binden), aber nur, wenn der verschenkte Rest größer
+ist als das Auffüllen – dann wird mehr frei, als ATDOS.SYS wächst
+(DGROUP rückt um das Auffüllen nach hinten). Vorn aufzufüllen lohnt nicht:
+der gewonnenen Seite steht fast dieselbe Menge Auffüllung gegenüber.
+
+**KTEXTP bewertet.** Verwerfbarer Laufzeitcode, der bei #NP aus ATDOS.SYS
+nachgeladen würde, bringt wenig: gemessen je Objekt (Codegröße) sind die
+seltenen Teile entweder im Plattenweg (loop.c 12 KB, dem.c 9,7 KB, ufs.c
+4 KB, swap.c 5 KB, codeswap.c 4 KB – das Nachladen bräuchte sie selbst,
+oft unter gehaltener Sperre), jederzeit über FAPI erreichbar (vesa.c
+4,4 KB, net.c, vdd.c – DEVLOAD kann später laden) oder klein (panic.c
+0,7 KB). Übrig bleibt nur **PROCFS** (6,2 KB), das ab Werk aus ist und nur
+über `SET PROCFS=` beim Start eingeschaltet wird. Dafür reicht der
+einfache Weg ohne Nachladen: procfs.c wird mit `-nt=PTEXT` übersetzt,
+PTEXT steht vorn in CGROUPI (vor ITEXT, Rahmen = Gruppe, `kptext_size`
+aus start.asm). Ist PROCFS aus (`pfs_drive < 0`), gibt kinit_done PTEXT
+mit dem Startcode frei; ist es an, beginnt das Freigeben hinter PTEXT und
+KCODEI bleibt gültig (Texte per `MK_FP(KCODEI, …)`). Ein KTEXTP mit
+Nachladen wird nicht gebaut.
+
+Ergebnis (QEMU, 16 MB): MEM „Kernel“ 290K -> 279K (PROCFS aus), 287K mit
+PROCFS; PROCFS geprüft mit DIR, TYPE VERSION/FILES/LOCKS, FIND über TASKS.
+
 ## Offene Punkte
 
-- KTEXTP (verwerfbarer Laufzeitcode) später gesondert bewerten.
-- Ob wlink `align=4096` in der DOS-EXE einhält, beim Bau prüfen.
+- keine.
