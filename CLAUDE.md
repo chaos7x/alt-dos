@@ -1355,7 +1355,9 @@ Win32s), nicht vorziehen, sondern nachfragen.
   (Vorspann mit Ton), QEMU (Demo, DOOM 1.9 Timedemo). Diskette 1 war
   danach voll – NSLOOKUP auf Diskette 3.
 - PROCFS (Vorschlag von mir als Hilfe bei der Fehlersuche, vom Nutzer
-  gewünscht, 23.11.2026): `kernel/procfs.c` (KTEXT4) – `struct
+  gewünscht, 23.11.2026): `kernel/procfs.c` (seit 25.11.2026 Segment
+  PTEXT vorn im Start-Segment – ohne `SET PROCFS=` gibt kinit_done es mit
+  frei, sonst bleibt KCODEI dafür; Texte `MK_FP(KCODEI, …)`) – `struct
   ifs_driver pfs_driver`, Laufwerk nach Wahl (Blockgerät DRV_UFS ohne Blöcke,
   wie NET USE), `procfs_boot` nach pn_boot in kmain (5 Byte im ersten
   Segment), ab Werk aus (Wunsch des Nutzers), nur mit `SET PROCFS=X:` in der
@@ -2242,6 +2244,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   kw fern, stille Wörter als `ks_quiet`, k2misc/cfgboot/biosdisk/panic),
   DGROUP zusammen 62.118 -> 59.926 Byte. Falle: `c ? ks_1 : ks_2` mit `__based`-Feldern liest
   aus DS – beide Zweige auf `const char __far *` casten.
+  Danach (25.11.2026): build.sh füllt das Ende von IDATA bis zur Seiten-
+  grenze auf, wenn das mehr frei macht als es kostet (`IDATA_PAD`, zweites
+  Binden); KTEXTP mit Nachladen bewertet und verworfen, nur PROCFS (PTEXT)
+  wird ohne PROCFS= mit freigegeben – MEM „Kernel“ 290K -> 279K.
 
 - **Fahrplan nach 6.0** (Vorschlag, Durchsicht der Pläne 15.11.2026; die
   Stelle der GUI und von 5.4 entscheidet der Nutzer): 6.1 Loop-
