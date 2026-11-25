@@ -5065,47 +5065,53 @@ struct bce {
     signed char   dev;                  /* -1 = frei                     */
     unsigned char valid, dirty, ref;    /* Bit s: Sektor lba + s         */
     unsigned      next;                 /* Hash-Kette                    */
+    pg_t          pg;                   /* Seite der Daten (nur in geraden
+                                           Eintraegen: Block i und i + 1) */
 };
 unsigned              bc_n, bc_ndirty;
-static unsigned       bc_msel, bc_wsel, bc_hand, bc_delay;
+static unsigned       bc_wsel, bc_hand, bc_delay;
 static unsigned long  bc_since, bc_grow_t;
-/* Daten in Stuecken zu 16 KB (8 Bloecke, 64 Einheiten), einzeln belegt:
-   bei Speichermangel gibt mem_alloc saubere Stuecke zurueck (bc_reclaim),
-   im Leerlauf waechst der Cache wieder bis zur CACHE=-Groesse (bc_regrow).
-   Bloecke fehlender Stuecke haben dev = -2. Vorbereitung fuer den
-   dynamischen Cache von 6.0 (dort mit Seiten statt Stuecken). */
-#define BC_CHB      8                   /* Bloecke je Stueck             */
-#define BC_CHU      4                   /* Seiten je Stueck (16 KB)      */
-#define BC_MAXCH    512                 /* 8 MB                          */
-static pg_t           bc_unit[BC_MAXCH];  /* erste Seite je Stueck, 0 = fehlt */
-unsigned              bc_nch, bc_present;
+/* Daten in einzelnen Seiten (4 KB = 2 Bloecke, 25.11.2026; vorher Stuecke
+   zu 16 KB): bei Speichermangel gibt mem_alloc saubere Seiten zurueck
+   (bc_reclaim), im Leerlauf waechst der Cache wieder (bc_regrow). Bloecke
+   fehlender Seiten haben dev = -2. Die Seitennummer steht im geraden
+   Eintrag (pg). Eintraege in bis zu BC_NSEG Kernelsegmenten zu je
+   BC_PER, die Hash-Koepfe im ersten dahinter (bc_hoff) - bis 32 MB. */
+#define BC_PER      4096u               /* Eintraege je Segment (56 KB)  */
+#define BC_NSEG     4
+#define BC_MAXKB    32768u              /* 16.384 Bloecke                */
+static unsigned       bc_esel[BC_NSEG], bc_hoff;
+unsigned              bc_nch, bc_present;     /* Seiten: alle / da   */
 static unsigned       bc_growing;
-#define BC_LIN(i)   (PG_LIN(bc_unit[(i) >> 3]) + ((unsigned)((i) & 7) << 11))
+#define BC_PG(c)    (BCE((c) << 1)->pg)
+#define BC_LIN(i)   (PG_LIN(BCE((i) & ~1u)->pg) + ((unsigned)((i) & 1) << 11))
 unsigned char         bc_sync;          /* fat.c: sofort schreiben       */
 unsigned long         bc_hits, bc_miss;
 static unsigned       cache_kb = 0xFFFF, cache_s = 5;   /* CACHE=kb,s,max */
 static unsigned       cache_max = 0xFFFF;               /* 0xFFFF = nach Speicher */
 unsigned              bc_minch;
 static unsigned       bc_rsv;                 /* Mindeststuecke, Reserve KB */
-#define BCE(i)  ((struct bce __far *)MK_FP(bc_msel, (unsigned)(i) * sizeof(struct bce)))
-#define BCH(h)  (((unsigned __far *)MK_FP(bc_msel, bc_n * sizeof(struct bce)))[h])
+#define BCE(i)  bc_e(i)
+#define BCH(h)  (((unsigned __far *)MK_FP(bc_esel[0], bc_hoff))[h])
+static struct bce __far *bc_e(unsigned i)
+{
+    return (struct bce __far *)MK_FP(bc_esel[i >> 12], (i & (BC_PER - 1)) * sizeof(struct bce));
+}
 
 static void bc_unlink(unsigned i);
 static pg_t bc_reclaim(unsigned pages);
 
-/* ein fehlendes Stueck holen; 0 = ok */
+/* eine fehlende Seite holen; 0 = ok */
 static int bc_chunk_get(unsigned c)
 {
-    unsigned k;
     pg_t u;
     bc_growing = 1;                     /* kein bc_reclaim waehrenddessen */
-    u = mem_alloc_hi(BC_CHU);
+    u = mem_alloc_top();
     bc_growing = 0;
     if (!u)
         return -1;
-    bc_unit[c] = u;
-    for (k = 0; k < BC_CHB; k++)
-        BCE(c * BC_CHB + k)->dev = -1;
+    BC_PG(c) = u;
+    BCE(c << 1)->dev = BCE((c << 1) + 1)->dev = -1;
     bc_present++;
     return 0;
 }
@@ -5119,16 +5125,16 @@ unsigned long mem_avail_kb(void)
 {
     unsigned long f = mem_free_kb();
     if (bc_present > bc_minch)
-        f += (unsigned long)(bc_present - bc_minch) << 4;
+        f += (unsigned long)(bc_present - bc_minch) << 2;
     return f;
 }
 
 unsigned blk_cache_kb(void)
 {
-    return bc_present << 4;
+    return bc_present << 2;
 }
 
-/* Speichermangel: saubere Stuecke von hinten freigeben, bis units Platz
+/* Speichermangel: saubere Seiten von hinten freigeben, bis units Platz
    gemacht sind. Nur Tabellen, keine Plattenzugriffe. */
 static pg_t bc_reclaim(unsigned units)
 {
@@ -5137,23 +5143,23 @@ static pg_t bc_reclaim(unsigned units)
     if (bc_growing)
         return 0;
     for (c = bc_nch; c-- > 0 && freed < units; ) {
-        if (!bc_unit[c])
-            continue;
-        for (k = 0; k < BC_CHB; k++)
-            if (BCE(c * BC_CHB + k)->dirty || (BCE(c * BC_CHB + k)->ref & 0x80))
+        if (!BC_PG(c) || (mem_low_req && BC_PG(c) >= 0x1000))
+            continue;                   /* fehlt / hilft ISA-DMA nicht   */
+        for (k = 0; k < 2; k++)
+            if (BCE((c << 1) + k)->dirty || (BCE((c << 1) + k)->ref & 0x80))
                 break;
-        if (k < BC_CHB)
+        if (k < 2)
             continue;                   /* noch Ungeschriebenes drin     */
-        for (k = 0; k < BC_CHB; k++) {
-            e = BCE(c * BC_CHB + k);
+        for (k = 0; k < 2; k++) {
+            e = BCE((c << 1) + k);
             if (e->dev >= 0)
-                bc_unlink(c * BC_CHB + k);
+                bc_unlink((c << 1) + k);
             e->dev = -2;
         }
-        mem_free(bc_unit[c], BC_CHU);
-        bc_unit[c] = 0;
+        mem_free(BC_PG(c), 1);
+        BC_PG(c) = 0;
         bc_present--;
-        freed += BC_CHU;
+        freed++;
     }
     return freed;
 }
@@ -5168,8 +5174,8 @@ static void bc_regrow(void)
     if (bc_present == bc_nch || get_ticks() - bc_grow_t < 91)
         return;
     bc_grow_t = get_ticks();
-    for (c = 0; c < bc_nch && n < 64; c++)
-        if (!bc_unit[c]) {
+    for (c = 0; c < bc_nch && n < 256; c++)
+        if (!BC_PG(c)) {
             if (mem_free_kb() < (bc_present < bc_minch ? 256 + 16 : bc_rsv + 16UL) ||
                 bc_chunk_get(c))
                 return;
@@ -5179,10 +5185,10 @@ static void bc_regrow(void)
 
 static void cache_info(struct fapi_cacheinfo __far *ci, unsigned size)
 {
-    ci->kb = bc_present << 4;           /* gerade belegt (kann schrumpfen) */
+    ci->kb = bc_present << 2;           /* gerade belegt (kann schrumpfen) */
     if (size >= sizeof(*ci)) {          /* 6.0: Grenzen des dynamischen Caches */
-        ci->min_kb = bc_minch << 4;
-        ci->max_kb = bc_nch << 4;
+        ci->min_kb = bc_minch << 2;
+        ci->max_kb = bc_nch << 2;
     }
     ci->delay_s = bc_n && bc_delay ? cache_s : 0;
     ci->hits = bc_hits;
@@ -5303,7 +5309,7 @@ static unsigned bc_victim(void)
         if (e->dev == -1)
             return i;
         if (e->dev < 0)
-            continue;                   /* Stueck fehlt                  */
+            continue;                   /* Seite fehlt                   */
         if (e->ref & 0x80)
             continue;                   /* wird gerade geschrieben       */
         if (e->ref) {
@@ -7253,6 +7259,7 @@ static void sched_start(void)
    #define unten lenken sie um. initcheck.py prueft beim Bau, dass kein
    Aufruf nah ueber die Grenze geht und niemand sonst ITEXT ruft. */
 static int __far kt_bc_chunk_get(unsigned c) { return bc_chunk_get(c); }
+static struct bce __far * __far kt_bc_e(unsigned i) { return bc_e(i); }
 static int __far kt_blk_media(int d) { return blk_media(d); }
 static void __far kt_cd_drives(void) { cd_drives(); }
 static int __far kt_cp_set(unsigned cp) { return cp_set(cp); }
@@ -7279,6 +7286,7 @@ static void __far kt_zero_seg(unsigned s, unsigned w) { zero_seg(s, w); }
 static void __far kt_kbd_init(void) { kbd_init(); }
 static void __far kt_fpu_pm_init(void) { fpu_pm_init(); }
 #define bc_chunk_get kt_bc_chunk_get
+#define bc_e kt_bc_e
 #define blk_media kt_blk_media
 #define cd_drives kt_cd_drives
 #define cp_set kt_cp_set
@@ -7507,34 +7515,53 @@ void blk_cache_init(unsigned kb)
     unsigned long ram = mem_ram_kb();
     /* Dynamisch (wie NT): kb ist die Mindestgroesse; darueber waechst der
        Cache in freien Speicher bis max (ohne Angabe: halber Speicher,
-       hoechstens 8 MB) und gibt bei Bedarf saubere Stuecke wieder ab
+       hoechstens 32 MB) und gibt bei Bedarf saubere Seiten wieder ab
        (bc_reclaim). Frei bleiben immer bc_rsv KB fuer Programme. */
     if (max == 0xFFFF)
-        max = ram / 2 > 8192 ? 8192 : (unsigned)(ram / 2);
-    if (kb > 8192)
-        kb = 8192;
-    if (max > 8192)
-        max = 8192;
+        max = ram / 2 > BC_MAXKB ? BC_MAXKB : (unsigned)(ram / 2);
+    if (kb > BC_MAXKB)
+        kb = BC_MAXKB;
+    if (max > BC_MAXKB)
+        max = BC_MAXKB;
     if (max < kb)
         max = kb;
-    kb &= ~15u;                         /* ganze Stuecke                 */
-    max &= ~15u;
+    kb &= ~3u;                          /* ganze Seiten                  */
+    max &= ~3u;
     bc_rsv = ram / 8 < 512 ? 512 : ram / 8 > 4096 ? 4096 : (unsigned)(ram / 8);
     bc_n = 0;
-    if (max < 16)
+    if (max < 4)
         return;
     w = kseg_alloc(16);                 /* nur fuer den Deskriptor       */
-    bc_msel = kseg_alloc((unsigned long)((max >> 1) * sizeof(struct bce) + BC_HASH * 2));
-    if (!w || !bc_msel)
+    if (!w)
         return;
+    {
+        unsigned n = max >> 1, s, c;
+        for (s = 0; s * BC_PER < n; s++) {      /* Eintraege, im ersten  */
+            c = n - s * BC_PER > BC_PER ? BC_PER : n - s * BC_PER;  /* Hash */
+            bc_esel[s] = kseg_alloc((unsigned long)(c * sizeof(struct bce) +
+                                                    (s ? 0 : BC_HASH * 2)));
+            if (!bc_esel[s]) {          /* kein Platz: kleiner           */
+                if (!s)
+                    return;
+                n = s * BC_PER;
+                break;
+            }
+            if (!s)
+                bc_hoff = c * sizeof(struct bce);
+        }
+        bc_n = n;
+    }
     bc_wsel = win_csel = w;
     if (mem_top_pg() > 0x1000)          /* ueber 16 MB: Umweg fuer ISA-  */
         bc_bsel = kseg_dma(512, &bc_bphys); /* Busmaster (bc_wb)        */
-    bc_n = max >> 1;
-    bc_nch = bc_n / BC_CHB;
-    bc_minch = kb >> 4;
-    for (i = 0; i < bc_n; i++)
+    bc_nch = bc_n >> 1;
+    bc_minch = kb >> 2;
+    if (bc_minch > bc_nch)
+        bc_minch = bc_nch;
+    for (i = 0; i < bc_n; i++) {
         BCE(i)->dev = -2;
+        BCE(i)->pg = 0;
+    }
     for (i = 0; i < BC_HASH; i++)
         BCH(i) = BC_END;
     for (i = 0; i < bc_minch; i++)      /* so viel, wie der Speicher hergibt */

@@ -31,6 +31,8 @@ void          __far mem_init(pg_t low, unsigned conv_kb); /* low: erste freie Se
 pg_t          __far mem_alloc(unsigned pages);      /* -> erste Seite, 0 = kein Speicher */
 pg_t          __far mem_alloc_low(unsigned pages);  /* unter 16 MB (ISA-DMA)   */
 pg_t          __far mem_alloc_hi(unsigned pages);   /* bevorzugt ueber MEM_LOW_PG */
+pg_t          __far mem_alloc_top(void);            /* eine Seite von oben (Cache) */
+extern unsigned char mem_low_req;                   /* mem_alloc_low wartet     */
 extern unsigned char mem_hi_ok;     /* paging.c: Fenster bereit           */
 void          __far mem_free(pg_t start, unsigned pages);
 int           __far mem_used(pg_t p);       /* swap.c: Bereich freiraeumen */

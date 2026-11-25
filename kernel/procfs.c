@@ -222,16 +222,16 @@ static void g_meminfo(void)
     PF("Frei:        %8lu KB\n", mem_free_kb());
     PF("Programme:   %8lu KB\n", (unsigned long)image_units << 2);
     PF("AllocSeg:    %8lu KB\n", (unsigned long)alloc_units << 2);
-    PF("Cache:       %8lu KB\n", (unsigned long)bc_present << 4);
+    PF("Cache:       %8lu KB\n", (unsigned long)bc_present << 2);
     PF("DOS-Boxen:   %8lu KB\n", v86_pages << 2);
 }
 
 static void g_cache(void)
 {
     unsigned long a = bc_hits + bc_miss;
-    PF("Bloecke %u zu 2 KB, Stuecke %u von %u da (mindestens %u)\n",
+    PF("Bloecke %u zu 2 KB, Seiten %u von %u da (mindestens %u)\n",
        bc_n, bc_present, bc_nch, bc_minch);
-    PF("Groesse %lu KB, verzoegert %u Bloecke\n", (unsigned long)bc_present << 4,
+    PF("Groesse %lu KB, verzoegert %u Bloecke\n", (unsigned long)bc_present << 2,
        bc_ndirty);
     PF("Treffer %lu, Fehltreffer %lu", bc_hits, bc_miss);
     if (a) {

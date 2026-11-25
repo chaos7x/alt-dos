@@ -11,7 +11,7 @@ REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20
 REM CACHE=kb,s,max  Platten-Cache im Kernel: Mindestgroesse in KB,
 REM   verzoegertes Schreiben nach s Sekunden (0 = sofort), Hoechstgroesse
-REM   in KB (bis 8192). Ohne Angabe nach Speicher; dazwischen waechst und
+REM   in KB (bis 32768). Ohne Angabe nach Speicher; dazwischen waechst und
 REM   schrumpft er mit dem freien Speicher. Beispiel:
 REM CACHE=512,5,4096
 REM SWAPPATH=X:\Verz kb  Auslagerungsdatei SWAPPER.DAT fuer DOS-Boxen;

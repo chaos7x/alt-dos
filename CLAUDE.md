@@ -1684,8 +1684,22 @@ Win32s), nicht vorziehen, sondern nachfragen.
   SHUTDOWN, fsck sauber, Inhalte gleich. Vom Nutzer in 86Box (386,
   4 MB) bestätigt: Cache wächst auf 1.856 KB, mit zwei Boxen (1.800 KB)
   schrumpft er auf 1.312 KB, frei 12 KB, verfügbar 1.068 KB.
-  Offen: Seiten statt 16-KB-
-  Stücke, mehr als 8 MB (Tabellen über ein Kernelsegment hinaus).
+  Seiten statt 16-KB-Stücke und bis 32 MB (25.11.2026, Auftrag des
+  Nutzers): Einheit ist eine Seite (2 Blöcke), ihre Nummer steht im
+  geraden Eintrag (`struct bce.pg`, 14 Byte; `bc_unit[]` in DGROUP
+  entfällt, DGROUP 2 KB kleiner), Einträge in bis zu 4 Kernelsegmenten zu
+  je 4.096 (`bc_esel[]`, `bc_e(i)`), Hash-Köpfe im ersten dahinter
+  (`bc_hoff`); `BC_MAXKB` 32768, ohne CACHE= höchstens RAM/2. Seiten holt
+  `mem_alloc_top` (mem.c, von oben abwärts, `hint_top`) – so liegt der
+  Cache oben und was er abgibt, grenzt an die Programmsegmente. Dabei
+  gefunden (älter): wartete `mem_alloc_low` (ISA-DMA, unter 16 MB), gab
+  der Cache Stück um Stück auch Speicher über 16 MB ab und lief leer
+  (mit CACHE=24576 bei 128 MB blieben 15 MB) – jetzt `mem_low_req`:
+  dann nur Seiten unter 16 MB. Geprüft: QEMU 128 MB mit CACHE=24576
+  (24 MB beim Start, alle 4 Segmente benutzt, 20 MB COPY/FC, XCOPY,
+  CHKDSK, fsck sauber), 16 MB, isapc 4 MB mit zwei Boxen (Cache 824 ->
+  696 KB, Kopien gleich), 86Box 386DX/40 mit 20 MB und AHA-154x (Cache-
+  Seiten über 16 MB, COPY/FC, XCOPY, fsck sauber).
   Vom Nutzer auf dem SCAT in 86Box
   bestätigt (beschnitten auf 2 MB, 1.664 KB erkannt): Vorgabe 128 KB,
   XCOPY auf die Adaptec-Platte (Busmaster-DMA direkt aus dem Cache

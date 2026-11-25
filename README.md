@@ -134,8 +134,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   sofort. Dynamisch wie bei Windows NT (6.0): kb ist die Mindestgröße
   (ohne Angabe nach Speicher, z. B. 128 KB bei 2 MB), darüber wächst der
   Cache in freien Speicher bis max (ohne Angabe halber Speicher,
-  höchstens 8 MB; `CACHE=1024,5,1024` = feste Größe), lässt immer 1/8
-  des Speichers (512 KB–4 MB) frei und gibt saubere 16-KB-Stücke ab,
+  höchstens 32 MB; `CACHE=1024,5,1024` = feste Größe), lässt immer 1/8
+  des Speichers (512 KB–4 MB) frei und gibt saubere 4-KB-Seiten ab,
   sobald ein Programm oder eine DOS-Box Speicher braucht; DPMI/XMS der
   Boxen zählen den abgebbaren Teil als frei. MEM zeigt Größe, Spanne,
   „verfügbar“ und Trefferquote; `BUFFERS=` gilt nur noch als

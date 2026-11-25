@@ -26,6 +26,9 @@ static pg_t          free_pg, total_pg, ram_pg;
 static pg_t          hint;              /* ab hier suchen (unter MEM_LOW_PG) */
 static pg_t          hint_hi;           /* ab hier suchen (darueber)      */
 unsigned char        mem_hi_ok;         /* Fenster bereit (paging_init)   */
+unsigned char        mem_low_req;       /* mem_alloc_low wartet: Cache gibt
+                                           nur Seiten unter 16 MB ab     */
+static pg_t          hint_top;          /* mem_alloc_top: ab hier abwaerts */
 
 #define BYTE(p)     BMB((p) >> 3)
 #define BIT(p)      (1 << ((unsigned)(p) & 7))
@@ -162,9 +165,38 @@ pg_t __far mem_alloc_out(pg_t lo, pg_t hi)
 pg_t __far mem_alloc_low(unsigned n)
 {
     pg_t p;
+    mem_low_req = 1;                    /* Cache-Seiten darueber helfen nicht */
     while ((p = alloc_in(n, 0x1000)) == 0 && kf_reclaim(n))
         ;
+    mem_low_req = 0;
     return p;
+}
+
+/* eine Seite fuer den Platten-Cache: ueber 2 GB, sonst von oben her (die
+   Segmente der Programme wachsen von unten - so liegt der Cache am Stueck
+   oben, und was er abgibt, grenzt an den Bereich der Segmente). Gibt
+   nichts zurueck, ohne den Cache selbst zu fragen. */
+pg_t __far mem_alloc_top(void)
+{
+    pg_t p, top = max_pg < MEM_LOW_PG ? max_pg : MEM_LOW_PG;
+    if ((p = alloc_hi(1)) != 0 || !free_pg)
+        return p;
+    if (!hint_top || hint_top > top)
+        hint_top = top;
+    for (p = hint_top; p-- > 1; ) {
+        if (((unsigned)p & 7) == 7 && BYTE(p) == 0xFF) {
+            p -= 7;                     /* ganzes Byte belegt            */
+            continue;
+        }
+        if (!USED(p)) {
+            BYTE(p) |= (unsigned char)BIT(p);
+            free_pg--;
+            hint_top = p;
+            return p;
+        }
+    }
+    hint_top = top;                     /* naechstes Mal wieder von oben */
+    return 0;
 }
 
 void __far mem_free(pg_t start, unsigned n)
@@ -175,6 +207,8 @@ void __far mem_free(pg_t start, unsigned n)
             hint_hi = start;
     } else if (start < hint)
         hint = start;
+    if (hint_top && start + n > hint_top && start < MEM_LOW_PG)
+        hint_top = start + n;           /* oben wieder frei              */
 }
 
 unsigned long __far mem_free_kb(void)
