@@ -2074,8 +2074,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
 
 - **F5-Notstart und `BASEDEV=`** (vorgemerkt vom Nutzer, 24.11.2026;
   Stufe 1 gebaut 25.11.2026 – F5, BASEDEV=, Notstart in Kernel/CMD/Box,
-  `kernel/cfgboot.c`; geprüft QEMU + 86Box 386DX/40; offen: INT-13h-
-  Rückfall): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
+  `kernel/cfgboot.c`; Stufe 2 INT-13h-Rückfall gebaut 25.11.2026 –
+  `kernel/biosdisk.c` (DRV_BIOS, bios_rw sichert SCRATCH/SCRATCH2),
+  rm_int10 mit BIOS-PIC/PIT; geprüft QEMU + 86Box 386DX/40 (AHA-BIOS)): F5 beim Start lässt DEVICE=/IFS=/LOOP=/RUN=, die
   Auslagerungsdatei und AUTOEXEC.CMD weg, startet CMD statt PROTSHELL und
   Boxen mit den Vorgaben (ATDOSCM.SYS, ohne DOSBOX.INI). Treiber des
   Startlaufwerks stehen in neuen `BASEDEV=`-Zeilen (wie OS/2), die auch

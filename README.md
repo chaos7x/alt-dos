@@ -124,6 +124,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   liest `DOSBOX.INI`, ihre `CONFIG.SYS` und die `AUTOEXEC.BAT` nicht.
   `BASEDEV=` wie bei OS/2: Treiber, die vor allen anderen Zeilen geladen
   werden (die mitgelieferte `CONFIG.SYS` lädt die Plattentreiber so).
+  Findet sich danach die Startpartition nicht (Treiber fehlt oder
+  scheitert), hängt der Kernel das Startlaufwerk über INT 13h des BIOS
+  ein (langsam, aber das System kommt hoch).
 - `CONFIG.SYS` wie MS-DOS: `DEVICE=`, `DEVICEHIGH=` (auch mit `/L:`),
   `IFS=`, `FILES=` (Tabelle offener Dateien, 8–255, Vorgabe 20),
   `CACHE=kb[,s[,max]]` (Platten-Cache wie SMARTDRV, aber im Kernel wie

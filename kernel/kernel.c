@@ -5472,7 +5472,7 @@ static int bc_due(void)
 
 static int bc_writeback(int dev)
 {
-    return bc_delay && !bc_sync && !IS_FLOPPY(dev) && !IS_REM(dev);
+    return bc_delay && !bc_sync && blk[dev].drv >= 0 && !IS_REM(dev);
 }
 
 /* Diskette gewechselt? Der Treiber erkennt Wechsel und Format; dann
@@ -5599,6 +5599,8 @@ static int dev_read(int dev, unsigned long lba, unsigned n)
     unsigned long dp = dr_phys;
     dr_sel = 0;                         /* vor dem ersten Schlafpunkt     */
 
+    if (b->drv == DRV_BIOS)             /* Rueckfall (biosdisk.c)        */
+        return bios_rw(b->unit, lba, n, 0);
     if (b->drv < 0)
         return fd_read(b->unit, (unsigned)lba) ? -1 : 0;   /* immer einer */
     drv_lock(DLB(dev));
@@ -5657,7 +5659,7 @@ int blk_read_n(int dev, unsigned long lba, unsigned n)
     bc_miss++;
     if (b->bsize == 2048 && (drv[b->drv].used & 2))
         return cd_ra(dev, lba);         /* CD: 32 KB am Stueck (cdra.c)  */
-    max = b->drv < 0 ? 1 : drv[b->drv].maxcnt;
+    max = b->drv == DRV_BIOS ? 4 : b->drv < 0 ? 1 : drv[b->drv].maxcnt;
     if (b->bsize != 512 || !bc_n)
         max = 1;                        /* ohne Cache haette es keinen Sinn */
     if (n > max)
@@ -5727,7 +5729,8 @@ int blk_write(int dev, unsigned long lba)
         }
     }
     if (b->drv < 0) {
-        rc = fd_write(b->unit, (unsigned)lba);
+        rc = b->drv == DRV_BIOS ? bios_rw(b->unit, lba, 1, 1) :
+             fd_write(b->unit, (unsigned)lba);
     } else {
         struct drv_req *r = DRQB(dev);
         drv_lock(DLB(dev));
@@ -5773,8 +5776,8 @@ void blk_flush(void)
     bc_flush();                         /* verzoegerte Daten zuerst      */
     fd_sync();                          /* Spurpuffer der Diskette       */
     for (dev = 1; dev < nblk; dev++) {
-        if (!blk_dirty[dev] || IS_FLOPPY(dev))
-            continue;
+        if (!blk_dirty[dev] || blk[dev].drv < 0)
+            continue;                   /* Diskette, INT 13h: kein FLUSH */
         d = blk[dev].drv;
         for (; dev < nblk; dev++)       /* je Treiber einmal          */
             if (blk[dev].drv == d)
@@ -7738,6 +7741,8 @@ void kmain(void)
         if (npre && pre_seg == 0x8000 && mem_conv_kb > 512)
             mem_free(0x80, mem_conv_kb / 4 - 0x80);      /* 80000h frei */
         sys_drive = find_boot_vol();
+        if (sys_drive < 0 && bios_attach() >= 0)   /* Rueckfall: INT 13h */
+            sys_drive = find_boot_vol();
         if (sys_drive < 0)
             panic("Startpartition nicht gefunden - Treiber in CONFIG.SYS?");
         vio_kputs(s0, "\xFE Startlaufwerk C:\n");

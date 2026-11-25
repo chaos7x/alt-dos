@@ -13,7 +13,8 @@
 #include "k2.h"
 
 struct rmregs { unsigned short ax, bx, cx, dx, si, di, bp, es, ds, flags,
-                intno; };              /* 10h Video-BIOS, 15h (APM)     */
+                intno,                 /* 10h Video-BIOS, 15h (APM), 13h */
+                pic, t0, t1, pdiv; };  /* nur INT 13h (biosdisk.c)       */
 #define RM_REGS   0x6F00UL
 #define RM_BUF    0x7000UL              /* 7000h: VbeInfoBlock, 7200h: ModeInfo */
 
@@ -28,7 +29,8 @@ static void rm_call(struct rmregs *r)
 {
     struct rmregs __far *p;
     unsigned i;
-    r->intno = rm_apm ? 0x15 : 0x10;    /* nicht aus r: die meisten Aufrufer */
+    r->intno = rm_apm == 2 ? 0x13 : rm_apm ? 0x15 : 0x10;   /* nicht aus r: */
+                                        /* die meisten Aufrufer           */
     rm_apm = 0;                         /* lassen intno ungesetzt (Stack)    */
     rm_kcr3 = paging_cr3();
     rm_cs16 = (unsigned)(KCODE2_LIN >> 4);
@@ -40,6 +42,15 @@ static void rm_call(struct rmregs *r)
     scratch_map(RM_REGS, sizeof(struct rmregs) - 1);
     for (i = 0; i < sizeof(struct rmregs) / 2; i++)
         ((unsigned short *)r)[i] = ((unsigned short __far *)p)[i];
+}
+
+/* INT 13h fuer den Rueckfall auf das BIOS (biosdisk.c, KTEXT4): r wie
+   rm_call, dazu pic (Maske vom Start), pdiv (PIT-Teiler des Kernels);
+   t0/t1 = BIOS-Takt 046Ch vor/nach dem Aufruf */
+void __far rm_call13(void *r)
+{
+    rm_apm = 2;
+    rm_call((struct rmregs *)r);
 }
 
 /* fuer v86.c: VBE-Abfrage (4F00h/4F01h) einer Box ueber den Real Mode -

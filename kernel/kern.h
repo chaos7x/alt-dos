@@ -212,6 +212,10 @@ unsigned proc_run(unsigned long id);
 #define IS_FLOPPY(dev) (blk[dev].drv == -1) /* B: ist Geraet 1, wenn da   */
 #define DRV_LOOP    (-2)            /* Loop-Laufwerk (loop.c), unit = Platz */
 #define DRV_UFS     (-3)            /* Netzlaufwerk (ufs.c), keine Bloecke */
+#define DRV_BIOS    (-4)            /* Startlaufwerk ueber INT 13h (biosdisk.c),
+                                       unit = BIOS-Laufwerk (80h ...)   */
+int __far bios_rw(unsigned drive, unsigned long lba, unsigned n, int wr);
+int __far bios_attach(void);
 #define NLOOP       8               /* 6.2: 4 -> 8                       */
 struct blkdev {
     signed char    drv;             /* Treiber, -1 = Diskette im Kernel     */

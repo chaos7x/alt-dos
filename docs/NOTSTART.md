@@ -3,10 +3,34 @@
 Stand: 24.11.2026, vom Nutzer gewünscht („ok. mach das“).
 
 **Stufe 1 gebaut (25.11.2026, Auftrag des Nutzers):** F5, `BASEDEV=`,
-Notstart in Kernel, CMD und DOS-Box. Der INT-13h-Rückfall (Stufe 2)
-fehlt noch – im Notstart mit einer alten `CONFIG.SYS`, die den
-Plattentreiber unter `DEVICE=` lädt, bleibt es bei „Startpartition
-nicht gefunden“.
+Notstart in Kernel, CMD und DOS-Box.
+
+**Stufe 2 gebaut (25.11.2026):** INT-13h-Rückfall. Findet kmain nach
+der CONFIG.SYS die Startpartition nicht (kein Treiber in BASEDEV=,
+Treiber ohne Gerät), hängt `bios_attach` das BIOS-Startlaufwerk als
+Blockgerät `DRV_BIOS` ein – mit und ohne F5.
+
+Umsetzung Stufe 2:
+- `kernel/biosdisk.c` (KTEXT4): `bios_attach` (INT 13h 08h Geometrie,
+  41h/48h Erweiterungen und Größe, Blockgerät, Meldung „Startlaufwerk
+  über INT 13h …“, mount_disk), `bios_rw` (bis 4 Sektoren je Ausflug,
+  CHS bis Zylinder 1023 – nie über das Spurende –, dahinter 42h/43h;
+  drei Versuche mit Reset; Puffer 7000h, DAP 7800h, Daten aus/in den
+  DMABUF des Tasks; sichert SCRATCH/SCRATCH2 – sie gehören dem Aufrufer,
+  ohne das meldete CMD.EXE „kein FAPI-Programm“).
+- start.asm `rm_int10`: für INT 13h PIC auf die BIOS-Vektoren (08h/70h)
+  mit der Maske vom Start (`bios_pic`), PIT auf 18,2 Hz, Interrupts an,
+  046Ch vorher/nachher; zurück PIC 20h/28h und PIT-Teiler des Kernels.
+  `bios_rw` trägt die verpassten Takte nach (× 5,5). vesa.c `rm_call13`.
+- kernel.c: dev_read/blk_write verzweigen bei DRV_BIOS, kein verzögertes
+  Schreiben, blk_flush übergeht das Gerät, keine Auslagerungsdatei.
+- Geprüft: QEMU (Start ohne IDE.SYS: XCOPY \DOS, CHKDSK, SHUTDOWN, fsck
+  sauber, Kopien gleich; normaler Start unverändert), 86Box 386DX/40
+  mit AHA-154x ohne AHA154X.SYS (über das Adaptec-BIOS: XCOPY, `command
+  /c dir` in der Box, CHKDSK, SHUTDOWN, fsck sauber, gleich).
+- Grenzen: nur das Startlaufwerk (keine weiteren Platten, keine CD),
+  langsam (jeder Auftrag ein Moduswechsel), Interrupts anderer Geräte
+  warten während des Ausflugs.
 
 Umsetzung Stufe 1:
 - `kernel/cfgboot.c` (KTEXT4, aus kernel.c herausgelöst – das erste

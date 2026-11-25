@@ -337,6 +337,10 @@ _start:
         rep     movsw
         mov     al, [0x17]              ; Umschaltzustand (NumLock beim Start)
         mov     [es:_bios_kbf], al
+        in      al, 0xA1                ; PIC-Maske des BIOS (INT-13h-
+        mov     ah, al                  ; Rueckfall, biosdisk.c)
+        in      al, 0x21
+        mov     [es:_bios_pic], ax
 .f8:    mov     ah, 1                   ; schon getippt? F8 = schrittweise
         int     0x16
         jz      .f8e
@@ -1511,7 +1515,35 @@ rm_int10_:
         mov     fs, ax
         mov     gs, ax
         lidt    [RMIVT]
-        mov     bx, [RMR+2]
+        cmp     byte [RMR+20], 13h      ; INT 13h: BIOS-Interrupts und
+        jne     .nb                     ; -Takt (Fristen, IRQ 14/15)
+        mov     al, 11h                 ; PIC auf die BIOS-Vektoren
+        out     20h, al
+        out     0A0h, al
+        mov     al, 08h
+        out     21h, al
+        mov     al, 70h
+        out     0A1h, al
+        mov     al, 4
+        out     21h, al
+        mov     al, 2
+        out     0A1h, al
+        mov     al, 1
+        out     21h, al
+        out     0A1h, al
+        mov     ax, [RMR+22]            ; Maske des BIOS (vom Start)
+        out     21h, al
+        mov     al, ah
+        out     0A1h, al
+        mov     al, 36h                 ; PIT 18,2 Hz wie das BIOS
+        out     43h, al
+        xor     al, al
+        out     40h, al
+        out     40h, al
+        mov     ax, [046Ch]
+        mov     [RMR+24], ax            ; BIOS-Takt vorher
+        sti
+.nb:    mov     bx, [RMR+2]
         mov     cx, [RMR+4]
         mov     dx, [RMR+6]
         mov     si, [RMR+8]
@@ -1524,7 +1556,11 @@ rm_int10_:
         pop     ds
         cmp     byte [ss:RMR+20], 15h   ; APM (INT 15h) oder Video-BIOS
         je      .i15
+        cmp     byte [ss:RMR+20], 13h
+        je      .i13
         int     10h
+        jmp     .ret
+.i13:   int     13h
         jmp     .ret
 .i15:   int     15h
 .ret:   mov     [ss:RMR], ax
@@ -1542,6 +1578,35 @@ rm_int10_:
         cli
         xor     ax, ax
         mov     ds, ax
+        cmp     byte [RMR+20], 13h      ; INT 13h: PIC und PIT zurueck
+        jne     .nk
+        mov     ax, [046Ch]
+        mov     [RMR+26], ax            ; BIOS-Takt nachher
+        mov     al, 11h
+        out     20h, al
+        out     0A0h, al
+        mov     al, 20h
+        out     21h, al
+        mov     al, 28h
+        out     0A1h, al
+        mov     al, 4
+        out     21h, al
+        mov     al, 2
+        out     0A1h, al
+        mov     al, 1
+        out     21h, al
+        out     0A1h, al
+        mov     al, 0FFh                ; Maske des Kernels stellt das
+        out     21h, al                 ; Ende des Ausflugs her
+        out     0A1h, al
+        mov     al, 34h                 ; PIT wie pic_pit_init / kpit_set
+        out     43h, al
+        mov     ax, [RMR+28]
+        out     40h, al
+        mov     al, ah
+        out     40h, al
+        xor     ax, ax
+.nk:
         o32 lgdt [RMGDT]                ; rohe Basis
         mov     eax, cr0
         or      al, 1
@@ -1573,9 +1638,21 @@ rm_int10_:
         out     21h, al
         mov     al, ah
         out     0A1h, al
-        pop     gs
-        pop     fs
-        pop     es
+        pop     ax                      ; GS/FS/ES nur zurueck, wenn noch
+        verr    ax                      ; gueltig: nach config_sys zeigt GS
+        jz      .g                      ; auf den freigegebenen cfg_sel
+        xor     ax, ax                  ; (INT-13h-Rueckfall direkt danach)
+.g:     mov     gs, ax
+        pop     ax
+        verr    ax
+        jz      .f
+        xor     ax, ax
+.f:     mov     fs, ax
+        pop     ax
+        verr    ax
+        jz      .e
+        xor     ax, ax
+.e:     mov     es, ax
         pop     ds
         popad
         popfd
@@ -1676,7 +1753,7 @@ _bios_fdpt:   resb 32
 _bios_geo_h:  resb 4                    ; Koepfe - 1 (INT 13h/08h)
 _bios_geo_s:  resb 4                    ; Sektoren je Spur, 0 = keine
 _bios_geo_c:  resw 4                    ; Zylinder
-global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model, _bios_kbf, _boot_f8, _boot_f5
+global _cpu_386, _fpu_ok, _bios_equip, _bios_ports, _bios_date, _bios_model, _bios_kbf, _boot_f8, _boot_f5, _bios_pic
 _cpu_386:     resb 1
 _fpu_ok:      resw 1
 _fpu_sw:      resw 1
@@ -1687,6 +1764,7 @@ _bios_model:  resb 1
 _bios_kbf:    resb 1                    ; 0040:0017 beim Start
 _boot_f8:     resb 1                    ; F8 vor dem Kernel getippt
 _boot_f5:     resb 1                    ; F5 (Notstart) vor dem Kernel
+_bios_pic:    resw 1                    ; PIC-Maske beim Start (Master, Slave)
 global _vga_ok, _vga_font8a, _vga_font8b, _vga_font16
 _vga_ok:      resb 1
 _vga_font8a:  resw 2                    ; Offset, Segment (ROM)
