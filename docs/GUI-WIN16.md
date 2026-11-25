@@ -252,6 +252,40 @@ Shell, weitere Grafiktreiber. Nächste Ziele: Write, danach (Wunsch des
 Nutzers, 25.11.2026) **PROGMAN** aus Windows 3.1 als Spaß-Ziel – braucht
 Profile/INI, Gruppen-Dateien, Symbole (Icons), MDI und WinExec.
 
+### Stand: osFree-Programme als Prüfstand (25.11.2026)
+
+Gebaut nur im Scratchpad (`wcc -bt=windows -ms -zW`, Clock mit `-fpi87`,
+`wlink system windows` mit den EXPORTS aus ihren makefiles; PROGMAN:
+`LANGUAGE`-Zeilen in Dialogen entfernt – der Watcom-RC nimmt sie für
+Win16 nicht an). Laufen jetzt: osFree-Notepad, Reversi, Winver, Taskman,
+Minesweeper (spielbar), Clock (analog). Dafür neu:
+
+- **Stufe 1:** SetErrorMode, lstrcpyn, LoadLibrary/FreeLibrary (eingebaute
+  Module; DLLs von Programmen noch nicht -> 2), WinExec (Win16 als neue
+  Task), GetKBCodePage, GetTextExtentPoint, Start/EndPage (Fehler),
+  EnumWindows/EnumTaskWindows/EnumChildWindows, GetLastActivePopup,
+  SwitchToThisWindow, Get/SetCursorPos, ShowCursor, AdjustWindowRect,
+  SystemParametersInfo (lesen). LISTBOX: LB_DELETESTRING mit ungültigem
+  Index gibt LB_ERR (Taskman leert die Liste in einer Schleife bis dahin
+  – vorher endlos).
+- **Stufe 2, GDI mit Bitmaps:** alle Zeichenroutinen arbeiten auf einer
+  Zielfläche (Bildschirm-Schatten oder Bitmap im selben Ebenenformat:
+  1 Ebene einfarbig, 4 Ebenen 16 Farben, ein Segment bis 64 KB);
+  CreateCompatibleDC/Bitmap, CreateBitmap(Indirect), Set/GetBitmapBits
+  (einfarbig), LoadBitmap (DIB 1/4/8/24 Bit), BitBlt/StretchBlt mit allen
+  256 ROPs (Ternärcode Bit für Bit, einfarbig <-> Farbe wie Windows);
+  Abbildungsmodi (Fenster-/Viewport-Ursprung und -Ausdehnung, ISOTROPIC/
+  ANISOTROPIC, feste Einheiten bei 96 dpi), DPtoLP/LPtoDP; Polygon füllt
+  mit dem Pinsel (Gerade-Ungerade).
+- Fehler bei osFree selbst (nicht bei uns): Notepad überspringt das erste
+  Wort der Befehlszeile (erwartet den Programmnamen wie Win32), Reversi
+  setzt seine Textzeile über den Clientbereich.
+- OSFIXUP-Einträge (Gleitkomma-Emulator) überspringt der Lader wie Wine:
+  benutzt wird die echte FPU. WIN87EM (`__fpmath`) fehlt noch.
+
+Nächste Stufe für PROGMAN: MDI (DefFrameProc/DefMDIChildProc, MDICLIENT)
+und Symbole (ExtractIcon, CreateIcon, DrawIcon).
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

@@ -1042,6 +1042,8 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
     case 0x0401: case 0x0402:                   /* LB_ADDSTRING/INSERT   */
         return lb_insert(l, w, m == 0x0401 ? -1 : (short)wp, (LPCSTR)lp);
     case 0x0403:                                /* LB_DELETESTRING       */
+        if (wp >= l->n)                         /* wie Windows: LB_ERR   */
+            return -1;
         lb_delete(l, wp);
         lb_show(l, w);
         return l->n;

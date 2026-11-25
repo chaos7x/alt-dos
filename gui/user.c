@@ -2063,3 +2063,132 @@ void user_init(void)
     user_paint_pending();
     gdi_flush();
 }
+
+/* ---- Stufe 1 fuer die osFree-Programme (25.11.2026) ---- */
+
+static WORD en_w[3];
+/* Rueckruf BOOL FAR PASCAL f(HWND, LPARAM) im Datensegment der Task */
+static BOOL en_call(void FAR *f, HWND h, DWORD lp)
+{
+    WORD ds = cur_task >= 0 ? wt[cur_task].hinst : 0;
+    en_w[0] = h; en_w[1] = HIWORD(lp); en_w[2] = LOWORD(lp);
+    return (BOOL)call16(f, ds, 3, en_w);
+}
+
+/* oberste Fenster, vorne zuerst; aufgezaehlt wird ein Abzug der Liste,
+   damit Rueckrufe Fenster anlegen oder schliessen duerfen */
+static HWND en_list[NWND];
+static short en_top(void)
+{
+    short i, n = 0;
+    for (i = 0; i < NWND; i++)
+        if (ww[i].used && !(ww[i].style & WS_CHILD) && ww[i].cls != 4)
+            en_list[n++] = HW(i);
+    return n;
+}
+BOOL API EnumWindows(void FAR *f, DWORD lp)
+{
+    short i, n = en_top();
+    for (i = 0; i < n; i++)
+        if (wptr(en_list[i]) && !en_call(f, en_list[i], lp))
+            break;
+    return 1;
+}
+BOOL API EnumTaskWindows(WORD task, void FAR *f, DWORD lp)
+{
+    short i, n = en_top();
+    for (i = 0; i < n; i++) {
+        struct wnd *w = wptr(en_list[i]);
+        if (w && w->task + 1 == (short)task && !en_call(f, en_list[i], lp))
+            break;
+    }
+    return 1;
+}
+BOOL API EnumChildWindows(HWND par, void FAR *f, DWORD lp)
+{
+    short i, n = 0;
+    for (i = 0; i < NWND; i++)
+        if (ww[i].used && (ww[i].style & WS_CHILD) && ww[i].parent == par)
+            en_list[n++] = HW(i);
+    for (i = 0; i < n; i++)
+        if (wptr(en_list[i]) && !en_call(f, en_list[i], lp))
+            break;
+    return 1;
+}
+
+HWND API GetLastActivePopup(HWND h)
+{
+    short i;
+    for (i = 0; i < NWND; i++)                  /* sichtbares Popup des Besitzers */
+        if (ww[i].used && ww[i].visible && ww[i].owner == h &&
+            (ww[i].style & WS_POPUP) && HW(i) == active)
+            return HW(i);
+    return h;
+}
+void API SwitchToThisWindow(HWND h, BOOL restore)
+{
+    (void)restore;
+    if (wptr(h)) {
+        ShowWindow(h, 5);                       /* SW_SHOW */
+        activate(h);
+    }
+}
+/* Symbolgroesse gibt es noch nicht: Schliessen = Verkleinern bleibt aus */
+void API CloseWindow(HWND h) { (void)h; }
+BOOL API OpenIcon(HWND h) { return ShowWindow(h, 9); }      /* SW_RESTORE */
+WORD API ArrangeIconicWindows(HWND h) { (void)h; return 0; }
+
+void API GetCursorPos(POINT FAR *p)
+{
+    if (p) { p->x = mpos.x; p->y = mpos.y; }
+}
+/* stellt nur den Zeiger der GUI um - die naechste Mausbewegung kommt
+   vom Kernel wieder als Abstand dazu */
+void API SetCursorPos(short x, short y)
+{
+    if (x < 0) x = 0;
+    if (x >= SCR_W) x = SCR_W - 1;
+    if (y < 0) y = 0;
+    if (y >= SCR_H) y = SCR_H - 1;
+    mpos.x = x; mpos.y = y;
+    gdi_cursor(x, y);
+}
+static short cur_cnt;
+short API ShowCursor(BOOL show) { return show ? ++cur_cnt : --cur_cnt; }
+BOOL API DestroyCursor(WORD c) { (void)c; return 1; }
+
+void API AdjustWindowRect(RECT FAR *r, DWORD style, BOOL menu)
+{
+    static struct wnd t;
+    short b;
+    t.style = style;
+    b = wnd_border(&t);
+    r->left -= b; r->right += b;
+    r->top -= b; r->bottom += b;
+    if ((style & WS_CAPTION) == WS_CAPTION)
+        r->top -= CAPH;
+    if (menu)
+        r->top -= MENUH;
+}
+
+/* SystemParametersInfo: nur das Lesen der ueblichen Werte */
+BOOL API SystemParametersInfo(WORD act, WORD p, void FAR *pv, WORD ini)
+{
+    (void)ini; (void)p;
+    switch (act) {
+    case 0x0010: case 0x0012:                   /* SPI_GETSCREENSAVE... */
+    case 0x0001:                                /* SPI_GETBEEP          */
+        if (pv) *(short FAR *)pv = act == 1;
+        return 1;
+    case 0x000D: case 0x0018:                   /* ICONHORZ/VERTSPACING */
+        if (pv) *(short FAR *)pv = act == 0x0D ? 75 : 75;
+        return 1;
+    case 0x0016:                                /* SPI_GETKEYBOARDDELAY */
+    case 0x000A:                                /* SPI_GETKEYBOARDSPEED */
+    case 0x0019:                                /* SPI_GETICONTITLEWRAP */
+    case 0x001B:                                /* SPI_GETMENUDROPALIGN */
+        if (pv) *(short FAR *)pv = act == 0x19;
+        return 1;
+    }
+    return 0;
+}

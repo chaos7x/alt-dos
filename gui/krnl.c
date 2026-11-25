@@ -1040,3 +1040,76 @@ void krnl_init(void)
     fapi_call(FAPI_SEGCTL, SEG_INTHND, SELOF((void FAR *)int_entry),
               OFFOF((void FAR *)int_entry));
 }
+
+/* ---- Stufe 1 fuer die osFree-Programme (25.11.2026) ---- */
+WORD API SetErrorMode(WORD m) { static WORD em; WORD o = em; em = m; return o; }
+
+LPSTR API lstrcpyn(LPSTR d, LPCSTR s, short n)
+{
+    LPSTR r = d;
+    if (n <= 0)
+        return d;
+    while (--n > 0 && *s)
+        *d++ = *s++;
+    *d = 0;
+    return r;
+}
+
+/* Name ohne Pfad und Endung, gross -> buf */
+static void mod_base(LPCSTR p, char *buf, short n)
+{
+    LPCSTR s = p, e;
+    short i = 0;
+    for (e = p; *e; e++)
+        if (*e == '\\' || *e == '/' || *e == ':')
+            s = e + 1;
+    while (*s && *s != '.' && i < n - 1)
+        buf[i++] = up(*s++);
+    buf[i] = 0;
+}
+
+/* eingebaute Module (KERNEL, USER, ...) liefern ihre Kennung; DLLs von
+   Programmen laedt der Lader noch nicht - wie Windows: 2 = nicht gefunden */
+WORD API LoadLibrary(LPCSTR name)
+{
+    static char b[16];
+    int m;
+    mod_base(name, b, sizeof(b));
+    m = exp_builtin(b);
+    if (m)
+        return 0x100 + m - 1;
+    for (m = 0; m < NMOD; m++)
+        if (wm[m].used && !fstricmp(wm[m].name, b)) {
+            wm[m].refs++;
+            return m + 1;
+        }
+    glogs("LoadLibrary: nicht vorhanden: ", name);
+    return 2;
+}
+void API FreeLibrary(WORD h) { (void)h; }
+
+/* WinExec: Win16-Programm als neue Task, sonst ueber das FAPI (DOS-
+   oder FX-Programm) in eigener Sitzung. > 31 = gestartet */
+static char we_path[FAPI_PATHLEN];
+WORD API WinExec(LPCSTR cmd, WORD show)
+{
+    LPCSTR a;
+    short i = 0, dot = 0;
+    while (*cmd == ' ')
+        cmd++;
+    for (a = cmd; *a && *a != ' ' && i < FAPI_PATHLEN - 5; a++) {
+        if (*a == '.') dot = 1;
+        if (*a == '\\') dot = 0;
+        we_path[i++] = *a;
+    }
+    if (!dot) {
+        we_path[i++] = '.'; we_path[i++] = 'E'; we_path[i++] = 'X'; we_path[i++] = 'E';
+    }
+    we_path[i] = 0;
+    while (*a == ' ')
+        a++;
+    if (!task_start(we_path, a, show))
+        return 33;
+    glogs("WinExec gescheitert: ", we_path);
+    return 2;
+}

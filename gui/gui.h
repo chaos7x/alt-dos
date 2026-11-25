@@ -29,7 +29,7 @@ typedef unsigned short WORD;
 typedef unsigned long  DWORD;
 typedef short          BOOL;
 typedef WORD           HANDLE;
-typedef WORD           HWND, HDC, HINSTANCE, HGDIOBJ, HMENU, HBRUSH, HPEN, HFONT;
+typedef WORD           HWND, HDC, HINSTANCE, HGDIOBJ, HMENU, HBRUSH, HPEN, HFONT, HBITMAP;
 typedef long           LONG;
 typedef char FAR      *LPSTR;
 typedef const char FAR *LPCSTR;

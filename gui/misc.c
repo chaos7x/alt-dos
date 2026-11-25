@@ -84,7 +84,6 @@ HDC API CreateDC(LPCSTR drv, LPCSTR dev, LPCSTR port, LPVOID init)
         glogs("CreateDC (kein Druckertreiber): ", drv);
     return 0;
 }
-BOOL API DeleteDC(HDC h) { (void)h; return 1; }
 short API Escape(HDC h, short esc, short n, LPCSTR in, LPVOID out)
 {
     (void)h; (void)esc; (void)n; (void)in; (void)out;
@@ -232,3 +231,14 @@ DWORD API GetTabbedTextExtent(HDC dc, LPCSTR s, short n, short nt, short FAR *ta
         px = s[i] == '\t' ? (px / (8 * FONT_W) + 1) * 8 * FONT_W : px + FONT_W;
     return MAKELONG(px, FONT_H);
 }
+
+/* KEYBOARD.132: Codepage der Tastatur = aktive Codepage des Systems */
+short API GetKBCodePage(void)
+{
+    WORD cp = fapi_call(FAPI_CODEPAGE, 0, 0, 0);
+    return FAPI_FAILED(cp) || !cp ? 437 : (short)cp;
+}
+
+/* Drucken gibt es noch nicht: Seiten melden Fehler (SP_ERROR) */
+short API StartPage(HDC h) { (void)h; return -1; }
+short API EndPage(HDC h) { (void)h; return -1; }

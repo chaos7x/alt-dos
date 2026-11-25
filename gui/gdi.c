@@ -21,6 +21,15 @@ static WORD phys;                       /* Bildspeicher (VioGetPhysBuf) */
 static short dx0 = 32767, dy0, dx1, dy1;   /* geaenderter Bereich       */
 static WORD fsel;                       /* Schrift 8x16, 256 Zeichen    */
 
+/* Zielflaeche aller Zeichenroutinen: der Bildschirm (Schattenbild) oder
+   eine Bitmap im selben Ebenenformat (1 Ebene = einfarbig, 4 = 16 Farben),
+   gesetzt von tgt() am Anfang jeder DC-Operation */
+static BYTE FAR *tb[4];
+static WORD tpitch = 80;
+static short tw = SCR_W, th = SCR_H;
+static BYTE tnp = 4, tscr = 1;
+static BYTE monob[16];                  /* Farbe -> Bit einfarbig (hell = 1) */
+
 /* Windows-16: Nummer -> RGB (0x00BBGGRR wie COLORREF) */
 DWORD vga_rgb[16] = {
     0x000000UL, 0x000080UL, 0x008000UL, 0x008080UL,
@@ -60,6 +69,8 @@ BYTE rgb2c(DWORD rgb)
 
 void gdi_dirty(short x0, short y0, short x1, short y1)
 {
+    if (!tscr)
+        return;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > SCR_W) x1 = SCR_W;
@@ -165,11 +176,11 @@ void gdi_flush(void)
    1 XOR, 2 NOT Ziel) - ohne Clipping */
 static void span(short x0, short x1, short y, BYTE c, BYTE rop)
 {
-    WORD o = y * 80, b0 = x0 >> 3, b1 = (x1 - 1) >> 3, b, p;
+    WORD o = y * tpitch, b0 = x0 >> 3, b1 = (x1 - 1) >> 3, b, p;
     BYTE m0 = 0xFF >> (x0 & 7), m1 = 0xFF << (7 - ((x1 - 1) & 7)), m;
-    for (p = 0; p < 4; p++) {
-        BYTE FAR *d = MKFP(pl[p], o);
-        BYTE on = (c >> p) & 1;
+    for (p = 0; p < tnp; p++) {
+        BYTE FAR *d = tb[p] + o;
+        BYTE on = tnp == 1 ? monob[c & 15] : (c >> p) & 1;
         for (b = b0; b <= b1; b++) {
             m = 0xFF;
             if (b == b0) m &= m0;
@@ -186,9 +197,18 @@ static void span(short x0, short x1, short y, BYTE c, BYTE rop)
     }
 }
 
+static void tgt_scr(void)
+{
+    short p;
+    for (p = 0; p < 4; p++)
+        tb[p] = MKFP(pl[p], 0);
+    tpitch = 80; tw = SCR_W; th = SCR_H; tnp = 4; tscr = 1;
+}
+
 void gfx_fill(short x0, short y0, short x1, short y1, BYTE c)
 {
     short y;
+    tgt_scr();
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
     if (x1 > SCR_W) x1 = SCR_W;
@@ -203,8 +223,11 @@ void gfx_fill(short x0, short y0, short x1, short y1, BYTE c)
 static BYTE getpx(short x, short y)
 {
     BYTE c = 0, p, m = 0x80 >> (x & 7);
+    WORD o = y * tpitch + (x >> 3);
+    if (tnp == 1)
+        return (tb[0][o] & m) ? 15 : 0;
     for (p = 0; p < 4; p++)
-        if (*(BYTE FAR *)MKFP(pl[p], y * 80 + (x >> 3)) & m)
+        if (tb[p][o] & m)
             c |= 1 << p;
     return c;
 }
@@ -223,13 +246,13 @@ static void glyph(short x, short y, BYTE ch, BYTE fg, BYTE bg, BYTE opaque,
     g = fsel ? MKFP(fsel, ch * 16) : 0;
     for (r = r0; r < r1; r++) {
         BYTE bits = g ? g[r] : (BYTE)((r == 0 || r == 15) ? 0xFF : 0x81);
-        WORD o = (y + r) * 80;
+        WORD o = (y + r) * tpitch;
         for (k = 0; k < 2; k++) {
             BYTE fm, cm, cell;
             short bx = (x >> 3) + k, px0 = bx * 8, px1 = px0 + 8, a, e;
             if (k == 1 && !sh)
                 break;
-            if (bx < 0 || bx >= 80)
+            if (bx < 0 || bx >= (short)tpitch)
                 continue;
             fm = k ? (BYTE)(bits << (8 - sh)) : (BYTE)(bits >> sh);
             cell = k ? (BYTE)(0xFF << (8 - sh)) : (BYTE)(0xFF >> sh);
@@ -240,13 +263,15 @@ static void glyph(short x, short y, BYTE ch, BYTE fg, BYTE bg, BYTE opaque,
             cm = (BYTE)((0xFF >> (a - px0)) & (0xFF << (px1 - e)));
             cell &= cm;
             fm &= cell;
-            for (p = 0; p < 4; p++) {
-                BYTE FAR *d = MKFP(pl[p], o + bx);
+            for (p = 0; p < tnp; p++) {
+                BYTE FAR *d = tb[p] + o + bx;
                 BYTE set = 0, clr = 0;
-                if ((fg >> p) & 1) set |= fm; else clr |= fm;
+                BYTE fon = tnp == 1 ? monob[fg & 15] : (fg >> p) & 1;
+                BYTE bon = tnp == 1 ? monob[bg & 15] : (bg >> p) & 1;
+                if (fon) set |= fm; else clr |= fm;
                 if (opaque) {
                     BYTE bm = cell & ~fm;
-                    if ((bg >> p) & 1) set |= bm; else clr |= bm;
+                    if (bon) set |= bm; else clr |= bm;
                 }
                 *d = (*d & ~clr) | set;
             }
@@ -257,6 +282,7 @@ static void glyph(short x, short y, BYTE ch, BYTE fg, BYTE bg, BYTE opaque,
 void gfx_text(short x, short y, LPCSTR s, WORD n, BYTE fg, BYTE bg, BYTE opaque)
 {
     WORD i;
+    tgt_scr();
     for (i = 0; i < n; i++) {
         BYTE c = s[i];
         if (c >= 0x80)
@@ -271,7 +297,8 @@ WORD gfx_textw(LPCSTR s, WORD n) { (void)s; return n * FONT_W; }
 #define OB_PEN   1
 #define OB_BRUSH 2
 #define OB_FONT  3
-#define NOBJ     64
+#define OB_BITMAP 4                     /* color = Platz in bm[]         */
+#define NOBJ     96
 static struct gobj { BYTE type, stock, style, width; DWORD color; } ob[NOBJ];
 #define HO(i)   ((HGDIOBJ)(0x6000u + ((i) << 2)))
 #define OI(h)   ((((WORD)(h)) - 0x6000u) >> 2)
@@ -294,13 +321,58 @@ static HGDIOBJ onew(BYTE type, BYTE style, BYTE width, DWORD color)
     return 0;
 }
 
+/* ---- Bitmaps -------------------------------------------------------- */
+/* Ebenen hintereinander in einem Segment (Ebene p ab p * pitch * h),
+   Zeilen oben zuerst, Zeile = pitch Byte (gerade wie bei Windows) */
+#define NBM 32
+static HGDIOBJ bm_stock;
+static struct bmp { BYTE used, np; WORD w, h, pitch, sel; } bm[NBM];
+static struct bmp *bptr(HGDIOBJ o)
+{
+    struct gobj *g = optr(o);
+    if (!g || g->type != OB_BITMAP)
+        return 0;
+    return &bm[(WORD)g->color];
+}
+static HGDIOBJ bm_new(WORD w, WORD h, BYTE np)
+{
+    WORD i, pitch;
+    unsigned long sz;
+    HGDIOBJ o;
+    if (!w) w = 1;
+    if (!h) h = 1;
+    pitch = ((w + 15) >> 4) << 1;
+    sz = (unsigned long)pitch * h * np;
+    if (sz > 0xFFF0UL)
+        return 0;
+    for (i = 0; i < NBM && bm[i].used; i++)
+        ;
+    if (i == NBM)
+        return 0;
+    bm[i].sel = seg_new((WORD)sz);
+    if (!bm[i].sel)
+        return 0;
+    fmemset(MKFP(bm[i].sel, 0), 0, (WORD)sz);
+    o = onew(OB_BITMAP, 0, 0, i);
+    if (!o) {
+        seg_del(bm[i].sel);
+        return 0;
+    }
+    bm[i].used = 1; bm[i].np = np; bm[i].w = w; bm[i].h = h; bm[i].pitch = pitch;
+    return o;
+}
+
 /* ---- Geraetekontexte ---------------------------------------------- */
 #define NDC 24
 struct dcs {
-    BYTE  used, paint, ropx;
+    BYTE  used, paint, ropx, mem;
+    HGDIOBJ bmo;                        /* Speicher-DC: gewaehlte Bitmap */
     HWND  hwnd;
     short ox, oy;                       /* Ursprung (Bildschirm)        */
     short wox, woy;                     /* SetWindowOrg                  */
+    short vox, voy;                     /* SetViewportOrg                */
+    short wex, wey, vex, vey;           /* Ausdehnungen                  */
+    BYTE  mm;                           /* Abbildungsmodus               */
     struct clip c;
     HGDIOBJ pen, brush, font;
     DWORD tcol, bcol;
@@ -339,6 +411,75 @@ void clip_and(struct clip FAR *c, const RECT FAR *r)
     c->n = k;
 }
 
+/* Zielflaeche des DC setzen */
+static void tgt(struct dcs *d)
+{
+    struct bmp *b;
+    short p;
+    if (!d->mem || !(b = bptr(d->bmo))) {
+        tgt_scr();
+        return;
+    }
+    for (p = 0; p < 4; p++)
+        tb[p] = MKFP(b->sel, (WORD)(p < b->np ? p : 0) * b->pitch * b->h);
+    tpitch = b->pitch; tw = b->w; th = b->h; tnp = b->np; tscr = 0;
+}
+static void dc_memclip(struct dcs *d)
+{
+    struct bmp *b = bptr(d->bmo);
+    d->c.n = 1;
+    d->c.r[0].left = 0; d->c.r[0].top = 0;
+    d->c.r[0].right = b ? b->w : 1; d->c.r[0].bottom = b ? b->h : 1;
+}
+
+/* logisch -> Geraet (Bildschirm bzw. Bitmap) */
+static short LX(struct dcs *d, short x)
+{
+    long v = (long)x - d->wox;
+    if (d->mm != 1 && d->wex)
+        v = v * d->vex / d->wex;
+    return (short)(v + d->vox + d->ox);
+}
+static short LY(struct dcs *d, short y)
+{
+    long v = (long)y - d->woy;
+    if (d->mm != 1 && d->wey)
+        v = v * d->vey / d->wey;
+    return (short)(v + d->voy + d->oy);
+}
+static short DX_(struct dcs *d, short x)
+{
+    long v = (long)x - d->ox - d->vox;
+    if (d->mm != 1 && d->vex)
+        v = v * d->wex / d->vex;
+    return (short)(v + d->wox);
+}
+static short DY_(struct dcs *d, short y)
+{
+    long v = (long)y - d->oy - d->voy;
+    if (d->mm != 1 && d->vey)
+        v = v * d->wey / d->vey;
+    return (short)(v + d->woy);
+}
+/* MM_ISOTROPIC: gleicher Massstab in beiden Richtungen (die kleinere
+   Viewport-Ausdehnung gilt, Vorzeichen bleiben) */
+static void iso_fix(struct dcs *d)
+{
+    long ax, ay, wx, wy, vx, vy;
+    if (d->mm != 7 || !d->wex || !d->wey)
+        return;
+    wx = d->wex < 0 ? -d->wex : d->wex;  wy = d->wey < 0 ? -d->wey : d->wey;
+    vx = d->vex < 0 ? -d->vex : d->vex;  vy = d->vey < 0 ? -d->vey : d->vey;
+    ax = vx * wy; ay = vy * wx;          /* vx/wx gegen vy/wy             */
+    if (ax < ay) {
+        vy = vx * wy / wx;
+        d->vey = (short)(d->vey < 0 ? -vy : vy);
+    } else if (ay < ax) {
+        vx = vy * wx / wy;
+        d->vex = (short)(d->vex < 0 ? -vx : vx);
+    }
+}
+
 HDC dc_get(HWND h, int client, int paint)
 {
     int i;
@@ -365,6 +506,8 @@ HDC dc_get(HWND h, int client, int paint)
     d->bcol = 0xFFFFFFUL;
     d->bkmode = 2;                      /* OPAQUE                       */
     d->rop2 = 13;                       /* R2_COPYPEN                   */
+    d->mm = 1;                          /* MM_TEXT                      */
+    d->wex = d->wey = d->vex = d->vey = 1;
     return HDCV(i);
 }
 
@@ -387,6 +530,7 @@ static void cfill(struct dcs *d, short x0, short y0, short x1, short y1, BYTE c,
 {
     short i, y;
     RECT r;
+    tgt(d);
     for (i = 0; i < d->c.n; i++) {
         r.left = x0; r.top = y0; r.right = x1; r.bottom = y1;
         rect_and(&r, &d->c.r[i]);
@@ -408,8 +552,6 @@ static BYTE ropof(struct dcs *d)
     return d->rop2 == 7 ? 1 : d->rop2 == 6 ? 2 : 0;   /* XORPEN, NOT */
 }
 
-#define LX(d, x)  ((short)((x) - (d)->wox + (d)->ox))
-#define LY(d, y)  ((short)((y) - (d)->woy + (d)->oy))
 
 static void cline(struct dcs *d, short x0, short y0, short x1, short y1)
 {
@@ -462,6 +604,12 @@ HGDIOBJ API SelectObject(HDC h, HGDIOBJ o)
     case OB_PEN: old = d->pen; d->pen = o; break;
     case OB_BRUSH: old = d->brush; d->brush = o; break;
     case OB_FONT: old = d->font; d->font = o; break;
+    case OB_BITMAP:                     /* nur in Speicher-DCs          */
+        if (!d->mem)
+            return 0;
+        old = d->bmo; d->bmo = o;
+        dc_memclip(d);
+        break;
     }
     return old;
 }
@@ -470,6 +618,11 @@ BOOL API DeleteObject(HGDIOBJ o)
     struct gobj *g = optr(o);
     if (!g || g->stock)
         return 0;
+    if (g->type == OB_BITMAP) {
+        struct bmp *b = &bm[(WORD)g->color];
+        seg_del(b->sel);
+        b->used = 0;
+    }
     g->type = 0;
     return 1;
 }
@@ -514,6 +667,13 @@ short API GetObject(HGDIOBJ o, short n, void FAR *buf)
         w[0] = g->style; w[1] = g->width;
         *(DWORD FAR *)(w + 3) = g->color;
         return 10;
+    }
+    if (g->type == OB_BITMAP && n >= 14) {   /* BITMAP                */
+        struct bmp *b = &bm[(WORD)g->color];
+        WORD FAR *w = buf;
+        w[0] = 0; w[1] = b->w; w[2] = b->h; w[3] = b->pitch;
+        ((BYTE FAR *)buf)[8] = b->np; ((BYTE FAR *)buf)[9] = 1;
+        return 14;
     }
     if (g->type == OB_FONT && n >= 2) {
         *(WORD FAR *)buf = FONT_H;
@@ -565,8 +725,71 @@ WORD API SetTextAlign(HDC h, WORD a)
     o = d->talign; d->talign = a;
     return o;
 }
-short API SetMapMode(HDC h, short m) { (void)h; (void)m; return 1; }
-short API GetMapMode(HDC h) { (void)h; return 1; }
+short API SetMapMode(HDC h, short m)
+{
+    struct dcs *d = dptr(h);
+    short o;
+    if (!d) return 0;
+    o = d->mm;
+    d->mm = (BYTE)m;
+    if (m == 1) {                       /* MM_TEXT                      */
+        d->wex = d->wey = d->vex = d->vey = 1;
+    } else if (m >= 2 && m <= 6) {      /* feste Einheiten: 96 dpi      */
+        static const short per_in[7] = { 0, 254, 2540, 100, 1000, 1440, 0 };
+        d->wex = per_in[m]; d->wey = per_in[m];
+        d->vex = 96; d->vey = -96;      /* y nach oben                  */
+    }
+    return o;
+}
+short API GetMapMode(HDC h) { struct dcs *d = dptr(h); return d ? d->mm : 0; }
+DWORD API SetWindowExt(HDC h, short x, short y)
+{
+    struct dcs *d = dptr(h);
+    DWORD o;
+    if (!d) return 0;
+    o = MAKELONG(d->wex, d->wey);
+    if (d->mm == 7 || d->mm == 8) {     /* nur ISO-/ANISOTROPIC          */
+        if (x) d->wex = x;
+        if (y) d->wey = y;
+        iso_fix(d);
+    }
+    return o;
+}
+DWORD API SetViewportExt(HDC h, short x, short y)
+{
+    struct dcs *d = dptr(h);
+    DWORD o;
+    if (!d) return 0;
+    o = MAKELONG(d->vex, d->vey);
+    if (d->mm == 7 || d->mm == 8) {
+        if (x) d->vex = x;
+        if (y) d->vey = y;
+        iso_fix(d);
+    }
+    return o;
+}
+DWORD API GetWindowExt(HDC h) { struct dcs *d = dptr(h); return d ? MAKELONG(d->wex, d->wey) : 0; }
+DWORD API GetViewportExt(HDC h) { struct dcs *d = dptr(h); return d ? MAKELONG(d->vex, d->vey) : 0; }
+DWORD API GetWindowOrg(HDC h) { struct dcs *d = dptr(h); return d ? MAKELONG(d->wox, d->woy) : 0; }
+DWORD API GetViewportOrg(HDC h) { struct dcs *d = dptr(h); return d ? MAKELONG(d->vox, d->voy) : 0; }
+DWORD API OffsetViewportOrg(HDC h, short x, short y)
+{
+    struct dcs *d = dptr(h);
+    DWORD o;
+    if (!d) return 0;
+    o = MAKELONG(d->vox, d->voy);
+    d->vox += x; d->voy += y;
+    return o;
+}
+DWORD API OffsetWindowOrg(HDC h, short x, short y)
+{
+    struct dcs *d = dptr(h);
+    DWORD o;
+    if (!d) return 0;
+    o = MAKELONG(d->wox, d->woy);
+    d->wox += x; d->woy += y;
+    return o;
+}
 DWORD API SetWindowOrg(HDC h, short x, short y)
 {
     struct dcs *d = dptr(h);
@@ -579,12 +802,35 @@ DWORD API SetWindowOrg(HDC h, short x, short y)
 DWORD API SetViewportOrg(HDC h, short x, short y)
 {
     struct dcs *d = dptr(h);
+    DWORD o;
     if (!d) return 0;
-    d->wox = -x; d->woy = -y;
-    return 0;
+    o = MAKELONG(d->vox, d->voy);
+    d->vox = x; d->voy = y;
+    return o;
 }
-BOOL API DPtoLP(HDC h, void FAR *p, short n) { (void)h; (void)p; (void)n; return 1; }
-BOOL API LPtoDP(HDC h, void FAR *p, short n) { (void)h; (void)p; (void)n; return 1; }
+/* Punkte des Programms: Geraet = Client-Koordinaten (ohne ox/oy) */
+BOOL API DPtoLP(HDC h, POINT FAR *p, short n)
+{
+    struct dcs *d = dptr(h);
+    short i;
+    if (!d) return 0;
+    for (i = 0; i < n; i++) {
+        p[i].x = DX_(d, p[i].x + d->ox);
+        p[i].y = DY_(d, p[i].y + d->oy);
+    }
+    return 1;
+}
+BOOL API LPtoDP(HDC h, POINT FAR *p, short n)
+{
+    struct dcs *d = dptr(h);
+    short i;
+    if (!d) return 0;
+    for (i = 0; i < n; i++) {
+        p[i].x = LX(d, p[i].x) - d->ox;
+        p[i].y = LY(d, p[i].y) - d->oy;
+    }
+    return 1;
+}
 DWORD API GetNearestColor(HDC h, DWORD c) { (void)h; return vga_rgb[rgb2c(c)]; }
 
 short API GetDeviceCaps(HDC h, short i)
@@ -629,8 +875,10 @@ BOOL API ExtTextOut(HDC h, short x, short y, WORD opt, LPRECT r, LPCSTR s, WORD 
     fg = rgb2c(d->tcol);
     bg = rgb2c(d->bcol);
     op = d->bkmode == 2;
+    tgt(d);
     if (r && (opt & 2))                 /* ETO_OPAQUE                   */
         cfill(d, LX(d, r->left), LY(d, r->top), LX(d, r->right), LY(d, r->bottom), bg, 0);
+    tgt(d);
     for (k = 0; k < d->c.n; k++) {
         RECT c = d->c.r[k];
         if (r && (opt & 4)) {           /* ETO_CLIPPED                  */
@@ -727,10 +975,51 @@ BOOL API Polyline(HDC h, POINT FAR *p, short n)
         cline(d, LX(d, p[i - 1].x), LY(d, p[i - 1].y), LX(d, p[i].x), LY(d, p[i].y));
     return 1;
 }
+/* gefuelltes Vieleck (Pinsel), Gerade-Ungerade-Regel; Punkte in
+   Geraetekoordinaten, hoechstens PMAX Ecken */
+#define PMAX 64
+static short pfx[PMAX], pfy[PMAX], pxs[PMAX];
+static void pfill(struct dcs *d, short n, BYTE c)
+{
+    short y0 = 32767, y1 = -32767, y, i, j, k, m;
+    for (i = 0; i < n; i++) {
+        if (pfy[i] < y0) y0 = pfy[i];
+        if (pfy[i] > y1) y1 = pfy[i];
+    }
+    for (y = y0; y < y1; y++) {
+        m = 0;
+        for (i = 0, j = n - 1; i < n; j = i++) {
+            short ya = pfy[j], yb = pfy[i];
+            if ((ya <= y && yb > y) || (yb <= y && ya > y)) {
+                long t = (long)(y - ya) * (pfx[i] - pfx[j]) * 2 / (yb - ya);
+                pxs[m++] = pfx[j] + (short)((t + (t < 0 ? -1 : 1)) / 2);
+            }
+        }
+        for (i = 1; i < m; i++)               /* einfuegen sortieren   */
+            for (k = i; k > 0 && pxs[k - 1] > pxs[k]; k--) {
+                short t = pxs[k]; pxs[k] = pxs[k - 1]; pxs[k - 1] = t;
+            }
+        for (i = 0; i + 1 < m; i += 2)
+            if (pxs[i] < pxs[i + 1])
+                cfill(d, pxs[i], y, pxs[i + 1], y + 1, c, 0);
+    }
+}
 BOOL API Polygon(HDC h, POINT FAR *p, short n)
 {
     struct dcs *d = dptr(h);
-    if (!Polyline(h, p, n) || !d)
+    struct gobj *br;
+    short i;
+    if (!d || n < 2)
+        return 0;
+    br = optr(d->brush);
+    if (br && br->style != 1 && n <= PMAX) {
+        for (i = 0; i < n; i++) {
+            pfx[i] = LX(d, p[i].x);
+            pfy[i] = LY(d, p[i].y);
+        }
+        pfill(d, n, rgb2c(br->color));
+    }
+    if (!Polyline(h, p, n))
         return 0;
     cline(d, LX(d, p[n - 1].x), LY(d, p[n - 1].y), LX(d, p[0].x), LY(d, p[0].y));
     return 1;
@@ -833,7 +1122,8 @@ DWORD API GetPixel(HDC h, short x, short y)
     short X, Y;
     if (!d) return 0;
     X = LX(d, x); Y = LY(d, y);
-    if (X < 0 || Y < 0 || X >= SCR_W || Y >= SCR_H)
+    tgt(d);
+    if (X < 0 || Y < 0 || X >= tw || Y >= th)
         return 0xFFFFFFFFUL;
     return vga_rgb[getpx(X, Y)];
 }
@@ -885,6 +1175,7 @@ void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg)
     struct dcs *d = dptr(h);
     short k, i;
     if (!d) return;
+    tgt(d);
     for (k = 0; k < d->c.n; k++) {
         RECT c = d->c.r[k];
         for (i = 0; i < (short)n; i++) {
@@ -954,6 +1245,13 @@ void gdi_init(void)
         ob[p].type = OB_FONT;
     for (p = 0; p <= 16; p++)
         ob[p].stock = 1;
+    for (p = 0; p < 16; p++)            /* hell (Summe >= 384) -> 1      */
+        monob[p] = (BYTE)(((vga_rgb[p] & 0xFF) + ((vga_rgb[p] >> 8) & 0xFF) +
+                           ((vga_rgb[p] >> 16) & 0xFF)) >= 384);
+    bm_stock = bm_new(1, 1, 1);
+    if (bm_stock)
+        ob[OI(bm_stock)].stock = 1;
+    tgt_scr();
     MouOpen();
     MouShowPtr(0);
     gdi_cursor(SCR_W / 2, SCR_H / 2);
@@ -966,4 +1264,276 @@ void gdi_done(void)
     VioSetGfx(0);
     for (p = 0; p < 4; p++)
         seg_del(pl[p]);
+}
+BOOL API GetTextExtentPoint(HDC h, LPCSTR s, short n, POINT FAR *sz)
+{
+    DWORD e = GetTextExtent(h, s, n);
+    if (sz) { sz->x = LOWORD(e); sz->y = HIWORD(e); }
+    return 1;
+}
+
+/* ---- Bitmaps und Speicher-DCs (Stufe 2 fuer die osFree-Programme) ---- */
+
+HDC API CreateCompatibleDC(HDC h)
+{
+    HDC n = dc_get(0, 0, 0);
+    struct dcs *d = dptr(n);
+    (void)h;
+    if (!d)
+        return 0;
+    d->mem = 1;
+    d->bmo = bm_stock;
+    d->ox = d->oy = 0;
+    dc_memclip(d);
+    return n;
+}
+BOOL API DeleteDC(HDC h)
+{
+    struct dcs *d = dptr(h);
+    if (!d)
+        return 0;
+    dc_release(h);
+    return 1;
+}
+HBITMAP API CreateCompatibleBitmap(HDC h, short w, short hh)
+{
+    struct dcs *d = dptr(h);
+    struct bmp *b = d && d->mem ? bptr(d->bmo) : 0;
+    return bm_new(w, hh, (BYTE)(b && b->np == 1 ? 1 : 4));
+}
+HBITMAP API CreateDiscardableBitmap(HDC h, short w, short hh)
+{
+    return CreateCompatibleBitmap(h, w, hh);
+}
+
+/* Bits im Format von Windows (Zeilen oben zuerst, je Zeile gerade
+   Byteanzahl): einfarbig = 1 Ebene wie bei uns, 4 Bit = gepackt */
+static void bm_setbits(struct bmp *b, BYTE bpp, const BYTE FAR *bits)
+{
+    WORD y, x, p;
+    if (bpp == 1) {
+        fmemcpy(MKFP(b->sel, 0), bits, b->pitch * b->h);
+        return;
+    }
+    if (bpp == 4) {
+        WORD lp = ((b->w * 4 + 15) >> 4) << 1;
+        for (y = 0; y < b->h; y++)
+            for (x = 0; x < b->w; x++) {
+                BYTE v = bits[y * lp + (x >> 1)];
+                BYTE c = (x & 1) ? (v & 15) : (v >> 4);
+                for (p = 0; p < b->np; p++) {
+                    BYTE FAR *q = MKFP(b->sel, p * b->pitch * b->h + y * b->pitch + (x >> 3));
+                    BYTE on = b->np == 1 ? monob[c] : (c >> p) & 1;
+                    if (on) *q |= 0x80 >> (x & 7); else *q &= ~(0x80 >> (x & 7));
+                }
+            }
+    }
+}
+HBITMAP API CreateBitmap(short w, short h, BYTE planes, BYTE bpp, const void FAR *bits)
+{
+    BYTE np = (BYTE)(planes * bpp == 1 ? 1 : 4);
+    HBITMAP o = bm_new(w, h, np);
+    struct bmp *b = bptr(o);
+    if (b && bits)
+        bm_setbits(b, (BYTE)(planes * bpp), bits);
+    return o;
+}
+HBITMAP API CreateBitmapIndirect(const void FAR *lp)
+{
+    const WORD FAR *w = lp;
+    const BYTE FAR *c = lp;
+    return CreateBitmap(w[1], w[2], c[8], c[9], *(void FAR * FAR *)(c + 10));
+}
+DWORD API SetBitmapBits(HBITMAP o, DWORD n, const void FAR *bits)
+{
+    struct bmp *b = bptr(o);
+    (void)n;
+    if (!b || b->np != 1)
+        return 0;
+    bm_setbits(b, 1, bits);
+    return (DWORD)b->pitch * b->h;
+}
+DWORD API GetBitmapBits(HBITMAP o, DWORD n, void FAR *bits)
+{
+    struct bmp *b = bptr(o);
+    WORD k;
+    if (!b || b->np != 1)
+        return 0;
+    k = b->pitch * b->h;
+    if (n < k) k = (WORD)n;
+    fmemcpy(bits, MKFP(b->sel, 0), k);
+    return k;
+}
+
+/* Zeilen der aktuellen Flaeche als Farbnummern lesen/schreiben */
+static BYTE rbs[SCR_W], rbd[SCR_W];
+static void rowget(short x, short y, short n, BYTE *o)
+{
+    short i;
+    for (i = 0; i < n; i++, x++)
+        o[i] = (x < 0 || y < 0 || x >= tw || y >= th) ? 0 : getpx(x, y);
+}
+static void rowput(short x, short y, short n, const BYTE *v)
+{
+    short i, p;
+    for (i = 0; i < n; i++, x++) {
+        WORD o = y * tpitch + (x >> 3);
+        BYTE m = 0x80 >> (x & 7);
+        for (p = 0; p < tnp; p++) {
+            BYTE on = tnp == 1 ? monob[v[i] & 15] : (v[i] >> p) & 1;
+            if (on) tb[p][o] |= m; else tb[p][o] &= ~m;
+        }
+    }
+}
+
+/* BitBlt/StretchBlt: Rasteroperation (Ternaercode von Windows) Bit fuer
+   Bit auf den Farbnummern; einfarbig <-> Farbe wie Windows: Quelle
+   einfarbig: 1 = Hintergrund-, 0 = Textfarbe des Ziels; Ziel einfarbig:
+   Quellfarbe = Hintergrundfarbe der Quelle -> 1 */
+static BOOL blt(HDC hd, short x, short y, short w, short h,
+                HDC hs, short sx, short sy, short sw, short sh, DWORD rop)
+{
+    struct dcs *d = dptr(hd), *s = hs ? dptr(hs) : 0;
+    struct gobj *br;
+    BYTE r3 = (BYTE)(rop >> 16), useS, useD, P, sbk, dtx, dbk, smono, dmono;
+    short X, Y, W, H, SX, SY, SW, SH, k, yy, i;
+    if (!d)
+        return 0;
+    useS = (BYTE)(((r3 >> 2) ^ r3) & 0x33);
+    useD = (BYTE)(((r3 >> 1) ^ r3) & 0x55);
+    if (useS && !s)
+        return 0;
+    X = LX(d, x); Y = LY(d, y);
+    W = LX(d, x + w) - X; H = LY(d, y + h) - Y;
+    if (W < 0) { X += W; W = -W; }
+    if (H < 0) { Y += H; H = -H; }
+    if (!W || !H)
+        return 1;
+    if (s) {
+        SX = LX(s, sx); SY = LY(s, sy);
+        SW = LX(s, sx + sw) - SX; SH = LY(s, sy + sh) - SY;
+        if (SW < 0) { SX += SW; SW = -SW; }
+        if (SH < 0) { SY += SH; SH = -SH; }
+        tgt(s);
+        smono = tnp == 1;
+        sbk = rgb2c(s->bcol);
+    } else {
+        SX = SY = 0; SW = W; SH = H; smono = 0; sbk = 0;
+    }
+    br = optr(d->brush);
+    P = br && br->style != 1 ? rgb2c(br->color) : 15;
+    dtx = rgb2c(d->tcol); dbk = rgb2c(d->bcol);
+    tgt(d);
+    dmono = tnp == 1;
+    if (dmono)
+        P = monob[P] ? 15 : 0;
+    for (k = 0; k < d->c.n; k++) {
+        RECT c = d->c.r[k], q;
+        q.left = X; q.top = Y; q.right = X + W; q.bottom = Y + H;
+        rect_and(&c, &q);
+        if (c.left >= c.right || c.top >= c.bottom)
+            continue;
+        if (c.right - c.left > SCR_W)
+            c.right = c.left + SCR_W;
+        for (yy = c.top; yy < c.bottom; yy++) {
+            short n = c.right - c.left;
+            if (useS) {
+                short ry = SY + (short)((long)(yy - Y) * SH / H);
+                tgt(s);
+                for (i = 0; i < n; i++) {
+                    short rx = SX + (short)((long)(c.left + i - X) * SW / W);
+                    BYTE v = (rx < 0 || ry < 0 || rx >= tw || ry >= th) ? 0 : getpx(rx, ry);
+                    if (smono && !dmono)
+                        v = v ? dbk : dtx;
+                    else if (!smono && dmono)
+                        v = v == sbk ? 15 : 0;
+                    rbs[i] = v;
+                }
+                tgt(d);
+            }
+            if (useD)
+                rowget(c.left, yy, n, rbd);
+            for (i = 0; i < n; i++) {
+                BYTE S = useS ? rbs[i] : 0, D = useD ? rbd[i] : 0, rv = 0, b;
+                for (b = 0; b < 4; b++) {
+                    BYTE ix = (BYTE)((((P >> b) & 1) << 2) | (((S >> b) & 1) << 1) | ((D >> b) & 1));
+                    rv |= (BYTE)(((r3 >> ix) & 1) << b);
+                }
+                rbd[i] = rv;
+            }
+            rowput(c.left, yy, n, rbd);
+        }
+        gdi_dirty(c.left, c.top, c.right, c.bottom);
+    }
+    return 1;
+}
+BOOL API BitBlt(HDC hd, short x, short y, short w, short h, HDC hs, short sx, short sy, DWORD rop)
+{
+    return blt(hd, x, y, w, h, hs, sx, sy, w, h, rop);
+}
+BOOL API StretchBlt(HDC hd, short x, short y, short w, short h, HDC hs,
+                    short sx, short sy, short sw, short sh, DWORD rop)
+{
+    return blt(hd, x, y, w, h, hs, sx, sy, sw, sh, rop);
+}
+
+/* LoadBitmap: DIB-Ressource (RT_BITMAP) 1/4/8/24 Bit -> Bitmap; 1 Bit
+   bleibt einfarbig, sonst 16 Farben (naechste Grundfarbe) */
+HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
+{
+    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    DWORD r;
+    WORD sel, hs, w, h, bpp, ncol, lp, x, y, p, i;
+    const BYTE FAR *bi;
+    const BYTE FAR *bits;
+    BYTE map[256], core;
+    HBITMAP o;
+    struct bmp *b;
+    if (hinst > 0 && hinst <= NMOD)
+        m = hinst - 1;
+    if (m < 0) {
+        glog("LoadBitmap: Systembitmaps (OBM_) gibt es noch nicht");
+        return 0;
+    }
+    r = w16_res_find(m, MKFP(0, 2), name);
+    if (!r || !(sel = w16_res_load(m, r)))
+        return 0;
+    bi = MKFP(sel, 0);
+    hs = *(const WORD FAR *)bi;
+    core = hs == 12;
+    w = core ? *(const WORD FAR *)(bi + 4) : *(const WORD FAR *)(bi + 4);
+    h = core ? *(const WORD FAR *)(bi + 6) : *(const WORD FAR *)(bi + 8);
+    bpp = core ? *(const WORD FAR *)(bi + 10) : *(const WORD FAR *)(bi + 14);
+    ncol = bpp <= 8 ? (WORD)(1 << bpp) : 0;
+    if (!core && *(const WORD FAR *)(bi + 32) && bpp <= 8)
+        ncol = *(const WORD FAR *)(bi + 32);
+    for (i = 0; i < ncol && i < 256; i++) {
+        const BYTE FAR *e = bi + hs + i * (core ? 3 : 4);
+        map[i] = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
+    }
+    bits = bi + hs + ncol * (core ? 3 : 4);
+    lp = (WORD)((((DWORD)w * bpp + 31) >> 5) << 2);
+    o = bm_new(w, h, (BYTE)(bpp == 1 ? 1 : 4));
+    b = bptr(o);
+    if (b)
+        for (y = 0; y < h; y++) {
+            const BYTE FAR *row = bits + (DWORD)(h - 1 - y) * lp;
+            for (x = 0; x < w; x++) {
+                BYTE c;
+                if (bpp == 1) c = map[(row[x >> 3] >> (7 - (x & 7))) & 1];
+                else if (bpp == 4) c = map[(x & 1) ? row[x >> 1] & 15 : row[x >> 1] >> 4];
+                else if (bpp == 8) c = map[row[x]];
+                else if (bpp == 24) {
+                    const BYTE FAR *e = row + x * 3;
+                    c = rgb2c((DWORD)e[2] | ((DWORD)e[1] << 8) | ((DWORD)e[0] << 16));
+                } else c = 0;
+                for (p = 0; p < b->np; p++) {
+                    BYTE FAR *q = MKFP(b->sel, p * b->pitch * b->h + y * b->pitch + (x >> 3));
+                    BYTE on = b->np == 1 ? monob[c] : (c >> p) & 1;
+                    if (on) *q |= 0x80 >> (x & 7); else *q &= ~(0x80 >> (x & 7));
+                }
+            }
+        }
+    seg_del(sel);
+    return o;
 }

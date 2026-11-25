@@ -2348,6 +2348,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   386DX/40. Lehre: `get_bp2()` nur als `WORD ds = get_bp2();` vorn in
   einer Exportfunktion, die vor BP nichts sichert. Nächstes: Write, dann
   PROGMAN (Wunsch des Nutzers).
+  osFree-Programme als Prüfstand (25.11.2026, docs/GUI-WIN16.md „Stand:
+  osFree-Programme“): Stufe 1 (Kleinkram) und 2 (Bitmaps, Zielfläche,
+  BitBlt mit allen ROPs, Abbildungsmodi) gebaut; Minesweeper, Clock,
+  Reversi, Taskman, Winver, osFree-Notepad laufen in QEMU. Nächstes: MDI
+  und Symbole für PROGMAN.
   Schriften (Wunsch des Nutzers: „einen Installer wie Debian“): `COREFONT.EXE`
   (`apps/task_corefont.c`, Diskette 3) lädt die elf Pakete der Core Fonts
   per WGET von SourceForge, prüft SHA-256 (Liste aus Debians
