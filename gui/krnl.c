@@ -846,6 +846,21 @@ static int f_ent(void)
 }
 static DWORD f_size(void) { return f_ent() ? fd_e.size : 0; }
 
+/* Pfad je Handle (fuer 57h: Datum ueber Handle), eigenes Segment:
+   je Platz 80 Byte Pfad, Datum, Zeit, Merker "beim Schliessen setzen" */
+#define HP_SZ 86
+static WORD hp_sel;
+#define HP(h) ((BYTE FAR *)MKFP(hp_sel, (h) * HP_SZ))
+static void hp_note(WORD h)
+{
+    if (h >= NFH)
+        return;
+    if (!hp_sel && (hp_sel = seg_new(NFH * HP_SZ)) == 0)
+        return;
+    fstrncpy((LPSTR)HP(h), fbuf, 80);
+    HP(h)[85] = 0;
+}
+
 static WORD f_open(LPCSTR name, WORD mode)
 {
     WORD h;
@@ -855,6 +870,7 @@ static WORD f_open(LPCSTR name, WORD mode)
     if (!FAPI_FAILED(h) && h < NFH) {
         fh[h].pos = 0;
         fh[h].size = f_size();
+        hp_note(h);
     }
     return h;
 }
@@ -863,8 +879,10 @@ static WORD f_create(LPCSTR name)
     WORD h;
     fstrncpy(fbuf, name, sizeof(fbuf));
     h = fapi_call(FAPI_CREATE, (WORD)fbuf, 0, 0);
-    if (!FAPI_FAILED(h) && h < NFH)
+    if (!FAPI_FAILED(h) && h < NFH) {
         fh[h].pos = fh[h].size = 0;
+        hp_note(h);
+    }
     return h;
 }
 static WORD f_rw(WORD fn, WORD h, void FAR *p, WORD n)
@@ -915,7 +933,22 @@ WORD API _lcreat(LPCSTR name, WORD attr)
     h = f_create(name);
     return FAPI_FAILED(h) ? 0xFFFF : h;
 }
-WORD API _lclose(WORD h) { DosClose(h); return 0; }
+/* Schliessen; ein mit 5701h gesetztes Datum wird danach eingetragen
+   (beim Schliessen schreibt das Dateisystem sonst die jetzige Zeit) */
+static void h_close(WORD h)
+{
+    DosClose(h);
+    if (hp_sel && h < NFH && HP(h)[85]) {
+        static struct fapi_finfo fi;
+        fstrncpy(fbuf, (LPCSTR)HP(h), 80);
+        fi.mask = 2;
+        fi.date = *(WORD FAR *)(HP(h) + 81);
+        fi.time = *(WORD FAR *)(HP(h) + 83);
+        DosSetFInfo(fbuf, &fi);
+        HP(h)[85] = 0;
+    }
+}
+WORD API _lclose(WORD h) { h_close(h); return 0; }
 WORD API _lread(WORD h, LPVOID p, WORD n) { return f_rw(FAPI_READ, h, p, n); }
 WORD API _lwrite(WORD h, LPCSTR p, WORD n) { return f_rw(FAPI_WRITE, h, (void FAR *)p, n); }
 DWORD API _llseek(WORD h, DWORD pos, short how) { return f_seek(h, pos, how); }
@@ -1000,50 +1033,105 @@ static WORD derr(WORD f)
     }
 }
 
-static WORD fd_n;
-static char fd_pat[80], fd_dir[80];
+/* Suchzustand wie DOS im reservierten Teil des DTA: Byte 0 Kennung 'S',
+   1 Platz in fs_t (Verzeichnis + Muster), 2/3 laufende Nummer,
+   12 Attribute aus 4Eh (4Fh liest CX nicht) */
+#define NFS 4
+static struct { char dir[80]; char pat[14]; } fs_t[NFS];
+static BYTE fs_next;
 
 static void find(struct iregs FAR *r, int first)
 {
     int t = cur_task;
     char FAR *dta = MKFP(wt[t].dta_s, wt[t].dta_o);
-    char *b, *ls = 0;
-    WORD x, i;
+    char *b, *ls = 0, *dir, *pat;
+    WORD x, i, n;
+    BYTE sl, at;
     if (first) {
-        fstrncpy(fd_dir, MKFP(r->ds, r->dx), sizeof(fd_dir));
-        for (b = fd_dir; *b; b++)
+        sl = fs_next++ % NFS;
+        dir = fs_t[sl].dir; pat = fs_t[sl].pat;
+        fstrncpy(dir, MKFP(r->ds, r->dx), sizeof(fs_t[0].dir));
+        for (b = dir; *b; b++)
             if (*b == '\\' || *b == ':')
                 ls = b;
         if (ls) {
             for (i = 0; ls[1 + i] && i < 13; i++)
-                fd_pat[i] = ls[1 + i];
-            fd_pat[i] = 0;
+                pat[i] = ls[1 + i];
+            pat[i] = 0;
             ls[1] = 0;
-            if (*ls == '\\' && ls > fd_dir && ls[-1] != ':')
+            if (*ls == '\\' && ls > dir && ls[-1] != ':')
                 *ls = 0;
         } else {
-            fstrncpy(fd_pat, fd_dir, sizeof(fd_pat));
-            fd_dir[0] = 0;
+            fstrncpy(pat, dir, sizeof(fs_t[0].pat));
+            dir[0] = 0;
         }
-        fd_n = 0;
+        n = 0;
+        at = (BYTE)r->cx;
+        dta[0] = 'S';
+        dta[1] = sl;
+        dta[12] = at;
+    } else {
+        if (dta[0] != 'S' || (BYTE)dta[1] >= NFS) {
+            err(r, 18);
+            return;
+        }
+        sl = dta[1];
+        dir = fs_t[sl].dir; pat = fs_t[sl].pat;
+        n = *(WORD FAR *)(dta + 2);
+        at = dta[12];
     }
     for (;;) {
-        x = fapi_call(FAPI_FINDENTRY, (WORD)&fd_e, fd_n++, fd_dir[0] ? (WORD)fd_dir : 0);
+        x = fapi_call(FAPI_FINDENTRY, (WORD)&fd_e, n++, dir[0] ? (WORD)dir : 0);
         if (FAPI_FAILED(x)) {
+            *(WORD FAR *)(dta + 2) = n - 1;
             err(r, first ? 2 : 18);
             return;
         }
-        if ((fd_e.attr & 0x16) & ~(r->cx & 0x16))
+        if ((fd_e.attr & 0x16) & ~(at & 0x16))
             continue;
-        if (wmatch(fd_pat, fd_e.name))
+        if (wmatch(pat, fd_e.name))
             break;
     }
+    *(WORD FAR *)(dta + 2) = n;
     dta[21] = fd_e.attr;
     *(WORD FAR *)(dta + 22) = fd_e.time;
     *(WORD FAR *)(dta + 24) = fd_e.date;
     *(DWORD FAR *)(dta + 26) = fd_e.size;
     fstrncpy(dta + 30, fd_e.name, 13);
+    if (w16_trace == 2)
+        glogs("  -> ", fd_e.name);
     ok(r);
+}
+
+/* Aenderungsmeldungen wie KERNEL.FileCDR: ein Programm (der Datei-
+   Manager) meldet eine Rueckruf-Funktion an, die nach jeder Aenderung im
+   Dateisystem gerufen wird - Pascal (WORD ax, LPSTR pfad), ax = DOS-
+   Funktion wie im AX des Aufrufs (3900h MD, 3A00h RD, 3C00h anlegen,
+   4100h loeschen, 4301h Attribute; ermittelt durch Probieren: nur 3900h
+   loeste im Datei-Manager die Aktualisierung aus) */
+static DWORD cdr_fn;
+static WORD cdr_ds;
+DWORD API FileCDR(DWORD fn)
+{
+    DWORD o = cdr_fn;
+    if (fn == 0xFFFFFFFFUL)                     /* nur abfragen          */
+        return o;
+    cdr_fn = fn;
+    cdr_ds = wt[cur_task].hinst;
+    return o ? o : 1;
+}
+static void fsc(WORD op, LPCSTR path)
+{
+    static char p[128];
+    static WORD w[3];
+    if (!cdr_fn)
+        return;
+    full_path(path, p, sizeof(p));
+    if (w16_trace) glogs("FSC ", p);
+    w[0] = op;
+    w[1] = SELOF((LPSTR)p);
+    w[2] = OFFOF((LPSTR)p);
+    call16((void FAR *)cdr_fn, cdr_ds, 3, w);
 }
 
 void dos_int(void FAR *rv)
@@ -1058,8 +1146,45 @@ void dos_int(void FAR *rv)
             r->ax &= 0xFF00;
             return;
         }
+        if (r->n == 0x2F && (r->ax == 0x1500 || r->ax == 0x150B)) {
+            /* MSCDEX: CD-Laufwerke sind die mit 2048-Byte-Bloecken */
+            static struct fapi_fsinfo fi;
+            WORD d, n = 0, first = 0;
+            for (d = 0; d < 26; d++) {
+                if (r->ax == 0x150B && d != r->cx)
+                    continue;
+                if (FAPI_FAILED(DosQFSInfo(d, &fi)))
+                    continue;
+                if (fi.bsize == 2048 || !fstricmp(fi.fsname, "ISO9660")) {
+                    if (!n++) first = d;
+                }
+            }
+            if (r->ax == 0x1500) {
+                r->bx = n;
+                r->cx = first;
+            } else {
+                r->ax = n ? 1 : 0;
+                r->bx = 0xADAD;
+            }
+            return;
+        }
+        if (r->n == 0x25 || r->n == 0x26) {     /* absolut lesen/schreiben: */
+            r->ax = 0x8002;                     /* "nicht bereit" (CF), die */
+            r->fl |= 1;                         /* Flags bleiben (gcrt.asm) */
+            return;
+        }
         glogn("INT ", r->n);
         return;                                 /* unbekannt: nichts   */
+    }
+    if (w16_trace == 2) {                       /* GUITRACE=2: jeder Aufruf */
+        static const BYTE __far pfn[] = { 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x41, 0x43, 0x4E, 0x56, 0x5B, 0x6C, 0 };
+        short i;
+        glogn("D ", r->ax);
+        for (i = 0; pfn[i]; i++)
+            if (pfn[i] == ah && r->ds) {
+                fstrncpy(fbuf, MKFP(r->ds, ah == 0x6C ? r->si : r->dx), 80);
+                glogs("  ", fbuf);
+            }
     }
     if (w16_trace)                              /* Aufrufspur: F000h|AH  */
         if (ah != 0x2C) { if (tr_dseg) ((WORD FAR *)MKFP(tr_dseg, 512))[tr_pos & 127] = 0;
@@ -1133,14 +1258,70 @@ void dos_int(void FAR *rv)
     }
     case 0x3C: case 0x5B:
         x = f_create(MKFP(r->ds, r->dx));
-        if (FAPI_FAILED(x)) err(r, derr(x)); else { r->ax = x; ok(r); }
+        if (FAPI_FAILED(x)) err(r, derr(x)); else { r->ax = x; ok(r); fsc(0x3C00, fbuf); }
         return;
+    case 0x6C: {                                /* erweitert oeffnen/anlegen */
+        BYTE ex;
+        fstrncpy(fbuf, MKFP(r->ds, r->si), sizeof(fbuf));
+        ex = (BYTE)f_ent();
+        if (ex && (fd_e.attr & 0x10)) { err(r, 5); return; }
+        if (ex) {
+            switch (r->dx & 0x0F) {
+            case 1: x = f_open(MKFP(r->ds, r->si), r->bx & 3); r->cx = 1; break;
+            case 2: x = f_create(MKFP(r->ds, r->si)); r->cx = 3; break;
+            default: err(r, 80); return;
+            }
+        } else {
+            if (((r->dx >> 4) & 0x0F) != 1) { err(r, 2); return; }
+            x = f_create(MKFP(r->ds, r->si));
+            r->cx = 2;
+        }
+        if (FAPI_FAILED(x)) { err(r, derr(x)); return; }
+        r->ax = x;
+        ok(r);
+        if (r->cx != 1) fsc(0x3C00, fbuf);
+        return;
+    }
     case 0x3D:
         x = f_open(MKFP(r->ds, r->dx), r->ax & 3);
         if (FAPI_FAILED(x)) err(r, derr(x)); else { r->ax = x; ok(r); }
         return;
     case 0x3E:
-        DosClose(r->bx);
+        h_close(r->bx);
+        ok(r);
+        return;
+    case 0x39: case 0x3A:                       /* Verzeichnis an/weg    */
+        fstrncpy(fbuf, MKFP(r->ds, r->dx), sizeof(fbuf));
+        x = ah == 0x39 ? DosMkDir(fbuf) : DosRmDir(fbuf);
+        if (FAPI_FAILED(x)) err(r, x == FAPI_ERR_EXIST ? 5 : derr(x));
+        else { ok(r); fsc(ah << 8, fbuf); }
+        return;
+    case 0x56: {                                /* umbenennen/verschieben */
+        static char to[128];
+        fstrncpy(fbuf, MKFP(r->ds, r->dx), sizeof(fbuf));
+        fstrncpy(to, MKFP(r->es, r->di), sizeof(to));
+        x = DosMove(fbuf, to);
+        if (FAPI_FAILED(x)) err(r, derr(x));
+        else { ok(r); fsc(0x4100, fbuf); fsc(0x3C00, to); }
+        return;
+    }
+    case 0x57:                                  /* Datum/Zeit ueber Handle */
+        if (!hp_sel || r->bx >= NFH || !HP(r->bx)[0]) { err(r, 6); return; }
+        if ((r->ax & 0xFF) == 0) {
+            if (HP(r->bx)[85]) {
+                r->dx = *(WORD FAR *)(HP(r->bx) + 81);
+                r->cx = *(WORD FAR *)(HP(r->bx) + 83);
+            } else {
+                fstrncpy(fbuf, (LPCSTR)HP(r->bx), 80);
+                if (!f_ent()) { err(r, 6); return; }
+                r->dx = fd_e.date;
+                r->cx = fd_e.time;
+            }
+        } else {
+            *(WORD FAR *)(HP(r->bx) + 81) = r->dx;
+            *(WORD FAR *)(HP(r->bx) + 83) = r->cx;
+            HP(r->bx)[85] = 1;
+        }
         ok(r);
         return;
     case 0x3F: case 0x40:
@@ -1150,7 +1331,7 @@ void dos_int(void FAR *rv)
     case 0x41:
         fstrncpy(fbuf, MKFP(r->ds, r->dx), sizeof(fbuf));
         x = DosDelete(fbuf);
-        if (FAPI_FAILED(x)) err(r, derr(x)); else ok(r);
+        if (FAPI_FAILED(x)) err(r, derr(x)); else { ok(r); fsc(0x4100, fbuf); }
         return;
     case 0x42: {
         DWORD p = f_seek(r->bx, MAKELONG(r->dx, r->cx), r->ax & 0xFF);
@@ -1171,7 +1352,8 @@ void dos_int(void FAR *rv)
         return;
     case 0x36: {
         static unsigned long fr;
-        if (FAPI_FAILED(DosFreeSpace((r->dx & 0xFF) ? (r->dx & 0xFF) - 1 : DosQCurDisk(), &fr))) {
+        WORD drv = (r->dx & 0xFF) ? (r->dx & 0xFF) - 1 : DosQCurDisk();
+        if (FAPI_FAILED(DosFreeSpace(drv, &fr))) {
             r->ax = 0xFFFF;
             return;
         }
@@ -1179,6 +1361,38 @@ void dos_int(void FAR *rv)
         fr >>= 15;
         r->bx = fr > 0xFFFE ? 0xFFFE : (WORD)fr;
         r->dx = 0xFFFE;
+        {                                       /* Gesamtgroesse         */
+            static struct fapi_fsinfo fi;
+            if (!FAPI_FAILED(DosQFSInfo(drv, &fi))
+                && fi.bsize) {
+                DWORD t = fi.sectors >> 6;      /* 512-Byte-Sektoren     */
+                if (fi.bsize == 2048) t = fi.sectors >> 4;
+                r->dx = t > 0xFFFE ? 0xFFFE : (WORD)t;
+                if (r->bx > r->dx) r->bx = r->dx;
+            }
+        }
+        return;
+    }
+    case 0x11: case 0x12: {                     /* FCB-Suche: nur die    */
+        BYTE FAR *f = MKFP(r->ds, r->dx);       /* Bezeichnung (Attr. 8) */
+        BYTE FAR *d = MKFP(wt[t].dta_s, wt[t].dta_o);
+        static struct fapi_label lb;
+        BYTE dr, i;
+        r->ax |= 0xFF;
+        if (ah == 0x12 || f[0] != 0xFF || !(f[6] & 8))
+            return;
+        dr = f[7] ? f[7] - 1 : (BYTE)DosQCurDisk();
+        if (FAPI_FAILED(DosLabel(dr, &lb, 0)) || !lb.label[0])
+            return;
+        fmemset(d, 0, 44);
+        d[0] = 0xFF; d[6] = 8; d[7] = dr + 1;
+        for (i = 0; i < 11; i++) {
+            BYTE c = lb.label[i] && lb.label[i] != '.' ? lb.label[i] : ' ';
+            if (!lb.label[i]) { for (; i < 11; i++) d[8 + i] = ' '; break; }
+            d[8 + i] = c;
+        }
+        d[8 + 11] = 8;                          /* Attribut im Eintrag   */
+        r->ax &= 0xFF00;
         return;
     }
     case 0x59:
@@ -1194,7 +1408,7 @@ void dos_int(void FAR *rv)
             static struct fapi_finfo fi;
             fi.mask = 1; fi.attr = r->cx;
             x = fapi_call(FAPI_SETFINFO, (WORD)fbuf, (WORD)&fi, 0);
-            if (FAPI_FAILED(x)) err(r, derr(x)); else ok(r);
+            if (FAPI_FAILED(x)) err(r, derr(x)); else { ok(r); fsc(0x4301, fbuf); }
         }
         return;
     default:
@@ -1555,4 +1769,23 @@ static short gid_impl(WORD ds, WORD hinst, WORD off, short n)
 short API GetInstanceData(WORD hinst, WORD off, short n)
 {
     return gid_impl(get_bp2(), hinst, off, n);  /* nur DS holen (s. LocalAlloc) */
+}
+
+/* ---- fuer den Datei-Manager ---- */
+WORD API SetHandleCount(WORD n) { return n < 255 ? n : 255; }
+/* DOS-Speicher: es gibt keinen Real Mode - ein Segment, HIWORD gilt nur
+   fuer INT 21h, das ohnehin uebersetzt wird */
+DWORD API GlobalDOSAlloc(DWORD n)
+{
+    WORD s = seg_new(n > 0xFFF0UL ? 0xFFF0U : (WORD)n);
+    if (s)
+        fmemset(MKFP(s, 0), 0, n > 0xFFF0UL ? 0xFFF0U : (WORD)n);
+    return MAKELONG(s, s);
+}
+WORD API GlobalDOSFree(WORD s) { seg_del(s); return 0; }
+/* grosse Zeiger: Selektoren im Abstand __AHINCR (8) */
+DWORD API LongPtrAdd(DWORD p, DWORD n)
+{
+    DWORD o = (DWORD)LOWORD(p) + n;
+    return MAKELONG(LOWORD(o), HIWORD(p) + HIWORD(o) * 8);
 }

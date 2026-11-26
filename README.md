@@ -83,7 +83,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   und mmio – Medienwiedergabe und Klangrecorder aus Windows 3.1 spielen;
   DLLs zur Laufzeit mit LibEntry, LZEXPAND, VER – die Systemsteuerung aus
   Windows 3.1 öffnet alle Bereiche; TrueType-Schriften mit eigenem
-  Rasterer – Write und ChooseFont benutzen Arial, Times New Roman usw.).
+  Rasterer – Write und ChooseFont benutzen Arial, Times New Roman usw.;
+  der Datei-Manager aus Windows 3.1 läuft: Baum, Dateiliste, Kopieren,
+  Umbenennen, Löschen, Verzeichnis anlegen).
   Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit

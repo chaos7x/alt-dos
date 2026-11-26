@@ -266,7 +266,10 @@ BOOL API IsDialogMessage(HWND d, MSG FAR *m)
             return 1;
         }
     }
-    if (m->message == WM_SYSCHAR) {             /* Alt+Buchstabe         */
+    /* Alt+Buchstabe; ohne Alt wie Windows nur, wenn das Element mit dem
+       Fokus keine Zeichen will (sonst gehoert der Buchstabe ihm) */
+    if (m->message == WM_SYSCHAR || (m->message == WM_CHAR && (BYTE)m->wParam > ' ' &&
+        !((WORD)send_msg(GetFocus(), WM_GETDLGCODE, 0, 0) & (DLGC_WANTCHARS | DLGC_WANTALLKEYS)))) {
         BYTE u = (BYTE)m->wParam;
         short i, n = child_cnt(d);
         if (u >= 'a' && u <= 'z') u -= 32;
@@ -285,7 +288,8 @@ BOOL API IsDialogMessage(HWND d, MSG FAR *m)
                 return 1;
             }
         }
-        return 1;
+        if (m->message == WM_SYSCHAR)
+            return 1;
     }
     TranslateMessage(m);
     DispatchMessage(m);
@@ -922,19 +926,41 @@ LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
 }
 
 /* ---- LISTBOX: Eintraege in einem eigenen Segment ----
-   Segment: 512 Worte Stellen der Texte, ab 1024 die Texte; Bit 15 des
-   Wortes frei, Daten (LB_SETITEMDATA) in einem zweiten Feld */
+   Segment: 512 Worte Stellen der Texte, ab 1024 die Daten (LB_SETITEMDATA,
+   je 4 Byte), ab 3072 die Auswahl (Bit je Eintrag), ab LB_TXT die Texte.
+   Owner-Draw (LBS_OWNERDRAWFIXED/VARIABLE): das Elternfenster zeichnet
+   (WM_DRAWITEM), ohne LBS_HASSTRINGS ist lParam von LB_ADDSTRING nur ein
+   Datenwert, sortiert wird dann ueber WM_COMPAREITEM. Mehrfachauswahl
+   (LBS_MULTIPLESEL/EXTENDEDSEL) und mehrere Spalten (LBS_MULTICOLUMN). */
 #define NLB     16
 #define LBMAX   500
+#ifndef WS_HSCROLL
+#define WS_HSCROLL 0x00100000UL
+#endif
+#ifndef WM_HSCROLL
+#define WM_HSCROLL 0x0114
+#endif
+#define LBS_SORT_       0x0002
+#define LBS_MULTISEL_   0x0008
+#define LBS_ODFIXED     0x0010
+#define LBS_ODVAR       0x0020
+#define LBS_HASSTR      0x0040
+#define LBS_MULTICOL    0x0200
+#define LBS_EXTSEL      0x0800
 static struct lb {
     HWND h;
-    WORD seg, n, used, cur, top;
+    WORD seg, n, used, cur, top, anchor;
+    WORD ih, colw;                              /* Zeilenhoehe, Spaltenbreite */
     DWORD last;
 } lbt[NLB];
 #define LBO(l)  ((WORD FAR *)MKFP((l)->seg, 0))
 #define LBS(l, i) ((char FAR *)MKFP((l)->seg, LBO(l)[i]))
 #define LBD(l)  ((DWORD FAR *)MKFP((l)->seg, 1024))      /* Elementdaten  */
-#define LB_TXT  3072                            /* Texte dahinter        */
+#define LBSEL(l) ((BYTE FAR *)MKFP((l)->seg, 3072))      /* Auswahl-Bits  */
+#define LB_TXT  3136                            /* Texte dahinter        */
+#define LB_OD(w)   ((w)->style & (LBS_ODFIXED | LBS_ODVAR))
+#define LB_NOSTR(w) (LB_OD(w) && !((w)->style & LBS_HASSTR))
+#define LB_MSEL(w) ((w)->style & (LBS_MULTISEL_ | LBS_EXTSEL))
 
 static struct lb *lbp(HWND h)
 {
@@ -944,14 +970,39 @@ static struct lb *lbp(HWND h)
             return &lbt[i];
     return 0;
 }
-static short lb_rows(struct wnd *w)
+static short lb_rows(struct lb *l, struct wnd *w)
 {
-    short r = (w->cr.bottom - w->cr.top) / FONT_H;
+    short r = (w->cr.bottom - w->cr.top) / l->ih;
     return r < 1 ? 1 : r;
+}
+static short lb_cols(struct lb *l, struct wnd *w)
+{
+    short c;
+    if (!(w->style & LBS_MULTICOL))
+        return 1;
+    c = (w->cr.right - w->cr.left) / l->colw;
+    return c < 1 ? 1 : c;
+}
+static WORD lb_page(struct lb *l, struct wnd *w) { return lb_rows(l, w) * lb_cols(l, w); }
+static BYTE lb_issel(struct lb *l, WORD i) { return (LBSEL(l)[i >> 3] >> (i & 7)) & 1; }
+static void lb_setsel(struct lb *l, WORD i, BYTE on)
+{
+    if (on) LBSEL(l)[i >> 3] |= 1 << (i & 7);
+    else LBSEL(l)[i >> 3] &= ~(1 << (i & 7));
 }
 static void lb_sb(struct lb *l, struct wnd *w)
 {
-    short r = lb_rows(w), mx = l->n > (WORD)r ? l->n - r : 0;
+    short r = lb_rows(l, w), mx;
+    if (w->style & LBS_MULTICOL) {
+        mx = l->n ? (short)((l->n - 1) / r) - lb_cols(l, w) + 1 : 0;
+        if (mx < 0) mx = 0;
+        if (w->style & WS_HSCROLL) {
+            sb_setrange(l->h, 0, 0, mx, 0);
+            SetScrollPos(l->h, 0, l->top / r, 1);
+        }
+        return;
+    }
+    mx = l->n > (WORD)r ? l->n - r : 0;
     if (w->style & WS_VSCROLL) {
         sb_setrange(l->h, 1, 0, mx, 0);
         SetScrollPos(l->h, 1, l->top, 1);
@@ -959,36 +1010,76 @@ static void lb_sb(struct lb *l, struct wnd *w)
 }
 static void lb_show(struct lb *l, struct wnd *w)
 {
-    short r = lb_rows(w);
+    WORD r = lb_rows(l, w), p = lb_page(l, w), st = (w->style & LBS_MULTICOL) ? r : 1;
     if (l->cur != 0xFFFF) {
-        if (l->cur < l->top) l->top = l->cur;
-        if (l->cur >= l->top + r) l->top = l->cur - r + 1;
+        if (l->cur < l->top) l->top = l->cur - l->cur % st;
+        if (l->cur >= l->top + p) l->top = (l->cur - p + st) - (l->cur - p + st) % st;
     }
-    if (l->top + r > l->n) l->top = l->n > (WORD)r ? l->n - r : 0;
+    if (l->top + p > l->n) {
+        WORD t = l->n > p ? l->n - p : 0;
+        t = (t + st - 1) - (t + st - 1) % st;
+        if (t < l->top) l->top = t;
+    }
     lb_sb(l, w);
     InvalidateRect(l->h, 0, 0);
 }
-static int lb_cmp(LPCSTR a, LPCSTR b) { return fstricmp(a, b); }
+/* Rechteck eines Eintrags (Client-Koordinaten), 0 = nicht sichtbar */
+static int lb_rect(struct lb *l, struct wnd *w, WORD i, RECT FAR *rc)
+{
+    WORD r = lb_rows(l, w), k;
+    if (i < l->top || i >= l->top + lb_page(l, w))
+        return 0;
+    k = i - l->top;
+    rc->left = (w->style & LBS_MULTICOL) ? (k / r) * l->colw : 0;
+    rc->right = (w->style & LBS_MULTICOL) ? rc->left + l->colw : w->cr.right - w->cr.left;
+    rc->top = (k % r) * l->ih;
+    rc->bottom = rc->top + l->ih;
+    return 1;
+}
+static WORD lb_hit(struct lb *l, struct wnd *w, short x, short y)
+{
+    WORD r = lb_rows(l, w), c = 0;
+    if (y < 0) y = 0;
+    if ((w->style & LBS_MULTICOL) && x > 0)
+        c = x / l->colw;
+    return l->top + c * r + y / l->ih;
+}
+static short lb_cmp(struct lb *l, struct wnd *w, WORD i, LPCSTR s)
+{
+    if (LB_NOSTR(w)) {                          /* WM_COMPAREITEM        */
+        static WORD ci[9];
+        ci[0] = 2; ci[1] = w->id; ci[2] = l->h;
+        ci[3] = i; *(DWORD *)&ci[4] = LBD(l)[i];
+        ci[6] = 0xFFFF; *(DWORD *)&ci[7] = (DWORD)s;
+        return (short)send_msg(w->parent, 0x0039, w->id, (DWORD)(void FAR *)ci);
+    }
+    return fstricmp(LBS(l, i), s);
+}
 static short lb_insert(struct lb *l, struct wnd *w, short at, LPCSTR s)
 {
-    WORD n = fstrlen(s) + 1, i;
+    BYTE nostr = LB_NOSTR(w) ? 1 : 0;
+    WORD n = nostr ? 1 : fstrlen(s) + 1, i;
     if (l->n >= LBMAX || l->used + n > 0xFF00u)
         return -2;                              /* LB_ERRSPACE           */
     if (at < 0 || at > (short)l->n) {
         at = l->n;
-        if (w->style & 2)                       /* LBS_SORT              */
-            for (at = 0; at < (short)l->n && lb_cmp(LBS(l, at), s) <= 0; at++)
+        if (w->style & LBS_SORT_)
+            for (at = 0; at < (short)l->n && lb_cmp(l, w, at, s) <= 0; at++)
                 ;
     }
     for (i = l->n; i > (WORD)at; i--) {
         LBO(l)[i] = LBO(l)[i - 1];
         LBD(l)[i] = LBD(l)[i - 1];
+        lb_setsel(l, i, lb_issel(l, i - 1));
     }
+    lb_setsel(l, at, 0);
     LBO(l)[at] = l->used;
-    LBD(l)[at] = 0;
-    fmemcpy(MKFP(l->seg, l->used), s, n);
+    LBD(l)[at] = nostr ? (DWORD)s : 0;
+    if (nostr) *(char FAR *)MKFP(l->seg, l->used) = 0;
+    else fmemcpy(MKFP(l->seg, l->used), s, n);
     l->used += n;
     l->n++;
+    if (l->cur != 0xFFFF && l->cur >= (WORD)at && l->cur + 1 < l->n) l->cur++;
     lb_show(l, w);
     return at;
 }
@@ -1000,10 +1091,45 @@ static void lb_delete(struct lb *l, WORD at)
     for (i = at; i + 1 < l->n; i++) {
         LBO(l)[i] = LBO(l)[i + 1];
         LBD(l)[i] = LBD(l)[i + 1];
+        lb_setsel(l, i, lb_issel(l, i + 1));
     }
     l->n--;
+    lb_setsel(l, l->n, 0);
     if (l->cur != 0xFFFF && l->cur >= l->n)
         l->cur = l->n ? l->n - 1 : 0xFFFF;
+}
+static void lb_selnone(struct lb *l) { fmemset(LBSEL(l), 0, 64); }
+static void lb_notify(struct wnd *w, struct lb *l, WORD code)
+{
+    if (w->style & 1)                           /* LBS_NOTIFY: wie Windows */
+        send_msg(w->parent, WM_COMMAND, w->id, MAKELONG(l->h, code));
+}
+/* Caret auf c setzen, Auswahl je nach Art nachfuehren */
+static void lb_move(struct lb *l, struct wnd *w, WORD c, WORD keys)
+{
+    WORD i, a, b;
+    if (c >= l->n)
+        return;
+    if (w->style & LBS_EXTSEL) {
+        if (keys & 4) {                         /* Umschalt: Bereich     */
+            if (l->anchor == 0xFFFF || l->anchor >= l->n) l->anchor = c;
+            a = l->anchor < c ? l->anchor : c;
+            b = l->anchor < c ? c : l->anchor;
+            if (!(keys & 8)) lb_selnone(l);
+            for (i = a; i <= b; i++) lb_setsel(l, i, 1);
+        } else if (keys & 8) {                  /* Strg: umschalten      */
+            lb_setsel(l, c, !lb_issel(l, c));
+            l->anchor = c;
+        } else {
+            lb_selnone(l);
+            lb_setsel(l, c, 1);
+            l->anchor = c;
+        }
+    } else if (w->style & LBS_MULTISEL_) {
+        if (keys & 0x8000) lb_setsel(l, c, !lb_issel(l, c));
+    }
+    l->cur = c;
+    lb_show(l, w);
 }
 
 LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
@@ -1024,6 +1150,15 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
             return -1;
         l->h = h;
         l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->last = 0;
+        l->anchor = 0xFFFF; l->ih = FONT_H; l->colw = 15 * FONT_W;
+        lb_selnone(l);
+        if (LB_OD(w)) {                         /* WM_MEASUREITEM        */
+            static WORD mi[7];
+            mi[0] = 2; mi[1] = w->id; mi[2] = 0; mi[3] = 0; mi[4] = FONT_H;
+            mi[5] = mi[6] = 0;
+            send_msg(w->parent, 0x002C, w->id, (DWORD)(void FAR *)mi);
+            if (mi[4] > 0 && mi[4] < 256) l->ih = mi[4];
+        }
         if (!(w->style & WS_BORDER))
             w->style |= WS_BORDER;
         return 0;
@@ -1039,18 +1174,32 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         return 1;
     case WM_PAINT: {
         static struct paintst ps;
+        static WORD di[13];
         HDC dc = BeginPaint(h, (void FAR *)&ps);
-        short r = lb_rows(w), k;
+        WORD i, p = lb_page(l, w);
         int foc = GetFocus() == h;
+        RECT rc;
         dc_rawfill(dc, w->cr.left, w->cr.top, w->cr.right, w->cr.bottom, 15);
-        for (k = 0; k < r && l->top + k < l->n; k++) {
-            WORD i = l->top + k;
-            short y = w->cr.top + k * FONT_H, n = fstrlen(LBS(l, i)), mx = (w->cr.right - w->cr.left - 4) / FONT_W;
-            BYTE sel = i == l->cur;
-            if (n > mx) n = mx;
-            if (sel)
-                dc_rawfill(dc, w->cr.left, y, w->cr.right, y + FONT_H, foc ? 4 : 7);
-            dc_rawtext(dc, w->cr.left + 2, y, LBS(l, i), n, sel && foc ? 15 : 0);
+        for (i = l->top; i < l->n && i < l->top + p; i++) {
+            BYTE sel = LB_MSEL(w) ? lb_issel(l, i) : i == l->cur;
+            lb_rect(l, w, i, &rc);
+            if (LB_OD(w)) {                     /* WM_DRAWITEM           */
+                di[0] = 2; di[1] = w->id; di[2] = i; di[3] = 1;   /* ODA_DRAWENTIRE */
+                di[4] = (sel ? 1 : 0) | (foc && i == l->cur ? 0x10 : 0);
+                di[5] = h; di[6] = dc;
+                di[7] = rc.left; di[8] = rc.top; di[9] = rc.right; di[10] = rc.bottom;
+                *(DWORD *)&di[11] = LBD(l)[i];
+                send_msg(w->parent, 0x002B, w->id, (DWORD)(void FAR *)di);
+                continue;
+            }
+            {
+                short x = w->cr.left + rc.left, y = w->cr.top + rc.top;
+                short n = fstrlen(LBS(l, i)), mx = (rc.right - rc.left - 4) / FONT_W;
+                if (n > mx) n = mx;
+                if (sel)
+                    dc_rawfill(dc, x, y, w->cr.left + rc.right, y + l->ih, foc ? 4 : 7);
+                dc_rawtext(dc, x + 2, y, LBS(l, i), n, sel && foc ? 15 : 0);
+            }
         }
         EndPaint(h, (void FAR *)&ps);
         return 0;
@@ -1058,55 +1207,66 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
         InvalidateRect(h, 0, 0);
+        lb_notify(w, l, m == WM_SETFOCUS ? 4 : 5);  /* LBN_SET/KILLFOCUS */
         return 0;
     case WM_GETDLGCODE:
         return DLGC_WANTARROWS | DLGC_WANTCHARS;
     case WM_LBUTTONDOWN: {
-        WORD i = l->top + (short)HIWORD(lp) / FONT_H;
+        WORD i = lb_hit(l, w, (short)LOWORD(lp), (short)HIWORD(lp));
         DWORD now = GetTickCount();
         if (GetFocus() != h) SetFocus(h);
         if (i >= l->n)
             return 0;
         if (i == l->cur && now - l->last < 500) {
-            if (w->style & 1)
-                post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 2));   /* LBN_DBLCLK */
+            lb_notify(w, l, 2);                 /* LBN_DBLCLK            */
             l->last = 0;
             return 0;
         }
         l->last = now;
-        if (i != l->cur) {
-            l->cur = i;
-            lb_show(l, w);
-            if (w->style & 1)
-                post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 1)); /* LBN_SELCHANGE */
+        if (i != l->cur || LB_MSEL(w)) {
+            lb_move(l, w, i, wp | 0x8000);
+            lb_notify(w, l, 1);                 /* LBN_SELCHANGE         */
         }
         return 0;
     }
+    case WM_LBUTTONDBLCLK:
+        lb_notify(w, l, 2);
+        return 0;
     case WM_KEYDOWN: {
         long c = l->cur == 0xFFFF ? -1 : l->cur;
-        short r = lb_rows(w);
+        short r = lb_rows(l, w), pg = lb_page(l, w);
+        WORD keys = (GetKeyState(0x10) < 0 ? 4 : 0) | (GetKeyState(0x11) < 0 ? 8 : 0);
         switch (wp) {
         case 0x26: c--; break;
         case 0x28: c++; break;
-        case 0x21: c -= r - 1; break;
-        case 0x22: c += r - 1; break;
+        case 0x25: c -= (w->style & LBS_MULTICOL) ? r : 1; break;
+        case 0x27: c += (w->style & LBS_MULTICOL) ? r : 1; break;
+        case 0x21: c -= pg > 1 ? pg - 1 : 1; break;
+        case 0x22: c += pg > 1 ? pg - 1 : 1; break;
         case 0x24: c = 0; break;
         case 0x23: c = (long)l->n - 1; break;
+        case 0x20:                              /* Leertaste: umschalten */
+            if (LB_MSEL(w) && l->cur < l->n) {
+                lb_setsel(l, l->cur, !lb_issel(l, l->cur));
+                InvalidateRect(h, 0, 0);
+                lb_notify(w, l, 1);
+            }
+            return 0;
         default: return 0;
         }
         if (c >= (long)l->n) c = (long)l->n - 1;
         if (c < 0) c = 0;
         if (l->n && (WORD)c != l->cur) {
-            l->cur = (WORD)c;
-            lb_show(l, w);
-            if (w->style & 1)
-                post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 1));
+            lb_move(l, w, (WORD)c, keys);
+            lb_notify(w, l, 1);
         }
         return 0;
     }
     case WM_CHAR: {                             /* Anfangsbuchstabe      */
         WORD i, k;
         BYTE u = (BYTE)wp;
+        if (LB_NOSTR(w) || !l->n)
+            return 0;
         if (u >= 'a' && u <= 'z') u -= 32;
         for (k = 1; k <= l->n; k++) {
             BYTE c;
@@ -1115,28 +1275,28 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
             if (c == '[' ) c = LBS(l, i)[1];
             if (c >= 'a' && c <= 'z') c -= 32;
             if (c == u) {
-                l->cur = i;
-                lb_show(l, w);
-                if (w->style & 1)
-                    post_msg(w->parent, WM_COMMAND, w->id, MAKELONG(h, 1));
+                lb_move(l, w, i, 0);
+                lb_notify(w, l, 1);
                 break;
             }
         }
         return 0;
     }
-    case WM_VSCROLL: {
+    case WM_VSCROLL: case WM_HSCROLL: {
         long t = l->top;
-        short r = lb_rows(w);
+        short r = lb_rows(l, w), st = (w->style & LBS_MULTICOL) ? r : 1;
+        short pg = (w->style & LBS_MULTICOL) ? lb_page(l, w) : r - 1;
         switch (wp) {
-        case 0: t--; break;
-        case 1: t++; break;
-        case 2: t -= r - 1; break;
-        case 3: t += r - 1; break;
-        case 4: case 5: t = (short)LOWORD(lp); break;
+        case 0: t -= st; break;
+        case 1: t += st; break;
+        case 2: t -= pg; break;
+        case 3: t += pg; break;
+        case 4: case 5: t = (long)(short)LOWORD(lp) * st; break;
         default: return 0;
         }
-        if (t > (long)l->n - r) t = (long)l->n - r;
+        if (t > (long)l->n - lb_page(l, w)) t = (long)l->n - lb_page(l, w) + st - 1;
         if (t < 0) t = 0;
+        t -= t % st;
         l->top = (WORD)t;
         lb_sb(l, w);
         InvalidateRect(h, 0, 0);
@@ -1151,25 +1311,56 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         lb_show(l, w);
         return l->n;
     case 0x0405:                                /* LB_RESETCONTENT       */
-        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0;
+        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->anchor = 0xFFFF;
+        lb_selnone(l);
         lb_show(l, w);
         return 0;
+    case 0x0406:                                /* LB_SETSEL             */
+        if (!LB_MSEL(w)) return -1;
+        if ((short)LOWORD(lp) == -1) {
+            WORD i;
+            for (i = 0; i < l->n; i++) lb_setsel(l, i, (BYTE)(wp != 0));
+        } else if (LOWORD(lp) < l->n)
+            lb_setsel(l, LOWORD(lp), (BYTE)(wp != 0));
+        else
+            return -1;
+        InvalidateRect(h, 0, 0);
+        return 0;
     case 0x0407:                                /* LB_SETCURSEL          */
+        if (LB_MSEL(w)) return -1;
         l->cur = wp < l->n ? wp : 0xFFFF;
         lb_show(l, w);
         return wp < l->n ? (LONG)wp : -1L;
+    case 0x0408:                                /* LB_GETSEL             */
+        if (wp >= l->n) return -1;
+        return LB_MSEL(w) ? lb_issel(l, wp) : wp == l->cur;
     case 0x0409:                                /* LB_GETCURSEL          */
         return l->cur == 0xFFFF ? -1L : (LONG)l->cur;
     case 0x040A:                                /* LB_GETTEXT            */
         if (wp >= l->n) return -1;
+        if (LB_NOSTR(w)) {
+            *(DWORD FAR *)lp = LBD(l)[wp];
+            return 4;
+        }
         fstrncpy((LPSTR)lp, LBS(l, wp), 260);
         return fstrlen((LPSTR)lp);
     case 0x040B:                                /* LB_GETTEXTLEN         */
-        return wp < l->n ? (LONG)fstrlen(LBS(l, wp)) : -1L;
+        if (wp >= l->n) return -1;
+        return LB_NOSTR(w) ? 4 : (LONG)fstrlen(LBS(l, wp));
     case 0x040C:                                /* LB_GETCOUNT           */
         return l->n;
     case 0x0410: case 0x040D: {                 /* LB_FINDSTRING/SELECT  */
         WORD i, n = fstrlen((LPCSTR)lp), k;
+        if (LB_NOSTR(w)) {                      /* Daten vergleichen     */
+            for (k = 0; k < l->n; k++) {
+                i = (WORD)((short)wp + 1 + k) % l->n;
+                if (LBD(l)[i] == lp) {
+                    if (m == 0x040D) lb_move(l, w, i, 0);
+                    return i;
+                }
+            }
+            return -1;
+        }
         for (k = 0; k < l->n; k++) {
             i = (WORD)((short)wp + 1 + k) % l->n;
             {
@@ -1182,12 +1373,45 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
                     if (x != y) break;
                 }
                 if (j == n) {
-                    if (m == 0x040D) { l->cur = i; lb_show(l, w); }
+                    if (m == 0x040D) lb_move(l, w, i, 0);
                     return i;
                 }
             }
         }
         return -1;
+    }
+    case 0x0411: {                              /* LB_GETSELCOUNT        */
+        WORD i, c = 0;
+        if (!LB_MSEL(w)) return -1;
+        for (i = 0; i < l->n; i++) c += lb_issel(l, i);
+        return c;
+    }
+    case 0x0412: {                              /* LB_GETSELITEMS        */
+        WORD i, c = 0;
+        short FAR *a = (short FAR *)lp;
+        if (!LB_MSEL(w)) return -1;
+        for (i = 0; i < l->n && c < wp; i++)
+            if (lb_issel(l, i)) a[c++] = i;
+        return c;
+    }
+    case 0x0413: case 0x0415:                   /* Tabstopps, Breite     */
+        return 1;
+    case 0x0414:                                /* LB_GETHORIZONTALEXTENT */
+        return 0;
+    case 0x0416:                                /* LB_SETCOLUMNWIDTH     */
+        if (wp > 0) l->colw = wp;
+        lb_show(l, w);
+        return 0;
+    case 0x0419: {                              /* LB_GETITEMRECT        */
+        RECT FAR *rc = (RECT FAR *)lp;
+        static RECT t;
+        if (wp >= l->n) return -1;
+        if (!lb_rect(l, w, wp, &t)) {
+            t.left = 0; t.right = w->cr.right - w->cr.left;
+            t.top = ((short)wp - (short)l->top) * (short)l->ih; t.bottom = t.top + l->ih;
+        }
+        *rc = t;
+        return 1;
     }
     case 0x041A:                                /* LB_GETITEMDATA        */
         return wp < l->n ? (LONG)LBD(l)[wp] : -1L;
@@ -1195,11 +1419,32 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         if (wp >= l->n) return -1;
         LBD(l)[wp] = lp;
         return 0;
+    case 0x041C: {                              /* LB_SELITEMRANGE       */
+        WORD i, a = LOWORD(lp), b = HIWORD(lp);
+        if (!LB_MSEL(w)) return -1;
+        for (i = a; i <= b && i < l->n; i++) lb_setsel(l, i, (BYTE)(wp != 0));
+        InvalidateRect(h, 0, 0);
+        return 0;
+    }
+    case 0x041F:                                /* LB_SETCARETINDEX      */
+        if (wp >= l->n) return -1;
+        l->cur = wp;
+        lb_show(l, w);
+        return 0;
+    case 0x0420:                                /* LB_GETCARETINDEX      */
+        return l->cur == 0xFFFF ? 0 : l->cur;
+    case 0x0421:                                /* LB_SETITEMHEIGHT      */
+        if (LOWORD(lp) > 0 && LOWORD(lp) < 256) l->ih = LOWORD(lp);
+        lb_show(l, w);
+        return 0;
+    case 0x0422:                                /* LB_GETITEMHEIGHT      */
+        return l->ih;
     case 0x0423: {                              /* LB_FINDSTRINGEXACT    */
         WORD i, k;
+        if (!l->n) return -1;
         for (k = 0; k < l->n; k++) {
             i = (WORD)((short)wp + 1 + k) % l->n;
-            if (!fstricmp(LBS(l, i), (LPCSTR)lp))
+            if (LB_NOSTR(w) ? LBD(l)[i] == lp : !fstricmp(LBS(l, i), (LPCSTR)lp))
                 return i;
         }
         return -1;

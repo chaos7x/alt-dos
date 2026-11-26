@@ -2108,3 +2108,25 @@ BOOL API GetCharWidth(HDC h, WORD first, WORD last, short FAR *buf)
         *buf++ = t >= 0 ? (short)tt_adv(t, (BYTE)c) : FONT_W;
     return 1;
 }
+
+/* CreateDIBitmap: Bitmap wie der Bildschirm, mit CBM_INIT aus DIB-Bits */
+HBITMAP API CreateDIBitmap(HDC dc, const BYTE FAR *bih, DWORD init,
+                           const BYTE FAR *bits, const BYTE FAR *bi, WORD use)
+{
+    static BYTE map[256];
+    WORD w, h, bpp, i;
+    (void)dc;
+    if (!bih)
+        return 0;
+    gdi_dibhdr(bih, &w, &h, &bpp, map);
+    if (!(init & 4) || !bits || !bi)
+        return bm_new(w, h, 4);
+    gdi_dibhdr(bi, &w, &h, &bpp, map);
+    if (use == 1)                                   /* DIB_PAL_COLORS */
+        for (i = 0; i < 256; i++) {
+            WORD k = *(const WORD FAR *)(bi + *(const WORD FAR *)bi + i * 2);
+            map[i] = (BYTE)(k & 15);
+            if (bpp <= 8 && i + 1 >= (1u << bpp)) break;
+        }
+    return gdi_dib(w, h, bpp, map, bits, 4);
+}

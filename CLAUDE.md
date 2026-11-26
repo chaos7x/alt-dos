@@ -2413,6 +2413,15 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit tools/bp2check.py. Test /tmp/claude-0/gt/ctl.sh, ctl1.sh N (Applet N,
   S=/W= Wartezeiten, PRE2= ohne Spur). Lehre: Python-Skripte, die Dateien
   mit Latin-1 schreiben, erst kodieren (`.encode`), dann öffnen.
+  Datei-Manager (26.11.2026, „Stand: Datei-Manager“; Vorschlag Punkt 1,
+  vom Nutzer gewünscht): WINFILE.EXE aus Windows 3.1 läuft in QEMU –
+  LISTBOX mit Owner-Draw/Mehrfachauswahl/Spalten, LBN_SETFOCUS, Kürzel
+  ohne Alt im Dialog, INT 21h 11h/36h/39h/3Ah/56h/57h/6Ch, Suchzustand im
+  DTA, INT 25h/26h mit Flags auf dem Stapel, MSCDEX 1500h/150Bh, FileCDR
+  (Rückruf mit DOS-AX, 3900h usw. – durch Probieren). Test /tmp/claude-
+  0/gt/ttt.sh WINFILE.EXE (XF="winfile.exe test.dat", QX="-cdrom t.iso";
+  laufende EXE und GUI.LOG nicht kopieren – sie sind offen). Der MIT-
+  Quelltext liegt nur als Nachschlagewerk im Scratchpad.
   TrueType (26.11.2026, „Stand: TrueType“): `gui/ttf.c` eigener Rasterer
   (glyf/cmap, 26.6, Nicht-Null, Ausfallschutz Zeilen + Spalten, 4 Schriften
   mit je 48-KB-Glyphensegment), Suche WINDIR\SYSTEM, WINDIR, \DOS\FONTS;

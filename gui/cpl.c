@@ -375,3 +375,15 @@ BOOL API DlgDirSelect(HWND d, LPSTR out, short idl)
     fstrncpy(out, dd_ln, 20);
     return 0;
 }
+
+/* fuer den Datei-Manager: Netzfunktionen ohne Netz (WN_NOT_SUPPORTED = 1) */
+WORD API WNetErrorText(WORD e, LPSTR p, WORD n) { (void)e; if (p && n) p[0] = 0; return 0; }
+WORD API WNetRestoreConnection(HWND h, LPSTR d) { (void)h; (void)d; return 1; }
+WORD API WNetConnectDialog(HWND h, WORD t) { (void)h; (void)t; return 1; }
+WORD API WNetDisconnectDialog(HWND h, WORD t) { (void)h; (void)t; return 1; }
+WORD API WNetPropertyDialog(HWND h, WORD b, WORD s, LPSTR n, WORD t)
+{ (void)h; (void)b; (void)s; (void)n; (void)t; return 1; }
+WORD API WNetGetDirectoryType(LPSTR n, short FAR *t) { (void)n; if (t) *t = 0; return 0; }
+WORD API WNetDirectoryNotify(HWND h, LPSTR d, WORD o) { (void)h; (void)d; (void)o; return 0; }
+WORD API WNetGetPropertyText(WORD b, WORD s, LPSTR n, LPSTR bn, WORD cb, WORD t)
+{ (void)b; (void)s; (void)n; (void)cb; (void)t; if (bn && cb) bn[0] = 0; return 1; }

@@ -738,6 +738,51 @@ gewählt wirkt im Text. PROGMAN unverändert. Offen: Hinting, Drehung
 (lfEscapement), Unterschneidung, Schriftarten-Bereich der Systemsteuerung
 (trägt in WIN.INI `[fonts]` ein, die Suche schaut nur in die Verzeichnisse).
 
+### Stand: Datei-Manager (26.11.2026)
+
+Wunsch des Nutzers: WINFILE.EXE aus Windows 3.1 in der GUI (Datei nur im
+Scratchpad, nicht zerlegt; der MIT-Quelltext von github.com/microsoft/
+winfile – NT-Stand – diente nur als Nachschlagewerk für die Meldewege).
+Läuft in QEMU: Laufwerksleiste (A:, C:, D: als CD über MSCDEX 150Bh),
+Baum und Dateiliste mit Symbolen, Bezeichnung „[AT-DOS]“, freier und
+gesamter Platz, Klick in Baum/Liste, CD-Abbild, Verzeichnis erstellen,
+Kopieren (F8, Inhalt und Datum gleich), Umbenennen, Löschen mit
+Rückfrage, „Alle Dateiangaben“; Baum und Liste aktualisieren sich sofort.
+
+- LISTBOX neu (dlg.c): Owner-Draw (`LBS_OWNERDRAWFIXED/VARIABLE`,
+  WM_MEASUREITEM/WM_DRAWITEM, ohne `LBS_HASSTRINGS` ist lParam von
+  LB_ADDSTRING ein Datenwert, Sortieren über WM_COMPAREITEM), Mehrfach-
+  auswahl (`LBS_EXTENDEDSEL`/`MULTIPLESEL`: Umschalt/Strg, LB_SETSEL,
+  GETSEL, GETSELCOUNT, GETSELITEMS, SELITEMRANGE, Caret), mehrere Spalten
+  (`LBS_MULTICOLUMN`, LB_SETCOLUMNWIDTH, waagerecht blättern), Zeilenhöhe
+  (LB_SET/GETITEMHEIGHT), LB_GETITEMRECT; Meldungen (LBN_*) wie Windows
+  per SendMessage, dazu LBN_SETFOCUS/KILLFOCUS – daran erkennt WINFILE
+  den aktiven Bereich (sonst kopierte F8 das Verzeichnis statt der Datei).
+- Dialoge: Buchstabe ohne Alt löst das Kürzel aus, wenn das Element mit
+  dem Fokus keine Zeichen will (wie IsDialogMessage).
+- INT 21h: Suchzustand im DTA (4Fh liest CX nicht, Suchen dürfen sich
+  verschachteln), 11h mit erweitertem FCB (Bezeichnung), 36h mit echter
+  Gesamtgröße, 39h/3Ah, 56h, 57h (Datum über Handle: Pfad je Handle,
+  Setzen wird beim Schließen nachgetragen – auch `_lclose`), 6Ch;
+  INT 25h/26h melden „nicht bereit“ und lassen wie DOS die Flags auf dem
+  Stapel (gcrt.asm); INT 2Fh 1500h/150Bh (CD-Laufwerke).
+- `FileCDR`: der Kernel ruft nach jeder Änderung (MD, RD, Anlegen,
+  Löschen, Umbenennen, Attribute) die angemeldete Funktion – Pascal
+  (WORD ax, LPSTR Pfad) mit dem AX des DOS-Aufrufs (3900h, 3A00h, 3C00h,
+  4100h, 4301h); ermittelt durch Probieren (die NT-Nummern FSC_* und
+  die bloße DOS-Nummer lösten nichts aus, 3900h schon).
+- Weiter: CreateDIBitmap, LongPtrAdd, GlobalDOSAlloc (ein Segment, kein
+  Real Mode), SetHandleCount, `__ROMBIOS` (Ersatzsegment), SHELL.Find-
+  EnvironmentString, WNet-Stummel (499, 523–532).
+- GUITRACE=2 schreibt jetzt auch jeden INT-21h-Aufruf (`D ax`, Pfad,
+  Treffer der Suche) und gepostete/eigene Nachrichten (`PM`, `SM`).
+
+Offen: Laufwerk ohne Medium meldet „Keine Dateien gefunden“ statt „nicht
+bereit“, Größe einer CD (der Treiber meldet keine), waagerechtes Blättern
+mit LB_SETHORIZONTALEXTENT („Alle Dateiangaben“ zeigt nur die ersten
+Spalten), Ziehen mit der Maus, Formatieren/Diskette kopieren (INT 25h/
+26h), Programme starten aus dem Datei-Manager, 86Box.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

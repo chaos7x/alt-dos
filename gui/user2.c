@@ -480,3 +480,16 @@ WORD API FindExecutable(LPCSTR file, LPCSTR dir, LPSTR res)
     }
     return 33;
 }
+
+/* SHELL.FindEnvironmentString: Wert einer Variablen (oder NULL) */
+LPSTR API FindEnvironmentString(LPCSTR name)
+{
+    static char nm[32], val[256];
+    short i;
+    for (i = 0; i < 31 && name && name[i]; i++)
+        nm[i] = name[i];
+    nm[i] = 0;
+    if (!i || FAPI_FAILED(DosGetEnv(nm, val, sizeof(val))))
+        return 0;
+    return (LPSTR)val;
+}

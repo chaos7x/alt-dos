@@ -38,6 +38,15 @@ void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst)
         if (ord == 114) { *isconst = 1; return MKFP(0, 8); }        /* __AHINCR  */
         if (ord == 113) { *isconst = 1; return MKFP(0, 3); }        /* __AHSHIFT */
         if (ord == 178) { *isconst = 1; return MKFP(0, 0x0413); }   /* __WINFLAGS */
+        if (ord == 173) {                                           /* __ROMBIOS */
+            static WORD rom;                    /* Ersatz: Nullen, Modell AT */
+            if (!rom && (rom = seg_new(0)) != 0) {
+                fmemset(MKFP(rom, 0), 0, 0xFFFF);
+                *(BYTE FAR *)MKFP(rom, 0xFFFE) = 0xFC;
+            }
+            *isconst = 1;
+            return MKFP(0, rom);
+        }
     }
     i = exp_builtin(mod);
     if (!i)

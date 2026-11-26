@@ -2064,6 +2064,9 @@ LONG API DispatchMessage(const MSG FAR *m)
 }
 BOOL API PostMessage(HWND h, WORD m, WORD wp, DWORD lp)
 {
+    if (w16_trace == 2 && (m >= 0x0400 || m < 0x0100)) {  /* GUITRACE=2 */
+        glogn("PM m ", m); glogn("PM w ", wp); glogn("PM l ", LOWORD(lp));
+    }
     if (h == 0xFFFF) {
         short i;
         for (i = 0; i < NWND; i++)
@@ -2073,7 +2076,11 @@ BOOL API PostMessage(HWND h, WORD m, WORD wp, DWORD lp)
     }
     return post_msg(h, m, wp, lp);
 }
-LONG API SendMessage(HWND h, WORD m, WORD wp, DWORD lp) { return send_msg(h, m, wp, lp); }
+LONG API SendMessage(HWND h, WORD m, WORD wp, DWORD lp)
+{
+    if (w16_trace == 2 && m >= 0x0400 && m < 0x0600) { glogn("SM m ", m); glogn("SM w ", wp); glogn("SM l ", LOWORD(lp)); }
+    return send_msg(h, m, wp, lp);
+}
 void API PostQuitMessage(short code)
 {
     if (cur_task >= 0) {

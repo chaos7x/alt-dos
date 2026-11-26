@@ -111,6 +111,11 @@ _int_entry:
         mov     ax, bp
         mov     dx, ss
         call    far dos_int_            ; (struct iregs __far *) in DX:AX
+        mov     bp, sp
+        cmp     word [bp+18], 25h       ; INT 25h/26h: Flags bleiben wie
+        je      .absrw                  ; bei DOS auf dem Stapel
+        cmp     word [bp+18], 26h
+        je      .absrw
         pop     di
         pop     si
         pop     dx
@@ -122,6 +127,23 @@ _int_entry:
         pop     bp
         add     sp, 2                   ; n
         iret
+.absrw:
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        pop     es
+        pop     ds
+        pop     bp
+        add     sp, 2                   ; n
+        push    bp
+        mov     bp, sp
+        push    word [bp+6]             ; Ergebnis-Flags (CF) setzen
+        popf
+        pop     bp                      ; aendert keine Flags
+        retf                            ; FLAGS bleiben auf dem Stapel
 
 ; long call16(void __far *fn, unsigned ds, unsigned nw, unsigned *w)  cdecl
 ; legt nw Worte aus w (nah, in DGROUP) der Reihe nach auf den Stapel
