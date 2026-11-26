@@ -4234,6 +4234,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             fi->fsname[3] = 0;
         }
         fi->sectors = vol[a1].psize ? vol[a1].psize : blk[dv].blocks;
+        if (blk[dv].bsize == 2048 && !blk_nomedia(dv))
+            fi->sectors = dem_cd_size(a1);  /* CD: Groesse aus dem PVD */
         fi->hidden = vol[a1].start;
         fi->ptype = vol[a1].ptype;
         fi->bsize = blk[dv].bsize;

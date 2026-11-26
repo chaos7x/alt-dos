@@ -2422,6 +2422,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   0/gt/ttt.sh WINFILE.EXE (XF="winfile.exe test.dat", QX="-cdrom t.iso";
   laufende EXE und GUI.LOG nicht kopieren – sie sind offen). Der MIT-
   Quelltext liegt nur als Nachschlagewerk im Scratchpad.
+  Danach (26.11.2026): leeres Laufwerk „kein Datenträger“ (INT 21h 47h
+  prüft das Medium, 59h, Systemfenster Wiederholen/Abbrechen ohne
+  SetErrorMode(1)), DosQFSInfo meldet bei CDs die Größe aus dem PVD,
+  LISTBOX LB_SETHORIZONTALEXTENT. Ziehen, Formatieren, Programme starten
+  prüft der Nutzer.
   TrueType (26.11.2026, „Stand: TrueType“): `gui/ttf.c` eigener Rasterer
   (glyf/cmap, 26.6, Nicht-Null, Ausfallschutz Zeilen + Spalten, 4 Schriften
   mit je 48-KB-Glyphensegment), Suche WINDIR\SYSTEM, WINDIR, \DOS\FONTS;

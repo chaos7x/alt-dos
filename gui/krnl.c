@@ -1022,13 +1022,19 @@ WORD API OpenFile(LPCSTR name, BYTE FAR *of, WORD st)
 struct iregs { WORD di, si, dx, cx, bx, ax, es, ds, bp, n, ip, cs, fl; };
 #define CF 1
 static void ok(struct iregs FAR *r) { r->fl &= ~CF; }
-static void err(struct iregs FAR *r, WORD c) { r->fl |= CF; r->ax = c; }
+static WORD last_err;                           /* fuer 59h             */
+static BYTE nr_drv;                             /* Laufwerk + 1, das    */
+                                                /* "nicht bereit" meldete */
+static void err(struct iregs FAR *r, WORD c) { r->fl |= CF; r->ax = c; last_err = c; }
 static WORD derr(WORD f)
 {
     switch (f) {
     case FAPI_ERR_EXIST: return 80;
     case FAPI_ERR_DENIED: case FAPI_ERR_INUSE: case FAPI_ERR_WP: return 5;
     case FAPI_ERR_FULL: return 39;
+    case FAPI_ERR_NOTREADY:
+        if (!nr_drv) nr_drv = 0x80;             /* Laufwerk aus fbuf    */
+        return 21;
     default: return 2;
     }
 }
@@ -1084,7 +1090,9 @@ static void find(struct iregs FAR *r, int first)
         x = fapi_call(FAPI_FINDENTRY, (WORD)&fd_e, n++, dir[0] ? (WORD)dir : 0);
         if (FAPI_FAILED(x)) {
             *(WORD FAR *)(dta + 2) = n - 1;
-            err(r, first ? 2 : 18);
+            if (x == FAPI_ERR_NOTREADY)
+                nr_drv = dir[0] && dir[1] == ':' ? up(dir[0]) - 'A' + 1 : 0x81;
+            err(r, x == FAPI_ERR_NOTREADY ? 21 : first ? 2 : 18);
             return;
         }
         if ((fd_e.attr & 0x16) & ~(at & 0x16))
@@ -1134,7 +1142,41 @@ static void fsc(WORD op, LPCSTR path)
     call16((void FAR *)cdr_fn, cdr_ds, 3, w);
 }
 
+static void dos_int1(void FAR *rv);
+static WORD err_mode;                           /* SetErrorMode         */
+
+/* Wie der Windows-Kern mit seinem INT-24h-Handler: meldet ein DOS-Aufruf
+   "nicht bereit", fragt ein Systemfenster Wiederholen/Abbrechen (ausser
+   bei SetErrorMode(SEM_FAILCRITICALERRORS)); Wiederholen ruft neu */
 void dos_int(void FAR *rv)
+{
+    struct iregs FAR *r = rv;
+    static struct iregs sv[NWT];
+    static char nrt[40];
+    int t = cur_task;
+    for (;;) {
+        fmemcpy((void FAR *)&sv[t], r, sizeof(sv[0]));
+        nr_drv = 0;
+        dos_int1(rv);
+        if (w16_trace == 2 && r->n == 0x21)     /* Ergebnis: CF -> "E"  */
+            glogn((r->fl & 1) ? "  E " : "  = ", r->ax);
+        if (!nr_drv || (err_mode & 1) || r->n != 0x21)
+            return;
+        {
+            BYTE d = nr_drv;
+            if (d >= 0x80)
+                d = (d == 0x80 && fbuf[0] && fbuf[1] == ':') ? up(fbuf[0]) - 'A' + 1
+                    : (BYTE)DosQCurDisk() + 1;
+            fstrncpy(nrt, "Laufwerk ?: ist nicht bereit.", sizeof(nrt));
+            nrt[9] = 'A' + d - 1;
+        }
+        if (MessageBox(0, nrt, "Fehler", 0x1015) != 4)   /* RETRYCANCEL | */
+            return;                             /* ICONHAND | SYSTEMMODAL */
+        fmemcpy(r, (void FAR *)&sv[t], sizeof(sv[0]));
+    }
+}
+
+static void dos_int1(void FAR *rv)
 {
     struct iregs FAR *r = rv;
     int t = cur_task;
@@ -1245,7 +1287,15 @@ void dos_int(void FAR *rv)
         return;
     case 0x47: {
         char FAR *d = MKFP(r->ds, r->si);
-        x = DosQCurDirD((r->dx & 0xFF) ? (r->dx & 0xFF) - 1 : DosQCurDisk(), fbuf);
+        WORD dr = (r->dx & 0xFF) ? (r->dx & 0xFF) - 1 : DosQCurDisk();
+        static struct fapi_fsinfo qi;           /* wie MS-DOS: leeres  */
+        if (!FAPI_FAILED(DosQFSInfo(dr, &qi))   /* Laufwerk -> 15h     */
+            && (qi.flags & FSI_NOMEDIA)) {      /* (WINFILE prueft so) */
+            nr_drv = (BYTE)dr + 1;
+            err(r, 21);
+            return;
+        }
+        x = DosQCurDirD(dr, fbuf);
         if (FAPI_FAILED(x)) {
             err(r, 15);
             return;
@@ -1353,8 +1403,10 @@ void dos_int(void FAR *rv)
     case 0x36: {
         static unsigned long fr;
         WORD drv = (r->dx & 0xFF) ? (r->dx & 0xFF) - 1 : DosQCurDisk();
-        if (FAPI_FAILED(DosFreeSpace(drv, &fr))) {
+        if (FAPI_FAILED(x = DosFreeSpace(drv, &fr))) {
             r->ax = 0xFFFF;
+            last_err = x == FAPI_ERR_NOTREADY ? 21 : 15;
+            if (last_err == 21) nr_drv = drv + 1;
             return;
         }
         r->ax = 64; r->cx = 512;                /* 32 KB je Cluster     */
@@ -1366,7 +1418,10 @@ void dos_int(void FAR *rv)
             if (!FAPI_FAILED(DosQFSInfo(drv, &fi))
                 && fi.bsize) {
                 DWORD t = fi.sectors >> 6;      /* 512-Byte-Sektoren     */
-                if (fi.bsize == 2048) t = fi.sectors >> 4;
+                if (fi.bsize == 2048) {         /* CD: 2-KB-Cluster      */
+                    r->ax = 4;
+                    t = fi.sectors;
+                }
                 r->dx = t > 0xFFFE ? 0xFFFE : (WORD)t;
                 if (r->bx > r->dx) r->bx = r->dx;
             }
@@ -1395,8 +1450,10 @@ void dos_int(void FAR *rv)
         r->ax &= 0xFF00;
         return;
     }
-    case 0x59:
-        r->ax = 0;
+    case 0x59:                                  /* erweiterter Fehler   */
+        r->ax = last_err;
+        r->bx = last_err == 21 ? 0x0B01 : 0x0D01; /* Klasse/Aktion        */
+        r->cx &= 0x00FF; r->cx |= 0x0200;        /* Ort: Blockgeraet     */
         return;
     case 0x43:                                  /* Attribute            */
         fstrncpy(fbuf, MKFP(r->ds, r->dx), sizeof(fbuf));
@@ -1427,7 +1484,7 @@ void krnl_init(void)
 }
 
 /* ---- Stufe 1 fuer die osFree-Programme (25.11.2026) ---- */
-WORD API SetErrorMode(WORD m) { static WORD em; WORD o = em; em = m; return o; }
+WORD API SetErrorMode(WORD m) { WORD o = err_mode; err_mode = m; return o; }
 
 LPSTR API lstrcpyn(LPSTR d, LPCSTR s, short n)
 {

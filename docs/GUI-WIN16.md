@@ -777,11 +777,26 @@ Rückfrage, „Alle Dateiangaben“; Baum und Liste aktualisieren sich sofort.
 - GUITRACE=2 schreibt jetzt auch jeden INT-21h-Aufruf (`D ax`, Pfad,
   Treffer der Suche) und gepostete/eigene Nachrichten (`PM`, `SM`).
 
-Offen: Laufwerk ohne Medium meldet „Keine Dateien gefunden“ statt „nicht
-bereit“, Größe einer CD (der Treiber meldet keine), waagerechtes Blättern
-mit LB_SETHORIZONTALEXTENT („Alle Dateiangaben“ zeigt nur die ersten
-Spalten), Ziehen mit der Maus, Formatieren/Diskette kopieren (INT 25h/
-26h), Programme starten aus dem Datei-Manager, 86Box.
+Nachgezogen (26.11.2026, in QEMU geprüft):
+- Leeres Laufwerk: WINFILE schaltet mit SetErrorMode(1) die Systemfenster
+  ab und prüft das Laufwerk über INT 21h 47h. 47h fragt jetzt wie MS-DOS
+  das Medium (DosQFSInfo, FSI_NOMEDIA -> Fehler 15h) – WINFILE meldet
+  „In Laufwerk A ist kein Datenträger eingelegt“ mit Wiederholen/
+  Abbrechen. 4Eh/36h melden ebenfalls 15h, 59h liefert den letzten
+  Fehler. Programme ohne SetErrorMode(1) bekommen wie unter Windows ein
+  Systemfenster „Laufwerk X: ist nicht bereit“ (Wiederholen ruft neu).
+- CD-Größe: DosQFSInfo meldet für CDs die Größe aus dem PVD
+  (`dem_cd_size`, wie die DOS-Box) – vorher FFFFFFFFh vom Treiber, 36h
+  zeigte 2 GB. 36h rechnet bei CDs in 2-KB-Clustern.
+- LISTBOX: LB_SETHORIZONTALEXTENT/LB_GETHORIZONTALEXTENT mit waagerechter
+  Leiste nach Bedarf (Schritt 8 Punkte), Einträge um den Versatz nach
+  links (rcItem.left negativ wie Windows) – „Alle Dateiangaben“ lässt
+  sich blättern. Das Jahr erscheint dort als „<6“: der bekannte Jahr-
+  2000-Fehler des Datei-Managers von Windows 3.1 (Jahr - 1900 zweistellig).
+
+Offen: Ziehen mit der Maus, Formatieren/Diskette kopieren (INT 25h/26h),
+Programme starten aus dem Datei-Manager (beim Nutzer, wenn es soweit
+ist), 86Box.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

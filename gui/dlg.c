@@ -951,6 +951,7 @@ static struct lb {
     HWND h;
     WORD seg, n, used, cur, top, anchor;
     WORD ih, colw;                              /* Zeilenhoehe, Spaltenbreite */
+    WORD hext, xoff;                            /* waagerecht: Breite, Versatz */
     DWORD last;
 } lbt[NLB];
 #define LBO(l)  ((WORD FAR *)MKFP((l)->seg, 0))
@@ -1002,6 +1003,13 @@ static void lb_sb(struct lb *l, struct wnd *w)
         }
         return;
     }
+    if (w->style & WS_HSCROLL) {                /* LB_SETHORIZONTALEXTENT */
+        short wd = w->cr.right - w->cr.left;
+        short mh = (short)l->hext > wd ? ((short)l->hext - wd + 7) / 8 : 0;
+        if (l->xoff > (WORD)mh * 8) l->xoff = mh * 8;
+        sb_setrange(l->h, 0, 0, mh, 0);
+        SetScrollPos(l->h, 0, l->xoff / 8, 1);
+    }
     mx = l->n > (WORD)r ? l->n - r : 0;
     if (w->style & WS_VSCROLL) {
         sb_setrange(l->h, 1, 0, mx, 0);
@@ -1030,8 +1038,14 @@ static int lb_rect(struct lb *l, struct wnd *w, WORD i, RECT FAR *rc)
     if (i < l->top || i >= l->top + lb_page(l, w))
         return 0;
     k = i - l->top;
-    rc->left = (w->style & LBS_MULTICOL) ? (k / r) * l->colw : 0;
-    rc->right = (w->style & LBS_MULTICOL) ? rc->left + l->colw : w->cr.right - w->cr.left;
+    if (w->style & LBS_MULTICOL) {
+        rc->left = (k / r) * l->colw;
+        rc->right = rc->left + l->colw;
+    } else {                                    /* waagerecht verschoben */
+        short wd = w->cr.right - w->cr.left;
+        rc->left = -(short)l->xoff;
+        rc->right = ((short)l->hext > wd ? (short)l->hext : wd) - (short)l->xoff;
+    }
     rc->top = (k % r) * l->ih;
     rc->bottom = rc->top + l->ih;
     return 1;
@@ -1150,7 +1164,7 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
             return -1;
         l->h = h;
         l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->last = 0;
-        l->anchor = 0xFFFF; l->ih = FONT_H; l->colw = 15 * FONT_W;
+        l->anchor = 0xFFFF; l->ih = FONT_H; l->colw = 15 * FONT_W; l->hext = 0; l->xoff = 0;
         lb_selnone(l);
         if (LB_OD(w)) {                         /* WM_MEASUREITEM        */
             static WORD mi[7];
@@ -1193,12 +1207,17 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
                 continue;
             }
             {
-                short x = w->cr.left + rc.left, y = w->cr.top + rc.top;
-                short n = fstrlen(LBS(l, i)), mx = (rc.right - rc.left - 4) / FONT_W;
+                short sk = (w->style & LBS_MULTICOL) ? 0 : l->xoff / FONT_W;
+                short x = w->cr.left + rc.left + sk * FONT_W, y = w->cr.top + rc.top;
+                short n = fstrlen(LBS(l, i)), mx = (w->cr.right - x - 4) / FONT_W;
+                if (rc.right > rc.left && x < w->cr.left) x = w->cr.left;
+                if (sk >= n) n = 0, sk = 0; else n -= sk;
                 if (n > mx) n = mx;
                 if (sel)
-                    dc_rawfill(dc, x, y, w->cr.left + rc.right, y + l->ih, foc ? 4 : 7);
-                dc_rawtext(dc, x + 2, y, LBS(l, i), n, sel && foc ? 15 : 0);
+                    dc_rawfill(dc, w->cr.left + (rc.left > 0 ? rc.left : 0), y,
+                               w->cr.left + rc.right, y + l->ih, foc ? 4 : 7);
+                if (n > 0)
+                    dc_rawtext(dc, x + 2, y, LBS(l, i) + sk, n, sel && foc ? 15 : 0);
             }
         }
         EndPaint(h, (void FAR *)&ps);
@@ -1282,7 +1301,31 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         }
         return 0;
     }
-    case WM_VSCROLL: case WM_HSCROLL: {
+    case WM_HSCROLL:
+        if (!(w->style & LBS_MULTICOL)) {       /* waagerecht in Punkten */
+            short wd = w->cr.right - w->cr.left;
+            long x = l->xoff, mh = (short)l->hext > wd ? (short)l->hext - wd : 0;
+            switch (wp) {
+            case 0: x -= 8; break;
+            case 1: x += 8; break;
+            case 2: x -= wd; break;
+            case 3: x += wd; break;
+            case 4: case 5: x = (long)(short)LOWORD(lp) * 8; break;
+            case 6: x = 0; break;
+            case 7: x = mh; break;
+            default: return 0;
+            }
+            if (x > mh) x = mh;
+            if (x < 0) x = 0;
+            if ((WORD)x != l->xoff) {
+                l->xoff = (WORD)x;
+                InvalidateRect(h, 0, 0);
+            }
+            lb_sb(l, w);
+            return 0;
+        }
+        /* mehrspaltig: weiter wie senkrecht */
+    case WM_VSCROLL: {
         long t = l->top;
         short r = lb_rows(l, w), st = (w->style & LBS_MULTICOL) ? r : 1;
         short pg = (w->style & LBS_MULTICOL) ? lb_page(l, w) : r - 1;
@@ -1311,7 +1354,7 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
         lb_show(l, w);
         return l->n;
     case 0x0405:                                /* LB_RESETCONTENT       */
-        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->anchor = 0xFFFF;
+        l->n = 0; l->used = LB_TXT; l->cur = 0xFFFF; l->top = 0; l->anchor = 0xFFFF; l->xoff = 0;
         lb_selnone(l);
         lb_show(l, w);
         return 0;
@@ -1394,10 +1437,15 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
             if (lb_issel(l, i)) a[c++] = i;
         return c;
     }
-    case 0x0413: case 0x0415:                   /* Tabstopps, Breite     */
+    case 0x0413:                                /* LB_SETTABSTOPS        */
         return 1;
-    case 0x0414:                                /* LB_GETHORIZONTALEXTENT */
+    case 0x0415:                                /* LB_SETHORIZONTALEXTENT */
+        l->hext = wp;
+        lb_sb(l, w);
+        InvalidateRect(h, 0, 0);
         return 0;
+    case 0x0414:                                /* LB_GETHORIZONTALEXTENT */
+        return l->hext;
     case 0x0416:                                /* LB_SETCOLUMNWIDTH     */
         if (wp > 0) l->colw = wp;
         lb_show(l, w);

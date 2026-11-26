@@ -87,6 +87,7 @@ extern unsigned char ne_sh[64];         /* LDT-Eintraege der DLLs (alle Tasks) *
 #define NE_SH(i) (ne_sh[(i) >> 3] & (1 << ((i) & 7)))
 extern const struct ctxblk fat_ctx[], redir_ctx[], dem_ctx[];
 extern const unsigned fat_nctx, redir_nctx, dem_nctx;
+unsigned long __far dem_cd_size(int d);     /* dem.c: CD-Groesse aus dem PVD */
 
 /* Kernel: Code ab 10000h, Daten ab dem naechsten Paragraphen dahinter */
 #define KCODE_LIN   0x10000UL

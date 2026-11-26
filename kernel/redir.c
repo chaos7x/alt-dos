@@ -40,7 +40,7 @@ int __far dem_box_init(int t);
 int __far dem_ready(void);
 unsigned __far dem_xfer(int t, unsigned fn, unsigned h, unsigned long lin, unsigned n,
                         unsigned *err);
-unsigned long __far dem_cd_size(int d);
+
 
 #define AL  (*(unsigned char *)&f->eax)
 #define AX  (*(unsigned short *)&f->eax)
