@@ -240,7 +240,9 @@ BOOL API IsDialogMessage(HWND d, MSG FAR *m)
                     dlg_cmd(d, fw->id, f);
                 else {
                     HWND b = def_button(d);
-                    dlg_cmd(d, b ? wptr(b)->id : IDOK, b);
+                    /* wie Windows: gesperrter Standardknopf -> nichts */
+                    if (!b || IsWindowEnabled(b))
+                        dlg_cmd(d, b ? wptr(b)->id : IDOK, b);
                 }
             }
             return 1;

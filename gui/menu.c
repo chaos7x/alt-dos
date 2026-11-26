@@ -872,6 +872,30 @@ WORD API LoadAccelerators(WORD hinst, LPCSTR name)
     return r ? w16_res_load(m, r) : 0;
 }
 
+/* wie Windows: vor dem WM_COMMAND eines Kuerzels WM_INITMENU und
+   WM_INITMENUPOPUP schicken; steht der Menuepunkt danach gesperrt da,
+   kommt kein Befehl (PROGMAN: Enter in leerer Gruppe = "Oeffnen") */
+HMENU API GetMenu(HWND h);
+static int acc_ok(HWND h, WORD id)
+{
+    HMENU hm = GetMenu(h), own = 0;
+    struct menu FAR *m;
+    struct mitem FAR *it;
+    short k;
+    if (!hm || !mfind(hm, id, 0, &own))
+        return 1;
+    send_msg(h, WM_INITMENU, hm, 0);
+    m = mptr(hm);
+    if (m && own != hm)
+        for (k = 0; k < m->n; k++)
+            if ((m->it[k].flags & MF_POPUP) && m->it[k].id == own) {
+                send_msg(h, WM_INITMENUPOPUP, own, MAKELONG(k, 0));
+                break;
+            }
+    it = mfind(hm, id, 0, 0);
+    return !it || !(it->flags & (MF_GRAYED | MF_DISABLED));
+}
+
 short API TranslateAccelerator(HWND h, WORD acc, MSG FAR *msg)
 {
     BYTE FAR *p;
@@ -896,12 +920,14 @@ short API TranslateAccelerator(HWND h, WORD acc, MSG FAR *msg)
                 !!(fl & FSHIFT) == !!(sh & 2) &&
                 !!(fl & FCONTROL) == !!(sh & 4) &&
                 !!(fl & FALT) == !!(sh & 0x20)) {
-                send_msg(h, WM_COMMAND, *(WORD FAR *)(p + 3), MAKELONG(0, 1));
+                if (acc_ok(h, *(WORD FAR *)(p + 3)))
+                    send_msg(h, WM_COMMAND, *(WORD FAR *)(p + 3), MAKELONG(0, 1));
                 return 1;
             }
         } else if (!virt && !(fl & FVIRTKEY) && ch == vk &&
                    (!(fl & FALT) || (sh & 0x20))) {
-            send_msg(h, WM_COMMAND, *(WORD FAR *)(p + 3), MAKELONG(0, 1));
+            if (acc_ok(h, *(WORD FAR *)(p + 3)))
+                send_msg(h, WM_COMMAND, *(WORD FAR *)(p + 3), MAKELONG(0, 1));
             return 1;
         }
         if (fl & 0x80)

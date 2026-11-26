@@ -1210,10 +1210,25 @@ static void key_event(WORD k)
         vk = ch - 32;
     else if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
         vk = ext ? 0 : ch;
+    if (scn == 0x53 && ch && !ext)
+        vk = 0x6E;                              /* Ziffernblock , = VK_DECIMAL */
     if (!vk && scn < sizeof(scvk))
         vk = scvk[scn];
-    if (!vk)
-        vk = ch;
+    if (!vk) {                                  /* Satzzeichen: VK_OEM_* nach
+                                                   deutscher Lage, nie ASCII
+                                                   ('.' = 2Eh waere VK_DELETE) */
+        static const BYTE oem[][2] = {
+            { 0x0C, 0xDB }, { 0x0D, 0xDD }, { 0x1A, 0xBA }, { 0x1B, 0xBB },
+            { 0x27, 0xC0 }, { 0x28, 0xDE }, { 0x29, 0xDC }, { 0x2B, 0xBF },
+            { 0x33, 0xBC }, { 0x34, 0xBE }, { 0x35, 0xBD }, { 0x56, 0xE2 }
+        };
+        WORD i;
+        for (i = 0; i < sizeof(oem) / 2; i++)
+            if (oem[i][0] == scn)
+                vk = oem[i][1];
+        if (!vk && ch < ' ')
+            vk = ch;
+    }
     if (w16_trace && scn == 0x58) {             /* F12: Spur ins GUI.LOG */
         tr_dump("Aufrufspur (F12):");
         return;
@@ -1843,6 +1858,8 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
         return 0;
     switch (m) {
     case WM_NCCREATE:
+        return 1;
+    case 0x0011:                                /* WM_QUERYENDSESSION: wie Windows ja */
         return 1;
     case 0x0083:                                /* WM_NCCALCSIZE: Fenster- -> Arbeitsbereich */
         if (lp) {

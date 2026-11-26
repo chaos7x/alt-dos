@@ -2387,6 +2387,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   [Extensions] + Vorgaben, `path_find`), DragObject, Pfeiltasten in
   Dialoggruppen. Testfalle: Pfeil im Dialog wandert jetzt wie Windows auch
   zwischen Knöpfen – Testskripte nicht mehr darauf verlassen.
+  Menü-Durchgang danach (26.11.2026): Enter auf gesperrtem Standard-
+  knopf ohne Wirkung, Satzzeichen als VK_OEM_* statt ASCII („.“ war
+  VK_DELETE), TranslateAccelerator prüft den Menüpunkt (WM_INITMENU-
+  POPUP), DefWindowProc WM_QUERYENDSESSION = 1 („Windows beenden“).
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

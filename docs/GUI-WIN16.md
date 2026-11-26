@@ -549,6 +549,23 @@ mit MSPM, osFree-PROGMAN, Notepad, Write, Minesweeper):
 5. Dialoge: GetNextDlgGroupItem, Pfeiltasten wandern innerhalb einer
    Gruppe und wählen Optionsfelder (wie Windows: auch OK → Abbrechen).
 
+Danach alle Menübefehle durchgegangen (Eigenschaften, Kopieren,
+Ausführen, Optionen, Fenster, Hilfe > Info, Windows beenden; in QEMU)
+und dabei behoben:
+
+6. Enter auf einen gesperrten Standardknopf tat so, als wäre OK
+   gedrückt (PROGMAN: „Gruppendatei '' kann nicht geöffnet werden“) –
+   jetzt wie Windows ohne Wirkung.
+7. Satzzeichen bekamen ihren ASCII-Code als virtuelle Taste – „.“
+   (2Eh) war damit VK_DELETE: Tippen im Gruppenfenster fragte „Gruppe
+   löschen?“, in EDIT löschte „.“ vorher das nächste Zeichen. Jetzt
+   VK_OEM_* nach deutscher Lage, Komma des Ziffernblocks VK_DECIMAL.
+8. TranslateAccelerator schickt wie Windows vorher WM_INITMENU/
+   WM_INITMENUPOPUP und kein WM_COMMAND, wenn der Menüpunkt danach
+   gesperrt ist (Enter in einer leeren Gruppe startete Datenmüll).
+9. DefWindowProc beantwortet WM_QUERYENDSESSION mit 1 – vorher lehnte
+   jedes Fenster ab und „Windows beenden“ blieb ohne Wirkung.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht
