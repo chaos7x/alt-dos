@@ -794,6 +794,13 @@ Nachgezogen (26.11.2026, in QEMU geprüft):
   sich blättern. Das Jahr erscheint dort als „<6“: der bekannte Jahr-
   2000-Fehler des Datei-Managers von Windows 3.1 (Jahr - 1900 zweistellig).
 
+- 86Box (P3B-F, vom Nutzer gemeldet): #GP in `fstrlen` beim Start –
+  LB_SELECTSTRING/LB_FINDSTRING nahmen `fstrlen(lp)`, bevor sie prüften,
+  ob die Liste Texte hat; bei Owner-Draw ohne LBS_HASSTRINGS ist lp ein
+  Datenwert. QEMU prüft Segmentgrenzen nicht und las darüber hinweg.
+  Jetzt erst die Prüfung; in 86Box P3B-F geprüft (WINFILE startet mit
+  installiertem Windows 3.1 in C:\WINDOWS).
+
 Offen: Ziehen mit der Maus, Formatieren/Diskette kopieren (INT 25h/26h),
 Programme starten aus dem Datei-Manager (beim Nutzer, wenn es soweit
 ist), 86Box.

@@ -2426,7 +2426,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   prüft das Medium, 59h, Systemfenster Wiederholen/Abbrechen ohne
   SetErrorMode(1)), DosQFSInfo meldet bei CDs die Größe aus dem PVD,
   LISTBOX LB_SETHORIZONTALEXTENT. Ziehen, Formatieren, Programme starten
-  prüft der Nutzer.
+  prüft der Nutzer. Absturz in 86Box (fstrlen auf den Datenwert von
+  LB_SELECTSTRING bei Owner-Draw-Listen) behoben, geprüft 86Box P3B-F.
   TrueType (26.11.2026, „Stand: TrueType“): `gui/ttf.c` eigener Rasterer
   (glyf/cmap, 26.6, Nicht-Null, Ausfallschutz Zeilen + Spalten, 4 Schriften
   mit je 48-KB-Glyphensegment), Suche WINDIR\SYSTEM, WINDIR, \DOS\FONTS;

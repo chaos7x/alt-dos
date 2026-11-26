@@ -1393,8 +1393,9 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
     case 0x040C:                                /* LB_GETCOUNT           */
         return l->n;
     case 0x0410: case 0x040D: {                 /* LB_FINDSTRING/SELECT  */
-        WORD i, n = fstrlen((LPCSTR)lp), k;
-        if (LB_NOSTR(w)) {                      /* Daten vergleichen     */
+        WORD i, n, k;
+        if (LB_NOSTR(w)) {                      /* Daten vergleichen -   */
+                                                /* lp ist kein Zeiger!   */
             for (k = 0; k < l->n; k++) {
                 i = (WORD)((short)wp + 1 + k) % l->n;
                 if (LBD(l)[i] == lp) {
@@ -1404,6 +1405,7 @@ LONG FAR PASCAL listbox_proc(HWND h, WORD m, WORD wp, DWORD lp)
             }
             return -1;
         }
+        n = fstrlen((LPCSTR)lp);
         for (k = 0; k < l->n; k++) {
             i = (WORD)((short)wp + 1 + k) % l->n;
             {
