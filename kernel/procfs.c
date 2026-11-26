@@ -201,7 +201,7 @@ static unsigned long dbase(int i)
 /* ---- Dateien ------------------------------------------------------------ */
 static void g_version(void)
 {
-    PF("AT-DOS 6.3\nBuild %s (%s, %s)\n", (const char *)ATDOS_BUILD,
+    PF("AT-DOS 6.4\nBuild %s (%s, %s)\n", (const char *)ATDOS_BUILD,
        (const char *)ATDOS_REV, (const char *)ATDOS_DATE);
     PF("FAPI %x\nTasks %u, Treiber %u, Kernelsegmente %u, Laufwerke %u\n",
        FAPI_VERSION, NTASK, NDRV, NKSEG, NDRIVE);

@@ -23,7 +23,16 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
-## Aktueller Stand: AT-DOS 6.3 fertig (Zweig `6.3`, Release `v6.3`), Weiterarbeit auf `main`
+## Aktueller Stand: AT-DOS 6.3 fertig (Zweig `6.3`, Release `v6.3`), 6.4 zur Prüfung (Zweig `6.4`), Weiterarbeit auf `main`
+
+AT-DOS 6.4 zur Prüfung (Entscheidung des Nutzers, 26.11.2026: „der Stand
+ohne GUI ist gut für 6.4“): Titel/VER „AT-DOS 6.4“, `FAPI_VERSION`
+0628h (VER zeigt „6.40“), Bootsektoren „6.4“. Ein Push auf `6.4` baut per
+CI die Testfassung `test-6.4` (Vorabversion, nicht neueste) mit
+`WITH_GUI=0` (build.sh: GUI.EXE, HALLOW.EXE, COREFONT.EXE nicht auf Platte
+und Disketten; gebaut werden sie trotzdem, der NE-Lader im Kernel bleibt).
+Erst nach der Freigabe kommt der Schritt für `v6.4` dazu. Fehlerbehebungen
+dann auf `6.4` und `main`. In QEMU geprüft: Start von Platte, VER.
 
 AT-DOS 6.3 ist fertig (Entscheidung des Nutzers, 21.11.2026: keine
 Fehler gefunden, Anmeldung am Samba-AD geht – „so wie immer“): Zweig

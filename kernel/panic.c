@@ -99,7 +99,7 @@ void __far pn_save(const char *msg)
     unsigned n, k, st, sum, i;
     scratch_map(PN_LIN, 0xFFF);
     n = pn_put(0, msg);
-    n = pn_put(n, "\r\nAT-DOS 6.3 Build " ATDOS_BUILD " (" ATDOS_REV ")\r\n");
+    n = pn_put(n, "\r\nAT-DOS 6.4 Build " ATDOS_BUILD " (" ATDOS_REV ")\r\n");
     if (current >= 0) {
         n = pn_put(n, "Laufender Task: ");
         n = pn_put(n, task[current].name);

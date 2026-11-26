@@ -7387,7 +7387,7 @@ static const char __based(__segname("IDATA")) ks_10[] = "\xFE IFS=";
 static const char __based(__segname("IDATA")) ks_11[] = "\n";
 static const char __based(__segname("IDATA")) ks_12[] = "\xFE CONFIG.SYS: unbekannt: ";
 static const char __based(__segname("IDATA")) ks_13[] = "\n";
-static const char __based(__segname("IDATA")) ks_14[] = "AT-DOS 6.3 - 80386, 16-Bit Protected Mode\n";
+static const char __based(__segname("IDATA")) ks_14[] = "AT-DOS 6.4 - 80386, 16-Bit Protected Mode\n";
 static const char __based(__segname("IDATA")) ks_15[] = ", Paging an (";
 static const char __based(__segname("IDATA")) ks_16[] = ", Paging aus\n";
 static const char __based(__segname("IDATA")) ks_17[] = "\xFE Laufwerk A: Diskette ";

@@ -2765,7 +2765,7 @@ static void cmd_time(char *arg)
 static void cmd_ver(void)
 {
     unsigned v = DosGetVersion();
-    puts("\nAT-DOS 6.3 (alternative Zeitlinie), 80386, 16-Bit Protected Mode\n"
+    puts("\nAT-DOS 6.4 (alternative Zeitlinie), 80386, 16-Bit Protected Mode\n"
          "Build " ATDOS_BUILD " (" ATDOS_REV ", " ATDOS_DATE "), FAPI-Version ");
     putc((char)('0' + (v >> 8)));
     putc('.');
@@ -3181,7 +3181,7 @@ static void show_prompt(void)
         case '$': putc('$'); break;
         case '_': puts("\n"); break;
         case 'H': puts("\b \b"); break;
-        case 'V': puts("AT-DOS 6.3"); break;
+        case 'V': puts("AT-DOS 6.4"); break;
         case 'E': putc(27); break;      /* ESC, fuer ANSI-Folgen        */
         case 'D': case 'T': {
             static char pd_[12];
@@ -5107,7 +5107,7 @@ void main(void)
         }
     }
 
-    puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 6.3\n"
+    puts("CMD.EXE - Befehlsinterpreter f\x81r AT-DOS 6.4\n"
          "HILFE zeigt die verf\x81gbaren Befehle.\n\n");
     if (permanent && !FAPI_FAILED(DosGetEnv("NOTSTART", pbuf, sizeof(pbuf))) &&
         pbuf[0] == '1') {               /* F5 beim Start (docs/NOTSTART.md) */

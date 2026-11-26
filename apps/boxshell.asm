@@ -1670,9 +1670,9 @@ t_kauto   db "/K ", 0
 t_autoexec db "X:\AUTOEXEC.BAT", 0
 t_kbox    db "/K X:\DOS\MDOS\BOXAUTO.BAT ", 0   ; ruft die AUTOEXEC.BAT
 t_bpath   db " X:\DOS\MDOS", 0                   ; und stellt das vor PATH
-t_hello   db "DOS-Box von AT-DOS 6.3 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
-t_hello2  db "DOS-Box von AT-DOS 6.3 - EXIT beendet die Box.", 13, 10, "$"
-t_hello3  db "DOS-Box von AT-DOS 6.3 (eigener Kern ATDOSCM, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+t_hello   db "DOS-Box von AT-DOS 6.4 (FreeDOS-Kern, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
+t_hello2  db "DOS-Box von AT-DOS 6.4 - EXIT beendet die Box.", 13, 10, "$"
+t_hello3  db "DOS-Box von AT-DOS 6.4 (eigener Kern ATDOSCM, FreeCOM) - EXIT beendet die Box.", 13, 10, "$"
 t_acom    db "A:\COMMAND.COM", 0
 t_acmd    db " A:\ /E:1024 /C ", 0
 notfd     db 0

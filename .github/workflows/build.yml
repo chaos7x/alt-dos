@@ -36,6 +36,10 @@ jobs:
           echo "$HOME/watcom/binl64" >> "$GITHUB_PATH"
 
       - name: Image bauen
+        # 6.4 wird ohne die Win16-Oberflaeche freigegeben (GUI.EXE, HALLOW,
+        # COREFONT nicht auf Platte und Disketten)
+        env:
+          WITH_GUI: ${{ github.ref == 'refs/heads/6.4' && '0' || '1' }}
         run: ./build.sh
 
       - uses: actions/upload-artifact@v7
@@ -57,7 +61,20 @@ jobs:
           gh release create latest build/atdos-fd.img build/atdos-fd2.img build/atdos-fd3.img build/atdos-hd.zip \
             --prerelease \
             --title "Aktueller Stand, Build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
-            --notes "Weiterarbeit nach AT-DOS 6.3 (Zweig main), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). das fertige 6.3 im Release v6.3, 6.2 in v6.2, 6.1 in v6.1, 6.0 in v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Setup-Diskette 1 (startfähig, Notfalldiskette, SETUP richtet AT-DOS auf der Festplatte ein), atdos-fd2.img: Setup-Diskette 2 (DOS-Box, Packprogramme, Zeichensätze, Demos), atdos-fd3.img: Setup-Diskette 3 (COMMAND.COM 4.0 für die DOS-Box). atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+            --notes "Weiterarbeit nach AT-DOS 6.4 (Zweig main, mit der Win16-Oberflaeche GUI.EXE; Testfassung von 6.4 in test-6.4), automatisch gebaut aus ${GITHUB_SHA::7} (Build ${GITHUB_RUN_NUMBER}, VER zeigt sie). das fertige 6.3 im Release v6.3, 6.2 in v6.2, 6.1 in v6.1, 6.0 in v6.0. Braucht einen 386 (AT-DOS 5.0 für den 286: Release v5.0). atdos-fd.img: Setup-Diskette 1 (startfähig, Notfalldiskette, SETUP richtet AT-DOS auf der Festplatte ein), atdos-fd2.img: Setup-Diskette 2 (DOS-Box, Packprogramme, Zeichensätze, Demos), atdos-fd3.img: Setup-Diskette 3 (COMMAND.COM 4.0 für die DOS-Box). atdos-hd.zip: startfähige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
+
+      - name: Testfassung "test-6.4" veroeffentlichen (Zweig 6.4)
+        if: github.ref == 'refs/heads/6.4' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd build && zip -q atdos-hd.zip atdos-hd.img)
+          BNO=$(sed -n 's/^#define ATDOS_BUILD "\(.*\)"/\1/p' build/version.h)
+          gh release delete test-6.4 --yes --cleanup-tag 2>/dev/null || true
+          gh release create test-6.4 build/atdos-fd.img build/atdos-fd2.img build/atdos-fd3.img build/atdos-hd.zip \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "AT-DOS 6.4 zur Pruefung, Build $BNO" \
+            --notes "AT-DOS 6.4 vor der Freigabe (Zweig 6.4, ohne die Win16-Oberflaeche) = 6.3 plus: eigener DOS-Kern der Boxen ATDOSCM.SYS (Vorgabe, FreeDOS als Rueckfall ueber DOS_KERNEL=FREEDOS.IMG) mit langen Namen (INT 21h 71xxh), INT 25h/26h wie MS-DOS 7, LOCK/UNLOCK, Netzlaufwerke in der Box; COMMAND.COM 4.0 deutsch; Windows 3.1 im Standard-Modus in der Box (WINLDR); SMB 3 (Signatur, Verschluesselung), NET wie unter Windows (VIEW, USER, GROUP, TIME, ...); F5-Notstart und BASEDEV=, Absturzprotokoll PANIC.LOG, RUN= in der CONFIG.SYS, AT-Zeitplaner, BACKUP/RESTORE, Netzdrucker (NET USE LPT1:), MODE CON RATE/DELAY, Tastatur-LEDs, Joystick, PROCFS, CMD mit PUSHD/POPD, HISTORY, ALIAS, FOR /F u. a.; Werkzeuge PS/KILL/TOP, DIFF/PATCH, SED, TRACERT, ARP, CURL, DIG und mehr; Startcode wird nach dem Start freigegeben, Platten-Cache bis 32 MB. Nach der Pruefung wird daraus das Release v6.4. atdos-fd.img/atdos-fd2.img/atdos-fd3.img: Setup-Disketten 1 bis 3. atdos-hd.zip: startfaehige IDE-Platte (130/16/63, im BIOS als Typ User eintragen)."
 
       - name: Release "v6.3" veroeffentlichen (Zweig 6.3)
         if: github.ref == 'refs/heads/6.3' && github.event_name != 'pull_request'

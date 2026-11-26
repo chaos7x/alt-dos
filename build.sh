@@ -448,6 +448,15 @@ BOXFILES="$B/atdoscm.sys ATDOSCM.SYS  atdoscm/CONFIG.SYS CONFIG.SYS  atdoscm/CON
 HDMDOS="$B/freedos.img FREEDOS.IMG  msdos4/COMMAND4.COM COMMAND4.COM  msdos4/README.txt COMMAND4.TXT  msdos4/LICENSE COMMAND4.LIC  $B/lock.com LOCK.COM  $B/unlock.com UNLOCK.COM"
 # Diskette 3, \DOS (Disketten 1 und 2 sind voll): NET mit Unterbefehlen
 HDDOS3="$B/gui.exe GUI.EXE  $B/task_domjoin.exe DOMJOIN.EXE  $B/task_nslookup.exe NSLOOKUP.EXE  $B/task_net.exe NET.EXE  $B/task_net1.exe NET1.EXE  $B/task_ps.exe PS.EXE  $B/task_kill.exe KILL.EXE  $B/task_pstree.exe PSTREE.EXE  $B/task_top.exe TOP.EXE  $B/task_diff.exe DIFF.EXE  $B/task_patch.exe PATCH.EXE  $B/task_tracert.exe TRACERT.EXE  $B/task_arp.exe ARP.EXE  $B/task_route.exe ROUTE.EXE  $B/task_whois.exe WHOIS.EXE  $B/task_curl.exe CURL.EXE  $B/task_where.exe WHERE.EXE $B/task_du.exe DU.EXE $B/task_df.exe DF.EXE $B/task_touch.exe TOUCH.EXE $B/task_tee.exe TEE.EXE $B/task_xargs.exe XARGS.EXE $B/task_seq.exe SEQ.EXE $B/task_sleep.exe SLEEP.EXE $B/task_timeout.exe TIMEOUT.EXE $B/task_uptime.exe UPTIME.EXE $B/task_free.exe FREE.EXE $B/task_uname.exe UNAME.EXE $B/task_base64.exe BASE64.EXE $B/task_sha256sum.exe SHA256SUM.EXE $B/task_sed.exe SED.EXE $B/task_hexedit.exe HEXEDIT.EXE $B/task_corefont.exe COREFONT.EXE"
+# Win16-Oberflaeche (GUI.EXE, HALLOW.EXE, COREFONT.EXE) auf Platte und
+# Disketten; die CI baut den Zweig 6.4 mit WITH_GUI=0 (Freigabe ohne GUI,
+# Entscheidung des Nutzers 26.11.2026). Gebaut wird sie trotzdem.
+WITH_GUI=${WITH_GUI:-1}
+if [ "$WITH_GUI" = 0 ]; then
+    HDDEMO=$(echo "$HDDEMO" | sed 's|[^ ]*/hallow\.exe HALLOW\.EXE||')
+    HDDOS3=$(echo "$HDDOS3" | sed 's|[^ ]*/gui\.exe GUI\.EXE||; s|[^ ]*/task_corefont\.exe COREFONT\.EXE||')
+    echo "ohne GUI (WITH_GUI=0)"
+fi
 # Diskette 1 (startfaehig, Notfall): System, Werkzeuge in \DOS, Treiber;
 # Diskette 2: DOS-Box, Zeichensaetze, Packprogramme, Demos. Die Platte
 # bekommt beides (copy_files + copy_extra), SETUP.EXE kopiert dasselbe.

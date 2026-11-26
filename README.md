@@ -1,4 +1,4 @@
-# alt-dos – AT-DOS 6.3 freigegeben (Zweig `6.3`, Release `v6.3`; ebenso 6.2 auf `6.2`, 6.1 auf `6.1`, 6.0 auf `6.0`, 286-Linie 5.4 auf `5.4`, 5.5 im Test auf `5.5`): Netzwerk mit TCP/IP und IPv6, Firewall, WGET, FTP, TELNET, SNTP, Karten NE2000/RTL8139/PCnet/e1000, Sperren je Laufwerk auch für CD-Dateisysteme, acht Loop-Laufwerke
+# alt-dos – AT-DOS 6.4 zur Prüfung (Zweig `6.4`, Testfassung `test-6.4`, ohne die Win16-Oberfläche; freigegeben: 6.3 auf `6.3`, 6.2 auf `6.2`, 6.1 auf `6.1`, 6.0 auf `6.0`, 286-Linie 5.4 auf `5.4`, 5.5 im Test auf `5.5`): Netzwerk mit TCP/IP und IPv6, Firewall, WGET, FTP, TELNET, SNTP, Karten NE2000/RTL8139/PCnet/e1000, Sperren je Laufwerk auch für CD-Dateisysteme, acht Loop-Laufwerke
 
 **AT-DOS** ist ein Hobby-Betriebssystem aus einer alternativen Zeitlinie.
 1986 zeigte Microsoft mit dem „Multitasking-DOS 4.0“ einen eigenen Weg zu
@@ -30,8 +30,10 @@ Geschrieben in C (Open Watcom) und Assembler (NASM), Lizenz
 **GPL-2.0-or-later**. „AT“ steht doppelt: für die Rechnerklasse, die es
 voraussetzt, und für die Alternative – wie bei DR-DOS und PC-DOS.
 
-Zweige: `main` = Weiterarbeit nach 6.3, `6.3`/`6.2`/`6.1`/`6.0` =
-freigegebene 386-Fassungen (ein Push baut das jeweilige Release), `5.x` = Weiterarbeit
+Zweige: `main` = Weiterarbeit (mit der Win16-Oberfläche), `6.4` = Stand
+zur Prüfung vor der Freigabe (CI baut die Testfassung `test-6.4` ohne die
+Oberfläche), `6.3`/`6.2`/`6.1`/`6.0` = freigegebene 386-Fassungen (ein
+Push baut das jeweilige Release), `5.x` = Weiterarbeit
 der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
 
 ## Was läuft
