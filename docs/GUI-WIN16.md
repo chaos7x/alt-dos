@@ -516,11 +516,38 @@ Behoben dabei:
    Moduls (Ressourcen werden später nachgeladen) und GUI.LOG liegt fest
    im Startverzeichnis.
 
-Offen: die Bildlaufleisten des MDI-Bereichs stehen immer da (Windows
-zeigt sie nur bei Bedarf), unterer Rand eines Gruppenfensters wird
-teils übermalt, Beschriftungen in Dialogen sind abgeschnitten (unsere
-Systemschrift ist breiter), Zuordnungen (Dokument → Programm), Ziehen
-von Symbolen zwischen Gruppen.
+Danach (26.11.2026, „die offenen Punkte vom PROGMAN“; in QEMU geprüft
+mit MSPM, osFree-PROGMAN, Notepad, Write, Minesweeper):
+
+1. Bildlaufleisten nur bei Bedarf: SetScrollRange mit lo == hi blendet
+   die Leiste aus (WS_HSCROLL/WS_VSCROLL, `sb_show` rechnet den Client neu;
+   EDIT/LISTBOX nehmen intern `sb_setrange` ohne das), ShowScrollBar
+   schaltet sie, SetWindowPos kennt SWP_FRAMECHANGED (PROGMAN setzt den
+   Stil per SetWindowLong und meldet ihn so an – vorher blieb ein grauer
+   Streifen), DefWindowProc beantwortet WM_NCCALCSIZE. CalcChildScroll
+   (`mdi_calcscroll` in mdi.c) zeigt die Leisten des MDI-Bereichs nur,
+   wenn Kinder über den Rand ragen, nach WM_MDICREATE/-DESTROY und bei
+   jedem Bewegen/Größenwechsel eines Kindes; WM_H/VSCROLL verschieben die
+   Kinder. UnionRect übergeht wie Windows leere Rechtecke – PROGMAN
+   beginnt mit SetRectEmpty, die Vereinigung mit (0,0,0,0) ergab eine
+   Gruppe ab x = −21 und eine überflüssige Leiste unter einem Symbol.
+2. Beschriftungen: Steuerelemente in Dialogen schreiben mit einer
+   proportionalen Fassung der Systemschrift (Breite je Zeichen aus dem
+   Bild der Schrift, `pwt` in gdi.c, Leerzeichen 4 Punkte); passt das
+   erste Wort einer STATIC-Zeile nicht, rückt sie enger zusammen
+   (`gfx_ptight`). Umbruch nach Punkten, Unterstreichung des Kürzels an
+   der richtigen Stelle.
+3. Zuordnungen: WIN.INI `[Extensions]` (`ext=prog ^.ext`), sonst die
+   Vorgaben von Windows 3.1 (TXT/INI → Notepad, WRI → Write, BMP →
+   Paintbrush …); ShellExecute, FindExecutable und
+   ExtractAssociatedIcon nehmen sie, gesucht wird das Programm wie bei
+   WinExec (`path_find` in main.c). Ein Eintrag „TEST.TXT“ zeigt das
+   Symbol von Notepad und öffnet es mit der Datei.
+4. Ziehen: DragObject (USER 464) mit WM_QUERYDROPOBJECT/WM_DROPOBJECT,
+   WM_DRAGLOOP/-SELECT/-MOVE, DRAGINFO in einem GlobalAlloc-Block, Esc
+   bricht ab – Symbole wandern zwischen Gruppen.
+5. Dialoge: GetNextDlgGroupItem, Pfeiltasten wandern innerhalb einer
+   Gruppe und wählen Optionsfelder (wie Windows: auch OK → Abbrechen).
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

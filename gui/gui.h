@@ -218,6 +218,9 @@ short wnd_border(struct wnd *w);
 BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait);
 void dc_rawfill(HDC h, short x0, short y0, short x1, short y1, BYTE c);
 void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg);
+void dc_ptext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg);   /* proportional */
+WORD gfx_ptextw(LPCSTR s, WORD n);
+void gfx_ptight(int on);                         /* enger setzen, wenn es nicht passt */
 HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
                         short x, short y, short cx, short cy, HWND parent,
                         HMENU menu, WORD hinst, LPVOID param);
@@ -281,6 +284,7 @@ HWND API GetFocus(void);
 int   wmatch(const char *p, const char FAR *n);
 void user_task_end(int t);
 long send_msg(HWND h, WORD m, WORD wp, DWORD lp);
+void sb_show(HWND h, WORD bar, int on);          /* Bildlaufleiste ein/aus */
 BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp);
 extern HWND desktop;
 DWORD GetSysColor_c(WORD i);

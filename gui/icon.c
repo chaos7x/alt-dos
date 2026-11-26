@@ -345,7 +345,15 @@ WORD API ExtractIcon(WORD hinst, LPCSTR file, WORD idx)
 /* SHELL: Symbol zu einer Datei (sonst das eingebaute) */
 WORD API ExtractAssociatedIcon(WORD hinst, LPSTR file, WORD FAR *idx)
 {
+    static char ap[FAPI_PATHLEN];
+    int shell_assoc(LPCSTR file, LPSTR prog, WORD n);
     WORD h = ExtractIcon(hinst, file, idx ? *idx : 0);
+    if ((!h || h == 1) && shell_assoc(file, ap, sizeof(ap))) {
+        int path_find(LPCSTR name, LPSTR out, WORD n);
+        h = path_find(ap, ap, sizeof(ap)) ? ExtractIcon(hinst, ap, 0) : 0;
+        if (h == 1)                             /* Symbol des Programms  */
+            h = 0;
+    }
     if (!h || h == 1) {
         if (idx) *idx = 0;
         h = icon_sys();

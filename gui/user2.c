@@ -165,8 +165,6 @@ void API InvalidateRgn(HWND h, WORD rgn, BOOL erase)
     else if (gdi_rgnbox(rgn, &r))
         InvalidateRect(h, &r, erase);
 }
-/* Bildlaufleisten des MDI-Bereichs: hier ohne Leisten */
-void API CalcChildScroll(HWND h, WORD sb) { (void)h; (void)sb; }
 
 /* ---- Zeichnen ------------------------------------------------------ */
 void API DrawFocusRect(HDC dc, const RECT FAR *r)
@@ -206,11 +204,6 @@ DWORD API DefHookProc(short code, WORD wp, DWORD lp, DWORD FAR *next)
     return 0;
 }
 HWND API SetSysModalWindow(HWND h) { (void)h; return 0; }
-BOOL API DragObject(HWND a, HWND b, WORD fmt, WORD d1, WORD d2, WORD cur)
-{
-    (void)a; (void)b; (void)fmt; (void)d1; (void)d2; (void)cur;
-    return 0;
-}
 /* ohne Wirkung - im Windows 3.1-SDK nicht beschrieben */
 DWORD API GetInternalIconHeader(void) { return 0; }
 
@@ -384,6 +377,7 @@ short API GetKeyNameText(DWORD lp, LPSTR buf, short n)
 
 /* ---- SHELL ---------------------------------------------------------- */
 WORD API WinExec(LPCSTR cmd, WORD show);
+short API GetProfileString(LPCSTR sec, LPCSTR key, LPCSTR def, LPSTR buf, short n);
 void API DragQueryPoint(WORD hd, POINT FAR *p) { (void)hd; p->x = p->y = 0; }
 BOOL API RegisterShellHook(HWND h, WORD fn) { (void)h; (void)fn; return 0; }
 /* Umgebungsvariablen in s ersetzen: hier unveraendert */
@@ -392,7 +386,7 @@ DWORD API DoEnvironmentSubst(LPSTR s, WORD n)
     (void)n;
     return MAKELONG(1, fstrlen(s));
 }
-static char sx_cmd[FAPI_PATHLEN + 128];
+static char sx_cmd[FAPI_PATHLEN + 128], sx_as[128];
 static int exe_like(LPCSTR f)
 {
     LPCSTR e = 0;
@@ -402,27 +396,75 @@ static int exe_like(LPCSTR f)
     return !e || !fstricmp(e, ".EXE") || !fstricmp(e, ".COM") || !fstricmp(e, ".BAT") ||
            !fstricmp(e, ".PIF");
 }
+/* Zuordnungen wie Windows 3.1: WIN.INI [Extensions] "txt=notepad.exe ^.txt"
+   (^ = Dateiname ohne Endung, also steht dort der ganze Name); fehlt der
+   Eintrag, die Vorgaben von Windows 3.1 */
+static const char *const as_def[] = {
+    "TXT", "notepad.exe ^.txt", "INI", "notepad.exe ^.ini", "LOG", "notepad.exe ^.log",
+    "WRI", "write.exe ^.wri", "BMP", "pbrush.exe ^.bmp", "CRD", "cardfile.exe ^.crd",
+    "TRM", "terminal.exe ^.trm", "REC", "recorder.exe ^.rec", "CAL", "calendar.exe ^.cal", 0
+};
+/* -> sx_cmd = Befehl fuer die Datei, 1 gefunden */
+static int assoc(LPCSTR file)
+{
+    LPCSTR e = 0, f;
+    const char *d = "";
+    WORD i, k;
+    for (f = file; *f; f++)
+        if (*f == '.') e = f + 1;
+        else if (*f == '\\' || *f == ':') e = 0;
+    if (!e || !*e)
+        return 0;
+    for (i = 0; as_def[i]; i += 2)
+        if (!fstricmp(e, as_def[i]))
+            d = as_def[i + 1];
+    if (!GetProfileString("Extensions", e, d, sx_as, sizeof(sx_as)) || !sx_as[0])
+        return 0;
+    for (i = k = 0; sx_as[i] && sx_as[i] != '^' && k < sizeof(sx_cmd) - 1; i++)
+        sx_cmd[k++] = sx_as[i];
+    if (!sx_as[i] && k < sizeof(sx_cmd) - 1)
+        sx_cmd[k++] = ' ';
+    fstrncpy(sx_cmd + k, file, sizeof(sx_cmd) - k);
+    return 1;
+}
+/* fuer ExtractAssociatedIcon: Programm zur Datei (ohne Argumente) */
+int shell_assoc(LPCSTR file, LPSTR prog, WORD n)
+{
+    WORD i;
+    if (!assoc(file))
+        return 0;
+    for (i = 0; sx_cmd[i] && sx_cmd[i] != ' ' && i < n - 1; i++)
+        prog[i] = sx_cmd[i];
+    prog[i] = 0;
+    return 1;
+}
 WORD API ShellExecute(HWND h, LPCSTR op, LPCSTR file, LPCSTR par, LPCSTR dir, short show)
 {
     WORD n;
     (void)h; (void)op; (void)dir;
-    if (!file || !exe_like(file))
+    if (!file)
+        return 2;
+    if (exe_like(file)) {
+        fstrncpy(sx_cmd, file, FAPI_PATHLEN);
+        if (par && *par) {
+            n = fstrlen(sx_cmd);
+            sx_cmd[n++] = ' ';
+            fstrncpy(sx_cmd + n, par, sizeof(sx_cmd) - n);
+        }
+    } else if (!assoc(file))
         return 31;                              /* SE_ERR_NOASSOC        */
-    fstrncpy(sx_cmd, file, FAPI_PATHLEN);
-    if (par && *par) {
-        n = fstrlen(sx_cmd);
-        sx_cmd[n++] = ' ';
-        fstrncpy(sx_cmd + n, par, sizeof(sx_cmd) - n);
-    }
     return WinExec(sx_cmd, show);
 }
 WORD API FindExecutable(LPCSTR file, LPCSTR dir, LPSTR res)
 {
     (void)dir;
-    if (!exe_like(file)) {
+    if (exe_like(file)) {
+        fstrncpy(res, file, FAPI_PATHLEN);
+        return 33;
+    }
+    if (!shell_assoc(file, res, FAPI_PATHLEN)) {
         res[0] = 0;
         return 31;
     }
-    fstrncpy(res, file, FAPI_PATHLEN);
     return 33;
 }

@@ -85,7 +85,7 @@ HWND API SetCapture(HWND h);
 void API ReleaseCapture(void);
 short API GetKeyState(short vk);
 short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw);
-void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw);
+void sb_setrange(HWND h, short bar, short lo, short hi, BOOL redraw);
 void API GetClientRect(HWND h, LPRECT r);
 
 static struct ed *eptr(HWND h)
@@ -221,11 +221,11 @@ static void sbars(struct ed *e)
     if (!w)
         return;
     if (w->style & WS_VSCROLL) {
-        SetScrollRange(e->h, 1, 0, e->nl > 1 ? e->nl - 1 : 0, 0);
+        sb_setrange(e->h, 1, 0, e->nl > 1 ? e->nl - 1 : 0, 0);
         SetScrollPos(e->h, 1, e->top, 1);
     }
     if (w->style & WS_HSCROLL) {
-        SetScrollRange(e->h, 0, 0, e->maxw > 0 ? e->maxw : 0, 0);
+        sb_setrange(e->h, 0, 0, e->maxw > 0 ? e->maxw : 0, 0);
         SetScrollPos(e->h, 0, e->left, 1);
     }
 }

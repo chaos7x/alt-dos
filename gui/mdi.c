@@ -183,6 +183,80 @@ static void mdi_arrange(struct mdi *m, int tile)
     }
 }
 
+
+/* Bildlaufleisten des Clients nur, wenn ein Kind ueber den Rand ragt
+   (wie CalcChildScroll unter Windows); Stelle immer 0 = jetzige Sicht,
+   Bereich = Vereinigung aus Kindern und Client */
+void sb_setrange(HWND h, short bar, short lo, short hi, BOOL redraw);
+short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw);
+void API ScrollWindow(HWND h, short dx, short dy, const RECT FAR *r, const RECT FAR *clip);
+void mdi_calcscroll(HWND client)
+{
+    static BYTE busy;
+    struct wnd *c = wptr(client);
+    struct mdi *m = mdp(client);
+    short i, k, l, t, r, b, cw, ch;
+    int any, nh, nv;
+    if (busy || !c || !m)
+        return;
+    busy = 1;
+    for (k = 0; k < 2; k++) {                   /* eine Leiste verkleinert den Client */
+        cw = c->cr.right - c->cr.left;
+        ch = c->cr.bottom - c->cr.top;
+        l = t = 0; r = cw; b = ch; any = 0;
+        for (i = 0; i < NWND; i++) {
+            struct wnd *o = &ww[i];
+            if (!o->used || !o->visible || o->parent != client || !(o->style & 0x40000000UL))
+                continue;
+            any = 1;
+            if (o->wr.left - c->cr.left < l) l = o->wr.left - c->cr.left;
+            if (o->wr.top - c->cr.top < t) t = o->wr.top - c->cr.top;
+            if (o->wr.right - c->cr.left > r) r = o->wr.right - c->cr.left;
+            if (o->wr.bottom - c->cr.top > b) b = o->wr.bottom - c->cr.top;
+        }
+        nh = any && !m->maxed && (l < 0 || r > cw);
+        nv = any && !m->maxed && (t < 0 || b > ch);
+        if (nh) {
+            sb_setrange(client, 0, l, r - cw, 0);
+            SetScrollPos(client, 0, 0, 1);
+        }
+        if (nv) {
+            sb_setrange(client, 1, t, b - ch, 0);
+            SetScrollPos(client, 1, 0, 1);
+        }
+        sb_show(client, 0, nh);
+        sb_show(client, 1, nv);
+    }
+    busy = 0;
+}
+void API CalcChildScroll(HWND h, WORD sb)
+{
+    (void)sb;
+    mdi_calcscroll(h);
+}
+static void mdi_scroll(HWND h, int v, WORD code, short pos)
+{
+    struct wnd *w = wptr(h);
+    short lo = w ? w->sb[v][0] : 0, hi = w ? w->sb[v][1] : 0, d = 0;
+    short pg = w ? (v ? w->cr.bottom - w->cr.top : w->cr.right - w->cr.left) : 0;
+    switch (code) {
+    case 0: d = -16; break;                     /* SB_LINEUP             */
+    case 1: d = 16; break;
+    case 2: d = -pg; break;                     /* SB_PAGEUP             */
+    case 3: d = pg; break;
+    case 4: case 5: d = pos; break;             /* SB_THUMBPOSITION/TRACK */
+    case 6: d = lo; break;                      /* SB_TOP                */
+    case 7: d = hi; break;
+    default: return;
+    }
+    if (d < lo) d = lo;
+    if (d > hi) d = hi;
+    if (!d)
+        return;
+    ScrollWindow(h, v ? 0 : -d, v ? -d : 0, 0, 0);
+    mdi_calcscroll(h);
+}
+
 LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
 {
     struct mdi *m = mdp(h);
@@ -205,8 +279,13 @@ LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
         }
         if (!m->first)
             m->first = 0x7F00;
+        sb_show(h, 3, 0);                       /* Leisten erst bei Bedarf */
         return 0;
     }
+    case 0x0114:                                /* WM_HSCROLL            */
+    case 0x0115:                                /* WM_VSCROLL            */
+        mdi_scroll(h, msg == 0x0115, wp, LOWORD(lp));
+        return 0;
     case 0x0002:                                /* WM_DESTROY            */
         if (m)
             m->client = 0;
@@ -225,6 +304,7 @@ LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
     case WM_SIZE:
         if (m && m->maxed && m->act)
             MoveWindow(m->act, 0, 0, LOWORD(lp), HIWORD(lp), 1);
+        mdi_calcscroll(h);
         return 0;
     case WM_MDICREATE: {
         /* MDICREATESTRUCT: szClass, szTitle, hOwner, x, y, cx, cy, style, lParam */
@@ -262,6 +342,7 @@ LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
         ShowWindow(k, 1);
         mdi_act(m, k);
         mdi_menu(m);
+        mdi_calcscroll(h);
         return k;
     }
     case WM_MDIDESTROY: {
@@ -276,6 +357,7 @@ LONG FAR PASCAL mdi_client_proc(HWND h, WORD msg, WORD wp, DWORD lp)
             m->maxed = 0;
         }
         DestroyWindow(k);
+        mdi_calcscroll(h);
         for (i = NMDIC - 1; i >= 0; i--)        /* oberstes noch da       */
             if (m->kid[i] && wptr(m->kid[i])) {
                 mdi_act(m, m->kid[i]);
@@ -385,6 +467,11 @@ LONG API DefMDIChildProc(HWND h, WORD msg, WORD wp, DWORD lp)
 {
     struct mdi *m = mdp_kid(h);
     switch (msg) {
+    case 0x0003:                                /* WM_MOVE               */
+    case WM_SIZE:
+        if (m)
+            mdi_calcscroll(m->client);
+        break;
     case WM_CLOSE:
         if (m) {
             send_msg(m->client, WM_MDIDESTROY, h, 0);

@@ -1327,6 +1327,65 @@ void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg)
     }
 }
 
+/* ---- proportionale Beschriftung (Dialogelemente) ------------------------
+   Die Systemschrift von Windows ist proportional, Dialogvorlagen sind auf
+   sie bemessen; mit fest 8 Punkten je Zeichen wurden Beschriftungen
+   abgeschnitten. Breite je Zeichen aus der Glyphe: belegte Spalten + 1
+   Punkt Abstand (Leerzeichen 4); Bits 4-7 = leere Spalten links. */
+static BYTE pwt[256];
+static void pw_calc(void)
+{
+    WORD c, r, l, e;
+    for (c = 0; c < 256; c++) {
+        BYTE o = 0;
+        if (fsel)
+            for (r = 0; r < FONT_H; r++)
+                o |= *(BYTE FAR *)MKFP(fsel, c * 16 + r);
+        if (!fsel)
+            pwt[c] = FONT_W;
+        else if (!o)
+            pwt[c] = 4;
+        else {
+            for (l = 0; !(o & (0x80 >> l)); l++)
+                ;
+            for (e = 7; !(o & (0x80 >> e)); e--)
+                ;
+            pwt[c] = (BYTE)((e - l + 2) | (l << 4));
+        }
+    }
+}
+static BYTE pch(BYTE ch) { return ch >= 0x80 ? a2o[ch - 0x80] : ch; }
+static BYTE ptight;                     /* eng: breite Zeichen 1 Punkt weniger */
+void gfx_ptight(int on) { ptight = (BYTE)on; }
+static BYTE padv(BYTE v)
+{
+    v &= 15;
+    return ptight && v >= 6 ? v - 1 : v;
+}
+WORD gfx_ptextw(LPCSTR s, WORD n)
+{
+    WORD i, w = 0;
+    for (i = 0; i < n; i++)
+        w += padv(pwt[pch(s[i])]);
+    return w;
+}
+void dc_ptext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg)
+{
+    struct dcs *d = dptr(h);
+    short k, i, px;
+    if (!d) return;
+    tgt(d);
+    for (k = 0; k < d->c.n; k++) {
+        RECT c = d->c.r[k];
+        for (i = 0, px = x; i < (short)n; i++) {
+            BYTE ch = pch(s[i]), v = pwt[ch];
+            glyph(px - (v >> 4), y, ch, fg, 0, 0, c.left, c.top, c.right, c.bottom);
+            px += padv(v);
+        }
+        gdi_dirty(c.left, c.top, c.right, c.bottom);
+    }
+}
+
 /* ---- Start/Ende ------------------------------------------------------ */
 static char fpath[80];
 
@@ -1353,6 +1412,7 @@ static void font_load(void)
         }
     }
     DosClose(h);
+    pw_calc();
 }
 
 void gdi_init(void)

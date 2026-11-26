@@ -2380,6 +2380,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Windows (Windows-Verz., Aufrufer, PATH), Exporttabellen in fernem
   Segment (DGROUP), Schattenstapel der Spur je Task. Lehre: GUI.LOG und
   Modulpfade voll angeben – Programme wechseln das Verzeichnis.
+  Offene Punkte danach erledigt (26.11.2026, docs/GUI-WIN16.md): Leisten
+  nur bei Bedarf (SetScrollRange lo == hi, SWP_FRAMECHANGED, WM_NCCALCSIZE,
+  CalcChildScroll in mdi.c), UnionRect übergeht leere Rechtecke,
+  proportionale Dialogschrift (`pwt`, `dc_ptext`), Zuordnungen (WIN.INI
+  [Extensions] + Vorgaben, `path_find`), DragObject, Pfeiltasten in
+  Dialoggruppen. Testfalle: Pfeil im Dialog wandert jetzt wie Windows auch
+  zwischen Knöpfen – Testskripte nicht mehr darauf verlassen.
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

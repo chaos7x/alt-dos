@@ -68,7 +68,7 @@ DWORD API GetTickCount(void);
 short API GetKeyState(short vk);
 void API GetClientRect(HWND h, LPRECT r);
 short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw);
-void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw);
+void sb_setrange(HWND h, short bar, short lo, short hi, BOOL redraw);
 BOOL API ShowWindow(HWND h, short cmd);
 BOOL API IsWindowEnabled(HWND h);
 BOOL API IsWindowVisible(HWND h);
@@ -188,6 +188,31 @@ static HWND dlg_kid(HWND d, HWND h)
     return w && (w->style & WS_CHILD) && w->parent == d ? HW(w - ww) : 0;
 }
 
+/* naechstes/voriges Element derselben Gruppe (WS_GROUP beginnt eine),
+   im Kreis, nur sichtbare und bediente (wie Windows) */
+HWND API GetNextDlgGroupItem(HWND d, HWND c, BOOL prev)
+{
+    short n = child_cnt(d), me = child_idx(d, c), a, b, i, k;
+    if (me < 0 || n <= 0)
+        return c;
+    for (a = me; a > 0; a--) {
+        struct wnd *w = wptr(child_n(d, a));
+        if (w && (w->style & WS_GROUP)) break;
+    }
+    for (b = me + 1; b < n; b++) {
+        struct wnd *w = wptr(child_n(d, b));
+        if (w && (w->style & WS_GROUP)) break;
+    }
+    for (k = 1, i = me; k < b - a; k++) {
+        struct wnd *w;
+        i = prev ? (i > a ? i - 1 : b - 1) : (i + 1 < b ? i + 1 : a);
+        w = wptr(child_n(d, i));
+        if (w && w->visible && w->enabled)
+            return child_n(d, i);
+    }
+    return c;
+}
+
 BOOL API IsDialogMessage(HWND d, MSG FAR *m)
 {
     struct wnd *dw = wptr(d), *t = wptr(m->hwnd);
@@ -223,6 +248,18 @@ BOOL API IsDialogMessage(HWND d, MSG FAR *m)
         if (k == 0x1B) {
             if (m->message == WM_KEYDOWN)
                 dlg_cmd(d, IDCANCEL, GetDlgItem(d, IDCANCEL));
+            return 1;
+        }
+        /* Pfeile: innerhalb der Gruppe weiter, Optionsfelder werden dabei
+           gewaehlt (wie Windows) */
+        if (m->message == WM_KEYDOWN && k >= 0x25 && k <= 0x28 && fk &&
+            !(code & (DLGC_WANTARROWS | DLGC_WANTALLKEYS))) {
+            HWND n = GetNextDlgGroupItem(d, fk, k == 0x25 || k == 0x26);
+            if (n && n != fk) {
+                SetFocus(n);
+                if ((WORD)send_msg(n, WM_GETDLGCODE, 0, 0) & DLGC_RADIO)
+                    send_msg(n, WM_KEYDOWN, 0x20, 0);
+            }
             return 1;
         }
     }
@@ -602,17 +639,23 @@ static void mtxt(HDC dc, short x, short y, LPCSTR s, BYTE fg)
         if (*s == '&') s++;
         b[n++] = *s;
     }
-    dc_rawtext(dc, x, y, b, n, fg);
-    if (ul >= 0)
-        dc_rawfill(dc, x + ul * FONT_W, y + FONT_H - 2, x + ul * FONT_W + FONT_W, y + FONT_H - 1, fg);
+    dc_ptext(dc, x, y, b, n, fg);
+    if (ul >= 0) {
+        short ux = x + gfx_ptextw(b, ul);
+        dc_rawfill(dc, ux, y + FONT_H - 2, ux + gfx_ptextw(b + ul, 1) - 1, y + FONT_H - 1, fg);
+    }
 }
-static short mlen(LPCSTR s)
+/* Breite in Punkten ohne die &-Zeichen (proportional wie mtxt) */
+static short mwid(LPCSTR s)
 {
+    static char b[64];
     short n = 0;
-    for (; *s; s++)
-        if (*s != '&' || s[1] == '&') n++;
-        else if (s[1] == '&') s++;
-    return n;
+    for (; *s && n < 63; s++) {
+        if (*s == '&' && s[1] && s[1] != '&') continue;
+        if (*s == '&') s++;
+        b[n++] = *s;
+    }
+    return gfx_ptextw(b, n);
 }
 
 static void radio_group(HWND h)                 /* andere Optionsfelder   */
@@ -663,7 +706,7 @@ LONG FAR PASCAL button_proc(HWND h, WORD m, WORD wp, DWORD lp)
         static struct paintst ps;
         HDC dc = BeginPaint(h, (void FAR *)&ps);
         short l = w->cr.left, t = w->cr.top, r = w->cr.right, b = w->cr.bottom;
-        short ty = (t + b - FONT_H) / 2, tw = mlen(w->title) * FONT_W;
+        short ty = (t + b - FONT_H) / 2, tw = mwid(w->title);
         BYTE fg = w->enabled ? 0 : 8;
         int foc = GetFocus() == h, dn = w->extra[0], ck = w->extra[1];
         switch (BS_TYPE(w)) {
@@ -800,15 +843,24 @@ LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
             else frame(dc, l, t, r, b, c);
         } else if (ss != 3) {                   /* Text, mit Umbruch     */
             LPCSTR s = w->title;
-            short y = t, maxc = (r - l) / FONT_W;
+            short y = t, maxw = r - l;
             dc_rawfill(dc, l, t, r, b, 15);
-            if (maxc < 1) maxc = 1;
+            {                                   /* erstes Wort passt nicht: eng */
+                static char wb[64];
+                short k;
+                for (k = 0; s[k] && s[k] != ' ' && s[k] != '\n' && k < 63; k++)
+                    wb[k] = s[k];
+                wb[k] = 0;
+                gfx_ptight(mwid(wb) > maxw);
+            }
             while (*s && y < b) {
-                short n = 0, br = 0, k, len;
+                short n = 0, br = 0, k, len, px = 0;
                 LPCSTR q = s;
                 while (q[n] && q[n] != '\n' && q[n] != '\r') {
                     if (q[n] == ' ') br = n;
-                    if (n >= maxc && ss != 0xC && ss != 0xB) {
+                    if (q[n] != '&' || (w->style & 0x80))
+                        px += gfx_ptextw(q + n, 1);
+                    if (px > maxw && n && ss != 0xC && ss != 0xB) {
                         if (br) n = br;
                         break;
                     }
@@ -818,10 +870,10 @@ LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
                     static char lb[96];
                     for (k = 0; k < n && k < 95; k++) lb[k] = q[k];
                     lb[k] = 0;
-                    len = mlen(lb) * FONT_W;
+                    len = (w->style & 0x80) ? gfx_ptextw(lb, k) : mwid(lb);
                     k = ss == 1 ? (l + r - len) / 2 : ss == 2 ? r - len : l;
                     if (w->style & 0x80)
-                        dc_rawtext(dc, k, y, lb, fstrlen(lb), fg);
+                        dc_ptext(dc, k, y, lb, fstrlen(lb), fg);
                     else
                         mtxt(dc, k, y, lb, fg);
                 }
@@ -832,6 +884,7 @@ LONG FAR PASCAL static_proc(HWND h, WORD m, WORD wp, DWORD lp)
                 y += FONT_H;
             }
         }
+        gfx_ptight(0);
         EndPaint(h, (void FAR *)&ps);
         return 0;
     }
@@ -870,7 +923,7 @@ static void lb_sb(struct lb *l, struct wnd *w)
 {
     short r = lb_rows(w), mx = l->n > (WORD)r ? l->n - r : 0;
     if (w->style & WS_VSCROLL) {
-        SetScrollRange(l->h, 1, 0, mx, 0);
+        sb_setrange(l->h, 1, 0, mx, 0);
         SetScrollPos(l->h, 1, l->top, 1);
     }
 }

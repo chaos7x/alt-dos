@@ -141,28 +141,34 @@ short wnd_border(struct wnd *w)
     return 0;
 }
 
-static void calc_client(struct wnd *w)
+/* Arbeitsbereich aus dem Fensterrechteck nach dem Stil (auch fuer
+   WM_NCCALCSIZE: PROGMAN rechnet so die Bildlaufleisten seiner Gruppen) */
+static void nc_calc(struct wnd *w, RECT FAR *r)
 {
     short b = wnd_border(w);
-    w->cr = w->wr;
-    win_gen++;
     if (w->style & WS_MINIMIZE) {               /* Symbol: kein Client   */
-        w->cr.right = w->cr.left;
-        w->cr.bottom = w->cr.top;
+        r->right = r->left;
+        r->bottom = r->top;
         return;
     }
-    w->cr.left += b; w->cr.right -= b;
-    w->cr.top += b; w->cr.bottom -= b;
+    r->left += b; r->right -= b;
+    r->top += b; r->bottom -= b;
     if ((w->style & WS_CAPTION) == WS_CAPTION)
-        w->cr.top += CAPH;
+        r->top += CAPH;
     if (w->menu && !(w->style & WS_CHILD))
-        w->cr.top += MENUH;
+        r->top += MENUH;
     if (w->style & WS_VSCROLL)
-        w->cr.right -= SBW;
+        r->right -= SBW;
     if (w->style & WS_HSCROLL)
-        w->cr.bottom -= SBW;
-    if (w->cr.right < w->cr.left) w->cr.right = w->cr.left;
-    if (w->cr.bottom < w->cr.top) w->cr.bottom = w->cr.top;
+        r->bottom -= SBW;
+    if (r->right < r->left) r->right = r->left;
+    if (r->bottom < r->top) r->bottom = r->top;
+}
+static void calc_client(struct wnd *w)
+{
+    w->cr = w->wr;
+    win_gen++;
+    nc_calc(w, &w->cr);
 }
 
 static struct wnd *top_of(struct wnd *w)
@@ -1591,6 +1597,14 @@ BOOL API SetWindowPos(HWND h, HWND after, short x, short y, short cx, short cy, 
     }
     if ((f & 3) != 3)
         win_move(w, x, y, cx, cy);
+    if ((f & 0x20) && (w = wptr(h)) != 0) {     /* SWP_FRAMECHANGED: Stil */
+        short ow = w->cr.right - w->cr.left, oh = w->cr.bottom - w->cr.top;
+        calc_client(w);                         /* (Leisten per SetWindowLong, PROGMAN) */
+        w->need_ncpaint = 1;
+        invalidate(w, 0, 1);
+        if (w->sized && (ow != w->cr.right - w->cr.left || oh != w->cr.bottom - w->cr.top))
+            send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+    }
     if (f & 0x40) ShowWindow(h, 5);             /* SWP_SHOWWINDOW       */
     if (f & 0x80) ShowWindow(h, 0);
     return 1;
@@ -1830,6 +1844,12 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
     switch (m) {
     case WM_NCCREATE:
         return 1;
+    case 0x0083:                                /* WM_NCCALCSIZE: Fenster- -> Arbeitsbereich */
+        if (lp) {
+            RECT FAR *q = (RECT FAR *)lp;
+            nc_calc(w, q);
+        }
+        return 0;
     case WM_CLOSE:
         DestroyWindow(h);
         return 0;
@@ -2023,6 +2043,103 @@ BOOL API IsChild(HWND p, HWND h)
 }
 HWND API GetDesktopWindow(void) { return desktop; }
 HWND API WindowFromPoint(POINT p) { return win_at(p.x, p.y); }
+
+/* ---- DragObject (USER.464, wie Windows 3.1): Ziehen eines Objekts, das
+   PROGMAN und der Datei-Manager benutzen. Die Schleife laeuft im Task des
+   Aufrufers mit eingefangener Maus; je Bewegung fragt sie das Fenster
+   unter dem Zeiger und seine Eltern bis zum Bereich (scope) mit
+   WM_QUERYDROPOBJECT, das erste, das zusagt, ist das Ziel (WM_DRAGSELECT
+   beim Wechsel, WM_DRAGMOVE, WM_DRAGLOOP an die Quelle); Loslassen schickt
+   WM_DROPOBJECT an das Ziel, dessen Antwort zurueckkommt. Esc bricht ab.
+   DRAGINFO: hWnd, hScope, wFlags, hList, hOfStruct, pt, l (18 Byte). ---- */
+WORD API GlobalAlloc(WORD flags, DWORD size);
+WORD API GlobalFree(WORD h);
+#define WM_DROPOBJECT    0x022A
+#define WM_QUERYDROPOBJECT 0x022B
+#define WM_DRAGLOOP      0x022D
+#define WM_DRAGSELECT    0x022E
+#define WM_DRAGMOVE      0x022F
+static int under(HWND h, HWND scope)             /* h liegt in scope      */
+{
+    struct wnd *w = wptr(h);
+    while (w) {
+        if (HW(w - ww) == scope)
+            return 1;
+        if (!(w->style & WS_CHILD))
+            return !scope;
+        w = wptr(w->parent);
+    }
+    return 0;
+}
+static HWND drag_query(HWND scope, WORD di, short x, short y)
+{
+    HWND h = win_at(x, y);
+    struct wnd *w;
+    WORD FAR *d = MKFP(di, 0);
+    if (!under(h, scope))
+        return 0;
+    for (w = wptr(h); w; ) {
+        HWND q = HW(w - ww);
+        int nc = x < w->cr.left || x >= w->cr.right || y < w->cr.top || y >= w->cr.bottom;
+        d[5] = x - w->cr.left;
+        d[6] = y - w->cr.top;
+        if (send_msg(q, WM_QUERYDROPOBJECT, nc, MAKELONG(0, di)))
+            return q;
+        if (q == scope || !(w->style & WS_CHILD) || !(w = wptr(w->parent)))
+            break;
+    }
+    return 0;
+}
+DWORD API DragObject(HWND scope, HWND h, WORD fmt, WORD hlist, WORD hof, WORD cur)
+{
+    static MSG msg;
+    WORD di = GlobalAlloc(0x40, 18);
+    WORD FAR *d;
+    HWND tgt = 0, oc;
+    DWORD r = 0;
+    (void)cur;
+    if (!di || !wptr(h))
+        return 0;
+    d = MKFP(di, 0);
+    d[0] = h; d[1] = scope; d[2] = fmt; d[3] = hlist; d[4] = hof;
+    oc = capture;
+    capture = h;
+    for (;;) {
+        if (!user_get_msg(&msg, 0, 0, 0, 1, 1)) {
+            PostQuitMessage(msg.wParam);
+            break;
+        }
+        if (msg.message == WM_KEYDOWN && msg.wParam == 0x1B) {     /* Esc */
+            tgt = 0;
+            break;
+        }
+        if (msg.message == WM_MOUSEMOVE || msg.message == WM_LBUTTONUP) {
+            short x = mpos.x, y = mpos.y;
+            HWND n = drag_query(scope, di, x, y);
+            if (n != tgt) {
+                if (tgt) send_msg(tgt, WM_DRAGSELECT, 0, MAKELONG(0, di));
+                if (n) send_msg(n, WM_DRAGSELECT, 1, MAKELONG(0, di));
+                tgt = n;
+            }
+            if (tgt)
+                send_msg(tgt, WM_DRAGMOVE, 0, MAKELONG(0, di));
+            send_msg(h, WM_DRAGLOOP, tgt != 0, MAKELONG(0, di));
+            if (msg.message == WM_LBUTTONUP)
+                break;
+            continue;
+        }
+        if (msg.message >= 0x0100 && msg.message <= 0x0108)
+            continue;                           /* Tasten verschlucken   */
+        DispatchMessage(&msg);
+    }
+    capture = wptr(oc) ? oc : 0;
+    if (tgt) {
+        send_msg(tgt, WM_DRAGSELECT, 0, MAKELONG(0, di));
+        r = send_msg(tgt, WM_DROPOBJECT, h, MAKELONG(0, di));
+    }
+    GlobalFree(di);
+    return r;
+}
 /* nach oben ohne zu aktivieren (Klappliste) */
 void wnd_raise(HWND h)
 {
@@ -2093,7 +2210,8 @@ short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw)
     return o;
 }
 short API GetScrollPos(HWND h, short bar) { short *s = sbp(h, bar); return s ? s[2] : 0; }
-void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw)
+/* intern (EDIT, LISTBOX): nur die Werte, Leiste bleibt wie sie ist */
+void sb_setrange(HWND h, short bar, short lo, short hi, BOOL redraw)
 {
     short *s = sbp(h, bar);
     if (!s) return;
@@ -2101,6 +2219,36 @@ void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw)
     if (s[2] < lo) s[2] = lo;
     if (s[2] > hi) s[2] = hi;
     if (redraw) sb_redraw(h, bar);
+}
+/* Leiste eines Fensters ein-/ausblenden (bar 0 waagerecht, 1 senkrecht,
+   3 beide): wie Windows ueber WS_HSCROLL/WS_VSCROLL, der Arbeitsbereich
+   aendert sich, das Fenster bekommt WM_SIZE */
+void sb_show(HWND h, WORD bar, int on)
+{
+    struct wnd *w = wptr(h);
+    DWORD st;
+    if (!w || is_sbctl(w))
+        return;
+    st = w->style;
+    if (bar == 0 || bar == 3)
+        st = on ? st | WS_HSCROLL : st & ~WS_HSCROLL;
+    if (bar == 1 || bar == 3)
+        st = on ? st | WS_VSCROLL : st & ~WS_VSCROLL;
+    if (st == w->style)
+        return;
+    w->style = st;
+    calc_client(w);
+    w->need_ncpaint = 1;
+    invalidate(w, 0, 1);
+    if (w->sized)
+        send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+}
+/* wie Windows: Bereich leer (lo = hi) blendet die Leiste aus, sonst ein */
+void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw)
+{
+    sb_setrange(h, bar, lo, hi, redraw);
+    if (bar == 0 || bar == 1)
+        sb_show(h, bar, lo != hi);
 }
 void API GetScrollRange(HWND h, short bar, short FAR *lo, short FAR *hi)
 {
@@ -2112,6 +2260,8 @@ void API ShowScrollBar(HWND h, WORD bar, BOOL show)
 {
     if (bar == 2)                               /* SB_CTL: das Fenster   */
         ShowWindow(h, show ? 5 : 0);
+    else
+        sb_show(h, bar, show);
 }
 HMENU API GetSystemMenu(HWND h, BOOL r) { (void)h; (void)r; return 0; }
 HWND API GetDlgItem(HWND p, short id)
@@ -2260,12 +2410,26 @@ BOOL API IntersectRect(LPRECT d, const RECT FAR *a, const RECT FAR *b)
     }
     return 1;
 }
+/* wie Windows: ein leeres Rechteck zaehlt nicht mit (PROGMAN beginnt mit
+   SetRectEmpty und vereinigt dann seine Elemente) */
 BOOL API UnionRect(LPRECT d, const RECT FAR *a, const RECT FAR *b)
 {
-    d->left = a->left < b->left ? a->left : b->left;
-    d->top = a->top < b->top ? a->top : b->top;
-    d->right = a->right > b->right ? a->right : b->right;
-    d->bottom = a->bottom > b->bottom ? a->bottom : b->bottom;
+    int ea = a->left >= a->right || a->top >= a->bottom;
+    int eb = b->left >= b->right || b->top >= b->bottom;
+    RECT r;
+    if (ea && eb) {
+        d->left = d->top = d->right = d->bottom = 0;
+        return 0;
+    }
+    if (ea) { r.left = b->left; r.top = b->top; r.right = b->right; r.bottom = b->bottom; }
+    else if (eb) { r.left = a->left; r.top = a->top; r.right = a->right; r.bottom = a->bottom; }
+    else {
+        r.left = a->left < b->left ? a->left : b->left;
+        r.top = a->top < b->top ? a->top : b->top;
+        r.right = a->right > b->right ? a->right : b->right;
+        r.bottom = a->bottom > b->bottom ? a->bottom : b->bottom;
+    }
+    d->left = r.left; d->top = r.top; d->right = r.right; d->bottom = r.bottom;
     return 1;
 }
 

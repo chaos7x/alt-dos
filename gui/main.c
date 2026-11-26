@@ -133,14 +133,10 @@ static int fstrchr_(const char *s, char c)
     return 0;
 }
 
-/* Programm ohne Pfad: wie Windows (LoadModule) erst im Windows-Verzeich-
-   nis, dann im Verzeichnis des aufrufenden Programms, dann im PATH (GUI aus
-   C:\ mit PROGMAN in C:\DOS\GUI; PROGMAN wechselt vor WinExec ins
-   Arbeitsverzeichnis) */
 static char sp_full[FAPI_PATHLEN], sp_path[512];
-static int sp_try(LPCSTR dir, WORD n, LPCSTR name, LPCSTR a, WORD show)
+static int sp_try(LPCSTR dir, WORD n, LPCSTR name)
 {
-    WORD k = 0, i;
+    WORD k = 0, i, h;
     for (i = 0; i < n && k < FAPI_PATHLEN - 2; i++)
         sp_full[k++] = dir[i];
     if (k && sp_full[k - 1] != '\\')
@@ -148,33 +144,49 @@ static int sp_try(LPCSTR dir, WORD n, LPCSTR name, LPCSTR a, WORD show)
     for (i = 0; name[i] && k < FAPI_PATHLEN - 1; i++)
         sp_full[k++] = name[i];
     sp_full[k] = 0;
-    return task_start(sp_full, a, show);
+    h = DosOpen(sp_full);
+    if (FAPI_FAILED(h))
+        return 0;
+    DosClose(h);
+    return 1;
 }
+/* Datei ohne Pfad finden -> out (voller oder relativer Pfad), 1 gefunden */
+int path_find(LPCSTR name, LPSTR out, WORD n)
+{
+    char *s, *e;
+    int ok = 0;
+    WORD i;
+    for (i = 0; name[i]; i++)
+        if (name[i] == '\\' || name[i] == ':')
+            break;
+    ok = sp_try("", 0, name);                   /* wie angegeben         */
+    if (!ok && !name[i])
+        ok = sp_try(sp_path, GetWindowsDirectory(sp_path, sizeof(sp_path)), name);
+    if (!ok && !name[i] && cur_task >= 0 && wt[cur_task].hmod) {   /* Aufrufer */
+        const char FAR *p = wm[wt[cur_task].hmod - 1].path;
+        WORD k = 0, j;
+        for (j = 0; p[j]; j++)
+            if (p[j] == '\\')
+                k = j;
+        ok = k && sp_try(p, k, name);
+    }
+    if (!ok && !name[i] && !FAPI_FAILED(DosGetEnv("PATH", sp_path, sizeof(sp_path))))
+        for (s = sp_path; *s && !ok; s = *e ? e + 1 : e) {
+            for (e = s; *e && *e != ';'; e++)
+                ;
+            ok = e > s && sp_try(s, (WORD)(e - s), name);
+        }
+    if (ok && out)                              /* sonst steht er in sp_full */
+        fstrncpy(out, sp_full, n);
+    return ok;
+}
+/* Programm ohne Pfad starten wie Windows (LoadModule): aktuelles
+   Verzeichnis, Windows-Verzeichnis, Verzeichnis des aufrufenden Programms,
+   PATH (GUI aus C:\ mit PROGMAN in C:\DOS\GUI; PROGMAN wechselt vor
+   WinExec ins Arbeitsverzeichnis) */
 int start_search(LPCSTR name, LPCSTR a, WORD show)
 {
-    WORD n = GetWindowsDirectory(sp_path, sizeof(sp_path));
-    char *s, *e;
-    int t = sp_try(sp_path, n, name, a, show);
-    if (t != 2)
-        return t;
-    if (cur_task >= 0 && wt[cur_task].hmod) {       /* Verz. des Aufrufers */
-        const char FAR *p = wm[wt[cur_task].hmod - 1].path;
-        WORD k = 0, i;
-        for (i = 0; p[i]; i++)
-            if (p[i] == '\\')
-                k = i;
-        if (k && (t = sp_try(p, k, name, a, show)) != 2)
-            return t;
-    }
-    if (FAPI_FAILED(DosGetEnv("PATH", sp_path, sizeof(sp_path))))
-        return 2;
-    for (s = sp_path; *s; s = *e ? e + 1 : e) {
-        for (e = s; *e && *e != ';'; e++)
-            ;
-        if (e > s && (t = sp_try(s, (WORD)(e - s), name, a, show)) != 2)
-            return t;
-    }
-    return 2;
+    return path_find(name, 0, 0) ? task_start(sp_full, a, show) : 2;
 }
 
 void gui_main(void)
