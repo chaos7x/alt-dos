@@ -298,15 +298,79 @@ __I4D:
 ; Aufrufspur (SET GUITRACE=1): jeder Import geht ueber einen Vorschaltcode
 ; (w16ldr.c tr_thunk), der mit DS = GUI und AX = Kennung hierher ruft;
 ; die Kennung (Modul << 12 | Nummer) kommt in einen Ring von 128 Worten.
-extern _tr_ring, _tr_pos
+extern _tr_ring, _tr_pos, _tr_dseg
 segment GCRT_TEXT
+; Stapel beim Eintritt: [sp] Ruecksprung in den Stummel, +4 ax, +6 ds
+; des Stummels, +8/+10 Ruecksprung ins Programm. Ohne Bit 15 in der
+; Kennung wird der Ruecksprung ins Programm auf tr_post umgebogen
+; (Schattenstapel, 64 tief), das die Rueckgabe DX:AX vermerkt.
+; Segment _tr_dseg: Rueckgaben AX bei 0, DX bei 256, gueltig bei 512
+; (je 128 Worte), Schattenstapel bei 768 (64 x 8 Byte), Tiefe bei 1280.
+TR_RDX  equ 256
+TR_ROK  equ 512
+TR_SHAD equ 768
+TR_SP   equ 1280
 global _tr_common
 _tr_common:
         push    bx
+        push    bp
+        mov     bp, sp
+        push    es
         mov     bx, [_tr_pos]
         and     bx, 127
         shl     bx, 1
         mov     [_tr_ring+bx], ax
-        inc     word [_tr_pos]
+        mov     es, [_tr_dseg]
+        mov     word [es:TR_ROK+bx], 0
+        test    ax, 0x8000
+        jnz     .nosh
+        mov     bx, [es:TR_SP]
+        cmp     bx, 64
+        jae     .nosh
+        shl     bx, 3
+        mov     ax, [bp+12]
+        mov     [es:TR_SHAD+bx], ax
+        mov     ax, [bp+14]
+        mov     [es:TR_SHAD+bx+2], ax
+        mov     ax, [_tr_pos]
+        mov     [es:TR_SHAD+bx+4], ax
+        inc     word [es:TR_SP]
+        mov     word [bp+12], tr_post
+        mov     [bp+14], cs
+.nosh:  inc     word [_tr_pos]
+        pop     es
+        pop     bp
         pop     bx
+        retf
+
+tr_post:
+        sub     sp, 4
+        push    bp
+        mov     bp, sp
+        push    ds
+        push    es
+        push    bx
+        push    cx
+        mov     bx, DGROUP
+        mov     ds, bx
+        mov     es, [_tr_dseg]
+        mov     bx, [es:TR_SP]
+        dec     bx
+        mov     [es:TR_SP], bx
+        shl     bx, 3
+        mov     cx, [es:TR_SHAD+bx]
+        mov     [bp+2], cx
+        mov     cx, [es:TR_SHAD+bx+2]
+        mov     [bp+4], cx
+        mov     bx, [es:TR_SHAD+bx+4]
+        and     bx, 127
+        shl     bx, 1
+        mov     [es:bx], ax
+        mov     [es:TR_RDX+bx], dx
+        mov     word [es:TR_ROK+bx], 1
+        pop     cx
+        pop     bx
+        pop     es
+        pop     ds
+        pop     bp
         retf

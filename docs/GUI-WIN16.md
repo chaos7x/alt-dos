@@ -371,7 +371,7 @@ Oberfläche gibt es noch nicht. Geprüft in QEMU mit einem Testprogramm
 (Scratchpad): Blau gewählt -> 0xFF0000, 11 pt fett unterstrichen -> 110/700,
 Drucken -> 1008h.
 
-### Stand: Write (25.11.2026, noch nicht lauffähig)
+### Stand: Write (25.11.2026; läuft seit 26.11.2026)
 
 WRITE.EXE aus Windows 3.1 (deutsch, aus der Kopie des Nutzers, nur im
 Scratchpad) lädt und läuft bis in WM_CREATE seines Hauptfensters, meldet
@@ -403,7 +403,7 @@ Dafür neu bzw. behoben:
   SetStretchBltMode, SetTextJustification, PlayMetaFile (ohne Wirkung).
 - USER: GetSystemMetrics vollständig (vorher 0 u. a. für
   SM_CXFULLSCREEN, SM_MOUSEPRESENT), CREATESTRUCT.hMenu = geladenes
-  Klassenmenü, nach WM_CREATE auch WM_MOVE, GetUpdateRect, ScrollDC (meldet
+  Klassenmenü, nach WM_CREATE auch WM_MOVE (nur Kind-/Popup-Fenster, s. u.), GetUpdateRect, ScrollDC (meldet
   den ganzen Bereich als neu zu zeichnen), ChangeMenu (Windows 2.x),
   RegisterClipboardFormat, FlashWindow, InSendMessage, GetCaretBlinkTime;
   MessageBox bricht lange Zeilen an Wortgrenzen um. KEYBOARD: VkKeyScan.
@@ -416,13 +416,42 @@ kommen als `F000h|AH` dazu. Vor jeder MessageBox steht der Ring im
 GUI.LOG („Aufruf (Modul<<12|Nummer)“, Modul 1 KERNEL, 2 USER, 3 GDI,
 4 KEYBOARD, 5 COMMDLG, 6 SHELL, 7 OLECLI; Namen in `gui/ordinals.txt`).
 
-Befund mit der Spur: WM_CREATE läuft vollständig durch (Zeichenketten,
-Klassen, Profil, Schriften, temporäre Datei, INT 21h/47h) und meldet
-keinen Fehler; Write legt danach keine Kindfenster an, räumt auf und
-meldet den Speichermangel. Hinweis aus Wine-Bug 19494: dort verschwand
-dieselbe Meldung von Write je nach Arbeitsverzeichnis – nächster
-Ansatz ist also, was Write aus Laufwerk/Verzeichnis ableitet (temporäre
-Datei, aktuelles Verzeichnis, freier Platz).
+Die Spur schreibt auch die Rückgaben mit (DX:AX je Aufruf, „AX …/DX …“
+unter dem Eintrag): der Vorschaltcode biegt den Rücksprung ins Programm
+über `tr_post` um (Schattenstapel 64 tief, Tabellen in einem eigenen
+Segment `tr_dseg`, nur bei GUITRACE – DGROUP von GUI.EXE ist voll);
+Catch/Throw (KERNEL 55/56) ohne Rückgabe. F12 schreibt die Spur jederzeit
+ins GUI.LOG; erfolglose PeekMessage-Aufrufe und INT 21h 2Ch (Leerlauf)
+kommen nicht in den Ring.
+
+Write läuft seit 26.11.2026 (in QEMU geprüft: Start, Menüs Datei/
+Bearbeiten, Tippen mit Schreibmarke und Endmarke). Gefunden mit der Spur:
+1. **INT 21h 47h** (aktuelles Verzeichnis) muss wie MS-DOS bei Erfolg
+   AX = 0100h liefern (undokumentiert, Wine tut es ebenso) – Write prüft
+   den Wert; mit dem alten AX meldete es „Nicht genügend
+   Arbeitsspeicher“ (der Hinweis aus Wine-Bug 19494, Verzeichnis, führte
+   dorthin: Write fragt dort mit AX = 4743h, DL = 3).
+2. Steuerelement **SCROLLBAR** fehlte (Write legt seine Bildlaufleisten
+   als eigene Fenster an): jetzt Klasse `SCROLLBAR` in user.c
+   (`sbctl_proc`, SBS_VERT/SBS_SIZEBOX, Meldungen WM_xSCROLL an das
+   Elternfenster mit dem eigenen Griff in HIWORD(lParam), SB_CTL in
+   Set/GetScrollPos/Range, ShowScrollBar).
+3. **WM_SIZE/WM_MOVE**: Hauptfenster bekommen sie erst beim ersten
+   ShowWindow (wie Windows, Wine `WIN_NEED_SIZE`), Kind- und Popup-Fenster
+   gleich nach WM_CREATE – Writes WM_SIZE bewegte sonst Kindfenster, die
+   es noch nicht gab.
+4. **Gehaltene DCs**: Write holt den DC seines Dokumentfensters einmal
+   beim Start (noch unsichtbar) und zeichnet später damit – Ursprung und
+   Clip stammten aus dieser Zeit (leerer Clip, Text unsichtbar). Jetzt
+   zählt `win_gen` jede Änderung an Lage, Rang und Sichtbarkeit; ein DC
+   außerhalb von BeginPaint rechnet beim nächsten Gebrauch Ursprung und
+   Clip neu (`dptr`, gdi.c). Ein mit IntersectClipRect verkleinerter Clip
+   geht dabei verloren.
+5. INT 21h 43h (Attribute lesen/setzen) im Win16-DOS.
+
+Offen: Write zeichnet mit der Systemschrift (keine echten Schriftgrößen),
+Drucken (kein Drucker), OLE-Objekte, CS_OWNDC als echter Klassen-DC
+(Einstellungen bleiben bei uns nur im gehaltenen DC).
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

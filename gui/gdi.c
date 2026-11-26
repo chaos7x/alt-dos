@@ -366,6 +366,8 @@ static HGDIOBJ bm_new(WORD w, WORD h, BYTE np)
 #define NDC 24
 struct dcs {
     BYTE  used, paint, ropx, mem;
+    BYTE  client;                       /* Ursprung/Clip: Arbeitsbereich */
+    WORD  gen;                          /* win_gen bei der letzten Rechnung */
     HGDIOBJ bmo;                        /* Speicher-DC: gewaehlte Bitmap */
     HWND  hwnd;
     short ox, oy;                       /* Ursprung (Bildschirm)        */
@@ -386,9 +388,22 @@ static struct dcs dcv[NDC];
 static struct dcs *dptr(HDC h)
 {
     WORD i = (((WORD)h) - 0x7000u) >> 2;
+    struct dcs *d;
     if (h < 0x7000u || i >= NDC || !dcv[i].used)
         return 0;
-    return &dcv[i];
+    d = &dcv[i];
+    /* ein gehaltener DC (Write holt ihn einmal beim Start, CS_OWNDC):
+       haben sich Fenster bewegt oder gezeigt, Ursprung und Clip neu */
+    if (d->gen != win_gen && d->hwnd && !d->paint && !d->mem) {
+        struct wnd *w = wptr(d->hwnd);
+        d->gen = win_gen;
+        if (w) {
+            d->ox = d->client ? w->cr.left : w->wr.left;
+            d->oy = d->client ? w->cr.top : w->wr.top;
+            clip_window(d->hwnd, d->client, &d->c);
+        }
+    }
+    return d;
 }
 
 static void rect_and(RECT FAR *a, const RECT FAR *b)
@@ -494,6 +509,8 @@ HDC dc_get(HWND h, int client, int paint)
     d->used = 1;
     d->hwnd = h;
     d->paint = (BYTE)paint;
+    d->client = (BYTE)client;
+    d->gen = win_gen;
     if (w) {
         d->ox = client ? w->cr.left : w->wr.left;
         d->oy = client ? w->cr.top : w->wr.top;

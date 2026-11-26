@@ -109,12 +109,18 @@ static void modname(WORD k, char *d)
    zu Code wird. */
 BYTE  w16_trace;
 WORD  tr_ring[128], tr_pos;
+WORD  tr_dseg;          /* Rueckgaben + Schattenstapel (gcrt.asm TR_*) */
 void __far __cdecl tr_common(void);
 static WORD tr_sel, tr_off;
 static void FAR *tr_thunk(void FAR *fp, WORD id)
 {
     BYTE FAR *t;
     void FAR *tc = (void FAR *)tr_common;
+    if (!tr_dseg) {
+        tr_dseg = seg_new(1282);
+        if (!tr_dseg)
+            return fp;
+    }
     if (!tr_sel) {
         tr_sel = seg_new(0xFFF0u);
         tr_off = 0;
@@ -141,8 +147,14 @@ void tr_dump(const char *why)
     if (!w16_trace)
         return;
     glog(why);
-    for (i = tr_pos - n; i != tr_pos; i++)
-        glogn("  Aufruf (Modul<<12|Nummer) ", tr_ring[i & 127]);
+    for (i = tr_pos - n; i != tr_pos; i++) {
+        WORD k = i & 127;
+        glogn("  Aufruf (Modul<<12|Nummer) ", tr_ring[k] >= 0xF000u ? tr_ring[k] : tr_ring[k] & 0x7FFF);
+        if (tr_dseg && ((WORD FAR *)MKFP(tr_dseg, 512))[k]) {
+            glogn("    AX ", ((WORD FAR *)MKFP(tr_dseg, 0))[k]);
+            glogn("    DX ", ((WORD FAR *)MKFP(tr_dseg, 256))[k]);
+        }
+    }
 }
 
 static int reloc_seg(struct w16mod *w, int s)
@@ -188,7 +200,8 @@ static int reloc_seg(struct w16mod *w, int s)
                     fp = (void FAR *)w16_stub;
                 }
                 else if (w16_trace && !isc && !(!fstricmp(mn, "KERNEL") && (b == 91 || b == 102)))
-                    fp = tr_thunk(fp, (exp_builtin(mn) << 12) | (b & 0xFFF));
+                    fp = tr_thunk(fp, (exp_builtin(mn) << 12) | (b & 0xFFF)
+                                  | (!fstricmp(mn, "KERNEL") && (b == 55 || b == 56) ? 0x8000u : 0));
                 tsg = SELOF(fp);
                 toff = OFFOF(fp);
                 if (isc)

@@ -135,7 +135,8 @@ void  w16_missing(void);
 /* ---- Exporte (exports.c) ---- */
 void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst);
 extern BYTE w16_trace;
-extern WORD tr_ring[128], tr_pos;
+extern WORD win_gen;               /* aendert sich mit Lage/Sichtbarkeit */
+extern WORD tr_ring[128], tr_pos, tr_dseg;
 void  tr_dump(const char *why);                   /* Aufrufspur ins GUI.LOG */
 int   exp_builtin(LPCSTR mod);                    /* 1.. oder 0 */
 void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst);

@@ -2369,11 +2369,16 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Öffnen/Speichern/Suchen/Ersetzen, Farbe, Schriftart darauf (Drucken:
   „kein Drucker“), Hooks/eigene Vorlagen. Stand
   in `docs/GUI-WIN16.md` „Standarddialoge“.
-  Write (25.11.2026, „Stand: Write“, noch nicht lauffähig): lädt (84
+  Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
+  INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
+  „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für
+  Hauptfenster erst bei ShowWindow, gehaltene DCs rechnen Ursprung/Clip
+  nach `win_gen` neu, INT 21h 43h; Spur jetzt mit Rückgaben (DX:AX) und
+  F12. Davor (25.11.2026): lädt (84
   Segmente – Segmenttabelle je Modul jetzt eigenes Segment), OLECLI
   (`gui/ole.c`), Atome, LocalHandleDelta, Halde auf 4 Byte, TEXTMETRIC
   korrigiert (lag ab Byte 19 verschoben), Schriftliste wie Windows 3.1;
-  meldet nach WM_CREATE weiter „Nicht genügend Arbeitsspeicher“. Werkzeug:
+  Werkzeug:
   `SET GUITRACE=1` schreibt vor jeder MessageBox die letzten 128 Importe
   (Modul<<12|Nummer, INT 21h als F000h|AH) ins GUI.LOG. Lehre: WRITE.EXE
   nicht zerlegen – Ursachen nur über Spur und eigene Rückgabewerte.

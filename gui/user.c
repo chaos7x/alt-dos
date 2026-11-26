@@ -145,6 +145,7 @@ static void calc_client(struct wnd *w)
 {
     short b = wnd_border(w);
     w->cr = w->wr;
+    win_gen++;
     if (w->style & WS_MINIMIZE) {               /* Symbol: kein Client   */
         w->cr.right = w->cr.left;
         w->cr.bottom = w->cr.top;
@@ -249,6 +250,7 @@ void clip_window(HWND h, int client, struct clip FAR *c)
     }
 }
 
+WORD win_gen = 1;                       /* Stand der Fensterlagen (DC-Clip) */
 /* ---- Zeichnen des Rahmens ------------------------------------------- */
 void dc_rawfill(HDC h, short x0, short y0, short x1, short y1, BYTE c);
 void dc_rawtext(HDC h, short x, short y, LPCSTR s, WORD n, BYTE fg);
@@ -504,6 +506,7 @@ static void win_move(struct wnd *w, short x, short y, short cx, short cy)
     RECT old = w->wr;
     short dx, dy;
     struct wnd *p;
+    win_gen++;                                  /* Lage/Sichtbarkeit: DCs neu */
     if ((w->style & WS_CHILD) && (p = wptr(w->parent)) != 0) {
         x += p->cr.left;
         y += p->cr.top;
@@ -584,7 +587,7 @@ static void activate(HWND h)
     o = wptr(active);
     active = h;
     if (w->z != zmax) {
-        w->z = ++zmax;
+        w->z = ++zmax; win_gen++;
         expose(&w->wr);
     } else
         w->need_ncpaint = 1;
@@ -890,15 +893,21 @@ static void drag_xor(void)
 }
 
 /* Bildlaufleiste: Klick, Wiederholen beim Halten, Schieber ziehen */
-static struct { HWND h; BYTE v, code, drag; short off; DWORD next; } sbm;
+static struct { HWND h; BYTE v, code, drag, ctl; short off; DWORD next; } sbm;
 static void sb_post(void)
 {
     struct wnd *w = wptr(sbm.h);
-    if (w)
-        post_msg(sbm.h, sbm.v ? WM_VSCROLL : WM_HSCROLL, sbm.code,
-                 sbm.code == 4 || sbm.code == 5 ? MAKELONG(w->sb[sbm.v][2], 0) : 0);
+    WORD pos;
+    if (!w)
+        return;
+    pos = sbm.code == 4 || sbm.code == 5 ? w->sb[sbm.v][2] : 0;
+    if (sbm.ctl)                /* Steuerelement: an das Elternfenster */
+        post_msg(w->parent, sbm.v ? WM_VSCROLL : WM_HSCROLL, sbm.code,
+                 MAKELONG(pos, sbm.h));
+    else
+        post_msg(sbm.h, sbm.v ? WM_VSCROLL : WM_HSCROLL, sbm.code, MAKELONG(pos, 0));
 }
-static void sb_down(struct wnd *w, int v, short x, short y)
+static void sb_down(struct wnd *w, int v, short x, short y, int ctl)
 {
     short a = v ? y - w->cr.top : x - w->cr.left;
     short len = v ? w->cr.bottom - w->cr.top : w->cr.right - w->cr.left;
@@ -906,6 +915,7 @@ static void sb_down(struct wnd *w, int v, short x, short y)
     sbm.h = HW(w - ww);
     sbm.v = (BYTE)v;
     sbm.drag = 0;
+    sbm.ctl = (BYTE)ctl;
     if (a < SBW) sbm.code = 0;                          /* SB_LINEUP     */
     else if (a >= len - SBW) sbm.code = 1;              /* SB_LINEDOWN   */
     else if (w->sb[v][1] <= w->sb[v][0]) { sbm.h = 0; return; }
@@ -935,7 +945,10 @@ static int sb_mouse(short x, short y, BYTE btn, int moved)
             short np = s[0] + (short)((long)a * (s[1] - s[0]) / len);
             if (np != s[2]) {
                 s[2] = np;
-                w->need_ncpaint = 1;
+                if (sbm.ctl)
+                    invalidate(w, 0, 0);
+                else
+                    w->need_ncpaint = 1;
                 sbm.code = 5;
                 sb_post();
             }
@@ -965,6 +978,68 @@ static void sb_repeat(void)
         sbm.next = now + 6;
         sb_post();
     }
+}
+
+/* Steuerelement SCROLLBAR (Klasse wie Windows): Werte in w->sb[v],
+   v = SBS_VERT; Meldungen WM_xSCROLL gehen ans Elternfenster mit dem
+   eigenen Griff in HIWORD(lParam) */
+#define SBS_VERT    0x0001
+#define SBS_SIZEBOX 0x0008
+static int is_sbctl(struct wnd *w)
+{
+    return w->cls && w->internal && !fstricmp(cl[w->cls - 1].name, "SCROLLBAR");
+}
+static void sbctl_paint(struct wnd *w)
+{
+    HDC dc = dc_get(HW(w - ww), 1, 0);
+    short l = w->cr.left, t = w->cr.top, r = w->cr.right, b = w->cr.bottom, p, k;
+    if (!dc)
+        return;
+    if (w->style & SBS_SIZEBOX)
+        dc_rawfill(dc, l, t, r, b, sc(C_BTN));
+    else if (w->style & SBS_VERT) {
+        k = r - l;
+        ui_bevel(dc, l, t, r, t + k, 0); arrow(dc, l + (k - SBW) / 2, t, 0);
+        ui_bevel(dc, l, b - k, r, b, 0); arrow(dc, l + (k - SBW) / 2, b - k, 1);
+        dc_rawfill(dc, l, t + k, r, b - k, 7);
+        if (b - t > 3 * k && w->sb[1][1] > w->sb[1][0] && w->enabled) {
+            p = t + k + sb_thumb(w, 1, b - t - 3 * k);
+            ui_bevel(dc, l, p, r, p + k, 0);
+        }
+    } else {
+        k = b - t;
+        ui_bevel(dc, l, t, l + k, b, 0); arrow(dc, l, t + (k - SBW) / 2, 2);
+        ui_bevel(dc, r - k, t, r, b, 0); arrow(dc, r - k, t + (k - SBW) / 2, 3);
+        dc_rawfill(dc, l + k, t, r - k, b, 7);
+        if (r - l > 3 * k && w->sb[0][1] > w->sb[0][0] && w->enabled) {
+            p = l + k + sb_thumb(w, 0, r - l - 3 * k);
+            ui_bevel(dc, p, t, p + k, b, 0);
+        }
+    }
+    dc_release(dc);
+}
+LONG FAR PASCAL sbctl_proc(HWND h, WORD m, WORD wp, DWORD lp)
+{
+    struct wnd *w = wptr(h);
+    BYTE ps[32];
+    if (!w)
+        return 0;
+    switch (m) {
+    case WM_PAINT:
+        BeginPaint(h, (void FAR *)ps);
+        sbctl_paint(w);
+        EndPaint(h, (void FAR *)ps);
+        return 0;
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_LBUTTONDOWN:
+        if (w->style & SBS_SIZEBOX)
+            return 0;
+        sb_down(w, (w->style & SBS_VERT) != 0,
+                (short)LOWORD(lp) + w->cr.left, (short)HIWORD(lp) + w->cr.top, 1);
+        return 0;
+    }
+    return DefWindowProc(h, m, wp, lp);
 }
 
 static void mouse_event(short x, short y, BYTE btn)
@@ -1069,7 +1144,7 @@ static void mouse_event(short x, short y, BYTE btn)
         return;
     }
     if ((ht == HTVSCROLL || ht == HTHSCROLL) && (down & 1)) {
-        sb_down(w, ht == HTVSCROLL, x, y);
+        sb_down(w, ht == HTVSCROLL, x, y, 0);
         return;
     }
     if (ht == HTSYSMENU && (down & 1)) {
@@ -1123,6 +1198,10 @@ static void key_event(WORD k)
         vk = scvk[scn];
     if (!vk)
         vk = ch;
+    if (w16_trace && scn == 0x58) {             /* F12: Spur ins GUI.LOG */
+        tr_dump("Aufrufspur (F12):");
+        return;
+    }
     if (!h)
         return;
     if (menu_input_key(k))
@@ -1330,7 +1409,7 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     p = parent ? wptr(parent) : 0;
     if (style & WS_CHILD) {
         w->parent = parent;
-        w->z = ++zmax;                          /* Rang unter Geschwistern */
+        w->z = ++zmax; win_gen++;                          /* Rang unter Geschwistern */
         if (p) {
             x += p->cr.left;
             y += p->cr.top;
@@ -1346,7 +1425,7 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
             cx = 480;
             cy = 320;
         }
-        w->z = ++zmax;
+        w->z = ++zmax; win_gen++;
     }
     if (p && !(style & WS_CHILD) && p->task >= 0 && w->task < 0)
         w->task = p->task;
@@ -1364,17 +1443,21 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
         w->used = 0;
         return 0;
     }
-    /* wie Windows (und Wine): nach WM_CREATE gleich WM_SIZE und WM_MOVE,
-       auch fuer unsichtbare Fenster */
-    w->sized = 1;
-    send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
-    w = wptr(h);
-    if (!w)
-        return 0;
-    {
-        struct wnd *pw = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
-        send_msg(h, WM_MOVE, 0, MAKELONG(w->cr.left - (pw ? pw->cr.left : 0),
-                                         w->cr.top - (pw ? pw->cr.top : 0)));
+    /* wie Windows (Wine: WIN_NEED_SIZE): Kind- und Popup-Fenster bekommen
+       WM_SIZE/WM_MOVE gleich nach WM_CREATE, Hauptfenster erst beim
+       ersten ShowWindow - Write legt seine Kindfenster erst nach
+       CreateWindow an, sein WM_SIZE davor bewegte Fenster 0 */
+    if (style & (WS_CHILD | WS_POPUP)) {
+        w->sized = 1;
+        send_msg(h, WM_SIZE, 0, MAKELONG(w->cr.right - w->cr.left, w->cr.bottom - w->cr.top));
+        w = wptr(h);
+        if (!w)
+            return 0;
+        {
+            struct wnd *pw = (w->style & WS_CHILD) ? wptr(w->parent) : 0;
+            send_msg(h, WM_MOVE, 0, MAKELONG(w->cr.left - (pw ? pw->cr.left : 0),
+                                             w->cr.top - (pw ? pw->cr.top : 0)));
+        }
     }
     if (style & WS_VISIBLE)
         ShowWindow(h, 1);
@@ -1390,6 +1473,7 @@ BOOL API ShowWindow(HWND h, short cmd)
 {
     struct wnd *w = wptr(h);
     BYTE was;
+    win_gen++;                                  /* Lage/Sichtbarkeit: DCs neu */
     if (!w)
         return 0;
     was = w->visible;
@@ -1401,7 +1485,7 @@ BOOL API ShowWindow(HWND h, short cmd)
         wnd_state(w, 0);                        /* SW_RESTORE           */
     if (cmd == 0) {                             /* SW_HIDE              */
         if (was) {
-            w->visible = 0;
+            w->visible = 0; win_gen++;
             expose(&w->wr);
             if (active == h)
                 active = 0;
@@ -1409,7 +1493,7 @@ BOOL API ShowWindow(HWND h, short cmd)
         return was;
     }
     if (!was) {
-        w->visible = 1;
+        w->visible = 1; win_gen++;
         w->style |= WS_VISIBLE;
         w->need_ncpaint = 1;
         invalidate(w, 0, 1);
@@ -1444,6 +1528,7 @@ BOOL API DestroyWindow(HWND h)
 {
     struct wnd *w = wptr(h);
     short i;
+    win_gen++;                                  /* Lage/Sichtbarkeit: DCs neu */
     if (!w)
         return 0;
     send_msg(h, WM_DESTROY, 0, 0);
@@ -1816,6 +1901,8 @@ BOOL API GetMessage(MSG FAR *m, HWND h, WORD lo, WORD hi) { return user_get_msg(
 BOOL API PeekMessage(MSG FAR *m, HWND h, WORD lo, WORD hi, WORD rem)
 {
     BOOL r = user_get_msg(m, h, lo, hi, rem & 1, 0);
+    if (!r && w16_trace && tr_pos && (tr_ring[(tr_pos - 1) & 127] & 0x7FFF) == 0x206D)
+        tr_pos--;               /* Spur: Leerlauf ohne Nachricht weglassen */
     if (!r && cur_task >= 0 && m->message != WM_QUIT) {
         wt[cur_task].waiting = 0;               /* andere Tasks laufen */
         task_yield_to_main();
@@ -1921,7 +2008,7 @@ void wnd_raise(HWND h)
 {
     struct wnd *w = wptr(h);
     if (w && w->z != zmax)
-        w->z = ++zmax;
+        w->z = ++zmax; win_gen++;
 }
 
 BOOL API BringWindowToTop(HWND h)
@@ -1929,7 +2016,7 @@ BOOL API BringWindowToTop(HWND h)
     struct wnd *w = wptr(h);
     if (w && (w->style & WS_CHILD)) {           /* nur unter Geschwistern */
         if (w->z != zmax) {
-            w->z = ++zmax;
+            w->z = ++zmax; win_gen++;
             if (w->visible)
                 expose(&w->wr);
         }
@@ -1958,9 +2045,21 @@ void API DrawMenuBar(HWND h) { struct wnd *w = wptr(h); if (w) w->need_ncpaint =
 static short *sbp(HWND h, short bar)
 {
     struct wnd *w = wptr(h);
-    if (!w || bar < 0 || bar > 1)
+    if (!w || bar < 0 || bar > 2)
         return 0;
+    if (bar == 2)                               /* SB_CTL                */
+        return is_sbctl(w) ? w->sb[(w->style & SBS_VERT) != 0] : 0;
     return w->sb[bar];
+}
+static void sb_redraw(HWND h, short bar)
+{
+    struct wnd *w = wptr(h);
+    if (!w)
+        return;
+    if (bar == 2)
+        invalidate(w, 0, 0);
+    else
+        w->need_ncpaint = 1;
 }
 short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw)
 {
@@ -1970,7 +2069,7 @@ short API SetScrollPos(HWND h, short bar, short pos, BOOL redraw)
     if (pos < s[0]) pos = s[0];
     if (pos > s[1]) pos = s[1];
     s[2] = pos;
-    if (redraw && o != pos) wptr(h)->need_ncpaint = 1;
+    if (redraw && o != pos) sb_redraw(h, bar);
     return o;
 }
 short API GetScrollPos(HWND h, short bar) { short *s = sbp(h, bar); return s ? s[2] : 0; }
@@ -1981,7 +2080,7 @@ void API SetScrollRange(HWND h, short bar, short lo, short hi, BOOL redraw)
     s[0] = lo; s[1] = hi;
     if (s[2] < lo) s[2] = lo;
     if (s[2] > hi) s[2] = hi;
-    if (redraw) wptr(h)->need_ncpaint = 1;
+    if (redraw) sb_redraw(h, bar);
 }
 void API GetScrollRange(HWND h, short bar, short FAR *lo, short FAR *hi)
 {
@@ -1989,7 +2088,11 @@ void API GetScrollRange(HWND h, short bar, short FAR *lo, short FAR *hi)
     *lo = s ? s[0] : 0;
     *hi = s ? s[1] : 0;
 }
-void API ShowScrollBar(HWND h, WORD bar, BOOL show) { (void)h; (void)bar; (void)show; }
+void API ShowScrollBar(HWND h, WORD bar, BOOL show)
+{
+    if (bar == 2)                               /* SB_CTL: das Fenster   */
+        ShowWindow(h, show ? 5 : 0);
+}
 HMENU API GetSystemMenu(HWND h, BOOL r) { (void)h; (void)r; return 0; }
 HWND API GetDlgItem(HWND p, short id)
 {
@@ -2368,6 +2471,8 @@ void user_init(void)
     cl[7].proc = mdi_client_proc;
     cl[8].used = 1; cl[8].internal = 1; fstrncpy(cl[8].name, "COMBOBOX", 24);
     cl[8].proc = combo_proc;
+    cl[9].used = 1; cl[9].internal = 1; fstrncpy(cl[9].name, "SCROLLBAR", 24);
+    cl[9].proc = sbctl_proc;
     rset(&r, 0, 0, SCR_W, SCR_H);
     expose(&r);
     user_paint_pending();

@@ -567,9 +567,10 @@ WORD lh_realloc(WORD ds, WORD h, WORD n)
 #define LMEM_MODIFY   0x80
 WORD API LocalReAlloc(WORD h, WORD n, WORD flags)
 {
+    WORD ds = get_bp2();
     if (flags & LMEM_MODIFY)
         return h;
-    return lh_realloc(get_bp2(), h, n);
+    return lh_realloc(ds, h, n);
 }
 /* Griff-Aufrufe: op 0 Lock, 1 Unlock, 2 Handle, 3 Flags. Die Exporte
    holen nur DS (get_bp2 gilt nur ohne gesicherte SI/DI vor BP) und
@@ -721,8 +722,8 @@ int wmatch(const char *p, const char FAR *n)
     }
 }
 
-/* Groesse einer Datei ueber DosFindEntry (Verzeichnis + Name) */
-static DWORD f_size(void)
+/* Eintrag einer Datei (fbuf) ueber DosFindEntry suchen -> fd_e */
+static int f_ent(void)
 {
     static char dir[260];
     char *b = fbuf, *ls = 0;
@@ -746,9 +747,10 @@ static DWORD f_size(void)
         if (FAPI_FAILED(x))
             return 0;
         if (wmatch(b, fd_e.name))
-            return fd_e.size;
+            return 1;
     }
 }
+static DWORD f_size(void) { return f_ent() ? fd_e.size : 0; }
 
 static WORD f_open(LPCSTR name, WORD mode)
 {
@@ -966,7 +968,8 @@ void dos_int(void FAR *rv)
         return;                                 /* unbekannt: nichts   */
     }
     if (w16_trace)                              /* Aufrufspur: F000h|AH  */
-        tr_ring[tr_pos++ & 127] = 0xF000u | ah;
+        if (ah != 0x2C) { if (tr_dseg) ((WORD FAR *)MKFP(tr_dseg, 512))[tr_pos & 127] = 0;
+          tr_ring[tr_pos++ & 127] = 0xF000u | ah; }
     switch (ah) {
     case 0x4C:
     case 0x00:
@@ -1022,6 +1025,8 @@ void dos_int(void FAR *rv)
             return;
         }
         fstrncpy(d, fbuf[1] == ':' ? fbuf + 3 : fbuf, 64);
+        r->ax = 0x0100;                         /* wie MS-DOS (undokumentiert);
+                                                   Write prueft es        */
         ok(r);
         return;
     }
@@ -1077,6 +1082,19 @@ void dos_int(void FAR *rv)
     }
     case 0x59:
         r->ax = 0;
+        return;
+    case 0x43:                                  /* Attribute            */
+        fstrncpy(fbuf, MKFP(r->ds, r->dx), sizeof(fbuf));
+        if ((r->ax & 0xFF) == 0) {
+            if (!f_ent()) { err(r, 2); return; }
+            r->cx = fd_e.attr;
+            ok(r);
+        } else {
+            static struct fapi_finfo fi;
+            fi.mask = 1; fi.attr = r->cx;
+            x = fapi_call(FAPI_SETFINFO, (WORD)fbuf, (WORD)&fi, 0);
+            if (FAPI_FAILED(x)) err(r, derr(x)); else ok(r);
+        }
         return;
     default:
         glogn("INT 21h AX=", r->ax);
