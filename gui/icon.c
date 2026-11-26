@@ -24,31 +24,49 @@ DWORD API SetBkColor(HDC h, DWORD c);
 BOOL API PatBlt(HDC h, short x, short y, short w, short hh, DWORD rop);
 HBRUSH API CreateSolidBrush(DWORD color);
 BOOL API DeleteDC(HDC h);
+WORD API CreateIcon(WORD hinst, short w, short h, BYTE planes, BYTE bpp,
+                    const void FAR *andb, const void FAR *xorb);
 
 #define NICON   64
-#define HICO(i) ((WORD)(0x5800u + ((i) << 2)))
-static struct icn { BYTE used; HBITMAP xb, ab; WORD w, h; } ic[NICON];
+/* Handle = Selektor eines Segments im Format CURSORICONINFO wie unter
+   Windows 3.x (Kopf 12 Byte, AND-Maske, Farbteil 4 Bit gepackt) - PROGMAN
+   liest es ueber LockResource/DumpIcon und schreibt es in die .GRP */
+static struct icn { BYTE used; HBITMAP xb, ab; WORD w, h, sel; } ic[NICON];
 static BYTE imap[256];
+void gdi_bm4(HBITMAP o, BYTE FAR *dst, WORD lp);
+DWORD API GetBitmapBits(HBITMAP o, DWORD n, void FAR *bits);
 
 static struct icn *iptr(WORD h)
 {
-    WORD i = (h - 0x5800u) >> 2;
-    if (h < 0x5800u || i >= NICON || !ic[i].used || HICO(i) != h)
+    WORD i;
+    if (!h)
         return 0;
-    return &ic[i];
+    for (i = 0; i < NICON; i++)
+        if (ic[i].used && ic[i].sel == h)
+            return &ic[i];
+    return 0;
 }
+#define IC_LA(w)  ((((w) + 15) >> 4) << 1)        /* Zeile AND-Maske */
+#define IC_LX(w)  ((((w) * 4 + 15) >> 4) << 1)    /* Zeile Farbteil  */
 static WORD icon_new(HBITMAP xb, HBITMAP ab, WORD w, WORD h)
 {
-    WORD i;
+    WORD i, la = IC_LA(w), lx = IC_LX(w);
+    WORD FAR *hd;
     for (i = 0; i < NICON && ic[i].used; i++)
         ;
-    if (i == NICON || !xb || !ab) {
+    if (i == NICON || !xb || !ab ||
+        !(ic[i].sel = seg_new(12 + (la + lx) * h))) {
         if (xb) DeleteObject(xb);
         if (ab) DeleteObject(ab);
         return 0;
     }
+    hd = MKFP(ic[i].sel, 0);
+    hd[0] = w / 2; hd[1] = h / 2; hd[2] = w; hd[3] = h; hd[4] = lx;
+    hd[5] = 0x0401;                             /* 1 Ebene, 4 Bit        */
+    GetBitmapBits(ab, (DWORD)la * h, MKFP(ic[i].sel, 12));
+    gdi_bm4(xb, MKFP(ic[i].sel, 12 + la * h), lx);
     ic[i].used = 1; ic[i].xb = xb; ic[i].ab = ab; ic[i].w = w; ic[i].h = h;
-    return HICO(i);
+    return ic[i].sel;
 }
 
 /* Symbol aus einem Icon-DIB (Hoehe doppelt: Farbteil, dann AND-Maske) */
@@ -154,8 +172,36 @@ BOOL API DestroyIcon(WORD h)
         return 0;
     DeleteObject(c->xb);
     DeleteObject(c->ab);
+    seg_del(c->sel);
     c->used = 0;
     return 1;
+}
+
+/* Kopie aus dem CURSORICONINFO eines Symbols (auch eines fremden) */
+static WORD icon_info(const WORD FAR *hd)
+{
+    WORD la = IC_LA(hd[2]);
+    return CreateIcon(0, hd[2], hd[3], (BYTE)hd[5], (BYTE)(hd[5] >> 8),
+                      (const BYTE FAR *)(hd + 6),
+                      (const BYTE FAR *)(hd + 6) + la * hd[3]);
+}
+WORD API CopyIcon(WORD hinst, WORD h)
+{
+    (void)hinst;
+    return iptr(h) ? icon_info(MKFP(h, 0)) : 0;
+}
+/* wie Windows: Zeiger auf AND-Maske und Farbteil hinter dem Kopf */
+DWORD API DumpIcon(const WORD FAR *hd, WORD FAR *len, LPVOID FAR *xorb, LPVOID FAR *andb)
+{
+    WORD sa, sx;
+    if (!hd)
+        return 0;
+    sa = IC_LA(hd[2]) * hd[3];
+    sx = hd[4] * hd[3];
+    if (andb) *andb = (BYTE FAR *)hd + 12;
+    if (xorb) *xorb = (BYTE FAR *)hd + 12 + sa;
+    if (len) *len = 12 + sa + sx;
+    return MAKELONG(sx, sx);
 }
 
 BOOL API DrawIcon(HDC hdc, short x, short y, WORD h)
@@ -294,4 +340,31 @@ WORD API ExtractIcon(WORD hinst, LPCSTR file, WORD idx)
     }
     DosClose(xh);
     return r;
+}
+
+/* SHELL: Symbol zu einer Datei (sonst das eingebaute) */
+WORD API ExtractAssociatedIcon(WORD hinst, LPSTR file, WORD FAR *idx)
+{
+    WORD h = ExtractIcon(hinst, file, idx ? *idx : 0);
+    if (!h || h == 1) {
+        if (idx) *idx = 0;
+        h = icon_sys();
+    }
+    return h;
+}
+/* SHELL: n Symbole ab idx als Feld von Handles in einem Speicherblock */
+WORD API GlobalAlloc(WORD flags, DWORD size);
+WORD API InternalExtractIcon(WORD hinst, LPCSTR file, WORD idx, WORD n)
+{
+    WORD g, i;
+    WORD FAR *p;
+    if (!n || !(g = GlobalAlloc(0x40, (DWORD)n * 2)))
+        return 0;
+    p = MKFP(g, 0);
+    if (idx == 0xFFFF)
+        p[0] = ExtractIcon(hinst, file, 0xFFFF);
+    else
+        for (i = 0; i < n; i++)
+            p[i] = ExtractIcon(hinst, file, idx + i);
+    return g;
 }

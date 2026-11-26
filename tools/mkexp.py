@@ -33,11 +33,11 @@ out['KERNEL'] += [(91, 'InitTask'), (102, 'Dos3Call')]
 with open(os.path.join(out_dir, 'exp_all.h'), 'w') as f:
     f.write('/* erzeugt von tools/mkexp.py */\n')
     for m in MODS:
-        f.write('static const struct ex t_%s[] = {\n' % m)
+        f.write('static const struct ex __far t_%s[] = {\n' % m)
         for o, n in sorted(out[m]):
             f.write('    X(%d, %s),\n' % (o, n))
         f.write('    { 0, 0 }\n};\n')
-    f.write('static const struct { const char *name; const struct ex *t; } modtab[] = {\n')
+    f.write('static const struct { const char *name; const struct ex __far *t; } modtab[] = {\n')
     for m in MODS:
         f.write('    { "%s", t_%s },\n' % (m, m))
     f.write('    { 0, 0 }\n};\n')

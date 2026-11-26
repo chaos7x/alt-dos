@@ -117,7 +117,7 @@ static void FAR *tr_thunk(void FAR *fp, WORD id)
     BYTE FAR *t;
     void FAR *tc = (void FAR *)tr_common;
     if (!tr_dseg) {
-        tr_dseg = seg_new(1282);
+        tr_dseg = seg_new(800 + (NWT + 1) * 256);
         if (!tr_dseg)
             return fp;
     }
@@ -295,7 +295,7 @@ int w16_load(LPCSTR path)
         goto out;
     w->used = 1;
     w->refs = 1;
-    fstrncpy(w->path, path, sizeof(w->path));
+    full_path(path, w->path, sizeof(w->path));   /* voll: Programme wechseln das Verzeichnis */
     o = W(nh + 0x26);                           /* residente Namen: erster */
     for (i = 0; i < TB(o) && i < 8; i++)
         w->name[i] = TB(o + 1 + i);

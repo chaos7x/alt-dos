@@ -71,7 +71,11 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   aus `[boot] shell=` der SYSTEM.INI; Fenster minimieren/maximieren,
   Systemmenü; Standarddialoge auf den Vorlagen von Wine mit COMBOBOX;
   OLECLI ohne Server, Atome, Steuerelement SCROLLBAR, Aufrufspur mit
-  Rückgaben über `SET GUITRACE=1` – Write aus Windows 3.1 läuft).
+  Rückgaben über `SET GUITRACE=1` – Write aus Windows 3.1 läuft; der
+  Programm-Manager aus Windows 3.1 legt Gruppen und Programme an, holt
+  die Symbole aus den Programmen, startet sie und lädt seine .GRP-Dateien
+  wieder: Symbole als Speicherblöcke wie unter Windows, Regionen,
+  Schreibmarke, verworfene Speicherblöcke, ExitWindows).
   Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit

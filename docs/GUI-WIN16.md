@@ -418,8 +418,12 @@ GUI.LOG („Aufruf (Modul<<12|Nummer)“, Modul 1 KERNEL, 2 USER, 3 GDI,
 
 Die Spur schreibt auch die Rückgaben mit (DX:AX je Aufruf, „AX …/DX …“
 unter dem Eintrag): der Vorschaltcode biegt den Rücksprung ins Programm
-über `tr_post` um (Schattenstapel 64 tief, Tabellen in einem eigenen
-Segment `tr_dseg`, nur bei GUITRACE – DGROUP von GUI.EXE ist voll);
+über `tr_post` um (Schattenstapel je Task 32 tief, Tabellen in einem
+eigenen Segment `tr_dseg`, nur bei GUITRACE – DGROUP von GUI.EXE ist
+voll); je Task, weil ein Aufruf in einen anderen Task wechseln kann
+(ShellExecute startet ein Programm, GetMessage gibt ab) – mit einem
+gemeinsamen Stapel kehrte GetMessage von Notepad mit dem Rücksprung von
+PROGMAN zurück (Müll als Nachricht, Hänger nur mit GUITRACE);
 Catch/Throw (KERNEL 55/56) ohne Rückgabe. F12 schreibt die Spur jederzeit
 ins GUI.LOG; erfolglose PeekMessage-Aufrufe und INT 21h 2Ch (Leerlauf)
 kommen nicht in den Ring.
@@ -452,6 +456,71 @@ Bearbeiten, Tippen mit Schreibmarke und Endmarke). Gefunden mit der Spur:
 Offen: Write zeichnet mit der Systemschrift (keine echten Schriftgrößen),
 Drucken (kein Drucker), OLE-Objekte, CS_OWNDC als echter Klassen-DC
 (Einstellungen bleiben bei uns nur im gehaltenen DC).
+
+### Stand: PROGMAN aus Windows 3.1 (26.11.2026)
+
+Der Programm-Manager aus Windows 3.1 (deutsch, aus der Kopie des Nutzers,
+nur im Scratchpad als MSPM.EXE) läuft – in QEMU geprüft: Start (leer, ohne
+PROGMAN.INI), Datei → Neu → Programmgruppe „Test“, Datei → Neu →
+Programm (Notepad, Befehlszeile `notepad.exe`), das Symbol kommt aus
+NOTEPAD.EXE, Enter startet Notepad; Windows beenden (Alt+F4, OK), danach
+erneut gestartet: PROGMAN.INI (im Windows-Verzeichnis) nennt TEST.GRP,
+die Gruppe kommt samt Symbol aus der Datei. Nichts zerlegt, gefunden mit
+der Aufrufspur.
+
+Dafür neu (rund 40 Funktionen fehlten, `gui/user2.c` neu):
+- USER: GetWindow (Geschwister nach Rang), Get/SetWindowPlacement,
+  Schreibmarke (CreateCaret/SetCaretPos/Show/Hide/DestroyCaret –
+  invertiertes Rechteck ohne Blinken), ScrollWindow (verschiebt die
+  Kinder, zeichnet neu), InvalidateRgn, DrawFocusRect, GrayString (nur
+  Text), SetWindowsHook/DefHookProc (angenommen, nie gerufen),
+  ExitWindows (WM_QUERYENDSESSION an alle oberen Fenster, dann Ende aller
+  Tasks), IsCharAlpha(Numeric), AnsiUpperBuff, CopyIcon, DumpIcon,
+  SetSysModalWindow, DragObject, CalcChildScroll (ohne Wirkung),
+  GetInternalIconHeader (Stummel).
+- **Symbole sind Speicherblöcke wie unter Windows**: der Griff ist der
+  Selektor eines Segments im Format CURSORICONINFO (12 Byte Kopf,
+  AND-Maske, Farbteil 4 Bit gepackt; `gdi_bm4`). PROGMAN holt die Bits
+  über LockResource/DumpIcon und schreibt sie in die .GRP; CreateIcon
+  baut sie beim Laden wieder auf.
+- GDI: Regionen als ein Rechteck (CreateRectRgn(Indirect), SetRectRgn,
+  CombineRgn – Vereinigung = umschließendes Rechteck –, GetRgnBox,
+  OffsetRgn, PtInRegion), RectVisible.
+- KERNEL: GetDriveType (über DosQFSInfo), GetNumTasks, GetFreeSpace,
+  IsRomModule, LockResource; **verworfene Blöcke**: GlobalAlloc bzw.
+  GlobalReAlloc mit Größe 0 und GMEM_MOVEABLE liefert einen Griff, dessen
+  GlobalLock NULL ist (GlobalFlags GMEM_DISCARDED), bis GlobalReAlloc ihn
+  füllt – PROGMAN legt so jede Gruppe an und lädt sie erst dann aus der
+  Datei; vorher galt der leere Block als „Gruppendatei ungültig“.
+- KEYBOARD: MapVirtualKey, GetKeyNameText (deutsche Tastennamen).
+- SHELL: ShellExecute/FindExecutable (nur Programme, keine Zuordnungen),
+  ExtractAssociatedIcon, InternalExtractIcon, DoEnvironmentSubst (ohne
+  Ersetzen), DragQueryPoint, RegisterShellHook (abgelehnt).
+- Exporttabellen in einem eigenen fernen Datensegment (3,3 KB aus DGROUP).
+
+Behoben dabei:
+1. **Veraltete WM_ACTIVATE/WM_SETFOCUS**: wir posten sie, Windows schickt
+   sie sofort. Nach dem ersten Dialog („Neues Programmobjekt“) kam das
+   WM_ACTIVATE des Hauptfensters erst an, als der zweite Dialog schon
+   offen war – PROGMAN setzte den Fokus auf die Gruppe, Tippen im Dialog
+   ging ins Leere. Beim Abholen fallen sie jetzt weg, wenn die Lage
+   inzwischen eine andere ist.
+2. **WM_PAINT ohne BeginPaint**: der Rahmen von PROGMAN kehrt bei WM_PAINT
+   zurück, ohne zu zeichnen; Windows macht das Fenster nach
+   DispatchMessage selbst gültig (Wine ebenso) – bei uns kam WM_PAINT
+   endlos, die Hauptschleife lief nicht mehr.
+3. **WinExec sucht wie Windows**: aktuelles Verzeichnis, Windows-
+   Verzeichnis, Verzeichnis des aufrufenden Programms, PATH
+   (`start_search`, main.c). PROGMAN wechselt vor dem Start ins
+   Arbeitsverzeichnis. Dazu speichert der Lader den vollen Pfad des
+   Moduls (Ressourcen werden später nachgeladen) und GUI.LOG liegt fest
+   im Startverzeichnis.
+
+Offen: die Bildlaufleisten des MDI-Bereichs stehen immer da (Windows
+zeigt sie nur bei Bedarf), unterer Rand eines Gruppenfensters wird
+teils übermalt, Beschriftungen in Dialogen sind abgeschnitten (unsere
+Systemschrift ist breiter), Zuordnungen (Dokument → Programm), Ziehen
+von Symbolen zwischen Gruppen.
 
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 

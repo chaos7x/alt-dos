@@ -103,6 +103,7 @@ extern WORD main_ss, main_sp;
 void task_yield_to_main(void);  /* aus einem Task zur Hauptschleife   */
 void task_run(int t);           /* aus der Hauptschleife in Task t    */
 int  task_start(LPCSTR path, LPCSTR args, WORD show);   /* -> 0 ok */
+int  start_search(LPCSTR name, LPCSTR args, WORD show); /* Windows-Verz., Aufrufer, PATH */
 void task_exit(int t, WORD code);
 void task_reap(int t);
 int  task_of_inst(WORD hinst);

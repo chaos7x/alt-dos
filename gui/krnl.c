@@ -474,19 +474,44 @@ void API FatalAppExit(WORD f, LPCSTR msg)
     task_exit(cur_task, 0xFF);
 }
 
+/* verworfene Bloecke wie Windows: GlobalAlloc/GlobalReAlloc mit Groesse 0
+   und GMEM_MOVEABLE liefert einen Griff, dessen GlobalLock NULL ist, bis ihn
+   GlobalReAlloc wieder fuellt (PROGMAN laedt seine Gruppen so nach) */
+#define NDISC 16
+static WORD gdisc[NDISC];
+static int disc_at(WORD h)
+{
+    int i;
+    for (i = 0; i < NDISC; i++)
+        if (gdisc[i] && gdisc[i] == (h | 7))
+            return i;
+    return -1;
+}
+static void disc_set(WORD h, int on)
+{
+    int i = disc_at(h);
+    if (!on) {
+        if (i >= 0)
+            gdisc[i] = 0;
+    } else if (i < 0)
+        for (i = 0; i < NDISC; i++)
+            if (!gdisc[i]) {
+                gdisc[i] = h | 7;
+                break;
+            }
+}
 WORD API GlobalAlloc(WORD flags, DWORD size)
 {
     WORD s;
-    (void)flags;
     if (size > 0x10000UL) {
         glogn("GlobalAlloc ueber 64 KB, KB: ", (WORD)(size >> 10));
         return 0;
     }
-    if (!size)
-        size = 1;
-    s = seg_new((WORD)size);                    /* Kernel nullt immer */
+    s = seg_new(size ? (WORD)size : 1);          /* Kernel nullt immer */
     if (!s)
         glogn("GlobalAlloc gescheitert: ", (WORD)size);
+    else if (!size && (flags & 0x02))           /* GMEM_MOVEABLE         */
+        disc_set(s, 1);
     return s;
 }
 WORD API GlobalReAlloc(WORD h, DWORD size, WORD flags)
@@ -497,6 +522,7 @@ WORD API GlobalReAlloc(WORD h, DWORD size, WORD flags)
         glogn("GlobalReAlloc gescheitert, KB: ", (WORD)(size >> 10));
         return 0;
     }
+    disc_set(h, !size && (flags & 0x02));       /* 0 + MOVEABLE: verwerfen */
     if (!size)
         size = 1;
     if (FAPI_FAILED(fapi_call(FAPI_SEGCTL, SEG_REALLOC, h, (WORD)size))) {
@@ -505,12 +531,12 @@ WORD API GlobalReAlloc(WORD h, DWORD size, WORD flags)
     }
     return h;
 }
-WORD API GlobalFree(WORD h) { seg_del(h & ~3u | 7); return 0; }
-DWORD API GlobalLock(WORD h) { return h ? MAKELONG(0, h | 7) : 0; }
+WORD API GlobalFree(WORD h) { disc_set(h, 0); seg_del(h & ~3u | 7); return 0; }
+DWORD API GlobalLock(WORD h) { return h && disc_at(h) < 0 ? MAKELONG(0, h | 7) : 0; }
 BOOL API GlobalUnlock(WORD h) { (void)h; return 0; }
-DWORD API GlobalSize(WORD h) { return h ? (DWORD)lsl_(h | 7) + 1 : 0; }
+DWORD API GlobalSize(WORD h) { return h && disc_at(h) < 0 ? (DWORD)lsl_(h | 7) + 1 : 0; }
 DWORD API GlobalHandle(WORD sel) { return MAKELONG(sel, sel); }
-WORD API GlobalFlags(WORD h) { (void)h; return 0; }
+WORD API GlobalFlags(WORD h) { return disc_at(h) >= 0 ? 0x4000 : 0; }   /* GMEM_DISCARDED */
 DWORD API GlobalCompact(DWORD n) { (void)n; return 0x100000UL; }
 WORD API LockSegment(WORD s) { return s; }
 void API UnlockSegment(WORD s) { (void)s; }
@@ -1159,6 +1185,13 @@ void API FreeLibrary(WORD h) { (void)h; }
 /* WinExec: Win16-Programm als neue Task, sonst ueber das FAPI (DOS-
    oder FX-Programm) in eigener Sitzung. > 31 = gestartet */
 static char we_path[FAPI_PATHLEN];
+static int fstrchr_s(LPCSTR s, char c)
+{
+    for (; *s; s++)
+        if (*s == c)
+            return 1;
+    return 0;
+}
 WORD API WinExec(LPCSTR cmd, WORD show)
 {
     LPCSTR a;
@@ -1177,6 +1210,9 @@ WORD API WinExec(LPCSTR cmd, WORD show)
     while (*a == ' ')
         a++;
     if (!task_start(we_path, a, show))
+        return 33;
+    if (!fstrchr_s(we_path, '\\') && !fstrchr_s(we_path, ':') &&
+        !start_search(we_path, a, show))
         return 33;
     glogs("WinExec gescheitert: ", we_path);
     return 2;

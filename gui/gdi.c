@@ -298,6 +298,7 @@ WORD gfx_textw(LPCSTR s, WORD n) { (void)s; return n * FONT_W; }
 #define OB_BRUSH 2
 #define OB_FONT  3
 #define OB_BITMAP 4                     /* color = Platz in bm[]         */
+#define OB_RGN   5                      /* color = Platz in rg[]         */
 #define NOBJ     192
 static struct gobj { BYTE type, stock, style, width; DWORD color; } ob[NOBJ];
 #define HO(i)   ((HGDIOBJ)(0x6000u + ((i) << 2)))
@@ -319,6 +320,107 @@ static HGDIOBJ onew(BYTE type, BYTE style, BYTE width, DWORD color)
             return HO(i);
         }
     return 0;
+}
+
+/* ---- Regionen: nur ein Rechteck (Vereinigung = umschliessendes Rechteck);
+   reicht fuer PROGMAN & Co., die damit Bereiche neu zeichnen lassen ---- */
+#define NRGN 24
+static RECT rg[NRGN];
+static BYTE rgu[NRGN];
+static RECT *rptr(WORD h)
+{
+    struct gobj *g = optr(h);
+    return g && g->type == OB_RGN ? &rg[(WORD)g->color] : 0;
+}
+static short rkind(const RECT *r)
+{
+    return r->left < r->right && r->top < r->bottom ? 2 : 1;   /* SIMPLE/NULL */
+}
+static void rset(RECT *r, short l, short t, short rr, short b)
+{
+    if (l >= rr || t >= b)
+        l = t = rr = b = 0;
+    r->left = l; r->top = t; r->right = rr; r->bottom = b;
+}
+WORD API CreateRectRgn(short l, short t, short r, short b)
+{
+    WORD i;
+    HGDIOBJ o;
+    for (i = 0; i < NRGN && rgu[i]; i++)
+        ;
+    if (i == NRGN || !(o = onew(OB_RGN, 0, 0, i)))
+        return 0;
+    rgu[i] = 1;
+    rset(&rg[i], l, t, r, b);
+    return o;
+}
+WORD API CreateRectRgnIndirect(const RECT FAR *r)
+{
+    return CreateRectRgn(r->left, r->top, r->right, r->bottom);
+}
+void API SetRectRgn(WORD h, short l, short t, short r, short b)
+{
+    RECT *p = rptr(h);
+    if (p)
+        rset(p, l, t, r, b);
+}
+short API CombineRgn(WORD d, WORD a, WORD b, short mode)
+{
+    static RECT x;
+    RECT *pd = rptr(d), *pa = rptr(a), *pb = rptr(b);
+    if (!pd || !pa || (mode != 5 && !pb))
+        return 0;
+    fmemcpy(&x, pa, sizeof x);
+    if (mode == 1)                              /* AND                  */
+        rset(&x, pa->left > pb->left ? pa->left : pb->left,
+             pa->top > pb->top ? pa->top : pb->top,
+             pa->right < pb->right ? pa->right : pb->right,
+             pa->bottom < pb->bottom ? pa->bottom : pb->bottom);
+    else if (mode == 2 || mode == 3) {          /* OR, XOR              */
+        if (rkind(pa) == 1)
+            fmemcpy(&x, pb, sizeof x);
+        else if (rkind(pb) == 2)
+            rset(&x, pa->left < pb->left ? pa->left : pb->left,
+                 pa->top < pb->top ? pa->top : pb->top,
+                 pa->right > pb->right ? pa->right : pb->right,
+                 pa->bottom > pb->bottom ? pa->bottom : pb->bottom);
+    } else if (mode == 4 && rkind(pb) == 2 &&    /* DIFF: nur ganz bedeckt */
+               pb->left <= pa->left && pb->right >= pa->right &&
+               pb->top <= pa->top && pb->bottom >= pa->bottom)
+        rset(&x, 0, 0, 0, 0);
+    fmemcpy(pd, &x, sizeof x);
+    return rkind(pd);
+}
+short API GetRgnBox(WORD h, LPRECT r)
+{
+    RECT *p = rptr(h);
+    if (!p)
+        return 0;
+    fmemcpy(r, p, sizeof *r);
+    return rkind(p);
+}
+short API OffsetRgn(WORD h, short x, short y)
+{
+    RECT *p = rptr(h);
+    if (!p)
+        return 0;
+    if (rkind(p) == 2) {
+        p->left += x; p->right += x; p->top += y; p->bottom += y;
+    }
+    return rkind(p);
+}
+BOOL API PtInRegion(WORD h, short x, short y)
+{
+    RECT *p = rptr(h);
+    return p && x >= p->left && x < p->right && y >= p->top && y < p->bottom;
+}
+int gdi_rgnbox(WORD h, RECT FAR *r)
+{
+    RECT *p = rptr(h);
+    if (!p || rkind(p) == 1)
+        return 0;
+    fmemcpy(r, p, sizeof *r);
+    return 1;
 }
 
 /* ---- Bitmaps -------------------------------------------------------- */
@@ -640,6 +742,8 @@ BOOL API DeleteObject(HGDIOBJ o)
         seg_del(b->sel);
         b->used = 0;
     }
+    if (g->type == OB_RGN)
+        rgu[(WORD)g->color] = 0;
     g->type = 0;
     return 1;
 }
@@ -1388,6 +1492,25 @@ DWORD API SetBitmapBits(HBITMAP o, DWORD n, const void FAR *bits)
     bm_setbits(b, 1, bits);
     return (DWORD)b->pitch * b->h;
 }
+/* Farbteil eines Symbols: Bitmap -> 4 Bit gepackt (Zeile lp Byte) */
+void gdi_bm4(HBITMAP o, BYTE FAR *dst, WORD lp)
+{
+    struct bmp *b = bptr(o);
+    WORD x, y, p;
+    if (!b)
+        return;
+    for (y = 0; y < b->h; y++)
+        for (x = 0; x < b->w; x++) {
+            BYTE c = 0, FAR *q = dst + y * lp + (x >> 1);
+            for (p = 0; p < b->np; p++)
+                if (*(BYTE FAR *)MKFP(b->sel, p * b->pitch * b->h + y * b->pitch + (x >> 3))
+                    & (0x80 >> (x & 7)))
+                    c |= 1 << p;
+            if (b->np == 1 && c)
+                c = 15;
+            if (x & 1) *q = (*q & 0xF0) | c; else *q = (*q & 0x0F) | (c << 4);
+        }
+}
 DWORD API GetBitmapBits(HBITMAP o, DWORD n, void FAR *bits)
 {
     struct bmp *b = bptr(o);
@@ -1606,6 +1729,21 @@ short API SelectClipRgn(HDC h, WORD rgn)
         clip_window(d->hwnd, w && d->ox == w->cr.left && d->oy == w->cr.top, &d->c);
     }
     return d->c.n ? 2 : 1;
+}
+/* sichtbar = schneidet eines der Clip-Rechtecke (logisch -> Geraet grob
+   ueber den Ursprung; Abbildungsmodi spielen hier keine Rolle) */
+BOOL API RectVisible(HDC h, const RECT FAR *r)
+{
+    struct dcs *d = dptr(h);
+    short i, l, t, rr, b;
+    if (!d)
+        return 0;
+    l = r->left + d->ox; t = r->top + d->oy; rr = r->right + d->ox; b = r->bottom + d->oy;
+    for (i = 0; i < d->c.n; i++)
+        if (l < d->c.r[i].right && rr > d->c.r[i].left &&
+            t < d->c.r[i].bottom && b > d->c.r[i].top)
+            return 1;
+    return 0;
 }
 BOOL API PlayMetaFile(HDC h, WORD mf) { (void)h; (void)mf; return 1; }
 short API MulDiv(short a, short b, short c)

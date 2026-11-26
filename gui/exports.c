@@ -3,7 +3,8 @@
  * AT-DOS GUI - Exporttabellen der eingebauten Win16-Module (KERNEL, USER,
  * GDI, KEYBOARD, COMMDLG, SHELL) nach Ordinalzahl. Die Nummern sind die der
  * Windows-3.1-Schnittstelle (gui/ordinals.txt); die Tabellen erzeugt
- * tools/mkexp.py (exp_all.h im Bauverzeichnis).
+ * tools/mkexp.py (exp_all.h im Bauverzeichnis). Die Tabellen liegen in
+ * einem eigenen fernen Datensegment - in DGROUP fehlte der Platz.
  */
 #include "gui.h"
 
@@ -30,7 +31,7 @@ int exp_builtin(LPCSTR mod)
 
 void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst)
 {
-    const struct ex *t;
+    const struct ex __far *t;
     short i;
     *isconst = 0;
     if (!fstricmp(mod, "KERNEL")) {

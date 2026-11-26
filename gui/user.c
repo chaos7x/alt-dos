@@ -771,7 +771,17 @@ BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait)
     for (;;) {
         process_sent(t);
         if (k->qh != k->qt) {
-            *m = k->q[k->qh];
+            MSG *q = &k->q[k->qh];
+            /* veraltet: Windows schickt WM_ACTIVATE/WM_SETFOCUS sofort, hier
+               liegen sie in der Schlange - ist die Lage inzwischen eine
+               andere (zweiter Dialog direkt nach dem ersten, PROGMAN), setzte
+               die alte Nachricht den Fokus falsch */
+            if ((q->message == WM_ACTIVATE && (q->wParam ? q->hwnd != active : q->hwnd == active)) ||
+                (q->message == WM_SETFOCUS && q->hwnd != focus)) {
+                k->qh = (k->qh + 1) % NQ;
+                continue;
+            }
+            *m = *q;
             if (remove)
                 k->qh = (k->qh + 1) % NQ;
             if (m->message >= 0x0100 && m->message <= 0x0108)
@@ -1922,8 +1932,18 @@ LONG API DispatchMessage(const MSG FAR *m)
     w = wptr(m->hwnd);
     if (!w)
         return 0;
-    if (m->message == WM_PAINT && !w->need_paint)
-        return 0;
+    if (m->message == WM_PAINT) {
+        LONG r;
+        if (!w->need_paint)
+            return 0;
+        r = send_msg(m->hwnd, m->message, m->wParam, m->lParam);
+        /* wie Windows: hat die Prozedur weder BeginPaint noch ValidateRect
+           gerufen, gilt das Fenster danach als gezeichnet (PROGMAN-Rahmen;
+           sonst kaeme WM_PAINT ohne Ende) */
+        if ((w = wptr(m->hwnd)) != 0)
+            w->need_paint = 0;
+        return r;
+    }
     return send_msg(m->hwnd, m->message, m->wParam, m->lParam);
 }
 BOOL API PostMessage(HWND h, WORD m, WORD wp, DWORD lp)

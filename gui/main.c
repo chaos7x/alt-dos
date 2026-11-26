@@ -71,7 +71,9 @@ int fstrcmp(LPCSTR a, LPCSTR b)
     return (BYTE)*a - (BYTE)*b;
 }
 
-/* Protokoll GUI.LOG im Verzeichnis beim Start (Fehlersuche) */
+/* Protokoll GUI.LOG im Verzeichnis beim Start (Fehlersuche); voller Pfad,
+   denn Programme wechseln das Verzeichnis (PROGMAN ins Windows-Verz.) */
+static char logpath[FAPI_CURDIRLEN + 10];
 /* je Zeile oeffnen und schliessen: nach einem Absturz steht alles drin */
 static void lput(const char *s)
 {
@@ -80,7 +82,7 @@ static void lput(const char *s)
         return;
     while (s[n])
         n++;
-    h = DosAppend("GUI.LOG");
+    h = DosAppend(logpath);
     if (FAPI_FAILED(h))
         return;
     DosWrite(h, s, n);
@@ -131,34 +133,45 @@ static int fstrchr_(const char *s, char c)
     return 0;
 }
 
-/* Programm ohne Pfad: wie Windows erst im Windows-Verzeichnis, dann im
-   PATH suchen (GUI aus C:\ mit PROGMAN in C:\DOS\GUI) */
+/* Programm ohne Pfad: wie Windows (LoadModule) erst im Windows-Verzeich-
+   nis, dann im Verzeichnis des aufrufenden Programms, dann im PATH (GUI aus
+   C:\ mit PROGMAN in C:\DOS\GUI; PROGMAN wechselt vor WinExec ins
+   Arbeitsverzeichnis) */
 static char sp_full[FAPI_PATHLEN], sp_path[512];
-static int sp_try(const char *dir, WORD n, const char *a)
+static int sp_try(LPCSTR dir, WORD n, LPCSTR name, LPCSTR a, WORD show)
 {
     WORD k = 0, i;
     for (i = 0; i < n && k < FAPI_PATHLEN - 2; i++)
         sp_full[k++] = dir[i];
     if (k && sp_full[k - 1] != '\\')
         sp_full[k++] = '\\';
-    for (i = 0; prog[i] && k < FAPI_PATHLEN - 1; i++)
-        sp_full[k++] = prog[i];
+    for (i = 0; name[i] && k < FAPI_PATHLEN - 1; i++)
+        sp_full[k++] = name[i];
     sp_full[k] = 0;
-    return task_start(sp_full, a, 1);
+    return task_start(sp_full, a, show);
 }
-static int start_in_path(const char *a)
+int start_search(LPCSTR name, LPCSTR a, WORD show)
 {
     WORD n = GetWindowsDirectory(sp_path, sizeof(sp_path));
     char *s, *e;
-    int t = sp_try(sp_path, n, a);
+    int t = sp_try(sp_path, n, name, a, show);
     if (t != 2)
         return t;
+    if (cur_task >= 0 && wt[cur_task].hmod) {       /* Verz. des Aufrufers */
+        const char FAR *p = wm[wt[cur_task].hmod - 1].path;
+        WORD k = 0, i;
+        for (i = 0; p[i]; i++)
+            if (p[i] == '\\')
+                k = i;
+        if (k && (t = sp_try(p, k, name, a, show)) != 2)
+            return t;
+    }
     if (FAPI_FAILED(DosGetEnv("PATH", sp_path, sizeof(sp_path))))
         return 2;
     for (s = sp_path; *s; s = *e ? e + 1 : e) {
         for (e = s; *e && *e != ';'; e++)
             ;
-        if (e > s && (t = sp_try(s, (WORD)(e - s), a)) != 2)
+        if (e > s && (t = sp_try(s, (WORD)(e - s), name, a, show)) != 2)
             return t;
     }
     return 2;
@@ -174,7 +187,16 @@ void gui_main(void)
         if (!FAPI_FAILED(DosGetEnv("GUITRACE", tv, sizeof(tv))) && tv[0] == '1')
             w16_trace = 1;
     }
-    logh = DosCreate("GUI.LOG");
+    {
+        WORD n;
+        DosQCurDir(logpath);
+        for (n = 0; logpath[n]; n++)
+            ;
+        if (n && logpath[n - 1] != '\\')
+            logpath[n++] = '\\';
+        fstrncpy(logpath + n, "GUI.LOG", 8);
+    }
+    logh = DosCreate(logpath);
     if (FAPI_FAILED(logh))
         logh = 0xFFFF;
     else
@@ -217,7 +239,7 @@ void gui_main(void)
     user_init();
     t = task_start(prog, p, 1);
     if (t == 2 && !fstrchr_(prog, '\\') && !fstrchr_(prog, ':'))
-        t = start_in_path(p);                   /* Windows-Verz., PATH   */
+        t = start_search(prog, p, 1);           /* Windows-Verz., PATH   */
     if (t != 0) {
         gdi_done();
         puts("GUI: Programm nicht geladen (siehe GUI.LOG)\r\n");

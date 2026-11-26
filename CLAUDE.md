@@ -2347,8 +2347,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   fiel nur in 86Box auf), Tasten bleiben im Kernelpuffer bei voller
   Schlange; Kernel SEG_REALLOC kopiert Bytes. Geprüft QEMU + 86Box
   386DX/40. Lehre: `get_bp2()` nur als `WORD ds = get_bp2();` vorn in
-  einer Exportfunktion, die vor BP nichts sichert. Nächstes: Write, dann
-  PROGMAN (Wunsch des Nutzers).
+  einer Exportfunktion, die vor BP nichts sichert. Write und
+  PROGMAN (Wunsch des Nutzers) laufen seit 26.11.2026.
   osFree-Programme als Prüfstand (25.11.2026, docs/GUI-WIN16.md „Stand:
   osFree-Programme“): Stufe 1 (Kleinkram) und 2 (Bitmaps, Zielfläche,
   BitBlt mit allen ROPs, Abbildungsmodi) gebaut; Minesweeper, Clock,
@@ -2369,6 +2369,17 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Öffnen/Speichern/Suchen/Ersetzen, Farbe, Schriftart darauf (Drucken:
   „kein Drucker“), Hooks/eigene Vorlagen. Stand
   in `docs/GUI-WIN16.md` „Standarddialoge“.
+  PROGMAN aus Windows 3.1 läuft (26.11.2026, „Stand: PROGMAN“; in QEMU:
+  Gruppe + Programm anlegen, Notepad starten, Windows beenden, Gruppe
+  aus der .GRP wieder geladen): `gui/user2.c` (GetWindow, WindowPlacement,
+  Caret, Hooks, ExitWindows, KEYBOARD/SHELL-Reste), Symbole = Selektor
+  eines CURSORICONINFO-Segments (DumpIcon/LockResource), Regionen als
+  Rechteck, verworfene Blöcke (GlobalAlloc 0 + MOVEABLE -> GlobalLock
+  NULL), veraltete gepostete WM_ACTIVATE/WM_SETFOCUS fallen weg, WM_PAINT
+  ohne BeginPaint wird nach DispatchMessage gültig, WinExec sucht wie
+  Windows (Windows-Verz., Aufrufer, PATH), Exporttabellen in fernem
+  Segment (DGROUP), Schattenstapel der Spur je Task. Lehre: GUI.LOG und
+  Modulpfade voll angeben – Programme wechseln das Verzeichnis.
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

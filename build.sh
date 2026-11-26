@@ -366,14 +366,14 @@ echo "GUI (Win16)"
 python3 tools/mkexp.py gui $B >/dev/null
 python3 tools/rc2dlg.py gui/res/commdlg.rc $B/cdlgtpl.h
 GCFLAGS="-q -mm -zu -2 -s -zl -zls -zp1 -d0 -ox -wx -we -i=$B"
-for f in main krnl w16ldr gdi user menu edit dlg combo commdlg misc ole ini icon mdi exports; do
+for f in main krnl w16ldr gdi user menu edit dlg combo commdlg misc ole ini icon mdi user2 exports; do
     wcc $GCFLAGS -fo=$B/gui_$f.o gui/$f.c
 done
 nasm -f obj -o $B/gui_gcrt.o gui/gcrt.asm
 wlink option quiet format os2 name $B/gui.exe option stack=8192 \
       option nodefaultlibs option map=$B/gui.map \
       file $B/gui_gcrt.o,$B/gui_main.o,$B/gui_krnl.o,$B/gui_w16ldr.o \
-      file $B/gui_gdi.o,$B/gui_user.o,$B/gui_menu.o,$B/gui_edit.o,$B/gui_dlg.o,$B/gui_combo.o,$B/gui_commdlg.o,$B/gui_misc.o,$B/gui_ole.o,$B/gui_ini.o,$B/gui_icon.o,$B/gui_mdi.o,$B/gui_exports.o
+      file $B/gui_gdi.o,$B/gui_user.o,$B/gui_menu.o,$B/gui_edit.o,$B/gui_dlg.o,$B/gui_combo.o,$B/gui_commdlg.o,$B/gui_misc.o,$B/gui_ole.o,$B/gui_ini.o,$B/gui_icon.o,$B/gui_mdi.o,$B/gui_user2.o,$B/gui_exports.o
 wcc -q -bt=windows -zW -ms -s -zl -zls -2 -ox -wx -we -i=$WATCOM/h/win \
     -fo=$B/hallow.o gui/demo/hallow.c
 nasm -f obj -o $B/w16crt.o gui/demo/w16crt.asm
