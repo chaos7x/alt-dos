@@ -1799,7 +1799,14 @@ static void inject(struct v86_iret *r, int t)
             return;
         }
     }
-    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) && t8_ok(t)) {
+    /* Hat ein DPMI-Programm INT 8 im PM eingehaengt und steht im Real Mode
+       nur der Stummel, wartet der Takt auf den PM (wie unter DOSX: die
+       PM-Routine kommt zuerst). Sonst schluckte der Stummel jeden Takt,
+       der in einen DOS-Aufruf fiel - Windows im Standard-Modus bekam statt
+       18,2 nur ~5 Takte je Sekunde, VBESVGA zeichnet den Mauszeiger nur
+       im Takt nach (Zeiger ruckelte). */
+    if (vt_pend[t] && !(visr[t] & 1) && !(vimr[t] & 1) &&
+        !(vec_def(8) && pm_hooked(t, 8)) && t8_ok(t)) {
         vt_pend[t]--;
         visr[t] |= 1;
         int_raw(r, t, 8, (unsigned)r->eip);
@@ -7510,6 +7517,7 @@ unsigned __far v86_exc(struct v86_frame *f)
         vme_out(&f->r, t);
     } else if (rc == 2) {
         irq_off();                      /* DPMI: weiter im PM            */
+        dp_hwint(&f->r, t);             /* was im Real Mode wartete (Takt) */
         pvi_out(&f->r, t);
     }
     from_tick = 0;

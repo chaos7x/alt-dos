@@ -1480,22 +1480,27 @@ drücken Knöpfe; PS2T.COM (Testprogramm, nur im Scratchpad) in der Box:
 Kennung AAh, Pakete mit Bewegung und Tasten; INT 33h (MT.COM) wie
 vorher.
 
-Offen (25.11.2026, vom Nutzer gemeldet, Build 1119): mit VBESVGA.DRV
-(1024×768×16) ruckelt der Zeiger in der Box, mit dem VGA-Treiber nicht.
-Gegenprobe des Nutzers auf einer 86Box-VM mit S3 Trio3D/2X unter echtem
-MS-DOS 6.22 (`WIN /S`, VBESVGA): dort flüssig, nur etwas zäher als mit
-dem Treiber der Karte (VBESVGA zeichnet den Zeiger in Software). Ein Teil
-des Ruckelns liegt also bei uns. Nachtrag des Nutzers: auch mit VBESVGA 640×480×256 –
-es hängt nicht an der Auflösung, sondern am Zeiger in Software. Befund aus QEMU mit Zählern über Port
-E9h (Instrumentierung nicht eingecheckt): Rückrufe aus dem V86-Modus
-kommen alle 1–2 Takte an; ein Rückruf, den `cb_pmtick` aus dem PM über
-den Stummel `MOU_PM` umlenkt, endet manchmal nicht (umgelenkt, aber kein
-HLT am Stummel, oder HLT ohne Abschluss in `dp_back`) – `cb_in` bleibt
-dann gesetzt und die Bewegungen dazwischen gehen verloren. Mit VBESVGA
-ist Windows länger im PM (Zeiger zeichnen), daher trifft es dort öfter.
-Nächster Schritt: den PM-Weg bis zum Abschluss verfolgen (Stummel-HLT
-in dp_trap, CT_MOU in dp_back); Zähler nicht aus irq0 heraus mit
-Modulaufrufen sammeln – das brachte Kernel-Paniken.
+Behoben (26.11.2026; vom Nutzer gemeldet, Build 1119: mit VBESVGA.DRV
+ruckelt der Zeiger in der Box, mit dem VGA-Treiber nicht, unter MS-DOS 6.22
+mit `WIN /S` flüssig). Die Rückrufe der Maus waren es nicht – in QEMU mit
+Zählern über Port E9h kamen alle an (150 Bewegungen, 150 Rückrufe,
+jeder aus dem PM vollständig: Stummel-HLT und Abschluss in `dp_back`).
+VBESVGA zeichnet mit Doppelpuffer, im Standard-Modus ohne MMSYSTEM-Takt
+schreibt es Bild und Zeiger nur im Takt von Windows um (`dbcursor_check`,
+alle 55 ms). Gezählt: Windows bekam im PM nur ~5 statt 18,2 Takte je
+Sekunde. Ursache: fiel ein Takt in einen DOS-Aufruf (Box im Real Mode),
+stellte `inject` ihn dort zu – im Real Mode stand nur der Stummel, der
+zählte den BIOS-Takt und gab ihn nicht an die PM-Routine weiter (DOSX ruft
+sie in jedem Modus zuerst). Jetzt: ist INT 8 im PM eingehängt und im Real
+Mode nur der Stummel, wartet der Takt auf den PM, und `v86_exc` stellt
+beim Rücksprung vom Real Mode in den PM zu (`dp_hwint`, auch Maus-Rückruf
+und Modul-IRQs). Prüfprogramm TK.COM (nur im Scratchpad: INT 8 im PM
+einhängen, ständig INT 21h 2Ch, bis 91 BIOS-Takte vergangen sind): vorher
+0 von 91 Takten im PM, jetzt 91 – QEMU und 86Box P3B-F. Windows bekommt
+18 Takte je Sekunde, die BIOS-Uhr läuft weiter (Windows kettet an den
+Stummel); DOOM 1.9 Timedemo unverändert (QEMU; 86Box P3B-F 322 -> 331
+Realtics, Rauschen). Gilt für jedes DPMI-
+Programm, das INT 8 nur im PM einhängt.
 
 Weg B (Plan, wie WIN-OS/2): ein eigener Lader statt DOSX.EXE, geliefert
 in `\DOS\MDOS`. Der Box-Kern ersetzt beim Programmstart (INT 21h
