@@ -54,6 +54,8 @@ void __cdecl tstart(void);
 void __cdecl int_entry(void);
 void __cdecl w16_stub(void);
 long __cdecl call16(void FAR *fn, WORD ds, WORD nw, WORD *w);
+/* LibEntry einer DLL: DI = DS = ds, CX = Halde, ES:SI = 0 -> AX */
+WORD __cdecl call_lib(void FAR *fn, WORD ds, WORD heap);
 WORD __cdecl fapi_sel(WORD fn, WORD sel, WORD a1, WORD a2, WORD a3);
 extern WORD ts_ax, ts_bx, ts_cx, ts_dx, ts_si, ts_di, ts_es, ts_ds, ts_ip, ts_cs;
 
@@ -83,8 +85,7 @@ struct wtask {
     WORD  psp;                  /* Selektor des PSP                  */
     WORD  env;                  /* Umgebung (PSP:2Ch)                */
     WORD  dta_s, dta_o;         /* INT 21h 1Ah                        */
-    WORD  qh, qt;               /* Nachrichtenschlange (Ring)         */
-    MSG   q[NQ];
+    WORD  qh, qt;               /* Nachrichtenschlange (Ring, TQ)     */
     BYTE  quit;                 /* WM_QUIT steht an                   */
     WORD  quitcode;
     BYTE  waiting;              /* wartet auf Nachrichten             */
@@ -98,6 +99,10 @@ struct wtask {
 #define WT_RUN  1               /* bereit                             */
 #define WT_DEAD 2
 extern struct wtask wt[NWT];
+/* Nachrichtenschlangen aller Tasks in einem eigenen Segment (in DGROUP
+   waren es 10 KB): TQ(k) = Schlange der Task k (struct wtask *) */
+extern WORD q_sel;
+#define TQ(k)   ((MSG FAR *)MKFP(q_sel, (WORD)((k) - wt) * (NQ * sizeof(MSG))))
 extern int  cur_task;           /* -1 = GUI selbst (Hauptschleife)    */
 extern WORD main_ss, main_sp;
 void task_yield_to_main(void);  /* aus einem Task zur Hauptschleife   */
@@ -107,6 +112,7 @@ int  start_search(LPCSTR name, LPCSTR args, WORD show); /* Windows-Verz., Aufruf
 void task_exit(int t, WORD code);
 void task_reap(int t);
 int  task_of_inst(WORD hinst);
+int  mod_of_inst(WORD hinst);              /* Modul 0.. oder -1 */
 void dos_int(void FAR *r);
 void krnl_init(void);
 
@@ -132,6 +138,10 @@ DWORD w16_res_find(int m, LPCSTR type, LPCSTR name);  /* Lage<<?: s.u. */
 WORD  w16_res_load(int m, DWORD id);             /* -> Selektor */
 WORD  w16_res_size(DWORD id);
 void  w16_missing(void);
+int   w16_byname(LPCSTR name);                    /* geladenes Modul -> 0.. */
+void FAR *w16_entry(int m, WORD ord);
+WORD  w16_ord_byname(int m, LPCSTR name);
+WORD  w16_lib_load(LPCSTR name);                  /* LoadLibrary (krnl.c) */
 
 /* ---- Exporte (exports.c) ---- */
 void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst);
@@ -146,6 +156,7 @@ extern WORD tr_ring[128], tr_pos, tr_dseg;
 void  tr_dump(const char *why);                   /* Aufrufspur ins GUI.LOG */
 int   exp_builtin(LPCSTR mod);                    /* 1.. oder 0 */
 void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst);
+WORD  exp_byname(WORD i, LPCSTR name);           /* 0 = unbekannt */
 /* lokale Halde eines Autodata (krnl.c), Handle = Stelle */
 BOOL  lh_init(WORD ds, WORD start, WORD end);
 WORD  lh_alloc(WORD ds, WORD n, WORD zero);
@@ -175,6 +186,7 @@ extern DWORD vga_rgb[16];
 #define NCLIP   24
 struct clip { short n; RECT r[NCLIP]; };
 void clip_window(HWND h, int client, struct clip FAR *c);
+void clip_sub(struct clip FAR *c, const RECT FAR *s);
 HDC  dc_get(HWND h, int client, int paint);
 void dc_release(HDC dc);
 

@@ -467,7 +467,7 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
 
 WORD load_tpl(WORD hinst, LPCSTR name)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r;
     if (hinst > 0 && hinst <= NMOD)
         m = hinst - 1;

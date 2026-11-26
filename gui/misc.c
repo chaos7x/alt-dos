@@ -113,7 +113,10 @@ static WORD fmtv(LPSTR out, LPCSTR f, const BYTE FAR *ap)
             for (f++; *f >= '0' && *f <= '9'; f++) prec = prec * 10 + (*f - '0');
         }
         if (*f == 'l' || *f == 'L') { lng = 1; f++; }
-        c = *f++;
+        c = *f;
+        if (!c)                                 /* '%' am Ende           */
+            break;
+        f++;
         s = num;
         switch (c) {
         case 'd': case 'i': case 'u': case 'x': case 'X': {
@@ -165,7 +168,12 @@ static WORD fmtv(LPSTR out, LPCSTR f, const BYTE FAR *ap)
 }
 short APIC _wsprintf(LPSTR out, LPCSTR fmt, ...)
 {
-    return fmtv(out, fmt, (const BYTE FAR *)&fmt + sizeof(fmt));
+    short r = fmtv(out, fmt, (const BYTE FAR *)&fmt + sizeof(fmt));
+    if (w16_trace == 2) {                       /* Vollspur: Text dazu   */
+        glogs("wsprintf ", fmt);
+        glogs("  -> ", out);
+    }
+    return r;
 }
 short API wvsprintf(LPSTR out, LPCSTR fmt, const BYTE FAR *args)
 {

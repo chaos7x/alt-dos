@@ -179,7 +179,7 @@ static struct wnd *top_of(struct wnd *w)
 }
 
 /* Clipping: Bereich ohne die Fenster darueber */
-static void clip_sub(struct clip FAR *c, const RECT FAR *s)
+void clip_sub(struct clip FAR *c, const RECT FAR *s)
 {
     struct clip o;
     short i;
@@ -732,12 +732,12 @@ BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp)
     k = &wt[t];
     if ((WORD)(k->qt + 1) % NQ == k->qh)
         return 0;                       /* voll                          */
-    k->q[k->qt].hwnd = h;
-    k->q[k->qt].message = m;
-    k->q[k->qt].wParam = wp;
-    k->q[k->qt].lParam = lp;
-    k->q[k->qt].time = ticks() * 10;
-    k->q[k->qt].pt = mpos;
+    TQ(k)[k->qt].hwnd = h;
+    TQ(k)[k->qt].message = m;
+    TQ(k)[k->qt].wParam = wp;
+    TQ(k)[k->qt].lParam = lp;
+    TQ(k)[k->qt].time = ticks() * 10;
+    TQ(k)[k->qt].pt = mpos;
     k->qt = (k->qt + 1) % NQ;
     return 1;
 }
@@ -808,7 +808,7 @@ BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait)
         mm_task(t);
         process_sent(t);
         if (k->qh != k->qt) {
-            MSG *q = &k->q[k->qh];
+            MSG FAR *q = &TQ(k)[k->qh];
             /* veraltet: Windows schickt WM_ACTIVATE/WM_SETFOCUS sofort, hier
                liegen sie in der Schlange - ist die Lage inzwischen eine
                andere (zweiter Dialog direkt nach dem ersten, PROGMAN), setzte
@@ -856,6 +856,8 @@ static RECT dgr;
 static BYTE dg_shown;
 static DWORD last_click;
 static HWND last_click_h;
+static WORD dbl_t = 50;                 /* Doppelklick in Takten (10 ms) */
+static BYTE mswap;                      /* SwapMouseButton               */
 static BYTE keystate[256];
 
 static HWND child_at(HWND h, short x, short y)
@@ -1093,9 +1095,12 @@ static void mouse_event(short x, short y, BYTE btn)
 {
     HWND h;
     struct wnd *w;
-    BYTE down = btn & ~mbtn, up = mbtn & ~btn;
+    BYTE down, up;
     short ht;
     int moved = x != mpos.x || y != mpos.y;
+    if (mswap)
+        btn = (btn & ~3) | ((btn & 1) << 1) | ((btn & 2) >> 1);
+    down = btn & ~mbtn; up = mbtn & ~btn;
     mpos.x = x; mpos.y = y;
     if (moved)
         gdi_cursor(x, y);
@@ -1169,7 +1174,7 @@ static void mouse_event(short x, short y, BYTE btn)
     }
     if (ht == HTCAPTION && (down & 1)) {
         DWORD now = ticks();
-        if (last_click_h == h && now - last_click < 50) {
+        if (last_click_h == h && now - last_click < dbl_t) {
             last_click_h = 0;                   /* Doppelklick           */
             if (w->style & WS_MINIMIZE)
                 post_msg(h, WM_SYSCOMMAND, SC_RESTORE, 0);
@@ -1207,8 +1212,19 @@ static void mouse_event(short x, short y, BYTE btn)
         WORD kf = (btn & 1) | ((btn & 2) ? 2 : 0);
         if (moved)
             post_msg(h, WM_MOUSEMOVE, kf, lp);
-        if (down & 1)
-            post_msg(h, WM_LBUTTONDOWN, kf, lp);
+        if (down & 1) {
+            /* Doppelklick nur fuer Klassen mit CS_DBLCLKS (wie Windows) */
+            DWORD now = ticks();
+            if (w->cls && (cl[w->cls - 1].style & 0x0008) && last_click_h == h
+                && now - last_click < dbl_t) {
+                last_click_h = 0;
+                post_msg(h, WM_LBUTTONDBLCLK, kf, lp);
+            } else {
+                last_click = now;
+                last_click_h = h;
+                post_msg(h, WM_LBUTTONDOWN, kf, lp);
+            }
+        }
         if (up & 1)
             post_msg(h, WM_LBUTTONUP, kf, lp);
         if (down & 2)
@@ -1811,6 +1827,24 @@ short API DrawText(HDC dc, LPCSTR s, short n, LPRECT r, WORD fmt)
 }
 
 DWORD API GetSysColor(short i) { return GetSysColor_c(i); }
+
+/* Systemsteuerung (Farben, Maus): Farben setzen, alles neu zeichnen und
+   WM_SYSCOLORCHANGE an die obersten Fenster */
+void API SetSysColors(short n, const short FAR *idx, const DWORD FAR *val)
+{
+    short i;
+    static RECT all = { 0, 0, 640, 480 };
+    for (i = 0; i < n; i++)
+        if ((WORD)idx[i] < 21)
+            syscol[idx[i]] = val[i];
+    for (i = 0; i < NWND; i++)
+        if (ww[i].used && !(ww[i].style & WS_CHILD))
+            post_msg(HW(i), 0x0015, 0, 0);       /* WM_SYSCOLORCHANGE    */
+    expose(&all);
+}
+void API SetDoubleClickTime(WORD ms) { dbl_t = ms ? (ms + 9) / 10 : 50; }
+WORD API GetDoubleClickTime(void) { return dbl_t * 10; }
+BOOL API SwapMouseButton(BOOL on) { BOOL o = mswap; mswap = on != 0; return o; }
 short API GetSystemMetrics(short i)
 {
     switch (i) {
@@ -2518,7 +2552,7 @@ LPSTR API AnsiPrev(LPCSTR a, LPCSTR s) { return (LPSTR)(s > a ? s - 1 : a); }
 
 short API LoadString(WORD hinst, WORD id, LPSTR buf, short n)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r;
     WORD sel, o = 0, k;
     BYTE FAR *p;

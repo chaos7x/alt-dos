@@ -391,6 +391,34 @@ short API CombineRgn(WORD d, WORD a, WORD b, short mode)
     fmemcpy(pd, &x, sizeof x);
     return rkind(pd);
 }
+/* Regionen sind hier Rechtecke: FillRgn = FillRect */
+short API FillRect(HDC dc, const RECT FAR *r, HBRUSH b);
+BOOL API FillRgn(HDC dc, WORD rgn, HBRUSH b)
+{
+    RECT *p = rptr(rgn);
+    if (!p)
+        return 0;
+    FillRect(dc, (const RECT FAR *)p, b);
+    return 1;
+}
+
+/* Schriften: die Systemsteuerung (Schriftarten) traegt Dateien ein und
+   fragt den TrueType-Rasterer - es gibt noch keinen (wFlags 0) */
+short API AddFontResource(LPCSTR f) { (void)f; return 1; }
+BOOL API RemoveFontResource(LPCSTR f) { (void)f; return 1; }
+BOOL API CreateScalableFontResource(WORD hid, LPCSTR fot, LPCSTR ttf, LPCSTR path)
+{ (void)hid; (void)fot; (void)ttf; (void)path; return 0; }
+BOOL API GetRasterizerCaps(WORD FAR *rs, short n)
+{
+    if (n >= 6) {
+        rs[0] = 6;                              /* nSize                */
+        rs[1] = 0;                              /* wFlags               */
+        rs[2] = 0;                              /* nLanguageID          */
+    }
+    return 1;
+}
+short API GetSpoolJob(short fn, long lp) { (void)fn; (void)lp; return 0; }
+
 short API GetRgnBox(WORD h, LPRECT r)
 {
     RECT *p = rptr(h);
@@ -1277,6 +1305,15 @@ DWORD API GetPixel(HDC h, short x, short y)
 }
 short API SaveDC(HDC h) { (void)h; return 1; }
 BOOL API RestoreDC(HDC h, short n) { (void)h; (void)n; return 1; }
+short API ExcludeClipRect(HDC h, short l, short t, short r, short b)
+{
+    struct dcs *d = dptr(h);
+    RECT q;
+    if (!d) return 0;
+    q.left = LX(d, l); q.top = LY(d, t); q.right = LX(d, r); q.bottom = LY(d, b);
+    clip_sub(&d->c, &q);
+    return d->c.n ? (d->c.n > 1 ? 3 : 2) : 1;
+}
 short API IntersectClipRect(HDC h, short l, short t, short r, short b)
 {
     struct dcs *d = dptr(h);
@@ -1758,7 +1795,7 @@ const BYTE FAR *gdi_dibhdr(const BYTE FAR *bi, WORD FAR *w, WORD FAR *h, WORD FA
    bleibt einfarbig, sonst 16 Farben (naechste Grundfarbe) */
 HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r;
     WORD sel, w, h, bpp;
     static BYTE map[256];

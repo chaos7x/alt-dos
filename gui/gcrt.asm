@@ -156,6 +156,35 @@ _call16:
         pop     bp
         retf
 
+; unsigned call_lib(void __far *fn, unsigned ds, unsigned heap)  cdecl
+; LibEntry einer Win16-DLL wie Windows: DS = DI = hInstance, CX = Halde,
+; ES:SI = Befehlszeile (hier 0) -> AX (0 = gescheitert)
+global _call_lib
+_call_lib:
+        push    bp
+        mov     bp, sp
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax, [bp+10]
+        mov     cx, [bp+12]
+        mov     di, ax
+        xor     si, si
+        mov     es, si
+        push    cs
+        push    word .ret
+        push    word [bp+8]
+        push    word [bp+6]
+        mov     ds, ax
+        retf
+.ret:   pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     bp
+        retf
+
 ; unsigned fapi_sel(fn, sel, a1, a2, a3)  cdecl: FAPI mit DS = sel
 global _fapi_sel
 _fapi_sel:
@@ -298,7 +327,7 @@ __I4D:
 ; Aufrufspur (SET GUITRACE=1): jeder Import geht ueber einen Vorschaltcode
 ; (w16ldr.c tr_thunk), der mit DS = GUI und AX = Kennung hierher ruft;
 ; die Kennung (Modul << 12 | Nummer) kommt in einen Ring von 128 Worten.
-extern _tr_ring, _tr_pos, _tr_dseg, _cur_task, _w16_trace, tr_logall_
+extern _tr_ring, _tr_pos, _tr_dseg, _cur_task, _w16_trace, tr_logall_, tr_logret_
 segment GCRT_TEXT
 ; Stapel beim Eintritt: [sp] Ruecksprung in den Stummel, +4 ax, +6 ds
 ; des Stummels, +8/+10 Ruecksprung ins Programm. Ohne Bit 15 in der
@@ -397,7 +426,16 @@ tr_post:
         mov     [es:bx], ax
         mov     [es:TR_RDX+bx], dx
         mov     word [es:TR_ROK+bx], 1
-        pop     si
+        cmp     byte [_w16_trace], 2            ; GUITRACE=2: Rueckgabe
+        jne     .norl                           ; auch ins GUI.LOG
+        push    ax
+        push    dx
+        push    di
+        call    far tr_logret_
+        pop     di
+        pop     dx
+        pop     ax
+.norl:  pop     si
         pop     cx
         pop     bx
         pop     es

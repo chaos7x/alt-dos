@@ -2405,6 +2405,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   jeden Import sofort ins GUI.LOG. Testfalle: Maus in der GUI über
   /tmp/claude-0/gt/goto.py (absolut), msmouse-Bewegung ist unzuverlässig;
   QEMU beendet sich mit `-device adlib` ohne audiodev.
+  Systemsteuerung (26.11.2026, „Stand: Systemsteuerung“): CONTROL.EXE mit
+  MAIN/SND/DRIVERS.CPL – DLLs zur Laufzeit (LoadLibrary + LibEntry,
+  `mod_of_inst`, GetProcAddress mit Namen), `gui/cpl.c` (LZEXPAND, VER,
+  Stummel), LocalInit(DS, 0, n) wie Windows ans Segmentende. Lehre:
+  get_bp2 nur in Exporten ohne gesicherte Register vor BP – build.sh prüft
+  mit tools/bp2check.py. Test /tmp/claude-0/gt/ctl.sh, ctl1.sh N (Applet N,
+  S=/W= Wartezeiten, PRE2= ohne Spur). Lehre: Python-Skripte, die Dateien
+  mit Latin-1 schreiben, erst kodieren (`.encode`), dann öffnen.
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

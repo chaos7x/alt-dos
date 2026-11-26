@@ -146,6 +146,12 @@ void __far tr_logall(WORD id)
 {
     glogn("T ", TR_SHOW(id & 0x7FFF));
 }
+/* Rueckgabe (AX, DX) eines Imports, Watcom: AX, DX */
+void __far tr_logret(WORD ax, WORD dx)
+{
+    glogn("R ", ax);
+    glogn("  DX ", dx);
+}
 void tr_dump(const char *why)
 {
     WORD i, n = tr_pos > 128 ? 128 : tr_pos;
@@ -199,6 +205,8 @@ static int reloc_seg(struct w16mod *w, int s)
             case 1:                             /* Import Ordinalzahl    */
                 modname(a, mn);
                 fp = exp_find(mn, b, &isc);
+                if (!fp && !isc)
+                    fp = w16_entry(w16_byname(mn), b);
                 if (!fp) {
                     glogn(mn, b);
                     nmiss++;
@@ -400,6 +408,11 @@ int w16_load(LPCSTR path)
     w->rsh = w->res_sel ? *(WORD FAR *)MKFP(w->res_sel, 0) : 0;
     if (nmiss)
         glogn("fehlende Importe: ", nmiss);
+    if (w16_trace) {                            /* Absturzstellen zuordnen */
+        glogs("Modul ", w->name);
+        for (s = 0; s < w->nseg; s++)
+            glogn("  Segment/Selektor ", ((WORD)(s + 1) << 12) | (w->seg[s].sel >> 3));
+    }
     rc = m;
 out:
     if (rc < 0)
@@ -517,6 +530,80 @@ WORD w16_res_load(int m, DWORD id)
     }
     DosClose(lh);
     return sel;
+}
+
+/* geladenes Modul nach Namen (DLL-Importe, LoadLibrary) -> 0.. oder -1 */
+int w16_byname(LPCSTR name)
+{
+    int m;
+    for (m = 0; m < NMOD; m++)
+        if (wm[m].used && !fstricmp(wm[m].name, name))
+            return m;
+    return -1;
+}
+
+/* Adresse des Eintrags `ord` eines geladenen Moduls (GetProcAddress) */
+void FAR *w16_entry(int m, WORD ord)
+{
+    WORD sg, off;
+    if (m < 0 || m >= NMOD || !wm[m].used || ent_lookup(&wm[m], ord, &sg, &off)
+        || !sg || sg > wm[m].nseg)
+        return 0;
+    return MKFP(wm[m].seg[sg - 1].sel, off);
+}
+
+/* Ordinalzahl zu einem exportierten Namen: residente Namen, dann die
+   nicht residenten - beide liest es neu aus der Datei (die Kopftabellen
+   gibt w16_load nach dem Laden frei). 0 = nicht gefunden */
+static WORD nm_scan(WORD sel, WORD len, LPCSTR name)
+{
+    BYTE FAR *t = MKFP(sel, 0);
+    WORD o = 0, l, i;
+    while (o < len && (l = t[o]) != 0 && o + l + 3 <= len) {
+        for (i = 0; i < l; i++) {
+            char a = t[o + 1 + i], b = name[i];
+            if (a >= 'a' && a <= 'z') a -= 32;
+            if (b >= 'a' && b <= 'z') b -= 32;
+            if (a != b)
+                break;
+        }
+        if (i == l && !name[l] && o)            /* Eintrag 0 = Modulname */
+            return t[o + 1 + l] | (t[o + 2 + l] << 8);
+        o += l + 3;
+    }
+    return 0;
+}
+WORD w16_ord_byname(int m, LPCSTR name)
+{
+    static BYTE mz[64];
+    WORD ord = 0, sel = 0, len;
+    unsigned long base;
+    if (m < 0 || m >= NMOD || !wm[m].used)
+        return 0;
+    fstrncpy(lpath, wm[m].path, sizeof(lpath));
+    lh = DosOpen(lpath);
+    if (FAPI_FAILED(lh))
+        return 0;
+    if (lread_near(mz, 64))
+        goto out;
+    base = W(mz + 0x3C);
+    if (lseek(base) || lread_near(nh, 64))
+        goto out;
+    len = W(nh + 0x28) - W(nh + 0x26);          /* residente Namen      */
+    if (len && len < 0x4000 && (sel = seg_new(len)) != 0) {
+        if (!lseek(base + W(nh + 0x26)) && !lread_sel(sel, 0, len))
+            ord = nm_scan(sel, len, name);
+        seg_del(sel);
+    }
+    len = W(nh + 0x20);                         /* nicht residente      */
+    if (!ord && len && len < 0x8000u && (sel = seg_new(len)) != 0) {
+        if (!lseek(*(DWORD *)(nh + 0x2C)) && !lread_sel(sel, 0, len))
+            ord = nm_scan(sel, len, name);
+        seg_del(sel);
+    }
+out:
+    DosClose(lh);
+    return ord;
 }
 
 void w16_missing(void)

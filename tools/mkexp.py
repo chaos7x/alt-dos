@@ -19,7 +19,7 @@ for f in sorted(glob.glob(os.path.join(gui, '*.c'))):
         if mm:
             names.append(mm.group(2))
             conv[mm.group(2)] = mm.group(1)
-MODS = ('KERNEL', 'USER', 'GDI', 'KEYBOARD', 'COMMDLG', 'SHELL', 'OLECLI', 'MMSYSTEM', 'OLESVR')
+MODS = ('KERNEL', 'USER', 'GDI', 'KEYBOARD', 'COMMDLG', 'SHELL', 'OLECLI', 'MMSYSTEM', 'OLESVR', 'LZEXPAND', 'VER')
 out = dict((m, []) for m in MODS)
 miss = []
 for n in names:
@@ -37,6 +37,17 @@ with open(os.path.join(out_dir, 'exp_all.h'), 'w') as f:
         for o, n in sorted(out[m]):
             f.write('    X(%d, %s),\n' % (o, n))
         f.write('    { 0, 0 }\n};\n')
+    # Namen je Modul (GetProcAddress mit Namen): Laenge, Name, Ordinalzahl
+    for m in MODS:
+        f.write('static const unsigned char __far n_%s[] = {\n' % m)
+        for o, n in sorted(out[m]):
+            b = n.upper().encode()
+            f.write('    %d, %s, %d, %d,\n' % (len(b), ', '.join(str(c) for c in b), o & 255, o >> 8))
+        f.write('    0\n};\n')
+    f.write('static const unsigned char __far * const __far modnam[] = {\n')
+    for m in MODS:
+        f.write('    n_%s,\n' % m)
+    f.write('};\n')
     f.write('static const struct { const char *name; const struct ex __far *t; } modtab[] = {\n')
     for m in MODS:
         f.write('    { "%s", t_%s },\n' % (m, m))

@@ -214,6 +214,12 @@ void gui_main(void)
     else
         DosClose(logh);
     glog("AT-DOS GUI");
+    if (w16_trace) {                            /* Absturzstellen zuordnen */
+        void FAR *seg2 = (void FAR *)path_find;   /* Code 2 (krnl, user, gdi) */
+        void FAR *seg3 = (void FAR *)glog;
+        glogn("GUI Code-Selektoren: main ", SELOF(seg2) >> 3);
+        glogn("                     glog ", SELOF(seg3) >> 3);
+    }
     DosGetArgs(args);
     p = args;
     while (*p == ' ')

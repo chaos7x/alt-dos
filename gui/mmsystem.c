@@ -138,11 +138,11 @@ void mm_cbfire(DWORD cb, DWORD flags, int t, WORD h, WORD msg, DWORD inst, DWORD
         w = &wt[k];
         if ((WORD)(w->qt + 1) % NQ == w->qh)
             break;
-        w->q[w->qt].hwnd = 0;
-        w->q[w->qt].message = msg;
-        w->q[w->qt].wParam = h;
-        w->q[w->qt].lParam = p1;
-        w->q[w->qt].time = 0;
+        TQ(w)[w->qt].hwnd = 0;
+        TQ(w)[w->qt].message = msg;
+        TQ(w)[w->qt].wParam = h;
+        TQ(w)[w->qt].lParam = p1;
+        TQ(w)[w->qt].time = 0;
         w->qt = (w->qt + 1) % NQ;
         break;
     }

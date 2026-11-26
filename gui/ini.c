@@ -210,8 +210,16 @@ static const char __far v_mci[] = "SYSTEM.INI\0mci\0WaveAudio\0mciwave.drv\0Sequ
 static const char __far v_ext[] = "WIN.INI\0mci extensions\0wav\0waveaudio\0mid\0sequencer\0rmi\0sequencer\0\0";
 /* [intl] wie nach Setup mit Land Deutschland (spaeter aus COUNTRY=) */
 static const char __far v_intl[] =
-    "WIN.INI\0" "intl\0" "sLanguage\0" "deu\0" "sCountry\0" "Deutschland\0" "iCountry\0" "49\0" "sList\0" ";\0" "iMeasure\0" "0\0" "sDecimal\0" ",\0" "sThousand\0" ".\0" "iDigits\0" "2\0" "iLzero\0" "1\0" "sCurrency\0" "DM\0" "iCurrency\0" "3\0" "iCurrDigits\0" "2\0" "iNegCurr\0" "8\0" "iDate\0" "1\0" "sDate\0" ".\0" "sShortDate\0" "dd.MM.yy\0" "sLongDate\0" "dddd, d. MMMM yyyy\0" "iTime\0" "1\0" "sTime\0" ":\0" "iTLZero\0" "1\0\0";
-static const char __far *const __far v_tab[] = { v_mci, v_ext, v_intl };
+    "WIN.INI\0" "intl\0" "sLanguage\0" "deu\0" "sCountry\0" "Deutschland\0" "iCountry\0" "49\0" "sList\0" ";\0" "iMeasure\0" "0\0" "sDecimal\0" ",\0" "sThousand\0" ".\0" "iDigits\0" "2\0" "iLzero\0" "1\0" "sCurrency\0" "DM\0" "iCurrency\0" "3\0" "iCurrDigits\0" "2\0" "iNegCurr\0" "8\0" "iDate\0" "1\0" "sDate\0" ".\0" "sShortDate\0" "dd.MM.yy\0" "sLongDate\0" "dddd, d. MMMM yyyy\0" "iTime\0" "1\0" "sTime\0" ":\0" "iTLZero\0" "1\0" "s1159\0" "\0" "s2359\0" "\0\0";
+/* Tastatur und Sprache wie nach Setup (deutsch): die Systemsteuerung
+   (Laendereinstellungen) sucht die Eintraege in den Listen von SETUP.INF -
+   fehlten sie, griff sie ins Leere (Absturz mit Text als Selektor) */
+static const char __far v_kbd[] = "SYSTEM.INI\0keyboard\0keyboard.dll\0kbdgr.dll\0type\04\0subtype\00\0oemansi.bin\0xlat850.bin\0\0";
+static const char __far v_boot[] = "SYSTEM.INI\0boot\0language.dll\0langger.dll\0\0";
+static const char __far v_bdesc[] = "SYSTEM.INI\0boot.description\0language.dll\0Deutsch\0keyboard.typ\0Erweiterte 101-/102-Tasten-US oder andere\0\0";
+/* Anschluesse wie nach Setup (Drucker der Systemsteuerung) */
+static const char __far v_ports[] = "WIN.INI\0ports\0LPT1:\0\0LPT2:\0\0LPT3:\0\0COM1:\09600,n,8,1,x\0COM2:\09600,n,8,1,x\0COM3:\09600,n,8,1,x\0COM4:\09600,n,8,1,x\0FILE:\0\0\0";
+static const char __far *const __far v_tab[] = { v_mci, v_ext, v_intl, v_kbd, v_boot, v_bdesc, v_ports };
 static int fseq(const char __far *a, const char FAR *b)
 {
     while (*a && up(*a) == up(*b))
@@ -232,7 +240,7 @@ static short ini_virt(LPCSTR sec, LPCSTR key, LPSTR buf, short n)
     for (l = 0; ini_name[l]; l++)
         if (ini_name[l] == '\\' || ini_name[l] == ':')
             fn = ini_name + l + 1;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < sizeof(v_tab) / sizeof(v_tab[0]); i++) {
         t = v_tab[i];
         if (!fseq(t, fn) || !fseq(fskip(t), sec))
             continue;
@@ -262,6 +270,11 @@ short API GetPrivateProfileString(LPCSTR sec, LPCSTR key, LPCSTR def,
                                   LPSTR buf, short n, LPCSTR f)
 {
     WORD o, v, e, a, q, k = 0;
+    if (w16_trace == 2) {                       /* Vollspur: was gesucht */
+        glogs("Profil ", f);
+        glogs("  [", sec ? sec : "");
+        glogs("  ", key ? key : "(alle)");
+    }
     if (!buf || n <= 0)
         return 0;
     buf[0] = 0;

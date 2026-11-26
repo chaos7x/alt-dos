@@ -53,6 +53,22 @@ int task_of_inst(WORD hinst)
     return -1;
 }
 
+/* Modul zu hInstance: Modulnummer + 1, DS einer Task oder einer DLL
+   (LoadLibrary liefert wie Windows das Autodata der DLL) -> 0.., -1 */
+int mod_of_inst(WORD hinst)
+{
+    int t = task_of_inst(hinst), m;
+    if (hinst > 0 && hinst <= NMOD)
+        return hinst - 1;
+    if (t >= 0)
+        return wt[t].hmod - 1;
+    for (m = 0; m < NMOD; m++)
+        if (wm[m].used && wm[m].autodata && wm[m].seg_sel &&
+            wm[m].seg[wm[m].autodata - 1].sel == hinst)
+            return m;
+    return -1;
+}
+
 /* Task t endet (INT 21h 4Ch, Absturz). Laeuft er gerade, steht er noch
    auf seinem eigenen Stapel (im Autodata, das hier frei wird): dann erst
    zur Hauptschleife, die raeumt ihn mit task_reap auf. */
@@ -222,9 +238,8 @@ static BOOL lh_grow(WORD ds, WORD need)
     WORD hs = lh_of(ds), lim = lsl_(ds), add;
     DWORD nsz;
     struct lheap FAR *h = MKFP(ds, hs);
-    if (h->end < lim - 1) {                     /* Segment hat noch Platz  */
-        add = (lim + 1 - h->end) & ~3u;
-    } else {
+    add = h->end < lim - 1 ? (lim + 1 - h->end) & ~3u : 0;
+    if (add < 8) {                              /* Segment vergroessern    */
         nsz = (DWORD)lim + 1 + need + 1024;
         if (nsz > 0xFFF0UL)
             nsz = 0xFFF0UL;
@@ -411,11 +426,9 @@ DWORD API GetWinFlags(void) { return 0x0413UL; }     /* PMODE|286|STANDARD|CPU38
 
 short API GetModuleFileName(WORD hinst, LPSTR buf, short n)
 {
-    int t = task_of_inst(hinst), m;
-    if (hinst > 0 && hinst <= NMOD)
-        m = hinst - 1;
-    else if (t >= 0)
-        m = wt[t].hmod - 1;
+    int m = mod_of_inst(hinst);
+    if (m >= 0)
+        ;
     else if (cur_task >= 0)
         m = wt[cur_task].hmod - 1;
     else
@@ -442,17 +455,57 @@ BOOL API IsDBCSLeadByte(WORD c) { (void)c; return 0; }
 DWORD API GetProcAddress(WORD hmod, LPCSTR name)
 {
     void FAR *fp;
-    WORD isc;
-    if (hmod >= 0x100 && hmod < 0x110 && !SELOF(name)) {
-        fp = exp_ord(hmod - 0x100, OFFOF(name), &isc);
+    WORD isc, ord;
+    int m;
+    if (hmod >= 0x100 && hmod < 0x110) {
+        ord = SELOF(name) ? exp_byname(hmod - 0x100, name) : OFFOF(name);
+        fp = ord ? exp_ord(hmod - 0x100, ord, &isc) : 0;
         if (!fp)
-            glogn("GetProcAddress fehlt: Modul/Nummer ", ((hmod - 0x100) << 12) | OFFOF(name));
+            glogn("GetProcAddress fehlt: Modul/Nummer ", ((hmod - 0x100) << 12) | ord);
         return fp && !isc ? (DWORD)fp : 0;
+    }
+    m = mod_of_inst(hmod);
+    if (m >= 0) {
+        ord = SELOF(name) ? w16_ord_byname(m, name) : OFFOF(name);
+        fp = ord ? w16_entry(m, ord) : 0;
+        if (fp)
+            return (DWORD)fp;
     }
     if (SELOF(name))
         glogs("GetProcAddress: ", name);
     return 0;
 }
+
+/* FindResource/LoadResource/FreeResource: HRSRC ist ein Platz in einer
+   kleinen Tabelle (w16_res_find liefert Modul + Stelle als DWORD) */
+#define NRSRC 8
+static DWORD rs_tab[NRSRC];
+static BYTE  rs_next;
+WORD API FindResource(WORD hinst, LPCSTR name, LPCSTR type)
+{
+    int m = mod_of_inst(hinst);
+    DWORD r;
+    if (m < 0 && cur_task >= 0)
+        m = wt[cur_task].hmod - 1;
+    r = w16_res_find(m, type, name);
+    if (!r)
+        return 0;
+    rs_next = (BYTE)((rs_next + 1) % NRSRC);
+    rs_tab[rs_next] = r;
+    return rs_next + 1;
+}
+WORD API LoadResource(WORD hinst, WORD hr)
+{
+    (void)hinst;
+    return hr && hr <= NRSRC && rs_tab[hr - 1] ? w16_res_load(0, rs_tab[hr - 1]) : 0;
+}
+DWORD API SizeofResource(WORD hinst, WORD hr)
+{
+    (void)hinst;
+    return hr && hr <= NRSRC ? w16_res_size(rs_tab[hr - 1]) : 0;
+}
+BOOL API FreeResource(WORD h) { if (h) seg_del(h); return 0; }
+WORD API LocalShrink(WORD seg, WORD n) { (void)seg; return n ? n : 0x1000; }
 
 short API GetModuleUsage(WORD h) { return h && h <= NMOD ? wm[h - 1].refs : 0; }
 
@@ -546,15 +599,16 @@ BOOL API GlobalUnWire(WORD h) { (void)h; return 1; }
 WORD API AllocSelector(WORD s) { (void)s; return 0; }
 WORD API FreeSelector(WORD s) { (void)s; return 0; }
 
-WORD API LocalAlloc(WORD flags, WORD n)
+static WORD la_impl(WORD ds, WORD flags, WORD n)
 {
-    WORD ds = get_bp2();
     WORD r = (flags & 0x02) ? lh_hnew(ds, n, flags & LMEM_ZEROINIT)   /* Griff */
                             : lh_alloc(ds, n, flags & LMEM_ZEROINIT);
     if (!r)
         glogn("LocalAlloc gescheitert: ", n);
     return r;
 }
+/* nur DS holen (get_bp2: vor BP darf der Export nichts sichern) */
+WORD API LocalAlloc(WORD flags, WORD n) { return la_impl(get_bp2(), flags, n); }
 WORD API LocalFree(WORD h)
 {
     WORD ds = get_bp2();
@@ -677,9 +731,22 @@ BOOL API LocalInit(WORD seg, WORD start, WORD end)
 {
     if (!seg)
         seg = get_bp2();
-    if (!start) {               /* Windows: ganzes Segment ab ...      */
-        start = 16;
-        end = (WORD)lsl_(seg) - 1;
+    if (!start) {
+        /* wie Windows: start 0 = die letzten `end` Bytes des Segments (bei
+           einer DLL also direkt hinter den statischen Daten - LibEntry ruft
+           LocalInit(DS, 0, Haldengroesse)). Vorher lag die Halde ab 16 und
+           ueberschrieb die Daten der DLL (Systemsteuerung, Laender) */
+        WORD sz = (WORD)lsl_(seg);              /* Groesse - 1           */
+        if (end && end <= sz - 16) {
+            start = sz - end + 1;
+            end = sz;
+        } else {
+            start = 16;
+            end = sz;
+        }
+    }
+    if (w16_trace) {
+        glogn("LocalInit seg ", seg); glogn("  start ", start); glogn("  end ", end);
     }
     return lh_init(seg, start, end);
 }
@@ -716,7 +783,7 @@ LPSTR API lstrcat(LPSTR d, LPCSTR s)
 /* ---- Dateien (KERNEL _lopen & Co., auch fuer INT 21h) ----------------
    FAPI_SEEK kennt nur die Stelle vom Anfang: Stelle und Groesse fuehrt
    die GUI je Handle selbst. */
-static char fbuf[260];
+char fbuf[260];                         /* auch cpl.c (Arbeitspuffer)   */
 #define NFH 48
 static struct { DWORD pos, size; } fh[NFH];
 static struct fapi_dirent fd_e;
@@ -1010,9 +1077,16 @@ void dos_int(void FAR *rv)
     case 0x2A: case 0x2C:
         DosGetDateTime(dt);
         if (ah == 0x2A) {
-            r->cx = (dt[0] >> 9) + 1980;
-            r->dx = ((dt[0] >> 5) & 15) << 8 | (dt[0] & 31);
-            r->ax = r->ax & 0xFF00;
+            /* AL = Wochentag (0 = Sonntag), Verfahren nach Sakamoto -
+               die Systemsteuerung zeigt das lange Datum damit an */
+            static const BYTE __far wt_t[12] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+            WORD y = (dt[0] >> 9) + 1980, mo = (dt[0] >> 5) & 15, d = dt[0] & 31;
+            r->cx = y;
+            r->dx = mo << 8 | d;
+            if (mo < 3)
+                y--;
+            r->ax = (r->ax & 0xFF00) |
+                    (y + y / 4 - y / 100 + y / 400 + wt_t[(mo - 1) % 12] + d) % 7;
         } else {
             r->cx = (dt[1] >> 11) << 8 | ((dt[1] >> 5) & 63);
             r->dx = ((dt[1] & 31) * 2) << 8;
@@ -1130,8 +1204,10 @@ void dos_int(void FAR *rv)
     }
 }
 
+WORD q_sel;
 void krnl_init(void)
 {
+    q_sel = seg_new(NWT * NQ * sizeof(MSG));
     fapi_call(FAPI_SEGCTL, SEG_INTHND, SELOF((void FAR *)int_entry),
               OFFOF((void FAR *)int_entry));
 }
@@ -1163,8 +1239,19 @@ static void mod_base(LPCSTR p, char *buf, short n)
     buf[i] = 0;
 }
 
-/* eingebaute Module (KERNEL, USER, ...) liefern ihre Kennung; DLLs von
-   Programmen laedt der Lader noch nicht - wie Windows: 2 = nicht gefunden */
+/* hInstance eines geladenen Moduls: Autodata, sonst die Segmenttabelle
+   (wie Windows ein Selektor > 32 - LoadLibrary < 32 hiesse Fehler) */
+static WORD mod_inst(int m)
+{
+    return wm[m].autodata ? wm[m].seg[wm[m].autodata - 1].sel : wm[m].seg_sel;
+}
+
+/* eingebaute Module (KERNEL, USER, ...) liefern ihre Kennung; DLLs wie
+   die Systemsteuerungsmodule (.CPL) laedt der Lader, ruft LibEntry (DI =
+   hInstance, CX = Halde, DS = Autodata, ES:SI = 0) und gibt hInstance
+   zurueck - wie Windows: 2 = nicht gefunden, 11 = kein Win16-Modul */
+static char we_path[FAPI_PATHLEN];
+#define ll_path we_path                  /* nie gleichzeitig in Gebrauch  */
 WORD API LoadLibrary(LPCSTR name)
 {
     static char b[16];
@@ -1173,19 +1260,68 @@ WORD API LoadLibrary(LPCSTR name)
     m = exp_builtin(b);
     if (m)
         return 0x100 + m - 1;
-    for (m = 0; m < NMOD; m++)
-        if (wm[m].used && !fstricmp(wm[m].name, b)) {
-            wm[m].refs++;
-            return m + 1;
+    m = w16_byname(b);
+    if (m < 0 && path_find(name, ll_path, sizeof(ll_path))) {
+        full_path(ll_path, fbuf, 128);
+        for (m = NMOD - 1; m >= 0; m--)         /* schon geladen (Pfad)? */
+            if (wm[m].used && !fstricmp(wm[m].path, fbuf))
+                break;
+    }
+    if (m >= 0) {
+        wm[m].refs++;
+        return mod_inst(m);
+    }
+    if (!path_find(name, ll_path, sizeof(ll_path))) {
+        glogs("LoadLibrary: nicht vorhanden: ", name);
+        return 2;
+    }
+    m = w16_load(ll_path);
+    if (m < 0)
+        return 11;
+    if (!(wm[m].flags & 0x8000u)) {             /* keine DLL            */
+        w16_free(m);
+        return 11;
+    }
+    if (wm[m].entcs && wm[m].entcs <= wm[m].nseg) {
+        WORD ds = wm[m].autodata ? wm[m].seg[wm[m].autodata - 1].sel : 0;
+        if (!call_lib(MKFP(wm[m].seg[wm[m].entcs - 1].sel, wm[m].entip), ds,
+                      wm[m].heap)) {
+            glogs("LibEntry gescheitert: ", name);
+            w16_free(m);
+            return 14;
         }
-    glogs("LoadLibrary: nicht vorhanden: ", name);
-    return 2;
+    }
+    return mod_inst(m);
 }
-void API FreeLibrary(WORD h) { (void)h; }
+WORD w16_lib_load(LPCSTR name) { return LoadLibrary(name); }
+
+/* Freigeben: WEP rufen und das Modul loswerden, wenn keiner es mehr hat */
+void API FreeLibrary(WORD h)
+{
+    int m = mod_of_inst(h);
+    WORD o, ds;
+    void FAR *wep;
+    if (h >= 0x100 && h < 0x110)
+        return;
+    if (m < 0 || !(wm[m].flags & 0x8000u))
+        return;
+    if (wm[m].refs > 1) {
+        wm[m].refs--;
+        return;
+    }
+    o = w16_ord_byname(m, "WEP");
+    wep = o ? w16_entry(m, o) : 0;
+    if (wep) {
+        static WORD wa[1];
+        ds = wm[m].autodata ? wm[m].seg[wm[m].autodata - 1].sel : 0;
+        wa[0] = 0;                              /* WEP_FREE_DLL         */
+        call16(wep, ds, 1, wa);
+    }
+    w16_free(m);
+}
 
 /* WinExec: Win16-Programm als neue Task, sonst ueber das FAPI (DOS-
    oder FX-Programm) in eigener Sitzung. > 31 = gestartet */
-static char we_path[FAPI_PATHLEN];
 static int fstrchr_s(LPCSTR s, char c)
 {
     for (; *s; s++)
@@ -1409,11 +1545,14 @@ WORD API GetTempFileName(BYTE drv, LPCSTR pre, WORD uniq, LPSTR buf)
 
 /* Daten aus der Instanz hinst an dieselbe Stelle im eigenen DS kopieren
    (eine zweite Instanz holt so Einstellungen der ersten) */
-short API GetInstanceData(WORD hinst, WORD off, short n)
+static short gid_impl(WORD ds, WORD hinst, WORD off, short n)
 {
-    WORD ds = get_bp2();
     if (!hinst || n <= 0)
         return 0;
     fmemcpy(MKFP(ds, off), MKFP(hinst, off), n);
     return n;
+}
+short API GetInstanceData(WORD hinst, WORD off, short n)
+{
+    return gid_impl(get_bp2(), hinst, off, n);  /* nur DS holen (s. LocalAlloc) */
 }

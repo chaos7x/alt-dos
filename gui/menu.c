@@ -160,7 +160,7 @@ HMENU API LoadMenuIndirect(LPVOID tpl)
 
 HMENU API LoadMenu(WORD hinst, LPCSTR name)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r;
     WORD sel;
     HMENU h;
@@ -867,7 +867,7 @@ short menu_mnemonic(HMENU h, BYTE ch)
 
 WORD API LoadAccelerators(WORD hinst, LPCSTR name)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r = w16_res_find(m, MKFP(0, 9), name);
     return r ? w16_res_load(m, r) : 0;
 }

@@ -137,7 +137,7 @@ static WORD icon_sys(void)
 
 WORD API LoadIcon(WORD hinst, LPCSTR name)
 {
-    int t = task_of_inst(hinst), m = t >= 0 ? wt[t].hmod - 1 : -1;
+    int m = mod_of_inst(hinst);
     DWORD r;
     WORD sel, id, h;
     if (hinst > 0 && hinst <= NMOD)

@@ -649,6 +649,59 @@ Notepad danach unverändert. Offen: Wellenform im Klangrecorder bleibt
 flach, Beschriftungen abgeschnitten (feste Schrift – kommt mit
 TrueType), Aufnahme, 86Box.
 
+### Stand: Systemsteuerung (26.11.2026)
+
+Ziel: CONTROL.EXE mit MAIN.CPL, SND.CPL und DRIVERS.CPL aus Windows 3.1
+(nur im Scratchpad, nicht im Repository; CPLs in `WINDIR\SYSTEM`, dazu
+CONTROL.INF/SETUP.INF der Windows-Diskette 1).
+
+- **DLLs zur Laufzeit** (bisher nur eingebaute Module): LoadLibrary lädt
+  über `path_find`, erkennt ein geladenes Modul auch am Pfad (der Modulname
+  „MAINCPL“ ist nicht der Dateiname – sonst zweite Instanz), ruft LibEntry
+  wie Windows (`call_lib` in gcrt.asm: DI = DS = hInstance, CX = Halde,
+  ES:SI = 0) und gibt das Autodata als hInstance zurück; `mod_of_inst`
+  ordnet hInstance (Task, Modulnummer oder DS einer DLL) dem Modul zu
+  (LoadString, LoadBitmap, Dialogvorlagen …). FreeLibrary ruft WEP.
+  GetProcAddress mit Namen: residente und nicht residente Namen aus der
+  Datei (`w16_ord_byname`), bei eingebauten Modulen eine Namenstabelle, die
+  mkexp.py erzeugt (`exp_byname`, KEYBOARD.SetSpeed). Importe aus schon
+  geladenen DLLs löst der Lader auf (`w16_entry`).
+- **LocalInit(DS, 0, n)** legt die Halde wie Windows in die letzten n Bytes
+  des Segments (bei einer DLL hinter die statischen Daten). Vorher lag sie
+  ab 16 und überschrieb die Daten der DLL – die Ländereinstellungen
+  stürzten mit einem Text als Selektor ab. `lh_grow` vergrößert das Segment
+  jetzt auch, wenn am Ende nur 1–7 Byte frei sind.
+- **get_bp2** (DS des Aufrufers in Exporten wie LocalAlloc) liest [bp+2] –
+  sichert der Export vor BP noch SI/DI, ist das falsch (LocalAlloc lief auf
+  DS 0). Solche Exporte sind dünne Mäntel um eine Hilfe; build.sh prüft es
+  mit `tools/bp2check.py` (wdis).
+- `gui/cpl.c`: LZEXPAND (SZDD entpacken in LZCopy/CopyLZFile, sonst rohe
+  Handles), VER (VerFindFile/VerInstallFile, keine Versionsdaten), Comm-
+  und WNet-Stummel, installierbare Treiber (keine), DlgDirList/-Select,
+  ChildWindowFromPoint, EqualRect. USER: Doppelklick im Client für
+  Klassen mit CS_DBLCLKS (gab es noch nicht), Set/GetDoubleClickTime,
+  SwapMouseButton, SetSysColors (WM_SYSCOLORCHANGE, neu zeichnen). GDI:
+  ExcludeClipRect, FillRgn, Add/RemoveFontResource, GetRasterizerCaps
+  (noch ohne TrueType). KERNEL: Find/Load/Sizeof/FreeResource,
+  LocalShrink, INT 21h 2Ah mit Wochentag. Nachrichtenschlangen in einem
+  eigenen Segment (`TQ`, 10 KB weniger in DGROUP).
+- INI-Vorgaben ohne Abschnitt: SYSTEM.INI `[keyboard]`, `[boot]`
+  language.dll, `[boot.description]`; WIN.INI `[intl]` mit leeren
+  s1159/s2359, `[ports]` (LPT1–3, COM1–4, FILE:).
+- GUITRACE=2 schreibt jetzt auch Rückgaben (`R`, `DX`), Formate von
+  wsprintf und Profilzugriffe; GUITRACE ≥ 1 die Selektoren jedes Moduls
+  (Absturzstelle CS:IP zuordnen).
+
+Geprüft in QEMU: CONTROL zeigt alle 11 Symbole, es öffnen Farben,
+Schriftarten, Anschlüsse, Maus, Desktop, Tastatur, Datum/Uhrzeit,
+Ländereinstellungen (mit Beispielen für Datum, Zeit, Währung, Zahl),
+Klang und Treiber; Drucker öffnet („Kein Standarddrucker“) und meldet
+danach, die Informationsdatei für die Druckerliste fehle (Drucken gibt es
+noch nicht).
+PROGMAN und Notepad danach unverändert. Offen: GDI.UnicodeToAnsi (Signatur
+unbekannt), Schriftarten installieren (TrueType), Felder mit fester
+Schrift zu schmal, Desktop braucht beim Öffnen einige Sekunden, 86Box.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

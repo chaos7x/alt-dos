@@ -58,3 +58,24 @@ void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst)
     *isconst = 0;
     return 0;
 }
+
+/* Ordinalzahl eines eingebauten Moduls (Nummer i) zu einem Namen, 0 =
+   unbekannt (GetProcAddress mit Namen, z. B. KEYBOARD.SetSpeed) */
+WORD exp_byname(WORD i, LPCSTR name)
+{
+    const unsigned char __far *p;
+    WORD l, k;
+    if (i >= sizeof(modnam) / sizeof(modnam[0]))
+        return 0;
+    for (p = modnam[i]; (l = *p) != 0; p += l + 3) {
+        for (k = 0; k < l; k++) {
+            char c = name[k];
+            if (c >= 'a' && c <= 'z') c -= 32;
+            if (c != (char)p[1 + k])
+                break;
+        }
+        if (k == l && !name[l])
+            return p[1 + l] | (p[2 + l] << 8);
+    }
+    return 0;
+}

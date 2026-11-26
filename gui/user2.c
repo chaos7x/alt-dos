@@ -290,6 +290,15 @@ DWORD API GlobalLock(WORD h);
 DWORD API LockResource(WORD h) { return GlobalLock(h); }
 
 /* ---- KEYBOARD ------------------------------------------------------- */
+/* SetSpeed (KEYBOARD.7, Systemsteuerung "Tastatur"): Wert wie das Byte
+   des Tastaturbefehls F3h, -1 = nur abfragen -> bisheriger Wert */
+short API SetSpeed(short v)
+{
+    WORD o = fapi_call(FAPI_KBDRATE, 0xFFFF, 0, 0);
+    if (v != -1)
+        fapi_call(FAPI_KBDRATE, (WORD)v & 0x7F, 0, 0);
+    return FAPI_FAILED(o) ? -1 : (short)(o & 0x7F);
+}
 /* Scancode <-> virtuelle Taste fuer die Tasten, die Programme nennen */
 static const BYTE vk_sc[][2] = {
     { 0x08, 0x0E }, { 0x09, 0x0F }, { 0x0D, 0x1C }, { 0x10, 0x2A }, { 0x11, 0x1D },
