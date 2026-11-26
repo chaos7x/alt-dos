@@ -2206,7 +2206,14 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `X:\CONFIG.SYS` des Startlaufwerks lenkt der Box-Kern auf
   `\DOS\MDOS\CONFIG.WIN` um (Entscheidung des Nutzers, 24.11.2026, wie
   CONFIG.NT; SETUP trug dort HIMEM/SMARTDRV ein). CONFIG.WIN liegt seit 25.11.2026 bei
-  (BOXFILES) – vorher fand EDIT in der Box `C:\CONFIG.SYS` nicht. Einzelheiten in
+  (BOXFILES) – vorher fand EDIT in der Box `C:\CONFIG.SYS` nicht.
+  Mauszeiger ruckelte mit VBESVGA (vom Nutzer gemeldet, behoben
+  26.11.2026): nicht die Rückrufe, sondern der Takt – fiel er in einen
+  DOS-Aufruf, schluckte ihn der Real-Mode-Stummel, Windows bekam im PM ~5
+  statt 18,2 Takte/s (VBESVGA zeichnet den Zeiger im Takt). Jetzt wartet
+  er auf den PM, `v86_exc` stellt beim Rücksprung RM -> PM zu (`dp_hwint`);
+  geprüft QEMU, 86Box P3B-F (TK.COM 91/91 statt 0/91, DOOM unverändert).
+  Einzelheiten in
   `docs/DOSKERN.md` „Stand Weg B“. Testumgebung /tmp/claude-0/w31 (ISO
   des Nutzers, nur zum Testen). Lehre: QEMU prüft Segmentgrenzen nicht –
   zwei Fehler (3Fh über die Grenze, INT 15h C0h) zeigte nur 86Box.
