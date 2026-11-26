@@ -77,7 +77,9 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   wieder: Symbole als Speicherblöcke wie unter Windows, Regionen,
   Schreibmarke, verworfene Speicherblöcke, ExitWindows; Bildlaufleisten
   nur bei Bedarf, proportionale Beschriftungen in Dialogen, Zuordnungen
-  Dokument → Programm aus WIN.INI, Symbole zwischen Gruppen ziehen).
+  Dokument → Programm aus WIN.INI, Symbole zwischen Gruppen ziehen;
+  MMSYSTEM mit sndPlaySound, MessageBeep-Klängen und waveOut über die
+  Ton-FAPI).
   Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit

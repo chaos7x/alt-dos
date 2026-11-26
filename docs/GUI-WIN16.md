@@ -566,6 +566,47 @@ und dabei behoben:
 9. DefWindowProc beantwortet WM_QUERYENDSESSION mit 1 – vorher lehnte
    jedes Fenster ab und „Windows beenden“ blieb ohne Wirkung.
 
+### Stand: MMSYSTEM Stufe 1 – Ton (26.11.2026)
+
+Wunsch des Nutzers (Reihenfolge danach: Ton, Systemsteuerung, TrueType).
+`gui/mmsystem.c`, Modul MMSYSTEM (Ordinalzahlen aus der mmsystem.lib von
+Open Watcom in `gui/ordinals.txt`), über die Ton-FAPI (FAPI_AUDIO) – kein
+eigener Treiber, SB16.SYS bzw. jeder AUD-Treiber spielt.
+
+- Der Kernel gibt je AT-DOS-Task nur einen Datenstrom her, die GUI ist
+  ein Task: ein Strom für alle Win16-Programme, Besitzer waveOut oder
+  sndPlaySound (wie ein Wave-Gerät unter Windows 3.1 ohne Mischer –
+  belegt -> MMSYSERR_ALLOCATED).
+- AUD_WRITE wartet, bis die Daten im Kartenpuffer sind, AUD_NOWAIT
+  verwirft still – beides taugt nicht für eine kooperative Schleife.
+  Deshalb zählt die GUI selbst mit: geöffnet mit AUD_SMALL, Vorrat
+  höchstens drei Abschnitte, abgebaut nach den vergangenen Takten
+  (Bytes je Sekunde), geschrieben wird nur, was ohne Warten passt.
+  `mm_pump` aus der Hauptschleife.
+- waveOut: GetNumDevs/GetDevCaps („AT-DOS Wave (FAPI)“), Open mit
+  WAVE_FORMAT_QUERY und CALLBACK_WINDOW/TASK/FUNCTION (MM_WOM_OPEN/
+  DONE/CLOSE), Prepare/Unprepare/Write, Schleifen (WHDR_BEGINLOOP/
+  ENDLOOP, dwLoops, BreakLoop), Pause/Restart/Reset, GetPosition,
+  Lautstärke über AUDMIX_WAVE, Fehlertexte deutsch. Ein Puffer ist fertig,
+  wenn seine Spielzeit vorbei ist (nicht, wenn er im Kartenpuffer liegt).
+  Funktionsrückrufe laufen im Zusammenhang der Task mit DS = hInstance
+  (`mm_task` vor jeder Nachrichtenabfrage).
+- sndPlaySound: Datei oder Speicher (SND_MEMORY), SND_ASYNC/LOOP/
+  NOSTOP/NODEFAULT, NULL hält an; Namen aus WIN.INI `[sounds]` (Teil vor
+  dem Komma), sonst Suche wie WinExec, sonst SystemDefault. MessageBeep
+  nimmt SystemHand/Question/Exclamation/Asterisk/Default, ohne Klang den
+  Piepser (FAPI_BEEP).
+- Dazu timeGetTime/timeGetSystemTime/timeGetDevCaps/timeBegin/EndPeriod,
+  mmsystemGetVersion 030Ah, OutputDebugStr (ins GUI.LOG); waveIn, MIDI,
+  aux, joy melden kein Gerät (Stufe 2: midiOut, MCI, mmio).
+
+Geprüft in QEMU (`-device sb16`, Mitschnitt als WAV, Auswertung je
+Viertelsekunde): Testprogramm im Scratchpad spielt DING.WAV synchron
+(780 Hz, 0,5 s), über waveOut 16 Puffer à 2.756 Byte 441 Hz bei 11 kHz
+mit Funktionsrückruf (4 s, 16 × WOM_DONE, Close 0), dann AKKORD.WAV
+asynchron (1,1 s); Notepad danach unverändert. Nicht geprüft: 86Box,
+Programme aus Windows 3.1 mit Ton (Klangrecorder kommt mit Stufe 2).
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

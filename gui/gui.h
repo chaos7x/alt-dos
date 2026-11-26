@@ -289,6 +289,13 @@ BOOL post_msg(HWND h, WORD m, WORD wp, DWORD lp);
 extern HWND desktop;
 DWORD GetSysColor_c(WORD i);
 void  MessageBeep_c(void);
+/* ---- MMSYSTEM (mmsystem.c) ---- */
+void  mm_pump(void);                             /* Hauptschleife      */
+void  mm_task(int t);                            /* GetMessage: Rueckrufe */
+int   mm_has_work(int t);
+void  mm_task_end(int t);
+void  mm_beep(WORD type);
+int   path_find(LPCSTR name, LPSTR out, WORD n);
 int   timer_due_peek(int t);
 BOOL  API ShowWindow(HWND h, short cmd);
 BOOL  API ExtTextOut(HDC h, short x, short y, WORD opt, LPRECT r, LPCSTR s, WORD n, short FAR *dx);

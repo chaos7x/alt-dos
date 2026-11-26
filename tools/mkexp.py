@@ -19,7 +19,7 @@ for f in sorted(glob.glob(os.path.join(gui, '*.c'))):
         if mm:
             names.append(mm.group(2))
             conv[mm.group(2)] = mm.group(1)
-MODS = ('KERNEL', 'USER', 'GDI', 'KEYBOARD', 'COMMDLG', 'SHELL', 'OLECLI')
+MODS = ('KERNEL', 'USER', 'GDI', 'KEYBOARD', 'COMMDLG', 'SHELL', 'OLECLI', 'MMSYSTEM')
 out = dict((m, []) for m in MODS)
 miss = []
 for n in names:

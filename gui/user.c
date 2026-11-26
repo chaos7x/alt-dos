@@ -750,7 +750,8 @@ int user_task_has_work(int t)
         return 1;
     if (k->wait_reply)
         return 0 || k->sent == 1;
-    return k->qh != k->qt || k->quit || k->sent == 1 || paint_win(t) || timer_due_peek(t);
+    return k->qh != k->qt || k->quit || k->sent == 1 || paint_win(t) || timer_due_peek(t) ||
+           mm_has_work(t);
 }
 
 int timer_due_peek(int t)
@@ -775,6 +776,7 @@ BOOL user_get_msg(MSG FAR *m, HWND filt, WORD lo, WORD hi, int remove, int wait)
         return 0;
     k = &wt[t];
     for (;;) {
+        mm_task(t);
         process_sent(t);
         if (k->qh != k->qt) {
             MSG *q = &k->q[k->qh];
@@ -2006,7 +2008,7 @@ void API PostQuitMessage(short code)
 WORD API LoadCursor(WORD hinst, LPCSTR id) { (void)hinst; (void)id; return 0x5001; }
 WORD API SetCursor(WORD c) { (void)c; return 0x5001; }
 void MessageBeep_c(void) { fapi_call(FAPI_BEEP, 880, 80, 0); }
-void API MessageBeep(WORD t) { (void)t; MessageBeep_c(); }
+void API MessageBeep(WORD t) { mm_beep(t); }
 
 BOOL API SetWindowText(HWND h, LPCSTR s) { return (BOOL)send_msg(h, WM_SETTEXT, 0, (DWORD)s); }
 short API GetWindowText(HWND h, LPSTR s, short n) { return (short)send_msg(h, WM_GETTEXT, n, (DWORD)s); }

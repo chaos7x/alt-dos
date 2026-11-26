@@ -275,6 +275,7 @@ void gui_main(void)
         }
         if (!any)
             break;
+        mm_pump();
         gdi_flush();
         DosSleep(10);
     }

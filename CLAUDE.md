@@ -2387,6 +2387,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   [Extensions] + Vorgaben, `path_find`), DragObject, Pfeiltasten in
   Dialoggruppen. Testfalle: Pfeil im Dialog wandert jetzt wie Windows auch
   zwischen Knöpfen – Testskripte nicht mehr darauf verlassen.
+  MMSYSTEM Stufe 1 (26.11.2026, Wunsch des Nutzers: Ton vor Systemsteuerung
+  und TrueType; „Stand: MMSYSTEM“): `gui/mmsystem.c`, ein Strom über
+  FAPI_AUDIO für die ganze GUI, Vorrat selbst gezählt (AUD_WRITE wartet,
+  AUD_NOWAIT verwirft), waveOut mit Rückrufen, sndPlaySound, MessageBeep
+  aus WIN.INI [sounds]; in QEMU mit SB16-Mitschnitt geprüft. Testfalle:
+  run2.sh nimmt die gui.exe aus /tmp/claude-0/gt – vorher aus build/
+  kopieren (sonst fehlen neue Exporte).
   Menü-Durchgang danach (26.11.2026): Enter auf gesperrtem Standard-
   knopf ohne Wirkung, Satzzeichen als VK_OEM_* statt ASCII („.“ war
   VK_DELETE), TranslateAccelerator prüft den Menüpunkt (WM_INITMENU-

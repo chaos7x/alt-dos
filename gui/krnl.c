@@ -61,6 +61,7 @@ void task_reap(int t)
     if (!wt[t].used)
         return;
     user_task_end(t);
+    mm_task_end(t);
     if (wt[t].psp)
         seg_del(wt[t].psp);
     if (wt[t].env)
