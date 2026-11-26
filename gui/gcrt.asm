@@ -298,7 +298,7 @@ __I4D:
 ; Aufrufspur (SET GUITRACE=1): jeder Import geht ueber einen Vorschaltcode
 ; (w16ldr.c tr_thunk), der mit DS = GUI und AX = Kennung hierher ruft;
 ; die Kennung (Modul << 12 | Nummer) kommt in einen Ring von 128 Worten.
-extern _tr_ring, _tr_pos, _tr_dseg, _cur_task
+extern _tr_ring, _tr_pos, _tr_dseg, _cur_task, _w16_trace, tr_logall_
 segment GCRT_TEXT
 ; Stapel beim Eintritt: [sp] Ruecksprung in den Stummel, +4 ax, +6 ds
 ; des Stummels, +8/+10 Ruecksprung ins Programm. Ohne Bit 15 in der
@@ -321,6 +321,18 @@ _tr_common:
         mov     bp, sp
         push    es
         push    si
+        cmp     byte [_w16_trace], 2            ; GUITRACE=2: jeden Aufruf
+        jne     .nolog                          ; gleich ins GUI.LOG
+        push    ax
+        push    cx
+        push    dx
+        push    di
+        call    far tr_logall_
+        pop     di
+        pop     dx
+        pop     cx
+        pop     ax
+.nolog:
         mov     bx, [_tr_pos]
         and     bx, 127
         shl     bx, 1

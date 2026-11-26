@@ -2,8 +2,8 @@
 /*
  * AT-DOS GUI - MMSYSTEM (Windows 3.1): Ton fuer Win16-Programme.
  *
- * Stufe 1: sndPlaySound (Datei, WIN.INI [sounds], Speicher, Schleife),
- * waveOut* und die Zeitfunktionen. Ausgegeben wird ueber die Audio-FAPI
+ * sndPlaySound (Datei, WIN.INI [sounds], Speicher, Schleife), waveOut*,
+ * die Zeitfunktionen und die Wiedergabe fuer MCI waveaudio (mci.c). Ausgegeben wird ueber die Audio-FAPI
  * (FAPI_AUDIO, Treiber SB16.SYS). Der Kernel kennt je AT-DOS-Task einen
  * Strom - die GUI ist ein Task, also gibt es ein Wave-Geraet, das
  * sndPlaySound und waveOut sich teilen (wie bei Windows mit einer SB).
@@ -22,101 +22,14 @@
  *
  * Zustand in einem eigenen Segment (DGROUP der GUI ist knapp).
  */
-#include "gui.h"
+#include "mm.h"
 
-#define MMSYSERR_NOERROR        0
-#define MMSYSERR_ERROR          1
-#define MMSYSERR_BADDEVICEID    2
-#define MMSYSERR_ALLOCATED      4
-#define MMSYSERR_INVALHANDLE    5
-#define MMSYSERR_NODRIVER       6
-#define MMSYSERR_NOMEM          7
-#define MMSYSERR_NOTSUPPORTED   8
-#define MMSYSERR_INVALFLAG      10
-#define MMSYSERR_INVALPARAM     11
-#define WAVERR_BADFORMAT        32
-#define WAVERR_STILLPLAYING     33
-#define WAVERR_UNPREPARED       34
-
-#define WHDR_DONE       0x01
-#define WHDR_PREPARED   0x02
-#define WHDR_BEGINLOOP  0x04
-#define WHDR_ENDLOOP    0x08
-#define WHDR_INQUEUE    0x10
-
-#define WAVE_FORMAT_QUERY   0x0001
-#define CALLBACK_TYPEMASK   0x00070000UL
-#define CALLBACK_WINDOW     0x00010000UL
-#define CALLBACK_TASK       0x00020000UL
-#define CALLBACK_FUNCTION   0x00030000UL
-
-#define MM_WOM_OPEN     0x3BB
-#define MM_WOM_CLOSE    0x3BC
-#define MM_WOM_DONE     0x3BD
-
-#define SND_ASYNC       0x0001
-#define SND_NODEFAULT   0x0002
-#define SND_MEMORY      0x0004
-#define SND_LOOP        0x0008
-#define SND_NOSTOP      0x0010
-
-#define HWO             0x0B01          /* das eine Wave-Geraet          */
-#define NCB             8
-#define SBUF            4096            /* Lesepuffer fuer sndPlaySound  */
-
-typedef struct wavehdr {
-    char FAR *lpData;
-    DWORD dwBufferLength, dwBytesRecorded, dwUser, dwFlags, dwLoops;
-    struct wavehdr FAR *lpNext;
-    DWORD reserved;                     /* hier: Takt, ab dem er fertig ist */
-} WAVEHDR;
-typedef WAVEHDR FAR *LPWAVEHDR;
-typedef struct {
-    WORD  wFormatTag, nChannels;
-    DWORD nSamplesPerSec, nAvgBytesPerSec;
-    WORD  nBlockAlign, wBitsPerSample;
-} PCMWAVEFORMAT;
-
-struct mmcb { BYTE t; DWORD fn; WORD h, msg; DWORD inst, p1, p2; };
-struct mmst {
-    /* Strom zur Karte: 0 frei, 1 waveOut, 2 sndPlaySound */
-    BYTE  owner;
-    WORD  rate;
-    BYTE  ch, bits;
-    WORD  align;
-    DWORD bps;                          /* Bytes je Sekunde              */
-    DWORD cap;                          /* Vorrat im Treiber             */
-    DWORD backlog;                      /* geschaetzt noch nicht gespielt */
-    DWORD rem;                          /* Rest unter einem Takt (Byte*100) */
-    WORD  last;                         /* DosQTicks beim letzten Pumpen */
-    /* waveOut */
-    BYTE  wo_open, paused;
-    int   wo_task;
-    DWORD cb, inst, woflags;
-    LPWAVEHDR head, tail, wr;           /* Schlange, gerade geschrieben  */
-    DWORD wpos, loops;
-    LPWAVEHDR loopstart;
-    DWORD written;
-    /* sndPlaySound */
-    BYTE  snd, sloop, smem;
-    WORD  fh;
-    DWORD dstart, dlen, dleft;
-    const BYTE FAR *mp;                 /* SND_MEMORY: Daten             */
-    WORD  bpos, blen;
-    DWORD seekpos;
-    char  path[128];
-    char  prof[128];
-    struct mmcb q[NCB];
-    BYTE  qn;
-    BYTE  buf[SBUF];
-};
-static WORD mm_sel;
-#define S ((struct mmst FAR *)MKFP(mm_sel, 0))
+WORD mm_sel;
 
 short API GetProfileString(LPCSTR sec, LPCSTR key, LPCSTR def, LPSTR buf, short n);
 int  path_find(LPCSTR name, LPSTR out, WORD n);
 
-static int mm_init(void)
+int mm_init(void)
 {
     if (!mm_sel) {
         mm_sel = seg_new(sizeof(struct mmst));
@@ -127,8 +40,8 @@ static int mm_init(void)
     return 1;
 }
 
-static WORD qticks(void) { return fapi_call(FAPI_QTICKS, 0, 0, 0); }
-static WORD caps(void)
+WORD mm_qticks(void) { return fapi_call(FAPI_QTICKS, 0, 0, 0); }
+WORD mm_caps(void)
 {
     WORD c = fapi_call(FAPI_AUDIO, AUD_CAPS, 0, 0);
     return FAPI_FAILED(c) ? 0 : c;
@@ -166,7 +79,7 @@ static int st_open(const PCMWAVEFORMAT FAR *f, BYTE who)
     if (seg > 8192) seg = 8192;
     S->cap = (DWORD)seg * 3;
     S->backlog = S->rem = 0;
-    S->last = qticks();
+    S->last = mm_qticks();
     S->written = 0;
     return 0;
 }
@@ -179,7 +92,7 @@ static void st_close(void)
 /* Uhr nachfuehren: was seit dem letzten Mal gespielt sein kann */
 static void st_clock(void)
 {
-    WORD now = qticks(), dt = now - S->last;
+    WORD now = mm_qticks(), dt = now - S->last;
     DWORD p;
     S->last = now;
     if (dt > 100)
@@ -210,7 +123,7 @@ static WORD st_lag(void)
 }
 
 /* ---- Rueckrufe -------------------------------------------------------- */
-static void cb_fire(DWORD cb, DWORD flags, int t, WORD h, WORD msg, DWORD inst, DWORD p1)
+void mm_cbfire(DWORD cb, DWORD flags, int t, WORD h, WORD msg, DWORD inst, DWORD p1)
 {
     switch (flags & CALLBACK_TYPEMASK) {
     case CALLBACK_WINDOW:
@@ -243,7 +156,7 @@ static void cb_fire(DWORD cb, DWORD flags, int t, WORD h, WORD msg, DWORD inst, 
     }
 }
 static WORD cbw[8];
-static void cb_call(DWORD fn, WORD h, WORD msg, DWORD inst, DWORD p1, DWORD p2, int t)
+void mm_cbcall(DWORD fn, WORD h, WORD msg, DWORD inst, DWORD p1, DWORD p2, int t)
 {
     cbw[0] = h; cbw[1] = msg;
     cbw[2] = HIWORD(inst); cbw[3] = LOWORD(inst);
@@ -266,7 +179,7 @@ void mm_task(int t)
         fmemcpy(&c, &S->q[i], sizeof(c));
         fmemmove(&S->q[i], &S->q[i + 1], (S->qn - i - 1) * sizeof(c));
         S->qn--;
-        cb_call(c.fn, c.h, c.msg, c.inst, c.p1, c.p2, t);
+        mm_cbcall(c.fn, c.h, c.msg, c.inst, c.p1, c.p2, t);
     }
 }
 int mm_has_work(int t)
@@ -284,12 +197,12 @@ int mm_has_work(int t)
 static void wo_done(LPWAVEHDR h)
 {
     h->dwFlags = (h->dwFlags & ~WHDR_INQUEUE) | WHDR_DONE;
-    cb_fire(S->cb, S->woflags, S->wo_task, HWO, MM_WOM_DONE, S->inst, (DWORD)h);
+    mm_cbfire(S->cb, S->woflags, S->wo_task, HWO, MM_WOM_DONE, S->inst, (DWORD)h);
 }
 /* fertige Puffer vorn aus der Schlange nehmen */
 static void wo_retire(int all)
 {
-    WORD now = qticks();
+    WORD now = mm_qticks();
     while (S->head && (all || (S->head != S->wr && S->head != S->loopstart &&
            (short)(now - (WORD)S->head->reserved) >= 0))) {
         LPWAVEHDR h = S->head;
@@ -336,13 +249,13 @@ static void wo_pump(void)
             S->loopstart = 0;
             S->loops = 0;
         }
-        h->reserved = (WORD)(qticks() + st_lag());
+        h->reserved = (WORD)(mm_qticks() + st_lag());
         S->wr = h->lpNext;
         S->wpos = 0;
     }
 }
 
-WORD API waveOutGetNumDevs(void) { return (caps() & AUDCAP_PCM) ? 1 : 0; }
+WORD API waveOutGetNumDevs(void) { return (mm_caps() & AUDCAP_PCM) ? 1 : 0; }
 
 WORD API waveOutGetDevCaps(WORD dev, void FAR *p, WORD sz)
 {
@@ -376,7 +289,7 @@ WORD API waveOutOpen(WORD FAR *ph, WORD dev, const PCMWAVEFORMAT FAR *f,
         return WAVERR_BADFORMAT;
     if (flags & WAVE_FORMAT_QUERY)
         return 0;
-    if (S->wo_open)
+    if (S->wo_open || S->owner == 3)
         return MMSYSERR_ALLOCATED;
     if (S->owner == 2) {                        /* sndPlaySound weicht     */
         S->snd = 0;
@@ -397,9 +310,9 @@ WORD API waveOutOpen(WORD FAR *ph, WORD dev, const PCMWAVEFORMAT FAR *f,
         *ph = HWO;
     if ((flags & CALLBACK_TYPEMASK) == CALLBACK_FUNCTION) {
         if (cb && cur_task >= 0)
-            cb_call(cb, HWO, MM_WOM_OPEN, inst, 0, 0, cur_task);
+            mm_cbcall(cb, HWO, MM_WOM_OPEN, inst, 0, 0, cur_task);
     } else
-        cb_fire(cb, flags, cur_task, HWO, MM_WOM_OPEN, inst, 0);
+        mm_cbfire(cb, flags, cur_task, HWO, MM_WOM_OPEN, inst, 0);
     return 0;
 }
 
@@ -417,9 +330,9 @@ WORD API waveOutClose(WORD h)
     S->wo_open = 0;
     if ((fl & CALLBACK_TYPEMASK) == CALLBACK_FUNCTION) {
         if (S->cb && cur_task >= 0)
-            cb_call(S->cb, HWO, MM_WOM_CLOSE, S->inst, 0, 0, cur_task);
+            mm_cbcall(S->cb, HWO, MM_WOM_CLOSE, S->inst, 0, 0, cur_task);
     } else
-        cb_fire(S->cb, fl, cur_task, HWO, MM_WOM_CLOSE, S->inst, 0);
+        mm_cbfire(S->cb, fl, cur_task, HWO, MM_WOM_CLOSE, S->inst, 0);
     return 0;
 }
 WORD API waveOutPrepareHeader(WORD h, LPWAVEHDR w, WORD sz)
@@ -547,7 +460,7 @@ static const char *const mmerr[] = {
     "Fehlernummer au\xDF" "erhalb des Bereichs.", "Ung\xFCltiges Flag.",
     "Ung\xFCltiger Parameter."
 };
-static WORD errtext(WORD e, LPSTR buf, WORD n)
+WORD mm_errtext(WORD e, LPSTR buf, WORD n)
 {
     const char *s;
     if (!buf || !n)
@@ -567,12 +480,23 @@ static WORD errtext(WORD e, LPSTR buf, WORD n)
     fstrncpy(buf, s, n);
     return 0;
 }
-WORD API waveOutGetErrorText(WORD e, LPSTR buf, WORD n) { return errtext(e, buf, n); }
-WORD API waveInGetErrorText(WORD e, LPSTR buf, WORD n) { return errtext(e, buf, n); }
+WORD API waveOutGetErrorText(WORD e, LPSTR buf, WORD n) { return mm_errtext(e, buf, n); }
+WORD API waveInGetErrorText(WORD e, LPSTR buf, WORD n) { return mm_errtext(e, buf, n); }
 WORD API waveInGetNumDevs(void) { return 0; }
 WORD API waveInGetDevCaps(WORD d, void FAR *p, WORD n) { (void)d; (void)p; (void)n; return MMSYSERR_NODRIVER; }
 WORD API waveInOpen(WORD FAR *ph, WORD d, const void FAR *f, DWORD cb, DWORD i, DWORD fl)
 { (void)ph; (void)d; (void)f; (void)cb; (void)i; (void)fl; return MMSYSERR_NODRIVER; }
+/* Aufnahme: der Kernel hat keinen Eingabeweg - nie ein offenes Geraet */
+WORD API waveInClose(WORD h) { (void)h; return MMSYSERR_INVALHANDLE; }
+WORD API waveInPrepareHeader(WORD h, LPWAVEHDR w, WORD s) { (void)h; (void)w; (void)s; return MMSYSERR_INVALHANDLE; }
+WORD API waveInUnprepareHeader(WORD h, LPWAVEHDR w, WORD s) { (void)h; (void)w; (void)s; return MMSYSERR_INVALHANDLE; }
+WORD API waveInAddBuffer(WORD h, LPWAVEHDR w, WORD s) { (void)h; (void)w; (void)s; return MMSYSERR_INVALHANDLE; }
+WORD API waveInStart(WORD h) { (void)h; return MMSYSERR_INVALHANDLE; }
+WORD API waveInStop(WORD h) { (void)h; return MMSYSERR_INVALHANDLE; }
+WORD API waveInReset(WORD h) { (void)h; return MMSYSERR_INVALHANDLE; }
+WORD API waveInGetPosition(WORD h, void FAR *t, WORD s) { (void)h; (void)t; (void)s; return MMSYSERR_INVALHANDLE; }
+WORD API waveInGetID(WORD h, WORD FAR *id) { (void)h; (void)id; return MMSYSERR_INVALHANDLE; }
+DWORD API waveInMessage(WORD h, WORD m, DWORD a, DWORD b) { (void)h; (void)m; (void)a; (void)b; return MMSYSERR_NOTSUPPORTED; }
 
 /* ---- sndPlaySound ----------------------------------------------------- */
 static void snd_stop(void)
@@ -588,17 +512,17 @@ static void snd_stop(void)
     S->snd = 0;
 }
 /* RIFF/WAVE im Puffer bzw. ueber die Datei: fmt und data finden */
-static int snd_parse(PCMWAVEFORMAT FAR *f)
+static int snd_parse(WORD fh, int mem, PCMWAVEFORMAT FAR *f, DWORD FAR *ds, DWORD FAR *dl)
 {
     static BYTE hd[8];
     DWORD p = 12, sz, end;
     const BYTE FAR *m = S->mp;
-    if (S->smem) {
+    if (mem) {
         if (*(DWORD FAR *)m != 0x46464952UL || *(DWORD FAR *)(m + 8) != 0x45564157UL)
             return 0;
         end = *(DWORD FAR *)(m + 4) + 8;
     } else {
-        if (fapi_sel(FAPI_READ, mm_sel, S->fh, OFFOF(S->buf), 12) != 12)
+        if (fapi_sel(FAPI_READ, mm_sel, fh, OFFOF(S->buf), 12) != 12)
             return 0;
         if (*(DWORD FAR *)S->buf != 0x46464952UL || *(DWORD FAR *)(S->buf + 8) != 0x45564157UL)
             return 0;
@@ -606,28 +530,28 @@ static int snd_parse(PCMWAVEFORMAT FAR *f)
     }
     fmemset(f, 0, sizeof(*f));
     while (p + 8 <= end) {
-        if (S->smem)
+        if (mem)
             fmemcpy(hd, m + (WORD)p, 8);
         else {
             S->seekpos = p;
-            fapi_sel(FAPI_SEEK, mm_sel, S->fh, OFFOF(&S->seekpos), 0);
-            if (fapi_sel(FAPI_READ, mm_sel, S->fh, OFFOF(S->buf), 8) != 8)
+            fapi_sel(FAPI_SEEK, mm_sel, fh, OFFOF(&S->seekpos), 0);
+            if (fapi_sel(FAPI_READ, mm_sel, fh, OFFOF(S->buf), 8) != 8)
                 return 0;
             fmemcpy(hd, S->buf, 8);
         }
         sz = *(DWORD *)(hd + 4);
         if (*(DWORD *)hd == 0x20746D66UL) {     /* "fmt " */
-            if (S->smem)
+            if (mem)
                 fmemcpy(f, m + (WORD)p + 8, sz < sizeof(*f) ? (WORD)sz : sizeof(*f));
             else
-                fapi_sel(FAPI_READ, mm_sel, S->fh, OFFOF(S->buf),
+                fapi_sel(FAPI_READ, mm_sel, fh, OFFOF(S->buf),
                          sz < sizeof(*f) ? (WORD)sz : sizeof(*f)),
                 fmemcpy(f, S->buf, sz < sizeof(*f) ? (WORD)sz : sizeof(*f));
         } else if (*(DWORD *)hd == 0x61746164UL) {  /* "data" */
-            S->dstart = p + 8;
-            S->dlen = sz;
-            if (S->dstart + sz > end)
-                S->dlen = end > S->dstart ? end - S->dstart : 0;
+            *ds = p + 8;
+            *dl = sz;
+            if (*ds + sz > end)
+                *dl = end > *ds ? end - *ds : 0;
             return f->wFormatTag != 0;
         }
         p += 8 + sz + (sz & 1);
@@ -644,25 +568,25 @@ static void snd_rewind(void)
     }
 }
 /* Daten weiterreichen; -> 0 fertig */
-static int snd_pump(void)
+static int snd_pump(WORD fh, int mem, int loop)
 {
     for (;;) {
         WORD n, w;
         if (S->bpos == S->blen) {
             if (!S->dleft) {
-                if (!S->sloop)
+                if (!loop)
                     return 0;
                 snd_rewind();
                 continue;
             }
             n = S->dleft > SBUF ? SBUF : (WORD)S->dleft;
-            if (S->smem) {
+            if (mem) {
                 DWORD o = S->dstart + (S->dlen - S->dleft);
                 if (o + n > 0x10000UL)          /* nur ein Segment         */
                     return 0;
                 fmemcpy(S->buf, S->mp + (WORD)o, n);
             } else {
-                n = fapi_sel(FAPI_READ, mm_sel, S->fh, OFFOF(S->buf), n);
+                n = fapi_sel(FAPI_READ, mm_sel, fh, OFFOF(S->buf), n);
                 if (FAPI_FAILED(n) || !n)
                     return 0;
             }
@@ -707,7 +631,7 @@ BOOL API sndPlaySound(LPCSTR name, WORD fl)
         snd_stop();
         return 1;
     }
-    if (S->wo_open)                     /* Geraet gehoert waveOut        */
+    if (S->wo_open || S->owner == 3)    /* Geraet gehoert waveOut/MCI    */
         return 0;
     if (S->snd && (fl & SND_NOSTOP))
         return 0;
@@ -725,7 +649,7 @@ BOOL API sndPlaySound(LPCSTR name, WORD fl)
             return 0;
         S->fh = h;
     }
-    if (!snd_parse(&f) || st_open(&f, 2)) {
+    if (!snd_parse(S->fh, S->smem, &f, &S->dstart, &S->dlen) || st_open(&f, 2)) {
         snd_stop();
         return 0;
     }
@@ -734,7 +658,7 @@ BOOL API sndPlaySound(LPCSTR name, WORD fl)
     if (fl & SND_ASYNC)
         return 1;
     /* synchron: hier abspielen, dann warten, bis es verklungen ist */
-    while (snd_pump()) {
+    while (snd_pump(S->fh, S->smem, S->sloop)) {
         DosSleep(10);
         st_clock();
     }
@@ -746,18 +670,121 @@ BOOL API sndPlaySound(LPCSTR name, WORD fl)
     return 1;
 }
 
+
+/* ---- MCI waveaudio: eine geladene Datei ------------------------------- */
+WORD mw_load(LPCSTR path)
+{
+    WORD h;
+    if (!mm_init())
+        return MCIERR_OUT_OF_MEMORY;
+    mw_unload();
+    fstrncpy(S->prof, path, sizeof(S->prof));
+    h = fapi_sel(FAPI_OPEN, mm_sel, OFFOF(S->prof), 0, 0);
+    if (FAPI_FAILED(h))
+        return MCIERR_FILE_NOT_FOUND;
+    if (!snd_parse(h, 0, &S->mw_f, &S->mw_dstart, &S->mw_dlen) || fmt_ok(&S->mw_f)) {
+        DosClose(h);
+        return MCIERR_INVALID_FILE;
+    }
+    S->mw_fh = h;
+    S->mw_pos = 0;
+    S->mw_done = 0;
+    return 0;
+}
+void mw_unload(void)
+{
+    if (!mm_sel)
+        return;
+    mw_halt();
+    if (S->mw_fh)
+        DosClose(S->mw_fh);
+    S->mw_fh = 0;
+    S->mw_dlen = 0;
+}
+int mw_playing(void) { return mm_sel && S->owner == 3; }
+/* from/to in Byte der Daten */
+WORD mw_play(DWORD from, DWORD to)
+{
+    if (!mm_sel || !S->mw_fh)
+        return MCIERR_FILE_NOT_FOUND;
+    if (S->wo_open)
+        return MCIERR_WAVE_OUTPUTSINUSE;
+    mw_halt();
+    if (S->owner == 2)
+        snd_stop();
+    if (to > S->mw_dlen)
+        to = S->mw_dlen;
+    from -= from % S->mw_f.nBlockAlign;
+    if (from > to)
+        from = to;
+    if (st_open(&S->mw_f, 3))
+        return MCIERR_WAVE_OUTPUTSINUSE;
+    S->mw_base = from;
+    S->mw_to = to;
+    S->mw_done = 0;
+    S->dleft = to - from;
+    S->bpos = S->blen = 0;
+    S->seekpos = S->mw_dstart + from;
+    fapi_sel(FAPI_SEEK, mm_sel, S->mw_fh, OFFOF(&S->seekpos), 0);
+    snd_pump(S->mw_fh, 0, 0);
+    return 0;
+}
+DWORD mw_where(void)
+{
+    DWORD p;
+    if (!mm_sel)
+        return 0;
+    if (S->owner != 3)
+        return S->mw_pos;
+    st_clock();
+    p = S->mw_base + (S->written - S->backlog);
+    return p > S->mw_to ? S->mw_to : p;
+}
+void mw_halt(void)
+{
+    if (!mm_sel || S->owner != 3)
+        return;
+    S->mw_pos = mw_where();
+    st_close();
+}
+void mw_seek(DWORD b)
+{
+    if (!mm_sel)
+        return;
+    mw_halt();
+    S->mw_pos = b > S->mw_dlen ? S->mw_dlen : b - b % S->mw_f.nBlockAlign;
+}
+void mm_cbopen(DWORD cb, DWORD flags, WORD h, WORD msg, DWORD inst)
+{
+    if ((flags & CALLBACK_TYPEMASK) == CALLBACK_FUNCTION) {
+        if (cb && cur_task >= 0)
+            mm_cbcall(cb, h, msg, inst, 0, 0, cur_task);
+    } else
+        mm_cbfire(cb, flags, cur_task, h, msg, inst, 0);
+}
+
 /* Hauptschleife */
 void mm_pump(void)
 {
-    if (!mm_sel || !S->owner)
+    if (!mm_sel)
+        return;
+    sq_pump();
+    mci_poll();
+    if (!S->owner)
         return;
     st_clock();
     if (S->owner == 1) {
         wo_pump();
         wo_retire(0);
     } else if (S->owner == 2 && S->snd) {
-        if (!snd_pump() && !S->backlog)
+        if (!snd_pump(S->fh, S->smem, S->sloop) && !S->backlog)
             snd_stop();
+    } else if (S->owner == 3) {
+        if (!snd_pump(S->mw_fh, 0, 0) && !S->backlog) {
+            S->mw_pos = S->mw_to;
+            st_close();
+            S->mw_done = 1;
+        }
     }
 }
 /* Task endet: was ihm gehoert, schliessen */
@@ -771,6 +798,9 @@ void mm_task_end(int t)
         st_close();
         S->wo_open = 0;
     }
+    md_task_end(t);
+    mci_task_end(t);
+    mmio_task_end(t);
     for (i = 0; i < S->qn; )
         if (S->q[i].t == t) {
             fmemmove(&S->q[i], &S->q[i + 1], (S->qn - i - 1) * sizeof(struct mmcb));
@@ -795,7 +825,7 @@ void mm_beep(WORD type)
 
 /* ---- Zeit, Version, Kleinkram ----------------------------------------- */
 WORD  API mmsystemGetVersion(void) { return 0x030A; }
-DWORD API timeGetTime(void) { return (DWORD)qticks() * 10; }
+DWORD API timeGetTime(void) { return (DWORD)mm_qticks() * 10; }
 WORD API timeGetSystemTime(WORD FAR *mt, WORD sz)
 {
     (void)sz;

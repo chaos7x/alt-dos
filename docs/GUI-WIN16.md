@@ -607,6 +607,48 @@ mit Funktionsrückruf (4 s, 16 × WOM_DONE, Close 0), dann AKKORD.WAV
 asynchron (1,1 s); Notepad danach unverändert. Nicht geprüft: 86Box,
 Programme aus Windows 3.1 mit Ton (Klangrecorder kommt mit Stufe 2).
 
+### Stand: MMSYSTEM Stufe 2 – MIDI, MCI, mmio (26.11.2026)
+
+Ziel: Medienwiedergabe (MPLAYER) und Klangrecorder (SOUNDREC) aus
+Windows 3.1 laufen (Dateien nur im Scratchpad, nicht im Repository).
+Gemeinsame Definitionen in `gui/mm.h`.
+
+- `gui/mmmidi.c`: midiOut mit zwei Geräten – MPU-401 (AUD_MIDI*) und
+  ein eigener FM-Synthesizer (Klänge wie PLAY, Tabellen `__far`), dazu
+  der Mapper (FFFFh). GetNumDevs/GetDevCaps/Open/Close/ShortMsg/LongMsg/
+  Reset/CachePatches/Message; Lautstärke NOTSUPPORTED. Sequenzer für
+  MCI: SMF bis 48 KB (auch RIFF-RMID) in einem Segment, Tempo, Suchen,
+  getrieben aus `mm_pump` nach timeGetTime.
+- `gui/mmio.c`: mmioOpen (PARSE/DELETE/EXIST/CREATE/ALLOCBUF, Speicher-
+  dateien), Read/Write/Seek, Puffer (Get/SetInfo, SetBuffer, Flush,
+  Advance), FOURCC, InstallIOProc, Descend/Ascend/CreateChunk (RIFF).
+- `gui/mci.c`: Geräte waveaudio (Wiedergabe über den Strom von Stufe 1,
+  Besitzer 3) und sequencer, bis 4 offen; mciSendCommand (OPEN/CLOSE/
+  PLAY/STOP/PAUSE/RESUME/SEEK/STATUS/SET/GETDEVCAPS/INFO/SYSINFO/BREAK/
+  SOUND), mciSendString mit Wörtertabelle, MM_MCINOTIFY, deutsche
+  Fehlertexte, mciExecute. Ohne `[mci]` in SYSTEM.INI bzw. `[mci
+  extensions]` in WIN.INI nimmt `gui/ini.c` Vorgaben (WaveAudio,
+  Sequencer, wav/mid/rmi), ebenso `[intl]` deutsch (SOUNDREC zeigte
+  sonst „0 Sek.“ – sDecimal fehlte).
+- waveIn meldet kein Gerät (Aufnahme braucht einen Eingabeweg im Kernel).
+- Für MPLAYER: Dialog als Hauptfenster mit Menü und eigener Klasse aus
+  der Vorlage (`gui/dlg.c`), WM_CTLCOLOR (Dialog und DefWindowProc),
+  Systembitmaps der Pfeile (OBM_*, `sys_bitmap` in user.c), CREATESTRUCT
+  mit relativen Koordinaten für Kindfenster, GetMessagePos,
+  CreatePatternBrush/SetBrushOrg, leere Metadateien, OLESVR-Stummel.
+- Spur: `SET GUITRACE=2` schreibt jeden Import sofort ins GUI.LOG
+  („T xxxx“) – für Hänger ohne MessageBox. Spurkennung jetzt Modul << 11
+  (Bit 15 = Aufruf ohne Rückkehr), ausgegeben wie bisher als Modul << 12.
+
+Geprüft in QEMU (`-device sb16` + AdLib, Mitschnitte): Testprogramm –
+FM A4/A5 je 1 s, Sequenzer ODE.MID, MCI waveaudio AKKORD.WAV (Länge
+1.130 ms), mmio schreibt und liest ein WAV; MPLAYER: Gerät Sequenzer,
+Öffnen-Dialog, CANYON.MID spielt über FM, Regler läuft, Skala Zeit/
+Titel; SOUNDREC lädt und spielt AKKORD.WAV (1,13 Sek.). PROGMAN und
+Notepad danach unverändert. Offen: Wellenform im Klangrecorder bleibt
+flach, Beschriftungen abgeschnitten (feste Schrift – kommt mit
+TrueType), Aufnahme, 86Box.
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

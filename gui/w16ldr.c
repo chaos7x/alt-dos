@@ -141,6 +141,11 @@ static void FAR *tr_thunk(void FAR *fp, WORD id)
     tr_off += 24;
     return MKFP(tr_sel | 3, tr_off - 24);
 }
+/* GUITRACE=2: jeden Aufruf sofort (langsam, nur zur Fehlersuche) */
+void __far tr_logall(WORD id)
+{
+    glogn("T ", TR_SHOW(id & 0x7FFF));
+}
 void tr_dump(const char *why)
 {
     WORD i, n = tr_pos > 128 ? 128 : tr_pos;
@@ -149,7 +154,7 @@ void tr_dump(const char *why)
     glog(why);
     for (i = tr_pos - n; i != tr_pos; i++) {
         WORD k = i & 127;
-        glogn("  Aufruf (Modul<<12|Nummer) ", tr_ring[k] >= 0xF000u ? tr_ring[k] : tr_ring[k] & 0x7FFF);
+        glogn("  Aufruf (Modul<<12|Nummer) ", TR_SHOW(tr_ring[k] >= 0xF000u ? tr_ring[k] : tr_ring[k] & 0x7FFF));
         if (tr_dseg && ((WORD FAR *)MKFP(tr_dseg, 512))[k]) {
             glogn("    AX ", ((WORD FAR *)MKFP(tr_dseg, 0))[k]);
             glogn("    DX ", ((WORD FAR *)MKFP(tr_dseg, 256))[k]);
@@ -200,7 +205,7 @@ static int reloc_seg(struct w16mod *w, int s)
                     fp = (void FAR *)w16_stub;
                 }
                 else if (w16_trace && !isc && !(!fstricmp(mn, "KERNEL") && (b == 91 || b == 102)))
-                    fp = tr_thunk(fp, (exp_builtin(mn) << 12) | (b & 0xFFF)
+                    fp = tr_thunk(fp, TR_ID(exp_builtin(mn), b)
                                   | (!fstricmp(mn, "KERNEL") && (b == 55 || b == 56) ? 0x8000u : 0));
                 tsg = SELOF(fp);
                 toff = OFFOF(fp);

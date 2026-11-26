@@ -204,6 +204,60 @@ static short copy_val(WORD o, LPSTR buf, short n)
     return k;
 }
 
+/* Abschnitte, die Windows-Setup anlegt und die die GUI selbst bedient:
+   fehlen sie in der Datei, gelten diese Vorgaben (die Datei bleibt). */
+static const char __far v_mci[] = "SYSTEM.INI\0mci\0WaveAudio\0mciwave.drv\0Sequencer\0mciseq.drv\0\0";
+static const char __far v_ext[] = "WIN.INI\0mci extensions\0wav\0waveaudio\0mid\0sequencer\0rmi\0sequencer\0\0";
+/* [intl] wie nach Setup mit Land Deutschland (spaeter aus COUNTRY=) */
+static const char __far v_intl[] =
+    "WIN.INI\0" "intl\0" "sLanguage\0" "deu\0" "sCountry\0" "Deutschland\0" "iCountry\0" "49\0" "sList\0" ";\0" "iMeasure\0" "0\0" "sDecimal\0" ",\0" "sThousand\0" ".\0" "iDigits\0" "2\0" "iLzero\0" "1\0" "sCurrency\0" "DM\0" "iCurrency\0" "3\0" "iCurrDigits\0" "2\0" "iNegCurr\0" "8\0" "iDate\0" "1\0" "sDate\0" ".\0" "sShortDate\0" "dd.MM.yy\0" "sLongDate\0" "dddd, d. MMMM yyyy\0" "iTime\0" "1\0" "sTime\0" ":\0" "iTLZero\0" "1\0\0";
+static const char __far *const __far v_tab[] = { v_mci, v_ext, v_intl };
+static int fseq(const char __far *a, const char FAR *b)
+{
+    while (*a && up(*a) == up(*b))
+        a++, b++;
+    return !*a && !*b;
+}
+static const char __far *fskip(const char __far *s)
+{
+    while (*s)
+        s++;
+    return s + 1;
+}
+static short ini_virt(LPCSTR sec, LPCSTR key, LPSTR buf, short n)
+{
+    WORD i, l, k = 0;
+    const char __far *t;
+    const char FAR *fn = ini_name;
+    for (l = 0; ini_name[l]; l++)
+        if (ini_name[l] == '\\' || ini_name[l] == ':')
+            fn = ini_name + l + 1;
+    for (i = 0; i < 3; i++) {
+        t = v_tab[i];
+        if (!fseq(t, fn) || !fseq(fskip(t), sec))
+            continue;
+        for (t = fskip(fskip(t)); *t; t = fskip(fskip(t))) {
+            if (key) {
+                if (fseq(t, key)) {
+                    fstrncpy(buf, fskip(t), n);
+                    return fstrlen(buf);
+                }
+            } else {
+                const char __far *c = t;
+                while (*c && (short)k < n - 2)
+                    buf[k++] = *c++;
+                buf[k++] = 0;
+            }
+        }
+        if (!key) {
+            buf[k] = 0;
+            return k ? k - 1 : 0;
+        }
+        return -1;
+    }
+    return -1;
+}
+
 short API GetPrivateProfileString(LPCSTR sec, LPCSTR key, LPCSTR def,
                                   LPSTR buf, short n, LPCSTR f)
 {
@@ -245,6 +299,8 @@ short API GetPrivateProfileString(LPCSTR sec, LPCSTR key, LPCSTR def,
     }
     if (o != 0xFFFF && key && key_find(o, key, &v) != 0xFFFF)
         return copy_val(v, buf, n);
+    if (o == 0xFFFF && (e = ini_virt(sec, key, buf, n)) != 0xFFFF)
+        return e;
     fstrncpy(buf, def ? def : "", n);
     return fstrlen(buf);
 }

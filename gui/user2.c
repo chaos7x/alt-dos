@@ -198,12 +198,15 @@ BOOL API GrayString(HDC dc, HBRUSH br, void FAR *proc, LPCSTR s, short n,
 
 /* ---- Haken (SetWindowsHook): angenommen, aber nie gerufen ---------- */
 DWORD API SetWindowsHook(short id, DWORD proc) { (void)id; (void)proc; return 0; }
+BOOL API UnhookWindowsHook(short id, DWORD proc) { (void)id; (void)proc; return 1; }
 DWORD API DefHookProc(short code, WORD wp, DWORD lp, DWORD FAR *next)
 {
     (void)code; (void)wp; (void)lp; (void)next;
     return 0;
 }
 HWND API SetSysModalWindow(HWND h) { (void)h; return 0; }
+/* Schlangen haben feste Groesse - Wunsch angenommen */
+BOOL API SetMessageQueue(short n) { (void)n; return 1; }
 /* ohne Wirkung - im Windows 3.1-SDK nicht beschrieben */
 DWORD API GetInternalIconHeader(void) { return 0; }
 

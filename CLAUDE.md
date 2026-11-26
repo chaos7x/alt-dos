@@ -2398,6 +2398,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   knopf ohne Wirkung, Satzzeichen als VK_OEM_* statt ASCII („.“ war
   VK_DELETE), TranslateAccelerator prüft den Menüpunkt (WM_INITMENU-
   POPUP), DefWindowProc WM_QUERYENDSESSION = 1 („Windows beenden“).
+  MMSYSTEM Stufe 2 (26.11.2026, „Stand: MMSYSTEM Stufe 2“): midiOut
+  (MPU/FM, `gui/mmmidi.c` mit Sequenzer), `gui/mmio.c`, `gui/mci.c`
+  (waveaudio/sequencer, mciSendString), Vorgaben für [mci]/[intl] in
+  ini.c; MPLAYER und SOUNDREC spielen in QEMU. `SET GUITRACE=2` schreibt
+  jeden Import sofort ins GUI.LOG. Testfalle: Maus in der GUI über
+  /tmp/claude-0/gt/goto.py (absolut), msmouse-Bewegung ist unzuverlässig;
+  QEMU beendet sich mit `-device adlib` ohne audiodev.
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

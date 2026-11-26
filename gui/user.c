@@ -297,6 +297,35 @@ static void arrow(HDC dc, short x, short y, int dir)   /* 0 hoch 1 runter 2 link
         default: dc_rawfill(dc, x + 6 + k, y + 4 + k, x + 7 + k, y + 12 - k, 0); break;
         }
 }
+/* Systembitmaps der Pfeile (OBM_UPARROW usw., auch gedrueckt D und
+   gesperrt I) aus der Zeichnung der Bildlaufleisten */
+HBITMAP API CreateBitmap(short w, short h, BYTE planes, BYTE bpp, const void FAR *bits);
+HDC API CreateCompatibleDC(HDC h);
+BOOL API DeleteDC(HDC h);
+HGDIOBJ API SelectObject(HDC h, HGDIOBJ o);
+HBITMAP sys_bitmap(WORD id)
+{
+    static const BYTE dirs[4] = { 2, 3, 1, 0 };     /* LF RG DN UP      */
+    HDC dc;
+    HBITMAP b, o;
+    int down = 0, dir;
+    if (id >= 32750 && id <= 32753) dir = dirs[id - 32750];
+    else if (id >= 32740 && id <= 32743) dir = dirs[id - 32740], down = 1;
+    else if (id >= 32734 && id <= 32737) dir = dirs[id - 32734];
+    else return 0;
+    b = CreateBitmap(SBW, SBW, 1, 4, 0);
+    dc = CreateCompatibleDC(0);
+    if (!b || !dc) {
+        if (dc) DeleteDC(dc);
+        return b;
+    }
+    o = SelectObject(dc, b);
+    ui_bevel(dc, 0, 0, SBW, SBW, down);
+    arrow(dc, down, down, dir);
+    SelectObject(dc, o);
+    DeleteDC(dc);
+    return b;
+}
 static void sb_paint(HDC dc, struct wnd *w)
 {
     short l = w->cr.left, t = w->cr.top, r = w->cr.right, b = w->cr.bottom, p;
@@ -1440,7 +1469,8 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     if (title)
         fstrncpy(w->title, title, sizeof(w->title));
     p = parent ? wptr(parent) : 0;
-    if (style & WS_CHILD) {
+    cs.x = x; cs.y = y;                         /* wie uebergeben (Kinder: */
+    if (style & WS_CHILD) {                     /* relativ zum Elternteil) */
         w->parent = parent;
         w->z = ++zmax; win_gen++;                          /* Rang unter Geschwistern */
         if (p) {
@@ -1466,7 +1496,8 @@ HWND API CreateWindowEx(DWORD ex, LPCSTR cname, LPCSTR title, DWORD style,
     calc_client(w);
     cs.param = (DWORD)param; cs.hinst = hinst; cs.parent = parent;
     cs.hmenu = (style & WS_CHILD) ? menu : w->menu;   /* wie Windows: das geladene Klassenmenue */
-    cs.cy = cy; cs.cx = cx; cs.y = y; cs.x = x; cs.style = style;
+    cs.cy = cy; cs.cx = cx; cs.style = style;
+    if (!(style & WS_CHILD)) { cs.x = x; cs.y = y; }
     cs.name = title; cs.cls = cname; cs.exstyle = ex;
     if (!send_msg(h, WM_NCCREATE, 0, (DWORD)(void FAR *)&cs) && !w->internal) {
         /* DefWindowProc liefert 1 - 0 heisst abbrechen */
@@ -1853,6 +1884,9 @@ static void sys_menu(HWND h, int mouse)
         send_msg(h, WM_SYSCOMMAND, c, 0);
 }
 
+DWORD API SetBkColor(HDC h, DWORD c);
+DWORD API SetTextColor(HDC h, DWORD c);
+HGDIOBJ API GetStockObject(short i);
 LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
 {
     struct wnd *w = wptr(h);
@@ -1863,6 +1897,15 @@ LONG API DefWindowProc(HWND h, WORD m, WORD wp, DWORD lp)
         return 1;
     case 0x0011:                                /* WM_QUERYENDSESSION: wie Windows ja */
         return 1;
+    case 0x0019:                                /* WM_CTLCOLOR: Farben + Pinsel */
+        if (HIWORD(lp) == 5) {                  /* CTLCOLOR_SCROLLBAR    */
+            SetBkColor(wp, 0xFFFFFFUL);
+            SetTextColor(wp, 0);
+            return GetStockObject(1);           /* LTGRAY_BRUSH          */
+        }
+        SetBkColor(wp, GetSysColor_c(5));       /* COLOR_WINDOW          */
+        SetTextColor(wp, GetSysColor_c(8));     /* COLOR_WINDOWTEXT      */
+        return GetStockObject(0);               /* WHITE_BRUSH           */
     case 0x0083:                                /* WM_NCCALCSIZE: Fenster- -> Arbeitsbereich */
         if (lp) {
             RECT FAR *q = (RECT FAR *)lp;
@@ -1950,7 +1993,7 @@ BOOL API GetMessage(MSG FAR *m, HWND h, WORD lo, WORD hi) { return user_get_msg(
 BOOL API PeekMessage(MSG FAR *m, HWND h, WORD lo, WORD hi, WORD rem)
 {
     BOOL r = user_get_msg(m, h, lo, hi, rem & 1, 0);
-    if (!r && w16_trace && tr_pos && (tr_ring[(tr_pos - 1) & 127] & 0x7FFF) == 0x206D)
+    if (!r && w16_trace && tr_pos && (tr_ring[(tr_pos - 1) & 127] & 0x7FFF) == TR_ID(2, 0x6D))
         tr_pos--;               /* Spur: Leerlauf ohne Nachricht weglassen */
     if (!r && cur_task >= 0 && m->message != WM_QUIT) {
         wt[cur_task].waiting = 0;               /* andere Tasks laufen */
@@ -2756,6 +2799,8 @@ void API CloseWindow(HWND h) { (void)h; }
 BOOL API OpenIcon(HWND h) { return ShowWindow(h, 9); }      /* SW_RESTORE */
 WORD API ArrangeIconicWindows(HWND h) { (void)h; return 0; }
 
+/* Mausstelle der letzten Nachricht - hier die aktuelle */
+DWORD API GetMessagePos(void) { return MAKELONG(mpos.x, mpos.y); }
 void API GetCursorPos(POINT FAR *p)
 {
     if (p) { p->x = mpos.x; p->y = mpos.y; }

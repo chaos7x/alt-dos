@@ -759,6 +759,9 @@ HPEN API CreatePenIndirect(void FAR *lp)
 }
 HBRUSH API CreateSolidBrush(DWORD color) { return onew(OB_BRUSH, 0, 0, color); }
 HBRUSH API CreateHatchBrush(short st, DWORD color) { (void)st; return onew(OB_BRUSH, 0, 0, color); }
+/* Musterpinsel: noch ohne Muster, als Mittelgrau (Bildlaufspuren u. a.) */
+HBRUSH API CreatePatternBrush(HBITMAP b) { (void)b; return onew(OB_BRUSH, 0, 0, 0xC0C0C0UL); }
+DWORD API SetBrushOrg(HDC dc, short x, short y) { (void)dc; (void)x; (void)y; return 0; }
 HBRUSH API CreateBrushIndirect(void FAR *lp)
 {
     WORD FAR *w = lp;
@@ -1245,7 +1248,13 @@ BOOL API PatBlt(HDC h, short x, short y, short w, short hh, DWORD rop)
         ro = 1;
     } else
         c = br ? rgb2c(br->color) : 15;
-    cfill(d, LX(d, x), LY(d, y), LX(d, x + w), LY(d, y + hh), c, ro);
+    /* wie Windows: negative Ausdehnung zaehlt vom anderen Rand */
+    {
+        short x0 = LX(d, x), y0 = LY(d, y), x1 = LX(d, x + w), y1 = LY(d, y + hh), t;
+        if (x1 < x0) { t = x0; x0 = x1; x1 = t; }
+        if (y1 < y0) { t = y0; y0 = y1; y1 = t; }
+        cfill(d, x0, y0, x1, y1, c, ro);
+    }
     return 1;
 }
 DWORD API SetPixel(HDC h, short x, short y, DWORD c)
@@ -1758,7 +1767,9 @@ HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
     if (hinst > 0 && hinst <= NMOD)
         m = hinst - 1;
     if (m < 0) {
-        glog("LoadBitmap: Systembitmaps (OBM_) gibt es noch nicht");
+        if (!SELOF(name) && (o = sys_bitmap(OFFOF(name))) != 0)
+            return o;
+        glogn("LoadBitmap: Systembitmap fehlt ", OFFOF(name));
         return 0;
     }
     r = w16_res_find(m, MKFP(0, 2), name);
@@ -1769,6 +1780,38 @@ HBITMAP API LoadBitmap(WORD hinst, LPCSTR name)
     seg_del(sel);
     return o;
 }
+
+/* ---- Metadateien: noch ohne Aufzeichnung. CreateMetaFile liefert einen
+   Speicher-DC (Zeichnen ohne Wirkung), CloseMetaFile eine leere, gueltige
+   Metadatei im Speicher (Kopf 9 Worte + Endsatz 3 Worte) - genug fuer
+   Programme, die sie nur erzeugen und weiterreichen (Zwischenablage). */
+WORD  API GlobalAlloc(WORD flags, DWORD size);
+WORD  API GlobalFree(WORD h);
+DWORD API GlobalLock(WORD h);
+HDC API CreateMetaFile(LPCSTR name)
+{
+    (void)name;
+    return CreateCompatibleDC(0);
+}
+WORD API CloseMetaFile(HDC h)
+{
+    WORD m, FAR *w;
+    DeleteDC(h);
+    m = GlobalAlloc(0x0042, 24);                /* GHND               */
+    if (!m)
+        return 0;
+    w = (WORD FAR *)GlobalLock(m);
+    if (!w)
+        return m;
+    w[0] = 1; w[1] = 9; w[2] = 0x0300;          /* Speicher, Kopf, Version */
+    w[3] = 12; w[4] = 0;                        /* Groesse in Worten  */
+    w[5] = 0;                                   /* Objekte            */
+    w[6] = 3; w[7] = 0;                         /* groesster Satz     */
+    w[8] = 0;
+    w[9] = 3; w[10] = 0; w[11] = 0;             /* Endsatz            */
+    return m;
+}
+WORD API DeleteMetaFile(WORD m) { if (m) GlobalFree(m); return 1; }
 
 /* ---- fuer Write & Co.: Kleinkram ohne eigene Wirkung ---- */
 short API SetStretchBltMode(HDC h, short m) { (void)h; (void)m; return 1; }

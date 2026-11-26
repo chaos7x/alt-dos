@@ -138,6 +138,11 @@ void FAR *exp_find(LPCSTR mod, WORD ord, WORD FAR *isconst);
 extern BYTE w16_trace;
 extern WORD win_gen;               /* aendert sich mit Lage/Sichtbarkeit */
 extern WORD tr_ring[128], tr_pos, tr_dseg;
+/* Spur-Kennung: Bit 15 = ohne Rueckgabe, Modul in Bit 11-14, Ordinalzahl
+   in Bit 0-10 (MMSYSTEM ist Modul 8); INT 21h als F000h | AH. Ins GUI.LOG
+   als Modul << 12 | Nummer. */
+#define TR_ID(m, o)     (((WORD)(m) << 11) | ((o) & 0x7FF))
+#define TR_SHOW(v)      ((v) >= 0xF000u ? (v) : (((v) >> 11) & 15) << 12 | ((v) & 0x7FF))
 void  tr_dump(const char *why);                   /* Aufrufspur ins GUI.LOG */
 int   exp_builtin(LPCSTR mod);                    /* 1.. oder 0 */
 void FAR *exp_ord(WORD i, WORD ord, WORD FAR *isconst);
@@ -262,6 +267,7 @@ LONG FAR PASCAL dlg_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 LONG FAR PASCAL listbox_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 LONG FAR PASCAL combo_proc(HWND h, WORD msg, WORD wp, DWORD lp);
 void  ui_bevel(HDC dc, short l, short t, short r, short b, int down);
+HBITMAP sys_bitmap(WORD id);
 typedef BOOL (*IDLGPROC)(HWND h, WORD m, WORD wp, DWORD lp);
 HWND  dlg_new(HWND owner, LPCSTR title, short x, short y, short cx, short cy,
               IDLGPROC proc, WORD hinst);           /* interner Dialog     */

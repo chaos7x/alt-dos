@@ -74,6 +74,7 @@ BOOL API IsWindowEnabled(HWND h);
 BOOL API IsWindowVisible(HWND h);
 BOOL API TranslateMessage(const MSG FAR *m);
 HWND API SetActiveWindow(HWND h);
+short API FillRect(HDC dc, const RECT FAR *r, HBRUSH b);
 
 /* ---- Dialogtabelle ---- */
 #define NDLG 12
@@ -291,8 +292,10 @@ BOOL API IsDialogMessage(HWND d, MSG FAR *m)
     return 1;
 }
 
-/* Fensterprozedur der Dialoge */
-LONG FAR PASCAL dlg_proc(HWND h, WORD m, WORD wp, DWORD lp)
+/* Fensterprozedur der Dialoge; auch DefDlgProc fuer Dialoge mit eigener
+   Klasse (Vorlage nennt eine Klasse des Programms, deren Prozedur alles
+   Uebrige an DefDlgProc gibt - so die Medienwiedergabe) */
+static LONG dlg_core(HWND h, WORD m, WORD wp, DWORD lp)
 {
     struct wnd *w = wptr(h);
     struct dlg *d = dptr_(h);
@@ -307,9 +310,19 @@ LONG FAR PASCAL dlg_proc(HWND h, WORD m, WORD wp, DWORD lp)
             return 1;
     }
     switch (m) {
-    case WM_ERASEBKGND:
-        dc_rawfill((HDC)wp, w->cr.left, w->cr.top, w->cr.right, w->cr.bottom, 15);
+    case WM_ERASEBKGND: {
+        /* wie Windows: Pinsel ueber WM_CTLCOLOR (CTLCOLOR_DLG) erfragen -
+           Programme mit eigener Dialogklasse faerben so ihren Grund */
+        HBRUSH b = (HBRUSH)send_msg(h, 0x0019, wp, MAKELONG(h, 4));
+        RECT r;
+        if (!b) {
+            dc_rawfill((HDC)wp, w->cr.left, w->cr.top, w->cr.right, w->cr.bottom, 15);
+            return 1;
+        }
+        GetClientRect(h, &r);
+        FillRect((HDC)wp, &r, b);
         return 1;
+    }
     case WM_CLOSE:
         post_msg(h, WM_COMMAND, IDCANCEL, MAKELONG(GetDlgItem(h, IDCANCEL), 0));
         return 0;
@@ -327,6 +340,7 @@ LONG FAR PASCAL dlg_proc(HWND h, WORD m, WORD wp, DWORD lp)
     }
     return DefWindowProc(h, m, wp, lp);
 }
+LONG FAR PASCAL dlg_proc(HWND h, WORD m, WORD wp, DWORD lp) { return dlg_core(h, m, wp, lp); }
 
 static struct dlg *dnew(HWND h, DWORD proc, WORD hinst, BYTE internal)
 {
@@ -378,14 +392,19 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
     BYTE n = p[4], i;
     short x = *(short FAR *)(p + 5) * 2, y = *(short FAR *)(p + 7) * 2;
     short cx = *(short FAR *)(p + 9) * 2, cy = *(short FAR *)(p + 11) * 2, wx, wy;
-    LPCSTR title;
+    LPCSTR title, mn, cls;
     HWND h, f;
+    HMENU hm = 0;
     struct wnd *w;
     struct dlg *d;
     p += 13;
-    tstr(&p);                                   /* Menue                 */
-    tstr(&p);                                   /* Klasse                */
+    mn = tstr(&p);                              /* Menue                 */
+    cls = tstr(&p);                             /* Klasse                */
     title = tstr(&p);
+    if (!(st & WS_CHILD) && (SELOF(mn) ? *mn != 0 : OFFOF(mn) != 0))
+        hm = LoadMenu(hinst, mn);
+    if (SELOF(cls) ? !*cls : !OFFOF(cls))
+        cls = MKFP(0, 0xC000 + 5);
     if (st & DS_SETFONT) {
         p += 2;
         tstr(&p);
@@ -393,16 +412,19 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
     {
         int cap = (st & WS_CAPTION) == WS_CAPTION;
         wx = cx + 6;
-        wy = cy + 6 + (cap ? CAPH : 0);
+        wy = cy + 6 + (cap ? CAPH : 0) + (hm ? MENUH : 0);
         place(owner, &x, &y, wx, wy, 0);
         st &= ~(WS_VISIBLE | WS_CHILD | WS_BORDER | 0xFFFFUL);
         st |= WS_POPUP | WS_DLGFRAME | (cap ? WS_BORDER : 0);
     }
-    h = CreateWindowEx(0, MKFP(0, 0xC000 + 5), SELOF(title) ? title : "",
-                       st, x, y, wx, wy, owner, 0, hinst, 0);
+    h = CreateWindowEx(0, cls, SELOF(title) ? title : "",
+                       st, x, y, wx, wy, owner, hm, hinst, 0);
     w = wptr(h);
-    if (!w)
+    if (!w) {
+        if (hm)
+            DestroyMenu(hm);
         return 0;
+    }
     w->hinst = hinst;
     d = dnew(h, proc, hinst, intl);
     if (!d) {
@@ -426,6 +448,12 @@ static HWND dlg_from(WORD hinst, BYTE FAR *p, HWND owner, DWORD proc, DWORD para
         p += 1 + *p;                            /* Zusatzdaten           */
         c = CreateWindowEx(0, cls, SELOF(txt) ? txt : "", ist | WS_CHILD,
                            ix, iy, icx, icy, h, id, hinst, 0);
+        if (!c) {
+            if (SELOF(cls))
+                glogs("Dialog: Steuerelement nicht angelegt, Klasse ", cls);
+            else
+                glogn("Dialog: Steuerelement nicht angelegt, Klasse #", OFFOF(cls));
+        }
         if (c && !(ist & WS_VISIBLE))
             ShowWindow(c, 0);
         if (c)
@@ -545,7 +573,7 @@ BOOL API EndDialog(HWND h, short r)
     d->result = r;
     return 1;
 }
-LONG API DefDlgProc(HWND h, WORD m, WORD wp, DWORD lp) { return DefWindowProc(h, m, wp, lp); }
+LONG API DefDlgProc(HWND h, WORD m, WORD wp, DWORD lp) { return dlg_core(h, m, wp, lp); }
 void API MapDialogRect(HWND h, LPRECT r)
 {
     (void)h;

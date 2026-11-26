@@ -210,3 +210,32 @@ LONG API RegEnumKey(DWORD key, DWORD i, LPSTR buf, DWORD n)
     if (buf) buf[0] = 0;
     return ERROR_BADKEY;
 }
+
+/* ---- OLESVR (OLE 1.0, Server-Seite) -----------------------------------
+   Programme wie der Klangrecorder melden sich als Server an. Ohne OLE-
+   Verbindungen zwischen Programmen ruft nie ein Client sie auf: Anmelden
+   und Abmelden gelingen, die Kennungen sind nur Zahlen. */
+static WORD svr_next = 1;
+WORD API OleRegisterServer(LPCSTR cls, LPOBJ srv, DWORD FAR *lh, HANDLE inst, WORD use)
+{
+    (void)cls; (void)srv; (void)inst; (void)use;
+    if (lh)
+        *lh = svr_next++;
+    return OLE_OK;
+}
+WORD API OleRevokeServer(DWORD lh) { (void)lh; return OLE_OK; }
+WORD API OleBlockServer(DWORD lh) { (void)lh; return OLE_OK; }
+WORD API OleUnblockServer(DWORD lh, BOOL FAR *more) { (void)lh; if (more) *more = 0; return OLE_OK; }
+WORD API OleRegisterServerDoc(DWORD lh, LPCSTR doc, LPOBJ sd, DWORD FAR *lhd)
+{
+    (void)lh; (void)doc; (void)sd;
+    if (lhd)
+        *lhd = svr_next++;
+    return OLE_OK;
+}
+WORD API OleRevokeServerDoc(DWORD lhd) { (void)lhd; return OLE_OK; }
+WORD API OleRenameServerDoc(DWORD lhd, LPCSTR doc) { (void)lhd; (void)doc; return OLE_OK; }
+WORD API OleRevertServerDoc(DWORD lhd) { (void)lhd; return OLE_OK; }
+WORD API OleSavedServerDoc(DWORD lhd) { (void)lhd; return OLE_OK; }
+WORD API OleRevokeObject(LPOBJ o) { (void)o; return OLE_OK; }
+DWORD API OleQueryServerVersion(void) { return 0x0001; }

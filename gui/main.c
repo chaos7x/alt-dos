@@ -196,8 +196,8 @@ void gui_main(void)
     gui_ds = SELOF((void FAR *)&gui_ds);
     {
         static char tv[4];
-        if (!FAPI_FAILED(DosGetEnv("GUITRACE", tv, sizeof(tv))) && tv[0] == '1')
-            w16_trace = 1;
+        if (!FAPI_FAILED(DosGetEnv("GUITRACE", tv, sizeof(tv))) && (tv[0] == '1' || tv[0] == '2'))
+            w16_trace = tv[0] - '0';
     }
     {
         WORD n;
