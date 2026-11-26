@@ -2419,6 +2419,8 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   eine Grenzprüfung (LSL) in fmemcpy einbauen, sie zeigt die Stelle.
   Test mit voller Windows-Installation: run2.sh mit PROG=CONTROL.EXE
   CDIR='\WINDOWS' und POST, das wtree/WINDOWS kopiert.
+  Fenstergröße am Rahmen ziehen (WS_THICKFRAME, `HTSIZE`, `dg_edge`;
+  vom Nutzer vermisst, 26.11.2026; in QEMU geprüft).
   Datei-Manager (26.11.2026, „Stand: Datei-Manager“; Vorschlag Punkt 1,
   vom Nutzer gewünscht): WINFILE.EXE aus Windows 3.1 läuft in QEMU –
   LISTBOX mit Owner-Draw/Mehrfachauswahl/Spalten, LBN_SETFOCUS, Kürzel

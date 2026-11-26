@@ -854,6 +854,8 @@ static HWND drag;                       /* Verschieben am Titel          */
 static short dgx, dgy;
 static RECT dgr;
 static BYTE dg_shown;
+static BYTE dg_edge;                    /* Groesse: 1 links, 2 rechts,   */
+                                        /* 4 oben, 8 unten; 0 = schieben */
 static DWORD last_click;
 static HWND last_click_h;
 static WORD dbl_t = 50;                 /* Doppelklick in Takten (10 ms) */
@@ -896,6 +898,8 @@ static HWND win_at(short x, short y)
 #define HTVSCROLL 7
 #define HTMIN 8
 #define HTMAX 9
+#define HTSIZE 0x100                    /* | Kanten wie dg_edge          */
+#define SZ_CORNER 16                    /* Eckbereich am Rahmen          */
 static short hittest(struct wnd *w, short x, short y)
 {
     short b = wnd_border(w);
@@ -903,6 +907,21 @@ static short hittest(struct wnd *w, short x, short y)
         return rhit(&w->wr, x, y) ? HTCAPTION : 0;
     if (rhit(&w->cr, x, y))
         return HTCLIENT;
+    if ((w->style & WS_THICKFRAME) && !(w->style & WS_MAXIMIZE) && rhit(&w->wr, x, y) &&
+        (x < w->wr.left + b || x >= w->wr.right - b ||
+         y < w->wr.top + b || y >= w->wr.bottom - b)) {
+        short e = 0;                    /* Rahmen: Groesse aendern       */
+        if (x < w->wr.left + SZ_CORNER) e |= 1;
+        else if (x >= w->wr.right - SZ_CORNER) e |= 2;
+        if (y < w->wr.top + SZ_CORNER) e |= 4;
+        else if (y >= w->wr.bottom - SZ_CORNER) e |= 8;
+        if (x >= w->wr.left + b && x < w->wr.right - b)
+            e &= 12;                    /* oben/unten: nur dort Ecken    */
+        if (y >= w->wr.top + b && y < w->wr.bottom - b)
+            e &= 3;                     /* links/rechts ebenso           */
+        if (e)
+            return HTSIZE | e;
+    }
     if ((w->style & WS_VSCROLL) && x >= w->cr.right && x < w->cr.right + SBW &&
         y >= w->cr.top && y < w->cr.bottom)
         return HTVSCROLL;
@@ -1118,8 +1137,25 @@ static void mouse_event(short x, short y, BYTE btn)
         if (moved && w) {
             if (dg_shown) drag_xor();
             dgr = w->wr;
-            dgr.left += x - dgx; dgr.right += x - dgx;
-            dgr.top += y - dgy; dgr.bottom += y - dgy;
+            if (!dg_edge) {
+                dgr.left += x - dgx; dgr.right += x - dgx;
+                dgr.top += y - dgy; dgr.bottom += y - dgy;
+            } else {                    /* Groesse: Kanten mitziehen,    */
+                short mw = 3 * CAPH + 2 * wnd_border(w) + 8;  /* Mindestmass */
+                short mh = CAPH + 2 * wnd_border(w) + 8;
+                if (dg_edge & 1) dgr.left += x - dgx;
+                if (dg_edge & 2) dgr.right += x - dgx;
+                if (dg_edge & 4) dgr.top += y - dgy;
+                if (dg_edge & 8) dgr.bottom += y - dgy;
+                if (dgr.right - dgr.left < mw) {
+                    if (dg_edge & 1) dgr.left = dgr.right - mw;
+                    else dgr.right = dgr.left + mw;
+                }
+                if (dgr.bottom - dgr.top < mh) {
+                    if (dg_edge & 4) dgr.top = dgr.bottom - mh;
+                    else dgr.bottom = dgr.top + mh;
+                }
+            }
             drag_xor();
             dg_shown = 1;
         }
@@ -1189,6 +1225,14 @@ static void mouse_event(short x, short y, BYTE btn)
         drag = (w->style & WS_CHILD) ? h : HW(top_of(w) - ww);
         dgx = x; dgy = y;
         dg_shown = 0;
+        dg_edge = 0;
+        return;
+    }
+    if ((ht & HTSIZE) && (down & 1)) {         /* am Rahmen ziehen      */
+        drag = h;
+        dgx = x; dgy = y;
+        dg_shown = 0;
+        dg_edge = (BYTE)ht;
         return;
     }
     if (ht == HTMENU && (down & 1)) {

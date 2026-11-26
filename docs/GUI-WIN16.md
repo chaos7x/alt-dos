@@ -715,6 +715,15 @@ Vorschau („AaBbCcXxYyZz 123“), keine Kopie über ein Segmentende. Offen:
 die Vorschau nimmt die Systemschrift, TrueType-Schriften gelten dort als
 „Bildschirm- oder Plotterschriftart“ (die .FOT wird nicht ausgewertet).
 
+Fenstergröße am Rahmen (vom Nutzer gemeldet: PROGMAN ließ sich nicht
+verkleinern): Fenster mit WS_THICKFRAME (nicht maximiert) haben am Rahmen
+einen Ziehbereich (`hittest` -> `HTSIZE` | Kanten, Ecken 16 Punkte), das
+Ziehen zeigt wie beim Verschieben einen Umriss (`dg_edge` in user.c),
+Mindestmaß drei Titelknöpfe breit, Titel hoch; beim Loslassen `win_move`
+(WM_SIZE). In QEMU geprüft: PROGMAN rechts unten größer, links und oben
+kleiner. Offen: Zeigerform an den Kanten, „Größe ändern“ im Systemmenü
+(Tastatur), WM_GETMINMAXINFO.
+
 ### Stand: TrueType (26.11.2026)
 
 Wunsch des Nutzers („Systemsteuerung und TrueType-Fonts“), eigener Code
