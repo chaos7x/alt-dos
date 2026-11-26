@@ -6,6 +6,13 @@
  * Nachricht "commdlg_FindReplace"); Aufbau und Aussehen eigener Entwurf.
  */
 #include "gui.h"
+#include "ttf.h"
+
+HGDIOBJ API SelectObject(HDC h, HGDIOBJ o);
+BOOL API DeleteObject(HGDIOBJ o);
+DWORD API SetTextColor(HDC h, DWORD c);
+HGDIOBJ API CreateFontIndirect(const void FAR *lf);
+short API DrawText(HDC dc, LPCSTR s, short n, LPRECT r, WORD fmt);
 
 #define WM_COMMAND  0x0111
 #define IDOK        1
@@ -947,6 +954,25 @@ static short cf_get(HWND d, short id)
     return (short)SendDlgItemMessage(d, id, CB_GETCURSEL, 0, 0);
 }
 
+static void cf_face(HWND d, BYTE FAR *lf)      /* Familie ins LOGFONT */
+{
+    static char fn[32];
+    short i, n = tt_nface();
+    GetDlgItemText(d, ID_F_FACE, fn, sizeof(fn));
+    if (!fn[0]) fstrncpy(fn, "System", 8);
+    fstrncpy((LPSTR)(lf + 18), fn, 32);
+    lf[17] = 0x22;                              /* VARIABLE_PITCH|FF_SWISS */
+    lf[13] = 0;                                 /* ANSI_CHARSET          */
+    for (i = 0; i < n; i++)
+        if (!fstricmp(tt_facename(i), fn)) {
+            BYTE s = tt_facestyle(i);
+            if (s & 0x10) lf[17] = 0x31;        /* FIXED_PITCH|FF_MODERN */
+            if (s & 0x20) lf[13] = 2;           /* SYMBOL_CHARSET        */
+            lf[16] = 4;                         /* PROOF_QUALITY         */
+            break;
+        }
+}
+
 static void cf_store(HWND d)                    /* Auswahl -> LOGFONT usw. */
 {
     BYTE FAR *p = cf.cf;
@@ -970,8 +996,7 @@ static void cf_store(HWND d)                    /* Auswahl -> LOGFONT usw. */
         lf[10] = (BYTE)(st & 1);
         lf[11] = (BYTE)SendDlgItemMessage(d, ID_F_UNDER, BM_GETCHECK, 0, 0);
         lf[12] = (BYTE)SendDlgItemMessage(d, ID_F_STRIKE, BM_GETCHECK, 0, 0);
-        lf[17] = 0x22;                          /* VARIABLE_PITCH|FF_SWISS */
-        fstrncpy((LPSTR)(lf + 18), "System", 32);
+        cf_face(d, lf);
     }
     if (cf_get(d, ID_F_COLOR) >= 0)
         *(DWORD FAR *)(p + 18) = crgb[cf_get(d, ID_F_COLOR)];
@@ -985,12 +1010,32 @@ static void cf_paint(HWND d)
     HDC dc = BeginPaint(d, (void FAR *)&ps);
     short x = w->cr.left + 206, y = w->cr.top + 206, c = cf_get(d, ID_F_COLOR);
     BYTE fg = c >= 0 ? rgb2c(crgb[c]) : 0;
+    static BYTE lf[50];
+    static char t[8];
+    short st = cf_get(d, ID_F_STYLE), pt = 0, i;
+    HFONT f, of;
+    RECT r;
     dc_rawfill(dc, x, y, x + 218, y + 44, 15);
-    dc_rawtext(dc, x + 77, y + 14, "AaBbYyZz", 8, fg);
-    if (SendDlgItemMessage(d, ID_F_UNDER, BM_GETCHECK, 0, 0))
-        dc_rawfill(dc, x + 77, y + 14 + FONT_H - 2, x + 77 + 64, y + 14 + FONT_H - 1, fg);
-    if (SendDlgItemMessage(d, ID_F_STRIKE, BM_GETCHECK, 0, 0))
-        dc_rawfill(dc, x + 77, y + 14 + FONT_H / 2, x + 77 + 64, y + 14 + FONT_H / 2 + 1, fg);
+    GetDlgItemText(d, ID_F_SIZE, t, sizeof(t));
+    for (i = 0; t[i] >= '0' && t[i] <= '9'; i++)
+        pt = pt * 10 + (t[i] - '0');
+    if (pt <= 0 || pt > 36) pt = pt > 36 ? 36 : 10;  /* passt ins Musterfeld */
+    fmemset(lf, 0, 50);
+    *(short FAR *)lf = -(short)(((long)pt * 96 + 36) / 72);
+    *(short FAR *)(lf + 8) = (st > 0 && (st & 2)) ? 700 : 400;
+    lf[10] = (BYTE)(st > 0 && (st & 1));
+    lf[11] = (BYTE)SendDlgItemMessage(d, ID_F_UNDER, BM_GETCHECK, 0, 0);
+    lf[12] = (BYTE)SendDlgItemMessage(d, ID_F_STRIKE, BM_GETCHECK, 0, 0);
+    cf_face(d, lf);
+    f = CreateFontIndirect((void FAR *)lf);
+    of = SelectObject(dc, f);
+    SetTextColor(dc, c >= 0 ? crgb[c] : 0);
+    SetBkMode(dc, 1);                           /* TRANSPARENT */
+    r.left = 206; r.top = 206; r.right = 206 + 218; r.bottom = 206 + 44;
+    DrawText(dc, "AaBbYyZz", 8, (void FAR *)&r, 0x25);  /* CENTER|VCENTER|SINGLELINE */
+    SelectObject(dc, of);
+    DeleteObject(f);
+    (void)fg;
     EndPaint(d, (void FAR *)&ps);
 }
 
@@ -1010,7 +1055,18 @@ static BOOL cf_proc(HWND d, WORD m, WORD wp, DWORD lp)
             hi = *(short FAR *)(p + 44);
         }
         SendDlgItemMessage(d, ID_F_FACE, CB_ADDSTRING, 0, (DWORD)(void FAR *)"System");
-        SendDlgItemMessage(d, ID_F_FACE, CB_SETCURSEL, 0, 0);
+        for (i = 0; i < tt_nface(); i++)        /* TrueType-Familien, jede einmal */
+            if ((short)SendDlgItemMessage(d, ID_F_FACE, CB_FINDSTRINGEXACT, (WORD)-1,
+                    (DWORD)tt_facename(i)) < 0)
+                SendDlgItemMessage(d, ID_F_FACE, CB_ADDSTRING, 0, (DWORD)tt_facename(i));
+        i = -1;
+        if ((fl & CF_INITTOLOGFONTSTRUCT) && lf && lf[18])
+            i = (short)SendDlgItemMessage(d, ID_F_FACE, CB_FINDSTRINGEXACT, (WORD)-1,
+                    (DWORD)(void FAR *)(lf + 18));
+        if (i < 0)
+            i = (short)SendDlgItemMessage(d, ID_F_FACE, CB_FINDSTRINGEXACT, (WORD)-1,
+                    (DWORD)(void FAR *)"System");
+        SendDlgItemMessage(d, ID_F_FACE, CB_SETCURSEL, i, 0);
         for (i = 0; i < 4; i++)
             SendDlgItemMessage(d, ID_F_STYLE, CB_ADDSTRING, 0, (DWORD)(void FAR *)fstyle[i]);
         {                                       /* Groessen nach Zahl, nicht als Text */
@@ -1066,6 +1122,7 @@ static BOOL cf_proc(HWND d, WORD m, WORD wp, DWORD lp)
     case WM_COMMAND:
         switch (wp) {
         case ID_F_COLOR: case ID_F_UNDER: case ID_F_STRIKE: case ID_F_STYLE: case ID_F_SIZE:
+        case ID_F_FACE:
             InvalidateRect(d, 0, 0);
             return 1;
         case ID_F_APPLY:

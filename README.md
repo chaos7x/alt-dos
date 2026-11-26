@@ -82,7 +82,8 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   Ton-FAPI, midiOut über MPU-401 oder FM, MCI (waveaudio, sequencer)
   und mmio – Medienwiedergabe und Klangrecorder aus Windows 3.1 spielen;
   DLLs zur Laufzeit mit LibEntry, LZEXPAND, VER – die Systemsteuerung aus
-  Windows 3.1 öffnet alle Bereiche).
+  Windows 3.1 öffnet alle Bereiche; TrueType-Schriften mit eigenem
+  Rasterer – Write und ChooseFont benutzen Arial, Times New Roman usw.).
   Beispiel
   `\DEMO\HALLOW.EXE`; Stand und Grenzen in `docs/GUI-WIN16.md`
 - IFS-Schicht; FAT12 und FAT16 stecken wie bei OS/2 fest im Kernel, mit

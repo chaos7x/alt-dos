@@ -702,6 +702,42 @@ PROGMAN und Notepad danach unverändert. Offen: GDI.UnicodeToAnsi (Signatur
 unbekannt), Schriftarten installieren (TrueType), Felder mit fester
 Schrift zu schmal, Desktop braucht beim Öffnen einige Sekunden, 86Box.
 
+### Stand: TrueType (26.11.2026)
+
+Wunsch des Nutzers („Systemsteuerung und TrueType-Fonts“), eigener Code
+nach der Spezifikation (Apple TrueType Reference, OpenType `glyf`/`cmap`):
+
+- `gui/ttf.c`: sucht beim ersten Gebrauch `*.TTF` in `WINDIR\SYSTEM`,
+  `WINDIR` und `X:\DOS\FONTS` (dorthin legt COREFONT die Core Fonts),
+  bis 24 Dateien; Familie aus `name` (ID 1), Stil aus `head.macStyle`,
+  feste Breite aus `post`, Symbol aus `cmap` 3/0. Zu einer LOGFONT
+  (Familie, Fett/Kursiv, Höhe – positiv Zellhöhe, negativ Geviert) wählt
+  `tt_find` die beste Datei; fehlt der fette Schnitt, wird fett simuliert
+  (um einen Punkt versetzt geodert).
+- Raster: Punkte in 26.6 skaliert, Kurven (quadratisch) in Stücken,
+  zusammengesetzte Glyphen rekursiv, Füllen nach der Nicht-Null-Regel an
+  Pixelmitten, Ausfallschutz in Zeilen und Spalten (sonst fehlte z. B.
+  der Querstrich des „e“ bei Times 20). Keine Hinting-Anweisungen – bei
+  kleinen Größen weicher als unter Windows 3.1, aber lesbar.
+- Bis 4 gerade benutzte Schriften gleichzeitig, je ein 48-KB-Segment mit
+  den gerasterten Zeichen (ANSI 32–255 über die Tabelle von CP1252 nach
+  Unicode, Symbolschriften über F000h + Zeichen); voll -> neu beginnen.
+- GDI: CreateFont/CreateFontIndirect behalten die LOGFONT (eigenes
+  Segment), TextOut/ExtTextOut (Ausrichtung, Hintergrund, unterstrichen,
+  durchgestrichen), GetTextExtent, GetTextMetrics, GetCharWidth,
+  GetTextFace kennen TrueType; EnumFonts/EnumFontFamilies melden die
+  Familien (FontType 4), GetRasterizerCaps meldet TrueType an.
+- COMMDLG ChooseFont listet die Familien, übernimmt sie in die LOGFONT
+  (Symbol/feste Breite) und zeigt das Muster in der gewählten Schrift.
+
+Geprüft in QEMU mit den Schriften von der Windows-3.1-CD (nur im
+Scratchpad): Testprogramm mit Arial 10/18 fett, Times 20/30 kursiv,
+Courier New unterstrichen, Arial 60, Symbol, Wingdings – Maße plausibel;
+Write schreibt in Arial, ChooseFont listet alle sechs Familien, Times 20
+gewählt wirkt im Text. PROGMAN unverändert. Offen: Hinting, Drehung
+(lfEscapement), Unterschneidung, Schriftarten-Bereich der Systemsteuerung
+(trägt in WIN.INI `[fonts]` ein, die Suche schaut nur in die Verzeichnisse).
+
 ### Regeln für die Win16-Schicht (damit Win32 später thunken kann)
 
 - Kern von USER/GDI getrennt von der Win16-API-Schicht (dünne Schicht

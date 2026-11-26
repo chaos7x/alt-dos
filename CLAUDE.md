@@ -2413,6 +2413,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit tools/bp2check.py. Test /tmp/claude-0/gt/ctl.sh, ctl1.sh N (Applet N,
   S=/W= Wartezeiten, PRE2= ohne Spur). Lehre: Python-Skripte, die Dateien
   mit Latin-1 schreiben, erst kodieren (`.encode`), dann öffnen.
+  TrueType (26.11.2026, „Stand: TrueType“): `gui/ttf.c` eigener Rasterer
+  (glyf/cmap, 26.6, Nicht-Null, Ausfallschutz Zeilen + Spalten, 4 Schriften
+  mit je 48-KB-Glyphensegment), Suche WINDIR\SYSTEM, WINDIR, \DOS\FONTS;
+  GDI/EnumFonts/ChooseFont kennen die Familien. Test /tmp/claude-0/gt/ttt.sh
+  PROG [s] [png] (XF= Programmdateien, TTFs von der Win-3.1-CD nur dort).
   Write läuft (26.11.2026, „Stand: Write“; in QEMU: Menüs, Tippen):
   INT 21h 47h liefert AX = 0100h wie MS-DOS (Write prüft es – daher
   „Nicht genügend Arbeitsspeicher“), Steuerelement SCROLLBAR, WM_SIZE für

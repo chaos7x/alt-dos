@@ -279,6 +279,51 @@ static void glyph(short x, short y, BYTE ch, BYTE fg, BYTE bg, BYTE opaque,
     }
 }
 
+/* 1-Bit-Bitmap (w x h, pitch Bytes je Zeile) bei x/y in Farbe fg,
+   nur innerhalb cx0..cx1/cy0..cy1 (TrueType-Zeichen) */
+static void bits_draw(short x, short y, const BYTE FAR *src, WORD w, WORD h, WORD pitch,
+                      BYTE fg, short cx0, short cy0, short cx1, short cy1)
+{
+    short r, k, p, sh = x & 7;
+    for (r = 0; r < (short)h; r++) {
+        short yy = y + r;
+        WORD o;
+        if (yy < cy0 || yy >= cy1)
+            continue;
+        o = yy * tpitch;
+        for (k = 0; k < (short)pitch; k++) {
+            BYTE bits = src[r * pitch + k], half;
+            short bx0 = ((x + k * 8) >> 3);
+            if (!bits)
+                continue;
+            if (k == (short)pitch - 1 && (w & 7))
+                bits &= (BYTE)(0xFF << (8 - (w & 7)));
+            for (half = 0; half < 2; half++) {
+                short bx = bx0 + half, px0 = bx * 8, px1 = px0 + 8, a, e;
+                BYTE fm, cm;
+                if (half && !sh)
+                    break;
+                if (bx < 0 || bx >= (short)tpitch)
+                    continue;
+                fm = half ? (BYTE)(bits << (8 - sh)) : (BYTE)(bits >> sh);
+                a = px0 < cx0 ? cx0 : px0;
+                e = px1 > cx1 ? cx1 : px1;
+                if (a >= e)
+                    continue;
+                cm = (BYTE)((0xFF >> (a - px0)) & (0xFF << (px1 - e)));
+                fm &= cm;
+                if (!fm)
+                    continue;
+                for (p = 0; p < tnp; p++) {
+                    BYTE FAR *d = tb[p] + o + bx;
+                    BYTE on = tnp == 1 ? monob[fg & 15] : (fg >> p) & 1;
+                    *d = on ? (BYTE)(*d | fm) : (BYTE)(*d & ~fm);
+                }
+            }
+        }
+    }
+}
+
 void gfx_text(short x, short y, LPCSTR s, WORD n, BYTE fg, BYTE bg, BYTE opaque)
 {
     WORD i;
@@ -320,6 +365,32 @@ static HGDIOBJ onew(BYTE type, BYTE style, BYTE width, DWORD color)
             return HO(i);
         }
     return 0;
+}
+
+/* ---- Schriften: LOGFONT je Objekt (50 Byte) in einem eigenen Segment,
+   TrueType ueber gui/ttf.c, sonst die eingebaute Systemschrift ---- */
+#include "ttf.h"
+static WORD lf_sel;
+#define LF(i)   ((BYTE FAR *)MKFP(lf_sel, (i) * 50))
+#define LFH(i)  (*(short FAR *)LF(i))
+/* TrueType-Schrift fuer einen Font-Griff, -1 = eingebaute */
+static int font_tt(HGDIOBJ f, BYTE FAR * FAR *lfo)
+{
+    WORD i = OI(f);
+    BYTE FAR *l;
+    int fc;
+    if (!lf_sel || f < 0x6000u || i >= NOBJ || ob[i].type != OB_FONT || ob[i].stock)
+        return -1;
+    l = LF(i);
+    if (lfo)
+        *lfo = l;
+    if (!l[18])
+        return -1;
+    fc = tt_find((LPCSTR)(l + 18), (BYTE)((*(short FAR *)(l + 8) >= 600) | (l[10] ? 2 : 0)));
+    if (fc < 0)
+        return -1;
+    return tt_realize(fc, *(short FAR *)l,
+                      (BYTE)(*(short FAR *)(l + 8) >= 600 && !(tt_facestyle(fc) & 1)));
 }
 
 /* ---- Regionen: nur ein Rechteck (Vereinigung = umschliessendes Rechteck);
@@ -412,7 +483,7 @@ BOOL API GetRasterizerCaps(WORD FAR *rs, short n)
 {
     if (n >= 6) {
         rs[0] = 6;                              /* nSize                */
-        rs[1] = 0;                              /* wFlags               */
+        rs[1] = tt_nface() ? 3 : 0;             /* TT_AVAILABLE|TT_ENABLED */
         rs[2] = 0;                              /* nLanguageID          */
     }
     return 1;
@@ -795,14 +866,26 @@ HBRUSH API CreateBrushIndirect(void FAR *lp)
     WORD FAR *w = lp;
     return onew(OB_BRUSH, (BYTE)w[0], 0, *(DWORD FAR *)(w + 1));
 }
+HFONT API CreateFontIndirect(void FAR *lf)
+{
+    HGDIOBJ o = onew(OB_FONT, 0, 0, 0);
+    if (o && lf_sel)
+        fmemcpy(LF(OI(o)), lf, 50);
+    return o;
+}
 HFONT API CreateFont(short h, short w, short e, short o, short wt, BYTE it, BYTE ul,
                      BYTE so, BYTE cs, BYTE op, BYTE cp, BYTE q, BYTE pf, LPCSTR face)
 {
-    (void)h; (void)w; (void)e; (void)o; (void)wt; (void)it; (void)ul; (void)so;
-    (void)cs; (void)op; (void)cp; (void)q; (void)pf; (void)face;
-    return onew(OB_FONT, 0, 0, 0);
+    static BYTE l[50];
+    short *v = (short *)l;
+    fmemset((void FAR *)l, 0, 50);
+    v[0] = h; v[1] = w; v[2] = e; v[3] = o; v[4] = wt;
+    l[10] = it; l[11] = ul; l[12] = so; l[13] = cs; l[14] = op; l[15] = cp;
+    l[16] = q; l[17] = pf;
+    if (face)
+        fstrncpy((LPSTR)(l + 18), face, 32);
+    return CreateFontIndirect((void FAR *)l);
 }
-HFONT API CreateFontIndirect(void FAR *lf) { (void)lf; return onew(OB_FONT, 0, 0, 0); }
 short API GetObject(HGDIOBJ o, short n, void FAR *buf)
 {
     struct gobj *g = optr(o);
@@ -828,7 +911,13 @@ short API GetObject(HGDIOBJ o, short n, void FAR *buf)
         return 14;
     }
     if (g->type == OB_FONT && n >= 2) {
+        if (!g->stock && lf_sel) {
+            fmemcpy(buf, LF(OI(o)), n > 50 ? 50 : n);
+            return n > 50 ? 50 : n;
+        }
         *(WORD FAR *)buf = FONT_H;
+        if (n >= 50)
+            fstrncpy((LPSTR)buf + 18, "System", 32);
         return n > 50 ? 50 : n;
     }
     return 0;
@@ -1013,6 +1102,76 @@ short API GetDeviceCaps(HDC h, short i)
     }
 }
 
+/* Breite eines Textes in einer TrueType-Schrift (dx: eigene Abstaende) */
+static short tt_width(int t, LPCSTR s, WORD n, short FAR *dx)
+{
+    short w = 0;
+    WORD i;
+    for (i = 0; i < n; i++)
+        w += dx ? dx[i] : (short)tt_adv(t, (BYTE)s[i]);
+    return w;
+}
+static BOOL tt_text(struct dcs *d, int t, BYTE FAR *l, short X, short Y, WORD opt,
+                    LPRECT r, LPCSTR s, WORD n, short FAR *dx)
+{
+    const struct ttm FAR *m = tt_metrics(t);
+    short w = tt_width(t, s, n, dx), base, top, k, px;
+    WORD i;
+    BYTE fg = rgb2c(d->tcol), bg = rgb2c(d->bcol);
+    if ((d->talign & 6) == 2)           /* TA_RIGHT                     */
+        X -= w;
+    else if ((d->talign & 6) == 6)      /* TA_CENTER                    */
+        X -= w / 2;
+    if ((d->talign & 24) == 8)          /* TA_BOTTOM                    */
+        base = Y - m->desc;
+    else if ((d->talign & 24) == 24)    /* TA_BASELINE                  */
+        base = Y;
+    else
+        base = Y + m->asc;
+    top = base - m->asc;
+    if (r && (opt & 2))                 /* ETO_OPAQUE                   */
+        cfill(d, LX(d, r->left), LY(d, r->top), LX(d, r->right), LY(d, r->bottom), bg, 0);
+    else if (d->bkmode == 2)
+        cfill(d, X, top, X + w, top + m->height, bg, 0);
+    tgt(d);
+    for (k = 0; k < d->c.n; k++) {
+        RECT c = d->c.r[k];
+        if (r && (opt & 4)) {           /* ETO_CLIPPED                  */
+            RECT q;
+            q.left = LX(d, r->left); q.top = LY(d, r->top);
+            q.right = LX(d, r->right); q.bottom = LY(d, r->bottom);
+            rect_and(&c, &q);
+        }
+        if (c.left >= c.right || c.top >= c.bottom)
+            continue;
+        px = X;
+        for (i = 0; i < n; i++) {
+            const struct ttg FAR *g;
+            const BYTE FAR *b = tt_glyph(t, (BYTE)s[i], &g);
+            if (b && g->w)
+                bits_draw(px + g->xo, base + g->yo, b, g->w, g->h, (g->w + 7) >> 3, fg,
+                          c.left, c.top, c.right, c.bottom);
+            px += dx ? dx[i] : (short)g->adv;
+        }
+        if (l[11] || l[12]) {           /* unterstrichen, durchgestrichen */
+            short th = m->height / 16 + 1, ly;
+            RECT q;
+            ly = l[11] ? base + 1 + th / 2 : base - m->asc / 3;
+            q.left = X; q.right = X + w; q.top = ly; q.bottom = ly + th;
+            rect_and(&q, &c);
+            if (q.left < q.right && q.top < q.bottom) {
+                short yy;
+                for (yy = q.top; yy < q.bottom; yy++)
+                    span(q.left, q.right, yy, fg, 0);
+            }
+        }
+        gdi_dirty(c.left, c.top, c.right, c.bottom);
+    }
+    if (d->talign & 1)
+        d->cx += w;
+    return 1;
+}
+
 BOOL API ExtTextOut(HDC h, short x, short y, WORD opt, LPRECT r, LPCSTR s, WORD n, short FAR *dx)
 {
     struct dcs *d = dptr(h);
@@ -1026,6 +1185,12 @@ BOOL API ExtTextOut(HDC h, short x, short y, WORD opt, LPRECT r, LPCSTR s, WORD 
     }
     X = LX(d, x);
     Y = LY(d, y);
+    {
+        BYTE FAR *l;
+        int t = font_tt(d->font, &l);
+        if (t >= 0)
+            return tt_text(d, t, l, X, Y, opt, r, s, n, dx);
+    }
     if ((d->talign & 6) == 2)           /* TA_RIGHT                     */
         X -= n * FONT_W;
     else if ((d->talign & 6) == 6)      /* TA_CENTER                    */
@@ -1069,13 +1234,20 @@ BOOL API TextOut(HDC h, short x, short y, LPCSTR s, short n)
 }
 DWORD API GetTextExtent(HDC h, LPCSTR s, short n)
 {
-    (void)h; (void)s;
+    struct dcs *d = dptr(h);
+    int t = d ? font_tt(d->font, 0) : -1;
+    if (t >= 0)
+        return MAKELONG(tt_width(t, s, n, 0), tt_metrics(t)->height);
     return MAKELONG(n * FONT_W, FONT_H);
 }
 short API GetTextFace(HDC h, short n, LPSTR buf)
 {
-    (void)h;
-    fstrncpy(buf, "System", n);
+    struct dcs *d = dptr(h);
+    BYTE FAR *l;
+    if (d && font_tt(d->font, &l) >= 0)
+        fstrncpy(buf, (LPCSTR)(l + 18), n);
+    else
+        fstrncpy(buf, "System", n);
     return fstrlen(buf);
 }
 /* TEXTMETRIC (Win16, 31 Byte): 7 Worte Masse, tmWeight(14), Bytes
@@ -1101,10 +1273,32 @@ void tm_fill(BYTE FAR *tm)
     *(short FAR *)(tm + 27) = 96;   /* tmDigitizedAspectX */
     *(short FAR *)(tm + 29) = 96;
 }
+/* TEXTMETRIC einer TrueType-Schrift */
+void tt_tmfill(int t, BYTE FAR *l, BYTE FAR *tm)
+{
+    const struct ttm FAR *m = tt_metrics(t);
+    short FAR *v = (short FAR *)tm;
+    int fc = tt_find((LPCSTR)(l + 18), 0);
+    BYTE st = fc >= 0 ? tt_facestyle(fc) : 0;
+    tm_fill(tm);
+    v[0] = m->height; v[1] = m->asc; v[2] = m->desc;
+    v[3] = m->intlead; v[4] = m->extlead;
+    v[5] = m->avgw; v[6] = m->maxw;
+    v[7] = *(short FAR *)(l + 8) ? *(short FAR *)(l + 8) : 400;
+    tm[16] = l[10]; tm[17] = l[11]; tm[18] = l[12];
+    /* Bit 0 = variable Breite, 2 = Vektor, 4 = TrueType; Familie oben */
+    tm[23] = (BYTE)((l[17] & 0xF0) | ((st & 0x10) ? 0 : 1) | 2 | 4);
+    tm[24] = (st & 0x20) ? 2 : 0;
+}
 BOOL API GetTextMetrics(HDC h, void FAR *tm)
 {
-    (void)h;
-    tm_fill(tm);
+    struct dcs *d = dptr(h);
+    BYTE FAR *l;
+    int t = d ? font_tt(d->font, &l) : -1;
+    if (t >= 0)
+        tt_tmfill(t, l, tm);
+    else
+        tm_fill(tm);
     return 1;
 }
 
@@ -1493,6 +1687,9 @@ void gdi_init(void)
     for (p = 0; p < 16; p++)            /* hell (Summe >= 384) -> 1      */
         monob[p] = (BYTE)(((vga_rgb[p] & 0xFF) + ((vga_rgb[p] >> 8) & 0xFF) +
                            ((vga_rgb[p] >> 16) & 0xFF)) >= 384);
+    lf_sel = seg_new(NOBJ * 50);
+    if (lf_sel)
+        fmemset(MKFP(lf_sel, 0), 0, NOBJ * 50);
     bm_stock = bm_new(1, 1, 1);
     if (bm_stock)
         ob[OI(bm_stock)].stock = 1;
@@ -1904,11 +2101,10 @@ DWORD API SetBitmapDimension(HBITMAP b, short x, short y)
 }
 BOOL API GetCharWidth(HDC h, WORD first, WORD last, short FAR *buf)
 {
-    (void)h;
-    while (first <= last) {
-        *buf++ = FONT_W;
-        if (first++ == 0xFFFF)
-            break;
-    }
+    struct dcs *d = dptr(h);
+    int t = d ? font_tt(d->font, 0) : -1;
+    WORD c;
+    for (c = first; c <= last && c < 256; c++)
+        *buf++ = t >= 0 ? (short)tt_adv(t, (BYTE)c) : FONT_W;
     return 1;
 }

@@ -284,6 +284,24 @@ static const struct { const char *n; BYTE pf, cs; } fonts[] = {
     { "Terminal",      0x31, 0xFF },            /* OEM                  */
 };
 static BYTE ef_lf[50], ef_tm[31];
+#include "ttf.h"
+/* Teiltext ohne Gross/klein */
+static int fstrstr_i(LPCSTR s, const char *t)
+{
+    WORD i, k;
+    for (i = 0; s[i]; i++) {
+        for (k = 0; t[k]; k++) {
+            char a = s[i + k], b = t[k];
+            if (a >= 'a' && a <= 'z') a -= 32;
+            if (b >= 'a' && b <= 'z') b -= 32;
+            if (a != b)
+                break;
+        }
+        if (!t[k])
+            return 1;
+    }
+    return 0;
+}
 static WORD ef_w[7];
 void tm_fill(BYTE FAR *tm);
 short API EnumFonts(HDC h, LPCSTR face, DWORD proc, DWORD data)
@@ -313,5 +331,42 @@ short API EnumFonts(HDC h, LPCSTR face, DWORD proc, DWORD data)
         r = (short)call16((void FAR *)proc,
                           cur_task >= 0 ? wt[cur_task].hinst : 0, 7, ef_w);
     }
+    /* TrueType-Familien (gui/ttf.c), jede einmal */
+    for (i = 0; (short)i < tt_nface() && r; i++) {
+        LPCSTR fam = tt_facename(i);
+        BYTE st = tt_facestyle(i), pf;
+        WORD k;
+        for (k = 0; k < i; k++)
+            if (!fstricmp(tt_facename(k), fam))
+                break;
+        if (k < i || (face && fstricmp(face, fam)))
+            continue;
+        pf = (st & 0x20) ? 0x50 : (st & 0x10) ? 0x30 :
+             (fstrstr_i(fam, "Times") || fstrstr_i(fam, "Roman")) ? 0x10 : 0x20;
+        pf |= (st & 0x10) ? 1 : 2;
+        fmemset((void FAR *)ef_lf, 0, sizeof(ef_lf));
+        ((short *)ef_lf)[0] = 16;               /* lfHeight             */
+        ((short *)ef_lf)[4] = 400;
+        ef_lf[13] = (st & 0x20) ? 2 : 0;
+        ef_lf[14] = 3;                          /* OUT_STROKE_PRECIS    */
+        ef_lf[15] = 2;                          /* CLIP_STROKE_PRECIS   */
+        ef_lf[16] = 1;                          /* DRAFT_QUALITY        */
+        ef_lf[17] = pf;
+        fstrncpy((LPSTR)(ef_lf + 18), fam, 32);
+        tm_fill(ef_tm);
+        ef_tm[23] = (BYTE)((pf & 0xF0) | ((st & 0x10) ? 0 : 1) | 2 | 4);
+        ef_tm[24] = ef_lf[13];
+        ef_w[0] = SELOF((void FAR *)ef_lf); ef_w[1] = OFFOF((void FAR *)ef_lf);
+        ef_w[2] = SELOF((void FAR *)ef_tm); ef_w[3] = OFFOF((void FAR *)ef_tm);
+        ef_w[4] = 4;                            /* TRUETYPE_FONTTYPE    */
+        ef_w[5] = HIWORD(data); ef_w[6] = LOWORD(data);
+        r = (short)call16((void FAR *)proc,
+                          cur_task >= 0 ? wt[cur_task].hinst : 0, 7, ef_w);
+    }
     return r;
+}
+/* EnumFontFamilies (GDI.330): gleiche Rueckrufe, je Familie */
+short API EnumFontFamilies(HDC h, LPCSTR fam, DWORD proc, DWORD data)
+{
+    return EnumFonts(h, fam, proc, data);
 }
