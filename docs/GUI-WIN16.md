@@ -702,6 +702,19 @@ PROGMAN und Notepad danach unverändert. Offen: GDI.UnicodeToAnsi (Signatur
 unbekannt), Schriftarten installieren (TrueType), Felder mit fester
 Schrift zu schmal, Desktop braucht beim Öffnen einige Sekunden, 86Box.
 
+Nachgezogen (vom Nutzer in 86Box P3B-F gemeldet: „Schriftarten“ ->
+#GP 001F:0312 in `fmemcpy`): MAIN.CPL öffnet die Dateien aus `[fonts]`
+(`ARIAL.FOT` …) per OpenFile ohne Pfad – Windows sucht dann wie LoadModule
+(aktuelles, Windows-, SYSTEM-Verzeichnis, Programm, PATH); unser OpenFile
+suchte nur im aktuellen Verzeichnis. Danach war der Griff für die Vorschau
+0, GlobalLock lieferte NULL und CreateFontIndirect(NULL) kopierte 50 Byte
+ab 0000:0000 (QEMU prüft das nicht). Jetzt sucht OpenFile über `path_find`
+(neu mit `WINDIR\SYSTEM`), CreateFontIndirect(NULL) gibt 0 wie Windows.
+Geprüft in QEMU mit Grenzprüfung in fmemcpy (Testbau): Dialog, Auswahl,
+Vorschau („AaBbCcXxYyZz 123“), keine Kopie über ein Segmentende. Offen:
+die Vorschau nimmt die Systemschrift, TrueType-Schriften gelten dort als
+„Bildschirm- oder Plotterschriftart“ (die .FOT wird nicht ausgewertet).
+
 ### Stand: TrueType (26.11.2026)
 
 Wunsch des Nutzers („Systemsteuerung und TrueType-Fonts“), eigener Code

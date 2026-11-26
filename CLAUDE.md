@@ -2413,6 +2413,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   mit tools/bp2check.py. Test /tmp/claude-0/gt/ctl.sh, ctl1.sh N (Applet N,
   S=/W= Wartezeiten, PRE2= ohne Spur). Lehre: Python-Skripte, die Dateien
   mit Latin-1 schreiben, erst kodieren (`.encode`), dann öffnen.
+  Danach (vom Nutzer in 86Box gemeldet, #GP bei „Schriftarten“): OpenFile
+  ohne Pfad sucht wie Windows (`path_find`, jetzt mit WINDIR\SYSTEM),
+  CreateFontIndirect(NULL) gibt 0. Lehre: Absturz nur in 86Box -> in QEMU
+  eine Grenzprüfung (LSL) in fmemcpy einbauen, sie zeigt die Stelle.
+  Test mit voller Windows-Installation: run2.sh mit PROG=CONTROL.EXE
+  CDIR='\WINDOWS' und POST, das wtree/WINDOWS kopiert.
   Datei-Manager (26.11.2026, „Stand: Datei-Manager“; Vorschlag Punkt 1,
   vom Nutzer gewünscht): WINFILE.EXE aus Windows 3.1 läuft in QEMU –
   LISTBOX mit Owner-Draw/Mehrfachauswahl/Spalten, LBN_SETFOCUS, Kürzel

@@ -162,6 +162,13 @@ int path_find(LPCSTR name, LPSTR out, WORD n)
     ok = sp_try("", 0, name);                   /* wie angegeben         */
     if (!ok && !name[i])
         ok = sp_try(sp_path, GetWindowsDirectory(sp_path, sizeof(sp_path)), name);
+    if (!ok && !name[i]) {                      /* SYSTEM-Verzeichnis    */
+        WORD k = GetWindowsDirectory(sp_path, sizeof(sp_path) - 8);
+        if (k && sp_path[k - 1] != '\\')
+            sp_path[k++] = '\\';
+        fstrncpy(sp_path + k, "SYSTEM", 7);
+        ok = sp_try(sp_path, k + 6, name);
+    }
     if (!ok && !name[i] && cur_task >= 0 && wt[cur_task].hmod) {   /* Aufrufer */
         const char FAR *p = wm[wt[cur_task].hmod - 1].path;
         WORD k = 0, j;

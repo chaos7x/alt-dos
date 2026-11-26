@@ -868,7 +868,10 @@ HBRUSH API CreateBrushIndirect(void FAR *lp)
 }
 HFONT API CreateFontIndirect(void FAR *lf)
 {
-    HGDIOBJ o = onew(OB_FONT, 0, 0, 0);
+    HGDIOBJ o;
+    if (!SELOF(lf))                             /* wie Windows: kein Font */
+        return 0;
+    o = onew(OB_FONT, 0, 0, 0);
     if (o && lf_sel)
         fmemcpy(LF(OI(o)), lf, 50);
     return o;

@@ -1005,8 +1005,14 @@ WORD API OpenFile(LPCSTR name, BYTE FAR *of, WORD st)
     }
     if (st & 0x1000)                            /* OF_CREATE                */
         h = f_create(p);
-    else
+    else {
         h = f_open(p, st & 3);
+        /* wie Windows: Name ohne Pfad auch im Windows- und SYSTEM-
+           Verzeichnis, beim Programm und im PATH suchen (MAIN.CPL oeffnet
+           die .FOT-Dateien aus [fonts] so) */
+        if (FAPI_FAILED(h) && !(st & 0x8000) && path_find(name, p, 128))
+            h = f_open(p, st & 3);
+    }
     if (FAPI_FAILED(h)) {
         *(WORD FAR *)(of + 2) = derr(h) == 5 ? 5 : 2;
         return 0xFFFF;
