@@ -146,6 +146,8 @@ static unsigned img_spt[NTASK], img_heads[NTASK], img_secs[NTASK];  /* Startabbi
 #define HK_WDOG   4                     /* IF_WATCHDOG: IF nach 3 Takten */
 static unsigned char box_hk[NTASK];
 static unsigned xms_lim[NTASK];         /* XMS-Grenze in Seiten + 1 (0 = Vorgabe) */
+static unsigned dp_lim[NTASK];          /* DPMI-Grenze in MB + 1 (0 = nicht
+                                           gesetzt, FFFFh = keine Grenze) */
 static unsigned char idle_n[NTASK];     /* Abfragen im laufenden Kerneltakt */
 static unsigned char idle_sens[NTASK];  /* IDLE_SENSITIVITY + 1, 0 = Vorgabe */
 static unsigned idle_tk[NTASK];         /* Takt, zu dem idle_n zaehlt      */
@@ -2981,6 +2983,13 @@ static void svc(int n, struct v86_frame *f, int t)
         } else if (AH == 0x18)                  /* Hilfen an (BL Bits 0-2) */
             box_hk[t] = (unsigned char)((~BX & 15) | (BX & (HK_ADLIB | HK_HWT)) |
                                         (BX & 64 ? 0 : HK_NOSHR));
+        else if (AH == 0x25)                    /* DPMI_MEMORY_LIMIT in MB + 1 */
+            dp_lim[t] = BX > 1025 ? 0xFFFF : BX;    /* (BOXSHELL, DOSBOX.INI) */
+        else if (AH == 0x26) {                  /* WINLDR: Vorgabe fuer   */
+            if (!dp_lim[t])                     /* Windows 64 MB (mit 100 MB */
+                dp_lim[t] = 65;                 /* und mehr wird es nach  */
+        }                                       /* DOS-Eingabeaufforderungen
+                                                   langsam, auch unter MS-DOS) */
         else if (AH == 0x19)                    /* IDLE_SENSITIVITY + 1 (0 = Vorgabe) */
             idle_sens[t] = (unsigned char)(BX > 101 ? 101 : BX);
         else if (AH == 0x16) {                  /* XMS-Grenze (BX KB, DOSBOX.INI) */
@@ -4111,6 +4120,7 @@ static void xms_end(int t)              /* aus v86_destroy               */
         xh[t][i].used = 0;
     a20_glob[t] = a20_loc[t] = a20_on[t] = hma_used[t] = 0;
     xms_lim[t] = 0;
+    dp_lim[t] = 0;
     xms_snap[t] = 0;
     box_hk[t] = 0;
     idle_sens[t] = 0;
@@ -5206,6 +5216,21 @@ static unsigned long dmem_free_pg(void) /* frei fuer DPMI, ohne Reserviertes */
     return fr > lazy_pg ? fr - lazy_pg : 0;
 }
 
+/* frei fuer DPMI in dieser Box: wie dmem_free_pg, hoechstens bis zur
+   Grenze aus DOSBOX.INI (DPMI_MEMORY_LIMIT, wie OS/2 in MB) */
+static unsigned long dmem_room(int t)
+{
+    unsigned long fr = dmem_free_pg(), lim, used = 0;
+    unsigned k;
+    if (!dp_lim[t] || dp_lim[t] == 0xFFFF)
+        return fr;
+    lim = (unsigned long)(dp_lim[t] - 1) << 8;
+    for (k = 0; k < NDPM; k++)
+        used += DPM(t, k).npg;
+    lim = lim > used ? lim - used : 0;
+    return lim < fr ? lim : fr;
+}
+
 /* Luecke fuer n Seiten ab 64 MB (Seite 4000h, darunter XMS), bis 1 GB */
 static unsigned long dmem_gap(int t, unsigned long n)
 {
@@ -5779,7 +5804,7 @@ static unsigned dp31(struct v86_frame *f, int t)
         DX = 0x0870;
         return 0;
     case 0x0500: {                              /* freier Speicher       */
-        unsigned long fr = dmem_free_pg();
+        unsigned long fr = dmem_room(t);
         if (fr > 0x3C000UL)             /* mehr als der DPMI-Bereich der Box */
             fr = 0x3C000UL;             /* (64 MB - 1 GB) geht nicht; ueber */
                                         /* 2 GB in Byte hielt DOS/4GW den Wert */
@@ -5805,7 +5830,7 @@ static unsigned dp31(struct v86_frame *f, int t)
                 lin = DPM(t, k).lpg << 12;
                 goto done501;
             }
-            if (n - DPM(t, k).npg > dmem_free_pg() || !(lin = dmem_gap(t, n)) ||
+            if (n - DPM(t, k).npg > dmem_room(t) || !(lin = dmem_gap(t, n)) ||
                 !dmem_res(t, lin, n))
                 DERR(0x8013);
             {                                   /* Seiten umhaengen      */
@@ -5827,7 +5852,7 @@ static unsigned dp31(struct v86_frame *f, int t)
             ;
         if (k == NDPM)
             DERR(0x8016);
-        if (n > dmem_free_pg() || !(lin = dmem_gap(t, n)) || !dmem_res(t, lin, n))
+        if (n > dmem_room(t) || !(lin = dmem_gap(t, n)) || !dmem_res(t, lin, n))
             DERR(0x8013);
         DPM(t, k).lpg = lin;
         DPM(t, k).npg = n;

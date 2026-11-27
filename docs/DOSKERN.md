@@ -1613,7 +1613,13 @@ einer Schleife in Windows selbst verloren, Windows holt nach dem Start
 keinen DPMI-Speicher mehr (Spur 0501h/0502h/0503h leer). Gegenprobe des
 Nutzers: MS-DOS 6.20 + QEMM mit `WIN /S` (Standardmodus, ~253 MB frei)
 verhält sich genauso – Verhalten von Windows im Standardmodus, kein
-Fehler von AT-DOS. Abhilfe: weniger Speicher für die VM.
+Fehler von AT-DOS. Abhilfe (Vorschlag des Nutzers, „64 MB waren damals
+viel“): WINLDR setzt beim Start per INT E0h 26h eine DPMI-Grenze von 64 MB
+für die Box, wenn DOSBOX.INI keine setzt; neu `DPMI_MEMORY_LIMIT=MB` (wie
+OS/2, -1 = keine Grenze; BOXSHELL INT E0h 25h, v86.c `dp_lim`/`dmem_room`
+für 0500h/0501h/0503h, zurück bei jedem Programmstart). Geprüft 86Box P3B-F
+256 MB: Info zeigt 65.690 KB frei, Systemsteuerung vor und nach drei DOS-
+Eingabeaufforderungen 1,8/1,7 s (vorher deutlich langsamer).
 
 ### Erledigt (27.11.2026): Datei-Dialoge unter Windows
 
