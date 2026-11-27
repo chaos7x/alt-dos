@@ -1604,6 +1604,18 @@ Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
 von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
 MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
+### Erledigt (27.11.2026): graue Tasten unter Windows bei NumLock
+
+Vom Nutzer gemeldet (86Box P3B-F): mit NumLock an tippte Cursor links
+im Eingabefeld eine „4“ (Pos1 7, Ende 1, rechts 6) – Windows hielt die
+grauen Tasten für den Ziffernblock. Der Tastaturtreiber kettet an den
+INT 9 des BIOS und erkennt die graue Taste am Merker des BIOS im
+Datenbereich (0040:0096 Bit 1 „letzter Code war E0“, Bit 4 erweiterte
+Tastatur); unser Stummel-INT-9 setzte ihn nicht. Jetzt pflegt `svc`
+Fall 09h beides nach `vcur`. Geprüft 86Box P3B-F: Ausführen-Dialog mit
+Pos1/Ende/links in beiden NumLock-Zuständen richtig, Gegenprobe mit dem
+alten Kernel „1432“ statt „1abcde3f2“.
+
 ### Erledigt (27.11.2026): leeres ZIP ist eine Wechselplatte
 
 Vom Nutzer gemeldet (Build 1162, schon mit der Art 3 der DEM-
