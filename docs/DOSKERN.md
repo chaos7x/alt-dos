@@ -1604,6 +1604,21 @@ Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
 von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
 MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
+### Erledigt (27.11.2026): Datei-Dialoge unter Windows
+
+Vom Nutzer gemeldet: Systemsteuerung -> Treiber -> Hinzufügen -> nicht
+aufgeführter Treiber -> „Durchsuchen…“ ließ die Systemsteuerung ohne
+Meldung verschwinden. In 86Box (P3B-F) nachgestellt, ebenso mit „Speichern
+unter“ im Editor – betroffen war jeder Datei-Dialog von COMMDLG. Eine
+vorübergehende Spur der DEM-Aufrufe zeigte als Letztes Laufwerksinfo und
+Lesen des Bootsektors, also INT 21h 32h (Laufwerksparameterblock, DS:BX).
+WINLDR reichte 1Bh/1Ch/1Fh/32h unübersetzt an den Wirt; der gibt im PM die
+Segmentregister nicht zurück, Windows las über seinen eigenen DS. DOSX
+macht aus DS einen Selektor – WINLDR jetzt auch (`f_dsbx`, DPMI 0002h,
+nicht bei AL = FFh). Geprüft 86Box P3B-F: „Speichern unter“ zeigt
+Verzeichnisse und Laufwerke, leeres ZIP meldet „kann nicht von Laufwerk d:
+lesen“, „Durchsuchen“ in der Systemsteuerung öffnet sich.
+
 ### Erledigt (27.11.2026): graue Tasten unter Windows bei NumLock
 
 Vom Nutzer gemeldet (86Box P3B-F): mit NumLock an tippte Cursor links
