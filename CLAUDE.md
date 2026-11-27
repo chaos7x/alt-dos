@@ -2113,7 +2113,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `kernel/npipe.c`, FAPI 6Ah und `OF_NPIPE` ohne Kernelsperre, Kunde über
   DosOpen `\PIPE\name` -> `np_open`; Test `\DEMO\NPTEST`, in QEMU
   geprüft). KTEXT4 danach 63.058 Byte – voll: vor dem nächsten Modul dort
-  ein fünftes Codesegment oder IPC-Module verschieben. Reihenfolge (Entscheidung des
+  ein fünftes Codesegment oder IPC-Module verschieben. Rückport nach 5.x
+  (Durchsicht 27.11.2026): Semaphoren, gemeinsame Segmente und Named Pipes
+  gingen mit kleinem Aufwand (67h–6Eh dort frei), DosLoadModule nicht
+  (kein NE-Lader). Entscheidung des Nutzers, 27.11.2026: NE-Lader und
+  GUI auf 5.x vorerst nicht geplant; über den IPC-Rückport ist noch nicht
+  entschieden. Reihenfolge (Entscheidung des
   Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
   des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
   Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.
