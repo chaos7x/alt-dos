@@ -93,14 +93,23 @@ static void cat(char *d, const char *s, unsigned max)
 }
 
 /* Kerberos-Ablage vorhanden (Pfad wie krb5.c krb_cc_path)? */
-/* Programm prog von AT-DOS: \DOS des COMSPEC-Laufwerks, sonst im PATH
-   (Start von der Setup-Diskette 1: SMBCLI/NET1 liegen dann auf C:) */
+/* Programm prog von AT-DOS: \DOS\SYSTEM (NET1, Hilfsprogramm) bzw. \DOS
+   des COMSPEC-Laufwerks, sonst im PATH und dessen SYSTEM\ (Start von der
+   Setup-Diskette 1: SMBCLI/NET1 liegen dann auf C:) */
 static void prog_path(char *d, const char *prog, unsigned max)
 {
     static char pv[FAPI_PATHLEN];
     unsigned h, i, k;
     if (FAPI_FAILED(DosGetEnv("COMSPEC", d, max)) || !d[0])
         scopy(d, "C:", max);
+    d[2] = 0;                           /* erst \DOS\SYSTEM (NET1), dann \DOS */
+    cat(d, "\\DOS\\SYSTEM\\", max);
+    cat(d, prog, max);
+    h = DosOpen(d);
+    if (!FAPI_FAILED(h)) {
+        DosClose(h);
+        return;
+    }
     d[2] = 0;
     cat(d, "\\DOS\\", max);
     cat(d, prog, max);
@@ -112,20 +121,26 @@ static void prog_path(char *d, const char *prog, unsigned max)
     if (FAPI_FAILED(DosGetEnv("PATH", pv, sizeof(pv))))
         return;
     for (i = 0; pv[i]; ) {
-        for (k = 0; pv[i] && pv[i] != ';' && k < max - 14; k++)
+        unsigned j, n;
+        for (k = 0; pv[i] && pv[i] != ';' && k < max - 21; k++)
             d[k] = pv[i++];
         if (pv[i] == ';')
             i++;
         if (!k)
             continue;
-        d[k] = 0;
-        if (d[k - 1] != '\\')
-            cat(d, "\\", max);
-        cat(d, prog, max);
-        h = DosOpen(d);
-        if (!FAPI_FAILED(h)) {
-            DosClose(h);
-            return;
+        for (j = 0; j < 2; j++) {       /* Eintrag, dann sein SYSTEM\ */
+            d[k] = 0;
+            n = k;
+            if (d[n - 1] != '\\')
+                cat(d, "\\", max);
+            if (j)
+                cat(d, "SYSTEM\\", max);
+            cat(d, prog, max);
+            h = DosOpen(d);
+            if (!FAPI_FAILED(h)) {
+                DosClose(h);
+                return;
+            }
         }
     }
     if (FAPI_FAILED(DosGetEnv("COMSPEC", d, max)) || !d[0])
