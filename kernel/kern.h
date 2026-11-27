@@ -81,6 +81,12 @@ void __far ne_task_end(int t);
 unsigned __far ne_getres(int t, unsigned h, unsigned type, unsigned id);
 unsigned __far ne_getmod(int t, const char *nm);
 unsigned __far ne_segctl(int t, unsigned op, unsigned a, unsigned b);
+struct fapi_procaddr;
+unsigned __far ne_modload(int t, const char *name, int drive, const char *path,
+                          unsigned short *fr, unsigned *h);
+unsigned __far ne_modfree(int t, unsigned h);
+unsigned __far ne_procaddr(int t, struct fapi_procaddr *q);
+unsigned __far ne_modname(int t, unsigned h, char *buf);
 unsigned __far ne_r3int(int t, void *f);       /* dpmi_trap: INT n -> Ring 3 */
 extern unsigned long ne_ihnd[];
 extern unsigned char ne_sh[64];         /* LDT-Eintraege der DLLs (alle Tasks) */

@@ -65,6 +65,40 @@ sinnvoll nachzubilden ist (DosLoadModule nein, RAM-Semaphoren ja).
   Stufe 1), zur Laufzeit laden, Funktion per Name und Ordinal rufen,
   freigeben, erneut laden, MEM gleich (kein Leck).
 
+### Stand Stufe 1 (27.11.2026, in QEMU geprüft)
+
+`kernel/neload.c` `ne_modload`/`ne_modfree`/`ne_procaddr`/`ne_modname`,
+Verteiler in kernel.c (`FAPI_MODULE`), Wrapper in apps/fapi.h
+(`DosLoadModule`, `DosFreeModule`, `DosGetProcAddr`, `DosGetModName`).
+
+- Geht auch für FX-Programme: deren LDT-Einträge 0/1 und DosAllocSeg
+  kommen den gemeinsamen DLL-Plätzen von oben nicht in die Quere.
+- Suchweg ohne Pfad: aktuelles Verzeichnis (wie `LIBPATH=.`), Verzeichnis
+  des NE-Programms, `\DOS\SYSTEM`, `\DOS`; mit `:` oder `\` nur der Pfad.
+  `LIBPATH=` aus der CONFIG.SYS fehlt noch.
+- Zähler je Task und DLL (`NEX(t)->dl`), Importe der EXE (`NEX(t)->stat`)
+  bleiben immer; `ne_detach` hängt ab, was keiner mehr braucht (Abhängig-
+  keiten mitgerechnet), Instanzkopien frei, letzter Benutzer gibt die DLL
+  frei.
+- Start-Routinen im Ring 3 vor der Rückkehr: der Kernel legt die Liste
+  wie beim Programmstart auf den Stapel des Aufrufers, dahinter BP, SI,
+  DI, BX, CX, DX, ES, DS, IP, CS aus dem FAPI-Rahmen, und biegt den
+  Rücksprung auf den zweiten Teil des Stummels (`NE_RSTUB`). Meldet eine
+  Start-Routine 0, gibt der Stummel die DLL per MODULE_FREE wieder frei
+  und liefert FAPI_ERR_DENIED; die Register des Aufrufers bleiben.
+- Nebenbei: die Suche nach nicht residenten Namen (`ord_byname`) schließt
+  die DLL-Datei jetzt (vorher blieb sie offen – auf Netzlaufwerken ein
+  Leck).
+- Noch nicht: Ende-Routine der DLL beim Freigeben (WEP), `LIBPATH=`,
+  Fehlername wie OS/2 (pszFailName).
+
+Geprüft mit Testprogrammen im Scratchpad (NETDLL mit Start-Routine und
+nicht residenten Namen, NETBAD mit scheiternder Start-Routine): Laden aus
+dem aktuellen Verzeichnis und über Pfad, Aufruf über Ordinalzahl und
+Namen, doppeltes Laden zählt, Freigeben, Fehlerfälle, Programmende ohne
+Freigeben, drei Runden ohne Speicherverlust; NE-Programm mit Importen
+unverändert.
+
 ## Stufe 2: Semaphoren
 
 - RAM-Semaphoren: ein Doppelwort im Speicher des Programms (wie OS/2:

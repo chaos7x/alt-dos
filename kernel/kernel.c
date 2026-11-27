@@ -4610,6 +4610,58 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return ne_getmod(current, buf);
     case FAPI_SEGCTL:                           /* GUI-Lader (neload.c)   */
         return ne_segctl(current, a1, a2, a3);
+    case FAPI_MODULE:                           /* DosLoadModule (neload.c) */
+        switch (a1) {
+        case MODULE_LOAD: {
+            int d = -1, j;
+            unsigned h = 0, r;
+            if (user_str(usel, a2, buf, FAPI_PATHLEN) || !user_ok(usel, a3, 2, 1))
+                return FAPI_ERROR;
+            for (j = 0; buf[j]; j++)
+                if (buf[j] == ':' || buf[j] == '\\')
+                    break;
+            canon[0] = 0;
+            if (buf[j]) {
+                if (resolve(current, buf, &d, canon))
+                    return FAPI_ERROR;
+            } else {                            /* aktuelles Verzeichnis  */
+                static const char ext[] = ".DLL";
+                for (j = 0; buf[j] && buf[j] != '.'; j++)
+                    ;
+                if (j <= 8)
+                    for (t = 0; t < 5; t++)
+                        buf[j + t] = ext[t];
+                if (j > 8 || resolve(current, buf, &d, canon))
+                    d = -1, canon[0] = 0;
+            }
+            r = ne_modload(current, buf, d, canon, FRAME(current), &h);
+            if (!r)
+                *(unsigned short __far *)MK_FP(usel, a3) = h;
+            return r;
+        }
+        case MODULE_FREE:
+            return ne_modfree(current, a2);
+        case MODULE_PROCADDR: {
+            struct fapi_procaddr pa;            /* Kernelstapel (SS = DS) */
+            unsigned r;
+            if (!user_ok(usel, a2, sizeof pa, 1))
+                return FAPI_ERROR;
+            far_copy(KDATA, (unsigned)&pa, usel, a2, sizeof pa);
+            pa.name[sizeof pa.name - 1] = 0;
+            r = ne_procaddr(current, &pa);
+            if (!r)
+                far_copy(usel, a2, KDATA, (unsigned)&pa, sizeof pa);
+            return r;
+        }
+        case MODULE_NAME:
+            if (!user_ok(usel, a3, FAPI_PATHLEN, 1) || ne_modname(current, a2, canon))
+                return FAPI_ERROR;
+            for (t = 0; canon[t] && t < FAPI_PATHLEN - 1; t++)
+                ;
+            far_copy(usel, a3, KDATA, (unsigned)canon, t + 1);
+            return 0;
+        }
+        return FAPI_ERROR;
     case FAPI_UNINAME:                          /* BACKUP/RESTORE (fat.c) */
         if (a1 > 1 || user_str(usel, a2, buf, 256) || !user_ok(usel, a3, 512, !a1))
             return FAPI_ERROR;

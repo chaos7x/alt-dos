@@ -353,6 +353,31 @@ struct fapi_joy {
                                        Programm (CX = 0 aus). Stapel beim
                                        Handler: n, IP hinter INT, CS, FLAGS
                                        - n selbst herunternehmen, IRET  */
+#define FAPI_MODULE         0x67    /* DLLs zur Laufzeit (6.5, wie
+                                       DosLoadModule/DosFreeModule/
+                                       DosGetProcAddr/DosGetModName von
+                                       OS/2 1.x, docs/FAPI-IPC.md): BX =
+                                       MODULE_*, CX/DX siehe dort */
+#define MODULE_LOAD         0       /* CX = Name ("FOO" sucht FOO.DLL im
+                                       Programmverzeichnis, \DOS\SYSTEM,
+                                       \DOS; mit ':' oder '\\' ein Pfad),
+                                       DX = Wort fuer die Kennung -> 0,
+                                       FAPI_ERROR (nicht da/kein NE),
+                                       FAPI_ERR_FULL (kein Platz),
+                                       FAPI_ERR_DENIED (Start-Routine
+                                       meldete Fehler). Start-Routinen
+                                       laufen vor der Rueckkehr im Ring 3 */
+#define MODULE_FREE         1       /* CX = Kennung -> 0, FAPI_ERROR      */
+#define MODULE_PROCADDR     2       /* CX = struct fapi_procaddr -> 0,
+                                       FAPI_ERROR (nicht da)             */
+#define MODULE_NAME         3       /* CX = Kennung, DX = Puffer
+                                       (FAPI_PATHLEN) -> voller Pfad    */
+struct fapi_procaddr {
+    unsigned short mod;             /* Kennung                           */
+    unsigned short ord;             /* Ordinalzahl, 0 = Name gilt        */
+    char           name[34];        /* Name (bis 33 Zeichen + 0)         */
+    unsigned short off, sel;        /* -> Einsprung                      */
+};
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

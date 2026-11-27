@@ -2101,7 +2101,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `\PIPE\`), dann nach der Freigabe von 6.4 mehr Tasks (NTASK 8 ->
   32, Kernelstapel/TSS aus DGROUP) und Threads (6Bh), zuletzt
   Warteschlangen, Prioritäten, Zeitgeber (6Ch–6Eh). 67h–6Eh sind auf
-  beiden Linien frei (5.x bis 5Eh, main bis 66h).
+  beiden Linien frei (5.x bis 5Eh, main bis 66h). Stufe 1 DosLoadModule
+  erledigt (27.11.2026, auch für FX-Programme, Start-Routinen über
+  `NE_RSTUB`; in QEMU geprüft, Stand in `docs/FAPI-IPC.md`).
 
 - **Befehle aus FreeCOM für CMD** – erledigt (25.11.2026, Auftrag „1, 9
   und 7 machen“): PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD/`CD /D`,

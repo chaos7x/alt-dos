@@ -29,8 +29,9 @@
  * geteilte) bekommt jeder Task als eigene Kopie unter demselben Selektor
  * (task_end gibt sie wie DosAllocSeg frei). Ressourcen: FAPI_GETRES/
  * FAPI_GETMOD wie DosGetResource/DosGetModHandle von OS/2 1.x (Typ und
- * Kennung als Zahl). Noch nicht: Namen als Ressourcenkennung,
- * DosLoadModule, Win16-Besonderheiten (Selektor-Kacheln, __AHINCR).
+ * Kennung als Zahl). Ab 6.5 DosLoadModule (FAPI_MODULE, unten). Noch
+ * nicht: Namen als Ressourcenkennung,
+ * Win16-Besonderheiten (Selektor-Kacheln, __AHINCR).
  *
  * DLLs werden gesucht: Verzeichnis des ladenden Moduls, dann \DOS\SYSTEM
  * und \DOS des Startlaufwerks, Name = Modulname + ".DLL".
@@ -99,6 +100,8 @@ struct neexe {
     char           path[96];
     unsigned long  rpos;
     unsigned       rlen;
+    unsigned short stat;                /* DLLs der EXE (Importe, Bitmaske) */
+    unsigned char  dl[NEMOD];           /* DosLoadModule je DLL (Zaehler)   */
 };
 #define NEX(t) ((struct neexe __far *)MK_FP(ne_sel, NEMOD * NEMSZ + \
                                             (t) * sizeof(struct neexe)))
@@ -109,12 +112,33 @@ struct neexe {
            push ds / pop es / mov bp,sp / call far [bp] / add sp,4
            test ax,ax / jnz next / mov ax,FAPI_EXIT / mov bx,255
            call 0023:0000 / jmp $
-     done: pop ds / push ds / pop es / retf                              */
+     done: pop ds / push ds / pop es / retf
+   Ab NE_RSTUB derselbe Lauf fuer DosLoadModule (FAPI_MODULE): hinter der
+   Liste liegen Kennung, BP, SI, DI, BX, CX, DX, ES, DS, IP, CS des
+   Aufrufers. Scheitert eine Start-Routine (AX = 0): Rest der Liste weg,
+   MODULE_FREE der Kennung, AX = FAPI_ERR_DENIED; sonst AX = 0.
+     next: (wie oben) ... test ax,ax / jnz next
+     fail: pop ax / test ax,ax / jz fd / add sp,8 / jmp fail
+     fd:   pop cx / mov ax,FAPI_MODULE / mov bx,MODULE_FREE
+           call 0023:0000 / mov ax,FAPI_ERR_DENIED / jmp rest
+     done: pop bp / xor ax,ax
+     rest: pop bp/si/di/bx/cx/dx/es/ds / retf                         */
+#define NE_RSTUB 40
 static const unsigned char ne_stubc[] = {
     0x58, 0x85, 0xC0, 0x74, 0x1F, 0x1F, 0x59, 0x8C, 0xDF, 0x1E, 0x07, 0x89,
     0xE5, 0xFF, 0x5E, 0x00, 0x83, 0xC4, 0x04, 0x85, 0xC0, 0x75, 0xE9, 0xB8,
     FAPI_EXIT, 0x00, 0xBB, 0xFF, 0x00, 0x9A, 0x00, 0x00, 0x23, 0x00, 0xEB, 0xFE,
-    0x1F, 0x1E, 0x07, 0xCB
+    0x1F, 0x1E, 0x07, 0xCB,
+    /* NE_RSTUB */
+    0x58, 0x85, 0xC0, 0x74, 0x2D, 0x1F, 0x59, 0x8C, 0xDF, 0x1E, 0x07, 0x89,
+    0xE5, 0xFF, 0x5E, 0x00, 0x83, 0xC4, 0x04, 0x85, 0xC0, 0x75, 0xE9,
+    0x58, 0x85, 0xC0, 0x74, 0x05, 0x83, 0xC4, 0x08, 0xEB, 0xF6,
+    0x59, 0xB8, FAPI_MODULE, 0x00, 0xBB, MODULE_FREE, 0x00,
+    0x9A, 0x00, 0x00, 0x23, 0x00, 0xB8,
+    (unsigned char)FAPI_ERR_DENIED, (unsigned char)(FAPI_ERR_DENIED >> 8),
+    0xEB, 0x03,
+    0x5D, 0x31, 0xC0,
+    0x5D, 0x5E, 0x5F, 0x5B, 0x59, 0x5A, 0x07, 0x1F, 0xCB
 };
 static unsigned ne_stub;                /* LDT-Eintrag des Stummels       */
 static pg_t ne_stubpg;
@@ -253,16 +277,17 @@ static unsigned ent_find(unsigned sel, unsigned off, unsigned len, unsigned ord,
     return 0;
 }
 
-/* Name (Pascal-Zeichenkette, SCRATCH) in einer Namenstabelle (sel:off,
-   len) -> Ordinalzahl, 0 = nicht da */
-static unsigned name_find(unsigned sel, unsigned off, unsigned len, unsigned nm)
+/* Name (Pascal-Zeichenkette nm) in einer Namenstabelle (sel:off, len)
+   -> Ordinalzahl, 0 = nicht da */
+static unsigned name_find(unsigned sel, unsigned off, unsigned len,
+                          const unsigned char __far *nm)
 {
     unsigned char __far *p = MK_FP(sel, off);
-    unsigned i = 0, k, n, ln = t8(nm);
+    unsigned i = 0, k, n, ln = nm[0];
     while (i < len && (n = p[i]) != 0) {
         if (n == ln) {
             for (k = 0; k < n; k++) {
-                unsigned a = p[i + 1 + k], b = t8(nm + 1 + k);
+                unsigned a = p[i + 1 + k], b = nm[1 + k];
                 if (a >= 'a' && a <= 'z') a -= 32;
                 if (b >= 'a' && b <= 'z') b -= 32;
                 if (a != b)
@@ -274,6 +299,46 @@ static unsigned name_find(unsigned sel, unsigned off, unsigned len, unsigned nm)
         i += n + 3;
     }
     return 0;
+}
+
+/* Name (Pascal) -> Ordinalzahl in DLL dm: residente, dann nicht residente
+   Namen (aus der Datei). 0 = nicht da, 0xFFFF = Datei nicht lesbar */
+static unsigned ord_byname(int dm, const unsigned char __far *nm)
+{
+    struct ifs_file nf;
+    unsigned ln, j, ord;
+    unsigned char tmp[8];
+    unsigned long p, e;
+    ord = name_find(ne_sel, dm * NEMSZ + NE_TABOFF + M(dm)->entlen,
+                    M(dm)->reslen, nm);
+    if (ord || !M(dm)->nrlen)
+        return ord;
+    p = M(dm)->nrpos;
+    e = p + M(dm)->nrlen;
+    for (j = 0; M(dm)->path[j] && j < IFS_PATHLEN - 1; j++)
+        np[j] = M(dm)->path[j];
+    np[j] = 0;
+    if (ifs_open(M(dm)->drive, np, &nf))
+        return 0xFFFF;
+    while (p < e && !ord) {
+        if (nread(&nf, p, KDATA, (unsigned)tmp, 1) || !tmp[0])
+            break;
+        ln = tmp[0];
+        if (ln == nm[0] && nread(&nf, p + 1, KDATA, (unsigned)np, ln + 2) == 0) {
+            for (j = 0; j < ln; j++) {
+                unsigned x = (unsigned char)np[j], y = nm[1 + j];
+                if (x >= 'a' && x <= 'z') x -= 32;
+                if (y >= 'a' && y <= 'z') y -= 32;
+                if (x != y)
+                    break;
+            }
+            if (j == ln)
+                ord = (unsigned char)np[ln] | ((unsigned char)np[ln + 1] << 8);
+        }
+        p += ln + 3;
+    }
+    ifs_close(&nf);
+    return ord;
 }
 
 /* gemeinsamen LDT-Eintrag holen: in keiner LDT belegt, von oben */
@@ -376,6 +441,9 @@ void __far ne_task_end(int t)
     if (!ne_sel)
         return;
     NEX(t)->drive = 0xFF;
+    NEX(t)->stat = 0;
+    for (m = 0; m < NEMOD; m++)
+        NEX(t)->dl[m] = 0;
     for (m = 0; m < NEMOD; m++)
         if (task[t].nemods & (1u << m)) {
             if (--M(m)->refs == 0)
@@ -385,6 +453,7 @@ void __far ne_task_end(int t)
 }
 
 static int ne_do(int t, int drive, const char *path, int m, struct ne_start *st);
+static int ne_init(void);
 
 /* Modulname aus der Tabelle der Stufe c (Pascal bei imptab + o) -> Platz
    der geladenen DLL; laedt sie nach */
@@ -505,38 +574,10 @@ static int reloc(struct nectx *c, int m, unsigned k, unsigned long rpos)
                     return -1;
                 dm = c->mod[a - 1];
                 if ((fl & 3) == 2) {
-                    unsigned nm = H16(c, NE_IMPTAB) + b;
-                    ord = name_find(ne_sel, dm * NEMSZ + NE_TABOFF +
-                                    M(dm)->entlen, M(dm)->reslen, nm);
-                    if (!ord && M(dm)->nrlen) {         /* nicht resident:  */
-                        struct ifs_file nf;             /* Datei der DLL   */
-                        unsigned ln;
-                        unsigned char tmp[8];
-                        unsigned long p = M(dm)->nrpos, e = p + M(dm)->nrlen;
-                        for (j = 0; M(dm)->path[j] && j < IFS_PATHLEN - 1; j++)
-                            np[j] = M(dm)->path[j];
-                        np[j] = 0;
-                        if (ifs_open(M(dm)->drive, np, &nf))
-                            return -1;
-                        while (p < e && !ord) {
-                            if (nread(&nf, p, KDATA, (unsigned)tmp, 1) || !tmp[0])
-                                break;
-                            ln = tmp[0];
-                            if (ln == t8(nm) &&
-                                nread(&nf, p + 1, KDATA, (unsigned)np, ln + 2) == 0) {
-                                for (j = 0; j < ln; j++) {
-                                    unsigned x = (unsigned char)np[j], y = t8(nm + 1 + j);
-                                    if (x >= 'a' && x <= 'z') x -= 32;
-                                    if (y >= 'a' && y <= 'z') y -= 32;
-                                    if (x != y)
-                                        break;
-                                }
-                                if (j == ln)
-                                    ord = (unsigned char)np[ln] | ((unsigned char)np[ln + 1] << 8);
-                            }
-                            p += ln + 3;
-                        }
-                    }
+                    ord = ord_byname(dm, MK_FP(SCRATCH, H16(c, NE_IMPTAB) + b));
+                    if (ord == 0xFFFF)
+                        return -1;
+                    tmap(c);
                     if (!ord) {
                         ne_log("NE: Name fehlt in ", M(dm)->name);
                         return -1;
@@ -857,30 +898,9 @@ int __far ne_load(int t, int drive, const char *path, struct ne_start *st)
 {
     int r, m;
     unsigned i;
-    if (!ne_sel) {
-        ne_sel = kseg_alloc((unsigned long)NEMOD * NEMSZ +
-                            NTASK * sizeof(struct neexe));
-        if (!ne_sel)
-            return EXEC_ERR_NOMEM;
-        for (m = 0; m < NEMOD; m++)
-            M(m)->used = 0;
-        for (m = 0; m < NTASK; m++)
-            NEX(m)->drive = 0xFF;
-    }
+    if (ne_init())
+        return EXEC_ERR_NOMEM;
     bkl_hold++;
-    if (!ne_stub && (ne_stubpg = kf_mem_get(1)) != 0) {
-        ne_floor = 2;
-        ne_stub = sh_alloc();                   /* bleibt fuer immer       */
-        if (!ne_stub) {
-            mem_free(ne_stubpg, 1);
-            ne_stubpg = 0;
-        } else {
-            scratch_map(PG_LIN(ne_stubpg), MEM_PAGE - 1);
-            for (i = 0; i < sizeof(ne_stubc); i++)
-                *(unsigned char __far *)MK_FP(SCRATCH, i) = ne_stubc[i];
-            image_units++;
-        }
-    }
     task[t].nemods = 0;
     for (i = 0; i < nldt; i++) {
         LDT(t, i)->access = 0;
@@ -888,6 +908,7 @@ int __far ne_load(int t, int drive, const char *path, struct ne_start *st)
     }
     ne_floor = 2;
     r = ne_do(t, drive, path, -1, st);
+    NEX(t)->stat = r ? 0 : task[t].nemods & 0x7FFF;
     if (r) {
         for (i = ne_floor; i < nldt; i++)       /* Instanzkopien der DLLs */
             if (LDT(t, i)->access && !(LDT(t, i)->rsv & D_ALIAS)) {
@@ -933,6 +954,302 @@ unsigned __far ne_getmod(int t, const char *nm)
                 return m + 1;
         }
     }
+    return 0;
+}
+
+/* ---- DosLoadModule (FAPI_MODULE, 6.5) ---------------------------------
+   Eine DLL zur Laufzeit an Task t haengen (auch an FX-Programme: deren
+   LDT-Eintraege 0/1 und DosAllocSeg-Plaetze kommen den gemeinsamen
+   Eintraegen von oben nicht in die Quere). Zaehler je Task und DLL in
+   NEX(t)->dl; NEX(t)->stat = Importe der EXE (bleiben immer). */
+
+static int ne_init(void)
+{
+    int m, t;
+    unsigned i;
+    if (!ne_sel) {
+        ne_sel = kseg_alloc((unsigned long)NEMOD * NEMSZ +
+                            NTASK * sizeof(struct neexe));
+        if (!ne_sel)
+            return EXEC_ERR_NOMEM;
+        for (m = 0; m < NEMOD; m++)
+            M(m)->used = 0;
+        for (t = 0; t < NTASK; t++) {
+            NEX(t)->drive = 0xFF;
+            NEX(t)->stat = 0;
+            for (m = 0; m < NEMOD; m++)
+                NEX(t)->dl[m] = 0;
+        }
+    }
+    if (!ne_stub && (ne_stubpg = kf_mem_get(1)) != 0) {
+        ne_floor = 2;
+        ne_stub = sh_alloc();                   /* bleibt fuer immer       */
+        if (!ne_stub) {
+            mem_free(ne_stubpg, 1);
+            ne_stubpg = 0;
+        } else {
+            scratch_map(PG_LIN(ne_stubpg), MEM_PAGE - 1);
+            for (i = 0; i < sizeof(ne_stubc); i++)
+                *(unsigned char __far *)MK_FP(SCRATCH, i) = ne_stubc[i];
+            image_units++;
+        }
+    }
+    return 0;
+}
+
+/* DLLs, die Task t braucht: Importe der EXE + geladene, mit Abhaengigkeiten */
+static void need_add(int m, unsigned *mask)
+{
+    unsigned k;
+    if (*mask & (1u << m))
+        return;
+    *mask |= 1u << m;
+    for (k = 0; k < M(m)->ndep; k++)
+        need_add(M(m)->dep[k], mask);
+}
+
+/* Was Task t nicht mehr braucht, abhaengen (Eintraege, Instanzkopien) */
+static void ne_detach(int t)
+{
+    unsigned need = 0, k;
+    int m;
+    for (m = 0; m < NEMOD; m++)
+        if (M(m)->used && ((NEX(t)->stat & (1u << m)) || NEX(t)->dl[m]))
+            need_add(m, &need);
+    for (m = 0; m < NEMOD; m++) {
+        struct nemod __far *p = M(m);
+        if (!(task[t].nemods & (1u << m)) || (need & (1u << m)))
+            continue;
+        for (k = 0; k < p->nseg; k++) {
+            unsigned i = p->seg[k].idx;
+            if (!i || !LDT(t, i)->access)
+                continue;
+            if (!(LDT(t, i)->rsv & D_ALIAS)) {  /* Instanzkopie          */
+                unsigned n = PAGES((unsigned long)LDT(t, i)->limit + 1);
+                mem_free(dbase(LDT(t, i)) >> 12, n);
+                alloc_units -= n;
+            }
+            LDT(t, i)->access = 0;
+            LDT(t, i)->rsv = 0;
+        }
+        task[t].nemods &= ~(1u << m);
+        if (--p->refs == 0)
+            mod_free(m);
+    }
+}
+
+/* Name -> Modulname (8 Zeichen, gross) und Suchweg. np = Pfad bei Pfad */
+static int mname(const char *in, char *nm, int *haspath)
+{
+    unsigned i, b = 0, n = 0;
+    *haspath = 0;
+    for (i = 0; in[i]; i++)
+        if (in[i] == '\\' || in[i] == ':') {
+            *haspath = 1;
+            b = i + 1;
+        }
+    for (i = b; in[i] && in[i] != '.'; i++) {
+        char a = in[i];
+        if (n >= 8)
+            return -1;
+        if (a >= 'a' && a <= 'z')
+            a -= 32;
+        nm[n++] = a;
+    }
+    nm[n] = 0;
+    return n ? 0 : -1;
+}
+
+/* MODULE_LOAD. name: wie vom Programm; drive/path: aufgeloester Pfad,
+   wenn name einen Pfad hat (sonst drive < 0). fr = FAPI-Rahmen (start.asm
+   fapi_entry_). *h = Kennung. Rueckgabe 0 oder FAPI-Fehler */
+unsigned __far ne_modload(int t, const char *name, int drive, const char *path,
+                          unsigned short *fr, unsigned *h)
+{
+    char nm[9];
+    int m, fm = -1, hp, r = 0;
+    unsigned k, i, before, j;
+    if (mname(name, nm, &hp) || ne_init())
+        return FAPI_ERROR;
+    bkl_hold++;
+    for (m = 0; m < NEMOD; m++) {
+        if (!M(m)->used) {
+            if (fm < 0)
+                fm = m;
+            continue;
+        }
+        for (k = 0; k < 9 && M(m)->name[k] == nm[k] && nm[k]; k++)
+            ;
+        if (k < 9 && M(m)->name[k] == nm[k])
+            break;
+    }
+    if (m == NEMOD) {                           /* neu laden              */
+        if (fm < 0) {
+            bkl_hold--;
+            return FAPI_ERR_FULL;
+        }
+        m = fm;
+        r = -1;
+        /* Reihenfolge: ohne Pfad aktuelles Verzeichnis (drive/path, wie
+           LIBPATH=. bei OS/2), Verzeichnis der EXE, \DOS\SYSTEM, \DOS;
+           mit Pfad nur dieser */
+        for (k = 3; k < 7 && r; k = k == 3 ? (hp ? 7 : 0) : k == 2 ? 7 : k + 1) {
+            int d = sys_drive;
+            if (k == 3 && drive < 0)
+                continue;
+            j = 0;
+            if (k == 0) {                       /* Verzeichnis der EXE    */
+                if (NEX(t)->drive == 0xFF)
+                    continue;
+                d = NEX(t)->drive;
+                for (i = 0; NEX(t)->path[i]; i++)
+                    ;
+                while (i && NEX(t)->path[i - 1] != '\\')
+                    i--;
+                for (j = 0; j < i; j++)
+                    np[j] = NEX(t)->path[j];
+            } else if (k < 3) {
+                const char *pre = k == 1 ? "\\DOS\\SYSTEM\\" : "\\DOS\\";
+                while (*pre)
+                    np[j++] = *pre++;
+            } else {
+                d = drive;
+                for (j = 0; path[j] && j < IFS_PATHLEN - 1; j++)
+                    np[j] = path[j];
+                np[j] = 0;
+            }
+            if (k < 3) {
+                for (i = 0; nm[i]; i++)
+                    np[j++] = nm[i];
+                np[j++] = '.'; np[j++] = 'D'; np[j++] = 'L'; np[j++] = 'L';
+                np[j] = 0;
+            }
+            M(m)->used = 1;
+            for (i = 0; i < 9; i++)
+                M(m)->name[i] = nm[i];
+            nd = -1;
+            r = ne_do(t, d, np, m, 0);
+            if (r)
+                M(m)->used = 0;
+        }
+        if (r) {
+            for (i = 0; i < NEMOD; i++)         /* Abhaengigkeiten ohne Benutzer */
+                if (M(i)->used && !M(i)->refs)
+                    mod_free(i);
+            bkl_hold--;
+            return r == EXEC_ERR_NOMEM ? FAPI_ERR_FULL : FAPI_ERROR;
+        }
+    }
+    if (NEX(t)->dl[m] == 0xFF) {
+        bkl_hold--;
+        return FAPI_ERR_FULL;
+    }
+    before = task[t].nemods & 0x7FFF;
+    NEX(t)->dl[m]++;
+    if (attach(t, m)) {
+        NEX(t)->dl[m]--;
+        ne_detach(t);
+        for (i = 0; i < NEMOD; i++)
+            if (M(i)->used && !M(i)->refs)
+                mod_free(i);
+        bkl_hold--;
+        return FAPI_ERR_FULL;
+    }
+    *h = m + 1;
+    nil = 0;
+    iseen = before;
+    init_collect(m);
+    if (nil) {                                  /* Start-Routinen im Ring 3 */
+        unsigned w = nil * 5 + 1 + 11, sp = fr[12], ss = fr[13], q;
+        struct desc __far *sd = LDT(t, ss >> 3);
+        unsigned short __far *s;
+        if (!ne_stub || (ss & 7) != 7 || (sd->access & 0x1A) != 0x12 ||
+            sp < w * 2 + 64U || (unsigned long)sp - 1 > sd->limit) {
+            ne_log("NE: kein Platz fuer DLL-Start ", M(m)->name);
+            NEX(t)->dl[m]--;
+            ne_detach(t);
+            bkl_hold--;
+            return FAPI_ERR_FULL;
+        }
+        desc_put(t, ne_stub, PG_LIN(ne_stubpg), sizeof(ne_stubc) - 1, ACC_UCODE, 1);
+        scratch2_map(dbase(sd), sd->limit);
+        s = MK_FP(SCRATCH2, sp - w * 2);
+        for (i = 0, q = 0; i < nil; i++) {
+            struct nemod __far *p = M(ilist[i]);
+            s[q++] = ilist[i] + 1;
+            s[q++] = p->ads ? USEL(p->seg[p->ads - 1].idx) : 0;
+            s[q++] = p->heap;
+            s[q++] = p->iip;
+            s[q++] = USEL(p->seg[p->ics - 1].idx);
+        }
+        s[q++] = 0;
+        s[q++] = m + 1;
+        s[q++] = fr[2];                         /* BP SI DI BX CX DX ES DS */
+        s[q++] = fr[1];
+        s[q++] = fr[0];
+        s[q++] = fr[4];
+        s[q++] = fr[6];
+        s[q++] = fr[5];
+        s[q++] = fr[8];
+        s[q++] = fr[9];
+        s[q++] = fr[10];                        /* IP, CS                 */
+        s[q++] = fr[11];
+        fr[10] = NE_RSTUB;
+        fr[11] = USEL(ne_stub);
+        fr[12] = sp - w * 2;
+    }
+    bkl_hold--;
+    return 0;
+}
+
+/* MODULE_FREE */
+unsigned __far ne_modfree(int t, unsigned h)
+{
+    if (!ne_sel || h == 0 || h > NEMOD || !NEX(t)->dl[h - 1])
+        return FAPI_ERROR;
+    NEX(t)->dl[h - 1]--;
+    ne_detach(t);
+    return 0;
+}
+
+/* MODULE_PROCADDR: q im Kernel (KDATA) */
+unsigned __far ne_procaddr(int t, struct fapi_procaddr *q)
+{
+    unsigned char pn[35];
+    unsigned ord = q->ord, es, eo, i;
+    int m = q->mod - 1;
+    if (!ne_sel || m < 0 || m >= NEMOD || !(task[t].nemods & (1u << m)))
+        return FAPI_ERROR;
+    if (!ord) {
+        for (i = 0; i < 33 && q->name[i]; i++)
+            pn[1 + i] = q->name[i];
+        if (!i)
+            return FAPI_ERROR;
+        pn[0] = (unsigned char)i;
+        ord = ord_byname(m, (unsigned char __far *)pn);
+        if (!ord || ord == 0xFFFF)
+            return FAPI_ERROR;
+    }
+    es = ent_find(ne_sel, m * NEMSZ + NE_TABOFF, M(m)->entlen, ord, &eo);
+    if (!es || es > M(m)->nseg)
+        return FAPI_ERROR;
+    q->sel = USEL(M(m)->seg[es - 1].idx);
+    q->off = eo;
+    return 0;
+}
+
+/* MODULE_NAME: voller Pfad "X:\..." nach buf (IFS_PATHLEN) */
+unsigned __far ne_modname(int t, unsigned h, char *buf)
+{
+    unsigned i;
+    int m = h - 1;
+    if (!ne_sel || m < 0 || m >= NEMOD || !(task[t].nemods & (1u << m)))
+        return FAPI_ERROR;
+    buf[0] = (char)('A' + M(m)->drive);
+    buf[1] = ':';
+    for (i = 0; M(m)->path[i] && i < IFS_PATHLEN - 3; i++)
+        buf[2 + i] = M(m)->path[i];
+    buf[2 + i] = 0;
     return 0;
 }
 
