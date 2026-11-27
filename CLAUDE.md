@@ -2081,7 +2081,7 @@ INT 2Fh-Kennungen in INC/MULT.INC (16h WIN386, 17h Zwischenablage).
 `v4.0-ozzie`: Multitasking-DOS-4-Beta (Grundlage dieser Zeitlinie, auf
 MS-DOS-2-Quellen) als Disketten + 11 Handbücher als gescannte PDFs (ohne
 Textebene). Für virtuelle Geräte außerdem DOSEMU2 (GPL, V86 wie wir),
-DOSBox (GPL, SB/OPL), ReactOS NTVDM (GPL). OS/2-Quellen sind nicht
+DOSBox (GPL, SB/OPL), ReactOS NTVDM (GPL). DR-DOS/OpenDOS 7.01 (Klon von github.com/roytam1/edrdos unter /tmp/claude-0/edr/edrdos, falls vorhanden; Entscheidung des Nutzers, 27.11.2026: „wenn man lesen darf, sollte man es tun“): Caldera-Lizenz LICENSE.TXT, Teil IV – Quelltext frei für persönliche, nicht-kommerzielle Nutzung, abgeleitete Werke bleiben Eigentum von Caldera (TITLE) und gehen an Caldera zurück; nicht GPL-verträglich. Also nur lesen (Verhalten, Strukturen, wie DR-DOS Windows 3.x bedient), nichts abschreiben oder übersetzen, eigenen Code schreiben; Herkunft als „nachgelesen in OpenDOS 7.01“ vermerken. OS/2-Quellen sind nicht
 freigegeben (Lecks nicht verwenden).
 
 Zweite Meinung: Der Nutzer hat einen Gemini-MCP-Server verbunden
