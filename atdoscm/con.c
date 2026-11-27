@@ -153,28 +153,96 @@ static int std_get(void)
 }
 
 /* ---- Zeileneingabe (0Ah, gekochtes Lesen) ------------------------------- */
+/* Vorlage wie MS-DOS 4.0 KSTRIN.ASM: F1/Rechts ein Zeichen, F2 bis vor ein
+   Zeichen, F3 Rest, F4 bis vor ein Zeichen ueberspringen, F5 Zeile wird
+   Vorlage ("@"), Entf ein Zeichen ueberspringen, Einfg Einfuegen an/aus,
+   F6 ^Z, F7 Zeichen 0, Esc Zeile verwerfen ("\"), Links/Rueck loeschen */
+static u8 ln_tmp[130];
+static unsigned ln_n, ln_tp, ln_tl, ln_max;
+
+static void ln_copy(u8 __far *buf, unsigned k)
+{
+    while (k-- && ln_n + 1 < ln_max && ln_tp < ln_tl) {
+        buf[2 + ln_n++] = ln_tmp[ln_tp];
+        con_out(ln_tmp[ln_tp++]);
+    }
+}
+
+/* naechste Taste, in der Vorlage ab tp+1 suchen; Abstand oder 0 */
+static unsigned ln_find(void)
+{
+    unsigned c = (unsigned)con_key(1), i;
+    if (c == 0) {                       /* Funktionstaste: nichts        */
+        con_key(1);
+        return 0;
+    }
+    for (i = ln_tp + 1; i < ln_tl; i++)
+        if (ln_tmp[i] == (u8)c)
+            return i - ln_tp;
+    return 0;
+}
+
 void con_line(u8 __far *buf)
 {
-    unsigned max = buf[0], n = 0, tl = buf[1], tp = 0, c;
-    u8 tmp[130];
-    unsigned i;
-    if (!max)
+    unsigned c, i, ins = 0;
+    ln_max = buf[0];
+    if (!ln_max)
         return;
-    for (i = 0; i < tl && i < 128; i++)
-        tmp[i] = buf[2 + i];
+    ln_tl = buf[1];
+    if (ln_tl > 128)
+        ln_tl = 128;
+    for (i = 0; i < ln_tl; i++)
+        ln_tmp[i] = buf[2 + i];
+    ln_n = ln_tp = 0;
     for (;;) {
         c = (unsigned)con_key(1);
         if (c == 0) {
             c = (unsigned)con_key(1);
-            if (c == 0x3D || c == 0x4D) {       /* F3 / F1: Vorlage      */
-                while (tp < tl && n + 1 < max && (c == 0x3D || tp == n)) {
-                    buf[2 + n++] = tmp[tp];
-                    con_out(tmp[tp++]);
-                    if (c == 0x4D)
-                        break;
-                }
+            switch (c) {
+            case 0x3B: case 0x4D:       /* F1, Rechts                    */
+                ins = 0;
+                ln_copy(buf, 1);
+                continue;
+            case 0x3C:                  /* F2                            */
+                ins = 0;
+                ln_copy(buf, ln_find());
+                continue;
+            case 0x3D:                  /* F3                            */
+                ins = 0;
+                ln_copy(buf, 0xFFFF);
+                continue;
+            case 0x3E:                  /* F4                            */
+                ln_tp += ln_find();
+                continue;
+            case 0x3F:                  /* F5: Zeile wird Vorlage        */
+                con_out('@');
+                con_out(13);
+                con_out(10);
+                for (i = 0; i < ln_n; i++)
+                    ln_tmp[i] = buf[2 + i];
+                ln_tl = ln_n;
+                ln_n = ln_tp = 0;
+                ins = 0;
+                continue;
+            case 0x53:                  /* Entf                          */
+                if (ln_tp < ln_tl)
+                    ln_tp++;
+                continue;
+            case 0x52:                  /* Einfg                         */
+                ins = !ins;
+                continue;
+            case 0x40:                  /* F6: ^Z                        */
+                c = 0x1A;
+                break;
+            case 0x41:                  /* F7: Zeichen 0                 */
+                c = 0x100;
+                break;
+            case 0x4B:                  /* Links = Rueckschritt          */
+                c = 8;
+                break;
+            default:
+                continue;
             }
-            continue;
         }
         if (c == 3) {
             cc_echo();
@@ -184,11 +252,11 @@ void con_line(u8 __far *buf)
         }
         if (c == 13)
             break;
-        if (c == 8) {
-            if (n) {
-                n--;
-                if (tp)
-                    tp--;
+        if (c == 8 || c == 0x7F) {
+            if (ln_n) {
+                ln_n--;
+                if (ln_tp)
+                    ln_tp--;
                 con_out(8);
                 con_out(' ');
                 con_out(8);
@@ -199,20 +267,28 @@ void con_line(u8 __far *buf)
             con_out('\\');
             con_out(13);
             con_out(10);
-            n = tp = 0;
+            ln_n = ln_tp = 0;
+            ins = 0;
             continue;
         }
-        if (n + 1 >= max) {
+        if (c == 6)                             /* ^F uebergehen         */
+            continue;
+        if (c == 10) {                          /* LF: neue Zeile, weiter */
+            con_out(13);
+            con_out(10);
+            continue;
+        }
+        if (ln_n + 1 >= ln_max) {
             con_out(7);
             continue;
         }
-        buf[2 + n++] = (u8)c;
-        if (tp < tl)
-            tp++;
-        con_out(c);
+        buf[2 + ln_n++] = (u8)c;
+        if (!ins && ln_tp < ln_tl)
+            ln_tp++;
+        con_out(c == 0x100 ? ' ' : c);
     }
-    buf[1] = (u8)n;
-    buf[2 + n] = 13;
+    buf[1] = (u8)ln_n;
+    buf[2 + ln_n] = 13;
     con_out(13);
 }
 

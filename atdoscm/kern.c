@@ -437,6 +437,8 @@ static struct frame __far *old_exit(struct frame __far *f)
     return f;
 }
 
+static u8 prn_flag;                     /* 64h, nur gemerkt              */
+
 struct frame __far *int21_c(struct frame __far *f)
 {
     u8 ah = AH(f);
@@ -479,6 +481,37 @@ struct frame __far *int21_c(struct frame __far *f)
     case 0x19:
         AL(f) = cur_drv;
         break;
+    case 0x18: case 0x1D: case 0x1E: case 0x20: case 0x61:
+    case 0x6B:                          /* CP/M-Platzhalter, IFS-IOCTL:  */
+        AL(f) = 0;                      /* nur AL = 0 (MS_TABLE.ASM)     */
+        break;
+    case 0x64:                          /* Druckermerker (fuer PRINT)    */
+        prn_flag = AL(f);
+        break;
+    case 0x53:                          /* DPB aus BPB (MISC.ASM)        */
+        set_dpb(f->ds, f->si, f->es, f->bp);
+        break;
+    case 0x26: {                        /* PSP bei DX, alte Art (MS-DOS
+                                           4.0 MISC.ASM): Kopie des PSP
+                                           im CS des Aufrufers, Handles
+                                           nur kopiert, aktueller PSP
+                                           bleibt                        */
+        u16 n = f->dx, c = f->cs, top = W(c, 0x02);
+        unsigned i;
+        if (n != c)
+            for (i = 0; i < 0x80; i++)
+                *(u16 __far *)MK_FP(n, i * 2) = *(u16 __far *)MK_FP(c, i * 2);
+        psp_jcopy(n, c);
+        W(n, 0x02) = top;
+        D(n, 0x0A) = D(0, 0x22 * 4);
+        D(n, 0x0E) = D(0, 0x23 * 4);
+        D(n, 0x12) = D(0, 0x24 * 4);
+        W(n, 0x32) = 20;
+        W(n, 0x34) = 0x18;
+        W(n, 0x36) = n;
+        D(n, 0x38) = 0xFFFFFFFFUL;
+        break;
+    }
     case 0x1A:
         dta_off = f->dx;
         dta_seg = f->ds;

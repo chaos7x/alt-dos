@@ -393,6 +393,10 @@ struct frame __far *exec_fn(struct frame __far *f)
     struct ld o;
     unsigned e, al = AL(f);
     u16 par = cur_psp(), pseg = f->es, poff = f->bx;
+    if (al == 5) {                      /* Ausfuehrungszustand (DOS 5):  */
+        f->ax = 0;                      /* nur bestaetigen               */
+        return f;
+    }
     if (al != 0 && al != 1 && al != 3) {
         set_err(f, E_FUNC);
         return f;
