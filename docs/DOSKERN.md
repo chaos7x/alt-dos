@@ -1604,6 +1604,17 @@ Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
 von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
 MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
+### Geklärt (27.11.2026): Windows wird nach DOS-Eingabeaufforderungen langsamer
+
+Vom Nutzer gemeldet: nach mehrmaligem Öffnen und Schließen der DOS-
+Eingabeaufforderung bauen sich Systemsteuerung und Datei-Manager immer
+langsamer auf. In 86Box (P3B-F, 256 MB) nachgestellt; die Zeit geht in
+einer Schleife in Windows selbst verloren, Windows holt nach dem Start
+keinen DPMI-Speicher mehr (Spur 0501h/0502h/0503h leer). Gegenprobe des
+Nutzers: MS-DOS 6.20 + QEMM mit `WIN /S` (Standardmodus, ~253 MB frei)
+verhält sich genauso – Verhalten von Windows im Standardmodus, kein
+Fehler von AT-DOS. Abhilfe: weniger Speicher für die VM.
+
 ### Erledigt (27.11.2026): Datei-Dialoge unter Windows
 
 Vom Nutzer gemeldet: Systemsteuerung -> Treiber -> Hinzufügen -> nicht
