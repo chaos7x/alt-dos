@@ -108,6 +108,7 @@ static void ctry_date(char *o, unsigned d)
     *o = 0;
 }
 
+#ifndef CTRY_NO_TIME
 /* FAT-Zeit (Sek./2 0-4, Minute 5-10, Stunde 11-15); sec: mit Sekunden */
 static void ctry_time(char *o, unsigned t, int sec)
 {
@@ -129,6 +130,7 @@ static void ctry_time(char *o, unsigned t, int sec)
         *o++ = ap;
     *o = 0;
 }
+#endif
 
 #ifndef CTRY_NO_DPAT
 /* Eingabeformat fuer DATE: "TT.MM.JJ" in der Folge des Landes */

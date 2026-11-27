@@ -32,6 +32,18 @@ abbrechen“ nur nach einem Abbruch durch das System (`task.ab`/`child_ab`,
 DETACH mit Umleitung zugleich, FORMAT einer zweiten Platte mit 8/32 ->
 BPB 32/8, CHKDSK, fsck sauber). Erstes Codesegment danach 65.267 Byte
 (253 frei!) – neuer Kernelcode nur noch nach KTEXT2 (52.390).
+Teil 2 Werkzeuge ohne Kernelbedarf (27.11.2026, Quelltexte unverändert
+aus main): DIFF, PATCH (lines.h), SED, HEXEDIT, WHERE, DU, DF, TOUCH, TEE,
+XARGS, SEQ, SLEEP, TIMEOUT, BASE64, SHA256SUM (task_md5sum.c aus main),
+FREE, UNAME, WHOIS, DIG und NSLOOKUP (dnsq.h), AT; alle in HDDOS (Platte,
+Setup-Disketten füllen sich selbst). In QEMU geprüft (isapc 4 MB:
+diff/patch/sed/base64/Prüfsummen gegen den Rechner, where/du/df/free/
+uname, AT-Liste). Noch offen aus 6.3/6.4: PS/KILL/TOP und UPTIME
+(PROC_INFO2), ARP (NET_NEIGH), TRACERT (ttl_out), BACKUP/RESTORE
+(FIND_SNAME, FAPI_UNINAME), CURL (TLS herausnehmen), CMD-Erweiterungen
+(BEEP/TITLE brauchen FAPI 61h/62h), Kernel: PANIC.LOG, RUN=, LEDs/MODE
+CON RATE, Netzdrucker, NDRV 16 + DEINIT, Treiber-Startcode freigeben,
+CD-Vorauslesen – alles nur mit Platz im ersten Codesegment bzw. in KTEXT2.
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`

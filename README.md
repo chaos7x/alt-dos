@@ -471,6 +471,12 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   -p -r -s n -u] [Ein [Aus]]` wie xxd (`XXD -r` patcht); `DMESG [-c] [-C]
   [-n Zeilen]` zeigt die letzten 8 KB der Kernelmeldungen mit der Zeit
   seit dem Start (Startzeilen, Treiber, abgebrochene Programme)
+- Weitere Werkzeuge aus 6.3 (auf der Platte bzw. den Setup-Disketten):
+  `DIFF` (normal und `-u`), `PATCH`, `SED`, `HEXEDIT`, `WHERE`, `DU`, `DF`,
+  `TOUCH`, `TEE`, `XARGS`, `SEQ`, `SLEEP`, `TIMEOUT`, `BASE64`,
+  `SHA256SUM`, `FREE`, `UNAME`, `WHOIS`, `DIG` (wie BIND-dig), `NSLOOKUP`
+  wie unter Windows, `AT` (Zeitplaner wie NT: `AT 14:30 /EVERY:Mo "Befehl"`,
+  Dienst `AT /SERVICE` startet von selbst)
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
