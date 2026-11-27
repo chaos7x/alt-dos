@@ -2186,7 +2186,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   86Box P3B-F 4,5 -> 1,9–2,0 s (MS-DOS 6.22: 1,9–2,6 s): `ldt_alloc` mit Merker `lm_hint`, far_copy mit rep movsd, MSCDEX-Abfrage ohne Diskettenzugriff (`kf_cd_blocks`, auch Laufwerkswechsel im Datei-Manager); CD-Laufwerke lesen 32 KB je Befehl (`kernel/cdra.c` `cd_ra`, Treiber melden Bit 80h in count: IDE.SYS, AIC7XXX.SYS) – Windows-SETUP von CD ~5× schneller (vom Nutzer in 86Box bestätigt); Leerlauf 1689h offen, docs/DOSKERN.md
   „Startzeit von Windows“), nach WIN öffnen sich Programme von selbst
   (in QEMU mit getipptem WIN nicht nachgestellt; Verdacht Maus/Tasten),
-  „Windows kann nicht eingelagert werden“ (WSWAP). Behoben: Bezeichnung
+  „Windows kann nicht eingelagert werden“ (WSWAP; behoben 27.11.2026:
+  WinOldAp schreibt die Auslagerungsdatei ab Stelle 4 einer leeren Datei,
+  FAPI_SEEK setzte die Stelle aufs Ende – jetzt gibt FAPI_SEEK die echte
+  Stelle zurück und der DEM verlängert vor dem Schreiben, wie DOS; in QEMU
+  geprüft, docs/DOSKERN.md). Behoben: Bezeichnung
   im Datei-Manager „[????1“ (WINLDR übersetzt FCB 11h/12h/13h), leeres
   Laufwerk im Datei-Manager ohne Meldung (25.11.2026: 47h prüft im
   Box-Kern das Medium über `DEM_MEDIA` wie MS-DOS, WINLDR übersetzt
