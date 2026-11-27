@@ -8146,7 +8146,17 @@ void __far kmain(void)
         env_set(-1, line);
     }
 
-    /* Dateitabelle nach FILES= */
+    /* Dateitabelle nach FILES=. Die Tabelle gilt fuer alle Programme
+       zusammen, auch fuer jede Datei, die eine DOS-Box (Windows) oeffnet -
+       FILES=30 aus MS-DOS-Zeiten reichte dort nicht ("Zur Zeit werden zu
+       viele Dateien benutzt"). Ab 4 MB daher mindestens 64, ab 8 MB 120
+       (je Eintrag ~300 Byte). */
+    {
+        unsigned long r = mem_ram_kb();
+        unsigned mn = r >= 8192UL ? 120 : r >= 4096UL ? 64 : 0;
+        if (nfiles < mn)
+            nfiles = mn;
+    }
     k = kseg_alloc(nfiles * sizeof(struct ofile));   /* < 64 KB, ohne __U4M */
     if (!k)
         pn_i(ks_70);
