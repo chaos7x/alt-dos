@@ -288,6 +288,11 @@ unsigned __far sem_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);  
 void __far sem_task_end(int t);
 unsigned __far shr_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);    /* shrseg.c */
 void __far shr_unref(unsigned long pg);
+unsigned __far np_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);     /* npipe.c */
+unsigned __far np_open(const char *buf);
+void __far np_close(unsigned first, unsigned side);
+unsigned __far np_rw(unsigned first, unsigned side, int wr, unsigned usel, unsigned off, unsigned n);
+void __far np_task_end(int t);
 struct fapi_lock;
 struct ifs_file;
 int  __far ufs_lock(struct ifs_file __far *f, struct fapi_lock __far *l);

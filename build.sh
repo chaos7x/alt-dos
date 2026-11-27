@@ -96,8 +96,8 @@ K2MODS="floppy vgagfx bus pnp mem paging k2misc vesa fat swap blkmnt codeswap"
 # KTEXT3: DOS-Boxen im dritten Codesegment (KCODE3)
 K3MODS="v86"
 # KTEXT4: viertes Codesegment (KCODE4), Erreichbarkeit wie KTEXT2 (k2.h)
-K4MODS="loop vio net redir dem vdd ufs sem shrseg panic cdra cfgboot biosdisk neload"
-for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs sem shrseg panic procfs cdra cfgboot biosdisk neload k2thunk; do
+K4MODS="loop vio net redir dem vdd ufs sem shrseg npipe panic cdra cfgboot biosdisk neload"
+for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs sem shrseg npipe panic procfs cdra cfgboot biosdisk neload k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2" ;; esac
     case " $K3MODS " in *" $m "*) S="-nt=KTEXT3" ;; esac
@@ -203,7 +203,7 @@ fi
 # 80000h (darueber Real-Mode-Reste, ab 9FC00h das EBDA)
 # Startcode (ITEXT): nur aus Startcode gerufen, fern ueber Segmentgrenzen
 python3 tools/initcheck.py -q --roots kmain_,gdt_build_,preload_ --seg ITEXT $B/start.o \
-    $(for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs sem shrseg panic procfs cdra cfgboot biosdisk neload k2thunk; do echo $B/$m.o; done) || exit 1
+    $(for m in kernel mem floppy fat vio kbd preload vgagfx bus pnp paging v86 redir dem k2misc vesa loop swap blkmnt codeswap net vdd ufs sem shrseg npipe panic procfs cdra cfgboot biosdisk neload k2thunk; do echo $B/$m.o; done) || exit 1
 [ $(stat -c %s $B/kernel.bin) -le 458752 ] || { echo "FEHLER: ATDOS.SYS groesser als 448 KB"; exit 1; }
 
 echo "Anwendungen"
@@ -215,7 +215,7 @@ ALINK="option quiet format dos option nodefaultlibs \
 # Werkzeuge mit gemeinsamer Hilfsbibliothek (apps/util.c)
 ARCAPPS="gzip gunzip tar zip unzip"
 LZHAPPS="unarj unzoo unlha lha arj zoo"        # ARJ/ZOO/LHA (lzh.c, lzhenc.c)
-UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest semtest shrtest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top diff patch tracert arp route whois curl where du df touch tee xargs seq sleep timeout uptime free uname base64 sha256sum sed hexedit corefont"
+UTILAPPS="$ARCAPPS $LZHAPPS 7zdec 7za attrib move deltree tree label choice sort fc xcopy format sys edit mode mtest grafik fputest busy joytest fdisk diskcopy subst join ansi fm diskcomp comp replace expand compress cut head tail wc uniq tr cat strings md5sum sha1sum hexdump xxd dmesg fragtest semtest shrtest nptest play mixer undel scandisk msd print at backup restore defrag setver vesa vdemo taskman convert aweload eject devload loop packdisk setup ping ipconfig nslookup dig nc netstat firewall mkdosimg wget ftp telnet sntp smbcli net kinit klist kdestroy ssh sftp domjoin logon hostname net1 ps kill pstree top diff patch tracert arp route whois curl where du df touch tee xargs seq sleep timeout uptime free uname base64 sha256sum sed hexedit corefont"
 wcc $CFLAGS -fo=$B/util.o apps/util.c
 wcc $CFLAGS -fo=$B/flate.o apps/flate.c      # Deflate, CRC-32 (Packprogramme)
 wcc $CFLAGS -fo=$B/arcutil.o apps/arcutil.c
@@ -426,7 +426,7 @@ DEMOFILES="$B/bioscmp.com BIOSCMP.COM  $B/task_a.exe TASKA.EXE  $B/task_b.exe TA
 # Werkzeuge der Setup-Diskette 2 (Packprogramme, GNU-Textwerkzeuge, ...)
 HDDOS="$B/task_logon.exe LOGON.EXE  $B/task_dig.exe DIG.EXE  $B/task_hostname.exe HOSTNAME.EXE  $B/task_backup.exe BACKUP.EXE  $B/task_restore.exe RESTORE.EXE  $B/task_klist.exe KLIST.EXE  $B/task_kdestroy.exe KDESTROY.EXE  $B/task_gzip.exe GZIP.EXE  $B/task_gunzip.exe GUNZIP.EXE  $B/task_tar.exe TAR.EXE  $B/task_zip.exe ZIP.EXE  $B/task_unzip.exe UNZIP.EXE  $B/task_unarj.exe UNARJ.EXE  $B/task_unzoo.exe UNZOO.EXE  $B/task_unlha.exe UNLHA.EXE  $B/task_7zdec.exe 7ZDEC.EXE  $B/task_lha.exe LHA.EXE  $B/task_arj.exe ARJ.EXE  $B/task_zoo.exe ZOO.EXE  $B/task_7za.exe 7ZA.EXE  $B/task_cat.exe CAT.EXE  $B/task_strings.exe STRINGS.EXE  $B/task_md5sum.exe MD5SUM.EXE  $B/task_sha1sum.exe SHA1SUM.EXE  $B/task_hexdump.exe HEXDUMP.EXE  $B/task_xxd.exe XXD.EXE  $B/task_loop.exe LOOP.EXE  $B/task_packdisk.exe PACKDISK.EXE  $B/task_mkdosimg.exe MKDOSIMG.EXE  $B/task_aweload.exe AWELOAD.EXE  $B/task_cut.exe CUT.EXE  $B/task_head.exe HEAD.EXE  $B/task_tail.exe TAIL.EXE  $B/task_wc.exe WC.EXE  $B/task_uniq.exe UNIQ.EXE  $B/task_tr.exe TR.EXE  $B/task_compress.exe COMPRESS.EXE  $B/task_ssh.exe SSH.EXE  $B/task_sftp.exe SFTP.EXE"
 # Testprogramme (Setup-Diskette 2)
-HDDEMO="$B/hallow.exe HALLOW.EXE  $B/dosbench.com DOSBENCH.COM  $B/dosstruc.com DOSSTRUC.COM  $B/task_fragtest.exe FRAGTEST.EXE  $B/task_semtest.exe SEMTEST.EXE  $B/task_shrtest.exe SHRTEST.EXE  $B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/task_joytest.exe JOYTEST.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
+HDDEMO="$B/hallow.exe HALLOW.EXE  $B/dosbench.com DOSBENCH.COM  $B/dosstruc.com DOSSTRUC.COM  $B/task_fragtest.exe FRAGTEST.EXE  $B/task_semtest.exe SEMTEST.EXE  $B/task_shrtest.exe SHRTEST.EXE  $B/task_nptest.exe NPTEST.EXE  $B/task_mtest.exe MAUSTEST.EXE  $B/task_fputest.exe FPUTEST.EXE  $B/task_busy.exe BUSY.EXE  $B/task_joytest.exe JOYTEST.EXE  $B/bgtest.com BGTEST.COM $B/bankt.com BANKT.COM  $B/svbg.com SVBG.COM  $B/opltest.com OPLTEST.COM  $B/vbetest.com VBETEST.COM  $B/task_vdemo.exe VDEMO.EXE"
 # Startabbild der DOS-Box (Phase 3): 360-KB-Diskette mit FreeDOS-Bootsektor,
 # KERNEL.SYS zuerst (der Bootsektor folgt der FAT-Kette), FreeCOM, BOXSHELL
 echo "DOS-Box: Startabbild freedos.img"

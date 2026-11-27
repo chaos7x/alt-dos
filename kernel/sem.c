@@ -67,6 +67,8 @@ static unsigned long ms_ticks(unsigned long ms)
     return ((unsigned long)hi << 16) | sdiv((unsigned)ms, r, 10);
 }
 
+unsigned long __far ipc_ticks(unsigned long ms) { return ms_ticks(ms); }
+
 /* ---- Zugriff ------------------------------------------------------------ */
 /* Kennung pruefen: 1 = RAM (*rp gesetzt), 2 = System (*ip), 0 = ungueltig */
 static int look(unsigned long h, unsigned __far **rp, int *ip)

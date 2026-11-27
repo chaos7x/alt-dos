@@ -218,6 +218,48 @@ Segment per GIVE, Geber gibt zuerst frei), MEM davor/danach gleich.
 - DOS-Boxen: INT 21h 3Dh auf `\PIPE\…` über den DEM (wie MS-DOS mit LAN
   Manager) – erst nach Bedarf.
 
+### Stand Stufe 4 (27.11.2026, in QEMU geprüft)
+
+`kernel/npipe.c` (KTEXT4, 3 KB), Verteiler `FAPI_NPIPE`, Handle-Art
+`OF_NPIPE` (task.h), Wrapper `DosMakeNmPipe`, `DosConnectNmPipe`,
+`DosDisConnectNmPipe`, `DosPeekNmPipe`, `DosWaitNmPipe`,
+`DosTransactNmPipe`, `DosCallNmPipe`.
+
+- 8 Instanzen im System (`NNP`), je zwei Ringe zu 2 KB (`NPBUF`), alles in
+  einem Kernelsegment (35 KB), erst beim ersten MAKE geholt. Mehr erst
+  mit Stufe 5 (dann auch Puffergröße je Pipe).
+- Kunde: `DosOpen("\\PIPE\\name")` – FAPI_OPEN fragt bei Pfaden, die mit
+  `\` beginnen, zuerst `np_open` (unter der Sperre von FAPI_OPEN, schläft
+  nicht). Ein echtes Verzeichnis `\PIPE` im Stamm ist damit nur noch mit
+  Laufwerksbuchstaben erreichbar (wie bei OS/2). Keine Instanz lauscht ->
+  FFFAh (dann DosWaitNmPipe), Name unbekannt -> FFFFh.
+- Lesen/Schreiben/Schließen über DosRead/DosWrite/DosClose, **ohne
+  Kernelsperre** (`fapi_nolock` wie Pipes und Sockets), Warten in Stücken
+  wie bei den Semaphoren (Signal -> FFF1h). DosQHandType meldet HT_PIPE.
+- Zustände DISC/LISTEN/CONN; schließt eine Seite, liest die andere den
+  Rest und dann 0 Byte, Schreiben scheitert (PEEK meldet NPS_CLOSING).
+  DISCONNECT des Dieners hängt den Kunden ab und leert die Puffer; das
+  Handle des alten Kunden ist dann tot (Generation im Handle), die
+  Instanz gleich wieder verwendbar.
+- Nachrichtenbetrieb (`NP_MSG`): Längenwort im Ring, Nachricht bis 2046
+  Byte, ein Lesen liefert höchstens eine; kleinerer Puffer -> Rest beim
+  nächsten Lesen. TRANSACT/CALL nur dort. CALL hängt den Kunden ohne
+  Handle an (`cltask`, `np_task_end` räumt auf, wenn er dabei endet).
+- Abweichungen von OS/2: kein QSTATE (PEEK mit Größe 0 liefert Zustand
+  und Füllstand), kein nicht blockierender Betrieb, keine getrennten
+  Lese-/Schreibrichtungen (immer beide), ein Betrieb für beide Seiten.
+- Nicht: Stub (MS-DOS), DOS-Boxen (INT 21h 3Dh auf `\PIPE\`), Netz.
+
+Geprüft mit `\DEMO\NPTEST.EXE` (nur Platte), Diener und Kunde in zwei
+Tasks: Bytebetrieb 20 × 1000 Byte hin und zurück, besetzte Instanz,
+unbekannter Name, Nachrichten mit 1/100/2046 Byte über TRANSACT, zu große
+Nachricht, PEEK, Teil-Lesen einer Nachricht, zweimal CALL, Diener
+schließt zuerst (Rest lesen, Dateiende, Schreiben scheitert); anonyme
+Pipes (`|`) unverändert.
+
+Platz: KTEXT4 danach 63.058 Byte (2,4 KB frei) – vor dem nächsten Modul
+dort ein fünftes Codesegment anlegen oder IPC-Module verschieben.
+
 ## Dazwischen: Rest der Kernelsperre (vor Stufe 5/6)
 
 Entscheidung des Nutzers (27.11.2026): der Abbau von `klock`, in

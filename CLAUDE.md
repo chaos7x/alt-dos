@@ -2109,7 +2109,11 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   geprüft – Test /tmp/claude-0/sem/go.sh). Stufe 3 gemeinsame Segmente
   erledigt (27.11.2026, `kernel/shrseg.c`, FAPI 69h mit Kernelsperre,
   Einträge mit `D_ALIAS`, seg_free -> `shr_unref`; Test `\DEMO\SHRTEST`,
-  in QEMU geprüft). Reihenfolge (Entscheidung des
+  in QEMU geprüft). Stufe 4 Named Pipes erledigt (27.11.2026,
+  `kernel/npipe.c`, FAPI 6Ah und `OF_NPIPE` ohne Kernelsperre, Kunde über
+  DosOpen `\PIPE\name` -> `np_open`; Test `\DEMO\NPTEST`, in QEMU
+  geprüft). KTEXT4 danach 63.058 Byte – voll: vor dem nächsten Modul dort
+  ein fünftes Codesegment oder IPC-Module verschieben. Reihenfolge (Entscheidung des
   Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
   des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
   Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.

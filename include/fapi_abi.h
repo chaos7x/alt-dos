@@ -446,6 +446,62 @@ struct fapi_muxsem {
                                        (Nummer wie DosProc) -> Selektor,
                                        der dort gilt (dem anderen Programm
                                        mitteilen)                        */
+#define FAPI_NPIPE          0x6A    /* Named Pipes (6.5, wie DosMakeNmPipe/
+                                       DosConnectNmPipe/DosDisConnectNmPipe/
+                                       DosPeekNmPipe/DosWaitNmPipe/
+                                       DosTransactNmPipe/DosCallNmPipe von
+                                       OS/2 1.x): BX = NPIPE_*. Der Kunde
+                                       oeffnet "\\PIPE\\name" mit DosOpen
+                                       (FAPI_ERR_INUSE = keine Instanz
+                                       lauscht gerade); beide Seiten lesen,
+                                       schreiben und schliessen mit DosRead/
+                                       DosWrite/DosClose. Lesen wartet auf
+                                       Daten; 0 = Gegenseite hat geschlossen.
+                                       Schreiben wartet auf Platz;
+                                       FAPI_ERROR = Gegenseite weg/getrennt.
+                                       8 Instanzen im System, Puffer 2 KB je
+                                       Richtung */
+#define NPIPE_MAKE          0       /* CX = Name, DX = NP_* -> Handle einer
+                                       neuen Instanz (Diener); mehrfach mit
+                                       demselben Namen = mehrere Kunden
+                                       zugleich. FAPI_ERR_FULL            */
+#define NPIPE_CONNECT       1       /* CX = Handle: auf einen Kunden warten
+                                       -> 0, FAPI_ERR_INTR                */
+#define NPIPE_DISCONNECT    2       /* CX = Handle: Kunden abhaengen (sein
+                                       Handle ist dann tot), Puffer leer   */
+#define NPIPE_PEEK          3       /* CX = Handle, DX = struct fapi_nppeek */
+#define NPIPE_WAIT          4       /* CX = Name, DX = Zeiger auf Frist in
+                                       ms (unsigned long): bis eine Instanz
+                                       lauscht -> 0, FAPI_ERR_TIMEOUT,
+                                       FAPI_ERROR (Name unbekannt)        */
+#define NPIPE_TRANSACT      5       /* CX = Handle, DX = struct fapi_nptrans:
+                                       Nachricht schreiben, Antwort lesen
+                                       (nur NP_MSG)                       */
+#define NPIPE_CALL          6       /* CX = Name, DX = struct fapi_npcall:
+                                       oeffnen, TRANSACT, schliessen      */
+#define NP_MSG              1       /* Nachrichtenbetrieb: jedes Schreiben
+                                       (bis 2046 Byte) ist eine Nachricht,
+                                       ein Lesen liefert hoechstens eine  */
+#define NPS_DISC            1       /* Zustand: angelegt/getrennt         */
+#define NPS_LISTEN          2       /* wartet auf einen Kunden            */
+#define NPS_CONN            3       /* verbunden                          */
+#define NPS_CLOSING         4       /* Gegenseite hat geschlossen         */
+struct fapi_nppeek {
+    unsigned short buf, n;          /* Puffer (eigenes DS), Groesse       */
+    unsigned short got;             /* -> kopiert (bleibt in der Pipe)    */
+    unsigned short avail;           /* -> Byte im Puffer der Pipe         */
+    unsigned short msg;             /* -> Rest der laufenden Nachricht    */
+    unsigned short state;           /* -> NPS_*                           */
+};
+struct fapi_nptrans {
+    unsigned short wbuf, wn;        /* Nachricht                          */
+    unsigned short rbuf, rn;        /* Puffer fuer die Antwort            */
+    unsigned short got;             /* -> Laenge der Antwort              */
+};
+struct fapi_npcall {
+    unsigned long  ms;              /* Frist, bis eine Instanz lauscht    */
+    struct fapi_nptrans t;
+};
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

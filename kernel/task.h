@@ -81,6 +81,8 @@ struct ofile {
 #define OF_NUL  7           /* NUL                                      */
 #define OF_COM  8           /* COM1-4/AUX (f.drive = 0-3)               */
 #define OF_SOCK 9           /* Socket (TCPIP.SYS), f.first = Nummer im Stapel */
+#define OF_NPIPE 10         /* Named Pipe (npipe.c): f.first = Platz | Generation << 8,
+                               pipe = 0 Diener, 1 Kunde                 */
 #define HBASE   3           /* Handles 0-2: Standard, ab 3: eigene Dateien */
 #define CONS    0           /* Eintrag 0 ist die Konsole                */
 extern struct ofile __far *files;

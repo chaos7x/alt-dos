@@ -65,6 +65,10 @@ der 286-Linie (freigegeben: `5.0` bis `5.4`, `5.5` zur Prüfung).
   DosAllocShrSeg/DosGetShrSeg) oder an ein anderes Programm weitergegeben
   (DosGiveSeg); RAM-Semaphoren darin gelten zwischen den Programmen. Test
   `\DEMO\SHRTEST`
+- Named Pipes wie OS/2 1.x (ab 6.5): ein Dienst legt `\PIPE\name` an
+  (DosMakeNmPipe, mehrere Instanzen für mehrere Kunden), Kunden öffnen den
+  Namen wie eine Datei; Byte- oder Nachrichtenbetrieb, Frage/Antwort in
+  einem Aufruf (DosTransactNmPipe, DosCallNmPipe). Test `\DEMO\NPTEST`
 - Grafische Oberfläche mit Windows-3.x-Programmen (6.x, erster Stand):
   `GUI Programm.EXE` startet die Oberfläche in einer Grafiksitzung (VGA
   640×480×16) und darin ein Win16-Programm. Alle Win16-Programme laufen
@@ -1397,6 +1401,7 @@ selbst nur 8.3 kennt.
 | 103 | DosLoadModule/DosFreeModule/DosGetProcAddr/DosGetModName | DLLs zur Laufzeit (6.5, wie OS/2 1.x, auch für FX-Programme): BX = 0 laden (CX = Name, ohne Pfad gesucht im aktuellen Verzeichnis, Verzeichnis des NE-Programms, `\DOS\SYSTEM`, `\DOS`; DX = Wort für die Kennung; Start-Routinen laufen vor der Rückkehr, Fehler dort -> FFFBh), 1 freigeben (CX = Kennung, gezählt), 2 Einsprung (CX = `struct fapi_procaddr`: Ordinalzahl oder Name -> Selektor:Offset), 3 Pfad (CX = Kennung, DX = Puffer) |
 | 104 | DosCreateSem/DosOpenSem/DosCloseSem/DosSemSet/DosSemClear/DosSemWait/DosSemSetWait/DosSemRequest/DosMuxSemWait | Semaphoren (6.5, wie OS/2 1.x): BX = 0 anlegen, 1 öffnen (DX = `\SEM\name`), 2 schließen, 3 setzen, 4 freigeben, 5 warten, 6 setzen + warten, 7 nehmen (Besitzer mit Zähler; 1 = Vorbesitzer endete ohne Freigabe), 8 auf eine von bis zu 16 warten; CX = `struct fapi_sem` (Kennung, Frist in ms) bzw. `struct fapi_muxsem`. RAM-Semaphore = Fernzeiger auf ein Doppelwort im eigenen Speicher, Systemsemaphore = Kennung aus Anlegen/Öffnen (32 im System). Frist abgelaufen FFF6h, Signal steht an FFF1h |
 | 105 | DosAllocShrSeg/DosGetShrSeg/DosGiveSeg | gemeinsame Segmente (6.5, wie OS/2 1.x): BX = 0 anlegen (CX = Größe, 0 = 64 KB; DX = `\SHAREMEM\name` oder 0 = ohne Namen), 1 holen (DX = Name), 2 einem anderen Task geben (CX = Selektor, DX = Task) -> Selektor (bei 2: der im anderen Task gilt). Jeder Task hat seinen eigenen Selektor, DosFreeSeg/Programmende gibt ihn ab, der letzte den Speicher; 32 im System |
+| 106 | DosMakeNmPipe/DosConnectNmPipe/DosDisConnectNmPipe/DosPeekNmPipe/DosWaitNmPipe/DosTransactNmPipe/DosCallNmPipe | Named Pipes (6.5, wie OS/2 1.x): BX = 0 Instanz anlegen (CX = `\PIPE\name`, DX = 1 Nachrichtenbetrieb) -> Handle, 1 auf einen Kunden warten, 2 Kunden abhängen, 3 nachsehen (DX = `struct fapi_nppeek`: Daten, Füllstand, Zustand), 4 warten, bis eine Instanz lauscht (DX = Zeiger auf Frist in ms), 5 Nachricht hin und Antwort zurück (DX = `struct fapi_nptrans`), 6 dasselbe mit Öffnen und Schließen (CX = Name, DX = `struct fapi_npcall`). Der Kunde öffnet den Namen mit DosOpen; Lesen, Schreiben, Schließen wie bei Dateien. 8 Instanzen, 2 KB je Richtung |
 | 84 | DosProc         | BX = 0 (`PROC_INFO`): CX = Tasknummer → `struct fapi_proc` bei DX (Zustand, Art FAPI/DOS-Box/ruhende Box, Sitzung, Aufrufer, Merker eigener/geschützt, Größe, Name, Anfang der Befehlszeile), Fehler hinter dem letzten Platz; BX = 1 (`PROC_KILL`): Task CX beenden (Rückgabewert 255 wie Strg+C) → FAPI_ERR_DENIED für den eigenen Task, seine Aufrufer und die Shell der ersten Sitzung |
 | 78 | VioSetAnsi      | BX = 1 an, 0 aus, 2 abfragen → bisheriger Zustand; ANSI-Folgen (ESC[…H/f/A–D/s/u/J/K/m) in der TTY-Ausgabe der eigenen Sitzung, wie OS/2 |
 | 68 | DosOpenDisk     | BX = Platte, CX = DRV_OPEN_* → Handle auf die ganze Platte ab Sektor 0 (für FDISK); mit Sperre nur, wenn darauf nichts offen ist |

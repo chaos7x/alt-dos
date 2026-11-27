@@ -2037,6 +2037,7 @@ static void task_end(int t)
     locks_task_end(t);
     ufs_task_end(t);                        /* Dienst eines Netzlaufwerks */
     sem_task_end(t);                        /* Semaphoren freigeben       */
+    np_task_end(t);                         /* DosCallNmPipe unterwegs    */
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -2859,6 +2860,8 @@ static void of_release(int k)
         }
     } else if (o->kind == OF_SOCK)
         net_sclose((unsigned)o->f.first);   /* Socket im Stapel schliessen */
+    else if (o->kind == OF_NPIPE)
+        np_close((unsigned)o->f.first, o->pipe);
     else if (o->kind == OF_LPT && ufs_lpt(o->f.drive))
         ufs_lpt_close(o->f.drive, k + 1);   /* Netzdrucker: Auftrag zu   */
     else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
@@ -3042,6 +3045,27 @@ unsigned __far kf_sock_new(unsigned id)
     files[k].kind = OF_SOCK;
     files[k].f.first = id;
     return k + HBASE;
+}
+
+/* Named Pipes (npipe.c): Eintrag anlegen -> Handle; Handle -> Kennung */
+unsigned __far kf_np_new(unsigned first, unsigned side)
+{
+    int k = of_alloc();
+    if (k < 0)
+        return 0xFFFF;
+    files[k].kind = OF_NPIPE;
+    files[k].pipe = (unsigned char)side;
+    files[k].f.first = first;
+    return k + HBASE;
+}
+int __far kf_np_get(unsigned h, unsigned *first, unsigned *side)
+{
+    int k = current >= 0 ? h2e(h) : -1;
+    if (k < 0 || files[k].kind != OF_NPIPE)
+        return 0;
+    *first = (unsigned)files[k].f.first;
+    *side = files[k].pipe;
+    return 1;
 }
 
 unsigned __far kf_sock_id(unsigned h)
@@ -3360,13 +3384,15 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
     case FAPI_RANDOM: case FAPI_UFS:            /* UFS: eigenes Warten   */
     case FAPI_SEM:                              /* Semaphoren (sem.c)    */
+    case FAPI_NPIPE:                            /* Named Pipes (npipe.c) */
     case FAPI_BEEP:                             /* wartet die Tondauer   */
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
         k = h2e(a1);
         return k >= 0 && (files[k].kind == OF_CON || files[k].kind == OF_PRD ||
-                          files[k].kind == OF_PWR || files[k].kind == OF_SOCK);
+                          files[k].kind == OF_PWR || files[k].kind == OF_SOCK ||
+                          files[k].kind == OF_NPIPE);
     }
     return 0;
 }
@@ -3577,8 +3603,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
 
     case FAPI_OPEN:
-        if (user_str(usel, a1, buf, sizeof(buf)) ||
-            resolve(current, buf, &d, canon))
+        if (user_str(usel, a1, buf, sizeof(buf)))
+            return FAPI_ERROR;
+        if ((buf[0] == '\\' || buf[0] == '/') && (t = (int)np_open(buf)) != (int)0xFFFE)
+            return (unsigned)t;                 /* \PIPE\name (npipe.c)  */
+        if (resolve(current, buf, &d, canon))
             return FAPI_ERROR;
         if ((t = dev_name(canon)) != 0)
             return dev_open(t);
@@ -3672,6 +3701,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return t < 0 ? FAPI_ERR_NOTREADY : (unsigned)t;
         case OF_SOCK:
             return net_srw((unsigned)files[k].f.first, 1, usel, a2, a3);
+        case OF_NPIPE:
+            return np_rw((unsigned)files[k].f.first, files[k].pipe, 1, usel, a2, a3);
         }
         /* erst die Laufwerkssperre, dann die Stelle lesen: teilen sich zwei
            Tasks einen Eintrag (DETACH mit Umleitung), schrieb der, der in
@@ -3975,6 +4006,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return (unsigned)com_io(k, usel, a2, a3, 0);
         case OF_SOCK:
             return net_srw((unsigned)files[k].f.first, 0, usel, a2, a3);
+        case OF_NPIPE:
+            return np_rw((unsigned)files[k].f.first, files[k].pipe, 0, usel, a2, a3);
         }
         vol_lock(files[k].f.drive);     /* erst sperren, dann pos lesen:  */
         t = ifs_read(&files[k].f, files[k].pos, usel, a2, a3);  /* s. WRITE */
@@ -4005,6 +4038,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         return files[k].kind == OF_CON ? HT_CONSOLE :
                files[k].kind == OF_FILE ? HT_FILE :
+               files[k].kind == OF_NPIPE ? HT_PIPE :
                files[k].kind >= OF_LPT ? HT_DEVICE :
                files[k].kind == OF_DASD ? HT_DRIVE : HT_PIPE;
 
@@ -4694,6 +4728,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return sem_fapi(usel, a1, a2, a3);
     case FAPI_SHRSEG:                           /* gemeinsame Segmente    */
         return shr_fapi(usel, a1, a2, a3);
+    case FAPI_NPIPE:                            /* Named Pipes (npipe.c)  */
+        return np_fapi(usel, a1, a2, a3);
 
     case FAPI_RANDOM:                           /* Pool aus start.asm     */
         if (a2 > 34)
