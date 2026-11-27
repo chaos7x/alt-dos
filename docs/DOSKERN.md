@@ -1548,6 +1548,17 @@ nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
 xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
 könnte dieselbe Ursache haben.
 
+Nachtrag (27.11.2026, Nutzer): „Programm-Manager lässt sich nicht
+beenden“ hatte hier seine Ursache – es lief eine DOS-Eingabeaufforderung,
+die als Symbol auf dem Desktop lag (so zeigt der Standardmodus
+weggeschaltete DOS-Programme). Nach Aufrufen des Symbols und EXIT ließ
+sich Windows beenden. Das ist das Verhalten von Windows: im Standardmodus
+beendet es sich nicht, solange ein DOS-Programm läuft (WinOldAp verneint
+WM_QUERYENDSESSION). Offen bleibt, woher die Eingabeaufforderung kam –
+geöffnet hatte der Nutzer sie nicht bewusst; passt zu einem Enter, das
+nach dem Start noch ankommt und den markierten Eintrag startet (wie oben
+die Gruppe) bzw. zu #149.
+
 ### Erledigt (27.11.2026): „Zu viele Dateien“ unter Windows
 
 Vom Nutzer gemeldet: mit vielen offenen Programmen „Zur Zeit werden zu
