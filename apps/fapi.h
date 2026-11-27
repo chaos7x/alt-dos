@@ -141,6 +141,10 @@ unsigned short fapi_call(unsigned short fn, unsigned short a1,
 #define DosSemSetWait(p)     fapi_call(FAPI_SEM, SEM_SETWAIT, (unsigned short)(p), 0)
 #define DosSemRequest(p)     fapi_call(FAPI_SEM, SEM_REQUEST, (unsigned short)(p), 0)
 #define DosMuxSemWait(m)     fapi_call(FAPI_SEM, SEM_MUXWAIT, (unsigned short)(m), 0)
+/* gemeinsame Segmente (6.5) -> Selektor */
+#define DosAllocShrSeg(n, nm) fapi_call(FAPI_SHRSEG, SHRSEG_ALLOC, (n), (unsigned short)(nm))
+#define DosGetShrSeg(nm)     fapi_call(FAPI_SHRSEG, SHRSEG_GET, 0, (unsigned short)(nm))
+#define DosGiveSeg(s, t)     fapi_call(FAPI_SHRSEG, SHRSEG_GIVE, (s), (t))
 #define MouOpen()           F2(FAPI_MOUOPEN, 0, 0)
 #define MouReadEvent(e, w)  F2(FAPI_MOUREADEVENT, (unsigned short)(e), (w))
 #define MouShowPtr(on)      F2(FAPI_MOUSHOWPTR, (on), 0)

@@ -173,6 +173,37 @@ gebunden in der DOS-Box (RAM-Teil). Nicht geprüft: Rückkehr mit
   Deskriptoren nicht mehr.
 - Test: zwei Tasks schreiben/lesen, zusammen mit Semaphore aus Stufe 2.
 
+### Stand Stufe 3 (27.11.2026, in QEMU geprüft)
+
+`kernel/shrseg.c` (KTEXT4, 1 KB), Verteiler `FAPI_SHRSEG`, Wrapper
+`DosAllocShrSeg(Größe, Name)`, `DosGetShrSeg(Name)`, `DosGiveSeg(Selektor,
+Task)` – alle liefern einen Selektor.
+
+- Speicher über `seg_alloc` (mit Nullen), danach trägt der LDT-Eintrag
+  `D_ALIAS`; Tabelle (32 Segmente, `NSHR`) im Kernelsegment, erst beim
+  ersten Anlegen geholt: erste Seite, Seitenzahl, Grenze, Verweise, Name.
+- Jeder Task hat seinen eigenen Selektor (LDT je Task). GIVE legt den
+  Eintrag im Ziel-Task an und liefert dessen Selektor – der Geber teilt
+  ihn dem anderen mit (z. B. über ein benanntes Segment). Ein eigenes
+  GETGIVEN braucht es deshalb nicht. Ohne Namen (`DX` = 0) ist ein Segment
+  nur weiterzugeben.
+- Freigeben: `seg_free` meldet jeden freigegebenen Alias-Eintrag mit
+  seiner Seite an `shr_unref`; der letzte Verweis gibt den Speicher
+  zurück (auch beim Programmende, task_end läuft über seg_free).
+- Verschieben/Auslagern: `seg_compact`/`seg_out` und SEG_REALLOC
+  übergehen Alias-Einträge schon.
+- RAM-Semaphoren in gemeinsamen Segmenten gehen zwischen Tasks (Ereignis
+  = lineare Adresse, in allen Tasks gleich).
+- Läuft **mit** Kernelsperre wie DosAllocSeg – die Speicherverwaltung
+  steht noch darunter (Abbau s. u.).
+- Nicht: Stub (MS-DOS), DOS-Boxen als Ziel von GIVE, Schutz „nur lesen“.
+
+Geprüft mit `\DEMO\SHRTEST.EXE` (nur Platte): Fehlerfälle in einem Task
+(doppelter/falscher Name, zwei Selektoren auf denselben Speicher,
+Freigabe in beiden Reihenfolgen, 64 KB ohne Namen), Diener und Kunde in
+zwei Tasks (Muster hin und zurück, RAM-Semaphoren im Segment, zweites
+Segment per GIVE, Geber gibt zuerst frei), MEM davor/danach gleich.
+
 ## Stufe 4: Named Pipes
 
 - `\PIPE\name` als Handle-Art `OF_NPIPE` (wie `OF_SOCK`): Server legt

@@ -2106,7 +2106,10 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   `NE_RSTUB`; in QEMU geprüft, Stand in `docs/FAPI-IPC.md`). Stufe 2
   Semaphoren erledigt (27.11.2026, `kernel/sem.c` in KTEXT4, FAPI 68h ohne
   Kernelsperre, `FAPI_ERR_INTR` FFF1h, Test `\DEMO\SEMTEST`, in QEMU
-  geprüft – Test /tmp/claude-0/sem/go.sh). Reihenfolge (Entscheidung des
+  geprüft – Test /tmp/claude-0/sem/go.sh). Stufe 3 gemeinsame Segmente
+  erledigt (27.11.2026, `kernel/shrseg.c`, FAPI 69h mit Kernelsperre,
+  Einträge mit `D_ALIAS`, seg_free -> `shr_unref`; Test `\DEMO\SHRTEST`,
+  in QEMU geprüft). Reihenfolge (Entscheidung des
   Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
   des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
   Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.

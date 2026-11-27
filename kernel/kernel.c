@@ -622,8 +622,10 @@ static unsigned seg_free(int t, unsigned sel)
     if (seg_drop_sw(t, idx))                    /* ausgelagert: nur Plaetze */
         return 0;
     if (d->rsv & D_ALIAS) {
+        unsigned long pg = desc_base(d) >> 12;
         d->rsv = 0;
         d->access = 0;
+        shr_unref(pg);                          /* gemeinsames Segment?    */
         return 0;
     }
     units = PAGES((unsigned long)d->limit + 1);
@@ -634,6 +636,21 @@ static unsigned seg_free(int t, unsigned sel)
 }
 unsigned __far kf_seg_free(int t, unsigned sel);
 unsigned __far kf_seg_free(int t, unsigned sel) { return seg_free(t, sel); }
+/* gemeinsame Segmente (shrseg.c): Alias-Eintrag im Task t; Speicher frei */
+unsigned __far kf_seg_alias(int t, unsigned long base, unsigned limit)
+{
+    unsigned idx = ldt_free(t);
+    if (idx == NLDT)
+        return FAPI_ERROR;
+    put_desc(LDT(t, idx), base, limit, ACC_UDATA);
+    LDT(t, idx)->rsv |= D_ALIAS;
+    return USEL(idx);
+}
+void __far kf_shr_memfree(pg_t pg, unsigned units)
+{
+    mem_free(pg, units);
+    alloc_units -= units;
+}
 
 /* ---- Programmlader ----------------------------------------------------- */
 static unsigned rd16(unsigned sel, unsigned off)
@@ -4675,6 +4692,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return ufs_fapi(usel, a1, a2, a3);
     case FAPI_SEM:                              /* Semaphoren (sem.c)     */
         return sem_fapi(usel, a1, a2, a3);
+    case FAPI_SHRSEG:                           /* gemeinsame Segmente    */
+        return shr_fapi(usel, a1, a2, a3);
 
     case FAPI_RANDOM:                           /* Pool aus start.asm     */
         if (a2 > 34)

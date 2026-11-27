@@ -424,6 +424,28 @@ struct fapi_muxsem {
     unsigned long  ms;
     unsigned long  sem[FAPI_MUXSEM_MAX];
 };
+#define FAPI_SHRSEG         0x69    /* gemeinsame Segmente (6.5, wie
+                                       DosAllocShrSeg/DosGetShrSeg/
+                                       DosGiveSeg von OS/2 1.x): BX =
+                                       SHRSEG_* -> AX = Selektor im eigenen
+                                       (GIVE: im anderen) Task. Jeder Task
+                                       hat seinen eigenen Selektor auf
+                                       denselben Speicher; DosFreeSeg bzw.
+                                       das Programmende gibt ihn ab, der
+                                       letzte den Speicher. FAPI_ERROR
+                                       (Name/Selektor/Task), FAPI_ERR_EXIST,
+                                       FAPI_ERR_FULL (kein Speicher, LDT
+                                       voll, 32 im System)               */
+#define SHRSEG_ALLOC        0       /* CX = Groesse (0 = 64 KB), DX =
+                                       "\\SHAREMEM\\name" oder 0 (ohne
+                                       Namen, nur zum Weitergeben); mit
+                                       Nullen gefuellt                   */
+#define SHRSEG_GET          1       /* DX = Name                          */
+#define SHRSEG_GIVE         2       /* CX = eigener Selektor eines
+                                       gemeinsamen Segments, DX = Task
+                                       (Nummer wie DosProc) -> Selektor,
+                                       der dort gilt (dem anderen Programm
+                                       mitteilen)                        */
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */

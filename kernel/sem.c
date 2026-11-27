@@ -264,10 +264,10 @@ static unsigned mux_wait(struct fapi_muxsem __far *m)
 }
 
 /* ---- Systemsemaphoren: Namen -------------------------------------------- */
-/* Name aus dem Programm nach nm (gross), muss mit \SEM\ beginnen */
-static int get_name(unsigned usel, unsigned off, char *nm)
+/* Name aus dem Programm nach nm (gross, / -> \), muss mit pre beginnen
+   und dahinter weitergehen (auch fuer shrseg.c) */
+int __far ipc_name(unsigned usel, unsigned off, char *nm, const char __far *pre, unsigned pl)
 {
-    static const char pre[] = "\\SEM\\";
     unsigned i;
     char c;
 
@@ -282,10 +282,16 @@ static int get_name(unsigned usel, unsigned off, char *nm)
         nm[i] = c;
         if (!c)
             break;
-        if (i < 5 && c != pre[i])
+        if (i < pl && c != pre[i])
             return -1;
     }
-    return i > 5 && i < FAPI_PATHLEN ? 0 : -1;
+    return i > pl && i < FAPI_PATHLEN ? 0 : -1;
+}
+
+static int get_name(unsigned usel, unsigned off, char *nm)
+{
+    static const char pre[] = "\\SEM\\";
+    return ipc_name(usel, off, nm, pre, 5);
 }
 
 static int find(const char *nm)
