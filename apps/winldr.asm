@@ -1613,6 +1613,8 @@ res_end:
 ; ---- nicht resident: Start --------------------------------------------
 dotexe  db      '.EXE'
 init:   mov     [rmseg], cs
+        mov     ah, 26h                 ; DPMI-Speicher fuer Windows: 64 MB,
+        int     0E0h                    ; wenn DOSBOX.INI nichts setzt
         mov     sp, stk_top
         mov     bx, (stk_top - start + 100h + 15) / 16
         mov     ah, 4Ah

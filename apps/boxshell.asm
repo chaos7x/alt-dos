@@ -384,6 +384,9 @@ copystr:                                ; DS:SI -> ES:DI ohne die Null
 ;   PVI=ON|OFF            CLI/STI ohne Falle (ab Pentium, CR4.PVI)
 ;   IDLE_SENSITIVITY=n    0-100 wie OS/2 (Vorgabe 75, 100 = aus)
 ;                         -> INT E0h 19h, BX = n + 1 (0 = Vorgabe)
+;   DPMI_MEMORY_LIMIT=MB  wie OS/2, -1 = keine Grenze (Vorgabe keine,
+;                         Windows 64 MB) -> INT E0h 25h, BX = MB + 1
+;                         (0 = nicht gesetzt, FFFFh = keine Grenze)
 ; Wird vor jedem Programm neu gelesen: Aenderungen gelten sofort.
 
 get_pname:                              ; Name aus cmd (CX Zeichen) -> pname
@@ -448,6 +451,7 @@ ini_apply:
         mov     word [dosver], 0
         mov     byte [hk], 79           ; Bits 0-3 und 6 (SHARE) an
         mov     word [idles], 0
+        mov     word [dpmimb], 0
         cmp     byte [nstart], 0        ; Notstart: DOSBOX.INI nicht lesen
         jne     .set
         mov     ah, 48h                 ; 4 KB Lesepuffer
@@ -486,6 +490,9 @@ ini_apply:
         int     0E0h
         mov     bx, [idles]
         mov     ah, 19h
+        int     0E0h
+        mov     bx, [dpmimb]
+        mov     ah, 25h
         int     0E0h
         mov     bx, [xmskb]
         mov     ah, 16h
@@ -586,10 +593,19 @@ ini_pass:                               ; BX = Abschnittsname, ES = Puffer
 .done:  ret
 .k3b:   mov     di, k_idle              ; IDLE_SENSITIVITY=n
         call    kmatch
-        jc      .k4
+        jc      .k3c
         call    pnum
         inc     ax
         mov     [idles], ax
+        jmp     .skip
+.k3c:   mov     di, k_dpmi              ; DPMI_MEMORY_LIMIT=MB
+        call    kmatch
+        jc      .k4
+        call    pnum
+        cmp     ax, 0FFFFh              ; -1: keine Grenze
+        je      .k3d
+        inc     ax
+.k3d:   mov     [dpmimb], ax
         jmp     .skip
 .k4:    mov     di, k_hk                ; Schalter ON/OFF (1/0)
         mov     dl, 1
@@ -1655,6 +1671,8 @@ k_hk      db "POPF_PATCH", 0, 0       ; je 12 Byte, Bit 0/1/2
 hk        db 79
 idles     dw 0
 k_idle    db "IDLE_SENSITIVITY", 0
+k_dpmi    db "DPMI_MEMORY_LIMIT", 0
+dpmimb    dw 0
 xmskb     dw 2048
 emskb     dw 2048
 dosver    dw 0
