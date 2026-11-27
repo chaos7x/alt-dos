@@ -100,6 +100,8 @@ struct task {
     unsigned char ab;                           /* abgebrochen (Strg+C, Ausnahme) */
     unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
     unsigned char child_ab;                     /* ... und ob abgebrochen   */
+    unsigned long cpu;                          /* Rechenzeit in Takten (PS/TOP) */
+    unsigned long born;                         /* Startzeit in Takten      */
     unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
     unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
     unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */
@@ -2090,6 +2092,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].bg = 0;
     RCAB(t) = 0;
     CRCAB(t) = 0;
+    task[t].cpu = 0;
+    task[t].born = get_ticks();
     task[t].hold = 0;
     task[t].want_lock = 0;
     for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
@@ -2362,6 +2366,8 @@ static void sched(int keep)
     struct task *tk;
 
     resched_req = 0;
+    if (current >= 0 && task[current].state != T_FREE && slice_start)
+        task[current].cpu += get_ticks() - slice_start;     /* PS/TOP */
     if (!keep && current >= 0 && klock == current) {
         task[current].want_lock = 1;    /* abgeben, spaeter zurueck      */
         task[current].lock_depth = (unsigned char)klock_depth;
@@ -3471,8 +3477,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         if (a2 >= NTASK)
             return FAPI_ERROR;
         t = (int)a2;
-        if (a1 == PROC_INFO) {
-            if (!user_ok(usel, a3, sizeof(struct fapi_proc), 1))
+        if (a1 == PROC_INFO || a1 == PROC_INFO2) {
+            if (!user_ok(usel, a3, a1 == PROC_INFO2 ? sizeof(struct fapi_proc2) :
+                                   sizeof(struct fapi_proc), 1))
                 return FAPI_ERROR;
             pi->state = task[t].state;
             pi->kind = 0;                       /* 5.x: keine DOS-Boxen  */
@@ -3488,6 +3495,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             for (k = 0; k < 40 && task[t].args[k]; k++)
                 pi->args[k] = task[t].args[k];
             pi->args[k] = 0;
+            if (a1 == PROC_INFO2) {             /* Rechenzeit (aus 6.3)  */
+                struct fapi_proc2 __far *p2 = (struct fapi_proc2 __far *)pi;
+                p2->now = get_ticks();
+                p2->cpu = task[t].cpu + (t == current ? p2->now - slice_start : 0);
+                p2->age = task[t].state == T_FREE ? 0 : p2->now - task[t].born;
+            }
             return 0;
         }
         if (a1 != PROC_KILL || task[t].state == T_FREE)

@@ -583,6 +583,14 @@ struct fapi_proc {
     char           name[13];
     char           args[41];        /* Anfang der Befehlszeile          */
 };
+/* PROC_INFO2 (2, aus 6.3: PS/TOP): wie PROC_INFO, dahinter Rechenzeit */
+struct fapi_proc2 {
+    struct fapi_proc p;
+    unsigned long  cpu;             /* Rechenzeit in Takten (100 je s)  */
+    unsigned long  age;             /* Laufzeit seit dem Start in Takten */
+    unsigned long  now;             /* Takte seit dem Systemstart       */
+};
+#define PROC_INFO2          2
 #define PROC_SELF           1       /* der aufrufende Task              */
 #define PROC_PROT           2       /* nicht beendbar                   */
 struct fapi_sysinfo {
