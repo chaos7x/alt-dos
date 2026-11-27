@@ -2118,7 +2118,12 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   gingen mit kleinem Aufwand (67h–6Eh dort frei), DosLoadModule nicht
   (kein NE-Lader). Entscheidung des Nutzers, 27.11.2026: NE-Lader und
   GUI auf 5.x vorerst nicht geplant; über den IPC-Rückport ist noch nicht
-  entschieden. Reihenfolge (Entscheidung des
+  entschieden. Idee des Nutzers dazu (27.11.2026, kein Plan): die eigene GUI
+  könnte nach 5.x, Windows-3.1-Programme auf dem 286 eher noch nicht –
+  technisch dieselben Voraussetzungen (GUI.EXE ist NE: NE-Lader, FAPI 66h,
+  größere LDT als 16 Einträge; sparen ließe sich nur das Lauffähigmachen
+  der großen Windows-Programme). Tempo des Schattenbilds auf dem 286
+  ungemessen. Reihenfolge (Entscheidung des
   Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
   des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
   Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.
