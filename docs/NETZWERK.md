@@ -970,4 +970,9 @@ auf Ortszeit), CONFIG, STATISTICS, HELP, HELPMSG, Serverbefehle
 abgelehnt. Der eigenständige Test-smbd startet seinen RPC-Dienst
 (samba-dcerpcd) in dieser Umgebung nicht – NET VIEW dort nicht prüfbar.
 NET.EXE und NET1.EXE liegen auf Setup-Diskette 3 (`HDDOS3` in build.sh),
-Disketten 1 und 2 sind voll.
+Disketten 1 und 2 sind voll. NET1.EXE ist ein Hilfsprogramm (getrennt,
+weil die Daten von LDAP/Kerberos nicht mit in das 64-KB-Datensegment von
+NET passen – Windows NT hat ebenfalls NET.EXE und NET1.EXE) und liegt
+seit 27.11.2026 wie die U*.EXE in `\DOS\SYSTEM` (`HDSYS3`, Wunsch des
+Nutzers); NET sucht dort zuerst, dann in `\DOS` und im PATH (auch dessen
+`SYSTEM\`). In QEMU geprüft: `NET USER /DOMAIN` startet NET1 von dort.
