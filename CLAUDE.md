@@ -44,6 +44,12 @@ uname, AT-Liste). Noch offen aus 6.3/6.4: PS/KILL/TOP und UPTIME
 (BEEP/TITLE brauchen FAPI 61h/62h), Kernel: PANIC.LOG, RUN=, LEDs/MODE
 CON RATE, Netzdrucker, NDRV 16 + DEINIT, Treiber-Startcode freigeben,
 CD-Vorauslesen – alles nur mit Platz im ersten Codesegment bzw. in KTEXT2.
+Platz (27.11.2026): der Ton-Teil (FAPI_AUDIO, aud_*/fm_*/md_*) steht
+jetzt in `kernel/audio.c` (KTEXT2; Einsprünge `aud_fapi`, `aud_task_end`,
+`aud_reg`/`aud_busy`/`aud_gone` für DevHlp und drv_unload, Thunks
+`kf_aud_drvcall`, `kf_task_ses`). Danach Code 62.773 + 54.975 Byte. In
+QEMU geprüft (isapc 4 MB mit sb16 + adlib: PLAY KLANG.WAV und ODE.IMF im
+Mitschnitt, MIXER).
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`
