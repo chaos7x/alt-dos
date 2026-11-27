@@ -1561,11 +1561,14 @@ darunter wird angehoben. Die SFT im Box-Kern hat weiter 40 Einträge
 Ursache von „PROGMAN lässt sich nicht beenden“ (Gruppen/INI nicht
 schreibbar) – beim Nutzer zu prüfen.
 
-Speicher im Standardmodus (Beobachtung, offen): bei 256 MB meldet
-Windows unter AT-DOS 102 MB frei, unter MS-DOS die vollen 256 MB.
-Spur: KRNL286 holt sich den Speicher per DPMI 0501h in Blöcken zu 1 MB
-und hört nach genau 100 Blöcken auf, ohne dass ein Aufruf scheitert –
-die Grenze liegt in KRNL286; warum es unter DOSX mehr bekommt, ist offen.
+Speicher im Standardmodus (Beobachtung, geklärt): bei 256 MB meldet
+Windows unter AT-DOS 102 MB frei, unter MS-DOS mit QEMM die vollen
+256 MB, unter MS-DOS nur mit HIMEM.SYS (ohne EMM386) 60 MB (Nutzer,
+27.11.2026). Spur: KRNL286 holt sich den Speicher per DPMI 0501h in
+Blöcken zu 1 MB und hört nach genau 100 Blöcken auf, ohne dass ein
+Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
+von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
+MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
 ### Erledigt (27.11.2026): Takt ohne 100-Hz-Raster, ZIP als Wechselplatte
 
