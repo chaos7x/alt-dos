@@ -1584,6 +1584,17 @@ Wert ein. Geprüft in QEMU: Notepad 7×, WINFILE 3×, REGEDIT 3×,
 Systemsteuerung mit Applet 2×, Write, Windows beenden – die SFT bleibt
 bei 15 Einträgen, vorher +2 je Programm; 86Box P3B-F: Notepad 15×.
 
+Gegenprobe mit DR-DOS (nachgelesen in OpenDOS 7.01, PROCESS.A86 func00/
+func4c; Lizenz erlaubt nur Lesen, s. CLAUDE.md): beim Ende schließt
+DR-DOS ebenso alle Handles des PSP, setzt den Eltern-PSP und gibt allen
+Speicher frei, der dem PSP gehört. Letzteres tut pmterm nicht – mit einer
+Spur geprüft (bei jedem 50h die Blöcke des bisherigen PSP gezählt): die
+PSPs der Windows-Tasks besitzen keinen DOS-Speicher, nur der PSP des
+Kerns zwei Blöcke, gleich bleibend über mehrere Programmstarte. Freigeben
+ist also nicht nötig. Anders als MS-DOS macht DR-DOS aus 00h mit
+CS ≠ aktuellem PSP keinen Rücksprung alter Art, sondern beendet den PSP
+von CS – für unseren Box-Kern bleibt MS-DOS der Maßstab.
+
 Speicher im Standardmodus (Beobachtung, geklärt): bei 256 MB meldet
 Windows unter AT-DOS 102 MB frei, unter MS-DOS mit QEMM die vollen
 256 MB, unter MS-DOS nur mit HIMEM.SYS (ohne EMM386) 60 MB (Nutzer,
