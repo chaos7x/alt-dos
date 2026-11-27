@@ -3094,6 +3094,10 @@ static int blk_eject(int dev);
 static unsigned drv_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 static unsigned loop_glue(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 static unsigned drives_busy(unsigned long m, int d);
+/* PIT-Teiler fuer hz (37..32767): 1193182 / hz (DIV 32/16, ohne __U4D) */
+unsigned pit_div(unsigned hz);
+#pragma aux pit_div = "mov dx, 12h" "mov ax, 34DEh" "div bx" parm [bx] value [ax] modify [dx];
+
 static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                            unsigned a3);
 
@@ -3111,6 +3115,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
     case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
+    case FAPI_BEEP:                             /* wartet die Tondauer   */
     case FAPI_QCHILDRC: case FAPI_QCURDISK:   /* QCURDIR liest u. U. die Platte */
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
     case FAPI_GETDATETIME: case FAPI_SETDATETIME: case FAPI_SETSIGHANDLER:
@@ -3741,6 +3746,23 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         fl->serial = ser;
         return 0;
     }
+
+    case FAPI_BEEP:                             /* wie OS/2 DosBeep (aus 6.3) */
+        if (a1 < 37 || a1 > 32767)
+            return FAPI_ERROR;
+        k = pit_div(a1);
+        outb(0x43, 0xB6);                       /* Kanal 2, Rechteck      */
+        outb(0x42, k & 0xFF);
+        outb(0x42, k >> 8);
+        outb(0x61, inb(0x61) | 3);
+        sleep_ticks((a2 + 9) / 10);
+        outb(0x61, inb(0x61) & ~3);
+        return 0;
+    case FAPI_SETTITLE:                         /* CMD TITLE              */
+        if (a1 && user_str(usel, a1, buf, 41))
+            return FAPI_ERROR;
+        vio_title(task[current].session, a1 && buf[0] ? buf : task[current].name);
+        return 0;
 
     case FAPI_QCHILDRC:                 /* BX = 1: Bit 8 = abgebrochen */
         return a1 == 1 ? CRCAB(current) : task[current].child_rc;

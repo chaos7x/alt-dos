@@ -240,6 +240,12 @@ struct fapi_drvinfo {
                                        -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
 #define UFS_INFO            5       /* CX = Laufwerk, DX = struct
                                        fapi_ufsreg -> 0, FAPI_ERROR     */
+#define FAPI_BEEP           0x61    /* Ton am PC-Lautsprecher (aus 6.3, wie OS/2
+                                       DosBeep): BX = Hz (37-32767), CX = ms
+                                       (auf 10 ms gerundet); wartet so lange */
+#define FAPI_SETTITLE       0x62    /* Titel der eigenen Sitzung (aus 6.3, CMD
+                                       TITLE): BX = Text (bis 40 Zeichen),
+                                       0 bzw. "" = wieder der Programmname */
 #define FAPI_FILELOCK       0x5E    /* Bereichssperre (5.6, aus 6.3, wie OS/2
                                        DosSetFileLocks): BX = Handle, CX =
                                        struct fapi_lock -> 0, FAPI_ERR_

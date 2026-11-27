@@ -50,6 +50,16 @@ jetzt in `kernel/audio.c` (KTEXT2; Einsprünge `aud_fapi`, `aud_task_end`,
 `kf_aud_drvcall`, `kf_task_ses`). Danach Code 62.773 + 54.975 Byte. In
 QEMU geprüft (isapc 4 MB mit sb16 + adlib: PLAY KLANG.WAV und ODE.IMF im
 Mitschnitt, MIXER).
+Teil 3 (27.11.2026): Rechenzeit je Task (`task.cpu`/`born`, gezählt am
+Eingang von `sched`, FAPI_PROC `PROC_INFO2`) mit PS, KILL, PSTREE, TOP,
+UPTIME (proc.h aus main); CMD-Befehle aus FreeCOM/NT (Patch 8a90e5a aus
+main passte ohne Änderung: PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD,
+SET /P /A /E, IF /I/DEFINED/EQU…, FOR /D /R /L /F, CALL /Y, COPY /Y /V
+/A /B, DEL /P /Q /S, DATE/TIME /T, DIR /L, BEEP, TITLE; Stand in
+`docs/CMD-FREECOM.md`), dazu FAPI 61h `FAPI_BEEP` und 62h
+`FAPI_SETTITLE`. In QEMU geprüft (isapc 4 MB: ps/pstree/uptime/kill,
+Stapeldatei mit den neuen Befehlen). Code 63.169 + 54.975 Byte, CMD
+63.766 Byte (voll).
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`
