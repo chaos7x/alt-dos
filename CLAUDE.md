@@ -60,6 +60,11 @@ SET /P /A /E, IF /I/DEFINED/EQU…, FOR /D /R /L /F, CALL /Y, COPY /Y /V
 `FAPI_SETTITLE`. In QEMU geprüft (isapc 4 MB: ps/pstree/uptime/kill,
 Stapeldatei mit den neuen Befehlen). Code 63.169 + 54.975 Byte, CMD
 63.766 Byte (voll).
+Teil 4 Netz (27.11.2026): TCPIP.SYS `NET_NEIGH` (Patch f196e5a aus main),
+ARP, TRACERT, ROUTE, CURL – CURL mit `apps/tlsstub.c` statt TLS (https
+meldet „erst ab 6.3“). In QEMU geprüft (isapc 4 MB, ne2k_isa: DHCP, PING,
+ARP -a, TRACERT -d, ROUTE PRINT, CURL gegen einen HTTP-Server auf dem
+Rechner).
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`

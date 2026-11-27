@@ -1,0 +1,944 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * FAPI - Family API, Aufrufschnittstelle (AT-DOS 5.0, alternative Zeitlinie)
+ *
+ * Anwendungen laufen in Ring 3 und haben keinen Zugriff auf Hardware,
+ * I/O-Ports oder fremden Speicher. Der einzige Weg nach unten ist das
+ * FAPI-Call-Gate im GDT:
+ *
+ *     call far FAPI_GATE:0000
+ *
+ *     AX = Funktionsnummer, BX/CX/DX = Argumente, Rueckgabe in AX
+ *     Zeiger-Argumente sind near und beziehen sich auf das DS des Aufrufers.
+ */
+#ifndef FAPI_ABI_H
+#define FAPI_ABI_H
+
+#define FAPI_GATE           0x23    /* GDT-Eintrag 4, RPL 3            */
+
+#define FAPI_GETVERSION     0x00    /* -> AX = 0x0500 (Major<<8|Minor)  */
+#define FAPI_VIOWRTSTR      0x01    /* BX = String, CX = Zeile<<8|Spalte */
+#define FAPI_YIELD          0x02    /* CPU kooperativ abgeben           */
+#define FAPI_EXIT           0x03    /* Task beenden, BX = Rueckgabewert (0-255) */
+#define FAPI_SLEEP          0x04    /* BX = Millisekunden               */
+#define FAPI_MEMINFO        0x05    /* BX = Puffer fuer struct fapi_meminfo */
+#define FAPI_ALLOCSEG       0x06    /* BX = Groesse (0 = 64 KB) -> Selektor */
+#define FAPI_FREESEG        0x07    /* BX = Selektor                    */
+#define FAPI_KBDCHARIN      0x08    /* -> AX = Zeichen | Scancode << 8  */
+#define FAPI_KBDPEEK        0x09    /* wie KBDCHARIN, wartet nicht, 0 = nichts */
+#define FAPI_VIOWRTTTY      0x0A    /* BX = Text, CX = Laenge           */
+#define FAPI_VIOCLS         0x0B    /* Bildschirm der Sitzung loeschen  */
+#define FAPI_EXECPGM        0x0C    /* BX = Befehlszeile, CX = EXEC_*   */
+#define FAPI_GETARGS        0x0D    /* BX = Puffer (FAPI_ARGLEN Bytes)  */
+#define FAPI_OPEN           0x0E    /* BX = Dateiname, CX = OPEN_* -> Handle */
+#define OPEN_READ           0       /* nur lesen (alle alten Programme) */
+#define OPEN_RW             2       /* lesen und schreiben, Datei muss da sein,
+                                       allein offen; Position 0, nicht gekuerzt */
+#define FAPI_READ           0x0F    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
+#define FAPI_CLOSE          0x10    /* BX = Handle                      */
+#define FAPI_FINDENTRY      0x11    /* BX = struct fapi_dirent, CX = Nummer,
+                                       DX = Verzeichnis (0 = aktuelles)  */
+#define FAPI_KBDSETLAYOUT   0x12    /* BX = .KBL-Daten (278 oder 728 Bytes), 0 = eingebaut
+                                       -> Zahl der Zeichen, die die aktive
+                                       Codepage nicht hat */
+#define FAPI_KBDGETLAYOUT   0x13    /* BX = Puffer (4 Bytes) fuer die Kennung;
+                                       CX >= KBL_BYTES: die ganze aktive Belegung
+                                       im .KBL-Format Version 1 (Zeichen der
+                                       aktiven Codepage, 5.1, fuer die Box) */
+#define KBL_BYTES           278     /* "KBL" 01h, Kennung, 3 x 90 Zeichen */
+#define KBL_SIZE_BYTES      278     /* Version 1: CP437, 3 Ebenen       */
+#define KBL2_SIZE_BYTES     728     /* Version 2: Unicode, 4 Ebenen
+                                       (normal, Umschalt, AltGr,
+                                       Umschalt+AltGr) */
+#define FAPI_CHDIR          0x14    /* BX = Pfad                        */
+#define FAPI_QCURDIR        0x15    /* BX = Puffer -> "C:\DOS"; 130 Bytes, mit
+                                       FX_FLAG_LONGNAMES bis 263 (FAPI_PATHLEN+2);
+                                       CX = Laufwerk + 1 (0 = aktuelles): wie
+                                       MS-DOS merkt sich jeder Task das Ver-
+                                       zeichnis von bis zu 4 weiteren Laufwerken
+                                       (DosChDir "A:\X" von C: aus) */
+#define FAPI_SELECTDISK     0x16    /* BX = Laufwerk (0 = A:)           */
+#define FAPI_QCURDISK       0x17    /* -> AX = Laufwerk (0 = A:)        */
+#define FAPI_CREATE         0x18    /* BX = Dateiname, CX = 0 neu/kuerzen, 1 anhaengen -> Handle */
+#define FAPI_WRITE          0x19    /* BX = Handle, CX = Puffer, DX = Laenge -> Bytes */
+#define FAPI_DELETE         0x1A    /* BX = Dateiname                   */
+#define FAPI_MKDIR          0x1B    /* BX = Pfad                        */
+#define FAPI_RMDIR          0x1C    /* BX = Pfad (Verzeichnis muss leer sein) */
+#define FAPI_MOVE           0x1D    /* BX = alter Pfad, CX = neuer Pfad (gleiches Laufwerk) */
+/* Signale wie OS/2 (DosSetSigHandler). Der Kernel stellt ein Signal beim
+   naechsten Ruecksprung aus der FAPI zu: Er springt in die Weiche (BX, ein
+   Offset im eigenen Codesegment, siehe DosSetSigHandler in apps/fapi.h)
+   mit AX = Signal; die Weiche ruft den Handler und endet mit DosSigReturn,
+   danach laeuft das Programm weiter, als sei der unterbrochene Aufruf
+   normal zurueckgekehrt. Wartende Aufrufe (KbdCharIn, DosSleep) kehren
+   dafuer vorzeitig zurueck (KbdCharIn mit 0). */
+#define FAPI_SETSIGHANDLER  0x20    /* BX = Weiche (0 = abmelden), CX = Maske SIG_* */
+#define FAPI_SIGRETURN      0x21    /* Handler fertig                   */
+#define SIG_BREAK           0x01    /* Strg+C                           */
+#define SIG_SHUTDOWN        0x02    /* SHUTDOWN / Strg+Alt+Entf: aufraeumen, dann DosExit */
+#define FAPI_GETENV         0x22    /* BX = Name, CX = Puffer, DX = Laenge -> Laenge des Werts */
+#define FAPI_SETENV         0x23    /* BX = "NAME=WERT" (leerer Wert loescht) */
+#define FAPI_ENVENTRY       0x24    /* BX = Nummer, CX = Puffer, DX = Laenge -> n-ter Eintrag */
+#define FAPI_GETDATETIME    0x25    /* BX = Puffer (4 Bytes): Datum, Uhrzeit im FAT-Format */
+#define FAPI_DUP2           0x26    /* BX = Handle (FFFFh = Konsole), CX = Standard-Handle 0-2 */
+#define FAPI_DUP            0x27    /* BX = Handle -> neues Handle auf dasselbe */
+#define FAPI_PIPE           0x28    /* BX = Puffer (2 Worte) -> Lese-, Schreib-Handle */
+#define FAPI_VIOWRTSTRATT   0x29    /* wie VioWrtStr, DX = Farbattribut */
+#define FAPI_QHANDTYPE      0x2A    /* BX = Handle -> HT_*              */
+#define HT_FILE             0
+#define HT_DRIVE            3       /* DosOpenDrive                     */
+#define HT_DEVICE           4       /* PRN, LPT1-3, NUL                 */
+/* Laufwerk als Ganzes (wie DASD bei OS/2), fuer CHKDSK, FORMAT, LABEL.
+   Lesen/Schreiben mit DosRead/DosWrite in ganzen Sektoren ab der Position
+   (DosSeek, Bytes, Vielfaches der Sektorgroesse), Sektor 0 = Bootsektor
+   der Partition. Exklusiv geht nur, wenn keine Datei auf dem Laufwerk
+   offen ist; solange gesperrt, lehnt das Dateisystem alle Zugriffe ab.
+   Beim Schliessen wird das Laufwerk neu eingelesen. */
+#define FAPI_OPENDRIVE      0x2B    /* BX = Laufwerk (0 = A:), CX = DRV_OPEN_* -> Handle */
+#define DRV_OPEN_READ       0       /* nur lesen, ohne Sperre           */
+#define DRV_OPEN_LOCK       1       /* exklusiv, lesen und schreiben    */
+/* Ganze Festplatten (FDISK): Nummer 0, 1, ... zaehlt nur Platten mit
+   512-Byte-Sektoren (keine Diskette, keine CD) */
+#define FAPI_DISKINFO       0x43    /* BX = Platte, CX = struct fapi_diskinfo
+                                       -> 0, FAPI_ERROR = keine solche Platte */
+#define FAPI_OPENDISK       0x44    /* BX = Platte, CX = DRV_OPEN_* -> Handle;
+                                       Sektoren ab 0 (MBR), mit Sperre nur,
+                                       wenn auf keinem ihrer Laufwerke etwas
+                                       offen ist; alle bleiben bis zum
+                                       Schliessen gesperrt */
+struct fapi_diskinfo {
+    unsigned long  sectors;
+    unsigned short bsize;
+    char           driver[13];      /* "IDE.SYS"                        */
+    unsigned char  unit;            /* Einheit des Treibers             */
+    unsigned char  nvol;            /* Laufwerksbuchstaben darauf       */
+    unsigned char  rsv;             /* ganze Zylinder am Ende, die das
+                                       BIOS nicht meldet (6.0)          */
+    unsigned short heads, spt;      /* Geometrie des BIOS (INT 13h/08h),
+                                       0 = unbekannt (Platte ohne BIOS)  */
+};
+/* Diskettenspur formatieren (FORMAT, DISKCOPY): BX = Handle aus
+   DosOpenDrive mit DRV_OPEN_LOCK auf einem Diskettenlaufwerk, CX = struct
+   fapi_fmttrack. blocks waehlt das Format (720 = 360 KB, 1440 = 720 KB,
+   2400 = 1,2 MB, 2880 = 1,44 MB, 5760 = 2,88 MB), es muss zum Laufwerk
+   passen; danach gilt es fuer das Laufwerk (DosQFSInfo meldet es).
+   -> 0, FAPI_ERR_WP, FAPI_ERROR (Format passt nicht / Fehler) */
+#define FAPI_FMTTRACK       0x46
+/* SUBST: BX = Laufwerk (0 = A:), CX = Pfad (bestehendes Verzeichnis) oder
+   0 = aufheben -> 0, FAPI_ERROR, FAPI_ERR_INUSE (aktuelles Laufwerk eines
+   Programms). DosQSubst: BX = Laufwerk, CX = Puffer (130 Byte) -> "C:\DOS" */
+/* Schnittstellen (MODE): BX = COM 0-3 oder 10h|LPT 0-2, CX = struct
+   fapi_comcfg, DX = 1 einstellen / 0 abfragen -> 0, FAPI_ERROR (kein
+   Anschluss), FAPI_ERR_INUSE (Port gehoert einem Treiber, z. B. Maus) */
+#define FAPI_COMCTL         0x4A
+struct fapi_comcfg {
+    unsigned short divisor;         /* COM: 115200 / Baud               */
+    unsigned char  lcr;             /* COM: Datenbits-5 | Stopp<<2 | Paritaet (UART-LCR) */
+    unsigned char  retry;           /* 1 = endlos warten (MODE ...,P)    */
+    unsigned char  lsr, msr;        /* Status (LPT: Druckerstatus in lsr) */
+    unsigned short base;            /* Portadresse                      */
+};
+/* Systemangaben fuer MSD: BX = struct fapi_sysinfo */
+#define FAPI_SYSINFO        0x49
+#define FAPI_RBOX           0x55    /* 5.1, Kompatibilitaetsbox: BX = RB_*;
+                                       RB_LOAD: CX = Selektor, DX = Laenge eines
+                                       .COM (bis FE00h) -> 0, FAPI_ERR_INUSE
+                                       (Speicher unter 640 KB belegt), FAPI_ERROR;
+                                       RB_BOOT: CX = Groesse eines Disketten-
+                                       abbilds in KB (bis 2880) -> 0, Fehler wie
+                                       RB_LOAD; RB_IMG: CX = Puffer, DX = Laenge
+                                       (Vielfaches von 512) haengt an das Abbild an,
+                                       das erste Stueck enthaelt den Bootsektor;
+                                       RB_RUN: CX = struct fapi_rbregs oder 0 (bei
+                                       RB_CALL damit gefuellt; DX = 1: vorher daraus
+                                       setzen, spart RB_REGS), wartet, bis die eigene
+                                       Sitzung vorn ist, laeuft im Real Mode ->
+                                       RB_SWITCH (Alt+Esc),
+                                       RB_EXIT (Programmende, Strg+Alt+Entf, INT E0h
+                                       AH = 01h), RB_CALL (INT E0h, AH ungleich 01h:
+                                       RBOX erledigt ihn ueber RB_REGS/RB_MEM, dann
+                                       wieder RB_RUN); RB_FREE */
+#define RB_LOAD             0
+#define RB_RUN              1
+#define RB_FREE             2
+#define RB_BOOT             3
+#define RB_IMG              4
+#define RB_REGS             5       /* CX = struct fapi_rbregs, DX = 0 holen,
+                                       1 setzen (AX..ES, FLAGS ohne IF/TF) */
+#define RB_MEM              6       /* CX = struct fapi_rbmem: Speicher der
+                                       Box lesen (write = 0) oder schreiben */
+#define RB_PERM             7       /* -> 1, wenn PROTECTONLY=NO und noch
+                                       keine Box laeuft (CMD /P startet dann
+                                       RBOX /P in eigener Sitzung) */
+#define RB_NEED             8       /* nach RB_FETCH: -> Nummer des fehlenden
+                                       4-KB-Stuecks des Abbilds; das naechste
+                                       RB_IMG schreibt dorthin */
+struct fapi_rbregs {                /* Zustand der Box bei RB_CALL      */
+    unsigned short ax, bx, cx, dx, si, di, bp, ds, es, sp, ss, ip, cs, flags;
+};
+struct fapi_rbmem {
+    unsigned long  lin;             /* linear in der Box (< 640 KB, oder
+                                       A0000h-10FFEFh: Rahmen, UMB, HMA) */
+    unsigned short buf, len;        /* Puffer im eigenen DS             */
+    unsigned short write;
+};
+#define RB_SWITCH           1
+#define RB_EXIT             2
+#define RB_CALL             3
+#define RB_TICK             4       /* nur im Kernel: Takt-Ausflug (RBSLICE) */
+#define RB_FETCH            6       /* INT 13h braucht ein Stueck des Abbilds,
+                                       das noch nicht geladen ist (RB_NEED,
+                                       RB_IMG, dann wieder RB_RUN) */
+/* Busangaben (nur 6.0; 5.x liefert FAPI_ERROR): BX = BUS_*, CX = Nummer,
+   DX = Puffer -> 0, FAPI_ERROR = keine weiteren Eintraege */
+#define FAPI_BUSINFO        0x51
+#define FAPI_DRIVER         0x58    /* BX = DRVL_*, CX/DX siehe dort: Treiber und
+                                       IFS-Module zur Laufzeit (6.0, DEVLOAD) */
+#define DRVL_LOAD           0       /* CX = "Pfad [Argumente]" (voller Pfad),
+                                       DX = DRVL_IFS fuer ein IFS-Modul ->
+                                       Platz 0.., FAPI_ERR_EXIST (schon
+                                       geladen), FAPI_ERR_FULL (kein Platz),
+                                       FAPI_ERR_NOTREADY (kein Geraet
+                                       gefunden), FAPI_ERR_INUSE (laeuft
+                                       gerade), FAPI_ERROR (Datei fehlt oder
+                                       kein Treiber). Neue Blockgeraete
+                                       bekommen die naechsten freien
+                                       Buchstaben, CDs nach einem IFS-Modul */
+#define DRVL_INFO           1       /* CX = Platz, DX = struct fapi_drvinfo
+                                       -> 0, FAPI_ERROR hinter dem letzten */
+#define DRVL_UNLOAD         2       /* CX = Name ("NCR8XX.SYS" oder "NCR8XX")
+                                       -> 0, FAPI_ERROR (nicht geladen),
+                                       FAPI_ERR_INUSE (Dateien offen, aktuelles
+                                       Laufwerk eines Programms, SUBST/JOIN,
+                                       Ton offen), FAPI_ERR_DENIED (Start-
+                                       laufwerk), FAPI_ERR_NOTREADY (der
+                                       Treiber kennt DRV_DEINIT nicht) */
+#define DRVL_IFS            1
+struct fapi_drvinfo {
+    char           name[13];        /* "" = Platz frei                  */
+    unsigned char  kind;            /* 0 frei, 1 Treiber, 2 IFS-Modul   */
+    unsigned char  units;           /* Blockgeraete des Treibers        */
+    unsigned char  rsv;
+    unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */
+};
+#define FAPI_LOOP           0x59    /* BX = LOOP_*, CX/DX siehe dort: Datei als
+                                       Laufwerk (6.1, LOOP) */
+#define FAPI_RANDOM         0x5C    /* Entropie (5.6, aus 6.3): BX = Puffer,
+                                       CX = Laenge (bis 34) -> Laenge; Pool
+                                       aus den Zeitpunkten der Interrupts */
+#define FAPI_UFS            0x5D    /* Dateisystem in Ring 3 (5.6, aus 6.3, NET USE,
+                                       kernel/ufs.c): BX = UFS_*, CX/DX
+                                       siehe dort */
+#define UFS_REG             1       /* CX = struct fapi_ufsreg (Laufwerk,
+                                       Name) -> 0, FAPI_ERR_EXIST, FULL  */
+#define UFS_GET             2       /* CX = struct fapi_ufsreq, DX = Puffer
+                                       (UFS_DATA): wartet auf den naechsten
+                                       Auftrag -> 0; op UFSOP_QUIT = Ende */
+#define UFS_PUT             3       /* CX = Antwort (status, Felder), DX =
+                                       Daten (len Byte) -> 0             */
+#define UFS_DEL             4       /* CX = Laufwerk: Dienst beenden lassen
+                                       -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
+#define UFS_INFO            5       /* CX = Laufwerk, DX = struct
+                                       fapi_ufsreg -> 0, FAPI_ERROR     */
+#define FAPI_BEEP           0x61    /* Ton am PC-Lautsprecher (aus 6.3, wie OS/2
+                                       DosBeep): BX = Hz (37-32767), CX = ms
+                                       (auf 10 ms gerundet); wartet so lange */
+#define FAPI_SETTITLE       0x62    /* Titel der eigenen Sitzung (aus 6.3, CMD
+                                       TITLE): BX = Text (bis 40 Zeichen),
+                                       0 bzw. "" = wieder der Programmname */
+#define FAPI_FILELOCK       0x5E    /* Bereichssperre (5.6, aus 6.3, wie OS/2
+                                       DosSetFileLocks): BX = Handle, CX =
+                                       struct fapi_lock -> 0, FAPI_ERR_
+                                       LOCKED (fremd gesperrt / nicht
+                                       gesperrt). Wirkt auf NET-USE-
+                                       Laufwerken beim Server; lokal immer
+                                       0 (zwei Schreiber gibt es lokal nie) */
+struct fapi_lock {
+    unsigned long  ofs, len;
+    unsigned short flags;           /* LOCK_*                            */
+};
+#define LOCK_UNLOCK         1       /* Bereich freigeben (genau so gesperrt) */
+#define LOCK_SHARED         2       /* andere duerfen lesen               */
+#define UFS_DATA            16384u  /* Daten je Auftrag hoechstens        */
+#define UFSOP_QUIT          0
+#define UFSOP_OPEN          1       /* path, mask -> h, size, attr; mask
+                                       Bits 0-1 Zugriff (0 lesen, 2 lesen+
+                                       schreiben), Bits 4-6 OPEN_DENY*,
+                                       Bit 7 alte Art (Zugriff/Freigabe
+                                       wie bisher: RW versuchen, alles
+                                       teilen) - auch UFSOP_CREATE       */
+#define UFSOP_READ          2       /* h, pos, len -> Daten              */
+#define UFSOP_READDIR       3       /* path (Verzeichnis), n -> Daten =
+                                       struct ifs_dirent                 */
+#define UFSOP_STAT          4       /* path -> attr (status -1: fehlt)   */
+#define UFSOP_CREATE        5       /* path, path2 = Originalname -> h   */
+#define UFSOP_WRITE         6       /* h, pos, len, Daten -> len         */
+#define UFSOP_CLOSE         7       /* h, mask: 1 attr, 2 date/time      */
+#define UFSOP_REMOVE        8
+#define UFSOP_MKDIR         9       /* path, path2 = Originalname        */
+#define UFSOP_RMDIR         10
+#define UFSOP_MOVE          11      /* path -> path2 (Ziel; Originalname
+                                       des letzten Teils in path2 hinter
+                                       der Null)                         */
+#define UFSOP_SPACE         12      /* -> pos = freie Bytes (gekappt),
+                                       size = freie KB (0: aus pos)     */
+#define UFSOP_SETINFO       13      /* path, mask, attr, date, time      */
+#define UFSOP_LABEL         14      /* -> Daten = Bezeichnung (11)       */
+#define UFSOP_NAMEPATH      15      /* path, shortn -> Daten = Pfad      */
+#define UFSOP_TRUNC         16      /* h, size                           */
+#define UFSOP_LOCK          17      /* h, pos = Stelle, size = Laenge,
+                                       mask = LOCK_* (FAPI_FILELOCK)     */
+struct fapi_ufsreg {
+    unsigned short drive;           /* 2 = C:                            */
+    unsigned short task;            /* UFS_INFO: Dienst                  */
+    char           name[80];        /* z. B. \\server\freigabe        */
+};
+struct fapi_ufsreq {
+    unsigned short op, seq;
+    short          status;          /* Antwort: 0 oder IFS_* (negativ)   */
+    unsigned short len;             /* Daten                             */
+    unsigned long  h, pos, size;
+    unsigned short n, attr, date, time, mask, shortn;
+    char           path[261];
+    char           path2[261];
+};
+#define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
+                                       CX = Parameterblock, DX = Groesse;
+                                       ohne Netz FAPI_ERR_NONET */
+#define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
+#define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
+#define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->
+                                       0, FAPI_ERROR hinter der letzten */
+#define NET_PING            2       /* struct fapi_ping: ICMP-Echo, wartet
+                                       bis Antwort/Fehler/Frist -> 0,
+                                       FAPI_ERR_TIMEOUT, FAPI_ERROR      */
+#define NET_DHCP            3       /* struct fapi_netcmd: arg 0 erneuern,
+                                       1 freigeben -> 0                  */
+/* Adressen immer 16 Byte: IPv4 als ::ffff:a.b.c.d (RFC 4291) */
+#define AF_INET             2
+#define AF_INET6            10
+struct fapi_netaddr {
+    unsigned char  a[16];
+    unsigned char  plen;            /* Praefixlaenge (IPv4: 96 + Maske) */
+    unsigned char  kind;            /* NA_*                             */
+};
+#define NA_STATIC           1
+#define NA_DHCP             2
+#define NA_LINK             3       /* IPv6 link-lokal                  */
+#define NA_SLAAC            4
+#define NET_MAXADDR         4
+struct fapi_netif {
+    unsigned short ifc;             /* Eingabe: Karte 0..               */
+    char           name[12];        /* Treiber, z. B. "RTL8139"         */
+    unsigned char  mac[6];
+    unsigned short mtu, irq, io;
+    unsigned short link;            /* Bit 0 Verbindung, Bit 1 voll-
+                                       duplex, Bits 8-15 Mbit/10        */
+    unsigned short naddr;
+    struct fapi_netaddr addr[NET_MAXADDR];
+    unsigned char  gw4[16], gw6[16];
+    unsigned char  dns[2][16];
+    unsigned char  dhcp[16];        /* DHCP-Server, 0 = fest            */
+    unsigned long  lease;           /* Restzeit in Sekunden             */
+    unsigned long  rx_ok, tx_ok, rx_err, tx_err, rx_drop;
+    char           host[32], domain[32];
+};
+struct fapi_ping {
+    unsigned char  addr[16];        /* Ziel                             */
+    unsigned short len;             /* Nutzdaten (0..1472)              */
+    unsigned short timeout;         /* ms                               */
+    unsigned short seq;
+    unsigned short ttl_out;         /* 0 = Vorgabe 64                   */
+    /* Rueckgabe */
+    unsigned short rtt;             /* ms                               */
+    unsigned char  ttl;
+    unsigned char  type;            /* 0 Antwort, sonst ICMP-Typ (3 =
+                                       unerreichbar, 11 = TTL)         */
+    unsigned char  code;
+    unsigned char  rsv;
+    unsigned char  from[16];
+};
+struct fapi_netcmd {
+    unsigned short ifc;
+    unsigned short arg;
+};
+#define NET_FAM_SRV         33      /* fapi_resolve.family: SRV-Satz    */
+#define NET_RESOLVE         4       /* struct fapi_resolve: Name -> Adressen
+                                       (DNS, Zahlenadressen direkt) -> 0,
+                                       FAPI_ERROR (unbekannt), TIMEOUT    */
+#define NET_FWCTL           5       /* struct fapi_fwctl: Firewall
+                                       (FIREWALL.EXE) -> 0 / Regelnummer  */
+#define NET_SOCKLIST        6       /* struct fapi_sockinfo, idx vorgeben
+                                       (NETSTAT) -> 0, FAPI_ERROR dahinter */
+/* Firewall: eingehend gesperrt ausser Antworten und Regeln (nur
+   Erlaubnisse); ausgehend frei. Regel: Programm ("*" = jedes), Protokoll,
+   Ports, Herkunft (Netz/Praefix, FWR_LOCAL = eigenes Netz der Karte). */
+#define NET_HOSTNAME        7       /* struct fapi_hostname: Rechnername
+                                       setzen (A-Z, 0-9, -, bis 31 Zeichen),
+                                       gebundenes DHCP erneuert gleich   */
+struct fapi_hostname {
+    char           name[32];
+};
+#define FW_GET              0       /* Zustand, Zaehler; idx < nrules: Regel */
+#define FW_SET              1       /* on = 0 aus, 1 an                     */
+#define FW_ADD              2       /* r -> AX = Nummer                     */
+#define FW_DEL              3       /* idx                                  */
+#define FW_CLEAR            4       /* alle Regeln weg                      */
+#define FW_LOG              5       /* on = Abgewiesenes ins DMESG          */
+#define FWP_ANY             0
+#define FWP_ICMP            1
+#define FWP_TCP             6
+#define FWP_UDP             17
+#define FWR_LOCAL           0x01    /* Herkunft: eigenes Netz               */
+struct fapi_fwrule {
+    char           prog[13];        /* "NC.EXE", "*" = jedes Programm   */
+    unsigned char  proto;           /* FWP_*                            */
+    unsigned short lo, hi;          /* Ports (ICMP: ohne Bedeutung)     */
+    unsigned char  net[16];         /* Herkunft (IPv4 als ::ffff:..)    */
+    unsigned char  plen;            /* Praefix (IPv4: 96 + n), 0 = alle */
+    unsigned char  flags;           /* FWR_*                            */
+    unsigned long  hits;            /* durchgelassen                    */
+};
+struct fapi_fwctl {
+    unsigned char  op, on;          /* FW_*; Rueckgabe on = Zustand     */
+    unsigned short idx;
+    unsigned char  log, rsv;
+    unsigned long  drop, pass;      /* abgewiesen / per Regel erlaubt   */
+    unsigned short nrules, maxrules;
+    struct fapi_fwrule r;
+};
+struct fapi_sockinfo {
+    unsigned short idx;             /* Eingabe: Platz 0..               */
+    unsigned char  type;            /* 0 frei, SOCK_STREAM, SOCK_DGRAM  */
+    unsigned char  state;           /* TCP: TS_* (0 geschlossen, 1 lauscht,
+                                       2 SYN gesendet, 3 SYN empfangen,
+                                       4 verbunden, 5/6 FIN_WAIT1/2,
+                                       7 CLOSE_WAIT, 8 CLOSING, 9 LAST_ACK,
+                                       10 TIME_WAIT)                   */
+    unsigned char  family, task;
+    unsigned short lport, rport;    /* Hostbytefolge                    */
+    unsigned char  laddr[16], raddr[16];
+    char           prog[13];
+    unsigned char  rsv;
+    unsigned short rq, sq;          /* Bytes im Empfangs-/Sendepuffer   */
+};
+/* Sockets (wie BSD). Sie sind Handles: DosRead/DosWrite/DosClose gehen,
+   beim Programmende schliesst der Kernel sie. SOCKET/ACCEPT -> Handle. */
+#define NET_SOCKET          0x10    /* struct fapi_socket -> Handle         */
+#define NET_BIND            0x11    /* struct fapi_sockio: h, addr          */
+#define NET_CONNECT         0x12    /* h, addr, timeout                     */
+#define NET_LISTEN          0x13    /* h, len = Warteschlange               */
+#define NET_ACCEPT          0x14    /* h, timeout -> neues Handle, addr     */
+#define NET_SEND            0x15    /* h, buf, len, flags -> Bytes          */
+#define NET_RECV            0x16    /* h, buf, len, flags, timeout -> Bytes
+                                       (0 = Gegenseite hat geschlossen)     */
+#define NET_SENDTO          0x17    /* wie SEND, Ziel in addr               */
+#define NET_RECVFROM        0x18    /* wie RECV, Absender nach addr         */
+#define NET_SHUTDOWN        0x19    /* h, len = 0 lesen/1 schreiben/2 beides */
+#define NET_GETNAME         0x1A    /* h -> addr (eigene)                   */
+#define NET_GETPEER         0x1B    /* h -> addr (Gegenseite)               */
+#define NET_SETOPT          0x1C    /* h, len = SO_*, flags = Wert          */
+#define NET_GETOPT          0x1D    /* h, len = SO_* -> AX = Wert           */
+#define NET_SELECT          0x1E    /* struct fapi_select: auf mehrere
+                                       Sockets warten -> Zahl der bereiten,
+                                       0 = Frist abgelaufen                */
+#define NSEL_MAX            8
+#define SEL_READ            0x01    /* Daten, Ende der Gegenseite, ACCEPT  */
+#define SEL_WRITE           0x02    /* Platz im Sendepuffer / verbunden    */
+#define SEL_ERR             0x04    /* Fehler, abgebrochen (immer gemeldet) */
+struct fapi_select {
+    unsigned short n;               /* Eintraege (1..NSEL_MAX)          */
+    unsigned short timeout;         /* ms; 0 = nur nachsehen, FFFFh = ewig */
+    struct {
+        unsigned short h;           /* Handle                           */
+        unsigned char  want;        /* SEL_READ | SEL_WRITE             */
+        unsigned char  ready;       /* Rueckgabe                        */
+    } e[NSEL_MAX];
+};
+#define FAPI_ERR_AGAIN      0xFFF5  /* nicht blockierend: noch nichts da   */
+#define FAPI_ERR_RESET      0xFFF4  /* Verbindung abgelehnt/abgebrochen    */
+#define SOCK_STREAM         1       /* TCP                                  */
+#define SOCK_DGRAM          2       /* UDP                                  */
+#define SO_NONBLOCK         1       /* Wert 1 = nicht blockierend           */
+#define SO_RCVTIMEO         2       /* Vorgabefrist in ms (0 = ewig)        */
+#define SO_BROADCAST        3       /* UDP an 255.255.255.255 erlaubt       */
+#define SO_V6ONLY           4       /* AF_INET6 nimmt kein IPv4             */
+#define MSG_PEEK            0x02
+/* Adresse wie BSD/RFC 3493: sockaddr_in (16 Byte) ist der Anfang von
+   sockaddr_in6 (28 Byte); Port in Netzbytefolge (htons) */
+struct fapi_sockaddr {
+    unsigned char  len, family;     /* family AF_INET / AF_INET6        */
+    unsigned short port;            /* Netzbytefolge                    */
+    unsigned char  a4[4];           /* AF_INET: Adresse; AF_INET6: flowinfo */
+    unsigned char  a6[16];          /* AF_INET6: Adresse                */
+    unsigned long  scope;
+};
+struct fapi_socket {
+    unsigned short family, type, proto;
+};
+struct fapi_sockio {
+    unsigned short h;
+    unsigned short buf;             /* Puffer im DS des Programms       */
+    unsigned short len;
+    unsigned short flags;
+    unsigned short timeout;         /* ms, 0 = Vorgabe des Sockets      */
+    struct fapi_sockaddr addr;
+};
+struct fapi_resolve {
+    char           name[128];
+    unsigned short family;          /* 0 = beliebig, AF_INET, AF_INET6  */
+    unsigned short count;           /* Rueckgabe: Adressen              */
+    unsigned long  ttl;             /* Rueckgabe: Sekunden              */
+    unsigned char  addr[4][16];
+};
+#define LOOP_ATTACH         0       /* CX = Pfad der Datei (ISO, IMG/IMA,
+                                       feste VHD), DX = Laufwerk 2..25 oder 0
+                                       = naechster freier, | LOOP_RO nur
+                                       lesend -> erstes Laufwerk,
+                                       FAPI_ERROR (fehlt, Verzeichnis),
+                                       FAPI_ERR_INUSE (zum Schreiben offen),
+                                       FAPI_ERR_EXIST (Buchstabe belegt),
+                                       FAPI_ERR_FULL (kein Platz frei),
+                                       FAPI_ERR_FRAG (zu stark zerstueckelt),
+                                       FAPI_ERR_DENIED (Traeger weder FAT noch
+                                       CD, dynamische VHD), FAPI_ERR_NOTREADY
+                                       (kein Dateisystem im Abbild) */
+#define LOOP_RO             0x100   /* ATTACH: nur lesend einhaengen    */
+#define LOOP_DETACH         1       /* CX = Laufwerk -> 0, FAPI_ERROR (kein
+                                       Loop-Laufwerk), FAPI_ERR_INUSE (offen,
+                                       aktuell, SUBST/JOIN) */
+#define LOOP_INFO           2       /* CX = Platz 0..3, DX = struct
+                                       fapi_loopinfo -> 0 (drives 0 = Platz
+                                       frei), FAPI_ERROR hinter dem letzten */
+#define FAPI_ERR_FRAG       0xFFF8  /* LOOP: Datei zu stark zerstueckelt  */
+struct fapi_loopinfo {
+    unsigned long  drives;          /* Bit n = Laufwerk 'A' + n         */
+    unsigned long  blocks;          /* Bloecke des Loop-Geraets         */
+    unsigned       bsize;           /* 512 oder 2048 (ISO)              */
+    unsigned       extents;         /* Plattenbereiche der Datei        */
+    unsigned char  cdrive;          /* Laufwerk der Datei               */
+    unsigned char  kind;            /* LOOPK_*                          */
+    char           path[261];       /* kanonisch, ohne Laufwerk         */
+};
+#define LOOPK_ISO           1
+#define LOOPK_IMG           2       /* Diskette/Partition ohne Tabelle  */
+#define LOOPK_DISK          3       /* Platte mit Partitionstabelle     */
+#define LOOPK_VHD           4       /* feste VHD                        */
+#define LOOPK_DBL           5       /* DoubleSpace/DriveSpace 6.x (CVF) */
+#define LOOPK_RO            0x80    /* in kind: nur lesend              */
+#define FAPI_KLOG           0x5A    /* Kernelmeldungen (DMESG): BX = Puffer,
+                                       CX = Laenge, DX = Stelle ab der
+                                       aeltesten Meldung -> AX = kopierte
+                                       Bytes; CX = 0 -> AX = Laenge des
+                                       Protokolls; CX = 0, DX = FFFFh ->
+                                       loeschen (wie 6.1) */
+#define KLOG_SIZE           8192u   /* Ringpuffer im Kernel               */
+#define FAPI_EJECT          0x57    /* BX = Laufwerk (0 = A:): Medium auswerfen
+                                       (CD, ZIP, MO) -> 0, FAPI_ERR_INUSE
+                                       (Dateien offen), FAPI_ERR_DENIED (kein
+                                       Wechseldatentraeger / Treiber kann es
+                                       nicht), FAPI_ERROR (Fehler) */
+#define FAPI_CODEPAGE       0x56    /* BX = 0: aktive Codepage -> AX; BX = FFFFh:
+                                       CX = Platz in der Liste aus CODEPAGE=
+                                       -> Codepage (0 = Ende); sonst BX =
+                                       Codepage einschalten (437 immer, sonst
+                                       nur vorbereitete) -> 0 / FAPI_ERROR */
+#define BUS_PCI             0       /* struct fapi_pcidev               */
+#define BUS_RES             1       /* struct fapi_res (Belegungsliste) */
+#define BUS_PNP             2       /* struct fapi_pnpdev (ISA-PnP)     */
+struct fapi_pnpdev {
+    unsigned char  csn, ldn;        /* Kartennummer, logisches Geraet   */
+    unsigned char  act;             /* 1 vom Kernel eingeschaltet, 2 vom BIOS */
+    unsigned char  rsv;
+    unsigned char  vid[4];          /* EISA-Kennung der Karte           */
+    unsigned char  lid[4];          /* ... des logischen Geraets        */
+    unsigned short io[4];           /* 0 = keiner                       */
+    unsigned char  irq[2];          /* 0 = keiner                       */
+    unsigned char  dma[2];          /* 4 = keiner                       */
+};
+struct fapi_pcidev {
+    unsigned short loc;             /* Bus << 8 | Geraet << 3 | Funktion */
+    unsigned short vendor, device;
+    unsigned char  cls, sub, progif;    /* Klasse, Unterklasse, Schnittstelle */
+    unsigned char  irq;             /* Register 3Ch, FFh = keiner       */
+};
+struct fapi_res {
+    unsigned char  type;            /* 1 Ports, 2 DMA, 3 IRQ            */
+    unsigned char  rsv;
+    unsigned short start, len;
+    char           owner[13];       /* Treiberdatei                     */
+};
+#define FAPI_PROC           0x54    /* BX = PROC_*, CX = Tasknummer (0..), DX =
+                                       struct fapi_proc (Taskmanager, wie 6.0) */
+#define PROC_INFO           0       /* -> 0, FAPI_ERROR hinter dem letzten Platz */
+#define PROC_KILL           1       /* Task beenden (wie Strg+C, aber ohne
+                                       Rueckfrage an das Programm) -> 0,
+                                       FAPI_ERR_DENIED (eigener Task, ein
+                                       Aufrufer davon, Shell der ersten Sitzung),
+                                       FAPI_ERROR (Platz frei) */
+struct fapi_proc {
+    unsigned char  state;           /* 0 frei, 1 laeuft, 2 wartet auf Kind,
+                                       3 im Treiber                     */
+    unsigned char  kind;            /* 0 FAPI-Programm, 1 DOS-Box, 2 geparkte
+                                       DOS-Box (nur 6.0)                */
+    unsigned char  session;         /* Sitzung (0 = erste)              */
+    unsigned char  parent;          /* Aufrufer, FFh = keiner           */
+    unsigned char  flags;           /* PROC_SELF, PROC_PROT             */
+    unsigned char  rsv;
+    unsigned short kb;              /* Programmabbild (Code + Daten) in KB */
+    char           name[13];
+    char           args[41];        /* Anfang der Befehlszeile          */
+};
+/* PROC_INFO2 (2, aus 6.3: PS/TOP): wie PROC_INFO, dahinter Rechenzeit */
+struct fapi_proc2 {
+    struct fapi_proc p;
+    unsigned long  cpu;             /* Rechenzeit in Takten (100 je s)  */
+    unsigned long  age;             /* Laufzeit seit dem Start in Takten */
+    unsigned long  now;             /* Takte seit dem Systemstart       */
+};
+#define PROC_INFO2          2
+#define PROC_SELF           1       /* der aufrufende Task              */
+#define PROC_PROT           2       /* nicht beendbar                   */
+struct fapi_sysinfo {
+    unsigned char  cpu;             /* 2 = 80286, 3 = 80386 oder neuer  */
+    unsigned char  fpu;             /* Koprozessor: 0 keiner, 1 287,
+                                       2 387-Kern (287XL, 387)          */
+    unsigned char  vga;             /* VGA erkannt                      */
+    unsigned char  model;           /* BIOS-Modellbyte F000:FFFE        */
+    char           bios_date[9];    /* F000:FFF5, "MM/TT/JJ"            */
+    unsigned char  fdtype[2];       /* Diskettenlaufwerke (CMOS-Typ)    */
+    unsigned char  rsv;
+    unsigned short equip;           /* INT 11h                          */
+    unsigned short com[4], lpt[3];  /* Portadressen, 0 = keiner         */
+    unsigned short conv_kb, ext_kb; /* Speicher laut BIOS               */
+    unsigned short kernel_kb;       /* Kernel (Code + Daten)            */
+    unsigned short irq_used;        /* Bit n: IRQ n freigegeben         */
+    unsigned short uptime_s;
+    char           bios_name[64];   /* laengster Text im System-BIOS    */
+    char           vbios_name[64];  /* ... im Video-BIOS (C000:0000)    */
+    char           drivers[6][13];  /* geladene Treiber (DEVICE=)       */
+};
+/* JOIN: BX = Laufwerk, CX = Pfad (leeres Verzeichnis, fehlt es, wird es
+   angelegt; nicht der Stamm) oder 0 = aufheben -> 0, FAPI_ERROR,
+   FAPI_ERR_INUSE (aktuelles Laufwerk eines Programms, offene Dateien,
+   Ziel eines SUBST/JOIN), FAPI_ERR_DENIED (Verzeichnis nicht leer).
+   DosQJoin: BX = Laufwerk, CX = Puffer (FAPI_CURDIRLEN) -> "C:\CDROM" */
+/* ANSI-Folgen in der TTY-Ausgabe der Sitzung (wie OS/2 VioSetAnsi):
+   BX = 1 an, 0 aus, 2 nur abfragen -> bisheriger Zustand (0/1) */
+#define FAPI_VIOSETANSI     0x4E
+/* Ton (Treiber z. B. SB16.SYS): BX = AUD_*. Mehrere Programme duerfen
+   oeffnen; zu hoeren ist das Programm der Vordergrund-Sitzung, sonst das
+   zuletzt geoeffnete. Die anderen laufen im Echtzeittempo weiter, ihre
+   Daten werden verworfen. */
+#define FAPI_AUDIO          0x4F
+#define FAPI_QTICKS         0x50    /* -> Systemtakt (100 Hz), untere 16 Bit:
+                                       Zeitmessung fuer Spieler, Spiele */
+#define FAPI_NEWSIZE        0x52    /* BX = Handle (schreibend), CX = Zeiger auf neue
+                                       Groesse (4 Bytes): kuerzen oder mit Nullen
+                                       verlaengern (wie DosNewSize bei OS/2) */
+#define AUD_OPEN            0       /* CX = struct fapi_audfmt -> 0, FAPI_ERROR
+                                       (kein Geraet, Format geht nicht),
+                                       FAPI_ERR_INUSE (alle Plaetze belegt) */
+#define AUD_WRITE           1       /* CX = Puffer, DX = Laenge -> Bytes (wartet,
+                                       bis sie im Puffer der Karte sind) */
+#define AUD_DRAIN           2       /* warten, bis alles gespielt ist    */
+#define AUD_CLOSE           3
+#define AUD_MIXER           4       /* CX = AUDMIX_*, DX = 0-100 setzen,
+                                       FFFFh nur abfragen -> Wert       */
+#define AUD_INFO            5       /* CX = Puffer (64 Byte) <- Name der Karte */
+#define AUD_CAPS            6       /* -> AUDCAP_* (was der Treiber kann)  */
+/* FM-Synthese (OPL2/OPL3, AdLib-kompatibel): Register direkt, wie die
+   Programme es von der AdLib kennen. Der Kernel merkt sich je Programm alle
+   Register; wechselt der Vorrang, laedt er die des neuen Programms. */
+#define AUD_FMOPEN          7       /* -> 0, FAPI_ERROR (kein OPL), FAPI_ERR_INUSE */
+#define AUD_FMWRITE         8       /* CX = struct fapi_fmreg[], DX = Anzahl
+                                       (hoechstens 512) -> 0               */
+#define AUD_FMCLOSE         9
+/* MIDI (MPU-401, UART-Betrieb): rohe MIDI-Bytes. Beim Wechsel des
+   Vorrangs: alle Noten aus, Programm und Lautstaerke je Kanal neu. */
+#define AUD_MIDIOPEN        10
+#define AUD_MIDIWRITE       11      /* CX = Bytes, DX = Anzahl -> 0      */
+#define AUD_MIDICLOSE       12
+/* AWE32/64-Wavetable (EMU8000): Klangbank laden (AWELOAD.EXE). CX =
+   struct fapi_awecmd + Daten, DX = Laenge -> 0 / FAPI_ERROR. Ist eine
+   Bank geladen, spielt der Treiber MIDI auf dem EMU8000 (AUDCAP_MPU401
+   wird dann mit gemeldet) - ohne Bank wie bisher an den MPU-401. */
+#define AUD_AWE             13
+#define AUD_BLASTER         14      /* CX = Puffer (64 Byte) <- Einstellungen
+                                       der Karte als BLASTER-Text, z. B.
+                                       "A220 I5 D1 H5 P330 T6" (fuer die
+                                       Kompatibilitaetsbox) -> 0 / FAPI_ERROR */
+struct fapi_awecmd {
+    unsigned short op;              /* AWE_*                             */
+    unsigned short n;               /* Anzahl (Zonen, Presets, Worte)    */
+    unsigned long  addr;            /* AWE_SAMPLE: Wortadresse im RAM der
+                                       Karte (ab 0); AWE_INFO: Ergebnis   */
+};                                  /* danach die Daten                  */
+#define AWE_INFO            0       /* -> addr = RAM der Karte in Worten,
+                                       n = hoechstens Zonen              */
+#define AWE_RESET           1       /* Bank verwerfen (MIDI wieder an den
+                                       MPU-401)                          */
+#define AWE_ZONES           2       /* n struct fapi_awezone anhaengen   */
+#define AWE_PRESETS         3       /* n struct fapi_awepre (alle auf einmal) */
+#define AWE_SAMPLE          4       /* n Worte ins RAM der Karte ab addr */
+#define AWE_DONE            5       /* Bank fertig: MIDI auf den EMU8000 */
+/* Eine Zone: ein Sample mit allen Parametern, schon in EMU8000-Werten
+   (AWELOAD rechnet sie aus dem SoundFont um) */
+struct fapi_awezone {
+    unsigned char  klo, khi, vlo, vhi;      /* Tasten-/Anschlagbereich   */
+    unsigned long  start, lstart, lend;     /* Wortadressen: ROM ab 0,
+                                               RAM ab 200000h; Schleife  */
+    short          rate;            /* Tonhoehe auf der Grundtaste: 4096 je
+                                       Oktave, 0 = 44,1 kHz ohne Versatz */
+    unsigned char  root, scale;     /* Grundtaste; Cent je Taste / 2     */
+    unsigned char  att, pan;        /* Daempfung 0-255; Pan 0 links -
+                                       127 rechts, FFh = Mitte/Kanal     */
+    unsigned char  excl, fixkey;    /* exklusive Klasse; feste Taste
+                                       (FFh = keine)                     */
+    unsigned char  cutoff, filterq, chorus, reverb;
+    unsigned short moddelay, modatkhld, moddcysus, modrelease;
+    unsigned short voldelay, volatkhld, voldcysus, volrelease;
+    unsigned short lfo1delay, lfo2delay, pefe, fmmod, tremfrq, fm2frq2;
+    unsigned char  fixvel, rsv;     /* feste Anschlagstaerke (FFh = keine) */
+};
+struct fapi_awepre {
+    unsigned char  bank, prog;      /* Bank 128 = Schlagzeug             */
+    unsigned short first, n;        /* Zonen first .. first + n - 1      */
+};
+#define AUDCAP_PCM          0x01    /* digitaler Ton (AUD_OPEN)          */
+#define AUDCAP_OPL2         0x02
+#define AUDCAP_OPL3         0x04    /* 18 Stimmen, Register 100h-1FFh    */
+#define AUDCAP_MPU401       0x08
+#define AUDCAP_AWE          0x10    /* Wavetable EMU8000 (AWE32/AWE64)   */
+struct fapi_fmreg {
+    unsigned short reg;             /* 000h-0F5h, OPL3 auch 100h-1F5h    */
+    unsigned char  val, rsv;
+};
+#define AUDMIX_MASTER       0
+#define AUDMIX_WAVE         1
+#define AUDMIX_FM           2
+#define AUDMIX_CD           3
+#define AUDMIX_LINE         4
+#define AUDMIX_MIC          5
+struct fapi_audfmt {
+    unsigned short rate;            /* Abtastrate, z. B. 22050           */
+    unsigned char  channels;        /* 1 mono, 2 stereo                  */
+    unsigned char  bits;            /* 8 (ohne Vorzeichen), 16 (mit)     */
+};                                  /* | AUD_SMALL: kurzer Puffer        */
+#define AUD_SMALL           0x80    /* (kleine Verzoegerung, DOS-Boxen)  */
+#define AUD_NOWAIT          0x40    /* | AUD_NOWAIT: AUD_WRITE wartet nie,
+                                       was nicht passt, faellt weg (Box) */
+/* Platten-Cache (MEM): BX = struct fapi_cacheinfo, CX = Groesse (0 = 5.0) -> 0 */
+#define FAPI_CACHEINFO      0x4D
+struct fapi_cacheinfo {
+    unsigned short kb;              /* Groesse, 0 = kein Cache          */
+    unsigned short delay_s;         /* verzoegertes Schreiben, 0 = sofort */
+    unsigned long  hits, misses;    /* Lesezugriffe aus dem Cache / von der Platte */
+    unsigned short dirty;           /* Bloecke mit noch nicht geschriebenen Daten */
+    unsigned short min_kb, max_kb;  /* CX = Groesse: dynamischer Cache (wie 6.0) */
+};
+#define CACHEINFO_V50 14                /* Groesse in 5.0 (CX = 0)          */
+#define FAPI_JOIN           0x4B
+#define FAPI_QJOIN          0x4C
+#define FAPI_SUBST          0x47
+#define FAPI_QSUBST         0x48
+struct fapi_fmttrack {
+    unsigned short cyl, head, blocks;
+};
+#define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
+#define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
+                                       (ERRORLEVEL); BX = 1: dazu Bit 8 = vom
+                                       System abgebrochen (Strg+C, Ausnahme) */
+#define FAPI_SETFINFO       0x2F    /* BX = Pfad, CX = struct fapi_finfo */
+struct fapi_finfo {
+    unsigned short mask;            /* 1: Attribut, 2: Datum/Uhrzeit    */
+    unsigned short attr;            /* 01h RO, 02h versteckt, 04h System, 20h Archiv */
+    unsigned short date, time;      /* FAT-Format                       */
+};
+#define FAPI_SETDATETIME    0x30    /* BX = Puffer (4 Bytes): Datum, Uhrzeit (FAT) -> Echtzeituhr */
+#define FAPI_LABEL          0x31    /* BX = Laufwerk, CX = struct fapi_label (Ausgabe),
+                                       DX = neue Bezeichnung (0 = nur lesen, "" = loeschen) */
+struct fapi_label {
+    char           label[12];
+    unsigned long  serial;          /* 0 = keine                        */
+};
+#define FAPI_VIOSETMODE     0x32    /* BX = 1 Vollbild (alle Zeilen, ohne Titel- und
+                                       Statusleiste), 0 normal (2 weniger) -> Zeilenzahl;
+                                       endet das Programm, gilt wieder normal */
+#define FAPI_VIOSETCURPOS   0x33    /* BX = Zeile << 8 | Spalte, Zeile FFh = Cursor aus */
+#define FAPI_KBDSHIFT       0x34    /* -> AX = KBDSHIFT_* (Zustand jetzt)  */
+#define FAPI_VIOSETLINES    0x35    /* BX = Bildschirmzeilen 25/43/50 (nur VGA)
+                                       der eigenen Sitzung, 0 = nur fragen;
+                                       loescht den Bildschirm -> Zeilen */
+#define FAPI_SHUTDOWNHOLD   0x37    /* nach SIG_SHUTDOWN: Herunterfahren aufhalten,
+                                       weil das Programm den Benutzer fragt; seine
+                                       Sitzung kommt nach vorn, der Kernel wartet
+                                       bis zum Programmende (sonst 5 s) */
+#define FAPI_VIOGETROWS     0x36    /* -> Zeilen, die das Programm beschreiben
+                                       kann (normal Bildschirm - 2, Vollbild alle) */
+/* Maus (wie das Mou-API von OS/2): Ereignisse gehen an die Sitzung im
+   Vordergrund, wenn dort ein Programm MouOpen gerufen hat. Zeile/Spalte
+   sind Textzellen relativ zur Sitzung (Zeile FFh: Titel-/Statusleiste). */
+#define FAPI_MOUOPEN        0x38    /* -> Anzahl Tasten, 0 = keine Maus;
+                                       Ereignisse fuer diese Sitzung an,
+                                       Warteschlange leer, Zeiger aus */
+#define FAPI_MOUREADEVENT   0x39    /* BX = struct fapi_mouevent, CX = MOU_WAIT
+                                       (warten) | MOU_XY (8 Byte mit x, y)
+                                       -> 0 Ereignis, 1 keins (oder Signal) */
+#define MOU_WAIT            1
+#define MOU_XY              2       /* x/y: Grafik in Bildpunkten (12h
+                                       640x480, 13h 320x200), Text im
+                                       virtuellen Raster (8 je Spalte) */
+#define FAPI_MOUSHOWPTR     0x3A    /* BX = 1 Zeiger zeigen, 0 verbergen */
+/* Zwischenablage des Kernels, fuer alle Sitzungen gemeinsam (auch die
+   Konsolenmaus legt markierten Text hier ab). Zeilenende CR LF oder LF. */
+#define FAPI_CLIPPUT        0x3B    /* BX = Selektor (0 = eigenes Datensegment),
+                                       CX = Offset, DX = Laenge -> gespeicherte
+                                       Laenge (hoechstens CLIP_MAX) */
+#define FAPI_CLIPGET        0x3C    /* BX = Selektor (0 = eigenes Datensegment),
+                                       CX = Offset, DX = Platz -> Laenge des
+                                       Inhalts (kopiert hoechstens DX Bytes) */
+#define CLIP_MAX            16384
+/* Logischer Bildschirmpuffer (wie VioGetBuf/VioShowBuf bei OS/2 1.x):
+   Selektor auf den Puffer der eigenen Sitzung, Zelle = Zeichen | Attribut
+   << 8, Zeile r ab Offset r * 160 (Zeilen wie VioGetRows). Schreiben
+   allein zeigt nichts; VioShowBuf meldet fertige Zeilen. */
+#define FAPI_VIOGETBUF      0x3D    /* -> Selektor (FAPI_ERROR: LDT voll) */
+#define FAPI_VIOSHOWBUF     0x3E    /* BX = erste, CX = letzte Zeile zeigen */
+/* Grafik (nur VGA): die Sitzung schaltet in einen Grafikmodus; Text-
+   ausgaben laufen weiter in den Textpuffer und erscheinen nach der Rueck-
+   kehr. Beim Sitzungswechsel sichert der Kernel Bild und Palette und biegt
+   den Selektor aus VioGetPhysBuf um - das Programm zeichnet weiter. */
+#define FAPI_VIOSETGFX      0x3F    /* BX = 13h (320x200x256), 12h (640x480x16),
+                                       VIO_MODEX (320x240x256, 2 Seiten),
+                                       0 = Text */
+#define VIO_MODEX           0x58
+#define FAPI_VIOGETPHYSBUF  0x40    /* -> Selektor auf das Bild. 13h: 64 KB,
+                                       Punkt (x,y) bei y * 320 + x. 12h: eine
+                                       Ebene (VioSetPlane), 38400 Byte, Bit 7
+                                       von Byte y * 80 + x / 8 = Punkt x */
+#define FAPI_VIOSETPAL      0x41    /* BX = erster Eintrag, CX = Anzahl,
+                                       DX = Puffer (je R, G, B, 0-63) */
+#define FAPI_VIOSETPLANE    0x42    /* 12h: BX = Ebene 0-3 (Farbbit) zum
+                                       Schreiben und Lesen; Mode X: Ebene
+                                       x & 3, Punkt (x,y) bei Seite +
+                                       y * 80 + x / 4, Seite 0 bei 0,
+                                       Seite 1 bei 19200 */
+#define FAPI_VIOSETPAGE     0x45    /* Mode X: BX = sichtbare Seite 0/1;
+                                       wartet vorn auf den Strahlruecklauf */
+struct fapi_mouevent {
+    unsigned char  buttons;         /* MOU_* gedrueckt                  */
+    unsigned char  row, col;        /* Zelle, row FFh = ausserhalb      */
+    unsigned char  rsv;
+    unsigned short x, y;            /* nur mit MOU_XY                   */
+};
+#define MOU_LEFT            0x01
+#define MOU_RIGHT           0x02
+#define MOU_MIDDLE          0x04
+#define KBDSHIFT_SHIFT      0x01
+#define KBDSHIFT_CTRL       0x02
+#define KBDSHIFT_ALT        0x04    /* linke Alt-Taste                  */
+#define KBDSHIFT_ALTGR      0x08
+#define KBDSHIFT_NUM        0x20    /* NumLock an (Bits wie 0040:0017)  */
+#define KBDSHIFT_CAPS       0x40    /* Feststelltaste an                */
+/* Tastencodes (KbdCharIn): Alt+Taste liefert wie das BIOS Zeichen 0 und den
+   Scancode; Alt allein gedrueckt und losgelassen liefert KEY_ALT. */
+#define KEY_ALT             0x3800
+#define FAPI_QFSINFO        0x2D    /* BX = Laufwerk, CX = struct fapi_fsinfo,
+                                       DX = 1: struct fapi_fsinfo2 (Aufteilung) */
+struct fapi_fsinfo {
+    char           fsname[10];      /* "FAT", "ISO9660" -> Pruefprogramm U<name>.EXE;
+                                       "RAW" = nicht formatiert */
+    unsigned long  sectors;         /* Sektoren des Laufwerks           */
+    unsigned short bsize;           /* Bytes je Sektor (512, CD 2048)   */
+    unsigned short flags;           /* FSI_*                            */
+    unsigned long  hidden;          /* erster Sektor der Partition (BPB) */
+    unsigned char  ptype;           /* Partitionstyp im MBR, 0 = keiner  */
+    unsigned char  disk;            /* Platte + 1 fuer DosDiskInfo (aus 6.3,
+                                       FORMAT: BIOS-Geometrie), 0 = keine */
+};
+/* DX = 1: dazu die Aufteilung des FAT-Dateisystems (sonst spc = 0) -
+   der Redirector der Box meldet damit INT 21h 36h wie MS-DOS */
+struct fapi_fsinfo2 {
+    struct fapi_fsinfo f;
+    unsigned short spc;             /* Sektoren je Cluster, 0 = kein FAT */
+    unsigned long  clusters;        /* Cluster im Datenbereich          */
+};
+#define FSI_REMOVABLE       0x01
+#define FSI_READONLY        0x02
+#define FSI_DIRTY           0x04    /* beim Einhaengen nicht sauber abgemeldet */
+#define FSI_NOMEDIA         0x08    /* Disketten- oder CD-Laufwerk leer */
+#define FSI_REMDISK         0x10    /* Wechselplatte (ZIP, MO): FORMAT nimmt F0h */
+#define HT_PIPE             1
+#define HT_CONSOLE          2
+#define STDIN               0       /* Standard-Handles, Vorgabe Konsole */
+#define STDOUT              1
+#define STDERR              2
+#define FAPI_ENVSIZE        1024    /* Umgebung je Programm (wie COMMAND /E:1024) */
+#define FAPI_SHUTDOWN       0x1F    /* BX = 0 anhalten (ausschalten), 1 Neustart; kehrt nicht zurueck */
+#define FAPI_FREESPACE      0x1E    /* BX = Laufwerk (0 = A:), CX = Puffer (4 Bytes) -> freie Bytes */
+
+/* Fehler: alle Werte ab FAPI_ERR_FIRST. FAPI_ERROR heisst "nicht gefunden
+   oder unzulaessig", die uebrigen sagen genauer, was schiefging. */
+#define FAPI_ERROR          0xFFFF
+#define FAPI_ERR_WP         0xFFFE  /* Datentraeger schreibgeschuetzt   */
+#define FAPI_ERR_FULL       0xFFFD  /* Datentraeger oder Verzeichnis voll */
+#define FAPI_ERR_EXIST      0xFFFC  /* Ziel gibt es schon               */
+#define FAPI_ERR_DENIED     0xFFFB  /* Attribut verbietet es / nicht leer */
+#define FAPI_ERR_INUSE      0xFFFA  /* Datei ist geoeffnet / Verzeichnis in Benutzung */
+#define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
+#define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
+#define FAPI_ERR_FIRST      0xFFF0
+
+#define FAPI_VERSION        0x0532  /* 5.50 (Nebenversion dezimal) */
+#define FAPI_ARGLEN         128     /* Argumente bis 127 Zeichen (wie MS-DOS) */
+#define FAPI_PATHLEN        261     /* Pfade bis 260 Zeichen + Nullbyte */
+#define FAPI_CURDIRLEN      263     /* DosQCurDir-Puffer (FAPI_PATHLEN + 2) */
+
+/* DosExecPgm */
+#define EXEC_SYNC           0       /* in dieser Sitzung, Aufrufer wartet */
+#define EXEC_ASYNC          1       /* eigene Sitzung, laeuft nebenher    */
+#define EXEC_BG             2       /* diese Sitzung, laeuft nebenher (Pipes) */
+#define EXEC_DETACH         3       /* losgeloest (DETACH): ohne Konsole, Eingabe
+                                       NUL, Kbd/Mou -> FAPI_ERR_NOCON; Kinder erben */
+#define EXEC_ERR_NOTFOUND   1
+#define EXEC_ERR_NOMEM      2
+#define EXEC_ERR_FORMAT     3
+#define EXEC_ERR_NOSLOT     4
+
+/*
+ * Speicher aus Sicht der FAPI: ein einziger Arbeitsspeicher. Die Trennung
+ * in "konventionell" und "erweitert" ist ein Real-Mode-Artefakt und wird
+ * nicht nach oben gereicht; das Loch 640 KB - 1 MB verwaltet der Kernel.
+ */
+struct fapi_meminfo {               /* alle Angaben in KB               */
+    unsigned short total_kb;        /* Arbeitsspeicher insgesamt        */
+    unsigned short free_kb;         /* frei                             */
+    unsigned short kernel_kb;       /* vom Kernel reserviert            */
+    unsigned short apps_kb;         /* fuer Programmabbilder reserviert */
+    unsigned short alloc_kb;        /* per DosAllocSeg vergeben         */
+    /* nur 6.0 fuellt sie (CX = Groesse); 5.x laesst sie stehen */
+    unsigned long  total_kb32, free_kb32;
+    unsigned long  box_kb;
+    unsigned long  swap_kb;         /* 5.x/6.1 (CX >= 30): Auslagerungs- */
+    unsigned long  swapped_kb;      /* datei und davon belegt           */
+};
+#define MEMINFO_V60  18
+#define MEMINFO_V61  30             /* dazu swap_kb, swapped_kb (wie 6.1) */
+
+struct fapi_dirent {                /* DosFindEntry                     */
+    char           name[256];       /* Dateiname, auch fuer lange Namen */
+    unsigned char  attr;            /* FAT-Attribute (10h = Verzeichnis) */
+    unsigned long  size;
+    unsigned short date, time;      /* FAT-Format                       */
+};
+
+#define ENV_CALLER          1
+#define FREESPACE_KB        0x8000
+#define FSI_REMOTE          0x20    /* Netzlaufwerk (NET USE)           */
+#define FAPI_ERR_LOCKED     0xFFF2  /* Bereich von anderem gesperrt (6.3) */
+#define OPEN_DENYALL        0x10    /* andere duerfen nichts              */
+#define OPEN_DENYWRITE      0x20    /* andere duerfen lesen               */
+#define OPEN_DENYREAD       0x30    /* andere duerfen schreiben           */
+#define OPEN_DENYNONE       0x40    /* andere duerfen alles               */
+#endif

@@ -477,7 +477,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `SHA256SUM`, `FREE`, `UNAME`, `WHOIS`, `DIG` (wie BIND-dig), `NSLOOKUP`
   wie unter Windows, `AT` (Zeitplaner wie NT: `AT 14:30 /EVERY:Mo "Befehl"`,
   Dienst `AT /SERVICE` startet von selbst);
-  `PS`, `KILL`, `PSTREE`, `TOP`, `UPTIME` (Rechenzeit je Programm)
+  `PS`, `KILL`, `PSTREE`, `TOP`, `UPTIME` (Rechenzeit je Programm);
+  Netz: `ARP`, `TRACERT`, `ROUTE PRINT`, `CURL` (nur http – TLS gibt es
+  erst ab 6.3 für den 386)
 - CMD mit den Befehlen aus FreeCOM/NT (aus 6.3): `PUSHD`/`POPD`/`DIRS`,
   `HISTORY`, `ALIAS`, `WHICH`, `CDD`, `SET /P /A`, `IF /I`, `IF DEFINED`,
   Vergleiche `EQU NEQ LSS LEQ GTR GEQ`, `FOR /D /R /L /F`, `COPY /Y /V`,

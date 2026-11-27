@@ -1065,6 +1065,33 @@ static unsigned net_hostname(struct net_call __far *c)
     return 0;
 }
 
+/* Nachbar-Cache lesen (ARP -a) */
+static unsigned net_neigh(struct net_call __far *c)
+{
+    struct fapi_neigh __far *u = uptr(c->usel, c->p, sizeof(struct fapi_neigh));
+    unsigned i;
+    if (!u || c->n < sizeof(struct fapi_neigh) || u->idx >= NARP)
+        return FAPI_ERROR;
+    i = u->idx;
+    zero((unsigned char __far *)u + 2, sizeof(struct fapi_neigh) - 2);
+    if (!arpc[i].state)
+        return 0;
+    cpy(u->ip, arpc[i].ip, 16);
+    cpy(u->mac, arpc[i].mac, 6);
+    u->ifc = arpc[i].ifc;
+    u->state = arpc[i].state;
+    {
+        unsigned long d = now - arpc[i].t;  /* Takte -> s ohne __U4D    */
+        unsigned q = 0;
+        while (d >= 6400UL && q < 65000u) {
+            d -= 6400UL;
+            q += 64;
+        }
+        u->age = q + (unsigned)d / 100;
+    }
+    return 0;
+}
+
 static unsigned e_call(void __far *v)   /* FAPI_NET                      */
 {
     struct net_call __far *c = v;
@@ -1083,6 +1110,8 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
         return sk_list(c);
     case NET_HOSTNAME:
         return net_hostname(c);
+    case NET_NEIGH:
+        return net_neigh(c);
     case NET_SELECT:
         return sk_select(c);
     }
