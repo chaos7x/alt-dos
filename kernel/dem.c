@@ -625,6 +625,20 @@ static unsigned d_rw(int t, struct dem_req *q)
     l32 = q->pos;
     if (FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
         return E_DENIED;
+    if (l32 < q->pos && q->count && q->fn == DEM_WRITE) {
+        /* hinter dem Dateiende schreiben: DOS laesst die Datei bis zur
+           Stelle wachsen (WSWAP schreibt erst ab Stelle 4 und traegt den
+           Kopf zuletzt ein), der Kernel setzt die Stelle aufs Ende */
+        l32 = q->pos;
+        r = FAPI(FAPI_NEWSIZE, KDATA, h, (unsigned)&l32, 0);
+        if (FAILED(r))
+            return errmap(r, E_DENIED);
+        if (e && q->pos > e->size)
+            e->size = q->pos;
+        l32 = q->pos;
+        if (FAILED(FAPI(FAPI_SEEK, KDATA, h, (unsigned)&l32, 0)))
+            return E_DENIED;
+    }
     if (q->count == 0 && q->fn == DEM_WRITE) {  /* Groesse setzen (DOS):  */
         l32 = q->pos;                           /* kuerzen/verlaengern    */
         r = FAPI(FAPI_NEWSIZE, KDATA, h, (unsigned)&l32, 0);

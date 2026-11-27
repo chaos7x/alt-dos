@@ -1548,6 +1548,29 @@ nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
 xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
 könnte dieselbe Ursache haben.
 
+### Erledigt (27.11.2026): Windows nach EXIT wieder einlagern
+
+Vom Nutzer gemeldet: im Standardmodus die MS-DOS-Eingabeaufforderung
+öffnen, `exit` – „Fataler Fehler beim Beenden! Windows kann nicht
+eingelagert werden“, zurück in CMD. Spur der DOS-Aufrufe (Port E9h,
+vorübergehend): beim Auslagern legt WinOldAp `~WOAxxxx.TMP` an, springt
+an Stelle 4 der leeren Datei, schreibt das Speicherabbild, trägt zuletzt
+die Länge in die ersten 4 Byte ein und hängt hinten 2 + 4 Byte an. Beim
+Einlagern liest WSWAP die Länge, springt dorthin und liest die 6 Byte –
+die letzten 4 fehlten. Ursache: FAPI_SEEK setzt die Stelle hinter dem
+Dateiende aufs Ende („keine Löcher“), der DEM wusste davon nichts. Alle
+Daten landeten 4 Byte zu früh, die Datei blieb 4 Byte zu kurz. DOS lässt
+eine Datei beim Schreiben hinter dem Ende bis zur Stelle wachsen.
+
+Jetzt gibt FAPI_SEEK die echte Stelle zurück, wenn sie begrenzt wurde,
+und `d_rw` (dem.c) verlängert die Datei vor dem Schreiben per
+FAPI_NEWSIZE (mit Nullen) bis zur Stelle. Testprogramm im Scratchpad mit
+der Schreibfolge von WSWAP (vorher 4 Byte zu kurz, jetzt richtig). In
+QEMU geprüft: Eingabeaufforderung, `exit`, Programm-Manager wieder da,
+zweimal hintereinander, Menü danach bedienbar. Vermutlich war das auch
+der zweite Teil von „WIN landet in der DOS-Eingabeaufforderung“ (dort
+scheiterte nach EXIT ebenfalls das Einlagern).
+
 ### Erledigt (25.11.2026): Ton unter Windows (SNDBLST2.DRV)
 
 Windows 3.11 im Standardmodus mit dem mitgelieferten Sound-Blaster-

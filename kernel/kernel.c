@@ -4191,8 +4191,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         p = MK_FP(usel, a2);
         files[k].pos = *p;
         if (files[k].kind == OF_FILE && files[k].pos > files[k].f.size)
-            files[k].pos = files[k].f.size;     /* keine Loecher         */
-        return 0;
+            *p = files[k].pos = files[k].f.size;    /* keine Loecher; die  */
+        return 0;                               /* echte Stelle zurueck  */
     }
 
     case FAPI_NEWSIZE: {
