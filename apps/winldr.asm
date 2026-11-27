@@ -284,12 +284,14 @@ T_PSET  equ     21                      ; 50h: BX Selektor -> Segment
 T_NPSP  equ     22                      ; 26h/55h: DX Selektor -> Segment
 T_5D    equ     24                      ; 5D0Ah: DS:DX 22 Byte hin
 T_NET   equ     25                      ; 5Eh/5Fh: Netz (Puffer hin/zurueck)
+T_DSBX  equ     26                      ; 1Bh/1Ch/1Fh/32h: DS:BX zurueck
 T_FCB   equ     23                      ; 11h/12h/13h: FCB DS:DX hin und
                                         ; zurueck, Ergebnis ins DTA
 
 ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      09h, T_STR,  0Bh, T_PASS, 0Ch, T_PASS, 0Eh, T_PASS
         db      11h, T_FCB,  12h, T_FCB,  13h, T_FCB
+        db      1Bh, T_DSBX, 1Ch, T_DSBX, 1Fh, T_DSBX, 32h, T_DSBX
         db      19h, T_PASS, 1Ah, T_DSET, 25h, T_VSET, 2Ah, T_PASS
         db      2Bh, T_PASS, 2Ch, T_PASS, 2Dh, T_PASS, 2Eh, T_PASS
         db      2Fh, T_DGET, 30h, T_PASS, 33h, T_PASS, 34h, T_ESBX
@@ -357,7 +359,7 @@ pm21:   test    ah, ah                  ; 00h: KRNL beendet den DOS-Teil
 jtab:   dw      f_pass, f_sz, f_rd, f_wr, f_vget, f_vset, f_dset, f_dget
         dw      f_find, f_cdir, f_ren, f_xopn, f_true, f_ctry, f_esbx, f_psp
         dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp, f_fcb, f_5d
-        dw      f_net
+        dw      f_net, f_dsbx
 
 ; Real Mode aufrufen (INT 21h mit R), Ergebnis in die Register
 callrm: push    es
@@ -910,6 +912,16 @@ f_esbx: call    callrm                  ; 34h/52h: ES:BX, ES -> Selektor
         int     31h
         mov     [c_es], ax
         mov     word [fl_out], 8
+        jmp     done
+
+f_dsbx: call    callrm                  ; 1Bh/1Ch/1Fh/32h: DS:BX (DPB,
+        cmp     byte [R_eax], 0FFh      ; FAT-Kennung) wie DOSX: DS ->
+        je      .err                    ; Selektor (sonst liest Windows
+        mov     bx, [R_ds]              ; ueber seinen eigenen DS)
+        mov     ax, 0002h
+        int     31h
+        mov     [c_ds], ax
+.err:   mov     word [fl_out], 1Fh
         jmp     done
 
 f_psp:  call    callrm                  ; 51h/62h: BX = Segment -> Selektor
