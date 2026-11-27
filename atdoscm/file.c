@@ -751,7 +751,7 @@ static void params_out(u16 seg, u16 off, unsigned d)
     u32 cl = *(u32 *)(dbuf + 4), sec;
     u8 spc = dbuf[1], m;
     B(seg, off + 1) = dbuf[0] == 2 ? 7 : 5;
-    W(seg, off + 2) = dbuf[0] == 2 ? 0 : 1;
+    W(seg, off + 2) = dbuf[0] >= 2 ? 0 : 1;   /* Bit 0: nicht wechselbar */
     W(seg, off + 4) = 1024;
     B(seg, off + 6) = 0;
     W(seg, off + 7) = *(u16 *)(dbuf + 2);
@@ -1016,7 +1016,7 @@ static void ioctl_fn(struct frame __far *f)
             break;
         }
         if (AL(f) == 0x08)
-            f->ax = dbuf[0] == 2 ? 0 : 1;
+            f->ax = dbuf[0] >= 2 ? 0 : 1;   /* Diskette, Wechselplatte */
         else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x66)
             serial_out(f->ds, f->dx);
         else if (AL(f) == 0x0D && CH(f) == 0x08 && CL(f) == 0x60)

@@ -1281,8 +1281,8 @@ int21:  cmp     ah, 44h
         cmp     al, 08h
         jne     .n9
         mov     ax, 1                   ; fest = 1, Wechselmedium = 0
-        cmp     byte [cs:dbuf], 2
-        jne     .ok
+        cmp     byte [cs:dbuf], 2       ; (2 Diskette, 3 Wechselplatte)
+        jb      .ok
         dec     ax
         jmp     .ok
 .n9:    cmp     al, 09h
@@ -1334,7 +1334,7 @@ int21:  cmp     ah, 44h
 .p1:    mov     [di + 1], al
         xor     ax, ax
         cmp     byte [cs:dbuf], 2
-        je      .p2
+        jae     .p2
         inc     ax                      ; nicht wechselbar
 .p2:    mov     [di + 2], ax
         mov     word [di + 4], 1024     ; Zylinder (geschaetzt)

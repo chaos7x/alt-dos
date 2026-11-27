@@ -1548,6 +1548,30 @@ nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
 xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
 könnte dieselbe Ursache haben.
 
+### Erledigt (27.11.2026): Takt ohne 100-Hz-Raster, ZIP als Wechselplatte
+
+Mauszeiger mit VBESVGA (Rest nach dem Takt-Fix vom 26.11.): der Nutzer
+fand ihn „angenehm“, unter MS-DOS 6.22 auf derselben VM ruckelt er mit
+VBESVGA genauso (der Treiber zeichnet den Zeiger nur im Takt nach). Bei
+uns kamen die Takte trotzdem unregelmäßig: ohne eigenen Teiler der Box
+rechnete der Monitor 18,2 Hz aus dem 100-Hz-Takt des Kernels, die
+Abstände wechselten zwischen 50 und 60 ms. Gemessen mit einem
+DPMI-Testprogramm (RDTSC je Takt in einem PM-Handler, Scratchpad):
+Abstände 89–111 %, Streuung 9 %. Jetzt läuft der echte Kanal 0 vorn mit
+einem Achtel des Box-Teilers (8192, 145,6 Hz), sobald die Box INT 8
+selbst hat (Real Mode oder PM) – jeder achte irq0 ist genau ein Takt
+(v86.c `kpit_check`/`k8`, Gleichlauf in `pit_run` über `pit_acc`).
+QEMU danach: 98–102 %, Streuung 0,5 %; mit DOS-Aufrufen im Wechsel
+3,6–9 % (ein Takt kommt dann einen irq0 später). Mit eigenem Teiler der
+Box (DOOM, Digger) unverändert.
+
+ZIP im Datei-Manager als Festplatte (vom Nutzer gemeldet, unter MS-DOS
+über das Adaptec-BIOS als Wechsellaufwerk): die Laufwerksinfo des DEM
+(`d_dinfo`) kannte nur „fest“ und „Diskette“, eine Wechselplatte galt als
+fest – 4408h meldete 1. Jetzt Art 3 = Wechselplatte: 4408h 0, 440Dh 0860h
+„wechselbar“, Gerätetyp und Geometrie weiter wie eine Platte (Box-Kern
+und BOXSHELL). In QEMU mit `scsi-hd,removable=on` am lsi53c895a geprüft.
+
 ### Erledigt (27.11.2026): Lücken gegenüber MS-DOS 4.0
 
 Funktionstabelle von INT 21h (MS_TABLE.ASM) gegen den Box-Kern

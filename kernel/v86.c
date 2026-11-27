@@ -131,6 +131,7 @@ static unsigned char pit_acc_m[NTASK];  /* Zugriff 1 lo, 2 hi, 3 lo/hi   */
 static unsigned char pit_latd[NTASK];   /* Latch gueltig                 */
 static unsigned char pit_wlo[NTASK];    /* lo/hi: lo schon geschrieben   */
 static unsigned long pit_acc[NTASK];
+static unsigned char k8[NTASK];         /* Box will den Achteltakt (kpit_check) */
 static unsigned pit_n0[NTASK];          /* irq0_n bei der letzten Messung */
 static unsigned pit_lastc;              /* zuletzt gelesener echter Zaehler */    /* Schritte bis zum naechsten INT 8 */
 static unsigned long pit_t0[NTASK];     /* Takt der letzten Messung      */
@@ -460,8 +461,9 @@ void __far v86_destroy(int t)
     if (noblink[t])
         blink_hw(0);
     noblink[t] = 0;
-    if (pit_rl[t] && box_fg(t))
+    if ((pit_rl[t] || k8[t]) && box_fg(t))
         kpit_set(0);
+    k8[t] = 0;
     pit_rl[t] = 0;
     if (pt_box[t])
         vga_leave(t);                           /* A0-BF vor dem Freigeben */
@@ -851,8 +853,9 @@ void __far v86_park(int t)
     spk_ports(t, 0);
     vfgr[t] = vtk[t] = virq[t] = 0;     /* Ton: VSB.SYS (Ereignis oben)  */
     spk[t] = 0;
-    if (pit_rl[t] && box_fg(t))
+    if ((pit_rl[t] || k8[t]) && box_fg(t))
         kpit_set(0);
+    k8[t] = 0;
     pit_rl[t] = 0;
     if (noblink[t])
         blink_hw(0);
@@ -948,7 +951,7 @@ void __far v86_poll(void)
     if (kpit_div) {                     /* schneller Takt nur fuer die Box vorn */
         int s = fg, ok = 0;
         for (t = 0; t < NTASK; t++)
-            if (box_ses[t] == s && s >= 0 && pit_rl[t])
+            if (box_ses[t] == s && s >= 0 && (pit_rl[t] || k8[t]))
                 ok = 1;
         if (!ok)
             kpit_set(0);
@@ -1259,10 +1262,23 @@ static int kpit_hw(int t)
     return (box_hk[t] & HK_HWT) && pit_rl[t] && box_fg(t);
 }
 
+/* Laesst die Box den Teiler stehen (18,2 Hz), haengt aber selbst am Takt
+   (INT 8 im Real Mode oder im PM - Windows), laeuft der echte Kanal 0 vorn
+   mit einem Achtel davon (145,6 Hz): jeder achte irq0 ist genau ein INT 8.
+   Aus dem 100-Hz-Raster kamen die Takte abwechselnd nach 50 und 60 ms
+   (VBESVGA zeichnet den Mauszeiger im Takt). */
+#define KPIT_EIGHTH 8192U
+
 static void kpit_check(int t)
 {
+    if (!box_fg(t))
+        return;                         /* hinten: kpit_set(0) andernorts */
     kpit_slow = (unsigned char)kpit_hw(t);
-    kpit_set(pit_rl[t] && box_fg(t) ? pit_rl[t] : 0);
+    k8[t] = !pit_rl[t] && (pm_hooked(t, 8) || !vec_def(8));
+    if (pit_rl[t])
+        kpit_set(pit_rl[t]);
+    else
+        kpit_set(k8[t] ? KPIT_EIGHTH : 0);
 }
 
 static unsigned long pit_div(int t)
@@ -1273,7 +1289,7 @@ static unsigned long pit_div(int t)
 /* Zeit fortschreiben: Zaehler und faellige INT 8 */
 static int pit_sync(int t)
 {
-    return kpit_div && kpit_div == pit_div(t) && box_fg(t);
+    return kpit_div && kpit_div == (pit_rl[t] ? pit_rl[t] : KPIT_EIGHTH) && box_fg(t);
 }
 
 static void pit_run(int t)
@@ -1288,11 +1304,16 @@ static void pit_run(int t)
            schaltet ihn je INT 8 um) klang dadurch unsauber. */
         n -= pit_n0[t];
         pit_n0[t] = irq0_n;
-        if (n > 2)
-            n = 2;
-        while (n-- && vt_pend[t] < 2)
-            vt_pend[t]++;
-        pit_acc[t] = 0;
+        if (n > 16)
+            n = 16;
+        while (n--) {                   /* je irq0 kpit_div Schritte     */
+            pit_acc[t] += kpit_div;     /* (Teiler der Box oder ein      */
+            if (pit_acc[t] >= dv) {     /* Achtel davon)                 */
+                pit_acc[t] -= dv;
+                if (vt_pend[t] < 2)
+                    vt_pend[t]++;
+            }
+        }
         /* den echten Zaehler liest pit_in nur, wenn die Box ihn will -
            pit_run laeuft nach jeder Falle (auf dem 486 tausende Male je
            Sekunde, drei ISA-Zugriffe) */
@@ -1319,7 +1340,7 @@ static void pit_now(int t)
     pit_run(t);
     if (pit_sync(t)) {
         pit_elapsed(t);
-        pit_cnt[t] = pit_lastc;
+        pit_cnt[t] = (unsigned)(pit_div(t) - pit_acc[t] - (kpit_div - pit_lastc));
     }
 }
 
@@ -1765,8 +1786,7 @@ static void inject(struct v86_iret *r, int t)
         spk_ports(t, 0);
         vdd_bg(t);
     }
-    if (pit_rl[t])
-        kpit_check(t);                          /* vorn schneller Takt   */
+    kpit_check(t);                              /* vorn schneller Takt   */
     vga_freeze(t);
     account(t);
     vdd_tk(t);
@@ -1862,8 +1882,7 @@ void __far v86_tick(struct v86_iret *r)
     } else {                                      /* "transfer stack overflow") */
         pvi_in(r, t);                           /* DPMI-Programm (Ring 3) */
         vga_freeze(t);
-        if (pit_rl[t])
-            kpit_check(t);
+        kpit_check(t);
         dp_hwint(r, t);
         pvi_out(r, t);
     }

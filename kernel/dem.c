@@ -774,7 +774,7 @@ static unsigned d_space(struct dem_req *q)
 
 /* Laufwerksinfo fuer die Laufwerks-IOCTL von BOXSHELL (4408h/4409h/440Dh
    ...): AT-DOS-Laufwerke wie MS-DOS lokale. 32 Byte nach buf: +0 Art (1
-   fest, 2 Wechsel), +1 Sektoren je Cluster, +2 Bytes je Sektor, +4
+   fest, 2 Diskette, 3 Wechselplatte), +1 Sektoren je Cluster, +2 Bytes je Sektor, +4
    Cluster (DWORD), +8 Seriennummer, +12 Bezeichnung (11), +23
    Dateisystem (8), +31 Medienbyte. CD und leere Laufwerke -> Fehler */
 static struct fapi_label di_lb;
@@ -799,7 +799,9 @@ static unsigned d_dinfo(int t, struct dem_req *q)
     o = bl(t, q->buf);
     for (k = 0; k < 32; k++)
         o[k] = 0;
-    o[0] = (fsi.flags & FSI_REMOVABLE) && !(fsi.flags & FSI_REMDISK) ? 2 : 1;
+    /* 1 fest, 2 Diskette, 3 Wechselplatte (ZIP: 4408h "wechselbar" wie
+       MS-DOS ueber das Adaptec-BIOS - WINFILE zeigt das Wechselsymbol) */
+    o[0] = (fsi.flags & FSI_REMDISK) ? 3 : (fsi.flags & FSI_REMOVABLE) ? 2 : 1;
     o[1] = (unsigned char)spc;
     w16(o + 2, fsi.bsize);
     w32(o + 4, cl);
@@ -820,7 +822,7 @@ static unsigned d_dinfo(int t, struct dem_req *q)
         else
             o[26] = '1', o[27] = '2';
     }
-    o[31] = o[0] == 2 || (fsi.flags & FSI_REMDISK) ? 0xF0 : 0xF8;
+    o[31] = o[0] >= 2 ? 0xF0 : 0xF8;
     return 0;
 }
 
