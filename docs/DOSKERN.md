@@ -1558,6 +1558,14 @@ WM_QUERYENDSESSION). Offen bleibt, woher die Eingabeaufforderung kam –
 geöffnet hatte der Nutzer sie nicht bewusst; passt zu einem Enter, das
 nach dem Start noch ankommt und den markierten Eintrag startet (wie oben
 die Gruppe) bzw. zu #149.
+Genauer (Nutzer): beim vergeblichen Beenden kam keine Meldung, und das
+Symbol erschien erst nach dem Klick auf „MS-DOS-Eingabeaufforderung“.
+Normal (in 86Box P3B-F geprüft) zeigt Windows für ein weggeschaltetes
+DOS-Programm ein Symbol und meldet beim Beenden „Die Anwendung läuft
+noch“; EXIT aus der Eingabeaufforderung und ein durchlaufendes Programm
+(MEM über „Ausführen“) lassen Windows normal beenden. Es gab also eine
+DOS-Anwendung ohne Symbol, die das Beenden still verneinte – nicht
+nachgestellt.
 
 ### Erledigt (27.11.2026): „Zu viele Dateien“ unter Windows
 
