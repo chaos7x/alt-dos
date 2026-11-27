@@ -783,10 +783,18 @@ static unsigned d_dinfo(int t, struct dem_req *q)
     unsigned char __far *o;
     unsigned d = q->drive, k, cs = 0, spc;
     unsigned long cl = 0;
+    o = bl(t, q->buf);
+    o[0] = 0;                               /* Art unbekannt          */
     if (FAILED(FAPI(FAPI_QFSINFO, KDATA, d, (unsigned)&fsi, 0)))
         return E_NOTREADY;
-    if (fsi.bsize == 2048 || (fsi.flags & FSI_NOMEDIA))
-        return E_NOTREADY;                  /* CD/leer: wie bisher    */
+    if (fsi.bsize == 2048 || (fsi.flags & FSI_NOMEDIA)) {
+        /* CD/leer: Fehler wie bisher, aber die Art bleibt sichtbar -
+           eine leere Wechselplatte (ZIP, in 86Box auch beim Anlaufen)
+           ist fuer 4408h weiter "wechselbar" wie unter MS-DOS */
+        if (fsi.bsize != 2048)
+            o[0] = (fsi.flags & FSI_REMDISK) ? 3 : (fsi.flags & FSI_REMOVABLE) ? 2 : 0;
+        return E_NOTREADY;
+    }
     if (fat_geom(d, &cs, &cl) || !cs) {
         cs = 1;
         cl = fsi.sectors;
