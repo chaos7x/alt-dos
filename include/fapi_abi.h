@@ -378,6 +378,52 @@ struct fapi_procaddr {
     char           name[34];        /* Name (bis 33 Zeichen + 0)         */
     unsigned short off, sel;        /* -> Einsprung                      */
 };
+#define FAPI_SEM            0x68    /* Semaphoren (6.5, wie DosCreateSem/
+                                       DosSemRequest/DosSemSet/DosSemClear/
+                                       DosSemWait/DosMuxSemWait von OS/2
+                                       1.x, docs/FAPI-IPC.md): BX = SEM_*,
+                                       CX = struct fapi_sem (MUXWAIT:
+                                       struct fapi_muxsem), DX = Name bei
+                                       CREATE/OPEN. Kennung (sem): RAM-
+                                       Semaphore = Fernzeiger auf ein
+                                       Doppelwort im eigenen Speicher (0 =
+                                       frei; kein Anlegen noetig), System-
+                                       semaphore = Wert aus CREATE/OPEN.
+                                       Frist ms: FFFFFFFFh = ohne, 0 = nur
+                                       pruefen. -> 0, FAPI_ERROR (Kennung/
+                                       Name), FAPI_ERR_TIMEOUT, _INTR
+                                       (Signal wartet), _DENIED (exklusiv,
+                                       gehoert einem anderen) */
+#define SEM_CREATE          0       /* DX = "\SEM\name", ms = SEM_EXCL
+                                       oder 0 -> sem; FAPI_ERR_EXIST,
+                                       FAPI_ERR_FULL (32 im System)      */
+#define SEM_OPEN            1       /* DX = Name -> sem                   */
+#define SEM_CLOSE           2       /* letzter Verweis loescht sie;
+                                       FAPI_ERR_INUSE = gehoert dem
+                                       Aufrufer noch                     */
+#define SEM_SET             3
+#define SEM_CLEAR           4       /* frei, Wartende laufen weiter; nach
+                                       mehrfachem REQUEST erst beim
+                                       letzten                           */
+#define SEM_WAIT            5       /* bis sie frei ist (nimmt sie nicht) */
+#define SEM_SETWAIT         6       /* setzen, dann wie WAIT              */
+#define SEM_REQUEST         7       /* warten und nehmen. Systemsemaphore:
+                                       Besitzer mit Zaehler; -> 1 statt 0,
+                                       wenn der Vorbesitzer endete, ohne
+                                       freizugeben                       */
+#define SEM_MUXWAIT         8       /* bis eine der n frei ist -> index   */
+#define SEM_EXCL            1       /* CREATE: solange sie jemandem
+                                       gehoert, setzt/loescht nur er     */
+#define FAPI_MUXSEM_MAX     16
+struct fapi_sem {
+    unsigned long  sem;             /* Kennung                           */
+    unsigned long  ms;              /* Frist; CREATE: SEM_*-Merker        */
+};
+struct fapi_muxsem {
+    unsigned short n, index;        /* Anzahl, -> Nummer der freien      */
+    unsigned long  ms;
+    unsigned long  sem[FAPI_MUXSEM_MAX];
+};
 struct fapi_lock {
     unsigned long  ofs, len;
     unsigned short flags;           /* LOCK_*                            */
@@ -974,6 +1020,7 @@ struct fapi_fsinfo {
 #define FAPI_ERR_NOTREADY   0xFFF9  /* Geraet nicht bereit (Drucker aus, Papierende) */
 #define FAPI_ERR_NOCON      0xFFF3  /* losgeloest (DETACH): keine Konsole */
 #define FAPI_ERR_LOCKED     0xFFF2  /* Bereich von anderem gesperrt (6.3) */
+#define FAPI_ERR_INTR       0xFFF1  /* Warten abgebrochen: Signal steht an (6.5) */
 #define FAPI_ERR_FIRST      0xFFF0
 
 #define FAPI_VERSION        0x0628

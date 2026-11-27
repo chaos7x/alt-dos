@@ -40,6 +40,7 @@ das Loop-Backend „durchs Dateisystem“.
 | 6.1 | Loop, DriveSpace | fat.c: globale Variablen in eine Struktur je Operation; danach Tiefe 2 + Loop-Backend durchs Dateisystem |
 | 6.2 | Netzwerk | Sperren für Objekte statt Laufwerke (FAT-, Verzeichnis-, EA-Cache einzeln); ISO9660.IFS und Redirector wie fat.c; Netzstapel von Anfang an ohne `klock` – erledigt, siehe „Stand 6.2“ |
 | 6.3 | VirtIO, SMB/Domäne | übriger Kernel: Dateitabelle/Handles, Pipes, Taskverwaltung, Speicher prüfen und markieren; Diskette mit eigener Sperre; `klock` entfällt, alle FAPI-Aufrufe wie heute `fapi_nolock` |
+| 6.5 | IPC wie OS/2 1.x (docs/FAPI-IPC.md) | der Rest aus der Zeile „6.3“ (dort liegen geblieben: 6.3/6.4 wurden Box-Module und eigener DOS-Kern) – Entscheidung des Nutzers, 27.11.2026: nach Semaphoren/gemeinsamen Segmenten/Named Pipes (die ohne `klock` entstehen), vor den Threads |
 | 6.x danach | nach Bedarf | mehrere Aufträge je Treiber (AHA154X mehrere CCBs, NCR mit Trennen) |
 | 7.0 | 32 Bit | Kernel von der ersten Zeile an wiedereintrittsfest: Zustand je Aufruf, Aufträge durch Schichten (wie NT-IRPs), Arbeitsfäden; Loop durchs Dateisystem, Extents nur für die Auslagerungsdatei |
 

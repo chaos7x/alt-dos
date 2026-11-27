@@ -2103,7 +2103,13 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Warteschlangen, Prioritäten, Zeitgeber (6Ch–6Eh). 67h–6Eh sind auf
   beiden Linien frei (5.x bis 5Eh, main bis 66h). Stufe 1 DosLoadModule
   erledigt (27.11.2026, auch für FX-Programme, Start-Routinen über
-  `NE_RSTUB`; in QEMU geprüft, Stand in `docs/FAPI-IPC.md`).
+  `NE_RSTUB`; in QEMU geprüft, Stand in `docs/FAPI-IPC.md`). Stufe 2
+  Semaphoren erledigt (27.11.2026, `kernel/sem.c` in KTEXT4, FAPI 68h ohne
+  Kernelsperre, `FAPI_ERR_INTR` FFF1h, Test `\DEMO\SEMTEST`, in QEMU
+  geprüft – Test /tmp/claude-0/sem/go.sh). Reihenfolge (Entscheidung des
+  Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
+  des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
+  Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.
 
 - **Befehle aus FreeCOM für CMD** – erledigt (25.11.2026, Auftrag „1, 9
   und 7 machen“): PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD/`CD /D`,

@@ -2019,6 +2019,7 @@ static void task_end(int t)
     dmab_free(t);                           /* eigener DMABUF             */
     locks_task_end(t);
     ufs_task_end(t);                        /* Dienst eines Netzlaufwerks */
+    sem_task_end(t);                        /* Semaphoren freigeben       */
     for (i = 0; i < NTASK; i++)
         if (task[i].state != T_FREE && task[i].parent == t)
             task[i].parent = -1;
@@ -3341,6 +3342,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOSETPAGE: case FAPI_AUDIO:     /* Ton wartet auf die Karte */
     case FAPI_QTICKS: case FAPI_NET:          /* Netz: eigene Sperren  */
     case FAPI_RANDOM: case FAPI_UFS:            /* UFS: eigenes Warten   */
+    case FAPI_SEM:                              /* Semaphoren (sem.c)    */
     case FAPI_BEEP:                             /* wartet die Tondauer   */
         return 1;
     case FAPI_READ:
@@ -4671,6 +4673,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return user_ok(usel, a1, sizeof(struct fapi_joy), 1) ? joy_fapi(usel, a1) : FAPI_ERROR;
     case FAPI_UFS:                              /* NET USE (ufs.c)        */
         return ufs_fapi(usel, a1, a2, a3);
+    case FAPI_SEM:                              /* Semaphoren (sem.c)     */
+        return sem_fapi(usel, a1, a2, a3);
 
     case FAPI_RANDOM:                           /* Pool aus start.asm     */
         if (a2 > 34)
@@ -5113,6 +5117,10 @@ unsigned __far kf_ufs_block(unsigned long id, unsigned t)
     return r;
 }
 unsigned __far kf_proc_run(unsigned long id) { return proc_run(id); }
+unsigned __far kf_sig_waiting(void)
+{
+    return current >= 0 && (task[current].sig_pending & task[current].sig_mask) != 0;
+}
 unsigned __far kf_user_ok(unsigned sel, unsigned off, unsigned n, int wr)
 {
     return user_ok(sel, off, n, wr);

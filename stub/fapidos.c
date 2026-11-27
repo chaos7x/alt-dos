@@ -1193,6 +1193,31 @@ static unsigned net_box(unsigned fn, unsigned p, unsigned n)
 }
 
 /* ---- Verteiler ---------------------------------------------------------- */
+
+/* RAM-Semaphoren (FAPI_SEM, 6.5): unter DOS gibt es nur einen Task - wer
+   auf eine gesetzte wartet, bekommt gleich "Frist abgelaufen" (auch
+   Signalroutinen laufen hier nicht nebenher). Systemsemaphoren: nein. */
+static unsigned sem_dos(unsigned fn, unsigned off)
+{
+    unsigned long h = *(unsigned long __far *)AP(off);
+    unsigned __far *s = (unsigned __far *)MK_FP((unsigned)(h >> 16), (unsigned)h);
+
+    if (!(unsigned)(h >> 16))
+        return FAPI_ERROR;
+    switch (fn) {
+    case SEM_SET:     *s = 1; return 0;
+    case SEM_CLEAR:   *s = 0; return 0;
+    case SEM_SETWAIT: *s = 1; return FAPI_ERR_TIMEOUT;
+    case SEM_WAIT:    return *s ? FAPI_ERR_TIMEOUT : 0;
+    case SEM_REQUEST:
+        if (*s)
+            return FAPI_ERR_TIMEOUT;
+        *s = 1;
+        return 0;
+    }
+    return FAPI_ERROR;
+}
+
 unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
 {
     unsigned rc = FAPI_ERROR, i;
@@ -1496,6 +1521,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         rc = 0;
         break;
     case FAPI_SHUTDOWNHOLD: rc = 0; break;
+    case FAPI_SEM:          rc = sem_dos(a1, a2); break;
 
     /* nicht unter DOS: OPENDRIVE, DISKINFO, OPENDISK, FMTTRACK, SUBST,
        JOIN, PIPE, SETENV, KBDSETLAYOUT, COMCTL, SHUTDOWN ... */

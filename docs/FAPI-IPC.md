@@ -116,6 +116,50 @@ unverändert.
 - Test: zwei Tasks, Erzeuger/Verbraucher; Besitzer per TASKMAN /K
   beenden -> anderer bekommt „Besitzer beendet“; MUXWAIT.
 
+### Stand Stufe 2 (27.11.2026, in QEMU geprüft)
+
+`kernel/sem.c` (KTEXT4, 2,6 KB), Verteiler `FAPI_SEM` in kernel.c, Wrapper
+in apps/fapi.h (`DosCreateSem`, `DosOpenSem`, `DosCloseSem`, `DosSemSet`,
+`DosSemClear`, `DosSemWait`, `DosSemSetWait`, `DosSemRequest`,
+`DosMuxSemWait` – je mit Zeiger auf `struct fapi_sem` bzw.
+`struct fapi_muxsem`).
+
+- Läuft **ohne Kernelsperre** (`fapi_nolock`, wie Netz und UFS): der
+  Kernel wird nie unterbrochen, zwischen zwei Schlafpunkten ändert sich
+  nichts; nach jedem Aufwachen wird die Kennung neu geprüft.
+- Kennung 32 Bit: RAM-Semaphore = Fernzeiger auf das Doppelwort (Wort 0:
+  0 frei, sonst gesetzt; kein Besitzer, kein Anlegen), Systemsemaphore =
+  0000h:(Generation << 8 | Platz + 1) – eine alte Kennung trifft nach dem
+  Löschen keinen neuen Eintrag.
+- Tabelle: 32 Systemsemaphoren (`NSEM`) in einem Kernelsegment (9 KB),
+  erst beim ersten Anlegen geholt; Name bis 260 Zeichen, groß
+  gespeichert, muss mit `\SEM\` beginnen. Zähler der Öffnungen je Task,
+  der letzte Verweis löscht.
+- REQUEST merkt Besitzer und Zähler; CLEAR des Besitzers gibt erst beim
+  letzten frei. Endet der Besitzer (`sem_task_end` aus task_end), wird
+  sie frei, der nächste REQUEST bekommt sie und das Ergebnis 1 statt 0
+  („Vorbesitzer beendet“ – kein Fehlercode, der Aufrufer besitzt sie).
+  `SEM_EXCL`: solange sie jemandem gehört, setzt/löscht nur er (FFFBh).
+  CLOSE mit eigener Belegung -> FFFAh.
+- Warten in Stücken von 200 ms (`SLICE`): danach Signal prüfen
+  (`FAPI_ERR_INTR` FFF1h, neu) und bei RAM-Semaphoren die lineare Adresse
+  neu bilden (sie ist das Ereignis; ein verschobenes Segment bliebe
+  sonst hängen). Geweckt wird sofort (`proc_run`), die Stücke sind nur
+  der Rückfall. MUXWAIT wartet auf ein gemeinsames Ereignis, das jedes
+  Freigeben auslöst.
+- Stub (MS-DOS): RAM-Semaphoren gehen (ein Task – Warten auf eine
+  gesetzte meldet sofort „Frist abgelaufen“), Systemsemaphoren nicht.
+- Noch nicht: Zeitgeber, die eine Semaphore setzen (Stufe 7);
+  Semaphoren aus Interruptroutinen von Treibern (DevHlp SemClear).
+
+Geprüft mit `\DEMO\SEMTEST.EXE` (nur Platte): Selbsttest (26 Fälle, RAM
+und System, Fristen, Zähler, Mux, Kennung nach dem Löschen), Diener und
+Kunde in zwei Tasks über 500 Runden, Besitzer endet ohne Freigabe ->
+wartender REQUEST bekommt 1, Mux mit Freigabe aus einem anderen Task,
+Strg+C beendet einen Wartenden (Semaphoren danach wieder anlegbar),
+gebunden in der DOS-Box (RAM-Teil). Nicht geprüft: Rückkehr mit
+`FAPI_ERR_INTR` bei eigenem Signalhandler.
+
 ## Stufe 3: gemeinsame Segmente
 
 - `SHRSEG_ALLOC(Name, Größe)`: Speicher wie DosAllocSeg, dazu ein Platz
@@ -142,6 +186,15 @@ unverändert.
 - Später über das Netz (SMB-Named-Pipes) – nicht in 6.5.
 - DOS-Boxen: INT 21h 3Dh auf `\PIPE\…` über den DEM (wie MS-DOS mit LAN
   Manager) – erst nach Bedarf.
+
+## Dazwischen: Rest der Kernelsperre (vor Stufe 5/6)
+
+Entscheidung des Nutzers (27.11.2026): der Abbau von `klock`, in
+`docs/BIGLOCK.md` für 6.3 vorgesehen und liegen geblieben, kommt in 6.5 –
+nach den Stufen 2–4 (die gleich ohne `klock` gebaut werden) und vor den
+Threads. Grund: Threads teilen Handles, LDT und Speicher eines Prozesses,
+genau die Tabellen, die noch unter `klock` stehen (Dateitabelle/Handles,
+Pipes, Taskverwaltung, Speicher; Diskette mit eigener Sperre).
 
 ## Stufe 5: mehr Tasks (nach der Freigabe von 6.4)
 

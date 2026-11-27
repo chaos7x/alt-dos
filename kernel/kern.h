@@ -284,6 +284,8 @@ unsigned __far vdd_int(int t, unsigned n, struct vdd_call *c);
 unsigned __far vdd_cbq(int t, struct vdd_call *c);
 unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 void __far ufs_task_end(int t);
+unsigned __far sem_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);    /* sem.c */
+void __far sem_task_end(int t);
 struct fapi_lock;
 struct ifs_file;
 int  __far ufs_lock(struct ifs_file __far *f, struct fapi_lock __far *l);
