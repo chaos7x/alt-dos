@@ -2618,6 +2618,10 @@ static void svc(int n, struct v86_frame *f, int t)
         visr[t] &= ~1;
         break;
     case 0x09:                                  /* Tastatur (verkettet)  */
+        /* wie das BIOS: 0496h Bit 1 = letzter Code war E0 (graue Taste),
+           Bit 4 = erweiterte Tastatur */
+        wr8(BDA, 0x96, (unsigned char)((rd8(BDA, 0x96) & ~2) | 0x10 |
+                                       (vcur[t] == 0xE0 ? 2 : 0)));
         visr[t] &= ~2;                          /* wie das BIOS: Taste in */
         if (box_fg(t))                          /* den Puffer 41Eh (Lotus */
             kb_pump(t);                         /* Works INSTALL kettet)  */
