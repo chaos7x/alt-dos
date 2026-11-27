@@ -2197,6 +2197,9 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   5D0Ah – KRNL stellt damit den Fehler 15h für WINFILE wieder her) und
   „Fehler beim Lesen von Laufwerk D:“ als Textabfrage mit stehendem
   Windows (WINLDR antwortet im Real Mode auf INT 24h mit „Fehler“).
+  Lücken gegenüber MS-DOS 4.0 geschlossen (27.11.2026, docs/DOSKERN.md):
+  INT 21h 26h, 53h, 64h, 6Bh, CP/M-Platzhalter, 4B05h, alle Vorlagentasten
+  der Zeileneingabe 0Ah; in QEMU geprüft.
   DOSBOX.INI `SHARE=OFF` (Vorschlag des Nutzers): Box wie MS-DOS ohne
   SHARE, ab Werk für `[SETUP.EXE]` – Windows-SETUP überschreibt geladene
   Schriften (SCRIPT.FON) ohne Rückfrage.

@@ -143,6 +143,8 @@ void file_init(void);
 void dpb_init(void);
 u16  dpb_first(void);
 void psp_handles(u16 psp, u16 parent);
+void psp_jcopy(u16 n, u16 c);
+void set_dpb(u16 bs, u16 bo, u16 ds, u16 dof);
 void close_all(u16 psp);
 int  hnd_sft(unsigned h);
 unsigned h_read(unsigned h, u16 seg, u16 off, unsigned n, unsigned *err);

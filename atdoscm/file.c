@@ -858,6 +858,54 @@ static u8 *dpb_of(unsigned d)
     return p;
 }
 
+/* ---- 53h: DPB aus BPB (MS-DOS 4.0 MISC.ASM $SETDPB) -------------------- */
+void set_dpb(u16 bs, u16 bo, u16 ds, u16 dof)
+{
+    u16 bps = W(bs, bo), root, dirs, spf, first;
+    u8 spc = B(bs, bo + 2), sh = 0, nf = B(bs, bo + 5);
+    u32 tot;
+    W(ds, dof + 2) = bps;
+    if (!nf) {                          /* kein FAT-Dateisystem          */
+        B(ds, dof + 8) = 0;
+        W(ds, dof + 0x0D) = bps + 1;    /* wie MS-DOS (AX = Sektorgroesse) */
+    } else {
+        B(ds, dof + 4) = (u8)(spc - 1);
+        while (spc && !(spc & 1)) {
+            sh++;
+            spc >>= 1;
+        }
+        B(ds, dof + 5) = sh;
+        W(ds, dof + 6) = W(bs, bo + 3);
+        B(ds, dof + 8) = nf;
+        root = W(bs, bo + 6);
+        W(ds, dof + 9) = root;
+        dirs = bps >= 32 ? (root + (bps >> 5) - 1) / (bps >> 5) : 0;
+        B(ds, dof + 0x17) = B(bs, bo + 0x0A);
+        spf = W(bs, bo + 0x0B);
+        W(ds, dof + 0x0F) = spf;
+        first = W(bs, bo + 3) + nf * spf;
+        W(ds, dof + 0x11) = first;
+        first += dirs;
+        W(ds, dof + 0x0B) = first;
+        tot = W(bs, bo + 8) ? W(bs, bo + 8) : D(bs, bo + 0x15);
+        tot = tot > first ? tot - first : 0;
+        for (spc = sh; spc; spc--)
+            tot >>= 1;
+        W(ds, dof + 0x0D) = (u16)tot + 1;
+    }
+    W(ds, dof + 0x1D) = 0;
+    W(ds, dof + 0x1F) = 0xFFFF;
+}
+
+/* ---- 26h: Handles nur kopieren (alte Art, ohne Zaehler wie MS-DOS) ----- */
+void psp_jcopy(u16 n, u16 c)
+{
+    u8 __far *s = jft(c);
+    unsigned i;
+    for (i = 0; i < 20; i++)
+        B(n, 0x18 + i) = s[i];
+}
+
 /* ---- 44h IOCTL ---------------------------------------------------------- */
 static void ioctl_fn(struct frame __far *f)
 {

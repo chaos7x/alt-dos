@@ -1548,6 +1548,21 @@ nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
 xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
 könnte dieselbe Ursache haben.
 
+### Erledigt (27.11.2026): Lücken gegenüber MS-DOS 4.0
+
+Funktionstabelle von INT 21h (MS_TABLE.ASM) gegen den Box-Kern
+verglichen, fehlende Teile wie MS-DOS 4.0 nachgebaut (eigener Code):
+26h neuer PSP alter Art (MISC.ASM: Kopie des PSP im CS des Aufrufers,
+Handles nur kopiert, aktueller PSP bleibt), 53h DPB aus BPB ($SETDPB),
+18h/1Dh/1Eh/20h/61h und 6Bh nur AL = 0 (vorher Fehler 1), 64h Merker
+(ohne Wirkung), 4B05h (DOS 5) bestätigt nur. Zeileneingabe 0Ah mit
+allen Vorlagentasten wie KSTRIN.ASM: F1/Rechts, F2, F3, F4, F5 („@“,
+Zeile wird Vorlage), Entf, Einfg, F6 (^Z), F7 (Zeichen 0), Links, LF =
+neue Zeile, ^F übergangen (vorher nur F1/F3). Offen: Strg+P (Ausgabe
+mitdrucken), Steuerzeichen als ^X im Echo. Geprüft QEMU mit einem
+Testprogramm (Werte des PSP/DPB, drei Eingabezeilen mit allen Tasten),
+BIOSCMP unverändert.
+
 ### Erledigt (27.11.2026): Windows nach EXIT wieder einlagern
 
 Vom Nutzer gemeldet: im Standardmodus die MS-DOS-Eingabeaufforderung
