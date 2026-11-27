@@ -20,6 +20,19 @@ neben dem Kernel. Grundsatz bleibt: fremder Code passt selten zum
 
 Produktname in der Zeitlinie: **AT-DOS** (AT = Rechnerklasse und Alternative).
 
+Rückport aus 6.3/6.4, Teil 1 Fehlerbehebungen (Auftrag des Nutzers,
+27.11.2026: „nimm das, was aus 6.x wichtig für 5.x ist“): of_release
+hält refs = 1 bis zum Ende des Schließens (Eintrag wurde sonst derweil
+neu vergeben), FAPI_SEEK gibt die begrenzte Stelle zurück, DETACH-Meldung
+von CMD nicht in die Umleitung (`con_out`), FORMAT nimmt Köpfe/Sektoren
+aus der BIOS-Geometrie (`fapi_fsinfo.disk`, DosDiskInfo), WGET mit
+Weiterleitungen bis 512 Zeichen, CMD fragt „Stapelverarbeitung
+abbrechen“ nur nach einem Abbruch durch das System (`task.ab`/`child_ab`,
+`RCAB`/`CRCAB`, FAPI_QCHILDRC BX = 1). In QEMU geprüft (isapc 4 MB: drei
+DETACH mit Umleitung zugleich, FORMAT einer zweiten Platte mit 8/32 ->
+BPB 32/8, CHKDSK, fsck sauber). Erstes Codesegment danach 65.267 Byte
+(253 frei!) – neuer Kernelcode nur noch nach KTEXT2 (52.390).
+
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`
 (QEMU: FreeDOS-8086 direkt gegen RBOX, eingetippt über den Monitor),

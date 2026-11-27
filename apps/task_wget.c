@@ -20,9 +20,10 @@
 #define NET_RESOLVE_FN
 #include "net.h"
 
-static char args[FAPI_ARGLEN], url[FAPI_ARGLEN], host[128], path[FAPI_ARGLEN];
+#define URLLEN 512                      /* Weiterleitungen (SourceForge ~170) */
+static char args[FAPI_ARGLEN], url[FAPI_ARGLEN], host[128], path[URLLEN];
 static char out[FAPI_PATHLEN], odir[FAPI_PATHLEN], tmp[FAPI_PATHLEN], ts[48];
-static char buf[4096], hdr[4096], req[600], loc[FAPI_ARGLEN];
+static char buf[4096], hdr[4096], req[1024], loc[URLLEN];
 static struct fapi_socket so;
 static struct fapi_sockio io;
 static struct fapi_dirent de;

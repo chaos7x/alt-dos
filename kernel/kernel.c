@@ -97,7 +97,9 @@ struct task {
     unsigned char sig_pending, in_sig;
     unsigned short sig_save[15];                /* Rahmen + AX waehrend des Handlers */
     unsigned char rc;                           /* Rueckgabewert (DosExit)  */
+    unsigned char ab;                           /* abgebrochen (Strg+C, Ausnahme) */
     unsigned char child_rc;                     /* des zuletzt beendeten Kindes */
+    unsigned char child_ab;                     /* ... und ob abgebrochen   */
     unsigned char hold;                         /* haelt SHUTDOWN auf (fragt) */
     unsigned char want_lock;                    /* braucht die Kernelsperre zurueck */
     unsigned char lock_depth;                   /* ihre Tiefe beim Abgeben  */
@@ -110,6 +112,9 @@ struct task {
 };
 
 static struct task    task[NTASK];
+/* rc/ab und child_rc/child_ab als ein Wort (spart Code im ersten Segment) */
+#define RCAB(t)     (*(unsigned short *)&task[t].rc)
+#define CRCAB(t)    (*(unsigned short *)&task[t].child_rc)
 static struct tss286  tss_k;
 static struct tss286  tss[NTASK];
 static struct desc    ldt[NTASK][NLDT];
@@ -1459,7 +1464,7 @@ static int seg_np(int t, unsigned idx)
     if (!(u = mem_get(units))) {
         tmsg(t, "\n", task[t].name, ": ");
         tmsg(t, "Ausgelagertes Segment: kein Speicher", "", "\nProgramm abgebrochen.\n");
-        task[t].rc = 255;
+        RCAB(t) = 0x1FF;
         task_end(t);
         schedule_next();                /* kehrt nicht zurueck           */
     }
@@ -1689,7 +1694,7 @@ unsigned code_np(unsigned err)
         tmsg(t, "\n", task[t].name, ": ");
         tmsg(t, "Programmcode nicht nachladbar (EXE ge\x84ndert oder fehlt, "
                 "kein Speicher)", "", "\nProgramm abgebrochen.\n");
-        task[t].rc = 255;
+        RCAB(t) = 0x1FF;
         task_end(t);                    /* haelt die Sperre noch         */
         schedule_next();                /* kehrt nicht zurueck           */
     }
@@ -2080,8 +2085,8 @@ static int task_create(const char *cmd, int session, int parent, int from)
     task[t].sig_tramp = task[t].sig_mask = 0;
     task[t].sig_pending = task[t].in_sig = 0;
     task[t].bg = 0;
-    task[t].rc = 0;
-    task[t].child_rc = 0;
+    RCAB(t) = 0;
+    CRCAB(t) = 0;
     task[t].hold = 0;
     task[t].want_lock = 0;
     for (i = 0; i < 3; i++) {                   /* Standard-Handles erben */
@@ -2144,7 +2149,7 @@ static void task_end(int t)
     vio_task_end(s, t);                     /* Vollbild zuruecknehmen   */
 
     if (p >= 0)
-        task[p].child_rc = task[t].rc;      /* fuer ERRORLEVEL          */
+        CRCAB(p) = RCAB(t);      /* fuer ERRORLEVEL          */
     if (task[t].bg)
         ;                                   /* Hintergrund (Pipe): niemand wartet */
     else if (p >= 0 && task[p].state == T_WAIT)
@@ -2273,7 +2278,7 @@ static void do_break(void)
     if (task[t].parent < 0 && s == 0)
         return;
     vio_kputs(s, "^C\n");
-    task[t].rc = 255;
+    RCAB(t) = 0x1FF;
     if (current >= 0) {                         /* Dateien schliessen: Sperre */
         klock = current;
         klock_depth = 1;
@@ -2620,8 +2625,14 @@ static void of_release(int k)
     struct ofile __far *o = &files[k];
     if (k == CONS || !o->refs)
         return;
-    if (--o->refs)
+    if (o->refs > 1) {
+        o->refs--;
         return;
+    }
+    /* letzter Verweis: refs bleibt 1, bis alles zu ist - das Schliessen
+       kann im Treiber schlafen; mit refs = 0 vergab of_alloc den Eintrag
+       in der Zeit an einen anderen Task, und das Schliessen traf dessen
+       Datei (aus 6.3, 23.11.2026) */
     o->owner = -1;
     if (o->kind == OF_FILE)
         ifs_close(&o->f);
@@ -2649,6 +2660,7 @@ static void of_release(int k)
     else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
+    o->refs = 0;
 }
 
 static void of_ref(int k)
@@ -3479,7 +3491,7 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (proc_prot(t))
             return FAPI_ERR_DENIED;
-        task[t].rc = 255;                       /* wie Strg+C            */
+        RCAB(t) = 0x1FF;                       /* wie Strg+C            */
         task_end(t);                            /* Kernelsperre haben wir */
         return 0;
     }
@@ -3714,8 +3726,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_QCHILDRC:
-        return task[current].child_rc;
+    case FAPI_QCHILDRC:                 /* BX = 1: Bit 8 = abgebrochen */
+        return a1 == 1 ? CRCAB(current) : task[current].child_rc;
 
     case FAPI_OPENDRIVE:
         if (a1 >= NDRIVE || IS_PRE(a1) || !vol_present(a1) || vol[a1].locked || join_hidden(a1))
@@ -3880,8 +3892,8 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         p = MK_FP(usel, a2);
         files[k].pos = *p;
         if (files[k].kind == OF_FILE && files[k].pos > files[k].f.size)
-            files[k].pos = files[k].f.size;     /* keine Loecher         */
-        return 0;
+            *p = files[k].pos = files[k].f.size;    /* keine Loecher; die  */
+        return 0;                               /* echte Stelle zurueck  */
     }
 
     case FAPI_NEWSIZE: {
@@ -3930,6 +3942,14 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
                     (vol[a1].was_dirty ? FSI_DIRTY : 0) | (blk_nomedia(dv) ? FSI_NOMEDIA : 0) |
                     (IS_REM(dv) ? FSI_REMDISK : 0) |
                     (blk[dv].drv == DRV_UFS ? FSI_REMOTE : 0);
+        fi->disk = 0;                       /* Platte n + 1 (DosDiskInfo) */
+        if (blk[dv].bsize == 512 && blk[dv].drv >= 0 && dv > 0) {
+            int dk, m = 0;
+            for (dk = 1; dk < dv; dk++)
+                if (blk[dk].bsize == 512 && blk[dk].drv >= 0)
+                    m++;
+            fi->disk = (unsigned char)(m + 1);
+        }
         if (a3 == 1) {                      /* Aufteilung (Redirector)  */
             struct fapi_fsinfo2 __far *f2 = (struct fapi_fsinfo2 __far *)fi;
             int fat = vol[a1].used && vol[a1].drv == &fat_driver;
@@ -4339,7 +4359,7 @@ void fault(unsigned vec, unsigned err, unsigned cs, unsigned ip)
         /* Fehler in einer Anwendung: nur dieses Programm beenden */
         tmsg(current, "\n", task[current].name, ": ");
         tmsg(current, exc_name(vec), msg, "\nProgramm abgebrochen.\n");
-        task[current].rc = 255;
+        RCAB(current) = 0x1FF;
         klock_enter();                  /* task_end schliesst Dateien    */
         task_end(current);
         schedule_next();

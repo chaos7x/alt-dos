@@ -16,6 +16,7 @@
 #include "../build/bootcode.h"
 
 static struct fapi_fsinfo ffi;
+static struct fapi_diskinfo fdi;         /* BIOS-Geometrie fuer den BPB */
 
 #define VCHUNK 16                       /* Sektoren je Lesen beim Pruefen (UFAT muss in 64 KB passen) */
 static unsigned char vbuf[VCHUNK * 512];
@@ -137,7 +138,12 @@ static int do_format(int quick, unsigned fkb)
         }
     } else {
         rootents = 512;
-        if (rd_secs(0, sec, 1) == 0 && rd16(sec + 11) == 512 &&
+        if (ffi.disk && DosDiskInfo(ffi.disk - 1, &fdi) == 0 && fdi.heads &&
+            fdi.spt && fdi.spt <= 63 && fdi.heads <= 255) {
+            spt = fdi.spt;                       /* Geometrie des BIOS wie  */
+            heads = fdi.heads;                   /* MS-DOS (dessen Startsektor
+                                                   liest per CHS damit)    */
+        } else if (rd_secs(0, sec, 1) == 0 && rd16(sec + 11) == 512 &&
             rd16(sec + 24) >= 1 && rd16(sec + 24) <= 63 &&
             rd16(sec + 26) >= 1 && rd16(sec + 26) <= 255) {
             spt = rd16(sec + 24);               /* Geometrie behalten     */

@@ -733,7 +733,8 @@ struct fapi_fmttrack {
 };
 #define FAPI_SEEK           0x2C    /* BX = Handle, CX = Zeiger auf Position (4 Bytes) */
 #define FAPI_QCHILDRC       0x2E    /* -> Rueckgabewert des zuletzt beendeten Kindes
-                                       (ERRORLEVEL; 255 = abgebrochen) */
+                                       (ERRORLEVEL); BX = 1: dazu Bit 8 = vom
+                                       System abgebrochen (Strg+C, Ausnahme) */
 #define FAPI_SETFINFO       0x2F    /* BX = Pfad, CX = struct fapi_finfo */
 struct fapi_finfo {
     unsigned short mask;            /* 1: Attribut, 2: Datum/Uhrzeit    */
@@ -839,7 +840,8 @@ struct fapi_fsinfo {
     unsigned short flags;           /* FSI_*                            */
     unsigned long  hidden;          /* erster Sektor der Partition (BPB) */
     unsigned char  ptype;           /* Partitionstyp im MBR, 0 = keiner  */
-    unsigned char  rsv;
+    unsigned char  disk;            /* Platte + 1 fuer DosDiskInfo (aus 6.3,
+                                       FORMAT: BIOS-Geometrie), 0 = keine */
 };
 /* DX = 1: dazu die Aufteilung des FAT-Dateisystems (sonst spc = 0) -
    der Redirector der Box meldet damit INT 21h 36h wie MS-DOS */
