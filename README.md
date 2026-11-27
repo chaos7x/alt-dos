@@ -484,6 +484,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `HISTORY`, `ALIAS`, `WHICH`, `CDD`, `SET /P /A`, `IF /I`, `IF DEFINED`,
   Vergleiche `EQU NEQ LSS LEQ GTR GEQ`, `FOR /D /R /L /F`, `COPY /Y /V`,
   `DEL /P /Q /S`, `DATE /T`, `TIME /T`, `DIR /L`, `BEEP`, `TITLE`
+- `RUN=Programm` in der CONFIG.SYS startet Dienste losgelöst wie bei OS/2
+  (bis 8 Zeilen; ab Werk der AT-Zeitplandienst); die Tastatur-LEDs für Num,
+  Feststell und Rollen folgen den Tasten
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

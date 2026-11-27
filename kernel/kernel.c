@@ -6161,6 +6161,80 @@ static void set_orig(const char *p)
         ifs_orig[k] = b[k];
     ifs_orig[k] = 0;
 }
+/* NAME=Wert mehrfach (LOOP=, RUN=): als NAMEn=Wert (n = 1, 2, ...) in
+   die Systemumgebung; v zeigt hinter das '=' in line, pl = Laenge von NAME */
+#define NRUN 8
+static void cfg_nth(char *line, const char *v, unsigned pl, unsigned char *cn,
+                    unsigned max)
+{
+    char *d = line + pl + 2;
+    unsigned k = 1, i;
+    while (v[k - 1])
+        k++;
+    if (*cn < max && k < FAPI_ARGLEN - pl - 2) {
+        if (d > v)
+            while (k--)
+                d[k] = v[k];
+        else
+            for (i = 0; i < k; i++)
+                d[i] = v[i];
+        line[pl] = (char)('1' + (*cn)++);
+        line[pl + 1] = '=';
+        env_set(-1, line);
+    }
+}
+
+/* RUN= aus CONFIG.SYS (aus 6.3): Programme losgeloest starten wie bei
+   OS/2 - ohne Tastatur, Ein- und Ausgabe NUL, kein Elternteil; Name ohne
+   Pfad wird im Stamm, in \DOS und \DOS\SYSTEM des Startlaufwerks gesucht */
+static void run_boot(int s0)
+{
+    static char nm[] = "RUN1";
+    static const char *const dirs[] = { "", "\\DOS\\", "\\DOS\\SYSTEM\\" };
+    static char rb[14 + FAPI_ARGLEN];
+    char *c;
+    int i, t, k, j, n;
+
+    for (nm[3] = '1'; nm[3] <= '0' + NRUN; nm[3]++) {
+        if ((i = env_find(-1, nm, 4)) < 0)
+            continue;
+        t = -EXEC_ERR_NOTFOUND;         /* ohne Pfad: Stamm, \DOS, ...   */
+        for (k = 0; k < 3 && t == -EXEC_ERR_NOTFOUND; k++) {
+            scopy(rb, dirs[k], 14);
+            for (n = 0; rb[n]; n++)
+                ;
+            c = rb + n;
+            fscopy((char __far *)c, MK_FP(env_sel, env_off(-1) + i + 5), FAPI_ARGLEN);
+            if (!k) {
+                vio_kputs(s0, "\xFE RUN=");
+                vio_kputs(s0, c);
+            }
+            for (j = 0; c[j] && c[j] != ' ' && c[j] != '\\' && c[j] != ':'; j++)
+                ;
+            if (k && (c[j] == '\\' || c[j] == ':'))
+                break;                  /* mit Pfad: nur so               */
+            exec_nocon = 1;
+            t = task_create(rb, s0, -1, -1);
+        }
+        exec_nocon = 0;
+        if (t < 0) {
+            vio_kputs(s0, " - ");
+            vio_kputs(s0, exec_err(-t));
+            vio_kputs(s0, "\n");
+            continue;
+        }
+        vio_kputs(s0, "\n");
+        task[t].bg = 1;
+        for (k = 1; k < 3; k++)         /* Ausgaben nach NUL            */
+            if ((j = of_alloc()) >= 0) {
+                files[j].kind = OF_NUL;
+                files[j].owner = -1;
+                of_release(task[t].std[k]);
+                task[t].std[k] = (unsigned char)j;
+            }
+    }
+}
+
 static char protshell[FAPI_ARGLEN] = "CMD.EXE /P";   /* PROTSHELL=   */
 
 static int kw(const char *l, const char *k)
@@ -6258,21 +6332,10 @@ static void config_sys(void)
             env_set(-1, ac);
         } else if (kw(line, "LOOP")) {         /* LOOP=[X:,]Datei[,/RO]   */
             static unsigned char loop_cn;      /* -> LOOP1..LOOP4 in der  */
-            char *d = line + 6;                /*    Systemumgebung       */
-            unsigned k = 1;
-            while (v[k - 1])
-                k++;
-            if (loop_cn < 4 && k < sizeof(line) - 6) {
-                if (d > v)
-                    while (k--)
-                        d[k] = v[k];
-                else
-                    for (i = 0; i < (int)k; i++)
-                        d[i] = v[i];
-                line[4] = (char)('1' + loop_cn++);
-                line[5] = '=';
-                env_set(-1, line);
-            }
+            cfg_nth(line, v, 4, &loop_cn, 4);  /*    Systemumgebung       */
+        } else if (kw(line, "RUN")) {          /* RUN=Programm [Arg.] wie */
+            static unsigned char run_cn;       /* OS/2 -> RUN1..RUN8      */
+            cfg_nth(line, v, 3, &run_cn, NRUN);
         } else if (kw(line, "SWAPPATH")) {     /* wie OS/2 (5.4)         */
             scopy(swappath, v, sizeof(swappath));
             if (!swappath[0])
@@ -6627,6 +6690,8 @@ void kmain(void)
             panic("Kein Befehlsinterpreter.");
     }
     vio_title(s0, task[t].name);
+    if (!boot_f5)
+        run_boot(s0);                           /* RUN= aus CONFIG.SYS   */
     fd_motor_off();
     vio_kputs(s0, "\n");
     vio_focus(s0);

@@ -65,6 +65,17 @@ ARP, TRACERT, ROUTE, CURL – CURL mit `apps/tlsstub.c` statt TLS (https
 meldet „erst ab 6.3“). In QEMU geprüft (isapc 4 MB, ne2k_isa: DHCP, PING,
 ARP -a, TRACERT -d, ROUTE PRINT, CURL gegen einen HTTP-Server auf dem
 Rechner).
+Teil 5 (27.11.2026): Tastatur-LEDs (kbd.c `led_go`/`led_ack`, Patch
+bce26f8 aus main; Feststell/Rollen beim Start aus dem BIOS,
+`KBDSHIFT_SCROLL`) – geprüft QEMU (`-trace ps2_set_ledstate`: 2, 6, 7, 5)
+und 86Box SCAT (286: Num/Feststell/Rollen gedrückt, Tippen danach
+normal); `RUN=` in der CONFIG.SYS (`cfg_nth`, `run_boot` nach PROTSHELL,
+nicht beim F5-Notstart; ausgeliefert mit `RUN=AT.EXE /SERVICE`) – in
+QEMU geprüft (TAIL -f läuft losgelöst, fehlendes Programm gemeldet, AT-
+Dienst endet ohne Aufträge). Code 64.014 + 54.975 Byte. Offen aus 6.3/6.4:
+MODE CON RATE/DELAY (FAPI 60h), BACKUP/RESTORE (FIND_SNAME, UNINAME),
+PANIC.LOG, Netzdrucker, NDRV 16 + DEINIT für IDE/AHA154X/NCR5380,
+Treiber-Startcode freigeben, CD-Vorauslesen.
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`
