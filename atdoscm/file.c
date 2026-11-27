@@ -994,7 +994,12 @@ static void ioctl_fn(struct frame __far *f)
             f->ax = 0;                  /* sie anzufassen (wie MS-DOS;   */
             break;                      /* Windows fragt beim Start alle */
         }                               /* Laufwerke, je ~0,3 s)         */
+        dbuf[0] = 0;
         if (dinfo(d)) {                 /* CD, kein Medium               */
+            if (dbuf[0] == 3 && AL(f) == 0x08) {
+                f->ax = 0;              /* leere Wechselplatte (ZIP):    */
+                break;                  /* wechselbar wie MS-DOS         */
+            }
             if (d < 2) {                /* leere Diskette: Laufwerk wie  */
                 dbuf[0] = 2;            /* MS-DOS ohne Medium (1,44 MB)  */
                 dbuf[1] = 1;

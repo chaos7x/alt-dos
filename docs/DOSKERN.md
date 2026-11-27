@@ -1604,6 +1604,18 @@ Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
 von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
 MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
+### Erledigt (27.11.2026): leeres ZIP ist eine Wechselplatte
+
+Vom Nutzer gemeldet (Build 1162, schon mit der Art 3 der DEM-
+Laufwerksinfo): im Datei-Manager weiter Festplattensymbol für das ZIP.
+In 86Box nachgestellt (P3B-F, AHA-2944UW, ZIP 250 an ID 5): DMESG zeigt
+beim Start „Wechselplatte, kein Medium“ – das ZIP von 86Box läuft erst
+an. Ohne Medium scheiterte `d_dinfo` (FSI_NOMEDIA), der Box-Kern nahm
+dann für 4408h „fest“. MS-DOS meldet auch eine leere Wechselplatte
+wechselbar. Jetzt trägt `d_dinfo` die Art auch im Fehlerfall ein, der
+Box-Kern antwortet bei Art 3 mit „wechselbar“. Geprüft in 86Box P3B-F:
+Testprogramm 4408h D: 0 statt 1, Datei-Manager zeigt das Wechselsymbol.
+
 ### Erledigt (27.11.2026): Windows-Netzwerk „Microsoft Network (oder 100% kompatibel)“
 
 Auf Anregung des Nutzers in Windows-Setup das Netzwerk „Microsoft Network
