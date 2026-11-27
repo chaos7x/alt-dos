@@ -1173,7 +1173,9 @@ Vordergrund hat Vorrang vor MIDI-Programmen. SVGA-Modi (VESA, auch über das Ban
   BOXSHELL trägt sie in LoL+45h ein),
   `DPMI_MEMORY_LIMIT=MB` (wie OS/2, `-1` = keine Grenze; Vorgabe keine,
   für Windows 64 MB – mit mehr wird Windows im Standardmodus nach DOS-
-  Eingabeaufforderungen langsam, unter MS-DOS genauso),
+  Eingabeaufforderungen langsam, unter MS-DOS genauso; DPMI 0800h blendet
+  Gerätespeicher mindestens 16 MB groß ab 768 MB linear ein – Treiber von
+  Windows greifen über das Angeforderte hinaus),
   `DOS_VERSION=n.nn` (SETVER.LST geht vor); Hilfen der Nachbildung für
   DPMI-Programme, Vorgabe `ON`, bei einem störrischen Programm `OFF`:
   `POPF_PATCH` (POPF nach CLI wird zur Falle, damit das virtuelle IF
