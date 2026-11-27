@@ -1048,14 +1048,67 @@ pm15:   cmp     ax, 0C207h              ; PS/2-Rueckruf ES:BX (PM)
         iret
 
 ; ---- Protected Mode: INT 21h 00h - Task beenden (wie DOSX) -----------
-; KRNL setzt den PSP einer endenden Task (50h) und ruft 00h. DOSX reicht
-; das mit seinem eigenen CS weiter - CS ist dann nicht der aktuelle PSP,
-; und MS-DOS kehrt nach alter Art zurueck, ohne etwas freizugeben
-; (MS-DOS 4.0 CTRLC.ASM reset_environment, ThisPDB = CS). Handles und PSP
-; der Task bleiben: KRNL laedt danach noch Segmente ueber diese Handles
-; (COMMDLG beim Ende von REGEDIT im SETUP - mit 4Ch waren sie zu,
-; FatalExit). Also nichts tun.
-pmterm: iret
+; KRNL setzt den PSP einer endenden Task (50h) und ruft 00h. DOSX macht
+; daraus im Real Mode ein 4Ch mit eigener Rueckkehradresse: MS-DOS
+; schliesst dabei alle Handles der Task und schaltet auf den PSP des
+; Kerns zurueck (MS-DOS 4.0 CTRLC.ASM reset_environment); KRNL schliesst
+; danach seine Moduldateien (NOTEPAD.EXE, COMMDLG.DLL), die es ohne
+; Vererbung geoeffnet hat, unter seinem eigenen PSP. Beim Nutzer gesehen:
+; ohne das blieben je Programmstart zwei Dateien offen, bis "zu viele
+; Dateien" kam. Ein echtes 4Ch beendete hier Windows (die Rueckkehr-
+; adresse der Task fuehrt nicht zurueck) - also nur nachbilden: Handles
+; der Task schliessen, PSP des Kerns setzen. Speicher der Task gibt KRNL
+; selbst frei.
+pmterm: push    ds
+        mov     ds, [cs:dsel]
+        pop     word [c_ds]
+        mov     [c_es], es
+        pushad
+        mov     word [rmint], 21h
+        mov     dword [R_eax], 5100h    ; PSP der endenden Task
+        call    callrm
+        mov     bx, [R_ebx]
+        cmp     bx, [kpsp]              ; der Kern selbst: nichts tun
+        je      .out
+        mov     ax, 0002h
+        int     31h
+        jc      .out
+        mov     es, ax
+        mov     cx, [es:32h]            ; Handle-Tabelle (JFT)
+        mov     si, [es:34h]
+        mov     bx, [es:36h]
+        push    cx
+        mov     ax, 0002h
+        int     31h
+        pop     cx
+        jc      .par
+        mov     es, ax
+        xor     dx, dx
+.l:     cmp     dx, cx
+        jae     .par
+        cmp     byte [es:si], 0FFh
+        je      .n
+        push    si
+        push    dx
+        mov     dword [R_eax], 3E00h
+        movzx   edx, dx
+        mov     [R_ebx], edx
+        call    callrm
+        pop     dx
+        pop     si
+.n:     inc     si
+        inc     dx
+        jmp     .l
+.par:   mov     dword [R_eax], 5000h   ; zurueck auf den Kern (DOSX
+        movzx   eax, word [kpsp]        ; traegt ihn als Eltern-PSP ein;
+                                        ; PSP:16h der Task setzt KRNL um)
+        mov     [R_ebx], eax
+        call    callrm
+.out:   popad
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        iret
 
 ; ---- Protected Mode: Maus fuer MOUSE.DRV von Windows -----------------
 ; MOUSE.DRV nimmt mit einem DOS-Maustreiber dessen Art aus INT 33h 24h und

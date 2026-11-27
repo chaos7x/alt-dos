@@ -1561,6 +1561,29 @@ darunter wird angehoben. Die SFT im Box-Kern hat weiter 40 Einträge
 Ursache von „PROGMAN lässt sich nicht beenden“ (Gruppen/INI nicht
 schreibbar) – beim Nutzer zu prüfen.
 
+Das reichte nicht (Nutzer: die Meldung kam weiter, vorher wurde alles
+träger). Die eigentliche Ursache war ein Leck: jeder Programmstart ließ
+zwei Einträge der SFT offen (gezählt mit einer Spur über Port E9h:
+Notepad öffnen und schließen 15 -> 17 -> 19 …, offen blieben NOTEPAD.EXE
+und COMMDLG.DLL). KRNL öffnet Moduldateien unter seinem eigenen PSP mit
+„nicht vererben“ und schließt sie nach dem Ende der Task. Am Ende einer
+Task ruft KRNL INT 21h 00h mit dem PSP der Task; DOSX macht daraus im
+Real Mode ein 4Ch – MS-DOS schließt dabei alle Handles der Task und
+schaltet auf den PSP des Kerns zurück, danach treffen die Schließaufrufe
+für die Moduldateien den richtigen PSP. Belegt unter echtem MS-DOS 6.22
+mit derselben Windows-Installation in QEMU: ein kleiner TSR (nur im
+Scratchpad) zeigte `4C00` mit dem PSP der Task, danach `3E` mit dem PSP
+des Kerns; die SFT (aus einem Speicherabzug) hatte jede Moduldatei nur
+einmal offen. WINLDR beantwortete 00h nur mit IRET – die Task-Handles
+blieben offen, der PSP blieb der der Task, und KRNLs Schließen ging ins
+Leere (Handle ungültig). Jetzt bildet `pmterm` (apps/winldr.asm) das
+4Ch nach: Handles der JFT der Task schließen, PSP auf den des Kerns
+(`kpsp`) setzen – ohne echtes 4Ch, das Windows beendete. Der Eltern-PSP
+im PSP der Task (PSP:16h) taugt nicht, KRNL trägt dort einen anderen
+Wert ein. Geprüft in QEMU: Notepad 7×, WINFILE 3×, REGEDIT 3×,
+Systemsteuerung mit Applet 2×, Write, Windows beenden – die SFT bleibt
+bei 15 Einträgen, vorher +2 je Programm; 86Box P3B-F: Notepad 15×.
+
 Speicher im Standardmodus (Beobachtung, geklärt): bei 256 MB meldet
 Windows unter AT-DOS 102 MB frei, unter MS-DOS mit QEMM die vollen
 256 MB, unter MS-DOS nur mit HIMEM.SYS (ohne EMM386) 60 MB (Nutzer,
