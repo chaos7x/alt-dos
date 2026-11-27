@@ -5231,10 +5231,15 @@ static unsigned long dmem_room(int t)
     return lim < fr ? lim : fr;
 }
 
+#define DPHYS_LP 0x30000UL              /* 0800h-Einblendungen ab 768 MB */
 /* Luecke fuer n Seiten ab 64 MB (Seite 4000h, darunter XMS), bis 1 GB */
+static unsigned long dmem_gap_at(int t, unsigned long n, unsigned long s);
 static unsigned long dmem_gap(int t, unsigned long n)
 {
-    unsigned long s = XMS_TOP;
+    return dmem_gap_at(t, n, XMS_TOP);
+}
+static unsigned long dmem_gap_at(int t, unsigned long n, unsigned long s)
+{
     unsigned i;
 again:
     for (i = 0; i < NDPM; i++)
@@ -5884,15 +5889,23 @@ done501:
         np = ((ph & 0xFFF) + sz + 4095) >> 12;
         if (pp < mem_top_pg())
             DERR(0x8025);                       /* RAM: nicht erlaubt    */
+        /* mindestens 16 MB: Treiber von Windows 3.1 blenden mit 0800h nur
+           das sichtbare Bild ein (1,5 MB bei 1024x768x16) und greifen
+           dahinter auf den restlichen Bildspeicher zu - unter DOSX ohne
+           Paging geht das. Mit knapper Einblendung landete der Zugriff
+           hinter ihr: in Bloecken von KRNL (Halde ueberschrieben) oder im
+           Leeren (Seitenfehler beim Blaettern in Listen) */
+        if (np < 0x1000UL)
+            np = pp + 0x1000UL <= 0x100000UL ? 0x1000UL : 0x100000UL - pp;
         for (k = 0; k < NDPP; k++)              /* schon da? gleich zurueck */
             if (dp_phys[t][k].npg && dp_phys[t][k].ppg == pp &&
                 dp_phys[t][k].npg >= np)
                 goto done800;
         for (k = 0; k < NDPP && dp_phys[t][k].npg; k++)
             ;
-        if (k == NDPP || !(lin = dmem_gap(t, np)))
-            DERR(0x8012);
-        dp_phys[t][k].lpg = lin;
+        if (k == NDPP || !(lin = dmem_gap_at(t, np, DPHYS_LP)))
+            DERR(0x8012);                       /* weit weg von 0501h:    */
+        dp_phys[t][k].lpg = lin;                /* Ueberlauf trifft nichts */
         dp_phys[t][k].ppg = pp;
         dp_phys[t][k].npg = np;
         for (i = 0; i < np; i++)

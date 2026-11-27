@@ -1640,6 +1640,32 @@ für 0500h/0501h/0503h, zurück bei jedem Programmstart). Geprüft 86Box P3B-F
 256 MB: Info zeigt 65.690 KB frei, Systemsteuerung vor und nach drei DOS-
 Eingabeaufforderungen 1,8/1,7 s (vorher deutlich langsamer).
 
+### Erledigt (27.11.2026): Seitenfehler beim Blättern in Listen
+
+Vom Nutzer gemeldet (Videos): in Windows-Setup („Systemeinstellungen
+ändern“, Liste „Netzwerk“) und im Datei-Manager beim Blättern „WINSETUP/
+WINFILE verursachte einen Seitenfehler in Modul <unknown> an Adresse
+16EF:…“. Gefunden mit einer Spur der Seitenfehler im PM (CR2) und der
+Deskriptoren: der Zugriff lag immer genau 70730Ch hinter der Einblendung
+von DPMI 0800h (physisch E0000000h, angefordert 1,5 MB = sichtbares Bild)
+– auch, als die Einblendung testweise nach 768 MB verlegt wurde. Ein Teil
+von Windows (vermutlich der Bildschirmtreiber beim Sichern des Bereichs
+unter der aufgeklappten Liste) greift über das Angeforderte hinaus auf
+den restlichen Bildspeicher zu; unter DOSX ohne Paging ist der ganze
+physische Speicher erreichbar, das fällt dort nicht auf. Bei uns lag
+hinter der Einblendung entweder nichts (Seitenfehler – seit der Grenze
+von 64 MB, weil KRNL danach keine weiteren Blöcke mehr bekam) oder, ohne
+Grenze, weitere 0501h-Blöcke von KRNL: der Zugriff traf still den
+Speicher von Windows. Jetzt blendet 0800h mindestens 16 MB ein (höchstens
+bis 4 GB physisch) und legt die Einblendungen ab 768 MB linear
+(`DPHYS_LP`), weit weg von den 0501h-Blöcken ab 64 MB. Geprüft 86Box
+P3B-F: Liste in Windows-Setup und Datei-Manager blättern, Windows
+beenden; VBETEST in der Box unverändert.
+
+Lehre: bei Fehlern, die von der Speichergröße abhängen, die Fehleradresse
+gegen jede Einblendung rechnen und eine davon testweise verschieben – wandert
+die Adresse mit, gehört der Zugriff zu ihr.
+
 ### Erledigt (27.11.2026): Datei-Dialoge unter Windows
 
 Vom Nutzer gemeldet: Systemsteuerung -> Treiber -> Hinzufügen -> nicht
