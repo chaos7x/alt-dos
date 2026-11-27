@@ -283,6 +283,7 @@ T_FFFF  equ     20                      ; 4Ch: an den Wirt
 T_PSET  equ     21                      ; 50h: BX Selektor -> Segment
 T_NPSP  equ     22                      ; 26h/55h: DX Selektor -> Segment
 T_5D    equ     24                      ; 5D0Ah: DS:DX 22 Byte hin
+T_NET   equ     25                      ; 5Eh/5Fh: Netz (Puffer hin/zurueck)
 T_FCB   equ     23                      ; 11h/12h/13h: FCB DS:DX hin und
                                         ; zurueck, Ergebnis ins DTA
 
@@ -301,6 +302,7 @@ ftab:   db      02h, T_PASS, 06h, T_PASS, 07h, T_PASS, 08h, T_PASS
         db      50h, T_PSET, 51h, T_PSP,  52h, T_ESBX, 55h, T_NPSP, 26h, T_NPSP, 54h, T_PASS, 56h, T_REN
         db      57h, T_PASS, 58h, T_PASS, 59h, T_PASS, 5Ah, T_TMP, 5Dh, T_5D
         db      5Bh, T_SZ,   5Ch, T_PASS, 60h, T_TRUE, 62h, T_PSP
+        db      5Eh, T_NET,  5Fh, T_NET
         db      66h, T_PASS, 67h, T_PASS, 68h, T_PASS, 6Ch, T_XOPN
         db      0
 
@@ -355,6 +357,7 @@ pm21:   test    ah, ah                  ; 00h: KRNL beendet den DOS-Teil
 jtab:   dw      f_pass, f_sz, f_rd, f_wr, f_vget, f_vset, f_dset, f_dget
         dw      f_find, f_cdir, f_ren, f_xopn, f_true, f_ctry, f_esbx, f_psp
         dw      f_mem, f_str, f_tmp, f_ffff, f_pset, f_npsp, f_fcb, f_5d
+        dw      f_net
 
 ; Real Mode aufrufen (INT 21h mit R), Ergebnis in die Register
 callrm: push    es
@@ -469,6 +472,105 @@ f_5d:   cmp     byte [R_eax], 0Ah
         pop     ds
         mov     word [R_edx], buf
         call    callrm
+        jmp     done
+
+; ---- 5Eh/5Fh: Netz (wie DOSX) -------------------------------------------
+; MSNET.DRV ("Microsoft Network oder 100% kompatibel") fragt so die
+; Verbindungen ab und verbindet/trennt Laufwerke. Ohne Uebersetzung
+; gingen die Puffer DS:SI/ES:DI als Selektoren an den Real Mode, die
+; Eintraege landeten im Puffer des Wirts und 5F02h fand nie ein Ende.
+; 5E00h DS:DX 16 Byte zurueck; 5F02h/05h DS:SI 16, ES:DI 128 Byte zurueck;
+; 5F03h DS:SI Laufwerk, ES:DI Pfad + Kennwort hin; 5F04h DS:SI hin.
+f_net:  mov     ax, [R_eax]
+        cmp     ah, 5Eh
+        jne     .f5f
+        test    al, al
+        jne     .raw
+        push    word [R_edx]
+        mov     word [R_edx], buf
+        call    callrm
+        pop     di
+        mov     es, [c_ds]
+        mov     si, buf
+        mov     cx, 16
+        cld
+        rep     movsb
+        mov     word [fl_out], 16       ; CX
+        jmp     done
+.f5f:   cmp     al, 02h
+        je      .lst
+        cmp     al, 05h
+        je      .lst
+        cmp     al, 03h
+        je      .con
+        cmp     al, 04h
+        je      .del
+.raw:   popad
+        mov     es, [c_es]
+        push    word [c_ds]
+        pop     ds
+        jmp     far [cs:old21]
+.lst:   push    word [R_esi]
+        push    word [R_edi]
+        mov     word [R_esi], buf
+        mov     word [R_edi], buf2
+        call    callrm
+        cld
+        pop     di                      ; ES:DI des Aufrufers: Pfad
+        mov     es, [c_es]
+        mov     si, buf2
+        mov     cx, 128
+        rep     movsb
+        pop     di                      ; DS:SI: Laufwerk
+        mov     es, [c_ds]
+        mov     si, buf
+        mov     cx, 16
+        rep     movsb
+        mov     word [fl_out], 8 + 16   ; BX, CX
+        jmp     done
+.con:   push    ds
+        pop     es
+        cld
+        mov     di, buf
+        mov     si, [R_esi]
+        push    ds
+        mov     ds, [c_ds]
+        mov     cx, 16
+        rep     movsb
+        pop     ds
+        mov     di, buf2
+        mov     si, [R_edi]
+        push    ds
+        mov     ds, [c_es]
+        mov     dx, 2                   ; zwei Zeichenketten
+        mov     cx, 255
+.c1:    jcxz    .c3
+        dec     cx
+        lodsb
+        stosb
+        test    al, al
+        jnz     .c1
+        dec     dx
+        jnz     .c1
+.c3:    pop     ds
+        mov     word [R_esi], buf
+        mov     word [R_edi], buf2
+        call    callrm
+        mov     word [fl_out], 0
+        jmp     done
+.del:   push    ds
+        pop     es
+        cld
+        mov     di, buf
+        mov     si, [R_esi]
+        push    ds
+        mov     ds, [c_ds]
+        mov     cx, 16
+        rep     movsb
+        pop     ds
+        mov     word [R_esi], buf
+        call    callrm
+        mov     word [fl_out], 0
         jmp     done
 
 f_sz:   call    cpsz_dx

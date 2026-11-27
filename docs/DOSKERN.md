@@ -1604,6 +1604,32 @@ Aufruf scheitert – die Grenze liegt in KRNL286. Die 256 MB kommen also
 von QEMM (QDPMI als Host), nicht von MS-DOS; AT-DOS gibt mehr als
 MS-DOS mit HIMEM. Kein Handlungsbedarf.
 
+### Erledigt (27.11.2026): Windows-Netzwerk „Microsoft Network (oder 100% kompatibel)“
+
+Auf Anregung des Nutzers in Windows-Setup das Netzwerk „Microsoft Network
+(oder 100% kompatibel)“ (MSNET.DRV) gewählt – unser NET USE soll dafür
+das kompatible Netz sein. Setup übernahm den Treiber, Windows startete
+neu, die Systemsteuerung zeigt „Netzwerk“. Der Datei-Manager hing danach
+mit Sanduhr: MSNET.DRV ruft INT 21h 5F02h mit fortlaufendem Index
+(Spur: bis 7E19h und weiter). WINLDR hatte für 5Eh/5Fh keinen Eintrag,
+die Aufrufe gingen roh an den DPMI-Wirt, der im Real Mode sein eigenes
+Segment für DS/ES einsetzt – die Einträge landeten im falschen Puffer.
+Jetzt übersetzt WINLDR (`f_net`) wie DOSX: 5E00h DS:DX 16 Byte zurück,
+5F02h/05h DS:SI 16 und ES:DI 128 Byte zurück (BX, CX), 5F03h DS:SI und
+ES:DI (Pfad + Kennwort) hin, 5F04h DS:SI hin. Danach zeigt der Datei-
+Manager das NET-USE-Laufwerk mit Netzsymbol. Geprüft in QEMU mit
+Samba (`NET USE E: \\10.0.2.2\daten` vor WIN). Offen: 5F03h/5F04h
+(Verbinden/Trennen aus Windows) beantwortet der Box-Kern noch mit
+„Funktion ungültig“ – das bräuchte NET USE aus der Box heraus.
+
+Messung auf Wunsch des Nutzers („irgendwo ist noch ein Blocker“):
+Systemsteuerung öffnen bis fertig gezeichnet, schließen, Datei-Manager
+zweimal, Systemsteuerung erneut, drei weitere Runden. QEMU: Systemsteuerung
+0,6–0,9 s, Datei-Manager 0,6–0,9 s; 86Box P3B-F: 0,6–0,8 s bzw.
+0,4–0,7 s – keine Verlangsamung mit der Zeit (nach dem Leck-Fix).
+Werkzeug: Bild alle ~0,5 s, Zeit der letzten Änderung (Scratchpad
+`meas.py`/`meas86.py`).
+
 ### Erledigt (27.11.2026): Takt ohne 100-Hz-Raster, ZIP als Wechselplatte
 
 Mauszeiger mit VBESVGA (Rest nach dem Takt-Fix vom 26.11.): der Nutzer
