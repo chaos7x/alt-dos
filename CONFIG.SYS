@@ -12,12 +12,12 @@ REM                 wird Code ruhender Programme frei und aus der EXE nachgelade
 REM SWAPPATH=C:\SWAP 2048  Auslagerungsdatei SWAPPER.DAT (KB, 1024-8192) fuer
 REM                 Datensegmente ruhender Programme; ohne Angabe keine
 REM LOOP=E:,C:\DISK.IMG,/RO  Datei als Laufwerk beim Start (ISO, IMG, VHD,
+REM                 DoubleSpace/DriveSpace-Container; bis 4 Zeilen)
 REM RUN=Programm [Argumente]  losgeloest starten wie OS/2 (ohne Tastatur,
 REM   Ausgaben nach NUL), bis 8 Zeilen; ohne Pfad: Stamm, \DOS, \DOS\SYSTEM
 REM RUN=PRINT.EXE /WORK
 REM Zeitplandienst fuer AT (endet gleich, wenn nichts geplant ist)
 RUN=AT.EXE /SERVICE
-REM                 DoubleSpace/DriveSpace-Container; bis 4 Zeilen)
 REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20
 REM CACHE=kb,s,max  Platten-Cache im Kernel: Mindestgroesse in KB,
