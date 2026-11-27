@@ -5,7 +5,8 @@ REM Einschalten REM weglassen. Hoechstens 8 KB, eine Zeile bis 127 Zeichen.
 REM ========================================
 
 REM --- Speicher und Dateien ---
-REM FILES=n      offene Dateien fuer alle Programme zusammen (8-219)
+REM FILES=n      offene Dateien fuer alle Programme zusammen (8-219; ab 4 MB
+REM                mindestens 64, ab 8 MB 120 - DOS-Boxen/Windows zaehlen mit)
 FILES=30
 REM BUFFERS=n    Untergrenze des Platten-Cache in Sektoren (1-99)
 BUFFERS=20

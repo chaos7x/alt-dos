@@ -1548,6 +1548,25 @@ nicht mit dem alten Kernel, auch nicht mit 1,5 s gehaltenem Enter über
 xdotool) – ob es den Fall behebt, zeigt erst der Test beim Nutzer; #149
 könnte dieselbe Ursache haben.
 
+### Erledigt (27.11.2026): „Zu viele Dateien“ unter Windows
+
+Vom Nutzer gemeldet: mit vielen offenen Programmen „Zur Zeit werden zu
+viele Dateien benutzt … FILES-Eintrag in CONFIG.SYS“. Jede Datei der Box
+ist ein Eintrag der Dateitabelle des Kernels, und die gilt für alle
+Programme zusammen – die mitgelieferte CONFIG.SYS hatte `FILES=30` (wie
+für MS-DOS allein). Jetzt mindestens 64 Einträge ab 4 MB, 120 ab 8 MB
+(kernel.c vor dem Anlegen der Tabelle, je Eintrag ~300 Byte); FILES=
+darunter wird angehoben. Die SFT im Box-Kern hat weiter 40 Einträge
+(Lage vor der FASTOPEN-Tabelle bei DS:0D30h fest). Vermutlich auch die
+Ursache von „PROGMAN lässt sich nicht beenden“ (Gruppen/INI nicht
+schreibbar) – beim Nutzer zu prüfen.
+
+Speicher im Standardmodus (Beobachtung, offen): bei 256 MB meldet
+Windows unter AT-DOS 102 MB frei, unter MS-DOS die vollen 256 MB.
+Spur: KRNL286 holt sich den Speicher per DPMI 0501h in Blöcken zu 1 MB
+und hört nach genau 100 Blöcken auf, ohne dass ein Aufruf scheitert –
+die Grenze liegt in KRNL286; warum es unter DOSX mehr bekommt, ist offen.
+
 ### Erledigt (27.11.2026): Takt ohne 100-Hz-Raster, ZIP als Wechselplatte
 
 Mauszeiger mit VBESVGA (Rest nach dem Takt-Fix vom 26.11.): der Nutzer
