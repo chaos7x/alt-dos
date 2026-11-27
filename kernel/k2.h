@@ -76,7 +76,6 @@ void __far kf_blk_invalidate(void);
 int __far kf_blk_media(int dev);
 int __far kf_blk_nomedia(int dev);
 unsigned __far kf_kseg_alloc(unsigned long bytes);
-unsigned long __far kf_rtc_stamp(void);
 #define blk_read(d, l)              kf_blk_read((d), (l))
 #define blk_read_n(d, l, n)         kf_blk_read_n((d), (l), (n))
 #define blk_write(d, l)             kf_blk_write((d), (l))
@@ -84,6 +83,5 @@ unsigned long __far kf_rtc_stamp(void);
 #define blk_media(d)                kf_blk_media(d)
 #define blk_nomedia(d)              kf_blk_nomedia(d)
 #define kseg_alloc(b)               kf_kseg_alloc(b)
-#define rtc_stamp()                 kf_rtc_stamp()
 
 #endif

@@ -486,7 +486,12 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `DEL /P /Q /S`, `DATE /T`, `TIME /T`, `DIR /L`, `BEEP`, `TITLE`
 - `RUN=Programm` in der CONFIG.SYS startet Dienste losgelöst wie bei OS/2
   (bis 8 Zeilen; ab Werk der AT-Zeitplandienst); die Tastatur-LEDs für Num,
-  Feststell und Rollen folgen den Tasten
+  Feststell und Rollen folgen den Tasten; `MODE CON RATE=n DELAY=n` stellt die
+  Tastaturwiederholung
+- `BACKUP` und `RESTORE` im Format von MS-DOS 3.3–5.0 (lange Namen in
+  `NAMES.nnn`, auch Namen außerhalb der Codepage)
+- Netzdrucker: `NET USE LPT1: \\server\drucker` leitet LPT1–3/PRN an
+  eine SMB-Druckfreigabe
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große

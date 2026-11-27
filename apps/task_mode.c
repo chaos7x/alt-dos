@@ -3,6 +3,7 @@
  * MODE.EXE - Geraete einstellen (wie MS-DOS 5/6):
  *
  *   MODE CON[:] [COLS=80] [LINES=n]     n = 25, 43 oder 50 (43/50 nur VGA)
+ *   MODE CON[:] [RATE=r] [DELAY=d]      Tastatur: r 1-32, d 1-4 (wie MS-DOS)
  *   MODE CO80 | BW80 | 80               zurueck auf 80x25
  *   MODE COMn[:] b[,p[,d[,s[,r]]]]      serielle Schnittstelle
  *   MODE COMn BAUD=b [PARITY=p] [DATA=d] [STOP=s] [RETRY=r]
@@ -17,7 +18,11 @@
  * 8 Zeilen je Zoll ESC 0, 6 Zeilen ESC 2 (IBM-/Epson-Drucker).
  * Eingestellt wird ueber das FAPI (DosComCtl); den Port einer seriellen
  * Maus gibt der Kernel nicht her.
- * Wie bei OS/2 gilt die Zeilenzahl fuer die eigene Sitzung.
+ * Wie bei OS/2 gilt die Zeilenzahl fuer die eigene Sitzung, die
+ * Wiederholrate dagegen fuer die ganze Tastatur (KbdRate, Befehl F3h);
+ * RATE 32 = 30 Zeichen/s, 1 = 2 Zeichen/s, DELAY 1-4 = 1/4 bis 1 s.
+ * Anders als MS-DOS darf eines von beiden allein stehen, das andere
+ * bleibt dann, wie es ist.
  */
 #include "fapi.h"
 #include "util.h"
@@ -30,14 +35,34 @@ static const unsigned long bauds[] = { 110, 150, 300, 600, 1200, 2400, 4800, 960
 static const unsigned divs[] = { 1047, 768, 384, 192, 96, 48, 24, 12, 6, 3, 2, 1 };
 #define NBAUD 12
 
+/* Zeichen je Sekunde in Zehnteln je Ratencode 0-31 (Tastaturbefehl F3h) */
+static const unsigned short cps[32] = { 300, 267, 240, 218, 200, 185, 171, 160,
+    150, 133, 120, 109, 100, 92, 86, 80, 75, 67, 60, 55, 50, 46, 43, 40, 37,
+    33, 30, 27, 25, 23, 21, 20 };
+
 static void con_status(void)
 {
-    unsigned n = VioSetLines(0);
+    unsigned n = VioSetLines(0), k = KbdRate(0xFFFFu);
     puts("\r\nStatus f\x81r Ger\x84t CON:\r\n"
          "----------------------\r\n"
          "Spalten=80\r\n"
          "Zeilen=");
     put_num(n, 0, 0);
+    if (!FAPI_FAILED(k)) {
+        n = k & 0x1F;
+        puts("\r\n\r\nTastatur:\r\nWiederholrate=");
+        put_num(32 - n, 0, 0);
+        puts(" (");
+        put_num(cps[n] / 10, 0, 0);
+        putc(',');
+        putc((char)('0' + cps[n] % 10));
+        puts(" Zeichen/s)\r\nVerz\x94gerung=");
+        n = ((k >> 5) & 3) + 1;
+        put_num(n, 0, 0);
+        puts(" (");
+        put_num(n * 250, 0, 0);
+        puts(" ms)");
+    }
     puts("\r\n");
 }
 
@@ -93,6 +118,7 @@ static void usage(void)
 {
     puts("Stellt Ger\x84te ein.\r\n\r\n"
          "MODE CON[:] [COLS=80] [LINES=n]    n = 25, 43 oder 50 (43/50 nur VGA)\r\n"
+         "MODE CON[:] [RATE=r] [DELAY=d]     Tastatur: r 1-32 (32 = schnell), d 1-4\r\n"
          "MODE CO80 | BW80 | 80              80 Spalten, 25 Zeilen\r\n"
          "MODE COMn[:] b[,p[,d[,s[,P]]]]     z. B. MODE COM1:9600,N,8,1\r\n"
          "MODE COMn BAUD=b PARITY=p DATA=d STOP=s RETRY=P\r\n"
@@ -325,7 +351,7 @@ static int devnum(char *s, const char *pre, unsigned max, char **rest)
 void main(void)
 {
     char *a, *v, *rest;
-    unsigned lines = 0, n;
+    unsigned lines = 0, n, rate = 0, delay = 0;
     int con = 0, any = 0, d;
 
     DosGetArgs(args);
@@ -382,6 +408,24 @@ void main(void)
             any = 1;
             continue;
         }
+        if (con && ((w[0] == 'R' && w[1] == 'A' && w[2] == 'T' && w[3] == 'E' &&
+                     w[4] == '=') || (w[0] == 'D' && w[1] == 'E' && w[2] == 'L' &&
+                     w[3] == 'A' && w[4] == 'Y' && w[5] == '='))) {
+            v = w + (w[0] == 'R' ? 5 : 6);
+            for (n = 0; *v >= '0' && *v <= '9' && n < 1000; v++)
+                n = n * 10 + (unsigned)(*v - '0');
+            if (w[0] == 'R') {
+                if (*v || n < 1 || n > 32)
+                    fail("RATE muss zwischen 1 und 32 liegen.");
+                rate = n;
+            } else {
+                if (*v || n < 1 || n > 4)
+                    fail("DELAY muss zwischen 1 und 4 liegen.");
+                delay = n;
+            }
+            any = 1;
+            continue;
+        }
         if (con && w[0] == 'C' && w[1] == 'O' && w[2] == 'L' && w[3] == 'S' &&
             w[4] == '=') {
             if (!same(w + 5, "80"))
@@ -400,4 +444,14 @@ void main(void)
     }
     if (lines)
         set_lines(lines);
+    if (rate || delay) {
+        n = KbdRate(0xFFFFu);
+        if (FAPI_FAILED(n))
+            fail("Wiederholrate kann nicht eingestellt werden.");
+        if (rate)
+            n = (n & 0x60) | (32 - rate);
+        if (delay)
+            n = (n & 0x1F) | ((delay - 1) << 5);
+        KbdRate(n);
+    }
 }

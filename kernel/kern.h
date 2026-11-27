@@ -114,7 +114,7 @@ void reboot(void);
 unsigned kseg_alloc(unsigned long bytes);
 void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
 extern volatile unsigned reboot_count;
-unsigned long rtc_stamp(void);      /* Datum << 16 | Uhrzeit im FAT-Format */
+unsigned long __far rtc_stamp(void);    /* k2misc.c; Datum << 16 | Uhrzeit im FAT-Format */
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */
 /* floppy.c liegt in KCODE2: alle Einspruenge fern */
@@ -264,3 +264,7 @@ extern volatile unsigned char kbd_switch_req, kbd_break_req, kbd_tm_req;
 
 unsigned __far ufs_fapi(unsigned usel, unsigned a1, unsigned a2, unsigned a3);
 void __far ufs_task_end(int t);
+int  __far ufs_lpt(int n);              /* LPTn umgeleitet (NET USE LPT1:) */
+int  __far ufs_lpt_write(int n, unsigned key, unsigned sel, unsigned off, unsigned len);
+void __far ufs_lpt_close(int n, unsigned key);
+unsigned kbd_rate(unsigned v);      /* Tastatur F3h, FFFFh = abfragen      */

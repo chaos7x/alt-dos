@@ -480,6 +480,26 @@ static unsigned kbd_shift(void)
     return f;
 }
 
+/* Wiederholrate ueber INT 16h 0305h (AT-BIOS); abfragen per 0306h, sonst
+   Grundeinstellung der Tastatur */
+static unsigned kbd_rate(unsigned v)
+{
+    r.ax = 0x0306;
+    r.bx = 0x012B;
+    do_int(0x16, &r);
+    if (r.ax != 0x0306)
+        r.bx = 0x012B;
+    {
+        unsigned old = ((r.bx >> 3) & 0x60) | (r.bx & 0x1F);
+        if (v != 0xFFFFu) {
+            r.ax = 0x0305;
+            r.bx = ((v & 0x60) << 3) | (v & 0x1F);
+            do_int(0x16, &r);
+        }
+        return old;
+    }
+}
+
 /* ---- Maus (INT 33h) ----------------------------------------------------- */
 static unsigned mou_open, mou_shown;
 static unsigned mou_lb = 0xFFFF, mou_lx, mou_ly;
@@ -1399,6 +1419,7 @@ unsigned fapi_dos(unsigned fn, unsigned a1, unsigned a2, unsigned a3)
         }
         break;
     case FAPI_KBDSHIFT:     rc = kbd_shift(); break;
+    case FAPI_KBDRATE:      rc = kbd_rate(a1); break;
     case FAPI_MOUOPEN:      rc = mou_init(); break;
     case FAPI_MOUREADEVENT: rc = mou_event(a1, a2); break;
     case FAPI_MOUSHOWPTR:   mou_show(a1); rc = 0; break;

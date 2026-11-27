@@ -76,6 +76,21 @@ Dienst endet ohne Aufträge). Code 64.014 + 54.975 Byte. Offen aus 6.3/6.4:
 MODE CON RATE/DELAY (FAPI 60h), BACKUP/RESTORE (FIND_SNAME, UNINAME),
 PANIC.LOG, Netzdrucker, NDRV 16 + DEINIT für IDE/AHA154X/NCR5380,
 Treiber-Startcode freigeben, CD-Vorauslesen.
+Teil 6 (27./28.11.2026): `rtc_stamp`/`rtc_set` nach k2misc.c (fern;
+Thunk kf_rtc_stamp entfällt); `MODE CON RATE=/DELAY=` (FAPI 60h, Patch
+068e359) – QEMU und 86Box SCAT (Wert angenommen und zurückgemeldet,
+Tippen danach; ob die Wiederholung langsamer wird, zeigt der Test dort
+nicht – xdotool wiederholt selbst); BACKUP/RESTORE mit `FIND_SNAME`,
+FAPI 63h `FAPI_UNINAME` (fat.c `uni_fapi`) und FORMAT `/BACKUP` – QEMU
+(Platte -> Platte mit langen Namen, ß und griechischem Namen: Inhalte
+gleich, fsck sauber); Netzdrucker `NET USE LPT1: \\server\drucker`
+(ufs.c `ufs_lpt*`, UFS_GETT, SMBCLI/NET aus main) – QEMU mit ne2k_isa
+gegen Samba (/tmp/claude-0/prn/run5.sh: COPY auf LPT1, ECHO > PRN, /D).
+Lehre: Patches aus main mit `patch` ohne `-F3` einspielen – mit Unschärfe
+landeten Blöcke mitten in fremden Strukturen und Kommentaren (baute
+trotzdem). Code 63.492 + 56.531 Byte, SMBCLI 64.496 Byte (voll). Offen:
+PANIC.LOG, NDRV 16 + DEINIT für IDE/AHA154X/NCR5380, Treiber-Startcode
+freigeben, CD-Vorauslesen.
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`

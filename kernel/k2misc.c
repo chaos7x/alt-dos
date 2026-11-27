@@ -144,3 +144,70 @@ void __far cfg_step(char *p)
         for (k = 0; k < sizeof(st); k++)
             p[i + k] = st[k];
 }
+
+/* ---- Echtzeituhr (CMOS), aus kernel.c (27.11.2026, Platz im ersten
+   Codesegment) ------------------------------------------------------------ */
+static unsigned cmos(unsigned r)
+{
+    outb(0x70, (unsigned char)r);
+    return inb(0x71);
+}
+
+static unsigned from_bcd(unsigned v, unsigned bin)
+{
+    return bin ? v : (v >> 4) * 10 + (v & 15);
+}
+
+/* jetzt, als FAT-Datum << 16 | FAT-Uhrzeit */
+unsigned long __far rtc_stamp(void)
+{
+    unsigned s, m, h, dd, mm, yy, cc, bin, n;
+
+    for (n = 0; n < 2000 && (cmos(0x0A) & 0x80); n++)
+        ;                                       /* Uhr zaehlt gerade     */
+    bin = cmos(0x0B) & 4;
+    s  = from_bcd(cmos(0x00), bin);
+    m  = from_bcd(cmos(0x02), bin);
+    h  = from_bcd(cmos(0x04) & 0x7F, bin);
+    dd = from_bcd(cmos(0x07), bin);
+    mm = from_bcd(cmos(0x08), bin);
+    yy = from_bcd(cmos(0x09), bin);
+    cc = from_bcd(cmos(0x32), bin);
+    if (cc != 19 && cc != 20)
+        cc = yy < 80 ? 20 : 19;
+    yy += cc == 20 ? 100 : 0;                   /* Jahre seit 1900       */
+    yy = yy < 80 ? 0 : yy - 80;                 /* FAT zaehlt ab 1980    */
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || h > 23 || m > 59 || s > 59)
+        return (1UL << 5 | 1) << 16;            /* Uhr kaputt: 1.1.1980  */
+    return ((unsigned long)((yy << 9) | (mm << 5) | dd) << 16) |
+           ((h << 11) | (m << 5) | (s >> 1));
+}
+
+static unsigned to_bcd(unsigned v, unsigned bin)
+{
+    return bin ? v : ((v / 10) << 4) | (v % 10);
+}
+
+/* Echtzeituhr stellen (FAT-Format); 0 = ok */
+int __far rtc_set(unsigned date, unsigned time)
+{
+    unsigned y = 1980 + (date >> 9), mo = (date >> 5) & 15, dd = date & 31;
+    unsigned h = time >> 11, mi = (time >> 5) & 63, sc = (time & 31) << 1;
+    unsigned bin = cmos(0x0B) & 4, b = cmos(0x0B), f;
+
+    if (mo < 1 || mo > 12 || dd < 1 || dd > 31 || h > 23 || mi > 59 || sc > 59)
+        return -1;
+    f = irq_off();
+    outb(0x70, 0x0B); outb(0x71, b | 0x80);     /* Uhr anhalten          */
+    outb(0x70, 0x00); outb(0x71, to_bcd(sc, bin));
+    outb(0x70, 0x02); outb(0x71, to_bcd(mi, bin));
+    outb(0x70, 0x04); outb(0x71, to_bcd(h, bin));    /* 24-Stunden-Modus */
+    outb(0x70, 0x07); outb(0x71, to_bcd(dd, bin));
+    outb(0x70, 0x08); outb(0x71, to_bcd(mo, bin));
+    outb(0x70, 0x09); outb(0x71, to_bcd(y % 100, bin));
+    outb(0x70, 0x32); outb(0x71, to_bcd(y / 100, bin));
+    outb(0x70, 0x0B); outb(0x71, b & 0x7F);     /* weiterlaufen          */
+    irq_restore(f);
+    return 0;
+}
+

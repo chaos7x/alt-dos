@@ -497,63 +497,8 @@ static unsigned cmos(unsigned r)
     return inb(0x71);
 }
 
-static unsigned from_bcd(unsigned v, unsigned bin)
-{
-    return bin ? v : (v >> 4) * 10 + (v & 15);
-}
-
-/* jetzt, als FAT-Datum << 16 | FAT-Uhrzeit */
-unsigned long rtc_stamp(void)
-{
-    unsigned s, m, h, dd, mm, yy, cc, bin, n;
-
-    for (n = 0; n < 2000 && (cmos(0x0A) & 0x80); n++)
-        ;                                       /* Uhr zaehlt gerade     */
-    bin = cmos(0x0B) & 4;
-    s  = from_bcd(cmos(0x00), bin);
-    m  = from_bcd(cmos(0x02), bin);
-    h  = from_bcd(cmos(0x04) & 0x7F, bin);
-    dd = from_bcd(cmos(0x07), bin);
-    mm = from_bcd(cmos(0x08), bin);
-    yy = from_bcd(cmos(0x09), bin);
-    cc = from_bcd(cmos(0x32), bin);
-    if (cc != 19 && cc != 20)
-        cc = yy < 80 ? 20 : 19;
-    yy += cc == 20 ? 100 : 0;                   /* Jahre seit 1900       */
-    yy = yy < 80 ? 0 : yy - 80;                 /* FAT zaehlt ab 1980    */
-    if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || h > 23 || m > 59 || s > 59)
-        return (1UL << 5 | 1) << 16;            /* Uhr kaputt: 1.1.1980  */
-    return ((unsigned long)((yy << 9) | (mm << 5) | dd) << 16) |
-           ((h << 11) | (m << 5) | (s >> 1));
-}
-
-static unsigned to_bcd(unsigned v, unsigned bin)
-{
-    return bin ? v : ((v / 10) << 4) | (v % 10);
-}
-
-/* Echtzeituhr stellen (FAT-Format); 0 = ok */
-static int rtc_set(unsigned date, unsigned time)
-{
-    unsigned y = 1980 + (date >> 9), mo = (date >> 5) & 15, dd = date & 31;
-    unsigned h = time >> 11, mi = (time >> 5) & 63, sc = (time & 31) << 1;
-    unsigned bin = cmos(0x0B) & 4, b = cmos(0x0B), f;
-
-    if (mo < 1 || mo > 12 || dd < 1 || dd > 31 || h > 23 || mi > 59 || sc > 59)
-        return -1;
-    f = irq_off();
-    outb(0x70, 0x0B); outb(0x71, b | 0x80);     /* Uhr anhalten          */
-    outb(0x70, 0x00); outb(0x71, to_bcd(sc, bin));
-    outb(0x70, 0x02); outb(0x71, to_bcd(mi, bin));
-    outb(0x70, 0x04); outb(0x71, to_bcd(h, bin));    /* 24-Stunden-Modus */
-    outb(0x70, 0x07); outb(0x71, to_bcd(dd, bin));
-    outb(0x70, 0x08); outb(0x71, to_bcd(mo, bin));
-    outb(0x70, 0x09); outb(0x71, to_bcd(y % 100, bin));
-    outb(0x70, 0x32); outb(0x71, to_bcd(y / 100, bin));
-    outb(0x70, 0x0B); outb(0x71, b & 0x7F);     /* weiterlaufen          */
-    irq_restore(f);
-    return 0;
-}
+/* rtc_stamp/rtc_set: kernel/k2misc.c (KTEXT2) */
+int __far rtc_set(unsigned date, unsigned time);
 
 /* Warmstart wie Strg+Alt+Entf unter MS-DOS: Kennung 1234h an 0040:0072,
    damit das BIOS den Speichertest ueberspringt, dann CPU-Reset */
@@ -2666,6 +2611,8 @@ static void of_release(int k)
         }
     } else if (o->kind == OF_SOCK)
         net_sclose((unsigned)o->f.first);   /* Socket im Stapel schliessen */
+    else if (o->kind == OF_LPT && ufs_lpt(o->f.drive))
+        ufs_lpt_close(o->f.drive, k + 1);   /* Netzdrucker: Auftrag zu   */
     else if ((o->kind == OF_PRD && !files[pipes[o->pipe].wr].refs) ||
              (o->kind == OF_PWR && !files[pipes[o->pipe].rd].refs))
         pipes[o->pipe].used = 0;        /* beide Enden zu                */
@@ -2922,7 +2869,7 @@ static unsigned dev_open(int dn)
             return FAPI_ERROR;
         if (com_busy(dn - 11))
             return FAPI_ERR_INUSE;          /* z. B. serielle Maus       */
-    } else if (dn != 9 && !bios_ports[3 + dn])
+    } else if (dn != 9 && !bios_ports[3 + dn] && !ufs_lpt(dn - 1))
         return FAPI_ERROR;                  /* kein solcher Anschluss    */
     k = of_alloc();
     if (k < 0)
@@ -2944,6 +2891,8 @@ static int lpt_write(int k, unsigned sel, unsigned off, unsigned len)
     unsigned char __far *p;
     unsigned long t0;
 
+    if (ufs_lpt(files[k].f.drive))          /* NET USE LPTn: an den Dienst */
+        return ufs_lpt_write(files[k].f.drive, k + 1, sel, off, len);
     for (i = 0; i < len; i++) {
         t0 = get_ticks();
         for (n = 0; !((st = inb(base + 1)) & 0x80); n++)
@@ -3114,7 +3063,7 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_VIOWRTTTY: case FAPI_VIOCLS: case FAPI_VIOSETMODE: case FAPI_VIOSETANSI:
     case FAPI_VIOSETLINES: case FAPI_VIOGETROWS: case FAPI_VIOSETCURPOS:
     case FAPI_KBDSHIFT: case FAPI_KBDCHARIN: case FAPI_KBDPEEK:
-    case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
+    case FAPI_KBDRATE: case FAPI_KBDGETLAYOUT: case FAPI_MEMINFO: case FAPI_GETARGS:
     case FAPI_BEEP:                             /* wartet die Tondauer   */
     case FAPI_QCHILDRC: case FAPI_QCURDISK:   /* QCURDIR liest u. U. die Platte */
     case FAPI_GETENV: case FAPI_SETENV: case FAPI_ENVENTRY:
@@ -3226,6 +3175,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
 
     case FAPI_KBDSHIFT:
         return kbd_shift();
+
+    case FAPI_KBDRATE:
+        return kbd_rate(a1);
 
     case FAPI_KBDCHARIN:
         if (task[current].nocon)
@@ -3747,6 +3699,12 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
+    case FAPI_UNINAME:                          /* BACKUP/RESTORE (fat.c) */
+        if (a1 > 1 || user_str(usel, a2, buf, 256) || !user_ok(usel, a3, 512, !a1))
+            return FAPI_ERROR;
+        t = uni_fapi(a1, buf, usel, a3);
+        return t < 0 ? FAPI_ERROR : t;
+
     case FAPI_BEEP:                             /* wie OS/2 DosBeep (aus 6.3) */
         if (a1 < 37 || a1 > 32767)
             return FAPI_ERROR;
@@ -4052,8 +4010,10 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
         return 0;
     }
 
-    case FAPI_FINDENTRY:
-        if (!user_ok(usel, a1, sizeof(de), 1))
+    case FAPI_FINDENTRY: {                      /* CX Bit 15: mit 8.3-Namen */
+        unsigned dl = a2 & FIND_SNAME ? sizeof(de) : sizeof(struct fapi_dirent);
+        a2 &= ~FIND_SNAME;
+        if (!user_ok(usel, a1, dl, 1))
             return FAPI_ERROR;
         if (a3 == 0)
             buf[0] = 0;                         /* aktuelles Verzeichnis */
@@ -4064,8 +4024,9 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
             return FAPI_ERROR;
         if (!task[current].lfn && de.sname[0])  /* altes Programm: 8.3   */
             scopy(de.name, de.sname, sizeof(de.sname));
-        far_copy(usel, a1, KDATA, (unsigned)&de, sizeof(struct fapi_dirent));
+        far_copy(usel, a1, KDATA, (unsigned)&de, dl);
         return 0;
+    }
 
     case FAPI_CHDIR: {
         static char real[IFS_PATHLEN];

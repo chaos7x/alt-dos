@@ -212,6 +212,21 @@ static void lst_load(void)
         persist = up(lb[11]) != 'N';
 }
 
+/* "X:" -> Laufwerk (0 = A:), "LPT1"/"LPT1:"/"PRN" -> UFS_LPT + n
+   (Netzdrucker), sonst FFFFh */
+static unsigned ldrv(const char *l)
+{
+    if (up(l[0]) == 'L' && up(l[1]) == 'P' && up(l[2]) == 'T' && l[3] >= '1' &&
+        l[3] <= '3' && (l[4] == ':' || (unsigned char)l[4] <= ' '))
+        return UFS_LPT + (unsigned)(l[3] - '1');
+    if (up(l[0]) == 'P' && up(l[1]) == 'R' && up(l[2]) == 'N' &&
+        (l[3] == ':' || (unsigned char)l[3] <= ' '))
+        return UFS_LPT;
+    if (l[0] && l[1] == ':' && (unsigned char)l[2] <= ' ')
+        return (unsigned)(up(l[0]) - 'A');
+    return 0xFFFF;
+}
+
 /* Zeile i (ab 0, ohne die Kopfzeile) -> Zeiger, Laenge; 0 = keine */
 static char *lst_line(unsigned i, unsigned *len)
 {
@@ -243,7 +258,7 @@ static void lst_save(unsigned skip, const char *add)
     DosWrite(h, persist ? "PERSISTENT=YES\r\n" : "PERSISTENT=NO\r\n",
              persist ? 16 : 15);
     for (i = 0; (l = lst_line(i, &n)) != 0; i++)
-        if (n > 2 && (unsigned)(up(l[0]) - 'A') != skip) {
+        if (n > 2 && ldrv(l) != skip) {
             DosWrite(h, l, n);
             DosWrite(h, "\r\n", 2);
         }
@@ -260,24 +275,25 @@ static unsigned lst_has(unsigned d)
     unsigned i, n;
     char *l;
     for (i = 0; (l = lst_line(i, &n)) != 0; i++)
-        if (n > 2 && (unsigned)(up(l[0]) - 'A') == d)
+        if (n > 2 && ldrv(l) == d)
             return 1;
     return 0;
 }
 
+static void drv_out(unsigned drive);
+
 static void list(void)
 {
-    unsigned d, n = 0, i, k;
-    char l[4], *e;
+    unsigned d, j, n = 0, i, k;
+    char *e;
     out(persist ? "Neue Verbindungen werden gespeichert.\r\n\r\n"
                 : "Neue Verbindungen werden nicht gespeichert.\r\n\r\n");
-    l[1] = ':';
-    l[2] = 0;
-    for (d = 2; d < 26; d++) {
+    for (j = 2; j < 29; j++) {          /* C:-Z:, dann LPT1-LPT3         */
+        d = j < 26 ? j : UFS_LPT + j - 26;
         e = 0;
         if (fapi_call(FAPI_UFS, UFS_INFO, d, (unsigned)&rg)) {
             for (i = 0; (e = lst_line(i, &k)) != 0; i++)   /* nur gemerkt?  */
-                if (k > 2 && (unsigned)(up(e[0]) - 'A') == d)
+                if (k > 2 && ldrv(e) == d)
                     break;
             if (!e)
                 continue;
@@ -286,9 +302,8 @@ static void list(void)
             out("Status         Lokal    Remote\r\n"
                 "------------------------------------------------------\r\n");
         out(e ? "Getrennt       " : "OK             ");
-        l[0] = (char)('A' + d);
-        out(l);
-        out("       ");
+        drv_out(d);
+        out(d >= UFS_LPT ? "     " : "       ");
         if (e) {
             for (i = 3; i < k && e[i] != ' '; i++)
                 ;
@@ -304,10 +319,16 @@ static void list(void)
 /* Verbindung merken (nach Erfolg) */
 static void remember(unsigned drive)
 {
-    ub[0] = (char)('A' + drive);
-    ub[1] = ':';
-    ub[2] = ' ';
-    scopy(ub + 3, unc, sizeof(ub) - 3);
+    unsigned o = 0;
+    if (drive >= UFS_LPT) {
+        ub[0] = 'L'; ub[1] = 'P'; ub[2] = 'T';
+        ub[3] = (char)('1' + drive - UFS_LPT);
+        o = 2;
+    } else
+        ub[0] = (char)('A' + drive);
+    ub[1 + o] = ':';
+    ub[2 + o] = ' ';
+    scopy(ub + 3 + o, unc, sizeof(ub) - 3 - o);
     if (user[0]) {
         cat(ub, " /USER:", sizeof(ub));
         if (dom[0]) {
@@ -323,9 +344,15 @@ static void remember(unsigned drive)
 
 static void drv_out(unsigned drive)
 {
-    msg[0] = (char)('A' + drive);
-    msg[1] = ':';
-    msg[2] = 0;
+    if (drive >= UFS_LPT) {
+        msg[0] = 'L'; msg[1] = 'P'; msg[2] = 'T';
+        msg[3] = (char)('1' + drive - UFS_LPT);
+        msg[4] = 0;
+    } else {
+        msg[0] = (char)('A' + drive);
+        msg[1] = ':';
+        msg[2] = 0;
+    }
     out(msg);
 }
 
@@ -337,7 +364,8 @@ static const char *connect(unsigned drive)
     if (!fapi_call(FAPI_UFS, UFS_INFO, drive, (unsigned)&rg)) {
         if (same(rg.name, unc))
             return 0;                           /* schon so verbunden      */
-        return "Das Laufwerk ist schon verbunden.";
+        return drive >= UFS_LPT ? "Der Drucker ist schon umgeleitet." :
+                                  "Das Laufwerk ist schon verbunden.";
     }
     kerb = !user[0] && !havepw && !star && !unc_numeric() && have_tickets();
     if (star || (user[0] && !havepw))
@@ -387,9 +415,14 @@ static const char *connect(unsigned drive)
     cat(cl, pwf, sizeof(cl));
     cat(cl, " --serve ", sizeof(cl));
     n = slen(cl);
-    cl[n] = (char)('A' + drive);
-    cl[n + 1] = ':';
-    cl[n + 2] = 0;
+    if (drive >= UFS_LPT) {             /* Netzdrucker                    */
+        cat(cl, "LPT1:", sizeof(cl));
+        cl[n + 3] = (char)('1' + drive - UFS_LPT);
+    } else {
+        cl[n] = (char)('A' + drive);
+        cl[n + 1] = ':';
+        cl[n + 2] = 0;
+    }
     if (DosExecPgm(cl, EXEC_DETACH)) {
         DosDelete(pwf);
         return "SMBCLI.EXE nicht gefunden (\\DOS, PATH).";
@@ -400,7 +433,7 @@ static const char *connect(unsigned drive)
         DosSleep(100);
         if (!fapi_call(FAPI_UFS, UFS_INFO, drive, (unsigned)&rg)) {
             DosDelete(pwf);
-            out("Laufwerk ");
+            out(drive >= UFS_LPT ? "Drucker " : "Laufwerk ");
             drv_out(drive);
             out(" ist mit ");
             out(rg.name);
@@ -429,14 +462,15 @@ static unsigned restore(void)
     const char *e;
     char *l, *q;
     for (i = 0; (l = lst_line(i, &n)) != 0; i++) {
-        if (n < 6 || n >= sizeof(ub) || l[1] != ':')
+        if (n < 6 || n >= sizeof(ub))
             continue;
-        d = (unsigned)(up(l[0]) - 'A');
-        if (d < 2 || d > 25 || !fapi_call(FAPI_UFS, UFS_INFO, d, (unsigned)&rg))
+        d = ldrv(l);
+        if (d < 2 || (d > 25 && d < UFS_LPT) || d == 0xFFFF ||
+            !fapi_call(FAPI_UFS, UFS_INFO, d, (unsigned)&rg))
             continue;                           /* z. B. Heimlaufwerk      */
         for (d = 0; d < n; d++)
             ub[d] = l[d];
-        d = (unsigned)(up(l[0]) - 'A');
+        d = ldrv(l);
         ub[n] = 0;
         user[0] = dom[0] = pass[0] = 0;
         havepw = star = nosign = 0;
@@ -471,10 +505,10 @@ static void net_use(char *a)
     lst_load();
     for (; *a; a = next_word(a)) {
         word(a, w, sizeof(w));
-        if (w[0] && w[1] == ':' && !w[2] && drive == 0xFFFF) {
-            drive = (unsigned)(up(w[0]) - 'A');
-            if (drive < 2 || drive > 25)
-                fail("Ung\x81ltiges Laufwerk (C: bis Z:).");
+        if (drive == 0xFFFF && ldrv(w) != 0xFFFF) {
+            drive = ldrv(w);
+            if (drive < 2 || (drive > 25 && drive < UFS_LPT))
+                fail("Ung\x81ltiges Laufwerk (C: bis Z:, LPT1 bis LPT3).");
         } else if (w[0] == '\\' && w[1] == '\\')
             scopy(unc, w, sizeof(unc));
         else if (w[0] == '/' && (up(w[1]) == 'D') && (!w[2] || same(w, "/DELETE")))
@@ -532,7 +566,7 @@ static void net_use(char *a)
         }
         for (t = 0; t < 50 && !fapi_call(FAPI_UFS, UFS_INFO, drive, (unsigned)&rg); t++)
             DosSleep(100);
-        out("Netzlaufwerk getrennt.\r\n");
+        out(drive >= UFS_LPT ? "Netzdrucker getrennt.\r\n" : "Netzlaufwerk getrennt.\r\n");
         DosExit(0);
     }
     if (!unc[0])
@@ -636,7 +670,7 @@ static const char *const hlp[] = {
     "HELPMSG", "NET HELPMSG Nummer\r\n\r\nErkl\x84rt eine Windows- bzw. LAN-Manager-Fehlernummer (z. B. 53, 86, 2250).\r\n",
     "STATISTICS", "NET STATISTICS [WORKSTATION]\r\n\r\nZeigt die Z\x84hler der Netzkarten und die verbundenen Netzlaufwerke.\r\n",
     "TIME", "NET TIME [\\\\Rechner | /DOMAIN[:Name]] [/SET [/Y]]\r\n\r\nZeigt die Uhrzeit eines SMB-Servers (ohne Anmeldung) und stellt mit\r\n/SET die eigene Uhr danach. Ohne Rechner: der Anmeldeserver (LOGON).\r\nZeitzone aus TZ wie bei SNTP.\r\n",
-    "USE", "NET USE [X: [\\\\Rechner\\Freigabe [Kennwort|*] [/USER:[Dom\x84ne\\]Name]] | X: /DELETE]\r\n        [/PERSISTENT:YES|NO] [/NOSIGN]\r\nNET USE /RESTORE\r\n\r\nVerbindet Netzlaufwerke (SMB 2/3) und zeigt sie an. /NOSIGN: nur SMB 2.x,\r\nsigniert nur, wenn der Server es verlangt (schneller auf dem 286).\r\n",
+    "USE", "NET USE [X: [\\\\Rechner\\Freigabe [Kennwort|*] [/USER:[Dom\x84ne\\]Name]] | X: /DELETE]\r\n        [/PERSISTENT:YES|NO] [/NOSIGN]\r\nNET USE /RESTORE\r\n\r\nVerbindet Netzlaufwerke (SMB 2/3) und zeigt sie an. /NOSIGN: nur SMB 2.x,\r\nsigniert nur, wenn der Server es verlangt (schneller auf dem 286).\r\nStatt X: auch LPT1 bis LPT3: Drucker auf eine Druckfreigabe umleiten\r\n(Auftrag endet beim Schlie\xE1en, bei DOS-Programmen nach 15 s Ruhe).\r\n",
     "USER", "NET USER [Name] /DOMAIN\r\n\r\nListet die Benutzer der Dom\x84ne bzw. zeigt ein Konto (LDAP).\r\nAT-DOS hat keine lokalen Konten.\r\n",
     "VIEW", "NET VIEW \\\\Rechner [/ALL] [/USER:[Dom\x84ne\\]Name]\r\n\r\nListet die Freigaben eines Servers (mit /ALL auch die versteckten).\r\nAngemeldet wird mit Kerberos (LOGON/KINIT), mit /USER: per Kennwort,\r\nsonst als Gast.\r\n",
     0

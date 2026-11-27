@@ -61,7 +61,7 @@ void main(void)
     static char prog[16];
     char *a;
     unsigned d = 0xFFFF, k, r;
-    int quick = 0, sys = 0, vlab = 0;
+    int quick = 0, sys = 0, vlab = 0, bk = 0;
 
     DosGetArgs(args);
     for (a = skip(args); *a; a = next_word(a)) {
@@ -69,6 +69,9 @@ void main(void)
             d = (unsigned)(up(a[0]) - 'A');
         else if (a[0] == '/' && up(a[1]) == 'Q')
             quick = 1;
+        else if (a[0] == '/' && up(a[1]) == 'B' && up(a[2]) == 'A')
+            bk = 1;                     /* /BACKUP: ohne Rueckfrage (wie
+                                           MS-DOS 5, BACKUP hat gefragt) */
         else if (a[0] == '/' && up(a[1]) == 'S')
             sys = 1;
         else if (a[0] == '/' && up(a[1]) == 'V') {
@@ -126,7 +129,9 @@ void main(void)
         puts(" fehlt).\r\n");
         DosExit(3);
     }
-    if (fi.flags & FSI_REMOVABLE) {
+    if (bk)
+        ;
+    else if (fi.flags & FSI_REMOVABLE) {
         puts("Neue Diskette in Laufwerk ");
         putc((char)('A' + d));
         puts(": einlegen\r\nund danach die EINGABETASTE dr\x81" "cken...");

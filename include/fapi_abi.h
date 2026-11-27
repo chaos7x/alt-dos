@@ -47,6 +47,8 @@
                                        aktiven Codepage, 5.1, fuer die Box) */
 #define KBL_BYTES           278     /* "KBL" 01h, Kennung, 3 x 90 Zeichen */
 #define KBL_SIZE_BYTES      278     /* Version 1: CP437, 3 Ebenen       */
+#define FIND_SNAME          0x8000  /* in CX: Puffer ist struct fapi_dirent_s,
+                                       dazu der 8.3-Name (BACKUP)          */
 #define KBL2_SIZE_BYTES     728     /* Version 2: Unicode, 4 Ebenen
                                        (normal, Umschalt, AltGr,
                                        Umschalt+AltGr) */
@@ -240,6 +242,23 @@ struct fapi_drvinfo {
                                        -> 0, FAPI_ERR_INUSE, FAPI_ERROR */
 #define UFS_INFO            5       /* CX = Laufwerk, DX = struct
                                        fapi_ufsreg -> 0, FAPI_ERROR     */
+#define UFS_GETT            6       /* wie UFS_GET, wartet aber hoechstens
+                                       rq.n Sekunden (vom Dienst vorher
+                                       gesetzt) -> op UFSOP_IDLE, wenn
+                                       nichts kam (Netzdrucker: Ende eines
+                                       Auftrags nach einer Frist wie NT) */
+#define UFS_LPT             0x80    /* Laufwerk = UFS_LPT + n: Drucker LPTn+1
+                                       statt eines Laufwerks (NET USE
+                                       LPT1: \\server\drucker). Auftraege:
+                                       UFSOP_WRITE (h = Handle-Kennung,
+                                       pos unbenutzt), UFSOP_CLOSE (h) beim
+                                       Schliessen des Handles */
+#define FAPI_KBDRATE        0x60    /* Wiederholrate (aus 6.3): BX = Byte fuer
+                                       den Tastaturbefehl F3h (Bit 0-4 Rate,
+                                       0 = 30/s .. 31 = 2/s; Bit 5-6
+                                       Verzoegerung 250/500/750/1000 ms),
+                                       FFFFh = nur abfragen -> AX = bisher.
+                                       Gilt fuer die ganze Tastatur */
 #define FAPI_BEEP           0x61    /* Ton am PC-Lautsprecher (aus 6.3, wie OS/2
                                        DosBeep): BX = Hz (37-32767), CX = ms
                                        (auf 10 ms gerundet); wartet so lange */
@@ -288,6 +307,8 @@ struct fapi_lock {
 #define UFSOP_TRUNC         16      /* h, size                           */
 #define UFSOP_LOCK          17      /* h, pos = Stelle, size = Laenge,
                                        mask = LOCK_* (FAPI_FILELOCK)     */
+#define UFSOP_IDLE          18      /* nur UFS_GETT: Frist um, nichts kam
+                                       (keine Antwort mit UFS_PUT)       */
 struct fapi_ufsreg {
     unsigned short drive;           /* 2 = C:                            */
     unsigned short task;            /* UFS_INFO: Dienst                  */
@@ -305,6 +326,17 @@ struct fapi_ufsreq {
 #define FAPI_NET            0x5B    /* Netzwerk (6.2, TCPIP.SYS): BX = NET_*,
                                        CX = Parameterblock, DX = Groesse;
                                        ohne Netz FAPI_ERR_NONET */
+#define FAPI_UNINAME        0x63    /* Unicode-Original eines Namens (aus 6.3,
+                                       BACKUP/RESTORE): BX = 0 lesen, 1
+                                       merken; CX = Name (ein Pfadteil, wie
+                                       das Programm ihn sieht, Fremdes als
+                                       '_'), DX = UTF-16 (bis 255 Zeichen +
+                                       0). Lesen liefert das Original, das
+                                       der Kernel diesem Task zuletzt zu dem
+                                       Namen gab (DosFindEntry, Pfad) -> AX =
+                                       Zeichen, 0 = keins; Merken: legt der
+                                       Task den Namen danach an, schreibt
+                                       FAT das Original */
 #define FAPI_ERR_NONET      0xFFF7  /* kein Netz (TCPIP.SYS oder Karte fehlt) */
 #define FAPI_ERR_TIMEOUT    0xFFF6  /* Frist abgelaufen (keine Antwort)  */
 #define NET_IFINFO          1       /* struct fapi_netif, ifc vorgeben ->
@@ -944,6 +976,14 @@ struct fapi_dirent {                /* DosFindEntry                     */
     unsigned char  attr;            /* FAT-Attribute (10h = Verzeichnis) */
     unsigned long  size;
     unsigned short date, time;      /* FAT-Format                       */
+};
+struct fapi_dirent_s {              /* DosFindEntry mit FIND_SNAME      */
+    char           name[256];
+    unsigned char  attr;
+    unsigned long  size;
+    unsigned short date, time;
+    char           sname[13];       /* 8.3-Name, "" = name ist schon 8.3
+                                       (CD-Module kennen ihn nicht: "")  */
 };
 
 #define ENV_CALLER          1
