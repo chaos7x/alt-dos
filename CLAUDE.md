@@ -65,6 +65,15 @@ Fehler, werden sie auf `6.2` behoben und danach freigegeben): Titel/VER
 nach der Freigabe kommt ein Schritt für das Release `v6.2` dazu (wie
 bei 6.1, als neuestes). Fehlerbehebungen dann auf `6.2` und `main`.
 
+Rückport 6.3/6.4 -> `5.x` (Auftrag des Nutzers, 27.11.2026: „nimm das,
+was aus 6.x wichtig für 5.x ist, rüber“; erledigt 28.11.2026, Einzelheiten
+in der CLAUDE.md von `5.x`, Teile 1–7): Fehlerbehebungen, Kleinwerkzeuge,
+DIFF/PATCH/SED, PS/KILL/TOP, CMD-Befehle aus FreeCOM, ARP/TRACERT/ROUTE/
+CURL (ohne TLS), LEDs, RUN=, MODE CON RATE, BACKUP/RESTORE, Netzdrucker,
+NDRV 10 + DEINIT, Treiber-Startcode freigeben, PANIC.LOG (dort nur über
+die Platte). Nicht übernommen: CD-Vorauslesen, NE-Lader/GUI, IPC (nicht
+entschieden).
+
 AT-DOS 5.5 ist fertig (Entscheidung des Nutzers, 20.11.2026): Zweig
 `5.5` mit dem Netz aus 6.2 für den 286, ein Push dorthin baut per CI das
 Release `v5.5` (`--latest=false`). Einzelheiten in der CLAUDE.md von
