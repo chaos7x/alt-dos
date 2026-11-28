@@ -2147,8 +2147,18 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   dasd), `fd_sync` nur noch für blk_flush. Geprüft QEMU und 86Box
   386DX/40 (Test /tmp/claude-0/fdl/go.sh; 86Box-VM `nfd` mit
   fdd_01_turbo = 0 und Ketten-Startsektor auf der Testdiskette, damit das
-  BIOS von der Platte startet). Als Nächstes: Sperre für `sw_buf`, dann
-  Durchsicht der Aufrufe je Tabelle.
+  BIOS von der Platte startet). Schritt 2 (28.11.2026): Auslagerungsdatei
+  bleibt unter `klock` (Befund in BIGLOCK.md: Seitentabellen aller Boxen,
+  halb aufgebaute Boxen, codeswap.c – eine Sperre nur für `sw_buf` reicht
+  nicht; zurückgestellt). Durchsicht der Aufrufe: QHANDTYPE, SEEK, DUP,
+  CACHEINFO jetzt in `fapi_nolock` (Regel: schläft nie und fasst keinen
+  Kontextpuffer wie fi_buf/fi_u an); `box_fapi` nimmt den Weg ohne Sperre
+  nur für SEEK/QHANDTYPE/DUP (dem.c hält Zustand über mehrere Aufrufe im
+  Kontext – ein schlafender Aufruf ohne Sperre tauschte ihn nicht);
+  `fapi_kcall` gilt nur noch für den einen Aufruf. Geprüft QEMU 16 und
+  4 MB (Test /tmp/claude-0/lk2/go.sh). Damit ist der Lock-Abbau für 6.5
+  abgeschlossen: `klock` ist Kontextmarke; ganz ohne erst mit 7.0. Als
+  Nächstes Stufe 5 (mehr Tasks) – erst nach der Freigabe von 6.4.
 
 - **Befehle aus FreeCOM für CMD** – erledigt (25.11.2026, Auftrag „1, 9
   und 7 machen“): PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD/`CD /D`,

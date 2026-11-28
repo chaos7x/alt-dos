@@ -3386,6 +3386,10 @@ static int fapi_nolock(unsigned fn, unsigned a1)
     case FAPI_SEM:                              /* Semaphoren (sem.c)    */
     case FAPI_NPIPE:                            /* Named Pipes (npipe.c) */
     case FAPI_BEEP:                             /* wartet die Tondauer   */
+    /* 6.5 (docs/BIGLOCK.md): schlafen nie und fassen keinen Puffer des
+       Kontexts (fi_buf, fi_u ...) an - ohne Sperre und ohne dass ein
+       Task mitten in einer Operation dafuer seinen Stand tauschen muss */
+    case FAPI_QHANDTYPE: case FAPI_SEEK: case FAPI_DUP: case FAPI_CACHEINFO:
         return 1;
     case FAPI_READ:
     case FAPI_WRITE:
@@ -3451,7 +3455,11 @@ static unsigned fapi_inner(unsigned fn, unsigned usel, unsigned a1, unsigned a2,
     int row, col, s = task[current].session, t, k;
     int d;
 
-    if (!fapi_kcall)
+    if (fapi_kcall)
+        fapi_kcall = 0;                         /* gilt nur fuer diesen Aufruf:
+                                                   schlaeft er, saehe ihn sonst
+                                                   der naechste Task          */
+    else
         usel |= 3;                              /* Aufrufer ist Ring 3  */
     switch (fn) {
     case FAPI_GETVERSION:
@@ -4876,10 +4884,17 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
 {
     unsigned r;
     ifs_notready = 0;
+    /* nur was nie schlaeft: der Dateidienst der Box (dem.c) haelt seinen
+       Stand ueber mehrere Aufrufe im Kontext - schliefe einer ohne Sperre
+       (Konsole lesen), tauschte ihn niemand */
+    if (fn == FAPI_SEEK || fn == FAPI_QHANDTYPE || fn == FAPI_DUP) {
+        fapi_kcall = 1;
+        return fapi_inner(fn, usel, a1, a2, a3);
+    }
     klock_enter();
-    fapi_kcall = 1;                     /* KDATA/Fenster mit RPL 0       */
+    fapi_kcall = 1;                     /* KDATA/Fenster mit RPL 0; fapi_inner
+                                           nimmt es beim Eintritt zurueck */
     r = fapi_inner(fn, usel, a1, a2, a3);
-    fapi_kcall = 0;
     if (bc_due())
         bc_flush_some(4);
     fd_sync_own();

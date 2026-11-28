@@ -124,18 +124,82 @@ in der Diskette schlief, jetzt nie – QEMUs Diskette antwortet aber fast
 sofort) und 86Box 386DX/40 mit AHA-154x und Diskettenlaufwerk ohne
 „Turbo“ (derselbe Ablauf, Inhalte gleich, fsck sauber).
 
-Wie es weitergeht (Reihenfolge):
+### Auslagerungsdatei: bleibt vorerst unter `klock` (Befund)
 
-1. Auslagerungsdatei: eigene Sperre für `sw_buf`, dann gibt auch das
-   Ein-/Auslagern `klock` ab.
-2. Durchsicht der Aufrufe mit `klock` je Tabelle (Dateitabelle/Handles,
-   Pipes, Taskverwaltung, Speicher): was nie schläft und keinen Kontext
-   braucht, wandert nach `fapi_nolock`; was schläft, braucht die Marke.
-3. Danach ist `klock` nur noch Kontextmarke: niemand wartet mehr auf sie,
-   außer bei `bkl_hold`. Ganz ohne sie ginge es erst, wenn der Zustand je
-   Aufruf nicht mehr in DGROUP steht (eigenes Segment je Task und ferne
-   Zeiger in fat.c – im 16-Bit-Kernel zu teuer; so steht es für 7.0 in
-   der Tabelle oben). Für Threads und mehr Tasks reicht Punkt 3.
+Nachgesehen, ob eine eigene Sperre für den Puffer `sw_buf` reicht. Sie
+reicht nicht – an `klock` hängt dort mehr:
+
+- swap.c schützt damit die Seitentabellen **aller** Boxen, den Kopf der
+  Auslagerungsdatei (Uhrzeiger, Bitmap) und den Puffer über das ganze
+  Aus-/Einlagern; wer eine Seite braucht, die gerade unterwegs ist, wartet
+  auf `klock` und liest danach.
+- codeswap.c (Code nachladen, Segmente verschieben und auslagern) braucht
+  `klock` ohnehin für den Kontext von fat.c (die EXE wird gelesen) und
+  ruft dabei das Seiten-E/A von swap.c.
+- Wer eine Box aufbaut (`v86_create`, `load_img`), holt Seiten und füllt
+  sie danach über ein Fenster. Gäbe `kf_swap_rw` die Sperre ab, könnte ein
+  anderer Task in dieser Zeit genau solche Seiten auslagern.
+
+Ein Umbau hieße: eine Sperre für swap.c **und** codeswap.c, jede Seite,
+die ein Erbauer noch in der Hand hat, als „nicht auslagerbar“ markieren,
+und alle Aufrufer von `mem_get`/`vp_alloc` darauf prüfen, dass sie einen
+neuen Schlafpunkt mit Abgabe vertragen. Der Gewinn: während eine Seite
+(4 KB) gelesen oder geschrieben wird, könnten andere in den Kernel –
+spürbar nur auf Rechnern unter Speicherdruck. Zurückgestellt, bis es
+jemand misst; für Threads und mehr Tasks ist es nicht nötig.
+
+### Durchsicht der Aufrufe mit `klock` (28.11.2026)
+
+Regel für `fapi_nolock`: ein Aufruf darf ohne Sperre laufen, wenn er
+**nie schläft** und **keinen Puffer des Kontexts** anfasst (`fi_buf`,
+`fi_canon`, `fi_de`, `fi_u`, Zustand von fat.c/Redirector/DEM) – dann ist
+er zwischen zwei Schlafpunkten unteilbar und stört keinen Task, der
+mitten in einer Operation steht. Oder er schläft nur an Stellen mit
+eigenem Schutz und hält nichts im Kontext (Konsole, Pipes, Netz, Ton,
+Semaphoren, Named Pipes). Jeder Aufruf mit Sperre kostet sonst, sobald
+ein anderer Task mitten in einer Operation steht, zwei Kopien des
+Kontexts (einige KB).
+
+| Tabelle | Aufrufe | Befund |
+| --- | --- | --- |
+| Dateitabelle/Handles | QHANDTYPE, SEEK, DUP | schlafen nie, kein Kontext: **jetzt ohne Sperre** (auch aus der Box über `box_fapi`) |
+| | CLOSE, DUP2 | `of_release` -> `ifs_close` schläft und braucht fat.c: mit Marke |
+| | OPEN, CREATE, READ/WRITE auf Dateien, NEWSIZE, FINDENTRY, DELETE, MKDIR, RMDIR, MOVE, SETFINFO, LABEL, FREESPACE, QFSINFO, CHDIR, QCURDIR, SELECTDISK | Dateisystem: mit Marke, geschützt durch die Laufwerkssperre |
+| Pipes | READ/WRITE auf Pipes | schon ohne Sperre |
+| | PIPE | benutzt `fi_u.hh` (zwei Worte) – bleibt, selten |
+| Anzeige | CACHEINFO | **jetzt ohne Sperre**; SYSINFO, BUSINFO, QJOIN, QSUBST, SETTITLE, KLOG benutzen `fi_buf` oder Fenster – bleiben, selten |
+| Taskverwaltung | EXECPGM, EXIT, PROC (KILL), SHUTDOWN, DRIVER, LOOP, MODULE | laden Dateien bzw. beenden fremde Tasks: mit Marke, EXIT/KILL nur außerhalb einer Operation (`in_op`) |
+| Speicher | ALLOCSEG, FREESEG, SHRSEG, SEGCTL | `mem_get` kann auslagern (s. o.); wer ohne Marke im Kernel steht, gilt nicht als „mitten in einer Operation“ und darf verschoben werden (`seg_compact`) – bleibt mit Marke |
+| Platten roh | OPENDRIVE, OPENDISK, FMTTRACK, EJECT, DISKINFO | mit Marke, Laufwerks-/Gerätesperre |
+
+Nebenbei: `fapi_kcall` (Aufruf aus dem Kernel für die Box, Puffer mit
+RPL 0) blieb gesetzt, während der Aufruf im Treiber schlief – ein
+anderer Task bekam dann ebenfalls keinen RPL 3 auf seinen Selektor. Nicht
+ausnutzbar (der Selektor ist sein eigenes DS), aber falsch; `fapi_inner`
+nimmt den Merker jetzt beim Eintritt zurück.
+
+Damit ist der Abbau so weit, wie er im 16-Bit-Kernel sinnvoll geht:
+`klock` ist die Kontextmarke. Auf sie gewartet wird nur noch, während
+ein anderer Task ein- oder auslagert, ohne eigene Ablage aus dem Cache
+schreibt oder die Hausarbeit (`bkl_hold`) läuft. Ganz ohne sie ginge es
+erst, wenn der Zustand je Aufruf nicht mehr in DGROUP steht (eigenes
+Segment je Task und ferne Zeiger in fat.c – im 16-Bit-Kernel zu teuer;
+so steht es für 7.0 in der Tabelle oben).
+
+Was Stufe 5/6 (mehr Tasks, Threads) daraus braucht:
+
+- Kontextablage und DMABUF je **Thread** (wie heute je Task) – jeder
+  Thread kann mitten in einer Operation schlafen.
+- Handles je **Prozess**: `task.std[]` und der Besitzer in `files[].owner`
+  zeigen auf den Prozess; `of_release` beim Prozessende, nicht beim
+  Threadende. Zwei Threads auf einem Handle verhalten sich wie heute zwei
+  Tasks mit geerbtem Handle (Stelle erst nach der Laufwerkssperre lesen).
+- `in_op` je Thread; `seg_compact`/`seg_out` verschieben Segmente eines
+  Prozesses nur, wenn **keiner** seiner Threads im Kernel steht.
+- LDT je Prozess: `seg_alloc`/`seg_free` bleiben mit Marke (kein Thread
+  sieht eine halb eingetragene Zeile, weil dazwischen niemand schläft –
+  außer in `mem_get`; dort Eintrag erst nach dem Holen des Speichers
+  schreiben, wie heute).
 
 ## Start des Taskwechsels (vorgemerkt 24.11.2026)
 
