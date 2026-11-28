@@ -2136,6 +2136,19 @@ unlesbare FAT 1), der Rest war schon gelöst oder passte nicht.
   Nutzers, 27.11.2026): Stufen 3–4 ebenfalls ohne `klock`, dann der Rest
   des Lock-Abbaus aus `docs/BIGLOCK.md` (Dateitabelle/Handles, Pipes,
   Taskverwaltung, Speicher, Diskette), erst danach mehr Tasks und Threads.
+  Lock-Abbau Schritt 1 (28.11.2026, `docs/BIGLOCK.md` „Stand 6.5“):
+  Bestandsaufnahme – `klock` ist seit Phase 6 vor allem die Marke für den
+  Kontexttausch (`ctx_take`); über ein Warten gehalten wurde sie nur noch
+  von der Diskette, der Auslagerungsdatei (`kf_swap_rw`, gemeinsamer
+  `sw_buf`), `bc_wb` ohne eigene Ablage und `bkl_hold`. Diskette erledigt:
+  eigene Sperre `kf_fd_lock` (dl_owner[NDRV]), Einsprünge von floppy.c mit
+  Sperre, innen `*_i`; Besitzer des geänderten Spurpuffers `tb_own`,
+  `fd_sync_own` am Ende eines Aufrufs (fat_flush, fapi_dispatch, box_fapi,
+  dasd), `fd_sync` nur noch für blk_flush. Geprüft QEMU und 86Box
+  386DX/40 (Test /tmp/claude-0/fdl/go.sh; 86Box-VM `nfd` mit
+  fdd_01_turbo = 0 und Ketten-Startsektor auf der Testdiskette, damit das
+  BIOS von der Platte startet). Als Nächstes: Sperre für `sw_buf`, dann
+  Durchsicht der Aufrufe je Tabelle.
 
 - **Befehle aus FreeCOM für CMD** – erledigt (25.11.2026, Auftrag „1, 9
   und 7 machen“): PUSHD/POPD/DIRS, HISTORY, ALIAS, WHICH, CDD/`CD /D`,

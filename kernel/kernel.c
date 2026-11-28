@@ -2990,7 +2990,7 @@ static int dasd_rw(int k, unsigned sel, unsigned off, unsigned len, int write)
         done += bs;
         lba++;
     }
-    if (write && IS_FLOPPY(dev) && fd_sync())
+    if (write && IS_FLOPPY(dev) && fd_sync_own())
         return -1;                      /* Spurpuffer nicht geschrieben */
     o->pos += o->f.flags & DASD_LBA ? done / bs : done;
     return (int)done;
@@ -3413,7 +3413,7 @@ unsigned fapi_dispatch(unsigned fn, unsigned usel, unsigned a1, unsigned a2)
             bc_flush_some(4);           /* je Aufruf ein Stueck (Phase 6:
                                            sonst schreibt ein Task, der nur
                                            den Prompt will, fuer alle)   */
-        fd_sync();                      /* Spurpuffer der Diskette: nach */
+        fd_sync_own();                  /* Spurpuffer der Diskette: nach */
         klock_leave();                  /* jedem Aufruf auf der Scheibe  */
     }
     if (ifs_notready && r >= FAPI_ERR_FIRST)
@@ -4882,7 +4882,7 @@ unsigned box_fapi(unsigned fn, unsigned usel, unsigned a1, unsigned a2, unsigned
     fapi_kcall = 0;
     if (bc_due())
         bc_flush_some(4);
-    fd_sync();
+    fd_sync_own();
     klock_leave();
     if (ifs_notready && r >= FAPI_ERR_FIRST)
         r = FAPI_ERR_NOTREADY;
@@ -5184,6 +5184,25 @@ void __far kf_kseg_free(unsigned sel)
 {
     mem_free(desc_base(&gdt[sel >> 3]) >> 12, PAGES(sel_limit(sel) + 1UL));
     gdt[sel >> 3].access = 0;
+}
+
+/* Diskette (floppy.c): eigene Sperre statt der Kernelsperre - Platz
+   dl_owner[NDRV] (seit 6.2 frei). Solange ein Task sie haelt, gibt
+   proc_block die Kernelsperre ab wie bei einem Treiberauftrag. */
+static int ctx_room(int t);
+void __far kf_fd_lock(void)
+{
+    if (current < 0)
+        return;
+    drv_lock(NDRV);
+    task[current].may_rel = (unsigned char)ctx_room(current);
+}
+void __far kf_fd_unlock(void)
+{
+    if (current < 0)
+        return;
+    task[current].may_rel = 0;
+    drv_unlock(NDRV);
 }
 
 /* Auftrag in den eigenen DMABUF: waehrend der Treiber wartet, duerfen

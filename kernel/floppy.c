@@ -69,6 +69,9 @@ static unsigned long last_use;
 static unsigned tb_sel;
 static unsigned long tb_lin;
 static signed char tb_drv = -1;
+static signed char tb_own = -1;  /* Task, der zuletzt in den Puffer schrieb */
+static signed char tb_lost, tb_lost_own;    /* Fehler beim Schreiben fremder Daten */
+extern int current;
 static unsigned char tb_cyl, tb_head, tb_ndirty;
 static unsigned char tb_valid[MAXSPT], tb_dirty[MAXSPT];
 
@@ -301,7 +304,7 @@ static int xfer(int d, unsigned cyl, unsigned head, unsigned s, unsigned e, int 
 
 /* Geaendertes aus dem Spurpuffer auf die Diskette; 0 = ok, -1 Fehler,
    -2 schreibgeschuetzt. Im Fehlerfall ist der Puffer verworfen. */
-int __far fd_sync(void)
+static int fd_sync_i(void)
 {
     unsigned s, e, spt;
     int d = tb_drv, rc = 0;
@@ -322,8 +325,13 @@ int __far fd_sync(void)
     for (s = 0; s < MAXSPT; s++)
         tb_dirty[s] = 0;
     tb_ndirty = 0;
-    if (rc)
+    if (rc) {
         tb_drv = -1;                            /* Inhalt stimmt nicht    */
+        if (tb_own != current) {                /* fremde Daten: der      */
+            tb_lost = (signed char)rc;          /* Besitzer erfaehrt es   */
+            tb_lost_own = tb_own;               /* bei seinem fd_sync     */
+        }
+    }
     done();
     return rc;
 }
@@ -335,7 +343,7 @@ static int tb_track(int d, unsigned cyl, unsigned head)
     int rc;
     if (tb_drv == d && tb_cyl == cyl && tb_head == head)
         return 0;
-    if ((rc = fd_sync()) != 0)
+    if ((rc = fd_sync_i()) != 0)
         return rc;
     tb_drv = (signed char)d;
     tb_cyl = (unsigned char)cyl;
@@ -358,7 +366,7 @@ static int split(int d, unsigned lba, unsigned *cyl, unsigned *head, unsigned *s
 }
 
 /* einen Sektor in den DMA-Puffer (DMABUF, Offset 0); 0 = ok */
-int __far fd_read(int d, unsigned lba)
+static int fd_read_i(int d, unsigned lba)
 {
     unsigned cyl, head, sec, spt, i;
     int rc = 0;
@@ -366,7 +374,7 @@ int __far fd_read(int d, unsigned lba)
     if (fd[d].nomedia || split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
         return -1;
     if (!tb_valid[sec]) {
-        if (tb_ndirty && fd_sync())             /* Spur lesen ueberschriebe */
+        if (tb_ndirty && fd_sync_i())             /* Spur lesen ueberschriebe */
             return -1;                          /* Geaendertes             */
         select(d);
         spt = F(d)->spt;
@@ -386,7 +394,7 @@ int __far fd_read(int d, unsigned lba)
 
 /* einen Sektor aus DMABUF schreiben (in den Spurpuffer, fd_sync bringt
    ihn auf die Diskette) */
-int __far fd_write(int d, unsigned lba)
+static int fd_write_i(int d, unsigned lba)
 {
     unsigned cyl, head, sec;
     if (fd[d].nomedia || split(d, lba, &cyl, &head, &sec) || tb_track(d, cyl, head))
@@ -397,6 +405,7 @@ int __far fd_write(int d, unsigned lba)
         tb_dirty[sec] = 1;
         tb_ndirty++;
     }
+    tb_own = (signed char)current;              /* wessen Daten warten    */
     return 0;
 }
 
@@ -445,7 +454,7 @@ static int detect(int d)
 
 /* Vor einem Zugriff: gewechselt oder unbekannt? Dann neu erkennen.
    -> 0 unveraendert, 1 neu (Caches verwerfen), -1 kein Laufwerk */
-int __far fd_check(int d)
+static int fd_check_i(int d)
 {
     int ch;
     if (d > 1 || !fd[d].type)
@@ -461,7 +470,7 @@ int __far fd_check(int d)
         tb_ndirty = 0;
     }
     if (tb_ndirty)                              /* detect liest in den   */
-        fd_sync();                              /* Puffer: B: zuerst raus */
+        fd_sync_i();                              /* Puffer: B: zuerst raus */
     tb_drv = -1;
     if (fd[d].type != 1 && (inb(DIR) & 0x80)) { /* Leitung zuruecksetzen:  */
         recalibrate(d);                         /* Schritt bei eingelegter */
@@ -505,7 +514,7 @@ int __far fd_type(int d)
 
 /* Spur formatieren (FAPI DosFmtTrack): Format nach Groesse 'blocks', muss
    zum Laufwerk passen. 0 = ok, -1 Fehler, -2 schreibgeschuetzt, -3 Format */
-int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
+static int fd_format_i(int d, unsigned cyl, unsigned head, unsigned blocks)
 {
     const signed char *c;
     unsigned char __far *t = MK_FP(DMABUF, 0);
@@ -522,7 +531,7 @@ int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
     f = &fmts[(unsigned)c[i]];
     if (cyl >= f->cyls)
         return -3;
-    if ((rc = fd_sync()) != 0)
+    if ((rc = fd_sync_i()) != 0)
         return rc;
     if (tb_drv == d)
         tb_drv = -1;
@@ -554,6 +563,82 @@ int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
         recalibrate(d);
     }
     done();
+    return rc;
+}
+
+/* ---- Einspruenge mit eigener Sperre (6.5, docs/BIGLOCK.md) ------------
+   Bis 6.4 behielt ein Task waehrend eines Diskettenzugriffs die
+   Kernelsperre - niemand sonst kam in den Kernel, solange die Diskette
+   lief. Jetzt gehoeren Controller und Spurpuffer dem, der die Sperre der
+   Diskette haelt (kernel.c kf_fd_lock: dl_owner[NDRV]); die Kernelsperre
+   gibt proc_block dabei ab wie bei den Plattentreibern. Geaendertes im
+   Spurpuffer gehoert dem Task, der es schrieb (tb_own): nur er schreibt
+   es am Ende seines Aufrufs (fd_sync_own); muss ein anderer es vorher
+   wegschreiben (andere Spur, fd_sync aus blk_flush) und scheitert das,
+   erfaehrt der Besitzer den Fehler bei seinem naechsten fd_sync_own. */
+void __far kf_fd_lock(void);
+void __far kf_fd_unlock(void);
+
+int __far fd_sync(void)                         /* alles (blk_flush)      */
+{
+    int rc;
+    if (tb_drv < 0 || !tb_ndirty)
+        return 0;
+    kf_fd_lock();
+    rc = fd_sync_i();
+    kf_fd_unlock();
+    return rc;
+}
+
+int __far fd_sync_own(void)                     /* Ende eines Aufrufs     */
+{
+    int rc;
+    if (tb_lost && tb_lost_own == current) {
+        rc = tb_lost;
+        tb_lost = 0;
+        return rc;
+    }
+    if (tb_drv < 0 || !tb_ndirty || tb_own != current)
+        return 0;
+    kf_fd_lock();
+    rc = tb_own == current ? fd_sync_i() : 0;   /* (nach dem Warten)      */
+    kf_fd_unlock();
+    return rc;
+}
+
+int __far fd_read(int d, unsigned lba)
+{
+    int rc;
+    kf_fd_lock();
+    rc = fd_read_i(d, lba);
+    kf_fd_unlock();
+    return rc;
+}
+
+int __far fd_write(int d, unsigned lba)
+{
+    int rc;
+    kf_fd_lock();
+    rc = fd_write_i(d, lba);
+    kf_fd_unlock();
+    return rc;
+}
+
+int __far fd_check(int d)
+{
+    int rc;
+    kf_fd_lock();
+    rc = fd_check_i(d);
+    kf_fd_unlock();
+    return rc;
+}
+
+int __far fd_format(int d, unsigned cyl, unsigned head, unsigned blocks)
+{
+    int rc;
+    kf_fd_lock();
+    rc = fd_format_i(d, cyl, head, blocks);
+    kf_fd_unlock();
     return rc;
 }
 

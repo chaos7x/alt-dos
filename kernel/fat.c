@@ -136,7 +136,7 @@ void __far fat_op_begin(void)
 /* ... und den Spurpuffer der Diskette: nach jeder Operation stimmig */
 static int fat_flush(void)
 {
-    int rc = fat_flush_fat(), r2 = fd_sync();
+    int rc = fat_flush_fat(), r2 = fd_sync_own();
     if (r2) {
         if (!ferr)
             ferr = r2 == -2 ? IFS_WP : IFS_ERR;

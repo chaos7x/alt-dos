@@ -40,7 +40,7 @@ das Loop-Backend „durchs Dateisystem“.
 | 6.1 | Loop, DriveSpace | fat.c: globale Variablen in eine Struktur je Operation; danach Tiefe 2 + Loop-Backend durchs Dateisystem |
 | 6.2 | Netzwerk | Sperren für Objekte statt Laufwerke (FAT-, Verzeichnis-, EA-Cache einzeln); ISO9660.IFS und Redirector wie fat.c; Netzstapel von Anfang an ohne `klock` – erledigt, siehe „Stand 6.2“ |
 | 6.3 | VirtIO, SMB/Domäne | übriger Kernel: Dateitabelle/Handles, Pipes, Taskverwaltung, Speicher prüfen und markieren; Diskette mit eigener Sperre; `klock` entfällt, alle FAPI-Aufrufe wie heute `fapi_nolock` |
-| 6.5 | IPC wie OS/2 1.x (docs/FAPI-IPC.md) | der Rest aus der Zeile „6.3“ (dort liegen geblieben: 6.3/6.4 wurden Box-Module und eigener DOS-Kern) – Entscheidung des Nutzers, 27.11.2026: nach Semaphoren/gemeinsamen Segmenten/Named Pipes (die ohne `klock` entstehen), vor den Threads |
+| 6.5 | IPC wie OS/2 1.x (docs/FAPI-IPC.md) | begonnen, siehe „Stand 6.5“ – der Rest aus der Zeile „6.3“ (dort liegen geblieben: 6.3/6.4 wurden Box-Module und eigener DOS-Kern) – Entscheidung des Nutzers, 27.11.2026: nach Semaphoren/gemeinsamen Segmenten/Named Pipes (die ohne `klock` entstehen), vor den Threads |
 | 6.x danach | nach Bedarf | mehrere Aufträge je Treiber (AHA154X mehrere CCBs, NCR mit Trennen) |
 | 7.0 | 32 Bit | Kernel von der ersten Zeile an wiedereintrittsfest: Zustand je Aufruf, Aufträge durch Schichten (wie NT-IRPs), Arbeitsfäden; Loop durchs Dateisystem, Extents nur für die Auslagerungsdatei |
 
@@ -86,6 +86,56 @@ Kopien bytegleich, DOS-Box auf ein Loop-Laufwerk, 16 und 4 MB, fsck sauber.
 
 Für 6.3 bleibt (Tabelle): Dateitabelle/Handles, Pipes, Taskverwaltung,
 Speicher, Diskette mit eigener Sperre, dann `klock` weg.
+
+## Stand 6.5 (28.11.2026): Bestandsaufnahme und Diskette
+
+Vor dem Umbau nachgesehen, was `klock` heute noch tut. Seit Phase 6 gibt
+ein Task sie an fast jedem Schlafpunkt ab (`proc_block` mit `may_rel`,
+Warten auf Laufwerks-/Treibersperren, freiwilliges Warten) und bekommt
+danach seinen Kontext zurück (`ctx_take`). Sie ist damit vor allem die
+**Marke, wessen Stand gerade in den statischen Puffern steht** (Pfade,
+Sammler von fat.c, Redirector, DEM) – und nur dort eine echte Sperre, wo
+sie über ein Warten hinweg gehalten wird. Das waren noch vier Stellen:
+
+| Stelle | hielt `klock` über | Stand |
+| --- | --- | --- |
+| Diskette (floppy.c) | jeden Zugriff: Motoranlauf, Suchen, Spur lesen/schreiben | **erledigt**, eigene Sperre (s. u.) |
+| Auslagerungsdatei (`kf_swap_rw`) | Lesen/Schreiben einer Seite; gemeinsamer Puffer `sw_buf` | offen: eigene Sperre für `sw_buf` |
+| Platten-Cache ohne eigene Ablage (`bc_wb`, Zweig ohne `ctx_room`) | Schreiben direkt aus dem Cache-Fenster | bleibt (nur bei Speichermangel oder vor dem Start der Tasks) |
+| Hausarbeit (`bkl_hold`: Herunterfahren, Treiber laden/entladen, Beenden fremder Tasks) | die ganze Arbeit | bleibt bewusst: „alle anhalten“ |
+
+Diskette: Controller und Spurpuffer gehören jetzt dem Task, der die
+Sperre der Diskette hält (`kf_fd_lock`/`kf_fd_unlock` in kernel.c, Platz
+`dl_owner[NDRV]`, seit 6.2 frei); alle Einsprünge von floppy.c (`fd_read`,
+`fd_write`, `fd_sync`, `fd_check`, `fd_format`) nehmen sie, innen rufen
+sie die Fassungen ohne Sperre (`*_i`). Solange ein Task sie hält, gibt
+`proc_block` die Kernelsperre ab wie bei einem Treiberauftrag. Neu dabei:
+Geändertes im Spurpuffer hat einen Besitzer (`tb_own`). Am Ende eines
+FAPI-Aufrufs schreibt nur er es weg (`fd_sync_own`) – sonst schriebe jeder
+Task, der gerade irgendeinen Aufruf beendet, fremde Daten und bekäme
+deren Fehler (schreibgeschützt). Muss ein anderer den Puffer vorher
+räumen (andere Spur, `blk_flush`) und scheitert das, merkt floppy.c den
+Fehler (`tb_lost`) und meldet ihn dem Besitzer bei dessen `fd_sync_own`.
+
+Geprüft: QEMU (XCOPY von A: und nach A: losgelöst, daneben XCOPY/COPY auf
+C:, CHKDSK A:, Inhalte gleich, fsck beider sauber; mit einem Zähler über
+Port E9h: vorher wartete ein Task auf die Kernelsperre, während der andere
+in der Diskette schlief, jetzt nie – QEMUs Diskette antwortet aber fast
+sofort) und 86Box 386DX/40 mit AHA-154x und Diskettenlaufwerk ohne
+„Turbo“ (derselbe Ablauf, Inhalte gleich, fsck sauber).
+
+Wie es weitergeht (Reihenfolge):
+
+1. Auslagerungsdatei: eigene Sperre für `sw_buf`, dann gibt auch das
+   Ein-/Auslagern `klock` ab.
+2. Durchsicht der Aufrufe mit `klock` je Tabelle (Dateitabelle/Handles,
+   Pipes, Taskverwaltung, Speicher): was nie schläft und keinen Kontext
+   braucht, wandert nach `fapi_nolock`; was schläft, braucht die Marke.
+3. Danach ist `klock` nur noch Kontextmarke: niemand wartet mehr auf sie,
+   außer bei `bkl_hold`. Ganz ohne sie ginge es erst, wenn der Zustand je
+   Aufruf nicht mehr in DGROUP steht (eigenes Segment je Task und ferne
+   Zeiger in fat.c – im 16-Bit-Kernel zu teuer; so steht es für 7.0 in
+   der Tabelle oben). Für Threads und mehr Tasks reicht Punkt 3.
 
 ## Start des Taskwechsels (vorgemerkt 24.11.2026)
 

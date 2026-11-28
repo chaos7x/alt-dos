@@ -216,6 +216,7 @@ int  __far fd_init(unsigned cmos_types);    /* CMOS 10h; 0 = Controller da */
 int  __far fd_write(int d, unsigned lba);   /* aus DMABUF in den Spurpuffer */
 int  __far fd_read(int d, unsigned lba);    /* Sektor in den DMA-Puffer     */
 int  __far fd_sync(void);                   /* Spurpuffer schreiben; -2 = WP */
+int  __far fd_sync_own(void);               /* ... nur Daten des laufenden Tasks */
 int  __far fd_check(int d);                 /* 1 = gewechselt/neu erkannt   */
 unsigned __far fd_size(int d);              /* Sektoren des Formats         */
 int  __far fd_type(int d);                  /* CMOS-Typ, 0 = kein Laufwerk  */
