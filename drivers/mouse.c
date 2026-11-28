@@ -121,6 +121,7 @@ static int aux_cmd(unsigned char c)
     return kbc_read(30) == 0xFA ? 0 : -1;
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static unsigned ps2_probe(void)
 {
     int cb, r;
@@ -154,6 +155,7 @@ static unsigned ps2_probe(void)
     r = 3;                              /* L, R und M im Protokoll      */
     return (unsigned)r;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void ps2_irq(void)
 {
@@ -179,6 +181,7 @@ static void ps2_irq(void)
 
 /* ---- seriell ------------------------------------------------------- */
 /* Lesen: sieht der Port wie ein UART aus? */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static int looks_like_uart(unsigned b)
 {
     unsigned char iir = inp(IIR(b)), mcr = inp(MCR(b));
@@ -186,6 +189,7 @@ static int looks_like_uart(unsigned b)
         return 0;
     return !(iir & 0x30) && !(mcr & 0xE0);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Beide Schnittstellen zugleich pruefen (Maske m: Bit i = COM i+1):
    einstellen, Maus stromlos (DTR/RTS aus), dann an - eine Microsoft-Maus
@@ -195,6 +199,7 @@ static int looks_like_uart(unsigned b)
    -1 = keine. Ports ohne Maus bekommen DTR/RTS wieder weg. */
 static unsigned probe_nb;                /* Tasten der gefundenen Maus   */
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static int probe_all(unsigned m)
 {
     unsigned start, i, b, got[2], three[2], hit = 0;
@@ -251,13 +256,16 @@ static int probe_all(unsigned m)
         }
     return r;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ---- Busmaus ------------------------------------------------------- */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static int inport_id(unsigned b)        /* nur lesen                    */
 {
     unsigned char x = inp(b + 2), y = inp(b + 2), z = inp(b + 2);
     return x == z && x != y && (x == 0xDE || y == 0xDE);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void inport_mode(unsigned char m)
 {
@@ -265,6 +273,7 @@ static void inport_mode(unsigned char m)
     outp(base + 1, m);
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static int logi_probe(unsigned b)
 {
     unsigned i;
@@ -283,6 +292,7 @@ static int logi_probe(unsigned b)
     outp(b + 2, 0x10);                  /* Interrupt aus                */
     return 1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void bus_irqs(int on)
 {
@@ -293,6 +303,7 @@ static void bus_irqs(int on)
 }
 
 /* IRR beider PICs, oder-verknuepft ueber t Takte */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static unsigned irr_scan(unsigned t)
 {
     unsigned start = ticks(), r = 0;
@@ -302,7 +313,9 @@ static unsigned irr_scan(unsigned t)
         r |= inp(0x20) | ((unsigned)inp(0xA0) << 8);
     return r;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static unsigned bus_find_irq(void)
 {
     static const unsigned char cand[] = { 2, 3, 4, 5, 7 };
@@ -321,6 +334,7 @@ static unsigned bus_find_irq(void)
     }
     return n == 1 ? found : 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static void bus_irq(void)
 {
@@ -360,6 +374,7 @@ static void bus_irq(void)
 }
 
 /* Busmaus suchen; -> 1 gefunden (base, bus, nbtn, irq gesetzt) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static int bus_probe(const char __far *args)
 {
     static const unsigned char opt_irq[] = { 2, 3, 4, 5, 7, 9 };
@@ -389,6 +404,7 @@ static int bus_probe(const char __far *args)
         irq = 5;
     return 1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Interrupt: Bytes abholen, Pakete zusammensetzen */
 static void mou_irq(unsigned n)
@@ -436,6 +452,7 @@ static void mou_irq(unsigned n)
     }
 }
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim Start */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -528,6 +545,7 @@ static void init(void)
     devhlp(DH_MOUREG, 0, nbtn, 0);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

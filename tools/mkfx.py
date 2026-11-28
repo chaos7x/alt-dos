@@ -34,6 +34,18 @@ def group_end(mapfile):
     return end
 
 
+def seg_range(mapfile, name):
+    """(Anfang, Groesse) eines Segments aus der Map, sonst None"""
+    for line in open(mapfile):
+        f = line.split()
+        if len(f) >= 5 and f[0] == name and f[2] == 'DGROUP':
+            try:
+                return int(f[3], 16), int(f[4], 16)
+            except ValueError:
+                pass
+    return None
+
+
 def groups(mapfile):
     """Gruppen aus einer Map von "format dos": Name -> (Offset, Groesse)"""
     g = {}
@@ -66,6 +78,7 @@ def main():
         stub = open(stub_f, 'rb').read()
     image = open(image_f, 'rb').read()
     code_size = 0
+    entry = gap = 0
     if image[:2] == b'MZ':
         # Version 2: wlink "format dos" (wie der Kernel) - Kopf ab, Code
         # (CGROUP) ab 0, Daten (DGROUP) ab dem naechsten Paragraphen
@@ -91,6 +104,20 @@ def main():
     else:
         bss = max(0, group_end(map_f) - len(image))
         total = len(image) + bss + stack
+        # Treiber mit Startcode (ITEXT hinter dem BSS, docs/INIT-SEGMENT.md):
+        # die BSS-Nullen nicht in die Datei - FX_FLAG_GAP, entry = Stelle,
+        # bss_size = Laenge der Luecke, der Lader setzt sie wieder ein
+        b, it = seg_range(map_f, '_BSS'), seg_range(map_f, 'ITEXT')
+        if driver and b and it and b[0] < len(image):
+            if it[0] + it[1] > b[0] + b[1] and it[1]:
+                gap_at, bss = b[0], it[0] - b[0]
+                image = image[:gap_at] + image[it[0]:]
+                entry = gap_at
+                gap = 1
+            else:                       # kein Startcode: BSS wie bisher
+                bss = max(0, group_end(map_f) - b[0])
+                image = image[:b[0]]
+            total = len(image) + bss + stack
         if total > 0x10000:
             sys.exit('%s: Abbild + BSS + Stack = %d Bytes, mehr als 64 KB'
                      % (image_f, total))
@@ -102,13 +129,13 @@ def main():
         stub = bytes(stub)
     image_off = (fx_off + fx_hdr + 15) & ~15    # Abbild auf Paragraph (DOS-Stub)
 
-    flags = (1 if driver else 0) | (2 if lfn else 0) | (4 if bind else 0)
+    flags = (1 if driver else 0) | (2 if lfn else 0) | (4 if bind else 0) | (8 if gap else 0)
     if code_size:
         fx = struct.pack('<2sHHHHHHHH', b'CH', 2, image_off, len(image),
                          bss, stack, 0, flags, code_size)
     else:
         fx = struct.pack('<2sHHHHHHH', b'CH', 1, image_off, len(image),
-                         bss, stack, 0, flags)
+                         bss, stack, entry, flags)
 
     body = stub + b'\0' * (fx_off - MZ_HDR - len(stub)) + fx
     body += b'\0' * (image_off - MZ_HDR - len(body)) + image

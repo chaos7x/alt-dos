@@ -9,7 +9,7 @@ mkdir -p $B
 
 CFLAGS="-q -ms -2 -s -zl -zls -zp1 -d0 -ox -wx -we"
 LINK="option quiet format raw bin option offset=0 option nodefaultlibs \
-      option map order clname CODE clname DATA clname BSS"
+      option map order clname CODE clname DATA clname BSS clname ICODE"
 
 # Ende von DGROUP (inkl. BSS) aus der Map-Datei
 group_end() {
@@ -81,8 +81,8 @@ echo "Kernel"
 nasm -f obj kernel/start.asm -o $B/start.o
 KOBJ="$B/start.o"
 # KTEXT2: Kernelteile im zweiten Codesegment (KCODE2, siehe kernel/k2.h)
-K2MODS="floppy vgagfx rbox fat loop net ufs audio k2misc"
-for m in kernel mem floppy fat vio kbd preload vgagfx rbox loop net ufs audio k2misc k2thunk; do
+K2MODS="floppy vgagfx rbox fat loop net ufs audio k2misc panic"
+for m in kernel mem floppy fat vio kbd preload vgagfx rbox loop net ufs audio k2misc panic k2thunk; do
     S=""
     case " $K2MODS " in *" $m "*) S="-nt=KTEXT2 -os" ;; esac   # selten: klein statt schnell
     wcc $CFLAGS $S -fo=$B/$m.o kernel/$m.c
@@ -112,7 +112,7 @@ if g['DGROUP'][0] != (c2[0] + c2[1] + 15) & ~15:
     sys.exit('FEHLER: DGROUP liegt nicht direkt hinter dem Code')
 # Fernaufrufe zwischen CGROUP und CGROUP2: der Kernel liegt immer bei
 # 10000h, also die Segmentwerte gleich als Selektoren eintragen
-# (KCODE 08h, KCODE2 228h, siehe kern.h); alles andere ist ein Fehler
+# (KCODE 08h, KCODE2 268h, siehe kern.h); alles andere ist ein Fehler
 img = hdr * 16
 for i in range(nrel):
     o, s = struct.unpack('<HH', d[relo + 4 * i:relo + 4 * i + 4])
@@ -121,7 +121,7 @@ for i in range(nrel):
     if v == 0:
         sel = 0x08
     elif v == c2[0] >> 4:
-        sel = 0x228
+        sel = 0x268
     else:
         sys.exit('FEHLER: Segment-Relokation auf %04Xh (nur KCODE/KCODE2 erlaubt)' % v)
     d[at:at + 2] = struct.pack('<H', sel)
@@ -207,6 +207,7 @@ echo "Treiber"
 nasm -f obj drivers/dcrt0.asm -o $B/dcrt0.o
 for t in aha154x ide mouse ncr5380 sb16; do
     wcc $CFLAGS -zu -fo=$B/drv_$t.o drivers/$t.c
+    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/drv_$t.o || exit 1
     wlink $LINK name $B/drv_$t.bin option map=$B/drv_$t.map \
           file $B/dcrt0.o file $B/drv_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/drv_$t.bin $B/drv_$t.map $B/drv_$t.sys
@@ -244,6 +245,7 @@ echo "Netzwerk"
 for t in tcpip ne2000; do
     S=net; [ $t = ne2000 ] && S=drivers
     wcc $CFLAGS -zu -fo=$B/net_$t.o $S/$t.c
+    python3 tools/initcheck.py -q --roots init_ --seg ITEXT $B/net_$t.o || exit 1
     wlink $LINK name $B/net_$t.bin option map=$B/net_$t.map \
           file $B/dcrt0.o file $B/net_$t.o 2>&1 | grep -v W1014 || true
     python3 tools/mkfx.py --driver $B/stub.bin $B/net_$t.bin $B/net_$t.map $B/net_$t.sys

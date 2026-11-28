@@ -1121,6 +1121,7 @@ static unsigned e_call(void __far *v)   /* FAPI_NET                      */
 }
 
 /* ---- Laden ----------------------------------------------------------- */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static const char __far *opt(const char __far *a, const char *k)
 {
     int i;
@@ -1132,6 +1133,7 @@ static const char __far *opt(const char __far *a, const char *k)
     }
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static const char __far *ip_parse(const char __far *a, unsigned char __far *ip)
 {
@@ -1153,6 +1155,7 @@ static const char __far *ip_parse(const char __far *a, unsigned char __far *ip)
 static struct net_proto pr;
 static char line[96];
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -1224,6 +1227,7 @@ static void init(void)
     }
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

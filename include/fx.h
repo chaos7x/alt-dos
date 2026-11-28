@@ -34,6 +34,10 @@
                                        liefern DosFindEntry/DosQCurDir 8.3 */
 #define FX_FLAG_DOS     0x0004      /* gebunden (mkfx --bind): der MZ-Stub
                                        uebersetzt die FAPI unter MS-DOS */
+#define FX_FLAG_GAP     0x0008      /* Treiber (V1) mit Startcode hinter dem
+                                       BSS (ITEXT, docs/INIT-SEGMENT.md): im
+                                       Abbild fehlen bei entry bss_size Null-
+                                       Bytes, der Lader setzt sie ein     */
 
 struct fx_header {
     char           sig[2];          /* "CH"                             */

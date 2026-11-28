@@ -293,15 +293,38 @@ void delay_ticks(unsigned n)
         idle_wait();
 }
 
+int __far pn_save(const char *msg, const char *tname);   /* panic.c */
+static const char *pn_task(void);
+
+/* Kernel-Panik: Meldung in der untersten Zeile, Protokoll nach
+   PANIC.DAT (panic.c), auf eine Taste warten und neu starten - der
+   naechste Start haengt es an \DOS\SYSTEM\PANIC.LOG */
 void panic(const char *msg)
 {
+    static unsigned char in_panic;
+    static const char hint[] = "Taste dr\x81" "cken: Neustart - Protokoll "
+        "in \\DOS\\SYSTEM\\PANIC.LOG";
     unsigned short __far *v = MK_FP(VIDEO, 0);
     int c;
+    unsigned st;
+    irq_off();
     for (c = 0; c < 80; c++)
         v[24 * 80 + c] = 0x4F20;
     for (c = 0; msg[c] && c < 78; c++)
         v[24 * 80 + 1 + c] = 0x4F00 | (unsigned char)msg[c];
-    halt_forever();
+    if (in_panic++ || pn_save(msg, pn_task()))  /* nichts geschrieben:   */
+        halt_forever();                         /* anhalten wie bisher   */
+    for (c = 0; c < 80; c++)
+        v[23 * 80 + c] = 0x4F20;
+    for (c = 0; hint[c]; c++)
+        v[23 * 80 + 1 + c] = 0x4F00 | (unsigned char)hint[c];
+    for (c = 0; c < 64 && (inb(0x64) & 1); c++)   /* Reste abholen    */
+        inb(0x60);
+    for (;;) {                          /* Taste (nicht Maus, nicht los) */
+        st = inb(0x64);
+        if ((st & 1) && !(st & 0x20) && inb(0x60) < 0x80)
+            reboot();
+    }
 }
 
 /* Strg+Alt+Entf: Der Neustart folgt beim naechsten Taskwechsel, wenn
@@ -697,9 +720,13 @@ static unsigned join_sel;                   /* = subst_sel, hintere Haelfte */
 #define JOIN_OFF (NDRIVE * IFS_PATHLEN)
 /* Protokoll der Kernelmeldungen (DMESG): Ring im selben Segment hinter
    den Pfaden (kein eigener GDT-Platz), jede Zeile mit [h:mm:ss] */
-#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
-static unsigned klog_head, klog_len;    /* naechste Stelle, belegt       */
-static unsigned char klog_mid;          /* mitten in einer Zeile          */
+/* KLOG_OFF steht in kern.h (auch panic.c) */
+#define klog_head pn_khead
+#define klog_len  pn_klen
+#define klog_mid  pn_kmid
+unsigned pn_khead, pn_klen;             /* naechste Stelle, belegt       */
+unsigned char pn_kmid;                  /* mitten in einer Zeile          */
+unsigned pn_ksel;                       /* = subst_sel (fuer panic.c)     */
 
 static void kl_put(char c)
 {
@@ -1688,7 +1715,7 @@ static int load_image(int drive, const char *path, struct fx_header *h,
         (h->version != FX_VERSION && h->version != FX_VERSION2) ||
         (unsigned long)h->image_off + h->image_size > f.size ||
         seg > 0x10000UL || h->image_size == 0 || csz > h->image_size ||
-        (csz & 15) || h->entry >= (csz ? csz : h->image_size) ||
+        (csz & 15) || h->entry > (csz ? csz : h->image_size) ||
         (h->version == FX_VERSION2 && csz == 0))
         err = EXEC_ERR_FORMAT;
     if (err) {
@@ -1737,7 +1764,12 @@ static int load_image(int drive, const char *path, struct fx_header *h,
        zero_seg schreibt ganze Einheiten, ein echter 286 prueft die Grenze */
     scratch2_map(base, n * MEM_UNIT - 1);
     zero_seg(SCRATCH2, n * (MEM_UNIT / 2));     /* BSS und Stack = 0    */
-    far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
+    if (h->flags & FX_FLAG_GAP) {       /* Treiber: BSS-Luecke bei entry */
+        far_copy(SCRATCH2, 0, SCRATCH, h->image_off, h->entry);
+        far_copy(SCRATCH2, h->entry + h->bss_size, SCRATCH, h->image_off + h->entry,
+                 h->image_size - h->entry);
+    } else
+        far_copy(SCRATCH2, 0, SCRATCH, h->image_off + csz, h->image_size - csz);
     mem_free(tu, tn);
     *unit = u;
     *cnt = n;
@@ -4556,9 +4588,38 @@ static void sys_info(struct fapi_sysinfo __far *si)
     }
 }
 
+static unsigned char drv_busy;          /* jemand steckt im Treiber       */
 static void drv_request(int d)
 {
+    drv_busy++;
     drv_call(DRVC_SEL(d), DRVD_SEL(d), drv[d].entry, (unsigned)&req);
+    drv_busy--;
+}
+
+/* Absturzprotokoll (panic.c): ein Sektor direkt ueber den Treiber, nur
+   wenn gerade niemand darin steckt. current = -1: der Treiber wartet in
+   der HLT-Schleife statt im Scheduler. */
+static const char *pn_task(void)
+{
+    return current >= 0 ? task[current].name : 0;
+}
+int __far kf_pn_io(int dev, unsigned long lba, unsigned long phys,
+                   unsigned sel, unsigned off, int wr)
+{
+    int d = blk[dev].drv;
+    if (d < 0 || d >= NDRV || drv_busy)
+        return -1;
+    current = -1;
+    req.cmd = wr ? DRV_WRITE : DRV_READ;
+    req.unit = blk[dev].unit;
+    req.count = 1;
+    req.status = DRV_ERR_IO;
+    req.lba = lba;
+    req.buf_phys = phys;
+    req.buf_sel = sel;
+    req.buf_off = off;
+    drv_request(d);
+    return req.status == DRV_OK ? 0 : -1;
 }
 
 /* zuletzt gelesener oder geschriebener Sektor, steht noch in DMABUF */
@@ -5379,7 +5440,7 @@ static int load_driver(const char *line, int is_ifs)
         return -1;
     }
     base = (unsigned long)u << 8;
-    set_desc(DRVC_IDX(d), base, h.image_size - 1, ACC_KCODE);
+    set_desc(DRVC_IDX(d), base, (unsigned)(seg - 1), ACC_KCODE);
     set_desc(DRVC_IDX(d) + 1, base, (unsigned)(seg - 1), ACC_KDATA);
     drv[d].used = 1;
     for (k = 0, j = 0; path[k]; k++)                /* Name ohne Pfad    */
@@ -5418,6 +5479,16 @@ static int load_driver(const char *line, int is_ifs)
         vio_kputs(boot_session, is_ifs ? ": Initialisierung fehlgeschlagen\n"
                                        : ": kein Ger\x84t gefunden\n");
         return 0;
+    }
+    if (req.buf_off && req.buf_off < seg) {    /* Startcode weg (aus 6.4): */
+        unsigned keep = UNITS((unsigned long)req.buf_off);  /* dcrt0 meldet  */
+        set_desc(DRVC_IDX(d), base, req.buf_off - 1, ACC_KCODE);  /* ITEXT   */
+        set_desc(DRVC_IDX(d) + 1, base, req.buf_off - 1, ACC_KDATA);
+        if (keep < n) {
+            mem_free(u + keep, n - keep);
+            n = keep;
+            drv[d].cnt = n;
+        }
     }
     drv[d].maxcnt = req.count ? req.count : 1;
     if (is_ifs) {
@@ -6482,6 +6553,7 @@ void kmain(void)
         subst_drv[i] = -1;
     /* SUBST- und JOIN-Pfade teilen sich ein Kernelsegment */
     subst_sel = kseg_alloc((unsigned long)KLOG_OFF + KLOG_SIZE);  /* + Protokoll */
+    pn_ksel = subst_sel;
     for (i = 0; i < NDRIVE; i++)
         join_drv[i] = -1;
     join_sel = subst_sel;
@@ -6625,6 +6697,8 @@ void kmain(void)
        OS/2 dem Befehlsinterpreter der DOS-Box (ab 6.0) vorbehalten.
        Fehlt er (alte CONFIG.SYS mit COMMAND.EXE nach dem Umbenennen),
        wird CMD.EXE /P genommen. */
+    if (!boot_f5)                               /* Absturzprotokoll      */
+        pn_boot(sys_drive, vol[sys_drive].blk, s0);
     if (boot_f5)
         ;                                       /* Notstart: nichts davon */
     else if (chk_pending() || vol[sys_drive].was_dirty) {

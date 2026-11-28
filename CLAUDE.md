@@ -91,6 +91,41 @@ landeten Blöcke mitten in fremden Strukturen und Kommentaren (baute
 trotzdem). Code 63.492 + 56.531 Byte, SMBCLI 64.496 Byte (voll). Offen:
 PANIC.LOG, NDRV 16 + DEINIT für IDE/AHA154X/NCR5380, Treiber-Startcode
 freigeben, CD-Vorauslesen.
+Teil 7 (28.11.2026): `NDRV` 6 -> 10 (MEMMAP_SEL 1A8h, KCODE2 268h –
+kern.h, mem.h, build.sh; mehr kostete DGROUP und GDT-Plätze ohne Bedarf,
+main hat 16), `DRV_DEINIT` für IDE (nIEN), AHA154X (IRST) und NCR5380
+(Bus los) aus 8a90e5a; Startcode der Treiber nach dem Laden frei (Patch
+64ea466: Startfunktionen in `ITEXT`/`ICODE` hinter dem BSS, dcrt0 meldet
+`_init_start` in `buf_off`, load_driver kürzt beide Deskriptoren und gibt
+die Einheiten dahinter frei; mkfx `FX_FLAG_GAP` lässt die BSS-Nullen aus
+der Datei, load_image setzt sie ein; `tools/initcheck.py` prüft in
+build.sh je Treiber, dass Laufzeitcode nichts in ITEXT ruft). Neue
+Startfunktionen in Treibern gehören in ITEXT. Geprüft: QEMU (IDE, SB16
+mit Mitschnitt, NE2000 + TCPIP, DEVLOAD /U SB16 und IDE + neu laden,
+XCOPY, CHKDSK, fsck sauber) und 86Box SCAT (286 prüft die gekürzten
+Segmentgrenzen: AHA-154x mit IRQ, Maus, SB16 mit PLAY, XCOPY, CHKDSK,
+fsck sauber; AHA154X entladen und neu laden). Absturzprotokoll
+(`kernel/panic.c`, KTEXT2): anders als main nur der Plattenweg – der
+Kernel liegt hier nicht an fester Stelle (PROTECTONLY=), und die BIOSe
+der 286er testen beim Neustart den Speicher. `pn_boot` (kmain, vor
+chk_pending; nicht bei F5, Diskette, Wechselplatte) hängt ein Protokoll
+aus `\DOS\SYSTEM\PANIC.DAT` (2 KB, SH, Kennung „ATPNDAT1“ + Zeit in
+Sektor 0, Sektoren über ifs_bmap gemerkt, Datei bleibt zu) an PANIC.LOG
+und legt die Kennung neu an; `panic()` -> `pn_save` (Meldung, Build,
+Task, Ende des DMESG-Rings in einen 2,5-KB-Puffer aus kseg_dma) schreibt
+über `kf_pn_io` direkt über den Treiber – nur wenn niemand im Treiber
+steckt (`drv_busy` in drv_request) und die Kennung noch dort steht;
+current = -1, der Treiber wartet in der HLT-Schleife. Gelingt es, wartet
+die Panik auf eine Taste und startet neu, sonst hält sie an wie bisher.
+klog_head/len/mid heißen jetzt pn_khead/pn_klen/pn_kmid (sichtbar für
+panic.c), KLOG_OFF steht in kern.h. Testweg: vorübergehend
+`if (a1 == 4242) panic(...)` in FAPI_BEEP, `BEEP 4242`
+(/tmp/claude-0/t5/pn.sh). Geprüft: QEMU (IDE) und 86Box SCAT (AHA-154x).
+CD-Vorauslesen (cdra.c) bewusst nicht übernommen: es wirkt nur mit
+Treibern, die 32 KB je Befehl melden (IDE.SYS-ATAPI, AIC7XXX – den gibt
+es hier nicht), braucht einen 32-KB-Puffer (auf 2 MB zu teuer) und das
+CD-Laufwerk des SCAT hängt am Adaptec. Damit ist der Rückport aus
+6.3/6.4 durch; über IPC (FAPI 68h–6Ah) ist nicht entschieden.
 
 Vergleichstest BIOSCMP (Wunsch des Nutzers, 18.11.2026; wie auf main):
 `tools/bioscmp.asm` -> `\DEMO\BIOSCMP.COM`, `tools/bioscmp.sh X rbox`

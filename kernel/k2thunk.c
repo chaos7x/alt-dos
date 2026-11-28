@@ -48,3 +48,4 @@ void __far kf_blk_invalidate(void) { blk_invalidate(); }
 int __far kf_blk_media(int dev) { return blk_media(dev); }
 int __far kf_blk_nomedia(int dev) { return blk_nomedia(dev); }
 unsigned __far kf_kseg_alloc(unsigned long bytes) { return kseg_alloc(bytes); }
+void __far kf_blk_flush(void) { blk_flush(); }

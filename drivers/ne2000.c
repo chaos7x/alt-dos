@@ -297,6 +297,7 @@ static unsigned ne_ctl(void __far *v)
 
 /* ---- Suche ----------------------------------------------------------- */
 /* sieht der Port wie ein DP8390 aus? (erst lesen, dann wie Linux pruefen) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int probe(unsigned b)
 {
     unsigned c, d;
@@ -318,8 +319,10 @@ static int probe(unsigned b)
     }
     return 1;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Karte zuruecksetzen, Adress-PROM lesen -> 1 = NE1000/NE2000-Kennung */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int read_prom(void)
 {
     unsigned k, pairs = 1;
@@ -348,15 +351,19 @@ static int read_prom(void)
     }
     return prom[14] == 0x57 && prom[15] == 0x57;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned irr_now(void)
 {
     outp(0x20, 0x0A);
     outp(0xA0, 0x0A);
     return inp(0x20) | ((unsigned)inp(0xA0) << 8);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Karte einen Interrupt ausloesen lassen (Remote-DMA mit 0 Bytes, wie Linux) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned find_irq(void)
 {
     static const unsigned char cand[] = { 3, 5, 9, 10, 11, 12, 15, 7, 4 };
@@ -391,6 +398,7 @@ static unsigned find_irq(void)
         }
     return n == 1 ? found : 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 static const unsigned pci_ids[][2] = {
     { 0x10EC, 0x8029 }, { 0x1050, 0x0940 }, { 0x1050, 0x5A5A },
@@ -398,6 +406,7 @@ static const unsigned pci_ids[][2] = {
     { 0x1106, 0x0926 }, { 0x10BD, 0x0E34 }, { 0x12C3, 0x0058 }
 };
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned hexval(const char __far *a)
 {
     unsigned v = 0, d;
@@ -409,7 +418,9 @@ static unsigned hexval(const char __far *a)
         v = v << 4 | d;
     }
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static const char __far *opt(const char __far *a, const char *k)
 {
     int i;
@@ -421,7 +432,9 @@ static const char __far *opt(const char __far *a, const char *k)
     }
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     static const unsigned isa[] = { 0x300, 0x280, 0x320, 0x340, 0x360, 0x240 };
@@ -551,6 +564,7 @@ static void init(void)
     dputs(line);
     r->status = DRV_OK;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 void strategy(void)
 {

@@ -26,14 +26,15 @@
 #define TSS_SEL(i)  (TSS_IDX(i) * 8)
 #define LDT_SEL(i)  (LDT_IDX(i) * 8)
 #define SCR_SEL(i)  (SCR_IDX(i) * 8)
-#define NDRV        6               /* Geraetetreiber und IFS-Module      */
+#define NDRV        10              /* Geraetetreiber und IFS-Module (6 -> 10,
+                                       28.11.2026: mit Netz waren alle belegt) */
 #define DRVC_IDX(i) (9 + 3 * NTASK + 2 * (i))   /* Treibercode, Ring 0    */
 #define DRVC_SEL(i) (DRVC_IDX(i) * 8)
 #define DRVD_SEL(i) (DRVC_SEL(i) + 8)           /* Treiberdaten           */
 #define NKSEG       24              /* eigene Kernelsegmente (kseg_alloc)  */
 #define KSEG_IDX(i) (9 + 3 * NTASK + 2 * NDRV + (i))
 #define KCODE2_IDX  (9 + 3 * NTASK + 2 * NDRV + NKSEG)
-#define KCODE2      0x228           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
+#define KCODE2      0x268           /* = KCODE2_IDX * 8; build.sh traegt ihn ein */
 #define NGDT        (KCODE2_IDX + 1)
 /* KSEG_IDX(0) ist fest die Speicher-Bitmap (MEMMAP_SEL in mem.h) */
 
@@ -114,6 +115,9 @@ void reboot(void);
 unsigned kseg_alloc(unsigned long bytes);
 void reboot_request(void);          /* Strg+Alt+Entf: erst Daten sichern   */
 extern volatile unsigned reboot_count;
+/* DMESG-Ring im Pfadsegment (kernel.c, panic.c) */
+#define KLOG_OFF ((2u * NDRIVE * IFS_PATHLEN + NTASK * 4u * (1 + IFS_PATHLEN) + 15) & ~15u)
+void __far pn_boot(int d, int dev, int ses);    /* panic.c */
 unsigned long __far rtc_stamp(void);    /* k2misc.c; Datum << 16 | Uhrzeit im FAT-Format */
 
 /* ---- Blockgeraet: Diskette A: (floppy.c) ------------------------------- */

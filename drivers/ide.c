@@ -216,6 +216,7 @@ static unsigned long drv_lin;           /* physische Basis des Treibers  */
 static unsigned long prd_phys[2];
 static unsigned long *prd[2];           /* im eigenen DS               */
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void bm_find(void)
 {
     struct drv_req __far *r = REQ;
@@ -258,6 +259,7 @@ static void bm_find(void)
         return;
     }
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* n Sektoren ab l per DMA; 0 = ok */
 static int dma_xfer(struct drv_req __far *r, struct unit *u, unsigned long l,
@@ -298,6 +300,7 @@ static int dma_xfer(struct drv_req __far *r, struct unit *u, unsigned long l,
 }
 
 /* Modellname (Bytes vertauscht) an p anhaengen */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static char *model(char *p)
 {
     char *q = p;
@@ -313,14 +316,18 @@ static char *model(char *p)
         p = scat(p, "Platte ohne Namen");
     return p;
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static char *where(int ch, int dev)
 {
     return scat(line, ch == 0 ? (dev ? "  IDE prim\x84r Slave: " : "  IDE prim\x84r Master: ")
                               : (dev ? "  IDE sekund\x84r Slave: " : "  IDE sekund\x84r Master: "));
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Sektoren von cyls x heads x spt (ohne __U4M) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static unsigned long chs_size(unsigned cyls, unsigned heads, unsigned spt)
 {
     unsigned long n = 0, t = 0;
@@ -331,6 +338,7 @@ static unsigned long chs_size(unsigned cyls, unsigned heads, unsigned spt)
         n += t;
     return n;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Befehl fuer n Sektoren ab l ausgeben (Register setzen, Befehl schreiben);
    0 = ok, -1 = Laufwerk belegt oder Adresse ausserhalb */
@@ -393,6 +401,7 @@ static int issue(struct unit *u, unsigned long l, unsigned n, unsigned char cmd)
 #undef head
 
 /* einen Sektor nach id[] lesen (Pruefung der Geometrie); 0 = ok */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int test_read(struct unit *u, unsigned long l)
 {
     if (issue(u, l, 1, 0x20) || wait_status(u->base, ST_DRQ, ST_DRQ, 300))
@@ -400,8 +409,10 @@ static int test_read(struct unit *u, unsigned long l)
     insw_far(u->base + R_DATA, (void __far *)id, 256);
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* INITIALIZE DRIVE PARAMETERS: Koepfe und Sektoren je Spur einstellen */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int set_geometry(struct unit *u)
 {
     unsigned b = u->base;
@@ -416,12 +427,14 @@ static int set_geometry(struct unit *u)
     settle(u->ctl);
     return wait_status(b, 0, 0, 300);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Geometrie aus der BIOS-Tabelle (INT 41h/46h) der Platte dev am
    primaeren Kanal; 0 = gueltig. Uebersetzende BIOS (Signatur A0h im
    Byte 3) legen dort die echte Geometrie ab. */
 static unsigned char fdpt[16];
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int bios_geometry(int ch, int dev, unsigned *cyls, unsigned *heads,
                          unsigned *spt)
 {
@@ -441,8 +454,10 @@ static int bios_geometry(int ch, int dev, unsigned *cyls, unsigned *heads,
         return -1;
     return 0;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* Platte ohne IDENTIFY (WD1003, MFM/RLL) */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void old_disk(int ch, int dev)
 {
     struct drv_req __far *r = REQ;
@@ -493,8 +508,10 @@ static void old_disk(int ch, int dev)
     scat(p, "\n");
     dputs(line);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ein Geraet pruefen; meldet Platten als Einheit, ATAPI nur im Protokoll */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void probe(int ch, int dev)
 {
     struct drv_req __far *r = REQ;
@@ -638,10 +655,12 @@ static void probe(int ch, int dev)
     }
     dputs(line);
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* SET FEATURES 03h (Transfermodus): 22h Multiword-DMA 2, 40h+n UDMA n
    (nur mit /DMA, wenn das BIOS keinen Modus eingestellt hat - z. B.
    SeaBIOS in QEMU); 0 = ok */
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static int set_xfer(struct unit *u, unsigned char m)
 {
     unsigned b = u->base;
@@ -655,7 +674,9 @@ static int set_xfer(struct unit *u, unsigned char m)
     settle(u->ctl);
     return wait_status(b, 0, 0, 300);
 }
+#pragma code_seg("_TEXT", "CODE")
 
+#pragma code_seg("ITEXT", "ICODE")   /* nur beim INIT */
 static void init(void)
 {
     struct drv_req __far *r = REQ;
@@ -742,6 +763,7 @@ static void init(void)
     r->count = 16;                          /* READ SECTORS mit Sektorzahl */
     r->status = nunit ? DRV_OK : DRV_ERR_NODEV;
 }
+#pragma code_seg("_TEXT", "CODE")
 
 /* ATAPI: Paketbefehl in pkt[] schicken und len Bytes nach sel:off lesen
    (READ(10): 2048, REQUEST SENSE: 18); 0 = ok */
@@ -1000,6 +1022,17 @@ void strategy(void)
         else
             eject(r);
         break;
+    case DRV_DEINIT: {                  /* DEVLOAD /U: Kanaele still      */
+        int ch;
+        for (ch = 0; ch < 2; ch++)
+            if (chan[ch].units) {
+                outp(ports[ch][1], 0x02);       /* nIEN: kein INTRQ mehr  */
+                if (bm_base[ch])
+                    outp(bm_base[ch], 0);       /* Busmaster anhalten     */
+            }
+        r->status = DRV_OK;
+        break;
+    }
     default:
         r->status = DRV_ERR_CMD;
     }

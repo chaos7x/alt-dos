@@ -134,7 +134,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `MEMMAN=NOSWAP` in der CONFIG.SYS schaltet das ab;
   `DEVLOAD [/L] [/U] Treiber [Argumente]` (5.4) lädt Treiber und IFS-Module zur
   Laufzeit wie modprobe (neue Laufwerke bekommen die nächsten freien
-  Buchstaben), `/U` entlädt sie wieder (SB16, MOUSE, IFS-Module), `/L` listet
+  Buchstaben), `/U` entlädt sie wieder (SB16, MOUSE, IDE, AHA154X, NCR5380,
+  IFS-Module; nicht den Treiber des Startlaufwerks), `/L` listet; bis zu zehn
+  Treiber, ihr Startcode wird nach dem Laden freigegeben
 - Die mitgelieferte `CONFIG.SYS` nennt alle Einstellungen mit Erklärung
   (Treiberschalter, Cache, lange Namen, Land/Codepage, Boxen); was nicht
   gebraucht wird, steht als `REM`-Beispiel darin.
@@ -492,6 +494,9 @@ CAT und `\DOS\LINUX.MAC`. 5.2 steht im Zweig `5.2` (`v5.2`), 5.1 in `5.1`,
   `NAMES.nnn`, auch Namen außerhalb der Codepage)
 - Netzdrucker: `NET USE LPT1: \\server\drucker` leitet LPT1–3/PRN an
   eine SMB-Druckfreigabe
+- Absturzprotokoll: eine Kernel-Panik schreibt Meldung, Task und die
+  letzten Kernelmeldungen auf die Startplatte; der nächste Start hängt sie
+  an `\DOS\SYSTEM\PANIC.LOG` und nennt sie unter den Startmeldungen
 - `FM [Verz1 [Verz2]]`, der AT-DOS-Dateimanager: zwei Verzeichnisfenster
   nebeneinander (Tab wechselt), Einfg/Grau + - * markieren, F3 Ansehen
   im eigenen Betrachter nach dem Vorbild von mcview (beliebig große
